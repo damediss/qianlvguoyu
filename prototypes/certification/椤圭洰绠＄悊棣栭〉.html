@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>项目管理首页 - 项目准备阶段</title>
+    <link rel="stylesheet" href="common.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@5.12.8/dist/reset.css">
+    <style>
+        :root {
+            --primary: #1890ff;
+            --primary-strong: #096dd9;
+            --primary-soft: #e6f7ff;
+            --success: #52c41a;
+            --success-soft: #f6ffed;
+            --warning: #fa8c16;
+            --warning-soft: #fff7e6;
+            --danger: #ff4d4f;
+            --danger-soft: #fff1f0;
+            --text: #1f2937;
+            --text-muted: #6b7280;
+            --border: #e5e7eb;
+            --bg: #f0f2f5;
+            --surface: #ffffff;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 220px;
+            background-color: #ffffff;
+            color: #1f2937;
+            border-right: 1px solid #e8e8e8;
+            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
+            padding: 16px 0;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+        .sidebar-logo {
+            padding: 0 16px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 8px;
+        }
+        .sidebar-logo h2 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .sidebar-logo p {
+            font-size: 12px;
+            color: #8c8c8c;
+            margin-top: 4px;
+        }
+        .sidebar-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+        }
+        .sidebar-item:hover {
+            background-color: #f5f5f5;
+        }
+        .sidebar-item.active {
+            background-color: var(--primary);
+            color: #ffffff;
+        }
+        .sidebar-item.active .sidebar-arrow {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .sidebar-item-content {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .sidebar-icon {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+        }
+        .sidebar-arrow {
+            font-size: 12px;
+            transition: transform 0.3s;
+            color: #bfbfbf;
+        }
+                .sidebar-subitem.expanded .sidebar-arrow { transform: rotate(90deg); }
+        .sidebar-item.expanded .sidebar-arrow {
+            transform: rotate(90deg);
+        }
+        .sidebar-sublist {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .sidebar-sublist.expanded {
+            max-height: 1200px;
+        }
+        .sidebar-subitem {
+            padding: 10px 16px 10px 46px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+            color: #595959;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sidebar-subitem:hover {
+            background-color: #f5f5f5;
+            color: var(--primary);
+        }
+        .sidebar-subitem.active {
+            background-color: rgba(24, 144, 255, 0.2);
+            color: var(--primary);
+            border-right: 3px solid var(--primary);
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .header {
+            height: 64px;
+            background-color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .header h1 {
+            font-size: 18px;
+            color: var(--text);
+        }
+        .header-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #666;
+            font-size: 14px;
+        }
+        .project-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            background: var(--bg);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+        .project-selector:hover {
+            background: var(--primary-soft);
+            color: var(--primary);
+        }
+        .content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+        .view-section {
+            display: none;
+        }
+        .view-section.active {
+            display: block;
+        }
+        /* 项目选择视图 */
+        .hero-card {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-strong) 100%);
+            border-radius: 12px;
+            padding: 28px;
+            color: white;
+            margin-bottom: 24px;
+        }
+        .hero-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+            align-items: start;
+        }
+        .badges {
+            margin-bottom: 16px;
+        }
+        .badge {
+            display: inline-block;
+            background-color: rgba(255, 255, 255, 0.2);
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-right: 8px;
+        }
+        .hero-card h1 {
+            font-size: 28px;
+            margin-bottom: 12px;
+        }
+        .hero-card p {
+            font-size: 14px;
+            line-height: 1.6;
+            opacity: 0.9;
+        }
+        .process-box {
+            background-color: rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .process-box h3 {
+            font-size: 16px;
+            margin-bottom: 12px;
+        }
+        .process-box ul {
+            list-style: none;
+            font-size: 13px;
+        }
+        .process-box li {
+            padding: 6px 0;
+            padding-left: 16px;
+            position: relative;
+        }
+        .process-box li::before {
+            content: '•';
+            position: absolute;
+            left: 0;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        .section-card {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .section-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .section-title h2 {
+            font-size: 18px;
+            color: var(--text);
+        }
+        .muted {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+        .button {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--primary);
+            color: white;
+            padding: 10px 18px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+        }
+        .button:hover {
+            background: var(--primary-strong);
+        }
+        .button-secondary {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: white;
+            color: var(--text);
+            padding: 10px 18px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            border: 1px solid var(--border);
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .button-secondary:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        .button-ghost {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-muted);
+            padding: 8px 16px;
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.3s;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+        }
+        .button-ghost:hover {
+            color: var(--primary);
+        }
+        .filter-bar {
+            background-color: #f8fafc;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        .filter-row {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .field label {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+        .field input,
+        .field select {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+            min-width: 200px;
+        }
+        .field input:focus,
+        .field select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .project-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .project-table thead th {
+            background-color: #f8fafc;
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-muted);
+            font-size: 13px;
+            border-bottom: 2px solid var(--border);
+            white-space: nowrap;
+        }
+        .project-table tbody tr {
+            transition: background-color 0.2s;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .project-table tbody tr:hover {
+            background-color: #f5f8ff;
+        }
+        .project-table tbody td {
+            padding: 14px 16px;
+            vertical-align: middle;
+        }
+        .project-table .project-name-cell {
+            font-weight: 600;
+            color: var(--text);
+            cursor: pointer;
+        }
+        .project-table .project-name-cell:hover {
+            color: var(--primary);
+        }
+        .project-table .action-cell {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .project-table .delete-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 1px solid var(--border);
+            background: white;
+            color: var(--text-muted);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        .project-table .delete-btn:hover {
+            border-color: var(--danger);
+            color: var(--danger);
+            background: var(--danger-soft);
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-draft {
+            background: #e7ecff;
+            color: #3b42b4;
+        }
+        .status-pending {
+            background: var(--warning-soft);
+            color: #9a5408;
+        }
+        .status-pass {
+            background: var(--success-soft);
+            color: #166534;
+        }
+        .status-reject {
+            background: var(--danger-soft);
+            color: #991b1b;
+        }
+        .project-info {
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.8;
+        }
+        .project-info span {
+            display: block;
+        }
+        .project-actions {
+            margin-top: 16px;
+            display: flex;
+            gap: 8px;
+        }
+        .order-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .order-table thead th {
+            background-color: #f8fafc;
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-muted);
+            font-size: 13px;
+            border-bottom: 2px solid var(--border);
+            white-space: nowrap;
+        }
+        .order-table tbody tr {
+            transition: background-color 0.2s;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .order-table tbody tr:hover {
+            background-color: #f5f8ff;
+        }
+        .order-table tbody td {
+            padding: 14px 16px;
+            vertical-align: middle;
+        }
+        .order-table .order-title-cell {
+            font-weight: 600;
+            color: var(--text);
+        }
+        .order-table .action-cell {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        /* 工作台视图 */
+        .workbench-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 24px;
+        }
+        .workbench-title h2 {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+        .meta-bar {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .meta-item {
+            padding: 12px 16px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            min-width: 140px;
+        }
+        .meta-item span {
+            display: block;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        .meta-item strong {
+            font-size: 15px;
+            color: var(--text);
+        }
+        .progress-strip {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border);
+        }
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .progress-bar {
+            height: 10px;
+            background: #e7edf7;
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .progress-value {
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--primary), #60a5fa);
+            transition: width 0.5s ease;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .form-card {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            position: relative;
+            transition: all 0.3s;
+        }
+        .form-card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px rgba(24, 144, 255, 0.1);
+        }
+        .form-card h3 {
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        .form-card p {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+        .form-card-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        /* 模态框 */
+        .modal-backdrop {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .modal-backdrop.active {
+            display: flex;
+        }
+        .modal-panel {
+            background: white;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 24px;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-header h3 {
+            font-size: 18px;
+        }
+        .form-layout {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .form-group.full-width {
+            grid-column: span 2;
+        }
+        .form-group label {
+            font-size: 13px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        .toolbar {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+            background: #f8fafc;
+            border-radius: 10px;
+            border: 1px dashed var(--border);
+        }
+        .toast-stack {
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .toast {
+            min-width: 260px;
+            max-width: 360px;
+            padding: 14px 18px;
+            border-radius: 8px;
+            background: #1f2937;
+            color: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            font-size: 14px;
+            animation: slideIn 0.3s ease;
+        }
+        .toast.success { background: #166534; }
+        .toast.warning { background: #9a5408; }
+        .toast.danger { background: #991b1b; }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="sidebar-logo">
+                <h2>认定工作流程</h2>
+                <p>系统原型</p>
+            </div>
+            
+            <!-- 数据面板 -->
+            <div class="sidebar-item" onclick="window.location.href='数据面板.html'">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📊</span>
+                    <span>数据面板</span>
+                </div>
+            </div>
+            
+            <!-- 项目管理 - 可展开 -->
+            <div class="sidebar-item expanded" id="projectMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📁</span>
+                    <span>任务管理</span>
+                </div>
+                <span class="sidebar-arrow">▶</span>
+            </div>
+            <div class="sidebar-sublist expanded" id="projectSubmenu">
+                <div class="sidebar-subitem active" onclick="window.location.href='项目管理首页.html'">
+                    <span>📋</span> 任务准备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='我要下单.html'">
+                    <span>🛒</span> 我要下单
+                </div>
+                <div class="sidebar-subitem" id="archiveMenu" onclick="toggleArchiveSubmenu(event)">
+                    <span>📦</span> 任务档案
+                    <span class="sidebar-arrow" style="margin-left: auto;">▶</span>
+                </div>
+                <div class="sidebar-sublist" id="archiveSubmenu">
+                    <div class="sidebar-subitem" onclick="window.location.href='考试材料.html'" style="padding-left: 56px;">
+                        <span>📝</span> 考试材料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='考场资料.html'" style="padding-left: 56px;">
+                        <span>🏫</span> 考场资料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='考生资料.html'" style="padding-left: 56px;">
+                        <span>👤</span> 考生资料
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 认定流程 - 可展开 -->
+            <div class="sidebar-item" id="processMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📋</span>
+                    <span>认定流程</span>
+                </div>
+                <span class="sidebar-arrow">▶</span>
+            </div>
+            <div class="sidebar-sublist" id="processSubmenu">
+                <div class="sidebar-subitem" onclick="window.location.href='任务选择.html'">
+                    <span>🏠</span> 任务选择
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定流程首页.html'">
+                    <span>📌</span> 流程首页
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定筹备.html'">
+                    <span>🔧</span> 认定筹备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定前.html'">
+                    <span>📅</span> 认定前
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='理论笔试.html'">
+                    <span>📝</span> 理论笔试
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='实操考试.html'">
+                    <span>🔨</span> 实操考试
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定归档.html'">
+                    <span>📦</span> 认定归档
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 顶部栏 -->
+            <div class="header">
+                <div class="header-left">
+                    <h1>项目准备阶段</h1>
+                    <div class="project-selector" id="projectSelector" style="display: none;">
+                        <span>📋</span>
+                        <span id="currentProjectName">任务选择</span>
+                        <span>▼</span>
+                    </div>
+                </div>
+                <div class="header-actions" style="display: flex; align-items: center; gap: 16px;">
+                    <button class="button-ghost" id="backToProjects" style="display: none;">
+                        <span>←</span> 返回项目列表
+                    </button>
+                    <div class="header-user">
+                        <span>👤 管理员</span>
+                        <span>|</span>
+                        <span>2026-04-14</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 内容区 -->
+            <div class="content">
+                <!-- 项目选择视图 -->
+                <div class="view-section active" id="projectSelectView">
+                    <!-- 项目列表 -->
+                    <div class="section-card">
+                        <div class="section-title">
+                            <h2>项目列表</h2>
+                            <button class="button" id="openNewProjectBtn">
+                                <span>+</span> 新增项目
+                            </button>
+                        </div>
+                        <div class="filter-bar">
+                            <div class="filter-row">
+                                <div class="field">
+                                    <label>搜索项目</label>
+                                    <input type="text" id="projectSearch" placeholder="输入项目名称、编号或项目经理">
+                                </div>
+                                <div class="field">
+                                    <label>状态筛选</label>
+                                    <select id="projectFilter">
+                                        <option>全部</option>
+                                        <option>进行中</option>
+                                        <option>待审核</option>
+                                        <option>已通过</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <table class="project-table" id="projectList">
+                            <thead>
+                                <tr>
+                                    <th>项目名称</th>
+                                    <th>项目编号</th>
+                                    <th>项目经理</th>
+                                    <th>当前阶段</th>
+                                    <th>状态</th>
+                                    <th>来源</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="projectListBody">
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 待接收项目订单 -->
+                    <div class="section-card">
+                        <div class="section-title">
+                            <h2>待接收项目订单</h2>
+                            <span class="muted">服务企业端下发到用户端的项目需求会出现在这里</span>
+                        </div>
+                        <table class="order-table" id="orderList">
+                            <thead>
+                                <tr>
+                                    <th>订单名称</th>
+                                    <th>企业</th>
+                                    <th>认定类型</th>
+                                    <th>联系人</th>
+                                    <th>计划日期</th>
+                                    <th>状态</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="orderListBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 工作台视图 -->
+                <div class="view-section" id="workbenchView">
+                    <div class="workbench-header">
+                        <div class="workbench-title">
+                            <h2 id="workbenchProjectName">项目工作台</h2>
+                            <span class="muted">管理项目章程、成员、WBS、进度和风险</span>
+                        </div>
+                    </div>
+
+                    <div class="meta-bar">
+                        <div class="meta-item">
+                            <span>项目编号</span>
+                            <strong id="metaProjectCode">-</strong>
+                        </div>
+                        <div class="meta-item">
+                            <span>项目经理</span>
+                            <strong id="metaProjectManager">-</strong>
+                        </div>
+                        <div class="meta-item">
+                            <span>当前阶段</span>
+                            <strong id="metaProjectStage">-</strong>
+                        </div>
+                        <div class="meta-item">
+                            <span>项目状态</span>
+                            <strong id="metaProjectStatus">-</strong>
+                        </div>
+                    </div>
+
+                    <div class="progress-strip">
+                        <div class="progress-header">
+                            <span>表单完成进度</span>
+                            <span id="progressText">0/5 表单已完成</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-value" id="progressValue" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <div class="form-grid">
+                        <div class="form-card">
+                            <h3>📄 项目章程</h3>
+                            <p>定义项目目标、范围和关键里程碑</p>
+                            <div class="form-card-actions">
+                                <span class="status-badge status-draft" id="charterStatus">未开始</span>
+                                <a href="项目策划任务书.html" class="button-secondary" style="font-size: 13px; padding: 6px 12px;">编辑</a>
+                            </div>
+                        </div>
+                        <div class="form-card">
+                            <h3>👥 项目成员</h3>
+                            <p>管理项目团队角色和职责分配</p>
+                            <div class="form-card-actions">
+                                <span class="status-badge status-draft" id="membersStatus">未开始</span>
+                                <a href="项目成员.html" class="button-secondary" style="font-size: 13px; padding: 6px 12px;">编辑</a>
+                            </div>
+                        </div>
+                        <div class="form-card">
+                            <h3>📊 WBS分解</h3>
+                            <p>工作分解结构和任务分配</p>
+                            <div class="form-card-actions">
+                                <span class="status-badge status-draft" id="wbsStatus">未开始</span>
+                                <a href="项目WBS.html" class="button-secondary" style="font-size: 13px; padding: 6px 12px;">编辑</a>
+                            </div>
+                        </div>
+                        <div class="form-card">
+                            <h3>📅 进度计划</h3>
+                            <p>项目时间表和关键路径</p>
+                            <div class="form-card-actions">
+                                <span class="status-badge status-draft" id="scheduleStatus">未开始</span>
+                                <a href="进度计划.html" class="button-secondary" style="font-size: 13px; padding: 6px 12px;">编辑</a>
+                            </div>
+                        </div>
+                        <div class="form-card">
+                            <h3>⚠️ 风险登记册</h3>
+                            <p>识别和管理项目风险</p>
+                            <div class="form-card-actions">
+                                <span class="status-badge status-draft" id="riskStatus">未开始</span>
+                                <a href="风险登记册.html" class="button-secondary" style="font-size: 13px; padding: 6px 12px;">编辑</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 新增项目模态框 -->
+    <div class="modal-backdrop" id="newProjectModal">
+        <div class="modal-panel">
+            <div class="modal-header">
+                <h3>新增项目信息</h3>
+                <button class="button-ghost" id="closeModalBtn">✕</button>
+            </div>
+            <div class="form-layout">
+                <input type="hidden" id="newProjectOrderId">
+                <div class="form-group">
+                    <label>项目名称</label>
+                    <input id="newProjectName" placeholder="请输入项目名称">
+                </div>
+                <div class="form-group">
+                    <label>项目编号</label>
+                    <input id="newProjectCode" placeholder="请输入项目编号">
+                </div>
+                <div class="form-group">
+                    <label>项目经理</label>
+                    <input id="newProjectManager" placeholder="请输入项目经理">
+                </div>
+                <div class="form-group">
+                    <label>当前阶段</label>
+                    <input id="newProjectStage" value="项目准备阶段" readonly>
+                </div>
+                <div class="form-group">
+                    <label>项目来源</label>
+                    <input id="newProjectSource" value="手动新增" readonly>
+                </div>
+                <div class="form-group full-width">
+                    <label>备注</label>
+                    <textarea id="newProjectNote" placeholder="补充说明"></textarea>
+                </div>
+            </div>
+            <div class="toolbar">
+                <button class="button-secondary" id="cancelNewProject">取消</button>
+                <button class="button" id="submitNewProject">创建项目</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 容器 -->
+    <div class="toast-stack" id="toastStack"></div>
+
+    <script>
+        // 数据存储
+        const STORAGE_KEY = 'project-management-data';
+        
+        const defaultProjects = [
+            { id: 'rd-2026-001', name: '2026 年职业技能认定项目', code: 'RD-2026-001', manager: '张晓峰', stage: '项目准备阶段', status: '进行中', updatedAt: '2026-04-08 16:30', source: '手动新增' },
+            { id: 'rd-2026-002', name: '高技能人才评价试点项目', code: 'RD-2026-002', manager: '刘晴', stage: '资料复核中', status: '待审核', updatedAt: '2026-04-07 11:10', source: '手动新增' },
+            { id: 'rd-2026-003', name: '企业专项认定协同项目', code: 'RD-2026-003', manager: '周楠', stage: '审核完成', status: '已通过', updatedAt: '2026-04-06 18:00', source: '项目订单创建' }
+        ];
+
+        const defaultOrders = [
+            { id: 'order-001', title: '化工企业技能认定需求', company: '华新化工', type: '有题库', contact: '赵工', plannedDate: '2026-05-25', description: '需新增一期企业专项认定计划，预计参与人数50人。', status: '待接收', createdAt: '2026-04-09 09:10' }
+        ];
+
+        const defaultFormStatus = {
+            charter: '未开始',
+            members: '未开始',
+            wbs: '未开始',
+            schedule: '未开始',
+            risk: '未开始'
+        };
+
+        let state = {
+            selectedProjectId: null,
+            projects: [...defaultProjects],
+            orders: [...defaultOrders],
+            formStatus: { ...defaultFormStatus }
+        };
+
+        // 初始化
+        function init() {
+            loadState();
+            renderProjects();
+            renderOrders();
+            bindEvents();
+        }
+
+        // 加载状态
+        function loadState() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    state = { ...state, ...parsed };
+                }
+            } catch (e) {
+                console.error('加载状态失败:', e);
+            }
+        }
+
+        // 保存状态
+        function saveState() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+
+        // 获取状态样式
+        function getStatusClass(status) {
+            if (status === '已通过' || status === '已完成') return 'status-pass';
+            if (status === '已驳回') return 'status-reject';
+            if (['待审核', '进行中', '编辑中', '草稿已保存'].includes(status)) return 'status-pending';
+            return 'status-draft';
+        }
+
+        // 渲染项目列表
+        function renderProjects() {
+            const search = document.getElementById('projectSearch').value.trim();
+            const filter = document.getElementById('projectFilter').value;
+            const tbody = document.getElementById('projectListBody');
+            
+            let filtered = state.projects.filter(p => {
+                const matchSearch = !search || [p.name, p.code, p.manager].join(' ').includes(search);
+                const matchFilter = filter === '全部' || p.status === filter;
+                return matchSearch && matchFilter;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state">暂无匹配的项目</div></td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(p => `
+                <tr data-project-id="${p.id}">
+                    <td class="project-name-cell" data-enter-project="${p.id}">${p.name}</td>
+                    <td>${p.code}</td>
+                    <td>${p.manager}</td>
+                    <td>${p.stage}</td>
+                    <td><span class="status-badge ${getStatusClass(p.status)}">${p.status}</span></td>
+                    <td>${p.source || '手动新增'}</td>
+                    <td class="action-cell">
+                        <button class="button" style="font-size: 13px; padding: 6px 14px;" data-enter-project="${p.id}">进入工作台</button>
+                        <button class="delete-btn" data-delete-project="${p.id}" title="删除项目">✕</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            tbody.querySelectorAll('[data-delete-project]').forEach(btn => {
+                btn.addEventListener('click', e => {
+                    e.stopPropagation();
+                    const id = btn.dataset.deleteProject;
+                    deleteProject(id);
+                });
+            });
+
+            tbody.querySelectorAll('[data-enter-project]').forEach(el => {
+                el.addEventListener('click', e => {
+                    e.stopPropagation();
+                    const id = el.dataset.enterProject;
+                    enterProject(id);
+                });
+            });
+        }
+
+        // 渲染订单列表
+        function renderOrders() {
+            const tbody = document.getElementById('orderListBody');
+            
+            if (state.orders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state">暂无待接收订单</div></td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = state.orders.map(o => `
+                <tr>
+                    <td class="order-title-cell">${o.title}</td>
+                    <td>${o.company}</td>
+                    <td>${o.type}</td>
+                    <td>${o.contact}</td>
+                    <td>${o.plannedDate}</td>
+                    <td><span class="status-badge ${getStatusClass(o.status)}">${o.status}</span></td>
+                    <td class="action-cell">
+                        <button class="button" style="font-size: 13px; padding: 6px 14px;" data-create-from-order="${o.id}">创建新项目</button>
+                        <button class="button-secondary" style="font-size: 13px; padding: 6px 14px;" data-order-later="${o.id}">稍后处理</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            tbody.querySelectorAll('[data-create-from-order]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const order = state.orders.find(o => o.id === btn.dataset.createFromOrder);
+                    if (order) openNewProjectFromOrder(order);
+                });
+            });
+
+            tbody.querySelectorAll('[data-order-later]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    showToast('该项目订单已保留，稍后可继续处理');
+                });
+            });
+        }
+
+        // 删除项目
+        function deleteProject(id) {
+            if (!confirm('确定要删除这个项目吗？')) return;
+            state.projects = state.projects.filter(p => p.id !== id);
+            if (state.selectedProjectId === id) {
+                state.selectedProjectId = null;
+            }
+            saveState();
+            renderProjects();
+            showToast('项目已删除', 'danger');
+        }
+
+        // 进入项目工作台
+        function enterProject(id) {
+            state.selectedProjectId = id;
+            saveState();
+            showWorkbench();
+        }
+
+        // 显示工作台
+        function showWorkbench() {
+            const project = state.projects.find(p => p.id === state.selectedProjectId);
+            if (!project) return;
+
+            // 更新工作台信息
+            document.getElementById('workbenchProjectName').textContent = project.name;
+            document.getElementById('currentProjectName').textContent = project.name;
+            document.getElementById('metaProjectCode').textContent = project.code;
+            document.getElementById('metaProjectManager').textContent = project.manager;
+            document.getElementById('metaProjectStage').textContent = project.stage;
+            document.getElementById('metaProjectStatus').textContent = project.status;
+
+            // 更新表单状态
+            updateFormStatus();
+
+            // 切换视图
+            document.getElementById('projectSelectView').classList.remove('active');
+            document.getElementById('workbenchView').classList.add('active');
+            document.getElementById('projectSelector').style.display = 'flex';
+            document.getElementById('backToProjects').style.display = 'inline-flex';
+        }
+
+        // 显示项目选择
+        function showProjectSelect() {
+            document.getElementById('workbenchView').classList.remove('active');
+            document.getElementById('projectSelectView').classList.add('active');
+            document.getElementById('projectSelector').style.display = 'none';
+            document.getElementById('backToProjects').style.display = 'none';
+            state.selectedProjectId = null;
+            saveState();
+            renderProjects();
+        }
+
+        // 更新表单状态显示
+        function updateFormStatus() {
+            const statusMap = {
+                'charter': 'charterStatus',
+                'members': 'membersStatus',
+                'wbs': 'wbsStatus',
+                'schedule': 'scheduleStatus',
+                'risk': 'riskStatus'
+            };
+
+            let completed = 0;
+            Object.keys(statusMap).forEach(key => {
+                const status = state.formStatus[key] || '未开始';
+                const el = document.getElementById(statusMap[key]);
+                if (el) {
+                    el.textContent = status;
+                    el.className = 'status-badge ' + getStatusClass(status);
+                }
+                if (status === '已完成') completed++;
+            });
+
+            document.getElementById('progressText').textContent = `${completed}/5 表单已完成`;
+            document.getElementById('progressValue').style.width = `${(completed / 5) * 100}%`;
+        }
+
+        // 打开新增项目模态框
+        function openNewProjectModal() {
+            document.getElementById('newProjectOrderId').value = '';
+            document.getElementById('newProjectName').value = '';
+            document.getElementById('newProjectCode').value = '';
+            document.getElementById('newProjectManager').value = '';
+            document.getElementById('newProjectStage').value = '项目准备阶段';
+            document.getElementById('newProjectSource').value = '手动新增';
+            document.getElementById('newProjectNote').value = '';
+            document.getElementById('newProjectModal').classList.add('active');
+        }
+
+        // 从订单创建项目
+        function openNewProjectFromOrder(order) {
+            document.getElementById('newProjectOrderId').value = order.id;
+            document.getElementById('newProjectName').value = order.title;
+            document.getElementById('newProjectCode').value = `ORD-${Date.now().toString().slice(-6)}`;
+            document.getElementById('newProjectManager').value = order.contact;
+            document.getElementById('newProjectStage').value = '项目准备阶段';
+            document.getElementById('newProjectSource').value = '项目订单创建';
+            document.getElementById('newProjectNote').value = order.description;
+            document.getElementById('newProjectModal').classList.add('active');
+        }
+
+        // 关闭模态框
+        function closeNewProjectModal() {
+            document.getElementById('newProjectModal').classList.remove('active');
+        }
+
+        // 提交新项目
+        function submitNewProject() {
+            const name = document.getElementById('newProjectName').value.trim();
+            const code = document.getElementById('newProjectCode').value.trim();
+            const manager = document.getElementById('newProjectManager').value.trim();
+            
+            if (!name || !code || !manager) {
+                showToast('请填写完整的项目信息', 'warning');
+                return;
+            }
+
+            const orderId = document.getElementById('newProjectOrderId').value;
+            const newProject = {
+                id: `project-${Date.now()}`,
+                name,
+                code,
+                manager,
+                stage: '项目准备阶段',
+                status: '进行中',
+                updatedAt: new Date().toLocaleString('zh-CN'),
+                source: orderId ? '项目订单创建' : '手动新增'
+            };
+
+            state.projects.unshift(newProject);
+
+            // 如果是从订单创建的，更新订单状态
+            if (orderId) {
+                const order = state.orders.find(o => o.id === orderId);
+                if (order) order.status = '已转为项目';
+            }
+
+            saveState();
+            closeNewProjectModal();
+            renderProjects();
+            renderOrders();
+            showToast('新项目创建成功', 'success');
+        }
+
+        // 显示 Toast
+        function showToast(message, type = '') {
+            const stack = document.getElementById('toastStack');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            stack.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // 初始化侧边栏展开/收起
+        function initSidebar() {
+            const projectMenu = document.getElementById('projectMenu');
+            const projectSubmenu = document.getElementById('projectSubmenu');
+            const processMenu = document.getElementById('processMenu');
+            const processSubmenu = document.getElementById('processSubmenu');
+            
+            projectMenu.addEventListener('click', (e) => {
+                e.stopPropagation();
+                projectMenu.classList.toggle('expanded');
+                projectSubmenu.classList.toggle('expanded');
+            });
+            
+            processMenu.addEventListener('click', (e) => {
+                e.stopPropagation();
+                processMenu.classList.toggle('expanded');
+                processSubmenu.classList.toggle('expanded');
+            });
+        }
+
+        // 资料档案子菜单展开/收起
+        function toggleArchiveSubmenu(event) {
+            event.stopPropagation();
+            const archiveMenu = document.getElementById('archiveMenu');
+            const archiveSubmenu = document.getElementById('archiveSubmenu');
+            const arrow = archiveMenu.querySelector('.sidebar-arrow');
+
+            archiveMenu.classList.toggle('expanded');
+            archiveSubmenu.classList.toggle('expanded');
+
+            if (archiveMenu.classList.contains('expanded')) {
+                arrow.style.transform = 'rotate(90deg)';
+            } else {
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // 绑定事件
+        function bindEvents() {
+            // 初始化侧边栏
+            initSidebar();
+
+            // 搜索和筛选
+            document.getElementById('projectSearch').addEventListener('input', renderProjects);
+            document.getElementById('projectFilter').addEventListener('change', renderProjects);
+
+            // 新增项目
+            document.getElementById('openNewProjectBtn').addEventListener('click', openNewProjectModal);
+            document.getElementById('closeModalBtn').addEventListener('click', closeNewProjectModal);
+            document.getElementById('cancelNewProject').addEventListener('click', closeNewProjectModal);
+            document.getElementById('submitNewProject').addEventListener('click', submitNewProject);
+
+            // 返回项目列表
+            document.getElementById('backToProjects').addEventListener('click', showProjectSelect);
+            document.getElementById('projectSelector').addEventListener('click', showProjectSelect);
+
+            // 点击模态框背景关闭
+            document.getElementById('newProjectModal').addEventListener('click', e => {
+                if (e.target === e.currentTarget) closeNewProjectModal();
+            });
+        }
+
+        // 启动
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+<script src="common.js"></script>
+</body>
+</html>

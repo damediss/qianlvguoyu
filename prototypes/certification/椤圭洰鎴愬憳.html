@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>项目成员</title>
+    <link rel="stylesheet" href="common.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@5.12.8/dist/reset.css">
+    <style>
+        :root {
+            --primary: #1890ff;
+            --primary-strong: #096dd9;
+            --primary-soft: #e6f7ff;
+            --success: #52c41a;
+            --success-soft: #f6ffed;
+            --warning: #fa8c16;
+            --warning-soft: #fff7e6;
+            --danger: #ff4d4f;
+            --danger-soft: #fff1f0;
+            --text: #1f2937;
+            --text-muted: #6b7280;
+            --border: #e5e7eb;
+            --bg: #f0f2f5;
+            --surface: #ffffff;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 220px;
+            background-color: #ffffff;
+            color: #1f2937;
+            border-right: 1px solid #e8e8e8;
+            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
+            padding: 16px 0;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+        .sidebar-logo {
+            padding: 0 16px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 8px;
+        }
+        .sidebar-logo h2 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .sidebar-logo p {
+            font-size: 12px;
+            color: #8c8c8c;
+            margin-top: 4px;
+        }
+        .sidebar-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+        }
+        .sidebar-item:hover {
+            background-color: #f5f5f5;
+        }
+        .sidebar-item.active {
+            background-color: var(--primary);
+            color: #ffffff;
+        }
+        .sidebar-item.active .sidebar-arrow {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .sidebar-item-content {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .sidebar-icon {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+        }
+        .sidebar-arrow {
+            font-size: 12px;
+            transition: transform 0.3s;
+            color: #bfbfbf;
+        }
+                .sidebar-subitem.expanded .sidebar-arrow { transform: rotate(90deg); }
+        .sidebar-item.expanded .sidebar-arrow {
+            transform: rotate(90deg);
+        }
+        .sidebar-sublist {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .sidebar-sublist.expanded {
+            max-height: 1200px;
+        }
+        .sidebar-subitem {
+            padding: 10px 16px 10px 46px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+            color: #595959;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sidebar-subitem:hover {
+            background-color: #f5f5f5;
+            color: var(--primary);
+        }
+        .sidebar-subitem.active {
+            background-color: rgba(24, 144, 255, 0.2);
+            color: var(--primary);
+            border-right: 3px solid var(--primary);
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .header {
+            height: 64px;
+            background-color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .header h1 {
+            font-size: 18px;
+            color: var(--text);
+        }
+        .header-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #666;
+            font-size: 14px;
+        }
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+        }
+        .breadcrumb a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+        .content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+        /* 文档容器 */
+        .document-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+        }
+        /* 文档头部 */
+        .document-header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-strong) 100%);
+            color: white;
+            padding: 32px;
+        }
+        .document-header h2 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+        .document-header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        /* 元信息区域 */
+        .meta-section {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .meta-item {
+            padding: 20px 24px;
+            border-right: 1px solid var(--border);
+        }
+        .meta-item:last-child {
+            border-right: none;
+        }
+        .meta-item span {
+            display: block;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+        .meta-item strong {
+            font-size: 15px;
+            color: var(--text);
+        }
+        /* 工具栏 */
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 32px;
+            background: #f8fafc;
+            border-bottom: 1px solid var(--border);
+        }
+        .toolbar-left, .toolbar-right {
+            display: flex;
+            gap: 12px;
+        }
+        .button {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--primary);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+        }
+        .button:hover {
+            background: var(--primary-strong);
+        }
+        .button-secondary {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: white;
+            color: var(--text);
+            padding: 10px 20px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            border: 1px solid var(--border);
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .button-secondary:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+        .button-ghost {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-muted);
+            padding: 10px 20px;
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.3s;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+        }
+        .button-ghost:hover {
+            color: var(--primary);
+        }
+        /* 文档内容 */
+        .document-body {
+            padding: 32px;
+        }
+        /* KPI 卡片 */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+        .kpi-card {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 24px;
+            text-align: center;
+            border: 1px solid var(--border);
+            transition: all 0.3s;
+        }
+        .kpi-card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px rgba(24, 144, 255, 0.1);
+        }
+        .kpi-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: var(--primary);
+            margin-bottom: 8px;
+        }
+        .kpi-label {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+        /* 筛选栏 */
+        .filter-section {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        .filter-row {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .field label {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+        .field select {
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+            min-width: 160px;
+            background: white;
+        }
+        .field select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        /* 表格 */
+        .table-section {
+            background: white;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border);
+        }
+        .table-header h3 {
+            font-size: 16px;
+            color: var(--text);
+        }
+        .table-wrap {
+            overflow-x: auto;
+        }
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .table th {
+            background: #f8fafc;
+            padding: 14px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text);
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        .table td {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-muted);
+        }
+        .table tr:last-child td {
+            border-bottom: none;
+        }
+        .table tr:hover td {
+            background: #f8fafc;
+        }
+        .role-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .role-pm { background: var(--primary-soft); color: var(--primary); }
+        .role-doc { background: #fef3c7; color: #d97706; }
+        .role-exam { background: #dbeafe; color: #2563eb; }
+        .role-contact { background: #fce7f3; color: #db2777; }
+        /* 底部操作 */
+        .footer-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 32px;
+            background: #f8fafc;
+            border-top: 1px solid var(--border);
+        }
+        .footer-right {
+            display: flex;
+            gap: 12px;
+        }
+        /* Toast */
+        .toast-stack {
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .toast {
+            min-width: 260px;
+            max-width: 360px;
+            padding: 14px 18px;
+            border-radius: 8px;
+            background: #1f2937;
+            color: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            font-size: 14px;
+            animation: slideIn 0.3s ease;
+        }
+        .toast.success { background: #166534; }
+        .toast.warning { background: #9a5408; }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        /* 响应式 */
+        @media (max-width: 1024px) {
+            .kpi-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .meta-section {
+                grid-template-columns: repeat(3, 1fr);
+            }
+            .meta-item:nth-child(3) {
+                border-right: none;
+            }
+            .meta-item:nth-child(4),
+            .meta-item:nth-child(5) {
+                border-top: 1px solid var(--border);
+            }
+        }
+        @media (max-width: 768px) {
+            .kpi-grid {
+                grid-template-columns: 1fr;
+            }
+            .meta-section {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .meta-item:nth-child(2),
+            .meta-item:nth-child(4) {
+                border-right: none;
+            }
+            .meta-item:nth-child(3),
+            .meta-item:nth-child(5) {
+                border-right: 1px solid var(--border);
+            }
+            .meta-item:nth-child(1),
+            .meta-item:nth-child(2) {
+                border-bottom: 1px solid var(--border);
+            }
+            .document-header,
+            .document-body,
+            .toolbar,
+            .footer-actions {
+                padding: 20px;
+            }
+            .table {
+                font-size: 13px;
+            }
+            .table th,
+            .table td {
+                padding: 10px 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="sidebar-logo">
+                <h2>认定工作流程</h2>
+                <p>系统原型</p>
+            </div>
+            
+            <!-- 数据面板 -->
+            <div class="sidebar-item" onclick="window.location.href='数据面板.html'">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📊</span>
+                    <span>数据面板</span>
+                </div>
+            </div>
+            
+            <!-- 项目管理 - 可展开 -->
+            <div class="sidebar-item expanded" id="projectMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📁</span>
+                    <span>任务管理</span>
+                </div>
+                <span class="sidebar-arrow">▶</span>
+            </div>
+            <div class="sidebar-sublist expanded" id="projectSubmenu">
+                <div class="sidebar-subitem active" onclick="window.location.href='项目管理首页.html'">
+                    <span>📋</span> 任务准备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='我要下单.html'">
+                    <span>🛒</span> 我要下单
+                </div>
+                <div class="sidebar-subitem" id="archiveMenu" onclick="toggleArchiveSubmenu(event)">
+                    <span>📦</span> 任务档案
+                    <span class="sidebar-arrow" style="margin-left: auto;">▶</span>
+                </div>
+                <div class="sidebar-sublist" id="archiveSubmenu">
+                    <div class="sidebar-subitem" onclick="window.location.href='考试材料.html'" style="padding-left: 56px;">
+                        <span>📝</span> 考试材料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='考场资料.html'" style="padding-left: 56px;">
+                        <span>🏫</span> 考场资料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='考生资料.html'" style="padding-left: 56px;">
+                        <span>👤</span> 考生资料
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 认定流程 - 可展开 -->
+            <div class="sidebar-item" id="processMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📋</span>
+                    <span>认定流程</span>
+                </div>
+                <span class="sidebar-arrow">▶</span>
+            </div>
+            <div class="sidebar-sublist" id="processSubmenu">
+                <div class="sidebar-subitem" onclick="window.location.href='任务选择.html'">
+                    <span>🏠</span> 任务选择
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定流程首页.html'">
+                    <span>📌</span> 流程首页
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定筹备.html'">
+                    <span>🔧</span> 认定筹备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定前.html'">
+                    <span>📅</span> 认定前
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='理论笔试.html'">
+                    <span>📝</span> 理论笔试
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='实操考试.html'">
+                    <span>🔨</span> 实操考试
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定归档.html'">
+                    <span>📦</span> 认定归档
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 顶部栏 -->
+            <div class="header">
+                <div class="header-left">
+                    <h1>项目成员</h1>
+                </div>
+                <div class="header-user">
+                    <span>👤 管理员</span>
+                    <span>|</span>
+                    <span>2026-04-14</span>
+                </div>
+            </div>
+            
+            <!-- 内容区 -->
+            <div class="content">
+                <!-- 面包屑 -->
+                <div class="breadcrumb">
+                    <a href="数据面板.html">首页</a>
+                    <span>/</span>
+                    <a href="项目管理首页.html">项目管理</a>
+                    <span>/</span>
+                    <span>项目成员</span>
+                </div>
+
+                <!-- 文档容器 -->
+                <div class="document-container">
+                    <!-- 文档头部 -->
+                    <div class="document-header">
+                        <h2>👥 项目成员表</h2>
+                        <p>当前为查看态页面，用于查看成员配置、角色与职责，并可进入编辑页面继续维护成员信息</p>
+                    </div>
+
+                    <!-- 元信息 -->
+                    <div class="meta-section">
+                        <div class="meta-item">
+                            <span>项目名称</span>
+                            <strong>2026 年职业技能认定项目</strong>
+                        </div>
+                        <div class="meta-item">
+                            <span>项目编号</span>
+                            <strong>RD-2026-001</strong>
+                        </div>
+                        <div class="meta-item">
+                            <span>项目经理</span>
+                            <strong>张晓峰</strong>
+                        </div>
+                        <div class="meta-item">
+                            <span>当前状态</span>
+                            <strong>进行中</strong>
+                        </div>
+                        <div class="meta-item">
+                            <span>草稿状态</span>
+                            <strong>未保存草稿</strong>
+                        </div>
+                    </div>
+
+                    <!-- 工具栏 -->
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <button class="button" id="editBtn" onclick="window.location.href='项目成员-编辑.html'">
+                                <span>✏️</span> 编辑表单
+                            </button>
+                            <button class="button-secondary" id="saveDraftBtn">
+                                <span>💾</span> 保存草稿
+                            </button>
+                            <button class="button-secondary" id="submitBtn">
+                                <span>📤</span> 提交审核
+                            </button>
+                        </div>
+                        <div class="toolbar-right">
+                            <button class="button-ghost" onclick="window.location.href='项目管理首页.html'">
+                                <span>←</span> 返回工作台
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 文档内容 -->
+                    <div class="document-body">
+                        <!-- KPI 卡片 -->
+                        <div class="kpi-grid">
+                            <div class="kpi-card">
+                                <div class="kpi-value" id="memberCount">4</div>
+                                <div class="kpi-label">当前筛选人数</div>
+                            </div>
+                            <div class="kpi-card">
+                                <div class="kpi-value">4</div>
+                                <div class="kpi-label">核心角色数</div>
+                            </div>
+                            <div class="kpi-card">
+                                <div class="kpi-value">1</div>
+                                <div class="kpi-label">企业对接人</div>
+                            </div>
+                            <div class="kpi-card">
+                                <div class="kpi-value">1</div>
+                                <div class="kpi-label">管理员联络人</div>
+                            </div>
+                        </div>
+
+                        <!-- 筛选栏 -->
+                        <div class="filter-section">
+                            <div class="filter-row">
+                                <div class="field">
+                                    <label>按角色筛选</label>
+                                    <select id="roleFilter">
+                                        <option value="all">全部</option>
+                                        <option value="项目经理">项目经理</option>
+                                        <option value="资料专员">资料专员</option>
+                                        <option value="认定负责人">认定负责人</option>
+                                        <option value="企业对接人">企业对接人</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 成员表格 -->
+                        <div class="table-section">
+                            <div class="table-header">
+                                <h3>项目组成员清单</h3>
+                                <span class="muted">支持按角色筛选查看</span>
+                            </div>
+                            <div class="table-wrap">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>序号</th>
+                                            <th>姓名</th>
+                                            <th>项目角色</th>
+                                            <th>所在部门</th>
+                                            <th>职责</th>
+                                            <th>项目起止日期</th>
+                                            <th>投入频度及工作量</th>
+                                            <th>联系方式</th>
+                                            <th>备注</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="memberTable">
+                                        <tr data-role="项目经理">
+                                            <td>1</td>
+                                            <td>张晓峰</td>
+                                            <td><span class="role-badge role-pm">项目经理</span></td>
+                                            <td>项目管理部</td>
+                                            <td>统筹项目准备、组织资料提交</td>
+                                            <td>2026-04-08 至 2026-05-20</td>
+                                            <td>全程参与 / 100%</td>
+                                            <td>138****1024</td>
+                                            <td>总负责人</td>
+                                        </tr>
+                                        <tr data-role="资料专员">
+                                            <td>2</td>
+                                            <td>李敏</td>
+                                            <td><span class="role-badge role-doc">资料专员</span></td>
+                                            <td>运营部</td>
+                                            <td>整理表单、汇总导出资料包</td>
+                                            <td>2026-04-08 至 2026-05-10</td>
+                                            <td>日常投入 / 70%</td>
+                                            <td>139****2088</td>
+                                            <td>制作人</td>
+                                        </tr>
+                                        <tr data-role="认定负责人">
+                                            <td>3</td>
+                                            <td>陈涛</td>
+                                            <td><span class="role-badge role-exam">认定负责人</span></td>
+                                            <td>培训部</td>
+                                            <td>确认认定类型、考试安排与资源协调</td>
+                                            <td>2026-04-10 至 2026-05-20</td>
+                                            <td>关键节点投入 / 60%</td>
+                                            <td>137****5519</td>
+                                            <td>进度协调</td>
+                                        </tr>
+                                        <tr data-role="企业对接人">
+                                            <td>4</td>
+                                            <td>王静</td>
+                                            <td><span class="role-badge role-contact">企业对接人</span></td>
+                                            <td>客户成功部</td>
+                                            <td>与服务企业确认考试时间、报名材料和反馈意见</td>
+                                            <td>2026-04-12 至 2026-05-18</td>
+                                            <td>节点投入 / 50%</td>
+                                            <td>136****7190</td>
+                                            <td>对外沟通</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 底部操作 -->
+                    <div class="footer-actions">
+                        <button class="button-secondary" onclick="window.location.href='项目管理首页.html'">
+                            <span>←</span> 返回工作台
+                        </button>
+                        <div class="footer-right">
+                            <button class="button-secondary" onclick="window.location.href='项目策划任务书.html'">
+                                <span>←</span> 上一步：项目策划
+                            </button>
+                            <button class="button" onclick="window.location.href='项目WBS.html'">
+                                下一步：项目 WBS <span>→</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 底部间距 -->
+                <div style="height: 40px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 容器 -->
+    <div class="toast-stack" id="toastStack"></div>
+
+    <script>
+        // 初始化侧边栏展开/收起
+        function toggleArchiveSubmenu(event) {
+            event.stopPropagation();
+            const archiveMenu = document.getElementById('archiveMenu');
+            const archiveSubmenu = document.getElementById('archiveSubmenu');
+            if (!archiveMenu || !archiveSubmenu) return;
+            const arrow = archiveMenu.querySelector('.sidebar-arrow');
+            archiveMenu.classList.toggle('expanded');
+            archiveSubmenu.classList.toggle('expanded');
+            if (arrow) {
+                if (archiveMenu.classList.contains('expanded')) {
+                    arrow.style.transform = 'rotate(90deg)';
+                } else {
+                    arrow.style.transform = 'rotate(0deg)';
+                }
+            }
+        }
+
+        function initSidebar() {
+            const projectMenu = document.getElementById('projectMenu');
+            const projectSubmenu = document.getElementById('projectSubmenu');
+            const processMenu = document.getElementById('processMenu');
+            const processSubmenu = document.getElementById('processSubmenu');
+            
+            projectMenu.addEventListener('click', (e) => {
+                e.stopPropagation();
+                projectMenu.classList.toggle('expanded');
+                projectSubmenu.classList.toggle('expanded');
+            });
+            
+            processMenu.addEventListener('click', (e) => {
+                e.stopPropagation();
+                processMenu.classList.toggle('expanded');
+                processSubmenu.classList.toggle('expanded');
+            });
+        }
+
+        // 显示 Toast
+        function showToast(message, type = '') {
+            const stack = document.getElementById('toastStack');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            stack.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // 筛选功能
+        function filterMembers() {
+            const filter = document.getElementById('roleFilter').value;
+            const rows = document.querySelectorAll('#memberTable tr');
+            let count = 0;
+
+            rows.forEach(row => {
+                const role = row.dataset.role;
+                if (filter === 'all' || role === filter) {
+                    row.style.display = '';
+                    count++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+
+            document.getElementById('memberCount').textContent = count;
+        }
+
+        // 绑定事件
+        function bindEvents() {
+            // 初始化侧边栏
+            initSidebar();
+
+            // 角色筛选
+            document.getElementById('roleFilter').addEventListener('change', filterMembers);
+
+            // 编辑按钮
+            document.getElementById('editBtn').addEventListener('click', () => {
+                showToast('进入编辑模式', 'success');
+            });
+
+            // 保存草稿
+            document.getElementById('saveDraftBtn').addEventListener('click', () => {
+                showToast('草稿已保存', 'success');
+            });
+
+            // 提交审核
+            document.getElementById('submitBtn').addEventListener('click', () => {
+                showToast('已提交审核', 'success');
+            });
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            bindEvents();
+        });
+    </script>
+<script src="common.js"></script>
+</body>
+</html>

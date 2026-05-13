@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>导入资料表单 - 认定筹备</title>
+    <link rel="stylesheet" href="common.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f0f2f5;
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 220px;
+            background-color: #ffffff;
+            color: #1f2937;
+            border-right: 1px solid #e8e8e8;
+            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
+            padding: 16px 0;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+        .sidebar-logo {
+            padding: 0 16px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 8px;
+        }
+        .sidebar-logo h2 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .sidebar-logo p {
+            font-size: 12px;
+            color: #8c8c8c;
+            margin-top: 4px;
+        }
+        .sidebar-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+        }
+        .sidebar-item:hover {
+            background-color: #f5f5f5;
+        }
+        .sidebar-item.active {
+            background-color: #1890ff;
+            color: #ffffff;
+        }
+        .sidebar-item.active .sidebar-arrow {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .sidebar-item-content {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .sidebar-icon {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+        }
+        .sidebar-arrow {
+            font-size: 12px;
+            transition: transform 0.3s;
+            color: #bfbfbf;
+        }
+                .sidebar-subitem.expanded .sidebar-arrow { transform: rotate(90deg); }
+        .sidebar-item.expanded .sidebar-arrow {
+            transform: rotate(90deg);
+        }
+        .sidebar-sublist {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .sidebar-sublist.expanded {
+            max-height: 1200px;
+        }
+        .sidebar-subitem {
+            padding: 10px 16px 10px 46px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+            color: #595959;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sidebar-subitem:hover {
+            background-color: #f5f5f5;
+            color: #1890ff;
+        }
+        .sidebar-subitem.active {
+            background-color: rgba(24, 144, 255, 0.2);
+            color: #1890ff;
+            border-right: 3px solid #1890ff;
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .header {
+            height: 64px;
+            background-color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        .header h1 {
+            font-size: 18px;
+            color: #1f2937;
+        }
+        .header-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #666;
+            font-size: 14px;
+        }
+        .content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+
+        /* Breadcrumb */
+        .breadcrumb {
+            font-size: 13px;
+            color: #999;
+            margin-bottom: 16px;
+        }
+        .breadcrumb a {
+            color: #1890ff;
+            text-decoration: none;
+        }
+        .breadcrumb a:hover {
+            color: #40a9ff;
+        }
+        .breadcrumb span {
+            margin: 0 8px;
+            color: #d9d9d9;
+        }
+
+        /* Page Header */
+        .page-header {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .page-header h1 {
+            font-size: 20px;
+            color: #1f2937;
+            margin-bottom: 8px;
+        }
+        .page-header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        /* Import Actions */
+        .import-actions {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .action-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            background: white;
+            border: 1px solid #d9d9d9;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #666;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+        }
+        .action-btn:hover {
+            border-color: #1890ff;
+            color: #1890ff;
+        }
+        .action-btn.primary {
+            background: #1890ff;
+            color: white;
+            border-color: #1890ff;
+        }
+        .action-btn.primary:hover {
+            background: #40a9ff;
+        }
+
+        /* Doc Categories */
+        .doc-section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        .section-header h2 {
+            font-size: 16px;
+            color: #1f2937;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .section-status {
+            font-size: 13px;
+            color: #999;
+        }
+        .section-status .completed {
+            color: #52c41a;
+        }
+        .doc-list {
+            padding: 16px 24px;
+        }
+        .doc-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px;
+            border-bottom: 1px solid #f0f0f0;
+            transition: background 0.3s;
+        }
+        .doc-item:last-child {
+            border-bottom: none;
+        }
+        .doc-item:hover {
+            background: #f8fafc;
+        }
+        .doc-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .doc-icon {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #e6f7ff;
+            border-radius: 8px;
+            font-size: 18px;
+        }
+        .doc-details h4 {
+            font-size: 14px;
+            color: #1f2937;
+            margin-bottom: 4px;
+        }
+        .doc-details p {
+            font-size: 12px;
+            color: #999;
+        }
+        .doc-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .btn-small {
+            padding: 6px 16px;
+            font-size: 13px;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 1px solid #d9d9d9;
+            background: white;
+            color: #666;
+            transition: all 0.3s;
+        }
+        .btn-small:hover {
+            border-color: #1890ff;
+            color: #1890ff;
+        }
+        .btn-small.primary {
+            background: #1890ff;
+            color: white;
+            border-color: #1890ff;
+        }
+        .btn-small.primary:hover {
+            background: #40a9ff;
+        }
+        .btn-small.success {
+            background: #f6ffed;
+            color: #52c41a;
+            border-color: #b7eb8f;
+        }
+
+        /* Upload Area */
+        .upload-area {
+            border: 2px dashed #d9d9d9;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            margin: 16px 24px 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .upload-area:hover {
+            border-color: #1890ff;
+            background: #f0f7ff;
+        }
+        .upload-area .icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .upload-area h3 {
+            font-size: 16px;
+            color: #1f2937;
+            margin-bottom: 8px;
+        }
+        .upload-area p {
+            font-size: 13px;
+            color: #999;
+        }
+
+        /* Progress Bar */
+        .progress-section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .progress-header h3 {
+            font-size: 16px;
+            color: #1f2937;
+        }
+        .progress-stats {
+            display: flex;
+            gap: 24px;
+            font-size: 14px;
+        }
+        .progress-stats .stat {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .progress-stats .stat.completed {
+            color: #52c41a;
+        }
+        .progress-stats .stat.pending {
+            color: #fa8c16;
+        }
+        .progress-bar {
+            height: 8px;
+            background: #e8e8e8;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #1890ff 0%, #52c41a 100%);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        /* Footer Actions */
+        .footer-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid #e8e8e8;
+        }
+        .footer-actions .right {
+            display: flex;
+            gap: 12px;
+        }
+        .button {
+            display: inline-flex;
+            align-items: center;
+            padding: 10px 24px;
+            background: #1890ff;
+            color: white;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+        }
+        .button:hover {
+            background: #40a9ff;
+        }
+        .button-secondary {
+            display: inline-flex;
+            align-items: center;
+            padding: 10px 24px;
+            background: white;
+            color: #666;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .button-secondary:hover {
+            color: #1890ff;
+            border-color: #1890ff;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 60px;
+            }
+            .sidebar-logo h2, .sidebar-logo p,
+            .sidebar-item span:not(.sidebar-icon),
+            .sidebar-arrow {
+                display: none;
+            }
+            .import-actions {
+                flex-wrap: wrap;
+            }
+            .doc-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+            }
+            .footer-actions {
+                flex-direction: column;
+                gap: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="sidebar-logo">
+                <h2>认定工作流程</h2>
+                <p>系统原型</p>
+            </div>
+            
+            <!-- 数据面板 -->
+            <div class="sidebar-item" onclick="window.location.href='数据面板.html'">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📊</span>
+                    <span>数据面板</span>
+                </div>
+            </div>
+            
+            <!-- 项目管理 - 可展开 -->
+            <div class="sidebar-item" id="projectMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📁</span>
+                    <span>任务管理</span>
+                </div>
+                <span class="sidebar-arrow">▶</span>
+            </div>
+            <div class="sidebar-sublist" id="projectSubmenu">
+                <div class="sidebar-subitem" onclick="window.location.href='项目管理首页.html'">
+                    <span>📋</span> 任务准备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='我要下单.html'">
+                    <span>🛒</span> 我要下单
+                </div>
+                <div class="sidebar-subitem" id="archiveMenu" onclick="toggleArchiveSubmenu(event)">
+                    <span>📦</span> 任务档案
+                    <span class="sidebar-arrow" style="margin-left: auto;">▶</span>
+                </div>
+                <div class="sidebar-sublist" id="archiveSubmenu">
+                    <div class="sidebar-subitem" onclick="window.location.href='考试材料.html'" style="padding-left: 56px;">
+                        <span>📝</span> 考试材料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='考场资料.html'" style="padding-left: 56px;">
+                        <span>🏫</span> 考场资料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='考生资料.html'" style="padding-left: 56px;">
+                        <span>👤</span> 考生资料
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 认定流程 - 可展开 -->
+            <div class="sidebar-item active expanded" id="processMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📋</span>
+                    <span>认定流程</span>
+                </div>
+                <span class="sidebar-arrow">▶</span>
+            </div>
+            <div class="sidebar-sublist expanded" id="processSubmenu">
+                <div class="sidebar-subitem" onclick="window.location.href='任务选择.html'">
+                    <span>🏠</span> 任务选择
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定流程首页.html'">
+                    <span>📌</span> 流程首页
+                </div>
+                <div class="sidebar-subitem active" onclick="window.location.href='认定筹备.html'">
+                    <span>🔧</span> 认定筹备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定前.html'">
+                    <span>📅</span> 认定前
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='理论笔试.html'">
+                    <span>📝</span> 理论笔试
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='实操考试.html'">
+                    <span>🔨</span> 实操考试
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定归档.html'">
+                    <span>📦</span> 认定归档
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 顶部栏 -->
+            <div class="header">
+                <h1>导入资料表单</h1>
+                <div class="header-user">
+                    <span>👤 管理员</span>
+                    <span>|</span>
+                    <span>2026-04-15</span>
+                </div>
+            </div>
+            
+            <!-- 内容区 -->
+            <div class="content">
+                <!-- Breadcrumb -->
+                <div class="breadcrumb">
+                    <a href="任务选择.html">↩ 项目选择</a>
+                    <span>/</span>
+                    <a href="认定流程首页.html">认定流程</a>
+                    <span>/</span>
+                    <a href="认定筹备.html">认定筹备</a>
+                    <span>/</span>
+                    <span>导入资料表单</span>
+                </div>
+
+                <!-- Page Header -->
+                <div class="page-header">
+                    <h1>📄 导入申报与呈报资料</h1>
+                    <p>请按照要求上传认定所需的各类申报表单，支持批量导入和单个上传。</p>
+                </div>
+
+                <!-- Import Actions -->
+                <div class="import-actions">
+                    <button class="action-btn primary" onclick="showToast('批量导入功能开发中')">
+                        <span>📥</span> 批量导入资料
+                    </button>
+                    <button class="action-btn" onclick="showToast('下载模板功能开发中')">
+                        <span>📋</span> 下载导入模板
+                    </button>
+                    <button class="action-btn" onclick="showToast('查看示例功能开发中')">
+                        <span>👁️</span> 查看填写示例
+                    </button>
+                </div>
+
+                <!-- Progress Section -->
+                <div class="progress-section">
+                    <div class="progress-header">
+                        <h3>📊 资料导入进度</h3>
+                        <div class="progress-stats">
+                            <span class="stat completed">
+                                <span>✓</span> 已完成 0 项
+                            </span>
+                            <span class="stat pending">
+                                <span>○</span> 待上传 10 项
+                            </span>
+                        </div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- 基础资料 -->
+                <div class="doc-section">
+                    <div class="section-header">
+                        <h2><span>📋</span> 基础资料 <span style="font-size:13px;color:#999;font-weight:normal;">（5项）</span></h2>
+                        <span class="section-status">已完成 <span class="completed">0/5</span></span>
+                    </div>
+                    <div class="doc-list">
+                        <div class="doc-item">
+                            <div class="doc-info">
+                                <div class="doc-icon">📝</div>
+                                <div class="doc-details">
+                                    <h4>报名信息表</h4>
+                                    <p>包含学员基本信息、报考等级等</p>
+                                </div>
+                            </div>
+                            <div class="doc-actions">
+                                <button class="btn-small" onclick="showToast('下载模板')">下载模板</button>
+                                <button class="btn-small primary" onclick="showToast('上传文件')">上传</button>
+                            </div>
+                        </div>
+                        <div class="doc-item">
+                            <div class="doc-info">
+                                <div class="doc-icon">🖼️</div>
+                                <div class="doc-details">
+                                    <h4>两寸证件照</h4>
+                                    <p>近期免冠彩色证件照，白底或蓝底</p>
+                                </div>
+                            </div>
+                            <div class="doc-actions">
+                                <button class="btn-small" onclick="showToast('查看要求')">查看要求</button>
+                                <button class="btn-small primary" onclick="showToast('上传文件')">上传</button>
+                            </div>
+                        </div>
+                        <div class="doc-item">
+                            <div class="doc-info">
+                                <div class="doc-icon">🆔</div>
+                                <div class="doc-details">
+                                    <h4>身份证复印件</h4>
+                                    <p>正反面复印件，清晰可辨</p>
+                                </div>
+                            </div>
+                            <div class="doc-actions">
+                                <button class="btn-small" onclick="showToast('查看要求')">查看要求</button>
+                                <button class="btn-small primary" onclick="showToast('上传文件')">上传</button>
+                            </div>
+                        </div>
+                        <div class="doc-item">
+                            <div class="doc-info">
+                                <div class="doc-icon">📜</div>
+                                <div class="doc-details">
+                                    <h4>学历证明</h4>
+                                    <p>最高学历证书复印件</p>
+                                </div>
+                            </div>
+                            <div class="doc-actions">
+                                <button class="btn-small" onclick="showToast('下载模板')">下载模板</button>
+                                <button class="btn-small primary" onclick="showToast('上传文件')">上传</button>
+                            </div>
+                        </div>
+                        <div class="doc-item">
+                            <div class="doc-info">
+                                <div class="doc-icon">📋</div>
+                                <div class="doc-details">
+                                    <h4>职业技能鉴定登记表</h4>
+                                    <p>广西壮族自治区职业技能鉴定登记表</p>
+                                </div>
+                            </div>
+                            <div class="doc-actions">
+                                <button class="btn-small" onclick="showToast('下载模板')">下载模板</button>
+                                <button class="btn-small primary" onclick="showToast('上传文件')">上传</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 申报与呈报资料 -->
+                <div class="doc-section">
+                    <div class="section-header">
+                        <h2><span>📄</span> 申报与呈报资料 <span style="font-size:13px;color:#999;font-weight:normal;">（5项）</span></h2>
+                        <span class="section-status">已完成 <span class="completed">0/5</span></span>
+                    </div>
+                    <div class="doc-list">
+                        <div class="doc-item">
+                            <div class="doc-info">
+                                <div class="doc-icon">📃</div>
+                                <div class="doc-details">
+                                    <h4>工作年限证明</h4>
+                                    <p>由所在单位出具的工作年限证明</p>
+                                </div>
+                            </div>
+                            <div class="doc-actions">
+                                <button class="btn-small" onclick="showToast('下载模板')">下载模板</button>
+                                <button class="btn-small primary" onclick="showToast('上传文件')">上传</button>
+                            </div>
+                        </div>
+                        <div class="doc-item">
+                            <div class="doc-info">
+                                <div class="doc-icon">📑</div>
+                                <div class="doc-details">
+                                    <h4>技师/高级技师考评申报表</h4>
+                                    <p>《技师、高级技师考评申报表》</p>
+                                </div>
+                            </div>
+                            <div class="doc-actions">
+                                <button class="btn-small" onclick="showToast('下载模板')">下载模板</button>
+                                <button class="btn-small primary" onclick="showToast('上传文件')">上传</button>
+                            </div>
+                        </div>
+                        <div class="doc-item">
+                            <div class="doc-info">
+                                <div class="doc-icon">📊</div>
+                                <div class="doc-details">
+                                    <h4>业绩评估报告表</h4>
+                                    <p>《广西壮族自治区技师、高级技师业绩评估报告表》</p>
+                                </div>
+                            </div>
+                            <div class="doc-actions">
+                                <button class="btn-small" onclick="showToast('下载模板')">下载模板</button>
+                                <button class="btn-small primary" onclick="showToast('上传文件')">上传</button>
+                            </div>
+                        </div>
+                        <div class="doc-item">
+                            <div class="doc-info">
+                                <div class="doc-icon">📋</div>
+                                <div class="doc-details">
+                                    <h4>行业考评呈报表</h4>
+                                    <p>《有色金属行业技师、高级技师考评呈报表》</p>
+                                </div>
+                            </div>
+                            <div class="doc-actions">
+                                <button class="btn-small" onclick="showToast('下载模板')">下载模板</button>
+                                <button class="btn-small primary" onclick="showToast('上传文件')">上传</button>
+                            </div>
+                        </div>
+                        <div class="doc-item">
+                            <div class="doc-info">
+                                <div class="doc-icon">📖</div>
+                                <div class="doc-details">
+                                    <h4>考评工作方案</h4>
+                                    <p>《广西千铝工投教育科技发展有限公司关于技师、高级技师考评的工作方案》</p>
+                                </div>
+                            </div>
+                            <div class="doc-actions">
+                                <button class="btn-small" onclick="showToast('下载模板')">下载模板</button>
+                                <button class="btn-small primary" onclick="showToast('上传文件')">上传</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer Actions -->
+                <div class="footer-actions">
+                    <a class="button-secondary" href="认定筹备.html">返回</a>
+                    <div class="right">
+                        <button class="button-secondary" onclick="showToast('保存草稿')">保存草稿</button>
+                        <button class="button" onclick="showToast('提交审核')">提交审核</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleArchiveSubmenu(event) {
+            event.stopPropagation();
+            const archiveMenu = document.getElementById('archiveMenu');
+            const archiveSubmenu = document.getElementById('archiveSubmenu');
+            if (!archiveMenu || !archiveSubmenu) return;
+            const arrow = archiveMenu.querySelector('.sidebar-arrow');
+            archiveMenu.classList.toggle('expanded');
+            archiveSubmenu.classList.toggle('expanded');
+            if (arrow) {
+                if (archiveMenu.classList.contains('expanded')) {
+                    arrow.style.transform = 'rotate(90deg)';
+                } else {
+                    arrow.style.transform = 'rotate(0deg)';
+                }
+            }
+        }
+
+        // 侧边栏展开/收起功能
+        document.getElementById('projectMenu').addEventListener('click', function(e) {
+            if (e.target.closest('.sidebar-subitem')) return;
+            this.classList.toggle('expanded');
+            document.getElementById('projectSubmenu').classList.toggle('expanded');
+        });
+
+        document.getElementById('processMenu').addEventListener('click', function(e) {
+            if (e.target.closest('.sidebar-subitem')) return;
+            this.classList.toggle('expanded');
+            document.getElementById('processSubmenu').classList.toggle('expanded');
+        });
+
+        // 为所有侧边栏子菜单项添加点击事件处理
+        document.querySelectorAll('.sidebar-subitem').forEach(function(item) {
+            item.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+        });
+
+        // Toast 提示功能
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 12px 24px;
+                border-radius: 6px;
+                font-size: 14px;
+                z-index: 9999;
+                animation: fadeIn 0.3s ease;
+            `;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            if (!document.getElementById('toast-style')) {
+                const style = document.createElement('style');
+                style.id = 'toast-style';
+                style.textContent = `
+                    @keyframes fadeIn {
+                        from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+                        to { opacity: 1; transform: translateX(-50%) translateY(0); }
+                    }
+                    @keyframes fadeOut {
+                        from { opacity: 1; transform: translateX(-50%) translateY(0); }
+                        to { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+
+            setTimeout(() => {
+                toast.style.animation = 'fadeOut 0.3s ease';
+                setTimeout(() => {
+                    document.body.removeChild(toast);
+                }, 300);
+            }, 2000);
+        }
+    </script>
+<script src="common.js"></script>
+</body>
+</html>

@@ -1,0 +1,1455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>认定筹备 - 认定工作流程</title>
+    <link rel="stylesheet" href="common.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f0f2f5;
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 220px;
+            background-color: #ffffff;
+            color: #1f2937;
+            border-right: 1px solid #e8e8e8;
+            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
+            padding: 16px 0;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+        .sidebar-logo {
+            padding: 0 16px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 8px;
+        }
+        .sidebar-logo h2 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .sidebar-logo p {
+            font-size: 12px;
+            color: #8c8c8c;
+            margin-top: 4px;
+        }
+        .sidebar-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+        }
+        .sidebar-item:hover {
+            background-color: #f5f5f5;
+        }
+        .sidebar-item.active {
+            background-color: #1890ff;
+            color: #ffffff;
+        }
+        .sidebar-item.active .sidebar-arrow {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .sidebar-item-content {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .sidebar-icon {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+        }
+        .sidebar-arrow {
+            font-size: 12px;
+            transition: transform 0.3s;
+            color: #bfbfbf;
+        }
+                .sidebar-subitem.expanded .sidebar-arrow { transform: rotate(90deg); }
+        .sidebar-item.expanded .sidebar-arrow {
+            transform: rotate(90deg);
+        }
+        .sidebar-sublist {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .sidebar-sublist.expanded {
+            max-height: 1200px;
+        }
+        .sidebar-subitem {
+            padding: 10px 16px 10px 46px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+            color: #595959;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sidebar-subitem:hover {
+            background-color: #f5f5f5;
+            color: #1890ff;
+        }
+        .sidebar-subitem.active {
+            background-color: rgba(24, 144, 255, 0.2);
+            color: #1890ff;
+            border-right: 3px solid #1890ff;
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .header {
+            height: 64px;
+            background-color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        .header h1 {
+            font-size: 18px;
+            color: #1f2937;
+        }
+        .header-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #666;
+            font-size: 14px;
+        }
+        .content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+
+        /* Breadcrumb */
+        .breadcrumb {
+            font-size: 13px;
+            color: #999;
+            margin-bottom: 16px;
+        }
+        .breadcrumb a {
+            color: #1890ff;
+            text-decoration: none;
+        }
+        .breadcrumb a:hover {
+            color: #40a9ff;
+        }
+        .breadcrumb span {
+            margin: 0 8px;
+            color: #d9d9d9;
+        }
+
+        /* Hero Card */
+        .hero-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .hero-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        .hero-grid h1 {
+            font-size: 24px;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        .hero-grid p {
+            color: #666;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+        .action-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .process-box {
+            background: linear-gradient(135deg, #f6ffed 0%, #f0f7ff 100%);
+            border: 1px solid #b7eb8f;
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .process-box h3 {
+            font-size: 14px;
+            color: #389e0d;
+            margin-bottom: 12px;
+        }
+        .process-box ul {
+            list-style: none;
+            font-size: 13px;
+        }
+        .process-box li {
+            padding: 6px 0;
+            color: #666;
+            border-bottom: 1px dashed rgba(0,0,0,0.05);
+        }
+        .process-box li:last-child {
+            border-bottom: none;
+        }
+        .progress-strip {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 16px 20px;
+        }
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .progress-header strong {
+            font-size: 14px;
+            color: #1f2937;
+        }
+        .helper {
+            font-size: 13px;
+            color: #999;
+        }
+        .progress-bar {
+            height: 8px;
+            background: #e8e8e8;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-value {
+            height: 100%;
+            background: linear-gradient(90deg, #1890ff 0%, #52c41a 100%);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        .button-link {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 16px;
+            color: #1890ff;
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .button-link:hover {
+            color: #40a9ff;
+        }
+        .badges {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            background: #f0f2f5;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #666;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .status-pending {
+            background: #e6f7ff;
+            color: #1890ff;
+        }
+        .status-draft {
+            background: #f5f5f5;
+            color: #999;
+        }
+        .status-progress {
+            background: #fff7e6;
+            color: #fa8c16;
+        }
+        .status-success {
+            background: #f6ffed;
+            color: #52c41a;
+        }
+
+        /* Meta Bar */
+        .meta-bar {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+        }
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+        }
+        .meta-item {
+            text-align: center;
+        }
+        .meta-item span {
+            display: block;
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 4px;
+        }
+        .meta-item strong {
+            display: block;
+            font-size: 14px;
+            color: #1f2937;
+        }
+
+        /* Toolbar */
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .toolbar-left {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .toolbar-right {
+            display: flex;
+            gap: 12px;
+        }
+        .button {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 20px;
+            background: #1890ff;
+            color: white;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+        }
+        .button:hover {
+            background: #40a9ff;
+        }
+        .button-secondary {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 20px;
+            background: white;
+            color: #1890ff;
+            border: 1px solid #1890ff;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .button-secondary:hover {
+            background: #e6f7ff;
+        }
+        .button-ghost {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 16px;
+            color: #666;
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.3s;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            background: white;
+        }
+        .button-ghost:hover {
+            color: #1890ff;
+            border-color: #1890ff;
+        }
+        .check-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #666;
+            cursor: pointer;
+            padding: 6px 0;
+        }
+        .check-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        .check-item.readonly-item {
+            cursor: default;
+        }
+        .check-item.readonly-item input {
+            cursor: default;
+        }
+
+        /* Info Cards */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        .info-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+        }
+        .info-card h3 {
+            font-size: 16px;
+            color: #1f2937;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .check-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .check-list .check-item {
+            padding: 8px 0;
+            border-bottom: 1px dashed #f0f0f0;
+        }
+        .check-list .check-item:last-child {
+            border-bottom: none;
+        }
+
+        /* Timeline Card */
+        .timeline-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .section-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .section-title h3 {
+            font-size: 16px;
+            color: #1f2937;
+        }
+        .section-title .muted {
+            font-size: 13px;
+            color: #999;
+        }
+
+        /* Notice */
+        .notice {
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .notice.warning {
+            background: #fffbe6;
+            border: 1px solid #ffe58f;
+            color: #d48806;
+        }
+        .notice.info {
+            background: #e6f7ff;
+            border: 1px solid #91d5ff;
+            color: #096dd9;
+        }
+
+
+
+        /* 学员表格区 */
+        .student-table-section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        .table-header h3 {
+            font-size: 16px;
+            color: #1f2937;
+        }
+        .table-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .btn-secondary-small {
+            padding: 6px 12px;
+            background: white;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #666;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-secondary-small:hover {
+            color: #1890ff;
+            border-color: #1890ff;
+        }
+        .table-container {
+            overflow-x: auto;
+        }
+        .student-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .student-table th {
+            background: #fafafa;
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: #1f2937;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        .student-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            color: #666;
+        }
+        .student-table tr:last-child td {
+            border-bottom: none;
+        }
+        .student-table tr:hover {
+            background: #f8fafc;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .status-badge.incomplete {
+            background: #fff7e6;
+            color: #fa8c16;
+        }
+        .status-badge.complete {
+            background: #f6ffed;
+            color: #52c41a;
+        }
+        .btn-text {
+            padding: 4px 8px;
+            background: transparent;
+            border: none;
+            color: #1890ff;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-text:hover {
+            color: #40a9ff;
+        }
+        .table-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 24px;
+            background: #f8fafc;
+            border-top: 1px solid #e8e8e8;
+        }
+        .total-info {
+            font-size: 14px;
+            color: #666;
+        }
+        .pagination {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .page-btn {
+            padding: 6px 12px;
+            background: white;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #666;
+            cursor: pointer;
+        }
+        .page-btn:disabled {
+            color: #ccc;
+            cursor: not-allowed;
+        }
+        .page-info {
+            font-size: 13px;
+            color: #666;
+        }
+
+        /* 弹窗样式 */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal-container {
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 900px;
+            max-height: 80vh;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        .modal-header h2 {
+            font-size: 18px;
+            color: #1f2937;
+        }
+        .modal-subtitle {
+            font-size: 13px;
+            color: #666;
+            margin-top: 4px;
+        }
+        .modal-close {
+            font-size: 24px;
+            color: #999;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+        .modal-close:hover {
+            background: #f0f0f0;
+            color: #666;
+        }
+        .modal-body {
+            padding: 24px;
+            overflow-y: auto;
+            max-height: calc(80vh - 140px);
+        }
+        .modal-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            background: #f8fafc;
+            border-top: 1px solid #e8e8e8;
+        }
+        .import-progress {
+            font-size: 14px;
+            color: #666;
+        }
+        .import-progress strong {
+            color: #1890ff;
+            font-size: 16px;
+        }
+
+        /* 资料清单样式 */
+        .doc-list-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+        }
+        .doc-list-section h3 {
+            font-size: 16px;
+            color: #1f2937;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e8e8e8;
+        }
+        .doc-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .doc-list-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border: 1px solid #e8e8e8;
+        }
+        .doc-list-item .doc-name {
+            flex: 1;
+            font-size: 14px;
+            color: #1f2937;
+        }
+        .doc-list-item .doc-status {
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 4px;
+            min-width: 60px;
+            text-align: center;
+        }
+        .doc-status.not-imported {
+            background: #fff7e6;
+            color: #fa8c16;
+        }
+        .doc-status.imported {
+            background: #f6ffed;
+            color: #52c41a;
+        }
+        .btn-import {
+            padding: 6px 16px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-import:hover {
+            background: #40a9ff;
+        }
+        .btn-import:disabled {
+            background: #d9d9d9;
+            cursor: not-allowed;
+        }
+        .doc-list-item:hover {
+            background: #f0f7ff;
+            border-color: #1890ff;
+        }
+
+        /* Footer Actions */
+        .footer-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid #e8e8e8;
+        }
+        .footer-actions .right {
+            display: flex;
+            gap: 12px;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .hero-grid {
+                grid-template-columns: 1fr;
+            }
+            .meta-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 60px;
+            }
+            .sidebar-logo h2, .sidebar-logo p,
+            .sidebar-item span:not(.sidebar-icon),
+            .sidebar-arrow {
+                display: none;
+            }
+            .sidebar-sublist.expanded {
+                max-height: 0;
+            }
+            .meta-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .table-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+            }
+            .table-footer {
+                flex-direction: column;
+                gap: 12px;
+            }
+            .footer-actions {
+                flex-direction: column;
+                gap: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="sidebar-logo">
+                <h2>认定工作流程</h2>
+                <p>系统原型</p>
+            </div>
+            
+            <!-- 数据面板 -->
+            <div class="sidebar-item" onclick="window.location.href='数据面板.html'">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📊</span>
+                    <span>数据面板</span>
+                </div>
+            </div>
+            
+            <!-- 项目管理 - 可展开 -->
+            <div class="sidebar-item" id="projectMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📁</span>
+                    <span>任务管理</span>
+                </div>
+                <span class="sidebar-arrow">▶</span>
+            </div>
+            <div class="sidebar-sublist" id="projectSubmenu">
+                <div class="sidebar-subitem" onclick="window.location.href='项目管理首页.html'">
+                    <span>📋</span> 任务准备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='我要下单.html'">
+                    <span>🛒</span> 我要下单
+                </div>
+                <div class="sidebar-subitem" id="archiveMenu" onclick="toggleArchiveSubmenu(event)">
+                    <span>📦</span> 任务档案
+                    <span class="sidebar-arrow" style="margin-left: auto;">▶</span>
+                </div>
+                <div class="sidebar-sublist" id="archiveSubmenu">
+                    <div class="sidebar-subitem" onclick="window.location.href='考试材料.html'" style="padding-left: 56px;">
+                        <span>📝</span> 考试材料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='考场资料.html'" style="padding-left: 56px;">
+                        <span>🏫</span> 考场资料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='考生资料.html'" style="padding-left: 56px;">
+                        <span>👤</span> 考生资料
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 认定流程 - 可展开 -->
+            <div class="sidebar-item active expanded" id="processMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📋</span>
+                    <span>认定流程</span>
+                </div>
+                <span class="sidebar-arrow">▶</span>
+            </div>
+            <div class="sidebar-sublist expanded" id="processSubmenu">
+                <div class="sidebar-subitem" onclick="window.location.href='任务选择.html'">
+                    <span>🏠</span> 任务选择
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定流程首页.html'">
+                    <span>📌</span> 流程首页
+                </div>
+                <div class="sidebar-subitem active" onclick="window.location.href='认定筹备.html'">
+                    <span>🔧</span> 认定筹备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定前.html'">
+                    <span>📅</span> 认定前
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='理论笔试.html'">
+                    <span>📝</span> 理论笔试
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='实操考试.html'">
+                    <span>🔨</span> 实操考试
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定归档.html'">
+                    <span>📦</span> 认定归档
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 顶部栏 -->
+            <div class="header">
+                <h1>认定筹备</h1>
+                <div class="header-user">
+                    <span>👤 管理员</span>
+                    <span>|</span>
+                    <span>2026-04-15</span>
+                </div>
+            </div>
+            
+            <!-- 内容区 -->
+            <div class="content">
+                <!-- Breadcrumb -->
+                <div class="breadcrumb">
+                    <a href="任务选择.html">↩ 项目选择</a>
+                    <span>/</span>
+                    <a href="认定流程首页.html">认定流程</a>
+                    <span>/</span>
+                    <span>认定筹备</span>
+                </div>
+
+                <!-- Hero Section -->
+                <div class="hero-card">
+                    <div class="hero-grid">
+                        <div>
+                            <div class="badges">
+                                <span class="badge">项目编号：<span data-project-code>RD-2026-001</span></span>
+                                <span class="status-badge status-progress">阶段 01 - 认定筹备</span>
+                            </div>
+                            <h1>📋 认定筹备 - 学员与资料导入</h1>
+                            <p>导入学员信息及其申报与呈报资料，完成认定筹备工作。确保所有学员信息及其申报与呈报资料（共10项）完整导入后，认定筹备方可完成。</p>
+                            <div class="action-row">
+                                <a class="button" href="#" onclick="showToast('批量导入学员功能开发中'); return false;">📥 批量导入学员</a>
+                                <a class="button-secondary" href="#" onclick="showToast('新增学员功能开发中'); return false;">➕ 单个新增学员</a>
+                                <a class="button-link" href="认定流程首页.html" style="margin-left: auto;">↩ 返回工作台</a>
+                            </div>
+                        </div>
+                        <div class="process-box">
+                            <h3>📋 当前阶段概览</h3>
+                            <ul>
+                                <li>当前阶段：认定筹备（阶段 01）</li>
+                                <li>已导入学员：<span id="importedCountHero">0</span> 人</li>
+                                <li>资料完整学员：<span id="completeCountHero">0</span> 人</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="meta-bar">
+                        <div class="meta-grid">
+                            <div class="meta-item"><span>已导入学员</span><strong id="importedCount">0</strong></div>
+                            <div class="meta-item"><span>未导入学员</span><strong id="pendingCount">0</strong></div>
+                            <div class="meta-item"><span>资料完整学员</span><strong id="completeCount">0</strong></div>
+                            <div class="meta-item"><span>当前阶段</span><strong>认定筹备</strong></div>
+                            <div class="meta-item"><span>项目编号</span><strong data-project-code>RD-2026-001</strong></div>
+                        </div>
+                    </div>
+
+                    <div class="progress-strip">
+                        <div class="progress-header">
+                            <strong>筹备完成进度</strong>
+                            <span class="helper" id="prepProgressText">0/3 名学员资料完整</span>
+                        </div>
+                        <div class="progress-bar"><div class="progress-value" id="prepProgressValue" style="width: 0%;"></div></div>
+                    </div>
+                </div>
+
+                <!-- 学员信息表单 -->
+                <div class="student-table-section">
+                    <div class="table-header">
+                        <h3>📋 已导入学员信息</h3>
+                        <div class="table-actions">
+                            <button class="btn-secondary-small" onclick="window.location.href='生成申报材料.html'">
+                                📄 生成申报材料
+                            </button>
+                            <button class="btn-secondary-small" onclick="showToast('批量删除功能开发中')">
+                                🗑️ 批量删除
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="student-table">
+                            <thead>
+                                <tr>
+                                    <th width="40"><input type="checkbox" id="selectAll"></th>
+                                    <th>序号</th>
+                                    <th>姓名</th>
+                                    <th>身份证号</th>
+                                    <th>报考等级</th>
+                                    <th>联系电话</th>
+                                    <th>资料状态</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="studentTableBody">
+                                <!-- 示例数据 -->
+                                <tr data-student-id="STU001">
+                                    <td><input type="checkbox" class="row-checkbox"></td>
+                                    <td>1</td>
+                                    <td>张三</td>
+                                    <td>450***********1234</td>
+                                    <td>技师</td>
+                                    <td>138****1234</td>
+                                    <td><span class="status-badge incomplete" id="status-STU001">资料不完整</span></td>
+                                    <td>
+                                        <button class="btn-text" onclick="showToast('编辑功能开发中')">编辑</button>
+                                        <button class="btn-text" onclick="openModal('STU001', '张三')">导入资料</button>
+                                    </td>
+                                </tr>
+                                <tr data-student-id="STU002">
+                                    <td><input type="checkbox" class="row-checkbox"></td>
+                                    <td>2</td>
+                                    <td>李四</td>
+                                    <td>450***********5678</td>
+                                    <td>高级技师</td>
+                                    <td>139****5678</td>
+                                    <td><span class="status-badge incomplete" id="status-STU002">资料不完整</span></td>
+                                    <td>
+                                        <button class="btn-text" onclick="showToast('编辑功能开发中')">编辑</button>
+                                        <button class="btn-text" onclick="openModal('STU002', '李四')">导入资料</button>
+                                    </td>
+                                </tr>
+                                <tr data-student-id="STU003">
+                                    <td><input type="checkbox" class="row-checkbox"></td>
+                                    <td>3</td>
+                                    <td>王五</td>
+                                    <td>450***********9012</td>
+                                    <td>技师</td>
+                                    <td>137****9012</td>
+                                    <td><span class="status-badge incomplete" id="status-STU003">资料不完整</span></td>
+                                    <td>
+                                        <button class="btn-text" onclick="showToast('编辑功能开发中')">编辑</button>
+                                        <button class="btn-text" onclick="openModal('STU003', '王五')">导入资料</button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="table-footer">
+                        <span class="total-info">共 <strong id="totalStudents">3</strong> 名学员</span>
+                        <div class="pagination">
+                            <button class="page-btn" disabled>上一页</button>
+                            <span class="page-info">第 1 页</span>
+                            <button class="page-btn" disabled>下一页</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 提示信息 -->
+                <div class="notice warning" style="margin-top: 20px;">
+                    ⚠️ 请确保所有学员信息及其申报与呈报资料（共10项）完整导入后，认定筹备方可完成。
+                </div>
+
+                <!-- Footer Actions -->
+                <div class="footer-actions">
+                    <a class="button-secondary" href="认定流程首页.html">返回工作台</a>
+                    <div class="right">
+                        <a class="button-secondary" href="认定流程首页.html">上一步：执行工作台</a>
+                        <a class="button" href="认定前.html">下一步：认定前</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 导入资料弹窗 -->
+    <div class="modal-overlay" id="importDocModal">
+        <div class="modal-container">
+            <div class="modal-header">
+                <div>
+                    <h2>📄 导入申报与呈报资料</h2>
+                    <p class="modal-subtitle" id="modalStudentInfo">学员：-</p>
+                </div>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="doc-list-container">
+                    <!-- 资料收集清单 -->
+                    <div class="doc-list-section">
+                        <h3>📋 资料收集清单</h3>
+                        <div class="doc-list" id="docListBasic">
+                            <div class="doc-list-item" data-doc-type="basic" data-doc-code="DOC001">
+                                <span class="doc-name">报名信息表</span>
+                                <span class="doc-status not-imported" data-status>未导入</span>
+                                <button class="btn-import" data-btn onclick="importDoc(this, 'DOC001')">导入</button>
+                            </div>
+                            <div class="doc-list-item" data-doc-type="basic" data-doc-code="DOC002">
+                                <span class="doc-name">两寸证件照</span>
+                                <span class="doc-status not-imported" data-status>未导入</span>
+                                <button class="btn-import" data-btn onclick="importDoc(this, 'DOC002')">导入</button>
+                            </div>
+                            <div class="doc-list-item" data-doc-type="basic" data-doc-code="DOC003">
+                                <span class="doc-name">身份证</span>
+                                <span class="doc-status not-imported" data-status>未导入</span>
+                                <button class="btn-import" data-btn onclick="importDoc(this, 'DOC003')">导入</button>
+                            </div>
+                            <div class="doc-list-item" data-doc-type="basic" data-doc-code="DOC004">
+                                <span class="doc-name">学历</span>
+                                <span class="doc-status not-imported" data-status>未导入</span>
+                                <button class="btn-import" data-btn onclick="importDoc(this, 'DOC004')">导入</button>
+                            </div>
+                            <div class="doc-list-item" data-doc-type="basic" data-doc-code="DOC005">
+                                <span class="doc-name">广西壮族自治区职业技能鉴定登记表</span>
+                                <span class="doc-status not-imported" data-status>未导入</span>
+                                <button class="btn-import" data-btn onclick="importDoc(this, 'DOC005')">导入</button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 申报与呈报资料 -->
+                    <div class="doc-list-section">
+                        <h3>📄 申报与呈报资料</h3>
+                        <div class="doc-list" id="docListApply">
+                            <div class="doc-list-item" data-doc-type="apply" data-doc-code="DOC006">
+                                <span class="doc-name">工作年限证明</span>
+                                <span class="doc-status not-imported" data-status>未导入</span>
+                                <button class="btn-import" data-btn onclick="importDoc(this, 'DOC006')">导入</button>
+                            </div>
+                            <div class="doc-list-item" data-doc-type="apply" data-doc-code="DOC007">
+                                <span class="doc-name">《技师、高级技师考评申报表》</span>
+                                <span class="doc-status not-imported" data-status>未导入</span>
+                                <button class="btn-import" data-btn onclick="importDoc(this, 'DOC007')">导入</button>
+                            </div>
+                            <div class="doc-list-item" data-doc-type="apply" data-doc-code="DOC008">
+                                <span class="doc-name">《广西壮族自治区技师、高级技师业绩评估报告表》</span>
+                                <span class="doc-status not-imported" data-status>未导入</span>
+                                <button class="btn-import" data-btn onclick="importDoc(this, 'DOC008')">导入</button>
+                            </div>
+                            <div class="doc-list-item" data-doc-type="apply" data-doc-code="DOC009">
+                                <span class="doc-name">《有色金属行业技师、高级技师考评呈报表》</span>
+                                <span class="doc-status not-imported" data-status>未导入</span>
+                                <button class="btn-import" data-btn onclick="importDoc(this, 'DOC009')">导入</button>
+                            </div>
+                            <div class="doc-list-item" data-doc-type="apply" data-doc-code="DOC010">
+                                <span class="doc-name">《广西千铝工投教育科技发展有限公司关于技师、高级技师考评的工作方案》</span>
+                                <span class="doc-status not-imported" data-status>未导入</span>
+                                <button class="btn-import" data-btn onclick="importDoc(this, 'DOC010')">导入</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="import-progress">
+                    <span>已导入：<strong id="importedCountModal">0</strong>/10</span>
+                </div>
+                <button class="button-secondary" onclick="closeModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleArchiveSubmenu(event) {
+            event.stopPropagation();
+            const archiveMenu = document.getElementById('archiveMenu');
+            const archiveSubmenu = document.getElementById('archiveSubmenu');
+            if (!archiveMenu || !archiveSubmenu) return;
+            const arrow = archiveMenu.querySelector('.sidebar-arrow');
+            archiveMenu.classList.toggle('expanded');
+            archiveSubmenu.classList.toggle('expanded');
+            if (arrow) {
+                if (archiveMenu.classList.contains('expanded')) {
+                    arrow.style.transform = 'rotate(90deg)';
+                } else {
+                    arrow.style.transform = 'rotate(0deg)';
+                }
+            }
+        }
+
+        // 侧边栏展开/收起功能
+        document.getElementById('projectMenu').addEventListener('click', function(e) {
+            // 如果点击的是子菜单项，不执行展开/收起
+            if (e.target.closest('.sidebar-subitem')) return;
+            this.classList.toggle('expanded');
+            document.getElementById('projectSubmenu').classList.toggle('expanded');
+        });
+
+        document.getElementById('processMenu').addEventListener('click', function(e) {
+            // 如果点击的是子菜单项，不执行展开/收起
+            if (e.target.closest('.sidebar-subitem')) return;
+            this.classList.toggle('expanded');
+            document.getElementById('processSubmenu').classList.toggle('expanded');
+        });
+
+        // 为所有侧边栏子菜单项添加点击事件处理
+        document.querySelectorAll('.sidebar-subitem').forEach(function(item) {
+            item.addEventListener('click', function(e) {
+                // 阻止事件冒泡，防止触发父菜单的展开/收起
+                e.stopPropagation();
+            });
+        });
+
+        // 学员资料状态存储（模拟后端数据 + localStorage 持久化）
+        // 格式: { studentId: { docCode: boolean } }
+        const DOC_STATUS_KEY = 'prep_student_doc_status_v1';
+        const STUDENT_ROSTER_KEY = 'prep_student_roster_v1';
+
+        function loadDocStatus() {
+            try {
+                const raw = localStorage.getItem(DOC_STATUS_KEY);
+                if (!raw) return {};
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function saveDocStatus(status) {
+            localStorage.setItem(DOC_STATUS_KEY, JSON.stringify(status || {}));
+        }
+
+        function saveStudentRosterFromTable() {
+            const roster = [];
+            document.querySelectorAll('#studentTableBody tr[data-student-id]').forEach((tr) => {
+                const id = tr.getAttribute('data-student-id');
+                const tds = tr.querySelectorAll('td');
+                if (!id || tds.length < 8) return;
+                const name = (tds[2]?.textContent || '').trim();
+                const idCard = (tds[3]?.textContent || '').trim();
+                const level = (tds[4]?.textContent || '').trim();
+                const phone = (tds[5]?.textContent || '').trim();
+                roster.push({ id, name, idCard, level, phone });
+            });
+            localStorage.setItem(STUDENT_ROSTER_KEY, JSON.stringify(roster));
+        }
+
+        const studentDocStatus = (() => {
+            const saved = loadDocStatus();
+            // 确保示例学员存在
+            ['STU001', 'STU002', 'STU003'].forEach(id => {
+                if (!saved[id] || typeof saved[id] !== 'object') saved[id] = {};
+            });
+            saveDocStatus(saved);
+            return saved;
+        })();
+
+        // 当前选中的学员
+        let currentStudentId = null;
+        let currentStudentName = null;
+
+        // 弹窗控制函数
+        function openModal(studentId, studentName) {
+            currentStudentId = studentId;
+            currentStudentName = studentName;
+
+            // 更新弹窗标题显示学员信息
+            document.getElementById('modalStudentInfo').textContent = '学员：' + studentName + '（' + studentId + '）';
+
+            // 加载该学员的资料状态
+            loadStudentDocStatus(studentId);
+
+            document.getElementById('importDocModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('importDocModal').classList.remove('active');
+            currentStudentId = null;
+            currentStudentName = null;
+        }
+
+        // 点击弹窗外部关闭弹窗
+        document.getElementById('importDocModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+
+        // 加载学员资料状态
+        function loadStudentDocStatus(studentId) {
+            const status = studentDocStatus[studentId] || {};
+            let importedCount = 0;
+
+            // 遍历所有资料项
+            document.querySelectorAll('.doc-list-item').forEach(function(item) {
+                const docCode = item.getAttribute('data-doc-code');
+                const statusSpan = item.querySelector('[data-status]');
+                const importBtn = item.querySelector('[data-btn]');
+
+                if (status[docCode]) {
+                    // 已导入
+                    statusSpan.textContent = '已导入';
+                    statusSpan.classList.remove('not-imported');
+                    statusSpan.classList.add('imported');
+                    importBtn.textContent = '已导入';
+                    importBtn.disabled = true;
+                    importedCount++;
+                } else {
+                    // 未导入
+                    statusSpan.textContent = '未导入';
+                    statusSpan.classList.remove('imported');
+                    statusSpan.classList.add('not-imported');
+                    importBtn.textContent = '导入';
+                    importBtn.disabled = false;
+                }
+            });
+
+            // 更新导入进度
+            document.getElementById('importedCountModal').textContent = importedCount;
+
+            // 更新学员列表中的状态显示
+            updateStudentListStatus(studentId, importedCount);
+        }
+
+        // 导入资料功能
+        function importDoc(btn, docCode) {
+            if (!currentStudentId) return;
+
+            const docItem = btn.closest('.doc-list-item');
+            const statusSpan = docItem.querySelector('[data-status]');
+
+            // 模拟导入过程
+            btn.textContent = '导入中...';
+            btn.disabled = true;
+
+            setTimeout(function() {
+                // 保存到该学员的状态
+                if (!studentDocStatus[currentStudentId]) {
+                    studentDocStatus[currentStudentId] = {};
+                }
+                studentDocStatus[currentStudentId][docCode] = true;
+                saveDocStatus(studentDocStatus);
+
+                // 更新UI
+                statusSpan.textContent = '已导入';
+                statusSpan.classList.remove('not-imported');
+                statusSpan.classList.add('imported');
+                btn.textContent = '已导入';
+
+                // 更新导入计数
+                const currentCount = parseInt(document.getElementById('importedCountModal').textContent);
+                document.getElementById('importedCountModal').textContent = currentCount + 1;
+
+                // 更新学员列表状态
+                updateStudentListStatus(currentStudentId, currentCount + 1);
+
+                showToast('资料导入成功');
+
+                // TODO: 后端API调用示例
+                // api.importDocument({
+                //     studentId: currentStudentId,
+                //     docCode: docCode,
+                //     docType: docItem.getAttribute('data-doc-type')
+                // });
+            }, 1000);
+        }
+
+        // 更新学员列表中的状态显示
+        function updateStudentListStatus(studentId, importedCount) {
+            const statusBadge = document.getElementById('status-' + studentId);
+            if (statusBadge) {
+                if (importedCount >= 10) {
+                    statusBadge.textContent = '资料完整';
+                    statusBadge.classList.remove('incomplete');
+                    statusBadge.classList.add('complete');
+                } else {
+                    statusBadge.textContent = '资料不完整 (' + importedCount + '/10)';
+                }
+            }
+        }
+
+        // 页面初始化时，缓存学员花名册到 localStorage（供"生成申报材料"页读取）
+        document.addEventListener('DOMContentLoaded', () => {
+            try {
+                saveStudentRosterFromTable();
+            } catch (e) {
+                // ignore
+            }
+            loadSelectedProject();
+        });
+
+        function loadSelectedProject() {
+            const projectCode = localStorage.getItem('currentProjectCode');
+            const projectName = localStorage.getItem('currentProjectName');
+
+            if (projectCode) {
+                document.querySelectorAll('[data-project-code]').forEach(el => {
+                    el.textContent = projectCode;
+                });
+            }
+        }
+
+        // Toast 提示功能
+        function showToast(message) {
+            // 创建 toast 元素
+            const toast = document.createElement('div');
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 12px 24px;
+                border-radius: 6px;
+                font-size: 14px;
+                z-index: 9999;
+                animation: fadeIn 0.3s ease;
+            `;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            // 添加动画样式
+            if (!document.getElementById('toast-style')) {
+                const style = document.createElement('style');
+                style.id = 'toast-style';
+                style.textContent = `
+                    @keyframes fadeIn {
+                        from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+                        to { opacity: 1; transform: translateX(-50%) translateY(0); }
+                    }
+                    @keyframes fadeOut {
+                        from { opacity: 1; transform: translateX(-50%) translateY(0); }
+                        to { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+
+            // 3秒后移除
+            setTimeout(() => {
+                toast.style.animation = 'fadeOut 0.3s ease';
+                setTimeout(() => {
+                    document.body.removeChild(toast);
+                }, 300);
+            }, 2000);
+        }
+
+        // 按钮点击事件
+        document.querySelector('[data-edit-form]').addEventListener('click', function(e) {
+            e.preventDefault();
+            showToast('编辑功能开发中');
+        });
+
+        document.querySelector('[data-save-draft]').addEventListener('click', function(e) {
+            e.preventDefault();
+            showToast('草稿已保存');
+        });
+
+        document.querySelector('[data-submit-form]').addEventListener('click', function(e) {
+            e.preventDefault();
+            showToast('已提交审核');
+        });
+
+        document.querySelector('[data-approve-stage]').addEventListener('click', function(e) {
+            e.preventDefault();
+            showToast('阶段已确认完成');
+        });
+    </script>
+    <script src="common.js"></script>
+</body>
+</html>

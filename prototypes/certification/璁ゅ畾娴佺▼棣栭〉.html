@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>认定流程首页 - 认定工作流程</title>
+    <link rel="stylesheet" href="common.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f0f2f5;
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 220px;
+            background-color: #ffffff;
+            color: #1f2937;
+            border-right: 1px solid #e8e8e8;
+            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
+            padding: 16px 0;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+        .sidebar-logo {
+            padding: 0 16px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 8px;
+        }
+        .sidebar-logo h2 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .sidebar-logo p {
+            font-size: 12px;
+            color: #8c8c8c;
+            margin-top: 4px;
+        }
+        .sidebar-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+        }
+        .sidebar-item:hover {
+            background-color: #f5f5f5;
+        }
+        .sidebar-item.active {
+            background-color: #1890ff;
+            color: #ffffff;
+        }
+        .sidebar-item.active .sidebar-arrow {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .sidebar-item-content {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .sidebar-icon {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+        }
+        .sidebar-arrow {
+            font-size: 12px;
+            transition: transform 0.3s;
+            color: #bfbfbf;
+        }
+                .sidebar-subitem.expanded .sidebar-arrow { transform: rotate(90deg); }
+        .sidebar-item.expanded .sidebar-arrow {
+            transform: rotate(90deg);
+        }
+        .sidebar-sublist {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .sidebar-sublist.expanded {
+            max-height: 1200px;
+        }
+        .sidebar-subitem {
+            padding: 10px 16px 10px 46px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+            color: #595959;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sidebar-subitem:hover {
+            background-color: #f5f5f5;
+            color: #1890ff;
+        }
+        .sidebar-subitem.active {
+            background-color: rgba(24, 144, 255, 0.2);
+            color: #1890ff;
+            border-right: 3px solid #1890ff;
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .header {
+            height: 64px;
+            background-color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        .header h1 {
+            font-size: 18px;
+            color: #1f2937;
+        }
+        .header-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #666;
+            font-size: 14px;
+        }
+        .content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+
+        /* Hero Section */
+        .hero-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .hero-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        .badges {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            background: #f0f2f5;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #666;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .status-pending {
+            background: #e6f7ff;
+            color: #1890ff;
+        }
+        .status-draft {
+            background: #f5f5f5;
+            color: #999;
+        }
+        .status-progress {
+            background: #fff7e6;
+            color: #fa8c16;
+        }
+        .status-success {
+            background: #f6ffed;
+            color: #52c41a;
+        }
+        .hero-grid h1 {
+            font-size: 24px;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        .hero-grid p {
+            color: #666;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+        .process-box {
+            background: linear-gradient(135deg, #f6ffed 0%, #f0f7ff 100%);
+            border: 1px solid #b7eb8f;
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .process-box h3 {
+            font-size: 14px;
+            color: #389e0d;
+            margin-bottom: 12px;
+        }
+        .process-box ul {
+            list-style: none;
+            font-size: 13px;
+        }
+        .process-box li {
+            padding: 6px 0;
+            color: #666;
+            border-bottom: 1px dashed rgba(0,0,0,0.05);
+        }
+        .process-box li:last-child {
+            border-bottom: none;
+        }
+        .action-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .button {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 20px;
+            background: #1890ff;
+            color: white;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+        }
+        .button:hover {
+            background: #40a9ff;
+        }
+        .button-secondary {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 20px;
+            background: white;
+            color: #1890ff;
+            border: 1px solid #1890ff;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .button-secondary:hover {
+            background: #e6f7ff;
+        }
+        .button-link {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 16px;
+            color: #1890ff;
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .button-link:hover {
+            color: #40a9ff;
+        }
+        .meta-bar {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+        }
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 16px;
+        }
+        .meta-item {
+            text-align: center;
+        }
+        .meta-item span {
+            display: block;
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 4px;
+        }
+        .meta-item strong {
+            display: block;
+            font-size: 14px;
+            color: #1f2937;
+        }
+        .progress-strip {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 16px 20px;
+        }
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .progress-header strong {
+            font-size: 14px;
+            color: #1f2937;
+        }
+        .helper {
+            font-size: 13px;
+            color: #999;
+        }
+        .progress-bar {
+            height: 8px;
+            background: #e8e8e8;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-value {
+            height: 100%;
+            background: linear-gradient(90deg, #1890ff 0%, #52c41a 100%);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        /* Timeline Card */
+        .timeline-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .section-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .section-title h2, .section-title h3 {
+            font-size: 16px;
+            color: #1f2937;
+        }
+        .section-title .muted {
+            font-size: 13px;
+            color: #999;
+        }
+        .flow-steps {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            overflow-x: auto;
+            padding: 10px 0;
+        }
+        .flow-step {
+            flex: 1;
+            min-width: 140px;
+            background: linear-gradient(135deg, #f0f7ff 0%, #e6f0ff 100%);
+            border: 1px solid #1890ff;
+            border-radius: 10px;
+            padding: 16px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        .flow-step:hover {
+            box-shadow: 0 4px 16px rgba(24, 144, 255, 0.2);
+            transform: translateY(-2px);
+        }
+        .flow-step.completed {
+            background: linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%);
+            border-color: #52c41a;
+        }
+        .flow-step.completed span {
+            color: #52c41a;
+        }
+        .flow-step.active {
+            background: linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%);
+            border-color: #1890ff;
+            box-shadow: 0 4px 16px rgba(24, 144, 255, 0.3);
+        }
+        .flow-step span {
+            display: block;
+            font-size: 12px;
+            color: #1890ff;
+            margin-bottom: 6px;
+        }
+        .flow-step.completed span {
+            color: #52c41a;
+        }
+        .flow-step strong {
+            display: block;
+            font-size: 14px;
+            color: #1f2937;
+        }
+        .flow-step .status-icon {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            font-size: 16px;
+        }
+        .flow-arrow {
+            color: #d9d9d9;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+        .flow-arrow.completed {
+            color: #52c41a;
+        }
+
+        /* Execution Flow Main Line */
+        .execution-flow {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .execution-flow-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .execution-flow-header h2 {
+            font-size: 16px;
+            color: #1f2937;
+        }
+        .execution-flow-header .subtitle {
+            font-size: 13px;
+            color: #999;
+        }
+        .flow-cards {
+            display: flex;
+            align-items: stretch;
+            gap: 12px;
+        }
+        .flow-card {
+            flex: 1;
+            min-width: 140px;
+            background: #f8fafc;
+            border: 2px solid #e8e8e8;
+            border-radius: 10px;
+            padding: 20px 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+        .flow-card:hover {
+            border-color: #1890ff;
+            box-shadow: 0 4px 16px rgba(24, 144, 255, 0.15);
+            transform: translateY(-2px);
+        }
+        .flow-card.completed {
+            background: #f6ffed;
+            border-color: #52c41a;
+        }
+        .flow-card.completed:hover {
+            box-shadow: 0 4px 16px rgba(82, 196, 26, 0.15);
+        }
+        .flow-card.active {
+            background: #e6f7ff;
+            border-color: #1890ff;
+            box-shadow: 0 4px 16px rgba(24, 144, 255, 0.2);
+        }
+        .flow-card .phase-num {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 8px;
+        }
+        .flow-card.completed .phase-num {
+            color: #52c41a;
+        }
+        .flow-card.active .phase-num {
+            color: #1890ff;
+        }
+        .flow-card .phase-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        .flow-card .phase-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 4px;
+            background: #f0f0f0;
+            color: #999;
+        }
+        .flow-card.completed .phase-status {
+            background: #d9f7be;
+            color: #52c41a;
+        }
+        .flow-card.active .phase-status {
+            background: #bae7ff;
+            color: #1890ff;
+        }
+        .flow-connector {
+            display: flex;
+            align-items: center;
+            color: #d9d9d9;
+            font-size: 20px;
+        }
+        .flow-connector.completed {
+            color: #52c41a;
+        }
+
+        /* Portal Cards */
+        .portal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+            gap: 20px;
+        }
+        .portal-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 20px;
+            transition: all 0.3s;
+            border: 1px solid transparent;
+        }
+        .portal-card:hover {
+            border-color: #1890ff;
+            box-shadow: 0 4px 16px rgba(24, 144, 255, 0.15);
+        }
+        .status-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .portal-card h3 {
+            font-size: 16px;
+            color: #1f2937;
+            margin-bottom: 8px;
+        }
+        .portal-card > p {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+        .mini-list {
+            list-style: none;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 12px;
+        }
+        .mini-list li {
+            padding: 4px 0;
+            padding-left: 16px;
+            position: relative;
+        }
+        .mini-list li::before {
+            content: "•";
+            position: absolute;
+            left: 4px;
+            color: #1890ff;
+        }
+        .check-list {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #f0f0f0;
+        }
+        .check-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #666;
+            cursor: pointer;
+            padding: 6px 0;
+        }
+        .check-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        .check-item.readonly-item {
+            cursor: default;
+        }
+        .check-item.readonly-item input {
+            cursor: default;
+        }
+        .notice {
+            margin-top: 12px;
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .notice.warning {
+            background: #fffbe6;
+            border: 1px solid #ffe58f;
+            color: #d48806;
+        }
+        .notice.info {
+            background: #e6f7ff;
+            border: 1px solid #91d5ff;
+            color: #096dd9;
+        }
+
+        /* Status Overview */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        .action-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+        }
+        .table-wrap {
+            overflow-x: auto;
+        }
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .table th, .table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .table th {
+            background: #fafafa;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        .table td {
+            color: #666;
+        }
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+        .kpi {
+            text-align: center;
+            padding: 16px;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+        .kpi span {
+            display: block;
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 8px;
+        }
+        .kpi strong {
+            display: block;
+            font-size: 24px;
+            color: #1890ff;
+        }
+
+        /* Deliverables */
+        .table-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .hero-grid {
+                grid-template-columns: 1fr;
+            }
+            .meta-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+            .portal-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 60px;
+            }
+            .sidebar-logo h2, .sidebar-logo p,
+            .sidebar-item span:not(.sidebar-icon),
+            .sidebar-arrow {
+                display: none;
+            }
+            .sidebar-sublist.expanded {
+                max-height: 0;
+            }
+            .meta-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .kpi-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .flow-steps {
+                flex-wrap: wrap;
+            }
+            .flow-step {
+                min-width: calc(50% - 4px);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="sidebar-logo">
+                <h2>认定工作流程</h2>
+                <p>系统原型</p>
+            </div>
+            
+            <!-- 数据面板 -->
+            <div class="sidebar-item" onclick="window.location.href='数据面板.html'">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📊</span>
+                    <span>数据面板</span>
+                </div>
+            </div>
+            
+            <!-- 项目管理 - 可展开 -->
+            <div class="sidebar-item" id="projectMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📁</span>
+                    <span>任务管理</span>
+                </div>
+                <span class="sidebar-arrow">▶</span>
+            </div>
+            <div class="sidebar-sublist" id="projectSubmenu">
+                <div class="sidebar-subitem" onclick="window.location.href='项目管理首页.html'">
+                    <span>📋</span> 任务准备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='我要下单.html'">
+                    <span>🛒</span> 我要下单
+                </div>
+                <div class="sidebar-subitem" id="archiveMenu" onclick="toggleArchiveSubmenu(event)">
+                    <span>📦</span> 任务档案
+                    <span class="sidebar-arrow" style="margin-left: auto;">▶</span>
+                </div>
+                <div class="sidebar-sublist" id="archiveSubmenu">
+                    <div class="sidebar-subitem" onclick="window.location.href='考试材料.html'" style="padding-left: 56px;">
+                        <span>📝</span> 考试材料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='考场资料.html'" style="padding-left: 56px;">
+                        <span>🏫</span> 考场资料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='考生资料.html'" style="padding-left: 56px;">
+                        <span>👤</span> 考生资料
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 认定流程 - 可展开 -->
+            <div class="sidebar-item active expanded" id="processMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📋</span>
+                    <span>认定流程</span>
+                </div>
+                <span class="sidebar-arrow">▶</span>
+            </div>
+            <div class="sidebar-sublist expanded" id="processSubmenu">
+                <div class="sidebar-subitem" onclick="window.location.href='任务选择.html'">
+                    <span>🏠</span> 任务选择
+                </div>
+                <div class="sidebar-subitem active" onclick="window.location.href='认定流程首页.html'">
+                    <span>📌</span> 流程首页
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定筹备.html'">
+                    <span>🔧</span> 认定筹备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定前.html'">
+                    <span>📅</span> 认定前
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='理论笔试.html'">
+                    <span>📝</span> 理论笔试
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='实操考试.html'">
+                    <span>🔨</span> 实操考试
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定归档.html'">
+                    <span>📦</span> 认定归档
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 顶部栏 -->
+            <div class="header">
+                <h1>认定流程首页</h1>
+                <div class="header-user">
+                    <span>👤 管理员</span>
+                    <span>|</span>
+                    <span>2026-04-14</span>
+                </div>
+            </div>
+            
+            <!-- 内容区 -->
+            <div class="content">
+                <!-- Hero Section -->
+                <div class="hero-card">
+                    <div class="hero-grid">
+                        <div>
+                            <div class="badges">
+                                <span class="badge">项目编号：<span data-project-code>RD-2026-001</span></span>
+                                <span class="status-badge status-pending" data-project-status>执行中</span>
+                            </div>
+                            <h1><span data-project-name>2026 年职业技能认定项目</span></h1>
+                            <p>当前聚焦认定工作流程的项目执行与收尾阶段，覆盖认定筹备、认定前、认定中、认定后四个业务模块，展示资料收集、现场执行、反馈统计、试卷备份和归档交接的完整闭环。</p>
+                            <div class="action-row">
+                                <a class="button" href="#" onclick="showToast('功能开发中')">查看阶段任务</a>
+                                <a class="button-secondary" href="#" onclick="showToast('功能开发中')">查看交付清单</a>
+                                <a class="button-secondary" href="任务选择.html" style="margin-left: auto;">↩ 切换任务</a>
+                            </div>
+                        </div>
+                        <div class="process-box">
+                            <h3>📋 当前项目概览</h3>
+                            <ul>
+                                <li>项目经理：<span data-project-manager>张晓峰</span></li>
+                                <li>当前阶段：<span data-project-stage>项目执行与收尾阶段</span></li>
+                                <li>最后更新：<span data-project-updated>2026-04-14 10:00</span></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="meta-bar">
+                        <div class="meta-grid">
+                            <div class="meta-item"><span>项目编号</span><strong data-project-code>RD-2026-001</strong></div>
+                            <div class="meta-item"><span>项目经理</span><strong data-project-manager>张晓峰</strong></div>
+                            <div class="meta-item"><span>当前阶段</span><strong data-project-stage>项目执行与收尾阶段</strong></div>
+                            <div class="meta-item"><span>项目状态</span><strong data-project-status>执行中</strong></div>
+                            <div class="meta-item"><span>最近更新</span><strong data-project-updated>2026-04-14 10:00</strong></div>
+                        </div>
+                    </div>
+
+                    <div class="progress-strip">
+                        <div class="progress-header">
+                            <strong>阶段完成进度</strong>
+                            <span class="helper" data-workbench-progress-text>0/5 节点已完成</span>
+                        </div>
+                        <div class="progress-bar"><div class="progress-value" data-workbench-progress-value style="width: 0%;"></div></div>
+                    </div>
+                </div>
+
+                <!-- 执行流程主线 -->
+                <div class="execution-flow">
+                    <div class="execution-flow-header">
+                        <h2>📋 执行流程主线</h2>
+                        <span class="subtitle">从资料筹备到归档交接</span>
+                    </div>
+                    <div class="flow-cards">
+                        <div class="flow-card" data-phase="1" onclick="goToPhase('认定筹备.html')">
+                            <div class="phase-num">阶段 01</div>
+                            <div class="phase-name">认定筹备</div>
+                            <div class="phase-status">
+                                <span>⏳</span> 进行中
+                            </div>
+                        </div>
+                        <div class="flow-connector">→</div>
+                        <div class="flow-card" data-phase="2" onclick="goToPhase('认定前.html')">
+                            <div class="phase-num">阶段 02</div>
+                            <div class="phase-name">认定前</div>
+                            <div class="phase-status">
+                                <span>⏸</span> 待开始
+                            </div>
+                        </div>
+                        <div class="flow-connector">→</div>
+                        <div class="flow-card" data-phase="3" onclick="goToPhase('理论笔试.html')">
+                            <div class="phase-num">阶段 03</div>
+                            <div class="phase-name">理论笔试</div>
+                            <div class="phase-status">
+                                <span>⏸</span> 待开始
+                            </div>
+                        </div>
+                        <div class="flow-connector">→</div>
+                        <div class="flow-card" data-phase="4" onclick="goToPhase('实操考试.html')">
+                            <div class="phase-num">阶段 04</div>
+                            <div class="phase-name">实操考试</div>
+                            <div class="phase-status">
+                                <span>⏸</span> 待开始
+                            </div>
+                        </div>
+                        <div class="flow-connector">→</div>
+                        <div class="flow-card" data-phase="5" onclick="goToPhase('认定归档.html')">
+                            <div class="phase-num">阶段 05</div>
+                            <div class="phase-name">认定归档</div>
+                            <div class="phase-status">
+                                <span>⏸</span> 待开始
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 提示 -->
+    <div id="toast" style="display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 12px 24px; border-radius: 6px; z-index: 9999; font-size: 14px;"></div>
+
+    <script>
+        // 侧边栏展开/收起功能
+        function toggleArchiveSubmenu(event) {
+            event.stopPropagation();
+            const archiveMenu = document.getElementById('archiveMenu');
+            const archiveSubmenu = document.getElementById('archiveSubmenu');
+            if (!archiveMenu || !archiveSubmenu) return;
+            const arrow = archiveMenu.querySelector('.sidebar-arrow');
+            archiveMenu.classList.toggle('expanded');
+            archiveSubmenu.classList.toggle('expanded');
+            if (arrow) {
+                if (archiveMenu.classList.contains('expanded')) {
+                    arrow.style.transform = 'rotate(90deg)';
+                } else {
+                    arrow.style.transform = 'rotate(0deg)';
+                }
+            }
+        }
+
+        function initSidebar() {
+            const projectMenu = document.getElementById('projectMenu');
+            const projectSubmenu = document.getElementById('projectSubmenu');
+            const processMenu = document.getElementById('processMenu');
+            const processSubmenu = document.getElementById('processSubmenu');
+
+            projectMenu.addEventListener('click', () => {
+                projectMenu.classList.toggle('expanded');
+                projectSubmenu.classList.toggle('expanded');
+            });
+            
+            processMenu.addEventListener('click', () => {
+                processMenu.classList.toggle('expanded');
+                processSubmenu.classList.toggle('expanded');
+            });
+        }
+
+        // Toast 提示
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.style.display = 'block';
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 2000);
+        }
+
+        // 更新进度
+        function updateProgress() {
+            // 保存到 localStorage
+            saveProgress();
+        }
+
+        // 保存进度
+        function saveProgress() {
+            const progress = {};
+            document.querySelectorAll('input[type="checkbox"][data-stage-check]').forEach(checkbox => {
+                progress[checkbox.dataset.stageCheck] = checkbox.checked;
+            });
+            localStorage.setItem('certificationProgress', JSON.stringify(progress));
+        }
+
+        // 加载进度
+        function loadProgress() {
+            const saved = localStorage.getItem('certificationProgress');
+            if (saved) {
+                const progress = JSON.parse(saved);
+                Object.keys(progress).forEach(key => {
+                    const checkbox = document.querySelector(`[data-stage-check="${key}"]`);
+                    if (checkbox) {
+                        checkbox.checked = progress[key];
+                    }
+                });
+            }
+        }
+
+        // 阶段跳转
+        function goToPhase(url) {
+            window.location.href = url;
+        }
+
+        // 更新流程卡片状态
+        function updateFlowCardStatus() {
+            // 从 localStorage 获取各阶段完成状态
+            const phaseStatus = {
+                1: localStorage.getItem('phase_1_completed') === 'true',
+                2: localStorage.getItem('phase_2_completed') === 'true',
+                3: localStorage.getItem('phase_3_completed') === 'true',
+                4: localStorage.getItem('phase_4_completed') === 'true',
+                5: localStorage.getItem('phase_5_completed') === 'true'
+            };
+
+            // 更新卡片状态
+            document.querySelectorAll('.flow-card').forEach(card => {
+                const phase = card.dataset.phase;
+                const statusEl = card.querySelector('.phase-status');
+                
+                if (phaseStatus[phase]) {
+                    // 已完成
+                    card.classList.add('completed');
+                    card.classList.remove('active');
+                    statusEl.innerHTML = '<span>✓</span> 已完成';
+                } else {
+                    // 检查是否是当前进行中的阶段
+                    const prevPhase = parseInt(phase) - 1;
+                    if (prevPhase === 0 || phaseStatus[prevPhase]) {
+                        card.classList.add('active');
+                        card.classList.remove('completed');
+                        statusEl.innerHTML = '<span>⏳</span> 进行中';
+                    } else {
+                        card.classList.remove('active', 'completed');
+                        statusEl.innerHTML = '<span>⏸</span> 待开始';
+                    }
+                }
+            });
+
+            // 更新连接线状态
+            document.querySelectorAll('.flow-connector').forEach((connector, index) => {
+                if (phaseStatus[index + 1]) {
+                    connector.classList.add('completed');
+                } else {
+                    connector.classList.remove('completed');
+                }
+            });
+
+            // 更新总进度
+            const completedCount = Object.values(phaseStatus).filter(v => v).length;
+            document.querySelector('[data-workbench-progress-text]').textContent = completedCount + '/5 节点已完成';
+            document.querySelector('[data-workbench-progress-value]').style.width = (completedCount / 5 * 100) + '%';
+        }
+
+        // 标记阶段完成（供其他页面调用）
+        function markPhaseCompleted(phaseNum) {
+            localStorage.setItem('phase_' + phaseNum + '_completed', 'true');
+        }
+
+        // 加载选择的项目信息
+        function loadSelectedProject() {
+            const projectCode = localStorage.getItem('currentProjectCode');
+            const projectName = localStorage.getItem('currentProjectName');
+            
+            if (projectCode && projectName) {
+                // 更新页面上的项目信息
+                document.querySelectorAll('[data-project-code]').forEach(el => {
+                    el.textContent = projectCode;
+                });
+                document.querySelectorAll('[data-project-name]').forEach(el => {
+                    el.textContent = projectName;
+                });
+            } else {
+                // 如果没有选择任务，提示用户先选择
+                showToast('请先选择任务');
+                setTimeout(() => {
+                    window.location.href = '任务选择.html';
+                }, 1500);
+            }
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            initSidebar();
+            loadSelectedProject();
+            loadProgress();
+            updateFlowCardStatus();
+        });
+    </script>
+    <script src="common.js"></script>
+</body>
+</html>

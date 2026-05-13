@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>认定归档 - 认定工作流程</title>
+    <link rel="stylesheet" href="common.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f0f2f5;
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 220px;
+            background-color: #ffffff;
+            color: #1f2937;
+            border-right: 1px solid #e8e8e8;
+            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
+            padding: 16px 0;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+        .sidebar-logo {
+            padding: 0 16px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 8px;
+        }
+        .sidebar-logo h2 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .sidebar-logo p {
+            font-size: 12px;
+            color: #8c8c8c;
+            margin-top: 4px;
+        }
+        .sidebar-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+        }
+        .sidebar-item:hover {
+            background-color: #f5f5f5;
+        }
+        .sidebar-item.active {
+            background-color: #1890ff;
+            color: #ffffff;
+        }
+        .sidebar-item.active .sidebar-arrow {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .sidebar-item-content {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .sidebar-icon {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+        }
+        .sidebar-arrow {
+            font-size: 12px;
+            transition: transform 0.3s;
+            color: #bfbfbf;
+        }
+                .sidebar-subitem.expanded .sidebar-arrow { transform: rotate(90deg); }
+        .sidebar-item.expanded .sidebar-arrow {
+            transform: rotate(90deg);
+        }
+        .sidebar-sublist {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .sidebar-sublist.expanded {
+            max-height: 1200px;
+        }
+        .sidebar-subitem {
+            padding: 10px 16px 10px 46px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+            color: #595959;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sidebar-subitem:hover {
+            background-color: #f5f5f5;
+            color: #1890ff;
+        }
+        .sidebar-subitem.active {
+            background-color: rgba(24, 144, 255, 0.2);
+            color: #1890ff;
+            border-right: 3px solid #1890ff;
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .header {
+            height: 64px;
+            background-color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        .header h1 {
+            font-size: 18px;
+            color: #1f2937;
+        }
+        .header-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #666;
+            font-size: 14px;
+        }
+        .content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+
+        /* Breadcrumb */
+        .breadcrumb {
+            font-size: 13px;
+            color: #999;
+            margin-bottom: 16px;
+        }
+        .breadcrumb a {
+            color: #1890ff;
+            text-decoration: none;
+        }
+        .breadcrumb a:hover {
+            color: #40a9ff;
+        }
+        .breadcrumb span {
+            margin: 0 8px;
+            color: #d9d9d9;
+        }
+
+        /* Page Header */
+        .page-header-section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .page-header-section h1 {
+            font-size: 22px;
+            color: #1f2937;
+            margin-bottom: 8px;
+        }
+        .page-header-section p {
+            font-size: 14px;
+            color: #666;
+        }
+
+        /* Meta Info */
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #f0f0f0;
+        }
+        .meta-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .meta-item span {
+            font-size: 12px;
+            color: #999;
+        }
+        .meta-item strong {
+            font-size: 14px;
+            color: #1f2937;
+            font-weight: 500;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-pending {
+            background: #fff7e6;
+            color: #fa8c16;
+        }
+        .status-ready {
+            background: #f6ffed;
+            color: #52c41a;
+        }
+
+        /* Content Grid */
+        .content-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        .content-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        .card-header h3 {
+            font-size: 16px;
+            color: #1f2937;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-header .muted {
+            font-size: 13px;
+            color: #999;
+        }
+        .card-body {
+            padding: 20px 24px;
+        }
+
+        /* Check List */
+        .check-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .check-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background: #f8fafc;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #1f2937;
+        }
+        .check-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: #1890ff;
+        }
+        .check-item.completed {
+            background: #f6ffed;
+            color: #52c41a;
+        }
+        .check-item.completed input[type="checkbox"] {
+            accent-color: #52c41a;
+        }
+
+        /* Archive Table */
+        .archive-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .archive-table th {
+            background: #fafafa;
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: #1f2937;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        .archive-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            color: #666;
+        }
+        .archive-table tr:hover {
+            background: #f8fafc;
+        }
+
+        /* File Upload List */
+        .file-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 16px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border: 1px solid #e8e8e8;
+        }
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .file-icon {
+            font-size: 24px;
+        }
+        .file-details {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .file-name {
+            font-size: 14px;
+            color: #1f2937;
+            font-weight: 500;
+        }
+        .file-status {
+            font-size: 12px;
+            color: #999;
+        }
+        .file-status.uploaded {
+            color: #52c41a;
+        }
+        .btn-upload {
+            padding: 6px 16px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-upload:hover {
+            background: #40a9ff;
+        }
+        .btn-reupload {
+            padding: 6px 16px;
+            background: #f6ffed;
+            color: #52c41a;
+            border: 1px solid #b7eb8f;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-reupload:hover {
+            background: #d9f7be;
+        }
+
+        /* Progress Overview */
+        .progress-overview {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .progress-header h3 {
+            font-size: 16px;
+            color: #1f2937;
+        }
+        .progress-stats {
+            font-size: 14px;
+            color: #666;
+        }
+        .progress-stats .completed {
+            color: #52c41a;
+            font-weight: 600;
+        }
+        .progress-bar {
+            height: 8px;
+            background: #e8e8e8;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #1890ff 0%, #52c41a 100%);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        /* Notice */
+        .notice {
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .notice.info {
+            background: #e6f7ff;
+            border: 1px solid #91d5ff;
+            color: #096dd9;
+        }
+
+        /* Footer Actions */
+        .footer-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid #e8e8e8;
+        }
+        .footer-actions .right {
+            display: flex;
+            gap: 12px;
+        }
+        .button {
+            display: inline-flex;
+            align-items: center;
+            padding: 10px 24px;
+            background: #1890ff;
+            color: white;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+        }
+        .button:hover {
+            background: #40a9ff;
+        }
+        .button-secondary {
+            display: inline-flex;
+            align-items: center;
+            padding: 10px 24px;
+            background: white;
+            color: #666;
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .button-secondary:hover {
+            color: #1890ff;
+            border-color: #1890ff;
+        }
+        .button-success {
+            display: inline-flex;
+            align-items: center;
+            padding: 10px 24px;
+            background: #52c41a;
+            color: white;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+        }
+        .button-success:hover {
+            background: #73d13d;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+            .meta-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 60px;
+            }
+            .sidebar-logo h2, .sidebar-logo p,
+            .sidebar-item span:not(.sidebar-icon),
+            .sidebar-arrow {
+                display: none;
+            }
+            .meta-grid {
+                grid-template-columns: 1fr;
+            }
+            .footer-actions {
+                flex-direction: column;
+                gap: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="sidebar-logo">
+                <h2>认定工作流程</h2>
+                <p>系统原型</p>
+            </div>
+            
+            <!-- 数据面板 -->
+            <div class="sidebar-item" onclick="window.location.href='数据面板.html'">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📊</span>
+                    <span>数据面板</span>
+                </div>
+            </div>
+            
+            <!-- 项目管理 - 可展开 -->
+            <div class="sidebar-item" id="projectMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📁</span>
+                    <span>任务管理</span>
+                </div>
+                <span class="sidebar-arrow">▶</span>
+            </div>
+            <div class="sidebar-sublist" id="projectSubmenu">
+                <div class="sidebar-subitem" onclick="window.location.href='项目管理首页.html'">
+                    <span>📋</span> 任务准备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='我要下单.html'">
+                    <span>🛒</span> 我要下单
+                </div>
+                <div class="sidebar-subitem" id="archiveMenu" onclick="toggleArchiveSubmenu(event)">
+                    <span>📦</span> 任务档案
+                    <span class="sidebar-arrow" style="margin-left: auto;">▶</span>
+                </div>
+                <div class="sidebar-sublist" id="archiveSubmenu">
+                    <div class="sidebar-subitem" onclick="window.location.href='考试材料.html'" style="padding-left: 56px;">
+                        <span>📝</span> 考试材料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='考场资料.html'" style="padding-left: 56px;">
+                        <span>🏫</span> 考场资料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='考生资料.html'" style="padding-left: 56px;">
+                        <span>👤</span> 考生资料
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 认定流程 - 可展开 -->
+            <div class="sidebar-item active expanded" id="processMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📋</span>
+                    <span>认定流程</span>
+                </div>
+                <span class="sidebar-arrow">▶</span>
+            </div>
+            <div class="sidebar-sublist expanded" id="processSubmenu">
+                <div class="sidebar-subitem" onclick="window.location.href='任务选择.html'">
+                    <span>🏠</span> 任务选择
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定流程首页.html'">
+                    <span>📌</span> 流程首页
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定筹备.html'">
+                    <span>🔧</span> 认定筹备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定前.html'">
+                    <span>📅</span> 认定前
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='理论笔试.html'">
+                    <span>📝</span> 理论笔试
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='实操考试.html'">
+                    <span>🔨</span> 实操考试
+                </div>
+                <div class="sidebar-subitem active" onclick="window.location.href='认定归档.html'">
+                    <span>📦</span> 认定归档
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 顶部栏 -->
+            <div class="header">
+                <h1>认定归档</h1>
+                <div class="header-user">
+                    <span>👤 管理员</span>
+                    <span>|</span>
+                    <span>2026-04-15</span>
+                </div>
+            </div>
+            
+            <!-- 内容区 -->
+            <div class="content">
+                <!-- Breadcrumb -->
+                <div class="breadcrumb">
+                    <a href="任务选择.html">↩ 项目选择</a>
+                    <span>/</span>
+                    <a href="认定流程首页.html">认定流程</a>
+                    <span>/</span>
+                    <span>认定归档</span>
+                </div>
+
+                <!-- 页面标题区 -->
+                <div class="page-header-section">
+                    <h1>📦 认定后复核归档</h1>
+                    <p>完成考试试卷复核、成绩备份、资料归档和交接明细目录整理，形成闭环留痕</p>
+                    <div class="meta-grid">
+                        <div class="meta-item">
+                            <span>项目名称</span>
+                            <strong>2026年职业技能认定项目</strong>
+                        </div>
+                        <div class="meta-item">
+                            <span>项目编号</span>
+                            <strong>RD-2026-001</strong>
+                        </div>
+                        <div class="meta-item">
+                            <span>项目经理</span>
+                            <strong>张晓峰</strong>
+                        </div>
+                        <div class="meta-item">
+                            <span>当前状态</span>
+                            <strong class="status-badge status-pending">进行中</strong>
+                        </div>
+                        <div class="meta-item">
+                            <span>复核状态</span>
+                            <strong class="status-badge status-pending">待上传</strong>
+                        </div>
+                        <div class="meta-item">
+                            <span>归档进度</span>
+                            <strong id="archiveProgress">0/6</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 进度概览 -->
+                <div class="progress-overview">
+                    <div class="progress-header">
+                        <h3>📊 归档进度</h3>
+                        <span class="progress-stats">已完成 <span class="completed" id="completedCount">0</span>/<span id="totalCount">10</span> 项</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- 内容网格 -->
+                <div class="content-grid">
+                    <!-- 复核与备份 -->
+                    <div class="content-card">
+                        <div class="card-header">
+                            <h3>📋 复核与备份</h3>
+                            <span class="muted">认定后首要动作</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="file-list">
+                                <div class="file-item" data-file-id="f1">
+                                    <div class="file-info">
+                                        <span class="file-icon">📄</span>
+                                        <div class="file-details">
+                                            <span class="file-name">考试试卷</span>
+                                            <span class="file-status" data-status>待上传</span>
+                                        </div>
+                                    </div>
+                                    <button class="btn-upload" data-upload-btn onclick="uploadFile(this, 'f1')">上传</button>
+                                    <button class="btn-reupload" data-reupload-btn style="display:none;" onclick="uploadFile(this, 'f1')">重新上传</button>
+                                </div>
+                                <div class="file-item" data-file-id="f2">
+                                    <div class="file-info">
+                                        <span class="file-icon">📝</span>
+                                        <div class="file-details">
+                                            <span class="file-name">学员理论答题卡</span>
+                                            <span class="file-status" data-status>待上传</span>
+                                        </div>
+                                    </div>
+                                    <button class="btn-upload" data-upload-btn onclick="uploadFile(this, 'f2')">上传</button>
+                                    <button class="btn-reupload" data-reupload-btn style="display:none;" onclick="uploadFile(this, 'f2')">重新上传</button>
+                                </div>
+                                <div class="file-item" data-file-id="f3">
+                                    <div class="file-info">
+                                        <span class="file-icon">📋</span>
+                                        <div class="file-details">
+                                            <span class="file-name">学员实操笔答试卷</span>
+                                            <span class="file-status" data-status>待上传</span>
+                                        </div>
+                                    </div>
+                                    <button class="btn-upload" data-upload-btn onclick="uploadFile(this, 'f3')">上传</button>
+                                    <button class="btn-reupload" data-reupload-btn style="display:none;" onclick="uploadFile(this, 'f3')">重新上传</button>
+                                </div>
+                                <div class="file-item" data-file-id="f4">
+                                    <div class="file-info">
+                                        <span class="file-icon">📊</span>
+                                        <div class="file-details">
+                                            <span class="file-name">实操成绩汇总及评分表</span>
+                                            <span class="file-status" data-status>待上传</span>
+                                        </div>
+                                    </div>
+                                    <button class="btn-upload" data-upload-btn onclick="uploadFile(this, 'f4')">上传</button>
+                                    <button class="btn-reupload" data-reupload-btn style="display:none;" onclick="uploadFile(this, 'f4')">重新上传</button>
+                                </div>
+                                <div class="file-item" data-file-id="f5">
+                                    <div class="file-info">
+                                        <span class="file-icon">📁</span>
+                                        <div class="file-details">
+                                            <span class="file-name">考试报名资料与考场组织检查记录</span>
+                                            <span class="file-status" data-status>待上传</span>
+                                        </div>
+                                    </div>
+                                    <button class="btn-upload" data-upload-btn onclick="uploadFile(this, 'f5')">上传</button>
+                                    <button class="btn-reupload" data-reupload-btn style="display:none;" onclick="uploadFile(this, 'f5')">重新上传</button>
+                                </div>
+                                <div class="file-item" data-file-id="f6">
+                                    <div class="file-info">
+                                        <span class="file-icon">🧾</span>
+                                        <div class="file-details">
+                                            <span class="file-name">成绩花名册备份记录</span>
+                                            <span class="file-status" data-status>待上传</span>
+                                        </div>
+                                    </div>
+                                    <button class="btn-upload" data-upload-btn onclick="uploadFile(this, 'f6')">上传</button>
+                                    <button class="btn-reupload" data-reupload-btn style="display:none;" onclick="uploadFile(this, 'f6')">重新上传</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 归档与交接 -->
+                    <div class="content-card">
+                        <div class="card-header">
+                            <h3>📦 归档与交接</h3>
+                            <span class="muted">形成闭环留痕</span>
+                        </div>
+                        <div class="card-body">
+                            <table class="archive-table">
+                                <thead>
+                                    <tr>
+                                        <th>归档事项</th>
+                                        <th>状态</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>考试报名资料归档</td>
+                                        <td><span class="status-badge status-pending" id="status-a1">待归档</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td>考试试卷归档</td>
+                                        <td><span class="status-badge status-pending" id="status-a2">待归档</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td>考务文件归档</td>
+                                        <td><span class="status-badge status-pending" id="status-a3">待归档</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td>交接明细目录</td>
+                                        <td><span class="status-badge status-pending" id="status-a4">待生成</span></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <div class="archive-action" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e8e8e8; text-align: center;">
+                                <button class="btn-archive" onclick="archiveProject()" style="padding: 12px 32px; background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%); color: white; border: none; border-radius: 6px; font-size: 15px; cursor: pointer; transition: all 0.3s; display: inline-flex; align-items: center; gap: 8px;">
+                                    <span>📥</span> 执行归档
+                                </button>
+                                <p style="margin-top: 12px; font-size: 13px; color: #999;">点击按钮将本项目所有材料归档至资料档案库</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 提示信息 -->
+                <div class="notice info">
+                    ℹ️ 上传所有复核文件后，系统将自动生成归档目录和交接明细。确认无误后可提交完成认定流程。
+                </div>
+
+                <!-- Footer Actions -->
+                <div class="footer-actions">
+                    <a class="button-secondary" href="实操考试.html">上一步：实操考试</a>
+                    <div class="right">
+                        <button class="button-secondary" onclick="saveDraft()">保存草稿</button>
+                        <button class="button" onclick="submitArchive()">提交归档</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleArchiveSubmenu(event) {
+            event.stopPropagation();
+            const archiveMenu = document.getElementById('archiveMenu');
+            const archiveSubmenu = document.getElementById('archiveSubmenu');
+            if (!archiveMenu || !archiveSubmenu) return;
+            const arrow = archiveMenu.querySelector('.sidebar-arrow');
+            archiveMenu.classList.toggle('expanded');
+            archiveSubmenu.classList.toggle('expanded');
+            if (arrow) {
+                if (archiveMenu.classList.contains('expanded')) {
+                    arrow.style.transform = 'rotate(90deg)';
+                } else {
+                    arrow.style.transform = 'rotate(0deg)';
+                }
+            }
+        }
+
+        // 文件上传状态管理
+        const fileState = {
+            f1: false,
+            f2: false,
+            f3: false,
+            f4: false,
+            f5: false,
+            f6: false
+        };
+
+        // 侧边栏展开/收起功能
+        document.getElementById('projectMenu').addEventListener('click', function(e) {
+            if (e.target.closest('.sidebar-subitem')) return;
+            this.classList.toggle('expanded');
+            document.getElementById('projectSubmenu').classList.toggle('expanded');
+        });
+
+        document.getElementById('processMenu').addEventListener('click', function(e) {
+            if (e.target.closest('.sidebar-subitem')) return;
+            this.classList.toggle('expanded');
+            document.getElementById('processSubmenu').classList.toggle('expanded');
+        });
+
+        // 为所有侧边栏子菜单项添加点击事件处理
+        document.querySelectorAll('.sidebar-subitem').forEach(function(item) {
+            item.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+        });
+
+        // 上传文件
+        function uploadFile(btn, fileId) {
+            const fileItem = btn.closest('.file-item');
+            const statusSpan = fileItem.querySelector('[data-status]');
+            const uploadBtn = fileItem.querySelector('[data-upload-btn]');
+            const reuploadBtn = fileItem.querySelector('[data-reupload-btn]');
+
+            // 模拟上传过程
+            btn.textContent = '上传中...';
+            btn.disabled = true;
+
+            setTimeout(function() {
+                // 更新状态为已上传
+                statusSpan.textContent = '已上传';
+                statusSpan.classList.add('uploaded');
+
+                // 隐藏上传按钮，显示重新上传按钮
+                uploadBtn.style.display = 'none';
+                reuploadBtn.style.display = 'inline-block';
+
+                fileState[fileId] = true;
+
+                // 更新统计
+                updateStats();
+                updateArchiveStatus();
+
+                showToast('文件上传成功');
+            }, 1000);
+        }
+
+        // 更新统计数据
+        function updateStats() {
+            const completed = Object.values(fileState).filter(v => v).length;
+            const total = Object.keys(fileState).length;
+            const progressPercent = (completed / total) * 100;
+
+            document.getElementById('progressFill').style.width = progressPercent + '%';
+            document.getElementById('completedCount').textContent = completed;
+            document.getElementById('archiveProgress').textContent = completed + '/' + total;
+        }
+
+        // 更新归档状态
+        function updateArchiveStatus() {
+            const completed = Object.values(fileState).filter(v => v).length;
+            
+            // 根据上传进度更新归档状态
+            if (completed >= 1) {
+                document.getElementById('status-a1').textContent = '已归档';
+                document.getElementById('status-a1').classList.remove('status-pending');
+                document.getElementById('status-a1').classList.add('status-ready');
+            }
+            if (completed >= 3) {
+                document.getElementById('status-a2').textContent = '已归档';
+                document.getElementById('status-a2').classList.remove('status-pending');
+                document.getElementById('status-a2').classList.add('status-ready');
+            }
+            if (completed >= 5) {
+                document.getElementById('status-a3').textContent = '已归档';
+                document.getElementById('status-a3').classList.remove('status-pending');
+                document.getElementById('status-a3').classList.add('status-ready');
+            }
+            if (completed >= 6) {
+                document.getElementById('status-a4').textContent = '已生成';
+                document.getElementById('status-a4').classList.remove('status-pending');
+                document.getElementById('status-a4').classList.add('status-ready');
+            }
+        }
+
+        // 保存草稿
+        function saveDraft() {
+            showToast('草稿保存成功');
+        }
+
+        // 执行归档
+        function archiveProject() {
+            const completed = Object.values(fileState).filter(v => v).length;
+            const total = Object.keys(fileState).length;
+            
+            if (completed < total) {
+                showToast('请先上传所有复核文件后再执行归档');
+                return;
+            }
+            
+            // 获取当前项目信息
+            const projectCode = localStorage.getItem('currentProjectCode') || '未知项目';
+            const projectName = localStorage.getItem('currentProjectName') || '未知项目';
+            
+            // 模拟归档过程
+            const btn = document.querySelector('.btn-archive');
+            btn.innerHTML = '<span>⏳</span> 归档中...';
+            btn.disabled = true;
+            btn.style.opacity = '0.7';
+            
+            setTimeout(() => {
+                // 更新归档状态
+                document.getElementById('status-a1').textContent = '已归档';
+                document.getElementById('status-a1').classList.remove('status-pending');
+                document.getElementById('status-a1').classList.add('status-ready');
+                
+                document.getElementById('status-a2').textContent = '已归档';
+                document.getElementById('status-a2').classList.remove('status-pending');
+                document.getElementById('status-a2').classList.add('status-ready');
+                
+                document.getElementById('status-a3').textContent = '已归档';
+                document.getElementById('status-a3').classList.remove('status-pending');
+                document.getElementById('status-a3').classList.add('status-ready');
+                
+                document.getElementById('status-a4').textContent = '已生成';
+                document.getElementById('status-a4').classList.remove('status-pending');
+                document.getElementById('status-a4').classList.add('status-ready');
+                
+                // 更新按钮状态
+                btn.innerHTML = '<span>✅</span> 归档完成';
+                btn.style.background = 'linear-gradient(135deg, #1890ff 0%, #40a9ff 100%)';
+                
+                showToast(`项目「${projectName}」归档成功！所有材料已归档至资料档案库`);
+                
+                // 保存归档状态到localStorage
+                localStorage.setItem(`archiveStatus_${projectCode}`, 'completed');
+                localStorage.setItem(`archiveTime_${projectCode}`, new Date().toISOString());
+            }, 2000);
+        }
+
+        // 提交归档
+        function submitArchive() {
+            const completed = Object.values(fileState).filter(v => v).length;
+            const total = Object.keys(fileState).length;
+            
+            if (completed < total) {
+                showToast('请先上传所有文件后再提交');
+                return;
+            }
+            
+            // 检查是否已执行归档
+            const projectCode = localStorage.getItem('currentProjectCode');
+            const archiveStatus = localStorage.getItem(`archiveStatus_${projectCode}`);
+            
+            if (archiveStatus !== 'completed') {
+                showToast('请先点击"执行归档"按钮完成归档操作');
+                return;
+            }
+            
+            showToast('归档提交成功，认定流程已完成');
+            setTimeout(() => {
+                window.location.href = '认定流程首页.html';
+            }, 2000);
+        }
+
+        // Toast 提示功能
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 12px 24px;
+                border-radius: 6px;
+                font-size: 14px;
+                z-index: 9999;
+                animation: fadeIn 0.3s ease;
+            `;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            if (!document.getElementById('toast-style')) {
+                const style = document.createElement('style');
+                style.id = 'toast-style';
+                style.textContent = `
+                    @keyframes fadeIn {
+                        from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+                        to { opacity: 1; transform: translateX(-50%) translateY(0); }
+                    }
+                    @keyframes fadeOut {
+                        from { opacity: 1; transform: translateX(-50%) translateY(0); }
+                        to { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+
+            setTimeout(() => {
+                toast.style.animation = 'fadeOut 0.3s ease';
+                setTimeout(() => {
+                    document.body.removeChild(toast);
+                }, 300);
+            }, 2000);
+        }
+    </script>
+<script src="common.js"></script>
+</body>
+</html>

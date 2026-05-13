@@ -1,0 +1,29 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: guoyu-platform-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_dev_password
+      MYSQL_DATABASE: guoyu_platform
+      MYSQL_USER: guoyu
+      MYSQL_PASSWORD: guoyu_dev_password
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - guoyu_platform_mysql:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+
+  redis:
+    image: redis:7.4
+    container_name: guoyu-platform-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - guoyu_platform_redis:/data
+
+volumes:
+  guoyu_platform_mysql:
+  guoyu_platform_redis:

@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>申领补贴 - 认定工作流程</title>
+    <link rel="stylesheet" href="common.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5; color: #1f2937; }
+        .container { display: flex; height: 100vh; }
+
+        /* Sidebar (same visual language as other pages) */
+        .sidebar {
+            width: 220px;
+            background-color: #ffffff;
+            color: #1f2937;
+            border-right: 1px solid #e8e8e8;
+            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
+            padding: 16px 0;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+        .sidebar-logo { padding: 0 16px 16px; border-bottom: 1px solid #f0f0f0; margin-bottom: 8px; }
+        .sidebar-logo h2 { font-size: 16px; font-weight: 600; }
+        .sidebar-logo p { font-size: 12px; color: #8c8c8c; margin-top: 4px; }
+        .sidebar-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+        }
+        .sidebar-item:hover { background-color: #f5f5f5; }
+        .sidebar-item.active { background-color: #1890ff; color: #ffffff; }
+        .sidebar-item.active .sidebar-arrow { color: rgba(255, 255, 255, 0.9); }
+        .sidebar-item-content { display: flex; align-items: center; gap: 10px; }
+        .sidebar-icon { font-size: 16px; width: 20px; text-align: center; }
+        .sidebar-arrow { font-size: 12px; transition: transform 0.3s; color: #bfbfbf; }
+        .sidebar-item.expanded .sidebar-arrow { transform: rotate(90deg); }
+        .sidebar-sublist { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
+        .sidebar-sublist.expanded { max-height: 1200px; }
+        .sidebar-subitem {
+            padding: 10px 16px 10px 46px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+            color: #595959;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sidebar-subitem:hover { background-color: #f5f5f5; color: #1890ff; }
+        .sidebar-subitem.active { background-color: rgba(24, 144, 255, 0.2); color: #1890ff; border-right: 3px solid #1890ff; }
+
+        .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .header {
+            height: 64px;
+            background-color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        .header h1 { font-size: 18px; color: #1f2937; }
+        .header-user { display: flex; align-items: center; gap: 12px; color: #666; font-size: 14px; }
+        .content { flex: 1; padding: 24px; overflow-y: auto; }
+
+        .breadcrumb { font-size: 13px; color: #999; margin-bottom: 16px; }
+        .breadcrumb a { color: #1890ff; text-decoration: none; }
+        .breadcrumb a:hover { color: #40a9ff; }
+        .breadcrumb span { margin: 0 8px; color: #d9d9d9; }
+
+        .page-header-section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+            margin-bottom: 16px;
+        }
+        .page-header-section h2 { font-size: 22px; color: #1f2937; margin-bottom: 8px; }
+        .page-header-section p { font-size: 14px; color: #666; line-height: 1.6; }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+            gap: 16px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 20px;
+        }
+        .card-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .card-title h3 { font-size: 16px; color: #1f2937; }
+        .muted { font-size: 13px; color: #999; }
+
+        .filter-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        .field label { font-size: 12px; color: #6b7280; }
+        .field input, .field select {
+            padding: 8px 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            min-width: 200px;
+            background: white;
+        }
+        .field input:focus, .field select:focus { outline: none; border-color: #1890ff; }
+
+        .button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 14px;
+            border-radius: 8px;
+            border: 1px solid #1890ff;
+            background: #1890ff;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+        .button:hover { background: #40a9ff; border-color: #40a9ff; }
+        .button-secondary {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 14px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            background: white;
+            color: #1f2937;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            transition: all 0.3s;
+        }
+        .button-secondary:hover { border-color: #1890ff; color: #1890ff; background: #e6f7ff; }
+
+        .table-wrap { overflow-x: auto; border: 1px solid #eef2f7; border-radius: 12px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; background: white; }
+        th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+        th { background: #fafafa; font-weight: 600; color: #1f2937; }
+        tr:hover td { background: #f8fafc; }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            border: 1px solid transparent;
+        }
+        .badge.success { background: #f6ffed; color: #166534; border-color: #b7eb8f; }
+        .badge.warning { background: #fff7e6; color: #9a5408; border-color: #ffe58f; }
+        .badge.danger { background: #fff1f0; color: #991b1b; border-color: #ffccc7; }
+
+        .progress-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: #f8fafc;
+            border: 1px solid #eef2f7;
+            min-width: 160px;
+        }
+        .progress-track { width: 90px; height: 8px; background: #e8e8e8; border-radius: 999px; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #1890ff, #52c41a); width: 0%; }
+
+        .tabs { display: flex; gap: 10px; margin-bottom: 12px; }
+        .tab {
+            padding: 8px 12px;
+            border-radius: 10px;
+            border: 1px solid #e5e7eb;
+            background: #fafafa;
+            cursor: pointer;
+            font-size: 14px;
+            color: #6b7280;
+            user-select: none;
+        }
+        .tab.active { border-color: #1890ff; background: #e6f7ff; color: #1890ff; }
+
+        .kv { display: grid; grid-template-columns: 120px 1fr; gap: 10px; font-size: 13px; }
+        .kv div { padding: 8px 0; border-bottom: 1px dashed #f0f0f0; }
+        .kv .k { color: #6b7280; }
+        .kv .v { color: #1f2937; }
+
+        .materials { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+        .mat {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid #eef2f7;
+            background: #f8fafc;
+        }
+        .mat strong { font-size: 13px; }
+        .mat p { font-size: 12px; color: #6b7280; margin-top: 4px; line-height: 1.5; }
+
+        .toast {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.82);
+            color: white;
+            padding: 12px 18px;
+            border-radius: 10px;
+            z-index: 9999;
+            font-size: 14px;
+        }
+
+        @media (max-width: 1200px) {
+            .layout { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 768px) {
+            .sidebar { width: 60px; }
+            .sidebar-logo h2, .sidebar-logo p,
+            .sidebar-item span:not(.sidebar-icon),
+            .sidebar-arrow { display: none; }
+            .sidebar-sublist.expanded { max-height: 0; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="sidebar">
+        <div class="sidebar-logo">
+            <h2>认定工作流程</h2>
+            <p>系统原型</p>
+        </div>
+
+        <div class="sidebar-item" onclick="window.location.href='数据面板.html'">
+            <div class="sidebar-item-content">
+                <span class="sidebar-icon">📊</span>
+                <span>数据面板</span>
+            </div>
+        </div>
+
+        <div class="sidebar-item" id="projectMenu">
+            <div class="sidebar-item-content">
+                <span class="sidebar-icon">📁</span>
+                <span>任务管理</span>
+            </div>
+            <span class="sidebar-arrow">▶</span>
+        </div>
+        <div class="sidebar-sublist" id="projectSubmenu">
+            <div class="sidebar-subitem" onclick="window.location.href='项目管理首页.html'"><span>📋</span> 任务准备</div>
+            <div class="sidebar-subitem" onclick="window.location.href='我要下单.html'"><span>🛒</span> 我要下单</div>
+            <div class="sidebar-subitem" id="archiveMenu" onclick="toggleArchiveSubmenu(event)">
+                <span>📦</span> 任务档案
+                <span class="sidebar-arrow" style="margin-left: auto;">▶</span>
+            </div>
+            <div class="sidebar-sublist" id="archiveSubmenu">
+                <div class="sidebar-subitem" onclick="window.location.href='考试材料.html'" style="padding-left: 56px;"><span>📝</span> 考试材料</div>
+                <div class="sidebar-subitem" onclick="window.location.href='考场资料.html'" style="padding-left: 56px;"><span>🏫</span> 考场资料</div>
+                <div class="sidebar-subitem" onclick="window.location.href='考生资料.html'" style="padding-left: 56px;"><span>👤</span> 考生资料</div>
+            </div>
+        </div>
+
+        <div class="sidebar-item active expanded" id="processMenu">
+            <div class="sidebar-item-content">
+                <span class="sidebar-icon">📋</span>
+                <span>认定流程</span>
+            </div>
+            <span class="sidebar-arrow">▶</span>
+        </div>
+        <div class="sidebar-sublist expanded" id="processSubmenu">
+            <div class="sidebar-subitem" onclick="window.location.href='任务选择.html'"><span>🏠</span> 任务选择</div>
+            <div class="sidebar-subitem" onclick="window.location.href='认定流程首页.html'"><span>📌</span> 流程首页</div>
+            <div class="sidebar-subitem" onclick="window.location.href='认定筹备.html'"><span>🔧</span> 认定筹备</div>
+            <div class="sidebar-subitem" onclick="window.location.href='认定前.html'"><span>📅</span> 认定前</div>
+            <div class="sidebar-subitem" onclick="window.location.href='理论笔试.html'"><span>📝</span> 理论笔试</div>
+            <div class="sidebar-subitem" onclick="window.location.href='实操考试.html'"><span>🔨</span> 实操考试</div>
+            <div class="sidebar-subitem" onclick="window.location.href='认定归档.html'"><span>📦</span> 认定归档</div>
+            <div class="sidebar-subitem active" onclick="window.location.href='申领补贴.html'"><span>💰</span> 申领补贴</div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h1>申领补贴</h1>
+            <div class="header-user">
+                <span>👤 管理员</span>
+                <span>|</span>
+                <span id="todayText">-</span>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="breadcrumb">
+                <a href="认定流程首页.html">认定流程</a>
+                <span>/</span>
+                <span>申领补贴</span>
+            </div>
+
+            <div class="page-header-section">
+                <h2>💰 申领补贴 · 材料核对与导出准备</h2>
+                <p>展示<strong>通过认定</strong>的学员列表，核对申领补贴所需材料是否齐全；支持查看学员信息与已具备材料信息，并提示缺失材料。</p>
+            </div>
+
+            <div class="layout">
+                <div class="card">
+                    <div class="card-title">
+                        <h3>✅ 通过认定学员</h3>
+                        <span class="muted">点击学员查看材料详情</span>
+                    </div>
+
+                    <div class="filter-row">
+                        <div class="field">
+                            <label>搜索</label>
+                            <input id="searchInput" placeholder="姓名/账号/班级" />
+                        </div>
+                        <div class="field">
+                            <label>班级</label>
+                            <select id="classFilter">
+                                <option value="">全部</option>
+                            </select>
+                        </div>
+                        <div style="margin-left:auto; display:flex; gap:10px; align-items:end;">
+                            <button class="button-secondary" id="resetBtn">重置</button>
+                            <button class="button" id="regenBtn">生成演示数据</button>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>学员</th>
+                                <th>账号</th>
+                                <th>班级</th>
+                                <th>通过时间</th>
+                                <th>材料齐全度</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                            </thead>
+                            <tbody id="tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">
+                        <h3>📄 学员补贴材料明细</h3>
+                        <span class="muted" id="selectedHint">未选择学员</span>
+                    </div>
+
+                    <div class="tabs">
+                        <div class="tab active" data-tab="info">学员信息</div>
+                        <div class="tab" data-tab="materials">材料清单</div>
+                    </div>
+
+                    <div id="panelInfo">
+                        <div class="kv" id="kv"></div>
+                    </div>
+                    <div id="panelMaterials" style="display:none;">
+                        <div class="materials" id="materialsList"></div>
+                    </div>
+
+                    <div style="margin-top: 12px; display:flex; gap:10px; flex-wrap:wrap;">
+                        <button class="button-secondary" id="markHaveBtn">标记随机补齐一项（演示）</button>
+                        <button class="button" id="exportBtn">导出材料核对单（演示）</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top: 16px;">
+                <div class="card-title">
+                    <h3>📌 说明</h3>
+                    <span class="muted">原型演示</span>
+                </div>
+                <div class="muted" style="line-height:1.7;">
+                    - 本模块以“通过认定学员”为对象，核对申领补贴所需材料是否齐全。<br>
+                    - 后续可对接“认定归档/任务档案”中的真实材料状态，实现自动同步。<br>
+                    - 导出为文本文件，便于原型演示材料清单与缺失项。
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+    const STORAGE_KEY = 'subsidy_students_v1';
+    const MATERIALS_KEY_PREFIX = 'subsidy_materials_v1:'; // + studentId
+
+    const REQUIRED_MATERIALS = [
+        { code: 'M001', name: '身份证复印件', note: '正反面复印件，清晰可辨' },
+        { code: 'M002', name: '社保缴纳证明', note: '近 6 个月社保缴纳记录' },
+        { code: 'M003', name: '银行卡信息', note: '开户行 + 卡号（用于补贴发放）' },
+        { code: 'M004', name: '证书/通过证明', note: '通过认定相关证明材料' },
+        { code: 'M005', name: '申请表/承诺书', note: '按补贴政策模板签署' },
+        { code: 'M006', name: '个人照片', note: '近期证件照电子版' }
+    ];
+
+    function toast(message) {
+        const el = document.getElementById('toast');
+        el.textContent = message;
+        el.style.display = 'block';
+        clearTimeout(window.__toastTimer);
+        window.__toastTimer = setTimeout(() => el.style.display = 'none', 1800);
+    }
+
+    function formatDateISO(d) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+    function unique(arr) { return Array.from(new Set(arr)); }
+
+    function loadStudents() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (!raw) return [];
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function saveStudents(list) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    }
+
+    function ensureMaterials(studentId) {
+        const key = MATERIALS_KEY_PREFIX + studentId;
+        try {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object') return parsed;
+            }
+        } catch (e) {}
+        // default: 2~4 items already have
+        const haveCount = Math.round(clamp(2 + Math.random() * 3, 0, REQUIRED_MATERIALS.length));
+        const shuffled = [...REQUIRED_MATERIALS].sort(() => Math.random() - 0.5);
+        const have = {};
+        shuffled.slice(0, haveCount).forEach(m => have[m.code] = true);
+        localStorage.setItem(key, JSON.stringify(have));
+        return have;
+    }
+
+    function saveMaterials(studentId, have) {
+        localStorage.setItem(MATERIALS_KEY_PREFIX + studentId, JSON.stringify(have || {}));
+    }
+
+    function generateDemo() {
+        const classes = ['2026-春季1班', '2026-春季2班', '企业专项A班'];
+        const names = ['张三','李四','王五','赵六','钱七','孙八','周九','吴十','郑一','王二','冯三','陈四'];
+        const list = Array.from({ length: 16 }).map((_, i) => {
+            const name = names[i % names.length] + (i >= names.length ? (i - names.length + 1) : '');
+            const cls = classes[i % classes.length];
+            const passDate = new Date();
+            passDate.setDate(passDate.getDate() - Math.floor(Math.random() * 20));
+            return {
+                id: `PASS-${String(i + 1).padStart(3, '0')}`,
+                name,
+                account: `stu${String(i + 1).padStart(3, '0')}`,
+                className: cls,
+                level: i % 3 === 0 ? '高级技师' : (i % 2 === 0 ? '技师' : '高级工'),
+                phone: '13' + String(Math.floor(100000000 + Math.random() * 899999999)),
+                idCard: '450***********' + String(1000 + i),
+                passAt: formatDateISO(passDate)
+            };
+        });
+        saveStudents(list);
+        // also refresh materials store
+        list.forEach(s => ensureMaterials(s.id));
+        return list;
+    }
+
+    function computeCompletion(have) {
+        const count = REQUIRED_MATERIALS.filter(m => !!have[m.code]).length;
+        const pct = Math.round((count / REQUIRED_MATERIALS.length) * 100);
+        return { count, pct, missing: REQUIRED_MATERIALS.length - count };
+    }
+
+    function statusBadge(pct) {
+        if (pct >= 100) return { text: '可申领', cls: 'success' };
+        if (pct >= 60) return { text: '待补齐', cls: 'warning' };
+        return { text: '材料缺失较多', cls: 'danger' };
+    }
+
+    function renderClassFilter(students) {
+        const el = document.getElementById('classFilter');
+        const classes = unique(students.map(s => s.className)).sort();
+        const current = el.value;
+        el.innerHTML = `<option value="">全部</option>` + classes.map(c => `<option value="${c}">${c}</option>`).join('');
+        el.value = classes.includes(current) ? current : '';
+    }
+
+    function renderTable(students) {
+        const q = document.getElementById('searchInput').value.trim().toLowerCase();
+        const classFilter = document.getElementById('classFilter').value;
+        const tbody = document.getElementById('tbody');
+
+        const filtered = students.filter(s => {
+            const hitSearch = !q || [s.name, s.account, s.className].join(' ').toLowerCase().includes(q);
+            const hitClass = !classFilter || s.className === classFilter;
+            return hitSearch && hitClass;
+        });
+
+        if (!filtered.length) {
+            tbody.innerHTML = `<tr><td colspan="7" style="color:#999; padding: 18px;">暂无数据</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = filtered.map(s => {
+            const have = ensureMaterials(s.id);
+            const c = computeCompletion(have);
+            const badge = statusBadge(c.pct);
+            return `
+                <tr data-stu="${s.id}">
+                    <td><strong>${s.name}</strong></td>
+                    <td>${s.account}</td>
+                    <td>${s.className}</td>
+                    <td>${s.passAt}</td>
+                    <td>
+                        <span class="progress-pill" title="已具备 ${c.count}/${REQUIRED_MATERIALS.length}">
+                            <span style="min-width: 52px;">${c.count}/${REQUIRED_MATERIALS.length}</span>
+                            <span class="progress-track"><span class="progress-fill" style="width:${c.pct}%"></span></span>
+                        </span>
+                    </td>
+                    <td><span class="badge ${badge.cls}">${badge.text}</span></td>
+                    <td><button class="button-secondary" style="padding:6px 10px; font-size:13px;" onclick="selectStudent('${s.id}')">查看</button></td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    let allStudents = [];
+    let currentStudentId = null;
+
+    function setTab(tabKey) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelector(`.tab[data-tab="${tabKey}"]`)?.classList.add('active');
+        document.getElementById('panelInfo').style.display = tabKey === 'info' ? 'block' : 'none';
+        document.getElementById('panelMaterials').style.display = tabKey === 'materials' ? 'block' : 'none';
+    }
+
+    function renderDetail(student) {
+        const hint = document.getElementById('selectedHint');
+        hint.textContent = student ? `${student.name}（${student.id}）` : '未选择学员';
+
+        const kv = document.getElementById('kv');
+        if (!student) {
+            kv.innerHTML = `<div class="k">提示</div><div class="v">请从左侧列表选择学员</div>`;
+            document.getElementById('materialsList').innerHTML = '';
+            return;
+        }
+
+        const have = ensureMaterials(student.id);
+        const c = computeCompletion(have);
+        const badge = statusBadge(c.pct);
+
+        kv.innerHTML = `
+            <div class="k">学员ID</div><div class="v">${student.id}</div>
+            <div class="k">姓名</div><div class="v">${student.name}</div>
+            <div class="k">账号</div><div class="v">${student.account}</div>
+            <div class="k">班级</div><div class="v">${student.className}</div>
+            <div class="k">等级</div><div class="v">${student.level}</div>
+            <div class="k">联系电话</div><div class="v">${student.phone}</div>
+            <div class="k">身份证号</div><div class="v">${student.idCard}</div>
+            <div class="k">通过时间</div><div class="v">${student.passAt}</div>
+            <div class="k">材料齐全度</div><div class="v"><span class="badge ${badge.cls}">${badge.text}</span>（已具备 ${c.count}/${REQUIRED_MATERIALS.length}，缺少 ${c.missing}）</div>
+        `;
+
+        const list = document.getElementById('materialsList');
+        list.innerHTML = REQUIRED_MATERIALS.map(m => {
+            const ok = !!have[m.code];
+            return `
+                <div class="mat">
+                    <div>
+                        <strong>${ok ? '✅' : '❌'} ${m.name}</strong>
+                        <p>${m.note}</p>
+                    </div>
+                    <span class="badge ${ok ? 'success' : 'warning'}">${ok ? '已具备' : '缺少'}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    window.selectStudent = function (studentId) {
+        currentStudentId = studentId;
+        const stu = allStudents.find(s => s.id === studentId);
+        renderDetail(stu);
+        setTab('info');
+    };
+
+    function markRandomHave() {
+        if (!currentStudentId) {
+            toast('请先选择学员');
+            return;
+        }
+        const have = ensureMaterials(currentStudentId);
+        const missing = REQUIRED_MATERIALS.filter(m => !have[m.code]);
+        if (!missing.length) {
+            toast('该学员材料已齐全');
+            return;
+        }
+        const pick = missing[Math.floor(Math.random() * missing.length)];
+        have[pick.code] = true;
+        saveMaterials(currentStudentId, have);
+        const stu = allStudents.find(s => s.id === currentStudentId);
+        renderTable(allStudents);
+        renderDetail(stu);
+        toast('已补齐：' + pick.name);
+    }
+
+    function exportChecklist() {
+        if (!currentStudentId) {
+            toast('请先选择学员');
+            return;
+        }
+        const stu = allStudents.find(s => s.id === currentStudentId);
+        const have = ensureMaterials(currentStudentId);
+        const lines = [
+            '【申领补贴材料核对单（原型导出）】',
+            '导出日期：' + formatDateISO(new Date()),
+            '',
+            `学员：${stu.name}（${stu.id}）`,
+            `账号：${stu.account}  班级：${stu.className}  等级：${stu.level}`,
+            `通过时间：${stu.passAt}`,
+            '',
+            '材料清单：'
+        ];
+        REQUIRED_MATERIALS.forEach(m => {
+            lines.push(`- ${have[m.code] ? '✅' : '❌'} ${m.name}（${m.code}）`);
+        });
+        const content = lines.join('\n');
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `补贴材料核对单_${stu.name}_${stu.id}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        toast('已导出核对单（原型）');
+    }
+
+    function bindTabs() {
+        document.querySelectorAll('.tab').forEach(t => {
+            t.addEventListener('click', () => setTab(t.getAttribute('data-tab')));
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('todayText').textContent = formatDateISO(new Date());
+
+        allStudents = loadStudents();
+        if (!allStudents.length) allStudents = generateDemo();
+
+        renderClassFilter(allStudents);
+        renderTable(allStudents);
+        bindTabs();
+        renderDetail(null);
+
+        document.getElementById('searchInput').addEventListener('input', () => renderTable(allStudents));
+        document.getElementById('classFilter').addEventListener('change', () => renderTable(allStudents));
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('classFilter').value = '';
+            renderTable(allStudents);
+            toast('已重置筛选条件');
+        });
+        document.getElementById('regenBtn').addEventListener('click', () => {
+            allStudents = generateDemo();
+            renderClassFilter(allStudents);
+            renderTable(allStudents);
+            currentStudentId = null;
+            renderDetail(null);
+            toast('演示数据已生成');
+        });
+        document.getElementById('markHaveBtn').addEventListener('click', markRandomHave);
+        document.getElementById('exportBtn').addEventListener('click', exportChecklist);
+    });
+</script>
+<script src="common.js"></script>
+</body>
+</html>
+

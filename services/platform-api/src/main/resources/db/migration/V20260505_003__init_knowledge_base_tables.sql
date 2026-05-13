@@ -1,0 +1,103 @@
+CREATE TABLE kb_space (
+  id BIGINT NOT NULL PRIMARY KEY,
+  tenant_id BIGINT NOT NULL,
+  code VARCHAR(64) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  scope_type VARCHAR(32) NOT NULL,
+  owner_user_id BIGINT NULL,
+  category_code VARCHAR(64) NULL,
+  description VARCHAR(512) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'enabled',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  created_by BIGINT NULL,
+  updated_by BIGINT NULL,
+  deleted TINYINT NOT NULL DEFAULT 0,
+  UNIQUE KEY uk_kb_space_tenant_code (tenant_id, code, deleted),
+  KEY idx_kb_space_scope_status (tenant_id, scope_type, status),
+  KEY idx_kb_space_owner (tenant_id, owner_user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE kb_space_role (
+  id BIGINT NOT NULL PRIMARY KEY,
+  tenant_id BIGINT NOT NULL,
+  space_id BIGINT NOT NULL,
+  role_code VARCHAR(64) NOT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  created_by BIGINT NULL,
+  updated_by BIGINT NULL,
+  deleted TINYINT NOT NULL DEFAULT 0,
+  UNIQUE KEY uk_kb_space_role (tenant_id, space_id, role_code, deleted),
+  KEY idx_kb_space_role_space (tenant_id, space_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE kb_document (
+  id BIGINT NOT NULL PRIMARY KEY,
+  tenant_id BIGINT NOT NULL,
+  space_id BIGINT NOT NULL,
+  file_id BIGINT NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  category_code VARCHAR(64) NULL,
+  source_type VARCHAR(32) NOT NULL DEFAULT 'file',
+  parser_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  index_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  chunk_count INT NOT NULL DEFAULT 0,
+  text_sha256 VARCHAR(128) NULL,
+  error_message VARCHAR(512) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'indexing',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  created_by BIGINT NULL,
+  updated_by BIGINT NULL,
+  deleted TINYINT NOT NULL DEFAULT 0,
+  KEY idx_kb_document_space (tenant_id, space_id, status),
+  KEY idx_kb_document_file (tenant_id, file_id),
+  KEY idx_kb_document_category (tenant_id, category_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE kb_chunk (
+  id BIGINT NOT NULL PRIMARY KEY,
+  tenant_id BIGINT NOT NULL,
+  space_id BIGINT NOT NULL,
+  document_id BIGINT NOT NULL,
+  chunk_no INT NOT NULL,
+  heading VARCHAR(255) NULL,
+  page_no INT NULL,
+  content TEXT NOT NULL,
+  token_count INT NOT NULL DEFAULT 0,
+  embedding_provider VARCHAR(64) NULL,
+  embedding_model VARCHAR(128) NULL,
+  vector_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  vector_id VARCHAR(128) NULL,
+  metadata_json TEXT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  created_by BIGINT NULL,
+  updated_by BIGINT NULL,
+  deleted TINYINT NOT NULL DEFAULT 0,
+  UNIQUE KEY uk_kb_chunk_no (tenant_id, document_id, chunk_no, deleted),
+  KEY idx_kb_chunk_space (tenant_id, space_id),
+  KEY idx_kb_chunk_document (tenant_id, document_id),
+  FULLTEXT KEY ft_kb_chunk_content (content)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE kb_index_task (
+  id BIGINT NOT NULL PRIMARY KEY,
+  tenant_id BIGINT NOT NULL,
+  space_id BIGINT NOT NULL,
+  document_id BIGINT NOT NULL,
+  task_type VARCHAR(32) NOT NULL DEFAULT 'ingest',
+  status VARCHAR(32) NOT NULL DEFAULT 'pending',
+  retry_count INT NOT NULL DEFAULT 0,
+  error_message VARCHAR(512) NULL,
+  started_at DATETIME NULL,
+  finished_at DATETIME NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  created_by BIGINT NULL,
+  updated_by BIGINT NULL,
+  deleted TINYINT NOT NULL DEFAULT 0,
+  KEY idx_kb_index_task_document (tenant_id, document_id),
+  KEY idx_kb_index_task_status (tenant_id, status, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -1,0 +1,247 @@
+/* ==========================================================
+   Prototype theme (aligned to:
+   “培训部数字化平台｜完整管理系统原型.html” look & feel)
+
+   Notes:
+   - Most pages have large inline <style> blocks loaded AFTER this file.
+     To ensure visual consistency, this stylesheet uses a few strategic
+     !important overrides (colors, radii, shadows, borders).
+   ========================================================== */
+
+:root{
+  /* Template tokens (light default) */
+  --bg:#f8fafc;
+  --panel:#ffffff;
+  --card:#f1f5f9;
+  --text:#1e293b;
+  --muted:#64748b;
+  --line:#e2e8f0;
+  --brand:#3b82f6;
+  --ok:#10b981;
+  --warn:#f59e0b;
+  --bad:#ef4444;
+  --chip:#e2e8f0;
+  --shadow: 0 10px 30px rgba(0,0,0,.10);
+  --radius: 14px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  /* Back-compat tokens used across existing pages */
+  --primary: var(--brand);
+  --primary-strong: #1d4ed8;
+  --primary-soft: rgba(59,130,246,.12);
+  --success: var(--ok);
+  --success-soft: rgba(16,185,129,.12);
+  --warning: var(--warn);
+  --warning-soft: rgba(245,158,11,.14);
+  --danger: var(--bad);
+  --danger-soft: rgba(239,68,68,.12);
+  --border: var(--line);
+  --surface: var(--panel);
+}
+
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  margin:0;
+  font-family: var(--sans) !important;
+  color: var(--text) !important;
+  background: var(--bg) !important;
+}
+a{ color: var(--brand); text-decoration:none; }
+a:hover{ text-decoration:underline; }
+
+/* ----------------------------------------------------------
+   Layout surfaces (sidebar/header/content)
+   ---------------------------------------------------------- */
+.container{
+  background: var(--bg) !important;
+}
+
+.sidebar{
+  background: linear-gradient(180deg, rgba(255,255,255,.96) 0%, rgba(248,250,252,.78) 100%) !important;
+  border-right: 1px solid rgba(0,0,0,.10) !important;
+  box-shadow: 0 12px 30px rgba(2,6,23,.06) !important;
+}
+
+.sidebar-logo{
+  border-bottom: 1px solid rgba(0,0,0,.08) !important;
+}
+
+.sidebar-logo p,
+.sidebar-subitem,
+.header-user,
+.sidebar-arrow{
+  color: var(--muted) !important;
+}
+
+.sidebar-item{
+  border-radius: 10px;
+  margin: 2px 10px;
+}
+.sidebar-item:hover{
+  background: rgba(59,130,246,.08) !important;
+}
+.sidebar-item.active{
+  background: rgba(59,130,246,.15) !important;
+  color: #1e40af !important;
+}
+.sidebar-item.active .sidebar-arrow{
+  color: rgba(30,64,175,.85) !important;
+}
+
+.sidebar-subitem{
+  border-radius: 10px;
+  margin: 2px 10px;
+}
+.sidebar-subitem:hover{
+  background: rgba(59,130,246,.08) !important;
+  color: #1e40af !important;
+}
+.sidebar-subitem.active{
+  background: rgba(59,130,246,.14) !important;
+  color: #1e40af !important;
+  border-right: 3px solid var(--brand) !important;
+}
+
+.header{
+  background: rgba(255,255,255,.92) !important;
+  border-bottom: 1px solid rgba(0,0,0,.08) !important;
+  box-shadow: 0 10px 30px rgba(2,6,23,.06) !important;
+  backdrop-filter: blur(10px);
+}
+
+.content{
+  background: transparent !important;
+}
+
+/* ----------------------------------------------------------
+   Cards / panels (most pages use these)
+   ---------------------------------------------------------- */
+.dashboard-card,
+.hero-card,
+.card,
+.panel,
+.section,
+.table-card,
+.form-card,
+.info-card,
+.detail-card{
+  background: rgba(255,255,255,.90) !important;
+  border: 1px solid rgba(0,0,0,.08) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: var(--shadow) !important;
+}
+
+/* Some pages use plain white blocks */
+div[style*="background: white"],
+div[style*="background-color: white"]{
+  border-radius: var(--radius);
+}
+
+/* ----------------------------------------------------------
+   Buttons
+   ---------------------------------------------------------- */
+button,
+.btn,
+.btn-primary,
+.btn-secondary{
+  font-family: inherit !important;
+}
+
+.btn-primary{
+  background: var(--brand) !important;
+  border: 1px solid rgba(29,78,216,.25) !important;
+  color: #fff !important;
+  border-radius: 10px !important;
+  box-shadow: 0 10px 20px rgba(59,130,246,.18) !important;
+}
+.btn-primary:hover{
+  filter: brightness(.98);
+}
+
+.btn-secondary{
+  background: rgba(2,6,23,.04) !important;
+  border: 1px solid rgba(0,0,0,.10) !important;
+  color: var(--text) !important;
+  border-radius: 10px !important;
+}
+.btn-secondary:hover{
+  background: rgba(2,6,23,.06) !important;
+}
+
+/* ----------------------------------------------------------
+   Inputs / selects
+   ---------------------------------------------------------- */
+input, select, textarea{
+  font-family: inherit !important;
+  color: var(--text) !important;
+}
+input, select, textarea{
+  background: rgba(255,255,255,.86) !important;
+  border: 1px solid rgba(0,0,0,.12) !important;
+  border-radius: 10px !important;
+}
+input:focus, select:focus, textarea:focus{
+  outline: none !important;
+  border-color: rgba(59,130,246,.55) !important;
+  box-shadow: 0 0 0 3px rgba(59,130,246,.15) !important;
+}
+
+/* ----------------------------------------------------------
+   Tables
+   ---------------------------------------------------------- */
+table{
+  border-collapse: separate;
+  border-spacing: 0;
+}
+table, .data-table{
+  background: rgba(255,255,255,.90) !important;
+  border: 1px solid rgba(0,0,0,.08) !important;
+  border-radius: var(--radius) !important;
+  overflow: hidden;
+  box-shadow: var(--shadow) !important;
+}
+th{
+  background: rgba(2,6,23,.03) !important;
+  color: var(--muted) !important;
+}
+td, th{
+  border-bottom: 1px solid rgba(0,0,0,.06) !important;
+}
+tr:hover td{
+  background: rgba(59,130,246,.04) !important;
+}
+
+/* ----------------------------------------------------------
+   Status pills / tags (common patterns)
+   ---------------------------------------------------------- */
+.tag, .pill, .chip, .badge{
+  border-radius: 999px !important;
+  border: 1px solid rgba(0,0,0,.10) !important;
+  background: rgba(2,6,23,.03) !important;
+  color: var(--muted) !important;
+}
+
+.tag.ok, .badge.ok, .pill.ok{
+  background: rgba(16,185,129,.12) !important;
+  color: var(--ok) !important;
+  border-color: rgba(16,185,129,.22) !important;
+}
+.tag.warn, .badge.warn, .pill.warn{
+  background: rgba(245,158,11,.14) !important;
+  color: var(--warn) !important;
+  border-color: rgba(245,158,11,.24) !important;
+}
+.tag.bad, .badge.bad, .pill.bad{
+  background: rgba(239,68,68,.12) !important;
+  color: var(--bad) !important;
+  border-color: rgba(239,68,68,.22) !important;
+}
+
+/* Unified toast (many pages create their own, this is a fallback) */
+#toast, .toast{
+  border-radius: 12px !important;
+  box-shadow: var(--shadow) !important;
+}
+
