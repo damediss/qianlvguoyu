@@ -7,7 +7,7 @@ spring:
   application:
     name: platform-api
   datasource:
-    url: ${MYSQL_URL:jdbc:mysql://localhost:3308/gjjd_test?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    url: ${MYSQL_URL:jdbc:mysql://192.168.1.200:3308/gjjd_test?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:guoyu_dev!513}
     driver-class-name: com.mysql.cj.jdbc.Driver
