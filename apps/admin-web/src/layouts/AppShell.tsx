@@ -45,6 +45,7 @@ export function AppShell({ children }: AppShellProps) {
         </div>
         <Menu
           className="app-menu"
+          theme="light"
           mode="inline"
           selectedKeys={['knowledge']}
           items={menuItems}
