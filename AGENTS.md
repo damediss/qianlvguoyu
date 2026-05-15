@@ -179,13 +179,13 @@ src/
 
 本地开发必需变量：
 
-| 变量 | 说明 |
-|---|---|
-| `SERVER_PORT` | 后端端口，默认 8080 |
-| `MYSQL_URL` | 本地 MySQL 使用端口 3308（非标准 3306） |
-| `MYSQL_USERNAME` | 数据库用户 |
-| `MYSQL_PASSWORD` | 数据库密码 |
-| `JWT_SECRET` | 至少 32 位随机字符串 |
+| 变量 | 说明                           |
+|---|------------------------------|
+| `SERVER_PORT` | 后端端口，默认 8080                 |
+| `MYSQL_URL` | 本地 MySQL jdbc:mysql://192.168.1.200:3308/gjjd_test |
+| `MYSQL_USERNAME` | 数据库用户 root                   |
+| `MYSQL_PASSWORD` | 数据库密码 guoyu_dev!513          |
+| `JWT_SECRET` | 至少 32 位随机字符串                 |
 
 Redis 不是当前代码路径的硬依赖，可跳过。
 

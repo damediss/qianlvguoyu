@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppShell } from './layouts/AppShell';
 import { AuthGate } from './components/AuthGate';
 import { KnowledgePage } from './pages/knowledge/KnowledgePage';
+import { WorkTypePage } from './pages/exam/WorkTypePage';
 import { appTheme } from './theme';
 import './styles/tokens.css';
 import './styles/global.css';
@@ -19,14 +20,17 @@ const queryClient = new QueryClient({
   },
 });
 
+const pageMap = {
+  knowledge: <KnowledgePage />,
+  'exam-work-type': <WorkTypePage />,
+};
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ConfigProvider locale={zhCN} theme={appTheme}>
       <QueryClientProvider client={queryClient}>
         <AuthGate>
-          <AppShell>
-            <KnowledgePage />
-          </AppShell>
+          <AppShell pageMap={pageMap} />
         </AuthGate>
       </QueryClientProvider>
     </ConfigProvider>

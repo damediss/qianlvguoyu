@@ -50,3 +50,8 @@ platform:
   file:
     storage-provider: ${FILE_STORAGE_PROVIDER:local}
     local-root: ${FILE_LOCAL_ROOT:./storage/files}
+
+
+logging:
+  level:
+    com.guoyu.platform.exam.mapper: DEBUG
