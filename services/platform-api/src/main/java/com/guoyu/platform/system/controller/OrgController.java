@@ -1,5 +1,7 @@
 package com.guoyu.platform.system.controller;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.system.dto.OrgCreateReq;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequestMapping("/system/orgs")
+@Slf4j
 public class OrgController {
 
   private final OrgApplicationService orgApplicationService;

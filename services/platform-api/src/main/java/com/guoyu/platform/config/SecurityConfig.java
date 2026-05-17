@@ -1,5 +1,7 @@
 package com.guoyu.platform.config;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.guoyu.platform.security.RestAccessDeniedHandler;
 import com.guoyu.platform.security.RestAuthenticationEntryPoint;
 import com.guoyu.platform.security.jwt.JwtAuthenticationFilter;
@@ -24,6 +26,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 @EnableMethodSecurity
 @EnableConfigurationProperties({JwtProperties.class, FileStorageProperties.class})
+@Slf4j
 public class SecurityConfig {
 
   @Bean

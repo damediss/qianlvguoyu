@@ -1,5 +1,7 @@
 package com.guoyu.platform.auth.controller;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.guoyu.platform.auth.dto.LoginReq;
 import com.guoyu.platform.auth.service.AuthApplicationService;
 import com.guoyu.platform.auth.vo.CurrentUserVO;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/auth")
+@Slf4j
 public class AuthController {
 
   private final AuthApplicationService authApplicationService;

@@ -1,5 +1,7 @@
 package com.guoyu.platform.system.service;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.common.api.PageResponse;
@@ -32,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 @Service
+@Slf4j
 public class RoleApplicationService {
 
   private final RoleMapper roleMapper;

@@ -1,5 +1,7 @@
 package com.guoyu.platform.exam.controller;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequestMapping("/exam")
+@Slf4j
 public class ExamWorkTypeController {
 
   private final ExamWorkTypeApplicationService service;

@@ -1,11 +1,14 @@
 package com.guoyu.platform.knowledge.service;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 @Component
+@Slf4j
 public class KnowledgeTextChunker {
 
   private static final int DEFAULT_MAX_CHARS = 1200;

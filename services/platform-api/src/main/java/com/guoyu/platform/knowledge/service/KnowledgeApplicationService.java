@@ -1,5 +1,7 @@
 package com.guoyu.platform.knowledge.service;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.ai.entity.AiGenerationDraftEntity;
 import com.guoyu.platform.ai.mapper.AiGenerationDraftMapper;
@@ -54,6 +56,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 @Service
+@Slf4j
 public class KnowledgeApplicationService {
 
   private static final String ROLE_PLATFORM_ADMIN = "PLATFORM_ADMIN";

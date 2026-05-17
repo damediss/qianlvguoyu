@@ -69,8 +69,10 @@ Spring Security + Sa-Token
 Flyway
 MapStruct
 MySQL 8.4
-Redis 协议缓存
+Redis 
 Flowable 7
+Lombok
+Logback
 
 React + Vite + TypeScript + Ant Design Pro
 Ant Design + ProComponents
@@ -111,6 +113,8 @@ Docker Engine / Docker Compose
 ## 一键启动开发环境
 
 macOS 下可双击根目录 `start-dev.command` 启动一期开发环境。
+启动时添加 -Dspring.profiles.active=dev 或 -Dspring.profiles.active=prod
+，logback-spring.xml 中的 <springProfile> 自动切换。默认无 profile 时行为等同于 dev
 
 脚本会先检查本机端口：
 

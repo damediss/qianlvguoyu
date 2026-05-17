@@ -1,5 +1,7 @@
 package com.guoyu.platform.auth.service;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.auth.dto.LoginReq;
 import com.guoyu.platform.auth.vo.CurrentUserVO;
@@ -29,6 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Slf4j
 public class AuthApplicationService {
 
   private final TenantMapper tenantMapper;

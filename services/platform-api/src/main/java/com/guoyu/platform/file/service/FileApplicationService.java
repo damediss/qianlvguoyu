@@ -1,5 +1,7 @@
 package com.guoyu.platform.file.service;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
@@ -29,6 +31,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
+@Slf4j
 public class FileApplicationService {
 
   private final FileMapper fileMapper;
