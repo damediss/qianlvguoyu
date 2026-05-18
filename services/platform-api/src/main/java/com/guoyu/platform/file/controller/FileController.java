@@ -1,5 +1,7 @@
 package com.guoyu.platform.file.controller;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.file.service.FileApplicationService;
@@ -22,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Validated
 @RestController
 @RequestMapping("/files")
+@Slf4j
 public class FileController {
 
   private final FileApplicationService fileApplicationService;

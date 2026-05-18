@@ -1,5 +1,7 @@
 package com.guoyu.platform.knowledge.service;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.file.entity.FileEntity;
@@ -18,6 +20,7 @@ import org.springframework.util.StringUtils;
 import org.xml.sax.SAXException;
 
 @Component
+@Slf4j
 public class TikaKnowledgeDocumentParser implements KnowledgeDocumentParser {
 
   private static final int MAX_EXTRACT_CHARS = 2_000_000;

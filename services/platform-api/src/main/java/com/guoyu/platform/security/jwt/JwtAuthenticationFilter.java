@@ -1,5 +1,7 @@
 package com.guoyu.platform.security.jwt;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.entity.UserEntity;
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
+@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
   private final JwtTokenService jwtTokenService;

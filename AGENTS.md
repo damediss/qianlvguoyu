@@ -1,336 +1,226 @@
-# AGENTS.md
+﻿# AGENTS.md
 
-本文件给在本项目中工作的 AI Agent / Codex 使用。进入仓库后先阅读本文件，再阅读对应目录下的 `README.md` 和需求文档。
+本文件给在本项目中工作的 AI Agent / Codex 使用。进入仓库后先阅读本文件，再按需加载对应目录下的文档。
 
-## 项目定位
+## 阅读顺序
 
-本项目是“千铝国昱云平台”资料、原型、代码和交付物的统一工作区。目标是建设覆盖培训、课程、题库、考试、认定、竞赛、补贴、项目管理、文件归档、AI Agent、MCP 工具和工作流的综合业务平台。
+按优先级从高到低，Agent 在处理任务时应按需逐层深入：
 
-当前阶段以“平台底座 + 培训学习考试闭环”为一期 MVP，不追求一次性完成全业务大平台。
+1. `README.md` — 项目概述、目录结构、技术栈、一期范围、一键启动
+2. `docs/README.md` — 文档分区说明
+3. `docs/04_requirements/phase1/README.md` — 一期可编码规格
+4. `docs/04_requirements/phase1/01_一期MVP功能清单.md` — 一期范围与不做范围
+5. `docs/04_requirements/phase1/02_基础表结构设计.md` — 涉及数据库时必须先读
+6. `docs/04_requirements/phase1/03_第一批API合同.md` — 涉及接口时必须先读
+7. `docs/04_requirements/phase1/04_前端页面清单.md` — 涉及前端页面时必须先读
+8. `docs/04_requirements/phase1/05_测试验收清单.md` — 提交实现前对照验收
+9. `docs/05_decisions/开发框架选型建议.md` 与 `docs/05_decisions/云平台技术路线选型建议.md` — 技术选型或架构变更时必须遵守
 
-## 首要阅读顺序
+---
 
-1. 根目录 `README.md`：了解目录放置规则。
-2. `docs/README.md`：了解文档分区。
-3. `docs/04_requirements/phase1/README.md`：了解一期可编码规格。
-4. `docs/04_requirements/phase1/01_一期MVP功能清单.md`：确认一期范围和不做范围。
-5. `docs/04_requirements/phase1/02_基础表结构设计.md`：涉及数据库时必须阅读。
-6. `docs/04_requirements/phase1/03_第一批API合同.md`：涉及接口时必须阅读。
-7. `docs/04_requirements/phase1/04_前端页面清单.md`：涉及前端页面时必须阅读。
-8. `docs/04_requirements/phase1/05_测试验收清单.md`：提交实现前对照验收。
-9. `docs/05_decisions/开发框架选型建议.md` 与 `docs/05_decisions/云平台技术路线选型建议.md`：涉及技术选型、架构边界或新增工程时必须遵守。
+## 当前项目状态
 
-## 目录规则
+### 已实现
+- **平台底座**：租户管理、组织管理、用户管理、角色权限、菜单权限（`system/`、`auth/`、`tenant/`、`security/`）
+- **知识库**：知识库 CRUD、文档管理、权限控制（`knowledge/`）
+- **数据库**：5 个 Flyway 迁移已就绪（含初始化表、Demo 数据、知识库表）
+- **前端管理端**：知识库页面（`apps/admin-web/src/pages/knowledge/`），登录页，AppShell 布局
 
-| 目录 | 用途 |
-| --- | --- |
-| `docs/` | 需求、方案、交付文档、台账、技术决策 |
-| `prototypes/` | HTML 原型、系统截图、流程演示页面 |
-| `apps/` | 正式前端应用 |
-| `services/` | 正式后端服务 |
-| `packages/` | 共享类型、UI 组件、内部 SDK |
-| `ai/` | Prompt、Skill、Agent 配置、知识库目录规范 |
-| `workflows/` | BPMN、n8n、流程自动化规则 |
-| `infra/` | Docker、Nginx、数据库、环境变量模板 |
-| `scripts/` | 文档生成、数据处理、检查和转换脚本 |
-| `data/` | 导入模板、脱敏样例、业务字典 |
-| `assets/` | 公共图片、图标、演示素材和素材索引 |
-| `outputs/` | 生成产物、渲染检查、PDF、截图 |
-| `archive/` | 历史资料和暂未整理文件 |
+### 空壳/待实现
+- `course/`、`exam/`、`question/`、`training/`：后端包目录存在但无业务代码
+- 前端对应页面（dashboard/、system/、course/、question/、exam/、training/、workflow/、ai/）均未创建
+- 学员端（`apps/student-web/`）未创建
 
-放置约束：
+### 独立服务状态
+- `services/ai-gateway/`：仅 README，无代码
+- `services/mcp-server/`：仅 README，无代码
+- `services/file-service/`：仅 README，无代码
+- `services/workflow-service/`：仅 README，无代码
 
-1. 新需求、流程图、业务表格优先放入 `docs/04_requirements/`。
-2. 技术路线、架构决策、选型记录放入 `docs/05_decisions/`。
-3. HTML 原型放入 `prototypes/`，不要迁入正式前端源码。
-4. 正式 React 等前端代码放入 `apps/`。
-5. Java、AI Gateway、MCP、文件、工作流等后端代码放入 `services/`。
-6. 生成物放入 `outputs/`，不要把生成物当作需求源头。
-7. 不提交真实密钥、本地缓存、`.DS_Store`、临时文件和大型二进制素材。
+---
 
-## 一期默认范围
+## 目录放置约束
 
-一期目标是跑通“平台底座 + 培训学习考试闭环”：
+目录结构详见 `README.md`。Agent 必须遵守以下放置规则：
 
-1. 平台管理员能创建租户、组织、用户、角色和菜单权限。
-2. 课程人员能维护课程、章节、题库和试卷。
-3. 培训负责人能发布考试安排。
-4. 学员能登录、学习章节、参加考试、查看成绩和错题。
-5. 课程发布支持提交、通过、驳回和记录留痕。
-6. AI 样板能生成课程大纲草稿，但不能自动发布。
+1. 新需求、流程图、业务表格 → `docs/04_requirements/`
+2. 技术路线、架构决策、选型记录 → `docs/05_decisions/`
+3. HTML 原型 → `prototypes/`，不可混入正式前端源码
+4. 正式 React 等前端代码 → `apps/`
+5. Java、AI Gateway、MCP、文件、工作流等后端代码 → `services/`
+6. 生成产物 → `outputs/`，不可当作需求源头
+7. 不提交真实密钥、本地缓存、`.DS_Store`、临时文件和大型二进制素材
 
-一期不默认做：
+---
 
-1. 竞赛全流程、认定全流程、补贴全流程。
-2. 复杂驾驶舱、领导大屏、经营分析。
-3. 短信登录、微信登录、企微登录、SSO。
-4. 多租户计费、套餐、客户自助开通。
-5. 自动组卷、随机抽题策略、题目难度算法。
-6. 完整 Agent 编排和自动执行。
-7. 客户侧 n8n 配置能力。
-8. Kubernetes、全量微服务、细业务服务拆分。
+## 技术约束
 
-## 技术路线
+技术栈详见 `README.md` 和 `docs/05_decisions/`。以下是与代码实现直接相关的约束。
 
-默认技术栈：
+### 总体架构口径
 
-```text
-Java 21
-Spring Boot 3.5.x
-Maven
-MyBatis-Plus
-Spring Security + Sa-Token
-Flyway
-MapStruct
-MySQL 8.4
-Redis 协议缓存
-Flowable 7
-React + Vite + TypeScript + Ant Design Pro
-Ant Design + ProComponents
-TanStack Query
-Zustand
-ECharts
-TypeScript MCP SDK
-Docker Engine / Docker Compose
+1. Java / Spring Boot 做核心业务主干，一期采用可控服务化，不做全量微服务
+2. 核心业务集中在 `services/platform-api/`，不要拆出 `course-service`、`exam-service` 等细业务服务
+3. AI、MCP、文件、工作流保持独立工程边界，但一期可先在 `platform-api` 内用包隔离
+4. Flowable 管核心业务流程状态，n8n 只做内部自动化/通知/定时
+
+### 后端规则
+
+包结构（`services/platform-api/src/main/java/com/guoyu/platform/`）：
+
+```
+common/  config/  security/  tenant/  system/
+file/  workflow/  course/  question/  exam/  training/
+ai/  integration/
 ```
 
-总体架构口径：
+分层约束：
 
-1. Java / Spring Boot 做核心业务主干。
-2. 一期采用可控服务化，不做全量微服务。
-3. 核心业务集中在 `services/platform-api/`。
-4. AI、MCP、文件、工作流等能力保持清晰边界。
-5. Flowable 管核心业务流程状态。
-6. n8n 只做内部自动化、通知、定时和低风险胶水层。
-7. AI Gateway 是统一 AI 能力入口。
-8. MCP 是 AI 调用受控业务工具的协议层。
-
-## 服务边界
-
-| 服务 | 目录 | 职责 |
-| --- | --- | --- |
-| 核心业务主服务 | `services/platform-api/` | 账号权限、租户组织、课程、题库、考试、学习记录、成绩、错题、统一审计和核心业务 API |
-| AI Gateway | `services/ai-gateway/` | 模型调用、Prompt 编排、课程大纲草稿生成、材料检查、AI 任务记录 |
-| MCP Server | `services/mcp-server/` | 暴露受控 MCP Tool，只调用平台 API，不直连数据库 |
-| 文件服务 | `services/file-service/` | 文件元数据、上传、下载、预签名 URL、删除、OSS/COS 适配 |
-| 工作流服务 | `services/workflow-service/` | 流程定义、审批任务、流程记录；一期可先集成在 `platform-api`，但按独立边界设计 |
-
-不要一开始拆出 `course-service`、`exam-service`、`tenant-service`、`user-service` 等细业务服务。账号、租户、权限、审计、核心业务规则必须统一。
-
-## 后端规则
-
-后端主工程默认放在 `services/platform-api/`。
-
-推荐包结构：
-
-```text
-services/platform-api/
-  src/main/java/
-    com/guoyu/platform/
-      PlatformApplication.java
-      common/
-      config/
-      security/
-      tenant/
-      system/
-      file/
-      workflow/
-      course/
-      question/
-      exam/
-      training/
-      ai/
-      integration/
-```
-
-分层规则：
-
-| 层 | 命名 | 说明 |
-| --- | --- | --- |
-| Controller | `*Controller` | REST API，只做参数接收、权限入口和结果返回 |
+| 层 | 命名 | 职责 |
+|---|---|---|
+| Controller | `*Controller` | REST API，参数接收、权限入口、结果返回 |
 | Application | `*ApplicationService` | 用例编排、事务边界、跨领域协调 |
-| Domain | `*DomainService` / 领域对象 | 核心业务规则 |
-| Repository | `*Repository` / `*Mapper` | 数据访问接口和 MyBatis-Plus 数据访问 |
-| Entity | `*Entity` | 数据库表映射 |
+| Domain | `*DomainService` | 核心业务规则 |
+| Repository | `*Repository` / `*Mapper` | MyBatis-Plus 数据访问 |
+| Entity | `*Entity` | 数据库表映射（不直接暴露给前端） |
 | DTO | `*CreateReq`、`*UpdateReq`、`*QueryReq` | 请求对象 |
 | VO | `*VO`、`*DetailVO` | 返回对象 |
 | Converter | `*Converter` | MapStruct 转换 |
 
 执行规则：
 
-1. Controller 不直接写 SQL。
-2. Entity 不直接暴露给前端。
-3. 所有列表接口使用统一分页结构。
-4. 所有写操作记录操作日志。
-5. 涉及企业、项目、用户的数据必须带 `tenant_id` 和数据权限过滤。
-6. 后端是权限最终裁决点，前端只做展示控制。
-7. 文件上传只返回文件 ID、文件名、大小、类型和访问策略，不把文件内容存数据库。
-8. AI / MCP 调用必须走受控 API 或 Application 层能力，不能绕过权限直接访问 Mapper。
+1. Controller 不直接写 SQL，Entity 不直接暴露给前端
+2. 所有列表接口使用统一分页结构，所有写操作记录操作日志
+3. 涉及企业/项目/用户的数据必须带 `tenant_id` 和数据权限过滤
+4. 后端是权限最终裁决点，前端只做展示控制
+5. 文件上传只返回文件 ID、文件名、大小、类型和访问策略，不存文件内容到数据库
+6. AI / MCP 调用必须走受控 API 或 Application 层，不能绕过权限直接访问 Mapper
+7. API 统一返回结构：`{ code, message, data }`，分页数据包裹在 `data` 中，含 `total`、`page`、`size`
 
-## 数据库规则
+### 数据库规则
 
-1. 默认使用 MySQL。
-2. 主键使用雪花 ID，数据库类型统一 `BIGINT`。
-3. 多租户字段统一使用 `tenant_id`。
-4. 业务主表默认包含 `id`、`tenant_id`、`created_at`、`updated_at`、`created_by`、`updated_by`、`deleted`。
-5. 使用 Flyway 管理迁移，迁移脚本放在 `services/platform-api/src/main/resources/db/migration/`。
-6. 逻辑删除通过统一字段实现，不在业务代码里手动拼接删除条件。
-7. 空库必须能执行全部 Flyway 迁移成功。
+1. MySQL 8.4，主键使用雪花 ID，类型统一 `BIGINT`
+2. 多租户字段统一 `tenant_id`，逻辑删除通过 `deleted` 字段实现（MyBatis-Plus 自动处理，不手写拼接条件）
+3. 业务主表必须包含：`id`、`tenant_id`、`created_at`、`updated_at`、`created_by`、`updated_by`、`deleted`
+4. 使用 Flyway 管理迁移，脚本放在 `services/platform-api/src/main/resources/db/migration/`
+5. 迁移命名：`V{YYYYMMDD}_{序号}__{描述}.sql`
+6. 空库必须能执行全部 Flyway 迁移成功
+7. 业务主状态以 MySQL 为准，Redis 只用于缓存/会话/验证码/限流
 
-迁移命名示例：
+### 前端规则
 
-```text
-V20260501_001__init_system_tables.sql
-V20260501_002__init_tenant_tables.sql
-V20260501_003__init_course_question_exam.sql
+管理端（`apps/admin-web/`）技术栈见 README。建议目录：
+
 ```
-
-## 前端规则
-
-管理端工程默认放在 `apps/admin-web/`。
-
-默认技术栈：
-
-```text
-React + Vite + TypeScript + Ant Design Pro + ProComponents
-React Router + TanStack Query + Zustand + ECharts
-```
-
-建议目录：
-
-```text
-apps/admin-web/
-  src/
-    app/
-    routes/
-    layouts/
-    pages/
-      dashboard/
-      system/
-      course/
-      question/
-      exam/
-      training/
-      workflow/
-      ai/
-    components/
-    services/
-    stores/
-    hooks/
-    utils/
-    types/
+src/
+  app/  routes/  layouts/  components/  services/
+  stores/  hooks/  utils/  types/
+  pages/
+    dashboard/  system/  course/  question/
+    exam/  training/  workflow/  ai/
 ```
 
 执行规则：
 
-1. 页面级数据请求使用 TanStack Query。
-2. 用户信息、菜单、主题、折叠状态等使用 Zustand。
-3. 表格优先使用 ProTable。
-4. 表单优先使用 Ant Design Form / ProForm。
-5. 图表统一使用 ECharts。
-6. 接口类型放入 `types/`，或后续由 OpenAPI 生成。
-7. 菜单从后端动态加载，不在前端写死。
-8. HTML 原型只作为参考，不在原型文件上继续堆正式功能。
+1. 页面级数据请求使用 TanStack Query
+2. 用户信息、菜单、主题、折叠状态使用 Zustand
+3. 表格优先 ProTable，表单优先 ProForm，图表统一 ECharts
+4. 菜单从后端动态加载，不在前端写死
+5. HTML 原型仅作参考，不在原型文件上堆正式功能
+6. 接口类型放入 `types/`（后续可用 OpenAPI 生成）
 
-学员端工程默认放在 `apps/student-web/`。一期可先用 H5 实现学习、练习、考试、错题、证书、通知等入口。
+### AI、Agent 与 MCP 规则
 
-## AI、Agent 与 MCP 规则
+1. AI Gateway 和 MCP Server 不直连业务数据库，只调用 `platform-api` 的受控 API
+2. `platform-api` 可保留 `ai/` 包用于 AI 业务记录、权限校验和草稿落库
+3. 写操作默认生成草稿或待办，课程发布/审批通过/删除核心数据必须人工确认
+4. AI 生成内容必须标记来源、模型、生成时间和操作人
+5. MCP Tool 必须定义名称、用途、参数 schema、权限要求和审计日志
+6. 所有工具调用必须可追踪到用户、租户、工具名和请求 ID
 
-AI Gateway 放在 `services/ai-gateway/`，MCP Server 放在 `services/mcp-server/`。
+### 工作流与 n8n 规则
 
-通用规则：
+1. Flowable 管核心业务流程状态、审批、驳回、留痕
+2. n8n 只做内部自动化、通知、定时、接口同步和 AI 草稿触发
+3. 不向客户开放 n8n 编辑器或执行后台
+4. BPMN 文件放 `workflows/bpmn/`，n8n 导出放 `workflows/n8n/`
 
-1. AI Gateway 和 MCP Server 不直连业务数据库。
-2. AI Gateway 和 MCP Server 只调用 `platform-api` 暴露的受控 API。
-3. `platform-api` 可以保留 `ai/` 包，用于 AI 业务记录、权限校验和草稿落库入口。
-4. 写操作默认生成草稿或待办。
-5. 课程发布、审批通过、删除核心数据等关键动作必须人工确认。
-6. AI 生成内容必须标记来源、模型、生成时间和操作人。
-7. MCP Tool 必须定义名称、用途、参数 schema、权限要求和审计日志。
-8. 所有工具调用必须能追踪到用户、租户、工具名和请求 ID。
-
-一期优先 Agent：
-
-1. 课程生成 Agent：生成课程大纲草稿、讲义草稿、题库草稿。
-2. 材料检查 Agent：检查材料缺失和格式问题。
-3. 项目周报 Agent：生成项目周报、风险和需协调事项。
-
-## 工作流与 n8n 规则
-
-1. Flowable 管核心业务流程状态、审批、驳回、留痕和状态回放。
-2. n8n 只做内部自动化、通知、定时、接口同步和 AI 草稿触发。
-3. n8n 不作为客户可配置工作流能力。
-4. 不向客户开放 n8n 编辑器、credentials 管理或执行后台。
-5. 如果未来需要对客户开放 n8n 能力，必须先完成商业授权、OEM / Embed 授权和法律审查。
-
-BPMN 文件放在：
-
-```text
-workflows/bpmn/
-```
-
-n8n 导出文件放在：
-
-```text
-workflows/n8n/
-```
-
-## 文件、Redis 与部署规则
-
-文件：
-
-1. 一期不使用 MinIO 作为默认生产方案。
-2. 生产环境优先使用阿里云 OSS 或腾讯云 COS。
-3. 业务模块只调用平台文件服务或 Cloud OSS Adapter。
-4. NAS 只作为历史资料和内部大文件索引来源，不作为平台标准上传文件主存储。
-
-Redis：
-
-1. 代码层使用 Redis 协议、Spring Cache 和 Spring Data Redis。
-2. Redis 只用于缓存、会话、验证码、任务状态、限流等基础设施。
-3. 业务主状态以 MySQL 为准。
-4. 生产优先使用托管 Redis / Tair，不默认自建 Redis 集群。
-
-部署：
-
-1. 测试、预生产和生产服务器使用 Linux Docker Engine / Docker Compose。
-2. Docker Desktop 只可能用于个人开发机，不写成生产依赖。
-3. 一期不默认引入 Kubernetes。
+---
 
 ## 测试与验收
 
-后端默认测试：
+后端：JUnit 5 / Mockito / Spring Boot Test + MockMvc / Testcontainers / Spring Security Test
 
-1. JUnit 5。
-2. Mockito。
-3. Spring Boot Test + MockMvc。
-4. Testcontainers。
-5. Spring Security Test。
-6. Flowable Test。
+前端：Vitest / React Testing Library / Playwright / MSW
 
-前端默认测试：
+最低验收：
 
-1. Vitest。
-2. React Testing Library。
-3. Playwright。
-4. MSW。
+1. 登录、菜单、权限、数据权限必须有测试
+2. 数据库迁移脚本必须能在空库执行成功
+3. 文件上传必须验证成功和失败路径
+4. AI 和 MCP 工具调用必须验证权限失败、参数错误和人工确认
+5. 一期主链路可跑通：管理员配置基础数据 → 课程人员建课建题 → 课程发布审批 → 安排考试 → 学员学习答题查看成绩错题
 
-最低验收要求：
+---
 
-1. 登录、菜单、权限、数据权限必须有测试。
-2. 数据库迁移脚本必须能在空库执行成功。
-3. 文件上传必须验证成功和失败路径。
-4. AI 和 MCP 工具调用必须验证权限失败、参数错误和人工确认。
-5. 一期主链路必须能跑通：管理员配置基础数据、课程人员建课建题、课程发布审批、培训负责人安排考试、学员学习答题并查看成绩错题。
+## 本地开发
+
+### 环境路径
+
+| 工具 | 路径 |
+|---|---|
+| JDK 21 | `D:\Program Files\Java\oracleJdk-21` |
+| Maven | `C:\Program Files\Java\apache-maven-3.9.11\bin\mvn.cmd` |
+| Node.js | `D:\Program Files\nodejs` |
+
+### 环境变量
+
+模板文件：`infra/env/platform-api.env.example`
+
+本地开发必需变量：
+
+| 变量 | 说明                           |
+|---|------------------------------|
+| `SERVER_PORT` | 后端端口，默认 8080                 |
+| `MYSQL_URL` | 本地 MySQL jdbc:mysql://192.168.1.200:3308/gjjd_test |
+| `MYSQL_USERNAME` | 数据库用户 root                   |
+| `MYSQL_PASSWORD` | 数据库密码 guoyu_dev!513          |
+| `JWT_SECRET` | 至少 32 位随机字符串                 |
+
+Redis 不是当前代码路径的硬依赖，可跳过。
+
+### 常用命令
+
+```bash
+# 后端构建
+mvn.cmd compile -f services/platform-api/pom.xml -s scripts/custom-maven-settings.xml
+
+# 后端直接启动（使用预构建 JAR）
+java -jar services/platform-api/target/platform-api-0.1.0-SNAPSHOT.jar
+
+# 前端开发服务器
+cd apps/admin-web && npm run dev
+
+# 访问
+# 前端: http://localhost:5173
+# 后端: http://localhost:8080/api
+```
+
+### Demo 账号
+
+- 租户：`demo`
+- 用户：`admin`
+- 密码：`Admin@123456`
+
+---
 
 ## Agent 工作方式
 
-1. 修改前先确认任务属于文档、原型、正式前端、后端服务、脚本、数据、基础设施或生成产物中的哪一类。
-2. 优先遵循当前目录 `README.md` 和已有文档，不引入与既定技术路线冲突的新框架。
-3. 涉及一期功能时，以 `docs/04_requirements/phase1/` 为准。
-4. 发现需求文档、API 合同、表结构、页面清单不一致时，先指出冲突并给出最小修正建议。
-5. 生成或修改正式代码时，同时补充必要的启动说明、环境变量模板、健康检查和测试。
-6. 不把原型 HTML 当作正式前端工程继续扩写。
-7. 不把 AI、MCP、n8n 设计成绕过平台权限和审计的通道。
-8. 不提交真实密钥、生产账号、客户敏感数据或未脱敏资料。
-
+1. 修改前先确认任务属于文档、原型、正式前端、后端服务、脚本、数据、基础设施或生成产物中的哪一类
+2. 优先遵循当前目录 `README.md` 和已有文档，不引入与既定技术路线冲突的新框架
+3. 涉及一期功能时以 `docs/04_requirements/phase1/` 为准
+4. 发现需求文档、API 合同、表结构、页面清单不一致时，先指出冲突并给出最小修正建议
+5. 生成或修改正式代码时，同步补充启动说明、环境变量、健康检查和测试
+6. 不把原型 HTML 当作正式前端工程继续扩写
+7. 不把 AI、MCP、n8n 设计成绕过平台权限和审计的通道
+8. 不提交真实密钥、生产账号、客户敏感数据或未脱敏资料

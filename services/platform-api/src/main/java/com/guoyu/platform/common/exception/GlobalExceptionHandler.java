@@ -1,15 +1,18 @@
 package com.guoyu.platform.common.exception;
 
+import lombok.extern.slf4j.Slf4j;
 import com.guoyu.platform.common.api.ApiResponse;
 import jakarta.validation.ConstraintViolationException;
 import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -34,8 +37,15 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(Exception.class)
   public ResponseEntity<ApiResponse<Void>> handleException(Exception ex) {
+    log.error("Unhandled exception", ex);
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
         .body(ApiResponse.fail(ErrorCode.INTERNAL_ERROR, "Internal server error"));
+  }
+
+  @ExceptionHandler(AuthorizationDeniedException.class)
+  public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AuthorizationDeniedException ex) {
+    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+        .body(ApiResponse.fail(ErrorCode.FORBIDDEN, "Forbidden"));
   }
 
   private String formatFieldError(FieldError error) {

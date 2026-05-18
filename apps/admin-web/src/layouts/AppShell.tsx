@@ -5,6 +5,7 @@ import {
   BranchesOutlined,
   DatabaseOutlined,
   DashboardOutlined,
+  ExperimentOutlined,
   RobotOutlined,
   ScheduleOutlined,
   SearchOutlined,
@@ -12,18 +13,22 @@ import {
   UserOutlined,
 } from '@ant-design/icons';
 import { Avatar, Button, Input, Layout, Menu, Space, Typography } from 'antd';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 
 const { Header, Sider, Content } = Layout;
 
-interface AppShellProps {
-  children: ReactNode;
-}
-
 const menuItems = [
   { key: 'dashboard', icon: <DashboardOutlined />, label: '管理概览' },
   { key: 'system', icon: <SettingOutlined />, label: '系统管理' },
-  { key: 'course', icon: <BookOutlined />, label: '课程题库' },
+  {
+    key: 'question-bank',
+    icon: <BookOutlined />,
+    label: '题库管理',
+    children: [
+      { key: 'exam-work-type', icon: <ExperimentOutlined />, label: '工种管理' },
+    ],
+  },
   { key: 'training', icon: <ScheduleOutlined />, label: '培训考试' },
   { key: 'workflow', icon: <BranchesOutlined />, label: '流程审批' },
   { key: 'ai', icon: <RobotOutlined />, label: 'AI 样板' },
@@ -32,7 +37,13 @@ const menuItems = [
   { key: 'audit', icon: <AuditOutlined />, label: '审计留痕' },
 ];
 
-export function AppShell({ children }: AppShellProps) {
+interface AppShellProps {
+  pageMap: Record<string, ReactNode>;
+}
+
+export function AppShell({ pageMap }: AppShellProps) {
+  const [selectedKey, setSelectedKey] = useState<string[]>(['knowledge']);
+
   return (
     <Layout className="app-shell">
       <Sider width={232} className="app-sider">
@@ -45,8 +56,11 @@ export function AppShell({ children }: AppShellProps) {
         </div>
         <Menu
           className="app-menu"
+          theme="light"
           mode="inline"
-          selectedKeys={['knowledge']}
+          selectedKeys={selectedKey}
+          defaultOpenKeys={['question-bank']}
+          onClick={({ key }) => setSelectedKey([key])}
           items={menuItems}
         />
       </Sider>
@@ -67,7 +81,9 @@ export function AppShell({ children }: AppShellProps) {
             </div>
           </Space>
         </Header>
-        <Content className="app-content">{children}</Content>
+        <Content className="app-content">
+          {pageMap[selectedKey[0]] || pageMap['knowledge']}
+        </Content>
       </Layout>
     </Layout>
   );

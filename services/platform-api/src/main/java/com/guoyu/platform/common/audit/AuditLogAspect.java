@@ -1,5 +1,7 @@
 package com.guoyu.platform.common.audit;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.web.TraceIdHolder;
@@ -21,6 +23,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 @Aspect
 @Component
+@Slf4j
 public class AuditLogAspect {
 
   private final AuditLogMapper auditLogMapper;

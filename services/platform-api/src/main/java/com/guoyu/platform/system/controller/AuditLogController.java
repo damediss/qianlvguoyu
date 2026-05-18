@@ -1,5 +1,7 @@
 package com.guoyu.platform.system.controller;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.system.dto.AuditLogQueryReq;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequestMapping("/system/audit-logs")
+@Slf4j
 public class AuditLogController {
 
   private final AuditLogApplicationService auditLogApplicationService;

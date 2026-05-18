@@ -1,5 +1,7 @@
 package com.guoyu.platform.common.web;
 
+import lombok.extern.slf4j.Slf4j;
+
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,6 +16,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
+@Slf4j
 public class TraceIdFilter extends OncePerRequestFilter {
 
   public static final String HEADER_NAME = "X-Request-Id";
@@ -27,11 +30,11 @@ public class TraceIdFilter extends OncePerRequestFilter {
     String traceId = resolveTraceId(request);
     try {
       TraceIdHolder.setTraceId(traceId);
-      MDC.put("traceId", traceId);
+      MDC.put("requestId", traceId);
       response.setHeader(HEADER_NAME, traceId);
       filterChain.doFilter(request, response);
     } finally {
-      MDC.remove("traceId");
+      MDC.remove("requestId");
       TraceIdHolder.clear();
     }
   }

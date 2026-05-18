@@ -1,5 +1,7 @@
 package com.guoyu.platform.config;
 
+import lombok.extern.slf4j.Slf4j;
+
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
@@ -10,6 +12,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
+@Slf4j
 public class MybatisPlusConfig {
 
   @Bean
