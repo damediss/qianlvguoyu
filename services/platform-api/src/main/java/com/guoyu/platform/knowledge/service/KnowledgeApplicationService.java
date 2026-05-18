@@ -291,7 +291,7 @@ public class KnowledgeApplicationService {
     draft.setTenantId(principal.getTenantId());
     draft.setDraftType("knowledge_answer");
     draft.setSourceType("knowledge_base");
-    draft.setSourceId(citations.isEmpty() ? null : citations.getFirst().spaceId());
+    draft.setSourceId(citations.isEmpty() ? null : citations.get(0).spaceId());
     draft.setPrompt(req.question());
     draft.setResultText(answerWithCitationText(answer, citations));
     draft.setModelName(MODEL_NAME);

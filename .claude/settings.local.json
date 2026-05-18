@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/c/Python313/python *2)",
+      "Bash(mysql *)",
+      "Bash(/c/Python313/python *)",
+      "Bash(export JAVA_HOME=\"D:\\\\\\\\Dev\\\\\\\\Java\\\\\\\\jdk-17\")",
+      "Bash(/c/Users/admin/.m2/wrapper/dists/apache-maven-3.9.15-bin/4rlcemksed9vjmkvgss0jpc4po/apache-maven-3.9.15/bin/mvn compile *)",
+      "Bash(export JAVA_HOME=\"D:\\\\Dev\\\\Java\\\\jdk-17\")"
+    ]
+  }
+}
