@@ -2,10 +2,10 @@ package com.guoyu.platform.config;
 
 import lombok.extern.slf4j.Slf4j;
 
+import com.guoyu.platform.common.filter.TenantContextFilter;
 import com.guoyu.platform.security.RestAccessDeniedHandler;
 import com.guoyu.platform.security.RestAuthenticationEntryPoint;
-import com.guoyu.platform.security.jwt.JwtAuthenticationFilter;
-import com.guoyu.platform.security.jwt.JwtProperties;
+import com.guoyu.platform.security.filter.SaTokenBridgeFilter;
 import com.guoyu.platform.file.config.FileStorageProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -25,7 +25,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
-@EnableConfigurationProperties({JwtProperties.class, FileStorageProperties.class})
+@EnableConfigurationProperties({FileStorageProperties.class})
 @Slf4j
 public class SecurityConfig {
 
@@ -34,7 +34,8 @@ public class SecurityConfig {
       HttpSecurity http,
       RestAuthenticationEntryPoint authenticationEntryPoint,
       RestAccessDeniedHandler accessDeniedHandler,
-      JwtAuthenticationFilter jwtAuthenticationFilter
+      SaTokenBridgeFilter saTokenBridgeFilter,
+      TenantContextFilter tenantContextFilter
   ) throws Exception {
     http
         .csrf(AbstractHttpConfigurer::disable)
@@ -49,7 +50,8 @@ public class SecurityConfig {
             .requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh").permitAll()
             .anyRequest().authenticated()
         )
-        .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        .addFilterBefore(tenantContextFilter, UsernamePasswordAuthenticationFilter.class)
+        .addFilterBefore(saTokenBridgeFilter, UsernamePasswordAuthenticationFilter.class);
     return http.build();
   }
 

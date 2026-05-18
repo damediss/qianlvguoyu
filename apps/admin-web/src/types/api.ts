@@ -1,4 +1,4 @@
-export interface ApiResponse<T> {
+﻿export interface ApiResponse<T> {
   code: string;
   message: string;
   data: T;
@@ -21,16 +21,17 @@ export interface LoginReq {
 export interface LoginVO {
   accessToken: string;
   refreshToken: string;
-  tokenType: string;
   expiresIn: number;
+  tenantId: number;
+  user: CurrentUserVO;
 }
 
 export interface CurrentUserVO {
-  userId: number;
+  id: number;
   tenantId: number;
   username: string;
   displayName: string;
   userType: string;
-  roleCodes: string[];
+  roles: string[];
   permissions: string[];
 }

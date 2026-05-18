@@ -1,7 +1,6 @@
 package com.guoyu.platform.auth.service;
 
-import lombok.extern.slf4j.Slf4j;
-
+import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.auth.dto.LoginReq;
 import com.guoyu.platform.auth.vo.CurrentUserVO;
@@ -10,9 +9,9 @@ import com.guoyu.platform.auth.vo.LoginVO;
 import com.guoyu.platform.auth.vo.MenuVO;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
-import com.guoyu.platform.security.jwt.JwtTokenService;
 import com.guoyu.platform.system.entity.MenuEntity;
 import com.guoyu.platform.system.entity.TenantEntity;
 import com.guoyu.platform.system.entity.UserEntity;
@@ -26,6 +25,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,7 +39,6 @@ public class AuthApplicationService {
   private final UserRoleMapper userRoleMapper;
   private final RoleMenuMapper roleMenuMapper;
   private final PasswordEncoder passwordEncoder;
-  private final JwtTokenService jwtTokenService;
   private final SecureRandom secureRandom = new SecureRandom();
 
   public AuthApplicationService(
@@ -47,15 +46,13 @@ public class AuthApplicationService {
       UserMapper userMapper,
       UserRoleMapper userRoleMapper,
       RoleMenuMapper roleMenuMapper,
-      PasswordEncoder passwordEncoder,
-      JwtTokenService jwtTokenService
+      PasswordEncoder passwordEncoder
   ) {
     this.tenantMapper = tenantMapper;
     this.userMapper = userMapper;
     this.userRoleMapper = userRoleMapper;
     this.roleMenuMapper = roleMenuMapper;
     this.passwordEncoder = passwordEncoder;
-    this.jwtTokenService = jwtTokenService;
   }
 
   @Transactional(readOnly = true)
@@ -78,14 +75,23 @@ public class AuthApplicationService {
     }
 
     PlatformUserPrincipal principal = buildPrincipal(user);
-    String accessToken = jwtTokenService.createAccessToken(principal);
+
+    StpUtil.login(user.getId());
+    StpUtil.getTokenSession().set("principal", principal);
+    String accessToken = StpUtil.getTokenValue();
+
     String refreshToken = createOpaqueRefreshToken();
     return new LoginVO(
         accessToken,
         refreshToken,
-        jwtTokenService.getAccessTokenTtlSeconds(),
+        StpUtil.getTokenTimeout(),
+        tenant.getId(),
         toCurrentUser(principal)
     );
+  }
+
+  public void logout() {
+    StpUtil.logout();
   }
 
   public CurrentUserVO me() {

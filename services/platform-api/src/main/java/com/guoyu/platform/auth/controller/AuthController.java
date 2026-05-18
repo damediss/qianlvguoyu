@@ -1,7 +1,6 @@
 package com.guoyu.platform.auth.controller;
 
-import lombok.extern.slf4j.Slf4j;
-
+import cn.dev33.satoken.stp.StpUtil;
 import com.guoyu.platform.auth.dto.LoginReq;
 import com.guoyu.platform.auth.service.AuthApplicationService;
 import com.guoyu.platform.auth.vo.CurrentUserVO;
@@ -11,6 +10,7 @@ import com.guoyu.platform.auth.vo.MenuVO;
 import com.guoyu.platform.common.api.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -40,6 +40,7 @@ public class AuthController {
 
   @PostMapping("/logout")
   public ApiResponse<Void> logout() {
+    authApplicationService.logout();
     return ApiResponse.ok();
   }
 

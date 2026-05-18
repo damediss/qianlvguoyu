@@ -1,21 +1,19 @@
-package com.guoyu.platform.security.jwt;
+package com.guoyu.platform.security.filter;
 
-import lombok.extern.slf4j.Slf4j;
-
+import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.RoleMenuMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.system.mapper.UserRoleMapper;
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -23,20 +21,17 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
 @Slf4j
-public class JwtAuthenticationFilter extends OncePerRequestFilter {
+public class SaTokenBridgeFilter extends OncePerRequestFilter {
 
-  private final JwtTokenService jwtTokenService;
   private final UserMapper userMapper;
   private final UserRoleMapper userRoleMapper;
   private final RoleMenuMapper roleMenuMapper;
 
-  public JwtAuthenticationFilter(
-      JwtTokenService jwtTokenService,
+  public SaTokenBridgeFilter(
       UserMapper userMapper,
       UserRoleMapper userRoleMapper,
       RoleMenuMapper roleMenuMapper
   ) {
-    this.jwtTokenService = jwtTokenService;
     this.userMapper = userMapper;
     this.userRoleMapper = userRoleMapper;
     this.roleMenuMapper = roleMenuMapper;
@@ -48,11 +43,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
       HttpServletResponse response,
       FilterChain filterChain
   ) throws ServletException, IOException {
-    String token = resolveBearerToken(request);
+    String token = StpUtil.getTokenValue();
     if (token != null && SecurityContextHolder.getContext().getAuthentication() == null) {
       try {
         authenticate(token);
-      } catch (JwtException | IllegalArgumentException ex) {
+      } catch (Exception ex) {
         SecurityContextHolder.clearContext();
       }
     }
@@ -60,15 +55,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
   }
 
   private void authenticate(String token) {
-    Claims claims = jwtTokenService.parse(token);
-    Long userId = Long.valueOf(claims.getSubject());
-    Long tenantId = ((Number) claims.get("tenantId")).longValue();
+    Object loginIdObj = StpUtil.getLoginIdByToken(token);
+    if (loginIdObj == null) {
+      return;
+    }
+    Long userId = Long.valueOf(loginIdObj.toString());
+    Long tenantId = StpUtil.getExtra(token, "tenantId") != null
+        ? Long.valueOf(StpUtil.getExtra(token, "tenantId").toString())
+        : null;
+
     UserEntity user = userMapper.selectOne(new LambdaQueryWrapper<UserEntity>()
         .eq(UserEntity::getId, userId)
-        .eq(UserEntity::getTenantId, tenantId)
         .eq(UserEntity::getStatus, "enabled")
         .eq(UserEntity::getDeleted, 0));
-    if (user == null) {
+    if (user == null || tenantId == null) {
       return;
     }
 
@@ -86,13 +86,5 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     UsernamePasswordAuthenticationToken authentication =
         new UsernamePasswordAuthenticationToken(principal, token, principal.getAuthorities());
     SecurityContextHolder.getContext().setAuthentication(authentication);
-  }
-
-  private String resolveBearerToken(HttpServletRequest request) {
-    String authorization = request.getHeader("Authorization");
-    if (authorization == null || !authorization.startsWith("Bearer ")) {
-      return null;
-    }
-    return authorization.substring(7);
   }
 }

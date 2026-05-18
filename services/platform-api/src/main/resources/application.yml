@@ -50,3 +50,15 @@ platform:
   file:
     storage-provider: ${FILE_STORAGE_PROVIDER:local}
     local-root: ${FILE_LOCAL_ROOT:./storage/files}
+
+# Sa-Token
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 259200
+  active-timeout: -1
+  is-concurrent: true
+  is-share: true
+  is-log: true
+  token-style: tik
+  is-read-cookie: false

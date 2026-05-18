@@ -1,4 +1,4 @@
-import { LockOutlined } from '@ant-design/icons';
+﻿import { LockOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Typography, message } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -13,6 +13,7 @@ interface AuthGateProps {
 export function AuthGate({ children }: AuthGateProps) {
   const token = useAuthStore((state) => state.token);
   const setToken = useAuthStore((state) => state.setToken);
+  const setTenantId = useAuthStore((state) => state.setTenantId);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
 
   const userQuery = useQuery({
@@ -32,6 +33,8 @@ export function AuthGate({ children }: AuthGateProps) {
     mutationFn: login,
     onSuccess: (data) => {
       setToken(data.accessToken);
+      setTenantId(data.tenantId);
+      setCurrentUser(data.user);
       message.success('登录成功');
     },
   });
@@ -50,7 +53,7 @@ export function AuthGate({ children }: AuthGateProps) {
         <div className="login-title-row">
           <div className="login-mark">国</div>
           <div>
-            <Typography.Title level={2}>千铝国昱云平台</Typography.Title>
+            <Typography.Title level={2}>千铅国旺云平台</Typography.Title>
             <Typography.Text>管理端登录</Typography.Text>
           </div>
         </div>

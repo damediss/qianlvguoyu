@@ -1,9 +1,11 @@
 package com.guoyu.platform.common.exception;
 
-import lombok.extern.slf4j.Slf4j;
+import cn.dev33.satoken.exception.NotLoginException;
+import cn.dev33.satoken.exception.NotPermissionException;
 import com.guoyu.platform.common.api.ApiResponse;
 import jakarta.validation.ConstraintViolationException;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authorization.AuthorizationDeniedException;
@@ -20,6 +22,20 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException ex) {
     return ResponseEntity.status(resolveStatus(ex.getCode()))
         .body(ApiResponse.fail(ex.getCode(), ex.getMessage()));
+  }
+
+  @ExceptionHandler(NotLoginException.class)
+  public ResponseEntity<ApiResponse<Void>> handleNotLogin(NotLoginException ex) {
+    log.warn("NotLoginException: {}", ex.getMessage());
+    return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+        .body(ApiResponse.fail(ErrorCode.UNAUTHORIZED, "Not logged in or token expired"));
+  }
+
+  @ExceptionHandler(NotPermissionException.class)
+  public ResponseEntity<ApiResponse<Void>> handleNotPermission(NotPermissionException ex) {
+    log.warn("NotPermissionException: {}", ex.getMessage());
+    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+        .body(ApiResponse.fail(ErrorCode.FORBIDDEN, "No permission"));
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)

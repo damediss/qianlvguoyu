@@ -1,4 +1,4 @@
-import axios from 'axios';
+﻿import axios from 'axios';
 import { message } from 'antd';
 import { useAuthStore } from '../stores/authStore';
 import type { ApiResponse } from '../types/api';
@@ -12,6 +12,10 @@ apiClient.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token;
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  const tenantId = useAuthStore.getState().tenantId;
+  if (tenantId) {
+    config.headers['X-Tenant-Id'] = String(tenantId);
   }
   config.headers['X-Request-Id'] = crypto.randomUUID();
   return config;
