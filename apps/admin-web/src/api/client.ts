@@ -1,4 +1,4 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 import { message } from 'antd';
 import { useAuthStore } from '../stores/authStore';
 import type { ApiResponse } from '../types/api';
@@ -30,6 +30,13 @@ apiClient.interceptors.response.use(
     return response;
   },
   (error) => {
+    // On 401, silently clear expired auth state so AuthGate shows login form
+    if (error?.response?.status === 401) {
+      useAuthStore.getState().setToken(undefined);
+      useAuthStore.getState().setCurrentUser(undefined);
+      return Promise.reject(error);
+    }
+
     const isProxyFailure =
       error?.response?.status === 500
       && typeof error?.response?.data === 'string'

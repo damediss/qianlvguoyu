@@ -1,4 +1,4 @@
-﻿import { LockOutlined } from '@ant-design/icons';
+import { LockOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Typography, message } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -12,6 +12,7 @@ interface AuthGateProps {
 
 export function AuthGate({ children }: AuthGateProps) {
   const token = useAuthStore((state) => state.token);
+  const currentUser = useAuthStore((state) => state.currentUser);
   const setToken = useAuthStore((state) => state.setToken);
   const setTenantId = useAuthStore((state) => state.setTenantId);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
@@ -23,11 +24,23 @@ export function AuthGate({ children }: AuthGateProps) {
     retry: false,
   });
 
+  // Sync /api/auth/me result to store (used on page refresh)
   useEffect(() => {
     if (userQuery.data) {
       setCurrentUser(userQuery.data);
     }
   }, [setCurrentUser, userQuery.data]);
+
+  // Silently clear expired token when /api/auth/me returns 401
+  useEffect(() => {
+    if (userQuery.isError && token && userQuery.error) {
+      const err = userQuery.error as { response?: { status?: number } };
+      if (err?.response?.status === 401) {
+        setToken(undefined);
+        setCurrentUser(undefined);
+      }
+    }
+  }, [userQuery.isError, userQuery.error, token, setToken, setCurrentUser]);
 
   const loginMutation = useMutation({
     mutationFn: login,
@@ -39,7 +52,10 @@ export function AuthGate({ children }: AuthGateProps) {
     },
   });
 
-  if (userQuery.data) {
+  // Primary check: currentUser from store (set by login response on first login,
+  // or by /api/auth/me on page refresh). This avoids blocking the UI on the
+  // /api/auth/me round-trip after a fresh login.
+  if (currentUser || userQuery.data) {
     return children;
   }
 

@@ -29,7 +29,7 @@ public class MybatisPlusConfig {
       public Expression getTenantId() {
         Long tenantId = TenantContextHolder.getTenantId();
         if (tenantId == null) {
-          tenantId = 10159L;
+          tenantId = 1L;
         }
         return new LongValue(tenantId);
       }

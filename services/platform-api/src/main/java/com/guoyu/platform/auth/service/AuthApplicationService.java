@@ -118,6 +118,8 @@ public class AuthApplicationService {
   private PlatformUserPrincipal buildPrincipal(UserEntity user) {
     List<String> roles = userRoleMapper.selectRoleCodes(user.getTenantId(), user.getId());
     List<String> permissions = roleMenuMapper.selectPermissionCodesByUser(user.getTenantId(), user.getId());
+    if (roles == null) roles = List.of();
+    if (permissions == null) permissions = List.of();
     return new PlatformUserPrincipal(
         user.getId(),
         user.getTenantId(),

@@ -48,6 +48,7 @@ public class SaTokenBridgeFilter extends OncePerRequestFilter {
       try {
         authenticate(token);
       } catch (Exception ex) {
+        log.warn("Sa-Token authentication failed for request {}: {}", request.getRequestURI(), ex.getMessage());
         SecurityContextHolder.clearContext();
       }
     }
@@ -60,20 +61,23 @@ public class SaTokenBridgeFilter extends OncePerRequestFilter {
       return;
     }
     Long userId = Long.valueOf(loginIdObj.toString());
-    Long tenantId = StpUtil.getExtra(token, "tenantId") != null
-        ? Long.valueOf(StpUtil.getExtra(token, "tenantId").toString())
-        : null;
 
     UserEntity user = userMapper.selectOne(new LambdaQueryWrapper<UserEntity>()
         .eq(UserEntity::getId, userId)
         .eq(UserEntity::getStatus, "enabled")
         .eq(UserEntity::getDeleted, 0));
-    if (user == null || tenantId == null) {
+    if (user == null) {
       return;
     }
 
+    // tenantId comes directly from the user record (tik tokens don't support extras)
+    Long tenantId = user.getTenantId();
+
     List<String> roleCodes = userRoleMapper.selectRoleCodes(tenantId, userId);
     List<String> permissionCodes = roleMenuMapper.selectPermissionCodesByUser(tenantId, userId);
+    // Defensive null guard for MyBatis mapper results
+    if (roleCodes == null) roleCodes = List.of();
+    if (permissionCodes == null) permissionCodes = List.of();
     PlatformUserPrincipal principal = new PlatformUserPrincipal(
         user.getId(),
         user.getTenantId(),
