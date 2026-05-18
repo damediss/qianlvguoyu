@@ -135,12 +135,7 @@ public class ExamWorkTypeApplicationService {
     List<Integer> idsToDelete = new ArrayList<>();
     idsToDelete.add(id);
     collectChildIds(tenantId, id, idsToDelete);
-    for (Integer childId : idsToDelete) {
-      ExamWorkTypeEntity child = new ExamWorkTypeEntity();
-      child.setId(childId);
-      child.setDeleted(1);
-      mapper.updateById(child);
-    }
+    mapper.deleteBatchIds(idsToDelete);
   }
 
   private void collectChildIds(Long tenantId, Integer parentId, List<Integer> collector) {
