@@ -35,3 +35,72 @@ export interface ExamWorkTypeQuery {
   pageSize?: number;
   title?: string;
 }
+
+export interface ExamCourse {
+  id: number;
+  workTypeId: number | null;
+  title: string;
+  level: number;
+  seriesNoGroup: string;
+  seriesNo: string;
+  userInCharge: number | null;
+  userInChargeName: string;
+  lastLevelGetYear: number;
+  workYearLimit: number | null;
+  minLevel: number | null;
+  minLevelYear: number | null;
+  startAge: number;
+  isGeneral: number;
+  examCondition: string;
+  version: string;
+  comments: string;
+  userId: number | null;
+  status: number;
+  sortNumber: number;
+  tenantId: number;
+  createTime: string;
+}
+
+export interface ExamCourseCreateReq {
+  title: string;
+  workTypeId?: number;
+  level?: number;
+  seriesNoGroup?: string;
+  seriesNo?: string;
+  userInChargeName?: string;
+  lastLevelGetYear?: number;
+  workYearLimit?: number;
+  minLevel?: number;
+  minLevelYear?: number;
+  startAge?: number;
+  isGeneral?: number;
+  examCondition?: string;
+  comments?: string;
+  status?: number;
+  sortNumber?: number;
+}
+
+export interface ExamCourseUpdateReq {
+  title: string;
+  workTypeId?: number;
+  level?: number;
+  seriesNoGroup?: string;
+  seriesNo?: string;
+  userInChargeName?: string;
+  lastLevelGetYear?: number;
+  workYearLimit?: number;
+  minLevel?: number;
+  minLevelYear?: number;
+  startAge?: number;
+  isGeneral?: number;
+  examCondition?: string;
+  comments?: string;
+  status?: number;
+  sortNumber?: number;
+}
+
+export interface ExamCourseQuery {
+  page?: number;
+  pageSize?: number;
+  title?: string;
+}

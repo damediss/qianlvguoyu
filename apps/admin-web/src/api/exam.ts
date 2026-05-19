@@ -5,6 +5,10 @@ import type {
   ExamWorkTypeCreateReq,
   ExamWorkTypeUpdateReq,
   ExamWorkTypeQuery,
+  ExamCourse,
+  ExamCourseCreateReq,
+  ExamCourseUpdateReq,
+  ExamCourseQuery,
 } from '../types/exam';
 
 export function pageWorkTypes(params: ExamWorkTypeQuery) {
@@ -29,4 +33,24 @@ export function updateWorkType(id: number, payload: ExamWorkTypeUpdateReq) {
 
 export function deleteWorkType(id: number) {
   return unwrap<void>(apiClient.delete(`/exam/work-types/${id}`));
+}
+
+export function pageCourses(params: ExamCourseQuery) {
+  return unwrap<PageResponse<ExamCourse>>(apiClient.get('/exam/courses', { params }));
+}
+
+export function getCourse(id: number) {
+  return unwrap<ExamCourse>(apiClient.get(`/exam/courses/${id}`));
+}
+
+export function createCourse(payload: ExamCourseCreateReq) {
+  return unwrap<ExamCourse>(apiClient.post('/exam/courses', payload));
+}
+
+export function updateCourse(id: number, payload: ExamCourseUpdateReq) {
+  return unwrap<ExamCourse>(apiClient.put(`/exam/courses/${id}`, payload));
+}
+
+export function deleteCourse(id: number) {
+  return unwrap<void>(apiClient.delete(`/exam/courses/${id}`));
 }

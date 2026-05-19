@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
@@ -7,6 +7,7 @@ import { AppShell } from './layouts/AppShell';
 import { AuthGate } from './components/AuthGate';
 import { KnowledgePage } from './pages/knowledge/KnowledgePage';
 import { WorkTypePage } from './pages/exam/WorkTypePage';
+import { CoursePage } from './pages/exam/CoursePage';
 import { appTheme } from './theme';
 import './styles/tokens.css';
 import './styles/global.css';
@@ -23,6 +24,7 @@ const queryClient = new QueryClient({
 const pageMap = {
   knowledge: <KnowledgePage />,
   'exam-work-type': <WorkTypePage />,
+  'exam-course': <CoursePage />,
 };
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
@@ -36,4 +38,3 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </ConfigProvider>
   </React.StrictMode>,
 );
-
