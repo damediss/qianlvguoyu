@@ -8,6 +8,7 @@ import {
   ExperimentOutlined,
   ReadOutlined,
   RobotOutlined,
+  SafetyOutlined,
   ScheduleOutlined,
   SearchOutlined,
   SettingOutlined,
@@ -29,6 +30,7 @@ const menuItems = [
     children: [
       { key: 'exam-work-type', icon: <ExperimentOutlined />, label: '工种管理' },
       { key: 'exam-course', icon: <ReadOutlined />, label: '科目管理' },
+      { key: 'exam-user-auth-course', icon: <SafetyOutlined />, label: '专家授权管理' },
     ],
   },
   { key: 'training', icon: <ScheduleOutlined />, label: '培训考试' },

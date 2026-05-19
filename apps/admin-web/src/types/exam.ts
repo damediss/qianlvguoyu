@@ -104,3 +104,31 @@ export interface ExamCourseQuery {
   pageSize?: number;
   title?: string;
 }
+export interface ExamUserAuthCourse {
+  realname: string;
+  idCard: string;
+  courses: ExamUserAuthCourseItem[];
+  status: number;
+  sortNumber: number;
+  createTime: string;
+}
+
+export interface ExamUserAuthCourseItem {
+  courseId: number;
+  courseTitle: string;
+  type: number;
+}
+
+export interface ExamUserAuthCourseCreateReq {
+  realname: string;
+  idCard: string;
+  items: ExamUserAuthCourseItem[];
+  status?: number;
+  sortNumber?: number;
+}
+
+export interface ExamUserAuthCourseQuery {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+}

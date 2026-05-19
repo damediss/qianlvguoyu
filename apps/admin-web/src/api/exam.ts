@@ -9,6 +9,9 @@ import type {
   ExamCourseCreateReq,
   ExamCourseUpdateReq,
   ExamCourseQuery,
+  ExamUserAuthCourse,
+  ExamUserAuthCourseCreateReq,
+  ExamUserAuthCourseQuery,
 } from '../types/exam';
 
 export function pageWorkTypes(params: ExamWorkTypeQuery) {
@@ -53,4 +56,31 @@ export function updateCourse(id: number, payload: ExamCourseUpdateReq) {
 
 export function deleteCourse(id: number) {
   return unwrap<void>(apiClient.delete(`/exam/courses/${id}`));
+}
+
+export function pageUserAuthCourses(params: ExamUserAuthCourseQuery) {
+  return unwrap<PageResponse<ExamUserAuthCourse>>(apiClient.get('/exam/user-auth-courses', { params }));
+}
+
+export function getUserAuthCourse(realname: string, idCard: string) {
+  return unwrap<ExamUserAuthCourse>(apiClient.get('/exam/user-auth-courses/detail', {
+    params: { realname, idCard },
+  }));
+}
+
+export function createUserAuthCourse(payload: ExamUserAuthCourseCreateReq) {
+  return unwrap<ExamUserAuthCourse>(apiClient.post('/exam/user-auth-courses', payload));
+}
+
+export function updateUserAuthCourse(realname: string, idCard: string, payload: ExamUserAuthCourseCreateReq) {
+  return unwrap<ExamUserAuthCourse>(apiClient.put(
+    `/exam/user-auth-courses/${encodeURIComponent(realname)}/${encodeURIComponent(idCard)}`,
+    payload,
+  ));
+}
+
+export function deleteUserAuthCourse(realname: string, idCard: string) {
+  return unwrap<void>(apiClient.delete(
+    `/exam/user-auth-courses/${encodeURIComponent(realname)}/${encodeURIComponent(idCard)}`,
+  ));
 }
