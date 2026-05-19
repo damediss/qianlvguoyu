@@ -17,7 +17,7 @@ apiClient.interceptors.request.use((config) => {
   if (tenantId) {
     config.headers['X-Tenant-Id'] = String(tenantId);
   }
-  config.headers['X-Request-Id'] = crypto.randomUUID();
+  config.headers['X-Request-Id'] = generateUUID();
   return config;
 });
 
@@ -30,7 +30,6 @@ apiClient.interceptors.response.use(
     return response;
   },
   (error) => {
-    // On 401, silently clear expired auth state so AuthGate shows login form
     if (error?.response?.status === 401) {
       useAuthStore.getState().setToken(undefined);
       useAuthStore.getState().setCurrentUser(undefined);
@@ -52,4 +51,23 @@ apiClient.interceptors.response.use(
 export async function unwrap<T>(promise: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   const response = await promise;
   return response.data.data;
+}
+
+function generateUUID(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    const arr = new Uint8Array(16);
+    crypto.getRandomValues(arr);
+    arr[6] = (arr[6] & 0x0f) | 0x40;
+    arr[8] = (arr[8] & 0x3f) | 0x80;
+    const hex = Array.from(arr, (b) => b.toString(16).padStart(2, '0'));
+    return [
+      hex.slice(0, 4).join(''),
+      hex.slice(4, 6).join(''),
+      hex.slice(6, 8).join(''),
+      hex.slice(8, 10).join(''),
+      hex.slice(10, 16).join(''),
+    ].join('-');
+  }
 }

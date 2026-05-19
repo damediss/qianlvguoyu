@@ -459,3 +459,20 @@ CREATE TABLE ai_generation_draft (
   KEY idx_ai_generation_draft_source (tenant_id, source_type, source_id),
   KEY idx_ai_generation_draft_created (tenant_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `exam_work_type`  (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `title` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '名称',
+  `series_no` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '职业编码',
+  `levels_no` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '级别',
+  `parent_id` int(11) NULL DEFAULT NULL COMMENT '上级ID',
+  `user_id` int(11) NULL DEFAULT NULL,
+  `deleted` int(1) NULL DEFAULT 0 COMMENT '1已删除，0正常',
+  `status` int(1) NOT NULL DEFAULT 1 COMMENT '状态',
+  `sort_number` int(11) NOT NULL DEFAULT 1 COMMENT '排序号，降序排序',
+  `tenant_id` int(11) NOT NULL DEFAULT 10159 COMMENT '租户id',
+  `create_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`) USING BTREE,
+  INDEX `id`(`id`) USING BTREE,
+  INDEX `parent_id`(`parent_id`) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 136 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '工种' ROW_FORMAT = Dynamic;
