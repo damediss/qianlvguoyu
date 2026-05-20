@@ -8,10 +8,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
     "com.guoyu.platform.system.mapper",
     "com.guoyu.platform.file.mapper",
     "com.guoyu.platform.ai.mapper",
-    "com.guoyu.platform.knowledge.mapper",
+    "com.guoyu.platform.exam.mapper",
     "com.guoyu.platform.trainingdepartment.mapper",
     "com.guoyu.platform.knowledge.mapper",
-    "com.guoyu.platform.exam.mapper",
     "com.guoyu.platform.chazheng.mapper"
 })
 @SpringBootApplication

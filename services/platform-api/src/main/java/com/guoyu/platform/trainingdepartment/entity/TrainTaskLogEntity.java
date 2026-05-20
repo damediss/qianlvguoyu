@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 @TableName("train_task_log")
 public class TrainTaskLogEntity {
 
+  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
 

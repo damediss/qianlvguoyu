@@ -8,6 +8,7 @@ public class TrainUserPatentUpdateReq {
 
   @NotBlank
   @Size(max = 255)
+  /** 标题 */
   private String title;
 
   /** 专利证书文件 */

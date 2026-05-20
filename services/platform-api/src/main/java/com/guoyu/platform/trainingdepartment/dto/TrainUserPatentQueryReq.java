@@ -5,6 +5,7 @@ import com.guoyu.platform.common.api.PageQuery;
 /** 用户专利查询请求 */
 public class TrainUserPatentQueryReq extends PageQuery {
 
+  /** 搜索关键词 */
   private String keyword;
 
   public String getKeyword() {

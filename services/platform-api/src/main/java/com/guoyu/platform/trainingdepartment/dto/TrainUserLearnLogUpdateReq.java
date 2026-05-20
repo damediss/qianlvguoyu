@@ -9,6 +9,7 @@ public class TrainUserLearnLogUpdateReq {
   /** 分数/成绩 */
   private Integer score;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Integer getLearnTime() {

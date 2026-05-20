@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 @TableName("train_user_patent")
 public class TrainUserPatentEntity {
 
+  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
 
@@ -19,11 +20,16 @@ public class TrainUserPatentEntity {
   private String title;
   /** 专利内容/URL */
   private String paper;
+  /** 用户ID */
   private Long userId;
+  /** 租户ID */
   private Long tenantId;
+  /** 更新时间 */
   private LocalDateTime updateTime;
+  /** 创建时间 */
   private LocalDateTime createTime;
 
+  /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
 

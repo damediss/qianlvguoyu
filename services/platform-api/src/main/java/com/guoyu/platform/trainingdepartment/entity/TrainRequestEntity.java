@@ -6,24 +6,37 @@ import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 
+/**
+ * 培训申请实体
+ */
 @TableName("train_request")
 public class TrainRequestEntity {
+  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
   private String companyName;
   private Long companyId;
+  /** 岗位 */
   private String position;
+  /** 人数 */
   private Integer num;
+  /** 类型 */
   private String type;
+  /** 培训日期 */
   private String trainDate;
   private String contact;
   private String contactPhone;
   private Integer isOnPosition;
   private String studentForm;
+  /** 用户ID */
   private Long userId;
+  /** 排序号 */
   private Integer sortNumber;
+  /** 租户ID */
   private Long tenantId;
+  /** 创建时间 */
   private LocalDateTime createTime;
+  /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
 

@@ -19,13 +19,16 @@ public class TrainTaskListCreateReq {
 
   @NotBlank
   @Size(max = 255)
+  /** 标题 */
   private String title;
 
   /** 类型 */
   @Size(max = 255)
+  /** 类型 */
   private String type;
 
   @Size(max = 2000)
+  /** 内容 */
   private String content;
 
   /** 学习时长 */
@@ -37,8 +40,10 @@ public class TrainTaskListCreateReq {
   /** 是否必修 */
   private Integer isRequired;
 
+  /** 用户ID */
   private Long userId;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   /** 分数 */

@@ -111,6 +111,33 @@ public class TrainClassListServiceImpl implements TrainClassListService {
     }
   }
 
+  @Override
+  @Transactional
+  public TrainClassListVO openClass(Long id) {
+    TrainClassListEntity entity = getExisting(id);
+    if (entity.getStatus() != null && entity.getStatus() == 2) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "已结课的班级不能重新开班");
+    }
+    if (entity.getStatus() != null && entity.getStatus() == 1) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "班级已处于开班状态");
+    }
+    entity.setStatus(1);
+    mapper.updateById(entity);
+    return toVO(entity);
+  }
+
+  @Override
+  @Transactional
+  public TrainClassListVO closeClass(Long id) {
+    TrainClassListEntity entity = getExisting(id);
+    if (entity.getStatus() == null || entity.getStatus() != 1) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "只有开班状态的班级才能结课");
+    }
+    entity.setStatus(2);
+    mapper.updateById(entity);
+    return toVO(entity);
+  }
+
   /**
    * 根据ID获取现有实体（未删除），不存在则抛出业务异常
    */
@@ -138,6 +165,7 @@ public class TrainClassListServiceImpl implements TrainClassListService {
         entity.getIsCommittee(),
         entity.getClassName(),
         entity.getSortNumber(),
+        entity.getStatus(),
         entity.getTenantId(),
         entity.getCreateTime()
     );

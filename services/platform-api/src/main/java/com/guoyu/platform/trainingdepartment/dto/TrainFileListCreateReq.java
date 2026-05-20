@@ -14,13 +14,16 @@ public class TrainFileListCreateReq {
   private String pk;
 
   @Size(max = 255)
+  /** 标题 */
   private String title;
 
+  /** 用户ID */
   private Long userId;
 
   /** 状态 */
   private Integer status;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public String getTableName() {

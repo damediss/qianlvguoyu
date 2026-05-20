@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Size;
 /** 参与培训人员信息创建请求 */
 public class TrainUserInfoCreateReq {
 
+  /** 用户ID */
   private Long userId;
 
   /** 企业ID */
@@ -28,6 +29,7 @@ public class TrainUserInfoCreateReq {
 
   /** 学历 */
   @Size(max = 200)
+  /** 学历 */
   private String education;
 
   /** 求职意向 */
@@ -38,6 +40,7 @@ public class TrainUserInfoCreateReq {
   private Integer isPartyMember;
 
   @Size(max = 500)
+  /** 培训地点 */
   private String address;
 
   /** 身份证正面 */
@@ -58,6 +61,7 @@ public class TrainUserInfoCreateReq {
   /** 劳动合同 */
   private String workContract;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getUserId() {

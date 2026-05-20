@@ -27,6 +27,7 @@ public class TrainUserAbilityCreateReq {
   /** 当前分数 */
   private Integer currentScore;
 
+  /** 用户ID */
   private Long userId;
 
   /** 平台用户ID */
@@ -39,6 +40,7 @@ public class TrainUserAbilityCreateReq {
   /** 状态 */
   private Integer status;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getTrainId() {

@@ -3,16 +3,13 @@ package com.guoyu.platform.config;
 import lombok.extern.slf4j.Slf4j;
 
 import com.baomidou.mybatisplus.annotation.DbType;
-import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
-import java.time.LocalDateTime;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
-import org.apache.ibatis.reflection.MetaObject;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -48,19 +45,4 @@ public class MybatisPlusConfig {
     return interceptor;
   }
 
-  @Bean
-  public MetaObjectHandler auditFieldMetaObjectHandler() {
-    return new MetaObjectHandler() {
-      @Override
-      public void insertFill(MetaObject metaObject) {
-        strictInsertFill(metaObject, "createdAt", LocalDateTime.class, LocalDateTime.now());
-        strictInsertFill(metaObject, "updatedAt", LocalDateTime.class, LocalDateTime.now());
-      }
-
-      @Override
-      public void updateFill(MetaObject metaObject) {
-        strictUpdateFill(metaObject, "updatedAt", LocalDateTime.class, LocalDateTime.now());
-      }
-    };
-  }
 }

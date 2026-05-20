@@ -5,11 +5,13 @@ import com.guoyu.platform.common.api.PageQuery;
 /** 开班信息查询请求 */
 public class TrainInfoListQueryReq extends PageQuery {
 
+  /** 搜索关键词 */
   private String keyword;
   /** 状态 */
   private Integer status;
   private Long companyId;
   private Long workTypeId;
+  /** 课程ID */
   private Long courseId;
   /** 审核状态 */
   private Integer passStatus;

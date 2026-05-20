@@ -22,6 +22,7 @@ public class TrainUserAbilityUpdateReq {
   /** 状态 */
   private Integer status;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public String getResult() {

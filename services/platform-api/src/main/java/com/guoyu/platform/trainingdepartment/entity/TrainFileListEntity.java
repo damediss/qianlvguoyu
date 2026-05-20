@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 @TableName("train_file_list")
 public class TrainFileListEntity {
 
+  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
 
@@ -20,12 +21,15 @@ public class TrainFileListEntity {
   private String pk;
   /** 文件标题 */
   private String title;
+  /** 用户ID */
   private Long userId;
   /** 状态 */
   private Integer status;
   /** 排序号 */
   private Integer sortNumber;
+  /** 租户ID */
   private Long tenantId;
+  /** 创建时间 */
   private LocalDateTime createTime;
 
   public Long getId() { return id; }

@@ -11,17 +11,21 @@ public class TrainUserPaperCreateReq {
 
   @NotBlank
   @Size(max = 255)
+  /** 标题 */
   private String title;
 
   /** 证书类型 */
   @Size(max = 255)
+  /** 类型 */
   private String type;
 
+  /** 用户ID */
   private Long userId;
 
   /** 平台用户ID */
   private Long platformUserId;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   /** 关联主键 */

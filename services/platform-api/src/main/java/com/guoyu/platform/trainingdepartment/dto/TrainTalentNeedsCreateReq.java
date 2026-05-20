@@ -2,21 +2,34 @@ package com.guoyu.platform.trainingdepartment.dto;
 
 import jakarta.validation.constraints.Size;
 
+/**
+ * 人才需求创建请求
+ */
 public class TrainTalentNeedsCreateReq {
+  /** 标题 */
   @Size(max = 255) private String title;
+  /** 组织ID */
   private Long orgId;
+  /** 组织名称 */
   @Size(max = 255) private String orgName;
   @Size(max = 255) private String job;
+  /** 工种 */
   @Size(max = 255) private String workType;
+  /** 专业 */
   @Size(max = 255) private String major;
   @Size(max = 255) private String edu;
+  /** 性别 */
   private Integer gender;
+  /** 人数 */
   private Integer num;
+  /** 培训地点 */
   @Size(max = 255) private String address;
   @Size(max = 255) private String workYear;
   @Size(max = 255) private String inPositionDate;
   private String paperRequire;
+  /** 排序号 */
   private Integer sortNumber;
+  /** 扩展JSON数据 */
   private String jsonData;
   private String duty;
   private String schoolNeed;

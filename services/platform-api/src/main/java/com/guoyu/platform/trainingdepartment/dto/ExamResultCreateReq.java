@@ -28,6 +28,7 @@ public class ExamResultCreateReq {
   /** 配置试卷的主键 */
   private Long examId;
 
+  /** 用户ID */
   private Long userId;
 
   private Long platformUserId;
@@ -35,6 +36,7 @@ public class ExamResultCreateReq {
   @NotBlank
   private String userAnswer;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public String getType() { return type; }

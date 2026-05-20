@@ -13,6 +13,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * 培训申请管理接口
+ */
 @Validated
 @RestController
 @RequestMapping("/training")
@@ -24,18 +27,21 @@ public class TrainRequestController {
     this.service = service;
   }
 
+  /** 分页查询 */
   @GetMapping("/requests")
   @PreAuthorize("hasAuthority('train:request:view')")
   public ApiResponse<PageResponse<TrainRequestVO>> page(@Valid @ModelAttribute TrainRequestQueryReq req) {
     return ApiResponse.ok(service.page(req));
   }
 
+  /** 根据ID查询 */
   @GetMapping("/requests/{id}")
   @PreAuthorize("hasAuthority('train:request:view')")
   public ApiResponse<TrainRequestVO> getById(@PathVariable Long id) {
     return ApiResponse.ok(service.getById(id));
   }
 
+  /** 创建 */
   @PostMapping("/requests")
   @PreAuthorize("hasAuthority('train:request:create')")
   @AuditLog(module = "training", action = "request:create", targetType = "train_request")
@@ -43,6 +49,7 @@ public class TrainRequestController {
     return ApiResponse.ok(service.create(req));
   }
 
+  /** 更新 */
   @PutMapping("/requests/{id}")
   @PreAuthorize("hasAuthority('train:request:update')")
   @AuditLog(module = "training", action = "request:update", targetType = "train_request")
@@ -50,6 +57,7 @@ public class TrainRequestController {
     return ApiResponse.ok(service.update(id, req));
   }
 
+  /** 删除 */
   @DeleteMapping("/requests/{id}")
   @PreAuthorize("hasAuthority('train:request:delete')")
   @AuditLog(module = "training", action = "request:delete", targetType = "train_request")

@@ -7,7 +7,9 @@ public class TrainUserAbilityQueryReq extends PageQuery {
 
   /** 培训ID */
   private Long trainId;
+  /** 用户ID */
   private Long userId;
+  /** 课程ID */
   private Long courseId;
 
   public Long getTrainId() {

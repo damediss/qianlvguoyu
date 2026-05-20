@@ -19,6 +19,7 @@ public class TrainTaskInfoUpdateReq {
   /** 分数 */
   private Integer score;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public String getCover() {

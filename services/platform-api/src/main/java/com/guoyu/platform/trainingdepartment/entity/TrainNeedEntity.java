@@ -6,31 +6,57 @@ import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 
+/**
+ * 培训需求实体
+ */
 @TableName("train_need")
 public class TrainNeedEntity {
+  /** 主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
+  /** 组织ID */
   private Long orgId;
+  /** 组织名称 */
   private String orgName;
+  /** 培训对象 */
   private String trainObject;
+  /** 岗位 */
   private String position;
+  /** 人数 */
   private Integer num;
+  /** 工种 */
   private String workType;
+  /** 等级 */
   private String level;
+  /** 培训目标 */
   private String target;
+  /** 培训方式 */
   private String method;
+  /** 培训地点 */
   private String address;
+  /** 培训日期 */
   private String trainDate;
+  /** 预算 */
   private String budget;
+  /** 师资要求 */
   private String teacherRequire;
+  /** 是否需要考试 0-否 1-是 */
   private Integer needExam;
+  /** 是否需要匹配 0-否 1-是 */
   private Integer needMatch;
+  /** 是否需要试卷 0-否 1-是 */
   private Integer needPaper;
+  /** 用户ID */
   private Long userId;
+  /** 排序号 */
   private Integer sortNumber;
+  /** 租户ID */
   private Long tenantId;
+  /** 创建时间 */
   private LocalDateTime createTime;
+  /** 扩展JSON数据 */
   private String jsonData;
+  /** 逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
 

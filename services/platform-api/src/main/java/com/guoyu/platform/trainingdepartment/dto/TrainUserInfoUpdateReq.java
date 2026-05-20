@@ -25,6 +25,7 @@ public class TrainUserInfoUpdateReq {
 
   /** 学历 */
   @Size(max = 200)
+  /** 学历 */
   private String education;
 
   /** 求职意向 */
@@ -35,6 +36,7 @@ public class TrainUserInfoUpdateReq {
   private Integer isPartyMember;
 
   @Size(max = 500)
+  /** 培训地点 */
   private String address;
 
   /** 身份证正面 */
@@ -55,6 +57,7 @@ public class TrainUserInfoUpdateReq {
   /** 劳动合同 */
   private String workContract;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getCompanyId() {

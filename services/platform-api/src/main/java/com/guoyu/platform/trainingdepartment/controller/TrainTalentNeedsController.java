@@ -13,6 +13,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * 人才需求管理接口
+ */
 @Validated
 @RestController
 @RequestMapping("/training")
@@ -24,18 +27,21 @@ public class TrainTalentNeedsController {
     this.service = service;
   }
 
+  /** 分页查询 */
   @GetMapping("/talent-needs")
   @PreAuthorize("hasAuthority('train:talent-needs:view')")
   public ApiResponse<PageResponse<TrainTalentNeedsVO>> page(@Valid @ModelAttribute TrainTalentNeedsQueryReq req) {
     return ApiResponse.ok(service.page(req));
   }
 
+  /** 根据ID查询 */
   @GetMapping("/talent-needs/{id}")
   @PreAuthorize("hasAuthority('train:talent-needs:view')")
   public ApiResponse<TrainTalentNeedsVO> getById(@PathVariable Long id) {
     return ApiResponse.ok(service.getById(id));
   }
 
+  /** 创建 */
   @PostMapping("/talent-needs")
   @PreAuthorize("hasAuthority('train:talent-needs:create')")
   @AuditLog(module = "training", action = "talent-needs:create", targetType = "train_talent_needs")
@@ -43,6 +49,7 @@ public class TrainTalentNeedsController {
     return ApiResponse.ok(service.create(req));
   }
 
+  /** 更新 */
   @PutMapping("/talent-needs/{id}")
   @PreAuthorize("hasAuthority('train:talent-needs:update')")
   @AuditLog(module = "training", action = "talent-needs:update", targetType = "train_talent_needs")
@@ -50,6 +57,7 @@ public class TrainTalentNeedsController {
     return ApiResponse.ok(service.update(id, req));
   }
 
+  /** 删除 */
   @DeleteMapping("/talent-needs/{id}")
   @PreAuthorize("hasAuthority('train:talent-needs:delete')")
   @AuditLog(module = "training", action = "talent-needs:delete", targetType = "train_talent_needs")

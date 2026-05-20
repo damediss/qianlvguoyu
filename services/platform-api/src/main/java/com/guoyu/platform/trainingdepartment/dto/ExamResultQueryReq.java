@@ -14,6 +14,7 @@ public class ExamResultQueryReq extends PageQuery {
   /** 0正考 1模拟考 2能力测评 3顺序练习 4随机练习 */
   private Integer examType;
 
+  /** 用户ID */
   private Long userId;
 
   private Long platformUserId;

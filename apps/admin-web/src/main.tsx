@@ -7,7 +7,11 @@ import { AppShell } from './layouts/AppShell';
 import { AuthGate } from './components/AuthGate';
 import { KnowledgePage } from './pages/knowledge/KnowledgePage';
 import { WorkTypePage } from './pages/exam/WorkTypePage';
-import { CoursePage } from './pages/exam/CoursePage';
+import { TrainingNeedsPage } from './pages/training/TrainingNeedsPage';
+import { TrainingSolutionsPage } from './pages/training/TrainingSolutionsPage';
+import { TrainingInfoPage } from './pages/training/TrainingInfoPage';
+import { TrainingClassPeoplePage } from './pages/training/TrainingClassPeoplePage';
+import { TrainingClassDeclarePage } from './pages/training/TrainingClassDeclarePage';
 import { UserAuthCoursePage } from './pages/exam/UserAuthCoursePage';
 import { UserListPage } from './pages/chazheng/UserListPage';
 import { CertQueryPage } from './pages/chazheng/CertQueryPage';
@@ -24,10 +28,14 @@ const queryClient = new QueryClient({
   },
 });
 
-const pageMap = {
+const pageMap: Record<string, React.ReactNode> = {
   knowledge: <KnowledgePage />,
   'exam-work-type': <WorkTypePage />,
-  'exam-course': <CoursePage />,
+  'training-needs': <TrainingNeedsPage />,
+  'training-solutions': <TrainingSolutionsPage />,
+  'training-info': <TrainingInfoPage />,
+  'training-class-people': <TrainingClassPeoplePage />,
+  'training-class-declare': <TrainingClassDeclarePage />,
   'exam-user-auth-course': <UserAuthCoursePage />,
   'chazheng-user-list': <UserListPage />,
   'chazheng-cert-query': <CertQueryPage />,
@@ -44,3 +52,4 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </ConfigProvider>
   </React.StrictMode>,
 );
+

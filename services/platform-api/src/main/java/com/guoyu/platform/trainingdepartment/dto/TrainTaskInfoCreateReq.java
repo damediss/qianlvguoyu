@@ -30,8 +30,10 @@ public class TrainTaskInfoCreateReq {
   /** 分数 */
   private Integer score;
 
+  /** 用户ID */
   private Long userId;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getTrainId() {

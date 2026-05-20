@@ -6,6 +6,7 @@ public class TrainUserExamLogUpdateReq {
   /** 知识点ID */
   private Long knowledgeId;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getKnowledgeId() {

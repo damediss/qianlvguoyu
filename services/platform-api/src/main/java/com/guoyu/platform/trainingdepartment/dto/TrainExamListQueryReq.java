@@ -5,10 +5,14 @@ import com.guoyu.platform.common.api.PageQuery;
 /** 考试计划查询请求 */
 public class TrainExamListQueryReq extends PageQuery {
 
+  /** 培训ID */
   private Long trainId;
+  /** 组织ID */
   private Long orgId;
+  /** 类型 */
   private Integer type;
   private Integer source;
+  /** 搜索关键词 */
   private String keyword;
 
   public Long getTrainId() { return trainId; }

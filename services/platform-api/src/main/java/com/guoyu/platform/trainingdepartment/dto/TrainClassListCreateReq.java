@@ -8,6 +8,7 @@ public class TrainClassListCreateReq {
   /** 培训ID */
   private Long trainId;
 
+  /** 用户ID */
   private Long userId;
 
   /** 是否组长 */
@@ -18,8 +19,10 @@ public class TrainClassListCreateReq {
 
   /** 班级名称 */
   @Size(max = 255)
+  /** 班级名称 */
   private String className;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getTrainId() {

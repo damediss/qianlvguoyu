@@ -9,16 +9,19 @@ public class TrainFileDetailCreateReq {
   private Long fileId;
 
   @Size(max = 255)
+  /** 标题 */
   private String title;
 
   @Size(max = 500)
   private String path;
 
+  /** 用户ID */
   private Long userId;
 
   /** 状态 */
   private Integer status;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getFileId() {

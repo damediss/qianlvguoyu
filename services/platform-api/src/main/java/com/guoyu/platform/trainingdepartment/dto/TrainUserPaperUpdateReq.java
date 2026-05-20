@@ -11,12 +11,15 @@ public class TrainUserPaperUpdateReq {
 
   @NotBlank
   @Size(max = 255)
+  /** 标题 */
   private String title;
 
   /** 证书类型 */
   @Size(max = 255)
+  /** 类型 */
   private String type;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public String getUrl() {

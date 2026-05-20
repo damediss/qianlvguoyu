@@ -13,8 +13,10 @@ public class TrainClassListUpdateReq {
 
   /** 班级名称 */
   @Size(max = 255)
+  /** 班级名称 */
   private String className;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Integer getIsLeader() {

@@ -14,6 +14,7 @@ public class TrainCourseCreateReq {
 
   /** 教师姓名 */
   @Size(max = 20)
+  /** 讲师姓名 */
   private String teacherName;
 
   /** 教师用户ID */
@@ -27,14 +28,17 @@ public class TrainCourseCreateReq {
   private String courseDate;
 
   @Size(max = 500)
+  /** 标题 */
   private String title;
 
   /** 开始时间 */
   @Size(max = 20)
+  /** 开始时间 */
   private String startTime;
 
   /** 结束时间 */
   @Size(max = 20)
+  /** 结束时间 */
   private String endTime;
 
   /** 理论课时 */
@@ -43,6 +47,7 @@ public class TrainCourseCreateReq {
   /** 实操课时 */
   private Integer operationTime;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getTrainId() {

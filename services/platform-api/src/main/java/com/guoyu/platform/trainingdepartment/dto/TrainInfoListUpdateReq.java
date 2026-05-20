@@ -10,6 +10,7 @@ public class TrainInfoListUpdateReq {
 
   @NotBlank
   @Size(max = 255)
+  /** 标题 */
   private String title;
 
   /** 封面 */
@@ -58,6 +59,7 @@ public class TrainInfoListUpdateReq {
 
   /** 岗位 */
   @Size(max = 500)
+  /** 岗位 */
   private String position;
 
   /** 课程数量 */
@@ -114,6 +116,7 @@ public class TrainInfoListUpdateReq {
   /** 状态 */
   private Integer status;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   /** 积分 */

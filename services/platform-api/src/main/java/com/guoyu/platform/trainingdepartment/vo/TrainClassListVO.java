@@ -17,6 +17,8 @@ public record TrainClassListVO(
     String className,
     /** 排序号 */
     Integer sortNumber,
+    /** 状态 0-未开班 1-开班 2-结课 */
+    Integer status,
     Long tenantId,
     LocalDateTime createTime
 ) {}

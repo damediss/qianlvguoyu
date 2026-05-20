@@ -2,10 +2,17 @@ package com.guoyu.platform.trainingdepartment.dto;
 
 import com.guoyu.platform.common.api.PageQuery;
 
+/**
+ * 培训预算查询请求
+ */
 public class TrainBudgetQueryReq extends PageQuery {
+  /** 培训ID */
   private Long trainId;
+  /** 组织ID */
   private Long orgId;
+  /** 状态 */
   private Integer status;
+  /** 搜索关键词 */
   private String keyword;
 
   public Long getTrainId() { return trainId; }

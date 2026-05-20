@@ -2,17 +2,25 @@ package com.guoyu.platform.trainingdepartment.dto;
 
 import jakarta.validation.constraints.Size;
 
+/**
+ * 培训申请更新请求
+ */
 public class TrainRequestUpdateReq {
   @Size(max = 255) private String companyName;
   private Long companyId;
+  /** 岗位 */
   @Size(max = 255) private String position;
+  /** 人数 */
   private Integer num;
+  /** 类型 */
   @Size(max = 255) private String type;
+  /** 培训日期 */
   @Size(max = 255) private String trainDate;
   @Size(max = 255) private String contact;
   @Size(max = 255) private String contactPhone;
   private Integer isOnPosition;
   private String studentForm;
+  /** 排序号 */
   private Integer sortNumber;
 
   public String getCompanyName() { return companyName; }

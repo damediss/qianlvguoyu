@@ -5,8 +5,10 @@ import com.guoyu.platform.common.api.PageQuery;
 /** 知识点任务列表查询请求 */
 public class TrainTaskListQueryReq extends PageQuery {
 
+  /** 搜索关键词 */
   private String keyword;
   private Long workTypeId;
+  /** 课程ID */
   private Long courseId;
   private Long knowledgeId;
   /** 类型 */

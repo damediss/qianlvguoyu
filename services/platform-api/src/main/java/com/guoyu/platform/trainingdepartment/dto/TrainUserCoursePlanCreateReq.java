@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Size;
 /** 用户课程计划创建请求 */
 public class TrainUserCoursePlanCreateReq {
 
+  /** 用户ID */
   private Long userId;
 
   /** 平台用户ID */
@@ -28,6 +29,7 @@ public class TrainUserCoursePlanCreateReq {
   /** 状态 */
   private Integer status;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getUserId() {

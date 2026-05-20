@@ -8,6 +8,7 @@ public class TrainInfoClassUpdateReq {
 
   @NotBlank
   @Size(max = 50)
+  /** 标题 */
   private String title;
 
   /** 人数 */

@@ -8,10 +8,12 @@ public class AssignClassReq {
 
   /** 目标班级ID */
   @NotNull
+  /** 班级ID */
   private Long classId;
 
   /** 用户ID列表 */
   @NotNull
+  /** 用户ID列表 */
   private List<Long> userIds;
 
   public Long getClassId() {

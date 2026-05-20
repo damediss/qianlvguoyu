@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 @TableName("course_kejian")
 public class CourseKejianEntity {
 
+  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
 
@@ -29,6 +30,7 @@ public class CourseKejianEntity {
   /** 单价 */
   private BigDecimal price;
   /** 描述 */
+  /**  描述 */
   @TableField("desction")
   private String description;
   /** 内容 */
@@ -46,6 +48,7 @@ public class CourseKejianEntity {
   /** 添加时间 */
   private Long addtime;
 
+  /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
 

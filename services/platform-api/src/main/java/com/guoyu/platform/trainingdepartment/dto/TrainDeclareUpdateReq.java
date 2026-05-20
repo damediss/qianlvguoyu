@@ -2,12 +2,19 @@ package com.guoyu.platform.trainingdepartment.dto;
 
 import jakarta.validation.constraints.Size;
 
+/**
+ * 培训申报更新请求
+ */
 public class TrainDeclareUpdateReq {
+  /** 培训ID */
   private Long trainId;
+  /** 标题 */
   @Size(max = 255) private String title;
   private Long cityId;
   @Size(max = 255) private String cityName;
+  /** 状态 */
   private Integer status;
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getTrainId() { return trainId; }

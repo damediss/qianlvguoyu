@@ -12,11 +12,13 @@ import java.time.LocalDateTime;
 @TableName("train_class_list")
 public class TrainClassListEntity {
 
+  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
 
   /** 培训ID */
   private Long trainId;
+  /** 用户ID */
   private Long userId;
   /** 是否组长 0-否 1-是 */
   private Integer isLeader;
@@ -26,9 +28,14 @@ public class TrainClassListEntity {
   private String className;
   /** 排序号 */
   private Integer sortNumber;
+  /** 状态 0-未开班 1-开班 2-结课 */
+  private Integer status;
+  /** 租户ID */
   private Long tenantId;
+  /** 创建时间 */
   private LocalDateTime createTime;
 
+  /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
 
@@ -46,6 +53,8 @@ public class TrainClassListEntity {
   public void setClassName(String className) { this.className = className; }
   public Integer getSortNumber() { return sortNumber; }
   public void setSortNumber(Integer sortNumber) { this.sortNumber = sortNumber; }
+  public Integer getStatus() { return status; }
+  public void setStatus(Integer status) { this.status = status; }
   public Long getTenantId() { return tenantId; }
   public void setTenantId(Long tenantId) { this.tenantId = tenantId; }
   public LocalDateTime getCreateTime() { return createTime; }

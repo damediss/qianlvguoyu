@@ -5,6 +5,7 @@ import com.guoyu.platform.common.api.PageQuery;
 /** 参与培训人员信息查询请求 */
 public class TrainUserInfoQueryReq extends PageQuery {
 
+  /** 搜索关键词 */
   private String keyword;
   private Long companyId;
   /** 人员类型 */

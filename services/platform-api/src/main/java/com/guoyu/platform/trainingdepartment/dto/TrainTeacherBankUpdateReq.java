@@ -6,9 +6,11 @@ import jakarta.validation.constraints.Size;
 public class TrainTeacherBankUpdateReq {
 
   @Size(max = 20)
+  /** 名称 */
   private String name;
 
   @Size(max = 30)
+  /** 联系电话 */
   private String phone;
 
   /** 身份证 */
@@ -32,9 +34,11 @@ public class TrainTeacherBankUpdateReq {
 
   /** 工作单位 */
   @Size(max = 255)
+  /** 单位 */
   private String company;
 
   @Size(max = 500)
+  /** 培训地点 */
   private String address;
 
   /** 身份证号码 */
@@ -62,17 +66,21 @@ public class TrainTeacherBankUpdateReq {
 
   /** 学历 */
   @Size(max = 50)
+  /** 学历 */
   private String education;
 
   /** 专业 */
   @Size(max = 50)
+  /** 专业 */
   private String major;
 
   /** 状态 */
   private Integer status;
 
+  /** 用户ID */
   private Long userId;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public String getName() {

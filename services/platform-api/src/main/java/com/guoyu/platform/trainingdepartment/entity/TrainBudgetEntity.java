@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 @TableName("train_budget")
 public class TrainBudgetEntity {
 
+  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
 
@@ -103,6 +104,7 @@ public class TrainBudgetEntity {
   /** 排序号 */
   private Integer sortNumber;
 
+  /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
 

@@ -9,17 +9,21 @@ public class TrainResourceCreateReq {
   private Long workTypeId;
 
   @Size(max = 255)
+  /** 标题 */
   private String title;
 
   /** 类型 */
   @Size(max = 20)
+  /** 类型 */
   private String type;
 
   @Size(max = 500)
   private String path;
 
+  /** 用户ID */
   private Long userId;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getWorkTypeId() {

@@ -3,13 +3,20 @@ package com.guoyu.platform.trainingdepartment.dto;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 
+/**
+ * 培训预算更新请求
+ */
 public class TrainBudgetUpdateReq {
+  /** 培训ID */
   private Long trainId;
   @Size(max = 255) private String province;
   @Size(max = 255) private String city;
   @Size(max = 255) private String region;
+  /** 组织ID */
   private Long orgId;
+  /** 组织名称 */
   @Size(max = 255) private String orgName;
+  /** 培训日期 */
   @Size(max = 255) private String trainDate;
   private Long trainWorkTypeId;
   @Size(max = 255) private String trainWorkTypeName;
@@ -41,7 +48,9 @@ public class TrainBudgetUpdateReq {
   private BigDecimal reviewMakeupTrainFee;
   private BigDecimal profit;
   private String comments;
+  /** 状态 */
   private Integer status;
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getTrainId() { return trainId; }

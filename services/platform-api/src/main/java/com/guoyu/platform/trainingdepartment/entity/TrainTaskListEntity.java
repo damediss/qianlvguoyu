@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 @TableName("train_task_list")
 public class TrainTaskListEntity {
 
+  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
 
@@ -34,10 +35,13 @@ public class TrainTaskListEntity {
   private Integer minMinute;
   /** 是否必须 0-否 1-是 */
   private Integer isRequired;
+  /** 用户ID */
   private Long userId;
   /** 排序号 */
   private Integer sortNumber;
+  /** 租户ID */
   private Long tenantId;
+  /** 创建时间 */
   private LocalDateTime createTime;
   /** 满分 */
   private Integer score;
@@ -60,6 +64,7 @@ public class TrainTaskListEntity {
   /** 终审人姓名 */
   private String finalCheckUsername;
 
+  /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
 
