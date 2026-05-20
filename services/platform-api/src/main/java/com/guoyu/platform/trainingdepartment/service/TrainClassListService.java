@@ -58,4 +58,20 @@ public interface TrainClassListService {
      * @param req 分配请求（classId + userIds）
      */
     void batchAssign(AssignClassReq req);
+
+    /**
+     * 开班
+     *
+     * @param id 班级ID
+     * @return 更新后的班级VO
+     */
+    TrainClassListVO openClass(Long id);
+
+    /**
+     * 结课
+     *
+     * @param id 班级ID
+     * @return 更新后的班级VO
+     */
+    TrainClassListVO closeClass(Long id);
 }

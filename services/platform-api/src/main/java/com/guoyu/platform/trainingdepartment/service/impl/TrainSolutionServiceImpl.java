@@ -200,6 +200,43 @@ public class TrainSolutionServiceImpl implements TrainSolutionService {
         mapper.updateById(entity);
     }
 
+    @Override
+    @Transactional
+    public TrainSolutionVO submit(Long id) {
+        TrainSolutionEntity entity = getExisting(id);
+        if (entity.getStatus() == null || entity.getStatus() != 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "只有草稿状态的方案才能提交审批");
+        }
+        entity.setStatus(1);
+        mapper.updateById(entity);
+        return toVO(entity);
+    }
+
+    @Override
+    @Transactional
+    public TrainSolutionVO approve(Long id) {
+        TrainSolutionEntity entity = getExisting(id);
+        if (entity.getStatus() == null || entity.getStatus() != 1) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "只有待审批状态的方案才能审批通过");
+        }
+        entity.setStatus(2);
+        mapper.updateById(entity);
+        return toVO(entity);
+    }
+
+    @Override
+    @Transactional
+    public TrainSolutionVO reject(Long id, String reason) {
+        TrainSolutionEntity entity = getExisting(id);
+        if (entity.getStatus() == null || entity.getStatus() != 1) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "只有待审批状态的方案才能驳回");
+        }
+        entity.setStatus(0);
+        entity.setRejectReason(reason);
+        mapper.updateById(entity);
+        return toVO(entity);
+    }
+
     private TrainSolutionEntity getExisting(Long id) {
         Long tenantId = SecurityContext.currentUser().getTenantId();
         TrainSolutionEntity entity = mapper.selectOne(new LambdaQueryWrapper<TrainSolutionEntity>()

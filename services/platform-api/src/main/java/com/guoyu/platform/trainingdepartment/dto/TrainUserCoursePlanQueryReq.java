@@ -5,7 +5,9 @@ import com.guoyu.platform.common.api.PageQuery;
 /** 用户课程计划查询请求 */
 public class TrainUserCoursePlanQueryReq extends PageQuery {
 
+  /** 用户ID */
   private Long userId;
+  /** 课程ID */
   private Long courseId;
   /** 状态 */
   private Integer status;

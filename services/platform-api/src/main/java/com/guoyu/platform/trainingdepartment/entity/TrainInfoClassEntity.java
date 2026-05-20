@@ -11,6 +11,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 @TableName("train_info_class")
 public class TrainInfoClassEntity {
 
+  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
 
@@ -35,6 +36,7 @@ public class TrainInfoClassEntity {
   /** 课表文件 */
   private String kcbiaoFile;
 
+  /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
 

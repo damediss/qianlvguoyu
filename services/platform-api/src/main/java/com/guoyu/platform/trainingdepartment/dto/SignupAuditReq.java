@@ -11,6 +11,7 @@ public class SignupAuditReq {
 
   /** 审核状态: 1通过, 2拒绝 */
   @NotNull
+  /** 状态 */
   private Integer status;
 
   public List<Long> getIds() {

@@ -8,6 +8,7 @@ public class TrainFileDetailUpdateReq {
 
   @NotBlank
   @Size(max = 255)
+  /** 标题 */
   private String title;
 
   @Size(max = 500)
@@ -16,6 +17,7 @@ public class TrainFileDetailUpdateReq {
   /** 状态 */
   private Integer status;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public String getTitle() {

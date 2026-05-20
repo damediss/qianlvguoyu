@@ -8,12 +8,14 @@ public class TrainUserPatentCreateReq {
 
   @NotBlank
   @Size(max = 255)
+  /** 标题 */
   private String title;
 
   /** 专利证书文件 */
   @Size(max = 255)
   private String paper;
 
+  /** 用户ID */
   private Long userId;
 
   public String getTitle() {

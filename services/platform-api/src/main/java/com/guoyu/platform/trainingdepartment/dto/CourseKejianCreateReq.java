@@ -16,6 +16,7 @@ public class CourseKejianCreateReq {
   /** 课件名称 */
   @NotBlank
   @Size(max = 50)
+  /** 标题 */
   private String title;
 
   /** 课时 */

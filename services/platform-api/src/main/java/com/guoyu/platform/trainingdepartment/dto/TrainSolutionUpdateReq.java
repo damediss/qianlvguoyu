@@ -2,10 +2,14 @@ package com.guoyu.platform.trainingdepartment.dto;
 
 import jakarta.validation.constraints.Size;
 
+/**
+ * 培训方案更新请求
+ */
 public class TrainSolutionUpdateReq {
   private Long trainInfoId;
   private Long companyId;
   @Size(max = 255) private String companyName;
+  /** 标题 */
   @Size(max = 255) private String title;
   private String nationPolicy;
   private String industrySituationAnalysis;
@@ -25,8 +29,11 @@ public class TrainSolutionUpdateReq {
   private String trainContent;
   private String trainMethod;
   private String course;
+  /** 状态 */
   private Integer status;
+  /** 排序号 */
   private Integer sortNumber;
+  /** 内容 */
   private String content;
   private String filePath;
   private String rejectReason;

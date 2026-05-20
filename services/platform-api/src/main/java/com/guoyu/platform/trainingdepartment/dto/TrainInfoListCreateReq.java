@@ -10,6 +10,7 @@ public class TrainInfoListCreateReq {
 
   @NotBlank
   @Size(max = 255)
+  /** 标题 */
   private String title;
 
   /** 封面 */
@@ -58,6 +59,7 @@ public class TrainInfoListCreateReq {
 
   /** 岗位 */
   @Size(max = 500)
+  /** 岗位 */
   private String position;
 
   /** 课程数量 */
@@ -66,6 +68,7 @@ public class TrainInfoListCreateReq {
   /** 负责人确认 */
   private Integer headConfirm;
 
+  /** 用户ID */
   private Long userId;
 
   /** 企业已确认 */
@@ -116,6 +119,7 @@ public class TrainInfoListCreateReq {
   /** 状态 */
   private Integer status;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   /** 积分 */

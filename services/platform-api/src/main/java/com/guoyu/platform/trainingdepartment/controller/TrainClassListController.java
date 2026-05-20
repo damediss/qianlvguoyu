@@ -83,4 +83,20 @@ public class TrainClassListController {
     service.batchAssign(req);
     return ApiResponse.ok();
   }
+
+  /** 开班 */
+  @PostMapping("/class-lists/{id}/open")
+  @PreAuthorize("hasAuthority('train:class-list:update')")
+  @AuditLog(module = "training", action = "class-list:open", targetType = "train_class_list")
+  public ApiResponse<TrainClassListVO> openClass(@PathVariable Long id) {
+    return ApiResponse.ok(service.openClass(id));
+  }
+
+  /** 结课 */
+  @PostMapping("/class-lists/{id}/close")
+  @PreAuthorize("hasAuthority('train:class-list:update')")
+  @AuditLog(module = "training", action = "class-list:close", targetType = "train_class_list")
+  public ApiResponse<TrainClassListVO> closeClass(@PathVariable Long id) {
+    return ApiResponse.ok(service.closeClass(id));
+  }
 }

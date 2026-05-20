@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 @TableName("train_people_list")
 public class TrainPeopleListEntity {
 
+  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
 
@@ -22,6 +23,7 @@ public class TrainPeopleListEntity {
   private Long trainClassId;
   /** 人员类型 */
   private String type;
+  /** 用户ID */
   private Long userId;
   /** 平台用户ID */
   private Long platformUserId;
@@ -47,13 +49,16 @@ public class TrainPeopleListEntity {
   private Integer currentLevel;
   /** 排序号 */
   private Integer sortNumber;
+  /** 租户ID */
   private Long tenantId;
+  /** 创建时间 */
   private LocalDateTime createTime;
   /** 身份证号 */
   private String idCard;
   /** 审核状态: 0待审核, 1通过, 2拒绝 */
   private Integer status;
 
+  /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
 

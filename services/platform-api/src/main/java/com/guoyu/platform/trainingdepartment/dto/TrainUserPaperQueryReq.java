@@ -5,9 +5,11 @@ import com.guoyu.platform.common.api.PageQuery;
 /** 用户证书查询请求 */
 public class TrainUserPaperQueryReq extends PageQuery {
 
+  /** 搜索关键词 */
   private String keyword;
   /** 证书类型 */
   private String type;
+  /** 用户ID */
   private Long userId;
 
   public String getKeyword() {

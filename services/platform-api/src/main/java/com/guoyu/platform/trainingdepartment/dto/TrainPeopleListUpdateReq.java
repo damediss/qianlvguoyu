@@ -10,6 +10,7 @@ public class TrainPeopleListUpdateReq {
   private String realname;
 
   @Size(max = 20)
+  /** 联系电话 */
   private String phone;
 
   /** 是否组长 */
@@ -38,6 +39,7 @@ public class TrainPeopleListUpdateReq {
   /** 当前等级 */
   private Integer currentLevel;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public String getRealname() {

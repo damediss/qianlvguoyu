@@ -8,11 +8,13 @@ public class TrainFileListUpdateReq {
 
   @NotBlank
   @Size(max = 255)
+  /** 标题 */
   private String title;
 
   /** 状态 */
   private Integer status;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public String getTitle() {

@@ -5,6 +5,7 @@ import com.guoyu.platform.common.api.PageQuery;
 /** 任务详情查询请求 */
 public class TrainTaskInfoDetailQueryReq extends PageQuery {
 
+  /** 培训ID */
   private Long trainId;
   /** 任务列表ID */
   private Long taskListId;

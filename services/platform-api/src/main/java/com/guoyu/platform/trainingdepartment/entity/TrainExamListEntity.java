@@ -12,13 +12,19 @@ import java.time.LocalDateTime;
 @TableName("train_exam_list")
 public class TrainExamListEntity {
 
+  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
 
+  /** 标题 */
   private String title;
+  /** 等级 */
   private String level;
+  /** 培训ID */
   private Long trainId;
+  /** 组织ID */
   private Long orgId;
+  /** 组织名称 */
   private String orgName;
   /** 0线上 1线下 */
   private Integer type;
@@ -62,13 +68,18 @@ public class TrainExamListEntity {
   private Integer needFinishAdventure;
   /** 是否需要先完成常规学 */
   private Integer needFinishNormal;
+  /** 用户ID */
   private Long userId;
+  /** 排序号 */
   private Integer sortNumber;
+  /** 租户ID */
   private Long tenantId;
   /** 机构ID */
   private Long jigouId;
+  /** 创建时间 */
   private LocalDateTime createTime;
 
+  /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
 

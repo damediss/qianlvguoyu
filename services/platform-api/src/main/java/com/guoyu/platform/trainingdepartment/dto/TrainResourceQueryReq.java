@@ -5,6 +5,7 @@ import com.guoyu.platform.common.api.PageQuery;
 /** 资源查询请求 */
 public class TrainResourceQueryReq extends PageQuery {
 
+  /** 搜索关键词 */
   private String keyword;
   /** 类型 */
   private String type;

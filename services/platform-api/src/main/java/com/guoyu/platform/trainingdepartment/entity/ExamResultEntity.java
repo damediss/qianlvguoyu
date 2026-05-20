@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 @TableName("exam_result")
 public class ExamResultEntity {
 
+  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
 
@@ -30,13 +31,18 @@ public class ExamResultEntity {
   private Integer examType;
   /** 配置试卷的主键 */
   private Long examId;
+  /** 用户ID */
   private Long userId;
   private Long platformUserId;
   private String userAnswer;
+  /** 排序号 */
   private Integer sortNumber;
+  /** 租户ID */
   private Long tenantId;
+  /** 创建时间 */
   private LocalDateTime createTime;
 
+  /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
 

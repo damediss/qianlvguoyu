@@ -18,8 +18,10 @@ public class TrainUserLearnLogCreateReq {
   /** 分数/成绩 */
   private Integer score;
 
+  /** 用户ID */
   private Long userId;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getTrainId() {

@@ -13,9 +13,11 @@ import java.time.LocalDateTime;
 @TableName("train_user_course_plan")
 public class TrainUserCoursePlanEntity {
 
+  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
 
+  /** 用户ID */
   private Long userId;
   /** 平台用户ID */
   private Long platformUserId;
@@ -33,9 +35,12 @@ public class TrainUserCoursePlanEntity {
   private Integer status;
   /** 排序号 */
   private Integer sortNumber;
+  /** 租户ID */
   private Long tenantId;
+  /** 创建时间 */
   private LocalDateTime createTime;
 
+  /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
 

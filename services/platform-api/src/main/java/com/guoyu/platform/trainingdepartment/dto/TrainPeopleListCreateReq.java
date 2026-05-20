@@ -14,8 +14,10 @@ public class TrainPeopleListCreateReq {
 
   /** 类型 */
   @Size(max = 20)
+  /** 类型 */
   private String type;
 
+  /** 用户ID */
   private Long userId;
 
   /** 平台用户ID */
@@ -25,6 +27,7 @@ public class TrainPeopleListCreateReq {
   private String realname;
 
   @Size(max = 20)
+  /** 联系电话 */
   private String phone;
 
   /** 是否组长 */
@@ -53,6 +56,7 @@ public class TrainPeopleListCreateReq {
   /** 当前等级 */
   private Integer currentLevel;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   /** 身份证 */

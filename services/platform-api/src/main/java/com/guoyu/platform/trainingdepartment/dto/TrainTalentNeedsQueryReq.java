@@ -2,9 +2,15 @@ package com.guoyu.platform.trainingdepartment.dto;
 
 import com.guoyu.platform.common.api.PageQuery;
 
+/**
+ * 人才需求查询请求
+ */
 public class TrainTalentNeedsQueryReq extends PageQuery {
+  /** 组织ID */
   private Long orgId;
+  /** 搜索关键词 */
   private String keyword;
+  /** 性别 */
   private Integer gender;
   private String edu;
 

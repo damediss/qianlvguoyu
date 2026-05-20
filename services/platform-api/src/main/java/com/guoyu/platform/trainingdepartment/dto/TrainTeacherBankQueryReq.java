@@ -5,6 +5,7 @@ import com.guoyu.platform.common.api.PageQuery;
 /** 师资库查询请求 */
 public class TrainTeacherBankQueryReq extends PageQuery {
 
+  /** 搜索关键词 */
   private String keyword;
   /** 状态 */
   private Integer status;

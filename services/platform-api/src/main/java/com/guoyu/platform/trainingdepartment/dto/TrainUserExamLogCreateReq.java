@@ -9,8 +9,10 @@ public class TrainUserExamLogCreateReq {
   /** 知识点ID */
   private Long knowledgeId;
 
+  /** 用户ID */
   private Long userId;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public Long getTrainId() {

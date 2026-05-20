@@ -7,6 +7,7 @@ public class TrainUserLearnLogQueryReq extends PageQuery {
 
   /** 培训ID */
   private Long trainId;
+  /** 用户ID */
   private Long userId;
 
   public Long getTrainId() {

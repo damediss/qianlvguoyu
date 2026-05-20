@@ -6,14 +6,18 @@ import jakarta.validation.constraints.Size;
 public class TrainExamListUpdateReq {
 
   @Size(max = 255)
+  /** 标题 */
   private String title;
 
   @Size(max = 255)
+  /** 等级 */
   private String level;
 
+  /** 组织ID */
   private Long orgId;
 
   @Size(max = 255)
+  /** 组织名称 */
   private String orgName;
 
   /** 0线上 1线下 */
@@ -67,6 +71,7 @@ public class TrainExamListUpdateReq {
 
   private Integer needFinishAdventure;
   private Integer needFinishNormal;
+  /** 排序号 */
   private Integer sortNumber;
 
   public String getTitle() { return title; }

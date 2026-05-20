@@ -13,6 +13,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+/**
+ * 培训预算管理接口
+ */
 @Validated
 @RestController
 @RequestMapping("/training")
@@ -24,18 +27,21 @@ public class TrainBudgetController {
     this.service = service;
   }
 
+  /** 分页查询培训预算 */
   @GetMapping("/budgets")
   @PreAuthorize("hasAuthority('train:budget:view')")
   public ApiResponse<PageResponse<TrainBudgetVO>> page(@Valid @ModelAttribute TrainBudgetQueryReq req) {
     return ApiResponse.ok(service.page(req));
   }
 
+  /** 根据ID查询培训预算 */
   @GetMapping("/budgets/{id}")
   @PreAuthorize("hasAuthority('train:budget:view')")
   public ApiResponse<TrainBudgetVO> getById(@PathVariable Long id) {
     return ApiResponse.ok(service.getById(id));
   }
 
+  /** 创建培训预算 */
   @PostMapping("/budgets")
   @PreAuthorize("hasAuthority('train:budget:create')")
   @AuditLog(module = "training", action = "budget:create", targetType = "train_budget")
@@ -43,6 +49,7 @@ public class TrainBudgetController {
     return ApiResponse.ok(service.create(req));
   }
 
+  /** 更新培训预算 */
   @PutMapping("/budgets/{id}")
   @PreAuthorize("hasAuthority('train:budget:update')")
   @AuditLog(module = "training", action = "budget:update", targetType = "train_budget")
@@ -50,6 +57,7 @@ public class TrainBudgetController {
     return ApiResponse.ok(service.update(id, req));
   }
 
+  /** 删除培训预算 */
   @DeleteMapping("/budgets/{id}")
   @PreAuthorize("hasAuthority('train:budget:delete')")
   @AuditLog(module = "training", action = "budget:delete", targetType = "train_budget")

@@ -6,12 +6,13 @@ import {
   DatabaseOutlined,
   DashboardOutlined,
   ExperimentOutlined,
-  ReadOutlined,
+  FileTextOutlined,
   RobotOutlined,
-  SafetyOutlined,
   ScheduleOutlined,
   SearchOutlined,
   SettingOutlined,
+  SolutionOutlined,
+  TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { Avatar, Button, Input, Layout, Menu, Space, Typography } from 'antd';
@@ -29,8 +30,18 @@ const menuItems = [
     label: '题库管理',
     children: [
       { key: 'exam-work-type', icon: <ExperimentOutlined />, label: '工种管理' },
-      { key: 'exam-course', icon: <ReadOutlined />, label: '科目管理' },
-      { key: 'exam-user-auth-course', icon: <SafetyOutlined />, label: '专家授权管理' },
+    ],
+  },
+  {
+    key: 'training',
+    icon: <ScheduleOutlined />,
+    label: '培训管理',
+    children: [
+      { key: 'training-needs', icon: <FileTextOutlined />, label: '需求管理' },
+      { key: 'training-solutions', icon: <SolutionOutlined />, label: '培训方案' },
+      { key: 'training-info', icon: <BookOutlined />, label: '培训信息' },
+      { key: 'training-class-people', icon: <TeamOutlined />, label: '班级人员' },
+      { key: 'training-class-declare', icon: <AuditOutlined />, label: '开班申报' },
     ],
   },
   { key: 'training', icon: <ScheduleOutlined />, label: '培训考试' },
@@ -54,7 +65,7 @@ export function AppShell({ pageMap }: AppShellProps) {
         <div className="brand-block">
           <div className="brand-mark">国</div>
           <div>
-            <Typography.Text className="brand-name">千铅国旺云平台</Typography.Text>
+            <Typography.Text className="brand-name">千铝国昱云平台</Typography.Text>
             <Typography.Text className="brand-sub">培训学习考试闭环</Typography.Text>
           </div>
         </div>
@@ -63,7 +74,7 @@ export function AppShell({ pageMap }: AppShellProps) {
           theme="light"
           mode="inline"
           selectedKeys={selectedKey}
-          defaultOpenKeys={['question-bank']}
+          defaultOpenKeys={['question-bank', 'training']}
           onClick={({ key }) => setSelectedKey([key])}
           items={menuItems}
         />

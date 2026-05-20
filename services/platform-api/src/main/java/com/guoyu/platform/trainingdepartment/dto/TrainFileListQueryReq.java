@@ -9,6 +9,7 @@ public class TrainFileListQueryReq extends PageQuery {
   private String tableName;
   /** 关联主键 */
   private String pk;
+  /** 搜索关键词 */
   private String keyword;
 
   public String getTableName() {

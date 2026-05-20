@@ -16,6 +16,7 @@ public class ExamResultUpdateReq {
 
   private String userAnswer;
 
+  /** 排序号 */
   private Integer sortNumber;
 
   public String getType() { return type; }
