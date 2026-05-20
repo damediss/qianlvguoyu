@@ -6,8 +6,10 @@ import {
   DatabaseOutlined,
   DashboardOutlined,
   ExperimentOutlined,
+  IdcardOutlined,
   ReadOutlined,
   RobotOutlined,
+  SafetyCertificateOutlined,
   SafetyOutlined,
   ScheduleOutlined,
   SearchOutlined,
@@ -39,6 +41,15 @@ const menuItems = [
   { key: 'knowledge', icon: <DatabaseOutlined />, label: '知识库' },
   { key: 'integration', icon: <ApiOutlined />, label: 'MCP 工具' },
   { key: 'audit', icon: <AuditOutlined />, label: '审计留痕' },
+  {
+    key: 'chazheng',
+    icon: <SafetyCertificateOutlined />,
+    label: '查证管理',
+    children: [
+      { key: 'chazheng-user-list', icon: <SearchOutlined />, label: '用户列表' },
+      { key: "chazheng-cert-query", icon: <IdcardOutlined />, label: "证书查询" },
+    ],
+  },
 ];
 
 interface AppShellProps {
@@ -54,7 +65,7 @@ export function AppShell({ pageMap }: AppShellProps) {
         <div className="brand-block">
           <div className="brand-mark">国</div>
           <div>
-            <Typography.Text className="brand-name">千铅国旺云平台</Typography.Text>
+            <Typography.Text className="brand-name">千铝国旺云平台</Typography.Text>
             <Typography.Text className="brand-sub">培训学习考试闭环</Typography.Text>
           </div>
         </div>

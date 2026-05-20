@@ -9,6 +9,8 @@ import { KnowledgePage } from './pages/knowledge/KnowledgePage';
 import { WorkTypePage } from './pages/exam/WorkTypePage';
 import { CoursePage } from './pages/exam/CoursePage';
 import { UserAuthCoursePage } from './pages/exam/UserAuthCoursePage';
+import { UserListPage } from './pages/chazheng/UserListPage';
+import { CertQueryPage } from './pages/chazheng/CertQueryPage';
 import { appTheme } from './theme';
 import './styles/tokens.css';
 import './styles/global.css';
@@ -27,6 +29,8 @@ const pageMap = {
   'exam-work-type': <WorkTypePage />,
   'exam-course': <CoursePage />,
   'exam-user-auth-course': <UserAuthCoursePage />,
+  'chazheng-user-list': <UserListPage />,
+  'chazheng-cert-query': <CertQueryPage />,
 };
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

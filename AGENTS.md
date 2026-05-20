@@ -30,12 +30,18 @@
   - 工种管理：树形结构 CRUD、职业编码/级别管理（`exam/`）
   - 科目管理：分页 CRUD、工种关联（`exam/`）
   - 专家授权管理：专家-科目多对多授权（命题/审题/终审）、聚合分页（`exam/`）
-- **数据库**：11 个 Flyway 迁移已就绪（含初始化表、Demo 数据、知识库表、工种表、科目表、授权表）
+- **????**?
+  - ?????Excel ??????? API ?????????/???Excel ???`chazheng/`?
+  - ?????????????????/???/????????????`chazheng/`?
+
+- **数据库**：13 个 Flyway 迁移已就绪（含初始化表、Demo 数据、知识库表、工种表、科目表、授权表、查证表）
 - **前端管理端**：
   - 登录页 + AuthGate 权限门控
   - AppShell 布局 + 侧栏菜单
   - 知识库页面
   - 题库管理：工种管理、科目管理、专家授权管理页面（`apps/admin-web/src/pages/exam/`）
+  - 查证管理：用户列表页面（`apps/admin-web/src/pages/chazheng/`）
+  
 
 ### 空壳/待实现
 - `course/`、`question/`、`training/`：后端包目录存在但无业务代码
@@ -91,7 +97,7 @@
 ```
 common/  config/  security/  tenant/  system/
 file/  workflow/  course/  question/  exam/  training/
-ai/  integration/
+ai/  chazheng/  integration/
 ```
 
 分层约束：
