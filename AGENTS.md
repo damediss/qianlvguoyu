@@ -1,4 +1,4 @@
-﻿# AGENTS.md
+# AGENTS.md
 
 本文件给在本项目中工作的 AI Agent / Codex 使用。进入仓库后先阅读本文件，再按需加载对应目录下的文档。
 
@@ -22,13 +22,24 @@
 
 ### 已实现
 - **平台底座**：租户管理、组织管理、用户管理、角色权限、菜单权限（`system/`、`auth/`、`tenant/`、`security/`）
+- **权限框架**：Sa-Token Token 管理（3天过期、并发登录），Spring Security `@PreAuthorize` 鉴权，SaTokenBridgeFilter 桥接（`security/filter/`）
+- **多租户**：`TenantContextHolder`（ThreadLocal） + `TenantContextFilter`（Header 解析）+ MyBatis-Plus `TenantLineInnerInterceptor`（SQL 自动拼 tenant_id）
+- **全局异常处理**：`GlobalExceptionHandler` 覆盖 Sa-Token 异常（NotLogin/NotPermission）、参数校验、业务异常
 - **知识库**：知识库 CRUD、文档管理、权限控制（`knowledge/`）
-- **数据库**：5 个 Flyway 迁移已就绪（含初始化表、Demo 数据、知识库表）
-- **前端管理端**：知识库页面（`apps/admin-web/src/pages/knowledge/`），登录页，AppShell 布局
+- **题库管理**：
+  - 工种管理：树形结构 CRUD、职业编码/级别管理（`exam/`）
+  - 科目管理：分页 CRUD、工种关联（`exam/`）
+  - 专家授权管理：专家-科目多对多授权（命题/审题/终审）、聚合分页（`exam/`）
+- **数据库**：11 个 Flyway 迁移已就绪（含初始化表、Demo 数据、知识库表、工种表、科目表、授权表）
+- **前端管理端**：
+  - 登录页 + AuthGate 权限门控
+  - AppShell 布局 + 侧栏菜单
+  - 知识库页面
+  - 题库管理：工种管理、科目管理、专家授权管理页面（`apps/admin-web/src/pages/exam/`）
 
 ### 空壳/待实现
-- `course/`、`exam/`、`question/`、`training/`：后端包目录存在但无业务代码
-- 前端对应页面（dashboard/、system/、course/、question/、exam/、training/、workflow/、ai/）均未创建
+- `course/`、`question/`、`training/`：后端包目录存在但无业务代码
+- 前端对应页面（dashboard/、system/、course/、question/、training/、workflow/、ai/）均未创建
 - 学员端（`apps/student-web/`）未创建
 
 ### 独立服务状态
@@ -64,6 +75,15 @@
 3. AI、MCP、文件、工作流保持独立工程边界，但一期可先在 `platform-api` 内用包隔离
 4. Flowable 管核心业务流程状态，n8n 只做内部自动化/通知/定时
 
+### 编码和文件规范
+- 所有源码、配置、Markdown 文件使用 UTF-8 without BOM
+- 生成后验证中文内容在 git diff 中正常显示
+
+### 防御性编程
+- 所有 MyBatis Mapper 返回值做 null 检查后再使用
+- 所有外部 API/网络请求的响应先做空值和类型检查
+- 认证、授权、权限校验路径必须打印 warn/error 级别日志
+
 ### 后端规则
 
 包结构（`services/platform-api/src/main/java/com/guoyu/platform/`）：
@@ -88,24 +108,41 @@ ai/  integration/
 | Converter | `*Converter` | MapStruct 转换 |
 
 执行规则：
+#### API 响应规范
+- 统一返回结构 `{ code, message, data }`，分页数据包裹在 `data` 中，含 `total`、`page`、`size`
+- 所有列表接口使用同一分页参数（PageQuery），响应统一分页结构（PageResponse）
 
-1. Controller 不直接写 SQL，Entity 不直接暴露给前端
-2. 所有列表接口使用统一分页结构，所有写操作记录操作日志
-3. 涉及企业/项目/用户的数据必须带 `tenant_id` 和数据权限过滤
-4. 后端是权限最终裁决点，前端只做展示控制
-5. 文件上传只返回文件 ID、文件名、大小、类型和访问策略，不存文件内容到数据库
-6. AI / MCP 调用必须走受控 API 或 Application 层，不能绕过权限直接访问 Mapper
-7. API 统一返回结构：`{ code, message, data }`，分页数据包裹在 `data` 中，含 `total`、`page`、`size`
+#### 审计日志
+- 所有写操作记录操作日志
+
+#### 数据访问与隔离
+- Controller 不直接写 SQL，Entity 不直接暴露给前端（[分层约束](#分层约束)）
+- 涉及企业/项目/用户的数据必须带 `tenant_id` 和数据权限过滤
+- 文件上传只返回文件 ID、文件名、大小、类型和访问策略，不存文件内容到数据库
+- 逻辑删除统一用 MyBatis-Plus 的 deleteById / deleteBatchIds，禁止手动 setDeleted=1 + updateById
+- 多租户过滤通过 MyBatis-Plus 多租户插件自动处理，不要在业务代码里手动拼接 tenant_id 条件
+- 所有列表接口返回统一分页结构 { total, page, size, records }
+
+#### 认证与权限
+- 后端是权限最终裁决点，前端只做展示控制
+- AI / MCP 调用必须走受控 API 或 Application 层，不能绕过权限直接访问 Mapper
+- 使用 Sa-Token 时，确认当前 token 类型是否支持 extra 持久化（tik/jwt/redis），不支持的从数据库实时查
+- buildPrincipal 中对 roles/permissions 做 List.of() 兜底
+
+#### 异常处理
+- 全局异常处理器覆盖：认证失败、权限不足、参数校验失败、业务异常
+- 不要在 filter/interceptor 中静默吞异常
 
 ### 数据库规则
 
 1. MySQL 8.4，主键使用雪花 ID，类型统一 `BIGINT`
 2. 多租户字段统一 `tenant_id`，逻辑删除通过 `deleted` 字段实现（MyBatis-Plus 自动处理，不手写拼接条件）
 3. 业务主表必须包含：`id`、`tenant_id`、`created_at`、`updated_at`、`created_by`、`updated_by`、`deleted`
-4. 使用 Flyway 管理迁移，脚本放在 `services/platform-api/src/main/resources/db/migration/`
-5. 迁移命名：`V{YYYYMMDD}_{序号}__{描述}.sql`
-6. 空库必须能执行全部 Flyway 迁移成功
-7. 业务主状态以 MySQL 为准，Redis 只用于缓存/会话/验证码/限流
+4. 使用 Flyway 管理迁移，脚本放在 `services/platform-api/src/main/resources/db/migration/`,涉及数字串等配置值时，YAML 中的版本号、数字串字段使用引号包裹
+5. 包含种子数据的 Flyway 迁移必须幂等，可重复执行不报错,不要修改已提交/已应用的 Flyway 迁移文件内容，新增迁移应使用新版本号
+6. 迁移命名：`V{YYYYMMDD}_{序号}__{描述}.sql`
+7. 空库必须能执行全部 Flyway 迁移成功
+8. 业务主状态以 MySQL 为准，Redis 只用于缓存/会话/验证码/限流
 
 ### 前端规则
 
@@ -120,6 +157,22 @@ src/
     exam/  training/  workflow/  ai/
 ```
 
+#### HTTP 错误处理
+- apiClient 响应拦截器必须覆盖 401/403/500 三种错误码：
+  - 401：清除 store 中 token + currentUser，让 AuthGate 展示登录表单
+  - 403：展示权限不足提示，不自动跳转
+  - 500：区分代理错误和业务错误
+
+#### 登录态管理
+- AuthGate 使用 store 中 currentUser（同步）作为主判定条件，避免仅依赖异步 /api/auth/me
+- 页面刷新后：先取 localStorage token → 同步展示 UI → 后台异步验证 /api/auth/me
+- /api/auth/me 返回 401 时静默清除本地 token，展示登录表单
+- 登录成功后同时写入 token、tenantId、currentUser 到 store
+
+#### 多租户
+- 请求拦截器在 Authorization header 之外附加 X-Tenant-Id header
+- tenantId 持久化到 localStorage，页面刷新后恢复
+
 执行规则：
 
 1. 页面级数据请求使用 TanStack Query
@@ -128,6 +181,7 @@ src/
 4. 菜单从后端动态加载，不在前端写死
 5. HTML 原型仅作参考，不在原型文件上堆正式功能
 6. 接口类型放入 `types/`（后续可用 OpenAPI 生成）
+7. 需兼容局域网 HTTP 访问
 
 ### AI、Agent 与 MCP 规则
 
@@ -193,6 +247,7 @@ Redis 不是当前代码路径的硬依赖，可跳过。
 
 ```bash
 # 后端构建
+$env:JAVA_HOME = "D:\Program Files\Java\oracleJdk-21"
 mvn.cmd compile -f services/platform-api/pom.xml -s scripts/custom-maven-settings.xml
 
 # 后端直接启动（使用预构建 JAR）
