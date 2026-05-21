@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainCourseCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainCourseQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainCourseUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainCourseService;
+import com.guoyu.platform.trainingdepartment.service.TrainCourseApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainCourseVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainCourseController {
 
-  private final TrainCourseService service;
+  private final TrainCourseApplicationService trainCourseApplicationService;
 
-  public TrainCourseController(TrainCourseService service) {
-    this.service = service;
+  public TrainCourseController(TrainCourseApplicationService trainCourseApplicationService) {
+    this.trainCourseApplicationService = trainCourseApplicationService;
   }
 
   /** 分页查询课时列表 */
   @GetMapping("/courses")
   @PreAuthorize("hasAuthority('train:course:view')")
   public ApiResponse<PageResponse<TrainCourseVO>> page(@Valid @ModelAttribute TrainCourseQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainCourseApplicationService.page(req));
   }
 
   /** 根据ID查询课时详情 */
   @GetMapping("/courses/{id}")
   @PreAuthorize("hasAuthority('train:course:view')")
   public ApiResponse<TrainCourseVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainCourseApplicationService.getById(id));
   }
 
   /** 新增课时 */
@@ -54,7 +54,7 @@ public class TrainCourseController {
   @PreAuthorize("hasAuthority('train:course:create')")
   @AuditLog(module = "training", action = "course:create", targetType = "train_course")
   public ApiResponse<TrainCourseVO> create(@Valid @RequestBody TrainCourseCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainCourseApplicationService.create(req));
   }
 
   /** 修改课时 */
@@ -62,7 +62,7 @@ public class TrainCourseController {
   @PreAuthorize("hasAuthority('train:course:update')")
   @AuditLog(module = "training", action = "course:update", targetType = "train_course")
   public ApiResponse<TrainCourseVO> update(@PathVariable Long id, @Valid @RequestBody TrainCourseUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainCourseApplicationService.update(id, req));
   }
 
   /** 删除课时 */
@@ -70,7 +70,7 @@ public class TrainCourseController {
   @PreAuthorize("hasAuthority('train:course:delete')")
   @AuditLog(module = "training", action = "course:delete", targetType = "train_course")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainCourseApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

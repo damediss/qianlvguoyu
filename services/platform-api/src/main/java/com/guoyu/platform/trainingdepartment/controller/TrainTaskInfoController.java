@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskInfoCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskInfoQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskInfoUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainTaskInfoService;
+import com.guoyu.platform.trainingdepartment.service.TrainTaskInfoApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainTaskInfoVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainTaskInfoController {
 
-  private final TrainTaskInfoService service;
+  private final TrainTaskInfoApplicationService trainTaskInfoApplicationService;
 
-  public TrainTaskInfoController(TrainTaskInfoService service) {
-    this.service = service;
+  public TrainTaskInfoController(TrainTaskInfoApplicationService trainTaskInfoApplicationService) {
+    this.trainTaskInfoApplicationService = trainTaskInfoApplicationService;
   }
 
   /** 分页查询培训配置任务列表 */
   @GetMapping("/task-infos")
   @PreAuthorize("hasAuthority('train:task-info:view')")
   public ApiResponse<PageResponse<TrainTaskInfoVO>> page(@Valid @ModelAttribute TrainTaskInfoQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainTaskInfoApplicationService.page(req));
   }
 
   /** 根据ID查询培训配置任务详情 */
   @GetMapping("/task-infos/{id}")
   @PreAuthorize("hasAuthority('train:task-info:view')")
   public ApiResponse<TrainTaskInfoVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainTaskInfoApplicationService.getById(id));
   }
 
   /** 新增培训配置任务 */
@@ -54,7 +54,7 @@ public class TrainTaskInfoController {
   @PreAuthorize("hasAuthority('train:task-info:create')")
   @AuditLog(module = "training", action = "task-info:create", targetType = "train_task_info")
   public ApiResponse<TrainTaskInfoVO> create(@Valid @RequestBody TrainTaskInfoCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainTaskInfoApplicationService.create(req));
   }
 
   /** 修改培训配置任务 */
@@ -62,7 +62,7 @@ public class TrainTaskInfoController {
   @PreAuthorize("hasAuthority('train:task-info:update')")
   @AuditLog(module = "training", action = "task-info:update", targetType = "train_task_info")
   public ApiResponse<TrainTaskInfoVO> update(@PathVariable Long id, @Valid @RequestBody TrainTaskInfoUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainTaskInfoApplicationService.update(id, req));
   }
 
   /** 删除培训配置任务 */
@@ -70,7 +70,7 @@ public class TrainTaskInfoController {
   @PreAuthorize("hasAuthority('train:task-info:delete')")
   @AuditLog(module = "training", action = "task-info:delete", targetType = "train_task_info")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainTaskInfoApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

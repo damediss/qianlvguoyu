@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainSubsidyCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSubsidyQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSubsidyUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainSubsidyService;
+import com.guoyu.platform.trainingdepartment.service.TrainSubsidyApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainSubsidyVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,24 +21,24 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/training")
 public class TrainSubsidyController {
 
-  private final TrainSubsidyService service;
+  private final TrainSubsidyApplicationService trainSubsidyApplicationService;
 
-  public TrainSubsidyController(TrainSubsidyService service) {
-    this.service = service;
+  public TrainSubsidyController(TrainSubsidyApplicationService trainSubsidyApplicationService) {
+    this.trainSubsidyApplicationService = trainSubsidyApplicationService;
   }
 
   /** 分页查询 */
   @GetMapping("/subsidies")
   @PreAuthorize("hasAuthority('train:subsidy:view')")
   public ApiResponse<PageResponse<TrainSubsidyVO>> page(@Valid @ModelAttribute TrainSubsidyQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainSubsidyApplicationService.page(req));
   }
 
   /** 根据ID查询 */
   @GetMapping("/subsidies/{id}")
   @PreAuthorize("hasAuthority('train:subsidy:view')")
   public ApiResponse<TrainSubsidyVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainSubsidyApplicationService.getById(id));
   }
 
   /** 创建 */
@@ -46,7 +46,7 @@ public class TrainSubsidyController {
   @PreAuthorize("hasAuthority('train:subsidy:create')")
   @AuditLog(module = "training", action = "subsidy:create", targetType = "train_subsidy")
   public ApiResponse<TrainSubsidyVO> create(@Valid @RequestBody TrainSubsidyCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainSubsidyApplicationService.create(req));
   }
 
   /** 更新 */
@@ -54,7 +54,7 @@ public class TrainSubsidyController {
   @PreAuthorize("hasAuthority('train:subsidy:update')")
   @AuditLog(module = "training", action = "subsidy:update", targetType = "train_subsidy")
   public ApiResponse<TrainSubsidyVO> update(@PathVariable Long id, @Valid @RequestBody TrainSubsidyUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainSubsidyApplicationService.update(id, req));
   }
 
   /** 删除 */
@@ -62,7 +62,7 @@ public class TrainSubsidyController {
   @PreAuthorize("hasAuthority('train:subsidy:delete')")
   @AuditLog(module = "training", action = "subsidy:delete", targetType = "train_subsidy")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainSubsidyApplicationService.delete(id);
     return ApiResponse.ok();
   }
 
@@ -71,7 +71,7 @@ public class TrainSubsidyController {
   @PreAuthorize("hasAuthority('train:subsidy:update')")
   @AuditLog(module = "training", action = "subsidy:submit", targetType = "train_subsidy")
   public ApiResponse<TrainSubsidyVO> submit(@PathVariable Long id) {
-    return ApiResponse.ok(service.submit(id));
+    return ApiResponse.ok(trainSubsidyApplicationService.submit(id));
   }
 
   /** 审批通过 */
@@ -79,7 +79,7 @@ public class TrainSubsidyController {
   @PreAuthorize("hasAuthority('train:subsidy:update')")
   @AuditLog(module = "training", action = "subsidy:approve", targetType = "train_subsidy")
   public ApiResponse<TrainSubsidyVO> approve(@PathVariable Long id) {
-    return ApiResponse.ok(service.approve(id));
+    return ApiResponse.ok(trainSubsidyApplicationService.approve(id));
   }
 
   /** 驳回 */
@@ -87,6 +87,6 @@ public class TrainSubsidyController {
   @PreAuthorize("hasAuthority('train:subsidy:update')")
   @AuditLog(module = "training", action = "subsidy:reject", targetType = "train_subsidy")
   public ApiResponse<TrainSubsidyVO> reject(@PathVariable Long id, @RequestParam String reason) {
-    return ApiResponse.ok(service.reject(id, reason));
+    return ApiResponse.ok(trainSubsidyApplicationService.reject(id, reason));
   }
 }

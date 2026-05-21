@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskLogCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskLogQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskLogUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainTaskLogService;
+import com.guoyu.platform.trainingdepartment.service.TrainTaskLogApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainTaskLogVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainTaskLogController {
 
-  private final TrainTaskLogService service;
+  private final TrainTaskLogApplicationService trainTaskLogApplicationService;
 
-  public TrainTaskLogController(TrainTaskLogService service) {
-    this.service = service;
+  public TrainTaskLogController(TrainTaskLogApplicationService trainTaskLogApplicationService) {
+    this.trainTaskLogApplicationService = trainTaskLogApplicationService;
   }
 
   /** 分页查询培训任务记录列表 */
   @GetMapping("/task-logs")
   @PreAuthorize("hasAuthority('train:task-log:view')")
   public ApiResponse<PageResponse<TrainTaskLogVO>> page(@Valid @ModelAttribute TrainTaskLogQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainTaskLogApplicationService.page(req));
   }
 
   /** 根据ID查询培训任务记录详情 */
   @GetMapping("/task-logs/{id}")
   @PreAuthorize("hasAuthority('train:task-log:view')")
   public ApiResponse<TrainTaskLogVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainTaskLogApplicationService.getById(id));
   }
 
   /** 新增培训任务记录 */
@@ -54,7 +54,7 @@ public class TrainTaskLogController {
   @PreAuthorize("hasAuthority('train:task-log:create')")
   @AuditLog(module = "training", action = "task-log:create", targetType = "train_task_log")
   public ApiResponse<TrainTaskLogVO> create(@Valid @RequestBody TrainTaskLogCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainTaskLogApplicationService.create(req));
   }
 
   /** 修改培训任务记录 */
@@ -62,7 +62,7 @@ public class TrainTaskLogController {
   @PreAuthorize("hasAuthority('train:task-log:update')")
   @AuditLog(module = "training", action = "task-log:update", targetType = "train_task_log")
   public ApiResponse<TrainTaskLogVO> update(@PathVariable Long id, @Valid @RequestBody TrainTaskLogUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainTaskLogApplicationService.update(id, req));
   }
 
   /** 删除培训任务记录 */
@@ -70,7 +70,7 @@ public class TrainTaskLogController {
   @PreAuthorize("hasAuthority('train:task-log:delete')")
   @AuditLog(module = "training", action = "task-log:delete", targetType = "train_task_log")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainTaskLogApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

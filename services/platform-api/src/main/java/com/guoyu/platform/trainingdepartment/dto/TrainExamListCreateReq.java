@@ -77,6 +77,9 @@ public class TrainExamListCreateReq {
   /** 排序号 */
   private Integer sortNumber;
 
+  /** 课程ID列表 */
+  private java.util.List<Long> courseIdList;
+
   public String getTitle() { return title; }
   public void setTitle(String title) { this.title = title; }
   public String getLevel() { return level; }
@@ -133,4 +136,6 @@ public class TrainExamListCreateReq {
   public void setJigouId(Long jigouId) { this.jigouId = jigouId; }
   public Integer getSortNumber() { return sortNumber; }
   public void setSortNumber(Integer sortNumber) { this.sortNumber = sortNumber; }
+  public java.util.List<Long> getCourseIdList() { return courseIdList; }
+  public void setCourseIdList(java.util.List<Long> courseIdList) { this.courseIdList = courseIdList; }
 }

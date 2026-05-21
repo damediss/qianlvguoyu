@@ -41,8 +41,9 @@ const menuItems = [
     icon: <ScheduleOutlined />,
     label: '培训管理',
     children: [
-      { key: 'training-needs', icon: <FileTextOutlined />, label: '需求管理' },
-      { key: 'training-solutions', icon: <SolutionOutlined />, label: '培训方案' },
+      { key: 'requirements-management', icon: <FileTextOutlined />, label: '需求管理' },
+      { key: 'training-program', icon: <SolutionOutlined />, label: '培训方案' },
+      { key: 'training-solutions', icon: <SolutionOutlined />, label: '方案审批' },
       { key: 'training-info', icon: <BookOutlined />, label: '培训信息' },
       { key: 'training-class-people', icon: <TeamOutlined />, label: '班级人员' },
       { key: 'training-class-declare', icon: <AuditOutlined />, label: '开班申报' },

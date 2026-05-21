@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserPaperCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserPaperQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserPaperUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainUserPaperService;
+import com.guoyu.platform.trainingdepartment.service.TrainUserPaperApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainUserPaperVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainUserPaperController {
 
-  private final TrainUserPaperService service;
+  private final TrainUserPaperApplicationService trainUserPaperApplicationService;
 
-  public TrainUserPaperController(TrainUserPaperService service) {
-    this.service = service;
+  public TrainUserPaperController(TrainUserPaperApplicationService trainUserPaperApplicationService) {
+    this.trainUserPaperApplicationService = trainUserPaperApplicationService;
   }
 
   /** 分页查询用户证书列表 */
   @GetMapping("/user-papers")
   @PreAuthorize("hasAuthority('train:user-paper:view')")
   public ApiResponse<PageResponse<TrainUserPaperVO>> page(@Valid @ModelAttribute TrainUserPaperQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainUserPaperApplicationService.page(req));
   }
 
   /** 根据ID查询用户证书详情 */
   @GetMapping("/user-papers/{id}")
   @PreAuthorize("hasAuthority('train:user-paper:view')")
   public ApiResponse<TrainUserPaperVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainUserPaperApplicationService.getById(id));
   }
 
   /** 新增用户证书 */
@@ -54,7 +54,7 @@ public class TrainUserPaperController {
   @PreAuthorize("hasAuthority('train:user-paper:create')")
   @AuditLog(module = "training", action = "user-paper:create", targetType = "train_user_paper")
   public ApiResponse<TrainUserPaperVO> create(@Valid @RequestBody TrainUserPaperCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainUserPaperApplicationService.create(req));
   }
 
   /** 修改用户证书 */
@@ -62,7 +62,7 @@ public class TrainUserPaperController {
   @PreAuthorize("hasAuthority('train:user-paper:update')")
   @AuditLog(module = "training", action = "user-paper:update", targetType = "train_user_paper")
   public ApiResponse<TrainUserPaperVO> update(@PathVariable Long id, @Valid @RequestBody TrainUserPaperUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainUserPaperApplicationService.update(id, req));
   }
 
   /** 删除用户证书 */
@@ -70,7 +70,7 @@ public class TrainUserPaperController {
   @PreAuthorize("hasAuthority('train:user-paper:delete')")
   @AuditLog(module = "training", action = "user-paper:delete", targetType = "train_user_paper")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainUserPaperApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

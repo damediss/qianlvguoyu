@@ -1595,3 +1595,113 @@ export interface TrainUserAbilityCreateReq {
 }
 
 export type TrainUserAbilityUpdateReq = Partial<TrainUserAbilityCreateReq>;
+
+// ==================== Demand Train (企业培训需求) ====================
+export interface DemandTrain {
+  id: number;
+  orgId?: number;
+  content?: string;
+  nums?: number;
+  status?: number;
+  addtime?: number;
+  tenantId?: number;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface DemandPending {
+  id: number;
+  orgId?: number;
+  content?: string;
+  nums?: number;
+  status?: number;
+  addtime?: number;
+  addtimeCn?: string;
+  company?: string;
+  companyType?: string;
+}
+
+export interface DemandTrainQuery {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  orgId?: number;
+}
+
+export interface DemandConvertReq {
+  title: string;
+  companyId: number;
+  trainCompanyName?: string;
+  workTypeId: number;
+  workTypeLevel: number;
+  num: number;
+  traindemandId?: number;
+}
+
+export interface DemandPublicData {
+  company_list: CompanyOption[];
+  worktype_list: WorkTypeGroup[];
+}
+
+export interface CompanyOption {
+  id: number;
+  title: string;
+  tag: string;
+}
+
+export interface WorkTypeGroup {
+  id: number;
+  title: string;
+  options: WorkTypeOption[];
+}
+
+export interface WorkTypeOption {
+  id: number;
+  title: string;
+}
+
+// ==================== Training Solution List (培训方案列表) ====================
+export interface TrainSolutionList {
+  id: number;
+  title: string;
+  companyId?: number;
+  companyName?: string;
+  trainTitle?: string;
+  badge?: number;
+  expend?: number;
+  createTime?: string;
+  rejectReason?: string;
+}
+
+export interface TrainSolutionDetail {
+  id: number;
+  title: string;
+  company_id?: number;
+  company_name?: string;
+  train_info_id?: number;
+  train_title?: string;
+  file_path?: string;
+  file?: string;
+  fileType?: string;
+  content?: string;
+  reject_reason?: string;
+  badgeList: TrainSolutionBadge[];
+}
+
+export interface TrainSolutionBadge {
+  id?: number;
+  solutionId?: number;
+  title: string;
+  badge: number;
+  expend: number;
+}
+
+export interface TrainSolutionSaveReq {
+  id?: number;
+  title: string;
+  companyId: number;
+  companyName?: string;
+  traininfoId: number;
+  filePath?: string;
+  badgeList: TrainSolutionBadge[];
+}

@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainProjectTableCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainProjectTableQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainProjectTableUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainProjectTableService;
+import com.guoyu.platform.trainingdepartment.service.TrainProjectTableApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainProjectTableVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,24 +21,24 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/training")
 public class TrainProjectTableController {
 
-  private final TrainProjectTableService service;
+  private final TrainProjectTableApplicationService trainProjectTableApplicationService;
 
-  public TrainProjectTableController(TrainProjectTableService service) {
-    this.service = service;
+  public TrainProjectTableController(TrainProjectTableApplicationService trainProjectTableApplicationService) {
+    this.trainProjectTableApplicationService = trainProjectTableApplicationService;
   }
 
   /** 分页查询 */
   @GetMapping("/project-tables")
   @PreAuthorize("hasAuthority('train:project-table:view')")
   public ApiResponse<PageResponse<TrainProjectTableVO>> page(@Valid @ModelAttribute TrainProjectTableQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainProjectTableApplicationService.page(req));
   }
 
   /** 根据ID查询 */
   @GetMapping("/project-tables/{id}")
   @PreAuthorize("hasAuthority('train:project-table:view')")
   public ApiResponse<TrainProjectTableVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainProjectTableApplicationService.getById(id));
   }
 
   /** 创建 */
@@ -46,7 +46,7 @@ public class TrainProjectTableController {
   @PreAuthorize("hasAuthority('train:project-table:create')")
   @AuditLog(module = "training", action = "project-table:create", targetType = "train_project_table")
   public ApiResponse<TrainProjectTableVO> create(@Valid @RequestBody TrainProjectTableCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainProjectTableApplicationService.create(req));
   }
 
   /** 更新 */
@@ -54,7 +54,7 @@ public class TrainProjectTableController {
   @PreAuthorize("hasAuthority('train:project-table:update')")
   @AuditLog(module = "training", action = "project-table:update", targetType = "train_project_table")
   public ApiResponse<TrainProjectTableVO> update(@PathVariable Long id, @Valid @RequestBody TrainProjectTableUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainProjectTableApplicationService.update(id, req));
   }
 
   /** 删除 */
@@ -62,7 +62,7 @@ public class TrainProjectTableController {
   @PreAuthorize("hasAuthority('train:project-table:delete')")
   @AuditLog(module = "training", action = "project-table:delete", targetType = "train_project_table")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainProjectTableApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainProtocolCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainProtocolQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainProtocolUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainProtocolService;
+import com.guoyu.platform.trainingdepartment.service.TrainProtocolApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainProtocolVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,24 +21,24 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/training")
 public class TrainProtocolController {
 
-  private final TrainProtocolService service;
+  private final TrainProtocolApplicationService trainProtocolApplicationService;
 
-  public TrainProtocolController(TrainProtocolService service) {
-    this.service = service;
+  public TrainProtocolController(TrainProtocolApplicationService trainProtocolApplicationService) {
+    this.trainProtocolApplicationService = trainProtocolApplicationService;
   }
 
   /** 分页查询 */
   @GetMapping("/protocols")
   @PreAuthorize("hasAuthority('train:protocol:view')")
   public ApiResponse<PageResponse<TrainProtocolVO>> page(@Valid @ModelAttribute TrainProtocolQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainProtocolApplicationService.page(req));
   }
 
   /** 根据ID查询 */
   @GetMapping("/protocols/{id}")
   @PreAuthorize("hasAuthority('train:protocol:view')")
   public ApiResponse<TrainProtocolVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainProtocolApplicationService.getById(id));
   }
 
   /** 创建 */
@@ -46,7 +46,7 @@ public class TrainProtocolController {
   @PreAuthorize("hasAuthority('train:protocol:create')")
   @AuditLog(module = "training", action = "protocol:create", targetType = "train_protocol")
   public ApiResponse<TrainProtocolVO> create(@Valid @RequestBody TrainProtocolCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainProtocolApplicationService.create(req));
   }
 
   /** 更新 */
@@ -54,7 +54,7 @@ public class TrainProtocolController {
   @PreAuthorize("hasAuthority('train:protocol:update')")
   @AuditLog(module = "training", action = "protocol:update", targetType = "train_protocol")
   public ApiResponse<TrainProtocolVO> update(@PathVariable Long id, @Valid @RequestBody TrainProtocolUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainProtocolApplicationService.update(id, req));
   }
 
   /** 删除 */
@@ -62,7 +62,7 @@ public class TrainProtocolController {
   @PreAuthorize("hasAuthority('train:protocol:delete')")
   @AuditLog(module = "training", action = "protocol:delete", targetType = "train_protocol")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainProtocolApplicationService.delete(id);
     return ApiResponse.ok();
   }
 
@@ -71,7 +71,7 @@ public class TrainProtocolController {
   @PreAuthorize("hasAuthority('train:protocol:update')")
   @AuditLog(module = "training", action = "protocol:submit-review", targetType = "train_protocol")
   public ApiResponse<TrainProtocolVO> submitReview(@PathVariable Long id) {
-    return ApiResponse.ok(service.submitReview(id));
+    return ApiResponse.ok(trainProtocolApplicationService.submitReview(id));
   }
 
   /** 办公室审批 */
@@ -79,7 +79,7 @@ public class TrainProtocolController {
   @PreAuthorize("hasAuthority('train:protocol:update')")
   @AuditLog(module = "training", action = "protocol:office-approve", targetType = "train_protocol")
   public ApiResponse<TrainProtocolVO> officeApprove(@PathVariable Long id) {
-    return ApiResponse.ok(service.officeApprove(id));
+    return ApiResponse.ok(trainProtocolApplicationService.officeApprove(id));
   }
 
   /** 总经理审批 */
@@ -87,7 +87,7 @@ public class TrainProtocolController {
   @PreAuthorize("hasAuthority('train:protocol:update')")
   @AuditLog(module = "training", action = "protocol:gm-approve", targetType = "train_protocol")
   public ApiResponse<TrainProtocolVO> gmApprove(@PathVariable Long id) {
-    return ApiResponse.ok(service.gmApprove(id));
+    return ApiResponse.ok(trainProtocolApplicationService.gmApprove(id));
   }
 
   /** 企业确认 */
@@ -95,7 +95,7 @@ public class TrainProtocolController {
   @PreAuthorize("hasAuthority('train:protocol:update')")
   @AuditLog(module = "training", action = "protocol:enterprise-confirm", targetType = "train_protocol")
   public ApiResponse<TrainProtocolVO> enterpriseConfirm(@PathVariable Long id) {
-    return ApiResponse.ok(service.enterpriseConfirm(id));
+    return ApiResponse.ok(trainProtocolApplicationService.enterpriseConfirm(id));
   }
 
   /** 签署 */
@@ -103,7 +103,7 @@ public class TrainProtocolController {
   @PreAuthorize("hasAuthority('train:protocol:update')")
   @AuditLog(module = "training", action = "protocol:sign", targetType = "train_protocol")
   public ApiResponse<TrainProtocolVO> sign(@PathVariable Long id) {
-    return ApiResponse.ok(service.sign(id));
+    return ApiResponse.ok(trainProtocolApplicationService.sign(id));
   }
 
   /** 驳回 */
@@ -111,6 +111,6 @@ public class TrainProtocolController {
   @PreAuthorize("hasAuthority('train:protocol:update')")
   @AuditLog(module = "training", action = "protocol:reject", targetType = "train_protocol")
   public ApiResponse<TrainProtocolVO> reject(@PathVariable Long id, @RequestParam String reason) {
-    return ApiResponse.ok(service.reject(id, reason));
+    return ApiResponse.ok(trainProtocolApplicationService.reject(id, reason));
   }
 }

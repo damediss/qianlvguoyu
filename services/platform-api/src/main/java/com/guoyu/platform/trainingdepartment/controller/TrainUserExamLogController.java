@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserExamLogCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserExamLogQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserExamLogUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainUserExamLogService;
+import com.guoyu.platform.trainingdepartment.service.TrainUserExamLogApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainUserExamLogVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainUserExamLogController {
 
-  private final TrainUserExamLogService service;
+  private final TrainUserExamLogApplicationService trainUserExamLogApplicationService;
 
-  public TrainUserExamLogController(TrainUserExamLogService service) {
-    this.service = service;
+  public TrainUserExamLogController(TrainUserExamLogApplicationService trainUserExamLogApplicationService) {
+    this.trainUserExamLogApplicationService = trainUserExamLogApplicationService;
   }
 
   /** 分页查询用户刷题记录列表 */
   @GetMapping("/user-exam-logs")
   @PreAuthorize("hasAuthority('train:user-exam-log:view')")
   public ApiResponse<PageResponse<TrainUserExamLogVO>> page(@Valid @ModelAttribute TrainUserExamLogQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainUserExamLogApplicationService.page(req));
   }
 
   /** 根据ID查询用户刷题记录详情 */
   @GetMapping("/user-exam-logs/{id}")
   @PreAuthorize("hasAuthority('train:user-exam-log:view')")
   public ApiResponse<TrainUserExamLogVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainUserExamLogApplicationService.getById(id));
   }
 
   /** 新增用户刷题记录 */
@@ -54,7 +54,7 @@ public class TrainUserExamLogController {
   @PreAuthorize("hasAuthority('train:user-exam-log:create')")
   @AuditLog(module = "training", action = "user-exam-log:create", targetType = "train_user_exam_log")
   public ApiResponse<TrainUserExamLogVO> create(@Valid @RequestBody TrainUserExamLogCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainUserExamLogApplicationService.create(req));
   }
 
   /** 修改用户刷题记录 */
@@ -62,7 +62,7 @@ public class TrainUserExamLogController {
   @PreAuthorize("hasAuthority('train:user-exam-log:update')")
   @AuditLog(module = "training", action = "user-exam-log:update", targetType = "train_user_exam_log")
   public ApiResponse<TrainUserExamLogVO> update(@PathVariable Long id, @Valid @RequestBody TrainUserExamLogUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainUserExamLogApplicationService.update(id, req));
   }
 
   /** 删除用户刷题记录 */
@@ -70,7 +70,7 @@ public class TrainUserExamLogController {
   @PreAuthorize("hasAuthority('train:user-exam-log:delete')")
   @AuditLog(module = "training", action = "user-exam-log:delete", targetType = "train_user_exam_log")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainUserExamLogApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

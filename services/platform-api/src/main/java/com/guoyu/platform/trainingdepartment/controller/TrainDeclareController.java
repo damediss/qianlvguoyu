@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainDeclareCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainDeclareQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainDeclareUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainDeclareService;
+import com.guoyu.platform.trainingdepartment.service.TrainDeclareApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainDeclareVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,24 +21,24 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/training")
 public class TrainDeclareController {
 
-  private final TrainDeclareService service;
+  private final TrainDeclareApplicationService trainDeclareApplicationService;
 
-  public TrainDeclareController(TrainDeclareService service) {
-    this.service = service;
+  public TrainDeclareController(TrainDeclareApplicationService trainDeclareApplicationService) {
+    this.trainDeclareApplicationService = trainDeclareApplicationService;
   }
 
   /** 分页查询 */
   @GetMapping("/declares")
   @PreAuthorize("hasAuthority('train:declare:view')")
   public ApiResponse<PageResponse<TrainDeclareVO>> page(@Valid @ModelAttribute TrainDeclareQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainDeclareApplicationService.page(req));
   }
 
   /** 根据ID查询 */
   @GetMapping("/declares/{id}")
   @PreAuthorize("hasAuthority('train:declare:view')")
   public ApiResponse<TrainDeclareVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainDeclareApplicationService.getById(id));
   }
 
   /** 创建 */
@@ -46,7 +46,7 @@ public class TrainDeclareController {
   @PreAuthorize("hasAuthority('train:declare:create')")
   @AuditLog(module = "training", action = "declare:create", targetType = "train_declare")
   public ApiResponse<TrainDeclareVO> create(@Valid @RequestBody TrainDeclareCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainDeclareApplicationService.create(req));
   }
 
   /** 更新 */
@@ -54,7 +54,7 @@ public class TrainDeclareController {
   @PreAuthorize("hasAuthority('train:declare:update')")
   @AuditLog(module = "training", action = "declare:update", targetType = "train_declare")
   public ApiResponse<TrainDeclareVO> update(@PathVariable Long id, @Valid @RequestBody TrainDeclareUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainDeclareApplicationService.update(id, req));
   }
 
   /** 删除 */
@@ -62,7 +62,7 @@ public class TrainDeclareController {
   @PreAuthorize("hasAuthority('train:declare:delete')")
   @AuditLog(module = "training", action = "declare:delete", targetType = "train_declare")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainDeclareApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

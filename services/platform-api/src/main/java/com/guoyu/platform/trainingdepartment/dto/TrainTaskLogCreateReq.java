@@ -2,25 +2,31 @@ package com.guoyu.platform.trainingdepartment.dto;
 
 import jakarta.validation.constraints.Size;
 
-/** 培训任务记录创建请求 */
+/** train_task_log 创建请求 */
 public class TrainTaskLogCreateReq {
 
-  /** 培训班级ID */
+  @Size(max = 255)
+  /** 班级ID */
   private Long trainClassId;
 
-  /** 签到ID */
+  @Size(max = 255)
+  /** 任务检查点ID */
   private Long ckId;
 
-  @Size(max = 10)
+  @Size(max = 255)
+  /** 日期 */
   private String date;
 
-  /** 添加时间 */
+  @Size(max = 255)
+  /** 添加时间戳 */
   private Integer addtime;
 
+  @Size(max = 255)
   /** 状态 */
   private Integer status;
 
-  /** 时间段 */
+  @Size(max = 255)
+  /** 时间范围 */
   private String times;
 
   public Long getTrainClassId() {
@@ -70,5 +76,4 @@ public class TrainTaskLogCreateReq {
   public void setTimes(String times) {
     this.times = times;
   }
-
 }

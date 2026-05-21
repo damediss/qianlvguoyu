@@ -7,7 +7,6 @@ import { AppShell } from './layouts/AppShell';
 import { AuthGate } from './components/AuthGate';
 import { KnowledgePage } from './pages/knowledge/KnowledgePage';
 import { WorkTypePage } from './pages/exam/WorkTypePage';
-import { TrainingNeedsPage } from './pages/training/TrainingNeedsPage';
 import { TrainingSolutionsPage } from './pages/training/TrainingSolutionsPage';
 import { TrainingInfoPage } from './pages/training/TrainingInfoPage';
 import { TrainingClassPeoplePage } from './pages/training/TrainingClassPeoplePage';
@@ -15,6 +14,8 @@ import { TrainingClassDeclarePage } from './pages/training/TrainingClassDeclareP
 import { UserAuthCoursePage } from './pages/exam/UserAuthCoursePage';
 import { UserListPage } from './pages/chazheng/UserListPage';
 import { CertQueryPage } from './pages/chazheng/CertQueryPage';
+import { RequirementsManagementPage } from './pages/training/RequirementsManagementPage';
+import { TrainingProgramPage } from './pages/training/TrainingProgramPage';
 import { appTheme } from './theme';
 import './styles/tokens.css';
 import './styles/global.css';
@@ -39,6 +40,8 @@ const pageMap: Record<string, React.ReactNode> = {
   'exam-user-auth-course': <UserAuthCoursePage />,
   'chazheng-user-list': <UserListPage />,
   'chazheng-cert-query': <CertQueryPage />,
+  'requirements-management': <RequirementsManagementPage />,
+  'training-program': <TrainingProgramPage />,
 };
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
