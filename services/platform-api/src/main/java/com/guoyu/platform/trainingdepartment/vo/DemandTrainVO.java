@@ -20,5 +20,9 @@ public record DemandTrainVO(
     /** 创建时间 */
     LocalDateTime createTime,
     /** 更新时间 */
-    LocalDateTime updateTime
+    LocalDateTime updateTime,
+    /** 企业确认状态 0=待确认 1=已确认 (关联 train_info_list.company_has_confirm) */
+    Integer solution,
+    /** 企业确认状态中文 */
+    String solutionCn
 ) {}

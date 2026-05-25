@@ -38,6 +38,7 @@ import type {
   TrainUserAbility, TrainUserAbilityQuery, TrainUserAbilityCreateReq, TrainUserAbilityUpdateReq,
   DemandTrain, DemandPending, DemandTrainQuery, DemandConvertReq, DemandPublicData,
   TrainSolutionList, TrainSolutionDetail, TrainSolutionBadge, TrainSolutionSaveReq,
+  TrainStudent, SolutionByDemand,
 } from '../types/training';
 
 const BASE = '/training';
@@ -648,8 +649,8 @@ export function deleteDemandTrain(id: number) {
   return unwrap<void>(apiClient.delete(`${BASE}/demand-trains/${id}`));
 }
 
-/** 待处理需求列表 */
-export function pageDemandPendings(params: { page?: number; pageSize?: number; keyword?: string }) {
+/** 待处理需求列表，del=0 正常数据，del=1 回收站 */
+export function pageDemandPendings(params: { page?: number; pageSize?: number; keyword?: string; del?: number }) {
   return unwrap<PageResponse<DemandPending>>(apiClient.get(`${BASE}/demand-trains/pendings`, { params }));
 }
 
@@ -683,4 +684,29 @@ export function saveSolution(payload: TrainSolutionSaveReq) {
 /** 删除方案 */
 export function deleteSolutionById(id: number) {
   return unwrap<void>(apiClient.delete(`${BASE}/solutions/${id}`));
+}
+
+/** 批量删除企业需求 */
+export function batchDeleteDemandTrains(ids: number[]) {
+  return unwrap<number[]>(apiClient.post(`${BASE}/demand-trains/batch-delete`, ids));
+}
+
+/** 根据需求ID获取报名学员列表 */
+export function getDemandStudents(id: number) {
+  return unwrap<TrainStudent[]>(apiClient.get(`${BASE}/demand-trains/${id}/students`));
+}
+
+/** 根据需求ID获取方案详情 */
+export function getSolutionByDemandId(traindemandId: number) {
+  return unwrap<SolutionByDemand>(apiClient.get(`${BASE}/solutions/by-demand-id`, { params: { traindemandId } }));
+}
+
+/** 企业确认方案 */
+export function companyConfirmInfoList(id: number) {
+  return unwrap<void>(apiClient.post(`${BASE}/info-lists/${id}/company-confirm`));
+}
+
+/** 企业驳回方案 */
+export function companyRejectInfoList(id: number, reason: string) {
+  return unwrap<void>(apiClient.post(`${BASE}/info-lists/${id}/company-reject`, null, { params: { reason } }));
 }

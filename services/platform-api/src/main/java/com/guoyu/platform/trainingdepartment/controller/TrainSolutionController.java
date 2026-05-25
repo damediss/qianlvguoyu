@@ -119,6 +119,13 @@ public class TrainSolutionController {
     return ApiResponse.ok(trainSolutionApplicationService.reject(id, reason));
   }
 
+  /** 根据需求ID获取方案详情 */
+  @GetMapping("/solutions/by-demand-id")
+  @PreAuthorize("hasAuthority('train:solution:view')")
+  public ApiResponse<Map<String, Object>> getByDemandId(@RequestParam Long traindemandId) {
+    return ApiResponse.ok(trainSolutionApplicationService.getByDemandId(traindemandId));
+  }
+
   /** 查询经费明细 */
   @GetMapping("/solutions/{id:\\d+}/badges")
   @PreAuthorize("hasAuthority('train:solution:view')")

@@ -11,12 +11,16 @@ import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoListCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoListQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoListUpdateReq;
+import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
+import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSolutionEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSolutionMapper;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoListVO;
 import java.time.LocalDateTime;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -30,10 +34,13 @@ public class TrainInfoListApplicationService {
 
   private final TrainInfoListMapper mapper;
   private final TrainSolutionMapper solutionMapper;
+  private final ExamWorkTypeMapper examWorkTypeMapper;
 
-  public TrainInfoListApplicationService(TrainInfoListMapper mapper, TrainSolutionMapper solutionMapper) {
+  public TrainInfoListApplicationService(TrainInfoListMapper mapper, TrainSolutionMapper solutionMapper,
+      ExamWorkTypeMapper examWorkTypeMapper) {
     this.mapper = mapper;
     this.solutionMapper = solutionMapper;
+    this.examWorkTypeMapper = examWorkTypeMapper;
   }
 
   @Transactional(readOnly = true)
@@ -64,8 +71,20 @@ public class TrainInfoListApplicationService {
     if (req.getPassStatus() != null) {
       wrapper.eq(TrainInfoListEntity::getPassStatus, req.getPassStatus());
     }
+    if (req.getGroupType() != null) {
+      wrapper.eq(TrainInfoListEntity::getGroupType, req.getGroupType());
+    }
     Page<TrainInfoListEntity> page = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
-    return new PageResponse<>(page.getRecords().stream().map(this::toVO).toList(),
+
+    // 工种ID → 名称映射
+    Map<Long, String> workTypeNameMap = Map.of();
+    if (!page.getRecords().isEmpty()) {
+      workTypeNameMap = examWorkTypeMapper.selectList(null).stream()
+          .collect(Collectors.toMap(e -> e.getId().longValue(), ExamWorkTypeEntity::getTitle, (a, b) -> a));
+    }
+
+    Map<Long, String> finalWorkTypeMap = workTypeNameMap;
+    return new PageResponse<>(page.getRecords().stream().map(e -> toVO(e, finalWorkTypeMap)).toList(),
         page.getCurrent(), page.getSize(), page.getTotal());
   }
 
@@ -127,6 +146,7 @@ public class TrainInfoListApplicationService {
     entity.setInChargeUsername(req.getInChargeUsername());
     entity.setFiles(req.getFiles());
     entity.setTraindemandId(req.getTraindemandId());
+    entity.setCreateTime(LocalDateTime.now());
     entity.setDeleted(0);
     mapper.insert(entity);
     return toVO(entity);
@@ -336,6 +356,10 @@ public class TrainInfoListApplicationService {
   }
 
   private TrainInfoListVO toVO(TrainInfoListEntity entity) {
+    return toVO(entity, Map.of());
+  }
+
+  private TrainInfoListVO toVO(TrainInfoListEntity entity, Map<Long, String> workTypeNameMap) {
     return new TrainInfoListVO(
         entity.getId(),
         entity.getTitle(),
@@ -386,7 +410,8 @@ public class TrainInfoListApplicationService {
         entity.getInChargeUserId(),
         entity.getInChargeUsername(),
         entity.getFiles(),
-        entity.getTraindemandId()
+        entity.getTraindemandId(),
+        workTypeNameMap.getOrDefault(entity.getWorkTypeId(), null)
     );
   }
 }

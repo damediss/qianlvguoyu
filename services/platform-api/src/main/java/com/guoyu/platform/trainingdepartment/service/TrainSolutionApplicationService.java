@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -242,40 +243,47 @@ public class TrainSolutionApplicationService {
         new LambdaQueryWrapper<TrainSolutionEntity>()
             .eq(TrainSolutionEntity::getTenantId, tenantId)
             .eq(TrainSolutionEntity::getDeleted, 0)
+            .gt(TrainSolutionEntity::getTrainInfoId, 0L)
+            .orderByAsc(TrainSolutionEntity::getSortNumber)
             .orderByDesc(TrainSolutionEntity::getCreateTime));
 
-    List<TrainSolutionListVO> vos = new ArrayList<>();
-    for (TrainSolutionEntity e : result.getRecords()) {
-      // 获取关联的培训需求标题
-      String trainTitle = "";
-      if (e.getTrainInfoId() != null) {
-        TrainInfoListEntity info = trainInfoListMapper.selectOne(
-            new LambdaQueryWrapper<TrainInfoListEntity>()
-                .eq(TrainInfoListEntity::getTenantId, tenantId)
-                .eq(TrainInfoListEntity::getId, e.getTrainInfoId())
-                .eq(TrainInfoListEntity::getDeleted, 0));
-        if (info != null) {
-          trainTitle = info.getTitle() != null ? info.getTitle() : "";
-        }
-      }
-
-      // 计算预算合计、支出合计
-      List<TrainSolutionBadgeEntity> badges = badgeMapper.selectList(
-          new LambdaQueryWrapper<TrainSolutionBadgeEntity>()
-              .eq(TrainSolutionBadgeEntity::getTenantId, tenantId)
-              .eq(TrainSolutionBadgeEntity::getSolutionId, e.getId())
-              .eq(TrainSolutionBadgeEntity::getDeleted, 0));
-      BigDecimal totalBadge = BigDecimal.ZERO;
-      BigDecimal totalExpend = BigDecimal.ZERO;
-      for (TrainSolutionBadgeEntity b : badges) {
-        if (b.getBadge() != null) totalBadge = totalBadge.add(b.getBadge());
-        if (b.getExpend() != null) totalExpend = totalExpend.add(b.getExpend());
-      }
-
-      vos.add(new TrainSolutionListVO(e.getId(), e.getTitle(), e.getCompanyId(),
-          e.getCompanyName(), trainTitle, totalBadge, totalExpend,
-          e.getCreateTime(), e.getRejectReason()));
+    List<TrainSolutionEntity> records = result.getRecords();
+    if (records.isEmpty()) {
+      return new PageResponse<>(List.of(), result.getCurrent(), result.getSize(), result.getTotal());
     }
+
+    // 批量获取培训标题 Map
+    List<Long> trainInfoIds = records.stream().map(TrainSolutionEntity::getTrainInfoId).distinct().toList();
+    Map<Long, String> trainTitleMap = trainInfoListMapper.selectList(
+        new LambdaQueryWrapper<TrainInfoListEntity>()
+            .in(TrainInfoListEntity::getId, trainInfoIds)
+            .eq(TrainInfoListEntity::getTenantId, tenantId)
+            .eq(TrainInfoListEntity::getDeleted, 0))
+        .stream().collect(Collectors.toMap(TrainInfoListEntity::getId,
+            t -> t.getTitle() != null ? t.getTitle() : "", (a, b) -> a));
+
+    // 批量获取费用汇总 Map (solutionId → {badge, expend})
+    List<Long> solutionIds = records.stream().map(TrainSolutionEntity::getId).toList();
+    List<TrainSolutionBadgeEntity> allBadges = badgeMapper.selectList(
+        new LambdaQueryWrapper<TrainSolutionBadgeEntity>()
+            .in(TrainSolutionBadgeEntity::getSolutionId, solutionIds)
+            .eq(TrainSolutionBadgeEntity::getDeleted, 0));
+    Map<Long, BigDecimal> badgeMap = allBadges.stream()
+        .filter(b -> b.getBadge() != null)
+        .collect(Collectors.groupingBy(TrainSolutionBadgeEntity::getSolutionId,
+            Collectors.reducing(BigDecimal.ZERO, TrainSolutionBadgeEntity::getBadge, BigDecimal::add)));
+    Map<Long, BigDecimal> expendMap = allBadges.stream()
+        .filter(b -> b.getExpend() != null)
+        .collect(Collectors.groupingBy(TrainSolutionBadgeEntity::getSolutionId,
+            Collectors.reducing(BigDecimal.ZERO, TrainSolutionBadgeEntity::getExpend, BigDecimal::add)));
+
+    List<TrainSolutionListVO> vos = records.stream().map(e ->
+        new TrainSolutionListVO(e.getId(), e.getTitle(), e.getCompanyId(),
+            e.getCompanyName(), trainTitleMap.getOrDefault(e.getTrainInfoId(), ""),
+            badgeMap.getOrDefault(e.getId(), BigDecimal.ZERO),
+            expendMap.getOrDefault(e.getId(), BigDecimal.ZERO),
+            e.getCreateTime(), e.getRejectReason()))
+        .toList();
 
     return new PageResponse<>(vos, result.getCurrent(), result.getSize(), result.getTotal());
   }
@@ -322,6 +330,54 @@ public class TrainSolutionApplicationService {
     data.put("content", entity.getContent());
     data.put("reject_reason", entity.getRejectReason());
     data.put("badgeList", badgeList);
+    return data;
+  }
+
+  @Transactional(readOnly = true)
+  public Map<String, Object> getByDemandId(Long traindemandId) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+
+    // Step 1: 通过需求ID找培训信息
+    TrainInfoListEntity trainInfo = trainInfoListMapper.selectOne(
+        new LambdaQueryWrapper<TrainInfoListEntity>()
+            .eq(TrainInfoListEntity::getTenantId, tenantId)
+            .eq(TrainInfoListEntity::getTraindemandId, traindemandId)
+            .eq(TrainInfoListEntity::getDeleted, 0));
+    if (trainInfo == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "需求不存在或已删除");
+    }
+
+    // Step 2: 通过培训信息ID找方案
+    TrainSolutionEntity solution = mapper.selectOne(
+        new LambdaQueryWrapper<TrainSolutionEntity>()
+            .eq(TrainSolutionEntity::getTenantId, tenantId)
+            .eq(TrainSolutionEntity::getDeleted, 0)
+            .eq(TrainSolutionEntity::getTrainInfoId, trainInfo.getId()));
+    if (solution == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "方案不存在或已删除");
+    }
+
+    // Step 3: 组装返回数据
+    String trainTitle = trainInfo.getTitle() != null ? trainInfo.getTitle() : "";
+    List<TrainSolutionBadgeVO> badgeList = getBadges(solution.getId());
+    String fileUrl = solution.getFilePath() != null ? solution.getFilePath() : "";
+    String fileType = "";
+    if (fileUrl.contains(".")) {
+      fileType = fileUrl.substring(fileUrl.lastIndexOf('.') + 1).toLowerCase();
+    }
+
+    Map<String, Object> data = new LinkedHashMap<>();
+    data.put("id", solution.getId());
+    data.put("title", solution.getTitle());
+    data.put("company_id", solution.getCompanyId());
+    data.put("company_name", solution.getCompanyName());
+    data.put("train_info_id", solution.getTrainInfoId());
+    data.put("train_title", trainTitle);
+    data.put("file_path", solution.getFilePath());
+    data.put("file", fileUrl);
+    data.put("fileType", fileType);
+    data.put("badgeList", badgeList);
+    data.put("train_info_status", trainInfo.getCompanyHasConfirm());
     return data;
   }
 

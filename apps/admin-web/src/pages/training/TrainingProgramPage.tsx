@@ -1,11 +1,14 @@
 import { useState } from 'react';
-import { Button, Card, Col, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Table, Tag, Typography, message } from 'antd';
-import { PlusOutlined, ReloadOutlined, EyeOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Table, Tag, Typography, Upload, message } from 'antd';
+import { PlusOutlined, ReloadOutlined, EyeOutlined, EditOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import type { UploadProps } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
-import type { TrainSolutionList, TrainSolutionDetail, TrainSolutionBadge, TrainSolutionSaveReq, DemandPublicData, CompanyOption, TrainInfoList } from '../../types/training';
+import { uploadFile } from '../../api/knowledge';
+import type { TrainSolutionList, TrainSolutionDetail, TrainSolutionBadge, TrainSolutionSaveReq, DemandPublicData, CompanyOption } from '../../types/training';
 
+const { Dragger } = Upload;
 const badgeFeeOptions = ['劳务费', '住宿费', '耗材', '场地成本', '设备成本', '其他'];
 
 export function TrainingProgramPage() {
@@ -87,6 +90,42 @@ export function TrainingProgramPage() {
     });
   };
 
+  // File upload handler
+  const uploadProps: UploadProps = {
+    name: 'file',
+    multiple: false,
+    accept: '.pdf,.docx',
+    showUploadList: true,
+    maxCount: 1,
+    beforeUpload: (file) => {
+      const isValid = file.type === 'application/pdf'
+        || file.name.endsWith('.docx')
+        || file.name.endsWith('.doc')
+        || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      if (!isValid) {
+        message.error('只能上传 PDF 或 DOCX 文件');
+        return Upload.LIST_IGNORE;
+      }
+      return true;
+    },
+    customRequest: async (options) => {
+      const { file, onSuccess, onError } = options;
+      try {
+        const result = await uploadFile(file as File, 'public');
+        const downloadUrl = `/api/files/${result.id}/download`;
+        form.setFieldsValue({ filePath: downloadUrl });
+        message.success('上传成功');
+        onSuccess?.(result, file as unknown as XMLHttpRequest);
+      } catch (err) {
+        message.error('上传失败');
+        onError?.(err as Error);
+      }
+    },
+    onRemove: () => {
+      form.setFieldsValue({ filePath: undefined });
+    },
+  };
+
   const columns: ColumnsType<TrainSolutionList> = [
     { title: 'ID', dataIndex: 'id', width: 60, align: 'center' },
     { title: '标题', dataIndex: 'title', width: 100 },
@@ -166,6 +205,16 @@ export function TrainingProgramPage() {
             </Col>
           </Row>
 
+          {/* File upload */}
+          <Form.Item label="上传方案文档">
+            <Dragger {...uploadProps}>
+              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+              <p className="ant-upload-text">将文件拖到此处，或<em>点击上传</em></p>
+              <p className="ant-upload-hint" style={{ color: '#ccc', marginTop: 10 }}>提示：上传过程中，请不要做任何操作</p>
+            </Dragger>
+            <Typography.Text type="secondary">只能上传 .pdf、.docx 文件</Typography.Text>
+          </Form.Item>
+
           {/* Badge list */}
           <Typography.Text strong>预算管理</Typography.Text>
           <Form.List name="badgeList">
@@ -224,6 +273,7 @@ export function TrainingProgramPage() {
               columns={[
                 { title: '费用名称', dataIndex: 'title' },
                 { title: '预算', dataIndex: 'badge', width: 180, render: (v: number) => v?.toLocaleString() },
+                { title: '实际支出', dataIndex: 'expend', width: 180, render: (v: number) => v?.toLocaleString() },
               ]} />
             {detail.file && (
               <p style={{ marginTop: 10 }}>
@@ -231,6 +281,17 @@ export function TrainingProgramPage() {
                 <a href={detail.file} target="_blank" rel="noopener noreferrer">下载</a>
                 {detail.fileType && <Tag style={{ marginLeft: 8 }}>{detail.fileType}</Tag>}
               </p>
+            )}
+            {/* Office document preview */}
+            {detail.file && (detail.fileType === 'pdf' || detail.fileType === 'docx' || detail.fileType === 'pptx') && (
+              <div style={{ height: 400, overflow: 'auto', border: '1px solid #e0e0e0', marginTop: 10 }}>
+                {detail.fileType === 'pdf' ? (
+                  <iframe src={detail.file} style={{ width: '100%', height: '100%', border: 'none' }} title="PDF预览" />
+                ) : (
+                  <iframe src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(detail.file)}`}
+                    style={{ width: '100%', height: '100%', border: 'none' }} title="文档预览" />
+                )}
+              </div>
             )}
           </div>
         )}

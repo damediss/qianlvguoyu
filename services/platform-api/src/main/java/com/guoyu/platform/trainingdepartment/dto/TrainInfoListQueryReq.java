@@ -15,6 +15,8 @@ public class TrainInfoListQueryReq extends PageQuery {
   private Long courseId;
   /** 审核状态 */
   private Integer passStatus;
+  /** 组类型 */
+  private Integer groupType;
 
   public String getKeyword() {
     return keyword;
@@ -62,5 +64,13 @@ public class TrainInfoListQueryReq extends PageQuery {
 
   public void setPassStatus(Integer passStatus) {
     this.passStatus = passStatus;
+  }
+
+  public Integer getGroupType() {
+    return groupType;
+  }
+
+  public void setGroupType(Integer groupType) {
+    this.groupType = groupType;
   }
 }

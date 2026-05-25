@@ -1161,6 +1161,7 @@ export interface TrainInfoList {
   companyName?: string;
   companyAddress?: string;
   workTypeId?: number;
+  workTypeTitle?: string;
   workTypeLevel?: number;
   courseId?: number;
   num?: number;
@@ -1607,6 +1608,8 @@ export interface DemandTrain {
   tenantId?: number;
   createTime?: string;
   updateTime?: string;
+  solution?: number;
+  solutionCn?: string;
 }
 
 export interface DemandPending {
@@ -1641,6 +1644,13 @@ export interface DemandConvertReq {
 export interface DemandPublicData {
   company_list: CompanyOption[];
   worktype_list: WorkTypeGroup[];
+  traininfo_list?: SimpleItem[];
+  kejian_list?: SimpleItem[];
+}
+
+export interface SimpleItem {
+  id: number;
+  title: string;
 }
 
 export interface CompanyOption {
@@ -1704,4 +1714,24 @@ export interface TrainSolutionSaveReq {
   traininfoId: number;
   filePath?: string;
   badgeList: TrainSolutionBadge[];
+}
+
+// ==================== Company Demand (企业端培训需求) ====================
+export interface TrainStudent {
+  id: number;
+  name: string;
+  phone: string;
+  idCardNumber: string;
+  gender: string;
+}
+
+export interface SolutionByDemand {
+  id: number;
+  title: string;
+  train_info_id?: number;
+  train_info_status?: number;
+  file?: string;
+  fileType?: string;
+  badgeList: TrainSolutionBadge[];
+  reject_reason?: string;
 }

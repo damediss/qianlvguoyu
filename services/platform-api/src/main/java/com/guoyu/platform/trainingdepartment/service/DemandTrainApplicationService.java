@@ -16,12 +16,19 @@ import com.guoyu.platform.trainingdepartment.dto.DemandConvertReq;
 import com.guoyu.platform.trainingdepartment.dto.DemandTrainCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.DemandTrainQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.DemandTrainUpdateReq;
+import com.guoyu.platform.trainingdepartment.entity.CourseKejianEntity;
 import com.guoyu.platform.trainingdepartment.entity.DemandTrainEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
+import com.guoyu.platform.trainingdepartment.mapper.CourseKejianMapper;
 import com.guoyu.platform.trainingdepartment.mapper.DemandTrainMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.vo.DemandPendingVO;
 import com.guoyu.platform.trainingdepartment.vo.DemandTrainVO;
+import com.guoyu.platform.trainingdepartment.vo.TrainStudentVO;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -43,13 +50,22 @@ public class DemandTrainApplicationService {
   private final OrgMapper orgMapper;
   private final ExamWorkTypeMapper examWorkTypeMapper;
   private final TrainInfoListMapper trainInfoListMapper;
+  private final CourseKejianMapper courseKejianMapper;
+  private final TrainSignUpSelfMapper signUpSelfMapper;
+  private final TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper;
 
   public DemandTrainApplicationService(DemandTrainMapper mapper, OrgMapper orgMapper,
-      ExamWorkTypeMapper examWorkTypeMapper, TrainInfoListMapper trainInfoListMapper) {
+      ExamWorkTypeMapper examWorkTypeMapper, TrainInfoListMapper trainInfoListMapper,
+      CourseKejianMapper courseKejianMapper,
+      TrainSignUpSelfMapper signUpSelfMapper,
+      TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper) {
     this.mapper = mapper;
     this.orgMapper = orgMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
     this.trainInfoListMapper = trainInfoListMapper;
+    this.courseKejianMapper = courseKejianMapper;
+    this.signUpSelfMapper = signUpSelfMapper;
+    this.signUpPeopleSelfMapper = signUpPeopleSelfMapper;
   }
 
   @Transactional(readOnly = true)
@@ -62,8 +78,27 @@ public class DemandTrainApplicationService {
     if (StringUtils.hasText(req.getKeyword())) {
       wrapper.like(DemandTrainEntity::getId, req.getKeyword());
     }
+    if (req.getOrgId() != null) {
+      wrapper.eq(DemandTrainEntity::getOrgId, req.getOrgId());
+    }
     Page<DemandTrainEntity> page = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
-    return new PageResponse<>(page.getRecords().stream().map(this::toVO).toList(),
+
+    // LEFT JOIN train_info_list 获取 solution 状态
+    Map<Long, Integer> solutionMap = Map.of();
+    List<Long> demandIds = page.getRecords().stream().map(DemandTrainEntity::getId).toList();
+    if (!demandIds.isEmpty()) {
+      List<TrainInfoListEntity> infoList = trainInfoListMapper.selectList(
+          new LambdaQueryWrapper<TrainInfoListEntity>()
+              .in(TrainInfoListEntity::getTraindemandId, demandIds)
+              .eq(TrainInfoListEntity::getTenantId, tenantId)
+              .eq(TrainInfoListEntity::getDeleted, 0));
+      solutionMap = infoList.stream()
+          .filter(t -> t.getTraindemandId() != null)
+          .collect(Collectors.toMap(TrainInfoListEntity::getTraindemandId,
+              t -> t.getCompanyHasConfirm() != null ? t.getCompanyHasConfirm() : 0, (a, b) -> a));
+    }
+    Map<Long, Integer> finalSolutionMap = solutionMap;
+    return new PageResponse<>(page.getRecords().stream().map(e -> toVO(e, finalSolutionMap)).toList(),
         page.getCurrent(), page.getSize(), page.getTotal());
   }
 
@@ -106,15 +141,31 @@ public class DemandTrainApplicationService {
     mapper.updateById(entity);
   }
 
+  @Transactional
+  public void batchDelete(List<Long> ids) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    for (Long id : ids) {
+      DemandTrainEntity entity = mapper.selectOne(new LambdaQueryWrapper<DemandTrainEntity>()
+          .eq(DemandTrainEntity::getTenantId, tenantId)
+          .eq(DemandTrainEntity::getId, id)
+          .eq(DemandTrainEntity::getDeleted, 0));
+      if (entity != null) {
+        entity.setDeleted(1);
+        mapper.updateById(entity);
+      }
+    }
+  }
+
   // ======== 需求管理业务方法 ========
 
   @Transactional(readOnly = true)
-  public PageResponse<DemandPendingVO> getPendings(Integer page, Integer pageSize, String keyword) {
+  public PageResponse<DemandPendingVO> getPendings(Integer page, Integer pageSize, String keyword, Integer del) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    int deleted = (del != null) ? del : 0;
     LambdaQueryWrapper<DemandTrainEntity> wrapper = new LambdaQueryWrapper<DemandTrainEntity>()
         .eq(DemandTrainEntity::getTenantId, tenantId)
         .eq(DemandTrainEntity::getStatus, 0)
-        .eq(DemandTrainEntity::getDeleted, 0)
+        .eq(DemandTrainEntity::getDeleted, deleted)
         .orderByDesc(DemandTrainEntity::getAddtime);
     if (StringUtils.hasText(keyword)) {
       wrapper.like(DemandTrainEntity::getContent, keyword);
@@ -122,9 +173,10 @@ public class DemandTrainApplicationService {
     Page<DemandTrainEntity> result = mapper.selectPage(
         new Page<>(page != null ? page : 1, pageSize != null ? pageSize : 30), wrapper);
 
-    // 获取所有企业/工作室信息用于填充
+    // 获取所有企业/工作室信息用于填充（排除 id=1 的系统组织）
     List<OrgEntity> orgs = orgMapper.selectList(new LambdaQueryWrapper<OrgEntity>()
         .eq(OrgEntity::getTenantId, tenantId)
+        .ne(OrgEntity::getId, 1L)
         .in(OrgEntity::getOrgType, "company", "master")
         .eq(OrgEntity::getDeleted, 0));
     Map<Long, OrgEntity> orgMap = orgs.stream()
@@ -157,10 +209,11 @@ public class DemandTrainApplicationService {
     boolean all = (tags == null || tags.isEmpty());
     Map<String, Object> data = new LinkedHashMap<>();
 
-    // 企业/工作室列表
+    // 企业/工作室列表（排除 id=1 的系统组织）
     if (all || tags.contains("company")) {
       List<OrgEntity> orgs = orgMapper.selectList(new LambdaQueryWrapper<OrgEntity>()
           .eq(OrgEntity::getTenantId, tenantId)
+          .ne(OrgEntity::getId, 1L)
           .in(OrgEntity::getOrgType, "company", "master")
           .eq(OrgEntity::getDeleted, 0));
       List<Map<String, Object>> companyList = orgs.stream().map(o -> {
@@ -173,11 +226,10 @@ public class DemandTrainApplicationService {
       data.put("company_list", companyList);
     }
 
-    // 工种列表
+    // 工种列表（查全表，不做 deleted 过滤）
     if (all || tags.contains("worktype")) {
       List<ExamWorkTypeEntity> workTypes = examWorkTypeMapper.selectList(
           new LambdaQueryWrapper<ExamWorkTypeEntity>()
-              .eq(ExamWorkTypeEntity::getDeleted, 0)
               .orderByAsc(ExamWorkTypeEntity::getParentId));
       Map<Integer, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
       List<Map<String, Object>> workTypeList = new ArrayList<>();
@@ -203,8 +255,8 @@ public class DemandTrainApplicationService {
       data.put("worktype_list", workTypeList);
     }
 
-    // 培训信息列表
-    if (all || tags.contains("traininfo")) {
+    // 培训信息列表（仅 tags 明确指定时返回）
+    if (tags != null && tags.contains("traininfo")) {
       List<TrainInfoListEntity> trainInfoList = trainInfoListMapper.selectList(
           new LambdaQueryWrapper<TrainInfoListEntity>()
               .eq(TrainInfoListEntity::getTenantId, tenantId)
@@ -216,6 +268,23 @@ public class DemandTrainApplicationService {
         return m;
       }).toList();
       data.put("traininfo_list", traininfoList);
+    }
+
+    // 课件列表（仅 tags 明确指定时返回）
+    if (tags != null && tags.contains("kejian")) {
+      List<CourseKejianEntity> kejianList = courseKejianMapper.selectList(
+          new LambdaQueryWrapper<CourseKejianEntity>()
+              .eq(CourseKejianEntity::getDeleted, 0)
+              .eq(CourseKejianEntity::getTag, 0)
+              .eq(CourseKejianEntity::getOwnerId, 1L)
+              .gt(CourseKejianEntity::getWorkTypeId, 0L));
+      List<Map<String, Object>> kejianVOList = kejianList.stream().map(k -> {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", k.getId());
+        m.put("title", k.getTitle());
+        return m;
+      }).toList();
+      data.put("kejian_list", kejianVOList);
     }
 
     return data;
@@ -251,6 +320,7 @@ public class DemandTrainApplicationService {
     entity.setPassStatus(1);
     entity.setStatus(0);
     entity.setSortNumber(1);
+    entity.setCreateTime(LocalDateTime.now());
     entity.setDeleted(0);
     if (req.getTraindemandId() != null) {
       entity.setTraindemandId(req.getTraindemandId());
@@ -272,6 +342,56 @@ public class DemandTrainApplicationService {
     return Map.of("id", entity.getId(), "title", entity.getTitle());
   }
 
+  @Transactional(readOnly = true)
+  public List<TrainStudentVO> getStudentsByDemandId(Long demandId) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+
+    // Step 1: demand_train → train_info_list
+    List<TrainInfoListEntity> infoList = trainInfoListMapper.selectList(
+        new LambdaQueryWrapper<TrainInfoListEntity>()
+            .eq(TrainInfoListEntity::getTenantId, tenantId)
+            .eq(TrainInfoListEntity::getTraindemandId, demandId)
+            .eq(TrainInfoListEntity::getDeleted, 0));
+    if (infoList.isEmpty()) {
+      return List.of();
+    }
+    List<Long> infoIds = infoList.stream().map(TrainInfoListEntity::getId).toList();
+
+    // Step 2: train_info_list → train_sign_up_self
+    List<TrainSignUpSelfEntity> signUpList = signUpSelfMapper.selectList(
+        new LambdaQueryWrapper<TrainSignUpSelfEntity>()
+            .in(TrainSignUpSelfEntity::getTrainInfoId, infoIds)
+            .eq(TrainSignUpSelfEntity::getDeleted, 0));
+    if (signUpList.isEmpty()) {
+      return List.of();
+    }
+    List<Long> signUpIds = signUpList.stream().map(TrainSignUpSelfEntity::getId).toList();
+
+    // Step 3: train_sign_up_self → train_sign_up_people_self
+    List<TrainSignUpPeopleSelfEntity> people = signUpPeopleSelfMapper.selectList(
+        new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
+            .in(TrainSignUpPeopleSelfEntity::getSignUpId, signUpIds)
+            .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0));
+
+    // 身份证号脱敏：中间8位替换为 *
+    return people.stream().map(p -> {
+      String idCard = p.getIdCardNumber();
+      if (idCard != null && idCard.length() >= 15) {
+        idCard = idCard.substring(0, 6) + "********" + idCard.substring(14);
+      }
+      String gender = p.getGender();
+      if (gender == null && idCard != null && idCard.length() >= 17) {
+        try {
+          int digit = Integer.parseInt(idCard.substring(16, 17));
+          gender = digit % 2 == 1 ? "男" : "女";
+        } catch (Exception ignored) {
+          gender = "-";
+        }
+      }
+      return new TrainStudentVO(p.getId(), p.getName(), p.getPhone(), idCard, gender);
+    }).toList();
+  }
+
   private DemandTrainEntity getExisting(Long id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     DemandTrainEntity entity = mapper.selectOne(new LambdaQueryWrapper<DemandTrainEntity>()
@@ -285,6 +405,21 @@ public class DemandTrainApplicationService {
   }
 
   private DemandTrainVO toVO(DemandTrainEntity e) {
+    return toVO(e, Map.of());
+  }
+
+  private DemandTrainVO toVO(DemandTrainEntity e, Map<Long, Integer> solutionMap) {
+    Integer solution = solutionMap.get(e.getId());
+    String solutionCn;
+    if (e.getStatus() == null || e.getStatus() == 0) {
+      solutionCn = "-";
+    } else if (solution == null) {
+      solutionCn = "-";
+    } else if (solution == 0) {
+      solutionCn = "待确认";
+    } else {
+      solutionCn = "已确认";
+    }
     return new DemandTrainVO(
         e.getId(),
         e.getOrgId(),
@@ -294,7 +429,9 @@ public class DemandTrainApplicationService {
         e.getAddtime(),
         e.getTenantId(),
         e.getCreateTime(),
-        e.getUpdateTime()
+        e.getUpdateTime(),
+        solution,
+        solutionCn
     );
   }
 }

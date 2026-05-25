@@ -64,14 +64,15 @@ public class DemandTrainController {
 
   // ======== 需求管理业务接口 ========
 
-  /** 待处理需求列表（status=0） */
+  /** 待处理需求列表（status=0），del=0 正常数据，del=1 回收站 */
   @GetMapping("/demand-trains/pendings")
   @PreAuthorize("hasAuthority('train:demand-train:view')")
   public ApiResponse<PageResponse<DemandPendingVO>> getPendings(
       @RequestParam(defaultValue = "1") Integer page,
       @RequestParam(defaultValue = "30") Integer pageSize,
-      @RequestParam(required = false) String keyword) {
-    return ApiResponse.ok(demandTrainApplicationService.getPendings(page, pageSize, keyword));
+      @RequestParam(required = false) String keyword,
+      @RequestParam(defaultValue = "0") Integer del) {
+    return ApiResponse.ok(demandTrainApplicationService.getPendings(page, pageSize, keyword, del));
   }
 
   /** 公共数据（企业列表、工种列表、培训信息列表） */
@@ -87,5 +88,21 @@ public class DemandTrainController {
   @AuditLog(module = "training", action = "demand-train:convert", targetType = "train_info_list")
   public ApiResponse<Map<String, Object>> convertToTraining(@Valid @RequestBody DemandConvertReq req) {
     return ApiResponse.ok(demandTrainApplicationService.convertToTraining(req));
+  }
+
+  /** 批量删除企业需求 */
+  @PostMapping("/demand-trains/batch-delete")
+  @PreAuthorize("hasAuthority('train:demand-train:delete')")
+  @AuditLog(module = "training", action = "demand-train:delete", targetType = "demand-trains")
+  public ApiResponse<List<Long>> batchDelete(@RequestBody List<Long> ids) {
+    demandTrainApplicationService.batchDelete(ids);
+    return ApiResponse.ok(ids);
+  }
+
+  /** 根据需求ID获取报名学员列表 */
+  @GetMapping("/demand-trains/{id:\\d+}/students")
+  @PreAuthorize("hasAuthority('train:demand-train:view')")
+  public ApiResponse<List<com.guoyu.platform.trainingdepartment.vo.TrainStudentVO>> getStudents(@PathVariable Long id) {
+    return ApiResponse.ok(demandTrainApplicationService.getStudentsByDemandId(id));
   }
 }
