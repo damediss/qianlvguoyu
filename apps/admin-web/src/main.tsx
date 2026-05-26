@@ -8,6 +8,7 @@ import { AuthGate } from './components/AuthGate';
 import { KnowledgePage } from './pages/knowledge/KnowledgePage';
 import { WorkTypePage } from './pages/exam/WorkTypePage';
 import { CoursePage } from './pages/exam/CoursePage';
+import { DevTaskDetailPage } from './pages/exam/DevTaskDetailPage';
 import { TrainingInfoPage } from './pages/training/TrainingInfoPage';
 import { TrainingClassPeoplePage } from './pages/training/TrainingClassPeoplePage';
 import { TrainingClassDeclarePage } from './pages/training/TrainingClassDeclarePage';
@@ -32,6 +33,7 @@ const queryClient = new QueryClient({
 const pageMap: Record<string, React.ReactNode> = {
   knowledge: <KnowledgePage />,
   'exam-work-type': <WorkTypePage />,
+  'dev-task-detail': <DevTaskDetailPage />,
   'exam-course': <CoursePage />,
   'training-info': <TrainingInfoPage />,
   'training-class-people': <TrainingClassPeoplePage />,

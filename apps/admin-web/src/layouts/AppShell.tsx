@@ -6,8 +6,10 @@ import {
   DatabaseOutlined,
   DashboardOutlined,
   ExperimentOutlined,
+  FileSearchOutlined,
   IdcardOutlined,
   FileTextOutlined,
+  ProjectOutlined,
   ReadOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
@@ -16,6 +18,7 @@ import {
   SearchOutlined,
   SettingOutlined,
   SolutionOutlined,
+  TableOutlined,
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons';
@@ -33,6 +36,21 @@ const menuItems = [
     icon: <BookOutlined />,
     label: '题库管理',
     children: [
+      {
+        key: 'task-management',
+        icon: <FileSearchOutlined />,
+        label: '任务管理',
+        children: [
+          {
+            key: 'dev-task',
+            icon: <ProjectOutlined />,
+            label: '开发任务',
+            children: [
+              { key: 'dev-task-detail', icon: <TableOutlined />, label: '细目表' },
+            ],
+          },
+        ],
+      },
       { key: 'exam-work-type', icon: <ExperimentOutlined />, label: '工种管理' },
       { key: 'exam-course', icon: <ReadOutlined />, label: '科目管理' },
       { key: 'exam-user-auth-course', icon: <SafetyOutlined />, label: '专家授权管理' },

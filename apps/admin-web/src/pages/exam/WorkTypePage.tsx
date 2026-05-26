@@ -55,7 +55,7 @@ export function WorkTypePage() {
   const [query, setQuery] = useState({ page: 1, pageSize: 20, title: '' });
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<'table' | 'tree'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'tree'>('tree');
   const [form] = Form.useForm();
 
   const listQuery = useQuery({
@@ -173,6 +173,11 @@ export function WorkTypePage() {
 
   const columns = [
     {
+      title: '序号',
+      width: 105,
+      render: (_: any, __: any, index: number) => index + 1,
+    },
+    {
       title: '工种名称',
       dataIndex: 'title',
       render: (text: string) => (
@@ -243,8 +248,8 @@ export function WorkTypePage() {
             onChange={setViewMode}
             style={{ width: 110 }}
             options={[
-              { label: '列表视图', value: 'table' },
               { label: '树形视图', value: 'tree' },
+              { label: '列表视图', value: 'table' },
             ]}
           />
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
