@@ -101,5 +101,7 @@ public record TrainInfoListVO(
     /** 附件 */
     String files,
     /** 培训需求ID */
-    Long traindemandId
+    Long traindemandId,
+    /** 工种名称（关联 exam_work_type） */
+    String workTypeTitle
 ) {}

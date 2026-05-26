@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserInfoCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserInfoQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserInfoUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainUserInfoService;
+import com.guoyu.platform.trainingdepartment.service.TrainUserInfoApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainUserInfoVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainUserInfoController {
 
-  private final TrainUserInfoService service;
+  private final TrainUserInfoApplicationService trainUserInfoApplicationService;
 
-  public TrainUserInfoController(TrainUserInfoService service) {
-    this.service = service;
+  public TrainUserInfoController(TrainUserInfoApplicationService trainUserInfoApplicationService) {
+    this.trainUserInfoApplicationService = trainUserInfoApplicationService;
   }
 
   /** 分页查询参与培训人员信息列表 */
   @GetMapping("/user-infos")
   @PreAuthorize("hasAuthority('train:user-info:view')")
   public ApiResponse<PageResponse<TrainUserInfoVO>> page(@Valid @ModelAttribute TrainUserInfoQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainUserInfoApplicationService.page(req));
   }
 
   /** 根据ID查询参与培训人员信息详情 */
   @GetMapping("/user-infos/{id}")
   @PreAuthorize("hasAuthority('train:user-info:view')")
   public ApiResponse<TrainUserInfoVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainUserInfoApplicationService.getById(id));
   }
 
   /** 新增参与培训人员信息 */
@@ -54,7 +54,7 @@ public class TrainUserInfoController {
   @PreAuthorize("hasAuthority('train:user-info:create')")
   @AuditLog(module = "training", action = "user-info:create", targetType = "train_user_info")
   public ApiResponse<TrainUserInfoVO> create(@Valid @RequestBody TrainUserInfoCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainUserInfoApplicationService.create(req));
   }
 
   /** 修改参与培训人员信息 */
@@ -62,7 +62,7 @@ public class TrainUserInfoController {
   @PreAuthorize("hasAuthority('train:user-info:update')")
   @AuditLog(module = "training", action = "user-info:update", targetType = "train_user_info")
   public ApiResponse<TrainUserInfoVO> update(@PathVariable Long id, @Valid @RequestBody TrainUserInfoUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainUserInfoApplicationService.update(id, req));
   }
 
   /** 删除参与培训人员信息 */
@@ -70,7 +70,7 @@ public class TrainUserInfoController {
   @PreAuthorize("hasAuthority('train:user-info:delete')")
   @AuditLog(module = "training", action = "user-info:delete", targetType = "train_user_info")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainUserInfoApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

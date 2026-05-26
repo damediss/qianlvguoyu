@@ -6,6 +6,10 @@ server:
 spring:
   application:
     name: platform-api
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    serialization:
+      write-dates-as-timestamps: false
   datasource:
     url: ${MYSQL_URL:jdbc:mysql://192.168.1.200:3308/gjjd_test?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
     username: ${MYSQL_USERNAME:root}

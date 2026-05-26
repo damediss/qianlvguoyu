@@ -7,7 +7,7 @@ import com.guoyu.platform.trainingdepartment.dto.AssignClassReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainClassListCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainClassListQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainClassListUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainClassListService;
+import com.guoyu.platform.trainingdepartment.service.TrainClassListApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainClassListVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -30,24 +30,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainClassListController {
 
-  private final TrainClassListService service;
+  private final TrainClassListApplicationService trainClassListApplicationService;
 
-  public TrainClassListController(TrainClassListService service) {
-    this.service = service;
+  public TrainClassListController(TrainClassListApplicationService trainClassListApplicationService) {
+    this.trainClassListApplicationService = trainClassListApplicationService;
   }
 
   /** 分页查询分班列表 */
   @GetMapping("/class-lists")
   @PreAuthorize("hasAuthority('train:class-list:view')")
   public ApiResponse<PageResponse<TrainClassListVO>> page(@Valid @ModelAttribute TrainClassListQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainClassListApplicationService.page(req));
   }
 
   /** 根据ID查询分班详情 */
   @GetMapping("/class-lists/{id}")
   @PreAuthorize("hasAuthority('train:class-list:view')")
   public ApiResponse<TrainClassListVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainClassListApplicationService.getById(id));
   }
 
   /** 新增分班 */
@@ -55,7 +55,7 @@ public class TrainClassListController {
   @PreAuthorize("hasAuthority('train:class-list:create')")
   @AuditLog(module = "training", action = "class-list:create", targetType = "train_class_list")
   public ApiResponse<TrainClassListVO> create(@Valid @RequestBody TrainClassListCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainClassListApplicationService.create(req));
   }
 
   /** 修改分班 */
@@ -63,7 +63,7 @@ public class TrainClassListController {
   @PreAuthorize("hasAuthority('train:class-list:update')")
   @AuditLog(module = "training", action = "class-list:update", targetType = "train_class_list")
   public ApiResponse<TrainClassListVO> update(@PathVariable Long id, @Valid @RequestBody TrainClassListUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainClassListApplicationService.update(id, req));
   }
 
   /** 删除分班 */
@@ -71,7 +71,7 @@ public class TrainClassListController {
   @PreAuthorize("hasAuthority('train:class-list:delete')")
   @AuditLog(module = "training", action = "class-list:delete", targetType = "train_class_list")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainClassListApplicationService.delete(id);
     return ApiResponse.ok();
   }
 
@@ -80,7 +80,7 @@ public class TrainClassListController {
   @PreAuthorize("hasAuthority('train:class-list:assign')")
   @AuditLog(module = "training", action = "class-list:batch-assign", targetType = "train_class_list")
   public ApiResponse<Void> batchAssign(@Valid @RequestBody AssignClassReq req) {
-    service.batchAssign(req);
+    trainClassListApplicationService.batchAssign(req);
     return ApiResponse.ok();
   }
 
@@ -89,7 +89,7 @@ public class TrainClassListController {
   @PreAuthorize("hasAuthority('train:class-list:update')")
   @AuditLog(module = "training", action = "class-list:open", targetType = "train_class_list")
   public ApiResponse<TrainClassListVO> openClass(@PathVariable Long id) {
-    return ApiResponse.ok(service.openClass(id));
+    return ApiResponse.ok(trainClassListApplicationService.openClass(id));
   }
 
   /** 结课 */
@@ -97,6 +97,6 @@ public class TrainClassListController {
   @PreAuthorize("hasAuthority('train:class-list:update')")
   @AuditLog(module = "training", action = "class-list:close", targetType = "train_class_list")
   public ApiResponse<TrainClassListVO> closeClass(@PathVariable Long id) {
-    return ApiResponse.ok(service.closeClass(id));
+    return ApiResponse.ok(trainClassListApplicationService.closeClass(id));
   }
 }

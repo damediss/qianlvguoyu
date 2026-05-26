@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskListCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskListQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskListUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainTaskListService;
+import com.guoyu.platform.trainingdepartment.service.TrainTaskListApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainTaskListVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainTaskListController {
 
-  private final TrainTaskListService service;
+  private final TrainTaskListApplicationService trainTaskListApplicationService;
 
-  public TrainTaskListController(TrainTaskListService service) {
-    this.service = service;
+  public TrainTaskListController(TrainTaskListApplicationService trainTaskListApplicationService) {
+    this.trainTaskListApplicationService = trainTaskListApplicationService;
   }
 
   /** 分页查询知识点任务列表 */
   @GetMapping("/task-lists")
   @PreAuthorize("hasAuthority('train:task-list:view')")
   public ApiResponse<PageResponse<TrainTaskListVO>> page(@Valid @ModelAttribute TrainTaskListQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainTaskListApplicationService.page(req));
   }
 
   /** 根据ID查询知识点任务详情 */
   @GetMapping("/task-lists/{id}")
   @PreAuthorize("hasAuthority('train:task-list:view')")
   public ApiResponse<TrainTaskListVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainTaskListApplicationService.getById(id));
   }
 
   /** 新增知识点任务 */
@@ -54,7 +54,7 @@ public class TrainTaskListController {
   @PreAuthorize("hasAuthority('train:task-list:create')")
   @AuditLog(module = "training", action = "task-list:create", targetType = "train_task_list")
   public ApiResponse<TrainTaskListVO> create(@Valid @RequestBody TrainTaskListCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainTaskListApplicationService.create(req));
   }
 
   /** 修改知识点任务 */
@@ -62,7 +62,7 @@ public class TrainTaskListController {
   @PreAuthorize("hasAuthority('train:task-list:update')")
   @AuditLog(module = "training", action = "task-list:update", targetType = "train_task_list")
   public ApiResponse<TrainTaskListVO> update(@PathVariable Long id, @Valid @RequestBody TrainTaskListUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainTaskListApplicationService.update(id, req));
   }
 
   /** 删除知识点任务 */
@@ -70,7 +70,7 @@ public class TrainTaskListController {
   @PreAuthorize("hasAuthority('train:task-list:delete')")
   @AuditLog(module = "training", action = "task-list:delete", targetType = "train_task_list")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainTaskListApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainCertificateCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainCertificateQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainCertificateUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainCertificateService;
+import com.guoyu.platform.trainingdepartment.service.TrainCertificateApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainCertificateVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -24,24 +24,24 @@ import java.util.Map;
 @RequestMapping("/training")
 public class TrainCertificateController {
 
-  private final TrainCertificateService service;
+  private final TrainCertificateApplicationService trainCertificateApplicationService;
 
-  public TrainCertificateController(TrainCertificateService service) {
-    this.service = service;
+  public TrainCertificateController(TrainCertificateApplicationService trainCertificateApplicationService) {
+    this.trainCertificateApplicationService = trainCertificateApplicationService;
   }
 
   /** 分页查询 */
   @GetMapping("/certificates")
   @PreAuthorize("hasAuthority('train:certificate:view')")
   public ApiResponse<PageResponse<TrainCertificateVO>> page(@Valid @ModelAttribute TrainCertificateQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainCertificateApplicationService.page(req));
   }
 
   /** 根据ID查询 */
   @GetMapping("/certificates/{id}")
   @PreAuthorize("hasAuthority('train:certificate:view')")
   public ApiResponse<TrainCertificateVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainCertificateApplicationService.getById(id));
   }
 
   /** 创建 */
@@ -49,7 +49,7 @@ public class TrainCertificateController {
   @PreAuthorize("hasAuthority('train:certificate:create')")
   @AuditLog(module = "training", action = "certificate:create", targetType = "train_certificate")
   public ApiResponse<TrainCertificateVO> create(@Valid @RequestBody TrainCertificateCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainCertificateApplicationService.create(req));
   }
 
   /** 更新 */
@@ -57,7 +57,7 @@ public class TrainCertificateController {
   @PreAuthorize("hasAuthority('train:certificate:update')")
   @AuditLog(module = "training", action = "certificate:update", targetType = "train_certificate")
   public ApiResponse<TrainCertificateVO> update(@PathVariable Long id, @Valid @RequestBody TrainCertificateUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainCertificateApplicationService.update(id, req));
   }
 
   /** 删除 */
@@ -65,7 +65,7 @@ public class TrainCertificateController {
   @PreAuthorize("hasAuthority('train:certificate:delete')")
   @AuditLog(module = "training", action = "certificate:delete", targetType = "train_certificate")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainCertificateApplicationService.delete(id);
     return ApiResponse.ok();
   }
 
@@ -77,6 +77,6 @@ public class TrainCertificateController {
     List<Long> studentIds = ((List<?>) body.get("studentIds")).stream()
         .map(o -> Long.valueOf(o.toString())).toList();
     Long projectId = Long.valueOf(body.get("projectId").toString());
-    return ApiResponse.ok(service.batchIssue(studentIds, projectId));
+    return ApiResponse.ok(trainCertificateApplicationService.batchIssue(studentIds, projectId));
   }
 }

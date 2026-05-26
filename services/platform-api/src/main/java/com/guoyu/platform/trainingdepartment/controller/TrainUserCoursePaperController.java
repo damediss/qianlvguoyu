@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserCoursePaperCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserCoursePaperQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserCoursePaperUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainUserCoursePaperService;
+import com.guoyu.platform.trainingdepartment.service.TrainUserCoursePaperApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainUserCoursePaperVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainUserCoursePaperController {
 
-  private final TrainUserCoursePaperService service;
+  private final TrainUserCoursePaperApplicationService trainUserCoursePaperApplicationService;
 
-  public TrainUserCoursePaperController(TrainUserCoursePaperService service) {
-    this.service = service;
+  public TrainUserCoursePaperController(TrainUserCoursePaperApplicationService trainUserCoursePaperApplicationService) {
+    this.trainUserCoursePaperApplicationService = trainUserCoursePaperApplicationService;
   }
 
   /** 分页查询用户已获得证书列表 */
   @GetMapping("/user-course-papers")
   @PreAuthorize("hasAuthority('train:user-course-paper:view')")
   public ApiResponse<PageResponse<TrainUserCoursePaperVO>> page(@Valid @ModelAttribute TrainUserCoursePaperQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainUserCoursePaperApplicationService.page(req));
   }
 
   /** 根据ID查询用户已获得证书详情 */
   @GetMapping("/user-course-papers/{id}")
   @PreAuthorize("hasAuthority('train:user-course-paper:view')")
   public ApiResponse<TrainUserCoursePaperVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainUserCoursePaperApplicationService.getById(id));
   }
 
   /** 新增用户已获得证书 */
@@ -54,7 +54,7 @@ public class TrainUserCoursePaperController {
   @PreAuthorize("hasAuthority('train:user-course-paper:create')")
   @AuditLog(module = "training", action = "user-course-paper:create", targetType = "train_user_course_paper")
   public ApiResponse<TrainUserCoursePaperVO> create(@Valid @RequestBody TrainUserCoursePaperCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainUserCoursePaperApplicationService.create(req));
   }
 
   /** 修改用户已获得证书 */
@@ -62,7 +62,7 @@ public class TrainUserCoursePaperController {
   @PreAuthorize("hasAuthority('train:user-course-paper:update')")
   @AuditLog(module = "training", action = "user-course-paper:update", targetType = "train_user_course_paper")
   public ApiResponse<TrainUserCoursePaperVO> update(@PathVariable Long id, @Valid @RequestBody TrainUserCoursePaperUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainUserCoursePaperApplicationService.update(id, req));
   }
 
   /** 删除用户已获得证书 */
@@ -70,7 +70,7 @@ public class TrainUserCoursePaperController {
   @PreAuthorize("hasAuthority('train:user-course-paper:delete')")
   @AuditLog(module = "training", action = "user-course-paper:delete", targetType = "train_user_course_paper")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainUserCoursePaperApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

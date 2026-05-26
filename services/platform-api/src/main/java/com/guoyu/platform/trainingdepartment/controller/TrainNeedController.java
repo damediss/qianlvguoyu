@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainNeedCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainNeedQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainNeedUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainNeedService;
+import com.guoyu.platform.trainingdepartment.service.TrainNeedApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainNeedVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,24 +25,24 @@ import java.util.Map;
 @RequestMapping("/training")
 public class TrainNeedController {
 
-  private final TrainNeedService service;
+  private final TrainNeedApplicationService trainNeedApplicationService;
 
-  public TrainNeedController(TrainNeedService service) {
-    this.service = service;
+  public TrainNeedController(TrainNeedApplicationService trainNeedApplicationService) {
+    this.trainNeedApplicationService = trainNeedApplicationService;
   }
 
   /** 分页查询 */
   @GetMapping("/needs")
   @PreAuthorize("hasAuthority('train:need:view')")
   public ApiResponse<PageResponse<TrainNeedVO>> page(@Valid @ModelAttribute TrainNeedQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainNeedApplicationService.page(req));
   }
 
   /** 根据ID查询 */
   @GetMapping("/needs/{id}")
   @PreAuthorize("hasAuthority('train:need:view')")
   public ApiResponse<TrainNeedVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainNeedApplicationService.getById(id));
   }
 
   /** 创建 */
@@ -50,7 +50,7 @@ public class TrainNeedController {
   @PreAuthorize("hasAuthority('train:need:create')")
   @AuditLog(module = "training", action = "need:create", targetType = "train_need")
   public ApiResponse<TrainNeedVO> create(@Valid @RequestBody TrainNeedCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainNeedApplicationService.create(req));
   }
 
   /** 更新 */
@@ -58,7 +58,7 @@ public class TrainNeedController {
   @PreAuthorize("hasAuthority('train:need:update')")
   @AuditLog(module = "training", action = "need:update", targetType = "train_need")
   public ApiResponse<TrainNeedVO> update(@PathVariable Long id, @Valid @RequestBody TrainNeedUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainNeedApplicationService.update(id, req));
   }
 
   /** 删除 */
@@ -66,7 +66,7 @@ public class TrainNeedController {
   @PreAuthorize("hasAuthority('train:need:delete')")
   @AuditLog(module = "training", action = "need:delete", targetType = "train_need")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainNeedApplicationService.delete(id);
     return ApiResponse.ok();
   }
 

@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainSummaryCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSummaryQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSummaryUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainSummaryService;
+import com.guoyu.platform.trainingdepartment.service.TrainSummaryApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainSummaryVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,24 +21,24 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/training")
 public class TrainSummaryController {
 
-  private final TrainSummaryService service;
+  private final TrainSummaryApplicationService trainSummaryApplicationService;
 
-  public TrainSummaryController(TrainSummaryService service) {
-    this.service = service;
+  public TrainSummaryController(TrainSummaryApplicationService trainSummaryApplicationService) {
+    this.trainSummaryApplicationService = trainSummaryApplicationService;
   }
 
   /** 分页查询 */
   @GetMapping("/summaries")
   @PreAuthorize("hasAuthority('train:summary:view')")
   public ApiResponse<PageResponse<TrainSummaryVO>> page(@Valid @ModelAttribute TrainSummaryQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainSummaryApplicationService.page(req));
   }
 
   /** 根据ID查询 */
   @GetMapping("/summaries/{id}")
   @PreAuthorize("hasAuthority('train:summary:view')")
   public ApiResponse<TrainSummaryVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainSummaryApplicationService.getById(id));
   }
 
   /** 创建 */
@@ -46,7 +46,7 @@ public class TrainSummaryController {
   @PreAuthorize("hasAuthority('train:summary:create')")
   @AuditLog(module = "training", action = "summary:create", targetType = "train_summary")
   public ApiResponse<TrainSummaryVO> create(@Valid @RequestBody TrainSummaryCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainSummaryApplicationService.create(req));
   }
 
   /** 更新 */
@@ -54,7 +54,7 @@ public class TrainSummaryController {
   @PreAuthorize("hasAuthority('train:summary:update')")
   @AuditLog(module = "training", action = "summary:update", targetType = "train_summary")
   public ApiResponse<TrainSummaryVO> update(@PathVariable Long id, @Valid @RequestBody TrainSummaryUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainSummaryApplicationService.update(id, req));
   }
 
   /** 删除 */
@@ -62,7 +62,7 @@ public class TrainSummaryController {
   @PreAuthorize("hasAuthority('train:summary:delete')")
   @AuditLog(module = "training", action = "summary:delete", targetType = "train_summary")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainSummaryApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

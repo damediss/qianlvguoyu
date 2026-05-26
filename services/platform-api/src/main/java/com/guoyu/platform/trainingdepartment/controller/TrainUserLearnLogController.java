@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserLearnLogCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserLearnLogQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserLearnLogUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainUserLearnLogService;
+import com.guoyu.platform.trainingdepartment.service.TrainUserLearnLogApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainUserLearnLogVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainUserLearnLogController {
 
-  private final TrainUserLearnLogService service;
+  private final TrainUserLearnLogApplicationService trainUserLearnLogApplicationService;
 
-  public TrainUserLearnLogController(TrainUserLearnLogService service) {
-    this.service = service;
+  public TrainUserLearnLogController(TrainUserLearnLogApplicationService trainUserLearnLogApplicationService) {
+    this.trainUserLearnLogApplicationService = trainUserLearnLogApplicationService;
   }
 
   /** 分页查询学习记录列表 */
   @GetMapping("/user-learn-logs")
   @PreAuthorize("hasAuthority('train:user-learn-log:view')")
   public ApiResponse<PageResponse<TrainUserLearnLogVO>> page(@Valid @ModelAttribute TrainUserLearnLogQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainUserLearnLogApplicationService.page(req));
   }
 
   /** 根据ID查询学习记录详情 */
   @GetMapping("/user-learn-logs/{id}")
   @PreAuthorize("hasAuthority('train:user-learn-log:view')")
   public ApiResponse<TrainUserLearnLogVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainUserLearnLogApplicationService.getById(id));
   }
 
   /** 新增学习记录 */
@@ -54,7 +54,7 @@ public class TrainUserLearnLogController {
   @PreAuthorize("hasAuthority('train:user-learn-log:create')")
   @AuditLog(module = "training", action = "user-learn-log:create", targetType = "train_user_learn_log")
   public ApiResponse<TrainUserLearnLogVO> create(@Valid @RequestBody TrainUserLearnLogCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainUserLearnLogApplicationService.create(req));
   }
 
   /** 修改学习记录 */
@@ -62,7 +62,7 @@ public class TrainUserLearnLogController {
   @PreAuthorize("hasAuthority('train:user-learn-log:update')")
   @AuditLog(module = "training", action = "user-learn-log:update", targetType = "train_user_learn_log")
   public ApiResponse<TrainUserLearnLogVO> update(@PathVariable Long id, @Valid @RequestBody TrainUserLearnLogUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainUserLearnLogApplicationService.update(id, req));
   }
 
   /** 删除学习记录 */
@@ -70,7 +70,7 @@ public class TrainUserLearnLogController {
   @PreAuthorize("hasAuthority('train:user-learn-log:delete')")
   @AuditLog(module = "training", action = "user-learn-log:delete", targetType = "train_user_learn_log")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainUserLearnLogApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

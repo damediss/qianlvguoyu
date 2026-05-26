@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskInfoDetailCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskInfoDetailQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskInfoDetailUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainTaskInfoDetailService;
+import com.guoyu.platform.trainingdepartment.service.TrainTaskInfoDetailApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainTaskInfoDetailVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainTaskInfoDetailController {
 
-  private final TrainTaskInfoDetailService service;
+  private final TrainTaskInfoDetailApplicationService trainTaskInfoDetailApplicationService;
 
-  public TrainTaskInfoDetailController(TrainTaskInfoDetailService service) {
-    this.service = service;
+  public TrainTaskInfoDetailController(TrainTaskInfoDetailApplicationService trainTaskInfoDetailApplicationService) {
+    this.trainTaskInfoDetailApplicationService = trainTaskInfoDetailApplicationService;
   }
 
   /** 分页查询任务详情列表 */
   @GetMapping("/task-info-details")
   @PreAuthorize("hasAuthority('train:task-info-detail:view')")
   public ApiResponse<PageResponse<TrainTaskInfoDetailVO>> page(@Valid @ModelAttribute TrainTaskInfoDetailQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainTaskInfoDetailApplicationService.page(req));
   }
 
   /** 根据ID查询任务详情 */
   @GetMapping("/task-info-details/{id}")
   @PreAuthorize("hasAuthority('train:task-info-detail:view')")
   public ApiResponse<TrainTaskInfoDetailVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainTaskInfoDetailApplicationService.getById(id));
   }
 
   /** 新增任务详情 */
@@ -54,7 +54,7 @@ public class TrainTaskInfoDetailController {
   @PreAuthorize("hasAuthority('train:task-info-detail:create')")
   @AuditLog(module = "training", action = "task-info-detail:create", targetType = "train_task_info_detail")
   public ApiResponse<TrainTaskInfoDetailVO> create(@Valid @RequestBody TrainTaskInfoDetailCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainTaskInfoDetailApplicationService.create(req));
   }
 
   /** 修改任务详情 */
@@ -62,7 +62,7 @@ public class TrainTaskInfoDetailController {
   @PreAuthorize("hasAuthority('train:task-info-detail:update')")
   @AuditLog(module = "training", action = "task-info-detail:update", targetType = "train_task_info_detail")
   public ApiResponse<TrainTaskInfoDetailVO> update(@PathVariable Long id, @Valid @RequestBody TrainTaskInfoDetailUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainTaskInfoDetailApplicationService.update(id, req));
   }
 
   /** 删除任务详情 */
@@ -70,7 +70,7 @@ public class TrainTaskInfoDetailController {
   @PreAuthorize("hasAuthority('train:task-info-detail:delete')")
   @AuditLog(module = "training", action = "task-info-detail:delete", targetType = "train_task_info_detail")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainTaskInfoDetailApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

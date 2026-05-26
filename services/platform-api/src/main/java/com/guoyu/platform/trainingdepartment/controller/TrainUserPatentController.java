@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserPatentCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserPatentQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainUserPatentUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainUserPatentService;
+import com.guoyu.platform.trainingdepartment.service.TrainUserPatentApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainUserPatentVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainUserPatentController {
 
-  private final TrainUserPatentService service;
+  private final TrainUserPatentApplicationService trainUserPatentApplicationService;
 
-  public TrainUserPatentController(TrainUserPatentService service) {
-    this.service = service;
+  public TrainUserPatentController(TrainUserPatentApplicationService trainUserPatentApplicationService) {
+    this.trainUserPatentApplicationService = trainUserPatentApplicationService;
   }
 
   /** 分页查询用户专利列表 */
   @GetMapping("/user-patents")
   @PreAuthorize("hasAuthority('train:user-patent:view')")
   public ApiResponse<PageResponse<TrainUserPatentVO>> page(@Valid @ModelAttribute TrainUserPatentQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainUserPatentApplicationService.page(req));
   }
 
   /** 根据ID查询用户专利详情 */
   @GetMapping("/user-patents/{id}")
   @PreAuthorize("hasAuthority('train:user-patent:view')")
   public ApiResponse<TrainUserPatentVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainUserPatentApplicationService.getById(id));
   }
 
   /** 新增用户专利 */
@@ -54,7 +54,7 @@ public class TrainUserPatentController {
   @PreAuthorize("hasAuthority('train:user-patent:create')")
   @AuditLog(module = "training", action = "user-patent:create", targetType = "train_user_patent")
   public ApiResponse<TrainUserPatentVO> create(@Valid @RequestBody TrainUserPatentCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainUserPatentApplicationService.create(req));
   }
 
   /** 修改用户专利 */
@@ -62,7 +62,7 @@ public class TrainUserPatentController {
   @PreAuthorize("hasAuthority('train:user-patent:update')")
   @AuditLog(module = "training", action = "user-patent:update", targetType = "train_user_patent")
   public ApiResponse<TrainUserPatentVO> update(@PathVariable Long id, @Valid @RequestBody TrainUserPatentUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainUserPatentApplicationService.update(id, req));
   }
 
   /** 删除用户专利 */
@@ -70,7 +70,7 @@ public class TrainUserPatentController {
   @PreAuthorize("hasAuthority('train:user-patent:delete')")
   @AuditLog(module = "training", action = "user-patent:delete", targetType = "train_user_patent")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainUserPatentApplicationService.delete(id);
 
     return ApiResponse.ok();
   }

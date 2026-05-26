@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainResourceCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResourceQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResourceUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainResourceService;
+import com.guoyu.platform.trainingdepartment.service.TrainResourceApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainResourceVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainResourceController {
 
-  private final TrainResourceService service;
+  private final TrainResourceApplicationService trainResourceApplicationService;
 
-  public TrainResourceController(TrainResourceService service) {
-    this.service = service;
+  public TrainResourceController(TrainResourceApplicationService trainResourceApplicationService) {
+    this.trainResourceApplicationService = trainResourceApplicationService;
   }
 
   /** 分页查询资源列表 */
   @GetMapping("/resources")
   @PreAuthorize("hasAuthority('train:resource:view')")
   public ApiResponse<PageResponse<TrainResourceVO>> page(@Valid @ModelAttribute TrainResourceQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainResourceApplicationService.page(req));
   }
 
   /** 根据ID查询资源详情 */
   @GetMapping("/resources/{id}")
   @PreAuthorize("hasAuthority('train:resource:view')")
   public ApiResponse<TrainResourceVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainResourceApplicationService.getById(id));
   }
 
   /** 新增资源 */
@@ -54,7 +54,7 @@ public class TrainResourceController {
   @PreAuthorize("hasAuthority('train:resource:create')")
   @AuditLog(module = "training", action = "resource:create", targetType = "train_resource")
   public ApiResponse<TrainResourceVO> create(@Valid @RequestBody TrainResourceCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainResourceApplicationService.create(req));
   }
 
   /** 修改资源 */
@@ -62,7 +62,7 @@ public class TrainResourceController {
   @PreAuthorize("hasAuthority('train:resource:update')")
   @AuditLog(module = "training", action = "resource:update", targetType = "train_resource")
   public ApiResponse<TrainResourceVO> update(@PathVariable Long id, @Valid @RequestBody TrainResourceUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainResourceApplicationService.update(id, req));
   }
 
   /** 删除资源 */
@@ -70,7 +70,7 @@ public class TrainResourceController {
   @PreAuthorize("hasAuthority('train:resource:delete')")
   @AuditLog(module = "training", action = "resource:delete", targetType = "train_resource")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainResourceApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }

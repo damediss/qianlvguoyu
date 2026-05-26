@@ -6,7 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassUpdateReq;
-import com.guoyu.platform.trainingdepartment.service.TrainInfoClassService;
+import com.guoyu.platform.trainingdepartment.service.TrainInfoClassApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoClassVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -29,24 +29,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/training")
 public class TrainInfoClassController {
 
-  private final TrainInfoClassService service;
+  private final TrainInfoClassApplicationService trainInfoClassApplicationService;
 
-  public TrainInfoClassController(TrainInfoClassService service) {
-    this.service = service;
+  public TrainInfoClassController(TrainInfoClassApplicationService trainInfoClassApplicationService) {
+    this.trainInfoClassApplicationService = trainInfoClassApplicationService;
   }
 
   /** 分页查询培训班级列表 */
   @GetMapping("/info-classes")
   @PreAuthorize("hasAuthority('train:info-class:view')")
   public ApiResponse<PageResponse<TrainInfoClassVO>> page(@Valid @ModelAttribute TrainInfoClassQueryReq req) {
-    return ApiResponse.ok(service.page(req));
+    return ApiResponse.ok(trainInfoClassApplicationService.page(req));
   }
 
   /** 根据ID查询培训班级详情 */
   @GetMapping("/info-classes/{id}")
   @PreAuthorize("hasAuthority('train:info-class:view')")
   public ApiResponse<TrainInfoClassVO> getById(@PathVariable Long id) {
-    return ApiResponse.ok(service.getById(id));
+    return ApiResponse.ok(trainInfoClassApplicationService.getById(id));
   }
 
   /** 新增培训班级 */
@@ -54,7 +54,7 @@ public class TrainInfoClassController {
   @PreAuthorize("hasAuthority('train:info-class:create')")
   @AuditLog(module = "training", action = "info-class:create", targetType = "train_info_class")
   public ApiResponse<TrainInfoClassVO> create(@Valid @RequestBody TrainInfoClassCreateReq req) {
-    return ApiResponse.ok(service.create(req));
+    return ApiResponse.ok(trainInfoClassApplicationService.create(req));
   }
 
   /** 修改培训班级 */
@@ -62,7 +62,7 @@ public class TrainInfoClassController {
   @PreAuthorize("hasAuthority('train:info-class:update')")
   @AuditLog(module = "training", action = "info-class:update", targetType = "train_info_class")
   public ApiResponse<TrainInfoClassVO> update(@PathVariable Long id, @Valid @RequestBody TrainInfoClassUpdateReq req) {
-    return ApiResponse.ok(service.update(id, req));
+    return ApiResponse.ok(trainInfoClassApplicationService.update(id, req));
   }
 
   /** 删除培训班级 */
@@ -70,7 +70,7 @@ public class TrainInfoClassController {
   @PreAuthorize("hasAuthority('train:info-class:delete')")
   @AuditLog(module = "training", action = "info-class:delete", targetType = "train_info_class")
   public ApiResponse<Void> delete(@PathVariable Long id) {
-    service.delete(id);
+    trainInfoClassApplicationService.delete(id);
     return ApiResponse.ok();
   }
 }
