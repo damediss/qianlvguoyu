@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { fetchMenus } from '../api/auth';
 import { useAuthStore } from '../stores/authStore';
+import { useNavStore } from '../stores/navStore';
 import type { MenuVO } from '../types/api';
 
 const { Header, Sider, Content } = Layout;
@@ -40,7 +41,8 @@ export function AppShell({ pageMap }: AppShellProps) {
   const token = useAuthStore((s) => s.token);
   const menuTree = useAuthStore((s) => s.menuTree);
   const setMenuTree = useAuthStore((s) => s.setMenuTree);
-  const [selectedKey, setSelectedKey] = useState<string[]>(['knowledge']);
+  const selectedKey = useNavStore((s) => s.selectedKey);
+  const setSelectedKey = useNavStore((s) => s.setSelectedKey);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
 
   const menusQuery = useQuery({
@@ -76,10 +78,10 @@ export function AppShell({ pageMap }: AppShellProps) {
           className="app-menu"
           theme="light"
           mode="inline"
-          selectedKeys={selectedKey}
+          selectedKeys={[selectedKey]}
           openKeys={openKeys}
           onOpenChange={setOpenKeys}
-          onClick={({ key }) => setSelectedKey([key])}
+          onClick={({ key }) => setSelectedKey(key)}
           items={menuItems}
         />
       </Sider>
@@ -101,7 +103,7 @@ export function AppShell({ pageMap }: AppShellProps) {
           </Space>
         </Header>
         <Content className="app-content">
-          {pageMap[selectedKey[0]] || pageMap['knowledge']}
+          {pageMap[selectedKey] || pageMap['knowledge']}
         </Content>
       </Layout>
     </Layout>
