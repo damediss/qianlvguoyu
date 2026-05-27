@@ -3,8 +3,11 @@ package com.guoyu.platform.trainingdepartment.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-/** 培训班级创建请求 */
+/** 培训班级创建/保存请求（id=0或null新增, id>0编辑） */
 public class TrainInfoClassCreateReq {
+
+  /** 班级ID，>0时编辑 */
+  private Long id;
 
   /** 开班信息ID */
   private Long trainInfoId;
@@ -40,6 +43,8 @@ public class TrainInfoClassCreateReq {
   @Size(max = 255)
   private String kcbiaoFile;
 
+  public Long getId() { return id; }
+  public void setId(Long id) { this.id = id; }
   public Long getTrainInfoId() {
     return trainInfoId;
   }

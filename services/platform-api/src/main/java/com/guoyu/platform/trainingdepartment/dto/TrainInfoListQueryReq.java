@@ -17,6 +17,10 @@ public class TrainInfoListQueryReq extends PageQuery {
   private Integer passStatus;
   /** 组类型 */
   private Integer groupType;
+  /** 排除的组类型（不等于） */
+  private Integer groupTypeNe;
+  /** 分类标签（精确匹配） */
+  private String cate;
 
   public String getKeyword() {
     return keyword;
@@ -72,5 +76,21 @@ public class TrainInfoListQueryReq extends PageQuery {
 
   public void setGroupType(Integer groupType) {
     this.groupType = groupType;
+  }
+
+  public Integer getGroupTypeNe() {
+    return groupTypeNe;
+  }
+
+  public void setGroupTypeNe(Integer groupTypeNe) {
+    this.groupTypeNe = groupTypeNe;
+  }
+
+  public String getCate() {
+    return cate;
+  }
+
+  public void setCate(String cate) {
+    this.cate = cate;
   }
 }

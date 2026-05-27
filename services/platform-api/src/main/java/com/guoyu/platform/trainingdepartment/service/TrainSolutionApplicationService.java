@@ -82,7 +82,7 @@ public class TrainSolutionApplicationService {
   }
 
   @Transactional
-  public TrainSolutionVO create(TrainSolutionCreateReq req) {
+  public PageResponse<TrainSolutionListVO> create(TrainSolutionCreateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
     TrainSolutionEntity entity = new TrainSolutionEntity();
@@ -117,7 +117,7 @@ public class TrainSolutionApplicationService {
     entity.setRejectReason(req.getRejectReason());
     entity.setDeleted(0);
     mapper.insert(entity);
-    return toVO(entity);
+    return listForPage(1, 10);
   }
 
   @Transactional

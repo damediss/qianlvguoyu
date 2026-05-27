@@ -25,7 +25,7 @@ import type {
   TrainBudget, TrainBudgetQuery, TrainBudgetCreateReq, TrainBudgetUpdateReq,
   TrainFileList, TrainFileListQuery, TrainFileListCreateReq, TrainFileListUpdateReq,
   TrainFileDetail, TrainFileDetailQuery, TrainFileDetailCreateReq, TrainFileDetailUpdateReq,
-  TrainInfoList, TrainInfoListQuery, TrainInfoListCreateReq, TrainInfoListUpdateReq,
+  TrainInfoList, TrainInfoListQuery, TrainInfoListCreateReq, TrainInfoListUpdateReq, TrainInfoListEditReq, TrainInfoListPageResponse, TrainInfoListItem,
   TrainInfoClass, TrainInfoClassQuery, TrainInfoClassCreateReq, TrainInfoClassUpdateReq,
   TrainTaskInfoDetail, TrainTaskInfoDetailQuery, TrainTaskInfoDetailCreateReq, TrainTaskInfoDetailUpdateReq,
   TrainTaskLog, TrainTaskLogQuery, TrainTaskLogCreateReq, TrainTaskLogUpdateReq,
@@ -39,6 +39,7 @@ import type {
   DemandTrain, DemandPending, DemandTrainQuery, DemandConvertReq, DemandPublicData,
   TrainSolutionList, TrainSolutionDetail, TrainSolutionBadge, TrainSolutionSaveReq,
   TrainStudent, SolutionByDemand,
+  TrainInfoClassListItem, TrainInfoClassPageResponse, ClassStudent, ClassStudentPageResponse, ClassOther, ClassTask, SignUpPerson, TeacherBankItem,
 } from '../types/training';
 
 const BASE = '/training';
@@ -447,7 +448,7 @@ export function deleteFileDetail(id: number) {
 
 // ==================== Info Lists (培训信息) ====================
 export function pageInfoLists(params: TrainInfoListQuery) {
-  return unwrap<PageResponse<TrainInfoList>>(apiClient.get(`${BASE}/info-lists`, { params }));
+  return unwrap<TrainInfoListPageResponse>(apiClient.get(`${BASE}/info-lists`, { params }));
 }
 export function getInfoList(id: number) {
   return unwrap<TrainInfoList>(apiClient.get(`${BASE}/info-lists/${id}`));
@@ -654,9 +655,9 @@ export function pageDemandPendings(params: { page?: number; pageSize?: number; k
   return unwrap<PageResponse<DemandPending>>(apiClient.get(`${BASE}/demand-trains/pendings`, { params }));
 }
 
-/** 公共数据（企业列表、工种列表） */
-export function getDemandPublicData() {
-  return unwrap<DemandPublicData>(apiClient.get(`${BASE}/demand-trains/public-data`));
+/** 公共数据（企业列表、工种列表），tags 可选 ['company','worktype','traininfo','kejian'] */
+export function getDemandPublicData(tags?: string[]) {
+  return unwrap<DemandPublicData>(apiClient.get(`${BASE}/demand-trains/public-data`, { params: tags ? { tags } : {} }));
 }
 
 /** 需求转培训开班 */
@@ -709,4 +710,92 @@ export function companyConfirmInfoList(id: number) {
 /** 企业驳回方案 */
 export function companyRejectInfoList(id: number, reason: string) {
   return unwrap<void>(apiClient.post(`${BASE}/info-lists/${id}/company-reject`, null, { params: { reason } }));
+}
+
+// ==================== Info Classes (班级管理 - 新版) ====================
+
+/** 班级列表（含企业名、工种名、培训标题） */
+export function pageInfoClassList(params: { page?: number; pageSize?: number; companyId?: number, trainInfoId?: number }) {
+  return unwrap<TrainInfoClassPageResponse>(apiClient.get(`${BASE}/info-classes`, { params }));
+}
+
+/** 新增/编辑班级 */
+export function saveInfoClass(payload: TrainInfoClassCreateReq) {
+  return unwrap<{ id: number; title: string; nums: number }>(apiClient.post(`${BASE}/info-classes/save`, payload));
+}
+
+/** 批量删除班级 */
+export function batchDeleteInfoClasses(ids: number[]) {
+  return unwrap<{ count: number }>(apiClient.post(`${BASE}/info-classes/batch-delete`, { ids }));
+}
+
+// ==================== 班级学员 ====================
+
+/** 班级学员列表 */
+export function listClassStudents(classId: number, currentPage = 1, limit = 20) {
+  return unwrap<ClassStudentPageResponse>(apiClient.get(`${BASE}/class-student-list`, { params: { classId, currentPage, limit } }));
+}
+
+/** 编辑学员 */
+export function saveClassStudent(params: Record<string, unknown>) {
+  return unwrap<{ id: number; realname: string }>(apiClient.post(`${BASE}/class-student-save`, params));
+}
+
+/** 批量删除学员 */
+export function deleteClassStudents(studentIds: number[]) {
+  return unwrap<{ count: number }>(apiClient.post(`${BASE}/class-student-del`, { studentIds }));
+}
+
+/** 可导入报名人员 */
+export function listSignUpSelf(traininfoId: number, keyword?: string) {
+  return unwrap<{ lists: SignUpPerson[] }>(apiClient.get(`${BASE}/sign-up-self-list`, { params: { traininfoId, keyword } }));
+}
+
+/** 从报名导入学员 */
+export function importStudents(params: { traininfoId: number; classId: number; studentIds: number[] }) {
+  return unwrap<{ count: number }>(apiClient.post(`${BASE}/class-student-import`, params));
+}
+
+/** 按身份证号导入学员 */
+export function importStudentsByIdCard(params: { traininfoId: number; classId: number; studentIds: string }) {
+  return unwrap<{ count: number }>(apiClient.post(`${BASE}/class-student-import-by-idcard`, params));
+}
+
+// ==================== 教务/负责人 ====================
+
+/** 教务/负责人列表 */
+export function listClassOthers(train_info_id: number, id: number, tag: string) {
+  return unwrap<{ list: ClassOther[] }>(apiClient.get(`${BASE}/class-other`, { params: { train_info_id, id, tag } }));
+}
+
+/** 新增/编辑教务/负责人 */
+export function saveClassOther(params: Record<string, unknown>) {
+  return unwrap<{ id: number }>(apiClient.post(`${BASE}/class-other-save`, params));
+}
+
+/** 批量删除教务/负责人 */
+export function deleteClassOthers(ids: number[]) {
+  return unwrap<{ count: number }>(apiClient.post(`${BASE}/class-other-del`, { ids }));
+}
+
+/** 可导入教务数据源（教师库） */
+export function listOtherImportData(tag: string) {
+  return unwrap<{ list: TeacherBankItem[] }>(apiClient.get(`${BASE}/class-other-import-data`, { params: { tag } }));
+}
+
+/** 从教师库导入教务 */
+export function importOthers(params: { traininfoId: number; classId: number; tag: string; ids: number[] }) {
+  return unwrap<{ count: number }>(apiClient.post(`${BASE}/class-other-import`, params));
+}
+
+// ==================== 培训任务 ====================
+
+/** 班级培训任务列表 */
+export function listClassTasks(classId: number) {
+  return unwrap<{ list: ClassTask[] }>(apiClient.get(`${BASE}/class-task`, { params: { classId } }));
+}
+
+/** 新增/编辑培训任务 */
+export function saveClassTask(params: { id?: number; classId?: number; ck_id?: number; date?: string }) {
+  return unwrap<{ id: number; ck_id: number; date: string; train_class_id: number }>(apiClient.post(`${BASE}/class-task-save`, params));
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, Card, Col, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Table, Tag, Typography, Upload, message } from 'antd';
-import { PlusOutlined, ReloadOutlined, EyeOutlined, EditOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons';
+import { PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadProps } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -23,7 +23,7 @@ export function TrainingProgramPage() {
   // Public data (companies + train info list)
   const { data: publicData } = useQuery({
     queryKey: ['demand-public-data', ['company', 'traininfo']],
-    queryFn: () => trainApi.getDemandPublicData(),
+    queryFn: () => trainApi.getDemandPublicData(['company', 'traininfo']),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -159,7 +159,6 @@ export function TrainingProgramPage() {
 
       <Card size="small">
         <Space style={{ marginBottom: 16 }}>
-          <Button icon={<ReloadOutlined />} onClick={() => queryClient.invalidateQueries({ queryKey: ['solution-list'] })}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>添加</Button>
         </Space>
         <Table rowKey="id" size="middle" loading={isLoading} columns={columns}
@@ -167,8 +166,9 @@ export function TrainingProgramPage() {
           scroll={{ x: 1000 }}
           pagination={{
             current: query.page, pageSize: query.pageSize, total: listData?.total ?? 0,
-            showSizeChanger: true, showTotal: (t) => `共 ${t} 条`,
-            onChange: (p, ps) => setQuery({ page: p, pageSize: ps }),
+            showSizeChanger: false, showTotal: (t) => `共 ${t} 条`,
+            position: ['bottomRight'],
+            onChange: (p) => setQuery(prev => ({ ...prev, page: p })),
           }}
         />
       </Card>
@@ -284,7 +284,7 @@ export function TrainingProgramPage() {
             )}
             {/* Office document preview */}
             {detail.file && (detail.fileType === 'pdf' || detail.fileType === 'docx' || detail.fileType === 'pptx') && (
-              <div style={{ height: 400, overflow: 'auto', border: '1px solid #e0e0e0', marginTop: 10 }}>
+              <div style={{ height: 300, overflow: 'auto', border: '1px solid #e0e0e0', marginTop: 10 }}>
                 {detail.fileType === 'pdf' ? (
                   <iframe src={detail.file} style={{ width: '100%', height: '100%', border: 'none' }} title="PDF预览" />
                 ) : (

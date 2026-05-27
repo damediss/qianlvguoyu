@@ -39,7 +39,9 @@ public class MybatisPlusConfig {
       @Override
       public boolean ignoreTable(String tableName) {
         return "sys_tenant".equalsIgnoreCase(tableName)
-            || "flyway_schema_history".equalsIgnoreCase(tableName);
+            || "flyway_schema_history".equalsIgnoreCase(tableName)
+            || "course_kejian".equalsIgnoreCase(tableName)
+            || "train_info_class".equalsIgnoreCase(tableName);
       }
     }));
     return interceptor;

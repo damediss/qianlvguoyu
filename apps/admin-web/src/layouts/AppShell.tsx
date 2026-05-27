@@ -57,6 +57,14 @@ const menuItems = [
     ],
   },
   {
+    key: 'zhixun',
+    icon: <ReadOutlined />,
+    label: '智训平台',
+    children: [
+      { key: 'zhixun-data-panel', icon: <DashboardOutlined />, label: '数据面板' },
+    ],
+  },
+  {
     key: 'training',
     icon: <ScheduleOutlined />,
     label: '培训管理',

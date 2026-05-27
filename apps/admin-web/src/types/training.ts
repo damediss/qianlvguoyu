@@ -1204,8 +1204,48 @@ export interface TrainInfoList {
 
 export interface TrainInfoListQuery {
   page?: number;
-  pageSize?: number;
+  limit?: number;
   keyword?: string;
+  status?: number;
+  companyId?: number;
+  workTypeId?: number;
+  groupType?: number;
+  groupTypeNe?: number;
+  cate?: string;
+  passStatus?: number;
+  headConfirm?: number;
+}
+
+export interface TrainInfoListPageResponse {
+  list: TrainInfoListItem[];
+  total: number;
+  limit: number;
+}
+
+/** 培训信息列表项（page 接口返回的 snake_case 字段） */
+export interface TrainInfoListItem {
+  id: number;
+  title: string;
+  cate?: string;
+  group_type?: number;
+  company_id?: number;
+  company_name?: string;
+  train_company_name?: string;
+  work_type_title?: string;
+  num?: number;
+  position?: string;
+  course_num?: number;
+  head_confirm?: number;
+  company_has_confirm?: number;
+  status?: number;
+  pass_status?: number;
+  create_time?: string;
+  work_type_level?: number;
+}
+
+export interface TrainInfoListEditReq {
+  courseNum?: number;
+  position?: string;
   status?: number;
 }
 
@@ -1278,6 +1318,7 @@ export interface TrainInfoClassQuery {
 }
 
 export interface TrainInfoClassCreateReq {
+  id?: number;
   trainInfoId?: number;
   title?: string;
   nums?: number;
@@ -1734,4 +1775,94 @@ export interface SolutionByDemand {
   fileType?: string;
   badgeList: TrainSolutionBadge[];
   reject_reason?: string;
+}
+
+// ==================== Class People (班级人员 - snake_case 响应) ====================
+
+/** 班级列表项（page 接口返回的 snake_case 字段） */
+export interface TrainInfoClassListItem {
+  id: number;
+  title: string;
+  nums?: number;
+  addtime?: number;
+  train_info_id?: number;
+  company_id?: number;
+  work_type_id?: number;
+  company_name?: string;
+  work_type_title?: string;
+  train_title?: string;
+  position?: string;
+  course_num?: number;
+  date_start?: string;
+  date_end?: string;
+  file_temps?: string;
+  kcbiao_file?: string;
+}
+
+export interface TrainInfoClassPageResponse {
+  list: TrainInfoClassListItem[];
+  total: number;
+  limit: number;
+}
+
+/** 学员列表项 */
+export interface ClassStudent {
+  id: number;
+  realname: string;
+  phone?: string;
+  train_id?: number;
+  train_class_id?: number;
+  id_card?: string;
+  is_leader?: number;
+  is_leader_cn?: string;
+  is_committee?: number;
+  is_committee_cn?: string;
+  exam_score?: number;
+  real_score?: number;
+  normal_score?: number;
+  header?: string;
+}
+
+export interface ClassStudentPageResponse {
+  list: ClassStudent[];
+  total: number;
+  limit: number;
+}
+
+/** 教务/负责人列表项 */
+export interface ClassOther {
+  id: number;
+  train_id?: number;
+  train_class_id?: number;
+  realname: string;
+  phone?: string;
+  id_card?: string;
+}
+
+/** 培训任务列表项 */
+export interface ClassTask {
+  id: number;
+  ck_id?: number;
+  title?: string;
+  date?: string;
+  status?: number;
+  status_cn?: string;
+  times?: string;
+  times_cn?: number;
+  addtime?: number;
+  train_class_id?: number;
+}
+
+/** 可导入报名人员 */
+export interface SignUpPerson {
+  id: number;
+  name: string;
+  phone?: string;
+}
+
+/** 教师库项 */
+export interface TeacherBankItem {
+  id: number;
+  name: string;
+  phone?: string;
 }

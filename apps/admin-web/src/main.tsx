@@ -17,6 +17,7 @@ import { UserListPage } from './pages/chazheng/UserListPage';
 import { CertQueryPage } from './pages/chazheng/CertQueryPage';
 import { RequirementsManagementPage } from './pages/training/RequirementsManagementPage';
 import { TrainingProgramPage } from './pages/training/TrainingProgramPage';
+import { DataPanelPage } from './pages/DataPanelPage';
 import { appTheme } from './theme';
 import './styles/tokens.css';
 import './styles/global.css';
@@ -43,6 +44,7 @@ const pageMap: Record<string, React.ReactNode> = {
   'chazheng-cert-query': <CertQueryPage />,
   'requirements-management': <RequirementsManagementPage />,
   'training-program': <TrainingProgramPage />,
+  'zhixun-data-panel': <DataPanelPage />,
 };
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

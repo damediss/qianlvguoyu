@@ -1,13 +1,13 @@
 package com.guoyu.platform.trainingdepartment.controller;
 
 import com.guoyu.platform.common.api.ApiResponse;
-import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoListCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoListQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoListUpdateReq;
 import com.guoyu.platform.trainingdepartment.service.TrainInfoListApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoListVO;
+import java.util.Map;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -39,7 +39,7 @@ public class TrainInfoListController {
   /** 分页查询开班信息列表 */
   @GetMapping("/info-lists")
   @PreAuthorize("hasAuthority('train:info-list:view')")
-  public ApiResponse<PageResponse<TrainInfoListVO>> page(@Valid @ModelAttribute TrainInfoListQueryReq req) {
+  public ApiResponse<Map<String, Object>> page(@Valid @ModelAttribute TrainInfoListQueryReq req) {
     return ApiResponse.ok(trainInfoListApplicationService.page(req));
   }
 

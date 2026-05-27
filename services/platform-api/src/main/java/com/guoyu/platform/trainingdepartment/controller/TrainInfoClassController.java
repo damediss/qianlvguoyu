@@ -9,6 +9,8 @@ import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassUpdateReq;
 import com.guoyu.platform.trainingdepartment.service.TrainInfoClassApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoClassVO;
 import jakarta.validation.Valid;
+import java.util.List;
+import java.util.Map;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -35,10 +37,10 @@ public class TrainInfoClassController {
     this.trainInfoClassApplicationService = trainInfoClassApplicationService;
   }
 
-  /** 分页查询培训班级列表 */
+  /** 分页查询培训班级列表（含企业名、工种名、培训标题等关联字段） */
   @GetMapping("/info-classes")
   @PreAuthorize("hasAuthority('train:info-class:view')")
-  public ApiResponse<PageResponse<TrainInfoClassVO>> page(@Valid @ModelAttribute TrainInfoClassQueryReq req) {
+  public ApiResponse<Map<String, Object>> page(@Valid @ModelAttribute TrainInfoClassQueryReq req) {
     return ApiResponse.ok(trainInfoClassApplicationService.page(req));
   }
 
@@ -47,6 +49,22 @@ public class TrainInfoClassController {
   @PreAuthorize("hasAuthority('train:info-class:view')")
   public ApiResponse<TrainInfoClassVO> getById(@PathVariable Long id) {
     return ApiResponse.ok(trainInfoClassApplicationService.getById(id));
+  }
+
+  /** 新增/编辑培训班级（id=0新增, id>0编辑） */
+  @PostMapping("/info-classes/save")
+  @PreAuthorize("hasAuthority('train:info-class:create')")
+  @AuditLog(module = "training", action = "info-class:save", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> save(@Valid @RequestBody TrainInfoClassCreateReq req) {
+    return ApiResponse.ok(trainInfoClassApplicationService.save(req));
+  }
+
+  /** 批量删除培训班级 */
+  @PostMapping("/info-classes/batch-delete")
+  @PreAuthorize("hasAuthority('train:info-class:delete')")
+  @AuditLog(module = "training", action = "info-class:batch-delete", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> batchDelete(@RequestBody Map<String, List<Long>> body) {
+    return ApiResponse.ok(trainInfoClassApplicationService.batchDelete(body.get("ids")));
   }
 
   /** 新增培训班级 */

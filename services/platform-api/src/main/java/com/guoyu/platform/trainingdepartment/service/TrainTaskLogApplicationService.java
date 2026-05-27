@@ -10,23 +10,29 @@ import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskLogCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskLogQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskLogUpdateReq;
+import com.guoyu.platform.trainingdepartment.entity.CourseKejianEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainTaskLogEntity;
+import com.guoyu.platform.trainingdepartment.mapper.CourseKejianMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainTaskLogMapper;
 import com.guoyu.platform.trainingdepartment.vo.TrainTaskLogVO;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 培训任务日志管理服务实现
- */
 @Service
 @Slf4j
 public class TrainTaskLogApplicationService {
 
   private final TrainTaskLogMapper mapper;
+  private final CourseKejianMapper courseKejianMapper;
 
-  public TrainTaskLogApplicationService(TrainTaskLogMapper mapper) {
+  public TrainTaskLogApplicationService(TrainTaskLogMapper mapper,
+      CourseKejianMapper courseKejianMapper) {
     this.mapper = mapper;
+    this.courseKejianMapper = courseKejianMapper;
   }
 
   @Transactional(readOnly = true)
@@ -82,6 +88,88 @@ public class TrainTaskLogApplicationService {
   @Transactional
   public void delete(Long id) {
     mapper.deleteById(id);
+  }
+
+  // ==================== 班级培训任务 ====================
+
+  /** 培训任务列表（含课件名称映射） */
+  @Transactional(readOnly = true)
+  public Map<String, Object> classTaskList(Long classId) {
+    List<TrainTaskLogEntity> records = mapper.selectList(
+        new LambdaQueryWrapper<TrainTaskLogEntity>()
+            .eq(TrainTaskLogEntity::getTrainClassId, classId)
+            .orderByDesc(TrainTaskLogEntity::getId));
+
+    // 课件名称映射
+    Map<Long, String> kejianNameMap = Map.of();
+    if (!records.isEmpty()) {
+      List<Long> ckIds = records.stream().map(TrainTaskLogEntity::getCkId).filter(c -> c != null).distinct().toList();
+      if (!ckIds.isEmpty()) {
+        kejianNameMap = courseKejianMapper.selectBatchIds(ckIds).stream()
+            .collect(Collectors.toMap(CourseKejianEntity::getId, CourseKejianEntity::getTitle, (a, b) -> a));
+      }
+    }
+
+    Map<Long, String> finalMap = kejianNameMap;
+    List<Map<String, Object>> list = records.stream().map(e -> {
+      Map<String, Object> item = new LinkedHashMap<>();
+      item.put("id", e.getId());
+      item.put("ck_id", e.getCkId());
+      item.put("title", finalMap.getOrDefault(e.getCkId(), null));
+      item.put("date", e.getDate());
+      item.put("status", e.getStatus());
+      item.put("status_cn", e.getStatus() != null && e.getStatus() == 1 ? "已完成" : "未开始");
+      item.put("times", e.getTimes());
+      String timesStr = e.getTimes();
+      int timesCnt = 0;
+      if (timesStr != null && !timesStr.isEmpty()) {
+        try {
+          timesCnt = timesStr.split(",").length;
+        } catch (Exception ignored) {}
+      }
+      item.put("times_cn", timesCnt);
+      item.put("addtime", e.getAddtime());
+      item.put("train_class_id", e.getTrainClassId());
+      return item;
+    }).toList();
+
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("list", list);
+    return result;
+  }
+
+  /** 新增/编辑培训任务 */
+  @Transactional
+  public Map<String, Object> saveTask(Map<String, Object> params) {
+    Long id = params.get("id") != null ? Long.valueOf(params.get("id").toString()) : 0L;
+    if (id > 0) {
+      TrainTaskLogEntity entity = mapper.selectById(id);
+      if (entity == null) {
+        throw new BusinessException(ErrorCode.NOT_FOUND, "Record not found");
+      }
+      if (params.get("date") != null) entity.setDate(params.get("date").toString());
+      if (params.get("ck_id") != null) entity.setCkId(Long.valueOf(params.get("ck_id").toString()));
+      mapper.updateById(entity);
+      Map<String, Object> result = new LinkedHashMap<>();
+      result.put("id", entity.getId());
+      result.put("ck_id", entity.getCkId());
+      result.put("date", entity.getDate());
+      result.put("train_class_id", entity.getTrainClassId());
+      return result;
+    } else {
+      TrainTaskLogEntity entity = new TrainTaskLogEntity();
+      entity.setTrainClassId(params.get("classId") != null ? Long.valueOf(params.get("classId").toString()) : null);
+      entity.setCkId(params.get("ck_id") != null ? Long.valueOf(params.get("ck_id").toString()) : null);
+      entity.setDate(params.get("date") != null ? params.get("date").toString() : null);
+      entity.setAddtime((int) (System.currentTimeMillis() / 1000));
+      mapper.insert(entity);
+      Map<String, Object> result = new LinkedHashMap<>();
+      result.put("id", entity.getId());
+      result.put("ck_id", entity.getCkId());
+      result.put("date", entity.getDate());
+      result.put("train_class_id", entity.getTrainClassId());
+      return result;
+    }
   }
 
   private TrainTaskLogVO toVO(TrainTaskLogEntity entity) {

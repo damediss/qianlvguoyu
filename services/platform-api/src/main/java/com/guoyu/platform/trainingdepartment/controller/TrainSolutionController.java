@@ -66,7 +66,7 @@ public class TrainSolutionController {
   @PostMapping("/solutions")
   @PreAuthorize("hasAuthority('train:solution:create')")
   @AuditLog(module = "training", action = "solution:create", targetType = "train_solution")
-  public ApiResponse<TrainSolutionVO> create(@Valid @RequestBody TrainSolutionCreateReq req) {
+  public ApiResponse<PageResponse<TrainSolutionListVO>> create(@Valid @RequestBody TrainSolutionCreateReq req) {
     return ApiResponse.ok(trainSolutionApplicationService.create(req));
   }
 

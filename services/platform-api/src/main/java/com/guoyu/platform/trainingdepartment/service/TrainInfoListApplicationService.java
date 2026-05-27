@@ -4,7 +4,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.security.SecurityContext;
@@ -19,6 +18,8 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSolutionMapper;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoListVO;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
@@ -44,48 +45,81 @@ public class TrainInfoListApplicationService {
   }
 
   @Transactional(readOnly = true)
-  public PageResponse<TrainInfoListVO> page(TrainInfoListQueryReq req) {
+  public Map<String, Object> page(TrainInfoListQueryReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaQueryWrapper<TrainInfoListEntity> wrapper = new LambdaQueryWrapper<TrainInfoListEntity>()
         .eq(TrainInfoListEntity::getTenantId, tenantId)
         .eq(TrainInfoListEntity::getDeleted, 0)
+        .orderByAsc(TrainInfoListEntity::getSortNumber)
         .orderByDesc(TrainInfoListEntity::getCreateTime);
     if (StringUtils.hasText(req.getKeyword())) {
-      wrapper.and(w -> w
-          .like(TrainInfoListEntity::getTitle, req.getKeyword())
-          .or()
-          .like(TrainInfoListEntity::getCompanyName, req.getKeyword()));
+      wrapper.like(TrainInfoListEntity::getTitle, req.getKeyword());
     }
-    if (req.getStatus() != null) {
-      wrapper.eq(TrainInfoListEntity::getStatus, req.getStatus());
-    }
-    if (req.getCompanyId() != null) {
+    if (req.getCompanyId() != null && req.getCompanyId() != 0) {
       wrapper.eq(TrainInfoListEntity::getCompanyId, req.getCompanyId());
-    }
-    if (req.getWorkTypeId() != null) {
-      wrapper.eq(TrainInfoListEntity::getWorkTypeId, req.getWorkTypeId());
-    }
-    if (req.getCourseId() != null) {
-      wrapper.eq(TrainInfoListEntity::getCourseId, req.getCourseId());
-    }
-    if (req.getPassStatus() != null) {
-      wrapper.eq(TrainInfoListEntity::getPassStatus, req.getPassStatus());
     }
     if (req.getGroupType() != null) {
       wrapper.eq(TrainInfoListEntity::getGroupType, req.getGroupType());
     }
-    Page<TrainInfoListEntity> page = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
+    if (req.getGroupTypeNe() != null) {
+      wrapper.ne(TrainInfoListEntity::getGroupType, req.getGroupTypeNe());
+    }
+    if (StringUtils.hasText(req.getCate())) {
+      wrapper.eq(TrainInfoListEntity::getCate, req.getCate());
+    }
+    if (req.getWorkTypeId() != null && req.getWorkTypeId() != 0) {
+      wrapper.eq(TrainInfoListEntity::getWorkTypeId, req.getWorkTypeId());
+    }
+    if (req.getStatus() != null) {
+      wrapper.eq(TrainInfoListEntity::getStatus, req.getStatus());
+    }
+    if (req.getPassStatus() != null) {
+      wrapper.eq(TrainInfoListEntity::getPassStatus, req.getPassStatus());
+    }
+    if (req.getCourseId() != null) {
+      wrapper.eq(TrainInfoListEntity::getCourseId, req.getCourseId());
+    }
+    Page<TrainInfoListEntity> mpPage = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
 
     // 工种ID → 名称映射
-    Map<Long, String> workTypeNameMap = Map.of();
-    if (!page.getRecords().isEmpty()) {
-      workTypeNameMap = examWorkTypeMapper.selectList(null).stream()
+    Map<Long, String> workTypeNameMap;
+    if (mpPage.getRecords().isEmpty()) {
+      workTypeNameMap = Map.of();
+    } else {
+      workTypeNameMap = examWorkTypeMapper.selectList(
+              new LambdaQueryWrapper<ExamWorkTypeEntity>()
+                  .eq(ExamWorkTypeEntity::getDeleted, 0))
+          .stream()
           .collect(Collectors.toMap(e -> e.getId().longValue(), ExamWorkTypeEntity::getTitle, (a, b) -> a));
     }
 
-    Map<Long, String> finalWorkTypeMap = workTypeNameMap;
-    return new PageResponse<>(page.getRecords().stream().map(e -> toVO(e, finalWorkTypeMap)).toList(),
-        page.getCurrent(), page.getSize(), page.getTotal());
+    List<Map<String, Object>> list = mpPage.getRecords().stream().map(e -> {
+      Map<String, Object> item = new LinkedHashMap<>();
+      item.put("id", e.getId());
+      item.put("title", e.getTitle());
+      item.put("cate", e.getCate());
+      item.put("group_type", e.getGroupType());
+      item.put("company_id", e.getCompanyId());
+      item.put("company_name", e.getCompanyName());
+      item.put("train_company_name", e.getTrainCompanyName());
+      item.put("work_type_title", workTypeNameMap.getOrDefault(e.getWorkTypeId(), null));
+      item.put("num", e.getNum());
+      item.put("position", e.getPosition());
+      item.put("course_num", e.getCourseNum());
+      item.put("head_confirm", e.getHeadConfirm());
+      item.put("company_has_confirm", e.getCompanyHasConfirm());
+      item.put("status", e.getStatus());
+      item.put("pass_status", e.getPassStatus());
+      item.put("create_time", e.getCreateTime());
+      item.put("work_type_level", e.getWorkTypeLevel());
+      return item;
+    }).toList();
+
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("list", list);
+    result.put("total", mpPage.getTotal());
+    result.put("limit", req.getPageSize());
+    return result;
   }
 
   @Transactional(readOnly = true)
