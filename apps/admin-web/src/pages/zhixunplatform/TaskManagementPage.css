@@ -1,0 +1,41 @@
+/* Tab 按钮 */
+.tp-tab-btn {
+  padding: 12px 28px;
+  border: none;
+  background: #fff;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  box-shadow: 0 4px 24px rgba(42, 109, 255, 0.06);
+  transition: all 0.2s;
+}
+
+.tp-tab-btn:hover {
+  color: #2A6DFF;
+}
+
+.tp-tab-btn.active {
+  background: #2A6DFF;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(42, 109, 255, 0.35);
+}
+
+/* 入口卡片 hover 效果 */
+.tp-entry-card:hover {
+  border-color: #2A6DFF !important;
+  box-shadow: 0 12px 40px rgba(42, 109, 255, 0.12);
+  transform: translateY(-2px);
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .tp-tab-btn {
+    flex: 1;
+    padding: 10px 16px;
+    font-size: 13px;
+    text-align: center;
+  }
+}

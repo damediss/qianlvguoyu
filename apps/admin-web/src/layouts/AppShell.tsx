@@ -6,6 +6,7 @@ import {
   DatabaseOutlined,
   DashboardOutlined,
   ExperimentOutlined,
+  FileAddOutlined,
   FileSearchOutlined,
   IdcardOutlined,
   FileTextOutlined,
@@ -19,12 +20,15 @@ import {
   SettingOutlined,
   SolutionOutlined,
   TableOutlined,
+  NodeIndexOutlined,
+  FolderOpenOutlined,
+  UnorderedListOutlined,
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { Avatar, Button, Input, Layout, Menu, Space, Typography } from 'antd';
-import { useState } from 'react';
 import type { ReactNode } from 'react';
+import { useNavStore } from '../stores/navStore';
 
 const { Header, Sider, Content } = Layout;
 
@@ -62,6 +66,11 @@ const menuItems = [
     label: '智训平台',
     children: [
       { key: 'zhixun-data-panel', icon: <DashboardOutlined />, label: '数据面板' },
+      { key: 'zhixun-task-management', icon: <UnorderedListOutlined />, label: '任务管理' },
+      { key: 'zhixun-task-archives', icon: <FolderOpenOutlined />, label: '任务档案' },
+      { key: 'zhixun-training-process', icon: <NodeIndexOutlined />, label: '培训流程' },
+      // { key: 'zhixun-material-archives', icon: <FileTextOutlined />, label: '资料档案' },
+      { key: 'zhixun-project-archives', icon: <FolderOpenOutlined />, label: '项目档案' },
     ],
   },
   {
@@ -98,7 +107,8 @@ interface AppShellProps {
 }
 
 export function AppShell({ pageMap }: AppShellProps) {
-  const [selectedKey, setSelectedKey] = useState<string[]>(['knowledge']);
+  const selectedKey = useNavStore((s) => s.selectedKey);
+  const setSelectedKey = useNavStore((s) => s.setSelectedKey);
 
   return (
     <Layout className="app-shell">
@@ -114,9 +124,9 @@ export function AppShell({ pageMap }: AppShellProps) {
           className="app-menu"
           theme="light"
           mode="inline"
-          selectedKeys={selectedKey}
-          defaultOpenKeys={['question-bank', 'training']}
-          onClick={({ key }) => setSelectedKey([key])}
+          selectedKeys={[selectedKey]}
+          defaultOpenKeys={['question-bank', 'zhixun', 'training']}
+          onClick={({ key }) => setSelectedKey(key)}
           items={menuItems}
         />
       </Sider>
@@ -138,7 +148,7 @@ export function AppShell({ pageMap }: AppShellProps) {
           </Space>
         </Header>
         <Content className="app-content">
-          {pageMap[selectedKey[0]] || pageMap['knowledge']}
+          {pageMap[selectedKey] || pageMap['knowledge']}
         </Content>
       </Layout>
     </Layout>
