@@ -55,10 +55,6 @@ export function AppShell({ pageMap }: AppShellProps) {
   useEffect(() => {
     if (menusQuery.data) {
       setMenuTree(menusQuery.data);
-      // auto-expand first-level directory menus
-      const root = menusQuery.data;
-      const firstLevel = root.filter((m) => m.children && m.children.length > 0).map((m) => m.code);
-      setOpenKeys((prev) => (prev.length === 0 ? firstLevel : prev));
     }
   }, [menusQuery.data, setMenuTree]);
 

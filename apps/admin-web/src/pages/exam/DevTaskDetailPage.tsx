@@ -82,6 +82,7 @@ export function DevTaskDetailPage() {
   // Working row
   const [currentRow, setCurrentRow] = useState<ExamTaskXimu | null>(null);
   const [assignRole, setAssignRole] = useState(0);
+  const [selectedExpertId, setSelectedExpertId] = useState<number | undefined>();
 
   // Import form
   const [importWorkTypeId, setImportWorkTypeId] = useState<number | undefined>();
@@ -202,6 +203,7 @@ export function DevTaskDetailPage() {
     setCurrentRow(row);
     setAssignRole(role);
     setAssignOpen(true);
+    setSelectedExpertId(undefined);
   };
 
   const handleShowDaily = async (row: ExamTaskXimu, role: number) => {
@@ -486,13 +488,28 @@ export function DevTaskDetailPage() {
         title="指派专家"
         open={assignOpen}
         onCancel={() => setAssignOpen(false)}
-        width={350}
+        width={455}
         footer={[
           <Button key="cancel" onClick={() => setAssignOpen(false)}>取消</Button>,
+          <Button key="confirm" type="primary" disabled={!selectedExpertId}
+            onClick={() => {
+              if (currentRow && selectedExpertId) {
+                assignMut.mutate({ taskId: currentRow.id, expertId: selectedExpertId, role: assignRole });
+              }
+            }}
+          >确定</Button>,
+        ]}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span>为「{currentRow?.workTypeCn}({currentRow?.levelCn})」指派</span>
+          <Tag style={{ marginRight: 2 }} color={assignRole > 0 ? 'red' : 'green'}>
+            {assignRole > 0 ? '终审' : '初审'}
+          </Tag>
           <Select
-            key="expert"
             showSearch
-            style={{ width: 160, marginRight: 8 }}
+            style={{ width: 200 }}
+            value={selectedExpertId}
+            onChange={(val) => setSelectedExpertId(val)}
             filterOption={(input, option) =>
               (option?.label as string)?.includes(input) ?? false
             }
@@ -501,20 +518,8 @@ export function DevTaskDetailPage() {
               value: e.id,
             }))}
             placeholder="选择专家"
-            onSelect={(val) => {
-              if (currentRow) {
-                assignMut.mutate({ taskId: currentRow.id, expertId: val, role: assignRole });
-              }
-            }}
-          />,
-        ]}
-      >
-        <p>
-          为「{currentRow?.workTypeCn}({currentRow?.levelCn})」指派
-          <Tag color={assignRole > 0 ? 'red' : 'green'}>
-            {assignRole > 0 ? '终审' : '初审'}
-          </Tag>
-        </p>
+          />
+        </div>
       </Modal>
 
       {/* Daily audit dialog */}
