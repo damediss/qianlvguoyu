@@ -17,7 +17,11 @@ import { UserListPage } from './pages/chazheng/UserListPage';
 import { CertQueryPage } from './pages/chazheng/CertQueryPage';
 import { RequirementsManagementPage } from './pages/training/RequirementsManagementPage';
 import { TrainingProgramPage } from './pages/training/TrainingProgramPage';
-import { DataPanelPage } from './pages/DataPanelPage';
+import { DataPanelPage } from './pages/zhixunplatform/DataPanelPage';
+import { TaskManagementPage } from './pages/zhixunplatform/TaskManagementPage';
+import { TaskArchivesPage } from './pages/zhixunplatform/TaskArchivesPage';
+import { TrainingProcessPage } from './pages/zhixunplatform/TrainingProcessPage';
+import { ProjectArchivesPage } from './pages/zhixunplatform/ProjectArchivesPage';
 import { appTheme } from './theme';
 import './styles/tokens.css';
 import './styles/global.css';
@@ -47,6 +51,10 @@ const pageMap: Record<string, React.ReactNode> = {
   knowledge_spaces: <KnowledgePage />,
   knowledge_search: <KnowledgePage />,
   zhixun_data_panel: <DataPanelPage />,
+  zhixun_task_management: <TaskManagementPage />,
+  zhixun_task_archives: <TaskArchivesPage />,
+  zhixun_training_process: <TrainingProcessPage />,
+  zhixun_project_archives: <ProjectArchivesPage />,
 };
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
