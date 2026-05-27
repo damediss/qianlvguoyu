@@ -56,6 +56,9 @@ platform:
   file:
     storage-provider: ${FILE_STORAGE_PROVIDER:local}
     local-root: ${FILE_LOCAL_ROOT:./storage/files}
+  cdn:
+    path: ${CDN_PATH:./data/cdn}
+    url: ${CDN_URL:http://localhost:8080/api/exam/files}
 
 # Sa-Token
 sa-token:

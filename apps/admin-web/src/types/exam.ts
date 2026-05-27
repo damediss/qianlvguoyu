@@ -132,3 +132,78 @@ export interface ExamUserAuthCourseQuery {
   pageSize?: number;
   keyword?: string;
 }
+
+// ---- 细目表任务 ----
+export interface ExamTaskXimu {
+  id: number;
+  workTypeId: number;
+  level: number;
+  types: number;
+  nums: number;
+  status: number;
+  expertStart: number | null;
+  expertEnd: number | null;
+  filePath: string;
+  fileUrl: string;
+  fileType: string;
+  addtime: number;
+  workTypeCn: string;
+  levelCn: string;
+  typesCn: string;
+  statusCn: string;
+  expertStartName: string;
+  expertEndName: string;
+  addtimeCn: string;
+}
+
+export interface ExamTaskXimuQuery {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+}
+
+export interface ExamTaskXimuDetailChild {
+  id: string;
+  snoItem: string;
+  snoTitle: string;
+}
+
+export interface ExamTaskXimuDetail {
+  id: number;
+  taskId: number;
+  sno: string;
+  sno0: string;
+  sno1: string;
+  title: string;
+  snoItem: string;
+  snoTitle: string;
+  rowColumn: string;
+  children: ExamTaskXimuDetailChild[];
+}
+
+export interface ExamTaskXimuDaily {
+  ymd: string;
+  nums: number;
+}
+
+export interface ExamTaskXimuAssignExpertReq {
+  taskId: number;
+  expertId: number;
+  role: number;
+}
+
+export interface PublicDataExpert {
+  id: number;
+  nickname: string;
+}
+
+export interface ExamWorkTypeTree {
+  id: number;
+  title: string;
+  children?: ExamWorkTypeTree[];
+}
+
+export interface PublicData {
+  workTypeList: ExamWorkTypeTree[];
+  expertList: PublicDataExpert[];
+}

@@ -40,3 +40,4 @@ outputs/**/.cache/
 # Local caches
 .m2/
 .npm-cache/
+/data/cdn/

@@ -17,22 +17,7 @@ import { UserListPage } from './pages/chazheng/UserListPage';
 import { CertQueryPage } from './pages/chazheng/CertQueryPage';
 import { RequirementsManagementPage } from './pages/training/RequirementsManagementPage';
 import { TrainingProgramPage } from './pages/training/TrainingProgramPage';
-import { DataPanelPage } from './pages/zhixunplatform/DataPanelPage';
-import { TaskManagementPage } from './pages/zhixunplatform/TaskManagementPage';
-import { TrainingProcessPage } from './pages/zhixunplatform/TrainingProcessPage';
-import { ProjectArchivesPage } from './pages/zhixunplatform/ProjectArchivesPage';
-import { TaskArchivesPage } from './pages/zhixunplatform/TaskArchivesPage';
-import { MaterialArchivesPage } from './pages/zhixunplatform/MaterialArchivesPage';
-import { TalentIdentificationPage } from './pages/zhixunplatform/TalentIdentificationPage';
-import { PreliminaryPlanPage } from './pages/zhixunplatform/PreliminaryPlanPage';
-import { CreateTaskPage } from './pages/zhixunplatform/CreateTaskPage';
-import { FinalPlanPage } from './pages/zhixunplatform/FinalPlanPage';
-import { ClassDeclarationPage } from './pages/zhixunplatform/ClassDeclarationPage';
-import { TrainingImplementationPage } from './pages/zhixunplatform/TrainingImplementationPage';
-import { CertificationPage } from './pages/zhixunplatform/CertificationPage';
-import { DeclarationServicePage } from './pages/zhixunplatform/DeclarationServicePage';
-import { GraduationPage } from './pages/zhixunplatform/GraduationPage';
-import { RefundPage } from './pages/zhixunplatform/RefundPage';
+import { DataPanelPage } from './pages/DataPanelPage';
 import { appTheme } from './theme';
 import './styles/tokens.css';
 import './styles/global.css';
@@ -48,33 +33,20 @@ const queryClient = new QueryClient({
 
 const pageMap: Record<string, React.ReactNode> = {
   knowledge: <KnowledgePage />,
-  'exam-work-type': <WorkTypePage />,
-  'dev-task-detail': <DevTaskDetailPage />,
-  'exam-course': <CoursePage />,
-  'training-info': <TrainingInfoPage />,
-  'training-class-people': <TrainingClassPeoplePage />,
-  'training-class-declare': <TrainingClassDeclarePage />,
-  'exam-user-auth-course': <UserAuthCoursePage />,
-  'chazheng-user-list': <UserListPage />,
-  'chazheng-cert-query': <CertQueryPage />,
-  'requirements-management': <RequirementsManagementPage />,
-  'training-program': <TrainingProgramPage />,
-  'zhixun-data-panel': <DataPanelPage />,
-  'zhixun-task-management': <TaskManagementPage />,
-  'zhixun-training-process': <TrainingProcessPage />,
-  'zhixun-project-archives': <ProjectArchivesPage />,
-  'zhixun-task-archives': <TaskArchivesPage />,
-  'zhixun-material-archives': <MaterialArchivesPage />,
-  'zhixun-talent-identification': <TalentIdentificationPage />,
-  'zhixun-preliminary-plan': <PreliminaryPlanPage />,
-  'zhixun-create-task': <CreateTaskPage />,
-  'zhixun-final-plan': <FinalPlanPage />,
-  'zhixun-class-declaration': <ClassDeclarationPage />,
-  'zhixun-training-implementation': <TrainingImplementationPage />,
-  'zhixun-certification': <CertificationPage />,
-  'zhixun-declaration-service': <DeclarationServicePage />,
-  'zhixun-graduation': <GraduationPage />,
-  'zhixun-refund': <RefundPage />,
+  exam_work_type: <WorkTypePage />,
+  dev_task_detail: <DevTaskDetailPage />,
+  exam_course: <CoursePage />,
+  'train_info-list': <TrainingInfoPage />,
+  'train_people-list': <TrainingClassPeoplePage />,
+  train_declares: <TrainingClassDeclarePage />,
+  exam_user_auth_course: <UserAuthCoursePage />,
+  chazheng_user_list: <UserListPage />,
+  chazheng_cert_query: <CertQueryPage />,
+  train_needs: <RequirementsManagementPage />,
+  train_solutions: <TrainingProgramPage />,
+  knowledge_spaces: <KnowledgePage />,
+  knowledge_search: <KnowledgePage />,
+  zhixun_data_panel: <DataPanelPage />,
 };
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
