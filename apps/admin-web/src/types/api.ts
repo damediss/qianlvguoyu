@@ -1,4 +1,4 @@
-﻿export interface ApiResponse<T> {
+export interface ApiResponse<T> {
   code: string;
   message: string;
   data: T;
@@ -34,4 +34,18 @@ export interface CurrentUserVO {
   userType: string;
   roles: string[];
   permissions: string[];
+}
+
+export interface MenuVO {
+  id: number;
+  parentId: number;
+  menuType: string;
+  code: string;
+  name: string;
+  path: string;
+  component: string;
+  permissionCode: string;
+  icon: string;
+  sortOrder: number;
+  children: MenuVO[];
 }

@@ -1,104 +1,66 @@
-import {
-  ApiOutlined,
-  AuditOutlined,
-  BookOutlined,
-  BranchesOutlined,
-  DatabaseOutlined,
-  DashboardOutlined,
-  ExperimentOutlined,
-  FileSearchOutlined,
-  IdcardOutlined,
-  FileTextOutlined,
-  ProjectOutlined,
-  ReadOutlined,
-  RobotOutlined,
-  SafetyCertificateOutlined,
-  SafetyOutlined,
-  ScheduleOutlined,
-  SearchOutlined,
-  SettingOutlined,
-  SolutionOutlined,
-  TableOutlined,
-  TeamOutlined,
-  UserOutlined,
-} from '@ant-design/icons';
+import * as Icons from '@ant-design/icons';
 import { Avatar, Button, Input, Layout, Menu, Space, Typography } from 'antd';
-import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { fetchMenus } from '../api/auth';
+import { useAuthStore } from '../stores/authStore';
+import type { MenuVO } from '../types/api';
 
 const { Header, Sider, Content } = Layout;
 
-const menuItems = [
-  { key: 'dashboard', icon: <DashboardOutlined />, label: '管理概览' },
-  { key: 'system', icon: <SettingOutlined />, label: '系统管理' },
-  {
-    key: 'question-bank',
-    icon: <BookOutlined />,
-    label: '题库管理',
-    children: [
-      {
-        key: 'task-management',
-        icon: <FileSearchOutlined />,
-        label: '任务管理',
-        children: [
-          {
-            key: 'dev-task',
-            icon: <ProjectOutlined />,
-            label: '开发任务',
-            children: [
-              { key: 'dev-task-detail', icon: <TableOutlined />, label: '细目表' },
-            ],
-          },
-        ],
-      },
-      { key: 'exam-work-type', icon: <ExperimentOutlined />, label: '工种管理' },
-      { key: 'exam-course', icon: <ReadOutlined />, label: '科目管理' },
-      { key: 'exam-user-auth-course', icon: <SafetyOutlined />, label: '专家授权管理' },
-    ],
-  },
-  {
-    key: 'zhixun',
-    icon: <ReadOutlined />,
-    label: '智训平台',
-    children: [
-      { key: 'zhixun-data-panel', icon: <DashboardOutlined />, label: '数据面板' },
-    ],
-  },
-  {
-    key: 'training',
-    icon: <ScheduleOutlined />,
-    label: '培训管理',
-    children: [
-      { key: 'requirements-management', icon: <FileTextOutlined />, label: '需求管理' },
-      { key: 'training-program', icon: <SolutionOutlined />, label: '培训方案' },
-      { key: 'training-info', icon: <BookOutlined />, label: '培训信息' },
-      { key: 'training-class-people', icon: <TeamOutlined />, label: '班级人员' },
-      { key: 'training-class-declare', icon: <AuditOutlined />, label: '开班申报' },
-    ],
-  },
-  { key: 'training-exam', icon: <ScheduleOutlined />, label: '培训考试' },
-  { key: 'workflow', icon: <BranchesOutlined />, label: '流程审批' },
-  { key: 'ai', icon: <RobotOutlined />, label: 'AI 样板' },
-  { key: 'knowledge', icon: <DatabaseOutlined />, label: '知识库' },
-  { key: 'integration', icon: <ApiOutlined />, label: 'MCP 工具' },
-  { key: 'audit', icon: <AuditOutlined />, label: '审计留痕' },
-  {
-    key: 'chazheng',
-    icon: <SafetyCertificateOutlined />,
-    label: '查证管理',
-    children: [
-      { key: 'chazheng-user-list', icon: <SearchOutlined />, label: '用户列表' },
-      { key: "chazheng-cert-query", icon: <IdcardOutlined />, label: "证书查询" },
-    ],
-  },
-];
+/** Map icon string name (e.g. "BookOutlined") to a React component at runtime. */
+function iconFromName(name?: string | null): ReactNode {
+  if (!name) return null;
+  const IconComp = (Icons as Record<string, React.ComponentType>)[name];
+  return IconComp ? <IconComp /> : null;
+}
+
+/** Recursively build Ant Design Menu items from the backend menu tree. */
+function buildMenuItems(tree: MenuVO[]): { key: string; icon?: ReactNode; label: string; children?: unknown[] }[] {
+  return tree
+    .map((m) => {
+      const item: { key: string; icon?: ReactNode; label: string; children?: unknown[] } = {
+        key: m.code,
+        icon: iconFromName(m.icon),
+        label: m.name,
+      };
+      if (m.children && m.children.length > 0) {
+        item.children = buildMenuItems(m.children);
+      }
+      return item;
+    });
+}
 
 interface AppShellProps {
   pageMap: Record<string, ReactNode>;
 }
 
 export function AppShell({ pageMap }: AppShellProps) {
+  const token = useAuthStore((s) => s.token);
+  const menuTree = useAuthStore((s) => s.menuTree);
+  const setMenuTree = useAuthStore((s) => s.setMenuTree);
   const [selectedKey, setSelectedKey] = useState<string[]>(['knowledge']);
+  const [openKeys, setOpenKeys] = useState<string[]>([]);
+
+  const menusQuery = useQuery({
+    queryKey: ['menus', token],
+    queryFn: fetchMenus,
+    enabled: Boolean(token),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (menusQuery.data) {
+      setMenuTree(menusQuery.data);
+      // auto-expand first-level directory menus
+      const root = menusQuery.data;
+      const firstLevel = root.filter((m) => m.children && m.children.length > 0).map((m) => m.code);
+      setOpenKeys((prev) => (prev.length === 0 ? firstLevel : prev));
+    }
+  }, [menusQuery.data, setMenuTree]);
+
+  const menuItems = buildMenuItems(menuTree);
 
   return (
     <Layout className="app-shell">
@@ -115,7 +77,8 @@ export function AppShell({ pageMap }: AppShellProps) {
           theme="light"
           mode="inline"
           selectedKeys={selectedKey}
-          defaultOpenKeys={['question-bank', 'training']}
+          openKeys={openKeys}
+          onOpenChange={setOpenKeys}
           onClick={({ key }) => setSelectedKey([key])}
           items={menuItems}
         />
@@ -124,13 +87,13 @@ export function AppShell({ pageMap }: AppShellProps) {
         <Header className="app-header">
           <Input
             className="top-search"
-            prefix={<SearchOutlined />}
+            prefix={<Icons.SearchOutlined />}
             placeholder="搜索课程、资料、任务"
             variant="filled"
           />
           <Space size={12}>
             <Button>操作日志</Button>
-            <Avatar icon={<UserOutlined />} />
+            <Avatar icon={<Icons.UserOutlined />} />
             <div className="user-meta">
               <span>平台管理员</span>
               <small>demo tenant</small>

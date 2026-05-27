@@ -33,18 +33,20 @@ const queryClient = new QueryClient({
 
 const pageMap: Record<string, React.ReactNode> = {
   knowledge: <KnowledgePage />,
-  'exam-work-type': <WorkTypePage />,
-  'dev-task-detail': <DevTaskDetailPage />,
-  'exam-course': <CoursePage />,
-  'training-info': <TrainingInfoPage />,
-  'training-class-people': <TrainingClassPeoplePage />,
-  'training-class-declare': <TrainingClassDeclarePage />,
-  'exam-user-auth-course': <UserAuthCoursePage />,
-  'chazheng-user-list': <UserListPage />,
-  'chazheng-cert-query': <CertQueryPage />,
-  'requirements-management': <RequirementsManagementPage />,
-  'training-program': <TrainingProgramPage />,
-  'zhixun-data-panel': <DataPanelPage />,
+  exam_work_type: <WorkTypePage />,
+  dev_task_detail: <DevTaskDetailPage />,
+  exam_course: <CoursePage />,
+  'train_info-list': <TrainingInfoPage />,
+  'train_people-list': <TrainingClassPeoplePage />,
+  train_declares: <TrainingClassDeclarePage />,
+  exam_user_auth_course: <UserAuthCoursePage />,
+  chazheng_user_list: <UserListPage />,
+  chazheng_cert_query: <CertQueryPage />,
+  train_needs: <RequirementsManagementPage />,
+  train_solutions: <TrainingProgramPage />,
+  knowledge_spaces: <KnowledgePage />,
+  knowledge_search: <KnowledgePage />,
+  zhixun_data_panel: <DataPanelPage />,
 };
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
