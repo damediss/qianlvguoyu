@@ -33,6 +33,8 @@ import { CertificationPage } from './pages/zhixunplatform/CertificationPage';
 import { DeclarationServicePage } from './pages/zhixunplatform/DeclarationServicePage';
 import { GraduationPage } from './pages/zhixunplatform/GraduationPage';
 import { RefundPage } from './pages/zhixunplatform/RefundPage';
+import { TaskStartPage } from './pages/expert/TaskStartPage';
+import { TaskEndPage } from './pages/expert/TaskEndPage';
 import { appTheme } from './theme';
 import './styles/tokens.css';
 import './styles/global.css';
@@ -77,6 +79,8 @@ const pageMap: Record<string, React.ReactNode> = {
   zhixun_declaration_service: <DeclarationServicePage />,
   zhixun_graduation: <GraduationPage />,
   zhixun_refund: <RefundPage />,
+  expert_task_start: <TaskStartPage />,
+  expert_task_end: <TaskEndPage />,
   // kebab-case aliases for page-internal navigation (navStore.setSelectedKey)
   'zhixun-data-panel': <DataPanelPage />,
   'zhixun-task-management': <TaskManagementPage />,

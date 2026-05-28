@@ -12,9 +12,11 @@ import com.guoyu.platform.exam.dto.ExamTaskXimuQueryReq;
 import com.guoyu.platform.exam.entity.ExamTaskXimuAuditRecordEntity;
 import com.guoyu.platform.exam.entity.ExamTaskXimuDetailEntity;
 import com.guoyu.platform.exam.entity.ExamTaskXimuEntity;
+import com.guoyu.platform.exam.entity.ExamTaskXimuExpertEntity;
 import com.guoyu.platform.exam.mapper.ExamTaskXimuAuditRecordMapper;
 import com.guoyu.platform.exam.mapper.ExamTaskXimuDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamTaskXimuMapper;
+import com.guoyu.platform.exam.mapper.ExamTaskXimuExpertMapper;
 import com.guoyu.platform.exam.vo.ExamTaskXimuDailyVO;
 import com.guoyu.platform.exam.vo.ExamTaskXimuDetailChildVO;
 import com.guoyu.platform.exam.vo.ExamTaskXimuDetailVO;
@@ -73,6 +75,7 @@ public class ExamTaskXimuApplicationService {
   private final ExamTaskXimuMapper ximuMapper;
   private final ExamTaskXimuDetailMapper detailMapper;
   private final ExamTaskXimuAuditRecordMapper auditMapper;
+  private final ExamTaskXimuExpertMapper expertMapper;
   private final UserMapper userMapper;
   private final UserRoleRelationMapper userRoleMapper;
   private final RoleMapper roleMapper;
@@ -88,6 +91,7 @@ public class ExamTaskXimuApplicationService {
       ExamTaskXimuMapper ximuMapper,
       ExamTaskXimuDetailMapper detailMapper,
       ExamTaskXimuAuditRecordMapper auditMapper,
+      ExamTaskXimuExpertMapper expertMapper,
       UserMapper userMapper,
       UserRoleRelationMapper userRoleMapper,
       RoleMapper roleMapper,
@@ -97,6 +101,7 @@ public class ExamTaskXimuApplicationService {
     this.ximuMapper = ximuMapper;
     this.detailMapper = detailMapper;
     this.auditMapper = auditMapper;
+    this.expertMapper = expertMapper;
     this.userMapper = userMapper;
     this.userRoleMapper = userRoleMapper;
     this.roleMapper = roleMapper;
@@ -266,6 +271,27 @@ public class ExamTaskXimuApplicationService {
     }
     entity.setStatus(1);
     ximuMapper.updateById(entity);
+
+    // check if expert already assigned for this task+role
+    LambdaQueryWrapper<ExamTaskXimuExpertEntity> expertQuery = new LambdaQueryWrapper<ExamTaskXimuExpertEntity>()
+        .eq(ExamTaskXimuExpertEntity::getTenantId, tenantId.intValue())
+        .eq(ExamTaskXimuExpertEntity::getTaskId, req.taskId())
+        .eq(ExamTaskXimuExpertEntity::getExpertId, req.expertId())
+        .eq(ExamTaskXimuExpertEntity::getTaskRole, req.role())
+        .eq(ExamTaskXimuExpertEntity::getTag, "ximu");
+    if (expertMapper.exists(expertQuery)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "已经指派过了");
+    }
+
+    // record assignment
+    ExamTaskXimuExpertEntity expertRecord = new ExamTaskXimuExpertEntity();
+    expertRecord.setTaskId(req.taskId());
+    expertRecord.setExpertId(req.expertId());
+    expertRecord.setTaskRole(req.role());
+    expertRecord.setTag("ximu");
+    expertRecord.setAddtime(LocalDateTime.now());
+    expertRecord.setTenantId(tenantId.intValue());
+    expertMapper.insert(expertRecord);
   }
 
   @Transactional(readOnly = true)
