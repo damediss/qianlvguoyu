@@ -94,6 +94,7 @@ export function DevTaskDetailPage() {
   const [detailData, setDetailData] = useState<ExamTaskXimuDetail[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailKey, setDetailKey] = useState(0);
+  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
 
   // Daily data
   const [dailyData, setDailyData] = useState<ExamTaskXimuDaily[]>([]);
@@ -185,6 +186,8 @@ export function DevTaskDetailPage() {
     try {
       const data = await getTaskXimuDetails(row.id);
       setDetailData(data);
+      // 数据加载完成后，将所有父行 ID 设为展开
+      setExpandedKeys(data.map((d) => d.id));
     } catch {
       message.error('获取细目列表失败');
     } finally {
@@ -340,7 +343,7 @@ export function DevTaskDetailPage() {
     { title: '编号', dataIndex: 'sno', width: 100 },
     { title: '一级', dataIndex: 'sno0', width: 140 },
     { title: '二级', dataIndex: 'sno1', width: 140 },
-    { title: '三级', dataIndex: 'title', width: 140 },
+    { title: '三级', dataIndex: 'title', width: 210 },
     { title: '代码', dataIndex: 'snoItem', width: 160 },
     { title: '内容', dataIndex: 'snoTitle' },
   ];
@@ -444,7 +447,7 @@ export function DevTaskDetailPage() {
       <Modal
         title="细目表列表"
         open={detailOpen}
-        onCancel={() => { setDetailOpen(false); setDetailData([]); setDetailLoading(false); setCurrentRow(null); }}
+        onCancel={() => { setDetailOpen(false); setDetailData([]); setDetailLoading(false); setExpandedKeys([]); setCurrentRow(null); }}
         width="85%"
         footer={null}
       >
@@ -455,7 +458,8 @@ export function DevTaskDetailPage() {
           dataSource={detailData}
           loading={detailLoading}
           expandable={{
-            defaultExpandAllRows: true,
+            expandedRowKeys: expandedKeys,
+            onExpandedRowsChange: (keys) => setExpandedKeys(keys as React.Key[]),
           }}
           rowClassName={(record) => {
             if (record.id === '初审') return 'row-start';
