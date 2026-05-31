@@ -26,6 +26,10 @@ public final class PermissionCodes {
   public static final String DICT_CREATE = "dict:create";
   public static final String DICT_UPDATE = "dict:update";
   public static final String AUDIT_LOG_VIEW = "audit-log:view";
+  public static final String POST_VIEW = "post:view";
+  public static final String POST_CREATE = "post:create";
+  public static final String POST_UPDATE = "post:update";
+  public static final String POST_DELETE = "post:delete";
   public static final String FILE_ACCESS = "file:access";
   public static final String KNOWLEDGE_VIEW = "knowledge:view";
   public static final String KNOWLEDGE_CREATE = "knowledge:create";

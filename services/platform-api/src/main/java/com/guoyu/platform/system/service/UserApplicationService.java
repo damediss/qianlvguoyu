@@ -13,10 +13,12 @@ import com.guoyu.platform.system.dto.UserCreateReq;
 import com.guoyu.platform.system.dto.UserQueryReq;
 import com.guoyu.platform.system.dto.UserUpdateReq;
 import com.guoyu.platform.system.entity.OrgEntity;
+import com.guoyu.platform.system.entity.PostEntity;
 import com.guoyu.platform.system.entity.RoleEntity;
 import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.entity.UserRoleEntity;
 import com.guoyu.platform.system.mapper.OrgMapper;
+import com.guoyu.platform.system.mapper.PostMapper;
 import com.guoyu.platform.system.mapper.RoleMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.system.mapper.UserRoleMapper;
@@ -36,6 +38,7 @@ public class UserApplicationService {
 
   private final UserMapper userMapper;
   private final OrgMapper orgMapper;
+  private final PostMapper postMapper;
   private final RoleMapper roleMapper;
   private final UserRoleMapper userRoleMapper;
   private final UserRoleRelationMapper userRoleRelationMapper;
@@ -44,6 +47,7 @@ public class UserApplicationService {
   public UserApplicationService(
       UserMapper userMapper,
       OrgMapper orgMapper,
+      PostMapper postMapper,
       RoleMapper roleMapper,
       UserRoleMapper userRoleMapper,
       UserRoleRelationMapper userRoleRelationMapper,
@@ -51,6 +55,7 @@ public class UserApplicationService {
   ) {
     this.userMapper = userMapper;
     this.orgMapper = orgMapper;
+    this.postMapper = postMapper;
     this.roleMapper = roleMapper;
     this.userRoleMapper = userRoleMapper;
     this.userRoleRelationMapper = userRoleRelationMapper;
@@ -100,12 +105,14 @@ public class UserApplicationService {
   public UserVO create(UserCreateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     validateOrg(tenantId, req.orgId());
+    validatePost(tenantId, req.postId());
     validateRoles(tenantId, req.roleIds());
     ensureUsernameAvailable(tenantId, req.username());
 
     UserEntity entity = new UserEntity();
     entity.setTenantId(tenantId);
     entity.setOrgId(req.orgId());
+    entity.setPostId(req.postId());
     entity.setUsername(req.username());
     entity.setPasswordHash(passwordEncoder.encode(req.password()));
     entity.setDisplayName(req.displayName());
@@ -124,9 +131,11 @@ public class UserApplicationService {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     UserEntity entity = getExisting(tenantId, id);
     validateOrg(tenantId, req.orgId());
+    validatePost(tenantId, req.postId());
     validateRoles(tenantId, req.roleIds());
 
     entity.setOrgId(req.orgId());
+    entity.setPostId(req.postId());
     entity.setDisplayName(req.displayName());
     entity.setUserType(req.userType());
     entity.setPhone(req.phone());
@@ -177,6 +186,19 @@ public class UserApplicationService {
     }
   }
 
+  private void validatePost(Long tenantId, Long postId) {
+    if (postId == null) {
+      return;
+    }
+    boolean exists = postMapper.exists(new LambdaQueryWrapper<PostEntity>()
+        .eq(PostEntity::getTenantId, tenantId)
+        .eq(PostEntity::getId, postId)
+        .eq(PostEntity::getDeleted, 0));
+    if (!exists) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "Post not found");
+    }
+  }
+
   private void validateRoles(Long tenantId, List<Long> roleIds) {
     if (roleIds == null || roleIds.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "At least one role is required");
@@ -218,10 +240,19 @@ public class UserApplicationService {
   private UserVO toVO(UserEntity entity) {
     List<Long> roleIds = userRoleMapper.selectRoleIds(entity.getTenantId(), entity.getId());
     List<String> roleCodes = userRoleMapper.selectRoleCodes(entity.getTenantId(), entity.getId());
+    String postName = null;
+    if (entity.getPostId() != null) {
+      PostEntity post = postMapper.selectById(entity.getPostId());
+      if (post != null && post.getDeleted() == 0) {
+        postName = post.getName();
+      }
+    }
     return new UserVO(
         entity.getId(),
         entity.getTenantId(),
         entity.getOrgId(),
+        entity.getPostId(),
+        postName,
         entity.getUsername(),
         entity.getDisplayName(),
         entity.getUserType(),

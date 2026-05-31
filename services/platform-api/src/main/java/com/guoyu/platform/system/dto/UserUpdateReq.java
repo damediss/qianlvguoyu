@@ -7,6 +7,7 @@ import java.util.List;
 
 public record UserUpdateReq(
     Long orgId,
+    Long postId,
     @NotBlank @Size(max = 64) String displayName,
     @NotBlank @Size(max = 32) String userType,
     @Size(max = 32) String phone,

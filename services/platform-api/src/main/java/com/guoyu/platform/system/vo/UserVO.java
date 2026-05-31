@@ -7,6 +7,8 @@ public record UserVO(
     Long id,
     Long tenantId,
     Long orgId,
+    Long postId,
+    String postName,
     String username,
     String displayName,
     String userType,

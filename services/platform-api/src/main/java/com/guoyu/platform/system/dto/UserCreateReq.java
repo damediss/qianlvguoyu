@@ -7,6 +7,7 @@ import java.util.List;
 
 public record UserCreateReq(
     Long orgId,
+    Long postId,
     @NotBlank @Size(max = 64) String username,
     @NotBlank @Size(min = 8, max = 128) String password,
     @NotBlank @Size(max = 64) String displayName,

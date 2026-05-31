@@ -35,6 +35,15 @@ import { GraduationPage } from './pages/zhixunplatform/GraduationPage';
 import { RefundPage } from './pages/zhixunplatform/RefundPage';
 import { TaskStartPage } from './pages/expert/TaskStartPage';
 import { TaskEndPage } from './pages/expert/TaskEndPage';
+import { TenantPage } from './pages/system/TenantPage';
+import { UserPage } from './pages/system/UserPage';
+import { OrgPage } from './pages/system/OrgPage';
+import { PostPage } from './pages/system/PostPage';
+import { RolePage } from './pages/system/RolePage';
+import { MenuPage } from './pages/system/MenuPage';
+import { DictPage } from './pages/system/DictPage';
+import { AuditLogPage } from './pages/system/AuditLogPage';
+import { PermissionPage } from './pages/system/PermissionPage';
 import { appTheme } from './theme';
 import './styles/tokens.css';
 import './styles/global.css';
@@ -81,6 +90,16 @@ const pageMap: Record<string, React.ReactNode> = {
   zhixun_refund: <RefundPage />,
   expert_task_start: <TaskStartPage />,
   expert_task_end: <TaskEndPage />,
+  // System management pages
+  system_tenant: <TenantPage />,
+  system_user: <UserPage />,
+  system_org: <OrgPage />,
+  system_post: <PostPage />,
+  system_role: <RolePage />,
+  system_menu: <MenuPage />,
+  system_dict: <DictPage />,
+  system_audit_log: <AuditLogPage />,
+  system_permission: <PermissionPage />,
   // kebab-case aliases for page-internal navigation (navStore.setSelectedKey)
   'zhixun-data-panel': <DataPanelPage />,
   'zhixun-task-management': <TaskManagementPage />,

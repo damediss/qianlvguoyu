@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 public class UserEntity extends BaseEntity {
 
   private Long orgId;
+  private Long postId;
   private String username;
   private String passwordHash;
   private String displayName;
@@ -24,6 +25,14 @@ public class UserEntity extends BaseEntity {
 
   public void setOrgId(Long orgId) {
     this.orgId = orgId;
+  }
+
+  public Long getPostId() {
+    return postId;
+  }
+
+  public void setPostId(Long postId) {
+    this.postId = postId;
   }
 
   public String getUsername() {
