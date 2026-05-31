@@ -41,3 +41,4 @@ outputs/**/.cache/
 .m2/
 .npm-cache/
 /data/cdn/
+/.qoder/
