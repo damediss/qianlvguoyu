@@ -10,8 +10,10 @@ import com.guoyu.platform.system.dto.MenuBatchVisibleReq;
 import com.guoyu.platform.system.dto.MenuCreateReq;
 import com.guoyu.platform.system.dto.MenuUpdateReq;
 import com.guoyu.platform.system.entity.MenuEntity;
+import com.guoyu.platform.system.entity.RoleEntity;
 import com.guoyu.platform.system.entity.RoleMenuEntity;
 import com.guoyu.platform.system.mapper.MenuMapper;
+import com.guoyu.platform.system.mapper.RoleMapper;
 import com.guoyu.platform.system.mapper.RoleMenuRelationMapper;
 import com.guoyu.platform.system.vo.MenuTreeVO;
 import java.util.Comparator;
@@ -27,10 +29,13 @@ import org.springframework.util.StringUtils;
 public class MenuApplicationService {
 
   private final MenuMapper menuMapper;
+  private final RoleMapper roleMapper;
   private final RoleMenuRelationMapper roleMenuRelationMapper;
 
-  public MenuApplicationService(MenuMapper menuMapper, RoleMenuRelationMapper roleMenuRelationMapper) {
+  public MenuApplicationService(MenuMapper menuMapper, RoleMapper roleMapper,
+      RoleMenuRelationMapper roleMenuRelationMapper) {
     this.menuMapper = menuMapper;
+    this.roleMapper = roleMapper;
     this.roleMenuRelationMapper = roleMenuRelationMapper;
   }
 
@@ -66,7 +71,43 @@ public class MenuApplicationService {
     entity.setStatus(StringUtils.hasText(req.status()) ? req.status() : "enabled");
     entity.setDeleted(0);
     menuMapper.insert(entity);
+
+    // Auto-bind new menu to PLATFORM_ADMIN role so it appears in the sidebar
+    bindToAdminRole(tenantId, entity.getId());
+
     return toTreeVO(entity);
+  }
+
+  private void bindToAdminRole(Long tenantId, Long menuId) {
+    Long adminRoleId = findAdminRoleId(tenantId);
+    if (adminRoleId == null) {
+      log.warn("PLATFORM_ADMIN role not found in tenant {}, skipping auto-bind for menu {}", tenantId, menuId);
+      return;
+    }
+    boolean alreadyBound = roleMenuRelationMapper.exists(new LambdaQueryWrapper<RoleMenuEntity>()
+        .eq(RoleMenuEntity::getTenantId, tenantId)
+        .eq(RoleMenuEntity::getRoleId, adminRoleId)
+        .eq(RoleMenuEntity::getMenuId, menuId)
+        .eq(RoleMenuEntity::getDeleted, 0));
+    if (alreadyBound) return;
+
+    RoleMenuEntity binding = new RoleMenuEntity();
+    binding.setTenantId(tenantId);
+    binding.setRoleId(adminRoleId);
+    binding.setMenuId(menuId);
+    binding.setDeleted(0);
+    roleMenuRelationMapper.insert(binding);
+  }
+
+  private Long findAdminRoleId(Long tenantId) {
+    return roleMapper.selectList(new LambdaQueryWrapper<RoleEntity>()
+            .eq(RoleEntity::getTenantId, tenantId)
+            .eq(RoleEntity::getCode, "PLATFORM_ADMIN")
+            .eq(RoleEntity::getDeleted, 0))
+        .stream()
+        .findFirst()
+        .map(RoleEntity::getId)
+        .orElse(null);
   }
 
   @Transactional
