@@ -33,7 +33,29 @@ import { CertificationPage } from './pages/zhixunplatform/CertificationPage';
 import { DeclarationServicePage } from './pages/zhixunplatform/DeclarationServicePage';
 import { GraduationPage } from './pages/zhixunplatform/GraduationPage';
 import { RefundPage } from './pages/zhixunplatform/RefundPage';
+import { PersonnelArchivePage } from './pages/zhixunplatform/PersonnelArchivePage';
+import { createArchiveTablePage } from './pages/zhixunplatform/ArchiveTablePage';
+import { createPmFormPage } from './pages/zhixunplatform/PmFormPage';
 import { TaskStartPage } from './pages/expert/TaskStartPage';
+
+// Pre-instantiate factory components for stable React references
+const ArchiveEquipmentPage = createArchiveTablePage('equipment');
+const ArchiveMaterialsPage = createArchiveTablePage('materials');
+const ArchiveRulesPage = createArchiveTablePage('rules');
+const ArchiveEnvironmentPage = createArchiveTablePage('environment');
+const PmStrategicPage = createPmFormPage('strategic');
+const PmOrgPerfPage = createPmFormPage('orgPerf');
+const PmPbcPage = createPmFormPage('pbc');
+const PmCharterPage = createPmFormPage('charter');
+const PmMilestonePage = createPmFormPage('milestone');
+const PmRiskPage = createPmFormPage('risk');
+const PmIssuePage = createPmFormPage('issue');
+const PmChangePage = createPmFormPage('change');
+const PmMeetingPage = createPmFormPage('meeting');
+const PmKnowledgePage = createPmFormPage('knowledge');
+const PmWbsPage = createPmFormPage('wbs');
+const PmCommunicationPage = createPmFormPage('communication');
+const PmStatusPage = createPmFormPage('status');
 import { TaskEndPage } from './pages/expert/TaskEndPage';
 import { TenantPage } from './pages/system/TenantPage';
 import { UserPage } from './pages/system/UserPage';
@@ -88,6 +110,24 @@ const pageMap: Record<string, React.ReactNode> = {
   zhixun_declaration_service: <DeclarationServicePage />,
   zhixun_graduation: <GraduationPage />,
   zhixun_refund: <RefundPage />,
+  zhixun_archive_personnel: <PersonnelArchivePage />,
+  zhixun_archive_equipment: <ArchiveEquipmentPage />,
+  zhixun_archive_materials: <ArchiveMaterialsPage />,
+  zhixun_archive_rules: <ArchiveRulesPage />,
+  zhixun_archive_environment: <ArchiveEnvironmentPage />,
+  zhixun_table_strategic: <PmStrategicPage />,
+  zhixun_table_org_perf: <PmOrgPerfPage />,
+  zhixun_table_pbc: <PmPbcPage />,
+  zhixun_table_charter: <PmCharterPage />,
+  zhixun_table_milestone: <PmMilestonePage />,
+  zhixun_table_risk: <PmRiskPage />,
+  zhixun_table_issue: <PmIssuePage />,
+  zhixun_table_change: <PmChangePage />,
+  zhixun_table_meeting: <PmMeetingPage />,
+  zhixun_table_knowledge: <PmKnowledgePage />,
+  zhixun_table_wbs: <PmWbsPage />,
+  zhixun_table_communication: <PmCommunicationPage />,
+  zhixun_table_status: <PmStatusPage />,
   expert_task_start: <TaskStartPage />,
   expert_task_end: <TaskEndPage />,
   // System management pages
@@ -117,6 +157,24 @@ const pageMap: Record<string, React.ReactNode> = {
   'zhixun-declaration-service': <DeclarationServicePage />,
   'zhixun-graduation': <GraduationPage />,
   'zhixun-refund': <RefundPage />,
+  'zhixun-archive-personnel': <PersonnelArchivePage />,
+  'zhixun-archive-equipment': <ArchiveEquipmentPage />,
+  'zhixun-archive-materials': <ArchiveMaterialsPage />,
+  'zhixun-archive-rules': <ArchiveRulesPage />,
+  'zhixun-archive-environment': <ArchiveEnvironmentPage />,
+  'zhixun-table-strategic': <PmStrategicPage />,
+  'zhixun-table-org-perf': <PmOrgPerfPage />,
+  'zhixun-table-pbc': <PmPbcPage />,
+  'zhixun-table-charter': <PmCharterPage />,
+  'zhixun-table-milestone': <PmMilestonePage />,
+  'zhixun-table-risk': <PmRiskPage />,
+  'zhixun-table-issue': <PmIssuePage />,
+  'zhixun-table-change': <PmChangePage />,
+  'zhixun-table-meeting': <PmMeetingPage />,
+  'zhixun-table-knowledge': <PmKnowledgePage />,
+  'zhixun-table-wbs': <PmWbsPage />,
+  'zhixun-table-communication': <PmCommunicationPage />,
+  'zhixun-table-status': <PmStatusPage />,
 };
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

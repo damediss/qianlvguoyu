@@ -7,6 +7,7 @@ import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassUpdateReq;
 import com.guoyu.platform.trainingdepartment.service.TrainInfoClassApplicationService;
+import com.guoyu.platform.trainingdepartment.service.TrainMaterialGenerateApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoClassVO;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -32,9 +33,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class TrainInfoClassController {
 
   private final TrainInfoClassApplicationService trainInfoClassApplicationService;
+  private final TrainMaterialGenerateApplicationService trainMaterialGenerateApplicationService;
 
-  public TrainInfoClassController(TrainInfoClassApplicationService trainInfoClassApplicationService) {
+  public TrainInfoClassController(TrainInfoClassApplicationService trainInfoClassApplicationService,
+      TrainMaterialGenerateApplicationService trainMaterialGenerateApplicationService) {
     this.trainInfoClassApplicationService = trainInfoClassApplicationService;
+    this.trainMaterialGenerateApplicationService = trainMaterialGenerateApplicationService;
   }
 
   /** 分页查询培训班级列表（含企业名、工种名、培训标题等关联字段） */
@@ -90,5 +94,29 @@ public class TrainInfoClassController {
   public ApiResponse<Void> delete(@PathVariable Long id) {
     trainInfoClassApplicationService.delete(id);
     return ApiResponse.ok();
+  }
+
+  /** 挂载文件模板到班级 */
+  @PostMapping("/info-classes/{classId}/file-temps")
+  @PreAuthorize("hasAuthority('train:info-class:update')")
+  @AuditLog(module = "training", action = "info-class:attach-file-temps", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> attachFileTemps(@PathVariable Long classId, @RequestBody Map<String, List<Long>> body) {
+    return ApiResponse.ok(trainInfoClassApplicationService.attachFileTemps(classId, body.get("ids")));
+  }
+
+  /** 移除班级文件模板 */
+  @DeleteMapping("/info-classes/{classId}/file-temps/{templateId}")
+  @PreAuthorize("hasAuthority('train:info-class:update')")
+  @AuditLog(module = "training", action = "info-class:detach-file-temp", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> detachFileTemp(@PathVariable Long classId, @PathVariable Long templateId) {
+    return ApiResponse.ok(trainInfoClassApplicationService.detachFileTemp(classId, templateId));
+  }
+
+  /** 生成班级申报材料 */
+  @PostMapping("/info-classes/{classId}/materials/generate")
+  @PreAuthorize("hasAuthority('train:info-class:update')")
+  @AuditLog(module = "training", action = "info-class:generate-materials", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> generateMaterials(@PathVariable Long classId) {
+    return ApiResponse.ok(trainMaterialGenerateApplicationService.generate(classId));
   }
 }

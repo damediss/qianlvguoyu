@@ -266,15 +266,30 @@ public class TrainPeopleListApplicationService {
   public Map<String, Object> importStudents(Long traininfoId, Long classId, List<Long> studentIds) {
     List<TrainSignUpPeopleSelfEntity> signUpPeople = signUpPeopleSelfMapper.selectBatchIds(studentIds);
     int count = 0;
-    for (TrainSignUpPeopleSelfEntity sp : signUpPeople) {
-      // 去重检查
+    List<Map<String, Object>> failed = new ArrayList<>();
+    for (Long sid : studentIds) {
+      TrainSignUpPeopleSelfEntity sp = signUpPeople.stream()
+          .filter(p -> p.getId().equals(sid)).findFirst().orElse(null);
+      if (sp == null) {
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("id", sid);
+        f.put("reason", "报名人员不存在");
+        failed.add(f);
+        continue;
+      }
       Long existCount = mapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
           .eq(TrainPeopleListEntity::getType, "student")
           .eq(TrainPeopleListEntity::getDeleted, 0)
           .eq(TrainPeopleListEntity::getTrainId, traininfoId)
           .eq(TrainPeopleListEntity::getTrainClassId, classId)
           .eq(TrainPeopleListEntity::getPlatformUserId, sp.getPlatformUserId()));
-      if (existCount != null && existCount > 0) continue;
+      if (existCount != null && existCount > 0) {
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("id", sid);
+        f.put("reason", "已存在该学员");
+        failed.add(f);
+        continue;
+      }
 
       TrainPeopleListEntity entity = new TrainPeopleListEntity();
       entity.setType("student");
@@ -290,6 +305,7 @@ public class TrainPeopleListApplicationService {
     }
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("count", count);
+    result.put("failed", failed);
     return result;
   }
 
@@ -303,23 +319,43 @@ public class TrainPeopleListApplicationService {
     if (signUp == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "报名记录未找到");
     }
-    String[] lines = idCardsText.split("\\n");
+    String[] lines = idCardsText.split("[\\n,，\\s]+");
     int count = 0;
+    List<Map<String, Object>> failed = new ArrayList<>();
     for (String line : lines) {
       String idCard = line.trim();
       if (idCard.isEmpty()) continue;
+      if (idCard.length() != 18) {
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("idCard", idCard);
+        f.put("reason", "身份证号格式错误");
+        failed.add(f);
+        continue;
+      }
       TrainSignUpPeopleSelfEntity sp = signUpPeopleSelfMapper.selectOne(
           new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
               .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUp.getId())
               .eq(TrainSignUpPeopleSelfEntity::getIdCardNumber, idCard));
-      if (sp == null) continue;
+      if (sp == null) {
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("idCard", idCard);
+        f.put("reason", "未在报名记录中找到该身份证号");
+        failed.add(f);
+        continue;
+      }
       Long existCount = mapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
           .eq(TrainPeopleListEntity::getType, "student")
           .eq(TrainPeopleListEntity::getDeleted, 0)
           .eq(TrainPeopleListEntity::getTrainId, traininfoId)
           .eq(TrainPeopleListEntity::getTrainClassId, classId)
           .eq(TrainPeopleListEntity::getPlatformUserId, sp.getPlatformUserId()));
-      if (existCount != null && existCount > 0) continue;
+      if (existCount != null && existCount > 0) {
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("idCard", idCard);
+        f.put("reason", "已存在该学员");
+        failed.add(f);
+        continue;
+      }
 
       TrainPeopleListEntity entity = new TrainPeopleListEntity();
       entity.setType("student");
@@ -335,6 +371,7 @@ public class TrainPeopleListApplicationService {
     }
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("count", count);
+    result.put("failed", failed);
     return result;
   }
 
@@ -438,14 +475,30 @@ public class TrainPeopleListApplicationService {
   public Map<String, Object> importOthers(Long traininfoId, Long classId, List<Long> ids) {
     List<TrainTeacherBankEntity> teachers = teacherBankMapper.selectBatchIds(ids);
     int count = 0;
-    for (TrainTeacherBankEntity t : teachers) {
+    List<Map<String, Object>> failed = new ArrayList<>();
+    for (Long tid : ids) {
+      TrainTeacherBankEntity t = teachers.stream()
+          .filter(x -> x.getId().equals(tid)).findFirst().orElse(null);
+      if (t == null) {
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("id", tid);
+        f.put("reason", "教师不存在");
+        failed.add(f);
+        continue;
+      }
       Long existCount = mapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
           .eq(TrainPeopleListEntity::getType, "staff")
           .eq(TrainPeopleListEntity::getDeleted, 0)
           .eq(TrainPeopleListEntity::getTrainId, traininfoId)
           .eq(TrainPeopleListEntity::getTrainClassId, classId)
           .eq(TrainPeopleListEntity::getUserId, t.getId()));
-      if (existCount != null && existCount > 0) continue;
+      if (existCount != null && existCount > 0) {
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("id", tid);
+        f.put("reason", "已存在该教务人员");
+        failed.add(f);
+        continue;
+      }
 
       TrainPeopleListEntity entity = new TrainPeopleListEntity();
       entity.setType("staff");
@@ -461,6 +514,7 @@ public class TrainPeopleListApplicationService {
     }
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("count", count);
+    result.put("failed", failed);
     return result;
   }
 

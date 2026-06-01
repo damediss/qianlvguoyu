@@ -15,11 +15,14 @@ import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.system.entity.OrgEntity;
+import com.guoyu.platform.trainingdepartment.mapper.TrainFileTempMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
 import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoClassVO;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -38,15 +41,19 @@ public class TrainInfoClassApplicationService {
 
   private final TrainInfoClassMapper mapper;
   private final TrainInfoListMapper trainInfoListMapper;
+  private final TrainFileTempMapper trainFileTempMapper;
   private final OrgMapper orgMapper;
   private final ExamWorkTypeMapper examWorkTypeMapper;
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
   public TrainInfoClassApplicationService(TrainInfoClassMapper mapper,
       TrainInfoListMapper trainInfoListMapper,
+      TrainFileTempMapper trainFileTempMapper,
       OrgMapper orgMapper,
       ExamWorkTypeMapper examWorkTypeMapper) {
     this.mapper = mapper;
     this.trainInfoListMapper = trainInfoListMapper;
+    this.trainFileTempMapper = trainFileTempMapper;
     this.orgMapper = orgMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
   }
@@ -235,6 +242,69 @@ public class TrainInfoClassApplicationService {
     TrainInfoClassEntity entity = getExisting(id);
     entity.setDeleted(1);
     mapper.updateById(entity);
+  }
+
+  /**
+   * 挂载文件模板到班级
+   */
+  @Transactional
+  public Map<String, Object> attachFileTemps(Long classId, List<Long> templateIds) {
+    TrainInfoClassEntity entity = getExisting(classId);
+    List<Long> currentIds = parseFileTemps(entity.getFileTemps());
+    for (Long tid : templateIds) {
+      if (tid != null && !currentIds.contains(tid)) {
+        currentIds.add(tid);
+      }
+    }
+    try {
+      entity.setFileTemps(objectMapper.writeValueAsString(currentIds));
+    } catch (Exception e) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "序列化模板ID列表失败");
+    }
+    mapper.updateById(entity);
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("classId", classId);
+    result.put("fileTemps", currentIds);
+    return result;
+  }
+
+  /**
+   * 从班级移除文件模板
+   */
+  @Transactional
+  public Map<String, Object> detachFileTemp(Long classId, Long templateId) {
+    TrainInfoClassEntity entity = getExisting(classId);
+    List<Long> currentIds = parseFileTemps(entity.getFileTemps());
+    currentIds.remove(templateId);
+    try {
+      entity.setFileTemps(objectMapper.writeValueAsString(currentIds));
+    } catch (Exception e) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "序列化模板ID列表失败");
+    }
+    mapper.updateById(entity);
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("classId", classId);
+    result.put("fileTemps", currentIds);
+    return result;
+  }
+
+  private List<Long> parseFileTemps(String fileTemps) {
+    if (fileTemps == null || fileTemps.isBlank()) {
+      return new ArrayList<>();
+    }
+    try {
+      return objectMapper.readValue(fileTemps, new TypeReference<List<Long>>() {});
+    } catch (Exception e) {
+      // 兼容逗号分隔的旧格式
+      List<Long> ids = new ArrayList<>();
+      for (String part : fileTemps.replace("[", "").replace("]", "").split(",")) {
+        String trimmed = part.trim();
+        if (!trimmed.isEmpty()) {
+          try { ids.add(Long.parseLong(trimmed)); } catch (NumberFormatException ignored) {}
+        }
+      }
+      return ids;
+    }
   }
 
   private TrainInfoClassEntity getExisting(Long id) {

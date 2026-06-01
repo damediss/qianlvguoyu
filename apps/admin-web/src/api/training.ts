@@ -40,6 +40,9 @@ import type {
   TrainSolutionList, TrainSolutionDetail, TrainSolutionBadge, TrainSolutionSaveReq,
   TrainStudent, SolutionByDemand,
   TrainInfoClassListItem, TrainInfoClassPageResponse, ClassStudent, ClassStudentPageResponse, ClassOther, ClassTask, SignUpPerson, TeacherBankItem,
+  TrainSummary, TrainSummaryQuery, TrainSummaryCreateReq, TrainSummaryUpdateReq,
+  TrainCertificate, TrainCertificateQuery, TrainCertificateCreateReq, TrainCertificateUpdateReq,
+  TrainUserAbility, TrainUserAbilityQuery, TrainUserAbilityCreateReq, TrainUserAbilityUpdateReq,
 } from '../types/training';
 
 const BASE = '/training';
@@ -633,6 +636,40 @@ export function deleteUserAbility(id: number) {
   return unwrap<void>(apiClient.delete(`${BASE}/user-abilities/${id}`));
 }
 
+// ==================== Summaries (培训总结/经验萃取) ====================
+export function pageSummaries(params: TrainSummaryQuery) {
+  return unwrap<PageResponse<TrainSummary>>(apiClient.get(`${BASE}/summaries`, { params }));
+}
+export function getSummary(id: number) {
+  return unwrap<TrainSummary>(apiClient.get(`${BASE}/summaries/${id}`));
+}
+export function createSummary(payload: TrainSummaryCreateReq) {
+  return unwrap<TrainSummary>(apiClient.post(`${BASE}/summaries`, payload));
+}
+export function updateSummary(id: number, payload: TrainSummaryUpdateReq) {
+  return unwrap<TrainSummary>(apiClient.put(`${BASE}/summaries/${id}`, payload));
+}
+export function deleteSummary(id: number) {
+  return unwrap<void>(apiClient.delete(`${BASE}/summaries/${id}`));
+}
+
+// ==================== Certificates (证书管理) ====================
+export function pageCertificates(params: TrainCertificateQuery) {
+  return unwrap<PageResponse<TrainCertificate>>(apiClient.get(`${BASE}/certificates`, { params }));
+}
+export function getCertificate(id: number) {
+  return unwrap<TrainCertificate>(apiClient.get(`${BASE}/certificates/${id}`));
+}
+export function createCertificate(payload: TrainCertificateCreateReq) {
+  return unwrap<TrainCertificate>(apiClient.post(`${BASE}/certificates`, payload));
+}
+export function updateCertificate(id: number, payload: TrainCertificateUpdateReq) {
+  return unwrap<TrainCertificate>(apiClient.put(`${BASE}/certificates/${id}`, payload));
+}
+export function deleteCertificate(id: number) {
+  return unwrap<void>(apiClient.delete(`${BASE}/certificates/${id}`));
+}
+
 // ==================== Demand Train (企业培训需求) ====================
 export function pageDemandTrains(params: DemandTrainQuery) {
   return unwrap<PageResponse<DemandTrain>>(apiClient.get(`${BASE}/demand-trains`, { params }));
@@ -753,12 +790,12 @@ export function listSignUpSelf(traininfoId: number, keyword?: string) {
 
 /** 从报名导入学员 */
 export function importStudents(params: { traininfoId: number; classId: number; studentIds: number[] }) {
-  return unwrap<{ count: number }>(apiClient.post(`${BASE}/class-student-import`, params));
+  return unwrap<{ count: number; failed: { id: number; reason: string }[] }>(apiClient.post(`${BASE}/class-student-import`, params));
 }
 
 /** 按身份证号导入学员 */
 export function importStudentsByIdCard(params: { traininfoId: number; classId: number; studentIds: string }) {
-  return unwrap<{ count: number }>(apiClient.post(`${BASE}/class-student-import-by-idcard`, params));
+  return unwrap<{ count: number; failed: { idCard: string; reason: string }[] }>(apiClient.post(`${BASE}/class-student-import-by-idcard`, params));
 }
 
 // ==================== 教务/负责人 ====================
@@ -785,7 +822,7 @@ export function listOtherImportData(tag: string) {
 
 /** 从教师库导入教务 */
 export function importOthers(params: { traininfoId: number; classId: number; tag: string; ids: number[] }) {
-  return unwrap<{ count: number }>(apiClient.post(`${BASE}/class-other-import`, params));
+  return unwrap<{ count: number; failed: { id: number; reason: string }[] }>(apiClient.post(`${BASE}/class-other-import`, params));
 }
 
 // ==================== 培训任务 ====================
@@ -798,4 +835,62 @@ export function listClassTasks(classId: number) {
 /** 新增/编辑培训任务 */
 export function saveClassTask(params: { id?: number; classId?: number; ck_id?: number; date?: string }) {
   return unwrap<{ id: number; ck_id: number; date: string; train_class_id: number }>(apiClient.post(`${BASE}/class-task-save`, params));
+}
+
+// ==================== 班级文件模板挂载 ====================
+
+/** 挂载文件模板到班级 */
+export function attachFileTemps(classId: number, ids: number[]) {
+  return unwrap<{ classId: number; fileTemps: number[] }>(apiClient.post(`${BASE}/info-classes/${classId}/file-temps`, { ids }));
+}
+
+/** 移除班级文件模板 */
+export function detachFileTemp(classId: number, templateId: number) {
+  return unwrap<{ classId: number; fileTemps: number[] }>(apiClient.delete(`${BASE}/info-classes/${classId}/file-temps/${templateId}`));
+}
+
+// ==================== 班级材料生成 ====================
+
+/** 生成班级申报材料 */
+export function generateMaterials(classId: number) {
+  return unwrap<{ downUrl: string; fileId: number }>(apiClient.post(`${BASE}/info-classes/${classId}/materials/generate`));
+}
+
+// ==================== 毕业管理 ====================
+
+/** 可毕业班级列表 */
+export function listGraduationCandidates(params: { page?: number; pageSize?: number }) {
+  return unwrap<{ list: Record<string, unknown>[]; total: number }>(apiClient.get(`${BASE}/info-classes/graduation-candidates`, { params }));
+}
+
+/** 班级可毕业学员列表 */
+export function listGraduationStudents(classId: number) {
+  return unwrap<{ classTitle: string; list: Record<string, unknown>[]; total: number }>(apiClient.get(`${BASE}/info-classes/${classId}/graduation-students`));
+}
+
+/** 执行毕业 */
+export function graduateClass(classId: number) {
+  return unwrap<{ classId: number; trainInfoId: number; graduateCount: number; status: string }>(apiClient.post(`${BASE}/info-classes/${classId}/graduate`));
+}
+
+/** 发送毕业通知 */
+export function notifyGraduation(classId: number) {
+  return unwrap<{ classId: number; notifiedCount: number; message: string }>(apiClient.post(`${BASE}/info-classes/${classId}/graduation-notify`));
+}
+
+// ==================== 课表配置 ====================
+
+/** 获取班级课表 */
+export function getClassSchedule(classId: number) {
+  return unwrap<Record<string, unknown>[]>(apiClient.get(`${BASE}/info-classes/${classId}/schedule`));
+}
+
+/** 批量保存课表 */
+export function saveClassSchedule(classId: number, items: Record<string, unknown>[]) {
+  return unwrap<{ classId: number; count: number }>(apiClient.put(`${BASE}/info-classes/${classId}/schedule`, { items }));
+}
+
+/** 导出课表 */
+export function exportClassSchedule(classId: number) {
+  return unwrap<{ fileId: number; downUrl: string; fileName: string }>(apiClient.get(`${BASE}/info-classes/${classId}/schedule/export`));
 }

@@ -1866,3 +1866,70 @@ export interface TeacherBankItem {
   name: string;
   phone?: string;
 }
+
+// ==================== Train Summary (培训总结/经验萃取) ====================
+export interface TrainSummary {
+  id: number;
+  title: string;
+  author?: string;
+  tags?: string;
+  content?: string;
+  status?: number;
+  trainInfoId?: number;
+  tenantId?: number;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface TrainSummaryQuery {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  status?: number;
+}
+
+export interface TrainSummaryCreateReq {
+  title: string;
+  author?: string;
+  tags?: string;
+  content?: string;
+  status?: number;
+  trainInfoId?: number;
+}
+
+export type TrainSummaryUpdateReq = Partial<TrainSummaryCreateReq>;
+
+// ==================== Train Certificate (证书管理) ====================
+export interface TrainCertificate {
+  id: number;
+  name: string;
+  type?: string;
+  description?: string;
+  templateFile?: string;
+  status?: number;
+  trainInfoId?: number;
+  studentId?: number;
+  issueDate?: string;
+  tenantId?: number;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface TrainCertificateQuery {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  type?: string;
+}
+
+export interface TrainCertificateCreateReq {
+  name: string;
+  type?: string;
+  description?: string;
+  templateFile?: string;
+  status?: number;
+  trainInfoId?: number;
+  studentId?: number;
+}
+
+export type TrainCertificateUpdateReq = Partial<TrainCertificateCreateReq>;
