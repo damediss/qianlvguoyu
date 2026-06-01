@@ -47,7 +47,7 @@ public class SecurityConfig {
         )
         .authorizeHttpRequests(auth -> auth
             .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-            .requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh").permitAll()
+            .requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh", "/auth/logout").permitAll()
             .anyRequest().authenticated()
         )
         .addFilterBefore(tenantContextFilter, UsernamePasswordAuthenticationFilter.class)

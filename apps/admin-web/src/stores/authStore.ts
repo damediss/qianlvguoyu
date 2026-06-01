@@ -12,6 +12,7 @@ interface AuthState {
   setCurrentUser: (user?: CurrentUserVO) => void;
   setMenuTree: (tree: MenuVO[]) => void;
   hasPermission: (code: string) => boolean;
+  clearAuth: () => void;
 }
 
 const TOKEN_KEY = 'guoyu_admin_access_token';
@@ -50,5 +51,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
   hasPermission: (code: string) => {
     return get().permissionCodes.includes(code);
+  },
+  clearAuth: () => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TENANT_KEY);
+    set({ token: undefined, tenantId: undefined, currentUser: undefined, permissionCodes: [], menuTree: [] });
   },
 }));

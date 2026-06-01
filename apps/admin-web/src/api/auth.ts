@@ -12,3 +12,7 @@ export function currentUser() {
 export function fetchMenus() {
   return unwrap<MenuVO[]>(apiClient.get('/auth/menus'));
 }
+
+export function logout() {
+  return apiClient.post('/auth/logout');
+}

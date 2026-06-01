@@ -1,9 +1,9 @@
 import * as Icons from '@ant-design/icons';
-import { Avatar, Button, Input, Layout, Menu, Space, Typography } from 'antd';
+import { Avatar, Dropdown, Input, Layout, Menu, Space, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { fetchMenus } from '../api/auth';
+import { fetchMenus, logout } from '../api/auth';
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore } from '../stores/navStore';
 import type { MenuVO } from '../types/api';
@@ -41,6 +41,8 @@ export function AppShell({ pageMap }: AppShellProps) {
   const token = useAuthStore((s) => s.token);
   const menuTree = useAuthStore((s) => s.menuTree);
   const setMenuTree = useAuthStore((s) => s.setMenuTree);
+  const clearAuth = useAuthStore((s) => s.clearAuth);
+  const currentUser = useAuthStore((s) => s.currentUser);
   const selectedKey = useNavStore((s) => s.selectedKey);
   const setSelectedKey = useNavStore((s) => s.setSelectedKey);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
@@ -57,6 +59,25 @@ export function AppShell({ pageMap }: AppShellProps) {
       setMenuTree(menusQuery.data);
     }
   }, [menusQuery.data, setMenuTree]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch {
+      // 忽略后端错误，前端强制清除登录态
+    } finally {
+      clearAuth();
+    }
+  };
+
+  const userDropdownItems = [
+    {
+      key: 'logout',
+      icon: <Icons.LogoutOutlined />,
+      label: '退出登录',
+      onClick: handleLogout,
+    },
+  ];
 
   const menuItems = buildMenuItems(menuTree);
 
@@ -90,12 +111,15 @@ export function AppShell({ pageMap }: AppShellProps) {
             variant="filled"
           />
           <Space size={12}>
-            <Button>操作日志</Button>
-            <Avatar icon={<Icons.UserOutlined />} />
-            <div className="user-meta">
-              <span>平台管理员</span>
-              <small>demo tenant</small>
-            </div>
+            <Dropdown menu={{ items: userDropdownItems }} placement="bottomRight" trigger={['click']}>
+              <Space style={{ cursor: 'pointer' }}>
+                <Avatar icon={<Icons.UserOutlined />} />
+                <div className="user-meta">
+                  <span>{currentUser?.displayName ?? '平台管理员'}</span>
+                  <small>demo tenant</small>
+                </div>
+              </Space>
+            </Dropdown>
           </Space>
         </Header>
         <Content className="app-content">
