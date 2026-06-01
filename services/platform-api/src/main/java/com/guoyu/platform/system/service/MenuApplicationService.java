@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.security.SecurityContext;
+import com.guoyu.platform.system.dto.MenuBatchVisibleReq;
 import com.guoyu.platform.system.dto.MenuCreateReq;
 import com.guoyu.platform.system.dto.MenuUpdateReq;
 import com.guoyu.platform.system.entity.MenuEntity;
@@ -86,6 +87,23 @@ public class MenuApplicationService {
     entity.setStatus(req.status());
     menuMapper.updateById(entity);
     return toTreeVO(entity);
+  }
+
+  @Transactional
+  public void batchUpdateVisible(MenuBatchVisibleReq req) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    List<MenuEntity> entities = menuMapper.selectList(new LambdaQueryWrapper<MenuEntity>()
+        .in(MenuEntity::getId, req.ids())
+        .eq(MenuEntity::getTenantId, tenantId)
+        .eq(MenuEntity::getDeleted, 0));
+    if (entities.size() != req.ids().size()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "Some menus not found or do not belong to current tenant");
+    }
+    for (MenuEntity entity : entities) {
+      entity.setVisible(req.visible());
+      menuMapper.updateById(entity);
+    }
+    log.info("Batch updated visible to {} for {} menus in tenant {}", req.visible(), entities.size(), tenantId);
   }
 
   @Transactional

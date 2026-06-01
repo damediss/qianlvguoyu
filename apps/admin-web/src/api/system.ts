@@ -6,7 +6,7 @@ import type {
   OrgTreeVO, OrgCreateReq, OrgUpdateReq,
   PostVO, PostCreateReq, PostUpdateReq, PostQuery,
   RoleVO, RoleCreateReq, RoleUpdateReq, RoleQuery, RolePermissionBindReq,
-  MenuTreeVO, MenuCreateReq, MenuUpdateReq,
+  MenuTreeVO, MenuCreateReq, MenuUpdateReq, MenuBatchVisibleReq,
   DictVO, DictItemVO, DictCreateReq, DictUpdateReq, DictQuery,
   DictItemCreateReq, DictItemUpdateReq,
   AuditLogVO, AuditLogQuery,
@@ -135,12 +135,16 @@ export function createMenu(payload: MenuCreateReq) {
   return unwrap<MenuTreeVO>(apiClient.post('/system/menus', payload));
 }
 
-export function updateMenu(id: number, payload: MenuUpdateReq) {
+export function updateMenu(id: number | string, payload: MenuUpdateReq) {
   return unwrap<MenuTreeVO>(apiClient.put(`/system/menus/${id}`, payload));
 }
 
-export function deleteMenu(id: number) {
+export function deleteMenu(id: number | string) {
   return unwrap<void>(apiClient.delete(`/system/menus/${id}`));
+}
+
+export function batchUpdateMenuVisible(payload: MenuBatchVisibleReq) {
+  return unwrap<void>(apiClient.put('/system/menus/batch-visible', payload));
 }
 
 // ---- Dict ----

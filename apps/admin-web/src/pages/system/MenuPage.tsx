@@ -21,16 +21,23 @@ import {
   message,
 } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   getMenuTree,
   createMenu,
   updateMenu,
   deleteMenu,
+  batchUpdateMenuVisible,
 } from '../../api/system';
-import type { MenuTreeVO, MenuCreateReq } from '../../types/system';
+import type { MenuTreeVO, MenuUpdateReq } from '../../types/system';
+import { IconPicker } from '../../components/IconPicker';
+import { usePinyinAutoGen } from '../../hooks/usePinyinAutoGen';
+import { iconFromName } from '../../utils/icons';
 
-function buildTreeSelectData(nodes: MenuTreeVO[], excludeId?: number): any[] {
+/** ID type that handles both safe integers and large snowflake IDs */
+type Id = number | string;
+
+function buildTreeSelectData(nodes: MenuTreeVO[], excludeId?: Id): any[] {
   return nodes
     .filter((n) => !excludeId || n.id !== excludeId)
     .map((node) => ({
@@ -40,6 +47,35 @@ function buildTreeSelectData(nodes: MenuTreeVO[], excludeId?: number): any[] {
         ? buildTreeSelectData(node.children, excludeId)
         : undefined,
     }));
+}
+
+/** Collect all descendant IDs from a tree node. */
+function collectDescendantIds(nodes: MenuTreeVO[], targetId: Id): Id[] {
+  const findNode = (list: MenuTreeVO[]): MenuTreeVO | null => {
+    for (const node of list) {
+      if (node.id === targetId) return node;
+      if (node.children?.length) {
+        const found = findNode(node.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const collectIds = (node: MenuTreeVO): Id[] => {
+    const ids: Id[] = [];
+    if (node.children?.length) {
+      for (const child of node.children) {
+        ids.push(child.id);
+        ids.push(...collectIds(child));
+      }
+    }
+    return ids;
+  };
+
+  const targetNode = findNode(nodes);
+  if (!targetNode) return [];
+  return collectIds(targetNode);
 }
 
 const MENU_TYPE_OPTIONS = [
@@ -57,13 +93,18 @@ const MENU_TYPE_TAG: Record<string, { color: string; text: string }> = {
 export function MenuPage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<Id | null>(null);
   const [form] = Form.useForm();
+  const originalVisibleRef = useRef<number | null>(null);
 
   const treeQuery = useQuery({
     queryKey: ['system-menus-tree'],
     queryFn: getMenuTree,
   });
+
+  const treeData = treeQuery.data || [];
+
+  const { onNameChange } = usePinyinAutoGen(form, treeData);
 
   const createMutation = useMutation({
     mutationFn: createMenu,
@@ -76,13 +117,20 @@ export function MenuPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: MenuCreateReq }) =>
+    mutationFn: ({ id, payload }: { id: Id; payload: MenuUpdateReq }) =>
       updateMenu(id, payload),
     onSuccess: () => {
       message.success('菜单已更新');
       setModalOpen(false);
       setEditingId(null);
       form.resetFields();
+      queryClient.invalidateQueries({ queryKey: ['system-menus-tree'] });
+    },
+  });
+
+  const batchVisibleMutation = useMutation({
+    mutationFn: batchUpdateMenuVisible,
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['system-menus-tree'] });
     },
   });
@@ -96,8 +144,9 @@ export function MenuPage() {
   });
 
   const openCreate = useCallback(
-    (parentId?: number) => {
+    (parentId?: Id) => {
       setEditingId(null);
+      originalVisibleRef.current = null;
       form.resetFields();
       form.setFieldsValue({
         parentId: parentId ?? 0,
@@ -114,6 +163,7 @@ export function MenuPage() {
   const openEdit = useCallback(
     (record: MenuTreeVO) => {
       setEditingId(record.id);
+      originalVisibleRef.current = record.visible;
       form.setFieldsValue({
         parentId: record.parentId,
         menuType: record.menuType,
@@ -134,13 +184,48 @@ export function MenuPage() {
 
   const handleSubmit = useCallback(() => {
     form.validateFields().then((values) => {
+      // Switch produces boolean; backend expects Integer (0/1)
+      const newVisible = typeof values.visible === 'boolean' ? (values.visible ? 1 : 0) : values.visible;
+      const payload = { ...values, visible: newVisible };
+
+      // Check if we need to cascade visibility for directory type
+      if (
+        editingId &&
+        values.menuType === 'directory' &&
+        originalVisibleRef.current !== null &&
+        newVisible !== originalVisibleRef.current
+      ) {
+        const descendantIds = collectDescendantIds(treeData, editingId);
+        if (descendantIds.length > 0) {
+          Modal.confirm({
+            title: '级联修改可见性',
+            content: `此操作将同时修改 ${descendantIds.length} 个子菜单的可见性，是否继续？`,
+            okText: '确认',
+            cancelText: '取消',
+            onOk: () => {
+              Promise.all([
+                updateMutation.mutateAsync({ id: editingId, payload }),
+                batchVisibleMutation.mutateAsync({ ids: descendantIds, visible: newVisible }),
+              ]).then(() => {
+                message.success(`已更新菜单及 ${descendantIds.length} 个子菜单的可见性`);
+                setModalOpen(false);
+                setEditingId(null);
+                form.resetFields();
+                queryClient.invalidateQueries({ queryKey: ['system-menus-tree'] });
+              });
+            },
+          });
+          return;
+        }
+      }
+
       if (editingId) {
-        updateMutation.mutate({ id: editingId, payload: values });
+        updateMutation.mutate({ id: editingId, payload });
       } else {
-        createMutation.mutate(values);
+        createMutation.mutate(payload);
       }
     });
-  }, [form, editingId, createMutation, updateMutation]);
+  }, [form, editingId, treeData, createMutation, updateMutation, batchVisibleMutation, queryClient]);
 
   const handleDelete = useCallback(
     (record: MenuTreeVO) => {
@@ -156,7 +241,6 @@ export function MenuPage() {
     [deleteMutation],
   );
 
-  const treeData = treeQuery.data || [];
   const treeSelectData = buildTreeSelectData(treeData, editingId || undefined);
 
   const columns = [
@@ -199,7 +283,7 @@ export function MenuPage() {
       title: '图标',
       dataIndex: 'icon',
       width: 80,
-      render: (v: string) => v || '-',
+      render: (v: string) => v ? <span title={v}>{iconFromName(v) || v}</span> : '-',
     },
     {
       title: '排序',
@@ -299,6 +383,7 @@ export function MenuPage() {
         onCancel={() => {
           setModalOpen(false);
           setEditingId(null);
+          originalVisibleRef.current = null;
           form.resetFields();
         }}
         confirmLoading={createMutation.isPending || updateMutation.isPending}
@@ -325,20 +410,29 @@ export function MenuPage() {
               <Select options={MENU_TYPE_OPTIONS} />
             </Form.Item>
             <Form.Item
-              name="code"
-              label="菜单编码"
-              rules={[{ required: true, message: '请输入菜单编码' }]}
+              name="name"
+              label="菜单名称"
+              rules={[{ required: true, message: '请输入菜单名称' }]}
               style={{ flex: 1 }}
             >
-              <Input placeholder="如 system_user" maxLength={64} disabled={!!editingId} />
+              <Input
+                placeholder="请输入菜单名称"
+                maxLength={64}
+                onChange={(e) => {
+                  // Auto-generate fields only in create mode
+                  if (!editingId) {
+                    onNameChange(e.target.value);
+                  }
+                }}
+              />
             </Form.Item>
           </Space>
           <Form.Item
-            name="name"
-            label="菜单名称"
-            rules={[{ required: true, message: '请输入菜单名称' }]}
+            name="code"
+            label="菜单编码"
+            rules={[{ required: true, message: '请输入菜单编码' }]}
           >
-            <Input placeholder="请输入菜单名称" maxLength={64} />
+            <Input placeholder="如 system_user" maxLength={64} disabled={!!editingId} />
           </Form.Item>
           <Space size={16} style={{ width: '100%' }}>
             <Form.Item name="path" label="路由路径" style={{ flex: 1 }}>
@@ -353,7 +447,7 @@ export function MenuPage() {
               <Input placeholder="如 user:view" maxLength={128} />
             </Form.Item>
             <Form.Item name="icon" label="图标" style={{ flex: 1 }}>
-              <Input placeholder="图标名称" maxLength={64} />
+              <IconPicker placeholder="选择图标" />
             </Form.Item>
           </Space>
           <Space size={16} style={{ width: '100%' }}>

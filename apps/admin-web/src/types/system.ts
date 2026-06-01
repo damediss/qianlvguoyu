@@ -202,9 +202,12 @@ export interface RolePermissionBindReq {
 }
 
 // ---- Menu ----
+/** ID type that handles both safe integers and large snowflake IDs (stored as strings by json-bigint) */
+type Id = number | string;
+
 export interface MenuTreeVO {
-  id: number;
-  parentId: number;
+  id: Id;
+  parentId: Id;
   menuType: string;
   code: string;
   name: string;
@@ -219,7 +222,7 @@ export interface MenuTreeVO {
 }
 
 export interface MenuCreateReq {
-  parentId: number;
+  parentId: Id;
   menuType: string;
   code: string;
   name: string;
@@ -233,7 +236,7 @@ export interface MenuCreateReq {
 }
 
 export interface MenuUpdateReq {
-  parentId: number;
+  parentId: Id;
   menuType: string;
   name: string;
   path?: string;
@@ -243,6 +246,11 @@ export interface MenuUpdateReq {
   sortOrder?: number;
   visible?: number;
   status: string;
+}
+
+export interface MenuBatchVisibleReq {
+  ids: Id[];
+  visible: number;
 }
 
 // ---- Dict ----

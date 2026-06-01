@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.system.dto.MenuBatchVisibleReq;
 import com.guoyu.platform.system.dto.MenuCreateReq;
 import com.guoyu.platform.system.dto.MenuUpdateReq;
 import com.guoyu.platform.system.service.MenuApplicationService;
@@ -51,6 +52,14 @@ public class MenuController {
   @AuditLog(module = "system", action = "menu:update", targetType = "menu")
   public ApiResponse<MenuTreeVO> update(@PathVariable Long id, @Valid @RequestBody MenuUpdateReq req) {
     return ApiResponse.ok(menuApplicationService.update(id, req));
+  }
+
+  @PutMapping("/batch-visible")
+  @PreAuthorize("hasAuthority('menu:update')")
+  @AuditLog(module = "system", action = "menu:batch-visible", targetType = "menu")
+  public ApiResponse<Void> batchVisible(@Valid @RequestBody MenuBatchVisibleReq req) {
+    menuApplicationService.batchUpdateVisible(req);
+    return ApiResponse.ok();
   }
 
   @DeleteMapping("/{id}")

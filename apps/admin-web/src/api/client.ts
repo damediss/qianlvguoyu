@@ -1,11 +1,26 @@
 import axios from 'axios';
 import { message } from 'antd';
+import JSONBig from 'json-bigint';
 import { useAuthStore } from '../stores/authStore';
 import type { ApiResponse } from '../types/api';
+
+// Use json-bigint to handle large integers (snowflake IDs) without precision loss.
+// Numbers exceeding Number.MAX_SAFE_INTEGER are stored as strings.
+const jsonBig = JSONBig({ storeAsString: true });
 
 export const apiClient = axios.create({
   baseURL: '/api',
   timeout: 20000,
+  transformResponse: [(data) => {
+    if (typeof data === 'string') {
+      try {
+        return jsonBig.parse(data);
+      } catch {
+        return data;
+      }
+    }
+    return data;
+  }],
 });
 
 apiClient.interceptors.request.use((config) => {

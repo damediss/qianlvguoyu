@@ -7,15 +7,9 @@ import { fetchMenus, logout } from '../api/auth';
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore } from '../stores/navStore';
 import type { MenuVO } from '../types/api';
+import { iconFromName } from '../utils/icons';
 
 const { Header, Sider, Content } = Layout;
-
-/** Map icon string name (e.g. "BookOutlined") to a React component at runtime. */
-function iconFromName(name?: string | null): ReactNode {
-  if (!name) return null;
-  const IconComp = (Icons as Record<string, React.ComponentType>)[name];
-  return IconComp ? <IconComp /> : null;
-}
 
 /** Recursively build Ant Design Menu items from the backend menu tree. */
 function buildMenuItems(tree: MenuVO[]): { key: string; icon?: ReactNode; label: string; children?: unknown[] }[] {
