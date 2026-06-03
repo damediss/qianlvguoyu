@@ -76,6 +76,16 @@ body {
   color: inherit !important;
 }
 
+/* Truncate long menu labels with ellipsis so the hover tooltip has something to reveal. */
+.app-sider .app-menu.ant-menu .app-menu-label {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
 .app-sider .app-menu.ant-menu .ant-menu-item:not(.ant-menu-item-selected):hover,
 .app-sider .app-menu.ant-menu .ant-menu-item:not(.ant-menu-item-selected).ant-menu-item-active {
   background: rgba(59, 130, 246, 0.08) !important;

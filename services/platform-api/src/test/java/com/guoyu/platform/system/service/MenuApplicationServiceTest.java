@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.guoyu.platform.system.entity.MenuEntity;
 import com.guoyu.platform.system.mapper.MenuMapper;
+import com.guoyu.platform.system.mapper.RoleMapper;
 import com.guoyu.platform.system.mapper.RoleMenuRelationMapper;
 import com.guoyu.platform.system.vo.MenuTreeVO;
 import java.util.List;
@@ -14,6 +15,7 @@ class MenuApplicationServiceTest {
 
   private final MenuApplicationService service = new MenuApplicationService(
       Mockito.mock(MenuMapper.class),
+      Mockito.mock(RoleMapper.class),
       Mockito.mock(RoleMenuRelationMapper.class)
   );
 

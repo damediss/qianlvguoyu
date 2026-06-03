@@ -1,5 +1,5 @@
 import * as Icons from '@ant-design/icons';
-import { Avatar, Dropdown, Input, Layout, Menu, Space, Typography } from 'antd';
+import { Avatar, Dropdown, Input, Layout, Menu, Space, Tooltip, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -11,14 +11,33 @@ import { iconFromName } from '../utils/icons';
 
 const { Header, Sider, Content } = Layout;
 
-/** Recursively build Ant Design Menu items from the backend menu tree. */
-function buildMenuItems(tree: MenuVO[]): { key: string; icon?: ReactNode; label: string; children?: unknown[] }[] {
+/**
+ * Recursively build Ant Design Menu items from the backend menu tree.
+ *
+ * The label is wrapped in a Tooltip so that truncated menu names are revealed
+ * in full on hover. `overflow: hidden; text-overflow: ellipsis` on the inner
+ * span is what actually triggers the truncation that the tooltip exposes.
+ */
+function buildMenuItems(
+  tree: MenuVO[],
+): { key: string; icon?: ReactNode; label: ReactNode; title: string; children?: unknown[] }[] {
   return tree
     .map((m) => {
-      const item: { key: string; icon?: ReactNode; label: string; children?: unknown[] } = {
+      const item: {
+        key: string;
+        icon?: ReactNode;
+        label: ReactNode;
+        title: string;
+        children?: unknown[];
+      } = {
         key: m.code,
         icon: iconFromName(m.icon),
-        label: m.name,
+        label: (
+          <Tooltip title={m.name} placement="right" mouseEnterDelay={0.2}>
+            <span className="app-menu-label">{m.name}</span>
+          </Tooltip>
+        ),
+        title: m.name,
       };
       if (m.children && m.children.length > 0) {
         item.children = buildMenuItems(m.children);

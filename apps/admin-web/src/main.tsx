@@ -9,6 +9,9 @@ import { KnowledgePage } from './pages/knowledge/KnowledgePage';
 import { WorkTypePage } from './pages/exam/WorkTypePage';
 import { CoursePage } from './pages/exam/CoursePage';
 import { DevTaskDetailPage } from './pages/exam/DevTaskDetailPage';
+import { TaskExamAuditAssignListPage } from './pages/exam/TaskExamAuditAssignListPage';
+import { TaskExamshicaoAuditAssignListPage } from './pages/exam/TaskExamshicaoAuditAssignListPage';
+import { TaskExamsubAuditAssignListPage } from './pages/exam/TaskExamsubAuditAssignListPage';
 import { TrainingInfoPage } from './pages/training/TrainingInfoPage';
 import { TrainingClassPeoplePage } from './pages/training/TrainingClassPeoplePage';
 import { TrainingClassDeclarePage } from './pages/training/TrainingClassDeclarePage';
@@ -37,6 +40,9 @@ import { PersonnelArchivePage } from './pages/zhixunplatform/PersonnelArchivePag
 import { createArchiveTablePage } from './pages/zhixunplatform/ArchiveTablePage';
 import { createPmFormPage } from './pages/zhixunplatform/PmFormPage';
 import { TaskStartPage } from './pages/expert/TaskStartPage';
+import { ExpertTaskExamPage } from './pages/expert/ExpertTaskExamPage';
+import { ExpertTaskExamshicaoPage } from './pages/expert/ExpertTaskExamshicaoPage';
+import { ExpertTaskExamsubPage } from './pages/expert/ExpertTaskExamsubPage';
 
 // Pre-instantiate factory components for stable React references
 const ArchiveEquipmentPage = createArchiveTablePage('equipment');
@@ -83,6 +89,10 @@ const pageMap: Record<string, React.ReactNode> = {
   knowledge: <KnowledgePage />,
   exam_work_type: <WorkTypePage />,
   dev_task_detail: <DevTaskDetailPage />,
+  // 题库审核指派(管理端 3 子菜单,挂在开发任务下)
+  task_exam_audit_assign: <TaskExamAuditAssignListPage />,
+  task_examshicao_audit_assign: <TaskExamshicaoAuditAssignListPage />,
+  task_examsub_audit_assign: <TaskExamsubAuditAssignListPage />,
   exam_course: <CoursePage />,
   'train_info-list': <TrainingInfoPage />,
   'train_people-list': <TrainingClassPeoplePage />,
@@ -130,6 +140,10 @@ const pageMap: Record<string, React.ReactNode> = {
   zhixun_table_status: <PmStatusPage />,
   expert_task_start: <TaskStartPage />,
   expert_task_end: <TaskEndPage />,
+  // 题库审核指派(专家端 3 子菜单,挂在审核任务下)
+  expert_task_exam: <ExpertTaskExamPage />,
+  expert_task_examshicao: <ExpertTaskExamshicaoPage />,
+  expert_task_examsub: <ExpertTaskExamsubPage />,
   // System management pages
   system_tenant: <TenantPage />,
   system_user: <UserPage />,

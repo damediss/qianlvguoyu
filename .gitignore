@@ -29,6 +29,11 @@ target/
 build/
 out/
 
+# Spring Boot fat jar 解压产物 (jar -xf 不小心会泄到根目录)
+BOOT-INF/
+META-INF/
+org/
+
 # Logs and runtime
 *.log
 logs/
@@ -42,3 +47,16 @@ outputs/**/.cache/
 .npm-cache/
 /data/cdn/
 /.qoder/
+/app-stderr.log
+/app-stdout.log
+/app-web-stderr.log
+/app-web-stdout.log
+/deliverable-backend.md
+/deliverable-frontend.md
+/deliverable-frontend.previous.md
+/deliverable-frontend-build.log
+/deliverable-frontend-build2.log
+/deliverable-frontend-build3.log
+/deliverable-frontend-tsc.log
+/deliverable-frontend-vite.log
+/.mavis/

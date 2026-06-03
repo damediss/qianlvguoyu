@@ -9,6 +9,7 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.dto.UserCreateReq;
 import com.guoyu.platform.system.mapper.OrgMapper;
+import com.guoyu.platform.system.mapper.PostMapper;
 import com.guoyu.platform.system.mapper.RoleMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.system.mapper.UserRoleMapper;
@@ -26,6 +27,7 @@ class UserApplicationServiceTest {
 
   private final UserMapper userMapper = Mockito.mock(UserMapper.class);
   private final OrgMapper orgMapper = Mockito.mock(OrgMapper.class);
+  private final PostMapper postMapper = Mockito.mock(PostMapper.class);
   private final RoleMapper roleMapper = Mockito.mock(RoleMapper.class);
   private final UserRoleMapper userRoleMapper = Mockito.mock(UserRoleMapper.class);
   private final UserRoleRelationMapper userRoleRelationMapper = Mockito.mock(UserRoleRelationMapper.class);
@@ -33,6 +35,7 @@ class UserApplicationServiceTest {
   private final UserApplicationService service = new UserApplicationService(
       userMapper,
       orgMapper,
+      postMapper,
       roleMapper,
       userRoleMapper,
       userRoleRelationMapper,
@@ -68,6 +71,7 @@ class UserApplicationServiceTest {
 
     UserCreateReq req = new UserCreateReq(
         100L,
+        null,
         "admin",
         "Admin@123456",
         "平台管理员",

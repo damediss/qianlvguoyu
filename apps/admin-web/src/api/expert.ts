@@ -6,6 +6,11 @@ import type {
   ExpertAuditItem,
   ExpertSubmitReq,
   XimuListResponse,
+  ExpertMyTaskVO,
+  ExpertMyTaskQuery,
+  ExpertTaskDetailVO,
+  ExpertTaskSubmitReq,
+  ExpertTaskSubmitResp,
 } from '../types/expert';
 
 export function pageStartTasks(params: ExpertTaskQuery) {
@@ -46,4 +51,44 @@ export function getXimuList(taskId: number, role: number) {
 
 export function submitXimu(payload: ExpertSubmitReq) {
   return unwrap<{ count: number; total: number; isdone: number }>(apiClient.post('/expert/ximu-submit', payload));
+}
+
+// ---- 题库审核指派 - 专家端(理论/实操/主观) ----
+// 3 套 × 3 方法 = 9 个函数
+// URL 前缀:
+//   /expert/task-exams         理论题
+//   /expert/task-examshicaos   实操题
+//   /expert/task-examsubs      主观题
+
+// 理论题 - exam
+export function pageMyTaskExams(params: ExpertMyTaskQuery) {
+  return unwrap<PageResponse<ExpertMyTaskVO>>(apiClient.get('/expert/task-exams', { params }));
+}
+export function getExpertTaskExamDetail(id: number) {
+  return unwrap<ExpertTaskDetailVO>(apiClient.get(`/expert/task-exams/${id}`));
+}
+export function submitExpertTaskExam(id: number, payload: ExpertTaskSubmitReq) {
+  return unwrap<ExpertTaskSubmitResp>(apiClient.post(`/expert/task-exams/${id}/submit`, payload));
+}
+
+// 实操题 - examshicao
+export function pageMyTaskExamshicaos(params: ExpertMyTaskQuery) {
+  return unwrap<PageResponse<ExpertMyTaskVO>>(apiClient.get('/expert/task-examshicaos', { params }));
+}
+export function getExpertTaskExamshicaoDetail(id: number) {
+  return unwrap<ExpertTaskDetailVO>(apiClient.get(`/expert/task-examshicaos/${id}`));
+}
+export function submitExpertTaskExamshicao(id: number, payload: ExpertTaskSubmitReq) {
+  return unwrap<ExpertTaskSubmitResp>(apiClient.post(`/expert/task-examshicaos/${id}/submit`, payload));
+}
+
+// 主观题 - examsub
+export function pageMyTaskExamsubs(params: ExpertMyTaskQuery) {
+  return unwrap<PageResponse<ExpertMyTaskVO>>(apiClient.get('/expert/task-examsubs', { params }));
+}
+export function getExpertTaskExamsubDetail(id: number) {
+  return unwrap<ExpertTaskDetailVO>(apiClient.get(`/expert/task-examsubs/${id}`));
+}
+export function submitExpertTaskExamsub(id: number, payload: ExpertTaskSubmitReq) {
+  return unwrap<ExpertTaskSubmitResp>(apiClient.post(`/expert/task-examsubs/${id}/submit`, payload));
 }

@@ -16,6 +16,9 @@ public class ExamTaskExamsubDetailEntity {
   private String zhishidian;
   private String content;
   private String answer;
+  private Integer isJisuan;
+  private String nanyicd;
+  private Integer isblod;
   private String pic;
   private Integer tenantId;
 
@@ -37,6 +40,12 @@ public class ExamTaskExamsubDetailEntity {
   public void setContent(String content) { this.content = content; }
   public String getAnswer() { return answer; }
   public void setAnswer(String answer) { this.answer = answer; }
+  public Integer getIsJisuan() { return isJisuan; }
+  public void setIsJisuan(Integer isJisuan) { this.isJisuan = isJisuan; }
+  public String getNanyicd() { return nanyicd; }
+  public void setNanyicd(String nanyicd) { this.nanyicd = nanyicd; }
+  public Integer getIsblod() { return isblod; }
+  public void setIsblod(Integer isblod) { this.isblod = isblod; }
   public String getPic() { return pic; }
   public void setPic(String pic) { this.pic = pic; }
   public Integer getTenantId() { return tenantId; }

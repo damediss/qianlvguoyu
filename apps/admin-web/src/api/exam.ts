@@ -18,6 +18,11 @@ import type {
   ExamTaskXimuQuery,
   ExamTaskXimuAssignExpertReq,
   PublicData,
+  TaskAuditVO,
+  TaskAuditQuery,
+  TaskAuditDetailItem,
+  TaskAuditDaily,
+  TaskAuditAssignExpertReq,
 } from '../types/exam';
 
 export function pageWorkTypes(params: ExamWorkTypeQuery) {
@@ -122,4 +127,70 @@ export function exportTaskXimu(id: number) {
 
 export function getPublicData() {
   return unwrap<PublicData>(apiClient.get('/exam/public-data'));
+}
+
+// ---- 题库审核指派 - 管理端(理论/实操/主观) ----
+// 理论题(exam) / 实操(examshicao) / 主观(examsub) 各自一套 6 个函数
+// 共 18 个函数,后台 URL 前缀:
+//   /exam/task-exams         /exam/task-examshicaos         /exam/task-examsubs
+//   /exam/task-exams/{id}    /exam/task-examshicaos/{id}    /exam/task-examsubs/{id}
+
+// 理论题 - exam
+export function pageTaskExamAudits(params: TaskAuditQuery) {
+  return unwrap<PageResponse<TaskAuditVO>>(apiClient.get('/exam/task-exams', { params }));
+}
+export function getTaskExamAuditDetails(taskId: number) {
+  return unwrap<TaskAuditDetailItem[]>(apiClient.get(`/exam/task-exams/${taskId}/details`));
+}
+export function deleteTaskExamAudit(id: number) {
+  return unwrap<void>(apiClient.delete(`/exam/task-exams/${id}`));
+}
+export function assignTaskExamAuditExpert(taskId: number, payload: TaskAuditAssignExpertReq) {
+  return unwrap<void>(apiClient.post(`/exam/task-exams/${taskId}/assign-expert`, payload));
+}
+export function getTaskExamAuditDaily(taskId: number, role: number) {
+  return unwrap<TaskAuditDaily[]>(apiClient.get(`/exam/task-exams/${taskId}/daily`, { params: { role } }));
+}
+export function exportTaskExamAudit(id: number) {
+  return apiClient.get(`/exam/task-exams/${id}/export`, { responseType: 'blob' });
+}
+
+// 实操题 - examshicao
+export function pageTaskExamshicaoAudits(params: TaskAuditQuery) {
+  return unwrap<PageResponse<TaskAuditVO>>(apiClient.get('/exam/task-examshicaos', { params }));
+}
+export function getTaskExamshicaoAuditDetails(taskId: number) {
+  return unwrap<TaskAuditDetailItem[]>(apiClient.get(`/exam/task-examshicaos/${taskId}/details`));
+}
+export function deleteTaskExamshicaoAudit(id: number) {
+  return unwrap<void>(apiClient.delete(`/exam/task-examshicaos/${id}`));
+}
+export function assignTaskExamshicaoAuditExpert(taskId: number, payload: TaskAuditAssignExpertReq) {
+  return unwrap<void>(apiClient.post(`/exam/task-examshicaos/${taskId}/assign-expert`, payload));
+}
+export function getTaskExamshicaoAuditDaily(taskId: number, role: number) {
+  return unwrap<TaskAuditDaily[]>(apiClient.get(`/exam/task-examshicaos/${taskId}/daily`, { params: { role } }));
+}
+export function exportTaskExamshicaoAudit(id: number) {
+  return apiClient.get(`/exam/task-examshicaos/${id}/export`, { responseType: 'blob' });
+}
+
+// 主观题 - examsub
+export function pageTaskExamsubAudits(params: TaskAuditQuery) {
+  return unwrap<PageResponse<TaskAuditVO>>(apiClient.get('/exam/task-examsubs', { params }));
+}
+export function getTaskExamsubAuditDetails(taskId: number) {
+  return unwrap<TaskAuditDetailItem[]>(apiClient.get(`/exam/task-examsubs/${taskId}/details`));
+}
+export function deleteTaskExamsubAudit(id: number) {
+  return unwrap<void>(apiClient.delete(`/exam/task-examsubs/${id}`));
+}
+export function assignTaskExamsubAuditExpert(taskId: number, payload: TaskAuditAssignExpertReq) {
+  return unwrap<void>(apiClient.post(`/exam/task-examsubs/${taskId}/assign-expert`, payload));
+}
+export function getTaskExamsubAuditDaily(taskId: number, role: number) {
+  return unwrap<TaskAuditDaily[]>(apiClient.get(`/exam/task-examsubs/${taskId}/daily`, { params: { role } }));
+}
+export function exportTaskExamsubAudit(id: number) {
+  return apiClient.get(`/exam/task-examsubs/${id}/export`, { responseType: 'blob' });
 }
