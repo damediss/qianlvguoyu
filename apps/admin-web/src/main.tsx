@@ -40,9 +40,6 @@ import { PersonnelArchivePage } from './pages/zhixunplatform/PersonnelArchivePag
 import { createArchiveTablePage } from './pages/zhixunplatform/ArchiveTablePage';
 import { createPmFormPage } from './pages/zhixunplatform/PmFormPage';
 import { TaskStartPage } from './pages/expert/TaskStartPage';
-import { ExpertTaskExamPage } from './pages/expert/ExpertTaskExamPage';
-import { ExpertTaskExamshicaoPage } from './pages/expert/ExpertTaskExamshicaoPage';
-import { ExpertTaskExamsubPage } from './pages/expert/ExpertTaskExamsubPage';
 
 // Pre-instantiate factory components for stable React references
 const ArchiveEquipmentPage = createArchiveTablePage('equipment');
@@ -140,10 +137,6 @@ const pageMap: Record<string, React.ReactNode> = {
   zhixun_table_status: <PmStatusPage />,
   expert_task_start: <TaskStartPage />,
   expert_task_end: <TaskEndPage />,
-  // 题库审核指派(专家端 3 子菜单,挂在审核任务下)
-  expert_task_exam: <ExpertTaskExamPage />,
-  expert_task_examshicao: <ExpertTaskExamshicaoPage />,
-  expert_task_examsub: <ExpertTaskExamsubPage />,
   // System management pages
   system_tenant: <TenantPage />,
   system_user: <UserPage />,

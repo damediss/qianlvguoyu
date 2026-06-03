@@ -30,14 +30,18 @@ public class ExpertAuditController {
 
   @GetMapping("/start-tasks")
   @PreAuthorize("hasAuthority('task:audit:start:view')")
-  public ApiResponse<PageResponse<ExpertTaskVO>> startTasks(@Valid @ModelAttribute ExpertTaskQueryReq req) {
-    return ApiResponse.ok(service.pageStartTasks(req));
+  public ApiResponse<PageResponse<ExpertTaskVO>> startTasks(
+      @Valid @ModelAttribute ExpertTaskQueryReq req,
+      @RequestParam(required = false) String taskType) {
+    return ApiResponse.ok(service.pageStartTasks(req, taskType));
   }
 
   @GetMapping("/end-tasks")
   @PreAuthorize("hasAuthority('task:audit:end:view')")
-  public ApiResponse<PageResponse<ExpertTaskVO>> endTasks(@Valid @ModelAttribute ExpertTaskQueryReq req) {
-    return ApiResponse.ok(service.pageEndTasks(req));
+  public ApiResponse<PageResponse<ExpertTaskVO>> endTasks(
+      @Valid @ModelAttribute ExpertTaskQueryReq req,
+      @RequestParam(required = false) String taskType) {
+    return ApiResponse.ok(service.pageEndTasks(req, taskType));
   }
 
   @GetMapping("/exam-list")

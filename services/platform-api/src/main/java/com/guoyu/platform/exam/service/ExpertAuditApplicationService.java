@@ -113,29 +113,37 @@ public class ExpertAuditApplicationService {
   }
 
   @Transactional(readOnly = true)
-  public PageResponse<ExpertTaskVO> pageStartTasks(ExpertTaskQueryReq req) {
-    return pageTasks(req, 0);
+  public PageResponse<ExpertTaskVO> pageStartTasks(ExpertTaskQueryReq req, String taskType) {
+    return pageTasks(req, 0, taskType);
   }
 
   @Transactional
-  public PageResponse<ExpertTaskVO> pageEndTasks(ExpertTaskQueryReq req) {
+  public PageResponse<ExpertTaskVO> pageEndTasks(ExpertTaskQueryReq req, String taskType) {
     tryAutoCompleteEndTasks();
-    return pageTasks(req, 1);
+    return pageTasks(req, 1, taskType);
   }
 
-  private PageResponse<ExpertTaskVO> pageTasks(ExpertTaskQueryReq req, int taskRole) {
+  private PageResponse<ExpertTaskVO> pageTasks(ExpertTaskQueryReq req, int taskRole, String taskType) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
-    log.info("expert task list, tenant={}, userId={}, role={}, page={}", tenantId, userId, taskRole, req.getPage());
+    log.info("expert task list, tenant={}, userId={}, role={}, taskType={}, page={}", tenantId, userId, taskRole, taskType, req.getPage());
+
+    // 4 种合法 taskType
+    java.util.Set<String> allowedTypes = java.util.Set.of("exam", "examshicao", "examsub", "ximu");
+    String filterType = (taskType != null && !taskType.isEmpty() && allowedTypes.contains(taskType)) ? taskType : null;
 
     // debug: check raw DB count
-    long rawCount = expertMapper.selectCount(new LambdaQueryWrapper<ExamTaskXimuExpertEntity>()
+    LambdaQueryWrapper<ExamTaskXimuExpertEntity> countWrapper = new LambdaQueryWrapper<ExamTaskXimuExpertEntity>()
         .eq(ExamTaskXimuExpertEntity::getTenantId, tenantId.intValue())
         .eq(ExamTaskXimuExpertEntity::getExpertId, userId.intValue())
         .eq(ExamTaskXimuExpertEntity::getTaskRole, taskRole)
-        .in(ExamTaskXimuExpertEntity::getTag, List.of("exam", "examshicao", "examsub", "ximu")));
-    log.info(">>> DEBUG start/end tasks: tenantId={}, userId={}, taskRole={}, rawCount={}",
-        tenantId, userId, taskRole, rawCount);
+        .in(ExamTaskXimuExpertEntity::getTag, List.of("exam", "examshicao", "examsub", "ximu"));
+    if (filterType != null) {
+      countWrapper.eq(ExamTaskXimuExpertEntity::getTag, filterType);
+    }
+    long rawCount = expertMapper.selectCount(countWrapper);
+    log.info(">>> DEBUG start/end tasks: tenantId={}, userId={}, taskRole={}, taskType={}, rawCount={}",
+        tenantId, userId, taskRole, filterType, rawCount);
 
 
     LambdaQueryWrapper<ExamTaskXimuExpertEntity> wrapper = new LambdaQueryWrapper<ExamTaskXimuExpertEntity>()
@@ -143,6 +151,9 @@ public class ExpertAuditApplicationService {
         .eq(ExamTaskXimuExpertEntity::getExpertId, userId.intValue())
         .eq(ExamTaskXimuExpertEntity::getTaskRole, taskRole)
         .in(ExamTaskXimuExpertEntity::getTag, List.of("exam", "examshicao", "examsub", "ximu"));
+    if (filterType != null) {
+      wrapper.eq(ExamTaskXimuExpertEntity::getTag, filterType);
+    }
 
     if (req.getStatus() != null && req.getStatus() > 0) {
       if (req.getStatus() == 1) {

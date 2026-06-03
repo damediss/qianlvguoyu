@@ -1,7 +1,7 @@
 import * as Icons from '@ant-design/icons';
 import { Avatar, Dropdown, Input, Layout, Menu, Space, Tooltip, Typography } from 'antd';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { fetchMenus, logout } from '../api/auth';
 import { useAuthStore } from '../stores/authStore';
@@ -12,11 +12,47 @@ import { iconFromName } from '../utils/icons';
 const { Header, Sider, Content } = Layout;
 
 /**
+ * Render a menu label and only attach the hover Tooltip when the text is
+ * actually truncated (i.e. the inner span would show an ellipsis). Untruncated
+ * labels render as plain text so we don't display the full name twice.
+ */
+function TruncatedLabel({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [truncated, setTruncated] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setTruncated(el.scrollWidth > el.clientWidth);
+    update();
+    // Re-check when the sidebar is resized or fonts load.
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [text]);
+
+  const label = (
+    <span ref={ref} className="app-menu-label">
+      {text}
+    </span>
+  );
+
+  if (!truncated) {
+    return label;
+  }
+
+  return (
+    <Tooltip title={text} placement="right" mouseEnterDelay={0.2}>
+      {label}
+    </Tooltip>
+  );
+}
+
+/**
  * Recursively build Ant Design Menu items from the backend menu tree.
  *
- * The label is wrapped in a Tooltip so that truncated menu names are revealed
- * in full on hover. `overflow: hidden; text-overflow: ellipsis` on the inner
- * span is what actually triggers the truncation that the tooltip exposes.
+ * The label is rendered through `TruncatedLabel` so the hover Tooltip only
+ * appears for menu names that overflow into an ellipsis.
  */
 function buildMenuItems(
   tree: MenuVO[],
@@ -32,11 +68,7 @@ function buildMenuItems(
       } = {
         key: m.code,
         icon: iconFromName(m.icon),
-        label: (
-          <Tooltip title={m.name} placement="right" mouseEnterDelay={0.2}>
-            <span className="app-menu-label">{m.name}</span>
-          </Tooltip>
-        ),
+        label: <TruncatedLabel text={m.name} />,
         title: m.name,
       };
       if (m.children && m.children.length > 0) {
