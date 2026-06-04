@@ -48,6 +48,14 @@ mybatis-plus:
       logic-delete-value: 1
       logic-not-delete-value: 0
 
+flowable:
+  database-schema-update: ${FLOWABLE_DATABASE_SCHEMA_UPDATE:true}
+  async-executor-activate: false
+  process-definition-location-prefix: classpath*:/workflows/bpmn/
+  process-definition-location-suffixes:
+    - "**.bpmn20.xml"
+    - "**.bpmn"
+
 platform:
   security:
     jwt-secret: ${JWT_SECRET:dev-only-change-me-dev-only-change-me}
