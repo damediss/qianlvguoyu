@@ -280,21 +280,30 @@ export interface TaskAuditDetailItem {
   zhishidian?: string;
   answer?: string;
   isJisuan?: number;
+  pic?: string;
   // 初审/终审 child 审核记录
   children?: TaskAuditDetailChild[];
 }
 
 export interface TaskAuditDetailChild {
   id: string; // "初审" or "终审"
+  examId?: number;
   expertId?: number;
   expertName?: string;
   auditStatus?: number;
-  auditContent?: string;
-  auditAnswer?: string;
+  // 理论题审核字段
+  examContent?: string;
+  examAnswer?: string;
   auditIsblod?: number;
-  auditPingfen?: string;
-  auditKaochang?: string;
-  auditKaosheng?: string;
+  // 实操题审核字段
+  content?: string;
+  answer?: string;
+  pingfen?: string;
+  kaochang?: string;
+  kaosheng?: string;
+  // 主观题审核字段
+  pic?: string;
+  // 通用
   addtimeCn?: string;
   [key: string]: unknown;
 }
@@ -336,6 +345,7 @@ export interface TaskAuditDetailColumnLabels {
   examAnswer?: string;
   isblod?: string;
   // 实操
+  jianding?: string;
   content?: string;
   pingfen?: string;
   kaochang?: string;
@@ -344,4 +354,15 @@ export interface TaskAuditDetailColumnLabels {
   zhishidian?: string;
   answer?: string;
   isJisuan?: string;
+  nanyicd?: string;
+}
+
+// 实操题"评分"列的子表 item schema
+// 对应后端 exam_task_examshicao_detail.pingfen(JSON 数组)
+export interface PingfenItem {
+  yaosu?: string;       // 要素
+  peifen?: string;      // 配分
+  biaozhun?: string;    // 评分标准
+  koufen?: string;      // 最大扣分
+  buchang?: string;     // 步长
 }

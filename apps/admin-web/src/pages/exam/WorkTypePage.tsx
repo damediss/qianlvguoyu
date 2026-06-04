@@ -340,6 +340,8 @@ export function WorkTypePage() {
           <Form.Item name="parentId" label="上级工种">
             <TreeSelect
               allowClear
+              showSearch
+              treeNodeFilterProp="title"
               placeholder="不选则为顶级工种"
               treeData={parentTreeData}
               treeDefaultExpandAll

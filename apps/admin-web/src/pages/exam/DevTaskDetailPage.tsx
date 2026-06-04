@@ -36,6 +36,7 @@ import {
   getPublicData,
 } from '../../api/exam';
 import { useAuthStore } from '../../stores/authStore';
+import { parseContentDispositionFilename } from '../../utils/download';
 import type {
   ExamTaskXimu,
   ExamTaskXimuDetail,
@@ -230,7 +231,7 @@ export function DevTaskDetailPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `ximu_${row.id}.xlsx`;
+      a.download = parseContentDispositionFilename(resp) ?? `${row.id}_${row.workTypeCn}_${row.levelCn}_细目.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {

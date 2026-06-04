@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.exam.dto.ExamTaskExamshicaoAssignExpertReq;
 import com.guoyu.platform.exam.entity.ExamTaskExamshicaoAuditRecordEntity;
@@ -46,7 +47,8 @@ class ExamTaskExamshicaoApplicationServiceTest {
 
   private final ExamTaskExamshicaoApplicationService service = new ExamTaskExamshicaoApplicationService(
       taskMapper, detailMapper, auditMapper, expertMapper,
-      userMapper, userRoleMapper, roleMapper, helper, workTypeService);
+      userMapper, userRoleMapper, roleMapper, helper, workTypeService,
+      Mockito.mock(ObjectMapper.class));
 
   @BeforeEach
   void setUp() {

@@ -194,3 +194,20 @@ export function getTaskExamsubAuditDaily(taskId: number, role: number) {
 export function exportTaskExamsubAudit(id: number) {
   return apiClient.get(`/exam/task-examsubs/${id}/export`, { responseType: 'blob' });
 }
+
+// ---- 题库审核指派 - 导入(理论/实操/主观 3 端点) ----
+// 服务端 @PostMapping 接 MultipartFile + workTypeId(Integer) + level(Integer)
+// 权限: task:exam-audit:import / task:examshicao-audit:import / task:examsub-audit:import
+// 返回 Integer:成功导入的题数
+
+export function importTaskExam(formData: FormData) {
+  return unwrap<number>(apiClient.post('/exam/task-exams/import', formData));
+}
+
+export function importTaskExamshicao(formData: FormData) {
+  return unwrap<number>(apiClient.post('/exam/task-examshicaos/import', formData));
+}
+
+export function importTaskExamsub(formData: FormData) {
+  return unwrap<number>(apiClient.post('/exam/task-examsubs/import', formData));
+}

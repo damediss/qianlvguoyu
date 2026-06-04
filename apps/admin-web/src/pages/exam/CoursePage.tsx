@@ -328,6 +328,8 @@ export function CoursePage() {
           <Form.Item name="workTypeId" label="关联工种">
             <TreeSelect
               allowClear
+              showSearch
+              treeNodeFilterProp="title"
               placeholder="不选则为独立科目"
               treeData={workTypeTreeData}
               treeDefaultExpandAll

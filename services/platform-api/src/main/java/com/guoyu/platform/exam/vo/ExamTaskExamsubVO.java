@@ -18,6 +18,8 @@ public class ExamTaskExamsubVO implements Serializable {
   private Integer expertEnd;
   private String expertEndName;
   private String filePath;
+  private String fileUrl;
+  private String fileType;
   private LocalDateTime addtime;
   private String addtimeCn;
 
@@ -47,6 +49,10 @@ public class ExamTaskExamsubVO implements Serializable {
   public void setExpertEndName(String expertEndName) { this.expertEndName = expertEndName; }
   public String getFilePath() { return filePath; }
   public void setFilePath(String filePath) { this.filePath = filePath; }
+  public String getFileUrl() { return fileUrl; }
+  public void setFileUrl(String fileUrl) { this.fileUrl = fileUrl; }
+  public String getFileType() { return fileType; }
+  public void setFileType(String fileType) { this.fileType = fileType; }
   public LocalDateTime getAddtime() { return addtime; }
   public void setAddtime(LocalDateTime addtime) { this.addtime = addtime; }
   public String getAddtimeCn() { return addtimeCn; }

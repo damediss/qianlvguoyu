@@ -2,6 +2,8 @@ package com.guoyu.platform.exam.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
@@ -21,6 +23,7 @@ import com.guoyu.platform.exam.vo.ExamTaskExamshicaoDailyVO;
 import com.guoyu.platform.exam.vo.ExamTaskExamshicaoDetailChildVO;
 import com.guoyu.platform.exam.vo.ExamTaskExamshicaoDetailVO;
 import com.guoyu.platform.exam.vo.ExamTaskExamshicaoVO;
+import com.guoyu.platform.exam.vo.ExportResultDTO;
 import com.guoyu.platform.exam.vo.ExamWorkTypeVO;
 import com.guoyu.platform.exam.vo.ExpertVO;
 import com.guoyu.platform.exam.vo.PublicDataVO;
@@ -31,17 +34,31 @@ import com.guoyu.platform.system.entity.UserRoleEntity;
 import com.guoyu.platform.system.mapper.RoleMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.system.mapper.UserRoleRelationMapper;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 管理端 - 题库实操审核指派 (菜单 4711)。tag = "examshicao"。
@@ -63,6 +80,15 @@ public class ExamTaskExamshicaoApplicationService {
   private final RoleMapper roleMapper;
   private final TaskAuditAssignHelper helper;
   private final ExamWorkTypeApplicationService workTypeService;
+  private final ObjectMapper objectMapper;
+
+  // 为保留旧版数据,id>41 之前的是老数据,新导入要避开。
+  private static final int LEGACY_TASK_ID_LIMIT = 41;
+
+  @Value("${platform.cdn.path:./data/cdn}")
+  private String cdnPath;
+  @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}")
+  private String cdnUrl;
 
   public ExamTaskExamshicaoApplicationService(
       ExamTaskExamshicaoMapper taskMapper,
@@ -73,7 +99,8 @@ public class ExamTaskExamshicaoApplicationService {
       UserRoleRelationMapper userRoleMapper,
       RoleMapper roleMapper,
       TaskAuditAssignHelper helper,
-      ExamWorkTypeApplicationService workTypeService) {
+      ExamWorkTypeApplicationService workTypeService,
+      ObjectMapper objectMapper) {
     this.taskMapper = taskMapper;
     this.detailMapper = detailMapper;
     this.auditMapper = auditMapper;
@@ -83,6 +110,7 @@ public class ExamTaskExamshicaoApplicationService {
     this.roleMapper = roleMapper;
     this.helper = helper;
     this.workTypeService = workTypeService;
+    this.objectMapper = objectMapper;
   }
 
   // 不要 @Transactional(readOnly = true):helper 会做 UPDATE
@@ -133,15 +161,22 @@ public class ExamTaskExamshicaoApplicationService {
 
     Map<Integer, Map<Integer, ExamTaskExamshicaoAuditRecordEntity>> sMap = new LinkedHashMap<>();
     Map<Integer, Map<Integer, ExamTaskExamshicaoAuditRecordEntity>> eMap = new LinkedHashMap<>();
+    Set<Integer> expertIds = new HashSet<>();
     for (ExamTaskExamshicaoAuditRecordEntity a : audits) {
       boolean isEnd = a.getAuditRole() != null && a.getAuditRole() > 0;
       var target = isEnd ? eMap : sMap;
       target.computeIfAbsent(a.getExamId(), k -> new LinkedHashMap<>()).put(a.getExpertId(), a);
+      if (a.getExpertId() != null) expertIds.add(a.getExpertId());
     }
+    Map<Integer, String> expertNames = helper.loadUserDisplayNames(expertIds);
+
     List<ExamTaskExamshicaoDetailVO> vos = new ArrayList<>();
     for (ExamTaskExamshicaoDetailEntity d : details) {
       ExamTaskExamshicaoDetailVO vo = toDetailVO(d);
-      vo.setChildren(buildChildren(sMap.getOrDefault(d.getId(), Map.of()), eMap.getOrDefault(d.getId(), Map.of())));
+      vo.setChildren(buildChildren(
+          sMap.getOrDefault(d.getId(), Map.of()),
+          eMap.getOrDefault(d.getId(), Map.of()),
+          expertNames));
       vos.add(vo);
     }
     return vos;
@@ -235,6 +270,156 @@ public class ExamTaskExamshicaoApplicationService {
     return vo;
   }
 
+  // ─── importExcel ───
+  // 对应老 PHP /yuntiku/upload?type=examshicao → examshicaoUpload()
+  // Excel 列:0 鉴定点 / 1 题目内容 / 2 考场准备 / 3 考生准备 / 4 评分要素 / 5 配分 / 6 评分标准 / 7 扣分 / 8 补偿
+  // 多行评分要素可挂在同一鉴定点下,会被合并为 pingfen JSON 数组。
+  // 查重要带 id>41 限制(老 PHP 行为),防止跟老版数据冲突。
+  @Transactional
+  public int importExcel(MultipartFile file, Integer workTypeId, Integer level) {
+    Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
+    Long userId = SecurityContext.currentUser().getUserId();
+    log.info("task_examshicao import, tenant={}, workTypeId={}, level={}, by={}",
+        tenantId, workTypeId, level, userId);
+
+    if (workTypeId == null || workTypeId <= 0 || level == null || level <= 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择工种和等级");
+    }
+
+    // 查重:PHP 老逻辑是 work_type_id + level + id>41(老 id<=41 的数据不算)
+    LambdaQueryWrapper<ExamTaskExamshicaoEntity> dup = new LambdaQueryWrapper<ExamTaskExamshicaoEntity>()
+        .eq(ExamTaskExamshicaoEntity::getTenantId, tenantId)
+        .eq(ExamTaskExamshicaoEntity::getWorkTypeId, workTypeId)
+        .eq(ExamTaskExamshicaoEntity::getLevel, level)
+        .gt(ExamTaskExamshicaoEntity::getId, LEGACY_TASK_ID_LIMIT);
+    if (taskMapper.exists(dup)) {
+      throw new BusinessException(ErrorCode.CONFLICT, "该工种等级已存在");
+    }
+
+    String filePath;
+    try {
+      filePath = saveFile(file, tenantId);
+    } catch (IOException e) {
+      log.error("Failed to save uploaded file", e);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "文件保存失败");
+    }
+
+    Path fullPath = Paths.get(cdnPath, filePath);
+    List<List<String>> rows;
+    try (InputStream is = Files.newInputStream(fullPath)) {
+      Workbook workbook = WorkbookFactory.create(is);
+      Sheet sheet = workbook.getSheetAt(0);
+      DataFormatter fmt = new DataFormatter();
+      int lastRow = sheet.getLastRowNum();
+      rows = new ArrayList<>();
+      for (int i = 0; i <= lastRow; i++) {
+        Row row = sheet.getRow(i);
+        if (row == null) { rows.add(List.of()); continue; }
+        List<String> cells = new ArrayList<>();
+        int lastCol = row.getLastCellNum();
+        for (int j = 0; j < lastCol; j++) {
+          var cell = row.getCell(j);
+          cells.add(cell == null ? "" : fmt.formatCellValue(cell).trim());
+        }
+        rows.add(cells);
+      }
+      workbook.close();
+    } catch (BusinessException e) {
+      delSilent(fullPath);
+      throw e;
+    } catch (Exception e) {
+      delSilent(fullPath);
+      log.error("Excel parse failed", e);
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "Excel解析失败: " + e.getMessage());
+    }
+
+    // 创建任务(参考 PHP:先 insertRow,拿到 task_id 再写 details,最后 updateRow nums)
+    ExamTaskExamshicaoEntity task = new ExamTaskExamshicaoEntity();
+    task.setTenantId(tenantId);
+    task.setWorkTypeId(workTypeId);
+    task.setLevel(level);
+    task.setNums(0);
+    task.setStatus(0);
+    task.setFilePath(filePath);
+    task.setAddtime(LocalDateTime.now());
+    task.setDeleted(0);
+    taskMapper.insert(task);
+
+    // 解析 rows(行 0 是表头,跳过)
+    // 重构:同一鉴定点下的多行评分数据合并到一个 pingfen JSON 数组中(PHP 行为)
+    int count = 0;
+    int rowIdx = 0;
+    String lastJianding = null;
+    List<LinkedHashMap<String, String>> pendingPingfen = null; // 当前鉴定点累积的评分项
+    ExamTaskExamshicaoDetailEntity currentDetail = null;       // 当前鉴定点的 detail 记录
+
+    for (List<String> el : rows) {
+      rowIdx++;
+      if (rowIdx == 1) continue;                                   // skip header
+      if (el.isEmpty() || el.stream().allMatch(String::isEmpty)) continue;
+
+      String jianding = cell(el, 0);
+      String content  = cell(el, 1);
+      String kaochang = cell(el, 2);
+      String kaosheng = cell(el, 3);
+      String yaosu    = cell(el, 4);
+      String peifen   = cell(el, 5);
+      String biaozhun = cell(el, 6);
+      String koufen   = cell(el, 7);
+      String buchang  = cell(el, 8);
+
+      if (!jianding.isEmpty()) {
+        // 新鉴定点:先 flush 上一个鉴定点的 detail
+        flushDetail(currentDetail, pendingPingfen);
+
+        // content / yaosu / peifen / biaozhun / koufen / buchang 都必须有效
+        if (content.isEmpty() || yaosu.isEmpty() || parseIntOrZero(peifen) == 0
+            || biaozhun.isEmpty() || parseIntOrZero(koufen) == 0 || parseIntOrZero(buchang) == 0) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST,
+              "第" + rowIdx + "行数据有列为空或为0");
+        }
+        lastJianding = jianding;
+        pendingPingfen = new ArrayList<>();
+        pendingPingfen.add(buildPingfenItem(yaosu, peifen, biaozhun, koufen, buchang));
+
+        currentDetail = new ExamTaskExamshicaoDetailEntity();
+        currentDetail.setTenantId(tenantId);
+        currentDetail.setTaskId(task.getId());
+        currentDetail.setJianding(jianding);
+        currentDetail.setContent(content);
+        currentDetail.setKaochang(kaochang);
+        currentDetail.setKaosheng(kaosheng);
+        currentDetail.setDeleted(0);
+        count++;
+      } else {
+        // 续行:yaosu 空表示文件结束(PHP 老逻辑 break)
+        if (yaosu.isEmpty()) break;
+        // yaosu / peifen / biaozhun / koufen / buchang 必须有效
+        if (parseIntOrZero(peifen) == 0 || biaozhun.isEmpty()
+            || parseIntOrZero(koufen) == 0 || parseIntOrZero(buchang) == 0) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST,
+              "第" + rowIdx + "行数据有列为空或为0");
+        }
+        if (lastJianding == null || pendingPingfen == null) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST,
+              "第" + rowIdx + "行缺少鉴定点,请检查数据");
+        }
+        // 追加评分项到当前鉴定点的 pingfen 数组
+        pendingPingfen.add(buildPingfenItem(yaosu, peifen, biaozhun, koufen, buchang));
+      }
+    }
+
+    // flush 最后一个鉴定点
+    flushDetail(currentDetail, pendingPingfen);
+
+    if (count > 0) {
+      task.setNums(count);
+      taskMapper.updateById(task);
+    }
+    log.info("task_examshicao import done, taskId={}, count={}", task.getId(), count);
+    return count;
+  }
+
   // ─── helpers ───
   private List<ExpertVO> loadExpertList() {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -265,7 +450,7 @@ public class ExamTaskExamshicaoApplicationService {
     return e;
   }
 
-  static ExamTaskExamshicaoVO toVO(ExamTaskExamshicaoEntity e,
+  ExamTaskExamshicaoVO toVO(ExamTaskExamshicaoEntity e,
                                    Map<Integer, String> wtNames,
                                    Map<Integer, String> exNames) {
     ExamTaskExamshicaoVO vo = new ExamTaskExamshicaoVO();
@@ -285,6 +470,16 @@ public class ExamTaskExamshicaoApplicationService {
     vo.setExpertEndName(e.getExpertEnd() != null && e.getExpertEnd() > 0
         ? exNames.getOrDefault(e.getExpertEnd(), "***") : "待指派");
     vo.setFilePath(e.getFilePath());
+    if (e.getFilePath() != null && !e.getFilePath().isEmpty()) {
+      vo.setFileUrl(cdnUrl + "/" + e.getFilePath());
+      String ext = e.getFilePath();
+      int dotIdx = ext.lastIndexOf('.');
+      if (dotIdx >= 0) {
+        ext = ext.substring(dotIdx + 1).toLowerCase();
+        if ("xls".equals(ext)) ext = "xlsx";
+        vo.setFileType(ext);
+      }
+    }
     vo.setAddtime(e.getAddtime());
     vo.setAddtimeCn(e.getAddtime() != null ? e.getAddtime().format(DATE_FMT) : "-");
     return vo;
@@ -311,7 +506,8 @@ public class ExamTaskExamshicaoApplicationService {
 
   static List<ExamTaskExamshicaoDetailChildVO> buildChildren(
       Map<Integer, ExamTaskExamshicaoAuditRecordEntity> sMap,
-      Map<Integer, ExamTaskExamshicaoAuditRecordEntity> eMap) {
+      Map<Integer, ExamTaskExamshicaoAuditRecordEntity> eMap,
+      Map<Integer, String> expertNames) {
     List<ExamTaskExamshicaoDetailChildVO> out = new ArrayList<>();
     ExamTaskExamshicaoAuditRecordEntity s = sMap.isEmpty() ? null : sMap.values().iterator().next();
     ExamTaskExamshicaoAuditRecordEntity en = eMap.isEmpty() ? null : eMap.values().iterator().next();
@@ -319,6 +515,9 @@ public class ExamTaskExamshicaoApplicationService {
     sc.setId("初审");
     if (s != null) {
       sc.setExamId(s.getExamId());
+      sc.setExpertId(s.getExpertId());
+      sc.setExpertName(s.getExpertId() != null ? expertNames.getOrDefault(s.getExpertId(), "-") : null);
+      sc.setAddtimeCn(formatAddtime(s.getAddtime()));
       sc.setContent(s.getContent());
       sc.setPingfen(s.getPingfen());
       sc.setKaochang(s.getKaochang());
@@ -329,6 +528,9 @@ public class ExamTaskExamshicaoApplicationService {
     ec.setId("终审");
     if (en != null) {
       ec.setExamId(en.getExamId());
+      ec.setExpertId(en.getExpertId());
+      ec.setExpertName(en.getExpertId() != null ? expertNames.getOrDefault(en.getExpertId(), "-") : null);
+      ec.setAddtimeCn(formatAddtime(en.getAddtime()));
       ec.setContent(en.getContent());
       ec.setPingfen(en.getPingfen());
       ec.setKaochang(en.getKaochang());
@@ -336,5 +538,118 @@ public class ExamTaskExamshicaoApplicationService {
     }
     out.add(ec);
     return out;
+  }
+
+  // 复用于 3 个 buildChildren:addtime → yyyy-MM-dd HH:mm:ss
+  static String formatAddtime(java.time.LocalDateTime t) {
+    if (t == null) return null;
+    return t.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+  }
+
+  // ─── import helpers ───
+  private static String cell(List<String> row, int idx) {
+    return idx < row.size() ? row.get(idx) : "";
+  }
+
+  private static Integer parseIntOrNull(String s) {
+    if (s == null || s.isEmpty()) return null;
+    try {
+      return Integer.parseInt(s.trim());
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
+  private static int parseIntOrZero(String s) {
+    Integer v = parseIntOrNull(s);
+    return v == null ? 0 : v;
+  }
+
+  /**
+   * 构建单个评分项的 Map(不序列化,等待累积完成后统一序列化)
+   */
+  private static LinkedHashMap<String, String> buildPingfenItem(
+      String yaosu, String peifen, String biaozhun,
+      String koufen, String buchang) {
+    LinkedHashMap<String, String> item = new LinkedHashMap<>();
+    item.put("yaosu", yaosu);
+    item.put("peifen", peifen);
+    item.put("biaozhun", biaozhun);
+    item.put("koufen", koufen);
+    item.put("buchang", buchang);
+    return item;
+  }
+
+  /**
+   * 把累积的评分项列表序列化为 JSON 并写入 detail 记录,然后 insert 入库。
+   * 与老 PHP json_encode(..., JSON_UNESCAPED_UNICODE) 兼容。
+   */
+  private void flushDetail(ExamTaskExamshicaoDetailEntity detail,
+                           List<LinkedHashMap<String, String>> pingfenItems) {
+    if (detail == null || pingfenItems == null || pingfenItems.isEmpty()) return;
+    try {
+      detail.setPingfen(objectMapper.writeValueAsString(pingfenItems));
+    } catch (JsonProcessingException e) {
+      log.error("Failed to serialize pingfen JSON", e);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "评分标准序列化失败");
+    }
+    detailMapper.insert(detail);
+  }
+
+  private String saveFile(MultipartFile file, Integer tenantId) throws IOException {
+    Path dir = Paths.get(cdnPath).toAbsolutePath().normalize();
+    Files.createDirectories(dir);
+    String orig = file.getOriginalFilename();
+    String ext = "";
+    if (orig != null && orig.contains(".")) {
+      ext = orig.substring(orig.lastIndexOf('.'));
+    }
+    String name = UUID.randomUUID().toString() + ext;
+    Path target = dir.resolve(name);
+    file.transferTo(target);
+    return name;
+  }
+
+  private void delSilent(Path path) {
+    try { Files.deleteIfExists(path); } catch (IOException ignored) {}
+  }
+
+  /**
+   * 导出审核任务对应的原始 Excel 文件。
+   */
+  @Transactional(readOnly = true)
+  public ExportResultDTO exportExcel(Integer taskId) {
+    Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
+    log.info("task_examshicao export, tenant={}, taskId={}", tenantId, taskId);
+    ExamTaskExamshicaoEntity entity = findExisting(tenantId, taskId);
+
+    if (entity.getFilePath() == null || entity.getFilePath().isBlank()) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "该任务没有关联的原始文件");
+    }
+
+    Path filePath = Paths.get(cdnPath, entity.getFilePath());
+    if (!Files.exists(filePath)) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "原文件不存在");
+    }
+
+    try {
+      byte[] data = Files.readAllBytes(filePath);
+      String filename = buildExportFilename(entity.getId(), entity.getWorkTypeId(),
+          entity.getLevel(), "实操");
+      return new ExportResultDTO(data, filename);
+    } catch (IOException e) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取文件失败: " + e.getMessage());
+    }
+  }
+
+  private String buildExportFilename(Integer id, Integer workTypeId, Integer level, String questionType) {
+    String workTypeCn = helper.loadWorkTypeNames(
+        java.util.Set.of(workTypeId != null ? workTypeId : 0))
+        .getOrDefault(workTypeId, "-");
+    int lvl = level != null ? level : 0;
+    String levelCn = lvl >= 1 && lvl < LEVELS.length ? LEVELS[lvl] : "-";
+    String ts = java.time.LocalDateTime.now()
+        .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+    return id + "_" + workTypeCn + "_" + levelCn + "_" + questionType + "_" + ts + ".xlsx";
   }
 }

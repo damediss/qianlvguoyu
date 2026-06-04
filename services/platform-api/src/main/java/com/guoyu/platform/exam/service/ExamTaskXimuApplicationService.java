@@ -21,6 +21,8 @@ import com.guoyu.platform.exam.vo.ExamTaskXimuDailyVO;
 import com.guoyu.platform.exam.vo.ExamTaskXimuDetailChildVO;
 import com.guoyu.platform.exam.vo.ExamTaskXimuDetailVO;
 import com.guoyu.platform.exam.vo.ExamTaskXimuVO;
+import com.guoyu.platform.exam.vo.ExamWorkTypeVO;
+import com.guoyu.platform.exam.vo.ExportResultDTO;
 import com.guoyu.platform.exam.vo.ExpertVO;
 import com.guoyu.platform.exam.vo.PublicDataVO;
 import com.guoyu.platform.security.SecurityContext;
@@ -405,7 +407,7 @@ public class ExamTaskXimuApplicationService {
   }
 
   @Transactional(readOnly = true)
-  public byte[] exportExcel(Integer taskId) {
+  public ExportResultDTO exportExcel(Integer taskId) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     log.info("task_ximu export, tenant={}, taskId={}", tenantId, taskId);
     ExamTaskXimuEntity entity = findExisting(tenantId, taskId);
@@ -464,13 +466,31 @@ public class ExamTaskXimuApplicationService {
       }
       byte[] bytes = Files.readAllBytes(tmp.toPath());
       tmp.delete();
-      return bytes;
+
+      String filename = buildExportFilename(entity.getId(), entity.getWorkTypeId(),
+          entity.getLevel());
+      return new ExportResultDTO(bytes, filename);
     } catch (BusinessException e) {
       throw e;
     } catch (Exception e) {
       log.error("Export failed", e);
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "导出失败");
     }
+  }
+
+  private String buildExportFilename(Integer id, Integer workTypeId, Integer level) {
+    String workTypeCn = "-";
+    if (workTypeId != null) {
+      try {
+        ExamWorkTypeVO vo = workTypeService.getById(workTypeId);
+        if (vo != null && vo.getTitle() != null) workTypeCn = vo.getTitle();
+      } catch (Exception ignored) {}
+    }
+    int lvl = level != null ? level : 0;
+    String levelCn = lvl >= 1 && lvl < LEVELS.length ? LEVELS[lvl] : "-";
+    String ts = java.time.LocalDateTime.now()
+        .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+    return id + "_" + workTypeCn + "_" + levelCn + "_细目_" + ts + ".xlsx";
   }
 
   @Transactional(readOnly = true)

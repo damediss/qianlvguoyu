@@ -28,7 +28,7 @@ public class ExamTaskExpertEntity {
   @TableLogic(value = "0", delval = "1")
   private Integer deleted;
 
-  private LocalDateTime createTime;
+  private LocalDateTime createdAt;
   private LocalDateTime updatedAt;
   private Integer createdBy;
   private Integer updatedBy;
@@ -53,8 +53,8 @@ public class ExamTaskExpertEntity {
   public void setTenantId(Integer tenantId) { this.tenantId = tenantId; }
   public Integer getDeleted() { return deleted; }
   public void setDeleted(Integer deleted) { this.deleted = deleted; }
-  public LocalDateTime getCreateTime() { return createTime; }
-  public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
+  public LocalDateTime getCreatedAt() { return createdAt; }
+  public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
   public LocalDateTime getUpdatedAt() { return updatedAt; }
   public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
   public Integer getCreatedBy() { return createdBy; }

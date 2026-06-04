@@ -9,10 +9,18 @@ import com.guoyu.platform.exam.service.ExamTaskExamsubApplicationService;
 import com.guoyu.platform.exam.vo.ExamTaskExamsubDailyVO;
 import com.guoyu.platform.exam.vo.ExamTaskExamsubDetailVO;
 import com.guoyu.platform.exam.vo.ExamTaskExamsubVO;
+import com.guoyu.platform.exam.vo.ExportResultDTO;
 import com.guoyu.platform.exam.vo.PublicDataVO;
 import jakarta.validation.Valid;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -24,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @Validated
 @RestController
@@ -41,6 +50,18 @@ public class ExamTaskExamsubController {
   @PreAuthorize("hasAuthority('task:examsub-audit:view')")
   public ApiResponse<PageResponse<ExamTaskExamsubVO>> page(@Valid @ModelAttribute ExamTaskExamsubQueryReq req) {
     return ApiResponse.ok(service.page(req));
+  }
+
+  @PostMapping("/task-examsubs/import")
+  @PreAuthorize("hasAuthority('task:examsub-audit:import')")
+  @AuditLog(module = "exam", action = "task-examsub-audit:import", targetType = "exam_task_examsub")
+  public ApiResponse<Integer> importExcel(
+      @RequestParam("file") MultipartFile file,
+      @RequestParam Integer workTypeId,
+      @RequestParam Integer level) {
+    log.info("POST /exam/task-examsubs/import workTypeId={}, level={}", workTypeId, level);
+    int count = service.importExcel(file, workTypeId, level);
+    return ApiResponse.ok(count);
   }
 
   @GetMapping("/task-examsubs/{id}/details")
@@ -65,6 +86,21 @@ public class ExamTaskExamsubController {
     log.info("POST /exam/task-examsubs/{}/assign-expert", id);
     service.assignExpert(req);
     return ApiResponse.ok();
+  }
+
+  @GetMapping("/task-examsubs/{id}/export")
+  @PreAuthorize("hasAuthority('task:examsub-audit:export')")
+  @AuditLog(module = "exam", action = "task-examsub:export", targetType = "exam_task_examsub")
+  public ResponseEntity<InputStreamResource> export(@PathVariable Integer id) throws IOException {
+    log.info("GET /exam/task-examsubs/{}/export", id);
+    ExportResultDTO result = service.exportExcel(id);
+    InputStreamResource resource = new InputStreamResource(new java.io.ByteArrayInputStream(result.data()));
+    return ResponseEntity.ok()
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment().filename(result.filename(), StandardCharsets.UTF_8).build().toString())
+        .contentType(MediaType.parseMediaType(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        .body(resource);
   }
 
   @DeleteMapping("/task-examsubs/{id}")

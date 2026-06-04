@@ -11,8 +11,9 @@ export function TaskExamshicaoAuditAssignListPage() {
       permissionPrefix="task:examshicao-audit"
       title="题库实操审核指派"
       detailColumnLabels={{
+        jianding: '考评点',
         content: '题目内容',
-        pingfen: '评分标准',
+        pingfen: '评分',
         kaochang: '考场准备',
         kaosheng: '考生准备',
       }}

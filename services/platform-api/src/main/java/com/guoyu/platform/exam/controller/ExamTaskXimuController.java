@@ -9,6 +9,7 @@ import com.guoyu.platform.exam.service.ExamTaskXimuApplicationService;
 import com.guoyu.platform.exam.vo.ExamTaskXimuDailyVO;
 import com.guoyu.platform.exam.vo.ExamTaskXimuDetailVO;
 import com.guoyu.platform.exam.vo.ExamTaskXimuVO;
+import com.guoyu.platform.exam.vo.ExportResultDTO;
 import com.guoyu.platform.exam.vo.PublicDataVO;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -16,6 +17,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.io.OutputStream;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -100,11 +102,11 @@ public class ExamTaskXimuController {
   @AuditLog(module = "exam", action = "task-ximu:export", targetType = "exam_task_ximu")
   public ResponseEntity<InputStreamResource> export(@PathVariable Integer id) throws IOException {
     log.info("GET /exam/task-ximus/{}/export", id);
-    byte[] data = service.exportExcel(id);
-    InputStreamResource resource = new InputStreamResource(new java.io.ByteArrayInputStream(data));
+    ExportResultDTO result = service.exportExcel(id);
+    InputStreamResource resource = new InputStreamResource(new java.io.ByteArrayInputStream(result.data()));
     return ResponseEntity.ok()
         .header(HttpHeaders.CONTENT_DISPOSITION,
-            ContentDisposition.attachment().filename("ximu_" + id + ".xlsx").build().toString())
+            ContentDisposition.attachment().filename(result.filename(), StandardCharsets.UTF_8).build().toString())
         .contentType(MediaType.parseMediaType(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
         .body(resource);
