@@ -60,6 +60,12 @@ const PmWbsPage = createPmFormPage('wbs');
 const PmCommunicationPage = createPmFormPage('communication');
 const PmStatusPage = createPmFormPage('status');
 import { TaskEndPage } from './pages/expert/TaskEndPage';
+import { ProjectManagementPage } from './pages/certification/ProjectManagementPage';
+import { PreparationPage } from './pages/certification/PreparationPage';
+import { AssessorInfoPage } from './pages/certification/info/AssessorInfoPage';
+import { ExamSiteInfoPage } from './pages/certification/info/ExamSiteInfoPage';
+import { ExamEquipmentInfoPage } from './pages/certification/info/ExamEquipmentInfoPage';
+import { ExamStaffInfoPage } from './pages/certification/info/ExamStaffInfoPage';
 import { TenantPage } from './pages/system/TenantPage';
 import { UserPage } from './pages/system/UserPage';
 import { OrgPage } from './pages/system/OrgPage';
@@ -137,6 +143,12 @@ const pageMap: Record<string, React.ReactNode> = {
   zhixun_table_status: <PmStatusPage />,
   expert_task_start: <TaskStartPage />,
   expert_task_end: <TaskEndPage />,
+  certification_project: <ProjectManagementPage />,
+  certification_preparation: <PreparationPage />,
+  certification_info_assessor: <AssessorInfoPage />,
+  certification_info_site: <ExamSiteInfoPage />,
+  certification_info_equipment: <ExamEquipmentInfoPage />,
+  certification_info_exam_staff: <ExamStaffInfoPage />,
   // System management pages
   system_tenant: <TenantPage />,
   system_user: <UserPage />,
