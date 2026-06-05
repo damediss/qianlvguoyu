@@ -3,7 +3,7 @@ import { Button, Form, Input, Typography, message } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
-import { currentUser, login } from '../api/auth';
+import { currentUser as fetchCurrentUser, login } from '../api/auth';
 import { useAuthStore } from '../stores/authStore';
 
 interface AuthGateProps {
@@ -19,7 +19,7 @@ export function AuthGate({ children }: AuthGateProps) {
 
   const userQuery = useQuery({
     queryKey: ['current-user', token],
-    queryFn: currentUser,
+    queryFn: fetchCurrentUser,
     enabled: Boolean(token),
     retry: false,
   });
