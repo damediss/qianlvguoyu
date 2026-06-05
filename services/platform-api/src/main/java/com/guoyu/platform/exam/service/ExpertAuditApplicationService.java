@@ -21,7 +21,6 @@ import com.guoyu.platform.exam.entity.ExamTaskXimuAuditRecordEntity;
 import com.guoyu.platform.exam.entity.ExamTaskXimuDetailEntity;
 import com.guoyu.platform.exam.entity.ExamTaskXimuEntity;
 import com.guoyu.platform.exam.entity.ExamTaskExpertEntity;
-import com.guoyu.platform.exam.entity.ExamTaskXimuExpertEntity;
 import com.guoyu.platform.exam.mapper.ExamTaskExpertMapper;
 import com.guoyu.platform.exam.mapper.ExamTaskExamAuditRecordMapper;
 import com.guoyu.platform.exam.mapper.ExamTaskExamDetailMapper;
@@ -34,7 +33,6 @@ import com.guoyu.platform.exam.mapper.ExamTaskExamsubDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamTaskExamsubMapper;
 import com.guoyu.platform.exam.mapper.ExamTaskXimuAuditRecordMapper;
 import com.guoyu.platform.exam.mapper.ExamTaskXimuDetailMapper;
-import com.guoyu.platform.exam.mapper.ExamTaskXimuExpertMapper;
 import com.guoyu.platform.exam.mapper.ExamTaskXimuMapper;
 import com.guoyu.platform.exam.helper.TaskAuditAssignHelper;
 import com.guoyu.platform.exam.vo.ExpertTaskVO;
@@ -68,7 +66,6 @@ public class ExpertAuditApplicationService {
   );
 
   private final ObjectMapper objectMapper;
-  private final ExamTaskXimuExpertMapper ximuExpertMapper;
   private final ExamTaskExpertMapper taskExpertMapper;
   private final TaskAuditAssignHelper helper;
   private final ExamTaskXimuMapper ximuMapper;
@@ -85,7 +82,6 @@ public class ExpertAuditApplicationService {
   private final ExamTaskExamsubAuditRecordMapper examsubAuditMapper;
 
   public ExpertAuditApplicationService(
-      ExamTaskXimuExpertMapper ximuExpertMapper,
       ExamTaskExpertMapper taskExpertMapper,
       ExamTaskXimuMapper ximuMapper,
       ExamTaskXimuDetailMapper ximuDetailMapper,
@@ -103,7 +99,6 @@ public class ExpertAuditApplicationService {
       TaskAuditAssignHelper helper
   ) {
     this.objectMapper = objectMapper;
-    this.ximuExpertMapper = ximuExpertMapper;
     this.taskExpertMapper = taskExpertMapper;
     this.helper = helper;
     this.ximuMapper = ximuMapper;
@@ -132,9 +127,8 @@ public class ExpertAuditApplicationService {
   }
 
   /**
-   * 两张专家指派表的统一载体:
-   *   exam_task_ximu_expert → ximu
-   *   exam_task_expert      → exam / examshicao / examsub
+   * 专家指派记录统一载体(exam_task_expert 表):
+   *   tag ∈ {ximu, exam, examshicao, examsub}
    */
   private record ExpertRecord(int id, int taskId, String tag,
                               LocalDateTime addtime, LocalDateTime endtime) {}
@@ -150,45 +144,24 @@ public class ExpertAuditApplicationService {
     int tid = tenantId.intValue();
     int uid = userId.intValue();
 
-    // ── 从两张表收集所有符合条件的 ExpertRecord ──
-    List<ExpertRecord> all = new ArrayList<>();
+    // 从 exam_task_expert 表查询所有符合条件的专家指派记录
+    java.util.Set<String> queryTags = (filterType != null)
+        ? java.util.Set.of(filterType)
+        : java.util.Set.of("exam", "examshicao", "examsub", "ximu");
 
-    // 1) exam_task_ximu_expert (tag = ximu, 也可能有旧数据 tag=exam/examshicao/examsub)
-    boolean queryXimuTable = (filterType == null || "ximu".equals(filterType));
-    if (queryXimuTable) {
-      var w = new LambdaQueryWrapper<ExamTaskXimuExpertEntity>()
-          .eq(ExamTaskXimuExpertEntity::getTenantId, tid)
-          .eq(ExamTaskXimuExpertEntity::getExpertId, uid)
-          .eq(ExamTaskXimuExpertEntity::getTaskRole, taskRole)
-          .eq(ExamTaskXimuExpertEntity::getTag, "ximu");
-      if (req.getStatus() != null && req.getStatus() > 0) {
-        if (req.getStatus() == 1) w.isNull(ExamTaskXimuExpertEntity::getEndtime);
-        else if (req.getStatus() == 2) w.isNotNull(ExamTaskXimuExpertEntity::getEndtime);
-      }
-      for (ExamTaskXimuExpertEntity e : ximuExpertMapper.selectList(w)) {
-        all.add(new ExpertRecord(e.getId(), e.getTaskId(), e.getTag(), e.getAddtime(), e.getEndtime()));
-      }
+    var w = new LambdaQueryWrapper<ExamTaskExpertEntity>()
+        .eq(ExamTaskExpertEntity::getTenantId, tid)
+        .eq(ExamTaskExpertEntity::getExpertId, uid)
+        .eq(ExamTaskExpertEntity::getTaskRole, taskRole)
+        .in(ExamTaskExpertEntity::getTag, queryTags);
+    if (req.getStatus() != null && req.getStatus() > 0) {
+      if (req.getStatus() == 1) w.isNull(ExamTaskExpertEntity::getEndtime);
+      else if (req.getStatus() == 2) w.isNotNull(ExamTaskExpertEntity::getEndtime);
     }
 
-    // 2) exam_task_expert (tag = exam / examshicao / examsub)
-    java.util.Set<String> generalTags = (filterType != null)
-        ? java.util.Set.of(filterType)
-        : java.util.Set.of("exam", "examshicao", "examsub");
-    // 排除 "ximu" (generalTags 不会包含 ximu,因为 allowedTypes 过滤后 filterType 只可能是 exam/examshicao/examsub/null)
-    generalTags = generalTags.stream().filter(t -> !"ximu".equals(t)).collect(Collectors.toSet());
-    if (!generalTags.isEmpty()) {
-      var w = new LambdaQueryWrapper<ExamTaskExpertEntity>()
-          .eq(ExamTaskExpertEntity::getTenantId, tid)
-          .eq(ExamTaskExpertEntity::getExpertId, uid)
-          .eq(ExamTaskExpertEntity::getTaskRole, taskRole)
-          .in(ExamTaskExpertEntity::getTag, generalTags);
-      if (req.getStatus() != null && req.getStatus() > 0) {
-        if (req.getStatus() == 1) w.isNull(ExamTaskExpertEntity::getEndtime);
-        else if (req.getStatus() == 2) w.isNotNull(ExamTaskExpertEntity::getEndtime);
-      }
-      for (ExamTaskExpertEntity e : taskExpertMapper.selectList(w)) {
-        all.add(new ExpertRecord(e.getId(), e.getTaskId(), e.getTag(), e.getAddtime(), e.getEndtime()));
-      }
+    List<ExpertRecord> all = new ArrayList<>();
+    for (ExamTaskExpertEntity e : taskExpertMapper.selectList(w)) {
+      all.add(new ExpertRecord(e.getId(), e.getTaskId(), e.getTag(), e.getAddtime(), e.getEndtime()));
     }
 
     // ── 排序 + 内存分页 ──
@@ -421,39 +394,117 @@ public class ExpertAuditApplicationService {
   // examshicao
 
   @Transactional(readOnly = true)
-  public List<Map<String, Object>> getExamshicaoList(Integer taskId, Integer role) {
+  public Map<String, Object> getExamshicaoList(Integer taskId, Integer role) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
+    int tid = tenantId.intValue();
+    int uid = userId.intValue();
 
-    List<Integer> auditedIds = examshicaoAuditMapper.selectList(
+    // 1) task info: id, status
+    ExamTaskExamshicaoEntity task = examshicaoMapper.selectById(taskId);
+    if (task == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "任务不存在");
+    }
+    Map<String, Object> taskExam = new LinkedHashMap<>();
+    taskExam.put("id", task.getId());
+    taskExam.put("status", task.getStatus());
+
+    // 2) auditcount - 已审题数
+    long auditcount = examshicaoAuditMapper.selectCount(
         new LambdaQueryWrapper<ExamTaskExamshicaoAuditRecordEntity>()
-            .eq(ExamTaskExamshicaoAuditRecordEntity::getTenantId, tenantId.intValue())
+            .eq(ExamTaskExamshicaoAuditRecordEntity::getTenantId, tid)
             .eq(ExamTaskExamshicaoAuditRecordEntity::getTaskId, taskId)
-            .eq(ExamTaskExamshicaoAuditRecordEntity::getExpertId, userId)
+            .eq(ExamTaskExamshicaoAuditRecordEntity::getExpertId, uid)
+            .eq(ExamTaskExamshicaoAuditRecordEntity::getAuditRole, role)
+            .eq(ExamTaskExamshicaoAuditRecordEntity::getAuditStatus, 1));
+
+    // 3) 构建查询条件
+    LambdaQueryWrapper<ExamTaskExamshicaoDetailEntity> dw = new LambdaQueryWrapper<ExamTaskExamshicaoDetailEntity>()
+        .eq(ExamTaskExamshicaoDetailEntity::getTenantId, tid)
+        .eq(ExamTaskExamshicaoDetailEntity::getTaskId, taskId);
+
+    // 排除当前专家已审的题
+    List<ExamTaskExamshicaoAuditRecordEntity> auditedRecords = examshicaoAuditMapper.selectList(
+        new LambdaQueryWrapper<ExamTaskExamshicaoAuditRecordEntity>()
+            .eq(ExamTaskExamshicaoAuditRecordEntity::getTenantId, tid)
+            .eq(ExamTaskExamshicaoAuditRecordEntity::getTaskId, taskId)
+            .eq(ExamTaskExamshicaoAuditRecordEntity::getExpertId, uid)
             .eq(ExamTaskExamshicaoAuditRecordEntity::getAuditRole, role)
             .eq(ExamTaskExamshicaoAuditRecordEntity::getAuditStatus, 1)
-            .select(ExamTaskExamshicaoAuditRecordEntity::getExamId))
-        .stream().map(ExamTaskExamshicaoAuditRecordEntity::getExamId).collect(Collectors.toList());
-
-    LambdaQueryWrapper<ExamTaskExamshicaoDetailEntity> dw = new LambdaQueryWrapper<ExamTaskExamshicaoDetailEntity>()
-        .eq(ExamTaskExamshicaoDetailEntity::getTenantId, tenantId.intValue())
-        .eq(ExamTaskExamshicaoDetailEntity::getTaskId, taskId);
+            .select(ExamTaskExamshicaoAuditRecordEntity::getExamId));
+    List<Integer> auditedIds = auditedRecords.stream()
+        .map(ExamTaskExamshicaoAuditRecordEntity::getExamId).distinct().collect(Collectors.toList());
     if (!auditedIds.isEmpty()) {
       dw.notIn(ExamTaskExamshicaoDetailEntity::getId, auditedIds);
     }
 
-    List<ExamTaskExamshicaoDetailEntity> list = examshicaoDetailMapper.selectList(dw);
-    return list.stream().map(d -> {
+    // 终审(role>0)且初审未完成(status==1): 只能获取初审已审的题
+    Map<Integer, ExamTaskExamshicaoAuditRecordEntity> startsMap = new LinkedHashMap<>();
+    if (role > 0 && task.getStatus() != null && task.getStatus() == 1) {
+      List<ExamTaskExamshicaoAuditRecordEntity> startAudits = examshicaoAuditMapper.selectList(
+          new LambdaQueryWrapper<ExamTaskExamshicaoAuditRecordEntity>()
+              .eq(ExamTaskExamshicaoAuditRecordEntity::getTenantId, tid)
+              .eq(ExamTaskExamshicaoAuditRecordEntity::getTaskId, taskId)
+              .eq(ExamTaskExamshicaoAuditRecordEntity::getAuditRole, 0)
+              .eq(ExamTaskExamshicaoAuditRecordEntity::getAuditStatus, 1));
+      List<Integer> startIds = startAudits.stream()
+          .map(ExamTaskExamshicaoAuditRecordEntity::getExamId).distinct().collect(Collectors.toList());
+      for (ExamTaskExamshicaoAuditRecordEntity a : startAudits) {
+        startsMap.putIfAbsent(a.getExamId(), a);
+      }
+      if (startIds.isEmpty()) {
+        // 初审还没审完任何题，返回空列表
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("taskExam", taskExam);
+        result.put("list", List.of());
+        result.put("auditcount", auditcount);
+        return result;
+      }
+      dw.in(ExamTaskExamshicaoDetailEntity::getId, startIds);
+    }
+
+    // 4) 查询 detail 列表
+    List<ExamTaskExamshicaoDetailEntity> details = examshicaoDetailMapper.selectList(dw);
+
+    // 5) 构建返回 list，解析 pingfen JSON
+    List<Map<String, Object>> list = new ArrayList<>();
+    for (ExamTaskExamshicaoDetailEntity d : details) {
       Map<String, Object> m = new LinkedHashMap<>();
       m.put("id", d.getId());
       m.put("task_id", d.getTaskId());
       m.put("jianding", d.getJianding());
       m.put("content", d.getContent());
-      m.put("pingfen", d.getPingfen());
+      m.put("pingfen", parsePingfen(d.getPingfen()));
       m.put("kaochang", d.getKaochang());
       m.put("kaosheng", d.getKaosheng());
-      return m;
-    }).collect(Collectors.toList());
+
+      // 终审:用初审数据覆盖 content/pingfen/kaochang/kaosheng
+      if (role > 0 && startsMap.containsKey(d.getId())) {
+        ExamTaskExamshicaoAuditRecordEntity sa = startsMap.get(d.getId());
+        m.put("content", sa.getContent());
+        m.put("pingfen", parsePingfen(sa.getPingfen()));
+        m.put("kaochang", sa.getKaochang());
+        m.put("kaosheng", sa.getKaosheng());
+      }
+      list.add(m);
+    }
+
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("taskExam", taskExam);
+    result.put("list", list);
+    result.put("auditcount", auditcount);
+    return result;
+  }
+
+  /** 解析 pingfen JSON 字符串为 List<Map>，失败返回空列表 */
+  private Object parsePingfen(String pingfenStr) {
+    if (pingfenStr == null || pingfenStr.isBlank()) return List.of();
+    try {
+      return objectMapper.readValue(pingfenStr, new TypeReference<List<Map<String, String>>>() {});
+    } catch (Exception e) {
+      log.warn("Failed to parse pingfen JSON: {}", e.getMessage());
+      return List.of();
+    }
   }
 
   @Transactional
@@ -782,28 +833,15 @@ public class ExpertAuditApplicationService {
     boolean isdone = audited >= total;
 
     if (isdone) {
-      if ("ximu".equals(tag)) {
-        ExamTaskXimuExpertEntity et = ximuExpertMapper.selectOne(new LambdaQueryWrapper<ExamTaskXimuExpertEntity>()
-            .eq(ExamTaskXimuExpertEntity::getTenantId, tenantId)
-            .eq(ExamTaskXimuExpertEntity::getTaskId, taskId)
-            .eq(ExamTaskXimuExpertEntity::getExpertId, expertId)
-            .eq(ExamTaskXimuExpertEntity::getTaskRole, role)
-            .eq(ExamTaskXimuExpertEntity::getTag, tag));
-        if (et != null && et.getEndtime() == null) {
-          et.setEndtime(LocalDateTime.now());
-          ximuExpertMapper.updateById(et);
-        }
-      } else {
-        ExamTaskExpertEntity et = taskExpertMapper.selectOne(new LambdaQueryWrapper<ExamTaskExpertEntity>()
-            .eq(ExamTaskExpertEntity::getTenantId, tenantId)
-            .eq(ExamTaskExpertEntity::getTaskId, taskId)
-            .eq(ExamTaskExpertEntity::getExpertId, expertId)
-            .eq(ExamTaskExpertEntity::getTaskRole, role)
-            .eq(ExamTaskExpertEntity::getTag, tag));
-        if (et != null && et.getEndtime() == null) {
-          et.setEndtime(LocalDateTime.now());
-          taskExpertMapper.updateById(et);
-        }
+      ExamTaskExpertEntity et = taskExpertMapper.selectOne(new LambdaQueryWrapper<ExamTaskExpertEntity>()
+          .eq(ExamTaskExpertEntity::getTenantId, tenantId)
+          .eq(ExamTaskExpertEntity::getTaskId, taskId)
+          .eq(ExamTaskExpertEntity::getExpertId, expertId)
+          .eq(ExamTaskExpertEntity::getTaskRole, role)
+          .eq(ExamTaskExpertEntity::getTag, tag));
+      if (et != null && et.getEndtime() == null) {
+        et.setEndtime(LocalDateTime.now());
+        taskExpertMapper.updateById(et);
       }
 
       if (role == 0) {
@@ -899,24 +937,15 @@ public class ExpertAuditApplicationService {
     int tid = tenantId.intValue();
     int uid = userId.intValue();
 
-    // 从两张表收集所有进行中的终审指派记录
+    // 从 exam_task_expert 表收集所有进行中的终审指派记录(tag ∈ {ximu, exam, examshicao, examsub})
     List<ExpertRecord> inProgress = new ArrayList<>();
-    for (ExamTaskXimuExpertEntity e : ximuExpertMapper.selectList(
-        new LambdaQueryWrapper<ExamTaskXimuExpertEntity>()
-            .eq(ExamTaskXimuExpertEntity::getTenantId, tid)
-            .eq(ExamTaskXimuExpertEntity::getExpertId, uid)
-            .eq(ExamTaskXimuExpertEntity::getTaskRole, 1)
-            .isNull(ExamTaskXimuExpertEntity::getEndtime)
-            .eq(ExamTaskXimuExpertEntity::getTag, "ximu"))) {
-      inProgress.add(new ExpertRecord(e.getId(), e.getTaskId(), e.getTag(), e.getAddtime(), e.getEndtime()));
-    }
     for (ExamTaskExpertEntity e : taskExpertMapper.selectList(
         new LambdaQueryWrapper<ExamTaskExpertEntity>()
             .eq(ExamTaskExpertEntity::getTenantId, tid)
             .eq(ExamTaskExpertEntity::getExpertId, uid)
             .eq(ExamTaskExpertEntity::getTaskRole, 1)
             .isNull(ExamTaskExpertEntity::getEndtime)
-            .in(ExamTaskExpertEntity::getTag, List.of("exam", "examshicao", "examsub")))) {
+            .in(ExamTaskExpertEntity::getTag, List.of("ximu", "exam", "examshicao", "examsub")))) {
       inProgress.add(new ExpertRecord(e.getId(), e.getTaskId(), e.getTag(), e.getAddtime(), e.getEndtime()));
     }
     if (inProgress.isEmpty()) return;
@@ -925,18 +954,10 @@ public class ExpertAuditApplicationService {
       long total = countTotal(er.tag(), er.taskId(), tid);
       long audited = countAudited(er.tag(), er.taskId(), uid, 1, tid);
       if (total > 0 && audited >= total) {
-        if ("ximu".equals(er.tag())) {
-          ExamTaskXimuExpertEntity et = ximuExpertMapper.selectById(er.id());
-          if (et != null && et.getEndtime() == null) {
-            et.setEndtime(LocalDateTime.now());
-            ximuExpertMapper.updateById(et);
-          }
-        } else {
-          ExamTaskExpertEntity et = taskExpertMapper.selectById(er.id());
-          if (et != null && et.getEndtime() == null) {
-            et.setEndtime(LocalDateTime.now());
-            taskExpertMapper.updateById(et);
-          }
+        ExamTaskExpertEntity et = taskExpertMapper.selectById(er.id());
+        if (et != null && et.getEndtime() == null) {
+          et.setEndtime(LocalDateTime.now());
+          taskExpertMapper.updateById(et);
         }
         updateTaskStatus(er.tag(), er.taskId(), 3);
         log.info("Auto-completed end audit: tag={}, taskId={}", er.tag(), er.taskId());

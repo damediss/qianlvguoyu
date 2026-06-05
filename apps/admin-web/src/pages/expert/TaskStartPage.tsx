@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Button, Card, Col, Form, Input, Modal, Row, Select, Space, Spin, Table, Tag, Tree, message } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as api from '../../api/expert';
-import type { ExpertTask, ExpertTaskQuery, ExpertAuditItem, ExpertSubmitReq, XimuTreeNode } from '../../types/expert';
+import type { ExpertTask, ExpertTaskQuery, ExpertAuditItem, ExpertSubmitReq, XimuTreeNode, ExamshicaoListResponse } from '../../types/expert';
 
 const TAG_COLORS: Record<string, string> = {
   exam: 'blue',
@@ -233,22 +233,42 @@ function ExamshicaoAuditPanel({
   onClose: () => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
-  const { data: list } = useQuery({
+  const { data } = useQuery({
     queryKey: ['expert-examshicao-list', taskId, role],
     queryFn: () => api.getExamshicaoList(taskId, role),
     enabled: open,
   });
-  const items = list || [];
+  const items = data?.list || [];
   const [idx, setIdx] = useState(0);
   const [form] = Form.useForm();
 
   const item = items[idx];
 
+  useEffect(() => {
+    if (item) {
+      form.setFieldsValue({
+        content: item.content,
+        kaochang: item.kaochang,
+        kaosheng: item.kaosheng,
+        pingfen: item.pingfen || [],
+      });
+    }
+  }, [idx, item, form]);
+
   const submit = async () => {
     if (submitting || !item) return;
     setSubmitting(true);
     const values = await form.validateFields();
-    const payload: ExpertSubmitReq = { id: item.id, taskId, role, ...values };
+    const payload: ExpertSubmitReq = {
+      id: item.id,
+      taskId,
+      role,
+      jianding: item.jianding,
+      content: values.content,
+      pingfen: JSON.stringify(values.pingfen),
+      kaochang: values.kaochang,
+      kaosheng: values.kaosheng,
+    };
     const res = await api.submitExamshicao(payload);
     setSubmitting(false);
     if (res.isdone) {
@@ -262,24 +282,64 @@ function ExamshicaoAuditPanel({
   };
 
   return (
-    <Modal title={panelTitle + `(${items.length})`} open={open} onCancel={onClose} footer={null} width={700}>
+    <Modal
+      title={panelTitle + `(${items.length})`}
+      open={open}
+      onCancel={onClose}
+      width={1000}
+      footer={[
+        <Button key="cancel" onClick={onClose}>取消</Button>,
+        <Button key="submit" type="primary" loading={submitting} onClick={submit}>提交</Button>,
+      ]}
+    >
       {item ? (
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="horizontal" labelCol={{ flex: '0 0 80px' }} wrapperCol={{ flex: 'auto', marginLeft: 4 }} labelAlign="left">
           <Form.Item label="考评点">
             <Input value={item.jianding} disabled />
           </Form.Item>
-          <Form.Item label="题目内容" name="content" rules={[{ required: true }]} initialValue={item.content}>
-            <Input.TextArea rows={3} />
+          <Form.Item label="题目内容" name="content" rules={[{ required: true }]}>
+            <Input.TextArea rows={2} autoSize={{ minRows: 2, maxRows: 4 }} />
           </Form.Item>
-          <Form.Item label="考场准备" name="kaochang" initialValue={item.kaochang}>
-            <Input.TextArea rows={2} />
+          <Form.Item label="考场准备" name="kaochang">
+            <Input.TextArea rows={1} autoSize={{ minRows: 1, maxRows: 3 }} />
           </Form.Item>
-          <Form.Item label="考生准备" name="kaosheng" initialValue={item.kaosheng}>
-            <Input.TextArea rows={2} />
+          <Form.Item label="考生准备" name="kaosheng">
+            <Input.TextArea rows={1} autoSize={{ minRows: 1, maxRows: 3 }} />
           </Form.Item>
-          <Button type="primary" loading={submitting} onClick={submit}>
-            提交
-          </Button>
+          <Form.Item label="评分标准">
+            <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+              <Input value="要素" disabled style={{ flex: 1 }} />
+              <Input value="配分" disabled style={{ width: 80 }} />
+              <Input value="评分标准" disabled style={{ flex: 2 }} />
+              <Input value="最大扣分" disabled style={{ width: 80 }} />
+              <Input value="步长" disabled style={{ width: 60 }} />
+            </div>
+            <Form.List name="pingfen">
+              {(fields) => (
+                <>
+                  {fields.map((field) => (
+                    <div key={field.key} style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                      <Form.Item {...field} name={[field.name, 'yaosu']} style={{ flex: 1, marginBottom: 0 }}>
+                        <Input />
+                      </Form.Item>
+                      <Form.Item {...field} name={[field.name, 'peifen']} style={{ width: 80, marginBottom: 0 }}>
+                        <Input />
+                      </Form.Item>
+                      <Form.Item {...field} name={[field.name, 'biaozhun']} style={{ flex: 2, marginBottom: 0 }}>
+                        <Input.TextArea rows={2} autoSize={{ minRows: 2, maxRows: 4 }} />
+                      </Form.Item>
+                      <Form.Item {...field} name={[field.name, 'koufen']} style={{ width: 80, marginBottom: 0 }}>
+                        <Input />
+                      </Form.Item>
+                      <Form.Item {...field} name={[field.name, 'buchang']} style={{ width: 60, marginBottom: 0 }}>
+                        <Input />
+                      </Form.Item>
+                    </div>
+                  ))}
+                </>
+              )}
+            </Form.List>
+          </Form.Item>
         </Form>
       ) : (
         <p>暂无审核数据</p>

@@ -34,7 +34,7 @@ export interface ExpertAuditItem {
   exam_answer?: string;
   jianding?: string;
   content?: string;
-  pingfen?: string;
+  pingfen?: any[];
   kaochang?: string;
   kaosheng?: string;
   zhishidian?: string;
@@ -72,6 +72,12 @@ export interface XimuListResponse {
   taskXimu: { id: number; types: number; status: number };
   treeData: XimuTreeNode[];
   ximuTotal: number;
+}
+
+export interface ExamshicaoListResponse {
+  taskExam: { id: number; status: number };
+  list: ExpertAuditItem[];
+  auditcount: number;
 }
 
 export interface ExpertSubmitReq {

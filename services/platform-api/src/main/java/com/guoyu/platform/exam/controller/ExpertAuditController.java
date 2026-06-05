@@ -58,7 +58,7 @@ public class ExpertAuditController {
 
   @GetMapping("/examshicao-list")
   @PreAuthorize("hasAnyAuthority('task:audit:start:view','task:audit:end:view')")
-  public ApiResponse<List<Map<String, Object>>> examshicaoList(@RequestParam Integer taskId, @RequestParam Integer role) {
+  public ApiResponse<Map<String, Object>> examshicaoList(@RequestParam Integer taskId, @RequestParam Integer role) {
     return ApiResponse.ok(service.getExamshicaoList(taskId, role));
   }
 

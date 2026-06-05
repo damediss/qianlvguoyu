@@ -370,9 +370,13 @@ export function TaskAuditAssignTable({
 
   // 删除
   const handleDelete = (row: TaskAuditVO) => {
+    const isInProgress = row.status !== 0;
+    const statusText = row.statusCn ?? '当前';
     Modal.confirm({
       title: '确认删除',
-      content: '确定要删除该任务吗?关联的明细和审核记录也将被删除。',
+      content: isInProgress
+        ? `该任务当前状态为「${statusText}」,删除将级联删除明细和已有的审核/专家分配记录(专家已提交的工作将丢失),不可恢复。确定删除吗?`
+        : '确定要删除该任务吗?关联的明细和审核记录也将被删除。',
       okText: '删除',
       okButtonProps: { danger: true },
       onOk: () => delMut.mutate(row.id),
@@ -386,7 +390,7 @@ export function TaskAuditAssignTable({
   // 详情列: 按 taskType 三套(对应 PHP /yuntiku/task-* -list 各题型)
   //   exam        - ID / 题型 / 题干 / A~H / 答案 / 重点
   //   examshicao  - ID / 考评点 / 题干 / 考场准备 / 考生准备 / 评分(子表)
-  //   examsub     - ID / 知识点 / 题干 / 参考答案 / 是否计算题 / 图片
+  //   examsub     - ID / 知识点 / 题干 / 参考答案 / 是否计算题
   const detailColumns: ColumnsType<TaskAuditDetailItem> = (() => {
     if (taskType === 'exam') {
       return [
@@ -463,7 +467,6 @@ export function TaskAuditAssignTable({
       },
       { title: detailColumnLabels.nanyicd ?? '难易程度', dataIndex: 'nanyicd', width: 100, render: (v: string | undefined) => v || '-' },
       { title: detailColumnLabels.isJisuan ?? '是否计算题', dataIndex: 'isJisuan', width: 100, render: (v: number | undefined) => (v ? <Tag color="blue">是</Tag> : '否') },
-      { title: '图片', dataIndex: 'pic', width: 80, render: (v: string | undefined) => v ? <Tag>有图</Tag> : '-' },
     ];
   })();
 
@@ -501,7 +504,6 @@ export function TaskAuditAssignTable({
       ...base,
       { title: '审核内容', dataIndex: 'content', width: 300, render: (v: string | undefined) => v || '-' },
       { title: '审核答案', dataIndex: 'answer', width: 300, render: (v: string | undefined) => v || '-' },
-      { title: '图片', dataIndex: 'pic', width: 80, render: (v: string | undefined) => (v ? <Tag>有图</Tag> : '-') },
       { title: '提交时间', dataIndex: 'addtimeCn', width: 160, render: (v: string | undefined) => v || '-' },
     ];
   })();
@@ -588,7 +590,7 @@ export function TaskAuditAssignTable({
               导出
             </Button>
           )}
-          {r.status === 0 && hasPerm(`${permissionPrefix}:delete`) && (
+          {hasPerm(`${permissionPrefix}:delete`) && (
             <Button size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(r)}>
               删除
             </Button>

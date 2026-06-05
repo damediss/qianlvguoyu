@@ -6,6 +6,7 @@ import type {
   ExpertAuditItem,
   ExpertSubmitReq,
   XimuListResponse,
+  ExamshicaoListResponse,
 } from '../types/expert';
 
 export function pageStartTasks(params: ExpertTaskQuery) {
@@ -25,7 +26,7 @@ export function submitExam(payload: ExpertSubmitReq) {
 }
 
 export function getExamshicaoList(taskId: number, role: number) {
-  return unwrap<ExpertAuditItem[]>(apiClient.get('/expert/examshicao-list', { params: { taskId, role } }));
+  return unwrap<ExamshicaoListResponse>(apiClient.get('/expert/examshicao-list', { params: { taskId, role } }));
 }
 
 export function submitExamshicao(payload: ExpertSubmitReq) {
