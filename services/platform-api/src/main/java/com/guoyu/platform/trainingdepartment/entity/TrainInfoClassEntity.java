@@ -25,6 +25,8 @@ public class TrainInfoClassEntity {
   private Long companyId;
   /** 工种ID */
   private Long workTypeId;
+  /** 工种等级 1-5 */
+  private Integer workTypeLevel;
   /** 开始日期 */
   private String dateStart;
   /** 结束日期 */
@@ -52,6 +54,8 @@ public class TrainInfoClassEntity {
   public void setCompanyId(Long companyId) { this.companyId = companyId; }
   public Long getWorkTypeId() { return workTypeId; }
   public void setWorkTypeId(Long workTypeId) { this.workTypeId = workTypeId; }
+  public Integer getWorkTypeLevel() { return workTypeLevel; }
+  public void setWorkTypeLevel(Integer workTypeLevel) { this.workTypeLevel = workTypeLevel; }
   public String getDateStart() { return dateStart; }
   public void setDateStart(String dateStart) { this.dateStart = dateStart; }
   public String getDateEnd() { return dateEnd; }

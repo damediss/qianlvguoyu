@@ -19,6 +19,7 @@ import com.guoyu.platform.system.mapper.RoleMenuMapper;
 import com.guoyu.platform.system.mapper.TenantMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.system.mapper.UserRoleMapper;
+import com.guoyu.platform.trainingdepartment.service.TrainingOperatorScopeService;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Comparator;
@@ -39,6 +40,7 @@ public class AuthApplicationService {
   private final UserRoleMapper userRoleMapper;
   private final RoleMenuMapper roleMenuMapper;
   private final PasswordEncoder passwordEncoder;
+  private final TrainingOperatorScopeService trainingOperatorScopeService;
   private final SecureRandom secureRandom = new SecureRandom();
 
   public AuthApplicationService(
@@ -46,13 +48,15 @@ public class AuthApplicationService {
       UserMapper userMapper,
       UserRoleMapper userRoleMapper,
       RoleMenuMapper roleMenuMapper,
-      PasswordEncoder passwordEncoder
+      PasswordEncoder passwordEncoder,
+      TrainingOperatorScopeService trainingOperatorScopeService
   ) {
     this.tenantMapper = tenantMapper;
     this.userMapper = userMapper;
     this.userRoleMapper = userRoleMapper;
     this.roleMenuMapper = roleMenuMapper;
     this.passwordEncoder = passwordEncoder;
+    this.trainingOperatorScopeService = trainingOperatorScopeService;
   }
 
   @Transactional(readOnly = true)
@@ -132,12 +136,16 @@ public class AuthApplicationService {
   }
 
   private CurrentUserVO toCurrentUser(PlatformUserPrincipal principal) {
+    TrainingOperatorScopeService.Scope scope = trainingOperatorScopeService.scopeForUser(principal.getUserId());
     return new CurrentUserVO(
         principal.getUserId(),
         principal.getTenantId(),
         principal.getUsername(),
         principal.getDisplayName(),
         principal.getUserType(),
+        scope.orgId(),
+        scope.orgType(),
+        scope.loginRole(),
         principal.getRoleCodes(),
         principal.getPermissionCodes()
     );

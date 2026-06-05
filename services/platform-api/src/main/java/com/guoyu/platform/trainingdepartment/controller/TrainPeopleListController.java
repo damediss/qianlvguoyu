@@ -7,6 +7,7 @@ import com.guoyu.platform.trainingdepartment.dto.SignupAuditReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListUpdateReq;
+import com.guoyu.platform.trainingdepartment.security.TrainingAuthorityExpressions;
 import com.guoyu.platform.trainingdepartment.service.TrainPeopleListApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainPeopleListVO;
 import jakarta.validation.Valid;
@@ -84,7 +85,7 @@ public class TrainPeopleListController {
 
   /** 班级学员列表 */
   @GetMapping("/class-student-list")
-  @PreAuthorize("hasAuthority('train:people-list:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
   public ApiResponse<Map<String, Object>> classStudentList(
       @RequestParam Long classId,
       @RequestParam(defaultValue = "1") int currentPage,
@@ -94,7 +95,7 @@ public class TrainPeopleListController {
 
   /** 编辑学员信息 */
   @PostMapping("/class-student-save")
-  @PreAuthorize("hasAuthority('train:people-list:update')")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_UPDATE)
   @AuditLog(module = "training", action = "class-student:save", targetType = "train_people_list")
   public ApiResponse<Map<String, Object>> saveStudent(@RequestBody Map<String, Object> params) {
     return ApiResponse.ok(trainPeopleListApplicationService.saveStudent(params));
@@ -102,7 +103,7 @@ public class TrainPeopleListController {
 
   /** 批量删除学员 */
   @PostMapping("/class-student-del")
-  @PreAuthorize("hasAuthority('train:people-list:delete')")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_DELETE)
   @AuditLog(module = "training", action = "class-student:delete", targetType = "train_people_list")
   public ApiResponse<Map<String, Object>> deleteStudents(@RequestBody Map<String, List<Long>> body) {
     return ApiResponse.ok(trainPeopleListApplicationService.batchDeleteStudents(body.get("studentIds")));
@@ -110,7 +111,7 @@ public class TrainPeopleListController {
 
   /** 可导入的报名人员 */
   @GetMapping("/sign-up-self-list")
-  @PreAuthorize("hasAuthority('train:people-list:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
   public ApiResponse<Map<String, Object>> signUpSelfList(
       @RequestParam Long traininfoId,
       @RequestParam(required = false) String keyword) {
@@ -119,7 +120,7 @@ public class TrainPeopleListController {
 
   /** 从报名导入学员 */
   @PostMapping("/class-student-import")
-  @PreAuthorize("hasAuthority('train:people-list:create')")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_CREATE)
   @AuditLog(module = "training", action = "class-student:import", targetType = "train_people_list")
   public ApiResponse<Map<String, Object>> importStudents(@RequestBody Map<String, Object> params) {
     Long traininfoId = params.get("traininfoId") != null ? Long.valueOf(params.get("traininfoId").toString()) : null;
@@ -132,7 +133,7 @@ public class TrainPeopleListController {
 
   /** 按身份证号导入学员 */
   @PostMapping("/class-student-import-by-idcard")
-  @PreAuthorize("hasAuthority('train:people-list:create')")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_CREATE)
   @AuditLog(module = "training", action = "class-student:import-by-idcard", targetType = "train_people_list")
   public ApiResponse<Map<String, Object>> importStudentsByIdCard(@RequestBody Map<String, Object> params) {
     Long traininfoId = params.get("traininfoId") != null ? Long.valueOf(params.get("traininfoId").toString()) : null;
@@ -145,7 +146,7 @@ public class TrainPeopleListController {
 
   /** 教务/负责人列表 */
   @GetMapping("/class-other")
-  @PreAuthorize("hasAuthority('train:people-list:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
   public ApiResponse<Map<String, Object>> classOtherList(
       @RequestParam Long train_info_id,
       @RequestParam Long id,
@@ -155,7 +156,7 @@ public class TrainPeopleListController {
 
   /** 新增/编辑教务/负责人 */
   @PostMapping("/class-other-save")
-  @PreAuthorize("hasAuthority('train:people-list:create')")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_CREATE)
   @AuditLog(module = "training", action = "class-other:save", targetType = "train_people_list")
   public ApiResponse<Map<String, Object>> saveOther(@RequestBody Map<String, Object> params) {
     return ApiResponse.ok(trainPeopleListApplicationService.saveOther(params));
@@ -163,7 +164,7 @@ public class TrainPeopleListController {
 
   /** 批量删除教务/负责人 */
   @PostMapping("/class-other-del")
-  @PreAuthorize("hasAuthority('train:people-list:delete')")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_DELETE)
   @AuditLog(module = "training", action = "class-other:delete", targetType = "train_people_list")
   public ApiResponse<Map<String, Object>> deleteOthers(@RequestBody Map<String, List<Long>> body) {
     return ApiResponse.ok(trainPeopleListApplicationService.batchDeleteOthers(body.get("ids")));
@@ -171,14 +172,14 @@ public class TrainPeopleListController {
 
   /** 可导入的教务数据源（教师库） */
   @GetMapping("/class-other-import-data")
-  @PreAuthorize("hasAuthority('train:people-list:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
   public ApiResponse<Map<String, Object>> otherImportData(@RequestParam String tag) {
     return ApiResponse.ok(trainPeopleListApplicationService.otherImportData(tag));
   }
 
   /** 从教师库导入教务人员 */
   @PostMapping("/class-other-import")
-  @PreAuthorize("hasAuthority('train:people-list:create')")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_CREATE)
   @AuditLog(module = "training", action = "class-other:import", targetType = "train_people_list")
   public ApiResponse<Map<String, Object>> importOthers(@RequestBody Map<String, Object> params) {
     Long traininfoId = params.get("traininfoId") != null ? Long.valueOf(params.get("traininfoId").toString()) : null;

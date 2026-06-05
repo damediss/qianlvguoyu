@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>培训业务核心指标与多维数据驾驶舱 - 智训企业版</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <style>
+    :root {
+      --primary: #2A6DFF;
+      --bg: #f5f7fa;
+      --card: #fff;
+      --text: #1a2332;
+      --text2: #64748b;
+      --border: #e2e8f0;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --shadow: 0 4px 24px rgba(42,109,255,.06);
+      --radius: 16px;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Inter, system-ui, sans-serif; background:var(--bg); color:var(--text); line-height:1.5; }
+    body.embed-mode .page-header { display: none; }
+    body.embed-mode .container { padding-top: 20px; }
+    .page-header {
+      background:linear-gradient(135deg,#1e3a8a 0%,#2A6DFF 55%,#5b8fff 100%);
+      color:#fff; padding:20px 28px 24px; position:sticky; top:0; z-index:100;
+      box-shadow:0 4px 20px rgba(30,58,138,.25);
+    }
+    .page-header-inner { max-width:1600px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; }
+    .page-header h1 { font-size:22px; font-weight:700; }
+    .page-header p { font-size:13px; opacity:.9; margin-top:4px; }
+    .back-link {
+      display:inline-flex; align-items:center; gap:8px; color:#fff; text-decoration:none;
+      font-size:14px; padding:8px 16px; background:rgba(255,255,255,.15); border-radius:10px;
+    }
+    .back-link:hover { background:rgba(255,255,255,.25); }
+    .container { max-width:1600px; margin:0 auto; padding:24px 20px 48px; }
+    .kpi-grid {
+      display:grid; grid-template-columns:repeat(6,1fr); gap:16px; margin-bottom:28px;
+    }
+    @media (max-width:1400px) { .kpi-grid { grid-template-columns:repeat(3,1fr); } }
+    @media (max-width:768px) { .kpi-grid { grid-template-columns:repeat(2,1fr); } }
+    @media (max-width:480px) { .kpi-grid { grid-template-columns:1fr; } }
+    .kpi-card {
+      background:var(--card); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow);
+      transition:transform .2s, box-shadow .2s; border:1px solid transparent;
+    }
+    .kpi-card:hover { transform:translateY(-2px); box-shadow:0 8px 32px rgba(42,109,255,.12); }
+    .kpi-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; }
+    .kpi-icon {
+      width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:18px;
+    }
+    .kpi-val { font-size:28px; font-weight:700; letter-spacing:-.5px; }
+    .kpi-label { font-size:13px; color:var(--text2); margin-top:4px; }
+    .kpi-trend { font-size:12px; font-weight:600; margin-top:8px; display:flex; align-items:center; gap:4px; }
+    .kpi-trend.up { color:var(--success); }
+    .kpi-trend.neutral { color:var(--text2); }
+    .section {
+      background:var(--card); border-radius:20px; box-shadow:var(--shadow);
+      padding:24px 28px; margin-bottom:28px; border:1px solid var(--border);
+    }
+    .section-head {
+      display:flex; align-items:center; gap:12px; margin-bottom:22px; padding-bottom:16px;
+      border-bottom:2px solid var(--bg);
+    }
+    .section-head .icon-wrap {
+      width:48px; height:48px; border-radius:14px; display:flex; align-items:center; justify-content:center; font-size:22px;
+    }
+    .section-head h2 { font-size:18px; font-weight:700; }
+    .section-head p { font-size:13px; color:var(--text2); margin-top:2px; }
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+    .grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
+    .grid-23 { display:grid; grid-template-columns:2fr 1fr; gap:20px; }
+    .grid-32 { display:grid; grid-template-columns:1fr 1.2fr; gap:20px; }
+    @media (max-width:1100px) {
+      .grid-2,.grid-3,.grid-23,.grid-32 { grid-template-columns:1fr; }
+    }
+    .sub-card {
+      background:var(--bg); border-radius:14px; padding:18px; height:100%;
+    }
+    .sub-card h3 { font-size:14px; font-weight:600; margin-bottom:14px; color:var(--text); display:flex; align-items:center; gap:8px; }
+    .chart { width:100%; height:320px; min-height:260px; }
+    .chart-sm { height:240px; min-height:200px; }
+    .chart-xs { height:200px; min-height:160px; }
+    .mini-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:16px; }
+    @media (max-width:900px) { .mini-stats { grid-template-columns:repeat(2,1fr); } }
+    .mini-stat {
+      background:var(--card); border-radius:10px; padding:14px; text-align:center; border:1px solid var(--border);
+    }
+    .mini-stat .v { font-size:20px; font-weight:700; color:var(--primary); }
+    .mini-stat .l { font-size:11px; color:var(--text2); margin-top:4px; }
+    .progress-row { margin-bottom:12px; }
+    .progress-row label { font-size:12px; display:flex; justify-content:space-between; margin-bottom:4px; color:var(--text2); }
+    .progress-bar { height:8px; background:var(--border); border-radius:4px; overflow:hidden; }
+    .progress-bar span { display:block; height:100%; background:linear-gradient(90deg,var(--primary),#5b8fff); border-radius:4px; }
+    table.data-tbl { width:100%; border-collapse:collapse; font-size:13px; }
+    table.data-tbl th {
+      text-align:left; padding:10px 12px; background:#fafbfd; color:var(--text2);
+      font-weight:600; font-size:12px; border-bottom:2px solid var(--border);
+    }
+    table.data-tbl td { padding:12px; border-bottom:1px solid var(--border); }
+    table.data-tbl tr:hover td { background:#f8fafc; }
+    .pct-cell { display:flex; align-items:center; gap:8px; }
+    .pct-bar { flex:1; height:6px; background:var(--border); border-radius:3px; max-width:80px; }
+    .pct-bar i { display:block; height:100%; background:var(--primary); border-radius:3px; }
+    .resource-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:16px; }
+    @media (max-width:1200px) { .resource-grid { grid-template-columns:repeat(2,1fr); } }
+    @media (max-width:600px) { .resource-grid { grid-template-columns:1fr; } }
+    .res-card {
+      background:var(--bg); border-radius:14px; padding:20px; border-left:4px solid var(--primary);
+      transition:transform .2s;
+    }
+    .res-card:hover { transform:translateY(-2px); }
+    .res-card h4 { font-size:15px; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+    .res-card .big { font-size:26px; font-weight:700; color:var(--primary); }
+    .res-card .sub { font-size:12px; color:var(--text2); margin-top:6px; }
+    .res-card.man { border-color:#2A6DFF; }
+    .res-card.machine { border-color:#8b5cf6; }
+    .res-card.material { border-color:#10b981; }
+    .res-card.method { border-color:#f59e0b; }
+    .res-card.env { border-color:#06b6d4; }
+    .project-card {
+      background:var(--bg); border-radius:14px; padding:20px; margin-bottom:16px;
+      border:1px solid var(--border); transition:box-shadow .2s;
+    }
+    .project-card:hover { box-shadow:0 4px 16px rgba(0,0,0,.06); }
+    .project-card h4 { font-size:15px; font-weight:600; margin-bottom:12px; }
+    .risk-tag {
+      display:inline-block; padding:3px 10px; border-radius:6px; font-size:11px; font-weight:600; margin-left:8px;
+    }
+    .risk-high { background:#fee2e2; color:#dc2626; }
+    .risk-mid { background:#fef3c7; color:#d97706; }
+    .risk-low { background:#d1fae5; color:#059669; }
+    .proj-meta { display:grid; grid-template-columns:repeat(2,1fr); gap:10px 20px; font-size:13px; margin-bottom:12px; }
+    .proj-meta span { color:var(--text2); }
+    .milestone-bar { display:flex; gap:4px; margin:10px 0; }
+    .milestone-bar .m { flex:1; height:6px; border-radius:3px; background:var(--border); position:relative; overflow:hidden; }
+    .milestone-bar .m.done { background:var(--success); }
+    .milestone-bar .m.partial { background:linear-gradient(90deg,var(--success) 70%,var(--border) 70%); }
+    .risk-desc { font-size:12px; color:var(--text2); padding:10px; background:var(--card); border-radius:8px; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <header class="page-header">
+    <div class="page-header-inner">
+      <div>
+        <a href="培训管理系统 主页面.html?panel=dashboard" class="back-link"><i class="fas fa-arrow-left"></i> 返回数据面板</a>
+        <h1 style="margin-top:12px">培训业务核心指标与多维数据驾驶舱</h1>
+        <p>人才 · 资源 · 平台 · 项目 四维数据全景 · 数据更新至 2026-05</p>
+      </div>
+      <div style="text-align:right;font-size:13px;opacity:.9">
+        <i class="fas fa-sync-alt"></i> 演示数据 · ECharts 交互图表
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <!-- 人才数据 -->
+    <section class="section" id="sec-talent">
+      <div class="section-head">
+        <div class="icon-wrap" style="background:#E8F0FF;color:#2A6DFF"><i class="fas fa-users"></i></div>
+        <div><h2>人才数据板块</h2><p>区域、企业、项目、职业、工种、级别多维度人才画像</p></div>
+      </div>
+      <div class="grid-23" style="margin-bottom:20px">
+        <div class="sub-card"><h3><i class="fas fa-chart-bar"></i> 职业工种分布</h3><div id="chartOccupation" class="chart"></div></div>
+        <div class="sub-card"><h3><i class="fas fa-chart-pie"></i> 人才类型结构</h3><div id="chartTalentType" class="chart chart-sm"></div></div>
+      </div>
+      <div class="grid-2" style="margin-bottom:20px">
+        <div class="sub-card"><h3><i class="fas fa-map-marked-alt"></i> 地域分布（广西）</h3><div id="chartRegion" class="chart chart-sm"></div></div>
+        <div class="sub-card"><h3><i class="fas fa-chart-line"></i> 培训项目数年度对比</h3><div id="chartYearTrend" class="chart chart-sm"></div></div>
+      </div>
+      <div class="sub-card" style="margin-bottom:20px">
+        <h3><i class="fas fa-table"></i> 各地市 × 工种人才数量（模拟）</h3>
+        <div style="overflow-x:auto"><table class="data-tbl" id="regionOccTable"></table></div>
+      </div>
+      <div class="grid-2" style="margin-bottom:20px">
+        <div class="sub-card"><h3><i class="fas fa-building"></i> 企业性质 × 人才级别</h3><div id="chartEnterpriseLevel" class="chart"></div></div>
+        <div class="sub-card"><h3><i class="fas fa-project-diagram"></i> 项目类型人才人次</h3><div id="chartProjectType" class="chart"></div></div>
+      </div>
+      <div class="grid-3">
+        <div class="sub-card"><h3>学历结构</h3><div id="chartEducation" class="chart chart-xs"></div></div>
+        <div class="sub-card"><h3>年龄分布</h3><div id="chartAge" class="chart chart-xs"></div></div>
+        <div class="sub-card">
+          <h3>各工种高级人才占比</h3>
+          <div id="seniorProgress" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 资源数据 -->
+    <section class="section" id="sec-resource">
+      <div class="section-head">
+        <div class="icon-wrap" style="background:#F5F3FF;color:#8B5CF6"><i class="fas fa-cubes"></i></div>
+        <div><h2>资源数据板块</h2><p>人机料法环五类培训资源状态与利用率</p></div>
+      </div>
+      <div class="resource-grid" id="resourceCards"></div>
+      <div class="grid-2" style="margin-top:20px">
+        <div class="sub-card"><h3><i class="fas fa-chalkboard-teacher"></i> 讲师利用率</h3><div id="chartTeacherUtil" class="chart chart-sm"></div></div>
+        <div class="sub-card"><h3><i class="fas fa-book"></i> 教学方法分布</h3><div id="chartMethod" class="chart chart-sm"></div></div>
+      </div>
+    </section>
+
+    <!-- 平台数据 -->
+    <section class="section" id="sec-platform">
+      <div class="section-head">
+        <div class="icon-wrap" style="background:#ECFDF5;color:#10B981"><i class="fas fa-laptop"></i></div>
+        <div><h2>平台数据板块</h2><p>不同平台、不同培训班组成果指标对比</p></div>
+      </div>
+      <div class="sub-card" style="margin-bottom:20px">
+        <h3><i class="fas fa-table"></i> 平台 × 班组成果明细</h3>
+        <div style="overflow-x:auto;margin-top:12px"><table class="data-tbl" id="platformTable"></table></div>
+      </div>
+      <div class="sub-card"><h3><i class="fas fa-chart-bar"></i> 各平台平均成果对比</h3><div id="chartPlatformCompare" class="chart"></div></div>
+    </section>
+
+    <!-- 项目数据 -->
+    <section class="section" id="sec-project">
+      <div class="section-head">
+        <div class="icon-wrap" style="background:#FFF7ED;color:#F59E0B"><i class="fas fa-exclamation-triangle"></i></div>
+        <div><h2>项目数据板块</h2><p>重点项目里程、质量、成本与风险点管控</p></div>
+      </div>
+      <div class="grid-32" style="margin-bottom:20px">
+        <div id="projectCards"></div>
+        <div class="sub-card"><h3><i class="fas fa-th"></i> 项目风险矩阵概览</h3><div id="chartRiskMatrix" class="chart"></div></div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const MOCK = {
+      kpi: [
+        { label:'总培训项目数', value:'186', trend:'+12% 同比', up:true, icon:'fa-folder-open', bg:'#E8F0FF', ic:'#2A6DFF' },
+        { label:'参与总人次', value:'12,458', trend:'+8.3% 同比', up:true, icon:'fa-users', bg:'#ECFDF5', ic:'#10B981' },
+        { label:'回款总额（万元）', value:'2,860', trend:'+15.2% 同比', up:true, icon:'fa-yen-sign', bg:'#FFF7ED', ic:'#F59E0B' },
+        { label:'进行中班次', value:'24', trend:'↑ 3个本周开班', up:true, icon:'fa-chalkboard-teacher', bg:'#F5F3FF', ic:'#8B5CF6' },
+        { label:'待认定人数', value:'342', trend:'本月需完成', up:null, icon:'fa-certificate', bg:'#FEF2F2', ic:'#EF4444' },
+        { label:'结业率', value:'94.6%', trend:'+2.1% 环比', up:true, icon:'fa-chart-line', bg:'#E0F2FE', ic:'#0284C7' }
+      ],
+      occupations: [
+        { name:'电工', count:128 }, { name:'焊工', count:94 }, { name:'起重工', count:46 },
+        { name:'架子工', count:33 }, { name:'安全员', count:87 }
+      ],
+      regions: [
+        { name:'南宁', pct:32 }, { name:'桂林', pct:18 }, { name:'柳州', pct:15 },
+        { name:'玉林', pct:12 }, { name:'梧州', pct:10 }, { name:'其他', pct:13 }
+      ],
+      regionOcc: {
+        cities: ['南宁','桂林','柳州','玉林','梧州'],
+        occs: ['电工','焊工','起重工','架子工','安全员'],
+        data: [
+          [50,30,15,11,22],[23,17,8,6,14],[20,14,7,5,12],
+          [16,11,6,4,10],[14,10,5,3,9]
+        ]
+      },
+      enterpriseLevel: {
+        types: ['国有企业','民营企业'],
+        levels: ['初级','中级','高级','专家级'],
+        data: [[2050,2387,1705,678],[2537,1691,1128,282]]
+      },
+      projectTypes: [
+        { name:'新员工培训', items:42, people:2100 },
+        { name:'晋升培训', items:28, people:1680 },
+        { name:'资质认证', items:56, people:4200 },
+        { name:'安全培训', items:38, people:2280 },
+        { name:'管理研修', items:22, people:1198 }
+      ],
+      education: [
+        { name:'大专及以下', value:39 }, { name:'本科', value:41 },
+        { name:'硕士', value:15 }, { name:'博士及其他', value:5 }
+      ],
+      age: [
+        { name:'20-30岁', value:3240 }, { name:'31-40岁', value:4580 },
+        { name:'41-50岁', value:3120 }, { name:'51岁以上', value:1518 }
+      ],
+      talentTypes: [
+        { name:'技能型人才', value:36 }, { name:'管理型人才', value:17 },
+        { name:'技术型人才', value:31 }, { name:'复合型', value:16 }
+      ],
+      seniorPct: [
+        { name:'电工', pct:28 }, { name:'焊工', pct:22 }, { name:'起重工', pct:35 },
+        { name:'架子工', pct:18 }, { name:'安全员', pct:31 }
+      ],
+      yearTrend: { years:['2024','2025','2026'], values:[142,168,186] },
+      resources: [
+        { key:'man', title:'人 · 人力资源', icon:'fa-user-tie', items:['专职讲师 35人','兼职讲师 42人','助教/班主任 26人'], util:'讲师利用率 87%' },
+        { key:'machine', title:'机 · 设备机器', icon:'fa-cogs', items:['实训设备 420台','完好率 96%','电工实训台/焊机/起重机模拟器等'], util:'' },
+        { key:'material', title:'料 · 教材物料', icon:'fa-book', items:['线上课程 128门','实体教材发放 5600册','课件季度更新率 92%'], util:'' },
+        { key:'method', title:'法 · 教学方法', icon:'fa-lightbulb', items:['案例教学 40%','实操模拟 35%','理论讲授 25%'], util:'' },
+        { key:'env', title:'环 · 环境场地', icon:'fa-warehouse', items:['实训基地 3个','总面积 12000㎡','教室利用率 82%','环境满意度 4.6/5'], util:'' }
+      ],
+      platformRows: [
+        { platform:'线上学习平台', team:'电工提升班', grad:96, pass:91, score:86.5, cert:89 },
+        { platform:'线上学习平台', team:'安全管理研修班', grad:94, pass:88, score:84.0, cert:85 },
+        { platform:'线下实训平台', team:'焊工特训班', grad:98, pass:96, score:90.2, cert:94 },
+        { platform:'线下实训平台', team:'起重工实操班', grad:92, pass:87, score:82.5, cert:83 },
+        { platform:'混合平台', team:'复合型人才班', grad:97, pass:93, score:88.0, cert:91 }
+      ],
+      projects: [
+        {
+          name:'2026年度电工高压特种作业认证培训', type:'资质认证', period:'2026.03-2026.06',
+          risk:'mid', milestones:[100,75,50], quality:'实操合格率 92%（目标95%）',
+          cost:'预算58万 / 已用32万（55%）', riskText:'实操设备老化故障率上升',
+          control:'增加备用设备与每日点检'
+        },
+        {
+          name:'全区建筑架子工安全轮训（春季）', type:'安全培训', period:'2026.04-2026.07',
+          risk:'low', milestones:[100,70,70], quality:'理论均分86 / 安全规范91',
+          cost:'预算35万 / 已用28万', riskText:'部分地市报名不足',
+          control:'线上同步直播参训'
+        },
+        {
+          name:'智能制造管理研修班', type:'管理研修', period:'2026.05-2026.09',
+          risk:'low', milestones:[100,100,85], quality:'往期满意度4.8/5',
+          cost:'预算120万 / 已用65万', riskText:'高层管理者时间冲突出勤率下降',
+          control:'录制课程+补学机制'
+        },
+        {
+          name:'焊工技师晋升认证项目', type:'晋升培训', period:'2026.02-2026.08',
+          risk:'high', milestones:[100,70,70], quality:'实操通过率88%（预期92%）',
+          cost:'预算72万 / 已用56万（材料超支8%）', riskText:'焊材浪费严重',
+          control:'定额领料+奖惩制度'
+        }
+      ],
+      riskMatrix: [
+        { name:'电工认证', impact:3, prob:2 }, { name:'架子工轮训', impact:2, prob:2 },
+        { name:'管理研修', impact:2, prob:3 }, { name:'焊工晋升', impact:4, prob:3 }
+      ]
+    };
+
+    const charts = [];
+    window.charts = charts;
+
+    function renderKpi() {
+      document.getElementById('kpiGrid').innerHTML = MOCK.kpi.map(k => `
+        <div class="kpi-card">
+          <div class="kpi-top">
+            <div class="kpi-icon" style="background:${k.bg};color:${k.ic}"><i class="fas ${k.icon}"></i></div>
+          </div>
+          <div class="kpi-val">${k.value}</div>
+          <div class="kpi-label">${k.label}</div>
+          <div class="kpi-trend ${k.up === true ? 'up' : 'neutral'}">
+            ${k.up === true ? '<i class="fas fa-arrow-up"></i>' : ''} ${k.trend}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function initChart(id, option) {
+      const el = document.getElementById(id);
+      if (!el) return null;
+      const c = echarts.init(el);
+      c.setOption(option);
+      charts.push(c);
+      return c;
+    }
+
+    function chartOccupation() {
+      const d = MOCK.occupations;
+      initChart('chartOccupation', {
+        tooltip: { trigger:'axis', axisPointer:{ type:'shadow' } },
+        grid: { left:'3%', right:'8%', bottom:'3%', top:'8%', containLabel:true },
+        xAxis: { type:'value', name:'人数' },
+        yAxis: { type:'category', data: d.map(x=>x.name) },
+        series: [{
+          type:'bar', data: d.map(x=>x.count),
+          itemStyle: { color: new echarts.graphic.LinearGradient(0,0,1,0,[{offset:0,color:'#5b8fff'},{offset:1,color:'#2A6DFF'}]) },
+          label: { show:true, position:'right', formatter:'{c}人' }
+        }]
+      });
+    }
+
+    function chartTalentType() {
+      initChart('chartTalentType', {
+        tooltip: { trigger:'item', formatter:'{b}: {c}% ({d}%)' },
+        legend: { bottom:0 },
+        series: [{
+          type:'pie', radius:['42%','68%'], center:['50%','45%'],
+          data: MOCK.talentTypes.map(t=>({ name:t.name, value:t.value })),
+          label: { formatter:'{b}\n{d}%' },
+          itemStyle: { borderRadius:6, borderColor:'#fff', borderWidth:2 }
+        }],
+        color: ['#2A6DFF','#10B981','#F59E0B','#8B5CF6']
+      });
+    }
+
+    function chartRegion() {
+      initChart('chartRegion', {
+        tooltip: { trigger:'item' },
+        legend: { orient:'vertical', right:10, top:'center' },
+        series: [{
+          type:'pie', radius:'65%', center:['40%','50%'],
+          data: MOCK.regions.map(r=>({ name:r.name, value:r.pct })),
+          label: { formatter:'{b} {c}%' },
+          emphasis: { itemStyle: { shadowBlur:10, shadowOffsetX:0, shadowColor:'rgba(0,0,0,.2)' } }
+        }],
+        color: ['#2A6DFF','#5b8fff','#10B981','#F59E0B','#8B5CF6','#94A3B8']
+      });
+    }
+
+    function chartYearTrend() {
+      initChart('chartYearTrend', {
+        tooltip: { trigger:'axis' },
+        legend: { data:['培训项目数'] },
+        grid: { left:'3%', right:'4%', bottom:'3%', containLabel:true },
+        xAxis: { type:'category', data: MOCK.yearTrend.years },
+        yAxis: { type:'value', name:'项' },
+        series: [{
+          name:'培训项目数', type:'line', smooth:true, data: MOCK.yearTrend.values,
+          areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(42,109,255,.3)'},{offset:1,color:'rgba(42,109,255,.02)'}]) },
+          itemStyle: { color:'#2A6DFF' }, lineStyle: { width:3 }
+        }]
+      });
+    }
+
+    function renderRegionTable() {
+      const { cities, occs, data } = MOCK.regionOcc;
+      let html = '<thead><tr><th>地市</th>' + occs.map(o=>`<th>${o}</th>`).join('') + '<th>合计</th></tr></thead><tbody>';
+      cities.forEach((city, i) => {
+        const row = data[i];
+        const sum = row.reduce((a,b)=>a+b,0);
+        html += `<tr><td><strong>${city}</strong></td>` + row.map(n=>`<td>${n}</td>`).join('') + `<td><strong>${sum}</strong></td></tr>`;
+      });
+      html += '</tbody>';
+      document.getElementById('regionOccTable').innerHTML = html;
+    }
+
+    function chartEnterpriseLevel() {
+      initChart('chartEnterpriseLevel', {
+        tooltip: { trigger:'axis', axisPointer:{ type:'shadow' } },
+        legend: { data: MOCK.enterpriseLevel.levels, bottom:0 },
+        grid: { left:'3%', right:'4%', bottom:'15%', containLabel:true },
+        xAxis: { type:'category', data: MOCK.enterpriseLevel.types },
+        yAxis: { type:'value', name:'人数' },
+        series: MOCK.enterpriseLevel.levels.map((lv, i) => ({
+          name: lv, type:'bar', stack:'total',
+          data: MOCK.enterpriseLevel.data.map(row => row[i]),
+          emphasis: { focus:'series' }
+        })),
+        color: ['#94A3B8','#5b8fff','#2A6DFF','#1e40af']
+      });
+    }
+
+    function chartProjectType() {
+      initChart('chartProjectType', {
+        tooltip: { trigger:'axis' },
+        legend: { data:['项目数','人才人次'] },
+        grid: { left:'3%', right:'4%', bottom:'3%', containLabel:true },
+        xAxis: { type:'category', data: MOCK.projectTypes.map(p=>p.name), axisLabel:{ rotate:20 } },
+        yAxis: [{ type:'value', name:'项目数' }, { type:'value', name:'人次', position:'right' }],
+        series: [
+          { name:'项目数', type:'bar', data: MOCK.projectTypes.map(p=>p.items), itemStyle:{ color:'#2A6DFF' } },
+          { name:'人才人次', type:'line', yAxisIndex:1, data: MOCK.projectTypes.map(p=>p.people), itemStyle:{ color:'#10B981' }, lineStyle:{ width:3 } }
+        ]
+      });
+    }
+
+    function chartEducation() {
+      initChart('chartEducation', {
+        tooltip: { trigger:'item' },
+        series: [{ type:'pie', radius:'60%', data: MOCK.education.map(e=>({name:e.name,value:e.value})), label:{formatter:'{b} {c}%'} }],
+        color: ['#2A6DFF','#5b8fff','#10B981','#8B5CF6']
+      });
+    }
+
+    function chartAge() {
+      initChart('chartAge', {
+        tooltip: { trigger:'axis' },
+        grid: { left:'3%', right:'4%', bottom:'3%', containLabel:true },
+        xAxis: { type:'category', data: MOCK.age.map(a=>a.name) },
+        yAxis: { type:'value' },
+        series: [{ type:'bar', data: MOCK.age.map(a=>a.value), itemStyle:{ color:'#10B981', borderRadius:[6,6,0,0] } }]
+      });
+    }
+
+    function renderSeniorProgress() {
+      document.getElementById('seniorProgress').innerHTML = MOCK.seniorPct.map(s => `
+        <div class="progress-row">
+          <label><span>${s.name}</span><span>${s.pct}%</span></label>
+          <div class="progress-bar"><span style="width:${s.pct}%"></span></div>
+        </div>
+      `).join('');
+    }
+
+    function renderResources() {
+      const cls = { man:'man', machine:'machine', material:'material', method:'method', env:'env' };
+      document.getElementById('resourceCards').innerHTML = MOCK.resources.map(r => `
+        <div class="res-card ${cls[r.key]}">
+          <h4><i class="fas ${r.icon}"></i> ${r.title}</h4>
+          <div class="big">${r.items[0].split(' ').slice(-1)[0] || '—'}</div>
+          ${r.items.map((t,i)=> i ? `<div class="sub">${t}</div>` : '').join('')}
+          ${r.util ? `<div class="sub" style="margin-top:10px;font-weight:600;color:var(--primary)">${r.util}</div>` : ''}
+        </div>
+      `).join('');
+    }
+
+    function chartTeacherUtil() {
+      initChart('chartTeacherUtil', {
+        tooltip: { formatter:'{b}: {c}%' },
+        series: [{
+          type:'gauge', startAngle:200, endAngle:-20, min:0, max:100,
+          progress: { show:true, width:14 }, axisLine: { lineStyle:{ width:14 } },
+          detail: { valueAnimation:true, formatter:'{value}%', fontSize:22, offsetCenter:[0,'20%'] },
+          data: [{ value:87, name:'讲师利用率' }]
+        }]
+      });
+    }
+
+    function chartMethod() {
+      initChart('chartMethod', {
+        tooltip: { trigger:'item' },
+        legend: { bottom:0 },
+        series: [{
+          type:'pie', radius:['40%','65%'],
+          data: [{name:'案例教学',value:40},{name:'实操模拟',value:35},{name:'理论讲授',value:25}],
+          label: { formatter:'{b} {d}%' }
+        }],
+        color: ['#2A6DFF','#10B981','#F59E0B']
+      });
+    }
+
+    function renderPlatformTable() {
+      const rows = MOCK.platformRows;
+      document.getElementById('platformTable').innerHTML = `
+        <thead><tr>
+          <th>平台</th><th>班组名称</th><th>结业率</th><th>考核通过率</th><th>平均成绩</th><th>证书获取率</th>
+        </tr></thead>
+        <tbody>${rows.map(r => `
+          <tr>
+            <td>${r.platform}</td><td><strong>${r.team}</strong></td>
+            <td><div class="pct-cell">${r.grad}%<div class="pct-bar"><i style="width:${r.grad}%"></i></div></div></td>
+            <td><div class="pct-cell">${r.pass}%<div class="pct-bar"><i style="width:${r.pass}%"></i></div></div></td>
+            <td>${r.score}</td>
+            <td><div class="pct-cell">${r.cert}%<div class="pct-bar"><i style="width:${r.cert}%"></i></div></div></td>
+          </tr>
+        `).join('')}</tbody>`;
+    }
+
+    function chartPlatformCompare() {
+      const platforms = ['线上学习平台','线下实训平台','混合平台'];
+      const avg = (key) => {
+        const rows = MOCK.platformRows.filter(r => r.platform.includes(key.includes('线上')?'线上':key.includes('线下')?'线下':'混合'));
+        if (!rows.length) return 0;
+        return Math.round(rows.reduce((s,r)=>s+r[key],0)/rows.length*10)/10;
+      };
+      const online = MOCK.platformRows.filter(r=>r.platform.includes('线上'));
+      const offline = MOCK.platformRows.filter(r=>r.platform.includes('线下'));
+      const mix = MOCK.platformRows.filter(r=>r.platform.includes('混合'));
+      const avgG = (arr,k) => arr.length ? Math.round(arr.reduce((s,r)=>s+r[k],0)/arr.length*10)/10 : 0;
+      initChart('chartPlatformCompare', {
+        tooltip: { trigger:'axis' },
+        legend: { data:['结业率','考核通过率','平均成绩','证书获取率'], bottom:0 },
+        grid: { left:'3%', right:'4%', bottom:'18%', containLabel:true },
+        xAxis: { type:'category', data:['线上学习平台','线下实训平台','混合平台'] },
+        yAxis: { type:'value' },
+        series: [
+          { name:'结业率', type:'bar', data:[avgG(online,'grad'),avgG(offline,'grad'),avgG(mix,'grad')] },
+          { name:'考核通过率', type:'bar', data:[avgG(online,'pass'),avgG(offline,'pass'),avgG(mix,'pass')] },
+          { name:'平均成绩', type:'bar', data:[avgG(online,'score'),avgG(offline,'score'),avgG(mix,'score')] },
+          { name:'证书获取率', type:'bar', data:[avgG(online,'cert'),avgG(offline,'cert'),avgG(mix,'cert')] }
+        ],
+        color: ['#2A6DFF','#10B981','#F59E0B','#8B5CF6']
+      });
+    }
+
+    function renderProjects() {
+      const riskCls = { high:'risk-high', mid:'risk-mid', low:'risk-low' };
+      const riskLabel = { high:'高风险', mid:'中风险', low:'低风险' };
+      document.getElementById('projectCards').innerHTML = MOCK.projects.map(p => {
+        const ms = p.milestones.map((v,i) => {
+          const cls = v>=100?'done':v>0?'partial':'';
+          const bg = v >= 100 ? 'background:var(--success)' : (v > 0 && v < 100 ? `background:linear-gradient(90deg,var(--success) ${v}%,var(--border) ${v}%)` : '');
+          return `<div class="m ${cls}" style="${bg}" title="${['课程开发','培训实施','考试筹备'][i]} ${v}%"></div>`;
+        }).join('');
+        return `
+        <div class="project-card">
+          <h4>${p.name}<span class="risk-tag ${riskCls[p.risk]}">${riskLabel[p.risk]}</span></h4>
+          <div class="proj-meta">
+            <div><span>类型：</span>${p.type}</div>
+            <div><span>周期：</span>${p.period}</div>
+            <div><span>质量：</span>${p.quality}</div>
+            <div><span>成本：</span>${p.cost}</div>
+          </div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:4px">里程碑进度</div>
+          <div class="milestone-bar">${ms}</div>
+          <div class="risk-desc"><strong>风险：</strong>${p.riskText} · <strong>管控：</strong>${p.control}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function chartRiskMatrix() {
+      initChart('chartRiskMatrix', {
+        tooltip: {
+          formatter: p => `${p.data[2]}<br/>影响:${p.data[0]} 概率:${p.data[1]}`
+        },
+        grid: { left:'12%', right:'8%', bottom:'12%', top:'8%' },
+        xAxis: { type:'value', name:'发生概率', min:0, max:5, splitLine:{ show:true } },
+        yAxis: { type:'value', name:'影响程度', min:0, max:5, splitLine:{ show:true } },
+        series: [{
+          type:'scatter', symbolSize: v => (v[0]+v[1])*8,
+          data: MOCK.riskMatrix.map(r => ({
+            value: [r.prob, r.impact, r.name],
+            itemStyle: { color: (r.prob + r.impact) >= 6 ? '#ef4444' : (r.prob + r.impact) >= 4 ? '#f59e0b' : '#10b981' }
+          })),
+          label: { show:true, formatter: p=>p.data[2], position:'top', fontSize:11 }
+        }]
+      });
+    }
+
+    function initAll() {
+      renderKpi();
+      chartOccupation();
+      chartTalentType();
+      chartRegion();
+      chartYearTrend();
+      renderRegionTable();
+      chartEnterpriseLevel();
+      chartProjectType();
+      chartEducation();
+      chartAge();
+      renderSeniorProgress();
+      renderResources();
+      chartTeacherUtil();
+      chartMethod();
+      renderPlatformTable();
+      chartPlatformCompare();
+      renderProjects();
+      chartRiskMatrix();
+    }
+
+    window.addEventListener('resize', () => charts.forEach(c => c.resize()));
+    document.addEventListener('DOMContentLoaded', () => {
+      if (new URLSearchParams(location.search).get('embed') === '1') {
+        document.body.classList.add('embed-mode');
+        document.title = '数据面板 - 智训企业版';
+      }
+      initAll();
+      setTimeout(() => charts.forEach(c => c.resize()), 350);
+    });
+  </script>
+</body>
+</html>

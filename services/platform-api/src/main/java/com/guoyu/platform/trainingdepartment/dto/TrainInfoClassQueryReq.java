@@ -8,6 +8,7 @@ public class TrainInfoClassQueryReq extends PageQuery {
   /** 开班信息ID */
   private Long trainInfoId;
   private Long companyId;
+  private Long workTypeId;
 
   public Long getTrainInfoId() {
     return trainInfoId;
@@ -23,5 +24,13 @@ public class TrainInfoClassQueryReq extends PageQuery {
 
   public void setCompanyId(Long companyId) {
     this.companyId = companyId;
+  }
+
+  public Long getWorkTypeId() {
+    return workTypeId;
+  }
+
+  public void setWorkTypeId(Long workTypeId) {
+    this.workTypeId = workTypeId;
   }
 }

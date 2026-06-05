@@ -6,9 +6,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
 import type { TrainInfoListItem, TrainInfoListEditReq } from '../../types/training';
 
+/** 与 PHP trainingInformation 一致：0 进行中 / 1 待确认 / 2 已完成 */
 const STATUS_MAP: Record<number, { label: string; color: string }> = {
-  0: { label: '待确认', color: 'default' },
-  1: { label: '进行中', color: 'processing' },
+  0: { label: '进行中', color: 'processing' },
+  1: { label: '待确认', color: 'default' },
   2: { label: '已完成', color: 'success' },
 };
 

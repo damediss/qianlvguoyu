@@ -295,6 +295,18 @@ public class DemandTrainApplicationService {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
 
+    long duplicateCount = trainInfoListMapper.selectCount(new LambdaQueryWrapper<TrainInfoListEntity>()
+        .eq(TrainInfoListEntity::getTenantId, tenantId)
+        .eq(TrainInfoListEntity::getDeleted, 0)
+        .eq(TrainInfoListEntity::getTitle, req.getTitle())
+        .eq(TrainInfoListEntity::getCompanyId, req.getCompanyId())
+        .eq(TrainInfoListEntity::getWorkTypeId, req.getWorkTypeId())
+        .eq(TrainInfoListEntity::getWorkTypeLevel, req.getWorkTypeLevel())
+        .eq(TrainInfoListEntity::getNum, req.getNum()));
+    if (duplicateCount > 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "已存在相同培训立项记录");
+    }
+
     // Look up company name
     String companyName = "";
     if (req.getCompanyId() != null) {

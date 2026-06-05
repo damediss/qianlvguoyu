@@ -19,6 +19,7 @@ import { UserAuthCoursePage } from './pages/exam/UserAuthCoursePage';
 import { UserListPage } from './pages/chazheng/UserListPage';
 import { CertQueryPage } from './pages/chazheng/CertQueryPage';
 import { RequirementsManagementPage } from './pages/training/RequirementsManagementPage';
+import { EnterpriseTrainingDemandPage } from './pages/training/EnterpriseTrainingDemandPage';
 import { TrainingProgramPage } from './pages/training/TrainingProgramPage';
 import { DataPanelPage } from './pages/zhixunplatform/DataPanelPage';
 import { TaskManagementPage } from './pages/zhixunplatform/TaskManagementPage';
@@ -104,6 +105,7 @@ const pageMap: Record<string, React.ReactNode> = {
   chazheng_user_list: <UserListPage />,
   chazheng_cert_query: <CertQueryPage />,
   train_needs: <RequirementsManagementPage />,
+  'train_demand-train': <EnterpriseTrainingDemandPage />,
   train_solutions: <TrainingProgramPage />,
   knowledge_spaces: <KnowledgePage />,
   knowledge_search: <KnowledgePage />,

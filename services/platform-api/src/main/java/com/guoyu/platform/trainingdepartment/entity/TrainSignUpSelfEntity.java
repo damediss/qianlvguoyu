@@ -1,6 +1,7 @@
 package com.guoyu.platform.trainingdepartment.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -36,11 +37,14 @@ public class TrainSignUpSelfEntity {
   /** 排序号 */
   private Integer sortNumber;
 
-  /** 租户ID */
+  /** 租户ID（PHP 遗留表可能无此列） */
+  @TableField(exist = false)
   private Long tenantId;
-  /** 创建时间 */
+  /** 创建时间（PHP 遗留表可能无此列） */
+  @TableField(exist = false)
   private LocalDateTime createTime;
-  /** 更新时间 */
+  /** 更新时间（PHP 遗留表可能无此列） */
+  @TableField(exist = false)
   private LocalDateTime updateTime;
 
   /** 逻辑删除 0-未删除 1-已删除 */

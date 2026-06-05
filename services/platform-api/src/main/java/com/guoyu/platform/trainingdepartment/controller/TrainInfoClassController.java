@@ -6,6 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassUpdateReq;
+import com.guoyu.platform.trainingdepartment.security.TrainingAuthorityExpressions;
 import com.guoyu.platform.trainingdepartment.service.TrainInfoClassApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainMaterialGenerateApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoClassVO;
@@ -43,7 +44,7 @@ public class TrainInfoClassController {
 
   /** 分页查询培训班级列表（含企业名、工种名、培训标题等关联字段） */
   @GetMapping("/info-classes")
-  @PreAuthorize("hasAuthority('train:info-class:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_PAGE_VIEW)
   public ApiResponse<Map<String, Object>> page(@Valid @ModelAttribute TrainInfoClassQueryReq req) {
     return ApiResponse.ok(trainInfoClassApplicationService.page(req));
   }
@@ -57,7 +58,7 @@ public class TrainInfoClassController {
 
   /** 新增/编辑培训班级（id=0新增, id>0编辑） */
   @PostMapping("/info-classes/save")
-  @PreAuthorize("hasAuthority('train:info-class:create')")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_SAVE)
   @AuditLog(module = "training", action = "info-class:save", targetType = "train_info_class")
   public ApiResponse<Map<String, Object>> save(@Valid @RequestBody TrainInfoClassCreateReq req) {
     return ApiResponse.ok(trainInfoClassApplicationService.save(req));
@@ -65,7 +66,7 @@ public class TrainInfoClassController {
 
   /** 批量删除培训班级 */
   @PostMapping("/info-classes/batch-delete")
-  @PreAuthorize("hasAuthority('train:info-class:delete')")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_BATCH_DELETE)
   @AuditLog(module = "training", action = "info-class:batch-delete", targetType = "train_info_class")
   public ApiResponse<Map<String, Object>> batchDelete(@RequestBody Map<String, List<Long>> body) {
     return ApiResponse.ok(trainInfoClassApplicationService.batchDelete(body.get("ids")));
@@ -98,7 +99,7 @@ public class TrainInfoClassController {
 
   /** 挂载文件模板到班级 */
   @PostMapping("/info-classes/{classId}/file-temps")
-  @PreAuthorize("hasAuthority('train:info-class:update')")
+  @PreAuthorize(TrainingAuthorityExpressions.DECLARE_CLASS_MUTATE)
   @AuditLog(module = "training", action = "info-class:attach-file-temps", targetType = "train_info_class")
   public ApiResponse<Map<String, Object>> attachFileTemps(@PathVariable Long classId, @RequestBody Map<String, List<Long>> body) {
     return ApiResponse.ok(trainInfoClassApplicationService.attachFileTemps(classId, body.get("ids")));
@@ -106,7 +107,7 @@ public class TrainInfoClassController {
 
   /** 移除班级文件模板 */
   @DeleteMapping("/info-classes/{classId}/file-temps/{templateId}")
-  @PreAuthorize("hasAuthority('train:info-class:update')")
+  @PreAuthorize(TrainingAuthorityExpressions.DECLARE_CLASS_MUTATE)
   @AuditLog(module = "training", action = "info-class:detach-file-temp", targetType = "train_info_class")
   public ApiResponse<Map<String, Object>> detachFileTemp(@PathVariable Long classId, @PathVariable Long templateId) {
     return ApiResponse.ok(trainInfoClassApplicationService.detachFileTemp(classId, templateId));
@@ -114,7 +115,7 @@ public class TrainInfoClassController {
 
   /** 生成班级申报材料 */
   @PostMapping("/info-classes/{classId}/materials/generate")
-  @PreAuthorize("hasAuthority('train:info-class:update')")
+  @PreAuthorize(TrainingAuthorityExpressions.DECLARE_CLASS_MUTATE)
   @AuditLog(module = "training", action = "info-class:generate-materials", targetType = "train_info_class")
   public ApiResponse<Map<String, Object>> generateMaterials(@PathVariable Long classId) {
     return ApiResponse.ok(trainMaterialGenerateApplicationService.generate(classId));

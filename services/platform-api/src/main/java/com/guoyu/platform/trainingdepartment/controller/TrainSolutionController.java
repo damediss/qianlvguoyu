@@ -7,6 +7,7 @@ import com.guoyu.platform.trainingdepartment.dto.TrainSolutionCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSolutionQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSolutionSaveReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSolutionUpdateReq;
+import com.guoyu.platform.trainingdepartment.security.TrainingAuthorityExpressions;
 import com.guoyu.platform.trainingdepartment.service.TrainSolutionApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainSolutionBadgeVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainSolutionListVO;
@@ -72,7 +73,7 @@ public class TrainSolutionController {
 
   /** 保存（创建/更新 + 经费明细） */
   @PostMapping("/solutions/save")
-  @PreAuthorize("hasAuthority('train:solution:create')")
+  @PreAuthorize("hasAnyAuthority('train:solution:create', 'train:solution:update')")
   @AuditLog(module = "training", action = "solution:save", targetType = "train_solution")
   public ApiResponse<Map<String, Object>> save(@Valid @RequestBody TrainSolutionSaveReq req) {
     return ApiResponse.ok(trainSolutionApplicationService.save(req));
@@ -121,7 +122,7 @@ public class TrainSolutionController {
 
   /** 根据需求ID获取方案详情 */
   @GetMapping("/solutions/by-demand-id")
-  @PreAuthorize("hasAuthority('train:solution:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.SOLUTION_BY_DEMAND_VIEW)
   public ApiResponse<Map<String, Object>> getByDemandId(@RequestParam Long traindemandId) {
     return ApiResponse.ok(trainSolutionApplicationService.getByDemandId(traindemandId));
   }

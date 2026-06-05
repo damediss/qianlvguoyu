@@ -13,18 +13,24 @@ import com.guoyu.platform.trainingdepartment.dto.SignupAuditReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListUpdateReq;
+import com.guoyu.platform.trainingdepartment.entity.PlatformUserDetailEntity;
 import com.guoyu.platform.trainingdepartment.entity.CourseKejianEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainTeacherBankEntity;
+import com.guoyu.platform.trainingdepartment.mapper.PlatformUserDetailMapper;
 import com.guoyu.platform.trainingdepartment.mapper.CourseKejianMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainTeacherBankMapper;
+import com.guoyu.platform.trainingdepartment.support.TrainingIdCardHeaderResolver;
 import com.guoyu.platform.trainingdepartment.vo.TrainPeopleListVO;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,17 +51,29 @@ public class TrainPeopleListApplicationService {
   private final TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper;
   private final TrainTeacherBankMapper teacherBankMapper;
   private final CourseKejianMapper courseKejianMapper;
+  private final TrainInfoClassMapper trainInfoClassMapper;
+  private final TrainingOperatorScopeService operatorScopeService;
+  private final TrainingIdCardHeaderResolver idCardHeaderResolver;
+  private final PlatformUserDetailMapper platformUserDetailMapper;
 
   public TrainPeopleListApplicationService(TrainPeopleListMapper mapper,
       TrainSignUpSelfMapper signUpSelfMapper,
       TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper,
       TrainTeacherBankMapper teacherBankMapper,
-      CourseKejianMapper courseKejianMapper) {
+      CourseKejianMapper courseKejianMapper,
+      TrainInfoClassMapper trainInfoClassMapper,
+      TrainingOperatorScopeService operatorScopeService,
+      TrainingIdCardHeaderResolver idCardHeaderResolver,
+      PlatformUserDetailMapper platformUserDetailMapper) {
     this.mapper = mapper;
     this.signUpSelfMapper = signUpSelfMapper;
     this.signUpPeopleSelfMapper = signUpPeopleSelfMapper;
     this.teacherBankMapper = teacherBankMapper;
     this.courseKejianMapper = courseKejianMapper;
+    this.trainInfoClassMapper = trainInfoClassMapper;
+    this.operatorScopeService = operatorScopeService;
+    this.idCardHeaderResolver = idCardHeaderResolver;
+    this.platformUserDetailMapper = platformUserDetailMapper;
   }
 
   // ==================== 基础CRUD ====================
@@ -158,12 +176,31 @@ public class TrainPeopleListApplicationService {
   /** 班级学员列表（type=student, by classId） */
   @Transactional(readOnly = true)
   public Map<String, Object> classStudentList(Long classId, int page, int pageSize) {
+    assertClassViewable(classId);
     LambdaQueryWrapper<TrainPeopleListEntity> wrapper = new LambdaQueryWrapper<TrainPeopleListEntity>()
         .eq(TrainPeopleListEntity::getDeleted, 0)
         .eq(TrainPeopleListEntity::getType, "student")
         .eq(TrainPeopleListEntity::getTrainClassId, classId)
         .orderByDesc(TrainPeopleListEntity::getId);
     Page<TrainPeopleListEntity> mpPage = mapper.selectPage(new Page<>(page, pageSize), wrapper);
+
+    List<String> idCards = mpPage.getRecords().stream()
+        .map(TrainPeopleListEntity::getIdCard)
+        .filter(StringUtils::hasText)
+        .distinct()
+        .toList();
+    Map<String, String> headerFromDetail = new HashMap<>();
+    if (!idCards.isEmpty()) {
+      platformUserDetailMapper.selectList(
+          new LambdaQueryWrapper<PlatformUserDetailEntity>()
+              .in(PlatformUserDetailEntity::getIdcard, idCards)
+              .eq(PlatformUserDetailEntity::getDeleted, 0))
+          .forEach(p -> {
+            if (StringUtils.hasText(p.getIdcard()) && StringUtils.hasText(p.getIdcardHeader())) {
+              headerFromDetail.put(p.getIdcard(), resolveHeaderFromStored(p.getIdcardHeader()));
+            }
+          });
+    }
 
     List<Map<String, Object>> list = mpPage.getRecords().stream().map(e -> {
       Map<String, Object> item = new LinkedHashMap<>();
@@ -180,6 +217,11 @@ public class TrainPeopleListApplicationService {
       item.put("exam_score", e.getExamScore());
       item.put("real_score", e.getRealScore());
       item.put("normal_score", e.getNormalScore());
+      String header = idCardHeaderResolver.resolveHeaderUrl(e.getIdCard());
+      if (!StringUtils.hasText(header) && StringUtils.hasText(e.getIdCard())) {
+        header = headerFromDetail.getOrDefault(e.getIdCard(), "");
+      }
+      item.put("header", header);
       return item;
     }).toList();
 
@@ -193,11 +235,13 @@ public class TrainPeopleListApplicationService {
   /** 编辑学员信息 */
   @Transactional
   public Map<String, Object> saveStudent(Map<String, Object> params) {
+    operatorScopeService.requireOrgOperator();
     Long id = params.get("id") != null ? Long.valueOf(params.get("id").toString()) : null;
     if (id == null || id <= 0) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持编辑已有学员");
     }
     TrainPeopleListEntity entity = getExisting(id);
+    assertClassViewable(entity.getTrainClassId());
     if (params.get("realname") != null) entity.setRealname(params.get("realname").toString());
     if (params.get("phone") != null) entity.setPhone(params.get("phone").toString());
     if (params.get("id_card") != null) entity.setIdCard(params.get("id_card").toString());
@@ -214,10 +258,12 @@ public class TrainPeopleListApplicationService {
   /** 批量删除学员 */
   @Transactional
   public Map<String, Object> batchDeleteStudents(List<Long> ids) {
+    operatorScopeService.requireOrgOperator();
     int count = 0;
     for (Long id : ids) {
       TrainPeopleListEntity entity = mapper.selectById(id);
       if (entity != null && entity.getDeleted() == 0) {
+        assertClassViewable(entity.getTrainClassId());
         entity.setDeleted(1);
         mapper.updateById(entity);
         count++;
@@ -264,6 +310,8 @@ public class TrainPeopleListApplicationService {
   /** 从报名人员导入学员 */
   @Transactional
   public Map<String, Object> importStudents(Long traininfoId, Long classId, List<Long> studentIds) {
+    operatorScopeService.requireOrgOperator();
+    assertClassViewable(classId);
     List<TrainSignUpPeopleSelfEntity> signUpPeople = signUpPeopleSelfMapper.selectBatchIds(studentIds);
     int count = 0;
     List<Map<String, Object>> failed = new ArrayList<>();
@@ -312,6 +360,8 @@ public class TrainPeopleListApplicationService {
   /** 按身份证号导入学员 */
   @Transactional
   public Map<String, Object> importStudentsByIdCard(Long traininfoId, Long classId, String idCardsText) {
+    operatorScopeService.requireOrgOperator();
+    assertClassViewable(classId);
     TrainSignUpSelfEntity signUp = signUpSelfMapper.selectOne(
         new LambdaQueryWrapper<TrainSignUpSelfEntity>()
             .eq(TrainSignUpSelfEntity::getTrainInfoId, traininfoId)
@@ -380,6 +430,7 @@ public class TrainPeopleListApplicationService {
   /** 查询教务/负责人列表 */
   @Transactional(readOnly = true)
   public Map<String, Object> classOtherList(Long trainInfoId, Long classId, String tag) {
+    assertClassViewable(classId);
     String type = tag.equals("teacher") ? "staff" : "inCharge";
     List<TrainPeopleListEntity> records = mapper.selectList(
         new LambdaQueryWrapper<TrainPeopleListEntity>()
@@ -405,10 +456,12 @@ public class TrainPeopleListApplicationService {
   /** 新增/编辑教务/负责人 */
   @Transactional
   public Map<String, Object> saveOther(Map<String, Object> params) {
+    operatorScopeService.requireOrgOperator();
     Long id = params.get("id") != null ? Long.valueOf(params.get("id").toString()) : 0L;
     String type = params.get("type") != null ? params.get("type").toString() : null;
     if (id > 0) {
       TrainPeopleListEntity entity = getExisting(id);
+      assertClassViewable(entity.getTrainClassId());
       if (params.get("realname") != null) entity.setRealname(params.get("realname").toString());
       if (params.get("phone") != null) entity.setPhone(params.get("phone").toString());
       if (params.get("id_card") != null) entity.setIdCard(params.get("id_card").toString());
@@ -417,10 +470,12 @@ public class TrainPeopleListApplicationService {
       result.put("id", entity.getId());
       return result;
     } else {
+      Long classId = params.get("classid") != null ? Long.valueOf(params.get("classid").toString()) : null;
+      assertClassViewable(classId);
       TrainPeopleListEntity entity = new TrainPeopleListEntity();
       entity.setType(type);
       entity.setTrainId(params.get("train_id") != null ? Long.valueOf(params.get("train_id").toString()) : null);
-      entity.setTrainClassId(params.get("classid") != null ? Long.valueOf(params.get("classid").toString()) : null);
+      entity.setTrainClassId(classId);
       entity.setRealname(params.get("realname") != null ? params.get("realname").toString() : null);
       entity.setPhone(params.get("phone") != null ? params.get("phone").toString() : null);
       entity.setIdCard(params.get("id_card") != null ? params.get("id_card").toString() : null);
@@ -435,10 +490,12 @@ public class TrainPeopleListApplicationService {
   /** 批量删除教务/负责人 */
   @Transactional
   public Map<String, Object> batchDeleteOthers(List<Long> ids) {
+    operatorScopeService.requireOrgOperator();
     int count = 0;
     for (Long id : ids) {
       TrainPeopleListEntity entity = mapper.selectById(id);
       if (entity != null && entity.getDeleted() == 0) {
+        assertClassViewable(entity.getTrainClassId());
         entity.setDeleted(1);
         mapper.updateById(entity);
         count++;
@@ -473,6 +530,8 @@ public class TrainPeopleListApplicationService {
   /** 从教师库导入教务人员 */
   @Transactional
   public Map<String, Object> importOthers(Long traininfoId, Long classId, List<Long> ids) {
+    operatorScopeService.requireOrgOperator();
+    assertClassViewable(classId);
     List<TrainTeacherBankEntity> teachers = teacherBankMapper.selectBatchIds(ids);
     int count = 0;
     List<Map<String, Object>> failed = new ArrayList<>();
@@ -518,6 +577,20 @@ public class TrainPeopleListApplicationService {
     return result;
   }
 
+  private void assertClassViewable(Long classId) {
+    if (classId == null) {
+      return;
+    }
+    TrainInfoClassEntity clazz = trainInfoClassMapper.selectOne(
+        new LambdaQueryWrapper<TrainInfoClassEntity>()
+            .eq(TrainInfoClassEntity::getId, classId)
+            .eq(TrainInfoClassEntity::getDeleted, 0));
+    if (clazz == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
+    }
+    operatorScopeService.assertClassAccessible(clazz);
+  }
+
   private TrainPeopleListEntity getExisting(Long id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainPeopleListEntity entity = mapper.selectOne(new LambdaQueryWrapper<TrainPeopleListEntity>()
@@ -528,6 +601,16 @@ public class TrainPeopleListApplicationService {
       throw new BusinessException(ErrorCode.NOT_FOUND, "Record not found");
     }
     return entity;
+  }
+
+  private String resolveHeaderFromStored(String stored) {
+    if (!StringUtils.hasText(stored)) {
+      return "";
+    }
+    if (stored.startsWith("http://") || stored.startsWith("https://") || stored.startsWith("/api/")) {
+      return stored;
+    }
+    return stored.startsWith("/") ? stored : "/" + stored;
   }
 
   private TrainPeopleListVO toVO(TrainPeopleListEntity entity) {

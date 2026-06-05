@@ -1,6 +1,5 @@
 package com.guoyu.platform.trainingdepartment.dto;
 
-import com.guoyu.platform.trainingdepartment.vo.TrainSolutionBadgeVO;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
@@ -24,7 +23,7 @@ public class TrainSolutionSaveReq {
   private String filePath;
 
   /** 经费明细列表（全量替换） */
-  private List<TrainSolutionBadgeVO> badgeList;
+  private List<TrainSolutionBadgeItem> badgeList;
 
   public Long getId() { return id; }
   public void setId(Long id) { this.id = id; }
@@ -38,6 +37,6 @@ public class TrainSolutionSaveReq {
   public void setTraininfoId(Long traininfoId) { this.traininfoId = traininfoId; }
   public String getFilePath() { return filePath; }
   public void setFilePath(String filePath) { this.filePath = filePath; }
-  public List<TrainSolutionBadgeVO> getBadgeList() { return badgeList; }
-  public void setBadgeList(List<TrainSolutionBadgeVO> badgeList) { this.badgeList = badgeList; }
+  public List<TrainSolutionBadgeItem> getBadgeList() { return badgeList; }
+  public void setBadgeList(List<TrainSolutionBadgeItem> badgeList) { this.badgeList = badgeList; }
 }

@@ -11,8 +11,10 @@ import com.guoyu.platform.trainingdepartment.dto.TrainTaskLogCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskLogQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskLogUpdateReq;
 import com.guoyu.platform.trainingdepartment.entity.CourseKejianEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainTaskLogEntity;
 import com.guoyu.platform.trainingdepartment.mapper.CourseKejianMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainTaskLogMapper;
 import com.guoyu.platform.trainingdepartment.vo.TrainTaskLogVO;
 import java.util.LinkedHashMap;
@@ -28,11 +30,17 @@ public class TrainTaskLogApplicationService {
 
   private final TrainTaskLogMapper mapper;
   private final CourseKejianMapper courseKejianMapper;
+  private final TrainInfoClassMapper trainInfoClassMapper;
+  private final TrainingOperatorScopeService operatorScopeService;
 
   public TrainTaskLogApplicationService(TrainTaskLogMapper mapper,
-      CourseKejianMapper courseKejianMapper) {
+      CourseKejianMapper courseKejianMapper,
+      TrainInfoClassMapper trainInfoClassMapper,
+      TrainingOperatorScopeService operatorScopeService) {
     this.mapper = mapper;
     this.courseKejianMapper = courseKejianMapper;
+    this.trainInfoClassMapper = trainInfoClassMapper;
+    this.operatorScopeService = operatorScopeService;
   }
 
   @Transactional(readOnly = true)
@@ -95,6 +103,7 @@ public class TrainTaskLogApplicationService {
   /** 培训任务列表（含课件名称映射） */
   @Transactional(readOnly = true)
   public Map<String, Object> classTaskList(Long classId) {
+    assertClassViewable(classId);
     List<TrainTaskLogEntity> records = mapper.selectList(
         new LambdaQueryWrapper<TrainTaskLogEntity>()
             .eq(TrainTaskLogEntity::getTrainClassId, classId)
@@ -170,6 +179,20 @@ public class TrainTaskLogApplicationService {
       result.put("train_class_id", entity.getTrainClassId());
       return result;
     }
+  }
+
+  private void assertClassViewable(Long classId) {
+    if (classId == null) {
+      return;
+    }
+    TrainInfoClassEntity clazz = trainInfoClassMapper.selectOne(
+        new LambdaQueryWrapper<TrainInfoClassEntity>()
+            .eq(TrainInfoClassEntity::getId, classId)
+            .eq(TrainInfoClassEntity::getDeleted, 0));
+    if (clazz == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
+    }
+    operatorScopeService.assertClassAccessible(clazz);
   }
 
   private TrainTaskLogVO toVO(TrainTaskLogEntity entity) {
