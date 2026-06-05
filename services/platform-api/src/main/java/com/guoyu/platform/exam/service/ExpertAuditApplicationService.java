@@ -209,7 +209,7 @@ public class ExpertAuditApplicationService {
         tid, uid, taskRole, filterType, total, pageRecords.size());
 
     if (pageRecords.isEmpty()) {
-      return new PageResponse<>(List.of(), (long) page, (long) pageSize, total);
+      return new PageResponse<>(List.of(), page, pageSize, total);
     }
 
     // 批量加载工种名称

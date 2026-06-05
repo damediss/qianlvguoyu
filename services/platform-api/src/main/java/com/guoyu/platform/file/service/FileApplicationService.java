@@ -25,6 +25,10 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -86,6 +90,29 @@ public class FileApplicationService {
   public DownloadUrlVO downloadUrl(Long id) {
     FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
     return new DownloadUrlVO(entity.getId(), "/api/files/" + entity.getId() + "/download", entity.getAccessPolicy());
+  }
+
+  public ResponseEntity<Resource> buildDownloadResponse(Long id, boolean inline) {
+    FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
+    Path path = localPath(entity)
+        .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "File is not available from local storage"));
+    try {
+      Resource resource = new UrlResource(path.toUri());
+      if (!resource.exists() || !resource.isReadable()) {
+        throw new BusinessException(ErrorCode.NOT_FOUND, "File content not found");
+      }
+      String contentType = entity.getContentType() != null ? entity.getContentType() : "application/octet-stream";
+      ContentDisposition disposition = ContentDisposition.builder(inline ? "inline" : "attachment")
+          .filename(entity.getOriginalName() != null ? entity.getOriginalName() : "download", java.nio.charset.StandardCharsets.UTF_8)
+          .build();
+      return ResponseEntity.ok()
+          .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+          .contentType(MediaType.parseMediaType(contentType))
+          .contentLength(entity.getSizeBytes() != null ? entity.getSizeBytes() : -1)
+          .body(resource);
+    } catch (IOException ex) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "File download failed");
+    }
   }
 
   @Transactional(readOnly = true)
