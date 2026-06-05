@@ -15,6 +15,13 @@ public class TrainBaseDataEntity {
   @TableId(type = IdType.AUTO)
   private Long id;
 
+  /** PHP 分类标签：民族、文化程度等 */
+  private String tag;
+  /** PHP 编码 */
+  private String sno;
+  /** PHP 显示名称 */
+  private String title;
+
   /** 配置键 */
   private String dataKey;
 
@@ -39,6 +46,12 @@ public class TrainBaseDataEntity {
   private Integer deleted;
   public Long getId() { return id; }
   public void setId(Long id) { this.id = id; }
+  public String getTag() { return tag; }
+  public void setTag(String tag) { this.tag = tag; }
+  public String getSno() { return sno; }
+  public void setSno(String sno) { this.sno = sno; }
+  public String getTitle() { return title; }
+  public void setTitle(String title) { this.title = title; }
   public String getDataKey() { return dataKey; }
   public void setDataKey(String dataKey) { this.dataKey = dataKey; }
   public String getDataValue() { return dataValue; }

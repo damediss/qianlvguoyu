@@ -27,6 +27,12 @@ public class TrainFileTempEntity {
   /** 源文件路径 */
   private String pathSource;
 
+  /** 扩展名 */
+  private String ext;
+
+  /** 变量替换后的 Word 路径 */
+  private String pathUsed;
+
   /** 租户ID */
   private Long tenantId;
   /** 创建时间 */
@@ -47,6 +53,10 @@ public class TrainFileTempEntity {
   public void setCity(String city) { this.city = city; }
   public String getPathSource() { return pathSource; }
   public void setPathSource(String pathSource) { this.pathSource = pathSource; }
+  public String getExt() { return ext; }
+  public void setExt(String ext) { this.ext = ext; }
+  public String getPathUsed() { return pathUsed; }
+  public void setPathUsed(String pathUsed) { this.pathUsed = pathUsed; }
   public Long getTenantId() { return tenantId; }
   public void setTenantId(Long tenantId) { this.tenantId = tenantId; }
   public LocalDateTime getCreateTime() { return createTime; }

@@ -1,0 +1,117 @@
+/* 对齐 yun_shang classMembers.vue */
+.training-class-people-page {
+  padding: 20px;
+}
+
+.training-class-people-page .filter-bar {
+  margin-top: 30px;
+}
+
+.training-class-people-page .table-wrap {
+  margin-top: 10px;
+}
+
+.training-class-people-page .pagination-bar {
+  margin-top: 20px;
+  text-align: right;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.training-class-people-page .ant-table-thead > tr > th {
+  background: #f8f9fa !important;
+}
+
+.training-class-people-page .link-action {
+  color: #409eff;
+  padding: 0;
+}
+
+.training-class-people-page .link-action-danger {
+  color: #ff7875;
+  padding: 0;
+}
+
+/* 学员列表证件照 — 对齐 yun_shang classMembers.vue 120×168 */
+.training-class-people-page .student-id-photo {
+  width: 120px;
+  height: 168px;
+  object-fit: cover;
+  display: block;
+  margin: 0 auto;
+}
+
+.training-class-people-page .mar-b10 {
+  margin-bottom: 10px;
+}
+
+.training-class-people-page .mar-r20 {
+  margin-right: 20px;
+}
+
+/* 学员列表弹窗：在 Modal body 层横向滚动，避免表内 scroll.x 裁切证件照列 */
+.class-student-list-modal .class-student-table-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.class-student-list-modal .class-student-table .ant-table-content > table {
+  min-width: 1180px;
+}
+
+.class-student-list-modal .student-photo-cell {
+  min-width: 120px;
+  min-height: 168px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.class-student-list-modal .student-id-photo {
+  width: 120px;
+  height: 168px;
+  object-fit: cover;
+  display: block;
+}
+
+.class-student-list-modal .student-photo-empty {
+  color: #999;
+  font-size: 12px;
+}
+
+.class-student-list-modal .ant-table-thead > tr > th {
+  background: #f8f9fa !important;
+}
+
+.class-student-list-modal .mar-b10 {
+  margin-bottom: 10px;
+}
+
+.class-student-list-modal .student-pagination-wrap {
+  width: 100%;
+  min-height: 60px;
+}
+
+.class-student-list-modal .pagination-bar {
+  margin-top: 20px;
+  text-align: right;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.training-class-people-page .idcard-import-textarea {
+  max-width: 480px;
+  margin-right: 20px;
+}
+
+.training-class-people-page .idcard-import-actions {
+  margin-top: 20px;
+}
+
+.training-class-people-page .kcbiao-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}

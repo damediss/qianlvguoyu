@@ -1,0 +1,1003 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>创建培训任务 - 智训企业版</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    :root {
+      --primary: #2A6DFF;
+      --primary-hover: #1E5AE8;
+      --primary-light: #E8F0FF;
+      --bg: #F5F7FC;
+      --card: #FFFFFF;
+      --text: #1A2332;
+      --text-secondary: #64748B;
+      --border: #E2E8F0;
+      --shadow: 0 4px 24px rgba(42, 109, 255, 0.06);
+      --radius-card: 20px;
+      --radius-btn: 12px;
+      --success: #10B981;
+      --warning: #F59E0B;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .topbar {
+      background: var(--card);
+      box-shadow: var(--shadow);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      padding: 8px 14px;
+      border-radius: var(--radius-btn);
+      transition: all 0.2s;
+    }
+    .back-link:hover { background: var(--primary-light); color: var(--primary); }
+    .topbar h1 { font-size: 20px; font-weight: 700; }
+    .topbar .sub { font-size: 13px; color: var(--text-secondary); font-weight: 400; }
+    .page { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+    .page.page-wide { max-width: 1280px; }
+    .steps-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+    }
+    .step-pill {
+      flex: 1;
+      min-width: 140px;
+      padding: 14px 16px;
+      background: var(--card);
+      border-radius: var(--radius-btn);
+      box-shadow: var(--shadow);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .step-pill.active {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: var(--primary-light);
+    }
+    .step-pill.done { color: var(--success); }
+    .step-pill .num { font-size: 11px; display: block; opacity: 0.7; margin-bottom: 2px; }
+    .section { display: none; }
+    .section.active { display: block; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .card {
+      background: var(--card);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow);
+      padding: 28px;
+      margin-bottom: 24px;
+    }
+    .card-head {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card-head i { color: var(--primary); }
+    .card-head .hint {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--text-secondary);
+      margin-left: auto;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+    .form-grid .full { grid-column: 1 / -1; }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+    .form-group label .req { color: #EF4444; }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-btn);
+      font-family: inherit;
+      font-size: 14px;
+    }
+    .form-group textarea { min-height: 88px; resize: vertical; }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(42, 109, 255, 0.12);
+    }
+    /* 步骤3：完整任务配置页 */
+    .config-step-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .config-progress-wrap { flex: 1; min-width: 200px; }
+    .config-progress-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .config-progress-bar {
+      height: 8px;
+      background: var(--bg);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .config-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), #5B8FFF);
+      border-radius: 4px;
+      transition: width 0.4s ease;
+    }
+    .config-layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 20px;
+      min-height: 520px;
+    }
+    .config-sidebar {
+      background: var(--card);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow);
+      padding: 12px;
+      position: sticky;
+      top: 88px;
+      align-self: start;
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+    }
+    .config-nav-group {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 12px 12px 6px;
+    }
+    .config-nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 11px 12px;
+      border: none;
+      background: transparent;
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s;
+    }
+    .config-nav-item:hover { background: var(--primary-light); color: var(--primary); }
+    .config-nav-item.active {
+      background: var(--primary-light);
+      color: var(--primary);
+      font-weight: 600;
+    }
+    .config-nav-item .nav-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+    .config-nav-item.done .nav-dot { background: var(--success); }
+    .config-main {
+      background: var(--card);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow);
+      padding: 28px 32px;
+    }
+    .config-panel { display: none; }
+    .config-panel.active { display: block; animation: fadeIn 0.25s ease; }
+    .config-panel-head {
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .config-panel-head h3 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .config-panel-head h3 i { color: var(--primary); }
+    .config-panel-head p { font-size: 13px; color: var(--text-secondary); }
+    .config-form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px;
+    }
+    .config-form-grid .full { grid-column: 1 / -1; }
+    .config-table-wrap { overflow-x: auto; margin-top: 8px; }
+    .config-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .config-table th, .config-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    .config-table th {
+      font-size: 12px;
+      color: var(--text-secondary);
+      background: #FAFBFD;
+    }
+    .check-list { list-style: none; }
+    .check-list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0;
+      font-size: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .check-list li:last-child { border-bottom: none; }
+    .panel-actions {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-actions .hint { font-size: 12px; color: var(--text-secondary); }
+    @media (max-width: 900px) {
+      .config-layout { grid-template-columns: 1fr; }
+      .config-sidebar { position: static; max-height: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="培训管理系统 主页面.html?panel=tasks" class="back-link">
+        <i class="fas fa-arrow-left"></i> 返回任务管理
+      </a>
+      <div>
+        <h1 id="pageTitle">创建培训任务</h1>
+        <span class="sub">基本信息 → 项目关联 → 任务配置</span>
+      </div>
+    </div>
+    <span id="taskCode" style="font-size:12px;color:var(--text-secondary)"></span>
+  </header>
+
+  <main class="page">
+    <nav class="steps-bar" id="stepsBar">
+      <button type="button" class="step-pill active" data-step="1"><span class="num">步骤 1</span>基本信息</button>
+      <button type="button" class="step-pill" data-step="2"><span class="num">步骤 2</span>项目关联</button>
+      <button type="button" class="step-pill" data-step="3"><span class="num">步骤 3</span>任务配置</button>
+      <button type="button" class="step-pill" data-step="4"><span class="num">步骤 4</span>确认提交</button>
+    </nav>
+
+    <form id="createTaskForm">
+      <!-- 步骤1：基本信息 -->
+      <section class="section active" data-section="1">
+        <div class="card">
+          <div class="card-head"><i class="fas fa-info-circle"></i> 任务基本信息</div>
+          <div class="form-grid">
+            <div class="form-group full">
+              <label>任务名称 <span class="req">*</span></label>
+              <input type="text" id="taskName" placeholder="如：2026年南宁电工高级班培训任务" required>
+            </div>
+            <div class="form-group">
+              <label>负责人 <span class="req">*</span></label>
+              <input type="text" id="taskOwner" placeholder="项目经理/培训专员" required>
+            </div>
+            <div class="form-group">
+              <label>截止日期 <span class="req">*</span></label>
+              <input type="date" id="taskDeadline" required>
+            </div>
+            <div class="form-group">
+              <label>优先级</label>
+              <select id="taskPriority">
+                <option value="高">高</option>
+                <option value="中" selected>中</option>
+                <option value="低">低</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>任务状态</label>
+              <select id="taskStatus">
+                <option value="草稿">草稿</option>
+                <option value="进行中">进行中</option>
+                <option value="待审批">待审批</option>
+              </select>
+            </div>
+            <div class="form-group full">
+              <label>任务说明</label>
+              <textarea id="taskDesc" placeholder="培训目标、交付要求、备注…"></textarea>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 步骤2：项目关联（需求规格：企业、工种、等级、时间） -->
+      <section class="section" data-section="2">
+        <div class="card">
+          <div class="card-head">
+            <i class="fas fa-building"></i> 项目关联信息
+            <span class="hint">对应立项表 / 项目创建字段</span>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>委托企业 <span class="req">*</span></label>
+              <input type="text" id="enterprise" placeholder="企业全称" required>
+            </div>
+            <div class="form-group">
+              <label>所属区域（广西）</label>
+              <select id="region">
+                <option value="南宁">南宁</option>
+                <option value="桂林">桂林</option>
+                <option value="柳州">柳州</option>
+                <option value="玉林">玉林</option>
+                <option value="梧州">梧州</option>
+                <option value="其他">其他</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>培训工种 <span class="req">*</span></label>
+              <select id="occupation" required>
+                <option value="">请选择</option>
+                <option value="电工">电工</option>
+                <option value="焊工">焊工</option>
+                <option value="起重工">起重工</option>
+                <option value="架子工">架子工</option>
+                <option value="安全员">安全员</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>技能等级</label>
+              <select id="skillLevel">
+                <option value="初级">初级</option>
+                <option value="中级">中级</option>
+                <option value="高级">高级</option>
+                <option value="技师">技师</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>项目类型</label>
+              <select id="projectType">
+                <option value="新员工培训">新员工培训</option>
+                <option value="晋升培训">晋升培训</option>
+                <option value="资质认证">资质认证</option>
+                <option value="安全培训">安全培训</option>
+                <option value="管理研修">管理研修</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>计划人数</label>
+              <input type="number" id="planCount" min="1" placeholder="如：42" value="40">
+            </div>
+            <div class="form-group">
+              <label>计划开始</label>
+              <input type="date" id="startDate">
+            </div>
+            <div class="form-group">
+              <label>计划结束</label>
+              <input type="date" id="endDate">
+            </div>
+            <div class="form-group full">
+              <label>培训需求摘要</label>
+              <textarea id="trainingNeed" placeholder="企业需求、补贴申报意向、特殊要求…"></textarea>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 步骤3：任务配置（完整页面） -->
+      <section class="section" data-section="3">
+        <div class="config-step-header">
+          <div>
+            <h2 style="font-size:18px;font-weight:700;margin-bottom:4px">任务配置</h2>
+            <p style="font-size:13px;color:var(--text-secondary)">逐项完成人员、资源、课程、计划与开班准备配置</p>
+          </div>
+          <div class="config-progress-wrap">
+            <div class="config-progress-label">
+              <span>配置完成度</span>
+              <span id="configProgressText">0 / 9</span>
+            </div>
+            <div class="config-progress-bar">
+              <div class="config-progress-fill" id="configProgressFill" style="width:0%"></div>
+            </div>
+          </div>
+        </div>
+        <div class="config-layout" id="configLayout">
+          <nav class="config-sidebar" id="configSidebar"></nav>
+          <div class="config-main" id="configMain"></div>
+        </div>
+      </section>
+
+      <!-- 步骤4：确认 -->
+      <section class="section" data-section="4">
+        <div class="card">
+          <div class="card-head"><i class="fas fa-check-circle"></i> 确认并提交</div>
+          <div id="summaryBox" style="font-size:14px;line-height:1.8;color:var(--text-secondary)"></div>
+        </div>
+      </section>
+
+      <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:8px">
+        <button type="button" class="btn btn-secondary" id="prevBtn" style="display:none">上一步</button>
+        <button type="button" class="btn btn-secondary" id="nextBtn">下一步</button>
+        <button type="submit" class="btn btn-primary" id="submitBtn" style="display:none">
+          <i class="fas fa-check"></i> 提交任务
+        </button>
+      </div>
+    </form>
+  </main>
+
+  <style>
+    .btn {
+      padding: 12px 28px; border: none; border-radius: 12px;
+      font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;
+    }
+    .btn-primary { background: #2A6DFF; color: #fff; }
+    .btn-primary:hover { background: #1E5AE8; }
+    .btn-secondary { background: #F5F7FC; color: #1A2332; }
+    .btn-secondary:hover { background: #E2E8F0; }
+  </style>
+
+  <script>
+    const STORAGE_KEY = 'zhixun_tasks';
+
+    // 任务配置项（按业务模块分组）
+    const CONFIG_GROUPS = [
+      {
+        title: '人员安排',
+        icon: 'fa-users',
+        items: [
+          { key: 'humanTeacher', title: '师资与教务', desc: '主讲、班主任、跟班与授课资质' },
+          { key: 'humanStudent', title: '参训学员', desc: '学员名单、企业确认与资格审核' }
+        ]
+      },
+      {
+        title: '资源与场地',
+        icon: 'fa-warehouse',
+        items: [
+          { key: 'machine', title: '机构与场地', desc: '合作机构、讲师资源、场地设备与占用' }
+        ]
+      },
+      {
+        title: '课程与经费',
+        icon: 'fa-book-open',
+        items: [
+          { key: 'materialCourse', title: '课程与课件', desc: '课纲、课件课包及版本审批' },
+          { key: 'materialCost', title: '预算与费用', desc: '预算科目、结算分成与回款' }
+        ]
+      },
+      {
+        title: '计划与制度',
+        icon: 'fa-calendar-alt',
+        items: [
+          { key: 'lawSchedule', title: '分班排课', desc: '分班、排课、课表与冲突检测' },
+          { key: 'lawMode', title: '培养方案', desc: '培养路径与规划方案版本' },
+          { key: 'lawRule', title: '业务规则', desc: '分班、考勤等业务策略' }
+        ]
+      },
+      {
+        title: '开班准备',
+        icon: 'fa-door-open',
+        items: [
+          { key: 'environment', title: '开班与合规', desc: '开班条件、场地落实与人社材料' }
+        ]
+      }
+    ];
+
+    function getAllConfigItems() {
+      return CONFIG_GROUPS.flatMap(g => g.items);
+    }
+
+    let currentStep = 1;
+    let editId = null;
+    let taskConfig = {};
+
+
+    getAllConfigItems().forEach(item => {
+      taskConfig[item.key] = { configured: false, summary: '', data: {} };
+    });
+
+    let activeConfigTab = 'humanTeacher';
+
+    const CONFIG_PANELS = {
+      humanTeacher: {
+        icon: 'fa-chalkboard-teacher',
+        title: '师资与教务',
+        desc: '指派主讲、助教、班主任与跟班，绑定授课资质与承诺书',
+        html: `
+          <div class="config-form-grid">
+            <div class="form-group"><label>主讲讲师</label><input type="text" data-field="mainTeacher" placeholder="姓名"></div>
+            <div class="form-group"><label>助教</label><input type="text" data-field="assistant" placeholder="可选"></div>
+            <div class="form-group"><label>班主任</label><input type="text" data-field="headTeacher" placeholder="姓名"></div>
+            <div class="form-group"><label>跟班教务</label><input type="text" data-field="followStaff" placeholder="姓名"></div>
+            <div class="form-group"><label>资质状态</label>
+              <select data-field="qualification">
+                <option value="有效">有效</option>
+                <option value="即将到期">即将到期</option>
+                <option value="待补充">待补充</option>
+              </select>
+            </div>
+            <div class="form-group"><label>派师锁定</label>
+              <select data-field="dispatchLock"><option value="是">是</option><option value="否">否</option></select>
+            </div>
+            <div class="form-group full"><label>备注</label><textarea data-field="remark" placeholder="资质说明、承诺书编号等"></textarea></div>
+          </div>
+        `
+      },
+      humanStudent: {
+        icon: 'fa-user-graduate',
+        title: '参训学员',
+        desc: '学员名单导入、企业确认与资格审核',
+        html: `
+          <div class="form-grid" style="margin-bottom:16px">
+            <div class="form-group"><label>应到人数</label><input type="number" data-field="expectedCount" value="40"></div>
+            <div class="form-group"><label>已确认人数</label><input type="number" data-field="confirmedCount" value="38"></div>
+            <div class="form-group"><label>企业确认状态</label>
+              <select data-field="corpConfirm"><option value="已确认">已确认</option><option value="部分确认">部分确认</option><option value="待确认">待确认</option></select>
+            </div>
+            <div class="form-group"><label>资格审核</label>
+              <select data-field="qualReview"><option value="通过">通过</option><option value="待补充">待补充</option><option value="审核中">审核中</option></select>
+            </div>
+          </div>
+          <label style="font-size:13px;font-weight:500">学员名册（示例）</label>
+          <div class="config-table-wrap">
+            <table class="config-table">
+              <thead><tr><th>姓名</th><th>身份证</th><th>工种</th><th>状态</th></tr></thead>
+              <tbody>
+                <tr><td>张三</td><td>4501**********1234</td><td>电工</td><td>已确认</td></tr>
+                <tr><td>李四</td><td>4501**********5678</td><td>电工</td><td>已确认</td></tr>
+                <tr><td>王五</td><td>4501**********9012</td><td>电工</td><td>待补充材料</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <button type="button" class="btn btn-secondary" style="margin-top:12px" onclick="alert('导入学员演示')"><i class="fas fa-file-import"></i> 导入名单</button>
+        `
+      },
+      machine: {
+        icon: 'fa-warehouse',
+        title: '机构与场地',
+        desc: '合作机构、讲师资源池、场地设备与占用冲突检测',
+        html: `
+          <div class="config-form-grid">
+            <div class="form-group"><label>合作培训机构</label><input type="text" data-field="orgName" placeholder="机构全称"></div>
+            <div class="form-group"><label>培训场地</label><input type="text" data-field="venue" placeholder="实训基地 / 教室"></div>
+            <div class="form-group"><label>场地容量</label><input type="number" data-field="capacity" placeholder="人"></div>
+            <div class="form-group"><label>设备状态</label>
+              <select data-field="equipment"><option value="齐全">齐全</option><option value="部分到位">部分到位</option><option value="待落实">待落实</option></select>
+            </div>
+            <div class="form-group"><label>占用时段</label><input type="text" data-field="occupyTime" placeholder="如 5月12日-6月30日"></div>
+            <div class="form-group"><label>冲突检测</label>
+              <select data-field="conflict"><option value="无冲突">无冲突</option><option value="有冲突待协调">有冲突待协调</option></select>
+            </div>
+          </div>
+        `
+      },
+      materialCourse: {
+        icon: 'fa-book',
+        title: '课程与课件',
+        desc: '课纲、课件课包版本与审批状态',
+        html: `
+          <div class="config-form-grid">
+            <div class="form-group"><label>课程名称</label><input type="text" data-field="courseName" placeholder="如：电工安全技术"></div>
+            <div class="form-group"><label>课纲版本</label><input type="text" data-field="syllabusVer" value="v2026.1"></div>
+            <div class="form-group"><label>课件课包</label><input type="text" data-field="courseware" placeholder="课件包名称"></div>
+            <div class="form-group"><label>审批状态</label>
+              <select data-field="approveStatus"><option value="已审批">已审批</option><option value="审批中">审批中</option><option value="草稿">草稿</option></select>
+            </div>
+            <div class="form-group full"><label>交付说明</label><textarea data-field="deliveryNote" placeholder="理论/实操课时分配等"></textarea></div>
+          </div>
+        `
+      },
+      materialCost: {
+        icon: 'fa-coins',
+        title: '预算与费用',
+        desc: '预算科目、结算分成与回款跟踪',
+        html: `
+          <div class="config-form-grid">
+            <div class="form-group"><label>预算总额（元）</label><input type="number" data-field="budgetTotal" value="280000"></div>
+            <div class="form-group"><label>已拨付（元）</label><input type="number" data-field="paidAmount" value="120000"></div>
+            <div class="form-group"><label>企业分成比例</label><input type="text" data-field="corpShare" value="30%"></div>
+            <div class="form-group"><label>机构分成比例</label><input type="text" data-field="orgShare" value="70%"></div>
+          </div>
+          <div class="config-table-wrap" style="margin-top:16px">
+            <table class="config-table">
+              <thead><tr><th>科目</th><th>金额（元）</th><th>说明</th></tr></thead>
+              <tbody>
+                <tr><td>讲师课酬</td><td>120,000</td><td>主讲+实操</td></tr>
+                <tr><td>场地设备</td><td>45,000</td><td>实训基地</td></tr>
+                <tr><td>管理与杂费</td><td>35,000</td><td>—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        `
+      },
+      lawSchedule: {
+        icon: 'fa-calendar-week',
+        title: '分班排课',
+        desc: '分班、排课、课表发布与冲突检测',
+        html: `
+          <div class="config-form-grid">
+            <div class="form-group"><label>班级名称</label><input type="text" data-field="className" placeholder="如：电工高级班第3期"></div>
+            <div class="form-group"><label>计划开班</label><input type="date" data-field="classStart"></div>
+            <div class="form-group"><label>周课时</label><input type="number" data-field="weeklyHours" value="24"></div>
+            <div class="form-group"><label>排课完成率</label><input type="text" data-field="scheduleRate" value="96%"></div>
+          </div>
+          <div class="config-table-wrap" style="margin-top:16px">
+            <table class="config-table">
+              <thead><tr><th>课程</th><th>讲师</th><th>时间</th></tr></thead>
+              <tbody>
+                <tr><td>安全规范</td><td>陈教授</td><td>周一 09:00-11:30</td></tr>
+                <tr><td>实操训练</td><td>刘师傅</td><td>周三 14:00-17:00</td></tr>
+              </tbody>
+            </table>
+          </div>
+        `
+      },
+      lawMode: {
+        icon: 'fa-route',
+        title: '培养方案',
+        desc: '培养路径与规划方案版本绑定',
+        html: `
+          <div class="config-form-grid">
+            <div class="form-group"><label>培养模式</label>
+              <select data-field="trainMode">
+                <option value="集中培训">集中培训</option>
+                <option value="工学结合">工学结合</option>
+                <option value="线上+线下">线上+线下</option>
+              </select>
+            </div>
+            <div class="form-group"><label>方案版本</label><input type="text" data-field="planVersion" value="2026-Q2-V1"></div>
+            <div class="form-group full"><label>培养路径说明</label><textarea data-field="pathDesc" placeholder="阶段目标、考核节点…"></textarea></div>
+          </div>
+        `
+      },
+      lawRule: {
+        icon: 'fa-gavel',
+        title: '业务规则',
+        desc: '分班、考勤等业务策略配置',
+        html: `
+          <ul class="check-list">
+            <li><input type="checkbox" data-field="ruleAttendance" checked id="r1"><label for="r1">启用考勤打卡规则（每日2次）</label></li>
+            <li><input type="checkbox" data-field="ruleLate" checked id="r2"><label for="r2">迟到超过3次触发预警</label></li>
+            <li><input type="checkbox" data-field="ruleClass" checked id="r3"><label for="r3">按工种自动分班</label></li>
+            <li><input type="checkbox" data-field="ruleExam" id="r4"><label for="r4">结业前强制模拟考试</label></li>
+          </ul>
+          <div class="form-group" style="margin-top:16px"><label>自定义规则说明</label><textarea data-field="ruleCustom" placeholder="其他业务约束…"></textarea></div>
+        `
+      },
+      environment: {
+        icon: 'fa-door-open',
+        title: '开班与合规',
+        desc: '开班条件、场地落实与人社材料准备',
+        html: `
+          <div class="config-form-grid">
+            <div class="form-group"><label>计划开班日期</label><input type="date" data-field="openDate"></div>
+            <div class="form-group"><label>开班地点</label><input type="text" data-field="openPlace" placeholder="详细地址"></div>
+            <div class="form-group"><label>场地落实</label>
+              <select data-field="venueReady"><option value="已落实">已落实</option><option value="待确认">待确认</option></select>
+            </div>
+          </div>
+          <label style="font-size:13px;font-weight:500;display:block;margin:16px 0 10px">人社材料清单</label>
+          <ul class="check-list">
+            <li><input type="checkbox" data-field="docPlan" checked><label>培训计划备案</label></li>
+            <li><input type="checkbox" data-field="docRoster" checked><label>学员名册</label></li>
+            <li><input type="checkbox" data-field="docVenue"><label>场地证明</label></li>
+            <li><input type="checkbox" data-field="docContract"><label>培训合同</label></li>
+          </ul>
+        `
+      }
+    };
+
+    // fix div tags in CONFIG_PANELS - done via replace when loading
+    Object.keys(CONFIG_PANELS).forEach(k => {
+      CONFIG_PANELS[k].html = CONFIG_PANELS[k].html.replace(/div/g, 'div');
+    });
+
+    function saveCurrentConfigPanel() {
+      const panel = document.getElementById('config-panel-' + activeConfigTab);
+      if (!panel) return;
+      const data = {};
+      panel.querySelectorAll('[data-field]').forEach(el => {
+        const key = el.dataset.field;
+        if (el.type === 'checkbox') data[key] = el.checked;
+        else data[key] = el.value;
+      });
+      const mod = CONFIG_PANELS[activeConfigTab];
+      let summary = '已配置';
+      if (data.mainTeacher) summary = data.mainTeacher;
+      else if (data.className) summary = data.className;
+      else if (data.courseName) summary = data.courseName;
+      else if (data.orgName) summary = data.orgName;
+      else if (data.expectedCount) summary = data.confirmedCount + '/' + data.expectedCount + '人';
+      else if (data.budgetTotal) summary = (data.budgetTotal / 10000).toFixed(1) + '万元';
+      else if (data.trainMode) summary = data.trainMode;
+      taskConfig[activeConfigTab] = { configured: true, data, summary };
+    }
+
+    function loadPanelData(key) {
+      const panel = document.getElementById('config-panel-' + key);
+      const cfg = taskConfig[key];
+      if (!panel || !cfg || !cfg.data) return;
+      panel.querySelectorAll('[data-field]').forEach(el => {
+        const f = el.dataset.field;
+        if (cfg.data[f] === undefined) return;
+        if (el.type === 'checkbox') el.checked = !!cfg.data[f];
+        else el.value = cfg.data[f];
+      });
+    }
+
+    function updateConfigProgress() {
+      const total = getAllConfigItems().length;
+      const done = Object.values(taskConfig).filter(c => c.configured).length;
+      const pct = Math.round((done / total) * 100);
+      document.getElementById('configProgressText').textContent = done + ' / ' + total;
+      document.getElementById('configProgressFill').style.width = pct + '%';
+      document.querySelectorAll('.config-nav-item').forEach(btn => {
+        const k = btn.dataset.key;
+        btn.classList.toggle('done', taskConfig[k] && taskConfig[k].configured);
+      });
+    }
+
+    function switchConfigTab(key) {
+      saveCurrentConfigPanel();
+      activeConfigTab = key;
+      document.querySelectorAll('.config-nav-item').forEach(b => b.classList.toggle('active', b.dataset.key === key));
+      document.querySelectorAll('.config-panel').forEach(p => p.classList.toggle('active', p.id === 'config-panel-' + key));
+      loadPanelData(key);
+      updateConfigProgress();
+    }
+
+    function renderConfigPage() {
+      const sidebar = document.getElementById('configSidebar');
+      const main = document.getElementById('configMain');
+      let navHtml = '';
+      CONFIG_GROUPS.forEach(group => {
+        navHtml += `<div class="config-nav-group">${group.title}</div>`;
+        group.items.forEach(item => {
+          const done = taskConfig[item.key] && taskConfig[item.key].configured;
+          navHtml += `<button type="button" class="config-nav-item ${item.key === activeConfigTab ? 'active' : ''} ${done ? 'done' : ''}" data-key="${item.key}">
+            <span class="nav-dot"></span>${item.title}
+          </button>`;
+        });
+      });
+      sidebar.innerHTML = navHtml;
+
+      main.innerHTML = getAllConfigItems().map(item => {
+        const p = CONFIG_PANELS[item.key];
+        return `
+          <div class="config-panel ${item.key === activeConfigTab ? 'active' : ''}" id="config-panel-${item.key}">
+            <div class="config-panel-head">
+              <h3><i class="fas ${p.icon}"></i> ${p.title}</h3>
+              <p>${p.desc}</p>
+            </div>
+            ${p.html}
+            <div class="panel-actions">
+              <span class="hint">填写后点击保存，可切换其他配置项</span>
+              <button type="button" class="btn btn-primary btn-save-panel" data-key="${item.key}">
+                <i class="fas fa-save"></i> 保存本节
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      sidebar.querySelectorAll('.config-nav-item').forEach(btn => {
+        btn.addEventListener('click', () => switchConfigTab(btn.dataset.key));
+      });
+      main.querySelectorAll('.btn-save-panel').forEach(btn => {
+        btn.addEventListener('click', () => {
+          activeConfigTab = btn.dataset.key;
+          saveCurrentConfigPanel();
+          updateConfigProgress();
+          alert('「' + CONFIG_PANELS[btn.dataset.key].title + '」已保存');
+        });
+      });
+      getAllConfigItems().forEach(item => loadPanelData(item.key));
+      updateConfigProgress();
+    }
+
+
+    function goStep(n) {
+      if (currentStep === 3) saveCurrentConfigPanel();
+      currentStep = n;
+      document.querySelector('.page').classList.toggle('page-wide', n === 3);
+      if (n === 3) renderConfigPage();
+      document.querySelectorAll('.section').forEach(s => s.classList.toggle('active', +s.dataset.section === n));
+      document.querySelectorAll('.step-pill').forEach(p => {
+        const sn = +p.dataset.step;
+        p.classList.toggle('active', sn === n);
+        p.classList.toggle('done', sn < n);
+      });
+      document.getElementById('prevBtn').style.display = n > 1 ? 'inline-flex' : 'none';
+      document.getElementById('nextBtn').style.display = n < 4 ? 'inline-flex' : 'none';
+      document.getElementById('submitBtn').style.display = n === 4 ? 'inline-flex' : 'none';
+      if (n === 4) renderSummary();
+    }
+
+    function renderSummary() {
+      const name = document.getElementById('taskName').value;
+      const ent = document.getElementById('enterprise').value;
+      const occ = document.getElementById('occupation').value;
+      const configured = Object.values(taskConfig).filter(c => c.configured).length;
+      const total = getAllConfigItems().length;
+      document.getElementById('summaryBox').innerHTML = `
+        <p><strong>任务名称：</strong>${name || '—'}</p>
+        <p><strong>企业 / 工种：</strong>${ent || '—'} · ${occ || '—'} · ${document.getElementById('skillLevel').value}</p>
+        <p><strong>区域：</strong>${document.getElementById('region').value} · <strong>类型：</strong>${document.getElementById('projectType').value}</p>
+        <p><strong>负责人：</strong>${document.getElementById('taskOwner').value} · <strong>截止：</strong>${document.getElementById('taskDeadline').value}</p>
+        <p><strong>配置完成度：</strong>${configured} / ${total} 项（可选，提交后可继续补充）</p>
+      `;
+    }
+
+    function fillForm(task) {
+      document.getElementById('taskName').value = task.name || '';
+      document.getElementById('taskOwner').value = task.owner || '';
+      document.getElementById('taskDeadline').value = task.deadline || '';
+      document.getElementById('taskPriority').value = task.priority || '中';
+      document.getElementById('taskStatus').value = task.status || '草稿';
+      document.getElementById('taskDesc').value = task.description || '';
+      document.getElementById('enterprise').value = task.enterprise || '';
+      document.getElementById('region').value = task.region || '南宁';
+      document.getElementById('occupation').value = task.occupation || '';
+      document.getElementById('skillLevel').value = task.skillLevel || '中级';
+      document.getElementById('projectType').value = task.projectType || '资质认证';
+      document.getElementById('planCount').value = task.planCount || 40;
+      document.getElementById('startDate').value = task.startDate || '';
+      document.getElementById('endDate').value = task.endDate || '';
+      document.getElementById('trainingNeed').value = task.trainingNeed || '';
+      const saved = task.taskConfig || task.fiveM;
+      if (saved) {
+        Object.keys(saved).forEach(k => {
+          taskConfig[k] = { configured: false, summary: '', data: {}, ...taskConfig[k], ...saved[k] };
+        });
+      }
+      document.getElementById('pageTitle').textContent = '编辑培训任务';
+      document.getElementById('taskCode').textContent = '任务编号 TASK-' + String(task.id).padStart(4, '0');
+    }
+
+    function collectTask() {
+      return {
+        name: document.getElementById('taskName').value.trim(),
+        owner: document.getElementById('taskOwner').value.trim(),
+        deadline: document.getElementById('taskDeadline').value,
+        priority: document.getElementById('taskPriority').value,
+        status: document.getElementById('taskStatus').value,
+        description: document.getElementById('taskDesc').value.trim(),
+        enterprise: document.getElementById('enterprise').value.trim(),
+        region: document.getElementById('region').value,
+        occupation: document.getElementById('occupation').value,
+        skillLevel: document.getElementById('skillLevel').value,
+        projectType: document.getElementById('projectType').value,
+        planCount: +document.getElementById('planCount').value || 0,
+        startDate: document.getElementById('startDate').value,
+        endDate: document.getElementById('endDate').value,
+        trainingNeed: document.getElementById('trainingNeed').value.trim(),
+        taskConfig,
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    // 步骤导航
+    document.getElementById('stepsBar').addEventListener('click', e => {
+      const pill = e.target.closest('.step-pill');
+      if (pill) goStep(+pill.dataset.step);
+    });
+    document.getElementById('nextBtn').addEventListener('click', () => {
+      if (currentStep === 1) {
+        if (!document.getElementById('taskName').value.trim() || !document.getElementById('taskOwner').value.trim() || !document.getElementById('taskDeadline').value) {
+          alert('请填写任务名称、负责人和截止日期');
+          return;
+        }
+      }
+      if (currentStep === 3) saveCurrentConfigPanel();
+      if (currentStep === 2 && !document.getElementById('enterprise').value.trim()) {
+        alert('请填写委托企业');
+        return;
+      }
+      goStep(currentStep + 1);
+    });
+    document.getElementById('prevBtn').addEventListener('click', () => goStep(currentStep - 1));
+
+    // 提交
+    document.getElementById('createTaskForm').addEventListener('submit', e => {
+      e.preventDefault();
+      saveCurrentConfigPanel();
+      getAllConfigItems().forEach(i => {
+        const prev = activeConfigTab;
+        activeConfigTab = i.key;
+        if (document.getElementById('config-panel-' + i.key)) saveCurrentConfigPanel();
+        activeConfigTab = prev;
+      });
+      const data = collectTask();
+      let tasks = loadTasks() || [];
+      if (editId) {
+        const idx = tasks.findIndex(t => t.id === editId);
+        if (idx !== -1) tasks[idx] = { ...tasks[idx], ...data };
+      } else {
+        tasks.unshift({ id: getNextId(tasks), ...data, createdAt: new Date().toISOString() });
+      }
+      saveTasks(tasks);
+      alert(editId ? '任务已更新' : '任务已创建，可在任务档案中查看');
+      window.location.href = '任务档案.html';
+    });
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(location.search);
+      const id = params.get('id');
+      if (id) {
+        editId = parseInt(id);
+        const tasks = loadTasks() || [];
+        const task = tasks.find(t => t.id === editId);
+        if (task) {
+          fillForm(task);
+          renderConfigPage();
+        } else alert('未找到该任务');
+      } else {
+        document.getElementById('taskCode').textContent = '新建任务';
+        const d = new Date();
+        d.setMonth(d.getMonth() + 2);
+        document.getElementById('taskDeadline').value = d.toISOString().slice(0, 10);
+      }
+    });
+  </script>
+</body>
+</html>

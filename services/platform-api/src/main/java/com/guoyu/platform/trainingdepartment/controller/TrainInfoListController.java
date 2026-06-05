@@ -5,6 +5,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoListCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoListQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoListUpdateReq;
+import com.guoyu.platform.trainingdepartment.security.TrainingAuthorityExpressions;
 import com.guoyu.platform.trainingdepartment.service.TrainInfoListApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoListVO;
 import java.util.Map;
@@ -38,7 +39,7 @@ public class TrainInfoListController {
 
   /** 分页查询开班信息列表 */
   @GetMapping("/info-lists")
-  @PreAuthorize("hasAuthority('train:info-list:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_LIST_PAGE_VIEW)
   public ApiResponse<Map<String, Object>> page(@Valid @ModelAttribute TrainInfoListQueryReq req) {
     return ApiResponse.ok(trainInfoListApplicationService.page(req));
   }
@@ -77,7 +78,7 @@ public class TrainInfoListController {
 
   /** 企业确认方案 */
   @PostMapping("/info-lists/{id}/company-confirm")
-  @PreAuthorize("hasAuthority('train:info-list:update')")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_LIST_ENTERPRISE_CONFIRM)
   @AuditLog(module = "training", action = "info-list:company-confirm", targetType = "train_info_list")
   public ApiResponse<TrainInfoListVO> companyConfirm(@PathVariable Long id) {
     return ApiResponse.ok(trainInfoListApplicationService.companyConfirm(id));
@@ -85,7 +86,7 @@ public class TrainInfoListController {
 
   /** 企业驳回方案 */
   @PostMapping("/info-lists/{id}/company-reject")
-  @PreAuthorize("hasAuthority('train:info-list:update')")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_LIST_ENTERPRISE_CONFIRM)
   @AuditLog(module = "training", action = "info-list:company-reject", targetType = "train_info_list")
   public ApiResponse<TrainInfoListVO> companyReject(@PathVariable Long id, @RequestParam String reason) {
     return ApiResponse.ok(trainInfoListApplicationService.companyReject(id, reason));

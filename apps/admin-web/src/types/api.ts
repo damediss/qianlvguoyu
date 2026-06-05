@@ -32,6 +32,10 @@ export interface CurrentUserVO {
   username: string;
   displayName: string;
   userType: string;
+  orgId?: number;
+  orgType?: string;
+  /** 对齐 yun_shang：org=培训机构，company=企业 */
+  loginRole?: 'org' | 'company';
   roles: string[];
   permissions: string[];
 }

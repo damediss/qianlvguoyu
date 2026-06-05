@@ -1205,6 +1205,7 @@ export interface TrainInfoList {
 export interface TrainInfoListQuery {
   page?: number;
   limit?: number;
+  pageSize?: number;
   keyword?: string;
   status?: number;
   companyId?: number;
@@ -1785,6 +1786,7 @@ export interface TrainInfoClassListItem {
   title: string;
   nums?: number;
   addtime?: number;
+  addtime_cn?: string;
   train_info_id?: number;
   company_id?: number;
   work_type_id?: number;
@@ -1797,6 +1799,7 @@ export interface TrainInfoClassListItem {
   date_end?: string;
   file_temps?: string;
   kcbiao_file?: string;
+  kcbiao_src?: string;
 }
 
 export interface TrainInfoClassPageResponse {

@@ -7,6 +7,7 @@ import com.guoyu.platform.trainingdepartment.dto.DemandConvertReq;
 import com.guoyu.platform.trainingdepartment.dto.DemandTrainCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.DemandTrainQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.DemandTrainUpdateReq;
+import com.guoyu.platform.trainingdepartment.security.TrainingAuthorityExpressions;
 import com.guoyu.platform.trainingdepartment.service.DemandTrainApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.DemandPendingVO;
 import com.guoyu.platform.trainingdepartment.vo.DemandTrainVO;
@@ -66,7 +67,7 @@ public class DemandTrainController {
 
   /** 待处理需求列表（status=0），del=0 正常数据，del=1 回收站 */
   @GetMapping("/demand-trains/pendings")
-  @PreAuthorize("hasAuthority('train:demand-train:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.DEMAND_PIPELINE_VIEW)
   public ApiResponse<PageResponse<DemandPendingVO>> getPendings(
       @RequestParam(defaultValue = "1") Integer page,
       @RequestParam(defaultValue = "30") Integer pageSize,
@@ -77,14 +78,14 @@ public class DemandTrainController {
 
   /** 公共数据（企业列表、工种列表、培训信息列表） */
   @GetMapping("/demand-trains/public-data")
-  @PreAuthorize("hasAuthority('train:demand-train:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.PUBLIC_DATA_VIEW)
   public ApiResponse<Map<String, Object>> getPublicData(@RequestParam(required = false) List<String> tags) {
     return ApiResponse.ok(demandTrainApplicationService.getPublicData(tags));
   }
 
   /** 需求转培训开班 */
   @PostMapping("/demand-trains/convert")
-  @PreAuthorize("hasAuthority('train:demand-train:create')")
+  @PreAuthorize(TrainingAuthorityExpressions.DEMAND_CONVERT)
   @AuditLog(module = "training", action = "demand-train:convert", targetType = "train_info_list")
   public ApiResponse<Map<String, Object>> convertToTraining(@Valid @RequestBody DemandConvertReq req) {
     return ApiResponse.ok(demandTrainApplicationService.convertToTraining(req));

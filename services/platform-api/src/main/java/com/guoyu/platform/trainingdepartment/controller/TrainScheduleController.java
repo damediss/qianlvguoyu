@@ -2,6 +2,7 @@ package com.guoyu.platform.trainingdepartment.controller;
 
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.trainingdepartment.security.TrainingAuthorityExpressions;
 import com.guoyu.platform.trainingdepartment.service.TrainScheduleApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainScheduleConflictVO;
 import java.util.List;
@@ -32,7 +33,7 @@ public class TrainScheduleController {
 
   /** 检查排课冲突 */
   @GetMapping("/schedules/conflicts")
-  @PreAuthorize("hasAuthority('train:class:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.SCHEDULE_CONFLICTS_VIEW)
   public ApiResponse<List<TrainScheduleConflictVO>> checkConflicts(@RequestParam Long classId) {
     return ApiResponse.ok(trainScheduleApplicationService.checkConflicts(classId));
   }

@@ -6,6 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskLogCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskLogQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainTaskLogUpdateReq;
+import com.guoyu.platform.trainingdepartment.security.TrainingAuthorityExpressions;
 import com.guoyu.platform.trainingdepartment.service.TrainTaskLogApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainTaskLogVO;
 import jakarta.validation.Valid;
@@ -74,14 +75,14 @@ public class TrainTaskLogController {
 
   /** 班级培训任务列表（含课件名称映射） */
   @GetMapping("/class-task")
-  @PreAuthorize("hasAuthority('train:task-log:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_TASK_VIEW)
   public ApiResponse<Map<String, Object>> classTaskList(@RequestParam Long classId) {
     return ApiResponse.ok(trainTaskLogApplicationService.classTaskList(classId));
   }
 
   /** 新增/编辑培训任务 */
   @PostMapping("/class-task-save")
-  @PreAuthorize("hasAuthority('train:task-log:create')")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_TASK_SAVE)
   @AuditLog(module = "training", action = "class-task:save", targetType = "train_task_log")
   public ApiResponse<Map<String, Object>> saveTask(@RequestBody Map<String, Object> params) {
     return ApiResponse.ok(trainTaskLogApplicationService.saveTask(params));

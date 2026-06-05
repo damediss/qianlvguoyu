@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>初步方案 - 智训企业版</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    :root {
+      --primary: #2A6DFF; --primary-hover: #1E5AE8; --primary-light: #E8F0FF;
+      --plan: #6366F1; --plan-light: #EEF2FF;
+      --bg: #F5F7FC; --card: #FFF; --text: #1A2332; --text-secondary: #64748B;
+      --border: #E2E8F0; --shadow: 0 4px 24px rgba(42,109,255,.06);
+      --radius-card: 16px; --radius-btn: 10px;
+      --success: #10B981; --warning: #F59E0B; --danger: #EF4444;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .topbar {
+      background: var(--card); box-shadow: var(--shadow); padding: 16px 32px;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+      position: sticky; top: 0; z-index: 50;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .back-link {
+      display: inline-flex; align-items: center; gap: 8px; color: var(--text-secondary);
+      text-decoration: none; font-size: 14px; font-weight: 500; padding: 8px 14px; border-radius: var(--radius-btn);
+    }
+    .back-link:hover { background: var(--primary-light); color: var(--primary); }
+    .topbar h1 { font-size: 20px; font-weight: 700; }
+    .topbar .sub { font-size: 13px; color: var(--text-secondary); }
+    .process-badge {
+      font-size: 12px; padding: 6px 12px; background: var(--plan-light); color: var(--plan);
+      border-radius: 20px; font-weight: 600;
+    }
+    .page { max-width: 1280px; margin: 0 auto; padding: 24px 24px 64px; }
+    .flow-hint {
+      padding: 14px 18px; background: var(--primary-light); border-radius: var(--radius-btn);
+      font-size: 13px; margin-bottom: 20px; line-height: 1.6;
+    }
+    .flow-hint strong { color: var(--primary); }
+    .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    @media (max-width: 900px) { .stat-row { grid-template-columns: repeat(2, 1fr); } }
+    .stat-card {
+      background: var(--card); border-radius: var(--radius-card); padding: 20px;
+      box-shadow: var(--shadow); border-left: 4px solid var(--primary);
+    }
+    .stat-card.plan { border-left-color: var(--plan); }
+    .stat-card.warn { border-left-color: var(--warning); }
+    .stat-card.success { border-left-color: var(--success); }
+    .stat-card .val { font-size: 26px; font-weight: 700; }
+    .stat-card .lbl { font-size: 13px; color: var(--text-secondary); margin-top: 6px; }
+    .card {
+      background: var(--card); border-radius: var(--radius-card);
+      box-shadow: var(--shadow); padding: 24px; margin-bottom: 24px;
+    }
+    .card-head {
+      font-size: 16px; font-weight: 600; margin-bottom: 20px;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    }
+    .card-head .title-wrap { display: flex; align-items: center; gap: 10px; }
+    .card-head i { color: var(--plan); }
+    .card-head .hint { font-size: 12px; color: var(--text-secondary); font-weight: 400; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .form-grid .full { grid-column: 1 / -1; }
+    .form-group label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+      border-radius: var(--radius-btn); font-family: inherit; font-size: 14px;
+    }
+    .form-group textarea { min-height: 88px; resize: vertical; }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+      outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(42,109,255,.12);
+    }
+    .btn {
+      padding: 10px 18px; border: none; border-radius: var(--radius-btn);
+      font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px; text-decoration: none; transition: all .2s;
+    }
+    .btn-plan { background: var(--plan); color: #fff; }
+    .btn-plan:hover { background: #4F46E5; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--bg); }
+    .btn-sm { padding: 6px 12px; font-size: 13px; }
+    .btn-link { background: none; border: none; color: var(--primary); cursor: pointer; font-size: 13px; padding: 4px 8px; }
+    .btn-link:hover { text-decoration: underline; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .data-table th {
+      text-align: left; padding: 12px 14px; font-size: 12px; font-weight: 600;
+      color: var(--text-secondary); background: #FAFBFD; border-bottom: 2px solid var(--border);
+    }
+    .data-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+    .data-table input, .data-table select {
+      width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;
+    }
+    .status-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+    .st-draft { background: #E2E8F0; color: #475569; }
+    .st-review { background: #FEF3C7; color: #D97706; }
+    .st-approved { background: #D1FAE5; color: #059669; }
+    .st-sent { background: var(--primary-light); color: var(--primary); }
+    .project-banner {
+      display: none; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 16px; padding: 16px; background: var(--bg); border-radius: var(--radius-btn); margin-top: 16px;
+    }
+    .project-banner .item label { font-size: 11px; color: var(--text-secondary); display: block; }
+    .project-banner .item strong { font-size: 14px; }
+    .workspace-empty {
+      text-align: center; padding: 64px 24px; color: var(--text-secondary);
+      background: var(--card); border-radius: var(--radius-card); box-shadow: var(--shadow);
+    }
+    .workspace-empty i { font-size: 48px; color: var(--border); margin-bottom: 16px; }
+    .footer-actions { display: flex; justify-content: flex-end; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      z-index: 200; align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-box {
+      background: var(--card); border-radius: var(--radius-card); padding: 24px;
+      max-width: 520px; width: 100%; max-height: 90vh; overflow-y: auto;
+    }
+    .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-secondary); }
+    .modal-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+    .tab {
+      padding: 8px 16px; border: 1px solid var(--border); border-radius: 20px;
+      background: var(--card); font-size: 13px; cursor: pointer; font-weight: 500;
+    }
+    .tab.active { background: var(--plan); color: #fff; border-color: var(--plan); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+    .btn-success { background: var(--success); color: #fff; }
+    .alert-banner { padding: 14px 18px; border-radius: var(--radius-btn); margin-bottom: 16px; display: flex; gap: 12px; font-size: 14px; background: #FEF3C7; color: #92400E; }
+    .week-grid { display: grid; grid-template-columns: 56px repeat(5, 1fr); gap: 1px; background: var(--border); border-radius: var(--radius-btn); overflow: hidden; font-size: 12px; }
+    .week-grid .wg-head, .week-grid .wg-slot { background: #FAFBFD; padding: 10px 8px; font-weight: 600; text-align: center; }
+    .week-grid .wg-cell { background: var(--card); min-height: 56px; padding: 6px; }
+    .week-course { padding: 6px 8px; border-radius: 8px; margin-bottom: 4px; font-size: 11px; line-height: 1.35; }
+    .week-course.theory { background: #E8F0FF; border-left: 3px solid var(--primary); }
+    .week-course.practice { background: #D1FAE5; border-left: 3px solid var(--success); }
+    .week-course.exam { background: #FEF3C7; border-left: 3px solid var(--warning); }
+    .week-course.conflict { box-shadow: inset 0 0 0 2px var(--danger); }
+    .sub-stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+    .sub-stat { background: var(--bg); padding: 14px; border-radius: var(--radius-btn); text-align: center; }
+    .sub-stat .v { font-size: 22px; font-weight: 700; color: var(--primary); }
+    .sub-stat .l { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="培训管理系统 主页面.html?panel=process" class="back-link">
+        <i class="fas fa-arrow-left"></i> 返回培训流程
+      </a>
+      <div>
+        <h1>初步方案</h1>
+        <span class="sub" id="pageSub">规划草案 · 分班排课草案 · 步骤 2 / 9</span>
+      </div>
+    </div>
+    <span class="process-badge"><i class="fas fa-file-alt"></i> 人才识别 → 初步方案 → 最终方案</span>
+  </header>
+
+  <main class="page">
+    <div class="card">
+      <div class="card-head">
+        <div class="title-wrap"><i class="fas fa-folder-open"></i> 培训项目</div>
+        <a href="任务档案.html" class="btn btn-secondary btn-sm"><i class="fas fa-list"></i> 任务档案</a>
+      </div>
+      <div class="form-group">
+        <label>选择企业培训项目（基于人才识别结果编制 3–5 年规划草案）</label>
+        <select id="projectSelect"><option value="">请选择项目…</option></select>
+      </div>
+      <div id="projectBanner" class="project-banner"></div>
+    </div>
+
+    <div id="workspaceEmpty" class="workspace-empty">
+      <i class="fas fa-hand-pointer"></i>
+      <p>请先选择<strong>企业培训项目</strong>，再编制初步培训规划方案。</p>
+      <p style="margin-top:8px;font-size:13px">需先完成 <a href="人才识别.html">人才识别</a>；也可从任务档案带项目参数进入。</p>
+    </div>
+
+    <div id="workspace" style="display:none">
+      <div class="flow-hint">
+        <i class="fas fa-info-circle" style="color:var(--primary)"></i>
+        依据需求规格：<strong>规划草案 → 分班规则/智能分班 → 排课安排/冲突检测</strong>（法·日程计划：导入名单 → 智能分班 → 排课 → 检测冲突）
+      </div>
+
+      <div class="stat-row" id="statRow"></div>
+
+      <div class="tabs">
+        <button type="button" class="tab active" data-tab="basic">方案概要</button>
+        <button type="button" class="tab" data-tab="occupation">工种等级规划</button>
+        <button type="button" class="tab" data-tab="annual">年度培训计划</button>
+        <button type="button" class="tab" data-tab="scheduling">分班排课工作台</button>
+      </div>
+
+      <!-- 方案概要 -->
+      <div class="tab-panel active" id="panel-basic">
+        <div class="card">
+          <div class="card-head">
+            <div class="title-wrap"><i class="fas fa-clipboard-list"></i> 规划方案概要</div>
+            <span class="hint">培训计划制定：工种、等级、时间、地点、培养模式</span>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>规划周期</label>
+              <select id="planYears">
+                <option value="3">3 年</option>
+                <option value="4">4 年</option>
+                <option value="5" selected>5 年</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>培养模式</label>
+              <select id="trainMode">
+                <option value="新型学徒制">新型学徒制</option>
+                <option value="岗前培训">岗前培训</option>
+                <option value="技能提升">技能提升</option>
+                <option value="企业内训">企业内训</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>规划起始年度</label>
+              <input type="number" id="startYear" min="2024" max="2035">
+            </div>
+            <div class="form-group">
+              <label>方案状态</label>
+              <select id="planStatus">
+                <option value="草案">草案</option>
+                <option value="编制中">编制中</option>
+                <option value="已定稿">已定稿</option>
+              </select>
+            </div>
+            <div class="form-group full">
+              <label>规划目标摘要</label>
+              <textarea id="planGoal" placeholder="根据人才识别结果，描述企业技能人才梯队建设目标…"></textarea>
+            </div>
+            <div class="form-group full">
+              <label>主要培训地点</label>
+              <input type="text" id="planVenue" placeholder="如：总部培训中心、华东实训基地">
+            </div>
+          </div>
+          <div class="toolbar" style="margin-top:16px">
+            <button type="button" class="btn btn-plan" id="btnGenDraft"><i class="fas fa-magic"></i> 智能生成规划草案</button>
+            <button type="button" class="btn btn-secondary" id="btnSaveBasic"><i class="fas fa-save"></i> 保存概要</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 工种等级 -->
+      <div class="tab-panel" id="panel-occupation">
+        <div class="card">
+          <div class="card-head">
+            <div class="title-wrap"><i class="fas fa-users-cog"></i> 工种等级规划表</div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnAddOcc"><i class="fas fa-plus"></i> 新增工种</button>
+          </div>
+          <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">
+            对接人才识别需求清单，明确各工种等级参训规模与批次安排（管理表：培训工种、等级确认）。
+          </p>
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>工种</th><th>等级</th><th>规划人数</th><th>已识别人数</th>
+                  <th>计划批次</th><th>培训形式</th><th>计划开班季度</th><th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="occBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card" style="margin-top:24px">
+          <div class="card-head"><div class="title-wrap"><i class="fas fa-link"></i> 关联人才识别数据</div></div>
+          <div id="rencaiSummary" style="font-size:14px;line-height:1.8;color:var(--text-secondary)"></div>
+        </div>
+      </div>
+
+      <!-- 年度计划 -->
+      <div class="tab-panel" id="panel-annual">
+        <div class="card">
+          <div class="card-head">
+            <div class="title-wrap"><i class="fas fa-calendar-alt"></i> 年度培训计划</div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnSyncAnnual"><i class="fas fa-sync"></i> 按工种汇总</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>年度</th><th>计划开班数</th><th>计划参训人次</th><th>重点工种</th><th>预算口径（万元）</th><th>备注</th>
+                </tr>
+              </thead>
+              <tbody id="annualBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="panel-scheduling">
+        <div class="card">
+          <div class="card-head">
+            <div class="title-wrap"><i class="fas fa-project-diagram"></i> 分班排课（草案）</div>
+            <span class="hint">完整功能请进入协同工作台</span>
+          </div>
+          <p style="font-size:14px;color:var(--text-secondary);line-height:1.8;margin-bottom:20px">
+            导入学员 → 分班规则 → 智能分班 → 排课安排 → 冲突检测 → 保存课表草案。
+          </p>
+          <div class="sub-stat-row">
+            <div class="sub-stat"><div class="v" id="hubStatPending">0</div><div class="l">待分班</div></div>
+            <div class="sub-stat"><div class="v" id="hubStatClasses">0</div><div class="l">班级</div></div>
+            <div class="sub-stat"><div class="v" id="hubStatCourses">0</div><div class="l">课程</div></div>
+            <div class="sub-stat"><div class="v" id="hubStatStatus">—</div><div class="l">课表</div></div>
+          </div>
+          <div class="toolbar">
+            <a href="#" class="btn btn-plan" id="linkSchedulingHub"><i class="fas fa-external-link-alt"></i> 协同工作台</a>
+            <a href="#" class="btn btn-primary" id="linkFenbanMgmt"><i class="fas fa-sitemap"></i> 分班管理</a>
+            <a href="#" class="btn btn-primary" id="linkPaikeMgmt"><i class="fas fa-calendar-alt"></i> 排课管理</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-actions">
+        <a href="#" class="btn btn-secondary" id="linkBackRencai"><i class="fas fa-user-check"></i> 返回人才识别</a>
+        <a href="培训管理系统 主页面.html?panel=process" class="btn btn-secondary">保存并返回流程</a>
+        <button type="button" class="btn btn-primary" id="btnNextStep">
+          <i class="fas fa-arrow-right"></i> 完成初步方案，进入最终方案
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const STORAGE_TASKS = 'zhixun_tasks';
+    const STORAGE_RENCAI = 'zhixun_rencai_by_unit';
+    const STORAGE_CHUBU = 'zhixun_chubu_fangan_by_project';
+
+    let tasks = [];
+    let currentProjectId = null;
+    let currentProject = null;
+    let plan = null;
+    let occIdCounter = 1;
+    function refreshSchedulingHub() {
+      if (!currentProjectId) return;
+      const q = '?projectId=' + currentProjectId + '&mode=draft';
+      document.getElementById('linkSchedulingHub').href = '分班排课协同.html' + q;
+      document.getElementById('linkFenbanMgmt').href = '分班管理.html' + q;
+      document.getElementById('linkPaikeMgmt').href = '排课管理.html' + q;
+      try {
+        const fb = JSON.parse(localStorage.getItem('zhixun_fenban_by_project') || '{}')[String(currentProjectId)];
+        const pk = JSON.parse(localStorage.getItem('zhixun_paike_by_project') || '{}')[String(currentProjectId)];
+        document.getElementById('hubStatPending').textContent = fb?.pendingStudents?.length ?? 0;
+        document.getElementById('hubStatClasses').textContent = fb?.classes?.length ?? 0;
+        document.getElementById('hubStatCourses').textContent = pk?.courses?.length ?? 0;
+        document.getElementById('hubStatStatus').textContent = pk?.published ? '已发布' : (pk?.courses?.length ? '草案' : '—');
+      } catch (e) {}
+    }
+
+    function loadTasks() {
+      try { tasks = JSON.parse(localStorage.getItem(STORAGE_TASKS) || '[]'); } catch (e) { tasks = []; }
+    }
+
+    function defaultPlan(project) {
+      const y = new Date().getFullYear();
+      return {
+        planYears: 5,
+        trainMode: project?.mode || '新型学徒制',
+        startYear: y,
+        planStatus: '草案',
+        planGoal: `基于「${project?.enterprise || '企业'}」人才识别结果，制定 ${y}–${y + 4} 年技能人才梯队培养规划，覆盖${project?.occupation || '主要工种'}等岗位技能提升与认定衔接。`,
+        planVenue: '总部培训中心',
+        occupations: [],
+        annuals: [],
+        versions: [{ ver: 'V1.0', status: '草案', time: new Date().toLocaleString('zh-CN'), note: '初始草案', current: true }],
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    function getRencaiStats(enterprise) {
+      let saved = {};
+      try { saved = JSON.parse(localStorage.getItem(STORAGE_RENCAI) || '{}'); } catch (e) {}
+      const companies = Object.values(saved);
+      const c = companies.find(x => x.name === enterprise) ||
+        Object.entries(saved).find(([k, v]) => v.name === enterprise)?.[1];
+      if (!c) return { confirmed: 0, pending: 0, unidentified: 0 };
+      return { confirmed: c.confirmed || 0, pending: c.pending || 0, unidentified: c.unidentified || 0 };
+    }
+
+    function loadPlan(projectId) {
+      const all = JSON.parse(localStorage.getItem(STORAGE_CHUBU) || '{}');
+      const project = tasks.find(t => String(t.id) === String(projectId));
+      if (!all[String(projectId)]) {
+        plan = defaultPlan(project);
+        const occ = project?.occupation || '电工';
+        plan.occupations = [
+          { id: 1, occ, level: '高级工', planCount: 40, identified: 32, batches: 2, form: '理实一体', quarter: 'Q2' },
+          { id: 2, occ: '焊工', level: '技师', planCount: 24, identified: 18, batches: 1, form: '集中培训', quarter: 'Q3' }
+        ];
+        occIdCounter = 3;
+        syncAnnualFromOcc();
+      } else {
+        plan = all[String(projectId)];
+        occIdCounter = plan.occupations?.length ? Math.max(...plan.occupations.map(o => o.id)) + 1 : 1;
+      }
+    }
+
+    function savePlan() {
+      if (!currentProjectId || !plan) return;
+      plan.updatedAt = new Date().toISOString();
+      const all = JSON.parse(localStorage.getItem(STORAGE_CHUBU) || '{}');
+      all[String(currentProjectId)] = plan;
+      localStorage.setItem(STORAGE_CHUBU, JSON.stringify(all));
+    }
+
+    function syncAnnualFromOcc() {
+      if (!plan) return;
+      const years = parseInt(plan.planYears || 5, 10);
+      const start = parseInt(plan.startYear || new Date().getFullYear(), 10);
+      const total = plan.occupations.reduce((s, o) => s + (parseInt(o.planCount, 10) || 0), 0);
+      const perYear = Math.ceil(total / years) || 0;
+      plan.annuals = [];
+      for (let i = 0; i < years; i++) {
+        const y = start + i;
+        const occs = plan.occupations.map(o => o.occ).filter(Boolean).slice(0, 2).join('、') || '—';
+        plan.annuals.push({
+          year: y,
+          classes: Math.max(1, Math.ceil((plan.occupations.length || 1) / years)),
+          trainees: perYear,
+          focus: occs,
+          budget: (perYear * 0.35).toFixed(1),
+          note: i === 0 ? '启动年' : ''
+        });
+      }
+    }
+
+    function loadProject(projectId) {
+      if (!projectId) return;
+      const project = tasks.find(t => String(t.id) === String(projectId));
+      if (!project) return;
+      currentProjectId = projectId;
+      currentProject = project;
+      loadPlan(projectId);
+
+      document.getElementById('workspace').style.display = 'block';
+      document.getElementById('workspaceEmpty').style.display = 'none';
+      document.getElementById('linkBackRencai').href = `人才识别.html?projectId=${projectId}`;
+
+      const banner = document.getElementById('projectBanner');
+      banner.style.display = 'grid';
+      const rs = getRencaiStats(project.enterprise);
+      banner.innerHTML = `
+        <div class="item"><label>企业</label><strong>${project.enterprise || '—'}</strong></div>
+        <div class="item"><label>项目</label><strong>${project.name || '—'}</strong></div>
+        <div class="item"><label>主工种</label><strong>${project.occupation || '—'}</strong></div>
+        <div class="item"><label>已确认人才</label><strong>${rs.confirmed} 人</strong></div>
+        <div class="item"><label>方案状态</label><strong>${plan.planStatus || '草案'}</strong></div>
+        <div class="item"><label>负责人</label><strong>${project.owner || '—'}</strong></div>
+      `;
+      document.getElementById('pageSub').textContent =
+        `${project.enterprise || ''} · 培训规划草案 · 步骤 2 / 9`;
+
+      bindForm();
+      renderAll();
+      refreshSchedulingHub();
+    }
+
+    function bindForm() {
+      document.getElementById('planYears').value = plan.planYears || 5;
+      document.getElementById('trainMode').value = plan.trainMode || '新型学徒制';
+      document.getElementById('startYear').value = plan.startYear || new Date().getFullYear();
+      document.getElementById('planStatus').value = plan.planStatus || '草案';
+      document.getElementById('planGoal').value = plan.planGoal || '';
+      document.getElementById('planVenue').value = plan.planVenue || '';
+    }
+
+    function readForm() {
+      plan.planYears = parseInt(document.getElementById('planYears').value, 10);
+      plan.trainMode = document.getElementById('trainMode').value;
+      plan.startYear = parseInt(document.getElementById('startYear').value, 10);
+      plan.planStatus = document.getElementById('planStatus').value;
+      plan.planGoal = document.getElementById('planGoal').value;
+      plan.planVenue = document.getElementById('planVenue').value;
+    }
+
+    function renderStats() {
+      const occCount = plan.occupations?.length || 0;
+      const total = plan.occupations?.reduce((s, o) => s + (parseInt(o.planCount, 10) || 0), 0) || 0;
+      const identified = plan.occupations?.reduce((s, o) => s + (parseInt(o.identified, 10) || 0), 0) || 0;
+      const years = plan.planYears || 5;
+      document.getElementById('statRow').innerHTML = `
+        <div class="stat-card plan"><div class="val">${occCount}</div><div class="lbl">规划工种数</div></div>
+        <div class="stat-card"><div class="val">${total}</div><div class="lbl">规划参训人次</div></div>
+        <div class="stat-card success"><div class="val">${identified}</div><div class="lbl">已识别人数衔接</div></div>
+        <div class="stat-card warn"><div class="val">${years}</div><div class="lbl">规划周期（年）</div></div>
+      `;
+    }
+
+    function renderOccTable() {
+      const tbody = document.getElementById('occBody');
+      if (!plan.occupations?.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-secondary)">暂无工种规划，请新增或智能生成草案</td></tr>';
+        return;
+      }
+      tbody.innerHTML = plan.occupations.map(o => `
+        <tr data-id="${o.id}">
+          <td><input type="text" value="${o.occ || ''}" data-f="occ"></td>
+          <td><select data-f="level">
+            ${['初级','中级','高级','高级工','技师','高级技师'].map(l =>
+              `<option value="${l}" ${o.level === l ? 'selected' : ''}>${l}</option>`).join('')}
+          </select></td>
+          <td><input type="number" min="0" value="${o.planCount || 0}" data-f="planCount"></td>
+          <td><input type="number" min="0" value="${o.identified || 0}" data-f="identified"></td>
+          <td><input type="number" min="1" value="${o.batches || 1}" data-f="batches"></td>
+          <td><select data-f="form">
+            ${['集中培训','理实一体','线上+线下','企业内训'].map(f =>
+              `<option value="${f}" ${o.form === f ? 'selected' : ''}>${f}</option>`).join('')}
+          </select></td>
+          <td><input type="text" value="${o.quarter || ''}" data-f="quarter" placeholder="Q1-Q4"></td>
+          <td><button type="button" class="btn-link danger btn-del-occ" data-id="${o.id}">删除</button></td>
+        </tr>
+      `).join('');
+    }
+
+    function renderAnnualTable() {
+      const tbody = document.getElementById('annualBody');
+      if (!plan.annuals?.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-secondary)">请先维护工种规划，再按工种汇总年度计划</td></tr>';
+        return;
+      }
+      tbody.innerHTML = plan.annuals.map((a, i) => `
+        <tr data-idx="${i}">
+          <td><strong>${a.year}</strong></td>
+          <td><input type="number" min="0" value="${a.classes}" data-f="classes"></td>
+          <td><input type="number" min="0" value="${a.trainees}" data-f="trainees"></td>
+          <td><input type="text" value="${a.focus || ''}" data-f="focus"></td>
+          <td><input type="number" step="0.1" value="${a.budget}" data-f="budget"></td>
+          <td><input type="text" value="${a.note || ''}" data-f="note"></td>
+        </tr>
+      `).join('');
+    }
+
+    function renderRencaiSummary() {
+      const rs = getRencaiStats(currentProject?.enterprise);
+      document.getElementById('rencaiSummary').innerHTML = `
+        <p>企业 <strong>${currentProject?.enterprise || '—'}</strong> 人才识别汇总：</p>
+        <ul style="margin:8px 0 0 20px">
+          <li>已确认 <strong style="color:var(--success)">${rs.confirmed}</strong> 人</li>
+          <li>待确认 <strong style="color:var(--warning)">${rs.pending}</strong> 人</li>
+          <li>未识别 <strong style="color:var(--danger)">${rs.unidentified}</strong> 人</li>
+        </ul>
+        <p style="margin-top:12px"><a href="人才识别.html?projectId=${currentProjectId}" class="btn-link">查看人才识别明细 →</a></p>
+      `;
+    }
+
+    function renderAll() {
+      renderStats();
+      renderOccTable();
+      renderAnnualTable();
+      renderRencaiSummary();
+    }
+
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+      });
+    });
+
+    document.getElementById('btnGenDraft').addEventListener('click', () => {
+      readForm();
+      const p = currentProject;
+      const rs = getRencaiStats(p?.enterprise);
+      const occ = p?.occupation || '电工';
+      plan.occupations = [
+        { id: occIdCounter++, occ, level: '高级工', planCount: Math.max(30, rs.confirmed), identified: rs.confirmed, batches: 2, form: '理实一体', quarter: 'Q2' },
+        { id: occIdCounter++, occ: '安全员', level: '中级', planCount: 20, identified: Math.min(15, rs.confirmed), batches: 1, form: '集中培训', quarter: 'Q1' }
+      ];
+      if (rs.unidentified > 10) {
+        plan.occupations.push({ id: occIdCounter++, occ: '多工种储备', level: '中级', planCount: rs.unidentified, identified: 0, batches: 1, form: '企业内训', quarter: 'Q4' });
+      }
+      plan.planGoal = `【智能草案】${p?.enterprise || '企业'} ${plan.startYear} 年起 ${plan.planYears} 年规划：以${occ}为主体，衔接已确认 ${rs.confirmed} 人，分 ${plan.planYears} 年梯次培养。`;
+      syncAnnualFromOcc();
+      bindForm();
+      savePlan();
+      renderAll();
+      alert('已根据人才识别数据生成规划草案，请核对工种等级与年度计划');
+    });
+
+    document.getElementById('btnSaveBasic').addEventListener('click', () => {
+      readForm();
+      syncAnnualFromOcc();
+      savePlan();
+      renderAll();
+      alert('方案概要已保存');
+    });
+
+    document.getElementById('btnAddOcc').addEventListener('click', () => {
+      plan.occupations = plan.occupations || [];
+      plan.occupations.push({ id: occIdCounter++, occ: '', level: '中级', planCount: 0, identified: 0, batches: 1, form: '集中培训', quarter: 'Q1' });
+      renderOccTable();
+    });
+
+    document.getElementById('occBody').addEventListener('change', e => {
+      const row = e.target.closest('tr[data-id]');
+      if (!row) return;
+      const o = plan.occupations.find(x => String(x.id) === row.dataset.id);
+      if (!o) return;
+      const f = e.target.dataset.f;
+      o[f] = e.target.type === 'number' ? parseInt(e.target.value, 10) : e.target.value;
+      savePlan();
+    });
+
+    document.getElementById('occBody').addEventListener('click', e => {
+      const btn = e.target.closest('.btn-del-occ');
+      if (!btn) return;
+      plan.occupations = plan.occupations.filter(o => String(o.id) !== btn.dataset.id);
+      savePlan();
+      renderAll();
+    });
+
+    document.getElementById('btnSyncAnnual').addEventListener('click', () => {
+      readForm();
+      syncAnnualFromOcc();
+      savePlan();
+      renderAnnualTable();
+      alert('已按工种规划汇总年度计划');
+    });
+
+    document.getElementById('annualBody').addEventListener('change', e => {
+      const row = e.target.closest('tr[data-idx]');
+      if (!row) return;
+      const a = plan.annuals[parseInt(row.dataset.idx, 10)];
+      const f = e.target.dataset.f;
+      a[f] = e.target.type === 'number' ? parseFloat(e.target.value) : e.target.value;
+      savePlan();
+    });
+
+    document.getElementById('btnNextStep').addEventListener('click', () => {
+      if (!currentProjectId) { alert('请先选择项目'); return; }
+      readForm();
+      if (!plan.occupations?.length) {
+        if (!confirm('尚未维护工种等级规划，是否仍进入最终方案？')) return;
+      }
+      savePlan();
+      window.location.href = `最终方案.html?projectId=${currentProjectId}`;
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadTasks();
+      const sel = document.getElementById('projectSelect');
+      sel.innerHTML = '<option value="">请选择项目…</option>' +
+        tasks.map(t => `<option value="${t.id}">${t.enterprise || '—'} · ${t.name}</option>`).join('');
+
+      const pid = new URLSearchParams(window.location.search).get('projectId');
+      if (pid && tasks.some(t => String(t.id) === String(pid))) {
+        sel.value = pid;
+        loadProject(pid);
+      }
+
+      sel.addEventListener('change', e => {
+        const v = e.target.value;
+        const url = new URL(window.location.href);
+        if (!v) {
+          document.getElementById('workspace').style.display = 'none';
+          document.getElementById('workspaceEmpty').style.display = 'block';
+          document.getElementById('projectBanner').style.display = 'none';
+          currentProjectId = null;
+          url.searchParams.delete('projectId');
+          history.replaceState(null, '', url);
+          return;
+        }
+        url.searchParams.set('projectId', v);
+        history.replaceState(null, '', url);
+        loadProject(v);
+      });
+    });
+  </script>
+</body>
+</html>

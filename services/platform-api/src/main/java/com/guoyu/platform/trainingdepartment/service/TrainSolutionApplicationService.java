@@ -8,6 +8,7 @@ import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.security.SecurityContext;
+import com.guoyu.platform.trainingdepartment.dto.TrainSolutionBadgeItem;
 import com.guoyu.platform.trainingdepartment.dto.TrainSolutionCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSolutionQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSolutionSaveReq;
@@ -156,9 +157,19 @@ public class TrainSolutionApplicationService {
 
   @Transactional
   public void delete(Long id) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainSolutionEntity entity = getExisting(id);
     entity.setDeleted(1);
     mapper.updateById(entity);
+    List<TrainSolutionBadgeEntity> badges = badgeMapper.selectList(
+        new LambdaQueryWrapper<TrainSolutionBadgeEntity>()
+            .eq(TrainSolutionBadgeEntity::getTenantId, tenantId)
+            .eq(TrainSolutionBadgeEntity::getSolutionId, id)
+            .eq(TrainSolutionBadgeEntity::getDeleted, 0));
+    for (TrainSolutionBadgeEntity b : badges) {
+      b.setDeleted(1);
+      badgeMapper.updateById(b);
+    }
   }
 
   @Transactional
@@ -211,6 +222,20 @@ public class TrainSolutionApplicationService {
 
   @Transactional
   public void saveBadges(Long solutionId, List<TrainSolutionBadgeVO> badges) {
+    if (badges == null) {
+      return;
+    }
+    List<TrainSolutionBadgeItem> items = badges.stream().map(b -> {
+      TrainSolutionBadgeItem item = new TrainSolutionBadgeItem();
+      item.setTitle(b.title());
+      item.setBadge(b.badge());
+      item.setExpend(b.expend());
+      return item;
+    }).toList();
+    replaceBadges(solutionId, items);
+  }
+
+  private void replaceBadges(Long solutionId, List<TrainSolutionBadgeItem> badges) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     List<TrainSolutionBadgeEntity> existing = badgeMapper.selectList(
         new LambdaQueryWrapper<TrainSolutionBadgeEntity>()
@@ -221,12 +246,18 @@ public class TrainSolutionApplicationService {
       e.setDeleted(1);
       badgeMapper.updateById(e);
     }
-    for (TrainSolutionBadgeVO b : badges) {
+    if (badges == null) {
+      return;
+    }
+    for (TrainSolutionBadgeItem b : badges) {
+      if (b == null || !StringUtils.hasText(b.getTitle())) {
+        continue;
+      }
       TrainSolutionBadgeEntity entity = new TrainSolutionBadgeEntity();
       entity.setSolutionId(solutionId);
-      entity.setTitle(b.title());
-      entity.setBadge(b.badge());
-      entity.setExpend(b.expend());
+      entity.setTitle(b.getTitle());
+      entity.setBadge(b.getBadge() != null ? b.getBadge() : BigDecimal.ZERO);
+      entity.setExpend(b.getExpend() != null ? b.getExpend() : BigDecimal.ZERO);
       entity.setTenantId(tenantId);
       entity.setDeleted(0);
       badgeMapper.insert(entity);
@@ -378,6 +409,7 @@ public class TrainSolutionApplicationService {
     data.put("fileType", fileType);
     data.put("badgeList", badgeList);
     data.put("train_info_status", trainInfo.getCompanyHasConfirm());
+    data.put("reject_reason", solution.getRejectReason());
     return data;
   }
 
@@ -413,14 +445,34 @@ public class TrainSolutionApplicationService {
       entity.setSortNumber(1);
       entity.setDeleted(0);
       mapper.insert(entity);
+      // 对齐 PHP YuntrainController::solutionsaveAction：新建方案后培训信息 status=1（待确认）
+      markTrainInfoPendingConfirm(req.getTraininfoId(), tenantId);
     }
 
     // Save badge list
     if (req.getBadgeList() != null) {
-      saveBadges(entity.getId(), req.getBadgeList());
+      replaceBadges(entity.getId(), req.getBadgeList());
     }
 
-    return Map.of("id", entity.getId(), "title", entity.getTitle());
+    Map<String, Object> info = new LinkedHashMap<>();
+    info.put("id", entity.getId());
+    info.put("title", entity.getTitle());
+    return Map.of("info", info);
+  }
+
+  private void markTrainInfoPendingConfirm(Long trainInfoId, Long tenantId) {
+    if (trainInfoId == null || trainInfoId <= 0) {
+      return;
+    }
+    TrainInfoListEntity info = trainInfoListMapper.selectOne(
+        new LambdaQueryWrapper<TrainInfoListEntity>()
+            .eq(TrainInfoListEntity::getTenantId, tenantId)
+            .eq(TrainInfoListEntity::getId, trainInfoId)
+            .eq(TrainInfoListEntity::getDeleted, 0));
+    if (info != null) {
+      info.setStatus(1);
+      trainInfoListMapper.updateById(info);
+    }
   }
 
   private TrainSolutionBadgeVO toBadgeVO(TrainSolutionBadgeEntity entity) {

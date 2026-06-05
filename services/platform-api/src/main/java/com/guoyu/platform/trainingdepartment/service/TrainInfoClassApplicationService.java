@@ -23,7 +23,9 @@ import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoClassVO;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,31 +46,39 @@ public class TrainInfoClassApplicationService {
   private final TrainFileTempMapper trainFileTempMapper;
   private final OrgMapper orgMapper;
   private final ExamWorkTypeMapper examWorkTypeMapper;
+  private final TrainingOperatorScopeService operatorScopeService;
   private final ObjectMapper objectMapper = new ObjectMapper();
+  private static final DateTimeFormatter ADD_TIME_FMT =
+      DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Shanghai"));
 
   public TrainInfoClassApplicationService(TrainInfoClassMapper mapper,
       TrainInfoListMapper trainInfoListMapper,
       TrainFileTempMapper trainFileTempMapper,
       OrgMapper orgMapper,
-      ExamWorkTypeMapper examWorkTypeMapper) {
+      ExamWorkTypeMapper examWorkTypeMapper,
+      TrainingOperatorScopeService operatorScopeService) {
     this.mapper = mapper;
     this.trainInfoListMapper = trainInfoListMapper;
     this.trainFileTempMapper = trainFileTempMapper;
     this.orgMapper = orgMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
+    this.operatorScopeService = operatorScopeService;
   }
 
   @Transactional(readOnly = true)
   public Map<String, Object> page(TrainInfoClassQueryReq req) {
-    Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaQueryWrapper<TrainInfoClassEntity> wrapper = new LambdaQueryWrapper<TrainInfoClassEntity>()
         .eq(TrainInfoClassEntity::getDeleted, 0)
         .orderByDesc(TrainInfoClassEntity::getAddtime);
     if (req.getTrainInfoId() != null) {
       wrapper.eq(TrainInfoClassEntity::getTrainInfoId, req.getTrainInfoId());
     }
-    if (req.getCompanyId() != null && req.getCompanyId() != 0) {
-      wrapper.eq(TrainInfoClassEntity::getCompanyId, req.getCompanyId());
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getCompanyId());
+    if (companyFilter != null) {
+      wrapper.eq(TrainInfoClassEntity::getCompanyId, companyFilter);
+    }
+    if (req.getWorkTypeId() != null && req.getWorkTypeId() != 0) {
+      wrapper.eq(TrainInfoClassEntity::getWorkTypeId, req.getWorkTypeId());
     }
     Page<TrainInfoClassEntity> mpPage = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
 
@@ -102,6 +112,7 @@ public class TrainInfoClassApplicationService {
       item.put("title", e.getTitle());
       item.put("nums", e.getNums());
       item.put("addtime", e.getAddtime());
+      item.put("addtime_cn", formatAddtime(e.getAddtime()));
       item.put("train_info_id", e.getTrainInfoId());
       item.put("company_id", e.getCompanyId());
       item.put("work_type_id", e.getWorkTypeId());
@@ -111,6 +122,7 @@ public class TrainInfoClassApplicationService {
       item.put("date_end", e.getDateEnd());
       item.put("file_temps", e.getFileTemps());
       item.put("kcbiao_file", e.getKcbiaoFile());
+      item.put("kcbiao_src", resolveKcbiaoSrc(e.getKcbiaoFile()));
       TrainInfoListEntity ti = trainInfoMap.get(e.getTrainInfoId());
       item.put("train_title", ti != null ? ti.getTitle() : null);
       item.put("position", ti != null ? ti.getPosition() : null);
@@ -132,16 +144,16 @@ public class TrainInfoClassApplicationService {
 
   @Transactional
   public Map<String, Object> save(TrainInfoClassCreateReq req) {
-    Long tenantId = SecurityContext.currentUser().getTenantId();
+    operatorScopeService.requireOrgOperator();
     if (req.getId() != null && req.getId() > 0) {
       // Update
       TrainInfoClassEntity entity = getExisting(req.getId());
+      operatorScopeService.assertClassAccessible(entity);
       entity.setTitle(req.getTitle());
       entity.setNums(req.getNums());
       entity.setDateStart(req.getDateStart());
       entity.setDateEnd(req.getDateEnd());
       entity.setKcbiaoFile(req.getKcbiaoFile());
-      entity.setFileTemps(req.getFileTemps());
       mapper.updateById(entity);
       Map<String, Object> result = new LinkedHashMap<>();
       result.put("id", entity.getId());
@@ -156,7 +168,6 @@ public class TrainInfoClassApplicationService {
       entity.setDateStart(req.getDateStart());
       entity.setDateEnd(req.getDateEnd());
       entity.setKcbiaoFile(req.getKcbiaoFile());
-      entity.setFileTemps(req.getFileTemps());
 
       // Auto-populate from train_info_list
       if (req.getTrainInfoId() != null) {
@@ -164,6 +175,7 @@ public class TrainInfoClassApplicationService {
         if (ti != null) {
           entity.setCompanyId(ti.getCompanyId());
           entity.setWorkTypeId(ti.getWorkTypeId());
+          entity.setWorkTypeLevel(ti.getWorkTypeLevel());
           if (req.getNums() == null || req.getNums() == 0) {
             entity.setNums(ti.getNum());
           } else {
@@ -188,6 +200,7 @@ public class TrainInfoClassApplicationService {
 
   @Transactional
   public Map<String, Object> batchDelete(List<Long> ids) {
+    operatorScopeService.requireOrgOperator();
     if (ids == null || ids.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要删除的班级");
     }
@@ -195,6 +208,7 @@ public class TrainInfoClassApplicationService {
     for (Long id : ids) {
       TrainInfoClassEntity entity = mapper.selectById(id);
       if (entity != null && entity.getDeleted() == 0) {
+        operatorScopeService.assertClassAccessible(entity);
         entity.setDeleted(1);
         mapper.updateById(entity);
         count++;
@@ -264,6 +278,8 @@ public class TrainInfoClassApplicationService {
     mapper.updateById(entity);
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("classId", classId);
+    result.put("count", templateIds != null ? templateIds.size() : 0);
+    result.put("ids", currentIds);
     result.put("fileTemps", currentIds);
     return result;
   }
@@ -284,6 +300,8 @@ public class TrainInfoClassApplicationService {
     mapper.updateById(entity);
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("classId", classId);
+    result.put("count", 1);
+    result.put("ids", currentIds);
     result.put("fileTemps", currentIds);
     return result;
   }
@@ -315,6 +333,24 @@ public class TrainInfoClassApplicationService {
       throw new BusinessException(ErrorCode.NOT_FOUND, "Record not found");
     }
     return entity;
+  }
+
+  private String formatAddtime(Integer addtime) {
+    if (addtime == null || addtime <= 0) {
+      return "-";
+    }
+    return ADD_TIME_FMT.format(Instant.ofEpochSecond(addtime.longValue()));
+  }
+
+  private String resolveKcbiaoSrc(String kcbiaoFile) {
+    if (kcbiaoFile == null || kcbiaoFile.isBlank()) {
+      return "";
+    }
+    if (kcbiaoFile.startsWith("http://") || kcbiaoFile.startsWith("https://")
+        || kcbiaoFile.startsWith("/api/")) {
+      return kcbiaoFile;
+    }
+    return kcbiaoFile.startsWith("/") ? kcbiaoFile : "/" + kcbiaoFile;
   }
 
   private TrainInfoClassVO toVO(TrainInfoClassEntity entity) {

@@ -59,7 +59,14 @@
       "Read(//d/Dev/**)",
       "Bash(export PATH=\"/d/Program Files/JetBrains/IntelliJ IDEA 2025.2.3/plugins/maven/lib/maven3/bin:$PATH\")",
       "Bash(JAVA_HOME=\"D:/Dev/Java/jdk-17\" \"/d/Program Files/JetBrains/IntelliJ IDEA 2025.2.3/plugins/maven/lib/maven3/bin/mvn\" compile -q)",
-      "Bash(JAVA_HOME=\"D:/Dev/Java/jdk-17\" \"/d/Program Files/JetBrains/IntelliJ IDEA 2025.2.3/plugins/maven/lib/maven3/bin/mvn\" compile)"
+      "Bash(JAVA_HOME=\"D:/Dev/Java/jdk-17\" \"/d/Program Files/JetBrains/IntelliJ IDEA 2025.2.3/plugins/maven/lib/maven3/bin/mvn\" compile)",
+      "PowerShell(\\(Get-Content \"D:\\\\qianlvguoyu_saas\\\\apps\\\\admin-web\\\\src\\\\types\\\\training.ts\" | Measure-Object -Line\\).Lines)",
+      "Bash(Select-Object -First 50)",
+      "PowerShell(java *)",
+      "Bash(Select-Object -First 30)",
+      "Bash(Get-ChildItem *)",
+      "Bash(npx *)",
+      "Bash(npm install *)"
     ]
   }
 }

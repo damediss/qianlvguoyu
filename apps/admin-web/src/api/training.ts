@@ -451,7 +451,16 @@ export function deleteFileDetail(id: number) {
 
 // ==================== Info Lists (培训信息) ====================
 export function pageInfoLists(params: TrainInfoListQuery) {
-  return unwrap<TrainInfoListPageResponse>(apiClient.get(`${BASE}/info-lists`, { params }));
+  const { limit, pageSize, page, ...rest } = params;
+  return unwrap<TrainInfoListPageResponse>(
+    apiClient.get(`${BASE}/info-lists`, {
+      params: {
+        ...rest,
+        page,
+        pageSize: pageSize ?? limit ?? 10,
+      },
+    }),
+  );
 }
 export function getInfoList(id: number) {
   return unwrap<TrainInfoList>(apiClient.get(`${BASE}/info-lists/${id}`));
@@ -716,7 +725,7 @@ export function getSolutionDetail(id: number) {
 
 /** 保存方案（创建/更新 + 经费明细） */
 export function saveSolution(payload: TrainSolutionSaveReq) {
-  return unwrap<{ id: number; title: string }>(apiClient.post(`${BASE}/solutions/save`, payload));
+  return unwrap<{ info: { id: number; title: string } }>(apiClient.post(`${BASE}/solutions/save`, payload));
 }
 
 /** 删除方案 */
@@ -752,7 +761,13 @@ export function companyRejectInfoList(id: number, reason: string) {
 // ==================== Info Classes (班级管理 - 新版) ====================
 
 /** 班级列表（含企业名、工种名、培训标题） */
-export function pageInfoClassList(params: { page?: number; pageSize?: number; companyId?: number, trainInfoId?: number }) {
+export function pageInfoClassList(params: {
+  page?: number;
+  pageSize?: number;
+  companyId?: number;
+  workTypeId?: number;
+  trainInfoId?: number;
+}) {
   return unwrap<TrainInfoClassPageResponse>(apiClient.get(`${BASE}/info-classes`, { params }));
 }
 
@@ -837,11 +852,53 @@ export function saveClassTask(params: { id?: number; classId?: number; ck_id?: n
   return unwrap<{ id: number; ck_id: number; date: string; train_class_id: number }>(apiClient.post(`${BASE}/class-task-save`, params));
 }
 
+// ==================== 材料模板（开班申报） ====================
+
+export interface TrainFileTempItem {
+  id: number;
+  type?: string | number;
+  city?: string;
+  title: string;
+  path_source?: string;
+  path_used?: string;
+  ext?: string;
+  urlSource?: string;
+  urlUsed?: string;
+}
+
+export interface TrainFileTempSavePayload {
+  id?: number;
+  type?: number;
+  city?: string;
+  title: string;
+  pathSource: string;
+  pathUsed?: string;
+  ext?: string;
+}
+
+/** 材料模板列表 type=1 培训 */
+export function listFileTemps(params: { type?: number; ids?: number[] }) {
+  const ids = params.ids?.length ? params.ids.join(',') : undefined;
+  return unwrap<{ list: TrainFileTempItem[] }>(apiClient.get(`${BASE}/file-temps/list`, {
+    params: { type: params.type ?? 1, ids },
+  }));
+}
+
+export function saveFileTemp(payload: TrainFileTempSavePayload) {
+  return unwrap<{ info: Record<string, unknown> }>(apiClient.post(`${BASE}/file-temps/save`, payload));
+}
+
+export function batchDeleteFileTemps(ids: number[]) {
+  return unwrap<{ count: number }>(apiClient.post(`${BASE}/file-temps/batch-delete`, { ids }));
+}
+
 // ==================== 班级文件模板挂载 ====================
 
 /** 挂载文件模板到班级 */
 export function attachFileTemps(classId: number, ids: number[]) {
-  return unwrap<{ classId: number; fileTemps: number[] }>(apiClient.post(`${BASE}/info-classes/${classId}/file-temps`, { ids }));
+  return unwrap<{ classId: number; count?: number; ids?: number[]; fileTemps?: number[] }>(
+    apiClient.post(`${BASE}/info-classes/${classId}/file-temps`, { ids }),
+  );
 }
 
 /** 移除班级文件模板 */
