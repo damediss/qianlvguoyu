@@ -36,6 +36,9 @@ public class TrainSignUpSelfEntity {
   /** 排序号 */
   private Integer sortNumber;
 
+  /** 方案附件 JSON 数组（相对 CDN 路径） */
+  private String files;
+
   private Long tenantId;
   private LocalDateTime createTime;
   private LocalDateTime updateTime;
@@ -59,6 +62,8 @@ public class TrainSignUpSelfEntity {
   public void setTrainInfoId(Long trainInfoId) { this.trainInfoId = trainInfoId; }
   public Integer getSortNumber() { return sortNumber; }
   public void setSortNumber(Integer sortNumber) { this.sortNumber = sortNumber; }
+  public String getFiles() { return files; }
+  public void setFiles(String files) { this.files = files; }
   public Long getTenantId() { return tenantId; }
   public void setTenantId(Long tenantId) { this.tenantId = tenantId; }
   public LocalDateTime getCreateTime() { return createTime; }

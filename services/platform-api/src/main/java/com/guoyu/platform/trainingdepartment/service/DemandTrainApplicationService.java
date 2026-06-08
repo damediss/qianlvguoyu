@@ -10,8 +10,13 @@ import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.security.SecurityContext;
+import com.guoyu.platform.system.entity.DictEntity;
+import com.guoyu.platform.system.entity.DictItemEntity;
 import com.guoyu.platform.system.entity.OrgEntity;
+import com.guoyu.platform.system.mapper.DictItemMapper;
+import com.guoyu.platform.system.mapper.DictMapper;
 import com.guoyu.platform.system.mapper.OrgMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainBaseDataMapper;
 import com.guoyu.platform.trainingdepartment.dto.DemandConvertReq;
 import com.guoyu.platform.trainingdepartment.dto.DemandTrainCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.DemandTrainQueryReq;
@@ -53,12 +58,18 @@ public class DemandTrainApplicationService {
   private final CourseKejianMapper courseKejianMapper;
   private final TrainSignUpSelfMapper signUpSelfMapper;
   private final TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper;
+  private final DictMapper dictMapper;
+  private final DictItemMapper dictItemMapper;
+  private final TrainBaseDataMapper trainBaseDataMapper;
 
   public DemandTrainApplicationService(DemandTrainMapper mapper, OrgMapper orgMapper,
       ExamWorkTypeMapper examWorkTypeMapper, TrainInfoListMapper trainInfoListMapper,
       CourseKejianMapper courseKejianMapper,
       TrainSignUpSelfMapper signUpSelfMapper,
-      TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper) {
+      TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper,
+      DictMapper dictMapper,
+      DictItemMapper dictItemMapper,
+      TrainBaseDataMapper trainBaseDataMapper) {
     this.mapper = mapper;
     this.orgMapper = orgMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
@@ -66,6 +77,9 @@ public class DemandTrainApplicationService {
     this.courseKejianMapper = courseKejianMapper;
     this.signUpSelfMapper = signUpSelfMapper;
     this.signUpPeopleSelfMapper = signUpPeopleSelfMapper;
+    this.dictMapper = dictMapper;
+    this.dictItemMapper = dictItemMapper;
+    this.trainBaseDataMapper = trainBaseDataMapper;
   }
 
   @Transactional(readOnly = true)
@@ -287,7 +301,71 @@ public class DemandTrainApplicationService {
       data.put("kejian_list", kejianVOList);
     }
 
+    // 申报条件（对齐 PHP TrainsController conditionList / dict_id=867）
+    if (all || tags.contains("condition")) {
+      try {
+        data.put("condition_list", loadDeclarationConditions(tenantId));
+      } catch (Exception ex) {
+        log.warn("load condition_list failed, fallback to empty list", ex);
+        data.put("condition_list", List.of());
+      }
+    }
+
     return data;
+  }
+
+  /** 优先 sys_dict(signup_declaration_condition)，其次 train_base_data 码表 */
+  private List<Map<String, Object>> loadDeclarationConditions(Long tenantId) {
+    List<Map<String, Object>> fromDict = loadConditionsFromDict(tenantId);
+    if (!fromDict.isEmpty()) {
+      return fromDict;
+    }
+    return loadConditionsFromBaseData(tenantId);
+  }
+
+  private List<Map<String, Object>> loadConditionsFromDict(Long tenantId) {
+    DictEntity dict = dictMapper.selectOne(new LambdaQueryWrapper<DictEntity>()
+        .eq(DictEntity::getTenantId, tenantId)
+        .eq(DictEntity::getCode, "signup_declaration_condition")
+        .eq(DictEntity::getDeleted, 0)
+        .eq(DictEntity::getStatus, "enabled")
+        .last("LIMIT 1"));
+    if (dict == null) {
+      return List.of();
+    }
+    return dictItemMapper.selectList(new LambdaQueryWrapper<DictItemEntity>()
+            .eq(DictItemEntity::getTenantId, tenantId)
+            .eq(DictItemEntity::getDictId, dict.getId())
+            .eq(DictItemEntity::getDeleted, 0)
+            .eq(DictItemEntity::getStatus, "enabled")
+            .orderByAsc(DictItemEntity::getSortOrder)
+            .orderByAsc(DictItemEntity::getId))
+        .stream()
+        .map(item -> {
+          Map<String, Object> m = new LinkedHashMap<>();
+          m.put("id", item.getId());
+          m.put("title", item.getItemLabel());
+          return m;
+        })
+        .toList();
+  }
+
+  /** 回落 train_base_data；共享 PHP 库无 tenant_id/deleted，仅用 legacy 列查询 */
+  private List<Map<String, Object>> loadConditionsFromBaseData(Long tenantId) {
+    try {
+      return trainBaseDataMapper.selectDeclarationConditionsLegacy().stream()
+          .filter(row -> StringUtils.hasText(row.title()))
+          .map(row -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", row.id());
+            m.put("title", row.title());
+            return m;
+          })
+          .toList();
+    } catch (Exception ex) {
+      log.debug("train_base_data legacy condition query skipped: {}", ex.getMessage());
+      return List.of();
+    }
   }
 
   @Transactional

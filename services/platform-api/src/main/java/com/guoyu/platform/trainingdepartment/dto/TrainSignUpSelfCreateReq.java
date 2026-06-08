@@ -1,38 +1,32 @@
 package com.guoyu.platform.trainingdepartment.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /** train_sign_up_self 创建请求 */
 public class TrainSignUpSelfCreateReq {
 
-  @NotBlank
+  @NotBlank(message = "标题不能为空")
   @Size(max = 255)
-  /** 标题 */
   private String title;
 
-  @Size(max = 255)
-  /** 封面图 */
+  @Size(max = 2000)
   private String cover;
 
+  @NotBlank(message = "培训时间不能为空")
   @Size(max = 255)
-  /** 培训时间 */
   private String trainTime;
 
+  @NotBlank(message = "考试时间不能为空")
   @Size(max = 255)
-  /** 考试时间 */
   private String examTime;
 
-  @Size(max = 255)
-  /** 组织ID */
+  @NotNull(message = "请选择绑定企业")
   private Long orgId;
 
-  @Size(max = 255)
-  /** 培训信息ID */
   private Long trainInfoId;
 
-  @Size(max = 255)
-  /** 排序号 */
   private Integer sortNumber;
 
   public String getTitle() {

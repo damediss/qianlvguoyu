@@ -4,12 +4,16 @@ import { useEffect, useRef, useState } from 'react';
 import {
   fetchCandidateDocumentBlob,
   fetchPlatformFileBlob,
+  fetchUrlFileBlob,
+  fileNameFromUrl,
   resolveFilePreviewKind,
   type FilePreviewKind,
 } from '../api/files';
 
 export interface FilePreviewTarget {
   fileId?: string;
+  /** CDN / 静态文件绝对或相对 URL（自主报名方案附件等） */
+  fileUrl?: string;
   fileName?: string;
   fileType?: string;
   taskId?: string;
@@ -31,10 +35,18 @@ export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProp
 
   useEffect(() => {
     const previewTarget = target;
-    if (!open || !previewTarget || (!previewTarget.fileId && !(previewTarget.taskId && previewTarget.documentId))) {
+    if (
+      !open
+      || !previewTarget
+      || (
+        !previewTarget.fileId
+        && !previewTarget.fileUrl
+        && !(previewTarget.taskId && previewTarget.documentId)
+      )
+    ) {
       return;
     }
-    const fileName = previewTarget.fileName;
+    const fileName = previewTarget.fileName || fileNameFromUrl(previewTarget.fileUrl);
     const fileType = previewTarget.fileType;
     const taskId = previewTarget.taskId;
     const documentId = previewTarget.documentId;
@@ -55,8 +67,9 @@ export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProp
       setPreviewKind(kind);
 
       try {
-        const blob =
-          taskId && documentId
+        const blob = previewTarget.fileUrl
+          ? await fetchUrlFileBlob(previewTarget.fileUrl)
+          : taskId && documentId
             ? await fetchCandidateDocumentBlob(taskId, documentId)
             : await fetchPlatformFileBlob(fileId!);
         if (cancelled) {
@@ -105,7 +118,7 @@ export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProp
         URL.revokeObjectURL(localObjectUrl);
       }
     };
-  }, [open, target?.fileId, target?.fileName, target?.fileType, target?.taskId, target?.documentId]);
+  }, [open, target?.fileId, target?.fileUrl, target?.fileName, target?.fileType, target?.taskId, target?.documentId]);
 
   useEffect(() => {
     if (open) {

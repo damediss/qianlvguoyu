@@ -1,6 +1,7 @@
 package com.guoyu.platform.trainingdepartment.vo;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /** 信息收集页报名计划列表项 */
 public record TrainSignUpSelfListVO(
@@ -15,6 +16,7 @@ public record TrainSignUpSelfListVO(
     Integer sortNumber,
     Long peopleCount,
     String wxMiniQrcode,
+    List<TrainSignUpSelfFileVO> files,
     LocalDateTime createTime,
     LocalDateTime updateTime
 ) {}

@@ -58,6 +58,39 @@ export function fetchPlatformFileBlob(fileId: string) {
   return fetchFileBlob(`/files/${encodeURIComponent(fileId)}/download?inline=true`);
 }
 
+/** 将 CDN 绝对地址转为 apiClient 相对路径（不含 /api 前缀，baseURL 已含） */
+export function toProxiedFileFetchPath(url: string): string {
+  if (!url) return url;
+  const marker = '/exam/files/';
+  let path = url;
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    try {
+      path = new URL(url).pathname;
+    } catch {
+      return url;
+    }
+  }
+  const idx = path.indexOf(marker);
+  if (idx >= 0) {
+    return path.substring(idx);
+  }
+  if (path.startsWith('/api/')) {
+    return path.substring(4);
+  }
+  return path.startsWith('/') ? path : `/${path}`;
+}
+
+export function fetchUrlFileBlob(url: string) {
+  return fetchFileBlob(toProxiedFileFetchPath(url));
+}
+
+export function fileNameFromUrl(url?: string): string {
+  if (!url) return '';
+  const path = url.split('?')[0].split('#')[0];
+  const name = path.substring(path.lastIndexOf('/') + 1);
+  return decodeURIComponent(name);
+}
+
 export type FilePreviewKind = 'image' | 'docx' | 'pdf' | 'unsupported';
 
 export function resolveFilePreviewKind(fileName?: string, fileType?: string): FilePreviewKind {

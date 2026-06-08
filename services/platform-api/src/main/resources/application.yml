@@ -68,6 +68,11 @@ platform:
   cdn:
     path: ${CDN_PATH:./data/cdn}
     url: ${CDN_URL:http://localhost:8080/api/exam/files}
+  wechat:
+    mini:
+      # 与 gjjd_phalcon WxminiController 保持一致，生产环境请用环境变量覆盖
+      app-id: ${WECHAT_MINI_APP_ID:wx67133f973ccd5592}
+      app-secret: ${WECHAT_MINI_APP_SECRET:a927524973ea144a9405b9739a2b2c51}
 
 # Sa-Token
 sa-token:

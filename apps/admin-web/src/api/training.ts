@@ -1,4 +1,5 @@
 import { apiClient, unwrap } from './client';
+import { fetchFileBlob } from './files';
 import type { PageResponse } from '../types/api';
 import type {
   TrainNeed, TrainNeedQuery, TrainNeedCreateReq, TrainNeedUpdateReq,
@@ -43,7 +44,9 @@ import type {
   TrainSummary, TrainSummaryQuery, TrainSummaryCreateReq, TrainSummaryUpdateReq,
   TrainCertificate, TrainCertificateQuery, TrainCertificateCreateReq, TrainCertificateUpdateReq,
   TrainSignUpSelf, TrainSignUpSelfQuery, TrainSignUpSelfCreateReq, TrainSignUpSelfUpdateReq,
-  TrainSignUpPerson, TrainSignUpPeopleQuery, PlatformUserSaveReq,
+  TrainSignUpPerson, TrainSignUpPeopleQuery, TrainSignUpOrcSelf, PlatformUserSaveReq,
+  SignUpPeopleImportResult,
+  SignUpDefaultTemplateExportStart, SignUpDefaultTemplateExportCheck,
 } from '../types/training';
 
 const BASE = '/training';
@@ -702,7 +705,7 @@ export function pageDemandPendings(params: { page?: number; pageSize?: number; k
   return unwrap<PageResponse<DemandPending>>(apiClient.get(`${BASE}/demand-trains/pendings`, { params }));
 }
 
-/** 公共数据（企业列表、工种列表），tags 可选 ['company','worktype','traininfo','kejian'] */
+/** 公共数据（企业/工种/申报条件等），tags 可选 ['company','worktype','traininfo','kejian','condition'] */
 export function getDemandPublicData(tags?: string[]) {
   return unwrap<DemandPublicData>(apiClient.get(`${BASE}/demand-trains/public-data`, { params: tags ? { tags } : {} }));
 }
@@ -975,9 +978,24 @@ export function deleteSignUp(id: number) {
   return unwrap<void>(apiClient.delete(`${BASE}/sign-ups/${id}`));
 }
 
+export interface SignUpQrcodeResult {
+  signUpId: number;
+  title: string;
+  qrcode: string;
+  qrcodeDataUrl?: string;
+  registrationPath: string;
+  generated: boolean;
+}
+
 export function getSignUpQrcode(id: number) {
-  return unwrap<{ signUpId: number; title: string; qrcode: string; registrationPath: string; generated: boolean }>(
+  return unwrap<SignUpQrcodeResult>(
     apiClient.get(`${BASE}/sign-ups/${id}/qrcode`)
+  );
+}
+
+export function generateSignUpQrcode(id: number) {
+  return unwrap<SignUpQrcodeResult>(
+    apiClient.get(`${BASE}/sign-ups/${id}/qrcode`, { params: { generate: true } })
   );
 }
 
@@ -989,9 +1007,9 @@ export function batchUpdateSignUpPeople(payload: { ids: number[]; field: string;
   return unwrap<number>(apiClient.put(`${BASE}/sign-up-people/batch`, payload));
 }
 
-export async function exportSignUpPeople(signUpId: number) {
+export async function exportSignUpPeople(signUpId: number, ids?: number[]) {
   const response = await apiClient.get(`${BASE}/sign-up-people/export`, {
-    params: { signUpId },
+    params: { signUpId, ids: ids?.length ? ids.join(',') : undefined },
     responseType: 'blob',
   });
   const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -1001,6 +1019,61 @@ export async function exportSignUpPeople(signUpId: number) {
   a.download = `sign-up-people-${signUpId}.xlsx`;
   a.click();
   window.URL.revokeObjectURL(url);
+}
+
+export function getSignUpPerson(id: number) {
+  return unwrap<TrainSignUpPerson>(apiClient.get(`${BASE}/sign-up-people/${id}`));
+}
+
+export function updateSignUpPerson(id: number, payload: Partial<TrainSignUpPerson>) {
+  return unwrap<TrainSignUpPerson>(apiClient.put(`${BASE}/sign-up-people/${id}`, payload));
+}
+
+export function importSignUpPeople(signUpId: number, file: File) {
+  const formData = new FormData();
+  formData.append('signUpId', String(signUpId));
+  formData.append('file', file);
+  return unwrap<SignUpPeopleImportResult>(apiClient.post(`${BASE}/sign-up-people/import`, formData));
+}
+
+export function downloadSignUpPeopleImportTemplate() {
+  return fetchFileBlob(`${BASE}/sign-up-people/import/template`);
+}
+
+export function importSignUpStudents(signUpId: number, ids: number[]) {
+  return unwrap<SignUpPeopleImportResult>(
+    apiClient.post(`${BASE}/sign-up-people/import/students`, { signUpId, ids }),
+  );
+}
+
+export function pageSignUpImportStudents(params: PlatformUserQuery) {
+  return unwrap<PageResponse<PlatformUser>>(
+    apiClient.get(`${BASE}/sign-up-people/import/students`, { params }),
+  );
+}
+
+export function startDefaultTemplateExport(payload: {
+  signUpId: number;
+  ids?: number[];
+  status?: number;
+}) {
+  return unwrap<SignUpDefaultTemplateExportStart>(
+    apiClient.post(`${BASE}/sign-up-people/export/default-template`, payload),
+  );
+}
+
+export function checkDefaultTemplateExport(payload: {
+  signUpId: number;
+  taskId: number;
+  signUpTitle?: string;
+}) {
+  return unwrap<SignUpDefaultTemplateExportCheck>(
+    apiClient.post(`${BASE}/sign-up-people/export/default-template/check`, payload),
+  );
+}
+
+export function pageSignUpOrcs(params: { signUpId?: number; page?: number; pageSize?: number }) {
+  return unwrap<PageResponse<TrainSignUpOrcSelf>>(apiClient.get(`${BASE}/sign-up-orcs`, { params }));
 }
 
 export function savePlatformUser(payload: PlatformUserSaveReq) {

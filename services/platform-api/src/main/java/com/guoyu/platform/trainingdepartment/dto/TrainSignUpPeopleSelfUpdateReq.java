@@ -1,73 +1,111 @@
 package com.guoyu.platform.trainingdepartment.dto;
 
 import jakarta.validation.constraints.Size;
+import lombok.Getter;
+import lombok.Setter;
 
-/** train_sign_up_people_self 更新请求 */
+/** train_sign_up_people_self 更新请求 — 对齐 PHP peopleselfsave */
+@Getter
+@Setter
 public class TrainSignUpPeopleSelfUpdateReq {
 
-  @Size(max = 255)
-  /** 报名计划ID */
   private Long signUpId;
-
-  @Size(max = 255)
-  /** 平台用户ID */
   private Long platformUserId;
+  private Long userId;
 
-  @Size(max = 255)
-  /** 姓名 */
+  @Size(max = 100)
   private String name;
-
-  @Size(max = 255)
-  /** 手机号 */
+  @Size(max = 20)
   private String phone;
-
-  @Size(max = 255)
-  /** 身份证号 */
+  @Size(max = 20)
   private String idCardNumber;
-
-  @Size(max = 255)
-  /** 性别 */
+  private Integer age;
+  @Size(max = 10)
   private String gender;
-
-  @Size(max = 255)
-  /** 学历 */
+  @Size(max = 50)
+  private String nation;
+  @Size(max = 50)
+  private String political;
+  @Size(max = 50)
+  private String houseType;
+  @Size(max = 500)
+  private String address;
+  @Size(max = 50)
   private String education;
 
-  @Size(max = 255)
-  /** 照片路径 */
+  @Size(max = 500)
+  private String idCardFront;
+  @Size(max = 500)
+  private String idCardBack;
+  @Size(max = 500)
+  private String idCardHeader;
+  @Size(max = 500)
+  private String idCardHeader2;
+  @Size(max = 500)
   private String photo;
 
   @Size(max = 255)
-  /** 合同路径 */
-  private String contract;
-
+  private String school;
   @Size(max = 255)
-  /** 证书路径 */
+  private String major;
+  private Integer schoolPaperHas;
+  @Size(max = 100)
+  private String schoolNo;
+  @Size(max = 20)
+  private String inSchoolDate;
+  @Size(max = 20)
+  private String graduateDate;
+  @Size(max = 500)
+  private String schoolPaper;
+
+  @Size(max = 20)
+  private String workTime;
+  @Size(max = 50)
+  private String titleType;
+  @Size(max = 500)
+  private String titlePaper;
+  private Long companyId;
+  @Size(max = 20)
+  private String workDateStart;
+  @Size(max = 20)
+  private String workDateEnd;
+  private Integer workTypePaperHas;
+  @Size(max = 500)
+  private String workTypePaper;
+  private Long workTypeId;
+  @Size(max = 255)
+  private String workTypeName;
+  private Integer level;
+  @Size(max = 100)
+  private String paperNo;
+  private Long reqWorkTypeId;
+  @Size(max = 255)
+  private String reqWorkTypeName;
+  private Integer reqLevel;
+  @Size(max = 255)
+  private String declarationCondition;
+  private String workExp;
+  @Size(max = 255)
+  private String jog;
+
+  @Size(max = 500)
+  private String contactFirstPage;
+  @Size(max = 500)
+  private String contactExpirePage;
+  @Size(max = 500)
+  private String contactSignPage;
+  @Size(max = 500)
+  private String contract;
+  @Size(max = 500)
   private String certificate;
 
   @Size(max = 255)
-  /** 状态 */
+  private String workTypePaperName;
+  private Integer workTypePaperLevel;
+  @Size(max = 100)
+  private String workTypePaperNo;
+
   private Integer status;
-  public Long getSignUpId() { return signUpId; }
-  public void setSignUpId(Long signUpId) { this.signUpId = signUpId; }
-  public Long getPlatformUserId() { return platformUserId; }
-  public void setPlatformUserId(Long platformUserId) { this.platformUserId = platformUserId; }
-  public String getName() { return name; }
-  public void setName(String name) { this.name = name; }
-  public String getPhone() { return phone; }
-  public void setPhone(String phone) { this.phone = phone; }
-  public String getIdCardNumber() { return idCardNumber; }
-  public void setIdCardNumber(String idCardNumber) { this.idCardNumber = idCardNumber; }
-  public String getGender() { return gender; }
-  public void setGender(String gender) { this.gender = gender; }
-  public String getEducation() { return education; }
-  public void setEducation(String education) { this.education = education; }
-  public String getPhoto() { return photo; }
-  public void setPhoto(String photo) { this.photo = photo; }
-  public String getContract() { return contract; }
-  public void setContract(String contract) { this.contract = contract; }
-  public String getCertificate() { return certificate; }
-  public void setCertificate(String certificate) { this.certificate = certificate; }
-  public Integer getStatus() { return status; }
-  public void setStatus(Integer status) { this.status = status; }
+  private Integer companyStatus;
+  private Integer hasPay;
 }

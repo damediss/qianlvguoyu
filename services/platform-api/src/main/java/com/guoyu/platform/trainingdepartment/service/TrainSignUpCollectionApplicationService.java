@@ -13,15 +13,20 @@ import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
+import com.guoyu.platform.trainingdepartment.support.SignUpSelfFilesResolver;
+import com.guoyu.platform.trainingdepartment.support.TrainingWxMiniQrcodeClient;
+import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.trainingdepartment.vo.TrainSignUpSelfListVO;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -33,12 +38,15 @@ import org.springframework.util.StringUtils;
 
 /** 信息收集（对齐 yun_shang information.vue） */
 @Service
+@Slf4j
 public class TrainSignUpCollectionApplicationService {
 
   private final TrainSignUpSelfMapper signUpMapper;
   private final TrainSignUpPeopleSelfMapper peopleMapper;
   private final OrgMapper orgMapper;
   private final TrainingOperatorScopeService operatorScopeService;
+  private final TrainingWxMiniQrcodeClient wxMiniQrcodeClient;
+  private final SignUpSelfFilesResolver filesResolver;
   private final String cdnPath;
   private final String cdnUrl;
 
@@ -47,25 +55,34 @@ public class TrainSignUpCollectionApplicationService {
       TrainSignUpPeopleSelfMapper peopleMapper,
       OrgMapper orgMapper,
       TrainingOperatorScopeService operatorScopeService,
+      TrainingWxMiniQrcodeClient wxMiniQrcodeClient,
+      SignUpSelfFilesResolver filesResolver,
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
       @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl) {
     this.signUpMapper = signUpMapper;
     this.peopleMapper = peopleMapper;
     this.orgMapper = orgMapper;
     this.operatorScopeService = operatorScopeService;
+    this.wxMiniQrcodeClient = wxMiniQrcodeClient;
+    this.filesResolver = filesResolver;
     this.cdnPath = cdnPath;
     this.cdnUrl = cdnUrl.endsWith("/") ? cdnUrl.substring(0, cdnUrl.length() - 1) : cdnUrl;
   }
 
   @Transactional(readOnly = true)
   public PageResponse<TrainSignUpSelfListVO> pageSignUps(TrainSignUpSelfQueryReq req) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaQueryWrapper<TrainSignUpSelfEntity> wrapper = new LambdaQueryWrapper<TrainSignUpSelfEntity>()
         .eq(TrainSignUpSelfEntity::getDeleted, 0)
+        .eq(TrainSignUpSelfEntity::getTenantId, tenantId)
         .orderByAsc(TrainSignUpSelfEntity::getSortNumber)
         .orderByDesc(TrainSignUpSelfEntity::getCreateTime);
     Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getOrgId());
     if (companyFilter != null) {
       wrapper.eq(TrainSignUpSelfEntity::getOrgId, companyFilter);
+    }
+    if (req.getTrainInfoId() != null) {
+      wrapper.eq(TrainSignUpSelfEntity::getTrainInfoId, req.getTrainInfoId());
     }
     if (StringUtils.hasText(req.getKeyword())) {
       wrapper.like(TrainSignUpSelfEntity::getTitle, req.getKeyword());
@@ -84,15 +101,27 @@ public class TrainSignUpCollectionApplicationService {
   @Transactional(readOnly = true)
   public Map<String, Object> resolveQrcode(Long signUpId) {
     TrainSignUpSelfEntity signUp = getSignUp(signUpId);
-    Path file = Paths.get(cdnPath).resolve("wxqrcode/signup_self_" + signUpId + ".png");
-    String qrcode = Files.exists(file) ? cdnUrl + "/wxqrcode/signup_self_" + signUpId + ".png" : "";
-    Map<String, Object> result = new LinkedHashMap<>();
-    result.put("signUpId", signUpId);
-    result.put("title", signUp.getTitle());
-    result.put("qrcode", qrcode);
-    result.put("registrationPath", "pages/registration/detail?id=" + signUpId);
-    result.put("generated", StringUtils.hasText(qrcode));
-    return result;
+    return buildQrcodeResult(signUpId, signUp.getTitle());
+  }
+
+  @Transactional
+  public Map<String, Object> generateQrcode(Long signUpId) {
+    TrainSignUpSelfEntity signUp = getSignUp(signUpId);
+    Path file = qrcodeFilePath(signUpId);
+    if (Files.exists(file)) {
+      return buildQrcodeResult(signUpId, signUp.getTitle());
+    }
+    byte[] png = wxMiniQrcodeClient.createSignUpSelfQrcode(signUpId);
+    try {
+      Files.createDirectories(file.getParent());
+      Files.write(file, png);
+    } catch (Exception e) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "保存二维码失败");
+    }
+    if (!Files.exists(file)) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "生成失败");
+    }
+    return buildQrcodeResult(signUpId, signUp.getTitle());
   }
 
   @Transactional
@@ -100,13 +129,19 @@ public class TrainSignUpCollectionApplicationService {
     if (ids == null || ids.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择人员");
     }
-    if (!"status".equals(field) && !"deleted".equals(field)) {
+    if (!"status".equals(field) && !"deleted".equals(field) && !"has_pay".equals(field) && !"company_status".equals(field)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的批量字段");
     }
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaUpdateWrapper<TrainSignUpPeopleSelfEntity> wrapper = new LambdaUpdateWrapper<TrainSignUpPeopleSelfEntity>()
-        .in(TrainSignUpPeopleSelfEntity::getId, ids);
+        .in(TrainSignUpPeopleSelfEntity::getId, ids)
+        .eq(TrainSignUpPeopleSelfEntity::getTenantId, tenantId);
     if ("status".equals(field)) {
       wrapper.set(TrainSignUpPeopleSelfEntity::getStatus, value != null ? value : 0);
+    } else if ("has_pay".equals(field)) {
+      wrapper.set(TrainSignUpPeopleSelfEntity::getHasPay, value != null ? value : 0);
+    } else if ("company_status".equals(field)) {
+      wrapper.set(TrainSignUpPeopleSelfEntity::getCompanyStatus, value != null ? value : 0);
     } else {
       wrapper.set(TrainSignUpPeopleSelfEntity::getDeleted, 1);
     }
@@ -117,9 +152,11 @@ public class TrainSignUpCollectionApplicationService {
   @Transactional(readOnly = true)
   public byte[] exportPeopleExcel(Long signUpId) {
     getSignUp(signUpId);
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     List<TrainSignUpPeopleSelfEntity> people = peopleMapper.selectList(
         new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
             .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUpId)
+            .eq(TrainSignUpPeopleSelfEntity::getTenantId, tenantId)
             .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0)
             .orderByDesc(TrainSignUpPeopleSelfEntity::getId));
     try (Workbook wb = new XSSFWorkbook()) {
@@ -150,8 +187,10 @@ public class TrainSignUpCollectionApplicationService {
   }
 
   private TrainSignUpSelfEntity getSignUp(Long id) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainSignUpSelfEntity entity = signUpMapper.selectOne(new LambdaQueryWrapper<TrainSignUpSelfEntity>()
         .eq(TrainSignUpSelfEntity::getId, id)
+        .eq(TrainSignUpSelfEntity::getTenantId, tenantId)
         .eq(TrainSignUpSelfEntity::getDeleted, 0));
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "报名计划不存在");
@@ -167,9 +206,11 @@ public class TrainSignUpCollectionApplicationService {
     if (signUpIds.isEmpty()) {
       return Map.of();
     }
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     List<TrainSignUpPeopleSelfEntity> rows = peopleMapper.selectList(
         new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
             .in(TrainSignUpPeopleSelfEntity::getSignUpId, signUpIds)
+            .eq(TrainSignUpPeopleSelfEntity::getTenantId, tenantId)
             .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0));
     return rows.stream().collect(Collectors.groupingBy(TrainSignUpPeopleSelfEntity::getSignUpId, Collectors.counting()));
   }
@@ -191,9 +232,60 @@ public class TrainSignUpCollectionApplicationService {
     return map;
   }
 
+  private Map<String, Object> buildQrcodeResult(Long signUpId, String title) {
+    Path file = qrcodeFilePath(signUpId);
+    boolean exists = Files.exists(file);
+    String qrcode = exists ? qrcodePublicUrl(signUpId) : "";
+    String qrcodeDataUrl = exists ? readQrcodeDataUrl(file) : "";
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("signUpId", signUpId);
+    result.put("title", title);
+    result.put("qrcode", qrcode);
+    result.put("qrcodeDataUrl", qrcodeDataUrl);
+    result.put("registrationPath", "pages/registration/detail?id=" + signUpId);
+    result.put("generated", StringUtils.hasText(qrcodeDataUrl) || StringUtils.hasText(qrcode));
+    return result;
+  }
+
+  private String readQrcodeDataUrl(Path file) {
+    try {
+      byte[] bytes = Files.readAllBytes(file);
+      if (bytes.length == 0) {
+        return "";
+      }
+      String mime = detectImageMime(bytes);
+      return "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(bytes);
+    } catch (Exception e) {
+      log.warn("读取二维码文件失败: {}", file, e);
+      return "";
+    }
+  }
+
+  private static String detectImageMime(byte[] data) {
+    if (data.length >= 8
+        && data[0] == (byte) 0x89
+        && data[1] == 0x50
+        && data[2] == 0x4E
+        && data[3] == 0x47) {
+      return "image/png";
+    }
+    if (data.length >= 2 && (data[0] & 0xFF) == 0xFF && (data[1] & 0xFF) == 0xD8) {
+      return "image/jpeg";
+    }
+    return "image/png";
+  }
+
+  private Path qrcodeFilePath(Long signUpId) {
+    return Paths.get(cdnPath).resolve("wxqrcode/signup_self_" + signUpId + ".png");
+  }
+
+  private String qrcodePublicUrl(Long signUpId) {
+    return cdnUrl + "/wxqrcode/signup_self_" + signUpId + ".png";
+  }
+
   private TrainSignUpSelfListVO toListVO(TrainSignUpSelfEntity e, long peopleCount, String orgName) {
-    Path qr = Paths.get(cdnPath).resolve("wxqrcode/signup_self_" + e.getId() + ".png");
-    String wxMiniQrcode = Files.exists(qr) ? cdnUrl + "/wxqrcode/signup_self_" + e.getId() + ".png" : "";
+    Path qr = qrcodeFilePath(e.getId());
+    String wxMiniQrcode = Files.exists(qr) ? qrcodePublicUrl(e.getId()) : "";
     return new TrainSignUpSelfListVO(
         e.getId(),
         e.getTitle(),
@@ -206,6 +298,7 @@ public class TrainSignUpCollectionApplicationService {
         e.getSortNumber(),
         peopleCount,
         wxMiniQrcode,
+        filesResolver.resolveFiles(e.getFiles()),
         e.getCreateTime(),
         e.getUpdateTime()
     );

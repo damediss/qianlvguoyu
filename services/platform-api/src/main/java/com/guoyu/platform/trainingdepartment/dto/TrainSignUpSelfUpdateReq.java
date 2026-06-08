@@ -6,32 +6,23 @@ import jakarta.validation.constraints.Size;
 public class TrainSignUpSelfUpdateReq {
 
   @Size(max = 255)
-  /** 标题 */
   private String title;
 
-  @Size(max = 255)
-  /** 封面图 */
+  @Size(max = 2000)
   private String cover;
 
   @Size(max = 255)
-  /** 培训时间 */
   private String trainTime;
 
   @Size(max = 255)
-  /** 考试时间 */
   private String examTime;
 
-  @Size(max = 255)
-  /** 组织ID */
   private Long orgId;
 
-  @Size(max = 255)
-  /** 培训信息ID */
   private Long trainInfoId;
 
-  @Size(max = 255)
-  /** 排序号 */
   private Integer sortNumber;
+
   public String getTitle() { return title; }
   public void setTitle(String title) { this.title = title; }
   public String getCover() { return cover; }

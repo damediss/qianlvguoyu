@@ -36,8 +36,10 @@ public class TrainSignUpSelfApplicationService {
 
   @Transactional(readOnly = true)
   public PageResponse<TrainSignUpSelfVO> page(TrainSignUpSelfQueryReq req) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaQueryWrapper<TrainSignUpSelfEntity> wrapper = new LambdaQueryWrapper<TrainSignUpSelfEntity>()
         .eq(TrainSignUpSelfEntity::getDeleted, 0)
+        .eq(TrainSignUpSelfEntity::getTenantId, tenantId)
         .orderByAsc(TrainSignUpSelfEntity::getSortNumber)
         .orderByDesc(TrainSignUpSelfEntity::getCreateTime)
         .orderByDesc(TrainSignUpSelfEntity::getId);
@@ -64,15 +66,17 @@ public class TrainSignUpSelfApplicationService {
   @Transactional
   public TrainSignUpSelfVO create(TrainSignUpSelfCreateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    assertTitleUnique(tenantId, req.getTitle(), null);
+    assertTrainInfoAvailable(tenantId, req.getTrainInfoId(), null);
     TrainSignUpSelfEntity entity = new TrainSignUpSelfEntity();
     entity.setTenantId(tenantId);
-    entity.setTitle(req.getTitle());
-    entity.setCover(req.getCover());
-    entity.setTrainTime(req.getTrainTime());
-    entity.setExamTime(req.getExamTime());
+    entity.setTitle(req.getTitle().trim());
+    entity.setCover(trimToNull(req.getCover()));
+    entity.setTrainTime(req.getTrainTime().trim());
+    entity.setExamTime(req.getExamTime().trim());
     entity.setOrgId(req.getOrgId());
-    entity.setTrainInfoId(req.getTrainInfoId());
-    entity.setSortNumber(req.getSortNumber());
+    entity.setTrainInfoId(normalizeTrainInfoId(req.getTrainInfoId()));
+    entity.setSortNumber(req.getSortNumber() != null ? req.getSortNumber() : 0);
     entity.setDeleted(0);
     entity.setCreateTime(LocalDateTime.now());
     entity.setUpdateTime(LocalDateTime.now());
@@ -83,13 +87,29 @@ public class TrainSignUpSelfApplicationService {
   @Transactional
   public TrainSignUpSelfVO update(Long id, TrainSignUpSelfUpdateReq req) {
     TrainSignUpSelfEntity entity = getExisting(id);
-    if (StringUtils.hasText(req.getTitle())) { entity.setTitle(req.getTitle()); }
-    if (StringUtils.hasText(req.getCover())) { entity.setCover(req.getCover()); }
-    if (StringUtils.hasText(req.getTrainTime())) { entity.setTrainTime(req.getTrainTime()); }
-    if (StringUtils.hasText(req.getExamTime())) { entity.setExamTime(req.getExamTime()); }
-    if (req.getOrgId() != null) { entity.setOrgId(req.getOrgId()); }
-    if (req.getTrainInfoId() != null) { entity.setTrainInfoId(req.getTrainInfoId()); }
-    if (req.getSortNumber() != null) { entity.setSortNumber(req.getSortNumber()); }
+    if (StringUtils.hasText(req.getTitle())) {
+      assertTitleUnique(entity.getTenantId(), req.getTitle().trim(), id);
+      entity.setTitle(req.getTitle().trim());
+    }
+    if (req.getCover() != null) {
+      entity.setCover(trimToNull(req.getCover()));
+    }
+    if (StringUtils.hasText(req.getTrainTime())) {
+      entity.setTrainTime(req.getTrainTime().trim());
+    }
+    if (StringUtils.hasText(req.getExamTime())) {
+      entity.setExamTime(req.getExamTime().trim());
+    }
+    if (req.getOrgId() != null) {
+      entity.setOrgId(req.getOrgId());
+    }
+    if (req.getTrainInfoId() != null) {
+      assertTrainInfoAvailable(entity.getTenantId(), req.getTrainInfoId(), id);
+      entity.setTrainInfoId(normalizeTrainInfoId(req.getTrainInfoId()));
+    }
+    if (req.getSortNumber() != null) {
+      entity.setSortNumber(req.getSortNumber());
+    }
     entity.setUpdateTime(LocalDateTime.now());
     mapper.updateById(entity);
     return toVO(entity);
@@ -97,15 +117,15 @@ public class TrainSignUpSelfApplicationService {
 
   @Transactional
   public void delete(Long id) {
-    TrainSignUpSelfEntity entity = getExisting(id);
-
-    entity.setDeleted(1);
-    mapper.updateById(entity);
+    getExisting(id);
+    mapper.deleteById(id);
   }
 
   private TrainSignUpSelfEntity getExisting(Long id) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainSignUpSelfEntity entity = mapper.selectOne(new LambdaQueryWrapper<TrainSignUpSelfEntity>()
         .eq(TrainSignUpSelfEntity::getId, id)
+        .eq(TrainSignUpSelfEntity::getTenantId, tenantId)
         .eq(TrainSignUpSelfEntity::getDeleted, 0));
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "Record not found");
@@ -115,6 +135,47 @@ public class TrainSignUpSelfApplicationService {
       throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该报名计划");
     }
     return entity;
+  }
+
+  private void assertTitleUnique(Long tenantId, String title, Long excludeId) {
+    LambdaQueryWrapper<TrainSignUpSelfEntity> wrapper = new LambdaQueryWrapper<TrainSignUpSelfEntity>()
+        .eq(TrainSignUpSelfEntity::getDeleted, 0)
+        .eq(TrainSignUpSelfEntity::getTenantId, tenantId)
+        .eq(TrainSignUpSelfEntity::getTitle, title);
+    if (excludeId != null) {
+      wrapper.ne(TrainSignUpSelfEntity::getId, excludeId);
+    }
+    if (mapper.selectCount(wrapper) > 0) {
+      throw new BusinessException(ErrorCode.CONFLICT, "该标题已存在");
+    }
+  }
+
+  private void assertTrainInfoAvailable(Long tenantId, Long trainInfoId, Long excludeId) {
+    Long normalized = normalizeTrainInfoId(trainInfoId);
+    if (normalized == null) {
+      return;
+    }
+    LambdaQueryWrapper<TrainSignUpSelfEntity> wrapper = new LambdaQueryWrapper<TrainSignUpSelfEntity>()
+        .eq(TrainSignUpSelfEntity::getDeleted, 0)
+        .eq(TrainSignUpSelfEntity::getTenantId, tenantId)
+        .eq(TrainSignUpSelfEntity::getTrainInfoId, normalized);
+    if (excludeId != null) {
+      wrapper.ne(TrainSignUpSelfEntity::getId, excludeId);
+    }
+    if (mapper.selectCount(wrapper) > 0) {
+      throw new BusinessException(ErrorCode.CONFLICT, "该培训信息已被其他报名计划绑定");
+    }
+  }
+
+  private Long normalizeTrainInfoId(Long trainInfoId) {
+    return trainInfoId != null && trainInfoId > 0 ? trainInfoId : null;
+  }
+
+  private String trimToNull(String value) {
+    if (!StringUtils.hasText(value)) {
+      return null;
+    }
+    return value.trim();
   }
 
   private TrainSignUpSelfVO toVO(TrainSignUpSelfEntity e) {

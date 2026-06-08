@@ -880,6 +880,10 @@ export interface PlatformUserCreateReq {
 export type PlatformUserUpdateReq = Partial<PlatformUserCreateReq>;
 
 // ==================== Sign Up Collection (信息收集) ====================
+export interface TrainSignUpSelfFile {
+  fileUrl: string;
+}
+
 export interface TrainSignUpSelf {
   id: number;
   title?: string;
@@ -892,6 +896,7 @@ export interface TrainSignUpSelf {
   sortNumber?: number;
   peopleCount?: number;
   wxMiniQrcode?: string;
+  files?: TrainSignUpSelfFile[];
   createTime?: string;
   updateTime?: string;
 }
@@ -907,26 +912,112 @@ export interface TrainSignUpSelfQuery {
 export interface TrainSignUpSelfCreateReq {
   title: string;
   cover?: string;
-  trainTime?: string;
-  examTime?: string;
-  orgId?: number;
+  trainTime: string;
+  examTime: string;
+  orgId: number;
   trainInfoId?: number;
   sortNumber?: number;
 }
 
 export type TrainSignUpSelfUpdateReq = Partial<TrainSignUpSelfCreateReq>;
 
+export interface SignUpPeopleImportResult {
+  inserted: number;
+  skipped: number;
+  invalid: number;
+  filePath?: string;
+  errors?: string[];
+}
+
+export interface SignUpDefaultTemplateExportStart {
+  taskId: number;
+  jindu: string;
+}
+
+export interface SignUpDefaultTemplateExportCheck {
+  url?: string;
+  jindu?: string;
+  error?: number;
+  msg?: string;
+}
+
 export interface TrainSignUpPerson {
   id: number;
   signUpId?: number;
   platformUserId?: number;
+  userId?: number;
   name?: string;
   phone?: string;
   idCardNumber?: string;
+  age?: number;
   gender?: string;
+  nation?: string;
+  political?: string;
+  houseType?: string;
+  address?: string;
   education?: string;
   photo?: string;
+  idCardFront?: string;
+  idCardBack?: string;
+  idCardHeader?: string;
+  idCardHeader2?: string;
+  idcardFront?: string;
+  idcardBack?: string;
+  idcardHeader?: string;
+  school?: string;
+  major?: string;
+  schoolPaperHas?: number;
+  schoolNo?: string;
+  inSchoolDate?: string;
+  graduateDate?: string;
+  schoolPaper?: string;
+  workTime?: string;
+  titleType?: string;
+  titlePaper?: string;
+  companyId?: number;
+  workDateStart?: string;
+  workDateEnd?: string;
+  workTypePaperHas?: number;
+  workTypePaper?: string;
+  workTypeId?: number;
+  workTypeName?: string;
+  level?: number;
+  paperNo?: string;
+  reqWorkTypeId?: number;
+  reqWorkTypeName?: string;
+  reqLevel?: number;
+  declarationCondition?: string;
+  workExp?: string;
+  workExpList?: Record<string, unknown>[];
+  jog?: string;
+  contactFirstPage?: string;
+  contactExpirePage?: string;
+  contactSignPage?: string;
+  contractFirst?: string;
+  contractExpire?: string;
+  contractSign?: string;
+  contract?: string;
+  certificate?: string;
+  workTypePaperName?: string;
+  workTypePaperLevel?: number;
+  workTypePaperNo?: string;
   status?: number;
+  statusCn?: string;
+  companyStatus?: number;
+  companyStatusCn?: string;
+  hasPay?: number;
+  payCn?: string;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface TrainSignUpOrcSelf {
+  id: number;
+  signUpId?: number;
+  platformUserId?: number;
+  orcData?: string;
+  status?: number;
+  failReason?: string;
   createTime?: string;
 }
 
@@ -1753,6 +1844,8 @@ export interface DemandPublicData {
   worktype_list: WorkTypeGroup[];
   traininfo_list?: SimpleItem[];
   kejian_list?: SimpleItem[];
+  /** 申报条件，对齐 PHP conditionList */
+  condition_list?: SimpleItem[];
 }
 
 export interface SimpleItem {

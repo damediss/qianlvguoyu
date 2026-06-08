@@ -135,7 +135,7 @@ public class ExamTaskXimuController {
   @GetMapping("/files/**")
   public ResponseEntity<InputStreamResource> serveFile(jakarta.servlet.http.HttpServletRequest request)
       throws IOException {
-    String fp = request.getRequestURI().substring(request.getContextPath().length() + "/files/".length());
+    String fp = extractCdnRelativePath(request);
     log.info("GET /exam/files/{}", fp);
     File file = service.resolveFile(fp);
     InputStreamResource resource = new InputStreamResource(new FileInputStream(file));
@@ -144,5 +144,15 @@ public class ExamTaskXimuController {
     return ResponseEntity.ok()
         .contentType(MediaType.parseMediaType(contentType))
         .body(resource);
+  }
+
+  private static String extractCdnRelativePath(jakarta.servlet.http.HttpServletRequest request) {
+    String marker = "/exam/files/";
+    String uri = request.getRequestURI();
+    int idx = uri.indexOf(marker);
+    if (idx < 0) {
+      throw new IllegalArgumentException("Invalid CDN file path: " + uri);
+    }
+    return uri.substring(idx + marker.length());
   }
 }

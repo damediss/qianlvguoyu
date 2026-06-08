@@ -67,10 +67,19 @@ public class PlatformUserApplicationService {
       wrapper.eq(PlatformUserEntity::getCompanyId, companyFilter);
     }
     if (StringUtils.hasText(req.getKeyword())) {
-      wrapper.and(w -> w
-          .like(PlatformUserEntity::getRealname, req.getKeyword())
-          .or().like(PlatformUserEntity::getIdcard, req.getKeyword())
-          .or().like(PlatformUserEntity::getPhone, req.getKeyword()));
+      List<Long> companyIds = orgMapper.selectList(new LambdaQueryWrapper<OrgEntity>()
+              .like(OrgEntity::getName, req.getKeyword()))
+          .stream()
+          .map(OrgEntity::getId)
+          .toList();
+      wrapper.and(w -> {
+        w.like(PlatformUserEntity::getRealname, req.getKeyword())
+            .or().like(PlatformUserEntity::getIdcard, req.getKeyword())
+            .or().like(PlatformUserEntity::getPhone, req.getKeyword());
+        if (!companyIds.isEmpty()) {
+          w.or().in(PlatformUserEntity::getCompanyId, companyIds);
+        }
+      });
     }
     Page<PlatformUserEntity> page = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
     Map<Long, String> companyNames = resolveCompanyNames(page.getRecords());
