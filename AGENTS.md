@@ -227,11 +227,12 @@ src/
 
 ### 环境路径
 
-| 工具 | 路径 |
-|---|---|
-| JDK 21 | `D:\Program Files\Java\oracleJdk-21` |
-| Maven | `C:\Program Files\Java\apache-maven-3.9.11\bin\mvn.cmd` |
-| Node.js | `D:\Program Files\nodejs` |
+| 工具        | 路径                                                      |
+|-----------|---------------------------------------------------------|
+| JDK 21    | `D:\Program Files\Java\oracleJdk-21`                    |
+| Maven     | `C:\Program Files\Java\apache-maven-3.9.11\bin\mvn.cmd` |
+| Node.js   | `D:\Program Files\nodejs`                               |
+| MySQL cli | `C:\Program Files\MySQL\MySQL Server 8.4\bin\mysql.exe` |
 
 ### 环境变量
 
@@ -279,9 +280,8 @@ cd apps/admin-web && npm run dev
 
 1. 修改前先确认任务属于文档、原型、正式前端、后端服务、脚本、数据、基础设施或生成产物中的哪一类
 2. 优先遵循当前目录 `README.md` 和已有文档，不引入与既定技术路线冲突的新框架
-3. 涉及一期功能时以 `docs/04_requirements/phase1/` 为准
-4. 发现需求文档、API 合同、表结构、页面清单不一致时，先指出冲突并给出最小修正建议
-5. 生成或修改正式代码时，同步补充启动说明、环境变量、健康检查和测试
-6. 不把原型 HTML 当作正式前端工程继续扩写
-7. 不把 AI、MCP、n8n 设计成绕过平台权限和审计的通道
-8. 不提交真实密钥、生产账号、客户敏感数据或未脱敏资料
+3. 发现需求文档、API 合同、表结构、页面清单不一致时，先指出冲突并给出最小修正建议
+4. 生成或修改正式代码时，同步补充启动说明、环境变量、健康检查和测试
+5. 不把原型 HTML 当作正式前端工程继续扩写
+6. 不把 AI、MCP、n8n 设计成绕过平台权限和审计的通道
+7. 不提交真实密钥、生产账号、客户敏感数据或未脱敏资料
