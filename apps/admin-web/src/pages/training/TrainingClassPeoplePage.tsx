@@ -1,13 +1,12 @@
 /**
  * 班级人员 — 对齐 yun_shang classMembers.vue
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   Button,
   DatePicker,
   Form,
   Input,
-  InputNumber,
   Modal,
   Pagination,
   Select,
@@ -21,8 +20,7 @@ import {
   EditOutlined,
   PictureOutlined,
   UploadOutlined,
-  PlusOutlined,
-  DeleteOutlined,
+  InboxOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadProps } from 'antd';
@@ -30,18 +28,20 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import * as trainApi from '../../api/training';
 import { uploadFile } from '../../api/knowledge';
-import { useAuthStore } from '../../stores/authStore';
 import type {
   TrainInfoClassListItem,
   TrainInfoClassCreateReq,
   DemandPublicData,
   ClassStudent,
+  ClassStudentPageResponse,
   ClassOther,
   ClassTask,
   SignUpPerson,
   TeacherBankItem,
 } from '../../types/training';
 import './TrainingClassPeoplePage.css';
+
+const { Dragger } = Upload;
 
 const STEPS_ITEMS = [
   { title: '需求管理', icon: <EditOutlined /> },
@@ -58,24 +58,47 @@ function resolveFileUrl(path?: string): string {
   return path.startsWith('/') ? path : `/${path}`;
 }
 
-function useLoginRole() {
-  const loginRole = useAuthStore((s) => s.currentUser?.loginRole ?? 'org');
-  return { loginRole, isOrg: loginRole === 'org' };
+/** 兼容接口 snake_case / camelCase 字段 */
+function normalizeClassStudent(raw: Record<string, unknown>): ClassStudent {
+  const pick = (...keys: string[]) => {
+    for (const key of keys) {
+      const v = raw[key];
+      if (v !== undefined && v !== null && v !== '') return v;
+    }
+    return undefined;
+  };
+  return {
+    id: Number(pick('id')),
+    realname: String(pick('realname', 'name') ?? ''),
+    phone: pick('phone') != null ? String(pick('phone')) : undefined,
+    train_id: pick('train_id', 'trainId') != null ? Number(pick('train_id', 'trainId')) : undefined,
+    train_class_id: pick('train_class_id', 'trainClassId') != null ? Number(pick('train_class_id', 'trainClassId')) : undefined,
+    id_card: pick('id_card', 'idCard') != null ? String(pick('id_card', 'idCard')) : undefined,
+    is_leader: pick('is_leader', 'isLeader') != null ? Number(pick('is_leader', 'isLeader')) : undefined,
+    is_leader_cn: pick('is_leader_cn', 'isLeaderCn') != null ? String(pick('is_leader_cn', 'isLeaderCn')) : undefined,
+    is_committee: pick('is_committee', 'isCommittee') != null ? Number(pick('is_committee', 'isCommittee')) : undefined,
+    is_committee_cn: pick('is_committee_cn', 'isCommitteeCn') != null ? String(pick('is_committee_cn', 'isCommitteeCn')) : undefined,
+    normal_score: pick('normal_score', 'normalScore') != null ? Number(pick('normal_score', 'normalScore')) : undefined,
+    header: pick('header', 'idcardHeader', 'idcard_header') != null ? String(pick('header', 'idcardHeader', 'idcard_header')) : undefined,
+  };
 }
 
-// ==================== 学员列表弹窗 ====================
+function normalizeClassStudentList(data?: ClassStudentPageResponse | { lists?: ClassStudent[]; list?: ClassStudent[] }) {
+  const rows = (data?.list ?? (data as { lists?: ClassStudent[] })?.lists ?? []) as unknown as Record<string, unknown>[];
+  return rows.map((row) => normalizeClassStudent(row));
+}
+
+// ==================== 班级人员弹窗（对齐 yun_shang classMembers.vue） ====================
 function StudentListModal({
   open,
   onClose,
   classId,
   trainInfoId,
-  isOrg,
 }: {
   open: boolean;
   onClose: () => void;
   classId: number | null;
   trainInfoId: number | null;
-  isOrg: boolean;
 }) {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm] = Form.useForm();
@@ -87,10 +110,18 @@ function StudentListModal({
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
 
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ['class-students', classId, currentPage, pageSize],
-    queryFn: () => trainApi.listClassStudents(classId!, currentPage, pageSize),
-    enabled: open && !!classId,
+  useEffect(() => {
+    if (open) {
+      setCurrentPage(1);
+    }
+  }, [open, classId]);
+
+  const normalizedClassId = classId != null ? Number(classId) : null;
+
+  const { data, isLoading, refetch, isError } = useQuery({
+    queryKey: ['class-students', normalizedClassId, currentPage, pageSize],
+    queryFn: () => trainApi.listClassStudents(normalizedClassId!, currentPage, pageSize),
+    enabled: open && normalizedClassId != null && !Number.isNaN(normalizedClassId),
   });
 
   const { data: signUpData } = useQuery({
@@ -101,7 +132,7 @@ function StudentListModal({
 
   const saveMu = useMutation({
     mutationFn: (p: Record<string, unknown>) => trainApi.saveClassStudent(p),
-    onSuccess: () => { message.success('保存成功'); setEditOpen(false); refetch(); },
+    onSuccess: () => { message.success('成功'); setEditOpen(false); refetch(); },
     onError: () => message.error('保存失败'),
   });
 
@@ -113,8 +144,8 @@ function StudentListModal({
 
   const importMu = useMutation({
     mutationFn: (p: { traininfoId: number; classId: number; studentIds: number[] }) => trainApi.importStudents(p),
-    onSuccess: (r) => {
-      message.success(`导入成功 ${r.count} 人`);
+    onSuccess: () => {
+      message.success('导入成功');
       setImportOpen(false);
       setSelectedSignUpIds([]);
       refetch();
@@ -124,8 +155,8 @@ function StudentListModal({
 
   const importByIdCardMu = useMutation({
     mutationFn: (p: { traininfoId: number; classId: number; studentIds: string }) => trainApi.importStudentsByIdCard(p),
-    onSuccess: (r) => {
-      message.success(`导入成功 ${r.count} 人`);
+    onSuccess: () => {
+      message.success('导入成功');
       setImportByIdCardOpen(false);
       setIdCardText('');
       refetch();
@@ -140,64 +171,91 @@ function StudentListModal({
       phone: row.phone,
       id_card: row.id_card,
       normal_score: row.normal_score,
-      is_leader: row.is_leader ?? 0,
-      is_committee: row.is_committee ?? 0,
+      is_leader: String(row.is_leader ?? 0),
+      is_committee: String(row.is_committee ?? 0),
     });
     setEditOpen(true);
+  };
+
+  const formatYesNo = (cn?: string, val?: number) => cn ?? (val === 1 ? '是' : '否');
+
+  const formatNormalScore = (score?: number) => {
+    if (score == null || Number.isNaN(Number(score))) return '0.00';
+    return Number(score).toFixed(2);
   };
 
   const renderIdCardPhoto = (row: ClassStudent) => {
     const src = resolveFileUrl(row.header);
     return (
       <div className="student-photo-cell">
-        {src ? (
-          <img src={src} alt="证件照" className="student-id-photo" />
-        ) : (
-          <span className="student-photo-empty">暂无</span>
-        )}
+        {src ? <img src={src} alt="证件照" className="student-id-photo" /> : null}
       </div>
     );
   };
 
+  const handleDeleteStudent = (row: ClassStudent) => {
+    Modal.confirm({
+      title: '友情提示',
+      content: '确定要删除该学员吗？',
+      onOk: () => deleteMu.mutate([row.id]),
+    });
+  };
+
   const studentColumns: ColumnsType<ClassStudent> = [
-    { title: 'ID', dataIndex: 'id', key: 'id', width: 60, align: 'center' },
+    { title: 'ID', dataIndex: 'id', key: 'id', width: 72, align: 'center' },
     { title: '姓名', dataIndex: 'realname', key: 'realname', width: 100, align: 'left' },
-    { title: '手机号', dataIndex: 'phone', key: 'phone', width: 120, align: 'center' },
-    { title: '身份证号', dataIndex: 'id_card', key: 'id_card', width: 180, align: 'center' },
+    { title: '手机号', dataIndex: 'phone', key: 'phone', width: 124, align: 'center' },
+    { title: '身份证号', dataIndex: 'id_card', key: 'id_card', width: 188, align: 'center' },
     {
       title: '平时分',
       dataIndex: 'normal_score',
       key: 'normal_score',
-      width: 100,
+      width: 88,
       align: 'center',
-      render: (v: number | undefined) => (v != null ? v : ''),
+      render: (v: number | undefined) => formatNormalScore(v),
     },
     {
       title: '证件照',
       key: 'idcard_header',
-      width: 180,
+      width: 100,
       align: 'center',
       render: (_: unknown, row: ClassStudent) => renderIdCardPhoto(row),
     },
-    { title: '是否班长', dataIndex: 'is_leader_cn', key: 'is_leader_cn', width: 100, align: 'center' },
-    { title: '是否学委', dataIndex: 'is_committee_cn', key: 'is_committee_cn', width: 100, align: 'center' },
-    ...(isOrg
-      ? [{
-          title: '操作', key: 'act', width: 150, align: 'center' as const,
-          render: (_: unknown, r: ClassStudent) => (
-            <Space size="small">
-              <Button type="link" size="small" className="link-action"
-                onClick={() => openEditStudent(r)}>编辑</Button>
-              <Button type="link" size="small" className="link-action-danger"
-                onClick={() => Modal.confirm({
-                  title: '友情提示',
-                  content: '确定要删除该学员吗？',
-                  onOk: () => deleteMu.mutate([r.id]),
-                })}>删除</Button>
-            </Space>
-          ),
-        }]
-      : []),
+    {
+      title: '是否班长',
+      key: 'is_leader_cn',
+      width: 88,
+      align: 'center',
+      render: (_: unknown, row: ClassStudent) => formatYesNo(row.is_leader_cn, row.is_leader),
+    },
+    {
+      title: '是否学委',
+      key: 'is_committee_cn',
+      width: 88,
+      align: 'center',
+      render: (_: unknown, row: ClassStudent) => formatYesNo(row.is_committee_cn, row.is_committee),
+    },
+    {
+      title: '操作',
+      key: 'act',
+      width: 120,
+      align: 'center',
+      fixed: 'right',
+      render: (_: unknown, row: ClassStudent) => (
+        <div className="student-row-actions">
+          <button type="button" className="student-action-link" onClick={() => openEditStudent(row)}>
+            编辑
+          </button>
+          <button
+            type="button"
+            className="student-action-link student-action-link-danger"
+            onClick={() => handleDeleteStudent(row)}
+          >
+            删除
+          </button>
+        </div>
+      ),
+    },
   ];
 
   const signUpColumns: ColumnsType<SignUpPerson> = [
@@ -205,12 +263,21 @@ function StudentListModal({
     { title: '手机号', dataIndex: 'phone', align: 'center' },
   ];
 
+  const studentRows = useMemo(
+    () => normalizeClassStudentList(data),
+    [data],
+  );
+
   const handleImportSubmit = () => {
     if (!selectedSignUpIds.length) {
       message.error('请选择要导入的人员');
       return;
     }
-    importMu.mutate({ traininfoId: trainInfoId!, classId: classId!, studentIds: selectedSignUpIds });
+    if (!trainInfoId || normalizedClassId == null) {
+      message.error('班级未关联培训信息');
+      return;
+    }
+    importMu.mutate({ traininfoId: trainInfoId, classId: normalizedClassId, studentIds: selectedSignUpIds });
   };
 
   const handleImportByIdCardSubmit = () => {
@@ -218,7 +285,11 @@ function StudentListModal({
       message.error('请输入身份证号');
       return;
     }
-    importByIdCardMu.mutate({ traininfoId: trainInfoId!, classId: classId!, studentIds: idCardText });
+    if (!trainInfoId || normalizedClassId == null) {
+      message.error('班级未关联培训信息');
+      return;
+    }
+    importByIdCardMu.mutate({ traininfoId: trainInfoId, classId: normalizedClassId, studentIds: idCardText });
   };
 
   return (
@@ -228,44 +299,45 @@ function StudentListModal({
         open={open}
         onCancel={onClose}
         footer={null}
-        width="92%"
-        style={{ maxWidth: 1400 }}
+        width="88%"
+        centered
         destroyOnClose
         rootClassName="class-student-list-modal"
-        styles={{ body: { overflowX: 'auto', overflowY: 'visible', paddingTop: 12 } }}
+        styles={{ body: { padding: '12px 16px 16px', maxHeight: '78vh', overflow: 'hidden' } }}
       >
-        {isOrg && (
-          <div className="mar-b10">
-            <Button onClick={() => setImportOpen(true)}>批量导入</Button>
-            <Button onClick={() => setImportByIdCardOpen(true)} style={{ marginLeft: 8 }}>按身份证号导入</Button>
-          </div>
-        )}
+        <div className="student-toolbar">
+          <Button className="student-toolbar-btn" onClick={() => setImportOpen(true)}>
+            批量导入
+          </Button>
+          <Button className="student-toolbar-btn" onClick={() => setImportByIdCardOpen(true)}>
+            按身份证号导入
+          </Button>
+        </div>
         <div className="class-student-table-scroll">
           <Table
             className="class-student-table"
             rowKey="id"
-            size="small"
             bordered
+            size="middle"
             loading={isLoading}
             columns={studentColumns}
-            dataSource={data?.list ?? []}
-            rowSelection={isOrg ? { columnWidth: 55 } : undefined}
-            scroll={{ y: 500 }}
+            dataSource={studentRows}
+            rowSelection={{ columnWidth: 48 }}
+            scroll={{ x: 1100, y: 480 }}
             pagination={false}
+            locale={{ emptyText: isError ? '加载失败，请关闭后重试' : '暂无数据' }}
           />
         </div>
-        <div className="student-pagination-wrap pagination-bar-wrap">
-          <div className="pagination-bar">
-            <Pagination
-              current={currentPage}
-              pageSize={pageSize}
-              total={data?.total ?? 0}
-              showSizeChanger={false}
-              showTotal={(t) => `共 ${t} 条`}
-              onChange={(p) => setCurrentPage(p)}
-            />
-          </div>
-        </div>
+        <Pagination
+          className="student-pagination"
+          current={currentPage}
+          pageSize={pageSize}
+          total={data?.total ?? 0}
+          showSizeChanger={false}
+          showQuickJumper
+          showTotal={(t) => `共 ${t} 条`}
+          onChange={(p) => setCurrentPage(p)}
+        />
       </Modal>
 
       <Modal
@@ -296,10 +368,10 @@ function StudentListModal({
             <Input type="number" placeholder="请输入平时分" />
           </Form.Item>
           <Form.Item name="is_leader" label="是否班长">
-            <Select placeholder="请选择" options={[{ value: 1, label: '是' }, { value: 0, label: '否' }]} />
+            <Select placeholder="请选择" options={[{ value: '1', label: '是' }, { value: '0', label: '否' }]} />
           </Form.Item>
           <Form.Item name="is_committee" label="是否学委">
-            <Select placeholder="请选择" options={[{ value: 1, label: '是' }, { value: 0, label: '否' }]} />
+            <Select placeholder="请选择" options={[{ value: '1', label: '是' }, { value: '0', label: '否' }]} />
           </Form.Item>
         </Form>
       </Modal>
@@ -365,7 +437,7 @@ function StudentListModal({
   );
 }
 
-// ==================== 教务/负责人弹窗 ====================
+// ==================== 教务/负责人弹窗（对齐 yun_shang classMembers.vue） ====================
 function StaffModal({
   open,
   onClose,
@@ -373,7 +445,6 @@ function StaffModal({
   trainInfoId,
   tag,
   title: modalTitle,
-  isOrg,
 }: {
   open: boolean;
   onClose: () => void;
@@ -381,9 +452,9 @@ function StaffModal({
   trainInfoId: number | null;
   tag: string;
   title: string;
-  isOrg: boolean;
 }) {
   const [editOpen, setEditOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
   const [editForm] = Form.useForm();
   const [importOpen, setImportOpen] = useState(false);
   const [selectedTeacherIds, setSelectedTeacherIds] = useState<number[]>([]);
@@ -402,7 +473,7 @@ function StaffModal({
 
   const saveMu = useMutation({
     mutationFn: (p: Record<string, unknown>) => trainApi.saveClassOther(p),
-    onSuccess: () => { message.success('保存成功'); setEditOpen(false); refetch(); },
+    onSuccess: () => { message.success('成功'); setEditOpen(false); refetch(); },
     onError: () => message.error('保存失败'),
   });
 
@@ -414,78 +485,178 @@ function StaffModal({
 
   const importMu = useMutation({
     mutationFn: (p: { traininfoId: number; classId: number; tag: string; ids: number[] }) => trainApi.importOthers(p),
-    onSuccess: (r) => { message.success(`导入成功 ${r.count} 人`); setImportOpen(false); setSelectedTeacherIds([]); refetch(); },
+    onSuccess: () => { message.success('导入成功'); setImportOpen(false); setSelectedTeacherIds([]); refetch(); },
     onError: () => message.error('导入失败'),
   });
 
+  const openAdd = () => {
+    editForm.resetFields();
+    editForm.setFieldsValue({
+      id: 0,
+      train_id: trainInfoId,
+      classid: classId,
+      type: 'inCharge',
+    });
+    setEditTitle(modalTitle);
+    setEditOpen(true);
+  };
+
+  const openEdit = (row: ClassOther) => {
+    const titleMap: Record<string, string> = { teacher: '教务人员', fuzhe: '负责人' };
+    setEditTitle(`${titleMap[tag] ?? modalTitle}编辑`);
+    editForm.setFieldsValue({
+      id: row.id,
+      train_id: row.train_id,
+      classid: row.train_class_id,
+      realname: row.realname,
+      phone: row.phone,
+      id_card: row.id_card,
+      type: row.type,
+    });
+    setEditOpen(true);
+  };
+
+  const handleDeleteStaff = (row: ClassOther) => {
+    Modal.confirm({
+      title: '友情提示',
+      content: '确定要删除该人员吗？',
+      onOk: () => deleteMu.mutate([row.id]),
+    });
+  };
+
   const columns: ColumnsType<ClassOther> = [
-    { title: 'ID', dataIndex: 'id', width: 60, align: 'center' },
-    { title: '姓名', dataIndex: 'realname' },
-    { title: '手机号', dataIndex: 'phone', width: 120, align: 'center' },
-    ...(isOrg
-      ? [{
-          title: '操作', key: 'act', width: 140, fixed: 'right' as const,
-          render: (_: unknown, r: ClassOther) => (
-            <Space size="small">
-              <Button type="link" size="small" className="link-action" icon={<EditOutlined />}
-                onClick={() => { editForm.setFieldsValue(r); setEditOpen(true); }}>编辑</Button>
-              <Button type="link" size="small" className="link-action-danger"
-                onClick={() => Modal.confirm({
-                  title: '确定删除?',
-                  onOk: () => deleteMu.mutate([r.id]),
-                })}>删除</Button>
-            </Space>
-          ),
-        }]
-      : []),
+    { title: 'ID', dataIndex: 'id', width: 72, align: 'center' },
+    { title: '姓名', dataIndex: 'realname', align: 'left' },
+    { title: '手机号', dataIndex: 'phone', width: 140, align: 'center' },
+    {
+      title: '操作',
+      key: 'act',
+      width: 120,
+      align: 'center',
+      render: (_: unknown, row: ClassOther) => (
+        <div className="staff-row-actions">
+          <button type="button" className="staff-action-link" onClick={() => openEdit(row)}>编辑</button>
+          <button type="button" className="staff-action-link staff-action-link-danger" onClick={() => handleDeleteStaff(row)}>
+            删除
+          </button>
+        </div>
+      ),
+    },
   ];
 
   const teacherColumns: ColumnsType<TeacherBankItem> = [
-    { title: '姓名', dataIndex: 'name' },
+    { title: '姓名', dataIndex: 'name', align: 'left' },
     { title: '手机号', dataIndex: 'phone', width: 200, align: 'center' },
   ];
 
   return (
     <>
-      <Modal title={modalTitle} open={open} onCancel={onClose} footer={null} width="35%" destroyOnClose>
-        {isOrg && (
-          <Space style={{ marginBottom: 10 }}>
-            {tag === 'teacher' ? (
-              <Button onClick={() => setImportOpen(true)}>批量导入</Button>
-            ) : (
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => { editForm.resetFields(); setEditOpen(true); }}>新增</Button>
-            )}
-          </Space>
-        )}
-        <Table rowKey="id" size="small" bordered loading={isLoading} columns={columns}
-          dataSource={data?.list ?? []} scroll={{ y: 500 }} pagination={false} />
+      <Modal
+        title={modalTitle}
+        open={open}
+        onCancel={onClose}
+        footer={null}
+        width="52%"
+        centered
+        destroyOnClose
+        rootClassName="class-staff-modal"
+        styles={{ body: { padding: '12px 16px 16px' } }}
+      >
+        <div className="staff-toolbar">
+          {tag === 'teacher' ? (
+            <Button className="staff-toolbar-btn" onClick={() => setImportOpen(true)}>
+              批量导入
+            </Button>
+          ) : (
+            <Button className="staff-toolbar-btn" onClick={openAdd}>
+              新增
+            </Button>
+          )}
+        </div>
+        <Table
+          className="class-staff-table"
+          rowKey="id"
+          bordered
+          size="middle"
+          loading={isLoading}
+          columns={columns}
+          dataSource={data?.list ?? []}
+          scroll={{ y: 420 }}
+          pagination={false}
+          locale={{ emptyText: '暂无数据' }}
+        />
       </Modal>
 
-      <Modal title={modalTitle} open={editOpen} onOk={() => {
-        const v = editForm.getFieldsValue();
-        saveMu.mutate({
-          ...v,
-          id: v.id ?? 0,
-          type: tag === 'teacher' ? 'staff' : 'inCharge',
-          train_id: trainInfoId,
-          classid: classId,
-        });
-      }} onCancel={() => setEditOpen(false)} confirmLoading={saveMu.isPending} width="35%" destroyOnClose>
-        <Form form={editForm} layout="vertical">
+      <Modal
+        title={editTitle || modalTitle}
+        open={editOpen}
+        onOk={() => saveMu.mutate(editForm.getFieldsValue())}
+        onCancel={() => { setEditOpen(false); setEditTitle(''); editForm.resetFields(); }}
+        confirmLoading={saveMu.isPending}
+        okText="确定"
+        cancelText="取消"
+        width="35%"
+        destroyOnClose
+        rootClassName="class-staff-modal"
+      >
+        <Form form={editForm} labelCol={{ style: { width: 80 } }} wrapperCol={{ span: 16 }}>
           <Form.Item name="id" hidden><Input /></Form.Item>
-          <Form.Item name="realname" label="姓名" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="phone" label="手机号"><Input /></Form.Item>
-          <Form.Item name="id_card" label="身份证号"><Input /></Form.Item>
+          <Form.Item name="train_id" hidden><Input /></Form.Item>
+          <Form.Item name="classid" hidden><Input /></Form.Item>
+          <Form.Item name="type" hidden><Input /></Form.Item>
+          <Form.Item name="realname" label="姓名">
+            <Input placeholder="请输入姓名" />
+          </Form.Item>
+          <Form.Item name="phone" label="手机号">
+            <Input placeholder="请输入手机号" />
+          </Form.Item>
+          <Form.Item name="id_card" label="身份证号">
+            <Input placeholder="请输入身份证号" />
+          </Form.Item>
         </Form>
       </Modal>
 
-      <Modal title="导入" open={importOpen}
-        onOk={() => importMu.mutate({ traininfoId: trainInfoId!, classId: classId!, tag, ids: selectedTeacherIds })}
+      <Modal
+        title="批量导入"
+        open={importOpen}
         onCancel={() => { setImportOpen(false); setSelectedTeacherIds([]); }}
-        confirmLoading={importMu.isPending} width={500}>
-        <Table rowKey="id" size="small" bordered columns={teacherColumns} dataSource={importData?.list ?? []}
-          rowSelection={{ selectedRowKeys: selectedTeacherIds, onChange: (keys) => setSelectedTeacherIds(keys as number[]) }}
-          scroll={{ y: 500 }} pagination={false} />
+        footer={null}
+        maskClosable={false}
+        width={520}
+        destroyOnClose
+        rootClassName="class-staff-modal"
+      >
+        <div className="staff-import-actions">
+          <Button
+            type="primary"
+            loading={importMu.isPending}
+            onClick={() => {
+              if (!selectedTeacherIds.length) {
+                message.error('请选择要导入的人员');
+                return;
+              }
+              importMu.mutate({ traininfoId: trainInfoId!, classId: classId!, tag, ids: selectedTeacherIds });
+            }}
+          >
+            确认导入
+          </Button>
+        </div>
+        <Table
+          className="class-staff-table"
+          rowKey="id"
+          bordered
+          size="middle"
+          columns={teacherColumns}
+          dataSource={importData?.list ?? []}
+          rowSelection={{
+            columnWidth: 48,
+            selectedRowKeys: selectedTeacherIds,
+            onChange: (keys) => setSelectedTeacherIds(keys as number[]),
+          }}
+          scroll={{ y: 420 }}
+          pagination={false}
+          locale={{ emptyText: '暂无数据' }}
+        />
       </Modal>
     </>
   );
@@ -515,24 +686,27 @@ function TrainTaskModal({
 
   const saveMu = useMutation({
     mutationFn: (p: { id?: number; classId?: number; ck_id?: number; date?: string }) => trainApi.saveClassTask(p),
-    onSuccess: () => { message.success('保存成功'); setEditOpen(false); refetch(); },
+    onSuccess: () => { message.success('成功'); setEditOpen(false); refetch(); },
     onError: () => message.error('保存失败'),
   });
 
   const columns: ColumnsType<ClassTask> = [
     { title: 'ID', dataIndex: 'id', width: 60, align: 'center' },
-    { title: '课件名称', dataIndex: 'title' },
+    { title: '课件名称', dataIndex: 'title', align: 'left' },
     { title: '日期', dataIndex: 'date', width: 160, align: 'center' },
-    { title: '状态', dataIndex: 'status_cn', width: 100, align: 'center' },
-    { title: '完成次数', dataIndex: 'times_cn', width: 100, align: 'center' },
+    { title: '状态', dataIndex: 'status_cn', width: 160, align: 'center' },
+    { title: '完成次数', dataIndex: 'times_cn', width: 160, align: 'center' },
     {
-      title: '操作', key: 'act', width: 80, fixed: 'right',
+      title: '操作', key: 'act', width: 150, fixed: 'right', align: 'center',
       render: (_, r) => (
-        <Button type="link" size="small" className="link-action" icon={<EditOutlined />} onClick={() => {
-          setEditingId(r.id);
-          editForm.setFieldsValue({ ck_id: r.ck_id, date: r.date ? dayjs(r.date) : undefined });
-          setEditOpen(true);
-        }}>编辑</Button>
+        <Space size="small">
+          <Button type="link" size="small" className="link-action" onClick={() => {
+            setEditingId(r.id);
+            editForm.setFieldsValue({ ck_id: r.ck_id, date: r.date ? dayjs(r.date) : undefined });
+            setEditOpen(true);
+          }}>编辑</Button>
+          <Button type="link" size="small" />
+        </Space>
       ),
     },
   ];
@@ -540,26 +714,38 @@ function TrainTaskModal({
   return (
     <>
       <Modal title="培训任务编辑" open={open} onCancel={onClose} footer={null} width="60%" destroyOnClose>
-        <Button type="primary" style={{ marginBottom: 10 }} onClick={() => {
-          setEditingId(null);
-          editForm.resetFields();
-          setEditOpen(true);
-        }}>新增</Button>
-        <Table rowKey="id" size="small" bordered loading={isLoading} columns={columns}
+        <div className="mar-b10">
+          <Button onClick={() => {
+            setEditingId(null);
+            editForm.resetFields();
+            setEditOpen(true);
+          }}>新增</Button>
+        </div>
+        <Table rowKey="id" bordered loading={isLoading} columns={columns}
           dataSource={data?.list ?? []} scroll={{ y: 400 }} pagination={false} />
       </Modal>
 
-      <Modal title="培训任务信息" open={editOpen} onOk={() => {
-        const v = editForm.getFieldsValue();
-        const date = v.date ? (dayjs.isDayjs(v.date) ? v.date.format('YYYY-MM-DD') : v.date) : undefined;
-        saveMu.mutate({ ...v, date, id: editingId ?? undefined, classId: classId! });
-      }} onCancel={() => setEditOpen(false)} confirmLoading={saveMu.isPending} width="50%" destroyOnClose>
-        <Form form={editForm} layout="vertical" labelCol={{ style: { width: 80 } }}>
-          <Form.Item name="ck_id" label="课件名称" rules={[{ required: true, message: '请选课件名称' }]}>
+      <Modal
+        title="培训任务信息"
+        open={editOpen}
+        onOk={() => {
+          const v = editForm.getFieldsValue();
+          const date = v.date ? (dayjs.isDayjs(v.date) ? v.date.format('YYYY-MM-DD') : v.date) : undefined;
+          saveMu.mutate({ ...v, date, id: editingId ?? undefined, classId: classId! });
+        }}
+        onCancel={() => setEditOpen(false)}
+        confirmLoading={saveMu.isPending}
+        okText="确定"
+        cancelText="取消"
+        width="50%"
+        destroyOnClose
+      >
+        <Form form={editForm} labelCol={{ style: { width: 80 } }} wrapperCol={{ span: 16 }}>
+          <Form.Item name="ck_id" label="课件名称">
             <Select showSearch filterOption={(input, option) => (option?.label as string || '').includes(input)}
-              placeholder="请选课件名称" options={kejianOptions} />
+              placeholder="请选课件名称" allowClear options={kejianOptions} />
           </Form.Item>
-          <Form.Item name="date" label="日期" rules={[{ required: true, message: '请选择日期' }]}>
+          <Form.Item name="date" label="日期">
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
           </Form.Item>
         </Form>
@@ -571,15 +757,26 @@ function TrainTaskModal({
 // ==================== 主页面 ====================
 export function TrainingClassPeoplePage() {
   const queryClient = useQueryClient();
-  const { isOrg } = useLoginRole();
-  const [form] = Form.useForm<TrainInfoClassCreateReq & { kcbiaoFileDisplay?: string }>();
+  const [form] = Form.useForm<{
+    id?: number;
+    title?: string;
+    trainInfoId?: number;
+    nums?: number;
+    dateStart?: dayjs.Dayjs;
+    dateEnd?: dayjs.Dayjs;
+    kcbiaoFile?: string;
+    kcbiaoFileDisplay?: string;
+  }>();
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
   const [companyIdFilter, setCompanyIdFilter] = useState<number | undefined>();
   const [workTypeIdFilter, setWorkTypeIdFilter] = useState<number | undefined>();
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [kcbiaoPreview, setKcbiaoPreview] = useState('');
+  const [kcbiaoSrc, setKcbiaoSrc] = useState('');
+
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState('');
 
   const [studentModal, setStudentModal] = useState(false);
   const [staffModal, setStaffModal] = useState(false);
@@ -606,7 +803,7 @@ export function TrainingClassPeoplePage() {
   const saveMu = useMutation({
     mutationFn: (p: TrainInfoClassCreateReq) => trainApi.saveInfoClass(p),
     onSuccess: () => {
-      message.success('保存成功');
+      message.success('成功');
       closeModal();
       queryClient.invalidateQueries({ queryKey: ['info-classes'] });
     },
@@ -622,15 +819,11 @@ export function TrainingClassPeoplePage() {
     onError: () => message.error('删除失败'),
   });
 
-  const workTypeOptions = useMemo(() => {
-    const groups = (publicData as DemandPublicData | undefined)?.worktype_list ?? [];
-    return groups.flatMap((g) =>
-      (g.options ?? []).map((o) => ({
-        value: o.id,
-        label: o.title,
-        group: g.title,
-      })),
-    );
+  const workTypeGroupedOptions = useMemo(() => {
+    return (publicData as DemandPublicData | undefined)?.worktype_list?.map((g) => ({
+      label: g.title,
+      options: (g.options ?? []).map((o) => ({ value: o.id, label: o.title })),
+    })) ?? [];
   }, [publicData]);
 
   const companyOptions = useMemo(() => {
@@ -656,15 +849,13 @@ export function TrainingClassPeoplePage() {
 
   const closeModal = () => {
     setModalOpen(false);
-    setEditingId(null);
-    setKcbiaoPreview('');
+    setKcbiaoSrc('');
     form.resetFields();
   };
 
   const openCreate = () => {
     form.resetFields();
-    setEditingId(null);
-    setKcbiaoPreview('');
+    setKcbiaoSrc('');
     setModalOpen(true);
   };
 
@@ -679,20 +870,39 @@ export function TrainingClassPeoplePage() {
       kcbiaoFile: row.kcbiao_file,
       kcbiaoFileDisplay: row.kcbiao_file,
     });
-    setKcbiaoPreview(row.kcbiao_src ?? resolveFileUrl(row.kcbiao_file));
-    setEditingId(row.id);
+    setKcbiaoSrc(row.kcbiao_src ?? resolveFileUrl(row.kcbiao_file));
     setModalOpen(true);
   };
 
   const handleSubmit = async () => {
-    const v = await form.validateFields();
+    const v = form.getFieldsValue();
+    if (!v.title) {
+      message.error('请填写班级名称');
+      return;
+    }
+    if (!v.trainInfoId) {
+      message.error('请选择班级课程');
+      return;
+    }
+    if (!v.nums) {
+      message.error('请填写班级人数');
+      return;
+    }
+    if (!v.dateStart) {
+      message.error('请选择班级开始时间');
+      return;
+    }
+    if (!v.dateEnd) {
+      message.error('请选择班级结束时间');
+      return;
+    }
     const payload: TrainInfoClassCreateReq = {
       id: v.id,
       title: v.title,
       trainInfoId: v.trainInfoId,
       nums: v.nums,
-      dateStart: v.dateStart ? (dayjs.isDayjs(v.dateStart) ? v.dateStart.format('YYYY-MM-DD') : String(v.dateStart)) : undefined,
-      dateEnd: v.dateEnd ? (dayjs.isDayjs(v.dateEnd) ? v.dateEnd.format('YYYY-MM-DD') : String(v.dateEnd)) : undefined,
+      dateStart: dayjs.isDayjs(v.dateStart) ? v.dateStart.format('YYYY-MM-DD') : String(v.dateStart),
+      dateEnd: dayjs.isDayjs(v.dateEnd) ? v.dateEnd.format('YYYY-MM-DD') : String(v.dateEnd),
       kcbiaoFile: v.kcbiaoFile,
     };
     saveMu.mutate(payload);
@@ -708,8 +918,8 @@ export function TrainingClassPeoplePage() {
         const result = await uploadFile(file as File, 'public');
         const url = `/api/files/${result.id}/download`;
         form.setFieldsValue({ kcbiaoFile: url, kcbiaoFileDisplay: url });
-        setKcbiaoPreview(url);
         message.success('上传成功');
+        setUploadOpen(false);
         onSuccess?.(result, file as unknown as XMLHttpRequest);
       } catch (err) {
         message.error('上传失败');
@@ -718,8 +928,28 @@ export function TrainingClassPeoplePage() {
     },
   };
 
+  const openPreview = (src?: string) => {
+    const url = resolveFileUrl(src);
+    if (!url) return;
+    setPreviewFile(url.startsWith('http') ? url : `${window.location.origin}${url}`);
+    setPreviewOpen(true);
+  };
+
+  const handleFilterChange = () => {
+    setCurrentPage(1);
+  };
+
+  const handleReset = () => {
+    setCompanyIdFilter(undefined);
+    setWorkTypeIdFilter(undefined);
+    setCurrentPage(1);
+  };
+
   const openSubDialog = (type: string, row: TrainInfoClassListItem) => {
-    setSelectedClass({ id: row.id, trainInfoId: row.train_info_id ?? 0 });
+    setSelectedClass({
+      id: Number(row.id),
+      trainInfoId: Number(row.train_info_id ?? 0),
+    });
     switch (type) {
       case 'students': setStudentModal(true); break;
       case 'staff': setStaffModal(true); break;
@@ -728,124 +958,222 @@ export function TrainingClassPeoplePage() {
     }
   };
 
+  const formatCreateTime = (row: TrainInfoClassListItem) => {
+    if (row.addtime_cn) return row.addtime_cn;
+    if (row.addtime) return dayjs.unix(row.addtime).format('YYYY-MM-DD HH:mm:ss');
+    return '-';
+  };
+
+  const handleDeleteClass = (row: TrainInfoClassListItem) => {
+    Modal.confirm({
+      title: '友情提示',
+      content: '确定要删除该班级吗？',
+      onOk: () => deleteMu.mutate(row.id),
+    });
+  };
+
+  const renderRowActions = (row: TrainInfoClassListItem) => (
+    <div className="class-row-actions">
+      <div className="class-row-actions-line">
+        <button type="button" className="class-action-link" onClick={() => openSubDialog('students', row)}>学员列表</button>
+        <button type="button" className="class-action-link" onClick={() => openSubDialog('staff', row)}>教务人员</button>
+        <button type="button" className="class-action-link" onClick={() => openSubDialog('charge', row)}>负责人</button>
+      </div>
+      <div className="class-row-actions-line">
+        <button type="button" className="class-action-link" onClick={() => openSubDialog('tasks', row)}>培训任务</button>
+        <button type="button" className="class-action-link" onClick={() => openEdit(row)}>编辑</button>
+        <button type="button" className="class-action-link class-action-link-danger" onClick={() => handleDeleteClass(row)}>删除</button>
+      </div>
+    </div>
+  );
+
   const columns: ColumnsType<TrainInfoClassListItem> = [
     {
-      title: '序号', key: 'index', width: 60, align: 'center',
+      title: '序号',
+      key: 'index',
+      width: 60,
+      align: 'center',
       render: (_, __, i) => (currentPage - 1) * pageSize + i + 1,
     },
-    { title: '标题', dataIndex: 'title', align: 'center' },
-    { title: '公司', dataIndex: 'company_name', align: 'center' },
-    { title: '工种', dataIndex: 'work_type_title', align: 'center' },
+    { title: '标题', dataIndex: 'title', align: 'left', ellipsis: true },
+    { title: '公司', dataIndex: 'company_name', align: 'left', ellipsis: true },
+    { title: '工种', dataIndex: 'work_type_title', align: 'center', width: 140 },
     { title: '人数', dataIndex: 'nums', width: 80, align: 'center' },
-    { title: '创建时间', dataIndex: 'addtime_cn', align: 'center', render: (v, r) => v ?? (r.addtime ? dayjs.unix(r.addtime).format('YYYY-MM-DD HH:mm:ss') : '-') },
     {
-      title: '操作', key: 'act', width: 220, align: 'center',
-      render: (_, r) => (
-        <Space size="small" wrap>
-          <Button type="link" size="small" className="link-action" onClick={() => openSubDialog('students', r)}>学员列表</Button>
-          <Button type="link" size="small" className="link-action" onClick={() => openSubDialog('staff', r)}>教务人员</Button>
-          <Button type="link" size="small" className="link-action" onClick={() => openSubDialog('charge', r)}>负责人</Button>
-          <Button type="link" size="small" className="link-action" onClick={() => openSubDialog('tasks', r)}>培训任务</Button>
-          {isOrg && (
-            <>
-              <Button type="link" size="small" className="link-action" icon={<EditOutlined />} onClick={() => openEdit(r)}>编辑</Button>
-              <Button type="link" size="small" className="link-action-danger" icon={<DeleteOutlined />}
-                onClick={() => Modal.confirm({ title: '确定删除该班级?', onOk: () => deleteMu.mutate(r.id) })}>删除</Button>
-            </>
-          )}
-        </Space>
-      ),
+      title: '创建时间',
+      key: 'createTime',
+      width: 174,
+      align: 'center',
+      render: (_, row) => formatCreateTime(row),
+    },
+    {
+      title: '操作',
+      key: 'act',
+      width: 240,
+      align: 'center',
+      fixed: 'right',
+      render: (_, row) => renderRowActions(row),
     },
   ];
 
-  const loginRole = useAuthStore((s) => s.currentUser?.loginRole);
-  const hideCompanyFilter = loginRole === 'company';
-
   return (
     <div className="training-class-people-page">
-      <Steps current={2} items={STEPS_ITEMS} style={{ maxWidth: '100%' }} />
+      <Steps className="class-people-steps" current={2} items={STEPS_ITEMS} />
 
-      <div className="filter-bar">
-        <Space wrap>
-          {!hideCompanyFilter && (
-            <Select allowClear showSearch placeholder="企业筛选" style={{ width: 200 }}
-              value={companyIdFilter}
-              onChange={(v) => { setCompanyIdFilter(v); setCurrentPage(1); }}
-              options={companyOptions}
-              filterOption={(input, option) => (option?.label as string || '').includes(input)} />
-          )}
-          <Select allowClear showSearch placeholder="请选择工种" style={{ width: 200 }}
+      <div className="search-filter-bar">
+        <div className="filter-actions">
+          <Select
+            className="filter-select"
+            allowClear
+            showSearch
+            placeholder="企业筛选"
+            value={companyIdFilter}
+            onChange={(v) => {
+              setCompanyIdFilter(v);
+              handleFilterChange();
+            }}
+            options={companyOptions}
+            optionFilterProp="label"
+          />
+          <Select
+            className="filter-select"
+            allowClear
+            showSearch
+            placeholder="请选择工种"
             value={workTypeIdFilter}
-            onChange={(v) => { setWorkTypeIdFilter(v); setCurrentPage(1); }}
-            options={workTypeOptions.map((o) => ({ value: o.value, label: o.group ? `${o.group} / ${o.label}` : o.label }))} />
-          <Button type="primary" onClick={() => { setCompanyIdFilter(undefined); setWorkTypeIdFilter(undefined); setCurrentPage(1); }}>重置</Button>
-          {isOrg && (
-            <Button type="primary" onClick={openCreate}>创建班级</Button>
-          )}
-        </Space>
+            onChange={(v) => {
+              setWorkTypeIdFilter(v);
+              handleFilterChange();
+            }}
+            options={workTypeGroupedOptions}
+            optionFilterProp="label"
+          />
+          <Button type="primary" onClick={handleReset}>重置</Button>
+          <Button type="primary" onClick={openCreate}>创建班级</Button>
+        </div>
       </div>
 
-      <div className="table-wrap">
-        <Table rowKey="id" bordered loading={isLoading} columns={columns}
-          dataSource={listData?.list ?? []}
-          scroll={{ x: 1200, y: 600 }}
-          pagination={false} />
-      </div>
+      <Table
+        className="class-people-table"
+        rowKey="id"
+        bordered
+        size="middle"
+        loading={isLoading}
+        columns={columns}
+        dataSource={listData?.list ?? []}
+        scroll={{ x: 1100, y: 600 }}
+        pagination={false}
+      />
 
-      <div className="pagination-bar">
-        <Pagination
-          current={currentPage}
-          pageSize={pageSize}
-          total={listData?.total ?? 0}
-          showTotal={(t) => `共 ${t} 条`}
-          onChange={(p) => setCurrentPage(p)}
-        />
-      </div>
+      <Pagination
+        className="class-people-pagination"
+        current={currentPage}
+        pageSize={pageSize}
+        total={listData?.total ?? 0}
+        showSizeChanger={false}
+        showQuickJumper
+        showTotal={(t) => `共 ${t} 条`}
+        onChange={(p) => setCurrentPage(p)}
+      />
 
-      <Modal title="班级信息" open={modalOpen} onOk={handleSubmit} onCancel={closeModal}
-        confirmLoading={saveMu.isPending} destroyOnClose width="50%">
-        <Form form={form} labelCol={{ span: 6 }} wrapperCol={{ span: 16 }}>
+      <Modal
+        title="班级信息"
+        open={modalOpen}
+        onOk={handleSubmit}
+        onCancel={closeModal}
+        confirmLoading={saveMu.isPending}
+        okText="确定"
+        cancelText="取消"
+        destroyOnClose
+        width="50%"
+      >
+        <Form form={form} labelCol={{ style: { width: 120 } }} wrapperCol={{ span: 16 }}>
           <Form.Item name="id" hidden><Input /></Form.Item>
-          <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
+          <Form.Item name="title" label="标题">
             <Input placeholder="请输入标题" />
           </Form.Item>
-          <Form.Item name="trainInfoId" label="选择培训信息" rules={[{ required: true, message: '请选择培训信息' }]}>
-            <Select placeholder="请选择培训信息" options={trainInfoOptions} disabled={!!editingId} />
+          <Form.Item name="trainInfoId" label="选择培训信息">
+            <Select placeholder="请选择培训信息" options={trainInfoOptions} />
           </Form.Item>
           <Form.Item name="nums" label="班级人数">
-            <InputNumber min={0} style={{ width: '100%' }} placeholder="请输入班级人数" />
+            <Input type="number" placeholder="请输入班级人数" />
           </Form.Item>
           <Form.Item name="dateStart" label="开始日期">
-            <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+            <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" placeholder="选择开始日期" />
           </Form.Item>
           <Form.Item name="dateEnd" label="结束日期">
-            <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+            <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" placeholder="选择结束日期" />
           </Form.Item>
           <Form.Item label="课程表">
-            <div className="kcbiao-upload-row">
-              <Form.Item name="kcbiaoFileDisplay" noStyle>
-                <Input readOnly placeholder="请上传课表" style={{ flex: 1 }} />
-              </Form.Item>
-              <Upload {...kcbiaoUploadProps}>
-                <Button>上传</Button>
-              </Upload>
-              {kcbiaoPreview && (
-                <Button type="link" onClick={() => window.open(resolveFileUrl(kcbiaoPreview), '_blank')}>预览</Button>
-              )}
-            </div>
+            <Form.Item noStyle shouldUpdate={(p, c) => p.kcbiaoFileDisplay !== c.kcbiaoFileDisplay || p.kcbiaoFile !== c.kcbiaoFile}>
+              {() => {
+                const fileVal = form.getFieldValue('kcbiaoFileDisplay');
+                return (
+                  <div className="kcbiao-upload-row">
+                    <Form.Item name="kcbiaoFileDisplay" noStyle>
+                      <Input readOnly placeholder="请上传课表" style={{ flex: 1 }} />
+                    </Form.Item>
+                    <Button onClick={() => setUploadOpen(true)}>上传</Button>
+                    {fileVal ? (
+                      <Button type="link" style={{ marginLeft: 20 }} onClick={() => openPreview(kcbiaoSrc || form.getFieldValue('kcbiaoFile'))}>
+                        预览
+                      </Button>
+                    ) : null}
+                  </div>
+                );
+              }}
+            </Form.Item>
             <Form.Item name="kcbiaoFile" hidden><Input /></Form.Item>
           </Form.Item>
         </Form>
       </Modal>
 
+      <Modal
+        title="上传文件"
+        open={uploadOpen}
+        width={500}
+        onCancel={() => setUploadOpen(false)}
+        footer={null}
+        maskClosable={false}
+        destroyOnClose
+      >
+        <Dragger {...kcbiaoUploadProps}>
+          <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+          <p className="ant-upload-text">将文件拖到此处，或<em>点击上传</em></p>
+          <p style={{ color: '#ccc', marginTop: 10 }}>提示:上传过程中,请不要做任何操作</p>
+          <p className="ant-upload-hint">只能上传.xls,.xlsx文件</p>
+        </Dragger>
+      </Modal>
+
+      <Modal
+        title="预览"
+        open={previewOpen}
+        width="80%"
+        styles={{ body: { height: 680, overflowY: 'auto' } }}
+        onCancel={() => { setPreviewOpen(false); setPreviewFile(''); }}
+        footer={null}
+        maskClosable={false}
+        destroyOnClose
+      >
+        {previewFile && (
+          <div className="file-preview-container">
+            <iframe
+              title="preview"
+              src={`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(previewFile)}`}
+              style={{ width: '100%', height: 600 }}
+            />
+          </div>
+        )}
+      </Modal>
+
       <StudentListModal open={studentModal} onClose={() => setStudentModal(false)}
-        classId={selectedClass?.id ?? null} trainInfoId={selectedClass?.trainInfoId ?? null} isOrg={isOrg} />
+        classId={selectedClass?.id ?? null} trainInfoId={selectedClass?.trainInfoId ?? null} />
       <StaffModal open={staffModal} onClose={() => setStaffModal(false)}
         classId={selectedClass?.id ?? null} trainInfoId={selectedClass?.trainInfoId ?? null}
-        tag="teacher" title="教务人员" isOrg={isOrg} />
+        tag="teacher" title="教务人员" />
       <StaffModal open={chargeModal} onClose={() => setChargeModal(false)}
         classId={selectedClass?.id ?? null} trainInfoId={selectedClass?.trainInfoId ?? null}
-        tag="fuzhe" title="负责人" isOrg={isOrg} />
+        tag="fuzhe" title="负责人" />
       <TrainTaskModal open={taskModal} onClose={() => setTaskModal(false)}
         classId={selectedClass?.id ?? null} kejianOptions={kejianOptions} />
     </div>

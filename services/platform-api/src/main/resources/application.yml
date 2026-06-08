@@ -51,10 +51,11 @@ mybatis-plus:
 flowable:
   database-schema-update: ${FLOWABLE_DATABASE_SCHEMA_UPDATE:true}
   async-executor-activate: false
-  process-definition-location-prefix: classpath*:/workflows/bpmn/
+  # 关闭 Spring Boot 内置自动部署，避免 ACT_RE_PROCDEF 版本冲突（见 FlowableProcessDeploymentRunner）
+  check-process-definitions: false
+  process-definition-location-prefix: classpath:/workflows/bpmn/
   process-definition-location-suffixes:
     - "**.bpmn20.xml"
-    - "**.bpmn"
 
 platform:
   security:

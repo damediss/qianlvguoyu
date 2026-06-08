@@ -1,7 +1,6 @@
 package com.guoyu.platform.trainingdepartment.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -50,11 +49,9 @@ public class TrainPeopleListEntity {
   private Integer currentLevel;
   /** 排序号 */
   private Integer sortNumber;
-  /** 租户ID（PHP 遗留表可能无此列） */
-  @TableField(exist = false)
+  /** 租户ID */
   private Long tenantId;
-  /** 创建时间（PHP 遗留表可能无此列） */
-  @TableField(exist = false)
+  /** 创建时间 */
   private LocalDateTime createTime;
   /** 身份证号 */
   private String idCard;

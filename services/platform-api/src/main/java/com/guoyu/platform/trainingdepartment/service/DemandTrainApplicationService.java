@@ -331,6 +331,7 @@ public class DemandTrainApplicationService {
     entity.setNum(req.getNum());
     entity.setPassStatus(1);
     entity.setStatus(0);
+    entity.setGroupType(0);
     entity.setSortNumber(1);
     entity.setCreateTime(LocalDateTime.now());
     entity.setDeleted(0);

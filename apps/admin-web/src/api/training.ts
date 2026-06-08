@@ -42,7 +42,8 @@ import type {
   TrainInfoClassListItem, TrainInfoClassPageResponse, ClassStudent, ClassStudentPageResponse, ClassOther, ClassTask, SignUpPerson, TeacherBankItem,
   TrainSummary, TrainSummaryQuery, TrainSummaryCreateReq, TrainSummaryUpdateReq,
   TrainCertificate, TrainCertificateQuery, TrainCertificateCreateReq, TrainCertificateUpdateReq,
-  TrainUserAbility, TrainUserAbilityQuery, TrainUserAbilityCreateReq, TrainUserAbilityUpdateReq,
+  TrainSignUpSelf, TrainSignUpSelfQuery, TrainSignUpSelfCreateReq, TrainSignUpSelfUpdateReq,
+  TrainSignUpPerson, TrainSignUpPeopleQuery, PlatformUserSaveReq,
 } from '../types/training';
 
 const BASE = '/training';
@@ -950,4 +951,58 @@ export function saveClassSchedule(classId: number, items: Record<string, unknown
 /** 导出课表 */
 export function exportClassSchedule(classId: number) {
   return unwrap<{ fileId: number; downUrl: string; fileName: string }>(apiClient.get(`${BASE}/info-classes/${classId}/schedule/export`));
+}
+
+// ==================== 信息收集 (sign-up collection) ====================
+
+export function pageSignUpCollection(params: TrainSignUpSelfQuery) {
+  return unwrap<PageResponse<TrainSignUpSelf>>(apiClient.get(`${BASE}/sign-ups/collection`, { params }));
+}
+
+export function pageSignUps(params: TrainSignUpSelfQuery) {
+  return unwrap<PageResponse<TrainSignUpSelf>>(apiClient.get(`${BASE}/sign-ups`, { params }));
+}
+
+export function createSignUp(payload: TrainSignUpSelfCreateReq) {
+  return unwrap<TrainSignUpSelf>(apiClient.post(`${BASE}/sign-ups`, payload));
+}
+
+export function updateSignUp(id: number, payload: TrainSignUpSelfUpdateReq) {
+  return unwrap<TrainSignUpSelf>(apiClient.put(`${BASE}/sign-ups/${id}`, payload));
+}
+
+export function deleteSignUp(id: number) {
+  return unwrap<void>(apiClient.delete(`${BASE}/sign-ups/${id}`));
+}
+
+export function getSignUpQrcode(id: number) {
+  return unwrap<{ signUpId: number; title: string; qrcode: string; registrationPath: string; generated: boolean }>(
+    apiClient.get(`${BASE}/sign-ups/${id}/qrcode`)
+  );
+}
+
+export function pageSignUpPeople(params: TrainSignUpPeopleQuery) {
+  return unwrap<PageResponse<TrainSignUpPerson>>(apiClient.get(`${BASE}/sign-up-people`, { params }));
+}
+
+export function batchUpdateSignUpPeople(payload: { ids: number[]; field: string; value?: number }) {
+  return unwrap<number>(apiClient.put(`${BASE}/sign-up-people/batch`, payload));
+}
+
+export async function exportSignUpPeople(signUpId: number) {
+  const response = await apiClient.get(`${BASE}/sign-up-people/export`, {
+    params: { signUpId },
+    responseType: 'blob',
+  });
+  const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `sign-up-people-${signUpId}.xlsx`;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+export function savePlatformUser(payload: PlatformUserSaveReq) {
+  return unwrap<PlatformUser>(apiClient.post(`${BASE}/platform-users`, payload));
 }

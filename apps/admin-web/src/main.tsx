@@ -21,6 +21,13 @@ import { CertQueryPage } from './pages/chazheng/CertQueryPage';
 import { RequirementsManagementPage } from './pages/training/RequirementsManagementPage';
 import { EnterpriseTrainingDemandPage } from './pages/training/EnterpriseTrainingDemandPage';
 import { TrainingProgramPage } from './pages/training/TrainingProgramPage';
+import { TrainingSchedulePage } from './pages/training/TrainingSchedulePage';
+import { TrainingGraduationPage } from './pages/training/TrainingGraduationPage';
+import { TrainingCapabilityPage } from './pages/training/TrainingCapabilityPage';
+import { TrainingSummaryPage } from './pages/training/TrainingSummaryPage';
+import { TrainingCertificateTemplatePage } from './pages/training/TrainingCertificateTemplatePage';
+import { TrainingInformationPage } from './pages/training/TrainingInformationPage';
+import { TrainingStudentPage } from './pages/training/TrainingStudentPage';
 import { DataPanelPage } from './pages/zhixunplatform/DataPanelPage';
 import { TaskManagementPage } from './pages/zhixunplatform/TaskManagementPage';
 import { TaskArchivesPage } from './pages/zhixunplatform/TaskArchivesPage';
@@ -100,6 +107,7 @@ const pageMap: Record<string, React.ReactNode> = {
   exam_course: <CoursePage />,
   'train_info-list': <TrainingInfoPage />,
   'train_people-list': <TrainingClassPeoplePage />,
+  train_people: <TrainingClassPeoplePage />,
   train_declares: <TrainingClassDeclarePage />,
   exam_user_auth_course: <UserAuthCoursePage />,
   chazheng_user_list: <UserListPage />,
@@ -107,6 +115,14 @@ const pageMap: Record<string, React.ReactNode> = {
   train_needs: <RequirementsManagementPage />,
   'train_demand-train': <EnterpriseTrainingDemandPage />,
   train_solutions: <TrainingProgramPage />,
+  train_schedule: <TrainingSchedulePage />,
+  train_graduation: <TrainingGraduationPage />,
+  'train_user-ability': <TrainingCapabilityPage />,
+  train_summary: <TrainingSummaryPage />,
+  train_certificates: <TrainingCertificateTemplatePage />,
+  'train_sign-up': <TrainingInformationPage />,
+  'train_sign-up-people': <TrainingInformationPage />,
+  'train_user-info': <TrainingStudentPage />,
   knowledge_spaces: <KnowledgePage />,
   knowledge_search: <KnowledgePage />,
   zhixun_data_panel: <DataPanelPage />,

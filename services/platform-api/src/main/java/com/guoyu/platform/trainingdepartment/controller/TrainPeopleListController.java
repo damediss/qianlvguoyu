@@ -184,9 +184,14 @@ public class TrainPeopleListController {
   public ApiResponse<Map<String, Object>> importOthers(@RequestBody Map<String, Object> params) {
     Long traininfoId = params.get("traininfoId") != null ? Long.valueOf(params.get("traininfoId").toString()) : null;
     Long classId = params.get("classId") != null ? Long.valueOf(params.get("classId").toString()) : null;
-    @SuppressWarnings("unchecked")
-    List<Long> ids = ((List<Number>) params.get("ids")).stream()
-        .map(Number::longValue).toList();
+    Object rawIds = params.get("ids");
+    if (!(rawIds instanceof List<?> idList) || idList.isEmpty()) {
+      return ApiResponse.ok(Map.of("count", 0, "failed", List.of()));
+    }
+    List<Long> ids = idList.stream()
+        .filter(Number.class::isInstance)
+        .map(id -> ((Number) id).longValue())
+        .toList();
     return ApiResponse.ok(trainPeopleListApplicationService.importOthers(traininfoId, classId, ids));
   }
 }

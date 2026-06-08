@@ -29,6 +29,7 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainTeacherBankMapper;
 import com.guoyu.platform.trainingdepartment.support.TrainingIdCardHeaderResolver;
 import com.guoyu.platform.trainingdepartment.vo.TrainPeopleListVO;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -132,7 +133,7 @@ public class TrainPeopleListApplicationService {
     entity.setSortNumber(req.getSortNumber());
     entity.setIdCard(req.getIdCard());
     entity.setDeleted(0);
-    mapper.insert(entity);
+    insertPeople(entity);
     return toVO(entity);
   }
 
@@ -348,7 +349,7 @@ public class TrainPeopleListApplicationService {
       entity.setIdCard(sp.getIdCardNumber());
       entity.setPlatformUserId(sp.getPlatformUserId());
       entity.setDeleted(0);
-      mapper.insert(entity);
+      insertPeople(entity);
       count++;
     }
     Map<String, Object> result = new LinkedHashMap<>();
@@ -416,7 +417,7 @@ public class TrainPeopleListApplicationService {
       entity.setIdCard(sp.getIdCardNumber());
       entity.setPlatformUserId(sp.getPlatformUserId());
       entity.setDeleted(0);
-      mapper.insert(entity);
+      insertPeople(entity);
       count++;
     }
     Map<String, Object> result = new LinkedHashMap<>();
@@ -480,7 +481,7 @@ public class TrainPeopleListApplicationService {
       entity.setPhone(params.get("phone") != null ? params.get("phone").toString() : null);
       entity.setIdCard(params.get("id_card") != null ? params.get("id_card").toString() : null);
       entity.setDeleted(0);
-      mapper.insert(entity);
+      insertPeople(entity);
       Map<String, Object> result = new LinkedHashMap<>();
       result.put("id", entity.getId());
       return result;
@@ -568,13 +569,23 @@ public class TrainPeopleListApplicationService {
       entity.setPhone(t.getPhone());
       entity.setIdCard(t.getIdCardNumber());
       entity.setDeleted(0);
-      mapper.insert(entity);
+      insertPeople(entity);
       count++;
     }
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("count", count);
     result.put("failed", failed);
     return result;
+  }
+
+  private void insertPeople(TrainPeopleListEntity entity) {
+    if (entity.getTenantId() == null) {
+      entity.setTenantId(SecurityContext.currentUser().getTenantId());
+    }
+    if (entity.getCreateTime() == null) {
+      entity.setCreateTime(LocalDateTime.now());
+    }
+    mapper.insert(entity);
   }
 
   private void assertClassViewable(Long classId) {

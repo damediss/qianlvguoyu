@@ -14,6 +14,8 @@ import com.guoyu.platform.trainingdepartment.dto.TrainSignUpPeopleSelfUpdateReq;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.vo.TrainSignUpPeopleSelfVO;
+import java.time.LocalDateTime;
+import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -30,13 +32,21 @@ public class TrainSignUpPeopleSelfApplicationService {
 
   @Transactional(readOnly = true)
   public PageResponse<TrainSignUpPeopleSelfVO> page(TrainSignUpPeopleSelfQueryReq req) {
-    Long tenantId = SecurityContext.currentUser().getTenantId();
+    if (req.getSignUpId() == null) {
+      return new PageResponse<>(List.of(), req.getPage().longValue(), req.getPageSize().longValue(), 0L);
+    }
     LambdaQueryWrapper<TrainSignUpPeopleSelfEntity> wrapper = new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
-        .eq(TrainSignUpPeopleSelfEntity::getTenantId, tenantId)
+        .eq(TrainSignUpPeopleSelfEntity::getSignUpId, req.getSignUpId())
         .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0)
         .orderByDesc(TrainSignUpPeopleSelfEntity::getId);
+    if (req.getStatus() != null) {
+      wrapper.eq(TrainSignUpPeopleSelfEntity::getStatus, req.getStatus());
+    }
     if (StringUtils.hasText(req.getKeyword())) {
-      wrapper.like(TrainSignUpPeopleSelfEntity::getId, req.getKeyword());
+      wrapper.and(w -> w
+          .like(TrainSignUpPeopleSelfEntity::getName, req.getKeyword())
+          .or().like(TrainSignUpPeopleSelfEntity::getPhone, req.getKeyword())
+          .or().like(TrainSignUpPeopleSelfEntity::getIdCardNumber, req.getKeyword()));
     }
     Page<TrainSignUpPeopleSelfEntity> page = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
     return new PageResponse<>(page.getRecords().stream().map(this::toVO).toList(),
@@ -65,6 +75,8 @@ public class TrainSignUpPeopleSelfApplicationService {
     entity.setCertificate(req.getCertificate());
     entity.setStatus(req.getStatus());
     entity.setDeleted(0);
+    entity.setCreateTime(LocalDateTime.now());
+    entity.setUpdateTime(LocalDateTime.now());
     mapper.insert(entity);
     return toVO(entity);
   }
@@ -83,6 +95,7 @@ public class TrainSignUpPeopleSelfApplicationService {
     if (StringUtils.hasText(req.getContract())) { entity.setContract(req.getContract()); }
     if (StringUtils.hasText(req.getCertificate())) { entity.setCertificate(req.getCertificate()); }
     if (req.getStatus() != null) { entity.setStatus(req.getStatus()); }
+    entity.setUpdateTime(LocalDateTime.now());
     mapper.updateById(entity);
     return toVO(entity);
   }
@@ -96,10 +109,7 @@ public class TrainSignUpPeopleSelfApplicationService {
   }
 
   private TrainSignUpPeopleSelfEntity getExisting(Long id) {
-    Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainSignUpPeopleSelfEntity entity = mapper.selectOne(new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
-
-        .eq(TrainSignUpPeopleSelfEntity::getTenantId, tenantId)
         .eq(TrainSignUpPeopleSelfEntity::getId, id)
         .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0));
     if (entity == null) {

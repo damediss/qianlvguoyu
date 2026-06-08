@@ -15,6 +15,8 @@ public class TrainInfoListQueryReq extends PageQuery {
   private Long courseId;
   /** 审核状态 */
   private Integer passStatus;
+  /** 负责人确认：0=待办，-1=已办（不筛选） */
+  private Integer headConfirm;
   /** 组类型 */
   private Integer groupType;
   /** 排除的组类型（不等于） */
@@ -68,6 +70,14 @@ public class TrainInfoListQueryReq extends PageQuery {
 
   public void setPassStatus(Integer passStatus) {
     this.passStatus = passStatus;
+  }
+
+  public Integer getHeadConfirm() {
+    return headConfirm;
+  }
+
+  public void setHeadConfirm(Integer headConfirm) {
+    this.headConfirm = headConfirm;
   }
 
   public Integer getGroupType() {

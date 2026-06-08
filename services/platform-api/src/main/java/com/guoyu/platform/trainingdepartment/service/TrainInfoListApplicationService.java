@@ -62,7 +62,13 @@ public class TrainInfoListApplicationService {
       wrapper.eq(TrainInfoListEntity::getGroupType, req.getGroupType());
     }
     if (req.getGroupTypeNe() != null) {
-      wrapper.ne(TrainInfoListEntity::getGroupType, req.getGroupTypeNe());
+      // group_type 为空时也应保留（立项记录默认未分组）
+      wrapper.and(w -> w.isNull(TrainInfoListEntity::getGroupType)
+          .or()
+          .ne(TrainInfoListEntity::getGroupType, req.getGroupTypeNe()));
+    }
+    if (req.getHeadConfirm() != null && req.getHeadConfirm() != -1) {
+      wrapper.eq(TrainInfoListEntity::getHeadConfirm, req.getHeadConfirm());
     }
     if (StringUtils.hasText(req.getCate())) {
       wrapper.eq(TrainInfoListEntity::getCate, req.getCate());

@@ -848,9 +848,11 @@ export interface PlatformUser {
   password?: string;
   stat?: string;
   addtime?: number;
+  addtimeCn?: string;
   logintime?: number;
   orgId?: number;
   companyId?: number;
+  companyName?: string;
   wxopenid?: string;
   expertId?: number;
   task?: number;
@@ -876,6 +878,69 @@ export interface PlatformUserCreateReq {
 }
 
 export type PlatformUserUpdateReq = Partial<PlatformUserCreateReq>;
+
+// ==================== Sign Up Collection (信息收集) ====================
+export interface TrainSignUpSelf {
+  id: number;
+  title?: string;
+  cover?: string;
+  trainTime?: string;
+  examTime?: string;
+  orgId?: number;
+  orgName?: string;
+  trainInfoId?: number;
+  sortNumber?: number;
+  peopleCount?: number;
+  wxMiniQrcode?: string;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface TrainSignUpSelfQuery {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  orgId?: number;
+  trainInfoId?: number;
+}
+
+export interface TrainSignUpSelfCreateReq {
+  title: string;
+  cover?: string;
+  trainTime?: string;
+  examTime?: string;
+  orgId?: number;
+  trainInfoId?: number;
+  sortNumber?: number;
+}
+
+export type TrainSignUpSelfUpdateReq = Partial<TrainSignUpSelfCreateReq>;
+
+export interface TrainSignUpPerson {
+  id: number;
+  signUpId?: number;
+  platformUserId?: number;
+  name?: string;
+  phone?: string;
+  idCardNumber?: string;
+  gender?: string;
+  education?: string;
+  photo?: string;
+  status?: number;
+  createTime?: string;
+}
+
+export interface TrainSignUpPeopleQuery {
+  page?: number;
+  pageSize?: number;
+  signUpId?: number;
+  keyword?: string;
+  status?: number;
+}
+
+export interface PlatformUserSaveReq extends PlatformUserCreateReq {
+  id?: number;
+}
 
 // ==================== Teacher Bank (师资管理) ====================
 export interface TrainTeacherBank {
@@ -1840,6 +1905,7 @@ export interface ClassOther {
   realname: string;
   phone?: string;
   id_card?: string;
+  type?: string;
 }
 
 /** 培训任务列表项 */

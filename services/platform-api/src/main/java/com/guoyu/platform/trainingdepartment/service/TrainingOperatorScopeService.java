@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class TrainingOperatorScopeService {
 
+  private static final String ROLE_PLATFORM_ADMIN = "PLATFORM_ADMIN";
   private static final Set<String> ENTERPRISE_ORG_TYPES = Set.of("company", "master");
 
   private final UserMapper userMapper;
@@ -57,15 +58,16 @@ public class TrainingOperatorScopeService {
   }
 
   public void requireOrgOperator() {
-    if (!currentScope().isOrgOperator()) {
-      throw new BusinessException(ErrorCode.FORBIDDEN, "仅培训机构账号可操作");
+    if (currentScope().isOrgOperator() || isPlatformAdmin()) {
+      return;
     }
+    throw new BusinessException(ErrorCode.FORBIDDEN, "仅培训机构账号可操作");
   }
 
   /** 企业账号强制按本企业过滤；机构账号使用请求中的筛选 */
   public Long resolveCompanyFilter(Long requestedCompanyId) {
     Scope scope = currentScope();
-    if (scope.isEnterpriseViewer() && scope.orgId() != null) {
+    if (!isPlatformAdmin() && scope.isEnterpriseViewer() && scope.orgId() != null) {
       return scope.orgId();
     }
     if (requestedCompanyId != null && requestedCompanyId != 0) {
@@ -75,7 +77,7 @@ public class TrainingOperatorScopeService {
   }
 
   public void assertClassAccessible(TrainInfoClassEntity entity) {
-    if (entity == null) {
+    if (entity == null || isPlatformAdmin()) {
       return;
     }
     Scope scope = currentScope();
@@ -84,5 +86,11 @@ public class TrainingOperatorScopeService {
         && !scope.orgId().equals(entity.getCompanyId())) {
       throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该班级");
     }
+  }
+
+  private boolean isPlatformAdmin() {
+    PlatformUserPrincipal principal = SecurityContext.currentUser();
+    return "admin".equals(principal.getUserType())
+        || principal.getRoleCodes().contains(ROLE_PLATFORM_ADMIN);
   }
 }
