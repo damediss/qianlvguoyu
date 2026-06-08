@@ -384,14 +384,6 @@ export function ScheduleEditor({
         </div>
       </div>
 
-      <div style={{ ...toolbarStyle, borderTop: '1px solid #e5e7eb', borderBottom: 'none' }}>
-        <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>
-          保存修改
-        </Button>
-        <Button icon={<EyeOutlined />} onClick={onPreview}>
-          预览
-        </Button>
-      </div>
     </div>
   );
 }

@@ -100,7 +100,7 @@ public class CertificationInfoApplicationService {
     CertificationInfoAssessorEntity entity = new CertificationInfoAssessorEntity();
     applyAssessor(entity, req);
     entity.setAuditStatus(DRAFT);
-    entity.setWorkStatus("idle");
+    entity.setWorkStatus("pending_review");
     entity.setReferencedCount(0);
     assessorMapper.insert(entity);
     return toAssessorVO(entity);
@@ -128,6 +128,7 @@ public class CertificationInfoApplicationService {
     requireMaterials(entity.getMaterialsDescription());
     String before = entity.getAuditStatus();
     entity.setAuditStatus(PENDING);
+    entity.setWorkStatus("pending_review");
     entity.setSubmittedAt(LocalDateTime.now());
     entity.setSubmittedBy(operatorId());
     entity.setRejectReason(null);
@@ -144,6 +145,7 @@ public class CertificationInfoApplicationService {
     String before = entity.getAuditStatus();
     if ("pass".equals(action)) {
       entity.setAuditStatus(APPROVED);
+      entity.setWorkStatus("idle");
       entity.setReviewedAt(LocalDateTime.now());
       entity.setReviewedBy(operatorId());
       entity.setReviewerName(operatorName());
@@ -153,6 +155,7 @@ public class CertificationInfoApplicationService {
     } else if ("reject".equals(action)) {
       requireRejectComment(req.comment());
       entity.setAuditStatus(REJECTED);
+      entity.setWorkStatus("pending_review");
       entity.setReviewedAt(LocalDateTime.now());
       entity.setReviewedBy(operatorId());
       entity.setReviewerName(operatorName());

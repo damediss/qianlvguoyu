@@ -1,6 +1,7 @@
 package com.guoyu.platform.certification.vo;
 
 import com.guoyu.platform.certification.entity.CertificationTaskEquipmentEntity;
+import com.guoyu.platform.certification.info.entity.CertificationInfoExamEquipmentEntity;
 
 public record PreparationTaskEquipmentVO(
     Long id,
@@ -10,9 +11,18 @@ public record PreparationTaskEquipmentVO(
     String equipmentNo,
     Integer equipmentQuantity,
     String status,
-    String remark
+    String remark,
+    Long equipmentPhotoFileId,
+    String equipmentPhotoFileName
 ) {
   public static PreparationTaskEquipmentVO from(CertificationTaskEquipmentEntity entity) {
+    return from(entity, null);
+  }
+
+  public static PreparationTaskEquipmentVO from(
+      CertificationTaskEquipmentEntity entity,
+      CertificationInfoExamEquipmentEntity equipment
+  ) {
     return new PreparationTaskEquipmentVO(
         entity.getId(),
         entity.getTaskId(),
@@ -21,7 +31,9 @@ public record PreparationTaskEquipmentVO(
         entity.getEquipmentNo(),
         entity.getEquipmentQuantity(),
         entity.getStatus(),
-        entity.getRemark()
+        entity.getRemark(),
+        equipment != null ? equipment.getEquipmentPhotoFileId() : null,
+        equipment != null ? equipment.getEquipmentPhotoFileName() : null
     );
   }
 }

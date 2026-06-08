@@ -1,6 +1,14 @@
 import { Tag } from 'antd';
+import type { CSSProperties } from 'react';
 import dayjs from 'dayjs';
 import type { PreparationCandidate } from '../../../types/certificationPreparation';
+
+/** 认定筹备已完成：比认定准备略深的绿色，背景更透明 */
+export const preparationCompletedTagStyle: CSSProperties = {
+  color: '#389e0d',
+  background: 'rgba(56, 158, 13, 0.08)',
+  borderColor: 'rgba(56, 158, 13, 0.2)',
+};
 
 export const activeStatusOptions = [
   { label: '启用', value: 'active' },
@@ -86,11 +94,22 @@ export function statusTag(status?: string) {
     in_progress: '填写中',
     rework: '需整改',
     preparing: '筹备中',
+    project_prepared: '认定准备已完成',
+    preparation_completed: '认定筹备已完成',
+    archive_completed: '认定归档已完成',
     missing: '未导入',
     pending_review: '待审核',
   };
+  if (status === 'preparation_completed') {
+    return <Tag style={preparationCompletedTagStyle}>{labelMap[status]}</Tag>;
+  }
   const color =
-    status === 'approved' || status === 'completed' || status === 'generated' || status === 'reviewed'
+    status === 'approved'
+    || status === 'completed'
+    || status === 'generated'
+    || status === 'reviewed'
+    || status === 'project_prepared'
+    || status === 'archive_completed'
       ? 'success'
       : status === 'rejected' || status === 'failed' || status === 'returned'
         ? 'error'

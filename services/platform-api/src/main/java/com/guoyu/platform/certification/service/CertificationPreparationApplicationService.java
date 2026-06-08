@@ -6,13 +6,11 @@ import com.guoyu.platform.certification.dto.PreparationAssessorDispatchReq;
 import com.guoyu.platform.certification.dto.PreparationAssessorGroupSaveReq;
 import com.guoyu.platform.certification.dto.PreparationAssessorQueryReq;
 import com.guoyu.platform.certification.dto.PreparationAssessorSaveReq;
-import com.guoyu.platform.certification.dto.PreparationAssessorTaskDraftReq;
-import com.guoyu.platform.certification.dto.PreparationAssessorTaskReviewReq;
-import com.guoyu.platform.certification.dto.PreparationAssessorWorkbenchQueryReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateDocumentSaveReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateImportReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateQueryReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateSaveReq;
+import com.guoyu.platform.certification.dto.PreparationChecklistUpdateReq;
 import com.guoyu.platform.certification.dto.PreparationDocumentQueryReq;
 import com.guoyu.platform.certification.dto.PreparationDocumentReviewReq;
 import com.guoyu.platform.certification.dto.PreparationExamSiteQueryReq;
@@ -20,7 +18,6 @@ import com.guoyu.platform.certification.dto.PreparationExamSiteSaveReq;
 import com.guoyu.platform.certification.dto.PreparationMaterialGenerateReq;
 import com.guoyu.platform.certification.dto.PreparationMaterialItemSaveReq;
 import com.guoyu.platform.certification.dto.PreparationMaterialQueryReq;
-import com.guoyu.platform.certification.dto.PreparationScoreReq;
 import com.guoyu.platform.certification.dto.PreparationTaskAssessorSaveReq;
 import com.guoyu.platform.certification.dto.PreparationTaskEquipmentSaveReq;
 import com.guoyu.platform.certification.dto.PreparationTaskExamSiteSaveReq;
@@ -32,7 +29,6 @@ import com.guoyu.platform.certification.entity.CertificationApplicationMaterialI
 import com.guoyu.platform.certification.entity.CertificationAssessorEntity;
 import com.guoyu.platform.certification.entity.CertificationAssessorNotificationEntity;
 import com.guoyu.platform.certification.entity.CertificationAssessorTaskEntity;
-import com.guoyu.platform.certification.entity.CertificationAssessorTaskScoreEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateDocumentEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateImportBatchEntity;
@@ -45,6 +41,7 @@ import com.guoyu.platform.certification.entity.CertificationTaskEquipmentEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskExamSiteEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskExamStaffEntity;
+import com.guoyu.platform.certification.entity.CertificationTaskChecklistItemEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskPhaseEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskScopeEntity;
 import com.guoyu.platform.certification.info.entity.CertificationInfoAssessorEntity;
@@ -58,7 +55,6 @@ import com.guoyu.platform.certification.mapper.CertificationApplicationMaterialI
 import com.guoyu.platform.certification.mapper.CertificationAssessorMapper;
 import com.guoyu.platform.certification.mapper.CertificationAssessorNotificationMapper;
 import com.guoyu.platform.certification.mapper.CertificationAssessorTaskMapper;
-import com.guoyu.platform.certification.mapper.CertificationAssessorTaskScoreMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateDocumentMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateImportBatchMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateImportErrorMapper;
@@ -70,6 +66,7 @@ import com.guoyu.platform.certification.mapper.CertificationTaskAssessorMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskEquipmentMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskExamSiteMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskExamStaffMapper;
+import com.guoyu.platform.certification.mapper.CertificationTaskChecklistItemMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskPhaseMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskScopeMapper;
@@ -78,6 +75,8 @@ import com.guoyu.platform.certification.vo.PreparationAssessorTaskVO;
 import com.guoyu.platform.certification.vo.PreparationAssessorVO;
 import com.guoyu.platform.certification.vo.PreparationCandidateDocumentVO;
 import com.guoyu.platform.certification.vo.PreparationCandidateVO;
+import com.guoyu.platform.certification.vo.PreparationChecklistItemVO;
+import com.guoyu.platform.certification.vo.PreparationChecklistVO;
 import com.guoyu.platform.certification.vo.PreparationCheckItemVO;
 import com.guoyu.platform.certification.vo.PreparationCompleteCheckVO;
 import com.guoyu.platform.certification.vo.PreparationExamSiteVO;
@@ -85,7 +84,6 @@ import com.guoyu.platform.certification.vo.PreparationImportBatchVO;
 import com.guoyu.platform.certification.vo.PreparationImportErrorVO;
 import com.guoyu.platform.certification.vo.PreparationMaterialBatchVO;
 import com.guoyu.platform.certification.vo.PreparationMaterialItemVO;
-import com.guoyu.platform.certification.vo.PreparationScoreVO;
 import com.guoyu.platform.certification.vo.PreparationTaskAssessorVO;
 import com.guoyu.platform.certification.vo.PreparationTaskEquipmentVO;
 import com.guoyu.platform.certification.vo.PreparationTaskExamSiteVO;
@@ -96,8 +94,6 @@ import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.file.service.FileApplicationService;
-import com.guoyu.platform.security.PlatformUserPrincipal;
-import com.guoyu.platform.security.SecurityContext;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -130,6 +126,53 @@ public class CertificationPreparationApplicationService {
   private static final String CANDIDATE_DOC_SCOPE = "candidate_doc";
   private static final List<String> CANDIDATE_DOC_CODES = List.of("DOC001", "DOC002");
   private static final String INFO_APPROVED = "approved";
+  private static final List<ChecklistTemplateItem> CHECKLIST_TEMPLATE = List.of(
+      new ChecklistTemplateItem(1, "平板电脑", "按需"),
+      new ChecklistTemplateItem(2, "平板电脑充电插头、线", "按需"),
+      new ChecklistTemplateItem(3, "实操试卷", "按需"),
+      new ChecklistTemplateItem(4, "职业技能等级认定评价结果确认表", "按需"),
+      new ChecklistTemplateItem(5, "实操评分表（1式3份）", "按需"),
+      new ChecklistTemplateItem(6, "考场签到表（理论）2份", "2"),
+      new ChecklistTemplateItem(7, "考场签到表（实操）2份", "2"),
+      new ChecklistTemplateItem(8, "考场简况表（理论）", "1"),
+      new ChecklistTemplateItem(9, "考场简况表（实操）", "1"),
+      new ChecklistTemplateItem(10, "成绩填报表", "1"),
+      new ChecklistTemplateItem(11, "理论考场座次表2份", "2"),
+      new ChecklistTemplateItem(12, "考场分布情况表", "按需"),
+      new ChecklistTemplateItem(13, "督导报告（广西）", "按需"),
+      new ChecklistTemplateItem(14, "督导报告（行业）", "按需"),
+      new ChecklistTemplateItem(15, "认定考场记录表（行业）", "按需"),
+      new ChecklistTemplateItem(16, "答辩原始记录表（技师、高级技师）", "按需"),
+      new ChecklistTemplateItem(17, "评审成绩汇总表（技师、高级技师）", "按需"),
+      new ChecklistTemplateItem(18, "投票评审表（技师、高级技师）", "按需"),
+      new ChecklistTemplateItem(19, "业绩评估报告评分表（技师、高级技师）", "按需"),
+      new ChecklistTemplateItem(20, "答辩评审评分表（技师、高级技师）", "按需"),
+      new ChecklistTemplateItem(21, "理论考场纪律", "按需"),
+      new ChecklistTemplateItem(22, "实操考场纪律", "按需"),
+      new ChecklistTemplateItem(23, "认定日程安排表", "按需"),
+      new ChecklistTemplateItem(24, "考评员签到表", "1"),
+      new ChecklistTemplateItem(25, "监考人员签到表", "1"),
+      new ChecklistTemplateItem(26, "考生报名材料（鉴定表、工作证明、上一等级证书按需）", "按需"),
+      new ChecklistTemplateItem(27, "监考人员证卡", "按需"),
+      new ChecklistTemplateItem(28, "考评员证卡", "按需"),
+      new ChecklistTemplateItem(29, "考务人员证卡", "按需"),
+      new ChecklistTemplateItem(30, "督导员证卡", "按需"),
+      new ChecklistTemplateItem(31, "摄像头", "按需"),
+      new ChecklistTemplateItem(32, "摄像头支架", "按需"),
+      new ChecklistTemplateItem(33, "工作手机及充电器", "按需"),
+      new ChecklistTemplateItem(34, "考场路由器", "按需"),
+      new ChecklistTemplateItem(35, "装订文印文具（钢擦、胶水、水性笔等）", "按需"),
+      new ChecklistTemplateItem(36, "横幅", "按需"),
+      new ChecklistTemplateItem(37, "劳保服&安全帽", "按需"),
+      new ChecklistTemplateItem(38, "夹板（每场3块）", "按需"),
+      new ChecklistTemplateItem(39, "应急充电宝", "按需"),
+      new ChecklistTemplateItem(40, "长线排插", "按需"),
+      new ChecklistTemplateItem(41, "考评员标识服", "按需"),
+      new ChecklistTemplateItem(42, "笔记本电脑", "2"),
+      new ChecklistTemplateItem(43, "打印机（打印纸）", "按需"),
+      new ChecklistTemplateItem(44, "封条", "按需"),
+      new ChecklistTemplateItem(45, "人员安排表（监考员、考评员、考务、督导）", "各1份")
+  );
 
   private final CertificationTaskMapper taskMapper;
   private final CertificationTaskPhaseMapper phaseMapper;
@@ -143,6 +186,7 @@ public class CertificationPreparationApplicationService {
   private final CertificationExamSiteMapper examSiteMapper;
   private final CertificationTaskExamSiteMapper taskExamSiteMapper;
   private final CertificationTaskExamStaffMapper taskExamStaffMapper;
+  private final CertificationTaskChecklistItemMapper taskChecklistItemMapper;
   private final CertificationInfoExamStaffMapper infoExamStaffMapper;
   private final CertificationTaskEquipmentMapper taskEquipmentMapper;
   private final CertificationInfoExamEquipmentMapper infoEquipmentMapper;
@@ -150,7 +194,6 @@ public class CertificationPreparationApplicationService {
   private final CertificationTaskAssessorGroupMapper groupMapper;
   private final CertificationTaskAssessorMapper taskAssessorMapper;
   private final CertificationAssessorTaskMapper assessorTaskMapper;
-  private final CertificationAssessorTaskScoreMapper scoreMapper;
   private final CertificationAssessorNotificationMapper notificationMapper;
   private final CertificationTaskScopeMapper scopeMapper;
   private final CertificationInfoAssessorMapper infoAssessorMapper;
@@ -169,6 +212,7 @@ public class CertificationPreparationApplicationService {
       CertificationExamSiteMapper examSiteMapper,
       CertificationTaskExamSiteMapper taskExamSiteMapper,
       CertificationTaskExamStaffMapper taskExamStaffMapper,
+      CertificationTaskChecklistItemMapper taskChecklistItemMapper,
       CertificationInfoExamStaffMapper infoExamStaffMapper,
       CertificationTaskEquipmentMapper taskEquipmentMapper,
       CertificationInfoExamEquipmentMapper infoEquipmentMapper,
@@ -176,7 +220,6 @@ public class CertificationPreparationApplicationService {
       CertificationTaskAssessorGroupMapper groupMapper,
       CertificationTaskAssessorMapper taskAssessorMapper,
       CertificationAssessorTaskMapper assessorTaskMapper,
-      CertificationAssessorTaskScoreMapper scoreMapper,
       CertificationAssessorNotificationMapper notificationMapper,
       CertificationTaskScopeMapper scopeMapper,
       CertificationInfoAssessorMapper infoAssessorMapper,
@@ -194,6 +237,7 @@ public class CertificationPreparationApplicationService {
     this.examSiteMapper = examSiteMapper;
     this.taskExamSiteMapper = taskExamSiteMapper;
     this.taskExamStaffMapper = taskExamStaffMapper;
+    this.taskChecklistItemMapper = taskChecklistItemMapper;
     this.infoExamStaffMapper = infoExamStaffMapper;
     this.taskEquipmentMapper = taskEquipmentMapper;
     this.infoEquipmentMapper = infoEquipmentMapper;
@@ -201,7 +245,6 @@ public class CertificationPreparationApplicationService {
     this.groupMapper = groupMapper;
     this.taskAssessorMapper = taskAssessorMapper;
     this.assessorTaskMapper = assessorTaskMapper;
-    this.scoreMapper = scoreMapper;
     this.notificationMapper = notificationMapper;
     this.scopeMapper = scopeMapper;
     this.infoAssessorMapper = infoAssessorMapper;
@@ -218,9 +261,7 @@ public class CertificationPreparationApplicationService {
           .or()
           .like(CertificationTaskEntity::getTaskNo, req.getKeyword()));
     }
-    if (StringUtils.hasText(req.getStatus())) {
-      wrapper.eq(CertificationTaskEntity::getStatus, req.getStatus());
-    }
+    wrapper.eq(CertificationTaskEntity::getStatus, CertificationTaskStatuses.PROJECT_PREPARED);
     if (StringUtils.hasText(req.getCurrentPhase())) {
       wrapper.eq(CertificationTaskEntity::getCurrentPhase, req.getCurrentPhase());
     }
@@ -245,6 +286,12 @@ public class CertificationPreparationApplicationService {
     batch.setStartedAt(LocalDateTime.now());
     batch.setStatus("completed");
     batch.setRemark(req.remark());
+    batch.setTotalCount(0);
+    batch.setSuccessCount(0);
+    batch.setFailedCount(0);
+    batch.setDuplicateCount(0);
+    batch.setDeleted(0);
+    importBatchMapper.insert(batch);
     int total = req.candidates() == null ? 0 : req.candidates().size();
     int success = 0;
     int failed = 0;
@@ -255,17 +302,10 @@ public class CertificationPreparationApplicationService {
           success++;
         } catch (BusinessException ex) {
           failed++;
-          CertificationCandidateImportErrorEntity error = new CertificationCandidateImportErrorEntity();
-          error.setTaskId(taskId);
-          error.setBatchId(batch.getId());
-          error.setRowNo(i + 1);
-          error.setCandidateName(req.candidates().get(i).candidateName());
-          error.setIdCardNo(req.candidates().get(i).idCardNo());
-          error.setPhone(req.candidates().get(i).phone());
-          error.setErrorCode("candidate_invalid");
-          error.setErrorMessage(ex.getMessage());
-          error.setDeleted(0);
-          importErrorMapper.insert(error);
+          insertImportError(taskId, batch.getId(), i + 1, req.candidates().get(i), "candidate_invalid", ex.getMessage());
+        } catch (RuntimeException ex) {
+          failed++;
+          insertImportError(taskId, batch.getId(), i + 1, req.candidates().get(i), "candidate_import_failed", "导入失败，请检查学员信息是否重复或格式是否正确");
         }
       }
     }
@@ -274,8 +314,7 @@ public class CertificationPreparationApplicationService {
     batch.setFailedCount(failed);
     batch.setDuplicateCount(failed);
     batch.setCompletedAt(LocalDateTime.now());
-    batch.setDeleted(0);
-    importBatchMapper.insert(batch);
+    importBatchMapper.updateById(batch);
     return PreparationImportBatchVO.from(batch);
   }
 
@@ -290,6 +329,27 @@ public class CertificationPreparationApplicationService {
             .orderByAsc(CertificationCandidateImportErrorEntity::getRowNo)
     );
     return page(page, page.getRecords().stream().map(PreparationImportErrorVO::from).toList());
+  }
+
+  private void insertImportError(
+      Long taskId,
+      Long batchId,
+      int rowNo,
+      PreparationCandidateSaveReq candidate,
+      String errorCode,
+      String errorMessage
+  ) {
+    CertificationCandidateImportErrorEntity error = new CertificationCandidateImportErrorEntity();
+    error.setTaskId(taskId);
+    error.setBatchId(batchId);
+    error.setRowNo(rowNo);
+    error.setCandidateName(candidate == null ? null : candidate.candidateName());
+    error.setIdCardNo(candidate == null ? null : candidate.idCardNo());
+    error.setPhone(candidate == null ? null : candidate.phone());
+    error.setErrorCode(errorCode);
+    error.setErrorMessage(errorMessage);
+    error.setDeleted(0);
+    importErrorMapper.insert(error);
   }
 
   @Transactional
@@ -363,6 +423,9 @@ public class CertificationPreparationApplicationService {
     if (generated > 0) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "已进入后续流程的考生不得删除");
     }
+    documentMapper.delete(new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
+        .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
+        .eq(CertificationCandidateDocumentEntity::getCandidateId, candidateId));
     candidateMapper.deleteById(candidateId);
     touchTask(taskId);
   }
@@ -401,6 +464,7 @@ public class CertificationPreparationApplicationService {
     if (!CANDIDATE_DOC_CODES.contains(req.docCode())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持上传报名信息表与两寸证件照");
     }
+    validateCandidateDocumentFile(req.docCode(), req.fileName(), req.fileType());
     CertificationCandidateDocumentEntity entity = documentMapper.selectOne(
         new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
             .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
@@ -431,6 +495,29 @@ public class CertificationPreparationApplicationService {
     }
     refreshCandidateDocumentStats(taskId, req.candidateId());
     return PreparationCandidateDocumentVO.from(entity);
+  }
+
+  @Transactional
+  public void deleteCandidateDocument(Long taskId, Long documentId) {
+    findTask(taskId);
+    CertificationCandidateDocumentEntity entity = documentMapper.selectById(documentId);
+    if (entity == null || !taskId.equals(entity.getTaskId())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "考生资料不存在");
+    }
+    if (!"rejected".equals(entity.getStatus()) && entity.getFileId() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前资料无需删除");
+    }
+    entity.setFileId(null);
+    entity.setFileName(null);
+    entity.setFileType(null);
+    entity.setStatus("missing");
+    entity.setUploadedAt(null);
+    entity.setReviewedAt(null);
+    entity.setReviewComment(null);
+    entity.setRemark(null);
+    documentMapper.updateById(entity);
+    refreshCandidateDocumentStats(taskId, entity.getCandidateId());
+    touchTask(taskId);
   }
 
   @Transactional(readOnly = true)
@@ -498,18 +585,33 @@ public class CertificationPreparationApplicationService {
   @Transactional
   public PreparationMaterialBatchVO generateApplicationMaterials(Long taskId, PreparationMaterialGenerateReq req) {
     findTask(taskId);
-    long candidateCount = candidateCount(taskId);
-    if (candidateCount == 0) {
+    syncCandidateDocuments(taskId);
+    List<CertificationCandidateEntity> candidates = candidateMapper.selectList(
+        new LambdaQueryWrapper<CertificationCandidateEntity>()
+            .eq(CertificationCandidateEntity::getTaskId, taskId)
+            .eq(CertificationCandidateEntity::getStatus, "active"));
+    if (CollectionUtils.isEmpty(candidates)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "当前任务下不存在考生，不能生成申报材料");
     }
-    long incomplete = safeCount(documentMapper.selectCount(new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
+    Set<Long> requestedCandidateIds = CollectionUtils.isEmpty(req.candidateIds())
+        ? candidates.stream().map(CertificationCandidateEntity::getId).collect(Collectors.toSet())
+        : Set.copyOf(req.candidateIds());
+    List<Long> activeCandidateIds = candidates.stream().map(CertificationCandidateEntity::getId).toList();
+    long incompleteDocs = safeCount(documentMapper.selectCount(new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
         .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
+        .in(CertificationCandidateDocumentEntity::getCandidateId, activeCandidateIds)
         .eq(CertificationCandidateDocumentEntity::getRequired, true)
         .ne(CertificationCandidateDocumentEntity::getStatus, "approved")));
-    if (incomplete > 0) {
+    if (incompleteDocs > 0) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "存在未审核通过的必传资料，不能生成申报材料");
     }
-    int requested = CollectionUtils.isEmpty(req.candidateIds()) ? Math.toIntExact(candidateCount) : req.candidateIds().size();
+    List<CertificationCandidateEntity> readyCandidates = candidates.stream()
+        .filter(candidate -> requestedCandidateIds.contains(candidate.getId()))
+        .toList();
+    if (readyCandidates.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "未选择可生成申报材料的考生");
+    }
+    int requested = readyCandidates.size();
     CertificationApplicationMaterialBatchEntity batch = new CertificationApplicationMaterialBatchEntity();
     batch.setTaskId(taskId);
     batch.setBatchNo("AMB-" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now()));
@@ -523,7 +625,42 @@ public class CertificationPreparationApplicationService {
     batch.setRemark(req.remark());
     batch.setDeleted(0);
     materialBatchMapper.insert(batch);
+    copyApprovedCandidateDocumentsToMaterialItems(taskId, batch.getId(), readyCandidates);
     return PreparationMaterialBatchVO.from(batch);
+  }
+
+  private void copyApprovedCandidateDocumentsToMaterialItems(
+      Long taskId,
+      Long batchId,
+      List<CertificationCandidateEntity> readyCandidates
+  ) {
+    if (batchId == null || CollectionUtils.isEmpty(readyCandidates)) {
+      return;
+    }
+    Set<Long> readyCandidateIds = readyCandidates.stream()
+        .map(CertificationCandidateEntity::getId)
+        .collect(Collectors.toSet());
+    List<CertificationCandidateDocumentEntity> documents = documentMapper.selectList(
+        new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
+            .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
+            .in(CertificationCandidateDocumentEntity::getCandidateId, readyCandidateIds)
+            .in(CertificationCandidateDocumentEntity::getDocCode, CANDIDATE_DOC_CODES)
+            .eq(CertificationCandidateDocumentEntity::getStatus, "approved"));
+    for (CertificationCandidateDocumentEntity document : documents) {
+      CertificationApplicationMaterialItemEntity item = new CertificationApplicationMaterialItemEntity();
+      item.setTaskId(taskId);
+      item.setBatchId(batchId);
+      item.setCandidateId(document.getCandidateId());
+      item.setItemCode(document.getDocCode());
+      item.setItemName(document.getDocName());
+      item.setRequired(document.getRequired());
+      item.setFileId(document.getFileId());
+      item.setFileName(document.getFileName());
+      item.setVersionNo(1);
+      item.setStatus("generated");
+      item.setDeleted(0);
+      materialItemMapper.insert(item);
+    }
   }
 
   @Transactional(readOnly = true)
@@ -533,7 +670,16 @@ public class CertificationPreparationApplicationService {
     if (entity == null || !taskId.equals(entity.getTaskId())) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "申报材料批次不存在");
     }
-    return PreparationMaterialBatchVO.from(entity);
+    List<PreparationMaterialItemVO> items = materialItemMapper.selectList(
+            new LambdaQueryWrapper<CertificationApplicationMaterialItemEntity>()
+                .eq(CertificationApplicationMaterialItemEntity::getTaskId, taskId)
+                .eq(CertificationApplicationMaterialItemEntity::getBatchId, batchId)
+                .orderByAsc(CertificationApplicationMaterialItemEntity::getCandidateId)
+                .orderByAsc(CertificationApplicationMaterialItemEntity::getItemCode))
+        .stream()
+        .map(PreparationMaterialItemVO::from)
+        .toList();
+    return PreparationMaterialBatchVO.from(entity, items);
   }
 
   @Transactional(readOnly = true)
@@ -724,6 +870,42 @@ public class CertificationPreparationApplicationService {
   }
 
   @Transactional
+  public PreparationChecklistVO getChecklist(Long taskId) {
+    CertificationTaskEntity task = findTask(taskId);
+    ensureChecklistItems(task);
+    return buildChecklist(task);
+  }
+
+  @Transactional
+  public PreparationChecklistVO updateChecklist(Long taskId, PreparationChecklistUpdateReq req) {
+    CertificationTaskEntity task = findTask(taskId);
+    ensureChecklistItems(task);
+    List<CertificationTaskChecklistItemEntity> items = listChecklistEntities(taskId);
+    Set<Long> checkedItemIds = Set.copyOf(req.checkedItemIds() == null ? List.of() : req.checkedItemIds());
+    if (checkedItemIds.size() != items.size() || items.stream().anyMatch(item -> !checkedItemIds.contains(item.getId()))) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "清单材料必须全部勾选后才可以确认");
+    }
+    if (req.confirmerTaskStaffId() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择确认人");
+    }
+    CertificationTaskExamStaffEntity confirmer = taskExamStaffMapper.selectById(req.confirmerTaskStaffId());
+    if (confirmer == null || !taskId.equals(confirmer.getTaskId())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "确认人必须来自当前任务已配置的考务人员");
+    }
+    LocalDateTime confirmedAt = LocalDateTime.now();
+    for (CertificationTaskChecklistItemEntity item : items) {
+      item.setChecked(1);
+      item.setConfirmerTaskStaffId(confirmer.getId());
+      item.setConfirmerName(confirmer.getStaffName());
+      item.setConfirmedAt(confirmedAt);
+      item.setRemark(req.remark());
+      taskChecklistItemMapper.updateById(item);
+    }
+    touchTask(taskId);
+    return buildChecklist(task);
+  }
+
+  @Transactional
   public void removeTaskExamStaff(Long taskId, Long taskStaffId) {
     CertificationTaskEntity task = findTask(taskId);
     CertificationTaskExamStaffEntity entity = taskExamStaffMapper.selectById(taskStaffId);
@@ -747,12 +929,22 @@ public class CertificationPreparationApplicationService {
   @Transactional(readOnly = true)
   public List<PreparationTaskEquipmentVO> listTaskEquipment(Long taskId) {
     findTask(taskId);
-    return taskEquipmentMapper.selectList(new LambdaQueryWrapper<CertificationTaskEquipmentEntity>()
+    List<CertificationTaskEquipmentEntity> bindings = taskEquipmentMapper.selectList(
+        new LambdaQueryWrapper<CertificationTaskEquipmentEntity>()
             .eq(CertificationTaskEquipmentEntity::getTaskId, taskId)
             .orderByAsc(CertificationTaskEquipmentEntity::getSortOrder)
-            .orderByDesc(CertificationTaskEquipmentEntity::getCreatedAt))
+            .orderByDesc(CertificationTaskEquipmentEntity::getCreatedAt));
+    if (bindings.isEmpty()) {
+      return List.of();
+    }
+    Set<Long> equipmentIds = bindings.stream()
+        .map(CertificationTaskEquipmentEntity::getEquipmentId)
+        .collect(Collectors.toSet());
+    Map<Long, CertificationInfoExamEquipmentEntity> equipmentMap = infoEquipmentMapper.selectBatchIds(equipmentIds)
         .stream()
-        .map(PreparationTaskEquipmentVO::from)
+        .collect(Collectors.toMap(CertificationInfoExamEquipmentEntity::getId, equipment -> equipment));
+    return bindings.stream()
+        .map(binding -> PreparationTaskEquipmentVO.from(binding, equipmentMap.get(binding.getEquipmentId())))
         .toList();
   }
 
@@ -784,7 +976,7 @@ public class CertificationPreparationApplicationService {
     taskEquipmentMapper.insert(entity);
     refreshInfoEquipmentUsage(equipment.getId());
     touchTask(taskId);
-    return PreparationTaskEquipmentVO.from(entity);
+    return PreparationTaskEquipmentVO.from(entity, equipment);
   }
 
   @Transactional
@@ -838,10 +1030,30 @@ public class CertificationPreparationApplicationService {
   @Transactional
   public PreparationAssessorGroupVO createGroup(Long taskId, PreparationAssessorGroupSaveReq req) {
     findTask(taskId);
+    List<Long> assessorIds = req.assessorIds() == null
+        ? List.of()
+        : req.assessorIds().stream().filter(Objects::nonNull).distinct().toList();
+    if (!assessorIds.isEmpty()) {
+      if (req.leaderAssessorId() == null) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "考评组必须设置组长");
+      }
+      if (!assessorIds.contains(req.leaderAssessorId())) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "组长必须从已选考评员中选择");
+      }
+    }
     CertificationTaskAssessorGroupEntity entity = new CertificationTaskAssessorGroupEntity();
     applyGroup(entity, taskId, req);
     entity.setDeleted(0);
     groupMapper.insert(entity);
+    for (Long assessorId : assessorIds) {
+      boolean isLeader = assessorId.equals(req.leaderAssessorId());
+      addGroupMember(taskId, entity.getId(), new PreparationTaskAssessorSaveReq(
+          assessorId,
+          isLeader ? "leader" : "member",
+          isLeader ? "组长" : "成员",
+          req.remark()
+      ));
+    }
     touchTask(taskId);
     return PreparationAssessorGroupVO.from(entity, leaderName(entity.getLeaderAssessorId()));
   }
@@ -978,6 +1190,12 @@ public class CertificationPreparationApplicationService {
         new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
             .eq(CertificationTaskAssessorEntity::getTaskId, taskId)
             .eq(CertificationTaskAssessorEntity::getGroupId, groupId));
+    if (CollectionUtils.isEmpty(members)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "考评组必须至少导入 1 名考评员后才能发放考评表");
+    }
+    if (req.assessmentFileId() == null || !StringUtils.hasText(req.assessmentFileName())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请先导入考评表文件");
+    }
     List<PreparationAssessorTaskVO> result = new ArrayList<>();
     for (CertificationTaskAssessorEntity member : members) {
       CertificationAssessorTaskEntity assessorTask = new CertificationAssessorTaskEntity();
@@ -994,7 +1212,7 @@ public class CertificationPreparationApplicationService {
       assessorTask.setTitle(StringUtils.hasText(title) ? title : "实操考评任务");
       assessorTask.setDurationMin(req.durationMin());
       assessorTask.setDueDate(req.dueDate());
-      assessorTask.setStatus("dispatched");
+      assessorTask.setStatus("completed");
       assessorTask.setRemark(req.remark());
       assessorTask.setDeleted(0);
       assessorTaskMapper.insert(assessorTask);
@@ -1024,63 +1242,6 @@ public class CertificationPreparationApplicationService {
     groupMapper.updateById(group);
     touchTask(taskId);
     return result;
-  }
-
-  @Transactional(readOnly = true)
-  public PageResponse<PreparationAssessorTaskVO> pageWorkbenchTasks(PreparationAssessorWorkbenchQueryReq req) {
-    LambdaQueryWrapper<CertificationAssessorTaskEntity> wrapper = new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
-        .orderByDesc(CertificationAssessorTaskEntity::getUpdatedAt);
-
-    String view = normalizeWorkbenchView(req.getView());
-    Long scopedAssessorId = req.getAssessorId() != null ? req.getAssessorId() : currentUserAssessorId();
-    if ("leader".equals(view)) {
-      if (scopedAssessorId != null) {
-        wrapper.eq(CertificationAssessorTaskEntity::getLeaderAssessorId, scopedAssessorId);
-      }
-      if (StringUtils.hasText(req.getStatus())) {
-        wrapper.eq(CertificationAssessorTaskEntity::getStatus, req.getStatus());
-      } else {
-        // 组长审批默认只看待复核
-        wrapper.eq(CertificationAssessorTaskEntity::getStatus, "submitted");
-      }
-    } else {
-      if (scopedAssessorId != null) {
-        wrapper.eq(CertificationAssessorTaskEntity::getAssessorId, scopedAssessorId);
-      }
-      if (StringUtils.hasText(req.getStatus())) {
-        wrapper.eq(CertificationAssessorTaskEntity::getStatus, req.getStatus());
-      }
-    }
-
-    Page<CertificationAssessorTaskEntity> page =
-        assessorTaskMapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
-    return page(page, page.getRecords().stream().map(t -> PreparationAssessorTaskVO.from(
-        t,
-        resolveTaskName(t.getTaskId()),
-        resolveGroupName(t.getGroupId()),
-        resolveAssessorName(t.getAssessorId()),
-        resolveAssessorName(t.getLeaderAssessorId()),
-        List.of()
-    )).toList());
-  }
-
-  @Transactional(readOnly = true)
-  public PreparationAssessorTaskVO getWorkbenchTask(Long assessorTaskId) {
-    CertificationAssessorTaskEntity task = requireAssessorTask(assessorTaskId);
-    List<PreparationScoreVO> scores = scoreMapper.selectList(new LambdaQueryWrapper<CertificationAssessorTaskScoreEntity>()
-            .eq(CertificationAssessorTaskScoreEntity::getAssessorTaskId, assessorTaskId)
-            .orderByAsc(CertificationAssessorTaskScoreEntity::getStepNo))
-        .stream()
-        .map(PreparationScoreVO::from)
-        .toList();
-    return PreparationAssessorTaskVO.from(
-        task,
-        resolveTaskName(task.getTaskId()),
-        resolveGroupName(task.getGroupId()),
-        resolveAssessorName(task.getAssessorId()),
-        resolveAssessorName(task.getLeaderAssessorId()),
-        scores
-    );
   }
 
   private String resolveTaskName(Long taskId) {
@@ -1114,121 +1275,27 @@ public class CertificationPreparationApplicationService {
   }
 
   @Transactional
-  public PreparationAssessorTaskVO saveAssessorTaskDraft(Long assessorTaskId, PreparationAssessorTaskDraftReq req) {
-    CertificationAssessorTaskEntity task = requireAssessorTask(assessorTaskId);
-    validateAssessorOwner(task, req.assessorId());
-    if ("reviewed".equals(task.getStatus())) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "已复核任务不得再次编辑");
-    }
-    List<PreparationScoreVO> scores = saveScores(task, req.scores());
-    task.setProgressNote(req.progressNote());
-    task.setStatus("scoring");
-    task.setTotalScore(scores.stream()
-        .map(PreparationScoreVO::score)
-        .filter(score -> score != null)
-        .reduce(BigDecimal.ZERO, BigDecimal::add));
-    assessorTaskMapper.updateById(task);
-    return PreparationAssessorTaskVO.from(
-        task,
-        resolveTaskName(task.getTaskId()),
-        resolveGroupName(task.getGroupId()),
-        resolveAssessorName(task.getAssessorId()),
-        resolveAssessorName(task.getLeaderAssessorId()),
-        scores
-    );
-  }
-
-  @Transactional
-  public PreparationAssessorTaskVO submitAssessorTask(Long assessorTaskId, PreparationAssessorTaskDraftReq req) {
-    PreparationAssessorTaskVO draft = saveAssessorTaskDraft(assessorTaskId, req);
-    CertificationAssessorTaskEntity task = requireAssessorTask(assessorTaskId);
-    task.setStatus("submitted");
-    task.setSubmittedAt(LocalDateTime.now());
-    assessorTaskMapper.updateById(task);
-    return PreparationAssessorTaskVO.from(
-        task,
-        resolveTaskName(task.getTaskId()),
-        resolveGroupName(task.getGroupId()),
-        resolveAssessorName(task.getAssessorId()),
-        resolveAssessorName(task.getLeaderAssessorId()),
-        draft.scores()
-    );
-  }
-
-  @Transactional
-  public PreparationAssessorTaskVO reviewAssessorTask(Long assessorTaskId, PreparationAssessorTaskReviewReq req) {
-    CertificationAssessorTaskEntity task = requireAssessorTask(assessorTaskId);
-    if (req.reviewerAssessorId() == null || !req.reviewerAssessorId().equals(task.getLeaderAssessorId())) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "非本组组长不得复核任务");
-    }
-    String normalized = normalizeReviewStatus(req.reviewStatus());
-    if ("reviewed".equals(normalized)) {
-      task.setStatus("reviewed");
-    } else {
-      task.setStatus("returned");
-    }
-    task.setReviewNote(req.reviewNote());
-    task.setReviewedAt(LocalDateTime.now());
-    task.setReviewedBy(req.reviewerAssessorId());
-    assessorTaskMapper.updateById(task);
-    return getWorkbenchTask(assessorTaskId);
-  }
-
-  private String normalizeWorkbenchView(String view) {
-    if (!StringUtils.hasText(view)) {
-      return "assessor";
-    }
-    String normalized = view.trim().toLowerCase(Locale.ROOT);
-    return "leader".equals(normalized) ? "leader" : "assessor";
-  }
-
-  private String normalizeReviewStatus(String status) {
-    if (!StringUtils.hasText(status)) {
-      return "returned";
-    }
-    String normalized = status.trim().toLowerCase(Locale.ROOT);
-    if (List.of("reviewed", "approved", "pass", "passed", "ok").contains(normalized)) {
-      return "reviewed";
-    }
-    if (List.of("returned", "rework", "reject", "rejected", "fail", "failed").contains(normalized)) {
-      return "returned";
-    }
-    // 前端可能直接传中文/其它枚举：兜底按“打回”
-    return "returned";
-  }
-
-  private Long currentUserAssessorId() {
-    Long userId = currentUserId();
-    if (userId == null) {
-      return null;
-    }
-    CertificationInfoAssessorEntity entity = infoAssessorMapper.selectOne(
-        new LambdaQueryWrapper<CertificationInfoAssessorEntity>()
-            .eq(CertificationInfoAssessorEntity::getUserId, userId)
-            .last("LIMIT 1"));
-    return entity == null ? null : entity.getId();
-  }
-
-  private Long currentUserId() {
-    try {
-      PlatformUserPrincipal principal = SecurityContext.currentUser();
-      return principal.getUserId();
-    } catch (RuntimeException ignored) {
-      return null;
-    }
-  }
-
-  @Transactional(readOnly = true)
   public PreparationCompleteCheckVO completeCheck(Long taskId) {
-    findTask(taskId);
+    CertificationTaskEntity task = findTask(taskId);
+    syncCandidateDocuments(taskId);
+    List<CertificationCandidateEntity> activeCandidates = candidateMapper.selectList(
+        new LambdaQueryWrapper<CertificationCandidateEntity>()
+            .eq(CertificationCandidateEntity::getTaskId, taskId)
+            .eq(CertificationCandidateEntity::getStatus, "active"));
     List<PreparationCheckItemVO> items = new ArrayList<>();
-    long candidateCount = candidateCount(taskId);
+    boolean taskPrepared = CertificationTaskStatuses.PROJECT_PREPARED.equals(task.getStatus());
+    items.add(new PreparationCheckItemVO("task_project_prepared", "认定准备", taskPrepared,
+        taskPrepared ? "认定准备已完成" : "只有认定准备已完成的任务允许完成筹备"));
+    long candidateCount = activeCandidates.size();
     items.add(new PreparationCheckItemVO("candidate_required", "考生名单", candidateCount > 0,
         candidateCount > 0 ? "已导入 " + candidateCount + " 名考生" : "当前任务下至少需要 1 名考生"));
-    long incompleteDocs = safeCount(documentMapper.selectCount(new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
-        .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
-        .eq(CertificationCandidateDocumentEntity::getRequired, true)
-        .ne(CertificationCandidateDocumentEntity::getStatus, "approved")));
+    List<Long> activeCandidateIds = activeCandidates.stream().map(CertificationCandidateEntity::getId).toList();
+    long incompleteDocs = activeCandidateIds.isEmpty() ? 0 : safeCount(documentMapper.selectCount(
+        new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
+            .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
+            .in(CertificationCandidateDocumentEntity::getCandidateId, activeCandidateIds)
+            .eq(CertificationCandidateDocumentEntity::getRequired, true)
+            .ne(CertificationCandidateDocumentEntity::getStatus, "approved")));
     items.add(new PreparationCheckItemVO("document_approved", "考生资料", incompleteDocs == 0,
         incompleteDocs == 0 ? "必传资料均已审核通过" : "存在未审核通过的必传资料"));
     long materialGenerated = safeCount(materialBatchMapper.selectCount(new LambdaQueryWrapper<CertificationApplicationMaterialBatchEntity>()
@@ -1245,6 +1312,10 @@ public class CertificationPreparationApplicationService {
         .eq(CertificationTaskExamStaffEntity::getTaskId, taskId)));
     items.add(new PreparationCheckItemVO("exam_staff_required", "考务配置", staffCount > 0,
         staffCount > 0 ? "已配置 " + staffCount + " 名考务人员" : "至少配置 1 名考务人员"));
+    long equipmentCount = safeCount(taskEquipmentMapper.selectCount(new LambdaQueryWrapper<CertificationTaskEquipmentEntity>()
+        .eq(CertificationTaskEquipmentEntity::getTaskId, taskId)));
+    items.add(new PreparationCheckItemVO("equipment_required", "配置设备", equipmentCount > 0,
+        equipmentCount > 0 ? "已配置 " + equipmentCount + " 台设备" : "至少配置 1 台设备"));
     long groupCount = safeCount(groupMapper.selectCount(new LambdaQueryWrapper<CertificationTaskAssessorGroupEntity>()
         .eq(CertificationTaskAssessorGroupEntity::getTaskId, taskId)));
     items.add(new PreparationCheckItemVO("assessor_group_required", "考评组", groupCount > 0,
@@ -1264,12 +1335,15 @@ public class CertificationPreparationApplicationService {
   @Transactional
   public PreparationCompleteCheckVO complete(Long taskId) {
     PreparationCompleteCheckVO check = completeCheck(taskId);
+    if (!isChecklistConfirmed(taskId)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "清单核查未完成，请勾选全部材料并选择确认人");
+    }
     if (!check.passed()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "筹备完成检查未通过");
     }
     CertificationTaskEntity task = findTask(taskId);
     task.setCurrentPhase("before_exam");
-    task.setStatus("running");
+    task.setStatus(CertificationTaskStatuses.PREPARATION_COMPLETED);
     task.setLastBusinessUpdatedAt(LocalDateTime.now());
     taskMapper.updateById(task);
     CertificationTaskPhaseEntity phase = phaseMapper.selectOne(new LambdaQueryWrapper<CertificationTaskPhaseEntity>()
@@ -1281,6 +1355,72 @@ public class CertificationPreparationApplicationService {
       phaseMapper.updateById(phase);
     }
     return check;
+  }
+
+  private void ensureChecklistItems(CertificationTaskEntity task) {
+    long existingCount = safeCount(taskChecklistItemMapper.selectCount(new LambdaQueryWrapper<CertificationTaskChecklistItemEntity>()
+        .eq(CertificationTaskChecklistItemEntity::getTaskId, task.getId())));
+    if (existingCount >= CHECKLIST_TEMPLATE.size()) {
+      return;
+    }
+    Set<Integer> existingNos = listChecklistEntities(task.getId()).stream()
+        .map(CertificationTaskChecklistItemEntity::getItemNo)
+        .collect(Collectors.toSet());
+    for (ChecklistTemplateItem templateItem : CHECKLIST_TEMPLATE) {
+      if (existingNos.contains(templateItem.itemNo())) {
+        continue;
+      }
+      CertificationTaskChecklistItemEntity entity = new CertificationTaskChecklistItemEntity();
+      entity.setTaskId(task.getId());
+      entity.setTenantId(task.getTenantId());
+      entity.setItemNo(templateItem.itemNo());
+      entity.setItemName(templateItem.itemName());
+      entity.setQuantityText(templateItem.quantityText());
+      entity.setChecked(0);
+      entity.setSortOrder(templateItem.itemNo());
+      entity.setDeleted(0);
+      taskChecklistItemMapper.insert(entity);
+    }
+  }
+
+  private PreparationChecklistVO buildChecklist(CertificationTaskEntity task) {
+    List<CertificationTaskChecklistItemEntity> entities = listChecklistEntities(task.getId());
+    List<PreparationChecklistItemVO> items = entities.stream()
+        .map(PreparationChecklistItemVO::from)
+        .toList();
+    int checkedCount = (int) items.stream().filter(PreparationChecklistItemVO::checked).count();
+    CertificationTaskChecklistItemEntity confirmed = entities.stream()
+        .filter(item -> item.getChecked() != null && item.getChecked() == 1 && item.getConfirmerTaskStaffId() != null)
+        .findFirst()
+        .orElse(null);
+    return new PreparationChecklistVO(
+        task.getId(),
+        task.getTaskName(),
+        items.size(),
+        checkedCount,
+        !items.isEmpty() && checkedCount == items.size(),
+        confirmed == null ? null : confirmed.getConfirmerTaskStaffId(),
+        confirmed == null ? null : confirmed.getConfirmerName(),
+        confirmed == null ? null : confirmed.getConfirmedAt(),
+        items
+    );
+  }
+
+  private List<CertificationTaskChecklistItemEntity> listChecklistEntities(Long taskId) {
+    return taskChecklistItemMapper.selectList(new LambdaQueryWrapper<CertificationTaskChecklistItemEntity>()
+        .eq(CertificationTaskChecklistItemEntity::getTaskId, taskId)
+        .orderByAsc(CertificationTaskChecklistItemEntity::getSortOrder)
+        .orderByAsc(CertificationTaskChecklistItemEntity::getItemNo));
+  }
+
+  private boolean isChecklistConfirmed(Long taskId) {
+    long total = safeCount(taskChecklistItemMapper.selectCount(new LambdaQueryWrapper<CertificationTaskChecklistItemEntity>()
+        .eq(CertificationTaskChecklistItemEntity::getTaskId, taskId)));
+    long checked = safeCount(taskChecklistItemMapper.selectCount(new LambdaQueryWrapper<CertificationTaskChecklistItemEntity>()
+        .eq(CertificationTaskChecklistItemEntity::getTaskId, taskId)
+        .eq(CertificationTaskChecklistItemEntity::getChecked, 1)
+        .isNotNull(CertificationTaskChecklistItemEntity::getConfirmerTaskStaffId)));
+    return total > 0 && total == checked;
   }
 
   private PreparationTaskOverviewVO overviewFromTask(CertificationTaskEntity task) {
@@ -1540,6 +1680,35 @@ public class CertificationPreparationApplicationService {
     return !StringUtils.hasText(document.getStatus()) || "missing".equalsIgnoreCase(document.getStatus());
   }
 
+  private void validateCandidateDocumentFile(String docCode, String fileName, String fileType) {
+    if (!StringUtils.hasText(fileName) && !StringUtils.hasText(fileType)) {
+      return;
+    }
+    String lowerName = StringUtils.hasText(fileName) ? fileName.toLowerCase(Locale.ROOT) : "";
+    String lowerType = StringUtils.hasText(fileType) ? fileType.toLowerCase(Locale.ROOT) : "";
+    if ("DOC001".equals(docCode)) {
+      boolean accepted = lowerName.endsWith(".xlsx") || lowerName.endsWith(".pdf") || lowerName.endsWith(".docx")
+          || "application/pdf".equals(lowerType)
+          || lowerType.contains("spreadsheetml.sheet")
+          || lowerType.contains("wordprocessingml.document");
+      if (!accepted) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "报名信息表仅支持 xlsx、pdf、docx 格式");
+      }
+    }
+    if ("DOC002".equals(docCode)) {
+      boolean accepted = lowerType.startsWith("image/")
+          || lowerName.endsWith(".jpg")
+          || lowerName.endsWith(".jpeg")
+          || lowerName.endsWith(".png")
+          || lowerName.endsWith(".gif")
+          || lowerName.endsWith(".bmp")
+          || lowerName.endsWith(".webp");
+      if (!accepted) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "两寸证件照仅支持图片格式");
+      }
+    }
+  }
+
   private void refreshCandidateDocumentStats(Long taskId, Long candidateId) {
     CertificationCandidateEntity candidate = candidateMapper.selectById(candidateId);
     if (candidate == null) {
@@ -1558,32 +1727,6 @@ public class CertificationPreparationApplicationService {
     candidate.setDocumentCompletedCount((int) approved);
     candidate.setDocumentComplete(required > 0 && required == approved);
     candidateMapper.updateById(candidate);
-  }
-
-  private List<PreparationScoreVO> saveScores(CertificationAssessorTaskEntity task, List<PreparationScoreReq> reqs) {
-    if (CollectionUtils.isEmpty(reqs)) {
-      return List.of();
-    }
-    List<PreparationScoreVO> result = new ArrayList<>();
-    for (PreparationScoreReq req : reqs) {
-      BigDecimal max = req.maxScore() == null ? BigDecimal.ZERO : req.maxScore();
-      BigDecimal score = req.score();
-      if (score != null && (score.compareTo(BigDecimal.ZERO) < 0 || score.compareTo(max) > 0)) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST, "得分不得小于 0，且不得超过步骤分值上限");
-      }
-      CertificationAssessorTaskScoreEntity entity = new CertificationAssessorTaskScoreEntity();
-      entity.setAssessorTaskId(task.getId());
-      entity.setTaskId(task.getTaskId());
-      entity.setStepNo(req.stepNo());
-      entity.setStepName(req.stepName());
-      entity.setMaxScore(max);
-      entity.setScore(score);
-      entity.setRemark(req.remark());
-      entity.setDeleted(0);
-      scoreMapper.insert(entity);
-      result.add(PreparationScoreVO.from(entity));
-    }
-    return result;
   }
 
   private void applyExamSite(CertificationExamSiteEntity entity, PreparationExamSiteSaveReq req) {
@@ -1798,20 +1941,6 @@ public class CertificationPreparationApplicationService {
     return group;
   }
 
-  private CertificationAssessorTaskEntity requireAssessorTask(Long assessorTaskId) {
-    CertificationAssessorTaskEntity task = assessorTaskMapper.selectById(assessorTaskId);
-    if (task == null) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "考评任务不存在");
-    }
-    return task;
-  }
-
-  private void validateAssessorOwner(CertificationAssessorTaskEntity task, Long assessorId) {
-    if (assessorId == null || !assessorId.equals(task.getAssessorId())) {
-      throw new BusinessException(ErrorCode.FORBIDDEN, "非任务所属考评员不得编辑评分");
-    }
-  }
-
   private long candidateCount(Long taskId) {
     return safeCount(candidateMapper.selectCount(new LambdaQueryWrapper<CertificationCandidateEntity>()
         .eq(CertificationCandidateEntity::getTaskId, taskId)
@@ -1877,6 +2006,9 @@ public class CertificationPreparationApplicationService {
   }
 
   private record ExamStaffRole(String code, String name, boolean internalSupervisor) {
+  }
+
+  private record ChecklistTemplateItem(Integer itemNo, String itemName, String quantityText) {
   }
 
   private LocalDate parseDate(String value) {

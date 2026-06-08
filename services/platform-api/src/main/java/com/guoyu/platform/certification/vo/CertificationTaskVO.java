@@ -34,6 +34,7 @@ public record CertificationTaskVO(
 
   public static CertificationTaskVO from(CertificationTaskEntity entity, List<CertificationTaskScopeVO> scopes) {
     List<CertificationTaskScopeVO> safeScopes = scopes == null ? List.of() : scopes;
+    String effectiveStatus = effectiveStatus(entity.getStatus(), entity.getCurrentPhase());
     return new CertificationTaskVO(
         entity.getId() == null ? null : String.valueOf(entity.getId()),
         entity.getTaskNo(),
@@ -41,8 +42,8 @@ public record CertificationTaskVO(
         entity.getTaskManagerName(),
         entity.getCurrentPhase(),
         phaseName(entity.getCurrentPhase()),
-        entity.getStatus(),
-        statusName(entity.getStatus()),
+        effectiveStatus,
+        statusName(effectiveStatus),
         entity.getSourceType(),
         sourceName(entity.getSourceType(), entity.getSourceName()),
         summarizeWorkTypes(safeScopes),
@@ -103,9 +104,16 @@ public record CertificationTaskVO(
       case "pending_review" -> "待审核";
       case "approved" -> "已通过";
       case "rejected" -> "已驳回";
+      case "project_prepared" -> "认定准备已完成";
+      case "preparation_completed" -> "认定筹备已完成";
+      case "archive_completed" -> "认定归档已完成";
       case "completed" -> "已完成";
       default -> status;
     };
+  }
+
+  private static String effectiveStatus(String status, String currentPhase) {
+    return status;
   }
 
   private static String sourceName(String sourceType, String sourceName) {

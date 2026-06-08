@@ -19,13 +19,14 @@ import java.nio.file.Paths;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -92,43 +93,46 @@ public class FileApplicationService {
     return new DownloadUrlVO(entity.getId(), "/api/files/" + entity.getId() + "/download", entity.getAccessPolicy());
   }
 
+  @Transactional(readOnly = true)
+  public Resource downloadResource(Long id) {
+    FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
+    return loadResource(entity);
+  }
+
+  @Transactional(readOnly = true)
   public ResponseEntity<Resource> buildDownloadResponse(Long id, boolean inline) {
     FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
+    Resource resource = loadResource(entity);
+    return buildDownloadResponse(entity, resource, inline);
+  }
+
+  private Resource loadResource(FileEntity entity) {
     Path path = localPath(entity)
         .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "File is not available from local storage"));
     try {
       Resource resource = new UrlResource(path.toUri());
       if (!resource.exists() || !resource.isReadable()) {
+        log.warn("File content missing on disk: id={}, objectKey={}, path={}", entity.getId(), entity.getObjectKey(), path);
         throw new BusinessException(ErrorCode.NOT_FOUND, "File content not found");
       }
-      String contentType = entity.getContentType() != null ? entity.getContentType() : "application/octet-stream";
-      ContentDisposition disposition = ContentDisposition.builder(inline ? "inline" : "attachment")
-          .filename(entity.getOriginalName() != null ? entity.getOriginalName() : "download", java.nio.charset.StandardCharsets.UTF_8)
-          .build();
-      return ResponseEntity.ok()
-          .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
-          .contentType(MediaType.parseMediaType(contentType))
-          .contentLength(entity.getSizeBytes() != null ? entity.getSizeBytes() : -1)
-          .body(resource);
+      return resource;
+    } catch (BusinessException ex) {
+      throw ex;
     } catch (IOException ex) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File download failed");
     }
   }
 
-  @Transactional(readOnly = true)
-  public Resource downloadResource(Long id) {
-    FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
-    Path path = localPath(entity)
-        .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "File is not available from local storage"));
-    try {
-      Resource resource = new UrlResource(path.toUri());
-      if (!resource.exists() || !resource.isReadable()) {
-        throw new BusinessException(ErrorCode.NOT_FOUND, "File content not found");
-      }
-      return resource;
-    } catch (IOException ex) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "File download failed");
-    }
+  private ResponseEntity<Resource> buildDownloadResponse(FileEntity entity, Resource resource, boolean inline) {
+    String contentType = StringUtils.hasText(entity.getContentType())
+        ? entity.getContentType()
+        : MediaType.APPLICATION_OCTET_STREAM_VALUE;
+    String dispositionType = inline ? "inline" : "attachment";
+    String encodedName = URLEncoder.encode(entity.getOriginalName(), StandardCharsets.UTF_8).replace("+", "%20");
+    return ResponseEntity.ok()
+        .header(HttpHeaders.CONTENT_DISPOSITION, dispositionType + "; filename*=UTF-8''" + encodedName)
+        .contentType(MediaType.parseMediaType(contentType))
+        .body(resource);
   }
 
   @Transactional

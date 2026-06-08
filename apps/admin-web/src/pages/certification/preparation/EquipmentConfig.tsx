@@ -1,4 +1,4 @@
-import { DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { ProCard } from '@ant-design/pro-components';
 import { Button, Form, Input, Modal, Popconfirm, Select, Space, Table, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -10,6 +10,7 @@ import {
   removePreparationTaskEquipment,
 } from '../../../api/certificationPreparation';
 import { listAvailableEquipment } from '../../../api/certificationInfo';
+import { FilePreviewModal, type FilePreviewTarget } from '../../../components/FilePreviewModal';
 import { PermissionGuard } from '../../../directives/permission';
 import type { PreparationTaskEquipment } from '../../../types/certificationPreparation';
 import { dash, statusTag } from './shared';
@@ -27,6 +28,7 @@ interface AssignFormValues {
 export function EquipmentConfig({ taskId, onChanged }: EquipmentConfigProps) {
   const queryClient = useQueryClient();
   const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState<FilePreviewTarget | null>(null);
   const [assignForm] = Form.useForm<AssignFormValues>();
 
   const availableEquipmentQuery = useQuery({
@@ -75,6 +77,30 @@ export function EquipmentConfig({ taskId, onChanged }: EquipmentConfigProps) {
     { title: '设备编号', dataIndex: 'equipmentNo', width: 160 },
     { title: '设备数量', dataIndex: 'equipmentQuantity', width: 100 },
     { title: '备注', dataIndex: 'remark', ellipsis: true, render: dash },
+    {
+      title: '预览',
+      width: 80,
+      align: 'center',
+      render: (_, record) =>
+        record.equipmentPhotoFileId ? (
+          <Button
+            type="link"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() =>
+              setPreviewTarget({
+                fileId: record.equipmentPhotoFileId,
+                fileName: record.equipmentPhotoFileName || '设备照片',
+                fileType: 'image/*',
+              })
+            }
+          >
+            预览
+          </Button>
+        ) : (
+          <Typography.Text type="secondary">-</Typography.Text>
+        ),
+    },
     { title: '状态', dataIndex: 'status', width: 100, render: statusTag },
     {
       title: '操作',
@@ -137,10 +163,16 @@ export function EquipmentConfig({ taskId, onChanged }: EquipmentConfigProps) {
             dataSource={taskEquipmentQuery.data || []}
             loading={taskEquipmentQuery.isFetching}
             pagination={false}
-            scroll={{ x: 760 }}
+            scroll={{ x: 840 }}
           />
         )}
       </ProCard>
+
+      <FilePreviewModal
+        open={Boolean(previewTarget)}
+        target={previewTarget}
+        onClose={() => setPreviewTarget(null)}
+      />
 
       <Modal
         title="绑定设备"

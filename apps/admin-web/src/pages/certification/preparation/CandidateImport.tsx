@@ -31,6 +31,7 @@ import {
   createPreparationCandidate,
   deletePreparationCandidate,
   importPreparationCandidates,
+  listAllPreparationCandidates,
   pagePreparationCandidates,
   pagePreparationImportErrors,
   updatePreparationCandidate,
@@ -80,7 +81,34 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
     enabled: Boolean(taskId) && importChannel === 'training',
   });
 
-  const trainingPeople = trainingPeopleQuery.data?.items || [];
+  const importedCandidatesQuery = useQuery({
+    queryKey: ['certification-preparation-candidates-imported', taskId],
+    queryFn: () => listAllPreparationCandidates(taskId!, { status: 'active' }),
+    enabled: Boolean(taskId) && importChannel === 'training',
+  });
+
+  const importedTrainingKeys = useMemo(() => {
+    const keys = new Set<string>();
+    (importedCandidatesQuery.data?.items || []).forEach((candidate) => {
+      if (candidate.idCardNo) {
+        keys.add(`id:${candidate.idCardNo}`);
+      }
+      if (candidate.phone) {
+        keys.add(`phone:${candidate.phone}`);
+      }
+    });
+    return keys;
+  }, [importedCandidatesQuery.data?.items]);
+
+  const trainingPeople = (trainingPeopleQuery.data?.items || []).filter((person) => {
+    if (person.idCard && importedTrainingKeys.has(`id:${person.idCard}`)) {
+      return false;
+    }
+    if (person.phone && importedTrainingKeys.has(`phone:${person.phone}`)) {
+      return false;
+    }
+    return true;
+  });
 
   const errorQuery = useQuery({
     queryKey: ['certification-preparation-import-errors', taskId, lastImportBatch?.id],
@@ -90,6 +118,7 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-candidates', taskId] });
+    queryClient.invalidateQueries({ queryKey: ['certification-preparation-candidates-imported', taskId] });
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-candidates-select', taskId] });
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-documents', taskId] });
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-overview', taskId] });

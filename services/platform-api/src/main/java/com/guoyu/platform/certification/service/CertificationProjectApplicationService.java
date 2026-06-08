@@ -67,7 +67,7 @@ public class CertificationProjectApplicationService {
 
   private static final Pattern MOBILE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
   private static final String DEFAULT_PHASE = "preparation";
-  private static final String DEFAULT_TASK_STATUS = "running";
+  private static final String DEFAULT_TASK_STATUS = CertificationTaskStatuses.RUNNING;
   private static final String DEFAULT_DOCUMENT_STATUS = "draft";
   private static final String STATUS_SUBMITTED = "submitted";
   private static final String STATUS_INITIAL_REVIEWING = "initial_reviewing";
@@ -857,6 +857,9 @@ public class CertificationProjectApplicationService {
     if ("schedule".equals(documentType) && countSchedule(taskId) == 0) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "项目进度信息未填写");
     }
+    if ("schedule".equals(documentType) && countIncompleteSchedule(taskId) > 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "准备期关键安排尚未全部确认完成，不能提交审核");
+    }
     if ("risk".equals(documentType) && countRisks(taskId) == 0) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "风险信息未填写");
     }
@@ -877,6 +880,15 @@ public class CertificationProjectApplicationService {
   private long countSchedule(Long taskId) {
     Long count = scheduleMapper.selectCount(new LambdaQueryWrapper<CertificationScheduleItemEntity>()
         .eq(CertificationScheduleItemEntity::getTaskId, taskId));
+    return count == null ? 0 : count;
+  }
+
+  private long countIncompleteSchedule(Long taskId) {
+    Long count = scheduleMapper.selectCount(new LambdaQueryWrapper<CertificationScheduleItemEntity>()
+        .eq(CertificationScheduleItemEntity::getTaskId, taskId)
+        .and(wrapper -> wrapper.eq(CertificationScheduleItemEntity::getCompleted, false)
+            .or()
+            .isNull(CertificationScheduleItemEntity::getCompleted)));
     return count == null ? 0 : count;
   }
 
@@ -920,6 +932,10 @@ public class CertificationProjectApplicationService {
     if (task == null) {
       return;
     }
+    if (CertificationTaskStatuses.PREPARATION_COMPLETED.equals(task.getStatus())
+        || CertificationTaskStatuses.ARCHIVE_COMPLETED.equals(task.getStatus())) {
+      return;
+    }
     List<CertificationTaskDocumentEntity> documents = documentMapper.selectList(
         new LambdaQueryWrapper<CertificationTaskDocumentEntity>()
             .eq(CertificationTaskDocumentEntity::getTaskId, taskId)
@@ -937,11 +953,11 @@ public class CertificationProjectApplicationService {
             || STATUS_FINAL_REJECTED.equals(document.getStatus()));
 
     if (hasReviewing) {
-      task.setStatus("pending_review");
+      task.setStatus(CertificationTaskStatuses.PENDING_REVIEW);
     } else if (hasRejected) {
-      task.setStatus("rejected");
+      task.setStatus(CertificationTaskStatuses.REJECTED);
     } else if (documents.size() >= DOCUMENTS.size() && archivedCount == DOCUMENTS.size()) {
-      task.setStatus("completed");
+      task.setStatus(CertificationTaskStatuses.PROJECT_PREPARED);
     } else {
       task.setStatus(DEFAULT_TASK_STATUS);
     }

@@ -272,6 +272,37 @@ export interface PreparationTaskExamStaffPayload {
   remark?: string;
 }
 
+export interface PreparationChecklistItem {
+  id: string;
+  taskId: string;
+  itemNo: number;
+  itemName: string;
+  quantityText?: string;
+  checked: boolean;
+  confirmerTaskStaffId?: string;
+  confirmerName?: string;
+  confirmedAt?: string;
+  remark?: string;
+}
+
+export interface PreparationChecklist {
+  taskId: string;
+  taskName?: string;
+  totalCount: number;
+  checkedCount: number;
+  allChecked: boolean;
+  confirmerTaskStaffId?: string;
+  confirmerName?: string;
+  confirmedAt?: string;
+  items: PreparationChecklistItem[];
+}
+
+export interface PreparationChecklistUpdatePayload {
+  checkedItemIds: string[];
+  confirmerTaskStaffId?: string;
+  remark?: string;
+}
+
 export interface PreparationTaskEquipment {
   id: string;
   taskId: string;
@@ -281,6 +312,8 @@ export interface PreparationTaskEquipment {
   equipmentQuantity: number;
   status?: string;
   remark?: string;
+  equipmentPhotoFileId?: string;
+  equipmentPhotoFileName?: string;
 }
 
 export interface PreparationTaskEquipmentPayload {
@@ -332,6 +365,7 @@ export interface PreparationAssessorGroup {
 export interface PreparationAssessorGroupPayload {
   groupName?: string;
   leaderAssessorId?: string;
+  assessorIds?: string[];
   workTypeName?: string;
   status?: string;
   remark?: string;
@@ -368,22 +402,6 @@ export interface PreparationAssessorDispatchPayload {
   remark?: string;
 }
 
-export interface PreparationAssessorWorkbenchQuery extends PreparationPageQuery {
-  assessorId?: string;
-  /** 视角：assessor(我的任务)/leader(组长审批) */
-  view?: 'assessor' | 'leader';
-  status?: string;
-}
-
-export interface PreparationScore {
-  id?: string;
-  stepNo?: number;
-  stepName?: string;
-  maxScore?: number;
-  score?: number;
-  remark?: string;
-}
-
 export interface PreparationAssessorTask {
   id: string;
   taskId: string;
@@ -405,19 +423,6 @@ export interface PreparationAssessorTask {
   totalScore?: number;
   submittedAt?: string;
   reviewedAt?: string;
-  reviewNote?: string;
-  scores?: PreparationScore[];
-}
-
-export interface PreparationAssessorTaskDraftPayload {
-  assessorId?: string;
-  progressNote?: string;
-  scores?: PreparationScore[];
-}
-
-export interface PreparationAssessorTaskReviewPayload {
-  reviewerAssessorId?: string;
-  reviewStatus?: string;
   reviewNote?: string;
 }
 

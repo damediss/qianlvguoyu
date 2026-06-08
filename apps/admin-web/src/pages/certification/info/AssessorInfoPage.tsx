@@ -44,6 +44,7 @@ export function AssessorInfoPage() {
         { name: 'remark', label: '备注', type: 'textarea' },
       ]}
       statusOptions={[
+        { label: '待审核', value: 'pending_review' },
         { label: '空闲', value: 'idle' },
         { label: '认定筹备中', value: 'preparing' },
         { label: '认定任务中', value: 'assigned' },
@@ -64,6 +65,7 @@ export function AssessorInfoPage() {
 
 function statusLabel(value: string) {
   return {
+    pending_review: '待审核',
     idle: '空闲',
     preparing: '认定筹备中',
     assigned: '认定任务中',

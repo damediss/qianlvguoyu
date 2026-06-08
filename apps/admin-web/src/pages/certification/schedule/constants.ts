@@ -15,6 +15,9 @@ export const certificationTypeOptions = [
 
 export const scheduleStatusOptions = [
   { label: '进行中', value: 'running' },
+  { label: '认定准备已完成', value: 'project_prepared' },
+  { label: '认定筹备已完成', value: 'preparation_completed' },
+  { label: '认定归档已完成', value: 'archive_completed' },
   { label: '待审核', value: 'pending_review' },
   { label: '已通过', value: 'approved' },
   { label: '已驳回', value: 'rejected' },

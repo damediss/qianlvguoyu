@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -59,6 +60,17 @@ public class CertificationPreparationDocumentController {
       @PathVariable Long documentId
   ) {
     return service.downloadCandidateDocument(taskId, documentId);
+  }
+
+  @DeleteMapping("/tasks/{taskId}/candidate-documents/{documentId}")
+  @PreAuthorize("hasAuthority('certification.preparation.document.upload')")
+  @AuditLog(module = "certification", action = "preparation-document:delete", targetType = "certification_candidate_document")
+  public ApiResponse<Void> deleteCandidateDocument(
+      @PathVariable Long taskId,
+      @PathVariable Long documentId
+  ) {
+    service.deleteCandidateDocument(taskId, documentId);
+    return ApiResponse.ok();
   }
 
   @PutMapping("/tasks/{taskId}/candidate-documents/{documentId}/review")

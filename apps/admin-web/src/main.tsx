@@ -70,6 +70,7 @@ const PmStatusPage = createPmFormPage('status');
 import { TaskEndPage } from './pages/expert/TaskEndPage';
 import { ProjectManagementPage } from './pages/certification/ProjectManagementPage';
 import { PreparationPage } from './pages/certification/PreparationPage';
+import { ArchivePage } from './pages/certification/ArchivePage';
 import { AssessorInfoPage } from './pages/certification/info/AssessorInfoPage';
 import { ExamSiteInfoPage } from './pages/certification/info/ExamSiteInfoPage';
 import { ExamEquipmentInfoPage } from './pages/certification/info/ExamEquipmentInfoPage';
@@ -163,6 +164,7 @@ const pageMap: Record<string, React.ReactNode> = {
   expert_task_end: <TaskEndPage />,
   certification_project: <ProjectManagementPage />,
   certification_preparation: <PreparationPage />,
+  certification_archive: <ArchivePage />,
   certification_info_assessor: <AssessorInfoPage />,
   certification_info_site: <ExamSiteInfoPage />,
   certification_info_equipment: <ExamEquipmentInfoPage />,

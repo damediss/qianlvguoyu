@@ -6,7 +6,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type Dayjs } from 'dayjs';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  addPreparationGroupMember,
   createPreparationAssessorGroup,
   deletePreparationAssessorGroup,
   dispatchPreparationAssessorGroup,
@@ -148,16 +147,9 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
       const group = await createPreparationAssessorGroup(taskId, {
         ...values,
         leaderAssessorId: leaderId,
+        assessorIds: selectedCandidateIds,
         status: 'preparing',
       });
-
-      for (const assessorId of selectedCandidateIds) {
-        await addPreparationGroupMember(taskId, group.id, {
-          assessorId,
-          taskRole: String(assessorId) === String(leaderId) ? 'leader' : 'member',
-          roleName: String(assessorId) === String(leaderId) ? '组长' : '成员',
-        });
-      }
       return group;
     },
     onSuccess: (group) => {

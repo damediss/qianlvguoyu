@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react';
 import {
   generatePreparationMaterials,
   getPreparationMaterialBatch,
-  pagePreparationCandidates,
+  listAllPreparationCandidates,
   pagePreparationMaterials,
 } from '../../../api/certificationPreparation';
 import { PermissionGate } from '../../../directives/permission';
@@ -26,7 +26,7 @@ export function ApplicationMaterials({ taskId, onChanged }: ApplicationMaterials
 
   const candidatesQuery = useQuery({
     queryKey: ['certification-preparation-candidates', taskId, 'materials-ready'],
-    queryFn: () => pagePreparationCandidates(taskId!, { page: 1, pageSize: 500 }),
+    queryFn: () => listAllPreparationCandidates(taskId!, { status: 'active' }),
     enabled: Boolean(taskId),
   });
 
@@ -67,8 +67,8 @@ export function ApplicationMaterials({ taskId, onChanged }: ApplicationMaterials
       message.success(`申报材料已生成：成功 ${batch.successCount || 0}，失败 ${batch.failedCount || 0}`);
       refresh();
     },
-    onError: () => {
-      message.error('申报材料生成失败，请确认学员资料已齐全后重试');
+    onError: (error) => {
+      message.error(apiErrorMessage(error, '申报材料生成失败，请确认学员资料已齐全后重试'));
     },
   });
 
@@ -79,6 +79,10 @@ export function ApplicationMaterials({ taskId, onChanged }: ApplicationMaterials
     }
     if (readiness.ready === 0) {
       message.warning('暂无资料齐全的学员，请先在学员列表中完成资料上传');
+      return;
+    }
+    if (readiness.incomplete > 0) {
+      message.warning(`瀛樺湪 ${readiness.incomplete} 鍚嶅鍛樼殑蹇呬紶璧勬枡鏈鏍搁€氳繃锛屾殏涓嶈兘鐢熸垚鐢虫姤鏉愭枡`);
       return;
     }
     Modal.confirm({
@@ -213,4 +217,9 @@ export function ApplicationMaterials({ taskId, onChanged }: ApplicationMaterials
       </Modal>
     </Space>
   );
+}
+
+function apiErrorMessage(error: unknown, fallback: string) {
+  const response = (error as { response?: { data?: { message?: string } } })?.response;
+  return response?.data?.message || (error instanceof Error ? error.message : undefined) || fallback;
 }

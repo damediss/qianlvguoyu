@@ -1,4 +1,4 @@
-import { DeleteOutlined, EyeOutlined, PlusOutlined, SaveOutlined, StopOutlined } from '@ant-design/icons';
+import { DeleteOutlined, PlusOutlined, SaveOutlined, StopOutlined } from '@ant-design/icons';
 import { Button, Input, InputNumber, Modal, Select, Space, Typography, message } from 'antd';
 import type { CSSProperties } from 'react';
 import type { CertificationWbsItem } from '../../../types/certification';
@@ -135,7 +135,6 @@ export function WbsEditor({
       <div style={toolbarStyle}>
         <Space wrap>
           <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>保存修改</Button>
-          <Button icon={<EyeOutlined />} onClick={onPreview}>预览</Button>
           <Button
             icon={<StopOutlined />}
             onClick={() => {
@@ -295,21 +294,6 @@ export function WbsEditor({
         </div>
       </div>
 
-      <div style={{ ...toolbarStyle, borderTop: '1px solid #e5e7eb', borderBottom: 'none' }}>
-        <Space wrap>
-          <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={handleSave}>保存修改</Button>
-          <Button icon={<StopOutlined />} onClick={() => Modal.confirm({
-            title: '确定要取消编辑吗？',
-            content: '未保存的修改将丢失。',
-            okText: '确定取消',
-            cancelText: '继续编辑',
-            onOk: onCancel,
-          })}
-          >
-            取消
-          </Button>
-        </Space>
-      </div>
     </div>
   );
 }

@@ -85,6 +85,7 @@ import {
 } from './schedule/constants';
 import { ScheduleEditor } from './schedule/ScheduleEditor';
 import { ScheduleViewer } from './schedule/ScheduleViewer';
+import { preparationCompletedTagStyle } from './preparation/shared';
 
 type EditorType = 'member' | 'wbs' | 'schedule' | 'risk';
 
@@ -122,6 +123,9 @@ interface EditorFormValues {
 
 const statusOptions = [
   { label: '进行中', value: 'running' },
+  { label: '认定准备已完成', value: 'project_prepared' },
+  { label: '认定筹备已完成', value: 'preparation_completed' },
+  { label: '认定归档已完成', value: 'archive_completed' },
   { label: '待审核', value: 'pending_review' },
   { label: '已通过', value: 'approved' },
   { label: '已驳回', value: 'rejected' },
@@ -633,13 +637,13 @@ export function ProjectManagementPage() {
     {
       title: '阶段',
       dataIndex: 'currentPhaseName',
-      width: 140,
+      width: 100,
       render: (value: string) => <Tag color="processing">{value}</Tag>,
     },
     {
       title: '状态',
       dataIndex: 'status',
-      width: 100,
+      width: 130,
       render: (value: string, record) => renderTaskStatus(value, record.statusName),
     },
     {
@@ -655,10 +659,11 @@ export function ProjectManagementPage() {
       width: 190,
       fixed: 'right',
       render: (_, record) => (
-        <Space size={4}>
+        <Space size={0} wrap={false}>
           <Button
             type="link"
             size="small"
+            style={{ paddingInline: 0 }}
             icon={<FolderOpenOutlined />}
             onClick={() => {
               setSelectedTaskId(record.id);
@@ -672,12 +677,12 @@ export function ProjectManagementPage() {
             工作台
           </Button>
           <PermissionGate code="certification.project.task.create">
-            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>
+            <Button type="link" size="small" style={{ paddingInline: 0 }} icon={<EditOutlined />} onClick={() => openEdit(record)}>
               编辑
             </Button>
           </PermissionGate>
           <PermissionGate code="certification.project.task.delete">
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>
+            <Button type="link" size="small" style={{ paddingInline: 0 }} danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>
               删除
             </Button>
           </PermissionGate>
@@ -1162,17 +1167,23 @@ export function ProjectManagementPage() {
   function renderSchedule() {
     const document = findDocument(workbench?.documents || [], 'schedule');
     const lockedForEdit = !isDocumentEditable(document?.status);
+    const submitSchedule = () => {
+      const incompleteCount = scheduleDraft.filter((item) => !item.completed).length;
+      if (scheduleDraft.length > 0 && incompleteCount > 0) {
+        message.warning(`请先确认准备期关键安排全部完成，当前还有 ${incompleteCount} 项未勾选`);
+        return;
+      }
+      submitDocumentMutation.mutate('schedule', {
+        onSuccess: () => setScheduleMode('view'),
+      });
+    };
     return (
       <PermissionGate code={documentMeta.schedule.view}>
         <Space direction="vertical" style={{ width: '100%' }} size={12}>
           <DocumentToolbar
             type="schedule"
             document={document}
-            onSubmit={() => {
-              submitDocumentMutation.mutate('schedule', {
-                onSuccess: () => setScheduleMode('view'),
-              });
-            }}
+            onSubmit={submitSchedule}
             submitLoading={submitDocumentMutation.isPending}
             onInitialReview={(approved) => reviewDocument('schedule', 'initial', approved)}
             onFinalReview={(approved) => reviewDocument('schedule', 'final', approved)}
@@ -1493,7 +1504,7 @@ function renderRiskFields() {
       <Form.Item name="impactCode" label="影响" rules={[{ required: true, message: '请选择影响' }]}><Select options={riskFactorOptions()} /></Form.Item>
       <Form.Item name="expectedCloseDate" label="预计关闭"><DatePicker style={{ width: '100%' }} /></Form.Item>
       <Form.Item name="status" label="状态"><Select options={[{ label: '开启', value: 'open' }, { label: '关闭', value: 'closed' }]} /></Form.Item>
-      <Form.Item name="responsePlan" label="应对计划"><Input /></Form.Item>
+      <Form.Item name="responsePlan" label="应对计划"><Input.TextArea rows={4} maxLength={1000} showCount /></Form.Item>
       <Form.Item name="remark" label="备注"><Input /></Form.Item>
     </div>
   );
@@ -1607,7 +1618,11 @@ function isDocumentEditable(status?: string) {
 }
 
 function renderTaskStatus(status: string, statusName?: string) {
-  const color = status === 'running' ? 'processing' : status === 'approved' || status === 'completed' ? 'success' : status === 'rejected' ? 'error' : 'warning';
+  if (status === 'preparation_completed') {
+    return <Tag style={preparationCompletedTagStyle}>{statusName || status || '-'}</Tag>;
+  }
+  const doneStatuses = ['approved', 'completed', 'project_prepared', 'archive_completed'];
+  const color = status === 'running' ? 'processing' : doneStatuses.includes(status) ? 'success' : status === 'rejected' ? 'error' : 'warning';
   return <Tag color={color}>{statusName || status || '-'}</Tag>;
 }
 

@@ -1,4 +1,5 @@
 import {
+  CheckSquareOutlined,
   DatabaseOutlined,
   DownOutlined,
   FolderOpenOutlined,
@@ -16,7 +17,7 @@ import { pagePreparationTasks } from '../../api/certificationPreparation';
 import { PermissionGate } from '../../directives/permission';
 import type { PreparationTaskOverview, PreparationTaskQuery } from '../../types/certificationPreparation';
 import { AssessorConfig } from './preparation/AssessorConfig';
-import { AssessorWorkbench } from './preparation/AssessorWorkbench';
+import { ChecklistReview } from './preparation/ChecklistReview';
 import { EquipmentConfig } from './preparation/EquipmentConfig';
 import { ExamSiteConfig } from './preparation/ExamSiteConfig';
 import { ExamStaffConfig } from './preparation/ExamStaffConfig';
@@ -28,12 +29,12 @@ import {
 import { PreparationWorkbench } from './preparation/PreparationWorkbench';
 import { dateText, dateTimeText, statusTag } from './preparation/shared';
 
-type PreparationTabKey = 'workbench' | 'collection' | 'equipment' | 'sites' | 'staff' | 'assessors' | 'assessorWorkbench';
+type PreparationTabKey = 'workbench' | 'collection' | 'checklist' | 'equipment' | 'sites' | 'staff' | 'assessors';
 
 export function PreparationPage() {
   const queryClient = useQueryClient();
   const tabsAnchorRef = useRef<HTMLDivElement | null>(null);
-  const [query, setQuery] = useState<PreparationTaskQuery>({ page: 1, pageSize: 10, currentPhase: 'preparation' });
+  const [query, setQuery] = useState<PreparationTaskQuery>({ page: 1, pageSize: 10, status: 'project_prepared' });
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
   const [activeTab, setActiveTab] = useState<PreparationTabKey>('workbench');
   const [collectionSubTab, setCollectionSubTab] = useState<CollectionSubTabKey>('candidates');
@@ -138,7 +139,14 @@ export function PreparationPage() {
       key: 'workbench',
       label: '筹备工作台',
       icon: <SafetyCertificateOutlined />,
-      children: <PreparationWorkbench taskId={selectedTaskId} task={selectedTask} onOpenSection={openSection} />,
+      children: (
+        <PreparationWorkbench
+          taskId={selectedTaskId}
+          task={selectedTask}
+          onOpenSection={openSection}
+          onChanged={refreshAll}
+        />
+      ),
     },
     {
       key: 'collection',
@@ -178,10 +186,10 @@ export function PreparationPage() {
       children: <AssessorConfig taskId={selectedTaskId} task={selectedTask} onChanged={refreshAll} />,
     },
     {
-      key: 'assessorWorkbench',
-      label: '考评员工作台',
-      icon: <SafetyCertificateOutlined />,
-      children: <AssessorWorkbench />,
+      key: 'checklist',
+      label: '清单核查',
+      icon: <CheckSquareOutlined />,
+      children: <ChecklistReview taskId={selectedTaskId} onChanged={refreshAll} />,
     },
   ];
 
@@ -232,8 +240,8 @@ export function PreparationPage() {
               <Form
                 layout="inline"
                 style={{ marginBottom: 16 }}
-                initialValues={{ currentPhase: 'preparation' }}
-                onFinish={(values) => setQuery({ ...query, ...values, page: 1 })}
+                initialValues={{ status: 'project_prepared' }}
+                onFinish={(values) => setQuery({ ...query, ...values, status: 'project_prepared', page: 1 })}
               >
                 <Form.Item name="keyword">
                   <Input.Search allowClear placeholder="任务编号、名称、工种" style={{ width: 280 }} />
@@ -244,20 +252,7 @@ export function PreparationPage() {
                     placeholder="任务状态"
                     style={{ width: 140 }}
                     options={[
-                      { label: '进行中', value: 'running' },
-                      { label: '已完成', value: 'completed' },
-                      { label: '待审核', value: 'pending_review' },
-                    ]}
-                  />
-                </Form.Item>
-                <Form.Item name="currentPhase">
-                  <Select
-                    allowClear
-                    placeholder="阶段"
-                    style={{ width: 150 }}
-                    options={[
-                      { label: '筹备期', value: 'preparation' },
-                      { label: '全部阶段', value: '' },
+                      { label: '认定准备已完成', value: 'project_prepared' },
                     ]}
                   />
                 </Form.Item>

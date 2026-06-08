@@ -9,7 +9,6 @@ import com.guoyu.platform.file.vo.DownloadUrlVO;
 import com.guoyu.platform.file.vo.FileVO;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.core.io.Resource;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -53,11 +52,11 @@ public class FileController {
   }
 
   @GetMapping("/{id}/download")
-  public ResponseEntity<Resource> download(@PathVariable Long id) {
-    Resource resource = fileApplicationService.downloadResource(id);
-    return ResponseEntity.ok()
-        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + resource.getFilename() + "\"")
-        .body(resource);
+  public ResponseEntity<Resource> download(
+      @PathVariable Long id,
+      @RequestParam(value = "inline", defaultValue = "false") boolean inline
+  ) {
+    return fileApplicationService.buildDownloadResponse(id, inline);
   }
 
   @DeleteMapping("/{id}")

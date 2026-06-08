@@ -8,15 +8,14 @@ import type {
   PreparationAssessorPayload,
   PreparationAssessorQuery,
   PreparationAssessorTask,
-  PreparationAssessorTaskDraftPayload,
-  PreparationAssessorTaskReviewPayload,
-  PreparationAssessorWorkbenchQuery,
   PreparationCandidate,
   PreparationCandidateDocument,
   PreparationCandidateDocumentPayload,
   PreparationCandidateImportPayload,
   PreparationCandidatePayload,
   PreparationCandidateQuery,
+  PreparationChecklist,
+  PreparationChecklistUpdatePayload,
   PreparationCompleteCheck,
   PreparationDocumentQuery,
   PreparationDocumentReviewPayload,
@@ -75,6 +74,20 @@ export function pagePreparationCandidates(taskId: string, params: PreparationCan
   return unwrap<PageResponse<PreparationCandidate>>(apiClient.get(`${base}/tasks/${taskId}/candidates`, { params }));
 }
 
+export async function listAllPreparationCandidates(taskId: string, params: Omit<PreparationCandidateQuery, 'page' | 'pageSize'> = {}) {
+  const pageSize = 200;
+  const first = await pagePreparationCandidates(taskId, { ...params, page: 1, pageSize });
+  const items = [...(first.items || [])];
+  const pageCount = Math.ceil((first.total || 0) / pageSize);
+
+  for (let page = 2; page <= pageCount; page += 1) {
+    const next = await pagePreparationCandidates(taskId, { ...params, page, pageSize });
+    items.push(...(next.items || []));
+  }
+
+  return { ...first, items };
+}
+
 export function createPreparationCandidate(taskId: string, payload: PreparationCandidatePayload) {
   return unwrap<PreparationCandidate>(apiClient.post(`${base}/tasks/${taskId}/candidates`, payload));
 }
@@ -95,6 +108,10 @@ export function pagePreparationCandidateDocuments(taskId: string, params: Prepar
 
 export function uploadPreparationCandidateDocument(taskId: string, payload: PreparationCandidateDocumentPayload) {
   return unwrap<PreparationCandidateDocument>(apiClient.post(`${base}/tasks/${taskId}/candidate-documents`, payload));
+}
+
+export function deletePreparationCandidateDocument(taskId: string, documentId: string) {
+  return unwrap<void>(apiClient.delete(`${base}/tasks/${taskId}/candidate-documents/${documentId}`));
 }
 
 export function reviewPreparationCandidateDocument(
@@ -175,6 +192,14 @@ export function updatePreparationTaskExamStaffRole(
   );
 }
 
+export function getPreparationChecklist(taskId: string) {
+  return unwrap<PreparationChecklist>(apiClient.get(`${base}/tasks/${taskId}/checklist`));
+}
+
+export function updatePreparationChecklist(taskId: string, payload: PreparationChecklistUpdatePayload) {
+  return unwrap<PreparationChecklist>(apiClient.put(`${base}/tasks/${taskId}/checklist`, payload));
+}
+
 export function listPreparationTaskEquipment(taskId: string) {
   return unwrap<PreparationTaskEquipment[]>(apiClient.get(`${base}/tasks/${taskId}/equipment`));
 }
@@ -243,24 +268,3 @@ export function dispatchPreparationAssessorGroup(
   );
 }
 
-export function pagePreparationAssessorTasks(params: PreparationAssessorWorkbenchQuery) {
-  return unwrap<PageResponse<PreparationAssessorTask>>(
-    apiClient.get(`${base}/assessor-workbench/tasks`, { params }),
-  );
-}
-
-export function getPreparationAssessorTask(taskId: string) {
-  return unwrap<PreparationAssessorTask>(apiClient.get(`${base}/assessor-workbench/tasks/${taskId}`));
-}
-
-export function savePreparationAssessorTaskDraft(taskId: string, payload: PreparationAssessorTaskDraftPayload) {
-  return unwrap<PreparationAssessorTask>(apiClient.put(`${base}/assessor-workbench/tasks/${taskId}/draft`, payload));
-}
-
-export function submitPreparationAssessorTask(taskId: string, payload: PreparationAssessorTaskDraftPayload) {
-  return unwrap<PreparationAssessorTask>(apiClient.post(`${base}/assessor-workbench/tasks/${taskId}/submit`, payload));
-}
-
-export function reviewPreparationAssessorTask(taskId: string, payload: PreparationAssessorTaskReviewPayload) {
-  return unwrap<PreparationAssessorTask>(apiClient.post(`${base}/assessor-workbench/tasks/${taskId}/review`, payload));
-}

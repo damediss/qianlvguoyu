@@ -1,11 +1,11 @@
 import {
   CheckOutlined,
+  DeleteOutlined,
   EyeOutlined,
-  FileAddOutlined,
   RollbackOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
-import { Button, Descriptions, Form, Input, Modal, Select, Space, Table, Typography, Upload, message } from 'antd';
+import { Button, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Table, Typography, Upload, message } from 'antd';
 import type { UploadProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -13,6 +13,7 @@ import { useEffect, useState } from 'react';
 import { uploadFile } from '../../../api/knowledge';
 import {
   pagePreparationCandidateDocuments,
+  deletePreparationCandidateDocument,
   reviewPreparationCandidateDocument,
   uploadPreparationCandidateDocument,
 } from '../../../api/certificationPreparation';
@@ -25,7 +26,7 @@ import type {
   PreparationCandidateDocumentPayload,
   PreparationDocumentReviewPayload,
 } from '../../../types/certificationPreparation';
-import { boolTag, candidateDocumentRatioTag, dash, dateTimeText, documentTemplates, statusTag } from './shared';
+import { boolTag, candidateDocumentRatioTag, dash, dateTimeText, statusTag } from './shared';
 
 interface CandidateDocumentDrawerProps {
   taskId: string;
@@ -39,6 +40,7 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
   const queryClient = useQueryClient();
   const [detailStatus, setDetailStatus] = useState<string>();
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploadingDocument, setUploadingDocument] = useState<PreparationCandidateDocument | null>(null);
   const [reviewingDocument, setReviewingDocument] = useState<PreparationCandidateDocument | null>(null);
   const [previewTarget, setPreviewTarget] = useState<FilePreviewTarget | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
@@ -61,6 +63,7 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
     if (!open) {
       setDetailStatus(undefined);
       setUploadModalOpen(false);
+      setUploadingDocument(null);
       setReviewingDocument(null);
       setPreviewTarget(null);
     }
@@ -78,6 +81,7 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
     onSuccess: () => {
       message.success('资料已保存');
       setUploadModalOpen(false);
+      setUploadingDocument(null);
       uploadForm.resetFields();
       refresh();
     },
@@ -94,9 +98,23 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (documentId: string) => deletePreparationCandidateDocument(taskId, documentId),
+    onSuccess: () => {
+      message.success('资料已删除，可重新上传');
+      refresh();
+    },
+  });
+
   const uploadProps: UploadProps = {
     maxCount: 1,
     beforeUpload: async (file) => {
+      const docCode = uploadForm.getFieldValue('docCode') || uploadingDocument?.docCode;
+      const validationError = validateUploadFileType(docCode, file);
+      if (validationError) {
+        message.warning(validationError);
+        return Upload.LIST_IGNORE;
+      }
       setUploadingFile(true);
       try {
         const saved: FileVO = await uploadFile(file, 'private');
@@ -151,30 +169,74 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
       title: '操作',
       width: 140,
       fixed: 'right',
-      render: (_, record) =>
-        record.status === 'missing' ? (
-          <Typography.Text type="secondary">待上传</Typography.Text>
-        ) : (
+      render: (_, record) => {
+        const reviewed = record.status === 'approved';
+        if (record.status === 'missing') {
+          return (
+            <PermissionGate code="certification.preparation.document.upload">
+              <Button type="link" size="small" icon={<UploadOutlined />} onClick={() => openUploadModal(record)}>
+                待上传
+              </Button>
+            </PermissionGate>
+          );
+        }
+        if (record.status === 'rejected') {
+          return (
+            <PermissionGate code="certification.preparation.document.upload">
+              <Popconfirm
+                title="确认删除该驳回资料？"
+                okText="删除"
+                cancelText="取消"
+                onConfirm={() => deleteMutation.mutate(record.id)}
+              >
+                <Button type="link" size="small" danger icon={<DeleteOutlined />} loading={deleteMutation.isPending}>
+                  删除
+                </Button>
+              </Popconfirm>
+            </PermissionGate>
+          );
+        }
+        return (
           <PermissionGate code="certification.preparation.document.review">
             <Space size={4}>
-              <Button type="link" size="small" icon={<CheckOutlined />} onClick={() => openReview(record, 'approved')}>
+              <Button
+                type="link"
+                size="small"
+                icon={<CheckOutlined />}
+                disabled={reviewed}
+                onClick={() => openReview(record, 'approved')}
+              >
                 通过
               </Button>
-              <Button type="link" size="small" danger icon={<RollbackOutlined />} onClick={() => openReview(record, 'rejected')}>
+              <Button
+                type="link"
+                size="small"
+                danger
+                icon={<RollbackOutlined />}
+                disabled={reviewed}
+                onClick={() => openReview(record, 'rejected')}
+              >
                 驳回
               </Button>
             </Space>
           </PermissionGate>
-        ),
+        );
+      },
     },
   ];
 
-  function openUploadModal() {
+  function openUploadModal(record: PreparationCandidateDocument) {
     if (!candidate) {
       return;
     }
     uploadForm.resetFields();
-    uploadForm.setFieldsValue({ candidateId: candidate.id });
+    setUploadingDocument(record);
+    uploadForm.setFieldsValue({
+      candidateId: candidate.id,
+      docCode: record.docCode,
+      docName: record.docName,
+      required: record.required,
+    });
     setUploadModalOpen(true);
   }
 
@@ -215,7 +277,7 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
               <Descriptions.Item label="报考等级">{candidate.levelName || '-'}</Descriptions.Item>
               <Descriptions.Item label="资料进度">{candidateDocumentRatioTag(candidate)}</Descriptions.Item>
             </Descriptions>
-            <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+            <Space style={{ justifyContent: 'flex-start', width: '100%' }}>
               <Select
                 allowClear
                 placeholder="按资料状态筛选"
@@ -230,11 +292,6 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
                   { label: '已驳回', value: 'rejected' },
                 ]}
               />
-              <PermissionGate code="certification.preparation.document.upload">
-                <Button type="primary" icon={<FileAddOutlined />} onClick={openUploadModal}>
-                  上传资料
-                </Button>
-              </PermissionGate>
             </Space>
             <Table
               rowKey="id"
@@ -253,7 +310,10 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
         title="上传学员资料"
         open={uploadModalOpen}
         onOk={submitUpload}
-        onCancel={() => setUploadModalOpen(false)}
+        onCancel={() => {
+          setUploadModalOpen(false);
+          setUploadingDocument(null);
+        }}
         confirmLoading={saveMutation.isPending || uploadingFile}
         width={720}
         destroyOnClose
@@ -263,13 +323,7 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
             <Input />
           </Form.Item>
           <Form.Item name="docCode" label="资料类型" rules={[{ required: true, message: '请选择资料类型' }]}>
-            <Select
-              options={documentTemplates.map((item) => ({ label: `${item.code} ${item.name}`, value: item.code }))}
-              onChange={(value) => {
-                const template = documentTemplates.find((item) => item.code === value);
-                uploadForm.setFieldsValue({ docName: template?.name, required: template?.required });
-              }}
-            />
+            <Input disabled />
           </Form.Item>
           <Form.Item name="docName" label="资料名称" rules={[{ required: true, message: '请输入资料名称' }]}>
             <Input />
@@ -278,7 +332,7 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
             <Select options={[{ label: '是', value: true }, { label: '否', value: false }]} />
           </Form.Item>
           <Form.Item label="文件">
-            <Upload {...uploadProps}>
+            <Upload {...uploadProps} accept={acceptByDocCode(uploadingDocument?.docCode)}>
               <Button icon={<UploadOutlined />} loading={uploadingFile}>
                 选择并上传文件
               </Button>
@@ -320,4 +374,28 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
       </Modal>
     </>
   );
+}
+
+function acceptByDocCode(docCode?: string) {
+  if (docCode === 'DOC001') {
+    return '.xlsx,.pdf,.docx';
+  }
+  if (docCode === 'DOC002') {
+    return 'image/*';
+  }
+  return undefined;
+}
+
+function validateUploadFileType(docCode: string | undefined, file: File) {
+  const extension = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
+  if (docCode === 'DOC001' && !['.xlsx', '.pdf', '.docx'].includes(extension)) {
+    return '报名信息表仅支持 xlsx、pdf、docx 格式';
+  }
+  if (docCode === 'DOC002') {
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
+    if (!file.type.startsWith('image/') && !imageExtensions.includes(extension)) {
+      return '两寸证件照仅支持图片格式';
+    }
+  }
+  return undefined;
 }

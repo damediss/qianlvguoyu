@@ -22,9 +22,10 @@ interface PreparationWorkbenchProps {
   taskId?: string;
   task?: PreparationTaskOverview;
   onOpenSection: (key: string) => void;
+  onChanged?: () => void;
 }
 
-export function PreparationWorkbench({ taskId, task, onOpenSection }: PreparationWorkbenchProps) {
+export function PreparationWorkbench({ taskId, task, onOpenSection, onChanged }: PreparationWorkbenchProps) {
   const queryClient = useQueryClient();
   const overviewQuery = useQuery({
     queryKey: ['certification-preparation-overview', taskId],
@@ -42,8 +43,10 @@ export function PreparationWorkbench({ taskId, task, onOpenSection }: Preparatio
     mutationFn: () => completePreparation(taskId!),
     onSuccess: (result) => {
       showCheckResult(result, true);
-      queryClient.invalidateQueries({ queryKey: ['certification-preparation'] });
+      queryClient.invalidateQueries({ queryKey: ['certification-preparation-tasks'] });
       queryClient.invalidateQueries({ queryKey: ['certification-preparation-overview', taskId] });
+      queryClient.invalidateQueries({ queryKey: ['certification-tasks'] });
+      onChanged?.();
     },
   });
 
@@ -51,12 +54,16 @@ export function PreparationWorkbench({ taskId, task, onOpenSection }: Preparatio
     return <Empty description="请选择认定任务后查看筹备工作台" />;
   }
 
+  const preparationCompleted = overview.preparationStatus === 'preparation_completed';
+  const canCompletePreparation = overview.preparationStatus === 'project_prepared';
   const quickEntryHeight = 72;
   const quickActions = [
     { key: 'collection', icon: <DatabaseOutlined />, title: '信息收集', description: '学员导入 · 申报材料一键生成' },
     { key: 'staff', icon: <TeamOutlined />, title: '考务配置', description: '考务人员绑定与备注' },
+    { key: 'equipment', icon: <DatabaseOutlined />, title: '配置设备', description: '考试设备绑定与数量' },
     { key: 'sites', icon: <ScheduleOutlined />, title: '考场配置', description: '考场信息与容量配置' },
-    { key: 'assessors', icon: <TeamOutlined />, title: '考评员配置', description: '考评员分配与授权' },
+    { key: 'assessors', icon: <TeamOutlined />, title: '考评员配置', description: '考评员分配与任务发放' },
+    { key: 'checklist', icon: <CheckCircleOutlined />, title: '清单核查', description: '材料勾选与确认人' },
   ];
 
   return (
@@ -91,9 +98,10 @@ export function PreparationWorkbench({ taskId, task, onOpenSection }: Preparatio
                 type="primary"
                 icon={<CheckCircleOutlined />}
                 loading={completeMutation.isPending}
+                disabled={preparationCompleted || !canCompletePreparation}
                 onClick={() => completeMutation.mutate()}
               >
-                完成筹备
+                {preparationCompleted ? '已完成筹备' : '完成筹备'}
               </Button>
             </PermissionGate>
           </Space>
@@ -119,7 +127,7 @@ export function PreparationWorkbench({ taskId, task, onOpenSection }: Preparatio
 
       <ProCard title="快捷入口">
         <List
-          grid={{ gutter: 12, column: 4 }}
+          grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 4 }}
           dataSource={quickActions}
           renderItem={(item) => (
             <List.Item style={{ height: '100%' }}>
