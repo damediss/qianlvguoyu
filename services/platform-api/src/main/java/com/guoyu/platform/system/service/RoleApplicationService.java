@@ -26,6 +26,7 @@ import com.guoyu.platform.system.mapper.RoleMenuRelationMapper;
 import com.guoyu.platform.system.mapper.RolePermissionRelationMapper;
 import com.guoyu.platform.system.mapper.UserRoleRelationMapper;
 import com.guoyu.platform.system.vo.RoleVO;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -133,8 +134,24 @@ public class RoleApplicationService {
     validateMenus(tenantId, req.menuIds());
     validatePermissions(tenantId, req.permissionIds());
 
+    // 菜单→功能权限联动：勾了菜单，自动把该菜单下所有 enabled 的权限也带进来
+    // 反向不联动（取消菜单不自动取消权限），避免误删用户手动细调的权限
+    Set<Long> effectivePermissionIds = new HashSet<>(req.permissionIds());
+    Set<Long> menuIds = new HashSet<>(req.menuIds());
+    if (!menuIds.isEmpty()) {
+      List<PermissionEntity> menuPerms = permissionMapper.selectList(
+          new LambdaQueryWrapper<PermissionEntity>()
+              .eq(PermissionEntity::getTenantId, tenantId)
+              .in(PermissionEntity::getMenuId, menuIds)
+              .eq(PermissionEntity::getStatus, "enabled")
+              .eq(PermissionEntity::getDeleted, 0));
+      for (PermissionEntity perm : menuPerms) {
+        effectivePermissionIds.add(perm.getId());
+      }
+    }
+
     roleMenuRelationMapper.physicalDeleteByRole(tenantId, id);
-    for (Long menuId : new HashSet<>(req.menuIds())) {
+    for (Long menuId : menuIds) {
       RoleMenuEntity relation = new RoleMenuEntity();
       relation.setTenantId(tenantId);
       relation.setRoleId(id);
@@ -144,7 +161,7 @@ public class RoleApplicationService {
     }
 
     rolePermissionRelationMapper.physicalDeleteByRole(tenantId, id);
-    for (Long permissionId : new HashSet<>(req.permissionIds())) {
+    for (Long permissionId : effectivePermissionIds) {
       RolePermissionEntity relation = new RolePermissionEntity();
       relation.setTenantId(tenantId);
       relation.setRoleId(id);

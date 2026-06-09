@@ -33,7 +33,29 @@ import {
   getMenuTree,
   getPermissionMatrix,
 } from '../../api/system';
-import type { RoleVO, MenuTreeVO, PermissionMatrixVO } from '../../types/system';
+import type { RoleVO, MenuTreeVO, PermissionMatrixVO, PermissionItemVO } from '../../types/system';
+
+// 操作类型分组顺序（业务侧常见顺序：先看再写后改删导）
+const ACTION_ORDER: Array<{ key: string; label: string; color: string }> = [
+  { key: 'view', label: '查看', color: 'blue' },
+  { key: 'query', label: '查询', color: 'blue' },
+  { key: 'list', label: '列表', color: 'blue' },
+  { key: 'create', label: '新增', color: 'green' },
+  { key: 'add', label: '新增', color: 'green' },
+  { key: 'update', label: '编辑', color: 'orange' },
+  { key: 'edit', label: '编辑', color: 'orange' },
+  { key: 'delete', label: '删除', color: 'red' },
+  { key: 'export', label: '导出', color: 'purple' },
+  { key: 'import', label: '导入', color: 'cyan' },
+  { key: 'audit', label: '审核', color: 'gold' },
+  { key: 'other', label: '其他', color: 'default' },
+];
+
+function resolveActionGroup(action: string | undefined | null) {
+  const key = (action || '').toLowerCase().trim();
+  if (!key) return ACTION_ORDER[ACTION_ORDER.length - 1];
+  return ACTION_ORDER.find((g) => g.key === key) || ACTION_ORDER[ACTION_ORDER.length - 1];
+}
 
 function buildMenuCheckTree(
   menus: MenuTreeVO[],
@@ -193,9 +215,35 @@ export function RolePage() {
     [],
   );
 
-  const handleMenuCheck = useCallback((keys: any) => {
-    setCheckedMenuIds(keys as number[]);
-  }, []);
+  const handleMenuCheck = useCallback(
+    (keys: any, info: any) => {
+      const nextMenuIds = (keys as number[]).map((k) => Number(k));
+      setCheckedMenuIds(nextMenuIds);
+
+      // 联动：把"当前所有已勾菜单"下的 perm id 全部加进 checkedPermIds
+      // 反向不联动（取消菜单时不取消对应权限），由用户手动细调
+      const allMatrix = (permMatrixQuery.data || []) as PermissionMatrixVO[];
+      const permIdByMenuId = new Map<number, number[]>();
+      for (const group of allMatrix) {
+        permIdByMenuId.set(
+          group.menuId,
+          group.permissions.map((p) => Number(p.id)),
+        );
+      }
+
+      setCheckedPermIds((prev) => {
+        const next = new Set(prev);
+        const menuIdSet = new Set(nextMenuIds);
+        for (const [menuId, permIds] of permIdByMenuId.entries()) {
+          if (menuIdSet.has(menuId)) {
+            for (const pid of permIds) next.add(pid);
+          }
+        }
+        return next;
+      });
+    },
+    [permMatrixQuery.data],
+  );
 
   const handlePermToggle = useCallback((permId: number, checked: boolean) => {
     setCheckedPermIds((prev) => {
@@ -501,47 +549,123 @@ export function RolePage() {
         </div>
 
         <div>
-          <Typography.Title level={5} style={{ marginBottom: 12 }}>
-            功能权限
-          </Typography.Title>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              功能权限
+            </Typography.Title>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              勾选菜单时会自动带出该菜单下的全部权限；取消菜单不会级联取消，可单独调整
+            </Typography.Text>
+          </div>
           {permMatrix.length > 0 ? (
-            permMatrix.map((group: PermissionMatrixVO) => (
-              <div
-                key={group.menuId}
-                style={{
-                  marginBottom: 16,
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 8,
-                  overflow: 'hidden',
-                }}
-              >
+            permMatrix.map((group: PermissionMatrixVO) => {
+              const menuIsChecked = checkedMenuIds.some((id) => Number(id) === Number(group.menuId));
+              const grouped = group.permissions.reduce<Record<string, PermissionItemVO[]>>((acc, p) => {
+                const g = resolveActionGroup(p.action);
+                (acc[g.key] ||= []).push(p);
+                return acc;
+              }, {});
+
+              return (
                 <div
+                  key={group.menuId}
                   style={{
-                    padding: '8px 14px',
-                    background: '#f8fafc',
-                    borderBottom: '1px solid #e2e8f0',
-                    fontWeight: 600,
-                    fontSize: 13,
-                    color: '#475569',
+                    marginBottom: 16,
+                    border: menuIsChecked ? '1px solid #1677ff' : '1px solid #e2e8f0',
+                    borderRadius: 8,
+                    overflow: 'hidden',
+                    background: menuIsChecked ? '#f0f7ff' : '#fff',
+                    transition: 'all 0.2s',
                   }}
                 >
-                  {group.menuName}
-                </div>
-                <div style={{ padding: '8px 14px' }}>
-                  <Space wrap>
-                    {group.permissions.map((perm) => (
-                      <Checkbox
-                        key={perm.id}
-                        checked={checkedPermIds.has(perm.id)}
-                        onChange={(e) => handlePermToggle(perm.id, e.target.checked)}
+                  <div
+                    style={{
+                      padding: '8px 14px',
+                      background: menuIsChecked ? '#e6f4ff' : '#f8fafc',
+                      borderBottom: '1px solid #e2e8f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <Space size={8} wrap>
+                      <Typography.Text strong style={{ fontSize: 13, color: '#1f2937' }}>
+                        {group.menuName}
+                      </Typography.Text>
+                      {group.menuPath && group.menuPath.includes(' / ') && (
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          {group.menuPath}
+                        </Typography.Text>
+                      )}
+                      <Tag color="default">{group.permissions.length} 个权限</Tag>
+                    </Space>
+                    <Space size={4}>
+                      <Button
+                        type="link"
+                        size="small"
+                        onClick={() => {
+                          // 一键全选该菜单下所有权限
+                          setCheckedPermIds((prev) => {
+                            const next = new Set(prev);
+                            for (const p of group.permissions) next.add(Number(p.id));
+                            return next;
+                          });
+                        }}
                       >
-                        {perm.name}
-                      </Checkbox>
+                        全选
+                      </Button>
+                      <Button
+                        type="link"
+                        size="small"
+                        onClick={() => {
+                          // 一键清空该菜单下所有权限
+                          setCheckedPermIds((prev) => {
+                            const next = new Set(prev);
+                            for (const p of group.permissions) next.delete(Number(p.id));
+                            return next;
+                          });
+                        }}
+                      >
+                        清空
+                      </Button>
+                    </Space>
+                  </div>
+                  <div style={{ padding: '10px 14px' }}>
+                    {ACTION_ORDER.filter((g) => grouped[g.key]?.length).map((g) => (
+                      <div
+                        key={g.key}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: 12,
+                          padding: '4px 0',
+                        }}
+                      >
+                        <Tag color={g.color} style={{ minWidth: 48, textAlign: 'center', marginTop: 4 }}>
+                          {g.label}
+                        </Tag>
+                        <Space wrap size={[12, 8]} style={{ flex: 1 }}>
+                          {grouped[g.key].map((perm) => (
+                            <Checkbox
+                              key={perm.id}
+                              checked={checkedPermIds.has(Number(perm.id))}
+                              onChange={(e) => handlePermToggle(Number(perm.id), e.target.checked)}
+                            >
+                              <Space size={4}>
+                                <span>{perm.name}</span>
+                                <Typography.Text type="secondary" style={{ fontSize: 11 }} code>
+                                  {perm.code}
+                                </Typography.Text>
+                              </Space>
+                            </Checkbox>
+                          ))}
+                        </Space>
+                      </div>
                     ))}
-                  </Space>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <Typography.Text type="secondary">暂无权限数据</Typography.Text>
           )}

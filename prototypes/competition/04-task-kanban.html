@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>任务中心-看板视图</title>
+  <link rel="stylesheet" href="common.css">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#1f2937;font-size:14px}
+    .container{display:flex;min-height:100vh}
+    .sidebar{width:220px;background:#fff;border-right:1px solid #e8e8e8;flex-shrink:0;padding:16px 0;position:sticky;top:0;height:100vh;overflow-y:auto}
+    .logo{padding:0 16px 16px;border-bottom:1px solid #f0f0f0;margin-bottom:8px}
+    .logo h2{font-size:16px;font-weight:600}.logo p{font-size:12px;color:#8c8c8c;margin-top:4px}
+    .menu-item{padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:.2s}
+    .menu-item:hover{background:#f5f7fa}.menu-item.active{background:#e6f4ff;color:#165dff}
+    .menu-item .arrow{margin-left:auto;font-size:12px;color:#bfbfbf;transition:.2s}
+    .menu-item.expanded .arrow{transform:rotate(90deg)}
+    .sub-list{max-height:0;overflow:hidden;transition:max-height .3s}.sub-list.expanded{max-height:600px}
+    .sub-item{padding:9px 16px 9px 46px;cursor:pointer;font-size:13px;color:#4b5563;transition:.2s}
+    .sub-item:hover{background:#f5f7fa;color:#165dff}
+    .sub-item.active{background:#e6f4ff;color:#165dff;border-right:3px solid #165dff}
+    main{flex:1;min-width:0;display:flex;flex-direction:column}
+    .header{height:60px;background:#fff;border-bottom:1px solid #e8e8e8;display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:10}
+    .crumb{color:#8c8c8c;font-size:13px}.crumb .now{color:#1f2937;font-weight:500}
+    .header-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+    .avatar{width:32px;height:32px;border-radius:50%;background:#165dff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500}
+
+    /* Page 4 filter bar */
+    .filter-bar{height:64px;background:#fff;padding:0 24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #f0f0f0}
+    .filter-bar select{padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;background:#fff;min-width:140px}
+    .filter-bar .select240{min-width:240px}
+    .view-group{display:flex;border:1px solid #d9d9d9;border-radius:6px;overflow:hidden}
+    .view-group .vb{padding:6px 14px;font-size:13px;cursor:pointer;background:#fff;color:#4b5563;border-right:1px solid #d9d9d9}
+    .view-group .vb:last-child{border-right:none}
+    .view-group .vb.active{background:#165dff;color:#fff}
+    .search-box{position:relative}
+    .search-box input{padding:6px 10px 6px 28px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;width:240px;background:#fff}
+    .search-box::before{content:"🔍";position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px;color:#8c8c8c}
+    .right-tools{margin-left:auto;display:flex;gap:8px}
+    .btn{padding:7px 14px;border-radius:6px;font-size:13px;cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;gap:6px}
+    .btn-primary{background:#165dff;color:#fff;border-color:#165dff}
+    .btn-secondary{background:#fff;color:#1f2937;border-color:#d9d9d9}
+
+    /* Progress strip */
+    .progress-strip{height:80px;background:#fff;margin:16px 24px 0;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06);padding:14px 20px;display:flex;align-items:center;gap:8px;overflow-x:auto}
+    .ps-node{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:120px}
+    .ps-circle{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:#fff}
+    .ps-circle.ok{background:#52c41a}
+    .ps-circle.cur{background:#165dff}
+    .ps-circle.todo{background:#d9d9d9}
+    .ps-circle.bad{background:#ff4d4f}
+    .ps-label{font-size:12px;color:#1f2937;font-weight:500}
+    .ps-pct{font-size:11px;color:#8c8c8c}
+    .ps-line{width:60px;height:3px;background:#e8e8e8;border-radius:2px;position:relative;margin-top:-22px}
+    .ps-line.ok{background:#52c41a}.ps-line.cur{background:#165dff}.ps-line.bad{background:#ff4d4f}
+    .ps-line.partial{background:linear-gradient(90deg,#52c41a 60%,#e8e8e8 60%)}
+
+    /* Kanban */
+    .kanban{padding:16px 24px 24px;display:flex;gap:16px;overflow-x:auto;flex:1}
+    .kcol{width:280px;flex-shrink:0;background:#f5f7fa;border-radius:8px;display:flex;flex-direction:column;max-height:calc(100vh - 320px)}
+    .kcol-head{height:48px;padding:0 14px;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;background:#fff;border-radius:8px 8px 0 0;border-bottom:1px solid #f0f0f0}
+    .kcol-head .dot{width:8px;height:8px;border-radius:50%}
+    .kcol-head .cnt{font-size:12px;font-weight:400;color:#8c8c8c;background:#f5f7fa;padding:2px 8px;border-radius:10px}
+    .kcol-body{padding:10px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex:1}
+    .kcard{background:#fff;border-radius:8px;padding:12px;box-shadow:0 2px 6px rgba(0,0,0,.05);cursor:grab;border:1px solid transparent;transition:.2s}
+    .kcard:hover{border-color:#91caff;box-shadow:0 4px 12px rgba(0,0,0,.08)}
+    .kcard-top{display:flex;align-items:flex-start;gap:6px;margin-bottom:8px}
+    .kcard-name{font-size:14px;font-weight:600;flex:1;line-height:1.4}
+    .prio{font-size:11px;padding:1px 8px;border-radius:4px;font-weight:500;white-space:nowrap}
+    .prio.h{background:#fff1f0;color:#cf1322}
+    .prio.m{background:#fff7e6;color:#d48806}
+    .prio.l{background:#f6ffed;color:#389e0d}
+    .kcard-mid{display:flex;align-items:center;gap:6px;font-size:12px;color:#4b5563;margin-bottom:6px}
+    .kcard-mid .av{width:20px;height:20px;border-radius:50%;background:#165dff;color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:600}
+    .kcard-mid .av.org{background:#722ed1}.kcard-mid .av.grn{background:#52c41a}.kcard-mid .av.amb{background:#fa8c16}
+    .kcard-mid .due{color:#8c8c8c;margin-left:auto}
+    .kcard-mid .due.bad{color:#cf1322;font-weight:500}
+    .kcard-bot{display:flex;align-items:center;gap:6px}
+    .kcard-bot .tag{font-size:11px;padding:2px 8px;background:#f5f7fa;color:#8c8c8c;border-radius:4px}
+
+    /* FAB */
+    .fab{position:fixed;right:32px;bottom:32px;width:56px;height:56px;border-radius:50%;background:#165dff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;box-shadow:0 6px 20px rgba(22,93,255,.35);z-index:100}
+    .fab:hover{background:#0e4ad6}
+  </style>
+</head>
+<body>
+<div class="container">
+  <aside class="sidebar">
+    <div class="logo"><h2>数字化管理平台</h2><p>qianlvguoyu saas</p></div>
+    <div class="menu-item">📊 <span>数据看板</span></div>
+    <div class="menu-item">🏆 <span>比赛管理</span><span class="arrow">▶</span></div>
+    <div class="sub-list">
+      <div class="sub-item">📋 比赛列表</div>
+      <div class="sub-item" onclick="window.location.href='01-template-library.html'">📚 流程模板库</div>
+      <div class="sub-item" onclick="window.location.href='02-competition-create-flow.html'">➕ 新建比赛</div>
+    </div>
+    <div class="menu-item expanded">✅ <span>任务中心</span><span class="arrow">▶</span></div>
+    <div class="sub-list expanded">
+      <div class="sub-item active" onclick="window.location.href='04-task-kanban.html'">📋 全部任务</div>
+      <div class="sub-item" onclick="window.location.href='05-task-gantt.html'">📅 甘特图</div>
+    </div>
+    <div class="menu-item">📚 <span>知识库</span></div>
+    <div class="menu-item">📝 <span>题库管理</span></div>
+    <div class="menu-item">🎓 <span>培训管理</span></div>
+    <div class="menu-item">⚙️ <span>系统设置</span></div>
+  </aside>
+
+  <main>
+    <header class="header">
+      <div class="crumb">任务中心 <span style="margin:0 6px">/</span> <span class="now">全部任务</span></div>
+      <div class="header-right"><div class="avatar">王</div></div>
+    </header>
+
+    <!-- Filter -->
+    <div class="filter-bar">
+      <select class="select240"><option>选择比赛: 2026年全国职业技能大赛</option></select>
+      <div class="view-group">
+        <div class="vb active">📋 看板视图</div>
+        <div class="vb" onclick="window.location.href='#'">📃 列表视图</div>
+        <div class="vb" onclick="window.location.href='05-task-gantt.html'">📅 甘特图</div>
+      </div>
+      <select><option>全部状态</option><option>待开始</option><option>进行中</option><option>已逾期</option><option>已完成</option></select>
+      <select><option>全部执行人</option><option>张老师</option><option>王主任</option></select>
+      <div class="search-box"><input placeholder="搜索任务名称"></div>
+      <div class="right-tools">
+        <button class="btn btn-secondary">📤 导出Excel</button>
+        <button class="btn btn-primary">➕ 新建任务</button>
+      </div>
+    </div>
+
+    <!-- Progress strip -->
+    <div class="progress-strip">
+      <div class="ps-node"><div class="ps-circle ok">✓</div><div class="ps-label">竞赛通知</div><div class="ps-pct">100%</div></div>
+      <div class="ps-line ok"></div>
+      <div class="ps-node"><div class="ps-circle ok">✓</div><div class="ps-label">报名活动</div><div class="ps-pct">100%</div></div>
+      <div class="ps-line ok"></div>
+      <div class="ps-node"><div class="ps-circle ok">✓</div><div class="ps-label">技术文件</div><div class="ps-pct">100%</div></div>
+      <div class="ps-line ok"></div>
+      <div class="ps-node"><div class="ps-circle cur">●</div><div class="ps-label">赛前培训</div><div class="ps-pct">75%</div></div>
+      <div class="ps-line partial"></div>
+      <div class="ps-node"><div class="ps-circle cur">●</div><div class="ps-label">初赛</div><div class="ps-pct">40%</div></div>
+      <div class="ps-line" style="background:#e8e8e8"></div>
+      <div class="ps-node"><div class="ps-circle todo">○</div><div class="ps-label">复赛</div><div class="ps-pct">0%</div></div>
+      <div class="ps-line" style="background:#e8e8e8"></div>
+      <div class="ps-node"><div class="ps-circle todo">○</div><div class="ps-label">决赛</div><div class="ps-pct">0%</div></div>
+      <div class="ps-line" style="background:#e8e8e8"></div>
+      <div class="ps-node"><div class="ps-circle bad">!</div><div class="ps-label">闭幕</div><div class="ps-pct">异常</div></div>
+    </div>
+
+    <!-- Kanban -->
+    <div class="kanban">
+      <!-- 待办 -->
+      <div class="kcol">
+        <div class="kcol-head"><span class="dot" style="background:#8c8c8c"></span>待办 <span class="cnt">6</span></div>
+        <div class="kcol-body">
+          <div class="kcard">
+            <div class="kcard-top"><div class="kcard-name">复赛考场安排</div><span class="prio h">高</span></div>
+            <div class="kcard-mid"><div class="av">陈</div>陈考务<span class="due">📅 08-08</span></div>
+            <div class="kcard-bot"><span class="tag">复赛</span></div>
+          </div>
+          <div class="kcard">
+            <div class="kcard-top"><div class="kcard-name">复赛评委邀请</div><span class="prio h">高</span></div>
+            <div class="kcard-mid"><div class="av org">褚</div>褚监考<span class="due">📅 08-08</span></div>
+            <div class="kcard-bot"><span class="tag">复赛</span></div>
+          </div>
+          <div class="kcard">
+            <div class="kcard-top"><div class="kcard-name">决赛奖品采购</div><span class="prio m">中</span></div>
+            <div class="kcard-mid"><div class="av grn">沈</div>沈采购<span class="due">📅 08-12</span></div>
+            <div class="kcard-bot"><span class="tag">决赛</span></div>
+          </div>
+          <div class="kcard">
+            <div class="kcard-top"><div class="kcard-name">闭幕场地布置</div><span class="prio m">中</span></div>
+            <div class="kcard-mid"><div class="av amb">韩</div>韩场务<span class="due">📅 08-13</span></div>
+            <div class="kcard-bot"><span class="tag">闭幕仪式</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 进行中 -->
+      <div class="kcol">
+        <div class="kcol-head"><span class="dot" style="background:#165dff"></span>进行中 <span class="cnt">5</span></div>
+        <div class="kcol-body">
+          <div class="kcard">
+            <div class="kcard-top"><div class="kcard-name">初赛阅卷评分</div><span class="prio h">高</span></div>
+            <div class="kcard-mid"><div class="av">卫</div>卫阅卷<span class="due">📅 08-05</span></div>
+            <div class="kcard-bot"><span class="tag">初赛</span></div>
+          </div>
+          <div class="kcard">
+            <div class="kcard-top"><div class="kcard-name">初赛成绩汇总</div><span class="prio h">高</span></div>
+            <div class="kcard-mid"><div class="av org">蒋</div>蒋发布<span class="due">📅 08-06</span></div>
+            <div class="kcard-bot"><span class="tag">初赛</span></div>
+          </div>
+          <div class="kcard">
+            <div class="kcard-top"><div class="kcard-name">赛前培训材料打印</div><span class="prio m">中</span></div>
+            <div class="kcard-mid"><div class="av grn">冯</div>冯材料<span class="due">📅 08-02</span></div>
+            <div class="kcard-bot"><span class="tag">赛前培训</span></div>
+          </div>
+          <div class="kcard">
+            <div class="kcard-top"><div class="kcard-name">复赛规则修订</div><span class="prio m">中</span></div>
+            <div class="kcard-mid"><div class="av amb">杨</div>杨规则<span class="due">📅 08-04</span></div>
+            <div class="kcard-bot"><span class="tag">复赛</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 已完成 -->
+      <div class="kcol">
+        <div class="kcol-head"><span class="dot" style="background:#52c41a"></span>已完成 <span class="cnt">12</span></div>
+        <div class="kcol-body">
+          <div class="kcard">
+            <div class="kcard-top"><div class="kcard-name">发布竞赛通知</div><span class="prio h">高</span></div>
+            <div class="kcard-mid"><div class="av">张</div>张老师<span class="due" style="color:#52c41a">✓ 已完成</span></div>
+            <div class="kcard-bot"><span class="tag">竞赛通知</span></div>
+          </div>
+          <div class="kcard">
+            <div class="kcard-top"><div class="kcard-name">报名审核完成</div><span class="prio m">中</span></div>
+            <div class="kcard-mid"><div class="av org">赵</div>赵审核<span class="due" style="color:#52c41a">✓ 已完成</span></div>
+            <div class="kcard-bot"><span class="tag">报名活动</span></div>
+          </div>
+          <div class="kcard">
+            <div class="kcard-top"><div class="kcard-name">技术文件发布</div><span class="prio h">高</span></div>
+            <div class="kcard-mid"><div class="av grn">吴</div>吴发布<span class="due" style="color:#52c41a">✓ 已完成</span></div>
+            <div class="kcard-bot"><span class="tag">技术文件</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 已逾期 -->
+      <div class="kcol">
+        <div class="kcol-head"><span class="dot" style="background:#ff4d4f"></span>已逾期 <span class="cnt">3</span></div>
+        <div class="kcol-body">
+          <div class="kcard" style="border-color:#ffccc7">
+            <div class="kcard-top"><div class="kcard-name">闭幕预算审批</div><span class="prio h">高</span></div>
+            <div class="kcard-mid"><div class="av">朱</div>朱审批<span class="due bad">⚠ 已逾期 2 天</span></div>
+            <div class="kcard-bot"><span class="tag">闭幕仪式</span></div>
+          </div>
+          <div class="kcard" style="border-color:#ffccc7">
+            <div class="kcard-top"><div class="kcard-name">决赛场地预定</div><span class="prio h">高</span></div>
+            <div class="kcard-mid"><div class="av org">秦</div>秦预定<span class="due bad">⚠ 已逾期 1 天</span></div>
+            <div class="kcard-bot"><span class="tag">决赛</span></div>
+          </div>
+          <div class="kcard" style="border-color:#ffccc7">
+            <div class="kcard-top"><div class="kcard-name">颁奖嘉宾邀请</div><span class="prio m">中</span></div>
+            <div class="kcard-mid"><div class="av amb">尤</div>尤邀请<span class="due bad">⚠ 已逾期 3 天</span></div>
+            <div class="kcard-bot"><span class="tag">闭幕仪式</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="fab" title="发送提醒">🔔</div>
+</body>
+</html>

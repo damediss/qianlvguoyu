@@ -7,6 +7,7 @@ public record PermissionMatrixVO(
     String menuName,
     String menuCode,
     Integer menuSortOrder,
+    String menuPath,
     List<PermissionItemVO> permissions
 ) {
 }

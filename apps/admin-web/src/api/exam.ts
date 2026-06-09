@@ -23,6 +23,13 @@ import type {
   TaskAuditDetailItem,
   TaskAuditDaily,
   TaskAuditAssignExpertReq,
+  ExamKnowledgeStructure,
+  ExamKnowledgeStructureCreateReq,
+  ExamKnowledgeStructureUpdateReq,
+  ExamExamDetail,
+  ExamExamDetailCreateReq,
+  ExamExamDetailUpdateReq,
+  ExamExamDetailQuery,
 } from '../types/exam';
 
 export function pageWorkTypes(params: ExamWorkTypeQuery) {
@@ -210,4 +217,50 @@ export function importTaskExamshicao(formData: FormData) {
 
 export function importTaskExamsub(formData: FormData) {
   return unwrap<number>(apiClient.post('/exam/task-examsubs/import', formData));
+}
+
+// ---- 试题管理 — 知识点 ----
+export function treeKnowledgeStructures(courseId?: number, type?: number) {
+  return unwrap<ExamKnowledgeStructure[]>(
+    apiClient.get('/exam/knowledge-structures/tree', { params: { courseId, type } }),
+  );
+}
+
+export function createKnowledgeStructure(payload: ExamKnowledgeStructureCreateReq) {
+  return unwrap<ExamKnowledgeStructure>(apiClient.post('/exam/knowledge-structures', payload));
+}
+
+export function updateKnowledgeStructure(id: number, payload: ExamKnowledgeStructureUpdateReq) {
+  return unwrap<ExamKnowledgeStructure>(apiClient.put(`/exam/knowledge-structures/${id}`, payload));
+}
+
+export function deleteKnowledgeStructure(id: number) {
+  return unwrap<void>(apiClient.delete(`/exam/knowledge-structures/${id}`));
+}
+
+export function batchImportKnowledgeStructures(courseId: number | undefined, type: number | undefined, lines: string[]) {
+  return unwrap<number>(apiClient.post('/exam/knowledge-structures/batch', lines, {
+    params: { courseId, type },
+  }));
+}
+
+// ---- 试题管理 — 试题详情 ----
+export function pageExamDetails(params: ExamExamDetailQuery) {
+  return unwrap<PageResponse<ExamExamDetail>>(apiClient.get('/exam/exam-details', { params }));
+}
+
+export function getExamDetail(id: number) {
+  return unwrap<ExamExamDetail>(apiClient.get(`/exam/exam-details/${id}`));
+}
+
+export function createExamDetail(payload: ExamExamDetailCreateReq) {
+  return unwrap<ExamExamDetail>(apiClient.post('/exam/exam-details', payload));
+}
+
+export function updateExamDetail(id: number, payload: ExamExamDetailUpdateReq) {
+  return unwrap<ExamExamDetail>(apiClient.put(`/exam/exam-details/${id}`, payload));
+}
+
+export function deleteExamDetail(id: number) {
+  return unwrap<void>(apiClient.delete(`/exam/exam-details/${id}`));
 }

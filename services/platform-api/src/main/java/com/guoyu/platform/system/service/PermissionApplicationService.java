@@ -120,11 +120,31 @@ public class PermissionApplicationService {
           menu.getName(),
           menu.getCode(),
           menu.getSortOrder(),
+          buildMenuPath(menu, menuById),
           items
       ));
     }
 
     return result;
+  }
+
+  /**
+   * 递归拼接菜单面包屑路径，如 "智训平台 / 任务管理 / 任务档案"。
+   * 找不到父级时直接返回当前菜单名，不抛错。
+   */
+  private String buildMenuPath(MenuEntity menu, Map<Long, MenuEntity> menuById) {
+    List<String> segments = new ArrayList<>();
+    MenuEntity cursor = menu;
+    int guard = 0;
+    while (cursor != null && guard++ < 16) {
+      segments.add(0, cursor.getName());
+      Long parentId = cursor.getParentId();
+      if (parentId == null || parentId == 0) {
+        break;
+      }
+      cursor = menuById.get(parentId);
+    }
+    return String.join(" / ", segments);
   }
 
   @Transactional(readOnly = true)

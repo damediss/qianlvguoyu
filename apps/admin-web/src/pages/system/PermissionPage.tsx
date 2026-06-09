@@ -208,8 +208,13 @@ export function PermissionPage() {
             items={matrixData.map((group: PermissionMatrixVO) => ({
               key: String(group.menuId),
               label: (
-                <Space>
+                <Space wrap>
                   <Typography.Text strong>{group.menuName}</Typography.Text>
+                  {group.menuPath && group.menuPath.includes(' / ') && (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {group.menuPath}
+                    </Typography.Text>
+                  )}
                   <Tag>{group.permissions.length} 个权限</Tag>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     {group.menuCode}

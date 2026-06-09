@@ -354,5 +354,6 @@ export interface PermissionMatrixVO {
   menuName: string;
   menuCode: string;
   menuSortOrder: number;
+  menuPath: string;
   permissions: PermissionItemVO[];
 }

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>任务中心-甘特图视图</title>
+  <link rel="stylesheet" href="common.css">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#1f2937;font-size:14px;overflow:hidden}
+    .container{display:flex;min-height:100vh}
+    .sidebar{width:220px;background:#fff;border-right:1px solid #e8e8e8;flex-shrink:0;padding:16px 0;position:sticky;top:0;height:100vh;overflow-y:auto}
+    .logo{padding:0 16px 16px;border-bottom:1px solid #f0f0f0;margin-bottom:8px}
+    .logo h2{font-size:16px;font-weight:600}.logo p{font-size:12px;color:#8c8c8c;margin-top:4px}
+    .menu-item{padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:.2s}
+    .menu-item:hover{background:#f5f7fa}.menu-item.active{background:#e6f4ff;color:#165dff}
+    .menu-item .arrow{margin-left:auto;font-size:12px;color:#bfbfbf;transition:.2s}
+    .menu-item.expanded .arrow{transform:rotate(90deg)}
+    .sub-list{max-height:0;overflow:hidden;transition:max-height .3s}.sub-list.expanded{max-height:600px}
+    .sub-item{padding:9px 16px 9px 46px;cursor:pointer;font-size:13px;color:#4b5563;transition:.2s}
+    .sub-item:hover{background:#f5f7fa;color:#165dff}
+    .sub-item.active{background:#e6f4ff;color:#165dff;border-right:3px solid #165dff}
+    main{flex:1;min-width:0;display:flex;flex-direction:column}
+    .header{height:60px;background:#fff;border-bottom:1px solid #e8e8e8;display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:10}
+    .crumb{color:#8c8c8c;font-size:13px}.crumb .now{color:#1f2937;font-weight:500}
+    .header-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+    .avatar{width:32px;height:32px;border-radius:50%;background:#165dff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500}
+
+    .filter-bar{height:64px;background:#fff;padding:0 24px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #f0f0f0}
+    .filter-bar select{padding:6px 10px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;background:#fff;min-width:160px}
+    .view-group{display:flex;border:1px solid #d9d9d9;border-radius:6px;overflow:hidden}
+    .view-group .vb{padding:6px 14px;font-size:13px;cursor:pointer;background:#fff;color:#4b5563;border-right:1px solid #d9d9d9}
+    .view-group .vb:last-child{border-right:none}
+    .view-group .vb.active{background:#165dff;color:#fff}
+    .gran-group{display:flex;border:1px solid #d9d9d9;border-radius:6px;overflow:hidden}
+    .gran-group .gb{padding:6px 12px;font-size:12px;cursor:pointer;background:#fff;color:#4b5563;border-right:1px solid #d9d9d9}
+    .gran-group .gb:last-child{border-right:none}
+    .gran-group .gb.active{background:#165dff;color:#fff}
+    .show-group{display:flex;align-items:center;gap:14px;font-size:12px;color:#4b5563;padding:0 8px;border-left:1px solid #f0f0f0;height:24px}
+    .show-group label{display:flex;align-items:center;gap:4px;cursor:pointer}
+    .zoom{font-size:13px;display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #d9d9d9;border-radius:6px;padding:0 8px;height:30px}
+    .zoom .zb{width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:4px}
+    .zoom .zb:hover{background:#f5f7fa}
+    .right-tools{margin-left:auto;display:flex;gap:8px}
+    .btn{padding:7px 14px;border-radius:6px;font-size:13px;cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;gap:6px}
+    .btn-primary{background:#165dff;color:#fff;border-color:#165dff}
+    .btn-secondary{background:#fff;color:#1f2937;border-color:#d9d9d9}
+
+    /* Gantt */
+    .gantt-wrap{flex:1;display:flex;background:#fff;margin:16px 24px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06);overflow:hidden}
+    .tree-panel{width:320px;border-right:1px solid #f0f0f0;display:flex;flex-direction:column;flex-shrink:0}
+    .tree-head{height:36px;background:#fafbfc;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;padding:0 14px;font-size:12px;color:#8c8c8c;font-weight:500}
+    .tree-body{flex:1;overflow-y:auto}
+    .trow{height:36px;display:flex;align-items:center;padding:0 14px;gap:6px;border-bottom:1px solid #f5f5f5;cursor:pointer}
+    .trow:hover{background:#fafbfc}
+    .trow.l1{font-weight:600;background:#f5f7fa}
+    .trow.l2{padding-left:36px}
+    .trow.l3{padding-left:64px;font-size:12px}
+    .trow.l3 .name{color:#4b5563}
+    .trow .caret{width:14px;color:#8c8c8c;font-size:10px}
+    .trow .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .trow .exe{font-size:11px;color:#8c8c8c;width:50px;text-align:right}
+    .trow .st{font-size:10px;padding:1px 6px;border-radius:3px}
+    .trow .st.ok{background:#f6ffed;color:#389e0d}
+    .trow .st.cur{background:#e6f4ff;color:#165dff}
+    .trow .st.todo{background:#f5f7fa;color:#8c8c8c}
+    .trow .st.bad{background:#fff1f0;color:#cf1322}
+    .trow.milestone .name::after{content:" ★";color:#ff4d4f}
+    .trow.overdue .name{color:#cf1322}
+    .trow.overdue .name::after{content:" ⚠";color:#cf1322}
+
+    .gantt-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
+    .gantt-head{height:36px;display:flex;border-bottom:1px solid #f0f0f0;background:#fafbfc;flex-shrink:0}
+    .gh-cell{flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#8c8c8c;border-right:1px solid #f5f5f5;font-weight:500}
+    .gh-cell.weekend{background:#f5f7fa}
+    .gh-cell.week-label{background:#fff;font-weight:600;color:#4b5563;border-bottom:1px solid #f0f0f0}
+    .gantt-body{flex:1;overflow:auto;position:relative}
+    .gantt-grid{position:absolute;top:0;left:0;right:0;bottom:0}
+    .grid-row{height:36px;border-bottom:1px solid #f5f5f5;position:relative}
+    .grid-row.weekend{background:#f5f7fa}
+    .grid-vline{position:absolute;top:0;bottom:0;width:1px;background:#f0f0f0}
+    .grid-vline.weekend{background:transparent}
+    .today-line{position:absolute;top:0;bottom:0;width:2px;background:#ff4d4f;z-index:5}
+    .today-line::before{content:"今";position:absolute;top:4px;left:4px;background:#ff4d4f;color:#fff;font-size:10px;padding:1px 4px;border-radius:3px}
+    .gantt-rows{position:relative;z-index:3}
+    .gantt-bar{position:absolute;height:18px;border-radius:3px;background:#165dff;display:flex;align-items:center;padding:0 6px;font-size:11px;color:#fff;font-weight:500;cursor:move;box-shadow:0 1px 2px rgba(0,0,0,.1)}
+    .gantt-bar .done{height:100%;background:#52c41a;border-radius:3px 0 0 3px}
+    .gantt-bar .lbl{margin-left:6px;position:relative;z-index:2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .gantt-bar.milestone{width:18px;background:#ff4d4f;transform:rotate(45deg);top:9px;border-radius:2px}
+    .gantt-bar.milestone .lbl{display:none}
+    .gantt-bar.overdue{border:2px solid #ff4d4f;background:#fff;color:#cf1322;top:7px;height:22px}
+    .gantt-bar.overdue .done{background:#ffccc7}
+    .dep-line{position:absolute;height:1px;background:#8c8c8c;border-top:1px dashed #8c8c8c;z-index:1}
+  </style>
+</head>
+<body>
+<div class="container">
+  <aside class="sidebar">
+    <div class="logo"><h2>数字化管理平台</h2><p>qianlvguoyu saas</p></div>
+    <div class="menu-item">📊 <span>数据看板</span></div>
+    <div class="menu-item">🏆 <span>比赛管理</span><span class="arrow">▶</span></div>
+    <div class="sub-list">
+      <div class="sub-item">📋 比赛列表</div>
+      <div class="sub-item" onclick="window.location.href='01-template-library.html'">📚 流程模板库</div>
+      <div class="sub-item" onclick="window.location.href='02-competition-create-flow.html'">➕ 新建比赛</div>
+    </div>
+    <div class="menu-item expanded">✅ <span>任务中心</span><span class="arrow">▶</span></div>
+    <div class="sub-list expanded">
+      <div class="sub-item" onclick="window.location.href='04-task-kanban.html'">📋 全部任务</div>
+      <div class="sub-item active" onclick="window.location.href='05-task-gantt.html'">📅 甘特图</div>
+    </div>
+    <div class="menu-item">📚 <span>知识库</span></div>
+    <div class="menu-item">📝 <span>题库管理</span></div>
+    <div class="menu-item">🎓 <span>培训管理</span></div>
+    <div class="menu-item">⚙️ <span>系统设置</span></div>
+  </aside>
+
+  <main>
+    <header class="header">
+      <div class="crumb">任务中心 <span style="margin:0 6px">/</span> <span class="now">甘特图视图</span></div>
+      <div class="header-right"><div class="avatar">王</div></div>
+    </header>
+
+    <div class="filter-bar">
+      <select><option>2026年全国职业技能大赛</option></select>
+      <div class="view-group">
+        <div class="vb" onclick="window.location.href='04-task-kanban.html'">📋 看板</div>
+        <div class="vb">📃 列表</div>
+        <div class="vb active">📅 甘特图</div>
+      </div>
+      <select><option>全部状态</option></select>
+      <select><option>全部执行人</option></select>
+      <div class="gran-group">
+        <div class="gb">日视图</div>
+        <div class="gb active">周视图</div>
+        <div class="gb">月视图</div>
+      </div>
+      <div class="show-group">
+        <label><input type="checkbox" checked> 里程碑</label>
+        <label><input type="checkbox" checked> 依赖线</label>
+        <label><input type="checkbox" checked> 周末</label>
+      </div>
+      <div class="zoom">
+        <div class="zb">−</div>
+        <span>100%</span>
+        <div class="zb">+</div>
+      </div>
+      <div class="right-tools">
+        <button class="btn btn-secondary">📤 导出Excel</button>
+        <button class="btn btn-primary">➕ 新建任务</button>
+      </div>
+    </div>
+
+    <div class="gantt-wrap">
+      <!-- Tree -->
+      <div class="tree-panel">
+        <div class="tree-head">任务层级</div>
+        <div class="tree-body">
+          <div class="trow l1"><span class="caret">▼</span><span class="name">🏆 2026 全国职业技能大赛</span></div>
+          <div class="trow l2"><span class="caret">▼</span><span class="name">📢 竞赛通知</span><span class="exe"></span><span class="st ok">完成</span></div>
+          <div class="trow l3"><span class="caret"></span><span class="name">发布通知公告</span><span class="exe">张</span><span class="st ok">完成</span></div>
+          <div class="trow l2"><span class="caret">▼</span><span class="name">📝 报名活动</span><span class="exe"></span><span class="st ok">完成</span></div>
+          <div class="trow l3"><span class="caret"></span><span class="name">报名审核</span><span class="exe">赵</span><span class="st ok">完成</span></div>
+          <div class="trow l2"><span class="caret">▼</span><span class="name">🎓 赛前培训</span><span class="exe"></span><span class="st cur">进行</span></div>
+          <div class="trow l3"><span class="caret"></span><span class="name">讲师安排</span><span class="exe">郑</span><span class="st ok">完成</span></div>
+          <div class="trow l3"><span class="caret"></span><span class="name">材料整理</span><span class="exe">冯</span><span class="st cur">进行</span></div>
+          <div class="trow l2"><span class="caret">▶</span><span class="name">🏆 初赛</span><span class="exe"></span><span class="st cur">进行</span></div>
+          <div class="trow l2"><span class="caret">▼</span><span class="name">🏆 复赛</span><span class="exe"></span><span class="st todo">未开始</span></div>
+          <div class="trow l3"><span class="caret"></span><span class="name">考场安排</span><span class="exe">陈</span><span class="st todo">未开始</span></div>
+          <div class="trow l3"><span class="caret"></span><span class="name">评委邀请</span><span class="exe">褚</span><span class="st todo">未开始</span></div>
+          <div class="trow l2 milestone"><span class="caret"></span><span class="name">⭐ 决赛开始</span><span class="exe"></span><span class="st milestone">里程碑</span></div>
+          <div class="trow l2"><span class="caret">▶</span><span class="name">🏆 决赛</span><span class="exe"></span><span class="st todo">未开始</span></div>
+          <div class="trow l2 overdue"><span class="caret">▶</span><span class="name">🎉 闭幕仪式</span><span class="exe"></span><span class="st bad">异常</span></div>
+          <div class="trow l3 overdue"><span class="caret"></span><span class="name">预算审批</span><span class="exe">朱</span><span class="st bad">逾期</span></div>
+        </div>
+      </div>
+
+      <!-- Gantt timeline -->
+      <div class="gantt-panel">
+        <div class="gantt-head">
+          <div class="gh-cell week-label" style="width:40px">周</div>
+          <div class="gh-cell" style="width:140px">第 27 周</div>
+          <div class="gh-cell" style="width:140px">第 28 周</div>
+          <div class="gh-cell" style="width:140px">第 29 周</div>
+          <div class="gh-cell" style="width:140px">第 30 周</div>
+          <div class="gh-cell" style="width:140px">第 31 周</div>
+          <div class="gh-cell" style="width:140px">第 32 周</div>
+          <div class="gh-cell" style="width:140px">第 33 周</div>
+        </div>
+        <div class="gantt-body">
+          <div class="gantt-grid">
+            <div class="grid-vline" style="left:40px;background:#e8e8e8"></div>
+            <div class="grid-vline" style="left:180px"></div>
+            <div class="grid-vline" style="left:320px"></div>
+            <div class="grid-vline" style="left:460px"></div>
+            <div class="grid-vline" style="left:600px"></div>
+            <div class="grid-vline" style="left:740px"></div>
+            <div class="grid-vline" style="left:880px"></div>
+            <div class="grid-vline" style="left:1020px"></div>
+            <div class="today-line" style="left:360px"></div>
+          </div>
+          <div class="gantt-rows">
+            <!-- Row 1: 竞赛通知 -->
+            <div class="grid-row"></div>
+            <div class="grid-row" style="position:relative;height:36px">
+              <div class="gantt-bar" style="left:50px;width:80px;top:9px"><div class="done" style="width:100%"></div><span class="lbl">发布通知</span></div>
+            </div>
+            <!-- Row 2: 报名 -->
+            <div class="grid-row" style="position:relative;height:36px">
+              <div class="gantt-bar" style="left:130px;width:180px;top:9px"><div class="done" style="width:100%"></div><span class="lbl">报名活动 (14d)</span></div>
+            </div>
+            <div class="grid-row"></div>
+            <!-- Row 3: 赛前培训 -->
+            <div class="grid-row" style="position:relative;height:36px">
+              <div class="gantt-bar" style="left:310px;width:120px;top:9px"><div class="done" style="width:75%"></div><span class="lbl">赛前培训</span></div>
+            </div>
+            <div class="grid-row"></div>
+            <div class="grid-row"></div>
+            <!-- Row 4: 初赛 -->
+            <div class="grid-row" style="position:relative;height:36px">
+              <div class="gantt-bar" style="left:430px;width:200px;top:9px"><div class="done" style="width:40%"></div><span class="lbl">初赛 (进行中)</span></div>
+            </div>
+            <div class="grid-row"></div>
+            <!-- Row 5: 复赛 -->
+            <div class="grid-row" style="position:relative;height:36px">
+              <div class="gantt-bar" style="left:630px;width:160px;top:9px;background:#91caff"><span class="lbl">复赛 (未开始)</span></div>
+            </div>
+            <div class="grid-row"></div>
+            <!-- Row 6: 决赛里程碑 -->
+            <div class="grid-row" style="position:relative;height:36px">
+              <div class="gantt-bar milestone" style="left:790px;top:9px" title="决赛开始 08-13"></div>
+            </div>
+            <!-- Row 7: 决赛 -->
+            <div class="grid-row" style="position:relative;height:36px">
+              <div class="gantt-bar" style="left:790px;width:120px;top:9px;background:#91caff"><span class="lbl">决赛</span></div>
+            </div>
+            <div class="grid-row"></div>
+            <!-- Row 8: 闭幕 -->
+            <div class="grid-row overdue" style="position:relative;height:36px">
+              <div class="gantt-bar overdue" style="left:910px;width:90px;top:7px"><div class="done" style="width:20%"></div><span class="lbl">闭幕 (逾期)</span></div>
+            </div>
+            <div class="grid-row"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

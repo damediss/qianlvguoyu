@@ -366,3 +366,182 @@ export interface PingfenItem {
   koufen?: string;      // 最大扣分
   buchang?: string;     // 步长
 }
+
+// ---- 知识点(试题管理) ----
+export interface ExamKnowledgeStructure {
+  id: number;
+  type: number;
+  useType: number | null;
+  courseId: number | null;
+  parentId: number;
+  cover: string;
+  intro: string;
+  title: string;
+  seriesNo: string;
+  level: number;
+  important: number;
+  userId: number | null;
+  status: number;
+  sortNumber: number;
+  tenantId: number;
+  amount: number;
+  createTime: string;
+  children?: ExamKnowledgeStructure[];
+}
+
+export interface ExamKnowledgeStructureCreateReq {
+  title: string;
+  type?: number;
+  courseId?: number;
+  parentId?: number;
+  seriesNo?: string;
+  important?: number;
+  status?: number;
+  sortNumber?: number;
+}
+
+export interface ExamKnowledgeStructureUpdateReq {
+  title?: string;
+  type?: number;
+  courseId?: number;
+  parentId?: number;
+  seriesNo?: string;
+  important?: number;
+  status?: number;
+  sortNumber?: number;
+}
+
+export interface ExamKnowledgeStructureQuery {
+  page?: number;
+  pageSize?: number;
+  courseId?: number;
+  type?: number;
+  title?: string;
+  level?: number;
+}
+
+// ---- 试题详情(试题管理) ----
+export interface ExamExamDetail {
+  id: number;
+  examId: number | null;
+  taskDetailId: number | null;
+  source: number;
+  orgId: number | null;
+  orgName: string;
+  knowledgeId: number | null;
+  knowledgeTitle: string;
+  isPrivate: number;
+  difficulty: number;
+  userId: number | null;
+  creatorName: string;
+  checkUserId: number | null;
+  finalCheckUserId: number | null;
+  type: string;
+  keyword: string;
+  audio: string;
+  video: string;
+  content: string;
+  answer: string;
+  score: number | null;
+  resolve: string;
+  checkStatus: number;
+  finalCheckStatus: number;
+  status: number;
+  sortNumber: number;
+  tenantId: number;
+  createTime: string;
+  checkTime: string;
+  finalCheckTime: string;
+}
+
+export interface ExamExamDetailCreateReq {
+  type: string;
+  content?: string;
+  answer?: string;
+  knowledgeId?: number;
+  difficulty?: number;
+  score?: number;
+  resolve?: string;
+  keyword?: string;
+  source?: number;
+  status?: number;
+  sortNumber?: number;
+}
+
+export interface ExamExamDetailUpdateReq {
+  type?: string;
+  content?: string;
+  answer?: string;
+  knowledgeId?: number;
+  difficulty?: number;
+  score?: number;
+  resolve?: string;
+  keyword?: string;
+  source?: number;
+  status?: number;
+  sortNumber?: number;
+  checkStatus?: number;
+  finalCheckStatus?: number;
+}
+
+export interface ExamExamDetailQuery {
+  page?: number;
+  pageSize?: number;
+  courseId?: number;
+  knowledgeId?: number;
+  type?: string;
+  source?: number;
+  difficulty?: number;
+  status?: number;
+  keyword?: string;
+}
+
+// 题型映射
+export const EXAM_TYPE_MAP: Record<string, string> = {
+  single: '单选题',
+  multi: '多选题',
+  judge: '判断题',
+  fill: '填空题',
+  short: '简答题',
+  essay: '论述题',
+  case: '案例分析',
+  composite: '综合题',
+  match: '匹配题',
+  read: '阅读理解',
+  practice: '实操题',
+  drawing: '制图题',
+  compute: '计算题',
+  name: '名词解释',
+  error_correction: '改错题',
+  program: '编程题',
+  oral: '口试题',
+  drawing2: '画图题',
+  cloze: '完形填空',
+  translation: '翻译题',
+  writing: '写作题',
+};
+
+// 难度映射
+export const DIFFICULTY_MAP: Record<number, string> = {
+  0: '易',
+  1: '较易',
+  2: '中',
+  3: '较难',
+  4: '难',
+};
+
+// 难度颜色
+export const DIFFICULTY_COLOR_MAP: Record<number, string> = {
+  0: 'green',
+  1: 'blue',
+  2: 'orange',
+  3: 'red',
+  4: '#8B0000',
+};
+
+// 审核状态映射
+export const CHECK_STATUS_MAP: Record<number, string> = {
+  0: '待审',
+  1: '通过',
+  2: '不通过',
+};
