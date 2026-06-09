@@ -86,7 +86,7 @@ public class OrgApplicationService {
       throw new BusinessException(ErrorCode.CONFLICT, "Org has child nodes");
     }
     entity.setDeleted(1);
-    orgMapper.updateById(entity);
+    orgMapper.deleteById(entity.getId());
   }
 
   List<OrgTreeVO> buildTree(List<OrgEntity> orgs) {

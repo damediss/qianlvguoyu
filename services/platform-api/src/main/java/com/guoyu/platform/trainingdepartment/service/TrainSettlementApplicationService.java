@@ -98,7 +98,7 @@ public class TrainSettlementApplicationService {
   public void delete(Long id) {
     TrainSettlementEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   @Transactional

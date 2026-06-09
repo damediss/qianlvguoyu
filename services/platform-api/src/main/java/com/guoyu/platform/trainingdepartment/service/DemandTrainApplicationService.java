@@ -152,7 +152,7 @@ public class DemandTrainApplicationService {
   public void delete(Long id) {
     DemandTrainEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   @Transactional
@@ -165,7 +165,7 @@ public class DemandTrainApplicationService {
           .eq(DemandTrainEntity::getDeleted, 0));
       if (entity != null) {
         entity.setDeleted(1);
-        mapper.updateById(entity);
+        mapper.deleteById(entity.getId());
       }
     }
   }

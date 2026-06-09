@@ -98,7 +98,7 @@ public class TenantApplicationService {
     TenantEntity entity = getExisting(id);
     entity.setDeleted(1);
     entity.setUpdatedAt(LocalDateTime.now());
-    tenantMapper.updateById(entity);
+    tenantMapper.deleteById(entity.getId());
   }
 
   private TenantEntity getExisting(Long id) {

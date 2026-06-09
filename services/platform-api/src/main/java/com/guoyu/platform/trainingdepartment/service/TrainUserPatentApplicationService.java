@@ -78,7 +78,7 @@ public class TrainUserPatentApplicationService {
   public void delete(Long id) {
     TrainUserPatentEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainUserPatentEntity getExisting(Long id) {

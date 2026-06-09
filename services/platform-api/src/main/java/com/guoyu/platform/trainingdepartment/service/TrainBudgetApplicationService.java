@@ -246,7 +246,7 @@ public class TrainBudgetApplicationService {
   public void delete(Long id) {
     TrainBudgetEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainBudgetEntity getExisting(Long id) {

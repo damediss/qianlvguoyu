@@ -102,7 +102,7 @@ public class TrainCertificateApplicationService {
   public void delete(Long id) {
     TrainCertificateEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   @Transactional

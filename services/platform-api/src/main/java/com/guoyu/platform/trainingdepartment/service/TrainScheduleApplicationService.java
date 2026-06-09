@@ -173,7 +173,7 @@ public class TrainScheduleApplicationService {
             .eq(TrainScheduleEntity::getDeleted, 0));
     for (TrainScheduleEntity e : existing) {
       e.setDeleted(1);
-      mapper.updateById(e);
+      mapper.deleteById(e.getId());
     }
 
     // Insert new schedules

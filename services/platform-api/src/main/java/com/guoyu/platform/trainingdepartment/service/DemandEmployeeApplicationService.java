@@ -80,7 +80,7 @@ public class DemandEmployeeApplicationService {
     DemandEmployeeEntity entity = getExisting(id);
 
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private DemandEmployeeEntity getExisting(Long id) {

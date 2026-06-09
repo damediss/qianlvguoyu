@@ -76,7 +76,7 @@ public class TrainExamStaffConfigApplicationService {
     TrainExamStaffConfigEntity entity = getExisting(id);
 
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainExamStaffConfigEntity getExisting(Long id) {

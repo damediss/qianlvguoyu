@@ -139,8 +139,10 @@ export function updateMenu(id: number | string, payload: MenuUpdateReq) {
   return unwrap<MenuTreeVO>(apiClient.put(`/system/menus/${id}`, payload));
 }
 
-export function deleteMenu(id: number | string) {
-  return unwrap<void>(apiClient.delete(`/system/menus/${id}`));
+export function deleteMenu(id: number | string, opts?: { cascade?: boolean }) {
+  return unwrap<number>(apiClient.delete(`/system/menus/${id}`, {
+    params: opts?.cascade ? { cascade: true } : undefined,
+  }));
 }
 
 export function batchUpdateMenuVisible(payload: MenuBatchVisibleReq) {

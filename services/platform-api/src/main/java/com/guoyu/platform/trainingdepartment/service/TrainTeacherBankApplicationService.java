@@ -168,7 +168,7 @@ public class TrainTeacherBankApplicationService {
   public void delete(Long id) {
     TrainTeacherBankEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainTeacherBankEntity getExisting(Long id) {

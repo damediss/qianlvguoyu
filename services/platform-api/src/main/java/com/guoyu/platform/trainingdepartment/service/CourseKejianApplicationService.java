@@ -123,7 +123,7 @@ public class CourseKejianApplicationService {
   public void delete(Long id) {
   CourseKejianEntity entity = getExisting(id);
   entity.setDeleted(1);
-  mapper.updateById(entity);
+  mapper.deleteById(entity.getId());
   }
 
   /**

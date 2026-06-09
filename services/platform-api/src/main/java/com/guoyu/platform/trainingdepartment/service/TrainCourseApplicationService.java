@@ -104,7 +104,7 @@ public class TrainCourseApplicationService {
   public void delete(Long id) {
   TrainCourseEntity entity = getExisting(id);
   entity.setDeleted(1);
-  mapper.updateById(entity);
+  mapper.deleteById(entity.getId());
   }
 
   /**

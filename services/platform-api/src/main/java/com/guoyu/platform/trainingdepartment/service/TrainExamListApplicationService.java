@@ -167,7 +167,7 @@ public class TrainExamListApplicationService {
   public void delete(Long id) {
     TrainExamListEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   // ======== People management (考生管理) ========
@@ -260,7 +260,7 @@ public class TrainExamListApplicationService {
               .eq(TrainExamPeopleListEntity::getDeleted, 0));
       if (entity != null) {
         entity.setDeleted(1);
-        peopleListMapper.updateById(entity);
+        peopleListMapper.deleteById(entity.getId());
       }
     }
   }
@@ -275,7 +275,7 @@ public class TrainExamListApplicationService {
             .eq(TrainExamWorkTypeListEntity::getDeleted, 0));
     for (TrainExamWorkTypeListEntity e : existing) {
       e.setDeleted(1);
-      workTypeListMapper.updateById(e);
+      workTypeListMapper.deleteById(e.getId());
     }
     for (Long courseId : courseIdList) {
       TrainExamWorkTypeListEntity wte = new TrainExamWorkTypeListEntity();

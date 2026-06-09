@@ -94,7 +94,7 @@ public class TrainArchiveApplicationService {
   public void delete(Long id) {
     TrainArchiveEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainArchiveEntity getExisting(Long id) {

@@ -159,7 +159,7 @@ public class TrainPeopleListApplicationService {
   public void delete(Long id) {
     TrainPeopleListEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   @Transactional
@@ -266,7 +266,7 @@ public class TrainPeopleListApplicationService {
       if (entity != null && entity.getDeleted() == 0) {
         assertClassViewable(entity.getTrainClassId());
         entity.setDeleted(1);
-        mapper.updateById(entity);
+        mapper.deleteById(entity.getId());
         count++;
       }
     }
@@ -498,7 +498,7 @@ public class TrainPeopleListApplicationService {
       if (entity != null && entity.getDeleted() == 0) {
         assertClassViewable(entity.getTrainClassId());
         entity.setDeleted(1);
-        mapper.updateById(entity);
+        mapper.deleteById(entity.getId());
         count++;
       }
     }

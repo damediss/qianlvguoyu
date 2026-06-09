@@ -80,7 +80,7 @@ public class TrainSignUpOrcSelfApplicationService {
     TrainSignUpOrcSelfEntity entity = getExisting(id);
 
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainSignUpOrcSelfEntity getExisting(Long id) {

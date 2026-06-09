@@ -82,7 +82,7 @@ public class TrainExamShijuanApplicationService {
     TrainExamShijuanEntity entity = getExisting(id);
 
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainExamShijuanEntity getExisting(Long id) {

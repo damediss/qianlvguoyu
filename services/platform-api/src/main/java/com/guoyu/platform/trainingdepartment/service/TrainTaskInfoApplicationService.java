@@ -100,7 +100,7 @@ public class TrainTaskInfoApplicationService {
   public void delete(Long id) {
     TrainTaskInfoEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainTaskInfoEntity getExisting(Long id) {

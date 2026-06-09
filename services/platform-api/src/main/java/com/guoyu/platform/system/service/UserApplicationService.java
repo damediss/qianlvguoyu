@@ -159,7 +159,7 @@ public class UserApplicationService {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     UserEntity entity = getExisting(tenantId, id);
     entity.setDeleted(1);
-    userMapper.updateById(entity);
+    userMapper.deleteById(entity.getId());
     userRoleRelationMapper.physicalDeleteByUser(tenantId, id);
   }
 

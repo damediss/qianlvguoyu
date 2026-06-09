@@ -136,9 +136,21 @@ export function MenuPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: deleteMenu,
-    onSuccess: () => {
-      message.success('菜单已删除');
+    mutationFn: (input: number | string | { id: number | string; cascade: boolean }) => {
+      if (typeof input === 'object' && 'cascade' in input) {
+        return deleteMenu(input.id, { cascade: input.cascade });
+      }
+      return deleteMenu(input as number | string);
+    },
+    onSuccess: (data, variables) => {
+      const isCascade =
+        typeof variables === 'object' && 'cascade' in variables && variables.cascade;
+      if (isCascade) {
+        const count = typeof data === 'number' ? data : 1;
+        message.success(`已级联删除 ${count} 个菜单`);
+      } else {
+        message.success('菜单已删除');
+      }
       queryClient.invalidateQueries({ queryKey: ['system-menus-tree'] });
     },
   });
@@ -229,16 +241,62 @@ export function MenuPage() {
 
   const handleDelete = useCallback(
     (record: MenuTreeVO) => {
+      const descendantIds = collectDescendantIds(treeData, record.id);
+      const hasChildren = descendantIds.length > 0;
+
+      if (!hasChildren) {
+        // 叶子菜单：直接走默认 delete
+        Modal.confirm({
+          title: `确认删除菜单「${record.name}」？`,
+          content: '该菜单为叶子节点，无子菜单。',
+          okText: '确认删除',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: () => deleteMutation.mutate(record.id),
+        });
+        return;
+      }
+
+      // 父菜单：弹级联确认，传 cascade=true
+      const names = descendantIds
+        .slice(0, 5)
+        .map((id) => {
+          const findName = (list: MenuTreeVO[]): string | null => {
+            for (const n of list) {
+              if (n.id === id) return n.name;
+              if (n.children?.length) {
+                const r = findName(n.children);
+                if (r) return r;
+              }
+            }
+            return null;
+          };
+          return findName(treeData) || `#${id}`;
+        });
+      const moreCount = descendantIds.length - names.length;
+      const namePreview = names.join('、') + (moreCount > 0 ? ` 等 ${moreCount} 个` : '');
+
       Modal.confirm({
-        title: `确认删除菜单「${record.name}」？`,
-        content: '将同时删除该菜单下的所有子级。',
-        okText: '确认删除',
+        title: `级联删除菜单「${record.name}」？`,
+        content: (
+          <div>
+            <p style={{ marginBottom: 8, color: '#dc2626', fontWeight: 500 }}>
+              该菜单下还有 {descendantIds.length} 个子菜单，删除后将级联清空。
+            </p>
+            <p style={{ marginBottom: 8, color: '#475569' }}>子菜单：{namePreview}</p>
+            <p style={{ marginBottom: 0, color: '#94a3b8', fontSize: 12 }}>
+              同时会解除所有角色对该菜单及其子菜单的绑定，操作不可恢复。
+            </p>
+          </div>
+        ),
+        okText: '级联删除',
         okType: 'danger',
         cancelText: '取消',
-        onOk: () => deleteMutation.mutate(record.id),
+        width: 480,
+        onOk: () => deleteMutation.mutate({ id: record.id, cascade: true } as any),
       });
     },
-    [deleteMutation],
+    [deleteMutation, treeData],
   );
 
   const treeSelectData = buildTreeSelectData(treeData, editingId || undefined);

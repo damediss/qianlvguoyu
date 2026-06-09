@@ -341,7 +341,7 @@ public class TrainInfoListApplicationService {
   public void delete(Long id) {
     TrainInfoListEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   // ======== Company confirm/reject workflow (企业确认/驳回) ========

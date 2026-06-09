@@ -136,7 +136,7 @@ public class PlatformUserApplicationService {
     operatorScopeService.requireOrgOperator();
     PlatformUserEntity entity = getExisting(id, resolveOrgId());
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private PlatformUserEntity getExisting(Long id, Long orgId) {

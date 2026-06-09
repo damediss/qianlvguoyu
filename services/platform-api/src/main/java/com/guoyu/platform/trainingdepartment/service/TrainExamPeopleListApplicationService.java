@@ -105,7 +105,7 @@ public class TrainExamPeopleListApplicationService {
   public void delete(Long id) {
     TrainExamPeopleListEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   @Transactional
@@ -118,7 +118,7 @@ public class TrainExamPeopleListApplicationService {
           .eq(TrainExamPeopleListEntity::getDeleted, 0));
       if (entity != null) {
         entity.setDeleted(1);
-        mapper.updateById(entity);
+        mapper.deleteById(entity.getId());
       }
     }
   }

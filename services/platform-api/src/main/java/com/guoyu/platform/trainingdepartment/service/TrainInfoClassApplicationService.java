@@ -210,7 +210,7 @@ public class TrainInfoClassApplicationService {
       if (entity != null && entity.getDeleted() == 0) {
         operatorScopeService.assertClassAccessible(entity);
         entity.setDeleted(1);
-        mapper.updateById(entity);
+        mapper.deleteById(entity.getId());
         count++;
       }
     }
@@ -255,7 +255,7 @@ public class TrainInfoClassApplicationService {
   public void delete(Long id) {
     TrainInfoClassEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   /**

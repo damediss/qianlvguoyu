@@ -160,7 +160,7 @@ public class TrainSolutionApplicationService {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainSolutionEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
     List<TrainSolutionBadgeEntity> badges = badgeMapper.selectList(
         new LambdaQueryWrapper<TrainSolutionBadgeEntity>()
             .eq(TrainSolutionBadgeEntity::getTenantId, tenantId)
@@ -168,7 +168,7 @@ public class TrainSolutionApplicationService {
             .eq(TrainSolutionBadgeEntity::getDeleted, 0));
     for (TrainSolutionBadgeEntity b : badges) {
       b.setDeleted(1);
-      badgeMapper.updateById(b);
+      badgeMapper.deleteById(b.getId());
     }
   }
 
@@ -244,7 +244,7 @@ public class TrainSolutionApplicationService {
             .eq(TrainSolutionBadgeEntity::getDeleted, 0));
     for (TrainSolutionBadgeEntity e : existing) {
       e.setDeleted(1);
-      badgeMapper.updateById(e);
+      badgeMapper.deleteById(e.getId());
     }
     if (badges == null) {
       return;

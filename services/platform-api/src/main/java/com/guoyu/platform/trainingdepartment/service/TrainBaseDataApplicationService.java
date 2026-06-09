@@ -78,7 +78,7 @@ public class TrainBaseDataApplicationService {
     TrainBaseDataEntity entity = getExisting(id);
 
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainBaseDataEntity getExisting(Long id) {

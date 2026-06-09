@@ -16,6 +16,7 @@ import com.guoyu.platform.system.mapper.MenuMapper;
 import com.guoyu.platform.system.mapper.RoleMapper;
 import com.guoyu.platform.system.mapper.RoleMenuRelationMapper;
 import com.guoyu.platform.system.vo.MenuTreeVO;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -151,12 +152,11 @@ public class MenuApplicationService {
   public void delete(Long id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     MenuEntity entity = getExisting(tenantId, id);
-    boolean hasChildren = menuMapper.exists(new LambdaQueryWrapper<MenuEntity>()
-        .eq(MenuEntity::getTenantId, tenantId)
-        .eq(MenuEntity::getParentId, id)
-        .eq(MenuEntity::getDeleted, 0));
-    if (hasChildren) {
-      throw new BusinessException(ErrorCode.CONFLICT, "Menu has child nodes");
+    int childCount = countChildren(tenantId, id);
+    if (childCount > 0) {
+      throw new BusinessException(
+          ErrorCode.CONFLICT,
+          "Menu has child nodes (" + childCount + "). Pass ?cascade=true to delete the whole subtree.");
     }
     boolean usedByRoles = roleMenuRelationMapper.exists(new LambdaQueryWrapper<RoleMenuEntity>()
         .eq(RoleMenuEntity::getTenantId, tenantId)
@@ -165,8 +165,76 @@ public class MenuApplicationService {
     if (usedByRoles) {
       throw new BusinessException(ErrorCode.CONFLICT, "Menu is used by roles");
     }
-    entity.setDeleted(1);
-    menuMapper.updateById(entity);
+    // 用 deleteById 而不是 updateById(setDeleted=1)：
+    // BaseEntity.deleted 标了 @TableLogic，updateById 会给 UPDATE 加 WHERE deleted=0
+    // 导致永远 0 行受影响。deleteById 是 MP 专为逻辑删除设计的方法。
+    int affected = menuMapper.deleteById(id);
+    if (affected == 0) {
+      log.warn("deleteById affected 0 rows for menu id={} tenant={} (already deleted?)", id, tenantId);
+    }
+  }
+
+  /**
+   * 级联软删：递归删除整支子树（深度优先，从叶子往上），并清空 sys_role_menu 中
+   * 与这些菜单的关联。删除完成后不会回滚"角色失去菜单访问权限"——那是用户预期的副作用。
+   *
+   * 实现要点：
+   * 1. 用 BFS 收集所有后代 id（避免深递归爆栈）
+   * 2. 先删 role_menu 关联（外层），再软删菜单本身（deleted=1）
+   * 3. 不主动校验"被角色绑定"——用户既然选了 cascade，已经默许级联
+   */
+  @Transactional
+  public int deleteWithChildren(Long id) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    MenuEntity entity = getExisting(tenantId, id);
+
+    // BFS 收集所有后代 id（不含自己）
+    List<Long> allIds = new ArrayList<>();
+    java.util.Deque<Long> queue = new java.util.ArrayDeque<>();
+    queue.add(id);
+    while (!queue.isEmpty()) {
+      Long current = queue.poll();
+      List<Long> children = menuMapper.selectList(new LambdaQueryWrapper<MenuEntity>()
+              .eq(MenuEntity::getTenantId, tenantId)
+              .eq(MenuEntity::getParentId, current)
+              .eq(MenuEntity::getDeleted, 0)
+              .select(MenuEntity::getId))
+          .stream()
+          .map(MenuEntity::getId)
+          .toList();
+      for (Long childId : children) {
+        allIds.add(childId);
+        queue.add(childId);
+      }
+    }
+
+    // 整支 id 列表 = 父 + 所有后代
+    List<Long> wholeTreeIds = new ArrayList<>(allIds.size() + 1);
+    wholeTreeIds.add(id);
+    wholeTreeIds.addAll(allIds);
+
+    // 1) 清空角色-菜单关联
+    int removedBindings = roleMenuRelationMapper.softDeleteByMenus(tenantId, wholeTreeIds);
+    // 2) 软删整支菜单
+    // 注意：不能用 updateById(entity.setDeleted(1))，因为 BaseEntity.deleted 标了 @TableLogic，
+    // MP 会自动给 UPDATE 加 WHERE deleted=0 条件，导致永远 0 行受影响。
+    // deleteById 是 MP 专门为逻辑删除设计的方法，会正确生成
+    //   UPDATE sys_menu SET deleted=1 [, updated_at, updated_by] WHERE id=? AND deleted=0
+    int deletedCount = 0;
+    for (Long menuId : wholeTreeIds) {
+      deletedCount += menuMapper.deleteById(menuId);
+    }
+
+    log.info("Cascade-deleted menu tree root={} totalIds={} removedBindings={} operator={}",
+        id, wholeTreeIds.size(), removedBindings, SecurityContext.currentUser().getUserId());
+    return wholeTreeIds.size();
+  }
+
+  private int countChildren(Long tenantId, Long parentId) {
+    return Math.toIntExact(menuMapper.selectCount(new LambdaQueryWrapper<MenuEntity>()
+        .eq(MenuEntity::getTenantId, tenantId)
+        .eq(MenuEntity::getParentId, parentId)
+        .eq(MenuEntity::getDeleted, 0)));
   }
 
   List<MenuTreeVO> buildTree(List<MenuEntity> menus) {

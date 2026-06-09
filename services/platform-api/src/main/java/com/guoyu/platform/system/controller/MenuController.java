@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
@@ -65,8 +66,16 @@ public class MenuController {
   @DeleteMapping("/{id}")
   @PreAuthorize("hasAuthority('menu:delete')")
   @AuditLog(module = "system", action = "menu:delete", targetType = "menu")
-  public ApiResponse<Void> delete(@PathVariable Long id) {
-    menuApplicationService.delete(id);
-    return ApiResponse.ok();
+  public ApiResponse<Integer> delete(
+      @PathVariable Long id,
+      @RequestParam(defaultValue = "false") boolean cascade) {
+    int deleted;
+    if (cascade) {
+      deleted = menuApplicationService.deleteWithChildren(id);
+    } else {
+      menuApplicationService.delete(id);
+      deleted = 1;
+    }
+    return ApiResponse.ok(deleted);
   }
 }

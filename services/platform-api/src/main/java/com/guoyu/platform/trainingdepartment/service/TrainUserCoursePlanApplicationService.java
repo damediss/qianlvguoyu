@@ -92,7 +92,7 @@ public class TrainUserCoursePlanApplicationService {
   public void delete(Long id) {
     TrainUserCoursePlanEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainUserCoursePlanEntity getExisting(Long id) {

@@ -158,7 +158,7 @@ public class TrainTalentNeedsApplicationService {
   public void delete(Long id) {
     TrainTalentNeedsEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainTalentNeedsEntity getExisting(Long id) {

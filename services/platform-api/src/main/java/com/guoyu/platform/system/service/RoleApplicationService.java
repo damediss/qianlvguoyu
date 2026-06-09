@@ -184,7 +184,7 @@ public class RoleApplicationService {
       throw new BusinessException(ErrorCode.CONFLICT, "Role is used by users");
     }
     entity.setDeleted(1);
-    roleMapper.updateById(entity);
+    roleMapper.deleteById(entity.getId());
     roleMenuRelationMapper.physicalDeleteByRole(tenantId, id);
     rolePermissionRelationMapper.physicalDeleteByRole(tenantId, id);
   }

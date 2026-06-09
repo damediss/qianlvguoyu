@@ -82,7 +82,7 @@ public class TrainExamSessionApplicationService {
     TrainExamSessionEntity entity = getExisting(id);
 
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainExamSessionEntity getExisting(Long id) {

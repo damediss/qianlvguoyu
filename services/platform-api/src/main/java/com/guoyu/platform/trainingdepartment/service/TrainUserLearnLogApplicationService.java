@@ -85,7 +85,7 @@ public class TrainUserLearnLogApplicationService {
   public void delete(Long id) {
     TrainUserLearnLogEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainUserLearnLogEntity getExisting(Long id) {

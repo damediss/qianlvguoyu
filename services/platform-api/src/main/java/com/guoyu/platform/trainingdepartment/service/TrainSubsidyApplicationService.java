@@ -101,7 +101,7 @@ public class TrainSubsidyApplicationService {
   public void delete(Long id) {
     TrainSubsidyEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   @Transactional

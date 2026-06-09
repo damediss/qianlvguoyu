@@ -90,7 +90,7 @@ public class TrainUserPaperApplicationService {
   public void delete(Long id) {
     TrainUserPaperEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   private TrainUserPaperEntity getExisting(Long id) {

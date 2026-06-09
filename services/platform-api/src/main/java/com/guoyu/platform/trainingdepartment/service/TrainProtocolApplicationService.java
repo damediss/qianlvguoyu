@@ -130,7 +130,7 @@ public class TrainProtocolApplicationService {
   public void delete(Long id) {
     TrainProtocolEntity entity = getExisting(id);
     entity.setDeleted(1);
-    mapper.updateById(entity);
+    mapper.deleteById(entity.getId());
   }
 
   @Transactional

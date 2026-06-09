@@ -125,7 +125,7 @@ public class PostApplicationService {
     }
 
     entity.setDeleted(1);
-    postMapper.updateById(entity);
+    postMapper.deleteById(entity.getId());
   }
 
   private void ensureCodeAvailable(Long tenantId, String code) {

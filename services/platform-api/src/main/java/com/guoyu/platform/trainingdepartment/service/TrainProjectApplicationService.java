@@ -167,7 +167,7 @@ public class TrainProjectApplicationService {
   public void delete(Long id) {
     TrainProjectEntity entity = getExisting(id);
     entity.setDeleted(1);
-    projectMapper.updateById(entity);
+    projectMapper.deleteById(entity.getId());
   }
 
   // ======== Workflow operations ========
