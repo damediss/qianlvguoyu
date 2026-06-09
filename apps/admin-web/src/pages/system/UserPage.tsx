@@ -116,7 +116,7 @@ export function UserPage() {
   const openCreate = useCallback(() => {
     setEditingId(null);
     form.resetFields();
-    form.setFieldsValue({ status: 'active', userType: 'normal', roleIds: [] });
+    form.setFieldsValue({ status: 'enabled', userType: 'normal', roleIds: [] });
     setModalOpen(true);
   }, [form]);
 
@@ -241,7 +241,7 @@ export function UserPage() {
       width: 80,
       render: (v: string) => {
         const map: Record<string, { color: string; text: string }> = {
-          active: { color: 'success', text: '正常' },
+          enabled: { color: 'success', text: '正常' },
           locked: { color: 'warning', text: '锁定' },
           disabled: { color: 'error', text: '停用' },
         };
@@ -351,7 +351,7 @@ export function UserPage() {
             value={query.status || undefined}
             onChange={(v) => setQuery((prev) => ({ ...prev, status: v || '', page: 1 }))}
             options={[
-              { label: '正常', value: 'active' },
+              { label: '正常', value: 'enabled' },
               { label: '锁定', value: 'locked' },
               { label: '停用', value: 'disabled' },
             ]}
@@ -445,7 +445,7 @@ export function UserPage() {
             <Form.Item name="status" label="状态" style={{ flex: 1 }}>
               <Select
                 options={[
-                  { label: '正常', value: 'active' },
+                  { label: '正常', value: 'enabled' },
                   { label: '锁定', value: 'locked' },
                   { label: '停用', value: 'disabled' },
                 ]}
