@@ -38,6 +38,7 @@ public class ExamExamDetailEntity {
   private Integer sortNumber;
   private Integer tenantId;
   private LocalDateTime createTime;
+  private LocalDateTime updateTime;
   private LocalDateTime checkTime;
   private LocalDateTime finalCheckTime;
 
@@ -96,6 +97,8 @@ public class ExamExamDetailEntity {
   public void setTenantId(Integer tenantId) { this.tenantId = tenantId; }
   public LocalDateTime getCreateTime() { return createTime; }
   public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
+  public LocalDateTime getUpdateTime() { return updateTime; }
+  public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
   public LocalDateTime getCheckTime() { return checkTime; }
   public void setCheckTime(LocalDateTime checkTime) { this.checkTime = checkTime; }
   public LocalDateTime getFinalCheckTime() { return finalCheckTime; }

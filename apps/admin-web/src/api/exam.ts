@@ -26,6 +26,7 @@ import type {
   ExamKnowledgeStructure,
   ExamKnowledgeStructureCreateReq,
   ExamKnowledgeStructureUpdateReq,
+  QuestionBankTreeNodeVO,
   ExamExamDetail,
   ExamExamDetailCreateReq,
   ExamExamDetailUpdateReq,
@@ -244,6 +245,15 @@ export function batchImportKnowledgeStructures(courseId: number | undefined, typ
   }));
 }
 
+/**
+ * 题库分类导航聚合树:工种→课程→知识点 L0~L3 一次性返回,每节点带
+ * questionCount(子树递归题数)。替代前端三次串行 lazy-load。
+ * 权限: exam:question:view
+ */
+export function getQuestionBankTree() {
+  return unwrap<QuestionBankTreeNodeVO[]>(apiClient.get('/exam/question-bank-tree'));
+}
+
 // ---- 试题管理 — 试题详情 ----
 export function pageExamDetails(params: ExamExamDetailQuery) {
   return unwrap<PageResponse<ExamExamDetail>>(apiClient.get('/exam/exam-details', { params }));
@@ -263,4 +273,9 @@ export function updateExamDetail(id: number, payload: ExamExamDetailUpdateReq) {
 
 export function deleteExamDetail(id: number) {
   return unwrap<void>(apiClient.delete(`/exam/exam-details/${id}`));
+}
+
+/** 批量删除试题,后端返回成功删除的数量 */
+export function batchDeleteExamDetails(ids: number[]) {
+  return unwrap<number>(apiClient.post('/exam/exam-details/batch-delete', ids));
 }

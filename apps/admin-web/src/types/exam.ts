@@ -367,6 +367,29 @@ export interface PingfenItem {
   buchang?: string;     // 步长
 }
 
+// ---- 题库分类导航聚合树(单接口一次性返回工种→课程→知识点 L0~L3) ----
+export type QuestionBankTreeNodeType = 'workType' | 'course' | 'knowledge';
+
+export interface QuestionBankTreeNodeVO {
+  key: string;
+  id: number;
+  nodeType: QuestionBankTreeNodeType;
+  title: string;
+  sortNumber?: number;
+  /** workType/course 不返回;knowledge 节点业务状态 0/1 */
+  status?: number;
+  /** 知识点节点 0/1/2/3 */
+  level?: number;
+  /** 仅 course 节点 */
+  workTypeId?: number;
+  /** 仅 knowledge 节点 */
+  courseId?: number;
+  /** 子树递归题数(L3 挂载题 + 所有后代题) */
+  questionCount: number;
+  /** 永远是数组(空叶节点是 []),不会是 null */
+  children: QuestionBankTreeNodeVO[];
+}
+
 // ---- 知识点(试题管理) ----
 export interface ExamKnowledgeStructure {
   id: number;
@@ -450,6 +473,8 @@ export interface ExamExamDetail {
   sortNumber: number;
   tenantId: number;
   createTime: string;
+  /** 后端 BaseDO.updateTime,某些接口可能不返回(此时回退到 createTime) */
+  updateTime?: string;
   checkTime: string;
   finalCheckTime: string;
 }
@@ -495,6 +520,12 @@ export interface ExamExamDetailQuery {
   status?: number;
   keyword?: string;
 }
+
+// 来源映射:0=内部,1=外部
+export const EXAM_SOURCE_MAP: Record<number, string> = {
+  0: '内部',
+  1: '外部',
+};
 
 // 题型映射
 export const EXAM_TYPE_MAP: Record<string, string> = {

@@ -189,6 +189,17 @@ public class ExamExamDetailApplicationService {
     mapper.deleteById(id);
   }
 
+  @Transactional
+  public int batchDelete(List<Integer> ids) {
+    if (ids == null || ids.isEmpty()) return 0;
+    Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
+    // 限定 tenant 范围,避免跨租户删除
+    LambdaQueryWrapper<ExamExamDetailEntity> wrapper = new LambdaQueryWrapper<ExamExamDetailEntity>()
+        .eq(ExamExamDetailEntity::getTenantId, tenantId)
+        .in(ExamExamDetailEntity::getId, ids);
+    return mapper.delete(wrapper);
+  }
+
   /**
    * 根据查询条件解析 L3 知识点ID列表。
    * 返回 null 表示不需要知识点过滤; 返回空列表表示无匹配。

@@ -9,6 +9,7 @@ import com.guoyu.platform.exam.dto.ExamExamDetailUpdateReq;
 import com.guoyu.platform.exam.service.ExamExamDetailApplicationService;
 import com.guoyu.platform.exam.vo.ExamExamDetailVO;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -70,5 +71,13 @@ public class ExamExamDetailController {
   public ApiResponse<Void> delete(@PathVariable Integer id) {
     service.delete(id);
     return ApiResponse.ok();
+  }
+
+  @PostMapping("/exam-details/batch-delete")
+  @PreAuthorize("hasAuthority('exam:question:delete')")
+  @AuditLog(module = "exam", action = "question:batchDelete", targetType = "exam_exam_detail")
+  public ApiResponse<Integer> batchDelete(@RequestBody List<Integer> ids) {
+    int n = service.batchDelete(ids);
+    return ApiResponse.ok(n);
   }
 }

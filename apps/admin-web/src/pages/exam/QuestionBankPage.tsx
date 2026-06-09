@@ -6,6 +6,7 @@ import {
   SearchOutlined,
 } from '@ant-design/icons';
 import {
+  Badge,
   Button,
   Card,
   Form,
@@ -20,38 +21,39 @@ import {
   Typography,
   message,
   Popconfirm,
-  Breadcrumb,
   Spin,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
-  treeWorkTypes,
-  pageCourses,
-  treeKnowledgeStructures,
+  getQuestionBankTree,
   pageExamDetails,
   createExamDetail,
   updateExamDetail,
   deleteExamDetail,
+  batchDeleteExamDetails,
 } from '../../api/exam';
 import { useAuthStore } from '../../stores/authStore';
 import type {
-  ExamWorkType,
-  ExamCourse,
   ExamKnowledgeStructure,
+  QuestionBankTreeNodeVO,
+  QuestionBankTreeNodeType,
   ExamExamDetail,
   ExamExamDetailCreateReq,
   ExamExamDetailQuery,
 } from '../../types/exam';
 import {
   EXAM_TYPE_MAP,
+  EXAM_SOURCE_MAP,
   DIFFICULTY_MAP,
   DIFFICULTY_COLOR_MAP,
   CHECK_STATUS_MAP,
 } from '../../types/exam';
+import { PathContextBar } from '../../components/ContextBar/PathContextBar';
+import { BatchActionBar } from '../../components/BatchActionBar/BatchActionBar';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { TextArea } = Input;
 
 // ─── helpers ───────────────────────────────────────────────
@@ -61,34 +63,96 @@ interface TreeNode {
   isLeaf?: boolean;
   children?: TreeNode[];
   // metadata
-  nodeType: 'workType' | 'course' | 'knowledge';
+  nodeType: QuestionBankTreeNodeType;
   workTypeId?: number;
   courseId?: number;
   knowledgeId?: number;
   level?: number;
+  /** 后端预计算的子树递归题数(0=灰, 1~9=蓝, 10+=橙) */
+  questionCount: number;
 }
 
-function buildKnowledgeTree(
-  nodes: ExamKnowledgeStructure[],
-  courseId: number,
-  workTypeId: number,
-): TreeNode[] {
-  return nodes.map((n) => ({
-    key: `ks-${n.id}`,
-    title: n.title,
-    nodeType: 'knowledge' as const,
-    workTypeId,
-    courseId,
-    knowledgeId: n.id,
-    level: n.level,
-    isLeaf: !n.children || n.children.length === 0,
-    children: n.children ? buildKnowledgeTree(n.children, courseId, workTypeId) : undefined,
-  }));
+/**
+ * 把后端聚合树(`QuestionBankTreeNodeVO[]`)转成 antd `Tree` 期望的形状。
+ * 树深 6 级:工种 → 课程 → 知识点 L0 → L1 → L2 → L3,每节点都带
+ * `questionCount`,渲染时挂 Badge。
+ */
+function buildTree(nodes: QuestionBankTreeNodeVO[]): TreeNode[] {
+  return nodes.map((n) => {
+    const childNodes: TreeNode[] = (n.children ?? []).map((c) => {
+      const subChildren = buildTree([c]);
+      return subChildren[0];
+    });
+    return {
+      key: n.key,
+      title: n.title,
+      nodeType: n.nodeType,
+      workTypeId: n.nodeType === 'workType' ? n.id : n.workTypeId,
+      courseId: n.nodeType === 'course' ? n.id : n.courseId,
+      knowledgeId: n.nodeType === 'knowledge' ? n.id : undefined,
+      level: n.level,
+      questionCount: n.questionCount,
+      isLeaf: childNodes.length === 0,
+      children: childNodes.length > 0 ? childNodes : undefined,
+    };
+  });
 }
 
-function flattenBreadcrumb(_node: TreeNode | undefined, _allNodes: TreeNode[]): string[] {
-  // placeholder for future breadcrumb implementation
-  return [];
+/**
+ * 在聚合树中按 key 找到节点,同时回溯整条祖先链
+ * (workType → course → [knowledge ...])。给 PathContextBar 用。
+ */
+function findNodeWithPath(
+  nodes: QuestionBankTreeNodeVO[],
+  key: string,
+  path: QuestionBankTreeNodeVO[] = [],
+): { node: QuestionBankTreeNodeVO; path: QuestionBankTreeNodeVO[] } | null {
+  for (const n of nodes) {
+    if (n.key === key) return { node: n, path };
+    const sub = findNodeWithPath(n.children ?? [], key, [...path, n]);
+    if (sub) return sub;
+  }
+  return null;
+}
+
+/**
+ * Badge 颜色: 0 题灰色,1~9 蓝,10+ 橙。
+ * (参考 `题库树接口契约.md` chip 风格一节)
+ */
+function countColor(n: number): string {
+  if (n <= 0) return '#bfbfbf';
+  if (n < 10) return '#1677ff';
+  return '#fa8c16';
+}
+
+/**
+ * 把新聚合树里的 `knowledge` 子树转成 modal 用的
+ * `ExamKnowledgeStructure[]` 形态(id/title/level/children)。
+ * 缺省字段用安全占位,modal 只读 `id/title/level/children`。
+ */
+function toKnowledgeStructures(nodes: QuestionBankTreeNodeVO[]): ExamKnowledgeStructure[] {
+  return nodes
+    .filter((n) => n.nodeType === 'knowledge')
+    .map((n) => ({
+      id: n.id,
+      title: n.title,
+      level: n.level ?? 0,
+      type: 0,
+      useType: null,
+      courseId: n.courseId ?? null,
+      parentId: 0,
+      cover: '',
+      intro: '',
+      seriesNo: '',
+      important: 0,
+      userId: null,
+      status: n.status ?? 1,
+      sortNumber: n.sortNumber ?? 0,
+      tenantId: 0,
+      amount: 0,
+      createTime: '',
+      children: toKnowledgeStructures(n.children ?? []),
+    }));
 }
 
 // ─── QuestionFormModal ─────────────────────────────────────
@@ -239,7 +303,6 @@ export function QuestionBankPage() {
   const [, setSelectedWorkTypeId] = useState<number | undefined>();
   const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>();
   const [selectedKnowledgeId, setSelectedKnowledgeId] = useState<number | undefined>();
-  const [selectedTitle, setSelectedTitle] = useState('');
 
   // ── right table state ──
   const [query, setQuery] = useState<ExamExamDetailQuery>({
@@ -248,95 +311,50 @@ export function QuestionBankPage() {
   });
   const [filterType, setFilterType] = useState<string | undefined>();
   const [filterDifficulty, setFilterDifficulty] = useState<number | undefined>();
+  const [filterSource, setFilterSource] = useState<number | undefined>();
   const [filterKeyword, setFilterKeyword] = useState('');
+
+  // ── selection state ──
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
   // ── modal state ──
   const [modalOpen, setModalOpen] = useState(false);
   const [editingDetail, setEditingDetail] = useState<ExamExamDetail | null>(null);
 
-  // ── Data loading ──
-  const { data: workTypes = [] } = useQuery({
-    queryKey: ['workTypeTree'],
-    queryFn: treeWorkTypes,
+  // ── Data loading: 单次拉取完整 6 级聚合树 ──
+  const {
+    data: bankTree = [],
+    isLoading: loadingBankTree,
+  } = useQuery({
+    queryKey: ['exam', 'question-bank-tree'],
+    queryFn: getQuestionBankTree,
+    staleTime: 60_000,
   });
 
-  // courses keyed by workTypeId
-  const [coursesMap, setCoursesMap] = useState<Record<number, ExamCourse[]>>({});
-  // knowledge trees keyed by courseId
-  const [knowledgeMap, setKnowledgeMap] = useState<Record<number, ExamKnowledgeStructure[]>>({});
+  // antd Tree 用结构
+  const treeData: TreeNode[] = useMemo(() => buildTree(bankTree), [bankTree]);
 
-  // Load courses for a work type
-  const loadCoursesForWorkType = useCallback(
-    async (workTypeId: number) => {
-      if (coursesMap[workTypeId]) return;
-      try {
-        const res = await pageCourses({ page: 1, pageSize: 200, title: '' });
-        // filter courses by workTypeId
-        const filtered = res.items.filter((c) => c.workTypeId === workTypeId);
-        setCoursesMap((prev) => ({ ...prev, [workTypeId]: filtered }));
-      } catch (e) {
-        console.error('loadCourses error', e);
-      }
-    },
-    [coursesMap],
-  );
+  // 默认展开工种 + 课程两级(取后端返回的第一层工种 + 第二层课程的 key)
+  const defaultExpandedKeys = useMemo<React.Key[]>(() => {
+    const keys: React.Key[] = [];
+    for (const wt of bankTree) {
+      keys.push(wt.key);
+      for (const c of wt.children ?? []) keys.push(c.key);
+    }
+    return keys;
+  }, [bankTree]);
 
-  // Load knowledge tree for a course
-  const loadKnowledgeForCourse = useCallback(
-    async (courseId: number) => {
-      if (knowledgeMap[courseId]) return;
-      try {
-        const tree = await treeKnowledgeStructures(courseId);
-        setKnowledgeMap((prev) => ({ ...prev, [courseId]: tree }));
-      } catch (e) {
-        console.error('loadKnowledge error', e);
-      }
-    },
-    [knowledgeMap],
-  );
+  // 首次拿到数据后,把 expandedKeys 初始化成"工种+课程两级"
+  useEffect(() => {
+    if (bankTree.length > 0 && expandedKeys.length === 0) {
+      setExpandedKeys(defaultExpandedKeys);
+    }
+  }, [bankTree, defaultExpandedKeys, expandedKeys.length]);
 
-  // Build tree data
-  const treeData: TreeNode[] = useMemo(() => {
-    return workTypes.map((wt) => {
-      const courses = coursesMap[wt.id] || [];
-      const courseNodes: TreeNode[] = courses.map((c) => {
-        const knowledge = knowledgeMap[c.id] || [];
-        const knowledgeNodes = buildKnowledgeTree(knowledge, c.id, wt.id);
-        return {
-          key: `course-${c.id}`,
-          title: `${c.title}${c.level ? ` (${c.level}级)` : ''}`,
-          nodeType: 'course' as const,
-          workTypeId: wt.id,
-          courseId: c.id,
-          isLeaf: knowledgeNodes.length === 0,
-          children: knowledgeNodes.length > 0 ? knowledgeNodes : undefined,
-        };
-      });
-      return {
-        key: `wt-${wt.id}`,
-        title: wt.title,
-        nodeType: 'workType' as const,
-        workTypeId: wt.id,
-        isLeaf: courseNodes.length === 0,
-        children: courseNodes.length > 0 ? courseNodes : undefined,
-      };
-    });
-  }, [workTypes, coursesMap, knowledgeMap]);
-
-  // Handle tree expand — lazy load children
-  const handleExpand = useCallback(
-    async (keys: React.Key[], info: any) => {
-      setExpandedKeys(keys);
-      const node = info.node as TreeNode;
-      if (info.expanded && node.nodeType === 'workType' && node.workTypeId) {
-        await loadCoursesForWorkType(node.workTypeId);
-      }
-      if (info.expanded && node.nodeType === 'course' && node.courseId) {
-        await loadKnowledgeForCourse(node.courseId);
-      }
-    },
-    [loadCoursesForWorkType, loadKnowledgeForCourse],
-  );
+  // Handle tree expand — 直接更新 expandedKeys(数据全在内存,无需 lazy load)
+  const handleExpand = useCallback((keys: React.Key[]) => {
+    setExpandedKeys(keys);
+  }, []);
 
   // Handle tree select — update right side filter
   const handleSelect = useCallback(
@@ -346,12 +364,10 @@ export function QuestionBankPage() {
         setSelectedWorkTypeId(undefined);
         setSelectedCourseId(undefined);
         setSelectedKnowledgeId(undefined);
-        setSelectedTitle('');
         setQuery((q) => ({ ...q, page: 1 }));
         return;
       }
       const node = info.node as TreeNode;
-      setSelectedTitle(node.title);
       setSelectedWorkTypeId(node.workTypeId);
       setSelectedCourseId(node.courseId);
       setSelectedKnowledgeId(node.knowledgeId);
@@ -368,15 +384,56 @@ export function QuestionBankPage() {
       knowledgeId: selectedKnowledgeId,
       type: filterType,
       difficulty: filterDifficulty,
+      source: filterSource,
       keyword: filterKeyword || undefined,
     }),
-    [query, selectedCourseId, selectedKnowledgeId, filterType, filterDifficulty, filterKeyword],
+    [
+      query,
+      selectedCourseId,
+      selectedKnowledgeId,
+      filterType,
+      filterDifficulty,
+      filterSource,
+      filterKeyword,
+    ],
   );
 
   const { data: examPage, isLoading: loadingDetails } = useQuery({
     queryKey: ['examDetails', effectiveQuery],
     queryFn: () => pageExamDetails(effectiveQuery),
   });
+
+  // ── Breadcrumb titles (从新聚合树里按 selectedKey 找 title + 祖先链) ──
+  const breadcrumbTitles = useMemo(() => {
+    const titles: { workType?: string; course?: string; knowledge?: string } = {};
+    if (selectedKeys.length === 0) return titles;
+
+    const keyStr = String(selectedKeys[0]);
+    const found = findNodeWithPath(bankTree, keyStr);
+    if (!found) return titles;
+
+    // 从祖先链 + 当前节点定位 workType / course / knowledge 三级
+    const chain = [...found.path, found.node];
+    for (const n of chain) {
+      if (n.nodeType === 'workType') titles.workType = n.title;
+      else if (n.nodeType === 'course') titles.course = n.title;
+      else if (n.nodeType === 'knowledge') titles.knowledge = n.title;
+    }
+    return titles;
+  }, [selectedKeys, bankTree]);
+
+  const workTypeTitle = breadcrumbTitles.workType;
+  const courseTitle = breadcrumbTitles.course;
+  const knowledgeTitle = breadcrumbTitles.knowledge;
+
+  // ── Source counts (从当前页数据粗略统计) ──
+  const sourceCount = useMemo(() => {
+    const items = examPage?.items ?? [];
+    return {
+      internal: items.filter((it) => it.source === 0).length,
+      external: items.filter((it) => it.source === 1).length,
+    };
+  }, [examPage?.items]);
 
   // ── Delete mutation ──
   const deleteMut = useMutation({
@@ -387,6 +444,29 @@ export function QuestionBankPage() {
     },
     onError: (e: Error) => message.error(e.message || '删除失败'),
   });
+
+  // ── Batch delete mutation ──
+  const batchDeleteMut = useMutation({
+    mutationFn: batchDeleteExamDetails,
+    onSuccess: (n) => {
+      message.success(`已删除 ${n} 道试题`);
+      setSelectedRowKeys([]);
+      queryClient.invalidateQueries({ queryKey: ['examDetails'] });
+    },
+    onError: (e: Error) => message.error(e.message || '批量删除失败'),
+  });
+
+  const handleBatchDelete = () => {
+    const ids = selectedRowKeys.map(Number);
+    if (ids.length === 0) return;
+    Modal.confirm({
+      title: `确认删除 ${ids.length} 道试题?`,
+      content: '删除后无法恢复,且会级联影响已组卷的试卷',
+      okText: '确认删除',
+      okButtonProps: { danger: true },
+      onOk: () => batchDeleteMut.mutate(ids),
+    });
+  };
 
   // ── Table columns ──
   const columns: ColumnsType<ExamExamDetail> = [
@@ -399,7 +479,9 @@ export function QuestionBankPage() {
       title: '来源',
       dataIndex: 'source',
       width: 80,
-      render: (v: number) => <Tag>{v === 1 ? '导入' : '手工'}</Tag>,
+      render: (v: number) => (
+        <Tag color={v === 0 ? 'blue' : 'orange'}>{EXAM_SOURCE_MAP[v] ?? v}</Tag>
+      ),
     },
     {
       title: '题型',
@@ -444,10 +526,13 @@ export function QuestionBankPage() {
       },
     },
     {
-      title: '创建时间',
-      dataIndex: 'createTime',
+      title: '更新时间',
+      dataIndex: 'updateTime',
       width: 160,
-      render: (v: string) => (v ? v.substring(0, 16) : '-'),
+      render: (v: string, record: ExamExamDetail) => {
+        const t = v || record.createTime;
+        return t ? String(t).substring(0, 16) : '-';
+      },
     },
     {
       title: '操作',
@@ -491,13 +576,23 @@ export function QuestionBankPage() {
     return treeData;
   }, [treeData, treeSearchValue]);
 
-  // Get current knowledge tree for modal
-  const currentKnowledgeTree = useMemo(() => {
-    if (selectedCourseId && knowledgeMap[selectedCourseId]) {
-      return knowledgeMap[selectedCourseId];
+  // Get current knowledge tree for modal — 从新聚合树里找选中课程的子节点
+  const currentKnowledgeTree = useMemo<ExamKnowledgeStructure[]>(() => {
+    if (selectedCourseId === undefined) return [];
+    // 找该 course 节点,转成 ExamKnowledgeStructure 形态给 modal
+    let courseNode: QuestionBankTreeNodeVO | undefined;
+    for (const wt of bankTree) {
+      for (const c of wt.children ?? []) {
+        if (c.id === selectedCourseId) {
+          courseNode = c;
+          break;
+        }
+      }
+      if (courseNode) break;
     }
-    return [];
-  }, [selectedCourseId, knowledgeMap]);
+    if (!courseNode) return [];
+    return toKnowledgeStructures(courseNode.children ?? []);
+  }, [selectedCourseId, bankTree]);
 
   return (
     <div style={{ display: 'flex', gap: 16, height: '100%' }}>
@@ -518,7 +613,7 @@ export function QuestionBankPage() {
           </Space>
         }
       >
-        <Spin spinning={false}>
+        <Spin spinning={loadingBankTree}>
           <Tree
             treeData={filteredTreeData}
             expandedKeys={expandedKeys}
@@ -527,21 +622,83 @@ export function QuestionBankPage() {
             onSelect={handleSelect}
             blockNode
             showLine
+            titleRender={(node: any) => {
+              const tn = node as TreeNode;
+              const isBold = tn.nodeType === 'workType' || tn.nodeType === 'course';
+              return (
+                <span
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+                >
+                  {isBold ? <Text strong>{tn.title}</Text> : <Text>{tn.title}</Text>}
+                  <Badge
+                    count={tn.questionCount}
+                    showZero
+                    style={{
+                      backgroundColor: countColor(tn.questionCount),
+                      color: '#fff',
+                      boxShadow: 'none',
+                    }}
+                    title={`${tn.questionCount} 道题`}
+                  />
+                </span>
+              );
+            }}
           />
         </Spin>
       </Card>
 
       {/* ── Right panel: Table ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {/* Breadcrumb */}
-        {selectedTitle && (
-          <Breadcrumb
-            items={[
-              { title: '试题管理' },
-              { title: selectedTitle },
+        {/* Batch action bar (visible when there are selected rows) */}
+        {selectedRowKeys.length > 0 && (
+          <BatchActionBar
+            count={selectedRowKeys.length}
+            onClear={() => setSelectedRowKeys([])}
+            actions={[
+              {
+                key: 'batch-delete',
+                label: '批量删除',
+                danger: true,
+                onClick: handleBatchDelete,
+              },
             ]}
           />
         )}
+
+        {/* Path context bar: 路径摘要 + 统计 + 筛选 chip */}
+        <PathContextBar
+          breadcrumb={{
+            workType: workTypeTitle,
+            course: courseTitle,
+            knowledge: knowledgeTitle,
+          }}
+          stats={{
+            total: examPage?.total ?? 0,
+            internal: sourceCount.internal,
+            external: sourceCount.external,
+            selected: selectedRowKeys.length,
+          }}
+          filters={{
+            source: filterSource !== undefined ? String(filterSource) : undefined,
+            type: filterType
+              ? (Object.entries(EXAM_TYPE_MAP).find(([k]) => k === filterType)?.[1] ?? filterType)
+              : undefined,
+            difficulty:
+              filterDifficulty !== undefined
+                ? (DIFFICULTY_MAP[filterDifficulty] ?? String(filterDifficulty))
+                : undefined,
+          }}
+          onFilterRemove={(key) => {
+            if (key === 'source') {
+              setFilterSource(undefined);
+            } else if (key === 'type') {
+              setFilterType(undefined);
+            } else if (key === 'difficulty') {
+              setFilterDifficulty(undefined);
+            }
+            setQuery((q) => ({ ...q, page: 1 }));
+          }}
+        />
 
         {/* Filter bar */}
         <Space wrap>
@@ -555,6 +712,20 @@ export function QuestionBankPage() {
               setQuery((q) => ({ ...q, page: 1 }));
             }}
             options={Object.entries(EXAM_TYPE_MAP).map(([k, v]) => ({ label: v, value: k }))}
+          />
+          <Select
+            style={{ width: 100 }}
+            placeholder="来源"
+            allowClear
+            value={filterSource}
+            onChange={(v) => {
+              setFilterSource(v);
+              setQuery((q) => ({ ...q, page: 1 }));
+            }}
+            options={[
+              { value: 0, label: '内部' },
+              { value: 1, label: '外部' },
+            ]}
           />
           <Select
             style={{ width: 100 }}
@@ -585,6 +756,23 @@ export function QuestionBankPage() {
           >
             刷新
           </Button>
+          {hasPerm('exam:question:delete') && (
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              disabled={selectedRowKeys.length === 0}
+              onClick={handleBatchDelete}
+            >
+              <Badge
+                count={selectedRowKeys.length}
+                offset={[8, -2]}
+                size="small"
+                showZero={false}
+              >
+                <span>批量删除</span>
+              </Badge>
+            </Button>
+          )}
           {hasPerm('exam:question:create') && (
             <Button
               type="primary"
@@ -605,6 +793,10 @@ export function QuestionBankPage() {
           columns={columns}
           dataSource={examPage?.items ?? []}
           loading={loadingDetails}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (keys) => setSelectedRowKeys(keys as React.Key[]),
+          }}
           pagination={{
             current: query.page,
             pageSize: query.pageSize,

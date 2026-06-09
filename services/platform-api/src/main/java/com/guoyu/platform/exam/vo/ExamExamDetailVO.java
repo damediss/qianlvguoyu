@@ -34,6 +34,7 @@ public class ExamExamDetailVO {
   private Integer sortNumber;
   private Integer tenantId;
   private LocalDateTime createTime;
+  private LocalDateTime updateTime;
   private LocalDateTime checkTime;
   private LocalDateTime finalCheckTime;
 
@@ -65,6 +66,7 @@ public class ExamExamDetailVO {
     vo.setSortNumber(entity.getSortNumber());
     vo.setTenantId(entity.getTenantId());
     vo.setCreateTime(entity.getCreateTime());
+    vo.setUpdateTime(entity.getUpdateTime());
     vo.setCheckTime(entity.getCheckTime());
     vo.setFinalCheckTime(entity.getFinalCheckTime());
     return vo;
@@ -126,6 +128,8 @@ public class ExamExamDetailVO {
   public void setTenantId(Integer tenantId) { this.tenantId = tenantId; }
   public LocalDateTime getCreateTime() { return createTime; }
   public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
+  public LocalDateTime getUpdateTime() { return updateTime; }
+  public void setUpdateTime(LocalDateTime updateTime) { this.updateTime = updateTime; }
   public LocalDateTime getCheckTime() { return checkTime; }
   public void setCheckTime(LocalDateTime checkTime) { this.checkTime = checkTime; }
   public LocalDateTime getFinalCheckTime() { return finalCheckTime; }
