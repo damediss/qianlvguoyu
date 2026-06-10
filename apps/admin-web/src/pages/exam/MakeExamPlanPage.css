@@ -1,0 +1,48 @@
+/* 组卷计划页 - 工种-科目树视觉调优
+ * 解决 antd v5 Tree blockNode=true 时 style.backgroundColor 不生效的问题,
+ * 用更高优先级的 .selected 标记 + CSS !important 强制覆盖 antd token
+ */
+
+.work-type-tree {
+  /* 选中节点:蓝色背景 + 白字 + 微圆角 */
+  .ant-tree-node-selected {
+    background-color: #1677ff !important;
+    border-radius: 6px;
+  }
+
+  /* 让整个节点区域(包括 icon)都跟随背景色 */
+  .ant-tree-node-selected .ant-tree-node-content-wrapper,
+  .ant-tree-node-selected .ant-tree-iconEle {
+    background-color: #1677ff !important;
+    color: #fff !important;
+  }
+
+  /* hover 时给个浅灰提示,避开选中态 */
+  .ant-tree-node-content-wrapper:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+  }
+  .ant-tree-node-selected .ant-tree-node-content-wrapper:hover {
+    background-color: #4096ff !important;
+  }
+
+  /* 工种节点的标题列加粗 */
+  .ant-tree-switcher,
+  .ant-tree-node-content-wrapper {
+    transition: background-color 0.15s ease;
+  }
+
+  /* 缩进增加,层级更清楚 */
+  .ant-tree-indent-unit {
+    width: 16px;
+  }
+
+  /* 节点标题列强制单行 + 超出截断,避免「母液蒸发工初 / 级」这种换行 */
+  .ant-tree-title {
+    display: inline-block;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+  }
+}

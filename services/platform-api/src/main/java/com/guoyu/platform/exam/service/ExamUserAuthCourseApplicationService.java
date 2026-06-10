@@ -10,6 +10,7 @@ import com.guoyu.platform.exam.dto.ExamUserAuthCourseQueryReq;
 import com.guoyu.platform.exam.entity.ExamUserAuthCourseEntity;
 import com.guoyu.platform.exam.mapper.ExamUserAuthCourseMapper;
 import com.guoyu.platform.exam.vo.ExamUserAuthCourseVO;
+import com.guoyu.platform.security.SecurityContext;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,7 +32,9 @@ public class ExamUserAuthCourseApplicationService {
 
   @Transactional(readOnly = true)
   public PageResponse<ExamUserAuthCourseVO> page(ExamUserAuthCourseQueryReq req) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaQueryWrapper<ExamUserAuthCourseEntity> wrapper = new LambdaQueryWrapper<ExamUserAuthCourseEntity>()
+        .eq(ExamUserAuthCourseEntity::getTenantId, tenantId)
         .orderByDesc(ExamUserAuthCourseEntity::getSortNumber)
         .orderByAsc(ExamUserAuthCourseEntity::getId);
 
@@ -61,7 +64,9 @@ public class ExamUserAuthCourseApplicationService {
 
   @Transactional(readOnly = true)
   public ExamUserAuthCourseVO getByKey(String realname, String idCard) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     List<ExamUserAuthCourseEntity> rows = mapper.selectList(new LambdaQueryWrapper<ExamUserAuthCourseEntity>()
+        .eq(ExamUserAuthCourseEntity::getTenantId, tenantId)
         .eq(ExamUserAuthCourseEntity::getRealname, realname)
         .eq(ExamUserAuthCourseEntity::getIdCard, idCard)
         .orderByDesc(ExamUserAuthCourseEntity::getSortNumber));
@@ -73,11 +78,13 @@ public class ExamUserAuthCourseApplicationService {
 
   @Transactional
   public ExamUserAuthCourseVO create(ExamUserAuthCourseCreateReq req) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     int sortNumber = req.sortNumber() != null ? req.sortNumber() : 1;
     int status = req.status() != null ? req.status() : 1;
 
     for (CourseItem item : req.items()) {
       ExamUserAuthCourseEntity entity = new ExamUserAuthCourseEntity();
+      entity.setTenantId(tenantId);
       entity.setRealname(req.realname());
       entity.setIdCard(req.idCard());
       entity.setCourseId(item.courseId());
@@ -90,6 +97,7 @@ public class ExamUserAuthCourseApplicationService {
     }
 
     List<ExamUserAuthCourseEntity> rows = mapper.selectList(new LambdaQueryWrapper<ExamUserAuthCourseEntity>()
+        .eq(ExamUserAuthCourseEntity::getTenantId, tenantId)
         .eq(ExamUserAuthCourseEntity::getRealname, req.realname())
         .eq(ExamUserAuthCourseEntity::getIdCard, req.idCard()));
     return toVO(rows);
@@ -97,8 +105,10 @@ public class ExamUserAuthCourseApplicationService {
 
   @Transactional
   public ExamUserAuthCourseVO update(String realname, String idCard, ExamUserAuthCourseCreateReq req) {
-    // Physical-delete old rows for this expert, then re-insert
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    // Physical-delete old rows for this expert (current tenant only), then re-insert
     LambdaQueryWrapper<ExamUserAuthCourseEntity> oldWrapper = new LambdaQueryWrapper<ExamUserAuthCourseEntity>()
+        .eq(ExamUserAuthCourseEntity::getTenantId, tenantId)
         .eq(ExamUserAuthCourseEntity::getRealname, realname)
         .eq(ExamUserAuthCourseEntity::getIdCard, idCard);
     List<ExamUserAuthCourseEntity> oldRows = mapper.selectList(oldWrapper);
@@ -114,6 +124,7 @@ public class ExamUserAuthCourseApplicationService {
 
     for (CourseItem item : req.items()) {
       ExamUserAuthCourseEntity entity = new ExamUserAuthCourseEntity();
+      entity.setTenantId(tenantId);
       entity.setRealname(req.realname());
       entity.setIdCard(req.idCard());
       entity.setCourseId(item.courseId());
@@ -126,6 +137,7 @@ public class ExamUserAuthCourseApplicationService {
     }
 
     List<ExamUserAuthCourseEntity> rows = mapper.selectList(new LambdaQueryWrapper<ExamUserAuthCourseEntity>()
+        .eq(ExamUserAuthCourseEntity::getTenantId, tenantId)
         .eq(ExamUserAuthCourseEntity::getRealname, req.realname())
         .eq(ExamUserAuthCourseEntity::getIdCard, req.idCard()));
     return toVO(rows);
@@ -133,7 +145,9 @@ public class ExamUserAuthCourseApplicationService {
 
   @Transactional
   public void delete(String realname, String idCard) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaQueryWrapper<ExamUserAuthCourseEntity> wrapper = new LambdaQueryWrapper<ExamUserAuthCourseEntity>()
+        .eq(ExamUserAuthCourseEntity::getTenantId, tenantId)
         .eq(ExamUserAuthCourseEntity::getRealname, realname)
         .eq(ExamUserAuthCourseEntity::getIdCard, idCard);
     List<ExamUserAuthCourseEntity> rows = mapper.selectList(wrapper);

@@ -9,7 +9,7 @@ public class PageQuery {
   private long page = 1;
 
   @Min(1)
-  @Max(200)
+  @Max(500)
   private long pageSize = 20;
 
   public long getPage() {

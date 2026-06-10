@@ -12,9 +12,9 @@ import com.guoyu.platform.chazheng.vo.ChazhengUserVO;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.security.SecurityContext;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,7 +51,9 @@ public class ChazhengApplicationService {
 
   @Transactional(readOnly = true)
   public PageResponse<ChazhengUserVO> page(ChazhengUserQueryReq req) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaQueryWrapper<ChazhengUserEntity> wrapper = new LambdaQueryWrapper<ChazhengUserEntity>()
+        .eq(ChazhengUserEntity::getTenantId, tenantId)
         .orderByDesc(ChazhengUserEntity::getSortNumber)
         .orderByDesc(ChazhengUserEntity::getId);
 
@@ -85,7 +87,9 @@ public class ChazhengApplicationService {
 
   @Transactional(readOnly = true)
   public List<String> getYmdList() {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaQueryWrapper<ChazhengUserEntity> wrapper = new LambdaQueryWrapper<ChazhengUserEntity>()
+        .eq(ChazhengUserEntity::getTenantId, tenantId)
         .select(ChazhengUserEntity::getYmd)
         .groupBy(ChazhengUserEntity::getYmd)
         .orderByDesc(ChazhengUserEntity::getYmd);
@@ -99,9 +103,10 @@ public class ChazhengApplicationService {
   @Transactional
   public int importExcel(MultipartFile file) {
     if (file.isEmpty()) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "上传文件为空");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "涓婁紶鏂囦欢涓虹┖");
     }
 
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     String ymd = String.valueOf(System.currentTimeMillis());
     int imported = 0;
 
@@ -120,12 +125,13 @@ public class ChazhengApplicationService {
           continue;
         }
         if (idCard.length() != 18) {
-          log.warn("跳过错行[{}]: {}", i, idCard);
+          log.warn("璺宠繃閿欒[{}]: {}", i, idCard);
           continue;
         }
 
         ChazhengUserEntity existing = userMapper.selectOne(
             new LambdaQueryWrapper<ChazhengUserEntity>()
+                .eq(ChazhengUserEntity::getTenantId, tenantId)
                 .eq(ChazhengUserEntity::getIdCard, idCard)
                 .last("LIMIT 1"));
 
@@ -135,6 +141,7 @@ public class ChazhengApplicationService {
           userMapper.updateById(existing);
         } else {
           ChazhengUserEntity entity = new ChazhengUserEntity();
+          entity.setTenantId(tenantId);
           entity.setUserName(userName);
           entity.setIdCard(idCard);
           entity.setYmd(ymd);
@@ -148,8 +155,8 @@ public class ChazhengApplicationService {
         imported++;
       }
     } catch (IOException e) {
-      log.error("Excel 解析失败", e);
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "Excel 解析失败: " + e.getMessage());
+      log.error("Excel 瑙ｆ瀽澶辫触", e);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "Excel 瑙ｆ瀽澶辫触: " + e.getMessage());
     }
 
     return imported;
@@ -157,7 +164,8 @@ public class ChazhengApplicationService {
 
   @Transactional
   public ChazhengUserVO certCheck(Integer id) {
-    ChazhengUserEntity user = findExistingUser(id);
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    ChazhengUserEntity user = findExistingUser(tenantId, id);
 
     String apiUrl = this.certApiUrl;
     if (!StringUtils.hasText(apiUrl)) {
@@ -214,8 +222,8 @@ public class ChazhengApplicationService {
       user.setIsChecked(1);
       userMapper.updateById(user);
     } catch (Exception e) {
-      log.warn("查证调用失败 user={}", user.getId(), e);
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "查证调用失败: " + e.getMessage());
+      log.warn("鏌ヨ瘉璋冪敤澶辫触 user={}", user.getId(), e);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "鏌ヨ瘉璋冪敤澶辫触: " + e.getMessage());
     }
 
     ChazhengUserVO vo = ChazhengUserVO.from(user);
@@ -228,9 +236,12 @@ public class ChazhengApplicationService {
 
   @Transactional(readOnly = true)
   public Map<String, Long> getCertProgress() {
-    Long total = userMapper.selectCount(new LambdaQueryWrapper<>());
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    Long total = userMapper.selectCount(new LambdaQueryWrapper<ChazhengUserEntity>()
+        .eq(ChazhengUserEntity::getTenantId, tenantId));
     Long checked = userMapper.selectCount(
         new LambdaQueryWrapper<ChazhengUserEntity>()
+            .eq(ChazhengUserEntity::getTenantId, tenantId)
             .eq(ChazhengUserEntity::getIsChecked, 1));
     return Map.of("total", total != null ? total : 0,
         "checked", checked != null ? checked : 0);
@@ -238,7 +249,9 @@ public class ChazhengApplicationService {
 
   @Transactional(readOnly = true)
   public byte[] exportExcel(String ymd) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaQueryWrapper<ChazhengUserEntity> wrapper = new LambdaQueryWrapper<ChazhengUserEntity>()
+        .eq(ChazhengUserEntity::getTenantId, tenantId)
         .orderByDesc(ChazhengUserEntity::getSortNumber)
         .orderByDesc(ChazhengUserEntity::getId);
     if (StringUtils.hasText(ymd)) {
@@ -249,14 +262,14 @@ public class ChazhengApplicationService {
     try (Workbook workbook = new XSSFWorkbook()) {
       Sheet sheet = workbook.createSheet("查证用户");
       Row header = sheet.createRow(0);
-      header.createCell(0).setCellValue("姓名");
-      header.createCell(1).setCellValue("身份证号");
-      header.createCell(2).setCellValue("性别");
-      header.createCell(3).setCellValue("证书编号");
-      header.createCell(4).setCellValue("证书名称");
-      header.createCell(5).setCellValue("发证日期");
+      header.createCell(0).setCellValue("濮撳悕");
+      header.createCell(1).setCellValue("韬唤璇佸彿");
+      header.createCell(2).setCellValue("鎬у埆");
+      header.createCell(3).setCellValue("璇佷功缂栧彿");
+      header.createCell(4).setCellValue("璇佷功鍚嶇О");
+      header.createCell(5).setCellValue("鍙戣瘉鏃ユ湡");
       header.createCell(6).setCellValue("查证状态");
-      header.createCell(7).setCellValue("批次");
+      header.createCell(7).setCellValue("鎵规");
 
       int rowIdx = 1;
       for (ChazhengUserEntity user : users) {
@@ -293,14 +306,16 @@ public class ChazhengApplicationService {
       workbook.write(bos);
       return bos.toByteArray();
     } catch (IOException e) {
-      log.error("导出 Excel 失败", e);
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "导出失败: " + e.getMessage());
+      log.error("瀵煎嚭 Excel 澶辫触", e);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "瀵煎嚭澶辫触: " + e.getMessage());
     }
   }
 
   @Transactional(readOnly = true)
   public List<Integer> getEnterprises() {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaQueryWrapper<ChazhengUserEntity> wrapper = new LambdaQueryWrapper<ChazhengUserEntity>()
+        .eq(ChazhengUserEntity::getTenantId, tenantId)
         .select(ChazhengUserEntity::getEnterpriseId)
         .isNotNull(ChazhengUserEntity::getEnterpriseId)
         .groupBy(ChazhengUserEntity::getEnterpriseId)
@@ -313,22 +328,24 @@ public class ChazhengApplicationService {
 
   public byte[] generateTemplate() {
     try (Workbook workbook = new XSSFWorkbook()) {
-      Sheet sheet = workbook.createSheet("\u5bfc\u5165\u6a21\u677f");
+      Sheet sheet = workbook.createSheet("瀵煎叆妯℃澘");
       Row header = sheet.createRow(0);
-      header.createCell(0).setCellValue("\u59d3\u540d");
-      header.createCell(1).setCellValue("\u8eab\u4efd\u8bc1\u53f7");
+      header.createCell(0).setCellValue("濮撳悕");
+      header.createCell(1).setCellValue("韬唤璇佸彿");
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       workbook.write(bos);
       return bos.toByteArray();
     } catch (IOException e) {
-      log.error("\u751f\u6210\u6a21\u677f\u5931\u8d25", e);
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "\u751f\u6210\u6a21\u677f\u5931\u8d25");
+      log.error("生成模板失败", e);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "生成模板失败");
     }
   }
 
   @Transactional(readOnly = true)
   public byte[] exportExcel(String ymd, List<Integer> ids) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaQueryWrapper<ChazhengUserEntity> wrapper = new LambdaQueryWrapper<ChazhengUserEntity>()
+        .eq(ChazhengUserEntity::getTenantId, tenantId)
         .orderByDesc(ChazhengUserEntity::getSortNumber)
         .orderByDesc(ChazhengUserEntity::getId);
     if (ids != null && !ids.isEmpty()) {
@@ -342,16 +359,16 @@ public class ChazhengApplicationService {
 
   private byte[] buildExportWorkbook(List<ChazhengUserEntity> users) {
     try (Workbook workbook = new XSSFWorkbook()) {
-      Sheet sheet = workbook.createSheet("\u67e5\u8bc1\u7528\u6237");
+      Sheet sheet = workbook.createSheet("查证用户");
       Row header = sheet.createRow(0);
-      header.createCell(0).setCellValue("\u59d3\u540d");
-      header.createCell(1).setCellValue("\u8eab\u4efd\u8bc1\u53f7");
-      header.createCell(2).setCellValue("\u6027\u522b");
-      header.createCell(3).setCellValue("\u8bc1\u4e66\u7f16\u53f7");
-      header.createCell(4).setCellValue("\u8bc1\u4e66\u540d\u79f0");
-      header.createCell(5).setCellValue("\u53d1\u8bc1\u65e5\u671f");
-      header.createCell(6).setCellValue("\u67e5\u8bc1\u72b6\u6001");
-      header.createCell(7).setCellValue("\u6279\u6b21");
+      header.createCell(0).setCellValue("濮撳悕");
+      header.createCell(1).setCellValue("韬唤璇佸彿");
+      header.createCell(2).setCellValue("鎬у埆");
+      header.createCell(3).setCellValue("璇佷功缂栧彿");
+      header.createCell(4).setCellValue("璇佷功鍚嶇О");
+      header.createCell(5).setCellValue("鍙戣瘉鏃ユ湡");
+      header.createCell(6).setCellValue("查证状态");
+      header.createCell(7).setCellValue("鎵规");
 
       int rowIdx = 1;
       for (ChazhengUserEntity user : users) {
@@ -363,22 +380,22 @@ public class ChazhengApplicationService {
           Row row = sheet.createRow(rowIdx++);
           row.createCell(0).setCellValue(nullToEmpty(user.getUserName()));
           row.createCell(1).setCellValue(nullToEmpty(user.getIdCard()));
-          row.createCell(2).setCellValue(user.getGender() != null && user.getGender() == 1 ? "\u5973" : "\u7537");
+          row.createCell(2).setCellValue(user.getGender() != null && user.getGender() == 1 ? "女" : "男");
           row.createCell(3).setCellValue("");
           row.createCell(4).setCellValue("");
           row.createCell(5).setCellValue("");
-          row.createCell(6).setCellValue(user.getIsChecked() != null && user.getIsChecked() == 1 ? "\u5df2\u67e5\u8bc1" : "\u672a\u67e5\u8bc1");
+          row.createCell(6).setCellValue(user.getIsChecked() != null && user.getIsChecked() == 1 ? "已查证" : "未查证");
           row.createCell(7).setCellValue(nullToEmpty(user.getYmd()));
         } else {
           for (ChazhengCertEntity cert : certs) {
             Row row = sheet.createRow(rowIdx++);
             row.createCell(0).setCellValue(nullToEmpty(user.getUserName()));
             row.createCell(1).setCellValue(nullToEmpty(user.getIdCard()));
-            row.createCell(2).setCellValue(user.getGender() != null && user.getGender() == 1 ? "\u5973" : "\u7537");
+            row.createCell(2).setCellValue(user.getGender() != null && user.getGender() == 1 ? "女" : "男");
             row.createCell(3).setCellValue(nullToEmpty(cert.getCertNo()));
             row.createCell(4).setCellValue(nullToEmpty(cert.getCertName()));
             row.createCell(5).setCellValue(nullToEmpty(cert.getCertDate()));
-            row.createCell(6).setCellValue("\u5df2\u67e5\u8bc1");
+            row.createCell(6).setCellValue("已查证");
             row.createCell(7).setCellValue(nullToEmpty(user.getYmd()));
           }
         }
@@ -388,13 +405,15 @@ public class ChazhengApplicationService {
       workbook.write(bos);
       return bos.toByteArray();
     } catch (IOException e) {
-      log.error("\u5bfc\u51fa Excel \u5931\u8d25", e);
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "\u5bfc\u51fa\u5931\u8d25: " + e.getMessage());
+      log.error("瀵煎嚭 Excel 澶辫触", e);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "瀵煎嚭澶辫触: " + e.getMessage());
     }
   }
 
-  private ChazhengUserEntity findExistingUser(Integer id) {
-    ChazhengUserEntity entity = userMapper.selectById(id);
+  private ChazhengUserEntity findExistingUser(Long tenantId, Integer id) {
+    ChazhengUserEntity entity = userMapper.selectOne(new LambdaQueryWrapper<ChazhengUserEntity>()
+        .eq(ChazhengUserEntity::getTenantId, tenantId)
+        .eq(ChazhengUserEntity::getId, id));
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
     }
@@ -412,3 +431,4 @@ public class ChazhengApplicationService {
     return value == null ? "" : value;
   }
 }
+

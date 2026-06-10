@@ -5,6 +5,9 @@ import {
   ReloadOutlined,
   SearchOutlined,
   MinusCircleOutlined,
+  ApartmentOutlined,
+  BookOutlined,
+  DownOutlined,
 } from '@ant-design/icons';
 import {
   Button,
@@ -12,7 +15,6 @@ import {
   Form,
   Input,
   InputNumber,
-  List,
   Modal,
   Select,
   Space,
@@ -20,19 +22,22 @@ import {
   Table,
   Tabs,
   Tag,
+  Tree,
   Typography,
   message,
   Popconfirm,
+  Spin,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   pageMakeExamPlans,
   createMakeExamPlan,
   updateMakeExamPlan,
   deleteMakeExamPlan,
   listKnowledgeRates,
+  pageWorkTypes,
 } from '../../api/exam';
 import { pageCourses } from '../../api/exam';
 import type {
@@ -41,7 +46,9 @@ import type {
   ExamMakeExamPlanDetailReq,
   ExamKnowledgeRate,
   ExamCourse,
+  ExamWorkType,
 } from '../../types/exam';
+import './MakeExamPlanPage.css';
 
 const { Title } = Typography;
 
@@ -69,11 +76,131 @@ export function MakeExamPlanPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form] = Form.useForm();
 
+  // 左侧树状态
+  const [treeSearchValue, setTreeSearchValue] = useState('');
+  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+  const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
+
+  // 工种列表(扁平,不分层级)—— /api/exam/work-types/tree 只返回根工种,
+  // 会漏掉子工种(如"金属材料热处理工"等 parentId!=0 的节点),
+  // 这里用 page 接口拿全部,再按 workTypeId 关联 courses
+  const workTypeQuery = useQuery({
+    queryKey: ['exam-work-types-all'],
+    queryFn: () => pageWorkTypes({ page: 1, pageSize: 500 }),
+  });
+
   // 科目列表
   const courseQuery = useQuery({
     queryKey: ['exam-courses-all'],
-    queryFn: () => pageCourses({ page: 1, pageSize: 200 }),
+    queryFn: () => pageCourses({ page: 1, pageSize: 500 }),
   });
+
+  // 构建"工种 → 科目"树形数据（工种按 sortNumber 升序，科目按 sortNumber 升序）
+  const treeData = useMemo(() => {
+    // pageWorkTypes 返回的是 PageResponse,需要从 .items 拿
+    const workTypes = ((workTypeQuery.data as any)?.items || [])
+      .slice()
+      .sort((a: any, b: any) => (a.sortNumber ?? 0) - (b.sortNumber ?? 0));
+    const courses = courseQuery.data?.items || [];
+
+    // 按 workTypeId 分组科目(容错: workTypeId 可能是 string 也可能是 number)
+    const coursesByWorkType = new Map<number, ExamCourse[]>();
+    courses.forEach((c: ExamCourse) => {
+      const wtId = c.workTypeId ?? 0;
+      if (!coursesByWorkType.has(wtId)) coursesByWorkType.set(wtId, []);
+      coursesByWorkType.get(wtId)!.push(c);
+    });
+    // 科目按 sortNumber 升序
+    coursesByWorkType.forEach((list) => {
+      list.sort((a, b) => (a.sortNumber ?? 0) - (b.sortNumber ?? 0));
+    });
+
+    const search = treeSearchValue.trim().toLowerCase();
+
+    return workTypes
+      .map((wt: any) => {
+        const wtCourses = coursesByWorkType.get(wt.id) || [];
+        const filteredCourses = search
+          ? wtCourses.filter((c) => c.title.toLowerCase().includes(search))
+          : wtCourses;
+        // 工种本身匹配搜索词时显示全部科目，否则只显示匹配的科目
+        const wtMatches = search ? wt.title.toLowerCase().includes(search) : false;
+        const coursesToShow = wtMatches ? wtCourses : filteredCourses;
+
+        if (search && !wtMatches && coursesToShow.length === 0) return null;
+
+        return {
+          key: `workType-${wt.id}`,
+          title: (
+            <span
+              style={{
+                fontWeight: 600,
+                fontSize: 13,
+                color: 'rgba(0, 0, 0, 0.88)',
+              }}
+            >
+              {wt.title}
+              <span style={{ color: 'rgba(0, 0, 0, 0.45)', fontWeight: 400, marginLeft: 6, fontSize: 12 }}>
+                ({wtCourses.length})
+              </span>
+            </span>
+          ),
+          icon: <ApartmentOutlined style={{ color: '#1677ff' }} />,
+          selectable: false,
+          children: coursesToShow.map((c) => {
+            const isSelected = selectedKeys.includes(`course-${c.id}`);
+            return {
+              key: `course-${c.id}`,
+              title: (
+                <span
+                  style={{
+                    color: isSelected ? '#fff' : 'rgba(0, 0, 0, 0.88)',
+                    fontWeight: isSelected ? 500 : 400,
+                    display: 'inline-block',
+                    width: '100%',
+                  }}
+                >
+                  {c.title}
+                </span>
+              ),
+              icon: (
+                <BookOutlined
+                  style={{ color: isSelected ? '#fff' : '#1677ff' }}
+                />
+              ),
+              isLeaf: true,
+              style: isSelected
+                ? {
+                    backgroundColor: '#1677ff',
+                    borderRadius: 6,
+                    color: '#fff',
+                    margin: '2px 4px',
+                  }
+                : {
+                    borderRadius: 6,
+                    margin: '2px 4px',
+                    transition: 'background-color 0.15s',
+                  },
+            };
+          }),
+        };
+      })
+      .filter(Boolean) as any[];
+  }, [workTypeQuery.data, courseQuery.data, treeSearchValue, selectedKeys]);
+
+  // 默认展开所有工种节点
+  const defaultExpandAll = useMemo(() => {
+    const workTypes = ((workTypeQuery.data as any)?.items || []) as any[];
+    const keys = workTypes.map((wt) => `workType-${wt.id}`);
+    return keys;
+  }, [workTypeQuery.data]);
+
+  // 首次加载时展开所有工种
+  useMemo(() => {
+    if (defaultExpandAll.length > 0 && expandedKeys.length === 0) {
+      setExpandedKeys(defaultExpandAll);
+    }
+  }, [defaultExpandAll, expandedKeys.length]);
 
   // 知识比重列表(下拉用)
   const rateQuery = useQuery({
@@ -167,26 +294,26 @@ export function MakeExamPlanPage() {
   }, [form, editingId, createMutation, updateMutation]);
 
   const columns: ColumnsType<ExamMakeExamPlan> = [
-    { title: '序号', width: 60, render: (_, __, i) => i + 1 },
-    { title: '名称', dataIndex: 'title', width: 180 },
-    { title: '类型', dataIndex: 'examType', width: 80, render: (v: number) => EXAM_TYPE_MAP[v] || v },
-    { title: '时长(分)', dataIndex: 'time', width: 80 },
+    { title: '序号', width: 50, render: (_, __, i) => i + 1 },
+    { title: '名称', dataIndex: 'title', width: 150, ellipsis: true },
+    { title: '类型', dataIndex: 'examType', width: 60, render: (v: number) => EXAM_TYPE_MAP[v] || v },
+    { title: '时长', dataIndex: 'time', width: 60 },
     {
-      title: '机考', dataIndex: 'isComputer', width: 70,
+      title: '机考', dataIndex: 'isComputer', width: 55,
       render: (v: number) => (v === 1 ? <Tag color="blue">是</Tag> : <Tag>否</Tag>),
     },
     {
-      title: '打印', dataIndex: 'isPrint', width: 70,
+      title: '打印', dataIndex: 'isPrint', width: 55,
       render: (v: number) => (v === 1 ? <Tag color="blue">是</Tag> : <Tag>否</Tag>),
     },
-    { title: '总分', dataIndex: 'totalPoint', width: 70 },
-    { title: '及格分', dataIndex: 'passPoint', width: 80 },
-    { title: '备注', dataIndex: 'comments', width: 120, ellipsis: true },
-    { title: '创建时间', dataIndex: 'createTime', width: 170 },
+    { title: '总分', dataIndex: 'totalPoint', width: 55 },
+    { title: '及格分', dataIndex: 'passPoint', width: 60 },
+    { title: '备注', dataIndex: 'comments', width: 90, ellipsis: true },
+    { title: '创建时间', dataIndex: 'createTime', width: 140 },
     {
-      title: '操作', width: 120, fixed: 'right',
+      title: '操作', width: 130, fixed: 'right',
       render: (_, record) => (
-        <Space>
+        <Space size={0}>
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
             编辑
           </Button>
@@ -203,43 +330,67 @@ export function MakeExamPlanPage() {
   const courses = courseQuery.data?.items || [];
   const rates = rateQuery.data || [];
 
+  const handleTreeSelect = useCallback(
+    (keys: React.Key[]) => {
+      setSelectedKeys(keys);
+      if (keys.length === 0) {
+        setSelectedCourseId(undefined);
+      } else {
+        const key = String(keys[0]);
+        if (key.startsWith('course-')) {
+          setSelectedCourseId(Number(key.replace('course-', '')));
+        } else {
+          setSelectedCourseId(undefined);
+        }
+      }
+      setQuery((q) => ({ ...q, page: 1 }));
+    },
+    [],
+  );
+
   return (
     <div style={{ display: 'flex', gap: 16, height: '100%' }}>
-      {/* 左侧科目筛选 */}
-      <Card style={{ width: 260, flexShrink: 0 }} title="科目筛选" size="small">
+      {/* 左侧：工种-科目 树形筛选 */}
+      <Card
+        style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column' }}
+        title="工种-科目筛选"
+        size="small"
+        bodyStyle={{ flex: 1, overflow: 'auto', padding: '8px 0' }}
+      >
         <Input
-          placeholder="搜索科目"
+          placeholder="搜索工种/科目"
           prefix={<SearchOutlined />}
-          style={{ marginBottom: 12 }}
-          onChange={(e) => {
-            const val = e.target.value;
-            // local filter could be added
-          }}
+          allowClear
+          style={{ marginBottom: 8, margin: '0 8px 8px' }}
+          value={treeSearchValue}
+          onChange={(e) => setTreeSearchValue(e.target.value)}
         />
-        <List
-          dataSource={courses}
-          renderItem={(item: ExamCourse) => (
-            <List.Item
-              style={{
-                cursor: 'pointer',
-                background: selectedCourseId === item.id ? '#e6f7ff' : undefined,
-                padding: '8px 12px',
-              }}
-              onClick={() => {
-                setSelectedCourseId(item.id);
-                setQuery({ ...query, page: 1 });
-              }}
-            >
-              {item.title}
-            </List.Item>
-          )}
-        />
+        {workTypeQuery.isLoading ? (
+          <div style={{ textAlign: 'center', padding: 24 }}><Spin size="small" /></div>
+        ) : (
+          <Tree
+            treeData={treeData}
+            expandedKeys={expandedKeys}
+            selectedKeys={selectedKeys}
+            onExpand={(keys) => setExpandedKeys(keys)}
+            onSelect={handleTreeSelect}
+            showIcon
+            showLine
+            blockNode
+            switcherIcon={<DownOutlined />}
+            style={{ padding: '0 4px' }}
+            className="work-type-tree"
+          />
+        )}
         {selectedCourseId && (
           <Button
             type="link"
             size="small"
-            onClick={() => setSelectedCourseId(undefined)}
-            style={{ marginTop: 8 }}
+            onClick={() => {
+              setSelectedCourseId(undefined);
+              setSelectedKeys([]);
+            }}
+            style={{ margin: '8px 8px 0' }}
           >
             清除筛选
           </Button>
@@ -276,7 +427,7 @@ export function MakeExamPlanPage() {
           columns={columns}
           dataSource={listQuery.data?.items || []}
           loading={listQuery.isLoading}
-          scroll={{ x: 1200 }}
+          scroll={{ x: 1000 }}
           pagination={{
             current: query.page,
             pageSize: query.pageSize,
@@ -297,14 +448,20 @@ export function MakeExamPlanPage() {
           setEditingId(null);
           form.resetFields();
         }}
-        width={800}
+        width={900}
         destroyOnClose
       >
-        <Form form={form} layout="vertical">
+        <Form
+          form={form}
+          layout="horizontal"
+          labelCol={{ flex: '80px' }}
+          wrapperCol={{ flex: 1 }}
+          labelAlign="right"
+        >
           <Form.Item name="title" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
             <Input />
           </Form.Item>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
             <Form.Item name="courseId" label="科目" rules={[{ required: true }]}>
               <Select
                 placeholder="选择科目"
@@ -377,32 +534,32 @@ export function MakeExamPlanPage() {
                               />
                             }
                           >
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                              <Form.Item name={[field.name, 'type']} label="题型" rules={[{ required: true }]}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
+                              <Form.Item name={[field.name, 'type']} label="题型" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
                                 <Select options={QUESTION_TYPES} />
                               </Form.Item>
-                              <Form.Item name={[field.name, 'num']} label="数量" rules={[{ required: true }]}>
+                              <Form.Item name={[field.name, 'num']} label="数量" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
                                 <InputNumber min={1} style={{ width: '100%' }} />
                               </Form.Item>
-                              <Form.Item name={[field.name, 'point']} label="每题分值">
+                              <Form.Item name={[field.name, 'point']} label="每题分值" style={{ marginBottom: 0 }}>
                                 <InputNumber min={0} style={{ width: '100%' }} />
                               </Form.Item>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-                                <Form.Item name={[field.name, 'difficultyStart']} label="难度起">
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                <Form.Item name={[field.name, 'difficultyStart']} label="难度起" style={{ marginBottom: 0 }}>
                                   <InputNumber min={0} max={4} style={{ width: '100%' }} />
                                 </Form.Item>
-                                <Form.Item name={[field.name, 'difficultyEnd']} label="难度止">
+                                <Form.Item name={[field.name, 'difficultyEnd']} label="难度止" style={{ marginBottom: 0 }}>
                                   <InputNumber min={0} max={4} style={{ width: '100%' }} />
                                 </Form.Item>
                               </div>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-                                <Form.Item name={[field.name, 'startPoint']} label="分值起">
-                                  <InputNumber min={0} style={{ width: '100%' }} />
-                                </Form.Item>
-                                <Form.Item name={[field.name, 'endPoint']} label="分值止">
-                                  <InputNumber min={0} style={{ width: '100%' }} />
-                                </Form.Item>
-                              </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginTop: 8 }}>
+                              <Form.Item name={[field.name, 'startPoint']} label="分值起" style={{ marginBottom: 0 }}>
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                              </Form.Item>
+                              <Form.Item name={[field.name, 'endPoint']} label="分值止" style={{ marginBottom: 0 }}>
+                                <InputNumber min={0} style={{ width: '100%' }} />
+                              </Form.Item>
                             </div>
                           </Card>
                         ))}

@@ -11,6 +11,7 @@ import com.guoyu.platform.exam.dto.ExamCourseUpdateReq;
 import com.guoyu.platform.exam.entity.ExamCourseEntity;
 import com.guoyu.platform.exam.mapper.ExamCourseMapper;
 import com.guoyu.platform.exam.vo.ExamCourseVO;
+import com.guoyu.platform.security.SecurityContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,7 +29,9 @@ public class ExamCourseApplicationService {
 
   @Transactional(readOnly = true)
   public PageResponse<ExamCourseVO> page(ExamCourseQueryReq req) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaQueryWrapper<ExamCourseEntity> wrapper = new LambdaQueryWrapper<ExamCourseEntity>()
+        .eq(ExamCourseEntity::getTenantId, tenantId)
         .orderByDesc(ExamCourseEntity::getSortNumber)
         .orderByAsc(ExamCourseEntity::getId);
 
@@ -53,13 +56,16 @@ public class ExamCourseApplicationService {
 
   @Transactional(readOnly = true)
   public ExamCourseVO getById(Integer id) {
-    ExamCourseEntity entity = findExisting(id);
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    ExamCourseEntity entity = findExisting(tenantId, id);
     return ExamCourseVO.from(entity);
   }
 
   @Transactional
   public ExamCourseVO create(ExamCourseCreateReq req) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
     ExamCourseEntity entity = new ExamCourseEntity();
+    entity.setTenantId(tenantId);
     entity.setTitle(req.title());
     entity.setWorkTypeId(req.workTypeId());
     entity.setLevel(req.level());
@@ -84,7 +90,8 @@ public class ExamCourseApplicationService {
 
   @Transactional
   public ExamCourseVO update(Integer id, ExamCourseUpdateReq req) {
-    ExamCourseEntity entity = findExisting(id);
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    ExamCourseEntity entity = findExisting(tenantId, id);
 
     entity.setTitle(req.title());
     entity.setWorkTypeId(req.workTypeId());
@@ -109,12 +116,15 @@ public class ExamCourseApplicationService {
 
   @Transactional
   public void delete(Integer id) {
-    findExisting(id);
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    findExisting(tenantId, id);
     mapper.deleteById(id);
   }
 
-  private ExamCourseEntity findExisting(Integer id) {
-    ExamCourseEntity entity = mapper.selectById(id);
+  private ExamCourseEntity findExisting(Long tenantId, Integer id) {
+    ExamCourseEntity entity = mapper.selectOne(new LambdaQueryWrapper<ExamCourseEntity>()
+        .eq(ExamCourseEntity::getTenantId, tenantId)
+        .eq(ExamCourseEntity::getId, id));
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "科目不存在");
     }
