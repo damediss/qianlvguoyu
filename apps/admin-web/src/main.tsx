@@ -49,6 +49,8 @@ import { createArchiveTablePage } from './pages/zhixunplatform/ArchiveTablePage'
 import { createPmFormPage } from './pages/zhixunplatform/PmFormPage';
 import { TaskStartPage } from './pages/expert/TaskStartPage';
 import { QuestionBankPage } from './pages/exam/QuestionBankPage';
+import { MakeExamPlanPage } from './pages/exam/MakeExamPlanPage';
+import { KnowledgeRatePage } from './pages/exam/KnowledgeRatePage';
 
 // Pre-instantiate factory components for stable React references
 const ArchiveEquipmentPage = createArchiveTablePage('equipment');
@@ -162,6 +164,8 @@ const pageMap: Record<string, React.ReactNode> = {
   zhixun_table_communication: <PmCommunicationPage />,
   zhixun_table_status: <PmStatusPage />,
   exam_question_bank: <QuestionBankPage />,
+  zu_juan_ji_hua: <MakeExamPlanPage />,
+  exam_knowledge_rate: <KnowledgeRatePage />,
   expert_task_start: <TaskStartPage />,
   expert_task_end: <TaskEndPage />,
   certification_project: <ProjectManagementPage />,

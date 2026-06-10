@@ -2,7 +2,6 @@ package com.guoyu.platform.exam.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.exam.entity.ExamCourseEntity;
-import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
 import com.guoyu.platform.exam.entity.ExamKnowledgeStructureEntity;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.exam.mapper.ExamCourseMapper;
@@ -99,21 +98,20 @@ public class QuestionBankTreeApplicationService {
 
     // 4. 题目按 knowledge_id 聚合成 (L3 knowledgeId -> count)
     //    只统计 L3 节点(题目挂载在 L3);知识节点的子树累加由 Java 侧处理
-    //    MP 逻辑删除 (deleted=0/1) 由 @TableLogic 自动加 deleted=0 过滤
-    //    多租户过滤由 MyBatis-Plus 多租户插件自动加 tenant_id 条件
-    //    用非 lambda 的 QueryWrapper + 列名字符串投影,既避免拉 TEXT/CLOB 列,
-    //    又不会触发 MyBatis-Plus 在单元测试中 .select(SFunction) 的 lambda cache 异常
-    com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<ExamExamDetailEntity> detailWrapper =
-        new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<ExamExamDetailEntity>()
-            .isNotNull("knowledge_id")
-            .select("id", "knowledge_id");
-    List<ExamExamDetailEntity> allDetails = examDetailMapper.selectList(detailWrapper);
+    //    走 MySQL 端 GROUP BY,不再拉所有 (id, knowledge_id) 到 Java 内存聚合。
+    //    配套索引 idx_ed_tenant_knowledge_deleted (V20260610_005) 让查询走覆盖索引扫描。
+    List<Map<String, Object>> rawCounts = examDetailMapper.countByKnowledgeIdGrouped(tenantId);
     Map<Integer, Long> l3Count = new HashMap<>();
-    if (allDetails != null) {
-      for (ExamExamDetailEntity d : allDetails) {
-        Integer kid = d.getKnowledgeId();
-        if (kid == null) continue;
-        l3Count.merge(kid, 1L, Long::sum);
+    if (rawCounts != null) {
+      for (Map<String, Object> row : rawCounts) {
+        Object kidObj = row.get("knowledgeId");
+        Object cntObj = row.get("cnt");
+        if (kidObj == null || cntObj == null) continue;
+        Integer kid = (kidObj instanceof Number) ? ((Number) kidObj).intValue() : null;
+        Long cnt = (cntObj instanceof Number) ? ((Number) cntObj).longValue() : 0L;
+        if (kid != null) {
+          l3Count.put(kid, cnt);
+        }
       }
     }
 

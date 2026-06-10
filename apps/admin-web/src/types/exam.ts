@@ -576,3 +576,171 @@ export const CHECK_STATUS_MAP: Record<number, string> = {
   1: '通过',
   2: '不通过',
 };
+
+// ==================== 组卷计划 ====================
+
+export interface ExamMakeExamPlan {
+  id: number;
+  courseId: number;
+  rateId: number | null;
+  type: number | null;
+  examType: number;
+  title: string;
+  time: number | null;
+  isComputer: number | null;
+  isPrint: number | null;
+  openRate: number | null;
+  totalPoint: number | null;
+  passPoint: number | null;
+  comments: string | null;
+  userId: number | null;
+  status: number;
+  isAll: number | null;
+  sortNumber: number | null;
+  tenantId: number;
+  createTime: string;
+  planDetailList?: ExamMakeExamPlanDetail[];
+}
+
+export interface ExamMakeExamPlanDetail {
+  id: number;
+  makeId: number;
+  courseId: number;
+  type: string;
+  num: number;
+  point: number | null;
+  startPoint: number | null;
+  endPoint: number | null;
+  difficultyStart: number | null;
+  difficultyEnd: number | null;
+  totalPoint: number | null;
+  userId: number | null;
+  status: number;
+  sortNumber: number | null;
+  tenantId: number;
+  createTime: string;
+}
+
+export interface ExamMakeExamPlanDetailReq {
+  type: string;
+  num: number;
+  point?: number;
+  startPoint?: number;
+  endPoint?: number;
+  difficultyStart?: number;
+  difficultyEnd?: number;
+}
+
+export interface ExamMakeExamPlanCreateReq {
+  title: string;
+  courseId: number;
+  rateId?: number;
+  type?: number;
+  examType: number;
+  time?: number;
+  isComputer?: number;
+  isPrint?: number;
+  openRate?: number;
+  totalPoint?: number;
+  passPoint?: number;
+  isAll?: number;
+  comments?: string;
+  detailList?: ExamMakeExamPlanDetailReq[];
+}
+
+export interface ExamMakeExamPlanQuery {
+  page?: number;
+  pageSize?: number;
+  courseId?: number;
+  examType?: number;
+  keyword?: string;
+}
+
+// ==================== 知识比重 ====================
+
+export interface ExamKnowledgeRate {
+  id: number;
+  courseId: number;
+  type: number | null;
+  isStandard: number | null;
+  title: string;
+  sortNumber: number | null;
+  comments: string | null;
+  status: number;
+  userId: number | null;
+  tenantId: number;
+  createTime: string;
+  detailList?: ExamKnowledgeRateDetail[];
+}
+
+export interface ExamKnowledgeRateDetail {
+  id: number;
+  knowledgeRateId: number;
+  knowledgeId: number;
+  rate: number;
+  userId: number | null;
+  sortNumber: number | null;
+  comments: string | null;
+  status: number;
+  tenantId: number;
+  createTime: string;
+}
+
+export interface ExamKnowledgeRateDetailReq {
+  knowledgeId: number;
+  rate: number;
+}
+
+export interface ExamKnowledgeRateCreateReq {
+  title: string;
+  courseId: number;
+  type?: number;
+  isStandard?: number;
+  comments?: string;
+  detailList?: ExamKnowledgeRateDetailReq[];
+}
+
+export interface ExamKnowledgeRateQuery {
+  page?: number;
+  pageSize?: number;
+  courseId?: number;
+  keyword?: string;
+}
+
+// ==================== 试卷 ====================
+
+export interface ExamPaper {
+  id: number;
+  makeId: number | null;
+  source: number | null;
+  type: number | null;
+  code: string;
+  title: string;
+  time: number | null;
+  totalPoint: number | null;
+  passPoint: number | null;
+  isComputer: number | null;
+  isPrint: number | null;
+  comments: string | null;
+  userId: number | null;
+  status: number;
+  sortNumber: number | null;
+  tenantId: number;
+  createTime: string;
+}
+
+export interface ExamPaperDetail {
+  id: number;
+  paperId: number;
+  examId: number;
+  type: string;
+  diff: number | null;
+  content: string;
+  answer: string;
+  score: number;
+  resolve: string;
+  status: number;
+  sortNumber: number | null;
+  tenantId: number;
+  createTime: string;
+}

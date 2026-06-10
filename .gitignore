@@ -60,3 +60,6 @@ outputs/**/.cache/
 /deliverable-frontend-tsc.log
 /deliverable-frontend-vite.log
 /.mavis/
+/outputs/
+!/outputs/README.md
+*.err

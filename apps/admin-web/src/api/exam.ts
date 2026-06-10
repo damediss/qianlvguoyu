@@ -31,6 +31,13 @@ import type {
   ExamExamDetailCreateReq,
   ExamExamDetailUpdateReq,
   ExamExamDetailQuery,
+  ExamMakeExamPlan,
+  ExamMakeExamPlanCreateReq,
+  ExamMakeExamPlanQuery,
+  ExamKnowledgeRate,
+  ExamKnowledgeRateCreateReq,
+  ExamKnowledgeRateQuery,
+  ExamPaperDetail,
 } from '../types/exam';
 
 export function pageWorkTypes(params: ExamWorkTypeQuery) {
@@ -278,4 +285,62 @@ export function deleteExamDetail(id: number) {
 /** 批量删除试题,后端返回成功删除的数量 */
 export function batchDeleteExamDetails(ids: number[]) {
   return unwrap<number>(apiClient.post('/exam/exam-details/batch-delete', ids));
+}
+
+// ==================== 组卷计划 ====================
+
+export function pageMakeExamPlans(params: ExamMakeExamPlanQuery) {
+  return unwrap<PageResponse<ExamMakeExamPlan>>(apiClient.get('/exam/make-exam-plans', { params }));
+}
+
+export function listMakeExamPlans(courseId?: number, examType?: number) {
+  return unwrap<ExamMakeExamPlan[]>(apiClient.get('/exam/make-exam-plans/list', { params: { courseId, examType } }));
+}
+
+export function getMakeExamPlan(id: number) {
+  return unwrap<ExamMakeExamPlan>(apiClient.get(`/exam/make-exam-plans/${id}`));
+}
+
+export function createMakeExamPlan(payload: ExamMakeExamPlanCreateReq) {
+  return unwrap<ExamMakeExamPlan>(apiClient.post('/exam/make-exam-plans', payload));
+}
+
+export function updateMakeExamPlan(id: number, payload: ExamMakeExamPlanCreateReq) {
+  return unwrap<ExamMakeExamPlan>(apiClient.put(`/exam/make-exam-plans/${id}`, payload));
+}
+
+export function deleteMakeExamPlan(id: number) {
+  return unwrap<void>(apiClient.delete(`/exam/make-exam-plans/${id}`));
+}
+
+// ==================== 知识比重 ====================
+
+export function pageKnowledgeRates(params: ExamKnowledgeRateQuery) {
+  return unwrap<PageResponse<ExamKnowledgeRate>>(apiClient.get('/exam/knowledge-rates', { params }));
+}
+
+export function listKnowledgeRates(courseId?: number) {
+  return unwrap<ExamKnowledgeRate[]>(apiClient.get('/exam/knowledge-rates/list', { params: { courseId } }));
+}
+
+export function getKnowledgeRate(id: number) {
+  return unwrap<ExamKnowledgeRate>(apiClient.get(`/exam/knowledge-rates/${id}`));
+}
+
+export function createKnowledgeRate(payload: ExamKnowledgeRateCreateReq) {
+  return unwrap<ExamKnowledgeRate>(apiClient.post('/exam/knowledge-rates', payload));
+}
+
+export function updateKnowledgeRate(id: number, payload: ExamKnowledgeRateCreateReq) {
+  return unwrap<ExamKnowledgeRate>(apiClient.put(`/exam/knowledge-rates/${id}`, payload));
+}
+
+export function deleteKnowledgeRate(id: number) {
+  return unwrap<void>(apiClient.delete(`/exam/knowledge-rates/${id}`));
+}
+
+// ==================== 试卷 ====================
+
+export function getPaperDetails(paperId: number) {
+  return unwrap<ExamPaperDetail[]>(apiClient.get(`/exam/papers/${paperId}/details`));
 }

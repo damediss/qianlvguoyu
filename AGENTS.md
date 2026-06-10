@@ -1,6 +1,17 @@
 # AGENTS.md
 
-本文件给在本项目中工作的 AI Agent / Codex 使用。进入仓库后先阅读本文件，再按需加载对应目录下的文档。
+> **本文件被以下 Agent 工具读取**(优先级从上到下):
+> - **MiniMax Code / Mavis** — 团队阶段,owner + producer + verifier 协作
+> - **Claude Code** — 单 agent 阶段,本文件等同 CLAUDE.md
+> - **Cursor** — 单 agent 阶段,通过 `Cursor → Settings → Rules` 自动同步
+> - **Qoder** — 通过 `.qoder/agents/builtin/*.md` 引用本文件核心段
+> - **OpenCode / Codex / Gemini CLI** — 直接读取根目录 `AGENTS.md`
+>
+> **若你是 producer**:只读"必读文档优先级 + 编码规范 + 已知坑",不要碰协作协议段。
+> **若你是 verifier**:必读"多 Agent 协作协议 + 测试与验收 + 硬上限规则"。
+> **若你是 owner / plan 编排**:必读全部。
+
+本文件给在本项目中工作的 AI Agent / Codex 使用。进入仓库后先阅读本文件,再按需加载对应目录下的文档。
 
 ## 阅读顺序
 
@@ -44,8 +55,6 @@
   
 
 ### 空壳/待实现
-- `course/`、`question/`、`training/`：后端包目录存在但无业务代码
-- 前端对应页面（dashboard/、system/、course/、question/、training/、workflow/、ai/）均未创建
 - 学员端（`apps/student-web/`）未创建
 
 ### 独立服务状态
@@ -285,3 +294,79 @@ cd apps/admin-web && npm run dev
 5. 不把原型 HTML 当作正式前端工程继续扩写
 6. 不把 AI、MCP、n8n 设计成绕过平台权限和审计的通道
 7. 不提交真实密钥、生产账号、客户敏感数据或未脱敏资料
+
+---
+
+## 多 Agent 协作协议(Mavis Team / Claude Code Team 适用)
+
+### 角色
+
+| 角色 | 干啥的 | 不要干啥 |
+|---|---|---|
+| **owner** | 拆 task、派活、看 CycleReport、决断 PASS/FAIL | 不要亲自写生产代码 |
+| **producer** | 按 task 写代码 / 跑构建 / 写 deliverable | 不要自己决定 PASS;每写完一个文件就 append 一行到 deliverable.md,给引擎心跳 |
+| **verifier** | 独立审查产物;跑 `mvn compile` / `tsc --noEmit` / `DESCRIBE table`;给 PASS/FAIL | 不要顺手改 producer 代码;不要靠"看着对"判 PASS |
+| **tester** | 跑单测 / 集成测 / 端到端 | 不要跳过手动冒烟 |
+
+### 硬上限
+
+- **producer 阶段:15min(系统硬限,撞了必被 kill)**
+- verifier 阶段:30min(可申请延长一次)
+- **生产者别在 thinking 里反复权衡方案** —— 先写代码 → 跑构建 → 错再改
+- 全链路 E2E 单 task 装不下,**拆成"接口代码 + 编译"和"单测 + 真实启动"两个 sub-task**
+
+### 交棒 / 上报
+
+- producer 完成后:在 deliverable.md 写**已完成文件清单 + 编译/测试日志关键行 + 已知遗留**
+- verifier 完成后:在 verdict 里写**PASS / FAIL + 一句话证据**(不能只说"看起来对")
+- 失败 owner 重派时:steer 一次,不要反复 abort + spawn(浪费 session)
+
+### 并行约束
+
+- 同一 controller / 同一 page 文件,**同一时间只允许 1 个 agent 改**
+- 改 `BaseEntity` / `pom.xml` / `tsconfig.json` / Flyway 主干迁移 —— **必须先在 plan 里 mark 为单 task**
+- producer A 完成后,producer B 才能开始读 A 的产物 —— 不要并发读未提交的中间状态
+- 文件所有权默认按目录划分:`services/platform-api/exam/` 归题库模块 owner;`apps/admin-web/src/pages/exam/` 归前端对应模块 owner;跨模块改动必须 owner 显式授权
+
+---
+
+## Git / 分支 / 提交规范
+
+### 分支命名
+
+- 普通 task:`feat/<task-id>-<slug>`,例如 `feat/tk-001-question-bank-tree`
+- 修 bug:`fix/<task-id>-<slug>`
+- 文档:`docs/<slug>`
+
+### 提交格式
+
+```
+<type>(<scope>): <subject>
+
+<body: 关联 task id + verifier verdict>
+```
+
+- **type** 取值:`feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `perf`
+- **scope** 取值:`backend` / `frontend` / `db` / `flyway` / `agt`(agent 配置) / 具体模块如 `exam` / `chazheng`
+
+### 合并前必须
+
+1. `mvn compile -DskipTests` 0 错(主代码)
+2. `npm run tsc` 0 错
+3. verifier task 写过且 verdict = PASS
+4. 不带 BOM(检查脚本见下方"项目级踩坑" #3)
+5. 不带 `setDeleted(1); mapper.updateById(...)` 这种假删写法
+6. 不修改已应用的 Flyway 迁移;新增迁移必须用新 version 号
+
+---
+
+## 项目级踩坑(摘自 Mavis memory)
+
+新进项目的 Agent **必须**先读这 6 条,能少走 3 天弯路:
+
+1. **MyBatis-Plus 默认 snake_case** — Flyway 迁移的列名必须 snake_case,跟 Java 命名策略对齐(2026-06-04)
+2. **`setDeleted(1) + updateById` 永远是假删** — 软删统一用 `mapper.deleteById(...)`,全项目禁止 `setDeleted(1)`(2026-06-09)
+3. **PowerShell Set-Content 默认带 UTF-8 BOM** — Java 编译会报非法字符;改源码用 Edit/Write 工具,不要走 shell 管道(2026-06-09)
+4. **Flyway 批量重命名迁移要按 description 还原真实 version** — 不要靠 description 猜 version,先 `SELECT description, version FROM flyway_schema_history` 反查(2026-06-05)
+5. **前端 tsx 引用同目录 css 是约定** — 移植 Vue → React 时别漏 import 对应 css(2026-06-05)
+6. **producer 阶段 25min 硬上限装不下全链路 E2E** — 拆 sub-task,或 owner 自己跑 E2E,或明确不让 verify-as-task 进 plan(2026-06-09)

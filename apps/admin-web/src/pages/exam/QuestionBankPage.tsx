@@ -570,11 +570,58 @@ export function QuestionBankPage() {
   ];
 
   // ── Filter tree by search ──
+  // 行为:输入框非空时,递归遍历树,保留"标题命中关键词"的节点 + 它的所有祖先链;
+  //      同时把命中的节点 key 自动加入 expandedKeys,确保能看到。
+  //      输入清空时恢复原树。
+  const filterTreeByKeyword = useCallback(
+    (nodes: TreeNode[], keyword: string): { matched: TreeNode[]; matchedKeys: string[] } => {
+      const k = keyword.trim().toLowerCase();
+      const matchedKeys: string[] = [];
+      const walk = (n: TreeNode, ancestors: TreeNode[]): TreeNode | null => {
+        const selfHit = n.title.toLowerCase().includes(k);
+        const keptChildren: TreeNode[] = [];
+        for (const c of n.children ?? []) {
+          const r = walk(c, [...ancestors, n]);
+          if (r) keptChildren.push(r);
+        }
+        if (selfHit) {
+          matchedKeys.push(n.key);
+          // 命中:自己保留,children 也全保留(让用户看到完整子树)
+          return { ...n, children: n.children };
+        }
+        if (keptChildren.length > 0) {
+          // 不是自身命中,但子树里有命中 → 作为"祖先"保留,只展示命中分支
+          return { ...n, children: keptChildren };
+        }
+        return null;
+      };
+      const out: TreeNode[] = [];
+      for (const n of nodes) {
+        const r = walk(n, []);
+        if (r) out.push(r);
+      }
+      return { matched: out, matchedKeys };
+    },
+    [],
+  );
+
   const filteredTreeData = useMemo(() => {
-    if (!treeSearchValue) return treeData;
-    // simple: just show all (antd Tree handles filter natively via expandedKeys)
-    return treeData;
-  }, [treeData, treeSearchValue]);
+    if (!treeSearchValue.trim()) return treeData;
+    return filterTreeByKeyword(treeData, treeSearchValue).matched;
+  }, [treeData, treeSearchValue, filterTreeByKeyword]);
+
+  // 搜索时:把命中的 key 自动加入 expandedKeys,这样用户能直接看到命中节点
+  useEffect(() => {
+    const k = treeSearchValue.trim();
+    if (!k) return;
+    const { matchedKeys } = filterTreeByKeyword(treeData, k);
+    if (matchedKeys.length === 0) return;
+    setExpandedKeys((prev) => {
+      const set = new Set(prev.map(String));
+      for (const mk of matchedKeys) set.add(mk);
+      return Array.from(set);
+    });
+  }, [treeSearchValue, treeData, filterTreeByKeyword]);
 
   // Get current knowledge tree for modal — 从新聚合树里找选中课程的子节点
   const currentKnowledgeTree = useMemo<ExamKnowledgeStructure[]>(() => {
@@ -625,11 +672,34 @@ export function QuestionBankPage() {
             titleRender={(node: any) => {
               const tn = node as TreeNode;
               const isBold = tn.nodeType === 'workType' || tn.nodeType === 'course';
+              // 高亮搜索命中的子串(忽略大小写),用 <mark> 默认样式
+              const k = treeSearchValue.trim();
+              const titleNode = (() => {
+                if (!k) {
+                  return isBold ? <Text strong>{tn.title}</Text> : <Text>{tn.title}</Text>;
+                }
+                const lower = tn.title.toLowerCase();
+                const idx = lower.indexOf(k.toLowerCase());
+                if (idx < 0) {
+                  return isBold ? <Text strong>{tn.title}</Text> : <Text>{tn.title}</Text>;
+                }
+                const before = tn.title.slice(0, idx);
+                const hit = tn.title.slice(idx, idx + k.length);
+                const after = tn.title.slice(idx + k.length);
+                const content = (
+                  <>
+                    {before}
+                    <mark style={{ background: '#fff566', padding: '0 2px' }}>{hit}</mark>
+                    {after}
+                  </>
+                );
+                return isBold ? <Text strong>{content}</Text> : <Text>{content}</Text>;
+              })();
               return (
                 <span
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
                 >
-                  {isBold ? <Text strong>{tn.title}</Text> : <Text>{tn.title}</Text>}
+                  {titleNode}
                   <Badge
                     count={tn.questionCount}
                     showZero
