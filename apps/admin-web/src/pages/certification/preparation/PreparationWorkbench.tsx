@@ -54,8 +54,10 @@ export function PreparationWorkbench({ taskId, task, onOpenSection, onChanged }:
     return <Empty description="请选择认定任务后查看筹备工作台" />;
   }
 
-  const preparationCompleted = overview.preparationStatus === 'preparation_completed';
-  const canCompletePreparation = overview.preparationStatus === 'project_prepared';
+  // 是否已经离开“认定筹备”阶段：进入归档或认定完成阶段
+  const preparationCompleted = ['archive', 'certification_completed'].includes(overview.currentPhase || '');
+  // 只有任务当前阶段=preparation 时才允许触发“完成筹备”
+  const canCompletePreparation = overview.currentPhase === 'preparation';
   const quickEntryHeight = 72;
   const quickActions = [
     { key: 'collection', icon: <DatabaseOutlined />, title: '信息收集', description: '学员导入 · 申报材料一键生成' },
@@ -110,7 +112,8 @@ export function PreparationWorkbench({ taskId, task, onOpenSection, onChanged }:
         <Descriptions bordered size="small" column={4}>
           <Descriptions.Item label="任务编号">{overview.taskNo}</Descriptions.Item>
           <Descriptions.Item label="任务名称" span={2}>{overview.taskName}</Descriptions.Item>
-          <Descriptions.Item label="筹备状态">{statusTag(overview.preparationStatus)}</Descriptions.Item>
+          <Descriptions.Item label="任务阶段">{statusTag(overview.currentPhase)}</Descriptions.Item>
+          <Descriptions.Item label="任务状态">{statusTag(overview.status)}</Descriptions.Item>
           <Descriptions.Item label="批次">{overview.batchName || '-'}</Descriptions.Item>
           <Descriptions.Item label="工种">{overview.workTypeName || '-'}</Descriptions.Item>
           <Descriptions.Item label="等级">{overview.levelName || '-'}</Descriptions.Item>

@@ -74,6 +74,7 @@ import { TaskEndPage } from './pages/expert/TaskEndPage';
 import { ProjectManagementPage } from './pages/certification/ProjectManagementPage';
 import { PreparationPage } from './pages/certification/PreparationPage';
 import { ArchivePage } from './pages/certification/ArchivePage';
+import { TaskArchivePage } from './pages/certification/TaskArchivePage';
 import { AssessorInfoPage } from './pages/certification/info/AssessorInfoPage';
 import { ExamSiteInfoPage } from './pages/certification/info/ExamSiteInfoPage';
 import { ExamEquipmentInfoPage } from './pages/certification/info/ExamEquipmentInfoPage';
@@ -171,6 +172,7 @@ const pageMap: Record<string, React.ReactNode> = {
   certification_project: <ProjectManagementPage />,
   certification_preparation: <PreparationPage />,
   certification_archive: <ArchivePage />,
+  certification_task_archive: <TaskArchivePage />,
   certification_info_assessor: <AssessorInfoPage />,
   certification_info_site: <ExamSiteInfoPage />,
   certification_info_equipment: <ExamEquipmentInfoPage />,
@@ -220,6 +222,7 @@ const pageMap: Record<string, React.ReactNode> = {
   'zhixun-table-wbs': <PmWbsPage />,
   'zhixun-table-communication': <PmCommunicationPage />,
   'zhixun-table-status': <PmStatusPage />,
+  'certification-task-archive': <TaskArchivePage />,
 };
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

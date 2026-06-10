@@ -9,5 +9,6 @@ import lombok.Setter;
 public class CertificationArchiveTaskQueryReq extends PageQuery {
   private String keyword;
   private String status;
+  private String currentPhase;
   private String archiveStatus;
 }

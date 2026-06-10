@@ -14,6 +14,11 @@ import type {
   PreparationCandidateImportPayload,
   PreparationCandidatePayload,
   PreparationCandidateQuery,
+  PreparationCandidateStaging,
+  PreparationCandidateStagingPromotePayload,
+  PreparationCandidateStagingPromoteResult,
+  PreparationCandidateStagingQuery,
+  PreparationDocumentGeneratePayload,
   PreparationChecklist,
   PreparationChecklistUpdatePayload,
   PreparationCompleteCheck,
@@ -62,6 +67,26 @@ export function completePreparation(taskId: string) {
 
 export function importPreparationCandidates(taskId: string, payload: PreparationCandidateImportPayload) {
   return unwrap<PreparationImportBatch>(apiClient.post(`${base}/tasks/${taskId}/candidate-imports`, payload));
+}
+
+export function pageCandidateStaging(taskId: string, params: PreparationCandidateStagingQuery) {
+  return unwrap<PageResponse<PreparationCandidateStaging>>(apiClient.get(`${base}/tasks/${taskId}/candidate-staging`, { params }));
+}
+
+export function promoteCandidateStaging(taskId: string, payload: PreparationCandidateStagingPromotePayload) {
+  return unwrap<PreparationCandidateStagingPromoteResult>(
+    apiClient.post(`${base}/tasks/${taskId}/candidate-staging/promote`, payload),
+  );
+}
+
+export function generatePreparationCandidateDocument(
+  taskId: string,
+  candidateId: string,
+  payload: PreparationDocumentGeneratePayload,
+) {
+  return unwrap<PreparationCandidateDocument>(
+    apiClient.post(`${base}/tasks/${taskId}/candidates/${candidateId}/documents/generate`, payload),
+  );
 }
 
 export function pagePreparationImportErrors(taskId: string, batchId: string, params: PreparationPageQuery) {

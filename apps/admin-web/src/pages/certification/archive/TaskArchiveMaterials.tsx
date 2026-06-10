@@ -28,6 +28,7 @@ export function TaskArchiveMaterials({ archiveId }: { archiveId?: string }) {
       message.success('材料已上传');
       form.resetFields();
       queryClient.invalidateQueries({ queryKey: ['certification-archive-materials', archiveId] });
+      queryClient.invalidateQueries({ queryKey: ['certification-archive-tasks'] });
     },
   });
 
@@ -36,6 +37,7 @@ export function TaskArchiveMaterials({ archiveId }: { archiveId?: string }) {
     onSuccess: () => {
       message.success('材料已删除');
       queryClient.invalidateQueries({ queryKey: ['certification-archive-materials', archiveId] });
+      queryClient.invalidateQueries({ queryKey: ['certification-archive-tasks'] });
     },
   });
 

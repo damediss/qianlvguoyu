@@ -3,6 +3,7 @@ export interface ArchivePageQuery {
   pageSize?: number;
   keyword?: string;
   status?: string;
+  currentPhase?: string;
   archiveStatus?: string;
   archiveId?: string;
 }
@@ -20,6 +21,8 @@ export interface CertificationArchiveTask {
   archiveId?: string;
   basicArchived: boolean;
   materialArchived: boolean;
+  candidateMaterialArchived?: boolean;
+  taskMaterialArchived?: boolean;
   archiveStatus: string;
   archivedAt?: string;
   lastOperatorName?: string;

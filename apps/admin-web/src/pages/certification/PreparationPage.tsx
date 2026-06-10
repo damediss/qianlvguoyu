@@ -34,7 +34,8 @@ type PreparationTabKey = 'workbench' | 'collection' | 'checklist' | 'equipment' 
 export function PreparationPage() {
   const queryClient = useQueryClient();
   const tabsAnchorRef = useRef<HTMLDivElement | null>(null);
-  const [query, setQuery] = useState<PreparationTaskQuery>({ page: 1, pageSize: 10, status: 'project_prepared' });
+  // 认定筹备模块：固定按任务阶段 = preparation 过滤
+  const [query, setQuery] = useState<PreparationTaskQuery>({ page: 1, pageSize: 10, currentPhase: 'preparation' });
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
   const [activeTab, setActiveTab] = useState<PreparationTabKey>('workbench');
   const [collectionSubTab, setCollectionSubTab] = useState<CollectionSubTabKey>('candidates');
@@ -108,7 +109,7 @@ export function PreparationPage() {
     { title: '考场', dataIndex: 'examSiteCount', width: 80 },
     { title: '考务', dataIndex: 'examStaffCount', width: 80 },
     { title: '考评员', dataIndex: 'assessorCount', width: 90 },
-    { title: '状态', dataIndex: 'preparationStatus', width: 110, render: statusTag },
+    { title: '任务状态', dataIndex: 'status', width: 110, render: statusTag },
     { title: '最近更新', dataIndex: 'lastUpdatedAt', width: 170, render: dateTimeText },
     {
       title: '操作',
@@ -240,8 +241,8 @@ export function PreparationPage() {
               <Form
                 layout="inline"
                 style={{ marginBottom: 16 }}
-                initialValues={{ status: 'project_prepared' }}
-                onFinish={(values) => setQuery({ ...query, ...values, status: 'project_prepared', page: 1 })}
+                initialValues={{}}
+                onFinish={(values) => setQuery({ ...query, ...values, currentPhase: 'preparation', page: 1 })}
               >
                 <Form.Item name="keyword">
                   <Input.Search allowClear placeholder="任务编号、名称、工种" style={{ width: 280 }} />
@@ -252,7 +253,10 @@ export function PreparationPage() {
                     placeholder="任务状态"
                     style={{ width: 140 }}
                     options={[
-                      { label: '认定准备已完成', value: 'project_prepared' },
+                      { label: '进行中', value: 'in_progress' },
+                      { label: '待审核', value: 'pending_review' },
+                      { label: '已驳回', value: 'rejected' },
+                      { label: '已完成', value: 'completed' },
                     ]}
                   />
                 </Form.Item>

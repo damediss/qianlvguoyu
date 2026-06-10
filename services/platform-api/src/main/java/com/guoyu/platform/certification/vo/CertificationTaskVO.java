@@ -1,6 +1,7 @@
 package com.guoyu.platform.certification.vo;
 
 import com.guoyu.platform.certification.entity.CertificationTaskEntity;
+import com.guoyu.platform.certification.service.CertificationTaskPhases;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -34,16 +35,17 @@ public record CertificationTaskVO(
 
   public static CertificationTaskVO from(CertificationTaskEntity entity, List<CertificationTaskScopeVO> scopes) {
     List<CertificationTaskScopeVO> safeScopes = scopes == null ? List.of() : scopes;
-    String effectiveStatus = effectiveStatus(entity.getStatus(), entity.getCurrentPhase());
+    String currentPhase = normalizePhase(entity.getCurrentPhase());
+    String status = normalizeStatus(entity.getStatus());
     return new CertificationTaskVO(
         entity.getId() == null ? null : String.valueOf(entity.getId()),
         entity.getTaskNo(),
         entity.getTaskName(),
         entity.getTaskManagerName(),
-        entity.getCurrentPhase(),
-        phaseName(entity.getCurrentPhase()),
-        effectiveStatus,
-        statusName(effectiveStatus),
+        currentPhase,
+        CertificationTaskPhases.phaseName(currentPhase),
+        status,
+        statusName(status),
         entity.getSourceType(),
         sourceName(entity.getSourceType(), entity.getSourceName()),
         summarizeWorkTypes(safeScopes),
@@ -86,34 +88,45 @@ public record CertificationTaskVO(
         .collect(Collectors.joining("、"));
   }
 
-  private static String phaseName(String phase) {
-    return switch (phase == null ? "" : phase) {
-      case "preparation" -> "任务准备阶段";
-      case "before_exam" -> "考前准备阶段";
-      case "theory_exam" -> "理论考试阶段";
-      case "practical_exam" -> "实操考试阶段";
-      case "archive" -> "归档总结阶段";
-      default -> phase;
+  // 把历史阶段编码（project_creation 等）规范化为新的 4 阶段编码
+  private static String normalizePhase(String phase) {
+    if (phase == null) {
+      return CertificationTaskPhases.TASK_CREATION;
+    }
+    return switch (phase) {
+      case "project_creation" -> CertificationTaskPhases.TASK_CREATION;
+      case CertificationTaskPhases.TASK_CREATION,
+           CertificationTaskPhases.PREPARATION,
+           CertificationTaskPhases.ARCHIVE,
+           CertificationTaskPhases.CERTIFICATION_COMPLETED -> phase;
+      default -> CertificationTaskPhases.TASK_CREATION;
+    };
+  }
+
+  // 把历史 status 取值规范化为新的 4 状态枚举
+  private static String normalizeStatus(String status) {
+    if (status == null) {
+      return "in_progress";
+    }
+    return switch (status) {
+      case "in_progress", "pending_review", "rejected", "completed" -> status;
+      case "approved" -> "completed";
+      case "running", "draft" -> "in_progress";
+      case "archive_completed", "certification_completed" -> "completed";
+      case "preparation_completed", "project_prepared",
+           "preparation", "archive", "project_creation", "task_creation" -> "in_progress";
+      default -> "in_progress";
     };
   }
 
   private static String statusName(String status) {
     return switch (status == null ? "" : status) {
-      case "draft" -> "草稿";
-      case "running" -> "进行中";
+      case "in_progress" -> "进行中";
       case "pending_review" -> "待审核";
-      case "approved" -> "已通过";
       case "rejected" -> "已驳回";
-      case "project_prepared" -> "认定准备已完成";
-      case "preparation_completed" -> "认定筹备已完成";
-      case "archive_completed" -> "认定归档已完成";
       case "completed" -> "已完成";
       default -> status;
     };
-  }
-
-  private static String effectiveStatus(String status, String currentPhase) {
-    return status;
   }
 
   private static String sourceName(String sourceType, String sourceName) {

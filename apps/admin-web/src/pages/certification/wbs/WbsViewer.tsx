@@ -130,13 +130,9 @@ function taskStatusLabel(task?: CertificationTask) {
     return task.statusName;
   }
   const map: Record<string, string> = {
-    running: '进行中',
+    in_progress: '进行中',
     pending_review: '待审核',
-    approved: '已通过',
     rejected: '已驳回',
-    project_prepared: '认定准备已完成',
-    preparation_completed: '认定筹备已完成',
-    archive_completed: '认定归档已完成',
     completed: '已完成',
   };
   return task?.status ? map[task.status] || task.status : '-';

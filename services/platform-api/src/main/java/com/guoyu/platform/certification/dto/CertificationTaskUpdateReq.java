@@ -17,6 +17,7 @@ public record CertificationTaskUpdateReq(
     LocalDate planEndDate,
     LocalDate examDate,
     @Size(max = 40) String status,
+    @Size(max = 40) String currentPhase,
     @Size(max = 1000) String remark
 ) {
 }

@@ -31,7 +31,8 @@ export interface CertificationTaskQuery {
   page?: number;
   pageSize?: number;
   keyword?: string;
-  status?: string;
+  status?: CertificationTaskStatus | string;
+  currentPhase?: CertificationTaskPhase | string;
   levelCode?: string;
   taskNo?: string;
 }
@@ -48,9 +49,52 @@ export interface CertificationTaskPayload {
   planEndDate?: string;
   examDate?: string;
   sourceType?: string;
-  status?: string;
+  status?: CertificationTaskStatus | string;
+  currentPhase?: CertificationTaskPhase | string;
   remark?: string;
 }
+
+// 任务阶段（current_phase）
+export type CertificationTaskPhase =
+  | 'task_creation'
+  | 'preparation'
+  | 'archive'
+  | 'certification_completed';
+
+// 任务状态（status）
+export type CertificationTaskStatus =
+  | 'in_progress'
+  | 'pending_review'
+  | 'rejected'
+  | 'completed';
+
+export const CERTIFICATION_TASK_PHASES: readonly CertificationTaskPhase[] = [
+  'task_creation',
+  'preparation',
+  'archive',
+  'certification_completed',
+] as const;
+
+export const CERTIFICATION_TASK_STATUSES: readonly CertificationTaskStatus[] = [
+  'in_progress',
+  'pending_review',
+  'rejected',
+  'completed',
+] as const;
+
+export const CERTIFICATION_TASK_PHASE_LABELS: Record<CertificationTaskPhase, string> = {
+  task_creation: '任务创建阶段',
+  preparation: '认定筹备阶段',
+  archive: '认定归档阶段',
+  certification_completed: '认定完成',
+};
+
+export const CERTIFICATION_TASK_STATUS_LABELS: Record<CertificationTaskStatus, string> = {
+  in_progress: '进行中',
+  pending_review: '待审核',
+  rejected: '已驳回',
+  completed: '已完成',
+};
 
 export interface CertificationTaskScope {
   id: string;

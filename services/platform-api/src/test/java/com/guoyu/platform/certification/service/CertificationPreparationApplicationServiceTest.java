@@ -5,14 +5,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.guoyu.platform.certification.dto.PreparationAssessorTaskDraftReq;
-import com.guoyu.platform.certification.dto.PreparationAssessorTaskReviewReq;
+import com.guoyu.platform.certification.dto.PreparationAssessorDispatchReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateSaveReq;
 import com.guoyu.platform.certification.dto.PreparationMaterialGenerateReq;
-import com.guoyu.platform.certification.dto.PreparationScoreReq;
 import com.guoyu.platform.certification.dto.PreparationTaskAssessorSaveReq;
 import com.guoyu.platform.certification.dto.PreparationTaskEquipmentSaveReq;
 import com.guoyu.platform.certification.dto.PreparationTaskExamSiteSaveReq;
@@ -26,6 +25,7 @@ import com.guoyu.platform.certification.entity.CertificationCandidateDocumentEnt
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
 import com.guoyu.platform.certification.entity.CertificationMaterialTemplateEntity;
 import com.guoyu.platform.certification.entity.CertificationExamSiteEntity;
+import com.guoyu.platform.certification.entity.CertificationTaskAssessorEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskAssessorGroupEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskScopeEntity;
@@ -34,7 +34,6 @@ import com.guoyu.platform.certification.mapper.CertificationApplicationMaterialI
 import com.guoyu.platform.certification.mapper.CertificationAssessorMapper;
 import com.guoyu.platform.certification.mapper.CertificationAssessorNotificationMapper;
 import com.guoyu.platform.certification.mapper.CertificationAssessorTaskMapper;
-import com.guoyu.platform.certification.mapper.CertificationAssessorTaskScoreMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateDocumentMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateImportBatchMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateImportErrorMapper;
@@ -46,6 +45,7 @@ import com.guoyu.platform.certification.mapper.CertificationTaskAssessorMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskEquipmentMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskExamSiteMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskExamStaffMapper;
+import com.guoyu.platform.certification.mapper.CertificationTaskChecklistItemMapper;
 import com.guoyu.platform.certification.info.mapper.CertificationInfoExamEquipmentMapper;
 import com.guoyu.platform.certification.info.mapper.CertificationInfoExamStaffMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskMapper;
@@ -59,6 +59,7 @@ import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 class CertificationPreparationApplicationServiceTest {
@@ -80,6 +81,8 @@ class CertificationPreparationApplicationServiceTest {
   private final CertificationExamSiteMapper examSiteMapper = Mockito.mock(CertificationExamSiteMapper.class);
   private final CertificationTaskExamSiteMapper taskExamSiteMapper = Mockito.mock(CertificationTaskExamSiteMapper.class);
   private final CertificationTaskExamStaffMapper taskExamStaffMapper = Mockito.mock(CertificationTaskExamStaffMapper.class);
+  private final CertificationTaskChecklistItemMapper taskChecklistItemMapper =
+      Mockito.mock(CertificationTaskChecklistItemMapper.class);
   private final CertificationInfoExamStaffMapper infoExamStaffMapper = Mockito.mock(CertificationInfoExamStaffMapper.class);
   private final CertificationTaskEquipmentMapper taskEquipmentMapper = Mockito.mock(CertificationTaskEquipmentMapper.class);
   private final CertificationInfoExamEquipmentMapper infoEquipmentMapper = Mockito.mock(CertificationInfoExamEquipmentMapper.class);
@@ -87,14 +90,16 @@ class CertificationPreparationApplicationServiceTest {
   private final CertificationTaskAssessorGroupMapper groupMapper = Mockito.mock(CertificationTaskAssessorGroupMapper.class);
   private final CertificationTaskAssessorMapper taskAssessorMapper = Mockito.mock(CertificationTaskAssessorMapper.class);
   private final CertificationAssessorTaskMapper assessorTaskMapper = Mockito.mock(CertificationAssessorTaskMapper.class);
-  private final CertificationAssessorTaskScoreMapper scoreMapper =
-      Mockito.mock(CertificationAssessorTaskScoreMapper.class);
   private final CertificationAssessorNotificationMapper notificationMapper =
       Mockito.mock(CertificationAssessorNotificationMapper.class);
   private final CertificationTaskScopeMapper scopeMapper = Mockito.mock(CertificationTaskScopeMapper.class);
   private final CertificationInfoAssessorMapper infoAssessorMapper = Mockito.mock(CertificationInfoAssessorMapper.class);
   private final com.guoyu.platform.file.service.FileApplicationService fileApplicationService =
       Mockito.mock(com.guoyu.platform.file.service.FileApplicationService.class);
+  private final CertificationCandidateStagingApplicationService stagingApplicationService =
+      Mockito.mock(CertificationCandidateStagingApplicationService.class);
+  private final CertificationApplicationFormGenerationService applicationFormGenerationService =
+      Mockito.mock(CertificationApplicationFormGenerationService.class);
 
   private CertificationPreparationApplicationService service;
 
@@ -113,6 +118,7 @@ class CertificationPreparationApplicationServiceTest {
         examSiteMapper,
         taskExamSiteMapper,
         taskExamStaffMapper,
+        taskChecklistItemMapper,
         infoExamStaffMapper,
         taskEquipmentMapper,
         infoEquipmentMapper,
@@ -120,11 +126,12 @@ class CertificationPreparationApplicationServiceTest {
         groupMapper,
         taskAssessorMapper,
         assessorTaskMapper,
-        scoreMapper,
         notificationMapper,
         scopeMapper,
         infoAssessorMapper,
-        fileApplicationService
+        fileApplicationService,
+        stagingApplicationService,
+        applicationFormGenerationService
     );
     when(scopeMapper.selectList(any())).thenReturn(List.of(existingScope()));
   }
@@ -175,6 +182,15 @@ class CertificationPreparationApplicationServiceTest {
   void generateApplicationMaterialsRejectsIncompleteRequiredDocuments() {
     when(taskMapper.selectById(1L)).thenReturn(existingTask());
     when(candidateMapper.selectCount(any())).thenReturn(2L);
+    CertificationCandidateEntity candidate1 = new CertificationCandidateEntity();
+    candidate1.setId(11L);
+    candidate1.setTaskId(1L);
+    candidate1.setStatus("active");
+    CertificationCandidateEntity candidate2 = new CertificationCandidateEntity();
+    candidate2.setId(12L);
+    candidate2.setTaskId(1L);
+    candidate2.setStatus("active");
+    when(candidateMapper.selectList(any())).thenReturn(List.of(candidate1, candidate2));
     when(documentMapper.selectCount(any())).thenReturn(1L);
 
     PreparationMaterialGenerateReq req = new PreparationMaterialGenerateReq("selected", List.of(11L, 12L), "批量生成");
@@ -366,40 +382,45 @@ class CertificationPreparationApplicationServiceTest {
   }
 
   @Test
-  void saveAssessorTaskDraftRejectsScoreGreaterThanStepMaxScore() {
-    CertificationAssessorTaskEntity task = assessorTask();
-    when(assessorTaskMapper.selectById(50L)).thenReturn(task);
-    PreparationAssessorTaskDraftReq req = new PreparationAssessorTaskDraftReq(
-        9L,
-        "进度说明",
-        List.of(new PreparationScoreReq(1, "安全操作", BigDecimal.TEN, BigDecimal.valueOf(11), "超分"))
-    );
+  void dispatchGroupCreatesAssignedWorkbenchTask() {
+    when(taskMapper.selectById(1L)).thenReturn(existingTask());
+    when(groupMapper.selectById(2L)).thenReturn(existingGroup());
+    CertificationTaskAssessorEntity member = new CertificationTaskAssessorEntity();
+    member.setId(30L);
+    member.setTaskId(1L);
+    member.setGroupId(2L);
+    member.setAssessorId(9L);
+    when(taskAssessorMapper.selectList(any())).thenReturn(List.of(member));
+    when(infoAssessorMapper.selectById(9L)).thenReturn(assessor("鐢靛伐", LocalDate.of(2026, 12, 31)));
+    CertificationInfoAssessorEntity leader = assessor("鐢靛伐", LocalDate.of(2026, 12, 31));
+    leader.setId(8L);
+    when(infoAssessorMapper.selectById(8L)).thenReturn(leader);
 
-    assertThatThrownBy(() -> service.saveAssessorTaskDraft(50L, req))
-        .isInstanceOf(BusinessException.class)
-        .hasMessage("得分不得小于 0，且不得超过步骤分值上限");
-  }
+    service.dispatchGroup(1L, 2L, new PreparationAssessorDispatchReq(
+        "鐢靛伐",
+        "瀹炴搷鑰冭瘎",
+        1001L,
+        "考评表.xlsx",
+        90,
+        LocalDate.of(2026, 6, 18),
+        null
+    ));
 
-  @Test
-  void reviewAssessorTaskRejectsNonLeaderReviewer() {
-    CertificationAssessorTaskEntity task = assessorTask();
-    task.setLeaderAssessorId(8L);
-    when(assessorTaskMapper.selectById(50L)).thenReturn(task);
-
-    PreparationAssessorTaskReviewReq req = new PreparationAssessorTaskReviewReq(9L, "approved", "通过");
-
-    assertThatThrownBy(() -> service.reviewAssessorTask(50L, req))
-        .isInstanceOf(BusinessException.class)
-        .hasMessage("非本组组长不得复核任务");
+    ArgumentCaptor<CertificationAssessorTaskEntity> captor =
+        ArgumentCaptor.forClass(CertificationAssessorTaskEntity.class);
+    verify(assessorTaskMapper).insert(captor.capture());
+    assertThat(captor.getValue().getStatus()).isEqualTo("completed");
   }
 
   @Test
   void completeCheckReturnsStructuredBlockingItems() {
     when(taskMapper.selectById(1L)).thenReturn(existingTask());
-    when(candidateMapper.selectCount(any())).thenReturn(0L);
+    when(candidateMapper.selectList(any())).thenReturn(List.of());
     when(documentMapper.selectCount(any())).thenReturn(1L);
     when(materialBatchMapper.selectCount(any())).thenReturn(0L);
     when(taskExamSiteMapper.selectCount(any())).thenReturn(0L);
+    when(taskExamStaffMapper.selectCount(any())).thenReturn(0L);
+    when(taskEquipmentMapper.selectCount(any())).thenReturn(0L);
     when(groupMapper.selectCount(any())).thenReturn(0L);
     when(assessorTaskMapper.selectCount(any())).thenReturn(0L);
 
@@ -412,15 +433,31 @@ class CertificationPreparationApplicationServiceTest {
             "document_approved",
             "material_generated",
             "exam_site_required",
+            "exam_staff_required",
+            "equipment_required",
             "assessor_group_required",
+            "assessor_group_leader",
             "assessor_task_dispatched"
         );
+    assertThat(result.items()).filteredOn(item -> "document_approved".equals(item.code()))
+        .singleElement()
+        .satisfies(item -> {
+          assertThat(item.passed()).isFalse();
+          assertThat(item.message()).isEqualTo("尚无考生，无法校验必传资料");
+        });
+    assertThat(result.items()).filteredOn(item -> "assessor_group_leader".equals(item.code()))
+        .singleElement()
+        .satisfies(item -> {
+          assertThat(item.passed()).isFalse();
+          assertThat(item.message()).isEqualTo("尚未配置考评组，无法校验组长");
+        });
   }
 
   @Test
   void createCandidateInsertsValidCandidateWithMaskedFields() {
     when(taskMapper.selectById(1L)).thenReturn(existingTask());
     when(candidateMapper.selectCount(any())).thenReturn(0L);
+    when(candidateMapper.selectByTaskAndIdCardIncludingDeleted(1L, 1L, "450102199001011234")).thenReturn(null);
     doAnswer(invocation -> {
       CertificationCandidateEntity entity = invocation.getArgument(0);
       entity.setId(10001L);
@@ -443,7 +480,65 @@ class CertificationPreparationApplicationServiceTest {
     service.createCandidate(1L, req);
 
     verify(candidateMapper).insert(any(CertificationCandidateEntity.class));
+    verify(candidateMapper, never()).restoreSoftDeleted(any());
     verify(documentMapper, atLeast(1)).insert(any(CertificationCandidateDocumentEntity.class));
+  }
+
+  @Test
+  void createCandidateRestoresSoftDeletedCandidateInsteadOfInserting() {
+    CertificationTaskEntity task = existingTask();
+    when(taskMapper.selectById(1L)).thenReturn(task);
+    when(candidateMapper.selectCount(any())).thenReturn(0L);
+    CertificationCandidateEntity existing = new CertificationCandidateEntity();
+    existing.setId(100L);
+    existing.setTaskId(1L);
+    existing.setIdCardNo("450102199001011234");
+    existing.setDeleted(1);
+    when(candidateMapper.selectByTaskAndIdCardIncludingDeleted(1L, 1L, "450102199001011234")).thenReturn(existing);
+    when(templateMapper.selectList(any())).thenReturn(candidateDocTemplates());
+    when(documentMapper.selectCount(any())).thenReturn(0L);
+
+    PreparationCandidateSaveReq req = new PreparationCandidateSaveReq(
+        "李敏",
+        "450102199001011234",
+        "13800001234",
+        "senior",
+        "高级",
+        "training",
+        "鉴定中心",
+        null
+    );
+
+    service.createCandidate(1L, req);
+
+    assertThat(existing.getDeleted()).isZero();
+    assertThat(existing.getStatus()).isEqualTo("active");
+    assertThat(existing.getCandidateName()).isEqualTo("李敏");
+    assertThat(existing.getImportSource()).isEqualTo("training");
+    verify(candidateMapper).restoreSoftDeleted(existing);
+    verify(candidateMapper, never()).insert(any(CertificationCandidateEntity.class));
+    verify(documentMapper, atLeast(1)).insert(any(CertificationCandidateDocumentEntity.class));
+  }
+
+  @Test
+  void deleteCandidatePurgesPreviousSoftDeletedRecordBeforeDelete() {
+    CertificationTaskEntity task = existingTask();
+    when(taskMapper.selectById(1L)).thenReturn(task);
+    CertificationCandidateEntity candidate = new CertificationCandidateEntity();
+    candidate.setId(200L);
+    candidate.setTaskId(1L);
+    candidate.setIdCardNo("450102199001011234");
+    candidate.setDeleted(0);
+    when(candidateMapper.selectById(200L)).thenReturn(candidate);
+    when(materialItemMapper.selectCount(any())).thenReturn(0L);
+
+    service.deleteCandidate(1L, 200L);
+
+    verify(candidateMapper).purgeSoftDeletedByTaskAndIdCard(1L, 1L, "450102199001011234");
+    verify(documentMapper).physicalDeleteByCandidate(1L, 200L);
+    verify(stagingApplicationService).releasePromoteByCandidate(1L, 200L);
+    verify(candidateMapper).physicalDeleteById(200L);
+    verify(candidateMapper, never()).deleteById(200L);
   }
 
   private List<CertificationMaterialTemplateEntity> candidateDocTemplates() {

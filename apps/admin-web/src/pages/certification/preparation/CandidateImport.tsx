@@ -32,8 +32,10 @@ import {
   deletePreparationCandidate,
   importPreparationCandidates,
   listAllPreparationCandidates,
+  pageCandidateStaging,
   pagePreparationCandidates,
   pagePreparationImportErrors,
+  promoteCandidateStaging,
   updatePreparationCandidate,
 } from '../../../api/certificationPreparation';
 import type { TrainPeople, TrainPeopleQuery } from '../../../types/training';
@@ -42,13 +44,15 @@ import type {
   PreparationCandidate,
   PreparationCandidatePayload,
   PreparationCandidateQuery,
+  PreparationCandidateStaging,
+  PreparationCandidateStagingQuery,
   PreparationImportBatch,
   PreparationImportError,
 } from '../../../types/certificationPreparation';
 import { CandidateDocumentDrawer } from './CandidateDocumentDrawer';
 import { candidateDocumentRatioTag, dash, dateTimeText, importSourceLabel, levelOptions, statusTag } from './shared';
 
-type ImportChannel = 'training' | 'other';
+type ImportChannel = 'staging' | 'training' | 'other';
 
 interface CandidateImportProps {
   taskId?: string;
@@ -58,7 +62,7 @@ interface CandidateImportProps {
 export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState<PreparationCandidateQuery>({ page: 1, pageSize: 10 });
-  const [importChannel, setImportChannel] = useState<ImportChannel>('training');
+  const [importChannel, setImportChannel] = useState<ImportChannel>('staging');
   const [candidateModalOpen, setCandidateModalOpen] = useState(false);
   const [editingCandidate, setEditingCandidate] = useState<PreparationCandidate | null>(null);
   const [documentCandidate, setDocumentCandidate] = useState<PreparationCandidate | null>(null);
@@ -67,12 +71,20 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   const [importFileList, setImportFileList] = useState<UploadFile[]>([]);
   const [trainingQuery, setTrainingQuery] = useState<TrainPeopleQuery>({ page: 1, pageSize: 10 });
   const [selectedTrainingPeople, setSelectedTrainingPeople] = useState<Map<number, TrainPeople>>(new Map());
+  const [stagingQuery, setStagingQuery] = useState<PreparationCandidateStagingQuery>({ page: 1, pageSize: 10 });
+  const [selectedStagingRows, setSelectedStagingRows] = useState<Map<string, PreparationCandidateStaging>>(new Map());
   const [importRemark, setImportRemark] = useState('');
 
   const candidatesQuery = useQuery({
     queryKey: ['certification-preparation-candidates', taskId, query],
     queryFn: () => pagePreparationCandidates(taskId!, query),
     enabled: Boolean(taskId),
+  });
+
+  const stagingPeopleQuery = useQuery({
+    queryKey: ['certification-preparation-candidate-staging', taskId, stagingQuery],
+    queryFn: () => pageCandidateStaging(taskId!, stagingQuery),
+    enabled: Boolean(taskId) && importChannel === 'staging',
   });
 
   const trainingPeopleQuery = useQuery({
@@ -119,6 +131,7 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-candidates', taskId] });
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-candidates-imported', taskId] });
+    queryClient.invalidateQueries({ queryKey: ['certification-preparation-candidate-staging', taskId] });
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-candidates-select', taskId] });
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-documents', taskId] });
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-overview', taskId] });
@@ -155,9 +168,21 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
     },
   });
 
+  const promoteMutation = useMutation({
+    mutationFn: (stagingIds: string[]) => promoteCandidateStaging(taskId!, { stagingIds }),
+    onSuccess: (result) => {
+      message.success(`导入完成：成功 ${result.successCount}，失败 ${result.failedCount}`);
+      setSelectedStagingRows(new Map());
+      refresh();
+    },
+    onError: (error: Error) => {
+      message.error(error.message || '导入失败');
+    },
+  });
+
   const importMutation = useMutation({
     mutationFn: async (payload: {
-      sourceType: ImportChannel;
+      sourceType: 'training' | 'other';
       remark?: string;
       file?: File;
       candidates?: PreparationCandidatePayload[];
@@ -196,6 +221,15 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
     },
   });
 
+  const stagingPeopleColumns: ColumnsType<PreparationCandidateStaging> = [
+    { title: '姓名', dataIndex: 'candidateName', width: 100, render: dash },
+    { title: '性别', dataIndex: 'gender', width: 72, render: dash },
+    { title: '身份证号', dataIndex: 'idCardNo', width: 170, ellipsis: true, render: dash },
+    { title: '手机号', dataIndex: 'phone', width: 130, render: dash },
+    { title: '报考等级', dataIndex: 'applyLevelName', width: 130, render: dash },
+    { title: '工作单位', dataIndex: 'companyName', minWidth: 180, ellipsis: true, render: dash },
+  ];
+
   const trainingPeopleColumns: ColumnsType<TrainPeople> = [
     { title: '姓名', dataIndex: 'realname', width: 100, render: dash },
     { title: '手机号', dataIndex: 'phone', width: 130, render: dash },
@@ -203,6 +237,25 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
     { title: '培训ID', dataIndex: 'trainId', width: 90, render: dash },
     { title: '班级ID', dataIndex: 'trainClassId', width: 90, render: dash },
   ];
+
+  function handleStagingSelectionChange(_keys: Key[], rows: PreparationCandidateStaging[]) {
+    setSelectedStagingRows((prev) => {
+      const next = new Map(prev);
+      const currentPageIds = (stagingPeopleQuery.data?.items || []).map((row) => row.id);
+      currentPageIds.forEach((id) => next.delete(id));
+      rows.forEach((row) => next.set(row.id, row));
+      return next;
+    });
+  }
+
+  function submitStagingPromote() {
+    const stagingIds = Array.from(selectedStagingRows.keys());
+    if (stagingIds.length === 0) {
+      message.warning('请勾选要导入的测试学员');
+      return;
+    }
+    promoteMutation.mutate(stagingIds);
+  }
 
   function handleTrainingSelectionChange(_keys: Key[], rows: TrainPeople[]) {
     setSelectedTrainingPeople((prev) => {
@@ -334,15 +387,63 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
             setImportChannel(value);
             setImportFileList([]);
             setSelectedTrainingPeople(new Map());
+            setSelectedStagingRows(new Map());
           }}
           options={[
+            { label: '测试学员', value: 'staging' },
             { label: '培训学员', value: 'training' },
             { label: '其他学员', value: 'other' },
           ]}
           style={{ marginBottom: 16 }}
         />
 
-        {importChannel === 'training' ? (
+        {importChannel === 'staging' ? (
+          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              从测试学员池勾选后导入当前认定任务；导入后仅需上传证件照，系统可自动生成报名信息表。
+            </Typography.Text>
+            <Input.Search
+              allowClear
+              placeholder="搜索姓名、身份证、手机号"
+              onSearch={(keyword) => setStagingQuery((prev) => ({ ...prev, keyword, page: 1 }))}
+            />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              已选 {selectedStagingRows.size} 人，勾选后点击「确认导入」。
+            </Typography.Text>
+            <Table
+              rowKey="id"
+              size="small"
+              columns={stagingPeopleColumns}
+              dataSource={stagingPeopleQuery.data?.items || []}
+              loading={stagingPeopleQuery.isFetching}
+              scroll={{ y: 240 }}
+              rowSelection={{
+                selectedRowKeys: Array.from(selectedStagingRows.keys()),
+                onChange: handleStagingSelectionChange,
+                preserveSelectedRowKeys: true,
+              }}
+              pagination={{
+                current: stagingQuery.page,
+                pageSize: stagingQuery.pageSize,
+                total: stagingPeopleQuery.data?.total || 0,
+                showSizeChanger: true,
+                onChange: (page, pageSize) => setStagingQuery((prev) => ({ ...prev, page, pageSize })),
+              }}
+            />
+            <Space wrap>
+              <PermissionGate code="certification.preparation.candidate.import">
+                <Button
+                  type="primary"
+                  icon={<UploadOutlined />}
+                  loading={promoteMutation.isPending}
+                  onClick={submitStagingPromote}
+                >
+                  确认导入测试学员
+                </Button>
+              </PermissionGate>
+            </Space>
+          </Space>
+        ) : importChannel === 'training' ? (
           <Space direction="vertical" style={{ width: '100%' }} size={12}>
             <Input.Search
               allowClear

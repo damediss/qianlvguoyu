@@ -2,6 +2,7 @@ import {
   CheckOutlined,
   DeleteOutlined,
   EyeOutlined,
+  FileSyncOutlined,
   RollbackOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
@@ -9,9 +10,10 @@ import { Button, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Ta
 import type { UploadProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { uploadFile } from '../../../api/knowledge';
 import {
+  generatePreparationCandidateDocument,
   pagePreparationCandidateDocuments,
   deletePreparationCandidateDocument,
   reviewPreparationCandidateDocument,
@@ -106,6 +108,21 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
     },
   });
 
+  const generateMutation = useMutation({
+    mutationFn: (docCode: string) =>
+      generatePreparationCandidateDocument(taskId, candidate!.id, { docCode }),
+    onSuccess: () => {
+      message.success('报名信息表已生成');
+      refresh();
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : '生成失败'),
+  });
+
+  const doc002Approved = useMemo(
+    () => (documentsQuery.data?.items || []).some((item) => item.docCode === 'DOC002' && item.status === 'approved'),
+    [documentsQuery.data?.items],
+  );
+
   const uploadProps: UploadProps = {
     maxCount: 1,
     beforeUpload: async (file) => {
@@ -170,6 +187,38 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
       width: 140,
       fixed: 'right',
       render: (_, record) => {
+        if (record.docCode === 'DOC001') {
+          if (record.status === 'approved') {
+            return (
+              <PermissionGate code="certification.preparation.document.generate">
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<FileSyncOutlined />}
+                  loading={generateMutation.isPending}
+                  onClick={() => generateMutation.mutate('DOC001')}
+                >
+                  重新生成
+                </Button>
+              </PermissionGate>
+            );
+          }
+          return (
+            <PermissionGate code="certification.preparation.document.generate">
+              <Button
+                type="link"
+                size="small"
+                icon={<FileSyncOutlined />}
+                loading={generateMutation.isPending}
+                disabled={!doc002Approved}
+                onClick={() => generateMutation.mutate('DOC001')}
+              >
+                {record.status === 'missing' ? '生成认定申请表' : '重新生成'}
+              </Button>
+            </PermissionGate>
+          );
+        }
+
         const reviewed = record.status === 'approved';
         if (record.status === 'missing') {
           return (
@@ -226,7 +275,7 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
   ];
 
   function openUploadModal(record: PreparationCandidateDocument) {
-    if (!candidate) {
+    if (!candidate || record.docCode === 'DOC001') {
       return;
     }
     uploadForm.resetFields();
@@ -377,9 +426,6 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
 }
 
 function acceptByDocCode(docCode?: string) {
-  if (docCode === 'DOC001') {
-    return '.xlsx,.pdf,.docx';
-  }
   if (docCode === 'DOC002') {
     return 'image/*';
   }
@@ -388,9 +434,6 @@ function acceptByDocCode(docCode?: string) {
 
 function validateUploadFileType(docCode: string | undefined, file: File) {
   const extension = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
-  if (docCode === 'DOC001' && !['.xlsx', '.pdf', '.docx'].includes(extension)) {
-    return '报名信息表仅支持 xlsx、pdf、docx 格式';
-  }
   if (docCode === 'DOC002') {
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
     if (!file.type.startsWith('image/') && !imageExtensions.includes(extension)) {

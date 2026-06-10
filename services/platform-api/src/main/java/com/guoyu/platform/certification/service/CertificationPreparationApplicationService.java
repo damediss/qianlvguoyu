@@ -93,7 +93,10 @@ import com.guoyu.platform.common.api.PageQuery;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.certification.entity.CertificationCandidateSourceStagingEntity;
 import com.guoyu.platform.file.service.FileApplicationService;
+import com.guoyu.platform.file.vo.FileVO;
+import org.springframework.context.annotation.Lazy;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -198,6 +201,8 @@ public class CertificationPreparationApplicationService {
   private final CertificationTaskScopeMapper scopeMapper;
   private final CertificationInfoAssessorMapper infoAssessorMapper;
   private final FileApplicationService fileApplicationService;
+  private final CertificationCandidateStagingApplicationService stagingApplicationService;
+  private final CertificationApplicationFormGenerationService applicationFormGenerationService;
 
   public CertificationPreparationApplicationService(
       CertificationTaskMapper taskMapper,
@@ -223,7 +228,9 @@ public class CertificationPreparationApplicationService {
       CertificationAssessorNotificationMapper notificationMapper,
       CertificationTaskScopeMapper scopeMapper,
       CertificationInfoAssessorMapper infoAssessorMapper,
-      FileApplicationService fileApplicationService
+      FileApplicationService fileApplicationService,
+      @Lazy CertificationCandidateStagingApplicationService stagingApplicationService,
+      CertificationApplicationFormGenerationService applicationFormGenerationService
   ) {
     this.taskMapper = taskMapper;
     this.phaseMapper = phaseMapper;
@@ -249,6 +256,8 @@ public class CertificationPreparationApplicationService {
     this.scopeMapper = scopeMapper;
     this.infoAssessorMapper = infoAssessorMapper;
     this.fileApplicationService = fileApplicationService;
+    this.stagingApplicationService = stagingApplicationService;
+    this.applicationFormGenerationService = applicationFormGenerationService;
   }
 
   @Transactional(readOnly = true)
@@ -261,7 +270,7 @@ public class CertificationPreparationApplicationService {
           .or()
           .like(CertificationTaskEntity::getTaskNo, req.getKeyword()));
     }
-    wrapper.eq(CertificationTaskEntity::getStatus, CertificationTaskStatuses.PROJECT_PREPARED);
+    wrapper.eq(CertificationTaskEntity::getCurrentPhase, CertificationTaskPhaseSupport.PREPARATION);
     if (StringUtils.hasText(req.getCurrentPhase())) {
       wrapper.eq(CertificationTaskEntity::getCurrentPhase, req.getCurrentPhase());
     }
@@ -383,19 +392,41 @@ public class CertificationPreparationApplicationService {
   public PreparationCandidateVO createCandidate(Long taskId, PreparationCandidateSaveReq req) {
     CertificationTaskEntity task = findTask(taskId);
     validateCandidate(task, req, null);
-    CertificationCandidateEntity entity = new CertificationCandidateEntity();
-    applyCandidate(entity, task, req);
-    entity.setTaskId(taskId);
-    entity.setCandidateNo("C-" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now()));
-    entity.setDocumentCompletedCount(0);
-    entity.setDocumentRequiredCount(CANDIDATE_DOC_CODES.size());
-    entity.setDocumentComplete(false);
-    entity.setStatus("active");
-    entity.setDeleted(0);
-    candidateMapper.insert(entity);
-    Long candidateId = resolveCandidateIdAfterInsert(taskId, entity);
-    if (candidateId != null) {
-      initializeCandidateDocuments(taskId, candidateId);
+    CertificationCandidateEntity existing = candidateMapper.selectByTaskAndIdCardIncludingDeleted(
+        task.getTenantId(), taskId, req.idCardNo());
+    if (existing != null && (existing.getDeleted() == null || existing.getDeleted() == 0)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "同一任务下身份证号不得重复");
+    }
+    CertificationCandidateEntity entity;
+    if (existing != null) {
+      entity = existing;
+      entity.setTaskId(taskId);
+      applyCandidate(entity, task, req);
+      entity.setCandidateNo("C-" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now()));
+      entity.setDocumentCompletedCount(0);
+      entity.setDocumentRequiredCount(CANDIDATE_DOC_CODES.size());
+      entity.setDocumentComplete(false);
+      entity.setStatus("active");
+      entity.setDeleted(0);
+      candidateMapper.restoreSoftDeleted(entity);
+    } else {
+      entity = new CertificationCandidateEntity();
+      applyCandidate(entity, task, req);
+      entity.setTaskId(taskId);
+      entity.setCandidateNo("C-" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now()));
+      entity.setDocumentCompletedCount(0);
+      entity.setDocumentRequiredCount(CANDIDATE_DOC_CODES.size());
+      entity.setDocumentComplete(false);
+      entity.setStatus("active");
+      entity.setDeleted(0);
+      candidateMapper.insert(entity);
+      Long candidateId = resolveCandidateIdAfterInsert(taskId, entity);
+      if (candidateId != null) {
+        entity.setId(candidateId);
+      }
+    }
+    if (entity.getId() != null) {
+      initializeCandidateDocuments(taskId, entity.getId());
     }
     touchTask(taskId);
     return PreparationCandidateVO.from(entity);
@@ -414,8 +445,8 @@ public class CertificationPreparationApplicationService {
 
   @Transactional
   public void deleteCandidate(Long taskId, Long candidateId) {
-    findTask(taskId);
-    requireCandidate(taskId, candidateId);
+    CertificationTaskEntity task = findTask(taskId);
+    CertificationCandidateEntity candidate = requireCandidate(taskId, candidateId);
     long generated = safeCount(materialItemMapper.selectCount(new LambdaQueryWrapper<CertificationApplicationMaterialItemEntity>()
         .eq(CertificationApplicationMaterialItemEntity::getTaskId, taskId)
         .eq(CertificationApplicationMaterialItemEntity::getCandidateId, candidateId)
@@ -423,10 +454,13 @@ public class CertificationPreparationApplicationService {
     if (generated > 0) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "已进入后续流程的考生不得删除");
     }
-    documentMapper.delete(new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
-        .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
-        .eq(CertificationCandidateDocumentEntity::getCandidateId, candidateId));
-    candidateMapper.deleteById(candidateId);
+    Long tenantId = candidate.getTenantId() != null ? candidate.getTenantId() : task.getTenantId();
+    if (StringUtils.hasText(candidate.getIdCardNo())) {
+      candidateMapper.purgeSoftDeletedByTaskAndIdCard(tenantId, taskId, candidate.getIdCardNo());
+    }
+    documentMapper.physicalDeleteByCandidate(taskId, candidateId);
+    stagingApplicationService.releasePromoteByCandidate(taskId, candidateId);
+    candidateMapper.physicalDeleteById(candidateId);
     touchTask(taskId);
   }
 
@@ -458,11 +492,72 @@ public class CertificationPreparationApplicationService {
   }
 
   @Transactional
+  public PreparationCandidateDocumentVO generateCandidateDocument(Long taskId, Long candidateId, String docCode) {
+    findTask(taskId);
+    requireCandidate(taskId, candidateId);
+    if (!"DOC001".equals(docCode)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前仅支持生成报名信息表");
+    }
+    CertificationCandidateDocumentEntity photoDocument = documentMapper.selectOne(
+        new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
+            .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
+            .eq(CertificationCandidateDocumentEntity::getCandidateId, candidateId)
+            .eq(CertificationCandidateDocumentEntity::getDocCode, "DOC002"));
+    if (photoDocument == null || !"approved".equals(photoDocument.getStatus())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请先上传并审核通过两寸证件照");
+    }
+    CertificationCandidateSourceStagingEntity staging =
+        stagingApplicationService.requireStagingByCandidate(taskId, candidateId);
+    byte[] content = applicationFormGenerationService.generateApplicationForm(staging);
+    String fileName = staging.getCandidateName() + "-职业技能等级认定申请表.docx";
+    FileVO file = fileApplicationService.storeFromBytes(
+        content,
+        fileName,
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "private");
+    CertificationCandidateDocumentEntity entity = documentMapper.selectOne(
+        new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
+            .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
+            .eq(CertificationCandidateDocumentEntity::getCandidateId, candidateId)
+            .eq(CertificationCandidateDocumentEntity::getDocCode, "DOC001"));
+    if (entity == null) {
+      entity = new CertificationCandidateDocumentEntity();
+      entity.setTaskId(taskId);
+      entity.setCandidateId(candidateId);
+      entity.setDocCode("DOC001");
+      entity.setDocName("报名信息表");
+      entity.setRequired(true);
+      entity.setVersionNo(1);
+      entity.setDeleted(0);
+    } else {
+      entity.setVersionNo((entity.getVersionNo() == null ? 0 : entity.getVersionNo()) + 1);
+    }
+    entity.setFileId(file.id());
+    entity.setFileName(file.originalName());
+    entity.setFileType(file.contentType());
+    entity.setStatus("approved");
+    entity.setUploadedAt(LocalDateTime.now());
+    entity.setReviewedAt(LocalDateTime.now());
+    entity.setReviewComment("系统生成");
+    if (entity.getId() == null) {
+      documentMapper.insert(entity);
+    } else {
+      documentMapper.updateById(entity);
+    }
+    refreshCandidateDocumentStats(taskId, candidateId);
+    touchTask(taskId);
+    return PreparationCandidateDocumentVO.from(entity);
+  }
+
+  @Transactional
   public PreparationCandidateDocumentVO saveCandidateDocument(Long taskId, PreparationCandidateDocumentSaveReq req) {
     findTask(taskId);
     requireCandidate(taskId, req.candidateId());
     if (!CANDIDATE_DOC_CODES.contains(req.docCode())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持上传报名信息表与两寸证件照");
+    }
+    if ("DOC001".equals(req.docCode())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "报名信息表请使用一键生成，不支持手工上传");
     }
     validateCandidateDocumentFile(req.docCode(), req.fileName(), req.fileType());
     CertificationCandidateDocumentEntity entity = documentMapper.selectOne(
@@ -1283,7 +1378,7 @@ public class CertificationPreparationApplicationService {
             .eq(CertificationCandidateEntity::getTaskId, taskId)
             .eq(CertificationCandidateEntity::getStatus, "active"));
     List<PreparationCheckItemVO> items = new ArrayList<>();
-    boolean taskPrepared = CertificationTaskStatuses.PROJECT_PREPARED.equals(task.getStatus());
+    boolean taskPrepared = CertificationTaskPhaseSupport.PREPARATION.equals(task.getCurrentPhase());
     items.add(new PreparationCheckItemVO("task_project_prepared", "认定准备", taskPrepared,
         taskPrepared ? "认定准备已完成" : "只有认定准备已完成的任务允许完成筹备"));
     long candidateCount = activeCandidates.size();
@@ -1296,8 +1391,10 @@ public class CertificationPreparationApplicationService {
             .in(CertificationCandidateDocumentEntity::getCandidateId, activeCandidateIds)
             .eq(CertificationCandidateDocumentEntity::getRequired, true)
             .ne(CertificationCandidateDocumentEntity::getStatus, "approved")));
-    items.add(new PreparationCheckItemVO("document_approved", "考生资料", incompleteDocs == 0,
-        incompleteDocs == 0 ? "必传资料均已审核通过" : "存在未审核通过的必传资料"));
+    boolean documentsApproved = candidateCount > 0 && incompleteDocs == 0;
+    items.add(new PreparationCheckItemVO("document_approved", "考生资料", documentsApproved,
+        candidateCount == 0 ? "尚无考生，无法校验必传资料"
+            : incompleteDocs == 0 ? "必传资料均已审核通过" : "存在未审核通过的必传资料"));
     long materialGenerated = safeCount(materialBatchMapper.selectCount(new LambdaQueryWrapper<CertificationApplicationMaterialBatchEntity>()
         .eq(CertificationApplicationMaterialBatchEntity::getTaskId, taskId)
         .eq(CertificationApplicationMaterialBatchEntity::getBatchType, "generate")
@@ -1323,8 +1420,10 @@ public class CertificationPreparationApplicationService {
     long leaderMissing = safeCount(groupMapper.selectCount(new LambdaQueryWrapper<CertificationTaskAssessorGroupEntity>()
         .eq(CertificationTaskAssessorGroupEntity::getTaskId, taskId)
         .isNull(CertificationTaskAssessorGroupEntity::getLeaderAssessorId)));
-    items.add(new PreparationCheckItemVO("assessor_group_leader", "考评组组长", leaderMissing == 0,
-        leaderMissing == 0 ? "考评组组长配置完整" : "存在未配置组长的考评组"));
+    boolean leaderConfigured = groupCount > 0 && leaderMissing == 0;
+    items.add(new PreparationCheckItemVO("assessor_group_leader", "考评组组长", leaderConfigured,
+        groupCount == 0 ? "尚未配置考评组，无法校验组长"
+            : leaderMissing == 0 ? "考评组组长配置完整" : "存在未配置组长的考评组"));
     long dispatched = safeCount(assessorTaskMapper.selectCount(new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
         .eq(CertificationAssessorTaskEntity::getTaskId, taskId)));
     items.add(new PreparationCheckItemVO("assessor_task_dispatched", "考评任务发放", dispatched > 0,
@@ -1341,19 +1440,14 @@ public class CertificationPreparationApplicationService {
     if (!check.passed()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "筹备完成检查未通过");
     }
-    CertificationTaskEntity task = findTask(taskId);
-    task.setCurrentPhase("before_exam");
-    task.setStatus(CertificationTaskStatuses.PREPARATION_COMPLETED);
-    task.setLastBusinessUpdatedAt(LocalDateTime.now());
-    taskMapper.updateById(task);
-    CertificationTaskPhaseEntity phase = phaseMapper.selectOne(new LambdaQueryWrapper<CertificationTaskPhaseEntity>()
-        .eq(CertificationTaskPhaseEntity::getTaskId, taskId)
-        .eq(CertificationTaskPhaseEntity::getPhaseCode, "preparation"));
-    if (phase != null) {
-      phase.setStatus("completed");
-      phase.setCompletedAt(LocalDateTime.now());
-      phaseMapper.updateById(phase);
-    }
+    CertificationTaskPhaseSupport.advancePhase(
+        taskMapper,
+        phaseMapper,
+        taskId,
+        CertificationTaskPhaseSupport.PREPARATION,
+        CertificationTaskPhaseSupport.ARCHIVE,
+        CertificationTaskStatuses.IN_PROGRESS
+    );
     return check;
   }
 

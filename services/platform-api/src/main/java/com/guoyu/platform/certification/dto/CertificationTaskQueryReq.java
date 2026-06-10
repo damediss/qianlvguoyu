@@ -6,6 +6,7 @@ public class CertificationTaskQueryReq extends PageQuery {
 
   private String keyword;
   private String status;
+  private String currentPhase;
   private String levelCode;
   private String taskNo;
 
@@ -23,6 +24,14 @@ public class CertificationTaskQueryReq extends PageQuery {
 
   public void setStatus(String status) {
     this.status = status;
+  }
+
+  public String getCurrentPhase() {
+    return currentPhase;
+  }
+
+  public void setCurrentPhase(String currentPhase) {
+    this.currentPhase = currentPhase;
   }
 
   public String getLevelCode() {

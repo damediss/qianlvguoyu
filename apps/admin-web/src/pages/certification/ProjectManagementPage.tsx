@@ -85,8 +85,6 @@ import {
 } from './schedule/constants';
 import { ScheduleEditor } from './schedule/ScheduleEditor';
 import { ScheduleViewer } from './schedule/ScheduleViewer';
-import { preparationCompletedTagStyle } from './preparation/shared';
-
 type EditorType = 'member' | 'wbs' | 'schedule' | 'risk';
 
 interface PendingOrder {
@@ -114,6 +112,7 @@ interface TaskFormValues {
   examDate?: Dayjs;
   sourceType?: string;
   status?: string;
+  currentPhase?: string;
   remark?: string;
 }
 
@@ -121,13 +120,18 @@ interface EditorFormValues {
   [key: string]: string | number | boolean | Dayjs | undefined;
 }
 
+// 任务阶段（current_phase）按四阶段流程对齐：任务创建 → 认定筹备 → 认定归档 → 认定完成
+const stageOptions = [
+  { label: '任务创建阶段', value: 'task_creation' },
+  { label: '认定筹备阶段', value: 'preparation' },
+  { label: '认定归档阶段', value: 'archive' },
+  { label: '认定完成', value: 'certification_completed' },
+];
+
+// 任务状态（status）映射阶段内的工作进度
 const statusOptions = [
-  { label: '进行中', value: 'running' },
-  { label: '认定准备已完成', value: 'project_prepared' },
-  { label: '认定筹备已完成', value: 'preparation_completed' },
-  { label: '认定归档已完成', value: 'archive_completed' },
+  { label: '进行中', value: 'in_progress' },
   { label: '待审核', value: 'pending_review' },
-  { label: '已通过', value: 'approved' },
   { label: '已驳回', value: 'rejected' },
   { label: '已完成', value: 'completed' },
 ];
@@ -172,6 +176,9 @@ const documentMeta: Record<CertificationDocumentType, { label: string; view: str
     submit: 'certification.project.risk.submit',
   },
 };
+
+/** 待接收任务面板：预留订单接入能力，当前关闭展示 */
+const PENDING_ORDERS_PANEL_ENABLED = false;
 
 const pendingOrders: PendingOrder[] = [
   {
@@ -522,7 +529,8 @@ export function ProjectManagementPage() {
       examDate: order ? dayjs(order.examDate) : now.add(14, 'day'),
       certificationType: 'with_question_bank',
       sourceType: order ? 'order' : 'manual',
-      status: 'running',
+      status: 'in_progress',
+      currentPhase: 'task_creation',
     });
     setTaskModalOpen(true);
   }, [taskForm]);
@@ -558,6 +566,7 @@ export function ProjectManagementPage() {
         examDate: formatDate(values.examDate),
         sourceType: values.sourceType,
         status: values.status,
+        currentPhase: values.currentPhase,
         remark: values.remark,
       };
       if (editingTask) {
@@ -635,15 +644,15 @@ export function ProjectManagementPage() {
     { title: '计划人数', dataIndex: 'plannedPeopleCount', width: 90, render: dash },
     { title: '考试日期', dataIndex: 'examDate', width: 120, render: dash },
     {
-      title: '阶段',
-      dataIndex: 'currentPhaseName',
-      width: 100,
-      render: (value: string) => <Tag color="processing">{value}</Tag>,
+      title: '当前阶段',
+      dataIndex: 'currentPhase',
+      width: 140,
+      render: (value: string, record) => renderTaskPhase(value, record.currentPhaseName),
     },
     {
-      title: '状态',
+      title: '任务状态',
       dataIndex: 'status',
-      width: 130,
+      width: 110,
       render: (value: string, record) => renderTaskStatus(value, record.statusName),
     },
     {
@@ -763,8 +772,16 @@ export function ProjectManagementPage() {
               />
               <Select
                 allowClear
-                placeholder="状态"
-                style={{ width: 140 }}
+                placeholder="任务阶段"
+                style={{ width: 150 }}
+                options={stageOptions}
+                value={query.currentPhase}
+                onChange={(currentPhase) => setQuery((prev) => ({ ...prev, currentPhase, page: 1 }))}
+              />
+              <Select
+                allowClear
+                placeholder="任务状态"
+                style={{ width: 130 }}
                 options={statusOptions}
                 value={query.status}
                 onChange={(status) => setQuery((prev) => ({ ...prev, status, page: 1 }))}
@@ -948,8 +965,11 @@ export function ProjectManagementPage() {
                 { label: '任务订单', value: 'order' },
               ]} />
             </Form.Item>
-            <Form.Item name="status" label="状态">
-              <Select options={statusOptions} />
+            <Form.Item name="currentPhase" label="任务阶段">
+              <Select options={stageOptions} placeholder="选择任务阶段" />
+            </Form.Item>
+            <Form.Item name="status" label="任务状态">
+              <Select options={statusOptions} placeholder="选择任务状态" />
             </Form.Item>
           </div>
           <Form.Item name="remark" label="备注">
@@ -984,6 +1004,9 @@ export function ProjectManagementPage() {
   }
 
   function renderPendingOrdersPanel() {
+    if (!PENDING_ORDERS_PANEL_ENABLED) {
+      return null;
+    }
     return (
       <Card
         title="待接收任务"
@@ -1382,8 +1405,8 @@ function renderWorkbench(selectedTask?: CertificationTask, workbench?: NonNullab
       <Descriptions bordered size="small" column={4}>
         <Descriptions.Item label="任务编号">{selectedTask.taskNo}</Descriptions.Item>
         <Descriptions.Item label="任务经理">{selectedTask.taskManagerName}</Descriptions.Item>
-        <Descriptions.Item label="当前阶段">{selectedTask.currentPhaseName}</Descriptions.Item>
-        <Descriptions.Item label="状态">{renderTaskStatus(selectedTask.status, selectedTask.statusName)}</Descriptions.Item>
+        <Descriptions.Item label="当前阶段">{renderTaskPhase(selectedTask.currentPhase, selectedTask.currentPhaseName)}</Descriptions.Item>
+        <Descriptions.Item label="任务状态">{renderTaskStatus(selectedTask.status, selectedTask.statusName)}</Descriptions.Item>
         <Descriptions.Item label="计划人数">{selectedTask.plannedPeopleCount || '-'}</Descriptions.Item>
         <Descriptions.Item label="考试日期">{selectedTask.examDate || '-'}</Descriptions.Item>
       </Descriptions>
@@ -1451,9 +1474,17 @@ function renderFlow(phases: Array<{ phaseCode: string; phaseName: string; status
   if (phases.length === 0) {
     return <Empty description="暂无流程数据" />;
   }
+  const runningIndex = phases.findIndex((phase) => phase.status === 'running');
+  const allCompleted = phases.every((phase) => phase.status === 'completed');
+  const current =
+    runningIndex >= 0
+      ? runningIndex
+      : allCompleted
+        ? phases.length - 1
+        : Math.max(0, phases.findIndex((phase) => phase.status === 'pending'));
   return (
     <Steps
-      current={Math.max(0, phases.findIndex((phase) => phase.status === 'running'))}
+      current={current}
       items={phases.map((phase) => ({
         title: phase.phaseName,
         status: phase.status === 'completed' ? 'finish' : phase.status === 'running' ? 'process' : 'wait',
@@ -1617,13 +1648,43 @@ function isDocumentEditable(status?: string) {
   return !status || status === 'draft' || status === 'initial_rejected' || status === 'final_rejected';
 }
 
+// 任务状态（4 值）的标签颜色
 function renderTaskStatus(status: string, statusName?: string) {
-  if (status === 'preparation_completed') {
-    return <Tag style={preparationCompletedTagStyle}>{statusName || status || '-'}</Tag>;
-  }
-  const doneStatuses = ['approved', 'completed', 'project_prepared', 'archive_completed'];
-  const color = status === 'running' ? 'processing' : doneStatuses.includes(status) ? 'success' : status === 'rejected' ? 'error' : 'warning';
-  return <Tag color={color}>{statusName || status || '-'}</Tag>;
+  const labelMap: Record<string, string> = {
+    in_progress: '进行中',
+    pending_review: '待审核',
+    rejected: '已驳回',
+    completed: '已完成',
+  };
+  const colorMap: Record<string, string> = {
+    in_progress: 'processing',
+    pending_review: 'warning',
+    rejected: 'error',
+    completed: 'success',
+  };
+  const color = colorMap[status] ?? 'default';
+  const label = statusName || labelMap[status] || status || '-';
+  return <Tag color={color}>{label}</Tag>;
+}
+
+// 任务阶段（4 值）的标签颜色
+function renderTaskPhase(phase?: string, phaseName?: string) {
+  const labelMap: Record<string, string> = {
+    task_creation: '任务创建阶段',
+    preparation: '认定筹备阶段',
+    archive: '认定归档阶段',
+    certification_completed: '认定完成',
+  };
+  const colorMap: Record<string, string> = {
+    task_creation: 'processing',
+    preparation: 'gold',
+    archive: 'purple',
+    certification_completed: 'success',
+  };
+  const normalized = phase === 'project_creation' ? 'task_creation' : phase;
+  const color = colorMap[normalized ?? ''] ?? 'default';
+  const label = phaseName || labelMap[normalized ?? ''] || normalized || '-';
+  return <Tag color={color}>{label}</Tag>;
 }
 
 function renderDocumentStatus(status?: string) {
@@ -1736,9 +1797,31 @@ function buildTaskFormValues(task: CertificationTask): TaskFormValues {
     planEndDate: task.planEndDate ? dayjs(task.planEndDate) : undefined,
     examDate: task.examDate ? dayjs(task.examDate) : undefined,
     sourceType: task.sourceType,
-    status: task.status,
+    status: normalizeTaskStatus(task.status),
+    currentPhase: normalizeTaskPhase(task.currentPhase),
     remark: task.remark,
   };
+}
+
+// 任务状态（status）只允许 4 个取值
+function normalizeTaskStatus(status?: string): string | undefined {
+  const allowed = new Set(['in_progress', 'pending_review', 'rejected', 'completed']);
+  if (status && allowed.has(status)) {
+    return status;
+  }
+  return 'in_progress';
+}
+
+// 任务阶段（current_phase）只允许 4 个取值，兼容历史 project_creation 编码
+function normalizeTaskPhase(phase?: string): string | undefined {
+  if (phase === 'project_creation') {
+    return 'task_creation';
+  }
+  const allowed = new Set(['task_creation', 'preparation', 'archive', 'certification_completed']);
+  if (phase && allowed.has(phase)) {
+    return phase;
+  }
+  return 'task_creation';
 }
 
 function resolveTaskScopes(task: CertificationTask) {
@@ -1756,13 +1839,14 @@ function scopeSummary(scopes: CertificationTask['scopes']) {
 }
 
 function exportTasks(tasks: CertificationTask[]) {
-  const header = ['任务编号', '任务名称', '任务经理', '工种', '等级', '状态', '考试日期'];
+  const header = ['任务编号', '任务名称', '任务经理', '工种', '等级', '当前阶段', '任务状态', '考试日期'];
   const lines = tasks.map((task) => [
     task.taskNo,
     task.taskName,
     task.taskManagerName,
     summarizeScopeField(task.scopes, 'workTypeName', '、'),
     summarizeScopeField(task.scopes, 'levelName', '、'),
+    task.currentPhaseName || '',
     task.statusName || '',
     task.examDate || '',
   ]);

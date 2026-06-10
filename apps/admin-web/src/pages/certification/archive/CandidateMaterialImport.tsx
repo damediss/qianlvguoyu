@@ -1,21 +1,75 @@
-import { DownloadOutlined, InboxOutlined } from '@ant-design/icons';
+import { DownloadOutlined, FolderOpenOutlined, InboxOutlined } from '@ant-design/icons';
 import { Button, Card, message, Space, Upload } from 'antd';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { importArchiveCandidateMaterials } from '../../../api/certificationArchive';
+import { useRef, useState, type ChangeEvent } from 'react';
+import { importArchiveCandidateMaterials, pageArchiveImportErrors } from '../../../api/certificationArchive';
 
 export function CandidateMaterialImport({ archiveId }: { archiveId?: string }) {
   const queryClient = useQueryClient();
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const [packing, setPacking] = useState(false);
   const mutation = useMutation({
     mutationFn: async (file: File) => {
       const data = new FormData();
       data.append('file', file);
       return importArchiveCandidateMaterials(archiveId!, data);
     },
-    onSuccess: (batch) => {
-      message.success(`导入批次已创建：${batch.batchNo}`);
+    onSuccess: async (batch) => {
+      if (batch.status === 'PARSE_FAILED') {
+        try {
+          const errors = await pageArchiveImportErrors(batch.id, { page: 1, pageSize: 1 });
+          const detail = errors.items?.[0]?.errorMessage;
+          message.error(detail ? `导入解析失败：${detail}` : '导入解析失败，请到「导入批次」查看异常详情');
+        } catch {
+          message.error('导入解析失败，请到「导入批次」查看异常详情');
+        }
+      } else if (batch.status === 'PARSE_SUCCESS') {
+        message.success(`导入成功：${batch.batchNo}`);
+      } else {
+        message.success(`导入批次已创建：${batch.batchNo}`);
+      }
       queryClient.invalidateQueries({ queryKey: ['certification-archive-batches', archiveId] });
+      queryClient.invalidateQueries({ queryKey: ['certification-archive-tasks'] });
+    },
+    onError: (error: Error) => {
+      message.error(error.message || '导入失败，请检查材料格式或稍后重试');
     },
   });
+
+  const uploadFile = (file: File) => {
+    if (!archiveId) {
+      message.warning('请先选择归档记录');
+      return;
+    }
+    mutation.mutate(file);
+  };
+
+  const handleFolderChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const fileList = event.target.files;
+    if (!fileList?.length) {
+      return;
+    }
+    if (!archiveId) {
+      message.warning('请先选择归档记录');
+      event.target.value = '';
+      return;
+    }
+
+    setPacking(true);
+    const hide = message.loading('正在打包文件夹...', 0);
+    try {
+      const zipFile = await createZipFileFromFolder(Array.from(fileList));
+      await mutation.mutateAsync(zipFile);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '文件夹打包失败');
+    } finally {
+      hide();
+      setPacking(false);
+      event.target.value = '';
+    }
+  };
+
+  const uploading = packing || mutation.isPending;
 
   return (
     <Card size="small" title="考生材料批量导入">
@@ -26,12 +80,9 @@ export function CandidateMaterialImport({ archiveId }: { archiveId?: string }) {
         <Upload.Dragger
           accept=".zip"
           maxCount={1}
+          disabled={uploading}
           beforeUpload={(file) => {
-            if (!archiveId) {
-              message.warning('请先选择归档记录');
-              return Upload.LIST_IGNORE;
-            }
-            mutation.mutate(file);
+            uploadFile(file);
             return false;
           }}
         >
@@ -39,6 +90,27 @@ export function CandidateMaterialImport({ archiveId }: { archiveId?: string }) {
           <p className="ant-upload-text">选择 ZIP 文件</p>
           <p className="ant-upload-hint">支持 zip，最大 2GB</p>
         </Upload.Dragger>
+        <input
+          ref={folderInputRef}
+          type="file"
+          style={{ display: 'none' }}
+          // @ts-expect-error webkitdirectory is supported by Chromium-based browsers
+          webkitdirectory=""
+          directory=""
+          multiple
+          onChange={handleFolderChange}
+        />
+        <Button
+          block
+          icon={<FolderOpenOutlined />}
+          loading={uploading}
+          onClick={() => folderInputRef.current?.click()}
+        >
+          选择文件夹
+        </Button>
+        <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>
+          文件夹需包含“考生清单.xlsx”及各考生子文件夹；系统将自动打包为标准 ZIP 后上传。
+        </div>
       </Space>
     </Card>
   );
@@ -147,6 +219,81 @@ function createCandidateListXlsx() {
       ),
     },
   ]);
+}
+
+async function createZipFileFromFolder(files: File[]) {
+  const entries = await Promise.all(
+    files
+      .map((file) => {
+        const relativePath = file.webkitRelativePath || file.name;
+        if (!relativePath) {
+          return null;
+        }
+        const path = relativePath.replace(/\\/g, '/');
+        if (path.endsWith('/')) {
+          return null;
+        }
+        return { path, file };
+      })
+      .filter((entry): entry is { path: string; file: File } => entry !== null)
+      .map(async ({ path, file }) => ({
+        path,
+        data: new Uint8Array(await file.arrayBuffer()),
+      })),
+  );
+
+  if (entries.length === 0) {
+    throw new Error('所选文件夹为空');
+  }
+
+  const prefix = detectStripPrefix(entries.map((entry) => entry.path));
+  const zipEntries = entries
+    .map((entry) => ({
+      name: stripPrefix(entry.path, prefix),
+      data: entry.data,
+    }))
+    .filter((entry) => entry.name.length > 0);
+
+  if (!zipEntries.some((entry) => entry.name === '考生清单.xlsx')) {
+    throw new Error('文件夹中缺少“考生清单.xlsx”');
+  }
+
+  const zipBytes = createZip(zipEntries);
+  const folderName = entries[0]?.path.split('/')[0] || '考生材料';
+  return new File([zipBytes], `${folderName}.zip`, { type: 'application/zip' });
+}
+
+function detectStripPrefix(paths: string[]) {
+  if (paths.some((path) => path === '考生清单.xlsx')) {
+    return '';
+  }
+
+  const excelPath = paths.find((path) => path.endsWith('/考生清单.xlsx'));
+  if (!excelPath) {
+    return '';
+  }
+
+  const segments = excelPath.split('/');
+  if (segments.length !== 2 || segments[1] !== '考生清单.xlsx') {
+    return '';
+  }
+
+  const prefix = `${segments[0]}/`;
+  const allUnderRoot = paths.every((path) => path === segments[0] || path.startsWith(prefix));
+  return allUnderRoot ? prefix : '';
+}
+
+function stripPrefix(path: string, prefix: string) {
+  if (!prefix) {
+    return path;
+  }
+  if (path.startsWith(prefix)) {
+    return path.slice(prefix.length);
+  }
+  if (path === prefix.slice(0, -1)) {
+    return '';
+  }
+  return path;
 }
 
 function createSamplePdf() {

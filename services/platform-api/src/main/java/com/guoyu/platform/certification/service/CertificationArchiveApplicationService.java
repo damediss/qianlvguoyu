@@ -38,6 +38,7 @@ import com.guoyu.platform.certification.mapper.CertificationTaskEquipmentMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskExamSiteMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskExamStaffMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskMapper;
+import com.guoyu.platform.certification.mapper.CertificationTaskPhaseMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskScopeMapper;
 import com.guoyu.platform.certification.vo.CertificationArchiveBasicSnapshotVO;
 import com.guoyu.platform.certification.vo.CertificationArchiveCandidateMaterialVO;
@@ -57,7 +58,14 @@ import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -69,11 +77,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Enumeration;
 import java.util.Set;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.core.io.Resource;
@@ -86,7 +96,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class CertificationArchiveApplicationService {
-  private static final String TASK_PREPARATION_COMPLETED = CertificationTaskStatuses.PREPARATION_COMPLETED;
+  private static final DataFormatter CELL_FORMATTER = new DataFormatter();
   private static final List<MaterialDef> TASK_MATERIALS = List.of(
       new MaterialDef("RESULT_CONFIRM_FORM", "职业技能等级认定评价结果确认表"),
       new MaterialDef("BUSINESS_APPLICATION", "广西壮族自治区职业技能鉴定业务申请表"),
@@ -118,6 +128,7 @@ public class CertificationArchiveApplicationService {
   );
 
   private final CertificationTaskMapper taskMapper;
+  private final CertificationTaskPhaseMapper phaseMapper;
   private final CertificationCandidateMapper sourceCandidateMapper;
   private final CertificationTaskScopeMapper scopeMapper;
   private final CertificationTaskExamStaffMapper examStaffMapper;
@@ -136,6 +147,7 @@ public class CertificationArchiveApplicationService {
 
   public CertificationArchiveApplicationService(
       CertificationTaskMapper taskMapper,
+      CertificationTaskPhaseMapper phaseMapper,
       CertificationCandidateMapper sourceCandidateMapper,
       CertificationTaskScopeMapper scopeMapper,
       CertificationTaskExamStaffMapper examStaffMapper,
@@ -153,6 +165,7 @@ public class CertificationArchiveApplicationService {
       ObjectMapper objectMapper
   ) {
     this.taskMapper = taskMapper;
+    this.phaseMapper = phaseMapper;
     this.sourceCandidateMapper = sourceCandidateMapper;
     this.scopeMapper = scopeMapper;
     this.examStaffMapper = examStaffMapper;
@@ -172,15 +185,22 @@ public class CertificationArchiveApplicationService {
 
   @Transactional(readOnly = true)
   public PageResponse<CertificationArchiveTaskVO> pageAvailableTasks(CertificationArchiveTaskQueryReq req) {
-    Page<CertificationTaskEntity> page = taskMapper.selectPage(new Page<>(req.getPage(), req.getPageSize()),
-        new LambdaQueryWrapper<CertificationTaskEntity>()
-            .eq(CertificationTaskEntity::getStatus, TASK_PREPARATION_COMPLETED)
-            .and(StringUtils.hasText(req.getKeyword()), w -> w
-                .like(CertificationTaskEntity::getTaskNo, req.getKeyword())
-                .or()
-                .like(CertificationTaskEntity::getTaskName, req.getKeyword()))
-            .orderByDesc(CertificationTaskEntity::getLastBusinessUpdatedAt)
-            .orderByDesc(CertificationTaskEntity::getUpdatedAt));
+    LambdaQueryWrapper<CertificationTaskEntity> wrapper = new LambdaQueryWrapper<CertificationTaskEntity>()
+        .and(StringUtils.hasText(req.getKeyword()), w -> w
+            .like(CertificationTaskEntity::getTaskNo, req.getKeyword())
+            .or()
+            .like(CertificationTaskEntity::getTaskName, req.getKeyword()))
+        .orderByDesc(CertificationTaskEntity::getLastBusinessUpdatedAt)
+        .orderByDesc(CertificationTaskEntity::getUpdatedAt);
+    // 认定归档模块只展示 current_phase = archive 的任务
+    String currentPhase = StringUtils.hasText(req.getCurrentPhase())
+        ? req.getCurrentPhase()
+        : CertificationTaskPhases.ARCHIVE;
+    wrapper.eq(CertificationTaskEntity::getCurrentPhase, currentPhase);
+    if (StringUtils.hasText(req.getStatus())) {
+      wrapper.eq(CertificationTaskEntity::getStatus, req.getStatus());
+    }
+    Page<CertificationTaskEntity> page = taskMapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
     List<CertificationArchiveTaskVO> items = page.getRecords().stream().map(this::toTaskVO).toList();
     return new PageResponse<>(items, req.getPage(), req.getPageSize(), page.getTotal());
   }
@@ -309,7 +329,11 @@ public class CertificationArchiveApplicationService {
     batch.setZipFileKey(storedZip.fileKey());
     batch.setStatus("PARSING");
     importBatchMapper.updateById(batch);
-    parseZip(record, batch, zipFile);
+    try {
+      parseZip(record, batch, fileStorageService.load(storedZip.fileKey()));
+    } catch (IOException ex) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "归档 ZIP 读取失败");
+    }
     return toBatchVO(batch);
   }
 
@@ -398,15 +422,12 @@ public class CertificationArchiveApplicationService {
         taskCompleted ? "认定筹备已完成，当前任务可归档" : "只有认定筹备已完成的任务允许归档"));
     items.add(new CertificationArchiveCheckItemVO("basic_archive_required", "基础信息归档", Boolean.TRUE.equals(record.getBasicArchived()),
         Boolean.TRUE.equals(record.getBasicArchived()) ? "基础信息已归档" : "请先完成基础信息归档"));
-    long materialCount = materialMapper.selectCount(new LambdaQueryWrapper<CertificationArchiveMaterialEntity>()
-        .eq(CertificationArchiveMaterialEntity::getArchiveId, archiveId));
-    items.add(new CertificationArchiveCheckItemVO("task_material_required", "认定材料", materialCount >= TASK_MATERIALS.size(),
-        materialCount >= TASK_MATERIALS.size() ? "必要认定材料已上传" : "必要认定材料尚未上传完整"));
-    long confirmed = importBatchMapper.selectCount(new LambdaQueryWrapper<CertificationArchiveImportBatchEntity>()
-        .eq(CertificationArchiveImportBatchEntity::getArchiveId, archiveId)
-        .eq(CertificationArchiveImportBatchEntity::getStatus, "CONFIRMED"));
-    items.add(new CertificationArchiveCheckItemVO("candidate_material_confirmed", "考生材料", confirmed > 0,
-        confirmed > 0 ? "已有确认入库的考生材料批次" : "请确认考生材料导入批次"));
+    boolean taskMaterialsReady = countUploadedTaskMaterials(archiveId) >= TASK_MATERIALS.size();
+    items.add(new CertificationArchiveCheckItemVO("task_material_required", "认定材料", taskMaterialsReady,
+        taskMaterialsReady ? "必要认定材料已上传" : "必要认定材料尚未上传完整"));
+    boolean candidateMaterialsReady = countArchiveCandidateMaterials(archiveId) > 0;
+    items.add(new CertificationArchiveCheckItemVO("candidate_material_confirmed", "考生材料", candidateMaterialsReady,
+        candidateMaterialsReady ? "考生材料已导入" : "请导入考生材料"));
     long errors = importErrorMapper.selectCount(new LambdaQueryWrapper<CertificationArchiveImportErrorEntity>()
         .inSql(CertificationArchiveImportErrorEntity::getBatchId,
             "select id from certification_archive_import_batch where archive_id = " + archiveId + " and deleted = 0"));
@@ -431,10 +452,16 @@ public class CertificationArchiveApplicationService {
     recordMapper.updateById(record);
     CertificationTaskEntity task = taskMapper.selectById(record.getTaskId());
     if (task != null) {
-      task.setStatus(CertificationTaskStatuses.ARCHIVE_COMPLETED);
-      task.setCurrentPhase("archive");
-      task.setLastBusinessUpdatedAt(LocalDateTime.now());
-      taskMapper.updateById(task);
+      // 认定归档完成 -> 推进到“认定完成”阶段，状态置为“已完成”
+      CertificationTaskPhaseSupport.advancePhase(
+          taskMapper,
+          phaseMapper,
+          task.getId(),
+          CertificationTaskPhases.ARCHIVE,
+          CertificationTaskPhases.CERTIFICATION_COMPLETED,
+          CertificationTaskStatuses.COMPLETED
+      );
+      CertificationTaskPhaseSupport.syncPhaseProgress(taskMapper, phaseMapper, task.getId());
     }
     return check;
   }
@@ -448,28 +475,22 @@ public class CertificationArchiveApplicationService {
         .body(resource);
   }
 
-  private void parseZip(CertificationArchiveRecordEntity record, CertificationArchiveImportBatchEntity batch, MultipartFile zipFile) {
+  private void parseZip(CertificationArchiveRecordEntity record, CertificationArchiveImportBatchEntity batch, Resource zipResource)
+      throws IOException {
     Map<String, ZipPart> parts = new HashMap<>();
     byte[] excelBytes = null;
-    try (ZipInputStream zip = new ZipInputStream(zipFile.getInputStream())) {
-      ZipEntry entry;
-      while ((entry = zip.getNextEntry()) != null) {
-        if (entry.isDirectory()) {
-          continue;
-        }
-        byte[] bytes = readAll(zip);
-        String name = entry.getName().replace("\\", "/");
-        if (name.endsWith("考生清单.xlsx")) {
-          excelBytes = bytes;
-        } else {
-          parts.put(name, new ZipPart(name, bytes));
-        }
-      }
+    String excelPath = null;
+    try {
+      ParsedZipContents zipContents = readZipContents(zipResource);
+      parts = zipContents.parts();
+      excelBytes = zipContents.excelBytes();
+      excelPath = zipContents.excelPath();
     } catch (IOException ex) {
       addError(batch, null, null, null, "FILE_READ_FAILED", "ZIP 文件读取失败");
       failBatch(batch);
       return;
     }
+    parts = normalizeZipPartPaths(parts, excelPath);
     if (excelBytes == null) {
       addError(batch, null, null, null, "MISSING_EXCEL", "缺少考生清单.xlsx");
       failBatch(batch);
@@ -485,29 +506,29 @@ public class CertificationArchiveApplicationService {
         addError(batch, row, "CANDIDATE_DUPLICATED", "同一批次身份证号重复");
         continue;
       }
-      String folderPrefix = row.folderName().replace("\\", "/") + "/";
-      List<ZipPart> folderFiles = parts.entrySet().stream()
-          .filter(e -> e.getKey().startsWith(folderPrefix))
-          .map(Map.Entry::getValue)
-          .toList();
+      List<ZipPart> folderFiles = findFolderFiles(parts, row.folderName());
       if (folderFiles.isEmpty()) {
-        addError(batch, row, "FOLDER_NOT_FOUND", "清单中的文件夹不存在");
+        addError(batch, row, "FOLDER_NOT_FOUND", "清单中的文件夹不存在：" + row.folderName());
         continue;
       }
       CertificationArchiveCandidateEntity candidate = saveCandidate(record, batch, row);
       Set<String> materialTypes = new HashSet<>();
+      boolean rowPassed = true;
       for (ZipPart part : folderFiles) {
         MaterialDef def = candidateMaterialDef(part.name());
         if (def == null) {
           addError(batch, row, "UNSUPPORTED_FILE_TYPE", "无法识别材料类型：" + part.name());
+          rowPassed = false;
           continue;
         }
         if (!materialTypes.add(def.code())) {
           addError(batch, row, "MATERIAL_DUPLICATED", "材料重复：" + def.name());
+          rowPassed = false;
           continue;
         }
         if (!isAllowedFile(part.name())) {
           addError(batch, row, "UNSUPPORTED_FILE_TYPE", "不支持的文件类型：" + part.name());
+          rowPassed = false;
           continue;
         }
         saveCandidateMaterial(record, batch, candidate, def, part);
@@ -515,10 +536,13 @@ public class CertificationArchiveApplicationService {
       }
       for (String required : REQUIRED_CANDIDATE_TYPES) {
         if (!materialTypes.contains(required)) {
-          addError(batch, row, "MATERIAL_MISSING", "缺少材料：" + required);
+          addError(batch, row, "MATERIAL_MISSING", "缺少材料：" + candidateMaterialName(required));
+          rowPassed = false;
         }
       }
-      success++;
+      if (rowPassed) {
+        success++;
+      }
     }
     long errorCount = importErrorMapper.selectCount(new LambdaQueryWrapper<CertificationArchiveImportErrorEntity>()
         .eq(CertificationArchiveImportErrorEntity::getBatchId, batch.getId()));
@@ -528,6 +552,7 @@ public class CertificationArchiveApplicationService {
     batch.setStatisticsJson(json(stats));
     batch.setStatus(errorCount > 0 ? "PARSE_FAILED" : "PARSE_SUCCESS");
     importBatchMapper.updateById(batch);
+    refreshMaterialArchived(record);
   }
 
   private List<CandidateRow> readCandidateRows(byte[] excelBytes, CertificationArchiveImportBatchEntity batch) {
@@ -581,18 +606,28 @@ public class CertificationArchiveApplicationService {
     String fileKey = "certification/archive/%s/%d/candidates/%s/%s/%s"
         .formatted(record.getTaskNo(), record.getId(), candidate.getIdCard(), def.code(), safeName);
     ArchiveFileObject stored = fileStorageService.store(part.bytes(), safeName, contentType(safeName), fileKey);
-    CertificationArchiveCandidateMaterialEntity entity = new CertificationArchiveCandidateMaterialEntity();
-    entity.setTenantId(current().getTenantId());
-    entity.setArchiveCandidateId(candidate.getId());
+    CertificationArchiveCandidateMaterialEntity entity = candidateMaterialMapper.selectOne(
+        new LambdaQueryWrapper<CertificationArchiveCandidateMaterialEntity>()
+            .eq(CertificationArchiveCandidateMaterialEntity::getArchiveCandidateId, candidate.getId())
+            .eq(CertificationArchiveCandidateMaterialEntity::getMaterialType, def.code()));
+    if (entity == null) {
+      entity = new CertificationArchiveCandidateMaterialEntity();
+      entity.setTenantId(current().getTenantId());
+      entity.setArchiveCandidateId(candidate.getId());
+      entity.setMaterialType(def.code());
+      entity.setMaterialGroup(def.group());
+    }
     entity.setSourceBatchId(batch.getId());
-    entity.setMaterialType(def.code());
-    entity.setMaterialGroup(def.group());
     entity.setFileName(stored.fileName());
     entity.setFileKey(stored.fileKey());
     entity.setFileSize(stored.fileSize());
     entity.setFileHash(stored.fileHash());
     entity.setContentType(stored.contentType());
-    candidateMaterialMapper.insert(entity);
+    if (entity.getId() == null) {
+      candidateMaterialMapper.insert(entity);
+    } else {
+      candidateMaterialMapper.updateById(entity);
+    }
   }
 
   private CertificationArchiveTaskVO toTaskVO(CertificationTaskEntity task) {
@@ -603,7 +638,9 @@ public class CertificationArchiveApplicationService {
         task.getLastBusinessUpdatedAt(), countCandidates(task.getId()), archiveTaskStatus(task),
         record == null ? null : record.getId(),
         record != null && Boolean.TRUE.equals(record.getBasicArchived()),
-        record != null && Boolean.TRUE.equals(record.getMaterialArchived()),
+        record != null && isMaterialArchiveComplete(record.getId()),
+        record != null && hasCandidateMaterialsArchived(record.getId()),
+        record != null && hasTaskMaterialsArchived(record.getId()),
         record == null ? "NOT_ARCHIVED" : record.getArchiveStatus(),
         record == null ? null : record.getArchivedAt(),
         record == null ? null : record.getLastOperatorName());
@@ -692,7 +729,8 @@ public class CertificationArchiveApplicationService {
     if (task == null) {
       return false;
     }
-    return TASK_PREPARATION_COMPLETED.equals(task.getStatus());
+    // 归档动作只允许在“认定归档阶段”执行
+    return CertificationTaskPhases.ARCHIVE.equals(task.getCurrentPhase());
   }
 
   private String archiveTaskStatus(CertificationTaskEntity task) {
@@ -764,17 +802,51 @@ public class CertificationArchiveApplicationService {
   }
 
   private void refreshMaterialArchived(CertificationArchiveRecordEntity record) {
-    long taskMaterialCount = materialMapper.selectCount(new LambdaQueryWrapper<CertificationArchiveMaterialEntity>()
-        .eq(CertificationArchiveMaterialEntity::getArchiveId, record.getId()));
-    long confirmedBatchCount = importBatchMapper.selectCount(new LambdaQueryWrapper<CertificationArchiveImportBatchEntity>()
-        .eq(CertificationArchiveImportBatchEntity::getArchiveId, record.getId())
-        .eq(CertificationArchiveImportBatchEntity::getStatus, "CONFIRMED"));
-    record.setMaterialArchived(taskMaterialCount >= TASK_MATERIALS.size() && confirmedBatchCount > 0);
-    if (Boolean.TRUE.equals(record.getMaterialArchived()) && !"ARCHIVED".equals(record.getArchiveStatus())) {
-      record.setArchiveStatus(Boolean.TRUE.equals(record.getBasicArchived()) ? "MATERIAL_ARCHIVED" : "NOT_ARCHIVED");
+    boolean materialComplete = isMaterialArchiveComplete(record.getId());
+    record.setMaterialArchived(materialComplete);
+    if (materialComplete && !"ARCHIVED".equals(record.getArchiveStatus())) {
+      record.setArchiveStatus("MATERIAL_ARCHIVED");
+    } else if (Boolean.TRUE.equals(record.getBasicArchived())
+        && hasCandidateMaterialsArchived(record.getId())
+        && !"ARCHIVED".equals(record.getArchiveStatus())
+        && !"MATERIAL_ARCHIVED".equals(record.getArchiveStatus())) {
+      record.setArchiveStatus("BASIC_ARCHIVED");
     }
     touch(record);
     recordMapper.updateById(record);
+  }
+
+  private boolean isMaterialArchiveComplete(Long archiveId) {
+    return hasTaskMaterialsArchived(archiveId) && hasCandidateMaterialsArchived(archiveId);
+  }
+
+  private boolean hasTaskMaterialsArchived(Long archiveId) {
+    return countUploadedTaskMaterials(archiveId) >= TASK_MATERIALS.size();
+  }
+
+  private boolean hasCandidateMaterialsArchived(Long archiveId) {
+    return countArchiveCandidateMaterials(archiveId) > 0;
+  }
+
+  private long countUploadedTaskMaterials(Long archiveId) {
+    return materialMapper.selectCount(new LambdaQueryWrapper<CertificationArchiveMaterialEntity>()
+        .eq(CertificationArchiveMaterialEntity::getArchiveId, archiveId)
+        .eq(CertificationArchiveMaterialEntity::getFileStatus, "uploaded"));
+  }
+
+  private long countArchiveCandidateMaterials(Long archiveId) {
+    List<Long> candidateIds = candidateMapper.selectList(new LambdaQueryWrapper<CertificationArchiveCandidateEntity>()
+            .eq(CertificationArchiveCandidateEntity::getArchiveId, archiveId)
+            .select(CertificationArchiveCandidateEntity::getId))
+        .stream()
+        .map(CertificationArchiveCandidateEntity::getId)
+        .filter(Objects::nonNull)
+        .toList();
+    if (candidateIds.isEmpty()) {
+      return 0;
+    }
+    return candidateMaterialMapper.selectCount(new LambdaQueryWrapper<CertificationArchiveCandidateMaterialEntity>()
+        .in(CertificationArchiveCandidateMaterialEntity::getArchiveCandidateId, candidateIds));
   }
 
   private void ensureNotArchived(CertificationArchiveRecordEntity record) {
@@ -812,6 +884,28 @@ public class CertificationArchiveApplicationService {
         .filter(item -> item.code().equals(materialType))
         .findFirst()
         .orElseGet(() -> new MaterialDef(StringUtils.hasText(materialType) ? materialType : "CUSTOM", materialName));
+  }
+
+  private Map<String, ZipPart> normalizeZipPartPaths(Map<String, ZipPart> parts, String excelPath) {
+    if (parts.isEmpty() || !StringUtils.hasText(excelPath) || "考生清单.xlsx".equals(excelPath)) {
+      return parts;
+    }
+    String normalizedExcelPath = excelPath.replace("\\", "/");
+    String[] segments = normalizedExcelPath.split("/");
+    if (segments.length != 2 || !"考生清单.xlsx".equals(segments[1])) {
+      return parts;
+    }
+    String rootPrefix = segments[0] + "/";
+    boolean allUnderRoot = parts.keySet().stream().allMatch(name -> name.startsWith(rootPrefix));
+    if (!allUnderRoot) {
+      return parts;
+    }
+    Map<String, ZipPart> normalized = new HashMap<>();
+    for (Map.Entry<String, ZipPart> entry : parts.entrySet()) {
+      String normalizedKey = entry.getKey().substring(rootPrefix.length());
+      normalized.put(normalizedKey, new ZipPart(normalizedKey, entry.getValue().bytes()));
+    }
+    return normalized;
   }
 
   private MaterialDef candidateMaterialDef(String path) {
@@ -946,8 +1040,7 @@ public class CertificationArchiveApplicationService {
     if (cell == null) {
       return "";
     }
-    cell.setCellType(org.apache.poi.ss.usermodel.CellType.STRING);
-    return cell.getStringCellValue().trim();
+    return CELL_FORMATTER.formatCellValue(cell).trim();
   }
 
   private String maskIdCard(String value) {
@@ -978,10 +1071,114 @@ public class CertificationArchiveApplicationService {
     return "application/octet-stream";
   }
 
-  private byte[] readAll(ZipInputStream input) throws IOException {
+  private byte[] readAll(InputStream input) throws IOException {
     ByteArrayOutputStream output = new ByteArrayOutputStream();
     input.transferTo(output);
     return output.toByteArray();
+  }
+
+  private ParsedZipContents readZipContents(Resource zipResource) throws IOException {
+    Path tempFile = null;
+    try {
+      File zipFile = zipResource.isFile() ? zipResource.getFile() : null;
+      if (zipFile == null) {
+        tempFile = Files.createTempFile("cert-archive-import-", ".zip");
+        try (InputStream input = zipResource.getInputStream()) {
+          Files.copy(input, tempFile, StandardCopyOption.REPLACE_EXISTING);
+        }
+        zipFile = tempFile.toFile();
+      }
+      IOException lastFailure = null;
+      ParsedZipContents bestContents = null;
+      int bestScore = -1;
+      for (Charset charset : List.of(Charset.forName("GBK"), StandardCharsets.UTF_8, Charset.forName("GB18030"))) {
+        try (ZipFile zip = new ZipFile(zipFile, charset)) {
+          ParsedZipContents contents = extractZipContents(zip);
+          int score = scoreZipContents(contents);
+          if (score > bestScore) {
+            bestScore = score;
+            bestContents = contents;
+          }
+        } catch (IllegalArgumentException | IOException ex) {
+          lastFailure = ex instanceof IOException ? (IOException) ex : new IOException(ex);
+        }
+      }
+      if (bestContents == null || bestContents.excelBytes() == null || bestContents.excelBytes().length == 0) {
+        throw lastFailure != null ? lastFailure : new IOException("ZIP 文件读取失败");
+      }
+      return bestContents;
+    } finally {
+      if (tempFile != null) {
+        Files.deleteIfExists(tempFile);
+      }
+    }
+  }
+
+  private int scoreZipContents(ParsedZipContents contents) {
+    int score = contents.parts().size();
+    if (contents.excelBytes() != null && contents.excelBytes().length > 0) {
+      score += 100;
+      if (contents.excelPath() != null && contents.excelPath().endsWith("考生清单.xlsx")) {
+        score += 50;
+      }
+    }
+    long materialFiles = contents.parts().keySet().stream()
+        .filter(name -> name.contains("/") && isAllowedFile(name))
+        .count();
+    score += (int) materialFiles;
+    return score;
+  }
+
+  private List<ZipPart> findFolderFiles(Map<String, ZipPart> parts, String folderName) {
+    String normalized = folderName == null ? "" : folderName.replace("\\", "/").trim();
+    if (!StringUtils.hasText(normalized)) {
+      return List.of();
+    }
+    String prefix = normalized.endsWith("/") ? normalized : normalized + "/";
+    List<ZipPart> exact = parts.entrySet().stream()
+        .filter(entry -> entry.getKey().startsWith(prefix))
+        .map(Map.Entry::getValue)
+        .toList();
+    if (!exact.isEmpty()) {
+      return exact;
+    }
+    String lowerPrefix = prefix.toLowerCase(Locale.ROOT);
+    return parts.entrySet().stream()
+        .filter(entry -> entry.getKey().toLowerCase(Locale.ROOT).startsWith(lowerPrefix))
+        .map(Map.Entry::getValue)
+        .toList();
+  }
+
+  private String candidateMaterialName(String code) {
+    return CANDIDATE_MATERIALS.values().stream()
+        .filter(def -> def.code().equals(code))
+        .map(MaterialDef::name)
+        .findFirst()
+        .orElse(code);
+  }
+
+  private ParsedZipContents extractZipContents(ZipFile zip) throws IOException {
+    Map<String, ZipPart> parts = new HashMap<>();
+    byte[] excelBytes = null;
+    String excelPath = null;
+    Enumeration<? extends ZipEntry> entries = zip.entries();
+    while (entries.hasMoreElements()) {
+      ZipEntry entry = entries.nextElement();
+      if (entry.isDirectory()) {
+        continue;
+      }
+      try (InputStream input = zip.getInputStream(entry)) {
+        byte[] bytes = readAll(input);
+        String name = entry.getName().replace("\\", "/");
+        if (name.endsWith("考生清单.xlsx")) {
+          excelBytes = bytes;
+          excelPath = name;
+        } else {
+          parts.put(name, new ZipPart(name, bytes));
+        }
+      }
+    }
+    return new ParsedZipContents(parts, excelBytes, excelPath);
   }
 
   private record MaterialDef(String code, String name, String group) {
@@ -994,6 +1191,9 @@ public class CertificationArchiveApplicationService {
   }
 
   private record ZipPart(String name, byte[] bytes) {
+  }
+
+  private record ParsedZipContents(Map<String, ZipPart> parts, byte[] excelBytes, String excelPath) {
   }
 
   private record FileRef(String fileName, String fileKey) {
