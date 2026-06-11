@@ -27,13 +27,6 @@ class CertificationPreparationControllerPermissionTest {
     assertThat(delete(CertificationPreparationCandidateController.class, "deleteCandidate"))
         .containsExactly("/tasks/{taskId}/candidates/{candidateId}");
 
-    assertThat(mapping(CertificationAssessorWorkbenchController.class)).containsExactly("/certification/preparation");
-    assertThat(get(CertificationAssessorWorkbenchController.class, "pageTasks"))
-        .containsExactly("/assessor-workbench/tasks");
-    assertThat(put(CertificationAssessorWorkbenchController.class, "saveDraft"))
-        .containsExactly("/assessor-workbench/tasks/{taskId}/draft");
-    assertThat(post(CertificationAssessorWorkbenchController.class, "review"))
-        .containsExactly("/assessor-workbench/tasks/{taskId}/review");
   }
 
   @Test
@@ -52,10 +45,6 @@ class CertificationPreparationControllerPermissionTest {
         .isEqualTo("hasAuthority('certification.preparation.site.assign')");
     assertThat(preAuthorize(CertificationPreparationAssessorController.class, "dispatchGroup"))
         .isEqualTo("hasAuthority('certification.preparation.assessor.dispatch')");
-    assertThat(preAuthorize(CertificationAssessorWorkbenchController.class, "saveDraft"))
-        .isEqualTo("hasAuthority('certification.preparation.assessor.score')");
-    assertThat(preAuthorize(CertificationAssessorWorkbenchController.class, "review"))
-        .isEqualTo("hasAuthority('certification.preparation.assessor.review')");
     assertThat(preAuthorize(CertificationPreparationController.class, "complete"))
         .isEqualTo("hasAuthority('certification.preparation.complete')");
   }

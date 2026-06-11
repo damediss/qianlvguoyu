@@ -248,7 +248,7 @@ export function EnterpriseTrainingDemandPage() {
 
   return (
     <div className="enterprise-demand-page">
-      <Typography.Title level={4}>企业培训需求</Typography.Title>
+      <Typography.Title level={4}>培训需求</Typography.Title>
       <div className="enterprise-demand-toolbar">
         <Space>
           <Button type="primary" onClick={openCreate}>添加</Button>

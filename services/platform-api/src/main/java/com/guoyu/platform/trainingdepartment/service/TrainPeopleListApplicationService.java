@@ -27,6 +27,7 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainTeacherBankMapper;
+import com.guoyu.platform.trainingdepartment.support.TrainPeopleListSignUpFieldMapper;
 import com.guoyu.platform.trainingdepartment.support.TrainingIdCardHeaderResolver;
 import com.guoyu.platform.trainingdepartment.vo.TrainPeopleListVO;
 import java.time.LocalDateTime;
@@ -340,15 +341,7 @@ public class TrainPeopleListApplicationService {
         continue;
       }
 
-      TrainPeopleListEntity entity = new TrainPeopleListEntity();
-      entity.setType("student");
-      entity.setTrainId(traininfoId);
-      entity.setTrainClassId(classId);
-      entity.setRealname(sp.getName());
-      entity.setPhone(sp.getPhone());
-      entity.setIdCard(sp.getIdCardNumber());
-      entity.setPlatformUserId(sp.getPlatformUserId());
-      entity.setDeleted(0);
+      TrainPeopleListEntity entity = buildStudentFromSignUp(traininfoId, classId, sp);
       insertPeople(entity);
       count++;
     }
@@ -408,15 +401,7 @@ public class TrainPeopleListApplicationService {
         continue;
       }
 
-      TrainPeopleListEntity entity = new TrainPeopleListEntity();
-      entity.setType("student");
-      entity.setTrainId(traininfoId);
-      entity.setTrainClassId(classId);
-      entity.setRealname(sp.getName());
-      entity.setPhone(sp.getPhone());
-      entity.setIdCard(sp.getIdCardNumber());
-      entity.setPlatformUserId(sp.getPlatformUserId());
-      entity.setDeleted(0);
+      TrainPeopleListEntity entity = buildStudentFromSignUp(traininfoId, classId, sp);
       insertPeople(entity);
       count++;
     }
@@ -424,6 +409,21 @@ public class TrainPeopleListApplicationService {
     result.put("count", count);
     result.put("failed", failed);
     return result;
+  }
+
+  private TrainPeopleListEntity buildStudentFromSignUp(
+      Long traininfoId, Long classId, TrainSignUpPeopleSelfEntity signUp) {
+    TrainPeopleListEntity entity = new TrainPeopleListEntity();
+    entity.setType("student");
+    entity.setTrainId(traininfoId);
+    entity.setTrainClassId(classId);
+    entity.setRealname(signUp.getName());
+    entity.setPhone(signUp.getPhone());
+    entity.setIdCard(signUp.getIdCardNumber());
+    entity.setPlatformUserId(signUp.getPlatformUserId());
+    entity.setDeleted(0);
+    TrainPeopleListSignUpFieldMapper.applySignUpFields(entity, signUp);
+    return entity;
   }
 
   // ==================== 教务/负责人 ====================

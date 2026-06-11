@@ -20,6 +20,7 @@ import { UserListPage } from './pages/chazheng/UserListPage';
 import { CertQueryPage } from './pages/chazheng/CertQueryPage';
 import { RequirementsManagementPage } from './pages/training/RequirementsManagementPage';
 import { EnterpriseTrainingDemandPage } from './pages/training/EnterpriseTrainingDemandPage';
+import { EnterpriseTalentDemandPage } from './pages/training/EnterpriseTalentDemandPage';
 import { TrainingProgramPage } from './pages/training/TrainingProgramPage';
 import { TrainingSchedulePage } from './pages/training/TrainingSchedulePage';
 import { TrainingGraduationPage } from './pages/training/TrainingGraduationPage';
@@ -74,6 +75,7 @@ import { TaskEndPage } from './pages/expert/TaskEndPage';
 import { ProjectManagementPage } from './pages/certification/ProjectManagementPage';
 import { PreparationPage } from './pages/certification/PreparationPage';
 import { ArchivePage } from './pages/certification/ArchivePage';
+import { TaskArchivePage } from './pages/certification/TaskArchivePage';
 import { AssessorInfoPage } from './pages/certification/info/AssessorInfoPage';
 import { ExamSiteInfoPage } from './pages/certification/info/ExamSiteInfoPage';
 import { ExamEquipmentInfoPage } from './pages/certification/info/ExamEquipmentInfoPage';
@@ -118,6 +120,9 @@ const pageMap: Record<string, React.ReactNode> = {
   chazheng_cert_query: <CertQueryPage />,
   train_needs: <RequirementsManagementPage />,
   'train_demand-train': <EnterpriseTrainingDemandPage />,
+  company_demand_train: <EnterpriseTrainingDemandPage />,
+  'train_demand-employee': <EnterpriseTalentDemandPage />,
+  company_demand_employee: <EnterpriseTalentDemandPage />,
   train_solutions: <TrainingProgramPage />,
   train_schedule: <TrainingSchedulePage />,
   train_graduation: <TrainingGraduationPage />,
@@ -171,6 +176,7 @@ const pageMap: Record<string, React.ReactNode> = {
   certification_project: <ProjectManagementPage />,
   certification_preparation: <PreparationPage />,
   certification_archive: <ArchivePage />,
+  certification_task_archive: <TaskArchivePage />,
   certification_info_assessor: <AssessorInfoPage />,
   certification_info_site: <ExamSiteInfoPage />,
   certification_info_equipment: <ExamEquipmentInfoPage />,
@@ -220,6 +226,7 @@ const pageMap: Record<string, React.ReactNode> = {
   'zhixun-table-wbs': <PmWbsPage />,
   'zhixun-table-communication': <PmCommunicationPage />,
   'zhixun-table-status': <PmStatusPage />,
+  'certification-task-archive': <TaskArchivePage />,
 };
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

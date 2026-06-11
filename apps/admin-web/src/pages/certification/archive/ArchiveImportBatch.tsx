@@ -21,7 +21,10 @@ export function ArchiveImportBatch({ archiveId }: { archiveId?: string }) {
 
   const confirmMutation = useMutation({
     mutationFn: confirmArchiveImportBatch,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['certification-archive-batches', archiveId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['certification-archive-batches', archiveId] });
+      queryClient.invalidateQueries({ queryKey: ['certification-archive-tasks'] });
+    },
   });
   const cancelMutation = useMutation({
     mutationFn: cancelArchiveImportBatch,

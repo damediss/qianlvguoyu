@@ -19,6 +19,7 @@ import {
 import { PlusOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadProps } from 'antd';
+import type { RcFile } from 'antd/es/upload/interface';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
 import { uploadFile } from '../../api/knowledge';
@@ -218,7 +219,10 @@ export function TrainingProgramPage() {
     },
     customRequest: async ({ file, onSuccess, onError }) => {
       try {
-        const result = await uploadFile(file as File, 'public');
+        const rawFile = (file as RcFile).originFileObj instanceof File
+          ? (file as RcFile).originFileObj!
+          : (file as RcFile);
+        const result = await uploadFile(rawFile, 'public');
         const url = `/api/files/${result.id}/download`;
         form.setFieldsValue({ filePath: url });
         setFilePathTip(url);

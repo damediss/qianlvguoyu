@@ -10,11 +10,13 @@ import com.guoyu.platform.auth.vo.MenuVO;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
+import com.guoyu.platform.security.PlatformAdminSupport;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.MenuEntity;
 import com.guoyu.platform.system.entity.TenantEntity;
 import com.guoyu.platform.system.entity.UserEntity;
+import com.guoyu.platform.system.mapper.MenuMapper;
 import com.guoyu.platform.system.mapper.RoleMenuMapper;
 import com.guoyu.platform.system.mapper.TenantMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
@@ -23,6 +25,7 @@ import com.guoyu.platform.trainingdepartment.service.TrainingOperatorScopeServic
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +42,7 @@ public class AuthApplicationService {
   private final UserMapper userMapper;
   private final UserRoleMapper userRoleMapper;
   private final RoleMenuMapper roleMenuMapper;
+  private final MenuMapper menuMapper;
   private final PasswordEncoder passwordEncoder;
   private final TrainingOperatorScopeService trainingOperatorScopeService;
   private final SecureRandom secureRandom = new SecureRandom();
@@ -48,6 +52,7 @@ public class AuthApplicationService {
       UserMapper userMapper,
       UserRoleMapper userRoleMapper,
       RoleMenuMapper roleMenuMapper,
+      MenuMapper menuMapper,
       PasswordEncoder passwordEncoder,
       TrainingOperatorScopeService trainingOperatorScopeService
   ) {
@@ -55,6 +60,7 @@ public class AuthApplicationService {
     this.userMapper = userMapper;
     this.userRoleMapper = userRoleMapper;
     this.roleMenuMapper = roleMenuMapper;
+    this.menuMapper = menuMapper;
     this.passwordEncoder = passwordEncoder;
     this.trainingOperatorScopeService = trainingOperatorScopeService;
   }
@@ -104,11 +110,50 @@ public class AuthApplicationService {
 
   public List<MenuVO> menus() {
     PlatformUserPrincipal currentUser = SecurityContext.currentUser();
-    List<MenuEntity> menus = roleMenuMapper.selectMenusByUser(
-        currentUser.getTenantId(),
-        currentUser.getUserId()
-    );
+    List<MenuEntity> menus;
+    if (PlatformAdminSupport.isPlatformAdmin(currentUser.getRoleCodes())) {
+      menus = menuMapper.selectList(new LambdaQueryWrapper<MenuEntity>()
+          .eq(MenuEntity::getTenantId, currentUser.getTenantId())
+          .eq(MenuEntity::getDeleted, 0)
+          .eq(MenuEntity::getStatus, "enabled")
+          .eq(MenuEntity::getVisible, 1)
+          .orderByAsc(MenuEntity::getSortOrder)
+          .orderByAsc(MenuEntity::getId));
+    } else {
+      menus = includeMenuAncestors(
+          currentUser.getTenantId(),
+          roleMenuMapper.selectMenusByUser(currentUser.getTenantId(), currentUser.getUserId()));
+    }
     return buildMenuTree(menus);
+  }
+
+  /** 补齐父级目录，避免仅有子菜单授权时侧栏树形结构断裂 */
+  private List<MenuEntity> includeMenuAncestors(Long tenantId, List<MenuEntity> menus) {
+    Map<Long, MenuEntity> byId = new LinkedHashMap<>();
+    for (MenuEntity menu : menus) {
+      byId.put(menu.getId(), menu);
+    }
+    boolean changed = true;
+    while (changed) {
+      changed = false;
+      for (MenuEntity menu : new ArrayList<>(byId.values())) {
+        Long parentId = menu.getParentId();
+        if (parentId == null || parentId <= 0 || byId.containsKey(parentId)) {
+          continue;
+        }
+        MenuEntity parent = menuMapper.selectOne(new LambdaQueryWrapper<MenuEntity>()
+            .eq(MenuEntity::getTenantId, tenantId)
+            .eq(MenuEntity::getId, parentId)
+            .eq(MenuEntity::getDeleted, 0)
+            .eq(MenuEntity::getStatus, "enabled")
+            .eq(MenuEntity::getVisible, 1));
+        if (parent != null) {
+          byId.put(parent.getId(), parent);
+          changed = true;
+        }
+      }
+    }
+    return new ArrayList<>(byId.values());
   }
 
   public HomeVO home() {
@@ -163,9 +208,13 @@ public class AuthApplicationService {
         parent.getChildren().add(node);
       }
     }
+    Comparator<MenuVO> comparator = Comparator
+        .comparing(MenuVO::getSortOrder, Comparator.nullsLast(Integer::compareTo))
+        .thenComparing(MenuVO::getId);
+    nodeMap.values().forEach(node -> node.getChildren().sort(comparator));
     return nodeMap.values().stream()
         .filter(node -> node.getParentId() == null || node.getParentId() == 0 || !nodeMap.containsKey(node.getParentId()))
-        .sorted(Comparator.comparing(MenuVO::getSortOrder, Comparator.nullsLast(Integer::compareTo)))
+        .sorted(comparator)
         .toList();
   }
 

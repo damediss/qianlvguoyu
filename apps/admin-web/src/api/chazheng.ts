@@ -14,9 +14,7 @@ export function importUsers(file: File) {
   const formData = new FormData();
   formData.append('file', file);
   return unwrap<{ imported: number }>(
-    apiClient.post('/chazheng/users/import', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    }),
+    apiClient.post('/chazheng/users/import', formData),
   );
 }
 

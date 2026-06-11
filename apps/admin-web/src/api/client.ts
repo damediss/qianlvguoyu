@@ -33,6 +33,10 @@ apiClient.interceptors.request.use((config) => {
     config.headers['X-Tenant-Id'] = String(tenantId);
   }
   config.headers['X-Request-Id'] = generateUUID();
+  // FormData 必须由浏览器自动设置 multipart boundary，手动设 Content-Type 会导致文件体为空
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
   return config;
 });
 

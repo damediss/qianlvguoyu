@@ -1,0 +1,15 @@
+.enterprise-talent-demand-page {
+  padding: 16px;
+  background: #fff;
+  min-height: 100%;
+}
+
+.enterprise-talent-demand-toolbar {
+  margin-bottom: 12px;
+}
+
+.enterprise-talent-demand-pagination {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}

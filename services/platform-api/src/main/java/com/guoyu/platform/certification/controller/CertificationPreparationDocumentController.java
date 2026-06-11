@@ -1,6 +1,7 @@
 package com.guoyu.platform.certification.controller;
 
 import com.guoyu.platform.certification.dto.PreparationCandidateDocumentSaveReq;
+import com.guoyu.platform.certification.dto.PreparationDocumentGenerateReq;
 import com.guoyu.platform.certification.dto.PreparationDocumentQueryReq;
 import com.guoyu.platform.certification.dto.PreparationDocumentReviewReq;
 import com.guoyu.platform.certification.service.CertificationPreparationApplicationService;
@@ -51,6 +52,17 @@ public class CertificationPreparationDocumentController {
       @Valid @RequestBody PreparationCandidateDocumentSaveReq req
   ) {
     return ApiResponse.ok(service.saveCandidateDocument(taskId, req));
+  }
+
+  @PostMapping("/tasks/{taskId}/candidates/{candidateId}/documents/generate")
+  @PreAuthorize("hasAuthority('certification.preparation.document.generate')")
+  @AuditLog(module = "certification", action = "preparation-document:generate", targetType = "certification_candidate_document")
+  public ApiResponse<PreparationCandidateDocumentVO> generateCandidateDocument(
+      @PathVariable Long taskId,
+      @PathVariable Long candidateId,
+      @Valid @RequestBody PreparationDocumentGenerateReq req
+  ) {
+    return ApiResponse.ok(service.generateCandidateDocument(taskId, candidateId, req.docCode()));
   }
 
   @GetMapping("/tasks/{taskId}/candidate-documents/{documentId}/download")

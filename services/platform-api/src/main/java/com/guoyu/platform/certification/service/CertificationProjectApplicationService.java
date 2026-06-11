@@ -66,8 +66,9 @@ import org.springframework.util.StringUtils;
 public class CertificationProjectApplicationService {
 
   private static final Pattern MOBILE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
-  private static final String DEFAULT_PHASE = "preparation";
-  private static final String DEFAULT_TASK_STATUS = CertificationTaskStatuses.RUNNING;
+  // 任务创建时默认阶段为“任务创建阶段”，状态为“进行中”
+  private static final String DEFAULT_PHASE = CertificationTaskPhases.TASK_CREATION;
+  private static final String DEFAULT_TASK_STATUS = CertificationTaskStatuses.IN_PROGRESS;
   private static final String DEFAULT_DOCUMENT_STATUS = "draft";
   private static final String STATUS_SUBMITTED = "submitted";
   private static final String STATUS_INITIAL_REVIEWING = "initial_reviewing";
@@ -86,13 +87,7 @@ public class CertificationProjectApplicationService {
       STATUS_FINAL_REVIEWING
   );
 
-  private static final List<PhaseSeed> PHASES = List.of(
-      new PhaseSeed("preparation", "任务准备阶段", 1, "running"),
-      new PhaseSeed("before_exam", "考前准备阶段", 2, "pending"),
-      new PhaseSeed("theory_exam", "理论考试阶段", 3, "pending"),
-      new PhaseSeed("practical_exam", "实操考试阶段", 4, "pending"),
-      new PhaseSeed("archive", "归档总结阶段", 5, "pending")
-  );
+  private static final List<CertificationTaskPhaseSupport.PhaseSeed> PHASES = CertificationTaskPhaseSupport.PHASES;
 
   private static final List<DocumentSeed> DOCUMENTS = List.of(
       new DocumentSeed("charter", "任务章程"),
@@ -180,6 +175,9 @@ public class CertificationProjectApplicationService {
     }
     if (StringUtils.hasText(req.getStatus())) {
       wrapper.eq(CertificationTaskEntity::getStatus, req.getStatus());
+    }
+    if (StringUtils.hasText(req.getCurrentPhase())) {
+      wrapper.eq(CertificationTaskEntity::getCurrentPhase, req.getCurrentPhase());
     }
     if (StringUtils.hasText(req.getLevelCode())) {
       List<Long> taskIds = scopeMapper.selectList(new LambdaQueryWrapper<CertificationTaskScopeEntity>()
@@ -272,8 +270,12 @@ public class CertificationProjectApplicationService {
     applyTaskFields(entity, req.taskName(), req.taskManagerName(), req.companyName(), req.certificationType(),
         req.plannedPeopleCount(), req.planStartDate(),
         req.planEndDate(), req.examDate(), req.remark());
-    if (StringUtils.hasText(req.status())) {
+    // status 与 current_phase 已彻底解耦，分别落库
+    if (StringUtils.hasText(req.status()) && CertificationTaskStatuses.isValid(req.status())) {
       entity.setStatus(req.status());
+    }
+    if (StringUtils.hasText(req.currentPhase()) && CertificationTaskPhases.isValid(req.currentPhase())) {
+      entity.setCurrentPhase(req.currentPhase());
     }
     entity.setLastBusinessUpdatedAt(LocalDateTime.now());
     taskMapper.updateById(entity);
@@ -288,30 +290,37 @@ public class CertificationProjectApplicationService {
     taskMapper.deleteById(taskId);
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   public List<CertificationPhaseVO> flow(Long taskId) {
-    findTask(taskId);
-    return phaseMapper.selectList(new LambdaQueryWrapper<CertificationTaskPhaseEntity>()
-            .eq(CertificationTaskPhaseEntity::getTaskId, taskId)
-            .orderByAsc(CertificationTaskPhaseEntity::getPhaseOrder))
-        .stream()
-        .map(CertificationPhaseVO::from)
-        .toList();
+    CertificationTaskEntity task = findTask(taskId);
+    CertificationTaskPhaseSupport.ensureCanonicalPhases(taskMapper, phaseMapper, task);
+    return listPhaseVOs(taskId);
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   public CertificationWorkbenchVO workbench(Long taskId) {
     CertificationTaskEntity entity = findTask(taskId);
-    CertificationTaskVO task = CertificationTaskVO.from(entity, listScopeVO(taskId));
+    CertificationTaskPhaseSupport.ensureCanonicalPhases(taskMapper, phaseMapper, entity);
+    CertificationTaskEntity refreshed = taskMapper.selectById(taskId);
+    CertificationTaskVO task = CertificationTaskVO.from(refreshed == null ? entity : refreshed, listScopeVO(taskId));
     return new CertificationWorkbenchVO(
         task,
-        flow(taskId),
+        listPhaseVOs(taskId),
         listDocuments(taskId),
         listMembers(taskId),
         listWbsItems(taskId),
         listScheduleItems(taskId),
         listRisks(taskId)
     );
+  }
+
+  private List<CertificationPhaseVO> listPhaseVOs(Long taskId) {
+    return phaseMapper.selectList(new LambdaQueryWrapper<CertificationTaskPhaseEntity>()
+            .eq(CertificationTaskPhaseEntity::getTaskId, taskId)
+            .orderByAsc(CertificationTaskPhaseEntity::getPhaseOrder))
+        .stream()
+        .map(CertificationPhaseVO::from)
+        .toList();
   }
 
   private Map<Long, List<CertificationTaskScopeVO>> loadScopes(List<Long> taskIds) {
@@ -932,10 +941,15 @@ public class CertificationProjectApplicationService {
     if (task == null) {
       return;
     }
-    if (CertificationTaskStatuses.PREPARATION_COMPLETED.equals(task.getStatus())
-        || CertificationTaskStatuses.ARCHIVE_COMPLETED.equals(task.getStatus())) {
+    // 已经离开“任务创建阶段”的任务不再回退，由各自阶段的应用服务管理 status
+    String currentPhase = task.getCurrentPhase();
+    if (!CertificationTaskPhases.TASK_CREATION.equals(currentPhase)
+        && CertificationTaskPhases.isValid(currentPhase)) {
+      task.setLastBusinessUpdatedAt(LocalDateTime.now());
+      refreshDocumentCounts(task);
       return;
     }
+
     List<CertificationTaskDocumentEntity> documents = documentMapper.selectList(
         new LambdaQueryWrapper<CertificationTaskDocumentEntity>()
             .eq(CertificationTaskDocumentEntity::getTaskId, taskId)
@@ -946,24 +960,63 @@ public class CertificationProjectApplicationService {
     long archivedCount = documents.stream()
         .filter(document -> STATUS_ARCHIVED.equals(document.getStatus()))
         .count();
-    boolean hasReviewing = documents.stream()
-        .anyMatch(document -> REVIEWING_DOCUMENT_STATUSES.contains(document.getStatus()));
-    boolean hasRejected = documents.stream()
-        .anyMatch(document -> STATUS_INITIAL_REJECTED.equals(document.getStatus())
-            || STATUS_FINAL_REJECTED.equals(document.getStatus()));
+    long reviewingCount = documents.stream()
+        .filter(document -> REVIEWING_DOCUMENT_STATUSES.contains(document.getStatus()))
+        .count();
+    long rejectedCount = documents.stream()
+        .filter(document -> STATUS_INITIAL_REJECTED.equals(document.getStatus())
+            || STATUS_FINAL_REJECTED.equals(document.getStatus()))
+        .count();
 
-    if (hasReviewing) {
-      task.setStatus(CertificationTaskStatuses.PENDING_REVIEW);
-    } else if (hasRejected) {
-      task.setStatus(CertificationTaskStatuses.REJECTED);
-    } else if (documents.size() >= DOCUMENTS.size() && archivedCount == DOCUMENTS.size()) {
-      task.setStatus(CertificationTaskStatuses.PROJECT_PREPARED);
-    } else {
-      task.setStatus(DEFAULT_TASK_STATUS);
-    }
+    boolean allDocumentsArchived = documents.size() >= DOCUMENTS.size() && archivedCount == DOCUMENTS.size();
     task.setDocumentCompletedCount((int) archivedCount);
     task.setDocumentTotalCount(DOCUMENTS.size());
     task.setLastBusinessUpdatedAt(LocalDateTime.now());
+
+    if (allDocumentsArchived) {
+      // 所有资料复审通过 -> 推进到“认定筹备阶段”，状态置为“进行中”
+      taskMapper.updateById(task);
+      CertificationTaskPhaseSupport.advancePhase(
+          taskMapper,
+          phaseMapper,
+          taskId,
+          CertificationTaskPhases.TASK_CREATION,
+          CertificationTaskPhases.PREPARATION,
+          CertificationTaskStatuses.IN_PROGRESS
+      );
+      return;
+    }
+
+    // 仍在任务创建阶段时，根据材料状态推断阶段内的 status
+    task.setCurrentPhase(CertificationTaskPhases.TASK_CREATION);
+    String nextStatus;
+    if (rejectedCount > 0) {
+      nextStatus = CertificationTaskStatuses.REJECTED;
+    } else if (reviewingCount > 0) {
+      nextStatus = CertificationTaskStatuses.PENDING_REVIEW;
+    } else {
+      nextStatus = CertificationTaskStatuses.IN_PROGRESS;
+    }
+    task.setStatus(nextStatus);
+    taskMapper.updateById(task);
+  }
+
+  private void refreshDocumentCounts(CertificationTaskEntity task) {
+    if (task == null || task.getId() == null) {
+      return;
+    }
+    List<CertificationTaskDocumentEntity> documents = documentMapper.selectList(
+        new LambdaQueryWrapper<CertificationTaskDocumentEntity>()
+            .eq(CertificationTaskDocumentEntity::getTaskId, task.getId())
+            .eq(CertificationTaskDocumentEntity::getIsCurrent, 1));
+    if (documents == null) {
+      documents = List.of();
+    }
+    long archivedCount = documents.stream()
+        .filter(document -> STATUS_ARCHIVED.equals(document.getStatus()))
+        .count();
+    task.setDocumentCompletedCount((int) archivedCount);
+    task.setDocumentTotalCount(DOCUMENTS.size());
     taskMapper.updateById(task);
   }
 
@@ -973,9 +1026,6 @@ public class CertificationProjectApplicationService {
       task.setLastBusinessUpdatedAt(LocalDateTime.now());
       taskMapper.updateById(task);
     }
-  }
-
-  private record PhaseSeed(String code, String name, Integer order, String status) {
   }
 
   private record DocumentSeed(String type, String name) {

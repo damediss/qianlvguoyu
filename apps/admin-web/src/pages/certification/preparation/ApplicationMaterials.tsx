@@ -1,4 +1,4 @@
-import { ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { EyeOutlined, ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { ProCard } from '@ant-design/pro-components';
 import { Alert, Button, Descriptions, Modal, Space, Statistic, Table, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -10,6 +10,7 @@ import {
   listAllPreparationCandidates,
   pagePreparationMaterials,
 } from '../../../api/certificationPreparation';
+import { FilePreviewModal, type FilePreviewTarget } from '../../../components/FilePreviewModal';
 import { PermissionGate } from '../../../directives/permission';
 import type { PreparationMaterialBatch, PreparationMaterialItem, PreparationMaterialQuery } from '../../../types/certificationPreparation';
 import { dash, statusTag } from './shared';
@@ -23,6 +24,7 @@ export function ApplicationMaterials({ taskId, onChanged }: ApplicationMaterials
   const queryClient = useQueryClient();
   const [query, setQuery] = useState<PreparationMaterialQuery>({ page: 1, pageSize: 10 });
   const [detailBatchId, setDetailBatchId] = useState<string>();
+  const [previewTarget, setPreviewTarget] = useState<FilePreviewTarget | null>(null);
 
   const candidatesQuery = useQuery({
     queryKey: ['certification-preparation-candidates', taskId, 'materials-ready'],
@@ -74,15 +76,15 @@ export function ApplicationMaterials({ taskId, onChanged }: ApplicationMaterials
 
   function handleOneClickGenerate() {
     if (readiness.total === 0) {
-      message.warning('请先在「学员导入」中导入学员并上传资料');
+      message.warning('请先在「学员导入」中导入学员并完成资料准备');
       return;
     }
     if (readiness.ready === 0) {
-      message.warning('暂无资料齐全的学员，请先在学员列表中完成资料上传');
+      message.warning('暂无资料齐全的学员，请先上传证件照并生成报名信息表');
       return;
     }
     if (readiness.incomplete > 0) {
-      message.warning(`瀛樺湪 ${readiness.incomplete} 鍚嶅鍛樼殑蹇呬紶璧勬枡鏈鏍搁€氳繃锛屾殏涓嶈兘鐢熸垚鐢虫姤鏉愭枡`);
+      message.warning(`存在 ${readiness.incomplete} 名学员的必传资料未审核通过，暂不能生成申报材料`);
       return;
     }
     Modal.confirm({
@@ -124,6 +126,29 @@ export function ApplicationMaterials({ taskId, onChanged }: ApplicationMaterials
     { title: '材料编码', dataIndex: 'itemCode', width: 110, render: dash },
     { title: '材料名称', dataIndex: 'itemName', minWidth: 180, render: dash },
     { title: '文件', dataIndex: 'fileName', minWidth: 180, render: dash },
+    {
+      title: '预览',
+      width: 80,
+      align: 'center',
+      render: (_, record) =>
+        record.fileId && record.status !== 'missing' ? (
+          <Button
+            type="link"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() =>
+              setPreviewTarget({
+                fileId: String(record.fileId),
+                fileName: record.fileName,
+              })
+            }
+          >
+            预览
+          </Button>
+        ) : (
+          <Typography.Text type="secondary">-</Typography.Text>
+        ),
+    },
     { title: '版本', dataIndex: 'versionNo', width: 80, render: dash },
     { title: '状态', dataIndex: 'status', width: 100, render: statusTag },
   ];
@@ -143,7 +168,7 @@ export function ApplicationMaterials({ taskId, onChanged }: ApplicationMaterials
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message="根据学员导入环节已上传的资料（报名信息表、两寸证件照），一键生成每位学员的申报材料包。"
+          message="根据学员导入环节已齐备的资料（证件照 + 系统生成的报名信息表），一键生成每位学员的申报材料包。"
         />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
           <Statistic title="任务学员总数" value={readiness.total} />
@@ -152,7 +177,7 @@ export function ApplicationMaterials({ taskId, onChanged }: ApplicationMaterials
         </div>
         <Descriptions bordered size="small" column={1} style={{ marginBottom: 20 }}>
           <Descriptions.Item label="生成说明">
-            系统读取每位学员在导入环节上传的资料，自动汇总生成申报材料；仅「资料齐全」的学员参与生成。
+            系统读取每位学员的证件照与报名信息表，自动汇总生成申报材料；仅「资料齐全」的学员参与生成。测试学员需先上传证件照并生成报名信息表。
           </Descriptions.Item>
         </Descriptions>
         <Space>
@@ -194,11 +219,20 @@ export function ApplicationMaterials({ taskId, onChanged }: ApplicationMaterials
         />
       </ProCard>
 
+      <FilePreviewModal
+        open={Boolean(previewTarget)}
+        target={previewTarget}
+        onClose={() => setPreviewTarget(null)}
+      />
+
       <Modal
         title="申报材料明细"
         open={Boolean(detailBatchId)}
-        onCancel={() => setDetailBatchId(undefined)}
-        width={760}
+        onCancel={() => {
+          setDetailBatchId(undefined);
+          setPreviewTarget(null);
+        }}
+        width={860}
         footer={
           <Button onClick={() => setDetailBatchId(undefined)}>关闭</Button>
         }

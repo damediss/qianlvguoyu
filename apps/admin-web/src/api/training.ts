@@ -38,6 +38,7 @@ import type {
   TrainUserExamLog, TrainUserExamLogQuery, TrainUserExamLogCreateReq, TrainUserExamLogUpdateReq,
   TrainUserAbility, TrainUserAbilityQuery, TrainUserAbilityCreateReq, TrainUserAbilityUpdateReq,
   DemandTrain, DemandPending, DemandTrainQuery, DemandConvertReq, DemandPublicData,
+  DemandEmployee, DemandEmployeeQuery, DemandEmployeeCreateReq, DemandEmployeeUpdateReq,
   TrainSolutionList, TrainSolutionDetail, TrainSolutionBadge, TrainSolutionSaveReq,
   TrainStudent, SolutionByDemand,
   TrainInfoClassListItem, TrainInfoClassPageResponse, ClassStudent, ClassStudentPageResponse, ClassOther, ClassTask, SignUpPerson, TeacherBankItem,
@@ -698,6 +699,26 @@ export function updateDemandTrain(id: number, payload: DemandTrain) {
 }
 export function deleteDemandTrain(id: number) {
   return unwrap<void>(apiClient.delete(`${BASE}/demand-trains/${id}`));
+}
+
+// ==================== Demand Employee (企业人才需求) ====================
+export function pageDemandEmployees(params: DemandEmployeeQuery) {
+  return unwrap<PageResponse<DemandEmployee>>(apiClient.get(`${BASE}/demand-employees`, { params }));
+}
+export function getDemandEmployee(id: number) {
+  return unwrap<DemandEmployee>(apiClient.get(`${BASE}/demand-employees/${id}`));
+}
+export function createDemandEmployee(payload: DemandEmployeeCreateReq) {
+  return unwrap<DemandEmployee>(apiClient.post(`${BASE}/demand-employees`, payload));
+}
+export function updateDemandEmployee(id: number, payload: DemandEmployeeUpdateReq) {
+  return unwrap<DemandEmployee>(apiClient.put(`${BASE}/demand-employees/${id}`, payload));
+}
+export function deleteDemandEmployee(id: number) {
+  return unwrap<void>(apiClient.delete(`${BASE}/demand-employees/${id}`));
+}
+export function batchDeleteDemandEmployees(ids: number[]) {
+  return unwrap<number[]>(apiClient.post(`${BASE}/demand-employees/batch-delete`, ids));
 }
 
 /** 待处理需求列表，del=0 正常数据，del=1 回收站 */

@@ -1,19 +1,22 @@
 package com.guoyu.platform.trainingdepartment.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /** demand_employee 创建请求 */
 public class DemandEmployeeCreateReq {
 
-  @Size(max = 255)
+  @NotNull
   /** 企业ID */
   private Long orgId;
 
+  @NotBlank
   @Size(max = 255)
   /** 工种/岗位 */
   private String work;
 
-  @Size(max = 255)
+  @Size(max = 50)
   /** 学历要求 */
   private String education;
 
@@ -21,7 +24,6 @@ public class DemandEmployeeCreateReq {
   /** 专业要求 */
   private String major;
 
-  @Size(max = 255)
   /** 添加时间戳 */
   private Integer addtime;
 

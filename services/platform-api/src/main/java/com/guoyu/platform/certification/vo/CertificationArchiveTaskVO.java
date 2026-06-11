@@ -15,6 +15,8 @@ public record CertificationArchiveTaskVO(
     Long archiveId,
     Boolean basicArchived,
     Boolean materialArchived,
+    Boolean candidateMaterialArchived,
+    Boolean taskMaterialArchived,
     String archiveStatus,
     LocalDateTime archivedAt,
     String lastOperatorName

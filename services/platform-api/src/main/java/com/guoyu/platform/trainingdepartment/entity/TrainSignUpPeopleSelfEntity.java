@@ -50,6 +50,7 @@ public class TrainSignUpPeopleSelfEntity {
   private String titleType;
   private String titlePaper;
   private Long companyId;
+  private String companyName;
   private String workDateStart;
   private String workDateEnd;
   private Integer workTypePaperHas;

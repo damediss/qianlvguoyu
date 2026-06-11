@@ -31,11 +31,12 @@ export const levelOptions = [
 ];
 
 export const documentTemplates = [
-  { code: 'DOC001', name: '报名信息表', required: true },
-  { code: 'DOC002', name: '两寸证件照', required: true },
+  { code: 'DOC001', name: '报名信息表', required: true, mode: 'generate' as const },
+  { code: 'DOC002', name: '两寸证件照', required: true, mode: 'upload' as const },
 ];
 
 export const importSourceLabelMap: Record<string, string> = {
+  staging: '测试学员',
   training: '培训学员',
   other: '其他学员',
   excel: '其他学员',

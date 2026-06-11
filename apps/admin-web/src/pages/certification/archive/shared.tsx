@@ -12,6 +12,63 @@ export const taskMaterialOptions = [
   { label: '职业技能等级认定技能考务材料', value: 'SKILL_EXAM_MATERIAL' },
 ];
 
+// 任务状态（status）的 4 个取值
+const taskStatusLabelMap: Record<string, string> = {
+  in_progress: '进行中',
+  pending_review: '待审核',
+  rejected: '已驳回',
+  completed: '已完成',
+};
+
+const taskStatusColorMap: Record<string, string> = {
+  in_progress: 'processing',
+  pending_review: 'warning',
+  rejected: 'error',
+  completed: 'success',
+};
+
+export function taskStageStatusTag(status?: string) {
+  const label = status ? taskStatusLabelMap[status] || status : '-';
+  const color = status ? taskStatusColorMap[status] || 'default' : 'default';
+  return <Tag color={color}>{label}</Tag>;
+}
+
+// 任务阶段（current_phase）的 4 个取值
+const taskPhaseLabelMap: Record<string, string> = {
+  task_creation: '任务创建阶段',
+  preparation: '认定筹备阶段',
+  archive: '认定归档阶段',
+  certification_completed: '认定完成',
+};
+
+const taskPhaseColorMap: Record<string, string> = {
+  task_creation: 'processing',
+  preparation: 'gold',
+  archive: 'purple',
+  certification_completed: 'success',
+};
+
+export function taskPhaseTag(phase?: string) {
+  const normalized = phase === 'project_creation' ? 'task_creation' : phase;
+  const label = normalized ? taskPhaseLabelMap[normalized] || normalized : '-';
+  const color = normalized ? taskPhaseColorMap[normalized] || 'default' : 'default';
+  return <Tag color={color}>{label}</Tag>;
+}
+
+export function materialArchiveTag(
+  materialArchived?: boolean,
+  candidateMaterialArchived?: boolean,
+  taskMaterialArchived?: boolean,
+) {
+  if (materialArchived || candidateMaterialArchived) {
+    return <Tag color="success">已归档</Tag>;
+  }
+  if (taskMaterialArchived) {
+    return <Tag color="processing">认定材料已齐</Tag>;
+  }
+  return <Tag>未归档</Tag>;
+}
+
 export function archiveStatusTag(value?: string) {
   const map: Record<string, { text: string; color: string }> = {
     NOT_ARCHIVED: { text: '未归档', color: 'default' },

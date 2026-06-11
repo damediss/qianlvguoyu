@@ -134,7 +134,7 @@ class CertificationProjectApplicationServiceTest {
   }
 
   @Test
-  void createTaskSeedsFivePhasesAndDocuments() {
+  void createTaskSeedsFourPhasesAndFiveDocuments() {
     CertificationTaskCreateReq req = new CertificationTaskCreateReq(
         "RD-2026-009",
         "企业专项认定协同任务",
@@ -153,7 +153,8 @@ class CertificationProjectApplicationServiceTest {
     service.createTask(req);
 
     verify(taskMapper).insert(any(CertificationTaskEntity.class));
-    verify(phaseMapper, Mockito.times(5)).insert(any(CertificationTaskPhaseEntity.class));
+    // 四阶段流程：项目创建 → 认定筹备 → 认定归档 → 认定完成
+    verify(phaseMapper, Mockito.times(4)).insert(any(CertificationTaskPhaseEntity.class));
     verify(documentMapper, Mockito.times(5)).insert(any(CertificationTaskDocumentEntity.class));
   }
 
@@ -344,12 +345,53 @@ class CertificationProjectApplicationServiceTest {
     verify(workflowService, Mockito.times(2)).completeFinalReview(any(), Mockito.anyBoolean(), any());
   }
 
+  @Test
+  void finalReviewAllProjectDocumentsAdvancesTaskToPreparation() {
+    CertificationTaskEntity task = existingTask();
+    task.setStatus("pending_review");
+    task.setCurrentPhase(CertificationTaskPhaseSupport.TASK_CREATION);
+    when(taskMapper.selectById(1L)).thenReturn(task);
+
+    CertificationTaskDocumentEntity current = currentDocument();
+    current.setStatus("final_reviewing");
+    when(documentMapper.selectOne(any())).thenReturn(current);
+    java.util.List<CertificationTaskDocumentEntity> documents = new java.util.ArrayList<>();
+    documents.add(current);
+    for (int i = 0; i < 4; i++) {
+      CertificationTaskDocumentEntity document = currentDocument();
+      document.setId(100L + i);
+      document.setDocumentType("doc-" + i);
+      document.setStatus("archived");
+      documents.add(document);
+    }
+    when(documentMapper.selectList(any())).thenReturn(documents);
+    when(phaseMapper.selectOne(any())).thenReturn(new CertificationTaskPhaseEntity());
+
+    service.finalReviewDocument(1L, "charter", new CertificationDocumentReviewReq(true, "final ok"));
+
+    ArgumentCaptor<CertificationTaskEntity> taskCaptor = ArgumentCaptor.forClass(CertificationTaskEntity.class);
+    verify(taskMapper, Mockito.atLeastOnce()).updateById(taskCaptor.capture());
+    assertThat(current.getStatus()).isEqualTo("archived");
+    // 资料全部归档后，任务推进到“认定筹备阶段”：current_phase=preparation，status=in_progress
+    assertThat(taskCaptor.getAllValues().stream()
+        .map(CertificationTaskEntity::getCurrentPhase)
+        .filter(CertificationTaskPhases.PREPARATION::equals)
+        .findFirst())
+        .contains(CertificationTaskPhases.PREPARATION);
+    assertThat(taskCaptor.getAllValues().stream()
+        .map(CertificationTaskEntity::getStatus)
+        .filter(CertificationTaskStatuses.IN_PROGRESS::equals)
+        .findFirst())
+        .contains(CertificationTaskStatuses.IN_PROGRESS);
+  }
+
   private CertificationTaskEntity existingTask() {
     CertificationTaskEntity task = new CertificationTaskEntity();
     task.setId(1L);
     task.setTaskNo("RD-2026-001");
     task.setTaskName("2026 年职业技能认定任务");
-    task.setStatus("running");
+    task.setStatus(CertificationTaskStatuses.IN_PROGRESS);
+    task.setCurrentPhase(CertificationTaskPhaseSupport.TASK_CREATION);
     return task;
   }
 

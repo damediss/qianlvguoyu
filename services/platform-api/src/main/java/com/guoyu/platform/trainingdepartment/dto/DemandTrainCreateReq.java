@@ -1,27 +1,26 @@
 package com.guoyu.platform.trainingdepartment.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /** demand_train 创建请求 */
 public class DemandTrainCreateReq {
 
-  @Size(max = 255)
+  @NotNull
   /** 企业ID */
   private Long orgId;
 
-  @Size(max = 255)
+  @NotBlank
   /** 需求内容 */
   private String content;
 
-  @Size(max = 255)
   /** 人数 */
   private Integer nums;
 
-  @Size(max = 255)
   /** 状态 0-待处理 1-已处理 */
   private Integer status;
 
-  @Size(max = 255)
   /** 添加时间戳 */
   private Integer addtime;
 

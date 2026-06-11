@@ -83,7 +83,5 @@ export async function uploadFile(file: File, accessPolicy = 'private') {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('accessPolicy', accessPolicy);
-  return unwrap<FileVO>(apiClient.post('/files', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  }));
+  return unwrap<FileVO>(apiClient.post('/files', formData));
 }

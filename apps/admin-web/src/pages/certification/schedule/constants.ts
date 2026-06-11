@@ -13,13 +13,10 @@ export const certificationTypeOptions = [
   { label: '企业专项认定', value: 'enterprise_special' },
 ];
 
+// 任务状态（status）的 4 个取值
 export const scheduleStatusOptions = [
-  { label: '进行中', value: 'running' },
-  { label: '认定准备已完成', value: 'project_prepared' },
-  { label: '认定筹备已完成', value: 'preparation_completed' },
-  { label: '认定归档已完成', value: 'archive_completed' },
+  { label: '进行中', value: 'in_progress' },
   { label: '待审核', value: 'pending_review' },
-  { label: '已通过', value: 'approved' },
   { label: '已驳回', value: 'rejected' },
   { label: '已完成', value: 'completed' },
 ];

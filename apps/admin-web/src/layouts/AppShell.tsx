@@ -78,6 +78,32 @@ function buildMenuItems(
     });
 }
 
+function findMenuNode(tree: MenuVO[], code: string): MenuVO | null {
+  for (const node of tree) {
+    if (node.code === code) return node;
+    if (node.children?.length) {
+      const found = findMenuNode(node.children, code);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function findAncestorCodes(tree: MenuVO[], targetCode: string, trail: string[] = []): string[] | null {
+  for (const node of tree) {
+    if (node.code === targetCode) {
+      return trail;
+    }
+    if (node.children?.length) {
+      const found = findAncestorCodes(node.children, targetCode, [...trail, node.code]);
+      if (found !== null) {
+        return found;
+      }
+    }
+  }
+  return null;
+}
+
 interface AppShellProps {
   pageMap: Record<string, ReactNode>;
 }
@@ -104,6 +130,25 @@ export function AppShell({ pageMap }: AppShellProps) {
       setMenuTree(menusQuery.data);
     }
   }, [menusQuery.data, setMenuTree]);
+
+  useEffect(() => {
+    if (!menuTree.length) return;
+    const autoOpenCodes = ['company_demand', 'training'].filter((code) => {
+      const node = findMenuNode(menuTree, code);
+      return Boolean(node?.children?.length);
+    });
+    if (autoOpenCodes.length > 0) {
+      setOpenKeys((prev) => [...new Set([...prev, ...autoOpenCodes])]);
+    }
+  }, [menuTree]);
+
+  useEffect(() => {
+    if (!menuTree.length || !selectedKey) return;
+    const ancestors = findAncestorCodes(menuTree, selectedKey);
+    if (ancestors && ancestors.length > 0) {
+      setOpenKeys((prev) => [...new Set([...prev, ...ancestors])]);
+    }
+  }, [menuTree, selectedKey]);
 
   const handleLogout = async () => {
     try {
@@ -143,7 +188,13 @@ export function AppShell({ pageMap }: AppShellProps) {
           selectedKeys={[selectedKey]}
           openKeys={openKeys}
           onOpenChange={setOpenKeys}
-          onClick={({ key }) => setSelectedKey(key)}
+          onClick={({ key }) => {
+            const node = findMenuNode(menuTree, key);
+            if (node?.children && node.children.length > 0) {
+              return;
+            }
+            setSelectedKey(key);
+          }}
           items={menuItems}
         />
       </Sider>

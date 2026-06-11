@@ -18,6 +18,8 @@ export interface PreparationTaskOverview {
   levelName?: string;
   planStartDate?: string;
   planEndDate?: string;
+  currentPhase?: string;
+  status?: string;
   preparationStatus?: string;
   candidateCount: number;
   documentCompletionRate: number;
@@ -72,6 +74,66 @@ export interface PreparationCandidateImportPayload {
   sourceFileId?: string;
   candidates: PreparationCandidatePayload[];
   remark?: string;
+}
+
+export interface PreparationCandidateStagingQuery extends PreparationPageQuery {
+  keyword?: string;
+  promoteStatus?: string;
+  sourceType?: string;
+}
+
+export interface PreparationCandidateStaging {
+  id: string;
+  taskId?: string;
+  candidateId?: string;
+  sourceType?: string;
+  promoteStatus?: string;
+  promoteMessage?: string;
+  candidateName: string;
+  gender?: string;
+  birthDate?: string;
+  education?: string;
+  graduateDate?: string;
+  idCardNo?: string;
+  phone?: string;
+  companyName?: string;
+  companyAddress?: string;
+  zipCode?: string;
+  companyCreditCode?: string;
+  applyWorkTypeName?: string;
+  certWorkTypeName?: string;
+  workDirection?: string;
+  workTypeCode?: string;
+  applyLevelName?: string;
+  certLevelName?: string;
+  applyWorkYears?: string;
+  workResume?: string;
+  trainingSummary?: string;
+  remark?: string;
+  createdAt?: string;
+}
+
+export interface PreparationCandidateStagingPromotePayload {
+  stagingIds: string[];
+}
+
+export interface PreparationStagingPromoteError {
+  stagingId: string;
+  candidateName?: string;
+  idCardNo?: string;
+  errorMessage?: string;
+}
+
+export interface PreparationCandidateStagingPromoteResult {
+  total: number;
+  successCount: number;
+  failedCount: number;
+  candidates: PreparationCandidate[];
+  errors: PreparationStagingPromoteError[];
+}
+
+export interface PreparationDocumentGeneratePayload {
+  docCode: string;
 }
 
 export interface PreparationImportBatch {

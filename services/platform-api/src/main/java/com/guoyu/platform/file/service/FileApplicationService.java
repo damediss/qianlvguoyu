@@ -48,6 +48,42 @@ public class FileApplicationService {
   }
 
   @Transactional
+  public FileVO storeFromBytes(byte[] content, String originalName, String contentType, String accessPolicy) {
+    if (content == null || content.length == 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "File is empty");
+    }
+    if (!"local".equalsIgnoreCase(storageProvider())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "Only local file storage is available in current MVP");
+    }
+
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    String safeName = sanitizeFileName(originalName);
+    String objectKey = buildObjectKey(tenantId, safeName);
+    Path target = resolveLocalPath(objectKey);
+    try {
+      Files.createDirectories(target.getParent());
+      Files.write(target, content);
+      String sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+
+      FileEntity entity = new FileEntity();
+      entity.setTenantId(tenantId);
+      entity.setStorageProvider(storageProvider());
+      entity.setObjectKey(objectKey);
+      entity.setOriginalName(safeName);
+      entity.setContentType(StringUtils.hasText(contentType) ? contentType : MediaType.APPLICATION_OCTET_STREAM_VALUE);
+      entity.setSizeBytes((long) content.length);
+      entity.setSha256(sha256);
+      entity.setAccessPolicy(StringUtils.hasText(accessPolicy) ? accessPolicy : "private");
+      entity.setStatus("uploaded");
+      entity.setDeleted(0);
+      fileMapper.insert(entity);
+      return toVO(entity);
+    } catch (IOException | NoSuchAlgorithmException ex) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "File store failed");
+    }
+  }
+
+  @Transactional
   public FileVO upload(MultipartFile file, String accessPolicy) {
     if (file == null || file.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File is empty");
