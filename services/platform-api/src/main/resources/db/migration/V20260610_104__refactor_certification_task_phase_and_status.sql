@@ -14,6 +14,20 @@
 -- 并将历史阶段编码 project_creation 重命名为 task_creation。
 
 -- 1. certification_task_phase：把 project_creation 重命名为 task_creation
+--    若同一任务已存在 task_creation（应用侧已写入），则软删冗余的 project_creation，避免唯一键冲突
+UPDATE certification_task_phase old_phase
+INNER JOIN (
+  SELECT DISTINCT task_id, tenant_id
+  FROM certification_task_phase
+  WHERE deleted = 0
+    AND phase_code = 'task_creation'
+) existing ON existing.task_id = old_phase.task_id
+  AND existing.tenant_id = old_phase.tenant_id
+SET old_phase.deleted = 1,
+    old_phase.updated_at = NOW()
+WHERE old_phase.deleted = 0
+  AND old_phase.phase_code = 'project_creation';
+
 UPDATE certification_task_phase
 SET phase_code = 'task_creation',
     phase_name = '任务创建阶段',

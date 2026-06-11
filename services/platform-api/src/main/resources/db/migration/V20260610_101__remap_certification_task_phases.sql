@@ -26,7 +26,7 @@ INSERT INTO certification_task_phase (
   started_at, completed_at, completed_by, remark, created_at, updated_at, created_by, updated_by, deleted
 )
 SELECT
-  task.id * 10 + 2,
+  id_base.max_id + ROW_NUMBER() OVER (ORDER BY task.id),
   task.tenant_id,
   task.id,
   'preparation',
@@ -43,6 +43,10 @@ SELECT
   task.updated_by,
   0
 FROM certification_task task
+CROSS JOIN (
+  SELECT COALESCE(MAX(id), 0) AS max_id
+  FROM certification_task_phase
+) id_base
 WHERE task.deleted = 0
   AND NOT EXISTS (
     SELECT 1
@@ -57,7 +61,7 @@ INSERT INTO certification_task_phase (
   started_at, completed_at, completed_by, remark, created_at, updated_at, created_by, updated_by, deleted
 )
 SELECT
-  task.id * 10 + 4,
+  id_base.max_id + ROW_NUMBER() OVER (ORDER BY task.id),
   task.tenant_id,
   task.id,
   'certification_completed',
@@ -74,6 +78,10 @@ SELECT
   task.updated_by,
   0
 FROM certification_task task
+CROSS JOIN (
+  SELECT COALESCE(MAX(id), 0) AS max_id
+  FROM certification_task_phase
+) id_base
 WHERE task.deleted = 0
   AND NOT EXISTS (
     SELECT 1

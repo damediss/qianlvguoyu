@@ -57,4 +57,12 @@ public class DemandEmployeeController {
     demandEmployeeApplicationService.delete(id);
     return ApiResponse.ok();
   }
+
+  @PostMapping("/demand-employees/batch-delete")
+  @PreAuthorize("hasAuthority('train:demand-employee:delete')")
+  @AuditLog(module = "training", action = "demand-employee:delete", targetType = "demand-employees")
+  public ApiResponse<java.util.List<Long>> batchDelete(@RequestBody java.util.List<Long> ids) {
+    demandEmployeeApplicationService.batchDelete(ids);
+    return ApiResponse.ok(ids);
+  }
 }

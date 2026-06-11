@@ -158,12 +158,9 @@ public class MenuApplicationService {
           ErrorCode.CONFLICT,
           "Menu has child nodes (" + childCount + "). Pass ?cascade=true to delete the whole subtree.");
     }
-    boolean usedByRoles = roleMenuRelationMapper.exists(new LambdaQueryWrapper<RoleMenuEntity>()
-        .eq(RoleMenuEntity::getTenantId, tenantId)
-        .eq(RoleMenuEntity::getMenuId, id)
-        .eq(RoleMenuEntity::getDeleted, 0));
-    if (usedByRoles) {
-      throw new BusinessException(ErrorCode.CONFLICT, "Menu is used by roles");
+    int removedBindings = roleMenuRelationMapper.softDeleteByMenus(tenantId, List.of(id));
+    if (removedBindings > 0) {
+      log.info("Removed {} role-menu bindings before deleting menu id={}", removedBindings, id);
     }
     // 用 deleteById 而不是 updateById(setDeleted=1)：
     // BaseEntity.deleted 标了 @TableLogic，updateById 会给 UPDATE 加 WHERE deleted=0

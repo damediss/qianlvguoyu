@@ -16,6 +16,4 @@ public interface TrainBaseDataMapper extends BaseMapper<TrainBaseDataEntity> {
       ORDER BY id ASC
       """)
   List<TrainBaseDataLegacyRow> selectDeclarationConditionsLegacy();
-
-  record TrainBaseDataLegacyRow(Long id, String title) {}
 }

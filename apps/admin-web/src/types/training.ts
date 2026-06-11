@@ -1829,6 +1829,36 @@ export interface DemandTrainQuery {
   orgId?: number;
 }
 
+// ==================== Demand Employee (企业人才需求) ====================
+export interface DemandEmployee {
+  id: number;
+  orgId?: number;
+  work?: string;
+  education?: string;
+  major?: string;
+  addtime?: number;
+  tenantId?: number;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface DemandEmployeeQuery {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  orgId?: number;
+}
+
+export interface DemandEmployeeCreateReq {
+  orgId: number;
+  work: string;
+  education?: string;
+  major?: string;
+  addtime?: number;
+}
+
+export type DemandEmployeeUpdateReq = Partial<DemandEmployeeCreateReq>;
+
 export interface DemandConvertReq {
   title: string;
   companyId: number;

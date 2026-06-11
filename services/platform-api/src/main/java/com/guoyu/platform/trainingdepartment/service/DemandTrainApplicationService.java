@@ -61,6 +61,7 @@ public class DemandTrainApplicationService {
   private final DictMapper dictMapper;
   private final DictItemMapper dictItemMapper;
   private final TrainBaseDataMapper trainBaseDataMapper;
+  private final TrainingOperatorScopeService operatorScopeService;
 
   public DemandTrainApplicationService(DemandTrainMapper mapper, OrgMapper orgMapper,
       ExamWorkTypeMapper examWorkTypeMapper, TrainInfoListMapper trainInfoListMapper,
@@ -69,7 +70,8 @@ public class DemandTrainApplicationService {
       TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper,
       DictMapper dictMapper,
       DictItemMapper dictItemMapper,
-      TrainBaseDataMapper trainBaseDataMapper) {
+      TrainBaseDataMapper trainBaseDataMapper,
+      TrainingOperatorScopeService operatorScopeService) {
     this.mapper = mapper;
     this.orgMapper = orgMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
@@ -80,6 +82,7 @@ public class DemandTrainApplicationService {
     this.dictMapper = dictMapper;
     this.dictItemMapper = dictItemMapper;
     this.trainBaseDataMapper = trainBaseDataMapper;
+    this.operatorScopeService = operatorScopeService;
   }
 
   @Transactional(readOnly = true)
@@ -90,9 +93,12 @@ public class DemandTrainApplicationService {
         .eq(DemandTrainEntity::getDeleted, 0)
         .orderByDesc(DemandTrainEntity::getId);
     if (StringUtils.hasText(req.getKeyword())) {
-      wrapper.like(DemandTrainEntity::getId, req.getKeyword());
+      wrapper.like(DemandTrainEntity::getContent, req.getKeyword());
     }
-    if (req.getOrgId() != null) {
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getOrgId());
+    if (companyFilter != null) {
+      wrapper.eq(DemandTrainEntity::getOrgId, companyFilter);
+    } else if (req.getOrgId() != null) {
       wrapper.eq(DemandTrainEntity::getOrgId, req.getOrgId());
     }
     Page<DemandTrainEntity> page = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
@@ -124,13 +130,22 @@ public class DemandTrainApplicationService {
   @Transactional
   public DemandTrainVO create(DemandTrainCreateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    Long orgId = operatorScopeService.resolveCompanyFilter(req.getOrgId());
+    if (orgId == null) {
+      orgId = req.getOrgId();
+    }
+    if (orgId == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少企业信息");
+    }
     DemandTrainEntity entity = new DemandTrainEntity();
     entity.setTenantId(tenantId);
-    entity.setOrgId(req.getOrgId());
+    entity.setOrgId(orgId);
     entity.setContent(req.getContent());
     entity.setNums(req.getNums());
-    entity.setStatus(req.getStatus());
-    entity.setAddtime(req.getAddtime());
+    entity.setStatus(req.getStatus() != null ? req.getStatus() : 0);
+    entity.setAddtime(req.getAddtime() != null ? req.getAddtime() : (int) (System.currentTimeMillis() / 1000));
+    entity.setCreateTime(LocalDateTime.now());
+    entity.setUpdateTime(LocalDateTime.now());
     entity.setDeleted(0);
     mapper.insert(entity);
     return toVO(entity);
@@ -139,7 +154,10 @@ public class DemandTrainApplicationService {
   @Transactional
   public DemandTrainVO update(Long id, DemandTrainUpdateReq req) {
     DemandTrainEntity entity = getExisting(id);
-    if (req.getOrgId() != null) { entity.setOrgId(req.getOrgId()); }
+    if (req.getOrgId() != null) {
+      Long orgId = operatorScopeService.resolveCompanyFilter(req.getOrgId());
+      entity.setOrgId(orgId != null ? orgId : req.getOrgId());
+    }
     if (StringUtils.hasText(req.getContent())) { entity.setContent(req.getContent()); }
     if (req.getNums() != null) { entity.setNums(req.getNums()); }
     if (req.getStatus() != null) { entity.setStatus(req.getStatus()); }
@@ -157,16 +175,10 @@ public class DemandTrainApplicationService {
 
   @Transactional
   public void batchDelete(List<Long> ids) {
-    Long tenantId = SecurityContext.currentUser().getTenantId();
     for (Long id : ids) {
-      DemandTrainEntity entity = mapper.selectOne(new LambdaQueryWrapper<DemandTrainEntity>()
-          .eq(DemandTrainEntity::getTenantId, tenantId)
-          .eq(DemandTrainEntity::getId, id)
-          .eq(DemandTrainEntity::getDeleted, 0));
-      if (entity != null) {
-        entity.setDeleted(1);
-        mapper.deleteById(entity.getId());
-      }
+      DemandTrainEntity entity = getExisting(id);
+      entity.setDeleted(1);
+      mapper.deleteById(entity.getId());
     }
   }
 
@@ -435,6 +447,7 @@ public class DemandTrainApplicationService {
 
   @Transactional(readOnly = true)
   public List<TrainStudentVO> getStudentsByDemandId(Long demandId) {
+    getExisting(demandId);
     Long tenantId = SecurityContext.currentUser().getTenantId();
 
     // Step 1: demand_train → train_info_list
@@ -491,6 +504,10 @@ public class DemandTrainApplicationService {
         .eq(DemandTrainEntity::getDeleted, 0));
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "Record not found");
+    }
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(entity.getOrgId());
+    if (companyFilter != null && entity.getOrgId() != null && !companyFilter.equals(entity.getOrgId())) {
+      throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该培训需求");
     }
     return entity;
   }

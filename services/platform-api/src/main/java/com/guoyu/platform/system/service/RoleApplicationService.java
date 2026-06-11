@@ -132,7 +132,8 @@ public class RoleApplicationService {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     RoleEntity entity = getExisting(tenantId, id);
     validateMenus(tenantId, req.menuIds());
-    validatePermissions(tenantId, req.permissionIds());
+    Set<Long> permissionIds = resolvePermissionIds(tenantId, req.menuIds(), req.permissionIds());
+    validatePermissions(tenantId, new ArrayList<>(permissionIds));
 
     // 菜单→功能权限联动：勾了菜单，自动把该菜单下所有 enabled 的权限也带进来
     // 反向不联动（取消菜单不自动取消权限），避免误删用户手动细调的权限
@@ -197,6 +198,23 @@ public class RoleApplicationService {
     if (exists) {
       throw new BusinessException(ErrorCode.CONFLICT, "Role code already exists");
     }
+  }
+
+  /** 勾选菜单时自动带上该菜单下全部权限，避免仅有菜单无 API 权限导致 403 */
+  private Set<Long> resolvePermissionIds(Long tenantId, List<Long> menuIds, List<Long> permissionIds) {
+    Set<Long> resolved = new HashSet<>();
+    if (permissionIds != null) {
+      resolved.addAll(permissionIds);
+    }
+    if (menuIds != null && !menuIds.isEmpty()) {
+      List<PermissionEntity> menuPermissions = permissionMapper.selectList(new LambdaQueryWrapper<PermissionEntity>()
+          .eq(PermissionEntity::getTenantId, tenantId)
+          .in(PermissionEntity::getMenuId, menuIds)
+          .eq(PermissionEntity::getDeleted, 0)
+          .eq(PermissionEntity::getStatus, "enabled"));
+      menuPermissions.forEach(permission -> resolved.add(permission.getId()));
+    }
+    return resolved;
   }
 
   private void validateMenus(Long tenantId, List<Long> menuIds) {

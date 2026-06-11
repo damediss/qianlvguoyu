@@ -245,14 +245,14 @@ export function MenuPage() {
       const hasChildren = descendantIds.length > 0;
 
       if (!hasChildren) {
-        // 叶子菜单：也使用 cascade=true，这样后端会自动清理 sys_role_menu 中的角色绑定
+        // 叶子菜单：直接走默认 delete
         Modal.confirm({
           title: `确认删除菜单「${record.name}」？`,
-          content: '删除后将同时解除所有角色对该菜单的绑定。',
+          content: '该菜单为叶子节点，无子菜单。',
           okText: '确认删除',
           okType: 'danger',
           cancelText: '取消',
-          onOk: () => deleteMutation.mutate({ id: record.id, cascade: true } as any),
+          onOk: () => deleteMutation.mutate(record.id),
         });
         return;
       }

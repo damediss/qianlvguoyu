@@ -20,6 +20,9 @@ public class TenantContextFilter extends OncePerRequestFilter {
       "/api/actuator/health",
       "/api/actuator/info"
   );
+  private static final Set<String> WHITE_PATH_PREFIXES = Set.of(
+      "/api/appregistration/"
+  );
   private static final Set<String> WHITE_METHOD_PATHS = Set.of(
       "POST:/api/auth/login",
       "POST:/api/auth/refresh"
@@ -33,16 +36,26 @@ public class TenantContextFilter extends OncePerRequestFilter {
   ) throws ServletException, IOException {
     String path = request.getRequestURI();
     String method = request.getMethod();
+    String tenantIdHeader = request.getHeader(TENANT_HEADER);
 
     boolean isWhite = WHITE_PATHS.contains(path)
-        || WHITE_METHOD_PATHS.contains(method + ":" + path);
+        || WHITE_METHOD_PATHS.contains(method + ":" + path)
+        || WHITE_PATH_PREFIXES.stream().anyMatch(path::startsWith);
 
     if (isWhite) {
-      filterChain.doFilter(request, response);
+      if (tenantIdHeader == null || tenantIdHeader.isBlank()) {
+        TenantContextHolder.setTenantId(1L);
+      } else {
+        TenantContextHolder.setTenantId(Long.valueOf(tenantIdHeader.trim()));
+      }
+      try {
+        filterChain.doFilter(request, response);
+      } finally {
+        TenantContextHolder.clear();
+      }
       return;
     }
 
-    String tenantIdHeader = request.getHeader(TENANT_HEADER);
     if (tenantIdHeader == null || tenantIdHeader.isBlank()) {
       response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
       response.setContentType("application/json;charset=UTF-8");

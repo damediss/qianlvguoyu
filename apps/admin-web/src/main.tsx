@@ -20,6 +20,7 @@ import { UserListPage } from './pages/chazheng/UserListPage';
 import { CertQueryPage } from './pages/chazheng/CertQueryPage';
 import { RequirementsManagementPage } from './pages/training/RequirementsManagementPage';
 import { EnterpriseTrainingDemandPage } from './pages/training/EnterpriseTrainingDemandPage';
+import { EnterpriseTalentDemandPage } from './pages/training/EnterpriseTalentDemandPage';
 import { TrainingProgramPage } from './pages/training/TrainingProgramPage';
 import { TrainingSchedulePage } from './pages/training/TrainingSchedulePage';
 import { TrainingGraduationPage } from './pages/training/TrainingGraduationPage';
@@ -119,6 +120,9 @@ const pageMap: Record<string, React.ReactNode> = {
   chazheng_cert_query: <CertQueryPage />,
   train_needs: <RequirementsManagementPage />,
   'train_demand-train': <EnterpriseTrainingDemandPage />,
+  company_demand_train: <EnterpriseTrainingDemandPage />,
+  'train_demand-employee': <EnterpriseTalentDemandPage />,
+  company_demand_employee: <EnterpriseTalentDemandPage />,
   train_solutions: <TrainingProgramPage />,
   train_schedule: <TrainingSchedulePage />,
   train_graduation: <TrainingGraduationPage />,

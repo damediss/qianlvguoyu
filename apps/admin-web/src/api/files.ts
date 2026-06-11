@@ -37,9 +37,7 @@ export async function uploadPlatformFile(file: File, accessPolicy?: string) {
   if (accessPolicy) {
     formData.append('accessPolicy', accessPolicy);
   }
-  const response = await apiClient.post('/files', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  const response = await apiClient.post('/files', formData);
   // /files is not wrapped by unwrap() in this module to keep blob error parsing isolated.
   const data = response.data as { data?: FileVO; message?: string };
   if (!data?.data) {
