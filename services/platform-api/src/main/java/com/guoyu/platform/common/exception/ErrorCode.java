@@ -8,6 +8,7 @@ public final class ErrorCode {
   public static final String NOT_FOUND = "404";
   public static final String CONFLICT = "409";
   public static final String INTERNAL_ERROR = "500";
+  public static final String NOT_IMPLEMENTED = "501";
 
   private ErrorCode() {
   }

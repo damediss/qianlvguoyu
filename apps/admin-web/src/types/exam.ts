@@ -421,6 +421,9 @@ export interface ExamKnowledgeStructureCreateReq {
   important?: number;
   status?: number;
   sortNumber?: number;
+  cover?: string;
+  intro?: string;
+  amount?: number;
 }
 
 export interface ExamKnowledgeStructureUpdateReq {
@@ -432,6 +435,9 @@ export interface ExamKnowledgeStructureUpdateReq {
   important?: number;
   status?: number;
   sortNumber?: number;
+  cover?: string;
+  intro?: string;
+  amount?: number;
 }
 
 export interface ExamKnowledgeStructureQuery {

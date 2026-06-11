@@ -25,6 +25,7 @@
     <flowable.version>7.2.0</flowable.version>
     <tika.version>3.3.0</tika.version>
     <lombok.version>1.18.38</lombok.version>
+    <cos.sdk.version>5.6.227</cos.sdk.version>
   </properties>
 
   <dependencies>
@@ -106,6 +107,13 @@
       <groupId>org.apache.poi</groupId>
       <artifactId>poi-ooxml</artifactId>
       <version>5.4.0</version>
+    </dependency>
+
+    <!-- 腾讯云 COS SDK(可选,生产用 cos provider 时需要) -->
+    <dependency>
+      <groupId>com.qcloud</groupId>
+      <artifactId>cos_api</artifactId>
+      <version>${cos.sdk.version}</version>
     </dependency>
 
     <!-- Sa-Token -->

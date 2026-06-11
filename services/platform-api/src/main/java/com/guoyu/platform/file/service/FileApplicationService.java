@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.file.FileStorage;
 import com.guoyu.platform.file.config.FileStorageProperties;
 import com.guoyu.platform.file.entity.FileEntity;
 import com.guoyu.platform.file.mapper.FileMapper;
@@ -13,14 +14,14 @@ import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.security.SecurityContext;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.HexFormat;
 import java.util.Optional;
@@ -39,12 +40,17 @@ import org.springframework.web.multipart.MultipartFile;
 @Slf4j
 public class FileApplicationService {
 
+  /** upload 的 hash + url 一起返回,避免在调用方拼接字符串。 */
+  private record UploadResult(String sha256, String url) {}
+
   private final FileMapper fileMapper;
   private final FileStorageProperties properties;
+  private final FileStorage storage;
 
-  public FileApplicationService(FileMapper fileMapper, FileStorageProperties properties) {
+  public FileApplicationService(FileMapper fileMapper, FileStorageProperties properties, FileStorage storage) {
     this.fileMapper = fileMapper;
     this.properties = properties;
+    this.storage = storage;
   }
 
   @Transactional
@@ -52,32 +58,20 @@ public class FileApplicationService {
     if (content == null || content.length == 0) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File is empty");
     }
-    if (!"local".equalsIgnoreCase(storageProvider())) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "Only local file storage is available in current MVP");
-    }
 
     Long tenantId = SecurityContext.currentUser().getTenantId();
     String safeName = sanitizeFileName(originalName);
     String objectKey = buildObjectKey(tenantId, safeName);
-    Path target = resolveLocalPath(objectKey);
     try {
-      Files.createDirectories(target.getParent());
-      Files.write(target, content);
       String sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+      String url;
+      try (InputStream in = new java.io.ByteArrayInputStream(content)) {
+        url = storage.put(objectKey, in, content.length, contentType);
+      }
 
-      FileEntity entity = new FileEntity();
-      entity.setTenantId(tenantId);
-      entity.setStorageProvider(storageProvider());
-      entity.setObjectKey(objectKey);
-      entity.setOriginalName(safeName);
-      entity.setContentType(StringUtils.hasText(contentType) ? contentType : MediaType.APPLICATION_OCTET_STREAM_VALUE);
-      entity.setSizeBytes((long) content.length);
-      entity.setSha256(sha256);
-      entity.setAccessPolicy(StringUtils.hasText(accessPolicy) ? accessPolicy : "private");
-      entity.setStatus("uploaded");
-      entity.setDeleted(0);
+      FileEntity entity = newFileEntity(tenantId, objectKey, safeName, contentType, content.length, sha256, accessPolicy);
       fileMapper.insert(entity);
-      return toVO(entity);
+      return toVO(entity, url);
     } catch (IOException | NoSuchAlgorithmException ex) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File store failed");
     }
@@ -88,39 +82,70 @@ public class FileApplicationService {
     if (file == null || file.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File is empty");
     }
-    if (!"local".equalsIgnoreCase(storageProvider())) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "Only local file storage is available in current MVP");
-    }
 
     Long tenantId = SecurityContext.currentUser().getTenantId();
     String safeName = sanitizeFileName(file.getOriginalFilename());
     String objectKey = buildObjectKey(tenantId, safeName);
-    Path target = resolveLocalPath(objectKey);
     try {
-      Files.createDirectories(target.getParent());
-      String sha256 = copyAndHash(file, target);
+      UploadResult r = copyAndUpload(file, objectKey);
 
-      FileEntity entity = new FileEntity();
-      entity.setTenantId(tenantId);
-      entity.setStorageProvider(storageProvider());
-      entity.setObjectKey(objectKey);
-      entity.setOriginalName(safeName);
-      entity.setContentType(file.getContentType());
-      entity.setSizeBytes(file.getSize());
-      entity.setSha256(sha256);
-      entity.setAccessPolicy(StringUtils.hasText(accessPolicy) ? accessPolicy : "private");
-      entity.setStatus("uploaded");
-      entity.setDeleted(0);
+      FileEntity entity = newFileEntity(tenantId, objectKey, safeName,
+          file.getContentType(), file.getSize(), r.sha256(), accessPolicy);
       fileMapper.insert(entity);
-      return toVO(entity);
+      return toVO(entity, r.url());
     } catch (IOException ex) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File upload failed");
     }
   }
 
+  /**
+   * MultipartFile -> FileStorage,带 SHA-256 摘要。
+   * 临时落本地小文件算 hash 再上传(纯流式可改用 COS TransferManager,简化起见用临时文件)。
+   */
+  private UploadResult copyAndUpload(MultipartFile file, String objectKey) throws IOException {
+    Path tmp = Files.createTempFile("guoyu-upload-", ".bin");
+    try {
+      MessageDigest digest;
+      try {
+        digest = MessageDigest.getInstance("SHA-256");
+      } catch (NoSuchAlgorithmException ex) {
+        throw new IllegalStateException("SHA-256 digest unavailable", ex);
+      }
+      try (InputStream input = file.getInputStream();
+          DigestInputStream digestInput = new DigestInputStream(input, digest)) {
+        Files.copy(digestInput, tmp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+      }
+      String sha256 = HexFormat.of().formatHex(digest.digest());
+      String url;
+      try (InputStream up = Files.newInputStream(tmp)) {
+        url = storage.put(objectKey, up, Files.size(tmp), file.getContentType());
+      }
+      return new UploadResult(sha256, url);
+    } finally {
+      Files.deleteIfExists(tmp);
+    }
+  }
+
+  private FileEntity newFileEntity(Long tenantId, String objectKey, String safeName,
+                                    String contentType, long size, String sha256, String accessPolicy) {
+    FileEntity entity = new FileEntity();
+    entity.setTenantId(tenantId);
+    entity.setStorageProvider(storage.providerName());
+    entity.setObjectKey(objectKey);
+    entity.setOriginalName(safeName);
+    entity.setContentType(StringUtils.hasText(contentType) ? contentType : MediaType.APPLICATION_OCTET_STREAM_VALUE);
+    entity.setSizeBytes(size);
+    entity.setSha256(sha256);
+    entity.setAccessPolicy(StringUtils.hasText(accessPolicy) ? accessPolicy : "private");
+    entity.setStatus("uploaded");
+    entity.setDeleted(0);
+    return entity;
+  }
+
   @Transactional(readOnly = true)
   public FileVO get(Long id) {
-    return toVO(getExistingFile(SecurityContext.currentUser().getTenantId(), id));
+    FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
+    return toVO(entity, publicUrl(entity));
   }
 
   @Transactional(readOnly = true)
@@ -143,6 +168,12 @@ public class FileApplicationService {
   }
 
   private Resource loadResource(FileEntity entity) {
+    if ("cos".equalsIgnoreCase(entity.getStorageProvider())) {
+      // COS 直连:前端用 FileVO.url 跳 CDN,后端不再流式转发(避免流量走两次)。
+      // 真要后端转发的话,FileController 调 TencentCosFileStorage.getObject → InputStreamResource。
+      throw new BusinessException(ErrorCode.NOT_IMPLEMENTED,
+          "COS 文件下载请使用前端 FileVO.url 直连 CDN");
+    }
     Path path = localPath(entity)
         .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "File is not available from local storage"));
     try {
@@ -177,6 +208,7 @@ public class FileApplicationService {
     FileEntity entity = getExistingFile(tenantId, id);
     entity.setStatus("deleted");
     fileMapper.updateById(entity);
+    storage.delete(entity.getObjectKey());
   }
 
   @Transactional(readOnly = true)
@@ -199,10 +231,6 @@ public class FileApplicationService {
     return Optional.of(resolveLocalPath(entity.getObjectKey()));
   }
 
-  private String storageProvider() {
-    return StringUtils.hasText(properties.storageProvider()) ? properties.storageProvider() : "local";
-  }
-
   private Path resolveLocalPath(String objectKey) {
     Path root = Paths.get(properties.localRoot()).toAbsolutePath().normalize();
     Path resolved = root.resolve(objectKey).normalize();
@@ -210,6 +238,28 @@ public class FileApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "Invalid file object key");
     }
     return resolved;
+  }
+
+  private String publicUrl(FileEntity entity) {
+    if ("cos".equalsIgnoreCase(entity.getStorageProvider())) {
+      return cosPublicUrl(entity.getObjectKey());
+    }
+    return localPublicUrl(entity.getObjectKey());
+  }
+
+  private String localPublicUrl(String objectKey) {
+    return "/api/exam/files/" + objectKey;
+  }
+
+  private String cosPublicUrl(String objectKey) {
+    FileStorageProperties.Cos c = properties.cos();
+    if (c == null) return "";
+    String prefix = StringUtils.hasText(c.urlPrefix())
+        ? c.urlPrefix()
+        : String.format("https://%s.cos.%s.myqcloud.com", c.bucket(), c.region());
+    if (!StringUtils.hasText(prefix)) return "";
+    String p = prefix.endsWith("/") ? prefix.substring(0, prefix.length() - 1) : prefix;
+    return p + "/" + objectKey;
   }
 
   private String buildObjectKey(Long tenantId, String fileName) {
@@ -223,20 +273,7 @@ public class FileApplicationService {
     return name.replace("\\", "_").replace("/", "_").replace(":", "_");
   }
 
-  private String copyAndHash(MultipartFile file, Path target) throws IOException {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      try (InputStream input = file.getInputStream();
-          DigestInputStream digestInput = new DigestInputStream(input, digest)) {
-        Files.copy(digestInput, target);
-      }
-      return HexFormat.of().formatHex(digest.digest());
-    } catch (NoSuchAlgorithmException ex) {
-      throw new IllegalStateException("SHA-256 digest unavailable", ex);
-    }
-  }
-
-  private FileVO toVO(FileEntity entity) {
+  private FileVO toVO(FileEntity entity, String url) {
     return new FileVO(
         entity.getId(),
         entity.getOriginalName(),
@@ -244,7 +281,8 @@ public class FileApplicationService {
         entity.getSizeBytes(),
         entity.getAccessPolicy(),
         entity.getStatus(),
-        entity.getCreatedAt()
+        entity.getCreatedAt(),
+        url
     );
   }
 }

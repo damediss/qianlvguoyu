@@ -8,9 +8,18 @@ import com.guoyu.platform.exam.dto.ExamKnowledgeStructureQueryReq;
 import com.guoyu.platform.exam.dto.ExamKnowledgeStructureUpdateReq;
 import com.guoyu.platform.exam.service.ExamKnowledgeStructureApplicationService;
 import com.guoyu.platform.exam.vo.ExamKnowledgeStructureVO;
+import com.guoyu.platform.exam.vo.ExportResultDTO;
 import jakarta.validation.Valid;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @Validated
 @RestController
@@ -90,5 +100,40 @@ public class ExamKnowledgeStructureController {
       @RequestParam(required = false) Integer type,
       @RequestBody List<String> lines) {
     return ApiResponse.ok(service.batchImport(courseId, type, lines));
+  }
+
+  @PostMapping("/knowledge-structures/batch-delete")
+  @PreAuthorize("hasAuthority('exam:knowledge:delete')")
+  @AuditLog(module = "exam", action = "knowledge:batch-delete", targetType = "exam_knowledge_structure")
+  public ApiResponse<Integer> batchDelete(@RequestBody List<Integer> ids) {
+    return ApiResponse.ok(service.batchDelete(ids));
+  }
+
+  @PostMapping("/knowledge-structures/import-excel")
+  @PreAuthorize("hasAuthority('exam:knowledge:import')")
+  @AuditLog(module = "exam", action = "knowledge:import-excel", targetType = "exam_knowledge_structure")
+  public ApiResponse<Integer> importExcel(
+      @RequestParam("file") MultipartFile file,
+      @RequestParam(required = false) Integer courseId,
+      @RequestParam(required = false) Integer type) {
+    log.info("POST /exam/knowledge-structures/import-excel courseId={}, type={}", courseId, type);
+    return ApiResponse.ok(service.importExcel(file, courseId, type));
+  }
+
+  @GetMapping("/knowledge-structures/export")
+  @PreAuthorize("hasAuthority('exam:knowledge:export')")
+  @AuditLog(module = "exam", action = "knowledge:export", targetType = "exam_knowledge_structure")
+  public ResponseEntity<InputStreamResource> export(
+      @RequestParam(required = false) Integer courseId,
+      @RequestParam(required = false) Integer type) throws IOException {
+    log.info("GET /exam/knowledge-structures/export courseId={}, type={}", courseId, type);
+    ExportResultDTO result = service.exportExcel(courseId, type);
+    InputStreamResource resource = new InputStreamResource(new ByteArrayInputStream(result.data()));
+    return ResponseEntity.ok()
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment().filename(result.filename(), StandardCharsets.UTF_8).build().toString())
+        .contentType(MediaType.parseMediaType(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        .body(resource);
   }
 }

@@ -9,6 +9,8 @@ public record FileVO(
     Long sizeBytes,
     String accessPolicy,
     String status,
-    LocalDateTime createdAt
+    LocalDateTime createdAt,
+    /** 公网可访问 URL(本地走 /api/exam/files/{objectKey},COS 走 bucket/CDN 公网 URL)。 */
+    String url
 ) {
 }

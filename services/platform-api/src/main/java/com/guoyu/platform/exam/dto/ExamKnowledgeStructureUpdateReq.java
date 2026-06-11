@@ -10,6 +10,9 @@ public record ExamKnowledgeStructureUpdateReq(
     @Size(max = 200) String seriesNo,
     Integer important,
     Integer status,
-    Integer sortNumber
+    Integer sortNumber,
+    @Size(max = 500) String cover,
+    @Size(max = 1000) String intro,
+    Integer amount
 ) {
 }

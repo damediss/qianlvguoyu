@@ -252,6 +252,24 @@ export function batchImportKnowledgeStructures(courseId: number | undefined, typ
   }));
 }
 
+/** Excel 导入知识点: FormData 包含 file + courseId + type */
+export function importKnowledgeStructureExcel(formData: FormData) {
+  return unwrap<number>(apiClient.post('/exam/knowledge-structures/import-excel', formData));
+}
+
+/** 导出知识点:返回 blob 流 */
+export function exportKnowledgeStructures(courseId?: number, type?: number) {
+  return apiClient.get('/exam/knowledge-structures/export', {
+    params: { courseId, type },
+    responseType: 'blob',
+  });
+}
+
+/** 批量删除知识点 */
+export function batchDeleteKnowledgeStructures(ids: number[]) {
+  return unwrap<number>(apiClient.post('/exam/knowledge-structures/batch-delete', ids));
+}
+
 /**
  * 题库分类导航聚合树:工种→课程→知识点 L0~L3 一次性返回,每节点带
  * questionCount(子树递归题数)。替代前端三次串行 lazy-load。
