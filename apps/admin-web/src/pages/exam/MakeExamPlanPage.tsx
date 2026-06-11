@@ -294,22 +294,22 @@ export function MakeExamPlanPage() {
   }, [form, editingId, createMutation, updateMutation]);
 
   const columns: ColumnsType<ExamMakeExamPlan> = [
-    { title: '序号', width: 50, render: (_, __, i) => i + 1 },
-    { title: '名称', dataIndex: 'title', width: 150, ellipsis: true },
-    { title: '类型', dataIndex: 'examType', width: 60, render: (v: number) => EXAM_TYPE_MAP[v] || v },
-    { title: '时长', dataIndex: 'time', width: 60 },
+    { title: '序号', width: 45, render: (_, __, i) => i + 1 },
+    { title: '计划名称', dataIndex: 'title', width: 220, ellipsis: true },
+    { title: '试卷类型', dataIndex: 'examType', width: 60, render: (v: number) => EXAM_TYPE_MAP[v] || v },
+    { title: '考试时长(分钟)', dataIndex: 'time', width: 60 },
     {
-      title: '机考', dataIndex: 'isComputer', width: 55,
+      title: '机考', dataIndex: 'isComputer', width: 50,
       render: (v: number) => (v === 1 ? <Tag color="blue">是</Tag> : <Tag>否</Tag>),
     },
     {
-      title: '打印', dataIndex: 'isPrint', width: 55,
+      title: '打印', dataIndex: 'isPrint', width: 50,
       render: (v: number) => (v === 1 ? <Tag color="blue">是</Tag> : <Tag>否</Tag>),
     },
     { title: '总分', dataIndex: 'totalPoint', width: 55 },
-    { title: '及格分', dataIndex: 'passPoint', width: 60 },
-    { title: '备注', dataIndex: 'comments', width: 90, ellipsis: true },
-    { title: '创建时间', dataIndex: 'createTime', width: 140 },
+    { title: '及格分', dataIndex: 'passPoint', width: 50 },
+    { title: '备注', dataIndex: 'comments', width: 75, ellipsis: true },
+    { title: '创建时间', dataIndex: 'createTime', width: 120 },
     {
       title: '操作', width: 130, fixed: 'right',
       render: (_, record) => (

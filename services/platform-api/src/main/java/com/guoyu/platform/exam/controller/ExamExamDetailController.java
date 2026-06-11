@@ -8,9 +8,18 @@ import com.guoyu.platform.exam.dto.ExamExamDetailQueryReq;
 import com.guoyu.platform.exam.dto.ExamExamDetailUpdateReq;
 import com.guoyu.platform.exam.service.ExamExamDetailApplicationService;
 import com.guoyu.platform.exam.vo.ExamExamDetailVO;
+import com.guoyu.platform.exam.vo.ExportResultDTO;
 import jakarta.validation.Valid;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,7 +30,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @Validated
 @RestController
@@ -79,5 +90,34 @@ public class ExamExamDetailController {
   public ApiResponse<Integer> batchDelete(@RequestBody List<Integer> ids) {
     int n = service.batchDelete(ids);
     return ApiResponse.ok(n);
+  }
+
+  @PostMapping("/exam-details/import")
+  @PreAuthorize("hasAuthority('exam:question:create')")
+  @AuditLog(module = "exam", action = "question:import", targetType = "exam_exam_detail")
+  public ApiResponse<Integer> importExcel(
+      @RequestParam("file") MultipartFile file,
+      @RequestParam Integer courseId,
+      @RequestParam(required = false, defaultValue = "0") Integer source) {
+    log.info("POST /exam/exam-details/import courseId={}, source={}", courseId, source);
+    int count = service.importExamDetails(file, courseId, source);
+    return ApiResponse.ok(count);
+  }
+
+  @GetMapping("/exam-details/export")
+  @PreAuthorize("hasAuthority('exam:question:view')")
+  @AuditLog(module = "exam", action = "question:export", targetType = "exam_exam_detail")
+  public ResponseEntity<InputStreamResource> exportByCourse(
+      @RequestParam Integer courseId) throws IOException {
+    log.info("GET /exam/exam-details/export courseId={}", courseId);
+    ExportResultDTO result = service.exportByCourse(courseId);
+    InputStreamResource resource = new InputStreamResource(new ByteArrayInputStream(result.data()));
+    return ResponseEntity.ok()
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment()
+                .filename(result.filename(), StandardCharsets.UTF_8).build().toString())
+        .contentType(MediaType.parseMediaType(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        .body(resource);
   }
 }

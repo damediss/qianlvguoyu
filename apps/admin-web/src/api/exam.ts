@@ -287,6 +287,19 @@ export function batchDeleteExamDetails(ids: number[]) {
   return unwrap<number>(apiClient.post('/exam/exam-details/batch-delete', ids));
 }
 
+/** 导入试题: FormData 包含 file + courseId + source */
+export function importExamDetails(formData: FormData) {
+  return unwrap<number>(apiClient.post('/exam/exam-details/import', formData));
+}
+
+/** 导出试题:返回 blob 流 */
+export function exportExamDetails(courseId: number) {
+  return apiClient.get('/exam/exam-details/export', {
+    params: { courseId },
+    responseType: 'blob',
+  });
+}
+
 // ==================== 组卷计划 ====================
 
 export function pageMakeExamPlans(params: ExamMakeExamPlanQuery) {
