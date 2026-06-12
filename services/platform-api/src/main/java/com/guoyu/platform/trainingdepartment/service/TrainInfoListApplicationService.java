@@ -12,6 +12,8 @@ import com.guoyu.platform.trainingdepartment.dto.TrainInfoListQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoListUpdateReq;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
+import com.guoyu.platform.system.entity.OrgEntity;
+import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSolutionEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
@@ -36,12 +38,14 @@ public class TrainInfoListApplicationService {
   private final TrainInfoListMapper mapper;
   private final TrainSolutionMapper solutionMapper;
   private final ExamWorkTypeMapper examWorkTypeMapper;
+  private final OrgMapper orgMapper;
 
   public TrainInfoListApplicationService(TrainInfoListMapper mapper, TrainSolutionMapper solutionMapper,
-      ExamWorkTypeMapper examWorkTypeMapper) {
+      ExamWorkTypeMapper examWorkTypeMapper, OrgMapper orgMapper) {
     this.mapper = mapper;
     this.solutionMapper = solutionMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
+    this.orgMapper = orgMapper;
   }
 
   @Transactional(readOnly = true)
@@ -67,8 +71,14 @@ public class TrainInfoListApplicationService {
           .or()
           .ne(TrainInfoListEntity::getGroupType, req.getGroupTypeNe()));
     }
-    if (req.getHeadConfirm() != null && req.getHeadConfirm() != -1) {
-      wrapper.eq(TrainInfoListEntity::getHeadConfirm, req.getHeadConfirm());
+    boolean yundemandList = Boolean.TRUE.equals(req.getYundemandList());
+    if (!yundemandList) {
+      if (req.getHeadConfirm() != null && req.getHeadConfirm() != -1) {
+        wrapper.eq(TrainInfoListEntity::getHeadConfirm, req.getHeadConfirm());
+      }
+      if (req.getPassStatus() != null) {
+        wrapper.eq(TrainInfoListEntity::getPassStatus, req.getPassStatus());
+      }
     }
     if (StringUtils.hasText(req.getCate())) {
       wrapper.eq(TrainInfoListEntity::getCate, req.getCate());
@@ -79,24 +89,30 @@ public class TrainInfoListApplicationService {
     if (req.getStatus() != null) {
       wrapper.eq(TrainInfoListEntity::getStatus, req.getStatus());
     }
-    if (req.getPassStatus() != null) {
-      wrapper.eq(TrainInfoListEntity::getPassStatus, req.getPassStatus());
-    }
     if (req.getCourseId() != null) {
       wrapper.eq(TrainInfoListEntity::getCourseId, req.getCourseId());
     }
     Page<TrainInfoListEntity> mpPage = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
 
-    // 工种ID → 名称映射
+    // 工种ID → 名称映射；企业名称对齐 PHP 从 org 表解析
     Map<Long, String> workTypeNameMap;
+    Map<Long, String> orgNameMap;
     if (mpPage.getRecords().isEmpty()) {
       workTypeNameMap = Map.of();
+      orgNameMap = Map.of();
     } else {
       workTypeNameMap = examWorkTypeMapper.selectList(
               new LambdaQueryWrapper<ExamWorkTypeEntity>()
                   .eq(ExamWorkTypeEntity::getDeleted, 0))
           .stream()
           .collect(Collectors.toMap(e -> e.getId().longValue(), ExamWorkTypeEntity::getTitle, (a, b) -> a));
+      orgNameMap = orgMapper.selectList(new LambdaQueryWrapper<OrgEntity>()
+              .eq(OrgEntity::getTenantId, tenantId)
+              .ne(OrgEntity::getId, 1L)
+              .in(OrgEntity::getOrgType, "company", "master")
+              .eq(OrgEntity::getDeleted, 0))
+          .stream()
+          .collect(Collectors.toMap(OrgEntity::getId, OrgEntity::getName, (a, b) -> a));
     }
 
     List<Map<String, Object>> list = mpPage.getRecords().stream().map(e -> {
@@ -106,7 +122,7 @@ public class TrainInfoListApplicationService {
       item.put("cate", e.getCate());
       item.put("group_type", e.getGroupType());
       item.put("company_id", e.getCompanyId());
-      item.put("company_name", e.getCompanyName());
+      item.put("company_name", orgNameMap.getOrDefault(e.getCompanyId(), "-"));
       item.put("train_company_name", e.getTrainCompanyName());
       item.put("work_type_title", workTypeNameMap.getOrDefault(e.getWorkTypeId(), null));
       item.put("num", e.getNum());

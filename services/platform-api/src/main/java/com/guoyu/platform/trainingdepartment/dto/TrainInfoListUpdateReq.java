@@ -1,6 +1,5 @@
 package com.guoyu.platform.trainingdepartment.dto;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -8,9 +7,8 @@ import java.time.LocalDateTime;
 /** 开班信息更新请求 */
 public class TrainInfoListUpdateReq {
 
-  @NotBlank
   @Size(max = 255)
-  /** 标题 */
+  /** 标题（部分更新时可不传，对齐 PHP train-info-save） */
   private String title;
 
   /** 封面 */

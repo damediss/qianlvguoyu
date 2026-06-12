@@ -18,6 +18,8 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
+import { downloadUrlFile, fileNameFromUrl } from '../../api/files';
+import { SolutionDocumentPreview } from '../../components/SolutionDocumentPreview';
 import { useAuthStore } from '../../stores/authStore';
 import type { DemandTrain, SolutionByDemand, TrainStudent } from '../../types/training';
 import './EnterpriseTrainingDemandPage.css';
@@ -32,6 +34,20 @@ const DEMAND_STATUS: Record<number, { label: string; color: string }> = {
   0: { label: '待处理', color: 'default' },
   1: { label: '已处理', color: 'success' },
 };
+
+function resolveFileUrl(path?: string): string {
+  if (!path) return '';
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  if (path.startsWith('/')) return path;
+  return `/${path}`;
+}
+
+function fileTypeFromPath(path?: string): string {
+  if (!path || !path.includes('.')) return '';
+  const ext = path.substring(path.lastIndexOf('.') + 1).toLowerCase();
+  const slash = ext.indexOf('/');
+  return slash >= 0 ? ext.substring(0, slash) : ext;
+}
 
 export function EnterpriseTrainingDemandPage() {
   const queryClient = useQueryClient();
@@ -132,10 +148,32 @@ export function EnterpriseTrainingDemandPage() {
     setCurrentDemandId(demandId);
     try {
       const info = await trainApi.getSolutionByDemandId(demandId);
-      setProgram(info);
+      const file = resolveFileUrl(info.file || info.file_path);
+      setProgram({
+        ...info,
+        file,
+        file_name: info.file_name || fileNameFromUrl(file),
+        fileType: info.fileType || fileTypeFromPath(info.file_name) || fileTypeFromPath(file),
+      });
       setProgramOpen(true);
     } catch {
       message.error('获取培训方案失败');
+    }
+  };
+
+  const handleDownloadProgram = async () => {
+    if (!program?.file) {
+      return;
+    }
+    try {
+      const ext = program.fileType ? `.${program.fileType}` : '';
+      const storedName = program.file_name;
+      const urlName = fileNameFromUrl(program.file);
+      const downloadName =
+        storedName || (urlName && urlName !== 'download' ? urlName : `${program.title || '培训方案'}${ext}`);
+      await downloadUrlFile(program.file, downloadName);
+    } catch {
+      message.error('下载失败');
     }
   };
 
@@ -304,7 +342,7 @@ export function EnterpriseTrainingDemandPage() {
       <Modal
         title="培训方案"
         open={programOpen}
-        width={720}
+        width="60%"
         onCancel={() => { setProgramOpen(false); setProgram(null); }}
         footer={null}
         destroyOnClose
@@ -331,10 +369,19 @@ export function EnterpriseTrainingDemandPage() {
             />
             {program.file && (
               <p className="mar-t10">
-                <strong>方案详情：</strong>
-                <a href={program.file} target="_blank" rel="noreferrer">下载</a>
+                <strong>方案详情：</strong>{' '}
+                <Button type="link" style={{ padding: 0 }} onClick={() => void handleDownloadProgram()}>
+                  下载
+                </Button>
               </p>
             )}
+            {program.file ? (
+              <SolutionDocumentPreview
+                fileUrl={program.file}
+                fileName={program.file_name}
+                fileType={program.fileType}
+              />
+            ) : null}
             {program.reject_reason && (
               <p className="mar-t10"><strong>驳回理由：</strong>{program.reject_reason}</p>
             )}

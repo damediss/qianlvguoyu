@@ -882,6 +882,8 @@ export type PlatformUserUpdateReq = Partial<PlatformUserCreateReq>;
 // ==================== Sign Up Collection (信息收集) ====================
 export interface TrainSignUpSelfFile {
   fileUrl: string;
+  fileName?: string;
+  fileType?: string;
 }
 
 export interface TrainSignUpSelf {
@@ -1371,6 +1373,8 @@ export interface TrainInfoListQuery {
   cate?: string;
   passStatus?: number;
   headConfirm?: number;
+  /** 对齐 PHP /yundemand/train-info-list：不按 headConfirm/passStatus 过滤 */
+  yundemandList?: boolean;
 }
 
 export interface TrainInfoListPageResponse {
@@ -1869,10 +1873,14 @@ export interface DemandConvertReq {
   traindemandId?: number;
 }
 
+export interface TrainInfoOption extends SimpleItem {
+  company_id?: number;
+}
+
 export interface DemandPublicData {
   company_list: CompanyOption[];
   worktype_list: WorkTypeGroup[];
-  traininfo_list?: SimpleItem[];
+  traininfo_list?: TrainInfoOption[];
   kejian_list?: SimpleItem[];
   /** 申报条件，对齐 PHP conditionList */
   condition_list?: SimpleItem[];
@@ -1922,6 +1930,7 @@ export interface TrainSolutionDetail {
   train_title?: string;
   file_path?: string;
   file?: string;
+  file_name?: string;
   fileType?: string;
   content?: string;
   reject_reason?: string;
@@ -1961,6 +1970,8 @@ export interface SolutionByDemand {
   train_info_id?: number;
   train_info_status?: number;
   file?: string;
+  file_path?: string;
+  file_name?: string;
   fileType?: string;
   badgeList: TrainSolutionBadge[];
   reject_reason?: string;

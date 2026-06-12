@@ -2,13 +2,16 @@ import { DownloadOutlined } from '@ant-design/icons';
 import { Button, Empty, Image, Modal, Spin, Typography, message } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import {
+  buildOfficeOnlinePreviewUrl,
   fetchCandidateDocumentBlob,
   fetchPlatformFileBlob,
   fetchUrlFileBlob,
   fileNameFromUrl,
   resolveFilePreviewKind,
+  shouldUseOfficeOnlinePreview,
   type FilePreviewKind,
 } from '../api/files';
+import { renderSpreadsheetPreview } from '../utils/spreadsheetPreview';
 
 export interface FilePreviewTarget {
   fileId?: string;
@@ -28,9 +31,11 @@ interface FilePreviewModalProps {
 
 export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProps) {
   const docxContainerRef = useRef<HTMLDivElement>(null);
+  const spreadsheetContainerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [previewKind, setPreviewKind] = useState<FilePreviewKind>('unsupported');
   const [objectUrl, setObjectUrl] = useState<string>();
+  const [officePreviewUrl, setOfficePreviewUrl] = useState<string>();
   const [downloadBlob, setDownloadBlob] = useState<Blob>();
 
   useEffect(() => {
@@ -51,24 +56,45 @@ export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProp
     const taskId = previewTarget.taskId;
     const documentId = previewTarget.documentId;
     const fileId = previewTarget.fileId;
+    const fileUrl = previewTarget.fileUrl;
 
     let cancelled = false;
     let localObjectUrl: string | undefined;
 
+    async function renderDocx(blob: Blob) {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+      const container = docxContainerRef.current;
+      if (!container) {
+        throw new Error('预览容器未就绪');
+      }
+      container.innerHTML = '';
+      const { renderAsync } = await import('docx-preview');
+      await renderAsync(blob, container, undefined, {
+        className: 'docx-preview-container',
+        inWrapper: true,
+        ignoreWidth: false,
+        ignoreHeight: false,
+      });
+    }
+
     async function loadPreview() {
       setLoading(true);
       setObjectUrl(undefined);
+      setOfficePreviewUrl(undefined);
       setDownloadBlob(undefined);
+      setPreviewKind('unsupported');
       if (docxContainerRef.current) {
         docxContainerRef.current.innerHTML = '';
       }
-
-      const kind = resolveFilePreviewKind(fileName, fileType);
-      setPreviewKind(kind);
+      if (spreadsheetContainerRef.current) {
+        spreadsheetContainerRef.current.innerHTML = '';
+      }
 
       try {
-        const blob = previewTarget.fileUrl
-          ? await fetchUrlFileBlob(previewTarget.fileUrl)
+        const blob = fileUrl
+          ? await fetchUrlFileBlob(fileUrl)
           : taskId && documentId
             ? await fetchCandidateDocumentBlob(taskId, documentId)
             : await fetchPlatformFileBlob(fileId!);
@@ -77,27 +103,46 @@ export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProp
         }
         setDownloadBlob(blob);
 
-        if (kind === 'image' || kind === 'pdf') {
-          localObjectUrl = URL.createObjectURL(blob);
-          setObjectUrl(localObjectUrl);
-          return;
-        }
+        const kind = resolveFilePreviewKind(fileName, fileType, blob.type);
 
-        if (kind === 'docx') {
+        if (kind === 'spreadsheet') {
+          setPreviewKind('spreadsheet');
           await new Promise<void>((resolve) => {
             requestAnimationFrame(() => resolve());
           });
-          const container = docxContainerRef.current;
+          const container = spreadsheetContainerRef.current;
           if (!container) {
             throw new Error('预览容器未就绪');
           }
-          const { renderAsync } = await import('docx-preview');
-          await renderAsync(blob, container, undefined, {
-            className: 'docx-preview-container',
-            inWrapper: true,
-            ignoreWidth: false,
-            ignoreHeight: false,
-          });
+          await renderSpreadsheetPreview(blob, container);
+          return;
+        }
+
+        if (
+          kind === 'office'
+          && fileUrl
+          && shouldUseOfficeOnlinePreview(fileUrl, fileName, fileType, blob.type)
+        ) {
+          setPreviewKind('office');
+          setOfficePreviewUrl(buildOfficeOnlinePreviewUrl(fileUrl));
+          return;
+        }
+
+        if (kind === 'office' || kind === 'docx') {
+          setPreviewKind('docx');
+          await renderDocx(blob);
+          return;
+        }
+
+        if (kind === 'unsupported') {
+          return;
+        }
+
+        if (kind === 'image' || kind === 'pdf') {
+          localObjectUrl = URL.createObjectURL(blob);
+          setObjectUrl(localObjectUrl);
+          setPreviewKind(kind);
+          return;
         }
       } catch (error) {
         if (!cancelled) {
@@ -128,9 +173,13 @@ export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProp
       URL.revokeObjectURL(objectUrl);
     }
     setObjectUrl(undefined);
+    setOfficePreviewUrl(undefined);
     setDownloadBlob(undefined);
     if (docxContainerRef.current) {
       docxContainerRef.current.innerHTML = '';
+    }
+    if (spreadsheetContainerRef.current) {
+      spreadsheetContainerRef.current.innerHTML = '';
     }
   }, [open, objectUrl]);
 
@@ -147,6 +196,7 @@ export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProp
   }
 
   const title = target?.fileName ? `预览 — ${target.fileName}` : '文件预览';
+  const modalWidth = previewKind === 'image' ? 720 : previewKind === 'office' ? '80%' : 960;
 
   return (
     <Modal
@@ -160,17 +210,29 @@ export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProp
           </Button>
         ) : null
       }
-      width={previewKind === 'image' ? 720 : 960}
+      width={modalWidth}
       destroyOnClose
     >
       <Spin spinning={loading}>
         <div style={{ minHeight: 420, maxHeight: '70vh', overflow: 'auto' }}>
+          {previewKind === 'office' && officePreviewUrl ? (
+            <iframe
+              title="Office 在线预览"
+              src={officePreviewUrl}
+              style={{ width: '100%', height: 600, border: 0 }}
+            />
+          ) : null}
           {previewKind === 'image' && objectUrl ? (
             <Image src={objectUrl} alt={target?.fileName || '预览'} style={{ maxWidth: '100%' }} />
           ) : null}
           {previewKind === 'pdf' && objectUrl ? (
             <iframe title="PDF 预览" src={objectUrl} style={{ width: '100%', height: '68vh', border: 0 }} />
           ) : null}
+          <div
+            ref={spreadsheetContainerRef}
+            className="spreadsheet-preview-host"
+            style={{ display: previewKind === 'spreadsheet' ? 'block' : 'none' }}
+          />
           <div
             ref={docxContainerRef}
             className="docx-preview-host"
@@ -185,9 +247,14 @@ export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProp
               ) : null}
             </Empty>
           ) : null}
-          {!loading && previewKind !== 'unsupported' && !objectUrl && previewKind !== 'docx' ? (
-            <Typography.Text type="secondary">暂无预览内容</Typography.Text>
-          ) : null}
+          {!loading
+            && previewKind !== 'unsupported'
+            && previewKind !== 'office'
+            && previewKind !== 'spreadsheet'
+            && previewKind !== 'docx'
+            && !objectUrl ? (
+              <Typography.Text type="secondary">暂无预览内容</Typography.Text>
+            ) : null}
         </div>
       </Spin>
     </Modal>

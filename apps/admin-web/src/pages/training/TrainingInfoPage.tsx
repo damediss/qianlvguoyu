@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Steps, Table, Tag, Typography, message } from 'antd';
-import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { EditOutlined, DeleteOutlined, PictureOutlined, UploadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
-import type { TrainInfoListItem, TrainInfoListEditReq } from '../../types/training';
+import type { TrainInfoListItem, TrainInfoListEditReq, TrainInfoListQuery } from '../../types/training';
 
 /** 与 PHP trainingInformation 一致：0 进行中 / 1 待确认 / 2 已完成 */
 const STATUS_MAP: Record<number, { label: string; color: string }> = {
@@ -13,23 +13,44 @@ const STATUS_MAP: Record<number, { label: string; color: string }> = {
   2: { label: '已完成', color: 'success' },
 };
 
+function formatWorkTypeTitle(item: TrainInfoListItem): string {
+  const title = item.work_type_title ?? '-';
+  const level = item.work_type_level;
+  const levelText = level && level > 0 ? `${level}级` : '-';
+  return `${title}(${levelText})`;
+}
+
 export function TrainingInfoPage() {
   const queryClient = useQueryClient();
   const [form] = Form.useForm<TrainInfoListEditReq>();
-  const [query, setQuery] = useState({ page: 1, limit: 10, passStatus: 1, headConfirm: 0 });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(10);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
   const [companyId, setCompanyId] = useState<number | undefined>();
   const [workTypeId, setWorkTypeId] = useState<number | undefined>();
 
+  const listQuery: TrainInfoListQuery = useMemo(
+    () => ({
+      page: currentPage,
+      limit: pageSize,
+      yundemandList: true,
+      companyId,
+      workTypeId,
+    }),
+    [currentPage, pageSize, companyId, workTypeId],
+  );
+
   const { data: publicData } = useQuery({
-    queryKey: ['demand-public-data'],
-    queryFn: () => trainApi.getDemandPublicData(),
+    queryKey: ['demand-public-data', 'training-info'],
+    queryFn: () => trainApi.getDemandPublicData(['company', 'worktype']),
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ['training-info', query, companyId, workTypeId],
-    queryFn: () => trainApi.pageInfoLists({ ...query, companyId, workTypeId }),
+    queryKey: ['training-info', listQuery],
+    queryFn: () => trainApi.pageInfoLists(listQuery),
   });
 
   const updateMu = useMutation({
@@ -43,10 +64,11 @@ export function TrainingInfoPage() {
     onSuccess: () => { message.success('删除成功'); queryClient.invalidateQueries({ queryKey: ['training-info'] }); },
   });
 
-  const closeModal = () => { setModalOpen(false); setEditingId(null); form.resetFields(); };
+  const closeModal = () => { setModalOpen(false); setEditingId(null); setEditingTitle(''); form.resetFields(); };
 
   const openEdit = (r: TrainInfoListItem) => {
     setEditingId(r.id);
+    setEditingTitle(r.title);
     form.setFieldsValue({ courseNum: r.course_num, position: r.position, status: r.status });
     setModalOpen(true);
   };
@@ -59,7 +81,7 @@ export function TrainingInfoPage() {
   const handleReset = () => {
     setCompanyId(undefined);
     setWorkTypeId(undefined);
-    setQuery(prev => ({ ...prev, page: 1 }));
+    setCurrentPage(1);
   };
 
   const companyOptions = (publicData?.company_list ?? []).map(c => ({ value: c.id, label: c.title }));
@@ -71,12 +93,12 @@ export function TrainingInfoPage() {
   const columns: ColumnsType<TrainInfoListItem> = [
     {
       title: '序号', key: 'index', width: 60,
-      render: (_, __, i) => (query.page - 1) * query.limit + i + 1,
+      render: (_, __, i) => (currentPage - 1) * pageSize + i + 1,
     },
     { title: '标题', dataIndex: 'title', width: 180, ellipsis: true },
     { title: '接受培训公司', dataIndex: 'company_name', width: 160, ellipsis: true },
     { title: '培训机构', dataIndex: 'train_company_name', width: 120 },
-    { title: '工种', dataIndex: 'work_type_title', width: 100 },
+    { title: '工种', dataIndex: 'work_type_title', width: 140, render: (_, row) => formatWorkTypeTitle(row) },
     { title: '人数', dataIndex: 'num', width: 70, align: 'center' },
     { title: '地点', dataIndex: 'position', width: 100 },
     { title: '课时', dataIndex: 'course_num', width: 70, align: 'center' },
@@ -117,12 +139,12 @@ export function TrainingInfoPage() {
           current={1}
           size="small"
           items={[
-            { title: '企业需求' },
-            { title: '培训信息' },
-            { title: '培训方案' },
-            { title: '申报' },
-            { title: '开班' },
-            { title: '补贴' },
+            { title: '需求管理', icon: <EditOutlined /> },
+            { title: '培训信息', icon: <UploadOutlined /> },
+            { title: '班级人员', icon: <PictureOutlined /> },
+            { title: '开班申报', icon: <EditOutlined /> },
+            { title: '课表配置', icon: <UploadOutlined /> },
+            { title: '毕业', icon: <PictureOutlined /> },
           ]}
         />
       </Card>
@@ -136,20 +158,20 @@ export function TrainingInfoPage() {
             style={{ width: 220 }}
             filterOption={(input, option) => (option?.label as string || '').includes(input)}
             value={companyId}
-            onChange={v => { setCompanyId(v); setQuery(prev => ({ ...prev, page: 1 })); }}
+            onChange={v => { setCompanyId(v); setCurrentPage(1); }}
             options={companyOptions}
           />
           <Select
             allowClear
             showSearch
-            placeholder="工种筛选"
+            placeholder="请选择工种"
             style={{ width: 220 }}
             filterOption={(input, option) => (option?.label as string || '').includes(input)}
             value={workTypeId}
-            onChange={v => { setWorkTypeId(v); setQuery(prev => ({ ...prev, page: 1 })); }}
+            onChange={v => { setWorkTypeId(v); setCurrentPage(1); }}
             options={workTypeOptions}
           />
-          <Button onClick={handleReset}>重置</Button>
+          <Button type="primary" onClick={handleReset}>重置</Button>
         </Space>
       </Card>
 
@@ -162,19 +184,19 @@ export function TrainingInfoPage() {
           dataSource={data?.list ?? []}
           scroll={{ x: 1300 }}
           pagination={{
-            current: query.page,
-            pageSize: query.limit,
+            current: currentPage,
+            pageSize,
             total: data?.total ?? 0,
             showSizeChanger: false,
             showTotal: t => `共 ${t} 条`,
             position: ['bottomRight'],
-            onChange: p => setQuery(prev => ({ ...prev, page: p })),
+            onChange: p => setCurrentPage(p),
           }}
         />
       </Card>
 
       <Modal
-        title="编辑培训信息"
+        title={editingTitle ? `${editingTitle}-信息编辑` : '编辑培训信息'}
         open={modalOpen}
         onOk={handleSubmit}
         onCancel={closeModal}

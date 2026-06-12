@@ -3,7 +3,6 @@ package com.guoyu.platform.trainingdepartment.service;
 import lombok.extern.slf4j.Slf4j;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
@@ -165,12 +164,7 @@ public class TrainPeopleListApplicationService {
 
   @Transactional
   public void batchAudit(SignupAuditReq req) {
-    Long tenantId = SecurityContext.currentUser().getTenantId();
-    mapper.update(null, new LambdaUpdateWrapper<TrainPeopleListEntity>()
-        .set(TrainPeopleListEntity::getStatus, req.getStatus())
-        .in(TrainPeopleListEntity::getId, req.getIds())
-        .eq(TrainPeopleListEntity::getTenantId, tenantId)
-        .eq(TrainPeopleListEntity::getDeleted, 0));
+    throw new BusinessException(ErrorCode.BAD_REQUEST, "遗留 train_people_list 表无 status 字段，不支持批量审核");
   }
 
   // ==================== 班级学员 ====================
@@ -645,8 +639,7 @@ public class TrainPeopleListApplicationService {
         entity.getSortNumber(),
         entity.getTenantId(),
         entity.getCreateTime(),
-        entity.getIdCard(),
-        entity.getStatus()
+        entity.getIdCard()
     );
   }
 }

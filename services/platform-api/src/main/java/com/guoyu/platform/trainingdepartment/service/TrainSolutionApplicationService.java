@@ -7,6 +7,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.file.entity.FileEntity;
+import com.guoyu.platform.file.mapper.FileMapper;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.trainingdepartment.dto.TrainSolutionBadgeItem;
 import com.guoyu.platform.trainingdepartment.dto.TrainSolutionCreateReq;
@@ -23,10 +25,13 @@ import com.guoyu.platform.trainingdepartment.vo.TrainSolutionBadgeVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainSolutionListVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainSolutionVO;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,15 +44,22 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class TrainSolutionApplicationService {
 
+  private static final Pattern FILE_API_PATTERN = Pattern.compile("/api/files/(\\d+)/download");
+
   private final TrainSolutionMapper mapper;
   private final TrainSolutionBadgeMapper badgeMapper;
   private final TrainInfoListMapper trainInfoListMapper;
+  private final FileMapper fileMapper;
 
-  public TrainSolutionApplicationService(TrainSolutionMapper mapper, TrainSolutionBadgeMapper badgeMapper,
-      TrainInfoListMapper trainInfoListMapper) {
+  public TrainSolutionApplicationService(
+      TrainSolutionMapper mapper,
+      TrainSolutionBadgeMapper badgeMapper,
+      TrainInfoListMapper trainInfoListMapper,
+      FileMapper fileMapper) {
     this.mapper = mapper;
     this.badgeMapper = badgeMapper;
     this.trainInfoListMapper = trainInfoListMapper;
+    this.fileMapper = fileMapper;
   }
 
   @Transactional(readOnly = true)
@@ -117,6 +129,7 @@ public class TrainSolutionApplicationService {
     entity.setFilePath(req.getFilePath());
     entity.setRejectReason(req.getRejectReason());
     entity.setDeleted(0);
+    entity.setCreateTime(LocalDateTime.now());
     mapper.insert(entity);
     return listForPage(1, 10);
   }
@@ -340,13 +353,10 @@ public class TrainSolutionApplicationService {
     // 经费明细
     List<TrainSolutionBadgeVO> badgeList = getBadges(id);
 
-    // 文件类型
-    String fileType = "";
+    // 文件类型（优先从 platform file 元数据解析，兼容 /api/files/{id}/download）
     String fileUrl = entity.getFilePath() != null ? entity.getFilePath() : "";
-    if (fileUrl.contains(".")) {
-      String ext = fileUrl.substring(fileUrl.lastIndexOf('.') + 1).toLowerCase();
-      fileType = ext;
-    }
+    String fileType = resolveFileType(fileUrl);
+    String fileName = resolveFileName(fileUrl);
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("id", entity.getId());
@@ -357,6 +367,7 @@ public class TrainSolutionApplicationService {
     data.put("train_title", trainTitle);
     data.put("file_path", entity.getFilePath());
     data.put("file", fileUrl);
+    data.put("file_name", fileName);
     data.put("fileType", fileType);
     data.put("content", entity.getContent());
     data.put("reject_reason", entity.getRejectReason());
@@ -392,10 +403,8 @@ public class TrainSolutionApplicationService {
     String trainTitle = trainInfo.getTitle() != null ? trainInfo.getTitle() : "";
     List<TrainSolutionBadgeVO> badgeList = getBadges(solution.getId());
     String fileUrl = solution.getFilePath() != null ? solution.getFilePath() : "";
-    String fileType = "";
-    if (fileUrl.contains(".")) {
-      fileType = fileUrl.substring(fileUrl.lastIndexOf('.') + 1).toLowerCase();
-    }
+    String fileType = resolveFileType(fileUrl);
+    String fileName = resolveFileName(fileUrl);
 
     Map<String, Object> data = new LinkedHashMap<>();
     data.put("id", solution.getId());
@@ -406,6 +415,7 @@ public class TrainSolutionApplicationService {
     data.put("train_title", trainTitle);
     data.put("file_path", solution.getFilePath());
     data.put("file", fileUrl);
+    data.put("file_name", fileName);
     data.put("fileType", fileType);
     data.put("badgeList", badgeList);
     data.put("train_info_status", trainInfo.getCompanyHasConfirm());
@@ -444,6 +454,7 @@ public class TrainSolutionApplicationService {
       entity.setCompanyName(req.getCompanyName());
       entity.setSortNumber(1);
       entity.setDeleted(0);
+      entity.setCreateTime(LocalDateTime.now());
       mapper.insert(entity);
       // 对齐 PHP YuntrainController::solutionsaveAction：新建方案后培训信息 status=1（待确认）
       markTrainInfoPendingConfirm(req.getTraininfoId(), tenantId);
@@ -534,5 +545,70 @@ public class TrainSolutionApplicationService {
         entity.getFilePath(),
         entity.getRejectReason()
     );
+  }
+
+  private String resolveFileType(String fileUrl) {
+    FileEntity entity = findPlatformFile(fileUrl);
+    if (entity != null) {
+      return inferFileType(entity.getOriginalName(), entity.getContentType());
+    }
+    return inferFileTypeFromPath(fileUrl);
+  }
+
+  private String resolveFileName(String fileUrl) {
+    FileEntity entity = findPlatformFile(fileUrl);
+    if (entity != null && StringUtils.hasText(entity.getOriginalName())) {
+      return entity.getOriginalName();
+    }
+    return inferFileNameFromPath(fileUrl);
+  }
+
+  private FileEntity findPlatformFile(String fileUrl) {
+    if (!StringUtils.hasText(fileUrl)) {
+      return null;
+    }
+    Matcher matcher = FILE_API_PATTERN.matcher(fileUrl.trim());
+    if (!matcher.find()) {
+      return null;
+    }
+    Long fileId = Long.parseLong(matcher.group(1));
+    return fileMapper.selectOne(new LambdaQueryWrapper<FileEntity>()
+        .eq(FileEntity::getId, fileId)
+        .eq(FileEntity::getDeleted, 0)
+        .eq(FileEntity::getStatus, "uploaded"));
+  }
+
+  private String inferFileTypeFromPath(String fileUrl) {
+    if (!StringUtils.hasText(fileUrl) || !fileUrl.contains(".")) {
+      return "";
+    }
+    String ext = fileUrl.substring(fileUrl.lastIndexOf('.') + 1).toLowerCase();
+    int slash = ext.indexOf('/');
+    return slash >= 0 ? ext.substring(0, slash) : ext;
+  }
+
+  private String inferFileNameFromPath(String fileUrl) {
+    if (!StringUtils.hasText(fileUrl)) {
+      return "";
+    }
+    String path = fileUrl.split("\\?")[0];
+    return path.substring(path.lastIndexOf('/') + 1);
+  }
+
+  private String inferFileType(String originalName, String contentType) {
+    if (StringUtils.hasText(originalName) && originalName.contains(".")) {
+      return originalName.substring(originalName.lastIndexOf('.') + 1).toLowerCase();
+    }
+    if (!StringUtils.hasText(contentType)) {
+      return "";
+    }
+    String type = contentType.toLowerCase();
+    if (type.contains("pdf")) {
+      return "pdf";
+    }
+    if (type.contains("wordprocessingml") || type.contains("msword") || type.contains("docx")) {
+      return "docx";
+    }
+    return "";
   }
 }

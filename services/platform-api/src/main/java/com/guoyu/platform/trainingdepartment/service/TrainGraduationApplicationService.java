@@ -190,24 +190,19 @@ public class TrainGraduationApplicationService {
     infoEntity.setStatus(2);
     infoListMapper.updateById(infoEntity);
 
-    // 标记班级所有学员为已毕业
-    List<TrainPeopleListEntity> students = peopleListMapper.selectList(
+    // 遗留 train_people_list 无 status 列，毕业仅更新培训信息状态
+    Long graduateCount = peopleListMapper.selectCount(
         new LambdaQueryWrapper<TrainPeopleListEntity>()
             .eq(TrainPeopleListEntity::getTrainClassId, classId)
             .eq(TrainPeopleListEntity::getType, "student")
             .eq(TrainPeopleListEntity::getDeleted, 0));
 
-    for (TrainPeopleListEntity s : students) {
-      s.setStatus(3); // 3=已毕业
-      peopleListMapper.updateById(s);
-    }
-
-    log.info("班级 {} 毕业完成，学员数: {}, 操作时间: {}", classId, students.size(), LocalDateTime.now());
+    log.info("班级 {} 毕业完成，学员数: {}, 操作时间: {}", classId, graduateCount, LocalDateTime.now());
 
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("classId", classId);
     result.put("trainInfoId", trainInfoId);
-    result.put("graduateCount", students.size());
+    result.put("graduateCount", graduateCount);
     result.put("status", "completed");
     return result;
   }

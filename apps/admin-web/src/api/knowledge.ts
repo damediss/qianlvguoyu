@@ -1,4 +1,5 @@
 import { apiClient, unwrap } from './client';
+import { uploadPlatformFile } from './files';
 import type { PageResponse } from '../types/api';
 import type {
   FileVO,
@@ -79,9 +80,6 @@ export function createAnswerDraft(payload: SearchPayload & { question: string })
   return unwrap<KnowledgeAnswerDraft>(apiClient.post('/knowledge/answer-drafts', { question, spaceIds, categoryCode, topK }));
 }
 
-export async function uploadFile(file: File, accessPolicy = 'private') {
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('accessPolicy', accessPolicy);
-  return unwrap<FileVO>(apiClient.post('/files', formData));
+export function uploadFile(file: File | Blob, accessPolicy = 'private') {
+  return uploadPlatformFile(file, accessPolicy);
 }

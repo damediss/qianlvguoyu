@@ -291,6 +291,7 @@ public class DemandTrainApplicationService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", t.getId());
         m.put("title", t.getTitle());
+        m.put("company_id", t.getCompanyId());
         return m;
       }).toList();
       data.put("traininfo_list", traininfoList);

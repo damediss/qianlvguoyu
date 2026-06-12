@@ -23,6 +23,16 @@ public class TrainInfoListQueryReq extends PageQuery {
   private Integer groupTypeNe;
   /** 分类标签（精确匹配） */
   private String cate;
+  /** 对齐 PHP YundemandController::traininfolistAction，忽略 headConfirm/passStatus 筛选 */
+  private Boolean yundemandList;
+
+  public Boolean getYundemandList() {
+    return yundemandList;
+  }
+
+  public void setYundemandList(Boolean yundemandList) {
+    this.yundemandList = yundemandList;
+  }
 
   public String getKeyword() {
     return keyword;

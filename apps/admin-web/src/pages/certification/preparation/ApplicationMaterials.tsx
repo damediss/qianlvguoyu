@@ -140,6 +140,9 @@ export function ApplicationMaterials({ taskId, onChanged }: ApplicationMaterials
               setPreviewTarget({
                 fileId: String(record.fileId),
                 fileName: record.fileName,
+                fileType: record.fileName?.includes('.')
+                  ? record.fileName.substring(record.fileName.lastIndexOf('.') + 1).toLowerCase()
+                  : undefined,
               })
             }
           >

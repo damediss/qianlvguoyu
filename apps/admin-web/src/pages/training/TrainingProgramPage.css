@@ -63,6 +63,34 @@
   border: 1px solid #e0e0e0;
 }
 
+.training-program-page .solution-doc-preview {
+  margin-top: 10px;
+  min-height: 300px;
+  max-height: 70vh;
+  overflow: auto;
+  border: 1px solid #e0e0e0;
+  background: #525659;
+  padding: 12px;
+}
+
+.training-program-page .solution-doc-preview__iframe {
+  width: 100%;
+  min-height: 300px;
+  height: 70vh;
+  border: none;
+  background: #fff;
+}
+
+.training-program-page .solution-doc-preview__docx {
+  background: #525659;
+}
+
+.training-program-page .solution-doc-preview .docx-wrapper {
+  margin: 0 auto;
+  background: #fff;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+}
+
 .training-program-page .office-box iframe {
   width: 100%;
   height: 100%;

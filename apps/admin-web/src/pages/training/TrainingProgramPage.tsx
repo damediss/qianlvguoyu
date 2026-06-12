@@ -2,7 +2,7 @@
  * 培训方案 — 对齐 yun_shang trainingProgram.vue
  * 单表 + 编辑弹窗 + 查看弹窗；接口 /api/training/solutions/*
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Button,
   Form,
@@ -19,10 +19,10 @@ import {
 import { PlusOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadProps } from 'antd';
-import type { RcFile } from 'antd/es/upload/interface';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
-import { uploadFile } from '../../api/knowledge';
+import { uploadPlatformFile, resolveUploadFile, downloadUrlFile, fileNameFromUrl } from '../../api/files';
+import { SolutionDocumentPreview } from '../../components/SolutionDocumentPreview';
 import type {
   TrainSolutionList,
   TrainSolutionDetail,
@@ -98,11 +98,28 @@ export function TrainingProgramPage() {
       label: c.title,
     })) ?? [];
 
-  const traininfoOptions =
-    (publicData as DemandPublicData | undefined)?.traininfo_list?.map((t) => ({
-      value: t.id,
-      label: t.title,
-    })) ?? [];
+  const selectedCompanyId = Form.useWatch('companyId', form);
+  const allTraininfoOptions = (publicData as DemandPublicData | undefined)?.traininfo_list ?? [];
+
+  const traininfoOptions = useMemo(() => {
+    if (!selectedCompanyId) return [];
+    const cid = Number(selectedCompanyId);
+    return allTraininfoOptions
+      .filter((t) => t.company_id != null && Number(t.company_id) === cid)
+      .map((t) => ({ value: t.id, label: t.title }));
+  }, [allTraininfoOptions, selectedCompanyId]);
+
+  const handleCompanyChange = (companyId?: number) => {
+    const traininfoId = form.getFieldValue('traininfoId') as number | undefined;
+    if (!traininfoId) return;
+    const cid = companyId != null ? Number(companyId) : undefined;
+    const stillValid = allTraininfoOptions.some(
+      (t) => t.id === traininfoId && cid != null && Number(t.company_id) === cid,
+    );
+    if (!stillValid) {
+      form.setFieldsValue({ traininfoId: undefined });
+    }
+  };
 
   const closeEdit = () => {
     setEditOpen(false);
@@ -147,7 +164,8 @@ export function TrainingProgramPage() {
       setTrainProgram({
         ...d,
         file,
-        fileType: d.fileType || fileTypeFromPath(file),
+        file_name: d.file_name || fileNameFromUrl(file),
+        fileType: d.fileType || fileTypeFromPath(d.file_name) || fileTypeFromPath(file),
         badgeList: (d.badgeList ?? []).map((b) => ({
           ...b,
           badge: Number(b.badge),
@@ -199,40 +217,62 @@ export function TrainingProgramPage() {
   };
 
   const uploadProps: UploadProps = {
-    name: 'file',
     multiple: false,
     accept: '.pdf,.docx',
     maxCount: 1,
     showUploadList: false,
     className: 'upload-demos',
-    beforeUpload: (file) => {
+    customRequest: async ({ file, onSuccess, onError }) => {
+      const rawFile = resolveUploadFile(file as File | Blob | { originFileObj?: File });
+      if (!(rawFile instanceof Blob)) {
+        message.error('无法读取文件，请重新选择');
+        onError?.(new Error('invalid file'));
+        return;
+      }
+      const fileName = rawFile instanceof File ? rawFile.name : 'upload.bin';
       const ok =
-        file.name.endsWith('.pdf') ||
-        file.name.endsWith('.docx') ||
-        file.type === 'application/pdf' ||
-        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        fileName.endsWith('.pdf') ||
+        fileName.endsWith('.docx') ||
+        rawFile.type === 'application/pdf' ||
+        rawFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
       if (!ok) {
         message.error('只能上传 .pdf、.docx 文件');
-        return Upload.LIST_IGNORE;
+        onError?.(new Error('invalid type'));
+        return;
       }
-      return true;
-    },
-    customRequest: async ({ file, onSuccess, onError }) => {
+      if (rawFile.size <= 0) {
+        message.error('文件为空，请重新选择');
+        onError?.(new Error('empty file'));
+        return;
+      }
       try {
-        const rawFile = (file as RcFile).originFileObj instanceof File
-          ? (file as RcFile).originFileObj!
-          : (file as RcFile);
-        const result = await uploadFile(rawFile, 'public');
+        const result = await uploadPlatformFile(rawFile, 'public');
         const url = `/api/files/${result.id}/download`;
         form.setFieldsValue({ filePath: url });
         setFilePathTip(url);
         message.success('上传成功');
         onSuccess?.(result);
-      } catch (e) {
+      } catch {
         message.error('上传失败');
-        onError?.(e as Error);
+        onError?.(new Error('upload failed'));
       }
     },
+  };
+
+  const handleDownloadSolution = async () => {
+    if (!trainProgram?.file) {
+      return;
+    }
+    try {
+      const ext = trainProgram.fileType ? `.${trainProgram.fileType}` : '';
+      const storedName = trainProgram.file_name;
+      const urlName = fileNameFromUrl(trainProgram.file);
+      const downloadName =
+        storedName || (urlName && urlName !== 'download' ? urlName : `${trainProgram.title || '培训方案'}${ext}`);
+      await downloadUrlFile(trainProgram.file, downloadName);
+    } catch {
+      message.error('下载失败');
+    }
   };
 
   const columns: ColumnsType<TrainSolutionList> = [
@@ -315,12 +355,24 @@ export function TrainingProgramPage() {
             <Input placeholder="请输入标题" />
           </Form.Item>
           <Form.Item name="companyId" label="受训单位" rules={[{ required: true, message: '请选择受训企业' }]}>
-            <Select showSearch allowClear placeholder="受训单位" options={companyOptions}
-              filterOption={(input, opt) => (opt?.label as string ?? '').includes(input)} />
+            <Select
+              showSearch
+              allowClear
+              placeholder="受训单位"
+              options={companyOptions}
+              filterOption={(input, opt) => (opt?.label as string ?? '').includes(input)}
+              onChange={handleCompanyChange}
+            />
           </Form.Item>
           <Form.Item name="traininfoId" label="绑定培训需求" rules={[{ required: true, message: '请选择绑定的需求' }]}>
-            <Select showSearch allowClear placeholder="培训需求" options={traininfoOptions}
-              filterOption={(input, opt) => (opt?.label as string ?? '').includes(input)} />
+            <Select
+              showSearch
+              allowClear
+              placeholder={selectedCompanyId ? '培训需求' : '请先选择受训单位'}
+              disabled={!selectedCompanyId}
+              options={traininfoOptions}
+              filterOption={(input, opt) => (opt?.label as string ?? '').includes(input)}
+            />
           </Form.Item>
           <Form.Item name="filePath" hidden>
             <Input />
@@ -443,24 +495,17 @@ export function TrainingProgramPage() {
             {trainProgram.file ? (
               <p className="mar-t10">
                 <strong>方案详情：</strong>{' '}
-                <a href={trainProgram.file} target="_blank" rel="noreferrer">
+                <Button type="link" className="link-view" style={{ padding: 0 }} onClick={() => void handleDownloadSolution()}>
                   下载
-                </a>
+                </Button>
               </p>
             ) : null}
-            {trainProgram.file && ['pdf', 'docx', 'pptx'].includes(trainProgram.fileType ?? '') ? (
-              <div className="office-box mar-t10">
-                {trainProgram.fileType === 'pdf' ? (
-                  <iframe src={trainProgram.file} title="PDF预览" />
-                ) : (
-                  <iframe
-                    title="文档预览"
-                    src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(
-                      window.location.origin + trainProgram.file,
-                    )}`}
-                  />
-                )}
-              </div>
+            {trainProgram.file ? (
+              <SolutionDocumentPreview
+                fileUrl={trainProgram.file}
+                fileName={trainProgram.file_name}
+                fileType={trainProgram.fileType}
+              />
             ) : null}
           </div>
         )}

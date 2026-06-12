@@ -1,0 +1,25 @@
+-- 参考：gjjddb 遗留 train_people_list 结构（来源 train_people_list.sql）
+CREATE TABLE IF NOT EXISTS `train_people_list` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `train_id` int(11) NULL DEFAULT NULL,
+  `train_class_id` int(11) NOT NULL DEFAULT 0,
+  `type` varchar(20) NULL DEFAULT NULL COMMENT '类型:student:学员,staff:教师,inCharge:负责人',
+  `user_id` int(11) NULL DEFAULT NULL COMMENT '教师id',
+  `platform_user_id` int(11) NOT NULL DEFAULT 0,
+  `realname` varchar(20) NULL DEFAULT NULL COMMENT '姓名',
+  `phone` varchar(20) NULL DEFAULT NULL COMMENT '手机号',
+  `is_leader` tinyint(1) NULL DEFAULT 0 COMMENT '是否班长',
+  `is_committee` tinyint(1) NULL DEFAULT 0 COMMENT '是否班委',
+  `exam_score` decimal(10, 2) NULL DEFAULT 0.00 COMMENT '考试分数',
+  `real_score` decimal(10, 1) NULL DEFAULT 0.0 COMMENT '真实分数',
+  `paper` varchar(255) NULL DEFAULT NULL COMMENT '证书',
+  `normal_score` decimal(10, 2) NULL DEFAULT 0.00 COMMENT '平时分',
+  `national_paper` varchar(255) NULL DEFAULT NULL COMMENT '国家证书',
+  `current_level` tinyint(1) NULL DEFAULT 0 COMMENT '当前等级',
+  `deleted` int(1) NOT NULL DEFAULT 0 COMMENT '是否删除, 0否, 1是',
+  `sort_number` int(11) NOT NULL DEFAULT 1 COMMENT '排序号',
+  `tenant_id` int(11) NOT NULL DEFAULT 10159 COMMENT '租户id',
+  `create_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `id_card` varchar(255) NULL DEFAULT NULL,
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='开班人员列表';

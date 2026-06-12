@@ -45,6 +45,13 @@ function resolveWxQrcodeDisplayUrl(
 }
 
 /** 将 CDN 绝对地址转为同源相对路径，便于 dev 代理与 img 加载 */
+function fileTypeFromPath(path?: string): string {
+  if (!path || !path.includes('.')) return '';
+  const ext = path.substring(path.lastIndexOf('.') + 1).toLowerCase();
+  const slash = ext.indexOf('/');
+  return slash >= 0 ? ext.substring(0, slash) : ext;
+}
+
 function toProxiedCdnUrl(url: string): string {
   if (!url) return url;
   const marker = '/exam/files/';
@@ -139,7 +146,14 @@ function normalizeSignUpPlanFiles(raw: unknown): TrainSignUpSelfFile[] {
       if (item && typeof item === 'object') {
         const row = item as Record<string, unknown>;
         const fileUrl = String(row.fileUrl ?? row.file_url ?? '');
-        return fileUrl ? { fileUrl } : null;
+        if (!fileUrl) return null;
+        const fileName = row.fileName ?? row.file_name;
+        const fileType = row.fileType ?? row.file_type;
+        return {
+          fileUrl,
+          fileName: fileName != null ? String(fileName) : undefined,
+          fileType: fileType != null ? String(fileType) : undefined,
+        };
       }
       return null;
     })
@@ -347,9 +361,12 @@ export function TrainingInformationPage() {
   };
 
   const previewPlanFile = (file: TrainSignUpSelfFile) => {
+    const fileName = file.fileName || fileNameFromUrl(file.fileUrl);
+    const fileType = file.fileType || fileTypeFromPath(fileName) || fileTypeFromPath(file.fileUrl);
     setFilePreviewTarget({
       fileUrl: file.fileUrl,
-      fileName: fileNameFromUrl(file.fileUrl),
+      fileName,
+      fileType,
     });
   };
 

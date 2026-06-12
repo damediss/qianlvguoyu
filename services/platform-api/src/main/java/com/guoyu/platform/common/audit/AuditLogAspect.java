@@ -9,8 +9,11 @@ import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.entity.AuditLogEntity;
 import com.guoyu.platform.system.mapper.AuditLogMapper;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.Part;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.AfterReturning;
@@ -20,11 +23,15 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+import org.springframework.web.multipart.MultipartFile;
 
 @Aspect
 @Component
 @Slf4j
 public class AuditLogAspect {
+
+  private static final int MAX_DETAIL_JSON_LENGTH = 60000;
+  private static final int MAX_STRING_LENGTH = 512;
 
   private final AuditLogMapper auditLogMapper;
   private final ObjectMapper objectMapper;
@@ -55,7 +62,11 @@ public class AuditLogAspect {
     entity.setDetailJson(toDetailJson(joinPoint));
     entity.setCreatedAt(LocalDateTime.now());
     entity.setDeleted(0);
-    auditLogMapper.insert(entity);
+    try {
+      auditLogMapper.insert(entity);
+    } catch (RuntimeException ex) {
+      log.warn("Audit log insert failed for {}:{} - {}", auditLog.module(), auditLog.action(), ex.getMessage());
+    }
   }
 
   private PlatformUserPrincipal currentPrincipal() {
@@ -92,11 +103,59 @@ public class AuditLogAspect {
   private String toDetailJson(JoinPoint joinPoint) {
     Map<String, Object> detail = new LinkedHashMap<>();
     detail.put("method", joinPoint.getSignature().toShortString());
-    detail.put("args", joinPoint.getArgs());
+    detail.put("args", sanitizeArgs(joinPoint.getArgs()));
     try {
-      return objectMapper.writeValueAsString(detail);
+      String json = objectMapper.writeValueAsString(detail);
+      if (json.length() <= MAX_DETAIL_JSON_LENGTH) {
+        return json;
+      }
+      return json.substring(0, MAX_DETAIL_JSON_LENGTH) + "...";
     } catch (JsonProcessingException ex) {
       return "{\"error\":\"audit detail serialization failed\"}";
     }
+  }
+
+  private List<Object> sanitizeArgs(Object[] args) {
+    if (args == null || args.length == 0) {
+      return List.of();
+    }
+    List<Object> sanitized = new ArrayList<>(args.length);
+    for (Object arg : args) {
+      sanitized.add(sanitizeArg(arg));
+    }
+    return sanitized;
+  }
+
+  private Object sanitizeArg(Object arg) {
+    if (arg == null) {
+      return null;
+    }
+    if (arg instanceof byte[] bytes) {
+      return Map.of("type", "byte[]", "length", bytes.length);
+    }
+    if (arg instanceof MultipartFile file) {
+      return Map.of(
+          "type", "MultipartFile",
+          "name", file.getOriginalFilename() != null ? file.getOriginalFilename() : "",
+          "size", file.getSize(),
+          "contentType", file.getContentType() != null ? file.getContentType() : "");
+    }
+    if (arg instanceof Part part) {
+      return Map.of(
+          "type", "Part",
+          "name", part.getName() != null ? part.getName() : "",
+          "size", part.getSize(),
+          "submittedFileName", part.getSubmittedFileName() != null ? part.getSubmittedFileName() : "");
+    }
+    if (arg instanceof HttpServletRequest request) {
+      return Map.of("type", "HttpServletRequest", "method", request.getMethod(), "uri", request.getRequestURI());
+    }
+    if (arg instanceof String text) {
+      if (text.length() <= MAX_STRING_LENGTH) {
+        return text;
+      }
+      return text.substring(0, MAX_STRING_LENGTH) + "...";
+    }
+    return arg;
   }
 }

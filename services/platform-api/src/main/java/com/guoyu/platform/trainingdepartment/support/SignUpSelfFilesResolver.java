@@ -44,7 +44,9 @@ public class SignUpSelfFilesResolver {
         String normalized = path.startsWith("/") ? path.substring(1) : path;
         Path file = Paths.get(cdnPath, normalized);
         if (Files.exists(file)) {
-          result.add(new TrainSignUpSelfFileVO(cdnUrl + "/" + normalized));
+          String fileName = normalized.substring(normalized.lastIndexOf('/') + 1);
+          String fileType = inferFileType(fileName);
+          result.add(new TrainSignUpSelfFileVO(cdnUrl + "/" + normalized, fileName, fileType));
         }
       }
       return result;
@@ -73,5 +75,12 @@ public class SignUpSelfFilesResolver {
   public String publicUrl(String relativePath) {
     String normalized = relativePath.startsWith("/") ? relativePath.substring(1) : relativePath;
     return cdnUrl + "/" + normalized;
+  }
+
+  private static String inferFileType(String fileName) {
+    if (!StringUtils.hasText(fileName) || !fileName.contains(".")) {
+      return "";
+    }
+    return fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
   }
 }
