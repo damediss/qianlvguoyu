@@ -1,12 +1,19 @@
-import { DownloadOutlined } from '@ant-design/icons';
-import { Button, Descriptions, Empty, Space, Table, Tabs } from 'antd';
+import { CheckCircleOutlined, CloseCircleOutlined, DownloadOutlined } from '@ant-design/icons';
+import { Alert, Button, Descriptions, Empty, List, message, Space, Table, Tabs, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useQuery } from '@tanstack/react-query';
-import { downloadArchiveFile, getArchiveDetail, pageArchiveCandidates } from '../../../api/certificationArchive';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  confirmArchiveRecord,
+  downloadArchiveFile,
+  getArchiveCompleteCheck,
+  getArchiveDetail,
+  pageArchiveCandidates,
+} from '../../../api/certificationArchive';
 import type { CertificationArchiveCandidate, CertificationArchiveCandidateMaterial, CertificationArchiveMaterial } from '../../../types/certificationArchive';
 import { archiveStatusTag, dateTimeText, fileSizeText } from './shared';
 
-export function ArchiveDetail({ archiveId }: { archiveId?: string }) {
+export function ArchiveDetail({ archiveId, onCompleted }: { archiveId?: string; onCompleted?: () => void }) {
+  const queryClient = useQueryClient();
   const detailQuery = useQuery({
     queryKey: ['certification-archive-detail', archiveId],
     queryFn: () => getArchiveDetail(archiveId!),
@@ -16,6 +23,24 @@ export function ArchiveDetail({ archiveId }: { archiveId?: string }) {
     queryKey: ['certification-archive-candidates', archiveId],
     queryFn: () => pageArchiveCandidates(archiveId!, { page: 1, pageSize: 50 }),
     enabled: !!archiveId,
+  });
+  const checkQuery = useQuery({
+    queryKey: ['certification-archive-complete-check', archiveId],
+    queryFn: () => getArchiveCompleteCheck(archiveId!),
+    enabled: !!archiveId,
+  });
+  const confirmMutation = useMutation({
+    mutationFn: () => confirmArchiveRecord(archiveId!),
+    onSuccess: (result) => {
+      if (!result.passed) {
+        message.warning(result.items.find((item) => !item.passed)?.message || '归档结束验核未通过');
+        return;
+      }
+      message.success('认定归档已完成，任务资源已释放');
+      queryClient.invalidateQueries({ queryKey: ['certification-archive-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['certification-archive-detail', archiveId] });
+      onCompleted?.();
+    },
   });
 
   if (!archiveId) {
@@ -53,6 +78,39 @@ export function ArchiveDetail({ archiveId }: { archiveId?: string }) {
           },
         ]}
       />
+      <div>
+        <Typography.Title level={5}>归档结束验核</Typography.Title>
+        <List
+          bordered
+          loading={checkQuery.isLoading}
+          dataSource={checkQuery.data?.items || []}
+          renderItem={(item) => (
+            <List.Item>
+              <Space>
+                {item.passed
+                  ? <CheckCircleOutlined style={{ color: '#16a34a' }} />
+                  : <CloseCircleOutlined style={{ color: '#dc2626' }} />}
+                <Typography.Text strong>{item.name}</Typography.Text>
+                <Typography.Text type={item.passed ? 'secondary' : 'danger'}>{item.message}</Typography.Text>
+              </Space>
+            </List.Item>
+          )}
+        />
+      </div>
+      {detail.record.archiveStatus === 'ARCHIVED' ? (
+        <Alert type="success" showIcon message="该任务已完成认定归档" />
+      ) : (
+        <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+          <Button
+            type="primary"
+            disabled={!checkQuery.data?.passed}
+            loading={confirmMutation.isPending}
+            onClick={() => confirmMutation.mutate()}
+          >
+            完成归档
+          </Button>
+        </Space>
+      )}
     </Space>
   );
 }

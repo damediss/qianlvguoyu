@@ -72,7 +72,8 @@ export interface PreparationCandidatePayload {
 export interface PreparationCandidateImportPayload {
   sourceType?: string;
   sourceFileId?: string;
-  candidates: PreparationCandidatePayload[];
+  candidates?: PreparationCandidatePayload[];
+  trainingPeopleIds?: number[];
   remark?: string;
 }
 

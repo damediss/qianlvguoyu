@@ -1,161 +1,186 @@
-import { FileDoneOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
-import { Button, Card, Empty, Input, Progress, Space, Table, Tag, Typography } from 'antd';
+import {
+  EyeOutlined,
+  FileDoneOutlined,
+  ReloadOutlined,
+  SearchOutlined,
+} from '@ant-design/icons';
+import {
+  Button,
+  Card,
+  Empty,
+  Input,
+  Modal,
+  Space,
+  Table,
+  Tag,
+  Typography,
+} from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { pageCertificationTasks } from '../../api/certification';
+import { pageArchiveRecords } from '../../api/certificationArchive';
 import { PermissionGate } from '../../directives/permission';
-import type { CertificationTask, CertificationTaskQuery } from '../../types/certification';
+import type {
+  ArchivePageQuery,
+  CertificationArchiveRecord,
+} from '../../types/certificationArchive';
+import { ArchiveDetail } from './archive/ArchiveDetail';
+import {
+  archiveStatusTag,
+  dateTimeText,
+} from './archive/shared';
 
-const phaseLabelMap: Record<string, string> = {
-  task_creation: '任务创建阶段',
-  preparation: '认定筹备阶段',
-  archive: '认定归档阶段',
-  certification_completed: '认定完成',
-};
-
-const statusLabelMap: Record<string, string> = {
-  in_progress: '进行中',
-  pending_review: '待审核',
-  rejected: '已驳回',
-  completed: '已完成',
-};
-
-function phaseTag(value?: string) {
-  const label = value ? phaseLabelMap[value] || value : '-';
-  const color = value === 'certification_completed' ? 'success' : 'default';
-  return <Tag color={color}>{label}</Tag>;
-}
-
-function statusTag(value?: string) {
-  const label = value ? statusLabelMap[value] || value : '-';
-  const colorMap: Record<string, string> = {
-    in_progress: 'processing',
-    pending_review: 'warning',
-    rejected: 'error',
-    completed: 'success',
-  };
-  const color = value ? colorMap[value] || 'default' : 'default';
-  return <Tag color={color}>{label}</Tag>;
-}
-
-function dash(value?: unknown) {
-  return value === undefined || value === null || value === '' ? '-' : String(value);
-}
-
-function dateTimeText(value?: string) {
-  return value ? value.replace('T', ' ').slice(0, 16) : '-';
+function archiveFlagTag(value?: boolean) {
+  return value
+    ? <Tag color="success">已完成</Tag>
+    : <Tag>未完成</Tag>;
 }
 
 /**
- * 任务档案：展示 current_phase = certification_completed 的任务清单。
+ * 任务档案：只展示已经完成归档的记录，并提供归档内容查看、下载入口。
  */
 export function TaskArchivePage() {
   const queryClient = useQueryClient();
-  // 任务档案模块：固定按任务阶段 = certification_completed 过滤
-  const [query, setQuery] = useState<CertificationTaskQuery>({
+  const [keywordInput, setKeywordInput] = useState('');
+  const [query, setQuery] = useState<ArchivePageQuery>({
     page: 1,
     pageSize: 10,
-    currentPhase: 'certification_completed',
+    archiveStatus: 'ARCHIVED',
   });
+  const [selectedArchiveId, setSelectedArchiveId] = useState<string>();
 
-  const tasksQuery = useQuery({
-    queryKey: ['certification-task-archive', query],
-    queryFn: () => pageCertificationTasks(query),
+  const recordsQuery = useQuery({
+    queryKey: ['certification-task-archive-records', query],
+    queryFn: () => pageArchiveRecords(query),
   });
-
-  const tasks = tasksQuery.data?.items || [];
 
   const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['certification-task-archive'] });
+    queryClient.invalidateQueries({ queryKey: ['certification-task-archive-records'] });
   };
 
-  const columns: ColumnsType<CertificationTask> = [
+  const search = (keyword: string) => {
+    setQuery((previous) => ({
+      ...previous,
+      keyword: keyword.trim() || undefined,
+      page: 1,
+    }));
+  };
+
+  const columns: ColumnsType<CertificationArchiveRecord> = [
     { title: '任务编号', dataIndex: 'taskNo', width: 160, fixed: 'left' },
-    { title: '任务名称', dataIndex: 'taskName', width: 230, ellipsis: true },
-    { title: '任务经理', dataIndex: 'taskManagerName', width: 110 },
-    { title: '工种', dataIndex: 'workTypeName', width: 130, render: dash },
-    { title: '等级', dataIndex: 'levelName', width: 110, render: dash },
-    { title: '计划人数', dataIndex: 'plannedPeopleCount', width: 100, render: dash },
-    { title: '考试日期', dataIndex: 'examDate', width: 120, render: dash },
+    { title: '任务名称', dataIndex: 'taskName', width: 240, ellipsis: true },
+    { title: '认定批次', dataIndex: 'batchName', width: 160, render: (value) => value || '-' },
+    { title: '工种/职业', dataIndex: 'workTypeName', width: 150, render: (value) => value || '-' },
+    { title: '等级', dataIndex: 'levelName', width: 120, render: (value) => value || '-' },
+    { title: '归档人数', dataIndex: 'candidateCount', width: 100 },
     {
-      title: '当前阶段',
-      dataIndex: 'currentPhase',
-      width: 140,
-      render: (value: string) => phaseTag(value),
-    },
-    {
-      title: '任务状态',
-      dataIndex: 'status',
+      title: '基础信息',
+      dataIndex: 'basicArchived',
       width: 110,
-      render: (value: string) => statusTag(value),
+      render: archiveFlagTag,
     },
     {
-      title: '阶段进度',
-      width: 140,
-      render: (_, record) => {
-        const total = record.phaseTotalCount || 4;
-        const done = record.phaseCompletedCount || 0;
-        const percent = total ? Math.round((done / total) * 100) : 0;
-        return <Progress percent={percent} size="small" />;
-      },
+      title: '归档材料',
+      dataIndex: 'materialArchived',
+      width: 110,
+      render: archiveFlagTag,
     },
     {
-      title: '完成时间',
-      dataIndex: 'lastBusinessUpdatedAt',
-      width: 170,
+      title: '归档状态',
+      dataIndex: 'archiveStatus',
+      width: 160,
+      render: archiveStatusTag,
+    },
+    {
+      title: '归档时间',
+      dataIndex: 'archivedAt',
+      width: 180,
       render: dateTimeText,
+    },
+    {
+      title: '操作人',
+      dataIndex: 'lastOperatorName',
+      width: 110,
+      render: (value) => value || '-',
+    },
+    {
+      title: '操作',
+      width: 110,
+      fixed: 'right',
+      render: (_, record) => (
+        <Button
+          size="small"
+          icon={<EyeOutlined />}
+          onClick={() => setSelectedArchiveId(record.id)}
+        >
+          查看
+        </Button>
+      ),
     },
   ];
 
   return (
-    <PermissionGate code="certification.archive.task.view" fallback={<Empty description="暂无任务档案访问权限" />}>
+    <PermissionGate
+      code="certification.archive.record.view"
+      fallback={<Empty description="暂无任务档案访问权限" />}
+    >
       <div className="knowledge-page">
         <div className="page-heading knowledge-heading">
-          <div>
-            <div className="page-title-line">
-              <div className="page-title-icon"><FileDoneOutlined /></div>
-              <div>
-                <Typography.Title level={1}>任务档案</Typography.Title>
-                <Typography.Text type="secondary">已经走完“认定完成”阶段的认定任务归档清单</Typography.Text>
-              </div>
+          <div className="page-title-line">
+            <div className="page-title-icon"><FileDoneOutlined /></div>
+            <div>
+              <Typography.Title level={1}>任务档案</Typography.Title>
+              <Typography.Text type="secondary">
+                集中查看已完成归档的认定任务、任务材料和考生材料
+              </Typography.Text>
             </div>
           </div>
-          <Space>
-            <Button icon={<ReloadOutlined />} onClick={refresh}>刷新</Button>
-          </Space>
+          <Button icon={<ReloadOutlined />} onClick={refresh}>刷新</Button>
         </div>
 
-        <Card title="任务列表" size="small">
+        <Card title="已归档任务" size="small">
           <Space wrap style={{ marginBottom: 12 }}>
-            <Input
+            <Input.Search
               allowClear
               prefix={<SearchOutlined />}
-              placeholder="搜索任务编号、名称、经理"
-              style={{ width: 280 }}
-              value={query.keyword}
-              onChange={(event) => setQuery((prev) => ({
-                ...prev,
-                keyword: event.target.value,
-                page: 1,
-              }))}
+              placeholder="搜索任务编号或任务名称"
+              style={{ width: 320 }}
+              value={keywordInput}
+              onChange={(event) => setKeywordInput(event.target.value)}
+              onSearch={search}
             />
           </Space>
           <Table
             rowKey="id"
             columns={columns}
-            dataSource={tasks}
-            loading={tasksQuery.isFetching}
-            scroll={{ x: 1600 }}
+            dataSource={recordsQuery.data?.items || []}
+            loading={recordsQuery.isFetching}
+            scroll={{ x: 1650 }}
             pagination={{
               current: query.page,
               pageSize: query.pageSize,
-              total: tasksQuery.data?.total || 0,
+              total: recordsQuery.data?.total || 0,
               showSizeChanger: true,
-              onChange: (page, pageSize) => setQuery((prev) => ({ ...prev, page, pageSize })),
+              showTotal: (total) => `共 ${total} 条已归档任务`,
+              onChange: (page, pageSize) => setQuery((previous) => ({
+                ...previous,
+                page,
+                pageSize,
+              })),
             }}
           />
         </Card>
+
+        <Modal
+          title="任务档案详情"
+          open={!!selectedArchiveId}
+          width={1120}
+          footer={null}
+          destroyOnHidden
+          onCancel={() => setSelectedArchiveId(undefined)}
+        >
+          <ArchiveDetail archiveId={selectedArchiveId} />
+        </Modal>
       </div>
     </PermissionGate>
   );

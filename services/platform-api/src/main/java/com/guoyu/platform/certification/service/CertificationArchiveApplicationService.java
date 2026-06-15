@@ -40,6 +40,14 @@ import com.guoyu.platform.certification.mapper.CertificationTaskExamStaffMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskPhaseMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskScopeMapper;
+import com.guoyu.platform.certification.info.entity.CertificationInfoAssessorEntity;
+import com.guoyu.platform.certification.info.entity.CertificationInfoExamEquipmentEntity;
+import com.guoyu.platform.certification.info.entity.CertificationInfoExamSiteEntity;
+import com.guoyu.platform.certification.info.entity.CertificationInfoExamStaffEntity;
+import com.guoyu.platform.certification.info.mapper.CertificationInfoAssessorMapper;
+import com.guoyu.platform.certification.info.mapper.CertificationInfoExamEquipmentMapper;
+import com.guoyu.platform.certification.info.mapper.CertificationInfoExamSiteMapper;
+import com.guoyu.platform.certification.info.mapper.CertificationInfoExamStaffMapper;
 import com.guoyu.platform.certification.vo.CertificationArchiveBasicSnapshotVO;
 import com.guoyu.platform.certification.vo.CertificationArchiveCandidateMaterialVO;
 import com.guoyu.platform.certification.vo.CertificationArchiveCandidateVO;
@@ -135,6 +143,10 @@ public class CertificationArchiveApplicationService {
   private final CertificationTaskEquipmentMapper equipmentMapper;
   private final CertificationTaskExamSiteMapper examSiteMapper;
   private final CertificationTaskAssessorMapper assessorMapper;
+  private final CertificationInfoExamStaffMapper infoExamStaffMapper;
+  private final CertificationInfoExamEquipmentMapper infoEquipmentMapper;
+  private final CertificationInfoExamSiteMapper infoExamSiteMapper;
+  private final CertificationInfoAssessorMapper infoAssessorMapper;
   private final CertificationArchiveRecordMapper recordMapper;
   private final CertificationArchiveBasicSnapshotMapper snapshotMapper;
   private final CertificationArchiveMaterialMapper materialMapper;
@@ -154,6 +166,10 @@ public class CertificationArchiveApplicationService {
       CertificationTaskEquipmentMapper equipmentMapper,
       CertificationTaskExamSiteMapper examSiteMapper,
       CertificationTaskAssessorMapper assessorMapper,
+      CertificationInfoExamStaffMapper infoExamStaffMapper,
+      CertificationInfoExamEquipmentMapper infoEquipmentMapper,
+      CertificationInfoExamSiteMapper infoExamSiteMapper,
+      CertificationInfoAssessorMapper infoAssessorMapper,
       CertificationArchiveRecordMapper recordMapper,
       CertificationArchiveBasicSnapshotMapper snapshotMapper,
       CertificationArchiveMaterialMapper materialMapper,
@@ -172,6 +188,10 @@ public class CertificationArchiveApplicationService {
     this.equipmentMapper = equipmentMapper;
     this.examSiteMapper = examSiteMapper;
     this.assessorMapper = assessorMapper;
+    this.infoExamStaffMapper = infoExamStaffMapper;
+    this.infoEquipmentMapper = infoEquipmentMapper;
+    this.infoExamSiteMapper = infoExamSiteMapper;
+    this.infoAssessorMapper = infoAssessorMapper;
     this.recordMapper = recordMapper;
     this.snapshotMapper = snapshotMapper;
     this.materialMapper = materialMapper;
@@ -276,25 +296,23 @@ public class CertificationArchiveApplicationService {
     CertificationArchiveRecordEntity record = getRecord(archiveId);
     ensureNotArchived(record);
     MaterialDef def = taskMaterialDef(materialType, materialName);
+    CertificationArchiveMaterialEntity existing = materialMapper.selectOne(
+        new LambdaQueryWrapper<CertificationArchiveMaterialEntity>()
+            .eq(CertificationArchiveMaterialEntity::getArchiveId, archiveId)
+            .eq(CertificationArchiveMaterialEntity::getMaterialType, def.code()));
+    if (existing != null) {
+      throw new BusinessException(ErrorCode.CONFLICT, "该类认定材料已上传，请勿重复上传");
+    }
     String safeName = fileStorageService.sanitizeFileName(file.getOriginalFilename());
     String fileKey = "certification/archive/%s/%d/task-materials/%s/%s".formatted(record.getTaskNo(), archiveId, def.code(), safeName);
     ArchiveFileObject stored = fileStorageService.store(file, fileKey);
-    CertificationArchiveMaterialEntity entity = materialMapper.selectOne(new LambdaQueryWrapper<CertificationArchiveMaterialEntity>()
-        .eq(CertificationArchiveMaterialEntity::getArchiveId, archiveId)
-        .eq(CertificationArchiveMaterialEntity::getMaterialType, def.code()));
-    if (entity == null) {
-      entity = new CertificationArchiveMaterialEntity();
-      entity.setTenantId(current().getTenantId());
-      entity.setArchiveId(archiveId);
-      entity.setMaterialType(def.code());
-      entity.setMaterialGroup("TASK_ARCHIVE");
-    }
+    CertificationArchiveMaterialEntity entity = new CertificationArchiveMaterialEntity();
+    entity.setTenantId(current().getTenantId());
+    entity.setArchiveId(archiveId);
+    entity.setMaterialType(def.code());
+    entity.setMaterialGroup("TASK_ARCHIVE");
     fillMaterial(entity, def.name(), stored);
-    if (entity.getId() == null) {
-      materialMapper.insert(entity);
-    } else {
-      materialMapper.updateById(entity);
-    }
+    materialMapper.insert(entity);
     refreshMaterialArchived(record);
     return toMaterialVO(entity);
   }
@@ -416,23 +434,22 @@ public class CertificationArchiveApplicationService {
   public CertificationArchiveCompleteCheckVO completeCheck(Long archiveId, boolean allowErrors) {
     CertificationArchiveRecordEntity record = getRecord(archiveId);
     CertificationTaskEntity task = taskMapper.selectById(record.getTaskId());
+    if (!isArchivableTask(task) && !"ARCHIVED".equals(record.getArchiveStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "当前任务不在认定归档阶段");
+    }
     List<CertificationArchiveCheckItemVO> items = new ArrayList<>();
-    boolean taskCompleted = isArchivableTask(task) || "ARCHIVED".equals(record.getArchiveStatus());
-    items.add(new CertificationArchiveCheckItemVO("task_completed", "认定任务状态", taskCompleted,
-        taskCompleted ? "认定筹备已完成，当前任务可归档" : "只有认定筹备已完成的任务允许归档"));
     items.add(new CertificationArchiveCheckItemVO("basic_archive_required", "基础信息归档", Boolean.TRUE.equals(record.getBasicArchived()),
         Boolean.TRUE.equals(record.getBasicArchived()) ? "基础信息已归档" : "请先完成基础信息归档"));
     boolean taskMaterialsReady = countUploadedTaskMaterials(archiveId) >= TASK_MATERIALS.size();
     items.add(new CertificationArchiveCheckItemVO("task_material_required", "认定材料", taskMaterialsReady,
         taskMaterialsReady ? "必要认定材料已上传" : "必要认定材料尚未上传完整"));
-    boolean candidateMaterialsReady = countArchiveCandidateMaterials(archiveId) > 0;
-    items.add(new CertificationArchiveCheckItemVO("candidate_material_confirmed", "考生材料", candidateMaterialsReady,
-        candidateMaterialsReady ? "考生材料已导入" : "请导入考生材料"));
-    long errors = importErrorMapper.selectCount(new LambdaQueryWrapper<CertificationArchiveImportErrorEntity>()
-        .inSql(CertificationArchiveImportErrorEntity::getBatchId,
-            "select id from certification_archive_import_batch where archive_id = " + archiveId + " and deleted = 0"));
-    items.add(new CertificationArchiveCheckItemVO("import_error_handled", "导入异常", allowErrors || errors == 0,
-        errors == 0 ? "无导入异常" : "存在 " + errors + " 条导入异常"));
+    long confirmedBatches = importBatchMapper.selectCount(
+        new LambdaQueryWrapper<CertificationArchiveImportBatchEntity>()
+            .eq(CertificationArchiveImportBatchEntity::getArchiveId, archiveId)
+            .eq(CertificationArchiveImportBatchEntity::getStatus, "CONFIRMED"));
+    boolean examMaterialsImported = confirmedBatches > 0 && countArchiveCandidateMaterials(archiveId) > 0;
+    items.add(new CertificationArchiveCheckItemVO("candidate_material_confirmed", "考试材料导入", examMaterialsImported,
+        examMaterialsImported ? "考试材料已导入并确认入库" : "请完成考试材料导入并确认批次"));
     boolean passed = items.stream().allMatch(CertificationArchiveCheckItemVO::passed);
     return new CertificationArchiveCompleteCheckVO(passed, items);
   }
@@ -445,6 +462,9 @@ public class CertificationArchiveApplicationService {
       return check;
     }
     CertificationArchiveRecordEntity record = getRecord(archiveId);
+    if ("ARCHIVED".equals(record.getArchiveStatus())) {
+      return check;
+    }
     record.setArchiveStatus("ARCHIVED");
     record.setArchivedBy(current().getUserId());
     record.setArchivedAt(LocalDateTime.now());
@@ -462,6 +482,7 @@ public class CertificationArchiveApplicationService {
           CertificationTaskStatuses.COMPLETED
       );
       CertificationTaskPhaseSupport.syncPhaseProgress(taskMapper, phaseMapper, task.getId());
+      releaseTaskResources(task.getId());
     }
     return check;
   }
@@ -853,6 +874,81 @@ public class CertificationArchiveApplicationService {
     if ("ARCHIVED".equals(record.getArchiveStatus())) {
       throw new BusinessException(ErrorCode.CONFLICT, "已完成归档的记录不允许修改");
     }
+  }
+
+  private void releaseTaskResources(Long taskId) {
+    safeList(examStaffMapper.selectList(new LambdaQueryWrapper<CertificationTaskExamStaffEntity>()
+        .eq(CertificationTaskExamStaffEntity::getTaskId, taskId))).stream()
+        .map(CertificationTaskExamStaffEntity::getStaffId)
+        .filter(Objects::nonNull)
+        .distinct()
+        .forEach(this::releaseExamStaff);
+
+    safeList(equipmentMapper.selectList(new LambdaQueryWrapper<CertificationTaskEquipmentEntity>()
+        .eq(CertificationTaskEquipmentEntity::getTaskId, taskId))).stream()
+        .map(CertificationTaskEquipmentEntity::getEquipmentId)
+        .filter(Objects::nonNull)
+        .distinct()
+        .forEach(this::releaseEquipment);
+
+    safeList(examSiteMapper.selectList(new LambdaQueryWrapper<CertificationTaskExamSiteEntity>()
+        .eq(CertificationTaskExamSiteEntity::getTaskId, taskId))).stream()
+        .map(CertificationTaskExamSiteEntity::getSiteId)
+        .filter(Objects::nonNull)
+        .distinct()
+        .forEach(this::releaseExamSite);
+
+    safeList(assessorMapper.selectList(new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
+        .eq(CertificationTaskAssessorEntity::getTaskId, taskId))).stream()
+        .map(CertificationTaskAssessorEntity::getAssessorId)
+        .filter(Objects::nonNull)
+        .distinct()
+        .forEach(this::releaseAssessor);
+  }
+
+  private void releaseExamStaff(Long staffId) {
+    CertificationInfoExamStaffEntity entity = infoExamStaffMapper.selectById(staffId);
+    if (entity == null || "disabled".equalsIgnoreCase(entity.getAuditStatus())) {
+      return;
+    }
+    entity.setWorkStatus("idle");
+    entity.setReferencedCount(0);
+    infoExamStaffMapper.updateById(entity);
+  }
+
+  private void releaseEquipment(Long equipmentId) {
+    CertificationInfoExamEquipmentEntity entity = infoEquipmentMapper.selectById(equipmentId);
+    if (entity == null || "disabled".equalsIgnoreCase(entity.getAuditStatus())) {
+      return;
+    }
+    entity.setEquipmentStatus("idle");
+    entity.setReferencedCount(0);
+    infoEquipmentMapper.updateById(entity);
+  }
+
+  private void releaseExamSite(Long siteId) {
+    CertificationInfoExamSiteEntity entity = infoExamSiteMapper.selectById(siteId);
+    if (entity == null || "disabled".equalsIgnoreCase(entity.getAuditStatus())
+        || "maintenance".equalsIgnoreCase(entity.getStatus())) {
+      return;
+    }
+    entity.setStatus("idle");
+    entity.setReferencedCount(0);
+    infoExamSiteMapper.updateById(entity);
+  }
+
+  private void releaseAssessor(Long assessorId) {
+    CertificationInfoAssessorEntity entity = infoAssessorMapper.selectById(assessorId);
+    if (entity == null || "disabled".equalsIgnoreCase(entity.getAuditStatus())) {
+      return;
+    }
+    entity.setWorkStatus("idle");
+    entity.setReferencedCount(0);
+    infoAssessorMapper.updateById(entity);
+  }
+
+  private <T> List<T> safeList(List<T> values) {
+    return values == null ? List.of() : values;
   }
 
   private void failBatch(CertificationArchiveImportBatchEntity batch) {

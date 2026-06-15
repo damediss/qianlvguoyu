@@ -57,7 +57,8 @@ export function ExamSiteInfoPage() {
           label: '使用状态',
           type: 'select',
           options: [
-            { label: '在用', value: 'active' },
+            { label: '空闲', value: 'idle' },
+            { label: '使用中', value: 'in_use' },
             { label: '维护中', value: 'maintenance' },
             { label: '停用', value: 'disabled' },
           ],
@@ -65,7 +66,8 @@ export function ExamSiteInfoPage() {
         { name: 'remark', label: '备注', type: 'textarea' },
       ]}
       statusOptions={[
-        { label: '在用', value: 'active' },
+        { label: '空闲', value: 'idle' },
+        { label: '使用中', value: 'in_use' },
         { label: '维护中', value: 'maintenance' },
         { label: '停用', value: 'disabled' },
       ]}
@@ -86,5 +88,11 @@ function siteTypeLabel(value: string) {
 }
 
 function statusLabel(value: string) {
-  return { active: '在用', maintenance: '维护中', disabled: '停用' }[value] || value || '-';
+  return {
+    active: '空闲',
+    idle: '空闲',
+    in_use: '使用中',
+    maintenance: '维护中',
+    disabled: '停用',
+  }[value] || value || '-';
 }

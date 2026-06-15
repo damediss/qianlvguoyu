@@ -465,7 +465,7 @@ public class CertificationInfoApplicationService {
     ensureEnableable(entity.getAuditStatus());
     String before = entity.getAuditStatus();
     entity.setAuditStatus(APPROVED);
-    entity.setStatus("active");
+    entity.setStatus("idle");
     entity.setDisabledAt(null);
     entity.setDisabledBy(null);
     entity.setDisableReason(null);
@@ -485,7 +485,7 @@ public class CertificationInfoApplicationService {
   public List<ExamSiteInfoVO> listAvailableSites(String keyword) {
     LambdaQueryWrapper<CertificationInfoExamSiteEntity> wrapper = new LambdaQueryWrapper<CertificationInfoExamSiteEntity>()
         .eq(CertificationInfoExamSiteEntity::getAuditStatus, APPROVED)
-        .eq(CertificationInfoExamSiteEntity::getStatus, "active")
+        .in(CertificationInfoExamSiteEntity::getStatus, List.of("idle", "active"))
         .orderByDesc(CertificationInfoExamSiteEntity::getCreatedAt);
     if (StringUtils.hasText(keyword)) {
       wrapper.and(w -> w.like(CertificationInfoExamSiteEntity::getSiteName, keyword)
@@ -671,7 +671,7 @@ public class CertificationInfoApplicationService {
     entity.setMaskedContactPhone(maskPhone(req.contactPhone()));
     entity.setEquipmentCondition(req.equipmentCondition());
     entity.setMaterialsDescription(req.materialsDescription());
-    entity.setStatus(StringUtils.hasText(req.status()) ? req.status() : "active");
+    entity.setStatus(StringUtils.hasText(req.status()) ? req.status() : "idle");
     entity.setRemark(req.remark());
   }
 

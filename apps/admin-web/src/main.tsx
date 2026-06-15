@@ -74,6 +74,7 @@ const PmCommunicationPage = createPmFormPage('communication');
 const PmStatusPage = createPmFormPage('status');
 import { TaskEndPage } from './pages/expert/TaskEndPage';
 import { ProjectManagementPage } from './pages/certification/ProjectManagementPage';
+import { CertificationDataPanelPage } from './pages/certification/CertificationDataPanelPage';
 import { PreparationPage } from './pages/certification/PreparationPage';
 import { ArchivePage } from './pages/certification/ArchivePage';
 import { TaskArchivePage } from './pages/certification/TaskArchivePage';
@@ -175,6 +176,7 @@ const pageMap: Record<string, React.ReactNode> = {
   zhi_shi_jie_gou_xi_mu_biao_guan_li: <KnowledgeStructurePage />,
   expert_task_start: <TaskStartPage />,
   expert_task_end: <TaskEndPage />,
+  certification_dashboard: <CertificationDataPanelPage />,
   certification_project: <ProjectManagementPage />,
   certification_preparation: <PreparationPage />,
   certification_archive: <ArchivePage />,
@@ -194,6 +196,7 @@ const pageMap: Record<string, React.ReactNode> = {
   system_audit_log: <AuditLogPage />,
   system_permission: <PermissionPage />,
   // kebab-case aliases for page-internal navigation (navStore.setSelectedKey)
+  'certification-dashboard': <CertificationDataPanelPage />,
   'zhixun-data-panel': <DataPanelPage />,
   'zhixun-task-management': <TaskManagementPage />,
   'zhixun-task-archives': <TaskArchivesPage />,

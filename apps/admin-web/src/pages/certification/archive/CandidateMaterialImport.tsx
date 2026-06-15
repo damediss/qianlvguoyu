@@ -3,6 +3,7 @@ import { Button, Card, message, Space, Upload } from 'antd';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type ChangeEvent } from 'react';
 import { importArchiveCandidateMaterials, pageArchiveImportErrors } from '../../../api/certificationArchive';
+import { ArchiveImportBatch } from './ArchiveImportBatch';
 
 export function CandidateMaterialImport({ archiveId }: { archiveId?: string }) {
   const queryClient = useQueryClient();
@@ -111,6 +112,8 @@ export function CandidateMaterialImport({ archiveId }: { archiveId?: string }) {
         <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>
           文件夹需包含“考生清单.xlsx”及各考生子文件夹；系统将自动打包为标准 ZIP 后上传。
         </div>
+        <div style={{ fontWeight: 600, marginTop: 8 }}>导入状态</div>
+        <ArchiveImportBatch archiveId={archiveId} />
       </Space>
     </Card>
   );

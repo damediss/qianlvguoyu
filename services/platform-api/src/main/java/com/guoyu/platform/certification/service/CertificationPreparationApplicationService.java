@@ -203,6 +203,7 @@ public class CertificationPreparationApplicationService {
   private final FileApplicationService fileApplicationService;
   private final CertificationCandidateStagingApplicationService stagingApplicationService;
   private final CertificationApplicationFormGenerationService applicationFormGenerationService;
+  private final CertificationImageSourceService imageSourceService;
 
   public CertificationPreparationApplicationService(
       CertificationTaskMapper taskMapper,
@@ -230,7 +231,8 @@ public class CertificationPreparationApplicationService {
       CertificationInfoAssessorMapper infoAssessorMapper,
       FileApplicationService fileApplicationService,
       @Lazy CertificationCandidateStagingApplicationService stagingApplicationService,
-      CertificationApplicationFormGenerationService applicationFormGenerationService
+      CertificationApplicationFormGenerationService applicationFormGenerationService,
+      CertificationImageSourceService imageSourceService
   ) {
     this.taskMapper = taskMapper;
     this.phaseMapper = phaseMapper;
@@ -258,6 +260,7 @@ public class CertificationPreparationApplicationService {
     this.fileApplicationService = fileApplicationService;
     this.stagingApplicationService = stagingApplicationService;
     this.applicationFormGenerationService = applicationFormGenerationService;
+    this.imageSourceService = imageSourceService;
   }
 
   @Transactional(readOnly = true)
@@ -287,6 +290,9 @@ public class CertificationPreparationApplicationService {
   @Transactional
   public PreparationImportBatchVO createImportBatch(Long taskId, PreparationCandidateImportReq req) {
     findTask(taskId);
+    if ("training".equals(req.sourceType()) && CollectionUtils.isEmpty(req.trainingPeopleIds())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要导入的培训学员");
+    }
     CertificationCandidateImportBatchEntity batch = new CertificationCandidateImportBatchEntity();
     batch.setTaskId(taskId);
     batch.setBatchNo("CIB-" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now()));
@@ -301,10 +307,27 @@ public class CertificationPreparationApplicationService {
     batch.setDuplicateCount(0);
     batch.setDeleted(0);
     importBatchMapper.insert(batch);
-    int total = req.candidates() == null ? 0 : req.candidates().size();
+    boolean trainingImport = "training".equals(batch.getSourceType());
+    int total = trainingImport
+        ? req.trainingPeopleIds() == null ? 0 : req.trainingPeopleIds().size()
+        : req.candidates() == null ? 0 : req.candidates().size();
     int success = 0;
     int failed = 0;
-    if (!CollectionUtils.isEmpty(req.candidates())) {
+    if (trainingImport && !CollectionUtils.isEmpty(req.trainingPeopleIds())) {
+      for (int i = 0; i < req.trainingPeopleIds().size(); i++) {
+        try {
+          stagingApplicationService.promoteTrainingPerson(taskId, req.trainingPeopleIds().get(i));
+          success++;
+        } catch (BusinessException ex) {
+          failed++;
+          insertImportError(taskId, batch.getId(), i + 1, null, "candidate_invalid", ex.getMessage());
+        } catch (RuntimeException ex) {
+          failed++;
+          insertImportError(taskId, batch.getId(), i + 1, null, "candidate_import_failed",
+              "导入失败，请检查培训学员信息是否完整");
+        }
+      }
+    } else if (!trainingImport && !CollectionUtils.isEmpty(req.candidates())) {
       for (int i = 0; i < req.candidates().size(); i++) {
         try {
           createCandidate(taskId, req.candidates().get(i));
@@ -508,7 +531,11 @@ public class CertificationPreparationApplicationService {
     }
     CertificationCandidateSourceStagingEntity staging =
         stagingApplicationService.requireStagingByCandidate(taskId, candidateId);
-    byte[] content = applicationFormGenerationService.generateApplicationForm(staging);
+    byte[] portrait = imageSourceService.readFile(photoDocument.getFileId());
+    if (portrait == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "两寸证件照文件不可读取，请重新上传");
+    }
+    byte[] content = applicationFormGenerationService.generateApplicationForm(staging, portrait);
     String fileName = staging.getCandidateName() + "-职业技能等级认定申请表.docx";
     FileVO file = fileApplicationService.storeFromBytes(
         content,
@@ -819,8 +846,8 @@ public class CertificationPreparationApplicationService {
   public PreparationTaskExamSiteVO assignExamSite(Long taskId, PreparationTaskExamSiteSaveReq req) {
     findTask(taskId);
     CertificationExamSiteEntity site = requireExamSite(req.siteId());
-    if (!"active".equals(site.getStatus())) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "停用考场不得绑定到新任务");
+    if (!List.of("active", "idle").contains(site.getStatus())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "停用或使用中的考场不得绑定到新任务");
     }
     int arrangedCount = req.arrangedCount() == null ? 0 : req.arrangedCount();
     if (arrangedCount > nullToZero(site.getSeatCount())) {
@@ -852,6 +879,8 @@ public class CertificationPreparationApplicationService {
     entity.setRemark(req.remark());
     entity.setDeleted(0);
     taskExamSiteMapper.insert(entity);
+    site.setStatus("in_use");
+    examSiteMapper.updateById(site);
     touchTask(taskId);
     return PreparationTaskExamSiteVO.from(entity);
   }
@@ -872,7 +901,17 @@ public class CertificationPreparationApplicationService {
   @Transactional
   public void removeTaskExamSite(Long taskId, Long taskSiteId) {
     findTask(taskId);
+    CertificationTaskExamSiteEntity binding = taskExamSiteMapper.selectById(taskSiteId);
+    if (binding == null || !taskId.equals(binding.getTaskId())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "任务考场配置不存在");
+    }
     taskExamSiteMapper.deleteById(taskSiteId);
+    CertificationExamSiteEntity site = examSiteMapper.selectById(binding.getSiteId());
+    if (site != null && !"disabled".equalsIgnoreCase(site.getStatus())
+        && !"maintenance".equalsIgnoreCase(site.getStatus())) {
+      site.setStatus("idle");
+      examSiteMapper.updateById(site);
+    }
     touchTask(taskId);
   }
 

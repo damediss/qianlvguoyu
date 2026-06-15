@@ -1,5 +1,7 @@
 package com.guoyu.platform.certification.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.certification.dto.PreparationCandidateSaveReq;
@@ -17,26 +19,40 @@ import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.security.SecurityContext;
+import com.guoyu.platform.trainingdepartment.service.TrainingStudentSourceApplicationService;
+import com.guoyu.platform.trainingdepartment.vo.TrainingStudentCertificationSourceVO;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.util.StringUtils;
 
 @Service
+@Slf4j
 public class CertificationCandidateStagingApplicationService {
 
   private final CertificationCandidateSourceStagingMapper stagingMapper;
   private final CertificationPreparationApplicationService preparationService;
+  private final TrainingStudentSourceApplicationService trainingStudentSourceService;
+  private final ObjectMapper objectMapper;
 
   public CertificationCandidateStagingApplicationService(
       CertificationCandidateSourceStagingMapper stagingMapper,
-      @Lazy CertificationPreparationApplicationService preparationService
+      @Lazy CertificationPreparationApplicationService preparationService,
+      TrainingStudentSourceApplicationService trainingStudentSourceService,
+      ObjectMapper objectMapper
   ) {
     this.stagingMapper = stagingMapper;
     this.preparationService = preparationService;
+    this.trainingStudentSourceService = trainingStudentSourceService;
+    this.objectMapper = objectMapper;
   }
 
   @Transactional(readOnly = true)
@@ -97,19 +113,7 @@ public class CertificationCandidateStagingApplicationService {
   @Transactional
   public void releasePromoteByCandidate(Long taskId, Long candidateId) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
-    List<CertificationCandidateSourceStagingEntity> stagingRows = stagingMapper.selectList(
-        new LambdaQueryWrapper<CertificationCandidateSourceStagingEntity>()
-            .eq(CertificationCandidateSourceStagingEntity::getTenantId, tenantId)
-            .eq(CertificationCandidateSourceStagingEntity::getTaskId, taskId)
-            .eq(CertificationCandidateSourceStagingEntity::getCandidateId, candidateId)
-            .eq(CertificationCandidateSourceStagingEntity::getDeleted, 0));
-    for (CertificationCandidateSourceStagingEntity staging : stagingRows) {
-      staging.setCandidateId(null);
-      staging.setPromoteStatus("draft");
-      staging.setPromoteMessage(null);
-      staging.setPromotedAt(null);
-      stagingMapper.updateById(staging);
-    }
+    stagingMapper.releasePromotedCandidate(tenantId, taskId, candidateId);
   }
 
   @Transactional(readOnly = true)
@@ -124,9 +128,64 @@ public class CertificationCandidateStagingApplicationService {
             .orderByDesc(CertificationCandidateSourceStagingEntity::getPromotedAt)
             .last("LIMIT 1"));
     if (entity == null) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "未找到该考生的来源暂存数据，请使用测试学员导入");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "未找到该考生的来源数据，请从测试学员或培训学员导入");
     }
     return entity;
+  }
+
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public PreparationCandidateVO promoteTrainingPerson(Long taskId, Long trainingPersonId) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    TrainingStudentCertificationSourceVO source =
+        trainingStudentSourceService.requireCertificationSource(trainingPersonId);
+
+    CertificationCandidateSourceStagingEntity snapshot = stagingMapper.selectOne(
+        new LambdaQueryWrapper<CertificationCandidateSourceStagingEntity>()
+            .eq(CertificationCandidateSourceStagingEntity::getTenantId, tenantId)
+            .eq(CertificationCandidateSourceStagingEntity::getTaskId, taskId)
+            .eq(CertificationCandidateSourceStagingEntity::getSourceType, "training_people")
+            .eq(CertificationCandidateSourceStagingEntity::getExternalRefTable, "train_sign_up_people_self")
+            .eq(CertificationCandidateSourceStagingEntity::getExternalRefId, source.getSignUpPersonId())
+            .eq(CertificationCandidateSourceStagingEntity::getDeleted, 0)
+            .orderByDesc(CertificationCandidateSourceStagingEntity::getCreatedAt)
+            .last("LIMIT 1"));
+    if (snapshot != null && snapshot.getCandidateId() != null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "该培训学员已导入当前任务");
+    }
+
+    String levelCode = levelCode(source.getReqLevel());
+    String levelName = firstNonBlank(
+        levelName(source.getReqLevel()),
+        levelName(source.getLevel()));
+    PreparationCandidateVO candidate = preparationService.createCandidate(
+        taskId,
+        new PreparationCandidateSaveReq(
+            source.getName(),
+            source.getIdCardNumber(),
+            source.getPhone(),
+            levelCode,
+            levelName,
+            "training",
+            firstNonBlank(source.getCompanyName(),
+                source.getTrainClassId() == null ? null : "班级" + source.getTrainClassId()),
+            source.getComments()));
+
+    if (snapshot == null) {
+      snapshot = new CertificationCandidateSourceStagingEntity();
+      snapshot.setTenantId(tenantId);
+      snapshot.setTaskId(taskId);
+      snapshot.setSourceType("training_people");
+      snapshot.setExternalRefTable("train_sign_up_people_self");
+      snapshot.setExternalRefId(source.getSignUpPersonId());
+      snapshot.setDeleted(0);
+    }
+    applyTrainingSnapshot(snapshot, source, candidate);
+    if (snapshot.getId() == null) {
+      stagingMapper.insert(snapshot);
+    } else {
+      stagingMapper.updateById(snapshot);
+    }
+    return candidate;
   }
 
   @Transactional
@@ -240,6 +299,135 @@ public class CertificationCandidateStagingApplicationService {
     entity.setWorkResume(req.workResume());
     entity.setTrainingSummary(req.trainingSummary());
     entity.setRemark(req.remark());
+  }
+
+  private void applyTrainingSnapshot(
+      CertificationCandidateSourceStagingEntity snapshot,
+      TrainingStudentCertificationSourceVO source,
+      PreparationCandidateVO candidate
+  ) {
+    snapshot.setCandidateId(candidate.id());
+    snapshot.setPromoteStatus("promoted");
+    snapshot.setPromoteMessage(null);
+    snapshot.setPromotedAt(LocalDateTime.now());
+    snapshot.setSignUpId(source.getSignUpId());
+    snapshot.setCandidateName(source.getName());
+    snapshot.setIdCardNo(source.getIdCardNumber());
+    snapshot.setPhone(source.getPhone());
+    snapshot.setGender(firstNonBlank(source.getGender(), IdCardSupport.parseGender(source.getIdCardNumber())));
+    snapshot.setBirthDate(IdCardSupport.parseBirthDate(source.getIdCardNumber()));
+    snapshot.setEducation(source.getEducation());
+    snapshot.setGraduateDate(parseDate(source.getGraduateDate()));
+    snapshot.setSchool(source.getSchool());
+    snapshot.setMajor(source.getMajor());
+    snapshot.setNation(source.getNation());
+    snapshot.setHomeAddress(source.getAddress());
+    snapshot.setCompanyName(source.getCompanyName());
+    snapshot.setCompanyAddress(source.getCompanyAddress());
+    snapshot.setZipCode(source.getZipCode());
+    snapshot.setCompanyCreditCode(source.getCompanyCode());
+    snapshot.setIndustrialPark(source.getIndustrialPark());
+    snapshot.setWorkStartDate(parseDate(firstNonBlank(source.getWorkDateStart(), source.getWorkTime())));
+    snapshot.setOriginalWorkTypeName(firstNonBlank(
+        source.getWorkTypePaperName(), source.getJob(), source.getJog()));
+    snapshot.setOriginalLevelName(levelName(source.getWorkTypePaperLevel()));
+    snapshot.setOriginalCertNo(firstNonBlank(source.getWorkTypePaperNo(), source.getPaperNo()));
+    snapshot.setApplyWorkTypeId(source.getReqWorkTypeId());
+    snapshot.setApplyWorkTypeName(firstNonBlank(source.getReqWorkTypeName(), source.getWorkTypeName()));
+    snapshot.setCertWorkTypeId(source.getWorkTypeId());
+    snapshot.setCertWorkTypeName(firstNonBlank(source.getWorkTypeName(), source.getReqWorkTypeName()));
+    snapshot.setWorkDirection(source.getJob());
+    snapshot.setApplyLevelCode(candidate.levelCode());
+    snapshot.setApplyLevelName(firstNonBlank(levelName(source.getReqLevel()), candidate.levelName()));
+    snapshot.setCertLevelName(firstNonBlank(levelName(source.getLevel()), candidate.levelName()));
+    snapshot.setApplyWorkYears(source.getWorkTime());
+    snapshot.setApplyCondition(source.getDeclarationCondition());
+    snapshot.setWorkResume(source.getWorkExp());
+    snapshot.setTheoryScore(source.getTheoryScore());
+    snapshot.setPracticalScore(source.getPracticalScore());
+    snapshot.setTrainingSummary(trainingSummary(source));
+    snapshot.setPhotoUrl(source.getIdCardHeader());
+    snapshot.setPhotoAltUrl(source.getIdCardHeader2());
+    snapshot.setIdCardFrontUrl(source.getIdCardFront());
+    snapshot.setIdCardBackUrl(source.getIdCardBack());
+    snapshot.setOriginalCertImageUrl(source.getWorkTypePaper());
+    snapshot.setEducationCertImageUrl(source.getSchoolPaper());
+    snapshot.setPlatformUserId(source.getPlatformUserId());
+    snapshot.setUserId(source.getUserId());
+    snapshot.setRawPayload(rawPayload(source));
+    snapshot.setRemark(source.getComments());
+  }
+
+  private String rawPayload(TrainingStudentCertificationSourceVO source) {
+    try {
+      return objectMapper.writeValueAsString(source);
+    } catch (JsonProcessingException ex) {
+      log.warn("Failed to serialize training source signUpPersonId={}", source.getSignUpPersonId(), ex);
+      return null;
+    }
+  }
+
+  private LocalDate parseDate(String value) {
+    if (!StringUtils.hasText(value)) {
+      return null;
+    }
+    String normalized = value.trim();
+    List<DateTimeFormatter> formatters = List.of(
+        DateTimeFormatter.ISO_LOCAL_DATE,
+        DateTimeFormatter.ofPattern("yyyy/M/d"),
+        DateTimeFormatter.ofPattern("yyyy.M.d"),
+        DateTimeFormatter.ofPattern("yyyy年M月d日"));
+    for (DateTimeFormatter formatter : formatters) {
+      try {
+        return LocalDate.parse(normalized, formatter);
+      } catch (DateTimeParseException ignored) {
+        // Try the next supported upstream date format.
+      }
+    }
+    return null;
+  }
+
+  private String trainingSummary(TrainingStudentCertificationSourceVO source) {
+    List<String> parts = new ArrayList<>();
+    if (source.getTrainId() != null) {
+      parts.add("培训ID：" + source.getTrainId());
+    }
+    if (source.getTrainClassId() != null) {
+      parts.add("班级ID：" + source.getTrainClassId());
+    }
+    if (source.getSignUpId() != null) {
+      parts.add("信息收集ID：" + source.getSignUpId());
+    }
+    return parts.isEmpty() ? null : String.join("；", parts);
+  }
+
+  private String levelCode(Integer level) {
+    if (level == null) {
+      return null;
+    }
+    // Training sign-up data keeps the legacy zero-based level values.
+    return switch (level) {
+      case 0 -> "junior";
+      case 1 -> "intermediate";
+      case 2 -> "senior";
+      case 3 -> "technician";
+      case 4 -> "senior_technician";
+      default -> null;
+    };
+  }
+
+  private String levelName(Integer level) {
+    if (level == null) {
+      return null;
+    }
+    return switch (level) {
+      case 0 -> "初级";
+      case 1 -> "中级";
+      case 2 -> "高级";
+      case 3 -> "技师";
+      case 4 -> "高级技师";
+      default -> null;
+    };
   }
 
   private String firstNonBlank(String... values) {

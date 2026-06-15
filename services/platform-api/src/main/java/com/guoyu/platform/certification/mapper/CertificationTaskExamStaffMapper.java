@@ -75,6 +75,7 @@ public interface CertificationTaskExamStaffMapper extends BaseMapper<Certificati
       FROM certification_task_exam_staff tes
       INNER JOIN certification_task ct ON ct.id = tes.task_id AND ct.deleted = 0
       WHERE tes.deleted = 0
+                  AND ct.current_phase != 'certification_completed'
         AND tes.staff_id IN
         <foreach collection="staffIds" item="staffId" open="(" separator="," close=")">
           #{staffId}

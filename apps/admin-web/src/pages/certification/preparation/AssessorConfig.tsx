@@ -67,7 +67,11 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
   const membersQuery = useQuery({
     queryKey: ['certification-preparation-assessor-members', taskId, selectedGroupId],
     queryFn: () => listPreparationGroupMembers(taskId!, selectedGroupId!),
-    enabled: Boolean(taskId && selectedGroupId),
+    enabled: Boolean(
+      taskId
+      && selectedGroupId
+      && (groupsQuery.data || []).some((group) => group.id === selectedGroupId),
+    ),
   });
 
   const editingGroupMembersQuery = useQuery({
@@ -83,6 +87,9 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
     }
     if (selectedGroupId && groups.length > 0 && !groups.some((group) => group.id === selectedGroupId)) {
       setSelectedGroupId(groups[0].id);
+    }
+    if (selectedGroupId && !groupsQuery.isFetching && groups.length === 0) {
+      setSelectedGroupId(undefined);
     }
   }, [groupsQuery.data, selectedGroupId]);
 

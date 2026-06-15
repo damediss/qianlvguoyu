@@ -69,7 +69,7 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   const [lastImportBatch, setLastImportBatch] = useState<PreparationImportBatch | null>(null);
   const [candidateForm] = Form.useForm<PreparationCandidatePayload>();
   const [importFileList, setImportFileList] = useState<UploadFile[]>([]);
-  const [trainingQuery, setTrainingQuery] = useState<TrainPeopleQuery>({ page: 1, pageSize: 10 });
+  const [trainingQuery, setTrainingQuery] = useState<TrainPeopleQuery>({ page: 1, pageSize: 10, type: 'student' });
   const [selectedTrainingPeople, setSelectedTrainingPeople] = useState<Map<number, TrainPeople>>(new Map());
   const [stagingQuery, setStagingQuery] = useState<PreparationCandidateStagingQuery>({ page: 1, pageSize: 10 });
   const [selectedStagingRows, setSelectedStagingRows] = useState<Map<string, PreparationCandidateStaging>>(new Map());
@@ -186,12 +186,18 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
       remark?: string;
       file?: File;
       candidates?: PreparationCandidatePayload[];
+      trainingPeopleIds?: number[];
     }) => {
       let candidates = payload.candidates;
       if (payload.sourceType === 'training') {
-        if (!candidates?.length) {
+        if (!payload.trainingPeopleIds?.length) {
           throw new Error('请勾选要导入的培训学员');
         }
+        return importPreparationCandidates(taskId!, {
+          sourceType: payload.sourceType,
+          trainingPeopleIds: payload.trainingPeopleIds,
+          remark: payload.remark,
+        });
       } else {
         if (!payload.file) {
           throw new Error('请选择要导入的文件');
@@ -268,12 +274,16 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   }
 
   function submitTrainingImport() {
-    const candidates = mapTrainingPeopleToCandidates(Array.from(selectedTrainingPeople.values()));
-    if (candidates.length === 0) {
+    const selectedPeople = Array.from(selectedTrainingPeople.values());
+    if (selectedPeople.some((person) => !person.realname || !person.idCard)) {
       message.warning('所选培训学员缺少姓名或身份证号，无法导入');
       return;
     }
-    importMutation.mutate({ sourceType: 'training', candidates, remark: importRemark });
+    importMutation.mutate({
+      sourceType: 'training',
+      trainingPeopleIds: selectedPeople.map((person) => person.id),
+      remark: importRemark,
+    });
   }
 
   function submitOtherImport() {
@@ -663,18 +673,6 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
       </Modal>
     </Space>
   );
-}
-
-function mapTrainingPeopleToCandidates(people: TrainPeople[]): PreparationCandidatePayload[] {
-  return people
-    .filter((person) => person.realname && person.idCard)
-    .map((person) => ({
-      candidateName: person.realname!,
-      idCardNo: person.idCard!,
-      phone: person.phone,
-      importSource: 'training',
-      orgName: person.trainClassId ? `班级${person.trainClassId}` : undefined,
-    }));
 }
 
 function downloadCandidateImportTemplate() {

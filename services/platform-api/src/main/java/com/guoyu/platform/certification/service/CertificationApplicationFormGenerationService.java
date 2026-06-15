@@ -4,6 +4,12 @@ import com.guoyu.platform.certification.entity.CertificationCandidateSourceStagi
 import com.guoyu.platform.certification.support.IdCardSupport;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,6 +17,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
+import javax.imageio.ImageIO;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
@@ -27,17 +37,140 @@ public class CertificationApplicationFormGenerationService {
   private static final String TEMPLATE_PATH = "templates/职业技能等级认定申请表.docx";
   private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy年M月d日");
 
-  public byte[] generateApplicationForm(CertificationCandidateSourceStagingEntity staging) {
-    try (InputStream input = new ClassPathResource(TEMPLATE_PATH).getInputStream();
-        XWPFDocument document = new XWPFDocument(input);
+  private final CertificationImageSourceService imageSourceService;
+
+  public CertificationApplicationFormGenerationService(CertificationImageSourceService imageSourceService) {
+    this.imageSourceService = imageSourceService;
+  }
+
+  public byte[] generateApplicationForm(CertificationCandidateSourceStagingEntity staging, byte[] portrait) {
+    try (InputStream templateInput = new ClassPathResource(TEMPLATE_PATH).getInputStream()) {
+      byte[] template = templateInput.readAllBytes();
+      byte[] populatedTemplate = replaceTemplateImages(
+          template,
+          portrait,
+          imageSourceService.readReference(staging.getIdCardFrontUrl()),
+          imageSourceService.readReference(staging.getIdCardBackUrl()));
+      try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(populatedTemplate));
         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-      Map<String, String> variables = buildVariables(staging);
-      replaceInDocument(document, variables);
-      document.write(output);
-      return output.toByteArray();
+        Map<String, String> variables = buildVariables(staging);
+        replaceInDocument(document, variables);
+        document.write(output);
+        return output.toByteArray();
+      }
     } catch (IOException ex) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "认定申请表模板生成失败");
     }
+  }
+
+  private byte[] replaceTemplateImages(
+      byte[] template,
+      byte[] portrait,
+      byte[] idCardFront,
+      byte[] idCardBack
+  ) throws IOException {
+    byte[] portraitPng = normalizeImage(portrait, "两寸证件照", "png", true, 600, 800);
+    byte[] frontPng = normalizeImage(idCardFront, "身份证正面未提供", "png", false, 1200, 800);
+    byte[] frontJpeg = normalizeImage(idCardFront, "身份证正面未提供", "jpeg", false, 1200, 800);
+    byte[] backPng = normalizeImage(idCardBack, "身份证背面未提供", "png", false, 1200, 800);
+
+    try (ZipInputStream zipInput = new ZipInputStream(new ByteArrayInputStream(template));
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ZipOutputStream zipOutput = new ZipOutputStream(output)) {
+      ZipEntry entry;
+      while ((entry = zipInput.getNextEntry()) != null) {
+        ZipEntry copiedEntry = new ZipEntry(entry.getName());
+        copiedEntry.setTime(entry.getTime());
+        zipOutput.putNextEntry(copiedEntry);
+        byte[] replacement = switch (entry.getName()) {
+          case "word/media/image1.png" -> portraitPng;
+          case "word/media/image2.png" -> frontPng;
+          case "word/media/image3.jpeg" -> frontJpeg;
+          case "word/media/image4.png" -> backPng;
+          default -> null;
+        };
+        if (replacement == null) {
+          zipInput.transferTo(zipOutput);
+        } else {
+          zipOutput.write(replacement);
+        }
+        zipOutput.closeEntry();
+        zipInput.closeEntry();
+      }
+      zipOutput.finish();
+      return output.toByteArray();
+    }
+  }
+
+  private byte[] normalizeImage(
+      byte[] content,
+      String missingLabel,
+      String format,
+      boolean required,
+      int maxWidth,
+      int maxHeight
+  )
+      throws IOException {
+    BufferedImage image = null;
+    if (content != null && content.length > 0) {
+      image = ImageIO.read(new ByteArrayInputStream(content));
+    }
+    if (image == null && required) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, missingLabel + "不是可识别的图片");
+    }
+    if (image == null) {
+      image = placeholderImage(missingLabel);
+    }
+    image = resizeToFit(image, maxWidth, maxHeight);
+    BufferedImage outputImage = image;
+    if ("jpeg".equals(format) && image.getType() != BufferedImage.TYPE_INT_RGB) {
+      outputImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
+      Graphics2D graphics = outputImage.createGraphics();
+      graphics.setColor(Color.WHITE);
+      graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+      graphics.drawImage(image, 0, 0, null);
+      graphics.dispose();
+    }
+    try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      if (!ImageIO.write(outputImage, format, output)) {
+        throw new IOException("Unsupported image format: " + format);
+      }
+      return output.toByteArray();
+    }
+  }
+
+  private BufferedImage resizeToFit(BufferedImage source, int maxWidth, int maxHeight) {
+    double scale = Math.min(
+        1D,
+        Math.min((double) maxWidth / source.getWidth(), (double) maxHeight / source.getHeight()));
+    if (scale >= 1D) {
+      return source;
+    }
+    int width = Math.max(1, (int) Math.round(source.getWidth() * scale));
+    int height = Math.max(1, (int) Math.round(source.getHeight() * scale));
+    BufferedImage resized = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+    Graphics2D graphics = resized.createGraphics();
+    graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+    graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+    graphics.drawImage(source, 0, 0, width, height, null);
+    graphics.dispose();
+    return resized;
+  }
+
+  private BufferedImage placeholderImage(String label) {
+    BufferedImage image = new BufferedImage(1200, 800, BufferedImage.TYPE_INT_RGB);
+    Graphics2D graphics = image.createGraphics();
+    graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+    graphics.setColor(new Color(244, 247, 250));
+    graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
+    graphics.setColor(new Color(166, 176, 186));
+    graphics.drawRoundRect(30, 30, image.getWidth() - 60, image.getHeight() - 60, 28, 28);
+    graphics.setFont(new Font("Microsoft YaHei", Font.BOLD, 48));
+    graphics.setColor(new Color(86, 98, 110));
+    int textWidth = graphics.getFontMetrics().stringWidth(label);
+    graphics.drawString(label, Math.max(40, (image.getWidth() - textWidth) / 2), image.getHeight() / 2);
+    graphics.dispose();
+    return image;
   }
 
   private Map<String, String> buildVariables(CertificationCandidateSourceStagingEntity staging) {

@@ -6,6 +6,7 @@ public record PreparationCandidateImportReq(
     String sourceType,
     Long sourceFileId,
     List<PreparationCandidateSaveReq> candidates,
+    List<Long> trainingPeopleIds,
     String remark
 ) {
 }

@@ -29,7 +29,6 @@ import {
   Progress,
   Select,
   Space,
-  Steps,
   Table,
   Tabs,
   Tag,
@@ -58,10 +57,12 @@ import {
   pageCertificationTasks,
 } from '../../api/certification';
 import { PermissionGate } from '../../directives/permission';
+import { useNavStore } from '../../stores/navStore';
 import type {
   CertificationDocument,
   CertificationDocumentType,
   CertificationMember,
+  CertificationPhase,
   CertificationRisk,
   CertificationScheduleItem,
   CertificationTask,
@@ -85,6 +86,7 @@ import {
 } from './schedule/constants';
 import { ScheduleEditor } from './schedule/ScheduleEditor';
 import { ScheduleViewer } from './schedule/ScheduleViewer';
+import { TaskFlowPanel } from './TaskFlowPanel';
 type EditorType = 'member' | 'wbs' | 'schedule' | 'risk';
 
 interface PendingOrder {
@@ -207,6 +209,7 @@ const pendingOrders: PendingOrder[] = [
 
 export function ProjectManagementPage() {
   const queryClient = useQueryClient();
+  const navigateTo = useNavStore((state) => state.setSelectedKey);
   const tabsAnchorRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState<CertificationTaskQuery>({ page: 1, pageSize: 10 });
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
@@ -215,7 +218,7 @@ export function ProjectManagementPage() {
   const [charterMode, setCharterMode] = useState<'view' | 'edit'>('view');
   const [wbsMode, setWbsMode] = useState<'view' | 'edit'>('view');
   const [scheduleMode, setScheduleMode] = useState<'view' | 'edit'>('view');
-  const [collapsedTaskList, setCollapsedTaskList] = useState(false);
+  const [collapsedTaskList, setCollapsedTaskList] = useState(true);
   const [collapsedTabs, setCollapsedTabs] = useState(false);
   const [collapsedPendingOrders, setCollapsedPendingOrders] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
@@ -255,6 +258,29 @@ export function ProjectManagementPage() {
 
   const workbench = workbenchQuery.data;
   const selectedTask = workbench?.task || tasks.find((task) => task.id === selectedTaskId);
+
+  const handlePhaseClick = (phase: CertificationPhase) => {
+    const targetMap: Record<string, string> = {
+      preparation: 'certification_preparation',
+      archive: 'certification_archive',
+      certification_completed: 'certification_task_archive',
+    };
+    const phaseCode = phase.phaseCode === 'project_creation' ? 'task_creation' : phase.phaseCode;
+
+    if (phaseCode === 'task_creation') {
+      setCollapsedTabs(false);
+      setActiveView('workbench');
+      requestAnimationFrame(() => {
+        tabsAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return;
+    }
+
+    const target = targetMap[phaseCode];
+    if (target) {
+      navigateTo(target);
+    }
+  };
 
   useEffect(() => {
     if (!workbench) {
@@ -420,11 +446,11 @@ export function ProjectManagementPage() {
           }}
         />
       ),
-      okText: '纭椹冲洖',
-      cancelText: '鍙栨秷',
+      okText: '确认驳回',
+      cancelText: '取消',
       onOk: () => {
         if (!comment.trim()) {
-          message.warning('椹冲洖鍘熷洜涓嶈兘涓虹┖');
+          message.warning('驳回原因不能为空');
           return Promise.reject();
         }
         return reviewDocumentMutation.mutateAsync({ type, stage, approved: false, comment });
@@ -640,21 +666,6 @@ export function ProjectManagementPage() {
       ),
     },
     { title: '任务名称', dataIndex: 'taskName', width: 230, ellipsis: true },
-    { title: '任务经理', dataIndex: 'taskManagerName', width: 100 },
-    { title: '计划人数', dataIndex: 'plannedPeopleCount', width: 90, render: dash },
-    { title: '考试日期', dataIndex: 'examDate', width: 120, render: dash },
-    {
-      title: '当前阶段',
-      dataIndex: 'currentPhase',
-      width: 140,
-      render: (value: string, record) => renderTaskPhase(value, record.currentPhaseName),
-    },
-    {
-      title: '任务状态',
-      dataIndex: 'status',
-      width: 110,
-      render: (value: string, record) => renderTaskStatus(value, record.statusName),
-    },
     {
       title: '资料进度',
       width: 120,
@@ -666,6 +677,7 @@ export function ProjectManagementPage() {
     {
       title: '操作',
       width: 190,
+      align: 'center',
       fixed: 'right',
       render: (_, record) => (
         <Space size={0} wrap={false}>
@@ -743,7 +755,7 @@ export function ProjectManagementPage() {
       </div>
 
       <Card
-        title="任务管理"
+        title="任务栏"
         styles={{
           body: collapsedTaskList
             ? { display: 'none', padding: 0 }
@@ -813,7 +825,7 @@ export function ProjectManagementPage() {
               dataSource={tasks}
               loading={tasksQuery.isLoading}
               rowSelection={{ selectedRowKeys, onChange: (keys) => setSelectedRowKeys(keys) }}
-              scroll={{ x: 1180 }}
+              scroll={{ x: 760 }}
               pagination={{
                 current: query.page,
                 pageSize: query.pageSize,
@@ -828,6 +840,8 @@ export function ProjectManagementPage() {
           </>
         ) : null}
       </Card>
+
+      <TaskFlowPanel phases={workbench?.phases || []} onPhaseClick={handlePhaseClick} />
 
       <Card
         title="任务资料与工作台"
@@ -853,7 +867,6 @@ export function ProjectManagementPage() {
               activeKey={activeView}
               onChange={setActiveView}
               items={[
-                { key: 'flow', label: '任务流程', children: renderFlow(workbench?.phases || []) },
                 { key: 'workbench', label: '任务工作台', children: renderWorkbenchPanel() },
                 { key: 'charter', label: '任务章程', children: renderCharter() },
                 { key: 'members', label: '项目成员', children: renderMembers() },
@@ -1468,30 +1481,6 @@ function normalizeWorkbench(workbench: unknown) {
     documents: CertificationDocument[];
     risks: CertificationRisk[];
   };
-}
-
-function renderFlow(phases: Array<{ phaseCode: string; phaseName: string; status: string }>) {
-  if (phases.length === 0) {
-    return <Empty description="暂无流程数据" />;
-  }
-  const runningIndex = phases.findIndex((phase) => phase.status === 'running');
-  const allCompleted = phases.every((phase) => phase.status === 'completed');
-  const current =
-    runningIndex >= 0
-      ? runningIndex
-      : allCompleted
-        ? phases.length - 1
-        : Math.max(0, phases.findIndex((phase) => phase.status === 'pending'));
-  return (
-    <Steps
-      current={current}
-      items={phases.map((phase) => ({
-        title: phase.phaseName,
-        status: phase.status === 'completed' ? 'finish' : phase.status === 'running' ? 'process' : 'wait',
-        description: renderItemStatus(phase.status),
-      }))}
-    />
-  );
 }
 
 function renderMemberFields() {

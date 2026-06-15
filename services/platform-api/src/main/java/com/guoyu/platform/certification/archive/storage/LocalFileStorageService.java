@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -97,7 +98,7 @@ public class LocalFileStorageService implements FileStorageService {
     try {
       MessageDigest digest = MessageDigest.getInstance("SHA-256");
       try (DigestInputStream digestInput = new DigestInputStream(input, digest)) {
-        Files.copy(digestInput, target);
+        Files.copy(digestInput, target, StandardCopyOption.REPLACE_EXISTING);
       }
       return HexFormat.of().formatHex(digest.digest());
     } catch (NoSuchAlgorithmException ex) {

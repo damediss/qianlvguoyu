@@ -34,6 +34,28 @@ class LocalFileStorageServiceTest {
   }
 
   @Test
+  void storeReplacesExistingFileAtSameKey() throws Exception {
+    LocalFileStorageService service = service();
+    String fileKey = "certification/archive/T001/1/task-materials/BUSINESS_APPLICATION/application.docx";
+
+    service.store(new MockMultipartFile(
+        "file",
+        "application.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "old".getBytes()
+    ), fileKey);
+    ArchiveFileObject replacement = service.store(new MockMultipartFile(
+        "file",
+        "application.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "replacement".getBytes()
+    ), fileKey);
+
+    assertThat(Files.readString(tempDir.resolve(fileKey))).isEqualTo("replacement");
+    assertThat(replacement.fileSize()).isEqualTo(11);
+  }
+
+  @Test
   void storeRejectsPathTraversalFileKey() {
     LocalFileStorageService service = service();
     MockMultipartFile file = new MockMultipartFile("file", "a.pdf", "application/pdf", "x".getBytes());

@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.guoyu.platform.certification.dto.PreparationAssessorDispatchReq;
+import com.guoyu.platform.certification.dto.PreparationCandidateImportReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateSaveReq;
 import com.guoyu.platform.certification.dto.PreparationMaterialGenerateReq;
 import com.guoyu.platform.certification.dto.PreparationTaskAssessorSaveReq;
@@ -23,6 +24,7 @@ import com.guoyu.platform.certification.info.entity.CertificationInfoExamStaffEn
 import com.guoyu.platform.certification.entity.CertificationAssessorTaskEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateDocumentEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
+import com.guoyu.platform.certification.entity.CertificationCandidateImportBatchEntity;
 import com.guoyu.platform.certification.entity.CertificationMaterialTemplateEntity;
 import com.guoyu.platform.certification.entity.CertificationExamSiteEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskAssessorEntity;
@@ -100,6 +102,8 @@ class CertificationPreparationApplicationServiceTest {
       Mockito.mock(CertificationCandidateStagingApplicationService.class);
   private final CertificationApplicationFormGenerationService applicationFormGenerationService =
       Mockito.mock(CertificationApplicationFormGenerationService.class);
+  private final CertificationImageSourceService imageSourceService =
+      Mockito.mock(CertificationImageSourceService.class);
 
   private CertificationPreparationApplicationService service;
 
@@ -131,7 +135,8 @@ class CertificationPreparationApplicationServiceTest {
         infoAssessorMapper,
         fileApplicationService,
         stagingApplicationService,
-        applicationFormGenerationService
+        applicationFormGenerationService,
+        imageSourceService
     );
     when(scopeMapper.selectList(any())).thenReturn(List.of(existingScope()));
   }
@@ -155,6 +160,23 @@ class CertificationPreparationApplicationServiceTest {
     assertThatThrownBy(() -> service.createCandidate(1L, req))
         .isInstanceOf(BusinessException.class)
         .hasMessage("同一任务下身份证号不得重复");
+  }
+
+  @Test
+  void trainingImportRequiresAuthoritativeSourceIds() {
+    when(taskMapper.selectById(1L)).thenReturn(existingTask());
+
+    PreparationCandidateImportReq req = new PreparationCandidateImportReq(
+        "training",
+        null,
+        null,
+        List.of(),
+        null);
+
+    assertThatThrownBy(() -> service.createImportBatch(1L, req))
+        .isInstanceOf(BusinessException.class)
+        .hasMessage("请选择要导入的培训学员");
+    verify(importBatchMapper, never()).insert(any(CertificationCandidateImportBatchEntity.class));
   }
 
   @Test

@@ -1,5 +1,5 @@
 import { DeleteOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
-import { Button, Empty, Form, message, Select, Space, Table, Upload } from 'antd';
+import { Alert, Button, Empty, Form, message, Select, Space, Table, Upload } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { deleteArchiveMaterial, downloadArchiveFile, listArchiveMaterials, uploadArchiveMaterial } from '../../../api/certificationArchive';
@@ -14,6 +14,11 @@ export function TaskArchiveMaterials({ archiveId }: { archiveId?: string }) {
     queryFn: () => listArchiveMaterials(archiveId!),
     enabled: !!archiveId,
   });
+  const uploadedTypes = new Set((query.data || []).map((item) => item.materialType));
+  const materialOptions = taskMaterialOptions.map((option) => ({
+    ...option,
+    disabled: uploadedTypes.has(option.value),
+  }));
 
   const uploadMutation = useMutation({
     mutationFn: async (values: { materialType: string; file: File }) => {
@@ -66,9 +71,15 @@ export function TaskArchiveMaterials({ archiveId }: { archiveId?: string }) {
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      <Alert
+        type={uploadedTypes.size === taskMaterialOptions.length ? 'success' : 'info'}
+        showIcon
+        message={`认定材料已上传 ${uploadedTypes.size} / ${taskMaterialOptions.length} 类`}
+        description="每类材料在当前任务中只能上传一次；如需重新上传，请先删除原材料。"
+      />
       <Form form={form} layout="inline" onFinish={uploadMutation.mutate}>
         <Form.Item name="materialType" rules={[{ required: true, message: '请选择材料类型' }]}>
-          <Select placeholder="材料类型" style={{ width: 320 }} options={taskMaterialOptions} />
+          <Select placeholder="材料类型" style={{ width: 320 }} options={materialOptions} />
         </Form.Item>
         <Form.Item
           name="file"
@@ -80,7 +91,14 @@ export function TaskArchiveMaterials({ archiveId }: { archiveId?: string }) {
             <Button icon={<UploadOutlined />}>选择文件</Button>
           </Upload>
         </Form.Item>
-        <Button type="primary" htmlType="submit" loading={uploadMutation.isPending}>上传</Button>
+        <Button
+          type="primary"
+          htmlType="submit"
+          disabled={uploadedTypes.size === taskMaterialOptions.length}
+          loading={uploadMutation.isPending}
+        >
+          上传
+        </Button>
       </Form>
       <Table
         rowKey="id"

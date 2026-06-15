@@ -227,6 +227,9 @@ export interface TrainPeople {
 export interface TrainPeopleQuery {
   page?: number;
   pageSize?: number;
+  trainId?: number;
+  trainClassId?: number;
+  type?: string;
   keyword?: string;
 }
 

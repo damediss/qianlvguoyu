@@ -48,9 +48,15 @@ public class TrainSignUpPeopleSelfEntity {
 
   private String workTime;
   private String titleType;
+  private String titleLevel;
   private String titlePaper;
   private Long companyId;
   private String companyName;
+  private String companyCode;
+  private String zipCode;
+  private String companyAddress;
+  private String industrialPark;
+  private String comments;
   private String workDateStart;
   private String workDateEnd;
   private Integer workTypePaperHas;
@@ -67,11 +73,13 @@ public class TrainSignUpPeopleSelfEntity {
   private String declarationCondition;
 
   private String workExp;
+  private String job;
   private String jog;
 
   private String contactFirstPage;
   private String contactExpirePage;
   private String contactSignPage;
+  private String socialSecurity;
   private String contract;
   private String certificate;
 

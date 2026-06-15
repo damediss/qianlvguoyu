@@ -65,7 +65,10 @@ export function PreparationPage() {
     if (selectedTaskId && tasks.length > 0 && !tasks.some((task) => task.id === selectedTaskId)) {
       setSelectedTaskId(tasks[0].id);
     }
-  }, [selectedTaskId, tasks]);
+    if (selectedTaskId && !tasksQuery.isFetching && tasks.length === 0) {
+      setSelectedTaskId(undefined);
+    }
+  }, [selectedTaskId, tasks, tasksQuery.isFetching]);
 
   const selectedTask = useMemo(
     () => tasks.find((task) => task.id === selectedTaskId),
@@ -220,7 +223,7 @@ export function PreparationPage() {
         </div>
 
         <Card
-          title="认定任务"
+          title="任务栏"
           styles={{
             body: collapsedTaskList
               ? { display: 'none', padding: 0 }
