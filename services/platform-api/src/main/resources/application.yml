@@ -16,10 +16,38 @@ spring:
     serialization:
       write-dates-as-timestamps: false
   datasource:
-    url: ${MYSQL_URL:jdbc:mysql://192.168.1.200:3308/gjjd_test?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
-    username: ${MYSQL_USERNAME:root}
-    password: ${MYSQL_PASSWORD:guoyu_dev!513}
+    type: com.alibaba.druid.pool.DruidDataSource
+    url: ${MYSQL_URL:jdbc:mysql://43.138.163.7:3308/gjjddb2026?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    username: ${MYSQL_USERNAME:gjjd}
+    password: ${MYSQL_PASSWORD:w-#Y+=g7jdsJLjD8}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    druid:
+      initial-size: 5
+      min-idle: 5
+      max-active: 20
+      max-wait: 60000
+#      connection-init-sqls:
+#        - "SET SESSION sql_mode = 'NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES'"
+#        - "SET SESSION time_zone = '+08:00'"
+      time-between-eviction-runs-millis: 60000
+      min-evictable-idle-time-millis: 300000
+      validation-query: SELECT 1
+      test-while-idle: true
+      test-on-borrow: false
+      test-on-return: false
+      pool-prepared-statements: true
+      max-pool-prepared-statement-per-connection-size: 20
+      # 关闭监控统计
+      stat-view-servlet:
+        enabled: false
+      web-stat-filter:
+        enabled: false
+      filters: stat,wall
+      filter:
+        stat:
+          enabled: false
+        wall:
+          enabled: true
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -55,7 +83,9 @@ mybatis-plus:
 
 flowable:
   database-schema-update: ${FLOWABLE_DATABASE_SCHEMA_UPDATE:true}
-  async-executor-activate: false
+  database-type: mysql
+  async-executor-activate: true
+  history-level: full
   # 关闭 Spring Boot 内置自动部署，避免 ACT_RE_PROCDEF 版本冲突（见 FlowableProcessDeploymentRunner）
   check-process-definitions: false
   process-definition-location-prefix: classpath:/workflows/bpmn/

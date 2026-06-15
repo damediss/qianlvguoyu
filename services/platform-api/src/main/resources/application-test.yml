@@ -1,9 +1,18 @@
 spring:
   datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
     url: jdbc:h2:mem:platform_api_test;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
     username: sa
     password:
     driver-class-name: org.h2.Driver
+    druid:
+      initial-size: 2
+      min-idle: 1
+      max-active: 5
+      max-wait: 60000
+      validation-query: SELECT 1
+      test-while-idle: false
+      filters: wall
   flyway:
     enabled: false
   data:
