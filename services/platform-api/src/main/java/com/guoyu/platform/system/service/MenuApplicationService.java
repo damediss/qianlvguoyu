@@ -21,6 +21,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -40,6 +42,12 @@ public class MenuApplicationService {
     this.roleMenuRelationMapper = roleMenuRelationMapper;
   }
 
+  /** Expose tenantId for @Cacheable SPEL key: #root.target.tenantId() */
+  public Long tenantId() {
+    return SecurityContext.currentUser().getTenantId();
+  }
+
+  @Cacheable(value = "menuTree", key = "#root.target.tenantId() + ':#ROOT'", unless = "#result == null")
   @Transactional(readOnly = true)
   public List<MenuTreeVO> tree() {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -51,6 +59,7 @@ public class MenuApplicationService {
     return buildTree(menus);
   }
 
+  @CacheEvict(value = "menuTree", allEntries = true)
   @Transactional
   public MenuTreeVO create(MenuCreateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -111,6 +120,7 @@ public class MenuApplicationService {
         .orElse(null);
   }
 
+  @CacheEvict(value = "menuTree", allEntries = true)
   @Transactional
   public MenuTreeVO update(Long id, MenuUpdateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -131,6 +141,7 @@ public class MenuApplicationService {
     return toTreeVO(entity);
   }
 
+  @CacheEvict(value = "menuTree", allEntries = true)
   @Transactional
   public void batchUpdateVisible(MenuBatchVisibleReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -148,6 +159,7 @@ public class MenuApplicationService {
     log.info("Batch updated visible to {} for {} menus in tenant {}", req.visible(), entities.size(), tenantId);
   }
 
+  @CacheEvict(value = "menuTree", allEntries = true)
   @Transactional
   public void delete(Long id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -180,6 +192,7 @@ public class MenuApplicationService {
    * 2. 先删 role_menu 关联（外层），再软删菜单本身（deleted=1）
    * 3. 不主动校验"被角色绑定"——用户既然选了 cascade，已经默许级联
    */
+  @CacheEvict(value = "menuTree", allEntries = true)
   @Transactional
   public int deleteWithChildren(Long id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();

@@ -87,7 +87,9 @@ public class AuthApplicationService {
     PlatformUserPrincipal principal = buildPrincipal(user);
 
     StpUtil.login(user.getId());
-    StpUtil.getTokenSession().set("principal", principal);
+    // P0 Direction A: 只存 userId，不存整个 principal（避免 Jackson 反序列化问题）
+    // Filter 每次请求时从 DB 重建 principal，保证禁用用户立即失效
+    StpUtil.getTokenSession().set("userId", user.getId());
     String accessToken = StpUtil.getTokenValue();
 
     String refreshToken = createOpaqueRefreshToken();

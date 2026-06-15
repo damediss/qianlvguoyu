@@ -19,6 +19,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -31,6 +33,11 @@ public class ExamWorkTypeApplicationService {
 
   public ExamWorkTypeApplicationService(ExamWorkTypeMapper mapper) {
     this.mapper = mapper;
+  }
+
+  /** Expose tenantId for @Cacheable SPEL key: #root.target.tenantId() */
+  public Long tenantId() {
+    return SecurityContext.currentUser().getTenantId();
   }
 
   @Transactional(readOnly = true)
@@ -67,6 +74,7 @@ public class ExamWorkTypeApplicationService {
     return ExamWorkTypeVO.from(entity);
   }
 
+  @Cacheable(value = "workTypeTree", key = "#root.target.tenantId() + ':#ROOT'", unless = "#result == null")
   @Transactional(readOnly = true)
   public List<ExamWorkTypeVO> tree() {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -92,6 +100,7 @@ public class ExamWorkTypeApplicationService {
     return roots;
   }
 
+  @CacheEvict(value = "workTypeTree", allEntries = true)
   @Transactional
   public ExamWorkTypeVO create(ExamWorkTypeCreateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -111,6 +120,7 @@ public class ExamWorkTypeApplicationService {
     return ExamWorkTypeVO.from(entity);
   }
 
+  @CacheEvict(value = "workTypeTree", allEntries = true)
   @Transactional
   public ExamWorkTypeVO update(Integer id, ExamWorkTypeUpdateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -128,6 +138,7 @@ public class ExamWorkTypeApplicationService {
     return ExamWorkTypeVO.from(entity);
   }
 
+  @CacheEvict(value = "workTypeTree", allEntries = true)
   @Transactional
   public void delete(Integer id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
