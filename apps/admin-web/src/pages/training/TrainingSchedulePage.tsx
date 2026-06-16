@@ -5,6 +5,8 @@ import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import * as trainApi from '../../api/training';
+import { downloadUrlFile } from '../../api/files';
+import { TrainingProcessSteps } from './TrainingProcessSteps';
 
 export function TrainingSchedulePage() {
   const queryClient = useQueryClient();
@@ -37,7 +39,12 @@ export function TrainingSchedulePage() {
 
   const exportMu = useMutation({
     mutationFn: () => trainApi.exportClassSchedule(classId),
-    onSuccess: (data) => { if (data.downUrl) window.open(data.downUrl); message.success('导出成功'); },
+    onSuccess: async (data) => {
+      if (data.downUrl) {
+        await downloadUrlFile(data.downUrl, data.fileName);
+      }
+      message.success('导出成功');
+    },
     onError: () => message.error('导出失败'),
   });
 
@@ -93,6 +100,8 @@ export function TrainingSchedulePage() {
           <Typography.Text type="secondary">为班级配置培训课程安排，支持添加、编辑和导出课表</Typography.Text>
         </div>
       </section>
+
+      <TrainingProcessSteps current={5} />
 
       <Card size="small" style={{ marginBottom: 16 }}>
         <Space>

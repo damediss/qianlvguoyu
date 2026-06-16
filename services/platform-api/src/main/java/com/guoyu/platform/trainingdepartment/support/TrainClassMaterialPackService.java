@@ -38,12 +38,6 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.apache.poi.xwpf.usermodel.XWPFDocument;
-import org.apache.poi.xwpf.usermodel.XWPFParagraph;
-import org.apache.poi.xwpf.usermodel.XWPFRun;
-import org.apache.poi.xwpf.usermodel.XWPFTable;
-import org.apache.poi.xwpf.usermodel.XWPFTableCell;
-import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -67,6 +61,7 @@ public class TrainClassMaterialPackService {
   private final TrainingStoredFileResolver fileResolver;
   private final TrainBaseDataLookup baseDataLookup;
   private final TrainingRemoteImageUtil remoteImageUtil;
+  private final TrainingDocxTemplateValidator docxTemplateValidator;
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final DataFormatter formatter = new DataFormatter();
 
@@ -79,7 +74,8 @@ public class TrainClassMaterialPackService {
       ExamWorkTypeMapper workTypeMapper,
       TrainingStoredFileResolver fileResolver,
       TrainBaseDataLookup baseDataLookup,
-      TrainingRemoteImageUtil remoteImageUtil) {
+      TrainingRemoteImageUtil remoteImageUtil,
+      TrainingDocxTemplateValidator docxTemplateValidator) {
     this.fileTempMapper = fileTempMapper;
     this.signUpPeopleMapper = signUpPeopleMapper;
     this.platformUserDetailMapper = platformUserDetailMapper;
@@ -89,6 +85,7 @@ public class TrainClassMaterialPackService {
     this.fileResolver = fileResolver;
     this.baseDataLookup = baseDataLookup;
     this.remoteImageUtil = remoteImageUtil;
+    this.docxTemplateValidator = docxTemplateValidator;
   }
 
   public byte[] buildZip(
@@ -243,8 +240,14 @@ public class TrainClassMaterialPackService {
       String companyName,
       String workTypeTitle,
       List<TrainPeopleListEntity> teachers) throws Exception {
-    String templatePath = StringUtils.hasText(tmpl.getPathUsed()) ? tmpl.getPathUsed() : tmpl.getPathSource();
+    String templatePath = resolveKaiBanTemplatePath(tmpl);
     Path local = fileResolver.resolveLocalPath(templatePath);
+    byte[] templateBytes = Files.readAllBytes(local);
+    if (!docxTemplateValidator.hasKaiBanMacros(templateBytes)) {
+      throw new IllegalStateException(
+          "开班申请表模板未设置 Word 变量（需含 ${pxdw}、${company} 等）。"
+              + "请重新上传并在「设置变量后的Word」中保存含占位符的文档，或挂载正确模板。");
+    }
     String wlevel = "";
     int level = trainInfo != null && trainInfo.getWorkTypeLevel() != null ? trainInfo.getWorkTypeLevel() : 0;
     if (level > 0 && level < LEVEL_LABELS.length) {
@@ -269,57 +272,25 @@ public class TrainClassMaterialPackService {
     vars.put("teacher2", teachers.size() > 1 && teachers.get(1).getRealname() != null ? teachers.get(1).getRealname() : "");
     vars.put("teatel2", teachers.size() > 1 && teachers.get(1).getPhone() != null ? teachers.get(1).getPhone() : "");
     vars.put("wktype", workTypeTitle);
+    vars.put("worktype", workTypeTitle);
     vars.put("level", wlevel);
     vars.put("nums", clazz.getNums() != null ? String.valueOf(clazz.getNums()) : "");
     vars.put("keshi", "");
     vars.put("pxchengnuo", "培训承诺*****");
 
-    try (InputStream in = Files.newInputStream(local);
-        XWPFDocument doc = new XWPFDocument(in);
-        ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-      replaceDocxVariables(doc, vars);
-      doc.write(out);
-      return out.toByteArray();
-    }
+    return TrainingDocxVariableReplacer.replaceAll(templateBytes, vars);
   }
 
-  private void replaceDocxVariables(XWPFDocument doc, Map<String, String> vars) {
-    for (XWPFParagraph p : doc.getParagraphs()) {
-      replaceParagraph(p, vars);
+  /** 对齐 PHP：优先使用 path_used（设置变量后的 Word） */
+  private String resolveKaiBanTemplatePath(TrainFileTempEntity tmpl) {
+    if (StringUtils.hasText(tmpl.getPathUsed())) {
+      return tmpl.getPathUsed();
     }
-    for (XWPFTable table : doc.getTables()) {
-      for (XWPFTableRow row : table.getRows()) {
-        for (XWPFTableCell cell : row.getTableCells()) {
-          for (XWPFParagraph p : cell.getParagraphs()) {
-            replaceParagraph(p, vars);
-          }
-        }
-      }
-    }
+    return tmpl.getPathSource();
   }
 
-  private void replaceParagraph(XWPFParagraph paragraph, Map<String, String> vars) {
-    String text = paragraph.getText();
-    if (!StringUtils.hasText(text)) {
-      return;
-    }
-    String replaced = text;
-    for (Map.Entry<String, String> e : vars.entrySet()) {
-      replaced = replaced.replace("${" + e.getKey() + "}", e.getValue() != null ? e.getValue() : "");
-    }
-    if (replaced.equals(text)) {
-      return;
-    }
-    List<XWPFRun> runs = paragraph.getRuns();
-    if (runs.isEmpty()) {
-      XWPFRun run = paragraph.createRun();
-      run.setText(replaced);
-      return;
-    }
-    for (int i = runs.size() - 1; i > 0; i--) {
-      paragraph.removeRun(i);
-    }
-    runs.get(0).setText(replaced, 0);
+  private String resolveTemplatePath(TrainFileTempEntity tmpl) {
+    return StringUtils.hasText(tmpl.getPathUsed()) ? tmpl.getPathUsed() : tmpl.getPathSource();
   }
 
   private byte[] buildImportSheet(
@@ -328,7 +299,7 @@ public class TrainClassMaterialPackService {
       Map<String, StudentDetail> userDetails,
       String companyName,
       Map<String, Map<String, String>> baseData) throws Exception {
-    Path local = fileResolver.resolveLocalPath(tmpl.getPathSource());
+    Path local = fileResolver.resolveLocalPath(resolveTemplatePath(tmpl));
     try (InputStream in = Files.newInputStream(local);
         Workbook workbook = WorkbookFactory.create(in)) {
       Sheet sheet = workbook.getSheetAt(0);
@@ -360,7 +331,7 @@ public class TrainClassMaterialPackService {
         setCell(sheet, rowNum, 0, rowA);
         setCell(sheet, rowNum, 1, "90-无");
         setCell(sheet, rowNum, 2, st.getIdCard());
-        setCell(sheet, rowNum, 3, ud.realname);
+        setCell(sheet, rowNum, 3, firstNonBlank(ud.realname, st.getRealname()));
         setCell(sheet, rowNum, 4, rowE);
         setCell(sheet, rowNum, 5, rowF);
         setCell(sheet, rowNum, 6, rowG);
@@ -379,13 +350,13 @@ public class TrainClassMaterialPackService {
       TrainFileTempEntity tmpl,
       List<TrainPeopleListEntity> students,
       Map<String, StudentDetail> userDetails) throws Exception {
-    Path local = fileResolver.resolveLocalPath(tmpl.getPathSource());
+    Path local = fileResolver.resolveLocalPath(resolveTemplatePath(tmpl));
     try (InputStream in = Files.newInputStream(local);
         Workbook workbook = WorkbookFactory.create(in)) {
       Sheet sheet = workbook.getSheetAt(0);
-      int headerRowIdx = 4;
-      int dataStartRow = 5;
-      Map<String, Integer> colMap = findRosterColumns(sheet, headerRowIdx);
+      RosterLayout layout = findRosterLayout(sheet);
+      int dataStartRow = layout.dataStartRow();
+      Map<String, Integer> colMap = layout.columns();
       int female = 0;
       int rowNum = dataStartRow;
       for (int k = 0; k < students.size(); k++) {
@@ -402,7 +373,7 @@ public class TrainClassMaterialPackService {
           leibie = "在岗农民工（在岗农民工）";
         }
         setCol(sheet, rowNum, colMap.get("序号"), String.valueOf(k + 1));
-        setCol(sheet, rowNum, colMap.get("姓名"), ud.realname);
+        setCol(sheet, rowNum, colMap.get("姓名"), firstNonBlank(ud.realname, st.getRealname()));
         setCol(sheet, rowNum, colMap.get("性别"), gender);
         setCol(sheet, rowNum, colMap.get("民族"), ud.nation);
         setCol(sheet, rowNum, colMap.get("学历"), ud.education);
@@ -417,10 +388,24 @@ public class TrainClassMaterialPackService {
         rowNum++;
       }
       double femaleRate = students.isEmpty() ? 0 : Math.round((female * 10000.0 / students.size())) / 100.0;
-      setCell(sheet, rowNum, 7, "女性占" + female + "，占总人数{" + femaleRate + "}%");
+      Integer femaleCol = colMap.get("联系电话");
+      setCell(sheet, rowNum, femaleCol != null ? femaleCol : 7, "女性占" + female + "，占总人数{" + femaleRate + "}%");
       return workbookToBytes(workbook);
     }
   }
+
+  /** 对齐 PHP：扫描「姓名」列确定表头行，数据从表头下一行开始 */
+  private RosterLayout findRosterLayout(Sheet sheet) {
+    for (int headerRowIdx = 0; headerRowIdx <= sheet.getLastRowNum(); headerRowIdx++) {
+      Map<String, Integer> columns = findRosterColumns(sheet, headerRowIdx);
+      if (columns.containsKey("姓名")) {
+        return new RosterLayout(headerRowIdx + 1, columns);
+      }
+    }
+    return new RosterLayout(5, findRosterColumns(sheet, 4));
+  }
+
+  private record RosterLayout(int dataStartRow, Map<String, Integer> columns) {}
 
   private Map<String, Integer> findRosterColumns(Sheet sheet, int headerRowIdx) {
     Row header = sheet.getRow(headerRowIdx);
@@ -451,7 +436,7 @@ public class TrainClassMaterialPackService {
       TrainFileTempEntity tmpl,
       TrainInfoClassEntity clazz,
       List<TrainPeopleListEntity> teachers) throws Exception {
-    Path templateLocal = fileResolver.resolveLocalPath(tmpl.getPathSource());
+    Path templateLocal = fileResolver.resolveLocalPath(resolveTemplatePath(tmpl));
     Path kcbiaoLocal = fileResolver.resolveLocalPath(clazz.getKcbiaoFile());
     Map<String, TrainPeopleListEntity> teacherByName = new HashMap<>();
     for (TrainPeopleListEntity t : teachers) {
@@ -603,6 +588,15 @@ public class TrainClassMaterialPackService {
     if (colIdx != null) {
       setCell(sheet, rowIdx, colIdx, value);
     }
+  }
+
+  private String firstNonBlank(String... values) {
+    for (String value : values) {
+      if (StringUtils.hasText(value)) {
+        return value;
+      }
+    }
+    return "";
   }
 
   private String cellText(Row row, int col) {

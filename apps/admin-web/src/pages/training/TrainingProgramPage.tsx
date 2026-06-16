@@ -5,6 +5,7 @@
 import { useMemo, useState } from 'react';
 import {
   Button,
+  Card,
   Form,
   Input,
   InputNumber,
@@ -14,6 +15,7 @@ import {
   Space,
   Table,
   Upload,
+  Typography,
   message,
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons';
@@ -31,6 +33,7 @@ import type {
   DemandPublicData,
 } from '../../types/training';
 import './TrainingProgramPage.css';
+import { TrainingProcessSteps } from './TrainingProcessSteps';
 
 const { Dragger } = Upload;
 const BADGE_FEE_OPTIONS = ['劳务费', '住宿费', '耗材', '场地成本', '设备成本', '其他'];
@@ -277,7 +280,7 @@ export function TrainingProgramPage() {
 
   const columns: ColumnsType<TrainSolutionList> = [
     { title: 'ID', dataIndex: 'id', width: 60, align: 'center' },
-    { title: '标题', dataIndex: 'title', align: 'center', width: 100 },
+    { title: '方案标题', dataIndex: 'title', align: 'center', width: 100 },
     { title: '企业', dataIndex: 'companyName', align: 'center' },
     { title: '培训需求', dataIndex: 'trainTitle', align: 'center', width: 180 },
     { title: '预算', dataIndex: 'badge', align: 'center', width: 100 },
@@ -309,10 +312,17 @@ export function TrainingProgramPage() {
   ];
 
   return (
-    <div className="training-program-page expense-table-container">
-      <Button type="primary" onClick={openAdd} style={{ marginBottom: 8 }}>
-        + 添加
-      </Button>
+    <div className="training-program-page training-page expense-table-container">
+      <section className="page-heading">
+        <Typography.Title level={4}>培训方案</Typography.Title>
+        <Typography.Text type="secondary">管理培训方案与预算，关联企业培训需求</Typography.Text>
+      </section>
+
+      <TrainingProcessSteps current={1} />
+
+      <Card size="small" style={{ marginBottom: 16 }}>
+        <Button type="primary" onClick={openAdd}>+ 添加</Button>
+      </Card>
 
       <Table
         rowKey="id"
@@ -351,8 +361,8 @@ export function TrainingProgramPage() {
           <Form.Item name="id" hidden>
             <Input />
           </Form.Item>
-          <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
-            <Input placeholder="请输入标题" />
+          <Form.Item name="title" label="方案标题" rules={[{ required: true, message: '请输入方案标题' }]}>
+            <Input placeholder="请输入方案标题" />
           </Form.Item>
           <Form.Item name="companyId" label="受训单位" rules={[{ required: true, message: '请选择受训企业' }]}>
             <Select

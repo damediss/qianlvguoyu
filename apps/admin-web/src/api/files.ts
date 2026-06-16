@@ -1,11 +1,7 @@
 import axios from 'axios';
-import JSONBig from 'json-bigint';
-import { useAuthStore } from '../stores/authStore';
 import { apiClient } from './client';
 import type { ApiResponse } from '../types/api';
 import type { FileVO } from '../types/knowledge';
-
-const jsonBig = JSONBig({ storeAsString: true });
 
 async function parseBlobError(blob: Blob, fallback: string): Promise<string> {
   if (!blob.type.includes('json') && blob.size > 512) {
@@ -59,71 +55,24 @@ async function materializeUploadFile(file: File | Blob): Promise<File> {
   return new File([buffer], name, { type });
 }
 
-function xhrUploadBinary(
-  url: string,
-  body: Blob,
-  originalName: string,
-  contentType: string,
-  accessPolicy?: string,
-): Promise<ApiResponse<FileVO>> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', url);
-    const token = useAuthStore.getState().token;
-    const tenantId = useAuthStore.getState().tenantId;
-    if (token) {
-      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    }
-    if (tenantId) {
-      xhr.setRequestHeader('X-Tenant-Id', String(tenantId));
-    }
-    try {
-      xhr.setRequestHeader('X-Request-Id', crypto.randomUUID());
-    } catch {
-      xhr.setRequestHeader('X-Request-Id', String(Date.now()));
-    }
-    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-    if (contentType && contentType !== 'application/octet-stream') {
-      xhr.setRequestHeader('X-Content-Type', contentType);
-    }
-    xhr.setRequestHeader('X-Original-Filename', encodeURIComponent(originalName));
-    if (accessPolicy) {
-      xhr.setRequestHeader('X-Access-Policy', accessPolicy);
-    }
-    xhr.onload = () => {
-      try {
-        const payload = jsonBig.parse(xhr.responseText) as ApiResponse<FileVO>;
-        if (xhr.status >= 400 || payload.code !== '0') {
-          reject(new Error(payload.message || '文件上传失败'));
-          return;
-        }
-        resolve(payload);
-      } catch {
-        reject(new Error('文件上传失败'));
-      }
-    };
-    xhr.onerror = () => reject(new Error('文件上传失败'));
-    xhr.send(body);
-  });
-}
-
 export async function uploadPlatformFile(file: File | Blob, accessPolicy?: string): Promise<FileVO> {
   const resolved = resolveUploadFile(file);
   if (!(resolved instanceof Blob)) {
     throw new Error('无法读取文件，请重新选择');
   }
   const uploadBody = await materializeUploadFile(resolved);
-  const payload = await xhrUploadBinary(
-    '/api/files',
-    uploadBody,
-    uploadBody.name,
-    uploadBody.type || 'application/octet-stream',
-    accessPolicy,
-  );
-  if (!payload.data) {
-    throw new Error(payload.message || '文件上传失败');
+  const form = new FormData();
+  form.append('file', uploadBody, uploadBody.name);
+  if (accessPolicy) {
+    form.append('accessPolicy', accessPolicy);
   }
-  return payload.data;
+  const response = await apiClient.post<ApiResponse<FileVO>>('/files', form, {
+    timeout: 120000,
+  });
+  if (!response.data.data) {
+    throw new Error(response.data.message || '文件上传失败');
+  }
+  return response.data.data;
 }
 
 export function fetchCandidateDocumentBlob(taskId: string, documentId: string) {

@@ -4,6 +4,7 @@
 import { useMemo, useState } from 'react';
 import {
   Button,
+  Card,
   Form,
   Input,
   InputNumber,
@@ -23,6 +24,12 @@ import { SolutionDocumentPreview } from '../../components/SolutionDocumentPrevie
 import { useAuthStore } from '../../stores/authStore';
 import type { DemandTrain, SolutionByDemand, TrainStudent } from '../../types/training';
 import './EnterpriseTrainingDemandPage.css';
+import { TRAINING_PROCESS_STEP_ROUTES, TrainingProcessSteps } from './TrainingProcessSteps';
+
+const ENTERPRISE_DEMAND_STEP_ROUTES = [
+  'train_demand-train',
+  ...TRAINING_PROCESS_STEP_ROUTES.slice(1),
+] as const;
 
 function formatAddtime(ts?: number): string {
   if (!ts) return '-';
@@ -259,7 +266,7 @@ export function EnterpriseTrainingDemandPage() {
     {
       title: '操作',
       key: 'act',
-      width: 200,
+      width: 260,
       fixed: 'right',
       render: (_, row) => {
         if (row.status === 0) {
@@ -276,7 +283,12 @@ export function EnterpriseTrainingDemandPage() {
           );
         }
         return (
-          <Button type="primary" size="small" onClick={() => openStudents(row)}>报名人员</Button>
+          <Space size="small">
+            <Button type="primary" size="small" onClick={() => openStudents(row)}>报名人员</Button>
+            {row.solution === 1 && (
+              <Button type="link" size="small" onClick={() => loadProgram(row.id)}>查看方案</Button>
+            )}
+          </Space>
         );
       },
     },
@@ -285,8 +297,15 @@ export function EnterpriseTrainingDemandPage() {
   const canConfirm = program && program.train_info_status !== 1;
 
   return (
-    <div className="enterprise-demand-page">
-      <Typography.Title level={4}>培训需求</Typography.Title>
+    <div className="enterprise-demand-page training-page">
+      <section className="page-heading">
+        <Typography.Title level={4}>培训需求</Typography.Title>
+        {/*<Typography.Text type="secondary">采集企业培训需求，提交并跟踪方案处理进度</Typography.Text>*/}
+      </section>
+
+      {/*<TrainingProcessSteps current={0} stepRoutes={ENTERPRISE_DEMAND_STEP_ROUTES} />*/}
+
+      <Card size="small" style={{ marginBottom: 16 }}>
       <div className="enterprise-demand-toolbar">
         <Space>
           <Button type="primary" onClick={openCreate}>添加</Button>
@@ -299,6 +318,8 @@ export function EnterpriseTrainingDemandPage() {
           </Button>
         </Space>
       </div>
+      </Card>
+
       <Table
         rowKey="id"
         loading={isLoading}

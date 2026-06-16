@@ -4,6 +4,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import {
   Button,
+  Card,
   DatePicker,
   Form,
   Input,
@@ -11,15 +12,12 @@ import {
   Pagination,
   Select,
   Space,
-  Steps,
   Table,
+  Typography,
   Upload,
   message,
 } from 'antd';
 import {
-  EditOutlined,
-  PictureOutlined,
-  UploadOutlined,
   InboxOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -28,6 +26,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import * as trainApi from '../../api/training';
 import { uploadFile } from '../../api/knowledge';
+import { FilePreviewModal, type FilePreviewTarget } from '../../components/FilePreviewModal';
+import { fileNameFromUrl } from '../../api/files';
 import type {
   TrainInfoClassListItem,
   TrainInfoClassCreateReq,
@@ -40,17 +40,9 @@ import type {
   TeacherBankItem,
 } from '../../types/training';
 import './TrainingClassPeoplePage.css';
+import { TrainingProcessSteps } from './TrainingProcessSteps';
 
 const { Dragger } = Upload;
-
-const STEPS_ITEMS = [
-  { title: '需求管理', icon: <EditOutlined /> },
-  { title: '培训信息', icon: <UploadOutlined /> },
-  { title: '班级人员', icon: <PictureOutlined /> },
-  { title: '开班申报', icon: <EditOutlined /> },
-  { title: '课表配置', icon: <UploadOutlined /> },
-  { title: '毕业', icon: <PictureOutlined /> },
-];
 
 function resolveFileUrl(path?: string): string {
   if (!path) return '';
@@ -775,8 +767,7 @@ export function TrainingClassPeoplePage() {
   const [kcbiaoSrc, setKcbiaoSrc] = useState('');
 
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewFile, setPreviewFile] = useState('');
+  const [previewTarget, setPreviewTarget] = useState<FilePreviewTarget | null>(null);
 
   const [studentModal, setStudentModal] = useState(false);
   const [staffModal, setStaffModal] = useState(false);
@@ -931,8 +922,10 @@ export function TrainingClassPeoplePage() {
   const openPreview = (src?: string) => {
     const url = resolveFileUrl(src);
     if (!url) return;
-    setPreviewFile(url.startsWith('http') ? url : `${window.location.origin}${url}`);
-    setPreviewOpen(true);
+    setPreviewTarget({
+      fileUrl: url,
+      fileName: fileNameFromUrl(url),
+    });
   };
 
   const handleFilterChange = () => {
@@ -995,7 +988,7 @@ export function TrainingClassPeoplePage() {
       align: 'center',
       render: (_, __, i) => (currentPage - 1) * pageSize + i + 1,
     },
-    { title: '标题', dataIndex: 'title', align: 'left', ellipsis: true },
+    { title: '班级名称', dataIndex: 'title', align: 'left', ellipsis: true },
     { title: '公司', dataIndex: 'company_name', align: 'left', ellipsis: true },
     { title: '工种', dataIndex: 'work_type_title', align: 'center', width: 140 },
     { title: '人数', dataIndex: 'nums', width: 80, align: 'center' },
@@ -1017,9 +1010,15 @@ export function TrainingClassPeoplePage() {
   ];
 
   return (
-    <div className="training-class-people-page">
-      <Steps className="class-people-steps" current={2} items={STEPS_ITEMS} />
+    <div className="training-class-people-page training-page">
+      <section className="page-heading">
+        <Typography.Title level={4}>班级人员</Typography.Title>
+        <Typography.Text type="secondary">管理培训班级人员，维护学员、班委及跟班任务</Typography.Text>
+      </section>
 
+      <TrainingProcessSteps current={3} />
+
+      <Card size="small" style={{ marginBottom: 16 }}>
       <div className="search-filter-bar">
         <div className="filter-actions">
           <Select
@@ -1052,6 +1051,7 @@ export function TrainingClassPeoplePage() {
           <Button type="primary" onClick={openCreate}>创建班级</Button>
         </div>
       </div>
+      </Card>
 
       <Table
         className="class-people-table"
@@ -1089,8 +1089,8 @@ export function TrainingClassPeoplePage() {
       >
         <Form form={form} labelCol={{ style: { width: 120 } }} wrapperCol={{ span: 16 }}>
           <Form.Item name="id" hidden><Input /></Form.Item>
-          <Form.Item name="title" label="标题">
-            <Input placeholder="请输入标题" />
+          <Form.Item name="title" label="班级名称">
+            <Input placeholder="请输入班级名称" />
           </Form.Item>
           <Form.Item name="trainInfoId" label="选择培训信息">
             <Select placeholder="请选择培训信息" options={trainInfoOptions} />
@@ -1145,26 +1145,11 @@ export function TrainingClassPeoplePage() {
         </Dragger>
       </Modal>
 
-      <Modal
-        title="预览"
-        open={previewOpen}
-        width="80%"
-        styles={{ body: { height: 680, overflowY: 'auto' } }}
-        onCancel={() => { setPreviewOpen(false); setPreviewFile(''); }}
-        footer={null}
-        maskClosable={false}
-        destroyOnClose
-      >
-        {previewFile && (
-          <div className="file-preview-container">
-            <iframe
-              title="preview"
-              src={`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(previewFile)}`}
-              style={{ width: '100%', height: 600 }}
-            />
-          </div>
-        )}
-      </Modal>
+      <FilePreviewModal
+        open={previewTarget != null}
+        target={previewTarget}
+        onClose={() => setPreviewTarget(null)}
+      />
 
       <StudentListModal open={studentModal} onClose={() => setStudentModal(false)}
         classId={selectedClass?.id ?? null} trainInfoId={selectedClass?.trainInfoId ?? null} />

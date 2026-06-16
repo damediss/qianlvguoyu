@@ -4,24 +4,28 @@
  */
 import { useMemo, useState } from 'react';
 import {
+  Alert,
   Button,
+  Card,
   Form,
   Input,
   Modal,
   Pagination,
   Select,
   Space,
-  Steps,
   Table,
+  Typography,
   Upload,
   message,
 } from 'antd';
-import { EditOutlined, PictureOutlined, UploadOutlined, InboxOutlined } from '@ant-design/icons';
+import { InboxOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadProps } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
 import { uploadFile } from '../../api/knowledge';
+import { FilePreviewModal, type FilePreviewTarget } from '../../components/FilePreviewModal';
+import { fileNameFromUrl, downloadUrlFile } from '../../api/files';
 import type {
   DemandPublicData,
   TrainFileTempItem,
@@ -29,19 +33,31 @@ import type {
   TrainInfoClassListItem,
 } from '../../api/training';
 import './TrainingClassDeclarePage.css';
+import { TrainingProcessSteps } from './TrainingProcessSteps';
 
 const { Dragger } = Upload;
 
-const STEPS_ITEMS = [
-  { title: '需求管理', icon: <EditOutlined /> },
-  { title: '培训信息', icon: <UploadOutlined /> },
-  { title: '班级人员', icon: <PictureOutlined /> },
-  { title: '开班申报', icon: <EditOutlined /> },
-  { title: '课表配置', icon: <UploadOutlined /> },
-  { title: '毕业', icon: <PictureOutlined /> },
-];
-
 const FILE_TEMP_TITLES = ['开班申请表', '导入表', '开班花名册', '课时导入表'];
+
+function uploadAcceptByTitle(title?: string): string {
+  if (title === '开班申请表') return '.docx';
+  if (title === '导入表' || title === '开班花名册' || title === '课时导入表') return '.xlsx,.xls';
+  return '.docx,.xlsx,.xls';
+}
+
+function isExcelExt(ext?: string): boolean {
+  return ext === 'xlsx' || ext === 'xls';
+}
+
+function fileTypeHint(title?: string): string {
+  if (title === '开班申请表') {
+    return '先上传空白表到「文件路径」，再上传含 ${pxdw}、${company}、${worktype} 等变量的 Word 到「设置变量后的Word」';
+  }
+  if (title === '导入表' || title === '开班花名册' || title === '课时导入表') {
+    return `上传 Excel 模板（.xlsx/.xls），须为人社部门提供的「${title}」标准表头`;
+  }
+  return '请先选择文件名称，再上传对应格式的模板文件';
+}
 
 const GUANGXI_CITIES = [
   '南宁市', '柳州市', '桂林市', '梧州市', '北海市', '防城港市', '钦州市', '贵港市',
@@ -90,9 +106,7 @@ export function TrainingClassDeclarePage() {
   const [classId, setClassId] = useState(0);
   const [materialRows, setMaterialRows] = useState<TrainFileTempItem[]>([]);
 
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState('');
-  const [previewType, setPreviewType] = useState('');
+  const [previewTarget, setPreviewTarget] = useState<FilePreviewTarget | null>(null);
 
   const { data: publicData } = useQuery({
     queryKey: ['demand-public-data', 'class-declare'],
@@ -192,6 +206,18 @@ export function TrainingClassDeclarePage() {
       message.error('请上传文件');
       return;
     }
+    if (v.title === '开班申请表' && v.ext !== 'docx') {
+      message.error('开班申请表须上传 Word 文档（.docx）');
+      return;
+    }
+    if (v.title === '开班申请表' && !v.pathUsed) {
+      message.error('请上传「设置变量后的Word」（须含 ${pxdw}、${company} 等占位符）');
+      return;
+    }
+    if (v.title !== '开班申请表' && !isExcelExt(v.ext)) {
+      message.error(`${v.title}须上传 Excel 文件（.xlsx/.xls）`);
+      return;
+    }
     const res = await trainApi.saveFileTemp({
       id: v.id,
       type: 1,
@@ -263,7 +289,8 @@ export function TrainingClassDeclarePage() {
     try {
       const res = await trainApi.generateMaterials(row.id);
       if (res?.downUrl) {
-        window.open(res.downUrl, '_blank');
+        await downloadUrlFile(res.downUrl, `${row.title || '班级'}_申报材料.zip`);
+        message.success('材料已生成');
       } else {
         message.warning('未返回下载地址');
       }
@@ -305,16 +332,17 @@ export function TrainingClassDeclarePage() {
   const onPreviewFile = (row: TrainFileTempItem, field: 'urlSource' | 'urlUsed' = 'urlSource') => {
     const url = field === 'urlUsed' ? row.urlUsed : row.urlSource;
     if (!url) return;
-    setPreviewUrl(fileUrl(url));
-    setPreviewType(row.ext ?? '');
-    setPreviewOpen(true);
+    const resolved = fileUrl(url);
+    setPreviewTarget({
+      fileUrl: resolved,
+      fileName: fileNameFromUrl(resolved),
+      fileType: row.ext,
+    });
   };
-
-  const ext = formFileTemp.getFieldValue('ext');
 
   const classColumns: ColumnsType<TrainInfoClassListItem> = [
     { title: '序号', width: 60, align: 'center', render: (_v, _r, i) => (currentPage - 1) * pageSize + i + 1 },
-    { title: '标题', dataIndex: 'title', align: 'center' },
+    { title: '班级名称', dataIndex: 'title', align: 'center' },
     { title: '公司', dataIndex: 'company_name', align: 'center' },
     { title: '工种', dataIndex: 'work_type_title', align: 'center' },
     { title: '人数', dataIndex: 'nums', width: 80, align: 'center' },
@@ -410,9 +438,15 @@ export function TrainingClassDeclarePage() {
   ];
 
   return (
-    <div className="training-class-declare-page training-table-container">
-      <Steps className="el-steps" style={{ maxWidth: '100%' }} current={3} items={STEPS_ITEMS} />
+    <div className="training-class-declare-page training-page training-table-container">
+      <section className="page-heading">
+        <Typography.Title level={4}>开班申报</Typography.Title>
+        <Typography.Text type="secondary">管理开班申报材料，配置模板并生成申报文件</Typography.Text>
+      </section>
 
+      <TrainingProcessSteps current={4} />
+
+      <Card size="small" style={{ marginBottom: 16 }}>
       <div className="filter-bar">
         <Space wrap>
           <Select
@@ -442,6 +476,7 @@ export function TrainingClassDeclarePage() {
           <Button type="primary" onClick={openTemplateManage}>材料模板管理</Button>
         </Space>
       </div>
+      </Card>
 
       <div className="table-wrap">
         <Table
@@ -475,6 +510,13 @@ export function TrainingClassDeclarePage() {
         footer={null}
         destroyOnClose
       >
+        <Alert
+          type="info"
+          showIcon
+          className="mar-b10"
+          message="Word 与 Excel 需分别新建模板"
+          description="开班申请表需两步：①「文件路径」上传空白表；②「设置变量后的Word」上传在 Word 中插入 ${pxdw}、${company}、${worktype} 等变量后的文档（生成材料时按此文件填充）。Excel 模板（导入表/花名册/课时表）须单独新建。"
+        />
         {fileTempImport ? (
           <Button className="mar-b10" type="primary" onClick={handleFileImport}>确认导入</Button>
         ) : (
@@ -510,14 +552,42 @@ export function TrainingClassDeclarePage() {
           <Form.Item name="id" hidden><Input /></Form.Item>
           <Form.Item name="type" hidden><Input /></Form.Item>
           <Form.Item name="ext" hidden><Input /></Form.Item>
+          <Form.Item noStyle shouldUpdate={(p, c) => p.title !== c.title}>
+            {() => (
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={fileTypeHint(formFileTemp.getFieldValue('title'))}
+              />
+            )}
+          </Form.Item>
           <Form.Item name="title" label="文件名称" rules={[{ required: true }]}>
-            <Select placeholder="请选择名称" options={FILE_TEMP_TITLES.map((t) => ({ value: t, label: t }))} />
+            <Select
+              placeholder="请选择名称"
+              options={FILE_TEMP_TITLES.map((t) => ({ value: t, label: t }))}
+              onChange={() => {
+                formFileTemp.setFieldsValue({ pathSource: '', pathUsed: '', ext: '' });
+              }}
+            />
           </Form.Item>
           <Form.Item name="pathSource" label="文件" rules={[{ required: true }]}>
             <Input
               readOnly
               addonAfter={
-                <Button type="link" onClick={() => openUpload('pathSource', '.docx,.xlsx')}>上传</Button>
+                <Button
+                  type="link"
+                  onClick={() => {
+                    const title = formFileTemp.getFieldValue('title');
+                    if (!title) {
+                      message.error('请先选择文件名称');
+                      return;
+                    }
+                    openUpload('pathSource', uploadAcceptByTitle(title));
+                  }}
+                >
+                  上传
+                </Button>
               }
             />
           </Form.Item>
@@ -530,16 +600,28 @@ export function TrainingClassDeclarePage() {
               ) : null
             }
           </Form.Item>
-          {ext === 'docx' ? (
-            <Form.Item name="pathUsed" label="设置变量后的Word">
-              <Input
-                readOnly
-                addonAfter={
-                  <Button type="link" onClick={() => openUpload('pathUsed', '.docx')}>上传</Button>
-                }
-              />
-            </Form.Item>
-          ) : null}
+          <Form.Item noStyle shouldUpdate={(p, c) => p.title !== c.title || p.ext !== c.ext}>
+            {() => {
+              const title = formFileTemp.getFieldValue('title');
+              const fileExt = formFileTemp.getFieldValue('ext');
+              if (title !== '开班申请表' || fileExt !== 'docx') return null;
+              return (
+                <Form.Item
+                  name="pathUsed"
+                  label="设置变量后的Word"
+                  rules={[{ required: true, message: '请上传含 ${pxdw}、${company} 等变量的 Word' }]}
+                  extra="在 Word 空白表对应位置插入 ${pxdw}、${company}、${worktype}、${nums}、${level} 等占位符后上传"
+                >
+                  <Input
+                    readOnly
+                    addonAfter={
+                      <Button type="link" onClick={() => openUpload('pathUsed', '.docx')}>上传</Button>
+                    }
+                  />
+                </Form.Item>
+              );
+            }}
+          </Form.Item>
         </Form>
       </Modal>
 
@@ -559,37 +641,11 @@ export function TrainingClassDeclarePage() {
         </Dragger>
       </Modal>
 
-      <Modal
-        title="预览"
-        open={previewOpen}
-        width="80%"
-        styles={{ body: { maxHeight: 680, overflowY: 'auto' } }}
-        onCancel={() => { setPreviewOpen(false); setPreviewUrl(''); }}
-        footer={null}
-        destroyOnClose
-      >
-        {previewUrl && (
-          <div className="file-preview-container">
-            {previewType === 'docx' ? (
-              <iframe
-                title="docx"
-                src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(
-                  window.location.origin + previewUrl,
-                )}`}
-              />
-            ) : previewType === 'xlsx' ? (
-              <iframe
-                title="xlsx"
-                src={`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(
-                  window.location.origin + previewUrl,
-                )}`}
-              />
-            ) : (
-              <iframe title="file" src={previewUrl} />
-            )}
-          </div>
-        )}
-      </Modal>
+      <FilePreviewModal
+        open={previewTarget != null}
+        target={previewTarget}
+        onClose={() => setPreviewTarget(null)}
+      />
 
       {/* 班级材料管理 */}
       <Modal

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Steps, Table, Tag, Typography, message } from 'antd';
-import { EditOutlined, DeleteOutlined, PictureOutlined, UploadOutlined } from '@ant-design/icons';
+import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from 'antd';
+import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { TrainingProcessSteps } from './TrainingProcessSteps';
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
@@ -95,7 +96,7 @@ export function TrainingInfoPage() {
       title: '序号', key: 'index', width: 60,
       render: (_, __, i) => (currentPage - 1) * pageSize + i + 1,
     },
-    { title: '标题', dataIndex: 'title', width: 180, ellipsis: true },
+    { title: '培训信息标题', dataIndex: 'title', width: 180, ellipsis: true },
     { title: '接受培训公司', dataIndex: 'company_name', width: 160, ellipsis: true },
     { title: '培训机构', dataIndex: 'train_company_name', width: 120 },
     { title: '工种', dataIndex: 'work_type_title', width: 140, render: (_, row) => formatWorkTypeTitle(row) },
@@ -134,20 +135,7 @@ export function TrainingInfoPage() {
         <Typography.Text type="secondary">管理培训信息，跟踪培训项目状态和进度</Typography.Text>
       </section>
 
-      <Card size="small" style={{ marginBottom: 16 }}>
-        <Steps
-          current={1}
-          size="small"
-          items={[
-            { title: '需求管理', icon: <EditOutlined /> },
-            { title: '培训信息', icon: <UploadOutlined /> },
-            { title: '班级人员', icon: <PictureOutlined /> },
-            { title: '开班申报', icon: <EditOutlined /> },
-            { title: '课表配置', icon: <UploadOutlined /> },
-            { title: '毕业', icon: <PictureOutlined /> },
-          ]}
-        />
-      </Card>
+      <TrainingProcessSteps current={2} />
 
       <Card size="small" style={{ marginBottom: 16 }}>
         <Space wrap>

@@ -4,6 +4,7 @@ import { ReloadOutlined, SearchOutlined, TrophyOutlined, NotificationOutlined, E
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
+import { TrainingProcessSteps } from './TrainingProcessSteps';
 
 export function TrainingGraduationPage() {
   const queryClient = useQueryClient();
@@ -83,6 +84,8 @@ export function TrainingGraduationPage() {
           <Typography.Text type="secondary">管理培训班级毕业流程，查看学员成绩并执行毕业操作</Typography.Text>
         </div>
       </section>
+
+      <TrainingProcessSteps current={6} />
 
       <Card size="small" style={{ marginBottom: 16 }}>
         <Form form={searchForm} layout="inline">

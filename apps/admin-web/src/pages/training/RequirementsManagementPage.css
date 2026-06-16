@@ -3,13 +3,8 @@
   padding: 20px;
 }
 
-.requirements-management-page .requirements-steps {
-  margin-bottom: 18px;
-}
-
-/* filter bar (headConfirmSwitch 待办 / 已办 tabs) */
 .requirements-management-page .search-filter-bar {
-  margin-bottom: 14px;
+  margin-bottom: 0;
 }
 
 .requirements-management-page .filter-actions {

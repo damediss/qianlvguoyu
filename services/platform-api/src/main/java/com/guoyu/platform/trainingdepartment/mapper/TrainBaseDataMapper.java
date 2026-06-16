@@ -16,4 +16,12 @@ public interface TrainBaseDataMapper extends BaseMapper<TrainBaseDataEntity> {
       ORDER BY id ASC
       """)
   List<TrainBaseDataLegacyRow> selectDeclarationConditionsLegacy();
+
+  /** 申报材料打包：加载全部码表（共享 PHP 库无 tenant_id/deleted） */
+  @Select("""
+      SELECT id, tag, sno, title FROM train_base_data
+      WHERE tag IS NOT NULL AND TRIM(tag) <> ''
+      ORDER BY id ASC
+      """)
+  List<TrainBaseDataMaterialRow> selectMaterialPackRowsLegacy();
 }

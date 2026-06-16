@@ -1,0 +1,11 @@
+.training-process-steps .ant-steps-item-container {
+  cursor: pointer;
+}
+
+.training-process-steps .ant-steps-item-title {
+  transition: color 0.2s;
+}
+
+.training-process-steps .ant-steps-item:not(.ant-steps-item-active):hover .ant-steps-item-title {
+  color: #1677ff;
+}

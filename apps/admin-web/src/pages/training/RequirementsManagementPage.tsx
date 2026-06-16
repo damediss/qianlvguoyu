@@ -6,17 +6,17 @@
 import { useMemo, useState } from 'react';
 import {
   Button,
+  Card,
   Form,
   Input,
   InputNumber,
   Modal,
   Pagination,
   Select,
-  Steps,
   Table,
+  Typography,
   message,
 } from 'antd';
-import { EditOutlined, PictureOutlined, UploadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
@@ -27,6 +27,7 @@ import type {
   TrainInfoListItem,
   TrainInfoListQuery,
 } from '../../types/training';
+import { TrainingProcessSteps } from './TrainingProcessSteps';
 import './RequirementsManagementPage.css';
 
 const WORK_LEVELS = [
@@ -41,15 +42,6 @@ const TRAIN_COMPANY_OPTIONS = [
   { value: '千铝工投', label: '千铝工投' },
   { value: '广西现代职业技术学院', label: '广西现代职业技术学院' },
   { value: '广西工业技师学院', label: '广西工业技师学院' },
-];
-
-const STEPS_ITEMS = [
-  { title: '需求管理', icon: <EditOutlined /> },
-  { title: '培训信息', icon: <UploadOutlined /> },
-  { title: '班级人员', icon: <PictureOutlined /> },
-  { title: '开班申报', icon: <EditOutlined /> },
-  { title: '课表配置', icon: <UploadOutlined /> },
-  { title: '毕业', icon: <PictureOutlined /> },
 ];
 
 function formatWorkTypeTitle(item: TrainInfoListItem): string {
@@ -245,9 +237,15 @@ export function RequirementsManagementPage() {
   ];
 
   return (
-    <div className="requirements-management-page training-table-container">
-      <Steps className="requirements-steps" current={0} items={STEPS_ITEMS} />
+    <div className="requirements-management-page training-page training-table-container">
+      <section className="page-heading">
+        <Typography.Title level={4}>需求管理</Typography.Title>
+        <Typography.Text type="secondary">处理企业培训需求，跟踪立项与培训项目进度</Typography.Text>
+      </section>
 
+      <TrainingProcessSteps current={0} />
+
+      <Card size="small" style={{ marginBottom: 16 }}>
       <div className="search-filter-bar">
         <div className="filter-actions">
           <Button type={headConfirmSwitch === 0 ? 'primary' : 'default'} onClick={handleSwitch}>
@@ -298,6 +296,7 @@ export function RequirementsManagementPage() {
           )}
         </div>
       </div>
+      </Card>
 
       {headConfirmSwitch === 0 && (
         <Table

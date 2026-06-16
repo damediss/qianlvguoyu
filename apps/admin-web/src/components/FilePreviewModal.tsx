@@ -118,6 +118,19 @@ export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProp
           return;
         }
 
+        if (kind === 'docx') {
+          setPreviewKind('docx');
+          await renderDocx(blob);
+          return;
+        }
+
+        if (kind === 'image' || kind === 'pdf') {
+          localObjectUrl = URL.createObjectURL(blob);
+          setObjectUrl(localObjectUrl);
+          setPreviewKind(kind);
+          return;
+        }
+
         if (
           kind === 'office'
           && fileUrl
@@ -128,20 +141,7 @@ export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProp
           return;
         }
 
-        if (kind === 'office' || kind === 'docx') {
-          setPreviewKind('docx');
-          await renderDocx(blob);
-          return;
-        }
-
         if (kind === 'unsupported') {
-          return;
-        }
-
-        if (kind === 'image' || kind === 'pdf') {
-          localObjectUrl = URL.createObjectURL(blob);
-          setObjectUrl(localObjectUrl);
-          setPreviewKind(kind);
           return;
         }
       } catch (error) {

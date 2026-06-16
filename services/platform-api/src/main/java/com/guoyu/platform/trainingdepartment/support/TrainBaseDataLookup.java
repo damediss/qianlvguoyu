@@ -1,8 +1,7 @@
 package com.guoyu.platform.trainingdepartment.support;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.guoyu.platform.trainingdepartment.entity.TrainBaseDataEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainBaseDataMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainBaseDataMaterialRow;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,19 +19,16 @@ public class TrainBaseDataLookup {
     this.mapper = mapper;
   }
 
+  /** 共享 PHP 库无 tenant_id/deleted，仅用 legacy 列查询 */
   public Map<String, Map<String, String>> loadGroupedByTag() {
-    List<TrainBaseDataEntity> rows = mapper.selectList(
-        new LambdaQueryWrapper<TrainBaseDataEntity>()
-            .eq(TrainBaseDataEntity::getDeleted, 0)
-            .isNotNull(TrainBaseDataEntity::getTag)
-            .ne(TrainBaseDataEntity::getTag, ""));
+    List<TrainBaseDataMaterialRow> rows = mapper.selectMaterialPackRowsLegacy();
     Map<String, Map<String, String>> result = new HashMap<>();
-    for (TrainBaseDataEntity row : rows) {
-      if (!StringUtils.hasText(row.getTag()) || !StringUtils.hasText(row.getTitle())) {
+    for (TrainBaseDataMaterialRow row : rows) {
+      if (!StringUtils.hasText(row.tag()) || !StringUtils.hasText(row.title())) {
         continue;
       }
-      String value = (row.getSno() != null ? row.getSno() : "") + "-" + row.getTitle();
-      result.computeIfAbsent(row.getTag(), k -> new LinkedHashMap<>()).put(row.getTitle(), value);
+      String value = (row.sno() != null ? row.sno() : "") + "-" + row.title();
+      result.computeIfAbsent(row.tag(), k -> new LinkedHashMap<>()).put(row.title(), value);
     }
     return result;
   }

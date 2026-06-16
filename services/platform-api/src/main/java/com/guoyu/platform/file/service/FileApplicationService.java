@@ -9,6 +9,7 @@ import com.guoyu.platform.file.FileStorage;
 import com.guoyu.platform.file.config.FileStorageProperties;
 import com.guoyu.platform.file.entity.FileEntity;
 import com.guoyu.platform.file.mapper.FileMapper;
+import com.guoyu.platform.file.support.StoredFileFormatValidator;
 import com.guoyu.platform.file.vo.DownloadUrlVO;
 import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.security.SecurityContext;
@@ -61,6 +62,7 @@ public class FileApplicationService {
 
     Long tenantId = SecurityContext.currentUser().getTenantId();
     String safeName = sanitizeFileName(originalName);
+    StoredFileFormatValidator.assertSupportedOfficeFile(safeName, content);
     String objectKey = buildObjectKey(tenantId, safeName);
     try {
       String sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
@@ -115,6 +117,7 @@ public class FileApplicationService {
           DigestInputStream digestInput = new DigestInputStream(input, digest)) {
         Files.copy(digestInput, tmp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
       }
+      StoredFileFormatValidator.assertSupportedOfficeFile(sanitizeFileName(file.getOriginalFilename()), tmp);
       String sha256 = HexFormat.of().formatHex(digest.digest());
       String url;
       try (InputStream up = Files.newInputStream(tmp)) {

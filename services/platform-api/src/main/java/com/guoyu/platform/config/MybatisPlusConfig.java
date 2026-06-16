@@ -42,6 +42,7 @@ public class MybatisPlusConfig {
             || "flyway_schema_history".equalsIgnoreCase(tableName)
             || "course_kejian".equalsIgnoreCase(tableName)
             || "train_info_class".equalsIgnoreCase(tableName)
+            || "train_base_data".equalsIgnoreCase(tableName)
             || "train_task_log".equalsIgnoreCase(tableName)
             || "train_sign_up_self".equalsIgnoreCase(tableName)
             || "train_sign_up_people_self".equalsIgnoreCase(tableName)

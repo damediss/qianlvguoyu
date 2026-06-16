@@ -67,9 +67,6 @@ export function SolutionDocumentPreview({ fileUrl, fileName, fileType }: Solutio
         }
 
         let kind = resolveFilePreviewKind(resolvedName, fileType, blob.type);
-        if (kind === 'office') {
-          kind = 'docx';
-        }
         setPreviewKind(kind);
 
         if (kind === 'unsupported') {

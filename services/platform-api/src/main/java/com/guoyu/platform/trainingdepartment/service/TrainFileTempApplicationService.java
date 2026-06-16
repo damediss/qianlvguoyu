@@ -15,6 +15,9 @@ import com.guoyu.platform.trainingdepartment.dto.TrainFileTempUpdateReq;
 import com.guoyu.platform.trainingdepartment.entity.TrainFileTempEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainFileTempMapper;
 import com.guoyu.platform.trainingdepartment.support.TrainExcelTemplateHeaderValidator;
+import com.guoyu.platform.trainingdepartment.support.TrainingDocxTemplateValidator;
+import com.guoyu.platform.trainingdepartment.support.TrainingOfficeFileKind;
+import com.guoyu.platform.trainingdepartment.support.TrainingStoredFileResolver;
 import com.guoyu.platform.trainingdepartment.vo.TrainFileTempVO;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -31,12 +34,18 @@ public class TrainFileTempApplicationService {
 
   private final TrainFileTempMapper mapper;
   private final TrainExcelTemplateHeaderValidator excelHeaderValidator;
+  private final TrainingDocxTemplateValidator docxTemplateValidator;
+  private final TrainingStoredFileResolver fileResolver;
 
   public TrainFileTempApplicationService(
       TrainFileTempMapper mapper,
-      TrainExcelTemplateHeaderValidator excelHeaderValidator) {
+      TrainExcelTemplateHeaderValidator excelHeaderValidator,
+      TrainingDocxTemplateValidator docxTemplateValidator,
+      TrainingStoredFileResolver fileResolver) {
     this.mapper = mapper;
     this.excelHeaderValidator = excelHeaderValidator;
+    this.docxTemplateValidator = docxTemplateValidator;
+    this.fileResolver = fileResolver;
   }
 
   @Transactional(readOnly = true)
@@ -67,7 +76,11 @@ public class TrainFileTempApplicationService {
     if ("开班申请表".equals(req.getTitle()) && !StringUtils.hasText(req.getCity())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择地市");
     }
+    assertTitleMatchesFileType(req.getTitle(), req.getPathSource(), resolveExt(req.getPathSource(), req.getExt()));
     excelHeaderValidator.validate(req.getTitle(), req.getPathSource());
+    if ("开班申请表".equals(req.getTitle())) {
+      docxTemplateValidator.validateKaiBanApplication(req.getPathUsed(), req.getPathSource());
+    }
     String ext = resolveExt(req.getPathSource(), req.getExt());
     String city = "开班申请表".equals(req.getTitle()) ? req.getCity() : "";
 
@@ -149,6 +162,33 @@ public class TrainFileTempApplicationService {
       return pathSource.substring(pathSource.lastIndexOf('.') + 1).toLowerCase();
     }
     return "";
+  }
+
+  private void assertTitleMatchesFileType(String title, String pathSource, String ext) {
+    boolean wordTitle = "开班申请表".equals(title);
+    boolean excelTitle = List.of("导入表", "开班花名册", "课时导入表").contains(title);
+    if (!wordTitle && !excelTitle) {
+      return;
+    }
+    if (wordTitle && ("xlsx".equals(ext) || "xls".equals(ext))) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "开班申请表须上传 Word 文档（.docx），不能上传 Excel");
+    }
+    if (excelTitle && ("docx".equals(ext) || "doc".equals(ext))) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, title + "须上传 Excel 文件（.xlsx/.xls），不能上传 Word 文档");
+    }
+    try {
+      TrainingOfficeFileKind.Kind kind = TrainingOfficeFileKind.detect(fileResolver.resolveLocalPath(pathSource));
+      if (wordTitle && kind != TrainingOfficeFileKind.Kind.WORD && kind != TrainingOfficeFileKind.Kind.UNKNOWN) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "开班申请表须上传 Word 文档（.docx）");
+      }
+      if (excelTitle && kind == TrainingOfficeFileKind.Kind.WORD) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, title + "须上传 Excel 文件（.xlsx/.xls），不能上传 Word 文档");
+      }
+    } catch (BusinessException ex) {
+      throw ex;
+    } catch (Exception ex) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "无法识别上传文件类型，请重新上传");
+    }
   }
 
   private Map<String, Object> toLegacyItem(TrainFileTempEntity e) {
