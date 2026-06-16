@@ -46,7 +46,7 @@ outputs/**/.cache/
 .m2/
 .npm-cache/
 /data/cdn/
-/.qoder/
+/infra/
 /app-stderr.log
 /app-stdout.log
 /app-web-stderr.log
