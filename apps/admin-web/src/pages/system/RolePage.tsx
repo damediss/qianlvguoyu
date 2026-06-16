@@ -59,9 +59,9 @@ function resolveActionGroup(action: string | undefined | null) {
 
 function buildMenuCheckTree(
   menus: MenuTreeVO[],
-  checkedIds: Set<number>,
-): { data: any[]; checkedKeys: number[] } {
-  const checkedKeys: number[] = [];
+  checkedIds: Set<number | string>,
+): { data: any[]; checkedKeys: (number | string)[] } {
+  const checkedKeys: (number | string)[] = [];
 
   function walk(nodes: MenuTreeVO[]): any[] {
     return nodes.map((node) => {

@@ -116,7 +116,7 @@ export function TrainingStudentPage() {
           rowKey="id"
           loading={isLoading}
           columns={columns}
-          dataSource={data?.records ?? []}
+          dataSource={data?.items ?? []}
           scroll={{ x: 1000 }}
           pagination={{
             current: page,

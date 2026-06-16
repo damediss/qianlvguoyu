@@ -103,6 +103,7 @@ export interface ExamCourseQuery {
   page?: number;
   pageSize?: number;
   title?: string;
+  workTypeId?: number;
 }
 export interface ExamUserAuthCourse {
   realname: string;

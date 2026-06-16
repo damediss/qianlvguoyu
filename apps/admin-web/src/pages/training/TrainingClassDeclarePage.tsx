@@ -27,11 +27,13 @@ import { uploadFile } from '../../api/knowledge';
 import { FilePreviewModal, type FilePreviewTarget } from '../../components/FilePreviewModal';
 import { fileNameFromUrl, downloadUrlFile } from '../../api/files';
 import type {
-  DemandPublicData,
   TrainFileTempItem,
   TrainFileTempSavePayload,
-  TrainInfoClassListItem,
 } from '../../api/training';
+import type {
+  DemandPublicData,
+  TrainInfoClassListItem,
+} from '../../types/training';
 import './TrainingClassDeclarePage.css';
 import { TrainingProcessSteps } from './TrainingProcessSteps';
 
@@ -127,8 +129,8 @@ export function TrainingClassDeclarePage() {
 
   const workTypeOptions = useMemo(() => {
     const groups = (publicData as DemandPublicData | undefined)?.worktype_list ?? [];
-    return groups.flatMap((g) =>
-      (g.options ?? []).map((o) => ({
+    return groups.flatMap((g: { title: string; options?: { id: number; title: string }[] }) =>
+      (g.options ?? []).map((o: { id: number; title: string }) => ({
         value: o.id,
         label: `${g.title} / ${o.title}`,
       })),
@@ -314,9 +316,9 @@ export function TrainingClassDeclarePage() {
       content: '确定要删除该模板吗?',
       onOk: async () => {
         const res = await trainApi.detachFileTemp(classId, row.id);
-        if (res?.ids) {
+        if (res?.fileTemps) {
           message.success('删除成功');
-          await loadFileTemps(res.ids, true);
+          await loadFileTemps(res.fileTemps, true);
           refetch();
         }
       },
@@ -456,7 +458,7 @@ export function TrainingClassDeclarePage() {
             style={{ width: 200 }}
             value={companyIdFilter}
             onChange={(v) => { setCompanyIdFilter(v); setCurrentPage(1); }}
-            options={(publicData as DemandPublicData | undefined)?.company_list?.map((c) => ({
+            options={(publicData as DemandPublicData | undefined)?.company_list?.map((c: { id: number; title: string }) => ({
               value: c.id,
               label: c.title,
             }))}

@@ -308,15 +308,15 @@ export function PersonnelArchivePage() {
         {/* Table */}
         <div className="pa-table-wrap">
           <Table
-            columns={activeTab === 'teachers' ? teacherColumns : studentColumns}
-            dataSource={activeTab === 'teachers' ? filterTeachers : filterStudents}
+            columns={(activeTab === 'teachers' ? teacherColumns : studentColumns) as ColumnsType<Teacher & Student>}
+            dataSource={(activeTab === 'teachers' ? filterTeachers : filterStudents) as (Teacher & Student)[]}
             rowKey="id"
             size="small"
             scroll={{ x: activeTab === 'teachers' ? 1400 : 1700 }}
             pagination={{ pageSize: 10, showSizeChanger: true, showTotal: t => `共 ${t} 条` }}
             rowClassName={activeTab === 'teachers'
-              ? (r: Teacher) => (isCertWarn(r) || isAgreePending(r)) ? 'row-warn' : ''
-              : (r: Student) => isStudentWarn(r) ? 'row-warn' : ''
+              ? ((r: Teacher & Student) => (isCertWarn(r as unknown as Teacher) || isAgreePending(r as unknown as Teacher)) ? 'row-warn' : '')
+              : ((r: Teacher & Student) => isStudentWarn(r as unknown as Student) ? 'row-warn' : '')
             }
           />
         </div>

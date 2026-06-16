@@ -21,6 +21,7 @@ import {
   Table,
   Tag,
   Tree,
+  TreeSelect,
   Typography,
   message,
   Popconfirm,
@@ -263,7 +264,7 @@ function QuestionFormModal({ open, editing, knowledgeTreeData, courseId, onClose
           <TextArea rows={3} placeholder="请输入答案（JSON 或文本）" />
         </Form.Item>
         <Form.Item name="knowledgeId" label="知识点">
-          <Select
+          <TreeSelect
             treeData={treeSelectData}
             showSearch
             treeDefaultExpandAll={false}

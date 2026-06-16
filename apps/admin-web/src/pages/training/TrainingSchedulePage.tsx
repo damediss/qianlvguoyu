@@ -87,8 +87,8 @@ export function TrainingSchedulePage() {
     },
   ];
 
-  const classOptions = (classData?.list ?? []).map((c: Record<string, unknown>) => ({
-    value: c.id as number,
+  const classOptions = (classData?.list ?? []).map((c) => ({
+    value: c.id,
     label: `${c.title} (${c.train_title ?? ''})`,
   }));
 

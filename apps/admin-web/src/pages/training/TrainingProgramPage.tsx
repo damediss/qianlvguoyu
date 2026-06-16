@@ -135,7 +135,7 @@ export function TrainingProgramPage() {
     form.resetFields();
     form.setFieldsValue({
       badgeList: [{ title: '', badge: undefined, expend: undefined }],
-    } as TrainSolutionSaveReq);
+    } as unknown as TrainSolutionSaveReq);
     setEditingId(null);
     setFilePathTip('');
     setEditOpen(true);

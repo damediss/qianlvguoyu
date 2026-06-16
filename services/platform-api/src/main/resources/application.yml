@@ -20,6 +20,9 @@ spring:
     url: ${MYSQL_URL:jdbc:mysql://43.138.163.7:3308/gjjddb2026?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
     username: ${MYSQL_USERNAME:gjjd}
     password: ${MYSQL_PASSWORD:w-#Y+=g7jdsJLjD8}
+#    url: jdbc:mysql://192.168.1.200:3308/gjjd_test?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+#    username: root
+#    password: guoyu_dev!513
     driver-class-name: com.mysql.cj.jdbc.Driver
     druid:
       initial-size: 5

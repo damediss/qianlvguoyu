@@ -54,6 +54,6 @@ export const CURATED_ICONS: string[] = [
 /** Map icon string name (e.g. "BookOutlined") to a React component at runtime. */
 export function iconFromName(name?: string | null): ReactNode {
   if (!name) return null;
-  const IconComp = (Icons as Record<string, React.ComponentType>)[name];
+  const IconComp = (Icons as unknown as Record<string, React.ComponentType>)[name];
   return IconComp ? <IconComp /> : null;
 }

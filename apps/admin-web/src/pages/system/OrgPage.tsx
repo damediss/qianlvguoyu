@@ -28,7 +28,7 @@ import {
   updateOrg,
   deleteOrg,
 } from '../../api/system';
-import type { OrgTreeVO, OrgCreateReq } from '../../types/system';
+import type { OrgTreeVO, OrgCreateReq, OrgUpdateReq } from '../../types/system';
 
 function buildTreeData(nodes: OrgTreeVO[]): any[] {
   return nodes.map((node) => ({
@@ -90,7 +90,7 @@ export function OrgPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: OrgCreateReq }) =>
+    mutationFn: ({ id, payload }: { id: number; payload: OrgUpdateReq }) =>
       updateOrg(id, payload),
     onSuccess: () => {
       message.success('组织已更新');
@@ -353,7 +353,6 @@ export function OrgPage() {
             <Select
               placeholder="选择上级组织（不选则为顶级）"
               allowClear
-              treeDefaultExpandAll
               options={[
                 { label: '顶级组织', value: 0 },
                 ...buildTreeSelectData(treeData, editingId || undefined),

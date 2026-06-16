@@ -1,5 +1,4 @@
-﻿import type { Directive, DirectiveBinding } from 'react';
-import { useAuthStore } from '../stores/authStore';
+﻿import { useAuthStore } from '../stores/authStore';
 
 /**
  * v-permission directive for React — DOM-level permission control.

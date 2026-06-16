@@ -25,6 +25,7 @@ import {
   Upload,
   message,
   Popconfirm,
+  Spin,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -609,19 +610,20 @@ export function KnowledgeStructurePage() {
                 </Button>
               </Space>
 
-              <Tree
-                treeData={treeData}
-                expandedKeys={expandedKeys}
-                onExpand={(keys) => setExpandedKeys(keys)}
-                selectedKeys={selectedKeys}
-                onSelect={(keys) => setSelectedKeys(keys)}
-                checkedKeys={checkedKeys}
-                onCheck={(keys) => setCheckedKeys(keys as React.Key[])}
-                checkable
-                showLine
-                loading={treeQuery.isLoading}
-                style={{ minHeight: 200 }}
-              />
+              <Spin spinning={treeQuery.isLoading}>
+                <Tree
+                  treeData={treeData}
+                  expandedKeys={expandedKeys}
+                  onExpand={(keys) => setExpandedKeys(keys)}
+                  selectedKeys={selectedKeys}
+                  onSelect={(keys) => setSelectedKeys(keys)}
+                  checkedKeys={checkedKeys}
+                  onCheck={(keys) => setCheckedKeys(keys as React.Key[])}
+                  checkable
+                  showLine
+                  style={{ minHeight: 200 }}
+                />
+              </Spin>
             </Card>
           </>
         ) : (

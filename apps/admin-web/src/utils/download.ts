@@ -3,8 +3,9 @@
  * 优先使用 filename* (RFC 5987 UTF-8 编码)，否则回退到 filename。
  * 返回 null 表示未找到。
  */
-export function parseContentDispositionFilename(resp: { headers?: Record<string, string> }): string | null {
-  const cd = resp.headers?.['content-disposition'];
+export function parseContentDispositionFilename(resp: { headers?: unknown }): string | null {
+  const headers = resp.headers as Record<string, string> | undefined;
+  const cd = headers?.['content-disposition'];
   if (!cd) return null;
 
   // RFC 5987: filename*=UTF-8''<url-encoded>

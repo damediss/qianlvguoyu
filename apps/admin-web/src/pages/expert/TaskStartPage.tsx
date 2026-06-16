@@ -293,7 +293,7 @@ function ExamshicaoAuditPanel({
       ]}
     >
       {item ? (
-        <Form form={form} layout="horizontal" labelCol={{ flex: '0 0 80px' }} wrapperCol={{ flex: 'auto', marginLeft: 4 }} labelAlign="left">
+        <Form form={form} layout="horizontal" labelCol={{ flex: '0 0 80px' }} wrapperCol={{ flex: 'auto' }} labelAlign="left">
           <Form.Item label="考评点">
             <Input value={item.jianding} disabled />
           </Form.Item>

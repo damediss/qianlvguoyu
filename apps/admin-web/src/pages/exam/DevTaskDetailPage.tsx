@@ -463,8 +463,8 @@ export function DevTaskDetailPage() {
             onExpandedRowsChange: (keys) => setExpandedKeys(keys as React.Key[]),
           }}
           rowClassName={(record) => {
-            if (record.id === '初审') return 'row-start';
-            if (record.id === '终审') return 'row-end';
+            if (String(record.id) === '初审') return 'row-start';
+            if (String(record.id) === '终审') return 'row-end';
             return '';
           }}
           scroll={{ x: 800, y: 500 }}
