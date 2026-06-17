@@ -15,7 +15,7 @@
   <artifactId>platform-api</artifactId>
   <version>0.1.0-SNAPSHOT</version>
   <name>platform-api</name>
-  <description>千铅国旺云平台核心业务主服务</description>
+  <description>千铝国昱云平台核心业务主服务</description>
 
   <properties>
     <java.version>21</java.version>

@@ -281,7 +281,7 @@ cd apps/admin-web && npm run dev
 
 ### Demo 账号
 
-- 租户：`demo`
+- 租户：`千铝工投`
 - 用户：`admin`
 - 密码：`Admin@123456`
 

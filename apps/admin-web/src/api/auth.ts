@@ -16,3 +16,12 @@ export function fetchMenus() {
 export function logout() {
   return apiClient.post('/auth/logout');
 }
+
+export interface TenantOption {
+  code: string;
+  name: string;
+}
+
+export function fetchTenants() {
+  return unwrap<TenantOption[]>(apiClient.get('/auth/tenants'));
+}

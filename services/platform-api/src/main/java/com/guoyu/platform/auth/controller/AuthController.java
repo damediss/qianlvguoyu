@@ -10,6 +10,7 @@ import com.guoyu.platform.auth.vo.MenuVO;
 import com.guoyu.platform.common.api.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -57,5 +58,10 @@ public class AuthController {
   @GetMapping("/home")
   public ApiResponse<HomeVO> home() {
     return ApiResponse.ok(authApplicationService.home());
+  }
+
+  @GetMapping("/tenants")
+  public ApiResponse<List<Map<String, String>>> tenants() {
+    return ApiResponse.ok(authApplicationService.listTenants());
   }
 }

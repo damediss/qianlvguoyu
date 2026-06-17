@@ -235,6 +235,18 @@ public class AuthApplicationService {
     return vo;
   }
 
+  /** 查询所有启用状态租户（供登录页下拉框使用，无需认证） */
+  @Transactional(readOnly = true)
+  public List<Map<String, String>> listTenants() {
+    List<TenantEntity> tenants = tenantMapper.selectList(new LambdaQueryWrapper<TenantEntity>()
+        .eq(TenantEntity::getStatus, "enabled")
+        .eq(TenantEntity::getDeleted, 0)
+        .orderByAsc(TenantEntity::getId));
+    return tenants.stream()
+        .map(t -> Map.of("code", t.getCode(), "name", t.getName()))
+        .toList();
+  }
+
   private String createOpaqueRefreshToken() {
     byte[] bytes = new byte[48];
     secureRandom.nextBytes(bytes);

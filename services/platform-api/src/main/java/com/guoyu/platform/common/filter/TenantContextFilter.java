@@ -25,7 +25,8 @@ public class TenantContextFilter extends OncePerRequestFilter {
   );
   private static final Set<String> WHITE_METHOD_PATHS = Set.of(
       "POST:/api/auth/login",
-      "POST:/api/auth/refresh"
+      "POST:/api/auth/refresh",
+      "GET:/api/auth/tenants"
   );
 
   @Override

@@ -1,9 +1,9 @@
 import { LockOutlined } from '@ant-design/icons';
-import { Button, Form, Input, Typography, message } from 'antd';
+import { Button, Form, Input, Select, Typography, message } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
-import { currentUser as fetchCurrentUser, login } from '../api/auth';
+import { currentUser as fetchCurrentUser, fetchTenants, login } from '../api/auth';
 import { useAuthStore } from '../stores/authStore';
 
 interface AuthGateProps {
@@ -52,6 +52,16 @@ export function AuthGate({ children }: AuthGateProps) {
     },
   });
 
+  // 获取租户列表
+  const tenantsQuery = useQuery({
+    queryKey: ['tenants'],
+    queryFn: fetchTenants,
+  });
+
+  // 默认选中"千铝工投"租户
+  const defaultTenantCode = tenantsQuery.data?.find(t => t.name.includes('千铝工投'))?.code
+    || tenantsQuery.data?.[0]?.code;
+
   // Primary check: currentUser from store (set by login response on first login,
   // or by /api/auth/me on page refresh). This avoids blocking the UI on the
   // /api/auth/me round-trip after a fresh login.
@@ -67,19 +77,23 @@ export function AuthGate({ children }: AuthGateProps) {
     <div className="login-screen">
       <div className="login-panel">
         <div className="login-title-row">
-          <div className="login-mark">国</div>
+          <div className="login-mark">千铝</div>
           <div>
-            <Typography.Title level={2}>千铅国旺云平台</Typography.Title>
+            <Typography.Title level={2}>千铝国昱云平台</Typography.Title>
             <Typography.Text>管理端登录</Typography.Text>
           </div>
         </div>
         <Form
           layout="vertical"
-          initialValues={{ tenantCode: 'demo', username: 'admin', password: 'Admin@123456' }}
+          initialValues={{ tenantCode: defaultTenantCode }}
           onFinish={(values) => loginMutation.mutate(values)}
         >
-          <Form.Item label="租户编码" name="tenantCode" rules={[{ required: true }]}>
-            <Input />
+          <Form.Item label="租户" name="tenantCode" rules={[{ required: true, message: '请选择租户' }]}>
+            <Select
+              placeholder="选择租户"
+              loading={tenantsQuery.isLoading}
+              options={tenantsQuery.data?.map(t => ({ label: t.name, value: t.code }))}
+            />
           </Form.Item>
           <Form.Item label="账号" name="username" rules={[{ required: true }]}>
             <Input />
