@@ -246,6 +246,8 @@ export function deleteTaskInfo(id: number) {
 }
 
 // ==================== Exam List (考试管理) ====================
+import type { TrainExamPeople, TrainExamPeopleQuery } from '../types/training';
+
 export function pageExams(params: TrainExamQuery) {
   return unwrap<PageResponse<TrainExam>>(apiClient.get(`${BASE}/exam-lists`, { params }));
 }
@@ -260,6 +262,32 @@ export function updateExam(id: number, payload: TrainExamUpdateReq) {
 }
 export function deleteExam(id: number) {
   return unwrap<void>(apiClient.delete(`${BASE}/exam-lists/${id}`));
+}
+
+// ----- 考生管理 -----
+export function pageExamPeople(examId: number, params: Omit<TrainExamPeopleQuery, 'examId'>) {
+  return unwrap<PageResponse<TrainExamPeople>>(
+    apiClient.get(`${BASE}/exam-lists/${examId}/people-grades`, { params }),
+  );
+}
+export function updateExamPeopleGrade(
+  id: number,
+  body: { inWhiteList?: number; normalScore?: number; score?: number; totalScore?: number },
+) {
+  return unwrap<void>(apiClient.put(`${BASE}/exam-lists/people-grades/${id}`, body));
+}
+export function importExamPeopleByIdCard(examId: number, idCardNumbers: string) {
+  return unwrap<{ count: number }>(
+    apiClient.post(`${BASE}/exam-lists/${examId}/import-people`, { idCardNumbers }),
+  );
+}
+export function importExamPeopleFromTrain(examId: number, trainId: number) {
+  return unwrap<{ count: number }>(
+    apiClient.post(`${BASE}/exam-lists/${examId}/import-from-train/${trainId}`),
+  );
+}
+export function batchDeleteExamPeople(ids: number[]) {
+  return unwrap<void>(apiClient.post(`${BASE}/exam-lists/people/batch-delete`, { ids }));
 }
 
 // Exam Results (考试结果)

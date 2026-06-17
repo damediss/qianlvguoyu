@@ -1,6 +1,7 @@
 package com.guoyu.platform.trainingdepartment.vo;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /** 考试计划视图对象 */
 public record TrainExamListVO(
@@ -57,5 +58,9 @@ public record TrainExamListVO(
     Long tenantId,
     /** 机构ID */
     Long jigouId,
-    LocalDateTime createTime
+    LocalDateTime createTime,
+    /** 关联工种列表（含 workTypeId/level） */
+    List<TrainExamWorkTypeListVO> workTypeLists,
+    /** 关联课程ID列表（从 workTypeLists 提取的 courseId） */
+    List<Long> courseIdList
 ) {}

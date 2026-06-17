@@ -53,6 +53,7 @@ import { QuestionBankPage } from './pages/exam/QuestionBankPage';
 import { MakeExamPlanPage } from './pages/exam/MakeExamPlanPage';
 import { KnowledgeRatePage } from './pages/exam/KnowledgeRatePage';
 import { KnowledgeStructurePage } from './pages/exam/KnowledgeStructurePage';
+import { TrainExamListPage } from './pages/training/TrainExamListPage';
 
 // Pre-instantiate factory components for stable React references
 const ArchiveEquipmentPage = createArchiveTablePage('equipment');
@@ -172,6 +173,7 @@ const pageMap: Record<string, React.ReactNode> = {
   zhixun_table_status: <PmStatusPage />,
   exam_question_bank: <QuestionBankPage />,
   zu_juan_ji_hua: <MakeExamPlanPage />,
+  'train_exam-list': <TrainExamListPage />,
   exam_knowledge_rate: <KnowledgeRatePage />,
   zhi_shi_jie_gou_xi_mu_biao_guan_li: <KnowledgeStructurePage />,
   expert_task_start: <TaskStartPage />,

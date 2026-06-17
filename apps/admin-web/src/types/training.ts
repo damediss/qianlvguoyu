@@ -544,12 +544,61 @@ export interface TrainExam {
   tenantId?: number;
   jigouId?: number;
   createTime?: string;
+  /** 关联工种（含 workTypeId / level） */
+  workTypeLists?: TrainExamWorkTypeItem[];
+  /** 关联课程 ID 列表 */
+  courseIdList?: number[];
 }
 
 export interface TrainExamQuery {
   page?: number;
   pageSize?: number;
   keyword?: string;
+  trainId?: number;
+  type?: number;
+  source?: number;
+  orgId?: number;
+}
+
+/** 考试计划关联工种 */
+export interface TrainExamWorkTypeItem {
+  id: number;
+  examId?: number;
+  workTypeId?: number;
+  courseId?: number;
+  level?: string;
+}
+
+/** 考试计划考生 */
+export interface TrainExamPeople {
+  id: number;
+  examId?: number;
+  platformUserId?: number;
+  workTypeId?: number;
+  workTypeLevel?: string;
+  realname?: string;
+  idCardNum?: string;
+  phone?: string;
+  education?: string;
+  roomId?: number;
+  inWhiteList?: number;
+  normalScore?: number;
+  score?: number;
+  totalScore?: number;
+  learnTime?: number;
+  learnUseTime?: number;
+  userId?: number;
+  sortNumber?: number;
+  tenantId?: number;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface TrainExamPeopleQuery {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  examId?: number;
 }
 
 export interface TrainExamCreateReq {
@@ -581,6 +630,7 @@ export interface TrainExamCreateReq {
   needFinishNormal?: number;
   jigouId?: number;
   sortNumber?: number;
+  courseIdList?: number[];
 }
 
 export type TrainExamUpdateReq = Partial<TrainExamCreateReq>;

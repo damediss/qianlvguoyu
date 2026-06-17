@@ -112,4 +112,13 @@ public class TrainExamListController {
     trainExamListApplicationService.batchDeletePeople(body.get("ids"));
     return ApiResponse.ok();
   }
+
+  @PostMapping("/exam-lists/{examId}/import-from-train/{trainId}")
+  @PreAuthorize("hasAuthority('train:exam-list:create')")
+  @AuditLog(module = "training", action = "exam-list:import-from-train", targetType = "train_exam_people_list")
+  public ApiResponse<Map<String, Object>> importFromTrain(
+      @PathVariable Long examId, @PathVariable Long trainId) {
+    int count = trainExamListApplicationService.importPeopleFromTrain(examId, trainId);
+    return ApiResponse.ok(Map.of("count", count));
+  }
 }
