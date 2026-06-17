@@ -1,9 +1,12 @@
 package com.guoyu.platform.config;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.time.Duration;
 import org.springframework.cache.annotation.EnableCaching;
@@ -22,17 +25,29 @@ public class CacheConfig {
 
   /**
    * 带 JSR310（LocalDateTime 等）支持 + 默认类型标记的 JSON 序列化器。
-   * GenericJackson2JsonRedisSerializer 的无参构造内部 ObjectMapper 不带 JavaTimeModule，
-   * 缓存含 java.time 字段的 VO（如 ExamWorkTypeVO.createTime）时会抛 SerializationException。
+   *
+   * <p>关键点（踩过的两个坑，见 BUG-2026-06-17-001）：
+   * <ol>
+   *   <li>必须显式 register {@link JavaTimeModule}，否则 VO 里的
+   *       {@code LocalDateTime}/{@code LocalDate} 字段写缓存就抛 SerializationException</li>
+   *   <li>必须显式 {@code activateDefaultTyping(... As.PROPERTY)}，
+   *       {@link GenericJackson2JsonRedisSerializer#GenericJackson2JsonRedisSerializer(ObjectMapper)}
+   *       构造器不会自动加 default typing，不加的话 read 时拿不到目标类型</li>
+   * </ol>
    */
   private static GenericJackson2JsonRedisSerializer jsonSerializer() {
     ObjectMapper mapper = new ObjectMapper();
     mapper.registerModule(new JavaTimeModule());
+    mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     mapper.setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.ANY);
-    mapper.activateDefaultTyping(
-        LaissezFaireSubTypeValidator.instance,
+
+    PolymorphicTypeValidator ptv = BasicPolymorphicTypeValidator.builder()
+        .allowIfBaseType(Object.class)
+        .build();
+    mapper.activateDefaultTyping(ptv,
         ObjectMapper.DefaultTyping.NON_FINAL,
-        com.fasterxml.jackson.annotation.JsonTypeInfo.As.PROPERTY);
+        JsonTypeInfo.As.PROPERTY);
+
     return new GenericJackson2JsonRedisSerializer(mapper);
   }
 

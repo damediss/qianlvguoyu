@@ -59,7 +59,7 @@ export function AuditLogPage() {
     {
       title: '操作',
       dataIndex: 'action',
-      width: 100,
+      width: 200,
       render: (v: string) => (
         <Tag color={ACTION_COLORS[v] || 'default'}>{v}</Tag>
       ),
