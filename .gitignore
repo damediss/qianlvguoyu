@@ -4,6 +4,7 @@
 # Local/editor files
 .idea/
 .vscode/
+.qoder/
 *.swp
 *.tmp
 
