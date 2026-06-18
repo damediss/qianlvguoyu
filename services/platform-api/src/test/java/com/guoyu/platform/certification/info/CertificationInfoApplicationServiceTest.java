@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.certification.info.application.CertificationInfoApplicationService;
+import com.guoyu.platform.certification.info.dto.AssessorAccountCreateReq;
 import com.guoyu.platform.certification.info.dto.AssessorInfoSaveReq;
 import com.guoyu.platform.certification.info.dto.CertificationInfoQueryReq;
 import com.guoyu.platform.certification.info.dto.ExamEquipmentInfoSaveReq;
@@ -30,7 +31,13 @@ import com.guoyu.platform.certification.info.vo.AssessorInfoVO;
 import com.guoyu.platform.certification.info.vo.ExamStaffInfoVO;
 import com.guoyu.platform.certification.mapper.ExamStaffAssignedTaskRow;
 import com.guoyu.platform.common.exception.BusinessException;
+import com.guoyu.platform.system.entity.RoleEntity;
+import com.guoyu.platform.system.mapper.RoleMapper;
+import com.guoyu.platform.system.mapper.UserMapper;
+import com.guoyu.platform.system.service.UserApplicationService;
+import com.guoyu.platform.system.vo.UserVO;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,26 +52,44 @@ class CertificationInfoApplicationServiceTest {
   private final CertificationInfoExamSiteMapper siteMapper = Mockito.mock(CertificationInfoExamSiteMapper.class);
   private final CertificationInfoExamEquipmentMapper equipmentMapper = Mockito.mock(CertificationInfoExamEquipmentMapper.class);
   private final CertificationInfoAuditRecordMapper auditRecordMapper = Mockito.mock(CertificationInfoAuditRecordMapper.class);
+  private final RoleMapper roleMapper = Mockito.mock(RoleMapper.class);
+  private final UserMapper userMapper = Mockito.mock(UserMapper.class);
+  private final UserApplicationService userApplicationService = Mockito.mock(UserApplicationService.class);
 
   private CertificationInfoApplicationService service;
 
   @BeforeEach
   void setUp() {
+    RoleEntity role = new RoleEntity();
+    role.setId(88L);
+    role.setCode("CERTIFICATION_ASSESSOR");
+    role.setStatus("enabled");
+    when(roleMapper.selectOne(any())).thenReturn(role);
+    when(userApplicationService.create(any())).thenReturn(new UserVO(
+        99L, 1L, null, null, null, "assessor.zhangsan", "张三", "assessor",
+        "13800001234", null, "enabled", null, List.of(88L),
+        List.of("CERTIFICATION_ASSESSOR"), LocalDateTime.now(), LocalDateTime.now()
+    ));
     service = new CertificationInfoApplicationService(
-        assessorMapper, examStaffMapper, taskExamStaffMapper, siteMapper, equipmentMapper, auditRecordMapper);
+        assessorMapper, examStaffMapper, taskExamStaffMapper, siteMapper, equipmentMapper, auditRecordMapper,
+        roleMapper, userMapper, userApplicationService);
   }
 
   @Test
   void createAssessorSavesDraftAndMasksPhone() {
     when(assessorMapper.selectCount(any())).thenReturn(0L);
     AssessorInfoVO vo = service.createAssessor(new AssessorInfoSaveReq(
-        "张三", "CERT-001", "电工", "高级", LocalDate.of(2027, 6, 30),
+        "张三", "assessor.zhangsan", "Assessor@123", "CERT-001", "电工", List.of("电工"), "高级", LocalDate.of(2027, 6, 30),
         "13800001234", "材料齐全说明", "备注"
     ));
 
     assertThat(vo.auditStatus()).isEqualTo("draft");
-    assertThat(vo.workStatus()).isEqualTo("idle");
+    assertThat(vo.workStatus()).isEqualTo("pending_review");
+    assertThat(vo.userId()).isEqualTo(99L);
+    assertThat(vo.accountUsername()).isEqualTo("assessor.zhangsan");
+    assertThat(vo.accountPassword()).isEqualTo("Assessor@123");
     assertThat(vo.maskedPhone()).isEqualTo("138****1234");
+    verify(userApplicationService).create(any());
     verify(assessorMapper).insert(any(CertificationInfoAssessorEntity.class));
   }
 
@@ -73,11 +98,31 @@ class CertificationInfoApplicationServiceTest {
     when(assessorMapper.selectCount(any())).thenReturn(1L);
 
     assertThatThrownBy(() -> service.createAssessor(new AssessorInfoSaveReq(
-        "张三", "CERT-001", "电工", null, LocalDate.of(2027, 6, 30),
+        "张三", "assessor.zhangsan", "Assessor@123", "CERT-001", "电工", List.of("电工"), null, LocalDate.of(2027, 6, 30),
         null, null, null
     )))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("证号已存在");
+  }
+
+  @Test
+  void createAccountBindsExistingApprovedAssessor() {
+    CertificationInfoAssessorEntity existing = assessor("approved", "idle");
+    when(assessorMapper.selectById(1L)).thenReturn(existing);
+
+    AssessorInfoVO result = service.createAssessorAccount(
+        1L,
+        new AssessorAccountCreateReq("assessor.existing", "Assessor@123")
+    );
+
+    assertThat(result.userId()).isEqualTo(99L);
+    assertThat(result.accountUsername()).isEqualTo("assessor.existing");
+    assertThat(result.accountPassword()).isEqualTo("Assessor@123");
+    assertThat(existing.getUserId()).isEqualTo(99L);
+    assertThat(existing.getAccountUsername()).isEqualTo("assessor.existing");
+    assertThat(existing.getAccountPassword()).isEqualTo("Assessor@123");
+    verify(userApplicationService).create(any());
+    verify(assessorMapper).updateById(existing);
   }
 
   @Test
@@ -163,8 +208,8 @@ class CertificationInfoApplicationServiceTest {
     expired.setValidUntil(LocalDate.now().minusDays(1));
     when(assessorMapper.selectList(any())).thenReturn(List.of(available, expired));
 
-    assertThat(service.listAvailableAssessors(null)).hasSize(1);
-    assertThat(service.listAvailableAssessors(null).getFirst().id()).isEqualTo(1L);
+    assertThat(service.listAvailableAssessors(null, List.of())).hasSize(1);
+    assertThat(service.listAvailableAssessors(null, List.of()).getFirst().id()).isEqualTo(1L);
   }
 
   @Test

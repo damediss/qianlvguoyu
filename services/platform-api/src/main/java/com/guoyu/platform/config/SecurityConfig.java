@@ -51,6 +51,7 @@ public class SecurityConfig {
             .requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh", "/auth/logout").permitAll()
             .requestMatchers(HttpMethod.GET, "/auth/tenants").permitAll()
             .requestMatchers(HttpMethod.GET, "/exam/files/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/ws/practical-scoring").permitAll()
             .requestMatchers(HttpMethod.POST, "/appregistration/**").permitAll()
             .anyRequest().authenticated()
         )

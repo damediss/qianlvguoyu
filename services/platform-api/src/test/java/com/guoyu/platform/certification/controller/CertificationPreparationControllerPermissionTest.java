@@ -43,8 +43,6 @@ class CertificationPreparationControllerPermissionTest {
         .isEqualTo("hasAuthority('certification.preparation.material.generate')");
     assertThat(preAuthorize(CertificationPreparationSiteController.class, "assignExamSite"))
         .isEqualTo("hasAuthority('certification.preparation.site.assign')");
-    assertThat(preAuthorize(CertificationPreparationAssessorController.class, "dispatchGroup"))
-        .isEqualTo("hasAuthority('certification.preparation.assessor.dispatch')");
     assertThat(preAuthorize(CertificationPreparationController.class, "complete"))
         .isEqualTo("hasAuthority('certification.preparation.complete')");
   }

@@ -34,6 +34,7 @@ export interface PreparationCandidateQuery extends PreparationPageQuery {
   keyword?: string;
   status?: string;
   levelCode?: string;
+  documentComplete?: boolean;
 }
 
 export interface PreparationCandidate {
@@ -46,6 +47,8 @@ export interface PreparationCandidate {
   maskedPhone?: string;
   levelCode?: string;
   levelName?: string;
+  workTypeId?: string;
+  workTypeName?: string;
   importSource?: string;
   orgName?: string;
   status?: string;
@@ -420,16 +423,28 @@ export interface PreparationAssessorGroup {
   groupName?: string;
   leaderAssessorId?: string;
   leaderAssessorName?: string;
+  /** @deprecated 旧字段，多个工种以"、"拼接。优先使用 workTypeScopes。 */
   workTypeName?: string;
+  workTypeScopes?: PreparationAssessorGroupWorktype[];
   status?: string;
   remark?: string;
+}
+
+export interface PreparationAssessorGroupWorktype {
+  scopeId: string;
+  workTypeName?: string;
+  levelCode?: string;
+  levelName?: string;
+  sortOrder?: number;
 }
 
 export interface PreparationAssessorGroupPayload {
   groupName?: string;
   leaderAssessorId?: string;
   assessorIds?: string[];
+  /** @deprecated 旧字段。优先使用 workTypeScopeIds。 */
   workTypeName?: string;
+  workTypeScopeIds?: string[];
   status?: string;
   remark?: string;
 }
@@ -452,16 +467,6 @@ export interface PreparationTaskAssessorPayload {
   assessorId: string;
   taskRole?: string;
   roleName?: string;
-  remark?: string;
-}
-
-export interface PreparationAssessorDispatchPayload {
-  subject?: string;
-  title?: string;
-  assessmentFileId?: string;
-  assessmentFileName?: string;
-  durationMin?: number;
-  dueDate?: string;
   remark?: string;
 }
 

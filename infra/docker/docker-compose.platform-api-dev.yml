@@ -9,7 +9,7 @@ services:
       MYSQL_PASSWORD: guoyu_dev_password
       TZ: Asia/Shanghai
     ports:
-      - "3306:3306"
+      - "${MYSQL_PORT:-3306}:3306"
     volumes:
       - guoyu_platform_mysql:/var/lib/mysql
     command:

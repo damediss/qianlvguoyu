@@ -562,7 +562,8 @@ export function RolePage() {
               const menuIsChecked = checkedMenuIds.some((id) => Number(id) === Number(group.menuId));
               const grouped = group.permissions.reduce<Record<string, PermissionItemVO[]>>((acc, p) => {
                 const g = resolveActionGroup(p.action);
-                (acc[g.key] ||= []).push(p);
+                if (!acc[g.key]) acc[g.key] = [];
+                acc[g.key].push(p);
                 return acc;
               }, {});
 

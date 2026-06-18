@@ -38,6 +38,10 @@ public class TenantContextFilter extends OncePerRequestFilter {
     String path = request.getRequestURI();
     String method = request.getMethod();
     String tenantIdHeader = request.getHeader(TENANT_HEADER);
+    if ((tenantIdHeader == null || tenantIdHeader.isBlank())
+        && path.equals("/api/ws/practical-scoring")) {
+      tenantIdHeader = request.getParameter("tenantId");
+    }
 
     boolean isWhite = WHITE_PATHS.contains(path)
         || WHITE_METHOD_PATHS.contains(method + ":" + path)

@@ -2,6 +2,7 @@ import { Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
   createAssessorInfo,
+  createAssessorAccount,
   deleteAssessorInfo,
   disableAssessorInfo,
   enableAssessorInfo,
@@ -15,6 +16,7 @@ import { InfoManagementTable } from './InfoManagementTable';
 
 const columns: ColumnsType<AssessorInfo> = [
   { title: '姓名', dataIndex: 'assessorName', width: 120 },
+  { title: '平板账号', dataIndex: 'userId', width: 110, render: (value) => <Tag color={value ? 'success' : 'warning'}>{value ? '已创建' : '未绑定'}</Tag> },
   { title: '在岗状态', dataIndex: 'workStatus', width: 130, render: (value) => <Tag>{statusLabel(value)}</Tag> },
   { title: '证号', dataIndex: 'certificateNo', width: 160 },
   { title: '工种', dataIndex: 'workTypeScope', width: 180 },
@@ -35,8 +37,10 @@ export function AssessorInfoPage() {
       auditColumnIndex={1}
       fields={[
         { name: 'assessorName', label: '姓名', required: true },
+        { name: 'accountUsername', label: '平板登录账号', createRequired: true, hideInEdit: true },
+        { name: 'accountPassword', label: '平板登录密码', type: 'password', createRequired: true, hideInEdit: true },
         { name: 'certificateNo', label: '证号', required: true },
-        { name: 'workTypeScope', label: '工种', required: true },
+        { name: 'workTypeScopes', label: '工种', required: true, type: 'select-multiple', placeholder: '可输入或粘贴工种，多个用顿号分隔' },
         { name: 'levelScope', label: '等级范围', type: 'levelRange' },
         { name: 'validUntil', label: '有效期至', type: 'date', required: true },
         { name: 'phone', label: '联系电话' },
@@ -59,6 +63,7 @@ export function AssessorInfoPage() {
       disableApi={disableAssessorInfo}
       enableApi={enableAssessorInfo}
       deleteApi={deleteAssessorInfo}
+      createAccountApi={createAssessorAccount}
     />
   );
 }

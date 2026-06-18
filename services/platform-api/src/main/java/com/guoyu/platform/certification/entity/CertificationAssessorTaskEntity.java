@@ -17,6 +17,13 @@ public class CertificationAssessorTaskEntity extends BaseEntity {
   private Long taskAssessorId;
   private Long assessorId;
   private Long leaderAssessorId;
+  private Long candidateId;
+  private Long paperId;
+  private Long paperQuestionId;
+  private Integer revisionNo;
+  private Integer versionNo;
+  private String candidateSnapshotJson;
+  private String questionSnapshotJson;
   private String questionId;
   private String subject;
   private String title;
@@ -28,6 +35,9 @@ public class CertificationAssessorTaskEntity extends BaseEntity {
   private String progressNote;
   private BigDecimal totalScore;
   private LocalDateTime submittedAt;
+  private LocalDateTime returnedAt;
+  private Long returnedBy;
+  private String returnReason;
   private LocalDateTime reviewedAt;
   private Long reviewedBy;
   private String reviewNote;

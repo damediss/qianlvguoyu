@@ -2,9 +2,9 @@ package com.guoyu.platform.certification.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.guoyu.platform.certification.dto.PreparationAssessorDispatchReq;
 import com.guoyu.platform.certification.dto.PreparationAssessorGroupSaveReq;
 import com.guoyu.platform.certification.dto.PreparationAssessorQueryReq;
+import com.guoyu.platform.certification.dto.PreparationAssessorDispatchReq;
 import com.guoyu.platform.certification.dto.PreparationAssessorSaveReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateDocumentSaveReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateImportReq;
@@ -27,8 +27,8 @@ import com.guoyu.platform.certification.dto.PreparationTaskQueryReq;
 import com.guoyu.platform.certification.entity.CertificationApplicationMaterialBatchEntity;
 import com.guoyu.platform.certification.entity.CertificationApplicationMaterialItemEntity;
 import com.guoyu.platform.certification.entity.CertificationAssessorEntity;
-import com.guoyu.platform.certification.entity.CertificationAssessorNotificationEntity;
 import com.guoyu.platform.certification.entity.CertificationAssessorTaskEntity;
+import com.guoyu.platform.certification.entity.CertificationAssessorGroupWorktypeEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateDocumentEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateImportBatchEntity;
@@ -52,8 +52,8 @@ import com.guoyu.platform.certification.info.mapper.CertificationInfoExamEquipme
 import com.guoyu.platform.certification.info.mapper.CertificationInfoExamStaffMapper;
 import com.guoyu.platform.certification.mapper.CertificationApplicationMaterialBatchMapper;
 import com.guoyu.platform.certification.mapper.CertificationApplicationMaterialItemMapper;
+import com.guoyu.platform.certification.mapper.CertificationAssessorGroupWorktypeMapper;
 import com.guoyu.platform.certification.mapper.CertificationAssessorMapper;
-import com.guoyu.platform.certification.mapper.CertificationAssessorNotificationMapper;
 import com.guoyu.platform.certification.mapper.CertificationAssessorTaskMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateDocumentMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateImportBatchMapper;
@@ -70,6 +70,7 @@ import com.guoyu.platform.certification.mapper.CertificationTaskChecklistItemMap
 import com.guoyu.platform.certification.mapper.CertificationTaskMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskPhaseMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskScopeMapper;
+import com.guoyu.platform.certification.vo.AssessorGroupWorktypeItem;
 import com.guoyu.platform.certification.vo.PreparationAssessorGroupVO;
 import com.guoyu.platform.certification.vo.PreparationAssessorTaskVO;
 import com.guoyu.platform.certification.vo.PreparationAssessorVO;
@@ -197,8 +198,8 @@ public class CertificationPreparationApplicationService {
   private final CertificationTaskAssessorGroupMapper groupMapper;
   private final CertificationTaskAssessorMapper taskAssessorMapper;
   private final CertificationAssessorTaskMapper assessorTaskMapper;
-  private final CertificationAssessorNotificationMapper notificationMapper;
   private final CertificationTaskScopeMapper scopeMapper;
+  private final CertificationAssessorGroupWorktypeMapper groupWorktypeMapper;
   private final CertificationInfoAssessorMapper infoAssessorMapper;
   private final FileApplicationService fileApplicationService;
   private final CertificationCandidateStagingApplicationService stagingApplicationService;
@@ -226,8 +227,8 @@ public class CertificationPreparationApplicationService {
       CertificationTaskAssessorGroupMapper groupMapper,
       CertificationTaskAssessorMapper taskAssessorMapper,
       CertificationAssessorTaskMapper assessorTaskMapper,
-      CertificationAssessorNotificationMapper notificationMapper,
       CertificationTaskScopeMapper scopeMapper,
+      CertificationAssessorGroupWorktypeMapper groupWorktypeMapper,
       CertificationInfoAssessorMapper infoAssessorMapper,
       FileApplicationService fileApplicationService,
       @Lazy CertificationCandidateStagingApplicationService stagingApplicationService,
@@ -254,8 +255,8 @@ public class CertificationPreparationApplicationService {
     this.groupMapper = groupMapper;
     this.taskAssessorMapper = taskAssessorMapper;
     this.assessorTaskMapper = assessorTaskMapper;
-    this.notificationMapper = notificationMapper;
     this.scopeMapper = scopeMapper;
+    this.groupWorktypeMapper = groupWorktypeMapper;
     this.infoAssessorMapper = infoAssessorMapper;
     this.fileApplicationService = fileApplicationService;
     this.stagingApplicationService = stagingApplicationService;
@@ -403,6 +404,9 @@ public class CertificationPreparationApplicationService {
     }
     if (StringUtils.hasText(req.getLevelCode())) {
       wrapper.eq(CertificationCandidateEntity::getLevelCode, req.getLevelCode());
+    }
+    if (req.getDocumentComplete() != null) {
+      wrapper.eq(CertificationCandidateEntity::getDocumentComplete, req.getDocumentComplete());
     }
     Page<CertificationCandidateEntity> page = candidateMapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
     List<PreparationCandidateVO> candidates = new ArrayList<>(
@@ -1179,6 +1183,7 @@ public class CertificationPreparationApplicationService {
     applyGroup(entity, taskId, req);
     entity.setDeleted(0);
     groupMapper.insert(entity);
+    replaceGroupWorktypes(entity.getId(), taskId, req.workTypeScopeIds());
     for (Long assessorId : assessorIds) {
       boolean isLeader = assessorId.equals(req.leaderAssessorId());
       addGroupMember(taskId, entity.getId(), new PreparationTaskAssessorSaveReq(
@@ -1189,7 +1194,9 @@ public class CertificationPreparationApplicationService {
       ));
     }
     touchTask(taskId);
-    return PreparationAssessorGroupVO.from(entity, leaderName(entity.getLeaderAssessorId()));
+    return PreparationAssessorGroupVO.from(entity,
+        leaderName(entity.getLeaderAssessorId()),
+        loadGroupWorktypeItems(entity.getId()));
   }
 
   @Transactional
@@ -1198,8 +1205,13 @@ public class CertificationPreparationApplicationService {
     CertificationTaskAssessorGroupEntity entity = requireGroup(taskId, groupId);
     applyGroup(entity, taskId, req);
     groupMapper.updateById(entity);
+    if (req.workTypeScopeIds() != null) {
+      replaceGroupWorktypes(groupId, taskId, req.workTypeScopeIds());
+    }
     touchTask(taskId);
-    return PreparationAssessorGroupVO.from(entity, leaderName(entity.getLeaderAssessorId()));
+    return PreparationAssessorGroupVO.from(entity,
+        leaderName(entity.getLeaderAssessorId()),
+        loadGroupWorktypeItems(groupId));
   }
 
   @Transactional
@@ -1221,6 +1233,14 @@ public class CertificationPreparationApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "考评组已发放任务，不能删除");
     }
 
+    // 联动删除关联表行
+    List<CertificationAssessorGroupWorktypeEntity> existing =
+        groupWorktypeMapper.selectList(new LambdaQueryWrapper<CertificationAssessorGroupWorktypeEntity>()
+            .eq(CertificationAssessorGroupWorktypeEntity::getGroupId, groupId));
+    for (CertificationAssessorGroupWorktypeEntity row : existing) {
+      groupWorktypeMapper.deleteById(row.getId());
+    }
+
     groupMapper.deleteById(groupId);
     touchTask(taskId);
   }
@@ -1228,11 +1248,36 @@ public class CertificationPreparationApplicationService {
   @Transactional(readOnly = true)
   public List<PreparationAssessorGroupVO> listGroups(Long taskId) {
     findTask(taskId);
-    return groupMapper.selectList(new LambdaQueryWrapper<CertificationTaskAssessorGroupEntity>()
+    List<CertificationTaskAssessorGroupEntity> groups = groupMapper.selectList(
+        new LambdaQueryWrapper<CertificationTaskAssessorGroupEntity>()
             .eq(CertificationTaskAssessorGroupEntity::getTaskId, taskId)
-            .orderByDesc(CertificationTaskAssessorGroupEntity::getCreatedAt))
-        .stream()
-        .map(group -> PreparationAssessorGroupVO.from(group, leaderName(group.getLeaderAssessorId())))
+            .orderByDesc(CertificationTaskAssessorGroupEntity::getCreatedAt));
+    if (groups.isEmpty()) {
+      return List.of();
+    }
+    Map<Long, List<AssessorGroupWorktypeItem>> worktypeByGroup = loadWorktypesByGroupIds(
+        groups.stream().map(CertificationTaskAssessorGroupEntity::getId).toList());
+    return groups.stream()
+        .map(group -> PreparationAssessorGroupVO.from(
+            group,
+            leaderName(group.getLeaderAssessorId()),
+            worktypeByGroup.getOrDefault(group.getId(), List.of())))
+        .toList();
+  }
+
+  @Transactional(readOnly = true)
+  public List<AssessorGroupWorktypeItem> listTaskWorktypes(Long taskId, Long groupId) {
+    findTask(taskId);
+    if (groupId != null) {
+      requireGroup(taskId, groupId);
+    }
+    return listScopes(taskId).stream()
+        .map(scope -> new AssessorGroupWorktypeItem(
+            scope.getId(),
+            scope.getWorkTypeName(),
+            scope.getLevelCode(),
+            scope.getLevelName(),
+            scope.getSortOrder()))
         .toList();
   }
 
@@ -1259,6 +1304,7 @@ public class CertificationPreparationApplicationService {
         || !assessor.getWorkTypeScope().toLowerCase(Locale.ROOT).contains(taskWorkTypeName.toLowerCase(Locale.ROOT)))) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "考评员工种范围必须覆盖当前认定任务工种");
     }
+    requireAssessorCoversGroupWorktypes(assessor, taskId, groupId);
     long duplicate = safeCount(taskAssessorMapper.selectCount(new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
         .eq(CertificationTaskAssessorEntity::getTaskId, taskId)
         .eq(CertificationTaskAssessorEntity::getAssessorId, assessor.getId())));
@@ -1301,6 +1347,58 @@ public class CertificationPreparationApplicationService {
   }
 
   @Transactional
+  public List<PreparationAssessorTaskVO> dispatchGroup(Long taskId, Long groupId, PreparationAssessorDispatchReq req) {
+    CertificationTaskEntity task = findTask(taskId);
+    CertificationTaskAssessorGroupEntity group = requireGroup(taskId, groupId);
+    List<CertificationTaskAssessorEntity> members = taskAssessorMapper.selectList(
+        new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
+            .eq(CertificationTaskAssessorEntity::getTaskId, taskId)
+            .eq(CertificationTaskAssessorEntity::getGroupId, groupId)
+            .orderByAsc(CertificationTaskAssessorEntity::getTaskRole)
+            .orderByDesc(CertificationTaskAssessorEntity::getCreatedAt));
+    if (CollectionUtils.isEmpty(members)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "鑰冭瘎缁勫皻鏈厤缃垚鍛橈紝涓嶈兘鍙戞斁鑰冭瘎浠诲姟");
+    }
+
+    List<PreparationAssessorTaskVO> dispatched = new ArrayList<>();
+    for (CertificationTaskAssessorEntity member : members) {
+      CertificationInfoAssessorEntity assessor = requireInfoAssessor(member.getAssessorId());
+      CertificationAssessorTaskEntity entity = new CertificationAssessorTaskEntity();
+      entity.setTenantId(task.getTenantId());
+      entity.setTaskId(taskId);
+      entity.setGroupId(groupId);
+      entity.setTaskAssessorId(member.getId());
+      entity.setAssessorId(member.getAssessorId());
+      entity.setLeaderAssessorId(group.getLeaderAssessorId());
+      entity.setQuestionId("group-" + groupId + "-assessor-" + member.getAssessorId());
+      entity.setSubject(req.subject());
+      entity.setTitle(req.title());
+      entity.setAssessmentFileId(req.assessmentFileId());
+      entity.setAssessmentFileName(req.assessmentFileName());
+      entity.setDurationMin(req.durationMin());
+      entity.setDueDate(req.dueDate());
+      entity.setStatus("assigned");
+      entity.setProgressNote(req.remark());
+      entity.setRemark(req.remark());
+      entity.setDeleted(0);
+      assessorTaskMapper.insert(entity);
+
+      member.setWorkStatus("assigned");
+      taskAssessorMapper.updateById(member);
+      markInfoAssessorWorkStatus(member.getAssessorId(), "assigned");
+      dispatched.add(PreparationAssessorTaskVO.from(
+          entity,
+          resolveTaskName(taskId),
+          group.getGroupName(),
+          assessor.getAssessorName(),
+          leaderName(group.getLeaderAssessorId()),
+          List.of()));
+    }
+    touchTask(taskId);
+    return dispatched;
+  }
+
+  @Transactional
   public void removeGroupMember(Long taskId, Long groupId, Long memberId) {
     requireGroup(taskId, groupId);
     CertificationTaskAssessorEntity member = taskAssessorMapper.selectById(memberId);
@@ -1311,71 +1409,6 @@ public class CertificationPreparationApplicationService {
     taskAssessorMapper.deleteById(memberId);
     releaseInfoAssessorIfIdle(assessorId);
     touchTask(taskId);
-  }
-
-  @Transactional
-  public List<PreparationAssessorTaskVO> dispatchGroup(Long taskId, Long groupId, PreparationAssessorDispatchReq req) {
-    CertificationTaskEntity task = findTask(taskId);
-    CertificationTaskAssessorGroupEntity group = requireGroup(taskId, groupId);
-    if (group.getLeaderAssessorId() == null) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "每个考评组必须有组长");
-    }
-    List<CertificationTaskAssessorEntity> members = taskAssessorMapper.selectList(
-        new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
-            .eq(CertificationTaskAssessorEntity::getTaskId, taskId)
-            .eq(CertificationTaskAssessorEntity::getGroupId, groupId));
-    if (CollectionUtils.isEmpty(members)) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "考评组必须至少导入 1 名考评员后才能发放考评表");
-    }
-    if (req.assessmentFileId() == null || !StringUtils.hasText(req.assessmentFileName())) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "请先导入考评表文件");
-    }
-    List<PreparationAssessorTaskVO> result = new ArrayList<>();
-    for (CertificationTaskAssessorEntity member : members) {
-      CertificationAssessorTaskEntity assessorTask = new CertificationAssessorTaskEntity();
-      assessorTask.setTaskId(taskId);
-      assessorTask.setGroupId(groupId);
-      assessorTask.setTaskAssessorId(member.getId());
-      assessorTask.setAssessorId(member.getAssessorId());
-      assessorTask.setLeaderAssessorId(group.getLeaderAssessorId());
-      assessorTask.setQuestionId("PRACTICAL-" + task.getId());
-      assessorTask.setSubject(StringUtils.hasText(req.subject()) ? req.subject() : summarizeWorkTypes(taskId));
-      assessorTask.setAssessmentFileId(req.assessmentFileId());
-      assessorTask.setAssessmentFileName(req.assessmentFileName());
-      String title = StringUtils.hasText(req.assessmentFileName()) ? req.assessmentFileName() : req.title();
-      assessorTask.setTitle(StringUtils.hasText(title) ? title : "实操考评任务");
-      assessorTask.setDurationMin(req.durationMin());
-      assessorTask.setDueDate(req.dueDate());
-      assessorTask.setStatus("completed");
-      assessorTask.setRemark(req.remark());
-      assessorTask.setDeleted(0);
-      assessorTaskMapper.insert(assessorTask);
-      member.setWorkStatus("assigned");
-      taskAssessorMapper.updateById(member);
-      result.add(PreparationAssessorTaskVO.from(
-          assessorTask,
-          resolveTaskName(assessorTask.getTaskId()),
-          resolveGroupName(assessorTask.getGroupId()),
-          resolveAssessorName(assessorTask.getAssessorId()),
-          resolveAssessorName(assessorTask.getLeaderAssessorId()),
-          List.of()
-      ));
-
-      markInfoAssessorWorkStatus(member.getAssessorId(), "assigned");
-
-      CertificationAssessorNotificationEntity notification = new CertificationAssessorNotificationEntity();
-      notification.setTaskId(taskId);
-      notification.setAssessorId(member.getAssessorId());
-      notification.setMessageType("task");
-      notification.setMessageContent("您有新的认定考评任务：" + assessorTask.getTitle());
-      notification.setReadStatus("unread");
-      notification.setDeleted(0);
-      notificationMapper.insert(notification);
-    }
-    group.setStatus("dispatched");
-    groupMapper.updateById(group);
-    touchTask(taskId);
-    return result;
   }
 
   private String resolveTaskName(Long taskId) {
@@ -1615,6 +1648,7 @@ public class CertificationPreparationApplicationService {
     CertificationTaskScopeEntity defaultScope = firstScope(task.getId());
     entity.setLevelCode(StringUtils.hasText(req.levelCode()) ? req.levelCode() : defaultScope == null ? null : defaultScope.getLevelCode());
     entity.setLevelName(StringUtils.hasText(req.levelName()) ? req.levelName() : defaultScope == null ? null : defaultScope.getLevelName());
+    entity.setWorkTypeId(defaultScope == null ? null : defaultScope.getWorkTypeId());
     entity.setWorkTypeName(defaultScope == null ? null : defaultScope.getWorkTypeName());
     entity.setImportSource(StringUtils.hasText(req.importSource()) ? req.importSource() : "manual");
     entity.setOrgName(req.orgName());
@@ -1894,6 +1928,118 @@ public class CertificationPreparationApplicationService {
     entity.setWorkTypeName(req.workTypeName());
     entity.setStatus(StringUtils.hasText(req.status()) ? req.status() : "draft");
     entity.setRemark(req.remark());
+  }
+
+  private void replaceGroupWorktypes(Long groupId, Long taskId, List<Long> scopeIds) {
+    List<Long> normalized = scopeIds == null
+        ? List.of()
+        : scopeIds.stream().filter(Objects::nonNull).distinct().toList();
+    List<CertificationAssessorGroupWorktypeEntity> existing =
+        groupWorktypeMapper.selectList(new LambdaQueryWrapper<CertificationAssessorGroupWorktypeEntity>()
+            .eq(CertificationAssessorGroupWorktypeEntity::getGroupId, groupId));
+    for (CertificationAssessorGroupWorktypeEntity row : existing) {
+      groupWorktypeMapper.deleteById(row.getId());
+    }
+    if (normalized.isEmpty()) {
+      return;
+    }
+    Map<Long, CertificationTaskScopeEntity> scopeMap = listScopes(taskId).stream()
+        .filter(s -> normalized.contains(s.getId()))
+        .collect(Collectors.toMap(CertificationTaskScopeEntity::getId, s -> s, (a, b) -> a));
+    int order = 100;
+    for (Long scopeId : normalized) {
+      CertificationTaskScopeEntity scope = scopeMap.get(scopeId);
+      if (scope == null) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "工种范围不属于当前认定任务");
+      }
+      CertificationAssessorGroupWorktypeEntity row = new CertificationAssessorGroupWorktypeEntity();
+      row.setGroupId(groupId);
+      row.setScopeId(scopeId);
+      row.setWorkTypeName(scope.getWorkTypeName());
+      row.setLevelCode(scope.getLevelCode());
+      row.setLevelName(scope.getLevelName());
+      row.setSortOrder(scope.getSortOrder() == null ? order : scope.getSortOrder());
+      row.setDeleted(0);
+      groupWorktypeMapper.insert(row);
+      order += 10;
+    }
+    // 同步回填单值 work_type_name 字段（拼接展示，向后兼容）
+    String joined = scopeMap.values().stream()
+        .map(CertificationTaskScopeEntity::getWorkTypeName)
+        .filter(StringUtils::hasText)
+        .distinct()
+        .collect(Collectors.joining("、"));
+    if (StringUtils.hasText(joined)) {
+      CertificationTaskAssessorGroupEntity group = groupMapper.selectById(groupId);
+      if (group != null) {
+        group.setWorkTypeName(joined);
+        groupMapper.updateById(group);
+      }
+    }
+  }
+
+  private List<AssessorGroupWorktypeItem> loadGroupWorktypeItems(Long groupId) {
+    return groupWorktypeMapper.selectList(new LambdaQueryWrapper<CertificationAssessorGroupWorktypeEntity>()
+            .eq(CertificationAssessorGroupWorktypeEntity::getGroupId, groupId)
+            .orderByAsc(CertificationAssessorGroupWorktypeEntity::getSortOrder)
+            .orderByAsc(CertificationAssessorGroupWorktypeEntity::getId))
+        .stream()
+        .map(row -> new AssessorGroupWorktypeItem(
+            row.getScopeId(),
+            row.getWorkTypeName(),
+            row.getLevelCode(),
+            row.getLevelName(),
+            row.getSortOrder()))
+        .toList();
+  }
+
+  private Map<Long, List<AssessorGroupWorktypeItem>> loadWorktypesByGroupIds(List<Long> groupIds) {
+    if (groupIds == null || groupIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<Long, List<AssessorGroupWorktypeItem>> result = new java.util.LinkedHashMap<>();
+    for (Long gid : groupIds) {
+      result.put(gid, new ArrayList<>());
+    }
+    List<CertificationAssessorGroupWorktypeEntity> rows = groupWorktypeMapper.selectList(
+        new LambdaQueryWrapper<CertificationAssessorGroupWorktypeEntity>()
+            .in(CertificationAssessorGroupWorktypeEntity::getGroupId, groupIds)
+            .orderByAsc(CertificationAssessorGroupWorktypeEntity::getSortOrder)
+            .orderByAsc(CertificationAssessorGroupWorktypeEntity::getId));
+    for (CertificationAssessorGroupWorktypeEntity row : rows) {
+      result.computeIfAbsent(row.getGroupId(), k -> new ArrayList<>()).add(
+          new AssessorGroupWorktypeItem(
+              row.getScopeId(),
+              row.getWorkTypeName(),
+              row.getLevelCode(),
+              row.getLevelName(),
+              row.getSortOrder()));
+    }
+    return result;
+  }
+
+  private void requireAssessorCoversGroupWorktypes(CertificationInfoAssessorEntity assessor, Long taskId, Long groupId) {
+    List<CertificationAssessorGroupWorktypeEntity> rows = groupWorktypeMapper.selectList(
+        new LambdaQueryWrapper<CertificationAssessorGroupWorktypeEntity>()
+            .eq(CertificationAssessorGroupWorktypeEntity::getGroupId, groupId));
+    if (rows.isEmpty()) {
+      return;
+    }
+    String assessorScope = assessor.getWorkTypeScope();
+    if (!StringUtils.hasText(assessorScope)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "考评员工种范围必须覆盖当前考评组负责工种");
+    }
+    String lowerScope = assessorScope.toLowerCase(Locale.ROOT);
+    List<String> missing = rows.stream()
+        .map(CertificationAssessorGroupWorktypeEntity::getWorkTypeName)
+        .filter(StringUtils::hasText)
+        .filter(name -> !lowerScope.contains(name.toLowerCase(Locale.ROOT)))
+        .distinct()
+        .toList();
+    if (!missing.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "考评员工种范围必须覆盖当前考评组负责工种：缺少 " + String.join("、", missing));
+    }
   }
 
   private CertificationTaskEntity findTask(Long taskId) {

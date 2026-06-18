@@ -2,6 +2,7 @@ import { apiClient, unwrap } from './client';
 import type { PageResponse } from '../types/api';
 import type {
   AssessorInfo,
+  AssessorAccountPayload,
   AssessorInfoPayload,
   ExamStaffInfo,
   ExamStaffInfoPayload,
@@ -30,6 +31,10 @@ export function createAssessorInfo(payload: AssessorInfoPayload) {
 
 export function updateAssessorInfo(id: string, payload: AssessorInfoPayload) {
   return unwrap<AssessorInfo>(apiClient.put(`${base}/assessors/${id}`, payload));
+}
+
+export function createAssessorAccount(id: string, payload: AssessorAccountPayload) {
+  return unwrap<AssessorInfo>(apiClient.post(`${base}/assessors/${id}/account`, payload));
 }
 
 export function submitAssessorInfo(id: string) {

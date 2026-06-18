@@ -3,6 +3,7 @@ package com.guoyu.platform.certification.info.application;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.certification.info.dto.AssessorInfoSaveReq;
+import com.guoyu.platform.certification.info.dto.AssessorAccountCreateReq;
 import com.guoyu.platform.certification.info.dto.CertificationInfoQueryReq;
 import com.guoyu.platform.certification.info.dto.ExamEquipmentInfoSaveReq;
 import com.guoyu.platform.certification.info.dto.ExamSiteInfoSaveReq;
@@ -31,6 +32,13 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
+import com.guoyu.platform.system.dto.UserCreateReq;
+import com.guoyu.platform.system.entity.RoleEntity;
+import com.guoyu.platform.system.entity.UserEntity;
+import com.guoyu.platform.system.mapper.RoleMapper;
+import com.guoyu.platform.system.mapper.UserMapper;
+import com.guoyu.platform.system.service.UserApplicationService;
+import com.guoyu.platform.system.vo.UserVO;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -57,6 +65,9 @@ public class CertificationInfoApplicationService {
   private final CertificationInfoExamSiteMapper siteMapper;
   private final CertificationInfoExamEquipmentMapper equipmentMapper;
   private final CertificationInfoAuditRecordMapper auditRecordMapper;
+  private final RoleMapper roleMapper;
+  private final UserMapper userMapper;
+  private final UserApplicationService userApplicationService;
 
   public CertificationInfoApplicationService(
       CertificationInfoAssessorMapper assessorMapper,
@@ -64,7 +75,10 @@ public class CertificationInfoApplicationService {
       CertificationTaskExamStaffMapper taskExamStaffMapper,
       CertificationInfoExamSiteMapper siteMapper,
       CertificationInfoExamEquipmentMapper equipmentMapper,
-      CertificationInfoAuditRecordMapper auditRecordMapper
+      CertificationInfoAuditRecordMapper auditRecordMapper,
+      RoleMapper roleMapper,
+      UserMapper userMapper,
+      UserApplicationService userApplicationService
   ) {
     this.assessorMapper = assessorMapper;
     this.examStaffMapper = examStaffMapper;
@@ -72,6 +86,9 @@ public class CertificationInfoApplicationService {
     this.siteMapper = siteMapper;
     this.equipmentMapper = equipmentMapper;
     this.auditRecordMapper = auditRecordMapper;
+    this.roleMapper = roleMapper;
+    this.userMapper = userMapper;
+    this.userApplicationService = userApplicationService;
   }
 
   @Transactional(readOnly = true)
@@ -97,8 +114,12 @@ public class CertificationInfoApplicationService {
   @Transactional
   public AssessorInfoVO createAssessor(AssessorInfoSaveReq req) {
     ensureUniqueAssessorCertificate(req.certificateNo(), null);
+    UserVO account = createAssessorAccount(req);
     CertificationInfoAssessorEntity entity = new CertificationInfoAssessorEntity();
     applyAssessor(entity, req);
+    entity.setUserId(account.id());
+    entity.setAccountUsername(req.accountUsername().trim());
+    entity.setAccountPassword(req.accountPassword());
     entity.setAuditStatus(DRAFT);
     entity.setWorkStatus("pending_review");
     entity.setReferencedCount(0);
@@ -116,7 +137,27 @@ public class CertificationInfoApplicationService {
     CertificationInfoAssessorEntity entity = requireAssessor(id);
     ensureEditable(entity.getAuditStatus());
     ensureUniqueAssessorCertificate(req.certificateNo(), id);
+    bindAccountIfMissing(entity, req);
     applyAssessor(entity, req);
+    assessorMapper.updateById(entity);
+    return toAssessorVO(entity);
+  }
+
+  @Transactional
+  public AssessorInfoVO createAssessorAccount(Long id, AssessorAccountCreateReq req) {
+    CertificationInfoAssessorEntity entity = requireAssessor(id);
+    if (entity.getUserId() != null) {
+      throw new BusinessException(ErrorCode.CONFLICT, "该考评员已绑定平板登录账号");
+    }
+    UserVO account = createAssessorAccount(
+        req.username(),
+        req.password(),
+        entity.getAssessorName(),
+        entity.getPhone()
+    );
+    entity.setUserId(account.id());
+    entity.setAccountUsername(req.username().trim());
+    entity.setAccountPassword(req.password());
     assessorMapper.updateById(entity);
     return toAssessorVO(entity);
   }
@@ -204,7 +245,7 @@ public class CertificationInfoApplicationService {
   }
 
   @Transactional(readOnly = true)
-  public List<AssessorInfoVO> listAvailableAssessors(String keyword) {
+  public List<AssessorInfoVO> listAvailableAssessors(String keyword, List<String> requiredWorkTypes) {
     LambdaQueryWrapper<CertificationInfoAssessorEntity> wrapper = new LambdaQueryWrapper<CertificationInfoAssessorEntity>()
         .eq(CertificationInfoAssessorEntity::getAuditStatus, APPROVED)
         .eq(CertificationInfoAssessorEntity::getWorkStatus, "idle")
@@ -214,10 +255,30 @@ public class CertificationInfoApplicationService {
           .or().like(CertificationInfoAssessorEntity::getCertificateNo, keyword));
     }
     LocalDate today = LocalDate.now();
+    List<String> required = requiredWorkTypes == null ? List.of()
+        : requiredWorkTypes.stream().filter(StringUtils::hasText).distinct().toList();
     return assessorMapper.selectList(wrapper).stream()
         .filter(item -> item.getValidUntil() == null || !item.getValidUntil().isBefore(today))
+        .filter(item -> coversRequiredWorkTypes(item, required))
         .map(this::toAssessorVO)
         .toList();
+  }
+
+  private boolean coversRequiredWorkTypes(CertificationInfoAssessorEntity item, List<String> required) {
+    if (required == null || required.isEmpty()) {
+      return true;
+    }
+    String scope = item.getWorkTypeScope();
+    if (!StringUtils.hasText(scope)) {
+      return false;
+    }
+    String lowerScope = scope.toLowerCase(Locale.ROOT);
+    for (String need : required) {
+      if (!lowerScope.contains(need.toLowerCase(Locale.ROOT))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @Transactional
@@ -636,13 +697,84 @@ public class CertificationInfoApplicationService {
   private void applyAssessor(CertificationInfoAssessorEntity entity, AssessorInfoSaveReq req) {
     entity.setAssessorName(req.assessorName());
     entity.setCertificateNo(req.certificateNo());
-    entity.setWorkTypeScope(req.workTypeScope());
+    String joinedScopes = req.workTypeScopes() == null
+        ? ""
+        : req.workTypeScopes().stream()
+            .filter(Objects::nonNull)
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .distinct()
+            .collect(java.util.stream.Collectors.joining("、"));
+    entity.setWorkTypeScope(joinedScopes);
+    entity.setWorkTypeJson(toWorkTypeJson(req.workTypeScopes()));
     entity.setLevelScope(req.levelScope());
     entity.setValidUntil(req.validUntil());
     entity.setPhone(req.phone());
     entity.setMaskedPhone(maskPhone(req.phone()));
     entity.setMaterialsDescription(req.materialsDescription());
     entity.setRemark(req.remark());
+  }
+
+  private String toWorkTypeJson(List<String> workTypeScopes) {
+    if (workTypeScopes == null || workTypeScopes.isEmpty()) {
+      return "[]";
+    }
+    try {
+      return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(workTypeScopes);
+    } catch (Exception e) {
+      return "[]";
+    }
+  }
+
+  private UserVO createAssessorAccount(AssessorInfoSaveReq req) {
+    if (!StringUtils.hasText(req.accountUsername()) || !StringUtils.hasText(req.accountPassword())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "创建考评员时必须填写平板登录账号和密码");
+    }
+    return createAssessorAccount(
+        req.accountUsername(),
+        req.accountPassword(),
+        req.assessorName(),
+        req.phone()
+    );
+  }
+
+  private UserVO createAssessorAccount(String username, String password, String displayName, String phone) {
+    RoleEntity role = roleMapper.selectOne(new LambdaQueryWrapper<RoleEntity>()
+        .eq(RoleEntity::getCode, "CERTIFICATION_ASSESSOR")
+        .eq(RoleEntity::getStatus, "enabled")
+        .last("LIMIT 1"));
+    if (role == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "实操考评员角色未配置，请先执行最新数据库迁移");
+    }
+    return userApplicationService.create(new UserCreateReq(
+        null,
+        null,
+        username.trim(),
+        password,
+        displayName,
+        "assessor",
+        phone,
+        null,
+        "enabled",
+        List.of(role.getId())
+    ));
+  }
+
+  private void bindAccountIfMissing(CertificationInfoAssessorEntity entity, AssessorInfoSaveReq req) {
+    boolean hasUsername = StringUtils.hasText(req.accountUsername());
+    boolean hasPassword = StringUtils.hasText(req.accountPassword());
+    if (!hasUsername && !hasPassword) {
+      return;
+    }
+    if (entity.getUserId() != null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "该考评员已绑定平板登录账号");
+    }
+    if (!hasUsername || !hasPassword) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "补建平板账号时必须同时填写账号和密码");
+    }
+    entity.setUserId(createAssessorAccount(req).id());
+    entity.setAccountUsername(req.accountUsername().trim());
+    entity.setAccountPassword(req.accountPassword());
   }
 
   private void applyExamStaff(CertificationInfoExamStaffEntity entity, ExamStaffInfoSaveReq req) {
@@ -868,10 +1000,45 @@ public class CertificationInfoApplicationService {
   }
 
   private AssessorInfoVO toAssessorVO(CertificationInfoAssessorEntity entity) {
-    return new AssessorInfoVO(entity.getId(), entity.getAssessorName(), entity.getCertificateNo(),
-        entity.getWorkTypeScope(), entity.getLevelScope(), entity.getValidUntil(),
+    String accountUsername = entity.getAccountUsername();
+    if (!StringUtils.hasText(accountUsername) && entity.getUserId() != null) {
+      UserEntity user = userMapper.selectById(entity.getUserId());
+      if (user != null) {
+        accountUsername = user.getUsername();
+      }
+    }
+    return new AssessorInfoVO(entity.getId(), entity.getUserId(), accountUsername, entity.getAccountPassword(),
+        entity.getAssessorName(), entity.getCertificateNo(),
+        entity.getWorkTypeScope(),
+        parseWorkTypeScopes(entity.getWorkTypeJson(), entity.getWorkTypeScope()),
+        entity.getLevelScope(), entity.getValidUntil(),
         StringUtils.hasText(entity.getMaskedPhone()) ? entity.getMaskedPhone() : maskPhone(entity.getPhone()),
         entity.getAuditStatus(), entity.getWorkStatus(), entity.getMaterialsDescription(), entity.getRemark());
+  }
+
+  private List<String> parseWorkTypeScopes(String workTypeJson, String workTypeScope) {
+    if (StringUtils.hasText(workTypeJson) && !"[]".equals(workTypeJson)) {
+      try {
+        String[] arr = new com.fasterxml.jackson.databind.ObjectMapper()
+            .readValue(workTypeJson, String[].class);
+        if (arr != null && arr.length > 0) {
+          return java.util.Arrays.stream(arr)
+              .filter(s -> s != null && !s.isBlank())
+              .map(String::trim)
+              .toList();
+        }
+      } catch (Exception ignored) {
+        // fall through to derive from string column
+      }
+    }
+    if (StringUtils.hasText(workTypeScope)) {
+      return java.util.Arrays.stream(workTypeScope.split("[、,，]"))
+          .map(String::trim)
+          .filter(s -> !s.isEmpty())
+          .distinct()
+          .toList();
+    }
+    return List.of();
   }
 
   private ExamStaffInfoVO toExamStaffVO(CertificationInfoExamStaffEntity entity) {

@@ -12,6 +12,7 @@ public class CertificationTaskScopeEntity extends BaseEntity {
 
   private Long taskId;
   private String certificationType;
+  private Long workTypeId;
   private String workTypeName;
   private String levelCode;
   private String levelName;

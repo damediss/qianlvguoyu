@@ -1,14 +1,14 @@
-import { DeleteOutlined, EditOutlined, ReloadOutlined, SendOutlined, TeamOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, ReloadOutlined, TeamOutlined } from '@ant-design/icons';
 import { ProCard } from '@ant-design/pro-components';
-import { Button, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Typography, Upload, message } from 'antd';
+import { Button, Form, Input, Modal, Popconfirm, Select, Space, Table, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type Dayjs } from 'dayjs';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  addPreparationGroupMember,
   createPreparationAssessorGroup,
   deletePreparationAssessorGroup,
-  dispatchPreparationAssessorGroup,
+  listPreparationAssessorGroupWorktypes,
   listPreparationAssessorGroups,
   listPreparationGroupMembers,
   removePreparationGroupMember,
@@ -18,14 +18,13 @@ import { listAvailableAssessors } from '../../../api/certificationInfo';
 import { PermissionGate } from '../../../directives/permission';
 import type { AssessorInfo } from '../../../types/certificationInfo';
 import type {
-  PreparationAssessorDispatchPayload,
   PreparationAssessorGroup,
   PreparationAssessorGroupPayload,
+  PreparationAssessorGroupWorktype,
   PreparationTaskAssessor,
   PreparationTaskOverview,
 } from '../../../types/certificationPreparation';
-import { dash, dateText, formatDate, statusTag } from './shared';
-import { uploadPlatformFile } from '../../../api/files';
+import { dash, dateText, statusTag } from './shared';
 
 interface AssessorConfigProps {
   taskId?: string;
@@ -33,24 +32,15 @@ interface AssessorConfigProps {
   onChanged?: () => void;
 }
 
-interface DispatchFormValues extends Omit<PreparationAssessorDispatchPayload, 'dueDate'> {
-  dueDate?: Dayjs;
-}
-
 export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps) {
   const queryClient = useQueryClient();
   const [selectedGroupId, setSelectedGroupId] = useState<string>();
   const [groupModalOpen, setGroupModalOpen] = useState(false);
   const [memberWizardOpen, setMemberWizardOpen] = useState(false);
-  const [memberWizardStep, setMemberWizardStep] = useState<'pick' | 'group'>('pick');
   const [candidateKeyword, setCandidateKeyword] = useState('');
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
-  const [leaderCandidateId, setLeaderCandidateId] = useState<string>();
-  const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
-  const [dispatchAssessmentUploading, setDispatchAssessmentUploading] = useState(false);
   const [editingGroup, setEditingGroup] = useState<PreparationAssessorGroup | null>(null);
-  const [groupForm] = Form.useForm<PreparationAssessorGroupPayload>();
-  const [dispatchForm] = Form.useForm<DispatchFormValues>();
+  const [groupForm] = Form.useForm<PreparationAssessorGroupPayload & { workTypeScopeIds?: string[] }>();
 
   const availableCandidatesQuery = useQuery({
     queryKey: ['certification-info-assessors-available', candidateKeyword],
@@ -78,6 +68,12 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
     queryKey: ['certification-preparation-assessor-members-for-edit', taskId, editingGroup?.id],
     queryFn: () => listPreparationGroupMembers(taskId!, editingGroup!.id),
     enabled: Boolean(taskId && editingGroup?.id),
+  });
+
+  const taskWorktypesQuery = useQuery({
+    queryKey: ['certification-preparation-task-worktypes', taskId],
+    queryFn: () => listPreparationAssessorGroupWorktypes(taskId!),
+    enabled: Boolean(taskId),
   });
 
   useEffect(() => {
@@ -134,34 +130,24 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
     },
   });
 
-  const memberWizardSaveMutation = useMutation({
+  const addMembersMutation = useMutation({
     mutationFn: async () => {
-      const values = await groupForm.validateFields();
-      if (!taskId) {
-        throw new Error('请先选择认定任务');
-      }
+      if (!taskId || !selectedGroupId) throw new Error('请先选择考评组');
       if (selectedCandidateIds.length === 0) {
         throw new Error('请至少选择 1 名成员');
       }
-      const leaderId = leaderCandidateId || values.leaderAssessorId;
-      if (!leaderId) {
-        throw new Error('请选择组长');
+      const members = [];
+      for (const assessorId of selectedCandidateIds) {
+        members.push(await addPreparationGroupMember(taskId, selectedGroupId, {
+          assessorId,
+          taskRole: 'member',
+          roleName: '成员',
+        }));
       }
-      if (!selectedCandidateIds.includes(String(leaderId))) {
-        throw new Error('组长必须从已选成员中选择');
-      }
-
-      const group = await createPreparationAssessorGroup(taskId, {
-        ...values,
-        leaderAssessorId: leaderId,
-        assessorIds: selectedCandidateIds,
-        status: 'preparing',
-      });
-      return group;
+      return members;
     },
-    onSuccess: (group) => {
-      message.success('配置成功');
-      setSelectedGroupId(group.id);
+    onSuccess: (members) => {
+      message.success(`已添加 ${members.length} 名考评成员`);
       closeMemberWizard();
       refresh();
     },
@@ -175,27 +161,17 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
     },
   });
 
-  const dispatchMutation = useMutation({
-    mutationFn: (values: DispatchFormValues) => dispatchPreparationAssessorGroup(taskId!, selectedGroupId!, {
-      subject: values.subject,
-      title: values.title,
-      assessmentFileId: values.assessmentFileId,
-      assessmentFileName: values.assessmentFileName,
-      durationMin: values.durationMin,
-      dueDate: formatDate(values.dueDate),
-      remark: values.remark,
-    }),
-    onSuccess: (tasks) => {
-      message.success(`已发放 ${tasks.length} 个考评任务`);
-      setDispatchModalOpen(false);
-      dispatchForm.resetFields();
-      refresh();
-    },
-  });
-
   const groupColumns: ColumnsType<PreparationAssessorGroup> = [
     { title: '考评组', dataIndex: 'groupName', minWidth: 180, render: dash },
-    { title: '工种/科目', dataIndex: 'workTypeName', width: 140, render: dash },
+    {
+      title: '工种/科目',
+      dataIndex: 'workTypeScopes',
+      width: 240,
+      render: (scopes?: PreparationAssessorGroupWorktype[]) => {
+        if (!scopes || scopes.length === 0) return '-';
+        return scopes.map((s) => [s.workTypeName, s.levelName].filter(Boolean).join('-')).join('、');
+      },
+    },
     { title: '组长', dataIndex: 'leaderAssessorName', width: 140, render: dash },
     { title: '状态', dataIndex: 'status', width: 100, render: statusTag },
     {
@@ -245,7 +221,7 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
     groupForm.setFieldsValue({
       groupName: record.groupName,
       leaderAssessorId: record.leaderAssessorId,
-      workTypeName: record.workTypeName,
+      workTypeScopeIds: (record.workTypeScopes || []).map((s) => String(s.scopeId)),
       status: record.status,
       remark: record.remark,
     });
@@ -254,51 +230,54 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
 
   function submitGroup() {
     groupForm.validateFields().then((values) => {
+      const payload: PreparationAssessorGroupPayload = {
+        groupName: values.groupName,
+        leaderAssessorId: values.leaderAssessorId,
+        workTypeScopeIds: values.workTypeScopeIds,
+        status: values.status,
+        remark: values.remark,
+      };
       if (editingGroup) {
-        updateGroupMutation.mutate({ id: editingGroup.id, values });
+        updateGroupMutation.mutate({ id: editingGroup.id, values: payload });
         return;
       }
-      createGroupMutation.mutate(values);
+      createGroupMutation.mutate(payload);
     });
   }
 
   function openMemberWizard() {
-    if (!taskId) {
-      message.warning('请先选择认定任务');
+    if (!taskId || !selectedGroupId) {
+      message.warning('请先选择考评组');
       return;
     }
-    setMemberWizardStep('pick');
     setCandidateKeyword('');
     setSelectedCandidateIds([]);
-    setLeaderCandidateId(undefined);
-    groupForm.resetFields();
-    groupForm.setFieldsValue({ status: 'preparing', workTypeName: task?.workTypeName });
     setMemberWizardOpen(true);
   }
 
   function closeMemberWizard() {
     setMemberWizardOpen(false);
-    setMemberWizardStep('pick');
     setCandidateKeyword('');
     setSelectedCandidateIds([]);
-    setLeaderCandidateId(undefined);
-    groupForm.resetFields();
   }
 
   const candidateColumns: ColumnsType<AssessorInfo> = [
     { title: '姓名', dataIndex: 'assessorName', width: 120, render: dash },
     { title: '证号', dataIndex: 'certificateNo', width: 160, render: dash },
-    { title: '工种范围', dataIndex: 'workTypeScope', minWidth: 180, render: dash },
+    {
+      title: '工种范围',
+      dataIndex: 'workTypeScopes',
+      minWidth: 180,
+      render: (value: string[] | undefined) => (value && value.length > 0 ? value.join('、') : '-'),
+    },
     { title: '等级范围', dataIndex: 'levelScope', width: 150, render: dash },
     { title: '有效期至', dataIndex: 'validUntil', width: 120, render: dateText },
   ];
 
-  const selectedCandidateOptions = useMemo(() => {
-    const all = availableCandidatesQuery.data || [];
-    return all
-      .filter((x) => selectedCandidateIds.includes(String(x.id)))
-      .map((x) => ({ label: `${x.assessorName || '-'} ${x.certificateNo || ''}`, value: String(x.id) }));
-  }, [availableCandidatesQuery.data, selectedCandidateIds]);
+  const worktypeOptions = (taskWorktypesQuery.data || []).map((w) => {
+    const label = [w.workTypeName, w.levelName].filter(Boolean).join('-');
+    return { label, value: String(w.scopeId) };
+  });
 
   return (
     <Space direction="vertical" style={{ width: '100%' }} size={16}>
@@ -309,12 +288,16 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
             <Button icon={<ReloadOutlined />} onClick={refresh}>刷新</Button>
             <PermissionGate code="certification.preparation.assessor.assign">
               <Button
-                disabled={!selectedGroupId || (groupsQuery.data || []).length === 0}
-                type="primary"
-                icon={<SendOutlined />}
-                onClick={() => setDispatchModalOpen(true)}
+                icon={<TeamOutlined />}
+                disabled={!taskId}
+                onClick={() => {
+                  setEditingGroup(null);
+                  groupForm.resetFields();
+                  groupForm.setFieldsValue({ status: 'preparing', workTypeScopeIds: [] });
+                  setGroupModalOpen(true);
+                }}
               >
-                发放任务
+                新建考评组
               </Button>
             </PermissionGate>
           </Space>
@@ -339,7 +322,7 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
         title={selectedGroup ? `成员：${selectedGroup.groupName || selectedGroup.id}` : '考评组成员'}
         extra={
           <PermissionGate code="certification.preparation.assessor.assign">
-            <Button disabled={!taskId} icon={<TeamOutlined />} onClick={openMemberWizard}>
+            <Button disabled={!taskId || !selectedGroupId} icon={<TeamOutlined />} onClick={openMemberWizard}>
               添加成员
             </Button>
           </PermissionGate>
@@ -367,23 +350,40 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
           <Form.Item name="groupName" label="考评组名称" rules={[{ required: true, message: '请输入考评组名称' }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="leaderAssessorId" label="组长" rules={[{ required: true, message: '请选择组长' }]}>
+          {editingGroup ? (
+            <Form.Item name="leaderAssessorId" label="组长" rules={[{ required: true, message: '请选择组长' }]}>
+              <Select
+                showSearch
+                optionFilterProp="label"
+                options={(editingGroupMembersQuery.data || []).map((m) => ({
+                  label: `${m.assessorName || '-'} ${m.certificateNo || ''}`,
+                  value: m.assessorId,
+                }))}
+                loading={editingGroupMembersQuery.isFetching}
+                placeholder="从本组成员中选择组长"
+              />
+            </Form.Item>
+          ) : (
+            <Typography.Paragraph type="secondary">
+              先创建空考评组，再在下方"考评组成员"区域添加成员，最后编辑考评组指定组长。
+            </Typography.Paragraph>
+          )}
+          <Form.Item
+            name="workTypeScopeIds"
+            label="工种/科目"
+            rules={[{ required: true, message: '请选择至少一个工种' }]}
+            extra={worktypeOptions.length === 0 ? '当前任务尚未配置工种范围，请先在认定任务中维护' : '可多选，范围严格限定为当前认定任务已配置的工种'}
+          >
             <Select
+              mode="multiple"
+              allowClear
               showSearch
               optionFilterProp="label"
-              options={
-                (editingGroup ? (editingGroupMembersQuery.data || []) : (membersQuery.data || []))
-                  .map((m) => ({
-                    label: `${m.assessorName || '-'} ${m.certificateNo || ''}`,
-                    value: m.assessorId,
-                  }))
-              }
-              loading={editingGroup ? editingGroupMembersQuery.isFetching : membersQuery.isFetching}
-              placeholder="从本组成员中选择组长"
+              placeholder="请选择工种"
+              loading={taskWorktypesQuery.isFetching}
+              options={worktypeOptions}
+              disabled={worktypeOptions.length === 0}
             />
-          </Form.Item>
-          <Form.Item name="workTypeName" label="工种/科目">
-            <Input />
           </Form.Item>
           <Form.Item name="status" label="状态">
             <Select options={[{ label: '筹备中', value: 'preparing' }, { label: '已发放', value: 'dispatched' }, { label: '已完成', value: 'completed' }]} />
@@ -395,160 +395,42 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
       </Modal>
 
       <Modal
-        title={memberWizardStep === 'pick' ? '添加成员' : '创建考评组'}
+        title={`添加成员${selectedGroup ? ` - ${selectedGroup.groupName}` : ''}`}
         open={memberWizardOpen}
         onCancel={closeMemberWizard}
-        width={memberWizardStep === 'pick' ? 920 : 680}
-        okText={memberWizardStep === 'pick' ? '创建考评组' : '保存'}
-        confirmLoading={memberWizardSaveMutation.isPending}
+        width={920}
+        okText="添加到当前考评组"
+        confirmLoading={addMembersMutation.isPending}
         onOk={() => {
-          if (memberWizardStep === 'pick') {
-            if (selectedCandidateIds.length === 0) {
-              message.warning('请至少选择 1 名成员');
-              return;
-            }
-            setMemberWizardStep('group');
+          if (selectedCandidateIds.length === 0) {
+            message.warning('请至少选择 1 名成员');
             return;
           }
-          memberWizardSaveMutation.mutate();
+          addMembersMutation.mutate();
         }}
       >
-        {memberWizardStep === 'pick' ? (
-          <Space direction="vertical" style={{ width: '100%' }} size={12}>
-            <Input.Search
-              allowClear
-              placeholder="搜索姓名、证号"
-              onSearch={(value) => setCandidateKeyword(value || '')}
-            />
-            <Table
-              rowKey="id"
-              columns={candidateColumns}
-              dataSource={availableCandidatesQuery.data || []}
-              loading={availableCandidatesQuery.isFetching}
-              pagination={false}
-              scroll={{ x: 860, y: 360 }}
-              rowSelection={{
-                selectedRowKeys: selectedCandidateIds,
-                onChange: (keys) => setSelectedCandidateIds(keys.map(String)),
-              }}
-            />
-            <Typography.Text type="secondary">
-              已选 {selectedCandidateIds.length} 人（候选来自“考评员信息-已入库且空闲且未过期”）
-            </Typography.Text>
-          </Space>
-        ) : (
-          <Space direction="vertical" style={{ width: '100%' }} size={12}>
-            <Typography.Text type="secondary">已选 {selectedCandidateIds.length} 名成员，请从已选成员中选择组长。</Typography.Text>
-            <Form form={groupForm} layout="vertical">
-              <Form.Item name="groupName" label="考评组名称" rules={[{ required: true, message: '请输入考评组名称' }]}>
-                <Input />
-              </Form.Item>
-              <Form.Item label="组长" required>
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  options={selectedCandidateOptions}
-                  value={leaderCandidateId}
-                  onChange={(value) => {
-                    setLeaderCandidateId(String(value));
-                    groupForm.setFieldValue('leaderAssessorId', String(value));
-                  }}
-                  placeholder="从已选成员中选择组长"
-                />
-              </Form.Item>
-              {/* 仍保留字段在 form 中，便于复用后端入参 */}
-              <Form.Item name="leaderAssessorId" hidden rules={[{ required: true, message: '请选择组长' }]}>
-                <Input />
-              </Form.Item>
-              <Form.Item name="workTypeName" label="工种/科目">
-                <Input />
-              </Form.Item>
-              <Form.Item name="remark" label="备注">
-                <Input.TextArea rows={2} />
-              </Form.Item>
-            </Form>
-            <Button onClick={() => setMemberWizardStep('pick')}>上一步</Button>
-          </Space>
-        )}
-      </Modal>
-
-      <Modal
-        title="发放考评任务"
-        open={dispatchModalOpen}
-        onOk={() => dispatchForm.validateFields().then((values) => dispatchMutation.mutate(values))}
-        onCancel={() => setDispatchModalOpen(false)}
-        confirmLoading={dispatchMutation.isPending}
-      >
-        <Form form={dispatchForm} layout="vertical">
-          <Form.Item name="subject" label="科目" rules={[{ required: true, message: '请输入科目' }]}>
-            <Input placeholder={task?.workTypeName || '实操考评'} />
-          </Form.Item>
-          <Form.Item
-            label="考评表"
-            required
-            tooltip="导入考评表文件后，将以文件名作为任务标题"
-          >
-            <Space direction="vertical" style={{ width: '100%' }} size={8}>
-              <Upload
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
-                maxCount={1}
-                showUploadList={false}
-                beforeUpload={async (file) => {
-                  setDispatchAssessmentUploading(true);
-                  try {
-                    const saved = await uploadPlatformFile(file as File);
-                    dispatchForm.setFieldsValue({
-                      assessmentFileId: String(saved.id),
-                      assessmentFileName: saved.originalName,
-                      // 兼容后端现有 title 字段（DB 非空）
-                      title: saved.originalName,
-                    });
-                    message.success('考评表已导入');
-                  } catch (e) {
-                    message.error((e as Error).message || '导入失败');
-                  } finally {
-                    setDispatchAssessmentUploading(false);
-                  }
-                  return false;
-                }}
-              >
-                <Button loading={dispatchAssessmentUploading}>导入考评表文件</Button>
-              </Upload>
-              <Form.Item
-                noStyle
-                shouldUpdate={(prev, next) => prev.assessmentFileName !== next.assessmentFileName}
-              >
-                {({ getFieldValue }) => (
-                  <Typography.Text type="secondary">
-                    {getFieldValue('assessmentFileName') ? `已选择：${getFieldValue('assessmentFileName')}` : '未选择文件'}
-                  </Typography.Text>
-                )}
-              </Form.Item>
-            </Space>
-          </Form.Item>
-          <Form.Item name="assessmentFileId" hidden rules={[{ required: true, message: '请导入考评表文件' }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="assessmentFileName" hidden rules={[{ required: true, message: '请导入考评表文件' }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item
-            name="durationMin"
-            label="时长（分钟）"
-            rules={[
-              { required: true, message: '请输入时长' },
-              { type: 'number', min: 1, message: '请输入有效时长' },
-            ]}
-          >
-            <InputNumber min={1} precision={0} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="dueDate" label="截止日期">
-            <DatePicker style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="remark" label="备注">
-            <Input />
-          </Form.Item>
-        </Form>
+        <Space direction="vertical" style={{ width: '100%' }} size={12}>
+          <Input.Search
+            allowClear
+            placeholder="搜索姓名、证号"
+            onSearch={(value) => setCandidateKeyword(value || '')}
+          />
+          <Table
+            rowKey="id"
+            columns={candidateColumns}
+            dataSource={availableCandidatesQuery.data || []}
+            loading={availableCandidatesQuery.isFetching}
+            pagination={false}
+            scroll={{ x: 860, y: 360 }}
+            rowSelection={{
+              selectedRowKeys: selectedCandidateIds,
+              onChange: (keys) => setSelectedCandidateIds(keys.map(String)),
+            }}
+          />
+          <Typography.Text type="secondary">
+            已选 {selectedCandidateIds.length} 人（候选来自"考评员信息-已入库且空闲且未过期"）
+          </Typography.Text>
+        </Space>
       </Modal>
     </Space>
   );

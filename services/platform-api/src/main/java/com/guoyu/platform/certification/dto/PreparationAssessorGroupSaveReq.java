@@ -6,7 +6,8 @@ public record PreparationAssessorGroupSaveReq(
     String groupName,
     Long leaderAssessorId,
     List<Long> assessorIds,
-    String workTypeName,
+    @Deprecated String workTypeName,
+    List<Long> workTypeScopeIds,
     String status,
     String remark
 ) {

@@ -8,9 +8,14 @@ export interface CertificationInfoQuery {
 
 export interface AssessorInfo {
   id: string;
+  userId?: string;
+  accountUsername?: string;
+  accountPassword?: string;
   assessorName: string;
   certificateNo: string;
+  /** @deprecated 旧字段，多个工种以"、"拼接。优先使用 workTypeScopes。 */
   workTypeScope: string;
+  workTypeScopes: string[];
   levelScope?: string;
   validUntil: string;
   maskedPhone?: string;
@@ -22,13 +27,22 @@ export interface AssessorInfo {
 
 export interface AssessorInfoPayload {
   assessorName: string;
+  accountUsername?: string;
+  accountPassword?: string;
   certificateNo: string;
-  workTypeScope: string;
+  /** @deprecated 旧字段。优先使用 workTypeScopes。 */
+  workTypeScope?: string;
+  workTypeScopes: string[];
   levelScope?: string;
   validUntil: string;
   phone?: string;
   materialsDescription?: string;
   remark?: string;
+}
+
+export interface AssessorAccountPayload {
+  username: string;
+  password: string;
 }
 
 export interface ExamStaffInfo {

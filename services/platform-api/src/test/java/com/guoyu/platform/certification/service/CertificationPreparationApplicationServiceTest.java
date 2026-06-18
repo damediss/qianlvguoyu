@@ -33,6 +33,7 @@ import com.guoyu.platform.certification.entity.CertificationTaskEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskScopeEntity;
 import com.guoyu.platform.certification.mapper.CertificationApplicationMaterialBatchMapper;
 import com.guoyu.platform.certification.mapper.CertificationApplicationMaterialItemMapper;
+import com.guoyu.platform.certification.mapper.CertificationAssessorGroupWorktypeMapper;
 import com.guoyu.platform.certification.mapper.CertificationAssessorMapper;
 import com.guoyu.platform.certification.mapper.CertificationAssessorNotificationMapper;
 import com.guoyu.platform.certification.mapper.CertificationAssessorTaskMapper;
@@ -92,9 +93,9 @@ class CertificationPreparationApplicationServiceTest {
   private final CertificationTaskAssessorGroupMapper groupMapper = Mockito.mock(CertificationTaskAssessorGroupMapper.class);
   private final CertificationTaskAssessorMapper taskAssessorMapper = Mockito.mock(CertificationTaskAssessorMapper.class);
   private final CertificationAssessorTaskMapper assessorTaskMapper = Mockito.mock(CertificationAssessorTaskMapper.class);
-  private final CertificationAssessorNotificationMapper notificationMapper =
-      Mockito.mock(CertificationAssessorNotificationMapper.class);
   private final CertificationTaskScopeMapper scopeMapper = Mockito.mock(CertificationTaskScopeMapper.class);
+  private final CertificationAssessorGroupWorktypeMapper groupWorktypeMapper =
+      Mockito.mock(CertificationAssessorGroupWorktypeMapper.class);
   private final CertificationInfoAssessorMapper infoAssessorMapper = Mockito.mock(CertificationInfoAssessorMapper.class);
   private final com.guoyu.platform.file.service.FileApplicationService fileApplicationService =
       Mockito.mock(com.guoyu.platform.file.service.FileApplicationService.class);
@@ -130,8 +131,8 @@ class CertificationPreparationApplicationServiceTest {
         groupMapper,
         taskAssessorMapper,
         assessorTaskMapper,
-        notificationMapper,
         scopeMapper,
+        groupWorktypeMapper,
         infoAssessorMapper,
         fileApplicationService,
         stagingApplicationService,
@@ -431,7 +432,7 @@ class CertificationPreparationApplicationServiceTest {
     ArgumentCaptor<CertificationAssessorTaskEntity> captor =
         ArgumentCaptor.forClass(CertificationAssessorTaskEntity.class);
     verify(assessorTaskMapper).insert(captor.capture());
-    assertThat(captor.getValue().getStatus()).isEqualTo("completed");
+    assertThat(captor.getValue().getStatus()).isEqualTo("assigned");
   }
 
   @Test
