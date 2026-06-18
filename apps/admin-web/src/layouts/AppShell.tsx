@@ -160,7 +160,24 @@ export function AppShell({ pageMap }: AppShellProps) {
     }
   };
 
+  const handleOpenAssessor = async () => {
+    try {
+      await logout();
+    } catch {
+      // 切换入口时仍强制清理旧登录态，避免管理账号误入平板端
+    } finally {
+      clearAuth();
+      window.location.assign('/assessor-scoring');
+    }
+  };
+
   const userDropdownItems = [
+    {
+      key: 'assessor',
+      icon: <Icons.TabletOutlined />,
+      label: '平板考评端',
+      onClick: handleOpenAssessor,
+    },
     {
       key: 'logout',
       icon: <Icons.LogoutOutlined />,

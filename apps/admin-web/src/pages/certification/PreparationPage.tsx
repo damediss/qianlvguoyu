@@ -27,9 +27,10 @@ import {
   isCollectionSubTabKey,
 } from './preparation/InformationCollection';
 import { PreparationWorkbench } from './preparation/PreparationWorkbench';
+import { PracticalScoringConfig } from './preparation/PracticalScoringConfig';
 import { dateText, dateTimeText, statusTag } from './preparation/shared';
 
-type PreparationTabKey = 'workbench' | 'collection' | 'checklist' | 'equipment' | 'sites' | 'staff' | 'assessors';
+type PreparationTabKey = 'workbench' | 'collection' | 'checklist' | 'equipment' | 'sites' | 'staff' | 'assessors' | 'scoring';
 
 export function PreparationPage() {
   const queryClient = useQueryClient();
@@ -188,6 +189,12 @@ export function PreparationPage() {
       label: '考评员配置',
       icon: <TeamOutlined />,
       children: <AssessorConfig taskId={selectedTaskId} task={selectedTask} onChanged={refreshAll} />,
+    },
+    {
+      key: 'scoring',
+      label: '实操配置',
+      icon: <CheckSquareOutlined />,
+      children: <PracticalScoringConfig taskId={selectedTaskId} showProgress={false} />,
     },
     {
       key: 'checklist',

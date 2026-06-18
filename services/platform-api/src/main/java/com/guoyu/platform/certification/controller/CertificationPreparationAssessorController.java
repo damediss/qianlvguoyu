@@ -1,13 +1,12 @@
 package com.guoyu.platform.certification.controller;
 
-import com.guoyu.platform.certification.dto.PreparationAssessorDispatchReq;
 import com.guoyu.platform.certification.dto.PreparationAssessorGroupSaveReq;
 import com.guoyu.platform.certification.dto.PreparationAssessorQueryReq;
 import com.guoyu.platform.certification.dto.PreparationAssessorSaveReq;
 import com.guoyu.platform.certification.dto.PreparationTaskAssessorSaveReq;
 import com.guoyu.platform.certification.service.CertificationPreparationApplicationService;
+import com.guoyu.platform.certification.vo.AssessorGroupWorktypeItem;
 import com.guoyu.platform.certification.vo.PreparationAssessorGroupVO;
-import com.guoyu.platform.certification.vo.PreparationAssessorTaskVO;
 import com.guoyu.platform.certification.vo.PreparationAssessorVO;
 import com.guoyu.platform.certification.vo.PreparationTaskAssessorVO;
 import com.guoyu.platform.common.api.ApiResponse;
@@ -25,6 +24,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
@@ -99,6 +99,15 @@ public class CertificationPreparationAssessorController {
     return ApiResponse.ok(service.listGroups(taskId));
   }
 
+  @GetMapping("/tasks/{taskId}/assessor-group-worktypes")
+  @PreAuthorize("hasAuthority('certification.preparation.assessor.view')")
+  public ApiResponse<List<AssessorGroupWorktypeItem>> listTaskWorktypes(
+      @PathVariable Long taskId,
+      @RequestParam(value = "groupId", required = false) Long groupId
+  ) {
+    return ApiResponse.ok(service.listTaskWorktypes(taskId, groupId));
+  }
+
   @GetMapping("/tasks/{taskId}/assessor-groups/{groupId}/members")
   @PreAuthorize("hasAuthority('certification.preparation.assessor.view')")
   public ApiResponse<List<PreparationTaskAssessorVO>> listGroupMembers(
@@ -129,16 +138,5 @@ public class CertificationPreparationAssessorController {
   ) {
     service.removeGroupMember(taskId, groupId, memberId);
     return ApiResponse.ok();
-  }
-
-  @PostMapping("/tasks/{taskId}/assessor-groups/{groupId}/dispatch")
-  @PreAuthorize("hasAuthority('certification.preparation.assessor.dispatch')")
-  @AuditLog(module = "certification", action = "preparation-assessor:dispatch", targetType = "certification_assessor_task")
-  public ApiResponse<List<PreparationAssessorTaskVO>> dispatchGroup(
-      @PathVariable Long taskId,
-      @PathVariable Long groupId,
-      @Valid @RequestBody PreparationAssessorDispatchReq req
-  ) {
-    return ApiResponse.ok(service.dispatchGroup(taskId, groupId, req));
   }
 }

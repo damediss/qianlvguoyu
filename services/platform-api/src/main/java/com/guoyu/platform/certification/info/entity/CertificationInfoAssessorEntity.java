@@ -12,6 +12,8 @@ import lombok.Setter;
 @TableName("certification_assessor")
 public class CertificationInfoAssessorEntity extends BaseEntity {
   private Long userId;
+  private String accountUsername;
+  private String accountPassword;
   private String assessorName;
   private String certificateNo;
   private String workTypeScope;

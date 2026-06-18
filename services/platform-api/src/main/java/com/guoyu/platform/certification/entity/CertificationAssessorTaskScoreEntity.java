@@ -14,7 +14,12 @@ public class CertificationAssessorTaskScoreEntity extends BaseEntity {
   private Long taskId;
   private Integer stepNo;
   private String stepName;
+  private String criterion;
   private BigDecimal maxScore;
+  private BigDecimal maxDeduction;
+  private BigDecimal deductionStep;
+  private BigDecimal deductedScore;
+  private BigDecimal awardedScore;
   private BigDecimal score;
   private String pointsJson;
   private String remark;

@@ -2,6 +2,7 @@ package com.guoyu.platform.certification.info.controller;
 
 import com.guoyu.platform.certification.info.application.CertificationInfoApplicationService;
 import com.guoyu.platform.certification.info.dto.AssessorInfoSaveReq;
+import com.guoyu.platform.certification.info.dto.AssessorAccountCreateReq;
 import com.guoyu.platform.certification.info.dto.CertificationInfoQueryReq;
 import com.guoyu.platform.certification.info.dto.ExamEquipmentInfoSaveReq;
 import com.guoyu.platform.certification.info.dto.ExamSiteInfoSaveReq;
@@ -68,6 +69,16 @@ public class CertificationInfoController {
     return ApiResponse.ok(service.updateAssessor(id, req));
   }
 
+  @PostMapping("/assessors/{id}/account")
+  @PreAuthorize("hasAuthority('certification.info.assessor.update')")
+  @AuditLog(module = "certification", action = "info-assessor:create-account", targetType = "certification_assessor")
+  public ApiResponse<AssessorInfoVO> createAssessorAccount(
+      @PathVariable Long id,
+      @Valid @RequestBody AssessorAccountCreateReq req
+  ) {
+    return ApiResponse.ok(service.createAssessorAccount(id, req));
+  }
+
   @PostMapping("/assessors/{id}/submit")
   @PreAuthorize("hasAuthority('certification.info.assessor.submit')")
   @AuditLog(module = "certification", action = "info-assessor:submit", targetType = "certification_assessor")
@@ -108,8 +119,11 @@ public class CertificationInfoController {
 
   @GetMapping("/assessors/available")
   @PreAuthorize("hasAuthority('certification.info.assessor.view')")
-  public ApiResponse<List<AssessorInfoVO>> listAvailableAssessors(@RequestParam(required = false) String keyword) {
-    return ApiResponse.ok(service.listAvailableAssessors(keyword));
+  public ApiResponse<List<AssessorInfoVO>> listAvailableAssessors(
+      @RequestParam(required = false) String keyword,
+      @RequestParam(required = false) List<String> requiredWorkTypes
+  ) {
+    return ApiResponse.ok(service.listAvailableAssessors(keyword, requiredWorkTypes));
   }
 
   @GetMapping("/exam-staff")

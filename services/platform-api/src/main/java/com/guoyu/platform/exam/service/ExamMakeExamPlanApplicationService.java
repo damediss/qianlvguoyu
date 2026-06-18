@@ -616,6 +616,8 @@ public class ExamMakeExamPlanApplicationService {
           opd.setWeight(od.getWeight());
           opd.setEquipPrepare(od.getEquipPrepare());
           opd.setExamContent(od.getExamContent());
+          opd.setScoringTemplateJson(od.getScoringTemplateJson());
+          opd.setWeight(100);
           opd.setUserId(userId);
           opd.setStatus(1);
           opd.setTenantId(tenantId);
@@ -643,6 +645,8 @@ public class ExamMakeExamPlanApplicationService {
           opd.setWeight(od.getWeight());
           opd.setEquipPrepare(od.getEquipPrepare());
           opd.setExamContent(od.getExamContent());
+          opd.setScoringTemplateJson(od.getScoringTemplateJson());
+          opd.setWeight(100);
           opd.setUserId(userId);
           opd.setStatus(1);
           opd.setTenantId(tenantId);

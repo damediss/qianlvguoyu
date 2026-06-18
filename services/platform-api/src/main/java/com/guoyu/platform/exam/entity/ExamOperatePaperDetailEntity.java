@@ -20,6 +20,7 @@ public class ExamOperatePaperDetailEntity {
   private Integer weight;
   private String equipPrepare;
   private String examContent;
+  private String scoringTemplateJson;
   private Integer userId;
   private Integer status;
   private Integer sortNumber;
@@ -45,6 +46,8 @@ public class ExamOperatePaperDetailEntity {
   public void setEquipPrepare(String equipPrepare) { this.equipPrepare = equipPrepare; }
   public String getExamContent() { return examContent; }
   public void setExamContent(String examContent) { this.examContent = examContent; }
+  public String getScoringTemplateJson() { return scoringTemplateJson; }
+  public void setScoringTemplateJson(String scoringTemplateJson) { this.scoringTemplateJson = scoringTemplateJson; }
   public Integer getUserId() { return userId; }
   public void setUserId(Integer userId) { this.userId = userId; }
   public Integer getStatus() { return status; }

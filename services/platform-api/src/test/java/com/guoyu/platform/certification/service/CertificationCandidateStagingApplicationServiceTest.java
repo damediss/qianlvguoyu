@@ -104,6 +104,8 @@ class CertificationCandidateStagingApplicationServiceTest {
         "138****1234",
         "junior",
         "初级",
+        null,
+        null,
         "training",
         "示例公司",
         "active",

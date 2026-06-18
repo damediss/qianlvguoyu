@@ -2,12 +2,10 @@ import { apiClient, unwrap } from './client';
 import type { PageResponse } from '../types/api';
 import type {
   PreparationAssessor,
-  PreparationAssessorDispatchPayload,
   PreparationAssessorGroup,
   PreparationAssessorGroupPayload,
   PreparationAssessorPayload,
   PreparationAssessorQuery,
-  PreparationAssessorTask,
   PreparationCandidate,
   PreparationCandidateDocument,
   PreparationCandidateDocumentPayload,
@@ -283,13 +281,9 @@ export function removePreparationGroupMember(taskId: string, groupId: string, me
   return unwrap<void>(apiClient.delete(`${base}/tasks/${taskId}/assessor-groups/${groupId}/members/${memberId}`));
 }
 
-export function dispatchPreparationAssessorGroup(
-  taskId: string,
-  groupId: string,
-  payload: PreparationAssessorDispatchPayload,
-) {
-  return unwrap<PreparationAssessorTask[]>(
-    apiClient.post(`${base}/tasks/${taskId}/assessor-groups/${groupId}/dispatch`, payload),
+export function listPreparationAssessorGroupWorktypes(taskId: string, groupId?: string) {
+  return unwrap<import('../types/certificationPreparation').PreparationAssessorGroupWorktype[]>(
+    apiClient.get(`${base}/tasks/${taskId}/assessor-group-worktypes`, { params: { groupId } })
   );
 }
 

@@ -54,6 +54,7 @@ import { MakeExamPlanPage } from './pages/exam/MakeExamPlanPage';
 import { KnowledgeRatePage } from './pages/exam/KnowledgeRatePage';
 import { KnowledgeStructurePage } from './pages/exam/KnowledgeStructurePage';
 import { TrainExamListPage } from './pages/training/TrainExamListPage';
+import { TabletAssessorApp } from './pages/assessor/TabletAssessorApp';
 
 // Pre-instantiate factory components for stable React references
 const ArchiveEquipmentPage = createArchiveTablePage('equipment');
@@ -76,6 +77,7 @@ const PmStatusPage = createPmFormPage('status');
 import { TaskEndPage } from './pages/expert/TaskEndPage';
 import { ProjectManagementPage } from './pages/certification/ProjectManagementPage';
 import { CertificationDataPanelPage } from './pages/certification/CertificationDataPanelPage';
+import { PracticalConfigurationPage } from './pages/certification/PracticalConfigurationPage';
 import { PreparationPage } from './pages/certification/PreparationPage';
 import { ArchivePage } from './pages/certification/ArchivePage';
 import { TaskArchivePage } from './pages/certification/TaskArchivePage';
@@ -182,6 +184,7 @@ const pageMap: Record<string, React.ReactNode> = {
   certification_dashboard: <CertificationDataPanelPage />,
   certification_project: <ProjectManagementPage />,
   certification_preparation: <PreparationPage />,
+  certification_practical_config: <PracticalConfigurationPage />,
   certification_archive: <ArchivePage />,
   certification_task_archive: <TaskArchivePage />,
   certification_info_assessor: <AssessorInfoPage />,
@@ -235,14 +238,17 @@ const pageMap: Record<string, React.ReactNode> = {
   'zhixun-table-communication': <PmCommunicationPage />,
   'zhixun-table-status': <PmStatusPage />,
   'certification-task-archive': <TaskArchivePage />,
+  'certification-practical-config': <PracticalConfigurationPage />,
 };
+
+const assessorMode = window.location.pathname.startsWith('/assessor-scoring');
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ConfigProvider locale={zhCN} theme={appTheme}>
       <QueryClientProvider client={queryClient}>
-        <AuthGate>
-          <AppShell pageMap={pageMap} />
+        <AuthGate mode={assessorMode ? 'assessor' : 'admin'}>
+          {assessorMode ? <TabletAssessorApp /> : <AppShell pageMap={pageMap} />}
         </AuthGate>
       </QueryClientProvider>
     </ConfigProvider>

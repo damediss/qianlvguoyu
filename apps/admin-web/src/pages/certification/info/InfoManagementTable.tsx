@@ -12,17 +12,21 @@ import { PermissionGate } from '../../../directives/permission';
 import type { PageResponse } from '../../../types/api';
 import type { CertificationInfoQuery, InfoReviewPayload } from '../../../types/certificationInfo';
 
-type FieldType = 'text' | 'textarea' | 'date' | 'number' | 'select' | 'levelRange' | 'imageUpload';
+type FieldType = 'text' | 'password' | 'textarea' | 'date' | 'number' | 'select' | 'select-multiple' | 'levelRange' | 'imageUpload';
 
 export interface InfoField<T> {
   name: keyof T & string;
   label: string;
   type?: FieldType;
   required?: boolean;
+  createRequired?: boolean;
   submitRequired?: boolean;
   options?: { label: string; value: string }[];
+  placeholder?: string;
   fileNameField?: keyof T & string;
   hidden?: boolean;
+  hideInView?: boolean;
+  hideInEdit?: boolean;
 }
 
 interface InfoManagementTableProps<T extends { id: string; auditStatus: string }, P extends object> {
@@ -44,6 +48,7 @@ interface InfoManagementTableProps<T extends { id: string; auditStatus: string }
   disableApi: (id: string, payload: { reason?: string }) => Promise<void>;
   enableApi: (id: string) => Promise<void>;
   deleteApi: (id: string) => Promise<void>;
+  createAccountApi?: (id: string, payload: { username: string; password: string }) => Promise<T>;
 }
 
 const auditOptions = [
@@ -69,6 +74,7 @@ type DeletableRecord = {
   workStatus?: string;
   status?: string;
   equipmentStatus?: string;
+  userId?: string;
 };
 
 function isRecordDeletable(record: DeletableRecord) {
@@ -99,6 +105,7 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
   disableApi,
   enableApi,
   deleteApi,
+  createAccountApi,
 }: InfoManagementTableProps<T, P>) {
   const queryClient = useQueryClient();
   const [form] = Form.useForm();
@@ -107,6 +114,8 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view' | null>(null);
   const [current, setCurrent] = useState<T | null>(null);
   const [reviewing, setReviewing] = useState<T | null>(null);
+  const [accountRecord, setAccountRecord] = useState<T | null>(null);
+  const [accountForm] = Form.useForm<{ username: string; password: string }>();
 
   const dataQuery = useQuery({
     queryKey: [queryKey, query],
@@ -151,6 +160,17 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
     },
   });
 
+  const accountMutation = useMutation({
+    mutationFn: (payload: { username: string; password: string }) =>
+      createAccountApi!(accountRecord!.id, payload),
+    onSuccess: () => {
+      message.success('平板登录账号已创建');
+      setAccountRecord(null);
+      accountForm.resetFields();
+      invalidate();
+    },
+  });
+
   const finalColumns = useMemo<ColumnsType<T>>(() => {
     const auditColumn = {
       title: '审核状态',
@@ -166,6 +186,11 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
       render: (_: unknown, record: T) => (
         <Space size={4} wrap>
           <Button size="small" icon={<EyeOutlined />} onClick={() => openModal('view', record)}>查看</Button>
+          {createAccountApi && !record.userId ? (
+            <PermissionGate code={`${permissionPrefix}.update`}>
+              <Button size="small" onClick={() => setAccountRecord(record)}>创建账号</Button>
+            </PermissionGate>
+          ) : null}
           <PermissionGate code={`${permissionPrefix}.update`}>
             <Button
               size="small"
@@ -216,7 +241,7 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
     base.splice(index, 0, auditColumn);
     base.push(actionColumn);
     return base;
-  }, [actionMutation, auditColumnIndex, columns, permissionPrefix]);
+  }, [actionMutation, auditColumnIndex, columns, createAccountApi, permissionPrefix]);
 
   const openModal = (mode: 'create' | 'edit' | 'view', record?: T) => {
     setModalMode(mode);
@@ -302,13 +327,19 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
         width={760}
       >
         <Form form={form} layout="vertical" disabled={modalMode === 'view'} onFinish={(values) => saveMutation.mutate(values as P)}>
-          {fields.map((field) => (
+          {fields.filter((field) =>
+            !(modalMode === 'view' && field.hideInView)
+            && !(modalMode === 'edit' && field.hideInEdit)
+          ).map((field) => (
             <Form.Item
               key={field.name}
               name={field.name as never}
               label={field.label}
               hidden={field.hidden}
-              rules={[{ required: field.required, message: `请填写${field.label}` }]}
+              rules={[{
+                required: field.required || (modalMode === 'create' && field.createRequired),
+                message: `请填写${field.label}`,
+              }]}
             >
               {renderField(field, form, modalMode === 'view')}
             </Form.Item>
@@ -331,18 +362,63 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
           </Form.Item>
         </Form>
       </Modal>
+
+      <Modal
+        title={`创建平板账号 - ${accountRecord ? String(accountRecord[statusField]) : ''}`}
+        open={Boolean(accountRecord)}
+        confirmLoading={accountMutation.isPending}
+        onCancel={() => {
+          setAccountRecord(null);
+          accountForm.resetFields();
+        }}
+        onOk={() => accountForm.validateFields().then((values) => accountMutation.mutate(values))}
+      >
+        <Form form={accountForm} layout="vertical">
+          <Form.Item name="username" label="平板登录账号" rules={[{ required: true, message: '请输入平板登录账号' }]}>
+            <Input autoComplete="off" />
+          </Form.Item>
+          <Form.Item
+            name="password"
+            label="平板登录密码"
+            rules={[
+              { required: true, message: '请输入平板登录密码' },
+              { min: 8, message: '密码至少 8 位' },
+            ]}
+          >
+            <Input.Password autoComplete="new-password" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Space>
   );
 }
 
 function renderField<T>(field: InfoField<T>, form: FormInstance, readOnly = false) {
+  if (field.type === 'password') return readOnly ? <SecretText /> : <Input.Password autoComplete="new-password" />;
   if (field.type === 'textarea') return <Input.TextArea rows={3} />;
   if (field.type === 'date') return <DatePicker style={{ width: '100%' }} />;
   if (field.type === 'number') return <InputNumber min={1} style={{ width: '100%' }} />;
   if (field.type === 'select') return <Select options={field.options || []} />;
+  if (field.type === 'select-multiple') return (
+    <Select
+      mode="tags"
+      allowClear
+      showSearch
+      maxTagCount="responsive"
+      placeholder={field.placeholder}
+      tokenSeparators={[',', '，', '、']}
+    />
+  );
   if (field.type === 'levelRange') return <LevelScopeRangeSelect />;
   if (field.type === 'imageUpload') return <ImageUploadField field={field} form={form} readOnly={readOnly} />;
   return <Input />;
+}
+
+function SecretText({ value }: { value?: string }) {
+  if (!value) {
+    return <Typography.Text type="secondary">未记录</Typography.Text>;
+  }
+  return <Typography.Text copyable code>{value}</Typography.Text>;
 }
 
 function ImageUploadField<T>({ field, form, value, onChange, readOnly }: {
