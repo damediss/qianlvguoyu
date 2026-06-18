@@ -174,6 +174,7 @@ const pageMap: Record<string, React.ReactNode> = {
   exam_question_bank: <QuestionBankPage />,
   zu_juan_ji_hua: <MakeExamPlanPage />,
   'train_exam-list': <TrainExamListPage />,
+  kao_shi_ji_hua: <TrainExamListPage />,
   exam_knowledge_rate: <KnowledgeRatePage />,
   zhi_shi_jie_gou_xi_mu_biao_guan_li: <KnowledgeStructurePage />,
   expert_task_start: <TaskStartPage />,
