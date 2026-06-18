@@ -53,6 +53,16 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(Exception.class)
   public ResponseEntity<ApiResponse<Void>> handleException(Exception ex) {
+    // 高亮识别 Redis cache 反序列化失败（区别于业务异常，方便排查）
+    Throwable rootCause = ex;
+    while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+      rootCause = rootCause.getCause();
+    }
+    String rootClass = rootCause.getClass().getName();
+    if (rootClass.contains("SerializationException") || rootClass.contains("JsonProcessingException")) {
+      log.error("[REDIS-CACHE-FAIL] rootCause={} msg={}",
+          rootClass, rootCause.getMessage());
+    }
     log.error("Unhandled exception", ex);
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
         .body(ApiResponse.fail(ErrorCode.INTERNAL_ERROR, "Internal server error"));

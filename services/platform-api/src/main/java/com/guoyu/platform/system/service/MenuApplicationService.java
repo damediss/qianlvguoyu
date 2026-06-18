@@ -21,6 +21,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -56,7 +57,53 @@ public class MenuApplicationService {
         .eq(MenuEntity::getDeleted, 0)
         .orderByAsc(MenuEntity::getSortOrder)
         .orderByAsc(MenuEntity::getId));
-    return buildTree(menus);
+    List<MenuTreeVO> tree = buildTree(menus);
+    // 2026-06-18 调试：dump menu VO name 字段的中文是否正常
+    // 用于诊断 Redis 缓存 read 报"Unexpected token (START_OBJECT)"的根因
+    // 如果 name 在 Java 内存里就已经是乱码，问题在 DB -> Java 这一段
+    // 如果 name 在 Java 内存里正常但 Redis 里是乱码，问题在 Java -> Redis 这一段
+    if (log.isDebugEnabled() && tree != null) {
+      log.debug("[MenuTree.VO-CHECK] totalNodes={} sampleNames={}",
+          tree.size(),
+          sampleNames(tree, 5));
+    }
+    return tree;
+  }
+
+  private static String sampleNames(List<MenuTreeVO> tree, int n) {
+    StringBuilder sb = new StringBuilder("[");
+    int count = 0;
+    for (MenuTreeVO root : tree) {
+      if (count++ >= n) break;
+      sb.append("{id=").append(root.getId()).append(",name=").append(repr(root.getName())).append("}, ");
+      if (root.getChildren() != null) {
+        for (MenuTreeVO c : root.getChildren()) {
+          if (count++ >= n * 3) break;
+          sb.append("{id=").append(c.getId()).append(",name=").append(repr(c.getName())).append("}, ");
+        }
+      }
+    }
+    if (sb.length() > 1) sb.setLength(sb.length() - 2);
+    return sb.append("]").toString();
+  }
+
+  /** Java 字符串字面量表示（控制字符转义），方便在日志里精确看到字符。 */
+  private static String repr(String s) {
+    if (s == null) return "null";
+    StringBuilder sb = new StringBuilder(s.length() + 2);
+    sb.append('"');
+    for (int i = 0; i < s.length(); i++) {
+      char c = s.charAt(i);
+      if (c == '"') sb.append("\\\"");
+      else if (c == '\\') sb.append("\\\\");
+      else if (c == '\n') sb.append("\\n");
+      else if (c == '\r') sb.append("\\r");
+      else if (c == '\t') sb.append("\\t");
+      else if (c < 0x20) sb.append(String.format("\\x%02x", (int) c));
+      else sb.append(c);
+    }
+    sb.append('"');
+    return sb.toString();
   }
 
   @CacheEvict(value = "menuTree", allEntries = true)
@@ -263,10 +310,17 @@ public class MenuApplicationService {
         .comparing(MenuTreeVO::getSortOrder, Comparator.nullsLast(Integer::compareTo))
         .thenComparing(MenuTreeVO::getId);
     nodeMap.values().forEach(node -> node.getChildren().sort(comparator));
+    // 2026-06-18 BUG-003：必须返回 ArrayList，不能用 Stream.toList()。
+    // Stream.toList() 返回 java.util.ImmutableCollections$ListN（继承自 final 类
+    // AbstractImmutableList），Jackson DefaultTyping.NON_FINAL 不会给 final 类加
+    // type id，导致外层 List 在 cache value 里没 type id，read 时 polymorphic
+    // 反序列化报 "Unexpected token (START_ARRAY), expected VALUE_STRING"。
+    // Collectors.toCollection(ArrayList::new) 强制返回 ArrayList（非 final），
+    // Jackson 就会 wrap 成 ["java.util.ArrayList", [...]]，read 路径有 type id。
     return nodeMap.values().stream()
         .filter(node -> node.getParentId() == null || node.getParentId() == 0 || !nodeMap.containsKey(node.getParentId()))
         .sorted(comparator)
-        .toList();
+        .collect(Collectors.toCollection(ArrayList::new));
   }
 
   private void ensureCodeAvailable(Long tenantId, String code) {

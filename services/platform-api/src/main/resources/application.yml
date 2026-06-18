@@ -131,3 +131,8 @@ sa-token:
   is-log: true
   token-style: uuid          # P0: tik → uuid，支持 Redis 存储
   is-read-cookie: false
+
+logging:
+  level:
+    com.guoyu.platform.config.CacheConfig: INFO
+    com.guoyu.platform.system.service.MenuApplicationService: INFO

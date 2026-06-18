@@ -132,17 +132,6 @@ export function AppShell({ pageMap }: AppShellProps) {
   }, [menusQuery.data, setMenuTree]);
 
   useEffect(() => {
-    if (!menuTree.length) return;
-    const autoOpenCodes = ['company_demand', 'training'].filter((code) => {
-      const node = findMenuNode(menuTree, code);
-      return Boolean(node?.children?.length);
-    });
-    if (autoOpenCodes.length > 0) {
-      setOpenKeys((prev) => [...new Set([...prev, ...autoOpenCodes])]);
-    }
-  }, [menuTree]);
-
-  useEffect(() => {
     if (!menuTree.length || !selectedKey) return;
     const ancestors = findAncestorCodes(menuTree, selectedKey);
     if (ancestors && ancestors.length > 0) {
