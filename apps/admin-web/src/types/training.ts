@@ -231,6 +231,10 @@ export interface TrainPeopleQuery {
   trainClassId?: number;
   type?: string;
   keyword?: string;
+  /** 认证任务导入时按报名申报工种筛选 */
+  applyWorkTypeName?: string;
+  /** 认证任务导入时按报名申报等级筛选（0=初级，4=高级技师） */
+  applyLevel?: number;
 }
 
 export interface TrainPeopleCreateReq {

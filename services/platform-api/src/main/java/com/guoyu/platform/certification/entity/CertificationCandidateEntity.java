@@ -10,6 +10,7 @@ import lombok.Setter;
 @TableName("certification_candidate")
 public class CertificationCandidateEntity extends BaseEntity {
   private Long taskId;
+  private Long taskScopeId;
   private String candidateNo;
   private String candidateName;
   private String idCardNo;

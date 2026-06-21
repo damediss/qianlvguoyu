@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 public record PreparationImportBatchVO(
     Long id,
     Long taskId,
+    Long taskScopeId,
     String batchNo,
     String sourceType,
     Integer totalCount,
@@ -19,6 +20,7 @@ public record PreparationImportBatchVO(
     return new PreparationImportBatchVO(
         entity.getId(),
         entity.getTaskId(),
+        entity.getTaskScopeId(),
         entity.getBatchNo(),
         entity.getSourceType(),
         entity.getTotalCount(),

@@ -69,6 +69,7 @@ export function TabletAssessorApp() {
   const [syncState, setSyncState] = useState<'saved' | 'syncing' | 'offline' | 'conflict'>('saved');
   const hydratedTaskRef = useRef<string>();
   const syncTimerRef = useRef<number>();
+  const skipNextDraftSyncRef = useRef(false);
 
   const examsQuery = useQuery({
     queryKey: ['my-practical-scoring-exams'],
@@ -142,6 +143,7 @@ export function TabletAssessorApp() {
     const key = assessorDraftKey(currentUser.id, detail.task.id, detail.task.revision);
     loadAssessorDraft(key).then((local) => {
       const source = local && local.version >= detail.task.version ? local : payloadFromDetail(detail);
+      skipNextDraftSyncRef.current = true;
       setDeductions(Object.fromEntries(source.items.map((item) => [item.itemNo, item.deductedScore])));
       setRemarks(Object.fromEntries(source.items.map((item) => [item.itemNo, item.remark || ''])));
       setNote(source.note || '');
@@ -149,6 +151,7 @@ export function TabletAssessorApp() {
       setSyncState(local && !online ? 'offline' : 'saved');
     }).catch(() => {
       const source = payloadFromDetail(detail);
+      skipNextDraftSyncRef.current = true;
       setDeductions(Object.fromEntries(source.items.map((item) => [item.itemNo, item.deductedScore])));
       setRemarks(Object.fromEntries(source.items.map((item) => [item.itemNo, item.remark || ''])));
       setNote(source.note || '');
@@ -245,8 +248,12 @@ export function TabletAssessorApp() {
   }, [examQuery.data, online, queryClient, tenantId, token]);
 
   useEffect(() => {
-    if (!payload || !activeDetail || !currentUser
-        || activeDetail.task.status === 'submitted'
+    if (!payload || !activeDetail || !currentUser) return;
+    if (skipNextDraftSyncRef.current) {
+      skipNextDraftSyncRef.current = false;
+      return;
+    }
+    if (activeDetail.task.status === 'submitted'
         || activeDetail.startSession?.status !== 'started') return;
     const key = assessorDraftKey(currentUser.id, activeDetail.task.id, activeDetail.task.revision);
     saveAssessorDraft({
@@ -390,7 +397,7 @@ export function TabletAssessorApp() {
         </aside>
 
         <section className="assessor-score-workspace">
-          {!selectedExam ? <Empty description="请选择考试任务" /> : examQuery.isFetching ? <Spin size="large" /> : activeDetail && examQuery.data ? (
+          {!selectedExam ? <Empty description="请选择考试任务" /> : !examQuery.data && examQuery.isFetching ? <Spin size="large" /> : activeDetail && examQuery.data ? (
             <>
               <Button className="assessor-mobile-back" icon={<LeftOutlined />} onClick={() => setSelectedExamKey(undefined)}>
                 返回任务

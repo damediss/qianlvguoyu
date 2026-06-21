@@ -1,6 +1,7 @@
 package com.guoyu.platform.certification.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.certification.dto.PreparationAssessorGroupSaveReq;
 import com.guoyu.platform.certification.dto.PreparationAssessorQueryReq;
@@ -56,6 +57,7 @@ import com.guoyu.platform.certification.mapper.CertificationAssessorGroupWorktyp
 import com.guoyu.platform.certification.mapper.CertificationAssessorMapper;
 import com.guoyu.platform.certification.mapper.CertificationAssessorTaskMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateDocumentMapper;
+import com.guoyu.platform.certification.mapper.CandidateDocRow;
 import com.guoyu.platform.certification.mapper.CertificationCandidateImportBatchMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateImportErrorMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateMapper;
@@ -103,11 +105,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 import org.springframework.core.io.Resource;
@@ -128,7 +132,7 @@ public class CertificationPreparationApplicationService {
   private static final Pattern ID_CARD_PATTERN = Pattern.compile("^\\d{17}[0-9Xx]$");
   private static final Pattern MOBILE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
   private static final String CANDIDATE_DOC_SCOPE = "candidate_doc";
-  private static final List<String> CANDIDATE_DOC_CODES = List.of("DOC001", "DOC002");
+  private static final List<String> CANDIDATE_DOC_CODES = List.of("DOC001", "DOC002", "DOC003", "DOC004", "DOC005", "DOC006");
   private static final String INFO_APPROVED = "approved";
   private static final List<ChecklistTemplateItem> CHECKLIST_TEMPLATE = List.of(
       new ChecklistTemplateItem(1, "平板电脑", "按需"),
@@ -279,7 +283,7 @@ public class CertificationPreparationApplicationService {
       wrapper.eq(CertificationTaskEntity::getCurrentPhase, req.getCurrentPhase());
     }
     Page<CertificationTaskEntity> page = taskMapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
-    return new PageResponse<>(page.getRecords().stream().map(this::overviewFromTask).toList(),
+    return new PageResponse<>(buildTaskOverviews(page.getRecords()),
         page.getCurrent(), page.getSize(), page.getTotal());
   }
 
@@ -294,8 +298,12 @@ public class CertificationPreparationApplicationService {
     if ("training".equals(req.sourceType()) && CollectionUtils.isEmpty(req.trainingPeopleIds())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要导入的培训学员");
     }
+    if (req.taskScopeId() == null || listScopes(taskId).stream().noneMatch(scope -> req.taskScopeId().equals(scope.getId()))) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择当前任务下的认定班级");
+    }
     CertificationCandidateImportBatchEntity batch = new CertificationCandidateImportBatchEntity();
     batch.setTaskId(taskId);
+    batch.setTaskScopeId(req.taskScopeId());
     batch.setBatchNo("CIB-" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now()));
     batch.setSourceType(StringUtils.hasText(req.sourceType()) ? req.sourceType() : "manual");
     batch.setSourceFileId(req.sourceFileId());
@@ -317,7 +325,7 @@ public class CertificationPreparationApplicationService {
     if (trainingImport && !CollectionUtils.isEmpty(req.trainingPeopleIds())) {
       for (int i = 0; i < req.trainingPeopleIds().size(); i++) {
         try {
-          stagingApplicationService.promoteTrainingPerson(taskId, req.trainingPeopleIds().get(i));
+          stagingApplicationService.promoteTrainingPerson(taskId, req.trainingPeopleIds().get(i), req.taskScopeId());
           success++;
         } catch (BusinessException ex) {
           failed++;
@@ -417,6 +425,12 @@ public class CertificationPreparationApplicationService {
 
   @Transactional
   public PreparationCandidateVO createCandidate(Long taskId, PreparationCandidateSaveReq req) {
+    return PreparationCandidateVO.from(createCandidateForImport(taskId, req, null));
+  }
+
+  /** Creates a candidate for a specific import batch so material generation can remain batch-scoped. */
+  @Transactional
+  public CertificationCandidateEntity createCandidateForImport(Long taskId, PreparationCandidateSaveReq req, Long importBatchId) {
     CertificationTaskEntity task = findTask(taskId);
     validateCandidate(task, req, null);
     CertificationCandidateEntity existing = candidateMapper.selectByTaskAndIdCardIncludingDeleted(
@@ -435,6 +449,7 @@ public class CertificationPreparationApplicationService {
       entity.setDocumentComplete(false);
       entity.setStatus("active");
       entity.setDeleted(0);
+      entity.setImportBatchId(importBatchId);
       candidateMapper.restoreSoftDeleted(entity);
     } else {
       entity = new CertificationCandidateEntity();
@@ -446,17 +461,14 @@ public class CertificationPreparationApplicationService {
       entity.setDocumentComplete(false);
       entity.setStatus("active");
       entity.setDeleted(0);
+      entity.setImportBatchId(importBatchId);
       candidateMapper.insert(entity);
-      Long candidateId = resolveCandidateIdAfterInsert(taskId, entity);
-      if (candidateId != null) {
-        entity.setId(candidateId);
-      }
     }
     if (entity.getId() != null) {
       initializeCandidateDocuments(taskId, entity.getId());
     }
     touchTask(taskId);
-    return PreparationCandidateVO.from(entity);
+    return entity;
   }
 
   @Transactional
@@ -521,7 +533,7 @@ public class CertificationPreparationApplicationService {
   @Transactional
   public PreparationCandidateDocumentVO generateCandidateDocument(Long taskId, Long candidateId, String docCode) {
     findTask(taskId);
-    requireCandidate(taskId, candidateId);
+    CertificationCandidateEntity candidate = requireCandidate(taskId, candidateId);
     if (!"DOC001".equals(docCode)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "当前仅支持生成报名信息表");
     }
@@ -533,8 +545,15 @@ public class CertificationPreparationApplicationService {
     if (photoDocument == null || !"approved".equals(photoDocument.getStatus())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请先上传并审核通过两寸证件照");
     }
-    CertificationCandidateSourceStagingEntity staging =
-        stagingApplicationService.requireStagingByCandidate(taskId, candidateId);
+    long identityImages = safeCount(documentMapper.selectCount(new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
+        .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
+        .eq(CertificationCandidateDocumentEntity::getCandidateId, candidateId)
+        .in(CertificationCandidateDocumentEntity::getDocCode, List.of("DOC003", "DOC004"))
+        .eq(CertificationCandidateDocumentEntity::getStatus, "approved")));
+    if (identityImages != 2) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请先上传并审核通过身份证正反面");
+    }
+    CertificationCandidateSourceStagingEntity staging = resolveApplicationFormSource(taskId, candidate, photoDocument);
     byte[] portrait = imageSourceService.readFile(photoDocument.getFileId());
     if (portrait == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "两寸证件照文件不可读取，请重新上传");
@@ -580,12 +599,75 @@ public class CertificationPreparationApplicationService {
     return PreparationCandidateDocumentVO.from(entity);
   }
 
+  private CertificationCandidateSourceStagingEntity resolveApplicationFormSource(
+      Long taskId,
+      CertificationCandidateEntity candidate,
+      CertificationCandidateDocumentEntity photoDocument
+  ) {
+    CertificationCandidateSourceStagingEntity source =
+        stagingApplicationService.findStagingByCandidate(taskId, candidate.getId());
+    if (source != null) {
+      return source;
+    }
+
+    // Historical/manual candidates predate the source snapshot. Their approved documents and
+    // current candidate fields are still authoritative for generating this one application form.
+    CertificationCandidateSourceStagingEntity fallback = new CertificationCandidateSourceStagingEntity();
+    fallback.setCandidateName(candidate.getCandidateName());
+    fallback.setIdCardNo(candidate.getIdCardNo());
+    fallback.setPhone(candidate.getPhone());
+    fallback.setCompanyName(candidate.getOrgName());
+    fallback.setOriginalWorkTypeName(candidate.getWorkTypeName());
+    fallback.setApplyWorkTypeId(candidate.getWorkTypeId());
+    fallback.setApplyWorkTypeName(candidate.getWorkTypeName());
+    fallback.setCertWorkTypeId(candidate.getWorkTypeId());
+    fallback.setCertWorkTypeName(candidate.getWorkTypeName());
+    fallback.setApplyLevelCode(candidate.getLevelCode());
+    fallback.setApplyLevelName(candidate.getLevelName());
+    fallback.setCertLevelName(candidate.getLevelName());
+    fallback.setRemark(candidate.getRemark());
+    fallback.setPhotoUrl(fileReference(photoDocument));
+    fallback.setIdCardFrontUrl(candidateDocumentFileReference(taskId, candidate.getId(), "DOC003"));
+    fallback.setIdCardBackUrl(candidateDocumentFileReference(taskId, candidate.getId(), "DOC004"));
+
+    CertificationTaskScopeEntity scope = candidate.getTaskScopeId() == null
+        ? firstScope(taskId)
+        : scopeMapper.selectById(candidate.getTaskScopeId());
+    if (scope != null && taskId.equals(scope.getTaskId())) {
+      if (!StringUtils.hasText(fallback.getApplyWorkTypeName())) {
+        fallback.setApplyWorkTypeId(scope.getWorkTypeId());
+        fallback.setApplyWorkTypeName(scope.getWorkTypeName());
+        fallback.setCertWorkTypeId(scope.getWorkTypeId());
+        fallback.setCertWorkTypeName(scope.getWorkTypeName());
+      }
+      if (!StringUtils.hasText(fallback.getApplyLevelName())) {
+        fallback.setApplyLevelCode(scope.getLevelCode());
+        fallback.setApplyLevelName(scope.getLevelName());
+        fallback.setCertLevelName(scope.getLevelName());
+      }
+    }
+    return fallback;
+  }
+
+  private String candidateDocumentFileReference(Long taskId, Long candidateId, String docCode) {
+    CertificationCandidateDocumentEntity document = documentMapper.selectOne(
+        new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
+            .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
+            .eq(CertificationCandidateDocumentEntity::getCandidateId, candidateId)
+            .eq(CertificationCandidateDocumentEntity::getDocCode, docCode));
+    return document != null && "approved".equals(document.getStatus()) ? fileReference(document) : null;
+  }
+
+  private String fileReference(CertificationCandidateDocumentEntity document) {
+    return document == null || document.getFileId() == null ? null : "file-id:" + document.getFileId();
+  }
+
   @Transactional
   public PreparationCandidateDocumentVO saveCandidateDocument(Long taskId, PreparationCandidateDocumentSaveReq req) {
     findTask(taskId);
     requireCandidate(taskId, req.candidateId());
     if (!CANDIDATE_DOC_CODES.contains(req.docCode())) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持上传报名信息表与两寸证件照");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的学员资料类型");
     }
     if ("DOC001".equals(req.docCode())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "报名信息表请使用一键生成，不支持手工上传");
@@ -611,6 +693,9 @@ public class CertificationPreparationApplicationService {
     entity.setFileId(req.fileId());
     entity.setFileName(req.fileName());
     entity.setFileType(req.fileType());
+    if (req.required() != null) {
+      entity.setRequired(req.required());
+    }
     entity.setStatus(req.fileId() == null ? "missing" : "pending_review");
     entity.setUploadedAt(req.fileId() == null ? null : LocalDateTime.now());
     entity.setRemark(req.remark());
@@ -619,6 +704,7 @@ public class CertificationPreparationApplicationService {
     } else {
       documentMapper.updateById(entity);
     }
+    stagingApplicationService.updateCandidateDocumentReference(taskId, req.candidateId(), req.docCode(), req.fileId());
     refreshCandidateDocumentStats(taskId, req.candidateId());
     return PreparationCandidateDocumentVO.from(entity);
   }
@@ -723,9 +809,13 @@ public class CertificationPreparationApplicationService {
         ? candidates.stream().map(CertificationCandidateEntity::getId).collect(Collectors.toSet())
         : Set.copyOf(req.candidateIds());
     List<Long> activeCandidateIds = candidates.stream().map(CertificationCandidateEntity::getId).toList();
+    List<Long> selectedCandidateIds = activeCandidateIds.stream().filter(requestedCandidateIds::contains).toList();
+    if (selectedCandidateIds.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "未选择可生成申报材料的考生");
+    }
     long incompleteDocs = safeCount(documentMapper.selectCount(new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
         .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
-        .in(CertificationCandidateDocumentEntity::getCandidateId, activeCandidateIds)
+        .in(CertificationCandidateDocumentEntity::getCandidateId, selectedCandidateIds)
         .eq(CertificationCandidateDocumentEntity::getRequired, true)
         .ne(CertificationCandidateDocumentEntity::getStatus, "approved")));
     if (incompleteDocs > 0) {
@@ -734,9 +824,7 @@ public class CertificationPreparationApplicationService {
     List<CertificationCandidateEntity> readyCandidates = candidates.stream()
         .filter(candidate -> requestedCandidateIds.contains(candidate.getId()))
         .toList();
-    if (readyCandidates.isEmpty()) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "未选择可生成申报材料的考生");
-    }
+    if (readyCandidates.isEmpty()) throw new BusinessException(ErrorCode.BAD_REQUEST, "未选择可生成申报材料的考生");
     int requested = readyCandidates.size();
     CertificationApplicationMaterialBatchEntity batch = new CertificationApplicationMaterialBatchEntity();
     batch.setTaskId(taskId);
@@ -753,6 +841,24 @@ public class CertificationPreparationApplicationService {
     materialBatchMapper.insert(batch);
     copyApprovedCandidateDocumentsToMaterialItems(taskId, batch.getId(), readyCandidates);
     return PreparationMaterialBatchVO.from(batch);
+  }
+
+  @Transactional
+  public PreparationMaterialBatchVO generateApplicationMaterialsForImportBatch(Long taskId, Long importBatchId, String remark) {
+    CertificationCandidateImportBatchEntity importBatch = importBatchMapper.selectById(importBatchId);
+    if (importBatch == null || !taskId.equals(importBatch.getTaskId())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "考生导入批次不存在");
+    }
+    List<Long> candidateIds = candidateMapper.selectList(new LambdaQueryWrapper<CertificationCandidateEntity>()
+            .eq(CertificationCandidateEntity::getTaskId, taskId)
+            .eq(CertificationCandidateEntity::getImportBatchId, importBatchId)
+            .eq(CertificationCandidateEntity::getStatus, "active"))
+        .stream().map(CertificationCandidateEntity::getId).filter(Objects::nonNull).toList();
+    if (candidateIds.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "该导入批次没有可生成申报材料的考生");
+    }
+    return generateApplicationMaterials(taskId,
+        new PreparationMaterialGenerateReq("import_batch", candidateIds, remark));
   }
 
   private void copyApprovedCandidateDocumentsToMaterialItems(
@@ -772,11 +878,18 @@ public class CertificationPreparationApplicationService {
             .in(CertificationCandidateDocumentEntity::getCandidateId, readyCandidateIds)
             .in(CertificationCandidateDocumentEntity::getDocCode, CANDIDATE_DOC_CODES)
             .eq(CertificationCandidateDocumentEntity::getStatus, "approved"));
+    if (CollectionUtils.isEmpty(documents)) {
+      return;
+    }
+    Long tenantId = readyCandidates.get(0).getTenantId();
+    List<CertificationApplicationMaterialItemEntity> items = new ArrayList<>(documents.size());
     for (CertificationCandidateDocumentEntity document : documents) {
       CertificationApplicationMaterialItemEntity item = new CertificationApplicationMaterialItemEntity();
+      item.setTenantId(tenantId);
       item.setTaskId(taskId);
       item.setBatchId(batchId);
       item.setCandidateId(document.getCandidateId());
+      item.setTemplateId(document.getTemplateId());
       item.setItemCode(document.getDocCode());
       item.setItemName(document.getDocName());
       item.setRequired(document.getRequired());
@@ -785,8 +898,9 @@ public class CertificationPreparationApplicationService {
       item.setVersionNo(1);
       item.setStatus("generated");
       item.setDeleted(0);
-      materialItemMapper.insert(item);
+      items.add(item);
     }
+    materialItemMapper.batchInsertGenerated(items);
   }
 
   @Transactional(readOnly = true)
@@ -1031,13 +1145,19 @@ public class CertificationPreparationApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "确认人必须来自当前任务已配置的考务人员");
     }
     LocalDateTime confirmedAt = LocalDateTime.now();
-    for (CertificationTaskChecklistItemEntity item : items) {
-      item.setChecked(1);
-      item.setConfirmerTaskStaffId(confirmer.getId());
-      item.setConfirmerName(confirmer.getStaffName());
-      item.setConfirmedAt(confirmedAt);
-      item.setRemark(req.remark());
-      taskChecklistItemMapper.updateById(item);
+    CertificationTaskChecklistItemEntity patch = new CertificationTaskChecklistItemEntity();
+    patch.setChecked(1);
+    patch.setConfirmerTaskStaffId(confirmer.getId());
+    patch.setConfirmerName(confirmer.getStaffName());
+    patch.setConfirmedAt(confirmedAt);
+    patch.setRemark(req.remark());
+    List<Long> itemIds = items.stream()
+        .map(CertificationTaskChecklistItemEntity::getId)
+        .filter(Objects::nonNull)
+        .toList();
+    if (!itemIds.isEmpty()) {
+      taskChecklistItemMapper.update(patch, new LambdaQueryWrapper<CertificationTaskChecklistItemEntity>()
+          .in(CertificationTaskChecklistItemEntity::getId, itemIds));
     }
     touchTask(taskId);
     return buildChecklist(task);
@@ -1234,12 +1354,8 @@ public class CertificationPreparationApplicationService {
     }
 
     // 联动删除关联表行
-    List<CertificationAssessorGroupWorktypeEntity> existing =
-        groupWorktypeMapper.selectList(new LambdaQueryWrapper<CertificationAssessorGroupWorktypeEntity>()
-            .eq(CertificationAssessorGroupWorktypeEntity::getGroupId, groupId));
-    for (CertificationAssessorGroupWorktypeEntity row : existing) {
-      groupWorktypeMapper.deleteById(row.getId());
-    }
+    groupWorktypeMapper.delete(new LambdaQueryWrapper<CertificationAssessorGroupWorktypeEntity>()
+        .eq(CertificationAssessorGroupWorktypeEntity::getGroupId, groupId));
 
     groupMapper.deleteById(groupId);
     touchTask(taskId);
@@ -1257,10 +1373,14 @@ public class CertificationPreparationApplicationService {
     }
     Map<Long, List<AssessorGroupWorktypeItem>> worktypeByGroup = loadWorktypesByGroupIds(
         groups.stream().map(CertificationTaskAssessorGroupEntity::getId).toList());
+    Map<Long, String> leaderNames = loadAssessorNamesByIds(groups.stream()
+        .map(CertificationTaskAssessorGroupEntity::getLeaderAssessorId)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet()));
     return groups.stream()
         .map(group -> PreparationAssessorGroupVO.from(
             group,
-            leaderName(group.getLeaderAssessorId()),
+            resolveAssessorName(leaderNames, group.getLeaderAssessorId()),
             worktypeByGroup.getOrDefault(group.getId(), List.of())))
         .toList();
   }
@@ -1282,11 +1402,33 @@ public class CertificationPreparationApplicationService {
   }
 
   private String leaderName(Long leaderAssessorId) {
-    if (leaderAssessorId == null) {
+    return resolveAssessorName(loadAssessorNamesByIds(
+        leaderAssessorId == null ? Set.of() : Set.of(leaderAssessorId)), leaderAssessorId);
+  }
+
+  private String resolveAssessorName(Map<Long, String> namesById, Long assessorId) {
+    if (assessorId == null) {
       return null;
     }
-    CertificationInfoAssessorEntity info = infoAssessorMapper.selectById(leaderAssessorId);
-    return info == null ? null : info.getAssessorName();
+    return namesById.get(assessorId);
+  }
+
+  private Map<Long, String> loadAssessorNamesByIds(Set<Long> assessorIds) {
+    if (assessorIds == null || assessorIds.isEmpty()) {
+      return Map.of();
+    }
+    List<CertificationInfoAssessorEntity> rows = infoAssessorMapper.selectList(
+        new LambdaQueryWrapper<CertificationInfoAssessorEntity>()
+            .in(CertificationInfoAssessorEntity::getId, assessorIds));
+    if (rows == null || rows.isEmpty()) {
+      return Map.of();
+    }
+    return rows.stream()
+        .filter(row -> row.getId() != null)
+        .collect(Collectors.toMap(
+            CertificationInfoAssessorEntity::getId,
+            CertificationInfoAssessorEntity::getAssessorName,
+            (left, right) -> left));
   }
 
   @Transactional
@@ -1357,12 +1499,32 @@ public class CertificationPreparationApplicationService {
             .orderByAsc(CertificationTaskAssessorEntity::getTaskRole)
             .orderByDesc(CertificationTaskAssessorEntity::getCreatedAt));
     if (CollectionUtils.isEmpty(members)) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "鑰冭瘎缁勫皻鏈厤缃垚鍛橈紝涓嶈兘鍙戞斁鑰冭瘎浠诲姟");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "考评组尚未配置成员，不能发放考评任务");
     }
 
     List<PreparationAssessorTaskVO> dispatched = new ArrayList<>();
+
+    List<Long> assessorIds = members.stream()
+        .map(CertificationTaskAssessorEntity::getAssessorId)
+        .filter(Objects::nonNull)
+        .distinct()
+        .toList();
+    Map<Long, CertificationInfoAssessorEntity> assessorById = new HashMap<>();
+    if (!assessorIds.isEmpty()) {
+      assessorById = infoAssessorMapper.selectList(
+              new LambdaQueryWrapper<CertificationInfoAssessorEntity>()
+                  .in(CertificationInfoAssessorEntity::getId, assessorIds))
+          .stream()
+          .collect(Collectors.toMap(CertificationInfoAssessorEntity::getId, Function.identity()));
+    }
+    String displayName = formatTaskName(task);
+    String leaderDisplayName = leaderName(group.getLeaderAssessorId());
+
     for (CertificationTaskAssessorEntity member : members) {
-      CertificationInfoAssessorEntity assessor = requireInfoAssessor(member.getAssessorId());
+      CertificationInfoAssessorEntity assessor = assessorById.get(member.getAssessorId());
+      if (assessor == null) {
+        throw new BusinessException(ErrorCode.NOT_FOUND, "考评员不存在");
+      }
       CertificationAssessorTaskEntity entity = new CertificationAssessorTaskEntity();
       entity.setTenantId(task.getTenantId());
       entity.setTaskId(taskId);
@@ -1382,20 +1544,37 @@ public class CertificationPreparationApplicationService {
       entity.setRemark(req.remark());
       entity.setDeleted(0);
       assessorTaskMapper.insert(entity);
-
-      member.setWorkStatus("assigned");
-      taskAssessorMapper.updateById(member);
-      markInfoAssessorWorkStatus(member.getAssessorId(), "assigned");
       dispatched.add(PreparationAssessorTaskVO.from(
           entity,
-          resolveTaskName(taskId),
+          displayName,
           group.getGroupName(),
           assessor.getAssessorName(),
-          leaderName(group.getLeaderAssessorId()),
+          leaderDisplayName,
           List.of()));
     }
+    List<Long> memberIds = members.stream()
+        .map(CertificationTaskAssessorEntity::getId)
+        .filter(Objects::nonNull)
+        .toList();
+    if (!memberIds.isEmpty()) {
+      CertificationTaskAssessorEntity memberPatch = new CertificationTaskAssessorEntity();
+      memberPatch.setWorkStatus("assigned");
+      taskAssessorMapper.update(memberPatch, new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
+          .in(CertificationTaskAssessorEntity::getId, memberIds));
+    }
+    markInfoAssessorsWorkStatus(assessorIds, "assigned");
     touchTask(taskId);
     return dispatched;
+  }
+
+  private String formatTaskName(CertificationTaskEntity task) {
+    if (task == null) {
+      return null;
+    }
+    if (StringUtils.hasText(task.getTaskNo()) && StringUtils.hasText(task.getTaskName())) {
+      return task.getTaskNo() + " " + task.getTaskName();
+    }
+    return task.getTaskName();
   }
 
   @Transactional
@@ -1613,6 +1792,64 @@ public class CertificationPreparationApplicationService {
         materialGenerated > 0 ? "generated" : "pending", siteCount, staffCount, assessorCount);
   }
 
+  private List<PreparationTaskOverviewVO> buildTaskOverviews(List<CertificationTaskEntity> tasks) {
+    if (CollectionUtils.isEmpty(tasks)) {
+      return List.of();
+    }
+    List<Long> taskIds = tasks.stream()
+        .map(CertificationTaskEntity::getId)
+        .filter(Objects::nonNull)
+        .toList();
+    if (taskIds.isEmpty()) {
+      return tasks.stream()
+          .map(task -> PreparationTaskOverviewVO.from(task, List.of(), 0, 0, "pending", 0, 0, 0))
+          .toList();
+    }
+
+    Map<Long, List<CertificationTaskScopeEntity>> scopesByTask = scopeMapper.selectList(
+            new LambdaQueryWrapper<CertificationTaskScopeEntity>()
+                .in(CertificationTaskScopeEntity::getTaskId, taskIds)
+                .orderByAsc(CertificationTaskScopeEntity::getSortOrder)
+                .orderByAsc(CertificationTaskScopeEntity::getId))
+        .stream()
+        .collect(Collectors.groupingBy(CertificationTaskScopeEntity::getTaskId));
+
+    Map<Long, Map<String, Object>> statsByTask = taskMapper.selectPreparationTaskOverviewStats(taskIds).stream()
+        .filter(item -> item.get("taskId") != null)
+        .collect(Collectors.toMap(item -> stat(item, "taskId"), item -> item, (left, right) -> left));
+
+    return tasks.stream()
+        .map(task -> {
+          Long taskId = task.getId();
+          Map<String, Object> stats = statsByTask.getOrDefault(taskId, Map.of());
+          long requiredDocs = stat(stats, "requiredDocCount");
+          long approvedDocs = stat(stats, "approvedDocCount");
+          int completionRate = requiredDocs == 0 ? 0 : (int) Math.round((approvedDocs * 100.0) / requiredDocs);
+          return PreparationTaskOverviewVO.from(
+              task,
+              scopesByTask.getOrDefault(taskId, List.of()),
+              stat(stats, "candidateCount"),
+              completionRate,
+              stat(stats, "materialGeneratedCount") > 0 ? "generated" : "pending",
+              stat(stats, "siteCount"),
+              stat(stats, "staffCount"),
+              stat(stats, "assessorCount")
+          );
+        })
+        .toList();
+  }
+
+  private long stat(Map<String, Object> stats, String key) {
+    Object value = stats.get(key);
+    if (value instanceof Number number) {
+      return number.longValue();
+    }
+    if (value == null) {
+      return 0;
+    }
+    return Long.parseLong(String.valueOf(value));
+  }
+
   private void validateCandidate(CertificationTaskEntity task, PreparationCandidateSaveReq req, Long currentCandidateId) {
     if (!ID_CARD_PATTERN.matcher(req.idCardNo()).matches()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "身份证号格式必须合法");
@@ -1620,7 +1857,11 @@ public class CertificationPreparationApplicationService {
     if (StringUtils.hasText(req.phone()) && !MOBILE_PATTERN.matcher(req.phone()).matches()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "联系电话格式必须合法");
     }
-    Set<String> supportedLevelCodes = listScopes(task.getId()).stream()
+    List<CertificationTaskScopeEntity> taskScopes = listScopes(task.getId());
+    if (req.taskScopeId() != null && taskScopes.stream().noneMatch(scope -> req.taskScopeId().equals(scope.getId()))) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "所选认定班级不属于当前任务");
+    }
+    Set<String> supportedLevelCodes = taskScopes.stream()
         .map(CertificationTaskScopeEntity::getLevelCode)
         .filter(StringUtils::hasText)
         .collect(Collectors.toSet());
@@ -1645,7 +1886,9 @@ public class CertificationPreparationApplicationService {
     entity.setMaskedIdCardNo(maskIdCard(req.idCardNo()));
     entity.setPhone(req.phone());
     entity.setMaskedPhone(maskPhone(req.phone()));
-    CertificationTaskScopeEntity defaultScope = firstScope(task.getId());
+    CertificationTaskScopeEntity defaultScope = req.taskScopeId() == null ? firstScope(task.getId())
+        : scopeMapper.selectById(req.taskScopeId());
+    entity.setTaskScopeId(defaultScope == null ? null : defaultScope.getId());
     entity.setLevelCode(StringUtils.hasText(req.levelCode()) ? req.levelCode() : defaultScope == null ? null : defaultScope.getLevelCode());
     entity.setLevelName(StringUtils.hasText(req.levelName()) ? req.levelName() : defaultScope == null ? null : defaultScope.getLevelName());
     entity.setWorkTypeId(defaultScope == null ? null : defaultScope.getWorkTypeId());
@@ -1662,16 +1905,24 @@ public class CertificationPreparationApplicationService {
             .in(CertificationMaterialTemplateEntity::getItemCode, CANDIDATE_DOC_CODES)
             .eq(CertificationMaterialTemplateEntity::getEnabled, true)
             .orderByAsc(CertificationMaterialTemplateEntity::getSortOrder));
+    Map<String, CertificationMaterialTemplateEntity> byCode = new HashMap<>();
     if (!CollectionUtils.isEmpty(templates)) {
-      return templates;
+      templates.forEach(template -> byCode.put(template.getItemCode(), template));
     }
-    return defaultCandidateDocumentTemplates();
+    for (CertificationMaterialTemplateEntity fallback : defaultCandidateDocumentTemplates()) {
+      byCode.putIfAbsent(fallback.getItemCode(), fallback);
+    }
+    return CANDIDATE_DOC_CODES.stream().map(byCode::get).filter(Objects::nonNull).toList();
   }
 
   private List<CertificationMaterialTemplateEntity> defaultCandidateDocumentTemplates() {
     return List.of(
         candidateDocTemplate("DOC001", "报名信息表", 1, true),
-        candidateDocTemplate("DOC002", "两寸证件照", 2, true)
+        candidateDocTemplate("DOC002", "两寸证件照", 2, true),
+        candidateDocTemplate("DOC003", "身份证正面", 3, true),
+        candidateDocTemplate("DOC004", "身份证反面", 4, true),
+        candidateDocTemplate("DOC005", "学历证明", 5, false),
+        candidateDocTemplate("DOC006", "原技能证书", 6, false)
     );
   }
 
@@ -1690,23 +1941,6 @@ public class CertificationPreparationApplicationService {
     template.setSortOrder(sortOrder);
     template.setDeleted(0);
     return template;
-  }
-
-  private Long resolveCandidateIdAfterInsert(Long taskId, CertificationCandidateEntity entity) {
-    if (entity.getId() != null) {
-      return entity.getId();
-    }
-    CertificationCandidateEntity saved = candidateMapper.selectOne(
-        new LambdaQueryWrapper<CertificationCandidateEntity>()
-            .eq(CertificationCandidateEntity::getTaskId, taskId)
-            .eq(CertificationCandidateEntity::getIdCardNo, entity.getIdCardNo())
-            .orderByDesc(CertificationCandidateEntity::getCreatedAt)
-            .last("LIMIT 1"));
-    if (saved != null) {
-      entity.setId(saved.getId());
-      return saved.getId();
-    }
-    return null;
   }
 
   private void applyDocumentKeywordFilter(
@@ -1736,30 +1970,7 @@ public class CertificationPreparationApplicationService {
     if (candidateId == null) {
       return;
     }
-    pruneObsoleteCandidateDocuments(taskId, candidateId);
-    List<CertificationMaterialTemplateEntity> templates = candidateDocumentTemplates();
-    if (CollectionUtils.isEmpty(templates)) {
-      return;
-    }
-    for (CertificationMaterialTemplateEntity template : templates) {
-      if (safeCount(documentMapper.selectCount(new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
-          .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
-          .eq(CertificationCandidateDocumentEntity::getCandidateId, candidateId)
-          .eq(CertificationCandidateDocumentEntity::getDocCode, template.getItemCode()))) > 0) {
-        continue;
-      }
-      CertificationCandidateDocumentEntity document = new CertificationCandidateDocumentEntity();
-      document.setTaskId(taskId);
-      document.setCandidateId(candidateId);
-      document.setTemplateId(template.getId());
-      document.setDocCode(template.getItemCode());
-      document.setDocName(template.getItemName());
-      document.setRequired(template.getRequired() == null || template.getRequired());
-      document.setVersionNo(1);
-      document.setStatus("missing");
-      document.setDeleted(0);
-      documentMapper.insert(document);
-    }
+    ensureCandidateDocuments(taskId, List.of(candidateId));
     refreshCandidateDocumentStats(taskId, candidateId);
   }
 
@@ -1770,23 +1981,82 @@ public class CertificationPreparationApplicationService {
     if (CollectionUtils.isEmpty(candidates)) {
       return;
     }
-    for (CertificationCandidateEntity candidate : candidates) {
-      initializeCandidateDocuments(taskId, candidate.getId());
+    List<Long> candidateIds = candidates.stream()
+        .map(CertificationCandidateEntity::getId)
+        .filter(Objects::nonNull)
+        .toList();
+    ensureCandidateDocuments(taskId, candidateIds);
+    batchRefreshCandidateDocumentStats(taskId, candidateIds);
+  }
+
+  private void ensureCandidateDocuments(Long taskId, List<Long> candidateIds) {
+    if (CollectionUtils.isEmpty(candidateIds)) {
+      return;
+    }
+    pruneObsoleteCandidateDocuments(taskId, candidateIds);
+    List<CertificationMaterialTemplateEntity> templates = candidateDocumentTemplates();
+    if (CollectionUtils.isEmpty(templates)) {
+      return;
+    }
+    Map<Long, CertificationTaskEntity> taskTenant = resolveTaskTenant(taskId);
+    Long tenantId = taskTenant.get(taskId) == null ? null : taskTenant.get(taskId).getTenantId();
+    Set<String> existingKeys = documentMapper
+        .selectExistingCandidateDocCodes(taskId, candidateIds)
+        .stream()
+        .filter(row -> row.getCandidateId() != null && row.getDocCode() != null)
+        .map(row -> row.getCandidateId() + "\u0000" + row.getDocCode())
+        .collect(Collectors.toSet());
+    List<CandidateDocRow> missingRows = new ArrayList<>();
+    for (Long candidateId : candidateIds) {
+      for (CertificationMaterialTemplateEntity template : templates) {
+        String key = candidateId + "\u0000" + template.getItemCode();
+        if (existingKeys.contains(key)) {
+          continue;
+        }
+        CandidateDocRow row = new CandidateDocRow();
+        row.setId(IdWorker.getId());
+        row.setCandidateId(candidateId);
+        row.setTenantId(tenantId);
+        row.setTaskId(taskId);
+        row.setTemplateId(template.getId());
+        row.setDocCode(template.getItemCode());
+        row.setDocName(template.getItemName());
+        row.setRequired(template.getRequired() == null || template.getRequired());
+        missingRows.add(row);
+      }
+    }
+    if (!missingRows.isEmpty()) {
+      documentMapper.batchInsertMissing(missingRows);
     }
   }
 
-  private void pruneObsoleteCandidateDocuments(Long taskId, Long candidateId) {
+  private void pruneObsoleteCandidateDocuments(Long taskId, List<Long> candidateIds) {
+    if (CollectionUtils.isEmpty(candidateIds)) {
+      return;
+    }
     List<CertificationCandidateDocumentEntity> obsoleteDocuments = documentMapper.selectList(
         new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
             .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
-            .eq(CertificationCandidateDocumentEntity::getCandidateId, candidateId)
+            .in(CertificationCandidateDocumentEntity::getCandidateId, candidateIds)
             .notIn(CertificationCandidateDocumentEntity::getDocCode, CANDIDATE_DOC_CODES));
     if (CollectionUtils.isEmpty(obsoleteDocuments)) {
       return;
     }
-    for (CertificationCandidateDocumentEntity document : obsoleteDocuments) {
-      documentMapper.deleteById(document.getId());
+    documentMapper.deleteBatchIds(obsoleteDocuments.stream()
+        .map(CertificationCandidateDocumentEntity::getId)
+        .filter(Objects::nonNull)
+        .toList());
+  }
+
+  private Map<Long, CertificationTaskEntity> resolveTaskTenant(Long taskId) {
+    if (taskId == null) {
+      return Map.of();
     }
+    CertificationTaskEntity task = taskMapper.selectById(taskId);
+    if (task == null) {
+      return Map.of();
+    }
+    return Map.of(taskId, task);
   }
 
   private Map<Long, CertificationCandidateEntity> loadCandidateMap(
@@ -1862,7 +2132,7 @@ public class CertificationPreparationApplicationService {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "报名信息表仅支持 xlsx、pdf、docx 格式");
       }
     }
-    if ("DOC002".equals(docCode)) {
+    if (List.of("DOC002", "DOC003", "DOC004", "DOC005", "DOC006").contains(docCode)) {
       boolean accepted = lowerType.startsWith("image/")
           || lowerName.endsWith(".jpg")
           || lowerName.endsWith(".jpeg")
@@ -1871,29 +2141,53 @@ public class CertificationPreparationApplicationService {
           || lowerName.endsWith(".bmp")
           || lowerName.endsWith(".webp");
       if (!accepted) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST, "两寸证件照仅支持图片格式");
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "图片资料仅支持图片格式");
       }
     }
   }
 
   private void refreshCandidateDocumentStats(Long taskId, Long candidateId) {
+    if (candidateId == null) {
+      return;
+    }
+    Map<Long, Map<String, Object>> stats =
+        candidateMapper.selectDocumentStatsByCandidate(taskId, List.of(candidateId));
+    Map<String, Object> row = stats == null ? null : stats.get(candidateId);
+    long required = row == null ? 0 : toLong(row.get("requiredCount"));
+    long approved = row == null ? 0 : toLong(row.get("approvedCount"));
     CertificationCandidateEntity candidate = candidateMapper.selectById(candidateId);
     if (candidate == null) {
       return;
     }
-    long required = safeCount(documentMapper.selectCount(new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
-        .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
-        .eq(CertificationCandidateDocumentEntity::getCandidateId, candidateId)
-        .eq(CertificationCandidateDocumentEntity::getRequired, true)));
-    long approved = safeCount(documentMapper.selectCount(new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
-        .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
-        .eq(CertificationCandidateDocumentEntity::getCandidateId, candidateId)
-        .eq(CertificationCandidateDocumentEntity::getRequired, true)
-        .eq(CertificationCandidateDocumentEntity::getStatus, "approved")));
     candidate.setDocumentRequiredCount((int) required);
     candidate.setDocumentCompletedCount((int) approved);
     candidate.setDocumentComplete(required > 0 && required == approved);
     candidateMapper.updateById(candidate);
+  }
+
+  private void batchRefreshCandidateDocumentStats(Long taskId, List<Long> candidateIds) {
+    if (taskId == null || CollectionUtils.isEmpty(candidateIds)) {
+      return;
+    }
+    List<Long> ids = candidateIds.stream().filter(Objects::nonNull).toList();
+    if (ids.isEmpty()) {
+      return;
+    }
+    candidateMapper.batchRefreshDocumentStats(taskId, ids);
+  }
+
+  private long toLong(Object value) {
+    if (value == null) {
+      return 0;
+    }
+    if (value instanceof Number n) {
+      return n.longValue();
+    }
+    try {
+      return Long.parseLong(String.valueOf(value));
+    } catch (NumberFormatException e) {
+      return 0;
+    }
   }
 
   private void applyExamSite(CertificationExamSiteEntity entity, PreparationExamSiteSaveReq req) {
@@ -1934,12 +2228,8 @@ public class CertificationPreparationApplicationService {
     List<Long> normalized = scopeIds == null
         ? List.of()
         : scopeIds.stream().filter(Objects::nonNull).distinct().toList();
-    List<CertificationAssessorGroupWorktypeEntity> existing =
-        groupWorktypeMapper.selectList(new LambdaQueryWrapper<CertificationAssessorGroupWorktypeEntity>()
-            .eq(CertificationAssessorGroupWorktypeEntity::getGroupId, groupId));
-    for (CertificationAssessorGroupWorktypeEntity row : existing) {
-      groupWorktypeMapper.deleteById(row.getId());
-    }
+    groupWorktypeMapper.delete(new LambdaQueryWrapper<CertificationAssessorGroupWorktypeEntity>()
+        .eq(CertificationAssessorGroupWorktypeEntity::getGroupId, groupId));
     if (normalized.isEmpty()) {
       return;
     }
@@ -1947,6 +2237,7 @@ public class CertificationPreparationApplicationService {
         .filter(s -> normalized.contains(s.getId()))
         .collect(Collectors.toMap(CertificationTaskScopeEntity::getId, s -> s, (a, b) -> a));
     int order = 100;
+    List<CertificationAssessorGroupWorktypeEntity> rows = new ArrayList<>(normalized.size());
     for (Long scopeId : normalized) {
       CertificationTaskScopeEntity scope = scopeMap.get(scopeId);
       if (scope == null) {
@@ -1960,8 +2251,11 @@ public class CertificationPreparationApplicationService {
       row.setLevelName(scope.getLevelName());
       row.setSortOrder(scope.getSortOrder() == null ? order : scope.getSortOrder());
       row.setDeleted(0);
-      groupWorktypeMapper.insert(row);
+      rows.add(row);
       order += 10;
+    }
+    for (CertificationAssessorGroupWorktypeEntity row : rows) {
+      groupWorktypeMapper.insert(row);
     }
     // 同步回填单值 work_type_name 字段（拼接展示，向后兼容）
     String joined = scopeMap.values().stream()
@@ -2165,15 +2459,25 @@ public class CertificationPreparationApplicationService {
   }
 
   private void markInfoAssessorWorkStatus(Long assessorId, String status) {
-    if (assessorId == null || !StringUtils.hasText(status)) {
+    if (assessorId == null) {
       return;
     }
-    CertificationInfoAssessorEntity info = infoAssessorMapper.selectById(assessorId);
-    if (info == null) {
+    markInfoAssessorsWorkStatus(List.of(assessorId), status);
+  }
+
+  private void markInfoAssessorsWorkStatus(List<Long> assessorIds, String status) {
+    if (!StringUtils.hasText(status)) {
       return;
     }
-    info.setWorkStatus(status);
-    infoAssessorMapper.updateById(info);
+    List<Long> ids = assessorIds == null ? List.of()
+        : assessorIds.stream().filter(Objects::nonNull).distinct().toList();
+    if (ids.isEmpty()) {
+      return;
+    }
+    CertificationInfoAssessorEntity patch = new CertificationInfoAssessorEntity();
+    patch.setWorkStatus(status);
+    infoAssessorMapper.update(patch, new LambdaQueryWrapper<CertificationInfoAssessorEntity>()
+        .in(CertificationInfoAssessorEntity::getId, ids));
   }
 
   private void markInfoExamStaffWorkStatus(Long staffId, String status) {

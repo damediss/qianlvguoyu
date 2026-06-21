@@ -12,6 +12,10 @@ public class TrainPeopleListQueryReq extends PageQuery {
   private String type;
   /** 搜索关键词 */
   private String keyword;
+  /** 认定导入筛选：报名申报工种 */
+  private String applyWorkTypeName;
+  /** 认定导入筛选：报名申报等级（培训报名数据使用 0-4） */
+  private Integer applyLevel;
 
   public Long getTrainId() {
     return trainId;
@@ -43,5 +47,21 @@ public class TrainPeopleListQueryReq extends PageQuery {
 
   public void setKeyword(String keyword) {
     this.keyword = keyword;
+  }
+
+  public String getApplyWorkTypeName() {
+    return applyWorkTypeName;
+  }
+
+  public void setApplyWorkTypeName(String applyWorkTypeName) {
+    this.applyWorkTypeName = applyWorkTypeName;
+  }
+
+  public Integer getApplyLevel() {
+    return applyLevel;
+  }
+
+  public void setApplyLevel(Integer applyLevel) {
+    this.applyLevel = applyLevel;
   }
 }

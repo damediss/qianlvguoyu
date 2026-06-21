@@ -116,10 +116,38 @@ public class CertificationCandidateStagingApplicationService {
     stagingMapper.releasePromotedCandidate(tenantId, taskId, candidateId);
   }
 
+  @Transactional
+  public void updateCandidateDocumentReference(Long taskId, Long candidateId, String docCode, Long fileId) {
+    if (fileId == null || !StringUtils.hasText(docCode)) {
+      return;
+    }
+    CertificationCandidateSourceStagingEntity source = stagingMapper.selectOne(
+        new LambdaQueryWrapper<CertificationCandidateSourceStagingEntity>()
+            .eq(CertificationCandidateSourceStagingEntity::getTenantId, SecurityContext.currentUser().getTenantId())
+            .eq(CertificationCandidateSourceStagingEntity::getTaskId, taskId)
+            .eq(CertificationCandidateSourceStagingEntity::getCandidateId, candidateId)
+            .eq(CertificationCandidateSourceStagingEntity::getDeleted, 0)
+            .orderByDesc(CertificationCandidateSourceStagingEntity::getPromotedAt)
+            .last("LIMIT 1"));
+    if (source == null) {
+      return;
+    }
+    String reference = "file-id:" + fileId;
+    switch (docCode) {
+      case "DOC002" -> source.setPhotoUrl(reference);
+      case "DOC003" -> source.setIdCardFrontUrl(reference);
+      case "DOC004" -> source.setIdCardBackUrl(reference);
+      case "DOC005" -> source.setEducationCertImageUrl(reference);
+      case "DOC006" -> source.setOriginalCertImageUrl(reference);
+      default -> { return; }
+    }
+    stagingMapper.updateById(source);
+  }
+
   @Transactional(readOnly = true)
-  public CertificationCandidateSourceStagingEntity requireStagingByCandidate(Long taskId, Long candidateId) {
+  public CertificationCandidateSourceStagingEntity findStagingByCandidate(Long taskId, Long candidateId) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
-    CertificationCandidateSourceStagingEntity entity = stagingMapper.selectOne(
+    return stagingMapper.selectOne(
         new LambdaQueryWrapper<CertificationCandidateSourceStagingEntity>()
             .eq(CertificationCandidateSourceStagingEntity::getTenantId, tenantId)
             .eq(CertificationCandidateSourceStagingEntity::getTaskId, taskId)
@@ -127,14 +155,24 @@ public class CertificationCandidateStagingApplicationService {
             .eq(CertificationCandidateSourceStagingEntity::getDeleted, 0)
             .orderByDesc(CertificationCandidateSourceStagingEntity::getPromotedAt)
             .last("LIMIT 1"));
+  }
+
+  @Transactional(readOnly = true)
+  public CertificationCandidateSourceStagingEntity requireStagingByCandidate(Long taskId, Long candidateId) {
+    CertificationCandidateSourceStagingEntity entity = findStagingByCandidate(taskId, candidateId);
     if (entity == null) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "未找到该考生的来源数据，请从测试学员或培训学员导入");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "未找到该考生的认定来源数据，请重新通过认定部或培训部导入");
     }
     return entity;
   }
 
   @Transactional(propagation = Propagation.REQUIRES_NEW)
   public PreparationCandidateVO promoteTrainingPerson(Long taskId, Long trainingPersonId) {
+    return promoteTrainingPerson(taskId, trainingPersonId, null);
+  }
+
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public PreparationCandidateVO promoteTrainingPerson(Long taskId, Long trainingPersonId, Long taskScopeId) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainingStudentCertificationSourceVO source =
         trainingStudentSourceService.requireCertificationSource(trainingPersonId);
@@ -168,7 +206,8 @@ public class CertificationCandidateStagingApplicationService {
             "training",
             firstNonBlank(source.getCompanyName(),
                 source.getTrainClassId() == null ? null : "班级" + source.getTrainClassId()),
-            source.getComments()));
+            source.getComments(),
+            taskScopeId));
 
     if (snapshot == null) {
       snapshot = new CertificationCandidateSourceStagingEntity();
@@ -179,6 +218,7 @@ public class CertificationCandidateStagingApplicationService {
       snapshot.setExternalRefId(source.getSignUpPersonId());
       snapshot.setDeleted(0);
     }
+    snapshot.setTaskScopeId(taskScopeId);
     applyTrainingSnapshot(snapshot, source, candidate);
     if (snapshot.getId() == null) {
       stagingMapper.insert(snapshot);

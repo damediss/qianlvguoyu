@@ -2,7 +2,10 @@ package com.guoyu.platform.certification.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
+import java.util.List;
+import java.util.Map;
 import org.apache.ibatis.annotations.Delete;
+import org.apache.ibatis.annotations.MapKey;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
@@ -68,4 +71,49 @@ public interface CertificationCandidateMapper extends BaseMapper<CertificationCa
       WHERE id = #{entity.id}
       """)
   int restoreSoftDeleted(@Param("entity") CertificationCandidateEntity entity);
+
+  @Select("""
+      <script>
+      SELECT d.candidate_id AS candidateId,
+             SUM(CASE WHEN d.required = 1 THEN 1 ELSE 0 END) AS requiredCount,
+             SUM(CASE WHEN d.required = 1 AND d.status = 'approved' THEN 1 ELSE 0 END) AS approvedCount
+      FROM certification_candidate_document d
+      WHERE d.task_id = #{taskId}
+        AND d.deleted = 0
+        AND d.candidate_id IN
+        <foreach item="cid" collection="candidateIds" open="(" separator="," close=")">#{cid}</foreach>
+      GROUP BY d.candidate_id
+      </script>
+      """)
+  @MapKey("candidateId")
+  Map<Long, Map<String, Object>> selectDocumentStatsByCandidate(
+      @Param("taskId") Long taskId,
+      @Param("candidateIds") List<Long> candidateIds);
+
+  @Update("""
+      <script>
+      UPDATE certification_candidate c
+      JOIN (
+        SELECT d.candidate_id AS cid,
+               SUM(CASE WHEN d.required = 1 THEN 1 ELSE 0 END) AS required_count,
+               SUM(CASE WHEN d.required = 1 AND d.status = 'approved' THEN 1 ELSE 0 END) AS approved_count
+        FROM certification_candidate_document d
+        WHERE d.task_id = #{taskId}
+          AND d.deleted = 0
+          AND d.required = 1
+        GROUP BY d.candidate_id
+      ) s ON c.id = s.cid
+      SET c.document_required_count = s.required_count,
+          c.document_completed_count = s.approved_count,
+          c.document_complete = (s.required_count > 0 AND s.required_count = s.approved_count),
+          c.updated_at = NOW()
+      WHERE c.task_id = #{taskId}
+        AND c.deleted = 0
+        AND c.id IN
+        <foreach item="cid" collection="candidateIds" open="(" separator="," close=")">#{cid}</foreach>
+      </script>
+      """)
+  int batchRefreshDocumentStats(
+      @Param("taskId") Long taskId,
+      @Param("candidateIds") List<Long> candidateIds);
 }

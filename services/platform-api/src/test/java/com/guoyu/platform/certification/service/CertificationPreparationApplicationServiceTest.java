@@ -25,6 +25,7 @@ import com.guoyu.platform.certification.entity.CertificationAssessorTaskEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateDocumentEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateImportBatchEntity;
+import com.guoyu.platform.certification.entity.CertificationCandidateSourceStagingEntity;
 import com.guoyu.platform.certification.entity.CertificationMaterialTemplateEntity;
 import com.guoyu.platform.certification.entity.CertificationExamSiteEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskAssessorEntity;
@@ -54,6 +55,7 @@ import com.guoyu.platform.certification.info.mapper.CertificationInfoExamStaffMa
 import com.guoyu.platform.certification.mapper.CertificationTaskMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskPhaseMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskScopeMapper;
+import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.certification.info.entity.CertificationInfoAssessorEntity;
 import com.guoyu.platform.certification.info.mapper.CertificationInfoAssessorMapper;
 import com.guoyu.platform.common.exception.BusinessException;
@@ -199,6 +201,47 @@ class CertificationPreparationApplicationServiceTest {
     assertThatThrownBy(() -> service.createCandidate(1L, req))
         .isInstanceOf(BusinessException.class)
         .hasMessage("报考等级必须匹配当前认定任务支持的等级");
+  }
+
+  @Test
+  void generateCandidateDocumentUsesCurrentCandidateDataWhenSourceSnapshotIsMissing() {
+    CertificationCandidateEntity candidate = new CertificationCandidateEntity();
+    candidate.setId(11L);
+    candidate.setTaskId(1L);
+    candidate.setCandidateName("李敏");
+    candidate.setIdCardNo("450102199001011234");
+    candidate.setPhone("13800001234");
+    candidate.setOrgName("示例公司");
+    candidate.setWorkTypeId(9L);
+    candidate.setWorkTypeName("电工");
+    candidate.setLevelCode("junior");
+    candidate.setLevelName("初级");
+    CertificationCandidateDocumentEntity photo = approvedDocument("DOC002", 21L);
+    CertificationCandidateDocumentEntity idCardFront = approvedDocument("DOC003", 22L);
+    CertificationCandidateDocumentEntity idCardBack = approvedDocument("DOC004", 23L);
+
+    when(taskMapper.selectById(1L)).thenReturn(existingTask());
+    when(candidateMapper.selectById(11L)).thenReturn(candidate);
+    when(documentMapper.selectOne(any())).thenReturn(photo, idCardFront, idCardBack, null);
+    when(documentMapper.selectCount(any())).thenReturn(2L);
+    when(stagingApplicationService.findStagingByCandidate(1L, 11L)).thenReturn(null);
+    when(imageSourceService.readFile(21L)).thenReturn(new byte[] {1, 2, 3});
+    when(applicationFormGenerationService.generateApplicationForm(any(), any())).thenReturn(new byte[] {4, 5, 6});
+    when(fileApplicationService.storeFromBytes(any(), any(), any(), any()))
+        .thenReturn(new FileVO(99L, "李敏-职业技能等级认定申请表.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 3L, "private", "active", null, null));
+
+    service.generateCandidateDocument(1L, 11L, "DOC001");
+
+    ArgumentCaptor<CertificationCandidateSourceStagingEntity> sourceCaptor =
+        ArgumentCaptor.forClass(CertificationCandidateSourceStagingEntity.class);
+    verify(applicationFormGenerationService).generateApplicationForm(sourceCaptor.capture(), any());
+    CertificationCandidateSourceStagingEntity source = sourceCaptor.getValue();
+    assertThat(source.getCandidateName()).isEqualTo("李敏");
+    assertThat(source.getApplyWorkTypeName()).isEqualTo("电工");
+    assertThat(source.getApplyLevelName()).isEqualTo("初级");
+    assertThat(source.getIdCardFrontUrl()).isEqualTo("file-id:22");
+    assertThat(source.getIdCardBackUrl()).isEqualTo("file-id:23");
+    verify(documentMapper).insert(any(CertificationCandidateDocumentEntity.class));
   }
 
   @Test
@@ -405,6 +448,19 @@ class CertificationPreparationApplicationServiceTest {
   }
 
   @Test
+  void listGroupsAllowsNullLeaderAssessorId() {
+    when(taskMapper.selectById(1L)).thenReturn(existingTask());
+    CertificationTaskAssessorGroupEntity group = existingGroup();
+    group.setLeaderAssessorId(null);
+    when(groupMapper.selectList(any())).thenReturn(List.of(group));
+    when(groupWorktypeMapper.selectList(any())).thenReturn(List.of());
+
+    assertThat(service.listGroups(1L))
+        .singleElement()
+        .satisfies(vo -> assertThat(vo.leaderAssessorName()).isNull());
+  }
+
+  @Test
   void dispatchGroupCreatesAssignedWorkbenchTask() {
     when(taskMapper.selectById(1L)).thenReturn(existingTask());
     when(groupMapper.selectById(2L)).thenReturn(existingGroup());
@@ -574,6 +630,14 @@ class CertificationPreparationApplicationServiceTest {
     template.setEnabled(true);
     template.setSortOrder(1);
     return List.of(template);
+  }
+
+  private CertificationCandidateDocumentEntity approvedDocument(String docCode, Long fileId) {
+    CertificationCandidateDocumentEntity document = new CertificationCandidateDocumentEntity();
+    document.setDocCode(docCode);
+    document.setFileId(fileId);
+    document.setStatus("approved");
+    return document;
   }
 
   private CertificationTaskEntity existingTask() {

@@ -161,11 +161,12 @@ class PracticalScoringApplicationServiceTest {
   }
 
   @Test
-  void adjustScoreResubmitsAndRecalculatesReviewRequiredQuestion() {
+  void adjustScoreAllowsCompletedSessionAndRecalculatesReviewRequiredQuestion() {
     CertificationAssessorTaskEntity task = task(50L, 9L, 2);
     task.setStatus("submitted");
     task.setTotalScore(new BigDecimal("5"));
     when(assessorTaskMapper.lockById(1L, 50L)).thenReturn(task);
+    when(startService.isCompleted(1L, 11L)).thenReturn(true);
     when(scoreMapper.selectList(any())).thenReturn(List.of(score(1, "要素一", "30", "30", "1")));
     when(assessorTaskMapper.selectList(any())).thenReturn(List.of(
         submittedTask(new BigDecimal("20")),
@@ -331,9 +332,9 @@ class PracticalScoringApplicationServiceTest {
         1L, 11L, new PracticalScoringModels.LinkCandidateReq(101L, 100L, 21L, 30L));
 
     assertThat(result.createdTasks()).isEqualTo(3);
-    Mockito.verify(scoreMapper).deleteById(701L);
-    Mockito.verify(assessorTaskMapper).deleteById(70L);
-    Mockito.verify(questionResultMapper).deleteById(801L);
+    Mockito.verify(scoreMapper).delete(any());
+    Mockito.verify(assessorTaskMapper).delete(any());
+    Mockito.verify(questionResultMapper).delete(any());
     ArgumentCaptor<CertificationPracticalCandidateResultEntity> resultCaptor =
         ArgumentCaptor.forClass(CertificationPracticalCandidateResultEntity.class);
     Mockito.verify(candidateResultMapper, Mockito.atLeastOnce()).updateById(resultCaptor.capture());
@@ -568,12 +569,14 @@ class PracticalScoringApplicationServiceTest {
     when(scopeMapper.selectById(101L)).thenReturn(scope());
     when(groupMapper.selectById(30L)).thenReturn(group());
     when(taskAssessorMapper.selectList(any())).thenReturn(members);
-    for (CertificationTaskAssessorEntity member : members) {
-      CertificationInfoAssessorEntity assessor = new CertificationInfoAssessorEntity();
-      assessor.setId(member.getAssessorId());
-      assessor.setUserId(1000L + member.getAssessorId());
-      when(assessorMapper.selectById(member.getAssessorId())).thenReturn(assessor);
-    }
+    when(assessorMapper.selectList(any())).thenAnswer(invocation -> members.stream().map(member -> {
+      CertificationInfoAssessorEntity row = new CertificationInfoAssessorEntity();
+      row.setId(member.getAssessorId());
+      row.setUserId(1000L + member.getAssessorId());
+      row.setAssessorName(member.getAssessorName());
+      row.setAuditStatus("approved");
+      return row;
+    }).toList());
     when(candidateMapper.selectById(firstCandidate.getId())).thenReturn(firstCandidate);
     if (secondCandidate != null) {
       when(candidateMapper.selectById(secondCandidate.getId())).thenReturn(secondCandidate);

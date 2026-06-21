@@ -426,7 +426,7 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
 }
 
 function acceptByDocCode(docCode?: string) {
-  if (docCode === 'DOC002') {
+  if (['DOC002', 'DOC003', 'DOC004', 'DOC005', 'DOC006'].includes(docCode || '')) {
     return 'image/*';
   }
   return undefined;
@@ -434,10 +434,10 @@ function acceptByDocCode(docCode?: string) {
 
 function validateUploadFileType(docCode: string | undefined, file: File) {
   const extension = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
-  if (docCode === 'DOC002') {
+  if (['DOC002', 'DOC003', 'DOC004', 'DOC005', 'DOC006'].includes(docCode || '')) {
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
     if (!file.type.startsWith('image/') && !imageExtensions.includes(extension)) {
-      return '两寸证件照仅支持图片格式';
+      return '图片资料仅支持图片格式';
     }
   }
   return undefined;

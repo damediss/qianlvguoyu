@@ -3,6 +3,7 @@ package com.guoyu.platform.trainingdepartment.service;
 import lombok.extern.slf4j.Slf4j;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
@@ -101,7 +102,17 @@ public class TrainPeopleListApplicationService {
           .or()
           .like(TrainPeopleListEntity::getPhone, req.getKeyword()));
     }
-    Page<TrainPeopleListEntity> page = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
+    IPage<TrainPeopleListEntity> page;
+    if (StringUtils.hasText(req.getApplyWorkTypeName()) && req.getApplyLevel() != null) {
+      page = mapper.selectCertificationImportPage(
+          new Page<>(req.getPage(), req.getPageSize()),
+          tenantId,
+          req.getApplyWorkTypeName(),
+          req.getApplyLevel(),
+          StringUtils.hasText(req.getKeyword()) ? req.getKeyword() : null);
+    } else {
+      page = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
+    }
     return new PageResponse<>(page.getRecords().stream().map(this::toVO).toList(),
         page.getCurrent(), page.getSize(), page.getTotal());
   }

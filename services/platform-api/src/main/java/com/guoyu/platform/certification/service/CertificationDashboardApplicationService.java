@@ -746,7 +746,7 @@ public class CertificationDashboardApplicationService {
   }
 
   private String normalizeDateMode(String value) {
-    return Set.of("created", "exam", "archive").contains(value) ? value : "created";
+    return value != null && Set.of("created", "exam", "archive").contains(value) ? value : "created";
   }
 
   private List<String> distinctSorted(List<String> values) {

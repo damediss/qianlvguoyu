@@ -7,6 +7,13 @@ public record PreparationCandidateImportReq(
     Long sourceFileId,
     List<PreparationCandidateSaveReq> candidates,
     List<Long> trainingPeopleIds,
+    Long taskScopeId,
     String remark
 ) {
+  public PreparationCandidateImportReq(
+      String sourceType, Long sourceFileId, List<PreparationCandidateSaveReq> candidates,
+      List<Long> trainingPeopleIds, String remark
+  ) {
+    this(sourceType, sourceFileId, candidates, trainingPeopleIds, null, remark);
+  }
 }

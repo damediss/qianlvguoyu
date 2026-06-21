@@ -11,6 +11,7 @@ import lombok.Setter;
 @TableName("certification_candidate_import_batch")
 public class CertificationCandidateImportBatchEntity extends BaseEntity {
   private Long taskId;
+  private Long taskScopeId;
   private String batchNo;
   private String sourceType;
   private Long sourceFileId;

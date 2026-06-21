@@ -10,6 +10,13 @@ public record PreparationCandidateSaveReq(
     String levelName,
     String importSource,
     String orgName,
-    String remark
+    String remark,
+    Long taskScopeId
 ) {
+  public PreparationCandidateSaveReq(
+      String candidateName, String idCardNo, String phone, String levelCode, String levelName,
+      String importSource, String orgName, String remark
+  ) {
+    this(candidateName, idCardNo, phone, levelCode, levelName, importSource, orgName, remark, null);
+  }
 }

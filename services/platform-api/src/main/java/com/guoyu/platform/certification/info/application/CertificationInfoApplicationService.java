@@ -281,7 +281,7 @@ public class CertificationInfoApplicationService {
     return true;
   }
 
-  @Transactional
+  @Transactional(readOnly = true)
   public PageResponse<ExamStaffInfoVO> pageExamStaff(CertificationInfoQueryReq req) {
     LambdaQueryWrapper<CertificationInfoExamStaffEntity> wrapper =
         new LambdaQueryWrapper<CertificationInfoExamStaffEntity>().orderByDesc(CertificationInfoExamStaffEntity::getCreatedAt);
@@ -300,7 +300,7 @@ public class CertificationInfoApplicationService {
     Map<Long, String> taskNosByStaffId = loadAssignedTaskNosByStaffIds(
         page.getRecords().stream().map(CertificationInfoExamStaffEntity::getId).toList());
     return new PageResponse<>(page.getRecords().stream()
-        .map(entity -> toExamStaffVO(entity, syncExamStaffAssignmentState(entity, taskNosByStaffId.get(entity.getId()))))
+        .map(entity -> toExamStaffVO(entity, taskNosByStaffId.get(entity.getId())))
         .toList(),
         page.getCurrent(), page.getSize(), page.getTotal());
   }
@@ -411,7 +411,7 @@ public class CertificationInfoApplicationService {
     record("exam_staff", id, "delete", entity.getAuditStatus(), "deleted", null);
   }
 
-  @Transactional
+  @Transactional(readOnly = true)
   public List<ExamStaffInfoVO> listAvailableExamStaff(String keyword) {
     LambdaQueryWrapper<CertificationInfoExamStaffEntity> wrapper = new LambdaQueryWrapper<CertificationInfoExamStaffEntity>()
         .eq(CertificationInfoExamStaffEntity::getAuditStatus, APPROVED)
@@ -426,7 +426,7 @@ public class CertificationInfoApplicationService {
     Map<Long, String> taskNosByStaffId = loadAssignedTaskNosByStaffIds(
         staffList.stream().map(CertificationInfoExamStaffEntity::getId).toList());
     return staffList.stream()
-        .map(entity -> toExamStaffVO(entity, syncExamStaffAssignmentState(entity, taskNosByStaffId.get(entity.getId()))))
+        .map(entity -> toExamStaffVO(entity, taskNosByStaffId.get(entity.getId())))
         .filter(item -> "idle".equalsIgnoreCase(item.workStatus()))
         .toList();
   }
@@ -1042,14 +1042,14 @@ public class CertificationInfoApplicationService {
   }
 
   private ExamStaffInfoVO toExamStaffVO(CertificationInfoExamStaffEntity entity) {
-    return toExamStaffVO(entity, syncExamStaffAssignmentState(entity, resolveAssignedTaskNos(entity.getId())));
+    return toExamStaffVO(entity, resolveAssignedTaskNos(entity.getId()));
   }
 
   private ExamStaffInfoVO toExamStaffVO(CertificationInfoExamStaffEntity entity, String assignedTaskNos) {
     String editablePhone = List.of(DRAFT, REJECTED).contains(entity.getAuditStatus()) ? entity.getPhone() : null;
     return new ExamStaffInfoVO(entity.getId(), entity.getStaffName(), editablePhone,
         StringUtils.hasText(entity.getMaskedPhone()) ? entity.getMaskedPhone() : maskPhone(entity.getPhone()),
-        entity.getAuditStatus(), entity.getWorkStatus(), assignedTaskNos);
+        entity.getAuditStatus(), resolveEffectiveWorkStatus(entity, assignedTaskNos), assignedTaskNos);
   }
 
   private String resolveAssignedTaskNos(Long staffId) {
@@ -1059,20 +1059,14 @@ public class CertificationInfoApplicationService {
     return loadAssignedTaskNosByStaffIds(List.of(staffId)).get(staffId);
   }
 
-  private String syncExamStaffAssignmentState(CertificationInfoExamStaffEntity entity, String assignedTaskNos) {
-    if (entity == null || !APPROVED.equals(entity.getAuditStatus())) {
-      return assignedTaskNos;
+  private String resolveEffectiveWorkStatus(CertificationInfoExamStaffEntity entity, String assignedTaskNos) {
+    if (entity == null) {
+      return null;
     }
-    boolean hasActiveBinding = StringUtils.hasText(assignedTaskNos);
-    String expectedWorkStatus = hasActiveBinding ? "assigned" : "idle";
-    int expectedReferencedCount = hasActiveBinding ? assignedTaskNos.split("、").length : 0;
-    if (!expectedWorkStatus.equals(entity.getWorkStatus())
-        || !Objects.equals(entity.getReferencedCount(), expectedReferencedCount)) {
-      entity.setWorkStatus(expectedWorkStatus);
-      entity.setReferencedCount(expectedReferencedCount);
-      examStaffMapper.updateById(entity);
+    if (!APPROVED.equals(entity.getAuditStatus())) {
+      return entity.getWorkStatus();
     }
-    return assignedTaskNos;
+    return StringUtils.hasText(assignedTaskNos) ? "assigned" : "idle";
   }
 
   private Map<Long, String> loadAssignedTaskNosByStaffIds(List<Long> staffIds) {

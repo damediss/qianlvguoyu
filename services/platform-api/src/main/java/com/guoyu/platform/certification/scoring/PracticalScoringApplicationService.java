@@ -152,13 +152,7 @@ public class PracticalScoringApplicationService {
         new LambdaQueryWrapper<CertificationTaskAssessorGroupEntity>()
             .eq(CertificationTaskAssessorGroupEntity::getTaskId, taskId)
             .orderByAsc(CertificationTaskAssessorGroupEntity::getCreatedAt));
-    Map<Long, Integer> memberCounts = new HashMap<>();
-    for (CertificationTaskAssessorGroupEntity group : groups) {
-      Long count = taskAssessorMapper.selectCount(new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
-          .eq(CertificationTaskAssessorEntity::getTaskId, taskId)
-          .eq(CertificationTaskAssessorEntity::getGroupId, group.getId()));
-      memberCounts.put(group.getId(), count == null ? 0 : count.intValue());
-    }
+    Map<Long, Integer> memberCounts = loadMemberCountsByTaskId(taskId, groups);
     List<ExamOperatePaperEntity> papers = paperMapper.selectList(
         new LambdaQueryWrapper<ExamOperatePaperEntity>()
             .eq(ExamOperatePaperEntity::getStatus, 1)
@@ -229,15 +223,12 @@ public class PracticalScoringApplicationService {
 
     scope.setWorkTypeId(req.workTypeId());
     scopeMapper.updateById(scope);
-    List<CertificationCandidateEntity> candidates = candidateMapper.selectList(
-        new LambdaQueryWrapper<CertificationCandidateEntity>()
-            .eq(CertificationCandidateEntity::getTaskId, taskId)
-            .eq(CertificationCandidateEntity::getLevelCode, scope.getLevelCode())
-            .eq(CertificationCandidateEntity::getWorkTypeName, scope.getWorkTypeName()));
-    for (CertificationCandidateEntity candidate : candidates) {
-      candidate.setWorkTypeId(req.workTypeId());
-      candidateMapper.updateById(candidate);
-    }
+    CertificationCandidateEntity candidatePatch = new CertificationCandidateEntity();
+    candidatePatch.setWorkTypeId(req.workTypeId());
+    candidateMapper.update(candidatePatch, new LambdaQueryWrapper<CertificationCandidateEntity>()
+        .eq(CertificationCandidateEntity::getTaskId, taskId)
+        .eq(CertificationCandidateEntity::getLevelCode, scope.getLevelCode())
+        .eq(CertificationCandidateEntity::getWorkTypeName, scope.getWorkTypeName()));
     return configView(entity);
   }
 
@@ -494,9 +485,6 @@ public class PracticalScoringApplicationService {
     if (task == null || task.getCandidateId() == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "评分任务不存在");
     }
-    if (startService.isCompleted(task.getTaskId(), task.getCandidateId())) {
-      throw new BusinessException(ErrorCode.CONFLICT, "考试已完成，评分数据已锁定");
-    }
     if (!"submitted".equals(task.getStatus())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅已提交的异常评分任务可在实操管理中修改");
     }
@@ -514,19 +502,7 @@ public class PracticalScoringApplicationService {
         || scores.stream().anyMatch(score -> !requestItems.containsKey(score.getStepNo()))) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "评分要素必须完整提交");
     }
-    BigDecimal total = BigDecimal.ZERO;
-    for (CertificationAssessorTaskScoreEntity score : scores) {
-      PracticalScoringModels.SaveScoreItemReq input = requestItems.get(score.getStepNo());
-      BigDecimal deduction = input.deductedScore().stripTrailingZeros();
-      validateDeduction(score, deduction);
-      BigDecimal awarded = score.getMaxScore().subtract(deduction).max(BigDecimal.ZERO);
-      score.setDeductedScore(deduction);
-      score.setAwardedScore(awarded);
-      score.setScore(awarded);
-      score.setRemark(input.remark());
-      scoreMapper.updateById(score);
-      total = total.add(awarded);
-    }
+    BigDecimal total = applyScoreInputs(scores, requestItems);
     task.setProgressNote(req.note());
     task.setTotalScore(total);
     task.setStatus("submitted");
@@ -561,14 +537,7 @@ public class PracticalScoringApplicationService {
     task.setRevisionNo(nvl(task.getRevisionNo(), 1) + 1);
     task.setVersionNo(nvl(task.getVersionNo(), 0) + 1);
     assessorTaskMapper.updateById(task);
-    List<CertificationAssessorTaskScoreEntity> scores = scores(task.getId());
-    for (CertificationAssessorTaskScoreEntity score : scores) {
-      score.setDeductedScore(BigDecimal.ZERO);
-      score.setAwardedScore(score.getMaxScore());
-      score.setScore(score.getMaxScore());
-      score.setRemark(null);
-      scoreMapper.updateById(score);
-    }
+    resetScoresToDefault(scores(task.getId()));
     invalidateResults(task);
   }
 
@@ -943,19 +912,7 @@ public class PracticalScoringApplicationService {
         || scores.stream().anyMatch(score -> !requestItems.containsKey(score.getStepNo()))) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "评分要素必须完整提交");
     }
-    BigDecimal total = BigDecimal.ZERO;
-    for (CertificationAssessorTaskScoreEntity score : scores) {
-      PracticalScoringModels.SaveScoreItemReq input = requestItems.get(score.getStepNo());
-      BigDecimal deduction = input.deductedScore().stripTrailingZeros();
-      validateDeduction(score, deduction);
-      BigDecimal awarded = score.getMaxScore().subtract(deduction).max(BigDecimal.ZERO);
-      score.setDeductedScore(deduction);
-      score.setAwardedScore(awarded);
-      score.setScore(awarded);
-      score.setRemark(input.remark());
-      scoreMapper.updateById(score);
-      total = total.add(awarded);
-    }
+    BigDecimal total = applyScoreInputs(scores, requestItems);
     task.setProgressNote(req.note());
     task.setTotalScore(total);
     task.setVersionNo(currentVersion + 1);
@@ -1117,10 +1074,18 @@ public class PracticalScoringApplicationService {
     entity.setStatus("assigned");
     entity.setDeleted(0);
     assessorTaskMapper.insert(entity);
+    insertScoreRows(task.getId(), entity.getId(), template);
+  }
+
+  private void insertScoreRows(Long taskId, Long assessorTaskId, List<PracticalScoringModels.TemplateItem> template) {
+    if (template == null || template.isEmpty()) {
+      return;
+    }
+    List<CertificationAssessorTaskScoreEntity> rows = new ArrayList<>(template.size());
     for (PracticalScoringModels.TemplateItem item : template) {
       CertificationAssessorTaskScoreEntity score = new CertificationAssessorTaskScoreEntity();
-      score.setAssessorTaskId(entity.getId());
-      score.setTaskId(task.getId());
+      score.setAssessorTaskId(assessorTaskId);
+      score.setTaskId(taskId);
       score.setStepNo(item.itemNo());
       score.setStepName(item.itemName());
       score.setCriterion(item.criterion());
@@ -1131,8 +1096,52 @@ public class PracticalScoringApplicationService {
       score.setAwardedScore(item.maxScore());
       score.setScore(item.maxScore());
       score.setDeleted(0);
+      rows.add(score);
+    }
+    for (CertificationAssessorTaskScoreEntity score : rows) {
       scoreMapper.insert(score);
     }
+  }
+
+  private BigDecimal applyScoreInputs(
+      List<CertificationAssessorTaskScoreEntity> scores,
+      Map<Integer, PracticalScoringModels.SaveScoreItemReq> requestItems
+  ) {
+    BigDecimal total = BigDecimal.ZERO;
+    for (CertificationAssessorTaskScoreEntity score : scores) {
+      PracticalScoringModels.SaveScoreItemReq input = requestItems.get(score.getStepNo());
+      BigDecimal deduction = input.deductedScore().stripTrailingZeros();
+      validateDeduction(score, deduction);
+      BigDecimal awarded = score.getMaxScore().subtract(deduction).max(BigDecimal.ZERO);
+      score.setDeductedScore(deduction);
+      score.setAwardedScore(awarded);
+      score.setScore(awarded);
+      score.setRemark(input.remark());
+      total = total.add(awarded);
+    }
+    if (!scores.isEmpty()) {
+      persistScoreUpdates(scores);
+    }
+    return total;
+  }
+
+  private void persistScoreUpdates(List<CertificationAssessorTaskScoreEntity> scores) {
+    for (CertificationAssessorTaskScoreEntity score : scores) {
+      scoreMapper.updateById(score);
+    }
+  }
+
+  private void resetScoresToDefault(List<CertificationAssessorTaskScoreEntity> scores) {
+    if (scores == null || scores.isEmpty()) {
+      return;
+    }
+    for (CertificationAssessorTaskScoreEntity score : scores) {
+      score.setDeductedScore(BigDecimal.ZERO);
+      score.setAwardedScore(score.getMaxScore());
+      score.setScore(score.getMaxScore());
+      score.setRemark(null);
+    }
+    persistScoreUpdates(scores);
   }
 
   private GenerateCounter generateForCandidate(
@@ -1147,16 +1156,12 @@ public class PracticalScoringApplicationService {
     replaceCandidateTasksIfPaperChanged(task, config, candidate, questions.size());
     startService.ensureSession(config, candidate.getId());
     ensureCandidateResult(task, candidate, questions.size());
+    Set<String> existingTaskKeys = loadExistingAssessorTaskKeys(task.getId(), candidate.getId());
     for (ExamOperatePaperDetailEntity question : questions) {
       ensureQuestionResult(task, candidate, config.getPaperId(), question.getId().longValue());
       for (CertificationTaskAssessorEntity member : members) {
-        long count = safeCount(assessorTaskMapper.selectCount(
-            new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
-                .eq(CertificationAssessorTaskEntity::getTaskId, task.getId())
-                .eq(CertificationAssessorTaskEntity::getCandidateId, candidate.getId())
-                .eq(CertificationAssessorTaskEntity::getPaperQuestionId, question.getId().longValue())
-                .eq(CertificationAssessorTaskEntity::getAssessorId, member.getAssessorId())));
-        if (count > 0) {
+        String key = assessorTaskKey(question.getId().longValue(), member.getAssessorId());
+        if (existingTaskKeys.contains(key)) {
           existing++;
           continue;
         }
@@ -1165,6 +1170,24 @@ public class PracticalScoringApplicationService {
       }
     }
     return new GenerateCounter(created, existing);
+  }
+
+  private Set<String> loadExistingAssessorTaskKeys(Long taskId, Long candidateId) {
+    List<CertificationAssessorTaskEntity> existing = assessorTaskMapper.selectList(
+        new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
+            .eq(CertificationAssessorTaskEntity::getTaskId, taskId)
+            .eq(CertificationAssessorTaskEntity::getCandidateId, candidateId));
+    if (existing == null || existing.isEmpty()) {
+      return Set.of();
+    }
+    return existing.stream()
+        .filter(t -> t.getPaperQuestionId() != null && t.getAssessorId() != null)
+        .map(t -> assessorTaskKey(t.getPaperQuestionId(), t.getAssessorId()))
+        .collect(Collectors.toSet());
+  }
+
+  private String assessorTaskKey(Long paperQuestionId, Long assessorId) {
+    return paperQuestionId + "@" + assessorId;
   }
 
   private void replaceCandidateTasksIfPaperChanged(
@@ -1191,11 +1214,15 @@ public class PracticalScoringApplicationService {
     if (hasLockedTask) {
       throw new BusinessException(ErrorCode.CONFLICT, "考生已有已提交的实操评分任务，不能替换评分表");
     }
-    for (CertificationAssessorTaskEntity existing : existingTasks) {
-      for (CertificationAssessorTaskScoreEntity score : scores(existing.getId())) {
-        scoreMapper.deleteById(score.getId());
-      }
-      assessorTaskMapper.deleteById(existing.getId());
+    List<Long> existingTaskIds = existingTasks.stream()
+        .map(CertificationAssessorTaskEntity::getId)
+        .filter(Objects::nonNull)
+        .toList();
+    if (!existingTaskIds.isEmpty()) {
+      scoreMapper.delete(new LambdaQueryWrapper<CertificationAssessorTaskScoreEntity>()
+          .in(CertificationAssessorTaskScoreEntity::getAssessorTaskId, existingTaskIds));
+      assessorTaskMapper.delete(new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
+          .in(CertificationAssessorTaskEntity::getId, existingTaskIds));
     }
     List<CertificationPracticalQuestionResultEntity> oldResults = questionResultMapper.selectList(
         new LambdaQueryWrapper<CertificationPracticalQuestionResultEntity>()
@@ -1204,8 +1231,10 @@ public class PracticalScoringApplicationService {
     if (oldResults == null) {
       oldResults = List.of();
     }
-    for (CertificationPracticalQuestionResultEntity oldResult : oldResults) {
-      questionResultMapper.deleteById(oldResult.getId());
+    if (!oldResults.isEmpty()) {
+      questionResultMapper.delete(new LambdaQueryWrapper<CertificationPracticalQuestionResultEntity>()
+          .eq(CertificationPracticalQuestionResultEntity::getTaskId, task.getId())
+          .eq(CertificationPracticalQuestionResultEntity::getCandidateId, candidate.getId()));
     }
     resetCandidateResult(task, candidate, questionCount);
   }
@@ -1227,14 +1256,44 @@ public class PracticalScoringApplicationService {
         || members.stream().noneMatch(m -> group.getLeaderAssessorId().equals(m.getAssessorId()))) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "考评组组长必须是本组三名考评员之一");
     }
-    for (CertificationTaskAssessorEntity member : members) {
-      CertificationInfoAssessorEntity assessor = assessorMapper.selectById(member.getAssessorId());
-      if (assessor == null || assessor.getUserId() == null) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST,
-            member.getAssessorName() + "未绑定有效平台账号，不能生成平板评分任务");
+    List<Long> assessorIds = members.stream()
+        .map(CertificationTaskAssessorEntity::getAssessorId)
+        .filter(Objects::nonNull)
+        .distinct()
+        .toList();
+    if (!assessorIds.isEmpty()) {
+      Map<Long, CertificationInfoAssessorEntity> assessorById = assessorMapper.selectList(
+              new LambdaQueryWrapper<CertificationInfoAssessorEntity>()
+                  .in(CertificationInfoAssessorEntity::getId, assessorIds))
+          .stream()
+          .collect(Collectors.toMap(CertificationInfoAssessorEntity::getId, Function.identity()));
+      for (CertificationTaskAssessorEntity member : members) {
+        CertificationInfoAssessorEntity assessor = assessorById.get(member.getAssessorId());
+        if (assessor == null || assessor.getUserId() == null) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST,
+              member.getAssessorName() + "未绑定有效平台账号，不能生成平板评分任务");
+        }
       }
     }
     return members;
+  }
+
+  private Map<Long, Integer> loadMemberCountsByTaskId(Long taskId, List<CertificationTaskAssessorGroupEntity> groups) {
+    Map<Long, Integer> memberCounts = new HashMap<>();
+    if (groups == null || groups.isEmpty()) {
+      return memberCounts;
+    }
+    List<Long> groupIds = groups.stream().map(CertificationTaskAssessorGroupEntity::getId).toList();
+    List<CertificationTaskAssessorEntity> allMembers = taskAssessorMapper.selectList(
+        new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
+            .eq(CertificationTaskAssessorEntity::getTaskId, taskId)
+            .in(CertificationTaskAssessorEntity::getGroupId, groupIds));
+    Map<Long, List<CertificationTaskAssessorEntity>> grouped = allMembers == null ? Map.of()
+        : allMembers.stream().collect(Collectors.groupingBy(CertificationTaskAssessorEntity::getGroupId));
+    for (CertificationTaskAssessorGroupEntity group : groups) {
+      memberCounts.put(group.getId(), grouped.getOrDefault(group.getId(), List.of()).size());
+    }
+    return memberCounts;
   }
 
   private CertificationTaskScopeEntity resolveScopeForCandidate(

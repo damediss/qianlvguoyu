@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 public record PreparationCandidateVO(
     Long id,
     Long taskId,
+    Long taskScopeId,
     String candidateName,
     String idCardNo,
     String maskedIdCardNo,
@@ -26,10 +27,26 @@ public record PreparationCandidateVO(
     Integer documentTotalCount,
     LocalDateTime createdAt
 ) {
+  /** Backward-compatible constructor for existing callers that did not expose taskScopeId. */
+  public PreparationCandidateVO(
+      Long id, Long taskId, String candidateName, String idCardNo, String maskedIdCardNo,
+      String phone, String maskedPhone, String levelCode, String levelName, Long workTypeId,
+      String workTypeName, String importSource, String orgName, String status,
+      Integer documentCompletedCount, Integer documentRequiredCount, Boolean documentComplete,
+      Integer documentUploadedCount, Integer documentMissingCount, Integer documentTotalCount,
+      LocalDateTime createdAt
+  ) {
+    this(id, taskId, null, candidateName, idCardNo, maskedIdCardNo, phone, maskedPhone,
+        levelCode, levelName, workTypeId, workTypeName, importSource, orgName, status,
+        documentCompletedCount, documentRequiredCount, documentComplete, documentUploadedCount,
+        documentMissingCount, documentTotalCount, createdAt);
+  }
+
   public static PreparationCandidateVO from(CertificationCandidateEntity entity) {
     return new PreparationCandidateVO(
         entity.getId(),
         entity.getTaskId(),
+        entity.getTaskScopeId(),
         entity.getCandidateName(),
         entity.getIdCardNo(),
         entity.getMaskedIdCardNo(),
@@ -56,6 +73,7 @@ public record PreparationCandidateVO(
     return new PreparationCandidateVO(
         id,
         taskId,
+        taskScopeId,
         candidateName,
         idCardNo,
         maskedIdCardNo,

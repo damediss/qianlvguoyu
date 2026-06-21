@@ -27,10 +27,14 @@ import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type Key } from 'react';
 import { pagePeople } from '../../../api/training';
+import { getCertificationTask } from '../../../api/certification';
 import {
   createPreparationCandidate,
   deletePreparationCandidate,
   importPreparationCandidates,
+  importPreparationCandidatesExcel,
+  downloadPreparationCandidateExcelTemplate,
+  generatePreparationImportBatchMaterials,
   listAllPreparationCandidates,
   pageCandidateStaging,
   pagePreparationCandidates,
@@ -54,6 +58,14 @@ import { candidateDocumentRatioTag, dash, dateTimeText, importSourceLabel, level
 
 type ImportChannel = 'staging' | 'training' | 'other';
 
+const certificationLevelToTrainingLevel: Record<string, number> = {
+  junior: 0,
+  intermediate: 1,
+  senior: 2,
+  technician: 3,
+  senior_technician: 4,
+};
+
 interface CandidateImportProps {
   taskId?: string;
   onChanged?: () => void;
@@ -62,13 +74,15 @@ interface CandidateImportProps {
 export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState<PreparationCandidateQuery>({ page: 1, pageSize: 10 });
-  const [importChannel, setImportChannel] = useState<ImportChannel>('staging');
+  const [importChannel, setImportChannel] = useState<ImportChannel>('training');
+  const [selectedScopeId, setSelectedScopeId] = useState<string>();
   const [candidateModalOpen, setCandidateModalOpen] = useState(false);
   const [editingCandidate, setEditingCandidate] = useState<PreparationCandidate | null>(null);
   const [documentCandidate, setDocumentCandidate] = useState<PreparationCandidate | null>(null);
   const [lastImportBatch, setLastImportBatch] = useState<PreparationImportBatch | null>(null);
   const [candidateForm] = Form.useForm<PreparationCandidatePayload>();
   const [importFileList, setImportFileList] = useState<UploadFile[]>([]);
+  const [importRawFile, setImportRawFile] = useState<File | null>(null);
   const [trainingQuery, setTrainingQuery] = useState<TrainPeopleQuery>({ page: 1, pageSize: 10, type: 'student' });
   const [selectedTrainingPeople, setSelectedTrainingPeople] = useState<Map<number, TrainPeople>>(new Map());
   const [stagingQuery, setStagingQuery] = useState<PreparationCandidateStagingQuery>({ page: 1, pageSize: 10 });
@@ -81,6 +95,20 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
     enabled: Boolean(taskId),
   });
 
+  const taskQuery = useQuery({
+    queryKey: ['certification-task-import-scopes', taskId],
+    queryFn: () => getCertificationTask(taskId!),
+    enabled: Boolean(taskId),
+  });
+  const scopeOptions = (taskQuery.data?.scopes || []).map((scope) => ({
+    value: scope.id,
+    label: `${scope.workTypeName || '未设置工种'}｜${scope.levelName || '未设置等级'}`,
+  }));
+  const selectedScope = (taskQuery.data?.scopes || []).find((scope) => scope.id === selectedScopeId);
+  const selectedTrainingLevel = selectedScope?.levelCode
+    ? certificationLevelToTrainingLevel[selectedScope.levelCode]
+    : undefined;
+
   const stagingPeopleQuery = useQuery({
     queryKey: ['certification-preparation-candidate-staging', taskId, stagingQuery],
     queryFn: () => pageCandidateStaging(taskId!, stagingQuery),
@@ -88,9 +116,16 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   });
 
   const trainingPeopleQuery = useQuery({
-    queryKey: ['training-people-import', trainingQuery],
-    queryFn: () => pagePeople(trainingQuery),
-    enabled: Boolean(taskId) && importChannel === 'training',
+    queryKey: ['training-people-import', trainingQuery, selectedScopeId],
+    queryFn: () => pagePeople({
+      ...trainingQuery,
+      applyWorkTypeName: selectedScope!.workTypeName,
+      applyLevel: selectedTrainingLevel,
+    }),
+    enabled: Boolean(taskId)
+      && importChannel === 'training'
+      && Boolean(selectedScope?.workTypeName)
+      && selectedTrainingLevel !== undefined,
   });
 
   const importedCandidatesQuery = useQuery({
@@ -181,36 +216,21 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   });
 
   const importMutation = useMutation({
-    mutationFn: async (payload: {
-      sourceType: 'training' | 'other';
+    mutationFn: (payload: {
+      sourceType: 'training';
       remark?: string;
-      file?: File;
-      candidates?: PreparationCandidatePayload[];
       trainingPeopleIds?: number[];
     }) => {
-      let candidates = payload.candidates;
-      if (payload.sourceType === 'training') {
-        if (!payload.trainingPeopleIds?.length) {
-          throw new Error('请勾选要导入的培训学员');
-        }
-        return importPreparationCandidates(taskId!, {
-          sourceType: payload.sourceType,
-          trainingPeopleIds: payload.trainingPeopleIds,
-          remark: payload.remark,
-        });
-      } else {
-        if (!payload.file) {
-          throw new Error('请选择要导入的文件');
-        }
-        const text = await readImportFile(payload.file);
-        candidates = parseCandidateRows(text);
-        if (candidates.length === 0) {
-          throw new Error('文件中没有可导入的学员数据');
-        }
+      if (!selectedScopeId) {
+        throw new Error('请选择认定班级（工种和等级）');
+      }
+      if (!payload.trainingPeopleIds?.length) {
+        throw new Error('请勾选要导入的培训学员');
       }
       return importPreparationCandidates(taskId!, {
         sourceType: payload.sourceType,
-        candidates: candidates!,
+        trainingPeopleIds: payload.trainingPeopleIds,
+        taskScopeId: selectedScopeId,
         remark: payload.remark,
       });
     },
@@ -225,6 +245,31 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
     onError: (error: Error) => {
       message.error(error.message || '导入失败');
     },
+  });
+
+  const excelImportMutation = useMutation({
+    mutationFn: ({ file, remark }: { file: File; remark?: string }) => {
+      if (!selectedScopeId) throw new Error('请选择认定班级（工种和等级）');
+      return importPreparationCandidatesExcel(taskId!, selectedScopeId, file, remark);
+    },
+    onSuccess: (batch) => {
+      message.success(`XLSX 导入完成：成功 ${batch.successCount || 0}，失败 ${batch.failedCount || 0}`);
+      setLastImportBatch(batch);
+      setImportFileList([]);
+      setImportRawFile(null);
+      setImportRemark('');
+      refresh();
+    },
+    onError: (error: Error) => message.error(error.message || 'XLSX 导入失败'),
+  });
+
+  const generateBatchMaterialsMutation = useMutation({
+    mutationFn: (batchId: string) => generatePreparationImportBatchMaterials(taskId!, batchId),
+    onSuccess: (batch) => {
+      message.success(`申报材料已生成：${batch.successCount || 0} 名考生`);
+      queryClient.invalidateQueries({ queryKey: ['certification-preparation-materials', taskId] });
+    },
+    onError: (error: Error) => message.error(error.message || '申报材料生成失败，请先补齐并审核必传资料'),
   });
 
   const stagingPeopleColumns: ColumnsType<PreparationCandidateStaging> = [
@@ -287,12 +332,22 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   }
 
   function submitOtherImport() {
-    const file = importFileList[0]?.originFileObj;
+    const file = importRawFile;
     if (!file) {
-      message.warning('请先选择要导入的 CSV 文件');
+      message.warning('请先选择要导入的 XLSX 文件');
       return;
     }
-    importMutation.mutate({ sourceType: 'other', file, remark: importRemark });
+    excelImportMutation.mutate({ file, remark: importRemark });
+  }
+
+  async function downloadExcelTemplate() {
+    const response = await downloadPreparationCandidateExcelTemplate();
+    const url = URL.createObjectURL(response.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = '考生信息批量导入模板.xlsx';
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   const columns: ColumnsType<PreparationCandidate> = useMemo(
@@ -396,15 +451,29 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
           onChange={(value) => {
             setImportChannel(value);
             setImportFileList([]);
+            setImportRawFile(null);
             setSelectedTrainingPeople(new Map());
             setSelectedStagingRows(new Map());
           }}
           options={[
-            { label: '测试学员', value: 'staging' },
             { label: '培训学员', value: 'training' },
             { label: '其他学员', value: 'other' },
           ]}
           style={{ marginBottom: 16 }}
+        />
+
+        <Select
+          allowClear
+          placeholder="选择认定班级（工种｜等级）"
+          value={selectedScopeId}
+          onChange={(value) => {
+            setSelectedScopeId(value);
+            setSelectedTrainingPeople(new Map());
+            setTrainingQuery((prev) => ({ ...prev, page: 1 }));
+          }}
+          options={scopeOptions}
+          loading={taskQuery.isFetching}
+          style={{ minWidth: 280, marginBottom: 16 }}
         />
 
         {importChannel === 'staging' ? (
@@ -505,23 +574,27 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
         ) : (
           <Space direction="vertical" style={{ width: '100%' }} size={12}>
             <Typography.Text type="secondary">
-              支持 CSV 批量导入，或使用「新增学员」手工录入。
+              XLSX 模板已含 5 名测试考生；导入后请在学员资料中补齐证件照与身份证正反面，再生成申报材料。
             </Typography.Text>
             <Space wrap>
-              <Button icon={<DownloadOutlined />} onClick={downloadCandidateImportTemplate}>
-                下载 CSV 模板
+              <Button icon={<DownloadOutlined />} onClick={downloadExcelTemplate}>
+                下载 XLSX 模板
               </Button>
               <Upload
-                accept=".csv,.txt"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 maxCount={1}
                 fileList={importFileList}
                 beforeUpload={(file) => {
                   setImportFileList([file as UploadFile]);
+                  setImportRawFile(file);
                   return false;
                 }}
-                onRemove={() => setImportFileList([])}
+                onRemove={() => {
+                  setImportFileList([]);
+                  setImportRawFile(null);
+                }}
               >
-                <Button icon={<UploadOutlined />}>选择 CSV 文件</Button>
+                <Button icon={<UploadOutlined />}>选择 XLSX 文件</Button>
               </Upload>
               <Input
                 placeholder="导入备注（可选）"
@@ -533,7 +606,7 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
                 <Button
                   type="primary"
                   icon={<UploadOutlined />}
-                  loading={importMutation.isPending}
+                  loading={excelImportMutation.isPending}
                   onClick={submitOtherImport}
                 >
                   确认导入其他学员
@@ -604,6 +677,18 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
             <Typography.Text type="success">成功 {lastImportBatch.successCount || 0}</Typography.Text>
             <Typography.Text type="danger">失败 {lastImportBatch.failedCount || 0}</Typography.Text>
             {statusTag(lastImportBatch.status)}
+            {lastImportBatch.sourceType === 'other_xlsx' && (lastImportBatch.successCount || 0) > 0 ? (
+              <PermissionGate code="certification.preparation.material.generate">
+                <Button
+                  type="primary"
+                  size="small"
+                  loading={generateBatchMaterialsMutation.isPending}
+                  onClick={() => generateBatchMaterialsMutation.mutate(lastImportBatch.id)}
+                >
+                  生成本批申报材料
+                </Button>
+              </PermissionGate>
+            ) : null}
           </Space>
           <Table
             rowKey="id"
@@ -673,50 +758,4 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
       </Modal>
     </Space>
   );
-}
-
-function downloadCandidateImportTemplate() {
-  const header = '姓名,身份证号,手机号,等级编码,等级名称,组织';
-  const example = '张三,110101199001011234,13800138000,junior,初级,示例单位';
-  const blob = new Blob([`\uFEFF${header}\n${example}\n`], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = '认定学员导入模板.csv';
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function readImportFile(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('读取文件失败'));
-    reader.readAsText(file, 'UTF-8');
-  });
-}
-
-function parseCandidateRows(text: string): PreparationCandidatePayload[] {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const dataLines = lines.length > 0 && /^姓名/.test(lines[0]) ? lines.slice(1) : lines;
-
-  return dataLines
-    .map((line) => {
-      const cells = line.split(/[\t,，]/).map((cell) => cell.trim());
-      const levelCode = cells[3];
-      const levelName = cells[4] || levelOptions.find((item) => item.value === levelCode)?.label;
-      return {
-        candidateName: cells[0],
-        idCardNo: cells[1],
-        phone: cells[2],
-        levelCode,
-        levelName,
-        orgName: cells[5],
-        importSource: 'other',
-      };
-    })
-    .filter((row) => row.candidateName && row.idCardNo);
 }

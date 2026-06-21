@@ -67,6 +67,24 @@ export function importPreparationCandidates(taskId: string, payload: Preparation
   return unwrap<PreparationImportBatch>(apiClient.post(`${base}/tasks/${taskId}/candidate-imports`, payload));
 }
 
+export function importPreparationCandidatesExcel(taskId: string, taskScopeId: string, file: File, remark?: string) {
+  const formData = new FormData();
+  formData.append('taskScopeId', taskScopeId);
+  formData.append('file', file);
+  if (remark) formData.append('remark', remark);
+  return unwrap<PreparationImportBatch>(apiClient.post(`${base}/tasks/${taskId}/candidate-imports/xlsx`, formData));
+}
+
+export function downloadPreparationCandidateExcelTemplate() {
+  return apiClient.get(`${base}/candidate-import-template`, { responseType: 'blob' });
+}
+
+export function generatePreparationImportBatchMaterials(taskId: string, batchId: string, remark?: string) {
+  return unwrap<PreparationMaterialBatch>(
+    apiClient.post(`${base}/tasks/${taskId}/candidate-imports/${batchId}/application-materials`, undefined, { params: { remark } }),
+  );
+}
+
 export function pageCandidateStaging(taskId: string, params: PreparationCandidateStagingQuery) {
   return unwrap<PageResponse<PreparationCandidateStaging>>(apiClient.get(`${base}/tasks/${taskId}/candidate-staging`, { params }));
 }

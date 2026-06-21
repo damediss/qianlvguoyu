@@ -40,6 +40,7 @@ export interface PreparationCandidateQuery extends PreparationPageQuery {
 export interface PreparationCandidate {
   id: string;
   taskId: string;
+  taskScopeId?: string;
   candidateName: string;
   idCardNo?: string;
   maskedIdCardNo?: string;
@@ -70,6 +71,7 @@ export interface PreparationCandidatePayload {
   importSource?: string;
   orgName?: string;
   remark?: string;
+  taskScopeId?: string;
 }
 
 export interface PreparationCandidateImportPayload {
@@ -77,6 +79,7 @@ export interface PreparationCandidateImportPayload {
   sourceFileId?: string;
   candidates?: PreparationCandidatePayload[];
   trainingPeopleIds?: number[];
+  taskScopeId?: string;
   remark?: string;
 }
 
@@ -143,6 +146,7 @@ export interface PreparationDocumentGeneratePayload {
 export interface PreparationImportBatch {
   id: string;
   taskId: string;
+  taskScopeId?: string;
   batchNo: string;
   sourceType?: string;
   totalCount?: number;
