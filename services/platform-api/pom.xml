@@ -7,7 +7,7 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.3.6</version>
+    <version>3.3.13</version>
     <relativePath/>
   </parent>
 
@@ -76,9 +76,11 @@
       <artifactId>flowable-spring-boot-starter-process</artifactId>
       <version>${flowable.version}</version>
     </dependency>
+    <!-- 钉版 8.4.0:Spring Boot 3.3.x BOM 管理 8.3.0,显式升版加固(无严重 CVE,补 bug + 新特性) -->
     <dependency>
       <groupId>com.mysql</groupId>
       <artifactId>mysql-connector-j</artifactId>
+      <version>8.4.0</version>
       <scope>runtime</scope>
     </dependency>
     <dependency>
@@ -112,10 +114,11 @@
       <version>${tika.version}</version>
     </dependency>
 
-        <dependency>
+    <!-- 与 Tika 3.3.0 传递引入的 poi-scratchpad / poi-ooxml-full 对齐,避免同 classpath 出现 POI 双版本 -->
+    <dependency>
       <groupId>org.apache.poi</groupId>
       <artifactId>poi-ooxml</artifactId>
-      <version>5.4.0</version>
+      <version>5.5.1</version>
     </dependency>
 
     <!-- 腾讯云 COS SDK(可选,生产用 cos provider 时需要) -->
@@ -123,6 +126,27 @@
       <groupId>com.qcloud</groupId>
       <artifactId>cos_api</artifactId>
       <version>${cos.sdk.version}</version>
+      <exclusions>
+        <!-- BC jdk15on 线已于 1.70(2022-04)停维护,无补丁可用;改由 Tika 引入的 bcprov-jdk18on:1.83 接管 -->
+        <exclusion>
+          <groupId>org.bouncycastle</groupId>
+          <artifactId>bcprov-jdk15on</artifactId>
+        </exclusion>
+        <!-- XStream 处理不可信 XML 风险极高,COS 上传链路不依赖 -->
+        <exclusion>
+          <groupId>com.thoughtworks.xstream</groupId>
+          <artifactId>xstream</artifactId>
+        </exclusion>
+        <!-- okhttp 2.x 自 2016 起停维护,无安全补丁 -->
+        <exclusion>
+          <groupId>com.squareup.okhttp</groupId>
+          <artifactId>okhttp</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.squareup.okhttp</groupId>
+          <artifactId>logging-interceptor</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
 
     <!-- Sa-Token -->
