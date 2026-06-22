@@ -19,6 +19,7 @@ import {
   importExamPeopleFromTrain,
 } from '../../api/training';
 import { pageCourses as pageExamCourses } from '../../api/exam';
+import { listOrgs } from '../../api/system';
 import type { TrainExamCreateReq, TrainExamUpdateReq } from '../../types/training';
 
 interface FormValues {
@@ -38,6 +39,8 @@ interface FormValues {
   propositionUsername?: string;
   markingUsername?: string;
   examDateMode?: number;
+  orgId?: number;
+  orgName?: string;
 }
 
 interface Props {
@@ -54,13 +57,19 @@ export function TrainExamListFormModal({ open, editingId, onClose }: Props) {
   // 培训下拉
   const { data: trainList } = useQuery({
     queryKey: ['train-exam-form-train-list', open],
-    queryFn: () => pageInfoLists({ page: 1, pageSize: 999 }),
+    queryFn: () => pageInfoLists({ page: 1, pageSize: 500 }),
+    enabled: open,
+  });
+  // 企业下拉
+  const { data: orgList } = useQuery({
+    queryKey: ['train-exam-form-org-list', open],
+    queryFn: () => listOrgs(),
     enabled: open,
   });
   // 课程下拉
   const { data: courseList } = useQuery({
     queryKey: ['train-exam-form-course-list', open],
-    queryFn: () => pageExamCourses({ page: 1, pageSize: 999 }),
+    queryFn: () => pageExamCourses({ page: 1, pageSize: 500 }),
     enabled: open,
   });
   // 编辑时回填
@@ -88,6 +97,8 @@ export function TrainExamListFormModal({ open, editingId, onClose }: Props) {
         staffUsername: detail.staffUsername,
         propositionUsername: detail.propositionUsername,
         markingUsername: detail.markingUsername,
+        orgId: detail.orgId,
+        orgName: detail.orgName,
       });
     } else if (open && !isEdit) {
       form.resetFields();
@@ -159,6 +170,23 @@ export function TrainExamListFormModal({ open, editingId, onClose }: Props) {
             <InputNumber min={0} style={{ width: '100%' }} />
           </Form.Item>
         </Space.Compact>
+        <Form.Item name="orgId" label="绑定企业" rules={[{ required: true, message: '请选择企业' }]}>
+          <Select
+            allowClear
+            showSearch
+            placeholder="请选择企业"
+            optionFilterProp="label"
+            options={(orgList ?? []).map(o => ({ value: o.id, label: o.name }))}
+            onChange={(value) => {
+              const org = orgList?.find(o => o.id === value);
+              form.setFieldsValue({ orgName: org?.name });
+            }}
+          />
+        </Form.Item>
+        {/* 隐藏字段：确保 orgName 随表单提交 */}
+        <Form.Item name="orgName" hidden>
+          <Input />
+        </Form.Item>
         <Form.Item name="trainId" label="关联培训">
           <Select
             allowClear
@@ -168,7 +196,7 @@ export function TrainExamListFormModal({ open, editingId, onClose }: Props) {
             options={(trainList?.list ?? []).map(t => ({ value: t.id, label: t.title }))}
           />
         </Form.Item>
-        <Form.Item name="courseIdList" label="关联课程（多选）">
+        <Form.Item name="courseIdList" label="关联课程/科目（多选）">
           <Select
             mode="multiple"
             allowClear

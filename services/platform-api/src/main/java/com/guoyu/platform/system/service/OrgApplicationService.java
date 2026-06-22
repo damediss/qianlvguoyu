@@ -10,6 +10,7 @@ import com.guoyu.platform.system.dto.OrgCreateReq;
 import com.guoyu.platform.system.dto.OrgUpdateReq;
 import com.guoyu.platform.system.entity.OrgEntity;
 import com.guoyu.platform.system.mapper.OrgMapper;
+import com.guoyu.platform.system.vo.OrgSimpleVO;
 import com.guoyu.platform.system.vo.OrgTreeVO;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -27,6 +28,19 @@ public class OrgApplicationService {
 
   public OrgApplicationService(OrgMapper orgMapper) {
     this.orgMapper = orgMapper;
+  }
+
+  @Transactional(readOnly = true)
+  public List<OrgSimpleVO> listSimple() {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    List<OrgEntity> list = orgMapper.selectList(new LambdaQueryWrapper<OrgEntity>()
+        .eq(OrgEntity::getTenantId, tenantId)
+        .eq(OrgEntity::getDeleted, 0)
+        .eq(OrgEntity::getOrgType, "company")
+        .orderByAsc(OrgEntity::getSortOrder));
+    return list.stream()
+        .map(o -> new OrgSimpleVO(o.getId(), o.getName(), o.getOrgType(), o.getSortOrder()))
+        .toList();
   }
 
   @Transactional(readOnly = true)

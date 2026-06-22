@@ -26,6 +26,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -84,6 +85,7 @@ public class ExamKnowledgeStructureApplicationService {
     return ExamKnowledgeStructureVO.from(entity);
   }
 
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public ExamKnowledgeStructureVO create(ExamKnowledgeStructureCreateReq req) {
     Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
@@ -113,6 +115,7 @@ public class ExamKnowledgeStructureApplicationService {
     return ExamKnowledgeStructureVO.from(entity);
   }
 
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public ExamKnowledgeStructureVO update(Integer id, ExamKnowledgeStructureUpdateReq req) {
     ExamKnowledgeStructureEntity entity = findExisting(id);
@@ -136,6 +139,7 @@ public class ExamKnowledgeStructureApplicationService {
     return ExamKnowledgeStructureVO.from(entity);
   }
 
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public void delete(Integer id) {
     Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
@@ -151,6 +155,7 @@ public class ExamKnowledgeStructureApplicationService {
     log.info("Deleted knowledge structure {} and {} child nodes", id, allIds.size() - 1);
   }
 
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public int batchImport(Integer courseId, Integer type, List<String> lines) {
     Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
@@ -309,6 +314,7 @@ public class ExamKnowledgeStructureApplicationService {
     }
   }
 
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public int batchDelete(List<Integer> ids) {
     if (ids == null || ids.isEmpty()) return 0;
@@ -321,6 +327,7 @@ public class ExamKnowledgeStructureApplicationService {
     return count;
   }
 
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public int importExcel(MultipartFile file, Integer courseId, Integer type) {
     if (file == null || file.isEmpty()) {

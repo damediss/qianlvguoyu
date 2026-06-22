@@ -27,6 +27,7 @@ import com.guoyu.platform.trainingdepartment.vo.TrainExamListVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainExamPeopleListVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainExamWorkTypeListVO;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -138,6 +139,7 @@ public class TrainExamListApplicationService {
     entity.setNeedFinishNormal(req.getNeedFinishNormal());
     entity.setJigouId(req.getJigouId());
     entity.setSortNumber(req.getSortNumber() != null ? req.getSortNumber() : 1);
+    entity.setCreateTime(LocalDateTime.now());
     mapper.insert(entity);
 
     if (req.getCourseIdList() != null && !req.getCourseIdList().isEmpty()) {

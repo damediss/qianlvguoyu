@@ -97,9 +97,10 @@ public class CacheConfig {
         .cacheDefaults(base)
         .withCacheConfiguration("menuTree", base.entryTtl(Duration.ofMinutes(30)))
         .withCacheConfiguration("workTypeTree", base.entryTtl(Duration.ofHours(1)))
+        .withCacheConfiguration("questionBankTree", base.entryTtl(Duration.ofMinutes(30)))
         .build();
 
-    log.info("[CacheConfig] menuTree TTL=30min, workTypeTree TTL=1h, 其他 cache TTL=10min, "
+    log.info("[CacheConfig] menuTree TTL=30min, workTypeTree TTL=1h, questionBankTree TTL=30min, 其他 cache TTL=10min, "
         + "key prefix=saas:, default typing=WRAPPER_ARRAY (NON_FINAL)。"
         + "约束:@Cacheable 返回值必须是 mutable collection（ArrayList/HashMap/HashSet），"
         + "不能用 Stream.toList() / List.of() / Map.of() / Set.of()（final 类不会被 wrap,read 会炸）。");

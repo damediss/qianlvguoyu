@@ -95,6 +95,13 @@ export interface ResetPasswordReq {
 }
 
 // ---- Organization ----
+export interface OrgSimpleVO {
+  id: number;
+  name: string;
+  orgType: string;
+  sortOrder: number;
+}
+
 export interface OrgTreeVO {
   id: number;
   parentId: number;

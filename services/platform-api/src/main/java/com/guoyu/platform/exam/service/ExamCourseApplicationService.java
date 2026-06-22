@@ -13,6 +13,7 @@ import com.guoyu.platform.exam.mapper.ExamCourseMapper;
 import com.guoyu.platform.exam.vo.ExamCourseVO;
 import com.guoyu.platform.security.SecurityContext;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -61,6 +62,7 @@ public class ExamCourseApplicationService {
     return ExamCourseVO.from(entity);
   }
 
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public ExamCourseVO create(ExamCourseCreateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -88,6 +90,7 @@ public class ExamCourseApplicationService {
     return ExamCourseVO.from(entity);
   }
 
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public ExamCourseVO update(Integer id, ExamCourseUpdateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -114,6 +117,7 @@ public class ExamCourseApplicationService {
     return ExamCourseVO.from(entity);
   }
 
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public void delete(Integer id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();

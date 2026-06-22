@@ -3,7 +3,7 @@ import type { PageResponse } from '../types/api';
 import type {
   TenantVO, TenantCreateReq, TenantUpdateReq, TenantQuery,
   UserVO, UserCreateReq, UserUpdateReq, UserQuery, ResetPasswordReq,
-  OrgTreeVO, OrgCreateReq, OrgUpdateReq,
+  OrgTreeVO, OrgSimpleVO, OrgCreateReq, OrgUpdateReq,
   PostVO, PostCreateReq, PostUpdateReq, PostQuery,
   RoleVO, RoleCreateReq, RoleUpdateReq, RoleQuery, RolePermissionBindReq,
   MenuTreeVO, MenuCreateReq, MenuUpdateReq, MenuBatchVisibleReq,
@@ -62,6 +62,10 @@ export function deleteUser(id: number) {
 // ---- Organization ----
 export function getOrgTree() {
   return unwrap<OrgTreeVO[]>(apiClient.get('/system/orgs/tree'));
+}
+
+export function listOrgs() {
+  return unwrap<OrgSimpleVO[]>(apiClient.get('/system/orgs/list'));
 }
 
 export function createOrg(payload: OrgCreateReq) {

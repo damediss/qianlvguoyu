@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -100,7 +101,10 @@ public class ExamWorkTypeApplicationService {
     return roots;
   }
 
-  @CacheEvict(value = "workTypeTree", allEntries = true)
+  @Caching(evict = {
+      @CacheEvict(value = "workTypeTree", allEntries = true),
+      @CacheEvict(value = "questionBankTree", allEntries = true)
+  })
   @Transactional
   public ExamWorkTypeVO create(ExamWorkTypeCreateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -120,7 +124,10 @@ public class ExamWorkTypeApplicationService {
     return ExamWorkTypeVO.from(entity);
   }
 
-  @CacheEvict(value = "workTypeTree", allEntries = true)
+  @Caching(evict = {
+      @CacheEvict(value = "workTypeTree", allEntries = true),
+      @CacheEvict(value = "questionBankTree", allEntries = true)
+  })
   @Transactional
   public ExamWorkTypeVO update(Integer id, ExamWorkTypeUpdateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -138,7 +145,10 @@ public class ExamWorkTypeApplicationService {
     return ExamWorkTypeVO.from(entity);
   }
 
-  @CacheEvict(value = "workTypeTree", allEntries = true)
+  @Caching(evict = {
+      @CacheEvict(value = "workTypeTree", allEntries = true),
+      @CacheEvict(value = "questionBankTree", allEntries = true)
+  })
   @Transactional
   public void delete(Integer id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();

@@ -35,6 +35,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -141,6 +142,7 @@ public class ExamExamDetailApplicationService {
     return vo;
   }
 
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public ExamExamDetailVO create(ExamExamDetailCreateReq req) {
     Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
@@ -170,6 +172,7 @@ public class ExamExamDetailApplicationService {
     return ExamExamDetailVO.from(entity);
   }
 
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public ExamExamDetailVO update(Integer id, ExamExamDetailUpdateReq req) {
     ExamExamDetailEntity entity = findExisting(id);
@@ -200,12 +203,14 @@ public class ExamExamDetailApplicationService {
     return ExamExamDetailVO.from(entity);
   }
 
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public void delete(Integer id) {
     findExisting(id);
     mapper.deleteById(id);
   }
 
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public int batchDelete(List<Integer> ids) {
     if (ids == null || ids.isEmpty()) return 0;
@@ -251,6 +256,7 @@ public class ExamExamDetailApplicationService {
   }
 
   // ── Import from Excel ──
+  @CacheEvict(value = "questionBankTree", allEntries = true)
   @Transactional
   public int importExamDetails(MultipartFile file, Integer courseId, Integer source) {
     if (file == null || file.isEmpty()) {

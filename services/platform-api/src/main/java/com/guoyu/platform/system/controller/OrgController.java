@@ -7,6 +7,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.system.dto.OrgCreateReq;
 import com.guoyu.platform.system.dto.OrgUpdateReq;
 import com.guoyu.platform.system.service.OrgApplicationService;
+import com.guoyu.platform.system.vo.OrgSimpleVO;
 import com.guoyu.platform.system.vo.OrgTreeVO;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -37,6 +38,12 @@ public class OrgController {
   @PreAuthorize("hasAuthority('org:view')")
   public ApiResponse<List<OrgTreeVO>> tree() {
     return ApiResponse.ok(orgApplicationService.tree());
+  }
+
+  @GetMapping("/list")
+  @PreAuthorize("hasAuthority('org:view')")
+  public ApiResponse<List<OrgSimpleVO>> list() {
+    return ApiResponse.ok(orgApplicationService.listSimple());
   }
 
   @PostMapping
