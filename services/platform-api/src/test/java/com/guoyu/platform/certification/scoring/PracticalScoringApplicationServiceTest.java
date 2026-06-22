@@ -347,6 +347,27 @@ class PracticalScoringApplicationServiceTest {
   }
 
   @Test
+  void cancelCandidateGeneratedTasksDeletesScoringDataAndConfiguration() {
+    CertificationTaskEntity certificationTask = new CertificationTaskEntity();
+    certificationTask.setId(1L);
+    CertificationCandidateEntity candidate = candidate(11L, "张三", 100L, true);
+    CertificationAssessorTaskEntity assessorTask = task(70L, 201L, 0);
+    assessorTask.setPaperQuestionId(21L);
+    when(taskMapper.selectById(1L)).thenReturn(certificationTask);
+    when(candidateMapper.selectById(11L)).thenReturn(candidate);
+    when(assessorTaskMapper.selectList(any())).thenReturn(List.of(assessorTask));
+
+    service.cancelCandidateGeneratedTasks(1L, 11L);
+
+    Mockito.verify(startService).cancelUnstartedSession(1L, 11L);
+    Mockito.verify(scoreMapper).delete(any());
+    Mockito.verify(assessorTaskMapper).delete(any());
+    Mockito.verify(questionResultMapper).delete(any());
+    Mockito.verify(candidateResultMapper).delete(any());
+    Mockito.verify(configMapper).delete(any());
+  }
+
+  @Test
   void linkCandidateRejectsNonThreeMemberGroup() {
     stubCandidateLinkBase(
         candidate(11L, "张三", 100L, true),

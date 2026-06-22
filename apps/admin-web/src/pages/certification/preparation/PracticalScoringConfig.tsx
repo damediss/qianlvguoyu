@@ -1,4 +1,5 @@
 import {
+  DeleteOutlined,
   DownloadOutlined,
   LinkOutlined,
   ReloadOutlined,
@@ -32,6 +33,7 @@ import {
 } from '../../../api/certificationPreparation';
 import {
   adjustPracticalScoringTaskScore,
+  cancelPracticalCandidateGeneratedTasks,
   confirmPracticalCandidate,
   exportPracticalSummary,
   getPracticalScoringTaskDetail,
@@ -221,6 +223,20 @@ export function PracticalScoringConfig({
       message.error(reason);
     },
   });
+  const cancelCandidateTasksMutation = useMutation({
+    mutationFn: (candidateId: string) => cancelPracticalCandidateGeneratedTasks(taskId!, candidateId),
+    onSuccess: () => {
+      message.success('评分任务已取消，可重新编辑试卷和考评组');
+      refresh();
+    },
+    onError: (error: unknown) => {
+      const reason =
+        (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
+        || (error as { message?: string })?.message
+        || '取消评分任务失败，请稍后重试';
+      message.error(reason);
+    },
+  });
   const returnMutation = useMutation({
     mutationFn: () => returnPracticalScoringTask(returningTask!.assessorTaskId, returnReason),
     onSuccess: () => {
@@ -382,6 +398,7 @@ export function PracticalScoringConfig({
             placeholder="请选择试卷"
             value={selectedPaperByCandidate[row.id] || configured?.paperId}
             style={{ width: '100%' }}
+            disabled={Boolean(progressByCandidate.get(row.id)?.totalTasks)}
             options={paperOptionsForCandidate(setup?.papers || [], row, rowScope).map((paper) => ({
               value: paper.id,
               label: paper.title,
@@ -390,6 +407,17 @@ export function PracticalScoringConfig({
             onChange={(paperId) => setSelectedPaperByCandidate((prev) => ({ ...prev, [row.id]: paperId }))}
           />
         );
+      },
+    },
+    {
+      title: '已绑定考评组',
+      width: 180,
+      render: (_, row) => {
+        const config = configByCandidate.get(row.id);
+        if (!config) return '-';
+        return groupDetailById.get(config.groupId)?.groupName
+          || setup?.groups.find((group) => group.id === config.groupId)?.groupName
+          || '-';
       },
     },
     {
@@ -409,16 +437,39 @@ export function PracticalScoringConfig({
       title: '操作',
       width: 130,
       fixed: 'right',
-      render: (_, row) => (
-        <Button
-          type="link"
-          icon={<LinkOutlined />}
-          loading={candidateLinkMutation.isPending}
-          onClick={() => configureCandidate(row)}
-        >
-          配置试卷
-        </Button>
-      ),
+      render: (_, row) => {
+        const hasGeneratedTasks = Boolean(progressByCandidate.get(row.id)?.totalTasks);
+        if (hasGeneratedTasks) {
+          return (
+            <Button
+              danger
+              type="link"
+              icon={<DeleteOutlined />}
+              loading={cancelCandidateTasksMutation.isPending}
+              onClick={() => Modal.confirm({
+                title: '取消已生成的评分任务？',
+                content: '仅未开考的考生可以取消。评分任务、评分明细和汇总结果将被删除，随后可重新编辑试卷和考评组。',
+                okText: '确认取消',
+                okButtonProps: { danger: true },
+                cancelText: '暂不取消',
+                onOk: () => cancelCandidateTasksMutation.mutateAsync(row.id),
+              })}
+            >
+              取消评分任务
+            </Button>
+          );
+        }
+        return (
+          <Button
+            type="link"
+            icon={<LinkOutlined />}
+            loading={candidateLinkMutation.isPending}
+            onClick={() => configureCandidate(row)}
+          >
+            配置试卷
+          </Button>
+        );
+      },
     },
   ];
 
@@ -554,7 +605,7 @@ export function PracticalScoringConfig({
               columns={candidateColumns}
               dataSource={candidateRows}
               loading={candidateQuery.isFetching || setupQuery.isFetching || progressQuery.isFetching}
-              scroll={{ x: 1310 }}
+              scroll={{ x: 1490 }}
               expandable={{
                 expandedRowRender: (row) => rowErrors[row.id]
                   ? <Typography.Text type="danger">{rowErrors[row.id]}</Typography.Text>

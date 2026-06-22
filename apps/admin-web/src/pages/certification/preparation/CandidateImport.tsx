@@ -634,15 +634,12 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
           <Form.Item name="keyword">
             <Input.Search allowClear placeholder="姓名、身份证、手机号" style={{ width: 260 }} />
           </Form.Item>
-          <Form.Item name="status">
+          <Form.Item name="taskScopeId">
             <Select
               allowClear
-              placeholder="状态"
-              style={{ width: 140 }}
-              options={[
-                { label: '正常', value: 'active' },
-                { label: '已删除', value: 'deleted' },
-              ]}
+              placeholder="选择认定班级（工种｜级别）"
+              style={{ width: 280 }}
+              options={scopeOptions}
             />
           </Form.Item>
           <Form.Item name="levelCode">

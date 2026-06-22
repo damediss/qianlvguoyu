@@ -5,6 +5,7 @@ import com.guoyu.platform.common.api.PageQuery;
 public class PreparationCandidateQueryReq extends PageQuery {
   private String keyword;
   private String status;
+  private Long taskScopeId;
   private String levelCode;
   private Boolean documentComplete;
 
@@ -22,6 +23,14 @@ public class PreparationCandidateQueryReq extends PageQuery {
 
   public void setStatus(String status) {
     this.status = status;
+  }
+
+  public Long getTaskScopeId() {
+    return taskScopeId;
+  }
+
+  public void setTaskScopeId(Long taskScopeId) {
+    this.taskScopeId = taskScopeId;
   }
 
   public String getLevelCode() {

@@ -211,6 +211,19 @@ public class PracticalStartApplicationService {
     return "completed".equals(requireSession(taskId, candidateId).getStatus());
   }
 
+  /**
+   * Removes a waiting or ready unified-start session as part of cancelling generated scoring tasks.
+   */
+  @Transactional
+  public void cancelUnstartedSession(Long taskId, Long candidateId) {
+    PlatformUserPrincipal user = SecurityContext.currentUser();
+    CertificationPracticalStartSessionEntity session = lockSession(user.getTenantId(), taskId, candidateId);
+    if (!Set.of("waiting", "ready").contains(session.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "实操考试已开始或已完成，不能取消评分任务");
+    }
+    sessionMapper.deleteById(session.getId());
+  }
+
   @Transactional
   public PracticalScoringModels.StartSessionView completeCandidate(
       Long taskId,

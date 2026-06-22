@@ -37,8 +37,8 @@ export function AssessorInfoPage() {
       auditColumnIndex={1}
       fields={[
         { name: 'assessorName', label: '姓名', required: true },
-        { name: 'accountUsername', label: '平板登录账号', createRequired: true, hideInEdit: true },
-        { name: 'accountPassword', label: '平板登录密码', type: 'password', createRequired: true, hideInEdit: true },
+        { name: 'accountUsername', label: '平板登录账号', createRequired: true },
+        { name: 'accountPassword', label: '平板登录密码', type: 'password', createRequired: true },
         { name: 'certificateNo', label: '证号', required: true },
         { name: 'workTypeScopes', label: '工种', required: true, type: 'select-multiple', placeholder: '可输入或粘贴工种，多个用顿号分隔' },
         { name: 'levelScope', label: '等级范围', type: 'levelRange' },
@@ -47,6 +47,7 @@ export function AssessorInfoPage() {
         { name: 'materialsDescription', label: '材料说明', type: 'textarea' },
         { name: 'remark', label: '备注', type: 'textarea' },
       ]}
+      editableAuditStatuses={['draft', 'rejected', 'disabled']}
       statusOptions={[
         { label: '待审核', value: 'pending_review' },
         { label: '空闲', value: 'idle' },

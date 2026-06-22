@@ -1,6 +1,7 @@
 package com.guoyu.platform.certification.scoring;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
@@ -107,6 +108,27 @@ class PracticalStartApplicationServiceTest {
     verify(publisher, atLeastOnce()).publish(eq(1L), eventCaptor.capture());
     assertThat(eventCaptor.getAllValues())
         .anySatisfy(event -> assertThat(event.currentAssessorConfirmed()).isFalse());
+  }
+
+  @Test
+  void cancelUnstartedSessionAllowsWaitingAndReadyButRejectsStartedAndCompleted() {
+    authenticate(900L, 11L);
+
+    service.cancelUnstartedSession(1L, 2L);
+    verify(sessionMapper).deleteById(30L);
+
+    session.setStatus("ready");
+    service.cancelUnstartedSession(1L, 2L);
+
+    session.setStatus("started");
+    assertThatThrownBy(() -> service.cancelUnstartedSession(1L, 2L))
+        .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)
+        .hasMessageContaining("已开始或已完成");
+
+    session.setStatus("completed");
+    assertThatThrownBy(() -> service.cancelUnstartedSession(1L, 2L))
+        .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)
+        .hasMessageContaining("已开始或已完成");
   }
 
   private PracticalScoringModels.StartSessionView confirm(Long userId, Long assessorId) {

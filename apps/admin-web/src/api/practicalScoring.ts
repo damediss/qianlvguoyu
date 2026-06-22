@@ -53,6 +53,12 @@ export function linkPracticalCandidateTemplate(
   );
 }
 
+export function cancelPracticalCandidateGeneratedTasks(taskId: string, candidateId: string) {
+  return unwrap<void>(
+    apiClient.delete(`${adminBase}/tasks/${taskId}/candidates/${candidateId}/generated-tasks`),
+  );
+}
+
 export function importPracticalPaper(taskId: string, file: File) {
   const formData = new FormData();
   formData.append('file', file);

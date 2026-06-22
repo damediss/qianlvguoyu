@@ -410,6 +410,9 @@ public class CertificationPreparationApplicationService {
     if (StringUtils.hasText(req.getStatus())) {
       wrapper.eq(CertificationCandidateEntity::getStatus, req.getStatus());
     }
+    if (req.getTaskScopeId() != null) {
+      wrapper.eq(CertificationCandidateEntity::getTaskScopeId, req.getTaskScopeId());
+    }
     if (StringUtils.hasText(req.getLevelCode())) {
       wrapper.eq(CertificationCandidateEntity::getLevelCode, req.getLevelCode());
     }

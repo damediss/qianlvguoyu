@@ -39,6 +39,7 @@ interface InfoManagementTableProps<T extends { id: string; auditStatus: string }
   auditColumnIndex?: number;
   fields: InfoField<P>[];
   statusOptions: { label: string; value: string }[];
+  editableAuditStatuses?: string[];
   showStatusFilter?: boolean;
   pageApi: (params: CertificationInfoQuery) => Promise<PageResponse<T>>;
   createApi: (payload: P) => Promise<T>;
@@ -96,6 +97,7 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
   auditColumnIndex,
   fields,
   statusOptions,
+  editableAuditStatuses = ['draft', 'rejected'],
   showStatusFilter = true,
   pageApi,
   createApi,
@@ -195,7 +197,7 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
             <Button
               size="small"
               icon={<EditOutlined />}
-              disabled={!['draft', 'rejected'].includes(record.auditStatus)}
+              disabled={!editableAuditStatuses.includes(record.auditStatus)}
               onClick={() => openModal('edit', record)}
             >
               编辑
@@ -241,7 +243,7 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
     base.splice(index, 0, auditColumn);
     base.push(actionColumn);
     return base;
-  }, [actionMutation, auditColumnIndex, columns, createAccountApi, permissionPrefix]);
+  }, [actionMutation, auditColumnIndex, columns, createAccountApi, editableAuditStatuses, permissionPrefix]);
 
   const openModal = (mode: 'create' | 'edit' | 'view', record?: T) => {
     setModalMode(mode);

@@ -32,6 +32,7 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
+import com.guoyu.platform.system.dto.ResetPasswordReq;
 import com.guoyu.platform.system.dto.UserCreateReq;
 import com.guoyu.platform.system.entity.RoleEntity;
 import com.guoyu.platform.system.entity.UserEntity;
@@ -135,9 +136,9 @@ public class CertificationInfoApplicationService {
   @Transactional
   public AssessorInfoVO updateAssessor(Long id, AssessorInfoSaveReq req) {
     CertificationInfoAssessorEntity entity = requireAssessor(id);
-    ensureEditable(entity.getAuditStatus());
+    ensureAssessorEditable(entity.getAuditStatus());
     ensureUniqueAssessorCertificate(req.certificateNo(), id);
-    bindAccountIfMissing(entity, req);
+    synchronizeAssessorAccount(entity, req);
     applyAssessor(entity, req);
     assessorMapper.updateById(entity);
     return toAssessorVO(entity);
@@ -760,20 +761,54 @@ public class CertificationInfoApplicationService {
     ));
   }
 
-  private void bindAccountIfMissing(CertificationInfoAssessorEntity entity, AssessorInfoSaveReq req) {
+  private void synchronizeAssessorAccount(CertificationInfoAssessorEntity entity, AssessorInfoSaveReq req) {
     boolean hasUsername = StringUtils.hasText(req.accountUsername());
     boolean hasPassword = StringUtils.hasText(req.accountPassword());
     if (!hasUsername && !hasPassword) {
       return;
     }
-    if (entity.getUserId() != null) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "该考评员已绑定平板登录账号");
-    }
     if (!hasUsername || !hasPassword) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "补建平板账号时必须同时填写账号和密码");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "编辑平板账号时必须同时填写账号和密码");
     }
-    entity.setUserId(createAssessorAccount(req).id());
-    entity.setAccountUsername(req.accountUsername().trim());
+    String username = req.accountUsername().trim();
+    if (entity.getUserId() == null) {
+      entity.setUserId(createAssessorAccount(req).id());
+      entity.setAccountUsername(username);
+      entity.setAccountPassword(req.accountPassword());
+      return;
+    }
+
+    UserEntity account = userMapper.selectById(entity.getUserId());
+    if (account == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "考评员绑定的平板登录账号不存在");
+    }
+    boolean accountChanged = false;
+    if (!username.equals(account.getUsername())) {
+      boolean usernameExists = userMapper.exists(new LambdaQueryWrapper<UserEntity>()
+          .eq(UserEntity::getTenantId, account.getTenantId())
+          .eq(UserEntity::getUsername, username)
+          .ne(UserEntity::getId, account.getId()));
+      if (usernameExists) {
+        throw new BusinessException(ErrorCode.CONFLICT, "平板登录账号已存在");
+      }
+      account.setUsername(username);
+      accountChanged = true;
+    }
+    if (!Objects.equals(req.assessorName(), account.getDisplayName())) {
+      account.setDisplayName(req.assessorName());
+      accountChanged = true;
+    }
+    if (!Objects.equals(req.phone(), account.getPhone())) {
+      account.setPhone(req.phone());
+      accountChanged = true;
+    }
+    if (accountChanged) {
+      userMapper.updateById(account);
+    }
+    if (!Objects.equals(req.accountPassword(), entity.getAccountPassword())) {
+      userApplicationService.resetPassword(entity.getUserId(), new ResetPasswordReq(req.accountPassword()));
+    }
+    entity.setAccountUsername(username);
     entity.setAccountPassword(req.accountPassword());
   }
 
@@ -893,6 +928,12 @@ public class CertificationInfoApplicationService {
 
   private void ensureEditable(String auditStatus) {
     if (!List.of(DRAFT, REJECTED).contains(auditStatus)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前状态不允许编辑");
+    }
+  }
+
+  private void ensureAssessorEditable(String auditStatus) {
+    if (!List.of(DRAFT, REJECTED, DISABLED).contains(auditStatus)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "当前状态不允许编辑");
     }
   }

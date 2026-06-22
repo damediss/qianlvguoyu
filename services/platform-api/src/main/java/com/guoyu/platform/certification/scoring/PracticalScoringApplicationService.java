@@ -330,6 +330,52 @@ public class PracticalScoringApplicationService {
     return new PracticalScoringModels.GenerateView(counter.created(), counter.existing(), 1, questions.size());
   }
 
+  /**
+   * Cancels all generated practical scoring data and configuration for one candidate before the
+   * practical exam starts.
+   */
+  @Transactional
+  public void cancelCandidateGeneratedTasks(Long taskId, Long candidateId) {
+    CertificationTaskEntity task = requireTask(taskId);
+    CertificationCandidateEntity candidate = candidateMapper.selectById(candidateId);
+    if (candidate == null || !taskId.equals(candidate.getTaskId())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "考生不存在");
+    }
+
+    List<CertificationAssessorTaskEntity> assessorTasks = assessorTaskMapper.selectList(
+        new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
+            .eq(CertificationAssessorTaskEntity::getTaskId, taskId)
+            .eq(CertificationAssessorTaskEntity::getCandidateId, candidateId)
+            .isNotNull(CertificationAssessorTaskEntity::getPaperQuestionId));
+    if (CollectionUtils.isEmpty(assessorTasks)) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "该考生尚未生成实操评分任务");
+    }
+
+    // Locks and validates the unified-start session first, preventing a concurrent start from
+    // leaving a started session without its scoring tasks.
+    startService.cancelUnstartedSession(task.getId(), candidateId);
+
+    List<Long> assessorTaskIds = assessorTasks.stream()
+        .map(CertificationAssessorTaskEntity::getId)
+        .filter(Objects::nonNull)
+        .toList();
+    if (!assessorTaskIds.isEmpty()) {
+      scoreMapper.delete(new LambdaQueryWrapper<CertificationAssessorTaskScoreEntity>()
+          .in(CertificationAssessorTaskScoreEntity::getAssessorTaskId, assessorTaskIds));
+      assessorTaskMapper.delete(new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
+          .in(CertificationAssessorTaskEntity::getId, assessorTaskIds));
+    }
+    questionResultMapper.delete(new LambdaQueryWrapper<CertificationPracticalQuestionResultEntity>()
+        .eq(CertificationPracticalQuestionResultEntity::getTaskId, taskId)
+        .eq(CertificationPracticalQuestionResultEntity::getCandidateId, candidateId));
+    candidateResultMapper.delete(new LambdaQueryWrapper<CertificationPracticalCandidateResultEntity>()
+        .eq(CertificationPracticalCandidateResultEntity::getTaskId, taskId)
+        .eq(CertificationPracticalCandidateResultEntity::getCandidateId, candidateId));
+    configMapper.delete(new LambdaQueryWrapper<CertificationPracticalScoringConfigEntity>()
+        .eq(CertificationPracticalScoringConfigEntity::getTaskId, taskId)
+        .eq(CertificationPracticalScoringConfigEntity::getCandidateId, candidateId));
+  }
+
   @Transactional
   public PracticalScoringModels.ImportPaperView importCustomPaper(Long taskId, MultipartFile file) {
     CertificationTaskEntity task = requireTask(taskId);

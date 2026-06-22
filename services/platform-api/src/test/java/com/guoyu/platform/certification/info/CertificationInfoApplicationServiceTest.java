@@ -32,6 +32,7 @@ import com.guoyu.platform.certification.info.vo.ExamStaffInfoVO;
 import com.guoyu.platform.certification.mapper.ExamStaffAssignedTaskRow;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.system.entity.RoleEntity;
+import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.RoleMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.system.service.UserApplicationService;
@@ -123,6 +124,37 @@ class CertificationInfoApplicationServiceTest {
     assertThat(existing.getAccountPassword()).isEqualTo("Assessor@123");
     verify(userApplicationService).create(any());
     verify(assessorMapper).updateById(existing);
+  }
+
+  @Test
+  void disabledAssessorCanUpdateTheSameFieldsAsCreate() {
+    CertificationInfoAssessorEntity disabled = assessor("disabled", "disabled");
+    disabled.setUserId(99L);
+    disabled.setAccountUsername("assessor.old");
+    disabled.setAccountPassword("Assessor@123");
+    UserEntity account = new UserEntity();
+    account.setId(99L);
+    account.setTenantId(1L);
+    account.setUsername("assessor.old");
+    account.setDisplayName("张三");
+    account.setPhone("13800001234");
+    when(assessorMapper.selectById(1L)).thenReturn(disabled);
+    when(assessorMapper.selectCount(any())).thenReturn(0L);
+    when(userMapper.selectById(99L)).thenReturn(account);
+    when(userMapper.exists(any())).thenReturn(false);
+
+    AssessorInfoVO result = service.updateAssessor(1L, new AssessorInfoSaveReq(
+        "李四", "assessor.new", "NewPass@123", "CERT-002", "焊工", List.of("焊工"), "中级",
+        LocalDate.of(2028, 6, 30), "13900001234", "更新后的材料说明", "更新备注"
+    ));
+
+    assertThat(result.assessorName()).isEqualTo("李四");
+    assertThat(result.accountUsername()).isEqualTo("assessor.new");
+    assertThat(result.accountPassword()).isEqualTo("NewPass@123");
+    assertThat(disabled.getWorkTypeScope()).isEqualTo("焊工");
+    verify(userMapper).updateById(account);
+    verify(userApplicationService).resetPassword(org.mockito.ArgumentMatchers.eq(99L), any());
+    verify(assessorMapper).updateById(disabled);
   }
 
   @Test

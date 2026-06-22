@@ -33,6 +33,7 @@ export interface PreparationTaskOverview {
 export interface PreparationCandidateQuery extends PreparationPageQuery {
   keyword?: string;
   status?: string;
+  taskScopeId?: string;
   levelCode?: string;
   documentComplete?: boolean;
 }
