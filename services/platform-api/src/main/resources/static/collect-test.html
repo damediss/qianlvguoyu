@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>培训报名·信息收集测试（完整版）</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;background:#f5f7fa;padding:20px;color:#333}
+.box{max-width:680px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h1{font-size:20px;text-align:center;margin-bottom:6px}
+.sub{font-size:13px;color:#888;text-align:center;margin-bottom:18px}
+.bar{background:#e8f3ff;border-left:3px solid #1989fa;padding:10px 12px;font-size:13px;border-radius:4px;margin-bottom:18px}
+.tabs{display:flex;border-bottom:1px solid #dcdfe6;margin-bottom:18px}
+.tab{flex:1;padding:10px;text-align:center;font-size:14px;color:#666;cursor:pointer;border-bottom:2px solid transparent;transition:.2s}
+.tab.active{color:#1989fa;border-bottom-color:#1989fa;font-weight:600}
+.tab:hover{background:#f5f7fa}
+section{margin-bottom:18px;border:1px solid #ebeef5;border-radius:8px;overflow:hidden}
+section>header{background:#f5f7fa;padding:10px 14px;font-size:14px;font-weight:600;color:#1989fa;cursor:pointer;user-select:none;display:flex;justify-content:space-between;align-items:center}
+section>header::after{content:'▾';font-size:12px;color:#888;transition:transform .2s}
+section.collapsed>header::after{transform:rotate(-90deg)}
+section>div.body{padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+section.collapsed>div.body{display:none}
+section .full{grid-column:1/3}
+.item{display:flex;flex-direction:column}
+label{font-size:13px;color:#666;margin-bottom:4px}
+.req{color:#f56c6c}
+input,select,textarea{width:100%;padding:8px 10px;border:1px solid #dcdfe6;border-radius:5px;font-size:13px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:#1989fa}
+input[readonly]{background:#f5f7fa;color:#888}
+.file-input{font-size:12px;color:#1989fa;margin-top:4px}
+.btn-row{display:flex;gap:8px;margin-top:6px}
+.btn{padding:8px 14px;background:#1989fa;color:#fff;border:none;border-radius:5px;font-size:13px;cursor:pointer}
+.btn.gray{background:#909399}
+.btn:disabled{background:#a0cfff;cursor:not-allowed}
+.submit{width:100%;padding:13px;background:#1989fa;color:#fff;border:none;border-radius:6px;font-size:16px;cursor:pointer;margin-top:10px}
+.submit:disabled{background:#a0cfff;cursor:not-allowed}
+.submit.gray{background:#909399}
+.submit.gray:disabled{background:#c0c4cc}
+.result{margin-top:14px;padding:10px;border-radius:6px;font-size:13px;word-break:break-all;display:none}
+.ok{background:#f0f9eb;color:#67c23a;border:1px solid #e1f3d8}
+.err{background:#fef0f0;color:#f56c6c;border:1px solid #fde2e2}
+.warn{background:#fdf6ec;color:#e6a23c;border:1px solid #faecd8}
+.note{font-size:12px;color:#909399;margin-top:4px}
+.preview-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.preview-row img{width:80px;height:80px;object-fit:cover;border:1px solid #dcdfe6;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>📋 培训报名·信息收集</h1>
+  <div class="sub">扫码进入 · 支持 50+ 字段 · 测试专用</div>
+  <div class="bar">报名计划 ID：<strong id="sid">-</strong><span id="ttl" style="margin-left:6px"></span></div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="new">① 新报名</div>
+    <div class="tab" data-tab="mine">② 我已报过名（修改）</div>
+  </div>
+
+  <!-- ============ TAB 1: 新报名 ============ -->
+  <div id="tab-new">
+    <form id="f">
+      <!-- 1. 基本信息 -->
+      <section>
+        <header onclick="this.parentElement.classList.toggle('collapsed')">① 基本信息</header>
+        <div class="body">
+          <div class="item"><label>姓名 <span class="req">*</span></label><input name="name" required maxlength="50"></div>
+          <div class="item"><label>性别 <span class="req">*</span></label>
+            <select name="gender" required>
+              <option value="">请选择</option><option>男</option><option>女</option>
+            </select></div>
+          <div class="item"><label>手机号 <span class="req">*</span></label><input name="phone" required pattern="^1[3-9]\d{9}$"></div>
+          <div class="item"><label>年龄</label><input name="age" type="number" min="0" max="120"></div>
+          <div class="item full"><label>身份证号 <span class="req">*</span></label><input name="idCardNumber" required pattern="^\d{17}[\dXx]$" maxlength="18"></div>
+          <div class="item"><label>民族</label>
+            <select name="nation">
+              <option value="">请选择</option>
+              <option>汉族</option><option>壮族</option><option>满族</option><option>回族</option>
+              <option>苗族</option><option>维吾尔族</option><option>土家族</option><option>彝族</option>
+              <option>蒙古族</option><option>藏族</option><option>其他</option>
+            </select></div>
+          <div class="item"><label>政治面貌</label>
+            <select name="political">
+              <option value="">请选择</option>
+              <option>群众</option><option>共青团员</option><option>中共党员</option><option>民主党派</option>
+            </select></div>
+          <div class="item"><label>学历</label>
+            <select name="education">
+              <option value="">请选择</option>
+              <option>小学</option><option>初中</option><option>高中</option><option>中专</option>
+              <option>大专</option><option>本科</option><option>硕士</option><option>博士</option>
+            </select></div>
+          <div class="item"><label>户口性质</label>
+            <select name="houseType">
+              <option value="">请选择</option>
+              <option>农业</option><option>非农业</option>
+            </select></div>
+          <div class="item full"><label>户籍/居住地址</label><input name="address" maxlength="500"></div>
+        </div>
+      </section>
+
+      <!-- 2. 学历信息 -->
+      <section class="collapsed">
+        <header onclick="this.parentElement.classList.toggle('collapsed')">② 学历信息</header>
+        <div class="body">
+          <div class="item"><label>学校名称</label><input name="school" maxlength="255"></div>
+          <div class="item"><label>所学专业</label><input name="major" maxlength="255"></div>
+          <div class="item"><label>入学日期</label><input name="inSchoolDate" type="date"></div>
+          <div class="item"><label>毕业日期</label><input name="graduateDate" type="date"></div>
+          <div class="item"><label>毕业证编号</label><input name="schoolNo" maxlength="100"></div>
+          <div class="item"><label>是否有毕业证</label>
+            <select name="schoolPaperHas">
+              <option value="0">无</option><option value="1">有</option>
+            </select></div>
+          <div class="item full"><label>毕业证图片</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="schoolPaper" class="file-input">
+            <input type="hidden" name="schoolPaper">
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. 工作信息 -->
+      <section class="collapsed">
+        <header onclick="this.parentElement.classList.toggle('collapsed')">③ 工作信息</header>
+        <div class="body">
+          <div class="item full"><label>工作单位（公司名称）</label><input name="companyName" maxlength="255"></div>
+          <div class="item"><label>公司代码</label><input name="companyCode" maxlength="255"></div>
+          <div class="item"><label>邮政编码</label><input name="zipCode" maxlength="20"></div>
+          <div class="item full"><label>公司地址</label><input name="companyAddress" maxlength="500"></div>
+          <div class="item"><label>所属工业园</label><input name="industrialPark" maxlength="255"></div>
+          <div class="item"><label>从业时间</label><input name="workTime" type="date"></div>
+          <div class="item"><label>入职日期</label><input name="workDateStart" type="date"></div>
+          <div class="item"><label>结束日期</label><input name="workDateEnd" type="date"></div>
+          <div class="item full"><label>备注</label><textarea name="comments" rows="2" maxlength="500"></textarea></div>
+        </div>
+      </section>
+
+      <!-- 4. 职称 -->
+      <section class="collapsed">
+        <header onclick="this.parentElement.classList.toggle('collapsed')">④ 职称</header>
+        <div class="body">
+          <div class="item"><label>职称</label><input name="titleType" maxlength="50"></div>
+          <div class="item"><label>职称等级</label><input name="titleLevel" maxlength="50"></div>
+          <div class="item full"><label>职称证书</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="titlePaper" class="file-input">
+            <input type="hidden" name="titlePaper">
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. 现工种 -->
+      <section class="collapsed">
+        <header onclick="this.parentElement.classList.toggle('collapsed')">⑤ 现工种</header>
+        <div class="body">
+          <div class="item"><label>工种 ID</label><input name="workTypeId" type="number"></div>
+          <div class="item"><label>工种名称</label><input name="workTypeName" maxlength="255"></div>
+          <div class="item"><label>等级</label><input name="level" type="number" min="0" max="10"></div>
+          <div class="item"><label>证书编号</label><input name="paperNo" maxlength="100"></div>
+        </div>
+      </section>
+
+      <!-- 6. 申报工种 -->
+      <section class="collapsed">
+        <header onclick="this.parentElement.classList.toggle('collapsed')">⑥ 申报工种（拟报）</header>
+        <div class="body">
+          <div class="item"><label>申报工种 ID</label><input name="reqWorkTypeId" type="number"></div>
+          <div class="item"><label>申报工种名称</label><input name="reqWorkTypeName" maxlength="255"></div>
+          <div class="item"><label>申报等级</label><input name="reqLevel" type="number" min="0" max="10"></div>
+          <div class="item"><label>岗位</label><input name="jog" maxlength="255"></div>
+          <div class="item full"><label>申报条件</label><input name="declarationCondition" maxlength="255"></div>
+          <div class="item full"><label>工作经历（自由文本）</label><textarea name="workExp" rows="2" maxlength="1000"></textarea></div>
+        </div>
+      </section>
+
+      <!-- 7. 上一等级证书 -->
+      <section class="collapsed">
+        <header onclick="this.parentElement.classList.toggle('collapsed')">⑦ 上一等级证书</header>
+        <div class="body">
+          <div class="item"><label>是否有上一等级证书</label>
+            <select name="workTypePaperHas"><option value="0">无</option><option value="1">有</option></select></div>
+          <div class="item"><label>上一等级证书工种</label><input name="workTypePaperName" maxlength="255"></div>
+          <div class="item"><label>上一等级证书等级</label><input name="workTypePaperLevel" type="number" min="0"></div>
+          <div class="item"><label>上一等级证书编号</label><input name="workTypePaperNo" maxlength="100"></div>
+          <div class="item full"><label>上一等级证书图片</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="workTypePaper" class="file-input">
+            <input type="hidden" name="workTypePaper">
+          </div>
+        </div>
+      </section>
+
+      <!-- 8. 上传材料 -->
+      <section>
+        <header onclick="this.parentElement.classList.toggle('collapsed')">⑧ 上传材料（图片/PDF）</header>
+        <div class="body">
+          <div class="item"><label>身份证正面</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="idCardFront" class="file-input">
+            <input type="hidden" name="idCardFront"></div>
+          <div class="item"><label>身份证反面</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="idCardBack" class="file-input">
+            <input type="hidden" name="idCardBack"></div>
+          <div class="item"><label>一寸证件照</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="idCardHeader" class="file-input">
+            <input type="hidden" name="idCardHeader"></div>
+          <div class="item"><label>原证件照</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="idCardHeader2" class="file-input">
+            <input type="hidden" name="idCardHeader2"></div>
+          <div class="item"><label>个人照片</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="photo" class="file-input">
+            <input type="hidden" name="photo"></div>
+          <div class="item"><label>合同</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="contract" class="file-input">
+            <input type="hidden" name="contract"></div>
+          <div class="item"><label>证书</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="certificate" class="file-input">
+            <input type="hidden" name="certificate"></div>
+          <div class="item"><label>合同第一页</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="contactFirstPage" class="file-input">
+            <input type="hidden" name="contactFirstPage"></div>
+          <div class="item"><label>合同到期页</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="contactExpirePage" class="file-input">
+            <input type="hidden" name="contactExpirePage"></div>
+          <div class="item"><label>合同盖章页</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="contactSignPage" class="file-input">
+            <input type="hidden" name="contactSignPage"></div>
+          <div class="item"><label>社保证明</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="socialSecurity" class="file-input">
+            <input type="hidden" name="socialSecurity"></div>
+        </div>
+      </section>
+
+      <button type="submit" class="submit" id="btn">提交报名（先上传文件再提交）</button>
+    </form>
+    <div id="r" class="result"></div>
+  </div>
+
+  <!-- ============ TAB 2: 我已报过名 ============ -->
+  <div id="tab-mine" style="display:none">
+    <section>
+      <header>第一步：身份校验</header>
+      <div class="body" style="grid-template-columns:1fr">
+        <div class="item"><label>手机号 <span class="req">*</span></label>
+          <input id="minePhone" pattern="^1[3-9]\d{9}$" placeholder="请输入报名时填写的手机号"></div>
+        <div class="item"><label>身份证号 <span class="req">*</span></label>
+          <input id="mineIdCard" pattern="^\d{17}[\dXx]$" maxlength="18" placeholder="请输入报名时填写的身份证号"></div>
+        <div class="item" style="flex-direction:row;gap:8px;align-items:center">
+          <button class="btn" id="btnLoad">加载我的信息</button>
+          <span class="note" id="mineHint">输入后会校验格式，并通过手机号+身份证号查"我"的记录</span>
+        </div>
+      </div>
+    </section>
+
+    <div id="mineResult" class="result"></div>
+
+    <form id="fMine" style="display:none">
+      <div class="bar" id="mineBar">已加载记录 ID: <strong id="mineId">-</strong>
+        <span style="margin-left:8px">状态: <strong id="mineStatus">-</strong></span>
+        <span style="margin-left:8px;color:#e6a23c" id="mineEditable"></span>
+      </div>
+
+      <section>
+        <header onclick="this.parentElement.classList.toggle('collapsed')">① 基本信息</header>
+        <div class="body">
+          <div class="item"><label>姓名 <span class="req">*</span></label><input name="name" required maxlength="50"></div>
+          <div class="item"><label>性别 <span class="req">*</span></label>
+            <select name="gender" required>
+              <option value="">请选择</option><option>男</option><option>女</option>
+            </select></div>
+          <div class="item"><label>手机号 <span class="req">*</span></label><input name="phone" required pattern="^1[3-9]\d{9}$"></div>
+          <div class="item"><label>年龄</label><input name="age" type="number" min="0" max="120"></div>
+          <div class="item full"><label>身份证号 <span class="req">*</span></label><input name="idCardNumber" required pattern="^\d{17}[\dXx]$" maxlength="18"></div>
+          <div class="item"><label>民族</label>
+            <select name="nation"><option value="">请选择</option><option>汉族</option><option>壮族</option><option>满族</option><option>回族</option><option>苗族</option><option>维吾尔族</option><option>土家族</option><option>彝族</option><option>蒙古族</option><option>藏族</option><option>其他</option></select></div>
+          <div class="item"><label>政治面貌</label>
+            <select name="political"><option value="">请选择</option><option>群众</option><option>共青团员</option><option>中共党员</option><option>民主党派</option></select></div>
+          <div class="item"><label>学历</label>
+            <select name="education"><option value="">请选择</option><option>小学</option><option>初中</option><option>高中</option><option>中专</option><option>大专</option><option>本科</option><option>硕士</option><option>博士</option></select></div>
+          <div class="item"><label>户口性质</label>
+            <select name="houseType"><option value="">请选择</option><option>农业</option><option>非农业</option></select></div>
+          <div class="item full"><label>户籍/居住地址</label><input name="address" maxlength="500"></div>
+        </div>
+      </section>
+
+      <section class="collapsed">
+        <header onclick="this.parentElement.classList.toggle('collapsed')">② 学历信息</header>
+        <div class="body">
+          <div class="item"><label>学校名称</label><input name="school" maxlength="255"></div>
+          <div class="item"><label>所学专业</label><input name="major" maxlength="255"></div>
+          <div class="item"><label>入学日期</label><input name="inSchoolDate" type="date"></div>
+          <div class="item"><label>毕业日期</label><input name="graduateDate" type="date"></div>
+          <div class="item"><label>毕业证编号</label><input name="schoolNo" maxlength="100"></div>
+          <div class="item"><label>是否有毕业证</label>
+            <select name="schoolPaperHas"><option value="0">无</option><option value="1">有</option></select></div>
+        </div>
+      </section>
+
+      <section class="collapsed">
+        <header onclick="this.parentElement.classList.toggle('collapsed')">③ 工作信息</header>
+        <div class="body">
+          <div class="item full"><label>工作单位</label><input name="companyName" maxlength="255"></div>
+          <div class="item"><label>公司代码</label><input name="companyCode" maxlength="255"></div>
+          <div class="item"><label>邮政编码</label><input name="zipCode" maxlength="20"></div>
+          <div class="item full"><label>公司地址</label><input name="companyAddress" maxlength="500"></div>
+          <div class="item"><label>所属工业园</label><input name="industrialPark" maxlength="255"></div>
+          <div class="item"><label>从业时间</label><input name="workTime" type="date"></div>
+          <div class="item"><label>入职日期</label><input name="workDateStart" type="date"></div>
+          <div class="item"><label>结束日期</label><input name="workDateEnd" type="date"></div>
+          <div class="item full"><label>备注</label><textarea name="comments" rows="2" maxlength="500"></textarea></div>
+        </div>
+      </section>
+
+      <section class="collapsed">
+        <header onclick="this.parentElement.classList.toggle('collapsed')">④ 工种 & 申报</header>
+        <div class="body">
+          <div class="item"><label>职称</label><input name="titleType" maxlength="50"></div>
+          <div class="item"><label>职称等级</label><input name="titleLevel" maxlength="50"></div>
+          <div class="item"><label>工种 ID</label><input name="workTypeId" type="number"></div>
+          <div class="item"><label>工种名称</label><input name="workTypeName" maxlength="255"></div>
+          <div class="item"><label>工种等级</label><input name="level" type="number" min="0" max="10"></div>
+          <div class="item"><label>工种证书编号</label><input name="paperNo" maxlength="100"></div>
+          <div class="item"><label>申报工种 ID</label><input name="reqWorkTypeId" type="number"></div>
+          <div class="item"><label>申报工种名称</label><input name="reqWorkTypeName" maxlength="255"></div>
+          <div class="item"><label>申报等级</label><input name="reqLevel" type="number" min="0" max="10"></div>
+          <div class="item"><label>岗位</label><input name="jog" maxlength="255"></div>
+          <div class="item full"><label>申报条件</label><input name="declarationCondition" maxlength="255"></div>
+          <div class="item full"><label>工作经历</label><textarea name="workExp" rows="2" maxlength="1000"></textarea></div>
+        </div>
+      </section>
+
+      <section>
+        <header onclick="this.parentElement.classList.toggle('collapsed')">⑤ 已有材料（可点击重新上传覆盖）</header>
+        <div class="body">
+          <div class="item"><label>身份证正面</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="idCardFront" class="file-input">
+            <input type="hidden" name="idCardFront">
+            <div class="preview-row" data-preview="idCardFront"></div>
+          </div>
+          <div class="item"><label>身份证反面</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="idCardBack" class="file-input">
+            <input type="hidden" name="idCardBack">
+            <div class="preview-row" data-preview="idCardBack"></div>
+          </div>
+          <div class="item"><label>一寸证件照</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="idCardHeader" class="file-input">
+            <input type="hidden" name="idCardHeader">
+            <div class="preview-row" data-preview="idCardHeader"></div>
+          </div>
+          <div class="item"><label>原证件照</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="idCardHeader2" class="file-input">
+            <input type="hidden" name="idCardHeader2">
+            <div class="preview-row" data-preview="idCardHeader2"></div>
+          </div>
+          <div class="item"><label>职称证书</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="titlePaper" class="file-input">
+            <input type="hidden" name="titlePaper">
+            <div class="preview-row" data-preview="titlePaper"></div>
+          </div>
+          <div class="item"><label>上一等级证书</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="workTypePaper" class="file-input">
+            <input type="hidden" name="workTypePaper">
+            <div class="preview-row" data-preview="workTypePaper"></div>
+          </div>
+          <div class="item"><label>毕业证</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="schoolPaper" class="file-input">
+            <input type="hidden" name="schoolPaper">
+            <div class="preview-row" data-preview="schoolPaper"></div>
+          </div>
+          <div class="item"><label>合同第一页</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="contactFirstPage" class="file-input">
+            <input type="hidden" name="contactFirstPage">
+            <div class="preview-row" data-preview="contactFirstPage"></div>
+          </div>
+          <div class="item"><label>合同到期页</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="contactExpirePage" class="file-input">
+            <input type="hidden" name="contactExpirePage">
+            <div class="preview-row" data-preview="contactExpirePage"></div>
+          </div>
+          <div class="item"><label>合同盖章页</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="contactSignPage" class="file-input">
+            <input type="hidden" name="contactSignPage">
+            <div class="preview-row" data-preview="contactSignPage"></div>
+          </div>
+          <div class="item"><label>社保证明</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="socialSecurity" class="file-input">
+            <input type="hidden" name="socialSecurity">
+            <div class="preview-row" data-preview="socialSecurity"></div>
+          </div>
+          <div class="item"><label>个人照片</label>
+            <input type="file" accept=".jpg,.jpeg,.png,.pdf" data-field="photo" class="file-input">
+            <input type="hidden" name="photo">
+            <div class="preview-row" data-preview="photo"></div>
+          </div>
+        </div>
+      </section>
+
+      <button type="submit" class="submit" id="btnUpdate">保存修改</button>
+    </form>
+  </div>
+</div>
+
+<script>
+const API = '/api';
+const p = new URLSearchParams(location.search);
+const id = p.get('id') || p.get('signUpId') || '0';
+document.getElementById('sid').textContent = id;
+
+fetch(`${API}/training/sign-ups/${id}/detail`)
+  .then(r => r.json())
+  .then(res => {
+    if (res && res.code === '0' && res.data) {
+      document.getElementById('ttl').textContent = '· ' + (res.data.title || '');
+    }
+  }).catch(() => {});
+
+// ==================== TAB 切换 ====================
+document.querySelectorAll('.tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('tab-new').style.display = t.dataset.tab === 'new' ? '' : 'none';
+    document.getElementById('tab-mine').style.display = t.dataset.tab === 'mine' ? '' : 'none';
+  };
+});
+
+// ==================== TAB 1: 新报名 ====================
+async function uploadOne(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`${API}/training/sign-ups/upload`, { method: 'POST', body: fd });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  if (!json || json.code !== '0') throw new Error(json.message || '上传失败');
+  return json.data.url;
+}
+
+document.getElementById('f').onsubmit = async e => {
+  e.preventDefault();
+  const btn = document.getElementById('btn');
+  const r = document.getElementById('r');
+  r.style.display = 'none';
+
+  const form = e.target;
+  const data = {};
+  new FormData(form).forEach((v, k) => { if (v) data[k] = v; });
+  if (!data.name || !data.phone || !data.idCardNumber || !data.gender) {
+    r.className = 'result err';
+    r.textContent = '请填写姓名、手机号、身份证号、性别';
+    r.style.display = 'block';
+    return;
+  }
+  if (data.schoolPaperHas === undefined) data.schoolPaperHas = 0;
+  data.workTypePaperHas = data.workTypePaperHas || 0;
+
+  btn.disabled = true;
+  btn.textContent = '上传材料中...';
+  try {
+    const fileInputs = form.querySelectorAll('input[type=file]');
+    let count = 0, total = 0;
+    for (const fi of fileInputs) {
+      if (fi.files && fi.files.length > 0) {
+        total++;
+        const field = fi.dataset.field;
+        btn.textContent = `上传材料中... (${count + 1}/${total})`;
+        try {
+          const url = await uploadOne(fi.files[0]);
+          data[field] = url;
+        } catch (ex) {
+          console.warn('upload fail', field, ex);
+        }
+        count++;
+      }
+    }
+    btn.textContent = '提交报名...';
+    const res = await fetch(`${API}/training/sign-ups/${id}/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(r => r.json());
+
+    if (res && res.code === '0') {
+      r.className = 'result ok';
+      const fileLinks = Object.entries(data)
+          .filter(([k, v]) => typeof v === 'string' && /\.(jpe?g|png|pdf)(\?|$)/i.test(v))
+          .map(([k, v]) => {
+            let u = v;
+            const marker = '/api/exam/files/';
+            const idx = u.indexOf(marker);
+            if (idx >= 0) u = '/api' + u.substring(idx);
+            return `<li><b>${k}</b>: <a href="${u}" target="_blank">${u.length > 60 ? '...' + u.slice(-60) : u}</a></li>`;
+          })
+          .join('');
+      r.innerHTML = `✅ 报名成功！ID: ${res.data.id}，共上传 ${total} 个文件${fileLinks ? '<ul style="margin-top:6px;padding-left:20px;text-align:left">' + fileLinks + '</ul>' : ''}`;
+    } else {
+      r.className = 'result err';
+      r.textContent = '❌ ' + (res.message || '提交失败');
+    }
+  } catch (err) {
+    r.className = 'result err';
+    r.textContent = '❌ 异常: ' + err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '提交报名（先上传文件再提交）';
+    r.style.display = 'block';
+    r.scrollIntoView({behavior:'smooth'});
+  }
+};
+
+// ==================== TAB 2: 我已报过名 ====================
+let mineEditable = false;
+let mineIdentity = { phone: '', idCardNumber: '' };
+
+document.getElementById('btnLoad').onclick = async () => {
+  const phone = document.getElementById('minePhone').value.trim();
+  const idCard = document.getElementById('mineIdCard').value.trim();
+  const result = document.getElementById('mineResult');
+  result.style.display = 'none';
+
+  if (!/^1[3-9]\d{9}$/.test(phone)) {
+    result.className = 'result err'; result.textContent = '手机号格式错误';
+    result.style.display = 'block'; return;
+  }
+  if (!/^\d{17}[\dXx]$/.test(idCard)) {
+    result.className = 'result err'; result.textContent = '身份证号格式错误';
+    result.style.display = 'block'; return;
+  }
+
+  try {
+    const res = await fetch(`${API}/training/sign-ups/${id}/mine?phone=${encodeURIComponent(phone)}&idCardNumber=${encodeURIComponent(idCard)}`)
+      .then(r => r.json());
+    if (res && res.code === '0' && res.data) {
+      fillMineForm(res.data);
+      mineEditable = !!res.data.editable;
+      mineIdentity = { phone, idCardNumber: idCard };
+      document.getElementById('fMine').style.display = '';
+      document.getElementById('mineId').textContent = res.data.id;
+      document.getElementById('mineStatus').textContent = res.data.statusCn || '-';
+      document.getElementById('mineEditable').textContent = mineEditable
+        ? '✏️ 可修改'
+        : '🔒 已锁定（联系管理后台）';
+      document.getElementById('btnUpdate').disabled = !mineEditable;
+      document.getElementById('btnUpdate').textContent = mineEditable
+        ? '保存修改'
+        : '当前记录不可修改';
+      result.className = 'result ok';
+      result.textContent = '✅ 已加载您的报名信息（' + (res.data.signUpTitle || '') + '）';
+      result.style.display = 'block';
+    } else {
+      result.className = 'result err';
+      result.textContent = '❌ ' + (res.message || '未找到记录');
+    }
+  } catch (err) {
+    result.className = 'result err';
+    result.textContent = '❌ 网络异常: ' + err.message;
+    result.style.display = 'block';
+  }
+};
+
+function fillMineForm(d) {
+  const f = document.getElementById('fMine');
+  // 简单字段：input/select/textarea 用 name= 取
+  const simple = ['name','gender','phone','age','idCardNumber','nation','political',
+    'education','houseType','address','school','major','inSchoolDate','graduateDate',
+    'schoolNo','schoolPaperHas','companyName','companyCode','zipCode','companyAddress',
+    'industrialPark','workTime','workDateStart','workDateEnd','comments','titleType',
+    'titleLevel','workTypeId','workTypeName','level','paperNo','reqWorkTypeId',
+    'reqWorkTypeName','reqLevel','jog','declarationCondition','workExp','job'];
+  for (const k of simple) {
+    const el = f.querySelector(`[name="${k}"]`);
+    if (el) el.value = d[k] != null ? d[k] : '';
+  }
+  // 文件URL 字段：填到 hidden，再渲染预览
+  const fileKeys = ['idCardFront','idCardBack','idCardHeader','idCardHeader2',
+    'titlePaper','workTypePaper','schoolPaper','contactFirstPage','contactExpirePage',
+    'contactSignPage','socialSecurity','photo'];
+  for (const k of fileKeys) {
+    const hidden = f.querySelector(`input[type=hidden][name="${k}"]`);
+    if (hidden) hidden.value = d[k] || '';
+    const preview = f.querySelector(`[data-preview="${k}"]`);
+    if (preview) {
+      preview.innerHTML = '';
+      if (d[k]) {
+        const img = document.createElement('img');
+        img.src = proxyUrl(d[k]);
+        img.alt = k;
+        img.onerror = () => { preview.innerHTML = `<span class="note">已上传：<a href="${proxyUrl(d[k])}" target="_blank">查看</a></span>`; };
+        preview.appendChild(img);
+      }
+    }
+  }
+}
+
+function proxyUrl(u) {
+  if (!u) return '';
+  if (u.startsWith('http://') || u.startsWith('https://')) {
+    const marker = '/api/exam/files/';
+    const idx = u.indexOf(marker);
+    if (idx >= 0) return '/api' + u.substring(idx);
+    return u;
+  }
+  return u;
+}
+
+document.getElementById('fMine').onsubmit = async e => {
+  e.preventDefault();
+  if (!mineEditable) {
+    const r = document.getElementById('mineResult');
+    r.className = 'result warn';
+    r.textContent = '当前记录不可修改（已通过审核或已锁定）';
+    r.style.display = 'block';
+    return;
+  }
+  const btn = document.getElementById('btnUpdate');
+  const r = document.getElementById('mineResult');
+  r.style.display = 'none';
+
+  const form = e.target;
+  const data = {};
+  new FormData(form).forEach((v, k) => { if (v) data[k] = v; });
+  // 必填校验
+  if (!data.name || !data.phone || !data.idCardNumber || !data.gender) {
+    r.className = 'result err';
+    r.textContent = '请填写姓名、手机号、身份证号、性别';
+    r.style.display = 'block';
+    return;
+  }
+  if (data.schoolPaperHas === undefined) data.schoolPaperHas = 0;
+  data.workTypePaperHas = data.workTypePaperHas || 0;
+
+  btn.disabled = true;
+  btn.textContent = '上传材料中...';
+  try {
+    // 1) 上传新文件
+    const fileInputs = form.querySelectorAll('input[type=file]');
+    let count = 0, total = 0;
+    for (const fi of fileInputs) {
+      if (fi.files && fi.files.length > 0) {
+        total++;
+        const field = fi.dataset.field;
+        btn.textContent = `上传材料中... (${count + 1}/${total})`;
+        try {
+          const url = await uploadOne(fi.files[0]);
+          data[field] = url;
+        } catch (ex) {
+          console.warn('upload fail', field, ex);
+        }
+        count++;
+      }
+    }
+
+    // 2) 提交修改
+    btn.textContent = '保存修改...';
+    const qs = `phone=${encodeURIComponent(mineIdentity.phone)}&idCardNumber=${encodeURIComponent(mineIdentity.idCardNumber)}`;
+    const res = await fetch(`${API}/training/sign-ups/${id}/mine?${qs}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(r => r.json());
+
+    if (res && res.code === '0') {
+      r.className = 'result ok';
+      r.textContent = `✅ 修改成功！记录 ID: ${res.data.id}，共重新上传 ${total} 个文件`;
+    } else {
+      r.className = 'result err';
+      r.textContent = '❌ ' + (res.message || '修改失败');
+    }
+  } catch (err) {
+    r.className = 'result err';
+    r.textContent = '❌ 异常: ' + err.message;
+  } finally {
+    btn.disabled = !mineEditable;
+    btn.textContent = mineEditable ? '保存修改' : '当前记录不可修改';
+    r.style.display = 'block';
+    r.scrollIntoView({behavior:'smooth'});
+  }
+};
+</script>
+</body>
+</html>

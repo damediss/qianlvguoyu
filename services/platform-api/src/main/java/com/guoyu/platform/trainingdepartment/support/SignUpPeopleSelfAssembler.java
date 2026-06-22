@@ -1,5 +1,6 @@
 package com.guoyu.platform.trainingdepartment.support;
 
+import com.guoyu.platform.file.support.CdnFileServeHelper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.trainingdepartment.dto.TrainSignUpPeopleSelfUpdateReq;
@@ -15,11 +16,14 @@ import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /** 报名人员 Entity/VO/DTO 转换与列表 enrich（对齐 PHP peopleselflist） */
+@Slf4j
 @Component
 public class SignUpPeopleSelfAssembler {
 
@@ -29,14 +33,17 @@ public class SignUpPeopleSelfAssembler {
   private final String cdnPath;
   private final String cdnUrl;
   private final ObjectMapper objectMapper;
+  private final CdnFileServeHelper cdnFileServeHelper;
 
   public SignUpPeopleSelfAssembler(
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
       @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      CdnFileServeHelper cdnFileServeHelper) {
     this.cdnPath = cdnPath;
     this.cdnUrl = cdnUrl.endsWith("/") ? cdnUrl.substring(0, cdnUrl.length() - 1) : cdnUrl;
     this.objectMapper = objectMapper;
+    this.cdnFileServeHelper = cdnFileServeHelper;
   }
 
   public TrainSignUpPeopleSelfVO toVo(TrainSignUpPeopleSelfEntity entity) {
@@ -113,7 +120,11 @@ public class SignUpPeopleSelfAssembler {
     String idCard = vo.getIdCardNumber();
 
     if (vo.getAge() == null && StringUtils.hasText(idCard)) {
-      vo.setAge(calcAgeFromIdCard(idCard));
+      try {
+        vo.setAge(calcAgeFromIdCard(idCard));
+      } catch (Exception ignored) {
+        // ignore
+      }
     }
 
     int status = vo.getStatus() != null ? vo.getStatus() : 0;
@@ -125,16 +136,26 @@ public class SignUpPeopleSelfAssembler {
     int hasPay = vo.getHasPay() != null ? vo.getHasPay() : 0;
     vo.setPayCn(hasPay > 0 ? "已支付" : "待支付");
 
-    vo.setIdcardFront(resolveIdCardImage(idCard, signUpId, vo.getIdCardFront(), "front"));
-    vo.setIdcardBack(resolveIdCardImage(idCard, signUpId, vo.getIdCardBack(), "back"));
-    vo.setIdcardHeader(resolveHeaderImage(idCard, vo.getIdCardHeader()));
+    try {
+      vo.setIdcardFront(safeResolve(() -> resolveIdCardImage(idCard, signUpId, vo.getIdCardFront(), "front")));
+      vo.setIdcardBack(safeResolve(() -> resolveIdCardImage(idCard, signUpId, vo.getIdCardBack(), "back")));
+      vo.setIdcardHeader(safeResolve(() -> resolveHeaderImage(idCard, vo.getIdCardHeader())));
+      vo.setPhoto(safeResolve(() -> resolveMediaUrl(vo.getPhoto())));
+      vo.setIdCardHeader2(safeResolve(() -> resolveMediaUrl(vo.getIdCardHeader2())));
+      vo.setSchoolPaper(safeResolve(() -> resolveMediaUrl(vo.getSchoolPaper())));
+      vo.setTitlePaper(safeResolve(() -> resolveMediaUrl(vo.getTitlePaper())));
+      vo.setWorkTypePaper(safeResolve(() -> resolveMediaUrl(vo.getWorkTypePaper())));
 
-    vo.setContractFirst(resolveStoredOrCdnUrl(vo.getContactFirstPage(),
-        idCard, signUpId, "first_self.png", "_contact_first_page.jpg"));
-    vo.setContractExpire(resolveStoredOrCdnUrl(vo.getContactExpirePage(),
-        idCard, signUpId, "expire_self.png", "_contact_expire_page.jpg"));
-    vo.setContractSign(resolveStoredOrCdnUrl(vo.getContactSignPage(),
-        idCard, signUpId, "sign_self.png", "_contact_sign_page.jpg"));
+      vo.setContractFirst(safeResolve(() -> resolveStoredOrCdnUrl(vo.getContactFirstPage(),
+          idCard, signUpId, "first_self.png", "_contact_first_page.jpg")));
+      vo.setContractExpire(safeResolve(() -> resolveStoredOrCdnUrl(vo.getContactExpirePage(),
+          idCard, signUpId, "expire_self.png", "_contact_expire_page.jpg")));
+      vo.setContractSign(safeResolve(() -> resolveStoredOrCdnUrl(vo.getContactSignPage(),
+          idCard, signUpId, "sign_self.png", "_contact_sign_page.jpg")));
+    } catch (Exception ex) {
+      // enrich 只做 URL 解析，单条失败也不能让 VO 半残
+      log.warn("enrich resolve media failed, ignore", ex);
+    }
 
     if (StringUtils.hasText(vo.getWorkExp())) {
       try {
@@ -142,6 +163,14 @@ public class SignUpPeopleSelfAssembler {
       } catch (Exception ignored) {
         vo.setWorkExpList(Collections.emptyList());
       }
+    }
+  }
+
+  private String safeResolve(java.util.function.Supplier<String> supplier) {
+    try {
+      return supplier.get();
+    } catch (Exception ex) {
+      return null;
     }
   }
 
@@ -306,7 +335,25 @@ public class SignUpPeopleSelfAssembler {
     }
   }
 
+  private String resolveMediaUrl(String stored) {
+    if (!StringUtils.hasText(stored) || isInvalidImageStored(stored)) {
+      return null;
+    }
+    return cdnFileServeHelper.publicUrl(stored);
+  }
+
+  private boolean isInvalidImageStored(String path) {
+    String t = path.trim();
+    return t.startsWith("process=image")
+        || t.startsWith("x-oss-process=")
+        || t.startsWith("?x-oss-process=")
+        || t.matches("^(image/)?(resize|quality|crop).*");
+  }
+
   private String resolveIdCardImage(String idCard, Long signUpId, String stored, String side) {
+    if (StringUtils.hasText(stored) && isInvalidImageStored(stored)) {
+      stored = null;
+    }
     if (StringUtils.hasText(stored) && stored.startsWith("http")) {
       return stored;
     }
@@ -326,6 +373,9 @@ public class SignUpPeopleSelfAssembler {
   }
 
   private String resolveHeaderImage(String idCard, String stored) {
+    if (StringUtils.hasText(stored) && isInvalidImageStored(stored)) {
+      stored = null;
+    }
     if (StringUtils.hasText(stored) && stored.startsWith("http")) {
       return stored;
     }
@@ -369,13 +419,9 @@ public class SignUpPeopleSelfAssembler {
   }
 
   private String toAbsoluteUrl(String path) {
-    if (!StringUtils.hasText(path)) {
-      return path;
+    if (!StringUtils.hasText(path) || isInvalidImageStored(path)) {
+      return null;
     }
-    if (path.startsWith("http://") || path.startsWith("https://")) {
-      return path;
-    }
-    String normalized = path.startsWith("/") ? path.substring(1) : path;
-    return cdnUrl + "/" + normalized;
+    return cdnFileServeHelper.publicUrl(path);
   }
 }

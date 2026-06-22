@@ -53,6 +53,9 @@ public class SecurityConfig {
             .requestMatchers(HttpMethod.GET, "/exam/files/**").permitAll()
             .requestMatchers(HttpMethod.GET, "/ws/practical-scoring").permitAll()
             .requestMatchers(HttpMethod.POST, "/appregistration/**").permitAll()
+            // 培训管理·扫码信息收集 - 测试专用接口（生成环境请移除并接入鉴权）
+            .requestMatchers("/training/sign-ups/**").permitAll()
+            .requestMatchers(HttpMethod.GET, "/collect-test.html", "/favicon.ico").permitAll()
             .anyRequest().authenticated()
         )
         .addFilterBefore(tenantContextFilter, UsernamePasswordAuthenticationFilter.class)

@@ -58,7 +58,11 @@ public class TrainSignUpPeopleSelfApplicationService {
     List<TrainSignUpPeopleSelfVO> items = page.getRecords().stream()
         .map(entity -> {
           TrainSignUpPeopleSelfVO vo = assembler.toVo(entity);
-          assembler.enrich(vo);
+          try {
+            assembler.enrich(vo);
+          } catch (Exception ex) {
+            log.warn("assembler.enrich failed for signUpPeople list id={}, ignore", entity.getId(), ex);
+          }
           return vo;
         })
         .toList();
@@ -67,8 +71,15 @@ public class TrainSignUpPeopleSelfApplicationService {
 
   @Transactional(readOnly = true)
   public TrainSignUpPeopleSelfVO getById(Long id) {
-    TrainSignUpPeopleSelfVO vo = assembler.toVo(getExisting(id));
-    assembler.enrich(vo);
+    TrainSignUpPeopleSelfEntity entity = getExisting(id);
+    TrainSignUpPeopleSelfVO vo = assembler.toVo(entity);
+    try {
+      assembler.enrich(vo);
+    } catch (Exception ex) {
+      // enrich 仅做 URL 解析/装饰，绝不能让列表/详情接口整体 500。
+      // 失败时只丢失展示用 URL，原始字段已在 vo 里。
+      log.warn("assembler.enrich failed for signUpPeople id={}, ignore and return base VO", id, ex);
+    }
     return vo;
   }
 
@@ -125,7 +136,7 @@ public class TrainSignUpPeopleSelfApplicationService {
         .eq(TrainSignUpPeopleSelfEntity::getTenantId, tenantId)
         .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0));
     if (entity == null) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "Record not found");
+      throw new BusinessException(ErrorCode.NOT_FOUND, "报名人员不存在或已删除");
     }
     return entity;
   }
