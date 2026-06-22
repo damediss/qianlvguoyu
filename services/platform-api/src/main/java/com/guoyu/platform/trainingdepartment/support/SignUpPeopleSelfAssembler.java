@@ -1,6 +1,5 @@
 package com.guoyu.platform.trainingdepartment.support;
 
-import com.guoyu.platform.file.support.CdnFileServeHelper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.trainingdepartment.dto.TrainSignUpPeopleSelfUpdateReq;
@@ -33,17 +32,14 @@ public class SignUpPeopleSelfAssembler {
   private final String cdnPath;
   private final String cdnUrl;
   private final ObjectMapper objectMapper;
-  private final CdnFileServeHelper cdnFileServeHelper;
 
   public SignUpPeopleSelfAssembler(
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
       @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl,
-      ObjectMapper objectMapper,
-      CdnFileServeHelper cdnFileServeHelper) {
+      ObjectMapper objectMapper) {
     this.cdnPath = cdnPath;
     this.cdnUrl = cdnUrl.endsWith("/") ? cdnUrl.substring(0, cdnUrl.length() - 1) : cdnUrl;
     this.objectMapper = objectMapper;
-    this.cdnFileServeHelper = cdnFileServeHelper;
   }
 
   public TrainSignUpPeopleSelfVO toVo(TrainSignUpPeopleSelfEntity entity) {
@@ -339,7 +335,7 @@ public class SignUpPeopleSelfAssembler {
     if (!StringUtils.hasText(stored) || isInvalidImageStored(stored)) {
       return null;
     }
-    return cdnFileServeHelper.publicUrl(stored);
+    return toAbsoluteUrl(stored);
   }
 
   private boolean isInvalidImageStored(String path) {
@@ -422,6 +418,10 @@ public class SignUpPeopleSelfAssembler {
     if (!StringUtils.hasText(path) || isInvalidImageStored(path)) {
       return null;
     }
-    return cdnFileServeHelper.publicUrl(path);
+    if (path.startsWith("http://") || path.startsWith("https://")) {
+      return path;
+    }
+    String normalized = path.startsWith("/") ? path.substring(1) : path;
+    return cdnUrl + "/" + normalized;
   }
 }
