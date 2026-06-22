@@ -122,7 +122,7 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
           layout="vertical"
           initialValues={mode === 'assessor'
             ? { tenantCode: defaultTenantCode || 'demo' }
-            : { tenantCode: defaultTenantCode || 'demo', username: 'admin', password: 'Admin@123456' }}
+            : { tenantCode: defaultTenantCode || 'demo', username: 'admin', password: '' }}
           onFinish={(values) => loginMutation.mutate(values)}
         >
           <Form.Item label="租户" name="tenantCode" rules={[{ required: true, message: '请选择租户' }]}>
