@@ -1,5 +1,5 @@
 import { apiClient, unwrap } from './client';
-import type { CurrentUserVO, LoginReq, LoginVO, MenuVO } from '../types/api';
+import type { CaptchaGenerateVO, CaptchaVerifyVO, CurrentUserVO, LoginReq, LoginVO, MenuVO } from '../types/api';
 
 export function login(req: LoginReq) {
   return unwrap<LoginVO>(apiClient.post('/auth/login', req));
@@ -24,4 +24,12 @@ export interface TenantOption {
 
 export function fetchTenants() {
   return unwrap<TenantOption[]>(apiClient.get('/auth/tenants'));
+}
+
+export function generateCaptcha() {
+  return unwrap<CaptchaGenerateVO>(apiClient.get('/auth/captcha/generate'));
+}
+
+export function verifyCaptcha(captchaId: string, x: number) {
+  return unwrap<CaptchaVerifyVO>(apiClient.post('/auth/captcha/verify', { captchaId, x }));
 }

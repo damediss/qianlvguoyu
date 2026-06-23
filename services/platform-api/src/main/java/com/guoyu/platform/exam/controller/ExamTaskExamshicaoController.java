@@ -67,7 +67,7 @@ public class ExamTaskExamshicaoController {
 
   @PostMapping("/task-examshicaos/import")
   @PreAuthorize("hasAuthority('task:examshicao-audit:import')")
-  @AuditLog(module = "exam", action = "task-examshicao-audit:import", targetType = "exam_task_examshicao")
+  @AuditLog(module = "exam", action = "task-examshicao-audit:import", targetType = "task_examshicao")
   public ApiResponse<Integer> importExcel(
       @RequestParam("file") MultipartFile file,
       @RequestParam Integer workTypeId,
@@ -79,7 +79,7 @@ public class ExamTaskExamshicaoController {
 
   @PostMapping("/task-examshicaos/{id}/assign-expert")
   @PreAuthorize("hasAuthority('task:examshicao-audit:assign-expert')")
-  @AuditLog(module = "exam", action = "task-examshicao:assign-expert", targetType = "exam_task_examshicao")
+  @AuditLog(module = "exam", action = "task-examshicao:assign-expert", targetType = "task_examshicao")
   public ApiResponse<Void> assignExpert(
       @PathVariable Integer id,
       @Valid @RequestBody ExamTaskExamshicaoAssignExpertReq req) {
@@ -90,7 +90,7 @@ public class ExamTaskExamshicaoController {
 
   @GetMapping("/task-examshicaos/{id}/export")
   @PreAuthorize("hasAuthority('task:examshicao-audit:export')")
-  @AuditLog(module = "exam", action = "task-examshicao:export", targetType = "exam_task_examshicao")
+  @AuditLog(module = "exam", action = "task-examshicao:export", targetType = "task_examshicao")
   public ResponseEntity<InputStreamResource> export(@PathVariable Integer id) throws IOException {
     log.info("GET /exam/task-examshicaos/{}/export", id);
     ExportResultDTO result = service.exportExcel(id);
@@ -105,7 +105,7 @@ public class ExamTaskExamshicaoController {
 
   @DeleteMapping("/task-examshicaos/{id}")
   @PreAuthorize("hasAuthority('task:examshicao-audit:delete')")
-  @AuditLog(module = "exam", action = "task-examshicao:delete", targetType = "exam_task_examshicao")
+  @AuditLog(module = "exam", action = "task-examshicao:delete", targetType = "task_examshicao")
   public ApiResponse<Void> delete(@PathVariable Integer id) {
     log.info("DELETE /exam/task-examshicaos/{}", id);
     service.delete(id);

@@ -16,6 +16,20 @@ export interface LoginReq {
   tenantCode: string;
   username: string;
   password: string;
+  captchaToken: string;
+}
+
+export interface CaptchaGenerateVO {
+  captchaId: string;
+  bgImage: string;
+  sliderImage: string;
+  sliderY: number;
+}
+
+export interface CaptchaVerifyVO {
+  success: boolean;
+  captchaToken: string | null;
+  message: string | null;
 }
 
 export interface LoginVO {

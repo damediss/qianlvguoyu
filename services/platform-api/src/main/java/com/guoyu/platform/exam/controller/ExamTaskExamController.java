@@ -67,7 +67,7 @@ public class ExamTaskExamController {
 
   @PostMapping("/task-exams/import")
   @PreAuthorize("hasAuthority('task:exam-audit:import')")
-  @AuditLog(module = "exam", action = "task-exam-audit:import", targetType = "exam_task_exam")
+  @AuditLog(module = "exam", action = "task-exam-audit:import", targetType = "task_exam")
   public ApiResponse<Integer> importExcel(
       @RequestParam("file") MultipartFile file,
       @RequestParam Integer workTypeId,
@@ -79,7 +79,7 @@ public class ExamTaskExamController {
 
   @PostMapping("/task-exams/{id}/assign-expert")
   @PreAuthorize("hasAuthority('task:exam-audit:assign-expert')")
-  @AuditLog(module = "exam", action = "task-exam:assign-expert", targetType = "exam_task_exam")
+  @AuditLog(module = "exam", action = "task-exam:assign-expert", targetType = "task_exam")
   public ApiResponse<Void> assignExpert(
       @PathVariable Integer id,
       @Valid @RequestBody ExamTaskExamAssignExpertReq req) {
@@ -90,7 +90,7 @@ public class ExamTaskExamController {
 
   @GetMapping("/task-exams/{id}/export")
   @PreAuthorize("hasAuthority('task:exam-audit:export')")
-  @AuditLog(module = "exam", action = "task-exam:export", targetType = "exam_task_exam")
+  @AuditLog(module = "exam", action = "task-exam:export", targetType = "task_exam")
   public ResponseEntity<InputStreamResource> export(@PathVariable Integer id) throws IOException {
     log.info("GET /exam/task-exams/{}/export", id);
     ExportResultDTO result = service.exportExcel(id);
@@ -105,7 +105,7 @@ public class ExamTaskExamController {
 
   @DeleteMapping("/task-exams/{id}")
   @PreAuthorize("hasAuthority('task:exam-audit:delete')")
-  @AuditLog(module = "exam", action = "task-exam:delete", targetType = "exam_task_exam")
+  @AuditLog(module = "exam", action = "task-exam:delete", targetType = "task_exam")
   public ApiResponse<Void> delete(@PathVariable Integer id) {
     log.info("DELETE /exam/task-exams/{}", id);
     service.delete(id);

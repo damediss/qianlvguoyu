@@ -30,7 +30,9 @@ public class TenantContextFilter extends OncePerRequestFilter {
   private static final Set<String> WHITE_METHOD_PATHS = Set.of(
       "POST:/api/auth/login",
       "POST:/api/auth/refresh",
-      "GET:/api/auth/tenants"
+      "GET:/api/auth/tenants",
+      "GET:/api/auth/captcha/generate",
+      "POST:/api/auth/captcha/verify"
   );
 
   @Override

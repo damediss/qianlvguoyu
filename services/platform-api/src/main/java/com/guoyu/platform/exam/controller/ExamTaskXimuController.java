@@ -75,7 +75,7 @@ public class ExamTaskXimuController {
 
   @PostMapping("/task-ximus/import")
   @PreAuthorize("hasAuthority('task:ximu:import')")
-  @AuditLog(module = "exam", action = "task-ximu:import", targetType = "exam_task_ximu")
+  @AuditLog(module = "exam", action = "task-ximu:import", targetType = "task_ximu")
   public ApiResponse<Integer> importExcel(
       @RequestParam("file") MultipartFile file,
       @RequestParam Integer workTypeId,
@@ -88,7 +88,7 @@ public class ExamTaskXimuController {
 
   @PostMapping("/task-ximus/{id}/assign-expert")
   @PreAuthorize("hasAuthority('task:ximu:assign-expert')")
-  @AuditLog(module = "exam", action = "task-ximu:assign-expert", targetType = "exam_task_ximu")
+  @AuditLog(module = "exam", action = "task-ximu:assign-expert", targetType = "task_ximu")
   public ApiResponse<Void> assignExpert(
       @PathVariable Integer id,
       @Valid @RequestBody ExamTaskXimuAssignExpertReq req) {
@@ -99,7 +99,7 @@ public class ExamTaskXimuController {
 
   @GetMapping("/task-ximus/{id}/export")
   @PreAuthorize("hasAuthority('task:ximu:export')")
-  @AuditLog(module = "exam", action = "task-ximu:export", targetType = "exam_task_ximu")
+  @AuditLog(module = "exam", action = "task-ximu:export", targetType = "task_ximu")
   public ResponseEntity<InputStreamResource> export(@PathVariable Integer id) throws IOException {
     log.info("GET /exam/task-ximus/{}/export", id);
     ExportResultDTO result = service.exportExcel(id);
@@ -114,7 +114,7 @@ public class ExamTaskXimuController {
 
   @DeleteMapping("/task-ximus/{id}")
   @PreAuthorize("hasAuthority('task:ximu:delete')")
-  @AuditLog(module = "exam", action = "task-ximu:delete", targetType = "exam_task_ximu")
+  @AuditLog(module = "exam", action = "task-ximu:delete", targetType = "task_ximu")
   public ApiResponse<Void> delete(@PathVariable Integer id) {
     log.info("DELETE /exam/task-ximus/{}", id);
     service.delete(id);

@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 public record LoginReq(
     @NotBlank String tenantCode,
     @NotBlank String username,
-    @NotBlank String password
+    @NotBlank String password,
+    @NotBlank String captchaToken
 ) {
 }

@@ -7,7 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.TableField;
 import java.time.LocalDateTime;
 
-@TableName("exam_task_ximu_detail")
+@TableName("task_ximu_detail")
 public class ExamTaskXimuDetailEntity {
 
   @TableId(type = IdType.AUTO)

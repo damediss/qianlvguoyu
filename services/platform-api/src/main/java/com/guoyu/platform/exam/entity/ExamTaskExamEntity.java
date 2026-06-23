@@ -6,7 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 
-@TableName("exam_task_exam")
+@TableName("task_exam")
 public class ExamTaskExamEntity {
 
   @TableId(type = IdType.AUTO)

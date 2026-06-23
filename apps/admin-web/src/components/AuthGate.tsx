@@ -1,11 +1,12 @@
 import { LockOutlined } from '@ant-design/icons';
-import { Button, Form, Input, Select, Typography, message } from 'antd';
+import { Button, Form, Input, Modal, Select, Typography, message } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { currentUser as fetchCurrentUser, fetchTenants, login } from '../api/auth';
 import { useAuthStore } from '../stores/authStore';
 import type { CurrentUserVO } from '../types/api';
+import { SliderCaptcha } from './SliderCaptcha';
 
 const ASSESSOR_ROLE = 'CERTIFICATION_ASSESSOR';
 const ASSESSOR_PERMISSION = 'certification.practical.score';
@@ -29,6 +30,9 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
   const setTenantId = useAuthStore((state) => state.setTenantId);
   const setCurrentUser = useAuthStore((state) => state.setCurrentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
+
+  const [captchaVisible, setCaptchaVisible] = useState(false);
+  const [pendingLogin, setPendingLogin] = useState<{ tenantCode: string; username: string; password: string } | null>(null);
 
   const userQuery = useQuery({
     queryKey: ['current-user', token],
@@ -123,7 +127,10 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
           initialValues={mode === 'assessor'
             ? { tenantCode: defaultTenantCode || 'demo' }
             : { tenantCode: defaultTenantCode || 'demo', username: 'admin', password: '' }}
-          onFinish={(values) => loginMutation.mutate(values)}
+          onFinish={(values) => {
+            setPendingLogin(values);
+            setCaptchaVisible(true);
+          }}
         >
           <Form.Item label="租户" name="tenantCode" rules={[{ required: true, message: '请选择租户' }]}>
             <Select
@@ -143,6 +150,33 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
           </Button>
         </Form>
       </div>
+
+      <Modal
+        open={captchaVisible}
+        onCancel={() => {
+          setCaptchaVisible(false);
+          setPendingLogin(null);
+        }}
+        footer={null}
+        title="安全验证"
+        width={380}
+        destroyOnClose
+        centered
+      >
+        <SliderCaptcha
+          onSuccess={(captchaToken) => {
+            setCaptchaVisible(false);
+            if (pendingLogin) {
+              loginMutation.mutate({ ...pendingLogin, captchaToken });
+              setPendingLogin(null);
+            }
+          }}
+          onClose={() => {
+            setCaptchaVisible(false);
+            setPendingLogin(null);
+          }}
+        />
+      </Modal>
     </div>
   );
 }

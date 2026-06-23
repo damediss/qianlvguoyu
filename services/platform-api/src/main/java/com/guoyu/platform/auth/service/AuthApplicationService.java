@@ -2,6 +2,7 @@ package com.guoyu.platform.auth.service;
 
 import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.guoyu.platform.auth.captcha.CaptchaService;
 import com.guoyu.platform.auth.dto.LoginReq;
 import com.guoyu.platform.auth.vo.CurrentUserVO;
 import com.guoyu.platform.auth.vo.HomeVO;
@@ -45,6 +46,7 @@ public class AuthApplicationService {
   private final MenuMapper menuMapper;
   private final PasswordEncoder passwordEncoder;
   private final TrainingOperatorScopeService trainingOperatorScopeService;
+  private final CaptchaService captchaService;
   private final SecureRandom secureRandom = new SecureRandom();
 
   public AuthApplicationService(
@@ -54,7 +56,8 @@ public class AuthApplicationService {
       RoleMenuMapper roleMenuMapper,
       MenuMapper menuMapper,
       PasswordEncoder passwordEncoder,
-      TrainingOperatorScopeService trainingOperatorScopeService
+      TrainingOperatorScopeService trainingOperatorScopeService,
+      CaptchaService captchaService
   ) {
     this.tenantMapper = tenantMapper;
     this.userMapper = userMapper;
@@ -63,10 +66,15 @@ public class AuthApplicationService {
     this.menuMapper = menuMapper;
     this.passwordEncoder = passwordEncoder;
     this.trainingOperatorScopeService = trainingOperatorScopeService;
+    this.captchaService = captchaService;
   }
 
   @Transactional(readOnly = true)
   public LoginVO login(LoginReq req) {
+    // 1. Verify captcha token (one-time consumption)
+    captchaService.consumeToken(req.captchaToken());
+
+    // 2. Original tenant/user/password verification
     TenantEntity tenant = tenantMapper.selectOne(new LambdaQueryWrapper<TenantEntity>()
         .eq(TenantEntity::getCode, req.tenantCode())
         .eq(TenantEntity::getStatus, "enabled")

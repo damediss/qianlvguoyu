@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
  * 通用任务专家分配 —— 见 V20260602_001。
  * task_type ∈ {ximu, exam, examshicao, examsub}。
  */
-@TableName("exam_task_expert")
+@TableName("task_expert")
 public class ExamTaskExpertEntity {
 
   @TableId(type = IdType.AUTO)

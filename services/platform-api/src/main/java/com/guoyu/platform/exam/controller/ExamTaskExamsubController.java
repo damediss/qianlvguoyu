@@ -54,7 +54,7 @@ public class ExamTaskExamsubController {
 
   @PostMapping("/task-examsubs/import")
   @PreAuthorize("hasAuthority('task:examsub-audit:import')")
-  @AuditLog(module = "exam", action = "task-examsub-audit:import", targetType = "exam_task_examsub")
+  @AuditLog(module = "exam", action = "task-examsub-audit:import", targetType = "task_examsub")
   public ApiResponse<Integer> importExcel(
       @RequestParam("file") MultipartFile file,
       @RequestParam Integer workTypeId,
@@ -79,7 +79,7 @@ public class ExamTaskExamsubController {
 
   @PostMapping("/task-examsubs/{id}/assign-expert")
   @PreAuthorize("hasAuthority('task:examsub-audit:assign-expert')")
-  @AuditLog(module = "exam", action = "task-examsub:assign-expert", targetType = "exam_task_examsub")
+  @AuditLog(module = "exam", action = "task-examsub:assign-expert", targetType = "task_examsub")
   public ApiResponse<Void> assignExpert(
       @PathVariable Integer id,
       @Valid @RequestBody ExamTaskExamsubAssignExpertReq req) {
@@ -90,7 +90,7 @@ public class ExamTaskExamsubController {
 
   @GetMapping("/task-examsubs/{id}/export")
   @PreAuthorize("hasAuthority('task:examsub-audit:export')")
-  @AuditLog(module = "exam", action = "task-examsub:export", targetType = "exam_task_examsub")
+  @AuditLog(module = "exam", action = "task-examsub:export", targetType = "task_examsub")
   public ResponseEntity<InputStreamResource> export(@PathVariable Integer id) throws IOException {
     log.info("GET /exam/task-examsubs/{}/export", id);
     ExportResultDTO result = service.exportExcel(id);
@@ -105,7 +105,7 @@ public class ExamTaskExamsubController {
 
   @DeleteMapping("/task-examsubs/{id}")
   @PreAuthorize("hasAuthority('task:examsub-audit:delete')")
-  @AuditLog(module = "exam", action = "task-examsub:delete", targetType = "exam_task_examsub")
+  @AuditLog(module = "exam", action = "task-examsub:delete", targetType = "task_examsub")
   public ApiResponse<Void> delete(@PathVariable Integer id) {
     log.info("DELETE /exam/task-examsubs/{}", id);
     service.delete(id);
