@@ -99,7 +99,7 @@ export function TrainingSummaryPage() {
       </Card>
 
       <Modal title={editingId ? '编辑经验' : '新增经验'} open={modalOpen} onOk={handleSubmit} onCancel={closeModal}
-        confirmLoading={createMu.isPending || updateMu.isPending} destroyOnClose width={700}>
+        confirmLoading={createMu.isPending || updateMu.isPending} destroyOnHidden width={700}>
         <Form form={form} layout="vertical">
           <Row gutter={24}>
             <Col span={24}><Form.Item name="title" label="标题" rules={[{ required: true }]}><Input placeholder="请输入标题" /></Form.Item></Col>

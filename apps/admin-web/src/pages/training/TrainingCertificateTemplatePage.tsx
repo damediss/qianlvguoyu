@@ -110,7 +110,7 @@ export function TrainingCertificateTemplatePage() {
       </Card>
 
       <Modal title={editingId ? '编辑证书模板' : '新增证书模板'} open={modalOpen} onOk={handleSubmit} onCancel={closeModal}
-        confirmLoading={createMu.isPending || updateMu.isPending} destroyOnClose width={600}>
+        confirmLoading={createMu.isPending || updateMu.isPending} destroyOnHidden width={600}>
         <Form form={form} layout="vertical">
           <Row gutter={24}>
             <Col span={24}><Form.Item name="name" label="模板名称" rules={[{ required: true }]}><Input placeholder="请输入模板名称" /></Form.Item></Col>

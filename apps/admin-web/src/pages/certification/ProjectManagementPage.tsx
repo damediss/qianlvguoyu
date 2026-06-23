@@ -891,7 +891,7 @@ export function ProjectManagementPage() {
         }}
         onOk={handleTaskSubmit}
         confirmLoading={createMutation.isPending || updateMutation.isPending}
-        destroyOnClose
+        destroyOnHidden
         width={820}
         okText="保存"
         cancelText="取消"
@@ -996,7 +996,7 @@ export function ProjectManagementPage() {
         open={editorType !== null}
         onCancel={() => setEditorType(null)}
         onOk={handleEditorSubmit}
-        destroyOnClose
+        destroyOnHidden
         width={760}
         okText="保存"
         cancelText="取消"

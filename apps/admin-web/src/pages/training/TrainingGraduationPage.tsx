@@ -110,7 +110,7 @@ export function TrainingGraduationPage() {
       </Card>
 
       <Modal title="班级学员成绩" open={studentModalOpen} onCancel={() => { setStudentModalOpen(false); setSelectedClassId(null); }}
-        footer={null} width={900} destroyOnClose>
+        footer={null} width={900} destroyOnHidden>
         <Table rowKey="id" size="small" loading={studentLoading} columns={studentColumns}
           dataSource={(studentData?.list ?? []) as Record<string, unknown>[]}
           pagination={false} scroll={{ x: 800 }}

@@ -189,7 +189,7 @@ export function TrainingInfoPage() {
         onOk={handleSubmit}
         onCancel={closeModal}
         confirmLoading={updateMu.isPending}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical">
           <Form.Item name="courseNum" label="课时">

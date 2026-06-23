@@ -96,7 +96,7 @@ export function TrainingCapabilityPage() {
       </Card>
 
       <Modal title={editingId ? '编辑能力' : '新增能力'} open={modalOpen} onOk={handleSubmit} onCancel={closeModal}
-        confirmLoading={createMu.isPending || updateMu.isPending} destroyOnClose width={600}>
+        confirmLoading={createMu.isPending || updateMu.isPending} destroyOnHidden width={600}>
         <Form form={form} layout="vertical">
           <Row gutter={24}>
             <Col span={12}><Form.Item name="userName" label="用户姓名" rules={[{ required: true }]}><Input placeholder="请输入" /></Form.Item></Col>

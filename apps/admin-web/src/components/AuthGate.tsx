@@ -160,7 +160,7 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
         footer={null}
         title="安全验证"
         width={380}
-        destroyOnClose
+        destroyOnHidden
         centered
       >
         <SliderCaptcha

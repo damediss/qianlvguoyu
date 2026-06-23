@@ -348,7 +348,7 @@ export function RequirementsManagementPage() {
         onOk={submitTrainDemand}
         onCancel={handleTrainDemandClose}
         confirmLoading={submitting}
-        destroyOnClose
+        destroyOnHidden
         width="50%"
         okText="确 定"
         cancelText="取 消"

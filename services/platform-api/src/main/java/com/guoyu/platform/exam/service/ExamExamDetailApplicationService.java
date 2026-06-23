@@ -11,9 +11,11 @@ import com.guoyu.platform.exam.dto.ExamExamDetailUpdateReq;
 import com.guoyu.platform.exam.entity.ExamCourseEntity;
 import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
 import com.guoyu.platform.exam.entity.ExamKnowledgeStructureEntity;
+import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.exam.mapper.ExamCourseMapper;
 import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
+import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.exam.vo.ExamExamDetailVO;
 import com.guoyu.platform.exam.vo.ExportResultDTO;
 import com.guoyu.platform.security.SecurityContext;
@@ -24,6 +26,8 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -48,6 +52,7 @@ public class ExamExamDetailApplicationService {
   private final ExamExamDetailMapper mapper;
   private final ExamKnowledgeStructureMapper knowledgeMapper;
   private final ExamCourseMapper courseMapper;
+  private final ExamWorkTypeMapper workTypeMapper;
   private final UserMapper userMapper;
   private final ExamKnowledgeStructureApplicationService knowledgeService;
 
@@ -55,11 +60,13 @@ public class ExamExamDetailApplicationService {
       ExamExamDetailMapper mapper,
       ExamKnowledgeStructureMapper knowledgeMapper,
       ExamCourseMapper courseMapper,
+      ExamWorkTypeMapper workTypeMapper,
       UserMapper userMapper,
       ExamKnowledgeStructureApplicationService knowledgeService) {
     this.mapper = mapper;
     this.knowledgeMapper = knowledgeMapper;
     this.courseMapper = courseMapper;
+    this.workTypeMapper = workTypeMapper;
     this.userMapper = userMapper;
     this.knowledgeService = knowledgeService;
   }
@@ -107,7 +114,7 @@ public class ExamExamDetailApplicationService {
         .collect(Collectors.toSet());
 
     Map<Integer, String> userNameMap = loadUserNames(userIds);
-    Map<Integer, String> knowledgeTitleMap = loadKnowledgeTitles(kIds);
+    Map<Integer, String> knowledgeTitleMap = buildKnowledgePaths(tenantId, kIds);
 
     List<ExamExamDetailVO> vos = records.stream().map(entity -> {
       ExamExamDetailVO vo = ExamExamDetailVO.from(entity);
@@ -134,10 +141,8 @@ public class ExamExamDetailApplicationService {
       }
     }
     if (entity.getKnowledgeId() != null) {
-      ExamKnowledgeStructureEntity ks = knowledgeMapper.selectById(entity.getKnowledgeId());
-      if (ks != null) {
-        vo.setKnowledgeTitle(ks.getTitle());
-      }
+      Map<Integer, String> pathMap = buildKnowledgePaths(entity.getTenantId(), Set.of(entity.getKnowledgeId()));
+      vo.setKnowledgeTitle(pathMap.getOrDefault(entity.getKnowledgeId(), ""));
     }
     return vo;
   }
@@ -246,13 +251,109 @@ public class ExamExamDetailApplicationService {
         (a, b) -> a));
   }
 
-  private Map<Integer, String> loadKnowledgeTitles(Set<Integer> kIds) {
+  /**
+   * 构建知识点完整路径: 工种链/课程标题/知识点链(L0→L1→L2→L3)。
+   * 例如: "母液蒸发工/母液蒸发工初级/基本要求/职业道德/职业道德基本知识/工匠精神培养"
+   */
+  private Map<Integer, String> buildKnowledgePaths(Integer tenantId, Set<Integer> kIds) {
     if (kIds.isEmpty()) return Map.of();
-    List<ExamKnowledgeStructureEntity> list = knowledgeMapper.selectBatchIds(kIds.stream().toList());
-    return list.stream().collect(Collectors.toMap(
-        ExamKnowledgeStructureEntity::getId,
-        ExamKnowledgeStructureEntity::getTitle,
-        (a, b) -> a));
+
+    // 1) 查当前租户全部知识点, 构建 id→entity Map
+    List<ExamKnowledgeStructureEntity> allKs = knowledgeMapper.selectList(
+        new LambdaQueryWrapper<ExamKnowledgeStructureEntity>()
+            .eq(ExamKnowledgeStructureEntity::getTenantId, tenantId));
+    Map<Integer, ExamKnowledgeStructureEntity> ksMap = allKs.stream()
+        .collect(Collectors.toMap(ExamKnowledgeStructureEntity::getId, e -> e, (a, b) -> a));
+
+    // 2) 收集涉及的 courseId, 批量查课程
+    Set<Integer> courseIds = allKs.stream()
+        .map(ExamKnowledgeStructureEntity::getCourseId)
+        .filter(cid -> cid != null && cid > 0)
+        .collect(Collectors.toSet());
+    Map<Integer, ExamCourseEntity> courseMap = courseIds.isEmpty() ? Map.of()
+        : courseMapper.selectBatchIds(courseIds.stream().toList()).stream()
+            .collect(Collectors.toMap(ExamCourseEntity::getId, e -> e, (a, b) -> a));
+
+    // 3) 查当前租户全部工种, 构建 id→entity Map (用于工种父链回溯)
+    List<ExamWorkTypeEntity> allWt = workTypeMapper.selectList(
+        new LambdaQueryWrapper<ExamWorkTypeEntity>()
+            .eq(ExamWorkTypeEntity::getTenantId, tenantId));
+    Map<Integer, ExamWorkTypeEntity> wtMap = allWt.stream()
+        .collect(Collectors.toMap(ExamWorkTypeEntity::getId, e -> e, (a, b) -> a));
+
+    // 4) 逐个 kId 组装路径
+    Map<Integer, String> result = new LinkedHashMap<>();
+    for (Integer kId : kIds) {
+      ExamKnowledgeStructureEntity ksNode = ksMap.get(kId);
+      if (ksNode == null) {
+        result.put(kId, "");
+        continue;
+      }
+
+      // 知识点父链: 从当前节点回溯到根, 反转为 L0→L1→...→Ln
+      List<String> ksChain = walkKsAncestors(ksNode, ksMap);
+
+      // 课程标题
+      String courseTitle = "";
+      String workTypePath = "";
+      if (ksNode.getCourseId() != null) {
+        ExamCourseEntity course = courseMap.get(ksNode.getCourseId());
+        if (course != null) {
+          courseTitle = course.getTitle() != null ? course.getTitle() : "";
+          // 工种父链
+          if (course.getWorkTypeId() != null) {
+            ExamWorkTypeEntity wtNode = wtMap.get(course.getWorkTypeId());
+            if (wtNode != null) {
+              workTypePath = walkWorkTypeAncestors(wtNode, wtMap);
+            }
+          }
+        }
+      }
+
+      // 拼接: 工种链/课程/知识点链
+      StringBuilder sb = new StringBuilder();
+      if (!workTypePath.isEmpty()) sb.append(workTypePath).append('/');
+      if (!courseTitle.isEmpty()) sb.append(courseTitle).append('/');
+      sb.append(String.join("/", ksChain));
+      result.put(kId, sb.toString());
+    }
+    return result;
+  }
+
+  /**
+   * 知识点父链回溯: 从当前节点沿 parentId 走到根, 返回正序 [L0, L1, ..., Ln]。
+   */
+  private List<String> walkKsAncestors(ExamKnowledgeStructureEntity node,
+      Map<Integer, ExamKnowledgeStructureEntity> ksMap) {
+    List<String> chain = new ArrayList<>();
+    ExamKnowledgeStructureEntity cur = node;
+    int maxDepth = 10; // 防环
+    while (cur != null && maxDepth-- > 0) {
+      if (cur.getTitle() != null) chain.add(cur.getTitle());
+      Integer pid = cur.getParentId();
+      if (pid == null || pid <= 0) break;
+      cur = ksMap.get(pid);
+    }
+    Collections.reverse(chain);
+    return chain;
+  }
+
+  /**
+   * 工种父链回溯: 从当前节点沿 parentId 走到根, 返回 "根/.../当前" 格式字符串。
+   */
+  private String walkWorkTypeAncestors(ExamWorkTypeEntity node,
+      Map<Integer, ExamWorkTypeEntity> wtMap) {
+    List<String> chain = new ArrayList<>();
+    ExamWorkTypeEntity cur = node;
+    int maxDepth = 10; // 防环
+    while (cur != null && maxDepth-- > 0) {
+      if (cur.getTitle() != null) chain.add(cur.getTitle());
+      Integer pid = cur.getParentId();
+      if (pid == null || pid <= 0) break;
+      cur = wtMap.get(pid);
+    }
+    Collections.reverse(chain);
+    return String.join("/", chain);
   }
 
   // ── Import from Excel ──
@@ -367,7 +468,7 @@ public class ExamExamDetailApplicationService {
         .map(ExamExamDetailEntity::getKnowledgeId)
         .filter(kid -> kid != null && kid > 0)
         .collect(Collectors.toSet());
-    Map<Integer, String> knowledgeTitleMap = loadKnowledgeTitles(kIds);
+    Map<Integer, String> knowledgeTitleMap = buildKnowledgePaths(tenantId, kIds);
 
     try (Workbook workbook = new XSSFWorkbook()) {
       Sheet sheet = workbook.createSheet("试题");

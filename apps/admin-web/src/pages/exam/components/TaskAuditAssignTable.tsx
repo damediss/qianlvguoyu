@@ -651,7 +651,7 @@ export function TaskAuditAssignTable({
           setDetailData([]);
         }}
         width="85%"
-        destroyOnClose
+        destroyOnHidden
       >
         <Descriptions bordered column={2} size="small" style={{ marginBottom: 12 }}>
           <Descriptions.Item label="工种">{currentRow?.workTypeCn}</Descriptions.Item>

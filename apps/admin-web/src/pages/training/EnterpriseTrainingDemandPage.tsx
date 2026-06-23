@@ -348,7 +348,7 @@ export function EnterpriseTrainingDemandPage() {
         onCancel={() => setFormOpen(false)}
         onOk={handleSubmit}
         confirmLoading={submitting}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical">
           <Form.Item name="content" label="培训内容" rules={[{ required: true, message: '请输入培训内容' }]}>
@@ -366,7 +366,7 @@ export function EnterpriseTrainingDemandPage() {
         width="60%"
         onCancel={() => { setProgramOpen(false); setProgram(null); }}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         {canConfirm && (
           <div className="program-actions">

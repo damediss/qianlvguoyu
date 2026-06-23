@@ -19,7 +19,7 @@ public class ExamTaskExamDetailEntity {
   private String kaohe3;
   private String kaohe4;
   private String jianding;
-  private Integer level;
+  private String level;
   private String nanyicd;
   private String examType;
   private String examContent;
@@ -59,8 +59,8 @@ public class ExamTaskExamDetailEntity {
   public void setKaohe4(String kaohe4) { this.kaohe4 = kaohe4; }
   public String getJianding() { return jianding; }
   public void setJianding(String jianding) { this.jianding = jianding; }
-  public Integer getLevel() { return level; }
-  public void setLevel(Integer level) { this.level = level; }
+  public String getLevel() { return level; }
+  public void setLevel(String level) { this.level = level; }
   public String getNanyicd() { return nanyicd; }
   public void setNanyicd(String nanyicd) { this.nanyicd = nanyicd; }
   public String getExamType() { return examType; }

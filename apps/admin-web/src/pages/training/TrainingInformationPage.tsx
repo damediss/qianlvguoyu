@@ -824,7 +824,7 @@ export function TrainingInformationPage() {
         onCancel={() => { setModalOpen(false); setEditing(null); form.resetFields(); }}
         onOk={handleSave}
         confirmLoading={saveMu.isPending}
-        destroyOnClose
+        destroyOnHidden
         okText="确认"
         cancelText="取消"
       >
@@ -973,7 +973,7 @@ export function TrainingInformationPage() {
         centered
         onCancel={closePeopleModal}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <div className="people-modal-body">
           <div className="people-search-row">
@@ -1086,7 +1086,7 @@ export function TrainingInformationPage() {
         width="40%"
         onCancel={closeImportModal}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
         maskClosable={false}
       >
         <Spin spinning={importLoading}>
@@ -1119,7 +1119,7 @@ export function TrainingInformationPage() {
         width="50%"
         onCancel={closeImportStudentModal}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
         maskClosable={false}
       >
         <div className="tools">
@@ -1214,7 +1214,7 @@ export function TrainingInformationPage() {
         width="40%"
         onCancel={closePlanFiles}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
         maskClosable={false}
       >
         <Table
@@ -1255,7 +1255,7 @@ export function TrainingInformationPage() {
         width="70%"
         onCancel={() => { setOrcFailOpen(false); setOrcFailData([]); }}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Table
           rowKey="id"

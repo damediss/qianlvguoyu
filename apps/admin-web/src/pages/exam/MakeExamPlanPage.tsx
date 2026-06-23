@@ -449,7 +449,7 @@ export function MakeExamPlanPage() {
           form.resetFields();
         }}
         width={900}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={form}

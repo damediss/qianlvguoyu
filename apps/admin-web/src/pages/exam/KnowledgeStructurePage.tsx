@@ -198,7 +198,7 @@ function NodeFormModal({ open, editing, courseId, activeType, treeData, onClose 
       onCancel={onClose}
       confirmLoading={createMut.isPending || updateMut.isPending}
       width={560}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form form={form} layout="vertical">
         <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
@@ -294,7 +294,7 @@ function ImportModal({ open, courseId, activeType, onClose }: ImportModalProps) 
       onCancel={handleClose}
       confirmLoading={loading}
       okText="开始导入"
-      destroyOnClose
+      destroyOnHidden
     >
       <Upload.Dragger
         accept=".xls,.xlsx"

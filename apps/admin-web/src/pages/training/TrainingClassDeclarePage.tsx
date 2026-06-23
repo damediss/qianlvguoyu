@@ -510,7 +510,7 @@ export function TrainingClassDeclarePage() {
         width="50%"
         onCancel={() => { setFileTempRows([]); setFileTempOpen(false); setFileTempImport(false); }}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Alert
           type="info"
@@ -548,7 +548,7 @@ export function TrainingClassDeclarePage() {
         onOk={fileUploadSubmit}
         okText="确定"
         cancelText="取消"
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={formFileTemp} labelCol={{ span: 8 }} wrapperCol={{ span: 16 }}>
           <Form.Item name="id" hidden><Input /></Form.Item>
@@ -633,7 +633,7 @@ export function TrainingClassDeclarePage() {
         width={500}
         onCancel={() => setUploadOpen(false)}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Dragger {...uploadProps}>
           <p className="ant-upload-drag-icon"><InboxOutlined /></p>
@@ -656,7 +656,7 @@ export function TrainingClassDeclarePage() {
         width="60%"
         onCancel={() => { setClassMaterialOpen(false); setFileTempImport(false); setMaterialRows([]); }}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Button className="mar-b10" type="primary" onClick={handleMaterialAdd}>新增</Button>
         <Table

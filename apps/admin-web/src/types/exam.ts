@@ -258,7 +258,7 @@ export interface TaskAuditDetailItem {
   kaohe3?: string;
   kaohe4?: string;
   jianding?: string;
-  level?: number;
+  level?: string;
   nanyicd?: string;
   examType?: string;
   examContent?: string;

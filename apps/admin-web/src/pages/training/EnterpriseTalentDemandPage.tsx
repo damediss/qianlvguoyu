@@ -187,7 +187,7 @@ export function EnterpriseTalentDemandPage() {
         onCancel={() => setFormOpen(false)}
         onOk={handleSubmit}
         confirmLoading={submitting}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical">
           <Form.Item name="work" label="岗位名称" rules={[{ required: true, message: '请输入岗位名称' }]}>

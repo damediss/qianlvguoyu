@@ -248,7 +248,7 @@ function QuestionFormModal({ open, editing, knowledgeTreeData, courseId, onClose
       onCancel={onClose}
       confirmLoading={createMut.isPending || updateMut.isPending}
       width={720}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form form={form} layout="vertical" initialValues={{ type: 'single', difficulty: 2 }}>
         <Form.Item name="type" label="题型" rules={[{ required: true, message: '请选择题型' }]}>
@@ -557,7 +557,7 @@ export function QuestionBankPage() {
     {
       title: '来源',
       dataIndex: 'source',
-      width: 80,
+      width: 70,
       render: (v: number) => (
         <Tag color={v === 0 ? 'blue' : 'orange'}>{EXAM_SOURCE_MAP[v] ?? v}</Tag>
       ),
@@ -565,7 +565,7 @@ export function QuestionBankPage() {
     {
       title: '题型',
       dataIndex: 'type',
-      width: 100,
+      width: 90,
       render: (v: string) => EXAM_TYPE_MAP[v] || v,
     },
     {
@@ -581,14 +581,14 @@ export function QuestionBankPage() {
     {
       title: '知识点',
       dataIndex: 'knowledgeTitle',
-      width: 120,
+      width: 190,
       ellipsis: true,
       render: (v: string) => v || '-',
     },
     {
       title: '难度',
       dataIndex: 'difficulty',
-      width: 80,
+      width: 60,
       render: (v: number) => (
         <Tag color={DIFFICULTY_COLOR_MAP[v] || 'default'}>
           {DIFFICULTY_MAP[v] || v}
@@ -607,7 +607,7 @@ export function QuestionBankPage() {
     {
       title: '更新时间',
       dataIndex: 'updateTime',
-      width: 160,
+      width: 130,
       render: (v: string, record: ExamExamDetail) => {
         const t = v || record.createTime;
         return t ? String(t).substring(0, 16) : '-';
@@ -1023,7 +1023,7 @@ export function QuestionBankPage() {
         }}
         confirmLoading={importLoading}
         okText="开始导入"
-        destroyOnClose
+        destroyOnHidden
       >
         <Upload.Dragger
           accept=".xls,.xlsx"

@@ -128,7 +128,7 @@ export function TrainingSchedulePage() {
       </Card>
 
       <Modal title={editingIndex !== null ? '编辑课时' : '添加课时'} open={modalOpen} onOk={handleSubmit} onCancel={() => { setModalOpen(false); form.resetFields(); }}
-        destroyOnClose width={560}>
+        destroyOnHidden width={560}>
         <Form form={form} layout="vertical">
           <Space style={{ width: '100%' }} direction="vertical">
             <Form.Item name="scheduleDate" label="日期" rules={[{ required: true }]}>

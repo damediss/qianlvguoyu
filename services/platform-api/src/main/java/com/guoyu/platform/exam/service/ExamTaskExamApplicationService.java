@@ -291,8 +291,7 @@ public class ExamTaskExamApplicationService {
       detail.setKaohe3(cell(el, 3));
       detail.setKaohe4(cell(el, 4));
       detail.setJianding(cell(el, 5));
-      Integer levelInt = parseIntOrNull(cell(el, 6));
-      detail.setLevel(levelInt);
+      detail.setLevel(cell(el, 6));
       detail.setNanyicd(cell(el, 7));
       detail.setExamType(cell(el, 8));
       detail.setExamContent(cell(el, 9));

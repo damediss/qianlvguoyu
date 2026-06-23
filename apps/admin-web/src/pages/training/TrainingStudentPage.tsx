@@ -133,7 +133,7 @@ export function TrainingStudentPage() {
         onCancel={() => { setModalOpen(false); setEditing(null); }}
         onOk={() => form.validateFields().then((v) => saveMu.mutate({ ...v, id: editing?.id }))}
         confirmLoading={saveMu.isPending}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical">
           <Form.Item name="realname" label="姓名" rules={[{ required: true }]}>

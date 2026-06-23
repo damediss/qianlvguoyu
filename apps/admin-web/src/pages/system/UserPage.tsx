@@ -394,7 +394,7 @@ export function UserPage() {
           form.resetFields();
         }}
         confirmLoading={createMutation.isPending || updateMutation.isPending}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Space size={16} style={{ width: '100%' }}>
@@ -499,7 +499,7 @@ export function UserPage() {
           pwdForm.resetFields();
         }}
         confirmLoading={resetPwdMutation.isPending}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={pwdForm} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item

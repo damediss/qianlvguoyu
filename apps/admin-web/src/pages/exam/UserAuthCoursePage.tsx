@@ -328,7 +328,7 @@ export function UserAuthCoursePage() {
           form.resetFields();
         }}
         confirmLoading={createMutation.isPending || updateMutation.isPending}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Space size={12} style={{ width: '100%' }}>

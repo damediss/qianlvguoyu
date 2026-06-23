@@ -315,7 +315,7 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
         onCancel={onClose}
         width={1080}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         {candidate ? (
           <Space direction="vertical" style={{ width: '100%' }} size={16}>
@@ -365,7 +365,7 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
         }}
         confirmLoading={saveMutation.isPending || uploadingFile}
         width={720}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={uploadForm} layout="vertical">
           <Form.Item name="candidateId" hidden rules={[{ required: true }]}>
@@ -410,7 +410,7 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
         onOk={submitReview}
         onCancel={() => setReviewingDocument(null)}
         confirmLoading={reviewMutation.isPending}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={reviewForm} layout="vertical">
           <Form.Item name="status" label="审核结果" rules={[{ required: true, message: '请选择审核结果' }]}>

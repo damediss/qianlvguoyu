@@ -355,7 +355,7 @@ export function SignUpPeopleEditModal({
       width="80%"
       onCancel={onClose}
       footer={null}
-      destroyOnClose
+      destroyOnHidden
       maskClosable={false}
       keyboard={false}
     >

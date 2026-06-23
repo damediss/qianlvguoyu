@@ -544,7 +544,7 @@ function XimuAuditPanel({
       onCancel={onClose}
       footer={null}
       width={1200}
-      destroyOnClose
+      destroyOnHidden
     >
       {treeLoading ? (
         <Spin style={{ display: 'block', textAlign: 'center', padding: 40 }} />

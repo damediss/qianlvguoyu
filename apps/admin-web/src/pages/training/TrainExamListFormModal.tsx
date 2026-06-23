@@ -142,7 +142,7 @@ export function TrainExamListFormModal({ open, editingId, onClose }: Props) {
       title={isEdit ? '编辑考试计划' : '新增考试计划'}
       open={open}
       width={720}
-      destroyOnClose
+      destroyOnHidden
       onCancel={onClose}
       onOk={() => form.submit()}
       confirmLoading={saveMu.isPending}

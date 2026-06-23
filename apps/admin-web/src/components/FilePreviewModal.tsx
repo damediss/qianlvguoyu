@@ -211,7 +211,7 @@ export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProp
         ) : null
       }
       width={modalWidth}
-      destroyOnClose
+      destroyOnHidden
     >
       <Spin spinning={loading}>
         <div style={{ minHeight: 420, maxHeight: '70vh', overflow: 'auto' }}>

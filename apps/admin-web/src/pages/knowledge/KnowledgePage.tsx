@@ -511,7 +511,7 @@ export function KnowledgePage() {
         open={spaceOpen}
         width={480}
         onClose={() => setSpaceOpen(false)}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={spaceForm}
@@ -548,7 +548,7 @@ export function KnowledgePage() {
         open={ingestOpen}
         width={520}
         onClose={() => setIngestOpen(false)}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={ingestForm}

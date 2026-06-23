@@ -138,7 +138,7 @@ export function TrainExamPeopleModal({ open, examId, examTitle, onClose }: Props
         width={1100}
         onCancel={onClose}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Space wrap style={{ marginBottom: 12 }}>
           <Input.Search
@@ -189,7 +189,7 @@ export function TrainExamPeopleModal({ open, examId, examTitle, onClose }: Props
         onOk={() => importMu.mutate()}
         onCancel={() => setImportOpen(false)}
         confirmLoading={importMu.isPending}
-        destroyOnClose
+        destroyOnHidden
       >
         <Typography.Paragraph type="secondary">每行一个 18 位身份证号，自动跳过重复项</Typography.Paragraph>
         <Input.TextArea
@@ -207,7 +207,7 @@ export function TrainExamPeopleModal({ open, examId, examTitle, onClose }: Props
         onOk={() => trainId && importTrainMu.mutate()}
         onCancel={() => { setImportFromTrainOpen(false); setTrainId(undefined); }}
         confirmLoading={importTrainMu.isPending}
-        destroyOnClose
+        destroyOnHidden
       >
         <Typography.Paragraph type="secondary">选择一个培训，将该培训的所有学员导入到本考试</Typography.Paragraph>
         <InputNumber
@@ -223,7 +223,7 @@ export function TrainExamPeopleModal({ open, examId, examTitle, onClose }: Props
         onOk={() => gradeForm.submit()}
         onCancel={() => { setGradeOpen(false); setEditing(null); }}
         confirmLoading={gradeMu.isPending}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={gradeForm} layout="vertical" onFinish={v => {
           gradeMu.mutate({

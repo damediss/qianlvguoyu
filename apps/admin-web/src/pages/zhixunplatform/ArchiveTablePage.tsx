@@ -325,7 +325,7 @@ export function createArchiveTablePage(module: ModuleKey) {
           )}
         </main>
 
-        <Modal title={`${modalMode === 'add' ? '新增' : '编辑'}${module === 'environment' ? (envEntity === 'bases' ? '基地' : '场地') : ' — ' + meta.title}`} open={modalOpen} onOk={handleSave} onCancel={() => setModalOpen(false)} destroyOnClose>
+        <Modal title={`${modalMode === 'add' ? '新增' : '编辑'}${module === 'environment' ? (envEntity === 'bases' ? '基地' : '场地') : ' — ' + meta.title}`} open={modalOpen} onOk={handleSave} onCancel={() => setModalOpen(false)} destroyOnHidden>
           <Form form={form} layout="vertical">
             {module === 'equipment' && (
               <>

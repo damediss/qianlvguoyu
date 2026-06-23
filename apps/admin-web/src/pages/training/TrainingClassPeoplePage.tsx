@@ -293,7 +293,7 @@ function StudentListModal({
         footer={null}
         width="88%"
         centered
-        destroyOnClose
+        destroyOnHidden
         rootClassName="class-student-list-modal"
         styles={{ body: { padding: '12px 16px 16px', maxHeight: '78vh', overflow: 'hidden' } }}
       >
@@ -341,7 +341,7 @@ function StudentListModal({
         okText="确定"
         cancelText="取消"
         width="35%"
-        destroyOnClose
+        destroyOnHidden
         className="training-class-people-page"
         wrapClassName="training-class-people-page"
       >
@@ -374,7 +374,7 @@ function StudentListModal({
         onCancel={() => { setImportOpen(false); setSelectedSignUpIds([]); setImportKeyword(''); }}
         footer={null}
         width="35%"
-        destroyOnClose
+        destroyOnHidden
         className="training-class-people-page"
         wrapClassName="training-class-people-page"
       >
@@ -408,7 +408,7 @@ function StudentListModal({
         footer={null}
         maskClosable={false}
         width="35%"
-        destroyOnClose
+        destroyOnHidden
         className="training-class-people-page"
         wrapClassName="training-class-people-page"
       >
@@ -550,7 +550,7 @@ function StaffModal({
         footer={null}
         width="52%"
         centered
-        destroyOnClose
+        destroyOnHidden
         rootClassName="class-staff-modal"
         styles={{ body: { padding: '12px 16px 16px' } }}
       >
@@ -588,7 +588,7 @@ function StaffModal({
         okText="确定"
         cancelText="取消"
         width="35%"
-        destroyOnClose
+        destroyOnHidden
         rootClassName="class-staff-modal"
       >
         <Form form={editForm} labelCol={{ style: { width: 80 } }} wrapperCol={{ span: 16 }}>
@@ -615,7 +615,7 @@ function StaffModal({
         footer={null}
         maskClosable={false}
         width={520}
-        destroyOnClose
+        destroyOnHidden
         rootClassName="class-staff-modal"
       >
         <div className="staff-import-actions">
@@ -705,7 +705,7 @@ function TrainTaskModal({
 
   return (
     <>
-      <Modal title="培训任务编辑" open={open} onCancel={onClose} footer={null} width="60%" destroyOnClose>
+      <Modal title="培训任务编辑" open={open} onCancel={onClose} footer={null} width="60%" destroyOnHidden>
         <div className="mar-b10">
           <Button onClick={() => {
             setEditingId(null);
@@ -730,7 +730,7 @@ function TrainTaskModal({
         okText="确定"
         cancelText="取消"
         width="50%"
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={editForm} labelCol={{ style: { width: 80 } }} wrapperCol={{ span: 16 }}>
           <Form.Item name="ck_id" label="课件名称">
@@ -1084,7 +1084,7 @@ export function TrainingClassPeoplePage() {
         confirmLoading={saveMu.isPending}
         okText="确定"
         cancelText="取消"
-        destroyOnClose
+        destroyOnHidden
         width="50%"
       >
         <Form form={form} labelCol={{ style: { width: 120 } }} wrapperCol={{ span: 16 }}>
@@ -1135,7 +1135,7 @@ export function TrainingClassPeoplePage() {
         onCancel={() => setUploadOpen(false)}
         footer={null}
         maskClosable={false}
-        destroyOnClose
+        destroyOnHidden
       >
         <Dragger {...kcbiaoUploadProps}>
           <p className="ant-upload-drag-icon"><InboxOutlined /></p>

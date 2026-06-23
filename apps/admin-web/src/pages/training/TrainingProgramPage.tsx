@@ -355,7 +355,7 @@ export function TrainingProgramPage() {
         okText="确认"
         cancelText="取消"
         width="50%"
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} labelCol={{ span: 6 }} wrapperCol={{ span: 18 }}>
           <Form.Item name="id" hidden>
@@ -476,7 +476,7 @@ export function TrainingProgramPage() {
         onCancel={() => { setViewOpen(false); setTrainProgram(null); }}
         footer={null}
         width="60%"
-        destroyOnClose
+        destroyOnHidden
       >
         {trainProgram && (
           <div>

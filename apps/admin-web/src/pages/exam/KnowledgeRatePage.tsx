@@ -224,7 +224,7 @@ export function KnowledgeRatePage() {
           form.resetFields();
         }}
         width={700}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical">
           <Form.Item name="title" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
