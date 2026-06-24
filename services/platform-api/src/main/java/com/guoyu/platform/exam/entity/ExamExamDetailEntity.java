@@ -16,7 +16,7 @@ public class ExamExamDetailEntity {
   private Integer examId;
   private Integer taskDetailId;
   private Integer source;
-  private Integer orgId;
+  private Long orgId;
   private String orgName;
   private Integer knowledgeId;
   private Integer isPrivate;
@@ -53,8 +53,8 @@ public class ExamExamDetailEntity {
   public void setTaskDetailId(Integer taskDetailId) { this.taskDetailId = taskDetailId; }
   public Integer getSource() { return source; }
   public void setSource(Integer source) { this.source = source; }
-  public Integer getOrgId() { return orgId; }
-  public void setOrgId(Integer orgId) { this.orgId = orgId; }
+  public Long getOrgId() { return orgId; }
+  public void setOrgId(Long orgId) { this.orgId = orgId; }
   public String getOrgName() { return orgName; }
   public void setOrgName(String orgName) { this.orgName = orgName; }
   public Integer getKnowledgeId() { return knowledgeId; }

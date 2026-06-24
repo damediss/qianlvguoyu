@@ -31,6 +31,9 @@ import type {
   ExamExamDetailCreateReq,
   ExamExamDetailUpdateReq,
   ExamExamDetailQuery,
+  CompanyQuestionCreateReq,
+  CompanyQuestionUpdateReq,
+  CompanyQuestionQuery,
   ExamMakeExamPlan,
   ExamMakeExamPlanCreateReq,
   ExamMakeExamPlanQuery,
@@ -314,6 +317,40 @@ export function importExamDetails(formData: FormData) {
 export function exportExamDetails(courseId: number) {
   return apiClient.get('/exam/exam-details/export', {
     params: { courseId },
+    responseType: 'blob',
+  });
+}
+
+// ---- 公司试题管理 ----
+export function pageCompanyQuestions(params: CompanyQuestionQuery) {
+  return unwrap<PageResponse<ExamExamDetail>>(apiClient.get('/exam/company-questions', { params }));
+}
+
+export function createCompanyQuestion(payload: CompanyQuestionCreateReq) {
+  return unwrap<ExamExamDetail>(apiClient.post('/exam/company-questions', payload));
+}
+
+export function updateCompanyQuestion(id: number, payload: CompanyQuestionUpdateReq) {
+  return unwrap<ExamExamDetail>(apiClient.put(`/exam/company-questions/${id}`, payload));
+}
+
+export function deleteCompanyQuestion(id: number) {
+  return unwrap<void>(apiClient.delete(`/exam/company-questions/${id}`));
+}
+
+export function batchDeleteCompanyQuestions(ids: number[]) {
+  return unwrap<number>(apiClient.post('/exam/company-questions/batch-delete', ids));
+}
+
+/** 导入公司试题: FormData 包含 file + orgId + orgName + source */
+export function importCompanyQuestions(formData: FormData) {
+  return unwrap<number>(apiClient.post('/exam/company-questions/import', formData));
+}
+
+/** 导出公司试题:返回 blob 流,orgId 为空时导出全部公司试题 */
+export function exportCompanyQuestions(orgId?: number) {
+  return apiClient.get('/exam/company-questions/export', {
+    params: { orgId },
     responseType: 'blob',
   });
 }

@@ -50,6 +50,7 @@ import { createArchiveTablePage } from './pages/zhixunplatform/ArchiveTablePage'
 import { createPmFormPage } from './pages/zhixunplatform/PmFormPage';
 import { TaskStartPage } from './pages/expert/TaskStartPage';
 import { QuestionBankPage } from './pages/exam/QuestionBankPage';
+import { CompanyQuestionPage } from './pages/exam/CompanyQuestionPage';
 import { MakeExamPlanPage } from './pages/exam/MakeExamPlanPage';
 import { KnowledgeRatePage } from './pages/exam/KnowledgeRatePage';
 import { KnowledgeStructurePage } from './pages/exam/KnowledgeStructurePage';
@@ -174,6 +175,7 @@ const pageMap: Record<string, React.ReactNode> = {
   zhixun_table_communication: <PmCommunicationPage />,
   zhixun_table_status: <PmStatusPage />,
   exam_question_bank: <QuestionBankPage />,
+  gong_si_shi_ti_guan_li: <CompanyQuestionPage />,
   zu_juan_ji_hua: <MakeExamPlanPage />,
   'train_exam-list': <TrainExamListPage />,
   kao_shi_ji_hua: <TrainExamListPage />,

@@ -528,6 +528,45 @@ export interface ExamExamDetailQuery {
   keyword?: string;
 }
 
+// ---- 公司试题管理 ----
+export interface CompanyQuestionCreateReq {
+  type: string;
+  content?: string;
+  answer?: string;
+  orgId: number;
+  orgName: string;
+  difficulty?: number;
+  score?: number;
+  resolve?: string;
+  keyword?: string;
+  status?: number;
+  sortNumber?: number;
+}
+
+export interface CompanyQuestionUpdateReq {
+  type?: string;
+  content?: string;
+  answer?: string;
+  orgId?: number;
+  orgName?: string;
+  difficulty?: number;
+  score?: number;
+  resolve?: string;
+  keyword?: string;
+  status?: number;
+  sortNumber?: number;
+}
+
+export interface CompanyQuestionQuery {
+  page?: number;
+  pageSize?: number;
+  orgId?: number;
+  type?: string;
+  difficulty?: number;
+  status?: number;
+  keyword?: string;
+}
+
 // 来源映射:0=内部,1=外部
 export const EXAM_SOURCE_MAP: Record<number, string> = {
   0: '内部',
