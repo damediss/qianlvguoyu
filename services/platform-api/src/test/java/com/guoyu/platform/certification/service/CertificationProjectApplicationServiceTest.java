@@ -18,6 +18,7 @@ import com.guoyu.platform.certification.dto.CertificationWbsItemReq;
 import com.guoyu.platform.certification.entity.CertificationRiskEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskDocumentEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskEntity;
+import com.guoyu.platform.certification.entity.CertificationTaskMemberEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskPhaseEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskScopeEntity;
 import com.guoyu.platform.certification.mapper.CertificationCharterGoalMapper;
@@ -179,6 +180,31 @@ class CertificationProjectApplicationServiceTest {
     assertThatThrownBy(() -> service.saveMembers(1L, java.util.List.of(req)))
         .isInstanceOf(BusinessException.class)
         .hasMessage("成员手机号格式不正确");
+  }
+
+  @Test
+  void saveMembersAcceptsNullRoleCode() {
+    when(taskMapper.selectById(1L)).thenReturn(existingTask());
+    CertificationMemberReq req = new CertificationMemberReq(
+        null,
+        "李敏",
+        null,
+        "资料专员",
+        "运营部",
+        "整理资料",
+        LocalDate.of(2026, 5, 1),
+        LocalDate.of(2026, 5, 10),
+        "full",
+        BigDecimal.valueOf(80),
+        null,
+        "备注"
+    );
+
+    service.saveMembers(1L, java.util.List.of(req));
+
+    ArgumentCaptor<CertificationTaskMemberEntity> captor = ArgumentCaptor.forClass(CertificationTaskMemberEntity.class);
+    verify(memberMapper).insert(captor.capture());
+    assertThat(captor.getValue().getCoreRole()).isFalse();
   }
 
   @Test

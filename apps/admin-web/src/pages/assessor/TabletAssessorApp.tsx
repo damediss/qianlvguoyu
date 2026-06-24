@@ -16,6 +16,7 @@ import {
   Input,
   List,
   Modal,
+  Select,
   Space,
   Spin,
   Tag,
@@ -29,16 +30,19 @@ import {
   confirmMyPracticalStart,
   createPracticalWebSocketTicket,
   getMyAssessorExam,
+  getMyAssessorWorkbenchContext,
   listMyAssessorExams,
   saveMyAssessorScoringDraft,
   startMyPracticalSession,
   submitMyAssessorScoringTask,
+  switchMyAssessorWorkbenchTask,
 } from '../../api/practicalScoring';
 import { logout } from '../../api/auth';
 import { useAuthStore } from '../../stores/authStore';
 import type {
   AssessorExamDetail,
   AssessorExamListItem,
+  AssessorWorkbenchContext,
   AssessorScoringTaskDetail,
   PracticalSaveScorePayload,
   PracticalStartSession,
@@ -68,13 +72,35 @@ export function TabletAssessorApp() {
   const [online, setOnline] = useState(navigator.onLine);
   const [syncState, setSyncState] = useState<'saved' | 'syncing' | 'offline' | 'conflict'>('saved');
   const hydratedTaskRef = useRef<string>();
+  const previousWorkbenchTaskRef = useRef<string>();
   const syncTimerRef = useRef<number>();
   const skipNextDraftSyncRef = useRef(false);
 
+  const workbenchContextQuery = useQuery({
+    queryKey: ['my-practical-scoring-workbench-context'],
+    queryFn: () => getMyAssessorWorkbenchContext(),
+    refetchInterval: online ? 10_000 : false,
+    staleTime: 0,
+  });
+
   const examsQuery = useQuery({
-    queryKey: ['my-practical-scoring-exams'],
+    queryKey: ['my-practical-scoring-exams', workbenchContextQuery.data?.activeTaskId],
     queryFn: () => listMyAssessorExams(),
+    enabled: workbenchContextQuery.isSuccess,
     refetchInterval: online ? 30_000 : false,
+  });
+
+  const switchWorkbenchTaskMutation = useMutation({
+    mutationFn: (taskId: string) => switchMyAssessorWorkbenchTask(taskId),
+    onSuccess: (context) => {
+      queryClient.setQueryData<AssessorWorkbenchContext>(['my-practical-scoring-workbench-context'], context);
+      setSelectedExamKey(undefined);
+      setActiveTaskId(undefined);
+      hydratedTaskRef.current = undefined;
+      queryClient.invalidateQueries({ queryKey: ['my-practical-scoring-exams'] });
+      queryClient.invalidateQueries({ queryKey: ['my-practical-scoring-exam'] });
+      message.success('已切换当前认定任务');
+    },
   });
 
   const selectedExam = useMemo(
@@ -101,6 +127,23 @@ export function TabletAssessorApp() {
       setSelectedExamKey(examKey(examsQuery.data[0]));
     }
   }, [examsQuery.data, selectedExamKey]);
+
+  useEffect(() => {
+    const currentTaskId = workbenchContextQuery.data?.activeTaskId;
+    if (!currentTaskId) return;
+    const previousTaskId = previousWorkbenchTaskRef.current;
+    previousWorkbenchTaskRef.current = currentTaskId;
+    if (previousTaskId && previousTaskId !== currentTaskId) {
+      hydratedTaskRef.current = undefined;
+      setSelectedExamKey(undefined);
+      setActiveTaskId(undefined);
+      queryClient.invalidateQueries({ queryKey: ['my-practical-scoring-exams'] });
+      queryClient.invalidateQueries({ queryKey: ['my-practical-scoring-exam'] });
+      if (!workbenchContextQuery.data?.leader) {
+        message.info('组长已切换当前认定任务，评分列表已同步更新');
+      }
+    }
+  }, [queryClient, workbenchContextQuery.data?.activeTaskId, workbenchContextQuery.data?.leader]);
 
   useEffect(() => {
     const questions = examQuery.data?.questions || [];
@@ -336,6 +379,24 @@ export function TabletAssessorApp() {
     }
   }
 
+  function switchWorkbenchTask(taskId: string) {
+    const task = workbenchContextQuery.data?.switchableTasks.find(
+      (item) => item.taskId === workbenchContextQuery.data?.activeTaskId,
+    );
+    const execute = () => switchWorkbenchTaskMutation.mutate(taskId);
+    if (task && task.startedSessionCount > 0) {
+      Modal.confirm({
+        title: '当前任务仍有进行中的考试',
+        content: `该任务有 ${task.startedSessionCount} 个已开考未完成场次。切换不会中断评分，确认后可继续在其他任务操作。`,
+        okText: '仍要切换',
+        cancelText: '留在当前任务',
+        onOk: execute,
+      });
+      return;
+    }
+    execute();
+  }
+
   return (
     <div className="assessor-tablet-shell">
       <header className="assessor-tablet-header">
@@ -344,6 +405,22 @@ export function TabletAssessorApp() {
           <Typography.Text>{currentUser?.displayName || '考评员'}，请独立完成本人评分</Typography.Text>
         </div>
         <Space>
+          {workbenchContextQuery.data?.leader ? (
+            <Select
+              aria-label="当前认定任务"
+              style={{ minWidth: 250 }}
+              value={workbenchContextQuery.data.activeTaskId}
+              loading={workbenchContextQuery.isFetching}
+              disabled={switchWorkbenchTaskMutation.isPending}
+              onChange={switchWorkbenchTask}
+              options={workbenchContextQuery.data.switchableTasks.map((task) => ({
+                value: task.taskId,
+                label: [task.taskNo, task.taskName].filter(Boolean).join(' ') || `认定任务 ${task.taskId}`,
+              }))}
+            />
+          ) : workbenchContextQuery.data?.leaderAssessorName ? (
+            <Tag color="blue">跟随组长：{workbenchContextQuery.data.leaderAssessorName}</Tag>
+          ) : null}
           <Tag icon={online ? <WifiOutlined /> : <CloudOutlined />} color={online ? 'success' : 'warning'}>
             {online ? '在线' : '短时断网'}
           </Tag>
@@ -357,7 +434,7 @@ export function TabletAssessorApp() {
       <main className={`assessor-tablet-main ${selectedExam ? 'has-selection' : ''}`}>
         <aside className="assessor-task-list">
           <div className="assessor-task-list-title">
-            <Typography.Title level={4}>我的考试任务</Typography.Title>
+            <Typography.Title level={4}>当前认定任务</Typography.Title>
             <Button
               size="large"
               icon={<ReloadOutlined />}

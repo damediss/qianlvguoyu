@@ -40,6 +40,7 @@ class PracticalStartApplicationServiceTest {
   private final CertificationCandidateMapper candidateMapper = mock(CertificationCandidateMapper.class);
   private final CertificationInfoAssessorMapper assessorMapper = mock(CertificationInfoAssessorMapper.class);
   private final PracticalStartEventPublisher publisher = mock(PracticalStartEventPublisher.class);
+  private final AssessorWorkbenchContextService workbenchContextService = mock(AssessorWorkbenchContextService.class);
   private final AtomicReference<CertificationInfoAssessorEntity> currentAssessor = new AtomicReference<>();
   private PracticalStartApplicationService service;
   private CertificationPracticalStartSessionEntity session;
@@ -47,7 +48,8 @@ class PracticalStartApplicationServiceTest {
   @BeforeEach
   void setUp() {
     service = new PracticalStartApplicationService(
-        sessionMapper, configMapper, taskMapper, candidateMapper, assessorMapper, publisher, new ObjectMapper());
+        sessionMapper, configMapper, taskMapper, candidateMapper, assessorMapper, publisher, new ObjectMapper(),
+        workbenchContextService);
     session = new CertificationPracticalStartSessionEntity();
     session.setId(30L);
     session.setTenantId(1L);

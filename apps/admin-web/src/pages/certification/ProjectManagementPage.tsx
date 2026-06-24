@@ -44,6 +44,7 @@ import {
   deleteCertificationTask,
   finalReviewCertificationDocument,
   getCertificationTask,
+  listCertificationMemberUsers,
   getCertificationWorkbench,
   initialReviewCertificationDocument,
   saveCertificationDocument,
@@ -62,6 +63,7 @@ import type {
   CertificationDocument,
   CertificationDocumentType,
   CertificationMember,
+  CertificationMemberUser,
   CertificationPhase,
   CertificationRisk,
   CertificationScheduleItem,
@@ -240,6 +242,15 @@ export function ProjectManagementPage() {
   });
 
   const tasks = useMemo(() => tasksQuery.data?.items || [], [tasksQuery.data]);
+
+  const memberUsersQuery = useQuery({
+    queryKey: ['certification-member-users'],
+    queryFn: listCertificationMemberUsers,
+  });
+  const memberUsers = useMemo(
+    () => memberUsersQuery.data || [],
+    [memberUsersQuery.data],
+  );
 
   useEffect(() => {
     if (!selectedTaskId && tasks.length > 0) {
@@ -1002,7 +1013,17 @@ export function ProjectManagementPage() {
         cancelText="取消"
       >
         <Form form={editorForm} layout="vertical">
-          {editorType === 'member' && renderMemberFields()}
+          {editorType === 'member' && renderMemberFields(memberUsers, (userId) => {
+            const user = memberUsers.find((item) => String(item.id) === userId);
+            if (!user) return;
+            editorForm.setFieldsValue({
+              userId,
+              memberName: user.displayName,
+              roleCode: 'certification_admin',
+              roleName: '认定管理员',
+              phone: user.phone,
+            });
+          })}
           {editorType === 'schedule' && renderScheduleFields()}
           {editorType === 'risk' && renderRiskFields()}
         </Form>
@@ -1483,9 +1504,17 @@ function normalizeWorkbench(workbench: unknown) {
   };
 }
 
-function renderMemberFields() {
+function renderMemberFields(users: CertificationMemberUser[], onUserSelect: (userId: string) => void) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+      <Form.Item name="userId" label="注册用户" rules={[{ required: true, message: '请选择认定管理员' }]}>
+        <Select
+          showSearch
+          optionFilterProp="label"
+          options={users.map((user) => ({ label: `${user.displayName}（${user.username}）`, value: String(user.id) }))}
+          onChange={onUserSelect}
+        />
+      </Form.Item>
       <Form.Item name="memberName" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}><Input /></Form.Item>
       <Form.Item name="roleName" label="角色"><Input /></Form.Item>
       <Form.Item name="roleCode" label="角色编码"><Input /></Form.Item>
@@ -1577,6 +1606,7 @@ function upsertDraft<T>(rows: T[], index: number | null, item: T, setter: (items
 function toMember(values: Record<string, unknown>): CertificationMember {
   const phone = stringValue(values.phone);
   return {
+    userId: stringValue(values.userId),
     memberName: stringValue(values.memberName) || '',
     roleCode: stringValue(values.roleCode),
     roleName: stringValue(values.roleName),

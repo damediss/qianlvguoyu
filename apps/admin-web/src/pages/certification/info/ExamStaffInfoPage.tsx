@@ -15,6 +15,7 @@ import { InfoManagementTable } from './InfoManagementTable';
 
 const columns: ColumnsType<ExamStaffInfo> = [
   { title: '姓名', dataIndex: 'staffName', width: 140 },
+  { title: '认定管理员账号', dataIndex: 'accountUsername', width: 170, render: (value?: string) => value || '-' },
   {
     title: '任务编号',
     dataIndex: 'assignedTaskNos',
@@ -39,6 +40,8 @@ export function ExamStaffInfoPage() {
       fields={[
         { name: 'staffName', label: '姓名', required: true },
         { name: 'phone', label: '联系电话', required: true },
+        { name: 'accountUsername', label: '认定管理员账号' },
+        { name: 'accountPassword', label: '初始密码（新增必填）' },
       ]}
       statusOptions={[
         { label: '空闲', value: 'idle' },

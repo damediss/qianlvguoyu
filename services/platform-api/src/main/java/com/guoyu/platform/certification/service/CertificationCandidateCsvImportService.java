@@ -53,7 +53,7 @@ public class CertificationCandidateCsvImportService {
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
   private static final List<String> HEADERS = List.of(
-      "序号", "姓名", "身份证号", "身份证地址", "性别", "手机号码", "文化程度（最低为初中）",
+      "序号", "姓名", "身份证号", "准考证号", "身份证地址", "性别", "手机号码", "文化程度（最低为初中）",
       "所学专业（初中、高中学历的填无）", "毕业证编号（如有请填写，如没有请填写入学时间）", "毕业学校",
       "毕业时间", "参加工作时间(第一次工作时间）", "民族", "政治面貌", "所在单位", "所在岗位", "入职时间",
       "劳动合同签订开始时间", "劳动合同签订结束时间", "负责人", "负责人电话", "原工种", "原技能等级", "原证书编号");
@@ -172,7 +172,7 @@ public class CertificationCandidateCsvImportService {
   ) {
     PreparationCandidateSaveReq candidateReq = new PreparationCandidateSaveReq(
         required(row, "姓名"), required(row, "身份证号"), value(row, "手机号码"),
-        scope.getLevelCode(), scope.getLevelName(), "other_xlsx", value(row, "所在单位"), remark, scope.getId());
+        scope.getLevelCode(), scope.getLevelName(), "other_xlsx", value(row, "所在单位"), remark, scope.getId(), value(row, "准考证号"));
     CertificationCandidateEntity candidate = createOrResumeCandidate(taskId, batchId, candidateReq);
     saveSnapshot(taskId, scope, batchId, candidate, row, remark);
   }
@@ -187,20 +187,6 @@ public class CertificationCandidateCsvImportService {
       Long batchId,
       PreparationCandidateSaveReq req
   ) {
-    CertificationCandidateEntity existing = candidateMapper.selectByTaskAndIdCardIncludingDeleted(
-        SecurityContext.currentUser().getTenantId(), taskId, req.idCardNo());
-    if (existing != null && !Integer.valueOf(1).equals(existing.getDeleted())
-        && "other_xlsx".equals(existing.getImportSource())) {
-      long snapshotCount = stagingMapper.selectCount(new LambdaQueryWrapper<CertificationCandidateSourceStagingEntity>()
-          .eq(CertificationCandidateSourceStagingEntity::getTaskId, taskId)
-          .eq(CertificationCandidateSourceStagingEntity::getCandidateId, existing.getId())
-          .eq(CertificationCandidateSourceStagingEntity::getSourceType, "other_xlsx"));
-      if (snapshotCount == 0) {
-        existing.setImportBatchId(batchId);
-        candidateMapper.updateById(existing);
-        return existing;
-      }
-    }
     return preparationService.createCandidateForImport(taskId, req, batchId);
   }
 
@@ -376,9 +362,9 @@ public class CertificationCandidateCsvImportService {
   private record SpreadsheetRow(int lineNo, Map<String, String> values) {}
 
   private static final List<List<String>> SAMPLE_ROWS = List.of(
-      List.of("1", "测试考生一", "110101199001010015", "北京市东城区测试路1号", "男", "13800138000", "大专", "机械制造", "2010-001", "测试职业技术学院", "2010-07-01", "2011-07-01", "汉族", "群众", "测试企业一", "操作工", "2020-01-01", "2020-01-01", "2025-12-31", "张主管", "13900139000", "无", "无", "无"),
-      List.of("2", "测试考生二", "110101199202020025", "北京市西城区测试路2号", "女", "13800138001", "本科", "电气工程", "2014-002", "测试理工大学", "2014-07-01", "2014-08-01", "汉族", "群众", "测试企业二", "检修工", "2021-02-01", "2021-02-01", "2026-01-31", "李主管", "13900139001", "无", "无", "无"),
-      List.of("3", "测试考生三", "110101198503030038", "北京市朝阳区测试路3号", "男", "13800138002", "高中", "无", "2003-003", "测试高级中学", "2003-07-01", "2004-07-01", "汉族", "群众", "测试企业三", "设备工", "2019-03-01", "2019-03-01", "2024-12-31", "王主管", "13900139002", "无", "无", "无"),
-      List.of("4", "测试考生四", "110101198804040045", "北京市海淀区测试路4号", "女", "13800138003", "中专", "机电一体化", "2006-004", "测试中等专业学校", "2006-07-01", "2007-07-01", "汉族", "群众", "测试企业四", "质检员", "2022-04-01", "2022-04-01", "2027-03-31", "赵主管", "13900139003", "无", "无", "无"),
-      List.of("5", "测试考生五", "110101199505050053", "北京市丰台区测试路5号", "男", "13800138004", "大专", "安全工程", "2016-005", "测试职业学院", "2016-07-01", "2016-08-01", "汉族", "群众", "测试企业五", "安全员", "2023-05-01", "2023-05-01", "2028-04-30", "陈主管", "13900139004", "无", "无", "无"));
+      List.of("1", "测试考生一", "110101199001010015", "ZD20260001", "北京市东城区测试路1号", "男", "13800138000", "大专", "机械制造", "2010-001", "测试职业技术学院", "2010-07-01", "2011-07-01", "汉族", "群众", "测试企业一", "操作工", "2020-01-01", "2020-01-01", "2025-12-31", "张主管", "13900139000", "无", "无", "无"),
+      List.of("2", "测试考生二", "110101199202020025", "ZD20260002", "北京市西城区测试路2号", "女", "13800138001", "本科", "电气工程", "2014-002", "测试理工大学", "2014-07-01", "2014-08-01", "汉族", "群众", "测试企业二", "检修工", "2021-02-01", "2021-02-01", "2026-01-31", "李主管", "13900139001", "无", "无", "无"),
+      List.of("3", "测试考生三", "110101198503030038", "ZD20260003", "北京市朝阳区测试路3号", "男", "13800138002", "高中", "无", "2003-003", "测试高级中学", "2003-07-01", "2004-07-01", "汉族", "群众", "测试企业三", "设备工", "2019-03-01", "2019-03-01", "2024-12-31", "王主管", "13900139002", "无", "无", "无"),
+      List.of("4", "测试考生四", "110101198804040045", "ZD20260004", "北京市海淀区测试路4号", "女", "13800138003", "中专", "机电一体化", "2006-004", "测试中等专业学校", "2006-07-01", "2007-07-01", "汉族", "群众", "测试企业四", "质检员", "2022-04-01", "2022-04-01", "2027-03-31", "赵主管", "13900139003", "无", "无", "无"),
+      List.of("5", "测试考生五", "110101199505050053", "ZD20260005", "北京市丰台区测试路5号", "男", "13800138004", "大专", "安全工程", "2016-005", "测试职业学院", "2016-07-01", "2016-08-01", "汉族", "群众", "测试企业五", "安全员", "2023-05-01", "2023-05-01", "2028-04-30", "陈主管", "13900139004", "无", "无", "无"));
 }

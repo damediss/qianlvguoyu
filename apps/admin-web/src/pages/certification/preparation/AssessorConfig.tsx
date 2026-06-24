@@ -44,7 +44,7 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
 
   const availableCandidatesQuery = useQuery({
     queryKey: ['certification-info-assessors-available', candidateKeyword],
-    queryFn: () => listAvailableAssessors(candidateKeyword || undefined),
+    queryFn: () => listAvailableAssessors(candidateKeyword || undefined, true),
     enabled: memberWizardOpen,
   });
 
@@ -96,6 +96,7 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-assessor-members', taskId, selectedGroupId] });
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-overview', taskId] });
     queryClient.invalidateQueries({ queryKey: ['certification-info-assessors-available'] });
+    queryClient.invalidateQueries({ queryKey: ['practical-scoring-setup', taskId] });
     onChanged?.();
   };
 
@@ -222,7 +223,6 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
       groupName: record.groupName,
       leaderAssessorId: record.leaderAssessorId,
       workTypeScopeIds: (record.workTypeScopes || []).map((s) => String(s.scopeId)),
-      status: record.status,
       remark: record.remark,
     });
     setGroupModalOpen(true);
@@ -234,7 +234,6 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
         groupName: values.groupName,
         leaderAssessorId: values.leaderAssessorId,
         workTypeScopeIds: values.workTypeScopeIds,
-        status: values.status,
         remark: values.remark,
       };
       if (editingGroup) {
@@ -272,6 +271,7 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
     },
     { title: '等级范围', dataIndex: 'levelScope', width: 150, render: dash },
     { title: '有效期至', dataIndex: 'validUntil', width: 120, render: dateText },
+    { title: '当前状态', dataIndex: 'workStatus', width: 110, render: statusTag },
   ];
 
   const worktypeOptions = (taskWorktypesQuery.data || []).map((w) => {
@@ -293,7 +293,7 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
                 onClick={() => {
                   setEditingGroup(null);
                   groupForm.resetFields();
-                  groupForm.setFieldsValue({ status: 'preparing', workTypeScopeIds: [] });
+                  groupForm.setFieldsValue({ workTypeScopeIds: [] });
                   setGroupModalOpen(true);
                 }}
               >
@@ -385,9 +385,6 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
               disabled={worktypeOptions.length === 0}
             />
           </Form.Item>
-          <Form.Item name="status" label="状态">
-            <Select options={[{ label: '筹备中', value: 'preparing' }, { label: '已发放', value: 'dispatched' }, { label: '已完成', value: 'completed' }]} />
-          </Form.Item>
           <Form.Item name="remark" label="备注">
             <Input.TextArea rows={2} />
           </Form.Item>
@@ -428,7 +425,7 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
             }}
           />
           <Typography.Text type="secondary">
-            已选 {selectedCandidateIds.length} 人（候选来自"考评员信息-已入库且空闲且未过期"）
+            已选 {selectedCandidateIds.length} 人（候选为已入库、证书未过期的考评员；已绑定其他任务仍可选择）
           </Typography.Text>
         </Space>
       </Modal>

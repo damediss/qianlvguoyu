@@ -247,10 +247,21 @@ public class CertificationInfoApplicationService {
 
   @Transactional(readOnly = true)
   public List<AssessorInfoVO> listAvailableAssessors(String keyword, List<String> requiredWorkTypes) {
+    return listAvailableAssessors(keyword, requiredWorkTypes, false);
+  }
+
+  @Transactional(readOnly = true)
+  public List<AssessorInfoVO> listAvailableAssessors(
+      String keyword,
+      List<String> requiredWorkTypes,
+      boolean includeAssigned
+  ) {
     LambdaQueryWrapper<CertificationInfoAssessorEntity> wrapper = new LambdaQueryWrapper<CertificationInfoAssessorEntity>()
         .eq(CertificationInfoAssessorEntity::getAuditStatus, APPROVED)
-        .eq(CertificationInfoAssessorEntity::getWorkStatus, "idle")
         .orderByDesc(CertificationInfoAssessorEntity::getCreatedAt);
+    if (!includeAssigned) {
+      wrapper.eq(CertificationInfoAssessorEntity::getWorkStatus, "idle");
+    }
     if (StringUtils.hasText(keyword)) {
       wrapper.and(w -> w.like(CertificationInfoAssessorEntity::getAssessorName, keyword)
           .or().like(CertificationInfoAssessorEntity::getCertificateNo, keyword));
@@ -308,8 +319,11 @@ public class CertificationInfoApplicationService {
 
   @Transactional
   public ExamStaffInfoVO createExamStaff(ExamStaffInfoSaveReq req) {
+    UserVO account = createExamStaffAccount(req);
     CertificationInfoExamStaffEntity entity = new CertificationInfoExamStaffEntity();
     applyExamStaff(entity, req);
+    entity.setUserId(account.id());
+    entity.setAccountUsername(account.username());
     entity.setAuditStatus(PENDING);
     entity.setWorkStatus("idle");
     entity.setReferencedCount(0);
@@ -328,6 +342,7 @@ public class CertificationInfoApplicationService {
     CertificationInfoExamStaffEntity entity = requireExamStaff(id);
     ensureEditable(entity.getAuditStatus());
     applyExamStaff(entity, req);
+    synchronizeExamStaffAccount(entity, req);
     examStaffMapper.updateById(entity);
     return toExamStaffVO(entity);
   }
@@ -761,6 +776,49 @@ public class CertificationInfoApplicationService {
     ));
   }
 
+  private UserVO createExamStaffAccount(ExamStaffInfoSaveReq req) {
+    if (!StringUtils.hasText(req.accountUsername()) || !StringUtils.hasText(req.accountPassword())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "新增考务信息时必须填写认定管理员账号和密码");
+    }
+    RoleEntity role = roleMapper.selectOne(new LambdaQueryWrapper<RoleEntity>()
+        .eq(RoleEntity::getCode, "CERTIFICATION_ADMIN_NO_REVIEW")
+        .eq(RoleEntity::getStatus, "enabled")
+        .last("LIMIT 1"));
+    if (role == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "无审核权限的认定管理员角色未配置，请先执行最新数据库迁移");
+    }
+    return userApplicationService.create(new UserCreateReq(
+        null,
+        null,
+        req.accountUsername().trim(),
+        req.accountPassword(),
+        req.staffName().trim(),
+        "certification_admin",
+        req.phone().trim(),
+        null,
+        "enabled",
+        List.of(role.getId())
+    ));
+  }
+
+  private void synchronizeExamStaffAccount(CertificationInfoExamStaffEntity entity, ExamStaffInfoSaveReq req) {
+    if (entity.getUserId() == null) {
+      if (StringUtils.hasText(req.accountUsername()) || StringUtils.hasText(req.accountPassword())) {
+        UserVO account = createExamStaffAccount(req);
+        entity.setUserId(account.id());
+        entity.setAccountUsername(account.username());
+      }
+      return;
+    }
+    UserEntity account = userMapper.selectById(entity.getUserId());
+    if (account == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "考务人员绑定的认定管理员账号不存在");
+    }
+    account.setDisplayName(req.staffName().trim());
+    account.setPhone(req.phone().trim());
+    userMapper.updateById(account);
+  }
+
   private void synchronizeAssessorAccount(CertificationInfoAssessorEntity entity, AssessorInfoSaveReq req) {
     boolean hasUsername = StringUtils.hasText(req.accountUsername());
     boolean hasPassword = StringUtils.hasText(req.accountPassword());
@@ -1088,7 +1146,7 @@ public class CertificationInfoApplicationService {
 
   private ExamStaffInfoVO toExamStaffVO(CertificationInfoExamStaffEntity entity, String assignedTaskNos) {
     String editablePhone = List.of(DRAFT, REJECTED).contains(entity.getAuditStatus()) ? entity.getPhone() : null;
-    return new ExamStaffInfoVO(entity.getId(), entity.getStaffName(), editablePhone,
+    return new ExamStaffInfoVO(entity.getId(), entity.getUserId(), entity.getAccountUsername(), entity.getStaffName(), editablePhone,
         StringUtils.hasText(entity.getMaskedPhone()) ? entity.getMaskedPhone() : maskPhone(entity.getPhone()),
         entity.getAuditStatus(), resolveEffectiveWorkStatus(entity, assignedTaskNos), assignedTaskNos);
   }

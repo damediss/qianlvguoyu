@@ -25,7 +25,8 @@ public record PreparationCandidateVO(
     Integer documentUploadedCount,
     Integer documentMissingCount,
     Integer documentTotalCount,
-    LocalDateTime createdAt
+    LocalDateTime createdAt,
+    String admissionTicketNo
 ) {
   /** Backward-compatible constructor for existing callers that did not expose taskScopeId. */
   public PreparationCandidateVO(
@@ -39,7 +40,7 @@ public record PreparationCandidateVO(
     this(id, taskId, null, candidateName, idCardNo, maskedIdCardNo, phone, maskedPhone,
         levelCode, levelName, workTypeId, workTypeName, importSource, orgName, status,
         documentCompletedCount, documentRequiredCount, documentComplete, documentUploadedCount,
-        documentMissingCount, documentTotalCount, createdAt);
+        documentMissingCount, documentTotalCount, createdAt, null);
   }
 
   public static PreparationCandidateVO from(CertificationCandidateEntity entity) {
@@ -65,7 +66,8 @@ public record PreparationCandidateVO(
         null,
         null,
         null,
-        entity.getCreatedAt()
+        entity.getCreatedAt(),
+        entity.getAdmissionTicketNo()
     );
   }
 
@@ -92,7 +94,8 @@ public record PreparationCandidateVO(
         uploaded,
         missing,
         total,
-        createdAt
+        createdAt,
+        admissionTicketNo
     );
   }
 }

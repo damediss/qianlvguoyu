@@ -203,6 +203,7 @@ export function UserPage() {
         const map: Record<string, string> = {
           platform_admin: '平台管理员',
           tenant_admin: '租户管理员',
+          certification_admin: '认定管理员',
           normal: '普通用户',
         };
         return map[v] || v;
@@ -341,6 +342,7 @@ export function UserPage() {
             options={[
               { label: '平台管理员', value: 'platform_admin' },
               { label: '租户管理员', value: 'tenant_admin' },
+              { label: '认定管理员', value: 'certification_admin' },
               { label: '普通用户', value: 'normal' },
             ]}
           />
@@ -438,6 +440,7 @@ export function UserPage() {
                 options={[
                   { label: '平台管理员', value: 'platform_admin' },
                   { label: '租户管理员', value: 'tenant_admin' },
+                  { label: '认定管理员', value: 'certification_admin' },
                   { label: '普通用户', value: 'normal' },
                 ]}
               />

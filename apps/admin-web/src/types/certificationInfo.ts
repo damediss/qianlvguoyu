@@ -47,6 +47,8 @@ export interface AssessorAccountPayload {
 
 export interface ExamStaffInfo {
   id: string;
+  userId?: string;
+  accountUsername?: string;
   staffName: string;
   phone?: string;
   maskedPhone?: string;
@@ -59,6 +61,8 @@ export interface ExamStaffInfo {
 export interface ExamStaffInfoPayload {
   staffName: string;
   phone: string;
+  accountUsername: string;
+  accountPassword: string;
 }
 
 export interface ExamSiteInfo {

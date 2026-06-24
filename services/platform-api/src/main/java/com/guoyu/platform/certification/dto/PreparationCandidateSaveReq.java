@@ -11,12 +11,20 @@ public record PreparationCandidateSaveReq(
     String importSource,
     String orgName,
     String remark,
-    Long taskScopeId
+    Long taskScopeId,
+    String admissionTicketNo
 ) {
   public PreparationCandidateSaveReq(
       String candidateName, String idCardNo, String phone, String levelCode, String levelName,
       String importSource, String orgName, String remark
   ) {
-    this(candidateName, idCardNo, phone, levelCode, levelName, importSource, orgName, remark, null);
+    this(candidateName, idCardNo, phone, levelCode, levelName, importSource, orgName, remark, null, null);
+  }
+
+  public PreparationCandidateSaveReq(
+      String candidateName, String idCardNo, String phone, String levelCode, String levelName,
+      String importSource, String orgName, String remark, Long taskScopeId
+  ) {
+    this(candidateName, idCardNo, phone, levelCode, levelName, importSource, orgName, remark, taskScopeId, null);
   }
 }

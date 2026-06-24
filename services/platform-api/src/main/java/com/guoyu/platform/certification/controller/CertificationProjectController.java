@@ -172,6 +172,12 @@ public class CertificationProjectController {
     return ApiResponse.ok(service.listMembers(taskId));
   }
 
+  @GetMapping("/member-users")
+  @PreAuthorize("hasAuthority('certification.project.members.edit')")
+  public ApiResponse<List<com.guoyu.platform.certification.vo.CertificationMemberUserVO>> listAssignableMemberUsers() {
+    return ApiResponse.ok(service.listAssignableMemberUsers());
+  }
+
   @PutMapping("/tasks/{taskId}/members")
   @PreAuthorize("hasAuthority('certification.project.members.edit')")
   @AuditLog(module = "certification", action = "project-members:save", targetType = "certification_task_member")

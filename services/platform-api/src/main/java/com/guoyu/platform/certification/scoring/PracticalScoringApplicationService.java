@@ -59,18 +59,13 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellStyle;
-import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.DataFormatter;
-import org.apache.poi.ss.usermodel.Font;
-import org.apache.poi.ss.usermodel.HorizontalAlignment;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.ss.util.CellRangeAddress;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
@@ -88,6 +83,13 @@ public class PracticalScoringApplicationService {
   private static final BigDecimal MAX_ASSESSOR_SCORE_DEVIATION = new BigDecimal("10");
   private static final Pattern QUESTION_SCORE_PATTERN =
       Pattern.compile("[（(]\\s*(\\d+(?:\\.\\d+)?)\\s*分\\s*[）)]");
+  private static final String SUMMARY_TEMPLATE_RESOURCE = "templates/评分记录汇总表模板.xlsx";
+  private static final int SUMMARY_DATA_ROW_INDEX = 6;
+  private static final int SUMMARY_QUESTION_COUNT = 6;
+  private static final int SUMMARY_SCORE_COLUMNS_PER_QUESTION = 6;
+  private static final int SUMMARY_FIRST_QUESTION_COLUMN = 3;
+  private static final int SUMMARY_TOTAL_SCORE_COLUMN = 39;
+
   private final CertificationTaskMapper taskMapper;
   private final CertificationTaskScopeMapper scopeMapper;
   private final CertificationCandidateMapper candidateMapper;
@@ -104,6 +106,7 @@ public class PracticalScoringApplicationService {
   private final ExamOperatePaperDetailMapper paperDetailMapper;
   private final ObjectMapper objectMapper;
   private final PracticalStartApplicationService startService;
+  private final AssessorWorkbenchContextService workbenchContextService;
 
   public PracticalScoringApplicationService(
       CertificationTaskMapper taskMapper,
@@ -121,7 +124,8 @@ public class PracticalScoringApplicationService {
       ExamOperatePaperMapper paperMapper,
       ExamOperatePaperDetailMapper paperDetailMapper,
       ObjectMapper objectMapper,
-      PracticalStartApplicationService startService
+      PracticalStartApplicationService startService,
+      AssessorWorkbenchContextService workbenchContextService
   ) {
     this.taskMapper = taskMapper;
     this.scopeMapper = scopeMapper;
@@ -139,6 +143,7 @@ public class PracticalScoringApplicationService {
     this.paperDetailMapper = paperDetailMapper;
     this.objectMapper = objectMapper;
     this.startService = startService;
+    this.workbenchContextService = workbenchContextService;
   }
 
   @Transactional(readOnly = true)
@@ -436,6 +441,7 @@ public class PracticalScoringApplicationService {
   @Transactional(readOnly = true)
   public List<PracticalScoringModels.AssessorTaskListItem> myTasks(String status) {
     CertificationInfoAssessorEntity assessor = currentAssessor();
+    Long activeTaskId = workbenchContextService.current().activeTaskId();
     LambdaQueryWrapper<CertificationAssessorTaskEntity> wrapper =
         new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
             .eq(CertificationAssessorTaskEntity::getAssessorId, assessor.getId())
@@ -445,15 +451,20 @@ public class PracticalScoringApplicationService {
     if (StringUtils.hasText(status)) {
       wrapper.eq(CertificationAssessorTaskEntity::getStatus, status);
     }
+    if (activeTaskId != null) {
+      wrapper.eq(CertificationAssessorTaskEntity::getTaskId, activeTaskId);
+    }
     return assessorTaskMapper.selectList(wrapper).stream().map(this::listItem).toList();
   }
 
   @Transactional(readOnly = true)
   public List<PracticalScoringModels.AssessorExamListItem> myExams(String status) {
     CertificationInfoAssessorEntity assessor = currentAssessor();
+    Long activeTaskId = workbenchContextService.current().activeTaskId();
     List<CertificationAssessorTaskEntity> tasks = assessorTaskMapper.selectList(
         new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
             .eq(CertificationAssessorTaskEntity::getAssessorId, assessor.getId())
+            .eq(activeTaskId != null, CertificationAssessorTaskEntity::getTaskId, activeTaskId)
             .isNotNull(CertificationAssessorTaskEntity::getCandidateId)
             .isNotNull(CertificationAssessorTaskEntity::getPaperQuestionId)
             .orderByDesc(CertificationAssessorTaskEntity::getUpdatedAt));
@@ -469,6 +480,7 @@ public class PracticalScoringApplicationService {
   @Transactional(readOnly = true)
   public PracticalScoringModels.AssessorExamDetail myExam(Long taskId, Long candidateId) {
     CertificationInfoAssessorEntity assessor = currentAssessor();
+    workbenchContextService.requireAccessibleTask(assessor, taskId);
     List<CertificationAssessorTaskEntity> tasks = assessorTaskMapper.selectList(
         new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
             .eq(CertificationAssessorTaskEntity::getTaskId, taskId)
@@ -776,165 +788,145 @@ public class PracticalScoringApplicationService {
         .mapToInt(List::size)
         .max()
         .orElse(0);
-    byte[] data = buildSummaryWorkbook(task, candidates, resultByCandidate,
-        questionResultsByCandidate, tasksByCandidateQuestion, questionCount);
+    if (questionCount != SUMMARY_QUESTION_COUNT) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "评分记录汇总表模板固定支持6道试题，当前评分任务包含" + questionCount + "道试题");
+    }
+    List<CertificationTaskAssessorEntity> assessors = taskAssessorMapper.selectList(
+        new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
+            .eq(CertificationTaskAssessorEntity::getTaskId, taskId)
+            .orderByAsc(CertificationTaskAssessorEntity::getSortOrder)
+            .orderByAsc(CertificationTaskAssessorEntity::getId));
+    if (assessors == null) {
+      assessors = List.of();
+    }
+    Map<Long, Integer> assessorOrder = new HashMap<>();
+    for (int index = 0; index < assessors.size(); index++) {
+      CertificationTaskAssessorEntity assessor = assessors.get(index);
+      if (assessor.getAssessorId() != null) {
+        assessorOrder.putIfAbsent(assessor.getAssessorId(), index);
+      }
+    }
+    tasksByCandidateQuestion.values().forEach(items -> items.sort(Comparator.comparingInt(
+        item -> assessorOrder.getOrDefault(item.getAssessorId(), Integer.MAX_VALUE))));
+    byte[] data = buildSummaryWorkbookFromTemplate(task, candidates, resultByCandidate,
+        questionResultsByCandidate, tasksByCandidateQuestion, assessors);
     String filename = "评分记录汇总表_" + task.getTaskNo() + "_" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
         .format(LocalDateTime.now()) + ".xlsx";
     return new ExportResultDTO(data, filename);
   }
 
-  private byte[] buildSummaryWorkbook(
+  private String formatDate(LocalDate date) {
+    return date == null ? "" : date.toString();
+  }
+
+  private byte[] buildSummaryWorkbookFromTemplate(
       CertificationTaskEntity task,
       List<CertificationCandidateEntity> candidates,
       Map<Long, CertificationPracticalCandidateResultEntity> resultByCandidate,
       Map<Long, List<CertificationPracticalQuestionResultEntity>> questionResultsByCandidate,
       Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion,
-      int questionCount
+      List<CertificationTaskAssessorEntity> assessors
   ) {
-    int lastColumn = 3 + questionCount * 6;
-    try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-      Sheet sheet = workbook.createSheet("评分记录汇总表");
-      CellStyle titleStyle = workbook.createCellStyle();
-      Font titleFont = workbook.createFont();
-      titleFont.setBold(true);
-      titleFont.setFontHeightInPoints((short) 16);
-      titleStyle.setFont(titleFont);
-      titleStyle.setAlignment(HorizontalAlignment.CENTER);
-      titleStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+    ClassPathResource template = new ClassPathResource(SUMMARY_TEMPLATE_RESOURCE);
+    try (InputStream input = template.getInputStream();
+        Workbook workbook = WorkbookFactory.create(input);
+        ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      Sheet sheet = requireSummaryTemplateSheet(workbook);
+      Row templateDataRow = sheet.getRow(SUMMARY_DATA_ROW_INDEX);
+      writeTemplateCell(sheet, 1, 0, "计划编码：" + nvlText(task.getTaskNo()));
+      writeTemplateCell(sheet, 1, 19, "考 点 ：" + nvlText(task.getCompanyName()));
+      writeTemplateCell(sheet, 2, 0, "计划名称：" + nvlText(task.getTaskName()));
+      writeTemplateCell(sheet, 2, 19, "考试时间：" + formatDate(task.getExamDate()));
 
-      CellStyle infoStyle = workbook.createCellStyle();
-      infoStyle.setVerticalAlignment(VerticalAlignment.CENTER);
-
-      CellStyle headerStyle = workbook.createCellStyle();
-      Font headerFont = workbook.createFont();
-      headerFont.setBold(true);
-      headerStyle.setFont(headerFont);
-      headerStyle.setAlignment(HorizontalAlignment.CENTER);
-      headerStyle.setVerticalAlignment(VerticalAlignment.CENTER);
-      headerStyle.setWrapText(true);
-      setBorder(headerStyle);
-
-      CellStyle bodyStyle = workbook.createCellStyle();
-      bodyStyle.setAlignment(HorizontalAlignment.CENTER);
-      bodyStyle.setVerticalAlignment(VerticalAlignment.CENTER);
-      bodyStyle.setWrapText(true);
-      setBorder(bodyStyle);
-
-      Row titleRow = sheet.createRow(0);
-      titleRow.setHeightInPoints(28);
-      setCell(titleRow, 0, "评分记录汇总表", titleStyle);
-      merge(sheet, 0, 0, 0, lastColumn);
-
-      int midColumn = Math.max(6, lastColumn / 2);
-      Row planRow = sheet.createRow(1);
-      setCell(planRow, 0, "计划编码：" + nvlText(task.getTaskNo()), infoStyle);
-      merge(sheet, 1, 1, 0, midColumn - 1);
-      setCell(planRow, midColumn, "考 点 ：" + nvlText(task.getCompanyName()), infoStyle);
-      merge(sheet, 1, 1, midColumn, lastColumn);
-
-      Row taskRow = sheet.createRow(2);
-      setCell(taskRow, 0, "计划名称：" + nvlText(task.getTaskName()), infoStyle);
-      merge(sheet, 2, 2, 0, midColumn - 1);
-      setCell(taskRow, midColumn, "考试时间：" + formatDate(task.getExamDate()), infoStyle);
-      merge(sheet, 2, 2, midColumn, lastColumn);
-
-      Row signRow = sheet.createRow(3);
-      setCell(signRow, 0, "考评员1(签字):        考评员2(签字):        考评员3(签字):        核分人:", infoStyle);
-      merge(sheet, 3, 3, 0, lastColumn);
-
-      Row groupHeader = sheet.createRow(4);
-      Row itemHeader = sheet.createRow(5);
-      setMergedHeader(sheet, groupHeader, 0, "序号", headerStyle);
-      setMergedHeader(sheet, groupHeader, 1, "考生姓名", headerStyle);
-      setMergedHeader(sheet, groupHeader, 2, "准考证号", headerStyle);
-      String[] subHeaders = {"考评员1\n评分", "考评员2\n评分", "考评员3\n评分", "平均分", "权重", "最后\n得分"};
-      for (int i = 0; i < questionCount; i++) {
-        int start = 3 + i * 6;
-        setCell(groupHeader, start, "试题" + (i + 1), headerStyle);
-        merge(sheet, 4, 4, start, start + 5);
-        for (int j = 0; j < subHeaders.length; j++) {
-          setCell(itemHeader, start + j, subHeaders[j], headerStyle);
-        }
-      }
-      setMergedHeader(sheet, groupHeader, lastColumn, "合计\n得分", headerStyle);
-
-      int rowIndex = 6;
       int sequence = 1;
-      for (CertificationCandidateEntity candidate : candidates) {
-        Row row = sheet.createRow(rowIndex++);
-        setCell(row, 0, sequence++, bodyStyle);
-        setCell(row, 1, nvlText(candidate.getCandidateName()), bodyStyle);
-        setCell(row, 2, nvlText(candidate.getCandidateNo()), bodyStyle);
+      for (int candidateIndex = 0; candidateIndex < candidates.size(); candidateIndex++) {
+        CertificationCandidateEntity candidate = candidates.get(candidateIndex);
+        Row row = candidateIndex == 0
+            ? templateDataRow
+            : sheet.createRow(SUMMARY_DATA_ROW_INDEX + candidateIndex);
+        if (candidateIndex > 0) {
+          copyDataRowStyle(templateDataRow, row);
+        }
+        writeTemplateCell(row, 0, sequence++);
+        writeTemplateCell(row, 1, nvlText(candidate.getCandidateName()));
+        writeTemplateCell(row, 2, nvlText(candidate.getCandidateNo()));
         List<CertificationPracticalQuestionResultEntity> questionResults =
             questionResultsByCandidate.getOrDefault(candidate.getId(), List.of());
-        for (int i = 0; i < questionCount; i++) {
-          int start = 3 + i * 6;
-          if (i >= questionResults.size()) {
-            for (int j = 0; j < 6; j++) {
-              setCell(row, start + j, "", bodyStyle);
+        for (int questionIndex = 0; questionIndex < SUMMARY_QUESTION_COUNT; questionIndex++) {
+          int startColumn = SUMMARY_FIRST_QUESTION_COLUMN
+              + questionIndex * SUMMARY_SCORE_COLUMNS_PER_QUESTION;
+          if (questionIndex >= questionResults.size()) {
+            for (int columnOffset = 0; columnOffset < SUMMARY_SCORE_COLUMNS_PER_QUESTION; columnOffset++) {
+              writeTemplateCell(row, startColumn + columnOffset, null);
             }
             continue;
           }
-          CertificationPracticalQuestionResultEntity questionResult = questionResults.get(i);
+          CertificationPracticalQuestionResultEntity questionResult = questionResults.get(questionIndex);
           List<CertificationAssessorTaskEntity> scoreTasks = tasksByCandidateQuestion.getOrDefault(
               candidate.getId() + ":" + questionResult.getPaperQuestionId(), List.of());
-          for (int j = 0; j < 3; j++) {
-            setCell(row, start + j,
-                j < scoreTasks.size() ? scoreTasks.get(j).getTotalScore() : null, bodyStyle);
+          for (int assessorIndex = 0; assessorIndex < 3; assessorIndex++) {
+            writeTemplateCell(row, startColumn + assessorIndex,
+                assessorIndex < scoreTasks.size() ? scoreTasks.get(assessorIndex).getTotalScore() : null);
           }
-          setCell(row, start + 3, questionResult.getAverageScore(), bodyStyle);
-          setCell(row, start + 4, 100, bodyStyle);
-          setCell(row, start + 5, questionResult.getFinalScore(), bodyStyle);
+          writeTemplateCell(row, startColumn + 3, questionResult.getAverageScore());
+          writeTemplateCell(row, startColumn + 4, 100);
+          writeTemplateCell(row, startColumn + 5, questionResult.getFinalScore());
         }
         CertificationPracticalCandidateResultEntity result = resultByCandidate.get(candidate.getId());
-        setCell(row, lastColumn, result == null ? null : result.getTotalScore(), bodyStyle);
-      }
-
-      sheet.setColumnWidth(0, 8 * 256);
-      sheet.setColumnWidth(1, 14 * 256);
-      sheet.setColumnWidth(2, 24 * 256);
-      for (int col = 3; col <= lastColumn; col++) {
-        sheet.setColumnWidth(col, 11 * 256);
+        writeTemplateCell(row, SUMMARY_TOTAL_SCORE_COLUMN,
+            result == null ? null : result.getTotalScore());
       }
       workbook.write(output);
       return output.toByteArray();
     } catch (Exception ex) {
-      log.warn("评分记录汇总表导出失败: {}", ex.getMessage(), ex);
+      log.warn("评分记录汇总表模板导出失败: {}", ex.getMessage(), ex);
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "导出评分记录汇总表失败");
     }
   }
 
-  private void setMergedHeader(Sheet sheet, Row row, int column, String value, CellStyle style) {
-    setCell(row, column, value, style);
-    merge(sheet, 4, 5, column, column);
+  private Sheet requireSummaryTemplateSheet(Workbook workbook) {
+    if (workbook.getNumberOfSheets() == 0) {
+      throw new IllegalStateException("评分记录汇总表模板不包含工作表");
+    }
+    Sheet sheet = workbook.getSheetAt(0);
+    Row dataTemplateRow = sheet.getRow(SUMMARY_DATA_ROW_INDEX);
+    if (dataTemplateRow == null || dataTemplateRow.getCell(SUMMARY_TOTAL_SCORE_COLUMN) == null) {
+      throw new IllegalStateException("评分记录汇总表模板缺少第7行数据样式模板");
+    }
+    return sheet;
   }
 
-  private void setCell(Row row, int column, Object value, CellStyle style) {
-    Cell cell = row.createCell(column);
-    if (value instanceof Number number) {
+  private void copyDataRowStyle(Row source, Row target) {
+    target.setHeight(source.getHeight());
+    for (int column = 0; column <= SUMMARY_TOTAL_SCORE_COLUMN; column++) {
+      Cell sourceCell = source.getCell(column);
+      if (sourceCell != null) {
+        target.createCell(column).setCellStyle(sourceCell.getCellStyle());
+      }
+    }
+  }
+
+  private void writeTemplateCell(Sheet sheet, int rowIndex, int column, Object value) {
+    Row row = sheet.getRow(rowIndex);
+    if (row == null) {
+      row = sheet.createRow(rowIndex);
+    }
+    writeTemplateCell(row, column, value);
+  }
+
+  private void writeTemplateCell(Row row, int column, Object value) {
+    Cell cell = row.getCell(column);
+    if (cell == null) {
+      cell = row.createCell(column);
+    }
+    if (value == null) {
+      cell.setBlank();
+    } else if (value instanceof Number number) {
       cell.setCellValue(number.doubleValue());
     } else {
-      cell.setCellValue(value == null ? "" : String.valueOf(value));
+      cell.setCellValue(String.valueOf(value));
     }
-    cell.setCellStyle(style);
-  }
-
-  private void merge(Sheet sheet, int firstRow, int lastRow, int firstCol, int lastCol) {
-    if (firstRow == lastRow && firstCol == lastCol) {
-      return;
-    }
-    sheet.addMergedRegion(new CellRangeAddress(firstRow, lastRow, firstCol, lastCol));
-  }
-
-  private void setBorder(CellStyle style) {
-    style.setBorderTop(BorderStyle.THIN);
-    style.setBorderBottom(BorderStyle.THIN);
-    style.setBorderLeft(BorderStyle.THIN);
-    style.setBorderRight(BorderStyle.THIN);
-  }
-
-  private String formatDate(LocalDate date) {
-    return date == null ? "" : date.toString();
   }
 
   private PracticalScoringModels.AssessorTaskDetail saveScore(
@@ -2047,6 +2039,7 @@ public class PracticalScoringApplicationService {
       log.warn("用户{}尝试访问非本人评分任务{}", user.getUserId(), id);
       throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该评分任务");
     }
+    workbenchContextService.requireAccessibleTask(assessor, task.getTaskId());
     return task;
   }
 

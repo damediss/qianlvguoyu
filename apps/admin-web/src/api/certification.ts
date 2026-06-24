@@ -7,6 +7,7 @@ import type {
   CertificationDocumentType,
   CertificationDocumentWorkflow,
   CertificationMember,
+  CertificationMemberUser,
   CertificationPhase,
   CertificationRisk,
   CertificationRiskStatusPayload,
@@ -98,6 +99,10 @@ export function getCertificationDocumentWorkflow(taskId: string, documentType: C
 
 export function listCertificationMembers(taskId: string) {
   return unwrap<CertificationMember[]>(apiClient.get(`/certification/projects/tasks/${taskId}/members`));
+}
+
+export function listCertificationMemberUsers() {
+  return unwrap<CertificationMemberUser[]>(apiClient.get('/certification/projects/member-users'));
 }
 
 export function saveCertificationMembers(taskId: string, payload: CertificationMember[]) {

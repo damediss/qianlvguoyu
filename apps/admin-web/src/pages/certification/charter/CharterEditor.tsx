@@ -127,6 +127,34 @@ function buildDefaultDraft(task?: CertificationTask): CharterDraft {
   };
 }
 
+function previewText(values: Partial<CharterDraft>) {
+  const goals = values.goals || {};
+  const milestones = values.milestones || [];
+  const milestoneText = milestones.length === 0
+    ? '无'
+    : milestones.map((item, index) => `${index + 1}. ${item.enabled ? '启用' : '未启用'}｜${item.title || '-'}${item.desc ? `\n   ${item.desc}` : ''}`).join('\n');
+  return [
+    '任务策划任务书',
+    '',
+    `任务名称：${values.taskName || '-'}`,
+    `任务编号：${values.taskNo || '-'}`,
+    `任务经理：${values.taskManagerName || '-'}`,
+    `任务状态：${values.taskStatus || '-'}`,
+    '',
+    '一、任务背景与目的',
+    values.background || '-',
+    '',
+    '二、总体目标',
+    `质量目标：${goals.quality || '-'}`,
+    `工期目标：${goals.schedule || '-'}`,
+    `费用目标：${goals.cost || '-'}`,
+    `交付目标：${goals.delivery || '-'}`,
+    '',
+    '三、节点目标',
+    milestoneText,
+  ].join('\n');
+}
+
 export function CharterEditor({
   task,
   document,
@@ -336,7 +364,7 @@ export function CharterEditor({
                 width: 860,
                 content: (
                   <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                    {JSON.stringify(values, null, 2)}
+                    {previewText(values)}
                   </pre>
                 ),
               });

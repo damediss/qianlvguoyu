@@ -12,6 +12,7 @@ public class CertificationCandidateEntity extends BaseEntity {
   private Long taskId;
   private Long taskScopeId;
   private String candidateNo;
+  private String admissionTicketNo;
   private String candidateName;
   private String idCardNo;
   private String maskedIdCardNo;

@@ -14,6 +14,7 @@ public class CertificationTaskMemberEntity extends BaseEntity {
 
   private Long taskId;
   private Long documentId;
+  private Long userId;
   private String memberName;
   private String roleCode;
   private String roleName;

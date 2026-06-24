@@ -214,6 +214,27 @@ public final class PracticalScoringModels {
   ) {
   }
 
+  public record AssessorWorkbenchTask(
+      Long taskId,
+      String taskNo,
+      String taskName,
+      LocalDate examDate,
+      int startedSessionCount
+  ) {
+  }
+
+  public record AssessorWorkbenchContext(
+      boolean leader,
+      Long leaderAssessorId,
+      String leaderAssessorName,
+      Long activeTaskId,
+      List<AssessorWorkbenchTask> switchableTasks
+  ) {
+  }
+
+  public record SwitchWorkbenchTaskReq(@NotNull Long taskId) {
+  }
+
   public record StartSessionView(
       Long id,
       Long taskId,

@@ -81,6 +81,7 @@ export function PreparationPage() {
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-tasks'] });
     if (selectedTaskId) {
       queryClient.invalidateQueries({ queryKey: ['certification-preparation-overview', selectedTaskId] });
+      queryClient.invalidateQueries({ queryKey: ['practical-scoring-setup', selectedTaskId] });
     }
   };
 

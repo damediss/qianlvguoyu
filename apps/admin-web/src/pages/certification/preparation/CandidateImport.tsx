@@ -353,6 +353,7 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   const columns: ColumnsType<PreparationCandidate> = useMemo(
     () => [
       { title: '姓名', dataIndex: 'candidateName', width: 110, fixed: 'left' },
+      { title: '准考证号', dataIndex: 'admissionTicketNo', width: 130, render: dash },
       { title: '身份证号', dataIndex: 'maskedIdCardNo', width: 180, render: (value, record) => value || record.idCardNo || '-' },
       { title: '手机号', dataIndex: 'maskedPhone', width: 140, render: (value, record) => value || record.phone || '-' },
       { title: '等级', dataIndex: 'levelName', width: 100, render: dash },
@@ -414,6 +415,7 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
     setEditingCandidate(record);
     candidateForm.setFieldsValue({
       candidateName: record.candidateName,
+      admissionTicketNo: record.admissionTicketNo,
       idCardNo: record.idCardNo || record.maskedIdCardNo || '',
       phone: record.phone || record.maskedPhone,
       levelCode: record.levelCode,
@@ -456,8 +458,8 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
             setSelectedStagingRows(new Map());
           }}
           options={[
-            { label: '培训学员', value: 'training' },
-            { label: '其他学员', value: 'other' },
+            { label: '培训途径', value: 'training' },
+            { label: '认定途径', value: 'other' },
           ]}
           style={{ marginBottom: 16 }}
         />
@@ -717,6 +719,9 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
             <Form.Item name="candidateName" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}>
               <Input />
+            </Form.Item>
+            <Form.Item name="admissionTicketNo" label="准考证号">
+              <Input maxLength={64} />
             </Form.Item>
             <Form.Item
               name="idCardNo"

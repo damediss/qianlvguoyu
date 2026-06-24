@@ -38,6 +38,7 @@ public class PracticalStartApplicationService {
   private final CertificationInfoAssessorMapper assessorMapper;
   private final PracticalStartEventPublisher publisher;
   private final ObjectMapper objectMapper;
+  private final AssessorWorkbenchContextService workbenchContextService;
 
   public PracticalStartApplicationService(
       CertificationPracticalStartSessionMapper sessionMapper,
@@ -46,7 +47,8 @@ public class PracticalStartApplicationService {
       CertificationCandidateMapper candidateMapper,
       CertificationInfoAssessorMapper assessorMapper,
       PracticalStartEventPublisher publisher,
-      ObjectMapper objectMapper
+      ObjectMapper objectMapper,
+      AssessorWorkbenchContextService workbenchContextService
   ) {
     this.sessionMapper = sessionMapper;
     this.configMapper = configMapper;
@@ -55,6 +57,7 @@ public class PracticalStartApplicationService {
     this.assessorMapper = assessorMapper;
     this.publisher = publisher;
     this.objectMapper = objectMapper;
+    this.workbenchContextService = workbenchContextService;
   }
 
   public void ensureSession(
@@ -306,6 +309,7 @@ public class PracticalStartApplicationService {
     if (assessor == null || task == null || !assessor.getId().equals(task.getAssessorId())) {
       throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该统一开考会话");
     }
+    workbenchContextService.requireAccessibleTask(assessor, task.getTaskId());
     return task;
   }
 

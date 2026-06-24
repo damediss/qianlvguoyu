@@ -2,6 +2,8 @@ package com.guoyu.platform.certification.info.vo;
 
 public record ExamStaffInfoVO(
     Long id,
+    Long userId,
+    String accountUsername,
     String staffName,
     String phone,
     String maskedPhone,

@@ -6,6 +6,7 @@ import java.time.LocalDate;
 
 public record CertificationMemberVO(
     String id,
+    String userId,
     String memberName,
     String roleCode,
     String roleName,
@@ -22,6 +23,7 @@ public record CertificationMemberVO(
   public static CertificationMemberVO from(CertificationTaskMemberEntity entity) {
     return new CertificationMemberVO(
         entity.getId() == null ? null : String.valueOf(entity.getId()),
+        entity.getUserId() == null ? null : String.valueOf(entity.getUserId()),
         entity.getMemberName(),
         entity.getRoleCode(),
         entity.getRoleName(),

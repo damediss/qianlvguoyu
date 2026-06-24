@@ -7,6 +7,7 @@ import java.time.LocalDate;
 
 public record CertificationMemberReq(
     Long id,
+    Long userId,
     @NotBlank @Size(max = 80) String memberName,
     @Size(max = 60) String roleCode,
     @Size(max = 80) String roleName,
@@ -19,4 +20,12 @@ public record CertificationMemberReq(
     @Size(max = 30) String phone,
     @Size(max = 500) String remark
 ) {
+  public CertificationMemberReq(
+      Long id, String memberName, String roleCode, String roleName, String departmentName,
+      String responsibility, LocalDate startDate, LocalDate endDate, String inputFrequency,
+      BigDecimal workloadPercent, String phone, String remark
+  ) {
+    this(id, null, memberName, roleCode, roleName, departmentName, responsibility, startDate, endDate,
+        inputFrequency, workloadPercent, phone, remark);
+  }
 }

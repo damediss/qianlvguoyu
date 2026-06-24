@@ -179,6 +179,7 @@ export interface CertificationDocumentWorkflow {
 
 export interface CertificationMember {
   id?: string;
+  userId?: string;
   memberName: string;
   roleCode?: string;
   roleName?: string;
@@ -191,6 +192,13 @@ export interface CertificationMember {
   maskedPhone?: string;
   phone?: string;
   remark?: string;
+}
+
+export interface CertificationMemberUser {
+  id: string;
+  username: string;
+  displayName: string;
+  phone?: string;
 }
 
 export interface CertificationWbsItem {

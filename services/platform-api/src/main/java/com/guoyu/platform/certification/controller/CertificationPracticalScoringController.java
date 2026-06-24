@@ -4,6 +4,7 @@ import com.guoyu.platform.certification.scoring.PracticalScoringApplicationServi
 import com.guoyu.platform.certification.scoring.PracticalScoringModels;
 import com.guoyu.platform.certification.scoring.PracticalStartApplicationService;
 import com.guoyu.platform.certification.scoring.PracticalWebSocketTicketService;
+import com.guoyu.platform.certification.scoring.AssessorWorkbenchContextService;
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.exam.vo.ExportResultDTO;
@@ -38,15 +39,18 @@ public class CertificationPracticalScoringController {
   private final PracticalScoringApplicationService service;
   private final PracticalStartApplicationService startService;
   private final PracticalWebSocketTicketService ticketService;
+  private final AssessorWorkbenchContextService workbenchContextService;
 
   public CertificationPracticalScoringController(
       PracticalScoringApplicationService service,
       PracticalStartApplicationService startService,
-      PracticalWebSocketTicketService ticketService
+      PracticalWebSocketTicketService ticketService,
+      AssessorWorkbenchContextService workbenchContextService
   ) {
     this.service = service;
     this.startService = startService;
     this.ticketService = ticketService;
+    this.workbenchContextService = workbenchContextService;
   }
 
   @GetMapping("/practical-scoring/tasks/{taskId}/setup")
@@ -183,6 +187,21 @@ public class CertificationPracticalScoringController {
       @RequestParam(required = false) String status
   ) {
     return ApiResponse.ok(service.myTasks(status));
+  }
+
+  @GetMapping("/assessor-scoring/workbench-context")
+  @PreAuthorize("hasAuthority('certification.practical.score')")
+  public ApiResponse<PracticalScoringModels.AssessorWorkbenchContext> workbenchContext() {
+    return ApiResponse.ok(workbenchContextService.current());
+  }
+
+  @PutMapping("/assessor-scoring/workbench-context")
+  @PreAuthorize("hasAuthority('certification.practical.score')")
+  @AuditLog(module = "certification", action = "practical-scoring:switch-workbench-task", targetType = "certification_assessor_workbench_context")
+  public ApiResponse<PracticalScoringModels.AssessorWorkbenchContext> switchWorkbenchTask(
+      @Valid @RequestBody PracticalScoringModels.SwitchWorkbenchTaskReq req
+  ) {
+    return ApiResponse.ok(workbenchContextService.switchTask(req.taskId()));
   }
 
   @GetMapping("/assessor-scoring/exams")

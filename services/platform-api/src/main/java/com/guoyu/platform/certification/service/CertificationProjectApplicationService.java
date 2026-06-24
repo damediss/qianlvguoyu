@@ -42,9 +42,13 @@ import com.guoyu.platform.certification.vo.CertificationWorkbenchVO;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.security.SecurityContext;
+import com.guoyu.platform.system.entity.UserEntity;
+import com.guoyu.platform.system.mapper.UserMapper;
+import com.guoyu.platform.system.mapper.UserRoleMapper;
+import com.guoyu.platform.certification.vo.CertificationMemberUserVO;
 import com.guoyu.platform.certification.workflow.CertificationDocumentWorkflowService;
 import com.guoyu.platform.security.PlatformUserPrincipal;
-import com.guoyu.platform.security.SecurityContext;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -113,6 +117,8 @@ public class CertificationProjectApplicationService {
   private final CertificationRiskMapper riskMapper;
   private final CertificationTaskScopeMapper scopeMapper;
   private final CertificationDocumentWorkflowService workflowService;
+  private final UserMapper userMapper;
+  private final UserRoleMapper userRoleMapper;
 
   public CertificationProjectApplicationService(
       CertificationTaskMapper taskMapper,
@@ -126,7 +132,24 @@ public class CertificationProjectApplicationService {
       CertificationTaskScopeMapper scopeMapper
   ) {
     this(taskMapper, phaseMapper, documentMapper, charterGoalMapper, memberMapper, wbsMapper, scheduleMapper,
-        riskMapper, scopeMapper, null);
+        riskMapper, scopeMapper, null, null, null);
+  }
+
+  /** Retained for existing focused unit tests and non-Spring callers. */
+  public CertificationProjectApplicationService(
+      CertificationTaskMapper taskMapper,
+      CertificationTaskPhaseMapper phaseMapper,
+      CertificationTaskDocumentMapper documentMapper,
+      CertificationCharterGoalMapper charterGoalMapper,
+      CertificationTaskMemberMapper memberMapper,
+      CertificationWbsItemMapper wbsMapper,
+      CertificationScheduleItemMapper scheduleMapper,
+      CertificationRiskMapper riskMapper,
+      CertificationTaskScopeMapper scopeMapper,
+      CertificationDocumentWorkflowService workflowService
+  ) {
+    this(taskMapper, phaseMapper, documentMapper, charterGoalMapper, memberMapper, wbsMapper, scheduleMapper,
+        riskMapper, scopeMapper, workflowService, null, null);
   }
 
   @Autowired
@@ -140,7 +163,9 @@ public class CertificationProjectApplicationService {
       CertificationScheduleItemMapper scheduleMapper,
       CertificationRiskMapper riskMapper,
       CertificationTaskScopeMapper scopeMapper,
-      CertificationDocumentWorkflowService workflowService
+      CertificationDocumentWorkflowService workflowService,
+      UserMapper userMapper,
+      UserRoleMapper userRoleMapper
   ) {
     this.taskMapper = taskMapper;
     this.phaseMapper = phaseMapper;
@@ -152,6 +177,8 @@ public class CertificationProjectApplicationService {
     this.riskMapper = riskMapper;
     this.scopeMapper = scopeMapper;
     this.workflowService = workflowService;
+    this.userMapper = userMapper;
+    this.userRoleMapper = userRoleMapper;
   }
 
   @Transactional(readOnly = true)
@@ -514,6 +541,30 @@ public class CertificationProjectApplicationService {
         .toList();
   }
 
+  @Transactional(readOnly = true)
+  public List<CertificationMemberUserVO> listAssignableMemberUsers() {
+    if (userMapper == null || userRoleMapper == null) {
+      return List.of();
+    }
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    List<UserEntity> users = userMapper.selectList(new LambdaQueryWrapper<UserEntity>()
+        .eq(UserEntity::getTenantId, tenantId)
+        .eq(UserEntity::getUserType, "certification_admin")
+        .eq(UserEntity::getStatus, "enabled")
+        .eq(UserEntity::getDeleted, 0)
+        .orderByAsc(UserEntity::getDisplayName));
+    if (users == null || users.isEmpty()) {
+      return List.of();
+    }
+    return users.stream()
+        .filter(user -> userRoleMapper.selectRoleCodes(tenantId, user.getId()).stream()
+            .anyMatch(roleCode -> "CERTIFICATION_ADMIN".equals(roleCode)
+                || "CERTIFICATION_ADMIN_NO_REVIEW".equals(roleCode)))
+        .map(user -> new CertificationMemberUserVO(
+            String.valueOf(user.getId()), user.getUsername(), user.getDisplayName(), user.getPhone()))
+        .toList();
+  }
+
   @Transactional
   public List<CertificationMemberVO> saveMembers(Long taskId, List<CertificationMemberReq> reqs) {
     findTask(taskId);
@@ -529,6 +580,7 @@ public class CertificationProjectApplicationService {
       CertificationTaskMemberEntity entity = new CertificationTaskMemberEntity();
       entity.setTaskId(taskId);
       entity.setDocumentId(documentId);
+      entity.setUserId(req.userId());
       entity.setMemberName(req.memberName());
       entity.setRoleCode(req.roleCode());
       entity.setRoleName(req.roleName());
@@ -919,6 +971,9 @@ public class CertificationProjectApplicationService {
   }
 
   private boolean isCoreRole(String roleCode) {
+    if (!StringUtils.hasText(roleCode)) {
+      return false;
+    }
     return List.of("task_manager", "material_specialist", "certification_owner").contains(roleCode);
   }
 

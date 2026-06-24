@@ -43,6 +43,7 @@ export interface PreparationCandidate {
   taskId: string;
   taskScopeId?: string;
   candidateName: string;
+  admissionTicketNo?: string;
   idCardNo?: string;
   maskedIdCardNo?: string;
   phone?: string;
@@ -65,6 +66,7 @@ export interface PreparationCandidate {
 
 export interface PreparationCandidatePayload {
   candidateName: string;
+  admissionTicketNo?: string;
   idCardNo: string;
   phone?: string;
   levelCode?: string;
@@ -433,6 +435,7 @@ export interface PreparationAssessorGroup {
   workTypeScopes?: PreparationAssessorGroupWorktype[];
   status?: string;
   remark?: string;
+  memberCount?: number;
 }
 
 export interface PreparationAssessorGroupWorktype {

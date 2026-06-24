@@ -13,7 +13,7 @@ import org.apache.ibatis.annotations.Update;
 public interface CertificationCandidateMapper extends BaseMapper<CertificationCandidateEntity> {
 
   @Select("""
-      SELECT id, tenant_id, task_id, candidate_no, candidate_name, id_card_no, masked_id_card_no, phone, masked_phone,
+      SELECT id, tenant_id, task_id, task_scope_id, candidate_no, admission_ticket_no, candidate_name, id_card_no, masked_id_card_no, phone, masked_phone,
              level_code, level_name, work_type_id, work_type_name, import_batch_id, import_source, org_name,
              document_completed_count, document_required_count, document_complete, status, remark,
              created_at, updated_at, created_by, updated_by, deleted
@@ -49,6 +49,7 @@ public interface CertificationCandidateMapper extends BaseMapper<CertificationCa
   @Update("""
       UPDATE certification_candidate
       SET candidate_no = #{entity.candidateNo},
+          admission_ticket_no = #{entity.admissionTicketNo},
           candidate_name = #{entity.candidateName},
           id_card_no = #{entity.idCardNo},
           masked_id_card_no = #{entity.maskedIdCardNo},

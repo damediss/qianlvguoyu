@@ -2,6 +2,7 @@ import { apiClient, unwrap } from './client';
 import type {
   AssessorExamDetail,
   AssessorExamListItem,
+  AssessorWorkbenchContext,
   AssessorScoringTask,
   AssessorScoringTaskDetail,
   PracticalAdjustScorePayload,
@@ -103,6 +104,14 @@ export function confirmPracticalCandidate(taskId: string, candidateId: string) {
 
 export function listMyAssessorScoringTasks(status?: string) {
   return unwrap<AssessorScoringTask[]>(apiClient.get(`${assessorBase}/tasks`, { params: { status } }));
+}
+
+export function getMyAssessorWorkbenchContext() {
+  return unwrap<AssessorWorkbenchContext>(apiClient.get(`${assessorBase}/workbench-context`));
+}
+
+export function switchMyAssessorWorkbenchTask(taskId: string) {
+  return unwrap<AssessorWorkbenchContext>(apiClient.put(`${assessorBase}/workbench-context`, { taskId }));
 }
 
 export function listMyAssessorExams(status?: string) {

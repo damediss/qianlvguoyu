@@ -121,9 +121,10 @@ public class CertificationInfoController {
   @PreAuthorize("hasAuthority('certification.info.assessor.view')")
   public ApiResponse<List<AssessorInfoVO>> listAvailableAssessors(
       @RequestParam(required = false) String keyword,
-      @RequestParam(required = false) List<String> requiredWorkTypes
+      @RequestParam(required = false) List<String> requiredWorkTypes,
+      @RequestParam(defaultValue = "false") boolean includeAssigned
   ) {
-    return ApiResponse.ok(service.listAvailableAssessors(keyword, requiredWorkTypes));
+    return ApiResponse.ok(service.listAvailableAssessors(keyword, requiredWorkTypes, includeAssigned));
   }
 
   @GetMapping("/exam-staff")

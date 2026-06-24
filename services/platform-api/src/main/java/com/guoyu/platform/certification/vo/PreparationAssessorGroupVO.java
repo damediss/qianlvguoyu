@@ -12,26 +12,26 @@ public record PreparationAssessorGroupVO(
     String workTypeName,
     List<AssessorGroupWorktypeItem> workTypeScopes,
     String status,
-    String remark
+    String remark,
+    int memberCount
 ) {
   public static PreparationAssessorGroupVO from(CertificationTaskAssessorGroupEntity entity, String leaderAssessorName) {
-    return new PreparationAssessorGroupVO(
-        entity.getId(),
-        entity.getTaskId(),
-        entity.getGroupName(),
-        entity.getLeaderAssessorId(),
-        leaderAssessorName,
-        entity.getWorkTypeName(),
-        List.of(),
-        entity.getStatus(),
-        entity.getRemark()
-    );
+    return from(entity, leaderAssessorName, List.of(), 0);
   }
 
   public static PreparationAssessorGroupVO from(
       CertificationTaskAssessorGroupEntity entity,
       String leaderAssessorName,
       List<AssessorGroupWorktypeItem> workTypeScopes
+  ) {
+    return from(entity, leaderAssessorName, workTypeScopes, 0);
+  }
+
+  public static PreparationAssessorGroupVO from(
+      CertificationTaskAssessorGroupEntity entity,
+      String leaderAssessorName,
+      List<AssessorGroupWorktypeItem> workTypeScopes,
+      int memberCount
   ) {
     return new PreparationAssessorGroupVO(
         entity.getId(),
@@ -42,7 +42,8 @@ public record PreparationAssessorGroupVO(
         entity.getWorkTypeName(),
         workTypeScopes == null ? List.of() : workTypeScopes,
         entity.getStatus(),
-        entity.getRemark()
+        entity.getRemark(),
+        memberCount
     );
   }
 }

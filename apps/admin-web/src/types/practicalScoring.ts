@@ -144,6 +144,22 @@ export interface AssessorExamDetail {
   questions: AssessorScoringTaskDetail[];
 }
 
+export interface AssessorWorkbenchTask {
+  taskId: string;
+  taskNo?: string;
+  taskName?: string;
+  examDate?: string;
+  startedSessionCount: number;
+}
+
+export interface AssessorWorkbenchContext {
+  leader: boolean;
+  leaderAssessorId?: string;
+  leaderAssessorName?: string;
+  activeTaskId?: string;
+  switchableTasks: AssessorWorkbenchTask[];
+}
+
 export interface PracticalStartSession {
   id: string;
   taskId: string;

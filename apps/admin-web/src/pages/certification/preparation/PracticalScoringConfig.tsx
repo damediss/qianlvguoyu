@@ -130,9 +130,17 @@ export function PracticalScoringConfig({
   });
 
   const groupDetailById = useMemo(
-    () => new Map((groupsQuery.data || []).map((group) => [group.id, group])),
+    () => new Map((groupsQuery.data || []).map((group) => [String(group.id), group])),
     [groupsQuery.data],
   );
+  const resolveMemberCount = (groupId: string) => {
+    const detail = groupDetailById.get(String(groupId));
+    if (typeof detail?.memberCount === 'number') {
+      return detail.memberCount;
+    }
+    const setupGroup = setup?.groups.find((group) => String(group.id) === String(groupId));
+    return setupGroup?.memberCount ?? 0;
+  };
   const configByCandidate = useMemo(
     () => new Map((setup?.configs || [])
       .filter((config) => config.candidateId)
@@ -352,8 +360,7 @@ export function PracticalScoringConfig({
       title: '成员',
       width: 100,
       render: (_, row) => {
-        const setupGroup = setup?.groups.find((group) => group.id === row.id);
-        const count = setupGroup?.memberCount || 0;
+        const count = resolveMemberCount(row.id);
         return <Tag color={count === 3 ? 'success' : 'warning'}>{count}/3</Tag>;
       },
     },
@@ -361,12 +368,12 @@ export function PracticalScoringConfig({
       title: '选择',
       width: 100,
       render: (_, row) => {
-        const setupGroup = setup?.groups.find((group) => group.id === row.id);
+        const count = resolveMemberCount(row.id);
         return (
           <Button
             type={selectedGroupId === row.id ? 'primary' : 'default'}
             size="small"
-            disabled={(setupGroup?.memberCount || 0) !== 3}
+            disabled={count !== 3}
             onClick={() => setSelectedGroupId(row.id)}
           >
             选择
@@ -415,8 +422,8 @@ export function PracticalScoringConfig({
       render: (_, row) => {
         const config = configByCandidate.get(row.id);
         if (!config) return '-';
-        return groupDetailById.get(config.groupId)?.groupName
-          || setup?.groups.find((group) => group.id === config.groupId)?.groupName
+        return groupDetailById.get(String(config.groupId))?.groupName
+          || setup?.groups.find((group) => String(group.id) === String(config.groupId))?.groupName
           || '-';
       },
     },
@@ -455,7 +462,7 @@ export function PracticalScoringConfig({
                 onOk: () => cancelCandidateTasksMutation.mutateAsync(row.id),
               })}
             >
-              取消评分任务
+              取消
             </Button>
           );
         }
@@ -540,12 +547,12 @@ export function PracticalScoringConfig({
               value={selectedGroupId}
               placeholder="请选择满足三人成组条件的考评组"
               style={{ width: 'min(520px, 100%)' }}
-              options={(setup?.groups || []).map((group) => {
-                const detail = groupDetailById.get(group.id);
+              options={(groupsQuery.data || []).map((group) => {
+                const count = resolveMemberCount(group.id);
                 return {
                   value: group.id,
-                  disabled: group.memberCount !== 3,
-                  label: `${group.groupName}（${group.memberCount}/3人${detail?.leaderAssessorName ? ` · 组长${detail.leaderAssessorName}` : ''}）`,
+                  disabled: count !== 3,
+                  label: `${group.groupName}（${count}/3人${group.leaderAssessorName ? ` · 组长${group.leaderAssessorName}` : ''}）`,
                 };
               })}
               onChange={setSelectedGroupId}
@@ -594,8 +601,8 @@ export function PracticalScoringConfig({
               </Upload>
               {selectedGroupId ? (
                 <Tag color="processing">
-                  已选考评组：{groupDetailById.get(selectedGroupId)?.groupName
-                    || setup?.groups.find((group) => group.id === selectedGroupId)?.groupName
+                  已选考评组：{groupDetailById.get(String(selectedGroupId))?.groupName
+                    || setup?.groups.find((group) => String(group.id) === String(selectedGroupId))?.groupName
                     || selectedGroupId}
                 </Tag>
               ) : null}

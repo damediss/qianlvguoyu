@@ -35,13 +35,18 @@ import com.guoyu.platform.exam.entity.ExamOperatePaperDetailEntity;
 import com.guoyu.platform.exam.entity.ExamOperatePaperEntity;
 import com.guoyu.platform.exam.mapper.ExamOperatePaperDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamOperatePaperMapper;
+import com.guoyu.platform.exam.vo.ExportResultDTO;
 import com.guoyu.platform.security.PlatformUserPrincipal;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
@@ -51,6 +56,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -77,6 +83,8 @@ class PracticalScoringApplicationServiceTest {
   private final ExamOperatePaperDetailMapper paperDetailMapper = Mockito.mock(ExamOperatePaperDetailMapper.class);
   private final PracticalStartApplicationService startService =
       Mockito.mock(PracticalStartApplicationService.class);
+  private final AssessorWorkbenchContextService workbenchContextService =
+      Mockito.mock(AssessorWorkbenchContextService.class);
   private PracticalScoringApplicationService service;
 
   @BeforeEach
@@ -89,12 +97,14 @@ class PracticalScoringApplicationServiceTest {
     service = new PracticalScoringApplicationService(
         taskMapper, scopeMapper, candidateMapper, groupMapper, taskAssessorMapper, assessorMapper,
         assessorTaskMapper, scoreMapper, configMapper, questionResultMapper, candidateResultMapper,
-        historyMapper, paperMapper, paperDetailMapper, new ObjectMapper(), startService);
+        historyMapper, paperMapper, paperDetailMapper, new ObjectMapper(), startService, workbenchContextService);
     CertificationInfoAssessorEntity assessor = new CertificationInfoAssessorEntity();
     assessor.setId(9L);
     assessor.setUserId(100L);
     assessor.setAuditStatus("approved");
     when(assessorMapper.selectOne(any())).thenReturn(assessor);
+    when(workbenchContextService.current()).thenReturn(
+        new PracticalScoringModels.AssessorWorkbenchContext(false, null, null, null, List.of()));
   }
 
   @AfterEach
@@ -557,6 +567,124 @@ class PracticalScoringApplicationServiceTest {
     assertThatThrownBy(() -> service.myExam(1L, 11L))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("无权访问");
+  }
+
+  @Test
+  void exportSummaryUsesTemplateAndCopiesTheSeventhRowStyle() throws Exception {
+    CertificationTaskEntity task = taskEntity();
+    task.setTaskNo("PLAN-001");
+    task.setTaskName("Template export");
+    task.setCompanyName("Test site");
+    task.setExamDate(LocalDate.of(2026, 6, 23));
+    CertificationCandidateEntity firstCandidate = candidate(11L, "Candidate 1", 100L, true);
+    firstCandidate.setCandidateNo("C-001");
+    CertificationCandidateEntity secondCandidate = candidate(12L, "Candidate 2", 100L, true);
+    secondCandidate.setCandidateNo("C-002");
+    List<CertificationPracticalQuestionResultEntity> questionResults = exportQuestionResults(
+        List.of(firstCandidate, secondCandidate));
+    List<CertificationAssessorTaskEntity> scoreTasks = exportScoreTasks(
+        List.of(firstCandidate, secondCandidate));
+    List<CertificationTaskAssessorEntity> assessors = members(3);
+    assessors.get(0).setAssessorName("Signer A");
+    assessors.get(1).setAssessorName("Signer B");
+    assessors.get(2).setAssessorName("Signer C");
+
+    when(taskMapper.selectById(1L)).thenReturn(task);
+    when(candidateMapper.selectList(any())).thenReturn(List.of(firstCandidate, secondCandidate));
+    when(candidateResultMapper.selectList(any())).thenReturn(List.of(
+        exportCandidateResult(firstCandidate.getId(), 100),
+        exportCandidateResult(secondCandidate.getId(), 99)));
+    when(questionResultMapper.selectList(any())).thenReturn(questionResults);
+    when(assessorTaskMapper.selectList(any())).thenReturn(scoreTasks);
+    when(taskAssessorMapper.selectList(any())).thenReturn(assessors);
+    when(startService.session(1L, firstCandidate.getId())).thenReturn(completedSession(firstCandidate.getId()));
+    when(startService.session(1L, secondCandidate.getId())).thenReturn(completedSession(secondCandidate.getId()));
+
+    ExportResultDTO result = service.exportSummary(1L, List.of(firstCandidate.getId(), secondCandidate.getId()));
+
+    try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(result.data()))) {
+      Sheet sheet = workbook.getSheetAt(0);
+      DataFormatter formatter = new DataFormatter();
+      assertThat(formatter.formatCellValue(sheet.getRow(0).getCell(0))).isEqualTo("评分记录汇总表");
+      assertThat(formatter.formatCellValue(sheet.getRow(1).getCell(0))).isEqualTo("计划编码：PLAN-001");
+      assertThat(formatter.formatCellValue(sheet.getRow(1).getCell(19))).isEqualTo("考 点 ：Test site");
+      assertThat(formatter.formatCellValue(sheet.getRow(2).getCell(0))).isEqualTo("计划名称：Template export");
+      assertThat(formatter.formatCellValue(sheet.getRow(2).getCell(19))).isEqualTo("考试时间：2026-06-23");
+      assertThat(formatter.formatCellValue(sheet.getRow(3).getCell(0)))
+          .doesNotContain("Signer A", "Signer B", "Signer C");
+      assertThat(sheet.getRow(6).getCell(1).getStringCellValue()).isEqualTo("Candidate 1");
+      assertThat(sheet.getRow(7).getCell(1).getStringCellValue()).isEqualTo("Candidate 2");
+      assertThat(sheet.getRow(6).getCell(3).getNumericCellValue()).isEqualTo(11D);
+      assertThat(sheet.getRow(6).getCell(4).getNumericCellValue()).isEqualTo(12D);
+      assertThat(sheet.getRow(6).getCell(5).getNumericCellValue()).isEqualTo(13D);
+      assertThat(sheet.getRow(6).getCell(39).getNumericCellValue()).isEqualTo(100D);
+      assertThat(sheet.getRow(7).getCell(39).getNumericCellValue()).isEqualTo(99D);
+      assertThat(sheet.getRow(7).getHeight()).isEqualTo(sheet.getRow(6).getHeight());
+      assertThat(sheet.getRow(7).getCell(0).getCellStyle().getIndex())
+          .isEqualTo(sheet.getRow(6).getCell(0).getCellStyle().getIndex());
+      assertThat(sheet.getRow(7).getCell(39).getCellStyle().getIndex())
+          .isEqualTo(sheet.getRow(6).getCell(39).getCellStyle().getIndex());
+      assertThat(sheet.getPrintSetup().getLandscape()).isTrue();
+      assertThat(sheet.getPrintSetup().getScale()).isEqualTo((short) 75);
+      assertThat(sheet.getMargin(Sheet.LeftMargin)).isEqualTo(0.25D);
+      assertThat(sheet.getMergedRegions()).anyMatch(range -> "A1:AN1".equals(range.formatAsString()));
+      try (Workbook templateWorkbook = WorkbookFactory.create(
+          new ClassPathResource("templates/评分记录汇总表模板.xlsx").getInputStream())) {
+        Sheet templateSheet = templateWorkbook.getSheetAt(0);
+        assertThat(sheet.getColumnWidth(0)).isEqualTo(templateSheet.getColumnWidth(0));
+        assertThat(sheet.getColumnWidth(39)).isEqualTo(templateSheet.getColumnWidth(39));
+        assertThat(sheet.getRow(0).getHeight()).isEqualTo(templateSheet.getRow(0).getHeight());
+        assertThat(sheet.getNumMergedRegions()).isEqualTo(templateSheet.getNumMergedRegions());
+        assertThat(formatter.formatCellValue(sheet.getRow(3).getCell(0)))
+            .isEqualTo(formatter.formatCellValue(templateSheet.getRow(3).getCell(0)));
+      }
+    }
+  }
+
+  private CertificationPracticalCandidateResultEntity exportCandidateResult(Long candidateId, int totalScore) {
+    CertificationPracticalCandidateResultEntity result = new CertificationPracticalCandidateResultEntity();
+    result.setTaskId(1L);
+    result.setCandidateId(candidateId);
+    result.setStatus("completed");
+    result.setTotalScore(totalScore);
+    return result;
+  }
+
+  private List<CertificationPracticalQuestionResultEntity> exportQuestionResults(
+      List<CertificationCandidateEntity> candidates
+  ) {
+    return candidates.stream().flatMap(candidate -> java.util.stream.IntStream.rangeClosed(1, 6)
+        .mapToObj(questionIndex -> {
+          CertificationPracticalQuestionResultEntity result = new CertificationPracticalQuestionResultEntity();
+          result.setTaskId(1L);
+          result.setCandidateId(candidate.getId());
+          result.setPaperQuestionId((long) questionIndex);
+          result.setAverageScore(new BigDecimal(questionIndex * 10 + 2));
+          result.setFinalScore(questionIndex * 10);
+          result.setStatus("completed");
+          return result;
+        })).toList();
+  }
+
+  private List<CertificationAssessorTaskEntity> exportScoreTasks(
+      List<CertificationCandidateEntity> candidates
+  ) {
+    return candidates.stream().flatMap(candidate -> java.util.stream.IntStream.rangeClosed(1, 6)
+        .boxed()
+        .flatMap(questionIndex -> List.of(3, 2, 1).stream().map(assessorIndex -> {
+          CertificationAssessorTaskEntity task = new CertificationAssessorTaskEntity();
+          task.setTaskId(1L);
+          task.setCandidateId(candidate.getId());
+          task.setPaperQuestionId(questionIndex.longValue());
+          task.setAssessorId(200L + assessorIndex);
+          task.setTotalScore(new BigDecimal(questionIndex * 10 + assessorIndex));
+          return task;
+        }))).toList();
+  }
+
+  private PracticalScoringModels.StartSessionView completedSession(Long candidateId) {
+    return new PracticalScoringModels.StartSessionView(
+        1L, 1L, candidateId, 20L, "completed", true, 3, 3, true, 1, null, null, null);
   }
 
   private CertificationAssessorTaskEntity task(Long id, Long assessorId, int version) {

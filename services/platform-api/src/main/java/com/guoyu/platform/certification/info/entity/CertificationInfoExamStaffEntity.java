@@ -10,7 +10,9 @@ import lombok.Setter;
 @Setter
 @TableName("certification_info_exam_staff")
 public class CertificationInfoExamStaffEntity extends BaseEntity {
+  private Long userId;
   private String staffName;
+  private String accountUsername;
   private String phone;
   private String maskedPhone;
   private String auditStatus;
