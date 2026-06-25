@@ -23,6 +23,23 @@ public class TrainingIdCardHeaderResolver {
     this.cdnUrl = cdnUrl.endsWith("/") ? cdnUrl.substring(0, cdnUrl.length() - 1) : cdnUrl;
   }
 
+  /** 班级学员列表证件照：本地文件 > 用户详情 > 报名人员 > 标准 CDN 路径 */
+  public String resolveForStudent(String idCard, String detailHeader, String signUpHeader) {
+    String fromFile = resolveHeaderUrl(idCard);
+    if (StringUtils.hasText(fromFile)) {
+      return fromFile;
+    }
+    String fromDetail = resolveStoredHeader(detailHeader);
+    if (StringUtils.hasText(fromDetail)) {
+      return fromDetail;
+    }
+    String fromSignUp = resolveStoredHeader(signUpHeader);
+    if (StringUtils.hasText(fromSignUp)) {
+      return fromSignUp;
+    }
+    return resolveCanonicalHeaderUrl(idCard);
+  }
+
   public String resolveHeaderUrl(String idCard) {
     if (!StringUtils.hasText(idCard)) {
       return "";
@@ -43,5 +60,41 @@ public class TrainingIdCardHeaderResolver {
       return cdnUrl + "/idCard/headerOrigin/" + id + "_header.jpg";
     }
     return "";
+  }
+
+  /** 将 DB 存储值转为可访问的完整 URL */
+  public String resolveStoredHeader(String stored) {
+    if (!StringUtils.hasText(stored) || isInvalidImageStored(stored)) {
+      return "";
+    }
+    if (stored.startsWith("http://") || stored.startsWith("https://")) {
+      return stored;
+    }
+    if (stored.startsWith("/api/")) {
+      return stored;
+    }
+    String normalized = stored.startsWith("/") ? stored.substring(1) : stored;
+    Path rel = Paths.get(cdnPath, normalized);
+    if (Files.exists(rel)) {
+      return cdnUrl + "/" + normalized;
+    }
+    return cdnUrl + "/" + normalized;
+  }
+
+  /** 本地无文件时仍返回 PHP 对齐的标准 CDN 路径（供前端直链加载） */
+  private String resolveCanonicalHeaderUrl(String idCard) {
+    if (!StringUtils.hasText(idCard)) {
+      return "";
+    }
+    String id = idCard.trim();
+    return cdnUrl + "/idCard/headerOrigin/" + id + "_header2.jpg";
+  }
+
+  private boolean isInvalidImageStored(String path) {
+    String t = path.trim();
+    return t.startsWith("process=image")
+        || t.startsWith("x-oss-process=")
+        || t.startsWith("?x-oss-process=")
+        || t.matches("^(image/)?(resize|quality|crop).*");
   }
 }

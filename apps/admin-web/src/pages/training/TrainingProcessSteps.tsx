@@ -1,5 +1,5 @@
 import { Card, Steps } from 'antd';
-import { EditOutlined, FileTextOutlined, PictureOutlined, UploadOutlined } from '@ant-design/icons';
+import { DatabaseOutlined, EditOutlined, FileTextOutlined, PictureOutlined, UploadOutlined } from '@ant-design/icons';
 import { useNavStore } from '../../stores/navStore';
 import './TrainingProcessSteps.css';
 
@@ -10,8 +10,7 @@ export const TRAINING_PROCESS_STEP_ROUTES = [
   'train_info-list',
   'train_people-list',
   'train_declares',
-  'train_schedule',
-  'train_graduation',
+  'train_sign-up',
 ] as const;
 
 export const TRAINING_PROCESS_STEPS = [
@@ -20,12 +19,11 @@ export const TRAINING_PROCESS_STEPS = [
   { title: '培训信息', icon: <UploadOutlined /> },
   { title: '班级人员', icon: <PictureOutlined /> },
   { title: '开班申报', icon: <EditOutlined /> },
-  { title: '课表配置', icon: <UploadOutlined /> },
-  { title: '毕业', icon: <PictureOutlined /> },
+  { title: '信息收集', icon: <DatabaseOutlined /> },
 ];
 
 type TrainingProcessStepsProps = {
-  /** 当前流程步骤索引，0=需求管理 … 6=毕业 */
+  /** 当前流程步骤索引，0=需求管理 … 5=信息收集 */
   current: number;
   /** 自定义各步骤跳转路由，默认使用 TRAINING_PROCESS_STEP_ROUTES */
   stepRoutes?: readonly string[];

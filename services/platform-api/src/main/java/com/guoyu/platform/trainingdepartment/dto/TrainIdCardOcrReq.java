@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 /** App 证件照/OCR 请求（对齐 AppuserController::idcardorcAction） */
 public class TrainIdCardOcrReq {
   private Long signUpId;
-  @NotBlank
+  /** 正面上传时可为空（OCR 提取），反面/证件照必填 */
   private String idcard;
   /** front / back / header */
   @NotBlank

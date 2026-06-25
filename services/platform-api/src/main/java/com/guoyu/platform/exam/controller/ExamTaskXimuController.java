@@ -10,7 +10,10 @@ import com.guoyu.platform.exam.vo.ExamTaskXimuDailyVO;
 import com.guoyu.platform.exam.vo.ExamTaskXimuDetailVO;
 import com.guoyu.platform.exam.vo.ExamTaskXimuVO;
 import com.guoyu.platform.exam.vo.ExportResultDTO;
+import com.guoyu.platform.common.exception.BusinessException;
+import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.vo.PublicDataVO;
+import com.guoyu.platform.file.support.CdnFileServeHelper;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.io.File;
@@ -19,11 +22,14 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.io.OutputStream;
+import java.net.URI;
+import java.nio.file.Path;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -46,9 +52,13 @@ import org.springframework.web.multipart.MultipartFile;
 public class ExamTaskXimuController {
 
   private final ExamTaskXimuApplicationService service;
+  private final CdnFileServeHelper cdnFileServeHelper;
 
-  public ExamTaskXimuController(ExamTaskXimuApplicationService service) {
+  public ExamTaskXimuController(
+      ExamTaskXimuApplicationService service,
+      CdnFileServeHelper cdnFileServeHelper) {
     this.service = service;
+    this.cdnFileServeHelper = cdnFileServeHelper;
   }
 
   @GetMapping("/task-ximus")
@@ -133,17 +143,28 @@ public class ExamTaskXimuController {
    * Used by Office Online Viewer and direct download.
    */
   @GetMapping("/files/**")
-  public ResponseEntity<InputStreamResource> serveFile(jakarta.servlet.http.HttpServletRequest request)
+  public ResponseEntity<?> serveFile(jakarta.servlet.http.HttpServletRequest request)
       throws IOException {
     String fp = extractCdnRelativePath(request);
     log.info("GET /exam/files/{}", fp);
-    File file = service.resolveFile(fp);
-    InputStreamResource resource = new InputStreamResource(new FileInputStream(file));
-    String contentType = Files.probeContentType(file.toPath());
-    if (contentType == null) contentType = "application/octet-stream";
-    return ResponseEntity.ok()
-        .contentType(MediaType.parseMediaType(contentType))
-        .body(resource);
+    var local = cdnFileServeHelper.resolveLocalPath(fp);
+    if (local.isPresent()) {
+      Path path = local.get();
+      InputStreamResource resource = new InputStreamResource(new FileInputStream(path.toFile()));
+      String contentType = Files.probeContentType(path);
+      if (contentType == null) {
+        contentType = "application/octet-stream";
+      }
+      return ResponseEntity.ok()
+          .contentType(MediaType.parseMediaType(contentType))
+          .body(resource);
+    }
+    var remote = cdnFileServeHelper.remoteFallbackUrl(fp);
+    if (remote.isPresent()) {
+      log.info("GET /exam/files/{} redirect to {}", fp, remote.get());
+      return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(remote.get())).build();
+    }
+    throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
   }
 
   private static String extractCdnRelativePath(jakarta.servlet.http.HttpServletRequest request) {

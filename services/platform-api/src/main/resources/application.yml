@@ -61,6 +61,7 @@ spring:
     baseline-on-migrate: true
     out-of-order: true
     validate-on-migrate: false
+    repair-on-migrate: true
 
 management:
   endpoints:
@@ -124,6 +125,15 @@ platform:
       # 与 gjjd_phalcon WxminiController 保持一致，生产环境请用环境变量覆盖
       app-id: ${WECHAT_MINI_APP_ID:wx67133f973ccd5592}
       app-secret: ${WECHAT_MINI_APP_SECRET:a927524973ea144a9405b9739a2b2c51}
+  baidu:
+    api-key: ${BAIDU_API_KEY:JHKuRKyAaLiqdWRi79Bfriim}
+    secret-key: ${BAIDU_SECRET_KEY:nLJlBKKsan5ArKiJNzw8NgVmU4RT94yb}
+  # 报名页面公开访问地址（用于生成二维码，扫码跳转用）
+  # 本地开发：http://localhost:8080  生产：https://api.gjjd168.com
+  app-base-url: ${APP_BASE_URL:http://localhost:8080}
+  sms:
+    # false=开发模式：验证码写入 platform_sms 并打日志，不调用阿里云
+    enabled: ${SMS_ENABLED:false}
 
 # Sa-Token
 sa-token:

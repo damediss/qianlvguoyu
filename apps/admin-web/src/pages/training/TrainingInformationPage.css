@@ -66,6 +66,20 @@
   color: #f5222d !important;
 }
 
+.training-list-container .cover-table-cell {
+  width: 60px;
+  height: 40px;
+  line-height: 0;
+}
+
+.training-list-container .cover-table-thumb {
+  width: 60px;
+  height: 40px;
+  display: block;
+  object-fit: cover;
+  border-radius: 2px;
+}
+
 .training-list-container .cover-uploader .cover {
   width: 178px;
   height: 178px;
@@ -159,6 +173,37 @@
 .training-list-container .qrcode-row {
   display: flex;
   justify-content: space-between;
+}
+
+/* 报名计划编辑弹窗（portal 渲染，不依赖 .training-list-container） */
+.sign-up-form .cover-uploader .cover {
+  width: 178px;
+  height: 178px;
+  display: block;
+  object-fit: cover;
+}
+
+.sign-up-form .cover-uploader {
+  border: 1px dashed #ccc;
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  display: inline-block;
+}
+
+.sign-up-form .cover-uploader:hover {
+  border-color: #409eff;
+}
+
+.sign-up-form .cover-uploader-icon {
+  font-size: 28px;
+  color: #8c939d;
+  width: 178px;
+  height: 178px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* 二维码弹窗（portal 渲染，不依赖 .training-list-container） */

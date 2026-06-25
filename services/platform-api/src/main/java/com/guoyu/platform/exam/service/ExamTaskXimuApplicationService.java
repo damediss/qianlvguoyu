@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.file.support.CdnFileServeHelper;
 import com.guoyu.platform.exam.dto.ExamTaskXimuAssignExpertReq;
 import com.guoyu.platform.exam.dto.ExamTaskXimuQueryReq;
 import com.guoyu.platform.exam.entity.ExamTaskXimuAuditRecordEntity;
@@ -83,6 +84,7 @@ public class ExamTaskXimuApplicationService {
   private final RoleMapper roleMapper;
   private final ExamWorkTypeApplicationService workTypeService;
   private final ObjectMapper objectMapper;
+  private final CdnFileServeHelper cdnFileServeHelper;
 
   @Value("${platform.cdn.path:./data/cdn}")
   private String cdnPath;
@@ -98,7 +100,8 @@ public class ExamTaskXimuApplicationService {
       UserRoleRelationMapper userRoleMapper,
       RoleMapper roleMapper,
       ExamWorkTypeApplicationService workTypeService,
-      ObjectMapper objectMapper
+      ObjectMapper objectMapper,
+      CdnFileServeHelper cdnFileServeHelper
   ) {
     this.ximuMapper = ximuMapper;
     this.detailMapper = detailMapper;
@@ -109,6 +112,7 @@ public class ExamTaskXimuApplicationService {
     this.roleMapper = roleMapper;
     this.workTypeService = workTypeService;
     this.objectMapper = objectMapper;
+    this.cdnFileServeHelper = cdnFileServeHelper;
   }
 
   // ── public methods ──
@@ -531,14 +535,9 @@ public class ExamTaskXimuApplicationService {
 
   @Transactional(readOnly = true)
   public File resolveFile(String fp) {
-    Path fullPath = Paths.get(cdnPath, fp).normalize();
-    if (!Files.exists(fullPath)) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
-    }
-    if (!fullPath.startsWith(Paths.get(cdnPath).normalize())) {
-      throw new BusinessException(ErrorCode.FORBIDDEN, "非法文件路径");
-    }
-    return fullPath.toFile();
+    return cdnFileServeHelper.resolveLocalPath(fp)
+        .map(Path::toFile)
+        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "文件不存在"));
   }
 
   // ── private helpers ──

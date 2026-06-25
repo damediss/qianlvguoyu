@@ -22,6 +22,9 @@ public class TenantContextFilter extends OncePerRequestFilter {
   );
   private static final Set<String> WHITE_PATH_PREFIXES = Set.of(
       "/api/appregistration/",
+      "/api/appsms/",
+      "/api/appauth/",
+      "/api/appuser/",
       "/api/exam/files/",
       // 培训管理·扫码信息收集 - 测试专用
       "/api/training/sign-ups/",

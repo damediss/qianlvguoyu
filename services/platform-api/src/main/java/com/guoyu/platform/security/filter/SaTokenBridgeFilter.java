@@ -43,13 +43,23 @@ public class SaTokenBridgeFilter extends OncePerRequestFilter {
       HttpServletResponse response,
       FilterChain filterChain
   ) throws ServletException, IOException {
-    String token = StpUtil.getTokenValue();
-    if (token != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+    if (SecurityContextHolder.getContext().getAuthentication() != null) {
+      filterChain.doFilter(request, response);
+      return;
+    }
+
+    String token = null;
+    try {
+      token = StpUtil.getTokenValue();
+    } catch (Exception e) {
+      log.debug("SaTokenBridgeFilter: failed to get token value: {}", e.getMessage());
+    }
+
+    if (token != null) {
       try {
         authenticate(token);
       } catch (Exception ex) {
-        log.warn("Sa-Token authentication failed for request {}: {}", request.getRequestURI(), ex.getMessage());
-        SecurityContextHolder.clearContext();
+        log.debug("SaTokenBridgeFilter: Sa-Token auth skipped for {}: {}", request.getRequestURI(), ex.getMessage());
       }
     }
     filterChain.doFilter(request, response);

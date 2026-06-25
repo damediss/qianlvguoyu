@@ -396,7 +396,23 @@ public class TrainSolutionApplicationService {
             .eq(TrainSolutionEntity::getDeleted, 0)
             .eq(TrainSolutionEntity::getTrainInfoId, trainInfo.getId()));
     if (solution == null) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "方案不存在或已删除");
+      // 方案尚未生成，返回占位结构（status=pending），避免前端 404 报错
+      Map<String, Object> data = new LinkedHashMap<>();
+      data.put("id", null);
+      data.put("title", "");
+      data.put("company_id", trainInfo.getCompanyId());
+      data.put("company_name", trainInfo.getCompanyName());
+      data.put("train_info_id", trainInfo.getId());
+      data.put("train_title", trainInfo.getTitle() != null ? trainInfo.getTitle() : "");
+      data.put("file_path", "");
+      data.put("file", "");
+      data.put("file_name", "");
+      data.put("fileType", "");
+      data.put("badgeList", List.of());
+      data.put("train_info_status", trainInfo.getCompanyHasConfirm());
+      data.put("reject_reason", "");
+      data.put("status", "pending");
+      return data;
     }
 
     // Step 3: 组装返回数据
@@ -420,6 +436,7 @@ public class TrainSolutionApplicationService {
     data.put("badgeList", badgeList);
     data.put("train_info_status", trainInfo.getCompanyHasConfirm());
     data.put("reject_reason", solution.getRejectReason());
+    data.put("status", "ready");
     return data;
   }
 

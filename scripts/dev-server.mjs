@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const BACKEND = 'http://localhost:8080';
-const PORT = 5173;
+const PORT = 5174;
 const HTML = fs.readFileSync('D:/workspace/qianlvguoyu_saas/outputs/login-test.html','utf8');
 
 const server = http.createServer((req, res) => {

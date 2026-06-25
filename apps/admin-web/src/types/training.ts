@@ -1869,6 +1869,7 @@ export interface DemandTrain {
   updateTime?: string;
   solution?: number;
   solutionCn?: string;
+  publisher?: string;
 }
 
 export interface DemandPending {
@@ -1881,6 +1882,7 @@ export interface DemandPending {
   addtimeCn?: string;
   company?: string;
   companyType?: string;
+  publisher?: string;
 }
 
 export interface DemandTrainQuery {
@@ -2032,6 +2034,8 @@ export interface SolutionByDemand {
   fileType?: string;
   badgeList: TrainSolutionBadge[];
   reject_reason?: string;
+  /** ready=方案已就绪；pending=方案正在制作中 */
+  status?: 'ready' | 'pending';
 }
 
 // ==================== Class People (班级人员 - snake_case 响应) ====================

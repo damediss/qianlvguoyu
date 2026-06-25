@@ -40,6 +40,65 @@ const BADGE_FEE_OPTIONS = ['劳务费', '住宿费', '耗材', '场地成本', '
 
 const TABLE_HEADER_STYLE = { background: '#f8f9fa' };
 
+const PRESET_FEE_OPTIONS = BADGE_FEE_OPTIONS.map((t) => ({ value: t, label: t }));
+
+/** 费用名下拉：支持在预置选项之外手动输入并保存。
+ *  antd v5 的 Select 在 showSearch 下，键入文字后若不选中选项，onChange 不会触发；
+ *  因此用 onSearch + onBlur/onKeyDown 把"非预置"输入值手动提交给表单。
+ */
+function FeeNameSelect({ value, onChange }: { value?: string; onChange?: (v: string) => void }) {
+  const [extras, setExtras] = useState<{ value: string; label: string }[]>([]);
+  const [searchText, setSearchText] = useState('');
+
+  const options = useMemo(() => {
+    const all = [...PRESET_FEE_OPTIONS];
+    if (value && !all.some((o) => o.value === value) && !extras.some((o) => o.value === value)) {
+      all.push({ value, label: value });
+    }
+    if (searchText && !all.some((o) => o.value === searchText)) {
+      all.push({ value: searchText, label: searchText });
+    }
+    return all;
+  }, [value, extras, searchText]);
+
+  const commit = (v: string) => {
+    const trimmed = v.trim();
+    if (!trimmed) return;
+    if (!PRESET_FEE_OPTIONS.some((o) => o.value === trimmed) && !extras.some((o) => o.value === trimmed)) {
+      setExtras((prev) => [...prev, { value: trimmed, label: trimmed }]);
+    }
+    if (trimmed !== value) onChange?.(trimmed);
+  };
+
+  return (
+    <Select
+      placeholder="选择或输入费用名"
+      style={{ width: 240 }}
+      showSearch
+      allowClear
+      value={value}
+      searchValue={searchText}
+      options={options}
+      filterOption={(input, option) => (option?.label as string ?? '').includes(input)}
+      onSearch={(t) => setSearchText(t)}
+      onChange={(v) => {
+        const next = (v ?? '') as string;
+        setSearchText('');
+        commit(next);
+      }}
+      onBlur={() => {
+        if (searchText && searchText !== value) commit(searchText);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && searchText && searchText !== value) {
+          e.preventDefault();
+          commit(searchText);
+        }
+      }}
+    />
+  );
+}
+
 function resolveFileUrl(path?: string): string {
   if (!path) return '';
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
@@ -425,9 +484,8 @@ export function TrainingProgramPage() {
                     {
                       title: '费用名',
                       render: (_, field) => (
-                        <Form.Item name={[field.name, 'title']} rules={[{ required: true, message: '请选择' }]} noStyle>
-                          <Select placeholder="选择费用名" style={{ width: 240 }}
-                            options={BADGE_FEE_OPTIONS.map((t) => ({ value: t, label: t }))} />
+                        <Form.Item name={[field.name, 'title']} rules={[{ required: true, message: '请选择或输入费用名' }]} noStyle>
+                          <FeeNameSelect />
                         </Form.Item>
                       ),
                     },

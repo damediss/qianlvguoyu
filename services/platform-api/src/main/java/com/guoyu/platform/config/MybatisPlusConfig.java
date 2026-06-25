@@ -49,7 +49,8 @@ public class MybatisPlusConfig {
             || "train_people_list".equalsIgnoreCase(tableName)
             || "platform_user_detail".equalsIgnoreCase(tableName)
             || "platform_user".equalsIgnoreCase(tableName)
-            || "platform_user_token".equalsIgnoreCase(tableName);
+            || "platform_user_token".equalsIgnoreCase(tableName)
+            || "platform_sms".equalsIgnoreCase(tableName);
       }
     }));
     return interceptor;

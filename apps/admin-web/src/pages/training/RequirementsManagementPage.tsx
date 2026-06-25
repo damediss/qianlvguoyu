@@ -196,6 +196,14 @@ export function RequirementsManagementPage() {
     { title: '接受培训单位', dataIndex: 'company', width: 300, align: 'center' },
     { title: '单位类型', dataIndex: 'companyType', width: 150, align: 'center' },
     { title: '内容', dataIndex: 'content', align: 'center' },
+    {
+      title: '发布人',
+      dataIndex: 'publisher',
+      width: 200,
+      align: 'center',
+      ellipsis: true,
+      render: (v: string | undefined, row) => v || row.company || '-',
+    },
     { title: '人数', dataIndex: 'nums', width: 200, align: 'center' },
     { title: '创建时间', dataIndex: 'addtimeCn', width: 200, align: 'center' },
     {

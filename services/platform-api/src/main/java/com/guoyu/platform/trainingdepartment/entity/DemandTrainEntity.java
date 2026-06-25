@@ -40,6 +40,13 @@ public class DemandTrainEntity {
   /** 逻辑删除 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
+
+  /** 创建人（共享库 legacy 列 created_by） */
+  private Long createdBy;
+
+  public Long getCreatedBy() { return createdBy; }
+  public void setCreatedBy(Long createdBy) { this.createdBy = createdBy; }
+
   public Long getId() { return id; }
   public void setId(Long id) { this.id = id; }
   public Long getOrgId() { return orgId; }

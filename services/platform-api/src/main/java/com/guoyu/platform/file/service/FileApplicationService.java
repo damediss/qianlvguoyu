@@ -60,7 +60,7 @@ public class FileApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File is empty");
     }
 
-    Long tenantId = SecurityContext.currentUser().getTenantId();
+    Long tenantId = getTenantIdSafe();
     String safeName = sanitizeFileName(originalName);
     StoredFileFormatValidator.assertSupportedOfficeFile(safeName, content);
     String objectKey = buildObjectKey(tenantId, safeName);
@@ -85,7 +85,7 @@ public class FileApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File is empty");
     }
 
-    Long tenantId = SecurityContext.currentUser().getTenantId();
+    Long tenantId = getTenantIdSafe();
     String safeName = sanitizeFileName(file.getOriginalFilename());
     String objectKey = buildObjectKey(tenantId, safeName);
     try {
@@ -274,6 +274,14 @@ public class FileApplicationService {
   private String sanitizeFileName(String originalName) {
     String name = StringUtils.hasText(originalName) ? originalName : "upload.bin";
     return name.replace("\\", "_").replace("/", "_").replace(":", "_");
+  }
+
+  private Long getTenantIdSafe() {
+    try {
+      return SecurityContext.currentUser().getTenantId();
+    } catch (IllegalStateException ex) {
+      return 0L;
+    }
   }
 
   private FileVO toVO(FileEntity entity, String url) {

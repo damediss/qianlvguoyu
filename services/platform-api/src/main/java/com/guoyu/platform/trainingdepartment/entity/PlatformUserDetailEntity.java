@@ -22,6 +22,10 @@ public class PlatformUserDetailEntity {
   private String political;
   private String address;
   private String idcardHeader;
+  private String idcardFront;
+  private String idcardBack;
+  private String idcardStartDate;
+  private String idcardEndDate;
   private String birthday;
 
   @TableLogic
@@ -49,6 +53,14 @@ public class PlatformUserDetailEntity {
   public void setAddress(String address) { this.address = address; }
   public String getIdcardHeader() { return idcardHeader; }
   public void setIdcardHeader(String idcardHeader) { this.idcardHeader = idcardHeader; }
+  public String getIdcardFront() { return idcardFront; }
+  public void setIdcardFront(String idcardFront) { this.idcardFront = idcardFront; }
+  public String getIdcardBack() { return idcardBack; }
+  public void setIdcardBack(String idcardBack) { this.idcardBack = idcardBack; }
+  public String getIdcardStartDate() { return idcardStartDate; }
+  public void setIdcardStartDate(String idcardStartDate) { this.idcardStartDate = idcardStartDate; }
+  public String getIdcardEndDate() { return idcardEndDate; }
+  public void setIdcardEndDate(String idcardEndDate) { this.idcardEndDate = idcardEndDate; }
   public String getBirthday() { return birthday; }
   public void setBirthday(String birthday) { this.birthday = birthday; }
   public Integer getDeleted() { return deleted; }

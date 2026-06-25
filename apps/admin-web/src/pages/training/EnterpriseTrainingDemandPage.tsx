@@ -164,7 +164,14 @@ export function EnterpriseTrainingDemandPage() {
       });
       setProgramOpen(true);
     } catch {
-      message.error('获取培训方案失败');
+      // 接口异常时也作为「方案制作中」处理
+      setProgram({
+        id: 0,
+        title: '',
+        badgeList: [],
+        status: 'pending',
+      });
+      setProgramOpen(true);
     }
   };
 
@@ -247,6 +254,13 @@ export function EnterpriseTrainingDemandPage() {
   const columns: ColumnsType<DemandTrain> = [
     { title: '创建日期', dataIndex: 'addtime', width: 170, render: (v: number) => formatAddtime(v) },
     { title: '培训内容', dataIndex: 'content', ellipsis: true },
+    {
+      title: '发布人',
+      dataIndex: 'publisher',
+      width: 180,
+      ellipsis: true,
+      render: (v: string | undefined) => v || '-',
+    },
     { title: '人数', dataIndex: 'nums', width: 90 },
     {
       title: '需求状态',
@@ -330,7 +344,7 @@ export function EnterpriseTrainingDemandPage() {
           onChange: (keys) => setSelectedRowKeys(keys as number[]),
         }}
         pagination={false}
-        scroll={{ x: 900 }}
+        scroll={{ x: 1080 }}
       />
       <Pagination
         className="enterprise-demand-pagination"
@@ -368,13 +382,13 @@ export function EnterpriseTrainingDemandPage() {
         footer={null}
         destroyOnHidden
       >
-        {canConfirm && (
+        {canConfirm && program?.status !== 'pending' && (
           <div className="program-actions">
             <Button type="primary" loading={actionLoading} onClick={handleAgree}>同意</Button>
             <Button loading={actionLoading} onClick={() => setRejectOpen(true)}>不同意</Button>
           </div>
         )}
-        {program && (
+        {program && program.status !== 'pending' && (
           <div className="program-body">
             <p><strong>方案标题：</strong>{program.title}</p>
             <p><strong>费用明细：</strong></p>
@@ -406,6 +420,13 @@ export function EnterpriseTrainingDemandPage() {
             {program.reject_reason && (
               <p className="mar-t10"><strong>驳回理由：</strong>{program.reject_reason}</p>
             )}
+          </div>
+        )}
+        {program && program.status === 'pending' && (
+          <div className="program-body" style={{ textAlign: 'center', padding: '32px 0' }}>
+            <Typography.Text type="secondary" style={{ fontSize: 15 }}>
+              方案正在制作中，请稍后查看
+            </Typography.Text>
           </div>
         )}
       </Modal>

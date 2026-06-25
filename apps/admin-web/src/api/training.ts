@@ -1032,6 +1032,8 @@ export interface SignUpQrcodeResult {
   title: string;
   qrcode: string;
   qrcodeDataUrl?: string;
+  appQrcode?: string;
+  appQrcodeDataUrl?: string;
   registrationPath: string;
   generated: boolean;
 }

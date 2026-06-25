@@ -1,20 +1,21 @@
 import { useMemo, useState, useRef, useEffect, type MouseEvent } from 'react';
 import {
   Button, DatePicker, Form, Image, Input, InputNumber, Modal, Pagination, Select, Space, Spin,
-  Switch, Table, Upload, message,
+  Switch, Table, Typography, Upload, message,
 } from 'antd';
 import { InboxOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadProps } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs, { type Dayjs } from 'dayjs';
-import QRCode from 'qrcode';
 import * as trainApi from '../../api/training';
 import { uploadFile } from '../../api/knowledge';
 import type { TrainSignUpSelf, TrainSignUpSelfCreateReq, TrainSignUpPerson, TrainSignUpOrcSelf, TrainSignUpSelfFile, PlatformUser } from '../../types/training';
 import { FilePreviewModal, type FilePreviewTarget } from '../../components/FilePreviewModal';
+import { AuthImage } from '../../components/ApiAuthImage';
 import { fileNameFromUrl } from '../../api/files';
 import { SignUpPeopleEditModal } from './SignUpPeopleEditModal';
+import { TrainingProcessSteps } from './TrainingProcessSteps';
 import './TrainingInformationPage.css';
 
 const { RangePicker } = DatePicker;
@@ -615,10 +616,9 @@ export function TrainingInformationPage() {
 
   const showQrcode = async (row: TrainSignUpSelf) => {
     try {
-      const [appQrcodeUrl, res] = await Promise.all([
-        QRCode.toDataURL(buildAppSignUpQrcodeUrl(row.id), { errorCorrectionLevel: 'H' }),
-        trainApi.getSignUpQrcode(row.id),
-      ]);
+      const res = await trainApi.getSignUpQrcode(row.id);
+      // 优先使用服务端生成的 APP 二维码（base64），回退到 URL
+      const appQrcodeUrl = res.appQrcodeDataUrl || res.appQrcode || '';
       const wxQrcodeUrl = resolveWxQrcodeDisplayUrl(res.qrcodeDataUrl, res.qrcode, row.wxMiniQrcode);
       setQrModal({
         signUpId: row.id,
@@ -627,6 +627,9 @@ export function TrainingInformationPage() {
         wxQrcodeUrl,
         path: res.registrationPath,
       });
+      if (!appQrcodeUrl) {
+        message.warning('APP 二维码生成失败');
+      }
       if (!wxQrcodeUrl) {
         message.info('尚未生成小程序码，可点击「获取」生成');
       }
@@ -696,7 +699,11 @@ export function TrainingInformationPage() {
     { title: '标题', dataIndex: 'title', ellipsis: true },
     {
       title: '封面', dataIndex: 'cover', width: 90,
-      render: (v: string) => v ? <img src={v} alt="cover" style={{ width: 60, height: 40, objectFit: 'cover' }} /> : '-',
+      render: (v: string) => v ? (
+        <div className="cover-table-cell">
+          <AuthImage url={v} alt="cover" className="cover-table-thumb" />
+        </div>
+      ) : '-',
     },
     { title: '培训时间', dataIndex: 'trainTime', width: 140 },
     { title: '考试时间', dataIndex: 'examTime', width: 140 },
@@ -784,6 +791,13 @@ export function TrainingInformationPage() {
 
   return (
     <div className="training-list-container">
+      <section className="page-heading" style={{ marginBottom: 16 }}>
+        <Typography.Title level={4}>信息收集</Typography.Title>
+        <Typography.Text type="secondary">创建报名计划、生成扫码二维码，收集学员报名资料</Typography.Text>
+      </section>
+
+      <TrainingProcessSteps current={5} />
+
       <div className="top-bar">
         <div>
           <Input
@@ -845,10 +859,31 @@ export function TrainingInformationPage() {
             <Input placeholder="请输入标题" maxLength={255} />
           </Form.Item>
 
-          <Form.Item name="cover" label="封面">
+          <Form.Item
+            name="cover"
+            label="封面"
+            getValueFromEvent={(e) => {
+              // antd Upload 默认把 fileList 提交给表单，里头是对象数组；
+              // 这里抽出我们需要的 URL 字符串，避免后端 JSON 反序列化失败
+              const fileList = Array.isArray(e?.fileList) ? e.fileList : [];
+              const last = fileList[fileList.length - 1];
+              if (!last) return '';
+              if (typeof last.url === 'string' && last.url) return last.url;
+              if (typeof last.thumbUrl === 'string' && last.thumbUrl) return last.thumbUrl;
+              if (last.response && typeof last.response === 'object' && last.response.id) {
+                return `/api/files/${last.response.id}/download`;
+              }
+              return '';
+            }}
+          >
             <Upload {...coverUploadProps}>
               {coverPreview ? (
-                <img src={coverPreview} alt="cover" className="cover" />
+                <AuthImage
+                  url={coverPreview}
+                  alt="cover"
+                  className="cover"
+                  style={{ width: 178, height: 178, display: 'block', objectFit: 'cover' }}
+                />
               ) : (
                 <div className="cover-uploader-icon">
                   <PlusOutlined />

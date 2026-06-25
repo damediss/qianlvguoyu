@@ -10,5 +10,6 @@ public record DemandPendingVO(
     Integer addtime,
     String addtimeCn,
     String company,
-    String companyType
+    String companyType,
+    String publisher
 ) {}

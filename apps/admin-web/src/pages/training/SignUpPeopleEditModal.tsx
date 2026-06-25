@@ -6,6 +6,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import dayjs, { type Dayjs } from 'dayjs';
 import * as trainApi from '../../api/training';
 import type { DemandPublicData, TrainSignUpPerson } from '../../types/training';
+import { ApiAuthImage } from '../../components/ApiAuthImage';
 import {
   EDUCATION_OPTIONS,
   HOUSE_TYPE_OPTIONS,
@@ -20,18 +21,9 @@ import './SignUpPeopleEditModal.css';
 
 const DATE_FORMAT = 'YYYY-MM-DD';
 
-function toProxiedCdnUrl(url?: string): string {
-  if (!url) return '';
-  const marker = '/exam/files/';
-  const idx = url.indexOf(marker);
-  if (idx >= 0) return `/api${url.substring(idx)}`;
-  if (url.startsWith('/api/')) return url;
-  return url;
-}
-
 function pickImageUrl(...candidates: (string | undefined)[]): string {
   for (const url of candidates) {
-    if (url) return toProxiedCdnUrl(url);
+    if (url) return url;
   }
   return '';
 }
@@ -228,14 +220,13 @@ function ImagePreviewBox({
   url?: string;
   boxClass: string;
 }) {
-  const src = url ? toProxiedCdnUrl(url) : '';
   return (
     <div className="people-edit-image-block">
       <div className="people-edit-image-label">{label}</div>
       <div className={`people-edit-image-box ${boxClass}`}>
-        {src ? (
-          <Image
-            src={src}
+        {url ? (
+          <ApiAuthImage
+            url={url}
             width="100%"
             height="100%"
             style={{ objectFit: 'fill' }}

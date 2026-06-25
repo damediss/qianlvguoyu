@@ -46,9 +46,11 @@ public class TrainSignUpCollectionApplicationService {
   private final OrgMapper orgMapper;
   private final TrainingOperatorScopeService operatorScopeService;
   private final TrainingWxMiniQrcodeClient wxMiniQrcodeClient;
+  private final QrCodeGenerationService qrCodeGenerationService;
   private final SignUpSelfFilesResolver filesResolver;
   private final String cdnPath;
   private final String cdnUrl;
+  private final String appBaseUrl;
 
   public TrainSignUpCollectionApplicationService(
       TrainSignUpSelfMapper signUpMapper,
@@ -56,17 +58,21 @@ public class TrainSignUpCollectionApplicationService {
       OrgMapper orgMapper,
       TrainingOperatorScopeService operatorScopeService,
       TrainingWxMiniQrcodeClient wxMiniQrcodeClient,
+      QrCodeGenerationService qrCodeGenerationService,
       SignUpSelfFilesResolver filesResolver,
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
-      @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl) {
+      @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl,
+      @Value("${platform.app-base-url:http://localhost:8080}") String appBaseUrl) {
     this.signUpMapper = signUpMapper;
     this.peopleMapper = peopleMapper;
     this.orgMapper = orgMapper;
     this.operatorScopeService = operatorScopeService;
     this.wxMiniQrcodeClient = wxMiniQrcodeClient;
+    this.qrCodeGenerationService = qrCodeGenerationService;
     this.filesResolver = filesResolver;
     this.cdnPath = cdnPath;
     this.cdnUrl = cdnUrl.endsWith("/") ? cdnUrl.substring(0, cdnUrl.length() - 1) : cdnUrl;
+    this.appBaseUrl = appBaseUrl.endsWith("/") ? appBaseUrl.substring(0, appBaseUrl.length() - 1) : appBaseUrl;
   }
 
   @Transactional(readOnly = true)
@@ -101,7 +107,27 @@ public class TrainSignUpCollectionApplicationService {
   @Transactional(readOnly = true)
   public Map<String, Object> resolveQrcode(Long signUpId) {
     TrainSignUpSelfEntity signUp = getSignUp(signUpId);
-    return buildQrcodeResult(signUpId, signUp.getTitle());
+    Map<String, Object> result = buildQrcodeResult(signUpId, signUp.getTitle());
+    
+    // 生成 APP 扫码二维码（服务端生成，保存到 CDN）
+    // 二维码指向 collect-test.html 页面（信息收集表单）
+    try {
+      String appSignUpUrl = appBaseUrl + "/api/collect-test.html?id=" + signUpId;
+      String appQrCodeFileName = "app_signup_" + signUpId;
+      // 每次重新生成以确保二维码内容与当前 URL 一致
+      if (qrCodeGenerationService.qrCodeExists(appQrCodeFileName)) {
+        qrCodeGenerationService.deleteQrCode(appQrCodeFileName);
+      }
+      String appQrCodeUrl = qrCodeGenerationService.generateAndSaveQrCode(appSignUpUrl, appQrCodeFileName);
+      result.put("appQrcode", appQrCodeUrl);
+      result.put("appQrcodeDataUrl", qrCodeGenerationService.generateQrCodeDataUrl(appSignUpUrl));
+    } catch (Exception e) {
+      log.warn("生成 APP 二维码失败: {}", e.getMessage());
+      result.put("appQrcode", "");
+      result.put("appQrcodeDataUrl", "");
+    }
+    
+    return result;
   }
 
   @Transactional

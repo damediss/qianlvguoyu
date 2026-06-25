@@ -24,5 +24,7 @@ public record DemandTrainVO(
     /** 企业确认状态 0=待确认 1=已确认 (关联 train_info_list.company_has_confirm) */
     Integer solution,
     /** 企业确认状态中文 */
-    String solutionCn
+    String solutionCn,
+    /** 发布人：企业名 / 用户名 */
+    String publisher
 ) {}

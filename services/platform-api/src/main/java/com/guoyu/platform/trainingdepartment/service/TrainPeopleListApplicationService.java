@@ -197,6 +197,7 @@ public class TrainPeopleListApplicationService {
         .distinct()
         .toList();
     Map<String, String> headerFromDetail = new HashMap<>();
+    Map<String, String> headerFromSignUp = new HashMap<>();
     if (!idCards.isEmpty()) {
       platformUserDetailMapper.selectList(
           new LambdaQueryWrapper<PlatformUserDetailEntity>()
@@ -204,7 +205,19 @@ public class TrainPeopleListApplicationService {
               .eq(PlatformUserDetailEntity::getDeleted, 0))
           .forEach(p -> {
             if (StringUtils.hasText(p.getIdcard()) && StringUtils.hasText(p.getIdcardHeader())) {
-              headerFromDetail.put(p.getIdcard(), resolveHeaderFromStored(p.getIdcardHeader()));
+              headerFromDetail.put(p.getIdcard(), p.getIdcardHeader());
+            }
+          });
+      signUpPeopleSelfMapper.selectList(
+          new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
+              .in(TrainSignUpPeopleSelfEntity::getIdCardNumber, idCards)
+              .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0)
+              .orderByDesc(TrainSignUpPeopleSelfEntity::getId))
+          .forEach(p -> {
+            if (StringUtils.hasText(p.getIdCardNumber())
+                && StringUtils.hasText(p.getIdCardHeader())
+                && !headerFromSignUp.containsKey(p.getIdCardNumber())) {
+              headerFromSignUp.put(p.getIdCardNumber(), p.getIdCardHeader());
             }
           });
     }
@@ -224,11 +237,11 @@ public class TrainPeopleListApplicationService {
       item.put("exam_score", e.getExamScore());
       item.put("real_score", e.getRealScore());
       item.put("normal_score", e.getNormalScore());
-      String header = idCardHeaderResolver.resolveHeaderUrl(e.getIdCard());
-      if (!StringUtils.hasText(header) && StringUtils.hasText(e.getIdCard())) {
-        header = headerFromDetail.getOrDefault(e.getIdCard(), "");
-      }
-      item.put("header", header);
+      String idCard = e.getIdCard();
+      item.put("header", idCardHeaderResolver.resolveForStudent(
+          idCard,
+          idCard != null ? headerFromDetail.get(idCard) : null,
+          idCard != null ? headerFromSignUp.get(idCard) : null));
       return item;
     }).toList();
 
@@ -620,13 +633,7 @@ public class TrainPeopleListApplicationService {
   }
 
   private String resolveHeaderFromStored(String stored) {
-    if (!StringUtils.hasText(stored)) {
-      return "";
-    }
-    if (stored.startsWith("http://") || stored.startsWith("https://") || stored.startsWith("/api/")) {
-      return stored;
-    }
-    return stored.startsWith("/") ? stored : "/" + stored;
+    return idCardHeaderResolver.resolveStoredHeader(stored);
   }
 
   private TrainPeopleListVO toVO(TrainPeopleListEntity entity) {

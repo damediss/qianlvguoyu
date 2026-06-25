@@ -17,8 +17,11 @@ async function parseBlobError(blob: Blob, fallback: string): Promise<string> {
 }
 
 export async function fetchFileBlob(path: string): Promise<Blob> {
+  const isAbsolute = path.startsWith('http://') || path.startsWith('https://');
   try {
-    const response = await apiClient.get(path, { responseType: 'blob' });
+    const response = isAbsolute
+      ? await axios.get(path, { responseType: 'blob', timeout: 30000 })
+      : await apiClient.get(path, { responseType: 'blob' });
     const blob = response.data as Blob;
     if (blob.type.includes('json') && blob.size < 4096) {
       throw new Error(await parseBlobError(blob, '文件下载失败'));
@@ -85,29 +88,53 @@ export function fetchPlatformFileBlob(fileId: string) {
   return fetchFileBlob(`/files/${encodeURIComponent(fileId)}/download?inline=true`);
 }
 
+/** 是否为可拉取的文件地址（排除 OSS 处理参数片段等脏数据） */
+export function isUsableFileUrl(url?: string | null): boolean {
+  if (!url?.trim()) return false;
+  const t = url.trim();
+  if (/^(process=image|x-oss-process=|\?x-oss-process=)/i.test(t)) return false;
+  if (/^image\/(resize|quality|crop)/i.test(t)) return false;
+  if (t.startsWith('http://') || t.startsWith('https://')) return true;
+  if (t.includes('/exam/files/') || t.includes('/files/')) return true;
+  if (/\.(jpe?g|png|gif|webp|bmp|pdf|docx?)$/i.test((t.split('?')[0] ?? ''))) return true;
+  if (/^(idCard|contract|upload|down)\//i.test(t.replace(/^\//, ''))) return true;
+  return t.includes('/');
+}
+
 /** 将 CDN 绝对地址转为 apiClient 相对路径（不含 /api 前缀，baseURL 已含） */
 export function toProxiedFileFetchPath(url: string): string {
   if (!url) return url;
   const marker = '/exam/files/';
-  let path = url;
   if (url.startsWith('http://') || url.startsWith('https://')) {
     try {
-      path = new URL(url).pathname;
+      const parsed = new URL(url);
+      const idx = parsed.pathname.indexOf(marker);
+      if (idx >= 0) {
+        return parsed.pathname.substring(idx) + parsed.search;
+      }
+      const filesIdx = parsed.pathname.indexOf('/files/');
+      if (filesIdx >= 0) {
+        return parsed.pathname.substring(filesIdx) + parsed.search;
+      }
+      return url;
     } catch {
       return url;
     }
   }
-  const idx = path.indexOf(marker);
+  const idx = url.indexOf(marker);
   if (idx >= 0) {
-    return path.substring(idx);
+    return url.substring(idx);
   }
-  if (path.startsWith('/api/')) {
-    return path.substring(4);
+  if (url.startsWith('/api/')) {
+    return url.substring(4);
   }
-  return path.startsWith('/') ? path : `/${path}`;
+  return url.startsWith('/') ? url : `/${url}`;
 }
 
 export function fetchUrlFileBlob(url: string) {
+  if (!isUsableFileUrl(url)) {
+    return Promise.reject(new Error('无效的文件地址'));
+  }
   return fetchFileBlob(toProxiedFileFetchPath(url));
 }
 

@@ -13,9 +13,11 @@ import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.DictEntity;
 import com.guoyu.platform.system.entity.DictItemEntity;
 import com.guoyu.platform.system.entity.OrgEntity;
+import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.DictItemMapper;
 import com.guoyu.platform.system.mapper.DictMapper;
 import com.guoyu.platform.system.mapper.OrgMapper;
+import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainBaseDataMapper;
 import com.guoyu.platform.trainingdepartment.dto.DemandConvertReq;
 import com.guoyu.platform.trainingdepartment.dto.DemandTrainCreateReq;
@@ -62,6 +64,7 @@ public class DemandTrainApplicationService {
   private final DictItemMapper dictItemMapper;
   private final TrainBaseDataMapper trainBaseDataMapper;
   private final TrainingOperatorScopeService operatorScopeService;
+  private final UserMapper userMapper;
 
   public DemandTrainApplicationService(DemandTrainMapper mapper, OrgMapper orgMapper,
       ExamWorkTypeMapper examWorkTypeMapper, TrainInfoListMapper trainInfoListMapper,
@@ -71,7 +74,8 @@ public class DemandTrainApplicationService {
       DictMapper dictMapper,
       DictItemMapper dictItemMapper,
       TrainBaseDataMapper trainBaseDataMapper,
-      TrainingOperatorScopeService operatorScopeService) {
+      TrainingOperatorScopeService operatorScopeService,
+      UserMapper userMapper) {
     this.mapper = mapper;
     this.orgMapper = orgMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
@@ -83,6 +87,7 @@ public class DemandTrainApplicationService {
     this.dictItemMapper = dictItemMapper;
     this.trainBaseDataMapper = trainBaseDataMapper;
     this.operatorScopeService = operatorScopeService;
+    this.userMapper = userMapper;
   }
 
   @Transactional(readOnly = true)
@@ -118,7 +123,9 @@ public class DemandTrainApplicationService {
               t -> t.getCompanyHasConfirm() != null ? t.getCompanyHasConfirm() : 0, (a, b) -> a));
     }
     Map<Long, Integer> finalSolutionMap = solutionMap;
-    return new PageResponse<>(page.getRecords().stream().map(e -> toVO(e, finalSolutionMap)).toList(),
+    PublisherContext publisherContext = buildPublisherContext(page.getRecords());
+    return new PageResponse<>(page.getRecords().stream()
+        .map(e -> toVO(e, finalSolutionMap, publisherContext)).toList(),
         page.getCurrent(), page.getSize(), page.getTotal());
   }
 
@@ -147,6 +154,7 @@ public class DemandTrainApplicationService {
     entity.setCreateTime(LocalDateTime.now());
     entity.setUpdateTime(LocalDateTime.now());
     entity.setDeleted(0);
+    entity.setCreatedBy(SecurityContext.currentUser().getUserId());
     mapper.insert(entity);
     return toVO(entity);
   }
@@ -210,6 +218,21 @@ public class DemandTrainApplicationService {
     Map<String, String> typeLabels = Map.of("master", "技能大师工作室", "company", "企业");
     DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    List<Long> creatorIds = result.getRecords().stream()
+        .map(DemandTrainEntity::getCreatedBy)
+        .filter(id -> id != null && id > 0)
+        .distinct()
+        .toList();
+    Map<Long, String> creatorNames = Map.of();
+    if (!creatorIds.isEmpty()) {
+      creatorNames = userMapper.selectBatchIds(creatorIds).stream()
+          .collect(Collectors.toMap(
+              UserEntity::getId,
+              u -> StringUtils.hasText(u.getDisplayName()) ? u.getDisplayName() : u.getUsername(),
+              (a, b) -> a));
+    }
+
+    Map<Long, String> finalCreatorNames = creatorNames;
     List<DemandPendingVO> vos = result.getRecords().stream().map(e -> {
       OrgEntity org = orgMap.get(e.getOrgId());
       String company = org != null ? org.getName() : "-";
@@ -222,11 +245,29 @@ public class DemandTrainApplicationService {
         addtimeCn = LocalDateTime.ofInstant(Instant.ofEpochSecond(e.getAddtime()), ZoneId.systemDefault())
             .format(fmt);
       }
+      String userName = e.getCreatedBy() != null ? finalCreatorNames.get(e.getCreatedBy()) : null;
+      String publisher = resolvePublisherName(company, userName);
       return new DemandPendingVO(e.getId(), e.getOrgId(), e.getContent(), e.getNums(),
-          e.getStatus(), e.getAddtime(), addtimeCn, company, companyType);
+          e.getStatus(), e.getAddtime(), addtimeCn, company, companyType, publisher);
     }).toList();
 
     return new PageResponse<>(vos, result.getCurrent(), result.getSize(), result.getTotal());
+  }
+
+  /** 发布人展示：公司名 / 用户名；无用户时仅公司名 */
+  private static String resolvePublisherName(String company, String userName) {
+    boolean hasCompany = StringUtils.hasText(company) && !"-".equals(company);
+    boolean hasUser = StringUtils.hasText(userName);
+    if (hasCompany && hasUser) {
+      return company + " / " + userName;
+    }
+    if (hasUser) {
+      return userName;
+    }
+    if (hasCompany) {
+      return company;
+    }
+    return "-";
   }
 
   @Transactional(readOnly = true)
@@ -514,10 +555,14 @@ public class DemandTrainApplicationService {
   }
 
   private DemandTrainVO toVO(DemandTrainEntity e) {
-    return toVO(e, Map.of());
+    return toVO(e, Map.of(), buildPublisherContext(List.of(e)));
   }
 
   private DemandTrainVO toVO(DemandTrainEntity e, Map<Long, Integer> solutionMap) {
+    return toVO(e, solutionMap, buildPublisherContext(List.of(e)));
+  }
+
+  private DemandTrainVO toVO(DemandTrainEntity e, Map<Long, Integer> solutionMap, PublisherContext ctx) {
     Integer solution = solutionMap.get(e.getId());
     String solutionCn;
     if (e.getStatus() == null || e.getStatus() == 0) {
@@ -529,6 +574,7 @@ public class DemandTrainApplicationService {
     } else {
       solutionCn = "已确认";
     }
+    String publisher = resolvePublisherForEntity(e, ctx);
     return new DemandTrainVO(
         e.getId(),
         e.getOrgId(),
@@ -540,7 +586,43 @@ public class DemandTrainApplicationService {
         e.getCreateTime(),
         e.getUpdateTime(),
         solution,
-        solutionCn
+        solutionCn,
+        publisher
     );
   }
+
+  private PublisherContext buildPublisherContext(List<DemandTrainEntity> records) {
+    List<Long> orgIds = records.stream()
+        .map(DemandTrainEntity::getOrgId)
+        .filter(id -> id != null && id > 0)
+        .distinct()
+        .toList();
+    Map<Long, OrgEntity> orgMap = orgIds.isEmpty()
+        ? Map.of()
+        : orgMapper.selectBatchIds(orgIds).stream()
+            .collect(Collectors.toMap(OrgEntity::getId, o -> o, (a, b) -> a));
+
+    List<Long> creatorIds = records.stream()
+        .map(DemandTrainEntity::getCreatedBy)
+        .filter(id -> id != null && id > 0)
+        .distinct()
+        .toList();
+    Map<Long, String> creatorNames = creatorIds.isEmpty()
+        ? Map.of()
+        : userMapper.selectBatchIds(creatorIds).stream()
+            .collect(Collectors.toMap(
+                UserEntity::getId,
+                u -> StringUtils.hasText(u.getDisplayName()) ? u.getDisplayName() : u.getUsername(),
+                (a, b) -> a));
+    return new PublisherContext(orgMap, creatorNames);
+  }
+
+  private String resolvePublisherForEntity(DemandTrainEntity e, PublisherContext ctx) {
+    OrgEntity org = e.getOrgId() != null ? ctx.orgMap().get(e.getOrgId()) : null;
+    String company = org != null ? org.getName() : "-";
+    String userName = e.getCreatedBy() != null ? ctx.creatorNames().get(e.getCreatedBy()) : null;
+    return resolvePublisherName(company, userName);
+  }
+
+  private record PublisherContext(Map<Long, OrgEntity> orgMap, Map<Long, String> creatorNames) {}
 }

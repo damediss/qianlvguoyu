@@ -27,6 +27,7 @@ import dayjs from 'dayjs';
 import * as trainApi from '../../api/training';
 import { uploadFile } from '../../api/knowledge';
 import { FilePreviewModal, type FilePreviewTarget } from '../../components/FilePreviewModal';
+import { ApiAuthImage } from '../../components/ApiAuthImage';
 import { fileNameFromUrl } from '../../api/files';
 import type {
   TrainInfoClassListItem,
@@ -177,10 +178,19 @@ function StudentListModal({
   };
 
   const renderIdCardPhoto = (row: ClassStudent) => {
-    const src = resolveFileUrl(row.header);
+    const url = row.header?.trim();
+    if (!url) return <div className="student-photo-cell" />;
     return (
       <div className="student-photo-cell">
-        {src ? <img src={src} alt="证件照" className="student-id-photo" /> : null}
+        <ApiAuthImage
+          url={url}
+          alt="证件照"
+          className="student-id-photo"
+          width={72}
+          height={96}
+          style={{ objectFit: 'cover', borderRadius: 2 }}
+          preview={{ mask: '预览' }}
+        />
       </div>
     );
   };
