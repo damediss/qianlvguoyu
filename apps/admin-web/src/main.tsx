@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppShell } from './layouts/AppShell';
 import { AuthGate } from './components/AuthGate';
 import { KnowledgePage } from './pages/knowledge/KnowledgePage';
+import { RencaishibieEmbedPage } from './pages/knowledge/RencaishibieEmbedPage';
 import { WorkTypePage } from './pages/exam/WorkTypePage';
 import { CoursePage } from './pages/exam/CoursePage';
 import { DevTaskDetailPage } from './pages/exam/DevTaskDetailPage';
@@ -140,6 +141,7 @@ const pageMap: Record<string, React.ReactNode> = {
   'train_user-info': <TrainingStudentPage />,
   knowledge_spaces: <KnowledgePage />,
   knowledge_search: <KnowledgePage />,
+  knowledge_rencaishibie: <RencaishibieEmbedPage />,
   zhixun_data_panel: <DataPanelPage />,
   zhixun_task_management: <TaskManagementPage />,
   zhixun_task_archives: <TaskArchivesPage />,
