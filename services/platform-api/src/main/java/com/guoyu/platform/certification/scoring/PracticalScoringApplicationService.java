@@ -59,6 +59,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -85,10 +86,10 @@ public class PracticalScoringApplicationService {
       Pattern.compile("[（(]\\s*(\\d+(?:\\.\\d+)?)\\s*分\\s*[）)]");
   private static final String SUMMARY_TEMPLATE_RESOURCE = "templates/评分记录汇总表模板.xlsx";
   private static final int SUMMARY_DATA_ROW_INDEX = 6;
-  private static final int SUMMARY_QUESTION_COUNT = 6;
+  private static final int SUMMARY_QUESTION_COUNT = 8;
   private static final int SUMMARY_SCORE_COLUMNS_PER_QUESTION = 6;
   private static final int SUMMARY_FIRST_QUESTION_COLUMN = 3;
-  private static final int SUMMARY_TOTAL_SCORE_COLUMN = 39;
+  private static final int SUMMARY_TOTAL_SCORE_COLUMN = 51;
 
   private final CertificationTaskMapper taskMapper;
   private final CertificationTaskScopeMapper scopeMapper;
@@ -788,9 +789,9 @@ public class PracticalScoringApplicationService {
         .mapToInt(List::size)
         .max()
         .orElse(0);
-    if (questionCount != SUMMARY_QUESTION_COUNT) {
+    if (questionCount > SUMMARY_QUESTION_COUNT) {
       throw new BusinessException(ErrorCode.BAD_REQUEST,
-          "评分记录汇总表模板固定支持6道试题，当前评分任务包含" + questionCount + "道试题");
+          "评分记录汇总表模板最多支持" + SUMMARY_QUESTION_COUNT + "道试题，当前评分任务包含" + questionCount + "道试题");
     }
     List<CertificationTaskAssessorEntity> assessors = taskAssessorMapper.selectList(
         new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
@@ -810,7 +811,7 @@ public class PracticalScoringApplicationService {
     tasksByCandidateQuestion.values().forEach(items -> items.sort(Comparator.comparingInt(
         item -> assessorOrder.getOrDefault(item.getAssessorId(), Integer.MAX_VALUE))));
     byte[] data = buildSummaryWorkbookFromTemplate(task, candidates, resultByCandidate,
-        questionResultsByCandidate, tasksByCandidateQuestion, assessors);
+        questionResultsByCandidate, tasksByCandidateQuestion, assessors, questionCount);
     String filename = "评分记录汇总表_" + task.getTaskNo() + "_" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
         .format(LocalDateTime.now()) + ".xlsx";
     return new ExportResultDTO(data, filename);
@@ -826,7 +827,8 @@ public class PracticalScoringApplicationService {
       Map<Long, CertificationPracticalCandidateResultEntity> resultByCandidate,
       Map<Long, List<CertificationPracticalQuestionResultEntity>> questionResultsByCandidate,
       Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion,
-      List<CertificationTaskAssessorEntity> assessors
+      List<CertificationTaskAssessorEntity> assessors,
+      int questionCount
   ) {
     ClassPathResource template = new ClassPathResource(SUMMARY_TEMPLATE_RESOURCE);
     try (InputStream input = template.getInputStream();
@@ -835,9 +837,9 @@ public class PracticalScoringApplicationService {
       Sheet sheet = requireSummaryTemplateSheet(workbook);
       Row templateDataRow = sheet.getRow(SUMMARY_DATA_ROW_INDEX);
       writeTemplateCell(sheet, 1, 0, "计划编码：" + nvlText(task.getTaskNo()));
-      writeTemplateCell(sheet, 1, 19, "考 点 ：" + nvlText(task.getCompanyName()));
+      writeTemplateCell(sheet, 1, SUMMARY_FIRST_QUESTION_COLUMN, "考 点 ：" + nvlText(task.getCompanyName()));
       writeTemplateCell(sheet, 2, 0, "计划名称：" + nvlText(task.getTaskName()));
-      writeTemplateCell(sheet, 2, 19, "考试时间：" + formatDate(task.getExamDate()));
+      writeTemplateCell(sheet, 2, SUMMARY_FIRST_QUESTION_COLUMN, "考试时间：" + formatDate(task.getExamDate()));
 
       int sequence = 1;
       for (int candidateIndex = 0; candidateIndex < candidates.size(); candidateIndex++) {
@@ -853,15 +855,11 @@ public class PracticalScoringApplicationService {
         writeTemplateCell(row, 2, nvlText(candidate.getCandidateNo()));
         List<CertificationPracticalQuestionResultEntity> questionResults =
             questionResultsByCandidate.getOrDefault(candidate.getId(), List.of());
-        for (int questionIndex = 0; questionIndex < SUMMARY_QUESTION_COUNT; questionIndex++) {
+        int actualTotalColumn = SUMMARY_FIRST_QUESTION_COLUMN
+            + questionCount * SUMMARY_SCORE_COLUMNS_PER_QUESTION;
+        for (int questionIndex = 0; questionIndex < questionCount; questionIndex++) {
           int startColumn = SUMMARY_FIRST_QUESTION_COLUMN
               + questionIndex * SUMMARY_SCORE_COLUMNS_PER_QUESTION;
-          if (questionIndex >= questionResults.size()) {
-            for (int columnOffset = 0; columnOffset < SUMMARY_SCORE_COLUMNS_PER_QUESTION; columnOffset++) {
-              writeTemplateCell(row, startColumn + columnOffset, null);
-            }
-            continue;
-          }
           CertificationPracticalQuestionResultEntity questionResult = questionResults.get(questionIndex);
           List<CertificationAssessorTaskEntity> scoreTasks = tasksByCandidateQuestion.getOrDefault(
               candidate.getId() + ":" + questionResult.getPaperQuestionId(), List.of());
@@ -874,9 +872,10 @@ public class PracticalScoringApplicationService {
           writeTemplateCell(row, startColumn + 5, questionResult.getFinalScore());
         }
         CertificationPracticalCandidateResultEntity result = resultByCandidate.get(candidate.getId());
-        writeTemplateCell(row, SUMMARY_TOTAL_SCORE_COLUMN,
+        writeTemplateCell(row, actualTotalColumn,
             result == null ? null : result.getTotalScore());
       }
+      trimSummarySheet(sheet, questionCount);
       workbook.write(output);
       return output.toByteArray();
     } catch (Exception ex) {
@@ -905,6 +904,74 @@ public class PracticalScoringApplicationService {
         target.createCell(column).setCellStyle(sourceCell.getCellStyle());
       }
     }
+  }
+
+  /**
+   * 按实际题数裁剪汇总表：将模板中第51列（合计得分）复制到实际位置，清除多余列，重建合并区域。
+   */
+  private void trimSummarySheet(Sheet sheet, int questionCount) {
+    int targetTotalColumn = SUMMARY_FIRST_QUESTION_COLUMN
+        + questionCount * SUMMARY_SCORE_COLUMNS_PER_QUESTION;
+    int firstExtraColumn = targetTotalColumn + 1;
+
+    // 将模板合计得分列（col 51）的值和样式复制到实际位置（数据行的值已在主循环中写入）
+    for (int r = 0; r <= sheet.getLastRowNum(); r++) {
+      Row sourceRow = sheet.getRow(r);
+      if (sourceRow == null) continue;
+      Cell src = sourceRow.getCell(SUMMARY_TOTAL_SCORE_COLUMN);
+      if (src == null) continue;
+      Cell dst = sourceRow.getCell(targetTotalColumn);
+      if (dst == null) dst = sourceRow.createCell(targetTotalColumn);
+      // 只复制值到表头/标题行（第 1-5 行），避免覆盖主循环写入的数据
+      if (r >= 1 && r <= 5 && src.getCellType() == CellType.STRING) {
+        dst.setCellValue(src.getStringCellValue());
+      }
+      dst.setCellStyle(src.getCellStyle());
+    }
+
+    // 清除多余列（多余试题列 + 模板原合计得分列位置）
+    for (int r = 0; r <= sheet.getLastRowNum(); r++) {
+      Row row = sheet.getRow(r);
+      if (row == null) continue;
+      for (int c = firstExtraColumn; c <= Math.max(row.getLastCellNum() - 1, SUMMARY_TOTAL_SCORE_COLUMN); c++) {
+        Cell cell = row.getCell(c);
+        if (cell != null) {
+          row.removeCell(cell);
+        }
+      }
+    }
+
+    // 清除模板中所有合并区域，再按实际列数重建
+    int regionCount = sheet.getNumMergedRegions();
+    for (int i = regionCount - 1; i >= 0; i--) {
+      sheet.removeMergedRegion(i);
+    }
+
+    int lastColumn = targetTotalColumn; // 0-based
+    // 试题区分界线：左侧 col 0-2 放计划编码/名称，右侧 col 3+ 放考点/考试时间
+    int infoDivider = SUMMARY_FIRST_QUESTION_COLUMN; // 3
+
+    // 标题行（row 0）跨全部实际列
+    sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, lastColumn));
+    // 计划编码（row 1 左） + 考点（row 1 右）
+    sheet.addMergedRegion(new CellRangeAddress(1, 1, 0, infoDivider - 1));
+    sheet.addMergedRegion(new CellRangeAddress(1, 1, infoDivider, lastColumn));
+    // 计划名称（row 2 左） + 考试时间（row 2 右）
+    sheet.addMergedRegion(new CellRangeAddress(2, 2, 0, infoDivider - 1));
+    sheet.addMergedRegion(new CellRangeAddress(2, 2, infoDivider, lastColumn));
+    // 签字行（row 3）跨全部实际列
+    sheet.addMergedRegion(new CellRangeAddress(3, 3, 0, lastColumn));
+    // 序号（col 0）、姓名（col 1）、准考证号（col 2）竖向合并 row 4-5
+    for (int col = 0; col < SUMMARY_FIRST_QUESTION_COLUMN; col++) {
+      sheet.addMergedRegion(new CellRangeAddress(4, 5, col, col));
+    }
+    // 每道试题标题横向合并 6 列（row 4）
+    for (int q = 0; q < questionCount; q++) {
+      int start = SUMMARY_FIRST_QUESTION_COLUMN + q * SUMMARY_SCORE_COLUMNS_PER_QUESTION;
+      sheet.addMergedRegion(new CellRangeAddress(4, 4, start, start + SUMMARY_SCORE_COLUMNS_PER_QUESTION - 1));
+    }
+    // 合计得分列竖向合并 row 4-5
+    sheet.addMergedRegion(new CellRangeAddress(4, 5, targetTotalColumn, targetTotalColumn));
   }
 
   private void writeTemplateCell(Sheet sheet, int rowIndex, int column, Object value) {
@@ -1005,7 +1072,7 @@ public class PracticalScoringApplicationService {
           .map(CertificationAssessorTaskEntity::getTotalScore)
           .filter(Objects::nonNull)
           .reduce(BigDecimal.ZERO, BigDecimal::add);
-      BigDecimal average = sum.divide(BigDecimal.valueOf(3), 4, RoundingMode.HALF_UP);
+      BigDecimal average = sum.divide(BigDecimal.valueOf(3), 1, RoundingMode.HALF_UP);
       result.setAverageScore(average);
       result.setFinalScore(average.setScale(0, RoundingMode.HALF_UP).intValueExact());
       result.setStatus("completed");

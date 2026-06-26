@@ -49,7 +49,7 @@ apiClient.interceptors.response.use(
     }
     return response;
   },
-  (error) => {
+  async (error) => {
     if (error?.response?.status === 401) {
       useAuthStore.getState().setToken(undefined);
       useAuthStore.getState().setCurrentUser(undefined);
@@ -60,9 +60,17 @@ apiClient.interceptors.response.use(
       error?.response?.status === 500
       && typeof error?.response?.data === 'string'
       && !error.response.data.trim();
-    const msg = isProxyFailure
-      ? '后端服务未启动或不可达，请先启动 platform-api'
-      : error?.response?.data?.message || error?.message || '请求失败';
+
+    let msg: string;
+    if (isProxyFailure) {
+      msg = '后端服务未启动或不可达，请先启动 platform-api';
+    } else if (error?.response?.data instanceof Blob) {
+      // responseType: 'blob' 的接口出错时，响应体是 Blob，需要解析出 JSON 错误信息
+      msg = await parseBlobErrorMessage(error.response.data)
+        || error?.message || '请求失败';
+    } else {
+      msg = error?.response?.data?.message || error?.message || '请求失败';
+    }
     message.error(msg);
     return Promise.reject(error);
   },
@@ -71,6 +79,19 @@ apiClient.interceptors.response.use(
 export async function unwrap<T>(promise: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   const response = await promise;
   return response.data.data;
+}
+
+/** Blob 类型的错误响应体中提取后端返回的 message 字段 */
+async function parseBlobErrorMessage(blob: Blob): Promise<string | null> {
+  // 非 JSON 类型且体积较大时，大概率是正常的二进制内容而非错误
+  if (!blob.type.includes('json') && blob.size > 512) return null;
+  try {
+    const text = await blob.text();
+    const json = JSON.parse(text) as { message?: string };
+    return json.message || null;
+  } catch {
+    return null;
+  }
 }
 
 function generateUUID(): string {
