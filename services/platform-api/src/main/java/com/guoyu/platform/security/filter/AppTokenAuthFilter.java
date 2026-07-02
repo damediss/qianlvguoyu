@@ -86,7 +86,8 @@ public class AppTokenAuthFilter extends OncePerRequestFilter {
           user.getRealname() != null ? user.getRealname() : user.getPhone(),
           "student",
           Collections.emptyList(),
-          Collections.emptyList()
+          Collections.emptyList(),
+          null
       );
       UsernamePasswordAuthenticationToken authentication =
           new UsernamePasswordAuthenticationToken(principal, token, principal.getAuthorities());

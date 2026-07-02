@@ -182,7 +182,8 @@ public class AuthApplicationService {
         user.getDisplayName(),
         user.getUserType(),
         roles,
-        permissions
+        permissions,
+        user.getEmail()
     );
   }
 

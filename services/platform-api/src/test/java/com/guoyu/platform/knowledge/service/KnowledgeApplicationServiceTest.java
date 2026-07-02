@@ -72,7 +72,7 @@ class KnowledgeApplicationServiceTest {
         "课程人员",
         "business",
         List.of("COURSE_STAFF"),
-        List.of("knowledge:search", "knowledge:answer", "knowledge:document")
+        List.of("knowledge:search", "knowledge:answer", "knowledge:document"),"asd@qq.com"
     );
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities())
@@ -203,7 +203,7 @@ class KnowledgeApplicationServiceTest {
         "平台管理员",
         "admin",
         List.of("PLATFORM_ADMIN"),
-        List.of("knowledge:document")
+        List.of("knowledge:document"),"asd@qq.com"
     );
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities())

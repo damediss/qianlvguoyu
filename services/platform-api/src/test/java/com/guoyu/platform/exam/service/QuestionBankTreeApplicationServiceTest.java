@@ -49,7 +49,7 @@ class QuestionBankTreeApplicationServiceTest {
     PlatformUserPrincipal principal = new PlatformUserPrincipal(
         1000L, 1L, "admin", "管理员", "platform",
         List.of("PLATFORM_ADMIN"),
-        List.of("exam:question:view")
+        List.of("exam:question:view"),"asd@qq.com"
     );
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
@@ -290,7 +290,7 @@ class QuestionBankTreeApplicationServiceTest {
     PlatformUserPrincipal tenant2 = new PlatformUserPrincipal(
         2000L, 2L, "user2", "用户2", "platform",
         List.of("PLATFORM_ADMIN"),
-        List.of("exam:question:view")
+        List.of("exam:question:view"),"asd@qq.com"
     );
     SecurityContextHolder.clearContext();
     SecurityContextHolder.getContext().setAuthentication(

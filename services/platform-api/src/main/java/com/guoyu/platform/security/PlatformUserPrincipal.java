@@ -13,6 +13,7 @@ public class PlatformUserPrincipal implements UserDetails {
   private final String username;
   private final String displayName;
   private final String userType;
+  private final String email;
   private final List<String> roleCodes;
   private final List<String> permissionCodes;
   private final Collection<? extends GrantedAuthority> authorities;
@@ -24,13 +25,15 @@ public class PlatformUserPrincipal implements UserDetails {
       String displayName,
       String userType,
       List<String> roleCodes,
-      List<String> permissionCodes
+      List<String> permissionCodes,
+      String email
   ) {
     this.userId = userId;
     this.tenantId = tenantId;
     this.username = username;
     this.displayName = displayName;
     this.userType = userType;
+    this.email = email;
     this.roleCodes = List.copyOf(roleCodes);
     this.permissionCodes = List.copyOf(permissionCodes);
     this.authorities = permissionCodes.stream()
@@ -52,6 +55,10 @@ public class PlatformUserPrincipal implements UserDetails {
 
   public String getUserType() {
     return userType;
+  }
+
+  public String getEmail() {
+    return email;
   }
 
   public List<String> getRoleCodes() {

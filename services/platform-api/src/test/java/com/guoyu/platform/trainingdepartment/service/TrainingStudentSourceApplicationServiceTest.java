@@ -32,7 +32,7 @@ class TrainingStudentSourceApplicationServiceTest {
   @BeforeEach
   void setUp() {
     PlatformUserPrincipal principal = new PlatformUserPrincipal(
-        10L, 1L, "admin", "Admin", "admin", List.of("PLATFORM_ADMIN"), List.of());
+        10L, 1L, "admin", "Admin", "admin", List.of("PLATFORM_ADMIN"), List.of(),"asd@qq.com");
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
     service = new TrainingStudentSourceApplicationService(

@@ -40,7 +40,7 @@ class AuditLogAspectTest {
         "平台管理员",
         "admin",
         List.of("PLATFORM_ADMIN"),
-        List.of("tenant:create")
+        List.of("tenant:create"),"asd@qq.com"
     );
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities())
@@ -75,7 +75,7 @@ class AuditLogAspectTest {
         "平台管理员",
         "admin",
         List.of("PLATFORM_ADMIN"),
-        List.of("file:upload")
+        List.of("file:upload"),"asd@qq.com"
     );
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities())

@@ -143,7 +143,7 @@ class PracticalStartApplicationServiceTest {
   private void authenticate(Long userId, Long assessorId) {
     PlatformUserPrincipal principal = new PlatformUserPrincipal(
         userId, 1L, "assessor" + assessorId, "考评员" + assessorId, "platform",
-        List.of("CERTIFICATION_ASSESSOR"), List.of("certification.practical.score"));
+        List.of("CERTIFICATION_ASSESSOR"), List.of("certification.practical.score"),"asd@qq.com");
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
     CertificationInfoAssessorEntity assessor = new CertificationInfoAssessorEntity();

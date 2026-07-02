@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { fetchMenus, logout } from '../api/auth';
+import { apiClient } from '../api/client';
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore } from '../stores/navStore';
 import type { MenuVO } from '../types/api';
@@ -197,6 +198,17 @@ export function AppShell({ pageMap }: AppShellProps) {
           onClick={({ key }) => {
             const node = findMenuNode(menuTree, key);
             if (node?.children && node.children.length > 0) {
+              return;
+            }
+            // 外部 SSO 链接：调桥接端点取 authorizeUrl 后跳转
+            if (node?.menuType === 'external') {
+              apiClient.get<{ authorizeUrl: string }>('/sso/weknora')
+                .then(r => {
+                  window.location.href = r.data.authorizeUrl;
+                })
+                .catch(() => {
+                  window.open('http://43.138.163.7:8088', '_blank');
+                });
               return;
             }
             setSelectedKey(key);

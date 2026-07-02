@@ -40,7 +40,7 @@ class AssessorWorkbenchContextServiceTest {
   @BeforeEach
   void setUp() {
     PlatformUserPrincipal principal = new PlatformUserPrincipal(
-        100L, 1L, "assessor", "组长", "platform", List.of("assessor"), List.of("certification.practical.score"));
+        100L, 1L, "assessor", "组长", "platform", List.of("assessor"), List.of("certification.practical.score"),"asd@qq.com");
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
     CertificationInfoAssessorEntity assessor = new CertificationInfoAssessorEntity();

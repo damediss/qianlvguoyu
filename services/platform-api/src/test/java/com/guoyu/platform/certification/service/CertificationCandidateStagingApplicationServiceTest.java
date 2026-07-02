@@ -43,7 +43,7 @@ class CertificationCandidateStagingApplicationServiceTest {
         "Admin",
         "admin",
         List.of("PLATFORM_ADMIN"),
-        List.of("certification.preparation.candidate.import"));
+        List.of("certification.preparation.candidate.import"),"asd@qq.com");
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
     service = new CertificationCandidateStagingApplicationService(

@@ -95,7 +95,8 @@ public class SaTokenBridgeFilter extends OncePerRequestFilter {
         user.getDisplayName(),
         user.getUserType(),
         roleCodes,
-        permissionCodes
+        permissionCodes,
+        user.getEmail()
     );
     UsernamePasswordAuthenticationToken authentication =
         new UsernamePasswordAuthenticationToken(principal, token, principal.getAuthorities());

@@ -91,7 +91,7 @@ class PracticalScoringApplicationServiceTest {
   void setUp() {
     PlatformUserPrincipal principal = new PlatformUserPrincipal(
         100L, 1L, "assessor", "考评员", "platform",
-        List.of("assessor"), List.of("certification.practical.score"));
+        List.of("assessor"), List.of("certification.practical.score"),"asd@qq.com");
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
     service = new PracticalScoringApplicationService(

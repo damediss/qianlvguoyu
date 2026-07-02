@@ -53,7 +53,7 @@ class ExamTaskExamsubApplicationServiceTest {
     PlatformUserPrincipal principal = new PlatformUserPrincipal(
         1000L, 1L, "admin", "管理员", "platform",
         List.of("PLATFORM_ADMIN"),
-        List.of("task:examsub-audit:view", "task:examsub-audit:assign-expert", "task:examsub-audit:delete")
+        List.of("task:examsub-audit:view", "task:examsub-audit:assign-expert", "task:examsub-audit:delete"),"asd@qq.com"
     );
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));

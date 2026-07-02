@@ -44,7 +44,7 @@ class CertificationCandidateCsvImportServiceTest {
   @BeforeEach
   void setUpSecurityContext() {
     PlatformUserPrincipal principal = new PlatformUserPrincipal(
-        10L, 1L, "admin", "管理员", "admin", List.of("PLATFORM_ADMIN"), List.of());
+        10L, 1L, "admin", "管理员", "admin", List.of("PLATFORM_ADMIN"), List.of(),"asd@qq.com");
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
   }

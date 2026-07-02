@@ -18,7 +18,10 @@ public class TenantContextFilter extends OncePerRequestFilter {
   private static final String TENANT_HEADER = "X-Tenant-Id";
   private static final Set<String> WHITE_PATHS = Set.of(
       "/api/actuator/health",
-      "/api/actuator/info"
+      "/api/actuator/info",
+      // OIDC: AS 链未认证时 LoginUrlAuthenticationEntryPoint 302 → /api/login，
+      // 浏览器跳转不带 X-Tenant-Id，此处放行避免被拦截返回 400
+      "/api/login"
   );
   private static final Set<String> WHITE_PATH_PREFIXES = Set.of(
       "/api/appregistration/",

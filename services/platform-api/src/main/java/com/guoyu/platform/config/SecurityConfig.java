@@ -11,6 +11,7 @@ import com.guoyu.platform.file.config.FileStorageProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -18,7 +19,11 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+
+import java.util.HashMap;
+import java.util.Map;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -47,6 +52,23 @@ public class SecurityConfig {
   }
 
   @Bean
+  @Order(0)
+  public SecurityFilterChain ssoBridgeChain(
+      HttpSecurity http,
+      SaTokenBridgeFilter saTokenBridgeFilter,
+      TenantContextFilter tenantContextFilter
+  ) throws Exception {
+    http
+        .securityMatcher("/sso/weknora")
+        .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+        .addFilterBefore(saTokenBridgeFilter, UsernamePasswordAuthenticationFilter.class)
+        .addFilterBefore(tenantContextFilter, UsernamePasswordAuthenticationFilter.class)
+        .authorizeHttpRequests(a -> a.anyRequest().permitAll());
+    return http.build();
+  }
+
+  @Bean
+  @Order(2)
   public SecurityFilterChain securityFilterChain(
       HttpSecurity http,
       RestAuthenticationEntryPoint authenticationEntryPoint,
@@ -82,6 +104,8 @@ public class SecurityConfig {
             // 培训管理·扫码信息收集 - 测试专用接口（生成环境请移除并接入鉴权）
             .requestMatchers("/training/sign-ups/**").permitAll()
             .requestMatchers(HttpMethod.GET, "/collect-test.html", "/favicon.ico").permitAll()
+            // OIDC 端点由 @Order(1) AS 链处理，此处放行防止 app 链拦截
+            .requestMatchers("/oauth2/**", "/userinfo", "/.well-known/**").permitAll()
             .anyRequest().authenticated()
         )
         .addFilterBefore(tenantContextFilter, UsernamePasswordAuthenticationFilter.class)
@@ -90,8 +114,21 @@ public class SecurityConfig {
     return http.build();
   }
 
+  /**
+   * 兼容编码器：{noop} 明文匹配（OIDC client_secret）+ 无前缀自动 BCrypt（现有用户密码）。
+   * <p>
+   * 不能用 {@code PasswordEncoderFactories.createDelegatingPasswordEncoder()}，
+   * 因为它的 defaultPasswordEncoderForMatches 是 UnmappedIdPasswordEncoder，
+   * 遇到无前缀的旧密码（$2a$...）会直接抛异常而非 fallback 到 BCrypt。
+   */
   @Bean
   public PasswordEncoder passwordEncoder() {
-    return new BCryptPasswordEncoder();
+    Map<String, PasswordEncoder> encoders = new HashMap<>();
+    encoders.put("bcrypt", new BCryptPasswordEncoder());
+    encoders.put("noop", org.springframework.security.crypto.password.NoOpPasswordEncoder.getInstance());
+    DelegatingPasswordEncoder delegating = new DelegatingPasswordEncoder("bcrypt", encoders);
+    // 无前缀密码（旧 bcrypt 哈希）→ 用 BCrypt 验证
+    delegating.setDefaultPasswordEncoderForMatches(new BCryptPasswordEncoder());
+    return delegating;
   }
 }

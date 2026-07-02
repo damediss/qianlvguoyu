@@ -51,7 +51,7 @@ class UserApplicationServiceTest {
         "平台管理员",
         "admin",
         List.of("PLATFORM_ADMIN"),
-        List.of("user:create")
+        List.of("user:create"),"asd@qq.com"
     );
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities())

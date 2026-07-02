@@ -51,7 +51,7 @@ class RoleApplicationServiceTest {
         "平台管理员",
         "admin",
         List.of("PLATFORM_ADMIN"),
-        List.of("role:delete")
+        List.of("role:delete"),"asd@qq.com"
     );
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities())

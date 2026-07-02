@@ -157,7 +157,7 @@ class CertificationDocumentWorkflowServiceTest {
             "certification.project.document.initialReview",
             "certification.project.document.finalReview",
             "certification.project.document.workflowView"
-        )
+        ),"asd@qq.com"
     );
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities())
