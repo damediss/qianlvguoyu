@@ -59,6 +59,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
@@ -85,11 +86,14 @@ public class PracticalScoringApplicationService {
   private static final Pattern QUESTION_SCORE_PATTERN =
       Pattern.compile("[（(]\\s*(\\d+(?:\\.\\d+)?)\\s*分\\s*[）)]");
   private static final String SUMMARY_TEMPLATE_RESOURCE = "templates/评分记录汇总表模板.xlsx";
+  private static final String SCORE_RECORD_TEMPLATE_RESOURCE = "templates/实操评分记录表模板.xlsx";
   private static final int SUMMARY_DATA_ROW_INDEX = 6;
   private static final int SUMMARY_QUESTION_COUNT = 8;
   private static final int SUMMARY_SCORE_COLUMNS_PER_QUESTION = 6;
   private static final int SUMMARY_FIRST_QUESTION_COLUMN = 3;
   private static final int SUMMARY_TOTAL_SCORE_COLUMN = 51;
+  private static final String DECIMAL_SCORE_FORMAT = "0.0";
+  private static final BigDecimal ZERO_SCORE = new BigDecimal("0.0");
 
   private final CertificationTaskMapper taskMapper;
   private final CertificationTaskScopeMapper scopeMapper;
@@ -334,6 +338,45 @@ public class PracticalScoringApplicationService {
     CertificationPracticalScoringConfigEntity config = upsertCandidateConfig(task, scope, candidate, req, effectiveWorkTypeId);
     GenerateCounter counter = generateForCandidate(task, config, candidate, members, questions);
     return new PracticalScoringModels.GenerateView(counter.created(), counter.existing(), 1, questions.size());
+  }
+
+  @Transactional
+  public PracticalScoringModels.StartSessionView markCandidateAbsent(Long taskId, Long candidateId) {
+    CertificationTaskEntity task = requireTask(taskId);
+    CertificationCandidateEntity candidate = candidateMapper.selectById(candidateId);
+    if (candidate == null || !taskId.equals(candidate.getTaskId())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "candidate not found");
+    }
+    if ("completed".equals(candidate.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "completed candidate cannot be marked absent");
+    }
+
+    List<CertificationAssessorTaskEntity> existingTasks = assessorTaskMapper.selectList(
+        new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
+            .eq(CertificationAssessorTaskEntity::getTaskId, taskId)
+            .eq(CertificationAssessorTaskEntity::getCandidateId, candidateId)
+            .isNotNull(CertificationAssessorTaskEntity::getPaperQuestionId));
+    if (existingTasks != null && existingTasks.stream().anyMatch(t -> "submitted".equals(t.getStatus()))) {
+      throw new BusinessException(ErrorCode.CONFLICT, "submitted practical scores cannot be marked absent");
+    }
+    CertificationPracticalCandidateResultEntity existingResult = candidateResultMapper.selectOne(
+        new LambdaQueryWrapper<CertificationPracticalCandidateResultEntity>()
+            .eq(CertificationPracticalCandidateResultEntity::getTaskId, taskId)
+            .eq(CertificationPracticalCandidateResultEntity::getCandidateId, candidateId)
+            .last("LIMIT 1"));
+    if (existingResult != null && "completed".equals(existingResult.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "completed practical result cannot be marked absent");
+    }
+
+    CertificationPracticalScoringConfigEntity config = resolveAbsentConfig(taskId, candidate);
+    List<CertificationTaskAssessorEntity> members = validateThreeAssessors(taskId, config.getGroupId());
+    List<ExamOperatePaperDetailEntity> questions = paperQuestions(config.getPaperId());
+    validateQuestionTemplates(questions);
+    generateForCandidate(task, config, candidate, members, questions);
+    applyAbsentScores(task, config, candidate, questions.size());
+    candidate.setStatus("absent");
+    candidateMapper.updateById(candidate);
+    return startService.markAbsent(taskId, candidateId);
   }
 
   /**
@@ -684,7 +727,7 @@ public class PracticalScoringApplicationService {
       return new PracticalScoringModels.CandidateProgress(
           candidate.getId(), candidate.getCandidateNo(), candidate.getCandidateName(),
           submittedTasks, totalTasks, completedQuestions, totalQuestions,
-          result == null ? null : result.getTotalScore(),
+          resolveCandidateTotalScore(candidate.getId(), result, questionResults),
           result == null ? "pending" : result.getStatus(),
           startService.session(taskId, candidate.getId()));
     }).toList();
@@ -746,26 +789,12 @@ public class PracticalScoringApplicationService {
             .in(CertificationPracticalCandidateResultEntity::getCandidateId, ids));
     Map<Long, CertificationPracticalCandidateResultEntity> resultByCandidate = candidateResults.stream()
         .collect(Collectors.toMap(CertificationPracticalCandidateResultEntity::getCandidateId, Function.identity()));
-    for (Long candidateId : ids) {
-      PracticalScoringModels.StartSessionView session = startService.session(taskId, candidateId);
-      CertificationPracticalCandidateResultEntity result = resultByCandidate.get(candidateId);
-      if (session == null || !"completed".equals(session.status())
-          || result == null || !"completed".equals(result.getStatus())) {
-        CertificationCandidateEntity candidate = candidateById.get(candidateId);
-        throw new BusinessException(ErrorCode.BAD_REQUEST,
-            (candidate == null ? "考生" + candidateId : candidate.getCandidateName()) + "尚未完成考试，不能导出汇总表");
-      }
-    }
-
     List<CertificationPracticalQuestionResultEntity> questionResults = questionResultMapper.selectList(
         new LambdaQueryWrapper<CertificationPracticalQuestionResultEntity>()
             .eq(CertificationPracticalQuestionResultEntity::getTaskId, taskId)
             .in(CertificationPracticalQuestionResultEntity::getCandidateId, ids)
             .orderByAsc(CertificationPracticalQuestionResultEntity::getCandidateId)
             .orderByAsc(CertificationPracticalQuestionResultEntity::getPaperQuestionId));
-    if (questionResults.isEmpty()) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "没有可导出的实操评分结果");
-    }
     List<CertificationAssessorTaskEntity> scoringTasks = assessorTaskMapper.selectList(
         new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
             .eq(CertificationAssessorTaskEntity::getTaskId, taskId)
@@ -774,6 +803,16 @@ public class PracticalScoringApplicationService {
             .orderByAsc(CertificationAssessorTaskEntity::getCandidateId)
             .orderByAsc(CertificationAssessorTaskEntity::getPaperQuestionId)
             .orderByAsc(CertificationAssessorTaskEntity::getAssessorId));
+    if ((questionResults == null || questionResults.isEmpty()) && (scoringTasks == null || scoringTasks.isEmpty())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "没有可导出的实操评分任务");
+    }
+    if (questionResults == null) {
+      questionResults = List.of();
+    }
+    if (scoringTasks == null) {
+      scoringTasks = List.of();
+    }
+    questionResults = completeExportQuestionResults(questionResults, scoringTasks);
 
     Map<Long, List<CertificationPracticalQuestionResultEntity>> questionResultsByCandidate =
         questionResults.stream().collect(Collectors.groupingBy(
@@ -810,8 +849,27 @@ public class PracticalScoringApplicationService {
     }
     tasksByCandidateQuestion.values().forEach(items -> items.sort(Comparator.comparingInt(
         item -> assessorOrder.getOrDefault(item.getAssessorId(), Integer.MAX_VALUE))));
+    List<Long> assessorTaskIds = scoringTasks.stream()
+        .map(CertificationAssessorTaskEntity::getId)
+        .filter(Objects::nonNull)
+        .distinct()
+        .toList();
+    List<CertificationAssessorTaskScoreEntity> scoreRows = assessorTaskIds.isEmpty()
+        ? List.of()
+        : scoreMapper.selectList(new LambdaQueryWrapper<CertificationAssessorTaskScoreEntity>()
+            .in(CertificationAssessorTaskScoreEntity::getAssessorTaskId, assessorTaskIds)
+            .orderByAsc(CertificationAssessorTaskScoreEntity::getAssessorTaskId)
+            .orderByAsc(CertificationAssessorTaskScoreEntity::getStepNo));
+    if (scoreRows == null) {
+      scoreRows = List.of();
+    }
+    Map<Long, List<CertificationAssessorTaskScoreEntity>> scoresByAssessorTask =
+        scoreRows.stream().collect(Collectors.groupingBy(
+            CertificationAssessorTaskScoreEntity::getAssessorTaskId,
+            LinkedHashMap::new,
+            Collectors.toList()));
     byte[] data = buildSummaryWorkbookFromTemplate(task, candidates, resultByCandidate,
-        questionResultsByCandidate, tasksByCandidateQuestion, assessors, questionCount);
+        questionResultsByCandidate, tasksByCandidateQuestion, scoresByAssessorTask, assessors, questionCount);
     String filename = "评分记录汇总表_" + task.getTaskNo() + "_" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
         .format(LocalDateTime.now()) + ".xlsx";
     return new ExportResultDTO(data, filename);
@@ -827,6 +885,7 @@ public class PracticalScoringApplicationService {
       Map<Long, CertificationPracticalCandidateResultEntity> resultByCandidate,
       Map<Long, List<CertificationPracticalQuestionResultEntity>> questionResultsByCandidate,
       Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion,
+      Map<Long, List<CertificationAssessorTaskScoreEntity>> scoresByAssessorTask,
       List<CertificationTaskAssessorEntity> assessors,
       int questionCount
   ) {
@@ -836,6 +895,7 @@ public class PracticalScoringApplicationService {
         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       Sheet sheet = requireSummaryTemplateSheet(workbook);
       Row templateDataRow = sheet.getRow(SUMMARY_DATA_ROW_INDEX);
+      CellStyle decimalStyle = decimalStyle(workbook, templateDataRow.getCell(SUMMARY_FIRST_QUESTION_COLUMN));
       writeTemplateCell(sheet, 1, 0, "计划编码：" + nvlText(task.getTaskNo()));
       writeTemplateCell(sheet, 1, SUMMARY_FIRST_QUESTION_COLUMN, "考 点 ：" + nvlText(task.getCompanyName()));
       writeTemplateCell(sheet, 2, 0, "计划名称：" + nvlText(task.getTaskName()));
@@ -857,25 +917,29 @@ public class PracticalScoringApplicationService {
             questionResultsByCandidate.getOrDefault(candidate.getId(), List.of());
         int actualTotalColumn = SUMMARY_FIRST_QUESTION_COLUMN
             + questionCount * SUMMARY_SCORE_COLUMNS_PER_QUESTION;
+        BigDecimal questionFinalTotal = BigDecimal.ZERO;
         for (int questionIndex = 0; questionIndex < questionCount; questionIndex++) {
           int startColumn = SUMMARY_FIRST_QUESTION_COLUMN
               + questionIndex * SUMMARY_SCORE_COLUMNS_PER_QUESTION;
-          CertificationPracticalQuestionResultEntity questionResult = questionResults.get(questionIndex);
+          CertificationPracticalQuestionResultEntity questionResult = questionResultAt(questionResults, questionIndex);
           List<CertificationAssessorTaskEntity> scoreTasks = tasksByCandidateQuestion.getOrDefault(
-              candidate.getId() + ":" + questionResult.getPaperQuestionId(), List.of());
+              candidate.getId() + ":" + (questionResult == null ? null : questionResult.getPaperQuestionId()), List.of());
           for (int assessorIndex = 0; assessorIndex < 3; assessorIndex++) {
-            writeTemplateCell(row, startColumn + assessorIndex,
-                assessorIndex < scoreTasks.size() ? scoreTasks.get(assessorIndex).getTotalScore() : null);
+            writeDecimalCell(row, startColumn + assessorIndex,
+                assessorIndex < scoreTasks.size() ? exportAssessorTaskScore(scoreTasks.get(assessorIndex)) : BigDecimal.ZERO);
           }
-          writeTemplateCell(row, startColumn + 3, questionResult.getAverageScore());
-          writeTemplateCell(row, startColumn + 4, 100);
-          writeTemplateCell(row, startColumn + 5, questionResult.getFinalScore());
+          BigDecimal finalScore = exportQuestionFinalScore(questionResult);
+          writeDecimalCell(row, startColumn + 3, exportQuestionAverageScore(questionResult));
+          writeDecimalCell(row, startColumn + 4, new BigDecimal("100.0"));
+          writeDecimalCell(row, startColumn + 5, finalScore);
+          questionFinalTotal = questionFinalTotal.add(finalScore);
         }
-        CertificationPracticalCandidateResultEntity result = resultByCandidate.get(candidate.getId());
-        writeTemplateCell(row, actualTotalColumn,
-            result == null ? null : result.getTotalScore());
+        writeDecimalCell(row, actualTotalColumn, questionFinalTotal.setScale(1, RoundingMode.HALF_UP));
       }
       trimSummarySheet(sheet, questionCount);
+      applySummaryDecimalStyles(sheet, questionCount, candidates.size(), decimalStyle);
+      appendScoreRecordSheets(workbook, task, candidates, questionResultsByCandidate,
+          tasksByCandidateQuestion, scoresByAssessorTask, assessors, decimalStyle);
       workbook.write(output);
       return output.toByteArray();
     } catch (Exception ex) {
@@ -996,6 +1060,851 @@ public class PracticalScoringApplicationService {
     }
   }
 
+  private void writeDecimalCell(Row row, int column, BigDecimal value) {
+    writeTemplateCell(row, column, value);
+  }
+
+  private CellStyle decimalStyle(Workbook workbook, Cell baseCell) {
+    CellStyle style = workbook.createCellStyle();
+    if (baseCell != null && baseCell.getCellStyle() != null) {
+      style.cloneStyleFrom(baseCell.getCellStyle());
+    }
+    style.setDataFormat(workbook.createDataFormat().getFormat(DECIMAL_SCORE_FORMAT));
+    return style;
+  }
+
+  private void applySummaryDecimalStyles(Sheet sheet, int questionCount, int candidateCount, CellStyle decimalStyle) {
+    int totalColumn = SUMMARY_FIRST_QUESTION_COLUMN + questionCount * SUMMARY_SCORE_COLUMNS_PER_QUESTION;
+    for (int rowIndex = SUMMARY_DATA_ROW_INDEX; rowIndex < SUMMARY_DATA_ROW_INDEX + candidateCount; rowIndex++) {
+      Row row = sheet.getRow(rowIndex);
+      if (row == null) {
+        continue;
+      }
+      for (int column = SUMMARY_FIRST_QUESTION_COLUMN; column <= totalColumn; column++) {
+        Cell cell = row.getCell(column);
+        if (cell != null) {
+          cell.setCellStyle(decimalStyle);
+        }
+      }
+    }
+  }
+
+  private void appendScoreRecordSheets(
+      Workbook workbook,
+      CertificationTaskEntity task,
+      List<CertificationCandidateEntity> candidates,
+      Map<Long, List<CertificationPracticalQuestionResultEntity>> questionResultsByCandidate,
+      Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion,
+      Map<Long, List<CertificationAssessorTaskScoreEntity>> scoresByAssessorTask,
+      List<CertificationTaskAssessorEntity> assessors,
+      CellStyle decimalStyle
+  ) {
+    int questionCount = questionResultsByCandidate.values().stream()
+        .mapToInt(List::size)
+        .max()
+        .orElse(0);
+    ClassPathResource template = new ClassPathResource(SCORE_RECORD_TEMPLATE_RESOURCE);
+    try (InputStream input = template.getInputStream();
+        Workbook templateWorkbook = WorkbookFactory.create(input)) {
+      List<ScoreRecordAssessor> recordAssessors = scoreRecordAssessors(assessors, tasksByCandidateQuestion);
+      for (int questionIndex = 0; questionIndex < questionCount; questionIndex++) {
+        List<CertificationAssessorTaskScoreEntity> templateItems = scoreRecordTemplateItems(
+            candidates, questionResultsByCandidate, tasksByCandidateQuestion, scoresByAssessorTask, questionIndex);
+        Sheet sourceSheet = chooseScoreRecordTemplateSheet(templateWorkbook, questionIndex, templateItems.size());
+        for (int assessorIndex = 0; assessorIndex < recordAssessors.size(); assessorIndex++) {
+          ScoreRecordAssessor assessor = recordAssessors.get(assessorIndex);
+          List<CertificationCandidateEntity> assessorCandidates = candidatesForScoreRecordAssessor(
+              candidates, questionResultsByCandidate, tasksByCandidateQuestion, questionIndex, assessor);
+          if (assessorCandidates.isEmpty()) {
+            continue;
+          }
+          Sheet sheet = copyTemplateSheet(workbook, sourceSheet,
+              scoreRecordSheetName(questionIndex + 1, assessorIndex + 1, assessor.name()));
+          appendScoreRecordSheet(sheet, task, assessorCandidates, questionResultsByCandidate,
+              tasksByCandidateQuestion, scoresByAssessorTask, questionIndex, assessor);
+        }
+      }
+    } catch (Exception ex) {
+      log.warn("实操评分记录表模板导出失败: {}", ex.getMessage(), ex);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "导出实操评分记录表失败");
+    }
+  }
+
+  private void appendScoreRecordSheet(
+      Sheet sheet,
+      CertificationTaskEntity task,
+      List<CertificationCandidateEntity> candidates,
+      Map<Long, List<CertificationPracticalQuestionResultEntity>> questionResultsByCandidate,
+      Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion,
+      Map<Long, List<CertificationAssessorTaskScoreEntity>> scoresByAssessorTask,
+      int questionIndex,
+      ScoreRecordAssessor assessor
+  ) {
+    String questionTitle = scoreRecordQuestionTitle(candidates, questionResultsByCandidate,
+        tasksByCandidateQuestion, questionIndex);
+    List<CertificationAssessorTaskScoreEntity> templateItems = scoreRecordTemplateItems(
+        candidates, questionResultsByCandidate, tasksByCandidateQuestion, scoresByAssessorTask, questionIndex);
+    int totalColumn = ensureScoreRecordCapacity(sheet, findScoreRecordTotalColumn(sheet), templateItems.size());
+    writeTemplateCell(sheet, 0, 0, "表" + (questionIndex + 1) + ":评分记录表");
+    writeTemplateCell(sheet, 1, 0, "计划编码：" + nvlText(task.getTaskNo())
+        + "                                 考 点 ：" + nvlText(task.getCompanyName()));
+    writeTemplateCell(sheet, 2, 0, "计划名称：" + nvlText(task.getTaskName())
+        + "        考试时间：" + formatChineseDate(task.getExamDate()) + "        考评员  签字：" + nvlText(assessor.name()));
+    writeTemplateCell(sheet, 3, 3, "试题" + (questionIndex + 1) + "、" + questionTitle
+        + "(" + scoreRecordQuestionScore(candidates, questionResultsByCandidate, tasksByCandidateQuestion,
+        scoresByAssessorTask, questionIndex) + "分)");
+    writeTemplateCell(sheet, 4, 4, questionTitle);
+    clearScoreRecordTemplateRows(sheet, candidates.size(), totalColumn);
+
+    for (int candidateIndex = 0; candidateIndex < candidates.size(); candidateIndex++) {
+      CertificationCandidateEntity candidate = candidates.get(candidateIndex);
+      CertificationPracticalQuestionResultEntity questionResult =
+          questionResultAt(questionResultsByCandidate.get(candidate.getId()), questionIndex);
+      int rowIndex = 11 + candidateIndex;
+      ensureScoreRecordCandidateRow(sheet, rowIndex, totalColumn);
+      Row row = sheet.getRow(rowIndex);
+      writeTemplateCell(row, 0, candidateIndex + 1);
+      writeTemplateCell(row, 1, nvlText(candidate.getCandidateName()));
+      writeTemplateCell(row, 2, nvlText(candidate.getCandidateNo()));
+      List<CertificationAssessorTaskEntity> scoreTasks = scoreTasksForCandidateQuestion(
+          tasksByCandidateQuestion, candidate.getId(), questionResult);
+      CertificationAssessorTaskEntity scoreTask = scoreTaskForAssessor(scoreTasks, assessor);
+      List<CertificationAssessorTaskScoreEntity> items = scoreTask == null
+          ? firstScoreItems(scoreTasks, scoresByAssessorTask)
+          : scoresByAssessorTask.getOrDefault(scoreTask.getId(), List.of());
+      writeScoreRecordTemplateItems(sheet, items, totalColumn);
+      for (int itemIndex = 0; itemIndex < items.size() && 4 + itemIndex * 2 + 1 < totalColumn; itemIndex++) {
+        CertificationAssessorTaskScoreEntity item = items.get(itemIndex);
+        writeTemplateCell(row, 4 + itemIndex * 2, exportScoreItemValue(scoreTask, item.getDeductedScore()));
+        writeTemplateCell(row, 5 + itemIndex * 2, exportScoreItemValue(scoreTask, item.getAwardedScore()));
+        applyDecimalCellStyle(row.getCell(4 + itemIndex * 2));
+        applyDecimalCellStyle(row.getCell(5 + itemIndex * 2));
+      }
+      writeTemplateCell(row, totalColumn, exportAssessorTaskScore(scoreTask));
+      applyDecimalCellStyle(row.getCell(totalColumn));
+    }
+  }
+
+  private String scoreRecordQuestionTitle(
+      List<CertificationCandidateEntity> candidates,
+      Map<Long, List<CertificationPracticalQuestionResultEntity>> questionResultsByCandidate,
+      Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion,
+      int questionIndex
+  ) {
+    for (CertificationCandidateEntity candidate : candidates) {
+      CertificationPracticalQuestionResultEntity questionResult =
+          questionResultAt(questionResultsByCandidate.get(candidate.getId()), questionIndex);
+      if (questionResult == null) {
+        continue;
+      }
+      List<CertificationAssessorTaskEntity> scoreTasks = scoreTasksForCandidateQuestion(
+          tasksByCandidateQuestion, candidate.getId(), questionResult);
+      if (!scoreTasks.isEmpty() && StringUtils.hasText(scoreTasks.get(0).getTitle())) {
+        return scoreTasks.get(0).getTitle();
+      }
+    }
+    return "试题" + (questionIndex + 1);
+  }
+
+  private List<CertificationAssessorTaskScoreEntity> scoreRecordTemplateItems(
+      List<CertificationCandidateEntity> candidates,
+      Map<Long, List<CertificationPracticalQuestionResultEntity>> questionResultsByCandidate,
+      Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion,
+      Map<Long, List<CertificationAssessorTaskScoreEntity>> scoresByAssessorTask,
+      int questionIndex
+  ) {
+    return candidates.stream()
+        .map(candidate -> questionResultAt(questionResultsByCandidate.get(candidate.getId()), questionIndex))
+        .filter(Objects::nonNull)
+        .flatMap(questionResult -> tasksByCandidateQuestion.values().stream()
+            .flatMap(List::stream)
+            .filter(task -> Objects.equals(task.getPaperQuestionId(), questionResult.getPaperQuestionId())))
+        .map(task -> scoresByAssessorTask.getOrDefault(task.getId(), List.of()))
+        .max(Comparator.comparingInt(List::size))
+        .orElse(List.of());
+  }
+
+  private List<CertificationPracticalQuestionResultEntity> completeExportQuestionResults(
+      List<CertificationPracticalQuestionResultEntity> questionResults,
+      List<CertificationAssessorTaskEntity> scoringTasks
+  ) {
+    Map<String, CertificationPracticalQuestionResultEntity> byCandidateQuestion = new LinkedHashMap<>();
+    for (CertificationPracticalQuestionResultEntity result : questionResults) {
+      byCandidateQuestion.put(result.getCandidateId() + ":" + result.getPaperQuestionId(), result);
+    }
+    for (CertificationAssessorTaskEntity task : scoringTasks) {
+      if (task.getCandidateId() == null || task.getPaperQuestionId() == null) {
+        continue;
+      }
+      String key = task.getCandidateId() + ":" + task.getPaperQuestionId();
+      byCandidateQuestion.computeIfAbsent(key, ignored -> {
+        CertificationPracticalQuestionResultEntity result = new CertificationPracticalQuestionResultEntity();
+        result.setTaskId(task.getTaskId());
+        result.setCandidateId(task.getCandidateId());
+        result.setPaperId(task.getPaperId());
+        result.setPaperQuestionId(task.getPaperQuestionId());
+        result.setSubmittedCount(0);
+        result.setStatus("pending");
+        return result;
+      });
+    }
+    return byCandidateQuestion.values().stream()
+        .sorted(Comparator
+            .comparing(CertificationPracticalQuestionResultEntity::getCandidateId)
+            .thenComparing(CertificationPracticalQuestionResultEntity::getPaperQuestionId))
+        .toList();
+  }
+
+  private BigDecimal exportAssessorTaskScore(CertificationAssessorTaskEntity task) {
+    return task != null && "submitted".equals(task.getStatus()) && task.getTotalScore() != null
+        ? task.getTotalScore()
+        : BigDecimal.ZERO;
+  }
+
+  private BigDecimal exportScoreItemValue(
+      CertificationAssessorTaskEntity task,
+      BigDecimal value
+  ) {
+    return task != null && "submitted".equals(task.getStatus()) && value != null ? value : BigDecimal.ZERO;
+  }
+
+  private BigDecimal exportQuestionAverageScore(CertificationPracticalQuestionResultEntity result) {
+    return result != null && "completed".equals(result.getStatus()) && result.getAverageScore() != null
+        ? result.getAverageScore()
+        : BigDecimal.ZERO;
+  }
+
+  private BigDecimal exportQuestionFinalScore(CertificationPracticalQuestionResultEntity result) {
+    return exportQuestionAverageScore(result);
+  }
+
+  private List<CertificationCandidateEntity> candidatesForScoreRecordAssessor(
+      List<CertificationCandidateEntity> candidates,
+      Map<Long, List<CertificationPracticalQuestionResultEntity>> questionResultsByCandidate,
+      Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion,
+      int questionIndex,
+      ScoreRecordAssessor assessor
+  ) {
+    return candidates.stream()
+        .filter(candidate -> {
+          CertificationPracticalQuestionResultEntity questionResult =
+              questionResultAt(questionResultsByCandidate.get(candidate.getId()), questionIndex);
+          List<CertificationAssessorTaskEntity> scoreTasks = scoreTasksForCandidateQuestion(
+              tasksByCandidateQuestion, candidate.getId(), questionResult);
+          return scoreTaskForAssessor(scoreTasks, assessor) != null;
+        })
+        .toList();
+  }
+
+  private List<ScoreRecordAssessor> scoreRecordAssessors(
+      List<CertificationTaskAssessorEntity> assessors,
+      Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion
+  ) {
+    List<ScoreRecordAssessor> configured = new ArrayList<>();
+    for (int index = 0; index < assessors.size(); index++) {
+      CertificationTaskAssessorEntity assessor = assessors.get(index);
+      if (assessor.getAssessorId() != null) {
+        configured.add(new ScoreRecordAssessor(
+            assessor.getAssessorId(),
+            StringUtils.hasText(assessor.getAssessorName())
+                ? assessor.getAssessorName()
+                : "考评员" + (index + 1),
+            index + 1));
+      }
+    }
+    if (!configured.isEmpty()) {
+      return configured;
+    }
+    return tasksByCandidateQuestion.values().stream()
+        .flatMap(List::stream)
+        .filter(task -> task.getAssessorId() != null)
+        .collect(Collectors.toMap(
+            CertificationAssessorTaskEntity::getAssessorId,
+            Function.identity(),
+            (left, right) -> left,
+            LinkedHashMap::new))
+        .values()
+        .stream()
+        .map(task -> new ScoreRecordAssessor(task.getAssessorId(), "考评员" + task.getAssessorId(), 0))
+        .toList();
+  }
+
+  private String scoreRecordSheetName(int questionNo, int assessorNo, String assessorName) {
+    String safeName = nvlText(assessorName).replaceAll("[\\\\/?*\\[\\]:]", "");
+    if (!StringUtils.hasText(safeName)) {
+      safeName = "考评员" + assessorNo;
+    }
+    String base = "评分记录表" + questionNo + "-" + safeName;
+    return base.length() <= 31 ? base : base.substring(0, 31);
+  }
+
+  private CertificationAssessorTaskEntity scoreTaskForAssessor(
+      List<CertificationAssessorTaskEntity> scoreTasks,
+      ScoreRecordAssessor assessor
+  ) {
+    if (scoreTasks == null || scoreTasks.isEmpty()) {
+      return null;
+    }
+    return scoreTasks.stream()
+        .filter(task -> Objects.equals(task.getAssessorId(), assessor.assessorId()))
+        .findFirst()
+        .orElse(null);
+  }
+
+  private Sheet chooseScoreRecordTemplateSheet(Workbook workbook, int questionIndex, int itemCount) {
+    if (workbook.getNumberOfSheets() == 0) {
+      throw new IllegalStateException("实操评分记录表模板不包含工作表");
+    }
+    Sheet best = null;
+    int bestCapacity = Integer.MAX_VALUE;
+    for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+      Sheet sheet = workbook.getSheetAt(i);
+      int capacity = scoreRecordItemCapacity(sheet);
+      if (capacity >= itemCount && capacity < bestCapacity) {
+        best = sheet;
+        bestCapacity = capacity;
+      }
+    }
+    if (best != null) {
+      return best;
+    }
+    bestCapacity = Integer.MAX_VALUE;
+    for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+      Sheet sheet = workbook.getSheetAt(i);
+      int capacity = expandableScoreRecordItemCapacity(sheet);
+      if (capacity >= itemCount && capacity < bestCapacity) {
+        best = sheet;
+        bestCapacity = capacity;
+      }
+    }
+    if (best != null) {
+      return best;
+    }
+    return workbook.getSheetAt(Math.min(questionIndex, workbook.getNumberOfSheets() - 1));
+  }
+
+  private int scoreRecordItemCapacity(Sheet sheet) {
+    int totalColumn = findScoreRecordTotalColumn(sheet);
+    return Math.max(0, (totalColumn - 4) / 2);
+  }
+
+  private int expandableScoreRecordItemCapacity(Sheet sheet) {
+    return Math.max(scoreRecordItemCapacity(sheet), Math.max(0, (maxTemplateColumn(sheet) - 4) / 2));
+  }
+
+  private Sheet copyTemplateSheet(Workbook targetWorkbook, Sheet sourceSheet, String targetName) {
+    Sheet target = targetWorkbook.createSheet(uniqueSheetName(targetWorkbook, targetName));
+    int maxColumn = maxTemplateColumn(sourceSheet);
+    for (int column = 0; column <= maxColumn; column++) {
+      target.setColumnWidth(column, sourceSheet.getColumnWidth(column));
+      target.setColumnHidden(column, sourceSheet.isColumnHidden(column));
+    }
+    Map<Short, CellStyle> styleMap = new HashMap<>();
+    for (int rowIndex = 0; rowIndex <= sourceSheet.getLastRowNum(); rowIndex++) {
+      Row sourceRow = sourceSheet.getRow(rowIndex);
+      if (sourceRow == null) {
+        continue;
+      }
+      Row targetRow = target.createRow(rowIndex);
+      targetRow.setHeight(sourceRow.getHeight());
+      for (int column = 0; column < sourceRow.getLastCellNum(); column++) {
+        Cell sourceCell = sourceRow.getCell(column);
+        if (sourceCell == null) {
+          continue;
+        }
+        Cell targetCell = targetRow.createCell(column);
+        copyCell(sourceCell, targetCell, targetWorkbook, styleMap);
+      }
+    }
+    for (int i = 0; i < sourceSheet.getNumMergedRegions(); i++) {
+      CellRangeAddress range = sourceSheet.getMergedRegion(i);
+      target.addMergedRegion(new CellRangeAddress(
+          range.getFirstRow(), range.getLastRow(), range.getFirstColumn(), range.getLastColumn()));
+    }
+    target.setDisplayGridlines(sourceSheet.isDisplayGridlines());
+    target.setPrintGridlines(sourceSheet.isPrintGridlines());
+    target.setMargin(Sheet.LeftMargin, sourceSheet.getMargin(Sheet.LeftMargin));
+    target.setMargin(Sheet.RightMargin, sourceSheet.getMargin(Sheet.RightMargin));
+    target.setMargin(Sheet.TopMargin, sourceSheet.getMargin(Sheet.TopMargin));
+    target.setMargin(Sheet.BottomMargin, sourceSheet.getMargin(Sheet.BottomMargin));
+    target.getPrintSetup().setLandscape(sourceSheet.getPrintSetup().getLandscape());
+    target.getPrintSetup().setScale(sourceSheet.getPrintSetup().getScale());
+    return target;
+  }
+
+  private int maxTemplateColumn(Sheet sheet) {
+    int max = 0;
+    for (int rowIndex = 0; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+      Row row = sheet.getRow(rowIndex);
+      if (row != null && row.getLastCellNum() > 0) {
+        max = Math.max(max, row.getLastCellNum() - 1);
+      }
+    }
+    for (int i = 0; i < sheet.getNumMergedRegions(); i++) {
+      max = Math.max(max, sheet.getMergedRegion(i).getLastColumn());
+    }
+    return max;
+  }
+
+  private void copyCell(
+      Cell source,
+      Cell target,
+      Workbook targetWorkbook,
+      Map<Short, CellStyle> styleMap
+  ) {
+    if (source.getCellStyle() != null) {
+      short sourceStyleIndex = source.getCellStyle().getIndex();
+      CellStyle targetStyle = styleMap.computeIfAbsent(sourceStyleIndex, ignored -> {
+        CellStyle style = targetWorkbook.createCellStyle();
+        style.cloneStyleFrom(source.getCellStyle());
+        return style;
+      });
+      target.setCellStyle(targetStyle);
+    }
+    switch (source.getCellType()) {
+      case STRING -> target.setCellValue(source.getStringCellValue());
+      case NUMERIC -> target.setCellValue(source.getNumericCellValue());
+      case BOOLEAN -> target.setCellValue(source.getBooleanCellValue());
+      case FORMULA -> target.setCellFormula(source.getCellFormula());
+      case ERROR -> target.setCellErrorValue(source.getErrorCellValue());
+      case BLANK, _NONE -> target.setBlank();
+    }
+  }
+
+  private String uniqueSheetName(Workbook workbook, String baseName) {
+    String name = baseName;
+    int suffix = 2;
+    while (workbook.getSheet(name) != null) {
+      name = baseName + "_" + suffix++;
+    }
+    return name;
+  }
+
+  private int findScoreRecordTotalColumn(Sheet sheet) {
+    Row row = sheet.getRow(3);
+    if (row == null) {
+      return Math.max(4, maxTemplateColumn(sheet));
+    }
+    DataFormatter formatter = new DataFormatter();
+    for (int column = 0; column < row.getLastCellNum(); column++) {
+      Cell cell = row.getCell(column);
+      if (cell != null && formatter.formatCellValue(cell).contains("本题得分合计")) {
+        return column;
+      }
+    }
+    return Math.max(4, maxTemplateColumn(sheet));
+  }
+
+  private int ensureScoreRecordCapacity(Sheet sheet, int currentTotalColumn, int itemCount) {
+    int requiredTotalColumn = 4 + Math.max(0, itemCount) * 2;
+    if (requiredTotalColumn <= currentTotalColumn) {
+      return currentTotalColumn;
+    }
+    Workbook workbook = sheet.getWorkbook();
+    Map<Short, CellStyle> styleMap = new HashMap<>();
+    sheet.setColumnWidth(requiredTotalColumn, sheet.getColumnWidth(currentTotalColumn));
+    sheet.setColumnHidden(requiredTotalColumn, sheet.isColumnHidden(currentTotalColumn));
+    for (int rowIndex = 0; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+      Row row = sheet.getRow(rowIndex);
+      if (row == null) {
+        continue;
+      }
+      Cell source = row.getCell(currentTotalColumn);
+      Cell target = row.getCell(requiredTotalColumn);
+      if (target == null) {
+        target = row.createCell(requiredTotalColumn);
+      }
+      if (source != null) {
+        copyCell(source, target, workbook, styleMap);
+        if (rowIndex >= 3) {
+          source.setBlank();
+        }
+      }
+    }
+    copyExpandedScoreRecordItemColumnStyles(sheet, currentTotalColumn, requiredTotalColumn, styleMap);
+    for (int i = sheet.getNumMergedRegions() - 1; i >= 0; i--) {
+      CellRangeAddress range = sheet.getMergedRegion(i);
+      boolean headerRows = range.getFirstRow() <= 9 && range.getLastRow() >= 3;
+      boolean oldOrNewTotalColumn = range.isInRange(3, currentTotalColumn)
+          || range.isInRange(3, requiredTotalColumn);
+      if (headerRows && oldOrNewTotalColumn) {
+        sheet.removeMergedRegion(i);
+      }
+    }
+    sheet.addMergedRegion(new CellRangeAddress(3, 9, requiredTotalColumn, requiredTotalColumn));
+    return requiredTotalColumn;
+  }
+
+  private void copyExpandedScoreRecordItemColumnStyles(
+      Sheet sheet,
+      int firstExpandedColumn,
+      int totalColumn,
+      Map<Short, CellStyle> styleMap
+  ) {
+    Workbook workbook = sheet.getWorkbook();
+    for (int column = firstExpandedColumn; column < totalColumn; column++) {
+      int sourceColumn = scoreRecordItemStyleSourceColumn(column, firstExpandedColumn);
+      sheet.setColumnWidth(column, sheet.getColumnWidth(sourceColumn));
+      sheet.setColumnHidden(column, sheet.isColumnHidden(sourceColumn));
+      for (int rowIndex = 3; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+        Row row = sheet.getRow(rowIndex);
+        if (row == null) {
+          continue;
+        }
+        Cell source = row.getCell(sourceColumn);
+        Cell target = row.getCell(column);
+        if (target == null) {
+          target = row.createCell(column);
+        }
+        if (source != null) {
+          copyCellStyle(source, target, workbook, styleMap);
+        }
+        target.setBlank();
+      }
+    }
+  }
+
+  private int scoreRecordItemStyleSourceColumn(int targetColumn, int firstExpandedColumn) {
+    int pairOffset = Math.floorMod(targetColumn - 4, 2);
+    int lastTemplatePairColumn = firstExpandedColumn - 2 + pairOffset;
+    if (lastTemplatePairColumn >= 4) {
+      return lastTemplatePairColumn;
+    }
+    return 4 + pairOffset;
+  }
+
+  private void copyCellStyle(
+      Cell source,
+      Cell target,
+      Workbook targetWorkbook,
+      Map<Short, CellStyle> styleMap
+  ) {
+    if (source.getCellStyle() == null) {
+      return;
+    }
+    short sourceStyleIndex = source.getCellStyle().getIndex();
+    CellStyle targetStyle = styleMap.computeIfAbsent(sourceStyleIndex, ignored -> {
+      CellStyle style = targetWorkbook.createCellStyle();
+      style.cloneStyleFrom(source.getCellStyle());
+      return style;
+    });
+    target.setCellStyle(targetStyle);
+  }
+
+  private void clearScoreRecordTemplateRows(Sheet sheet, int candidateCount, int totalColumn) {
+    int rows = Math.max(8, candidateCount);
+    for (int i = 0; i < rows; i++) {
+      int rowIndex = 11 + i;
+      ensureScoreRecordCandidateRow(sheet, rowIndex, totalColumn);
+      Row row = sheet.getRow(rowIndex);
+      for (int column = 1; column <= totalColumn; column++) {
+        Cell cell = row.getCell(column);
+        if (cell == null) {
+          cell = row.createCell(column);
+        }
+        cell.setBlank();
+      }
+    }
+  }
+
+  private void ensureScoreRecordCandidateRow(Sheet sheet, int rowIndex, int totalColumn) {
+    Row row = sheet.getRow(rowIndex);
+    if (row != null) {
+      return;
+    }
+    Row templateRow = sheet.getRow(18);
+    row = sheet.createRow(rowIndex);
+    if (templateRow != null) {
+      row.setHeight(templateRow.getHeight());
+      for (int column = 0; column <= totalColumn; column++) {
+        Cell source = templateRow.getCell(column);
+        if (source == null) {
+          continue;
+        }
+        Cell target = row.createCell(column);
+        target.setCellStyle(source.getCellStyle());
+      }
+    }
+  }
+
+  private List<CertificationAssessorTaskScoreEntity> firstScoreItems(
+      List<CertificationAssessorTaskEntity> scoreTasks,
+      Map<Long, List<CertificationAssessorTaskScoreEntity>> scoresByAssessorTask
+  ) {
+    return scoreTasks.stream()
+        .map(task -> scoresByAssessorTask.getOrDefault(task.getId(), List.of()))
+        .filter(items -> !items.isEmpty())
+        .findFirst()
+        .orElse(List.of());
+  }
+
+  private void writeScoreRecordTemplateItems(
+      Sheet sheet,
+      List<CertificationAssessorTaskScoreEntity> items,
+      int totalColumn
+  ) {
+    int capacity = Math.max(0, (totalColumn - 4) / 2);
+    clearScoreRecordItemMerges(sheet, totalColumn);
+    Map<Short, CellStyle> wrapStyles = new HashMap<>();
+    for (int itemIndex = 0; itemIndex < capacity; itemIndex++) {
+      int column = 4 + itemIndex * 2;
+      CertificationAssessorTaskScoreEntity item = itemIndex < items.size() ? items.get(itemIndex) : null;
+      writeTemplateCell(sheet, 5, column, "");
+      writeTemplateCell(sheet, 6, column, "");
+      writeTemplateCell(sheet, 7, column, item == null ? "" : nvlText(item.getCriterion()));
+      writeTemplateCell(sheet, 8, column, item == null ? "" : item.getMaxDeduction());
+      writeTemplateCell(sheet, 9, column, item == null ? "" : item.getDeductionStep());
+      writeTemplateCell(sheet, 10, column, item == null ? "" : "扣分");
+      writeTemplateCell(sheet, 10, column + 1, item == null ? "" : "得分");
+      applyWrapText(sheet, 7, column, wrapStyles);
+      clearTemplateCell(sheet, 5, column + 1);
+      clearTemplateCell(sheet, 6, column + 1);
+      clearTemplateCell(sheet, 7, column + 1);
+      clearTemplateCell(sheet, 8, column + 1);
+      clearTemplateCell(sheet, 9, column + 1);
+      if (item != null) {
+        mergeScoreRecordItemPair(sheet, 7, column);
+        mergeScoreRecordItemPair(sheet, 8, column);
+        mergeScoreRecordItemPair(sheet, 9, column);
+      }
+    }
+    int groupStart = 0;
+    int itemLimit = Math.min(items.size(), capacity);
+    while (groupStart < itemLimit) {
+      CertificationAssessorTaskScoreEntity first = items.get(groupStart);
+      String stepName = nvlText(first.getStepName());
+      int groupEnd = groupStart;
+      BigDecimal groupScore = BigDecimal.ZERO;
+      while (groupEnd < itemLimit
+          && Objects.equals(stepName, nvlText(items.get(groupEnd).getStepName()))) {
+        BigDecimal score = items.get(groupEnd).getMaxScore();
+        groupScore = groupScore.add(score == null ? BigDecimal.ZERO : score);
+        groupEnd++;
+      }
+      int startColumn = 4 + groupStart * 2;
+      int endColumn = 4 + (groupEnd - 1) * 2 + 1;
+      writeTemplateCell(sheet, 5, startColumn, stepName);
+      writeTemplateCell(sheet, 6, startColumn, groupScore);
+      applyWrapText(sheet, 5, startColumn, wrapStyles);
+      mergeScoreRecordItemRange(sheet, 5, startColumn, endColumn);
+      mergeScoreRecordItemRange(sheet, 6, startColumn, endColumn);
+      groupStart = groupEnd;
+    }
+    adjustScoreRecordHeaderRowHeight(sheet, 5, totalColumn, 120F);
+    adjustScoreRecordHeaderRowHeight(sheet, 7, totalColumn, 160F);
+    keepScoreRecordHeaderRowMinimumHeight(sheet, 6);
+    keepScoreRecordHeaderRowMinimumHeight(sheet, 8);
+    keepScoreRecordHeaderRowMinimumHeight(sheet, 9);
+  }
+
+  private void applyWrapText(
+      Sheet sheet,
+      int rowIndex,
+      int column,
+      Map<Short, CellStyle> wrapStyles
+  ) {
+    Row row = sheet.getRow(rowIndex);
+    if (row == null) {
+      return;
+    }
+    Cell cell = row.getCell(column);
+    if (cell == null || cell.getCellStyle() == null) {
+      return;
+    }
+    short styleIndex = cell.getCellStyle().getIndex();
+    CellStyle wrapStyle = wrapStyles.computeIfAbsent(styleIndex, ignored -> {
+      CellStyle style = sheet.getWorkbook().createCellStyle();
+      style.cloneStyleFrom(cell.getCellStyle());
+      style.setWrapText(true);
+      return style;
+    });
+    cell.setCellStyle(wrapStyle);
+  }
+
+  private void adjustScoreRecordHeaderRowHeight(
+      Sheet sheet,
+      int rowIndex,
+      int totalColumn,
+      float maxHeightPoints
+  ) {
+    Row row = sheet.getRow(rowIndex);
+    if (row == null) {
+      return;
+    }
+    float baseHeight = row.getHeightInPoints() > 0
+        ? row.getHeightInPoints()
+        : sheet.getDefaultRowHeightInPoints();
+    int maxLines = 1;
+    DataFormatter formatter = new DataFormatter();
+    for (int column = 4; column < totalColumn; column++) {
+      CellRangeAddress mergedRange = mergedRangeAt(sheet, rowIndex, column);
+      if (mergedRange != null && mergedRange.getFirstColumn() != column) {
+        continue;
+      }
+      Cell cell = row.getCell(column);
+      if (cell == null) {
+        continue;
+      }
+      String text = formatter.formatCellValue(cell).trim();
+      if (!StringUtils.hasText(text)) {
+        continue;
+      }
+      int firstColumn = mergedRange == null ? column : mergedRange.getFirstColumn();
+      int lastColumn = mergedRange == null ? column : Math.min(mergedRange.getLastColumn(), totalColumn - 1);
+      double charsPerLine = Math.max(6D, mergedColumnWidthChars(sheet, firstColumn, lastColumn) * 0.85D);
+      int lines = Math.max(1, (int) Math.ceil(weightedTextLength(text) / charsPerLine));
+      maxLines = Math.max(maxLines, lines);
+    }
+    float targetHeight = Math.min(maxHeightPoints, Math.max(baseHeight, baseHeight * maxLines));
+    row.setHeightInPoints(targetHeight);
+  }
+
+  private void keepScoreRecordHeaderRowMinimumHeight(Sheet sheet, int rowIndex) {
+    Row row = sheet.getRow(rowIndex);
+    if (row == null) {
+      return;
+    }
+    float baseHeight = sheet.getDefaultRowHeightInPoints();
+    if (row.getHeightInPoints() < baseHeight) {
+      row.setHeightInPoints(baseHeight);
+    }
+  }
+
+  private CellRangeAddress mergedRangeAt(Sheet sheet, int rowIndex, int column) {
+    for (CellRangeAddress range : sheet.getMergedRegions()) {
+      if (range.isInRange(rowIndex, column)) {
+        return range;
+      }
+    }
+    return null;
+  }
+
+  private double mergedColumnWidthChars(Sheet sheet, int firstColumn, int lastColumn) {
+    double chars = 0D;
+    for (int column = firstColumn; column <= lastColumn; column++) {
+      chars += sheet.getColumnWidth(column) / 256D;
+    }
+    return chars;
+  }
+
+  private double weightedTextLength(String text) {
+    double length = 0D;
+    for (int offset = 0; offset < text.length(); ) {
+      int codePoint = text.codePointAt(offset);
+      if (codePoint == '\n' || codePoint == '\r') {
+        length += 8D;
+      } else if (codePoint < 128) {
+        length += 1D;
+      } else {
+        length += 1.8D;
+      }
+      offset += Character.charCount(codePoint);
+    }
+    return length;
+  }
+
+  private void clearScoreRecordItemMerges(Sheet sheet, int totalColumn) {
+    for (int i = sheet.getNumMergedRegions() - 1; i >= 0; i--) {
+      CellRangeAddress range = sheet.getMergedRegion(i);
+      boolean rowIntersects = range.getFirstRow() <= 9 && range.getLastRow() >= 5;
+      boolean columnIntersects = range.getFirstColumn() < totalColumn && range.getLastColumn() >= 4;
+      if (rowIntersects && columnIntersects) {
+        sheet.removeMergedRegion(i);
+      }
+    }
+  }
+
+  private void mergeScoreRecordItemPair(Sheet sheet, int rowIndex, int column) {
+    mergeScoreRecordItemRange(sheet, rowIndex, column, column + 1);
+  }
+
+  private void mergeScoreRecordItemRange(Sheet sheet, int rowIndex, int firstColumn, int lastColumn) {
+    if (lastColumn <= firstColumn) {
+      return;
+    }
+    sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, firstColumn, lastColumn));
+  }
+
+  private void clearTemplateCell(Sheet sheet, int rowIndex, int column) {
+    Row row = sheet.getRow(rowIndex);
+    if (row == null) {
+      row = sheet.createRow(rowIndex);
+    }
+    Cell cell = row.getCell(column);
+    if (cell == null) {
+      cell = row.createCell(column);
+    }
+    cell.setBlank();
+  }
+
+  private void applyDecimalCellStyle(Cell cell) {
+    if (cell == null) {
+      return;
+    }
+    Workbook workbook = cell.getSheet().getWorkbook();
+    CellStyle style = workbook.createCellStyle();
+    if (cell.getCellStyle() != null) {
+      style.cloneStyleFrom(cell.getCellStyle());
+    }
+    style.setDataFormat(workbook.createDataFormat().getFormat(DECIMAL_SCORE_FORMAT));
+    cell.setCellStyle(style);
+  }
+
+  private String scoreRecordQuestionScore(
+      List<CertificationCandidateEntity> candidates,
+      Map<Long, List<CertificationPracticalQuestionResultEntity>> questionResultsByCandidate,
+      Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion,
+      Map<Long, List<CertificationAssessorTaskScoreEntity>> scoresByAssessorTask,
+      int questionIndex
+  ) {
+    for (CertificationCandidateEntity candidate : candidates) {
+      CertificationPracticalQuestionResultEntity questionResult =
+          questionResultAt(questionResultsByCandidate.get(candidate.getId()), questionIndex);
+      List<CertificationAssessorTaskEntity> scoreTasks = scoreTasksForCandidateQuestion(
+          tasksByCandidateQuestion, candidate.getId(), questionResult);
+      List<CertificationAssessorTaskScoreEntity> items = firstScoreItems(scoreTasks, scoresByAssessorTask);
+      if (!items.isEmpty()) {
+        BigDecimal score = items.stream()
+            .map(CertificationAssessorTaskScoreEntity::getMaxScore)
+            .filter(Objects::nonNull)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return score.stripTrailingZeros().toPlainString();
+      }
+    }
+    return "0";
+  }
+
+  private CertificationPracticalQuestionResultEntity questionResultAt(
+      List<CertificationPracticalQuestionResultEntity> results,
+      int index
+  ) {
+    return results == null || index < 0 || index >= results.size() ? null : results.get(index);
+  }
+
+  private List<CertificationAssessorTaskEntity> scoreTasksForCandidateQuestion(
+      Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion,
+      Long candidateId,
+      CertificationPracticalQuestionResultEntity questionResult
+  ) {
+    if (candidateId == null || questionResult == null || questionResult.getPaperQuestionId() == null) {
+      return List.of();
+    }
+    return tasksByCandidateQuestion.getOrDefault(
+        candidateId + ":" + questionResult.getPaperQuestionId(), List.of());
+  }
+
+  private String assessorName(
+      CertificationAssessorTaskEntity task,
+      Map<Long, String> assessorNames
+  ) {
+    String name = assessorNames.get(task.getAssessorId());
+    return StringUtils.hasText(name) ? name : "考评员" + nvlText(task.getAssessorId());
+  }
+
+  private String formatChineseDate(LocalDate date) {
+    return date == null ? "" : date.getYear() + "年" + date.getMonthValue() + "月" + date.getDayOfMonth() + "日";
+  }
+
   private PracticalScoringModels.AssessorTaskDetail saveScore(
       Long assessorTaskId,
       PracticalScoringModels.SaveScoreReq req,
@@ -1074,7 +1983,7 @@ public class PracticalScoringApplicationService {
           .reduce(BigDecimal.ZERO, BigDecimal::add);
       BigDecimal average = sum.divide(BigDecimal.valueOf(3), 1, RoundingMode.HALF_UP);
       result.setAverageScore(average);
-      result.setFinalScore(average.setScale(0, RoundingMode.HALF_UP).intValueExact());
+      result.setFinalScore(average);
       result.setStatus("completed");
       result.setCalculatedAt(LocalDateTime.now());
     } else {
@@ -1105,8 +2014,11 @@ public class PracticalScoringApplicationService {
     candidateResult.setQuestionCount(results.size());
     candidateResult.setCompletedQuestionCount(completed);
     if (!results.isEmpty() && completed == results.size()) {
-      candidateResult.setTotalScore(results.stream().map(CertificationPracticalQuestionResultEntity::getFinalScore)
-          .filter(Objects::nonNull).mapToInt(Integer::intValue).sum());
+      candidateResult.setTotalScore(results.stream()
+          .map(CertificationPracticalQuestionResultEntity::getAverageScore)
+          .filter(Objects::nonNull)
+          .reduce(BigDecimal.ZERO, BigDecimal::add)
+          .setScale(1, RoundingMode.HALF_UP));
       candidateResult.setStatus("completed");
       candidateResult.setCalculatedAt(LocalDateTime.now());
     } else if (reviewRequired) {
@@ -1119,6 +2031,33 @@ public class PracticalScoringApplicationService {
       candidateResult.setCalculatedAt(null);
     }
     candidateResultMapper.updateById(candidateResult);
+  }
+
+  private BigDecimal resolveCandidateTotalScore(
+      Long candidateId,
+      CertificationPracticalCandidateResultEntity result,
+      List<CertificationPracticalQuestionResultEntity> questionResults
+  ) {
+    if (result == null) {
+      return null;
+    }
+    if ("absent".equals(result.getStatus())) {
+      return result.getTotalScore();
+    }
+    if (!"completed".equals(result.getStatus())) {
+      return null;
+    }
+    List<CertificationPracticalQuestionResultEntity> candidateQuestions = questionResults.stream()
+        .filter(questionResult -> candidateId.equals(questionResult.getCandidateId()))
+        .toList();
+    if (candidateQuestions.isEmpty()) {
+      return null;
+    }
+    return candidateQuestions.stream()
+        .map(CertificationPracticalQuestionResultEntity::getAverageScore)
+        .filter(Objects::nonNull)
+        .reduce(BigDecimal.ZERO, BigDecimal::add)
+        .setScale(1, RoundingMode.HALF_UP);
   }
 
   private void invalidateResults(CertificationAssessorTaskEntity task) {
@@ -1748,6 +2687,13 @@ public class PracticalScoringApplicationService {
   ) {
   }
 
+  private record ScoreRecordAssessor(
+      Long assessorId,
+      String name,
+      int sortOrder
+  ) {
+  }
+
   private List<CertificationCandidateEntity> candidatesForConfig(
       CertificationPracticalScoringConfigEntity config
   ) {
@@ -1766,6 +2712,132 @@ public class PracticalScoringApplicationService {
             .or()
             .and(n -> n.isNull(CertificationCandidateEntity::getWorkTypeId)
                 .eq(CertificationCandidateEntity::getWorkTypeName, config.getWorkTypeName()))));
+  }
+
+  private CertificationPracticalScoringConfigEntity resolveAbsentConfig(
+      Long taskId,
+      CertificationCandidateEntity candidate
+  ) {
+    CertificationPracticalScoringConfigEntity candidateConfig = configMapper.selectOne(
+        new LambdaQueryWrapper<CertificationPracticalScoringConfigEntity>()
+            .eq(CertificationPracticalScoringConfigEntity::getTaskId, taskId)
+            .eq(CertificationPracticalScoringConfigEntity::getCandidateId, candidate.getId())
+            .eq(CertificationPracticalScoringConfigEntity::getStatus, "configured")
+            .last("LIMIT 1"));
+    if (candidateConfig != null) {
+      return candidateConfig;
+    }
+    List<CertificationPracticalScoringConfigEntity> configs = configMapper.selectList(
+        new LambdaQueryWrapper<CertificationPracticalScoringConfigEntity>()
+            .eq(CertificationPracticalScoringConfigEntity::getTaskId, taskId)
+            .eq(CertificationPracticalScoringConfigEntity::getStatus, "configured")
+            .isNull(CertificationPracticalScoringConfigEntity::getCandidateId));
+    if (configs == null) {
+      configs = List.of();
+    }
+    return configs.stream()
+        .filter(config -> matchesAbsentConfig(config, candidate))
+        .findFirst()
+        .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST,
+            "configure practical paper and assessor group before marking absent"));
+  }
+
+  private boolean matchesAbsentConfig(
+      CertificationPracticalScoringConfigEntity config,
+      CertificationCandidateEntity candidate
+  ) {
+    boolean sameLevel = Objects.equals(config.getLevelCode(), candidate.getLevelCode())
+        || Objects.equals(config.getLevelName(), candidate.getLevelName());
+    boolean sameWorkType = candidate.getWorkTypeId() != null
+        ? Objects.equals(config.getWorkTypeId(), candidate.getWorkTypeId())
+            || Objects.equals(config.getWorkTypeName(), candidate.getWorkTypeName())
+        : Objects.equals(config.getWorkTypeName(), candidate.getWorkTypeName());
+    return sameLevel && sameWorkType;
+  }
+
+  private void applyAbsentScores(
+      CertificationTaskEntity task,
+      CertificationPracticalScoringConfigEntity config,
+      CertificationCandidateEntity candidate,
+      int questionCount
+  ) {
+    LocalDateTime now = LocalDateTime.now();
+    List<CertificationAssessorTaskEntity> scoringTasks = assessorTaskMapper.selectList(
+        new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
+            .eq(CertificationAssessorTaskEntity::getTaskId, task.getId())
+            .eq(CertificationAssessorTaskEntity::getCandidateId, candidate.getId())
+            .eq(CertificationAssessorTaskEntity::getPaperId, config.getPaperId())
+            .isNotNull(CertificationAssessorTaskEntity::getPaperQuestionId));
+    if (scoringTasks == null || scoringTasks.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "practical scoring tasks are not generated");
+    }
+    List<Long> assessorTaskIds = scoringTasks.stream()
+        .map(CertificationAssessorTaskEntity::getId)
+        .filter(Objects::nonNull)
+        .toList();
+    for (CertificationAssessorTaskEntity scoringTask : scoringTasks) {
+      scoringTask.setStatus("absent");
+      scoringTask.setTotalScore(ZERO_SCORE);
+      scoringTask.setSubmittedAt(null);
+      scoringTask.setProgressNote("absent");
+      scoringTask.setVersionNo(nvl(scoringTask.getVersionNo(), 0) + 1);
+      assessorTaskMapper.updateById(scoringTask);
+    }
+    if (!assessorTaskIds.isEmpty()) {
+      List<CertificationAssessorTaskScoreEntity> scoreRows = scoreMapper.selectList(
+          new LambdaQueryWrapper<CertificationAssessorTaskScoreEntity>()
+              .in(CertificationAssessorTaskScoreEntity::getAssessorTaskId, assessorTaskIds));
+      if (scoreRows != null) {
+        for (CertificationAssessorTaskScoreEntity scoreRow : scoreRows) {
+          scoreRow.setDeductedScore(ZERO_SCORE);
+          scoreRow.setAwardedScore(ZERO_SCORE);
+          scoreRow.setScore(ZERO_SCORE);
+          scoreMapper.updateById(scoreRow);
+        }
+      }
+    }
+
+    List<CertificationPracticalQuestionResultEntity> questionResults = questionResultMapper.selectList(
+        new LambdaQueryWrapper<CertificationPracticalQuestionResultEntity>()
+            .eq(CertificationPracticalQuestionResultEntity::getTaskId, task.getId())
+            .eq(CertificationPracticalQuestionResultEntity::getCandidateId, candidate.getId())
+            .eq(CertificationPracticalQuestionResultEntity::getPaperId, config.getPaperId()));
+    if (questionResults == null) {
+      questionResults = List.of();
+    }
+    for (CertificationPracticalQuestionResultEntity questionResult : questionResults) {
+      questionResult.setSubmittedCount(0);
+      questionResult.setAverageScore(ZERO_SCORE);
+      questionResult.setFinalScore(ZERO_SCORE);
+      questionResult.setStatus("absent");
+      questionResult.setCalculatedAt(now);
+      questionResultMapper.updateById(questionResult);
+    }
+
+    CertificationPracticalCandidateResultEntity result = candidateResultMapper.selectOne(
+        new LambdaQueryWrapper<CertificationPracticalCandidateResultEntity>()
+            .eq(CertificationPracticalCandidateResultEntity::getTaskId, task.getId())
+            .eq(CertificationPracticalCandidateResultEntity::getCandidateId, candidate.getId())
+            .last("LIMIT 1"));
+    if (result == null) {
+      result = new CertificationPracticalCandidateResultEntity();
+      result.setTaskId(task.getId());
+      result.setCandidateId(candidate.getId());
+      result.setDeleted(0);
+      result.setQuestionCount(questionCount);
+      result.setCompletedQuestionCount(0);
+      result.setTotalScore(ZERO_SCORE);
+      result.setStatus("absent");
+      result.setCalculatedAt(now);
+      candidateResultMapper.insert(result);
+    } else {
+      result.setQuestionCount(questionCount);
+      result.setCompletedQuestionCount(0);
+      result.setTotalScore(ZERO_SCORE);
+      result.setStatus("absent");
+      result.setCalculatedAt(now);
+      candidateResultMapper.updateById(result);
+    }
   }
 
   private void ensureQuestionResult(

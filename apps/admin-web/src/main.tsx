@@ -57,6 +57,7 @@ import { KnowledgeRatePage } from './pages/exam/KnowledgeRatePage';
 import { KnowledgeStructurePage } from './pages/exam/KnowledgeStructurePage';
 import { TrainExamListPage } from './pages/training/TrainExamListPage';
 import { TabletAssessorApp } from './pages/assessor/TabletAssessorApp';
+import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
 
 // Pre-instantiate factory components for stable React references
 const ArchiveEquipmentPage = createArchiveTablePage('equipment');
@@ -82,6 +83,7 @@ import { ProjectManagementPage } from './pages/certification/ProjectManagementPa
 import { CertificationDataPanelPage } from './pages/certification/CertificationDataPanelPage';
 import { PracticalConfigurationPage } from './pages/certification/PracticalConfigurationPage';
 import { PreparationPage } from './pages/certification/PreparationPage';
+import { CollectionTaskListPage } from './pages/certification/collection/CollectionTaskListPage';
 import { ArchivePage } from './pages/certification/ArchivePage';
 import { TaskArchivePage } from './pages/certification/TaskArchivePage';
 import { AssessorInfoPage } from './pages/certification/info/AssessorInfoPage';
@@ -190,6 +192,7 @@ const pageMap: Record<string, React.ReactNode> = {
   certification_project: <ProjectManagementPage />,
   certification_preparation: <PreparationPage />,
   certification_practical_config: <PracticalConfigurationPage />,
+  certification_practical_collection: <CollectionTaskListPage />,
   certification_archive: <ArchivePage />,
   certification_task_archive: <TaskArchivePage />,
   certification_info_assessor: <AssessorInfoPage />,
@@ -466,16 +469,24 @@ const pageMap: Record<string, React.ReactNode> = {
   risk_finance: <ProductPlaceholder moduleCode="risk_finance" />,
   risk_admin: <ProductPlaceholder moduleCode="risk_admin" />,
   risk_platform_coop: <ProductPlaceholder moduleCode="risk_platform_coop" />,
+  'certification-practical-collection': <CollectionTaskListPage />,
 };
 
 const assessorMode = window.location.pathname.startsWith('/assessor-scoring');
+const practicalCollectionMode = window.location.pathname.startsWith('/practical-collection');
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ConfigProvider locale={zhCN} theme={appTheme}>
       <QueryClientProvider client={queryClient}>
         <AuthGate mode={assessorMode ? 'assessor' : 'admin'}>
-          {assessorMode ? <TabletAssessorApp /> : <AppShell pageMap={pageMap} />}
+          {assessorMode ? (
+            <TabletAssessorApp />
+          ) : practicalCollectionMode ? (
+            <PracticalCollectionApp />
+          ) : (
+            <AppShell pageMap={pageMap} />
+          )}
         </AuthGate>
       </QueryClientProvider>
     </ConfigProvider>

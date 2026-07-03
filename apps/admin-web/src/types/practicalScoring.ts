@@ -165,7 +165,7 @@ export interface PracticalStartSession {
   taskId: string;
   candidateId: string;
   paperId: string;
-  status: 'waiting' | 'ready' | 'started' | 'completed';
+  status: 'waiting' | 'ready' | 'started' | 'completed' | 'absent';
   candidateConfirmed: boolean;
   confirmedAssessors: number;
   requiredAssessors: number;

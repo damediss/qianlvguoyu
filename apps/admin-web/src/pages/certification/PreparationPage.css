@@ -1,0 +1,8 @@
+.preparation-task-table .ant-table-cell-fix-left,
+.preparation-task-table .ant-table-cell-fix-right {
+  overflow: hidden;
+}
+
+.preparation-task-table .ant-typography-ellipsis {
+  width: 100%;
+}

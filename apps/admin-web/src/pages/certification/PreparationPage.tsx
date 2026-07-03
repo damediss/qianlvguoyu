@@ -9,7 +9,7 @@ import {
   TeamOutlined,
   UpOutlined,
 } from '@ant-design/icons';
-import { Button, Card, Empty, Form, Input, Progress, Select, Space, Table, Tabs, Tag, Typography } from 'antd';
+import { Button, Card, Empty, Form, Input, Progress, Select, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -29,6 +29,7 @@ import {
 import { PreparationWorkbench } from './preparation/PreparationWorkbench';
 import { PracticalScoringConfig } from './preparation/PracticalScoringConfig';
 import { dateText, dateTimeText, statusTag } from './preparation/shared';
+import './PreparationPage.css';
 
 type PreparationTabKey = 'workbench' | 'collection' | 'checklist' | 'equipment' | 'sites' | 'staff' | 'assessors' | 'scoring';
 
@@ -89,16 +90,26 @@ export function PreparationPage() {
     {
       title: '任务编号',
       dataIndex: 'taskNo',
-      width: 160,
+      minWidth: 140,
+      ellipsis: { showTitle: true },
       fixed: 'left',
       render: (value: string, record) => (
-        <Button type="link" style={{ padding: 0 }} onClick={() => setSelectedTaskId(record.id)}>
-          {value}
-        </Button>
+        <Tooltip title={value}>
+          <Typography.Link
+            ellipsis
+            style={{ maxWidth: '100%' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedTaskId(record.id);
+            }}
+          >
+            {value}
+          </Typography.Link>
+        </Tooltip>
       ),
     },
-    { title: '任务名称', dataIndex: 'taskName', width: 230, ellipsis: true },
-    { title: '批次', dataIndex: 'batchName', width: 160, ellipsis: true },
+    { title: '任务名称', dataIndex: 'taskName', minWidth: 200, ellipsis: { showTitle: true } },
+    { title: '批次', dataIndex: 'batchName', minWidth: 120, ellipsis: { showTitle: true } },
     { title: '工种', dataIndex: 'workTypeName', width: 110, render: (value) => value || '-' },
     { title: '等级', dataIndex: 'levelName', width: 100, render: (value) => value || '-' },
     { title: '计划开始', dataIndex: 'planStartDate', width: 120, render: dateText },
@@ -274,13 +285,15 @@ export function PreparationPage() {
                 <Button htmlType="submit">查询</Button>
               </Form>
               <Table
+                className="preparation-task-table"
+                style={{ width: '100%' }}
                 rowKey="id"
                 columns={columns}
                 dataSource={tasks}
                 loading={tasksQuery.isFetching}
                 rowClassName={(record) => record.id === selectedTaskId ? 'selected-row' : ''}
                 onRow={(record) => ({ onClick: () => setSelectedTaskId(record.id) })}
-                scroll={{ x: 1780 }}
+                scroll={{ x: 'max-content' }}
                 pagination={{
                   current: query.page,
                   pageSize: query.pageSize,

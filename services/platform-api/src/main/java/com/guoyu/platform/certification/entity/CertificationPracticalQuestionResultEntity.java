@@ -17,7 +17,7 @@ public class CertificationPracticalQuestionResultEntity extends BaseEntity {
   private Long paperQuestionId;
   private Integer submittedCount;
   private BigDecimal averageScore;
-  private Integer finalScore;
+  private BigDecimal finalScore;
   private String status;
   private LocalDateTime calculatedAt;
 }

@@ -181,6 +181,16 @@ public class CertificationPracticalScoringController {
     return ApiResponse.ok(startService.confirmCandidate(taskId, candidateId));
   }
 
+  @PostMapping("/practical-scoring/tasks/{taskId}/candidates/{candidateId}/absent")
+  @PreAuthorize("hasAuthority('certification.practical.progress')")
+  @AuditLog(module = "certification", action = "practical-scoring:candidate-absent", targetType = "certification_practical_candidate_result")
+  public ApiResponse<PracticalScoringModels.StartSessionView> markCandidateAbsent(
+      @PathVariable Long taskId,
+      @PathVariable Long candidateId
+  ) {
+    return ApiResponse.ok(service.markCandidateAbsent(taskId, candidateId));
+  }
+
   @GetMapping("/assessor-scoring/tasks")
   @PreAuthorize("hasAuthority('certification.practical.score')")
   public ApiResponse<List<PracticalScoringModels.AssessorTaskListItem>> myTasks(

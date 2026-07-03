@@ -34,13 +34,13 @@ import {
 import {
   adjustPracticalScoringTaskScore,
   cancelPracticalCandidateGeneratedTasks,
-  confirmPracticalCandidate,
   exportPracticalSummary,
   getPracticalScoringTaskDetail,
   getPracticalScoringProgress,
   getPracticalScoringSetup,
   importPracticalPaper,
   linkPracticalCandidateTemplate,
+  markPracticalCandidateAbsent,
   returnPracticalScoringTask,
 } from '../../../api/practicalScoring';
 import { parseContentDispositionFilename } from '../../../utils/download';
@@ -155,6 +155,11 @@ export function PracticalScoringConfig({
     () => (progressQuery.data?.candidates || []).filter((candidate) => candidate.status === 'review_required'),
     [progressQuery.data?.candidates],
   );
+  const submittedCandidateCount = useMemo(
+    () => (progressQuery.data?.candidates || []).filter((candidate) => candidate.status === 'completed').length,
+    [progressQuery.data?.candidates],
+  );
+  const totalCandidateCount = progressQuery.data?.candidates.length || 0;
   const assessorGroupsByCandidate = useMemo(() => {
     const groups = new Map<string, Map<string, { id: string; name: string; tasks: PracticalTaskProgressItem[] }>>();
     for (const task of progressQuery.data?.scoringTasks || []) {
@@ -278,10 +283,10 @@ export function PracticalScoringConfig({
       refresh();
     },
   });
-  const candidateConfirmMutation = useMutation({
-    mutationFn: (candidateId: string) => confirmPracticalCandidate(taskId!, candidateId),
-    onSuccess: (session) => {
-      message.success(session.status === 'started' ? '组长已开始考试' : '开考状态已更新');
+  const candidateAbsentMutation = useMutation({
+    mutationFn: (candidateId: string) => markPracticalCandidateAbsent(taskId!, candidateId),
+    onSuccess: () => {
+      message.success('已标记缺考');
       refresh();
     },
   });
@@ -312,7 +317,7 @@ export function PracticalScoringConfig({
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      message.success('评分记录汇总表已生成');
+      message.success('实操评分表已生成');
     },
   });
 
@@ -494,33 +499,49 @@ export function PracticalScoringConfig({
       ),
     },
     { title: '试题完成', width: 150, render: (_, row) => `${row.completedQuestions}/${row.totalQuestions}` },
-    { title: '实操总分', dataIndex: 'totalScore', width: 110, render: (v) => v ?? '待三人齐交' },
+    { title: '实操总分', dataIndex: 'totalScore', width: 110, render: (v) => formatScore(v) ?? '待三人齐交' },
     {
       title: '开考协同',
       width: 220,
-      render: (_, row) => row.startSession ? (
-        <Space>
-          <Tag color={row.startSession.status === 'completed' ? 'success' : row.startSession.status === 'started' ? 'processing' : 'default'}>
-            {row.startSession.status === 'completed'
-              ? '考试已完成'
-              : row.startSession.status === 'started'
-                ? '考试中'
-                : `${row.startSession.candidateConfirmed ? '已选择考生' : '待组长开始'} · ${row.startSession.confirmedAssessors}/3`}
-          </Tag>
-          {!row.startSession.candidateConfirmed && (
+      render: (_, row) => {
+        const sessionStatus = row.startSession?.status;
+        const absentDisabled =
+          row.status === 'completed' || row.status === 'absent' || sessionStatus === 'completed';
+        return (
+          <Space>
+            {row.startSession ? (
+              <Tag color={sessionStatus === 'completed' ? 'success' : sessionStatus === 'absent' ? 'warning' : sessionStatus === 'started' ? 'processing' : 'default'}>
+                {sessionStatus === 'completed'
+                  ? '考试已完成'
+                  : sessionStatus === 'absent'
+                    ? '缺考'
+                    : sessionStatus === 'started'
+                      ? '考试中'
+                      : `${row.startSession.candidateConfirmed ? '已选择考生' : '待确认'} · ${row.startSession.confirmedAssessors}/3`}
+              </Tag>
+            ) : <Tag>待生成任务</Tag>}
             <Button
               size="small"
-              loading={candidateConfirmMutation.isPending}
+              danger
+              disabled={absentDisabled}
+              loading={candidateAbsentMutation.isPending}
               onClick={(event) => {
                 event.stopPropagation();
-                candidateConfirmMutation.mutate(row.candidateId);
+                Modal.confirm({
+                  title: '确认标记缺考？',
+                  content: `${row.candidateName} 的实操评分数据将按 0.0 导出。`,
+                  okText: '确认缺考',
+                  cancelText: '取消',
+                  okButtonProps: { danger: true },
+                  onOk: () => candidateAbsentMutation.mutateAsync(row.candidateId),
+                });
               }}
             >
-              组长开始
+              缺考
             </Button>
-          )}
-        </Space>
-      ) : <Tag>待生成任务</Tag>,
+          </Space>
+        );
+      },
     },
     {
       title: '状态',
@@ -528,6 +549,7 @@ export function PracticalScoringConfig({
       width: 100,
       render: (v) => {
         if (v === 'review_required') return <Tag color="error">分差异常</Tag>;
+        if (v === 'absent') return <Tag color="warning">缺考</Tag>;
         return <Tag color={v === 'completed' ? 'success' : 'processing'}>{v === 'completed' ? '已完成' : '评分中'}</Tag>;
       },
     },
@@ -637,7 +659,7 @@ export function PracticalScoringConfig({
               loading={exportSummaryMutation.isPending}
               onClick={() => exportSummaryMutation.mutate()}
             >
-              导出汇总表
+              导出实操评分表
             </Button>
           </Space>
           {abnormalCandidates.length > 0 && (
@@ -653,13 +675,12 @@ export function PracticalScoringConfig({
             <Progress
               type="circle"
               size={92}
-              percent={progressQuery.data?.totalTasks
-                ? Math.round(progressQuery.data.submittedTasks * 100 / progressQuery.data.totalTasks)
+              percent={totalCandidateCount
+                ? Math.round(submittedCandidateCount * 100 / totalCandidateCount)
                 : 0}
             />
             <Typography.Text>
-              已提交 {progressQuery.data?.submittedTasks || 0} / {progressQuery.data?.totalTasks || 0} 份，
-              已完成 {progressQuery.data?.completedQuestions || 0} / {progressQuery.data?.totalQuestions || 0} 道试题
+              考生已提交 {submittedCandidateCount} / {totalCandidateCount} 人
             </Typography.Text>
           </Space>
           <Table
@@ -672,7 +693,7 @@ export function PracticalScoringConfig({
               selectedRowKeys: selectedSummaryCandidateIds,
               onChange: (keys) => setSelectedSummaryCandidateIds(keys.map(String)),
               getCheckboxProps: (row) => ({
-                disabled: row.status !== 'completed' || row.startSession?.status !== 'completed',
+                disabled: row.status !== 'completed' && row.status !== 'absent',
               }),
             }}
             expandable={{
@@ -878,7 +899,7 @@ function AssessorBreakdown({ assessorGroups, onReturnTask, onAdjustTask }: Asses
                     className={`practical-assessor-task${reviewRequired ? ' is-review-required' : ''}`}
                   >
                     <span className="task-title">{task.questionTitle}</span>
-                    <span className="task-score">{task.totalScore ?? '-'}</span>
+                    <span className="task-score">{formatScore(task.totalScore) ?? '-'}</span>
                     <Tag color={taskColor}>{statusName(task.status)}</Tag>
                     {reviewRequired ? (
                       <Tag color="error">分差异常{task.scoreDeviation != null ? ` ${task.scoreDeviation}分` : ''}</Tag>
@@ -917,7 +938,7 @@ function AssessorBreakdown({ assessorGroups, onReturnTask, onAdjustTask }: Asses
             </div>
             <div className="practical-assessor-total">
               <span>合计分</span>
-              <strong>{totalScore}</strong>
+              <strong>{formatScore(totalScore)}</strong>
             </div>
           </div>
         );
@@ -957,6 +978,12 @@ function toNullableNumber(value?: string | number | null) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function formatScore(value?: number | null) {
+  if (value === undefined || value === null) return undefined;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(1) : undefined;
+}
+
 function statusName(status: string) {
-  return { assigned: '待评分', draft: '草稿', submitted: '已提交', returned: '已退回' }[status] || status;
+  return { assigned: '待评分', draft: '草稿', submitted: '已提交', returned: '已退回', absent: '缺考' }[status] || status;
 }

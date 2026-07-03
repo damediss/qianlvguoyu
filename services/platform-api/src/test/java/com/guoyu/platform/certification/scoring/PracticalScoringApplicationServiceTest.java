@@ -41,8 +41,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -113,13 +115,13 @@ class PracticalScoringApplicationServiceTest {
   }
 
   @Test
-  void submitCalculatesHalfUpQuestionScoreAndCandidateTotal() {
+  void submitCalculatesOneDecimalQuestionScoreAndCandidateTotal() {
     CertificationAssessorTaskEntity task = task(50L, 9L, 0);
     when(assessorTaskMapper.lockById(1L, 50L)).thenReturn(task);
-    when(scoreMapper.selectList(any())).thenReturn(List.of(score(1, "要素一", "10", "10", "1")));
+    when(scoreMapper.selectList(any())).thenReturn(List.of(score(1, "要素一", "10", "10", "0.1")));
     when(assessorTaskMapper.selectList(any())).thenReturn(List.of(
-        submittedTask(new BigDecimal("9")),
-        submittedTask(new BigDecimal("10")),
+        submittedTask(new BigDecimal("9.6")),
+        submittedTask(new BigDecimal("9.7")),
         task));
     CertificationPracticalQuestionResultEntity questionResult = new CertificationPracticalQuestionResultEntity();
     questionResult.setId(70L);
@@ -133,11 +135,11 @@ class PracticalScoringApplicationServiceTest {
     when(candidateResultMapper.selectOne(any())).thenReturn(candidateResult);
 
     service.submit(50L, new PracticalScoringModels.SaveScoreReq(
-        0, List.of(new PracticalScoringModels.SaveScoreItemReq(1, BigDecimal.ZERO, null)), null));
+        0, List.of(new PracticalScoringModels.SaveScoreItemReq(1, new BigDecimal("0.2"), null)), null));
 
-    assertThat(questionResult.getAverageScore()).isEqualByComparingTo("9.6667");
-    assertThat(questionResult.getFinalScore()).isEqualTo(10);
-    assertThat(candidateResult.getTotalScore()).isEqualTo(10);
+    assertThat(questionResult.getAverageScore()).isEqualByComparingTo("9.7");
+    assertThat(questionResult.getFinalScore()).isEqualByComparingTo("9.7");
+    assertThat(candidateResult.getTotalScore()).isEqualByComparingTo("9.7");
   }
 
   @Test
@@ -206,9 +208,9 @@ class PracticalScoringApplicationServiceTest {
     assertThat(detail.task().status()).isEqualTo("submitted");
     assertThat(detail.task().totalScore()).isEqualByComparingTo("24");
     assertThat(questionResult.getStatus()).isEqualTo("completed");
-    assertThat(questionResult.getFinalScore()).isEqualTo(23);
+    assertThat(questionResult.getFinalScore()).isEqualByComparingTo("23.0");
     assertThat(candidateResult.getStatus()).isEqualTo("completed");
-    assertThat(candidateResult.getTotalScore()).isEqualTo(23);
+    assertThat(candidateResult.getTotalScore()).isEqualByComparingTo("23.0");
   }
 
   @Test
@@ -335,7 +337,7 @@ class PracticalScoringApplicationServiceTest {
     CertificationPracticalCandidateResultEntity candidateResult = new CertificationPracticalCandidateResultEntity();
     candidateResult.setId(901L);
     candidateResult.setStatus("completed");
-    candidateResult.setTotalScore(80);
+    candidateResult.setTotalScore(new BigDecimal("80.0"));
     when(candidateResultMapper.selectOne(any())).thenReturn(candidateResult);
 
     PracticalScoringModels.GenerateView result = service.linkCandidate(
@@ -570,6 +572,140 @@ class PracticalScoringApplicationServiceTest {
   }
 
   @Test
+  void markCandidateAbsentGeneratesZeroScoreDataWhenNoScoringTasksExist() {
+    CertificationCandidateEntity candidate = candidate(11L, "Absent candidate", 100L, true);
+    CertificationPracticalScoringConfigEntity config = absentConfig();
+    List<CertificationAssessorTaskEntity> taskStore = new ArrayList<>();
+    List<CertificationAssessorTaskScoreEntity> scoreStore = new ArrayList<>();
+    List<CertificationPracticalQuestionResultEntity> questionResultStore = new ArrayList<>();
+    AtomicReference<CertificationPracticalCandidateResultEntity> candidateResultStore = new AtomicReference<>();
+    AtomicLong ids = new AtomicLong(1000L);
+
+    when(taskMapper.selectById(1L)).thenReturn(taskEntity());
+    when(candidateMapper.selectById(11L)).thenReturn(candidate);
+    when(configMapper.selectOne(any())).thenReturn(null);
+    when(configMapper.selectList(any())).thenReturn(List.of(config));
+    when(groupMapper.selectById(30L)).thenReturn(group());
+    when(taskAssessorMapper.selectList(any())).thenReturn(members(3));
+    when(assessorMapper.selectList(any())).thenReturn(List.of(assessor(201L), assessor(202L), assessor(203L)));
+    when(paperDetailMapper.selectList(any())).thenReturn(List.of(question(20)));
+    when(assessorTaskMapper.selectList(any())).thenAnswer(invocation -> List.copyOf(taskStore));
+    when(scoreMapper.selectList(any())).thenAnswer(invocation -> List.copyOf(scoreStore));
+    when(questionResultMapper.selectCount(any())).thenReturn(0L);
+    when(questionResultMapper.selectList(any())).thenAnswer(invocation -> List.copyOf(questionResultStore));
+    when(candidateResultMapper.selectOne(any())).thenAnswer(invocation -> candidateResultStore.get());
+    when(startService.markAbsent(1L, 11L)).thenReturn(absentSession(11L));
+    doAnswer(invocation -> {
+      CertificationAssessorTaskEntity entity = invocation.getArgument(0);
+      entity.setId(ids.incrementAndGet());
+      taskStore.add(entity);
+      return 1;
+    }).when(assessorTaskMapper).insert(any(CertificationAssessorTaskEntity.class));
+    doAnswer(invocation -> {
+      CertificationAssessorTaskScoreEntity entity = invocation.getArgument(0);
+      entity.setId(ids.incrementAndGet());
+      scoreStore.add(entity);
+      return 1;
+    }).when(scoreMapper).insert(any(CertificationAssessorTaskScoreEntity.class));
+    doAnswer(invocation -> {
+      CertificationPracticalQuestionResultEntity entity = invocation.getArgument(0);
+      entity.setId(ids.incrementAndGet());
+      questionResultStore.add(entity);
+      return 1;
+    }).when(questionResultMapper).insert(any(CertificationPracticalQuestionResultEntity.class));
+    doAnswer(invocation -> {
+      CertificationPracticalCandidateResultEntity entity = invocation.getArgument(0);
+      entity.setId(ids.incrementAndGet());
+      candidateResultStore.set(entity);
+      return 1;
+    }).when(candidateResultMapper).insert(any(CertificationPracticalCandidateResultEntity.class));
+
+    PracticalScoringModels.StartSessionView session = service.markCandidateAbsent(1L, 11L);
+
+    assertThat(session.status()).isEqualTo("absent");
+    assertThat(candidate.getStatus()).isEqualTo("absent");
+    assertThat(taskStore).hasSize(3);
+    assertThat(taskStore).allSatisfy(task -> {
+      assertThat(task.getStatus()).isEqualTo("absent");
+      assertThat(task.getTotalScore()).isEqualByComparingTo("0.0");
+    });
+    assertThat(scoreStore).hasSize(3);
+    assertThat(scoreStore).allSatisfy(score -> {
+      assertThat(score.getDeductedScore()).isEqualByComparingTo("0.0");
+      assertThat(score.getAwardedScore()).isEqualByComparingTo("0.0");
+      assertThat(score.getScore()).isEqualByComparingTo("0.0");
+    });
+    assertThat(questionResultStore).hasSize(1);
+    assertThat(questionResultStore.get(0).getStatus()).isEqualTo("absent");
+    assertThat(questionResultStore.get(0).getAverageScore()).isEqualByComparingTo("0.0");
+    assertThat(questionResultStore.get(0).getFinalScore()).isEqualByComparingTo("0.0");
+    assertThat(candidateResultStore.get().getStatus()).isEqualTo("absent");
+    assertThat(candidateResultStore.get().getTotalScore()).isEqualByComparingTo("0.0");
+  }
+
+  @Test
+  void markCandidateAbsentRejectsCompletedResult() {
+    CertificationCandidateEntity candidate = candidate(11L, "Completed candidate", 100L, true);
+    CertificationPracticalCandidateResultEntity result = new CertificationPracticalCandidateResultEntity();
+    result.setStatus("completed");
+    result.setTotalScore(new BigDecimal("90.0"));
+    when(taskMapper.selectById(1L)).thenReturn(taskEntity());
+    when(candidateMapper.selectById(11L)).thenReturn(candidate);
+    when(assessorTaskMapper.selectList(any())).thenReturn(List.of());
+    when(candidateResultMapper.selectOne(any())).thenReturn(result);
+
+    assertThatThrownBy(() -> service.markCandidateAbsent(1L, 11L))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("completed practical result");
+  }
+
+  @Test
+  void markCandidateAbsentRejectsSubmittedScore() {
+    CertificationCandidateEntity candidate = candidate(11L, "Submitted candidate", 100L, true);
+    CertificationAssessorTaskEntity submitted = submittedTask(new BigDecimal("9.0"));
+    when(taskMapper.selectById(1L)).thenReturn(taskEntity());
+    when(candidateMapper.selectById(11L)).thenReturn(candidate);
+    when(assessorTaskMapper.selectList(any())).thenReturn(List.of(submitted));
+
+    assertThatThrownBy(() -> service.markCandidateAbsent(1L, 11L))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("submitted practical scores");
+  }
+
+  @Test
+  void progressUsesDecimalAverageTotalInsteadOfLegacyIntegerTotal() {
+    CertificationCandidateEntity candidate = candidate(11L, "Candidate", 100L, true);
+    candidate.setCandidateNo("C-001");
+    CertificationPracticalQuestionResultEntity firstQuestion = new CertificationPracticalQuestionResultEntity();
+    firstQuestion.setCandidateId(11L);
+    firstQuestion.setPaperQuestionId(1L);
+    firstQuestion.setStatus("completed");
+    firstQuestion.setAverageScore(new BigDecimal("9.7"));
+    firstQuestion.setFinalScore(new BigDecimal("10"));
+    CertificationPracticalQuestionResultEntity secondQuestion = new CertificationPracticalQuestionResultEntity();
+    secondQuestion.setCandidateId(11L);
+    secondQuestion.setPaperQuestionId(2L);
+    secondQuestion.setStatus("completed");
+    secondQuestion.setAverageScore(new BigDecimal("8.3"));
+    secondQuestion.setFinalScore(new BigDecimal("8"));
+    CertificationPracticalCandidateResultEntity candidateResult = new CertificationPracticalCandidateResultEntity();
+    candidateResult.setCandidateId(11L);
+    candidateResult.setStatus("completed");
+    candidateResult.setTotalScore(new BigDecimal("18"));
+    when(taskMapper.selectById(1L)).thenReturn(taskEntity());
+    when(candidateMapper.selectList(any())).thenReturn(List.of(candidate));
+    when(assessorTaskMapper.selectList(any())).thenReturn(List.of());
+    when(candidateResultMapper.selectList(any())).thenReturn(List.of(candidateResult));
+    when(questionResultMapper.selectList(any())).thenReturn(List.of(firstQuestion, secondQuestion));
+    when(startService.session(1L, 11L)).thenReturn(null);
+
+    PracticalScoringModels.ProgressView view = service.progress(1L);
+
+    assertThat(view.candidates()).hasSize(1);
+    assertThat(view.candidates().get(0).totalScore()).isEqualByComparingTo("18.0");
+  }
+
+  @Test
   void exportSummaryUsesTemplateAndCopiesTheSeventhRowStyle() throws Exception {
     CertificationTaskEntity task = taskEntity();
     task.setTaskNo("PLAN-001");
@@ -592,13 +728,14 @@ class PracticalScoringApplicationServiceTest {
     when(taskMapper.selectById(1L)).thenReturn(task);
     when(candidateMapper.selectList(any())).thenReturn(List.of(firstCandidate, secondCandidate));
     when(candidateResultMapper.selectList(any())).thenReturn(List.of(
-        exportCandidateResult(firstCandidate.getId(), 100),
-        exportCandidateResult(secondCandidate.getId(), 99)));
+        exportCandidateResult(firstCandidate.getId(), "100.0"),
+        exportAbsentCandidateResult(secondCandidate.getId())));
     when(questionResultMapper.selectList(any())).thenReturn(questionResults);
     when(assessorTaskMapper.selectList(any())).thenReturn(scoreTasks);
+    when(scoreMapper.selectList(any())).thenReturn(exportScoreRows(scoreTasks));
     when(taskAssessorMapper.selectList(any())).thenReturn(assessors);
     when(startService.session(1L, firstCandidate.getId())).thenReturn(completedSession(firstCandidate.getId()));
-    when(startService.session(1L, secondCandidate.getId())).thenReturn(completedSession(secondCandidate.getId()));
+    when(startService.session(1L, secondCandidate.getId())).thenReturn(absentSession(secondCandidate.getId()));
 
     ExportResultDTO result = service.exportSummary(1L, List.of(firstCandidate.getId(), secondCandidate.getId()));
 
@@ -607,9 +744,9 @@ class PracticalScoringApplicationServiceTest {
       DataFormatter formatter = new DataFormatter();
       assertThat(formatter.formatCellValue(sheet.getRow(0).getCell(0))).isEqualTo("评分记录汇总表");
       assertThat(formatter.formatCellValue(sheet.getRow(1).getCell(0))).isEqualTo("计划编码：PLAN-001");
-      assertThat(formatter.formatCellValue(sheet.getRow(1).getCell(19))).isEqualTo("考 点 ：Test site");
+      assertThat(formatter.formatCellValue(sheet.getRow(1).getCell(3))).isEqualTo("考 点 ：Test site");
       assertThat(formatter.formatCellValue(sheet.getRow(2).getCell(0))).isEqualTo("计划名称：Template export");
-      assertThat(formatter.formatCellValue(sheet.getRow(2).getCell(19))).isEqualTo("考试时间：2026-06-23");
+      assertThat(formatter.formatCellValue(sheet.getRow(2).getCell(3))).isEqualTo("考试时间：2026-06-23");
       assertThat(formatter.formatCellValue(sheet.getRow(3).getCell(0)))
           .doesNotContain("Signer A", "Signer B", "Signer C");
       assertThat(sheet.getRow(6).getCell(1).getStringCellValue()).isEqualTo("Candidate 1");
@@ -617,8 +754,13 @@ class PracticalScoringApplicationServiceTest {
       assertThat(sheet.getRow(6).getCell(3).getNumericCellValue()).isEqualTo(11D);
       assertThat(sheet.getRow(6).getCell(4).getNumericCellValue()).isEqualTo(12D);
       assertThat(sheet.getRow(6).getCell(5).getNumericCellValue()).isEqualTo(13D);
-      assertThat(sheet.getRow(6).getCell(39).getNumericCellValue()).isEqualTo(100D);
-      assertThat(sheet.getRow(7).getCell(39).getNumericCellValue()).isEqualTo(99D);
+      assertThat(sheet.getRow(6).getCell(39).getNumericCellValue()).isEqualTo(222D);
+      assertThat(sheet.getRow(7).getCell(4).getNumericCellValue()).isEqualTo(0D);
+      assertThat(sheet.getRow(7).getCell(8).getNumericCellValue()).isEqualTo(0D);
+      assertThat(sheet.getRow(7).getCell(39).getNumericCellValue()).isEqualTo(210D);
+      assertThat(formatter.formatCellValue(sheet.getRow(6).getCell(6))).isEqualTo("12.0");
+      assertThat(formatter.formatCellValue(sheet.getRow(6).getCell(8))).isEqualTo("12.0");
+      assertThat(formatter.formatCellValue(sheet.getRow(6).getCell(39))).isEqualTo("222.0");
       assertThat(sheet.getRow(7).getHeight()).isEqualTo(sheet.getRow(6).getHeight());
       assertThat(sheet.getRow(7).getCell(0).getCellStyle().getIndex())
           .isEqualTo(sheet.getRow(6).getCell(0).getCellStyle().getIndex());
@@ -634,19 +776,68 @@ class PracticalScoringApplicationServiceTest {
         assertThat(sheet.getColumnWidth(0)).isEqualTo(templateSheet.getColumnWidth(0));
         assertThat(sheet.getColumnWidth(39)).isEqualTo(templateSheet.getColumnWidth(39));
         assertThat(sheet.getRow(0).getHeight()).isEqualTo(templateSheet.getRow(0).getHeight());
-        assertThat(sheet.getNumMergedRegions()).isEqualTo(templateSheet.getNumMergedRegions());
         assertThat(formatter.formatCellValue(sheet.getRow(3).getCell(0)))
             .isEqualTo(formatter.formatCellValue(templateSheet.getRow(3).getCell(0)));
       }
+      assertThat(workbook.getNumberOfSheets()).isEqualTo(19);
+      Sheet firstRecordSheet = workbook.getSheet("评分记录表1-Signer A");
+      assertThat(firstRecordSheet).isNotNull();
+      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(0).getCell(0))).isEqualTo("表1:评分记录表");
+      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(2).getCell(0))).contains("考评员  签字：Signer A");
+      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(3).getCell(3))).isEqualTo("试题1、试题1(10分)");
+      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(5).getCell(4))).isEqualTo("评分项1");
+      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(1))).isEqualTo("Candidate 1");
+      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(4))).isEqualTo("0.7");
+      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(5))).isEqualTo("9.3");
+      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(10))).isEqualTo("11.0");
+      Sheet secondAssessorSheet = workbook.getSheet("评分记录表1-Signer B");
+      assertThat(secondAssessorSheet).isNotNull();
+      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(2).getCell(0))).contains("考评员  签字：Signer B");
+      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(11).getCell(4))).isEqualTo("1.5");
+      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(11).getCell(5))).isEqualTo("8.5");
+      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(11).getCell(10))).isEqualTo("12.0");
+      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(12).getCell(1))).isEqualTo("Candidate 2");
+      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(12).getCell(4))).isEqualTo("0.0");
+      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(12).getCell(5))).isEqualTo("0.0");
+      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(12).getCell(10))).isEqualTo("0.0");
+      Sheet thirdAssessorSheet = workbook.getSheet("评分记录表1-Signer C");
+      assertThat(thirdAssessorSheet).isNotNull();
+      assertThat(formatter.formatCellValue(thirdAssessorSheet.getRow(11).getCell(1))).isEqualTo("Candidate 1");
+      assertThat(formatter.formatCellValue(thirdAssessorSheet.getRow(12).getCell(1))).isBlank();
+      Sheet expandedRecordSheet = workbook.getSheetAt(7);
+      assertThat(formatter.formatCellValue(expandedRecordSheet.getRow(5).getCell(18)))
+          .isEqualTo("Long grouped factor name for capacity expansion and row height");
+      assertThat(formatter.formatCellValue(expandedRecordSheet.getRow(7).getCell(18)))
+          .isEqualTo("Long criterion text that should wrap after the sheet grows beyond the original template capacity");
+      assertThat(expandedRecordSheet.getColumnWidth(18)).isEqualTo(expandedRecordSheet.getColumnWidth(16));
+      assertThat(expandedRecordSheet.getColumnWidth(19)).isEqualTo(expandedRecordSheet.getColumnWidth(17));
+      assertThat(formatter.formatCellValue(expandedRecordSheet.getRow(3).getCell(20)))
+          .isNotBlank();
+      assertThat(formatter.formatCellValue(expandedRecordSheet.getRow(11).getCell(20))).isEqualTo("31.0");
+      assertThat(expandedRecordSheet.getRow(5).getCell(18).getCellStyle().getWrapText()).isTrue();
+      assertThat(expandedRecordSheet.getRow(7).getCell(18).getCellStyle().getWrapText()).isTrue();
+      assertThat(expandedRecordSheet.getRow(5).getHeightInPoints())
+          .isGreaterThan(expandedRecordSheet.getRow(6).getHeightInPoints());
+      assertThat(expandedRecordSheet.getRow(7).getHeightInPoints())
+          .isGreaterThan(expandedRecordSheet.getRow(8).getHeightInPoints());
     }
   }
 
-  private CertificationPracticalCandidateResultEntity exportCandidateResult(Long candidateId, int totalScore) {
+  private CertificationPracticalCandidateResultEntity exportCandidateResult(Long candidateId, String totalScore) {
     CertificationPracticalCandidateResultEntity result = new CertificationPracticalCandidateResultEntity();
     result.setTaskId(1L);
     result.setCandidateId(candidateId);
     result.setStatus("completed");
-    result.setTotalScore(totalScore);
+    result.setTotalScore(new BigDecimal(totalScore));
+    return result;
+  }
+
+  private CertificationPracticalCandidateResultEntity exportAbsentCandidateResult(Long candidateId) {
+    CertificationPracticalCandidateResultEntity result = new CertificationPracticalCandidateResultEntity();
+    result.setTaskId(1L);
+    result.setCandidateId(candidateId);
+    result.setStatus("absent");
+    result.setTotalScore(BigDecimal.ZERO);
     return result;
   }
 
@@ -659,9 +850,16 @@ class PracticalScoringApplicationServiceTest {
           result.setTaskId(1L);
           result.setCandidateId(candidate.getId());
           result.setPaperQuestionId((long) questionIndex);
-          result.setAverageScore(new BigDecimal(questionIndex * 10 + 2));
-          result.setFinalScore(questionIndex * 10);
-          result.setStatus("completed");
+          BigDecimal averageScore = new BigDecimal(questionIndex * 10 + 2).setScale(1);
+          result.setAverageScore(averageScore);
+          result.setFinalScore(averageScore);
+          if (candidate.getId().equals(12L) && questionIndex == 1) {
+            result.setAverageScore(null);
+            result.setFinalScore(null);
+            result.setStatus("pending");
+          } else {
+            result.setStatus("completed");
+          }
           return result;
         })).toList();
   }
@@ -673,18 +871,90 @@ class PracticalScoringApplicationServiceTest {
         .boxed()
         .flatMap(questionIndex -> List.of(3, 2, 1).stream().map(assessorIndex -> {
           CertificationAssessorTaskEntity task = new CertificationAssessorTaskEntity();
+          task.setId(candidate.getId() * 1000 + questionIndex * 10L + assessorIndex);
           task.setTaskId(1L);
           task.setCandidateId(candidate.getId());
           task.setPaperQuestionId(questionIndex.longValue());
           task.setAssessorId(200L + assessorIndex);
+          task.setTitle("试题" + questionIndex);
           task.setTotalScore(new BigDecimal(questionIndex * 10 + assessorIndex));
+          task.setStatus("submitted");
           return task;
-        }))).toList();
+        }))
+        .filter(task -> !(task.getCandidateId().equals(12L)
+            && task.getPaperQuestionId().equals(1L)
+            && task.getAssessorId().equals(203L)))
+        .peek(task -> {
+          if (task.getCandidateId().equals(12L)
+              && task.getPaperQuestionId().equals(1L)
+              && task.getAssessorId().equals(202L)) {
+            task.setStatus("assigned");
+          }
+        })).toList();
+  }
+
+  private List<CertificationAssessorTaskScoreEntity> exportScoreRows(
+      List<CertificationAssessorTaskEntity> tasks
+  ) {
+    return tasks.stream().flatMap(task -> {
+      int itemCount = task.getPaperQuestionId().equals(3L) ? 8 : 1;
+      return java.util.stream.IntStream.rangeClosed(1, itemCount).mapToObj(itemNo -> {
+      CertificationAssessorTaskScoreEntity score = score(1, "评分项1", "10", "10", "1");
+      score.setAssessorTaskId(task.getId());
+      score.setStepNo(itemNo);
+      score.setId(task.getId() * 100 + itemNo);
+      if (task.getPaperQuestionId().equals(3L)) {
+        score.setStepName(itemNo == 8
+            ? "Long grouped factor name for capacity expansion and row height"
+            : "Factor " + itemNo);
+        score.setCriterion(itemNo == 8
+            ? "Long criterion text that should wrap after the sheet grows beyond the original template capacity"
+            : "criterion " + itemNo);
+      }
+      BigDecimal deducted = switch (String.valueOf(task.getAssessorId())) {
+        case "201" -> new BigDecimal("0.7");
+        case "202" -> new BigDecimal("1.5");
+        default -> new BigDecimal("2.0");
+      };
+      score.setDeductedScore(deducted);
+      score.setAwardedScore(new BigDecimal("10").subtract(deducted));
+      return score;
+      });
+    }).toList();
   }
 
   private PracticalScoringModels.StartSessionView completedSession(Long candidateId) {
     return new PracticalScoringModels.StartSessionView(
         1L, 1L, candidateId, 20L, "completed", true, 3, 3, true, 1, null, null, null);
+  }
+
+  private PracticalScoringModels.StartSessionView absentSession(Long candidateId) {
+    return new PracticalScoringModels.StartSessionView(
+        1L, 1L, candidateId, 20L, "absent", false, 0, 3, false, 1, null, null, null);
+  }
+
+  private CertificationPracticalScoringConfigEntity absentConfig() {
+    CertificationPracticalScoringConfigEntity config = new CertificationPracticalScoringConfigEntity();
+    config.setId(900L);
+    config.setTaskId(1L);
+    config.setScopeId(101L);
+    config.setWorkTypeId(100L);
+    config.setWorkTypeName("鐢靛伐");
+    config.setLevelCode("L3");
+    config.setLevelName("楂樼骇");
+    config.setPaperId(20L);
+    config.setGroupId(30L);
+    config.setStatus("configured");
+    return config;
+  }
+
+  private CertificationInfoAssessorEntity assessor(Long id) {
+    CertificationInfoAssessorEntity assessor = new CertificationInfoAssessorEntity();
+    assessor.setId(id);
+    assessor.setUserId(1000L + id);
+    assessor.setAssessorName("Assessor " + id);
+    assessor.setAuditStatus("approved");
+    return assessor;
   }
 
   private CertificationAssessorTaskEntity task(Long id, Long assessorId, int version) {

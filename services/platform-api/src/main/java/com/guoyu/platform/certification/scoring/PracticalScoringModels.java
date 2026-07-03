@@ -260,7 +260,7 @@ public final class PracticalScoringModels {
       int totalTasks,
       int completedQuestions,
       int totalQuestions,
-      Integer totalScore,
+      BigDecimal totalScore,
       String status,
       StartSessionView startSession
   ) {

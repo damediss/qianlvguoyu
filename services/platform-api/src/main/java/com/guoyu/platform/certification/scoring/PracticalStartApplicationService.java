@@ -259,6 +259,26 @@ public class PracticalStartApplicationService {
     return event;
   }
 
+  @Transactional
+  public PracticalScoringModels.StartSessionView markAbsent(Long taskId, Long candidateId) {
+    PlatformUserPrincipal user = SecurityContext.currentUser();
+    CertificationPracticalStartSessionEntity session =
+        lockSession(user.getTenantId(), taskId, candidateId);
+    if ("completed".equals(session.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "completed practical session cannot be marked absent");
+    }
+    if (!"absent".equals(session.getStatus())) {
+      session.setStatus("absent");
+      session.setCompletedAt(LocalDateTime.now());
+      session.setCompletedBy(user.getUserId());
+      session.setVersionNo(session.getVersionNo() == null ? 1 : session.getVersionNo() + 1);
+      sessionMapper.updateById(session);
+    }
+    PracticalScoringModels.StartSessionView event = view(session);
+    publishAfterCommit(session.getTenantId(), broadcastView(session));
+    return event;
+  }
+
   private PracticalScoringModels.StartSessionView evaluateAndPublish(
       CertificationPracticalStartSessionEntity session,
       Long operatorId

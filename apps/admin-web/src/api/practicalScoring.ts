@@ -102,6 +102,12 @@ export function confirmPracticalCandidate(taskId: string, candidateId: string) {
   );
 }
 
+export function markPracticalCandidateAbsent(taskId: string, candidateId: string) {
+  return unwrap<PracticalStartSession>(
+    apiClient.post(`${adminBase}/tasks/${taskId}/candidates/${candidateId}/absent`),
+  );
+}
+
 export function listMyAssessorScoringTasks(status?: string) {
   return unwrap<AssessorScoringTask[]>(apiClient.get(`${assessorBase}/tasks`, { params: { status } }));
 }
