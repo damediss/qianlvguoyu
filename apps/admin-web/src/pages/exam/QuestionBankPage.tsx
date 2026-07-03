@@ -493,7 +493,7 @@ export function QuestionBankPage() {
       return;
     }
     const formData = new FormData();
-    formData.append('file', importFileList[0]);
+    formData.append('file', importFileList[0].originFileObj as Blob);
     formData.append('courseId', String(selectedCourseId));
     formData.append('source', String(importSource));
 

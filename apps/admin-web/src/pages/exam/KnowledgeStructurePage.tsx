@@ -263,7 +263,7 @@ function ImportModal({ open, courseId, activeType, onClose }: ImportModalProps) 
       return;
     }
     const formData = new FormData();
-    formData.append('file', fileList[0]);
+    formData.append('file', fileList[0].originFileObj as Blob);
     formData.append('courseId', String(courseId));
     formData.append('type', String(activeType));
 

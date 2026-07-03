@@ -16,6 +16,7 @@ public class MenuEntity extends BaseEntity {
   private String icon;
   private Integer sortOrder;
   private Integer visible;
+  private Integer expanded;
   private String status;
 
   public Long getParentId() {
@@ -96,6 +97,14 @@ public class MenuEntity extends BaseEntity {
 
   public void setVisible(Integer visible) {
     this.visible = visible;
+  }
+
+  public Integer getExpanded() {
+    return expanded;
+  }
+
+  public void setExpanded(Integer expanded) {
+    this.expanded = expanded;
   }
 
   public String getStatus() {

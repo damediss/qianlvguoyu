@@ -237,6 +237,7 @@ public class AuthApplicationService {
     vo.setPermissionCode(entity.getPermissionCode());
     vo.setIcon(entity.getIcon());
     vo.setSortOrder(entity.getSortOrder());
+    vo.setExpanded(entity.getExpanded());
     return vo;
   }
 

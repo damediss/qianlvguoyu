@@ -20,13 +20,7 @@
 
 1. `README.md` — 项目概述、目录结构、技术栈、一期范围、一键启动
 2. `docs/README.md` — 文档分区说明
-3. `docs/04_requirements/phase1/README.md` — 一期可编码规格
-4. `docs/04_requirements/phase1/01_一期MVP功能清单.md` — 一期范围与不做范围
-5. `docs/04_requirements/phase1/02_基础表结构设计.md` — 涉及数据库时必须先读
-6. `docs/04_requirements/phase1/03_第一批API合同.md` — 涉及接口时必须先读
-7. `docs/04_requirements/phase1/04_前端页面清单.md` — 涉及前端页面时必须先读
-8. `docs/04_requirements/phase1/05_测试验收清单.md` — 提交实现前对照验收
-9. `docs/05_decisions/开发框架选型建议.md` 与 `docs/05_decisions/云平台技术路线选型建议.md` — 技术选型或架构变更时必须遵守
+3. `docs/05_decisions/开发框架选型建议.md` 与 `docs/05_decisions/云平台技术路线选型建议.md` — 技术选型或架构变更时必须遵守
 
 ---
 

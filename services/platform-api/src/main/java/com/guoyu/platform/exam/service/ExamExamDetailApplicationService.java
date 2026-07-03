@@ -374,12 +374,36 @@ public class ExamExamDetailApplicationService {
     try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
       Sheet sheet = workbook.getSheetAt(0);
       int lastRow = sheet.getLastRowNum();
+      if (lastRow < 1) {
+        log.info("Import: empty sheet for courseId={}", courseId);
+        return 0;
+      }
+
+      // 按表头列名解析，兼容"序号"前置列、列顺序变化、选项 A-H、
+      // 以及"参考答案"/"答案"等不同命名。不再硬编码列索引。
+      Map<String, Integer> colMap = buildColumnMap(sheet.getRow(0));
+      Integer typeCol = colMap.get("题型");
+      Integer stemCol = colMap.get("题干");
+      if (typeCol == null || stemCol == null) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST,
+            "Excel 表头缺少必需列“题型”或“题干”。请使用系统导出的模板，或确保表头包含这两列");
+      }
+      // 选项列 A-H：normalizeHeader 把 "A"/"选项A" 都归一为 "a"，
+      // 故按 "a".."h" 查列索引
+      Integer[] optCols = new Integer[8];
+      for (int k = 0; k < 8; k++) {
+        optCols[k] = colMap.get(String.valueOf((char) ('a' + k)));
+      }
+      Integer answerCol = firstNonNull(colMap.get("参考答案"), colMap.get("答案"));
+      Integer resolveCol = firstNonNull(colMap.get("答案解析"), colMap.get("解析"));
+      Integer difficultyCol = colMap.get("难度");
+      Integer keywordCol = colMap.get("关键词");
 
       for (int i = 1; i <= lastRow; i++) {
         Row row = sheet.getRow(i);
         if (row == null) continue;
 
-        String type = getCellString(row.getCell(0));
+        String type = getCellString(row.getCell(typeCol));
         if (!StringUtils.hasText(type)) continue;
 
         String typeCode = mapTypeLabel(type);
@@ -388,17 +412,18 @@ public class ExamExamDetailApplicationService {
           continue;
         }
 
-        String stem = getCellString(row.getCell(1));
-        String optA = getCellString(row.getCell(2));
-        String optB = getCellString(row.getCell(3));
-        String optC = getCellString(row.getCell(4));
-        String optD = getCellString(row.getCell(5));
-        String answer = getCellString(row.getCell(6));
-        String resolve = getCellString(row.getCell(7));
-        Integer difficulty = parseDifficulty(getCellString(row.getCell(8)));
-        String keyword = getCellString(row.getCell(9));
+        String stem = getCellString(row.getCell(stemCol));
+        String[] opts = new String[8];
+        for (int k = 0; k < 8; k++) {
+          opts[k] = optCols[k] != null ? getCellString(row.getCell(optCols[k])) : null;
+        }
+        String answer = answerCol != null ? getCellString(row.getCell(answerCol)) : null;
+        String resolve = resolveCol != null ? getCellString(row.getCell(resolveCol)) : null;
+        Integer difficulty = parseDifficulty(
+            difficultyCol != null ? getCellString(row.getCell(difficultyCol)) : null);
+        String keyword = keywordCol != null ? getCellString(row.getCell(keywordCol)) : null;
 
-        String content = buildContent(stem, optA, optB, optC, optD);
+        String content = buildContent(stem, opts);
 
         ExamExamDetailEntity entity = new ExamExamDetailEntity();
         entity.setTenantId(tenantId);
@@ -578,13 +603,48 @@ public class ExamExamDetailApplicationService {
     };
   }
 
-  private String buildContent(String stem, String optA, String optB, String optC, String optD) {
+  private String buildContent(String stem, String[] opts) {
     StringBuilder sb = new StringBuilder(nvl(stem));
-    if (StringUtils.hasText(optA)) sb.append("\nA. ").append(optA);
-    if (StringUtils.hasText(optB)) sb.append("\nB. ").append(optB);
-    if (StringUtils.hasText(optC)) sb.append("\nC. ").append(optC);
-    if (StringUtils.hasText(optD)) sb.append("\nD. ").append(optD);
+    for (int k = 0; k < opts.length; k++) {
+      if (StringUtils.hasText(opts[k])) {
+        sb.append("\n").append((char) ('A' + k)).append(". ").append(opts[k]);
+      }
+    }
     return sb.toString();
+  }
+
+  /**
+   * 读表头行，建立 归一化列名 -> 列索引 的映射。
+   *
+   * <p>归一化规则：trim + 去掉"选项"前缀 + 转小写。
+   * 这样 "A"/"选项A"/"选项 A" 都归一为 "a"，兼容不同模板的列命名与顺序。
+   * 同名列取第一个出现的（防止重复表头）。
+   */
+  private Map<String, Integer> buildColumnMap(Row headerRow) {
+    Map<String, Integer> map = new LinkedHashMap<>();
+    if (headerRow == null) return map;
+    int last = headerRow.getLastCellNum();
+    for (int c = 0; c <= last; c++) {
+      String name = normalizeHeader(getCellString(headerRow.getCell(c)));
+      if (name != null && !map.containsKey(name)) {
+        map.put(name, c);
+      }
+    }
+    return map;
+  }
+
+  private String normalizeHeader(String s) {
+    if (s == null) return null;
+    String t = s.trim();
+    if (t.startsWith("选项")) t = t.substring(2).trim();
+    return t.toLowerCase();
+  }
+
+  private Integer firstNonNull(Integer... vals) {
+    for (Integer v : vals) {
+      if (v != null) return v;
+    }
+    return null;
   }
 
   private String[] splitContent(String content) {

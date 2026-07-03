@@ -5,7 +5,7 @@ import * as Icons from '@ant-design/icons';
 
 interface IconPickerProps {
   value?: string;
-  onChange?: (value: string) => void;
+  onChange?: (value?: string) => void;
   placeholder?: string;
 }
 
@@ -98,20 +98,33 @@ export function IconPicker({ value, onChange, placeholder }: IconPickerProps) {
   );
 
   return (
-    <Popover
-      content={content}
-      trigger="click"
-      open={open}
-      onOpenChange={setOpen}
-      placement="bottomLeft"
-    >
-      <Input
-        readOnly
-        value={value || ''}
-        placeholder={placeholder}
-        prefix={value ? iconFromName(value) : null}
-        style={{ cursor: 'pointer' }}
-      />
-    </Popover>
+      <Popover
+        content={content}
+        trigger="click"
+        open={open}
+        onOpenChange={setOpen}
+        placement="bottomLeft"
+      >
+        <Input
+          readOnly
+          value={value || ''}
+          placeholder={placeholder}
+          prefix={value ? iconFromName(value) : null}
+          suffix={
+            value ? (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onChange?.(undefined);
+                }}
+                style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
+              >
+                <Icons.CloseCircleOutlined />
+              </span>
+            ) : null
+          }
+          style={{ cursor: 'pointer' }}
+        />
+      </Popover>
   );
 }

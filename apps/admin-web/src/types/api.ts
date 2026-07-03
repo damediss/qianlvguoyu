@@ -65,5 +65,6 @@ export interface MenuVO {
   permissionCode: string;
   icon: string;
   sortOrder: number;
+  expanded?: number;
   children: MenuVO[];
 }

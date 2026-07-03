@@ -22,7 +22,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -106,7 +105,6 @@ public class MenuApplicationService {
     return sb.toString();
   }
 
-  @CacheEvict(value = "menuTree", allEntries = true)
   @Transactional
   public MenuTreeVO create(MenuCreateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -125,6 +123,7 @@ public class MenuApplicationService {
     entity.setIcon(req.icon());
     entity.setSortOrder(req.sortOrder() == null ? 0 : req.sortOrder());
     entity.setVisible(req.visible() == null ? 1 : req.visible());
+    entity.setExpanded(req.expanded() == null ? 1 : req.expanded());
     entity.setStatus(StringUtils.hasText(req.status()) ? req.status() : "enabled");
     entity.setDeleted(0);
     menuMapper.insert(entity);
@@ -167,7 +166,6 @@ public class MenuApplicationService {
         .orElse(null);
   }
 
-  @CacheEvict(value = "menuTree", allEntries = true)
   @Transactional
   public MenuTreeVO update(Long id, MenuUpdateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -183,12 +181,12 @@ public class MenuApplicationService {
     entity.setIcon(req.icon());
     entity.setSortOrder(req.sortOrder() == null ? 0 : req.sortOrder());
     entity.setVisible(req.visible() == null ? 1 : req.visible());
+    entity.setExpanded(req.expanded() == null ? entity.getExpanded() : req.expanded());
     entity.setStatus(req.status());
     menuMapper.updateById(entity);
     return toTreeVO(entity);
   }
 
-  @CacheEvict(value = "menuTree", allEntries = true)
   @Transactional
   public void batchUpdateVisible(MenuBatchVisibleReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -206,7 +204,6 @@ public class MenuApplicationService {
     log.info("Batch updated visible to {} for {} menus in tenant {}", req.visible(), entities.size(), tenantId);
   }
 
-  @CacheEvict(value = "menuTree", allEntries = true)
   @Transactional
   public void delete(Long id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -239,7 +236,6 @@ public class MenuApplicationService {
    * 2. 先删 role_menu 关联（外层），再软删菜单本身（deleted=1）
    * 3. 不主动校验"被角色绑定"——用户既然选了 cascade，已经默许级联
    */
-  @CacheEvict(value = "menuTree", allEntries = true)
   @Transactional
   public int deleteWithChildren(Long id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -307,7 +303,9 @@ public class MenuApplicationService {
       }
     }
     Comparator<MenuTreeVO> comparator = Comparator
-        .comparing(MenuTreeVO::getSortOrder, Comparator.nullsLast(Integer::compareTo))
+        // 可见(visible=1)排前，不可见(visible=0)沉到同级最后
+        .comparing(MenuTreeVO::getVisible, Comparator.nullsLast(Comparator.reverseOrder()))
+        .thenComparing(MenuTreeVO::getSortOrder, Comparator.nullsLast(Integer::compareTo))
         .thenComparing(MenuTreeVO::getId);
     nodeMap.values().forEach(node -> node.getChildren().sort(comparator));
     // 2026-06-18 BUG-003：必须返回 ArrayList，不能用 Stream.toList()。
@@ -373,6 +371,7 @@ public class MenuApplicationService {
     vo.setIcon(entity.getIcon());
     vo.setSortOrder(entity.getSortOrder());
     vo.setVisible(entity.getVisible());
+    vo.setExpanded(entity.getExpanded());
     vo.setStatus(entity.getStatus());
     return vo;
   }

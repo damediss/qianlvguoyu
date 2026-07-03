@@ -15,6 +15,7 @@ public record MenuCreateReq(
     @Size(max = 64) String icon,
     Integer sortOrder,
     Integer visible,
+    Integer expanded,
     @Size(max = 32) String status
 ) {
 }

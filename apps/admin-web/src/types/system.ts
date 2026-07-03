@@ -224,6 +224,7 @@ export interface MenuTreeVO {
   icon: string;
   sortOrder: number;
   visible: number;
+  expanded?: number;
   status: string;
   children: MenuTreeVO[];
 }
@@ -239,6 +240,7 @@ export interface MenuCreateReq {
   icon?: string;
   sortOrder?: number;
   visible?: number;
+  expanded?: number;
   status?: string;
 }
 
@@ -252,6 +254,7 @@ export interface MenuUpdateReq {
   icon?: string;
   sortOrder?: number;
   visible?: number;
+  expanded?: number;
   status: string;
 }
 

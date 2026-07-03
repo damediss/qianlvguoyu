@@ -11,6 +11,7 @@ import com.guoyu.platform.system.service.MenuApplicationService;
 import com.guoyu.platform.system.vo.MenuTreeVO;
 import jakarta.validation.Valid;
 import java.util.List;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -44,6 +45,7 @@ public class MenuController {
   @PostMapping
   @PreAuthorize("hasAuthority('menu:create')")
   @AuditLog(module = "system", action = "menu:create", targetType = "menu")
+  @CacheEvict(value = "menuTree", allEntries = true)
   public ApiResponse<MenuTreeVO> create(@Valid @RequestBody MenuCreateReq req) {
     return ApiResponse.ok(menuApplicationService.create(req));
   }
@@ -51,6 +53,7 @@ public class MenuController {
   @PutMapping("/{id}")
   @PreAuthorize("hasAuthority('menu:update')")
   @AuditLog(module = "system", action = "menu:update", targetType = "menu")
+  @CacheEvict(value = "menuTree", allEntries = true)
   public ApiResponse<MenuTreeVO> update(@PathVariable Long id, @Valid @RequestBody MenuUpdateReq req) {
     return ApiResponse.ok(menuApplicationService.update(id, req));
   }
@@ -58,6 +61,7 @@ public class MenuController {
   @PutMapping("/batch-visible")
   @PreAuthorize("hasAuthority('menu:update')")
   @AuditLog(module = "system", action = "menu:batch-visible", targetType = "menu")
+  @CacheEvict(value = "menuTree", allEntries = true)
   public ApiResponse<Void> batchVisible(@Valid @RequestBody MenuBatchVisibleReq req) {
     menuApplicationService.batchUpdateVisible(req);
     return ApiResponse.ok();
@@ -66,6 +70,7 @@ public class MenuController {
   @DeleteMapping("/{id}")
   @PreAuthorize("hasAuthority('menu:delete')")
   @AuditLog(module = "system", action = "menu:delete", targetType = "menu")
+  @CacheEvict(value = "menuTree", allEntries = true)
   public ApiResponse<Integer> delete(
       @PathVariable Long id,
       @RequestParam(defaultValue = "false") boolean cascade) {

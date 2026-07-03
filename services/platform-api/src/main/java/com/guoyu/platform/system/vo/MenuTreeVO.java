@@ -16,6 +16,7 @@ public class MenuTreeVO {
   private String icon;
   private Integer sortOrder;
   private Integer visible;
+  private Integer expanded;
   private String status;
   private List<MenuTreeVO> children = new ArrayList<>();
 
@@ -105,6 +106,14 @@ public class MenuTreeVO {
 
   public void setVisible(Integer visible) {
     this.visible = visible;
+  }
+
+  public Integer getExpanded() {
+    return expanded;
+  }
+
+  public void setExpanded(Integer expanded) {
+    this.expanded = expanded;
   }
 
   public String getStatus() {

@@ -9,7 +9,10 @@ import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.time.Duration;
+import org.springframework.cache.Cache;
+import org.springframework.cache.annotation.CachingConfigurer;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.interceptor.CacheErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
@@ -24,7 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 @Configuration
 @EnableCaching
 @Slf4j
-public class CacheConfig {
+public class CacheConfig implements CachingConfigurer {
 
   /**
    * 带 JSR310（LocalDateTime 等）支持 + 默认类型标记的 JSON 序列化器。
@@ -105,5 +108,42 @@ public class CacheConfig {
         + "约束:@Cacheable 返回值必须是 mutable collection（ArrayList/HashMap/HashSet），"
         + "不能用 Stream.toList() / List.of() / Map.of() / Set.of()（final 类不会被 wrap,read 会炸）。");
     return cm;
+  }
+
+  /**
+   * Redis 异常时 fail-silent：只记 warn 日志，不向业务方法抛异常。
+   *
+   * <p>配合 {@code spring.data.redis.timeout}，即使 Redis 卡住，最多 3s 超时后
+   * 被 errorHandler 吞掉，事务仍能正常提交、DB 连接正常释放，不会拖垮连接池。
+   * <ul>
+   *   <li>{@code @Cacheable} GET 失败 → 吞异常，执行原方法（降级为直查 DB）</li>
+   *   <li>{@code @CacheEvict} EVICT/CLEAR 失败 → 吞异常，方法正常返回，缓存靠 TTL 自然过期</li>
+   * </ul>
+   * 注意：errorHandler 只在 Redis 抛 RuntimeException 时生效；纯 hang（无超时）不会被接住，
+   * 所以 {@code spring.data.redis.timeout} 是前置必要条件。
+   */
+  @Override
+  public CacheErrorHandler errorHandler() {
+    return new CacheErrorHandler() {
+      @Override
+      public void handleCacheGetError(RuntimeException e, Cache cache, Object key) {
+        log.warn("[Cache] GET 失败 cache={} key={} err={}", cache.getName(), key, e.toString());
+      }
+
+      @Override
+      public void handleCachePutError(RuntimeException e, Cache cache, Object key, Object value) {
+        log.warn("[Cache] PUT 失败 cache={} key={} err={}", cache.getName(), key, e.toString());
+      }
+
+      @Override
+      public void handleCacheEvictError(RuntimeException e, Cache cache, Object key) {
+        log.warn("[Cache] EVICT 失败 cache={} key={} err={}", cache.getName(), key, e.toString());
+      }
+
+      @Override
+      public void handleCacheClearError(RuntimeException e, Cache cache) {
+        log.warn("[Cache] CLEAR 失败 cache={} err={}", cache.getName(), e.toString());
+      }
+    };
   }
 }

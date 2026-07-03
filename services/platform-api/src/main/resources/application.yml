@@ -56,6 +56,18 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DATABASE:0}
+      # Redis 命令超时：防止 Redis 不响应时 Lettuce 无限等待，
+      # 进而拖垮 DB 连接池（@CacheEvict 卡住 → 事务不提交 → 连接不释放 → 连接池耗尽）
+      timeout: 3s
+      lettuce:
+        # 连接池：Lettuce 默认单连接非池化，一个操作 hang 会堵全部 Redis 操作
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+          max-wait: 2000ms
+        # 关闭时等待未完成命令的最长时间
+        shutdown-timeout: 100ms
   flyway:
     enabled: true
     locations: classpath:db/migration

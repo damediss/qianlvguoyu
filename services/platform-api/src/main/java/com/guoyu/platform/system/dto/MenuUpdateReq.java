@@ -14,6 +14,7 @@ public record MenuUpdateReq(
     @Size(max = 64) String icon,
     Integer sortOrder,
     Integer visible,
+    Integer expanded,
     @NotBlank @Size(max = 32) String status
 ) {
 }

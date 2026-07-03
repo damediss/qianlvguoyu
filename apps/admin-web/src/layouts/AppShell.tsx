@@ -140,6 +140,21 @@ export function AppShell({ pageMap }: AppShellProps) {
     }
   }, [menuTree, selectedKey]);
 
+  // 根据菜单配置的 expanded 字段初始化默认展开的目录
+  useEffect(() => {
+    const collectExpanded = (nodes: MenuVO[]): string[] => {
+      return nodes.reduce((keys: string[], node) => {
+        if (node.menuType === 'directory' && node.expanded === 1) keys.push(node.code);
+        if (node.children?.length) keys.push(...collectExpanded(node.children));
+        return keys;
+      }, []);
+    };
+    if (menuTree.length > 0) {
+      const expandedKeys = collectExpanded(menuTree);
+      setOpenKeys((prev) => [...new Set([...prev, ...expandedKeys])]);
+    }
+  }, [menuTree]);
+
   const handleLogout = async () => {
     try {
       await logout();
@@ -180,7 +195,7 @@ export function AppShell({ pageMap }: AppShellProps) {
 
   return (
     <Layout className="app-shell">
-      <Sider width={232} className="app-sider">
+      <Sider width={270} className="app-sider">
         <div className="brand-block">
           <div className="brand-mark">国</div>
           <div>

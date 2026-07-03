@@ -284,7 +284,7 @@ export function CompanyQuestionPage() {
     }
     const org = orgList?.find((o) => o.id === filterOrgId);
     const formData = new FormData();
-    formData.append('file', importFileList[0]);
+    formData.append('file', importFileList[0].originFileObj as Blob);
     formData.append('orgId', String(filterOrgId));
     formData.append('orgName', org?.name ?? '');
     formData.append('source', '0');

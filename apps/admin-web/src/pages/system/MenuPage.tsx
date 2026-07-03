@@ -95,6 +95,7 @@ export function MenuPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<Id | null>(null);
   const [form] = Form.useForm();
+  const menuType = Form.useWatch('menuType', form);
   const originalVisibleRef = useRef<number | null>(null);
 
   const treeQuery = useQuery({
@@ -165,6 +166,7 @@ export function MenuPage() {
         menuType: 'menu',
         sortOrder: 0,
         visible: 1,
+        expanded: 1,
         status: 'enabled',
       });
       setModalOpen(true);
@@ -187,6 +189,7 @@ export function MenuPage() {
         icon: record.icon,
         sortOrder: record.sortOrder,
         visible: record.visible,
+        expanded: record.expanded ?? 1,
         status: record.status,
       });
       setModalOpen(true);
@@ -198,7 +201,8 @@ export function MenuPage() {
     form.validateFields().then((values) => {
       // Switch produces boolean; backend expects Integer (0/1)
       const newVisible = typeof values.visible === 'boolean' ? (values.visible ? 1 : 0) : values.visible;
-      const payload = { ...values, visible: newVisible };
+      const newExpanded = typeof values.expanded === 'boolean' ? (values.expanded ? 1 : 0) : values.expanded;
+      const payload = { ...values, visible: newVisible, expanded: newExpanded };
 
       // Check if we need to cascade visibility for directory type
       if (
@@ -523,6 +527,11 @@ export function MenuPage() {
                 ]}
               />
             </Form.Item>
+            {menuType === 'directory' && (
+              <Form.Item name="expanded" label="默认展开" valuePropName="checked" style={{ flex: 1 }}>
+                <Switch checkedChildren="是" unCheckedChildren="否" />
+              </Form.Item>
+            )}
           </Space>
         </Form>
       </Modal>

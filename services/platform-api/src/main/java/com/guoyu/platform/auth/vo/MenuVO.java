@@ -15,6 +15,7 @@ public class MenuVO {
   private String permissionCode;
   private String icon;
   private Integer sortOrder;
+  private Integer expanded;
   private List<MenuVO> children = new ArrayList<>();
 
   public Long getId() {
@@ -95,6 +96,14 @@ public class MenuVO {
 
   public void setSortOrder(Integer sortOrder) {
     this.sortOrder = sortOrder;
+  }
+
+  public Integer getExpanded() {
+    return expanded;
+  }
+
+  public void setExpanded(Integer expanded) {
+    this.expanded = expanded;
   }
 
   public List<MenuVO> getChildren() {
