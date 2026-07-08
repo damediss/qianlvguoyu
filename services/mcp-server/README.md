@@ -1,6 +1,6 @@
 # mcp-server
 
-MCP 工具服务，供 AI 在授权范围内调用平台能力。
+MCP 工具服务，供 AI 在授权范围内调用平台能力。本目录是仓库内统一的 MCP Server 工程，当前已纳入认定管理只读查询试点服务，面向 WeKnora Agent 提供受控 MCP Tool。
 
 ## 职责
 
@@ -14,11 +14,46 @@ MCP 工具服务，供 AI 在授权范围内调用平台能力。
 2. 不绕过平台权限、租户隔离和审计。
 3. 不执行高风险最终动作，关键写操作需要人工确认。
 
-## 约定
+## 当前试点
 
-1. 一期优先采用 TypeScript MCP SDK。
-2. 健康检查接口预留为 `/health`。
-3. 所有工具调用必须能追踪到用户、租户、工具名和请求 ID。
+认定管理试点服务用于只读查询认定管理模块数据：
+
+- 传输方式：Streamable HTTP 使用 `/mcp`；兼容旧版 SSE，使用 `/sse` 和 `/messages`
+- 入站认证：`Authorization: Bearer <MCP_BEARER_TOKEN>`
+- 上游调用：只调用 `platform-api`，不直接连接 MySQL
+- 平台鉴权：向平台发送 `Authorization: Bearer ${PLATFORM_API_TOKEN}` 和 `X-Tenant-Id: ${PLATFORM_TENANT_ID}`
+
+已提供工具：
+
+- `certification.searchTasks`
+- `certification.getTaskOverview`
+- `certification.getCollectionProgress`
+- `certification.getPracticalScoreProgress`
+
+## 本地启动
+
+参见 `.env.example` 配置环境变量。缺少必需 Token 时，服务会主动快速失败，避免以不完整配置启动。
+
+```powershell
+cd services/mcp-server
+npm install
+npm run build
+npm start
+```
+
+健康检查：
+
+```text
+GET /health
+```
+
+WeKnora 配置：
+
+- 服务名称：`certification-data-assistant`
+- 描述：用于只读查询认定管理业务数据的助手
+- HTTP Streamable 地址：`http://<host>:3001/mcp`
+- SSE URL：`http://<host>:3001/sse`
+- 认证方式：`Authorization: Bearer <MCP_BEARER_TOKEN>`
 
 ## 知识库工具合同
 
