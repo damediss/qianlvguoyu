@@ -71,6 +71,18 @@ export type SignatureRecordStatus = 'ACTIVE' | 'REVOKED';
 
 export type SnowflakeId = string | number;
 
+export type CollectionEntrySource = 'QR_SCAN' | 'CANDIDATE_ROW' | 'SEARCH';
+
+export interface CandidateCollectionContext {
+  taskId: SnowflakeId;
+  candidateId?: SnowflakeId;
+  staffId?: SnowflakeId;
+  candidateName: string;
+  idCardNo?: string;
+  collectionStatus?: CollectionOverallStatus | string;
+  entrySource: CollectionEntrySource;
+}
+
 export const QrIssueStatusText: Record<QrIssueStatus, string> = {
   NOT_ISSUED: '未发放',
   ISSUED: '已发放',
@@ -215,6 +227,16 @@ export interface MatchByTokenRequest {
 export interface SearchCandidateRequest {
   taskId: SnowflakeId;
   keyword: string;
+}
+
+export interface ScanMatchCurrentRequest {
+  token: string;
+}
+
+export interface ScanMatchResultVO {
+  alreadyCompleted: boolean;
+  currentCandidate: CandidateCollectionDetailVO;
+  message?: string;
 }
 
 export interface CandidateMatchVO {

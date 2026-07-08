@@ -62,8 +62,11 @@ import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.HorizontalAlignment;
+import org.apache.poi.ss.usermodel.PrintSetup;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.ss.util.CellRangeAddress;
@@ -88,11 +91,23 @@ public class PracticalScoringApplicationService {
   private static final String SUMMARY_TEMPLATE_RESOURCE = "templates/评分记录汇总表模板.xlsx";
   private static final String SCORE_RECORD_TEMPLATE_RESOURCE = "templates/实操评分记录表模板.xlsx";
   private static final int SUMMARY_DATA_ROW_INDEX = 6;
+  private static final int SUMMARY_HEADER_ROW_INDEX = 5;
   private static final int SUMMARY_QUESTION_COUNT = 8;
   private static final int SUMMARY_SCORE_COLUMNS_PER_QUESTION = 6;
   private static final int SUMMARY_FIRST_QUESTION_COLUMN = 3;
   private static final int SUMMARY_TOTAL_SCORE_COLUMN = 51;
+  private static final int EXCEL_COLUMN_WIDTH_UNIT = 256;
+  private static final int SUMMARY_ASSESSOR_COLUMN_WIDTH = excelColumnWidth(3.2D);
+  private static final int SUMMARY_AVERAGE_FINAL_COLUMN_WIDTH = excelColumnWidth(4.8D);
+  private static final int SUMMARY_WEIGHT_COLUMN_WIDTH = excelColumnWidth(4D);
+  private static final int SUMMARY_TOTAL_DISPLAY_COLUMN_WIDTH = excelColumnWidth(6D);
+  private static final int SUMMARY_WEIGHT_VALUE = 100;
+  private static final int SCORE_RECORD_SCORE_START_COLUMN = 4;
+  private static final int SCORE_RECORD_CANDIDATE_START_ROW = 11;
+  private static final int SCORE_RECORD_TEMPLATE_CANDIDATE_ROW = 18;
+  private static final int SCORE_RECORD_RECOMMENDED_MAX_STANDARD_COUNT = 9;
   private static final String DECIMAL_SCORE_FORMAT = "0.0";
+  private static final String INTEGER_SCORE_FORMAT = "0";
   private static final BigDecimal ZERO_SCORE = new BigDecimal("0.0");
 
   private final CertificationTaskMapper taskMapper;
@@ -112,6 +127,10 @@ public class PracticalScoringApplicationService {
   private final ObjectMapper objectMapper;
   private final PracticalStartApplicationService startService;
   private final AssessorWorkbenchContextService workbenchContextService;
+
+  private static int excelColumnWidth(double characters) {
+    return (int) Math.round(characters * EXCEL_COLUMN_WIDTH_UNIT);
+  }
 
   public PracticalScoringApplicationService(
       CertificationTaskMapper taskMapper,
@@ -595,13 +614,10 @@ public class PracticalScoringApplicationService {
       throw new BusinessException(ErrorCode.CONFLICT, "评分任务已被更新，请刷新后再修改");
     }
     List<CertificationAssessorTaskScoreEntity> scores = scores(task.getId());
-    Map<Integer, PracticalScoringModels.SaveScoreItemReq> requestItems = req.items().stream()
-        .collect(Collectors.toMap(
-            PracticalScoringModels.SaveScoreItemReq::itemNo,
-            Function.identity(),
-            (left, right) -> right));
+    ScoreInputIndex requestItems = scoreInputIndex(req.items());
     if (scores.isEmpty()
-        || scores.stream().anyMatch(score -> !requestItems.containsKey(score.getStepNo()))) {
+        || req.items().size() != scores.size()
+        || scores.stream().anyMatch(score -> scoreInput(score, requestItems) == null)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "评分要素必须完整提交");
     }
     BigDecimal total = applyScoreInputs(scores, requestItems);
@@ -896,6 +912,10 @@ public class PracticalScoringApplicationService {
       Sheet sheet = requireSummaryTemplateSheet(workbook);
       Row templateDataRow = sheet.getRow(SUMMARY_DATA_ROW_INDEX);
       CellStyle decimalStyle = decimalStyle(workbook, templateDataRow.getCell(SUMMARY_FIRST_QUESTION_COLUMN));
+      CellStyle summaryDecimalStyle = decimalStyle(workbook, templateDataRow.getCell(SUMMARY_FIRST_QUESTION_COLUMN));
+      CellStyle integerStyle = integerStyle(workbook, templateDataRow.getCell(SUMMARY_FIRST_QUESTION_COLUMN + 4));
+      summaryDecimalStyle.setShrinkToFit(true);
+      integerStyle.setShrinkToFit(true);
       writeTemplateCell(sheet, 1, 0, "计划编码：" + nvlText(task.getTaskNo()));
       writeTemplateCell(sheet, 1, SUMMARY_FIRST_QUESTION_COLUMN, "考 点 ：" + nvlText(task.getCompanyName()));
       writeTemplateCell(sheet, 2, 0, "计划名称：" + nvlText(task.getTaskName()));
@@ -930,14 +950,16 @@ public class PracticalScoringApplicationService {
           }
           BigDecimal finalScore = exportQuestionFinalScore(questionResult);
           writeDecimalCell(row, startColumn + 3, exportQuestionAverageScore(questionResult));
-          writeDecimalCell(row, startColumn + 4, new BigDecimal("100.0"));
+          writeTemplateCell(row, startColumn + 4, SUMMARY_WEIGHT_VALUE);
           writeDecimalCell(row, startColumn + 5, finalScore);
           questionFinalTotal = questionFinalTotal.add(finalScore);
         }
         writeDecimalCell(row, actualTotalColumn, questionFinalTotal.setScale(1, RoundingMode.HALF_UP));
       }
       trimSummarySheet(sheet, questionCount);
-      applySummaryDecimalStyles(sheet, questionCount, candidates.size(), decimalStyle);
+      applySummaryColumnWidths(sheet, questionCount);
+      applySummaryInfoRowsLayout(sheet);
+      applySummaryNumberStyles(sheet, questionCount, candidates.size(), summaryDecimalStyle, integerStyle);
       appendScoreRecordSheets(workbook, task, candidates, questionResultsByCandidate,
           tasksByCandidateQuestion, scoresByAssessorTask, assessors, decimalStyle);
       workbook.write(output);
@@ -1065,15 +1087,121 @@ public class PracticalScoringApplicationService {
   }
 
   private CellStyle decimalStyle(Workbook workbook, Cell baseCell) {
+    return scoreStyle(workbook, baseCell, DECIMAL_SCORE_FORMAT);
+  }
+
+  private CellStyle scoreStyle(Workbook workbook, Cell baseCell, String dataFormat) {
     CellStyle style = workbook.createCellStyle();
     if (baseCell != null && baseCell.getCellStyle() != null) {
       style.cloneStyleFrom(baseCell.getCellStyle());
     }
-    style.setDataFormat(workbook.createDataFormat().getFormat(DECIMAL_SCORE_FORMAT));
+    style.setDataFormat(workbook.createDataFormat().getFormat(dataFormat));
     return style;
   }
 
-  private void applySummaryDecimalStyles(Sheet sheet, int questionCount, int candidateCount, CellStyle decimalStyle) {
+  private CellStyle integerStyle(Workbook workbook, Cell baseCell) {
+    CellStyle style = workbook.createCellStyle();
+    if (baseCell != null && baseCell.getCellStyle() != null) {
+      style.cloneStyleFrom(baseCell.getCellStyle());
+    }
+    style.setDataFormat(workbook.createDataFormat().getFormat(INTEGER_SCORE_FORMAT));
+    return style;
+  }
+
+  private void applySummaryColumnWidths(Sheet sheet, int questionCount) {
+    Row headerRow = sheet.getRow(SUMMARY_HEADER_ROW_INDEX);
+    DataFormatter formatter = new DataFormatter();
+    int lastQuestionColumn = SUMMARY_FIRST_QUESTION_COLUMN
+        + questionCount * SUMMARY_SCORE_COLUMNS_PER_QUESTION - 1;
+    int totalColumn = lastQuestionColumn + 1;
+    for (int column = SUMMARY_FIRST_QUESTION_COLUMN; column <= lastQuestionColumn; column++) {
+      String header = headerRow == null || headerRow.getCell(column) == null
+          ? ""
+          : formatter.formatCellValue(headerRow.getCell(column));
+      int offset = (column - SUMMARY_FIRST_QUESTION_COLUMN) % SUMMARY_SCORE_COLUMNS_PER_QUESTION;
+      if (isSummaryAssessorColumn(header, offset)) {
+        sheet.setColumnWidth(column, SUMMARY_ASSESSOR_COLUMN_WIDTH);
+        sheet.setColumnHidden(column, false);
+      } else if (isSummaryAverageOrFinalColumn(header, offset)) {
+        sheet.setColumnWidth(column, SUMMARY_AVERAGE_FINAL_COLUMN_WIDTH);
+        sheet.setColumnHidden(column, false);
+      } else if (isSummaryWeightColumnHeader(header, offset)) {
+        sheet.setColumnWidth(column, SUMMARY_WEIGHT_COLUMN_WIDTH);
+        sheet.setColumnHidden(column, false);
+      }
+    }
+    sheet.setColumnWidth(totalColumn, SUMMARY_TOTAL_DISPLAY_COLUMN_WIDTH);
+    sheet.setColumnHidden(totalColumn, false);
+  }
+
+  private boolean isSummaryAssessorColumn(String header, int offset) {
+    return offset <= 2 || header.contains("考评员");
+  }
+
+  private boolean isSummaryAverageOrFinalColumn(String header, int offset) {
+    return offset == 3 || offset == 5 || header.contains("平均分") || header.contains("最后");
+  }
+
+  private boolean isSummaryWeightColumnHeader(String header, int offset) {
+    return offset == 4 || header.contains("权重");
+  }
+
+  private void applySummaryInfoRowsLayout(Sheet sheet) {
+    Map<Short, CellStyle> wrapStyles = new HashMap<>();
+    for (int rowIndex = 1; rowIndex <= 2; rowIndex++) {
+      applyWrapText(sheet, rowIndex, 0, wrapStyles);
+      applyWrapText(sheet, rowIndex, SUMMARY_FIRST_QUESTION_COLUMN, wrapStyles);
+      adjustSummaryInfoRowHeight(sheet, rowIndex);
+    }
+  }
+
+  private void adjustSummaryInfoRowHeight(Sheet sheet, int rowIndex) {
+    Row row = sheet.getRow(rowIndex);
+    if (row == null) {
+      return;
+    }
+    float baseHeight = row.getHeightInPoints() > 0
+        ? row.getHeightInPoints()
+        : sheet.getDefaultRowHeightInPoints();
+    int maxLines = 1;
+    DataFormatter formatter = new DataFormatter();
+    for (int column : List.of(0, SUMMARY_FIRST_QUESTION_COLUMN)) {
+      Cell cell = row.getCell(column);
+      if (cell == null) {
+        continue;
+      }
+      String text = formatter.formatCellValue(cell).trim();
+      if (!StringUtils.hasText(text)) {
+        continue;
+      }
+      CellRangeAddress mergedRange = mergedRangeAt(sheet, rowIndex, column);
+      int firstColumn = mergedRange == null ? column : mergedRange.getFirstColumn();
+      int lastColumn = mergedRange == null ? column : mergedRange.getLastColumn();
+      double charsPerLine = Math.max(8D, mergedColumnWidthChars(sheet, firstColumn, lastColumn) * 0.9D);
+      maxLines = Math.max(maxLines, estimatedWrappedLineCount(text, charsPerLine));
+    }
+    row.setHeightInPoints(Math.max(baseHeight, baseHeight * maxLines));
+  }
+
+  private int estimatedWrappedLineCount(String text, double charsPerLine) {
+    if (!StringUtils.hasText(text)) {
+      return 1;
+    }
+    int lineCount = 0;
+    String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
+    for (String line : normalized.split("\n", -1)) {
+      lineCount += Math.max(1, (int) Math.ceil(weightedTextLength(line) / charsPerLine));
+    }
+    return Math.max(1, lineCount);
+  }
+
+  private void applySummaryNumberStyles(
+      Sheet sheet,
+      int questionCount,
+      int candidateCount,
+      CellStyle decimalStyle,
+      CellStyle integerStyle
+  ) {
     int totalColumn = SUMMARY_FIRST_QUESTION_COLUMN + questionCount * SUMMARY_SCORE_COLUMNS_PER_QUESTION;
     for (int rowIndex = SUMMARY_DATA_ROW_INDEX; rowIndex < SUMMARY_DATA_ROW_INDEX + candidateCount; rowIndex++) {
       Row row = sheet.getRow(rowIndex);
@@ -1083,10 +1211,31 @@ public class PracticalScoringApplicationService {
       for (int column = SUMMARY_FIRST_QUESTION_COLUMN; column <= totalColumn; column++) {
         Cell cell = row.getCell(column);
         if (cell != null) {
-          cell.setCellStyle(decimalStyle);
+          cell.setCellStyle(summaryCellUsesIntegerStyle(cell, column, questionCount) ? integerStyle : decimalStyle);
         }
       }
     }
+  }
+
+  private boolean summaryCellUsesIntegerStyle(Cell cell, int column, int questionCount) {
+    return isSummaryWeightColumn(column, questionCount) || isIntegerNumericCell(cell);
+  }
+
+  private boolean isIntegerNumericCell(Cell cell) {
+    if (cell.getCellType() != CellType.NUMERIC) {
+      return false;
+    }
+    double value = cell.getNumericCellValue();
+    return Math.abs(value - Math.rint(value)) < 0.0000001D;
+  }
+
+  private boolean isSummaryWeightColumn(int column, int questionCount) {
+    if (column < SUMMARY_FIRST_QUESTION_COLUMN) {
+      return false;
+    }
+    int questionColumnOffset = column - SUMMARY_FIRST_QUESTION_COLUMN;
+    return questionColumnOffset < questionCount * SUMMARY_SCORE_COLUMNS_PER_QUESTION
+        && questionColumnOffset % SUMMARY_SCORE_COLUMNS_PER_QUESTION == 4;
   }
 
   private void appendScoreRecordSheets(
@@ -1144,7 +1293,13 @@ public class PracticalScoringApplicationService {
         tasksByCandidateQuestion, questionIndex);
     List<CertificationAssessorTaskScoreEntity> templateItems = scoreRecordTemplateItems(
         candidates, questionResultsByCandidate, tasksByCandidateQuestion, scoresByAssessorTask, questionIndex);
-    int totalColumn = ensureScoreRecordCapacity(sheet, findScoreRecordTotalColumn(sheet), templateItems.size());
+    int standardCount = templateItems.size();
+    if (standardCount > SCORE_RECORD_RECOMMENDED_MAX_STANDARD_COUNT) {
+      log.warn("评分记录表导出提示：当前试题评分标准数量超过推荐打印范围{}个，standardCount = {}, taskId = {}, questionNo = {}",
+          SCORE_RECORD_RECOMMENDED_MAX_STANDARD_COUNT, standardCount, task.getId(), questionIndex + 1);
+    }
+    int totalColumn = calculateScoreRecordTotalColumn(standardCount);
+    prepareScoreRecordSheetLayout(sheet, standardCount, candidates.size(), totalColumn);
     writeTemplateCell(sheet, 0, 0, "表" + (questionIndex + 1) + ":评分记录表");
     writeTemplateCell(sheet, 1, 0, "计划编码：" + nvlText(task.getTaskNo())
         + "                                 考 点 ：" + nvlText(task.getCompanyName()));
@@ -1155,12 +1310,13 @@ public class PracticalScoringApplicationService {
         scoresByAssessorTask, questionIndex) + "分)");
     writeTemplateCell(sheet, 4, 4, questionTitle);
     clearScoreRecordTemplateRows(sheet, candidates.size(), totalColumn);
+    writeScoreRecordTemplateItems(sheet, templateItems, totalColumn);
 
     for (int candidateIndex = 0; candidateIndex < candidates.size(); candidateIndex++) {
       CertificationCandidateEntity candidate = candidates.get(candidateIndex);
       CertificationPracticalQuestionResultEntity questionResult =
           questionResultAt(questionResultsByCandidate.get(candidate.getId()), questionIndex);
-      int rowIndex = 11 + candidateIndex;
+      int rowIndex = SCORE_RECORD_CANDIDATE_START_ROW + candidateIndex;
       ensureScoreRecordCandidateRow(sheet, rowIndex, totalColumn);
       Row row = sheet.getRow(rowIndex);
       writeTemplateCell(row, 0, candidateIndex + 1);
@@ -1172,17 +1328,22 @@ public class PracticalScoringApplicationService {
       List<CertificationAssessorTaskScoreEntity> items = scoreTask == null
           ? firstScoreItems(scoreTasks, scoresByAssessorTask)
           : scoresByAssessorTask.getOrDefault(scoreTask.getId(), List.of());
-      writeScoreRecordTemplateItems(sheet, items, totalColumn);
-      for (int itemIndex = 0; itemIndex < items.size() && 4 + itemIndex * 2 + 1 < totalColumn; itemIndex++) {
+      for (int itemIndex = 0; itemIndex < items.size()
+          && SCORE_RECORD_SCORE_START_COLUMN + itemIndex * 2 + 1 < totalColumn; itemIndex++) {
         CertificationAssessorTaskScoreEntity item = items.get(itemIndex);
-        writeTemplateCell(row, 4 + itemIndex * 2, exportScoreItemValue(scoreTask, item.getDeductedScore()));
-        writeTemplateCell(row, 5 + itemIndex * 2, exportScoreItemValue(scoreTask, item.getAwardedScore()));
-        applyDecimalCellStyle(row.getCell(4 + itemIndex * 2));
-        applyDecimalCellStyle(row.getCell(5 + itemIndex * 2));
+        int deductColumn = SCORE_RECORD_SCORE_START_COLUMN + itemIndex * 2;
+        int scoreColumn = deductColumn + 1;
+        writeTemplateCell(row, deductColumn, exportScoreItemValue(scoreTask, item.getDeductedScore()));
+        writeTemplateCell(row, scoreColumn, exportScoreItemValue(scoreTask, item.getAwardedScore()));
+        applyDecimalCellStyle(row.getCell(deductColumn));
+        applyDecimalCellStyle(row.getCell(scoreColumn));
       }
       writeTemplateCell(row, totalColumn, exportAssessorTaskScore(scoreTask));
       applyDecimalCellStyle(row.getCell(totalColumn));
+      applyScoreRecordCandidateRowHeight(sheet, rowIndex, totalColumn);
     }
+    applyScoreRecordPrintSettings(sheet, totalColumn,
+        calculateScoreRecordLastRow(candidates.size()));
   }
 
   private String scoreRecordQuestionTitle(
@@ -1385,11 +1546,24 @@ public class PracticalScoringApplicationService {
 
   private int scoreRecordItemCapacity(Sheet sheet) {
     int totalColumn = findScoreRecordTotalColumn(sheet);
-    return Math.max(0, (totalColumn - 4) / 2);
+    return Math.max(0, (totalColumn - SCORE_RECORD_SCORE_START_COLUMN) / 2);
   }
 
   private int expandableScoreRecordItemCapacity(Sheet sheet) {
-    return Math.max(scoreRecordItemCapacity(sheet), Math.max(0, (maxTemplateColumn(sheet) - 4) / 2));
+    return Math.max(scoreRecordItemCapacity(sheet),
+        Math.max(0, (maxTemplateColumn(sheet) - SCORE_RECORD_SCORE_START_COLUMN) / 2));
+  }
+
+  private int calculateScoreRecordTotalColumn(int standardCount) {
+    return SCORE_RECORD_SCORE_START_COLUMN + Math.max(0, standardCount) * 2;
+  }
+
+  private int calculateScoreRecordScoreEndColumn(int standardCount) {
+    return calculateScoreRecordTotalColumn(standardCount) - 1;
+  }
+
+  private int calculateScoreRecordLastRow(int candidateCount) {
+    return SCORE_RECORD_CANDIDATE_START_ROW + Math.max(8, candidateCount) - 1;
   }
 
   private Sheet copyTemplateSheet(Workbook targetWorkbook, Sheet sourceSheet, String targetName) {
@@ -1495,8 +1669,215 @@ public class PracticalScoringApplicationService {
     return Math.max(4, maxTemplateColumn(sheet));
   }
 
+  private void prepareScoreRecordSheetLayout(
+      Sheet sheet,
+      int standardCount,
+      int candidateCount,
+      int totalColumn
+  ) {
+    int templateTotalColumn = findScoreRecordTotalColumn(sheet);
+    ensureScoreRecordCapacity(sheet, templateTotalColumn, standardCount);
+    copyScoreRecordTotalColumnStyle(sheet, templateTotalColumn, totalColumn);
+    clearScoreRecordUnusedColumns(sheet, totalColumn, Math.max(maxTemplateColumn(sheet), templateTotalColumn));
+    rebuildScoreRecordHeaderMerges(sheet, standardCount, totalColumn);
+    applyScoreRecordColumnWidths(sheet, standardCount, totalColumn);
+    applyScoreRecordBaseRowHeights(sheet, candidateCount);
+    applyScoreRecordCellStyleDefaults(sheet, totalColumn, calculateScoreRecordLastRow(candidateCount));
+    writeTemplateCell(sheet, 3, totalColumn, "本题得分合计");
+  }
+
+  private void copyScoreRecordTotalColumnStyle(Sheet sheet, int sourceColumn, int targetColumn) {
+    if (sourceColumn == targetColumn) {
+      return;
+    }
+    Workbook workbook = sheet.getWorkbook();
+    Map<Short, CellStyle> styleMap = new HashMap<>();
+    sheet.setColumnWidth(targetColumn, sheet.getColumnWidth(sourceColumn));
+    sheet.setColumnHidden(targetColumn, false);
+    for (int rowIndex = 0; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+      Row row = sheet.getRow(rowIndex);
+      if (row == null) {
+        continue;
+      }
+      Cell source = row.getCell(sourceColumn);
+      Cell target = row.getCell(targetColumn);
+      if (target == null) {
+        target = row.createCell(targetColumn);
+      }
+      if (source != null) {
+        copyCellStyle(source, target, workbook, styleMap);
+      }
+      if (rowIndex >= 3) {
+        target.setBlank();
+      }
+    }
+  }
+
+  private void clearScoreRecordUnusedColumns(Sheet sheet, int totalColumn, int maxColumn) {
+    for (int column = totalColumn + 1; column <= maxColumn; column++) {
+      sheet.setColumnHidden(column, true);
+      for (int rowIndex = 0; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+        Row row = sheet.getRow(rowIndex);
+        if (row == null) {
+          continue;
+        }
+        Cell cell = row.getCell(column);
+        if (cell != null) {
+          cell.setBlank();
+        }
+      }
+    }
+  }
+
+  private void rebuildScoreRecordHeaderMerges(Sheet sheet, int standardCount, int totalColumn) {
+    for (int i = sheet.getNumMergedRegions() - 1; i >= 0; i--) {
+      CellRangeAddress range = sheet.getMergedRegion(i);
+      if (range.getFirstRow() <= 10 && range.getLastRow() >= 0) {
+        sheet.removeMergedRegion(i);
+      }
+    }
+    int scoreEndColumn = calculateScoreRecordScoreEndColumn(standardCount);
+    mergeSafely(sheet, 0, 0, 0, totalColumn);
+    mergeSafely(sheet, 1, 1, 0, totalColumn);
+    mergeSafely(sheet, 2, 2, 0, totalColumn);
+    mergeSafely(sheet, 3, 3, 3, Math.max(3, scoreEndColumn));
+    if (scoreEndColumn >= SCORE_RECORD_SCORE_START_COLUMN) {
+      mergeSafely(sheet, 4, 4, SCORE_RECORD_SCORE_START_COLUMN, scoreEndColumn);
+    }
+    mergeSafely(sheet, 3, 10, 0, 0);
+    mergeSafely(sheet, 3, 10, 1, 1);
+    mergeSafely(sheet, 3, 10, 2, 2);
+    mergeSafely(sheet, 3, 9, totalColumn, totalColumn);
+  }
+
+  private void applyScoreRecordColumnWidths(Sheet sheet, int standardCount, int totalColumn) {
+    sheet.setColumnWidth(0, 6 * 256);
+    sheet.setColumnWidth(1, 10 * 256);
+    sheet.setColumnWidth(2, 16 * 256);
+    sheet.setColumnWidth(3, 12 * 256);
+    int scoreColumnWidth = scoreRecordScoreColumnWidth(standardCount) * 256;
+    for (int column = SCORE_RECORD_SCORE_START_COLUMN; column < totalColumn; column++) {
+      sheet.setColumnWidth(column, scoreColumnWidth);
+      sheet.setColumnHidden(column, false);
+    }
+    sheet.setColumnWidth(totalColumn, 8 * 256);
+    sheet.setColumnHidden(totalColumn, false);
+  }
+
+  private int scoreRecordScoreColumnWidth(int standardCount) {
+    if (standardCount <= 5) {
+      return 7;
+    }
+    if (standardCount <= 7) {
+      return 6;
+    }
+    return 5;
+  }
+
+  private void applyScoreRecordBaseRowHeights(Sheet sheet, int candidateCount) {
+    setScoreRecordRowHeight(sheet, 4, 26F);
+    setScoreRecordRowHeight(sheet, 5, 90F);
+    setScoreRecordRowHeight(sheet, 6, 20F);
+    setScoreRecordRowHeight(sheet, 7, 110F);
+    setScoreRecordRowHeight(sheet, 8, 18F);
+    setScoreRecordRowHeight(sheet, 9, 18F);
+    setScoreRecordRowHeight(sheet, 10, 20F);
+    int lastRow = calculateScoreRecordLastRow(candidateCount);
+    for (int rowIndex = SCORE_RECORD_CANDIDATE_START_ROW; rowIndex <= lastRow; rowIndex++) {
+      setScoreRecordRowHeight(sheet, rowIndex, 24F);
+    }
+  }
+
+  private void setScoreRecordRowHeight(Sheet sheet, int rowIndex, float heightPoints) {
+    Row row = sheet.getRow(rowIndex);
+    if (row == null) {
+      row = sheet.createRow(rowIndex);
+    }
+    row.setHeightInPoints(heightPoints);
+  }
+
+  private void applyScoreRecordCellStyleDefaults(Sheet sheet, int totalColumn, int lastRow) {
+    Workbook workbook = sheet.getWorkbook();
+    Map<Short, CellStyle> styleMap = new HashMap<>();
+    for (int rowIndex = 0; rowIndex <= lastRow; rowIndex++) {
+      Row row = sheet.getRow(rowIndex);
+      if (row == null) {
+        continue;
+      }
+      for (int column = 0; column <= totalColumn; column++) {
+        Cell cell = row.getCell(column);
+        if (cell == null) {
+          cell = row.createCell(column);
+        }
+        applyScoreRecordCellStyleDefaults(cell, workbook, styleMap);
+      }
+    }
+  }
+
+  private void applyScoreRecordCellStyleDefaults(
+      Cell cell,
+      Workbook workbook,
+      Map<Short, CellStyle> styleMap
+  ) {
+    if (cell.getCellStyle() == null) {
+      return;
+    }
+    short sourceStyleIndex = cell.getCellStyle().getIndex();
+    CellStyle style = styleMap.computeIfAbsent(sourceStyleIndex, ignored -> {
+      CellStyle cloned = workbook.createCellStyle();
+      cloned.cloneStyleFrom(cell.getCellStyle());
+      cloned.setAlignment(HorizontalAlignment.CENTER);
+      cloned.setVerticalAlignment(VerticalAlignment.CENTER);
+      cloned.setWrapText(true);
+      return cloned;
+    });
+    cell.setCellStyle(style);
+  }
+
+  private void applyScoreRecordCandidateRowHeight(Sheet sheet, int rowIndex, int totalColumn) {
+    Row row = sheet.getRow(rowIndex);
+    if (row == null) {
+      return;
+    }
+    DataFormatter formatter = new DataFormatter();
+    double maxLength = 0D;
+    for (int column = 1; column <= Math.min(2, totalColumn); column++) {
+      Cell cell = row.getCell(column);
+      if (cell != null) {
+        maxLength = Math.max(maxLength, weightedTextLength(formatter.formatCellValue(cell)));
+      }
+    }
+    if (maxLength > 30D) {
+      row.setHeightInPoints(36F);
+    } else if (maxLength > 18D) {
+      row.setHeightInPoints(30F);
+    } else if (row.getHeightInPoints() < 24F) {
+      row.setHeightInPoints(24F);
+    }
+  }
+
+  private void applyScoreRecordPrintSettings(Sheet sheet, int totalColumn, int lastRow) {
+    Workbook workbook = sheet.getWorkbook();
+    PrintSetup printSetup = sheet.getPrintSetup();
+    printSetup.setPaperSize(PrintSetup.A4_PAPERSIZE);
+    printSetup.setLandscape(true);
+    printSetup.setFitWidth((short) 1);
+    printSetup.setFitHeight((short) 0);
+    sheet.setFitToPage(true);
+    sheet.setAutobreaks(true);
+    sheet.setHorizontallyCenter(true);
+    sheet.setMargin(Sheet.LeftMargin, 0.25D);
+    sheet.setMargin(Sheet.RightMargin, 0.25D);
+    sheet.setMargin(Sheet.TopMargin, 0.5D);
+    sheet.setMargin(Sheet.BottomMargin, 0.5D);
+    int sheetIndex = workbook.getSheetIndex(sheet);
+    if (sheetIndex >= 0) {
+      workbook.setPrintArea(sheetIndex, 0, totalColumn, 0, lastRow);
+    }
+  }
+
   private int ensureScoreRecordCapacity(Sheet sheet, int currentTotalColumn, int itemCount) {
-    int requiredTotalColumn = 4 + Math.max(0, itemCount) * 2;
+    int requiredTotalColumn = calculateScoreRecordTotalColumn(itemCount);
     if (requiredTotalColumn <= currentTotalColumn) {
       return currentTotalColumn;
     }
@@ -1565,12 +1946,12 @@ public class PracticalScoringApplicationService {
   }
 
   private int scoreRecordItemStyleSourceColumn(int targetColumn, int firstExpandedColumn) {
-    int pairOffset = Math.floorMod(targetColumn - 4, 2);
+    int pairOffset = Math.floorMod(targetColumn - SCORE_RECORD_SCORE_START_COLUMN, 2);
     int lastTemplatePairColumn = firstExpandedColumn - 2 + pairOffset;
-    if (lastTemplatePairColumn >= 4) {
+    if (lastTemplatePairColumn >= SCORE_RECORD_SCORE_START_COLUMN) {
       return lastTemplatePairColumn;
     }
-    return 4 + pairOffset;
+    return SCORE_RECORD_SCORE_START_COLUMN + pairOffset;
   }
 
   private void copyCellStyle(
@@ -1594,7 +1975,7 @@ public class PracticalScoringApplicationService {
   private void clearScoreRecordTemplateRows(Sheet sheet, int candidateCount, int totalColumn) {
     int rows = Math.max(8, candidateCount);
     for (int i = 0; i < rows; i++) {
-      int rowIndex = 11 + i;
+      int rowIndex = SCORE_RECORD_CANDIDATE_START_ROW + i;
       ensureScoreRecordCandidateRow(sheet, rowIndex, totalColumn);
       Row row = sheet.getRow(rowIndex);
       for (int column = 1; column <= totalColumn; column++) {
@@ -1612,7 +1993,7 @@ public class PracticalScoringApplicationService {
     if (row != null) {
       return;
     }
-    Row templateRow = sheet.getRow(18);
+    Row templateRow = sheet.getRow(SCORE_RECORD_TEMPLATE_CANDIDATE_ROW);
     row = sheet.createRow(rowIndex);
     if (templateRow != null) {
       row.setHeight(templateRow.getHeight());
@@ -1643,11 +2024,11 @@ public class PracticalScoringApplicationService {
       List<CertificationAssessorTaskScoreEntity> items,
       int totalColumn
   ) {
-    int capacity = Math.max(0, (totalColumn - 4) / 2);
+    int capacity = Math.max(0, (totalColumn - SCORE_RECORD_SCORE_START_COLUMN) / 2);
     clearScoreRecordItemMerges(sheet, totalColumn);
     Map<Short, CellStyle> wrapStyles = new HashMap<>();
     for (int itemIndex = 0; itemIndex < capacity; itemIndex++) {
-      int column = 4 + itemIndex * 2;
+      int column = SCORE_RECORD_SCORE_START_COLUMN + itemIndex * 2;
       CertificationAssessorTaskScoreEntity item = itemIndex < items.size() ? items.get(itemIndex) : null;
       writeTemplateCell(sheet, 5, column, "");
       writeTemplateCell(sheet, 6, column, "");
@@ -1681,8 +2062,8 @@ public class PracticalScoringApplicationService {
         groupScore = groupScore.add(score == null ? BigDecimal.ZERO : score);
         groupEnd++;
       }
-      int startColumn = 4 + groupStart * 2;
-      int endColumn = 4 + (groupEnd - 1) * 2 + 1;
+      int startColumn = SCORE_RECORD_SCORE_START_COLUMN + groupStart * 2;
+      int endColumn = SCORE_RECORD_SCORE_START_COLUMN + (groupEnd - 1) * 2 + 1;
       writeTemplateCell(sheet, 5, startColumn, stepName);
       writeTemplateCell(sheet, 6, startColumn, groupScore);
       applyWrapText(sheet, 5, startColumn, wrapStyles);
@@ -1736,7 +2117,7 @@ public class PracticalScoringApplicationService {
         : sheet.getDefaultRowHeightInPoints();
     int maxLines = 1;
     DataFormatter formatter = new DataFormatter();
-    for (int column = 4; column < totalColumn; column++) {
+    for (int column = SCORE_RECORD_SCORE_START_COLUMN; column < totalColumn; column++) {
       CellRangeAddress mergedRange = mergedRangeAt(sheet, rowIndex, column);
       if (mergedRange != null && mergedRange.getFirstColumn() != column) {
         continue;
@@ -1807,7 +2188,8 @@ public class PracticalScoringApplicationService {
     for (int i = sheet.getNumMergedRegions() - 1; i >= 0; i--) {
       CellRangeAddress range = sheet.getMergedRegion(i);
       boolean rowIntersects = range.getFirstRow() <= 9 && range.getLastRow() >= 5;
-      boolean columnIntersects = range.getFirstColumn() < totalColumn && range.getLastColumn() >= 4;
+      boolean columnIntersects = range.getFirstColumn() < totalColumn
+          && range.getLastColumn() >= SCORE_RECORD_SCORE_START_COLUMN;
       if (rowIntersects && columnIntersects) {
         sheet.removeMergedRegion(i);
       }
@@ -1819,10 +2201,33 @@ public class PracticalScoringApplicationService {
   }
 
   private void mergeScoreRecordItemRange(Sheet sheet, int rowIndex, int firstColumn, int lastColumn) {
-    if (lastColumn <= firstColumn) {
+    mergeSafely(sheet, rowIndex, rowIndex, firstColumn, lastColumn);
+  }
+
+  private void mergeSafely(
+      Sheet sheet,
+      int firstRow,
+      int lastRow,
+      int firstColumn,
+      int lastColumn
+  ) {
+    if (lastRow < firstRow || lastColumn < firstColumn) {
       return;
     }
-    sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, firstColumn, lastColumn));
+    if (lastRow == firstRow && lastColumn == firstColumn) {
+      return;
+    }
+    CellRangeAddress target = new CellRangeAddress(firstRow, lastRow, firstColumn, lastColumn);
+    for (int i = sheet.getNumMergedRegions() - 1; i >= 0; i--) {
+      CellRangeAddress existing = sheet.getMergedRegion(i);
+      if (existing.formatAsString().equals(target.formatAsString())) {
+        return;
+      }
+      if (existing.intersects(target)) {
+        sheet.removeMergedRegion(i);
+      }
+    }
+    sheet.addMergedRegion(target);
   }
 
   private void clearTemplateCell(Sheet sheet, int rowIndex, int column) {
@@ -1920,10 +2325,9 @@ public class PracticalScoringApplicationService {
       throw new BusinessException(ErrorCode.CONFLICT, "评分任务已在其他设备更新，请重新加载");
     }
     List<CertificationAssessorTaskScoreEntity> scores = scores(task.getId());
-    Map<Integer, PracticalScoringModels.SaveScoreItemReq> requestItems = req.items().stream()
-        .collect(Collectors.toMap(PracticalScoringModels.SaveScoreItemReq::itemNo, Function.identity()));
+    ScoreInputIndex requestItems = scoreInputIndex(req.items());
     if (scores.size() != requestItems.size()
-        || scores.stream().anyMatch(score -> !requestItems.containsKey(score.getStepNo()))) {
+        || scores.stream().anyMatch(score -> scoreInput(score, requestItems) == null)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "评分要素必须完整提交");
     }
     BigDecimal total = applyScoreInputs(scores, requestItems);
@@ -2147,13 +2551,55 @@ public class PracticalScoringApplicationService {
     }
   }
 
+  private record ScoreInputIndex(
+      Map<Long, PracticalScoringModels.SaveScoreItemReq> byScoreItemId,
+      Map<Integer, PracticalScoringModels.SaveScoreItemReq> byItemNo,
+      int size
+  ) {
+  }
+
+  private ScoreInputIndex scoreInputIndex(List<PracticalScoringModels.SaveScoreItemReq> items) {
+    Map<Long, PracticalScoringModels.SaveScoreItemReq> byScoreItemId = items.stream()
+        .filter(item -> item.scoreItemId() != null)
+        .collect(Collectors.toMap(
+            PracticalScoringModels.SaveScoreItemReq::scoreItemId,
+            Function.identity(),
+            (left, right) -> right));
+    Map<Integer, PracticalScoringModels.SaveScoreItemReq> byItemNo = items.stream()
+        .collect(Collectors.toMap(
+            PracticalScoringModels.SaveScoreItemReq::itemNo,
+            Function.identity(),
+            (left, right) -> right));
+    return new ScoreInputIndex(byScoreItemId, byItemNo, items.size());
+  }
+
+  private PracticalScoringModels.SaveScoreItemReq scoreInput(
+      CertificationAssessorTaskScoreEntity score,
+      ScoreInputIndex requestItems
+  ) {
+    if (score.getId() != null) {
+      PracticalScoringModels.SaveScoreItemReq byId = requestItems.byScoreItemId().get(score.getId());
+      if (byId != null) {
+        return byId;
+      }
+    }
+    PracticalScoringModels.SaveScoreItemReq byItemNo = requestItems.byItemNo().get(score.getStepNo());
+    if (byItemNo == null) {
+      return null;
+    }
+    if (requestItems.byScoreItemId().isEmpty() || byItemNo.scoreItemId() == null) {
+      return byItemNo;
+    }
+    return null;
+  }
+
   private BigDecimal applyScoreInputs(
       List<CertificationAssessorTaskScoreEntity> scores,
-      Map<Integer, PracticalScoringModels.SaveScoreItemReq> requestItems
+      ScoreInputIndex requestItems
   ) {
     BigDecimal total = BigDecimal.ZERO;
     for (CertificationAssessorTaskScoreEntity score : scores) {
-      PracticalScoringModels.SaveScoreItemReq input = requestItems.get(score.getStepNo());
+      PracticalScoringModels.SaveScoreItemReq input = scoreInput(score, requestItems);
       BigDecimal deduction = input.deductedScore().stripTrailingZeros();
       validateDeduction(score, deduction);
       BigDecimal awarded = score.getMaxScore().subtract(deduction).max(BigDecimal.ZERO);
@@ -3063,6 +3509,7 @@ public class PracticalScoringApplicationService {
   private PracticalScoringModels.ScoreItemView scoreItemView(CertificationAssessorTaskScoreEntity score) {
     return new PracticalScoringModels.ScoreItemView(
         score.getId(), score.getStepNo(), score.getStepName(), score.getCriterion(),
+        score.getId(), score.getStepName(), score.getCriterion(),
         score.getMaxScore(), score.getMaxDeduction(), score.getDeductionStep(),
         score.getDeductedScore(), score.getAwardedScore(), score.getRemark());
   }

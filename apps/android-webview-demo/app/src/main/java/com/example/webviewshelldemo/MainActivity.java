@@ -18,6 +18,8 @@ public class MainActivity extends Activity {
 
     private WebView webView;
     private FingerprintSdkAdapter fingerprintSdkAdapter;
+    private QrCodeScanHelper qrCodeScanHelper;
+    private AndroidBridge androidBridge;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -31,6 +33,7 @@ public class MainActivity extends Activity {
         ));
         fingerprintSdkAdapter = new FingerprintSdkAdapter(this);
         fingerprintSdkAdapter.start();
+        qrCodeScanHelper = new QrCodeScanHelper(this);
 
         configureWebView(webView);
         setContentView(webView);
@@ -49,7 +52,8 @@ public class MainActivity extends Activity {
         settings.setDisplayZoomControls(false);
 
         view.setWebChromeClient(new WebChromeClient());
-        view.addJavascriptInterface(new AndroidBridge(this, view, fingerprintSdkAdapter), "AndroidBridge");
+        androidBridge = new AndroidBridge(this, view, fingerprintSdkAdapter, qrCodeScanHelper);
+        view.addJavascriptInterface(androidBridge, "AndroidBridge");
         view.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageStarted(WebView webView, String url, Bitmap favicon) {
@@ -73,6 +77,22 @@ public class MainActivity extends Activity {
         }
 
         return getString(R.string.default_web_url);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (qrCodeScanHelper != null) {
+            qrCodeScanHelper.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (qrCodeScanHelper != null) {
+            qrCodeScanHelper.onActivityResult(requestCode, resultCode, data);
+        }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
     @Override

@@ -82,6 +82,9 @@ export interface PracticalScoreItem {
   itemNo: number;
   itemName: string;
   criterion: string;
+  scoringElementName?: string;
+  scoringStandardId?: string;
+  scoringStandardContent?: string;
   maxScore: number;
   maxDeduction: number;
   deductionStep: number;
@@ -217,7 +220,7 @@ export interface PracticalScoringProgress {
 
 export interface PracticalSaveScorePayload {
   version: number;
-  items: Array<{ itemNo: number; deductedScore: number; remark?: string }>;
+  items: Array<{ scoreItemId?: string; itemNo: number; deductedScore: number; remark?: string }>;
   note?: string;
 }
 

@@ -4,6 +4,12 @@ import JSONBig from 'json-bigint';
 import { useAuthStore } from '../stores/authStore';
 import type { ApiResponse } from '../types/api';
 
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    silentError?: boolean;
+  }
+}
+
 // Use json-bigint to handle large integers (snowflake IDs) without precision loss.
 // Numbers exceeding Number.MAX_SAFE_INTEGER are stored as strings.
 const jsonBig = JSONBig({ storeAsString: true });
@@ -71,7 +77,9 @@ apiClient.interceptors.response.use(
     } else {
       msg = error?.response?.data?.message || error?.message || '请求失败';
     }
-    message.error(msg);
+    if (!error?.config?.silentError) {
+      message.error(msg);
+    }
     return Promise.reject(error);
   },
 );

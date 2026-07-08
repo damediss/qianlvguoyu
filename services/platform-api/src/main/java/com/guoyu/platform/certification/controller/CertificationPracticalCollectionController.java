@@ -10,6 +10,7 @@ import com.guoyu.platform.certification.collection.dto.MarkInfoErrorRequest;
 import com.guoyu.platform.certification.collection.dto.MarkPendingRetryRequest;
 import com.guoyu.platform.certification.collection.dto.MatchByTokenRequest;
 import com.guoyu.platform.certification.collection.dto.RemoveQueueRequest;
+import com.guoyu.platform.certification.collection.dto.ScanMatchCurrentRequest;
 import com.guoyu.platform.certification.collection.dto.SearchCandidateRequest;
 import com.guoyu.platform.certification.collection.dto.StartNextRequest;
 import com.guoyu.platform.certification.collection.dto.SubmitFingerprintRequest;
@@ -21,13 +22,22 @@ import com.guoyu.platform.certification.collection.vo.CollectionExceptionVO;
 import com.guoyu.platform.certification.collection.vo.CollectionTaskVO;
 import com.guoyu.platform.certification.collection.vo.CollectionWorkbenchVO;
 import com.guoyu.platform.certification.collection.vo.FingerprintTraceVO;
+import com.guoyu.platform.certification.collection.vo.QrCodeExportVO;
 import com.guoyu.platform.certification.collection.vo.QueueItemVO;
+import com.guoyu.platform.certification.collection.vo.ScanMatchResultVO;
 import com.guoyu.platform.certification.collection.vo.SignatureRecordVO;
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
 import jakarta.validation.Valid;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -80,8 +90,15 @@ public class CertificationPracticalCollectionController {
   @GetMapping("/tasks/{taskId}/qrcodes/export")
   @PreAuthorize("hasAuthority('certification.practical.collection.export')")
   @AuditLog(module = "certification", action = "practical-collection:qrcode-export", targetType = "certification_practical_collection_status")
-  public ApiResponse<CollectionActionResultVO> exportQrCodes(@PathVariable Long taskId) {
-    return ApiResponse.ok(service.exportQrCodesPlaceholder(taskId));
+  public ResponseEntity<InputStreamResource> exportQrCodes(@PathVariable Long taskId) {
+    QrCodeExportVO result = service.exportQrCodes(taskId);
+    InputStreamResource resource = new InputStreamResource(new ByteArrayInputStream(result.data()));
+    return ResponseEntity.ok()
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment().filename(result.filename(), StandardCharsets.UTF_8).build().toString())
+        .contentType(MediaType.parseMediaType(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        .body(resource);
   }
 
   @PostMapping("/match-by-token")
@@ -89,6 +106,26 @@ public class CertificationPracticalCollectionController {
   @AuditLog(module = "certification", action = "practical-collection:match-by-token", targetType = "certification_practical_collection_status")
   public ApiResponse<CandidateMatchVO> matchByToken(@Valid @RequestBody MatchByTokenRequest request) {
     return ApiResponse.ok(service.matchByToken(request));
+  }
+
+  @PostMapping("/workbench/{taskId}/scan-match-current")
+  @PreAuthorize("hasAuthority('certification.practical.collection.operate')")
+  @AuditLog(module = "certification", action = "practical-collection:scan-match-current", targetType = "certification_practical_collection_status")
+  public ApiResponse<ScanMatchResultVO> scanMatchCurrent(
+      @PathVariable Long taskId,
+      @Valid @RequestBody ScanMatchCurrentRequest request
+  ) {
+    return ApiResponse.ok(service.scanMatchCurrent(taskId, request.token()));
+  }
+
+  @PostMapping("/workbench/{taskId}/candidates/{candidateId}/open")
+  @PreAuthorize("hasAuthority('certification.practical.collection.operate')")
+  @AuditLog(module = "certification", action = "practical-collection:open-candidate", targetType = "certification_practical_collection_status")
+  public ApiResponse<CandidateCollectionDetailVO> openCandidateCollection(
+      @PathVariable Long taskId,
+      @PathVariable Long candidateId
+  ) {
+    return ApiResponse.ok(service.openCandidateCollection(taskId, candidateId));
   }
 
   @PostMapping("/search-candidate")

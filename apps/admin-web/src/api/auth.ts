@@ -6,7 +6,7 @@ export function login(req: LoginReq) {
 }
 
 export function currentUser() {
-  return unwrap<CurrentUserVO>(apiClient.get('/auth/me'));
+  return unwrap<CurrentUserVO>(apiClient.get('/auth/me', { silentError: true }));
 }
 
 export function fetchMenus() {

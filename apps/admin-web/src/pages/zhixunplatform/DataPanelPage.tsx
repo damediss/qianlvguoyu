@@ -28,6 +28,7 @@ import * as echarts from 'echarts/core';
 import { BarChart, PieChart as Pie, LineChart, ScatterChart, GaugeChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
+import { WeKnoraWidget } from '../../components/ai/WeKnoraWidget';
 import './DataPanelPage.css';
 
 echarts.use([BarChart, Pie, LineChart, ScatterChart, GaugeChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
@@ -549,6 +550,7 @@ export function DataPanelPage() {
       <div style={{ textAlign: 'center', fontSize: 12, color: '#64748b', marginTop: 12 }}>
         数据更新至 2026-05 · 演示数据 · ECharts 交互图表
       </div>
+      <WeKnoraWidget />
     </div>
   );
 }

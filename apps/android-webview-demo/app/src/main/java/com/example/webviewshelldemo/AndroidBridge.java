@@ -2,6 +2,7 @@ package com.example.webviewshelldemo;
 
 import android.app.Activity;
 import android.os.Build;
+import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 
@@ -9,20 +10,25 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 public final class AndroidBridge {
+    private static final String TAG = "AndroidBridge";
+
     private final Activity activity;
     private final WebView webView;
     private final FingerprintSdkAdapter fingerprintSdkAdapter;
+    private final QrCodeScanHelper qrCodeScanHelper;
     private boolean fingerprintDialogOpen;
     private boolean signatureDialogOpen;
 
     public AndroidBridge(
             Activity activity,
             WebView webView,
-            FingerprintSdkAdapter fingerprintSdkAdapter
+            FingerprintSdkAdapter fingerprintSdkAdapter,
+            QrCodeScanHelper qrCodeScanHelper
     ) {
         this.activity = activity;
         this.webView = webView;
         this.fingerprintSdkAdapter = fingerprintSdkAdapter;
+        this.qrCodeScanHelper = qrCodeScanHelper;
     }
 
     @JavascriptInterface
@@ -165,6 +171,30 @@ public final class AndroidBridge {
     }
 
     @JavascriptInterface
+    public void scanQRCode(String requestId, String payloadJson) {
+        String resolvedRequestId = resolveScanRequestId(requestId, payloadJson);
+        Log.i(TAG, "scanQRCode called from H5, requestId=" + resolvedRequestId);
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                qrCodeScanHelper.startScan(resolvedRequestId, new QrCodeScanHelper.ResultCallback() {
+                    @Override
+                    public void onComplete(QrCodeScanPayload result) {
+                        result.requestId = resolvedRequestId;
+                        boolean callbackSuccess = result.success;
+                        Log.i(TAG, "scanQRCode completed, requestId=" + resolvedRequestId
+                                + ", success=" + callbackSuccess
+                                + ", code=" + result.code);
+                        callback(callbackSuccess
+                                ? "window.__onNativeCapabilitySuccess"
+                                : "window.__onNativeCapabilityError", result);
+                    }
+                });
+            }
+        });
+    }
+
+    @JavascriptInterface
     public void getDeviceInfo(String requestId, String payloadJson) {
         String resolvedRequestId = resolveRequestId(requestId, payloadJson);
         JSONObject payload = new JSONObject();
@@ -208,15 +238,45 @@ public final class AndroidBridge {
         callback(functionName, payload.toJson());
     }
 
+    private void callback(String functionName, QrCodeScanPayload payload) {
+        callback(functionName, payload.toJson());
+    }
+
     private void callback(String functionName, JSONObject payloadJson) {
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
+                if (activity.isFinishing() || webView == null) {
+                    Log.w(TAG, "skip JS callback because activity or webView is unavailable");
+                    return;
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && activity.isDestroyed()) {
+                    Log.w(TAG, "skip JS callback because activity is destroyed");
+                    return;
+                }
                 String quotedPayload = JSONObject.quote(payloadJson.toString());
                 String script = "if (" + functionName + ") { " + functionName + "(" + quotedPayload + "); }";
-                webView.evaluateJavascript(script, null);
+                webView.evaluateJavascript(script, value -> Log.d(TAG, "callback " + functionName + " dispatched"));
             }
         });
+    }
+
+    private String resolveScanRequestId(String requestId, String payloadJson) {
+        if (requestId != null && !requestId.trim().isEmpty()) {
+            return requestId.trim();
+        }
+        if (payloadJson != null && !payloadJson.trim().isEmpty()) {
+            try {
+                JSONObject json = new JSONObject(payloadJson);
+                String payloadRequestId = json.optString("requestId", "");
+                if (!payloadRequestId.trim().isEmpty()) {
+                    return payloadRequestId.trim();
+                }
+            } catch (JSONException ignored) {
+                // Invalid H5 payloads are handled by generating a native request id.
+            }
+        }
+        return "android-scan-" + System.currentTimeMillis();
     }
 
     private JSONObject parsePayload(String payloadJson) {

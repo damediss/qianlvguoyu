@@ -84,6 +84,7 @@ import { CertificationDataPanelPage } from './pages/certification/CertificationD
 import { PracticalConfigurationPage } from './pages/certification/PracticalConfigurationPage';
 import { PreparationPage } from './pages/certification/PreparationPage';
 import { CollectionTaskListPage } from './pages/certification/collection/CollectionTaskListPage';
+import { CollectionManagePage } from './pages/certification/collection/CollectionManagePage';
 import { ArchivePage } from './pages/certification/ArchivePage';
 import { TaskArchivePage } from './pages/certification/TaskArchivePage';
 import { AssessorInfoPage } from './pages/certification/info/AssessorInfoPage';
@@ -474,6 +475,11 @@ const pageMap: Record<string, React.ReactNode> = {
 
 const assessorMode = window.location.pathname.startsWith('/assessor-scoring');
 const practicalCollectionMode = window.location.pathname.startsWith('/practical-collection');
+const collectionManageTaskId = (() => {
+  const match = window.location.pathname.match(/^\/certification\/practical-collection\/([^/]+)\/manage\/?$/);
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+})();
+const collectionManageMode = Boolean(collectionManageTaskId);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -484,6 +490,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <TabletAssessorApp />
           ) : practicalCollectionMode ? (
             <PracticalCollectionApp />
+          ) : collectionManageMode ? (
+            <AppShell
+              pageMap={pageMap}
+              selectedMenuKeyOverride="certification_practical_collection"
+              contentOverride={<CollectionManagePage taskId={collectionManageTaskId} />}
+            />
           ) : (
             <AppShell pageMap={pageMap} />
           )}

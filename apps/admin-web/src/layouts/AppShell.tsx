@@ -1,7 +1,8 @@
 import * as Icons from '@ant-design/icons';
-import { Avatar, Dropdown, Input, Layout, Menu, Space, Tooltip, Typography } from 'antd';
+import { Avatar, Breadcrumb, Dropdown, Input, Layout, Menu, Space, Tooltip, Typography } from 'antd';
+import type { MenuProps } from 'antd';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { fetchMenus, logout } from '../api/auth';
 import { apiClient } from '../api/client';
@@ -11,6 +12,16 @@ import type { MenuVO } from '../types/api';
 import { iconFromName } from '../utils/icons';
 
 const { Header, Sider, Content } = Layout;
+
+type AppMenuItem = {
+  key: string;
+  icon?: ReactNode;
+  label: ReactNode;
+  title: string;
+  disabled?: boolean;
+  children?: AppMenuItem[];
+  onTitleClick?: () => void;
+};
 
 /**
  * Render a menu label and only attach the hover Tooltip when the text is
@@ -57,23 +68,25 @@ function TruncatedLabel({ text }: { text: string }) {
  */
 function buildMenuItems(
   tree: MenuVO[],
-): { key: string; icon?: ReactNode; label: ReactNode; title: string; children?: unknown[] }[] {
+  pageMap: Record<string, ReactNode>,
+  onDirectoryTitleClick?: (node: MenuVO) => void,
+): AppMenuItem[] {
   return tree
     .map((m) => {
-      const item: {
-        key: string;
-        icon?: ReactNode;
-        label: ReactNode;
-        title: string;
-        children?: unknown[];
-      } = {
+      const hasChildren = Boolean(m.children && m.children.length > 0);
+      const isEmptyDirectory = m.menuType === 'directory' && !hasChildren && !pageMap[m.code];
+      const item: AppMenuItem = {
         key: m.code,
         icon: iconFromName(m.icon),
         label: <TruncatedLabel text={m.name} />,
         title: m.name,
+        disabled: isEmptyDirectory,
       };
-      if (m.children && m.children.length > 0) {
-        item.children = buildMenuItems(m.children);
+      if (hasChildren) {
+        item.children = buildMenuItems(m.children, pageMap, onDirectoryTitleClick);
+        if (isCertificationDirectory(m)) {
+          item.onTitleClick = () => onDirectoryTitleClick?.(m);
+        }
       }
       return item;
     });
@@ -105,11 +118,49 @@ function findAncestorCodes(tree: MenuVO[], targetCode: string, trail: string[] =
   return null;
 }
 
-interface AppShellProps {
-  pageMap: Record<string, ReactNode>;
+function findMenuPath(tree: MenuVO[], targetCode: string, trail: MenuVO[] = []): MenuVO[] | null {
+  for (const node of tree) {
+    const nextTrail = [...trail, node];
+    if (node.code === targetCode) {
+      return nextTrail;
+    }
+    if (node.children?.length) {
+      const found = findMenuPath(node.children, targetCode, nextTrail);
+      if (found) {
+        return found;
+      }
+    }
+  }
+  return null;
 }
 
-export function AppShell({ pageMap }: AppShellProps) {
+function findFirstNavigableNode(tree: MenuVO[], pageMap: Record<string, ReactNode>): MenuVO | null {
+  for (const node of tree) {
+    if (node.menuType === 'external' || pageMap[node.code]) {
+      return node;
+    }
+    if (node.children?.length) {
+      const found = findFirstNavigableNode(node.children, pageMap);
+      if (found) {
+        return found;
+      }
+    }
+  }
+  return null;
+}
+
+function isCertificationDirectory(node: MenuVO) {
+  return node.menuType === 'directory'
+    && (node.code === 'certification' || node.code.startsWith('certification_'));
+}
+
+interface AppShellProps {
+  pageMap: Record<string, ReactNode>;
+  contentOverride?: ReactNode;
+  selectedMenuKeyOverride?: string;
+}
+
+export function AppShell({ pageMap, contentOverride, selectedMenuKeyOverride }: AppShellProps) {
   const token = useAuthStore((s) => s.token);
   const menuTree = useAuthStore((s) => s.menuTree);
   const setMenuTree = useAuthStore((s) => s.setMenuTree);
@@ -118,6 +169,7 @@ export function AppShell({ pageMap }: AppShellProps) {
   const selectedKey = useNavStore((s) => s.selectedKey);
   const setSelectedKey = useNavStore((s) => s.setSelectedKey);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
+  const activeMenuKey = selectedMenuKeyOverride || selectedKey;
 
   const menusQuery = useQuery({
     queryKey: ['menus', token],
@@ -133,12 +185,12 @@ export function AppShell({ pageMap }: AppShellProps) {
   }, [menusQuery.data, setMenuTree]);
 
   useEffect(() => {
-    if (!menuTree.length || !selectedKey) return;
-    const ancestors = findAncestorCodes(menuTree, selectedKey);
+    if (!menuTree.length || !activeMenuKey) return;
+    const ancestors = findAncestorCodes(menuTree, activeMenuKey);
     if (ancestors && ancestors.length > 0) {
       setOpenKeys((prev) => [...new Set([...prev, ...ancestors])]);
     }
-  }, [menuTree, selectedKey]);
+  }, [activeMenuKey, menuTree]);
 
   // 根据菜单配置的 expanded 字段初始化默认展开的目录
   useEffect(() => {
@@ -154,6 +206,15 @@ export function AppShell({ pageMap }: AppShellProps) {
       setOpenKeys((prev) => [...new Set([...prev, ...expandedKeys])]);
     }
   }, [menuTree]);
+  useEffect(() => {
+    if (!menuTree.length || !selectedKey) return;
+    const node = findMenuNode(menuTree, selectedKey);
+    if (!node || pageMap[node.code] || node.menuType === 'external') return;
+    const target = findFirstNavigableNode(node.children || [], pageMap);
+    if (target && target.code !== selectedKey && target.menuType !== 'external') {
+      setSelectedKey(target.code);
+    }
+  }, [menuTree, pageMap, selectedKey, setSelectedKey]);
 
   const handleLogout = async () => {
     try {
@@ -191,7 +252,47 @@ export function AppShell({ pageMap }: AppShellProps) {
     },
   ];
 
-  const menuItems = buildMenuItems(menuTree);
+  const openExternalMenu = useCallback((node: MenuVO) => {
+    if (node.menuType !== 'external') {
+      return;
+    }
+    apiClient.get<{ authorizeUrl: string }>('/sso/weknora')
+      .then(r => {
+        window.location.href = r.data.authorizeUrl;
+      })
+      .catch(() => {
+        window.open('http://43.138.163.7:8088', '_blank');
+      });
+  }, []);
+
+  const navigateToNode = useCallback((node: MenuVO | null) => {
+    if (!node) {
+      return;
+    }
+    const target = pageMap[node.code] || node.menuType === 'external'
+      ? node
+      : findFirstNavigableNode(node.children || [], pageMap);
+    if (!target) {
+      return;
+    }
+    if (target.menuType === 'external') {
+      openExternalMenu(target);
+      return;
+    }
+    if (pageMap[target.code]) {
+      setSelectedKey(target.code);
+    }
+  }, [openExternalMenu, pageMap, setSelectedKey]);
+
+  const menuItems = useMemo(
+    () => buildMenuItems(menuTree, pageMap, navigateToNode),
+    [menuTree, navigateToNode, pageMap],
+  );
+
+  const breadcrumbItems = useMemo(() => {
+    const path = findMenuPath(menuTree, activeMenuKey) || [];
+    return path.map((node) => ({ title: node.name }));
+  }, [activeMenuKey, menuTree]);
 
   return (
     <Layout className="app-shell">
@@ -207,28 +308,13 @@ export function AppShell({ pageMap }: AppShellProps) {
           className="app-menu"
           theme="light"
           mode="inline"
-          selectedKeys={[selectedKey]}
+          selectedKeys={[activeMenuKey]}
           openKeys={openKeys}
           onOpenChange={setOpenKeys}
           onClick={({ key }) => {
-            const node = findMenuNode(menuTree, key);
-            if (node?.children && node.children.length > 0) {
-              return;
-            }
-            // 外部 SSO 链接：调桥接端点取 authorizeUrl 后跳转
-            if (node?.menuType === 'external') {
-              apiClient.get<{ authorizeUrl: string }>('/sso/weknora')
-                .then(r => {
-                  window.location.href = r.data.authorizeUrl;
-                })
-                .catch(() => {
-                  window.open('http://43.138.163.7:8088', '_blank');
-                });
-              return;
-            }
-            setSelectedKey(key);
+            navigateToNode(findMenuNode(menuTree, String(key)));
           }}
-          items={menuItems}
+          items={menuItems as MenuProps['items']}
         />
       </Sider>
       <Layout>
@@ -252,7 +338,12 @@ export function AppShell({ pageMap }: AppShellProps) {
           </Space>
         </Header>
         <Content className="app-content">
-          {pageMap[selectedKey] || pageMap['knowledge']}
+          {breadcrumbItems.length > 0 && (
+            <Breadcrumb className="app-breadcrumb" items={breadcrumbItems} />
+          )}
+          <div className="app-page-body">
+            {contentOverride || pageMap[selectedKey] || pageMap['knowledge']}
+          </div>
         </Content>
       </Layout>
     </Layout>

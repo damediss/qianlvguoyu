@@ -74,7 +74,6 @@ spring:
     baseline-on-migrate: true
     out-of-order: true
     validate-on-migrate: false
-    repair-on-migrate: true
 
 management:
   endpoints:
@@ -106,6 +105,12 @@ flowable:
   process-definition-location-prefix: classpath:/workflows/bpmn/
   process-definition-location-suffixes:
     - "**.bpmn20.xml"
+
+weknora:
+  base-url: ${WEKNORA_BASE_URL:http://43.138.163.7:8088}
+  channel-id: ${WEKNORA_CHANNEL_ID:aa3a676b-a1cb-4719-8e06-6636932d9bb2}
+  publish-token: ${WEKNORA_PUBLISH_TOKEN:}
+  origin: ${WEKNORA_ORIGIN:http://localhost:5173}
 
 platform:
   cors:

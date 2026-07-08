@@ -1,4 +1,4 @@
-﻿* {
+* {
   box-sizing: border-box;
 }
 
@@ -133,6 +133,16 @@ body {
 /* ---- Content ---- */
 .app-content {
   padding: 24px;
+}
+
+.app-breadcrumb {
+  margin-bottom: 12px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.app-page-body {
+  min-width: 0;
 }
 
 .knowledge-page {

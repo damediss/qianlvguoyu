@@ -39,7 +39,9 @@ import com.guoyu.platform.certification.collection.vo.CollectionStatsVO;
 import com.guoyu.platform.certification.collection.vo.CollectionTaskVO;
 import com.guoyu.platform.certification.collection.vo.CollectionWorkbenchVO;
 import com.guoyu.platform.certification.collection.vo.FingerprintTraceVO;
+import com.guoyu.platform.certification.collection.vo.QrCodeExportVO;
 import com.guoyu.platform.certification.collection.vo.QueueItemVO;
+import com.guoyu.platform.certification.collection.vo.ScanMatchResultVO;
 import com.guoyu.platform.certification.collection.vo.SignatureRecordVO;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
@@ -62,10 +64,23 @@ import com.guoyu.platform.file.entity.FileEntity;
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.WriterException;
+import com.google.zxing.client.j2se.MatrixToImageWriter;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -76,7 +91,15 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import javax.imageio.ImageIO;
+import org.apache.poi.ss.usermodel.ClientAnchor;
+import org.apache.poi.ss.usermodel.Drawing;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -89,6 +112,11 @@ public class PracticalCollectionApplicationService {
   private static final Pattern NAME_LAST4_PATTERN = Pattern.compile("^(.+?)[\\s,，:：-]*(\\d{4})$");
   private static final int TOKEN_BYTES = 32;
   private static final int JOIN_QUEUE_RETRY = 2;
+  private static final int QR_EXPORT_IMAGE_SIZE = 160;
+  private static final Pattern TOKEN_QUERY_PATTERN =
+      Pattern.compile("(?:collectionToken|collectToken|token)=([^&\\s]+)", Pattern.CASE_INSENSITIVE);
+  private static final DateTimeFormatter FILE_TS_FORMAT =
+      DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
   private final CertificationTaskMapper taskMapper;
   private final CertificationCandidateMapper candidateMapper;
@@ -102,6 +130,13 @@ public class PracticalCollectionApplicationService {
   private final PracticalCollectionConverter converter;
   private final SecureRandom secureRandom = new SecureRandom();
 
+  /**
+   * 采集链接模板，需包含占位符 {token}，例如
+   * {@code https://xxx/practical-collection/scan?token={token}}。
+   * 为空时二维码内容退化为 {@code collectionToken=<token>}。
+   */
+  private final String scanUrlTemplate;
+
   public PracticalCollectionApplicationService(
       CertificationTaskMapper taskMapper,
       CertificationCandidateMapper candidateMapper,
@@ -112,7 +147,8 @@ public class PracticalCollectionApplicationService {
       PracticalCollectionExceptionMapper exceptionMapper,
       FileApplicationService fileApplicationService,
       PracticalCollectionDomainService domainService,
-      PracticalCollectionConverter converter
+      PracticalCollectionConverter converter,
+      @Value("${platform.practical-collection.scan-url-template:}") String scanUrlTemplate
   ) {
     this.taskMapper = taskMapper;
     this.candidateMapper = candidateMapper;
@@ -124,6 +160,7 @@ public class PracticalCollectionApplicationService {
     this.fileApplicationService = fileApplicationService;
     this.domainService = domainService;
     this.converter = converter;
+    this.scanUrlTemplate = scanUrlTemplate == null ? "" : scanUrlTemplate.trim();
   }
 
   public PageResponse<CollectionTaskVO> pageTasks(CollectionTaskQueryRequest request) {
@@ -279,13 +316,281 @@ public class PracticalCollectionApplicationService {
 
   @Transactional
   public CollectionActionResultVO generateQrTokensAction(Long taskId) {
+    Long tenantId = current().getTenantId();
     int generated = generateQrTokens(taskId);
-    return actionResult(taskId, "Generated collection QR tokens: " + generated);
+    List<PracticalCollectionStatusEntity> statuses = statusMapper.selectList(
+        new LambdaQueryWrapper<PracticalCollectionStatusEntity>()
+            .eq(PracticalCollectionStatusEntity::getTenantId, tenantId)
+            .eq(PracticalCollectionStatusEntity::getTaskId, taskId)
+            .eq(PracticalCollectionStatusEntity::getDeleted, 0));
+    int total = statuses.size();
+    long issued = statuses.stream().filter(status -> StringUtils.hasText(status.getCollectToken())).count();
+    long existing = Math.max(issued - generated, 0);
+    String message = String.format(
+        "二维码 token 生成完成：本次新增 %d 个，已有 %d 个，共 %d/%d 名考生已发放",
+        generated, existing, issued, total);
+    return actionResult(taskId, message);
   }
 
-  public CollectionActionResultVO exportQrCodesPlaceholder(Long taskId) {
-    requireTask(current().getTenantId(), taskId);
-    return actionResult(taskId, "QR code export endpoint is reserved for the platform export implementation.");
+  /**
+   * 导出当前任务考生的采集二维码。生成真实二维码图片并嵌入 Excel，
+   * 同时包含姓名、准考证号、token、二维码内容与采集链接。
+   */
+  @Transactional
+  public QrCodeExportVO exportQrCodes(Long taskId) {
+    Long tenantId = current().getTenantId();
+    CertificationTaskEntity task = requireTask(tenantId, taskId);
+    generateQrTokens(taskId);
+    List<CertificationCandidateEntity> candidates = candidateMapper.selectList(
+        new LambdaQueryWrapper<CertificationCandidateEntity>()
+            .eq(CertificationCandidateEntity::getTenantId, tenantId)
+            .eq(CertificationCandidateEntity::getTaskId, taskId)
+            .eq(CertificationCandidateEntity::getDeleted, 0)
+            .orderByAsc(CertificationCandidateEntity::getId));
+    Map<Long, PracticalCollectionStatusEntity> statuses = statusesByCandidateIds(
+        tenantId,
+        taskId,
+        candidates.stream().map(CertificationCandidateEntity::getId).toList());
+    byte[] data = buildQrCodeWorkbook(candidates, statuses);
+    String filename = String.format(
+        "practical-collection-qrcodes-%s-%s.xlsx",
+        taskId,
+        LocalDateTime.now().format(FILE_TS_FORMAT));
+    LocalDateTime now = LocalDateTime.now();
+    statuses.values().forEach(status -> {
+      if (StringUtils.hasText(status.getCollectToken())) {
+        status.setQrExportedAt(now);
+        statusMapper.updateById(status);
+      }
+    });
+    return new QrCodeExportVO(data, filename);
+  }
+
+  private byte[] buildQrCodeWorkbook(
+      List<CertificationCandidateEntity> candidates,
+      Map<Long, PracticalCollectionStatusEntity> statuses
+  ) {
+    String[] headers = {
+        "序号", "姓名", "准考证号", "身份证后四位", "单位", "工种", "等级",
+        "二维码token", "二维码内容", "采集链接", "二维码图片"
+    };
+    try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      Sheet sheet = workbook.createSheet("采集二维码");
+      Drawing<?> drawing = sheet.createDrawingPatriarch();
+      Row header = sheet.createRow(0);
+      for (int col = 0; col < headers.length; col++) {
+        header.createCell(col).setCellValue(headers[col]);
+      }
+      int[] widths = {1600, 3200, 5000, 3600, 5200, 4200, 3000, 9000, 9000, 9000, 6000};
+      for (int col = 0; col < widths.length; col++) {
+        sheet.setColumnWidth(col, widths[col]);
+      }
+      int rowIdx = 1;
+      int seq = 1;
+      for (CertificationCandidateEntity candidate : candidates) {
+        PracticalCollectionStatusEntity status = statuses.get(candidate.getId());
+        String token = status == null ? null : status.getCollectToken();
+        String qrContent = buildQrContent(token);
+        String scanLink = buildScanLink(token);
+        Row row = sheet.createRow(rowIdx);
+        row.setHeightInPoints(120f);
+        row.createCell(0).setCellValue(seq);
+        row.createCell(1).setCellValue(nullToDash(candidate.getCandidateName()));
+        row.createCell(2).setCellValue(nullToDash(candidate.getAdmissionTicketNo()));
+        row.createCell(3).setCellValue(status == null ? "-" : nullToDash(status.getIdCardLast4()));
+        row.createCell(4).setCellValue(nullToDash(candidate.getOrgName()));
+        row.createCell(5).setCellValue(nullToDash(candidate.getWorkTypeName()));
+        row.createCell(6).setCellValue(nullToDash(candidate.getLevelName()));
+        row.createCell(7).setCellValue(nullToDash(token));
+        row.createCell(8).setCellValue(nullToDash(qrContent));
+        row.createCell(9).setCellValue(nullToDash(scanLink));
+        if (StringUtils.hasText(qrContent)) {
+          byte[] png = qrPngBytes(qrContent);
+          if (png != null) {
+            int pictureIdx = workbook.addPicture(png, Workbook.PICTURE_TYPE_PNG);
+            ClientAnchor anchor = workbook.getCreationHelper().createClientAnchor();
+            anchor.setCol1(10);
+            anchor.setRow1(rowIdx);
+            anchor.setCol2(11);
+            anchor.setRow2(rowIdx + 1);
+            drawing.createPicture(anchor, pictureIdx);
+          }
+        }
+        rowIdx++;
+        seq++;
+      }
+      workbook.write(output);
+      return output.toByteArray();
+    } catch (IOException ex) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "生成二维码导出文件失败: " + ex.getMessage());
+    }
+  }
+
+  private byte[] qrPngBytes(String content) {
+    try {
+      QRCodeWriter writer = new QRCodeWriter();
+      Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
+      hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
+      hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.M);
+      hints.put(EncodeHintType.MARGIN, 1);
+      BitMatrix matrix = writer.encode(
+          content, BarcodeFormat.QR_CODE, QR_EXPORT_IMAGE_SIZE, QR_EXPORT_IMAGE_SIZE, hints);
+      BufferedImage image = MatrixToImageWriter.toBufferedImage(matrix);
+      ByteArrayOutputStream out = new ByteArrayOutputStream();
+      ImageIO.write(image, "PNG", out);
+      return out.toByteArray();
+    } catch (WriterException ex) {
+      return null;
+    } catch (IOException ex) {
+      throw new UncheckedIOException(ex);
+    }
+  }
+
+  private String buildQrContent(String token) {
+    if (!StringUtils.hasText(token)) {
+      return "";
+    }
+    if (scanUrlTemplate.contains("{token}")) {
+      return scanUrlTemplate.replace("{token}", token);
+    }
+    return "collectionToken=" + token;
+  }
+
+  private String buildScanLink(String token) {
+    if (!StringUtils.hasText(token) || !scanUrlTemplate.contains("{token}")) {
+      return "";
+    }
+    return scanUrlTemplate.replace("{token}", token);
+  }
+
+  private String nullToDash(String value) {
+    return StringUtils.hasText(value) ? value : "-";
+  }
+
+  /**
+   * 扫码匹配当前考生并推进到采集中状态。token 允许是纯 token、二维码内容或采集链接。
+   */
+  @Transactional
+  public ScanMatchResultVO scanMatchCurrent(Long taskId, String rawToken) {
+    PlatformUserPrincipal user = current();
+    requireTask(user.getTenantId(), taskId);
+    String token = normalizeToken(rawToken);
+    if (!StringUtils.hasText(token)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "二维码内容为空，无法匹配考生");
+    }
+    PracticalCollectionStatusEntity status =
+        statusMapper.lockByTaskAndToken(user.getTenantId(), taskId, token);
+    if (status == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "采集二维码无效或不属于当前任务");
+    }
+    CertificationCandidateEntity candidate =
+        requireCandidate(user.getTenantId(), taskId, status.getCandidateId());
+    if (CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
+      return new ScanMatchResultVO(
+          true,
+          collectionDetail(taskId, candidate.getId()),
+          "该考生已完成采集");
+    }
+    CandidateCollectionDetailVO detail = openCurrentCandidate(
+        user,
+        taskId,
+        candidate,
+        status,
+        CollectionMatchMethodEnum.QR_CODE
+    );
+    return new ScanMatchResultVO(false, detail, "匹配成功");
+  }
+
+  @Transactional
+  public CandidateCollectionDetailVO openCandidateCollection(Long taskId, Long candidateId) {
+    PlatformUserPrincipal user = current();
+    requireTask(user.getTenantId(), taskId);
+    CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), taskId, candidateId);
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
+    if (CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
+      return collectionDetail(taskId, candidate.getId());
+    }
+    return openCurrentCandidate(
+        user,
+        taskId,
+        candidate,
+        status,
+        CollectionMatchMethodEnum.MANUAL
+    );
+  }
+
+  private CandidateCollectionDetailVO openCurrentCandidate(
+      PlatformUserPrincipal user,
+      Long taskId,
+      CertificationCandidateEntity candidate,
+      PracticalCollectionStatusEntity status,
+      CollectionMatchMethodEnum matchMethod
+  ) {
+    PracticalCollectionQueueEntity collecting = queueMapper.selectList(
+            new LambdaQueryWrapper<PracticalCollectionQueueEntity>()
+                .eq(PracticalCollectionQueueEntity::getTenantId, user.getTenantId())
+                .eq(PracticalCollectionQueueEntity::getTaskId, taskId)
+                .eq(PracticalCollectionQueueEntity::getQueueStatus, CollectionQueueStatusEnum.COLLECTING.getCode())
+                .eq(PracticalCollectionQueueEntity::getDeleted, 0)
+                .last("LIMIT 1"))
+        .stream()
+        .findFirst()
+        .orElse(null);
+    if (collecting != null && !Objects.equals(collecting.getCandidateId(), candidate.getId())) {
+      CertificationCandidateEntity currentCandidate =
+          candidateById(user.getTenantId(), taskId, collecting.getCandidateId());
+      String currentName = currentCandidate == null
+          ? String.valueOf(collecting.getCandidateId())
+          : currentCandidate.getCandidateName();
+      throw new BusinessException(
+          ErrorCode.CONFLICT,
+          "当前已有正在采集的考生：" + currentName + "，请先完成或处理后再切换");
+    }
+    LocalDateTime now = LocalDateTime.now();
+    status.setMatchMethod(matchMethod.getCode());
+    if (status.getArrivedAt() == null) {
+      status.setArrivedAt(now);
+    }
+    status.setLastOperatorId(user.getUserId());
+    statusMapper.updateById(status);
+    PracticalCollectionQueueEntity queue =
+        queueMapper.selectActiveByCandidate(user.getTenantId(), taskId, candidate.getId());
+    if (queue == null) {
+      joinQueue(new JoinQueueRequest(taskId, candidate.getId(), matchMethod.getCode()));
+      queue = queueMapper.selectActiveByCandidate(user.getTenantId(), taskId, candidate.getId());
+    }
+    if (queue == null) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "加入采集队列失败");
+    }
+    PracticalCollectionStatusEntity locked = lockStatusForCandidate(user.getTenantId(), candidate);
+    if (!CollectionOverallStatusEnum.COLLECTING.getCode().equals(locked.getOverallStatus())) {
+      if (!CollectionQueueStatusEnum.COLLECTING.getCode().equals(queue.getQueueStatus())) {
+        queue.setQueueStatus(CollectionQueueStatusEnum.COLLECTING.getCode());
+        queue.setStartedAt(now);
+        queue.setOperatorId(user.getUserId());
+        queueMapper.updateById(queue);
+      }
+      locked.setOverallStatus(CollectionOverallStatusEnum.COLLECTING.getCode());
+      locked.setQueueStatus(CollectionQueueStatusEnum.COLLECTING.getCode());
+      if (locked.getCollectingStartedAt() == null) {
+        locked.setCollectingStartedAt(now);
+      }
+      locked.setLastOperatorId(user.getUserId());
+      statusMapper.updateById(locked);
+    }
+    return collectionDetail(taskId, candidate.getId());
+  }
+
+  private String normalizeToken(String rawToken) {
+    if (!StringUtils.hasText(rawToken)) {
+      return null;
+    }
+    String value = rawToken.trim();
+    Matcher matcher = TOKEN_QUERY_PATTERN.matcher(value);
+    if (matcher.find()) {
+      return matcher.group(1).trim();
+    }
+    return value;
   }
 
   @Transactional

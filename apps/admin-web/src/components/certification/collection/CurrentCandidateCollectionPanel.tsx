@@ -1,27 +1,41 @@
-import { CheckCircleOutlined, SafetyCertificateOutlined, WarningOutlined } from '@ant-design/icons';
-import { Button, Descriptions, Empty, Space, Tag, Typography, message } from 'antd';
+import {
+  CheckCircleOutlined,
+  CloseOutlined,
+  SafetyCertificateOutlined,
+  WarningOutlined,
+} from '@ant-design/icons';
+import { Button, Descriptions, Empty, Input, Modal, Space, Tag, Typography, message } from 'antd';
 import { useMutation } from '@tanstack/react-query';
-import { submitFingerprint } from '../../../api/certificationPracticalCollection';
+import { useState } from 'react';
+import { completeCollection, markInfoError, submitFingerprint } from '../../../api/certificationPracticalCollection';
 import { getFingerprintAdapter } from '../../../services/fingerprint/FingerprintAdapterFactory';
 import { isFingerprintCaptureCancelled } from '../../../services/fingerprint/AndroidFingerprintAdapter';
 import { formatBackendDateTime } from '../../../utils/dateTime';
 import { SignaturePad } from './SignaturePad';
 import type {
+  CandidateCollectionContext,
   CandidateCollectionDetailVO,
   CandidateMatchVO,
+  CollectionEntrySource,
   SnowflakeId,
 } from '../../../types/certificationPracticalCollection';
+import { CollectionOverallStatusText } from '../../../types/certificationPracticalCollection';
 
 interface CurrentCandidateCollectionPanelProps {
   candidate?: CandidateCollectionDetailVO | null;
+  collectionContext?: CandidateCollectionContext | null;
   taskId: SnowflakeId;
-  loading?: boolean;
   onRefresh: () => void;
-  onComplete: () => void;
-  onPendingRetry: () => void;
-  onInfoError: () => void;
-  onExceptionRelease: () => void;
+  onCancelCurrent: () => void;
+  onClearCurrent?: () => void;
+  onAfterStatusChanged?: () => void;
 }
+
+const entrySourceText: Record<CollectionEntrySource, string> = {
+  QR_SCAN: '二维码扫码匹配',
+  CANDIDATE_ROW: '考生列表选择',
+  SEARCH: '搜索选择',
+};
 
 function asMatchCandidate(candidate: CandidateCollectionDetailVO): CandidateMatchVO {
   return {
@@ -44,7 +58,7 @@ function asMatchCandidate(candidate: CandidateCollectionDetailVO): CandidateMatc
 
 function getSignatureDisabledReason(candidate: CandidateCollectionDetailVO): string | undefined {
   if (candidate.signatureStatus === 'EXCEPTION_RELEASED') {
-    return '签名已异常放行';
+    return '签名状态异常';
   }
   if (candidate.signatureStatus === 'DONE' || candidate.latestSignature) {
     return '签名已提交，本阶段不支持重复签名覆盖';
@@ -53,21 +67,51 @@ function getSignatureDisabledReason(candidate: CandidateCollectionDetailVO): str
     return '考生采集已完成，不允许重复签名';
   }
   if (candidate.overallStatus !== 'COLLECTING') {
-    return '只有采集中考生可以签名';
+    return '请先确认当前考生';
   }
   return undefined;
 }
 
+function getFingerprintStatusText(candidate: CandidateCollectionDetailVO) {
+  if (candidate.latestFingerprint?.fingerprintImageFileId || candidate.fingerprintStatus === 'DONE') {
+    return '已采集';
+  }
+  if (candidate.fingerprintStatus === 'FAILED' || candidate.fingerprintStatus === 'EXCEPTION_RELEASED') {
+    return '异常';
+  }
+  return '未完成';
+}
+
+function getSignatureStatusText(candidate: CandidateCollectionDetailVO) {
+  if (candidate.latestSignature?.signatureFileId || candidate.signatureStatus === 'DONE') {
+    return '已签名';
+  }
+  if (candidate.signatureStatus === 'FAILED' || candidate.signatureStatus === 'EXCEPTION_RELEASED') {
+    return '异常';
+  }
+  return '未完成';
+}
+
 export function CurrentCandidateCollectionPanel({
   candidate,
+  collectionContext,
   taskId,
-  loading,
   onRefresh,
-  onComplete,
-  onPendingRetry,
-  onInfoError,
-  onExceptionRelease,
+  onCancelCurrent,
+  onClearCurrent,
+  onAfterStatusChanged,
 }: CurrentCandidateCollectionPanelProps) {
+  const [infoErrorOpen, setInfoErrorOpen] = useState(false);
+  const [infoErrorReason, setInfoErrorReason] = useState('');
+
+  const clearCurrentAfterSave = () => {
+    if (onClearCurrent) {
+      onClearCurrent();
+      return;
+    }
+    onCancelCurrent();
+  };
+
   const fingerprintMutation = useMutation({
     mutationFn: async (detail: CandidateCollectionDetailVO) => {
       const adapter = getFingerprintAdapter();
@@ -113,16 +157,91 @@ export function CurrentCandidateCollectionPanel({
     },
   });
 
+  const completeMutation = useMutation({
+    mutationFn: () => {
+      if (!candidate) {
+        throw new Error('请先确认当前考生');
+      }
+      return completeCollection({
+        taskId,
+        candidateId: candidate.candidateId,
+        sessionId: candidate.sessionId,
+      });
+    },
+    onSuccess: (result) => {
+      message.success(result.message || '采集已完成');
+      clearCurrentAfterSave();
+      onAfterStatusChanged?.();
+    },
+    onError: (error) => {
+      message.error(error instanceof Error ? error.message : '提交失败，请稍后重试');
+    },
+  });
+
+  const infoErrorMutation = useMutation({
+    mutationFn: (reason: string) => {
+      if (!candidate) {
+        throw new Error('请先确认当前考生');
+      }
+      return markInfoError({
+        taskId,
+        candidateId: candidate.candidateId,
+        reason,
+      });
+    },
+    onSuccess: () => {
+      message.success('已标记异常');
+      setInfoErrorOpen(false);
+      setInfoErrorReason('');
+      clearCurrentAfterSave();
+      onAfterStatusChanged?.();
+    },
+    onError: (error) => {
+      message.error(error instanceof Error ? error.message : '标记异常失败，请稍后重试');
+    },
+  });
+
   if (!candidate) {
     return (
       <div className="collection-panel current-candidate-panel empty-current-candidate">
-        <Empty description="暂无当前采集考生，请从队列开始下一位" />
+        <Empty
+          description={(
+            <Space direction="vertical" size={4}>
+              <Typography.Text>等待确认考生</Typography.Text>
+              <Typography.Text type="secondary">请扫码或从考生列表选择后开始采集</Typography.Text>
+            </Space>
+          )}
+        />
       </div>
     );
   }
 
   const canOperate = candidate.overallStatus === 'COLLECTING';
   const signatureDisabledReason = getSignatureDisabledReason(candidate);
+  const fingerprintButtonText = candidate.latestFingerprint?.fingerprintImageFileId ? '重新采集指纹' : '指纹采集';
+  const source = collectionContext?.entrySource || 'QR_SCAN';
+  const panelLoading = completeMutation.isPending || infoErrorMutation.isPending;
+
+  const handleComplete = () => {
+    if (!candidate) {
+      message.warning('请先确认当前考生');
+      return;
+    }
+    if (!candidate.latestFingerprint?.fingerprintImageFileId || !candidate.latestSignature?.signatureFileId) {
+      message.warning('请先完成指纹采集和电子签名');
+      return;
+    }
+    completeMutation.mutate();
+  };
+
+  const handleSubmitInfoError = () => {
+    const reason = infoErrorReason.trim();
+    if (!reason) {
+      message.warning('请填写异常原因');
+      return;
+    }
+    infoErrorMutation.mutate(reason);
+  };
 
   return (
     <div className="collection-panel current-candidate-panel">
@@ -131,20 +250,26 @@ export function CurrentCandidateCollectionPanel({
           <Typography.Text type="secondary">当前采集对象</Typography.Text>
           <Typography.Title level={2}>{candidate.name}</Typography.Title>
           <Space wrap>
-            <Tag color="processing">{candidate.overallStatusLabel || candidate.overallStatus}</Tag>
-            <Tag>队列号 {candidate.queueNo || '-'}</Tag>
+            <Tag color="processing">当前</Tag>
             <Tag>后四位 {candidate.idCardLast4 || '-'}</Tag>
+            <Tag>{entrySourceText[source]}</Tag>
           </Space>
         </div>
       </div>
 
       <Descriptions className="current-candidate-desc" column={2} size="small" bordered>
         <Descriptions.Item label="单位">{candidate.unitName || '-'}</Descriptions.Item>
-        <Descriptions.Item label="工种">{candidate.workType || '-'}</Descriptions.Item>
-        <Descriptions.Item label="等级">{candidate.level || '-'}</Descriptions.Item>
+        <Descriptions.Item label="身份证号">{candidate.maskedIdCardNo || '-'}</Descriptions.Item>
+        <Descriptions.Item label="工种/等级">
+          {[candidate.workType, candidate.level].filter(Boolean).join(' / ') || '-'}
+        </Descriptions.Item>
         <Descriptions.Item label="准考证号">{candidate.admissionNo || '-'}</Descriptions.Item>
-        <Descriptions.Item label="指纹状态">{candidate.fingerprintStatusLabel || candidate.fingerprintStatus}</Descriptions.Item>
-        <Descriptions.Item label="签名状态">{candidate.signatureStatusLabel || candidate.signatureStatus}</Descriptions.Item>
+        <Descriptions.Item label="采集状态">
+          {candidate.overallStatusLabel || CollectionOverallStatusText[candidate.overallStatus]}
+        </Descriptions.Item>
+        <Descriptions.Item label="入口来源">{entrySourceText[source]}</Descriptions.Item>
+        <Descriptions.Item label="指纹状态">{getFingerprintStatusText(candidate)}</Descriptions.Item>
+        <Descriptions.Item label="电子签名">{getSignatureStatusText(candidate)}</Descriptions.Item>
       </Descriptions>
 
       <SignaturePad
@@ -162,27 +287,57 @@ export function CurrentCandidateCollectionPanel({
           disabled={!canOperate}
           onClick={() => fingerprintMutation.mutate(candidate)}
         >
-          采集指纹
+          {fingerprintButtonText}
         </Button>
         <Button
           type="primary"
           icon={<CheckCircleOutlined />}
-          loading={loading}
+          loading={completeMutation.isPending}
           disabled={!canOperate}
-          onClick={onComplete}
+          onClick={handleComplete}
         >
-          完成采集
+          提交完成并清空当前考生
         </Button>
-        <Button loading={loading} disabled={!canOperate} onClick={onPendingRetry}>
-          待补采
+        <Button
+          danger
+          icon={<WarningOutlined />}
+          loading={panelLoading}
+          disabled={!canOperate}
+          onClick={() => {
+            setInfoErrorReason('');
+            setInfoErrorOpen(true);
+          }}
+        >
+          标记异常
         </Button>
-        <Button loading={loading} disabled={!canOperate} onClick={onInfoError}>
-          信息异常
-        </Button>
-        <Button danger icon={<WarningOutlined />} loading={loading} disabled={!canOperate} onClick={onExceptionRelease}>
-          异常放行
+        <Button icon={<CloseOutlined />} onClick={onCancelCurrent}>
+          取消当前
         </Button>
       </div>
+
+      <Modal
+        title="标记异常"
+        open={infoErrorOpen}
+        okText="确认异常"
+        cancelText="取消"
+        confirmLoading={infoErrorMutation.isPending}
+        okButtonProps={{ danger: true }}
+        onCancel={() => {
+          setInfoErrorOpen(false);
+          setInfoErrorReason('');
+        }}
+        onOk={handleSubmitInfoError}
+        destroyOnHidden
+      >
+        <Input.TextArea
+          rows={4}
+          maxLength={1000}
+          showCount
+          value={infoErrorReason}
+          placeholder="请输入异常原因"
+          onChange={(event) => setInfoErrorReason(event.target.value)}
+        />
+      </Modal>
     </div>
   );
 }

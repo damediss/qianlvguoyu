@@ -1,4 +1,5 @@
 import type { ScanAdapter, ScanResult } from './ScanAdapter';
+import { parseCollectionToken } from './scanToken';
 
 export class ManualScanAdapter implements ScanAdapter {
   async startScan(): Promise<ScanResult> {
@@ -9,7 +10,7 @@ export class ManualScanAdapter implements ScanAdapter {
       };
     }
     const rawText = window.prompt('请输入或粘贴采集二维码 token');
-    const token = rawText?.trim();
+    const token = parseCollectionToken(rawText);
     if (!token) {
       return {
         success: false,
@@ -20,7 +21,7 @@ export class ManualScanAdapter implements ScanAdapter {
     return {
       success: true,
       token,
-      rawText: token,
+      rawText: rawText ?? token,
     };
   }
 }

@@ -85,8 +85,8 @@ export function PracticalScoringConfig({
   const [returningTask, setReturningTask] = useState<PracticalTaskProgressItem>();
   const [returnReason, setReturnReason] = useState('');
   const [adjustingTask, setAdjustingTask] = useState<PracticalTaskProgressItem>();
-  const [adjustDeductions, setAdjustDeductions] = useState<Record<number, number>>({});
-  const [adjustRemarks, setAdjustRemarks] = useState<Record<number, string>>({});
+  const [adjustDeductions, setAdjustDeductions] = useState<Record<string, number>>({});
+  const [adjustRemarks, setAdjustRemarks] = useState<Record<string, string>>({});
   const [adjustNote, setAdjustNote] = useState('');
   const [adjustReason, setAdjustReason] = useState('');
   const [selectedSummaryCandidateIds, setSelectedSummaryCandidateIds] = useState<string[]>([]);
@@ -198,10 +198,10 @@ export function PracticalScoringConfig({
     const detail = adjustingTaskQuery.data;
     if (!detail) return;
     setAdjustDeductions(Object.fromEntries(
-      detail.scoreItems.map((item) => [item.itemNo, item.deductedScore || 0]),
+      detail.scoreItems.map((item) => [scoreItemKey(item), item.deductedScore || 0]),
     ));
     setAdjustRemarks(Object.fromEntries(
-      detail.scoreItems.map((item) => [item.itemNo, item.remark || '']),
+      detail.scoreItems.map((item) => [scoreItemKey(item), item.remark || '']),
     ));
     setAdjustNote(detail.progressNote || '');
   }, [adjustingTaskQuery.data]);
@@ -210,7 +210,7 @@ export function PracticalScoringConfig({
     const detail = adjustingTaskQuery.data;
     if (!detail) return 0;
     return detail.scoreItems.reduce((sum, item) => (
-      sum + Math.max(0, item.maxScore - (adjustDeductions[item.itemNo] ?? item.deductedScore ?? 0))
+      sum + Math.max(0, item.maxScore - (adjustDeductions[scoreItemKey(item)] ?? item.deductedScore ?? 0))
     ), 0);
   }, [adjustDeductions, adjustingTaskQuery.data]);
 
@@ -267,9 +267,10 @@ export function PracticalScoringConfig({
         reason: adjustReason,
         note: adjustNote || undefined,
         items: detail.scoreItems.map((item) => ({
+          scoreItemId: item.id,
           itemNo: item.itemNo,
-          deductedScore: adjustDeductions[item.itemNo] ?? item.deductedScore ?? 0,
-          remark: adjustRemarks[item.itemNo] || undefined,
+          deductedScore: adjustDeductions[scoreItemKey(item)] ?? item.deductedScore ?? 0,
+          remark: adjustRemarks[scoreItemKey(item)] || undefined,
         })),
       });
     },
@@ -675,6 +676,7 @@ export function PracticalScoringConfig({
             <Progress
               type="circle"
               size={92}
+              style={{ marginLeft: 7 }}
               percent={totalCandidateCount
                 ? Math.round(submittedCandidateCount * 100 / totalCandidateCount)
                 : 0}
@@ -760,47 +762,53 @@ export function PracticalScoringConfig({
             />
           ) : null}
           <Table<PracticalScoreItem>
-            rowKey="itemNo"
+            rowKey={scoreItemKey}
             loading={adjustingTaskQuery.isFetching}
             dataSource={adjustingTaskQuery.data?.scoreItems || []}
             pagination={false}
             columns={[
               { title: '序号', dataIndex: 'itemNo', width: 70 },
-              { title: '评分项', dataIndex: 'itemName' },
+              { title: '评分项', render: (_, item) => scoreStandardContent(item) },
               { title: '满分', dataIndex: 'maxScore', width: 80 },
               {
                 title: '扣分',
                 width: 150,
-                render: (_, item) => (
-                  <InputNumber
-                    min={0}
-                    max={item.maxDeduction}
-                    step={item.deductionStep}
-                    value={adjustDeductions[item.itemNo] ?? item.deductedScore ?? 0}
-                    onChange={(value) => setAdjustDeductions((prev) => ({
-                      ...prev,
-                      [item.itemNo]: Number(value || 0),
-                    }))}
-                  />
-                ),
+                render: (_, item) => {
+                  const key = scoreItemKey(item);
+                  return (
+                    <InputNumber
+                      min={0}
+                      max={item.maxDeduction}
+                      step={item.deductionStep}
+                      value={adjustDeductions[key] ?? item.deductedScore ?? 0}
+                      onChange={(value) => setAdjustDeductions((prev) => ({
+                        ...prev,
+                        [key]: Number(value || 0),
+                      }))}
+                    />
+                  );
+                },
               },
               {
                 title: '得分',
                 width: 90,
-                render: (_, item) => Math.max(0, item.maxScore - (adjustDeductions[item.itemNo] ?? item.deductedScore ?? 0)),
+                render: (_, item) => Math.max(0, item.maxScore - (adjustDeductions[scoreItemKey(item)] ?? item.deductedScore ?? 0)),
               },
               {
                 title: '说明',
                 width: 220,
-                render: (_, item) => (
-                  <Input
-                    value={adjustRemarks[item.itemNo] || ''}
-                    onChange={(event) => setAdjustRemarks((prev) => ({
-                      ...prev,
-                      [item.itemNo]: event.target.value,
-                    }))}
-                  />
-                ),
+                render: (_, item) => {
+                  const key = scoreItemKey(item);
+                  return (
+                    <Input
+                      value={adjustRemarks[key] || ''}
+                      onChange={(event) => setAdjustRemarks((prev) => ({
+                        ...prev,
+                        [key]: event.target.value,
+                      }))}
+                    />
+                  );
+                },
               },
             ]}
           />
@@ -976,6 +984,14 @@ function toNullableNumber(value?: string | number | null) {
   if (value === undefined || value === null || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function scoreItemKey(item: PracticalScoreItem) {
+  return item.id || String(item.itemNo);
+}
+
+function scoreStandardContent(item: PracticalScoreItem) {
+  return item.scoringStandardContent || item.criterion || item.itemName || '-';
 }
 
 function formatScore(value?: number | null) {

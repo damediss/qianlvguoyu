@@ -26,6 +26,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import ReactECharts from 'echarts-for-react';
 import { useMemo, useState } from 'react';
 import { getCertificationDashboard } from '../../api/certificationDashboard';
+import { WeKnoraWidget } from '../../components/ai/WeKnoraWidget';
 import { PermissionGate } from '../../directives/permission';
 import type {
   CertificationDashboardAlert,
@@ -362,6 +363,7 @@ export function CertificationDataPanelPage() {
             />
           </Card>
         </div>
+        <WeKnoraWidget />
       </div>
     </PermissionGate>
   );

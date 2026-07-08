@@ -46,10 +46,12 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.PrintSetup;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -211,6 +213,77 @@ class PracticalScoringApplicationServiceTest {
     assertThat(questionResult.getFinalScore()).isEqualByComparingTo("23.0");
     assertThat(candidateResult.getStatus()).isEqualTo("completed");
     assertThat(candidateResult.getTotalScore()).isEqualByComparingTo("23.0");
+  }
+
+  @Test
+  void adminTaskReturnsScoringStandardContentSeparatelyFromElementName() {
+    CertificationAssessorTaskEntity task = task(50L, 9L, 2);
+    CertificationAssessorTaskScoreEntity first = score(1, "中缝均匀添加20-25公分冰晶石", "5", "5", "1");
+    first.setId(101L);
+    first.setCriterion("不放冰晶石扣5分");
+    CertificationAssessorTaskScoreEntity second = score(2, "中缝均匀添加20-25公分冰晶石", "5", "5", "1");
+    second.setId(102L);
+    second.setCriterion("冰晶石不均匀扣5分");
+    when(assessorTaskMapper.selectById(50L)).thenReturn(task);
+    when(startService.session(1L, 11L)).thenReturn(null);
+    when(scoreMapper.selectList(any())).thenReturn(List.of(first, second));
+
+    PracticalScoringModels.AssessorTaskDetail detail = service.adminTask(50L);
+
+    assertThat(detail.scoreItems()).hasSize(2);
+    assertThat(detail.scoreItems()).extracting(PracticalScoringModels.ScoreItemView::itemName)
+        .containsExactly("中缝均匀添加20-25公分冰晶石", "中缝均匀添加20-25公分冰晶石");
+    assertThat(detail.scoreItems()).extracting(PracticalScoringModels.ScoreItemView::scoringStandardContent)
+        .containsExactly("不放冰晶石扣5分", "冰晶石不均匀扣5分");
+    assertThat(detail.scoreItems()).extracting(PracticalScoringModels.ScoreItemView::scoringStandardId)
+        .containsExactly(101L, 102L);
+  }
+
+  @Test
+  void adjustScoreMatchesScoreItemIdBeforeItemNo() {
+    CertificationAssessorTaskEntity task = task(50L, 9L, 2);
+    task.setStatus("submitted");
+    task.setTotalScore(new BigDecimal("20"));
+    CertificationAssessorTaskScoreEntity first = score(1, "重复评分要素", "10", "10", "1");
+    first.setId(101L);
+    first.setCriterion("评分标准一");
+    CertificationAssessorTaskScoreEntity second = score(2, "重复评分要素", "10", "10", "1");
+    second.setId(102L);
+    second.setCriterion("评分标准二");
+    when(assessorTaskMapper.lockById(1L, 50L)).thenReturn(task);
+    when(scoreMapper.selectList(any())).thenReturn(List.of(first, second));
+    when(assessorTaskMapper.selectList(any())).thenReturn(List.of(
+        submittedTask(new BigDecimal("16")),
+        submittedTask(new BigDecimal("17")),
+        task));
+    CertificationPracticalQuestionResultEntity questionResult = new CertificationPracticalQuestionResultEntity();
+    questionResult.setId(70L);
+    questionResult.setTaskId(1L);
+    questionResult.setCandidateId(11L);
+    questionResult.setPaperQuestionId(21L);
+    questionResult.setStatus("review_required");
+    when(questionResultMapper.lockResult(1L, 1L, 11L, 21L)).thenReturn(questionResult);
+    when(questionResultMapper.selectList(any())).thenReturn(List.of(questionResult));
+    CertificationPracticalCandidateResultEntity candidateResult = new CertificationPracticalCandidateResultEntity();
+    candidateResult.setId(80L);
+    candidateResult.setStatus("review_required");
+    when(candidateResultMapper.selectOne(any())).thenReturn(candidateResult);
+
+    service.adjustScore(
+        50L,
+        new PracticalScoringModels.AdjustScoreReq(
+            2,
+            List.of(
+                new PracticalScoringModels.SaveScoreItemReq(102L, 1, new BigDecimal("3"), "按第二条标准扣分"),
+                new PracticalScoringModels.SaveScoreItemReq(101L, 2, new BigDecimal("1"), "按第一条标准扣分")),
+            "管理端复核后修正",
+            "三人分差复核调整"));
+
+    assertThat(first.getDeductedScore()).isEqualByComparingTo("1");
+    assertThat(first.getRemark()).isEqualTo("按第一条标准扣分");
+    assertThat(second.getDeductedScore()).isEqualByComparingTo("3");
+    assertThat(second.getRemark()).isEqualTo("按第二条标准扣分");
+    assertThat(task.getTotalScore()).isEqualByComparingTo("16");
   }
 
   @Test
@@ -751,16 +824,20 @@ class PracticalScoringApplicationServiceTest {
           .doesNotContain("Signer A", "Signer B", "Signer C");
       assertThat(sheet.getRow(6).getCell(1).getStringCellValue()).isEqualTo("Candidate 1");
       assertThat(sheet.getRow(7).getCell(1).getStringCellValue()).isEqualTo("Candidate 2");
-      assertThat(sheet.getRow(6).getCell(3).getNumericCellValue()).isEqualTo(11D);
+      assertThat(sheet.getRow(6).getCell(3).getNumericCellValue()).isEqualTo(11.5D);
       assertThat(sheet.getRow(6).getCell(4).getNumericCellValue()).isEqualTo(12D);
       assertThat(sheet.getRow(6).getCell(5).getNumericCellValue()).isEqualTo(13D);
       assertThat(sheet.getRow(6).getCell(39).getNumericCellValue()).isEqualTo(222D);
       assertThat(sheet.getRow(7).getCell(4).getNumericCellValue()).isEqualTo(0D);
       assertThat(sheet.getRow(7).getCell(8).getNumericCellValue()).isEqualTo(0D);
       assertThat(sheet.getRow(7).getCell(39).getNumericCellValue()).isEqualTo(210D);
-      assertThat(formatter.formatCellValue(sheet.getRow(6).getCell(6))).isEqualTo("12.0");
-      assertThat(formatter.formatCellValue(sheet.getRow(6).getCell(8))).isEqualTo("12.0");
-      assertThat(formatter.formatCellValue(sheet.getRow(6).getCell(39))).isEqualTo("222.0");
+      assertThat(formatter.formatCellValue(sheet.getRow(6).getCell(3))).isEqualTo("11.5");
+      assertThat(formatter.formatCellValue(sheet.getRow(6).getCell(4))).isEqualTo("12");
+      assertThat(formatter.formatCellValue(sheet.getRow(6).getCell(6))).isEqualTo("12");
+      assertThat(formatter.formatCellValue(sheet.getRow(6).getCell(7))).isEqualTo("100");
+      assertThat(formatter.formatCellValue(sheet.getRow(6).getCell(8))).isEqualTo("12");
+      assertThat(formatter.formatCellValue(sheet.getRow(6).getCell(39))).isEqualTo("222");
+      assertSummaryScoreColumnWidths(sheet, 6);
       assertThat(sheet.getRow(7).getHeight()).isEqualTo(sheet.getRow(6).getHeight());
       assertThat(sheet.getRow(7).getCell(0).getCellStyle().getIndex())
           .isEqualTo(sheet.getRow(6).getCell(0).getCellStyle().getIndex());
@@ -774,7 +851,6 @@ class PracticalScoringApplicationServiceTest {
           new ClassPathResource("templates/评分记录汇总表模板.xlsx").getInputStream())) {
         Sheet templateSheet = templateWorkbook.getSheetAt(0);
         assertThat(sheet.getColumnWidth(0)).isEqualTo(templateSheet.getColumnWidth(0));
-        assertThat(sheet.getColumnWidth(39)).isEqualTo(templateSheet.getColumnWidth(39));
         assertThat(sheet.getRow(0).getHeight()).isEqualTo(templateSheet.getRow(0).getHeight());
         assertThat(formatter.formatCellValue(sheet.getRow(3).getCell(0)))
             .isEqualTo(formatter.formatCellValue(templateSheet.getRow(3).getCell(0)));
@@ -789,17 +865,17 @@ class PracticalScoringApplicationServiceTest {
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(1))).isEqualTo("Candidate 1");
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(4))).isEqualTo("0.7");
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(5))).isEqualTo("9.3");
-      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(10))).isEqualTo("11.0");
+      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(6))).isEqualTo("11.5");
       Sheet secondAssessorSheet = workbook.getSheet("评分记录表1-Signer B");
       assertThat(secondAssessorSheet).isNotNull();
       assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(2).getCell(0))).contains("考评员  签字：Signer B");
       assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(11).getCell(4))).isEqualTo("1.5");
       assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(11).getCell(5))).isEqualTo("8.5");
-      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(11).getCell(10))).isEqualTo("12.0");
+      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(11).getCell(6))).isEqualTo("12.0");
       assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(12).getCell(1))).isEqualTo("Candidate 2");
       assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(12).getCell(4))).isEqualTo("0.0");
       assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(12).getCell(5))).isEqualTo("0.0");
-      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(12).getCell(10))).isEqualTo("0.0");
+      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(12).getCell(6))).isEqualTo("0.0");
       Sheet thirdAssessorSheet = workbook.getSheet("评分记录表1-Signer C");
       assertThat(thirdAssessorSheet).isNotNull();
       assertThat(formatter.formatCellValue(thirdAssessorSheet.getRow(11).getCell(1))).isEqualTo("Candidate 1");
@@ -821,6 +897,259 @@ class PracticalScoringApplicationServiceTest {
       assertThat(expandedRecordSheet.getRow(7).getHeightInPoints())
           .isGreaterThan(expandedRecordSheet.getRow(8).getHeightInPoints());
     }
+  }
+
+  @Test
+  void exportSummaryExpandsPlanInfoRowsForWrappedText() throws Exception {
+    CertificationTaskEntity task = taskEntity();
+    task.setTaskNo("RD-202607060001-广西百色广投银海铝业有限责任公司职业技能等级认定超长计划编码");
+    task.setTaskName("2026年度广西百色广投银海铝业有限责任公司铝电解操作工高级工职业技能等级认定实操考试超长计划名称");
+    task.setCompanyName("广西百色广投银海铝业有限责任公司超长考点名称");
+    task.setExamDate(LocalDate.of(2026, 7, 9));
+    CertificationCandidateEntity candidate = candidate(11L, "Candidate 1", 100L, true);
+    candidate.setCandidateNo("C-001");
+    List<CertificationPracticalQuestionResultEntity> questionResults = exportQuestionResults(List.of(candidate));
+    List<CertificationAssessorTaskEntity> scoreTasks = exportScoreTasks(List.of(candidate));
+    List<CertificationTaskAssessorEntity> assessors = members(1);
+    assessors.get(0).setAssessorName("Signer A");
+
+    when(taskMapper.selectById(1L)).thenReturn(task);
+    when(candidateMapper.selectList(any())).thenReturn(List.of(candidate));
+    when(candidateResultMapper.selectList(any())).thenReturn(List.of(exportCandidateResult(candidate.getId(), "100.0")));
+    when(questionResultMapper.selectList(any())).thenReturn(questionResults);
+    when(assessorTaskMapper.selectList(any())).thenReturn(scoreTasks);
+    when(scoreMapper.selectList(any())).thenReturn(exportScoreRows(scoreTasks));
+    when(taskAssessorMapper.selectList(any())).thenReturn(assessors);
+
+    ExportResultDTO result = service.exportSummary(1L, List.of(candidate.getId()));
+
+    try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(result.data()));
+        Workbook templateWorkbook = WorkbookFactory.create(
+            new ClassPathResource("templates/评分记录汇总表模板.xlsx").getInputStream())) {
+      Sheet sheet = workbook.getSheetAt(0);
+      Sheet templateSheet = templateWorkbook.getSheetAt(0);
+      assertThat(sheet.getRow(1).getHeightInPoints()).isGreaterThan(templateSheet.getRow(1).getHeightInPoints());
+      assertThat(sheet.getRow(2).getHeightInPoints()).isGreaterThan(templateSheet.getRow(2).getHeightInPoints());
+      assertThat(sheet.getRow(1).getCell(0).getCellStyle().getWrapText()).isTrue();
+      assertThat(sheet.getRow(2).getCell(0).getCellStyle().getWrapText()).isTrue();
+      assertThat(sheet.getRow(1).getCell(3).getCellStyle().getWrapText()).isTrue();
+      assertThat(sheet.getRow(2).getCell(3).getCellStyle().getWrapText()).isTrue();
+    }
+  }
+
+  @Test
+  void exportScoreRecordSheetsUseDynamicSinglePageColumns() throws Exception {
+    CertificationTaskEntity task = taskEntity();
+    task.setTaskNo("PLAN-DYNAMIC");
+    task.setTaskName("Dynamic score record");
+    task.setCompanyName("Dynamic site");
+    task.setExamDate(LocalDate.of(2026, 7, 6));
+    CertificationCandidateEntity candidate = candidate(11L, "Candidate Dynamic", 100L, true);
+    candidate.setCandidateNo("CD-001");
+    List<Integer> standardCounts = List.of(5, 7, 8, 9, 10);
+    List<CertificationPracticalQuestionResultEntity> questionResults =
+        dynamicExportQuestionResults(candidate, standardCounts.size());
+    List<CertificationAssessorTaskEntity> scoreTasks = dynamicExportScoreTasks(candidate, standardCounts);
+    List<CertificationTaskAssessorEntity> assessors = members(1);
+    assessors.get(0).setAssessorName("Signer A");
+
+    when(taskMapper.selectById(1L)).thenReturn(task);
+    when(candidateMapper.selectList(any())).thenReturn(List.of(candidate));
+    when(candidateResultMapper.selectList(any())).thenReturn(List.of(exportCandidateResult(candidate.getId(), "29.0")));
+    when(questionResultMapper.selectList(any())).thenReturn(questionResults);
+    when(assessorTaskMapper.selectList(any())).thenReturn(scoreTasks);
+    when(scoreMapper.selectList(any())).thenReturn(dynamicExportScoreRows(scoreTasks, standardCounts));
+    when(taskAssessorMapper.selectList(any())).thenReturn(assessors);
+    when(startService.session(1L, candidate.getId())).thenReturn(completedSession(candidate.getId()));
+
+    ExportResultDTO result = service.exportSummary(1L, List.of(candidate.getId()));
+
+    try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(result.data()))) {
+      assertScoreRecordLayout(workbook, 1, "Signer A", 5, "E:N", "O");
+      assertScoreRecordLayout(workbook, 2, "Signer A", 7, "E:R", "S");
+      assertScoreRecordLayout(workbook, 3, "Signer A", 8, "E:T", "U");
+      Sheet nineStandardSheet = assertScoreRecordLayout(workbook, 4, "Signer A", 9, "E:V", "W");
+      assertScoreRecordLayout(workbook, 5, "Signer A", 10, "E:X", "Y");
+      assertMerged(nineStandardSheet, "E6:H6");
+      assertMerged(nineStandardSheet, "E7:H7");
+      assertMerged(nineStandardSheet, "I6:J6");
+      assertMerged(nineStandardSheet, "I7:J7");
+      assertMerged(nineStandardSheet, "K6:P6");
+      assertMerged(nineStandardSheet, "K7:P7");
+      assertMerged(nineStandardSheet, "Q6:R6");
+      assertMerged(nineStandardSheet, "Q7:R7");
+      assertMerged(nineStandardSheet, "S6:V6");
+      assertMerged(nineStandardSheet, "S7:V7");
+    }
+  }
+
+  private Sheet assertScoreRecordLayout(
+      Workbook workbook,
+      int questionNo,
+      String assessorName,
+      int standardCount,
+      String expectedScoreArea,
+      String expectedTotalColumn
+  ) {
+    Sheet sheet = workbook.getSheet("评分记录表" + questionNo + "-" + assessorName);
+    assertThat(sheet).isNotNull();
+    int scoreStartColumn = 4;
+    int scoreEndColumn = scoreStartColumn + standardCount * 2 - 1;
+    int totalColumn = scoreStartColumn + standardCount * 2;
+    String scoreStartName = CellReference.convertNumToColString(scoreStartColumn);
+    String scoreEndName = CellReference.convertNumToColString(scoreEndColumn);
+    String totalColumnName = CellReference.convertNumToColString(totalColumn);
+    assertThat(scoreStartName + ":" + scoreEndName).isEqualTo(expectedScoreArea);
+    assertThat(totalColumnName).isEqualTo(expectedTotalColumn);
+    DataFormatter formatter = new DataFormatter();
+    assertThat(formatter.formatCellValue(sheet.getRow(3).getCell(totalColumn))).isEqualTo("本题得分合计");
+    assertMerged(sheet, "A1:" + totalColumnName + "1");
+    assertMerged(sheet, "A2:" + totalColumnName + "2");
+    assertMerged(sheet, "A3:" + totalColumnName + "3");
+    assertMerged(sheet, "D4:" + scoreEndName + "4");
+    assertMerged(sheet, "E5:" + scoreEndName + "5");
+    assertMerged(sheet, totalColumnName + "4:" + totalColumnName + "10");
+    for (int itemIndex = 0; itemIndex < standardCount; itemIndex++) {
+      String start = CellReference.convertNumToColString(scoreStartColumn + itemIndex * 2);
+      String end = CellReference.convertNumToColString(scoreStartColumn + itemIndex * 2 + 1);
+      assertMerged(sheet, start + "8:" + end + "8");
+      assertMerged(sheet, start + "9:" + end + "9");
+      assertMerged(sheet, start + "10:" + end + "10");
+      assertNotMerged(sheet, start + "11:" + end + "11");
+    }
+    assertThat(sheet.getPrintSetup().getPaperSize()).isEqualTo(PrintSetup.A4_PAPERSIZE);
+    assertThat(sheet.getPrintSetup().getLandscape()).isTrue();
+    assertThat(sheet.getPrintSetup().getFitWidth()).isEqualTo((short) 1);
+    assertThat(sheet.getPrintSetup().getFitHeight()).isEqualTo((short) 0);
+    assertThat(sheet.getFitToPage()).isTrue();
+    assertThat(sheet.getHorizontallyCenter()).isTrue();
+    assertThat(workbook.getPrintArea(workbook.getSheetIndex(sheet)))
+        .contains("$A$1:$" + totalColumnName + "$19");
+    assertThat(sheet.getRow(7).getCell(4).getCellStyle().getWrapText()).isTrue();
+    assertThat(sheet.getColumnWidth(4)).isEqualTo(expectedScoreColumnWidth(standardCount) * 256);
+    assertThat(sheet.getColumnWidth(totalColumn)).isEqualTo(8 * 256);
+    return sheet;
+  }
+
+  private int expectedScoreColumnWidth(int standardCount) {
+    if (standardCount <= 5) {
+      return 7;
+    }
+    if (standardCount <= 7) {
+      return 6;
+    }
+    return 5;
+  }
+
+  private void assertSummaryScoreColumnWidths(Sheet sheet, int questionCount) {
+    int firstQuestionColumn = 3;
+    int columnsPerQuestion = 6;
+    for (int questionIndex = 0; questionIndex < questionCount; questionIndex++) {
+      int startColumn = firstQuestionColumn + questionIndex * columnsPerQuestion;
+      assertThat(sheet.getColumnWidth(startColumn)).isEqualTo(excelColumnWidth(3.2D));
+      assertThat(sheet.getColumnWidth(startColumn + 1)).isEqualTo(excelColumnWidth(3.2D));
+      assertThat(sheet.getColumnWidth(startColumn + 2)).isEqualTo(excelColumnWidth(3.2D));
+      assertThat(sheet.getColumnWidth(startColumn + 3)).isEqualTo(excelColumnWidth(4.8D));
+      assertThat(sheet.getColumnWidth(startColumn + 4)).isEqualTo(excelColumnWidth(4D));
+      assertThat(sheet.getColumnWidth(startColumn + 5)).isEqualTo(excelColumnWidth(4.8D));
+    }
+    int totalColumn = firstQuestionColumn + questionCount * columnsPerQuestion;
+    assertThat(sheet.getColumnWidth(totalColumn)).isEqualTo(excelColumnWidth(6D));
+  }
+
+  private int excelColumnWidth(double characters) {
+    return (int) Math.round(characters * 256D);
+  }
+
+  private void assertMerged(Sheet sheet, String ref) {
+    assertThat(sheet.getMergedRegions())
+        .extracting(CellRangeAddress::formatAsString)
+        .contains(ref);
+  }
+
+  private void assertNotMerged(Sheet sheet, String ref) {
+    assertThat(sheet.getMergedRegions())
+        .extracting(CellRangeAddress::formatAsString)
+        .doesNotContain(ref);
+  }
+
+  private List<CertificationPracticalQuestionResultEntity> dynamicExportQuestionResults(
+      CertificationCandidateEntity candidate,
+      int questionCount
+  ) {
+    return java.util.stream.IntStream.rangeClosed(1, questionCount)
+        .mapToObj(questionIndex -> {
+          CertificationPracticalQuestionResultEntity result = new CertificationPracticalQuestionResultEntity();
+          result.setTaskId(1L);
+          result.setCandidateId(candidate.getId());
+          result.setPaperQuestionId((long) questionIndex);
+          result.setAverageScore(new BigDecimal(questionIndex));
+          result.setFinalScore(new BigDecimal(questionIndex));
+          result.setStatus("completed");
+          return result;
+        }).toList();
+  }
+
+  private List<CertificationAssessorTaskEntity> dynamicExportScoreTasks(
+      CertificationCandidateEntity candidate,
+      List<Integer> standardCounts
+  ) {
+    return java.util.stream.IntStream.rangeClosed(1, standardCounts.size())
+        .mapToObj(questionIndex -> {
+          CertificationAssessorTaskEntity task = new CertificationAssessorTaskEntity();
+          task.setId(9000L + questionIndex);
+          task.setTaskId(1L);
+          task.setCandidateId(candidate.getId());
+          task.setPaperQuestionId((long) questionIndex);
+          task.setAssessorId(201L);
+          task.setTitle("动态试题" + questionIndex);
+          task.setTotalScore(new BigDecimal(standardCounts.get(questionIndex - 1)));
+          task.setStatus("submitted");
+          return task;
+        }).toList();
+  }
+
+  private List<CertificationAssessorTaskScoreEntity> dynamicExportScoreRows(
+      List<CertificationAssessorTaskEntity> tasks,
+      List<Integer> standardCounts
+  ) {
+    return tasks.stream().flatMap(task -> {
+      int standardCount = standardCounts.get(task.getPaperQuestionId().intValue() - 1);
+      return java.util.stream.IntStream.rangeClosed(1, standardCount).mapToObj(itemNo -> {
+        CertificationAssessorTaskScoreEntity score = score(
+            itemNo,
+            dynamicStepName(standardCount, itemNo),
+            "1",
+            "1",
+            "0.5");
+        score.setId(task.getId() * 100 + itemNo);
+        score.setAssessorTaskId(task.getId());
+        score.setStepNo(itemNo);
+        score.setCriterion("较长评分标准内容 " + itemNo + "，用于验证自动换行和两列合并。");
+        score.setDeductedScore(BigDecimal.ZERO);
+        score.setAwardedScore(BigDecimal.ONE);
+        return score;
+      });
+    }).toList();
+  }
+
+  private String dynamicStepName(int standardCount, int itemNo) {
+    if (standardCount == 9) {
+      if (itemNo <= 2) {
+        return "评分要素1";
+      }
+      if (itemNo == 3) {
+        return "评分要素2";
+      }
+      if (itemNo <= 6) {
+        return "评分要素3";
+      }
+      if (itemNo == 7) {
+        return "评分要素4";
+      }
+      return "评分要素5";
+    }
+    return "评分要素" + ((itemNo + 1) / 2);
   }
 
   private CertificationPracticalCandidateResultEntity exportCandidateResult(Long candidateId, String totalScore) {
@@ -877,7 +1206,11 @@ class PracticalScoringApplicationServiceTest {
           task.setPaperQuestionId(questionIndex.longValue());
           task.setAssessorId(200L + assessorIndex);
           task.setTitle("试题" + questionIndex);
-          task.setTotalScore(new BigDecimal(questionIndex * 10 + assessorIndex));
+          BigDecimal totalScore = new BigDecimal(questionIndex * 10 + assessorIndex);
+          if (candidate.getId().equals(11L) && questionIndex == 1 && assessorIndex == 1) {
+            totalScore = new BigDecimal("11.5");
+          }
+          task.setTotalScore(totalScore);
           task.setStatus("submitted");
           return task;
         }))

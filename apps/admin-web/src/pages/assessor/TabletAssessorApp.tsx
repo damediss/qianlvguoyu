@@ -207,6 +207,7 @@ export function TabletAssessorApp() {
     return {
       version: serverVersion,
       items: activeDetail.scoreItems.map((item) => ({
+        scoreItemId: item.id,
         itemNo: item.itemNo,
         deductedScore: deductions[item.itemNo] ?? item.deductedScore ?? 0,
         remark: remarks[item.itemNo] || undefined,
@@ -711,6 +712,7 @@ function payloadFromDetail(detail: AssessorScoringTaskDetail): PracticalSaveScor
   return {
     version: detail.task.version,
     items: detail.scoreItems.map((item) => ({
+      scoreItemId: item.id,
       itemNo: item.itemNo,
       deductedScore: item.deductedScore || 0,
       remark: item.remark,

@@ -9,6 +9,7 @@ public final class ErrorCode {
   public static final String CONFLICT = "409";
   public static final String INTERNAL_ERROR = "500";
   public static final String NOT_IMPLEMENTED = "501";
+  public static final String BAD_GATEWAY = "502";
 
   private ErrorCode() {
   }

@@ -45,10 +45,14 @@ public final class PracticalScoringModels {
   }
 
   public record SaveScoreItemReq(
+      Long scoreItemId,
       @NotNull @Min(1) Integer itemNo,
       @NotNull @DecimalMin("0.00") BigDecimal deductedScore,
       String remark
   ) {
+    public SaveScoreItemReq(Integer itemNo, BigDecimal deductedScore, String remark) {
+      this(null, itemNo, deductedScore, remark);
+    }
   }
 
   public record SaveScoreReq(
@@ -147,6 +151,9 @@ public final class PracticalScoringModels {
       Integer itemNo,
       String itemName,
       String criterion,
+      Long scoringStandardId,
+      String scoringElementName,
+      String scoringStandardContent,
       BigDecimal maxScore,
       BigDecimal maxDeduction,
       BigDecimal deductionStep,

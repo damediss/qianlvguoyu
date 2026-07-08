@@ -293,7 +293,7 @@ export function SignaturePad({
       return;
     }
     if (isExceptionReleased) {
-      message.info('签名已异常放行，不能清空重签');
+      message.info('签名状态异常，不能清空重签');
       return;
     }
     if (isAlreadySigned) {
@@ -312,7 +312,7 @@ export function SignaturePad({
       return;
     }
     if (disabled || candidate.overallStatus !== 'COLLECTING') {
-      message.warning(disabledReason || '只有采集中考生可以提交签名');
+      message.warning(disabledReason || '请先通过扫码确认当前考生');
       return;
     }
     if (isAlreadySigned || isExceptionReleased) {
@@ -385,7 +385,7 @@ export function SignaturePad({
       return;
     }
     if (disabled || candidate.overallStatus !== 'COLLECTING') {
-      message.warning(disabledReason || '只有采集中考生可以提交签名');
+      message.warning(disabledReason || '请先通过扫码确认当前考生');
       return;
     }
     if (isAlreadySigned || isExceptionReleased) {
@@ -431,14 +431,14 @@ export function SignaturePad({
   };
 
   const statusText = isExceptionReleased
-    ? '签名已异常放行'
+    ? '签名状态异常'
     : latestRecord
       ? '签名已提交'
       : '未签名';
   const statusColor = isExceptionReleased ? 'orange' : latestRecord ? 'success' : 'default';
   const resolvedDisabledReason = disabledReason
     || (isAlreadySigned ? '签名已提交，不支持重复签名' : undefined)
-    || (isExceptionReleased ? '签名已异常放行' : undefined);
+    || (isExceptionReleased ? '签名状态异常' : undefined);
 
   return (
     <div className="signature-pad">

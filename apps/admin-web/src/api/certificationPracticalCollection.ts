@@ -1,4 +1,5 @@
 import { apiClient, unwrap } from './client';
+import { parseContentDispositionFilename } from '../utils/download';
 import type { PageResponse } from '../types/api';
 import type {
   CandidateCollectionDetailVO,
@@ -18,6 +19,7 @@ import type {
   MatchByTokenRequest,
   QueueItemVO,
   RemoveQueueRequest,
+  ScanMatchResultVO,
   SearchCandidateRequest,
   SignatureRecordVO,
   SnowflakeId,
@@ -55,15 +57,48 @@ export function generateQrCodes(taskId: SnowflakeId): Promise<CollectionActionRe
   );
 }
 
-export function exportQrCodes(taskId: SnowflakeId): Promise<unknown> {
-  return unwrap<unknown>(
-    apiClient.get(`${base}/tasks/${taskId}/qrcodes/export`, collectionRequestConfig),
-  );
+export async function exportQrCodes(taskId: SnowflakeId): Promise<{ filename: string }> {
+  const response = await apiClient.get(`${base}/tasks/${taskId}/qrcodes/export`, {
+    ...collectionRequestConfig,
+    responseType: 'blob',
+  });
+  const blob = new Blob([response.data as BlobPart], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const filename = parseContentDispositionFilename(response)
+    || `practical-collection-qrcodes-${taskId}.xlsx`;
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+  return { filename };
 }
 
 export function matchByToken(params: MatchByTokenRequest): Promise<CandidateMatchVO> {
   return unwrap<CandidateMatchVO>(
     apiClient.post(`${base}/match-by-token`, params, collectionRequestConfig),
+  );
+}
+
+export function scanMatchCurrent(
+  taskId: SnowflakeId,
+  token: string,
+): Promise<ScanMatchResultVO> {
+  return unwrap<ScanMatchResultVO>(
+    apiClient.post(`${base}/workbench/${taskId}/scan-match-current`, { token }, collectionRequestConfig),
+  );
+}
+
+export function openCandidateCollection(
+  taskId: SnowflakeId,
+  candidateId: SnowflakeId,
+): Promise<CandidateCollectionDetailVO> {
+  return unwrap<CandidateCollectionDetailVO>(
+    apiClient.post(`${base}/workbench/${taskId}/candidates/${candidateId}/open`, undefined, collectionRequestConfig),
   );
 }
 

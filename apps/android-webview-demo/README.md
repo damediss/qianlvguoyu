@@ -62,3 +62,14 @@ WebView.setWebContentsDebuggingEnabled(true);
 ```
 
 连接设备后，在 Chrome 打开 `chrome://inspect/#devices` 即可调试 WebView。
+
+## 原生扫码能力
+
+H5 可通过 `AndroidBridge.scanQRCode(requestId, payloadJson)` 调起原生二维码扫描。
+
+- 依赖：`com.journeyapps:zxing-android-embedded`
+- 权限：首次扫码会申请 `CAMERA`
+- 回调：沿用 `window.__onNativeCapabilitySuccess` / `window.__onNativeCapabilityError`，`type=scan`
+- 成功字段：`success`、`code`、`rawText`、`parsed`、`message`
+
+平板端实操采集页会自动检测 `AndroidBridge.scanQRCode`，无需额外配置 `VITE_SCAN_MODE`。
