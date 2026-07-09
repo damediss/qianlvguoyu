@@ -112,6 +112,7 @@ export function DictPage() {
       form.setFieldsValue({
         code: record.code,
         name: record.name,
+        value: record.value,
         status: record.status,
       });
       setModalOpen(true);
@@ -179,7 +180,14 @@ export function DictPage() {
     {
       title: '字典名称',
       dataIndex: 'name',
+      width: 150,
       render: (text: string) => <Typography.Text strong>{text}</Typography.Text>,
+    },
+    {
+      title: '字典值',
+      dataIndex: 'value',
+      ellipsis: true,
+      render: (text: string) => text ? <Typography.Text>{text}</Typography.Text> : '-',
     },
     {
       title: '状态',
@@ -362,6 +370,12 @@ export function DictPage() {
             rules={[{ required: true, message: '请输入字典名称' }]}
           >
             <Input placeholder="如 性别, 学历" maxLength={64} />
+          </Form.Item>
+          <Form.Item
+            name="value"
+            label="字典值"
+          >
+            <Input placeholder="编码对应的值" maxLength={1000} allowClear />
           </Form.Item>
           <Form.Item name="status" label="状态">
             <Select

@@ -7,6 +7,7 @@ public record DictVO(
     Long tenantId,
     String code,
     String name,
+    String value,
     String status,
     LocalDateTime createdAt,
     LocalDateTime updatedAt

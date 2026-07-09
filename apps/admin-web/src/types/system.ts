@@ -269,6 +269,7 @@ export interface DictVO {
   tenantId: number;
   code: string;
   name: string;
+  value: string;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -289,11 +290,13 @@ export interface DictItemVO {
 export interface DictCreateReq {
   code: string;
   name: string;
+  value?: string;
   status?: string;
 }
 
 export interface DictUpdateReq {
   name: string;
+  value?: string;
   status: string;
 }
 

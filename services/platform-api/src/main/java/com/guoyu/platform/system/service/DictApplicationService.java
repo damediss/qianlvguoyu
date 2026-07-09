@@ -70,6 +70,7 @@ public class DictApplicationService {
     entity.setTenantId(tenantId);
     entity.setCode(req.code());
     entity.setName(req.name());
+    entity.setValue(StringUtils.hasText(req.value()) ? req.value() : null);
     entity.setStatus(StringUtils.hasText(req.status()) ? req.status() : "enabled");
     entity.setDeleted(0);
     dictMapper.insert(entity);
@@ -81,6 +82,7 @@ public class DictApplicationService {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     DictEntity entity = getExistingDict(tenantId, id);
     entity.setName(req.name());
+    entity.setValue(StringUtils.hasText(req.value()) ? req.value() : entity.getValue());
     entity.setStatus(req.status());
     dictMapper.updateById(entity);
     return toVO(entity);
@@ -192,6 +194,7 @@ public class DictApplicationService {
         entity.getTenantId(),
         entity.getCode(),
         entity.getName(),
+        entity.getValue(),
         entity.getStatus(),
         entity.getCreatedAt(),
         entity.getUpdatedAt()

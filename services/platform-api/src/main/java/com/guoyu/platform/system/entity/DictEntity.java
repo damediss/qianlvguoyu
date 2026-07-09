@@ -8,6 +8,7 @@ public class DictEntity extends BaseEntity {
 
   private String code;
   private String name;
+  private String value;
   private String status;
 
   public String getCode() {
@@ -24,6 +25,14 @@ public class DictEntity extends BaseEntity {
 
   public void setName(String name) {
     this.name = name;
+  }
+
+  public String getValue() {
+    return value;
+  }
+
+  public void setValue(String value) {
+    this.value = value;
   }
 
   public String getStatus() {
