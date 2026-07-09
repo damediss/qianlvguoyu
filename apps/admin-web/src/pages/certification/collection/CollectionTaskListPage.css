@@ -124,6 +124,22 @@
   cursor: pointer;
 }
 
+.collection-manage-row-actions {
+  white-space: nowrap;
+}
+
+.collection-manage-row-actions .ant-btn-sm {
+  height: 24px;
+  padding-inline: 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 22px;
+}
+
+.collection-manage-row-actions .ant-btn-sm .ant-btn-icon {
+  margin-inline-end: 3px;
+}
+
 .collection-manage-side {
   width: 100%;
 }

@@ -515,10 +515,10 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
     },
     {
       title: '操作',
-      width: 310,
+      width: 260,
       fixed: 'right',
       render: (_, candidate) => (
-        <Space size={8}>
+        <Space size={4} className="collection-manage-row-actions">
           <Button
             size="small"
             type={candidate.overallStatus === 'COMPLETED' ? 'default' : 'primary'}
@@ -539,7 +539,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
               setDetailCandidate(candidate);
             }}
           >
-            查看详情
+            详情
           </Button>
           <Button
             size="small"
@@ -549,7 +549,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
               setInfoErrorCandidate(candidate);
             }}
           >
-            标记异常
+            异常
           </Button>
           <Button
             size="small"
