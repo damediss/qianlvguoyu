@@ -3,7 +3,9 @@ package com.guoyu.platform.app.controller;
 import com.guoyu.platform.app.api.LegacyAppResponse;
 import com.guoyu.platform.app.auth.AppAuthApplicationService;
 import com.guoyu.platform.app.sms.AppSmsException;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -42,6 +44,24 @@ public class AppAuthController {
     String phone = str(body, "phone");
     String isAuth = str(body, "isAuth");
     return LegacyAppResponse.ok("成功", authService.setLogin(idcard, phone, isAuth));
+  }
+
+  /** 退出登录：服务端删除当前 token，前端再清本地存储 */
+  @PostMapping("/logout")
+  public LegacyAppResponse logout(HttpServletRequest request) {
+    String token = extractBearerToken(request);
+    authService.logout(token);
+    return LegacyAppResponse.ok("退出成功", null);
+  }
+
+  private static String extractBearerToken(HttpServletRequest request) {
+    String authHeader = request.getHeader("Authorization");
+    if (StringUtils.hasText(authHeader) && authHeader.startsWith("Bearer ")) {
+      return authHeader.substring(7).trim();
+    }
+    // 兼容前端直接传 itoken 头的情况
+    String itoken = request.getHeader("itoken");
+    return StringUtils.hasText(itoken) ? itoken.trim() : null;
   }
 
   @ExceptionHandler(AppSmsException.class)

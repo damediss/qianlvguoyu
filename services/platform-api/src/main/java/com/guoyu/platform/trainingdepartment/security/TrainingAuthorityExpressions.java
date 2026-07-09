@@ -81,4 +81,13 @@ public final class TrainingAuthorityExpressions {
   /** 排课冲突检查 */
   public static final String SCHEDULE_CONFLICTS_VIEW =
       "hasAnyAuthority('train:class:view', 'train:info-class:view', 'train:class-list:view')";
+
+  /** 三年规划企业确认/驳回 */
+  public static final String THREE_YEAR_PLAN_ENTERPRISE_CONFIRM =
+      "hasAnyAuthority('pxanfangguihua:enterprise_confirm', 'pxanfangguihua:manage', "
+          + "'train:info-list:update', 'train:demand-train:update')";
+
+  /** 三年规划新建/同步/提交（机构操作员 + 平台管理员） */
+  public static final String THREE_YEAR_PLAN_MANAGE =
+      "hasAnyAuthority('pxanfangguihua:manage', 'pxanfangguihua:view')";
 }

@@ -3,6 +3,8 @@ server:
   servlet:
     context-path: /api
   forward-headers-strategy: native
+  tomcat:
+    max-http-form-post-size: 25MB
 
 spring:
   application:
@@ -149,9 +151,39 @@ platform:
   # 报名页面公开访问地址（用于生成二维码，扫码跳转用）
   # 本地开发：http://localhost:8080  生产：https://api.gjjd168.com
   app-base-url: ${APP_BASE_URL:http://localhost:8080}
+  # App 首页轮播图等未登录可访问资源的默认租户（PHP 端硬编码 10159）
+  default-tenant-id: ${APP_DEFAULT_TENANT_ID:10159}
+  # 我的页客服电话/协议链接
+  kefu-phone: ${APP_KEFU_PHONE:18977081413}
+  agreement-url: ${APP_AGREEMENT_URL:}
+  privacy-url: ${APP_PRIVACY_URL:}
   sms:
     # false=开发模式：验证码写入 platform_sms 并打日志，不调用阿里云
     enabled: ${SMS_ENABLED:false}
+  weknora:
+    # WeKnora 本地知识库（AI 陪练代理目标）
+    enabled: ${WEKNORA_ENABLED:true}
+    base-url: ${WEKNORA_BASE_URL:http://43.138.163.7:8088/api/v1}
+    api-key: ${WEKNORA_API_KEY:sk-9u9kws6uBLRVmSHThzGjNeCrCEjWx61sOEEgg52VqowzWsDi}
+    # 逗号分隔的知识库 ID，在 WeKnora 控制台获取
+    default-knowledge-base-ids: ${WEKNORA_KB_IDS:}
+    default-agent-id: ${WEKNORA_AGENT_ID:a6223b7c-96ed-494a-b0ef-2c39dac77064}
+    # 自定义智能体走 agent-chat；内置 builtin-* 可走 knowledge-chat
+    use-agent-chat: ${WEKNORA_USE_AGENT_CHAT:true}
+    connect-timeout-seconds: ${WEKNORA_CONNECT_TIMEOUT:15}
+    read-timeout-seconds: ${WEKNORA_READ_TIMEOUT:180}
+    # 可选备用：platform-api 自行调视觉 API 识图（需单独配 COACH_VISION_API_KEY）
+    # 默认 false：拍照图片直接交给 WeKnora 智能体（使用控制台里已配的 MiniMax-M3 VLM）
+    vision-preprocess-enabled: ${COACH_VISION_PREPROCESS:false}
+    vision-api-url: ${COACH_VISION_API_URL:https://api.scnet.cn/api/llm/v1/chat/completions}
+    vision-api-key: ${COACH_VISION_API_KEY:}
+    vision-model: ${COACH_VISION_MODEL:MiniMax-M3}
+  rencaishibie:
+    enabled: ${RENCAI_ENABLED:true}
+    base-url: ${RENCAI_BASE_URL:http://localhost:8001}
+    internal-token: ${RENCAI_INTERNAL_TOKEN:}
+    connect-timeout-seconds: ${RENCAI_CONNECT_TIMEOUT:15}
+    read-timeout-seconds: ${RENCAI_READ_TIMEOUT:300}
 
 # Sa-Token
 sa-token:

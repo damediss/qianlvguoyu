@@ -15,6 +15,7 @@ public record TrainDashboardVO(
         double materialSubmissionRate,
         double certificationRate,
         double subsidyApprovalRate,
+        double trainingCompletionRate,
         long totalProjects,
         long totalStudents,
         long totalCertificates,

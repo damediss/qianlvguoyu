@@ -27,6 +27,17 @@ public class PlatformUserDetailEntity {
   private String idcardStartDate;
   private String idcardEndDate;
   private String birthday;
+  /** 户口性质 */
+  private String houseType;
+  private String school;
+  private String major;
+  private String schoolNo;
+  private String inSchoolDate;
+  private String graduateDate;
+  private String workTime;
+  private String titleType;
+  /** 毕业证照片路径 */
+  private String schoolPaper;
 
   @TableLogic
   private Integer deleted;
@@ -63,6 +74,24 @@ public class PlatformUserDetailEntity {
   public void setIdcardEndDate(String idcardEndDate) { this.idcardEndDate = idcardEndDate; }
   public String getBirthday() { return birthday; }
   public void setBirthday(String birthday) { this.birthday = birthday; }
+  public String getHouseType() { return houseType; }
+  public void setHouseType(String houseType) { this.houseType = houseType; }
+  public String getSchool() { return school; }
+  public void setSchool(String school) { this.school = school; }
+  public String getMajor() { return major; }
+  public void setMajor(String major) { this.major = major; }
+  public String getSchoolNo() { return schoolNo; }
+  public void setSchoolNo(String schoolNo) { this.schoolNo = schoolNo; }
+  public String getInSchoolDate() { return inSchoolDate; }
+  public void setInSchoolDate(String inSchoolDate) { this.inSchoolDate = inSchoolDate; }
+  public String getGraduateDate() { return graduateDate; }
+  public void setGraduateDate(String graduateDate) { this.graduateDate = graduateDate; }
+  public String getWorkTime() { return workTime; }
+  public void setWorkTime(String workTime) { this.workTime = workTime; }
+  public String getTitleType() { return titleType; }
+  public void setTitleType(String titleType) { this.titleType = titleType; }
+  public String getSchoolPaper() { return schoolPaper; }
+  public void setSchoolPaper(String schoolPaper) { this.schoolPaper = schoolPaper; }
   public Integer getDeleted() { return deleted; }
   public void setDeleted(Integer deleted) { this.deleted = deleted; }
 }

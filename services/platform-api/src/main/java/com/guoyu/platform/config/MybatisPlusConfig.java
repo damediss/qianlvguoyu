@@ -50,7 +50,11 @@ public class MybatisPlusConfig {
             || "platform_user_detail".equalsIgnoreCase(tableName)
             || "platform_user".equalsIgnoreCase(tableName)
             || "platform_user_token".equalsIgnoreCase(tableName)
-            || "platform_sms".equalsIgnoreCase(tableName);
+            || "platform_sms".equalsIgnoreCase(tableName)
+            || "cms_article".equalsIgnoreCase(tableName)
+            || "cms_article_category".equalsIgnoreCase(tableName)
+            || "cms_article_content".equalsIgnoreCase(tableName)
+            || "sys_index_swiper".equalsIgnoreCase(tableName);
       }
     }));
     return interceptor;

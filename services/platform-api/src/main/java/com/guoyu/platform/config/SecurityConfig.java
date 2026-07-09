@@ -98,7 +98,7 @@ public class SecurityConfig {
             .requestMatchers("/files/**").permitAll()
             .requestMatchers(HttpMethod.GET, "/ws/practical-scoring").permitAll()
             .requestMatchers(HttpMethod.POST, "/appregistration/**").permitAll()
-            .requestMatchers(HttpMethod.POST, "/appsms/**", "/appauth/**", "/appuser/**", "/apphome/**").permitAll()
+            .requestMatchers(HttpMethod.POST, "/appsms/**", "/appauth/**", "/appuser/**", "/appuserv4/**", "/apphome/**", "/appsmart/**", "/appcoach/**").permitAll()
             // App 端接口（身份证 OCR 等），由 AppTokenAuthFilter 验证登录态即可
             .requestMatchers("/training/app/**").permitAll()
             // 培训管理·扫码信息收集 - 测试专用接口（生成环境请移除并接入鉴权）

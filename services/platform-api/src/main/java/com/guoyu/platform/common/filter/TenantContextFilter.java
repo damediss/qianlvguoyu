@@ -28,6 +28,10 @@ public class TenantContextFilter extends OncePerRequestFilter {
       "/api/appsms/",
       "/api/appauth/",
       "/api/appuser/",
+      "/api/appuserv4/",
+      "/api/appsmart/",
+      "/api/appcoach/",
+      "/api/apphome/",
       "/api/exam/files/",
       // 培训管理·扫码信息收集 - 测试专用
       "/api/training/sign-ups/",

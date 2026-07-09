@@ -48,6 +48,15 @@ public class AppAuthApplicationService {
     smsService.verifyCode(phone, code);
   }
 
+  /** 退出登录：删除当前 token 记录（仅登出当前设备） */
+  public void logout(String token) {
+    if (!StringUtils.hasText(token)) {
+      return;
+    }
+    tokenMapper.delete(new LambdaQueryWrapper<PlatformUserTokenEntity>()
+        .eq(PlatformUserTokenEntity::getToken, token.trim()));
+  }
+
   public Map<String, Object> login(String phone, String password) {
     if (!StringUtils.hasText(phone)) {
       throw new AppSmsException(-1, "手机号不能为空");

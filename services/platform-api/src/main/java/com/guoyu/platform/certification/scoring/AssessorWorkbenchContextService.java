@@ -153,7 +153,7 @@ public class AssessorWorkbenchContextService {
       log.warn("考评员{}存在多个未完成任务组长{}", assessor.getId(), leaderIds);
       throw new BusinessException(ErrorCode.CONFLICT, "考评员存在多个组长，请先完成或调整原任务分组");
     }
-    Long leaderId = leaderIds.getFirst();
+    Long leaderId = leaderIds.isEmpty() ? null : leaderIds.get(0);
     boolean leader = Objects.equals(leaderId, assessor.getId());
     CertificationAssessorWorkbenchContextEntity stored = contextMapper.selectOne(
         new LambdaQueryWrapper<CertificationAssessorWorkbenchContextEntity>()
@@ -167,8 +167,8 @@ public class AssessorWorkbenchContextService {
         .toList();
     Long activeTaskId = stored != null && selectable.stream().anyMatch(task -> Objects.equals(task.getId(), stored.getActiveTaskId()))
         ? stored.getActiveTaskId()
-        : selectable.getFirst().getId();
-    String leaderName = leader ? assessor.getAssessorName() : groups.get(bindings.getFirst().member().getGroupId()) == null
+        : (selectable.isEmpty() ? null : selectable.get(0).getId());
+    String leaderName = leader ? assessor.getAssessorName() : groups.get(bindings.isEmpty() ? null : bindings.get(0).member().getGroupId()) == null
         ? null : loadAssessorName(leaderId);
     return new ResolvedContext(leader, leaderId, leaderName, activeTaskId, bindings);
   }
