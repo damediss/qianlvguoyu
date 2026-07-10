@@ -30,6 +30,15 @@ public class TrainSignUpSelfEntity {
   /** 组织ID */
   private Long orgId;
 
+  /** 关联企业调研 */
+  private Long researchOrgId;
+
+  /** 采集来源 train_info / research */
+  private String collectionSource;
+
+  /** 公开采集 token */
+  private String qrcodeToken;
+
   /** 培训信息ID */
   private Long trainInfoId;
 
@@ -58,6 +67,12 @@ public class TrainSignUpSelfEntity {
   public void setExamTime(String examTime) { this.examTime = examTime; }
   public Long getOrgId() { return orgId; }
   public void setOrgId(Long orgId) { this.orgId = orgId; }
+  public Long getResearchOrgId() { return researchOrgId; }
+  public void setResearchOrgId(Long researchOrgId) { this.researchOrgId = researchOrgId; }
+  public String getCollectionSource() { return collectionSource; }
+  public void setCollectionSource(String collectionSource) { this.collectionSource = collectionSource; }
+  public String getQrcodeToken() { return qrcodeToken; }
+  public void setQrcodeToken(String qrcodeToken) { this.qrcodeToken = qrcodeToken; }
   public Long getTrainInfoId() { return trainInfoId; }
   public void setTrainInfoId(Long trainInfoId) { this.trainInfoId = trainInfoId; }
   public Integer getSortNumber() { return sortNumber; }

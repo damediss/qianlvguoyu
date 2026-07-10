@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public record TrainResearchOrgCreateReq(
     @NotBlank String title,
+    Long targetOrgId,
     String type,
     Integer provinceId,
     String provinceName,

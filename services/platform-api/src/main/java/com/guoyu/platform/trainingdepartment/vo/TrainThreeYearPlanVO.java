@@ -25,5 +25,9 @@ public record TrainThreeYearPlanVO(
     Integer totalRows,
     Integer recommendedRows,
     Double progressPct,
-    String rencaiTaskStatus
+    String rencaiTaskStatus,
+    Long submitPersonnelFileId,
+    Long submitSchemeFileId,
+    String submitPersonnelFileName,
+    String submitSchemeFileName
 ) {}

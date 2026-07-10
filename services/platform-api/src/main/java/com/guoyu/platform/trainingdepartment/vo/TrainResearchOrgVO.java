@@ -5,6 +5,10 @@ import java.time.LocalDateTime;
 public record TrainResearchOrgVO(
     Long id,
     String title,
+    Long targetOrgId,
+    String targetOrgName,
+    Long activeSignUpId,
+    Integer personnelCount,
     String type,
     Integer provinceId,
     String provinceName,

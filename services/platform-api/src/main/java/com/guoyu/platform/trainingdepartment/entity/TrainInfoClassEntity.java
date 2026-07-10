@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
+import java.time.LocalDateTime;
 
 /**
  * 培训班级表
@@ -37,6 +38,12 @@ public class TrainInfoClassEntity {
   private String fileTemps;
   /** 课表文件 */
   private String kcbiaoFile;
+  /** 企业确认状态 0待确认 1已确认 2已驳回 */
+  private Integer companyConfirmStatus;
+  private LocalDateTime companyConfirmTime;
+  private Long companyConfirmUserId;
+  private String companyConfirmUsername;
+  private String companyRejectReason;
 
   /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
@@ -66,6 +73,16 @@ public class TrainInfoClassEntity {
   public void setFileTemps(String fileTemps) { this.fileTemps = fileTemps; }
   public String getKcbiaoFile() { return kcbiaoFile; }
   public void setKcbiaoFile(String kcbiaoFile) { this.kcbiaoFile = kcbiaoFile; }
+  public Integer getCompanyConfirmStatus() { return companyConfirmStatus; }
+  public void setCompanyConfirmStatus(Integer companyConfirmStatus) { this.companyConfirmStatus = companyConfirmStatus; }
+  public LocalDateTime getCompanyConfirmTime() { return companyConfirmTime; }
+  public void setCompanyConfirmTime(LocalDateTime companyConfirmTime) { this.companyConfirmTime = companyConfirmTime; }
+  public Long getCompanyConfirmUserId() { return companyConfirmUserId; }
+  public void setCompanyConfirmUserId(Long companyConfirmUserId) { this.companyConfirmUserId = companyConfirmUserId; }
+  public String getCompanyConfirmUsername() { return companyConfirmUsername; }
+  public void setCompanyConfirmUsername(String companyConfirmUsername) { this.companyConfirmUsername = companyConfirmUsername; }
+  public String getCompanyRejectReason() { return companyRejectReason; }
+  public void setCompanyRejectReason(String companyRejectReason) { this.companyRejectReason = companyRejectReason; }
   public Integer getDeleted() { return deleted; }
   public void setDeleted(Integer deleted) { this.deleted = deleted; }
 }

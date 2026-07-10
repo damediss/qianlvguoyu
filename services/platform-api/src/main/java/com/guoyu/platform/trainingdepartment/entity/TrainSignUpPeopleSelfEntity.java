@@ -48,10 +48,13 @@ public class TrainSignUpPeopleSelfEntity {
 
   private String workTime;
   private String titleType;
+  private String titleMajor;
+  private String titleCertDate;
   private String titleLevel;
   private String titlePaper;
   private Long companyId;
   private String companyName;
+  private String department;
   private String companyCode;
   private String zipCode;
   private String companyAddress;
@@ -65,6 +68,9 @@ public class TrainSignUpPeopleSelfEntity {
   private String workTypeName;
   private Integer level;
   private String paperNo;
+  private String certIssueDates;
+  private String certificatesJson;
+  private String dataSource;
   private Long reqWorkTypeId;
   private String reqWorkTypeName;
   private Integer reqLevel;

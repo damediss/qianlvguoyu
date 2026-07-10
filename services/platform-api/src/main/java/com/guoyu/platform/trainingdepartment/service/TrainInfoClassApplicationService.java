@@ -24,6 +24,7 @@ import com.guoyu.platform.trainingdepartment.vo.TrainInfoClassVO;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -80,6 +81,9 @@ public class TrainInfoClassApplicationService {
     if (req.getWorkTypeId() != null && req.getWorkTypeId() != 0) {
       wrapper.eq(TrainInfoClassEntity::getWorkTypeId, req.getWorkTypeId());
     }
+    if (req.getCompanyConfirmStatus() != null) {
+      wrapper.eq(TrainInfoClassEntity::getCompanyConfirmStatus, req.getCompanyConfirmStatus());
+    }
     Page<TrainInfoClassEntity> mpPage = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
 
     // Batch resolve names
@@ -127,6 +131,10 @@ public class TrainInfoClassApplicationService {
       item.put("train_title", ti != null ? ti.getTitle() : null);
       item.put("position", ti != null ? ti.getPosition() : null);
       item.put("course_num", ti != null ? ti.getCourseNum() : null);
+      item.put("company_confirm_status", e.getCompanyConfirmStatus() != null ? e.getCompanyConfirmStatus() : 0);
+      item.put("company_confirm_time", e.getCompanyConfirmTime());
+      item.put("company_confirm_username", e.getCompanyConfirmUsername());
+      item.put("company_reject_reason", e.getCompanyRejectReason());
       return item;
     }).toList();
 
@@ -189,6 +197,7 @@ public class TrainInfoClassApplicationService {
       }
       entity.setAddtime((int) (System.currentTimeMillis() / 1000));
       entity.setDeleted(0);
+      entity.setCompanyConfirmStatus(0);
       mapper.insert(entity);
       Map<String, Object> result = new LinkedHashMap<>();
       result.put("id", entity.getId());
@@ -304,6 +313,48 @@ public class TrainInfoClassApplicationService {
     result.put("ids", currentIds);
     result.put("fileTemps", currentIds);
     return result;
+  }
+
+  @Transactional
+  public Map<String, Object> companyConfirm(Long id) {
+    TrainInfoClassEntity entity = getExisting(id);
+    assertEnterpriseCanConfirm(entity);
+    entity.setCompanyConfirmStatus(1);
+    entity.setCompanyConfirmTime(LocalDateTime.now());
+    entity.setCompanyConfirmUserId(SecurityContext.currentUser().getUserId());
+    entity.setCompanyConfirmUsername(SecurityContext.currentUser().getUsername());
+    entity.setCompanyRejectReason(null);
+    mapper.updateById(entity);
+    return Map.of("id", entity.getId(), "company_confirm_status", 1);
+  }
+
+  @Transactional
+  public Map<String, Object> companyReject(Long id, String reason) {
+    TrainInfoClassEntity entity = getExisting(id);
+    assertEnterpriseCanConfirm(entity);
+    if (reason == null || reason.isBlank()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请填写驳回理由");
+    }
+    entity.setCompanyConfirmStatus(2);
+    entity.setCompanyRejectReason(reason.trim());
+    mapper.updateById(entity);
+    return Map.of("id", entity.getId(), "company_confirm_status", 2);
+  }
+
+  private void assertEnterpriseCanConfirm(TrainInfoClassEntity entity) {
+    operatorScopeService.assertClassAccessible(entity);
+    Integer status = entity.getCompanyConfirmStatus() != null ? entity.getCompanyConfirmStatus() : 0;
+    if (status != 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅待确认状态的班级可审核");
+    }
+    TrainingOperatorScopeService.Scope scope = operatorScopeService.currentScope();
+    if (!scope.isEnterpriseViewer()) {
+      operatorScopeService.requireOrgOperator();
+      return;
+    }
+    if (scope.orgId() == null || entity.getCompanyId() == null || !scope.orgId().equals(entity.getCompanyId())) {
+      throw new BusinessException(ErrorCode.FORBIDDEN, "仅目标企业可确认该班级");
+    }
   }
 
   private List<Long> parseFileTemps(String fileTemps) {

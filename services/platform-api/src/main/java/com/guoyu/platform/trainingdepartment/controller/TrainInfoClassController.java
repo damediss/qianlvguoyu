@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -119,5 +120,21 @@ public class TrainInfoClassController {
   @AuditLog(module = "training", action = "info-class:generate-materials", targetType = "train_info_class")
   public ApiResponse<Map<String, Object>> generateMaterials(@PathVariable Long classId) {
     return ApiResponse.ok(trainMaterialGenerateApplicationService.generate(classId));
+  }
+
+  /** 企业确认分班 */
+  @PostMapping("/info-classes/{id}/company-confirm")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_ENTERPRISE_CONFIRM)
+  @AuditLog(module = "training", action = "info-class:company-confirm", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> companyConfirm(@PathVariable Long id) {
+    return ApiResponse.ok(trainInfoClassApplicationService.companyConfirm(id));
+  }
+
+  /** 企业驳回分班 */
+  @PostMapping("/info-classes/{id}/company-reject")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_ENTERPRISE_CONFIRM)
+  @AuditLog(module = "training", action = "info-class:company-reject", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> companyReject(@PathVariable Long id, @RequestParam String reason) {
+    return ApiResponse.ok(trainInfoClassApplicationService.companyReject(id, reason));
   }
 }

@@ -45,19 +45,19 @@ public class TrainThreeYearPlanController {
   }
 
   @GetMapping("/three-year-plans")
-  @PreAuthorize("hasAuthority('pxanfangguihua:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
   public ApiResponse<PageResponse<TrainThreeYearPlanVO>> page(@Valid @ModelAttribute TrainThreeYearPlanQueryReq req) {
     return ApiResponse.ok(trainThreeYearPlanApplicationService.page(req));
   }
 
   @GetMapping("/three-year-plans/{id:\\d+}")
-  @PreAuthorize("hasAuthority('pxanfangguihua:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
   public ApiResponse<TrainThreeYearPlanVO> getById(@PathVariable Long id) {
     return ApiResponse.ok(trainThreeYearPlanApplicationService.getById(id));
   }
 
   @GetMapping("/three-year-plans/{id:\\d+}/detail-bundle")
-  @PreAuthorize("hasAuthority('pxanfangguihua:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
   public ApiResponse<TrainThreeYearPlanDetailVO> getDetailBundle(
       @PathVariable Long id,
       @Valid @ModelAttribute TrainThreeYearPlanItemQueryReq req) {
@@ -77,7 +77,7 @@ public class TrainThreeYearPlanController {
   }
 
   @GetMapping("/three-year-plans/{id:\\d+}/analysis-status")
-  @PreAuthorize("hasAuthority('pxanfangguihua:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
   public ApiResponse<TrainThreeYearPlanAnalysisStatusVO> analysisStatus(@PathVariable Long id) {
     return ApiResponse.ok(trainThreeYearPlanApplicationService.refreshAnalysisStatus(id));
   }
@@ -95,11 +95,14 @@ public class TrainThreeYearPlanController {
     return ApiResponse.ok(trainThreeYearPlanApplicationService.prepareReview(id));
   }
 
-  @PostMapping("/three-year-plans/{id:\\d+}/submit")
+  @PostMapping(value = "/three-year-plans/{id:\\d+}/submit", consumes = "multipart/form-data")
   @PreAuthorize("hasAuthority('pxanfangguihua:manage')")
   @AuditLog(module = "training", action = "three-year-plan:submit", targetType = "train_three_year_plan")
-  public ApiResponse<TrainThreeYearPlanVO> submit(@PathVariable Long id) {
-    return ApiResponse.ok(trainThreeYearPlanApplicationService.submit(id));
+  public ApiResponse<TrainThreeYearPlanVO> submit(
+      @PathVariable Long id,
+      @RequestPart("personnelFile") MultipartFile personnelFile,
+      @RequestPart("schemeFile") MultipartFile schemeFile) {
+    return ApiResponse.ok(trainThreeYearPlanApplicationService.submit(id, personnelFile, schemeFile));
   }
 
   @PostMapping("/three-year-plans/{id:\\d+}/company-confirm")
@@ -117,7 +120,7 @@ public class TrainThreeYearPlanController {
   }
 
   @GetMapping("/three-year-plans/{id:\\d+}/items")
-  @PreAuthorize("hasAuthority('pxanfangguihua:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
   public ApiResponse<PageResponse<TrainThreeYearPlanItemVO>> pageItems(
       @PathVariable Long id,
       @Valid @ModelAttribute TrainThreeYearPlanItemQueryReq req) {
@@ -135,31 +138,43 @@ public class TrainThreeYearPlanController {
   }
 
   @GetMapping("/three-year-plans/{id:\\d+}/matrix")
-  @PreAuthorize("hasAuthority('pxanfangguihua:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
   public ApiResponse<List<TrainThreeYearPlanMatrixVO>> listMatrix(@PathVariable Long id) {
     return ApiResponse.ok(trainThreeYearPlanApplicationService.listMatrix(id));
   }
 
   @GetMapping("/three-year-plans/{id:\\d+}/review-distribution")
-  @PreAuthorize("hasAuthority('pxanfangguihua:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
   public ApiResponse<List<TrainThreeYearPlanDistributionVO>> reviewDistribution(@PathVariable Long id) {
     return ApiResponse.ok(trainThreeYearPlanApplicationService.getReviewDistribution(id));
   }
 
   @GetMapping("/three-year-plans/{id:\\d+}/download-plan")
-  @PreAuthorize("hasAuthority('pxanfangguihua:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
   public ResponseEntity<byte[]> downloadPlan(@PathVariable Long id) {
     return trainThreeYearPlanApplicationService.downloadPlanFile(id);
   }
 
   @GetMapping("/three-year-plans/{id:\\d+}/download-reviewed-plan")
-  @PreAuthorize("hasAuthority('pxanfangguihua:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
   public ResponseEntity<byte[]> downloadReviewedPlan(@PathVariable Long id) {
     return trainThreeYearPlanApplicationService.downloadReviewedPlanFile(id);
   }
 
+  @GetMapping("/three-year-plans/{id:\\d+}/download-submit-personnel")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
+  public ResponseEntity<byte[]> downloadSubmitPersonnel(@PathVariable Long id) {
+    return trainThreeYearPlanApplicationService.downloadSubmitPersonnelFile(id);
+  }
+
+  @GetMapping("/three-year-plans/{id:\\d+}/download-submit-scheme")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
+  public ResponseEntity<byte[]> downloadSubmitScheme(@PathVariable Long id) {
+    return trainThreeYearPlanApplicationService.downloadSubmitSchemeFile(id);
+  }
+
   @GetMapping("/three-year-plans/{id:\\d+}/download-result")
-  @PreAuthorize("hasAuthority('pxanfangguihua:view')")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
   public ResponseEntity<byte[]> downloadResult(@PathVariable Long id) {
     return trainThreeYearPlanApplicationService.downloadResultZip(id);
   }
