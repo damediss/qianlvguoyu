@@ -378,7 +378,52 @@ WeKnora 管理员配置:
 
 ---
 
-## 五、总体流程（按工种）
+## 五、菜单与权限配置
+
+### 5.1 菜单挂载位置
+
+挂在「提升/考试管理」(parent_id = 2064170197574156289) 目录下，排在「试题管理」(sort=3) 与「知识比重」(sort=5) 之间：
+
+```
+提升/考试管理 (id=2064170197574156289, directory)
+├── 试题管理         (id=6400, sort=3)
+├── 试题FAQ知识管理   (id=6600, sort=4)  ← 新增
+└── 知识比重         (id=6501, sort=5)
+```
+
+### 5.2 菜单 INSERT 迁移
+
+```sql
+INSERT IGNORE INTO sys_menu (
+  id, tenant_id, parent_id, menu_type, code, name,
+  path, component, permission_code,
+  icon, sort_order, visible, expanded, status,
+  created_at, updated_at, created_by, updated_by, deleted
+) VALUES
+(
+  6600, 1, 2064170197574156289, 'page', 'exam_faq_conversion', '试题FAQ知识管理',
+  '/question-bank/faq-conversion', 'exam/FaqConversionPage', 'exam:faq:view',
+  'RobotOutlined', 4, 1, NULL, 'enabled',
+  NOW(), NOW(), 1, 1, 0
+);
+```
+
+### 5.3 功能权限码
+
+在权限管理菜单中注册以下权限码（同级于 `exam:question:view`）：
+
+| 权限码 | 用途 |
+|---|---|
+| `exam:faq:view` | 进入「试题FAQ知识管理」页面 |
+| `exam:faq:generate` | 执行 FAQ 转换（调 LLM） |
+| `exam:faq:pause` | 暂停 / 恢复批次 |
+| `exam:faq:retry` | 重试失败记录 |
+| `exam:faq:export` | 导出 FAQ JSON 文件 |
+| `exam:faq:config` | 配置 LLM 模型 / WeKnora Webhook 参数 |
+
+---
+
+## 六、总体流程（按工种）
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -409,7 +454,7 @@ WeKnora 管理员配置:
 
 ---
 
-## 六、输入筛选规则
+## 七、输入筛选规则
 
 只转换以下题型，其余跳过：
 
@@ -439,7 +484,7 @@ WHERE deleted = 0
 
 ---
 
-## 七、知识点关联逻辑（tag_name 知识层级来源）
+## 八、知识点关联逻辑（tag_name 知识层级来源）
 
 ### 7.1 关联路径（修正版）
 
@@ -490,7 +535,7 @@ SELECT id, name, path, level, depth FROM ks_path;
 
 ---
 
-## 八、输入 → 输出字段映射
+## 九、输入 → 输出字段映射
 
 ### 8.1 输入结构（exam_exam_detail 单条）
 
@@ -533,7 +578,7 @@ SELECT id, name, path, level, depth FROM ks_path;
 
 ---
 
-## 九、分题型转换逻辑
+## 十、分题型转换逻辑
 
 ### 9.1 单选题（type = 'single'）
 
@@ -675,7 +720,7 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 
 ---
 
-## 十、LLM 生成 Prompt 设计（国家职业标准专家角色）
+## 十一、LLM 生成 Prompt 设计（国家职业标准专家角色）
 
 ### 10.1 System Prompt（共用前缀）
 
@@ -785,7 +830,7 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 
 ---
 
-## 十一、tag_name 命名规范
+## 十二、tag_name 命名规范
 
 格式：`{题型}|{知识点路径}|{难度}`
 
@@ -805,7 +850,7 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 
 ---
 
-## 十二、边界与特殊处理
+## 十三、边界与特殊处理
 
 | 情况 | 处理方式 |
 |---|---|
@@ -824,7 +869,7 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 
 ---
 
-## 十三、页面设计：工种题库结构化问答管理
+## 十四、页面设计：工种题库结构化问答管理
 
 ### 13.1 页面布局
 
@@ -917,7 +962,7 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 
 ---
 
-## 十四、模块划分（新增代码参考）
+## 十五、模块划分（新增代码参考）
 
 | 层级 | 模块 | 职责 |
 |---|---|---|
@@ -942,7 +987,7 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 
 ---
 
-## 十五、输出文件组织
+## 十六、输出文件组织
 
 按 `tag_name` 一级分类输出，方便分批次导入 WeKnora：
 
@@ -958,7 +1003,7 @@ output/
 
 ---
 
-## 十六、待确认项
+## 十七、待确认项
 
 | 项 | 状态 |
 |---|---|
