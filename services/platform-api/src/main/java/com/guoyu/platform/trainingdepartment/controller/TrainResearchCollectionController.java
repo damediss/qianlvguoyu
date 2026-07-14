@@ -7,10 +7,12 @@ import com.guoyu.platform.trainingdepartment.dto.TrainResearchCollectionCreatePl
 import com.guoyu.platform.trainingdepartment.dto.TrainResearchPersonCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResearchPersonQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResearchPersonUpdateReq;
+import com.guoyu.platform.trainingdepartment.dto.CertVerifyReq;
 import com.guoyu.platform.trainingdepartment.service.TrainResearchCollectionApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainResearchCollectionVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainResearchPersonVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainThreeYearPlanVO;
+import com.guoyu.platform.trainingdepartment.vo.CertVerifyBatchResultVO;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -83,6 +85,15 @@ public class TrainResearchCollectionController {
       @PathVariable Long peopleId) {
     collectionService.deletePerson(researchOrgId, peopleId);
     return ApiResponse.ok();
+  }
+
+  @PostMapping("/people/verify-cert")
+  @PreAuthorize("hasAuthority('train:research_org:update')")
+  @AuditLog(module = "training", action = "research-collection:verify-cert", targetType = "train_sign_up_people_self")
+  public ApiResponse<CertVerifyBatchResultVO> verifyPeopleCertificate(
+      @PathVariable Long researchOrgId,
+      @Valid @RequestBody CertVerifyReq req) {
+    return ApiResponse.ok(collectionService.verifyPeopleCertificate(researchOrgId, req.peopleIds()));
   }
 
   @GetMapping("/export-template")

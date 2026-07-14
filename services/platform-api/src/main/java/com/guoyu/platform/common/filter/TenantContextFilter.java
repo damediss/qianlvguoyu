@@ -35,6 +35,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
       "/api/exam/files/",
       // 培训管理·扫码信息收集 - 测试专用
       "/api/training/sign-ups/",
+      "/api/training/public/research-collection/",
       "/api/collect-test.html"
   );
   private static final Set<String> WHITE_METHOD_PATHS = Set.of(

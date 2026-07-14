@@ -103,6 +103,7 @@ public class SecurityConfig {
             .requestMatchers("/training/app/**").permitAll()
             // 培训管理·扫码信息收集 - 测试专用接口（生成环境请移除并接入鉴权）
             .requestMatchers("/training/sign-ups/**").permitAll()
+            .requestMatchers("/training/public/research-collection/**").permitAll()
             .requestMatchers(HttpMethod.GET, "/collect-test.html", "/favicon.ico").permitAll()
             // OIDC 端点由 @Order(1) AS 链处理，此处放行防止 app 链拦截
             .requestMatchers("/oauth2/**", "/userinfo", "/.well-known/**").permitAll()

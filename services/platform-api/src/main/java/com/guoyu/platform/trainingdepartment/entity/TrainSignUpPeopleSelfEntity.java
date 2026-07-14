@@ -67,6 +67,8 @@ public class TrainSignUpPeopleSelfEntity {
   private Long workTypeId;
   private String workTypeName;
   private Integer level;
+  /** 证书查证状态：null未查证 0查证中 1已查证 2查证无结果 3查证失败 */
+  private Integer certVerified;
   private String paperNo;
   private String certIssueDates;
   private String certificatesJson;

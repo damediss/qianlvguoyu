@@ -39,14 +39,4 @@ CREATE TABLE IF NOT EXISTS chazheng_cert_batch_item (
   KEY idx_batch_item_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='查证明细';
 
--- 3. chazheng_cert 唯一索引（防并发重复插入同一用户的同一证书）
-SET @db := DATABASE();
-SET @sql := IF(
-  (SELECT COUNT(*) FROM information_schema.STATISTICS
-   WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'chazheng_cert'
-   AND INDEX_NAME = 'uk_chazheng_cert_user_cert_no') = 0,
-  'ALTER TABLE chazheng_cert ADD UNIQUE KEY uk_chazheng_cert_user_cert_no (user_id, cert_no)',
-  'SELECT 1');
-PREPARE stmt FROM @sql;
-EXECUTE stmt;
-DEALLOCATE PREPARE stmt;
+-- 唯一索引由 V20260709_007__add_chazheng_cert_unique_index.sql 维护，此处不再重复创建

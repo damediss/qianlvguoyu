@@ -1,5 +1,6 @@
 package com.guoyu.platform.trainingdepartment.vo;
 
+import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOptionsSupport.ResearchCollectionFieldOptions;
 import java.time.LocalDateTime;
 
 public record TrainResearchOrgVO(
@@ -9,6 +10,7 @@ public record TrainResearchOrgVO(
     String targetOrgName,
     Long activeSignUpId,
     Integer personnelCount,
+    ResearchCollectionFieldOptions collectionFieldOptions,
     String type,
     Integer provinceId,
     String provinceName,

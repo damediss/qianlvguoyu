@@ -39,6 +39,9 @@ public class TrainSignUpSelfEntity {
   /** 公开采集 token */
   private String qrcodeToken;
 
+  /** 开启采集时的字段选项快照 */
+  private String collectionFieldOptions;
+
   /** 培训信息ID */
   private Long trainInfoId;
 
@@ -73,6 +76,8 @@ public class TrainSignUpSelfEntity {
   public void setCollectionSource(String collectionSource) { this.collectionSource = collectionSource; }
   public String getQrcodeToken() { return qrcodeToken; }
   public void setQrcodeToken(String qrcodeToken) { this.qrcodeToken = qrcodeToken; }
+  public String getCollectionFieldOptions() { return collectionFieldOptions; }
+  public void setCollectionFieldOptions(String collectionFieldOptions) { this.collectionFieldOptions = collectionFieldOptions; }
   public Long getTrainInfoId() { return trainInfoId; }
   public void setTrainInfoId(Long trainInfoId) { this.trainInfoId = trainInfoId; }
   public Integer getSortNumber() { return sortNumber; }

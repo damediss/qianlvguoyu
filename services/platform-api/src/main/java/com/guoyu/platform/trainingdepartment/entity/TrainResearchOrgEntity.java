@@ -27,6 +27,9 @@ public class TrainResearchOrgEntity {
   /** 已采集人数 */
   private Integer personnelCount;
 
+  /** 人员采集字段下拉选项 JSON */
+  private String collectionFieldOptions;
+
   /** 类型 */
   private String type;
 
@@ -84,6 +87,9 @@ public class TrainResearchOrgEntity {
 
   public Integer getPersonnelCount() { return personnelCount; }
   public void setPersonnelCount(Integer personnelCount) { this.personnelCount = personnelCount; }
+
+  public String getCollectionFieldOptions() { return collectionFieldOptions; }
+  public void setCollectionFieldOptions(String collectionFieldOptions) { this.collectionFieldOptions = collectionFieldOptions; }
 
   public String getType() { return type; }
   public void setType(String type) { this.type = type; }

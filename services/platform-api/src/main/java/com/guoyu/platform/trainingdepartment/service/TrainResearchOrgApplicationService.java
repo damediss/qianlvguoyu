@@ -11,8 +11,13 @@ import com.guoyu.platform.trainingdepartment.dto.TrainResearchOrgCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResearchOrgQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResearchOrgUpdateReq;
 import com.guoyu.platform.trainingdepartment.entity.TrainResearchOrgEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainResearchOrgMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
+import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOptionsSupport;
+import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOptionsSupport.ResearchCollectionFieldOptions;
 import com.guoyu.platform.trainingdepartment.vo.TrainResearchOrgVO;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -24,12 +29,18 @@ public class TrainResearchOrgApplicationService {
 
   private final TrainResearchOrgMapper trainResearchOrgMapper;
   private final OrgMapper orgMapper;
+  private final TrainSignUpSelfMapper signUpSelfMapper;
+  private final ResearchCollectionFieldOptionsSupport fieldOptionsSupport;
 
   public TrainResearchOrgApplicationService(
       TrainResearchOrgMapper trainResearchOrgMapper,
-      OrgMapper orgMapper) {
+      OrgMapper orgMapper,
+      TrainSignUpSelfMapper signUpSelfMapper,
+      ResearchCollectionFieldOptionsSupport fieldOptionsSupport) {
     this.trainResearchOrgMapper = trainResearchOrgMapper;
     this.orgMapper = orgMapper;
+    this.signUpSelfMapper = signUpSelfMapper;
+    this.fieldOptionsSupport = fieldOptionsSupport;
   }
 
   public PageResponse<TrainResearchOrgVO> page(TrainResearchOrgQueryReq req) {
@@ -81,6 +92,8 @@ public class TrainResearchOrgApplicationService {
     entity.setAreaName(req.areaName());
     entity.setSortNumber(req.sortNumber() != null ? req.sortNumber() : 100);
     entity.setStatus(req.status() != null ? req.status() : 1);
+    entity.setCollectionFieldOptions(fieldOptionsSupport.serialize(
+        fieldOptionsSupport.mergeIncoming(req.collectionFieldOptions())));
     entity.setTenantId(SecurityContext.currentUser().getTenantId());
     entity.setUserId(SecurityContext.currentUser().getUserId());
     trainResearchOrgMapper.insert(entity);
@@ -107,6 +120,16 @@ public class TrainResearchOrgApplicationService {
     if (req.areaName() != null) entity.setAreaName(req.areaName());
     if (req.sortNumber() != null) entity.setSortNumber(req.sortNumber());
     if (req.status() != null) entity.setStatus(req.status());
+    if (req.collectionFieldOptions() != null) {
+      String serialized = fieldOptionsSupport.serialize(
+          fieldOptionsSupport.mergeIncoming(req.collectionFieldOptions()));
+      entity.setCollectionFieldOptions(serialized);
+      syncActiveSignUpFieldOptions(entity.getActiveSignUpId(), serialized);
+    } else {
+      entity.setCollectionFieldOptions(null);
+      syncActiveSignUpFieldOptions(entity.getActiveSignUpId(), null);
+    }
+    entity.setUpdateTime(LocalDateTime.now());
     trainResearchOrgMapper.updateById(entity);
     return toVO(entity, resolveOrgName(entity.getTargetOrgId()));
   }
@@ -131,6 +154,7 @@ public class TrainResearchOrgApplicationService {
         targetOrgName,
         e.getActiveSignUpId(),
         e.getPersonnelCount(),
+        fieldOptionsSupport.parse(e.getCollectionFieldOptions()),
         e.getType(),
         e.getProvinceId(),
         e.getProvinceName(),
@@ -164,5 +188,22 @@ public class TrainResearchOrgApplicationService {
     }
     OrgEntity org = orgMapper.selectById(orgId);
     return org != null ? org.getName() : null;
+  }
+
+  /** 编辑调研企业字段配置时，同步到已开启的采集批次，H5 扫码才能读到最新选项 */
+  private void syncActiveSignUpFieldOptions(Long activeSignUpId, String fieldOptionsJson) {
+    if (activeSignUpId == null) {
+      return;
+    }
+    TrainSignUpSelfEntity signUp = signUpSelfMapper.selectById(activeSignUpId);
+    if (signUp == null || Integer.valueOf(1).equals(signUp.getDeleted())) {
+      return;
+    }
+    if (!"research".equals(signUp.getCollectionSource())) {
+      return;
+    }
+    signUp.setCollectionFieldOptions(fieldOptionsJson);
+    signUp.setUpdateTime(LocalDateTime.now());
+    signUpSelfMapper.updateById(signUp);
   }
 }
