@@ -435,7 +435,7 @@ public class FaqConversionApplicationService {
   }
 
   /**
-   * 对单条记录执行 LLM 增强（生成 similar + negative），最多重试 2 次。
+   * 对单条记录执行 LLM 增强（生成 similar + negative），最多重试 3 次。
    */
   private void processSingleLlmEnhancement(
       ExamFaqConversionEntity entity, Long tenantId,
@@ -445,7 +445,7 @@ public class FaqConversionApplicationService {
       return;
     }
 
-    int maxRetries = 2;
+    int maxRetries = 3;
     String lastError = null;
 
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
