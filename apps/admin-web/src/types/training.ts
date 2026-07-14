@@ -1,4 +1,5 @@
 // ==================== Training Needs (培训需求) ====================
+import type { PageResponse } from './api';
 export interface TrainNeed {
   id: number;
   orgId?: number;
@@ -817,6 +818,7 @@ export interface DashboardSummaryKpi {
   materialSubmissionRate: number;
   certificationRate: number;
   subsidyApprovalRate: number;
+  trainingCompletionRate: number;
   totalProjects: number;
   totalStudents: number;
   totalCertificates: number;
@@ -842,6 +844,16 @@ export interface TrainDashboard {
   monthlyTrends: DashboardMonthlyTrend[];
   alerts: DashboardAlertItem[];
 }
+
+export interface DashboardMilestoneItem {
+  projectId: number;
+  projectName: string;
+  currentStage: string;
+  progress: number;
+  companyName: string;
+}
+
+export type DashboardStageDistribution = Record<string, number>;
 
 // ==================== Train Talent Needs (人才数据管理) ====================
 export interface TrainTalentNeed {
@@ -2060,6 +2072,10 @@ export interface TrainInfoClassListItem {
   file_temps?: string;
   kcbiao_file?: string;
   kcbiao_src?: string;
+  company_confirm_status?: number;
+  company_confirm_time?: string;
+  company_confirm_username?: string;
+  company_reject_reason?: string;
 }
 
 export interface TrainInfoClassPageResponse {
@@ -2197,3 +2213,349 @@ export interface TrainCertificateCreateReq {
 }
 
 export type TrainCertificateUpdateReq = Partial<TrainCertificateCreateReq>;
+
+export interface ResearchCollectionFieldConfig {
+  inputType?: 'select' | 'text' | 'date';
+  label?: string;
+  required?: boolean;
+  visible?: boolean;
+  allowCustom?: boolean;
+  order?: number;
+  group?: string;
+  options?: string[];
+}
+
+export interface ResearchCollectionGroupConfig {
+  key: string;
+  label: string;
+  order: number;
+}
+
+export interface ResearchCollectionFieldOptions {
+  version?: number;
+  groups?: ResearchCollectionGroupConfig[];
+  fields?: Record<string, ResearchCollectionFieldConfig>;
+}
+
+// ==================== Train Research Org (培训调研企业) ====================
+export interface TrainResearchOrg {
+  id: number;
+  title: string;
+  targetOrgId?: number;
+  targetOrgName?: string;
+  activeSignUpId?: number;
+  personnelCount?: number;
+  collectionFieldOptions?: ResearchCollectionFieldOptions;
+  type?: string;
+  provinceId?: number;
+  provinceName?: string;
+  cityId?: number;
+  cityName?: string;
+  areaId?: number;
+  areaName?: string;
+  userId?: number;
+  sortNumber?: number;
+  status?: number;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface TrainResearchOrgQuery {
+  page?: number;
+  pageSize?: number;
+  title?: string;
+  type?: string;
+  status?: number;
+}
+
+export interface TrainResearchOrgCreateReq {
+  title: string;
+  targetOrgId?: number;
+  collectionFieldOptions?: ResearchCollectionFieldOptions;
+  type?: string;
+  provinceId?: number;
+  provinceName?: string;
+  cityId?: number;
+  cityName?: string;
+  areaId?: number;
+  areaName?: string;
+  sortNumber?: number;
+  status?: number;
+}
+
+export type TrainResearchOrgUpdateReq = Partial<TrainResearchOrgCreateReq>;
+
+export interface TrainResearchCollection {
+  researchOrgId: number;
+  researchOrgTitle: string;
+  targetOrgId?: number;
+  targetOrgName?: string;
+  signUpId?: number;
+  collectionStatus: 'not_started' | 'active';
+  personnelCount: number;
+  qrcodeToken?: string;
+  qrcodeReady: boolean;
+  collectionPageUrl?: string;
+  collectionStartTime?: string;
+  fieldOptions?: ResearchCollectionFieldOptions;
+}
+
+export interface TrainResearchPersonCertificate {
+  level?: string;
+  certNo?: string;
+  issueDate?: string;
+}
+
+export interface TrainResearchPerson {
+  id: number;
+  signUpId: number;
+  name: string;
+  idCardNumber?: string;
+  phone?: string;
+  companyName?: string;
+  major?: string;
+  education?: string;
+  workTime?: string;
+  workTypeName?: string;
+  department?: string;
+  job?: string;
+  workDateStart?: string;
+  titleType?: string;
+  titleMajor?: string;
+  titleCertDate?: string;
+  level?: number;
+  paperNo?: string;
+  certIssueDates?: string;
+  certificates?: TrainResearchPersonCertificate[];
+  /** 证书查证状态：null未查证 0查证中 1已查证 2查证无结果 3查证失败 */
+  certVerified?: number;
+  dataSource?: string;
+  createTime?: string;
+  updateTime?: string;
+}
+
+export interface TrainResearchPersonQuery {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+}
+
+export interface TrainResearchPersonCreateReq {
+  name: string;
+  idCardNumber?: string;
+  phone?: string;
+  companyName?: string;
+  major?: string;
+  education?: string;
+  workTime?: string;
+  workTypeName?: string;
+  department?: string;
+  job?: string;
+  workDateStart?: string;
+  titleType?: string;
+  titleMajor?: string;
+  titleCertDate?: string;
+  level?: number;
+  paperNo?: string;
+  certIssueDates?: string;
+  certificates?: TrainResearchPersonCertificate[];
+}
+
+export type TrainResearchPersonUpdateReq = Partial<TrainResearchPersonCreateReq>;
+
+// ==================== Three Year Plan (三年规划) ====================
+
+export interface ThreeYearPlan {
+  id: number;
+  planNo: string;
+  title: string;
+  targetOrgId: number;
+  targetOrgName?: string;
+  researchOrgId?: number;
+  researchOrgTitle?: string;
+  rencaiTaskId?: number;
+  rencaiInputFileId?: number;
+  planYears?: string;
+  status: number;
+  statusLabel?: string;
+  analysisStatus?: string;
+  rejectReason?: string;
+  /** 驳回历史（按时间顺序，越早越靠前） */
+  rejectHistory?: ThreeYearPlanRejectHistoryItem[];
+  /** 提交历史（按时间顺序，越早越靠前） */
+  submitHistory?: ThreeYearPlanSubmitHistoryItem[];
+  companyConfirmTime?: string;
+  companyConfirmUsername?: string;
+  createdBy?: number;
+  createTime?: string;
+  updateTime?: string;
+  totalRows?: number;
+  recommendedRows?: number;
+  progressPct?: number;
+  rencaiTaskStatus?: string;
+  submitPersonnelFileId?: number;
+  submitSchemeFileId?: number;
+  submitPersonnelFileName?: string;
+  submitSchemeFileName?: string;
+}
+
+/** 驳回历史条目 */
+export interface ThreeYearPlanRejectHistoryItem {
+  reason?: string;
+  rejectedBy?: string;
+  rejectedByUsername?: string;
+  /** ISO 字符串 */
+  rejectedAt?: string;
+}
+
+/** 提交历史条目 */
+export interface ThreeYearPlanSubmitHistoryItem {
+  submittedBy?: string;
+  submittedByUsername?: string;
+  submittedAt?: string;
+  personnelFileName?: string;
+  schemeFileName?: string;
+}
+
+export interface ThreeYearPlanQuery {
+  page?: number;
+  pageSize?: number;
+  title?: string;
+  targetOrgId?: number;
+  status?: number;
+}
+
+export interface ThreeYearPlanItem {
+  id: number;
+  planId: number;
+  personName?: string;
+  idCard?: string;
+  companyName?: string;
+  jobName?: string;
+  levelName?: string;
+  trainMode?: string;
+  planYear?: number;
+  trainYear?: number;
+  certYear?: number;
+  eligibleDate?: string;
+  rowIndex?: number;
+  source?: string;
+}
+
+export interface ThreeYearPlanItemQuery {
+  page?: number;
+  pageSize?: number;
+  planYear?: number;
+  jobName?: string;
+}
+
+export interface ThreeYearPlanMatrix {
+  id: number;
+  jobName: string;
+  planYear: number;
+  trainMode?: string;
+  levelName: string;
+  headcount: number;
+}
+
+export interface ThreeYearPlanAnalysisStatus {
+  planId: number;
+  rencaiTaskId?: number;
+  analysisStatus?: string;
+  status: number;
+  rencaiTaskStatus?: string;
+  totalRows?: number;
+  processedRows?: number;
+  progressPct?: number;
+  recommendedRows?: number;
+  notRecommendedRows?: number;
+  pendingManualRows?: number;
+  errorMessage?: string;
+}
+
+export interface ThreeYearPlanDistribution {
+  jobName: string;
+  levelName: string;
+  employeeCount: number;
+  thresholdMin: number;
+  meetsThreshold: boolean;
+  warning?: string;
+}
+
+export interface ThreeYearPlanDetailBundle {
+  plan: ThreeYearPlan;
+  items: PageResponse<ThreeYearPlanItem>;
+  matrix: ThreeYearPlanMatrix[];
+  distribution: ThreeYearPlanDistribution[];
+}
+
+// ==================== Certificate Verification (证书查证) ====================
+
+/** 查证明细 */
+export interface CertVerifyDetail {
+  peopleId: number;
+  name?: string;
+  idCardNumber?: string;
+  /** 是否查到证书 */
+  found: boolean;
+  /** 已有证书等级（文本：如"三级"） */
+  certLevel?: string;
+  /** 证书编号 */
+  certNo?: string;
+  /** 发证日期 */
+  issueDate?: string;
+  /** 错误信息（失败/无结果时） */
+  errorMessage?: string;
+}
+
+/** 批量查证结果 */
+export interface CertVerifyBatchResultVO {
+  /** 总数 */
+  total: number;
+  /** 成功查到证书的人数 */
+  verified: number;
+  /** 查证无结果的人数 */
+  notFound: number;
+  /** 查证失败的人数 */
+  failed: number;
+  /** 提示信息 */
+  message: string;
+  /** 每条明细 */
+  details: CertVerifyDetail[];
+}
+
+// ==================== 方案规划 · 人员认定（Excel 查证回填，不落库） ====================
+
+export type PersonnelCertLookupStatus =
+  | 'pending'
+  | 'verified'
+  | 'not_found'
+  | 'invalid'
+  | 'failed'
+  | 'skipped';
+
+export interface PersonnelCertLookupPerson {
+  rowIndex: number;
+  name: string;
+  idCard: string;
+}
+
+export interface PersonnelCertLookupDetail {
+  rowIndex: number;
+  name?: string;
+  idCard?: string;
+  status: PersonnelCertLookupStatus;
+  certLevel?: string;
+  certNo?: string;
+  issueDate?: string;
+  message?: string;
+}
+
+export interface PersonnelCertLookupResultVO {
+  total: number;
+  verified: number;
+  notFound: number;
+  invalid: number;
+  failed: number;
+  details: PersonnelCertLookupDetail[];
+}
