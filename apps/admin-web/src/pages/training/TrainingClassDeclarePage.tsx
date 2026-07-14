@@ -446,7 +446,7 @@ export function TrainingClassDeclarePage() {
         <Typography.Text type="secondary">管理开班申报材料，配置模板并生成申报文件</Typography.Text>
       </section>
 
-      <TrainingProcessSteps current={4} />
+      <TrainingProcessSteps current={5} />
 
       <Card size="small" style={{ marginBottom: 16 }}>
       <div className="filter-bar">

@@ -15,6 +15,7 @@ import { TaskExamshicaoAuditAssignListPage } from './pages/exam/TaskExamshicaoAu
 import { TaskExamsubAuditAssignListPage } from './pages/exam/TaskExamsubAuditAssignListPage';
 import { TrainingInfoPage } from './pages/training/TrainingInfoPage';
 import { TrainingClassPeoplePage } from './pages/training/TrainingClassPeoplePage';
+import { TrainingClassDivisionPage } from './pages/training/TrainingClassDivisionPage';
 import { TrainingClassDeclarePage } from './pages/training/TrainingClassDeclarePage';
 import { UserAuthCoursePage } from './pages/exam/UserAuthCoursePage';
 import { UserListPage } from './pages/chazheng/UserListPage';
@@ -30,6 +31,9 @@ import { TrainingSummaryPage } from './pages/training/TrainingSummaryPage';
 import { TrainingCertificateTemplatePage } from './pages/training/TrainingCertificateTemplatePage';
 import { TrainingInformationPage } from './pages/training/TrainingInformationPage';
 import { TrainingStudentPage } from './pages/training/TrainingStudentPage';
+import { EnterpriseResearchPage } from './pages/training/EnterpriseResearchPage';
+import { SolutionPlanningPage } from './pages/training/SolutionPlanningPage';
+import { EnterprisePlanReviewPage } from './pages/training/EnterprisePlanReviewPage';
 import { DataPanelPage } from './pages/zhixunplatform/DataPanelPage';
 import { TaskManagementPage } from './pages/zhixunplatform/TaskManagementPage';
 import { TaskArchivesPage } from './pages/zhixunplatform/TaskArchivesPage';
@@ -124,15 +128,20 @@ const pageMap: Record<string, React.ReactNode> = {
   task_examsub_audit_assign: <TaskExamsubAuditAssignListPage />,
   exam_course: <CoursePage />,
   'train_info-list': <TrainingInfoPage />,
+  fen_ban: <TrainingClassDivisionPage />,
   'train_people-list': <TrainingClassPeoplePage />,
   train_people: <TrainingClassPeoplePage />,
   train_declares: <TrainingClassDeclarePage />,
   exam_user_auth_course: <UserAuthCoursePage />,
   chazheng_user_list: <UserListPage />,
   chazheng_cert_query: <CertQueryPage />,
+  // 培训管理 → 战略规划
+  pxyan_jiu: <EnterpriseResearchPage />,
+  pxan_fang_gui_hua: <SolutionPlanningPage />,
   train_needs: <RequirementsManagementPage />,
   'train_demand-train': <EnterpriseTrainingDemandPage />,
   company_demand_train: <EnterpriseTrainingDemandPage />,
+  company_plan_review: <EnterprisePlanReviewPage />,
   'train_demand-employee': <EnterpriseTalentDemandPage />,
   company_demand_employee: <EnterpriseTalentDemandPage />,
   train_solutions: <TrainingProgramPage />,

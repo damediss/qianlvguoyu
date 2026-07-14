@@ -19,6 +19,8 @@ import type {
   TrainProject, TrainProjectQuery, TrainProjectCreateReq, TrainProjectUpdateReq,
   TrainProjectTable, TrainProjectTableQuery, TrainProjectTableCreateReq, TrainProjectTableUpdateReq,
   TrainDashboard,
+  DashboardMilestoneItem,
+  DashboardStageDistribution,
   TrainTalentNeed, TrainTalentNeedQuery, TrainTalentNeedCreateReq, TrainTalentNeedUpdateReq,
   PlatformUser, PlatformUserQuery, PlatformUserCreateReq, PlatformUserUpdateReq,
   TrainTeacherBank, TrainTeacherBankQuery, TrainTeacherBankCreateReq, TrainTeacherBankUpdateReq,
@@ -44,6 +46,14 @@ import type {
   TrainInfoClassListItem, TrainInfoClassPageResponse, ClassStudent, ClassStudentPageResponse, ClassOther, ClassTask, SignUpPerson, TeacherBankItem,
   TrainSummary, TrainSummaryQuery, TrainSummaryCreateReq, TrainSummaryUpdateReq,
   TrainCertificate, TrainCertificateQuery, TrainCertificateCreateReq, TrainCertificateUpdateReq,
+  TrainResearchOrg, TrainResearchOrgQuery, TrainResearchOrgCreateReq, TrainResearchOrgUpdateReq,
+  TrainResearchCollection, TrainResearchPerson, TrainResearchPersonQuery,
+  TrainResearchPersonCreateReq, TrainResearchPersonUpdateReq,
+  CertVerifyBatchResultVO,
+  PersonnelCertLookupPerson,
+  PersonnelCertLookupResultVO,
+  ThreeYearPlan, ThreeYearPlanQuery, ThreeYearPlanItem, ThreeYearPlanItemQuery,
+  ThreeYearPlanMatrix, ThreeYearPlanAnalysisStatus, ThreeYearPlanDistribution, ThreeYearPlanDetailBundle,
   TrainSignUpSelf, TrainSignUpSelfQuery, TrainSignUpSelfCreateReq, TrainSignUpSelfUpdateReq,
   TrainSignUpPerson, TrainSignUpPeopleQuery, TrainSignUpOrcSelf, PlatformUserSaveReq,
   SignUpPeopleImportResult,
@@ -361,6 +371,14 @@ export function deleteProjectTable(id: number) {
 // ==================== Dashboard (仪表盘) ====================
 export function getDashboard() {
   return unwrap<TrainDashboard>(apiClient.get(`${BASE}/dashboard`));
+}
+
+export function getDashboardMilestones() {
+  return unwrap<DashboardMilestoneItem[]>(apiClient.get(`${BASE}/dashboard/milestones`));
+}
+
+export function getDashboardStageDistribution() {
+  return unwrap<DashboardStageDistribution>(apiClient.get(`${BASE}/dashboard/stage-distribution`));
 }
 
 // ==================== Talent Needs (人才数据管理) ====================
@@ -820,8 +838,21 @@ export function pageInfoClassList(params: {
   companyId?: number;
   workTypeId?: number;
   trainInfoId?: number;
+  companyConfirmStatus?: number;
 }) {
   return unwrap<TrainInfoClassPageResponse>(apiClient.get(`${BASE}/info-classes`, { params }));
+}
+
+export function companyConfirmInfoClass(id: number) {
+  return unwrap<{ id: number; company_confirm_status: number }>(
+    apiClient.post(`${BASE}/info-classes/${id}/company-confirm`),
+  );
+}
+
+export function companyRejectInfoClass(id: number, reason: string) {
+  return unwrap<{ id: number; company_confirm_status: number }>(
+    apiClient.post(`${BASE}/info-classes/${id}/company-reject`, null, { params: { reason } }),
+  );
 }
 
 /** 新增/编辑班级 */
@@ -1129,4 +1160,263 @@ export function pageSignUpOrcs(params: { signUpId?: number; page?: number; pageS
 
 export function savePlatformUser(payload: PlatformUserSaveReq) {
   return unwrap<PlatformUser>(apiClient.post(`${BASE}/platform-users`, payload));
+}
+
+// ==================== Train Research Org (培训调研企业) ====================
+export function pageResearchOrgs(params: TrainResearchOrgQuery) {
+  return unwrap<PageResponse<TrainResearchOrg>>(apiClient.get(`${BASE}/research-orgs`, { params }));
+}
+
+export function getResearchOrg(id: number) {
+  return unwrap<TrainResearchOrg>(apiClient.get(`${BASE}/research-orgs/${id}`));
+}
+
+export function createResearchOrg(payload: TrainResearchOrgCreateReq) {
+  return unwrap<TrainResearchOrg>(apiClient.post(`${BASE}/research-orgs`, payload));
+}
+
+export function updateResearchOrg(id: number, payload: TrainResearchOrgUpdateReq) {
+  return unwrap<TrainResearchOrg>(apiClient.put(`${BASE}/research-orgs/${id}`, payload));
+}
+
+export function deleteResearchOrg(id: number) {
+  return unwrap<void>(apiClient.delete(`${BASE}/research-orgs/${id}`));
+}
+
+// ==================== Research Collection (企业调研人员采集) ====================
+
+export function getResearchCollection(researchOrgId: number) {
+  return unwrap<TrainResearchCollection>(
+    apiClient.get(`${BASE}/research-orgs/${researchOrgId}/collection`),
+  );
+}
+
+export function startResearchCollection(researchOrgId: number) {
+  return unwrap<TrainResearchCollection>(
+    apiClient.post(`${BASE}/research-orgs/${researchOrgId}/collection/start`),
+  );
+}
+
+export function pageResearchPeople(researchOrgId: number, params: TrainResearchPersonQuery) {
+  return unwrap<PageResponse<TrainResearchPerson>>(
+    apiClient.get(`${BASE}/research-orgs/${researchOrgId}/collection/people`, { params }),
+  );
+}
+
+export function createResearchPerson(researchOrgId: number, payload: TrainResearchPersonCreateReq) {
+  return unwrap<TrainResearchPerson>(
+    apiClient.post(`${BASE}/research-orgs/${researchOrgId}/collection/people`, payload),
+  );
+}
+
+export function updateResearchPerson(
+  researchOrgId: number,
+  peopleId: number,
+  payload: TrainResearchPersonUpdateReq,
+) {
+  return unwrap<TrainResearchPerson>(
+    apiClient.put(`${BASE}/research-orgs/${researchOrgId}/collection/people/${peopleId}`, payload),
+  );
+}
+
+export function deleteResearchPerson(researchOrgId: number, peopleId: number) {
+  return unwrap<void>(
+    apiClient.delete(`${BASE}/research-orgs/${researchOrgId}/collection/people/${peopleId}`),
+  );
+}
+
+export async function downloadResearchCollectionTemplate(researchOrgId: number, filename: string) {
+  const blob = await fetchFileBlob(`${BASE}/research-orgs/${researchOrgId}/collection/export-template`);
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.endsWith('.xlsx') ? filename : `${filename}-认定采集精简版.xlsx`;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+export function createThreeYearPlanFromResearch(
+  researchOrgId: number,
+  payload?: { title?: string },
+) {
+  return unwrap<ThreeYearPlan>(
+    apiClient.post(`${BASE}/research-orgs/${researchOrgId}/collection/create-three-year-plan`, payload ?? {}, {
+      timeout: 120000,
+    }),
+  );
+}
+
+/** 证书查证：将选中人员的姓名+身份证上传到外部查证接口，回填证书信息 */
+export function verifyResearchPeopleCertificate(
+  researchOrgId: number,
+  peopleIds: number[],
+) {
+  return unwrap<CertVerifyBatchResultVO>(
+    apiClient.post(
+      `${BASE}/research-orgs/${researchOrgId}/collection/people/verify-cert`,
+      { peopleIds },
+      { timeout: 120000 },
+    ),
+  );
+}
+
+/** 方案规划人员认定：按姓名+身份证查证（不落库，前端写回 Excel） */
+export function verifyPersonnelCertLookup(people: PersonnelCertLookupPerson[]) {
+  return unwrap<PersonnelCertLookupResultVO>(
+    apiClient.post(
+      `${BASE}/personnel-cert/verify-lookup`,
+      { people },
+      { timeout: 120000 },
+    ),
+  );
+}
+
+// ==================== Three Year Plan (三年规划) ====================
+
+export function pageThreeYearPlans(params: ThreeYearPlanQuery) {
+  return unwrap<PageResponse<ThreeYearPlan>>(apiClient.get(`${BASE}/three-year-plans`, { params }));
+}
+
+export function getThreeYearPlan(id: number) {
+  return unwrap<ThreeYearPlan>(apiClient.get(`${BASE}/three-year-plans/${id}`));
+}
+
+export function getThreeYearPlanDetailBundle(planId: number, params: ThreeYearPlanItemQuery = {}) {
+  return unwrap<ThreeYearPlanDetailBundle>(
+    apiClient.get(`${BASE}/three-year-plans/${planId}/detail-bundle`, { params, timeout: 120000 }),
+  );
+}
+
+export function createThreeYearPlan(payload: {
+  title: string;
+  targetOrgId: number;
+  researchOrgId?: number;
+  file: File;
+}) {
+  const formData = new FormData();
+  formData.append('title', payload.title);
+  formData.append('targetOrgId', String(payload.targetOrgId));
+  if (payload.researchOrgId) {
+    formData.append('researchOrgId', String(payload.researchOrgId));
+  }
+  formData.append('file', payload.file);
+  return unwrap<ThreeYearPlan>(
+    apiClient.post(`${BASE}/three-year-plans`, formData, { timeout: 120000 }),
+  );
+}
+
+export function refreshThreeYearPlanAnalysis(id: number) {
+  return unwrap<ThreeYearPlanAnalysisStatus>(
+    apiClient.get(`${BASE}/three-year-plans/${id}/analysis-status`),
+  );
+}
+
+export function syncThreeYearPlanFromRencai(id: number) {
+  return unwrap<ThreeYearPlan>(apiClient.post(`${BASE}/three-year-plans/${id}/sync-from-rencai`));
+}
+
+export function prepareThreeYearPlanReview(id: number) {
+  return unwrap<ThreeYearPlan>(apiClient.post(`${BASE}/three-year-plans/${id}/prepare-review`));
+}
+
+export function updateThreeYearPlanItem(
+  planId: number,
+  itemId: number,
+  payload: Partial<Pick<ThreeYearPlanItem, 'personName' | 'jobName' | 'levelName' | 'eligibleDate' | 'planYear'>>,
+) {
+  return unwrap<ThreeYearPlanItem>(
+    apiClient.put(`${BASE}/three-year-plans/${planId}/items/${itemId}`, payload),
+  );
+}
+
+export function submitThreeYearPlan(
+  id: number,
+  payload: { personnelFile: File; schemeFile: File },
+) {
+  const formData = new FormData();
+  formData.append('personnelFile', payload.personnelFile);
+  formData.append('schemeFile', payload.schemeFile);
+  return unwrap<ThreeYearPlan>(
+    apiClient.post(`${BASE}/three-year-plans/${id}/submit`, formData, { timeout: 120000 }),
+  );
+}
+
+export function companyConfirmThreeYearPlan(id: number) {
+  return unwrap<ThreeYearPlan>(apiClient.post(`${BASE}/three-year-plans/${id}/company-confirm`));
+}
+
+export function companyRejectThreeYearPlan(id: number, reason: string) {
+  return unwrap<ThreeYearPlan>(
+    apiClient.post(`${BASE}/three-year-plans/${id}/company-reject`, null, { params: { reason } }),
+  );
+}
+
+export function pageThreeYearPlanItems(planId: number, params: ThreeYearPlanItemQuery) {
+  return unwrap<PageResponse<ThreeYearPlanItem>>(
+    apiClient.get(`${BASE}/three-year-plans/${planId}/items`, { params }),
+  );
+}
+
+export function listThreeYearPlanMatrix(planId: number) {
+  return unwrap<ThreeYearPlanMatrix[]>(apiClient.get(`${BASE}/three-year-plans/${planId}/matrix`));
+}
+
+export function listThreeYearPlanReviewDistribution(planId: number) {
+  return unwrap<ThreeYearPlanDistribution[]>(
+    apiClient.get(`${BASE}/three-year-plans/${planId}/review-distribution`),
+  );
+}
+
+export function deleteThreeYearPlan(id: number) {
+  return unwrap<void>(apiClient.delete(`${BASE}/three-year-plans/${id}`));
+}
+
+export async function downloadThreeYearPlanFile(
+  planId: number,
+  kind: 'plan' | 'result' | 'reviewed' | 'submit-personnel' | 'submit-scheme',
+) {
+  const path = threeYearPlanFileDownloadPath(planId, kind);
+  const blob = await fetchFileBlob(path);
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = threeYearPlanFileDefaultName(planId, kind);
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+export type ThreeYearPlanMaterialKind = 'submit-personnel' | 'submit-scheme';
+
+export function threeYearPlanFileDownloadPath(
+  planId: number,
+  kind: 'plan' | 'result' | 'reviewed' | ThreeYearPlanMaterialKind,
+): string {
+  if (kind === 'plan') {
+    return `${BASE}/three-year-plans/${planId}/download-plan`;
+  }
+  if (kind === 'reviewed') {
+    return `${BASE}/three-year-plans/${planId}/download-reviewed-plan`;
+  }
+  if (kind === 'submit-personnel') {
+    return `${BASE}/three-year-plans/${planId}/download-submit-personnel`;
+  }
+  if (kind === 'submit-scheme') {
+    return `${BASE}/three-year-plans/${planId}/download-submit-scheme`;
+  }
+  return `${BASE}/three-year-plans/${planId}/download-result`;
+}
+
+export function threeYearPlanMaterialPreviewUrl(planId: number, kind: ThreeYearPlanMaterialKind): string {
+  return threeYearPlanFileDownloadPath(planId, kind);
+}
+
+function threeYearPlanFileDefaultName(
+  planId: number,
+  kind: 'plan' | 'result' | 'reviewed' | ThreeYearPlanMaterialKind,
+): string {
+  if (kind === 'plan') return `原始三年规划-${planId}.xlsx`;
+  if (kind === 'reviewed') return `已审核三年规划-${planId}.xlsx`;
+  if (kind === 'submit-personnel') return `企业审核人员名单-${planId}.xlsx`;
+  if (kind === 'submit-scheme') return `方案文档-${planId}`;
+  return `原始认定结果-${planId}.zip`;
 }

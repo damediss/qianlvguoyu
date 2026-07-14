@@ -758,6 +758,7 @@ function TrainTaskModal({
 
 // ==================== 主页面 ====================
 export function TrainingClassPeoplePage() {
+  const processStep = 4;
   const queryClient = useQueryClient();
   const [form] = Form.useForm<{
     id?: number;
@@ -1026,7 +1027,7 @@ export function TrainingClassPeoplePage() {
         <Typography.Text type="secondary">管理培训班级人员，维护学员、班委及跟班任务</Typography.Text>
       </section>
 
-      <TrainingProcessSteps current={3} />
+      <TrainingProcessSteps current={processStep} />
 
       <Card size="small" style={{ marginBottom: 16 }}>
       <div className="search-filter-bar">
