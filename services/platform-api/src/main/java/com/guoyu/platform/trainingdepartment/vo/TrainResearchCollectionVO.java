@@ -1,5 +1,6 @@
 package com.guoyu.platform.trainingdepartment.vo;
 
+import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOptionsSupport.ResearchCollectionFieldOptions;
 import java.time.LocalDateTime;
 
 public record TrainResearchCollectionVO(
@@ -12,5 +13,7 @@ public record TrainResearchCollectionVO(
     Integer personnelCount,
     String qrcodeToken,
     boolean qrcodeReady,
-    LocalDateTime collectionStartTime
+    String collectionPageUrl,
+    LocalDateTime collectionStartTime,
+    ResearchCollectionFieldOptions fieldOptions
 ) {}

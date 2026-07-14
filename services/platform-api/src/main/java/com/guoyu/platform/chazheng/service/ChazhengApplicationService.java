@@ -4,11 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.util.concurrent.RateLimiter;
 import com.guoyu.platform.chazheng.config.CertCheckBatchConfig;
 import com.guoyu.platform.chazheng.dto.CertCheckBatchProgress;
-import com.guoyu.platform.chazheng.dto.CertCheckBatchReport;
-import com.guoyu.platform.chazheng.dto.CertCheckBatchSubmitResp;
 import com.guoyu.platform.chazheng.dto.CertCheckBatchReport;
 import com.guoyu.platform.chazheng.dto.CertCheckBatchSubmitResp;
 import com.guoyu.platform.chazheng.dto.ChazhengUserQueryReq;
@@ -20,6 +17,7 @@ import com.guoyu.platform.chazheng.mapper.CertCheckBatchItemMapper;
 import com.guoyu.platform.chazheng.mapper.CertCheckBatchMapper;
 import com.guoyu.platform.chazheng.mapper.ChazhengCertMapper;
 import com.guoyu.platform.chazheng.mapper.ChazhengUserMapper;
+import com.guoyu.platform.chazheng.support.FixedRateLimiter;
 import com.guoyu.platform.chazheng.vo.ChazhengCertVO;
 import com.guoyu.platform.chazheng.vo.ChazhengUserVO;
 import com.guoyu.platform.common.api.PageResponse;
@@ -82,50 +80,34 @@ public class ChazhengApplicationService {
 
   private final ChazhengUserMapper userMapper;
   private final ChazhengCertMapper certMapper;
-  private final CertCheckConfigService certCheckConfigService;
   private final ChazhengPersistService chazhengPersistService;
   private final CertCheckBatchMapper batchMapper;
   private final CertCheckBatchItemMapper batchItemMapper;
-  private final RestTemplate chazhengRestTemplate;
-  private final ObjectMapper objectMapper;
+  private final ChazhengCertQueryService chazhengCertQueryService;
 
   @Value("${chazheng.batch.max-retry:2}")
   private int maxRetry;
-
-  @Value("${chazheng.batch.rate-limit-per-second:10.0}")
-  private double rateLimitPerSecond;
-
-  @Value("${chazheng.log-dir:./logs/chazheng}")
-  private String chazhengLogDir;
-
-  /** 限流器(所有 Worker 共享) */
-  private RateLimiter rateLimiter;
 
   /** 线程池引用(由 Controller 创建后注入) */
   private ThreadPoolTaskExecutor executor;
 
   public ChazhengApplicationService(ChazhengUserMapper userMapper,
       ChazhengCertMapper certMapper,
-      CertCheckConfigService certCheckConfigService,
       ChazhengPersistService chazhengPersistService,
       CertCheckBatchMapper batchMapper,
       CertCheckBatchItemMapper batchItemMapper,
-      RestTemplate chazhengRestTemplate,
-      ObjectMapper objectMapper) {
+      ChazhengCertQueryService chazhengCertQueryService) {
     this.userMapper = userMapper;
     this.certMapper = certMapper;
-    this.certCheckConfigService = certCheckConfigService;
     this.chazhengPersistService = chazhengPersistService;
     this.batchMapper = batchMapper;
     this.batchItemMapper = batchItemMapper;
-    this.chazhengRestTemplate = chazhengRestTemplate;
-    this.objectMapper = objectMapper;
+    this.chazhengCertQueryService = chazhengCertQueryService;
   }
 
   /** 由 Controller 在 @PostConstruct 中设置线程池时调用 */
   public void setExecutor(ThreadPoolTaskExecutor executor) {
     this.executor = executor;
-    this.rateLimiter = RateLimiter.create(rateLimitPerSecond);
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -389,7 +371,6 @@ public class ChazhengApplicationService {
    * 对单个用户执行证书查证（无事务编排层）。
    */
   public ChazhengUserVO certCheck(Integer id, Long tenantId) {
-    // tenantId 由调用方传入,工作线程不调 SecurityContext
     ChazhengUserEntity user = userMapper.selectOne(new LambdaQueryWrapper<ChazhengUserEntity>()
         .eq(ChazhengUserEntity::getTenantId, tenantId)
         .eq(ChazhengUserEntity::getId, id)
@@ -398,48 +379,22 @@ public class ChazhengApplicationService {
       throw new BusinessException(ErrorCode.NOT_FOUND, "查证用户不存在");
     }
 
-    // 1. 读取配置（无事务）
-    String apiUrl = certCheckConfigService.findApiUrl(tenantId);
-    if (!StringUtils.hasText(apiUrl)) {
-      log.error("[certCheck] 查证接口未配置 user={}", id);
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "查证接口未配置(sys_dict: chazheng_url)");
-    }
+    log.info("[certCheck] 开始查证 user={}, idCard={}", id, maskIdCard(user.getIdCard()));
 
-    List<Map<String, Object>> templates = certCheckConfigService.findRequestTemplates(tenantId);
-    if (templates.isEmpty()) {
-      log.error("[certCheck] 查证请求模板未配置 user={}", id);
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "查证请求模板未配置(sys_dict: chazheng_datas)");
-    }
-
-    log.info("[certCheck] 开始查证 user={}, idCard={}, templates={}", id,
-        maskIdCard(user.getIdCard()), templates.size());
-
-    // 2. 遍历模板轮询（无事务，网络 IO 不占 DB 连接）
-    CertCheckResult result = new CertCheckResult();
-    for (int templateIdx = 0; templateIdx < templates.size(); templateIdx++) {
-      Map<String, Object> template = templates.get(templateIdx);
-      if (template == null) continue;
-
-      Map<String, Object> reqData = new LinkedHashMap<>(template);
-      reqData.put("idcode", user.getIdCard());
-      reqData.put("username", user.getUserName());
-
-      log.debug("[certCheck] 模板轮询 user={}, templateIdx={}, req={}", id, templateIdx, reqData);
-      processOneTemplate(apiUrl, reqData, user, templateIdx, result);
-    }
+    CertQueryOutcome outcome = chazhengCertQueryService.queryByNameIdCard(
+        user.getUserName(), user.getIdCard(), tenantId);
 
     log.info("[certCheck] 查证完成 user={}, anyNormal={}, anyCertFound={}, certCount={}",
-        id, result.anyNormal, result.anyCertFound, result.certs.size());
+        id, outcome.anyNormal(), outcome.anyCertFound(), outcome.certs().size());
 
-    // 3. DB 写入（独立 Bean 短事务）
     try {
-      chazhengPersistService.persistResult(user, result.certs, result.anyNormal, result.anyCertFound);
+      chazhengPersistService.persistResult(
+          user, outcome.certs(), outcome.anyNormal(), outcome.anyCertFound());
     } catch (Exception e) {
       log.error("[certCheck] DB 写入失败 user={}, err={}", id, e.getMessage(), e);
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "查证结果写入失败: " + e.getMessage());
     }
 
-    // 4. 返回最新状态
     ChazhengUserVO vo = ChazhengUserVO.from(user);
     List<ChazhengCertEntity> certs = certMapper.selectList(
         new LambdaQueryWrapper<ChazhengCertEntity>()
@@ -458,174 +413,6 @@ public class ChazhengApplicationService {
   private static String maskIdCard(String idCard) {
     if (idCard == null || idCard.length() < 8) return "***";
     return idCard.substring(0, 4) + "********" + idCard.substring(idCard.length() - 4);
-  }
-
-  private void processOneTemplate(String apiUrl, Map<String, Object> reqData,
-                                  ChazhengUserEntity user, int templateIdx,
-                                  CertCheckResult result) {
-    Map<String, Object> response;
-    try {
-      response = chazhengRestTemplate.postForObject(apiUrl,
-          new HttpEntity<>(reqData, jsonHeaders()), Map.class);
-    } catch (HttpMessageConversionException e) {
-      // 第三方返回非 JSON(如 HTML 错误页)
-      log.warn("[certCheck] JSON 解析失败 user={}, templateIdx={}, err={}",
-          user.getId(), templateIdx, e.getMessage());
-      logRequestResponse(user, reqData, "no_json_response", e.getMessage());
-      return;
-    } catch (HttpStatusCodeException e) {
-      // 第三方返回 4xx/5xx
-      log.warn("[certCheck] HTTP 错误 user={}, templateIdx={}, status={}, body={}",
-          user.getId(), templateIdx, e.getStatusCode(),
-          abbreviate(e.getResponseBodyAsString(), 300));
-      logRequestResponse(user, reqData, "http_error_" + e.getStatusCode().value(),
-          abbreviate(e.getResponseBodyAsString(), 500));
-      return;
-    } catch (ResourceAccessException e) {
-      // 网络异常: 超时/连接失败/DNS 失败
-      log.warn("[certCheck] 网络异常 user={}, templateIdx={}, err={}",
-          user.getId(), templateIdx, e.getMessage());
-      logRequestResponse(user, reqData, "network_error", e.getMessage());
-      return;
-    }
-
-    if (response == null) {
-      logRequestResponse(user, reqData, "no_json_response", "null response");
-      return;
-    }
-
-    if (!isBizResponseOk(response)) {
-      logRequestResponse(user, reqData, "api_error", response.get("errorCode"));
-      return;
-    }
-
-    result.anyNormal = true;
-
-    Object resultObj = response.get("result");
-    if (!(resultObj instanceof Map)) {
-      logRequestResponse(user, reqData, "no_cert", "missing 'result' key or not a Map");
-      return;
-    }
-    @SuppressWarnings("unchecked")
-    Map<String, Object> resultMap = (Map<String, Object>) resultObj;
-
-    Object dataObj = resultMap.get("data");
-    if (!(dataObj instanceof List) || ((List<?>) dataObj).isEmpty()) {
-      logRequestResponse(user, reqData, "no_cert", "data is empty");
-      return;
-    }
-
-    List<?> dataList = (List<?>) dataObj;
-    for (Object certObj : dataList) {
-      if (!(certObj instanceof Map)) {
-        log.warn("查证响应含非 Map 元素，跳过 user={}, element={}", user.getId(), certObj);
-        continue;
-      }
-      @SuppressWarnings("unchecked")
-      Map<String, Object> cert = (Map<String, Object>) certObj;
-
-      String certNo = getStringOrEmpty(cert, "serialid");
-      if (certNo.isEmpty()) {
-        log.debug("证书缺 serialid，跳过 user={}", user.getId());
-        continue;
-      }
-
-      String certName = buildCertName(getMapOrEmpty(cert, "metadata"));
-      String certDate = cert.containsKey("bzz002") ? String.valueOf(cert.get("bzz002")) : "";
-
-      result.certs.add(new CollectedCert(certNo, certName, certDate));
-      result.anyCertFound = true;
-    }
-
-    logRequestResponse(user, reqData, "success", "collected " + dataList.size() + " certs");
-  }
-
-  private boolean isBizResponseOk(Map<String, Object> result) {
-    Object errorCode = result.get("errorCode");
-    if (errorCode != null && !errorCode.toString().isEmpty()) return false;
-    Object statusCode = result.get("statusCode");
-    if (statusCode != null && !"200".equals(statusCode.toString())) return false;
-    Object status = result.get("status");
-    if (status != null) {
-      String s = status.toString();
-      if (!"200".equals(s) && !"0".equals(s)) return false;
-    }
-    return true;
-  }
-
-  private String buildCertName(Map<String, Object> metadata) {
-    String zymc = getStringOrEmpty(metadata, "zymc");
-    String gzmcRaw = getStringOrEmpty(metadata, "gzmc");
-    String zyjndj = getStringOrEmpty(metadata, "zyjndj");
-
-    String gzmc = gzmcRaw.trim();
-    if (!gzmc.isEmpty() && gzmc.matches("^[–-]+$")) gzmc = "";
-
-    String base;
-    if (zymc.isEmpty() && gzmc.isEmpty()) {
-      base = "";
-    } else if (gzmc.isEmpty()) {
-      base = zymc;
-    } else if (zymc.isEmpty()) {
-      base = gzmc;
-    } else {
-      base = zymc + "_" + gzmc;
-    }
-
-    if (!base.isEmpty() && !zyjndj.isEmpty()) {
-      return base + "(" + zyjndj + ")";
-    } else if (!base.isEmpty()) {
-      return base;
-    } else if (!zyjndj.isEmpty()) {
-      return zyjndj;
-    }
-    return "";
-  }
-
-  private static HttpHeaders jsonHeaders() {
-    HttpHeaders headers = new HttpHeaders();
-    headers.setContentType(MediaType.APPLICATION_JSON);
-    return headers;
-  }
-
-  private static String getStringOrEmpty(Map<String, Object> map, String key) {
-    Object val = map.get(key);
-    return val == null ? "" : val.toString().trim();
-  }
-
-  @SuppressWarnings("unchecked")
-  private static Map<String, Object> getMapOrEmpty(Map<String, Object> map, String key) {
-    Object val = map.get(key);
-    return (val instanceof Map) ? (Map<String, Object>) val : new LinkedHashMap<>();
-  }
-
-  private void logRequestResponse(ChazhengUserEntity user, Map<String, Object> reqData,
-                                   String parseStatus, Object detail) {
-    String safeUserName = user.getUserName().replaceAll("[\\\\/:*?\"<>|]", "_");
-    Path logDir = Paths.get(chazhengLogDir);
-    try {
-      Files.createDirectories(logDir);
-    } catch (IOException e) {
-      log.warn("无法创建日志目录: {}", logDir);
-      return;
-    }
-    Path logFile = logDir.resolve("certs_" + safeUserName + "_" + user.getIdCard() + ".log");
-
-    String entry;
-    try {
-      entry = String.format("--- %s %s ---%n%s%n",
-          parseStatus, Instant.now(),
-          objectMapper.writeValueAsString(Map.of("template", reqData, "detail", detail)));
-    } catch (JsonProcessingException e) {
-      entry = String.format("--- %s %s ---%ntemplate=%s, detail=%s%n",
-          parseStatus, Instant.now(), reqData, detail);
-    }
-
-    try {
-      Files.writeString(logFile, entry, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-    } catch (IOException e) {
-      log.warn("写日志失败: {}", logFile, e);
-    }
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -680,7 +467,6 @@ public class ChazhengApplicationService {
     // tenantId 从 HTTP 请求线程传递下来,工作线程不可调 SecurityContext
     batchItemMapper.updateStatus(batchId, userId, "processing", null);
     try {
-      rateLimiter.acquire();
       ChazhengUserVO vo = certCheck(userId.intValue(), tenantId);
 
       boolean hasCert = vo.getIsCert() != null && vo.getIsCert() == 1;
@@ -826,16 +612,5 @@ public class ChazhengApplicationService {
 
   private static String formatDuration(Duration d) {
     return String.format("%02d:%02d:%02d", d.toHours(), d.toMinutesPart(), d.toSecondsPart());
-  }
-
-  // ════════════════════════════════════════════════════════════════════════
-  //  内部类
-  // ════════════════════════════════════════════════════════════════════════
-
-  /** 单次查证方法的累积结果（跨多轮模板） */
-  static class CertCheckResult {
-    boolean anyNormal = false;
-    boolean anyCertFound = false;
-    final List<CollectedCert> certs = new ArrayList<>();
   }
 }

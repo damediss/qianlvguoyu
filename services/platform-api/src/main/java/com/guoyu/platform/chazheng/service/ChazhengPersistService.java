@@ -52,18 +52,18 @@ public class ChazhengPersistService {
     for (CollectedCert cert : certs) {
       boolean exists = certMapper.exists(new LambdaQueryWrapper<ChazhengCertEntity>()
           .eq(ChazhengCertEntity::getUserId, user.getId())
-          .eq(ChazhengCertEntity::getCertNo, cert.certNo));
+          .eq(ChazhengCertEntity::getCertNo, cert.certNo()));
       if (!exists) {
         ChazhengCertEntity certEntity = new ChazhengCertEntity();
         certEntity.setUserId(user.getId());
         certEntity.setTenantId(user.getTenantId());
-        certEntity.setCertNo(cert.certNo);
-        certEntity.setCertName(cert.certName);
-        certEntity.setCertDate(cert.certDate);
+        certEntity.setCertNo(cert.certNo());
+        certEntity.setCertName(cert.certName());
+        certEntity.setCertDate(cert.certDate());
         try {
           certMapper.insert(certEntity);
         } catch (DuplicateKeyException dup) {
-          log.warn("并发插入证书已存在 user={} certNo={}", user.getId(), cert.certNo);
+          log.warn("并发插入证书已存在 user={} certNo={}", user.getId(), cert.certNo());
         }
       }
     }

@@ -359,8 +359,10 @@ public class TrainThreeYearPlanApplicationService {
   public TrainThreeYearPlanVO submit(Long id, MultipartFile personnelFile, MultipartFile schemeFile) {
     scopeService.requireOrgOperator();
     TrainThreeYearPlanEntity entity = getExisting(id);
-    if (entity.getStatus() == null || entity.getStatus() != 2) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅「分析完成请审核」状态的规划可提交企业审核");
+    Integer currentStatus = entity.getStatus();
+    if (currentStatus == null || (currentStatus != 2 && currentStatus != 5)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "仅「分析完成请审核」或「已驳回」状态的规划可提交企业审核");
     }
     if (personnelFile == null || personnelFile.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请上传企业审核人员名单");
@@ -391,6 +393,7 @@ public class TrainThreeYearPlanApplicationService {
     entity.setReviewedPlanFileId(reviewedFile.id());
     entity.setStatus(3);
     entity.setRejectReason(null);
+    appendSubmitHistory(entity, personnelStored, schemeStored);
     planMapper.updateById(entity);
     return toVO(entity, null);
   }
@@ -411,6 +414,53 @@ public class TrainThreeYearPlanApplicationService {
         && !lower.endsWith(".docx") && !lower.endsWith(".doc")
         && !lower.endsWith(".pdf")) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "方案文档支持 Excel、Word 或 PDF 格式");
+    }
+  }
+
+  /** 追加一条驳回历史到 reject_history_json */
+  private void appendRejectHistory(TrainThreeYearPlanEntity entity, String reason) {
+    List<Map<String, Object>> history = parseHistoryList(entity.getRejectHistoryJson());
+    Map<String, Object> item = new LinkedHashMap<>();
+    item.put("reason", reason);
+    item.put("rejectedBy", SecurityContext.currentUser().getUserId());
+    item.put("rejectedByUsername", SecurityContext.currentUser().getDisplayName());
+    item.put("rejectedAt", LocalDateTime.now().toString());
+    history.add(item);
+    entity.setRejectHistoryJson(writeHistoryJson(history));
+  }
+
+  /** 追加一条提交历史到 submit_history_json */
+  private void appendSubmitHistory(TrainThreeYearPlanEntity entity, FileVO personnelFile, FileVO schemeFile) {
+    List<Map<String, Object>> history = parseHistoryList(entity.getSubmitHistoryJson());
+    Map<String, Object> item = new LinkedHashMap<>();
+    item.put("submittedBy", SecurityContext.currentUser().getUserId());
+    item.put("submittedByUsername", SecurityContext.currentUser().getDisplayName());
+    item.put("submittedAt", LocalDateTime.now().toString());
+    item.put("personnelFileName", personnelFile != null ? personnelFile.originalName() : null);
+    item.put("schemeFileName", schemeFile != null ? schemeFile.originalName() : null);
+    history.add(item);
+    entity.setSubmitHistoryJson(writeHistoryJson(history));
+  }
+
+  private List<Map<String, Object>> parseHistoryList(String json) {
+    if (!StringUtils.hasText(json)) {
+      return new ArrayList<>();
+    }
+    try {
+      List<Map<String, Object>> parsed = objectMapper.readValue(json, new TypeReference<List<Map<String, Object>>>() {});
+      return parsed != null ? new ArrayList<>(parsed) : new ArrayList<>();
+    } catch (Exception e) {
+      log.warn("解析历史 JSON 失败，将重置：{}", e.getMessage());
+      return new ArrayList<>();
+    }
+  }
+
+  private String writeHistoryJson(List<Map<String, Object>> history) {
+    try {
+      return objectMapper.writeValueAsString(history);
+    } catch (Exception e) {
+      log.warn("序列化历史 JSON 失败：{}", e.getMessage());
+      return null;
     }
   }
 
@@ -436,6 +486,7 @@ public class TrainThreeYearPlanApplicationService {
     }
     entity.setStatus(5);
     entity.setRejectReason(reason.trim());
+    appendRejectHistory(entity, reason.trim());
     planMapper.updateById(entity);
     return toVO(entity, null);
   }
@@ -852,7 +903,7 @@ public class TrainThreeYearPlanApplicationService {
         .body(bytes);
   }
 
-  @Transactional(readOnly = true)
+  @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
   public ResponseEntity<byte[]> downloadReviewedPlanFile(Long id) {
     TrainThreeYearPlanEntity entity = getExisting(id);
     assertAccessible(entity);
@@ -861,7 +912,7 @@ public class TrainThreeYearPlanApplicationService {
     }
     byte[] bytes;
     if (entity.getStatus() >= 3 && entity.getReviewedPlanFileId() != null) {
-      bytes = readStoredFileBytes(entity.getReviewedPlanFileId());
+      bytes = readStoredFileBytes(entity.getReviewedPlanFileId(), entity, true);
     } else {
       ensureLocalDataReady(entity);
       bytes = buildReviewedPlanExcelBytes(entity);
@@ -898,7 +949,7 @@ public class TrainThreeYearPlanApplicationService {
     return computeDistributionFromLocalItems(plan, Map.of());
   }
 
-  @Transactional(readOnly = true)
+  @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
   public ResponseEntity<byte[]> downloadSubmitPersonnelFile(Long id) {
     TrainThreeYearPlanEntity entity = getExisting(id);
     assertAccessible(entity);
@@ -908,7 +959,7 @@ public class TrainThreeYearPlanApplicationService {
     return downloadStoredAttachment(entity.getSubmitPersonnelFileId(), entity.getPlanNo() + "-企业审核人员名单");
   }
 
-  @Transactional(readOnly = true)
+  @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
   public ResponseEntity<byte[]> downloadSubmitSchemeFile(Long id) {
     TrainThreeYearPlanEntity entity = getExisting(id);
     assertAccessible(entity);
@@ -919,8 +970,8 @@ public class TrainThreeYearPlanApplicationService {
   }
 
   private ResponseEntity<byte[]> downloadStoredAttachment(Long fileId, String fallbackName) {
-    FileVO file = fileApplicationService.get(fileId);
-    byte[] bytes = readStoredFileBytes(fileId);
+    FileVO file = fileApplicationService.getById(fileId);
+    byte[] bytes = readStoredFileBytes(fileId, null, false);
     String filename = StringUtils.hasText(file.originalName()) ? file.originalName() : fallbackName;
     MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
     if (StringUtils.hasText(file.contentType())) {
@@ -936,11 +987,30 @@ public class TrainThreeYearPlanApplicationService {
         .body(bytes);
   }
 
-  private byte[] readStoredFileBytes(Long fileId) {
-    try (InputStream in = fileApplicationService.downloadResource(fileId).getInputStream()) {
-      return in.readAllBytes();
+  /**
+   * @param planForFallback 已审核规划表读取失败时用于实时生成的方案实体（仅 reviewed 场景传入）
+   * @param fallbackToGeneratedReviewedPlan 读取固化文件失败时是否回退为实时生成已审核规划表
+   */
+  private byte[] readStoredFileBytes(
+      Long fileId,
+      TrainThreeYearPlanEntity planForFallback,
+      boolean fallbackToGeneratedReviewedPlan) {
+    try {
+      return fileApplicationService.readFileBytesById(fileId);
+    } catch (BusinessException ex) {
+      if (fallbackToGeneratedReviewedPlan && planForFallback != null) {
+        log.warn("读取固化已审核规划表失败(fileId={})，回退实时生成: {}", fileId, ex.getMessage());
+        ensureLocalDataReady(planForFallback);
+        return buildReviewedPlanExcelBytes(planForFallback);
+      }
+      throw ex;
     } catch (Exception e) {
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取已审核规划表失败");
+      if (fallbackToGeneratedReviewedPlan && planForFallback != null) {
+        log.warn("读取固化已审核规划表异常(fileId={})，回退实时生成", fileId, e);
+        ensureLocalDataReady(planForFallback);
+        return buildReviewedPlanExcelBytes(planForFallback);
+      }
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取文件失败");
     }
   }
 
@@ -1152,6 +1222,8 @@ public class TrainThreeYearPlanApplicationService {
     } else if (entity.getStatus() != null && entity.getStatus() == 1 && "PROCESSING".equals(rencaiTaskStatus)) {
       progressPct = progressPct == null ? 0.0 : Math.min(progressPct, 99.0);
     }
+    List<TrainThreeYearPlanVO.RejectHistoryItem> rejectHistory = parseRejectHistory(entity.getRejectHistoryJson());
+    List<TrainThreeYearPlanVO.SubmitHistoryItem> submitHistory = parseSubmitHistory(entity.getSubmitHistoryJson());
     return new TrainThreeYearPlanVO(
         entity.getId(),
         entity.getPlanNo(),
@@ -1167,6 +1239,8 @@ public class TrainThreeYearPlanApplicationService {
         statusLabel,
         entity.getAnalysisStatus(),
         entity.getRejectReason(),
+        rejectHistory,
+        submitHistory,
         entity.getCompanyConfirmTime(),
         entity.getCompanyConfirmUsername(),
         entity.getCreatedBy(),
@@ -1181,6 +1255,49 @@ public class TrainThreeYearPlanApplicationService {
         resolveOriginalFileName(entity.getSubmitPersonnelFileId()),
         resolveOriginalFileName(entity.getSubmitSchemeFileId())
     );
+  }
+
+  private List<TrainThreeYearPlanVO.RejectHistoryItem> parseRejectHistory(String json) {
+    List<Map<String, Object>> raw = parseHistoryList(json);
+    List<TrainThreeYearPlanVO.RejectHistoryItem> result = new ArrayList<>();
+    for (Map<String, Object> m : raw) {
+      result.add(new TrainThreeYearPlanVO.RejectHistoryItem(
+          asString(m.get("reason")),
+          asString(m.get("rejectedBy")),
+          asString(m.get("rejectedByUsername")),
+          asLocalDateTime(m.get("rejectedAt"))
+      ));
+    }
+    return result;
+  }
+
+  private List<TrainThreeYearPlanVO.SubmitHistoryItem> parseSubmitHistory(String json) {
+    List<Map<String, Object>> raw = parseHistoryList(json);
+    List<TrainThreeYearPlanVO.SubmitHistoryItem> result = new ArrayList<>();
+    for (Map<String, Object> m : raw) {
+      result.add(new TrainThreeYearPlanVO.SubmitHistoryItem(
+          asString(m.get("submittedBy")),
+          asString(m.get("submittedByUsername")),
+          asLocalDateTime(m.get("submittedAt")),
+          asString(m.get("personnelFileName")),
+          asString(m.get("schemeFileName"))
+      ));
+    }
+    return result;
+  }
+
+  private static String asString(Object v) {
+    return v == null ? null : String.valueOf(v);
+  }
+
+  private static LocalDateTime asLocalDateTime(Object v) {
+    if (v == null) return null;
+    String s = String.valueOf(v);
+    try {
+      return LocalDateTime.parse(s);
+    } catch (Exception e) {
+      return null;
+    }
   }
 
   private String resolveOriginalFileName(Long fileId) {

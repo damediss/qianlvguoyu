@@ -1,5 +1,6 @@
 package com.guoyu.platform.trainingdepartment.dto;
 
+import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOptionsSupport.ResearchCollectionFieldOptions;
 import jakarta.validation.constraints.NotBlank;
 
 public record TrainResearchOrgCreateReq(
@@ -13,6 +14,7 @@ public record TrainResearchOrgCreateReq(
     Integer areaId,
     String areaName,
     Integer sortNumber,
-    Integer status
+    Integer status,
+    ResearchCollectionFieldOptions collectionFieldOptions
 ) {
 }

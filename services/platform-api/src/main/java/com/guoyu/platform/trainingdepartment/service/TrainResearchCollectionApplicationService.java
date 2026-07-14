@@ -16,6 +16,8 @@ import com.guoyu.platform.trainingdepartment.dto.TrainResearchPersonCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResearchPersonQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResearchPersonUpdateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainThreeYearPlanCreateReq;
+import com.guoyu.platform.chazheng.service.CertQueryOutcome;
+import com.guoyu.platform.chazheng.service.ChazhengCertQueryService;
 import com.guoyu.platform.trainingdepartment.entity.TrainResearchOrgEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
@@ -24,11 +26,17 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainResearchOrgMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainThreeYearPlanMapper;
+import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOptionsSupport;
+import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOptionsSupport.ResearchCollectionFieldOptions;
 import com.guoyu.platform.trainingdepartment.support.ResearchCollectionTemplateExportService;
+import com.guoyu.platform.trainingdepartment.vo.PublicResearchCollectionSubmitResultVO;
+import com.guoyu.platform.trainingdepartment.vo.PublicResearchCollectionVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainResearchCollectionVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainResearchPersonCertificateVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainResearchPersonVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainThreeYearPlanVO;
+import com.guoyu.platform.trainingdepartment.vo.CertVerifyBatchResultVO;
+import com.guoyu.platform.trainingdepartment.vo.CertVerifyDetail;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -36,6 +44,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -59,7 +68,13 @@ public class TrainResearchCollectionApplicationService {
   private final TrainThreeYearPlanApplicationService threeYearPlanService;
   private final TrainThreeYearPlanMapper planMapper;
   private final ResearchCollectionTemplateExportService exportService;
+  private final ResearchCollectionFieldOptionsSupport fieldOptionsSupport;
   private final ObjectMapper objectMapper;
+  private final ChazhengCertQueryService chazhengCertQueryService;
+  private final ResearchCertBackfillService researchCertBackfillService;
+
+  @Value("${platform.h5.base-url:https://h5.gjjd168.com}")
+  private String h5BaseUrl;
 
   public TrainResearchCollectionApplicationService(
       TrainResearchOrgMapper researchOrgMapper,
@@ -69,7 +84,10 @@ public class TrainResearchCollectionApplicationService {
       TrainThreeYearPlanApplicationService threeYearPlanService,
       TrainThreeYearPlanMapper planMapper,
       ResearchCollectionTemplateExportService exportService,
-      ObjectMapper objectMapper) {
+      ResearchCollectionFieldOptionsSupport fieldOptionsSupport,
+      ObjectMapper objectMapper,
+      ChazhengCertQueryService chazhengCertQueryService,
+      ResearchCertBackfillService researchCertBackfillService) {
     this.researchOrgMapper = researchOrgMapper;
     this.signUpMapper = signUpMapper;
     this.peopleMapper = peopleMapper;
@@ -77,7 +95,10 @@ public class TrainResearchCollectionApplicationService {
     this.threeYearPlanService = threeYearPlanService;
     this.planMapper = planMapper;
     this.exportService = exportService;
+    this.fieldOptionsSupport = fieldOptionsSupport;
     this.objectMapper = objectMapper;
+    this.chazhengCertQueryService = chazhengCertQueryService;
+    this.researchCertBackfillService = researchCertBackfillService;
   }
 
   @Transactional(readOnly = true)
@@ -108,6 +129,7 @@ public class TrainResearchCollectionApplicationService {
     signUp.setResearchOrgId(researchOrgId);
     signUp.setCollectionSource(COLLECTION_SOURCE_RESEARCH);
     signUp.setQrcodeToken(UUID.randomUUID().toString().replace("-", ""));
+    signUp.setCollectionFieldOptions(research.getCollectionFieldOptions());
     signUp.setSortNumber(100);
     signUp.setTenantId(tenantId);
     signUp.setCreateTime(LocalDateTime.now());
@@ -147,6 +169,8 @@ public class TrainResearchCollectionApplicationService {
   public TrainResearchPersonVO createPerson(Long researchOrgId, TrainResearchPersonCreateReq req) {
     TrainResearchOrgEntity research = requireResearchOrg(researchOrgId);
     TrainSignUpSelfEntity signUp = requireActiveSignUp(researchOrgId);
+    ResearchCollectionFieldOptions fieldOptions = resolveEffectiveFieldOptions(signUp, research);
+    fieldOptionsSupport.validateCreatePerson(fieldOptions, req);
     if (!StringUtils.hasText(req.name())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "姓名不能为空");
     }
@@ -168,8 +192,10 @@ public class TrainResearchCollectionApplicationService {
 
   @Transactional
   public TrainResearchPersonVO updatePerson(Long researchOrgId, Long peopleId, TrainResearchPersonUpdateReq req) {
-    requireResearchOrg(researchOrgId);
+    TrainResearchOrgEntity research = requireResearchOrg(researchOrgId);
     TrainSignUpSelfEntity signUp = requireActiveSignUp(researchOrgId);
+    ResearchCollectionFieldOptions fieldOptions = resolveEffectiveFieldOptions(signUp, research);
+    fieldOptionsSupport.validateUpdatePerson(fieldOptions, req);
     TrainSignUpPeopleSelfEntity entity = requirePerson(signUp.getId(), peopleId);
     if (StringUtils.hasText(req.idCardNumber())) {
       assertIdCardUnique(signUp.getId(), req.idCardNumber(), peopleId);
@@ -187,6 +213,63 @@ public class TrainResearchCollectionApplicationService {
     TrainSignUpPeopleSelfEntity entity = requirePerson(signUp.getId(), peopleId);
     peopleMapper.deleteById(entity.getId());
     refreshPersonnelCount(researchOrgId);
+  }
+
+  /**
+   * 人员采集查证：按 peopleId 调用 chazheng 查证引擎，回填 train_sign_up_people_self。
+   */
+  public CertVerifyBatchResultVO verifyPeopleCertificate(Long researchOrgId, List<Long> peopleIds) {
+    if (peopleIds == null || peopleIds.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请至少选择一名人员");
+    }
+    TrainSignUpSelfEntity signUp = requireActiveSignUp(researchOrgId);
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+
+    List<TrainSignUpPeopleSelfEntity> people = peopleMapper.selectList(
+        new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
+            .in(TrainSignUpPeopleSelfEntity::getId, peopleIds)
+            .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUp.getId())
+            .eq(TrainSignUpPeopleSelfEntity::getTenantId, tenantId)
+            .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0));
+    if (people.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "未找到选中的人员");
+    }
+
+    List<CertVerifyDetail> details = new ArrayList<>();
+    int verified = 0;
+    int notFound = 0;
+    int failed = 0;
+
+    for (TrainSignUpPeopleSelfEntity person : people) {
+      if (!StringUtils.hasText(person.getName()) || !StringUtils.hasText(person.getIdCardNumber())) {
+        details.add(researchCertBackfillService.markInvalid(person, "姓名或身份证为空"));
+        failed++;
+        continue;
+      }
+      try {
+        CertQueryOutcome outcome = chazhengCertQueryService.queryByNameIdCard(
+            person.getName().trim(),
+            person.getIdCardNumber().trim(),
+            tenantId);
+        CertVerifyDetail detail = researchCertBackfillService.backfill(person, outcome);
+        details.add(detail);
+        if (detail.found()) {
+          verified++;
+        } else if (outcome.anyNormal()) {
+          notFound++;
+        } else {
+          failed++;
+        }
+      } catch (Exception e) {
+        log.error("[verify-cert] 查证失败 peopleId={}, err={}", person.getId(), e.getMessage(), e);
+        details.add(researchCertBackfillService.markFailed(
+            person, e.getMessage() != null ? e.getMessage() : "查证失败"));
+        failed++;
+      }
+    }
+
+    return new CertVerifyBatchResultVO(
+        people.size(), verified, notFound, failed, "查证完成", details);
   }
 
   @Transactional(readOnly = true)
@@ -239,6 +322,78 @@ public class TrainResearchCollectionApplicationService {
     return plan;
   }
 
+  @Transactional(readOnly = true)
+  public PublicResearchCollectionVO getPublicCollection(String token) {
+    TrainSignUpSelfEntity signUp = requireSignUpByToken(token);
+    TrainResearchOrgEntity research = requireResearchOrgById(signUp.getResearchOrgId());
+    OrgEntity targetOrg = resolveTargetOrg(research);
+    ResearchCollectionFieldOptions fieldOptions = resolveEffectiveFieldOptions(signUp, research);
+    String companyName = targetOrg != null ? targetOrg.getName() : research.getTitle();
+    return new PublicResearchCollectionVO(
+        signUp.getTitle(),
+        research.getTitle(),
+        companyName,
+        fieldOptions,
+        true);
+  }
+
+  @Transactional(readOnly = true)
+  public TrainResearchPersonVO findPublicPerson(String token, String idCardNumber) {
+    TrainSignUpSelfEntity signUp = requireSignUpByToken(token);
+    TrainSignUpPeopleSelfEntity entity = peopleMapper.selectOne(
+        new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
+            .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUp.getId())
+            .eq(TrainSignUpPeopleSelfEntity::getIdCardNumber, idCardNumber.trim())
+            .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0)
+            .last("LIMIT 1"));
+    return entity != null ? toPersonVO(entity) : null;
+  }
+
+  @Transactional
+  public PublicResearchCollectionSubmitResultVO submitPublicPerson(String token, TrainResearchPersonCreateReq req) {
+    TrainSignUpSelfEntity signUp = requireSignUpByToken(token);
+    TrainResearchOrgEntity research = requireResearchOrgById(signUp.getResearchOrgId());
+    ResearchCollectionFieldOptions fieldOptions = resolveEffectiveFieldOptions(signUp, research);
+    fieldOptionsSupport.validateCreatePerson(fieldOptions, req);
+    if (!StringUtils.hasText(req.name())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "姓名不能为空");
+    }
+    if (!StringUtils.hasText(req.idCardNumber())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "身份证号不能为空");
+    }
+
+    Long tenantId = signUp.getTenantId() != null ? signUp.getTenantId() : 1L;
+    TrainSignUpPeopleSelfEntity existing = peopleMapper.selectOne(
+        new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
+            .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUp.getId())
+            .eq(TrainSignUpPeopleSelfEntity::getIdCardNumber, req.idCardNumber().trim())
+            .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0)
+            .last("LIMIT 1"));
+
+    OrgEntity targetOrg = resolveTargetOrg(research);
+    String defaultCompany = targetOrg != null ? targetOrg.getName() : research.getTitle();
+
+    if (existing != null) {
+      applyPersonFields(existing, req, defaultCompany);
+      existing.setDataSource("h5");
+      existing.setUpdateTime(LocalDateTime.now());
+      peopleMapper.updateById(existing);
+      refreshPersonnelCountByResearchOrgId(research.getId());
+      return new PublicResearchCollectionSubmitResultVO(existing.getId(), true, "信息已更新");
+    }
+
+    TrainSignUpPeopleSelfEntity entity = new TrainSignUpPeopleSelfEntity();
+    entity.setSignUpId(signUp.getId());
+    entity.setTenantId(tenantId);
+    entity.setDataSource("h5");
+    applyPersonFields(entity, req, defaultCompany);
+    entity.setCreateTime(LocalDateTime.now());
+    entity.setUpdateTime(LocalDateTime.now());
+    peopleMapper.insert(entity);
+    refreshPersonnelCountByResearchOrgId(research.getId());
+    return new PublicResearchCollectionSubmitResultVO(entity.getId(), false, "提交成功");
+  }
+
   private TrainResearchOrgEntity requireResearchOrg(Long researchOrgId) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainResearchOrgEntity entity = researchOrgMapper.selectOne(
@@ -249,6 +404,53 @@ public class TrainResearchCollectionApplicationService {
       throw new BusinessException(ErrorCode.NOT_FOUND, "调研企业不存在");
     }
     return entity;
+  }
+
+  private TrainResearchOrgEntity requireResearchOrgById(Long researchOrgId) {
+    if (researchOrgId == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "采集批次未关联调研企业");
+    }
+    TrainResearchOrgEntity entity = researchOrgMapper.selectById(researchOrgId);
+    if (entity == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "调研企业不存在");
+    }
+    return entity;
+  }
+
+  private TrainSignUpSelfEntity requireSignUpByToken(String token) {
+    if (!StringUtils.hasText(token)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "采集链接无效");
+    }
+    TrainSignUpSelfEntity signUp = signUpMapper.selectOne(
+        new LambdaQueryWrapper<TrainSignUpSelfEntity>()
+            .eq(TrainSignUpSelfEntity::getQrcodeToken, token.trim())
+            .eq(TrainSignUpSelfEntity::getCollectionSource, COLLECTION_SOURCE_RESEARCH)
+            .eq(TrainSignUpSelfEntity::getDeleted, 0));
+    if (signUp == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "采集链接无效或已失效");
+    }
+    return signUp;
+  }
+
+  private void refreshPersonnelCountByResearchOrgId(Long researchOrgId) {
+    TrainResearchOrgEntity research = researchOrgMapper.selectById(researchOrgId);
+    if (research == null || research.getActiveSignUpId() == null) {
+      return;
+    }
+    long count = peopleMapper.selectCount(
+        new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
+            .eq(TrainSignUpPeopleSelfEntity::getSignUpId, research.getActiveSignUpId())
+            .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0));
+    research.setPersonnelCount((int) count);
+    researchOrgMapper.updateById(research);
+  }
+
+  private String buildCollectionPageUrl(String token) {
+    if (!StringUtils.hasText(token)) {
+      return null;
+    }
+    String base = h5BaseUrl.endsWith("/") ? h5BaseUrl.substring(0, h5BaseUrl.length() - 1) : h5BaseUrl;
+    return base + "/#/pages/research/collect?token=" + token;
   }
 
   private OrgEntity resolveTargetOrg(TrainResearchOrgEntity research) {
@@ -439,8 +641,24 @@ public class TrainResearchCollectionApplicationService {
         status,
         count,
         signUp != null ? signUp.getQrcodeToken() : null,
-        false,
-        signUp != null ? signUp.getCreateTime() : null);
+        signUp != null && StringUtils.hasText(signUp.getQrcodeToken()),
+        signUp != null && StringUtils.hasText(signUp.getQrcodeToken())
+            ? buildCollectionPageUrl(signUp.getQrcodeToken()) : null,
+        signUp != null ? signUp.getCreateTime() : null,
+        resolveEffectiveFieldOptions(signUp, research));
+  }
+
+  private ResearchCollectionFieldOptions resolveEffectiveFieldOptions(
+      TrainSignUpSelfEntity signUp,
+      TrainResearchOrgEntity research) {
+    // 调研企业上的字段配置为权威来源，避免批次快照未同步导致 H5 读不到最新下拉选项
+    if (StringUtils.hasText(research.getCollectionFieldOptions())) {
+      return fieldOptionsSupport.parse(research.getCollectionFieldOptions());
+    }
+    if (signUp != null && StringUtils.hasText(signUp.getCollectionFieldOptions())) {
+      return fieldOptionsSupport.parse(signUp.getCollectionFieldOptions());
+    }
+    return fieldOptionsSupport.defaultOptions();
   }
 
   private TrainResearchPersonVO toPersonVO(TrainSignUpPeopleSelfEntity entity) {
@@ -462,6 +680,7 @@ public class TrainResearchCollectionApplicationService {
         entity.getTitleMajor(),
         entity.getTitleCertDate(),
         entity.getLevel(),
+        entity.getCertVerified(),
         entity.getPaperNo(),
         entity.getCertIssueDates(),
         parseCertificateVOs(entity.getCertificatesJson()),

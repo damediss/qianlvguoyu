@@ -21,6 +21,7 @@ public record TrainResearchPersonVO(
     String titleMajor,
     String titleCertDate,
     Integer level,
+    Integer certVerified,
     String paperNo,
     String certIssueDates,
     List<TrainResearchPersonCertificateVO> certificates,

@@ -27,6 +27,8 @@ public class TrainThreeYearPlanEntity {
   private Long submitPersonnelFileId;
   private Long submitSchemeFileId;
   private String rejectReason;
+  private String rejectHistoryJson;
+  private String submitHistoryJson;
   private LocalDateTime companyConfirmTime;
   private Long companyConfirmUserId;
   private String companyConfirmUsername;
@@ -70,6 +72,10 @@ public class TrainThreeYearPlanEntity {
   public void setSubmitSchemeFileId(Long submitSchemeFileId) { this.submitSchemeFileId = submitSchemeFileId; }
   public String getRejectReason() { return rejectReason; }
   public void setRejectReason(String rejectReason) { this.rejectReason = rejectReason; }
+  public String getRejectHistoryJson() { return rejectHistoryJson; }
+  public void setRejectHistoryJson(String rejectHistoryJson) { this.rejectHistoryJson = rejectHistoryJson; }
+  public String getSubmitHistoryJson() { return submitHistoryJson; }
+  public void setSubmitHistoryJson(String submitHistoryJson) { this.submitHistoryJson = submitHistoryJson; }
   public LocalDateTime getCompanyConfirmTime() { return companyConfirmTime; }
   public void setCompanyConfirmTime(LocalDateTime companyConfirmTime) { this.companyConfirmTime = companyConfirmTime; }
   public Long getCompanyConfirmUserId() { return companyConfirmUserId; }
