@@ -10,7 +10,7 @@ import type {
   FaqModelConfigUpdateReq,
   FaqModelConfigQueryReq,
   FaqWeknoraConfigVO,
-  FaqWeknoraConfigSaveReq,
+  FaqWeKnoraConfigSaveReq,
   ExamWorkType,
   ExamWorkTypeCreateReq,
   ExamWorkTypeUpdateReq,
@@ -457,6 +457,10 @@ export function retryFaqBatch(batchId: string) {
   return unwrap<void>(apiClient.post(`/exam/faq/conversion/batches/${batchId}/retry`));
 }
 
+export async function exportFaqBatch(batchId: string): Promise<Blob> {
+  return (await apiClient.get(`/exam/faq/conversion/batches/${batchId}/export`, { responseType: 'blob' })).data;
+}
+
 export function listEnabledFaqModels() {
   return unwrap<FaqModelConfigVO[]>(apiClient.get('/exam/faq/conversion/models/enabled'));
 }
@@ -489,6 +493,6 @@ export function getFaqWeknoraConfig() {
   return unwrap<FaqWeknoraConfigVO>(apiClient.get('/exam/faq/weknora-config'));
 }
 
-export function saveFaqWeknoraConfig(payload: FaqWeknoraConfigSaveReq) {
+export function saveFaqWeknoraConfig(payload: FaqWeKnoraConfigSaveReq) {
   return unwrap<FaqWeknoraConfigVO>(apiClient.post('/exam/faq/weknora-config', payload));
 }

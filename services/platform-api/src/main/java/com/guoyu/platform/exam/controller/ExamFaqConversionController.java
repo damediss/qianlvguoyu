@@ -14,6 +14,8 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -116,6 +118,21 @@ public class ExamFaqConversionController {
     Long userId = com.guoyu.platform.security.SecurityContext.currentUser().getUserId();
     conversionService.retryFailed(tenantId, userId, batchId);
     return ApiResponse.ok();
+  }
+
+  /** 导出批次成功的 FAQ 为 zip 文件 */
+  @GetMapping("/batches/{batchId}/export")
+  @PreAuthorize("hasAuthority('exam:faq:export')")
+  @AuditLog(module = "exam", action = "faq:batch:export", targetType = "exam_faq_conversion")
+  public ResponseEntity<InputStreamResource> export(@PathVariable Long batchId) {
+    Long tenantId = com.guoyu.platform.security.SecurityContext.currentUser().getTenantId();
+    byte[] zipBytes = conversionService.exportBatch(tenantId, batchId);
+    String filename = "faq_batch_" + batchId + ".zip";
+    return ResponseEntity.ok()
+        .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, "application/zip")
+        .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+            org.springframework.http.ContentDisposition.attachment().filename(filename).build().toString())
+        .body(new org.springframework.core.io.InputStreamResource(new java.io.ByteArrayInputStream(zipBytes)));
   }
 
   /** 查询可用模型列表（供下拉选择） */

@@ -101,8 +101,8 @@ public class FaqLlmClient {
         responseStr = response.toString();
       }
       // 截断超长响应避免日志爆炸
-      if (responseStr.length() > 2000) {
-        responseStr = responseStr.substring(0, 2000) + "...(truncated)";
+      if (responseStr.length() > 200) {
+        responseStr = responseStr.substring(0, 200) + "...(truncated)";
       }
       log.info("FAQ LLM 响应：tenantId={}, model={}, body={}", tenantId, modelId, responseStr);
 

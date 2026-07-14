@@ -26,13 +26,17 @@ import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.exam.vo.FaqBatchVO;
 import com.guoyu.platform.exam.vo.FaqConversionVO;
 import com.guoyu.platform.security.SecurityContext;
+import java.io.ByteArrayOutputStream;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
@@ -286,6 +290,67 @@ public class FaqConversionApplicationService {
         "conversionStatus", entity.getConversionStatus(),
         "errorMessage", entity.getErrorMessage() != null ? entity.getErrorMessage() : ""
     );
+  }
+
+  /**
+   * 导出批次下所有 success 状态的 FAQ 为 zip 文件。
+   * 按 tag_name 分组，每组一个 JSON 文件，打包为 zip。
+   *
+   * @return zip 文件字节数组
+   */
+  @Transactional(readOnly = true)
+  public byte[] exportBatch(Long tenantId, Long batchId) {
+    List<ExamFaqConversionEntity> successRecords = faqConversionMapper.selectList(
+        new LambdaQueryWrapper<ExamFaqConversionEntity>()
+            .eq(ExamFaqConversionEntity::getTenantId, tenantId)
+            .eq(ExamFaqConversionEntity::getBatchId, batchId)
+            .eq(ExamFaqConversionEntity::getConversionStatus, "success"));
+
+    if (successRecords.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "该批次没有成功转换的记录可导出");
+    }
+
+    // 按 tag_name 分组
+    Map<String, List<ExamFaqConversionEntity>> grouped = new LinkedHashMap<>();
+    for (ExamFaqConversionEntity record : successRecords) {
+      String tag = record.getTagName() != null ? record.getTagName() : "未分类";
+      grouped.computeIfAbsent(tag, k -> new ArrayList<>()).add(record);
+    }
+
+    // 打包为 zip
+    try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+         ZipOutputStream zos = new ZipOutputStream(baos)) {
+
+      for (Map.Entry<String, List<ExamFaqConversionEntity>> entry : grouped.entrySet()) {
+        String tagFileName = entry.getKey().replaceAll("[\\\\/:*?\"<>|]", "_") + ".json";
+        List<Map<String, Object>> faqList = entry.getValue().stream().map(entity -> Map.<String, Object>of(
+            "standard_question", entity.getStandardQuestion() != null ? entity.getStandardQuestion() : "",
+            "answers", parseJsonArray(entity.getAnswers()),
+            "similar_questions", parseJsonArray(entity.getSimilarQuestions()),
+            "negative_questions", parseJsonArray(entity.getNegativeQuestions()),
+            "tag_name", entity.getTagName() != null ? entity.getTagName() : ""
+        )).toList();
+
+        String jsonContent;
+        try {
+          jsonContent = objectMapper.writeValueAsString(faqList);
+        } catch (Exception e) {
+          jsonContent = faqList.toString();
+        }
+
+        ZipEntry zipEntry = new ZipEntry(tagFileName);
+        zos.putNextEntry(zipEntry);
+        zos.write(jsonContent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        zos.closeEntry();
+      }
+
+      zos.finish();
+      log.info("FAQ 导出完成：batchId={}, successCount={}, tagCount={}", batchId, successRecords.size(), grouped.size());
+      return baos.toByteArray();
+    } catch (java.io.IOException e) {
+      log.error("FAQ 导出 zip 打包失败：batchId={}, error={}", batchId, e.getMessage());
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "导出文件生成失败");
+    }
   }
 
   // ──────────────────────── private ────────────────────────

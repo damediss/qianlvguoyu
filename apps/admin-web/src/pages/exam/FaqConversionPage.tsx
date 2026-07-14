@@ -6,13 +6,13 @@ import {
 import {
   PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined, EyeOutlined,
   SettingOutlined, RobotOutlined, CheckCircleOutlined, CloseCircleOutlined,
-  ClockCircleOutlined, MinusCircleOutlined, LoadingOutlined,
+  ClockCircleOutlined, MinusCircleOutlined, LoadingOutlined, DownloadOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import {
   submitFaqConversion, listFaqBatches, getFaqBatchProgress, pageFaqRecords,
   getFaqRecordDetail, pauseFaqBatch, resumeFaqBatch, retryFaqBatch,
-  listEnabledFaqModels,
+  listEnabledFaqModels, exportFaqBatch,
 } from '../../api/exam';
 import { treeWorkTypes, pageCourses } from '../../api/exam';
 import type { FaqBatchVO, FaqConversionVO, FaqModelConfigVO, ExamCourse } from '../../types/exam';
@@ -172,6 +172,23 @@ export function FaqConversionPage() {
     }
   };
 
+  // 导出批次成功的 FAQ
+  const handleExport = async (batchId: string) => {
+    try {
+      const blob = await exportFaqBatch(batchId);
+      const url = window.URL.createObjectURL(blob as Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `faq_batch_${batchId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      message.error(e.message || '导出失败，请确认该批次有成功转换的记录');
+    }
+  };
+
   // 记录表格列
   const recordColumns: ColumnsType<FaqConversionVO> = [
     { title: 'ID', dataIndex: 'id', width: 100, ellipsis: true },
@@ -264,7 +281,7 @@ export function FaqConversionPage() {
                 },
               },
               {
-                title: '操作', key: 'batchActions', width: 180,
+                title: '操作', key: 'batchActions', width: 260,
                 render: (_: unknown, row: FaqBatchVO) => (
                   <Space size="small">
                     {row.status === 'running' && (
@@ -276,6 +293,12 @@ export function FaqConversionPage() {
                     <Popconfirm title="确定重试失败记录？" onConfirm={(e) => { e?.stopPropagation(); retryFaqBatch(row.id).then(loadRecords); }}>
                       <Button size="small" icon={<ReloadOutlined />} onClick={(e) => e.stopPropagation()}>重试失败</Button>
                     </Popconfirm>
+                    <Button
+                      size="small"
+                      icon={<DownloadOutlined />}
+                      disabled={!row.successCount || row.successCount === 0}
+                      onClick={(e) => { e.stopPropagation(); handleExport(row.id); }}
+                    >导出</Button>
                   </Space>
                 ),
               },

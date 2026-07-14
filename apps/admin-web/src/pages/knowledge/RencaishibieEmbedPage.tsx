@@ -27,7 +27,7 @@ export function RencaishibieEmbedPage() {
         </div>
       )}
       <iframe
-        src="/rencai/"
+        src="http://43.138.163.7:8001/tasks"
         title="人才识别"
         style={{
           width: '100%',
