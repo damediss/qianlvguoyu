@@ -55,6 +55,7 @@ import { CompanyQuestionPage } from './pages/exam/CompanyQuestionPage';
 import { MakeExamPlanPage } from './pages/exam/MakeExamPlanPage';
 import { KnowledgeRatePage } from './pages/exam/KnowledgeRatePage';
 import { KnowledgeStructurePage } from './pages/exam/KnowledgeStructurePage';
+import { FaqConversionPage } from './pages/exam/FaqConversionPage';
 import { TrainExamListPage } from './pages/training/TrainExamListPage';
 import { TabletAssessorApp } from './pages/assessor/TabletAssessorApp';
 import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
@@ -187,6 +188,7 @@ const pageMap: Record<string, React.ReactNode> = {
   kao_shi_ji_hua: <TrainExamListPage />,
   exam_knowledge_rate: <KnowledgeRatePage />,
   zhi_shi_jie_gou_xi_mu_biao_guan_li: <KnowledgeStructurePage />,
+  exam_faq_conversion: <FaqConversionPage />,
   expert_task_start: <TaskStartPage />,
   expert_task_end: <TaskEndPage />,
   certification_dashboard: <CertificationDataPanelPage />,

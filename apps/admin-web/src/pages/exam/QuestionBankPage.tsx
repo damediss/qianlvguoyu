@@ -307,7 +307,7 @@ export function QuestionBankPage() {
   const [treeSearchValue, setTreeSearchValue] = useState('');
 
   // selected node metadata
-  const [, setSelectedWorkTypeId] = useState<number | undefined>();
+  const [selectedWorkTypeId, setSelectedWorkTypeId] = useState<number | undefined>();
   const [selectedCourseId, setSelectedCourseId] = useState<number | undefined>();
   const [selectedKnowledgeId, setSelectedKnowledgeId] = useState<number | undefined>();
 
@@ -394,6 +394,7 @@ export function QuestionBankPage() {
   const effectiveQuery: ExamExamDetailQuery = useMemo(
     () => ({
       ...query,
+      workTypeId: selectedWorkTypeId,
       courseId: selectedCourseId,
       knowledgeId: selectedKnowledgeId,
       type: filterType,
@@ -403,6 +404,7 @@ export function QuestionBankPage() {
     }),
     [
       query,
+      selectedWorkTypeId,
       selectedCourseId,
       selectedKnowledgeId,
       filterType,

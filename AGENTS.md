@@ -94,6 +94,51 @@
 - 所有外部 API/网络请求的响应先做空值和类型检查
 - 认证、授权、权限校验路径必须打印 warn/error 级别日志
 
+### 异步与多租户陷阱(必读,2026-07-13 新增)
+
+#### 1. BaseEntity 字段必须完整映射到 DDL
+所有后端 Entity 继承 `BaseEntity`(`com.guoyu.platform.common.domain.BaseEntity`),
+自动包含以下字段: `tenant_id`、`deleted`、`created_by`、`updated_by`、`created_at`、`updated_at`。
+
+**新增表或修改实体时,必须执行**:
+1. 确认实体 `extends BaseEntity`
+2. 在 DDL 中包含上述 6 列(顺序不限,建议按 `tenant_id / deleted / created_by / updated_by / created_at / updated_at`)
+3. 已有表的 ALTER 迁移也必须补全缺失的 BaseEntity 列
+4. **检查方式**:`SHOW COLUMNS FROM table` 对比实体 getter,每个 getter 都应对应一个表列
+
+**典型踩坑**:实体继承 BaseEntity → MyBatis-Plus 生成的 INSERT/SELECT 包含所有继承字段 → 表中缺少对应列 → `Unknown column 'xxx' in 'field list'`。
+
+#### 2. 异步线程禁止直接调用 SecurityContext
+`SecurityContext.currentUser()` 基于 `ThreadLocal`,在以下场景中为 null:
+- `@Async` 注解的方法
+- `ThreadPoolTaskExecutor` 提交的 Worker 线程
+- `CompletableFuture.supplyAsync()` 的回调
+- 任何不在原始 HTTP 请求线程中执行的代码
+
+**涉及异步的场景必须遵守**:
+1. 在 HTTP 请求线程中提前取出 `tenantId`/`userId`,通过方法参数传递到异步方法
+2. 整个异步调用链(**包括所有下游 Service、Mapper、ConfigService**)都不能直接调 `SecurityContext`
+3. 写方案时画清"线程边界",标注哪些方法跑在 HTTP 线程、哪些跑在 Worker 线程
+4. 遍历被异步方法调用的**完整调用链**,逐一确认每个方法都不依赖 SecurityContext
+
+**典型踩坑**:
+- Service A 在 HTTP 线程调用 SecurityContext → OK
+- Service A 内部提交任务到线程池 → 线程池 Worker 调用 Service B → Service B 调 SecurityContext → `IllegalStateException: No authenticated platform user`
+- 即使 Service 本身不调 SecurityContext,它的**下游依赖**(如 `CertCheckConfigService.findApiUrl()`)调了也一样报错
+
+**正确写法**:
+```java
+// HTTP 请求线程:捕获 tenantId
+Long tenantId = SecurityContext.currentUser().getTenantId();
+executor.submit(() -> processAsync(tenantId, userId));
+
+// Worker 线程:通过参数接收,不调 SecurityContext
+private void processAsync(Long tenantId, Long userId) {
+    // 整个调用链内所有方法都通过参数传递 tenantId
+    certCheck(userId, tenantId);
+}
+```
+
 ### 后端规则
 
 包结构（`services/platform-api/src/main/java/com/guoyu/platform/`）：
@@ -220,10 +265,11 @@ src/
 最低验收：
 
 1. 登录、菜单、权限、数据权限必须有测试
-2. 数据库迁移脚本必须能在空库执行成功
-3. 文件上传必须验证成功和失败路径
-4. AI 和 MCP 工具调用必须验证权限失败、参数错误和人工确认
-5. 一期主链路可跑通：管理员配置基础数据 → 课程人员建课建题 → 课程发布审批 → 安排考试 → 学员学习答题查看成绩错题
+2. 数据库迁移脚本必须能在空库执行成功；所有新增/修改表 DDL 必须包含完整 BaseEntity 字段（tenant_id / deleted / created_by / updated_by / created_at / updated_at），与实体 getter 一一对应
+3. 涉及异步线程（线程池 / @Async / CompletableFuture）的功能，整个调用链禁止直接调用 SecurityContext，tenantId 必须通过 HTTP 请求线程捕获后参数传递
+4. 文件上传必须验证成功和失败路径
+5. AI 和 MCP 工具调用必须验证权限失败、参数错误和人工确认
+6. 一期主链路可跑通：管理员配置基础数据 → 课程人员建课建题 → 课程发布审批 → 安排考试 → 学员学习答题查看成绩错题
 
 ---
 

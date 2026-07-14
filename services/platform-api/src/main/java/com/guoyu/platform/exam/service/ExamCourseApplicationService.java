@@ -36,6 +36,9 @@ public class ExamCourseApplicationService {
         .orderByDesc(ExamCourseEntity::getSortNumber)
         .orderByAsc(ExamCourseEntity::getId);
 
+    if (req.getWorkTypeId() != null && req.getWorkTypeId() > 0) {
+      wrapper.eq(ExamCourseEntity::getWorkTypeId, req.getWorkTypeId());
+    }
     if (StringUtils.hasText(req.getTitle())) {
       wrapper.and(w -> w
           .like(ExamCourseEntity::getTitle, req.getTitle())

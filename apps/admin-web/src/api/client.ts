@@ -16,7 +16,7 @@ const jsonBig = JSONBig({ storeAsString: true });
 
 export const apiClient = axios.create({
   baseURL: '/api',
-  timeout: 20000,
+  timeout: 25000,
   transformResponse: [(data) => {
     if (typeof data === 'string') {
       try {

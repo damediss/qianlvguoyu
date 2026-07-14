@@ -4,6 +4,7 @@ import com.guoyu.platform.common.api.PageQuery;
 
 public class ExamExamDetailQueryReq extends PageQuery {
 
+  private Integer workTypeId;
   private Integer courseId;
   private Integer knowledgeId;
   private String type;
@@ -12,6 +13,8 @@ public class ExamExamDetailQueryReq extends PageQuery {
   private Integer status;
   private String keyword;
 
+  public Integer getWorkTypeId() { return workTypeId; }
+  public void setWorkTypeId(Integer workTypeId) { this.workTypeId = workTypeId; }
   public Integer getCourseId() { return courseId; }
   public void setCourseId(Integer courseId) { this.courseId = courseId; }
   public Integer getKnowledgeId() { return knowledgeId; }

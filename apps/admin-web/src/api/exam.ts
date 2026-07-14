@@ -1,6 +1,16 @@
 import { apiClient, unwrap } from './client';
 import type { PageResponse } from '../types/api';
 import type {
+  FaqBatchVO,
+  FaqConversionVO,
+  FaqConversionSubmitReq,
+  FaqConversionQueryReq,
+  FaqModelConfigVO,
+  FaqModelConfigCreateReq,
+  FaqModelConfigUpdateReq,
+  FaqModelConfigQueryReq,
+  FaqWeknoraConfigVO,
+  FaqWeknoraConfigSaveReq,
   ExamWorkType,
   ExamWorkTypeCreateReq,
   ExamWorkTypeUpdateReq,
@@ -411,4 +421,74 @@ export function deleteKnowledgeRate(id: number) {
 
 export function getPaperDetails(paperId: number) {
   return unwrap<ExamPaperDetail[]>(apiClient.get(`/exam/papers/${paperId}/details`));
+}
+
+// ==================== FAQ 转换 ====================
+
+export function submitFaqConversion(payload: FaqConversionSubmitReq) {
+  return unwrap<FaqBatchVO>(apiClient.post('/exam/faq/conversion/submit', payload));
+}
+
+export function listFaqBatches(params: { status?: string; page?: number; pageSize?: number }) {
+  return unwrap<PageResponse<FaqBatchVO>>(apiClient.get('/exam/faq/conversion/batches', { params }));
+}
+
+export function getFaqBatchProgress(batchId: string) {
+  return unwrap<FaqBatchVO>(apiClient.get(`/exam/faq/conversion/batches/${batchId}/progress`));
+}
+
+export function pageFaqRecords(params: FaqConversionQueryReq) {
+  return unwrap<PageResponse<FaqConversionVO>>(apiClient.get('/exam/faq/conversion/records', { params }));
+}
+
+export function getFaqRecordDetail(id: string) {
+  return unwrap<Record<string, unknown>>(apiClient.get(`/exam/faq/conversion/records/${id}`));
+}
+
+export function pauseFaqBatch(batchId: string) {
+  return unwrap<void>(apiClient.post(`/exam/faq/conversion/batches/${batchId}/pause`));
+}
+
+export function resumeFaqBatch(batchId: string) {
+  return unwrap<void>(apiClient.post(`/exam/faq/conversion/batches/${batchId}/resume`));
+}
+
+export function retryFaqBatch(batchId: string) {
+  return unwrap<void>(apiClient.post(`/exam/faq/conversion/batches/${batchId}/retry`));
+}
+
+export function listEnabledFaqModels() {
+  return unwrap<FaqModelConfigVO[]>(apiClient.get('/exam/faq/conversion/models/enabled'));
+}
+
+// ---- LLM 模型配置 ----
+
+export function pageFaqModelConfigs(params: FaqModelConfigQueryReq) {
+  return unwrap<PageResponse<FaqModelConfigVO>>(apiClient.get('/exam/faq/model-config/page', { params }));
+}
+
+export function getFaqModelConfig(id: string) {
+  return unwrap<FaqModelConfigVO>(apiClient.get(`/exam/faq/model-config/${id}`));
+}
+
+export function createFaqModelConfig(payload: FaqModelConfigCreateReq) {
+  return unwrap<FaqModelConfigVO>(apiClient.post('/exam/faq/model-config', payload));
+}
+
+export function updateFaqModelConfig(id: string, payload: FaqModelConfigUpdateReq) {
+  return unwrap<FaqModelConfigVO>(apiClient.put(`/exam/faq/model-config/${id}`, payload));
+}
+
+export function deleteFaqModelConfig(id: string) {
+  return unwrap<void>(apiClient.delete(`/exam/faq/model-config/${id}`));
+}
+
+// ---- WeKnora 配置 ----
+
+export function getFaqWeknoraConfig() {
+  return unwrap<FaqWeknoraConfigVO>(apiClient.get('/exam/faq/weknora-config'));
+}
+
+export function saveFaqWeknoraConfig(payload: FaqWeknoraConfigSaveReq) {
+  return unwrap<FaqWeknoraConfigVO>(apiClient.post('/exam/faq/weknora-config', payload));
 }

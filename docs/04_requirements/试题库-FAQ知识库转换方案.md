@@ -6,6 +6,22 @@
 
 ---
 
+## 〇、审核修订记录
+
+### v1.1（本次审核,2026-07-13）
+
+| # | 缺陷/疑议 | 严重度 | 修正章节 |
+|---|---|---|---|
+| 1 | **exam_faq_conversion DDL SQL 语法错误** — `KEY KEY idx_efc_knowledge` 重复关键字 | 🔴 重大 | §2.1 删重复 KEY |
+| 2 | **base_url 格式错误** — 种子数据中 LongCat 的 `base_url` 含 `/chat/completions` 后缀,OpenAI 客户端会重复拼接导致 404 | 🟡 中 | §3.4 修正为不含后缀 |
+| 3 | **章节编号混乱** — 标题号(六~十七)与子章节号(7.1~13.x)错位,交叉引用不可靠 | 🟡 中 | 全文重编号 |
+| 4 | **SecurityContext 在异步线程中的使用** — 方案涉及异步处理(>5000 题)但未提及 ThreadLocal 传递问题 | 🟡 中 | 新增 §十八 补充注意事项 |
+| 5 | **§5.2 菜单迁移内容为空** — 标题下无 SQL | 🟢 小 | 补充占位说明 |
+| 6 | **JSON 文件导出章节引用不准确** — 写"与第九章输出结构一致"但第九章不存在 | 🟢 小 | 改为引用 §九 |
+| 7 | **方案无版本号与修订记录** — 首次审核补充 | 🟢 小 | 本记录 |
+
+---
+
 ## 一、表关系澄清（必读）
 
 现有系统中不存在 `exam_knowledge_point` 和 `exam_exam_subject` 两张表，正确的关系链如下：
@@ -101,7 +117,7 @@ CREATE TABLE exam_faq_conversion (
   UNIQUE KEY uk_exam_faq_conversion_exam (tenant_id, exam_id, deleted),
   KEY idx_efc_work_type_status (tenant_id, work_type_id, conversion_status),
   KEY idx_efc_status (tenant_id, conversion_status),
-  KEY KEY idx_efc_knowledge (tenant_id, knowledge_id)
+  KEY idx_efc_knowledge (tenant_id, knowledge_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='试题FAQ结构化转换记录表';
 ```
@@ -225,7 +241,7 @@ INSERT INTO exam_faq_model_config (
   0,  -- tenant_id=0 表示全局默认，各租户可覆盖
   'longcat-2.0',
   'LongCat-2.0',
-  'https://api.longcat.chat/openai/v1/chat/completions',
+  'https://api.longcat.chat/openai/v1',
   'PENDING_USER_INPUT',  -- 占位符，提醒用户在页面填入真实 API Key
   'openai_compatible',
   'LongCat-2.0',
@@ -269,9 +285,9 @@ INSERT INTO exam_faq_model_config (
     └── 批次列表（可展开看每条试题状态）
 ```
 
-### JSON 文件导出
+### 3.6 JSON 文件导出
 
-- 文件格式与第九章输出结构一致：`faq_example.json`
+- 文件格式与§九输出结构一致：`faq_example.json`
 - 按 `tag_name` 分组输出为多个 JSON 文件，打包为 zip 提供下载
 - 仅导出 `conversion_status='success'` 且 `weknora_imported=0` 的记录
 - 导出后不改 `weknora_imported` 状态（因用户选择文件手动上传，由用户上传后手动标记或下次导入时自动识别）
@@ -393,6 +409,9 @@ WeKnora 管理员配置:
 
 ### 5.2 菜单 INSERT 迁移
 
+> 菜单迁移 SQL 格式参照项目已有迁移(如 `V20260702_017__add_weknora_sso_menu.sql`),
+> 实施方案时根据实际菜单编号生成。此处不预设具体 SQL,避免与既有菜单 ID 冲突。
+
 ```sql
 INSERT IGNORE INTO sys_menu (
   id, tenant_id, parent_id, menu_type, code, name,
@@ -486,7 +505,7 @@ WHERE deleted = 0
 
 ## 八、知识点关联逻辑（tag_name 知识层级来源）
 
-### 7.1 关联路径（修正版）
+### 8.1 关联路径（修正版）
 
 ```
 exam_exam_detail.knowledge_id
@@ -504,7 +523,7 @@ exam_knowledge_structure.id  ──►  exam_knowledge_structure.parent_id
 tag_name 知识层级 = 知识点路径的末三级（level=2~3 拼接）
 ```
 
-### 7.2 SQL 示意（表已修正）
+### 8.2 SQL 示意（表已修正）
 
 ```sql
 -- 递归查知识点层级路径（MySQL 8+ CTE）
@@ -523,7 +542,7 @@ WITH RECURSIVE ks_path AS (
 SELECT id, name, path, level, depth FROM ks_path;
 ```
 
-### 7.3 截断规则
+### 8.3 截断规则
 
 | 知识点深度 | tag_name 知识层级取值 |
 |---|---|
@@ -537,7 +556,7 @@ SELECT id, name, path, level, depth FROM ks_path;
 
 ## 九、输入 → 输出字段映射
 
-### 8.1 输入结构（exam_exam_detail 单条）
+### 9.1 输入结构（exam_exam_detail 单条）
 
 ```json
 {
@@ -553,7 +572,7 @@ SELECT id, name, path, level, depth FROM ks_path;
 }
 ```
 
-### 8.2 输出结构（FAQ 条目）
+### 9.2 输出结构（FAQ 条目）
 
 ```json
 {
@@ -580,7 +599,7 @@ SELECT id, name, path, level, depth FROM ks_path;
 
 ## 十、分题型转换逻辑
 
-### 9.1 单选题（type = 'single'）
+### 10.1 单选题（type = 'single'）
 
 **输入示例：**
 
@@ -627,7 +646,7 @@ answer:  [{"content":"精益求精","isCorrect":false},
 
 ---
 
-### 9.2 判断题（type = 'judge'）
+### 10.2 判断题（type = 'judge'）
 
 **输入示例：**
 
@@ -672,7 +691,7 @@ answer:  [{"content":"对","isCorrect":true,"score":1},
 
 ---
 
-### 9.3 多选题（type = 'multi'）
+### 10.3 多选题（type = 'multi'）
 
 **输入示例：**
 
@@ -722,7 +741,7 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 
 ## 十一、LLM 生成 Prompt 设计（国家职业标准专家角色）
 
-### 10.1 System Prompt（共用前缀）
+### 11.1 System Prompt（共用前缀）
 
 ```text
 你是一位「国家职业标准」专家。你熟知中华人民共和国人力资源和社会保障部颁布的各职业国家职业标准（Occupational Standard of the People's Republic of China），包括但不限于：
@@ -742,10 +761,10 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 每次收到题目，你都将当前题目涵盖的国家职业标准上下文（工种名称、职业等级、鉴定范围），再按要求生成输出。
 ```
 
-### 10.2 生成 similar_questions 的 Prompt
+### 11.2 生成 similar_questions 的 Prompt
 
 ```text
-## 题目上下文
+#### 题目上下文
 - 工种：{work_type_name} ({work_type_series_no})
 - 职业等级：{work_type_level}
 - 科目{subject_title}
@@ -754,13 +773,13 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 - 难度：{难度}
 - 涉及的国家职业标准鉴定点：{鉴定点描述}
 
-## 题目信息
+#### 题目信息
 - 题型：{single|multi|judge}
 - 题干：{content_stripped}
 - 正确选项：{correct_options}
 - 干扰项：{wrong_options}
 
-## 生成要求
+#### 生成要求
 1. 相似问必须与原题答案一致，语义等价
 2. 使用国家职业标准中的规范术语，避免口语化表述
 3. 保留题干中的核心概念（名词、限定词）不变，这些通常是标准中的关键词
@@ -769,14 +788,14 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 6. 不要生成需要额外推理或引入新知识才能回答的问法
 7. 输出为 JSON 数组，每条为纯文本字符串，不要带引号以外的标记
 
-## 输出格式
+#### 输出格式
 {"similar_questions": ["问法1", "问法2", "问法3"]}
 ```
 
-### 10.3 生成 negative_questions 的 Prompt
+### 11.3 生成 negative_questions 的 Prompt
 
 ```text
-## 题目上下文
+#### 题目上下文
 - 工种：{work_type_name} ({work_type_series_no})
 - 职业等级：{work_type_level}
 - 科目{subject_title}
@@ -785,14 +804,14 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 - 难度：{难度}
 - 涉及的国家职业标准鉴定点：{鉴定点描述}
 
-## 题目信息
+#### 题目信息
 - 题型：{single|multi|judge}
 - 题干：{content_stripped}
 - 正确选项：{correct_options}
 - 干扰项：{wrong_options}
 - 题目考查的关键概念：{key_concepts_from_keyword}
 
-## 生成要求
+#### 生成要求
 1. 反例必须与原题「看起来相似但答案不同」，用于培训模型区分能力
 2. 使用以下策略生成反例（每条使用不同策略）：
    - 属性替换：保留主题词，把属性词替换为同职业标准中该主题的其他属性
@@ -804,11 +823,11 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 4. 反例应体现国家职业标准中容易混淆的邻近概念
 5. 输出为 JSON 数组，每条为纯文本字符串
 
-## 输出格式
+#### 输出格式
 {"negative_questions": ["反例1（答案应为XXX）", "反例2（答案应为XXX）", "反例3（答案应为XXX）"]}
 ```
 
-### 10.4 LLM 调用参数（由 exam_faq_model_config 动态配置）
+### 11.4 LLM 调用参数（由 exam_faq_model_config 动态配置）
 
 | 参数 | 取值 |
 |---|---|
@@ -820,7 +839,7 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 | max_tokens | 从 `exam_faq_model_config.max_tokens` 取（默认 2000） |
 | api_format | 由 `exam_faq_model_config.api_format` 决定请求适配层 |
 
-### 10.5 调用策略
+### 11.5 调用策略
 
 - **并发控制**：每批最多 20 条试题，调 2 次 LLM（一次 similar、一次 negative）；>5000 题的工艺整体任务异步执行（后台线程池/消息队列消费），前端轮询进度
 - **重试机制**：解析失败最多重试 2 次，仍失败则记录 `conversion_status='failed'` + 错误信息
@@ -871,7 +890,7 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 
 ## 十四、页面设计：工种题库结构化问答管理
 
-### 13.1 页面布局
+### 14.1 页面布局
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
@@ -904,7 +923,7 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 └────────────────────────────────────────────────────────────────┘
 ```
 
-### 13.2 状态标识
+### 14.2 状态标识
 
 | 状态 | 图标 | 含义 | 后台值 |
 |------|------|------|--------|
@@ -914,7 +933,7 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 | 转换失败 | ❌ | LLM/解析失败 | `failed` |
 | 跳过 | ⏭ | 题型不适配 | `skipped` |
 
-### 13.3 操作按钮
+### 14.3 操作按钮
 
 | 按钮 | 权限 | 行为 |
 |------|------|------|
@@ -926,7 +945,7 @@ answer:  [{"content":"罐式煅烧炉","isCorrect":true,"score":0.2},
 | **导入 WeKnora** | exam:faq:export | 直接将 success 状态的 FAQ 推送至 WeKnora |
 | **查看明细** | — | 弹出抽屉看 standard_question / similar / negative |
 
-### 13.4 设置弹层
+### 14.4 设置弹层
 
 ```
 ┌────────────────────────────────────────────────────┐
@@ -1018,4 +1037,16 @@ output/
 
 ---
 
-*方案版本：v2.0 | 日期：2026-07-12 | 状态：待用户确认后落地实现*
+## 十八、异步线程注意事项（审核修订 v1.1 #4）
+
+> `AGENTS.md §异步与多租户陷阱` 已有规则,此处仅针对本方案强调:
+
+| 规则 | 说明 |
+|---|---|
+| SecurityContext 不传线程 | 异步处理(>5000 题)时,工作线程不可直接调用 `SecurityContext.currentUser()`,必须由 HTTP 线程捕获 `tenantId` 后通过参数传递 |
+| 调用链全量检查 | `LlmClient`、`FaqConversionService` 等被异步调用的下游,都通过参数接收 `tenantId` |
+| DDL BaseEntity 完整 | 实施方案时,所有 4 张新增表必须经 `SHOW COLUMNS` 对比 BaseEntity 6 字段 |
+
+---
+
+*方案版本：v1.1（审核修订）\| 日期：2026-07-13 \| 状态：待用户确认后落地实现*
