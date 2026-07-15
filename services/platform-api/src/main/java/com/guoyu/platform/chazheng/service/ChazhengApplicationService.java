@@ -2,11 +2,22 @@ package com.guoyu.platform.chazheng.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guoyu.platform.chazheng.config.CertCheckBatchConfig;
+import com.guoyu.platform.chazheng.dto.CertCheckBatchProgress;
+import com.guoyu.platform.chazheng.dto.CertCheckBatchReport;
+import com.guoyu.platform.chazheng.dto.CertCheckBatchSubmitResp;
 import com.guoyu.platform.chazheng.dto.ChazhengUserQueryReq;
+import com.guoyu.platform.chazheng.entity.CertCheckBatchEntity;
+import com.guoyu.platform.chazheng.entity.CertCheckBatchItemEntity;
 import com.guoyu.platform.chazheng.entity.ChazhengCertEntity;
 import com.guoyu.platform.chazheng.entity.ChazhengUserEntity;
+import com.guoyu.platform.chazheng.mapper.CertCheckBatchItemMapper;
+import com.guoyu.platform.chazheng.mapper.CertCheckBatchMapper;
 import com.guoyu.platform.chazheng.mapper.ChazhengCertMapper;
 import com.guoyu.platform.chazheng.mapper.ChazhengUserMapper;
+import com.guoyu.platform.chazheng.support.FixedRateLimiter;
 import com.guoyu.platform.chazheng.vo.ChazhengCertVO;
 import com.guoyu.platform.chazheng.vo.ChazhengUserVO;
 import com.guoyu.platform.common.api.PageResponse;
@@ -15,14 +26,27 @@ import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.security.SecurityContext;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -31,23 +55,64 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.http.converter.HttpMessageConversionException;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+/**
+ * 查证应用服务。
+ *
+ * <p>重构说明(对齐 PHP MainTask::queryCertByTemplate):
+ * <ul>
+ *   <li>从 sys_dict 读取接口地址 + 请求模板(运行时覆盖 idcode/username)</li>
+ *   <li>多模板轮询(datas[0] + datas[1])</li>
+ *   <li>正确的响应路径(result.data[])和字段映射(serialid/bzz002/metadata 拼合)</li>
+ *   <li>异常分流: curl/JSON 异常 → 不标记 anyNormal(留待重试); 业务异常 → 不标记 anyNormal</li>
+ *   <li>HTTP 调用在事务外(不占 DB 连接), DB 写入通过独立 Bean(ChazhengPersistService)短事务</li>
+ *   <li>批量异步查证: 导入后自动触发, 多线程并行执行, 支持进度查询</li>
+ * </ul>
+ */
 @Service
 @Slf4j
 public class ChazhengApplicationService {
 
   private final ChazhengUserMapper userMapper;
   private final ChazhengCertMapper certMapper;
+  private final ChazhengPersistService chazhengPersistService;
+  private final CertCheckBatchMapper batchMapper;
+  private final CertCheckBatchItemMapper batchItemMapper;
+  private final ChazhengCertQueryService chazhengCertQueryService;
 
-  public ChazhengApplicationService(ChazhengUserMapper userMapper, ChazhengCertMapper certMapper) {
+  @Value("${chazheng.batch.max-retry:2}")
+  private int maxRetry;
+
+  /** 线程池引用(由 Controller 创建后注入) */
+  private ThreadPoolTaskExecutor executor;
+
+  public ChazhengApplicationService(ChazhengUserMapper userMapper,
+      ChazhengCertMapper certMapper,
+      ChazhengPersistService chazhengPersistService,
+      CertCheckBatchMapper batchMapper,
+      CertCheckBatchItemMapper batchItemMapper,
+      ChazhengCertQueryService chazhengCertQueryService) {
     this.userMapper = userMapper;
     this.certMapper = certMapper;
+    this.chazhengPersistService = chazhengPersistService;
+    this.batchMapper = batchMapper;
+    this.batchItemMapper = batchItemMapper;
+    this.chazhengCertQueryService = chazhengCertQueryService;
   }
 
-  @Value("${chazheng.cert-api-url:#{null}}")
-  private String certApiUrl;
+  /** 由 Controller 在 @PostConstruct 中设置线程池时调用 */
+  public void setExecutor(ThreadPoolTaskExecutor executor) {
+    this.executor = executor;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  分页查询 / 导入 / 导出(原有逻辑)
+  // ════════════════════════════════════════════════════════════════════════
 
   @Transactional(readOnly = true)
   public PageResponse<ChazhengUserVO> page(ChazhengUserQueryReq req) {
@@ -70,9 +135,7 @@ public class ChazhengApplicationService {
       wrapper.eq(ChazhengUserEntity::getYmd, req.getYmd());
     }
 
-    Page<ChazhengUserEntity> page = userMapper.selectPage(
-        new Page<>(req.getPage(), req.getPageSize()), wrapper);
-
+    var page = userMapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
     List<ChazhengUserVO> vos = page.getRecords().stream().map(entity -> {
       ChazhengUserVO vo = ChazhengUserVO.from(entity);
       List<ChazhengCertEntity> certs = certMapper.selectList(
@@ -83,6 +146,18 @@ public class ChazhengApplicationService {
     }).toList();
 
     return new PageResponse<>(vos, page.getCurrent(), page.getSize(), page.getTotal());
+  }
+
+  /**
+   * 获取最新导入的 ymd 批次号(导入后自动查证用)。
+   */
+  public String getLatestYmd() {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    ChazhengUserEntity latest = userMapper.selectOne(new LambdaQueryWrapper<ChazhengUserEntity>()
+        .eq(ChazhengUserEntity::getTenantId, tenantId)
+        .orderByDesc(ChazhengUserEntity::getCreateTime)
+        .last("LIMIT 1"));
+    return latest != null ? latest.getYmd() : null;
   }
 
   @Transactional(readOnly = true)
@@ -103,7 +178,7 @@ public class ChazhengApplicationService {
   @Transactional
   public int importExcel(MultipartFile file) {
     if (file.isEmpty()) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "涓婁紶鏂囦欢涓虹┖");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "上传文件为空");
     }
 
     Long tenantId = SecurityContext.currentUser().getTenantId();
@@ -114,18 +189,14 @@ public class ChazhengApplicationService {
       Sheet sheet = workbook.getSheetAt(0);
       for (int i = 1; i <= sheet.getLastRowNum(); i++) {
         Row row = sheet.getRow(i);
-        if (row == null) {
-          continue;
-        }
+        if (row == null) continue;
 
         String userName = getCellString(row, 0);
         String idCard = getCellString(row, 1);
 
-        if (!StringUtils.hasText(userName) || !StringUtils.hasText(idCard)) {
-          continue;
-        }
+        if (!StringUtils.hasText(userName) || !StringUtils.hasText(idCard)) continue;
         if (idCard.length() != 18) {
-          log.warn("璺宠繃閿欒[{}]: {}", i, idCard);
+          log.warn("跳过非法定身份证长度行[{}]: {}", i, idCard);
           continue;
         }
 
@@ -155,83 +226,10 @@ public class ChazhengApplicationService {
         imported++;
       }
     } catch (IOException e) {
-      log.error("Excel 瑙ｆ瀽澶辫触", e);
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "Excel 瑙ｆ瀽澶辫触: " + e.getMessage());
+      log.error("Excel 解析失败", e);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "Excel 解析失败: " + e.getMessage());
     }
-
     return imported;
-  }
-
-  @Transactional
-  public ChazhengUserVO certCheck(Integer id) {
-    Long tenantId = SecurityContext.currentUser().getTenantId();
-    ChazhengUserEntity user = findExistingUser(tenantId, id);
-
-    String apiUrl = this.certApiUrl;
-    if (!StringUtils.hasText(apiUrl)) {
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "查证接口未配置");
-    }
-
-    try {
-      RestTemplate rest = new RestTemplate();
-      HttpHeaders headers = new HttpHeaders();
-      headers.setContentType(MediaType.APPLICATION_JSON);
-      Map<String, String> body = new LinkedHashMap<>();
-      body.put("idcode", user.getIdCard());
-      body.put("username", user.getUserName());
-      HttpEntity<Map<String, String>> request = new HttpEntity<>(body, headers);
-
-      @SuppressWarnings("unchecked")
-      Map<String, Object> response = rest.postForObject(apiUrl, request, Map.class);
-
-      if (response != null && response.get("code") != null
-          && "0".equals(String.valueOf(response.get("code")))) {
-        certMapper.delete(new LambdaQueryWrapper<ChazhengCertEntity>()
-            .eq(ChazhengCertEntity::getUserId, user.getId()));
-
-        Object dataObj = response.get("data");
-        if (dataObj instanceof Map) {
-          @SuppressWarnings("unchecked")
-          Map<String, Object> dataMap = (Map<String, Object>) dataObj;
-          if (dataMap.containsKey("certNo")) {
-            ChazhengCertEntity cert = new ChazhengCertEntity();
-            cert.setUserId(user.getId());
-            cert.setCertNo(String.valueOf(dataMap.getOrDefault("certNo", "")));
-            cert.setCertName(String.valueOf(dataMap.getOrDefault("certName", "")));
-            cert.setCertDate(String.valueOf(dataMap.getOrDefault("certDate", "")));
-            certMapper.insert(cert);
-            user.setIsCert(1);
-          }
-        } else if (dataObj instanceof List) {
-          @SuppressWarnings("unchecked")
-          List<Map<String, Object>> certList = (List<Map<String, Object>>) dataObj;
-          if (!certList.isEmpty()) {
-            for (Map<String, Object> certItem : certList) {
-              ChazhengCertEntity cert = new ChazhengCertEntity();
-              cert.setUserId(user.getId());
-              cert.setCertNo(String.valueOf(certItem.getOrDefault("certNo", "")));
-              cert.setCertName(String.valueOf(certItem.getOrDefault("certName", "")));
-              cert.setCertDate(String.valueOf(certItem.getOrDefault("certDate", "")));
-              certMapper.insert(cert);
-            }
-            user.setIsCert(1);
-          }
-        }
-      }
-
-      user.setIsChecked(1);
-      userMapper.updateById(user);
-    } catch (Exception e) {
-      log.warn("鏌ヨ瘉璋冪敤澶辫触 user={}", user.getId(), e);
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "鏌ヨ瘉璋冪敤澶辫触: " + e.getMessage());
-    }
-
-    ChazhengUserVO vo = ChazhengUserVO.from(user);
-    List<ChazhengCertEntity> certs = certMapper.selectList(
-        new LambdaQueryWrapper<ChazhengCertEntity>()
-            .eq(ChazhengCertEntity::getUserId, user.getId()));
-    vo.setCerts(certs.stream().map(ChazhengCertVO::from).toList());
-    return vo;
   }
 
   @Transactional(readOnly = true)
@@ -245,70 +243,6 @@ public class ChazhengApplicationService {
             .eq(ChazhengUserEntity::getIsChecked, 1));
     return Map.of("total", total != null ? total : 0,
         "checked", checked != null ? checked : 0);
-  }
-
-  @Transactional(readOnly = true)
-  public byte[] exportExcel(String ymd) {
-    Long tenantId = SecurityContext.currentUser().getTenantId();
-    LambdaQueryWrapper<ChazhengUserEntity> wrapper = new LambdaQueryWrapper<ChazhengUserEntity>()
-        .eq(ChazhengUserEntity::getTenantId, tenantId)
-        .orderByDesc(ChazhengUserEntity::getSortNumber)
-        .orderByDesc(ChazhengUserEntity::getId);
-    if (StringUtils.hasText(ymd)) {
-      wrapper.eq(ChazhengUserEntity::getYmd, ymd);
-    }
-    List<ChazhengUserEntity> users = userMapper.selectList(wrapper);
-
-    try (Workbook workbook = new XSSFWorkbook()) {
-      Sheet sheet = workbook.createSheet("查证用户");
-      Row header = sheet.createRow(0);
-      header.createCell(0).setCellValue("濮撳悕");
-      header.createCell(1).setCellValue("韬唤璇佸彿");
-      header.createCell(2).setCellValue("鎬у埆");
-      header.createCell(3).setCellValue("璇佷功缂栧彿");
-      header.createCell(4).setCellValue("璇佷功鍚嶇О");
-      header.createCell(5).setCellValue("鍙戣瘉鏃ユ湡");
-      header.createCell(6).setCellValue("查证状态");
-      header.createCell(7).setCellValue("鎵规");
-
-      int rowIdx = 1;
-      for (ChazhengUserEntity user : users) {
-        List<ChazhengCertEntity> certs = certMapper.selectList(
-            new LambdaQueryWrapper<ChazhengCertEntity>()
-                .eq(ChazhengCertEntity::getUserId, user.getId()));
-
-        if (certs.isEmpty()) {
-          Row row = sheet.createRow(rowIdx++);
-          row.createCell(0).setCellValue(nullToEmpty(user.getUserName()));
-          row.createCell(1).setCellValue(nullToEmpty(user.getIdCard()));
-          row.createCell(2).setCellValue(user.getGender() != null && user.getGender() == 1 ? "女" : "男");
-          row.createCell(3).setCellValue("");
-          row.createCell(4).setCellValue("");
-          row.createCell(5).setCellValue("");
-          row.createCell(6).setCellValue(user.getIsChecked() != null && user.getIsChecked() == 1 ? "已查证" : "未查证");
-          row.createCell(7).setCellValue(nullToEmpty(user.getYmd()));
-        } else {
-          for (ChazhengCertEntity cert : certs) {
-            Row row = sheet.createRow(rowIdx++);
-            row.createCell(0).setCellValue(nullToEmpty(user.getUserName()));
-            row.createCell(1).setCellValue(nullToEmpty(user.getIdCard()));
-            row.createCell(2).setCellValue(user.getGender() != null && user.getGender() == 1 ? "女" : "男");
-            row.createCell(3).setCellValue(nullToEmpty(cert.getCertNo()));
-            row.createCell(4).setCellValue(nullToEmpty(cert.getCertName()));
-            row.createCell(5).setCellValue(nullToEmpty(cert.getCertDate()));
-            row.createCell(6).setCellValue("已查证");
-            row.createCell(7).setCellValue(nullToEmpty(user.getYmd()));
-          }
-        }
-      }
-
-      ByteArrayOutputStream bos = new ByteArrayOutputStream();
-      workbook.write(bos);
-      return bos.toByteArray();
-    } catch (IOException e) {
-      log.error("瀵煎嚭 Excel 澶辫触", e);
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "瀵煎嚭澶辫触: " + e.getMessage());
-    }
   }
 
   @Transactional(readOnly = true)
@@ -328,10 +262,10 @@ public class ChazhengApplicationService {
 
   public byte[] generateTemplate() {
     try (Workbook workbook = new XSSFWorkbook()) {
-      Sheet sheet = workbook.createSheet("瀵煎叆妯℃澘");
+      Sheet sheet = workbook.createSheet("导入模板");
       Row header = sheet.createRow(0);
-      header.createCell(0).setCellValue("濮撳悕");
-      header.createCell(1).setCellValue("韬唤璇佸彿");
+      header.createCell(0).setCellValue("姓名");
+      header.createCell(1).setCellValue("身份证号");
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       workbook.write(bos);
       return bos.toByteArray();
@@ -339,6 +273,20 @@ public class ChazhengApplicationService {
       log.error("生成模板失败", e);
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "生成模板失败");
     }
+  }
+
+  @Transactional(readOnly = true)
+  public byte[] exportExcel(String ymd) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    LambdaQueryWrapper<ChazhengUserEntity> wrapper = new LambdaQueryWrapper<ChazhengUserEntity>()
+        .eq(ChazhengUserEntity::getTenantId, tenantId)
+        .orderByDesc(ChazhengUserEntity::getSortNumber)
+        .orderByDesc(ChazhengUserEntity::getId);
+    if (StringUtils.hasText(ymd)) {
+      wrapper.eq(ChazhengUserEntity::getYmd, ymd);
+    }
+    List<ChazhengUserEntity> users = userMapper.selectList(wrapper);
+    return buildExportWorkbook(users);
   }
 
   @Transactional(readOnly = true)
@@ -361,14 +309,14 @@ public class ChazhengApplicationService {
     try (Workbook workbook = new XSSFWorkbook()) {
       Sheet sheet = workbook.createSheet("查证用户");
       Row header = sheet.createRow(0);
-      header.createCell(0).setCellValue("濮撳悕");
-      header.createCell(1).setCellValue("韬唤璇佸彿");
-      header.createCell(2).setCellValue("鎬у埆");
-      header.createCell(3).setCellValue("璇佷功缂栧彿");
-      header.createCell(4).setCellValue("璇佷功鍚嶇О");
-      header.createCell(5).setCellValue("鍙戣瘉鏃ユ湡");
+      header.createCell(0).setCellValue("姓名");
+      header.createCell(1).setCellValue("身份证号");
+      header.createCell(2).setCellValue("性别");
+      header.createCell(3).setCellValue("证书编号");
+      header.createCell(4).setCellValue("证书名称");
+      header.createCell(5).setCellValue("发证日期");
       header.createCell(6).setCellValue("查证状态");
-      header.createCell(7).setCellValue("鎵规");
+      header.createCell(7).setCellValue("批次");
 
       int rowIdx = 1;
       for (ChazhengUserEntity user : users) {
@@ -378,25 +326,25 @@ public class ChazhengApplicationService {
 
         if (certs.isEmpty()) {
           Row row = sheet.createRow(rowIdx++);
-          row.createCell(0).setCellValue(nullToEmpty(user.getUserName()));
-          row.createCell(1).setCellValue(nullToEmpty(user.getIdCard()));
+          row.createCell(0).setCellValue(user.getUserName() != null ? user.getUserName() : "");
+          row.createCell(1).setCellValue(user.getIdCard() != null ? user.getIdCard() : "");
           row.createCell(2).setCellValue(user.getGender() != null && user.getGender() == 1 ? "女" : "男");
           row.createCell(3).setCellValue("");
           row.createCell(4).setCellValue("");
           row.createCell(5).setCellValue("");
           row.createCell(6).setCellValue(user.getIsChecked() != null && user.getIsChecked() == 1 ? "已查证" : "未查证");
-          row.createCell(7).setCellValue(nullToEmpty(user.getYmd()));
+          row.createCell(7).setCellValue(user.getYmd() != null ? user.getYmd() : "");
         } else {
           for (ChazhengCertEntity cert : certs) {
             Row row = sheet.createRow(rowIdx++);
-            row.createCell(0).setCellValue(nullToEmpty(user.getUserName()));
-            row.createCell(1).setCellValue(nullToEmpty(user.getIdCard()));
+            row.createCell(0).setCellValue(user.getUserName() != null ? user.getUserName() : "");
+            row.createCell(1).setCellValue(user.getIdCard() != null ? user.getIdCard() : "");
             row.createCell(2).setCellValue(user.getGender() != null && user.getGender() == 1 ? "女" : "男");
-            row.createCell(3).setCellValue(nullToEmpty(cert.getCertNo()));
-            row.createCell(4).setCellValue(nullToEmpty(cert.getCertName()));
-            row.createCell(5).setCellValue(nullToEmpty(cert.getCertDate()));
+            row.createCell(3).setCellValue(cert.getCertNo() != null ? cert.getCertNo() : "");
+            row.createCell(4).setCellValue(cert.getCertName() != null ? cert.getCertName() : "");
+            row.createCell(5).setCellValue(cert.getCertDate() != null ? cert.getCertDate() : "");
             row.createCell(6).setCellValue("已查证");
-            row.createCell(7).setCellValue(nullToEmpty(user.getYmd()));
+            row.createCell(7).setCellValue(user.getYmd() != null ? user.getYmd() : "");
           }
         }
       }
@@ -405,30 +353,264 @@ public class ChazhengApplicationService {
       workbook.write(bos);
       return bos.toByteArray();
     } catch (IOException e) {
-      log.error("瀵煎嚭 Excel 澶辫触", e);
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "瀵煎嚭澶辫触: " + e.getMessage());
+      log.error("导出 Excel 失败", e);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "导出失败: " + e.getMessage());
     }
-  }
-
-  private ChazhengUserEntity findExistingUser(Long tenantId, Integer id) {
-    ChazhengUserEntity entity = userMapper.selectOne(new LambdaQueryWrapper<ChazhengUserEntity>()
-        .eq(ChazhengUserEntity::getTenantId, tenantId)
-        .eq(ChazhengUserEntity::getId, id));
-    if (entity == null) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
-    }
-    return entity;
   }
 
   private static String getCellString(Row row, int index) {
-    if (row.getCell(index) == null) {
-      return "";
-    }
+    if (row.getCell(index) == null) return "";
     return row.getCell(index).getStringCellValue().trim();
   }
 
-  private static String nullToEmpty(String value) {
-    return value == null ? "" : value;
+  // ════════════════════════════════════════════════════════════════════════
+  //  单个用户查证（重构版 —— 对齐 PHP queryCertByTemplate）
+  // ════════════════════════════════════════════════════════════════════════
+
+  /**
+   * 对单个用户执行证书查证（无事务编排层）。
+   */
+  public ChazhengUserVO certCheck(Integer id, Long tenantId) {
+    ChazhengUserEntity user = userMapper.selectOne(new LambdaQueryWrapper<ChazhengUserEntity>()
+        .eq(ChazhengUserEntity::getTenantId, tenantId)
+        .eq(ChazhengUserEntity::getId, id)
+        .eq(ChazhengUserEntity::getDeleted, 0));
+    if (user == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "查证用户不存在");
+    }
+
+    log.info("[certCheck] 开始查证 user={}, idCard={}", id, maskIdCard(user.getIdCard()));
+
+    CertQueryOutcome outcome = chazhengCertQueryService.queryByNameIdCard(
+        user.getUserName(), user.getIdCard(), tenantId);
+
+    log.info("[certCheck] 查证完成 user={}, anyNormal={}, anyCertFound={}, certCount={}",
+        id, outcome.anyNormal(), outcome.anyCertFound(), outcome.certs().size());
+
+    try {
+      chazhengPersistService.persistResult(
+          user, outcome.certs(), outcome.anyNormal(), outcome.anyCertFound());
+    } catch (Exception e) {
+      log.error("[certCheck] DB 写入失败 user={}, err={}", id, e.getMessage(), e);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "查证结果写入失败: " + e.getMessage());
+    }
+
+    ChazhengUserVO vo = ChazhengUserVO.from(user);
+    List<ChazhengCertEntity> certs = certMapper.selectList(
+        new LambdaQueryWrapper<ChazhengCertEntity>()
+            .eq(ChazhengCertEntity::getUserId, user.getId()));
+    vo.setCerts(certs.stream().map(ChazhengCertVO::from).toList());
+    return vo;
+  }
+
+  /** 截断字符串(日志用) */
+  private static String abbreviate(String s, int maxLen) {
+    if (s == null) return "null";
+    return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...(truncated)";
+  }
+
+  /** 身份证号脱敏(日志用) */
+  private static String maskIdCard(String idCard) {
+    if (idCard == null || idCard.length() < 8) return "***";
+    return idCard.substring(0, 4) + "********" + idCard.substring(idCard.length() - 4);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  //  批量异步查证（新增）
+  // ════════════════════════════════════════════════════════════════════════
+
+  /**
+   * 提交批次查证任务。
+   */
+  @Transactional
+  public CertCheckBatchSubmitResp submitCertCheckBatch(List<Long> userIds, String sourceFilename) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    Long triggerBy = SecurityContext.currentUser().getUserId();
+
+    // 1. 创建 batch 记录
+    CertCheckBatchEntity batch = new CertCheckBatchEntity();
+    batch.setTenantId(tenantId);
+    batch.setTotalCount(userIds.size());
+    batch.setCompletedCount(0);
+    batch.setStatus("processing");
+    batch.setSourceFilename(sourceFilename);
+    batch.setTriggerBy(triggerBy);
+    batch.setTriggeredAt(LocalDateTime.now());
+    batch.setDeleted(0);
+    batchMapper.insert(batch);
+
+    // 2. 为每个用户创建 item 记录
+    for (Long userId : userIds) {
+      ChazhengUserEntity user = userMapper.selectById(userId);
+      CertCheckBatchItemEntity item = new CertCheckBatchItemEntity();
+      item.setBatchId(batch.getId());
+      item.setUserId(userId);
+      item.setUserName(user != null ? user.getUserName() : "");
+      item.setTenantId(tenantId);
+      item.setStatus("pending");
+      item.setRetryCount(0);
+      item.setDeleted(0);
+      batchItemMapper.insert(item);
+    }
+
+    // 3. 提交到线程池(tenantId 从 HTTP 请求线程传递到工作线程)
+    for (Long userId : userIds) {
+      executor.submit(() -> processBatchUser(batch.getId(), userId, tenantId));
+    }
+
+    log.info("[chazheng-batch] 提交批次 batch={}, users={}", batch.getId(), userIds.size());
+    return new CertCheckBatchSubmitResp(batch.getId(), userIds.size(),
+        "导入完成，正在后台查证，批次 ID: " + batch.getId());
+  }
+
+  private void processBatchUser(long batchId, Long userId, Long tenantId) {
+    // tenantId 从 HTTP 请求线程传递下来,工作线程不可调 SecurityContext
+    batchItemMapper.updateStatus(batchId, userId, "processing", null);
+    try {
+      ChazhengUserVO vo = certCheck(userId.intValue(), tenantId);
+
+      boolean hasCert = vo.getIsCert() != null && vo.getIsCert() == 1;
+      batchItemMapper.updateSuccess(batchId, userId, hasCert ? "success" : "success_no_cert");
+      batchMapper.incrementCompleted(batchId);
+    } catch (Exception e) {
+      log.warn("[chazheng-batch] 查证异常 batch={}, user={}, err={}", batchId, userId, e.toString());
+      log.warn("[chazheng-batch] 查证异常堆栈 batch={}, user={}", batchId, userId, e);
+      handleBatchFailure(batchId, userId, e, tenantId);
+    }
+  }
+
+  private void handleBatchFailure(long batchId, Long userId, Exception e, Long tenantId) {
+    // 截取错误信息前 200 字符(避免超长短文写入 DB)
+    String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+    if (errorMsg.length() > 200) errorMsg = errorMsg.substring(0, 200);
+
+    int retryCount = batchItemMapper.incrementRetry(batchId, userId);
+    if (retryCount <= maxRetry) {
+      // 重试时也记录异常详情,不再只打印 retry 编号
+      log.warn("[chazheng-batch] 查证失败,准备重试 batch={}, user={}, retry={}, cause={}",
+          batchId, userId, retryCount, errorMsg);
+      executor.submit(() -> processBatchUser(batchId, userId, tenantId));
+    } else {
+      log.error("[chazheng-batch] 查证最终失败(重试耗尽) batch={}, user={}, err={}", batchId, userId, errorMsg);
+      batchItemMapper.updateFailed(batchId, userId, errorMsg);
+      batchMapper.incrementCompleted(batchId);
+    }
+  }
+
+  public CertCheckBatchProgress getBatchProgress(Long batchId) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    CertCheckBatchEntity batch = batchMapper.selectById(batchId);
+    if (batch == null || !batch.getTenantId().equals(tenantId)) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "批次不存在或无权访问");
+    }
+
+    List<Map<String, Object>> statusRows = batchItemMapper.countByStatus(batchId);
+    Map<String, Long> statusMap = new HashMap<>();
+    for (Map<String, Object> row : statusRows) {
+      statusMap.put(String.valueOf(row.get("status")), Long.valueOf(String.valueOf(row.get("cnt"))));
+    }
+
+    long success = statusMap.getOrDefault("success", 0L);
+    long successNoCert = statusMap.getOrDefault("success_no_cert", 0L);
+    long failed = statusMap.getOrDefault("failed", 0L);
+    long processing = statusMap.getOrDefault("processing", 0L);
+    long pending = statusMap.getOrDefault("pending", 0L);
+    long completed = success + successNoCert + failed;
+    int total = batch.getTotalCount();
+    int percent = total > 0 ? (int) (completed * 100 / total) : 0;
+
+    LocalDateTime triggered = batch.getTriggeredAt();
+    Duration elapsed = Duration.between(triggered, LocalDateTime.now());
+    String elapsedStr = formatDuration(elapsed);
+    String estimateRemainingStr = "--:--:--";
+    if (completed > 0 && completed < total) {
+      long avgMsPerUser = elapsed.toMillis() / completed;
+      long remainingMs = avgMsPerUser * (total - completed);
+      estimateRemainingStr = formatDuration(Duration.ofMillis(remainingMs));
+    }
+
+    return CertCheckBatchProgress.builder()
+        .batchId(batchId)
+        .total(total)
+        .completed((int) completed)
+        .success(success)
+        .successNoCert(successNoCert)
+        .failed(failed)
+        .pending(pending + processing)
+        .percent(percent)
+        .status(batch.getStatus())
+        .elapsed(elapsedStr)
+        .estimateRemaining(estimateRemainingStr)
+        .build();
+  }
+
+  public CertCheckBatchReport getBatchReport(Long batchId) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    CertCheckBatchEntity batch = batchMapper.selectById(batchId);
+    if (batch == null || !batch.getTenantId().equals(tenantId)) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "批次不存在或无权访问");
+    }
+
+    List<CertCheckBatchItemEntity> failedItems = batchItemMapper.selectFailedItems(batchId);
+
+    CertCheckBatchReport report = new CertCheckBatchReport();
+    report.setBatchId(batchId);
+    report.setStatus(batch.getStatus());
+    report.setTriggerBy(batch.getTriggerBy());
+    report.setSourceFilename(batch.getSourceFilename());
+    report.setTriggeredAt(batch.getTriggeredAt());
+    report.setCompletedAt(batch.getCompletedAt());
+
+    List<Map<String, Object>> statusRows = batchItemMapper.countByStatus(batchId);
+    Map<String, Long> statusMap = new HashMap<>();
+    for (Map<String, Object> row : statusRows) {
+      statusMap.put(String.valueOf(row.get("status")), Long.valueOf(String.valueOf(row.get("cnt"))));
+    }
+
+    CertCheckBatchReport.CertCheckSummary summary = new CertCheckBatchReport.CertCheckSummary();
+    summary.setTotal(batch.getTotalCount());
+    summary.setSuccess(statusMap.getOrDefault("success", 0L));
+    summary.setSuccessNoCert(statusMap.getOrDefault("success_no_cert", 0L));
+    summary.setFailed(statusMap.getOrDefault("failed", 0L));
+    report.setSummary(summary);
+
+    List<CertCheckBatchReport.CertCheckFailedDetail> failedDetails = new ArrayList<>();
+    for (CertCheckBatchItemEntity item : failedItems) {
+      CertCheckBatchReport.CertCheckFailedDetail detail = new CertCheckBatchReport.CertCheckFailedDetail();
+      detail.setUserId(item.getUserId());
+      detail.setUserName(item.getUserName());
+      detail.setError(item.getErrorMessage());
+      detail.setRetryCount(item.getRetryCount());
+      failedDetails.add(detail);
+    }
+    report.setFailedDetails(failedDetails);
+    return report;
+  }
+
+  @Transactional
+  public CertCheckBatchSubmitResp retryFailedBatch(Long batchId) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    CertCheckBatchEntity batch = batchMapper.selectById(batchId);
+    if (batch == null || !batch.getTenantId().equals(tenantId)) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "批次不存在或无权访问");
+    }
+
+    int resetCount = batchItemMapper.resetFailedToPending(batchId);
+
+    List<CertCheckBatchItemEntity> pendingItems = batchItemMapper.selectList(
+        new LambdaQueryWrapper<CertCheckBatchItemEntity>()
+            .eq(CertCheckBatchItemEntity::getBatchId, batchId)
+            .eq(CertCheckBatchItemEntity::getStatus, "pending"));
+
+    for (CertCheckBatchItemEntity item : pendingItems) {
+      executor.submit(() -> processBatchUser(batchId, item.getUserId(), tenantId));
+    }
+
+    log.info("[chazheng-batch] 重试失败用户 batch={}, count={}", batchId, resetCount);
+    return new CertCheckBatchSubmitResp(batchId, resetCount, "已重试 " + resetCount + " 个失败用户");
+  }
+
+  private static String formatDuration(Duration d) {
+    return String.format("%02d:%02d:%02d", d.toHours(), d.toMinutesPart(), d.toSecondsPart());
   }
 }
-

@@ -28,9 +28,10 @@ public final class TrainingAuthorityExpressions {
   public static final String INFO_LIST_PAGE_VIEW =
       "hasAnyAuthority('train:info-list:view', 'train:need:view')";
 
-  /** 班级列表（班级人员 + 开班申报） */
+  /** 班级列表（班级人员 + 开班申报 + 企业审核） */
   public static final String INFO_CLASS_PAGE_VIEW =
-      "hasAnyAuthority('train:info-class:view', 'train:people-list:view', 'train:declare:view')";
+      "hasAnyAuthority('train:info-class:view', 'train:people-list:view', 'train:declare:view', "
+          + "'pxqiyeshenhe:view')";
 
   /** 班级新增/编辑（班级人员页 save） */
   public static final String INFO_CLASS_SAVE =
@@ -41,9 +42,9 @@ public final class TrainingAuthorityExpressions {
   public static final String INFO_CLASS_BATCH_DELETE =
       "hasAnyAuthority('train:info-class:delete', 'train:people-list:delete')";
 
-  /** 班级人员子功能（学员/教务/负责人/报名导入） */
+  /** 班级人员子功能（学员/教务/负责人/报名导入 + 企业审核查看学员） */
   public static final String CLASS_PEOPLE_VIEW =
-      "hasAnyAuthority('train:info-class:view', 'train:people-list:view')";
+      "hasAnyAuthority('train:info-class:view', 'train:people-list:view', 'pxqiyeshenhe:view')";
   public static final String CLASS_PEOPLE_CREATE =
       "hasAnyAuthority('train:info-class:create', 'train:people-list:create')";
   public static final String CLASS_PEOPLE_UPDATE =
@@ -78,14 +79,24 @@ public final class TrainingAuthorityExpressions {
   public static final String INFO_LIST_ENTERPRISE_CONFIRM =
       "hasAnyAuthority('train:info-list:update', 'train:demand-train:update')";
 
+  /** 企业确认/驳回培训分班 */
+  public static final String INFO_CLASS_ENTERPRISE_CONFIRM =
+      "hasAnyAuthority('pxqiyeshenhe:confirm', 'pxanfangguihua:enterprise_confirm', "
+          + "'train:info-list:update', 'train:demand-train:update')";
+
   /** 排课冲突检查 */
   public static final String SCHEDULE_CONFLICTS_VIEW =
       "hasAnyAuthority('train:class:view', 'train:info-class:view', 'train:class-list:view')";
 
   /** 三年规划企业确认/驳回 */
   public static final String THREE_YEAR_PLAN_ENTERPRISE_CONFIRM =
-      "hasAnyAuthority('pxanfangguihua:enterprise_confirm', 'pxanfangguihua:manage', "
-          + "'train:info-list:update', 'train:demand-train:update')";
+      "hasAnyAuthority('pxanfangguihua:enterprise_confirm', 'pxqiyeshenhe:confirm', "
+          + "'pxanfangguihua:manage', 'train:info-list:update', 'train:demand-train:update')";
+
+  /** 三年规划查看（机构 + 企业审核页） */
+  public static final String THREE_YEAR_PLAN_VIEW =
+      "hasAnyAuthority('pxanfangguihua:view', 'pxqiyeshenhe:view', "
+          + "'pxanfangguihua:enterprise_confirm', 'pxqiyeshenhe:confirm')";
 
   /** 三年规划新建/同步/提交（机构操作员 + 平台管理员） */
   public static final String THREE_YEAR_PLAN_MANAGE =

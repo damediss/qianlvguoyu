@@ -11,6 +11,7 @@ import com.guoyu.platform.file.config.FileStorageProperties;
 import com.qcloud.cos.model.COSObject;
 import com.guoyu.platform.file.entity.FileEntity;
 import com.guoyu.platform.file.mapper.FileMapper;
+import com.guoyu.platform.file.support.FileLocalPathResolver;
 import com.guoyu.platform.file.support.StoredFileFormatValidator;
 import com.guoyu.platform.file.vo.DownloadUrlVO;
 import com.guoyu.platform.file.vo.FileVO;
@@ -21,7 +22,6 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -36,6 +36,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -50,11 +51,17 @@ public class FileApplicationService {
   private final FileMapper fileMapper;
   private final FileStorageProperties properties;
   private final FileStorage storage;
+  private final FileLocalPathResolver localPathResolver;
 
-  public FileApplicationService(FileMapper fileMapper, FileStorageProperties properties, FileStorage storage) {
+  public FileApplicationService(
+      FileMapper fileMapper,
+      FileStorageProperties properties,
+      FileStorage storage,
+      FileLocalPathResolver localPathResolver) {
     this.fileMapper = fileMapper;
     this.properties = properties;
     this.storage = storage;
+    this.localPathResolver = localPathResolver;
   }
 
   @Transactional
@@ -172,6 +179,33 @@ public class FileApplicationService {
     return loadResource(entity);
   }
 
+  /**
+   * 按文件 ID 读取元数据（不做当前用户租户校验）。
+   * 供已通过业务权限校验的内部服务调用（如三年规划附件下载）。
+   * NOT_SUPPORTED：避免调用方 catch 异常后回退逻辑触发 UnexpectedRollbackException。
+   */
+  @Transactional(propagation = Propagation.NOT_SUPPORTED, readOnly = true)
+  public FileVO getById(Long id) {
+    FileEntity entity = findUploadedFile(id);
+    return toVO(entity, publicUrl(entity));
+  }
+
+  /**
+   * 按文件 ID 读取字节（不做当前用户租户校验，支持 local / COS）。
+   * NOT_SUPPORTED：避免调用方 catch 异常后回退逻辑触发 UnexpectedRollbackException。
+   */
+  @Transactional(propagation = Propagation.NOT_SUPPORTED, readOnly = true)
+  public byte[] readFileBytesById(Long id) {
+    FileEntity entity = findUploadedFile(id);
+    try (InputStream in = openInputStream(entity)) {
+      return in.readAllBytes();
+    } catch (IOException ex) {
+      log.warn("读取文件失败: id={}, objectKey={}, provider={}", id, entity.getObjectKey(),
+          entity.getStorageProvider(), ex);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取文件失败: " + ex.getMessage());
+    }
+  }
+
   @Transactional(readOnly = true)
   public ResponseEntity<Resource> buildDownloadResponse(Long id, boolean inline) {
     FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
@@ -215,8 +249,8 @@ public class FileApplicationService {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "File download failed");
       }
     }
-    Path path = localPath(entity)
-        .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "File is not available from local storage"));
+    Path path = localPathResolver.resolveExisting(entity.getObjectKey())
+        .orElseGet(() -> localPathResolver.resolveConfigured(entity.getObjectKey()));
     try {
       Resource resource = new UrlResource(path.toUri());
       if (!resource.exists() || !resource.isReadable()) {
@@ -265,20 +299,64 @@ public class FileApplicationService {
     return entity;
   }
 
+  private FileEntity findUploadedFile(Long id) {
+    FileEntity entity = fileMapper.selectOne(new LambdaQueryWrapper<FileEntity>()
+        .eq(FileEntity::getId, id)
+        .eq(FileEntity::getDeleted, 0)
+        .eq(FileEntity::getStatus, "uploaded"));
+    if (entity == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "File not found");
+    }
+    return entity;
+  }
+
+  private InputStream openInputStream(FileEntity entity) throws IOException {
+    if ("cos".equalsIgnoreCase(entity.getStorageProvider())) {
+      return openCosInputStream(entity);
+    }
+    Optional<Path> existing = localPathResolver.resolveExisting(entity.getObjectKey());
+    if (existing.isPresent()) {
+      return Files.newInputStream(existing.get());
+    }
+    InputStream cosFallback = tryOpenCosInputStream(entity);
+    if (cosFallback != null) {
+      log.info("本地文件缺失，已从 COS 回退读取: id={}, objectKey={}", entity.getId(), entity.getObjectKey());
+      return cosFallback;
+    }
+    Path configured = localPathResolver.resolveConfigured(entity.getObjectKey());
+    log.warn("File content missing on disk: id={}, objectKey={}, configuredPath={}",
+        entity.getId(), entity.getObjectKey(), configured);
+    throw new BusinessException(ErrorCode.NOT_FOUND, "File content not found");
+  }
+
+  private InputStream openCosInputStream(FileEntity entity) {
+    InputStream in = tryOpenCosInputStream(entity);
+    if (in != null) {
+      return in;
+    }
+    throw new BusinessException(ErrorCode.NOT_IMPLEMENTED, "COS 存储未配置，无法读取文件");
+  }
+
+  private InputStream tryOpenCosInputStream(FileEntity entity) {
+    if (!(storage instanceof TencentCosFileStorage cosStorage)) {
+      return null;
+    }
+    try {
+      return cosStorage.getObject(entity.getObjectKey()).getObjectContent();
+    } catch (Exception ex) {
+      log.warn("COS 读取失败: id={}, objectKey={}", entity.getId(), entity.getObjectKey(), ex);
+      if ("cos".equalsIgnoreCase(entity.getStorageProvider())) {
+        throw new BusinessException(ErrorCode.INTERNAL_ERROR, "COS 读取失败: " + ex.getMessage());
+      }
+      return null;
+    }
+  }
+
   public Optional<Path> localPath(FileEntity entity) {
     if (!"local".equalsIgnoreCase(entity.getStorageProvider())) {
       return Optional.empty();
     }
-    return Optional.of(resolveLocalPath(entity.getObjectKey()));
-  }
-
-  private Path resolveLocalPath(String objectKey) {
-    Path root = Paths.get(properties.localRoot()).toAbsolutePath().normalize();
-    Path resolved = root.resolve(objectKey).normalize();
-    if (!resolved.startsWith(root)) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "Invalid file object key");
-    }
-    return resolved;
+    return localPathResolver.resolveExisting(entity.getObjectKey());
   }
 
   private String publicUrl(FileEntity entity) {

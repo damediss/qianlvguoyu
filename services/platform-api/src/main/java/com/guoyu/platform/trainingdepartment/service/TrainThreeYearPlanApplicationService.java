@@ -43,6 +43,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -52,6 +53,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
+@Slf4j
 public class TrainThreeYearPlanApplicationService {
 
   private static final Map<Integer, String> STATUS_LABELS = Map.of(
@@ -155,10 +157,21 @@ public class TrainThreeYearPlanApplicationService {
       statusNode = safeAnalysisStatus(entity);
     }
     ensureLocalDataReady(entity);
+
+    PageResponse<TrainThreeYearPlanItemVO> items = pageItemsFromDb(entity, req);
+    if (items.total() == 0 && canPreviewFromRencai(entity)) {
+      items = previewEmployeesFromRencai(entity, req);
+    }
+
+    List<TrainThreeYearPlanMatrixVO> matrix = listMatrixFromDb(entity);
+    if (matrix.isEmpty() && canPreviewFromRencai(entity)) {
+      matrix = previewMatrixFromRencai(entity);
+    }
+
     return new TrainThreeYearPlanDetailVO(
         toVO(entity, statusNode),
-        pageItemsFromDb(entity, req),
-        listMatrixFromDb(entity),
+        items,
+        matrix,
         loadDistribution(entity)
     );
   }
@@ -343,12 +356,22 @@ public class TrainThreeYearPlanApplicationService {
   }
 
   @Transactional
-  public TrainThreeYearPlanVO submit(Long id) {
+  public TrainThreeYearPlanVO submit(Long id, MultipartFile personnelFile, MultipartFile schemeFile) {
     scopeService.requireOrgOperator();
     TrainThreeYearPlanEntity entity = getExisting(id);
-    if (entity.getStatus() == null || entity.getStatus() != 2) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅「分析完成请审核」状态的规划可提交企业审核");
+    Integer currentStatus = entity.getStatus();
+    if (currentStatus == null || (currentStatus != 2 && currentStatus != 5)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "仅「分析完成请审核」或「已驳回」状态的规划可提交企业审核");
     }
+    if (personnelFile == null || personnelFile.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请上传企业审核人员名单");
+    }
+    if (schemeFile == null || schemeFile.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请上传方案文档");
+    }
+    assertSubmitFileExtension(personnelFile, true);
+    assertSubmitFileExtension(schemeFile, false);
     ensureLocalDataReady(entity);
     refreshDistributionSnapshotFromLocal(entity);
     long itemCount = itemMapper.selectCount(new LambdaQueryWrapper<TrainThreeYearPlanItemEntity>()
@@ -357,17 +380,88 @@ public class TrainThreeYearPlanApplicationService {
     if (itemCount <= 0) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "暂无规划明细，请打开详情等待数据加载或手动同步");
     }
+    FileVO personnelStored = fileApplicationService.upload(personnelFile, "private");
+    FileVO schemeStored = fileApplicationService.upload(schemeFile, "private");
     byte[] reviewedExcel = buildReviewedPlanExcelBytes(entity);
     FileVO reviewedFile = fileApplicationService.storeFromBytes(
         reviewedExcel,
         entity.getPlanNo() + "-已审核三年培训规划表.xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "private");
+    entity.setSubmitPersonnelFileId(personnelStored.id());
+    entity.setSubmitSchemeFileId(schemeStored.id());
     entity.setReviewedPlanFileId(reviewedFile.id());
     entity.setStatus(3);
     entity.setRejectReason(null);
+    appendSubmitHistory(entity, personnelStored, schemeStored);
     planMapper.updateById(entity);
     return toVO(entity, null);
+  }
+
+  private void assertSubmitFileExtension(MultipartFile file, boolean personnelOnly) {
+    String name = file.getOriginalFilename();
+    if (!StringUtils.hasText(name)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "文件名无效");
+    }
+    String lower = name.toLowerCase();
+    if (personnelOnly) {
+      if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls")) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "人员名单请上传 Excel 文件（.xlsx / .xls）");
+      }
+      return;
+    }
+    if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls")
+        && !lower.endsWith(".docx") && !lower.endsWith(".doc")
+        && !lower.endsWith(".pdf")) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "方案文档支持 Excel、Word 或 PDF 格式");
+    }
+  }
+
+  /** 追加一条驳回历史到 reject_history_json */
+  private void appendRejectHistory(TrainThreeYearPlanEntity entity, String reason) {
+    List<Map<String, Object>> history = parseHistoryList(entity.getRejectHistoryJson());
+    Map<String, Object> item = new LinkedHashMap<>();
+    item.put("reason", reason);
+    item.put("rejectedBy", SecurityContext.currentUser().getUserId());
+    item.put("rejectedByUsername", SecurityContext.currentUser().getDisplayName());
+    item.put("rejectedAt", LocalDateTime.now().toString());
+    history.add(item);
+    entity.setRejectHistoryJson(writeHistoryJson(history));
+  }
+
+  /** 追加一条提交历史到 submit_history_json */
+  private void appendSubmitHistory(TrainThreeYearPlanEntity entity, FileVO personnelFile, FileVO schemeFile) {
+    List<Map<String, Object>> history = parseHistoryList(entity.getSubmitHistoryJson());
+    Map<String, Object> item = new LinkedHashMap<>();
+    item.put("submittedBy", SecurityContext.currentUser().getUserId());
+    item.put("submittedByUsername", SecurityContext.currentUser().getDisplayName());
+    item.put("submittedAt", LocalDateTime.now().toString());
+    item.put("personnelFileName", personnelFile != null ? personnelFile.originalName() : null);
+    item.put("schemeFileName", schemeFile != null ? schemeFile.originalName() : null);
+    history.add(item);
+    entity.setSubmitHistoryJson(writeHistoryJson(history));
+  }
+
+  private List<Map<String, Object>> parseHistoryList(String json) {
+    if (!StringUtils.hasText(json)) {
+      return new ArrayList<>();
+    }
+    try {
+      List<Map<String, Object>> parsed = objectMapper.readValue(json, new TypeReference<List<Map<String, Object>>>() {});
+      return parsed != null ? new ArrayList<>(parsed) : new ArrayList<>();
+    } catch (Exception e) {
+      log.warn("解析历史 JSON 失败，将重置：{}", e.getMessage());
+      return new ArrayList<>();
+    }
+  }
+
+  private String writeHistoryJson(List<Map<String, Object>> history) {
+    try {
+      return objectMapper.writeValueAsString(history);
+    } catch (Exception e) {
+      log.warn("序列化历史 JSON 失败：{}", e.getMessage());
+      return null;
+    }
   }
 
   @Transactional
@@ -392,6 +486,7 @@ public class TrainThreeYearPlanApplicationService {
     }
     entity.setStatus(5);
     entity.setRejectReason(reason.trim());
+    appendRejectHistory(entity, reason.trim());
     planMapper.updateById(entity);
     return toVO(entity, null);
   }
@@ -470,14 +565,48 @@ public class TrainThreeYearPlanApplicationService {
     if (entity.getStatus() == null || entity.getStatus() < 2 || entity.getRencaiTaskId() == null) {
       return;
     }
-    long itemCount = itemMapper.selectCount(new LambdaQueryWrapper<TrainThreeYearPlanItemEntity>()
+    long itemCount = countLocalItems(entity);
+    if (itemCount == 0) {
+      try {
+        syncRencaiDataToLocal(entity);
+        itemCount = countLocalItems(entity);
+      } catch (Exception e) {
+        log.warn("Sync rencai data to local failed for plan {}: {}", entity.getId(), e.getMessage());
+      }
+      if (itemCount == 0 && countRencaiEmployeeTotal(entity) > 0) {
+        try {
+          syncRencaiDataToLocal(entity);
+        } catch (Exception e) {
+          log.warn("Retry sync rencai data failed for plan {}: {}", entity.getId(), e.getMessage());
+        }
+      }
+    } else if (!StringUtils.hasText(entity.getDistributionSnapshot())) {
+      try {
+        syncDistributionSnapshotFromRencai(entity);
+        planMapper.updateById(entity);
+      } catch (Exception e) {
+        log.warn("Sync distribution snapshot failed for plan {}: {}", entity.getId(), e.getMessage());
+      }
+    }
+  }
+
+  private long countLocalItems(TrainThreeYearPlanEntity entity) {
+    return itemMapper.selectCount(new LambdaQueryWrapper<TrainThreeYearPlanItemEntity>()
         .eq(TrainThreeYearPlanItemEntity::getPlanId, entity.getId())
         .eq(TrainThreeYearPlanItemEntity::getTenantId, entity.getTenantId()));
-    if (itemCount == 0) {
-      syncRencaiDataToLocal(entity);
-    } else if (!StringUtils.hasText(entity.getDistributionSnapshot())) {
-      syncDistributionSnapshotFromRencai(entity);
-      planMapper.updateById(entity);
+  }
+
+  private int countRencaiEmployeeTotal(TrainThreeYearPlanEntity entity) {
+    if (entity.getRencaiTaskId() == null) {
+      return 0;
+    }
+    try {
+      JsonNode resp = rencaishibieClient.listEmployees(
+          entity.getRencaiTaskId(), 1, 1, entity.getTenantId(), entity.getId());
+      return resp.path("total").asInt(0);
+    } catch (Exception e) {
+      log.warn("Count rencai employees failed for plan {}: {}", entity.getId(), e.getMessage());
+      return 0;
     }
   }
 
@@ -774,7 +903,7 @@ public class TrainThreeYearPlanApplicationService {
         .body(bytes);
   }
 
-  @Transactional(readOnly = true)
+  @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
   public ResponseEntity<byte[]> downloadReviewedPlanFile(Long id) {
     TrainThreeYearPlanEntity entity = getExisting(id);
     assertAccessible(entity);
@@ -783,7 +912,7 @@ public class TrainThreeYearPlanApplicationService {
     }
     byte[] bytes;
     if (entity.getStatus() >= 3 && entity.getReviewedPlanFileId() != null) {
-      bytes = readStoredFileBytes(entity.getReviewedPlanFileId());
+      bytes = readStoredFileBytes(entity.getReviewedPlanFileId(), entity, true);
     } else {
       ensureLocalDataReady(entity);
       bytes = buildReviewedPlanExcelBytes(entity);
@@ -820,11 +949,68 @@ public class TrainThreeYearPlanApplicationService {
     return computeDistributionFromLocalItems(plan, Map.of());
   }
 
-  private byte[] readStoredFileBytes(Long fileId) {
-    try (InputStream in = fileApplicationService.downloadResource(fileId).getInputStream()) {
-      return in.readAllBytes();
+  @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
+  public ResponseEntity<byte[]> downloadSubmitPersonnelFile(Long id) {
+    TrainThreeYearPlanEntity entity = getExisting(id);
+    assertAccessible(entity);
+    if (entity.getStatus() == null || entity.getStatus() < 3 || entity.getSubmitPersonnelFileId() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "尚未提交企业审核人员名单");
+    }
+    return downloadStoredAttachment(entity.getSubmitPersonnelFileId(), entity.getPlanNo() + "-企业审核人员名单");
+  }
+
+  @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
+  public ResponseEntity<byte[]> downloadSubmitSchemeFile(Long id) {
+    TrainThreeYearPlanEntity entity = getExisting(id);
+    assertAccessible(entity);
+    if (entity.getStatus() == null || entity.getStatus() < 3 || entity.getSubmitSchemeFileId() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "尚未提交方案文档");
+    }
+    return downloadStoredAttachment(entity.getSubmitSchemeFileId(), entity.getPlanNo() + "-方案文档");
+  }
+
+  private ResponseEntity<byte[]> downloadStoredAttachment(Long fileId, String fallbackName) {
+    FileVO file = fileApplicationService.getById(fileId);
+    byte[] bytes = readStoredFileBytes(fileId, null, false);
+    String filename = StringUtils.hasText(file.originalName()) ? file.originalName() : fallbackName;
+    MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
+    if (StringUtils.hasText(file.contentType())) {
+      try {
+        mediaType = MediaType.parseMediaType(file.contentType());
+      } catch (Exception ignored) {
+        // keep default
+      }
+    }
+    return ResponseEntity.ok()
+        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + urlEncode(filename))
+        .contentType(mediaType)
+        .body(bytes);
+  }
+
+  /**
+   * @param planForFallback 已审核规划表读取失败时用于实时生成的方案实体（仅 reviewed 场景传入）
+   * @param fallbackToGeneratedReviewedPlan 读取固化文件失败时是否回退为实时生成已审核规划表
+   */
+  private byte[] readStoredFileBytes(
+      Long fileId,
+      TrainThreeYearPlanEntity planForFallback,
+      boolean fallbackToGeneratedReviewedPlan) {
+    try {
+      return fileApplicationService.readFileBytesById(fileId);
+    } catch (BusinessException ex) {
+      if (fallbackToGeneratedReviewedPlan && planForFallback != null) {
+        log.warn("读取固化已审核规划表失败(fileId={})，回退实时生成: {}", fileId, ex.getMessage());
+        ensureLocalDataReady(planForFallback);
+        return buildReviewedPlanExcelBytes(planForFallback);
+      }
+      throw ex;
     } catch (Exception e) {
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取已审核规划表失败");
+      if (fallbackToGeneratedReviewedPlan && planForFallback != null) {
+        log.warn("读取固化已审核规划表异常(fileId={})，回退实时生成", fileId, e);
+        ensureLocalDataReady(planForFallback);
+        return buildReviewedPlanExcelBytes(planForFallback);
+      }
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取文件失败");
     }
   }
 
@@ -930,8 +1116,29 @@ public class TrainThreeYearPlanApplicationService {
         planMapper.updateById(entity);
         return;
       }
-      // 分析完成后先同步到本地库，再切换为「分析完成请审核」，详情页即可秒开
+      // 共库模式下 Python 可能已同库落库并置 status=2，此处仅作补偿
+      long existingItems = countLocalItems(entity);
+      if (existingItems > 0) {
+        entity.setStatus(2);
+        entity.setAnalysisStatus("done");
+        planMapper.updateById(entity);
+        return;
+      }
+      int recommended = status.path("recommended_rows").asInt(0);
+      int rencaiTotal = countRencaiEmployeeTotal(entity);
+      if (rencaiTotal == 0 && recommended > 0) {
+        // rencaishibie 已标记完成但明细尚未入库，保持分析中并继续轮询
+        entity.setAnalysisStatus("syncing");
+        planMapper.updateById(entity);
+        return;
+      }
       syncRencaiDataToLocal(entity);
+      long itemCount = countLocalItems(entity);
+      if (itemCount == 0 && recommended > 0) {
+        entity.setAnalysisStatus("syncing");
+        planMapper.updateById(entity);
+        return;
+      }
       entity.setStatus(2);
       planMapper.updateById(entity);
       return;
@@ -1003,6 +1210,20 @@ public class TrainThreeYearPlanApplicationService {
       progressPct = statusNode.path("progress_pct").asDouble(0);
       rencaiTaskStatus = statusNode.path("status").asText(null);
     }
+    String statusLabel = STATUS_LABELS.getOrDefault(entity.getStatus(), "未知");
+    if (entity.getStatus() != null && entity.getStatus() == 1 && rencaiTaskStatus != null
+        && TERMINAL_RENCAI_STATUS.contains(rencaiTaskStatus) && !"FAILED".equals(rencaiTaskStatus)) {
+      statusLabel = "同步分析结果";
+      progressPct = null;
+    } else if (entity.getStatus() != null && entity.getStatus() == 1
+        && "syncing".equals(entity.getAnalysisStatus())) {
+      statusLabel = "同步分析结果";
+      progressPct = null;
+    } else if (entity.getStatus() != null && entity.getStatus() == 1 && "PROCESSING".equals(rencaiTaskStatus)) {
+      progressPct = progressPct == null ? 0.0 : Math.min(progressPct, 99.0);
+    }
+    List<TrainThreeYearPlanVO.RejectHistoryItem> rejectHistory = parseRejectHistory(entity.getRejectHistoryJson());
+    List<TrainThreeYearPlanVO.SubmitHistoryItem> submitHistory = parseSubmitHistory(entity.getSubmitHistoryJson());
     return new TrainThreeYearPlanVO(
         entity.getId(),
         entity.getPlanNo(),
@@ -1015,9 +1236,11 @@ public class TrainThreeYearPlanApplicationService {
         entity.getRencaiInputFileId(),
         entity.getPlanYears(),
         entity.getStatus(),
-        STATUS_LABELS.getOrDefault(entity.getStatus(), "未知"),
+        statusLabel,
         entity.getAnalysisStatus(),
         entity.getRejectReason(),
+        rejectHistory,
+        submitHistory,
         entity.getCompanyConfirmTime(),
         entity.getCompanyConfirmUsername(),
         entity.getCreatedBy(),
@@ -1026,8 +1249,66 @@ public class TrainThreeYearPlanApplicationService {
         totalRows,
         recommendedRows,
         progressPct,
-        rencaiTaskStatus
+        rencaiTaskStatus,
+        entity.getSubmitPersonnelFileId(),
+        entity.getSubmitSchemeFileId(),
+        resolveOriginalFileName(entity.getSubmitPersonnelFileId()),
+        resolveOriginalFileName(entity.getSubmitSchemeFileId())
     );
+  }
+
+  private List<TrainThreeYearPlanVO.RejectHistoryItem> parseRejectHistory(String json) {
+    List<Map<String, Object>> raw = parseHistoryList(json);
+    List<TrainThreeYearPlanVO.RejectHistoryItem> result = new ArrayList<>();
+    for (Map<String, Object> m : raw) {
+      result.add(new TrainThreeYearPlanVO.RejectHistoryItem(
+          asString(m.get("reason")),
+          asString(m.get("rejectedBy")),
+          asString(m.get("rejectedByUsername")),
+          asLocalDateTime(m.get("rejectedAt"))
+      ));
+    }
+    return result;
+  }
+
+  private List<TrainThreeYearPlanVO.SubmitHistoryItem> parseSubmitHistory(String json) {
+    List<Map<String, Object>> raw = parseHistoryList(json);
+    List<TrainThreeYearPlanVO.SubmitHistoryItem> result = new ArrayList<>();
+    for (Map<String, Object> m : raw) {
+      result.add(new TrainThreeYearPlanVO.SubmitHistoryItem(
+          asString(m.get("submittedBy")),
+          asString(m.get("submittedByUsername")),
+          asLocalDateTime(m.get("submittedAt")),
+          asString(m.get("personnelFileName")),
+          asString(m.get("schemeFileName"))
+      ));
+    }
+    return result;
+  }
+
+  private static String asString(Object v) {
+    return v == null ? null : String.valueOf(v);
+  }
+
+  private static LocalDateTime asLocalDateTime(Object v) {
+    if (v == null) return null;
+    String s = String.valueOf(v);
+    try {
+      return LocalDateTime.parse(s);
+    } catch (Exception e) {
+      return null;
+    }
+  }
+
+  private String resolveOriginalFileName(Long fileId) {
+    if (fileId == null) {
+      return null;
+    }
+    try {
+      return fileApplicationService.get(fileId).originalName();
+    } catch (Exception ex) {
+      return null;
+    }
   }
 
   private TrainThreeYearPlanItemVO toItemVO(TrainThreeYearPlanItemEntity entity) {

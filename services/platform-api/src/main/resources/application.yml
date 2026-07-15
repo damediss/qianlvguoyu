@@ -127,7 +127,7 @@ platform:
     refresh-token-ttl-seconds: ${REFRESH_TOKEN_TTL_SECONDS:604800}
   file:
     storage-provider: ${FILE_STORAGE_PROVIDER:cos}
-    local-root: ${FILE_LOCAL_ROOT:./services/platform-api/storage/files}
+    local-root: ${FILE_LOCAL_ROOT:./storage/files}
     cos:
       secret-id: ${COS_SECRET_ID:AKIDTD0e8QWQ8f09TcZKzTlqiQxIUVRBjYCe}
       secret-key: ${COS_SECRET_KEY:JQM5cw52mJenjSo260kMmGeu55tZDtRp}
@@ -156,6 +156,9 @@ platform:
   # 报名页面公开访问地址（用于生成二维码，扫码跳转用）
   # 本地开发：http://localhost:8080  生产：https://api.gjjd168.com
   app-base-url: ${APP_BASE_URL:http://localhost:8080}
+  h5:
+    # H5 前端地址（企业调研人员采集二维码跳转）
+    base-url: ${H5_BASE_URL:https://h5.gjjd168.com}
   # App 首页轮播图等未登录可访问资源的默认租户（PHP 端硬编码 10159）
   default-tenant-id: ${APP_DEFAULT_TENANT_ID:10159}
   # 我的页客服电话/协议链接

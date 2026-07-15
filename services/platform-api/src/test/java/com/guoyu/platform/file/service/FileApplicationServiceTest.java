@@ -6,6 +6,7 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.file.FileStorage;
 import com.guoyu.platform.file.config.FileStorageProperties;
 import com.guoyu.platform.file.mapper.FileMapper;
+import com.guoyu.platform.file.support.FileLocalPathResolver;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.mock.web.MockMultipartFile;
@@ -14,11 +15,13 @@ class FileApplicationServiceTest {
 
   private final FileMapper mapper = Mockito.mock(FileMapper.class);
   private final FileStorage storage = Mockito.mock(FileStorage.class);
+  private final FileStorageProperties properties = new FileStorageProperties("local", "./target/test-files",
+      new FileStorageProperties.Cos(null, null, null, null, null));
   private final FileApplicationService service = new FileApplicationService(
       mapper,
-      new FileStorageProperties("local", "./target/test-files",
-          new FileStorageProperties.Cos(null, null, null, null, null)),
-      storage
+      properties,
+      storage,
+      new FileLocalPathResolver(properties)
   );
 
   @Test

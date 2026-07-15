@@ -9,6 +9,7 @@ public class TrainInfoClassQueryReq extends PageQuery {
   private Long trainInfoId;
   private Long companyId;
   private Long workTypeId;
+  private Integer companyConfirmStatus;
 
   public Long getTrainInfoId() {
     return trainInfoId;
@@ -32,5 +33,13 @@ public class TrainInfoClassQueryReq extends PageQuery {
 
   public void setWorkTypeId(Long workTypeId) {
     this.workTypeId = workTypeId;
+  }
+
+  public Integer getCompanyConfirmStatus() {
+    return companyConfirmStatus;
+  }
+
+  public void setCompanyConfirmStatus(Integer companyConfirmStatus) {
+    this.companyConfirmStatus = companyConfirmStatus;
   }
 }

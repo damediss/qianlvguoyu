@@ -18,6 +18,18 @@ public class TrainResearchOrgEntity {
   /** 企业/机构名称 */
   private String title;
 
+  /** 对应 sys_org.id */
+  private Long targetOrgId;
+
+  /** 当前进行中的预报名批次 */
+  private Long activeSignUpId;
+
+  /** 已采集人数 */
+  private Integer personnelCount;
+
+  /** 人员采集字段下拉选项 JSON */
+  private String collectionFieldOptions;
+
   /** 类型 */
   private String type;
 
@@ -66,6 +78,18 @@ public class TrainResearchOrgEntity {
 
   public String getTitle() { return title; }
   public void setTitle(String title) { this.title = title; }
+
+  public Long getTargetOrgId() { return targetOrgId; }
+  public void setTargetOrgId(Long targetOrgId) { this.targetOrgId = targetOrgId; }
+
+  public Long getActiveSignUpId() { return activeSignUpId; }
+  public void setActiveSignUpId(Long activeSignUpId) { this.activeSignUpId = activeSignUpId; }
+
+  public Integer getPersonnelCount() { return personnelCount; }
+  public void setPersonnelCount(Integer personnelCount) { this.personnelCount = personnelCount; }
+
+  public String getCollectionFieldOptions() { return collectionFieldOptions; }
+  public void setCollectionFieldOptions(String collectionFieldOptions) { this.collectionFieldOptions = collectionFieldOptions; }
 
   public String getType() { return type; }
   public void setType(String type) { this.type = type; }

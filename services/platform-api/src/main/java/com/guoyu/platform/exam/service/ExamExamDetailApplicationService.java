@@ -238,6 +238,24 @@ public class ExamExamDetailApplicationService {
     if (req.getCourseId() != null && req.getCourseId() > 0) {
       return knowledgeService.getLevel3IdsByCourse(req.getCourseId());
     }
+    // workTypeId → 查该工种下所有科目 → 再查所有知识点 L3
+    if (req.getWorkTypeId() != null && req.getWorkTypeId() > 0) {
+      List<Integer> courseIds = courseMapper.selectList(
+          new LambdaQueryWrapper<ExamCourseEntity>()
+              .eq(ExamCourseEntity::getTenantId, SecurityContext.currentUser().getTenantId().intValue())
+              .eq(ExamCourseEntity::getWorkTypeId, req.getWorkTypeId())
+              .select(ExamCourseEntity::getId))
+          .stream().map(ExamCourseEntity::getId).toList();
+      if (courseIds.isEmpty()) {
+        return List.of();
+      }
+      // 批量查所有科目下的 L3 知识点
+      List<Integer> allKnowledgeIds = new ArrayList<>();
+      for (Integer cid : courseIds) {
+        allKnowledgeIds.addAll(knowledgeService.getLevel3IdsByCourse(cid));
+      }
+      return allKnowledgeIds.isEmpty() ? List.of() : allKnowledgeIds;
+    }
     return null;
   }
 

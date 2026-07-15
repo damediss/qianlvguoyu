@@ -101,6 +101,8 @@ public class CacheConfig implements CachingConfigurer {
         .withCacheConfiguration("menuTree", base.entryTtl(Duration.ofMinutes(30)))
         .withCacheConfiguration("workTypeTree", base.entryTtl(Duration.ofHours(1)))
         .withCacheConfiguration("questionBankTree", base.entryTtl(Duration.ofMinutes(30)))
+        .withCacheConfiguration("faqModelConfig", base.entryTtl(Duration.ofMinutes(15)))
+        .withCacheConfiguration("faqWeknoraConfig", base.entryTtl(Duration.ofMinutes(15)))
         .build();
 
     log.info("[CacheConfig] menuTree TTL=30min, workTypeTree TTL=1h, questionBankTree TTL=30min, 其他 cache TTL=10min, "

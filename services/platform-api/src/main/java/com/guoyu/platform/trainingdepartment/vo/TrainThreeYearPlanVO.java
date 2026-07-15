@@ -1,6 +1,7 @@
 package com.guoyu.platform.trainingdepartment.vo;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record TrainThreeYearPlanVO(
     Long id,
@@ -17,6 +18,8 @@ public record TrainThreeYearPlanVO(
     String statusLabel,
     String analysisStatus,
     String rejectReason,
+    List<RejectHistoryItem> rejectHistory,
+    List<SubmitHistoryItem> submitHistory,
     LocalDateTime companyConfirmTime,
     String companyConfirmUsername,
     Long createdBy,
@@ -25,5 +28,27 @@ public record TrainThreeYearPlanVO(
     Integer totalRows,
     Integer recommendedRows,
     Double progressPct,
-    String rencaiTaskStatus
-) {}
+    String rencaiTaskStatus,
+    Long submitPersonnelFileId,
+    Long submitSchemeFileId,
+    String submitPersonnelFileName,
+    String submitSchemeFileName
+) {
+
+  /** 驳回历史条目 */
+  public record RejectHistoryItem(
+      String reason,
+      String rejectedBy,
+      String rejectedByUsername,
+      LocalDateTime rejectedAt
+  ) {}
+
+  /** 提交历史条目 */
+  public record SubmitHistoryItem(
+      String submittedBy,
+      String submittedByUsername,
+      LocalDateTime submittedAt,
+      String personnelFileName,
+      String schemeFileName
+  ) {}
+}

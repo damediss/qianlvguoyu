@@ -16,6 +16,7 @@ public class TrainThreeYearPlanEntity {
   private String title;
   private Long targetOrgId;
   private Long researchOrgId;
+  private Long sourceSignUpId;
   private Long rencaiTaskId;
   private Long rencaiInputFileId;
   private String planYears;
@@ -23,7 +24,11 @@ public class TrainThreeYearPlanEntity {
   private String analysisStatus;
   private String distributionSnapshot;
   private Long reviewedPlanFileId;
+  private Long submitPersonnelFileId;
+  private Long submitSchemeFileId;
   private String rejectReason;
+  private String rejectHistoryJson;
+  private String submitHistoryJson;
   private LocalDateTime companyConfirmTime;
   private Long companyConfirmUserId;
   private String companyConfirmUsername;
@@ -45,6 +50,8 @@ public class TrainThreeYearPlanEntity {
   public void setTargetOrgId(Long targetOrgId) { this.targetOrgId = targetOrgId; }
   public Long getResearchOrgId() { return researchOrgId; }
   public void setResearchOrgId(Long researchOrgId) { this.researchOrgId = researchOrgId; }
+  public Long getSourceSignUpId() { return sourceSignUpId; }
+  public void setSourceSignUpId(Long sourceSignUpId) { this.sourceSignUpId = sourceSignUpId; }
   public Long getRencaiTaskId() { return rencaiTaskId; }
   public void setRencaiTaskId(Long rencaiTaskId) { this.rencaiTaskId = rencaiTaskId; }
   public Long getRencaiInputFileId() { return rencaiInputFileId; }
@@ -59,8 +66,16 @@ public class TrainThreeYearPlanEntity {
   public void setDistributionSnapshot(String distributionSnapshot) { this.distributionSnapshot = distributionSnapshot; }
   public Long getReviewedPlanFileId() { return reviewedPlanFileId; }
   public void setReviewedPlanFileId(Long reviewedPlanFileId) { this.reviewedPlanFileId = reviewedPlanFileId; }
+  public Long getSubmitPersonnelFileId() { return submitPersonnelFileId; }
+  public void setSubmitPersonnelFileId(Long submitPersonnelFileId) { this.submitPersonnelFileId = submitPersonnelFileId; }
+  public Long getSubmitSchemeFileId() { return submitSchemeFileId; }
+  public void setSubmitSchemeFileId(Long submitSchemeFileId) { this.submitSchemeFileId = submitSchemeFileId; }
   public String getRejectReason() { return rejectReason; }
   public void setRejectReason(String rejectReason) { this.rejectReason = rejectReason; }
+  public String getRejectHistoryJson() { return rejectHistoryJson; }
+  public void setRejectHistoryJson(String rejectHistoryJson) { this.rejectHistoryJson = rejectHistoryJson; }
+  public String getSubmitHistoryJson() { return submitHistoryJson; }
+  public void setSubmitHistoryJson(String submitHistoryJson) { this.submitHistoryJson = submitHistoryJson; }
   public LocalDateTime getCompanyConfirmTime() { return companyConfirmTime; }
   public void setCompanyConfirmTime(LocalDateTime companyConfirmTime) { this.companyConfirmTime = companyConfirmTime; }
   public Long getCompanyConfirmUserId() { return companyConfirmUserId; }

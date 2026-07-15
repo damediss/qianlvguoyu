@@ -519,6 +519,7 @@ export interface ExamExamDetailUpdateReq {
 export interface ExamExamDetailQuery {
   page?: number;
   pageSize?: number;
+  workTypeId?: number;
   courseId?: number;
   knowledgeId?: number;
   type?: string;
@@ -789,4 +790,131 @@ export interface ExamPaperDetail {
   sortNumber: number | null;
   tenantId: number;
   createTime: string;
+}
+
+// ---- FAQ 转换相关类型 ----
+
+export interface FaqBatchVO {
+  id: string;
+  workTypeId: number;
+  workTypeName: string;
+  modelCode: string;
+  modelName: string;
+  totalExams: number;
+  successCount: number;
+  failedCount: number;
+  skippedCount: number;
+  pendingCount: number;
+  status: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FaqConversionVO {
+  id: string;
+  examId: number | null;
+  workTypeId: number;
+  courseId: number | null;
+  knowledgeId: number | null;
+  sourceType: string | null;
+  sourceDifficulty: number | null;
+  sourceContent: string | null;
+  standardQuestion: string | null;
+  tagName: string | null;
+  conversionStatus: string;
+  modelCode: string | null;
+  errorMessage: string | null;
+  retryCount: number;
+  weknoraImported: number;
+  weknoraImportedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FaqModelConfigVO {
+  id: string;
+  modelCode: string;
+  modelName: string;
+  baseUrl: string;
+  apiKeyMasked: string;
+  apiFormat: string;
+  modelId: string;
+  temperature: number;
+  maxTokens: number;
+  extraConfig: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FaqWeknoraConfigVO {
+  id: string | null;
+  webhookSecretMasked: string | null;
+  enabledEvents: string | null;
+  knowledgeBaseId: string | null;
+  faqSetId: string | null;
+  webhookEnabled: number;
+  autoExport: number;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface FaqConversionSubmitReq {
+  workTypeId: number;
+  courseIds?: number[];
+  questionTypes?: string[];
+  modelCode: string;
+  concurrencyLimit?: number;
+}
+
+export interface FaqConversionQueryReq {
+  batchId: string;
+  conversionStatus?: string;
+  tagName?: string;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface FaqModelConfigCreateReq {
+  modelCode: string;
+  modelName: string;
+  baseUrl: string;
+  apiKey: string;
+  apiFormat: string;
+  modelId: string;
+  temperature?: number;
+  maxTokens?: number;
+  extraConfig?: string;
+  status: number;
+}
+
+export interface FaqModelConfigUpdateReq {
+  modelName?: string;
+  baseUrl?: string;
+  apiKey?: string;
+  apiFormat?: string;
+  modelId?: string;
+  temperature?: number;
+  maxTokens?: number;
+  extraConfig?: string;
+  status?: number;
+}
+
+export interface FaqModelConfigQueryReq {
+  keyword?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface FaqWeKnoraConfigSaveReq {
+  webhookSecret?: string;
+  enabledEvents?: string;
+  knowledgeBaseId?: string;
+  faqSetId?: string;
+  webhookEnabled?: number;
+  autoExport?: number;
 }

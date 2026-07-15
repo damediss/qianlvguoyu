@@ -15,6 +15,7 @@ import { TaskExamshicaoAuditAssignListPage } from './pages/exam/TaskExamshicaoAu
 import { TaskExamsubAuditAssignListPage } from './pages/exam/TaskExamsubAuditAssignListPage';
 import { TrainingInfoPage } from './pages/training/TrainingInfoPage';
 import { TrainingClassPeoplePage } from './pages/training/TrainingClassPeoplePage';
+import { TrainingClassDivisionPage } from './pages/training/TrainingClassDivisionPage';
 import { TrainingClassDeclarePage } from './pages/training/TrainingClassDeclarePage';
 import { UserAuthCoursePage } from './pages/exam/UserAuthCoursePage';
 import { UserListPage } from './pages/chazheng/UserListPage';
@@ -30,6 +31,9 @@ import { TrainingSummaryPage } from './pages/training/TrainingSummaryPage';
 import { TrainingCertificateTemplatePage } from './pages/training/TrainingCertificateTemplatePage';
 import { TrainingInformationPage } from './pages/training/TrainingInformationPage';
 import { TrainingStudentPage } from './pages/training/TrainingStudentPage';
+import { EnterpriseResearchPage } from './pages/training/EnterpriseResearchPage';
+import { SolutionPlanningPage } from './pages/training/SolutionPlanningPage';
+import { EnterprisePlanReviewPage } from './pages/training/EnterprisePlanReviewPage';
 import { DataPanelPage } from './pages/zhixunplatform/DataPanelPage';
 import { TaskManagementPage } from './pages/zhixunplatform/TaskManagementPage';
 import { TaskArchivesPage } from './pages/zhixunplatform/TaskArchivesPage';
@@ -55,6 +59,7 @@ import { CompanyQuestionPage } from './pages/exam/CompanyQuestionPage';
 import { MakeExamPlanPage } from './pages/exam/MakeExamPlanPage';
 import { KnowledgeRatePage } from './pages/exam/KnowledgeRatePage';
 import { KnowledgeStructurePage } from './pages/exam/KnowledgeStructurePage';
+import { FaqConversionPage } from './pages/exam/FaqConversionPage';
 import { TrainExamListPage } from './pages/training/TrainExamListPage';
 import { TabletAssessorApp } from './pages/assessor/TabletAssessorApp';
 import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
@@ -123,15 +128,20 @@ const pageMap: Record<string, React.ReactNode> = {
   task_examsub_audit_assign: <TaskExamsubAuditAssignListPage />,
   exam_course: <CoursePage />,
   'train_info-list': <TrainingInfoPage />,
+  fen_ban: <TrainingClassDivisionPage />,
   'train_people-list': <TrainingClassPeoplePage />,
   train_people: <TrainingClassPeoplePage />,
   train_declares: <TrainingClassDeclarePage />,
   exam_user_auth_course: <UserAuthCoursePage />,
   chazheng_user_list: <UserListPage />,
   chazheng_cert_query: <CertQueryPage />,
+  // 培训管理 → 战略规划
+  pxyan_jiu: <EnterpriseResearchPage />,
+  pxan_fang_gui_hua: <SolutionPlanningPage />,
   train_needs: <RequirementsManagementPage />,
   'train_demand-train': <EnterpriseTrainingDemandPage />,
   company_demand_train: <EnterpriseTrainingDemandPage />,
+  company_plan_review: <EnterprisePlanReviewPage />,
   'train_demand-employee': <EnterpriseTalentDemandPage />,
   company_demand_employee: <EnterpriseTalentDemandPage />,
   train_solutions: <TrainingProgramPage />,
@@ -187,6 +197,7 @@ const pageMap: Record<string, React.ReactNode> = {
   kao_shi_ji_hua: <TrainExamListPage />,
   exam_knowledge_rate: <KnowledgeRatePage />,
   zhi_shi_jie_gou_xi_mu_biao_guan_li: <KnowledgeStructurePage />,
+  exam_faq_conversion: <FaqConversionPage />,
   expert_task_start: <TaskStartPage />,
   expert_task_end: <TaskEndPage />,
   certification_dashboard: <CertificationDataPanelPage />,
