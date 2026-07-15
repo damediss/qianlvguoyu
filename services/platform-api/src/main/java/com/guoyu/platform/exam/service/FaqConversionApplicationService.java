@@ -151,12 +151,11 @@ public class FaqConversionApplicationService {
     // 所有批次统一走异步 LLM 增强，HTTP 立即返回 batchId，前端轮询进度
     Long batchId = batch.getId();
     CompletableFuture.runAsync(() -> {
-      try {
-        processLlmEnhancementAsync(batchId, tenantId, userId, req.modelCode(), conversionEntities);
-      } catch (Exception e) {
-        log.error("FAQ LLM 异步增强异常：batchId={}, error={}", batchId, e.getMessage(), e);
-      }
-    }, faqConversionExecutor);
+      processLlmEnhancementAsync(batchId, tenantId, userId, req.modelCode(), conversionEntities);
+    }, faqConversionExecutor).exceptionally(ex -> {
+      log.error("FAQ LLM 异步增强未捕获异常：batchId={}, error={}", batchId, ex.getMessage(), ex);
+      return null;
+    });
 
     return FaqBatchVO.from(batch);
   }
@@ -185,6 +184,7 @@ public class FaqConversionApplicationService {
    */
   public void processLlmEnhancementAsync(Long batchId, Long tenantId, Long userId,
                                           String modelCode, List<ExamFaqConversionEntity> entities) {
+    log.info("FAQ LLM 异步增强开始：batchId={}, tenantId={}, modelCode={}, count={}", batchId, tenantId, modelCode, entities.size());
     ExamFaqModelConfigEntity modelConfig = modelConfigService.findByModelCode(tenantId, modelCode);
     if (modelConfig == null) {
       log.error("模型配置不存在：tenantId={}, modelCode={}", tenantId, modelCode);

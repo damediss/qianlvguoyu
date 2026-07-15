@@ -403,7 +403,7 @@ cd apps/admin-web && npm run dev
 
 ## 项目级踩坑(摘自 Mavis memory)
 
-新进项目的 Agent **必须**先读这 6 条,能少走 3 天弯路:
+新进项目的 Agent **必须**先读这 10 条,能少走 3 天弯路:
 
 1. **MyBatis-Plus 默认 snake_case** — Flyway 迁移的列名必须 snake_case,跟 Java 命名策略对齐(2026-06-04)
 2. **`setDeleted(1) + updateById` 永远是假删** — 软删统一用 `mapper.deleteById(...)`,全项目禁止 `setDeleted(1)`(2026-06-09)
@@ -411,3 +411,7 @@ cd apps/admin-web && npm run dev
 4. **Flyway 批量重命名迁移要按 description 还原真实 version** — 不要靠 description 猜 version,先 `SELECT description, version FROM flyway_schema_history` 反查(2026-06-05)
 5. **前端 tsx 引用同目录 css 是约定** — 移植 Vue → React 时别漏 import 对应 css(2026-06-05)
 6. **producer 阶段 25min 硬上限装不下全链路 E2E** — 拆 sub-task,或 owner 自己跑 E2E,或明确不让 verify-as-task 进 plan(2026-06-09)
+7. **新建 Flyway 迁移前先查最大 version** — `SELECT MAX(version) FROM flyway_schema_history`,新迁移版本号 = 最大 version + 0.001;不要靠文件名猜,数据库里可能已有同 version 的迁移(2026-07-14)
+8. **权限系统三步链:菜单→权限码→角色授权** — 只建菜单+权限码不够,还必须 INSERT `sys_role_permission` 把权限码授予目标角色(role_id=2000 是平台管理员),否则接口 403(2026-07-14)
+9. **Redis 缓存序列化:返回 mutable collection** — `@Cacheable` 方法的返回值必须用 `ArrayList::new` 或 `new ArrayList<>(list)`,禁止用 `.toList()` / `List.of()` / `Map.of()` 等 immutable collection,否则 Redis 反序列化报 `Unexpected token (START_ARRAY), expected VALUE_STRING`(2026-07-14)
+10. **前端 axios `responseType: 'blob'` 下载文件** — `apiClient.get(url, { responseType: 'blob' })` 返回 `AxiosResponse`,blob 数据在 `.data` 里;API 函数签名应 `return (await apiClient.get(...)).data` 并声明 `Promise<Blob>`(2026-07-14)
