@@ -63,6 +63,20 @@ body {
   border: 0 !important;
 }
 
+/* 目录行整行可点击展开/收起，不必瞄准右侧箭头 */
+.app-sider .app-menu.ant-menu .ant-menu-submenu-title {
+  cursor: pointer;
+  height: 38px;
+  margin: 3px 0;
+  border-radius: 8px;
+  color: #64748b !important;
+}
+
+.app-sider .app-menu.ant-menu .ant-menu-submenu-title:hover {
+  background: rgba(59, 130, 246, 0.08) !important;
+  color: #1e293b !important;
+}
+
 .app-sider .app-menu.ant-menu .ant-menu-item {
   height: 38px;
   margin: 3px 0;

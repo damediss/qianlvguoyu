@@ -20,7 +20,6 @@ type AppMenuItem = {
   title: string;
   disabled?: boolean;
   children?: AppMenuItem[];
-  onTitleClick?: () => void;
 };
 
 /**
@@ -69,7 +68,6 @@ function TruncatedLabel({ text }: { text: string }) {
 function buildMenuItems(
   tree: MenuVO[],
   pageMap: Record<string, ReactNode>,
-  onDirectoryTitleClick?: (node: MenuVO) => void,
 ): AppMenuItem[] {
   return tree
     .map((m) => {
@@ -83,10 +81,8 @@ function buildMenuItems(
         disabled: isEmptyDirectory,
       };
       if (hasChildren) {
-        item.children = buildMenuItems(m.children, pageMap, onDirectoryTitleClick);
-        if (isCertificationDirectory(m)) {
-          item.onTitleClick = () => onDirectoryTitleClick?.(m);
-        }
+        // inline 模式下点击目录本体即可展开/收起，无需再绑 onTitleClick 导航
+        item.children = buildMenuItems(m.children, pageMap);
       }
       return item;
     });
@@ -149,11 +145,6 @@ function findFirstNavigableNode(tree: MenuVO[], pageMap: Record<string, ReactNod
   return null;
 }
 
-function isCertificationDirectory(node: MenuVO) {
-  return node.menuType === 'directory'
-    && (node.code === 'certification' || node.code.startsWith('certification_'));
-}
-
 interface AppShellProps {
   pageMap: Record<string, ReactNode>;
   contentOverride?: ReactNode;
@@ -176,6 +167,8 @@ export function AppShell({
   const setSelectedKey = useNavStore((s) => s.setSelectedKey);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
   const activeMenuKey = selectedMenuKeyOverride || selectedKey;
+  const prevActiveMenuKeyRef = useRef<string | null>(null);
+  const appliedDefaultExpandedRef = useRef(false);
 
   const menusQuery = useQuery({
     queryKey: ['menus', token],
@@ -190,16 +183,24 @@ export function AppShell({
     }
   }, [menusQuery.data, setMenuTree]);
 
+  // 进入系统时不按当前选中页强制展开祖先（认定管理等保持折叠）；
+  // 仅在用户切换菜单后，才自动展开选中页的祖先路径。
   useEffect(() => {
     if (!menuTree.length || !activeMenuKey) return;
+    const prevKey = prevActiveMenuKeyRef.current;
+    prevActiveMenuKeyRef.current = activeMenuKey;
+    if (prevKey === null || prevKey === activeMenuKey) {
+      return;
+    }
     const ancestors = findAncestorCodes(menuTree, activeMenuKey);
     if (ancestors && ancestors.length > 0) {
       setOpenKeys((prev) => [...new Set([...prev, ...ancestors])]);
     }
   }, [activeMenuKey, menuTree]);
 
-  // 根据菜单配置的 expanded 字段初始化默认展开的目录
+  // 根据菜单配置的 expanded 字段初始化默认展开的目录（仅首次）
   useEffect(() => {
+    if (!menuTree.length || appliedDefaultExpandedRef.current) return;
     const collectExpanded = (nodes: MenuVO[]): string[] => {
       return nodes.reduce((keys: string[], node) => {
         if (node.menuType === 'directory' && node.expanded === 1) keys.push(node.code);
@@ -207,11 +208,13 @@ export function AppShell({
         return keys;
       }, []);
     };
-    if (menuTree.length > 0) {
-      const expandedKeys = collectExpanded(menuTree);
+    const expandedKeys = collectExpanded(menuTree);
+    appliedDefaultExpandedRef.current = true;
+    if (expandedKeys.length > 0) {
       setOpenKeys((prev) => [...new Set([...prev, ...expandedKeys])]);
     }
   }, [menuTree]);
+
   useEffect(() => {
     if (!menuTree.length || !selectedKey) return;
     const node = findMenuNode(menuTree, selectedKey);
@@ -296,8 +299,8 @@ export function AppShell({
   }, [navigateToNode, onMenuNavigate]);
 
   const menuItems = useMemo(
-    () => buildMenuItems(menuTree, pageMap, handleMenuNavigate),
-    [handleMenuNavigate, menuTree, pageMap],
+    () => buildMenuItems(menuTree, pageMap),
+    [menuTree, pageMap],
   );
 
   const breadcrumbItems = useMemo(() => {
