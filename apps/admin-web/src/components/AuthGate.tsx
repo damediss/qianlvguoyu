@@ -10,6 +10,7 @@ import { SliderCaptcha } from './SliderCaptcha';
 
 const ASSESSOR_ROLE = 'CERTIFICATION_ASSESSOR';
 const ASSESSOR_PERMISSION = 'certification.practical.score';
+const COLLECTION_OPERATE_PERMISSION = 'certification.practical.collection.operate';
 
 function isAssessorAccount(user?: CurrentUserVO) {
   return Boolean(
@@ -18,9 +19,13 @@ function isAssessorAccount(user?: CurrentUserVO) {
   );
 }
 
+function isCollectionOperator(user?: CurrentUserVO) {
+  return Boolean(user?.permissions?.includes(COLLECTION_OPERATE_PERMISSION));
+}
+
 interface AuthGateProps {
   children: ReactNode;
-  mode?: 'admin' | 'assessor';
+  mode?: 'admin' | 'assessor' | 'collection';
 }
 
 export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
@@ -70,7 +75,12 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
         clearAuth();
         return;
       }
-      if (mode !== 'assessor' && isAssessorAccount(data.user)) {
+      if (mode === 'collection' && !isCollectionOperator(data.user)) {
+        message.error('当前账号无平板信息采集端权限');
+        clearAuth();
+        return;
+      }
+      if (mode === 'admin' && isAssessorAccount(data.user)) {
         message.success('登录成功');
         window.location.replace('/assessor-scoring');
         return;
@@ -95,6 +105,11 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
     if (mode === 'assessor' && resolvedUser && !isAssessorAccount(resolvedUser)) {
       message.error('当前账号无平板考评端权限');
       clearAuth();
+      return;
+    }
+    if (mode === 'collection' && resolvedUser && !isCollectionOperator(resolvedUser)) {
+      message.error('当前账号无平板信息采集端权限');
+      clearAuth();
     }
   }, [clearAuth, mode, resolvedUser]);
 
@@ -104,6 +119,9 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
   if (resolvedUser) {
     if (mode === 'assessor' && !isAssessorAccount(resolvedUser)) {
       return <div className="boot-screen">正在校验平板考评端权限...</div>;
+    }
+    if (mode === 'collection' && !isCollectionOperator(resolvedUser)) {
+      return <div className="boot-screen">正在校验平板信息采集端权限...</div>;
     }
     return children;
   }
@@ -119,14 +137,20 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
           <div className="login-mark">千铝</div>
           <div>
             <Typography.Title level={2}>千铝国昱云平台</Typography.Title>
-            <Typography.Text>{mode === 'assessor' ? '平板考评端登录' : '管理端登录'}</Typography.Text>
+            <Typography.Text>
+              {mode === 'assessor'
+                ? '平板考评端登录'
+                : mode === 'collection'
+                  ? '平板信息采集端登录'
+                  : '管理端登录'}
+            </Typography.Text>
           </div>
         </div>
         <Form
           layout="vertical"
-          initialValues={mode === 'assessor'
-            ? { tenantCode: defaultTenantCode || 'demo' }
-            : { tenantCode: defaultTenantCode || 'demo', username: 'admin', password: '' }}
+          initialValues={mode === 'admin'
+            ? { tenantCode: defaultTenantCode || 'demo', username: 'admin', password: '' }
+            : { tenantCode: defaultTenantCode || 'demo' }}
           onFinish={(values) => {
             setPendingLogin(values);
             setCaptchaVisible(true);

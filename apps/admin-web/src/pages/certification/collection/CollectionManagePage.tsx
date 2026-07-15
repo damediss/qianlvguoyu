@@ -34,8 +34,11 @@ import {
 import type { TableColumnsType } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { downloadUrlFile } from '../../../api/files';
 import {
   exceptionRelease,
+  exportCollectionForms,
+  exportCollectionPdf,
   exportQrCodes,
   generateQrCodes,
   getCollectionDetail,
@@ -233,6 +236,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   const [collectionCandidate, setCollectionCandidate] = useState<CandidateCollectionDetailVO | null>(null);
   const [collectionContext, setCollectionContext] = useState<CandidateCollectionContext | null>(null);
   const [exceptionModalOpen, setExceptionModalOpen] = useState(false);
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<SnowflakeId[]>([]);
 
   const workbenchQuery = useQuery({
     queryKey: ['practical-collection-workbench', taskId],
@@ -305,6 +309,33 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
     },
     onError: (error) => {
       message.error(error instanceof Error ? error.message : '二维码导出失败，请稍后重试');
+    },
+  });
+
+  const exportCollectionFormsMutation = useMutation({
+    mutationFn: (candidateIds: SnowflakeId[]) => exportCollectionForms(taskId!, candidateIds),
+    onSuccess: (result) => {
+      message.success(`采集表已生成：${result.filename}`);
+      setSelectedCandidateIds([]);
+    },
+    onError: (error) => {
+      message.error(error instanceof Error ? error.message : '采集表生成失败，请补齐资料后重试');
+    },
+  });
+
+  const exportCollectionPdfMutation = useMutation({
+    mutationFn: (candidateIds: SnowflakeId[]) => exportCollectionPdf(taskId!, candidateIds),
+    onSuccess: async (result) => {
+      try {
+        await downloadUrlFile(result.downloadUrl, result.fileName);
+        message.success(`打印版 PDF 已生成：${result.fileName}`);
+        setSelectedCandidateIds([]);
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : 'PDF 下载失败，请稍后重试');
+      }
+    },
+    onError: (error) => {
+      message.error(error instanceof Error ? error.message : '打印版 PDF 生成失败，请补齐资料后重试');
     },
   });
 
@@ -411,6 +442,21 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   };
 
   const validateCandidateEntry = (candidate: CandidateCollectionItemVO) => {
+    if (candidate.collectionEligible === false) {
+      Modal.warning({
+        title: '资料未满足实操采集准入条件',
+        content: (
+          <div>
+            <div>该考生的信息收集尚未完成，暂不能进入实操信息采集。</div>
+            {candidate.missingDocumentCodes?.length ? <div>缺少资料：{candidate.missingDocumentCodes.join('、')}</div> : null}
+            {candidate.invalidDocumentCodes?.length ? <div>资料异常：{candidate.invalidDocumentCodes.join('、')}</div> : null}
+            <div>请先前往“认定筹备—信息收集”补充资料。</div>
+          </div>
+        ),
+        okText: '我知道了',
+      });
+      return false;
+    }
     const currentCollectingCandidate = getCurrentCollectingCandidate();
     if (currentCollectingCandidate && !isSameId(currentCollectingCandidate.candidateId, candidate.candidateId)) {
       showCollectingConflict(currentCollectingCandidate, candidate);
@@ -480,6 +526,30 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
       render: (value: CollectionOverallStatus, candidate) => (
         statusTag(value, candidate.overallStatusLabel, CollectionOverallStatusText)
       ),
+    },
+    {
+      title: '资料状态',
+      dataIndex: 'documentStatus',
+      width: 220,
+      render: (_value: string, candidate) => {
+        const complete = candidate.collectionEligible === true;
+        const label = complete ? '已完成' : candidate.documentStatus === 'INVALID' ? '资料异常' : '待补充';
+        return (
+          <Space direction="vertical" size={0}>
+            <Tag color={complete ? 'green' : candidate.documentStatus === 'INVALID' ? 'red' : 'orange'}>{label}</Tag>
+            {!complete && candidate.missingDocumentCodes?.length ? (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                缺少：{candidate.missingDocumentCodes.join('、')}
+              </Typography.Text>
+            ) : null}
+            {!complete && candidate.invalidDocumentCodes?.length ? (
+              <Typography.Text type="danger" style={{ fontSize: 12 }}>
+                异常：{candidate.invalidDocumentCodes.join('、')}
+              </Typography.Text>
+            ) : null}
+          </Space>
+        );
+      },
     },
     {
       title: '指纹状态',
@@ -660,6 +730,35 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
               onChange={setExceptionFilter}
               style={{ width: 140 }}
             />
+            <Button
+              type="primary"
+              icon={<DownloadOutlined />}
+              disabled={!selectedCandidateIds.length}
+              loading={exportCollectionFormsMutation.isPending}
+              onClick={() => {
+                if (!selectedCandidateIds.length) {
+                  message.warning('请先选择需要生成采集表的考生。');
+                  return;
+                }
+                exportCollectionFormsMutation.mutate(selectedCandidateIds);
+              }}
+              >
+              生成 Excel
+            </Button>
+            <Button
+              icon={<DownloadOutlined />}
+              disabled={!selectedCandidateIds.length}
+              loading={exportCollectionPdfMutation.isPending}
+              onClick={() => {
+                if (!selectedCandidateIds.length) {
+                  message.warning('请先选择需要生成打印版 PDF 的考生。');
+                  return;
+                }
+                exportCollectionPdfMutation.mutate(selectedCandidateIds);
+              }}
+            >
+              生成打印版 PDF
+            </Button>
           </Space>
           <Table<CandidateCollectionItemVO>
             rowKey={(candidate) => String(candidate.candidateId)}
@@ -669,6 +768,14 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
             pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 名考生` }}
             scroll={{ x: 1540 }}
             locale={{ emptyText: <Empty description="暂无考生" /> }}
+            rowSelection={{
+              selectedRowKeys: selectedCandidateIds.map(String),
+              onChange: (keys) => setSelectedCandidateIds(keys.map(String)),
+              getCheckboxProps: (candidate) => ({
+                disabled: candidate.collectionEligible !== true || candidate.overallStatus !== 'COMPLETED',
+                title: candidate.collectionEligible !== true ? '资料未完成，不能生成采集表' : '实操采集未完成，不能生成采集表',
+              }),
+            }}
             onRow={(candidate) => ({
               onClick: () => confirmOpenCandidateCollection(candidate),
             })}

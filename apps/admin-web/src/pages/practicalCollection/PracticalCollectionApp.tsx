@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CollectionWorkbenchPage } from './CollectionWorkbenchPage';
 import { CollectionTaskSwitchModal } from '../../components/certification/collection/CollectionTaskSwitchModal';
-import { switchCollectionTask } from '../../services/practicalCollection/tabletCollectionService';
+import {
+  readLastCollectionTaskId,
+  switchCollectionTask,
+} from '../../services/practicalCollection/tabletCollectionService';
 import type { SnowflakeId } from '../../types/certificationPracticalCollection';
 import './PracticalCollectionApp.css';
 
@@ -14,9 +17,16 @@ function taskIdFromPath(): string | undefined {
 }
 
 export function PracticalCollectionApp() {
-  const initialTaskId = useMemo(() => taskIdFromPath(), []);
+  const initialTaskId = useMemo(() => taskIdFromPath() || readLastCollectionTaskId(), []);
   const [currentTaskId, setCurrentTaskId] = useState<string | undefined>(initialTaskId);
   const [taskSelectorVisible, setTaskSelectorVisible] = useState(!initialTaskId);
+
+  useEffect(() => {
+    if (!initialTaskId) {
+      return;
+    }
+    switchCollectionTask(initialTaskId);
+  }, [initialTaskId]);
 
   useEffect(() => {
     const previous = document.body.style.minWidth;

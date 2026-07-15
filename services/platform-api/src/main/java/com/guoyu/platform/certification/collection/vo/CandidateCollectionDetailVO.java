@@ -36,6 +36,10 @@ public record CandidateCollectionDetailVO(
     QueueItemVO currentQueue,
     FingerprintTraceVO latestFingerprint,
     SignatureRecordVO latestSignature,
-    List<CollectionExceptionVO> exceptions
+    List<CollectionExceptionVO> exceptions,
+    String documentStatus,
+    List<String> missingDocumentCodes,
+    List<String> invalidDocumentCodes,
+    Boolean collectionEligible
 ) {
 }

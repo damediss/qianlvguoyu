@@ -4,11 +4,13 @@ import type { PageResponse } from '../types/api';
 import type {
   CandidateCollectionDetailVO,
   CandidateMatchVO,
+  BatchJoinQueueResultVO,
   CollectionActionResultVO,
   CollectionExceptionQueryRequest,
   CollectionExceptionVO,
   CollectionTaskQueryRequest,
   CollectionTaskVO,
+  CollectionPdfExportVO,
   CollectionWorkbenchVO,
   CompleteCollectionRequest,
   ExceptionReleaseRequest,
@@ -111,6 +113,45 @@ export function searchCandidate(params: SearchCandidateRequest): Promise<Candida
 export function joinQueue(params: JoinQueueRequest): Promise<QueueItemVO> {
   return unwrap<QueueItemVO>(
     apiClient.post(`${base}/queue/join`, params, collectionRequestConfig),
+  );
+}
+
+export function joinQueueBatch(params: {
+  taskId: SnowflakeId;
+  candidateIds: SnowflakeId[];
+  matchMethod?: string;
+}): Promise<BatchJoinQueueResultVO> {
+  return unwrap<BatchJoinQueueResultVO>(
+    apiClient.post(`${base}/queue/join-batch`, params, collectionRequestConfig),
+  );
+}
+
+export async function exportCollectionForms(taskId: SnowflakeId, candidateIds: SnowflakeId[]): Promise<{ filename: string }> {
+  const response = await apiClient.post(`${base}/tasks/${taskId}/collection-forms/export`, { candidateIds }, {
+    ...collectionRequestConfig,
+    responseType: 'blob',
+  });
+  const blob = new Blob([response.data as BlobPart], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const filename = parseContentDispositionFilename(response) || `职业技能等级认定座次签到表_${taskId}.xlsx`;
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+  return { filename };
+}
+
+export function exportCollectionPdf(
+  examTaskId: SnowflakeId,
+  candidateIds: SnowflakeId[],
+): Promise<CollectionPdfExportVO> {
+  return unwrap<CollectionPdfExportVO>(
+    apiClient.post('/certification/collection/export/pdf', { examTaskId, candidateIds }, collectionRequestConfig),
   );
 }
 

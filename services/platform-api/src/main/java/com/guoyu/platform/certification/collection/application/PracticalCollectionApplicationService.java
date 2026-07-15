@@ -3,8 +3,12 @@ package com.guoyu.platform.certification.collection.application;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.certification.collection.converter.PracticalCollectionConverter;
+import com.guoyu.platform.certification.collection.domain.CollectionEligibilityResult;
 import com.guoyu.platform.certification.collection.domain.PracticalCollectionDomainService;
+import com.guoyu.platform.certification.collection.domain.PracticalCollectionEligibilityService;
 import com.guoyu.platform.certification.collection.dto.CollectionExceptionQueryRequest;
+import com.guoyu.platform.certification.collection.dto.BatchJoinQueueRequest;
+import com.guoyu.platform.certification.collection.dto.CollectionFormExportRequest;
 import com.guoyu.platform.certification.collection.dto.CollectionTaskQueryRequest;
 import com.guoyu.platform.certification.collection.dto.CompleteCollectionRequest;
 import com.guoyu.platform.certification.collection.dto.ExceptionReleaseRequest;
@@ -35,6 +39,8 @@ import com.guoyu.platform.certification.collection.vo.CandidateCollectionItemVO;
 import com.guoyu.platform.certification.collection.vo.CandidateMatchVO;
 import com.guoyu.platform.certification.collection.vo.CollectionActionResultVO;
 import com.guoyu.platform.certification.collection.vo.CollectionExceptionVO;
+import com.guoyu.platform.certification.collection.vo.BatchJoinQueueResultVO;
+import com.guoyu.platform.certification.collection.vo.CollectionFormExportVO;
 import com.guoyu.platform.certification.collection.vo.CollectionStatsVO;
 import com.guoyu.platform.certification.collection.vo.CollectionTaskVO;
 import com.guoyu.platform.certification.collection.vo.CollectionWorkbenchVO;
@@ -46,13 +52,18 @@ import com.guoyu.platform.certification.collection.vo.SignatureRecordVO;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskEntity;
+import com.guoyu.platform.certification.entity.CertificationTaskExamSiteEntity;
+import com.guoyu.platform.certification.entity.CertificationTaskScopeEntity;
 import com.guoyu.platform.certification.entity.PracticalCollectionExceptionEntity;
 import com.guoyu.platform.certification.entity.PracticalCollectionQueueEntity;
 import com.guoyu.platform.certification.entity.PracticalCollectionStatusEntity;
 import com.guoyu.platform.certification.entity.PracticalFingerprintTraceEntity;
 import com.guoyu.platform.certification.entity.PracticalSignatureRecordEntity;
 import com.guoyu.platform.certification.mapper.CertificationCandidateMapper;
+import com.guoyu.platform.certification.mapper.CertificationCandidateDocumentMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskMapper;
+import com.guoyu.platform.certification.mapper.CertificationTaskExamSiteMapper;
+import com.guoyu.platform.certification.mapper.CertificationTaskScopeMapper;
 import com.guoyu.platform.certification.mapper.PracticalCollectionExceptionMapper;
 import com.guoyu.platform.certification.mapper.PracticalCollectionQueueMapper;
 import com.guoyu.platform.certification.mapper.PracticalCollectionStatusMapper;
@@ -71,6 +82,8 @@ import com.google.zxing.client.j2se.MatrixToImageWriter;
 import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.QRCodeWriter;
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -93,12 +106,26 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import javax.imageio.ImageIO;
 import org.apache.poi.ss.usermodel.ClientAnchor;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Drawing;
+import org.apache.poi.ss.usermodel.FillPatternType;
+import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.ss.usermodel.HorizontalAlignment;
+import org.apache.poi.ss.usermodel.Picture;
+import org.apache.poi.ss.usermodel.PictureData;
 import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.VerticalAlignment;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.xssf.usermodel.XSSFClientAnchor;
+import org.apache.poi.xssf.usermodel.XSSFDrawing;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.slf4j.MDC;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -106,6 +133,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 @Service
+@Slf4j
 public class PracticalCollectionApplicationService {
 
   private static final Pattern LAST4_PATTERN = Pattern.compile("^\\d{4}$");
@@ -117,9 +145,24 @@ public class PracticalCollectionApplicationService {
       Pattern.compile("(?:collectionToken|collectToken|token)=([^&\\s]+)", Pattern.CASE_INSENSITIVE);
   private static final DateTimeFormatter FILE_TS_FORMAT =
       DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+  private static final int COLLECTION_TEMPLATE_COLUMN_COUNT = 9;
+  private static final int COLLECTION_TEMPLATE_ROW_COUNT = 23;
+  private static final int COLLECTION_FIRST_BLOCK_ROW = 2;
+  private static final int COLLECTION_BLOCK_ROW_STEP = 7;
+  private static final int COLLECTION_BLOCK_COUNT = 3;
+  private static final int COLLECTION_CANDIDATES_PER_PAGE = COLLECTION_BLOCK_COUNT * 3;
+  /**
+   * Excel 单元格屏幕像素约为 96DPI；按 4x 生成嵌入图，打印/缩放后笔画不易发虚断点。
+   */
+  private static final int COLLECTION_IMAGE_EXPORT_SCALE = 4;
+  private static final int COLLECTION_IMAGE_CONTENT_PADDING_PX = 8;
+  private static final int COLLECTION_IMAGE_WHITE_THRESHOLD = 245;
 
   private final CertificationTaskMapper taskMapper;
   private final CertificationCandidateMapper candidateMapper;
+  private final CertificationCandidateDocumentMapper candidateDocumentMapper;
+  private final CertificationTaskExamSiteMapper taskExamSiteMapper;
+  private final CertificationTaskScopeMapper taskScopeMapper;
   private final PracticalCollectionStatusMapper statusMapper;
   private final PracticalCollectionQueueMapper queueMapper;
   private final PracticalFingerprintTraceMapper fingerprintTraceMapper;
@@ -127,6 +170,7 @@ public class PracticalCollectionApplicationService {
   private final PracticalCollectionExceptionMapper exceptionMapper;
   private final FileApplicationService fileApplicationService;
   private final PracticalCollectionDomainService domainService;
+  private final PracticalCollectionEligibilityService eligibilityService;
   private final PracticalCollectionConverter converter;
   private final SecureRandom secureRandom = new SecureRandom();
 
@@ -140,6 +184,9 @@ public class PracticalCollectionApplicationService {
   public PracticalCollectionApplicationService(
       CertificationTaskMapper taskMapper,
       CertificationCandidateMapper candidateMapper,
+      CertificationCandidateDocumentMapper candidateDocumentMapper,
+      CertificationTaskExamSiteMapper taskExamSiteMapper,
+      CertificationTaskScopeMapper taskScopeMapper,
       PracticalCollectionStatusMapper statusMapper,
       PracticalCollectionQueueMapper queueMapper,
       PracticalFingerprintTraceMapper fingerprintTraceMapper,
@@ -147,11 +194,15 @@ public class PracticalCollectionApplicationService {
       PracticalCollectionExceptionMapper exceptionMapper,
       FileApplicationService fileApplicationService,
       PracticalCollectionDomainService domainService,
+      PracticalCollectionEligibilityService eligibilityService,
       PracticalCollectionConverter converter,
       @Value("${platform.practical-collection.scan-url-template:}") String scanUrlTemplate
   ) {
     this.taskMapper = taskMapper;
     this.candidateMapper = candidateMapper;
+    this.candidateDocumentMapper = candidateDocumentMapper;
+    this.taskExamSiteMapper = taskExamSiteMapper;
+    this.taskScopeMapper = taskScopeMapper;
     this.statusMapper = statusMapper;
     this.queueMapper = queueMapper;
     this.fingerprintTraceMapper = fingerprintTraceMapper;
@@ -159,6 +210,7 @@ public class PracticalCollectionApplicationService {
     this.exceptionMapper = exceptionMapper;
     this.fileApplicationService = fileApplicationService;
     this.domainService = domainService;
+    this.eligibilityService = eligibilityService;
     this.converter = converter;
     this.scanUrlTemplate = scanUrlTemplate == null ? "" : scanUrlTemplate.trim();
   }
@@ -201,14 +253,19 @@ public class PracticalCollectionApplicationService {
             .eq(CertificationCandidateEntity::getDeleted, 0)
             .orderByAsc(CertificationCandidateEntity::getId)
             .last("LIMIT 500"));
+    Map<Long, CollectionEligibilityResult> eligibilities = eligibilityService.checkCandidates(tenantId, taskId, candidates);
+    List<CertificationCandidateEntity> eligibleCandidates = eligibleCandidates(candidates, eligibilities);
     Map<Long, PracticalCollectionStatusEntity> statuses = statusesByCandidateIds(
         tenantId,
         taskId,
-        candidates.stream().map(CertificationCandidateEntity::getId).toList()
+        eligibleCandidates.stream().map(CertificationCandidateEntity::getId).toList()
     );
-    List<CandidateCollectionItemVO> candidateItems = candidates.stream()
-        .map(candidate -> converter.toCandidateItemVO(candidate, statuses.get(candidate.getId())))
+    List<CandidateCollectionItemVO> candidateItems = eligibleCandidates.stream()
+        .map(candidate -> converter.toCandidateItemVO(candidate, statuses.get(candidate.getId()), eligibilities.get(candidate.getId())))
         .toList();
+    Set<Long> eligibleCandidateIds = eligibleCandidates.stream()
+        .map(CertificationCandidateEntity::getId)
+        .collect(Collectors.toSet());
     List<PracticalCollectionQueueEntity> queueRows = queueMapper.selectList(
         new LambdaQueryWrapper<PracticalCollectionQueueEntity>()
             .eq(PracticalCollectionQueueEntity::getTenantId, tenantId)
@@ -217,8 +274,11 @@ public class PracticalCollectionApplicationService {
                 List.of(CollectionQueueStatusEnum.QUEUED.getCode(), CollectionQueueStatusEnum.COLLECTING.getCode()))
             .eq(PracticalCollectionQueueEntity::getDeleted, 0)
             .orderByAsc(PracticalCollectionQueueEntity::getQueueNo)
-            .orderByAsc(PracticalCollectionQueueEntity::getJoinedAt));
-    Map<Long, CertificationCandidateEntity> candidateMap = candidates.stream()
+            .orderByAsc(PracticalCollectionQueueEntity::getJoinedAt))
+        .stream()
+        .filter(queue -> eligibleCandidateIds.contains(queue.getCandidateId()))
+        .toList();
+    Map<Long, CertificationCandidateEntity> candidateMap = eligibleCandidates.stream()
         .collect(Collectors.toMap(CertificationCandidateEntity::getId, Function.identity(), (left, right) -> left));
     List<QueueItemVO> queueItems = queueRows.stream()
         .map(queue -> converter.toQueueItemVO(
@@ -262,6 +322,7 @@ public class PracticalCollectionApplicationService {
         .map(entity -> converter.toExceptionVO(entity, candidate, status))
         .toList();
     QueueItemVO queueItem = queue == null ? null : converter.toQueueItemVO(queue, candidate, status);
+    CollectionEligibilityResult eligibility = eligibilityService.check(user.getTenantId(), taskId, candidateId);
     return converter.toCandidateDetailVO(
         candidate,
         status,
@@ -269,7 +330,8 @@ public class PracticalCollectionApplicationService {
         queueItem,
         converter.toFingerprintTraceVO(fingerprintTrace),
         converter.toSignatureRecordVO(signatureRecord),
-        exceptions
+        exceptions,
+        eligibility
     );
   }
 
@@ -364,6 +426,494 @@ public class PracticalCollectionApplicationService {
       }
     });
     return new QrCodeExportVO(data, filename);
+  }
+
+  /** Strict archive export: every selected candidate must pass the current eligibility gate and have all capture images readable. */
+  @Transactional(readOnly = true)
+  public CollectionFormExportVO exportCollectionForms(Long taskId, CollectionFormExportRequest request) {
+    Long tenantId = current().getTenantId();
+    CertificationTaskEntity task = requireTask(tenantId, taskId);
+    List<Long> candidateIds = request.candidateIds().stream().filter(Objects::nonNull).distinct().toList();
+    List<CertificationCandidateEntity> candidates = candidateMapper.selectList(
+        new LambdaQueryWrapper<CertificationCandidateEntity>()
+            .eq(CertificationCandidateEntity::getTenantId, tenantId)
+            .eq(CertificationCandidateEntity::getTaskId, taskId)
+            .in(CertificationCandidateEntity::getId, candidateIds)
+            .eq(CertificationCandidateEntity::getDeleted, 0)
+            .orderByAsc(CertificationCandidateEntity::getId));
+    Map<Long, CertificationCandidateEntity> candidateMap = (candidates == null ? List.<CertificationCandidateEntity>of() : candidates).stream()
+        .collect(Collectors.toMap(CertificationCandidateEntity::getId, Function.identity(), (left, right) -> left));
+    Map<Long, CollectionEligibilityResult> eligibilities = eligibilityService.checkCandidates(tenantId, taskId, candidates);
+    Map<Long, PracticalCollectionStatusEntity> statuses = statusesByCandidateIds(tenantId, taskId, candidateIds);
+    List<String> errors = new ArrayList<>();
+    List<CollectionFormCandidate> exportCandidates = new ArrayList<>();
+    for (Long candidateId : candidateIds) {
+      CertificationCandidateEntity candidate = candidateMap.get(candidateId);
+      if (candidate == null) {
+        errors.add("考生ID" + candidateId + "：不属于当前任务或已被删除");
+        continue;
+      }
+      CollectionEligibilityResult eligibility = eligibilities.get(candidateId);
+      PracticalCollectionStatusEntity status = statuses.get(candidateId);
+      if (eligibility == null || !eligibility.eligible()) {
+        errors.add(candidateLabel(candidate) + "：" + (eligibility == null ? "资料状态无法确认" : eligibility.reasonMessage()));
+        continue;
+      }
+      if (status == null || !CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
+        errors.add(candidateLabel(candidate) + "：实操信息采集尚未完成");
+        continue;
+      }
+      try {
+        byte[] avatar = readImageFile(tenantId, eligibility.avatarFileId(), "证件照");
+        PracticalFingerprintTraceEntity fingerprint = latestFingerprintTrace(tenantId, taskId, candidateId);
+        if (fingerprint == null || !FingerprintCollectStatusEnum.SUCCESS.getCode().equals(fingerprint.getCollectStatus())
+            || fingerprint.getFingerprintImageFileId() == null) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少有效指纹图片");
+        }
+        byte[] fingerprintImage = readImageFile(tenantId, fingerprint.getFingerprintImageFileId(), "指纹图片");
+        PracticalSignatureRecordEntity signature = latestSignatureRecord(tenantId, taskId, candidateId);
+        if (signature == null || signature.getSignatureFileId() == null) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少有效电子签名图片");
+        }
+        byte[] signatureImage = readImageFile(tenantId, signature.getSignatureFileId(), "电子签名图片");
+        exportCandidates.add(new CollectionFormCandidate(candidate, avatar, fingerprintImage, signatureImage));
+      } catch (BusinessException ex) {
+        errors.add(candidateLabel(candidate) + "：" + ex.getMessage());
+      }
+    }
+    if (!errors.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "本次选择" + candidateIds.size() + "名考生，其中" + errors.size()
+              + "名不满足采集表生成条件：\n" + String.join("\n", errors) + "\n请补充资料后重新生成。");
+    }
+    if (exportCandidates.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请先选择需要生成采集表的考生");
+    }
+    CertificationTaskExamSiteEntity site = taskExamSiteMapper.selectOne(new LambdaQueryWrapper<CertificationTaskExamSiteEntity>()
+        .eq(CertificationTaskExamSiteEntity::getTenantId, tenantId)
+        .eq(CertificationTaskExamSiteEntity::getTaskId, taskId)
+        .eq(CertificationTaskExamSiteEntity::getDeleted, 0)
+        .orderByAsc(CertificationTaskExamSiteEntity::getSortOrder)
+        .last("LIMIT 1"));
+    CertificationTaskScopeEntity scope = taskScopeMapper.selectOne(new LambdaQueryWrapper<CertificationTaskScopeEntity>()
+        .eq(CertificationTaskScopeEntity::getTenantId, tenantId)
+        .eq(CertificationTaskScopeEntity::getTaskId, taskId)
+        .eq(CertificationTaskScopeEntity::getDeleted, 0)
+        .orderByAsc(CertificationTaskScopeEntity::getSortOrder)
+        .last("LIMIT 1"));
+    byte[] data = buildCollectionFormWorkbook(task, site, scope, exportCandidates);
+    String filename = "职业技能等级认定座次签到表_" + safeFilename(task.getTaskName()) + "_"
+        + LocalDateTime.now().format(FILE_TS_FORMAT) + ".xlsx";
+    return new CollectionFormExportVO(data, filename);
+  }
+
+  private byte[] buildCollectionFormWorkbook(
+      CertificationTaskEntity task,
+      CertificationTaskExamSiteEntity site,
+      CertificationTaskScopeEntity scope,
+      List<CollectionFormCandidate> candidates
+  ) {
+    try (java.io.InputStream input = getClass().getResourceAsStream("/templates/职业技能等级认定座次签到表.xlsx");
+         Workbook workbook = input == null ? buildNormalizedCollectionTemplate() : createTemplateWorkbook(input);
+         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+       int pageCount = (candidates.size() + COLLECTION_CANDIDATES_PER_PAGE - 1)
+           / COLLECTION_CANDIDATES_PER_PAGE;
+       Sheet template = workbook.getSheetAt(0);
+       Sheet first = copyCollectionTemplateSheet(workbook, template, 1);
+       workbook.removeSheetAt(workbook.getSheetIndex(template));
+       for (int page = 0; page < pageCount; page++) {
+         Sheet sheet = page == 0 ? first : copyCollectionTemplateSheet(workbook, template, page + 1);
+         fillCollectionSheet(sheet, task, site, scope,
+             candidates.subList(page * COLLECTION_CANDIDATES_PER_PAGE,
+                 Math.min((page + 1) * COLLECTION_CANDIDATES_PER_PAGE, candidates.size())), workbook);
+       }
+      workbook.write(output);
+      return output.toByteArray();
+    } catch (IOException ex) {
+      log.error("Practical collection form export failed", ex);
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "采集表模板读取或生成失败，请检查模板文件");
+    }
+  }
+
+  private Workbook createTemplateWorkbook(java.io.InputStream input) {
+    try {
+      return WorkbookFactory.create(input);
+    } catch (Exception ex) {
+      log.warn("Provided WPS/DISPIMG template is not readable by Apache POI; using a POI-normalized equivalent", ex);
+      return buildNormalizedCollectionTemplate();
+    }
+  }
+
+  private Workbook buildNormalizedCollectionTemplate() {
+    Workbook workbook = new XSSFWorkbook();
+    Sheet sheet = workbook.createSheet("座次签到表_优化");
+    sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, 8));
+    sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(1, 1, 0, 8));
+    CellStyle titleStyle = workbook.createCellStyle();
+    titleStyle.setAlignment(HorizontalAlignment.CENTER);
+    titleStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+    Font titleFont = workbook.createFont();
+    titleFont.setFontName("Microsoft YaHei");
+    titleFont.setFontHeightInPoints((short) 18);
+    titleFont.setBold(true);
+    titleStyle.setFont(titleFont);
+    CellStyle infoStyle = workbook.createCellStyle();
+    infoStyle.setFillForegroundColor(org.apache.poi.ss.usermodel.IndexedColors.GREY_25_PERCENT.getIndex());
+    infoStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+    CellStyle labelStyle = workbook.createCellStyle();
+    labelStyle.setFillForegroundColor(org.apache.poi.ss.usermodel.IndexedColors.GREY_25_PERCENT.getIndex());
+    labelStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+    labelStyle.setAlignment(HorizontalAlignment.CENTER);
+    labelStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+    Font labelFont = workbook.createFont();
+    labelFont.setFontName("Microsoft YaHei");
+    labelFont.setBold(true);
+    labelStyle.setFont(labelFont);
+    CellStyle bodyStyle = workbook.createCellStyle();
+    bodyStyle.setAlignment(HorizontalAlignment.CENTER);
+    bodyStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+    bodyStyle.setBorderTop(BorderStyle.THIN);
+    bodyStyle.setBorderBottom(BorderStyle.THIN);
+    bodyStyle.setBorderLeft(BorderStyle.THIN);
+    bodyStyle.setBorderRight(BorderStyle.THIN);
+    Row title = sheet.createRow(0);
+    title.setHeightInPoints(36);
+    title.createCell(0).setCellValue("职业技能等级认定座次签到表");
+    title.getCell(0).setCellStyle(titleStyle);
+    Row info = sheet.createRow(1);
+    info.setHeightInPoints(22);
+    info.createCell(0).setCellValue("考场地址：                                      考试时间：");
+    info.getCell(0).setCellStyle(infoStyle);
+     for (int row = COLLECTION_FIRST_BLOCK_ROW; row < COLLECTION_TEMPLATE_ROW_COUNT; row++) {
+      sheet.createRow(row).setHeightInPoints(40);
+     }
+     for (int col = 0; col < COLLECTION_TEMPLATE_COLUMN_COUNT; col++) {
+       int blockColumn = col % 3;
+      sheet.setColumnWidth(col, blockColumn == 0 ? 5280 : blockColumn == 1 ? 3328 : 4352);
+     }
+     for (int block = 0; block < COLLECTION_BLOCK_COUNT; block++) {
+       int blockStartRow = COLLECTION_FIRST_BLOCK_ROW + block * COLLECTION_BLOCK_ROW_STEP;
+       for (int start : new int[]{0, 3, 6}) {
+         sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(
+             blockStartRow, blockStartRow + 3, start, start));
+         sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(
+             blockStartRow, blockStartRow + 3, start + 1, start + 1));
+       }
+       for (int row = blockStartRow; row < blockStartRow + COLLECTION_BLOCK_ROW_STEP; row++) {
+         for (int col = 0; col < COLLECTION_TEMPLATE_COLUMN_COUNT; col++) {
+           sheet.getRow(row).getCell(col).setCellStyle(bodyStyle);
+         }
+       }
+       for (int start : new int[]{0, 3, 6}) {
+         sheet.getRow(blockStartRow).getCell(start + 2).setCellValue("考场签到");
+         sheet.getRow(blockStartRow).getCell(start + 2).setCellStyle(labelStyle);
+         sheet.getRow(blockStartRow + 2).getCell(start + 2).setCellValue("交卷确认");
+         sheet.getRow(blockStartRow + 2).getCell(start + 2).setCellStyle(labelStyle);
+         sheet.getRow(blockStartRow + 4).getCell(start + 1).setCellValue("理论/实操");
+         sheet.getRow(blockStartRow + 4).getCell(start + 1).setCellStyle(labelStyle);
+         sheet.getRow(blockStartRow + 5).getCell(start).setCellValue("证件号");
+         sheet.getRow(blockStartRow + 5).getCell(start).setCellStyle(labelStyle);
+         sheet.getRow(blockStartRow + 6).getCell(start).setCellValue("准考证");
+         sheet.getRow(blockStartRow + 6).getCell(start).setCellStyle(labelStyle);
+       }
+    }
+    sheet.setDisplayGridlines(false);
+    sheet.setPrintGridlines(false);
+    sheet.setFitToPage(false);
+    sheet.setAutobreaks(true);
+    sheet.setHorizontallyCenter(false);
+    sheet.setVerticallyCenter(false);
+    sheet.getPrintSetup().setLandscape(false);
+    sheet.getPrintSetup().setPaperSize((short) 1);
+    sheet.getPrintSetup().setScale((short) 100);
+    sheet.getPrintSetup().setFitWidth((short) 1);
+    sheet.getPrintSetup().setFitHeight((short) 1);
+    sheet.setMargin(Sheet.LeftMargin, 0.7);
+    sheet.setMargin(Sheet.RightMargin, 0.7);
+    sheet.setMargin(Sheet.TopMargin, 0.75);
+    sheet.setMargin(Sheet.BottomMargin, 0.75);
+    workbook.setPrintArea(workbook.getSheetIndex(sheet), 0, COLLECTION_TEMPLATE_COLUMN_COUNT - 1,
+        0, COLLECTION_TEMPLATE_ROW_COUNT - 1);
+    return workbook;
+  }
+
+  private Sheet copyCollectionTemplateSheet(Workbook workbook, Sheet source, int pageNo) {
+    Sheet target = workbook.createSheet("座次签到表_" + pageNo);
+    target.setDefaultColumnWidth(source.getDefaultColumnWidth());
+    target.setDefaultRowHeight(source.getDefaultRowHeight());
+    target.setDefaultRowHeightInPoints(source.getDefaultRowHeightInPoints());
+    target.setDisplayGridlines(source.isDisplayGridlines());
+    target.setPrintGridlines(source.isPrintGridlines());
+    target.setFitToPage(source.getFitToPage());
+    target.setAutobreaks(source.getAutobreaks());
+    target.setHorizontallyCenter(source.getHorizontallyCenter());
+    target.setVerticallyCenter(source.getVerticallyCenter());
+    for (int col = 0; col < COLLECTION_TEMPLATE_COLUMN_COUNT; col++) {
+      target.setColumnWidth(col, source.getColumnWidth(col));
+      target.setColumnHidden(col, source.isColumnHidden(col));
+    }
+    for (int rowNo = 0; rowNo < COLLECTION_TEMPLATE_ROW_COUNT; rowNo++) {
+      Row sourceRow = source.getRow(rowNo);
+      Row targetRow = target.createRow(rowNo);
+      if (sourceRow != null) {
+        targetRow.setHeight(sourceRow.getHeight());
+        targetRow.setZeroHeight(sourceRow.getZeroHeight());
+      }
+      if (sourceRow == null) continue;
+      for (int col = 0; col < COLLECTION_TEMPLATE_COLUMN_COUNT; col++) {
+        Cell sourceCell = sourceRow.getCell(col);
+        if (sourceCell == null) continue;
+        Cell targetCell = targetRow.createCell(col);
+        targetCell.setCellStyle(sourceCell.getCellStyle());
+        switch (sourceCell.getCellType()) {
+          case STRING -> targetCell.setCellValue(sourceCell.getStringCellValue());
+          case NUMERIC -> targetCell.setCellValue(sourceCell.getNumericCellValue());
+          case BOOLEAN -> targetCell.setCellValue(sourceCell.getBooleanCellValue());
+          case FORMULA -> targetCell.setCellFormula(sourceCell.getCellFormula());
+          default -> targetCell.setBlank();
+        }
+      }
+    }
+    for (int i = 0; i < source.getNumMergedRegions(); i++) {
+      org.apache.poi.ss.util.CellRangeAddress region = source.getMergedRegion(i);
+      if (region.getFirstRow() < COLLECTION_TEMPLATE_ROW_COUNT
+          && region.getLastRow() < COLLECTION_TEMPLATE_ROW_COUNT
+          && region.getFirstColumn() < COLLECTION_TEMPLATE_COLUMN_COUNT
+          && region.getLastColumn() < COLLECTION_TEMPLATE_COLUMN_COUNT) {
+        target.addMergedRegion(region.copy());
+      }
+    }
+    workbook.setPrintArea(workbook.getSheetIndex(target), 0,
+        COLLECTION_TEMPLATE_COLUMN_COUNT - 1, 0, COLLECTION_TEMPLATE_ROW_COUNT - 1);
+    target.getPrintSetup().setLandscape(source.getPrintSetup().getLandscape());
+    target.getPrintSetup().setPaperSize(source.getPrintSetup().getPaperSize());
+    target.getPrintSetup().setScale(source.getPrintSetup().getScale());
+    target.getPrintSetup().setFitWidth(source.getPrintSetup().getFitWidth());
+    target.getPrintSetup().setFitHeight(source.getPrintSetup().getFitHeight());
+    target.setMargin(Sheet.LeftMargin, source.getMargin(Sheet.LeftMargin));
+    target.setMargin(Sheet.RightMargin, source.getMargin(Sheet.RightMargin));
+    target.setMargin(Sheet.TopMargin, source.getMargin(Sheet.TopMargin));
+    target.setMargin(Sheet.BottomMargin, source.getMargin(Sheet.BottomMargin));
+    return target;
+  }
+
+  private void fillCollectionSheet(
+      Sheet sheet,
+      CertificationTaskEntity task,
+      CertificationTaskExamSiteEntity site,
+      CertificationTaskScopeEntity scope,
+      List<CollectionFormCandidate> candidates,
+      Workbook workbook
+  ) {
+    setCellValue(sheet, 0, 0, "职业技能等级认定座次签到表");
+    String address = site == null ? "" : nullToEmpty(site.getAddress());
+    String examTime = site == null ? nullToEmpty(task.getExamDate() == null ? null : task.getExamDate().toString())
+        : nullToEmpty(site.getExamDate() == null ? task.getExamDate() == null ? null : task.getExamDate().toString() : site.getExamDate().toString())
+            + " " + nullToEmpty(site.getStartTime()) + (StringUtils.hasText(site.getEndTime()) ? "-" + site.getEndTime() : "");
+    setCellValue(sheet, 1, 0, "考场地址：" + address + "    考试时间：" + examTime);
+     int candidateIndex = 0;
+     for (int block = 0; block < COLLECTION_BLOCK_COUNT; block++) {
+       int blockStartRow = COLLECTION_FIRST_BLOCK_ROW + block * COLLECTION_BLOCK_ROW_STEP;
+       for (int start : new int[]{0, 3, 6}) {
+         CollectionFormCandidate candidate = candidateIndex < candidates.size()
+             ? candidates.get(candidateIndex) : null;
+         candidateIndex++;
+         clearPictureCells(sheet, start, blockStartRow);
+         clearCandidateCells(sheet, start, blockStartRow);
+         if (candidate == null) {
+           continue;
+         }
+         setCellValue(sheet, blockStartRow + 4, start, candidate.candidate().getCandidateName());
+         setCellValue(sheet, blockStartRow + 4, start + 1, "实操");
+         setCellValue(sheet, blockStartRow + 5, start + 1, candidate.candidate().getIdCardNo());
+         setCellValue(sheet, blockStartRow + 6, start + 1, candidate.candidate().getAdmissionTicketNo());
+         addImage(workbook, sheet, candidate.avatar(), start, blockStartRow, 1, 4);
+         addImage(workbook, sheet, candidate.fingerprint(), start + 1, blockStartRow, 1, 4);
+         addImage(workbook, sheet, candidate.signature(), start + 2, blockStartRow + 1, 1, 1);
+         addImage(workbook, sheet, candidate.signature(), start + 2, blockStartRow + 3, 1, 1);
+       }
+     }
+  }
+
+  private void clearPictureCells(Sheet sheet, int start, int blockStartRow) {
+    setCellValue(sheet, blockStartRow, start, null);
+    setCellValue(sheet, blockStartRow, start + 1, null);
+    setCellValue(sheet, blockStartRow + 1, start + 2, null);
+    setCellValue(sheet, blockStartRow + 3, start + 2, null);
+  }
+
+  private void clearCandidateCells(Sheet sheet, int start, int blockStartRow) {
+    setCellValue(sheet, blockStartRow + 4, start, null);
+    setCellValue(sheet, blockStartRow + 4, start + 1, null);
+    setCellValue(sheet, blockStartRow + 4, start + 2, null);
+    setCellValue(sheet, blockStartRow + 5, start + 1, null);
+    setCellValue(sheet, blockStartRow + 6, start + 1, null);
+    setCellValue(sheet, blockStartRow + 5, start + 2, null);
+    setCellValue(sheet, blockStartRow + 6, start + 2, null);
+  }
+
+  private void setCellValue(Sheet sheet, int row, int col, String value) {
+    Row targetRow = sheet.getRow(row);
+    if (targetRow == null) targetRow = sheet.createRow(row);
+    Cell cell = targetRow.getCell(col);
+    if (cell == null) cell = targetRow.createCell(col);
+    cell.setBlank();
+    if (value != null) cell.setCellValue(value);
+  }
+
+  private void addImage(Workbook workbook, Sheet sheet, byte[] source, int col, int row, int colSpan, int rowSpan) {
+    try {
+      BufferedImage image = ImageIO.read(new java.io.ByteArrayInputStream(source));
+      if (image == null) throw new IOException("not an image");
+      int displayWidth = 0;
+      for (int column = col; column < col + colSpan; column++) {
+        displayWidth += Math.max(1, Math.round(sheet.getColumnWidthInPixels(column)));
+      }
+      int displayHeight = 0;
+      for (int targetRow = row; targetRow < row + rowSpan; targetRow++) {
+        Row target = sheet.getRow(targetRow);
+        float heightInPoints = target == null || target.getHeightInPoints() <= 0
+            ? sheet.getDefaultRowHeightInPoints() : target.getHeightInPoints();
+        displayHeight += Math.max(1, Math.round(heightInPoints * 96f / 72f));
+      }
+      // 嵌入图按打印级分辨率生成，单元格锚点仍占原区域，避免先压成屏幕像素再被 Excel/打印机二次缩放。
+      int canvasWidth = Math.max(1, displayWidth * COLLECTION_IMAGE_EXPORT_SCALE);
+      int canvasHeight = Math.max(1, displayHeight * COLLECTION_IMAGE_EXPORT_SCALE);
+      BufferedImage content = cropWhitespace(image);
+      BufferedImage normalized = new BufferedImage(canvasWidth, canvasHeight, BufferedImage.TYPE_INT_RGB);
+      Graphics2D graphics = normalized.createGraphics();
+      try {
+        graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        graphics.setRenderingHint(RenderingHints.KEY_ALPHA_INTERPOLATION,
+            RenderingHints.VALUE_ALPHA_INTERPOLATION_QUALITY);
+        graphics.setColor(java.awt.Color.WHITE);
+        graphics.fillRect(0, 0, canvasWidth, canvasHeight);
+        double scale = Math.min((double) canvasWidth / content.getWidth(),
+            (double) canvasHeight / content.getHeight());
+        int drawWidth = Math.max(1, (int) Math.round(content.getWidth() * scale));
+        int drawHeight = Math.max(1, (int) Math.round(content.getHeight() * scale));
+        int drawX = (canvasWidth - drawWidth) / 2;
+        int drawY = (canvasHeight - drawHeight) / 2;
+        graphics.drawImage(content, drawX, drawY, drawWidth, drawHeight, null);
+      } finally {
+        graphics.dispose();
+      }
+      ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+      ImageIO.write(normalized, "png", bytes);
+      int pictureIndex = workbook.addPicture(bytes.toByteArray(), Workbook.PICTURE_TYPE_PNG);
+      XSSFDrawing drawing = ((XSSFSheet) sheet).createDrawingPatriarch();
+      XSSFClientAnchor anchor = new XSSFClientAnchor();
+      anchor.setCol1(col);
+      anchor.setRow1(row);
+      anchor.setCol2(col + colSpan);
+      anchor.setRow2(row + rowSpan);
+      anchor.setAnchorType(ClientAnchor.AnchorType.MOVE_AND_RESIZE);
+      drawing.createPicture(anchor, pictureIndex);
+    } catch (IOException ex) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "图片无法读取，正式导出已阻止");
+    }
+  }
+
+  /**
+   * 裁掉大块留白，让签名笔画在单元格内更大更清晰；无有效内容时退回原图。
+   */
+  private BufferedImage cropWhitespace(BufferedImage image) {
+    int width = image.getWidth();
+    int height = image.getHeight();
+    if (width <= 2 || height <= 2) {
+      return image;
+    }
+    int minX = width;
+    int minY = height;
+    int maxX = -1;
+    int maxY = -1;
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        int rgb = image.getRGB(x, y);
+        int alpha = (rgb >>> 24) & 0xFF;
+        int red = (rgb >> 16) & 0xFF;
+        int green = (rgb >> 8) & 0xFF;
+        int blue = rgb & 0xFF;
+        boolean transparent = alpha < 16;
+        boolean nearWhite = red >= COLLECTION_IMAGE_WHITE_THRESHOLD
+            && green >= COLLECTION_IMAGE_WHITE_THRESHOLD
+            && blue >= COLLECTION_IMAGE_WHITE_THRESHOLD;
+        if (transparent || nearWhite) {
+          continue;
+        }
+        if (x < minX) {
+          minX = x;
+        }
+        if (y < minY) {
+          minY = y;
+        }
+        if (x > maxX) {
+          maxX = x;
+        }
+        if (y > maxY) {
+          maxY = y;
+        }
+      }
+    }
+    if (maxX < minX || maxY < minY) {
+      return image;
+    }
+    int pad = COLLECTION_IMAGE_CONTENT_PADDING_PX;
+    int cropX = Math.max(0, minX - pad);
+    int cropY = Math.max(0, minY - pad);
+    int cropW = Math.min(width - cropX, maxX - minX + 1 + pad * 2);
+    int cropH = Math.min(height - cropY, maxY - minY + 1 + pad * 2);
+    if (cropW <= 0 || cropH <= 0 || (cropW == width && cropH == height)) {
+      return image;
+    }
+    BufferedImage cropped = new BufferedImage(cropW, cropH, BufferedImage.TYPE_INT_RGB);
+    Graphics2D graphics = cropped.createGraphics();
+    try {
+      graphics.setColor(java.awt.Color.WHITE);
+      graphics.fillRect(0, 0, cropW, cropH);
+      graphics.drawImage(image, 0, 0, cropW, cropH, cropX, cropY, cropX + cropW, cropY + cropH, null);
+    } finally {
+      graphics.dispose();
+    }
+    return cropped;
+  }
+
+  private byte[] readImageFile(Long tenantId, Long fileId, String label) {
+    if (fileId == null) throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少" + label);
+    FileEntity file = fileApplicationService.getExistingFile(tenantId, fileId);
+    try {
+      byte[] bytes = fileApplicationService.readBytes(fileId);
+      if (bytes == null || bytes.length == 0 || ImageIO.read(new java.io.ByteArrayInputStream(bytes)) == null) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, label + "文件不可读取");
+      }
+      return bytes;
+    } catch (BusinessException ex) {
+      throw ex;
+    } catch (IOException ex) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, label + "文件不可读取");
+    }
+  }
+
+  private String candidateLabel(CertificationCandidateEntity candidate) {
+    return nullToEmpty(candidate.getCandidateName()) + "，准考证号" + nullToEmpty(candidate.getAdmissionTicketNo());
+  }
+
+  private String safeFilename(String value) {
+    return StringUtils.hasText(value) ? value.replaceAll("[\\\\/:*?\"<>|]", "_") : "任务";
+  }
+
+  private String nullToEmpty(String value) {
+    return value == null ? "" : value;
+  }
+
+  private record CollectionFormCandidate(
+      CertificationCandidateEntity candidate,
+      byte[] avatar,
+      byte[] fingerprint,
+      byte[] signature
+  ) {
   }
 
   private byte[] buildQrCodeWorkbook(
@@ -491,6 +1041,7 @@ public class PracticalCollectionApplicationService {
           collectionDetail(taskId, candidate.getId()),
           "该考生已完成采集");
     }
+    eligibilityService.requireEligible(user.getTenantId(), taskId, candidate.getId());
     CandidateCollectionDetailVO detail = openCurrentCandidate(
         user,
         taskId,
@@ -506,10 +1057,12 @@ public class PracticalCollectionApplicationService {
     PlatformUserPrincipal user = current();
     requireTask(user.getTenantId(), taskId);
     CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), taskId, candidateId);
-    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
-    if (CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
+    PracticalCollectionStatusEntity existingStatus = statusMapper.selectByTaskAndCandidate(user.getTenantId(), taskId, candidateId);
+    if (existingStatus != null && CollectionOverallStatusEnum.COMPLETED.getCode().equals(existingStatus.getOverallStatus())) {
       return collectionDetail(taskId, candidate.getId());
     }
+    eligibilityService.requireEligible(user.getTenantId(), taskId, candidateId);
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
     return openCurrentCandidate(
         user,
         taskId,
@@ -526,6 +1079,7 @@ public class PracticalCollectionApplicationService {
       PracticalCollectionStatusEntity status,
       CollectionMatchMethodEnum matchMethod
   ) {
+    eligibilityService.requireEligible(user.getTenantId(), taskId, candidate.getId());
     PracticalCollectionQueueEntity collecting = queueMapper.selectList(
             new LambdaQueryWrapper<PracticalCollectionQueueEntity>()
                 .eq(PracticalCollectionQueueEntity::getTenantId, user.getTenantId())
@@ -602,11 +1156,20 @@ public class PracticalCollectionApplicationService {
             .eq(CertificationCandidateEntity::getTenantId, tenantId)
             .eq(CertificationCandidateEntity::getTaskId, taskId)
             .eq(CertificationCandidateEntity::getDeleted, 0));
+    Map<Long, CollectionEligibilityResult> eligibilities = eligibilityService.checkCandidates(tenantId, taskId, candidates);
     int created = 0;
     for (CertificationCandidateEntity candidate : candidates) {
       PracticalCollectionStatusEntity existing = statusMapper.selectByTaskAndCandidate(
           tenantId, taskId, candidate.getId());
       if (existing != null) {
+        continue;
+      }
+      CollectionEligibilityResult eligibility = eligibilities.get(candidate.getId());
+      if (eligibility == null || !eligibility.eligible()) {
+        log.warn("Skip practical collection status initialization for ineligible candidate: taskId={}, candidateId={}, missing={}, invalid={}",
+            taskId, candidate.getId(),
+            eligibility == null ? List.of() : eligibility.missingDocumentCodes(),
+            eligibility == null ? List.of() : eligibility.invalidDocumentCodes());
         continue;
       }
       try {
@@ -672,6 +1235,9 @@ public class PracticalCollectionApplicationService {
       throw new BusinessException(ErrorCode.NOT_FOUND, "采集二维码不存在或不属于当前任务");
     }
     CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), status.getCandidateId());
+    if (!CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
+      eligibilityService.requireEligible(user.getTenantId(), request.taskId(), candidate.getId());
+    }
     LocalDateTime now = LocalDateTime.now();
     if (CollectionOverallStatusEnum.NOT_ARRIVED.getCode().equals(status.getOverallStatus())
         || CollectionOverallStatusEnum.ISSUED.getCode().equals(status.getOverallStatus())) {
@@ -703,6 +1269,11 @@ public class PracticalCollectionApplicationService {
     }
     List<CertificationCandidateEntity> candidates = searchCandidates(tenantId, request.taskId(), keyword);
     if (candidates.isEmpty()) {
+        return List.of();
+    }
+    Map<Long, CollectionEligibilityResult> eligibilities = eligibilityService.checkCandidates(tenantId, request.taskId(), candidates);
+    candidates = eligibleCandidates(candidates, eligibilities);
+    if (candidates.isEmpty()) {
       return List.of();
     }
     Map<Long, PracticalCollectionStatusEntity> statuses = statusesByCandidateIds(
@@ -716,8 +1287,27 @@ public class PracticalCollectionApplicationService {
             statuses.get(candidate.getId()),
             null,
             isActiveQueued(statuses.get(candidate.getId())),
-            inferMatchMethod(keyword, candidate, statuses.get(candidate.getId()))
+            inferMatchMethod(keyword, candidate, statuses.get(candidate.getId())),
+            eligibilities.get(candidate.getId())
         ))
+        .toList();
+  }
+
+  private List<CertificationCandidateEntity> eligibleCandidates(
+      List<CertificationCandidateEntity> candidates,
+      Map<Long, CollectionEligibilityResult> eligibilities
+  ) {
+    if (candidates == null || candidates.isEmpty() || eligibilities == null || eligibilities.isEmpty()) {
+      return List.of();
+    }
+    return candidates.stream()
+        .filter(candidate -> {
+          if (candidate == null || candidate.getId() == null) {
+            return false;
+          }
+          CollectionEligibilityResult eligibility = eligibilities.get(candidate.getId());
+          return eligibility != null && eligibility.eligible();
+        })
         .toList();
   }
 
@@ -729,6 +1319,7 @@ public class PracticalCollectionApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "匹配方式不正确");
     }
     CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
+    eligibilityService.requireEligible(user.getTenantId(), request.taskId(), request.candidateId());
     PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
     if (CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
       throw new BusinessException(ErrorCode.CONFLICT, "已完成采集的考生不能重新入队");
@@ -779,6 +1370,33 @@ public class PracticalCollectionApplicationService {
   }
 
   @Transactional
+  public BatchJoinQueueResultVO joinQueueBatch(BatchJoinQueueRequest request) {
+    String matchMethod = StringUtils.hasText(request.matchMethod())
+        ? request.matchMethod() : CollectionMatchMethodEnum.MANUAL.getCode();
+    List<Long> candidateIds = request.candidateIds() == null ? List.of() : request.candidateIds().stream()
+        .filter(Objects::nonNull).distinct().toList();
+    int success = 0;
+    List<BatchJoinQueueResultVO.BatchJoinQueueFailureVO> failures = new ArrayList<>();
+    for (Long candidateId : candidateIds) {
+      try {
+        joinQueue(new JoinQueueRequest(request.taskId(), candidateId, matchMethod));
+        success++;
+      } catch (BusinessException ex) {
+        CollectionEligibilityResult eligibility = eligibilityService.check(
+            current().getTenantId(), request.taskId(), candidateId);
+        failures.add(new BatchJoinQueueResultVO.BatchJoinQueueFailureVO(
+            candidateId,
+            eligibility.candidateName(),
+            eligibility.admissionTicketNo(),
+            eligibility.missingDocumentCodes(),
+            eligibility.invalidDocumentCodes(),
+            ex.getMessage()));
+      }
+    }
+    return new BatchJoinQueueResultVO(success, failures.size(), failures);
+  }
+
+  @Transactional
   public QueueItemVO removeQueue(RemoveQueueRequest request) {
     PlatformUserPrincipal user = current();
     PracticalCollectionQueueEntity queue = queueMapper.selectById(request.queueId());
@@ -822,6 +1440,7 @@ public class PracticalCollectionApplicationService {
       return null;
     }
     CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), queue.getCandidateId());
+    eligibilityService.requireEligible(user.getTenantId(), request.taskId(), candidate.getId());
     PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
     domainService.assertCanStartCollecting(status.getOverallStatus(), status.getQueueStatus());
     LocalDateTime now = LocalDateTime.now();
@@ -842,6 +1461,7 @@ public class PracticalCollectionApplicationService {
   public FingerprintTraceVO submitFingerprint(SubmitFingerprintRequest request) {
     PlatformUserPrincipal user = current();
     CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
+    eligibilityService.requireEligible(user.getTenantId(), request.taskId(), request.candidateId());
     PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
     domainService.assertCanSubmitFingerprint(status.getOverallStatus());
     FingerprintCollectStatusEnum collectStatus = FingerprintCollectStatusEnum.fromCode(request.collectStatus());
@@ -919,6 +1539,7 @@ public class PracticalCollectionApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "签署人类型不正确");
     }
     CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
+    eligibilityService.requireEligible(user.getTenantId(), request.taskId(), request.candidateId());
     PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
     domainService.assertCanSubmitSignature(status.getOverallStatus());
     FileEntity file = fileApplicationService.getExistingFile(user.getTenantId(), request.signatureFileId());
@@ -956,6 +1577,7 @@ public class PracticalCollectionApplicationService {
     if (CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
       return converter.toActionResultVO(status, activeQueueItem(user.getTenantId(), candidate, status), "采集已完成");
     }
+    eligibilityService.requireEligible(user.getTenantId(), request.taskId(), request.candidateId());
     domainService.assertCanComplete(status.getFingerprintStatus(), status.getSignatureStatus());
     LocalDateTime now = LocalDateTime.now();
     status.setOverallStatus(CollectionOverallStatusEnum.COMPLETED.getCode());

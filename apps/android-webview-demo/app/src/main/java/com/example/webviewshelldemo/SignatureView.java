@@ -10,6 +10,12 @@ import android.view.MotionEvent;
 import android.view.View;
 
 public final class SignatureView extends View {
+    /**
+     * The exported seating-sign form scales a captured signature down to one cell.
+     * Keep the on-device stroke wider so complex glyphs remain legible after print.
+     */
+    private static final float SIGNATURE_STROKE_WIDTH_DP = 9f;
+
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
     private boolean hasSignature;
@@ -20,7 +26,7 @@ public final class SignatureView extends View {
         super(context);
         setBackgroundColor(Color.WHITE);
         paint.setColor(Color.rgb(17, 24, 39));
-        paint.setStrokeWidth(dp(3.5f));
+        paint.setStrokeWidth(dp(SIGNATURE_STROKE_WIDTH_DP));
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeJoin(Paint.Join.ROUND);

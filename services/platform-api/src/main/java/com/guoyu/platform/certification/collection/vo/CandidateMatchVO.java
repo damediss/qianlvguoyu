@@ -18,6 +18,10 @@ public record CandidateMatchVO(
     String qrIssueStatus,
     String qrIssueStatusLabel,
     String matchMethod,
-    String matchMethodLabel
+    String matchMethodLabel,
+    String documentStatus,
+    java.util.List<String> missingDocumentCodes,
+    java.util.List<String> invalidDocumentCodes,
+    Boolean collectionEligible
 ) {
 }

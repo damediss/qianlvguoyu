@@ -148,7 +148,8 @@ export function SignaturePad({
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, height);
     ctx.strokeStyle = '#111827';
-    ctx.lineWidth = 3.5;
+    // 座次签到表会把签名缩进单格，线宽过细时复杂笔画易断、难辨认。
+    ctx.lineWidth = 5.5;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -225,7 +226,7 @@ export function SignaturePad({
     }
     const ctx = getContext(canvas);
     ctx.beginPath();
-    ctx.arc(point.x, point.y, 1.8, 0, Math.PI * 2);
+    ctx.arc(point.x, point.y, 2.6, 0, Math.PI * 2);
     ctx.fillStyle = '#111827';
     ctx.fill();
     markHasSignature();

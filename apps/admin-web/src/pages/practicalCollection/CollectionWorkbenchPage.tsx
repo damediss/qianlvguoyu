@@ -720,6 +720,23 @@ export function CollectionWorkbenchPage({
 
   const validateCandidateEntry = (candidate: CandidateCollectionItemVO) => {
 
+    if (candidate.collectionEligible === false) {
+
+      Modal.warning({
+
+        title: '资料未满足实操采集准入条件',
+
+        content: `该考生的信息收集尚未完成。${candidate.missingDocumentCodes?.length ? `缺少：${candidate.missingDocumentCodes.join('、')}。` : ''}${candidate.invalidDocumentCodes?.length ? `资料异常：${candidate.invalidDocumentCodes.join('、')}。` : ''}请先前往“认定筹备—信息收集”补充资料。`,
+
+        okText: '我知道了',
+
+      });
+
+      return false;
+
+    }
+
+
     const currentCollectingCandidate = getCurrentCollectingCandidate();
 
     if (currentCollectingCandidate && !isSameId(currentCollectingCandidate.candidateId, candidate.candidateId)) {
@@ -1086,6 +1103,14 @@ export function CollectionWorkbenchPage({
 
                           <Tag color={tabletStatusColor[status]}>{statusLabel}</Tag>
 
+                          {candidate.collectionEligible !== true ? (
+                            <Tag color="orange">
+
+                            资料：{candidate.documentStatus === 'INVALID' ? '资料异常' : '待补充'}
+
+                            </Tag>
+                          ) : null}
+
                           <Button
 
                             size="large"
@@ -1095,6 +1120,7 @@ export function CollectionWorkbenchPage({
                             icon={<PlayCircleOutlined />}
 
                             loading={openCandidateMutation.isPending}
+                            disabled={candidate.collectionEligible === false}
 
                             onClick={(event) => {
 

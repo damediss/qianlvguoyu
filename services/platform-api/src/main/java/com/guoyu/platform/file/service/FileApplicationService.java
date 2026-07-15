@@ -6,7 +6,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.file.FileStorage;
+import com.guoyu.platform.file.TencentCosFileStorage;
 import com.guoyu.platform.file.config.FileStorageProperties;
+import com.qcloud.cos.model.COSObject;
 import com.guoyu.platform.file.entity.FileEntity;
 import com.guoyu.platform.file.mapper.FileMapper;
 import com.guoyu.platform.file.support.StoredFileFormatValidator;
@@ -27,6 +29,7 @@ import java.time.LocalDate;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
@@ -158,6 +161,12 @@ public class FileApplicationService {
   }
 
   @Transactional(readOnly = true)
+  public byte[] readBytes(Long id) {
+    FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
+    return readBytes(entity);
+  }
+
+  @Transactional(readOnly = true)
   public Resource downloadResource(Long id) {
     FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
     return loadResource(entity);
@@ -170,12 +179,41 @@ public class FileApplicationService {
     return buildDownloadResponse(entity, resource, inline);
   }
 
+  private byte[] readBytes(FileEntity entity) {
+    if ("cos".equalsIgnoreCase(entity.getStorageProvider())) {
+      if (!(storage instanceof TencentCosFileStorage cosStorage)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "COS storage is not configured");
+      }
+      try (COSObject object = cosStorage.getObject(entity.getObjectKey());
+          InputStream input = object.getObjectContent()) {
+        return input.readAllBytes();
+      } catch (IOException ex) {
+        log.warn("Failed to read COS file: id={}, objectKey={}", entity.getId(), entity.getObjectKey(), ex);
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "File read failed");
+      }
+    }
+    Path path = localPath(entity)
+        .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "File is not available from local storage"));
+    try {
+      return Files.readAllBytes(path);
+    } catch (IOException ex) {
+      log.warn("Failed to read local file: id={}, objectKey={}, path={}", entity.getId(), entity.getObjectKey(), path, ex);
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "File read failed");
+    }
+  }
+
   private Resource loadResource(FileEntity entity) {
     if ("cos".equalsIgnoreCase(entity.getStorageProvider())) {
-      // COS 直连:前端用 FileVO.url 跳 CDN,后端不再流式转发(避免流量走两次)。
-      // 真要后端转发的话,FileController 调 TencentCosFileStorage.getObject → InputStreamResource。
-      throw new BusinessException(ErrorCode.NOT_IMPLEMENTED,
-          "COS 文件下载请使用前端 FileVO.url 直连 CDN");
+      if (!(storage instanceof TencentCosFileStorage cosStorage)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "COS storage is not configured");
+      }
+      try {
+        COSObject object = cosStorage.getObject(entity.getObjectKey());
+        return new InputStreamResource(object.getObjectContent());
+      } catch (Exception ex) {
+        log.warn("Failed to load COS file: id={}, objectKey={}", entity.getId(), entity.getObjectKey(), ex);
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "File download failed");
+      }
     }
     Path path = localPath(entity)
         .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "File is not available from local storage"));

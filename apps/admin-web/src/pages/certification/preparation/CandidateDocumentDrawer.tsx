@@ -30,6 +30,8 @@ import type {
 } from '../../../types/certificationPreparation';
 import { boolTag, candidateDocumentRatioTag, dash, dateTimeText, statusTag } from './shared';
 
+const AUTO_APPROVED_IMAGE_DOC_CODES = new Set(['DOC002', 'DOC003', 'DOC004']);
+
 interface CandidateDocumentDrawerProps {
   taskId: string;
   candidate: PreparationCandidate | null;
@@ -81,7 +83,11 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
   const saveMutation = useMutation({
     mutationFn: (payload: PreparationCandidateDocumentPayload) => uploadPreparationCandidateDocument(taskId, payload),
     onSuccess: () => {
-      message.success('资料已保存');
+      if (uploadingDocument?.fileId && AUTO_APPROVED_IMAGE_DOC_CODES.has(uploadingDocument.docCode)) {
+        message.warning('照片已修改，请重新生成申请表');
+      } else {
+        message.success('资料已保存');
+      }
       setUploadModalOpen(false);
       setUploadingDocument(null);
       uploadForm.resetFields();
@@ -118,8 +124,9 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
     onError: (error) => message.error(error instanceof Error ? error.message : '生成失败'),
   });
 
-  const doc002Approved = useMemo(
-    () => (documentsQuery.data?.items || []).some((item) => item.docCode === 'DOC002' && item.status === 'approved'),
+  const requiredImagesReady = useMemo(
+    () => ['DOC002', 'DOC003', 'DOC004'].every((docCode) =>
+      (documentsQuery.data?.items || []).some((item) => item.docCode === docCode && Boolean(item.fileId))),
     [documentsQuery.data?.items],
   );
 
@@ -210,10 +217,25 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
                 size="small"
                 icon={<FileSyncOutlined />}
                 loading={generateMutation.isPending}
-                disabled={!doc002Approved}
+                disabled={!requiredImagesReady}
                 onClick={() => generateMutation.mutate('DOC001')}
               >
                 {record.status === 'missing' ? '生成认定申请表' : '重新生成'}
+              </Button>
+            </PermissionGate>
+          );
+        }
+
+        if (AUTO_APPROVED_IMAGE_DOC_CODES.has(record.docCode)) {
+          return (
+            <PermissionGate code="certification.preparation.document.upload">
+              <Button
+                type="link"
+                size="small"
+                icon={<UploadOutlined />}
+                onClick={() => openUploadModal(record)}
+              >
+                {record.fileId ? '修改' : '上传'}
               </Button>
             </PermissionGate>
           );
@@ -356,7 +378,7 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
       </Modal>
 
       <Modal
-        title="上传学员资料"
+        title={uploadingDocument?.fileId ? '修改学员资料' : '上传学员资料'}
         open={uploadModalOpen}
         onOk={submitUpload}
         onCancel={() => {
@@ -383,7 +405,7 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
           <Form.Item label="文件">
             <Upload {...uploadProps} accept={acceptByDocCode(uploadingDocument?.docCode)}>
               <Button icon={<UploadOutlined />} loading={uploadingFile}>
-                选择并上传文件
+                {uploadingDocument?.fileId ? '修改' : '上传'}
               </Button>
             </Upload>
           </Form.Item>

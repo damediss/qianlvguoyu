@@ -93,11 +93,16 @@ export function FilePreviewModal({ open, target, onClose }: FilePreviewModalProp
       }
 
       try {
-        const blob = fileUrl
-          ? await fetchUrlFileBlob(fileUrl)
-          : taskId && documentId
-            ? await fetchCandidateDocumentBlob(taskId, documentId)
-            : await fetchPlatformFileBlob(fileId!);
+        let blob: Blob;
+        if (fileUrl) {
+          blob = await fetchUrlFileBlob(fileUrl);
+        } else if (taskId && documentId) {
+          blob = await fetchCandidateDocumentBlob(taskId, documentId);
+        } else if (fileId) {
+          blob = await fetchPlatformFileBlob(fileId);
+        } else {
+          throw new Error('缺少文件标识');
+        }
         if (cancelled) {
           return;
         }

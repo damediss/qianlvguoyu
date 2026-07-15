@@ -133,6 +133,7 @@ public class CertificationPreparationApplicationService {
   private static final Pattern MOBILE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
   private static final String CANDIDATE_DOC_SCOPE = "candidate_doc";
   private static final List<String> CANDIDATE_DOC_CODES = List.of("DOC001", "DOC002", "DOC003", "DOC004", "DOC005", "DOC006");
+  private static final List<String> AUTO_APPROVED_IMAGE_DOC_CODES = List.of("DOC002", "DOC003", "DOC004");
   private static final String INFO_APPROVED = "approved";
   private static final List<ChecklistTemplateItem> CHECKLIST_TEMPLATE = List.of(
       new ChecklistTemplateItem(1, "平板电脑", "按需"),
@@ -699,8 +700,11 @@ public class CertificationPreparationApplicationService {
     if (req.required() != null) {
       entity.setRequired(req.required());
     }
-    entity.setStatus(req.fileId() == null ? "missing" : "pending_review");
+    boolean autoApprovedImage = AUTO_APPROVED_IMAGE_DOC_CODES.contains(req.docCode()) && req.fileId() != null;
+    entity.setStatus(req.fileId() == null ? "missing" : (autoApprovedImage ? INFO_APPROVED : "pending_review"));
     entity.setUploadedAt(req.fileId() == null ? null : LocalDateTime.now());
+    entity.setReviewedAt(autoApprovedImage ? LocalDateTime.now() : null);
+    entity.setReviewComment(autoApprovedImage ? "图片上传后自动通过，无需审核" : null);
     entity.setRemark(req.remark());
     if (entity.getId() == null) {
       documentMapper.insert(entity);
@@ -754,6 +758,9 @@ public class CertificationPreparationApplicationService {
     CertificationCandidateDocumentEntity entity = documentMapper.selectById(documentId);
     if (entity == null || !taskId.equals(entity.getTaskId())) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "考生资料不存在");
+    }
+    if (AUTO_APPROVED_IMAGE_DOC_CODES.contains(entity.getDocCode())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "身份证及证件照上传后无需审核，可直接修改");
     }
     entity.setStatus(req.status());
     entity.setReviewComment(req.reviewComment());
@@ -2044,7 +2051,27 @@ public class CertificationPreparationApplicationService {
         .filter(Objects::nonNull)
         .toList();
     ensureCandidateDocuments(taskId, candidateIds);
+    normalizeAutoApprovedImageDocuments(taskId, candidateIds);
     batchRefreshCandidateDocumentStats(taskId, candidateIds);
+  }
+
+  private void normalizeAutoApprovedImageDocuments(Long taskId, List<Long> candidateIds) {
+    List<CertificationCandidateDocumentEntity> documents = documentMapper.selectList(
+        new LambdaQueryWrapper<CertificationCandidateDocumentEntity>()
+            .eq(CertificationCandidateDocumentEntity::getTaskId, taskId)
+            .in(CertificationCandidateDocumentEntity::getCandidateId, candidateIds)
+            .in(CertificationCandidateDocumentEntity::getDocCode, AUTO_APPROVED_IMAGE_DOC_CODES)
+            .isNotNull(CertificationCandidateDocumentEntity::getFileId)
+            .ne(CertificationCandidateDocumentEntity::getStatus, INFO_APPROVED));
+    if (CollectionUtils.isEmpty(documents)) {
+      return;
+    }
+    for (CertificationCandidateDocumentEntity document : documents) {
+      document.setStatus(INFO_APPROVED);
+      document.setReviewedAt(document.getUploadedAt() == null ? LocalDateTime.now() : document.getUploadedAt());
+      document.setReviewComment("图片上传后自动通过，无需审核");
+      documentMapper.updateById(document);
+    }
   }
 
   private void ensureCandidateDocuments(Long taskId, List<Long> candidateIds) {

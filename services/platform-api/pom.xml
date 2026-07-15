@@ -130,6 +130,13 @@
       <version>5.5.1</version>
     </dependency>
 
+    <!-- Apache PDFBox: fixed-layout PDF printing without commercial licensing risk. -->
+    <dependency>
+      <groupId>org.apache.pdfbox</groupId>
+      <artifactId>pdfbox</artifactId>
+      <version>3.0.4</version>
+    </dependency>
+
     <!-- 腾讯云 COS SDK(可选,生产用 cos provider 时需要) -->
     <dependency>
       <groupId>com.qcloud</groupId>

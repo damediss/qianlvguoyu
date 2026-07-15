@@ -1,6 +1,25 @@
 import { getCollectionTasks, getCollectionWorkbench } from '../../api/certificationPracticalCollection';
 import type { CollectionTaskVO, SnowflakeId } from '../../types/certificationPracticalCollection';
 
+const LAST_COLLECTION_TASK_ID_KEY = 'guoyu.practical-collection.last-task-id';
+
+export function readLastCollectionTaskId(): string | undefined {
+  try {
+    const value = localStorage.getItem(LAST_COLLECTION_TASK_ID_KEY)?.trim();
+    return value || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function writeLastCollectionTaskId(taskId: SnowflakeId): void {
+  try {
+    localStorage.setItem(LAST_COLLECTION_TASK_ID_KEY, String(taskId));
+  } catch {
+    // ignore storage failures on restricted WebView profiles
+  }
+}
+
 export async function fetchCollectionTasks(keyword?: string): Promise<CollectionTaskVO[]> {
   const response = await getCollectionTasks({
     page: 1,
@@ -25,5 +44,6 @@ export function buildTabletWorkbenchPath(taskId: SnowflakeId): string {
 }
 
 export function switchCollectionTask(taskId: SnowflakeId): void {
+  writeLastCollectionTaskId(taskId);
   window.history.replaceState(null, '', buildTabletWorkbenchPath(taskId));
 }

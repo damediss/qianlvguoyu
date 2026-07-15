@@ -78,13 +78,36 @@ export async function uploadPlatformFile(file: File | Blob, accessPolicy?: strin
   return response.data.data;
 }
 
+export async function getPlatformFile(fileId: string): Promise<FileVO> {
+  const response = await apiClient.get<ApiResponse<FileVO>>(`/files/${encodeURIComponent(fileId)}`);
+  if (!response.data.data) {
+    throw new Error(response.data.message || '文件不存在');
+  }
+  return response.data.data;
+}
+
 export function fetchCandidateDocumentBlob(taskId: string, documentId: string) {
   return fetchFileBlob(
     `/certification/preparation/tasks/${taskId}/candidate-documents/${documentId}/download`,
   );
 }
 
-export function fetchPlatformFileBlob(fileId: string) {
+/** 私有 COS 桶直链浏览器无法访问，须走后端鉴权下载 */
+export function isPrivateCosUrl(url?: string | null): boolean {
+  if (!url?.trim()) return false;
+  return /\.cos\.[\w-]+\.myqcloud\.com/i.test(url.trim());
+}
+
+function shouldFetchFileViaApi(file: FileVO): boolean {
+  if (file.accessPolicy === 'private') return true;
+  return isPrivateCosUrl(file.url);
+}
+
+export async function fetchPlatformFileBlob(fileId: string) {
+  const file = await getPlatformFile(fileId);
+  if (file.url && isUsableFileUrl(file.url) && !shouldFetchFileViaApi(file)) {
+    return fetchUrlFileBlob(file.url);
+  }
   return fetchFileBlob(`/files/${encodeURIComponent(fileId)}/download?inline=true`);
 }
 

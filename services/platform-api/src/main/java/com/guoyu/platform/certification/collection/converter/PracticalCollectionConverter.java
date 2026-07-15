@@ -1,5 +1,6 @@
 package com.guoyu.platform.certification.collection.converter;
 
+import com.guoyu.platform.certification.collection.domain.CollectionEligibilityResult;
 import com.guoyu.platform.certification.collection.enums.CollectionExceptionStatusEnum;
 import com.guoyu.platform.certification.collection.enums.CollectionExceptionTypeEnum;
 import com.guoyu.platform.certification.collection.enums.CollectionMatchMethodEnum;
@@ -67,6 +68,17 @@ public class PracticalCollectionConverter {
       Boolean alreadyQueued,
       String matchMethod
   ) {
+    return toCandidateMatchVO(candidate, status, avatarFileId, alreadyQueued, matchMethod, null);
+  }
+
+  public CandidateMatchVO toCandidateMatchVO(
+      CertificationCandidateEntity candidate,
+      PracticalCollectionStatusEntity status,
+      Long avatarFileId,
+      Boolean alreadyQueued,
+      String matchMethod,
+      CollectionEligibilityResult eligibility
+  ) {
     if (candidate == null) {
       return null;
     }
@@ -90,13 +102,25 @@ public class PracticalCollectionConverter {
         qrIssueStatus,
         qrIssueStatusLabel(qrIssueStatus),
         matchMethod,
-        matchMethodLabel(matchMethod)
+        matchMethodLabel(matchMethod),
+        eligibility == null ? null : eligibility.documentStatus(),
+        eligibility == null ? List.of() : eligibility.missingDocumentCodes(),
+        eligibility == null ? List.of() : eligibility.invalidDocumentCodes(),
+        eligibility == null ? null : eligibility.eligible()
     );
   }
 
   public CandidateCollectionItemVO toCandidateItemVO(
       CertificationCandidateEntity candidate,
       PracticalCollectionStatusEntity status
+  ) {
+    return toCandidateItemVO(candidate, status, null);
+  }
+
+  public CandidateCollectionItemVO toCandidateItemVO(
+      CertificationCandidateEntity candidate,
+      PracticalCollectionStatusEntity status,
+      CollectionEligibilityResult eligibility
   ) {
     if (candidate == null) {
       return null;
@@ -121,7 +145,11 @@ public class PracticalCollectionConverter {
         signatureStatusLabel(status == null ? null : status.getSignatureStatus()),
         status == null ? null : status.getExceptionStatus(),
         exceptionStatusLabel(status == null ? null : status.getExceptionStatus()),
-        status == null ? null : status.getQueueNo()
+        status == null ? null : status.getQueueNo(),
+        eligibility == null ? null : eligibility.documentStatus(),
+        eligibility == null ? List.of() : eligibility.missingDocumentCodes(),
+        eligibility == null ? List.of() : eligibility.invalidDocumentCodes(),
+        eligibility == null ? null : eligibility.eligible()
     );
   }
 
@@ -141,6 +169,20 @@ public class PracticalCollectionConverter {
       FingerprintTraceVO latestFingerprint,
       SignatureRecordVO latestSignature,
       List<CollectionExceptionVO> exceptions
+  ) {
+    return toCandidateDetailVO(candidate, status, avatarFileId, currentQueue, latestFingerprint, latestSignature,
+        exceptions, null);
+  }
+
+  public CandidateCollectionDetailVO toCandidateDetailVO(
+      CertificationCandidateEntity candidate,
+      PracticalCollectionStatusEntity status,
+      Long avatarFileId,
+      QueueItemVO currentQueue,
+      FingerprintTraceVO latestFingerprint,
+      SignatureRecordVO latestSignature,
+      List<CollectionExceptionVO> exceptions,
+      CollectionEligibilityResult eligibility
   ) {
     if (candidate == null || status == null) {
       return null;
@@ -178,7 +220,11 @@ public class PracticalCollectionConverter {
         currentQueue,
         latestFingerprint,
         latestSignature,
-        exceptions == null ? List.of() : exceptions
+        exceptions == null ? List.of() : exceptions,
+        eligibility == null ? null : eligibility.documentStatus(),
+        eligibility == null ? List.of() : eligibility.missingDocumentCodes(),
+        eligibility == null ? List.of() : eligibility.invalidDocumentCodes(),
+        eligibility == null ? null : eligibility.eligible()
     );
   }
 

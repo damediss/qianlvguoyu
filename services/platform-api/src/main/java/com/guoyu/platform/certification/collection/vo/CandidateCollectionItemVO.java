@@ -20,6 +20,10 @@ public record CandidateCollectionItemVO(
     String signatureStatusLabel,
     String exceptionStatus,
     String exceptionStatusLabel,
-    Integer queueNo
+    Integer queueNo,
+    String documentStatus,
+    java.util.List<String> missingDocumentCodes,
+    java.util.List<String> invalidDocumentCodes,
+    Boolean collectionEligible
 ) {
 }

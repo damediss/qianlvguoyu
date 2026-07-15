@@ -1,5 +1,6 @@
 package com.guoyu.platform.certification.service;
 
+import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.file.service.FileApplicationService;
 import java.io.IOException;
 import java.io.InputStream;
@@ -29,7 +30,17 @@ public class CertificationImageSourceService {
     if (fileId == null) {
       return null;
     }
-    return readResource(fileApplicationService.downloadResource(fileId), "fileId=" + fileId);
+    try {
+      byte[] content = fileApplicationService.readBytes(fileId);
+      if (content.length == 0 || content.length > MAX_IMAGE_BYTES) {
+        log.warn("Certification image is empty or too large: fileId={}", fileId);
+        return null;
+      }
+      return content;
+    } catch (BusinessException ex) {
+      log.warn("Failed to read certification image: fileId={}, {}", fileId, ex.getMessage());
+      return null;
+    }
   }
 
   public byte[] readReference(String reference) {

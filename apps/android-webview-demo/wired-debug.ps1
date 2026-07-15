@@ -1,8 +1,10 @@
 param(
     [string]$TaskId = "2069972938644135937",
     [string]$Device = "",
+    [string]$LocalHost = "192.168.1.98",
     [int]$WebPort = 5173,
     [int]$ApiPort = 8080,
+    [switch]$LocalTest,
     [switch]$SkipBuild,
     [switch]$SkipInstall,
     [switch]$LogcatOnly
@@ -10,8 +12,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ApkPath = Join-Path $Root "app\build\outputs\apk\debug\app-debug.apk"
-$WebUrl = "http://127.0.0.1:$WebPort/practical-collection/workbench/$TaskId"
+$Flavor = if ($LocalTest) { "localTest" } else { "prod" }
+$ApkPath = Join-Path $Root "app\build\outputs\apk\$Flavor\debug\app-$Flavor-debug.apk"
+$PackageName = if ($LocalTest) { "com.example.webviewshelldemo.localtest" } else { "com.example.webviewshelldemo" }
+$WebUrl = if ($LocalTest) {
+    "http://${LocalHost}:$WebPort/practical-collection/workbench/$TaskId"
+} else {
+    "http://43.138.163.7:$WebPort/practical-collection/workbench/$TaskId"
+}
 
 function Get-AdbTarget {
     param([string]$PreferredDevice)
@@ -52,10 +60,11 @@ if ($LogcatOnly) {
 }
 
 if (-not $SkipBuild) {
-    Write-Host "Building debug APK..."
+    Write-Host "Building $Flavor debug APK..."
     Push-Location $Root
     try {
-        & .\gradlew.bat :app:assembleDebug
+        $gradleTask = if ($LocalTest) { ":app:assembleLocalTestDebug" } else { ":app:assembleProdDebug" }
+        & .\gradlew.bat $gradleTask
         if ($LASTEXITCODE -ne 0) { throw "Gradle build failed" }
     } finally {
         Pop-Location
@@ -67,12 +76,12 @@ if (-not $SkipInstall) {
     Invoke-Adb $adbTarget @("install", "-r", $ApkPath)
 }
 
-Write-Host "Launching WebView shell..."
+Write-Host "Launching WebView shell ($PackageName)..."
 Write-Host "URL: $WebUrl"
-Invoke-Adb $adbTarget @("shell", "am", "force-stop", "com.example.webviewshelldemo")
+Invoke-Adb $adbTarget @("shell", "am", "force-stop", $PackageName)
 Invoke-Adb $adbTarget @(
     "shell", "am", "start",
-    "-n", "com.example.webviewshelldemo/.MainActivity",
+    "-n", "$PackageName/.MainActivity",
     "--es", "web_url", $WebUrl
 )
 

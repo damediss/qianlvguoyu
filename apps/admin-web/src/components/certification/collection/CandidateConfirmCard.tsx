@@ -30,7 +30,7 @@ export function CandidateConfirmCard({
   onViewDetail,
   onInfoError,
 }: CandidateConfirmCardProps) {
-  const disabled = !candidate || candidate.currentStatus === 'COMPLETED' || candidate.currentStatus === 'INFO_ERROR';
+  const disabled = !candidate || candidate.collectionEligible === false || candidate.currentStatus === 'COMPLETED' || candidate.currentStatus === 'INFO_ERROR';
   const matchMethod = candidate?.matchMethod as CollectionMatchMethod | undefined;
 
   return (
@@ -63,6 +63,11 @@ export function CandidateConfirmCard({
             <Descriptions.Item label="等级">{candidate.level || '-'}</Descriptions.Item>
             <Descriptions.Item label="准考证号">{candidate.admissionNo || '-'}</Descriptions.Item>
           </Descriptions>
+          {candidate.collectionEligible === false ? (
+            <Typography.Paragraph type="warning" style={{ marginTop: 16, marginBottom: 0 }}>
+              资料状态：{candidate.documentStatus === 'INVALID' ? '资料异常' : '待补充'}。{candidate.missingDocumentCodes?.length ? `缺少：${candidate.missingDocumentCodes.join('、')}。` : ''}{candidate.invalidDocumentCodes?.length ? `异常：${candidate.invalidDocumentCodes.join('、')}。` : ''}请先前往“认定筹备—信息收集”补充资料。
+            </Typography.Paragraph>
+          ) : null}
           {candidate.currentStatus === 'COMPLETED' ? (
             <div className="candidate-confirm-warning">
               <ExclamationCircleOutlined /> 已完成考生不能重复入队或重新采集。

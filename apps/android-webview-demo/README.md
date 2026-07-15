@@ -9,31 +9,78 @@
 - JDK: Java 21
 - Gradle: 使用项目内 Gradle Wrapper `gradlew.bat`
 
-## 默认 H5 地址
+## 默认 H5 地址（信息采集平板端）
 
-默认地址在 `app/src/main/res/values/strings.xml`:
+WebView **必须**加载信息采集平板端工作台，路径格式：
 
-```xml
-<string name="default_web_url">https://java.app.gjjd168.com/</string>
+```
+/practical-collection/workbench/{taskId}
 ```
 
-Android 模拟器访问宿主机服务时使用 `10.0.2.2`。真机访问局域网服务时改成电脑局域网 IP，例如 `http://192.168.1.10:5173`。
+| 路径 | 实际页面 | 是否适合 APK |
+|------|----------|--------------|
+| `/practical-collection/workbench/{taskId}` | 信息采集平板端工作台（扫码/指纹/签名） | ✅ 正确 |
+| `/practical-collection/` | 平板端任务选择页 | ❌ 需再选任务 |
+| `/` 或 `/dashboard` | PC 管理端 | ❌ 错误入口 |
+| `/assessor-scoring` | 平板考评端 | ❌ 另一套平板应用 |
+
+默认地址在 `app/src/main/res/values/strings.xml`（prod）和 `app/src/localTest/res/values/strings.xml`（localTest）：
+
+```xml
+<string name="default_web_url">http://192.168.1.98:5173/practical-collection/workbench/2069972938644135937</string>
+```
+
+`{taskId}` 换成你本机要测试的采集任务 ID。登录页会显示「平板信息采集端登录」，需账号具备 `certification.practical.collection.operate` 权限。
+
+Android 模拟器访问宿主机服务时使用 `10.0.2.2`。真机访问局域网服务时改成电脑局域网 IP，例如 `http://192.168.1.10:5173/practical-collection/workbench/{taskId}`。
+
+## 构建变体
+
+| 变体 | 用途 | 包名 | 默认 H5（信息采集平板端） |
+|---|---|---|---|
+| `prodDebug` | 远程服务器（现有） | `com.example.webviewshelldemo` | `43.138.163.7:5173/practical-collection/workbench/{taskId}` |
+| `localTestDebug` | 本机联调 | `com.example.webviewshelldemo.localtest` | `192.168.1.98:5173/practical-collection/workbench/{taskId}` |
+
+两个变体可同时安装，互不影响。
 
 ## 构建
 
 ```powershell
 cd apps/android-webview-demo
-.\gradlew.bat :app:assembleDebug
+
+# 远程服务器版（与线上一致）
+.\gradlew.bat :app:assembleProdDebug
+
+# 本机测试版（localTest）
+.\gradlew.bat :app:assembleLocalTestDebug
 ```
 
-## 安装和指定 H5 地址
+## 本机测试（localTest）
+
+前提：本机已启动 `admin-web`（5173）和 `platform-api`（8080），且平板与电脑在同一局域网。
+
+平板通过局域网 IP 访问本机（默认 `192.168.1.98`），无需 `adb reverse`：
 
 ```powershell
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install app/build/outputs/apk/localTest/debug/app-localTest-debug.apk
+```
+
+也可直接运行脚本（自动 reverse、构建、安装、启动）：
+
+```powershell
+.\wired-debug.ps1 -LocalTest
+```
+
+Android 模拟器未走 `adb reverse` 时，可把 `app/src/localTest/res/values/strings.xml` 里的地址改成 `http://10.0.2.2:5173/...`。
+
+## 安装和指定 H5 地址（prod 远程版）
+
+```powershell
+adb install -r app/build/outputs/apk/prod/debug/app-prod-debug.apk
 
 adb shell am start `
   -n com.example.webviewshelldemo/.MainActivity `
-  --es web_url "https://java.app.gjjd168.com/"
+  --es web_url "http://43.138.163.7:5173/practical-collection/workbench/2069972938644135937"
 ```
 
 临时测试服务器 IP 地址时，可用：
@@ -41,7 +88,7 @@ adb shell am start `
 ```powershell
 adb shell am start `
   -n com.example.webviewshelldemo/.MainActivity `
-  --es web_url "http://43.138.163.7:5173/"
+  --es web_url "http://43.138.163.7:5173/practical-collection/workbench/2069972938644135937"
 ```
 
 也支持通过 `VIEW` data URL 启动：

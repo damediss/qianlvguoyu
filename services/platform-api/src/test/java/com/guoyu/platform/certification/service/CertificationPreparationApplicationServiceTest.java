@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.guoyu.platform.certification.dto.PreparationAssessorDispatchReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateImportReq;
+import com.guoyu.platform.certification.dto.PreparationCandidateDocumentSaveReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateSaveReq;
 import com.guoyu.platform.certification.dto.PreparationMaterialGenerateReq;
 import com.guoyu.platform.certification.dto.PreparationTaskAssessorSaveReq;
@@ -242,6 +243,38 @@ class CertificationPreparationApplicationServiceTest {
     assertThat(source.getIdCardFrontUrl()).isEqualTo("file-id:22");
     assertThat(source.getIdCardBackUrl()).isEqualTo("file-id:23");
     verify(documentMapper).insert(any(CertificationCandidateDocumentEntity.class));
+  }
+
+  @Test
+  void saveCandidateImageDocumentAutoApprovesWithoutReview() {
+    CertificationCandidateEntity candidate = new CertificationCandidateEntity();
+    candidate.setId(11L);
+    candidate.setTaskId(1L);
+    candidate.setCandidateName("李敏");
+    when(taskMapper.selectById(1L)).thenReturn(existingTask());
+    when(candidateMapper.selectById(11L)).thenReturn(candidate);
+    when(documentMapper.selectOne(any())).thenReturn(null);
+    when(candidateMapper.selectDocumentStatsByCandidate(any(), any())).thenReturn(java.util.Map.of());
+
+    PreparationCandidateDocumentSaveReq req = new PreparationCandidateDocumentSaveReq(
+        11L,
+        "DOC003",
+        "身份证正面",
+        true,
+        22L,
+        "id-card-front.png",
+        "image/png",
+        null
+    );
+
+    service.saveCandidateDocument(1L, req);
+
+    ArgumentCaptor<CertificationCandidateDocumentEntity> captor =
+        ArgumentCaptor.forClass(CertificationCandidateDocumentEntity.class);
+    verify(documentMapper).insert(captor.capture());
+    assertThat(captor.getValue().getStatus()).isEqualTo("approved");
+    assertThat(captor.getValue().getReviewComment()).isEqualTo("图片上传后自动通过，无需审核");
+    verify(stagingApplicationService).updateCandidateDocumentReference(1L, 11L, "DOC003", 22L);
   }
 
   @Test

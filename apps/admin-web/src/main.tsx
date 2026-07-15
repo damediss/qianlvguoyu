@@ -481,21 +481,30 @@ const collectionManageTaskId = (() => {
 })();
 const collectionManageMode = Boolean(collectionManageTaskId);
 
+function CollectionManageShell({ taskId }: { taskId: string }) {
+  const [manageActive, setManageActive] = React.useState(true);
+
+  return (
+    <AppShell
+      pageMap={pageMap}
+      selectedMenuKeyOverride={manageActive ? 'certification_practical_collection' : undefined}
+      contentOverride={manageActive ? <CollectionManagePage taskId={taskId} /> : undefined}
+      onMenuNavigate={() => setManageActive(false)}
+    />
+  );
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ConfigProvider locale={zhCN} theme={appTheme}>
       <QueryClientProvider client={queryClient}>
-        <AuthGate mode={assessorMode ? 'assessor' : 'admin'}>
+        <AuthGate mode={assessorMode ? 'assessor' : practicalCollectionMode ? 'collection' : 'admin'}>
           {assessorMode ? (
             <TabletAssessorApp />
           ) : practicalCollectionMode ? (
             <PracticalCollectionApp />
           ) : collectionManageMode ? (
-            <AppShell
-              pageMap={pageMap}
-              selectedMenuKeyOverride="certification_practical_collection"
-              contentOverride={<CollectionManagePage taskId={collectionManageTaskId} />}
-            />
+            <CollectionManageShell taskId={collectionManageTaskId!} />
           ) : (
             <AppShell pageMap={pageMap} />
           )}

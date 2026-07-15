@@ -2,6 +2,8 @@ package com.guoyu.platform.certification.controller;
 
 import com.guoyu.platform.certification.collection.application.PracticalCollectionApplicationService;
 import com.guoyu.platform.certification.collection.dto.CollectionExceptionQueryRequest;
+import com.guoyu.platform.certification.collection.dto.BatchJoinQueueRequest;
+import com.guoyu.platform.certification.collection.dto.CollectionFormExportRequest;
 import com.guoyu.platform.certification.collection.dto.CollectionTaskQueryRequest;
 import com.guoyu.platform.certification.collection.dto.CompleteCollectionRequest;
 import com.guoyu.platform.certification.collection.dto.ExceptionReleaseRequest;
@@ -19,6 +21,8 @@ import com.guoyu.platform.certification.collection.vo.CandidateCollectionDetailV
 import com.guoyu.platform.certification.collection.vo.CandidateMatchVO;
 import com.guoyu.platform.certification.collection.vo.CollectionActionResultVO;
 import com.guoyu.platform.certification.collection.vo.CollectionExceptionVO;
+import com.guoyu.platform.certification.collection.vo.BatchJoinQueueResultVO;
+import com.guoyu.platform.certification.collection.vo.CollectionFormExportVO;
 import com.guoyu.platform.certification.collection.vo.CollectionTaskVO;
 import com.guoyu.platform.certification.collection.vo.CollectionWorkbenchVO;
 import com.guoyu.platform.certification.collection.vo.FingerprintTraceVO;
@@ -143,6 +147,13 @@ public class CertificationPracticalCollectionController {
     return ApiResponse.ok(service.joinQueue(request));
   }
 
+  @PostMapping("/queue/join-batch")
+  @PreAuthorize("hasAuthority('certification.practical.collection.operate')")
+  @AuditLog(module = "certification", action = "practical-collection:queue-join-batch", targetType = "certification_practical_collection_queue")
+  public ApiResponse<BatchJoinQueueResultVO> joinQueueBatch(@Valid @RequestBody BatchJoinQueueRequest request) {
+    return ApiResponse.ok(service.joinQueueBatch(request));
+  }
+
   @PostMapping("/queue/remove")
   @PreAuthorize("hasAuthority('certification.practical.collection.operate')")
   @AuditLog(module = "certification", action = "practical-collection:queue-remove", targetType = "certification_practical_collection_queue")
@@ -226,5 +237,22 @@ public class CertificationPracticalCollectionController {
       @Valid @ModelAttribute CollectionExceptionQueryRequest request
   ) {
     return ApiResponse.ok(service.pageExceptions(request));
+  }
+
+  @PostMapping("/tasks/{taskId}/collection-forms/export")
+  @PreAuthorize("hasAuthority('certification.practical.collection.export')")
+  @AuditLog(module = "certification", action = "practical-collection:collection-form-export", targetType = "certification_practical_collection_status")
+  public ResponseEntity<InputStreamResource> exportCollectionForms(
+      @PathVariable Long taskId,
+      @Valid @RequestBody CollectionFormExportRequest request
+  ) {
+    CollectionFormExportVO result = service.exportCollectionForms(taskId, request);
+    InputStreamResource resource = new InputStreamResource(new ByteArrayInputStream(result.data()));
+    return ResponseEntity.ok()
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment().filename(result.filename(), StandardCharsets.UTF_8).build().toString())
+        .contentType(MediaType.parseMediaType(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        .body(resource);
   }
 }

@@ -49,7 +49,7 @@ class DictApplicationServiceTest {
   void createRejectsDuplicateDictCode() {
     when(dictMapper.exists(any(Wrapper.class))).thenReturn(true);
 
-    DictCreateReq req = new DictCreateReq("work_type", "工种", "enabled");
+    DictCreateReq req = new DictCreateReq("work_type", "工种", null, "enabled");
 
     assertThatThrownBy(() -> service.create(req))
         .isInstanceOf(BusinessException.class)

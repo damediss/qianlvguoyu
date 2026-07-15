@@ -158,9 +158,15 @@ interface AppShellProps {
   pageMap: Record<string, ReactNode>;
   contentOverride?: ReactNode;
   selectedMenuKeyOverride?: string;
+  onMenuNavigate?: () => void;
 }
 
-export function AppShell({ pageMap, contentOverride, selectedMenuKeyOverride }: AppShellProps) {
+export function AppShell({
+  pageMap,
+  contentOverride,
+  selectedMenuKeyOverride,
+  onMenuNavigate,
+}: AppShellProps) {
   const token = useAuthStore((s) => s.token);
   const menuTree = useAuthStore((s) => s.menuTree);
   const setMenuTree = useAuthStore((s) => s.setMenuTree);
@@ -284,9 +290,14 @@ export function AppShell({ pageMap, contentOverride, selectedMenuKeyOverride }: 
     }
   }, [openExternalMenu, pageMap, setSelectedKey]);
 
+  const handleMenuNavigate = useCallback((node: MenuVO | null) => {
+    onMenuNavigate?.();
+    navigateToNode(node);
+  }, [navigateToNode, onMenuNavigate]);
+
   const menuItems = useMemo(
-    () => buildMenuItems(menuTree, pageMap, navigateToNode),
-    [menuTree, navigateToNode, pageMap],
+    () => buildMenuItems(menuTree, pageMap, handleMenuNavigate),
+    [handleMenuNavigate, menuTree, pageMap],
   );
 
   const breadcrumbItems = useMemo(() => {
@@ -312,7 +323,7 @@ export function AppShell({ pageMap, contentOverride, selectedMenuKeyOverride }: 
           openKeys={openKeys}
           onOpenChange={setOpenKeys}
           onClick={({ key }) => {
-            navigateToNode(findMenuNode(menuTree, String(key)));
+            handleMenuNavigate(findMenuNode(menuTree, String(key)));
           }}
           items={menuItems as MenuProps['items']}
         />

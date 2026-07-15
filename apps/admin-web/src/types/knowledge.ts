@@ -67,4 +67,6 @@ export interface FileVO {
   accessPolicy: string;
   status: string;
   createdAt: string;
+  /** COS/CDN 公网直链；本地存储时为 /api/exam/files/... */
+  url?: string;
 }

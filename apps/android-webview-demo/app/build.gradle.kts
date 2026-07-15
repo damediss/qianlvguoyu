@@ -17,6 +17,18 @@ android {
         }
     }
 
+    flavorDimensions += "env"
+    productFlavors {
+        create("prod") {
+            dimension = "env"
+        }
+        create("localTest") {
+            dimension = "env"
+            applicationIdSuffix = ".localtest"
+            versionNameSuffix = "-localTest"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

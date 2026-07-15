@@ -258,6 +258,10 @@ export interface CandidateMatchVO {
   qrIssueStatusLabel?: string;
   matchMethod?: CollectionMatchMethod;
   matchMethodLabel?: string;
+  documentStatus?: 'COMPLETED' | 'INCOMPLETE' | 'INVALID' | string;
+  missingDocumentCodes?: string[];
+  invalidDocumentCodes?: string[];
+  collectionEligible?: boolean;
 }
 
 export interface CandidateCollectionItemVO {
@@ -281,6 +285,10 @@ export interface CandidateCollectionItemVO {
   exceptionStatus: CollectionExceptionStatus;
   exceptionStatusLabel?: string;
   queueNo?: number;
+  documentStatus?: 'COMPLETED' | 'INCOMPLETE' | 'INVALID' | string;
+  missingDocumentCodes?: string[];
+  invalidDocumentCodes?: string[];
+  collectionEligible?: boolean;
 }
 
 export interface JoinQueueRequest {
@@ -437,6 +445,12 @@ export interface CollectionActionResultVO {
   message?: string;
 }
 
+export interface CollectionPdfExportVO {
+  fileId: SnowflakeId;
+  fileName: string;
+  downloadUrl: string;
+}
+
 export interface CollectionExceptionQueryRequest {
   page?: number;
   pageSize?: number;
@@ -501,4 +515,21 @@ export interface CandidateCollectionDetailVO {
   latestFingerprint?: FingerprintTraceVO | null;
   latestSignature?: SignatureRecordVO | null;
   exceptions: CollectionExceptionVO[];
+  documentStatus?: 'COMPLETED' | 'INCOMPLETE' | 'INVALID' | string;
+  missingDocumentCodes?: string[];
+  invalidDocumentCodes?: string[];
+  collectionEligible?: boolean;
+}
+
+export interface BatchJoinQueueResultVO {
+  successCount: number;
+  failureCount: number;
+  failures: Array<{
+    candidateId: SnowflakeId;
+    candidateName?: string;
+    admissionTicketNo?: string;
+    missingDocumentCodes?: string[];
+    invalidDocumentCodes?: string[];
+    message: string;
+  }>;
 }

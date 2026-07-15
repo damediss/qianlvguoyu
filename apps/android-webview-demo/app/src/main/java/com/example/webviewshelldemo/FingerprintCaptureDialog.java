@@ -84,7 +84,7 @@ public final class FingerprintCaptureDialog extends Dialog {
         if (dialogWindow != null) {
             dialogWindow.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         }
-        setState(UiState.IDLE, "请考生按压指纹采集器采集指纹");
+        startCapture();
     }
 
     private View buildContentView() {
@@ -135,7 +135,7 @@ public final class FingerprintCaptureDialog extends Dialog {
         cancelButton.setOnClickListener(view -> cancelFlow());
         recaptureButton.setOnClickListener(view -> {
             clearCapturedBitmap();
-            setState(UiState.IDLE, "请考生按压指纹采集器采集指纹");
+            startCapture();
         });
         startButton.setOnClickListener(view -> startCapture());
         saveButton.setOnClickListener(view -> confirmUpload());
