@@ -14,6 +14,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
@@ -88,6 +89,12 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AuthorizationDeniedException ex) {
     return ResponseEntity.status(HttpStatus.FORBIDDEN)
         .body(ApiResponse.fail(ErrorCode.FORBIDDEN, "Forbidden"));
+  }
+
+  /** 客户端主动断开（如下载未完成刷新页面），打 WARN 不打 ERROR */
+  @ExceptionHandler(AsyncRequestNotUsableException.class)
+  public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException ex) {
+    log.warn("ClientAborted: client disconnected before response completed: {}", ex.getMessage());
   }
 
   private String formatFieldError(FieldError error) {

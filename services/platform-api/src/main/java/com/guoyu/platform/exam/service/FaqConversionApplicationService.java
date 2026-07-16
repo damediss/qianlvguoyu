@@ -265,6 +265,35 @@ public class FaqConversionApplicationService {
   }
 
   /**
+   * 恢复批次：改状态为 running + 重新启动异步 LLM 处理 pending 记录。
+   */
+  public void resumeBatch(Long tenantId, Long userId, Long batchId) {
+    batchService.resumeBatch(tenantId, batchId);
+
+    // 取出所有 pending 记录，重新启动异步处理
+    List<ExamFaqConversionEntity> pendingRecords = faqConversionMapper.selectList(
+        new LambdaQueryWrapper<ExamFaqConversionEntity>()
+            .eq(ExamFaqConversionEntity::getTenantId, tenantId)
+            .eq(ExamFaqConversionEntity::getBatchId, batchId)
+            .eq(ExamFaqConversionEntity::getConversionStatus, "pending"));
+
+    if (pendingRecords.isEmpty()) {
+      log.info("恢复批次无 pending 记录：batchId={}", batchId);
+      return;
+    }
+
+    ExamFaqConversionBatchEntity batch = batchService.getBatchEntity(tenantId, batchId);
+    log.info("FAQ 恢复批次启动异步 LLM：batchId={}, pendingCount={}", batchId, pendingRecords.size());
+
+    CompletableFuture.runAsync(() -> {
+      processLlmEnhancementAsync(batchId, tenantId, userId, batch.getModelCode(), pendingRecords);
+    }, faqConversionExecutor).exceptionally(ex -> {
+      log.error("FAQ 恢复批次异步 LLM 未捕获异常：batchId={}, error={}", batchId, ex.getMessage(), ex);
+      return null;
+    });
+  }
+
+  /**
    * 查询批次进度（用于前端轮询）。
    */
   @Transactional(readOnly = true)

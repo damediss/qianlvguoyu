@@ -99,13 +99,14 @@ public class ExamFaqConversionController {
     return ApiResponse.ok();
   }
 
-  /** 恢复批次 */
+  /** 恢复批次：改状态 + 重新启动异步 LLM 处理 */
   @PostMapping("/batches/{batchId}/resume")
   @PreAuthorize("hasAuthority('exam:faq:pause')")
   @AuditLog(module = "exam", action = "faq:batch:resume", targetType = "exam_faq_conversion_batch")
   public ApiResponse<Void> resume(@PathVariable Long batchId) {
     Long tenantId = com.guoyu.platform.security.SecurityContext.currentUser().getTenantId();
-    batchService.resumeBatch(tenantId, batchId);
+    Long userId = com.guoyu.platform.security.SecurityContext.currentUser().getUserId();
+    conversionService.resumeBatch(tenantId, userId, batchId);
     return ApiResponse.ok();
   }
 

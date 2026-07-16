@@ -111,11 +111,13 @@ export function FaqConversionPage() {
           setPollingBatchId(null);
           message.success('批次转换完成');
           loadBatches();
+        } else if (progress.status === 'paused') {
+          setPollingBatchId(null);
         }
       } catch {
         // silent
       }
-    }, 3000);
+    }, 20000);
 
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [pollingBatchId, loadBatches]);
@@ -285,7 +287,7 @@ export function FaqConversionPage() {
                 render: (_: unknown, row: FaqBatchVO) => (
                   <Space size="small">
                     {row.status === 'running' && (
-                      <Button size="small" icon={<PauseCircleOutlined />} onClick={(e) => { e.stopPropagation(); pauseFaqBatch(row.id).then(loadBatches); }}>暂停</Button>
+                      <Button size="small" icon={<PauseCircleOutlined />} onClick={(e) => { e.stopPropagation(); pauseFaqBatch(row.id).then(() => { setPollingBatchId(null); loadBatches(); }); }}>暂停</Button>
                     )}
                     {row.status === 'paused' && (
                       <Button size="small" type="primary" icon={<PlayCircleOutlined />} onClick={(e) => { e.stopPropagation(); resumeFaqBatch(row.id).then(() => { setPollingBatchId(row.id); loadBatches(); }); }}>继续</Button>
