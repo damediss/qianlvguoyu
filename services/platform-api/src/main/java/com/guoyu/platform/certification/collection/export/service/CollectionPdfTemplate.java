@@ -16,6 +16,7 @@ import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.springframework.util.StringUtils;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 职业技能等级认定座次签到表 PDF 固定模板。
@@ -23,6 +24,7 @@ import org.springframework.util.StringUtils;
  * <p>版式对齐现有座次签到表：A4 横向、页眉 + 3 列 x 3 行考生格，每页固定 9 名考生。
  * 所有格子、图片框和文字行均使用固定坐标，不由内容自动撑开或分页。</p>
  */
+@Slf4j
 public final class CollectionPdfTemplate {
 
   private static final float PAGE_WIDTH = PDRectangle.A4.getHeight();
@@ -288,20 +290,10 @@ public final class CollectionPdfTemplate {
         return PDType0Font.load(document, input, true);
       }
     }
-    String[] classpathFonts = {"/fonts/NotoSansSC-Regular.otf", "/fonts/NotoSansCJKsc-Regular.otf"};
-    for (String resource : classpathFonts) {
-      try (InputStream input = CollectionPdfTemplate.class.getResourceAsStream(resource)) {
-        if (input != null) {
-          return PDType0Font.load(document, input, true);
-        }
-      }
-    }
     String[] systemFonts = {
-        "C:/Windows/Fonts/Noto Sans SC (TrueType).otf",
-        "C:/Windows/Fonts/simhei.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
+        "C:/Windows/Fonts/msyh.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
     };
     for (String font : systemFonts) {
       Path path = Path.of(font);
