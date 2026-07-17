@@ -424,6 +424,9 @@ public class ChazhengApplicationService {
    */
   @Transactional
   public CertCheckBatchSubmitResp submitCertCheckBatch(List<Long> userIds, String sourceFilename) {
+    if (userIds == null || userIds.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "无用户可查证");
+    }
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long triggerBy = SecurityContext.currentUser().getUserId();
 

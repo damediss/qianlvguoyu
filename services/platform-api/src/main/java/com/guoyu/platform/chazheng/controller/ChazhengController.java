@@ -58,7 +58,7 @@ public class ChazhengController {
     chazhengCertCheckExecutor.setMaxPoolSize(5);
     chazhengCertCheckExecutor.setQueueCapacity(1000);
     chazhengCertCheckExecutor.setThreadNamePrefix("cert-check-");
-    chazhengCertCheckExecutor.setRejectedExecutionHandler(new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
+    chazhengCertCheckExecutor.setRejectedExecutionHandler(new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
     chazhengCertCheckExecutor.setWaitForTasksToCompleteOnShutdown(true);
     chazhengCertCheckExecutor.setAwaitTerminationSeconds(60);
     chazhengCertCheckExecutor.initialize();
@@ -96,37 +96,64 @@ public class ChazhengController {
   }
 
   /**
-   * 导入用户 Excel → 自动触发异步查证。
+   * 第一步：导入用户 Excel → 只入库，返回 ymd（秒回）。
+   * 前端/Python 拿到 ymd 后，再调 {@link #triggerCertByYmd(String, String)} 触发查证。
    */
   @PostMapping("/users/import")
   @PreAuthorize("hasAuthority('chazheng:user:import')")
   @AuditLog(module = "chazheng", action = "user:import", targetType = "chazheng_user")
   public ApiResponse<Map<String, Object>> importUsers(@RequestParam("file") MultipartFile file) {
-    // 1. 导入 Excel(同步)
     int count = service.importExcel(file);
+    if (count == 0) {
+      throw new com.guoyu.platform.common.exception.BusinessException(
+          com.guoyu.platform.common.exception.ErrorCode.BAD_REQUEST,
+          "导入无可处理的数据，请检查 Excel 内容（姓名+18 位身份证为必填）");
+    }
 
-    // 2. 查询刚导入的用户 ID 列表
     String latestYmd = service.getLatestYmd();
+    Map<String, Object> data = new HashMap<>();
+    data.put("imported", count);
+    data.put("ymd", latestYmd);
+    data.put("message", "导入成功，请调用 /chazheng/users/import/" + latestYmd + "/cert 触发查证");
+    return ApiResponse.ok(data);
+  }
+
+  /**
+   * 第二步：按 ymd 触发异步查证 → 返回 batchId（秒回）。
+   * 前端/Python 拿到 batchId 后，轮询 /chazheng/cert/batch/{batchId}/progress 获取进度。
+   */
+  @PostMapping("/users/import/{ymd}/cert")
+  @PreAuthorize("hasAuthority('chazheng:user:cert')")
+  @AuditLog(module = "chazheng", action = "user:import:cert", targetType = "chazheng_cert_batch")
+  public ApiResponse<Map<String, Object>> triggerCertByYmd(
+      @PathVariable String ymd,
+      @RequestParam(required = false) String sourceFilename) {
+    Long tenantId = com.guoyu.platform.security.SecurityContext.currentUser().getTenantId();
     List<ChazhengUserEntity> importedUsers = userMapper.selectList(
         new LambdaQueryWrapper<ChazhengUserEntity>()
-            .eq(ChazhengUserEntity::getYmd, latestYmd));
+            .eq(ChazhengUserEntity::getTenantId, tenantId)
+            .eq(ChazhengUserEntity::getYmd, ymd));
 
     List<Long> userIds = importedUsers.stream()
         .map(ChazhengUserEntity::getId)
         .map(Integer::longValue)
         .toList();
 
-    // 3. 提交到异步批次服务
-    String originalFilename = file.getOriginalFilename();
-    CertCheckBatchSubmitResp batchResp = service.submitCertCheckBatch(userIds, originalFilename);
+    if (userIds.isEmpty()) {
+      throw new com.guoyu.platform.common.exception.BusinessException(
+          com.guoyu.platform.common.exception.ErrorCode.BAD_REQUEST,
+          "该 ymd 下无用户可查证");
+    }
+
+    String filename = (sourceFilename != null && !sourceFilename.isBlank())
+        ? sourceFilename : ("import_" + ymd + ".xlsx");
+    CertCheckBatchSubmitResp batchResp = service.submitCertCheckBatch(userIds, filename);
 
     Map<String, Object> data = new HashMap<>();
-    data.put("imported", count);
     data.put("batchId", batchResp.getBatchId());
     data.put("totalCount", batchResp.getTotalCount());
     data.put("status", "processing");
     data.put("message", batchResp.getMessage());
-
     return ApiResponse.ok(data);
   }
 

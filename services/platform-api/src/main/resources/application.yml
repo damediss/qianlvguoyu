@@ -4,7 +4,7 @@ server:
     context-path: /api
   forward-headers-strategy: native
   tomcat:
-    max-http-form-post-size: 25MB
+    max-http-form-post-size: 50MB
 
 spring:
   application:
