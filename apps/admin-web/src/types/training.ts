@@ -2397,6 +2397,14 @@ export interface ThreeYearPlan {
   submitSchemeFileId?: number;
   submitPersonnelFileName?: string;
   submitSchemeFileName?: string;
+  enterpriseRosterFileId?: number;
+  enterpriseShiftFileId?: number;
+  enterpriseRosterFileName?: string;
+  enterpriseShiftFileName?: string;
+  enterpriseReturnTime?: string;
+  enterpriseReturnUsername?: string;
+  enterpriseReturnReady?: boolean;
+  enterpriseReturnHistory?: ThreeYearPlanEnterpriseReturnHistoryItem[];
 }
 
 /** 驳回历史条目 */
@@ -2415,6 +2423,18 @@ export interface ThreeYearPlanSubmitHistoryItem {
   submittedAt?: string;
   personnelFileName?: string;
   schemeFileName?: string;
+}
+
+/** 企业回传历史条目 */
+export interface ThreeYearPlanEnterpriseReturnHistoryItem {
+  rosterFileId?: number;
+  rosterFileName?: string;
+  shiftFileId?: number;
+  shiftFileName?: string;
+  uploadedBy?: string;
+  uploadedByUsername?: string;
+  uploadedAt?: string;
+  remark?: string;
 }
 
 export interface ThreeYearPlanQuery {
@@ -2558,4 +2578,289 @@ export interface PersonnelCertLookupResultVO {
   invalid: number;
   failed: number;
   details: PersonnelCertLookupDetail[];
+}
+
+/** 分班（组织分班）一期 */
+export interface DivisionPlanItem {
+  planId: number;
+  planNo: string;
+  title: string;
+  targetOrgId: number;
+  orgName?: string;
+  status: number;
+  statusLabel?: string;
+  enterpriseReturnReady?: boolean;
+  rosterFileName?: string;
+  shiftFileName?: string;
+  rosterFileId?: number;
+  shiftFileId?: number;
+  linkedTrainInfoCount?: number;
+  pendingRosterCount?: number;
+}
+
+export interface DivisionReadyVO {
+  planId: number;
+  status: number;
+  enterpriseReturnReady: boolean;
+  shiftReady?: boolean;
+  rosterReady?: boolean;
+  requireRoster?: boolean;
+  /** 排班表驱动主路径是否可进入 */
+  divisionPathReady?: boolean;
+  rosterFileId?: number;
+  shiftFileId?: number;
+  rosterFileName?: string;
+  shiftFileName?: string;
+  missing: string[];
+}
+
+export interface DivisionEnsureTrainInfoReq {
+  planYear?: number;
+  workTypeId?: number;
+  workTypeLevel?: number;
+  title?: string;
+  reuseExisting?: boolean;
+}
+
+export interface DivisionEnsureTrainInfoResult {
+  trainInfoId: number;
+  created: boolean;
+  title: string;
+}
+
+export interface DivisionRosterParseReq {
+  planId: number;
+  trainInfoId?: number;
+  mode?: 'enterprise_roster' | 'plan_item';
+  fallbackToPlanItem?: boolean;
+  planYear?: number;
+  jobName?: string;
+}
+
+export interface DivisionRosterParseResult {
+  total: number;
+  withIdCard: number;
+  withoutIdCard: number;
+  source: string;
+}
+
+export interface DivisionRosterItem {
+  id: number;
+  planId: number;
+  trainInfoId?: number;
+  source: string;
+  personName: string;
+  idCard?: string;
+  phone?: string;
+  jobName?: string;
+  levelName?: string;
+  workshop?: string;
+  shiftTeam?: string;
+  planYear?: number;
+  trainMode?: string;
+  assignStatus: number;
+  trainClassId?: number;
+}
+
+export interface DivisionOrgSplitClassItem {
+  classId?: number;
+  title: string;
+  workTypeId?: number;
+  workTypeLevel?: number;
+  dateStart?: string;
+  dateEnd?: string;
+  rosterIds: number[];
+}
+
+export interface DivisionOrgSplitReq {
+  planId: number;
+  trainInfoId: number;
+  classes: DivisionOrgSplitClassItem[];
+  submitForCompanyConfirm?: boolean;
+}
+
+export interface DivisionTrainInfoSummary {
+  trainInfoId: number;
+  title: string;
+  planId?: number;
+  companyId?: number;
+  companyName?: string;
+  classCount: number;
+  peopleCount: number;
+  pendingRosterCount: number;
+}
+
+export interface DivisionAutoPackReq {
+  planId: number;
+  trainInfoId: number;
+  strategy?: 'by_shift_team' | 'by_roster_order';
+  classMax?: number;
+  classNamePrefix?: string;
+  submitForCompanyConfirm?: boolean;
+  excludeNoIdCard?: boolean;
+  useShiftFilter?: boolean;
+  year?: number;
+  month?: number;
+  autoParseRoster?: boolean;
+}
+
+export interface DivisionAutoPackClass {
+  classId: number;
+  title: string;
+  group?: string;
+  nums: number;
+}
+
+export interface DivisionAutoPackUnassigned {
+  rosterId?: number;
+  personName?: string;
+  idCard?: string;
+  shiftTeam?: string;
+  reason: string;
+}
+
+export interface DivisionAutoPackResult {
+  trainInfoId: number;
+  strategy: string;
+  classMax: number;
+  classCount: number;
+  assignedCount: number;
+  classes: DivisionAutoPackClass[];
+  unassigned: DivisionAutoPackUnassigned[];
+  unassignedCount: number;
+  warnings?: { level?: string; code?: string; message: string }[];
+  submitForCompanyConfirm?: boolean;
+}
+
+/** 二期：排课分班（L2） */
+export interface ShiftAssignGenerateReq {
+  planId: number;
+  trainInfoId?: number;
+  year: number;
+  month: number;
+  adapterType?: string;
+  classMin?: number;
+  classMax?: number;
+}
+
+export interface ShiftAssignWarning {
+  level?: string;
+  code?: string;
+  message: string;
+}
+
+export interface ShiftAssignBinding {
+  algoClassName: string;
+  recordCount: number;
+  trainClassId?: number;
+}
+
+export interface ShiftAssignRecordItem {
+  id: number;
+  personName: string;
+  idCard?: string;
+  employeeNo?: string;
+  dept?: string;
+  shiftClass?: string;
+  assignDate: string;
+  slot: string;
+  algoClassName: string;
+  trainClassId?: number;
+}
+
+export interface ShiftAssignTaskResult {
+  taskId: number;
+  planId: number;
+  trainInfoId?: number;
+  year: number;
+  month: number;
+  adapterType?: string;
+  status?: string;
+  version?: number;
+  sourceShiftFileId?: number;
+  warnings?: ShiftAssignWarning[];
+  config?: Record<string, unknown>;
+  unassignedPersons?: { personKey?: string; personName?: string; reason?: string }[];
+  theoryDays?: string[];
+  practiceDays?: string[];
+  recordCount?: number;
+  algoClassNames?: string[];
+  bindings?: ShiftAssignBinding[];
+  records?: ShiftAssignRecordItem[];
+  dailyStats?: { date: string; slot?: string; algoClassName?: string; count: number }[];
+  created?: boolean;
+  boundAlgoClassName?: string;
+  boundTrainClassId?: number;
+  boundRecordCount?: number;
+}
+
+export interface ShiftAssignPrecheckResult {
+  adapterType?: string;
+  year: number;
+  month: number;
+  warnings?: ShiftAssignWarning[];
+  algoClassNames?: string[];
+  dailyStats?: { date: string; slot?: string; algoClassName?: string; count: number }[];
+  unassignedPersons?: { personKey?: string; personName?: string; reason?: string }[];
+  recordCount?: number;
+  theoryDays?: string[];
+  practiceDays?: string[];
+}
+
+export interface ShiftAssignPreviewResult {
+  adapterType?: string;
+  year: number;
+  month: number;
+  personCount?: number;
+  slotCount?: number;
+  warnings?: ShiftAssignWarning[];
+  unrecognizedShifts?: string[];
+  failedExtractRows?: string[];
+}
+
+export interface ShiftAssignBindClassReq {
+  algoClassName: string;
+  trainClassId: number;
+}
+
+export interface ShiftAssignPatchReq {
+  version: number;
+  changes: {
+    personName: string;
+    employeeNo?: string;
+    assignDate: string;
+    slot?: string;
+    algoClassName?: string | null;
+  }[];
+}
+
+export interface ShiftAssignMaterializeReq {
+  trainInfoId: number;
+  mode?: 'algo_class_as_train_class' | 'bind_existing';
+  submitForCompanyConfirm?: boolean;
+  classNamePrefix?: string;
+  onlyUnbound?: boolean;
+  matchRoster?: boolean;
+}
+
+export interface ShiftAssignGenerateMaterializeReq extends ShiftAssignGenerateReq {
+  trainInfoId: number;
+  mode?: 'algo_class_as_train_class' | 'bind_existing';
+  submitForCompanyConfirm?: boolean;
+  classNamePrefix?: string;
+  onlyUnbound?: boolean;
+  matchRoster?: boolean;
+}
+
+export interface ShiftAssignMaterializeResult {
+  taskId: number;
+  trainInfoId: number;
+  status?: string;
+  classCount: number;
+  classes: { algoClassName: string; classId: number; title?: string; nums: number }[];
+  warnings?: ShiftAssignWarning[];
+  submitForCompanyConfirm?: boolean;
+  generatedAndMaterialized?: boolean;
+  recordCount?: number;
+  algoClassNames?: string[];
 }

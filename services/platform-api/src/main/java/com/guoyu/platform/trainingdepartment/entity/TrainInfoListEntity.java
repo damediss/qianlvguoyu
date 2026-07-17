@@ -115,6 +115,8 @@ public class TrainInfoListEntity {
   private String files;
   /** 培训需求ID */
   private Long traindemandId;
+  /** 来源三年规划ID */
+  private Long threeYearPlanId;
 
   /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
@@ -220,6 +222,8 @@ public class TrainInfoListEntity {
   public void setFiles(String files) { this.files = files; }
   public Long getTraindemandId() { return traindemandId; }
   public void setTraindemandId(Long traindemandId) { this.traindemandId = traindemandId; }
+  public Long getThreeYearPlanId() { return threeYearPlanId; }
+  public void setThreeYearPlanId(Long threeYearPlanId) { this.threeYearPlanId = threeYearPlanId; }
   public Integer getDeleted() { return deleted; }
   public void setDeleted(Integer deleted) { this.deleted = deleted; }
 }
