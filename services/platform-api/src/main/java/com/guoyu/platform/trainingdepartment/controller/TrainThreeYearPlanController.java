@@ -112,6 +112,16 @@ public class TrainThreeYearPlanController {
     return ApiResponse.ok(trainThreeYearPlanApplicationService.companyConfirm(id));
   }
 
+  @PostMapping(value = "/three-year-plans/{id:\\d+}/enterprise-return", consumes = "multipart/form-data")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_ENTERPRISE_CONFIRM)
+  @AuditLog(module = "training", action = "three-year-plan:enterprise-return", targetType = "train_three_year_plan")
+  public ApiResponse<TrainThreeYearPlanVO> uploadEnterpriseReturn(
+      @PathVariable Long id,
+      @RequestPart(value = "rosterFile", required = false) MultipartFile rosterFile,
+      @RequestPart(value = "shiftFile", required = false) MultipartFile shiftFile) {
+    return ApiResponse.ok(trainThreeYearPlanApplicationService.uploadEnterpriseReturn(id, rosterFile, shiftFile));
+  }
+
   @PostMapping("/three-year-plans/{id:\\d+}/company-reject")
   @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_ENTERPRISE_CONFIRM)
   @AuditLog(module = "training", action = "three-year-plan:company-reject", targetType = "train_three_year_plan")
@@ -171,6 +181,18 @@ public class TrainThreeYearPlanController {
   @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
   public ResponseEntity<byte[]> downloadSubmitScheme(@PathVariable Long id) {
     return trainThreeYearPlanApplicationService.downloadSubmitSchemeFile(id);
+  }
+
+  @GetMapping("/three-year-plans/{id:\\d+}/download-enterprise-roster")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
+  public ResponseEntity<byte[]> downloadEnterpriseRoster(@PathVariable Long id) {
+    return trainThreeYearPlanApplicationService.downloadEnterpriseRosterFile(id);
+  }
+
+  @GetMapping("/three-year-plans/{id:\\d+}/download-enterprise-shift")
+  @PreAuthorize(TrainingAuthorityExpressions.THREE_YEAR_PLAN_VIEW)
+  public ResponseEntity<byte[]> downloadEnterpriseShift(@PathVariable Long id) {
+    return trainThreeYearPlanApplicationService.downloadEnterpriseShiftFile(id);
   }
 
   @GetMapping("/three-year-plans/{id:\\d+}/download-result")

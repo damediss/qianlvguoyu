@@ -115,6 +115,10 @@ weknora:
   origin: ${WEKNORA_ORIGIN:http://localhost:5173}
 
 platform:
+  training:
+    division:
+      # 主路径门禁：排班表必填；名单默认也要求（可关，仅作人员补全建议）
+      require-roster: ${TRAINING_DIVISION_REQUIRE_ROSTER:true}
   certification:
     collection:
       # PDFBox 嵌入中文字体；为空时按 classpath 与常见系统字体路径自动探测。

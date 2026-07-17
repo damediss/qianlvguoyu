@@ -13,6 +13,7 @@ import {
   Tag,
   Timeline,
   Typography,
+  Upload,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -21,6 +22,7 @@ import {
   CheckOutlined,
   CloseOutlined,
   CloudDownloadOutlined,
+  CloudUploadOutlined,
   EyeOutlined,
   FileTextOutlined,
 } from '@ant-design/icons';
@@ -83,6 +85,34 @@ function renderRejectHistory(items?: ThreeYearPlanRejectHistoryItem[]) {
         }))}
     />
   );
+}
+
+function isReturnReady(plan?: ThreeYearPlan | null): boolean {
+  if (!plan) return false;
+  return !!plan.enterpriseRosterFileId && !!plan.enterpriseShiftFileId;
+}
+
+function returnMissingHint(plan?: ThreeYearPlan | null): string {
+  if (!plan) return '尚未上传筛选名单与排班表';
+  const miss: string[] = [];
+  if (!plan.enterpriseRosterFileId) miss.push('筛选后培训名单');
+  if (!plan.enterpriseShiftFileId) miss.push('排班表');
+  if (miss.length === 0) return '';
+  return `还缺：${miss.join('、')}`;
+}
+
+function returnReadyLabel(plan: ThreeYearPlan): { text: string; color: string } {
+  const ready = isReturnReady(plan);
+  if (plan.status === 4) {
+    return ready
+      ? { text: '已确认 · 材料已齐', color: 'success' }
+      : { text: '已确认 · 待补交', color: 'warning' };
+  }
+  if (ready) return { text: '材料已齐', color: 'processing' };
+  if (plan.enterpriseRosterFileId || plan.enterpriseShiftFileId) {
+    return { text: '部分回传', color: 'warning' };
+  }
+  return { text: '未回传', color: 'default' };
 }
 
 export function EnterprisePlanReviewPanel() {
@@ -191,6 +221,14 @@ export function EnterprisePlanReviewPanel() {
       },
     },
     {
+      title: '企业回传',
+      width: 110,
+      render: (_, row) => {
+        const meta = returnReadyLabel(row);
+        return <Tag color={meta.color}>{meta.text}</Tag>;
+      },
+    },
+    {
       title: '机构方案材料',
       width: 220,
       render: (_, row) => (
@@ -241,16 +279,30 @@ export function EnterprisePlanReviewPanel() {
 
   const renderDrawerActions = () => {
     if (!plan || plan.status !== 3) return null;
+    const ready = isReturnReady(plan);
+    const doConfirm = () => runAction(
+      () => trainApi.companyConfirmThreeYearPlan(plan.id),
+      '已确认方案',
+    );
     return (
       <Space>
         <Button
           type="primary"
           icon={<CheckOutlined />}
           loading={actionLoading}
-          onClick={() => runAction(
-            () => trainApi.companyConfirmThreeYearPlan(plan.id),
-            '已确认方案',
-          )}
+          onClick={() => {
+            if (ready) {
+              void doConfirm();
+              return;
+            }
+            Modal.confirm({
+              title: '回传材料尚未齐套',
+              content: `${returnMissingHint(plan)}。确认后可在「已确认」详情中补交，是否继续确认方案？`,
+              okText: '仍要确认',
+              cancelText: '取消',
+              onOk: () => doConfirm(),
+            });
+          }}
         >
           确认方案
         </Button>
@@ -263,6 +315,36 @@ export function EnterprisePlanReviewPanel() {
         </Button>
       </Space>
     );
+  };
+
+  const canUploadReturn = plan != null && (plan.status === 3 || plan.status === 4);
+
+  const uploadReturnFile = async (kind: 'roster' | 'shift', file: File) => {
+    if (!plan) return false;
+    setActionLoading(true);
+    try {
+      const updated = await trainApi.uploadThreeYearPlanEnterpriseReturn(plan.id, {
+        rosterFile: kind === 'roster' ? file : undefined,
+        shiftFile: kind === 'shift' ? file : undefined,
+      });
+      const ready = isReturnReady(updated);
+      if (ready) {
+        message.success(plan.status === 4 ? '回传材料已齐套' : '回传材料已齐套，可以确认方案');
+      } else {
+        message.success(
+          `${kind === 'roster' ? '筛选名单' : '排班表'}已上传；${returnMissingHint(updated)}`
+            + (plan.status === 4 ? '，请继续补交' : '（确认后也可补交）'),
+        );
+      }
+      setCurrentPlan(updated);
+      invalidateDetail(plan.id);
+      refreshList();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '上传失败');
+    } finally {
+      setActionLoading(false);
+    }
+    return false;
   };
 
   return (
@@ -406,6 +488,135 @@ export function EnterprisePlanReviewPanel() {
                 ) : null}
                 {!plan.submitPersonnelFileId && !plan.submitSchemeFileId ? (
                   <Typography.Text type="secondary">暂无方案材料</Typography.Text>
+                ) : null}
+              </Space>
+            </Card>
+
+            <Alert
+              type={plan.status === 4 && !isReturnReady(plan) ? 'warning' : 'info'}
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={plan.status === 4 ? '回传材料（可补交）' : '企业回传'}
+              description={
+                plan.status === 4 && !isReturnReady(plan)
+                  ? `方案已确认，但${returnMissingHint(plan)}。请尽快补交，否则无法进入分班/排课。`
+                  : plan.status === 4
+                    ? '方案已确认。如需更正，可重新上传覆盖当前回传版本。'
+                    : '请下载机构提交的人员名单，筛选后上传，并上传对应人员排班表。材料可不齐也可先确认，确认后可在「已确认」详情补交。'
+              }
+            />
+
+            <Card
+              size="small"
+              title={(
+                <Space>
+                  <span>{plan.status === 4 ? '回传材料（可补交）' : '企业回传材料'}</span>
+                  <Tag color={returnReadyLabel(plan).color}>{returnReadyLabel(plan).text}</Tag>
+                </Space>
+              )}
+              style={{ marginBottom: 16 }}
+            >
+              <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                <Space wrap align="start">
+                  <Typography.Text>
+                    筛选后培训名单
+                    {plan.enterpriseRosterFileName ? `（${plan.enterpriseRosterFileName}）` : '（未上传）'}
+                  </Typography.Text>
+                  {plan.enterpriseRosterFileId ? (
+                    <>
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<EyeOutlined />}
+                        onClick={() => openMaterialPreview(
+                          plan.id,
+                          'enterprise-roster',
+                          plan.enterpriseRosterFileName,
+                          '企业筛选培训名单',
+                        )}
+                      >
+                        预览
+                      </Button>
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<CloudDownloadOutlined />}
+                        onClick={() => trainApi.downloadThreeYearPlanFile(plan.id, 'enterprise-roster')}
+                      >
+                        下载
+                      </Button>
+                    </>
+                  ) : null}
+                  {canUploadReturn ? (
+                    <Upload
+                      accept=".xlsx,.xls"
+                      showUploadList={false}
+                      beforeUpload={(file) => {
+                        void uploadReturnFile('roster', file);
+                        return false;
+                      }}
+                    >
+                      <Button size="small" icon={<CloudUploadOutlined />} loading={actionLoading}>
+                        {plan.enterpriseRosterFileId
+                          ? (plan.status === 4 ? '覆盖上传' : '重新上传')
+                          : (plan.status === 4 ? '补交名单' : '上传名单')}
+                      </Button>
+                    </Upload>
+                  ) : null}
+                </Space>
+
+                <Space wrap align="start">
+                  <Typography.Text>
+                    排班表
+                    {plan.enterpriseShiftFileName ? `（${plan.enterpriseShiftFileName}）` : '（未上传）'}
+                  </Typography.Text>
+                  {plan.enterpriseShiftFileId ? (
+                    <>
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<EyeOutlined />}
+                        onClick={() => openMaterialPreview(
+                          plan.id,
+                          'enterprise-shift',
+                          plan.enterpriseShiftFileName,
+                          '企业排班表',
+                        )}
+                      >
+                        预览
+                      </Button>
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<CloudDownloadOutlined />}
+                        onClick={() => trainApi.downloadThreeYearPlanFile(plan.id, 'enterprise-shift')}
+                      >
+                        下载
+                      </Button>
+                    </>
+                  ) : null}
+                  {canUploadReturn ? (
+                    <Upload
+                      accept=".xlsx,.xls"
+                      showUploadList={false}
+                      beforeUpload={(file) => {
+                        void uploadReturnFile('shift', file);
+                        return false;
+                      }}
+                    >
+                      <Button size="small" icon={<CloudUploadOutlined />} loading={actionLoading}>
+                        {plan.enterpriseShiftFileId
+                          ? (plan.status === 4 ? '覆盖上传' : '重新上传')
+                          : (plan.status === 4 ? '补交排班表' : '上传排班表')}
+                      </Button>
+                    </Upload>
+                  ) : null}
+                </Space>
+
+                {plan.enterpriseReturnTime ? (
+                  <Typography.Text type="secondary">
+                    最近回传：{plan.enterpriseReturnUsername || '企业'} · {formatTime(plan.enterpriseReturnTime)}
+                  </Typography.Text>
                 ) : null}
               </Space>
             </Card>

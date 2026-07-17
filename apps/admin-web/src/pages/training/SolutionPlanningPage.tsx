@@ -31,6 +31,7 @@ import {
   CheckOutlined,
   CloseOutlined,
   CloudDownloadOutlined,
+  CloudUploadOutlined,
   DeleteOutlined,
   DownOutlined,
   EditOutlined,
@@ -468,6 +469,25 @@ export const SolutionPlanningPage: React.FC = () => {
       },
     },
     {
+      title: '企业回传',
+      width: 140,
+      render: (_, row) => {
+        const code = planStatusCode(row.status);
+        if (code < 3) return '-';
+        const ready = !!(row.enterpriseRosterFileId && row.enterpriseShiftFileId);
+        if (code === 4) {
+          return ready
+            ? <Tag color="success">已确认 · 材料已齐</Tag>
+            : <Tag color="warning">已确认 · 待补交</Tag>;
+        }
+        if (ready) return <Tag color="processing">材料已齐</Tag>;
+        if (row.enterpriseRosterFileId || row.enterpriseShiftFileId) {
+          return <Tag color="warning">部分回传</Tag>;
+        }
+        return <Tag>未回传</Tag>;
+      },
+    },
+    {
       title: '分析进度',
       width: 140,
       render: (_, row) => {
@@ -584,16 +604,33 @@ export const SolutionPlanningPage: React.FC = () => {
     }
 
     if (isEnterpriseViewer && plan.status === 3) {
+      const returnReady = !!(plan.enterpriseRosterFileId && plan.enterpriseShiftFileId);
+      const missingReturn: string[] = [];
+      if (!plan.enterpriseRosterFileId) missingReturn.push('筛选后培训名单');
+      if (!plan.enterpriseShiftFileId) missingReturn.push('排班表');
+      const doConfirm = () => runAction(
+        () => trainApi.companyConfirmThreeYearPlan(plan.id),
+        '已确认',
+      );
       workflowActions.push(
         <Button
           key="confirm"
           type="primary"
           icon={<CheckOutlined />}
           loading={actionLoading}
-          onClick={() => runAction(
-            () => trainApi.companyConfirmThreeYearPlan(plan.id),
-            '已确认',
-          )}
+          onClick={() => {
+            if (returnReady) {
+              void doConfirm();
+              return;
+            }
+            Modal.confirm({
+              title: '回传材料尚未齐套',
+              content: `还缺：${missingReturn.join('、') || '筛选名单与排班表'}。确认后可在已确认详情中补交，是否继续？`,
+              okText: '仍要确认',
+              cancelText: '取消',
+              onOk: () => doConfirm(),
+            });
+          }}
         >
           企业确认
         </Button>,
@@ -649,6 +686,24 @@ export const SolutionPlanningPage: React.FC = () => {
         icon: <CloudDownloadOutlined />,
         label: '方案文档',
         onClick: () => trainApi.downloadThreeYearPlanFile(plan.id, 'submit-scheme'),
+      });
+    }
+
+    if (plan.status >= 3 && plan.enterpriseRosterFileId) {
+      downloadMenuItems.push({
+        key: 'enterprise-roster',
+        icon: <CloudDownloadOutlined />,
+        label: '企业筛选培训名单',
+        onClick: () => trainApi.downloadThreeYearPlanFile(plan.id, 'enterprise-roster'),
+      });
+    }
+
+    if (plan.status >= 3 && plan.enterpriseShiftFileId) {
+      downloadMenuItems.push({
+        key: 'enterprise-shift',
+        icon: <CloudDownloadOutlined />,
+        label: '企业排班表',
+        onClick: () => trainApi.downloadThreeYearPlanFile(plan.id, 'enterprise-shift'),
       });
     }
 
@@ -850,6 +905,91 @@ export const SolutionPlanningPage: React.FC = () => {
                 }
               />
             )}
+            {plan.status === 4 && !(plan.enterpriseRosterFileId && plan.enterpriseShiftFileId) && (
+              <Alert
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="已确认 · 待补交回传材料"
+                description={
+                  [
+                    !plan.enterpriseRosterFileId ? '筛选后培训名单' : null,
+                    !plan.enterpriseShiftFileId ? '排班表' : null,
+                  ].filter(Boolean).join('、')
+                  + '尚未上传。请尽快补交，补齐前不建议进入分班/排课。'
+                }
+              />
+            )}
+            {(plan.status === 3 || plan.status === 4) && (canManagePlan || isEnterpriseViewer) && (
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={plan.status === 4 ? '回传材料补交 / 覆盖' : '企业回传材料上传'}
+                description={(
+                  <Space wrap>
+                    <Upload
+                      accept=".xlsx,.xls"
+                      showUploadList={false}
+                      beforeUpload={(file) => {
+                        void (async () => {
+                          setActionLoading(true);
+                          try {
+                            const updated = await trainApi.uploadThreeYearPlanEnterpriseReturn(plan.id, {
+                              rosterFile: file,
+                            });
+                            message.success('筛选名单已上传');
+                            setCurrentPlan(updated);
+                            invalidateDetailData(plan.id);
+                            refreshList();
+                          } catch (e) {
+                            message.error(e instanceof Error ? e.message : '上传失败');
+                          } finally {
+                            setActionLoading(false);
+                          }
+                        })();
+                        return false;
+                      }}
+                    >
+                      <Button size="small" icon={<CloudUploadOutlined />} loading={actionLoading}>
+                        {plan.enterpriseRosterFileId
+                          ? (plan.status === 4 ? '覆盖名单' : '重新上传名单')
+                          : (plan.status === 4 ? '补交名单' : '上传名单')}
+                      </Button>
+                    </Upload>
+                    <Upload
+                      accept=".xlsx,.xls"
+                      showUploadList={false}
+                      beforeUpload={(file) => {
+                        void (async () => {
+                          setActionLoading(true);
+                          try {
+                            const updated = await trainApi.uploadThreeYearPlanEnterpriseReturn(plan.id, {
+                              shiftFile: file,
+                            });
+                            message.success('排班表已上传');
+                            setCurrentPlan(updated);
+                            invalidateDetailData(plan.id);
+                            refreshList();
+                          } catch (e) {
+                            message.error(e instanceof Error ? e.message : '上传失败');
+                          } finally {
+                            setActionLoading(false);
+                          }
+                        })();
+                        return false;
+                      }}
+                    >
+                      <Button size="small" icon={<CloudUploadOutlined />} loading={actionLoading}>
+                        {plan.enterpriseShiftFileId
+                          ? (plan.status === 4 ? '覆盖排班表' : '重新上传排班表')
+                          : (plan.status === 4 ? '补交排班表' : '上传排班表')}
+                      </Button>
+                    </Upload>
+                  </Space>
+                )}
+              />
+            )}
             <Descriptions column={2} size="small" bordered style={{ marginBottom: 16 }}>
               <Descriptions.Item label="规划编号">{plan.planNo}</Descriptions.Item>
               <Descriptions.Item label="状态">
@@ -877,6 +1017,38 @@ export const SolutionPlanningPage: React.FC = () => {
               {plan.status >= 3 && plan.submitSchemeFileName && (
                 <Descriptions.Item label="方案文档" span={2}>
                   {plan.submitSchemeFileName}
+                </Descriptions.Item>
+              )}
+              {plan.status >= 3 && (
+                <Descriptions.Item label="企业回传" span={2}>
+                  {(() => {
+                    const ready = !!(plan.enterpriseRosterFileId && plan.enterpriseShiftFileId);
+                    if (plan.status === 4) {
+                      return ready
+                        ? <Tag color="success">已确认 · 材料已齐</Tag>
+                        : <Tag color="warning">已确认 · 待补交</Tag>;
+                    }
+                    if (ready) return <Tag color="processing">材料已齐</Tag>;
+                    if (plan.enterpriseRosterFileId || plan.enterpriseShiftFileId) {
+                      return <Tag color="warning">部分回传</Tag>;
+                    }
+                    return <Tag>未回传</Tag>;
+                  })()}
+                  {plan.enterpriseReturnTime ? (
+                    <Typography.Text type="secondary" style={{ marginLeft: 8 }}>
+                      {plan.enterpriseReturnUsername || '企业'} · {formatTime(plan.enterpriseReturnTime)}
+                    </Typography.Text>
+                  ) : null}
+                </Descriptions.Item>
+              )}
+              {plan.status >= 3 && (
+                <Descriptions.Item label="企业筛选名单" span={2}>
+                  {plan.enterpriseRosterFileName || '未补交'}
+                </Descriptions.Item>
+              )}
+              {plan.status >= 3 && (
+                <Descriptions.Item label="企业排班表" span={2}>
+                  {plan.enterpriseShiftFileName || '未补交'}
                 </Descriptions.Item>
               )}
             </Descriptions>

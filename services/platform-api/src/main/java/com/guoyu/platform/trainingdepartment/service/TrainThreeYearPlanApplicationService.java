@@ -391,6 +391,14 @@ public class TrainThreeYearPlanApplicationService {
     entity.setSubmitPersonnelFileId(personnelStored.id());
     entity.setSubmitSchemeFileId(schemeStored.id());
     entity.setReviewedPlanFileId(reviewedFile.id());
+    // 机构重新提交时清空企业当前回传指针（历史保留）
+    entity.setEnterpriseRosterFileId(null);
+    entity.setEnterpriseShiftFileId(null);
+    entity.setEnterpriseRosterFileName(null);
+    entity.setEnterpriseShiftFileName(null);
+    entity.setEnterpriseReturnTime(null);
+    entity.setEnterpriseReturnUserId(null);
+    entity.setEnterpriseReturnUsername(null);
     entity.setStatus(3);
     entity.setRejectReason(null);
     appendSubmitHistory(entity, personnelStored, schemeStored);
@@ -465,9 +473,69 @@ public class TrainThreeYearPlanApplicationService {
   }
 
   @Transactional
+  public TrainThreeYearPlanVO uploadEnterpriseReturn(
+      Long id, MultipartFile rosterFile, MultipartFile shiftFile) {
+    TrainThreeYearPlanEntity entity = getExisting(id);
+    assertEnterpriseCanUploadReturn(entity);
+    boolean hasRoster = rosterFile != null && !rosterFile.isEmpty();
+    boolean hasShift = shiftFile != null && !shiftFile.isEmpty();
+    if (!hasRoster && !hasShift) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请至少上传筛选名单或排班表其中一份");
+    }
+    if (hasRoster) {
+      assertExcelExtension(rosterFile, "筛选名单");
+      FileVO stored = fileApplicationService.upload(rosterFile, "private");
+      entity.setEnterpriseRosterFileId(stored.id());
+      entity.setEnterpriseRosterFileName(stored.originalName());
+    }
+    if (hasShift) {
+      assertExcelExtension(shiftFile, "排班表");
+      FileVO stored = fileApplicationService.upload(shiftFile, "private");
+      entity.setEnterpriseShiftFileId(stored.id());
+      entity.setEnterpriseShiftFileName(stored.originalName());
+    }
+    entity.setEnterpriseReturnTime(LocalDateTime.now());
+    entity.setEnterpriseReturnUserId(SecurityContext.currentUser().getUserId());
+    entity.setEnterpriseReturnUsername(
+        StringUtils.hasText(SecurityContext.currentUser().getDisplayName())
+            ? SecurityContext.currentUser().getDisplayName()
+            : SecurityContext.currentUser().getUsername());
+    appendEnterpriseReturnHistory(entity);
+    planMapper.updateById(entity);
+    return toVO(entity, null);
+  }
+
+  private void assertExcelExtension(MultipartFile file, String label) {
+    String name = file.getOriginalFilename();
+    if (!StringUtils.hasText(name)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, label + "文件名无效");
+    }
+    String lower = name.toLowerCase();
+    if (!lower.endsWith(".xlsx") && !lower.endsWith(".xls")) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, label + "请上传 Excel 文件（.xlsx / .xls）");
+    }
+  }
+
+  private void appendEnterpriseReturnHistory(TrainThreeYearPlanEntity entity) {
+    List<Map<String, Object>> history = parseHistoryList(entity.getEnterpriseReturnHistoryJson());
+    Map<String, Object> item = new LinkedHashMap<>();
+    item.put("rosterFileId", entity.getEnterpriseRosterFileId());
+    item.put("rosterFileName", entity.getEnterpriseRosterFileName());
+    item.put("shiftFileId", entity.getEnterpriseShiftFileId());
+    item.put("shiftFileName", entity.getEnterpriseShiftFileName());
+    item.put("uploadedBy", SecurityContext.currentUser().getUserId());
+    item.put("uploadedByUsername", entity.getEnterpriseReturnUsername());
+    item.put("uploadedAt", LocalDateTime.now().toString());
+    item.put("remark", null);
+    history.add(item);
+    entity.setEnterpriseReturnHistoryJson(writeHistoryJson(history));
+  }
+
+  @Transactional
   public TrainThreeYearPlanVO companyConfirm(Long id) {
     TrainThreeYearPlanEntity entity = getExisting(id);
     assertEnterpriseCanConfirm(entity);
+    // 确认与回传完备度解耦：未齐套也可确认，后续在 status=4 补交
     entity.setStatus(4);
     entity.setCompanyConfirmTime(LocalDateTime.now());
     entity.setCompanyConfirmUserId(SecurityContext.currentUser().getUserId());
@@ -969,6 +1037,30 @@ public class TrainThreeYearPlanApplicationService {
     return downloadStoredAttachment(entity.getSubmitSchemeFileId(), entity.getPlanNo() + "-方案文档");
   }
 
+  @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
+  public ResponseEntity<byte[]> downloadEnterpriseRosterFile(Long id) {
+    TrainThreeYearPlanEntity entity = getExisting(id);
+    assertAccessible(entity);
+    if (entity.getEnterpriseRosterFileId() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "企业尚未回传筛选培训名单");
+    }
+    return downloadStoredAttachment(
+        entity.getEnterpriseRosterFileId(),
+        entity.getPlanNo() + "-企业筛选培训名单");
+  }
+
+  @Transactional(readOnly = true, noRollbackFor = BusinessException.class)
+  public ResponseEntity<byte[]> downloadEnterpriseShiftFile(Long id) {
+    TrainThreeYearPlanEntity entity = getExisting(id);
+    assertAccessible(entity);
+    if (entity.getEnterpriseShiftFileId() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "企业尚未回传排班表");
+    }
+    return downloadStoredAttachment(
+        entity.getEnterpriseShiftFileId(),
+        entity.getPlanNo() + "-企业排班表");
+  }
+
   private ResponseEntity<byte[]> downloadStoredAttachment(Long fileId, String fallbackName) {
     FileVO file = fileApplicationService.getById(fileId);
     byte[] bytes = readStoredFileBytes(fileId, null, false);
@@ -1168,15 +1260,29 @@ public class TrainThreeYearPlanApplicationService {
   private void assertEnterpriseCanConfirm(TrainThreeYearPlanEntity entity) {
     assertAccessible(entity);
     if (entity.getStatus() == null || entity.getStatus() != 3) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅待机构审核状态的规划可企业确认");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅待企业审核状态的规划可确认或驳回");
     }
+    assertEnterpriseActor(entity);
+  }
+
+  /** 待审(3) 上传或已确认(4) 补交/覆盖回传材料 */
+  private void assertEnterpriseCanUploadReturn(TrainThreeYearPlanEntity entity) {
+    assertAccessible(entity);
+    Integer status = entity.getStatus();
+    if (status == null || (status != 3 && status != 4)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅待企业审核或已确认状态可上传/补交回传材料");
+    }
+    assertEnterpriseActor(entity);
+  }
+
+  private void assertEnterpriseActor(TrainThreeYearPlanEntity entity) {
     TrainingOperatorScopeService.Scope scope = scopeService.currentScope();
     if (!scope.isEnterpriseViewer()) {
       scopeService.requireOrgOperator();
       return;
     }
     if (scope.orgId() == null || !scope.orgId().equals(entity.getTargetOrgId())) {
-      throw new BusinessException(ErrorCode.FORBIDDEN, "仅目标企业可确认该规划");
+      throw new BusinessException(ErrorCode.FORBIDDEN, "仅目标企业可操作该规划回传");
     }
   }
 
@@ -1224,6 +1330,15 @@ public class TrainThreeYearPlanApplicationService {
     }
     List<TrainThreeYearPlanVO.RejectHistoryItem> rejectHistory = parseRejectHistory(entity.getRejectHistoryJson());
     List<TrainThreeYearPlanVO.SubmitHistoryItem> submitHistory = parseSubmitHistory(entity.getSubmitHistoryJson());
+    List<TrainThreeYearPlanVO.EnterpriseReturnHistoryItem> returnHistory =
+        parseEnterpriseReturnHistory(entity.getEnterpriseReturnHistoryJson());
+    boolean returnReady = entity.getEnterpriseRosterFileId() != null && entity.getEnterpriseShiftFileId() != null;
+    String rosterName = StringUtils.hasText(entity.getEnterpriseRosterFileName())
+        ? entity.getEnterpriseRosterFileName()
+        : resolveOriginalFileName(entity.getEnterpriseRosterFileId());
+    String shiftName = StringUtils.hasText(entity.getEnterpriseShiftFileName())
+        ? entity.getEnterpriseShiftFileName()
+        : resolveOriginalFileName(entity.getEnterpriseShiftFileId());
     return new TrainThreeYearPlanVO(
         entity.getId(),
         entity.getPlanNo(),
@@ -1253,8 +1368,48 @@ public class TrainThreeYearPlanApplicationService {
         entity.getSubmitPersonnelFileId(),
         entity.getSubmitSchemeFileId(),
         resolveOriginalFileName(entity.getSubmitPersonnelFileId()),
-        resolveOriginalFileName(entity.getSubmitSchemeFileId())
+        resolveOriginalFileName(entity.getSubmitSchemeFileId()),
+        entity.getEnterpriseRosterFileId(),
+        entity.getEnterpriseShiftFileId(),
+        rosterName,
+        shiftName,
+        entity.getEnterpriseReturnTime(),
+        entity.getEnterpriseReturnUsername(),
+        returnReady,
+        returnHistory
     );
+  }
+
+  private List<TrainThreeYearPlanVO.EnterpriseReturnHistoryItem> parseEnterpriseReturnHistory(String json) {
+    List<Map<String, Object>> raw = parseHistoryList(json);
+    List<TrainThreeYearPlanVO.EnterpriseReturnHistoryItem> result = new ArrayList<>();
+    for (Map<String, Object> m : raw) {
+      result.add(new TrainThreeYearPlanVO.EnterpriseReturnHistoryItem(
+          asLong(m.get("rosterFileId")),
+          asString(m.get("rosterFileName")),
+          asLong(m.get("shiftFileId")),
+          asString(m.get("shiftFileName")),
+          asString(m.get("uploadedBy")),
+          asString(m.get("uploadedByUsername")),
+          asLocalDateTime(m.get("uploadedAt")),
+          asString(m.get("remark"))
+      ));
+    }
+    return result;
+  }
+
+  private Long asLong(Object value) {
+    if (value == null) {
+      return null;
+    }
+    if (value instanceof Number number) {
+      return number.longValue();
+    }
+    try {
+      return Long.parseLong(String.valueOf(value));
+    } catch (Exception e) {
+      return null;
+    }
   }
 
   private List<TrainThreeYearPlanVO.RejectHistoryItem> parseRejectHistory(String json) {

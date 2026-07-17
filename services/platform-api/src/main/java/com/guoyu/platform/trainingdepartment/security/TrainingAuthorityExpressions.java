@@ -101,4 +101,15 @@ public final class TrainingAuthorityExpressions {
   /** 三年规划新建/同步/提交（机构操作员 + 平台管理员） */
   public static final String THREE_YEAR_PLAN_MANAGE =
       "hasAnyAuthority('pxanfangguihua:manage', 'pxanfangguihua:view')";
+
+  /** 分班（组织分班）查看 */
+  public static final String DIVISION_VIEW =
+      "hasAnyAuthority('train:division:view', 'train:class-list:view', 'train:info-class:view', "
+          + "'train:people-list:view', 'pxanfangguihua:view', 'train:info-list:view')";
+
+  /** 分班（组织分班）写操作 */
+  public static final String DIVISION_MANAGE =
+      "hasAnyAuthority('train:division:view', 'train:class-list:create', 'train:class-list:update', "
+          + "'train:info-class:create', 'train:info-class:update', "
+          + "'train:people-list:create', 'train:people-list:update', 'pxanfangguihua:manage')";
 }

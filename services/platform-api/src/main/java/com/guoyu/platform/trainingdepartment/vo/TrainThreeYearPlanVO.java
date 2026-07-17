@@ -32,7 +32,15 @@ public record TrainThreeYearPlanVO(
     Long submitPersonnelFileId,
     Long submitSchemeFileId,
     String submitPersonnelFileName,
-    String submitSchemeFileName
+    String submitSchemeFileName,
+    Long enterpriseRosterFileId,
+    Long enterpriseShiftFileId,
+    String enterpriseRosterFileName,
+    String enterpriseShiftFileName,
+    LocalDateTime enterpriseReturnTime,
+    String enterpriseReturnUsername,
+    Boolean enterpriseReturnReady,
+    List<EnterpriseReturnHistoryItem> enterpriseReturnHistory
 ) {
 
   /** 驳回历史条目 */
@@ -50,5 +58,17 @@ public record TrainThreeYearPlanVO(
       LocalDateTime submittedAt,
       String personnelFileName,
       String schemeFileName
+  ) {}
+
+  /** 企业回传历史条目 */
+  public record EnterpriseReturnHistoryItem(
+      Long rosterFileId,
+      String rosterFileName,
+      Long shiftFileId,
+      String shiftFileName,
+      String uploadedBy,
+      String uploadedByUsername,
+      LocalDateTime uploadedAt,
+      String remark
   ) {}
 }

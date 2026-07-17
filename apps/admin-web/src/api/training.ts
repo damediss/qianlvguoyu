@@ -58,6 +58,13 @@ import type {
   TrainSignUpPerson, TrainSignUpPeopleQuery, TrainSignUpOrcSelf, PlatformUserSaveReq,
   SignUpPeopleImportResult,
   SignUpDefaultTemplateExportStart, SignUpDefaultTemplateExportCheck,
+  DivisionPlanItem, DivisionReadyVO, DivisionEnsureTrainInfoReq, DivisionEnsureTrainInfoResult,
+  DivisionRosterParseReq, DivisionRosterParseResult, DivisionRosterItem,
+  DivisionOrgSplitReq, DivisionTrainInfoSummary,
+  DivisionAutoPackReq, DivisionAutoPackResult,
+  ShiftAssignGenerateReq, ShiftAssignPreviewResult, ShiftAssignPrecheckResult,
+  ShiftAssignTaskResult, ShiftAssignBindClassReq, ShiftAssignPatchReq,
+  ShiftAssignMaterializeReq, ShiftAssignGenerateMaterializeReq, ShiftAssignMaterializeResult,
 } from '../types/training';
 
 const BASE = '/training';
@@ -1345,6 +1352,18 @@ export function companyConfirmThreeYearPlan(id: number) {
   return unwrap<ThreeYearPlan>(apiClient.post(`${BASE}/three-year-plans/${id}/company-confirm`));
 }
 
+export function uploadThreeYearPlanEnterpriseReturn(
+  id: number,
+  payload: { rosterFile?: File; shiftFile?: File },
+) {
+  const formData = new FormData();
+  if (payload.rosterFile) formData.append('rosterFile', payload.rosterFile);
+  if (payload.shiftFile) formData.append('shiftFile', payload.shiftFile);
+  return unwrap<ThreeYearPlan>(
+    apiClient.post(`${BASE}/three-year-plans/${id}/enterprise-return`, formData, { timeout: 120000 }),
+  );
+}
+
 export function companyRejectThreeYearPlan(id: number, reason: string) {
   return unwrap<ThreeYearPlan>(
     apiClient.post(`${BASE}/three-year-plans/${id}/company-reject`, null, { params: { reason } }),
@@ -1373,7 +1392,7 @@ export function deleteThreeYearPlan(id: number) {
 
 export async function downloadThreeYearPlanFile(
   planId: number,
-  kind: 'plan' | 'result' | 'reviewed' | 'submit-personnel' | 'submit-scheme',
+  kind: 'plan' | 'result' | 'reviewed' | ThreeYearPlanMaterialKind,
 ) {
   const path = threeYearPlanFileDownloadPath(planId, kind);
   const blob = await fetchFileBlob(path);
@@ -1385,7 +1404,11 @@ export async function downloadThreeYearPlanFile(
   window.URL.revokeObjectURL(url);
 }
 
-export type ThreeYearPlanMaterialKind = 'submit-personnel' | 'submit-scheme';
+export type ThreeYearPlanMaterialKind =
+  | 'submit-personnel'
+  | 'submit-scheme'
+  | 'enterprise-roster'
+  | 'enterprise-shift';
 
 export function threeYearPlanFileDownloadPath(
   planId: number,
@@ -1403,6 +1426,12 @@ export function threeYearPlanFileDownloadPath(
   if (kind === 'submit-scheme') {
     return `${BASE}/three-year-plans/${planId}/download-submit-scheme`;
   }
+  if (kind === 'enterprise-roster') {
+    return `${BASE}/three-year-plans/${planId}/download-enterprise-roster`;
+  }
+  if (kind === 'enterprise-shift') {
+    return `${BASE}/three-year-plans/${planId}/download-enterprise-shift`;
+  }
   return `${BASE}/three-year-plans/${planId}/download-result`;
 }
 
@@ -1418,5 +1447,112 @@ function threeYearPlanFileDefaultName(
   if (kind === 'reviewed') return `已审核三年规划-${planId}.xlsx`;
   if (kind === 'submit-personnel') return `企业审核人员名单-${planId}.xlsx`;
   if (kind === 'submit-scheme') return `方案文档-${planId}`;
+  if (kind === 'enterprise-roster') return `企业筛选培训名单-${planId}.xlsx`;
+  if (kind === 'enterprise-shift') return `企业排班表-${planId}.xlsx`;
   return `原始认定结果-${planId}.zip`;
+}
+
+// ==================== Division (分班) ====================
+
+export function pageDivisionPlans(params: {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  readyOnly?: boolean;
+}) {
+  return unwrap<PageResponse<DivisionPlanItem>>(apiClient.get(`${BASE}/division/plans`, { params }));
+}
+
+export function getDivisionReady(planId: number) {
+  return unwrap<DivisionReadyVO>(apiClient.get(`${BASE}/division/plans/${planId}/ready`));
+}
+
+export function ensureDivisionTrainInfo(planId: number, payload: DivisionEnsureTrainInfoReq = {}) {
+  return unwrap<DivisionEnsureTrainInfoResult>(
+    apiClient.post(`${BASE}/division/plans/${planId}/ensure-train-info`, payload),
+  );
+}
+
+export function parseDivisionRoster(payload: DivisionRosterParseReq) {
+  return unwrap<DivisionRosterParseResult>(
+    apiClient.post(`${BASE}/division/roster/parse`, payload, { timeout: 120000 }),
+  );
+}
+
+export function pageDivisionRoster(params: {
+  planId: number;
+  trainInfoId?: number;
+  assignStatus?: number;
+  page?: number;
+  pageSize?: number;
+}) {
+  return unwrap<PageResponse<DivisionRosterItem>>(apiClient.get(`${BASE}/division/roster`, { params }));
+}
+
+export function submitDivisionOrgSplit(payload: DivisionOrgSplitReq) {
+  return unwrap<{
+    trainInfoId: number;
+    classCount: number;
+    classes: { classId: number; title: string; nums: number }[];
+  }>(apiClient.post(`${BASE}/division/org-split`, payload));
+}
+
+export function autoPackDivision(payload: DivisionAutoPackReq) {
+  return unwrap<DivisionAutoPackResult>(
+    apiClient.post(`${BASE}/division/auto-pack`, payload, { timeout: 180000 }),
+  );
+}
+
+export function getDivisionTrainInfoSummary(trainInfoId: number) {
+  return unwrap<DivisionTrainInfoSummary>(
+    apiClient.get(`${BASE}/division/train-info/${trainInfoId}/summary`),
+  );
+}
+
+// ==================== Shift Assign (排课分班 L2) ====================
+
+export function previewShiftAssignAdapter(payload: ShiftAssignGenerateReq) {
+  return unwrap<ShiftAssignPreviewResult>(
+    apiClient.post(`${BASE}/shift-assign/adapters/preview`, payload, { timeout: 120000 }),
+  );
+}
+
+export function precheckShiftAssign(payload: ShiftAssignGenerateReq) {
+  return unwrap<ShiftAssignPrecheckResult>(
+    apiClient.post(`${BASE}/shift-assign/precheck`, payload, { timeout: 180000 }),
+  );
+}
+
+export function generateShiftAssign(payload: ShiftAssignGenerateReq) {
+  return unwrap<ShiftAssignTaskResult>(
+    apiClient.post(`${BASE}/shift-assign/generate`, payload, { timeout: 180000 }),
+  );
+}
+
+export function getShiftAssignTask(taskId: number) {
+  return unwrap<ShiftAssignTaskResult>(apiClient.get(`${BASE}/shift-assign/tasks/${taskId}`));
+}
+
+export function patchShiftAssignTask(taskId: number, payload: ShiftAssignPatchReq) {
+  return unwrap<ShiftAssignTaskResult>(
+    apiClient.post(`${BASE}/shift-assign/tasks/${taskId}/patch`, payload),
+  );
+}
+
+export function bindShiftAssignClass(taskId: number, payload: ShiftAssignBindClassReq) {
+  return unwrap<ShiftAssignTaskResult>(
+    apiClient.post(`${BASE}/shift-assign/tasks/${taskId}/bind-class`, payload),
+  );
+}
+
+export function materializeShiftAssign(taskId: number, payload: ShiftAssignMaterializeReq) {
+  return unwrap<ShiftAssignMaterializeResult>(
+    apiClient.post(`${BASE}/shift-assign/tasks/${taskId}/materialize`, payload, { timeout: 180000 }),
+  );
+}
+
+export function generateAndMaterializeShiftAssign(payload: ShiftAssignGenerateMaterializeReq) {
+  return unwrap<ShiftAssignMaterializeResult & ShiftAssignTaskResult>(
+    apiClient.post(`${BASE}/shift-assign/generate-and-materialize`, payload, { timeout: 180000 }),
+  );
 }

@@ -26,6 +26,14 @@ public class TrainThreeYearPlanEntity {
   private Long reviewedPlanFileId;
   private Long submitPersonnelFileId;
   private Long submitSchemeFileId;
+  private Long enterpriseRosterFileId;
+  private Long enterpriseShiftFileId;
+  private String enterpriseRosterFileName;
+  private String enterpriseShiftFileName;
+  private LocalDateTime enterpriseReturnTime;
+  private Long enterpriseReturnUserId;
+  private String enterpriseReturnUsername;
+  private String enterpriseReturnHistoryJson;
   private String rejectReason;
   private String rejectHistoryJson;
   private String submitHistoryJson;
@@ -70,6 +78,22 @@ public class TrainThreeYearPlanEntity {
   public void setSubmitPersonnelFileId(Long submitPersonnelFileId) { this.submitPersonnelFileId = submitPersonnelFileId; }
   public Long getSubmitSchemeFileId() { return submitSchemeFileId; }
   public void setSubmitSchemeFileId(Long submitSchemeFileId) { this.submitSchemeFileId = submitSchemeFileId; }
+  public Long getEnterpriseRosterFileId() { return enterpriseRosterFileId; }
+  public void setEnterpriseRosterFileId(Long enterpriseRosterFileId) { this.enterpriseRosterFileId = enterpriseRosterFileId; }
+  public Long getEnterpriseShiftFileId() { return enterpriseShiftFileId; }
+  public void setEnterpriseShiftFileId(Long enterpriseShiftFileId) { this.enterpriseShiftFileId = enterpriseShiftFileId; }
+  public String getEnterpriseRosterFileName() { return enterpriseRosterFileName; }
+  public void setEnterpriseRosterFileName(String enterpriseRosterFileName) { this.enterpriseRosterFileName = enterpriseRosterFileName; }
+  public String getEnterpriseShiftFileName() { return enterpriseShiftFileName; }
+  public void setEnterpriseShiftFileName(String enterpriseShiftFileName) { this.enterpriseShiftFileName = enterpriseShiftFileName; }
+  public LocalDateTime getEnterpriseReturnTime() { return enterpriseReturnTime; }
+  public void setEnterpriseReturnTime(LocalDateTime enterpriseReturnTime) { this.enterpriseReturnTime = enterpriseReturnTime; }
+  public Long getEnterpriseReturnUserId() { return enterpriseReturnUserId; }
+  public void setEnterpriseReturnUserId(Long enterpriseReturnUserId) { this.enterpriseReturnUserId = enterpriseReturnUserId; }
+  public String getEnterpriseReturnUsername() { return enterpriseReturnUsername; }
+  public void setEnterpriseReturnUsername(String enterpriseReturnUsername) { this.enterpriseReturnUsername = enterpriseReturnUsername; }
+  public String getEnterpriseReturnHistoryJson() { return enterpriseReturnHistoryJson; }
+  public void setEnterpriseReturnHistoryJson(String enterpriseReturnHistoryJson) { this.enterpriseReturnHistoryJson = enterpriseReturnHistoryJson; }
   public String getRejectReason() { return rejectReason; }
   public void setRejectReason(String rejectReason) { this.rejectReason = rejectReason; }
   public String getRejectHistoryJson() { return rejectHistoryJson; }
