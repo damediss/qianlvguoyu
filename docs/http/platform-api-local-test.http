@@ -1,0 +1,60 @@
+@baseUrl = http://localhost:18080
+@token = your_token_here
+@tenantId = your_tenant_id_here
+@taskId = 1
+@candidateId = 1
+
+### 健康检查
+GET {{baseUrl}}/api/actuator/health
+
+### 登录获取 token（按需填写真实账号；不要提交真实 token）
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+X-Tenant-Id: {{tenantId}}
+
+{
+  "tenantCode": "demo",
+  "username": "admin",
+  "password": "Admin@123456"
+}
+
+### 查询认定任务列表（当前 MCP Server 上游实际接口）
+GET {{baseUrl}}/api/certification/mcp/tasks?page=1&pageSize=10
+Authorization: Bearer {{token}}
+X-Tenant-Id: {{tenantId}}
+
+### 查询认定任务状态（实际接口：MCP 任务概览）
+GET {{baseUrl}}/api/certification/mcp/tasks/{{taskId}}/overview
+Authorization: Bearer {{token}}
+X-Tenant-Id: {{tenantId}}
+
+### 查询考生采集状态（实际接口：单个考生采集详情）
+GET {{baseUrl}}/api/certification/practical-collection/detail/{{taskId}}/{{candidateId}}
+Authorization: Bearer {{token}}
+X-Tenant-Id: {{tenantId}}
+
+### 查询考生采集进度（当前 MCP Server 上游聚合接口）
+GET {{baseUrl}}/api/certification/mcp/tasks/{{taskId}}/collection-progress
+Authorization: Bearer {{token}}
+X-Tenant-Id: {{tenantId}}
+
+### 查询考评员配置状态（实际接口：考评员小组列表；当前无聚合 status 接口）
+GET {{baseUrl}}/api/certification/preparation/tasks/{{taskId}}/assessor-groups
+Authorization: Bearer {{token}}
+X-Tenant-Id: {{tenantId}}
+
+### 查询评分表配置状态（实际接口：实操评分配置视图；当前无 score-table/status 聚合接口）
+GET {{baseUrl}}/api/certification/practical-scoring/tasks/{{taskId}}/setup
+Authorization: Bearer {{token}}
+X-Tenant-Id: {{tenantId}}
+
+### 查询实操评分进度（当前 MCP Server 上游聚合接口）
+GET {{baseUrl}}/api/certification/mcp/tasks/{{taskId}}/practical-score-progress
+Authorization: Bearer {{token}}
+X-Tenant-Id: {{tenantId}}
+
+# 待后端补齐接口示例，不作为当前可运行接口：
+# GET {{baseUrl}}/api/certification/tasks/{{taskId}}/status
+# GET {{baseUrl}}/api/certification/tasks/{{taskId}}/candidates/{{candidateId}}/collection-status
+# GET {{baseUrl}}/api/certification/tasks/{{taskId}}/examiner-group/status
+# GET {{baseUrl}}/api/certification/tasks/{{taskId}}/score-table/status

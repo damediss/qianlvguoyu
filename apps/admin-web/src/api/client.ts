@@ -49,6 +49,11 @@ apiClient.interceptors.request.use((config) => {
 
 apiClient.interceptors.response.use(
   (response) => {
+    // blob / arraybuffer 下载不能按 JSON ApiResponse 解析，否则图片预览会异常
+    if (response.config.responseType === 'blob' || response.config.responseType === 'arraybuffer'
+      || (typeof Blob !== 'undefined' && response.data instanceof Blob)) {
+      return response;
+    }
     const payload = response.data as ApiResponse<unknown>;
     if (payload && payload.code && payload.code !== '0') {
       throw new Error(payload.message || '请求失败');

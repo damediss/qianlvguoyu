@@ -16,7 +16,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
     "com.guoyu.platform.knowledge.mapper",
     "com.guoyu.platform.certification.mapper",
     "com.guoyu.platform.certification.info.mapper",
-    "com.guoyu.platform.chazheng.mapper"
+    "com.guoyu.platform.chazheng.mapper",
+    "com.guoyu.platform.competition.mapper"
 })
 @SpringBootApplication
 public class PlatformApplication {

@@ -6,6 +6,7 @@ import com.guoyu.platform.certification.collection.converter.PracticalCollection
 import com.guoyu.platform.certification.collection.domain.CollectionEligibilityResult;
 import com.guoyu.platform.certification.collection.domain.PracticalCollectionDomainService;
 import com.guoyu.platform.certification.collection.domain.PracticalCollectionEligibilityService;
+import com.guoyu.platform.certification.collection.dto.CancelCurrentCollectionRequest;
 import com.guoyu.platform.certification.collection.dto.CollectionExceptionQueryRequest;
 import com.guoyu.platform.certification.collection.dto.BatchJoinQueueRequest;
 import com.guoyu.platform.certification.collection.dto.CollectionFormExportRequest;
@@ -1070,6 +1071,45 @@ public class PracticalCollectionApplicationService {
         status,
         CollectionMatchMethodEnum.MANUAL
     );
+  }
+
+  /**
+   * 取消当前采集：释放采集中占用，不清空已提交的指纹/签名记录。
+   * 取消后考生回到已到场，可再次开采集；不再阻塞其他考生进入采集中。
+   */
+  @Transactional
+  public CollectionActionResultVO cancelCurrentCollection(CancelCurrentCollectionRequest request) {
+    PlatformUserPrincipal user = current();
+    requireTask(user.getTenantId(), request.taskId());
+    CertificationCandidateEntity candidate =
+        requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
+    boolean collecting =
+        CollectionOverallStatusEnum.COLLECTING.getCode().equals(status.getOverallStatus())
+            || CollectionQueueStatusEnum.COLLECTING.getCode().equals(status.getQueueStatus());
+    if (!collecting) {
+      PracticalCollectionQueueEntity activeQueue =
+          queueMapper.selectActiveByCandidate(user.getTenantId(), request.taskId(), request.candidateId());
+      if (activeQueue == null
+          || !CollectionQueueStatusEnum.COLLECTING.getCode().equals(activeQueue.getQueueStatus())) {
+        return converter.toActionResultVO(status, activeQueueItem(user.getTenantId(), candidate, status), "当前考生未在采集中");
+      }
+    }
+    removeActiveQueue(
+        user.getTenantId(),
+        request.taskId(),
+        request.candidateId(),
+        user.getUserId(),
+        "取消当前采集"
+    );
+    if (CollectionOverallStatusEnum.COLLECTING.getCode().equals(status.getOverallStatus())) {
+      status.setOverallStatus(CollectionOverallStatusEnum.ARRIVED.getCode());
+    }
+    status.setQueueStatus(CollectionQueueStatusEnum.REMOVED.getCode());
+    status.setCollectingStartedAt(null);
+    status.setLastOperatorId(user.getUserId());
+    statusMapper.updateById(status);
+    return converter.toActionResultVO(status, null, "已取消当前采集");
   }
 
   private CandidateCollectionDetailVO openCurrentCandidate(

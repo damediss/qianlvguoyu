@@ -150,6 +150,7 @@ interface AppShellProps {
   contentOverride?: ReactNode;
   selectedMenuKeyOverride?: string;
   onMenuNavigate?: () => void;
+  hideBreadcrumb?: boolean;
 }
 
 export function AppShell({
@@ -157,6 +158,7 @@ export function AppShell({
   contentOverride,
   selectedMenuKeyOverride,
   onMenuNavigate,
+  hideBreadcrumb = false,
 }: AppShellProps) {
   const token = useAuthStore((s) => s.token);
   const menuTree = useAuthStore((s) => s.menuTree);
@@ -352,7 +354,7 @@ export function AppShell({
           </Space>
         </Header>
         <Content className="app-content">
-          {breadcrumbItems.length > 0 && (
+          {!hideBreadcrumb && breadcrumbItems.length > 0 && (
             <Breadcrumb className="app-breadcrumb" items={breadcrumbItems} />
           )}
           <div className="app-page-body">

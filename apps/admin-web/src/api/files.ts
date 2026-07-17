@@ -20,8 +20,8 @@ export async function fetchFileBlob(path: string): Promise<Blob> {
   const isAbsolute = path.startsWith('http://') || path.startsWith('https://');
   try {
     const response = isAbsolute
-      ? await axios.get(path, { responseType: 'blob', timeout: 30000 })
-      : await apiClient.get(path, { responseType: 'blob' });
+      ? await axios.get(path, { responseType: 'blob', timeout: 120000 })
+      : await apiClient.get(path, { responseType: 'blob', timeout: 120000 });
     const blob = response.data as Blob;
     if (blob.type.includes('json') && blob.size < 4096) {
       throw new Error(await parseBlobError(blob, '文件下载失败'));
@@ -55,7 +55,28 @@ async function materializeUploadFile(file: File | Blob): Promise<File> {
   }
   const name = file instanceof File ? file.name : 'upload.bin';
   const type = file.type || 'application/octet-stream';
+  const bytes = new Uint8Array(buffer);
+  assertImageMagicIfNeeded(name, type, bytes);
   return new File([buffer], name, { type });
+}
+
+function assertImageMagicIfNeeded(name: string, type: string, bytes: Uint8Array) {
+  const lower = name.toLowerCase();
+  const looksImage = type.startsWith('image/')
+    || /\.(png|jpe?g|gif|bmp|webp)$/.test(lower);
+  if (!looksImage || bytes.length < 3) {
+    return;
+  }
+  const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+  const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const isGif = bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46;
+  const isBmp = bytes[0] === 0x42 && bytes[1] === 0x4d;
+  const isWebp = bytes.length >= 12
+    && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
+  if (!(isPng || isJpeg || isGif || isBmp || isWebp)) {
+    throw new Error('上传的文件不是有效图片（内容已损坏或格式不支持），请用 JPG/PNG 重新导出后再上传');
+  }
 }
 
 export async function uploadPlatformFile(file: File | Blob, accessPolicy?: string): Promise<FileVO> {

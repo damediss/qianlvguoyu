@@ -6,7 +6,7 @@ import {
   RollbackOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
-import { Button, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Table, Typography, Upload, message } from 'antd';
+import { Button, Descriptions, Form, Image, Input, Modal, Popconfirm, Select, Space, Table, Typography, Upload, message } from 'antd';
 import type { UploadProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -48,8 +48,17 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
   const [reviewingDocument, setReviewingDocument] = useState<PreparationCandidateDocument | null>(null);
   const [previewTarget, setPreviewTarget] = useState<FilePreviewTarget | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string>();
   const [uploadForm] = Form.useForm<PreparationCandidateDocumentPayload>();
   const [reviewForm] = Form.useForm<PreparationDocumentReviewPayload>();
+
+  useEffect(() => {
+    return () => {
+      if (localPreviewUrl) {
+        URL.revokeObjectURL(localPreviewUrl);
+      }
+    };
+  }, [localPreviewUrl]);
 
   const documentsQuery = useQuery({
     queryKey: ['certification-preparation-documents', taskId, candidate?.id, detailStatus],
@@ -70,6 +79,10 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
       setUploadingDocument(null);
       setReviewingDocument(null);
       setPreviewTarget(null);
+      setLocalPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return undefined;
+      });
     }
   }, [open]);
 
@@ -148,7 +161,14 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
           fileName: saved.originalName,
           fileType: saved.contentType,
         });
+        setLocalPreviewUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return URL.createObjectURL(file);
+        });
         message.success('文件已上传到统一文件服务');
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '文件上传失败');
+        return Upload.LIST_IGNORE;
       } finally {
         setUploadingFile(false);
       }
@@ -301,6 +321,10 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
       return;
     }
     uploadForm.resetFields();
+    setLocalPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return undefined;
+    });
     setUploadingDocument(record);
     uploadForm.setFieldsValue({
       candidateId: candidate.id,
@@ -408,6 +432,11 @@ export function CandidateDocumentDrawer({ taskId, candidate, open, onClose, onCh
                 {uploadingDocument?.fileId ? '修改' : '上传'}
               </Button>
             </Upload>
+            {localPreviewUrl ? (
+              <div style={{ marginTop: 12 }}>
+                <Image src={localPreviewUrl} alt="上传预览" style={{ maxWidth: 240, maxHeight: 320 }} />
+              </div>
+            ) : null}
           </Form.Item>
           <Form.Item name="fileId" label="文件ID" rules={[{ required: true, message: '请先上传文件' }]}>
             <Input disabled />

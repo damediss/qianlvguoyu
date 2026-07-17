@@ -122,15 +122,8 @@ public class CertificationApplicationFormGenerationService {
       image = placeholderImage(missingLabel);
     }
     image = resizeToFit(image, maxWidth, maxHeight);
-    BufferedImage outputImage = image;
-    if ("jpeg".equals(format) && image.getType() != BufferedImage.TYPE_INT_RGB) {
-      outputImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
-      Graphics2D graphics = outputImage.createGraphics();
-      graphics.setColor(Color.WHITE);
-      graphics.fillRect(0, 0, image.getWidth(), image.getHeight());
-      graphics.drawImage(image, 0, 0, null);
-      graphics.dispose();
-    }
+    // Word / docx-preview 对 RGBA PNG 常显示为空白，统一压成白底 RGB
+    BufferedImage outputImage = flattenToRgb(image);
     try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       if (!ImageIO.write(outputImage, format, output)) {
         throw new IOException("Unsupported image format: " + format);
@@ -148,13 +141,28 @@ public class CertificationApplicationFormGenerationService {
     }
     int width = Math.max(1, (int) Math.round(source.getWidth() * scale));
     int height = Math.max(1, (int) Math.round(source.getHeight() * scale));
-    BufferedImage resized = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+    BufferedImage resized = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
     Graphics2D graphics = resized.createGraphics();
+    graphics.setColor(Color.WHITE);
+    graphics.fillRect(0, 0, width, height);
     graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
     graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
     graphics.drawImage(source, 0, 0, width, height, null);
     graphics.dispose();
     return resized;
+  }
+
+  private BufferedImage flattenToRgb(BufferedImage source) {
+    if (source.getType() == BufferedImage.TYPE_INT_RGB) {
+      return source;
+    }
+    BufferedImage rgb = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_INT_RGB);
+    Graphics2D graphics = rgb.createGraphics();
+    graphics.setColor(Color.WHITE);
+    graphics.fillRect(0, 0, source.getWidth(), source.getHeight());
+    graphics.drawImage(source, 0, 0, null);
+    graphics.dispose();
+    return rgb;
   }
 
   private BufferedImage placeholderImage(String label) {

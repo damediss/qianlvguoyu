@@ -118,6 +118,11 @@ class AuditLogAspectTest {
       }
 
       @Override
+      public boolean includeResult() {
+        return false;
+      }
+
+      @Override
       public Class<? extends java.lang.annotation.Annotation> annotationType() {
         return AuditLog.class;
       }
@@ -139,6 +144,11 @@ class AuditLogAspectTest {
       @Override
       public String targetType() {
         return "tenant";
+      }
+
+      @Override
+      public boolean includeResult() {
+        return false;
       }
 
       @Override

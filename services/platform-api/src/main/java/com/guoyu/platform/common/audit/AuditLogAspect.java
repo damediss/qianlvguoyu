@@ -59,7 +59,7 @@ public class AuditLogAspect {
     entity.setRequestId(TraceIdHolder.getTraceId());
     entity.setIp(request == null ? null : resolveClientIp(request));
     entity.setUserAgent(request == null ? null : request.getHeader("User-Agent"));
-    entity.setDetailJson(toDetailJson(joinPoint));
+    entity.setDetailJson(toDetailJson(joinPoint, result, auditLog));
     entity.setCreatedAt(LocalDateTime.now());
     entity.setDeleted(0);
     try {
@@ -100,10 +100,14 @@ public class AuditLogAspect {
     return request.getRemoteAddr();
   }
 
-  private String toDetailJson(JoinPoint joinPoint) {
+  private String toDetailJson(JoinPoint joinPoint, Object result, AuditLog auditLog) {
     Map<String, Object> detail = new LinkedHashMap<>();
     detail.put("method", joinPoint.getSignature().toShortString());
-    detail.put("args", sanitizeArgs(joinPoint.getArgs()));
+    if (auditLog.includeResult()) {
+      detail.put("result", sanitizeArg(result));
+    } else {
+      detail.put("args", sanitizeArgs(joinPoint.getArgs()));
+    }
     try {
       String json = objectMapper.writeValueAsString(detail);
       if (json.length() <= MAX_DETAIL_JSON_LENGTH) {

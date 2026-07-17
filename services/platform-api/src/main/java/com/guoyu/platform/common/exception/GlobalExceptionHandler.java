@@ -107,6 +107,7 @@ public class GlobalExceptionHandler {
       case ErrorCode.FORBIDDEN -> HttpStatus.FORBIDDEN;
       case ErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
       case ErrorCode.CONFLICT -> HttpStatus.CONFLICT;
+      case ErrorCode.UNPROCESSABLE_ENTITY -> HttpStatus.UNPROCESSABLE_ENTITY;
       case ErrorCode.BAD_GATEWAY -> HttpStatus.BAD_GATEWAY;
       default -> HttpStatus.BAD_REQUEST;
     };
