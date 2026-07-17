@@ -104,6 +104,19 @@ export function openCandidateCollection(
   );
 }
 
+export function cancelCurrentCollection(
+  taskId: SnowflakeId,
+  candidateId: SnowflakeId,
+): Promise<CollectionActionResultVO> {
+  return unwrap<CollectionActionResultVO>(
+    apiClient.post(
+      `${base}/workbench/${taskId}/candidates/${candidateId}/cancel-current`,
+      undefined,
+      collectionRequestConfig,
+    ),
+  );
+}
+
 export function searchCandidate(params: SearchCandidateRequest): Promise<CandidateMatchVO[]> {
   return unwrap<CandidateMatchVO[]>(
     apiClient.post(`${base}/search-candidate`, params, collectionRequestConfig),

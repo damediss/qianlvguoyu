@@ -36,6 +36,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { downloadUrlFile } from '../../../api/files';
 import {
+  cancelCurrentCollection,
   exceptionRelease,
   exportCollectionForms,
   exportCollectionPdf,
@@ -270,6 +271,39 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
     setCollectionContext(null);
   };
 
+  const releaseCurrentCollectingCandidate = async (candidate: CandidateCollectionDetailVO) => {
+    if (candidate.overallStatus !== 'COLLECTING') {
+      clearCollectionCandidate();
+      return;
+    }
+    try {
+      await cancelCurrentCollection(taskId!, candidate.candidateId);
+      clearCollectionCandidate();
+      refreshAll();
+      message.success('已取消当前采集');
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '取消当前采集失败，请稍后重试');
+      throw error;
+    }
+  };
+
+  const handleCancelCurrent = () => {
+    if (!collectionCandidate) {
+      return;
+    }
+    if (collectionCandidate.overallStatus === 'COLLECTING') {
+      Modal.confirm({
+        title: '取消当前采集？',
+        content: '取消后将释放该考生的「采集中」占用，已提交的指纹/签名记录会保留，可稍后再继续采集。',
+        okText: '确认取消',
+        cancelText: '继续采集',
+        onOk: () => releaseCurrentCollectingCandidate(collectionCandidate),
+      });
+      return;
+    }
+    clearCollectionCandidate();
+  };
+
   const refreshAll = () => {
     queryClient.invalidateQueries({ queryKey: ['practical-collection-workbench', taskId] });
     queryClient.invalidateQueries({ queryKey: ['practical-collection-exceptions', taskId] });
@@ -434,7 +468,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
             {current.maskedIdCardNo || (current.idCardLast4 ? `后四位 ${current.idCardLast4}` : '-')}
           </Descriptions.Item>
           <Descriptions.Item label="本次选择">{selected.name || '-'}</Descriptions.Item>
-          <Descriptions.Item label="处理方式">请先完成或标记异常当前考生，刷新确认现场状态后再切换到其他考生。</Descriptions.Item>
+          <Descriptions.Item label="处理方式">请先完成、取消当前或标记异常当前考生，刷新确认现场状态后再切换到其他考生。</Descriptions.Item>
         </Descriptions>
       ),
       okText: '我知道了',
@@ -964,7 +998,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
             candidate={collectionCandidate}
             collectionContext={collectionContext}
             onRefresh={refreshCollectionCandidate}
-            onCancelCurrent={clearCollectionCandidate}
+            onCancelCurrent={handleCancelCurrent}
             onClearCurrent={clearCollectionCandidate}
             onAfterStatusChanged={refreshAll}
           />

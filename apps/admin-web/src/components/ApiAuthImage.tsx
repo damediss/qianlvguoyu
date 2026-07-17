@@ -1,7 +1,7 @@
 import { Image, Spin } from 'antd';
 import type { ImageProps } from 'antd';
 import { useEffect, useState, type ImgHTMLAttributes } from 'react';
-import { fetchUrlFileBlob, isUsableFileUrl } from '../api/files';
+import { fetchUrlFileBlob, isPrivateCosUrl, isUsableFileUrl } from '../api/files';
 
 function useAuthImageSrc(url?: string) {
   const [src, setSrc] = useState<string>();
@@ -16,7 +16,8 @@ function useAuthImageSrc(url?: string) {
 
     const isExternalDirect =
       (url.startsWith('http://') || url.startsWith('https://'))
-      && !url.includes('/api/');
+      && !url.includes('/api/')
+      && !isPrivateCosUrl(url);
     if (isExternalDirect) {
       setSrc(url);
       setLoading(false);

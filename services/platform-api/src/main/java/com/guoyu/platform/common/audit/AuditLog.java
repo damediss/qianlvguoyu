@@ -14,4 +14,7 @@ public @interface AuditLog {
   String action();
 
   String targetType();
+
+  /** Whether the returned command result should be included in the audit detail. */
+  boolean includeResult() default false;
 }

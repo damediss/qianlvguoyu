@@ -1,6 +1,7 @@
 package com.guoyu.platform.certification.controller;
 
 import com.guoyu.platform.certification.collection.application.PracticalCollectionApplicationService;
+import com.guoyu.platform.certification.collection.dto.CancelCurrentCollectionRequest;
 import com.guoyu.platform.certification.collection.dto.CollectionExceptionQueryRequest;
 import com.guoyu.platform.certification.collection.dto.BatchJoinQueueRequest;
 import com.guoyu.platform.certification.collection.dto.CollectionFormExportRequest;
@@ -130,6 +131,16 @@ public class CertificationPracticalCollectionController {
       @PathVariable Long candidateId
   ) {
     return ApiResponse.ok(service.openCandidateCollection(taskId, candidateId));
+  }
+
+  @PostMapping("/workbench/{taskId}/candidates/{candidateId}/cancel-current")
+  @PreAuthorize("hasAuthority('certification.practical.collection.operate')")
+  @AuditLog(module = "certification", action = "practical-collection:cancel-current", targetType = "certification_practical_collection_status")
+  public ApiResponse<CollectionActionResultVO> cancelCurrentCollection(
+      @PathVariable Long taskId,
+      @PathVariable Long candidateId
+  ) {
+    return ApiResponse.ok(service.cancelCurrentCollection(new CancelCurrentCollectionRequest(taskId, candidateId)));
   }
 
   @PostMapping("/search-candidate")

@@ -932,7 +932,7 @@ public class PracticalScoringApplicationService {
         }
         writeTemplateCell(row, 0, sequence++);
         writeTemplateCell(row, 1, nvlText(candidate.getCandidateName()));
-        writeTemplateCell(row, 2, nvlText(candidate.getCandidateNo()));
+        writeTemplateCell(row, 2, nvlText(candidate.getAdmissionTicketNo()));
         List<CertificationPracticalQuestionResultEntity> questionResults =
             questionResultsByCandidate.getOrDefault(candidate.getId(), List.of());
         int actualTotalColumn = SUMMARY_FIRST_QUESTION_COLUMN
@@ -1321,7 +1321,7 @@ public class PracticalScoringApplicationService {
       Row row = sheet.getRow(rowIndex);
       writeTemplateCell(row, 0, candidateIndex + 1);
       writeTemplateCell(row, 1, nvlText(candidate.getCandidateName()));
-      writeTemplateCell(row, 2, nvlText(candidate.getCandidateNo()));
+      writeTemplateCell(row, 2, nvlText(candidate.getAdmissionTicketNo()));
       List<CertificationAssessorTaskEntity> scoreTasks = scoreTasksForCandidateQuestion(
           tasksByCandidateQuestion, candidate.getId(), questionResult);
       CertificationAssessorTaskEntity scoreTask = scoreTaskForAssessor(scoreTasks, assessor);

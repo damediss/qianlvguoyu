@@ -63,6 +63,7 @@ import { FaqConversionPage } from './pages/exam/FaqConversionPage';
 import { TrainExamListPage } from './pages/training/TrainExamListPage';
 import { TabletAssessorApp } from './pages/assessor/TabletAssessorApp';
 import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
+import { CompetitionEventManagementPage } from './pages/competition/CompetitionEventManagementPage';
 
 // Pre-instantiate factory components for stable React references
 const ArchiveEquipmentPage = createArchiveTablePage('equipment');
@@ -482,6 +483,7 @@ const pageMap: Record<string, React.ReactNode> = {
   risk_admin: <ProductPlaceholder moduleCode="risk_admin" />,
   risk_platform_coop: <ProductPlaceholder moduleCode="risk_platform_coop" />,
   'certification-practical-collection': <CollectionTaskListPage />,
+  competition_event: <CompetitionEventManagementPage />,
 };
 
 const assessorMode = window.location.pathname.startsWith('/assessor-scoring');
@@ -491,6 +493,7 @@ const collectionManageTaskId = (() => {
   return match?.[1] ? decodeURIComponent(match[1]) : undefined;
 })();
 const collectionManageMode = Boolean(collectionManageTaskId);
+const competitionEventMode = window.location.pathname.startsWith('/competition/events');
 
 function CollectionManageShell({ taskId }: { taskId: string }) {
   const [manageActive, setManageActive] = React.useState(true);
@@ -501,6 +504,20 @@ function CollectionManageShell({ taskId }: { taskId: string }) {
       selectedMenuKeyOverride={manageActive ? 'certification_practical_collection' : undefined}
       contentOverride={manageActive ? <CollectionManagePage taskId={taskId} /> : undefined}
       onMenuNavigate={() => setManageActive(false)}
+    />
+  );
+}
+
+function CompetitionEventShell() {
+  const [eventActive, setEventActive] = React.useState(true);
+
+  return (
+    <AppShell
+      pageMap={pageMap}
+      selectedMenuKeyOverride={eventActive ? 'competition_event' : undefined}
+      contentOverride={eventActive ? <CompetitionEventManagementPage /> : undefined}
+      onMenuNavigate={() => setEventActive(false)}
+      hideBreadcrumb={eventActive}
     />
   );
 }
@@ -516,6 +533,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <PracticalCollectionApp />
           ) : collectionManageMode ? (
             <CollectionManageShell taskId={collectionManageTaskId!} />
+          ) : competitionEventMode ? (
+            <CompetitionEventShell />
           ) : (
             <AppShell pageMap={pageMap} />
           )}

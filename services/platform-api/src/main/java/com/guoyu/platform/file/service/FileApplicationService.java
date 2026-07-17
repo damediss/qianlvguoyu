@@ -29,6 +29,7 @@ import java.time.LocalDate;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -73,6 +74,8 @@ public class FileApplicationService {
     Long tenantId = getTenantIdSafe();
     String safeName = sanitizeFileName(originalName);
     StoredFileFormatValidator.assertSupportedOfficeFile(safeName, content);
+    byte[] head = content.length > 16 ? java.util.Arrays.copyOf(content, 16) : content;
+    StoredFileFormatValidator.assertSupportedImageFile(safeName, contentType, head);
     String objectKey = buildObjectKey(tenantId, safeName);
     try {
       String sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
@@ -209,8 +212,29 @@ public class FileApplicationService {
   @Transactional(readOnly = true)
   public ResponseEntity<Resource> buildDownloadResponse(Long id, boolean inline) {
     FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
-    Resource resource = loadResource(entity);
-    return buildDownloadResponse(entity, resource, inline);
+    // 读满字节再返回，避免 COS InputStream + chunked 传输导致浏览器拿到残缺图片无法显示
+    byte[] bytes = readBytes(entity);
+    return buildDownloadResponse(entity, new ByteArrayResource(bytes), inline);
+  }
+
+  private ResponseEntity<Resource> buildDownloadResponse(FileEntity entity, Resource resource, boolean inline) {
+    String contentType = StringUtils.hasText(entity.getContentType())
+        ? entity.getContentType()
+        : MediaType.APPLICATION_OCTET_STREAM_VALUE;
+    String dispositionType = inline ? "inline" : "attachment";
+    String encodedName = URLEncoder.encode(entity.getOriginalName(), StandardCharsets.UTF_8).replace("+", "%20");
+    ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
+        .header(HttpHeaders.CONTENT_DISPOSITION, dispositionType + "; filename*=UTF-8''" + encodedName)
+        .contentType(MediaType.parseMediaType(contentType));
+    try {
+      long length = resource.contentLength();
+      if (length >= 0) {
+        builder.contentLength(length);
+      }
+    } catch (IOException ignored) {
+      // contentLength 不可用时退回 chunked
+    }
+    return builder.body(resource);
   }
 
   private byte[] readBytes(FileEntity entity) {
@@ -263,18 +287,6 @@ public class FileApplicationService {
     } catch (IOException ex) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File download failed");
     }
-  }
-
-  private ResponseEntity<Resource> buildDownloadResponse(FileEntity entity, Resource resource, boolean inline) {
-    String contentType = StringUtils.hasText(entity.getContentType())
-        ? entity.getContentType()
-        : MediaType.APPLICATION_OCTET_STREAM_VALUE;
-    String dispositionType = inline ? "inline" : "attachment";
-    String encodedName = URLEncoder.encode(entity.getOriginalName(), StandardCharsets.UTF_8).replace("+", "%20");
-    return ResponseEntity.ok()
-        .header(HttpHeaders.CONTENT_DISPOSITION, dispositionType + "; filename*=UTF-8''" + encodedName)
-        .contentType(MediaType.parseMediaType(contentType))
-        .body(resource);
   }
 
   @Transactional

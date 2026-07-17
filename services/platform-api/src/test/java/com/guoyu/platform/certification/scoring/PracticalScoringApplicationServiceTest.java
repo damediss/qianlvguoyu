@@ -787,8 +787,10 @@ class PracticalScoringApplicationServiceTest {
     task.setExamDate(LocalDate.of(2026, 6, 23));
     CertificationCandidateEntity firstCandidate = candidate(11L, "Candidate 1", 100L, true);
     firstCandidate.setCandidateNo("C-001");
+    firstCandidate.setAdmissionTicketNo("2607134501032300013");
     CertificationCandidateEntity secondCandidate = candidate(12L, "Candidate 2", 100L, true);
     secondCandidate.setCandidateNo("C-002");
+    secondCandidate.setAdmissionTicketNo("2607134501032300014");
     List<CertificationPracticalQuestionResultEntity> questionResults = exportQuestionResults(
         List.of(firstCandidate, secondCandidate));
     List<CertificationAssessorTaskEntity> scoreTasks = exportScoreTasks(
@@ -824,6 +826,8 @@ class PracticalScoringApplicationServiceTest {
           .doesNotContain("Signer A", "Signer B", "Signer C");
       assertThat(sheet.getRow(6).getCell(1).getStringCellValue()).isEqualTo("Candidate 1");
       assertThat(sheet.getRow(7).getCell(1).getStringCellValue()).isEqualTo("Candidate 2");
+      assertThat(sheet.getRow(6).getCell(2).getStringCellValue()).isEqualTo("2607134501032300013");
+      assertThat(sheet.getRow(7).getCell(2).getStringCellValue()).isEqualTo("2607134501032300014");
       assertThat(sheet.getRow(6).getCell(3).getNumericCellValue()).isEqualTo(11.5D);
       assertThat(sheet.getRow(6).getCell(4).getNumericCellValue()).isEqualTo(12D);
       assertThat(sheet.getRow(6).getCell(5).getNumericCellValue()).isEqualTo(13D);
@@ -863,6 +867,8 @@ class PracticalScoringApplicationServiceTest {
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(3).getCell(3))).isEqualTo("试题1、试题1(10分)");
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(5).getCell(4))).isEqualTo("评分项1");
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(1))).isEqualTo("Candidate 1");
+      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(2)))
+          .isEqualTo("2607134501032300013");
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(4))).isEqualTo("0.7");
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(5))).isEqualTo("9.3");
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(6))).isEqualTo("11.5");

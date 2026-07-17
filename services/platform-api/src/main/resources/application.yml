@@ -20,7 +20,8 @@ spring:
       write-dates-as-timestamps: false
   datasource:
     type: com.alibaba.druid.pool.DruidDataSource
-    url: ${MYSQL_URL:jdbc:mysql://43.138.163.7:3308/gjjddb2026?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    # connectTimeout/socketTimeout/tcpKeepAlive：远程 MySQL 经公网/NAT 时降低 Communications link failure 概率
+    url: ${MYSQL_URL:jdbc:mysql://43.138.163.7:3308/gjjddb2026?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&connectTimeout=5000&socketTimeout=60000&tcpKeepAlive=true}
     username: ${MYSQL_USERNAME:gjjd}
     password: ${MYSQL_PASSWORD:w-#Y+=g7jdsJLjD8}
 #    url: jdbc:mysql://192.168.1.200:3308/gjjd_test?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
@@ -35,9 +36,15 @@ spring:
 #      connection-init-sqls:
 #        - "SET SESSION sql_mode = 'NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES'"
 #        - "SET SESSION time_zone = '+08:00'"
-      time-between-eviction-runs-millis: 60000
-      min-evictable-idle-time-millis: 300000
+      # 远程库空闲连接常被 NAT/防火墙在 30~60s 掐断；保活间隔需短于该阈值
+      time-between-eviction-runs-millis: 15000
+      min-evictable-idle-time-millis: 60000
+      max-evictable-idle-time-millis: 180000
+      keep-alive: true
+      keep-alive-between-time-millis: 20000
+      phy-timeout-millis: 600000
       validation-query: SELECT 1
+      validation-query-timeout: 3
       test-while-idle: true
       test-on-borrow: false
       test-on-return: false

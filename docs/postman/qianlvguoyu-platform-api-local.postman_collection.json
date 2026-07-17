@@ -1,0 +1,250 @@
+{
+  "info": {
+    "_postman_id": "80a4f405-47b9-4a99-8e4c-597b8d893630",
+    "name": "qianlvguoyu-platform-api-local",
+    "description": "千铝国昱 platform-api 本地联调 Collection。只使用变量，不保存真实 token、tenantId、数据库密码或 API Key。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "健康检查",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/actuator/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "actuator",
+            "health"
+          ]
+        },
+        "description": "验证 platform-api 是否启动。"
+      }
+    },
+    {
+      "name": "查询认定任务列表（当前 MCP 上游实际接口）",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "X-Tenant-Id",
+            "value": "{{tenantId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/certification/mcp/tasks?page=1&pageSize=10",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "certification",
+            "mcp",
+            "tasks"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "pageSize",
+              "value": "10"
+            }
+          ]
+        },
+        "description": "用于先找到数字 taskId。当前 Controller 的 taskId 是 Long，不是 T001 业务编号。"
+      }
+    },
+    {
+      "name": "查询认定任务状态（实际：MCP 任务概览）",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "X-Tenant-Id",
+            "value": "{{tenantId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/certification/mcp/tasks/{{taskId}}/overview",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "certification",
+            "mcp",
+            "tasks",
+            "{{taskId}}",
+            "overview"
+          ]
+        },
+        "description": "实际 Controller 路径：GET /api/certification/mcp/tasks/{taskId}/overview。示例 /api/certification/tasks/{taskId}/status 当前未发现。"
+      }
+    },
+    {
+      "name": "查询考生采集状态（实际：单个考生采集详情）",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "X-Tenant-Id",
+            "value": "{{tenantId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/certification/practical-collection/detail/{{taskId}}/{{candidateId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "certification",
+            "practical-collection",
+            "detail",
+            "{{taskId}}",
+            "{{candidateId}}"
+          ]
+        },
+        "description": "实际 Controller 路径：GET /api/certification/practical-collection/detail/{taskId}/{candidateId}。MCP 聚合上游另见 /api/certification/mcp/tasks/{taskId}/collection-progress。"
+      }
+    },
+    {
+      "name": "查询考评员配置状态（实际：考评员小组列表）",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "X-Tenant-Id",
+            "value": "{{tenantId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/certification/preparation/tasks/{{taskId}}/assessor-groups",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "certification",
+            "preparation",
+            "tasks",
+            "{{taskId}}",
+            "assessor-groups"
+          ]
+        },
+        "description": "当前未发现 examiner-group/status 聚合接口。此请求读取当前已有的小组列表接口，用于人工判断配置状态。"
+      }
+    },
+    {
+      "name": "查询评分表配置状态（实际：实操评分配置视图）",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "X-Tenant-Id",
+            "value": "{{tenantId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/certification/practical-scoring/tasks/{{taskId}}/setup",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "certification",
+            "practical-scoring",
+            "tasks",
+            "{{taskId}}",
+            "setup"
+          ]
+        },
+        "description": "当前未发现 score-table/status 聚合接口。此请求读取当前已有的实操评分配置视图。"
+      }
+    },
+    {
+      "name": "查询实操评分进度（当前 MCP 上游实际接口）",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "X-Tenant-Id",
+            "value": "{{tenantId}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/certification/mcp/tasks/{{taskId}}/practical-score-progress",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "certification",
+            "mcp",
+            "tasks",
+            "{{taskId}}",
+            "practical-score-progress"
+          ]
+        },
+        "description": "当前 MCP Server 工具 certification.getPracticalScoreProgress 的上游接口。"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:18080",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "your_token_here",
+      "type": "string"
+    },
+    {
+      "key": "tenantId",
+      "value": "your_tenant_id_here",
+      "type": "string"
+    },
+    {
+      "key": "taskId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "candidateId",
+      "value": "1",
+      "type": "string"
+    }
+  ]
+}

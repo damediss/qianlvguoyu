@@ -24,6 +24,8 @@ import {
 
   openCandidateCollection,
 
+  cancelCurrentCollection,
+
   scanMatchCurrent,
 
 } from '../../api/certificationPracticalCollection';
@@ -290,6 +292,96 @@ export function CollectionWorkbenchPage({
 
 
 
+  const releaseCurrentCollectingCandidate = async (candidate: CandidateCollectionDetailVO) => {
+
+    if (candidate.overallStatus !== 'COLLECTING') {
+
+      clearCurrentCandidate();
+
+      return;
+
+    }
+
+    try {
+
+      await cancelCurrentCollection(taskId, candidate.candidateId);
+
+      clearCurrentCandidate();
+
+      refreshWorkbench();
+
+      message.success('已取消当前采集');
+
+    } catch (error) {
+
+      message.error(error instanceof Error ? error.message : '取消当前采集失败，请稍后重试');
+
+      throw error;
+
+    }
+
+  };
+
+
+
+  const handleCancelCurrent = () => {
+
+    if (!activeCandidate) {
+
+      return;
+
+    }
+
+    if (activeCandidate.overallStatus === 'COLLECTING') {
+
+      Modal.confirm({
+
+        title: '取消当前采集？',
+
+        content: hasCollectedCollectionData(activeCandidate)
+
+          ? '取消后将释放该考生的「采集中」占用，已提交的指纹/签名记录会保留，可稍后再继续采集。'
+
+          : '取消后将释放该考生的「采集中」占用，可切换到其他考生开始采集。',
+
+        okText: '确认取消',
+
+        cancelText: '继续采集',
+
+        onOk: () => releaseCurrentCollectingCandidate(activeCandidate),
+
+      });
+
+      return;
+
+    }
+
+    if (hasCollectedCollectionData(activeCandidate)) {
+
+      Modal.confirm({
+
+        title: '取消当前采集？',
+
+        content: '当前考生已有采集记录，取消后仅清空本机当前考生，不会删除已提交记录。',
+
+        okText: '确认取消',
+
+        cancelText: '继续采集',
+
+        onOk: clearCurrentCandidate,
+
+      });
+
+      return;
+
+    }
+
+    clearCurrentCandidate();
+
+  };
+
+
+
   useEffect(() => {
 
     deviceMutation.mutate();
@@ -540,40 +632,6 @@ export function CollectionWorkbenchPage({
 
 
 
-  const handleCancelCurrent = () => {
-
-    if (!activeCandidate) {
-
-      return;
-
-    }
-
-    if (hasCollectedCollectionData(activeCandidate)) {
-
-      Modal.confirm({
-
-        title: '取消当前采集？',
-
-        content: '当前考生已有采集记录，取消后仅清空本机当前考生，不会删除已提交记录。',
-
-        okText: '确认取消',
-
-        cancelText: '继续采集',
-
-        onOk: clearCurrentCandidate,
-
-      });
-
-      return;
-
-    }
-
-    clearCurrentCandidate();
-
-  };
-
-
-
   const openScanEntry = () => {
 
     if (configuredScanMode() === 'MOCK' || hasAndroidScanBridge()) {
@@ -704,7 +762,7 @@ export function CollectionWorkbenchPage({
 
           ) : null}
 
-          <Descriptions.Item label="处理方式">请先完成或标记异常当前考生，刷新确认现场状态后再切换到其他考生。</Descriptions.Item>
+          <Descriptions.Item label="处理方式">请先完成、取消当前或标记异常当前考生，刷新确认现场状态后再切换到其他考生。</Descriptions.Item>
 
         </Descriptions>
 
