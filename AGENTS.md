@@ -403,7 +403,7 @@ cd apps/admin-web && npm run dev
 
 ## 项目级踩坑(摘自 Mavis memory)
 
-新进项目的 Agent **必须**先读这 10 条,能少走 3 天弯路:
+新进项目的 Agent **必须**先读这 13 条,能少走 3 天弯路:
 
 1. **MyBatis-Plus 默认 snake_case** — Flyway 迁移的列名必须 snake_case,跟 Java 命名策略对齐(2026-06-04)
 2. **`setDeleted(1) + updateById` 永远是假删** — 软删统一用 `mapper.deleteById(...)`,全项目禁止 `setDeleted(1)`(2026-06-09)
@@ -415,3 +415,6 @@ cd apps/admin-web && npm run dev
 8. **权限系统三步链:菜单→权限码→角色授权** — 只建菜单+权限码不够,还必须 INSERT `sys_role_permission` 把权限码授予目标角色(role_id=2000 是平台管理员),否则接口 403(2026-07-14)
 9. **Redis 缓存序列化:返回 mutable collection** — `@Cacheable` 方法的返回值必须用 `ArrayList::new` 或 `new ArrayList<>(list)`,禁止用 `.toList()` / `List.of()` / `Map.of()` 等 immutable collection,否则 Redis 反序列化报 `Unexpected token (START_ARRAY), expected VALUE_STRING`(2026-07-14)
 10. **前端 axios `responseType: 'blob'` 下载文件** — `apiClient.get(url, { responseType: 'blob' })` 返回 `AxiosResponse`,blob 数据在 `.data` 里;API 函数签名应 `return (await apiClient.get(...)).data` 并声明 `Promise<Blob>`(2026-07-14)
+11. **可能处理大数据量的导入接口必须拆分为"快速返回 + 异步执行"两步** —— 如果接口涉及文件上传/批量导入/批量处理等**数据量不确定**的场景,禁止在一个接口里同步完成"接收数据 + 后台处理"。需开发人员确认是否拆为:第一步只接收数据并入库/返回标识(秒回),第二步单独触发后台处理(秒回 batchId),第三步轮询进度。否则数据量大时前端会超时(axios 默认 20s),前端拿不到 batchId 就无法轮询(2026-07-15)
+12. **线程池拒绝策略禁止用 CallerRunsPolicy** —— 队列满时 CallerRunsPolicy 会把任务退化为调用者线程(HTTP 线程)同步执行,前端表现为"卡死"。必须用 `AbortPolicy` + 全局异常处理返回 503"服务繁忙,请稍后重试",让客户端感知到限流(2026-07-15)
+13. **调用第三方 API(LLM/支付/短信等)前必须核对目标文档,不能假设兼容** —— OpenAI 兼容 ≠ 完全兼容。LongCat 不支持 `response_format` 字段,强发会导致模型返回空 content。调用任何第三方接口前,先确认目标平台文档明确支持该字段/参数,不支持的字段一律不传(2026-07-15)
