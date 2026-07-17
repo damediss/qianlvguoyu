@@ -74,7 +74,7 @@ public class FaqLlmClient {
         .connectTimeout(Duration.ofSeconds(10))
         .build();
     JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-    requestFactory.setReadTimeout(Duration.ofSeconds(40));
+    requestFactory.setReadTimeout(Duration.ofSeconds(50));
     RestClient client = RestClient.builder()
         .requestFactory(requestFactory)
         .build();

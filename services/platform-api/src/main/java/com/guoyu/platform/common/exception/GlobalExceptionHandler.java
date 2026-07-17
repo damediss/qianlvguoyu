@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import java.util.concurrent.RejectedExecutionException;
 
 @Slf4j
 @RestControllerAdvice
@@ -95,6 +96,14 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(AsyncRequestNotUsableException.class)
   public void handleAsyncRequestNotUsable(AsyncRequestNotUsableException ex) {
     log.warn("ClientAborted: client disconnected before response completed: {}", ex.getMessage());
+  }
+
+  /** 查证线程池队列已满，返回 503 提示稍后重试 */
+  @ExceptionHandler(RejectedExecutionException.class)
+  public ResponseEntity<ApiResponse<Void>> handleRejected(RejectedExecutionException ex) {
+    log.warn("查证任务队列已满: {}", ex.getMessage());
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .body(ApiResponse.fail("503", "查证服务繁忙，请稍后重试"));
   }
 
   private String formatFieldError(FieldError error) {

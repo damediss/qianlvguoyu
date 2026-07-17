@@ -521,10 +521,10 @@ public class FaqConversionApplicationService {
         lastError = e.getMessage();
         log.warn("FAQ LLM 增强失败（第{}次）：conversionId={}, error={}",
             attempt + 1, entity.getId(), lastError);
-        // 重试之间等 200ms，避免连续快速重试触发限流
+        // 重试之间等 300ms，避免连续快速重试触发限流
         if (attempt < maxRetries) {
           try {
-            Thread.sleep(200);
+            Thread.sleep(300);
           } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
             break;
