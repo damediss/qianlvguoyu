@@ -71,10 +71,10 @@ public class FaqLlmClient {
     log.info("FAQ LLM 请求：tenantId={}, model={}, url={}, body={}", tenantId, modelId, url, requestBodyStr);
 
     HttpClient httpClient = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(10))
+        .connectTimeout(Duration.ofSeconds(70))
         .build();
     JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-    requestFactory.setReadTimeout(Duration.ofSeconds(50));
+    requestFactory.setReadTimeout(Duration.ofSeconds(70));
     RestClient client = RestClient.builder()
         .requestFactory(requestFactory)
         .build();
