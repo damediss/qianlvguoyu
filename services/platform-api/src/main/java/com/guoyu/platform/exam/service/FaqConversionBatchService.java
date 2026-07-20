@@ -111,6 +111,20 @@ public class FaqConversionBatchService {
     log.info("FAQ 转换批次已暂停：batchId={}", batchId);
   }
 
+  /** 暂停批次（带原因写入 error_message） */
+  @Transactional
+  public void pauseBatchWithReason(Long tenantId, Long batchId, String reason) {
+    ExamFaqConversionBatchEntity entity = getBatchEntity(tenantId, batchId);
+    if (!STATUS_RUNNING.equals(entity.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "批次状态不是运行中，无法暂停");
+    }
+    entity.setStatus(STATUS_PAUSED);
+    entity.setErrorMessage(reason);
+    entity.setUpdatedAt(LocalDateTime.now());
+    batchMapper.updateById(entity);
+    log.info("FAQ 转换批次已暂停（带原因）：batchId={}, reason={}", batchId, reason);
+  }
+
   /** 恢复批次 */
   @Transactional
   public void resumeBatch(Long tenantId, Long batchId) {
@@ -158,6 +172,18 @@ public class FaqConversionBatchService {
   @Transactional
   public void decrementPending(Long batchId) {
     batchMapper.decrementPending(batchId);
+  }
+
+  /** 原子递增待转换计数（retryFailed 场景：failed → pending） */
+  @Transactional
+  public void incrementPending(Long batchId) {
+    batchMapper.incrementPending(batchId);
+  }
+
+  /** 原子递减失败计数（retryFailed 场景：failed → pending） */
+  @Transactional
+  public void decrementFailed(Long batchId) {
+    batchMapper.decrementFailed(batchId);
   }
 
   /** 检查批次是否为运行中 */

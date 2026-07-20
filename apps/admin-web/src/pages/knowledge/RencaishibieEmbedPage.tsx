@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { Spin, message } from 'antd';
+import { Spin } from 'antd';
 import { TeamOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../../stores/authStore';
 
 /**
  * 知识库 → 人才识别
- * 通过 iframe 嵌入 rencaishie Vue3 应用，通过 postMessage 传递登录 token。
- * Token 不经过 URL，安全可靠。
+ * 通过 iframe 嵌入 rencaishibie Vue3 应用，通过 postMessage 传递登录 token。
+ *
+ * 服务器 nginx 反代：/rencai/ → http://127.0.0.1:8001/
+ * 本机开发：vite 代理 /rencai/ → http://localhost:8001/
+ * iframe src 用相对路径 /rencai/，postMessage targetOrigin 动态拼接当前页面 origin。
  */
 export function RencaishibieEmbedPage() {
   const [loading, setLoading] = useState(true);
@@ -15,18 +18,17 @@ export function RencaishibieEmbedPage() {
   const token = useAuthStore((s) => s.token);
   const tenantId = useAuthStore((s) => s.tenantId);
 
+  // 动态拼接目标 origin（支持 localhost:5173 和域名访问）
+  const targetOrigin = `${window.location.protocol}//${window.location.host}`;
+
   // iframe 加载完成后，通过 postMessage 把 token 传过去
   useEffect(() => {
     if (!iframeRef.current || !token || tokenReady) return;
 
     const sendToken = () => {
       iframeRef.current?.contentWindow?.postMessage(
-        {
-          type: 'saas-auth',
-          token: token,
-          tenantId: tenantId,
-        },
-        'http://127.0.0.1:8001'  // 生产环境换成实际域名 'http://43.138.163.7:8001'
+        { type: 'saas-auth', token, tenantId },
+        targetOrigin  // 动态 origin，适配本机和服务器
       );
       setTokenReady(true);
     };
@@ -34,7 +36,7 @@ export function RencaishibieEmbedPage() {
     // 等 iframe 加载后再发，确保对方监听器已就绪
     const timer = setTimeout(sendToken, 1000);
     return () => clearTimeout(timer);
-  }, [token, tenantId, tokenReady]);
+  }, [token, tenantId, tokenReady, targetOrigin]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: 'calc(100vh - 104px)' }}>
@@ -55,7 +57,7 @@ export function RencaishibieEmbedPage() {
       )}
       <iframe
         ref={iframeRef}
-        src="http://127.0.0.1:8001/tasks"
+        src="/rencai/"
         title="人才识别"
         style={{
           width: '100%',

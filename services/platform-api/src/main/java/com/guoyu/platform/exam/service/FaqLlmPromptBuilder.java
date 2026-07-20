@@ -40,6 +40,62 @@ public class FaqLlmPromptBuilder {
     return SYSTEM_PROMPT + "\n\n" + buildNegativeUserPrompt(ctx);
   }
 
+  /**
+   * 合并生成 similar_questions + negative_questions 的完整 prompt（system + user）。
+   * 一次调用生成 3 条相似问 + 3 条反例，共享题目上下文。
+   * 使用 buildLlmPromptContext 已有的键（knowledgePath/typeLabel/diffLabel/contentStripped/correctOptions/wrongOptions/keyConcepts）。
+   */
+  public String buildMergedPrompt(Map<String, String> ctx) {
+    return SYSTEM_PROMPT + "\n\n" + buildMergedUserPrompt(ctx);
+  }
+
+  private String buildMergedUserPrompt(Map<String, String> ctx) {
+    return """
+        ## 题目上下文
+        - 鉴定范围：%s
+        - 题型：%s
+        - 难度：%s
+
+        ## 题目信息
+        - 题型：%s
+        - 题干：%s
+        - 正确选项：%s
+        - 干扰项：%s
+        - 题目考查的关键概念：%s
+
+        ## 生成要求
+        一次性生成 3 条「相似问」和 3 条「反例」。
+
+        ### 相似问要求
+        1. 与原题答案一致，语义等价
+        2. 使用国家职业标准中的规范术语，避免口语化
+        3. 保留题干核心概念（名词、限定词）不变
+        4. 通过替换疑问词、同义改写、调整句式生成多样性问法
+        5. 不生成需要额外推理或引入新知识才能回答的问法
+
+        ### 反例要求
+        1. 与原题「看起来相似但答案不同」
+        2. 每条使用不同策略：属性替换 / 实体替换 / 等级混淆 / 工段场景替换 / 答非所问
+        3. 每条反例后用括号标注「应匹配的正确答案」，格式：（答案应为 XXX）
+        4. 体现国家职业标准中容易混淆的邻近概念
+
+        ## 输出格式
+        {
+          "similar_questions": ["问法1", "问法2", "问法3"],
+          "negative_questions": ["反例1（答案应为XXX）", "反例2（答案应为XXX）", "反例3（答案应为XXX）"]
+        }
+        """.formatted(
+        ctx.getOrDefault("knowledgePath", "未分类"),
+        ctx.getOrDefault("typeLabel", ""),
+        ctx.getOrDefault("diffLabel", ""),
+        ctx.getOrDefault("typeLabel", ""),
+        ctx.getOrDefault("contentStripped", ""),
+        ctx.getOrDefault("correctOptions", ""),
+        ctx.getOrDefault("wrongOptions", ""),
+        ctx.getOrDefault("keyConcepts", "无")
+    );
+  }
+
   private String buildSimilarUserPrompt(Map<String, String> ctx) {
     return """
         #### 题目上下文

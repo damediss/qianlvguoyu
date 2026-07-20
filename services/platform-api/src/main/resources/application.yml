@@ -41,7 +41,7 @@ spring:
       min-evictable-idle-time-millis: 60000
       max-evictable-idle-time-millis: 180000
       keep-alive: true
-      keep-alive-between-time-millis: 20000
+      keep-alive-between-time-millis: 50000
       phy-timeout-millis: 600000
       validation-query: SELECT 1
       validation-query-timeout: 3

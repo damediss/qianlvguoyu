@@ -54,6 +54,50 @@ public class FaqLlmResponseParser {
     return List.of();
   }
 
+  /**
+   * 从合并 prompt 的 LLM 响应中同时提取 similar_questions 和 negative_questions。
+   *
+   * @return 解析结果，JSON 解析失败返回 null（确定性失败，不重试）
+   */
+  public MergedResult extractMergedResult(String llmContent) {
+    if (llmContent == null || llmContent.isBlank()) {
+      return null;
+    }
+
+    String jsonStr = stripMarkdownCodeBlock(llmContent.trim());
+    JsonNode root;
+    try {
+      root = objectMapper.readTree(jsonStr);
+    } catch (JsonProcessingException e) {
+      // 尝试从文本中提取 JSON 对象部分
+      int start = jsonStr.indexOf('{');
+      int end = jsonStr.lastIndexOf('}');
+      if (start >= 0 && end > start) {
+        try {
+          root = objectMapper.readTree(jsonStr.substring(start, end + 1));
+        } catch (JsonProcessingException ex) {
+          log.warn("合并 prompt JSON 解析失败（二次尝试）：content={}", jsonStr);
+          return null;
+        }
+      } else {
+        log.warn("合并 prompt JSON 解析失败：content={}", jsonStr);
+        return null;
+      }
+    }
+
+    List<String> similar = extractArrayField(root, "similar_questions");
+    List<String> negative = extractArrayField(root, "negative_questions");
+    return new MergedResult(similar, negative);
+  }
+
+  /** 合并 prompt 解析结果（similar + negative） */
+  public record MergedResult(List<String> similarQuestions, List<String> negativeQuestions) {
+    /** 任一字段为空数组 → 瞬时失败，可重试 */
+    public boolean hasEmptyField() {
+      return similarQuestions.isEmpty() || negativeQuestions.isEmpty();
+    }
+  }
+
   private List<String> extractArrayField(JsonNode root, String fieldName) {
     JsonNode arrayNode = root.path(fieldName);
     if (!arrayNode.isArray()) {

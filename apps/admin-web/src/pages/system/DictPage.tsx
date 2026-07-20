@@ -237,8 +237,12 @@ export function DictPage() {
     {
       title: '值',
       dataIndex: 'itemValue',
-      width: 140,
-      render: (text: string) => <Typography.Text code>{text}</Typography.Text>,
+      ellipsis: { showTitle: false },
+      render: (text: string) => (
+        <Typography.Text code ellipsis={{ tooltip: text }}>
+          {text}
+        </Typography.Text>
+      ),
     },
     {
       title: '标签',
@@ -430,9 +434,10 @@ export function DictPage() {
             label="值"
             rules={[{ required: true, message: '请输入字典项值' }]}
           >
-            <Input
+            <Input.TextArea
               placeholder="存储值（如 male, female）"
-              maxLength={64}
+              showCount
+              rows={5}
               disabled={!!editingItemId}
             />
           </Form.Item>

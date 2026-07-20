@@ -403,7 +403,7 @@ cd apps/admin-web && npm run dev
 
 ## 项目级踩坑(摘自 Mavis memory)
 
-新进项目的 Agent **必须**先读这 13 条,能少走 3 天弯路:
+新进项目的 Agent **必须**先读这 18 条,能少走 3 天弯路:
 
 1. **MyBatis-Plus 默认 snake_case** — Flyway 迁移的列名必须 snake_case,跟 Java 命名策略对齐(2026-06-04)
 2. **`setDeleted(1) + updateById` 永远是假删** — 软删统一用 `mapper.deleteById(...)`,全项目禁止 `setDeleted(1)`(2026-06-09)
@@ -418,3 +418,8 @@ cd apps/admin-web && npm run dev
 11. **可能处理大数据量的导入接口必须拆分为"快速返回 + 异步执行"两步** —— 如果接口涉及文件上传/批量导入/批量处理等**数据量不确定**的场景,禁止在一个接口里同步完成"接收数据 + 后台处理"。需开发人员确认是否拆为:第一步只接收数据并入库/返回标识(秒回),第二步单独触发后台处理(秒回 batchId),第三步轮询进度。否则数据量大时前端会超时(axios 默认 20s),前端拿不到 batchId 就无法轮询(2026-07-15)
 12. **线程池拒绝策略禁止用 CallerRunsPolicy** —— 队列满时 CallerRunsPolicy 会把任务退化为调用者线程(HTTP 线程)同步执行,前端表现为"卡死"。必须用 `AbortPolicy` + 全局异常处理返回 503"服务繁忙,请稍后重试",让客户端感知到限流(2026-07-15)
 13. **调用第三方 API(LLM/支付/短信等)前必须核对目标文档,不能假设兼容** —— OpenAI 兼容 ≠ 完全兼容。LongCat 不支持 `response_format` 字段,强发会导致模型返回空 content。调用任何第三方接口前,先确认目标平台文档明确支持该字段/参数,不支持的字段一律不传(2026-07-15)
+14. **多个同类型线程池 Bean 必须用具体类型 + @Qualifier 注入** — `@Bean` 方法返回类型必须用 `ThreadPoolTaskExecutor`(不能用 `Executor` 接口),否则 Spring 按返回类型注册导致找不到 Bean。注入端配合 `@Qualifier("beanName")` 区分。Flowable 还需要名为 `applicationTaskExecutor` 的 `AsyncTaskExecutor` Bean,缺少会启动报错(2026-07-20)
+15. **TenantContextHolder 不跨线程传播** — 并行/异步场景中,编排线程 `setTenantId()` 对 Worker 线程无效。每条 Worker 线程必须独立 `TenantContextHolder.setTenantId(tenantId)` + `finally clear()`。编排线程仅在加载期 set/clear,不传给子任务(2026-07-20)
+16. **Flyway 迁移脚本必须编译后才生效** — Flyway 读取 `target/classes/db/migration/`,不是源码目录。新加 `.sql` 后必须 `mvn compile` 再启动,否则 Flyway 看不到新脚本(2026-07-20)
+17. **MyBatis-Plus 多租户拦截器依赖 TenantContextHolder** — Worker 线程中 Mapper 查询自动拼 `tenant_id` 的前提是该线程已 `setTenantId()`。未设置时查询不带租户条件,可能跨租户漏数据(2026-07-20)
+18. **异步批处理 pause 不中断已提交的 LLM 长调用** — 暂停只阻止新任务块继续提交,当前块内已启动的 Worker 线程会跑完。设计时缩小块粒度、在 resume 时重置 `processing` → `pending`,并把批次内不变数据(如知识点全表)一次性加载到内存复用,避免每条记录都查库导致连接池被长耗时压垮(2026-07-20)

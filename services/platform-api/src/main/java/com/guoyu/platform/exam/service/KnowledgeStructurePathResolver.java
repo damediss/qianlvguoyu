@@ -31,28 +31,45 @@ public class KnowledgeStructurePathResolver {
    * @param tenantId    租户 ID
    * @return 末三级路径，如 "碳素工艺-煅烧炉-顺流罐式"；无关联返回 null
    */
+  /**
+   * 解析知识点的末三级路径（使用预加载的 Map，避免每条记录全表扫描）。
+   *
+   * @param knowledgeId   知识点 ID
+   * @param knowledgeMap  知识点预加载映射（key = id）
+   * @return 末三级路径，无关联返回 null
+   */
+  public String resolveLastThreeLevels(Integer knowledgeId,
+      Map<Integer, ExamKnowledgeStructureEntity> knowledgeMap) {
+    if (knowledgeId == null || knowledgeId <= 0 || knowledgeMap == null || knowledgeMap.isEmpty()) {
+      return null;
+    }
+    return buildPath(knowledgeId, knowledgeMap);
+  }
+
+  /**
+   * 解析知识点的末三级路径（兼容旧调用，单条查询会加载全表）。
+   */
   public String resolveLastThreeLevels(Integer knowledgeId, Long tenantId) {
     if (knowledgeId == null || knowledgeId <= 0) {
       return null;
     }
-
-    // 一次性加载该租户下所有知识点，避免 N+1 查询
     List<ExamKnowledgeStructureEntity> all = knowledgeStructureMapper.selectList(
         new LambdaQueryWrapper<ExamKnowledgeStructureEntity>()
             .eq(ExamKnowledgeStructureEntity::getTenantId, tenantId.intValue()));
-
     Map<Integer, ExamKnowledgeStructureEntity> idMap = all.stream()
         .collect(Collectors.toMap(ExamKnowledgeStructureEntity::getId, Function.identity()));
+    return buildPath(knowledgeId, idMap);
+  }
 
-    // 递归向上收集路径节点
+  private String buildPath(Integer knowledgeId, Map<Integer, ExamKnowledgeStructureEntity> knowledgeMap) {
     List<String> pathSegments = new ArrayList<>();
-    ExamKnowledgeStructureEntity current = idMap.get(knowledgeId);
+    ExamKnowledgeStructureEntity current = knowledgeMap.get(knowledgeId);
     int depth = 0;
     while (current != null && depth < 10) {
       pathSegments.add(current.getTitle());
       Integer parentId = current.getParentId();
       if (parentId == null || parentId <= 0) break;
-      current = idMap.get(parentId);
+      current = knowledgeMap.get(parentId);
       depth++;
     }
 
@@ -60,10 +77,7 @@ public class KnowledgeStructurePathResolver {
       return null;
     }
 
-    // 反转得到从根到叶的顺序
     Collections.reverse(pathSegments);
-
-    // 截取末三级
     int fromIndex = Math.max(0, pathSegments.size() - 3);
     List<String> lastThree = pathSegments.subList(fromIndex, pathSegments.size());
     return String.join("-", lastThree);
