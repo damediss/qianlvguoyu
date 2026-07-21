@@ -23,6 +23,8 @@ public class ExamFaqModelConfigEntity {
   private String modelId;
   private BigDecimal temperature;
   private Integer maxTokens;
+  /** LongCat 思考模式：enabled / disabled，非 LongCat 模型留空 */
+  private String thinking;
   private String extraConfig;
   private String status;
   private LocalDateTime createdAt;
@@ -53,6 +55,8 @@ public class ExamFaqModelConfigEntity {
   public void setTemperature(BigDecimal temperature) { this.temperature = temperature; }
   public Integer getMaxTokens() { return maxTokens; }
   public void setMaxTokens(Integer maxTokens) { this.maxTokens = maxTokens; }
+  public String getThinking() { return thinking; }
+  public void setThinking(String thinking) { this.thinking = thinking; }
   public String getExtraConfig() { return extraConfig; }
   public void setExtraConfig(String extraConfig) { this.extraConfig = extraConfig; }
   public String getStatus() { return status; }
