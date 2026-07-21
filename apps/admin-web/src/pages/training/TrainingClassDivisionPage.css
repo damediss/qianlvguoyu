@@ -1,0 +1,103 @@
+.training-class-division-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.training-class-division-page .division-steps-card .ant-card-body {
+  padding: 16px 20px 8px;
+}
+
+.training-class-division-page .division-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.training-class-division-page .division-plan-hint {
+  margin-bottom: 16px;
+}
+
+.training-class-division-page .division-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid #e8edf5;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.training-class-division-page .division-context-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.training-class-division-page .division-context-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.training-class-division-page .division-context-meta {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.training-class-division-page .division-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px 16px;
+  margin-bottom: 8px;
+}
+
+.training-class-division-page .division-config-grid .ant-form-item {
+  margin-bottom: 0;
+}
+
+.training-class-division-page .division-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  padding-top: 4px;
+}
+
+.training-class-division-page .division-result-stats {
+  margin-bottom: 16px;
+}
+
+.training-class-division-page .division-result-stats .ant-statistic-content {
+  font-size: 22px;
+}
+
+.training-class-division-page .division-fill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.training-class-division-page .division-fill .ant-progress {
+  flex: 1;
+  margin: 0;
+  max-width: 120px;
+}
+
+.training-class-division-page .ant-table-tbody > tr.division-row-ready:hover > td {
+  background: #f0f9ff;
+}
+
+@media (max-width: 768px) {
+  .training-class-division-page .division-config-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
