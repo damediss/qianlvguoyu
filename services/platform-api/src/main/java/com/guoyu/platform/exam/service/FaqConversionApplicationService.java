@@ -215,8 +215,10 @@ public class FaqConversionApplicationService {
     CircuitBreaker circuitBreaker = new CircuitBreaker(5);
     Semaphore semaphore = new Semaphore(concurrencyLimit);
 
-    // 缩小块：暂停只阻止新块提交，当前块内的 LLM 长调用仍会跑完
-    int chunkSize = Math.min(concurrencyLimit, 10);
+    // 分块提交：chunkSize 独立于 concurrencyLimit，确保 semaphore 始终饱和。
+    // 暂停通过双重检查生效：块间检查（line 221）+ 逐条检查（line 232），
+    // 排队的任务在获取许可后感知暂停立即退出，仅当前在跑的 LLM 调用跑完。
+    int chunkSize = 50;
     for (int offset = 0; offset < pending.size(); offset += chunkSize) {
       if (!batchService.isRunning(tenantId, batchId)) {
         log.info("批次已暂停，停止提交新任务：batchId={}, offset={}", batchId, offset);
