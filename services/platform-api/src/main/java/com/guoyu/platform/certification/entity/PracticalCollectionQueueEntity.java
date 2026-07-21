@@ -11,6 +11,7 @@ import lombok.Setter;
 @TableName("certification_practical_collection_queue")
 public class PracticalCollectionQueueEntity extends BaseEntity {
   private Long taskId;
+  private Long examSessionId;
   private Long candidateId;
   private Long statusId;
   private Integer queueNo;

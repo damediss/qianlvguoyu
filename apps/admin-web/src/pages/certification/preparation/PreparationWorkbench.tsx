@@ -1,13 +1,8 @@
 import {
   CheckCircleOutlined,
-  DatabaseOutlined,
-  FileProtectOutlined,
-  ReadOutlined,
-  ScheduleOutlined,
-  TeamOutlined,
 } from '@ant-design/icons';
 import { ProCard } from '@ant-design/pro-components';
-import { Button, Descriptions, Empty, List, Modal, Progress, Space, Statistic, Typography, message } from 'antd';
+import { Button, Descriptions, Empty, List, Modal, Progress, Space, Typography, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   completePreparation,
@@ -21,11 +16,10 @@ import { dateText, dateTimeText, statusTag } from './shared';
 interface PreparationWorkbenchProps {
   taskId?: string;
   task?: PreparationTaskOverview;
-  onOpenSection: (key: string) => void;
   onChanged?: () => void;
 }
 
-export function PreparationWorkbench({ taskId, task, onOpenSection, onChanged }: PreparationWorkbenchProps) {
+export function PreparationWorkbench({ taskId, task, onChanged }: PreparationWorkbenchProps) {
   const queryClient = useQueryClient();
   const overviewQuery = useQuery({
     queryKey: ['certification-preparation-overview', taskId],
@@ -58,36 +52,8 @@ export function PreparationWorkbench({ taskId, task, onOpenSection, onChanged }:
   const preparationCompleted = ['archive', 'certification_completed'].includes(overview.currentPhase || '');
   // 只有任务当前阶段=preparation 时才允许触发“完成筹备”
   const canCompletePreparation = overview.currentPhase === 'preparation';
-  const quickEntryHeight = 72;
-  const quickActions = [
-    { key: 'collection', icon: <DatabaseOutlined />, title: '信息收集', description: '学员导入 · 申报材料一键生成' },
-    { key: 'staff', icon: <TeamOutlined />, title: '考务配置', description: '考务人员绑定与备注' },
-    { key: 'equipment', icon: <DatabaseOutlined />, title: '配置设备', description: '考试设备绑定与数量' },
-    { key: 'sites', icon: <ScheduleOutlined />, title: '考场配置', description: '考场信息与容量配置' },
-    { key: 'assessors', icon: <TeamOutlined />, title: '考评员配置', description: '考评员分配与任务发放' },
-    { key: 'checklist', icon: <CheckCircleOutlined />, title: '清单核查', description: '材料勾选与确认人' },
-  ];
-
   return (
     <Space direction="vertical" style={{ width: '100%' }} size={16}>
-      <div className="knowledge-overview">
-        <ProCard className="overview-card">
-          <Statistic title="学员数量" value={overview.candidateCount || 0} prefix={<ReadOutlined />} />
-        </ProCard>
-        <ProCard className="overview-card">
-          <Statistic title="资料完成率" value={overview.documentCompletionRate || 0} suffix="%" prefix={<FileProtectOutlined />} />
-        </ProCard>
-        <ProCard className="overview-card">
-          <Statistic title="已配置考场" value={overview.examSiteCount || 0} prefix={<ScheduleOutlined />} />
-        </ProCard>
-        <ProCard className="overview-card">
-          <Statistic title="已配置考务" value={overview.examStaffCount || 0} prefix={<TeamOutlined />} />
-        </ProCard>
-        <ProCard className="overview-card">
-          <Statistic title="已配置考评员" value={overview.assessorCount || 0} prefix={<TeamOutlined />} />
-        </ProCard>
-      </div>
-
       <ProCard
         title="筹备概览"
         extra={
@@ -128,34 +94,6 @@ export function PreparationWorkbench({ taskId, task, onOpenSection, onChanged }:
         </div>
       </ProCard>
 
-      <ProCard title="快捷入口">
-        <List
-          grid={{ gutter: 12, xs: 1, sm: 2, md: 3, lg: 4 }}
-          dataSource={quickActions}
-          renderItem={(item) => (
-            <List.Item style={{ height: '100%' }}>
-              <Button
-                block
-                icon={item.icon}
-                onClick={() => onOpenSection(item.key)}
-                style={{
-                  height: quickEntryHeight,
-                  textAlign: 'left',
-                  alignItems: 'flex-start',
-                  padding: '10px 15px',
-                }}
-              >
-                <div style={{ lineHeight: 1.4 }}>
-                  <div style={{ fontWeight: 600 }}>{item.title}</div>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {item.description}
-                  </Typography.Text>
-                </div>
-              </Button>
-            </List.Item>
-          )}
-        />
-      </ProCard>
     </Space>
   );
 }

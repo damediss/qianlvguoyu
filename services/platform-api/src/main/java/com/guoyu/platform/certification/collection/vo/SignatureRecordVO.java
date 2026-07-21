@@ -7,6 +7,7 @@ public record SignatureRecordVO(
     Long taskId,
     Long candidateId,
     Long sessionId,
+    Long examSessionId,
     Long signatureFileId,
     String signatureHash,
     String signerType,

@@ -100,9 +100,9 @@ export function CollectionTaskSwitchModal({
                     <span>考生：{task.candidateTotal} 人</span>
                     <span>已完成：{task.completedCount} 人</span>
                   </div>
-                  {(task.workType || task.level) ? (
+                  {(task.workTypeLevel || task.workType || task.level) ? (
                     <div className="collection-task-switch-item-extra">
-                      {[task.workType, task.level].filter(Boolean).join(' · ')}
+                      {task.workTypeLevel || [task.workType, task.level].filter(Boolean).join(' · ')}
                     </div>
                   ) : null}
                 </div>

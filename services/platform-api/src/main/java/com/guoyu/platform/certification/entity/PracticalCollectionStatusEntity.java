@@ -13,6 +13,7 @@ public class PracticalCollectionStatusEntity extends BaseEntity {
   private Long taskId;
   private Long candidateId;
   private Long sessionId;
+  private Long examSessionId;
   private String collectToken;
   private String qrIssueStatus;
   private String overallStatus;

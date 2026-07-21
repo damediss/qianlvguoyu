@@ -6,6 +6,7 @@ public record QueueItemVO(
     Long queueId,
     Long taskId,
     Long candidateId,
+    Long examSessionId,
     Integer queueNo,
     String name,
     String idCardLast4,

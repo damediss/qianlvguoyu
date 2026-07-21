@@ -25,12 +25,16 @@ import com.guoyu.platform.certification.collection.vo.QueueItemVO;
 import com.guoyu.platform.certification.collection.vo.SignatureRecordVO;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskEntity;
+import com.guoyu.platform.certification.entity.CertificationTaskScopeEntity;
 import com.guoyu.platform.certification.entity.PracticalCollectionExceptionEntity;
 import com.guoyu.platform.certification.entity.PracticalCollectionQueueEntity;
 import com.guoyu.platform.certification.entity.PracticalCollectionStatusEntity;
 import com.guoyu.platform.certification.entity.PracticalFingerprintTraceEntity;
 import com.guoyu.platform.certification.entity.PracticalSignatureRecordEntity;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -38,17 +42,26 @@ import org.springframework.util.StringUtils;
 public class PracticalCollectionConverter {
 
   public CollectionTaskVO toTaskVO(CertificationTaskEntity task, CollectionStatsVO stats) {
+    return toTaskVO(task, stats, List.of());
+  }
+
+  public CollectionTaskVO toTaskVO(
+      CertificationTaskEntity task,
+      CollectionStatsVO stats,
+      List<CertificationTaskScopeEntity> scopes
+  ) {
     if (task == null) {
       return null;
     }
     CollectionStatsVO safeStats = stats == null ? emptyStats(task.getPlannedPeopleCount()) : stats;
+    List<CertificationTaskScopeEntity> safeScopes = scopes == null ? List.of() : scopes;
     return new CollectionTaskVO(
         task.getId(),
         task.getTaskNo(),
         task.getTaskName(),
         task.getCompanyName(),
-        null,
-        null,
+        summarizeScopeField(safeScopes, CertificationTaskScopeEntity::getWorkTypeName),
+        summarizeLevelNames(safeScopes),
         task.getExamDate(),
         safeStats.candidateTotal(),
         safeStats.qrIssuedCount(),
@@ -57,7 +70,11 @@ public class PracticalCollectionConverter {
         safeStats.collectingCount(),
         safeStats.completedCount(),
         safeStats.pendingRetryCount(),
-        safeStats.exceptionCount()
+        safeStats.exceptionCount(),
+        null,
+        null,
+        null,
+        summarizeScopePairs(safeScopes)
     );
   }
 
@@ -108,6 +125,32 @@ public class PracticalCollectionConverter {
         eligibility == null ? List.of() : eligibility.invalidDocumentCodes(),
         eligibility == null ? null : eligibility.eligible()
     );
+  }
+
+  public CollectionTaskVO toTaskVO(
+      CertificationTaskEntity task,
+      CollectionStatsVO stats,
+      List<CertificationTaskScopeEntity> scopes,
+      Long examSessionId,
+      String sessionName,
+      String examType
+  ) {
+    CollectionTaskVO base = toTaskVO(task, stats, scopes);
+    return new CollectionTaskVO(
+        base.taskId(), base.taskNo(), base.taskName(), base.projectName(), base.workType(), base.level(),
+        base.examDate(), base.candidateTotal(), base.qrIssuedCount(), base.arrivedCount(), base.queuedCount(),
+        base.collectingCount(), base.completedCount(), base.pendingRetryCount(), base.exceptionCount(),
+        examSessionId, sessionName, examType, base.workTypeLevel());
+  }
+
+  public CollectionTaskVO toTaskVO(
+      CertificationTaskEntity task,
+      CollectionStatsVO stats,
+      Long examSessionId,
+      String sessionName,
+      String examType
+  ) {
+    return toTaskVO(task, stats, List.of(), examSessionId, sessionName, examType);
   }
 
   public CandidateCollectionItemVO toCandidateItemVO(
@@ -192,6 +235,7 @@ public class PracticalCollectionConverter {
         candidate.getId(),
         candidate.getTaskId(),
         status.getSessionId(),
+        status.getExamSessionId(),
         candidate.getCandidateName(),
         idCardLast4(candidate, status),
         candidate.getMaskedIdCardNo(),
@@ -240,6 +284,7 @@ public class PracticalCollectionConverter {
         queue.getId(),
         queue.getTaskId(),
         queue.getCandidateId(),
+        queue.getExamSessionId(),
         queue.getQueueNo(),
         candidate == null ? null : candidate.getCandidateName(),
         idCardLast4(candidate, status),
@@ -264,6 +309,7 @@ public class PracticalCollectionConverter {
         entity.getTaskId(),
         entity.getCandidateId(),
         entity.getSessionId(),
+        entity.getExamSessionId(),
         entity.getDeviceSn(),
         entity.getDeviceModel(),
         entity.getDeviceVendorId(),
@@ -293,6 +339,7 @@ public class PracticalCollectionConverter {
         entity.getTaskId(),
         entity.getCandidateId(),
         entity.getSessionId(),
+        entity.getExamSessionId(),
         entity.getSignatureFileId(),
         entity.getSignatureHash(),
         entity.getSignerType(),
@@ -361,6 +408,54 @@ public class PracticalCollectionConverter {
 
   private CollectionStatsVO emptyStats(Integer candidateTotal) {
     return new CollectionStatsVO(candidateTotal == null ? 0 : candidateTotal, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  }
+
+  private String summarizeScopeField(
+      List<CertificationTaskScopeEntity> scopes,
+      Function<CertificationTaskScopeEntity, String> getter
+  ) {
+    return scopes.stream()
+        .filter(Objects::nonNull)
+        .map(getter)
+        .filter(StringUtils::hasText)
+        .map(String::trim)
+        .distinct()
+        .collect(Collectors.joining("、"));
+  }
+
+  private String summarizeLevelNames(List<CertificationTaskScopeEntity> scopes) {
+    return scopes.stream()
+        .filter(Objects::nonNull)
+        .map(scope -> StringUtils.hasText(scope.getLevelName())
+            ? scope.getLevelName() : scope.getLevelCode())
+        .filter(StringUtils::hasText)
+        .map(String::trim)
+        .distinct()
+        .collect(Collectors.joining("、"));
+  }
+
+  private String summarizeScopePairs(List<CertificationTaskScopeEntity> scopes) {
+    return scopes.stream()
+        .filter(Objects::nonNull)
+        .map(scope -> {
+          String workType = text(scope.getWorkTypeName());
+          String level = StringUtils.hasText(scope.getLevelName())
+              ? scope.getLevelName().trim() : text(scope.getLevelCode());
+          if (!StringUtils.hasText(workType)) {
+            return level;
+          }
+          if (!StringUtils.hasText(level)) {
+            return workType;
+          }
+          return workType + " / " + level;
+        })
+        .filter(StringUtils::hasText)
+        .distinct()
+        .collect(Collectors.joining("、"));
+  }
+
+  private String text(String value) {
+    return value == null ? "" : value.trim();
   }
 
   private String idCardLast4(CertificationCandidateEntity candidate, PracticalCollectionStatusEntity status) {

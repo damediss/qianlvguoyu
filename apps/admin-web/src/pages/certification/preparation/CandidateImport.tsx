@@ -54,7 +54,7 @@ import type {
   PreparationImportError,
 } from '../../../types/certificationPreparation';
 import { CandidateDocumentDrawer } from './CandidateDocumentDrawer';
-import { candidateDocumentRatioTag, dash, dateTimeText, importSourceLabel, levelOptions, statusTag } from './shared';
+import { candidateDocumentRatioTag, dash, dateTimeText, levelOptions, statusTag } from './shared';
 
 type ImportChannel = 'staging' | 'training' | 'other';
 
@@ -357,24 +357,37 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
       { title: '身份证号', dataIndex: 'maskedIdCardNo', width: 180, render: (value, record) => value || record.idCardNo || '-' },
       { title: '手机号', dataIndex: 'maskedPhone', width: 140, render: (value, record) => value || record.phone || '-' },
       { title: '等级', dataIndex: 'levelName', width: 100, render: dash },
-      { title: '组织', dataIndex: 'orgName', width: 150, render: dash },
       { title: '资料进度', width: 110, align: 'center', render: (_, record) => candidateDocumentRatioTag(record) },
       { title: '资料齐全', dataIndex: 'documentComplete', width: 90, render: (value: boolean) => (value ? '是' : '否') },
       { title: '状态', dataIndex: 'status', width: 100, render: statusTag },
-      { title: '导入途径', dataIndex: 'importSource', width: 110, render: (value) => importSourceLabel(value) },
       { title: '创建时间', dataIndex: 'createdAt', width: 170, render: dateTimeText },
       {
         title: '操作',
-        width: 200,
+        width: 120,
+        align: 'center',
         fixed: 'right',
         render: (_, record) => (
-          <Space size={4}>
-            <Button type="link" size="small" icon={<FileProtectOutlined />} onClick={() => setDocumentCandidate(record)}>
-              上传资料
+          <Space size={2}>
+            <Button
+              type="link"
+              size="small"
+              title="上传资料"
+              aria-label="上传资料"
+              icon={<FileProtectOutlined />}
+              onClick={() => setDocumentCandidate(record)}
+              style={{ paddingInline: 5 }}
+            >
             </Button>
             <PermissionGate code="certification.preparation.candidate.edit">
-              <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>
-                编辑
+              <Button
+                type="link"
+                size="small"
+                title="编辑"
+                aria-label="编辑"
+                icon={<EditOutlined />}
+                onClick={() => openEdit(record)}
+                style={{ paddingInline: 5 }}
+              >
               </Button>
             </PermissionGate>
             <PermissionGate code="certification.preparation.candidate.delete">
@@ -384,8 +397,15 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
                 cancelText="取消"
                 onConfirm={() => deleteMutation.mutate(record.id)}
               >
-                <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-                  删除
+                <Button
+                  type="link"
+                  size="small"
+                  danger
+                  title="删除"
+                  aria-label="删除"
+                  icon={<DeleteOutlined />}
+                  style={{ paddingInline: 5 }}
+                >
                 </Button>
               </Popconfirm>
             </PermissionGate>
@@ -447,7 +467,7 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
 
   return (
     <Space direction="vertical" style={{ width: '100%' }} size={16}>
-      <ProCard title="学员导入">
+      <ProCard>
         <Segmented<ImportChannel>
           value={importChannel}
           onChange={(value) => {
@@ -575,9 +595,6 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
           </Space>
         ) : (
           <Space direction="vertical" style={{ width: '100%' }} size={12}>
-            <Typography.Text type="secondary">
-              XLSX 模板已含 5 名测试考生；导入后请在学员资料中补齐证件照与身份证正反面，再生成申报材料。
-            </Typography.Text>
             <Space wrap>
               <Button icon={<DownloadOutlined />} onClick={downloadExcelTemplate}>
                 下载 XLSX 模板

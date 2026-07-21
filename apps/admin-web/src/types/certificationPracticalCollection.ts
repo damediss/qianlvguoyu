@@ -182,8 +182,11 @@ export interface CollectionTaskQueryRequest {
 
 export interface CollectionTaskVO {
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
   taskNo?: string;
   taskName: string;
+  sessionName?: string;
+  examType?: 'THEORY' | 'PRACTICE';
   projectName?: string;
   workType?: string;
   level?: string;
@@ -196,6 +199,8 @@ export interface CollectionTaskVO {
   completedCount: number;
   pendingRetryCount: number;
   exceptionCount: number;
+  /** 任务管理中配置的工种/等级范围，保留每一行的对应关系。 */
+  workTypeLevel?: string;
 }
 
 export interface CollectionStatsVO {

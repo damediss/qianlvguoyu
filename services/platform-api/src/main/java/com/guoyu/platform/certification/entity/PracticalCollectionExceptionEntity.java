@@ -11,6 +11,7 @@ import lombok.Setter;
 @TableName("certification_practical_collection_exception")
 public class PracticalCollectionExceptionEntity extends BaseEntity {
   private Long taskId;
+  private Long examSessionId;
   private Long candidateId;
   private String exceptionType;
   private String exceptionStatus;

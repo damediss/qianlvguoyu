@@ -32,7 +32,7 @@ fi
 
 # ---------- 1. 安装基础依赖 ----------
 hr
-log "[1/7] 安装 JDK 21 / Maven / Nginx / MySQL 8 / Redis / git / unzip"
+log "[1/7] 安装 JDK 21 / Maven / Nginx / MySQL 8 / Redis / 中文字体 / git / unzip"
 apt-get update -qq
 apt-get install -y --no-install-recommends \
   openjdk-21-jdk-headless \
@@ -40,10 +40,18 @@ apt-get install -y --no-install-recommends \
   nginx \
   mysql-server-8.0 \
   redis-server \
+  fonts-wqy-zenhei \
   git \
   unzip \
   curl \
   python3-pip
+
+COLLECTION_PDF_FONT_PATH=/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc
+if [ ! -f "$COLLECTION_PDF_FONT_PATH" ]; then
+  err "中文 TrueType 字体未安装: $COLLECTION_PDF_FONT_PATH"
+  exit 1
+fi
+log "中文 PDF 字体: $COLLECTION_PDF_FONT_PATH"
 
 # ---------- 2. 创建部署用户 ----------
 hr

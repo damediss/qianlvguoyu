@@ -13,6 +13,7 @@ public record SubmitFingerprintRequest(
     @NotNull Long taskId,
     @NotNull Long candidateId,
     Long sessionId,
+    Long examSessionId,
     @Size(max = 128) String deviceSn,
     @Size(max = 128) String deviceModel,
     @Size(max = 32) String deviceVendorId,

@@ -108,6 +108,8 @@ class CertificationPreparationApplicationServiceTest {
       Mockito.mock(CertificationApplicationFormGenerationService.class);
   private final CertificationImageSourceService imageSourceService =
       Mockito.mock(CertificationImageSourceService.class);
+  private final CertificationExamSessionApplicationService examSessionService =
+      Mockito.mock(CertificationExamSessionApplicationService.class);
 
   private CertificationPreparationApplicationService service;
 
@@ -140,7 +142,8 @@ class CertificationPreparationApplicationServiceTest {
         fileApplicationService,
         stagingApplicationService,
         applicationFormGenerationService,
-        imageSourceService
+        imageSourceService,
+        examSessionService
     );
     when(scopeMapper.selectList(any())).thenReturn(List.of(existingScope()));
   }

@@ -782,7 +782,7 @@ export function CollectionWorkbenchPage({
 
       Modal.warning({
 
-        title: '资料未满足实操采集准入条件',
+        title: '资料未满足信息采集准入条件',
 
         content: `该考生的信息收集尚未完成。${candidate.missingDocumentCodes?.length ? `缺少：${candidate.missingDocumentCodes.join('、')}。` : ''}${candidate.invalidDocumentCodes?.length ? `资料异常：${candidate.invalidDocumentCodes.join('、')}。` : ''}请先前往“认定筹备—信息收集”补充资料。`,
 

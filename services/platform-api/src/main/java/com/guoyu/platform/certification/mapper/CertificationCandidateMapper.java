@@ -30,6 +30,24 @@ public interface CertificationCandidateMapper extends BaseMapper<CertificationCa
       @Param("idCardNo") String idCardNo
   );
 
+  @Select("""
+      SELECT id, tenant_id, task_id, task_scope_id, candidate_no, admission_ticket_no, candidate_name, id_card_no, masked_id_card_no, phone, masked_phone,
+             level_code, level_name, work_type_id, work_type_name, import_batch_id, import_source, org_name,
+             document_completed_count, document_required_count, document_complete, status, remark,
+             created_at, updated_at, created_by, updated_by, deleted
+      FROM certification_candidate
+      WHERE tenant_id = #{tenantId}
+        AND task_id = #{taskId}
+        AND admission_ticket_no = #{admissionTicketNo}
+      ORDER BY deleted ASC, created_at DESC
+      LIMIT 1
+      """)
+  CertificationCandidateEntity selectByTaskAndAdmissionTicketIncludingDeleted(
+      @Param("tenantId") Long tenantId,
+      @Param("taskId") Long taskId,
+      @Param("admissionTicketNo") String admissionTicketNo
+  );
+
   @Delete("""
       DELETE FROM certification_candidate
       WHERE tenant_id = #{tenantId}

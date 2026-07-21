@@ -185,7 +185,7 @@ public class CollectionPdfExportService {
       log.error("Practical collection PDF export failed: taskId={}", request.examTaskId(), ex);
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "打印版 PDF 生成失败，请检查中文字体配置");
     }
-    String fileName = "实操采集打印版_" + safeFilename(task.getTaskName()) + "_"
+    String fileName = "信息采集打印版_" + safeFilename(task.getTaskName()) + "_"
         + LocalDateTime.now().format(FILE_TS_FORMAT) + ".pdf";
     FileVO file = fileApplicationService.storeFromBytes(pdf, fileName, "application/pdf", "private");
     return new CollectionPdfExportVO(file.id(), file.originalName(), "/api/files/" + file.id() + "/download");

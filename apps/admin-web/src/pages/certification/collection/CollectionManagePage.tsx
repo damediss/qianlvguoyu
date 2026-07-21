@@ -478,7 +478,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   const validateCandidateEntry = (candidate: CandidateCollectionItemVO) => {
     if (candidate.collectionEligible === false) {
       Modal.warning({
-        title: '资料未满足实操采集准入条件',
+        title: '资料未满足信息采集准入条件',
         content: (
           <div>
             <div>该考生的信息收集尚未完成，暂不能进入实操信息采集。</div>
@@ -677,10 +677,10 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
           type="warning"
           showIcon
           message="任务 ID 缺失"
-          description="无法打开 PC 采集管理台，请返回实操采集首页后重新进入。"
+          description="无法打开 PC 采集管理台，请返回信息采集首页后重新进入。"
         />
         <Button icon={<ArrowLeftOutlined />} onClick={goBackToList}>
-          返回实操采集首页
+          返回信息采集首页
         </Button>
       </div>
     );
@@ -695,7 +695,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
           <div className="page-title-line">
             <div className="page-title-icon"><ClusterOutlined /></div>
             <div>
-              <Typography.Title level={1}>实操采集管理台</Typography.Title>
+              <Typography.Title level={1}>信息采集管理台</Typography.Title>
               <Typography.Text type="secondary">
                 {task?.taskName || '正在加载任务'} · 当前任务 ID：{taskId}
               </Typography.Text>
@@ -704,7 +704,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
         </div>
         <Space wrap>
           <Button icon={<ArrowLeftOutlined />} onClick={goBackToList}>
-            返回实操采集首页
+              返回信息采集首页
           </Button>
           <Button icon={<ReloadOutlined />} loading={workbenchQuery.isFetching || exceptionsQuery.isFetching} onClick={refreshAll}>
             刷新
@@ -721,7 +721,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
           <Descriptions.Item label="任务名称">{task?.taskName || '-'}</Descriptions.Item>
           <Descriptions.Item label="任务编号">{task?.taskNo || '-'}</Descriptions.Item>
           <Descriptions.Item label="企业">{task?.projectName || '-'}</Descriptions.Item>
-          <Descriptions.Item label="工种/等级">{task?.workType || '-'} / {task?.level || '-'}</Descriptions.Item>
+          <Descriptions.Item label="工种/等级">{task?.workTypeLevel || `${task?.workType || '-'} / ${task?.level || '-'}`}</Descriptions.Item>
           <Descriptions.Item label="认定日期">{task?.examDate || '-'}</Descriptions.Item>
         </Descriptions>
       </Card>
@@ -807,7 +807,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
               onChange: (keys) => setSelectedCandidateIds(keys.map(String)),
               getCheckboxProps: (candidate) => ({
                 disabled: candidate.collectionEligible !== true || candidate.overallStatus !== 'COMPLETED',
-                title: candidate.collectionEligible !== true ? '资料未完成，不能生成采集表' : '实操采集未完成，不能生成采集表',
+                title: candidate.collectionEligible !== true ? '资料未完成，不能生成采集表' : '信息采集未完成，不能生成采集表',
               }),
             }}
             onRow={(candidate) => ({

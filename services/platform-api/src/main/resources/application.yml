@@ -128,7 +128,8 @@ platform:
       require-roster: ${TRAINING_DIVISION_REQUIRE_ROSTER:true}
   certification:
     collection:
-      # PDFBox 嵌入中文字体；为空时按 classpath 与常见系统字体路径自动探测。
+      # PDFBox 嵌入中文字体；为空时探测 Windows simhei.ttf 或 Linux WQY TTC 字体。
+      # OTF/CFF 字体不受 PDFBox PDType0Font 支持；Linux 推荐 fonts-wqy-zenhei。
       pdf-font-path: ${COLLECTION_PDF_FONT_PATH:}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:}

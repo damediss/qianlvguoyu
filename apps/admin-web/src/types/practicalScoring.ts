@@ -70,6 +70,14 @@ export interface PracticalGenerateResult {
   questions: number;
 }
 
+export interface PracticalBatchGenerateResult {
+  createdTasks: number;
+  existingTasks: number;
+  configuredCandidates: number;
+  skippedCandidates: number;
+  questions: number;
+}
+
 export interface PracticalImportPaperResult {
   paperId: string;
   title: string;

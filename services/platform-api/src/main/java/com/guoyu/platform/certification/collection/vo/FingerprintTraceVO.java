@@ -8,6 +8,7 @@ public record FingerprintTraceVO(
     Long taskId,
     Long candidateId,
     Long sessionId,
+    Long examSessionId,
     String deviceSn,
     String deviceModel,
     String deviceVendorId,

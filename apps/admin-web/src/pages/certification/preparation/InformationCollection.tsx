@@ -1,5 +1,5 @@
 import { FolderOpenOutlined, UserAddOutlined } from '@ant-design/icons';
-import { Empty, Steps, Tabs } from 'antd';
+import { Empty, Tabs } from 'antd';
 import { useEffect, useState } from 'react';
 import { ApplicationMaterials } from './ApplicationMaterials';
 import { CandidateImport } from './CandidateImport';
@@ -44,7 +44,7 @@ export function InformationCollection({
   const subTabItems = [
     {
       key: 'candidates',
-      label: '学员导入',
+      label: '考生导入',
       icon: <UserAddOutlined />,
       children: <CandidateImport taskId={taskId} onChanged={onChanged} />,
     },
@@ -58,12 +58,6 @@ export function InformationCollection({
 
   return (
     <div>
-      <Steps
-        size="small"
-        current={subTabItems.findIndex((item) => item.key === subTab)}
-        style={{ marginBottom: 20, maxWidth: 480 }}
-        items={[{ title: '学员导入' }, { title: '申报材料' }]}
-      />
       <Tabs activeKey={subTab} onChange={handleSubTabChange} items={subTabItems} />
     </div>
   );

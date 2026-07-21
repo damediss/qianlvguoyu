@@ -9,6 +9,7 @@ public record SubmitSignatureRequest(
     @NotNull Long taskId,
     @NotNull Long candidateId,
     Long sessionId,
+    Long examSessionId,
     @NotNull Long signatureFileId,
     @NotBlank @Size(min = 64, max = 64) String signatureHash,
     @NotBlank @Size(max = 32) String signerType,

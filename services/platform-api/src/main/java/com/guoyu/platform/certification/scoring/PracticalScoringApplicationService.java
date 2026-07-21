@@ -359,6 +359,77 @@ public class PracticalScoringApplicationService {
     return new PracticalScoringModels.GenerateView(counter.created(), counter.existing(), 1, questions.size());
   }
 
+  /**
+   * Applies one practical paper and assessor group to several candidates. Candidates that already
+   * have a practical configuration or generated scoring tasks are deliberately left unchanged.
+   */
+  @Transactional
+  public PracticalScoringModels.BatchGenerateView linkCandidates(
+      Long taskId,
+      PracticalScoringModels.BatchLinkCandidatesReq req
+  ) {
+    requireTask(taskId);
+    List<Long> candidateIds = req.candidateIds().stream().distinct().toList();
+    List<CertificationAssessorTaskEntity> generatedTasks = assessorTaskMapper.selectList(
+        new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
+            .eq(CertificationAssessorTaskEntity::getTaskId, taskId)
+            .in(CertificationAssessorTaskEntity::getCandidateId, candidateIds)
+            .isNotNull(CertificationAssessorTaskEntity::getPaperQuestionId));
+    Set<Long> generatedCandidateIds = (generatedTasks == null ? List.<CertificationAssessorTaskEntity>of() : generatedTasks)
+        .stream()
+        .map(CertificationAssessorTaskEntity::getCandidateId)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
+    List<CertificationPracticalScoringConfigEntity> existingConfigs = configMapper.selectList(
+        new LambdaQueryWrapper<CertificationPracticalScoringConfigEntity>()
+            .eq(CertificationPracticalScoringConfigEntity::getTaskId, taskId)
+            .in(CertificationPracticalScoringConfigEntity::getCandidateId, candidateIds));
+    Set<Long> unavailableCandidateIds = new java.util.HashSet<>(generatedCandidateIds);
+    (existingConfigs == null ? List.<CertificationPracticalScoringConfigEntity>of() : existingConfigs).stream()
+        .map(CertificationPracticalScoringConfigEntity::getCandidateId)
+        .filter(Objects::nonNull)
+        .forEach(unavailableCandidateIds::add);
+    Set<Long> configuredScopeIds = (existingConfigs == null
+        ? List.<CertificationPracticalScoringConfigEntity>of()
+        : existingConfigs).stream()
+        .filter(config -> config.getCandidateId() == null)
+        .map(CertificationPracticalScoringConfigEntity::getScopeId)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
+    if (!configuredScopeIds.isEmpty()) {
+      for (Long candidateId : candidateIds) {
+        if (unavailableCandidateIds.contains(candidateId)) {
+          continue;
+        }
+        CertificationCandidateEntity candidate = candidateMapper.selectById(candidateId);
+        if (candidate != null && taskId.equals(candidate.getTaskId())) {
+          CertificationTaskScopeEntity scope = resolveScopeForCandidate(taskId, candidate, null);
+          if (configuredScopeIds.contains(scope.getId())) {
+            unavailableCandidateIds.add(candidateId);
+          }
+        }
+      }
+    }
+
+    int created = 0;
+    int existing = 0;
+    int configured = 0;
+    int questions = 0;
+    for (Long candidateId : candidateIds) {
+      if (unavailableCandidateIds.contains(candidateId)) {
+        continue;
+      }
+      PracticalScoringModels.GenerateView result = linkCandidate(taskId, candidateId,
+          new PracticalScoringModels.LinkCandidateReq(null, null, req.paperId(), req.groupId()));
+      created += result.createdTasks();
+      existing += result.existingTasks();
+      configured += result.candidates();
+      questions += result.questions();
+    }
+    return new PracticalScoringModels.BatchGenerateView(
+        created, existing, configured, unavailableCandidateIds.size(), questions);
+  }
+
   @Transactional
   public PracticalScoringModels.StartSessionView markCandidateAbsent(Long taskId, Long candidateId) {
     CertificationTaskEntity task = requireTask(taskId);

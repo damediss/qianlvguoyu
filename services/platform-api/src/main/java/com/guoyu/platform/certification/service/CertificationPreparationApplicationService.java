@@ -210,6 +210,7 @@ public class CertificationPreparationApplicationService {
   private final CertificationCandidateStagingApplicationService stagingApplicationService;
   private final CertificationApplicationFormGenerationService applicationFormGenerationService;
   private final CertificationImageSourceService imageSourceService;
+  private final CertificationExamSessionApplicationService examSessionService;
 
   public CertificationPreparationApplicationService(
       CertificationTaskMapper taskMapper,
@@ -238,7 +239,8 @@ public class CertificationPreparationApplicationService {
       FileApplicationService fileApplicationService,
       @Lazy CertificationCandidateStagingApplicationService stagingApplicationService,
       CertificationApplicationFormGenerationService applicationFormGenerationService,
-      CertificationImageSourceService imageSourceService
+      CertificationImageSourceService imageSourceService,
+      CertificationExamSessionApplicationService examSessionService
   ) {
     this.taskMapper = taskMapper;
     this.phaseMapper = phaseMapper;
@@ -267,6 +269,7 @@ public class CertificationPreparationApplicationService {
     this.stagingApplicationService = stagingApplicationService;
     this.applicationFormGenerationService = applicationFormGenerationService;
     this.imageSourceService = imageSourceService;
+    this.examSessionService = examSessionService;
   }
 
   @Transactional(readOnly = true)
@@ -305,6 +308,7 @@ public class CertificationPreparationApplicationService {
     CertificationCandidateImportBatchEntity batch = new CertificationCandidateImportBatchEntity();
     batch.setTaskId(taskId);
     batch.setTaskScopeId(req.taskScopeId());
+    examSessionService.validateSessionIds(taskId, req.examSessionIds());
     batch.setBatchNo("CIB-" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now()));
     batch.setSourceType(StringUtils.hasText(req.sourceType()) ? req.sourceType() : "manual");
     batch.setSourceFileId(req.sourceFileId());
@@ -355,6 +359,7 @@ public class CertificationPreparationApplicationService {
     batch.setSuccessCount(success);
     batch.setFailedCount(failed);
     batch.setDuplicateCount(failed);
+    examSessionService.assignBatchCandidates(taskId, batch.getId(), req.examSessionIds(), req.defaultParticipation());
     batch.setCompletedAt(LocalDateTime.now());
     importBatchMapper.updateById(batch);
     return PreparationImportBatchVO.from(batch);
@@ -436,10 +441,27 @@ public class CertificationPreparationApplicationService {
   @Transactional
   public CertificationCandidateEntity createCandidateForImport(Long taskId, PreparationCandidateSaveReq req, Long importBatchId) {
     CertificationTaskEntity task = findTask(taskId);
-    validateCandidate(task, req, null);
-    CertificationCandidateEntity existing = candidateMapper.selectByTaskAndIdCardIncludingDeleted(
-        task.getTenantId(), taskId, req.idCardNo());
+    CertificationCandidateEntity existing = null;
+    if (StringUtils.hasText(req.idCardNo())) {
+      existing = candidateMapper.selectByTaskAndIdCardIncludingDeleted(
+          task.getTenantId(), taskId, req.idCardNo());
+    }
+    if (existing == null && StringUtils.hasText(req.admissionTicketNo())) {
+      existing = candidateMapper.selectByTaskAndAdmissionTicketIncludingDeleted(
+          task.getTenantId(), taskId, req.admissionTicketNo());
+    }
+    validateCandidate(task, req, importBatchId == null || existing == null ? null : existing.getId());
     if (existing != null && (existing.getDeleted() == null || existing.getDeleted() == 0)) {
+      if (importBatchId != null) {
+        applyCandidate(existing, task, req);
+        existing.setImportBatchId(importBatchId);
+        existing.setStatus("active");
+        existing.setDeleted(0);
+        candidateMapper.updateById(existing);
+        initializeCandidateDocuments(taskId, existing.getId());
+        touchTask(taskId);
+        return existing;
+      }
       throw new BusinessException(ErrorCode.BAD_REQUEST, "同一任务下身份证号不得重复");
     }
     CertificationCandidateEntity entity;
@@ -1915,7 +1937,14 @@ public class CertificationPreparationApplicationService {
   }
 
   private void validateCandidate(CertificationTaskEntity task, PreparationCandidateSaveReq req, Long currentCandidateId) {
-    if (!ID_CARD_PATTERN.matcher(req.idCardNo()).matches()) {
+    boolean xlsxImport = "other_xlsx".equals(req.importSource());
+    if (xlsxImport && !StringUtils.hasText(req.idCardNo()) && !StringUtils.hasText(req.admissionTicketNo())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "准考证号或身份证号至少填写一个");
+    }
+    if (!xlsxImport && !StringUtils.hasText(req.idCardNo())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "身份证号不能为空");
+    }
+    if (StringUtils.hasText(req.idCardNo()) && !ID_CARD_PATTERN.matcher(req.idCardNo()).matches()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "身份证号格式必须合法");
     }
     if (StringUtils.hasText(req.phone()) && !MOBILE_PATTERN.matcher(req.phone()).matches()) {
@@ -1933,14 +1962,27 @@ public class CertificationPreparationApplicationService {
         && !supportedLevelCodes.contains(req.levelCode())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "报考等级必须匹配当前认定任务支持的等级");
     }
-    LambdaQueryWrapper<CertificationCandidateEntity> duplicateWrapper = new LambdaQueryWrapper<CertificationCandidateEntity>()
-        .eq(CertificationCandidateEntity::getTaskId, task.getId())
-        .eq(CertificationCandidateEntity::getIdCardNo, req.idCardNo());
-    if (currentCandidateId != null) {
-      duplicateWrapper.ne(CertificationCandidateEntity::getId, currentCandidateId);
+    if (StringUtils.hasText(req.idCardNo())) {
+      LambdaQueryWrapper<CertificationCandidateEntity> duplicateWrapper = new LambdaQueryWrapper<CertificationCandidateEntity>()
+          .eq(CertificationCandidateEntity::getTaskId, task.getId())
+          .eq(CertificationCandidateEntity::getIdCardNo, req.idCardNo());
+      if (currentCandidateId != null) {
+        duplicateWrapper.ne(CertificationCandidateEntity::getId, currentCandidateId);
+      }
+      if (safeCount(candidateMapper.selectCount(duplicateWrapper)) > 0) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "同一任务下身份证号不得重复");
+      }
     }
-    if (safeCount(candidateMapper.selectCount(duplicateWrapper)) > 0) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "同一任务下身份证号不得重复");
+    if (StringUtils.hasText(req.admissionTicketNo())) {
+      LambdaQueryWrapper<CertificationCandidateEntity> duplicateWrapper = new LambdaQueryWrapper<CertificationCandidateEntity>()
+          .eq(CertificationCandidateEntity::getTaskId, task.getId())
+          .eq(CertificationCandidateEntity::getAdmissionTicketNo, req.admissionTicketNo());
+      if (currentCandidateId != null) {
+        duplicateWrapper.ne(CertificationCandidateEntity::getId, currentCandidateId);
+      }
+      if (safeCount(candidateMapper.selectCount(duplicateWrapper)) > 0) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "同一任务下准考证号不得重复");
+      }
     }
   }
 

@@ -47,12 +47,12 @@ sudo bash /tmp/guoyu-deploy/deploy/deploy-public.sh
 ```
 
 脚本会做:
-1. 安装 JDK 21 / Maven / Nginx / MySQL 8 / Redis
+1. 安装 JDK 21 / Maven / Nginx / MySQL 8 / Redis / `fonts-wqy-zenhei` 中文 TrueType 字体
 2. 创建 `guoyu` 系统用户 + `/data/guoyu` 目录结构
 3. 初始化 MySQL `gjjd_test` 库 + 应用账号
 4. 给 Redis 设密码
 5. `mvn package` 构建 jar + `npm run build` 构建前端
-6. 生成 `/data/guoyu/.env`(随机 JWT / 随机密码 / 公网 IP 自动注入)
+6. 生成 `/data/guoyu/.env`(随机 JWT / 随机密码 / 公网 IP 自动注入)，并配置 `COLLECTION_PDF_FONT_PATH`
 7. 部署 systemd + nginx + 启动 + 冒烟
 
 ## 3. 补 COS 凭证
@@ -102,6 +102,7 @@ curl -s -X POST http://43.138.163.7/api/auth/login \
 | `/data/guoyu/.env` | `JWT_SECRET` | 至少 32 字符,生产必须重生成 |
 | `/data/guoyu/.env` | `CORS_ALLOWED_ORIGINS` | 浏览器跨域白名单,逗号分隔,不能用 `*` |
 | `/data/guoyu/.env` | `FILE_STORAGE_PROVIDER` | `cos` / `local` |
+| `/data/guoyu/.env` | `COLLECTION_PDF_FONT_PATH` | `/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc`，必须是可读的 TrueType `.ttf` 或 `.ttc` |
 | `/data/guoyu/.env` | `COS_*` | COS 凭证 + bucket + region |
 | `/etc/nginx/sites-enabled/guoyu` | 80 监听 | 改完 `sudo nginx -t && sudo systemctl reload nginx` |
 | `/etc/systemd/system/platform-api.service` | JVM 参数 / 重启策略 | 一般不用改 |
@@ -136,6 +137,7 @@ ssh ubuntu@<PUBLIC_IP> 'sudo systemctl restart platform-api'
 | 登录 401 | MySQL 没起来 / 密码错;`mysql -u guoyu_app -p` 验证 |
 | 登录后菜单 403 | Redis 没起 / 密码错;`redis-cli -a <pwd> ping` 验证 |
 | 文件上传 500 | `client_max_body_size` 是否 ≥ 50M;COS 凭证是否对;`journalctl -u platform-api` 看堆栈 |
+| 打印版 PDF 生成失败 | `test -r /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc`;检查 `.env` 的 `COLLECTION_PDF_FONT_PATH`;不要使用 CFF `.otf` |
 | 前端白屏 | 浏览器 F12 看 console,大概率是 JS 404;`/data/guoyu/web/` 下 dist 拷齐了吗 |
 | Flyway 报错 | MySQL 版本必须 8.4(脚本装的 8.0 也行,但 Flyway 会 warn 兼容),字符集 utf8mb4 |
 

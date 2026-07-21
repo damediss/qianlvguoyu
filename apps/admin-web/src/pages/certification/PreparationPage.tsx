@@ -2,56 +2,42 @@ import {
   CheckSquareOutlined,
   DatabaseOutlined,
   DownOutlined,
-  FolderOpenOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
   ScheduleOutlined,
   TeamOutlined,
   UpOutlined,
 } from '@ant-design/icons';
-import { Button, Card, Empty, Form, Input, Progress, Select, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import { Button, Card, Empty, Select, Space, Tabs, Tag, Typography } from 'antd';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { pagePreparationTasks } from '../../api/certificationPreparation';
 import { PermissionGate } from '../../directives/permission';
-import type { PreparationTaskOverview, PreparationTaskQuery } from '../../types/certificationPreparation';
+import type { PreparationTaskQuery } from '../../types/certificationPreparation';
 import { AssessorConfig } from './preparation/AssessorConfig';
 import { ChecklistReview } from './preparation/ChecklistReview';
 import { EquipmentConfig } from './preparation/EquipmentConfig';
 import { ExamSiteConfig } from './preparation/ExamSiteConfig';
 import { ExamStaffConfig } from './preparation/ExamStaffConfig';
+import { ExamSessionConfig } from './preparation/ExamSessionConfig';
 import {
   CollectionSubTabKey,
   InformationCollection,
-  isCollectionSubTabKey,
 } from './preparation/InformationCollection';
 import { PreparationWorkbench } from './preparation/PreparationWorkbench';
 import { PracticalScoringConfig } from './preparation/PracticalScoringConfig';
-import { dateText, dateTimeText, statusTag } from './preparation/shared';
 import './PreparationPage.css';
 
-type PreparationTabKey = 'workbench' | 'collection' | 'checklist' | 'equipment' | 'sites' | 'staff' | 'assessors' | 'scoring';
+type PreparationTabKey = 'workbench' | 'collection' | 'sessions' | 'checklist' | 'equipment' | 'sites' | 'staff' | 'assessors' | 'scoring';
 
 export function PreparationPage() {
   const queryClient = useQueryClient();
-  const tabsAnchorRef = useRef<HTMLDivElement | null>(null);
   // 认定筹备模块：固定按任务阶段 = preparation 过滤
-  const [query, setQuery] = useState<PreparationTaskQuery>({ page: 1, pageSize: 10, currentPhase: 'preparation' });
+  const query: PreparationTaskQuery = { page: 1, pageSize: 500, currentPhase: 'preparation' };
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
   const [activeTab, setActiveTab] = useState<PreparationTabKey>('workbench');
   const [collectionSubTab, setCollectionSubTab] = useState<CollectionSubTabKey>('candidates');
-  const [collapsedTaskList, setCollapsedTaskList] = useState(false);
   const [collapsedTabs, setCollapsedTabs] = useState(false);
-
-  const openSection = (key: string) => {
-    if (isCollectionSubTabKey(key)) {
-      setCollectionSubTab(key);
-      setActiveTab('collection');
-      return;
-    }
-    setActiveTab(key as PreparationTabKey);
-  };
 
   const tasksQuery = useQuery({
     queryKey: ['certification-preparation-tasks', query],
@@ -77,6 +63,14 @@ export function PreparationPage() {
     [selectedTaskId, tasks],
   );
 
+  const taskOptions = useMemo(
+    () => tasks.map((task) => ({
+      value: task.id,
+      label: [task.taskNo, task.taskName].filter(Boolean).join(' · '),
+    })),
+    [tasks],
+  );
+
   const refreshAll = () => {
     queryClient.invalidateQueries({ queryKey: ['certification-preparation'] });
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-tasks'] });
@@ -85,71 +79,6 @@ export function PreparationPage() {
       queryClient.invalidateQueries({ queryKey: ['practical-scoring-setup', selectedTaskId] });
     }
   };
-
-  const columns: ColumnsType<PreparationTaskOverview> = [
-    {
-      title: '任务编号',
-      dataIndex: 'taskNo',
-      minWidth: 140,
-      ellipsis: { showTitle: true },
-      fixed: 'left',
-      render: (value: string, record) => (
-        <Tooltip title={value}>
-          <Typography.Link
-            ellipsis
-            style={{ maxWidth: '100%' }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedTaskId(record.id);
-            }}
-          >
-            {value}
-          </Typography.Link>
-        </Tooltip>
-      ),
-    },
-    { title: '任务名称', dataIndex: 'taskName', minWidth: 200, ellipsis: { showTitle: true } },
-    { title: '批次', dataIndex: 'batchName', minWidth: 120, ellipsis: { showTitle: true } },
-    { title: '工种', dataIndex: 'workTypeName', width: 110, render: (value) => value || '-' },
-    { title: '等级', dataIndex: 'levelName', width: 100, render: (value) => value || '-' },
-    { title: '计划开始', dataIndex: 'planStartDate', width: 120, render: dateText },
-    { title: '计划结束', dataIndex: 'planEndDate', width: 120, render: dateText },
-    { title: '学员', dataIndex: 'candidateCount', width: 80 },
-    {
-      title: '资料完成率',
-      dataIndex: 'documentCompletionRate',
-      width: 150,
-      render: (value: number) => <Progress percent={value || 0} size="small" />,
-    },
-    { title: '申报材料', dataIndex: 'materialStatus', width: 110, render: statusTag },
-    { title: '考场', dataIndex: 'examSiteCount', width: 80 },
-    { title: '考务', dataIndex: 'examStaffCount', width: 80 },
-    { title: '考评员', dataIndex: 'assessorCount', width: 90 },
-    { title: '任务状态', dataIndex: 'status', width: 110, render: statusTag },
-    { title: '最近更新', dataIndex: 'lastUpdatedAt', width: 170, render: dateTimeText },
-    {
-      title: '操作',
-      width: 120,
-      fixed: 'right',
-      render: (_, record) => (
-        <Button
-          type="link"
-          size="small"
-          icon={<FolderOpenOutlined />}
-          onClick={() => {
-            setSelectedTaskId(record.id);
-            setCollapsedTabs(false);
-            setActiveTab('workbench');
-            requestAnimationFrame(() => {
-              tabsAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            });
-          }}
-        >
-          工作台
-        </Button>
-      ),
-    },
-  ];
 
   const tabItems = [
     {
@@ -160,14 +89,13 @@ export function PreparationPage() {
         <PreparationWorkbench
           taskId={selectedTaskId}
           task={selectedTask}
-          onOpenSection={openSection}
           onChanged={refreshAll}
         />
       ),
     },
     {
       key: 'collection',
-      label: '信息收集',
+      label: '考生导入',
       icon: <DatabaseOutlined />,
       children: (
         <InformationCollection
@@ -177,6 +105,12 @@ export function PreparationPage() {
           onChanged={refreshAll}
         />
       ),
+    },
+    {
+      key: 'sessions',
+      label: '考试场次',
+      icon: <ScheduleOutlined />,
+      children: <ExamSessionConfig taskId={selectedTaskId} onChanged={refreshAll} />,
     },
     {
       key: 'staff',
@@ -215,6 +149,20 @@ export function PreparationPage() {
       children: <ChecklistReview taskId={selectedTaskId} onChanged={refreshAll} />,
     },
   ];
+  const tabOrder: PreparationTabKey[] = [
+    'workbench',
+    'collection',
+    'sessions',
+    'assessors',
+    'staff',
+    'equipment',
+    'sites',
+    'scoring',
+    'checklist',
+  ];
+  const orderedTabItems = [...tabItems].sort(
+    (a, b) => tabOrder.indexOf(a.key as PreparationTabKey) - tabOrder.indexOf(b.key as PreparationTabKey),
+  );
 
   return (
     <PermissionGate code="certification.preparation.task.view" fallback={<Empty description="暂无认定筹备访问权限" />}>
@@ -242,68 +190,37 @@ export function PreparationPage() {
         </div>
 
         <Card
-          title="任务栏"
-          styles={{
-            body: collapsedTaskList
-              ? { display: 'none', padding: 0 }
-              : { paddingTop: 12 },
-          }}
-          extra={(
-            <Button
-              type="text"
-              icon={collapsedTaskList ? <DownOutlined /> : <UpOutlined />}
-              onClick={() => setCollapsedTaskList((prev) => !prev)}
-            >
-              {collapsedTaskList ? '展开' : '折叠'}
-            </Button>
-          )}
+          className="preparation-task-selector"
+          size="small"
+          title="当前认定任务"
+          extra={<Typography.Text type="secondary">共 {tasksQuery.data?.total || 0} 项</Typography.Text>}
         >
-          {!collapsedTaskList ? (
-            <>
-              <Form
-                layout="inline"
-                style={{ marginBottom: 16 }}
-                initialValues={{}}
-                onFinish={(values) => setQuery({ ...query, ...values, currentPhase: 'preparation', page: 1 })}
-              >
-                <Form.Item name="keyword">
-                  <Input.Search allowClear placeholder="任务编号、名称、工种" style={{ width: 280 }} />
-                </Form.Item>
-                <Form.Item name="status">
-                  <Select
-                    allowClear
-                    placeholder="任务状态"
-                    style={{ width: 140 }}
-                    options={[
-                      { label: '进行中', value: 'in_progress' },
-                      { label: '待审核', value: 'pending_review' },
-                      { label: '已驳回', value: 'rejected' },
-                      { label: '已完成', value: 'completed' },
-                    ]}
-                  />
-                </Form.Item>
-                <Button htmlType="submit">查询</Button>
-              </Form>
-              <Table
-                className="preparation-task-table"
-                style={{ width: '100%' }}
-                rowKey="id"
-                columns={columns}
-                dataSource={tasks}
-                loading={tasksQuery.isFetching}
-                rowClassName={(record) => record.id === selectedTaskId ? 'selected-row' : ''}
-                onRow={(record) => ({ onClick: () => setSelectedTaskId(record.id) })}
-                scroll={{ x: 'max-content' }}
-                pagination={{
-                  current: query.page,
-                  pageSize: query.pageSize,
-                  total: tasksQuery.data?.total || 0,
-                  showSizeChanger: true,
-                  onChange: (page, pageSize) => setQuery({ ...query, page, pageSize }),
-                }}
-              />
-            </>
-          ) : null}
+          <Space wrap size={[12, 8]} style={{ width: '100%' }}>
+            <Typography.Text type="secondary">选择任务</Typography.Text>
+            <Select
+              showSearch
+              allowClear
+              value={selectedTaskId}
+              loading={tasksQuery.isFetching}
+              disabled={!tasksQuery.isFetching && tasks.length === 0}
+              placeholder="请选择认定任务"
+              optionFilterProp="label"
+              options={taskOptions}
+              onChange={(value) => setSelectedTaskId(value || undefined)}
+              style={{ width: 'min(100%, 520px)' }}
+            />
+            {selectedTask && (
+              <Space size={8} wrap>
+                <Tag color="processing">{selectedTask.taskNo}</Tag>
+                <Typography.Text>{selectedTask.taskName}</Typography.Text>
+                <Typography.Text type="secondary">
+                  {[selectedTask.batchName, selectedTask.workTypeName, selectedTask.levelName]
+                    .filter(Boolean)
+                    .join(' / ') || '暂无任务详情'}
+                </Typography.Text>
+              </Space>
+            )}
+          </Space>
         </Card>
 
         <Card
@@ -325,11 +242,10 @@ export function PreparationPage() {
         >
           {!collapsedTabs ? (
             <>
-              <div ref={tabsAnchorRef} />
               <Tabs
                 activeKey={activeTab}
                 onChange={(key) => setActiveTab(key as PreparationTabKey)}
-                items={tabItems}
+                items={orderedTabItems}
               />
             </>
           ) : null}

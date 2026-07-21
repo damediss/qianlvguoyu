@@ -21,6 +21,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -146,8 +147,14 @@ export function CollectionTaskListPage() {
     {
       title: '任务名称',
       dataIndex: 'taskName',
-      width: 220,
+      width: 200,
       fixed: 'left',
+      render: (value: string) => <Typography.Text strong>{value || '-'}</Typography.Text>,
+    },
+    {
+      title: '场次名称',
+      dataIndex: 'sessionName',
+      width: 180,
       render: (value: string) => <Typography.Text strong>{value || '-'}</Typography.Text>,
     },
     {
@@ -164,39 +171,39 @@ export function CollectionTaskListPage() {
     },
     {
       title: '工种/等级',
-      width: 180,
-      render: (_, task) => `${task.workType || '-'} / ${task.level || '-'}`,
+      width: 160,
+      render: (_, task) => task.workTypeLevel || `${task.workType || '-'} / ${task.level || '-'}`,
     },
     {
       title: '认定日期',
       dataIndex: 'examDate',
-      width: 130,
+      width: 120,
       render: (value: string) => value || '-',
     },
     {
       title: '总人数',
       dataIndex: 'candidateTotal',
-      width: 100,
+      width: 72,
       align: 'right',
       render: toNumber,
     },
     {
       title: '已完成',
       dataIndex: 'completedCount',
-      width: 100,
+      width: 72,
       align: 'right',
       render: toNumber,
     },
     {
       title: '待采集',
-      width: 100,
+      width: 72,
       align: 'right',
       render: (_, task) => pendingCount(task),
     },
     {
       title: '异常',
       dataIndex: 'exceptionCount',
-      width: 90,
+      width: 72,
       align: 'right',
       render: (value: number) => {
         const count = toNumber(value);
@@ -205,53 +212,60 @@ export function CollectionTaskListPage() {
     },
     {
       title: '状态',
-      width: 110,
+      width: 92,
       render: (_, task) => statusTag(task),
     },
     {
       title: '操作',
-      width: 180,
+      width: 104,
       fixed: 'right',
       render: (_, task) => (
-        <Space size={8}>
-          <Button
-            type="primary"
-            size="small"
-            icon={<ToolOutlined />}
-            onClick={(event) => {
-              event.stopPropagation();
-              openManagePage(task);
-            }}
-          >
-            采集管理
-          </Button>
-          <Button
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={(event) => {
-              event.stopPropagation();
-              setSelectedTask(task);
-            }}
-          >
-            详情
-          </Button>
+        <Space size={4}>
+          <Tooltip title="采集管理">
+            <Button
+              type="primary"
+              size="small"
+              shape="circle"
+              icon={<ToolOutlined />}
+              aria-label="采集管理"
+              onClick={(event) => {
+                event.stopPropagation();
+                openManagePage(task);
+              }}
+            />
+          </Tooltip>
+          <Tooltip title="详情">
+            <Button
+              size="small"
+              shape="circle"
+              icon={<EyeOutlined />}
+              aria-label="详情"
+              onClick={(event) => {
+                event.stopPropagation();
+                setSelectedTask(task);
+              }}
+            />
+          </Tooltip>
         </Space>
       ),
     },
   ];
 
+  const visibleColumns = columns.filter(
+    (column) => !('dataIndex' in column && ['taskNo', 'projectName'].includes(String(column.dataIndex))),
+  );
   const drawerTask = selectedTask;
 
   return (
-    <PermissionGate code="certification.practical.collection.view" fallback={<Empty description="暂无实操采集访问权限" />}>
+    <PermissionGate code="certification.practical.collection.view" fallback={<Empty description="暂无信息采集访问权限" />}>
       <div className="knowledge-page collection-task-page">
         <div className="page-heading knowledge-heading collection-task-heading">
           <div>
             <div className="page-title-line">
               <div className="page-title-icon"><QrcodeOutlined /></div>
               <div>
-                <Typography.Title level={1}>实操采集</Typography.Title>
-                <Typography.Text type="secondary">查找采集任务、查看概况，并进入 PC 采集管理台</Typography.Text>
+                <Typography.Title level={1}>信息采集</Typography.Title>
+                <Typography.Text type="secondary">按考试场次查看现场信息采集任务，并进入 PC 采集管理台</Typography.Text>
               </div>
             </div>
           </div>
@@ -285,12 +299,12 @@ export function CollectionTaskListPage() {
 
         <Table<CollectionTaskVO>
           className="collection-task-table"
-          rowKey={(task) => String(task.taskId)}
-          columns={columns}
+          rowKey={(task) => String(task.examSessionId || task.taskId)}
+          columns={visibleColumns}
           dataSource={filteredTasks}
           loading={tasksQuery.isFetching}
           pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 个任务` }}
-          scroll={{ x: 1380 }}
+          scroll={{ x: 1200 }}
           locale={{ emptyText: <Empty description="暂无可采集任务" /> }}
           onRow={(task) => ({
             onClick: () => setSelectedTask(task),
@@ -316,10 +330,11 @@ export function CollectionTaskListPage() {
 
               <Descriptions title="任务基础信息" column={1} bordered size="small">
                 <Descriptions.Item label="任务名称">{drawerTask.taskName || '-'}</Descriptions.Item>
+                <Descriptions.Item label="场次名称">{drawerTask.sessionName || '-'}</Descriptions.Item>
                 <Descriptions.Item label="任务编号">{drawerTask.taskNo || '-'}</Descriptions.Item>
                 <Descriptions.Item label="企业">{drawerTask.projectName || '-'}</Descriptions.Item>
                 <Descriptions.Item label="工种/等级">
-                  {drawerTask.workType || '-'} / {drawerTask.level || '-'}
+                  {drawerTask.workTypeLevel || `${drawerTask.workType || '-'} / ${drawerTask.level || '-'}`}
                 </Descriptions.Item>
                 <Descriptions.Item label="认定日期">{drawerTask.examDate || '-'}</Descriptions.Item>
               </Descriptions>

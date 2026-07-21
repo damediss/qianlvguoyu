@@ -17,6 +17,12 @@ import type {
   PreparationCandidateStagingPromoteResult,
   PreparationCandidateStagingQuery,
   PreparationDocumentGeneratePayload,
+  CertificationCandidateExamSession,
+  CertificationCandidateExamSessionPayload,
+  CertificationExamSessionCandidate,
+  CertificationExamSessionCandidateAssignPayload,
+  CertificationExamSession,
+  CertificationExamSessionPayload,
   PreparationChecklist,
   PreparationChecklistUpdatePayload,
   PreparationCompleteCheck,
@@ -67,12 +73,76 @@ export function importPreparationCandidates(taskId: string, payload: Preparation
   return unwrap<PreparationImportBatch>(apiClient.post(`${base}/tasks/${taskId}/candidate-imports`, payload));
 }
 
-export function importPreparationCandidatesExcel(taskId: string, taskScopeId: string, file: File, remark?: string) {
+export function importPreparationCandidatesExcel(
+  taskId: string,
+  taskScopeId: string,
+  file: File,
+  remark?: string,
+  examSessionIds?: string[],
+  defaultParticipation?: string,
+) {
   const formData = new FormData();
   formData.append('taskScopeId', taskScopeId);
   formData.append('file', file);
   if (remark) formData.append('remark', remark);
+  examSessionIds?.forEach((sessionId) => formData.append('examSessionIds', sessionId));
+  if (defaultParticipation) formData.append('defaultParticipation', defaultParticipation);
   return unwrap<PreparationImportBatch>(apiClient.post(`${base}/tasks/${taskId}/candidate-imports/xlsx`, formData));
+}
+
+const examSessionBase = '/certification';
+
+export function listCertificationExamSessions(taskId: string) {
+  return unwrap<CertificationExamSession[]>(apiClient.get(`${examSessionBase}/tasks/${taskId}/exam-sessions`));
+}
+
+export function createCertificationExamSession(taskId: string, payload: CertificationExamSessionPayload) {
+  return unwrap<CertificationExamSession>(apiClient.post(`${examSessionBase}/tasks/${taskId}/exam-sessions`, payload));
+}
+
+export function updateCertificationExamSession(sessionId: string, payload: CertificationExamSessionPayload) {
+  return unwrap<CertificationExamSession>(apiClient.put(`${examSessionBase}/exam-sessions/${sessionId}`, payload));
+}
+
+export function deleteCertificationExamSession(sessionId: string) {
+  return unwrap<void>(apiClient.delete(`${examSessionBase}/exam-sessions/${sessionId}`));
+}
+
+export function listCertificationExamSessionCandidates(sessionId: string) {
+  return unwrap<CertificationExamSessionCandidate[]>(
+    apiClient.get(`${examSessionBase}/exam-sessions/${sessionId}/candidates`),
+  );
+}
+
+export function assignCertificationExamSessionCandidates(
+  sessionId: string,
+  payload: CertificationExamSessionCandidateAssignPayload,
+) {
+  return unwrap<CertificationExamSessionCandidate[]>(
+    apiClient.put(`${examSessionBase}/exam-sessions/${sessionId}/candidates`, payload),
+  );
+}
+
+export function completeCertificationExamSessionCollectionConfig(sessionId: string) {
+  return unwrap<CertificationExamSession>(
+    apiClient.post(`${examSessionBase}/exam-sessions/${sessionId}/collection-config/complete`),
+  );
+}
+
+export function listCandidateExamSessions(candidateId: string) {
+  return unwrap<CertificationCandidateExamSession[]>(
+    apiClient.get(`${examSessionBase}/candidates/${candidateId}/exam-sessions`),
+  );
+}
+
+export function updateCandidateExamSession(
+  candidateId: string,
+  sessionId: string,
+  payload: CertificationCandidateExamSessionPayload,
+) {
+  return unwrap<CertificationCandidateExamSession>(
+    apiClient.put(`${examSessionBase}/candidates/${candidateId}/exam-sessions/${sessionId}`, payload),
+  );
 }
 
 export function downloadPreparationCandidateExcelTemplate() {

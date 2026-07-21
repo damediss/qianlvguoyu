@@ -14,6 +14,7 @@ public class PracticalFingerprintTraceEntity extends BaseEntity {
   private Long taskId;
   private Long candidateId;
   private Long sessionId;
+  private Long examSessionId;
   private String deviceSn;
   private String deviceModel;
   private String deviceVendorId;

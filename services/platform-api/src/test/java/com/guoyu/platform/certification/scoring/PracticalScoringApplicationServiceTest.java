@@ -353,6 +353,65 @@ class PracticalScoringApplicationServiceTest {
   }
 
   @Test
+  void batchLinkCandidatesUsesOnePaperAndGroupForAllEligibleCandidates() {
+    stubCandidateLinkBase(
+        candidate(11L, "张三", 100L, true),
+        candidate(12L, "李四", 100L, true),
+        paper(20, 100),
+        null,
+        members(3));
+    when(scopeMapper.selectList(any())).thenReturn(List.of(scope()));
+    when(configMapper.selectList(any())).thenReturn(List.of());
+    when(assessorTaskMapper.selectList(any())).thenReturn(List.of());
+    AtomicLong ids = new AtomicLong(1000);
+    doAnswer(invocation -> {
+      CertificationPracticalScoringConfigEntity entity = invocation.getArgument(0);
+      entity.setId(ids.incrementAndGet());
+      return 1;
+    }).when(configMapper).insert(any(CertificationPracticalScoringConfigEntity.class));
+
+    PracticalScoringModels.BatchGenerateView result = service.linkCandidates(
+        1L, new PracticalScoringModels.BatchLinkCandidatesReq(List.of(11L, 12L), 20L, 30L));
+
+    assertThat(result.createdTasks()).isEqualTo(6);
+    assertThat(result.configuredCandidates()).isEqualTo(2);
+    assertThat(result.skippedCandidates()).isZero();
+    ArgumentCaptor<CertificationPracticalScoringConfigEntity> captor =
+        ArgumentCaptor.forClass(CertificationPracticalScoringConfigEntity.class);
+    Mockito.verify(configMapper, Mockito.times(2)).insert(captor.capture());
+    assertThat(captor.getAllValues())
+        .extracting(CertificationPracticalScoringConfigEntity::getPaperId)
+        .containsOnly(20L);
+    assertThat(captor.getAllValues())
+        .extracting(CertificationPracticalScoringConfigEntity::getGroupId)
+        .containsOnly(30L);
+  }
+
+  @Test
+  void batchLinkCandidatesSkipsAlreadyConfiguredCandidates() {
+    stubCandidateLinkBase(
+        candidate(11L, "张三", 100L, true),
+        candidate(12L, "李四", 100L, true),
+        paper(20, 100),
+        null,
+        members(3));
+    when(scopeMapper.selectList(any())).thenReturn(List.of(scope()));
+    CertificationPracticalScoringConfigEntity existingConfig = new CertificationPracticalScoringConfigEntity();
+    existingConfig.setTaskId(1L);
+    existingConfig.setCandidateId(11L);
+    when(configMapper.selectList(any())).thenReturn(List.of(existingConfig));
+    when(assessorTaskMapper.selectList(any())).thenReturn(List.of());
+
+    PracticalScoringModels.BatchGenerateView result = service.linkCandidates(
+        1L, new PracticalScoringModels.BatchLinkCandidatesReq(List.of(11L, 12L), 20L, 30L));
+
+    assertThat(result.configuredCandidates()).isEqualTo(1);
+    assertThat(result.skippedCandidates()).isEqualTo(1);
+    Mockito.verify(candidateMapper, Mockito.never()).selectById(11L);
+    Mockito.verify(candidateMapper).selectById(12L);
+  }
+
+  @Test
   void linkCandidateAllowsCustomPaperWithoutStandardWorkType() {
     stubCandidateLinkBase(
         candidate(11L, "张三", null, true),

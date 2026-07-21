@@ -6,6 +6,7 @@ import type {
   AssessorScoringTask,
   AssessorScoringTaskDetail,
   PracticalAdjustScorePayload,
+  PracticalBatchGenerateResult,
   PracticalGenerateResult,
   PracticalImportPaperResult,
   PracticalSaveScorePayload,
@@ -51,6 +52,15 @@ export function linkPracticalCandidateTemplate(
 ) {
   return unwrap<PracticalGenerateResult>(
     apiClient.post(`${adminBase}/tasks/${taskId}/candidates/${candidateId}/link`, payload),
+  );
+}
+
+export function batchLinkPracticalCandidateTemplates(
+  taskId: string,
+  payload: { candidateIds: string[]; paperId: string; groupId: string },
+) {
+  return unwrap<PracticalBatchGenerateResult>(
+    apiClient.post(`${adminBase}/tasks/${taskId}/candidates/batch-link`, payload),
   );
 }
 

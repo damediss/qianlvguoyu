@@ -52,6 +52,8 @@ import com.guoyu.platform.certification.collection.vo.ScanMatchResultVO;
 import com.guoyu.platform.certification.collection.vo.SignatureRecordVO;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
+import com.guoyu.platform.certification.entity.CertificationCandidateExamSessionEntity;
+import com.guoyu.platform.certification.entity.CertificationExamSessionEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskExamSiteEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskScopeEntity;
@@ -61,6 +63,8 @@ import com.guoyu.platform.certification.entity.PracticalCollectionStatusEntity;
 import com.guoyu.platform.certification.entity.PracticalFingerprintTraceEntity;
 import com.guoyu.platform.certification.entity.PracticalSignatureRecordEntity;
 import com.guoyu.platform.certification.mapper.CertificationCandidateMapper;
+import com.guoyu.platform.certification.mapper.CertificationCandidateExamSessionMapper;
+import com.guoyu.platform.certification.mapper.CertificationExamSessionMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateDocumentMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskExamSiteMapper;
@@ -98,6 +102,7 @@ import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -128,6 +133,7 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.slf4j.MDC;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -152,6 +158,7 @@ public class PracticalCollectionApplicationService {
   private static final int COLLECTION_BLOCK_ROW_STEP = 7;
   private static final int COLLECTION_BLOCK_COUNT = 3;
   private static final int COLLECTION_CANDIDATES_PER_PAGE = COLLECTION_BLOCK_COUNT * 3;
+  private static final String LEGACY_COLLECTION_SESSION_NAME = "历史实操考试";
   /**
    * Excel 单元格屏幕像素约为 96DPI；按 4x 生成嵌入图，打印/缩放后笔画不易发虚断点。
    */
@@ -161,6 +168,8 @@ public class PracticalCollectionApplicationService {
 
   private final CertificationTaskMapper taskMapper;
   private final CertificationCandidateMapper candidateMapper;
+  private final CertificationExamSessionMapper examSessionMapper;
+  private final CertificationCandidateExamSessionMapper candidateExamSessionMapper;
   private final CertificationCandidateDocumentMapper candidateDocumentMapper;
   private final CertificationTaskExamSiteMapper taskExamSiteMapper;
   private final CertificationTaskScopeMapper taskScopeMapper;
@@ -182,9 +191,12 @@ public class PracticalCollectionApplicationService {
    */
   private final String scanUrlTemplate;
 
+  @Autowired
   public PracticalCollectionApplicationService(
       CertificationTaskMapper taskMapper,
       CertificationCandidateMapper candidateMapper,
+      CertificationExamSessionMapper examSessionMapper,
+      CertificationCandidateExamSessionMapper candidateExamSessionMapper,
       CertificationCandidateDocumentMapper candidateDocumentMapper,
       CertificationTaskExamSiteMapper taskExamSiteMapper,
       CertificationTaskScopeMapper taskScopeMapper,
@@ -201,6 +213,8 @@ public class PracticalCollectionApplicationService {
   ) {
     this.taskMapper = taskMapper;
     this.candidateMapper = candidateMapper;
+    this.examSessionMapper = examSessionMapper;
+    this.candidateExamSessionMapper = candidateExamSessionMapper;
     this.candidateDocumentMapper = candidateDocumentMapper;
     this.taskExamSiteMapper = taskExamSiteMapper;
     this.taskScopeMapper = taskScopeMapper;
@@ -216,12 +230,84 @@ public class PracticalCollectionApplicationService {
     this.scanUrlTemplate = scanUrlTemplate == null ? "" : scanUrlTemplate.trim();
   }
 
+  /** Backward-compatible constructor for template/export-only callers that do not use session-based tasks. */
+  public PracticalCollectionApplicationService(
+      CertificationTaskMapper taskMapper,
+      CertificationCandidateMapper candidateMapper,
+      CertificationCandidateDocumentMapper candidateDocumentMapper,
+      CertificationTaskExamSiteMapper taskExamSiteMapper,
+      CertificationTaskScopeMapper taskScopeMapper,
+      PracticalCollectionStatusMapper statusMapper,
+      PracticalCollectionQueueMapper queueMapper,
+      PracticalFingerprintTraceMapper fingerprintTraceMapper,
+      PracticalSignatureRecordMapper signatureRecordMapper,
+      PracticalCollectionExceptionMapper exceptionMapper,
+      FileApplicationService fileApplicationService,
+      PracticalCollectionDomainService domainService,
+      PracticalCollectionEligibilityService eligibilityService,
+      PracticalCollectionConverter converter,
+      String scanUrlTemplate
+  ) {
+    this(taskMapper, candidateMapper, null, null, candidateDocumentMapper, taskExamSiteMapper, taskScopeMapper,
+        statusMapper, queueMapper, fingerprintTraceMapper, signatureRecordMapper, exceptionMapper,
+        fileApplicationService, domainService, eligibilityService, converter, scanUrlTemplate);
+  }
+
   public PageResponse<CollectionTaskVO> pageTasks(CollectionTaskQueryRequest request) {
     Long tenantId = current().getTenantId();
+    List<CertificationExamSessionEntity> configuredSessions = examSessionMapper.selectList(
+        new LambdaQueryWrapper<CertificationExamSessionEntity>()
+            .eq(CertificationExamSessionEntity::getTenantId, tenantId)
+            .in(CertificationExamSessionEntity::getStatus, List.of("CONFIGURED", "IN_PROGRESS", "ENDED"))
+            .eq(CertificationExamSessionEntity::getDeleted, 0)
+            .orderByAsc(CertificationExamSessionEntity::getExamDate)
+            .orderByAsc(CertificationExamSessionEntity::getStartTime));
+    List<CertificationExamSessionEntity> safeSessions = configuredSessions == null
+        ? List.of() : configuredSessions;
+    List<CollectionTaskVO> taskRows = new ArrayList<>();
+    Set<Long> sessionTaskIds = safeSessions.stream()
+        .map(CertificationExamSessionEntity::getTaskId)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
+    taskRows.addAll(safeSessions.stream()
+        .map(session -> {
+          CertificationTaskEntity task = taskMapper.selectById(session.getTaskId());
+          if (task == null || (StringUtils.hasText(request.getStatus())
+              && !Objects.equals(request.getStatus(), task.getStatus()))) {
+            return null;
+          }
+          String keyword = request.getKeyword();
+          if (StringUtils.hasText(keyword)
+              && !containsIgnoreCase(task.getTaskName(), keyword)
+              && !containsIgnoreCase(task.getTaskNo(), keyword)
+              && !containsIgnoreCase(task.getCompanyName(), keyword)
+              && !containsIgnoreCase(session.getSessionName(), keyword)) {
+            return null;
+          }
+          return converter.toTaskVO(task, statsForSession(tenantId, session),
+              scopesForTask(tenantId, task.getId()), session.getId(), session.getSessionName(), session.getExamType());
+        })
+        .filter(Objects::nonNull)
+        .toList());
+
+    // 兼容旧认定任务：历史任务没有考试场次关系，统一以固定场次名称展示，
+    // 并与新场次任务合并返回，避免新增场次后旧任务被整体隐藏。
+    taskRows.addAll(listLegacyTaskRows(tenantId, request, sessionTaskIds));
+    return paginateTaskRows(taskRows, request);
+  }
+
+  private List<CollectionTaskVO> listLegacyTaskRows(
+      Long tenantId,
+      CollectionTaskQueryRequest request,
+      Set<Long> sessionTaskIds
+  ) {
+    String keyword = request.getKeyword();
+    boolean matchesLegacySessionName = StringUtils.hasText(keyword)
+        && containsIgnoreCase(LEGACY_COLLECTION_SESSION_NAME, keyword);
     LambdaQueryWrapper<CertificationTaskEntity> wrapper = new LambdaQueryWrapper<CertificationTaskEntity>()
         .eq(CertificationTaskEntity::getTenantId, tenantId)
         .eq(CertificationTaskEntity::getDeleted, 0)
-        .and(StringUtils.hasText(request.getKeyword()), nested -> nested
+        .and(StringUtils.hasText(keyword) && !matchesLegacySessionName, nested -> nested
             .like(CertificationTaskEntity::getTaskName, request.getKeyword())
             .or()
             .like(CertificationTaskEntity::getTaskNo, request.getKeyword())
@@ -230,15 +316,72 @@ public class PracticalCollectionApplicationService {
         .eq(StringUtils.hasText(request.getStatus()), CertificationTaskEntity::getStatus, request.getStatus())
         .orderByDesc(CertificationTaskEntity::getExamDate)
         .orderByDesc(CertificationTaskEntity::getCreatedAt);
+    if (!sessionTaskIds.isEmpty()) {
+      wrapper.notIn(CertificationTaskEntity::getId, sessionTaskIds);
+    }
     applyCandidateTaskFilter(wrapper, request);
-    Page<CertificationTaskEntity> page = taskMapper.selectPage(
-        new Page<>(request.getPage(), request.getPageSize()),
-        wrapper
-    );
-    List<CollectionTaskVO> items = page.getRecords().stream()
-        .map(task -> converter.toTaskVO(task, statsForTask(tenantId, task.getId())))
+    List<CertificationTaskEntity> legacyTasks = taskMapper.selectList(wrapper);
+    return legacyTasks.stream()
+        .map(task -> converter.toTaskVO(task, statsForTask(tenantId, task.getId()),
+            scopesForTask(tenantId, task.getId()), null, LEGACY_COLLECTION_SESSION_NAME, "PRACTICE"))
         .toList();
-    return new PageResponse<>(items, page.getCurrent(), page.getSize(), page.getTotal());
+  }
+
+  private PageResponse<CollectionTaskVO> paginateTaskRows(
+      List<CollectionTaskVO> taskRows,
+      CollectionTaskQueryRequest request
+  ) {
+    long page = request.getPage();
+    long pageSize = request.getPageSize();
+    int from = (int) Math.min(Math.max(page - 1, 0) * pageSize, taskRows.size());
+    int to = (int) Math.min(from + pageSize, taskRows.size());
+    return new PageResponse<>(taskRows.subList(from, to), page, pageSize, taskRows.size());
+  }
+
+  private boolean containsIgnoreCase(String value, String keyword) {
+    return value != null && keyword != null && value.toLowerCase(Locale.ROOT).contains(keyword.toLowerCase(Locale.ROOT));
+  }
+
+  private CollectionStatsVO statsForSession(Long tenantId, CertificationExamSessionEntity session) {
+    List<CertificationCandidateExamSessionEntity> relations = candidateExamSessionMapper.selectBySession(
+        tenantId, session.getTaskId(), session.getId());
+    List<Long> candidateIds = (relations == null ? List.<CertificationCandidateExamSessionEntity>of() : relations).stream()
+        .filter(relation -> "ASSIGNED".equalsIgnoreCase(relation.getParticipationStatus()))
+        .map(CertificationCandidateExamSessionEntity::getCandidateId)
+        .toList();
+    List<PracticalCollectionStatusEntity> statuses = statusMapper.selectList(
+        new LambdaQueryWrapper<PracticalCollectionStatusEntity>()
+            .eq(PracticalCollectionStatusEntity::getTenantId, tenantId)
+            .eq(PracticalCollectionStatusEntity::getTaskId, session.getTaskId())
+            .eq(PracticalCollectionStatusEntity::getExamSessionId, session.getId())
+            .eq(PracticalCollectionStatusEntity::getDeleted, 0));
+    if (statuses == null) {
+      statuses = List.of();
+    }
+    int qrIssued = countStatuses(statuses, PracticalCollectionStatusEntity::getQrIssueStatus, QrIssueStatusEnum.ISSUED.getCode());
+    int arrived = (int) statuses.stream().filter(status -> status.getArrivedAt() != null).count();
+    int queued = countStatuses(statuses, PracticalCollectionStatusEntity::getQueueStatus, CollectionQueueStatusEnum.QUEUED.getCode());
+    int collecting = countStatuses(statuses, PracticalCollectionStatusEntity::getOverallStatus, CollectionOverallStatusEnum.COLLECTING.getCode());
+    int completed = countStatuses(statuses, PracticalCollectionStatusEntity::getOverallStatus, CollectionOverallStatusEnum.COMPLETED.getCode());
+    int pendingRetry = countStatuses(statuses, PracticalCollectionStatusEntity::getOverallStatus, CollectionOverallStatusEnum.PENDING_RETRY.getCode());
+    int infoError = countStatuses(statuses, PracticalCollectionStatusEntity::getOverallStatus, CollectionOverallStatusEnum.INFO_ERROR.getCode());
+    int exceptionReleased = countStatuses(statuses, PracticalCollectionStatusEntity::getOverallStatus, CollectionOverallStatusEnum.EXCEPTION_RELEASED.getCode());
+    return new CollectionStatsVO(candidateIds.size(), qrIssued, arrived, queued, collecting, completed,
+        pendingRetry, infoError, exceptionReleased, infoError + exceptionReleased);
+  }
+
+  private List<CertificationTaskScopeEntity> scopesForTask(Long tenantId, Long taskId) {
+    if (tenantId == null || taskId == null) {
+      return List.of();
+    }
+    List<CertificationTaskScopeEntity> scopes = taskScopeMapper.selectList(
+        new LambdaQueryWrapper<CertificationTaskScopeEntity>()
+            .eq(CertificationTaskScopeEntity::getTenantId, tenantId)
+            .eq(CertificationTaskScopeEntity::getTaskId, taskId)
+            .eq(CertificationTaskScopeEntity::getDeleted, 0)
+            .orderByAsc(CertificationTaskScopeEntity::getSortOrder)
+            .orderByAsc(CertificationTaskScopeEntity::getId));
+    return scopes == null ? List.of() : scopes;
   }
 
   @Transactional
@@ -247,6 +390,7 @@ public class PracticalCollectionApplicationService {
     initializeCollectionStatus(taskId);
     CertificationTaskEntity task = requireTask(tenantId, taskId);
     CollectionStatsVO stats = statsForTask(tenantId, taskId);
+    List<CertificationTaskScopeEntity> scopes = scopesForTask(tenantId, taskId);
     List<CertificationCandidateEntity> candidates = candidateMapper.selectList(
         new LambdaQueryWrapper<CertificationCandidateEntity>()
             .eq(CertificationCandidateEntity::getTenantId, tenantId)
@@ -294,7 +438,7 @@ public class PracticalCollectionApplicationService {
         .map(queue -> collectionDetail(taskId, queue.getCandidateId()))
         .orElse(null);
     return new CollectionWorkbenchVO(
-        converter.toTaskVO(task, stats),
+        converter.toTaskVO(task, stats, scopes),
         stats,
         candidateItems,
         queueItems,
@@ -1503,6 +1647,9 @@ public class PracticalCollectionApplicationService {
     CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
     eligibilityService.requireEligible(user.getTenantId(), request.taskId(), request.candidateId());
     PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
+    if (request.examSessionId() != null) {
+      status.setExamSessionId(request.examSessionId());
+    }
     domainService.assertCanSubmitFingerprint(status.getOverallStatus());
     FingerprintCollectStatusEnum collectStatus = FingerprintCollectStatusEnum.fromCode(request.collectStatus());
     if (collectStatus == null) {
@@ -1537,6 +1684,7 @@ public class PracticalCollectionApplicationService {
     trace.setTaskId(request.taskId());
     trace.setCandidateId(request.candidateId());
     trace.setSessionId(request.sessionId());
+    trace.setExamSessionId(request.examSessionId());
     trace.setDeviceSn(request.deviceSn());
     trace.setDeviceModel(request.deviceModel());
     trace.setDeviceVendorId(request.deviceVendorId());
@@ -1581,6 +1729,9 @@ public class PracticalCollectionApplicationService {
     CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
     eligibilityService.requireEligible(user.getTenantId(), request.taskId(), request.candidateId());
     PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
+    if (request.examSessionId() != null) {
+      status.setExamSessionId(request.examSessionId());
+    }
     domainService.assertCanSubmitSignature(status.getOverallStatus());
     FileEntity file = fileApplicationService.getExistingFile(user.getTenantId(), request.signatureFileId());
     if (StringUtils.hasText(file.getSha256())
@@ -1593,6 +1744,7 @@ public class PracticalCollectionApplicationService {
     record.setTaskId(request.taskId());
     record.setCandidateId(request.candidateId());
     record.setSessionId(request.sessionId());
+    record.setExamSessionId(request.examSessionId());
     record.setSignatureFileId(request.signatureFileId());
     record.setSignatureHash(request.signatureHash());
     record.setSignerType(request.signerType());
@@ -1614,6 +1766,9 @@ public class PracticalCollectionApplicationService {
     PlatformUserPrincipal user = current();
     CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
     PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
+    if (request.examSessionId() != null) {
+      status.setExamSessionId(request.examSessionId());
+    }
     if (CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
       return converter.toActionResultVO(status, activeQueueItem(user.getTenantId(), candidate, status), "采集已完成");
     }

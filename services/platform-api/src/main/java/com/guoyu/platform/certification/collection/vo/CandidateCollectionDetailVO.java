@@ -8,6 +8,7 @@ public record CandidateCollectionDetailVO(
     Long candidateId,
     Long taskId,
     Long sessionId,
+    Long examSessionId,
     String name,
     String idCardLast4,
     String maskedIdCardNo,

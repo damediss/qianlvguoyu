@@ -13,6 +13,7 @@ public class PracticalSignatureRecordEntity extends BaseEntity {
   private Long taskId;
   private Long candidateId;
   private Long sessionId;
+  private Long examSessionId;
   private Long signatureFileId;
   private String signatureHash;
   private String signerType;

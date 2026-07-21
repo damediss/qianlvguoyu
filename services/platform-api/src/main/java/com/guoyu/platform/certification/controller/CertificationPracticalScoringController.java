@@ -98,6 +98,16 @@ public class CertificationPracticalScoringController {
     return ApiResponse.ok(service.linkCandidate(taskId, candidateId, req));
   }
 
+  @PostMapping("/practical-scoring/tasks/{taskId}/candidates/batch-link")
+  @PreAuthorize("hasAuthority('certification.practical.generate')")
+  @AuditLog(module = "certification", action = "practical-scoring:candidate-batch-link", targetType = "certification_assessor_task")
+  public ApiResponse<PracticalScoringModels.BatchGenerateView> linkCandidates(
+      @PathVariable Long taskId,
+      @Valid @RequestBody PracticalScoringModels.BatchLinkCandidatesReq req
+  ) {
+    return ApiResponse.ok(service.linkCandidates(taskId, req));
+  }
+
   @DeleteMapping("/practical-scoring/tasks/{taskId}/candidates/{candidateId}/generated-tasks")
   @PreAuthorize("hasAuthority('certification.practical.generate')")
   @AuditLog(module = "certification", action = "practical-scoring:candidate-cancel", targetType = "certification_assessor_task")

@@ -8,6 +8,7 @@ import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateImportBatchEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateImportErrorEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateSourceStagingEntity;
+import com.guoyu.platform.certification.entity.CertificationExamSessionEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskScopeEntity;
 import com.guoyu.platform.certification.mapper.CertificationCandidateImportBatchMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateImportErrorMapper;
@@ -51,6 +52,7 @@ import lombok.extern.slf4j.Slf4j;
 public class CertificationCandidateCsvImportService {
 
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+  private static final String PARTICIPATION_HEADER = "\u53c2\u52a0\u73af\u8282";
 
   private static final List<String> HEADERS = List.of(
       "序号", "姓名", "身份证号", "准考证号", "身份证地址", "性别", "手机号码", "文化程度（最低为初中）",
@@ -64,6 +66,7 @@ public class CertificationCandidateCsvImportService {
   private final CertificationCandidateMapper candidateMapper;
   private final CertificationCandidateSourceStagingMapper stagingMapper;
   private final CertificationPreparationApplicationService preparationService;
+  private final CertificationExamSessionApplicationService examSessionService;
   private final FileApplicationService fileApplicationService;
   private final TransactionTemplate transactionTemplate;
 
@@ -74,6 +77,7 @@ public class CertificationCandidateCsvImportService {
       CertificationCandidateMapper candidateMapper,
       CertificationCandidateSourceStagingMapper stagingMapper,
       CertificationPreparationApplicationService preparationService,
+      CertificationExamSessionApplicationService examSessionService,
       FileApplicationService fileApplicationService,
       PlatformTransactionManager transactionManager
   ) {
@@ -83,6 +87,7 @@ public class CertificationCandidateCsvImportService {
     this.candidateMapper = candidateMapper;
     this.stagingMapper = stagingMapper;
     this.preparationService = preparationService;
+    this.examSessionService = examSessionService;
     this.fileApplicationService = fileApplicationService;
     this.transactionTemplate = new TransactionTemplate(transactionManager);
   }
@@ -110,6 +115,17 @@ public class CertificationCandidateCsvImportService {
   }
 
   public PreparationImportBatchVO importExcel(Long taskId, Long taskScopeId, MultipartFile file, String remark) {
+    return importExcel(taskId, taskScopeId, file, remark, null, null);
+  }
+
+  public PreparationImportBatchVO importExcel(
+      Long taskId,
+      Long taskScopeId,
+      MultipartFile file,
+      String remark,
+      List<Long> examSessionIds,
+      String defaultParticipation
+  ) {
     if (file == null || file.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择 XLSX 文件");
     }
@@ -117,6 +133,7 @@ public class CertificationCandidateCsvImportService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持 XLSX 格式的考生导入文件");
     }
     CertificationTaskScopeEntity scope = requireScope(taskId, taskScopeId);
+    examSessionService.validateSessionIds(taskId, examSessionIds);
     List<SpreadsheetRow> rows = readRows(file);
     FileVO sourceFile = fileApplicationService.upload(file, "private");
 
@@ -140,7 +157,8 @@ public class CertificationCandidateCsvImportService {
     int failed = 0;
     for (SpreadsheetRow row : rows) {
       try {
-        transactionTemplate.executeWithoutResult(status -> importRow(taskId, scope, batch.getId(), row, remark));
+        transactionTemplate.executeWithoutResult(status -> importRow(
+            taskId, scope, batch.getId(), row, remark, examSessionIds, defaultParticipation));
         success++;
       } catch (BusinessException ex) {
         failed++;
@@ -168,14 +186,52 @@ public class CertificationCandidateCsvImportService {
       CertificationTaskScopeEntity scope,
       Long batchId,
       SpreadsheetRow row,
-      String remark
+      String remark,
+      List<Long> examSessionIds,
+      String defaultParticipation
   ) {
+    String idCardNo = nullableValue(row, "身份证号");
+    String admissionTicketNo = nullableValue(row, "准考证号");
+    if (!StringUtils.hasText(idCardNo) && !StringUtils.hasText(admissionTicketNo)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "准考证号或身份证号至少填写一个");
+    }
     PreparationCandidateSaveReq candidateReq = new PreparationCandidateSaveReq(
-        required(row, "姓名"), required(row, "身份证号"), value(row, "手机号码"),
-        scope.getLevelCode(), scope.getLevelName(), "other_xlsx", value(row, "所在单位"), remark, scope.getId(), value(row, "准考证号"));
+        nullableValue(row, "姓名"), idCardNo, nullableValue(row, "手机号码"),
+        scope.getLevelCode(), scope.getLevelName(), "other_xlsx", nullableValue(row, "所在单位"), remark,
+        scope.getId(), admissionTicketNo);
     CertificationCandidateEntity candidate = createOrResumeCandidate(taskId, batchId, candidateReq);
+    ParticipationSelection selection = resolveParticipation(row, defaultParticipation, examSessionIds, taskId);
+    examSessionService.assignCandidateSessions(
+        taskId, candidate.getId(), selection.sessionIds(), selection.status(), selection.exemptReason());
     saveSnapshot(taskId, scope, batchId, candidate, row, remark);
   }
+
+  private ParticipationSelection resolveParticipation(
+      SpreadsheetRow row, String defaultParticipation, List<Long> sessionIds, Long taskId
+  ) {
+    List<CertificationExamSessionEntity> sessions = examSessionService.validateSessionIds(taskId, sessionIds);
+    String value = value(row, PARTICIPATION_HEADER);
+    if (!StringUtils.hasText(value)) {
+      return new ParticipationSelection(sessionIds, defaultParticipation, null);
+    }
+    String normalized = value.toUpperCase(java.util.Locale.ROOT).replace(" ", "");
+    if ("THEORY".equals(normalized) || "\u7406\u8bba".equals(value)) {
+      return new ParticipationSelection(sessions.stream().filter(s -> "THEORY".equals(s.getExamType())).map(CertificationExamSessionEntity::getId).toList(), "ASSIGNED", null);
+    }
+    if ("PRACTICE".equals(normalized) || "\u5b9e\u64cd".equals(value)) {
+      return new ParticipationSelection(sessions.stream().filter(s -> "PRACTICE".equals(s.getExamType())).map(CertificationExamSessionEntity::getId).toList(), "ASSIGNED", null);
+    }
+    if ("THEORY+PRACTICE".equals(normalized) || "\u7406\u8bba+\u5b9e\u64cd".equals(value)
+        || "\u7406\u8bba\u002b\u5b9e\u64cd".equals(value)) {
+      return new ParticipationSelection(sessionIds, "ASSIGNED", null);
+    }
+    if ("EXEMPT".equals(normalized) || "\u514d\u8003".equals(value)) {
+      return new ParticipationSelection(sessionIds, "EXEMPT", "Excel \u53c2\u52a0\u73af\u8282\u6807\u8bb0\u4e3a\u514d\u8003");
+    }
+    throw new BusinessException(ErrorCode.BAD_REQUEST, "参加环节必须为理论、实操、理论+实操或免考");
+  }
+
+  private record ParticipationSelection(List<Long> sessionIds, String status, String exemptReason) {}
 
   /**
    * A former import could create the candidate before its source snapshot failed. Re-importing
@@ -209,14 +265,20 @@ public class CertificationCandidateCsvImportService {
       }
       DataFormatter formatter = new DataFormatter();
       Row headerRow = sheet.getRow(sheet.getFirstRowNum());
-      if (headerRow == null || headerRow.getLastCellNum() != HEADERS.size()) {
+      int headerSize = headerRow == null ? 0 : headerRow.getLastCellNum();
+      boolean hasParticipationColumn = headerSize == HEADERS.size() + 1;
+      if (headerRow == null || (headerSize != HEADERS.size() && !hasParticipationColumn)) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "XLSX 表头必须与考生信息导入模板完全一致");
       }
       List<String> header = new ArrayList<>();
-      for (int column = 0; column < HEADERS.size(); column++) {
+      for (int column = 0; column < headerSize; column++) {
         header.add(cellValue(headerRow, column, formatter));
       }
-      if (!HEADERS.equals(header)) {
+      List<String> expectedHeaders = new ArrayList<>(HEADERS);
+      if (hasParticipationColumn) {
+        expectedHeaders.add(PARTICIPATION_HEADER);
+      }
+      if (!expectedHeaders.equals(header)) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "XLSX 表头必须与考生信息导入模板完全一致");
       }
       List<SpreadsheetRow> rows = new ArrayList<>();
@@ -227,15 +289,15 @@ public class CertificationCandidateCsvImportService {
         }
         Map<String, String> values = new LinkedHashMap<>();
         boolean hasValue = false;
-        for (int column = 0; column < HEADERS.size(); column++) {
+        for (int column = 0; column < headerSize; column++) {
           String value = cellValue(row, column, formatter);
-          values.put(HEADERS.get(column), value);
+          values.put(expectedHeaders.get(column), value);
           hasValue |= StringUtils.hasText(value);
         }
         if (!hasValue) {
           continue;
         }
-        if (row.getLastCellNum() > HEADERS.size()) {
+        if (row.getLastCellNum() > headerSize) {
           throw new BusinessException(ErrorCode.BAD_REQUEST, "第 " + (rowIndex + 1) + " 行列数与模板不一致");
         }
         rows.add(new SpreadsheetRow(rowIndex + 1, values));
@@ -316,16 +378,13 @@ public class CertificationCandidateCsvImportService {
     throw new BusinessException(ErrorCode.BAD_REQUEST, field + "日期格式不正确");
   }
 
-  private String required(SpreadsheetRow row, String field) {
-    String value = value(row, field);
-    if (!StringUtils.hasText(value)) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, field + "不能为空");
-    }
-    return value;
-  }
-
   private String value(SpreadsheetRow row, String field) {
     return row.values().getOrDefault(field, "").trim();
+  }
+
+  private String nullableValue(SpreadsheetRow row, String field) {
+    String value = value(row, field);
+    return StringUtils.hasText(value) ? value : null;
   }
 
   private String toJson(Map<String, String> values) {

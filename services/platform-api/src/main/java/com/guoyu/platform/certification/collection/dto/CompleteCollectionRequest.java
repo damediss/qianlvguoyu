@@ -7,6 +7,7 @@ public record CompleteCollectionRequest(
     @NotNull Long taskId,
     @NotNull Long candidateId,
     Long sessionId,
+    Long examSessionId,
     @Size(max = 500) String remark
 ) {
 }

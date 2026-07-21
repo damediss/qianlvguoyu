@@ -44,6 +44,13 @@ public final class PracticalScoringModels {
   ) {
   }
 
+  public record BatchLinkCandidatesReq(
+      @NotEmpty List<@NotNull Long> candidateIds,
+      @NotNull Long paperId,
+      @NotNull Long groupId
+  ) {
+  }
+
   public record SaveScoreItemReq(
       Long scoreItemId,
       @NotNull @Min(1) Integer itemNo,
@@ -136,6 +143,15 @@ public final class PracticalScoringModels {
   }
 
   public record GenerateView(int createdTasks, int existingTasks, int candidates, int questions) {
+  }
+
+  public record BatchGenerateView(
+      int createdTasks,
+      int existingTasks,
+      int configuredCandidates,
+      int skippedCandidates,
+      int questions
+  ) {
   }
 
   public record ImportPaperView(

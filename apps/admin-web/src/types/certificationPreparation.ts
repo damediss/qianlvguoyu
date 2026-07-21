@@ -83,6 +83,78 @@ export interface PreparationCandidateImportPayload {
   candidates?: PreparationCandidatePayload[];
   trainingPeopleIds?: number[];
   taskScopeId?: string;
+  examSessionIds?: string[];
+  defaultParticipation?: 'ASSIGNED' | 'EXEMPT' | 'CANCELLED';
+  remark?: string;
+}
+
+export type CertificationExamType = 'THEORY' | 'PRACTICE';
+export type CertificationExamSessionStatus = 'DRAFT' | 'CONFIGURED' | 'IN_PROGRESS' | 'ENDED';
+export type CandidateParticipationStatus = 'ASSIGNED' | 'EXEMPT' | 'CANCELLED';
+
+export interface CertificationExamSession {
+  id: string;
+  taskId: string;
+  taskScopeId?: string;
+  examType: CertificationExamType;
+  sessionName: string;
+  examDate?: string;
+  startTime?: string;
+  endTime?: string;
+  examSiteId?: string;
+  status: CertificationExamSessionStatus;
+  identityCheckRequired: boolean;
+  fingerprintRequired: boolean;
+  signatureRequired: boolean;
+  remark?: string;
+}
+
+export interface CertificationExamSessionCandidate {
+  candidateId: string;
+  candidateName: string;
+  idCardNo?: string;
+  admissionTicketNo?: string;
+  participationStatus: CandidateParticipationStatus;
+  collectionStatus: string;
+}
+
+export interface CertificationExamSessionCandidateAssignPayload {
+  candidateIds: string[];
+}
+
+export interface CertificationExamSessionPayload {
+  taskScopeId?: string;
+  examType: CertificationExamType;
+  sessionName: string;
+  examDate?: string;
+  startTime?: string;
+  endTime?: string;
+  examSiteId?: string;
+  status?: CertificationExamSessionStatus;
+  identityCheckRequired: boolean;
+  fingerprintRequired: boolean;
+  signatureRequired: boolean;
+  remark?: string;
+}
+
+export interface CertificationCandidateExamSession {
+  id: string;
+  candidateId: string;
+  examSessionId: string;
+  examType: CertificationExamType;
+  sessionName: string;
+  participationStatus: CandidateParticipationStatus;
+  collectionStatus: string;
+  collectionSourceSessionId?: string;
+  exemptReason?: string;
+  remark?: string;
+}
+
+export interface CertificationCandidateExamSessionPayload {
+  participationStatus: CandidateParticipationStatus;
+  collectionStatus?: string;
+  collectionSourceSessionId?: string;
+  exemptReason?: string;
   remark?: string;
 }
 

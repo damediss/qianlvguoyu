@@ -63,6 +63,7 @@ class CertificationCandidateCsvImportServiceTest {
         Mockito.mock(CertificationCandidateMapper.class),
         Mockito.mock(CertificationCandidateSourceStagingMapper.class),
         Mockito.mock(CertificationPreparationApplicationService.class),
+        Mockito.mock(CertificationExamSessionApplicationService.class),
         Mockito.mock(FileApplicationService.class), transactionManager());
 
     try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(service.templateBytes()))) {
@@ -85,7 +86,8 @@ class CertificationCandidateCsvImportServiceTest {
     CertificationPreparationApplicationService preparationService = Mockito.mock(CertificationPreparationApplicationService.class);
     FileApplicationService fileApplicationService = Mockito.mock(FileApplicationService.class);
     CertificationCandidateCsvImportService service = new CertificationCandidateCsvImportService(
-        scopeMapper, batchMapper, errorMapper, candidateMapper, stagingMapper, preparationService, fileApplicationService,
+        scopeMapper, batchMapper, errorMapper, candidateMapper, stagingMapper, preparationService,
+        Mockito.mock(CertificationExamSessionApplicationService.class), fileApplicationService,
         transactionManager());
     CertificationTaskScopeEntity scope = new CertificationTaskScopeEntity();
     scope.setId(20L);
@@ -133,7 +135,8 @@ class CertificationCandidateCsvImportServiceTest {
     CertificationPreparationApplicationService preparationService = Mockito.mock(CertificationPreparationApplicationService.class);
     FileApplicationService fileApplicationService = Mockito.mock(FileApplicationService.class);
     CertificationCandidateCsvImportService service = new CertificationCandidateCsvImportService(
-        scopeMapper, batchMapper, errorMapper, candidateMapper, stagingMapper, preparationService, fileApplicationService,
+        scopeMapper, batchMapper, errorMapper, candidateMapper, stagingMapper, preparationService,
+        Mockito.mock(CertificationExamSessionApplicationService.class), fileApplicationService,
         transactionManager());
     CertificationTaskScopeEntity scope = new CertificationTaskScopeEntity();
     scope.setId(20L);

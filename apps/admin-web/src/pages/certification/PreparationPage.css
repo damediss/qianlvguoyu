@@ -1,8 +1,9 @@
-.preparation-task-table .ant-table-cell-fix-left,
-.preparation-task-table .ant-table-cell-fix-right {
-  overflow: hidden;
+.preparation-task-selector .ant-card-body {
+  padding: 12px 16px;
 }
 
-.preparation-task-table .ant-typography-ellipsis {
-  width: 100%;
+@media (max-width: 768px) {
+  .preparation-task-selector .ant-select {
+    width: 100% !important;
+  }
 }

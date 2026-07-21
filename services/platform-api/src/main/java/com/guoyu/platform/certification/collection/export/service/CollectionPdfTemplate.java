@@ -1,13 +1,16 @@
 package com.guoyu.platform.certification.collection.export.service;
 
 import java.awt.image.BufferedImage;
+import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import javax.imageio.ImageIO;
+import org.apache.fontbox.ttf.TrueTypeCollection;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -284,36 +287,64 @@ public final class CollectionPdfTemplate {
       if (!Files.isRegularFile(path)) {
         throw new IOException("配置的 PDF 中文字体不存在：" + path);
       }
-      try (InputStream input = Files.newInputStream(path)) {
-        return PDType0Font.load(document, input, true);
-      }
-    }
-    String[] classpathFonts = {"/fonts/NotoSansSC-Regular.otf", "/fonts/NotoSansCJKsc-Regular.otf"};
-    for (String resource : classpathFonts) {
-      try (InputStream input = CollectionPdfTemplate.class.getResourceAsStream(resource)) {
-        if (input != null) {
-          return PDType0Font.load(document, input, true);
-        }
-      }
+      return loadFontFile(document, path);
     }
     String[] systemFonts = {
-        "C:/Windows/Fonts/Noto Sans SC (TrueType).otf",
         "C:/Windows/Fonts/simhei.ttf",
+        "C:/Windows/Fonts/msyh.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
     };
+    IOException lastFailure = null;
     for (String font : systemFonts) {
       Path path = Path.of(font);
       if (Files.isRegularFile(path)) {
-        try (InputStream input = Files.newInputStream(path)) {
-          return PDType0Font.load(document, input, true);
-        } catch (IOException ignored) {
-          // Try the next installed CJK font.
+        try {
+          return loadFontFile(document, path);
+        } catch (IOException ex) {
+          lastFailure = ex;
         }
       }
     }
-    throw new IOException("未找到可嵌入的中文字体，请配置 platform.certification.collection.pdf-font-path");
+    throw new IOException(
+        "未找到可嵌入的 TrueType 中文字体，请安装 fonts-wqy-zenhei 或配置 "
+            + "platform.certification.collection.pdf-font-path 指向 .ttf/.ttc 文件",
+        lastFailure);
+  }
+
+  private static PDFont loadFontFile(PDDocument document, Path path) throws IOException {
+    if (isTrueTypeCollection(path)) {
+      try (InputStream input = Files.newInputStream(path);
+          TrueTypeCollection collection = new TrueTypeCollection(input)) {
+        PDFont[] loadedFont = new PDFont[1];
+        IOException[] lastFailure = new IOException[1];
+        collection.processAllFonts(font -> {
+          if (loadedFont[0] != null) {
+            return;
+          }
+          try {
+            loadedFont[0] = PDType0Font.load(document, font, true);
+          } catch (IOException ex) {
+            lastFailure[0] = ex;
+          }
+        });
+        if (loadedFont[0] != null) {
+          return loadedFont[0];
+        }
+        throw new IOException("TrueType 字体集合中没有可嵌入的字体：" + path, lastFailure[0]);
+      }
+    }
+    try (InputStream input = Files.newInputStream(path)) {
+      return PDType0Font.load(document, input, true);
+    }
+  }
+
+  private static boolean isTrueTypeCollection(Path path) throws IOException {
+    try (InputStream input = new BufferedInputStream(Files.newInputStream(path))) {
+      byte[] signature = input.readNBytes(4);
+      return Arrays.equals(signature, new byte[] {'t', 't', 'c', 'f'});
+    }
   }
 
   private static String safe(String value) {

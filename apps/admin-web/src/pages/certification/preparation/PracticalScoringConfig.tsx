@@ -1,7 +1,5 @@
 import {
-  DeleteOutlined,
   DownloadOutlined,
-  LinkOutlined,
   ReloadOutlined,
   RollbackOutlined,
   UploadOutlined,
@@ -32,20 +30,18 @@ import {
   listPreparationAssessorGroups,
 } from '../../../api/certificationPreparation';
 import {
+  batchLinkPracticalCandidateTemplates,
   adjustPracticalScoringTaskScore,
-  cancelPracticalCandidateGeneratedTasks,
   exportPracticalSummary,
   getPracticalScoringTaskDetail,
   getPracticalScoringProgress,
   getPracticalScoringSetup,
   importPracticalPaper,
-  linkPracticalCandidateTemplate,
   markPracticalCandidateAbsent,
   returnPracticalScoringTask,
 } from '../../../api/practicalScoring';
 import { parseContentDispositionFilename } from '../../../utils/download';
 import type {
-  PreparationAssessorGroup,
   PreparationCandidate,
 } from '../../../types/certificationPreparation';
 import type {
@@ -63,14 +59,6 @@ interface Props {
   showProgress?: boolean;
 }
 
-interface CandidateLinkValues {
-  candidateId: string;
-  scopeId?: string;
-  paperId: string;
-  groupId: string;
-  workTypeId?: number | null;
-}
-
 export function PracticalScoringConfig({
   taskId,
   showSetup = true,
@@ -78,10 +66,11 @@ export function PracticalScoringConfig({
   showProgress = true,
 }: Props) {
   const queryClient = useQueryClient();
-  const [selectedGroupId, setSelectedGroupId] = useState<string>();
   const [selectedScopeId, setSelectedScopeId] = useState<string>();
-  const [selectedPaperByCandidate, setSelectedPaperByCandidate] = useState<Record<string, string | undefined>>({});
-  const [rowErrors, setRowErrors] = useState<Record<string, string | undefined>>({});
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+  const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [batchGroupId, setBatchGroupId] = useState<string>();
+  const [batchPaperId, setBatchPaperId] = useState<string>();
   const [returningTask, setReturningTask] = useState<PracticalTaskProgressItem>();
   const [returnReason, setReturnReason] = useState('');
   const [adjustingTask, setAdjustingTask] = useState<PracticalTaskProgressItem>();
@@ -182,6 +171,32 @@ export function PracticalScoringConfig({
     if (!selectedScope) return rows;
     return rows.filter((candidate) => scopeMatchesCandidate(selectedScope, candidate));
   }, [candidateQuery.data?.items, selectedScope]);
+  const selectedCandidateRows = useMemo(
+    () => candidateRows.filter((candidate) => selectedCandidateIds.includes(candidate.id)),
+    [candidateRows, selectedCandidateIds],
+  );
+  const resolvedConfigByCandidate = useMemo(() => new Map(candidateRows.map((candidate) => {
+    const directConfig = configByCandidate.get(candidate.id);
+    if (directConfig) return [candidate.id, directConfig] as const;
+    const scope = findScopeForCandidate(setup?.scopes || [], candidate);
+    const scopeConfig = scope ? (setup?.configs || []).find((config) => (
+      !config.candidateId && String(config.scopeId) === String(scope.id)
+    )) : undefined;
+    return [candidate.id, scopeConfig] as const;
+  })), [candidateRows, configByCandidate, setup?.configs, setup?.scopes]);
+  const availableBatchPapers = useMemo(() => (setup?.papers || []).filter((paper) => (
+    paper.questions.length > 0
+    && paper.questions.every((question) => question.templateReady)
+    && selectedCandidateRows.every((candidate) => paperOptionsForCandidate(
+      setup?.papers || [],
+      candidate,
+      findScopeForCandidate(setup?.scopes || [], candidate),
+    ).some((option) => option.id === paper.id))
+  )), [selectedCandidateRows, setup?.papers, setup?.scopes]);
+
+  const isCandidateUnavailable = (candidate: PreparationCandidate) => (
+    Boolean(resolvedConfigByCandidate.get(candidate.id)) || Boolean(progressByCandidate.get(candidate.id)?.totalTasks)
+  );
 
   const refresh = () => {
     if (showConfig) {
@@ -206,6 +221,19 @@ export function PracticalScoringConfig({
     setAdjustNote(detail.progressNote || '');
   }, [adjustingTaskQuery.data]);
 
+  useEffect(() => {
+    const availableIds = new Set(candidateRows
+      .filter((candidate) => !isCandidateUnavailable(candidate))
+      .map((candidate) => candidate.id));
+    setSelectedCandidateIds((previous) => previous.filter((candidateId) => availableIds.has(candidateId)));
+  }, [candidateRows, progressByCandidate, resolvedConfigByCandidate]);
+
+  useEffect(() => {
+    if (batchPaperId && !availableBatchPapers.some((paper) => paper.id === batchPaperId)) {
+      setBatchPaperId(undefined);
+    }
+  }, [availableBatchPapers, batchPaperId]);
+
   const adjustTotalScore = useMemo(() => {
     const detail = adjustingTaskQuery.data;
     if (!detail) return 0;
@@ -214,39 +242,28 @@ export function PracticalScoringConfig({
     ), 0);
   }, [adjustDeductions, adjustingTaskQuery.data]);
 
-  const candidateLinkMutation = useMutation({
-    mutationFn: (values: CandidateLinkValues) =>
-      linkPracticalCandidateTemplate(taskId!, values.candidateId, {
-        scopeId: values.scopeId,
-        paperId: values.paperId,
-        groupId: values.groupId,
-        workTypeId: values.workTypeId,
-      }),
-    onSuccess: (result, values) => {
-      message.success(`已生成 ${result.createdTasks} 个评分任务，已存在 ${result.existingTasks} 个`);
-      setRowErrors((prev) => ({ ...prev, [values.candidateId]: undefined }));
-      refresh();
-    },
-    onError: (error: unknown, values) => {
-      const reason =
-        (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
-        || (error as { message?: string })?.message
-        || '配置实操试卷失败，请稍后重试';
-      setRowErrors((prev) => ({ ...prev, [values.candidateId]: reason }));
-      message.error(reason);
-    },
-  });
-  const cancelCandidateTasksMutation = useMutation({
-    mutationFn: (candidateId: string) => cancelPracticalCandidateGeneratedTasks(taskId!, candidateId),
-    onSuccess: () => {
-      message.success('评分任务已取消，可重新编辑试卷和考评组');
+  const batchCandidateLinkMutation = useMutation({
+    mutationFn: () => batchLinkPracticalCandidateTemplates(taskId!, {
+      candidateIds: selectedCandidateIds,
+      paperId: batchPaperId!,
+      groupId: batchGroupId!,
+    }),
+    onSuccess: (result) => {
+      message.success(`已为 ${result.configuredCandidates} 名学员生成 ${result.createdTasks} 个评分任务`);
+      if (result.skippedCandidates > 0) {
+        message.warning(`${result.skippedCandidates} 名已配置或已生成评分任务的学员未处理`);
+      }
+      setConfigModalOpen(false);
+      setSelectedCandidateIds([]);
+      setBatchGroupId(undefined);
+      setBatchPaperId(undefined);
       refresh();
     },
     onError: (error: unknown) => {
       const reason =
         (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
         || (error as { message?: string })?.message
-        || '取消评分任务失败，请稍后重试';
+        || '批量配置实操试卷失败，请稍后重试';
       message.error(reason);
     },
   });
@@ -324,71 +341,6 @@ export function PracticalScoringConfig({
 
   if (!taskId) return <Typography.Text type="secondary">请选择认定任务。</Typography.Text>;
 
-  const configureCandidate = (candidate: PreparationCandidate) => {
-    const paperId = selectedPaperByCandidate[candidate.id] || configByCandidate.get(candidate.id)?.paperId;
-    const scope = selectedScope && scopeMatchesCandidate(selectedScope, candidate)
-      ? selectedScope
-      : findScopeForCandidate(setup?.scopes || [], candidate);
-    if (!selectedGroupId) {
-      message.warning('请选择三人考评组');
-      return;
-    }
-    if (!paperId) {
-      message.warning('请选择实操试卷');
-      return;
-    }
-    if (!scope) {
-      message.warning('未找到匹配学员工种等级的任务范围');
-      return;
-    }
-    const paper = setup?.papers.find((item) => item.id === paperId);
-    candidateLinkMutation.mutate({
-      candidateId: candidate.id,
-      scopeId: scope.id,
-      paperId,
-      groupId: selectedGroupId,
-      workTypeId: toNullableNumber(candidate.workTypeId || scope.workTypeId || paper?.workTypeId),
-    });
-  };
-
-  const groupColumns: ColumnsType<PreparationAssessorGroup> = [
-    { title: '考评组', dataIndex: 'groupName', ellipsis: true },
-    { title: '组长', dataIndex: 'leaderAssessorName', width: 120, render: (value) => value || '-' },
-    {
-      title: '负责工种等级',
-      dataIndex: 'workTypeScopes',
-      render: (scopes: PreparationAssessorGroup['workTypeScopes'], row) =>
-        scopes?.length
-          ? scopes.map((scope) => `${scope.workTypeName || '-'} / ${scope.levelName || scope.levelCode || '-'}`).join('、')
-          : row.workTypeName || '-',
-    },
-    {
-      title: '成员',
-      width: 100,
-      render: (_, row) => {
-        const count = resolveMemberCount(row.id);
-        return <Tag color={count === 3 ? 'success' : 'warning'}>{count}/3</Tag>;
-      },
-    },
-    {
-      title: '选择',
-      width: 100,
-      render: (_, row) => {
-        const count = resolveMemberCount(row.id);
-        return (
-          <Button
-            type={selectedGroupId === row.id ? 'primary' : 'default'}
-            size="small"
-            disabled={count !== 3}
-            onClick={() => setSelectedGroupId(row.id)}
-          >
-            选择
-          </Button>
-        );
-      },
-    },
-  ];
-
   const candidateColumns: ColumnsType<PreparationCandidate> = [
     { title: '学员', dataIndex: 'candidateName', width: 120, fixed: 'left' },
     { title: '证件号', dataIndex: 'maskedIdCardNo', width: 180, render: (v, row) => v || row.idCardNo || '-' },
@@ -397,36 +349,10 @@ export function PracticalScoringConfig({
     { title: '等级', dataIndex: 'levelName', width: 100, render: (v, row) => v || row.levelCode || '-' },
     { title: '单位', dataIndex: 'orgName', width: 160, ellipsis: true, render: (v) => v || '-' },
     {
-      title: '实操试卷',
-      width: 260,
-      render: (_, row) => {
-        const configured = configByCandidate.get(row.id);
-        const rowScope = selectedScope && scopeMatchesCandidate(selectedScope, row)
-          ? selectedScope
-          : findScopeForCandidate(setup?.scopes || [], row);
-        return (
-          <Select
-            showSearch
-            optionFilterProp="label"
-            placeholder="请选择试卷"
-            value={selectedPaperByCandidate[row.id] || configured?.paperId}
-            style={{ width: '100%' }}
-            disabled={Boolean(progressByCandidate.get(row.id)?.totalTasks)}
-            options={paperOptionsForCandidate(setup?.papers || [], row, rowScope).map((paper) => ({
-              value: paper.id,
-              label: paper.title,
-              disabled: paper.questions.length === 0 || paper.questions.some((question) => !question.templateReady),
-            }))}
-            onChange={(paperId) => setSelectedPaperByCandidate((prev) => ({ ...prev, [row.id]: paperId }))}
-          />
-        );
-      },
-    },
-    {
       title: '已绑定考评组',
       width: 180,
       render: (_, row) => {
-        const config = configByCandidate.get(row.id);
+        const config = resolvedConfigByCandidate.get(row.id);
         if (!config) return '-';
         return groupDetailById.get(String(config.groupId))?.groupName
           || setup?.groups.find((group) => String(group.id) === String(config.groupId))?.groupName
@@ -437,51 +363,11 @@ export function PracticalScoringConfig({
       title: '配置状态',
       width: 180,
       render: (_, row) => {
-        const error = rowErrors[row.id];
-        const configured = configByCandidate.get(row.id);
+        const configured = resolvedConfigByCandidate.get(row.id);
         const progress = progressByCandidate.get(row.id);
-        if (error) return <Tag color="error">配置失败</Tag>;
         if (progress?.totalTasks) return <Tag color="success">已生成评分任务</Tag>;
         if (configured) return <Tag color="processing">已配置</Tag>;
         return <Tag>未配置</Tag>;
-      },
-    },
-    {
-      title: '操作',
-      width: 130,
-      fixed: 'right',
-      render: (_, row) => {
-        const hasGeneratedTasks = Boolean(progressByCandidate.get(row.id)?.totalTasks);
-        if (hasGeneratedTasks) {
-          return (
-            <Button
-              danger
-              type="link"
-              icon={<DeleteOutlined />}
-              loading={cancelCandidateTasksMutation.isPending}
-              onClick={() => Modal.confirm({
-                title: '取消已生成的评分任务？',
-                content: '仅未开考的考生可以取消。评分任务、评分明细和汇总结果将被删除，随后可重新编辑试卷和考评组。',
-                okText: '确认取消',
-                okButtonProps: { danger: true },
-                cancelText: '暂不取消',
-                onOk: () => cancelCandidateTasksMutation.mutateAsync(row.id),
-              })}
-            >
-              取消
-            </Button>
-          );
-        }
-        return (
-          <Button
-            type="link"
-            icon={<LinkOutlined />}
-            loading={candidateLinkMutation.isPending}
-            onClick={() => configureCandidate(row)}
-          >
-            配置试卷
-          </Button>
-        );
       },
     },
   ];
@@ -560,41 +446,9 @@ export function PracticalScoringConfig({
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       {showConfig && (
         <ProCard
-          title="区域一：考评组配置区"
+          title="学员列表"
           extra={<Button icon={<ReloadOutlined />} onClick={refresh}>刷新</Button>}
         >
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
-            <Select
-              showSearch
-              optionFilterProp="label"
-              value={selectedGroupId}
-              placeholder="请选择满足三人成组条件的考评组"
-              style={{ width: 'min(520px, 100%)' }}
-              options={(groupsQuery.data || []).map((group) => {
-                const count = resolveMemberCount(group.id);
-                return {
-                  value: group.id,
-                  disabled: count !== 3,
-                  label: `${group.groupName}（${count}/3人${group.leaderAssessorName ? ` · 组长${group.leaderAssessorName}` : ''}）`,
-                };
-              })}
-              onChange={setSelectedGroupId}
-            />
-            <Table
-              rowKey="id"
-              size="small"
-              loading={groupsQuery.isFetching || setupQuery.isFetching}
-              dataSource={groupsQuery.data || []}
-              columns={groupColumns}
-              pagination={false}
-              locale={{ emptyText: <Empty description="暂无考评组" /> }}
-            />
-          </Space>
-        </ProCard>
-      )}
-
-      {showConfig && (
-        <ProCard title="区域二：学员列表区">
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Space wrap>
               <Select
@@ -622,25 +476,30 @@ export function PracticalScoringConfig({
                   导入评分记录表
                 </Button>
               </Upload>
-              {selectedGroupId ? (
-                <Tag color="processing">
-                  已选考评组：{groupDetailById.get(String(selectedGroupId))?.groupName
-                    || setup?.groups.find((group) => String(group.id) === String(selectedGroupId))?.groupName
-                    || selectedGroupId}
-                </Tag>
-              ) : null}
+              <Button
+                type="primary"
+                disabled={selectedCandidateIds.length === 0}
+                onClick={() => {
+                  setBatchGroupId(undefined);
+                  setBatchPaperId(undefined);
+                  setConfigModalOpen(true);
+                }}
+              >
+                配置{selectedCandidateIds.length ? `（${selectedCandidateIds.length}）` : ''}
+              </Button>
             </Space>
             <Table
               rowKey="id"
               columns={candidateColumns}
               dataSource={candidateRows}
               loading={candidateQuery.isFetching || setupQuery.isFetching || progressQuery.isFetching}
-              scroll={{ x: 1490 }}
-              expandable={{
-                expandedRowRender: (row) => rowErrors[row.id]
-                  ? <Typography.Text type="danger">{rowErrors[row.id]}</Typography.Text>
-                  : null,
-                rowExpandable: (row) => Boolean(rowErrors[row.id]),
+              scroll={{ x: 1000 }}
+              rowSelection={{
+                selectedRowKeys: selectedCandidateIds,
+                onChange: (keys) => setSelectedCandidateIds(keys.map(String)),
+                getCheckboxProps: (row) => ({
+                  disabled: isCandidateUnavailable(row),
+                }),
               }}
               pagination={{ pageSize: 10 }}
               locale={{
@@ -650,6 +509,64 @@ export function PracticalScoringConfig({
           </Space>
         </ProCard>
       )}
+
+      <Modal
+        title={`批量配置实操考试（已选 ${selectedCandidateIds.length} 名学员）`}
+        open={configModalOpen}
+        okText="确认配置"
+        cancelText="取消"
+        confirmLoading={batchCandidateLinkMutation.isPending}
+        onCancel={() => setConfigModalOpen(false)}
+        onOk={() => {
+          if (!batchGroupId) {
+            message.warning('请选择考评组');
+            return;
+          }
+          if (!batchPaperId) {
+            message.warning('请选择实操试卷');
+            return;
+          }
+          batchCandidateLinkMutation.mutate();
+        }}
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Typography.Text type="secondary">
+            已配置或已生成评分任务的学员不可勾选；本次将为所选学员统一绑定以下考评组和试卷。
+          </Typography.Text>
+          <div>
+            <Typography.Text strong>考评组</Typography.Text>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              value={batchGroupId}
+              placeholder="请选择满足三人成组条件的考评组"
+              style={{ width: '100%', marginTop: 8 }}
+              options={(groupsQuery.data || []).map((group) => {
+                const count = resolveMemberCount(group.id);
+                return {
+                  value: group.id,
+                  disabled: count !== 3,
+                  label: `${group.groupName}（${count}/3人${group.leaderAssessorName ? ` · 组长${group.leaderAssessorName}` : ''}）`,
+                };
+              })}
+              onChange={setBatchGroupId}
+            />
+          </div>
+          <div>
+            <Typography.Text strong>实操试卷</Typography.Text>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              value={batchPaperId}
+              placeholder="请选择可用于所有已选学员的实操试卷"
+              style={{ width: '100%', marginTop: 8 }}
+              options={availableBatchPapers.map((paper) => ({ value: paper.id, label: paper.title }))}
+              notFoundContent="没有可统一用于所选学员的已完成模板试卷"
+              onChange={setBatchPaperId}
+            />
+          </div>
+        </Space>
+      </Modal>
 
       {showProgress && (
         <ProCard title="评分进度">
@@ -978,12 +895,6 @@ function paperOptionsForCandidate(
     const sameLevel = !paper.level || paper.level === candidate.levelCode || paper.level === candidate.levelName;
     return sameWorkType && sameLevel;
   });
-}
-
-function toNullableNumber(value?: string | number | null) {
-  if (value === undefined || value === null || value === '') return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function scoreItemKey(item: PracticalScoreItem) {

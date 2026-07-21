@@ -30,6 +30,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MultipartFile;
+import java.util.List;
 
 @Validated
 @RestController
@@ -63,9 +64,12 @@ public class CertificationPreparationCandidateController {
       @PathVariable Long taskId,
       @RequestParam Long taskScopeId,
       @RequestPart MultipartFile file,
-      @RequestParam(required = false) String remark
+      @RequestParam(required = false) String remark,
+      @RequestParam(required = false) List<Long> examSessionIds,
+      @RequestParam(required = false) String defaultParticipation
   ) {
-    return ApiResponse.ok(excelImportService.importExcel(taskId, taskScopeId, file, remark));
+    return ApiResponse.ok(excelImportService.importExcel(
+        taskId, taskScopeId, file, remark, examSessionIds, defaultParticipation));
   }
 
   @PostMapping("/tasks/{taskId}/candidate-imports/{batchId}/application-materials")

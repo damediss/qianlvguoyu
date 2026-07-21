@@ -47,7 +47,7 @@ PDF 生成后通过现有 `FileApplicationService` 上传，文件内容不写�
 - 图片框固定：证件照、指纹、签到签名、交卷签名。当前数据库没有独立的交卷指纹字段，按参考模板不额外增加版面槽位。
 - 图片按比例缩放后居中绘制；无法读取或为空时显示“暂无采集图片”。
 - 文本超出固定宽度时截断，不自动换行；不会产生标题单独占页或考生跨页。
-- 中文字体优先读取 `COLLECTION_PDF_FONT_PATH`，其次探测 classpath 和常见系统字体路径，并嵌入 PDF。
+- 中文字体优先读取 `COLLECTION_PDF_FONT_PATH`，其次探测常见系统字体路径，并嵌入 PDF；支持 TrueType `.ttf` 和 TrueType Collection `.ttc`。
 
 当前数据库只有最近一次指纹记录和有效签名记录，没有独立的签到/交卷两套文件字段。为保持不改库并复用现有采集数据，当前记录会填充签到和交卷两个对应槽位；后续若数据模型增加阶段字段，只需调整导出数据组装，不需要改模板布局。
 
@@ -74,4 +74,4 @@ PDF 返回文件信息后，前端通过带鉴权的文件服务下载。
 ## 6. 已知事项
 
 - 真实数据联调仍需在已配置文件存储和至少 10 名已完成考生数据的环境中调用接口验证；当前自动化测试覆盖模板渲染，不伪造数据库/文件服务联调结果。
-- Linux/容器部署必须安装中文字体，或设置 `COLLECTION_PDF_FONT_PATH` 指向可读的 `.ttf/.otf` 字体文件。
+- Linux/容器部署必须安装 `fonts-wqy-zenhei` 并使用 `/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc`，或设置 `COLLECTION_PDF_FONT_PATH` 指向可读的 TrueType `.ttf/.ttc` 文件；CFF outlines 的 `.otf` 不受 PDFBox `PDType0Font` 支持。

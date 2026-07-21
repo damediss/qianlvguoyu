@@ -76,7 +76,7 @@ export function ApplicationMaterials({ taskId, onChanged }: ApplicationMaterials
 
   function handleOneClickGenerate() {
     if (readiness.total === 0) {
-      message.warning('请先在「学员导入」中导入学员并完成资料准备');
+      message.warning('请先在「考生导入」中导入考生并完成资料准备');
       return;
     }
     if (readiness.ready === 0) {
@@ -171,7 +171,7 @@ export function ApplicationMaterials({ taskId, onChanged }: ApplicationMaterials
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message="根据学员导入环节已齐备的资料（证件照 + 系统生成的报名信息表），一键生成每位学员的申报材料包。"
+          message="根据考生导入环节已齐备的资料（证件照 + 系统生成的报名信息表），一键生成每位考生的申报材料包。"
         />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 16, marginBottom: 20 }}>
           <Statistic title="任务学员总数" value={readiness.total} />
