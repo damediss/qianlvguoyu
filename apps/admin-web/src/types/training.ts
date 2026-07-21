@@ -2693,43 +2693,99 @@ export interface DivisionTrainInfoSummary {
 export interface DivisionAutoPackReq {
   planId: number;
   trainInfoId: number;
-  strategy?: 'by_shift_team' | 'by_roster_order';
+  strategy?: 'by_job_level' | 'by_job_level_slot' | 'by_shift_team' | 'by_roster_order';
   classMax?: number;
   classNamePrefix?: string;
   submitForCompanyConfirm?: boolean;
   excludeNoIdCard?: boolean;
   useShiftFilter?: boolean;
+  requireJobAndLevel?: boolean;
   year?: number;
   month?: number;
   autoParseRoster?: boolean;
 }
 
+export interface DivisionAutoPackClassMember {
+  rosterId: number;
+  personName?: string;
+  idCard?: string;
+  /** 单位/车间/部门 */
+  workshop?: string;
+  jobName?: string;
+  levelName?: string;
+  shiftTeam?: string;
+  phone?: string;
+}
+
 export interface DivisionAutoPackClass {
-  classId: number;
+  tempId?: string;
+  classId?: number;
   title: string;
   group?: string;
   nums: number;
+  members?: DivisionAutoPackClassMember[];
 }
 
 export interface DivisionAutoPackUnassigned {
   rosterId?: number;
   personName?: string;
   idCard?: string;
+  workshop?: string;
+  jobName?: string;
+  levelName?: string;
   shiftTeam?: string;
   reason: string;
 }
 
-export interface DivisionAutoPackResult {
+export type DivisionPackTaskStatus =
+  | 'draft'
+  | 'pending'
+  | 'rejected'
+  | 'materialized'
+  | 'superseded';
+
+export interface DivisionPackTaskResult {
+  taskId: number;
+  planId: number;
   trainInfoId: number;
+  companyId?: number;
   strategy: string;
   classMax: number;
+  year?: number;
+  month?: number;
+  classNamePrefix?: string;
+  status: DivisionPackTaskStatus;
+  statusLabel?: string;
   classCount: number;
   assignedCount: number;
+  unassignedCount: number;
   classes: DivisionAutoPackClass[];
   unassigned: DivisionAutoPackUnassigned[];
-  unassignedCount: number;
   warnings?: { level?: string; code?: string; message: string }[];
-  submitForCompanyConfirm?: boolean;
+  rejectReason?: string;
+  submitUsername?: string;
+  confirmUsername?: string;
+  confirmTime?: string;
+  createTime?: string;
+  updateTime?: string;
+  materialized?: {
+    classCount: number;
+    peopleCount: number;
+    classes: { classId: number; title: string; nums: number }[];
+  };
+}
+
+/** @deprecated 使用 DivisionPackTaskResult */
+export type DivisionAutoPackResult = DivisionPackTaskResult;
+
+export interface DivisionPackPatchReq {
+  classes: {
+    tempId?: string;
+    title: string;
+    group?: string;
+    members: DivisionAutoPackClassMember[];
+  }[];
+  unassigned?: DivisionAutoPackUnassigned[];
 }
 
 /** 二期：排课分班（L2） */

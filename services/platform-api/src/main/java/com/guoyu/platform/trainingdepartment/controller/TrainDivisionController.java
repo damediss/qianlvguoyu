@@ -6,6 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainDivisionAutoPackReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainDivisionEnsureTrainInfoReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainDivisionOrgSplitReq;
+import com.guoyu.platform.trainingdepartment.dto.TrainDivisionPackPatchReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainDivisionRosterParseReq;
 import com.guoyu.platform.trainingdepartment.security.TrainingAuthorityExpressions;
 import com.guoyu.platform.trainingdepartment.service.TrainDivisionApplicationService;
@@ -79,9 +80,57 @@ public class TrainDivisionController {
 
   @PostMapping("/auto-pack")
   @PreAuthorize(TrainingAuthorityExpressions.DIVISION_MANAGE)
-  @AuditLog(module = "training", action = "division:auto-pack", targetType = "train_info_class")
+  @AuditLog(module = "training", action = "division:auto-pack", targetType = "train_division_pack_task")
   public ApiResponse<Map<String, Object>> autoPack(@Valid @RequestBody TrainDivisionAutoPackReq req) {
     return ApiResponse.ok(divisionService.autoPack(req));
+  }
+
+  @GetMapping("/pack-tasks")
+  @PreAuthorize(TrainingAuthorityExpressions.DIVISION_VIEW)
+  public ApiResponse<PageResponse<Map<String, Object>>> pagePackTasks(
+      @RequestParam(defaultValue = "1") int page,
+      @RequestParam(defaultValue = "10") int pageSize,
+      @RequestParam(required = false) String status,
+      @RequestParam(required = false) Long planId) {
+    return ApiResponse.ok(divisionService.pagePackTasks(page, pageSize, status, planId));
+  }
+
+  @GetMapping("/pack-tasks/{taskId}")
+  @PreAuthorize(TrainingAuthorityExpressions.DIVISION_VIEW)
+  public ApiResponse<Map<String, Object>> getPackTask(@PathVariable Long taskId) {
+    return ApiResponse.ok(divisionService.getPackTask(taskId));
+  }
+
+  @PostMapping("/pack-tasks/{taskId}/patch")
+  @PreAuthorize(TrainingAuthorityExpressions.DIVISION_MANAGE)
+  @AuditLog(module = "training", action = "division:pack-patch", targetType = "train_division_pack_task")
+  public ApiResponse<Map<String, Object>> patchPackTask(
+      @PathVariable Long taskId,
+      @Valid @RequestBody TrainDivisionPackPatchReq req) {
+    return ApiResponse.ok(divisionService.patchPackTask(taskId, req));
+  }
+
+  @PostMapping("/pack-tasks/{taskId}/submit")
+  @PreAuthorize(TrainingAuthorityExpressions.DIVISION_MANAGE)
+  @AuditLog(module = "training", action = "division:pack-submit", targetType = "train_division_pack_task")
+  public ApiResponse<Map<String, Object>> submitPackTask(@PathVariable Long taskId) {
+    return ApiResponse.ok(divisionService.submitPackTask(taskId));
+  }
+
+  @PostMapping("/pack-tasks/{taskId}/company-confirm")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_ENTERPRISE_CONFIRM)
+  @AuditLog(module = "training", action = "division:pack-confirm", targetType = "train_division_pack_task")
+  public ApiResponse<Map<String, Object>> companyConfirmPackTask(@PathVariable Long taskId) {
+    return ApiResponse.ok(divisionService.companyConfirmPackTask(taskId));
+  }
+
+  @PostMapping("/pack-tasks/{taskId}/company-reject")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_ENTERPRISE_CONFIRM)
+  @AuditLog(module = "training", action = "division:pack-reject", targetType = "train_division_pack_task")
+  public ApiResponse<Map<String, Object>> companyRejectPackTask(
+      @PathVariable Long taskId,
+      @RequestParam String reason) {
+    return ApiResponse.ok(divisionService.companyRejectPackTask(taskId, reason));
   }
 
   @PostMapping("/org-split")

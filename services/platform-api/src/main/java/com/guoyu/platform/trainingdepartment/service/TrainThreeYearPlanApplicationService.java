@@ -80,6 +80,7 @@ public class TrainThreeYearPlanApplicationService {
   private final ObjectMapper objectMapper;
   private final TrainThreeYearPlanExcelExporter excelExporter;
   private final FileApplicationService fileApplicationService;
+  private final TrainDivisionApplicationService divisionApplicationService;
 
   public TrainThreeYearPlanApplicationService(
       TrainThreeYearPlanMapper planMapper,
@@ -91,7 +92,8 @@ public class TrainThreeYearPlanApplicationService {
       TrainingOperatorScopeService scopeService,
       ObjectMapper objectMapper,
       TrainThreeYearPlanExcelExporter excelExporter,
-      FileApplicationService fileApplicationService) {
+      FileApplicationService fileApplicationService,
+      @org.springframework.context.annotation.Lazy TrainDivisionApplicationService divisionApplicationService) {
     this.planMapper = planMapper;
     this.itemMapper = itemMapper;
     this.matrixMapper = matrixMapper;
@@ -102,6 +104,7 @@ public class TrainThreeYearPlanApplicationService {
     this.objectMapper = objectMapper;
     this.excelExporter = excelExporter;
     this.fileApplicationService = fileApplicationService;
+    this.divisionApplicationService = divisionApplicationService;
   }
 
   @Transactional
@@ -502,6 +505,9 @@ public class TrainThreeYearPlanApplicationService {
             : SecurityContext.currentUser().getUsername());
     appendEnterpriseReturnHistory(entity);
     planMapper.updateById(entity);
+    if (hasRoster) {
+      divisionApplicationService.invalidateAfterEnterpriseRosterUpload(entity.getId());
+    }
     return toVO(entity, null);
   }
 

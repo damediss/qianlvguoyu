@@ -61,7 +61,8 @@ import type {
   DivisionPlanItem, DivisionReadyVO, DivisionEnsureTrainInfoReq, DivisionEnsureTrainInfoResult,
   DivisionRosterParseReq, DivisionRosterParseResult, DivisionRosterItem,
   DivisionOrgSplitReq, DivisionTrainInfoSummary,
-  DivisionAutoPackReq, DivisionAutoPackResult,
+  DivisionAutoPackReq, DivisionAutoPackResult, DivisionPackPatchReq, DivisionPackTaskResult,
+  DivisionPackTaskStatus,
   ShiftAssignGenerateReq, ShiftAssignPreviewResult, ShiftAssignPrecheckResult,
   ShiftAssignTaskResult, ShiftAssignBindClassReq, ShiftAssignPatchReq,
   ShiftAssignMaterializeReq, ShiftAssignGenerateMaterializeReq, ShiftAssignMaterializeResult,
@@ -1498,8 +1499,49 @@ export function submitDivisionOrgSplit(payload: DivisionOrgSplitReq) {
 }
 
 export function autoPackDivision(payload: DivisionAutoPackReq) {
-  return unwrap<DivisionAutoPackResult>(
+  return unwrap<DivisionPackTaskResult>(
     apiClient.post(`${BASE}/division/auto-pack`, payload, { timeout: 180000 }),
+  );
+}
+
+export function pageDivisionPackTasks(params: {
+  page?: number;
+  pageSize?: number;
+  status?: DivisionPackTaskStatus | string;
+  planId?: number;
+}) {
+  return unwrap<PageResponse<DivisionPackTaskResult>>(
+    apiClient.get(`${BASE}/division/pack-tasks`, { params }),
+  );
+}
+
+export function getDivisionPackTask(taskId: number) {
+  return unwrap<DivisionPackTaskResult>(apiClient.get(`${BASE}/division/pack-tasks/${taskId}`));
+}
+
+export function patchDivisionPackTask(taskId: number, payload: DivisionPackPatchReq) {
+  return unwrap<DivisionPackTaskResult>(
+    apiClient.post(`${BASE}/division/pack-tasks/${taskId}/patch`, payload),
+  );
+}
+
+export function submitDivisionPackTask(taskId: number) {
+  return unwrap<DivisionPackTaskResult>(
+    apiClient.post(`${BASE}/division/pack-tasks/${taskId}/submit`),
+  );
+}
+
+export function companyConfirmDivisionPackTask(taskId: number) {
+  return unwrap<DivisionPackTaskResult>(
+    apiClient.post(`${BASE}/division/pack-tasks/${taskId}/company-confirm`, undefined, { timeout: 180000 }),
+  );
+}
+
+export function companyRejectDivisionPackTask(taskId: number, reason: string) {
+  return unwrap<DivisionPackTaskResult>(
+    apiClient.post(`${BASE}/division/pack-tasks/${taskId}/company-reject`, null, {
+      params: { reason },
+    }),
   );
 }
 
