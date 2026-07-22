@@ -93,6 +93,8 @@ public class TrainResearchCollectionController {
   public ApiResponse<CertVerifyBatchResultVO> verifyPeopleCertificate(
       @PathVariable Long researchOrgId,
       @Valid @RequestBody CertVerifyReq req) {
+    ///users/import/{ymd}/cert
+    //ChazhengController.certCheck
     return ApiResponse.ok(collectionService.verifyPeopleCertificate(researchOrgId, req.peopleIds()));
   }
 

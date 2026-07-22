@@ -11,6 +11,8 @@ public final class ErrorCode {
   public static final String INTERNAL_ERROR = "500";
   public static final String NOT_IMPLEMENTED = "501";
   public static final String BAD_GATEWAY = "502";
+  public static final String TOO_MANY_REQUESTS = "429";
+  public static final String GATEWAY_TIMEOUT = "504";
 
   private ErrorCode() {
   }

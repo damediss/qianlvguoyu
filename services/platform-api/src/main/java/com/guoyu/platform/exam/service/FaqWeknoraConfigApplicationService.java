@@ -28,7 +28,7 @@ public class FaqWeknoraConfigApplicationService {
     return SecurityContext.currentUser().getTenantId();
   }
 
-  @Cacheable(value = "faqWeknoraConfig", key = "#root.target.tenantId()}", unless = "#result == null")
+  @Cacheable(value = "faqWeknoraConfig", key = "#root.target.tenantId()", unless = "#result == null")
   @Transactional(readOnly = true)
   public FaqWeknoraConfigVO getConfig() {
     Long tenantId = SecurityContext.currentUser().getTenantId();

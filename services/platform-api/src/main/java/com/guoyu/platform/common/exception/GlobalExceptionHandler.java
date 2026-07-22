@@ -3,6 +3,10 @@ package com.guoyu.platform.common.exception;
 import cn.dev33.satoken.exception.NotLoginException;
 import cn.dev33.satoken.exception.NotPermissionException;
 import com.guoyu.platform.common.api.ApiResponse;
+import com.guoyu.platform.ai.infrastructure.FaqLlmClientException;
+import com.guoyu.platform.ai.infrastructure.FaqLlmException;
+import com.guoyu.platform.ai.infrastructure.FaqLlmRateLimitException;
+import com.guoyu.platform.ai.infrastructure.FaqLlmTimeoutException;
 import jakarta.validation.ConstraintViolationException;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +30,29 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException ex) {
     return ResponseEntity.status(resolveStatus(ex.getCode()))
         .body(ApiResponse.fail(ex.getCode(), ex.getMessage()));
+  }
+
+  /**
+   * LLM 代理调用异常 — 按子类差异化映射 HTTP 状态码。
+   * 代理模式仅抛出 HTTP 级异常（429/4xx/5xx/超时），内容级结果（截断等）已透传不抛。
+   */
+  @ExceptionHandler(FaqLlmException.class)
+  public ResponseEntity<ApiResponse<Void>> handleFaqLlmException(FaqLlmException ex) {
+    log.warn("LLM 调用失败：{}", ex.getMessage());
+    if (ex instanceof FaqLlmClientException) {
+      return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+          .body(ApiResponse.fail(ErrorCode.BAD_REQUEST, ex.getMessage()));
+    }
+    if (ex instanceof FaqLlmRateLimitException) {
+      return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+          .body(ApiResponse.fail(ErrorCode.TOO_MANY_REQUESTS, ex.getMessage()));
+    }
+    if (ex instanceof FaqLlmTimeoutException) {
+      return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT)
+          .body(ApiResponse.fail(ErrorCode.GATEWAY_TIMEOUT, ex.getMessage()));
+    }
+    return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+        .body(ApiResponse.fail(ErrorCode.BAD_GATEWAY, ex.getMessage()));
   }
 
   @ExceptionHandler(NotLoginException.class)

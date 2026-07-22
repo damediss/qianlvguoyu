@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.math.BigDecimal;
 import java.net.SocketTimeoutException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.config.RequestConfig;
@@ -30,6 +31,12 @@ import org.springframework.web.client.RestClientResponseException;
  *   <li>连接池复用：Apache HttpClient 5 单例，替代原来每次 new JDK HttpClient</li>
  *   <li>异常分类：根据 HTTP status code 和 finish_reason 抛出具类型异常</li>
  *   <li>finish_reason 检测：length → Truncated；stop + content 为空 → Server</li>
+ * </ul>
+ *
+ * <p>改造说明（2026-07-22）：
+ * <ul>
+ *   <li>提取 {@link #executeChatCompletion} 共享层：HTTP 调用 + HTTP 级异常分类</li>
+ *   <li>新增 {@link #chatCompletionMessages}：messages 透传代理模式，仅做 HTTP 级分类，内容级结果原样返回</li>
  * </ul>
  *
  * <p>注意：tenantId 由调用方通过参数传入，整个调用链不调 SecurityContext。
@@ -82,21 +89,9 @@ public class FaqLlmClient {
 
   /**
    * 调用 LLM 生成 similar_questions + negative_questions（合并后单次调用）。
+   * 执行 HTTP 级 + 内容级双重分类；返回 content 文本。
    *
-   * @param baseUrl     API Base URL（不含 /chat/completions 后缀）
-   * @param apiKey      API Key
-   * @param modelId     模型 ID
-   * @param fullPrompt  完整 prompt（含 system + user，由 FaqLlmPromptBuilder 组装）
-   * @param maxTokens   最大输出 token
-   * @param thinking    思考模式（enabled/disabled），仅 LongCat 模型生效，非 LongCat 传 null
-   * @param tenantId    租户 ID（仅用于日志）
-   * @return LLM 返回的 JSON 字符串（raw content）
-   * @throws FaqLlmRateLimitException  429 限流
-   * @throws FaqLlmServerException     5xx 或服务端异常（含 stop + content 为空）
-   * @throws FaqLlmTimeoutException    网络超时
-   * @throws FaqLlmTruncatedException  finish_reason=length 截断
-   * @throws FaqLlmParseException      finish_reason=stop 但 JSON 解析失败
-   * @throws FaqLlmClientException     4xx 非 429
+   * @return LLM 返回的 content 文本（finish_reason=stop 且 content 非空）
    */
   public String chatCompletion(String baseUrl, String apiKey, String modelId,
                                String fullPrompt, int maxTokens, String thinking, Long tenantId) {
@@ -122,14 +117,84 @@ public class FaqLlmClient {
     userMsg.put("role", "user");
     userMsg.put("content", fullPrompt);
 
+    // 共享层：HTTP 调用 + HTTP 级异常分类
+    JsonNode response = executeChatCompletion(requestBody, url, apiKey, tenantId);
+
+    // ──── 以下内容级分类（仅 FAQ 模式执行，代理模式跳过）────
+
+    // 提取 choices[0]
+    JsonNode choices = response.path("choices");
+    if (!choices.isArray() || choices.isEmpty()) {
+      log.error("FAQ LLM 响应缺少 choices：tenantId={}, url={}", tenantId, url);
+      throw new FaqLlmServerException("LLM 响应缺少 choices");
+    }
+    JsonNode firstChoice = choices.get(0);
+
+    // finish_reason 检测
+    String finishReason = firstChoice.path("finish_reason").asText(null);
+    if ("length".equals(finishReason)) {
+      log.warn("FAQ LLM 输出被截断（finish_reason=length）：tenantId={}, url={}", tenantId, url);
+      throw new FaqLlmTruncatedException("LLM 输出被 max_tokens 截断（finish_reason=length）");
+    }
+
+    // 提取 content
+    String content = firstChoice.path("message").path("content").asText(null);
+    if (content == null || content.isBlank()) {
+      log.warn("FAQ LLM 响应 content 为空（finish_reason={}）：tenantId={}, url={}", finishReason, tenantId, url);
+      throw new FaqLlmServerException("LLM 响应 content 为空（finish_reason=" + finishReason + "）");
+    }
+    return content;
+  }
+
+  /**
+   * OpenAI 兼容 Chat Completion（messages 透传代理模式）。
+   * 仅做 HTTP 级异常分类；finish_reason / 空 content 等内容级结果原样返回，由调用方解释。
+   *
+   * @param messages    OpenAI 标准 messages 数组（JsonNode 透传，Jackson 解析 JSON 数组为 ArrayNode）
+   * @param temperature 采样温度（null 时使用模型配置默认值 0.7）
+   * @return 完整 LLM 响应 JsonNode（含 choices / usage / model / finish_reason）
+   */
+  public JsonNode chatCompletionMessages(String baseUrl, String apiKey, String modelId,
+                                         JsonNode messages, int maxTokens,
+                                         BigDecimal temperature, String thinking, Long tenantId) {
+    String url = trimTrailingSlash(baseUrl) + "/chat/completions";
+
+    ObjectNode requestBody = objectMapper.createObjectNode();
+    requestBody.put("model", modelId);
+    requestBody.put("max_tokens", maxTokens);
+    requestBody.put("temperature", temperature != null ? temperature.doubleValue() : 0.7);
+
+    // LongCat 思考模式：baseURL 含 longcat 且 thinking 非空时传
+    if (isLongCat(baseUrl) && thinking != null && !thinking.isBlank()) {
+      ObjectNode thinkingNode = objectMapper.createObjectNode();
+      thinkingNode.put("type", thinking);
+      requestBody.set("thinking", thinkingNode);
+    }
+
+    // messages 原样透传（ArrayNode）
+    requestBody.set("messages", messages);
+
+    // 共享层：HTTP 调用 + HTTP 级异常分类，返回原始响应
+    return executeChatCompletion(requestBody, url, apiKey, tenantId);
+  }
+
+  // ──────────────────────── 共享层 ────────────────────────
+
+  /**
+   * 共享 HTTP 调用层 — 处理请求发送 + HTTP 级异常分类。
+   * 响应日志沿用 200 字符截断（仅影响日志可读性，响应体本身完整返回）。
+   *
+   * @return 完整 LLM 响应 JsonNode（非 null）
+   * @throws FaqLlmException HTTP 级异常（429/4xx/5xx/超时）
+   */
+  private JsonNode executeChatCompletion(ObjectNode requestBody, String url, String apiKey, Long tenantId) {
     String requestBodyStr;
     try {
       requestBodyStr = objectMapper.writeValueAsString(requestBody);
     } catch (Exception e) {
       requestBodyStr = requestBody.toString();
     }
-
-    log.info("FAQ LLM 请求：tenantId={}, model={}, url={}, body={}", tenantId, modelId, url, requestBodyStr);
+    log.info("LLM 请求：tenantId={}, url={}, body={}", tenantId, url, requestBodyStr);
 
     try {
       JsonNode response = client.post()
@@ -141,11 +206,11 @@ public class FaqLlmClient {
           .body(JsonNode.class);
 
       if (response == null) {
-        log.error("FAQ LLM 返回 null：tenantId={}, url={}", tenantId, url);
+        log.error("LLM 返回 null：tenantId={}, url={}", tenantId, url);
         throw new FaqLlmServerException("LLM 返回空响应");
       }
 
-      // 记录完整响应
+      // 记录响应（截断到 200 字符，仅日志）
       String responseStr;
       try {
         responseStr = objectMapper.writeValueAsString(response);
@@ -155,33 +220,9 @@ public class FaqLlmClient {
       if (responseStr.length() > 200) {
         responseStr = responseStr.substring(0, 200) + "...(truncated)";
       }
-      log.info("FAQ LLM 响应：tenantId={}, model={}, body={}", tenantId, modelId, responseStr);
+      log.info("LLM 响应：tenantId={}, url={}, body={}", tenantId, url, responseStr);
 
-      // 提取 choices[0]
-      JsonNode choices = response.path("choices");
-      if (!choices.isArray() || choices.isEmpty()) {
-        log.error("FAQ LLM 响应缺少 choices：tenantId={}, body={}", tenantId, responseStr);
-        throw new FaqLlmServerException("LLM 响应缺少 choices");
-      }
-      JsonNode firstChoice = choices.get(0);
-
-      // finish_reason 检测（在解析 JSON 之前判定）
-      String finishReason = firstChoice.path("finish_reason").asText(null);
-      if ("length".equals(finishReason)) {
-        log.warn("FAQ LLM 输出被截断（finish_reason=length）：tenantId={}, body={}", tenantId, responseStr);
-        throw new FaqLlmTruncatedException("LLM 输出被 max_tokens 截断（finish_reason=length）");
-      }
-
-      // 提取 content
-      String content = firstChoice.path("message").path("content").asText(null);
-      if (content == null || content.isBlank()) {
-        // finish_reason=stop 但 content 为空 → 瞬时，可重试
-        log.warn("FAQ LLM 响应 content 为空（finish_reason={}）：tenantId={}, body={}",
-            finishReason, tenantId, responseStr);
-        throw new FaqLlmServerException(
-            "LLM 响应 content 为空（finish_reason=" + finishReason + "）");
-      }
-      return content;
+      return response;
     } catch (FaqLlmException ex) {
       // 已分类的 LLM 异常直接向上抛
       throw ex;
@@ -192,20 +233,22 @@ public class FaqLlmClient {
       // 网络超时 / 连接异常
       Throwable cause = ex.getCause();
       if (cause instanceof SocketTimeoutException) {
-        log.error("FAQ LLM 网络超时：tenantId={}, url={}, error={}", tenantId, url, ex.getMessage());
+        log.error("LLM 网络超时：tenantId={}, url={}, error={}", tenantId, url, ex.getMessage());
         throw new FaqLlmTimeoutException("LLM 网络超时：" + ex.getMessage());
       }
-      log.error("FAQ LLM 请求异常：tenantId={}, url={}, error={}", tenantId, url, ex.getMessage());
+      log.error("LLM 请求异常：tenantId={}, url={}, error={}", tenantId, url, ex.getMessage());
       throw new FaqLlmTimeoutException("LLM 请求异常：" + ex.getMessage());
     }
   }
+
+  // ──────────────────────── private helpers ────────────────────────
 
   /**
    * 根据 HTTP 状态码分类异常。
    * 429 → RateLimit（瞬时），4xx → Client（确定性），5xx → Server（瞬时）
    */
   private FaqLlmException classifyHttpException(int statusCode, String message, Long tenantId, String url) {
-    log.error("FAQ LLM HTTP 错误：tenantId={}, status={}, url={}, message={}",
+    log.error("LLM HTTP 错误：tenantId={}, status={}, url={}, message={}",
         tenantId, statusCode, url, message);
     if (statusCode == 429) {
       return new FaqLlmRateLimitException("LLM 限流（HTTP 429）");
