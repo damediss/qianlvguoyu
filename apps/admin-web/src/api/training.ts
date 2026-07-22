@@ -61,7 +61,8 @@ import type {
   DivisionPlanItem, DivisionReadyVO, DivisionEnsureTrainInfoReq, DivisionEnsureTrainInfoResult,
   DivisionRosterParseReq, DivisionRosterParseResult, DivisionRosterItem,
   DivisionOrgSplitReq, DivisionTrainInfoSummary,
-  DivisionAutoPackReq, DivisionAutoPackResult, DivisionPackPatchReq, DivisionPackTaskResult,
+  DivisionAutoPackReq, DivisionAutoPackResult, DivisionManualPackReq, DivisionAddPersonReq,
+  DivisionPackPatchReq, DivisionPackTaskResult,
   DivisionPackTaskStatus,
   ShiftAssignGenerateReq, ShiftAssignPreviewResult, ShiftAssignPrecheckResult,
   ShiftAssignTaskResult, ShiftAssignBindClassReq, ShiftAssignPatchReq,
@@ -1484,6 +1485,8 @@ export function pageDivisionRoster(params: {
   planId: number;
   trainInfoId?: number;
   assignStatus?: number;
+  keyword?: string;
+  jobName?: string;
   page?: number;
   pageSize?: number;
 }) {
@@ -1502,6 +1505,49 @@ export function autoPackDivision(payload: DivisionAutoPackReq) {
   return unwrap<DivisionPackTaskResult>(
     apiClient.post(`${BASE}/division/auto-pack`, payload, { timeout: 180000 }),
   );
+}
+
+export function manualPackDivision(payload: DivisionManualPackReq) {
+  return unwrap<DivisionPackTaskResult>(
+    apiClient.post(`${BASE}/division/manual-pack`, payload),
+  );
+}
+
+export function addPersonToDivisionPackClass(
+  taskId: number,
+  tempId: string,
+  payload: DivisionAddPersonReq,
+) {
+  return unwrap<DivisionPackTaskResult & { rosterId?: number; createdRoster?: boolean }>(
+    apiClient.post(`${BASE}/division/pack-tasks/${taskId}/classes/${encodeURIComponent(tempId)}/add-person`, payload),
+  );
+}
+
+export async function importMembersToDivisionPackClass(
+  taskId: number,
+  tempId: string,
+  file: File,
+) {
+  const form = new FormData();
+  form.append('file', file);
+  return unwrap<{
+    added: number;
+    skipped: { personName?: string; idCard?: string; reason?: string }[];
+    unmatched: { personName?: string; idCard?: string; reason?: string }[];
+    task: DivisionPackTaskResult;
+  }>(
+    apiClient.post(
+      `${BASE}/division/pack-tasks/${taskId}/classes/${encodeURIComponent(tempId)}/import-members`,
+      form,
+      { timeout: 120000, headers: { 'Content-Type': 'multipart/form-data' } },
+    ),
+  );
+}
+
+export function downloadDivisionMemberImportTemplate() {
+  return apiClient.get(`${BASE}/division/member-import-template`, {
+    responseType: 'blob',
+  });
 }
 
 export function pageDivisionPackTasks(params: {

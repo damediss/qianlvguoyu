@@ -52,6 +52,7 @@ import type {
   ThreeYearPlanSubmitHistoryItem,
 } from '../../types/training';
 import { PersonnelCertImportPanel } from './PersonnelCertImportPanel';
+import { TrainingProcessSteps } from './TrainingProcessSteps';
 
 const { Text } = Typography;
 
@@ -751,6 +752,8 @@ export const SolutionPlanningPage: React.FC = () => {
   };
 
   return (
+    <>
+      <TrainingProcessSteps current={1} />
     <Card bordered={false} bodyStyle={{ padding: 0 }}>
       <Tabs
         activeKey={activeTab}
@@ -1303,5 +1306,6 @@ export const SolutionPlanningPage: React.FC = () => {
         )}
       </Modal>
     </Card>
+    </>
   );
 };

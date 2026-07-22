@@ -206,6 +206,7 @@ export function EnterpriseClassConfirmPanel() {
       title: '策略',
       width: 120,
       render: (_, row) => {
+        if (row.strategy === 'manual') return '手动组班';
         if (row.strategy === 'by_job_level') return '工种/等级';
         if (row.strategy === 'by_job_level_slot') return '工种/等级+时段';
         if (row.strategy === 'by_shift_team') return '按班组';
@@ -441,10 +442,11 @@ export function EnterpriseClassConfirmPanel() {
               <Descriptions.Item label="人数">{detail.assignedCount}</Descriptions.Item>
               <Descriptions.Item label="每班上限">{detail.classMax}</Descriptions.Item>
               <Descriptions.Item label="策略">
-                {detail.strategy === 'by_job_level' ? '按工种/等级'
-                  : detail.strategy === 'by_job_level_slot' ? '工种/等级+上下午时段'
-                    : detail.strategy === 'by_shift_team' ? '按班组/倒班'
-                      : '按名单顺序'}
+                {detail.strategy === 'manual' ? '手动组班'
+                  : detail.strategy === 'by_job_level' ? '按工种/等级'
+                    : detail.strategy === 'by_job_level_slot' ? '工种/等级+上下午时段'
+                      : detail.strategy === 'by_shift_team' ? '按班组/倒班'
+                        : '按名单顺序'}
               </Descriptions.Item>
               {detail.submitUsername && (
                 <Descriptions.Item label="提交人" span={2}>

@@ -5,15 +5,20 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guoyu.platform.chazheng.support.CertMappingSupport;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
+import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.OrgEntity;
 import com.guoyu.platform.system.mapper.OrgMapper;
+import com.guoyu.platform.trainingdepartment.dto.TrainDivisionAddPersonReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainDivisionAutoPackReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainDivisionEnsureTrainInfoReq;
+import com.guoyu.platform.trainingdepartment.dto.TrainDivisionManualPackReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainDivisionOrgSplitReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainDivisionPackPatchReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainDivisionRosterParseReq;
@@ -42,6 +47,7 @@ import com.guoyu.platform.trainingdepartment.service.shiftassign.engine.ShiftTim
 import com.guoyu.platform.trainingdepartment.vo.TrainDivisionPlanVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainDivisionReadyVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainPlanRosterVO;
+import java.io.ByteArrayOutputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -58,10 +64,14 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor
@@ -88,6 +98,7 @@ public class TrainDivisionApplicationService {
   private final TrainPlanRosterMapper rosterMapper;
   private final TrainDivisionPackTaskMapper packTaskMapper;
   private final OrgMapper orgMapper;
+  private final ExamWorkTypeMapper examWorkTypeMapper;
   private final FileApplicationService fileApplicationService;
   private final TrainPlanRosterParseService rosterParseService;
   private final TrainingOperatorScopeService scopeService;
@@ -261,7 +272,13 @@ public class TrainDivisionApplicationService {
 
   @Transactional(readOnly = true)
   public PageResponse<TrainPlanRosterVO> pageRoster(
-      Long planId, Long trainInfoId, Integer assignStatus, int page, int pageSize) {
+      Long planId,
+      Long trainInfoId,
+      Integer assignStatus,
+      String keyword,
+      String jobName,
+      int page,
+      int pageSize) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     requirePlan(planId);
     LambdaQueryWrapper<TrainPlanRosterEntity> q = new LambdaQueryWrapper<TrainPlanRosterEntity>()
@@ -274,6 +291,14 @@ public class TrainDivisionApplicationService {
     }
     if (assignStatus != null) {
       q.eq(TrainPlanRosterEntity::getAssignStatus, assignStatus);
+    }
+    if (StringUtils.hasText(keyword)) {
+      String kw = keyword.trim();
+      q.and(w -> w.like(TrainPlanRosterEntity::getPersonName, kw)
+          .or().like(TrainPlanRosterEntity::getIdCard, kw));
+    }
+    if (StringUtils.hasText(jobName)) {
+      q.like(TrainPlanRosterEntity::getJobName, jobName.trim());
     }
     Page<TrainPlanRosterEntity> result = rosterMapper.selectPage(new Page<>(page, pageSize), q);
     List<TrainPlanRosterVO> list = result.getRecords().stream().map(this::toRosterVO).toList();
@@ -432,12 +457,14 @@ public class TrainDivisionApplicationService {
         : (StringUtils.hasText(trainInfo.getCompanyName()) ? trainInfo.getCompanyName() + "-" : "")
             + year + String.format("%02d", month) + "-";
 
+    WorkTypeLookup workTypeLookup = buildWorkTypeLookup();
+
     List<Map<String, Object>> classes;
     int assignedCount;
     if ("by_job_level_slot".equalsIgnoreCase(strategy)
         || "by_attendable_slot".equalsIgnoreCase(strategy)) {
       SlotPackResult slotPack = buildJobLevelSlotClasses(
-          plan, assignable, prefix, classMax, year, month, warnings);
+          plan, assignable, prefix, classMax, year, month, warnings, workTypeLookup);
       classes = slotPack.classes;
       assignedCount = slotPack.assignedCount;
       unassigned.addAll(slotPack.extraUnassigned);
@@ -498,6 +525,9 @@ public class TrainDivisionApplicationService {
           row.put("group", groupName);
           row.put("nums", memberRows.size());
           row.put("members", memberRows);
+          String jobName = chunk.isEmpty() ? null : chunk.get(0).getJobName();
+          String levelName = chunk.isEmpty() ? null : chunk.get(0).getLevelName();
+          fillClassWorkMeta(row, jobName, levelName, workTypeLookup);
           classes.add(row);
           assignedCount += memberRows.size();
           seq++;
@@ -656,6 +686,471 @@ public class TrainDivisionApplicationService {
     return toPackTaskVo(task);
   }
 
+  /**
+   * 手动创建分班草稿：名单+排班齐套，strategy=manual，不立即建班。
+   */
+  @Transactional
+  public Map<String, Object> manualPack(TrainDivisionManualPackReq req) {
+    TrainThreeYearPlanEntity plan = requirePlan(req.getPlanId());
+    assertFullReturnReady(plan);
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    TrainInfoListEntity trainInfo = requireTrainInfoLinked(req.getTrainInfoId(), plan.getId(), tenantId);
+
+    int classMax = req.getClassMax() == null ? 50 : req.getClassMax();
+    if (classMax < 1) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "班额上限无效");
+    }
+    String prefix = StringUtils.hasText(req.getClassNamePrefix())
+        ? req.getClassNamePrefix().trim()
+        : (StringUtils.hasText(trainInfo.getCompanyName()) ? trainInfo.getCompanyName() + "-" : "培训-");
+
+    LocalDate nowDate = LocalDate.now();
+    int year = nowDate.getYear();
+    int month = nowDate.getMonthValue();
+
+    List<Map<String, Object>> classes = new ArrayList<>();
+    Set<Long> usedRosterIds = new HashSet<>();
+    int assignedCount = 0;
+    List<Map<String, Object>> warnings = new ArrayList<>();
+
+    if (req.getClasses() != null) {
+      int seq = 1;
+      for (TrainDivisionManualPackReq.ClassSeed seed : req.getClasses()) {
+        String title = StringUtils.hasText(seed.getTitle())
+            ? seed.getTitle().trim()
+            : prefix + seq + "班";
+        List<Map<String, Object>> members = new ArrayList<>();
+        if (seed.getRosterIds() != null) {
+          for (Long rosterId : seed.getRosterIds()) {
+            if (rosterId == null || !usedRosterIds.add(rosterId)) {
+              continue;
+            }
+            TrainPlanRosterEntity roster = rosterMapper.selectById(rosterId);
+            if (roster == null || !Objects.equals(roster.getTenantId(), tenantId)
+                || !Objects.equals(roster.getPlanId(), plan.getId())) {
+              throw new BusinessException(ErrorCode.BAD_REQUEST, "名单人员无效: " + rosterId);
+            }
+            if (roster.getAssignStatus() != null && roster.getAssignStatus() != 0) {
+              throw new BusinessException(ErrorCode.BAD_REQUEST,
+                  roster.getPersonName() + " 已分班，无法放入草稿");
+            }
+            assertNotAlreadyInTrainInfo(tenantId, trainInfo.getId(), roster);
+            members.add(memberDraft(roster));
+          }
+        }
+        if (members.size() > classMax) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST,
+              "班级「" + title + "」人数超过上限 " + classMax);
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("tempId", "c-" + UUID.randomUUID().toString().substring(0, 8));
+        row.put("title", title);
+        row.put("group", "手动");
+        row.put("nums", members.size());
+        row.put("members", members);
+        String jobName = members.isEmpty() ? null : textOf(members.get(0).get("jobName"));
+        String levelName = members.isEmpty() ? null : textOf(members.get(0).get("levelName"));
+        fillClassWorkMeta(row, jobName, levelName, buildWorkTypeLookup());
+        classes.add(row);
+        assignedCount += members.size();
+        seq++;
+      }
+    }
+
+    supersedeActivePackTasks(tenantId, trainInfo.getId());
+
+    LocalDateTime now = LocalDateTime.now();
+    TrainDivisionPackTaskEntity task = new TrainDivisionPackTaskEntity();
+    task.setTenantId(tenantId);
+    task.setPlanId(plan.getId());
+    task.setTrainInfoId(trainInfo.getId());
+    task.setCompanyId(trainInfo.getCompanyId() != null ? trainInfo.getCompanyId() : plan.getTargetOrgId());
+    task.setStrategy("manual");
+    task.setClassMax(classMax);
+    task.setYear(year);
+    task.setMonth(month);
+    task.setClassNamePrefix(prefix);
+    task.setStatus("draft");
+    task.setClassCount(classes.size());
+    task.setAssignedCount(assignedCount);
+    task.setUnassignedCount(0);
+    task.setClassesJson(toJson(classes));
+    task.setUnassignedJson(toJson(List.of()));
+    task.setWarningJson(toJson(warnings));
+    task.setCreateTime(now);
+    task.setUpdateTime(now);
+    task.setDeleted(0);
+    packTaskMapper.insert(task);
+    return toPackTaskVo(task);
+  }
+
+  @Transactional
+  public Map<String, Object> addPersonToPackClass(
+      Long taskId, String tempId, TrainDivisionAddPersonReq req) {
+    TrainDivisionPackTaskEntity task = requireEditableManualTask(taskId);
+    if (!StringUtils.hasText(req.getPersonName())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "姓名不能为空");
+    }
+    List<Map<String, Object>> classes = readJsonList(task.getClassesJson());
+    int classIdx = findClassIndex(classes, tempId);
+    Map<String, Object> clazz = classes.get(classIdx);
+    List<Map<String, Object>> members = new ArrayList<>(asMemberList(clazz.get("members")));
+    int classMax = task.getClassMax() == null ? 50 : task.getClassMax();
+    if (members.size() >= classMax) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "班级已达人数上限 " + classMax);
+    }
+
+    Set<Long> occupied = collectOccupiedRosterIds(classes, classIdx);
+    PersonResolveResult resolved = resolveOrCreateRoster(
+        task,
+        req.getPersonName().trim(),
+        trimToNull(req.getIdCard()),
+        trimToNull(req.getPhone()),
+        trimToNull(req.getJobName()),
+        trimToNull(req.getLevelName()),
+        trimToNull(req.getWorkshop()),
+        trimToNull(req.getShiftTeam()),
+        "manual_add",
+        occupied);
+
+    members.add(memberDraft(resolved.roster));
+    clazz.put("members", members);
+    clazz.put("nums", members.size());
+    refreshClassWorkMetaFromMembers(clazz);
+    classes.set(classIdx, clazz);
+    persistPackClasses(task, classes, readJsonList(task.getUnassignedJson()), List.of());
+
+    Map<String, Object> result = toPackTaskVo(task);
+    result.put("rosterId", resolved.roster.getId());
+    result.put("createdRoster", resolved.created);
+    return result;
+  }
+
+  @Transactional
+  public Map<String, Object> importMembersToPackClass(Long taskId, String tempId, MultipartFile file) {
+    TrainDivisionPackTaskEntity task = requireEditableManualTask(taskId);
+    if (file == null || file.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请上传名单文件");
+    }
+    byte[] bytes;
+    try {
+      bytes = file.getBytes();
+    } catch (Exception e) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "读取上传文件失败");
+    }
+    List<TrainPlanRosterEntity> parsed = rosterParseService.parseEnterpriseRoster(bytes);
+    if (parsed.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "未解析到有效人员");
+    }
+
+    List<Map<String, Object>> classes = readJsonList(task.getClassesJson());
+    int classIdx = findClassIndex(classes, tempId);
+    Map<String, Object> clazz = classes.get(classIdx);
+    List<Map<String, Object>> members = new ArrayList<>(asMemberList(clazz.get("members")));
+    int classMax = task.getClassMax() == null ? 50 : task.getClassMax();
+    if (members.size() + parsed.size() > classMax) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "导入后人数将超过班额上限 " + classMax
+              + "（当前 " + members.size() + " + 导入 " + parsed.size() + "），请拆分后重试");
+    }
+
+    Set<Long> occupied = collectOccupiedRosterIds(classes, classIdx);
+    List<Map<String, Object>> skipped = new ArrayList<>();
+    List<Map<String, Object>> unmatched = new ArrayList<>();
+    List<Map<String, Object>> warnings = new ArrayList<>(readJsonList(task.getWarningJson()));
+    int added = 0;
+
+    for (TrainPlanRosterEntity row : parsed) {
+      if (!StringUtils.hasText(row.getPersonName())) {
+        unmatched.add(Map.of(
+            "personName", "",
+            "idCard", row.getIdCard() == null ? "" : row.getIdCard(),
+            "reason", "缺姓名"));
+        continue;
+      }
+      try {
+        PersonResolveResult resolved = resolveOrCreateRoster(
+            task,
+            row.getPersonName().trim(),
+            trimToNull(row.getIdCard()),
+            trimToNull(row.getPhone()),
+            trimToNull(row.getJobName()),
+            trimToNull(row.getLevelName()),
+            trimToNull(row.getWorkshop()),
+            trimToNull(row.getShiftTeam()),
+            "class_import",
+            occupied);
+        occupied.add(resolved.roster.getId());
+        members.add(memberDraft(resolved.roster));
+        added++;
+        if (resolved.created) {
+          warnings.add(Map.of(
+              "level", "INFO",
+              "code", "ROSTER_AUTO_CREATED",
+              "message", resolved.roster.getPersonName() + " 不在待分池，已自动入库并入班"));
+        }
+      } catch (BusinessException ex) {
+        Map<String, Object> skip = new LinkedHashMap<>();
+        skip.put("personName", row.getPersonName());
+        skip.put("idCard", row.getIdCard());
+        skip.put("reason", ex.getMessage());
+        skipped.add(skip);
+      }
+    }
+
+    clazz.put("members", members);
+    clazz.put("nums", members.size());
+    refreshClassWorkMetaFromMembers(clazz);
+    classes.set(classIdx, clazz);
+    persistPackClasses(task, classes, readJsonList(task.getUnassignedJson()), warnings);
+
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("added", added);
+    result.put("skipped", skipped);
+    result.put("unmatched", unmatched);
+    result.put("task", toPackTaskVo(task));
+    return result;
+  }
+
+  @Transactional(readOnly = true)
+  public byte[] buildMemberImportTemplate() {
+    try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+      Sheet sheet = wb.createSheet("班级人员");
+      Row header = sheet.createRow(0);
+      String[] cols = {"姓名", "身份证", "手机", "工种", "等级", "车间/单位", "班组"};
+      for (int i = 0; i < cols.length; i++) {
+        header.createCell(i).setCellValue(cols[i]);
+        sheet.setColumnWidth(i, 16 * 256);
+      }
+      Row sample = sheet.createRow(1);
+      sample.createCell(0).setCellValue("张三");
+      sample.createCell(1).setCellValue("110101199001011234");
+      sample.createCell(2).setCellValue("13800000000");
+      sample.createCell(3).setCellValue("电工");
+      sample.createCell(4).setCellValue("高级");
+      wb.write(out);
+      return out.toByteArray();
+    } catch (Exception e) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "生成导入模板失败");
+    }
+  }
+
+  private TrainDivisionPackTaskEntity requireEditableManualTask(Long taskId) {
+    TrainDivisionPackTaskEntity task = requirePackTask(taskId, true);
+    if (!EDITABLE_PACK_STATUS.contains(task.getStatus())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅草稿或已驳回方案可加人");
+    }
+    if (!"manual".equalsIgnoreCase(task.getStrategy())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅手动组班方案支持此操作");
+    }
+    return task;
+  }
+
+  private static int findClassIndex(List<Map<String, Object>> classes, String tempId) {
+    if (!StringUtils.hasText(tempId)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "班级 tempId 不能为空");
+    }
+    for (int i = 0; i < classes.size(); i++) {
+      Object tid = classes.get(i).get("tempId");
+      if (tempId.equals(String.valueOf(tid))) {
+        return i;
+      }
+    }
+    throw new BusinessException(ErrorCode.BAD_REQUEST, "未找到班级：" + tempId);
+  }
+
+  private static Set<Long> collectOccupiedRosterIds(List<Map<String, Object>> classes, int excludeIdx) {
+    Set<Long> occupied = new HashSet<>();
+    for (int i = 0; i < classes.size(); i++) {
+      if (i == excludeIdx) continue;
+      for (Map<String, Object> m : asMemberList(classes.get(i).get("members"))) {
+        Long id = toLong(m.get("rosterId"));
+        if (id != null) occupied.add(id);
+      }
+    }
+    for (Map<String, Object> m : asMemberList(classes.get(excludeIdx).get("members"))) {
+      Long id = toLong(m.get("rosterId"));
+      if (id != null) occupied.add(id);
+    }
+    return occupied;
+  }
+
+  private void persistPackClasses(
+      TrainDivisionPackTaskEntity task,
+      List<Map<String, Object>> classes,
+      List<Map<String, Object>> unassigned,
+      List<Map<String, Object>> warnings) {
+    int assigned = 0;
+    for (Map<String, Object> c : classes) {
+      assigned += asMemberList(c.get("members")).size();
+    }
+    if ("rejected".equals(task.getStatus())) {
+      task.setStatus("draft");
+      task.setRejectReason(null);
+    }
+    task.setClassesJson(toJson(classes));
+    task.setUnassignedJson(toJson(unassigned == null ? List.of() : unassigned));
+    task.setWarningJson(toJson(warnings == null ? List.of() : warnings));
+    task.setClassCount(classes.size());
+    task.setAssignedCount(assigned);
+    task.setUnassignedCount(unassigned == null ? 0 : unassigned.size());
+    task.setUpdateTime(LocalDateTime.now());
+    packTaskMapper.updateById(task);
+  }
+
+  private void assertNotAlreadyInTrainInfo(Long tenantId, Long trainInfoId, TrainPlanRosterEntity roster) {
+    if (!StringUtils.hasText(roster.getIdCard())) {
+      return;
+    }
+    Long exists = peopleListMapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
+        .eq(TrainPeopleListEntity::getTenantId, tenantId)
+        .eq(TrainPeopleListEntity::getTrainId, trainInfoId)
+        .eq(TrainPeopleListEntity::getIdCard, roster.getIdCard().trim())
+        .ne(TrainPeopleListEntity::getType, "teacher"));
+    if (exists != null && exists > 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          roster.getPersonName() + " 已在该培训信息班级中");
+    }
+  }
+
+  /**
+   * 匹配待分池或自动入库，再供入班使用。
+   */
+  private PersonResolveResult resolveOrCreateRoster(
+      TrainDivisionPackTaskEntity task,
+      String personName,
+      String idCard,
+      String phone,
+      String jobName,
+      String levelName,
+      String workshop,
+      String shiftTeam,
+      String source,
+      Set<Long> occupiedRosterIds) {
+    Long tenantId = task.getTenantId();
+    Long planId = task.getPlanId();
+    Long trainInfoId = task.getTrainInfoId();
+
+    TrainPlanRosterEntity matched = null;
+    if (StringUtils.hasText(idCard)) {
+      String idKey = idCard.trim();
+      List<TrainPlanRosterEntity> hits = rosterMapper.selectList(
+          new LambdaQueryWrapper<TrainPlanRosterEntity>()
+              .eq(TrainPlanRosterEntity::getTenantId, tenantId)
+              .eq(TrainPlanRosterEntity::getPlanId, planId)
+              .eq(TrainPlanRosterEntity::getDeleted, 0)
+              .eq(TrainPlanRosterEntity::getAssignStatus, 0)
+              .eq(TrainPlanRosterEntity::getIdCard, idKey)
+              .orderByAsc(TrainPlanRosterEntity::getId)
+              .last("LIMIT 5"));
+      if (hits.isEmpty()) {
+        // 兼容大小写差异
+        hits = rosterMapper.selectList(
+            new LambdaQueryWrapper<TrainPlanRosterEntity>()
+                .eq(TrainPlanRosterEntity::getTenantId, tenantId)
+                .eq(TrainPlanRosterEntity::getPlanId, planId)
+                .eq(TrainPlanRosterEntity::getDeleted, 0)
+                .eq(TrainPlanRosterEntity::getAssignStatus, 0)
+                .apply("UPPER(TRIM(id_card)) = {0}", idKey.toUpperCase(Locale.ROOT))
+                .orderByAsc(TrainPlanRosterEntity::getId)
+                .last("LIMIT 5"));
+      }
+      if (!hits.isEmpty()) {
+        matched = hits.get(0);
+      }
+    } else {
+      List<TrainPlanRosterEntity> hits = rosterMapper.selectList(
+          new LambdaQueryWrapper<TrainPlanRosterEntity>()
+              .eq(TrainPlanRosterEntity::getTenantId, tenantId)
+              .eq(TrainPlanRosterEntity::getPlanId, planId)
+              .eq(TrainPlanRosterEntity::getDeleted, 0)
+              .eq(TrainPlanRosterEntity::getAssignStatus, 0)
+              .eq(TrainPlanRosterEntity::getPersonName, personName)
+              .orderByAsc(TrainPlanRosterEntity::getId)
+              .last("LIMIT 5"));
+      if (hits.size() > 1) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST,
+            "姓名「" + personName + "」在待分池中有多人，请补充身份证");
+      }
+      if (hits.size() == 1) {
+        matched = hits.get(0);
+      }
+    }
+
+    if (matched != null) {
+      if (occupiedRosterIds.contains(matched.getId())) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST,
+            matched.getPersonName() + " 已在本方案其他班或本班中");
+      }
+      assertNotAlreadyInTrainInfo(tenantId, trainInfoId, matched);
+      // 补全空字段
+      boolean dirty = false;
+      if (!StringUtils.hasText(matched.getPhone()) && StringUtils.hasText(phone)) {
+        matched.setPhone(phone);
+        dirty = true;
+      }
+      if (!StringUtils.hasText(matched.getJobName()) && StringUtils.hasText(jobName)) {
+        matched.setJobName(jobName);
+        dirty = true;
+      }
+      if (!StringUtils.hasText(matched.getLevelName()) && StringUtils.hasText(levelName)) {
+        matched.setLevelName(levelName);
+        dirty = true;
+      }
+      if (!StringUtils.hasText(matched.getWorkshop()) && StringUtils.hasText(workshop)) {
+        matched.setWorkshop(workshop);
+        dirty = true;
+      }
+      if (!StringUtils.hasText(matched.getShiftTeam()) && StringUtils.hasText(shiftTeam)) {
+        matched.setShiftTeam(shiftTeam);
+        dirty = true;
+      }
+      if (dirty) {
+        matched.setUpdateTime(LocalDateTime.now());
+        rosterMapper.updateById(matched);
+      }
+      return new PersonResolveResult(matched, false);
+    }
+
+    // 池外新人：自动入库
+    TrainPlanRosterEntity created = new TrainPlanRosterEntity();
+    created.setTenantId(tenantId);
+    created.setPlanId(planId);
+    created.setTrainInfoId(trainInfoId);
+    created.setSource(source);
+    created.setPersonName(personName);
+    created.setIdCard(idCard);
+    created.setPhone(phone);
+    created.setJobName(jobName);
+    created.setLevelName(levelName);
+    created.setWorkshop(workshop);
+    created.setShiftTeam(shiftTeam);
+    created.setAssignStatus(0);
+    created.setDeleted(0);
+    LocalDateTime now = LocalDateTime.now();
+    created.setCreateTime(now);
+    created.setUpdateTime(now);
+    assertNotAlreadyInTrainInfo(tenantId, trainInfoId, created);
+    rosterMapper.insert(created);
+    return new PersonResolveResult(created, true);
+  }
+
+  private static String trimToNull(String v) {
+    if (!StringUtils.hasText(v)) return null;
+    String t = v.trim();
+    return t.isEmpty() ? null : t;
+  }
+
+  private static final class PersonResolveResult {
+    final TrainPlanRosterEntity roster;
+    final boolean created;
+
+    PersonResolveResult(TrainPlanRosterEntity roster, boolean created) {
+      this.roster = roster;
+      this.created = created;
+    }
+  }
+
   private static TrainShiftProfileService.ShiftPersonProfile matchProfile(
       TrainPlanRosterEntity r,
       Map<String, TrainShiftProfileService.ShiftPersonProfile> byName,
@@ -734,7 +1229,8 @@ public class TrainDivisionApplicationService {
       int classMax,
       int year,
       int month,
-      List<Map<String, Object>> warnings) {
+      List<Map<String, Object>> warnings,
+      WorkTypeLookup workTypeLookup) {
     if (plan.getEnterpriseShiftFileId() == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "企业尚未上传排班表，无法按时段分班");
     }
@@ -846,6 +1342,9 @@ public class TrainDivisionApplicationService {
           row.put("jobLevel", jobLevel);
           row.put("nums", memberRows.size());
           row.put("members", memberRows);
+          String jobName = chunk.isEmpty() ? null : chunk.get(0).getJobName();
+          String levelName = chunk.isEmpty() ? null : chunk.get(0).getLevelName();
+          fillClassWorkMeta(row, jobName, levelName, workTypeLookup);
           classes.add(row);
           assignedSeats += memberRows.size();
           seq++;
@@ -973,10 +1472,7 @@ public class TrainDivisionApplicationService {
       throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该分班方案");
     }
     if (orgManage) {
-      TrainingOperatorScopeService.Scope scope = scopeService.currentScope();
-      if (scope.isEnterpriseViewer()) {
-        throw new BusinessException(ErrorCode.FORBIDDEN, "企业侧不可编辑分班方案");
-      }
+      scopeService.requireOrgOperator();
     }
     return task;
   }
@@ -1047,6 +1543,11 @@ public class TrainDivisionApplicationService {
       c.put("group", draft.getGroup());
       c.put("nums", members.size());
       c.put("members", members);
+      String jobName = StringUtils.hasText(draft.getJobName())
+          ? draft.getJobName().trim()
+          : (members.isEmpty() ? null : textOf(members.get(0).get("jobName")));
+      String levelName = members.isEmpty() ? null : textOf(members.get(0).get("levelName"));
+      fillClassWorkMeta(c, jobName, levelName, buildWorkTypeLookup());
       classes.add(c);
       assigned += members.size();
     }
@@ -1091,6 +1592,7 @@ public class TrainDivisionApplicationService {
     var user = SecurityContext.currentUser();
     List<Map<String, Object>> created = new ArrayList<>();
     int people = 0;
+    WorkTypeLookup workTypeLookup = buildWorkTypeLookup();
 
     for (Map<String, Object> c : classes) {
       List<Map<String, Object>> members = asMemberList(c.get("members"));
@@ -1100,8 +1602,7 @@ public class TrainDivisionApplicationService {
       clazz.setTrainInfoId(trainInfo.getId());
       clazz.setTitle(title);
       clazz.setCompanyId(trainInfo.getCompanyId() != null ? trainInfo.getCompanyId() : task.getCompanyId());
-      clazz.setWorkTypeId(trainInfo.getWorkTypeId());
-      clazz.setWorkTypeLevel(trainInfo.getWorkTypeLevel());
+      applyWorkTypeToClass(clazz, c, trainInfo, workTypeLookup);
       clazz.setNums(members.size());
       clazz.setAddtime((int) (System.currentTimeMillis() / 1000));
       clazz.setDeleted(0);
@@ -1264,6 +1765,175 @@ public class TrainDivisionApplicationService {
       return Long.parseLong(String.valueOf(v));
     } catch (Exception e) {
       return null;
+    }
+  }
+
+  private static Integer toInt(Object v) {
+    if (v == null) return null;
+    if (v instanceof Number n) return n.intValue();
+    try {
+      return Integer.parseInt(String.valueOf(v).trim());
+    } catch (Exception e) {
+      return null;
+    }
+  }
+
+  private static String textOf(Object v) {
+    if (v == null) return null;
+    String s = String.valueOf(v).trim();
+    return s.isEmpty() || "null".equalsIgnoreCase(s) ? null : s;
+  }
+
+  /** 草稿班级写入工种文本，并尽量解析 exam_work_type.id / 等级数字。 */
+  private static void fillClassWorkMeta(
+      Map<String, Object> row, String jobName, String levelName, WorkTypeLookup lookup) {
+    if (StringUtils.hasText(jobName)) {
+      row.put("jobName", jobName.trim());
+    }
+    if (StringUtils.hasText(levelName)) {
+      row.put("levelName", levelName.trim());
+    }
+    Long workTypeId = lookup != null ? lookup.resolveId(jobName) : null;
+    if (workTypeId != null) {
+      row.put("workTypeId", workTypeId);
+    }
+    Integer level = resolveWorkTypeLevel(levelName);
+    if (level != null) {
+      row.put("workTypeLevel", level);
+    }
+  }
+
+  private void refreshClassWorkMetaFromMembers(Map<String, Object> clazz) {
+    List<Map<String, Object>> members = asMemberList(clazz.get("members"));
+    if (members.isEmpty()) {
+      return;
+    }
+    String jobName = textOf(clazz.get("jobName"));
+    String levelName = textOf(clazz.get("levelName"));
+    if (!StringUtils.hasText(jobName)) {
+      jobName = textOf(members.get(0).get("jobName"));
+    }
+    if (!StringUtils.hasText(levelName)) {
+      levelName = textOf(members.get(0).get("levelName"));
+    }
+    fillClassWorkMeta(clazz, jobName, levelName, buildWorkTypeLookup());
+  }
+
+  private void applyWorkTypeToClass(
+      TrainInfoClassEntity clazz,
+      Map<String, Object> classDraft,
+      TrainInfoListEntity trainInfo,
+      WorkTypeLookup lookup) {
+    String jobName = textOf(classDraft.get("jobName"));
+    String levelName = textOf(classDraft.get("levelName"));
+    List<Map<String, Object>> members = asMemberList(classDraft.get("members"));
+    if (!members.isEmpty()) {
+      if (!StringUtils.hasText(jobName)) {
+        jobName = textOf(members.get(0).get("jobName"));
+      }
+      if (!StringUtils.hasText(levelName)) {
+        levelName = textOf(members.get(0).get("levelName"));
+      }
+    }
+
+    Long workTypeId = toLong(classDraft.get("workTypeId"));
+    if (workTypeId == null) {
+      workTypeId = lookup.resolveId(jobName);
+    }
+    if (workTypeId == null) {
+      workTypeId = trainInfo.getWorkTypeId();
+    }
+
+    Integer workTypeLevel = toInt(classDraft.get("workTypeLevel"));
+    if (workTypeLevel == null) {
+      workTypeLevel = resolveWorkTypeLevel(levelName);
+    }
+    if (workTypeLevel == null) {
+      workTypeLevel = trainInfo.getWorkTypeLevel();
+    }
+
+    clazz.setWorkTypeId(workTypeId);
+    clazz.setWorkTypeLevel(workTypeLevel);
+  }
+
+  /**
+   * 名单等级文本 → 1~5（与采集/人员认定一致：初级工=1 … 高级技师=5）。
+   */
+  static Integer resolveWorkTypeLevel(String levelName) {
+    if (!StringUtils.hasText(levelName)) {
+      return null;
+    }
+    String t = levelName.trim();
+    Integer mapped = CertMappingSupport.mapLevelText(t);
+    if (mapped != null) {
+      return mapped;
+    }
+    // 复合写法：五级/初级工、初级工/五级 等
+    String[] labels = {"高级技师", "技师", "高级工", "中级工", "初级工"};
+    for (String label : labels) {
+      if (t.contains(label)) {
+        return CertMappingSupport.mapLevelText(label);
+      }
+    }
+    if (t.matches("[1-5]")) {
+      return Integer.parseInt(t);
+    }
+    return null;
+  }
+
+  private WorkTypeLookup buildWorkTypeLookup() {
+    List<ExamWorkTypeEntity> all = examWorkTypeMapper.selectList(
+        new LambdaQueryWrapper<ExamWorkTypeEntity>().eq(ExamWorkTypeEntity::getDeleted, 0));
+    Map<String, List<ExamWorkTypeEntity>> byTitle = new HashMap<>();
+    for (ExamWorkTypeEntity e : all) {
+      if (!StringUtils.hasText(e.getTitle())) {
+        continue;
+      }
+      byTitle.computeIfAbsent(normalizeWorkTypeTitle(e.getTitle()), k -> new ArrayList<>()).add(e);
+    }
+    return new WorkTypeLookup(byTitle);
+  }
+
+  private static String normalizeWorkTypeTitle(String title) {
+    return title.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+  }
+
+  private static final class WorkTypeLookup {
+    private final Map<String, List<ExamWorkTypeEntity>> byTitle;
+
+    private WorkTypeLookup(Map<String, List<ExamWorkTypeEntity>> byTitle) {
+      this.byTitle = byTitle;
+    }
+
+    private Long resolveId(String jobName) {
+      if (!StringUtils.hasText(jobName)) {
+        return null;
+      }
+      String key = normalizeWorkTypeTitle(jobName);
+      List<ExamWorkTypeEntity> hits = byTitle.get(key);
+      if (hits == null || hits.isEmpty()) {
+        List<ExamWorkTypeEntity> fuzzy = new ArrayList<>();
+        for (Map.Entry<String, List<ExamWorkTypeEntity>> e : byTitle.entrySet()) {
+          if (e.getKey().contains(key) || key.contains(e.getKey())) {
+            fuzzy.addAll(e.getValue());
+          }
+        }
+        hits = fuzzy;
+      }
+      if (hits == null || hits.isEmpty()) {
+        return null;
+      }
+      ExamWorkTypeEntity best = pickBestWorkType(hits);
+      return best.getId() == null ? null : best.getId().longValue();
+    }
+
+    private static ExamWorkTypeEntity pickBestWorkType(List<ExamWorkTypeEntity> hits) {
+      return hits.stream()
+          .sorted(Comparator
+              .comparing((ExamWorkTypeEntity e) -> e.getParentId() == null || e.getParentId() == 0)
+              .thenComparing(e -> e.getId() == null ? Integer.MAX_VALUE : e.getId()))
+          .findFirst()
+          .orElse(hits.get(0));
     }
   }
 
@@ -1561,10 +2231,10 @@ public class TrainDivisionApplicationService {
     }
   }
 
-  /** 兼容模式 org-split：仍要求名单+排班齐套（依赖名单勾选） */
+  /** 手动/自动分班：名单与排班均需齐套 */
   private void assertFullReturnReady(TrainThreeYearPlanEntity plan) {
     if (plan.getEnterpriseRosterFileId() == null || plan.getEnterpriseShiftFileId() == null) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "兼容模式需名单与排班均已上传");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请先上传筛选名单与排班表后再分班");
     }
   }
 

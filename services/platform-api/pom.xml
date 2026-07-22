@@ -63,6 +63,15 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-amqp</artifactId>
     </dependency>
+    <!-- 显式声明，避免 IDE 未解析 starter 传递依赖时报「程序包 org.springframework.amqp.* 不存在」 -->
+    <dependency>
+      <groupId>org.springframework.amqp</groupId>
+      <artifactId>spring-amqp</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.amqp</groupId>
+      <artifactId>spring-rabbit</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-aop</artifactId>

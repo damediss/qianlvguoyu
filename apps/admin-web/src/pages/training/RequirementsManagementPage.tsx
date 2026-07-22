@@ -27,7 +27,6 @@ import type {
   TrainInfoListItem,
   TrainInfoListQuery,
 } from '../../types/training';
-import { TrainingProcessSteps } from './TrainingProcessSteps';
 import './RequirementsManagementPage.css';
 
 const WORK_LEVELS = [
@@ -250,8 +249,6 @@ export function RequirementsManagementPage() {
         <Typography.Title level={4}>需求管理</Typography.Title>
         <Typography.Text type="secondary">处理企业培训需求，跟踪立项与培训项目进度</Typography.Text>
       </section>
-
-      <TrainingProcessSteps current={0} />
 
       <Card size="small" style={{ marginBottom: 16 }}>
       <div className="search-filter-bar">

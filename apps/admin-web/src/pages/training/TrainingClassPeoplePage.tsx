@@ -758,7 +758,7 @@ function TrainTaskModal({
 
 // ==================== 主页面 ====================
 export function TrainingClassPeoplePage() {
-  const processStep = 4;
+  const processStep = 3;
   const queryClient = useQueryClient();
   const [form] = Form.useForm<{
     id?: number;

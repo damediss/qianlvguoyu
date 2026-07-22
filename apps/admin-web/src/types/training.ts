@@ -2705,6 +2705,27 @@ export interface DivisionAutoPackReq {
   autoParseRoster?: boolean;
 }
 
+export interface DivisionManualPackReq {
+  planId: number;
+  trainInfoId: number;
+  classMax?: number;
+  classNamePrefix?: string;
+  classes?: {
+    title?: string;
+    rosterIds?: number[];
+  }[];
+}
+
+export interface DivisionAddPersonReq {
+  personName: string;
+  idCard?: string;
+  phone?: string;
+  jobName?: string;
+  levelName?: string;
+  workshop?: string;
+  shiftTeam?: string;
+}
+
 export interface DivisionAutoPackClassMember {
   rosterId: number;
   personName?: string;
@@ -2722,6 +2743,8 @@ export interface DivisionAutoPackClass {
   classId?: number;
   title: string;
   group?: string;
+  /** 班级工种（手动可选；自动分班时由名单推断） */
+  jobName?: string;
   nums: number;
   members?: DivisionAutoPackClassMember[];
 }
@@ -2783,6 +2806,7 @@ export interface DivisionPackPatchReq {
     tempId?: string;
     title: string;
     group?: string;
+    jobName?: string;
     members: DivisionAutoPackClassMember[];
   }[];
   unassigned?: DivisionAutoPackUnassigned[];
