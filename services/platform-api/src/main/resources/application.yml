@@ -83,6 +83,11 @@ spring:
     baseline-on-migrate: true
     out-of-order: true
     validate-on-migrate: false
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
 
 management:
   endpoints:
@@ -122,6 +127,35 @@ weknora:
   origin: ${WEKNORA_ORIGIN:http://localhost:5173}
 
 platform:
+  competition:
+    player:
+      crypto:
+        aes-key-base64: ${COMPETITION_PLAYER_CRYPTO_AES_KEY_BASE64:}
+        lookup-pepper: ${COMPETITION_PLAYER_CRYPTO_LOOKUP_PEPPER:}
+        key-version: ${COMPETITION_PLAYER_CRYPTO_KEY_VERSION:}
+      sms:
+        code-ttl-seconds: ${COMPETITION_PLAYER_SMS_CODE_TTL_SECONDS:300}
+        resend-cooldown-seconds: ${COMPETITION_PLAYER_SMS_RESEND_COOLDOWN_SECONDS:60}
+        daily-limit-per-mobile: ${COMPETITION_PLAYER_SMS_DAILY_LIMIT_PER_MOBILE:5}
+        daily-limit-per-player: ${COMPETITION_PLAYER_SMS_DAILY_LIMIT_PER_PLAYER:5}
+        max-failed-attempts: ${COMPETITION_PLAYER_SMS_MAX_FAILED_ATTEMPTS:5}
+        lock-seconds: ${COMPETITION_PLAYER_SMS_LOCK_SECONDS:1800}
+        aliyun:
+          enabled: ${COMPETITION_PLAYER_SMS_ALIYUN_ENABLED:false}
+          endpoint: ${COMPETITION_PLAYER_SMS_ALIYUN_ENDPOINT:https://dysmsapi.aliyuncs.com}
+          region-id: ${COMPETITION_PLAYER_SMS_ALIYUN_REGION_ID:cn-hangzhou}
+          sign-name: ${COMPETITION_PLAYER_SMS_ALIYUN_SIGN_NAME:}
+          template-code: ${COMPETITION_PLAYER_SMS_ALIYUN_TEMPLATE_CODE:}
+    messaging:
+      enabled: ${COMPETITION_MESSAGING_ENABLED:false}
+      dispatch-delay-millis: ${COMPETITION_MESSAGING_DISPATCH_DELAY_MILLIS:5000}
+      batch-size: ${COMPETITION_MESSAGING_BATCH_SIZE:50}
+      max-attempts: ${COMPETITION_MESSAGING_MAX_ATTEMPTS:10}
+      exchange: ${COMPETITION_MESSAGING_EXCHANGE:competition.events}
+      routing-key: ${COMPETITION_MESSAGING_ROUTING_KEY:competition.notice.published.v1}
+      queue: ${COMPETITION_MESSAGING_QUEUE:competition.notice.delivery}
+      dead-letter-queue: ${COMPETITION_MESSAGING_DEAD_LETTER_QUEUE:competition.notice.delivery.dlq}
+      dead-letter-exchange: ${COMPETITION_MESSAGING_DEAD_LETTER_EXCHANGE:competition.dlx}
   training:
     division:
       # 主路径门禁：排班表必填；名单默认也要求（可关，仅作人员补全建议）

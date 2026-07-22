@@ -46,6 +46,7 @@ class CompetitionEventServiceTest {
     assertThat(result.getEventId()).isEqualTo(1001L);
     assertThat(result.getPreviousStatus()).isEqualTo("draft");
     assertThat(result.getStatus()).isEqualTo("published");
+    assertThat(event.getPlayerEntryCode()).isNotBlank();
     assertThat(event.getStatus()).isEqualTo("published");
     assertThat(event.getUpdatedBy()).isEqualTo(1000L);
     assertThat(event.getUpdatedAt()).isNotNull();

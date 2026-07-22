@@ -10,8 +10,10 @@ import static org.mockito.Mockito.when;
 import com.guoyu.platform.competition.dto.CompetitionRosterPrecheckReq;
 import com.guoyu.platform.competition.entity.CompetitionRosterImportEntity;
 import com.guoyu.platform.competition.entity.CompetitionRosterItemEntity;
+import com.guoyu.platform.competition.entity.CompetitionPlayerIdentityEntity;
 import com.guoyu.platform.competition.mapper.CompetitionRosterImportMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRosterItemMapper;
+import com.guoyu.platform.competition.player.domain.CompetitionPlayerIdentityDomainService;
 import java.io.ByteArrayOutputStream;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.poi.ss.usermodel.Row;
@@ -24,10 +26,14 @@ class CompetitionRosterImportServiceTest {
 
   private final CompetitionRosterImportMapper importMapper = Mockito.mock(CompetitionRosterImportMapper.class);
   private final CompetitionRosterItemMapper itemMapper = Mockito.mock(CompetitionRosterItemMapper.class);
-  private final CompetitionRosterImportService service = new CompetitionRosterImportService(importMapper, itemMapper);
+  private final CompetitionPlayerIdentityDomainService playerIdentityService =
+      Mockito.mock(CompetitionPlayerIdentityDomainService.class);
+  private final CompetitionRosterImportService service = new CompetitionRosterImportService(
+      importMapper, itemMapper, playerIdentityService);
 
   @Test
   void precheckStoresValidRowsAndBatchCounts() throws Exception {
+    stubPlayerIdentity(9001L);
     AtomicReference<CompetitionRosterImportEntity> batchRef = new AtomicReference<>();
     when(importMapper.insert(any(CompetitionRosterImportEntity.class))).thenAnswer(invocation -> {
       CompetitionRosterImportEntity batch = invocation.getArgument(0);
@@ -37,7 +43,7 @@ class CompetitionRosterImportServiceTest {
     });
 
     CompetitionRosterImportEntity batch = service.precheck(1L, 1001L, 3001L, 8001L,
-        workbook(new String[][]{{"E001", "Alice", "electrician", "senior"}}));
+        workbook(new String[][]{{"E001", "Alice", "11010519491231002X", "13800138000", "electrician", "senior"}}));
 
     assertThat(batchRef.get()).isSameAs(batch);
     assertThat(batch.getStatus()).isEqualTo("pending_confirm");
@@ -57,8 +63,8 @@ class CompetitionRosterImportServiceTest {
 
     CompetitionRosterImportEntity batch = service.precheck(1L, 1001L, 3001L, 8001L,
         workbook(new String[][]{
-            {"E001", "Alice", "electrician", "senior"},
-            {"E001", "Bob", "welder", "intermediate"}
+            {"E001", "Alice", "11010519491231002X", "13800138000", "electrician", "senior"},
+            {"E001", "Bob", "11010519491231002X", "13800138000", "welder", "intermediate"}
         }));
 
     assertThat(batch.getStatus()).isEqualTo("validation_failed");
@@ -75,14 +81,33 @@ class CompetitionRosterImportServiceTest {
     verify(importMapper, never()).insert(any(CompetitionRosterImportEntity.class));
   }
 
+  @Test
+  void singleImportCreatesOnePendingConfirmBatch() {
+    stubPlayerIdentity(9002L);
+    when(importMapper.insert(any(CompetitionRosterImportEntity.class))).thenAnswer(invocation -> {
+      CompetitionRosterImportEntity batch = invocation.getArgument(0);
+      batch.setId(7003L);
+      return 1;
+    });
+
+    CompetitionRosterImportEntity batch = service.precheckSingle(1L, 1001L, 3001L,
+        "E001", "Alice", "11010519491231002X", "13800138000", "electrician", "senior");
+
+    assertThat(batch.getBatchNo()).startsWith("SINGLE-");
+    assertThat(batch.getStatus()).isEqualTo("pending_confirm");
+    verify(itemMapper).insert(any(CompetitionRosterItemEntity.class));
+  }
+
   private byte[] workbook(String[][] rows) throws Exception {
     try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       var sheet = workbook.createSheet("roster");
       Row header = sheet.createRow(0);
       header.createCell(0).setCellValue("employeeNo");
       header.createCell(1).setCellValue("name");
-      header.createCell(2).setCellValue("workType");
-      header.createCell(3).setCellValue("level");
+      header.createCell(2).setCellValue("idCardNo");
+      header.createCell(3).setCellValue("mobile");
+      header.createCell(4).setCellValue("workType");
+      header.createCell(5).setCellValue("level");
       for (int rowIndex = 0; rowIndex < rows.length; rowIndex++) {
         Row row = sheet.createRow(rowIndex + 1);
         for (int column = 0; column < rows[rowIndex].length; column++) {
@@ -92,5 +117,13 @@ class CompetitionRosterImportServiceTest {
       workbook.write(output);
       return output.toByteArray();
     }
+  }
+
+  private void stubPlayerIdentity(Long playerId) {
+    when(playerIdentityService.normalizeIdCard(any())).thenAnswer(invocation -> invocation.getArgument(0));
+    when(playerIdentityService.normalizeMobile(any())).thenAnswer(invocation -> invocation.getArgument(0));
+    CompetitionPlayerIdentityEntity player = new CompetitionPlayerIdentityEntity();
+    player.setId(playerId);
+    when(playerIdentityService.resolveOrCreate(any(), any(), any())).thenReturn(player);
   }
 }

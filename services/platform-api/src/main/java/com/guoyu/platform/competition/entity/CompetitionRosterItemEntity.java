@@ -7,6 +7,7 @@ import com.guoyu.platform.common.domain.BaseEntity;
 public class CompetitionRosterItemEntity extends BaseEntity {
 
   private Long batchId;
+  private Long playerId;
   private String employeeNo;
   private String name;
   private String workType;
@@ -16,6 +17,8 @@ public class CompetitionRosterItemEntity extends BaseEntity {
 
   public Long getBatchId() { return batchId; }
   public void setBatchId(Long batchId) { this.batchId = batchId; }
+  public Long getPlayerId() { return playerId; }
+  public void setPlayerId(Long playerId) { this.playerId = playerId; }
   public String getEmployeeNo() { return employeeNo; }
   public void setEmployeeNo(String employeeNo) { this.employeeNo = employeeNo; }
   public String getName() { return name; }

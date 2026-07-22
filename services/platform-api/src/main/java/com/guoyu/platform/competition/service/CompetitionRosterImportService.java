@@ -12,7 +12,9 @@ import com.guoyu.platform.competition.enums.CompetitionRosterImportStatus;
 import com.guoyu.platform.competition.enums.CompetitionRosterValidationStatus;
 import com.guoyu.platform.competition.mapper.CompetitionRosterImportMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRosterItemMapper;
+import com.guoyu.platform.competition.player.domain.CompetitionPlayerIdentityDomainService;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -27,6 +29,7 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,30 +37,79 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class CompetitionRosterImportService {
 
-  private static final Set<String> ALLOWED_FIELDS = Set.of("employeeNo", "name", "workType", "level");
+  private static final Set<String> ALLOWED_FIELDS = Set.of(
+      "employeeNo", "name", "idCardNo", "mobile", "workType", "level");
 
   private final CompetitionRosterImportMapper importMapper;
   private final CompetitionRosterItemMapper itemMapper;
+  private final CompetitionPlayerIdentityDomainService playerIdentityService;
 
   public CompetitionRosterImportService(
       CompetitionRosterImportMapper importMapper,
-      CompetitionRosterItemMapper itemMapper) {
+      CompetitionRosterItemMapper itemMapper,
+      CompetitionPlayerIdentityDomainService playerIdentityService) {
     this.importMapper = importMapper;
     this.itemMapper = itemMapper;
+    this.playerIdentityService = playerIdentityService;
   }
 
   @Transactional
   public CompetitionRosterImportEntity precheck(
       Long tenantId, Long eventId, Long orgId, Long fileId, byte[] fileBytes) {
     List<ParsedRow> rows = parse(fileBytes);
-    Map<String, Integer> employeeNoCounts = new HashMap<>();
-    rows.stream()
-        .map(ParsedRow::employeeNo)
-        .filter(value -> value != null && !value.isBlank())
-        .forEach(value -> employeeNoCounts.merge(value, 1, Integer::sum));
+    return validateAndPersist(tenantId, eventId, orgId, fileId, rows, "ROSTER-");
+  }
+
+  @Transactional
+  public CompetitionRosterImportEntity precheckSingle(
+      Long tenantId,
+      Long eventId,
+      Long orgId,
+      String employeeNo,
+      String name,
+      String idCardNo,
+      String mobile,
+      String workType,
+      String level) {
+    return validateAndPersist(tenantId, eventId, orgId, null,
+        List.of(new ParsedRow(employeeNo, name, idCardNo, mobile, workType, level, null, List.of())),
+        "SINGLE-");
+  }
+
+  public byte[] createTemplate() {
+    try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      Sheet sheet = workbook.createSheet("roster");
+      Row header = sheet.createRow(0);
+      String[] fields = {"employeeNo", "name", "idCardNo", "mobile", "workType", "level"};
+      for (int i = 0; i < fields.length; i++) {
+        header.createCell(i).setCellValue(fields[i]);
+        sheet.setColumnWidth(i, 20 * 256);
+      }
+      workbook.write(output);
+      return output.toByteArray();
+    } catch (Exception ex) {
+      log.error("Failed to create competition roster import template", ex);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "名单导入模板生成失败");
+    }
+  }
+
+  private CompetitionRosterImportEntity validateAndPersist(
+      Long tenantId,
+      Long eventId,
+      Long orgId,
+      Long fileId,
+      List<ParsedRow> rows,
+      String batchPrefix) {
+    if (rows == null || rows.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "名单不能为空");
+    }
+    Map<String, Integer> employeeNoCounts = countValues(rows, ParsedRow::employeeNo);
+    Map<String, Integer> idCardCounts = countValues(rows, ParsedRow::idCardNo);
+    Map<String, Integer> mobileCounts = countValues(rows, ParsedRow::mobile);
 
     List<ParsedRow> validatedRows = rows.stream()
-        .map(row -> validateRow(row, employeeNoCounts))
+        .map(row -> validateRow(row, employeeNoCounts, idCardCounts, mobileCounts))
+        .map(row -> resolvePlayer(row, tenantId))
         .toList();
     int invalidCount = (int) validatedRows.stream().filter(row -> !row.errors().isEmpty()).count();
 
@@ -65,7 +117,7 @@ public class CompetitionRosterImportService {
     batch.setTenantId(tenantId);
     batch.setEventId(eventId);
     batch.setOrgId(orgId);
-    batch.setBatchNo("ROSTER-" + UUID.randomUUID().toString().replace("-", ""));
+    batch.setBatchNo(batchPrefix + UUID.randomUUID().toString().replace("-", ""));
     batch.setSourceFileId(fileId);
     batch.setStatus(invalidCount == 0
         ? CompetitionRosterImportStatus.PENDING_CONFIRM.getCode()
@@ -81,6 +133,7 @@ public class CompetitionRosterImportService {
       CompetitionRosterItemEntity item = new CompetitionRosterItemEntity();
       item.setTenantId(tenantId);
       item.setBatchId(batch.getId());
+      item.setPlayerId(row.playerId());
       item.setEmployeeNo(row.employeeNo());
       item.setName(row.name());
       item.setWorkType(row.workType());
@@ -169,12 +222,15 @@ public class CompetitionRosterImportService {
         Row row = sheet.getRow(rowIndex);
         String employeeNo = cellValue(row, headerIndexes.get("employeeNo"));
         String name = cellValue(row, headerIndexes.get("name"));
+        String idCardNo = cellValue(row, headerIndexes.get("idCardNo"));
+        String mobile = cellValue(row, headerIndexes.get("mobile"));
         String workType = cellValue(row, headerIndexes.get("workType"));
         String level = cellValue(row, headerIndexes.get("level"));
-        if (isBlank(employeeNo) && isBlank(name) && isBlank(workType) && isBlank(level)) {
+        if (isBlank(employeeNo) && isBlank(name) && isBlank(idCardNo) && isBlank(mobile)
+            && isBlank(workType) && isBlank(level)) {
           continue;
         }
-        rows.add(new ParsedRow(employeeNo, name, workType, level, List.of()));
+        rows.add(new ParsedRow(employeeNo, name, idCardNo, mobile, workType, level, null, List.of()));
       }
       if (rows.isEmpty()) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "名单不能为空");
@@ -204,12 +260,17 @@ public class CompetitionRosterImportService {
       }
     }
     if (!indexes.keySet().equals(new HashSet<>(ALLOWED_FIELDS))) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "名单必须包含 employeeNo、name、workType、level 字段");
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "名单必须包含 employeeNo、name、idCardNo、mobile、workType、level 字段");
     }
     return indexes;
   }
 
-  private ParsedRow validateRow(ParsedRow row, Map<String, Integer> employeeNoCounts) {
+  private ParsedRow validateRow(
+      ParsedRow row,
+      Map<String, Integer> employeeNoCounts,
+      Map<String, Integer> idCardCounts,
+      Map<String, Integer> mobileCounts) {
     List<String> errors = new ArrayList<>();
     if (isBlank(row.employeeNo())) {
       errors.add("employeeNo不能为空");
@@ -223,13 +284,63 @@ public class CompetitionRosterImportService {
     } else if (row.name().length() > 128) {
       errors.add("name长度不能超过128");
     }
+    if (isBlank(row.idCardNo())) {
+      errors.add("idCardNo不能为空");
+    } else if (idCardCounts.getOrDefault(row.idCardNo(), 0) > 1) {
+      errors.add("idCardNo重复");
+    } else {
+      try {
+        playerIdentityService.normalizeIdCard(row.idCardNo());
+      } catch (BusinessException ex) {
+        errors.add(ex.getMessage());
+      }
+    }
+    if (isBlank(row.mobile())) {
+      errors.add("mobile不能为空");
+    } else if (mobileCounts.getOrDefault(row.mobile(), 0) > 1) {
+      errors.add("mobile重复");
+    } else {
+      try {
+        playerIdentityService.normalizeMobile(row.mobile());
+      } catch (BusinessException ex) {
+        errors.add(ex.getMessage());
+      }
+    }
     if (row.workType() != null && row.workType().length() > 64) {
       errors.add("workType长度不能超过64");
     }
     if (row.level() != null && row.level().length() > 32) {
       errors.add("level长度不能超过32");
     }
-    return new ParsedRow(row.employeeNo(), row.name(), row.workType(), row.level(), errors);
+    return new ParsedRow(row.employeeNo(), row.name(), row.idCardNo(), row.mobile(), row.workType(),
+        row.level(), null, errors);
+  }
+
+  private ParsedRow resolvePlayer(ParsedRow row, Long tenantId) {
+    if (!row.errors().isEmpty()) {
+      return row;
+    }
+    try {
+      Long playerId = playerIdentityService.resolveOrCreate(tenantId, row.idCardNo(), row.mobile()).getId();
+      return new ParsedRow(row.employeeNo(), row.name(), row.idCardNo(), row.mobile(), row.workType(),
+          row.level(), playerId, row.errors());
+    } catch (BusinessException ex) {
+      if (!ErrorCode.CONFLICT.equals(ex.getCode())) {
+        throw ex;
+      }
+      List<String> errors = new ArrayList<>(row.errors());
+      errors.add(ex.getMessage());
+      return new ParsedRow(row.employeeNo(), row.name(), row.idCardNo(), row.mobile(), row.workType(),
+          row.level(), null, errors);
+    }
+  }
+
+  private Map<String, Integer> countValues(
+      List<ParsedRow> rows, java.util.function.Function<ParsedRow, String> extractor) {
+    Map<String, Integer> counts = new HashMap<>();
+    rows.stream().map(extractor).filter(value -> value != null && !value.isBlank())
+        .forEach(value -> counts.merge(value.trim(), 1, Integer::sum));
+    return counts;
   }
 
   private String cellValue(Row row, Integer index) {
@@ -254,8 +365,11 @@ public class CompetitionRosterImportService {
   private record ParsedRow(
       String employeeNo,
       String name,
+      String idCardNo,
+      String mobile,
       String workType,
       String level,
+      Long playerId,
       List<String> errors) {
   }
 }

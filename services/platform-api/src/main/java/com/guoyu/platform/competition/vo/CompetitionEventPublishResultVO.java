@@ -4,6 +4,7 @@ public class CompetitionEventPublishResultVO {
 
   private Long eventId;
   private String eventCode;
+  private String playerEntryCode;
   private String eventScope;
   private Long ownerOrgId;
   private String previousStatus;
@@ -13,6 +14,8 @@ public class CompetitionEventPublishResultVO {
   public void setEventId(Long eventId) { this.eventId = eventId; }
   public String getEventCode() { return eventCode; }
   public void setEventCode(String eventCode) { this.eventCode = eventCode; }
+  public String getPlayerEntryCode() { return playerEntryCode; }
+  public void setPlayerEntryCode(String playerEntryCode) { this.playerEntryCode = playerEntryCode; }
   public String getEventScope() { return eventScope; }
   public void setEventScope(String eventScope) { this.eventScope = eventScope; }
   public Long getOwnerOrgId() { return ownerOrgId; }

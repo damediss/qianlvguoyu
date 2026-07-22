@@ -6,6 +6,7 @@ import com.guoyu.platform.competition.dto.CompetitionRosterImportListQueryReq;
 import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.competition.dto.CompetitionRosterImportQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionRosterPrecheckReq;
+import com.guoyu.platform.competition.dto.CompetitionRosterSingleImportReq;
 import com.guoyu.platform.competition.service.CompetitionRosterImportApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionRosterImportDetailVO;
 import com.guoyu.platform.competition.vo.CompetitionRosterImportVO;
@@ -20,6 +21,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 
 @Validated
 @RestController
@@ -40,6 +45,27 @@ public class CompetitionRosterImportController {
       @PathVariable Long eventId,
       @Valid @RequestBody CompetitionRosterPrecheckReq req) {
     return ApiResponse.ok(service.precheck(eventId, req));
+  }
+
+  @PostMapping("/events/{eventId}/roster-imports/single")
+  @PreAuthorize("hasAuthority('competition:roster:import')")
+  @AuditLog(module = "competition", action = "roster-import:single-precheck", targetType = "competition_roster_import")
+  public ApiResponse<CompetitionRosterImportDetailVO> precheckSingle(
+      @PathVariable Long eventId,
+      @Valid @RequestBody CompetitionRosterSingleImportReq req) {
+    return ApiResponse.ok(service.precheckSingle(eventId, req));
+  }
+
+  @GetMapping("/roster-import-template")
+  @PreAuthorize("hasAuthority('competition:roster:import')")
+  public ResponseEntity<byte[]> downloadTemplate() {
+    byte[] content = service.createTemplate();
+    return ResponseEntity.ok()
+        .contentType(MediaType.parseMediaType(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+            .filename("competition-roster-template.xlsx").build().toString())
+        .body(content);
   }
 
   @GetMapping("/roster-imports/{batchId}")

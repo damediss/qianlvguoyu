@@ -11,6 +11,7 @@ import com.guoyu.platform.competition.entity.CompetitionEventOrgEntity;
 import com.guoyu.platform.competition.entity.CompetitionRegistrationEntity;
 import com.guoyu.platform.competition.entity.CompetitionRosterImportEntity;
 import com.guoyu.platform.competition.entity.CompetitionRosterItemEntity;
+import com.guoyu.platform.competition.entity.CompetitionPlayerIdentityEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventOrgStatus;
 import com.guoyu.platform.competition.enums.CompetitionEventScope;
 import com.guoyu.platform.competition.enums.CompetitionEventStatus;
@@ -19,12 +20,14 @@ import com.guoyu.platform.competition.enums.CompetitionRegistrationSource;
 import com.guoyu.platform.competition.enums.CompetitionRegistrationStatus;
 import com.guoyu.platform.competition.enums.CompetitionRosterImportStatus;
 import com.guoyu.platform.competition.enums.CompetitionRosterValidationStatus;
+import com.guoyu.platform.competition.enums.CompetitionPlayerStatus;
 import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventOrgMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRegistrationMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRegistrationQueryRow;
 import com.guoyu.platform.competition.mapper.CompetitionRosterImportMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRosterItemMapper;
+import com.guoyu.platform.competition.mapper.CompetitionPlayerIdentityMapper;
 import com.guoyu.platform.competition.vo.CompetitionRegistrationAuditResultVO;
 import com.guoyu.platform.security.PlatformAdminSupport;
 import com.guoyu.platform.security.PlatformUserPrincipal;
@@ -52,6 +55,7 @@ public class CompetitionRegistrationService {
   private final CompetitionRegistrationMapper registrationMapper;
   private final OrgMapper orgMapper;
   private final UserMapper userMapper;
+  private final CompetitionPlayerIdentityMapper playerMapper;
 
   public CompetitionRegistrationService(
       CompetitionEventMapper eventMapper,
@@ -59,7 +63,7 @@ public class CompetitionRegistrationService {
       CompetitionRosterImportMapper importMapper,
       CompetitionRosterItemMapper itemMapper,
       CompetitionRegistrationMapper registrationMapper) {
-    this(eventMapper, eventOrgMapper, importMapper, itemMapper, registrationMapper, null, null);
+    this(eventMapper, eventOrgMapper, importMapper, itemMapper, registrationMapper, null, null, null);
   }
 
   @Autowired
@@ -71,6 +75,18 @@ public class CompetitionRegistrationService {
       CompetitionRegistrationMapper registrationMapper,
       OrgMapper orgMapper,
       UserMapper userMapper) {
+    this(eventMapper, eventOrgMapper, importMapper, itemMapper, registrationMapper, orgMapper, userMapper, null);
+  }
+
+  public CompetitionRegistrationService(
+      CompetitionEventMapper eventMapper,
+      CompetitionEventOrgMapper eventOrgMapper,
+      CompetitionRosterImportMapper importMapper,
+      CompetitionRosterItemMapper itemMapper,
+      CompetitionRegistrationMapper registrationMapper,
+      OrgMapper orgMapper,
+      UserMapper userMapper,
+      CompetitionPlayerIdentityMapper playerMapper) {
     this.eventMapper = eventMapper;
     this.eventOrgMapper = eventOrgMapper;
     this.importMapper = importMapper;
@@ -78,6 +94,7 @@ public class CompetitionRegistrationService {
     this.registrationMapper = registrationMapper;
     this.orgMapper = orgMapper;
     this.userMapper = userMapper;
+    this.playerMapper = playerMapper;
   }
 
   @Transactional
@@ -116,13 +133,17 @@ public class CompetitionRegistrationService {
         ? CompetitionRegistrationStatus.PENDING_AUDIT.getCode()
         : CompetitionRegistrationStatus.ELIGIBLE_UNACTIVATED.getCode();
     for (CompetitionRosterItemEntity item : validItems) {
+      if (item.getPlayerId() == null) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "名单缺少选手身份，请按最新模板重新导入");
+      }
       CompetitionRegistrationEntity registration = new CompetitionRegistrationEntity();
       registration.setTenantId(tenantId);
       registration.setEventId(event.getId());
       registration.setOrgId(batch.getOrgId());
       registration.setRosterItemId(item.getId());
+      registration.setPlayerId(item.getPlayerId());
       registration.setSource(CompetitionRegistrationSource.ENTERPRISE_IMPORT.getCode());
-      registration.setStatus(registrationStatus);
+      registration.setStatus(resolveRegistrationStatus(registrationStatus, item.getPlayerId()));
       registration.setDeleted(0);
       registrationMapper.insert(registration);
     }
@@ -134,6 +155,21 @@ public class CompetitionRegistrationService {
     log.info("Competition roster confirmed: tenantId={}, eventId={}, orgId={}, batchId={}, generatedCount={}, status={}",
         tenantId, event.getId(), batch.getOrgId(), batchId, validItems.size(), registrationStatus);
     return batch;
+  }
+
+  private String resolveRegistrationStatus(String defaultStatus, Long playerId) {
+    if (!CompetitionRegistrationStatus.ELIGIBLE_UNACTIVATED.getCode().equals(defaultStatus)
+        || playerMapper == null) {
+      return defaultStatus;
+    }
+    CompetitionPlayerIdentityEntity player = playerMapper.selectById(playerId);
+    if (player == null) {
+      log.warn("Competition registration player identity not found, playerId={}", playerId);
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "名单选手身份不存在");
+    }
+    return CompetitionPlayerStatus.ACTIVE.getCode().equals(player.getStatus())
+        ? CompetitionRegistrationStatus.ELIGIBLE_ACTIVATED.getCode()
+        : defaultStatus;
   }
 
   @Transactional(readOnly = true)

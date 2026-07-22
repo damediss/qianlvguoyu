@@ -6,6 +6,7 @@ public enum CompetitionRegistrationStatus {
   SUPPLEMENT_REQUIRED("supplement_required"),
   REJECTED("rejected"),
   ELIGIBLE_UNACTIVATED("eligible_unactivated"),
+  ELIGIBLE_ACTIVATED("eligible_activated"),
   WITHDRAWN("withdrawn"),
   EXPIRED("expired");
 
