@@ -8,6 +8,7 @@ import com.guoyu.platform.competition.converter.CompetitionRosterImportConverter
 import com.guoyu.platform.competition.dto.CompetitionRosterImportQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionRosterImportListQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionRosterPrecheckReq;
+import com.guoyu.platform.competition.dto.CompetitionRosterSingleImportReq;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventOrgEntity;
 import com.guoyu.platform.competition.entity.CompetitionRosterImportEntity;
@@ -74,6 +75,21 @@ public class CompetitionRosterImportApplicationService {
     CompetitionRosterImportEntity batch = importService.precheck(
         principal.getTenantId(), event.getId(), req.orgId(), req.fileId(), fileBytes);
     return detail(principal.getTenantId(), batch, new CompetitionRosterImportQueryReq());
+  }
+
+  @Transactional
+  public CompetitionRosterImportDetailVO precheckSingle(
+      Long eventId, CompetitionRosterSingleImportReq req) {
+    PlatformUserPrincipal principal = currentUser();
+    CompetitionEventEntity event = assertCanImport(principal, eventId, req.orgId());
+    CompetitionRosterImportEntity batch = importService.precheckSingle(
+        principal.getTenantId(), event.getId(), req.orgId(), req.employeeNo(), req.name(),
+        req.idCardNo(), req.mobile(), req.workType(), req.level());
+    return detail(principal.getTenantId(), batch, new CompetitionRosterImportQueryReq());
+  }
+
+  public byte[] createTemplate() {
+    return importService.createTemplate();
   }
 
   @Transactional(readOnly = true)

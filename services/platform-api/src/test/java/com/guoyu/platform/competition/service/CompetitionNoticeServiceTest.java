@@ -16,6 +16,7 @@ import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionNoticeEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventScope;
 import com.guoyu.platform.competition.mapper.CompetitionNoticeMapper;
+import com.guoyu.platform.competition.messaging.service.CompetitionOutboxApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionNoticePublishResultVO;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.entity.OrgEntity;
@@ -32,8 +33,10 @@ class CompetitionNoticeServiceTest {
   private final CompetitionEventService eventService = Mockito.mock(CompetitionEventService.class);
   private final UserMapper userMapper = Mockito.mock(UserMapper.class);
   private final OrgMapper orgMapper = Mockito.mock(OrgMapper.class);
+  private final CompetitionOutboxApplicationService outboxApplicationService =
+      Mockito.mock(CompetitionOutboxApplicationService.class);
   private final CompetitionNoticeService service = new CompetitionNoticeService(
-      mapper, eventService, userMapper, orgMapper);
+      mapper, eventService, userMapper, orgMapper, outboxApplicationService);
 
   @Test
   void createsDraftNoticeWithServerManagedStatus() {
@@ -85,6 +88,7 @@ class CompetitionNoticeServiceTest {
     assertThat(notice.getStatus()).isEqualTo("published");
     assertThat(notice.getPublishedBy()).isEqualTo(1000L);
     assertThat(notice.getPublishedAt()).isNotNull();
+    verify(outboxApplicationService).enqueueNoticePublished(notice, 1000L);
   }
 
   @Test

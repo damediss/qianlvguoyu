@@ -3,6 +3,7 @@ package com.guoyu.platform.competition.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.competition.entity.CompetitionRegistrationEntity;
+import java.util.List;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
@@ -28,11 +29,43 @@ public interface CompetitionRegistrationMapper extends BaseMapper<CompetitionReg
 
   @Select("SELECT COUNT(1) FROM competition_registration "
       + "WHERE tenant_id = #{tenantId} AND event_id = #{eventId} AND org_id = #{orgId} "
-      + "AND deleted = 0 AND status IN ('pending_audit', 'supplement_required', 'eligible_unactivated')")
+      + "AND deleted = 0 AND status IN ("
+      + "'pending_audit', 'supplement_required', 'eligible_unactivated', 'eligible_activated')")
   long countEffectiveByEventOrg(
       @Param("tenantId") Long tenantId,
       @Param("eventId") Long eventId,
       @Param("orgId") Long orgId);
+
+  @Select("SELECT r.* FROM competition_registration r "
+      + "JOIN competition_player_identity p ON p.id = r.player_id "
+      + "AND p.tenant_id = r.tenant_id AND p.deleted = 0 "
+      + "WHERE r.tenant_id = #{tenantId} AND r.event_id = #{eventId} "
+      + "AND p.mobile_lookup_hash = #{mobileLookupHash} AND r.status = 'eligible_unactivated' "
+      + "AND r.deleted = 0 LIMIT 1 FOR UPDATE")
+  CompetitionRegistrationEntity selectEligibleUnactivatedForPlayerActivation(
+      @Param("tenantId") Long tenantId,
+      @Param("eventId") Long eventId,
+      @Param("mobileLookupHash") String mobileLookupHash);
+
+  @org.apache.ibatis.annotations.Update("UPDATE competition_registration "
+      + "SET status = 'eligible_activated', updated_at = #{updatedAt}, updated_by = #{updatedBy} "
+      + "WHERE tenant_id = #{tenantId} AND player_id = #{playerId} "
+      + "AND status = 'eligible_unactivated' AND deleted = 0")
+  int activateEligibleRegistrations(
+      @Param("tenantId") Long tenantId,
+      @Param("playerId") Long playerId,
+      @Param("updatedBy") Long updatedBy,
+      @Param("updatedAt") java.time.LocalDateTime updatedAt);
+
+  @Select("SELECT DISTINCT r.player_id FROM competition_registration r "
+      + "JOIN competition_player_identity p ON p.id = r.player_id "
+      + "AND p.tenant_id = r.tenant_id AND p.deleted = 0 "
+      + "WHERE r.tenant_id = #{tenantId} AND r.event_id = #{eventId} "
+      + "AND r.status = 'eligible_activated' AND r.player_id IS NOT NULL "
+      + "AND p.status = 'active' AND r.deleted = 0")
+  List<Long> selectActivePlayerIdsByEvent(
+      @Param("tenantId") Long tenantId,
+      @Param("eventId") Long eventId);
 
   @Select({
       "<script>",

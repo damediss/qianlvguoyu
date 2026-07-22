@@ -85,7 +85,7 @@ export function TrainingGraduationPage() {
         </div>
       </section>
 
-      <TrainingProcessSteps current={7} />
+      <TrainingProcessSteps current={6} />
 
       <Card size="small" style={{ marginBottom: 16 }}>
         <Form form={searchForm} layout="inline">

@@ -26,6 +26,8 @@ public class TrainDivisionPackPatchReq {
     @NotNull
     private String title;
     private String group;
+    /** 班级工种（可选，用于展示与筛选） */
+    private String jobName;
     @Valid
     private List<MemberDraft> members = new ArrayList<>();
 
@@ -35,6 +37,8 @@ public class TrainDivisionPackPatchReq {
     public void setTitle(String title) { this.title = title; }
     public String getGroup() { return group; }
     public void setGroup(String group) { this.group = group; }
+    public String getJobName() { return jobName; }
+    public void setJobName(String jobName) { this.jobName = jobName; }
     public List<MemberDraft> getMembers() { return members; }
     public void setMembers(List<MemberDraft> members) { this.members = members; }
   }

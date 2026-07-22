@@ -23,6 +23,8 @@ import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import java.time.LocalDateTime;
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +35,8 @@ import org.springframework.util.StringUtils;
 @Service
 @Slf4j
 public class CompetitionEventService {
+
+  private static final SecureRandom ENTRY_CODE_RANDOM = new SecureRandom();
 
   private final CompetitionEventMapper mapper;
   private final CompetitionEventOrgMapper eventOrgMapper;
@@ -161,6 +165,9 @@ public class CompetitionEventService {
     validateOrganizations(tenantId, userId, event, principal);
 
     String previousStatus = event.getStatus();
+    if (event.getPlayerEntryCode() == null || event.getPlayerEntryCode().isBlank()) {
+      event.setPlayerEntryCode(newPlayerEntryCode());
+    }
     event.setStatus(CompetitionEventStatus.PUBLISHED.getCode());
     event.setUpdatedBy(userId);
     event.setUpdatedAt(LocalDateTime.now());
@@ -172,6 +179,7 @@ public class CompetitionEventService {
     CompetitionEventPublishResultVO result = new CompetitionEventPublishResultVO();
     result.setEventId(event.getId());
     result.setEventCode(event.getCode());
+    result.setPlayerEntryCode(event.getPlayerEntryCode());
     result.setEventScope(event.getScope());
     result.setOwnerOrgId(event.getOwnerOrgId());
     result.setPreviousStatus(previousStatus);
@@ -184,6 +192,18 @@ public class CompetitionEventService {
         .eq(CompetitionEventEntity::getTenantId, tenantId)
         .eq(CompetitionEventEntity::getCode, code));
     return existing != null;
+  }
+
+  private String newPlayerEntryCode() {
+    for (int attempt = 0; attempt < 5; attempt++) {
+      byte[] randomBytes = new byte[24];
+      ENTRY_CODE_RANDOM.nextBytes(randomBytes);
+      String entryCode = Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes);
+      if (!mapper.existsByPlayerEntryCode(entryCode)) {
+        return entryCode;
+      }
+    }
+    throw new BusinessException(ErrorCode.INTERNAL_ERROR, "选手入口创建失败");
   }
 
   private CompetitionEventEntity findExisting(Long tenantId, Long eventId) {

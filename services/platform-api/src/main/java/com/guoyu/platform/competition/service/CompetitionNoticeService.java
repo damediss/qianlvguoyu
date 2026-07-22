@@ -13,6 +13,7 @@ import com.guoyu.platform.competition.entity.CompetitionNoticeEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventScope;
 import com.guoyu.platform.competition.enums.CompetitionNoticeStatus;
 import com.guoyu.platform.competition.mapper.CompetitionNoticeMapper;
+import com.guoyu.platform.competition.messaging.service.CompetitionOutboxApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionNoticePublishResultVO;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.entity.OrgEntity;
@@ -37,16 +38,19 @@ public class CompetitionNoticeService {
   private final CompetitionEventService eventService;
   private final UserMapper userMapper;
   private final OrgMapper orgMapper;
+  private final CompetitionOutboxApplicationService outboxApplicationService;
 
   public CompetitionNoticeService(
       CompetitionNoticeMapper mapper,
       CompetitionEventService eventService,
       UserMapper userMapper,
-      OrgMapper orgMapper) {
+      OrgMapper orgMapper,
+      CompetitionOutboxApplicationService outboxApplicationService) {
     this.mapper = mapper;
     this.eventService = eventService;
     this.userMapper = userMapper;
     this.orgMapper = orgMapper;
+    this.outboxApplicationService = outboxApplicationService;
   }
 
   @Transactional
@@ -143,6 +147,7 @@ public class CompetitionNoticeService {
           principal.getTenantId(), noticeId);
       throw new BusinessException(ErrorCode.CONFLICT, "通知状态已发生变化，请刷新后重试");
     }
+    outboxApplicationService.enqueueNoticePublished(notice, principal.getUserId());
 
     CompetitionNoticePublishResultVO result = new CompetitionNoticePublishResultVO();
     result.setNoticeId(notice.getId());

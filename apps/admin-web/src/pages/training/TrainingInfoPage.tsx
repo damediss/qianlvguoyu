@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from 'antd';
 import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
-import { TrainingProcessSteps } from './TrainingProcessSteps';
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
@@ -134,8 +133,6 @@ export function TrainingInfoPage() {
         <Typography.Title level={4}>培训信息</Typography.Title>
         <Typography.Text type="secondary">管理培训信息，跟踪培训项目状态和进度</Typography.Text>
       </section>
-
-      <TrainingProcessSteps current={2} />
 
       <Card size="small" style={{ marginBottom: 16 }}>
         <Space wrap>

@@ -10,6 +10,7 @@ public class CompetitionRegistrationEntity extends BaseEntity {
   private Long eventId;
   private Long orgId;
   private Long rosterItemId;
+  private Long playerId;
   private String source;
   private String status;
   private String auditReason;
@@ -22,6 +23,8 @@ public class CompetitionRegistrationEntity extends BaseEntity {
   public void setOrgId(Long orgId) { this.orgId = orgId; }
   public Long getRosterItemId() { return rosterItemId; }
   public void setRosterItemId(Long rosterItemId) { this.rosterItemId = rosterItemId; }
+  public Long getPlayerId() { return playerId; }
+  public void setPlayerId(Long playerId) { this.playerId = playerId; }
   public String getSource() { return source; }
   public void setSource(String source) { this.source = source; }
   public String getStatus() { return status; }

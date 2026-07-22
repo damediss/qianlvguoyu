@@ -8,6 +8,8 @@ public class CompetitionEventVO {
   private Long id;
   private String name;
   private String code;
+  /** Player-app entry credential, returned only from the authenticated management API. */
+  private String playerEntryCode;
   private String scope;
   private Long ownerOrgId;
   private String status;
@@ -26,6 +28,8 @@ public class CompetitionEventVO {
   public void setName(String name) { this.name = name; }
   public String getCode() { return code; }
   public void setCode(String code) { this.code = code; }
+  public String getPlayerEntryCode() { return playerEntryCode; }
+  public void setPlayerEntryCode(String playerEntryCode) { this.playerEntryCode = playerEntryCode; }
   public String getScope() { return scope; }
   public void setScope(String scope) { this.scope = scope; }
   public Long getOwnerOrgId() { return ownerOrgId; }

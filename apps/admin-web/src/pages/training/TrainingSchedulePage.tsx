@@ -101,7 +101,7 @@ export function TrainingSchedulePage() {
         </div>
       </section>
 
-      <TrainingProcessSteps current={6} />
+      <TrainingProcessSteps current={5} />
 
       <Card size="small" style={{ marginBottom: 16 }}>
         <Space>

@@ -24,6 +24,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Slf4j
 public class AppTokenAuthFilter extends OncePerRequestFilter {
 
+  private static final String PLAYER_API_PREFIX = "/api/competition/player/";
+
   private final PlatformUserTokenMapper tokenMapper;
   private final PlatformUserMapper userMapper;
 
@@ -32,6 +34,11 @@ public class AppTokenAuthFilter extends OncePerRequestFilter {
       PlatformUserMapper userMapper) {
     this.tokenMapper = tokenMapper;
     this.userMapper = userMapper;
+  }
+
+  @Override
+  protected boolean shouldNotFilter(HttpServletRequest request) {
+    return request.getRequestURI().startsWith(PLAYER_API_PREFIX);
   }
 
   @Override

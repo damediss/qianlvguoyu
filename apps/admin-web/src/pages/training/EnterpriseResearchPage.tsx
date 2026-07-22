@@ -11,6 +11,7 @@ import { listOrgs } from '../../api/system';
 import * as trainApi from '../../api/training';
 import { ResearchCollectionDrawer } from './ResearchCollectionDrawer';
 import { ResearchCollectionFieldOptionsEditor } from './ResearchCollectionFieldOptionsEditor';
+import { TrainingProcessSteps } from './TrainingProcessSteps';
 import {
   buildEmptyFieldOptionsForm,
   mergeFieldOptionsForForm,
@@ -226,6 +227,8 @@ export function EnterpriseResearchPage() {
   ];
 
   return (
+    <>
+      <TrainingProcessSteps current={0} />
     <Card
       title={<Title level={5} style={{ margin: 0 }}>企业调研</Title>}
       extra={
@@ -333,5 +336,6 @@ export function EnterpriseResearchPage() {
         }}
       />
     </Card>
+    </>
   );
 }

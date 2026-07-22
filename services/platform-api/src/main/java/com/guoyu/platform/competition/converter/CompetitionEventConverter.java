@@ -64,6 +64,7 @@ public final class CompetitionEventConverter {
     target.setId(source.getId());
     target.setName(source.getName());
     target.setCode(source.getCode());
+    target.setPlayerEntryCode(source.getPlayerEntryCode());
     target.setScope(source.getScope());
     target.setOwnerOrgId(source.getOwnerOrgId());
     target.setStatus(source.getStatus());

@@ -388,6 +388,7 @@ class CompetitionRegistrationServiceTest {
     item.setId(id);
     item.setTenantId(1L);
     item.setBatchId(7001L);
+    item.setPlayerId(8001L);
     item.setEmployeeNo(employeeNo);
     item.setName("Name");
     item.setValidationStatus("valid");

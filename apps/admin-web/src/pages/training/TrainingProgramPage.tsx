@@ -33,8 +33,6 @@ import type {
   DemandPublicData,
 } from '../../types/training';
 import './TrainingProgramPage.css';
-import { TrainingProcessSteps } from './TrainingProcessSteps';
-
 const { Dragger } = Upload;
 const BADGE_FEE_OPTIONS = ['劳务费', '住宿费', '耗材', '场地成本', '设备成本', '其他'];
 
@@ -376,8 +374,6 @@ export function TrainingProgramPage() {
         <Typography.Title level={4}>培训方案</Typography.Title>
         <Typography.Text type="secondary">管理培训方案与预算，关联企业培训需求</Typography.Text>
       </section>
-
-      <TrainingProcessSteps current={1} />
 
       <Card size="small" style={{ marginBottom: 16 }}>
         <Button type="primary" onClick={openAdd}>+ 添加</Button>

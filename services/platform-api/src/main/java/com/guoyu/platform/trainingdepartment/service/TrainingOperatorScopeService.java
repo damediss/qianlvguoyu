@@ -2,6 +2,7 @@ package com.guoyu.platform.trainingdepartment.service;
 
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.security.PlatformAdminSupport;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.OrgEntity;
@@ -9,6 +10,7 @@ import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
+import java.util.List;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +21,7 @@ import org.springframework.stereotype.Service;
 public class TrainingOperatorScopeService {
 
   private static final String ROLE_PLATFORM_ADMIN = "PLATFORM_ADMIN";
+  private static final String ROLE_SUPER_ADMIN = "SUPER_ADMIN";
   private static final Set<String> ENTERPRISE_ORG_TYPES = Set.of("company", "master");
 
   private final UserMapper userMapper;
@@ -90,7 +93,10 @@ public class TrainingOperatorScopeService {
 
   private boolean isPlatformAdmin() {
     PlatformUserPrincipal principal = SecurityContext.currentUser();
+    List<String> roleCodes = principal.getRoleCodes() == null ? List.of() : principal.getRoleCodes();
     return "admin".equals(principal.getUserType())
-        || principal.getRoleCodes().contains(ROLE_PLATFORM_ADMIN);
+        || PlatformAdminSupport.isSuperAdmin(principal)
+        || roleCodes.stream().anyMatch(ROLE_PLATFORM_ADMIN::equalsIgnoreCase)
+        || roleCodes.stream().anyMatch(ROLE_SUPER_ADMIN::equalsIgnoreCase);
   }
 }

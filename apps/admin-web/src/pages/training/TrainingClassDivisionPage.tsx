@@ -1,14 +1,13 @@
 /**
- * 分班 — 名单+排班自动建班（每班≤50）
- * 选规划 → 配置并一键分班 → 编辑草稿 → 提交企业审核 → 通过后建班
+ * 分班 — 自动/手动创建班级草稿 → 企业审核通过后建班
+ * 选规划 → 一键自动或手动组班 → 编辑草稿 → 提交企业审核
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
   Card,
   Checkbox,
-  Collapse,
   Descriptions,
   Drawer,
   Form,
@@ -24,23 +23,29 @@ import {
   Tabs,
   Tag,
   Typography,
+  Upload,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  CheckOutlined,
   DownloadOutlined,
   EditOutlined,
+  PlusOutlined,
   ReloadOutlined,
   SendOutlined,
   ThunderboltOutlined,
+  UploadOutlined,
+  UserAddOutlined,
 } from '@ant-design/icons';
 import * as trainApi from '../../api/training';
 import type {
+  DemandPublicData,
+  DivisionAddPersonReq,
   DivisionAutoPackClass,
   DivisionAutoPackClassMember,
   DivisionAutoPackUnassigned,
+  DivisionPackPatchReq,
   DivisionPackTaskResult,
   DivisionPlanItem,
   DivisionRosterItem,
@@ -56,6 +61,7 @@ const STRATEGY_LABEL: Record<string, string> = {
   by_job_level_slot: '工种等级+上下午时段',
   by_shift_team: '按班组/倒班',
   by_roster_order: '按名单顺序',
+  manual: '手动组班',
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -77,6 +83,29 @@ function normalizeClasses(classes: DivisionAutoPackClass[]): DivisionAutoPackCla
     nums: c.members?.length ?? c.nums ?? 0,
     members: (c.members ?? []).map((m) => ({ ...m })),
   }));
+}
+
+function resolveClassJobName(row: DivisionAutoPackClass): string | undefined {
+  if (row.jobName?.trim()) return row.jobName.trim();
+  const names = Array.from(new Set(
+    (row.members ?? [])
+      .map((m) => m.jobName?.trim())
+      .filter((v): v is string => !!v),
+  ));
+  return names.length === 1 ? names[0] : undefined;
+}
+
+function buildPackPatch(pack: DivisionPackTaskResult): DivisionPackPatchReq {
+  return {
+    classes: pack.classes.map((c) => ({
+      tempId: c.tempId,
+      title: c.title,
+      group: c.group,
+      jobName: (c.jobName ?? '').trim() || resolveClassJobName(c) || undefined,
+      members: c.members ?? [],
+    })),
+    unassigned: pack.unassigned,
+  };
 }
 
 export function TrainingClassDivisionPage() {
@@ -101,13 +130,24 @@ export function TrainingClassDivisionPage() {
   const [useShiftFilter, setUseShiftFilter] = useState(true);
 
   const [packResult, setPackResult] = useState<DivisionPackTaskResult | null>(null);
+  const packResultRef = useRef<DivisionPackTaskResult | null>(null);
+  packResultRef.current = packResult;
   const [draftDirty, setDraftDirty] = useState(false);
   const [editClassIdx, setEditClassIdx] = useState<number | null>(null);
+  const [classMemberKeyword, setClassMemberKeyword] = useState('');
   const [resultTab, setResultTab] = useState('classes');
 
-  const [compatClassTitle, setCompatClassTitle] = useState('');
-  const [selectedRosterIds, setSelectedRosterIds] = useState<number[]>([]);
+  const [poolOpen, setPoolOpen] = useState(false);
+  const [poolSelectedIds, setPoolSelectedIds] = useState<number[]>([]);
   const [rosterPage, setRosterPage] = useState(1);
+  const [rosterPageSize, setRosterPageSize] = useState(20);
+  const [poolKeywordInput, setPoolKeywordInput] = useState('');
+  const [poolJobNameInput, setPoolJobNameInput] = useState('');
+  const [poolKeyword, setPoolKeyword] = useState('');
+  const [poolJobName, setPoolJobName] = useState('');
+  const [addPersonOpen, setAddPersonOpen] = useState(false);
+  const [addPersonForm] = Form.useForm<DivisionAddPersonReq>();
+  const [newClassTitle, setNewClassTitle] = useState('');
 
   const plansQuery = useQuery({
     queryKey: ['division-plans', page, pageSize, keyword, readyOnly],
@@ -125,16 +165,90 @@ export function TrainingClassDivisionPage() {
     enabled: !!selectedPlan?.planId,
   });
 
+  const workTypePublicQuery = useQuery({
+    queryKey: ['division-worktype-public'],
+    queryFn: () => trainApi.getDemandPublicData(['worktype']),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const savedPackTasksQuery = useQuery({
+    queryKey: ['division-pack-tasks', 'plan-entry'],
+    queryFn: async () => {
+      const pageSize = 500;
+      const first = await trainApi.pageDivisionPackTasks({
+        page: 1,
+        pageSize,
+      });
+      const totalPages = Math.ceil((first.total ?? 0) / pageSize);
+      if (totalPages <= 1) return first;
+
+      const rest = [];
+      for (let p = 2; p <= totalPages; p++) {
+        rest.push(trainApi.pageDivisionPackTasks({
+          page: p,
+          pageSize,
+        }));
+      }
+      const pages = await Promise.all(rest);
+      return {
+        ...first,
+        page: 1,
+        pageSize: first.total,
+        items: [
+          ...first.items,
+          ...pages.flatMap((item) => item.items),
+        ],
+      };
+    },
+    enabled: step === 0,
+  });
+
   const rosterQuery = useQuery({
-    queryKey: ['division-roster', selectedPlan?.planId, trainInfoId, rosterPage],
-    queryFn: () => trainApi.pageDivisionRoster({
-      planId: selectedPlan!.planId,
-      trainInfoId: trainInfoId ?? undefined,
-      assignStatus: 0,
-      page: rosterPage,
-      pageSize: 100,
-    }),
-    enabled: !!selectedPlan?.planId && step === 1,
+    queryKey: [
+      'division-roster',
+      selectedPlan?.planId,
+      trainInfoId,
+      poolOpen,
+      poolKeyword,
+      poolJobName,
+    ],
+    queryFn: async () => {
+      const pageSize = 500;
+      const baseParams = {
+        planId: selectedPlan!.planId,
+        trainInfoId: trainInfoId ?? undefined,
+        assignStatus: 0,
+        keyword: poolKeyword || undefined,
+        jobName: poolJobName || undefined,
+      };
+      const first = await trainApi.pageDivisionRoster({
+        ...baseParams,
+        page: 1,
+        pageSize,
+      });
+      const totalPages = Math.ceil((first.total ?? 0) / pageSize);
+      if (totalPages <= 1) return first;
+
+      const rest = [];
+      for (let p = 2; p <= totalPages; p++) {
+        rest.push(trainApi.pageDivisionRoster({
+          ...baseParams,
+          page: p,
+          pageSize,
+        }));
+      }
+      const pages = await Promise.all(rest);
+      return {
+        ...first,
+        page: 1,
+        pageSize: first.total,
+        items: [
+          ...first.items,
+          ...pages.flatMap((item) => item.items),
+        ],
+      };
+    },
+    enabled: !!selectedPlan?.planId && (poolOpen || step === 2),
   });
 
   const materialsOk = !!(
@@ -148,6 +262,35 @@ export function TrainingClassDivisionPage() {
 
   const editable = !!packResult && (packResult.status === 'draft' || packResult.status === 'rejected');
   const editingClass = editClassIdx != null && packResult ? packResult.classes[editClassIdx] : null;
+  const classMemberItems = useMemo(() => {
+    const rows = editingClass?.members ?? [];
+    const kw = classMemberKeyword.trim().toLowerCase();
+    if (!kw) return rows;
+    return rows.filter((row) => (row.personName ?? '').toLowerCase().includes(kw)
+      || (row.idCard ?? '').toLowerCase().includes(kw));
+  }, [editingClass?.members, classMemberKeyword]);
+  const savedPackTaskByPlanId = useMemo(() => {
+    const priority: Record<string, number> = {
+      draft: 0,
+      rejected: 1,
+      pending: 2,
+      materialized: 3,
+    };
+    const map = new Map<number, DivisionPackTaskResult>();
+    for (const task of savedPackTasksQuery.data?.items ?? []) {
+      if (!task.planId || task.status === 'superseded') continue;
+      const current = map.get(task.planId);
+      const currentPriority = current ? priority[current.status] ?? 99 : 99;
+      const taskPriority = priority[task.status] ?? 99;
+      const isNewerSameStatus = current
+        && taskPriority === currentPriority
+        && (task.updateTime ?? task.createTime ?? '') > (current.updateTime ?? current.createTime ?? '');
+      if (!current || taskPriority < currentPriority || isNewerSameStatus) {
+        map.set(task.planId, task);
+      }
+    }
+    return map;
+  }, [savedPackTasksQuery.data?.items]);
 
   const enterPlan = (row: DivisionPlanItem) => {
     if (!row.rosterFileId || !row.shiftFileId) {
@@ -158,10 +301,9 @@ export function TrainingClassDivisionPage() {
     setTrainInfoId(null);
     setTrainInfoTitle('');
     setTitlePrefix(row.orgName || row.title);
-    setCompatClassTitle(`${row.orgName || row.title}-培训班`);
     setPackResult(null);
     setDraftDirty(false);
-    setSelectedRosterIds([]);
+    setPoolSelectedIds([]);
     setResultTab('classes');
     setStep(1);
   };
@@ -176,6 +318,37 @@ export function TrainingClassDivisionPage() {
       unassignedCount: next.unassigned?.length ?? 0,
     };
     setPackResult(normalized);
+  };
+
+  const openSavedPackTask = async (taskId: number) => {
+    try {
+      const detail = await trainApi.getDivisionPackTask(taskId);
+      const plan = (plansQuery.data?.items ?? []).find((item) => item.planId === detail.planId);
+      setSelectedPlan(plan ?? {
+        planId: detail.planId,
+        planNo: `#${detail.planId}`,
+        title: `分班方案 #${detail.taskId}`,
+        targetOrgId: detail.companyId ?? 0,
+        status: 4,
+        statusLabel: '企业已确认',
+      });
+      setTrainInfoId(detail.trainInfoId);
+      setTrainInfoTitle('');
+      setTitlePrefix(detail.classNamePrefix ?? '');
+      setClassMax(detail.classMax ?? 50);
+      if (detail.year) setYear(detail.year);
+      if (detail.month) setMonth(detail.month);
+      if (['by_job_level', 'by_job_level_slot', 'by_shift_team', 'by_roster_order'].includes(detail.strategy)) {
+        setStrategy(detail.strategy as 'by_job_level' | 'by_job_level_slot' | 'by_shift_team' | 'by_roster_order');
+      }
+      applyLocalPack(detail);
+      setDraftDirty(false);
+      setEditClassIdx(null);
+      setResultTab('classes');
+      setStep(2);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '打开分班方案失败');
+    }
   };
 
   const ensureTrainInfo = async (): Promise<number> => {
@@ -221,18 +394,36 @@ export function TrainingClassDivisionPage() {
     onError: (e: Error) => message.error(e.message || '自动分班失败'),
   });
 
+  const manualPackMu = useMutation({
+    mutationFn: async () => {
+      const tid = await ensureTrainInfo();
+      return trainApi.manualPackDivision({
+        planId: selectedPlan!.planId,
+        trainInfoId: tid,
+        classMax,
+        classNamePrefix: titlePrefix ? `${titlePrefix}-` : undefined,
+        classes: [{ title: `${titlePrefix || '培训'}-1班`, rosterIds: [] }],
+      });
+    },
+    onSuccess: (res) => {
+      applyLocalPack(res);
+      setTrainInfoId(res.trainInfoId);
+      setDraftDirty(false);
+      setStep(2);
+      setResultTab('classes');
+      message.success('已创建手动分班草稿，请添加班级与学员后提交企业审核');
+      queryClient.invalidateQueries({ queryKey: ['division-roster'] });
+      queryClient.invalidateQueries({ queryKey: ['division-plans'] });
+      queryClient.invalidateQueries({ queryKey: ['division-pack-tasks'] });
+    },
+    onError: (e: Error) => message.error(e.message || '创建手动草稿失败'),
+  });
+
   const saveMu = useMutation({
     mutationFn: () => {
-      if (!packResult) throw new Error('无草稿');
-      return trainApi.patchDivisionPackTask(packResult.taskId, {
-        classes: packResult.classes.map((c) => ({
-          tempId: c.tempId,
-          title: c.title,
-          group: c.group,
-          members: c.members ?? [],
-        })),
-        unassigned: packResult.unassigned,
-      });
+      const pack = packResultRef.current;
+      if (!pack) throw new Error('无草稿');
+      return trainApi.patchDivisionPackTask(pack.taskId, buildPackPatch(pack));
     },
     onSuccess: (res) => {
       applyLocalPack(res);
@@ -244,19 +435,12 @@ export function TrainingClassDivisionPage() {
 
   const submitMu = useMutation({
     mutationFn: async () => {
-      if (!packResult) throw new Error('无草稿');
+      const pack = packResultRef.current;
+      if (!pack) throw new Error('无草稿');
       if (draftDirty) {
-        await trainApi.patchDivisionPackTask(packResult.taskId, {
-          classes: packResult.classes.map((c) => ({
-            tempId: c.tempId,
-            title: c.title,
-            group: c.group,
-            members: c.members ?? [],
-          })),
-          unassigned: packResult.unassigned,
-        });
+        await trainApi.patchDivisionPackTask(pack.taskId, buildPackPatch(pack));
       }
-      return trainApi.submitDivisionPackTask(packResult.taskId);
+      return trainApi.submitDivisionPackTask(pack.taskId);
     },
     onSuccess: (res) => {
       applyLocalPack(res);
@@ -268,57 +452,61 @@ export function TrainingClassDivisionPage() {
     onError: (e: Error) => message.error(e.message || '提交失败'),
   });
 
-  const parseMu = useMutation({
-    mutationFn: async () => {
-      const tid = await ensureTrainInfo();
-      return trainApi.parseDivisionRoster({
-        planId: selectedPlan!.planId,
-        trainInfoId: tid,
-        mode: 'enterprise_roster',
-        fallbackToPlanItem: false,
-      });
+  const addPersonMu = useMutation({
+    mutationFn: async (payload: DivisionAddPersonReq) => {
+      const pack = packResultRef.current;
+      if (!pack || editClassIdx == null) throw new Error('未选择班级');
+      const tempId = pack.classes[editClassIdx]?.tempId;
+      if (!tempId) throw new Error('班级 tempId 缺失，请先保存草稿');
+      if (draftDirty) {
+        await trainApi.patchDivisionPackTask(pack.taskId, buildPackPatch(pack));
+      }
+      return trainApi.addPersonToDivisionPackClass(pack.taskId, tempId, payload);
     },
     onSuccess: (res) => {
-      message.success(`已解析 ${res.total} 人`);
-      setSelectedRosterIds([]);
+      applyLocalPack(res);
+      setDraftDirty(false);
+      setAddPersonOpen(false);
+      addPersonForm.resetFields();
+      message.success(res.createdRoster ? '已入库并加入班级' : '已加入班级');
       queryClient.invalidateQueries({ queryKey: ['division-roster'] });
-      queryClient.invalidateQueries({ queryKey: ['division-plans'] });
     },
-    onError: (e: Error) => message.error(e.message || '解析名单失败'),
+    onError: (e: Error) => message.error(e.message || '加人失败'),
   });
 
-  const splitMu = useMutation({
-    mutationFn: async () => {
-      const tid = await ensureTrainInfo();
-      return trainApi.submitDivisionOrgSplit({
-        planId: selectedPlan!.planId,
-        trainInfoId: tid,
-        submitForCompanyConfirm: true,
-        classes: [{
-          title: compatClassTitle.trim() || `${selectedPlan?.orgName || '培训'}-1班`,
-          rosterIds: selectedRosterIds,
-        }],
-      });
+  const importMembersMu = useMutation({
+    mutationFn: async (file: File) => {
+      const pack = packResultRef.current;
+      if (!pack || editClassIdx == null) throw new Error('未选择班级');
+      const tempId = pack.classes[editClassIdx]?.tempId;
+      if (!tempId) throw new Error('班级 tempId 缺失，请先保存草稿');
+      if (draftDirty) {
+        await trainApi.patchDivisionPackTask(pack.taskId, buildPackPatch(pack));
+      }
+      return trainApi.importMembersToDivisionPackClass(pack.taskId, tempId, file);
     },
     onSuccess: (res) => {
-      message.success(`手工分班成功：${res.classCount} 个班级`);
-      setSelectedRosterIds([]);
+      applyLocalPack(res.task);
+      setDraftDirty(false);
+      const skipN = res.skipped?.length ?? 0;
+      message.success(`导入成功 ${res.added} 人${skipN ? `，跳过 ${skipN} 人` : ''}`);
       queryClient.invalidateQueries({ queryKey: ['division-roster'] });
-      queryClient.invalidateQueries({ queryKey: ['division-plans'] });
-      queryClient.invalidateQueries({ queryKey: ['enterprise-class-confirm'] });
     },
-    onError: (e: Error) => message.error(e.message || '分班提交失败'),
+    onError: (e: Error) => message.error(e.message || '导入失败'),
   });
 
   const updateDraft = (mutator: (draft: DivisionPackTaskResult) => void) => {
-    if (!packResult || !editable) return;
-    const next = clonePack(packResult);
-    mutator(next);
-    next.classes = normalizeClasses(next.classes);
-    next.classCount = next.classes.length;
-    next.assignedCount = next.classes.reduce((s, c) => s + (c.members?.length ?? 0), 0);
-    next.unassignedCount = next.unassigned.length;
-    setPackResult(next);
+    setPackResult((prev) => {
+      if (!prev || (prev.status !== 'draft' && prev.status !== 'rejected')) return prev;
+      const next = clonePack(prev);
+      mutator(next);
+      next.classes = normalizeClasses(next.classes);
+      next.classCount = next.classes.length;
+      next.assignedCount = next.classes.reduce((s, c) => s + (c.members?.length ?? 0), 0);
+      next.unassignedCount = next.unassigned.length;
+      packResultRef.current = next;
+      return next;
+    });
     setDraftDirty(true);
   };
 
@@ -420,14 +608,28 @@ export function TrainingClassDivisionPage() {
     },
     {
       title: '操作',
-      width: 96,
+      width: 210,
       fixed: 'right',
       render: (_, row) => {
         const ok = !!(row.rosterFileId && row.shiftFileId);
+        const savedTask = savedPackTaskByPlanId.get(row.planId);
+        const canEditSaved = savedTask?.status === 'draft' || savedTask?.status === 'rejected';
         return (
-          <Button type="link" size="small" disabled={!ok} onClick={(e) => { e.stopPropagation(); enterPlan(row); }}>
-            开始分班
-          </Button>
+          <Space size={4} wrap>
+            <Button type="link" size="small" disabled={!ok} onClick={(e) => { e.stopPropagation(); enterPlan(row); }}>
+              开始分班
+            </Button>
+            {savedTask && (
+              <>
+                <Tag color={STATUS_COLOR[savedTask.status] || 'default'} style={{ marginInlineEnd: 0 }}>
+                  {savedTask.statusLabel || savedTask.status}
+                </Tag>
+                <Button type="link" size="small" onClick={(e) => { e.stopPropagation(); openSavedPackTask(savedTask.taskId); }}>
+                  {canEditSaved ? '继续编辑' : '分班草稿'}
+                </Button>
+              </>
+            )}
+          </Space>
         );
       },
     },
@@ -447,6 +649,75 @@ export function TrainingClassDivisionPage() {
     })),
     [packResult],
   );
+
+  const poolRosterItems = useMemo(() => {
+    const rows = rosterQuery.data?.items ?? [];
+    const kw = poolKeywordInput.trim().toLowerCase();
+    const job = poolJobNameInput.trim().toLowerCase();
+    if (!kw && !job) return rows;
+    return rows.filter((row) => {
+      const keywordMatched = !kw
+        || (row.personName ?? '').toLowerCase().includes(kw)
+        || (row.idCard ?? '').toLowerCase().includes(kw);
+      const jobMatched = !job || (row.jobName ?? '').toLowerCase().includes(job);
+      return keywordMatched && jobMatched;
+    });
+  }, [rosterQuery.data?.items, poolKeywordInput, poolJobNameInput]);
+
+  const poolJobOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const row of rosterQuery.data?.items ?? []) {
+      const name = row.jobName?.trim();
+      if (name) names.add(name);
+    }
+    return Array.from(names)
+      .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+      .map((name) => ({ label: name, value: name }));
+  }, [rosterQuery.data?.items]);
+
+  const classJobOptions = useMemo(() => {
+    const names = new Set<string>();
+    const groups = (workTypePublicQuery.data as DemandPublicData | undefined)?.worktype_list ?? [];
+    for (const g of groups) {
+      for (const o of g.options ?? []) {
+        const title = o.title?.trim();
+        if (title) names.add(title);
+      }
+    }
+    for (const opt of poolJobOptions) names.add(opt.value);
+    for (const cls of packResult?.classes ?? []) {
+      const own = cls.jobName?.trim();
+      if (own) names.add(own);
+      for (const m of cls.members ?? []) {
+        const name = m.jobName?.trim();
+        if (name) names.add(name);
+      }
+    }
+    for (const u of packResult?.unassigned ?? []) {
+      const name = u.jobName?.trim();
+      if (name) names.add(name);
+    }
+    return Array.from(names)
+      .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+      .map((name) => ({ label: name, value: name }));
+  }, [workTypePublicQuery.data, poolJobOptions, packResult]);
+
+  const applyPoolFilters = () => {
+    setRosterPage(1);
+    setPoolSelectedIds([]);
+    setPoolKeyword(poolKeywordInput.trim());
+    setPoolJobName(poolJobNameInput.trim());
+  };
+
+  const resetPoolFilters = () => {
+    setRosterPage(1);
+    setRosterPageSize(20);
+    setPoolSelectedIds([]);
+    setPoolKeywordInput('');
+    setPoolJobNameInput('');
+    setPoolKeyword('');
+    setPoolJobName('');
+  };
 
   const confirmPack = () => {
     if (!materialsOk) {
@@ -474,6 +745,75 @@ export function TrainingClassDivisionPage() {
     });
   };
 
+  const confirmManualPack = () => {
+    if (!materialsOk) {
+      message.warning(`材料未齐：${missing.join('、') || '筛选名单/排班表'}`);
+      return;
+    }
+    Modal.confirm({
+      title: '创建手动分班草稿？',
+      content: '将创建可编辑的班级草稿（不立即建班）。可多班，支持从待分池勾选、上传名单、手填加人；提交企业审核通过后才创建正式班级。新建草稿会作废同培训信息下未完成的旧草稿。',
+      okText: '创建草稿',
+      onOk: () => manualPackMu.mutateAsync(),
+    });
+  };
+
+  const addEmptyClass = () => {
+    const title = newClassTitle.trim() || `${titlePrefix || '培训'}-${(packResult?.classes.length ?? 0) + 1}班`;
+    updateDraft((draft) => {
+      draft.classes.push({
+        tempId: `c-${Math.random().toString(36).slice(2, 10)}`,
+        title,
+        group: '手动',
+        nums: 0,
+        members: [],
+      });
+    });
+    setNewClassTitle('');
+    message.success(`已添加班级「${title}」，请保存草稿`);
+  };
+
+  const addFromPoolToEditingClass = () => {
+    if (editClassIdx == null || !packResult) return;
+    const occupied = new Set<number>();
+    packResult.classes.forEach((c) => (c.members ?? []).forEach((m) => occupied.add(m.rosterId)));
+    const candidates = poolRosterItems.filter(
+      (r) => poolSelectedIds.includes(r.id) && !occupied.has(r.id),
+    );
+    if (candidates.length === 0) {
+      message.warning('请选择尚未入班的待分人员');
+      return;
+    }
+    const cls = packResult.classes[editClassIdx];
+    const room = (packResult.classMax || 50) - (cls.members?.length ?? 0);
+    if (candidates.length > room) {
+      message.warning(`本班仅剩 ${room} 个名额`);
+      return;
+    }
+    updateDraft((draft) => {
+      const target = draft.classes[editClassIdx];
+      if (!target) return;
+      target.members = [
+        ...(target.members ?? []),
+        ...candidates.map((r) => ({
+          rosterId: r.id,
+          personName: r.personName,
+          idCard: r.idCard,
+          workshop: r.workshop,
+          jobName: r.jobName,
+          levelName: r.levelName,
+          shiftTeam: r.shiftTeam,
+          phone: r.phone,
+        })),
+      ];
+    });
+    setPoolOpen(false);
+    setPoolSelectedIds([]);
+    message.success(`已加入 ${candidates.length} 人，请保存草稿`);
+  };
+
+  const isManualPack = packResult?.strategy === 'manual';
+
   const confirmSubmit = () => {
     if (!packResult) return;
     Modal.confirm({
@@ -486,13 +826,13 @@ export function TrainingClassDivisionPage() {
 
   return (
     <div className="training-class-division-page training-page">
-      <TrainingProcessSteps current={3} />
+      <TrainingProcessSteps current={2} />
 
       <section className="page-heading">
         <div>
           <Typography.Title level={4} style={{ marginBottom: 4 }}>分班</Typography.Title>
           <Text type="secondary">
-            根据人员名单与排班表自动划分培训班（默认按班组切班，每班≤{classMax}）
+            根据人员名单与排班表自动划分培训班（默认按工种×等级切班，每班≤{classMax}）
           </Text>
         </div>
       </section>
@@ -514,7 +854,7 @@ export function TrainingClassDivisionPage() {
               return;
             }
             if (s >= 2 && !packResult) {
-              message.warning('请先执行自动分班生成草稿');
+              message.warning('请先生成分班草稿（自动或手动）');
               return;
             }
             setStep(s);
@@ -537,7 +877,15 @@ export function TrainingClassDivisionPage() {
             >
               仅材料已齐
             </Checkbox>
-            <Button icon={<ReloadOutlined />} onClick={() => plansQuery.refetch()}>刷新</Button>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => {
+                plansQuery.refetch();
+                savedPackTasksQuery.refetch();
+              }}
+            >
+              刷新
+            </Button>
           </div>
           <Alert
             className="division-plan-hint"
@@ -684,76 +1032,17 @@ export function TrainingClassDivisionPage() {
             >
               一键自动分班
             </Button>
-            <Text type="secondary">每次都会按企业最新名单重新解析，生成草稿后不立即建班</Text>
+            <Button
+              size="large"
+              icon={<UserAddOutlined />}
+              loading={manualPackMu.isPending}
+              disabled={!materialsOk}
+              onClick={confirmManualPack}
+            >
+              手动创建班级
+            </Button>
+            <Text type="secondary">自动/手动均生成草稿，企业通过后才建班；新建草稿会作废同培训下旧草稿</Text>
           </div>
-
-          <Collapse
-            items={[
-              {
-                key: 'manual',
-                label: (
-                  <Space>
-                    <span>兼容：勾选名单直接建班（旧路径）</span>
-                    {selectedRosterIds.length > 0 && <Tag color="blue">已选 {selectedRosterIds.length}</Tag>}
-                  </Space>
-                ),
-                children: (
-                  <div>
-                    <Alert
-                      type="warning"
-                      showIcon
-                      style={{ marginBottom: 12 }}
-                      message="此路径会立即创建班级并进入企业确认，建议优先使用上方「一键自动分班」草稿流程。"
-                    />
-                    <Space style={{ marginBottom: 12 }} wrap>
-                      <Button loading={parseMu.isPending} onClick={() => parseMu.mutate()}>解析确认名单</Button>
-                      <Input
-                        style={{ width: 240 }}
-                        value={compatClassTitle}
-                        onChange={(e) => setCompatClassTitle(e.target.value)}
-                        placeholder="班级名称"
-                      />
-                      <Button
-                        type="primary"
-                        icon={<CheckOutlined />}
-                        loading={splitMu.isPending}
-                        disabled={selectedRosterIds.length === 0 || !compatClassTitle.trim()}
-                        onClick={() => {
-                          Modal.confirm({
-                            title: '手工提交分班？',
-                            content: `将 ${selectedRosterIds.length} 人写入「${compatClassTitle.trim()}」并提交企业确认。`,
-                            onOk: () => splitMu.mutateAsync(),
-                          });
-                        }}
-                      >
-                        保存并提交企业确认
-                      </Button>
-                    </Space>
-                    <Table<DivisionRosterItem>
-                      rowKey="id"
-                      size="small"
-                      loading={rosterQuery.isLoading || parseMu.isPending}
-                      columns={rosterColumns}
-                      dataSource={rosterQuery.data?.items ?? []}
-                      locale={{ emptyText: '暂无待分人员，可先点「解析确认名单」' }}
-                      rowSelection={{
-                        selectedRowKeys: selectedRosterIds,
-                        onChange: (keys) => setSelectedRosterIds(keys as number[]),
-                        preserveSelectedRowKeys: true,
-                      }}
-                      pagination={{
-                        current: rosterPage,
-                        pageSize: 100,
-                        total: rosterQuery.data?.total ?? 0,
-                        showTotal: (t) => `共 ${t} 人`,
-                        onChange: (p) => setRosterPage(p),
-                      }}
-                    />
-                  </div>
-                ),
-              },
-            ]}
-          />
         </Card>
       )}
 
@@ -829,6 +1118,19 @@ export function TrainingClassDivisionPage() {
             </Space>
           </Card>
 
+          {editable && isManualPack && (
+            <Space style={{ marginBottom: 12, marginTop: 12 }} wrap>
+              <Input
+                style={{ width: 220 }}
+                placeholder="新班级名称"
+                value={newClassTitle}
+                onChange={(e) => setNewClassTitle(e.target.value)}
+              />
+              <Button icon={<PlusOutlined />} onClick={addEmptyClass}>新建班级</Button>
+              <Text type="secondary">手动组班：编辑学员时支持待分池勾选、上传名单、手填加人</Text>
+            </Space>
+          )}
+
           <Tabs
             activeKey={resultTab}
             onChange={setResultTab}
@@ -861,6 +1163,37 @@ export function TrainingClassDivisionPage() {
                       },
                       { title: '分组', dataIndex: 'group', width: 120 },
                       {
+                        title: '工种',
+                        dataIndex: 'jobName',
+                        width: 160,
+                        render: (_v, row, idx) => {
+                          if (!editable) {
+                            const value = resolveClassJobName(row);
+                            return value ? <Tag>{value}</Tag> : <Text type="secondary">-</Text>;
+                          }
+                          return (
+                            <Select
+                              mode="tags"
+                              maxCount={1}
+                              allowClear
+                              showSearch
+                              placeholder="选择或输入工种"
+                              style={{ width: '100%' }}
+                              value={row.jobName?.trim() ? [row.jobName.trim()] : []}
+                              options={classJobOptions}
+                              optionFilterProp="label"
+                              tokenSeparators={[]}
+                              onChange={(vals) => {
+                                const next = (vals?.[0] ?? '').trim();
+                                updateDraft((d) => {
+                                  if (d.classes[idx]) d.classes[idx].jobName = next || undefined;
+                                });
+                              }}
+                            />
+                          );
+                        },
+                      },
+                      {
                         title: '人数',
                         width: 160,
                         render: (_, row) => {
@@ -886,7 +1219,10 @@ export function TrainingClassDivisionPage() {
                             type="link"
                             size="small"
                             icon={<EditOutlined />}
-                            onClick={() => setEditClassIdx(idx)}
+                            onClick={() => {
+                              setClassMemberKeyword('');
+                              setEditClassIdx(idx);
+                            }}
                           >
                             {editable ? '编辑学员' : '查看学员'}
                           </Button>
@@ -972,11 +1308,11 @@ export function TrainingClassDivisionPage() {
                 </Button>
               </>
             )}
-            {packResult.status === 'pending' && (
+            {/*{packResult.status === 'pending' && (
               <Button onClick={() => navigateTo('company_plan_review')}>
                 去企业分班确认
               </Button>
-            )}
+            )}*/}
             {packResult.status === 'materialized' && (
               <>
                 <Button type="primary" onClick={() => navigateTo('train_people-list')}>去班级人员</Button>
@@ -1001,48 +1337,223 @@ export function TrainingClassDivisionPage() {
         title={editingClass ? `${editable ? '编辑' : '查看'}：${editingClass.title}` : '班级学员'}
         width={960}
         open={editClassIdx != null}
-        onClose={() => setEditClassIdx(null)}
+        onClose={() => {
+          setClassMemberKeyword('');
+          setEditClassIdx(null);
+        }}
       >
         {editingClass && (
-          <Table<DivisionAutoPackClassMember>
-            rowKey="rosterId"
-            size="small"
-            pagination={false}
-            dataSource={editingClass.members ?? []}
-            locale={{ emptyText: '该班暂无学员' }}
-            columns={[
-              { title: '姓名', dataIndex: 'personName', width: 90 },
-              { title: '单位', dataIndex: 'workshop', width: 120, ellipsis: true, render: (v) => v || '-' },
-              { title: '工种', dataIndex: 'jobName', width: 110, ellipsis: true, render: (v) => v || '-' },
-              { title: '等级', dataIndex: 'levelName', width: 90, render: (v) => v || '-' },
-              { title: '班组', dataIndex: 'shiftTeam', width: 90, render: (v) => v || '-' },
-              { title: '身份证', dataIndex: 'idCard', width: 170 },
-              ...(editable && editClassIdx != null ? [{
-                title: '调整',
-                width: 220,
-                render: (_: unknown, row: DivisionAutoPackClassMember) => (
-                  <Space>
-                    <Select
-                      placeholder="调到其他班"
-                      style={{ width: 140 }}
-                      options={classOptions.filter((o) => o.value !== editClassIdx)}
-                      onChange={(toIdx: number) => moveMemberBetweenClasses(editClassIdx, row.rosterId, toIdx)}
-                    />
-                    <Button
-                      type="link"
-                      danger
-                      size="small"
-                      onClick={() => moveMemberToUnassigned(editClassIdx, row.rosterId)}
-                    >
-                      移出
-                    </Button>
-                  </Space>
-                ),
-              } as ColumnsType<DivisionAutoPackClassMember>[number]] : []),
-            ]}
-          />
+          <>
+            {editable && isManualPack && (
+              <Space style={{ marginBottom: 12 }} wrap>
+                <Button
+                  icon={<UserAddOutlined />}
+                  onClick={() => {
+                    setPoolSelectedIds([]);
+                    setRosterPage(1);
+                    setRosterPageSize(20);
+                    setPoolKeywordInput('');
+                    setPoolJobNameInput('');
+                    setPoolKeyword('');
+                    setPoolJobName('');
+                    setPoolOpen(true);
+                  }}
+                >
+                  从待分池勾选
+                </Button>
+                <Upload
+                  accept=".xlsx,.xls"
+                  showUploadList={false}
+                  beforeUpload={(file) => {
+                    importMembersMu.mutate(file);
+                    return false;
+                  }}
+                >
+                  <Button icon={<UploadOutlined />} loading={importMembersMu.isPending}>
+                    上传名单
+                  </Button>
+                </Upload>
+                <Button
+                  onClick={async () => {
+                    try {
+                      const res = await trainApi.downloadDivisionMemberImportTemplate();
+                      const blob = res.data as Blob;
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = 'class-member-import-template.xlsx';
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    } catch (e) {
+                      message.error((e as Error).message || '下载模板失败');
+                    }
+                  }}
+                >
+                  下载导入模板
+                </Button>
+                <Button
+                  type="primary"
+                  ghost
+                  icon={<PlusOutlined />}
+                  onClick={() => {
+                    addPersonForm.resetFields();
+                    setAddPersonOpen(true);
+                  }}
+                >
+                  手填加人
+                </Button>
+              </Space>
+            )}
+            <Input.Search
+              allowClear
+              style={{ width: 280, marginBottom: 12 }}
+              placeholder="姓名 / 身份证号"
+              value={classMemberKeyword}
+              onChange={(e) => setClassMemberKeyword(e.target.value)}
+            />
+            <Table<DivisionAutoPackClassMember>
+              rowKey="rosterId"
+              size="small"
+              pagination={false}
+              dataSource={classMemberItems}
+              locale={{ emptyText: '该班暂无学员' }}
+              columns={[
+                { title: '姓名', dataIndex: 'personName', width: 90 },
+                { title: '单位', dataIndex: 'workshop', width: 120, ellipsis: true, render: (v) => v || '-' },
+                { title: '工种', dataIndex: 'jobName', width: 110, ellipsis: true, render: (v) => v || '-' },
+                { title: '等级', dataIndex: 'levelName', width: 90, render: (v) => v || '-' },
+                { title: '班组', dataIndex: 'shiftTeam', width: 90, render: (v) => v || '-' },
+                { title: '身份证', dataIndex: 'idCard', width: 170 },
+                ...(editable && editClassIdx != null ? [{
+                  title: '调整',
+                  width: 220,
+                  render: (_: unknown, row: DivisionAutoPackClassMember) => (
+                    <Space>
+                      <Select
+                        placeholder="调到其他班"
+                        style={{ width: 140 }}
+                        options={classOptions.filter((o) => o.value !== editClassIdx)}
+                        onChange={(toIdx: number) => moveMemberBetweenClasses(editClassIdx, row.rosterId, toIdx)}
+                      />
+                      <Button
+                        type="link"
+                        danger
+                        size="small"
+                        onClick={() => moveMemberToUnassigned(editClassIdx, row.rosterId)}
+                      >
+                        移出
+                      </Button>
+                    </Space>
+                  ),
+                } as ColumnsType<DivisionAutoPackClassMember>[number]] : []),
+              ]}
+            />
+          </>
         )}
       </Drawer>
+
+      <Modal
+        title="从待分池勾选加人"
+        open={poolOpen}
+        onCancel={() => setPoolOpen(false)}
+        onOk={addFromPoolToEditingClass}
+        okText="加入本班"
+        width={800}
+        destroyOnClose
+      >
+        <Space style={{ marginBottom: 12 }} wrap>
+          <Input.Search
+            allowClear
+            style={{ width: 260 }}
+            placeholder="姓名 / 身份证号"
+            value={poolKeywordInput}
+            onChange={(e) => {
+              setRosterPage(1);
+              setPoolKeywordInput(e.target.value);
+            }}
+            onSearch={applyPoolFilters}
+          />
+          <Select
+            allowClear
+            showSearch
+            style={{ width: 220 }}
+            placeholder="工种"
+            value={poolJobNameInput}
+            options={poolJobOptions}
+            optionFilterProp="label"
+            onChange={(value) => {
+              setRosterPage(1);
+              setPoolJobNameInput(value ?? '');
+            }}
+          />
+          <Button onClick={applyPoolFilters}>筛选</Button>
+          <Button onClick={resetPoolFilters}>重置</Button>
+          {poolSelectedIds.length > 0 && (
+            <Text type="secondary">已选 {poolSelectedIds.length} 人</Text>
+          )}
+        </Space>
+        <Table<DivisionRosterItem>
+          rowKey="id"
+          size="small"
+          loading={rosterQuery.isLoading}
+          columns={rosterColumns}
+          dataSource={poolRosterItems}
+          rowSelection={{
+            selectedRowKeys: poolSelectedIds,
+            onChange: (keys) => setPoolSelectedIds(keys as number[]),
+            preserveSelectedRowKeys: true,
+          }}
+          pagination={{
+            current: rosterPage,
+            pageSize: rosterPageSize,
+            total: poolRosterItems.length,
+            showTotal: (t) => `共 ${t} 人`,
+            showSizeChanger: true,
+            pageSizeOptions: [20, 50, 100, 200, 500],
+            onChange: (p, ps) => {
+              setRosterPage(p);
+              setRosterPageSize(ps);
+            },
+          }}
+        />
+      </Modal>
+
+      <Modal
+        title="手填加人"
+        open={addPersonOpen}
+        onCancel={() => setAddPersonOpen(false)}
+        onOk={() => addPersonForm.submit()}
+        confirmLoading={addPersonMu.isPending}
+        destroyOnClose
+      >
+        <Form
+          form={addPersonForm}
+          layout="vertical"
+          onFinish={(values) => addPersonMu.mutate(values)}
+        >
+          <Form.Item name="personName" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}>
+            <Input placeholder="必填" />
+          </Form.Item>
+          <Form.Item name="idCard" label="身份证" extra="强烈建议填写；无证时同名多人须补证">
+            <Input placeholder="建议填写" />
+          </Form.Item>
+          <Form.Item name="phone" label="手机">
+            <Input />
+          </Form.Item>
+          <Form.Item name="jobName" label="工种">
+            <Input />
+          </Form.Item>
+          <Form.Item name="levelName" label="等级">
+            <Input />
+          </Form.Item>
+          <Form.Item name="workshop" label="车间/单位">
+            <Input />
+          </Form.Item>
+          <Form.Item name="shiftTeam" label="班组">
+            <Input />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

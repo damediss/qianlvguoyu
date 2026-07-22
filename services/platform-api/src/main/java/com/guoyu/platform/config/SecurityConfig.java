@@ -7,6 +7,7 @@ import com.guoyu.platform.security.RestAccessDeniedHandler;
 import com.guoyu.platform.security.RestAuthenticationEntryPoint;
 import com.guoyu.platform.security.filter.AppTokenAuthFilter;
 import com.guoyu.platform.security.filter.SaTokenBridgeFilter;
+import com.guoyu.platform.competition.player.security.CompetitionPlayerTokenBridgeFilter;
 import com.guoyu.platform.file.config.FileStorageProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -62,7 +63,7 @@ public class SecurityConfig {
         .securityMatcher("/sso/weknora")
         .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
         .addFilterBefore(saTokenBridgeFilter, UsernamePasswordAuthenticationFilter.class)
-        .addFilterBefore(tenantContextFilter, UsernamePasswordAuthenticationFilter.class)
+        .addFilterBefore(tenantContextFilter, SaTokenBridgeFilter.class)
         .authorizeHttpRequests(a -> a.anyRequest().permitAll());
     return http.build();
   }
@@ -74,6 +75,7 @@ public class SecurityConfig {
       RestAuthenticationEntryPoint authenticationEntryPoint,
       RestAccessDeniedHandler accessDeniedHandler,
       AppTokenAuthFilter appTokenAuthFilter,
+      CompetitionPlayerTokenBridgeFilter competitionPlayerTokenBridgeFilter,
       SaTokenBridgeFilter saTokenBridgeFilter,
       TenantContextFilter tenantContextFilter,
       CorsConfigurationSource corsConfigurationSource
@@ -91,6 +93,11 @@ public class SecurityConfig {
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
             .requestMatchers("/actuator/health", "/actuator/info").permitAll()
             .requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh", "/auth/logout").permitAll()
+            .requestMatchers(HttpMethod.GET, "/competition/player/entry/resolve").permitAll()
+            .requestMatchers(HttpMethod.POST,
+                "/competition/player/activation/send-code",
+                "/competition/player/activation/verify",
+                "/competition/player/auth/login").permitAll()
             .requestMatchers(HttpMethod.GET, "/auth/tenants").permitAll()
             .requestMatchers(HttpMethod.GET, "/auth/captcha/generate").permitAll()
             .requestMatchers(HttpMethod.POST, "/auth/captcha/verify").permitAll()
@@ -109,9 +116,10 @@ public class SecurityConfig {
             .requestMatchers("/oauth2/**", "/userinfo", "/.well-known/**").permitAll()
             .anyRequest().authenticated()
         )
-        .addFilterBefore(tenantContextFilter, UsernamePasswordAuthenticationFilter.class)
         .addFilterBefore(saTokenBridgeFilter, UsernamePasswordAuthenticationFilter.class)
-        .addFilterBefore(appTokenAuthFilter, SaTokenBridgeFilter.class);
+        .addFilterBefore(appTokenAuthFilter, SaTokenBridgeFilter.class)
+        .addFilterBefore(competitionPlayerTokenBridgeFilter, AppTokenAuthFilter.class)
+        .addFilterBefore(tenantContextFilter, CompetitionPlayerTokenBridgeFilter.class);
     return http.build();
   }
 
