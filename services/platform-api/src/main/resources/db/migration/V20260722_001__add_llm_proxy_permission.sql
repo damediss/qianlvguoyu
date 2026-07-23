@@ -19,3 +19,61 @@ INSERT INTO sys_role_permission (
 ) VALUES
   (6600307, 1, 2000, 660007, NOW(), NOW(), 1, 1, 0)
 ON DUPLICATE KEY UPDATE deleted = 0;
+
+
+
+INSERT INTO sys_permission (
+  id, tenant_id, menu_id, code, name, action, status, created_at, updated_at, created_by, updated_by, deleted
+) VALUES
+  (660008, 1, 4603, 'rencai:task:create', '创建人才识别', 'proxy', 'enabled', NOW(), NOW(), 1, 1, 0)
+ON DUPLICATE KEY UPDATE
+  menu_id = VALUES(menu_id),
+  name = VALUES(name),
+  action = VALUES(action),
+  status = VALUES(status),
+  updated_at = NOW(),
+  updated_by = 1,
+  deleted = 0;
+
+INSERT INTO sys_permission (
+  id, tenant_id, menu_id, code, name, action, status, created_at, updated_at, created_by, updated_by, deleted
+) VALUES
+  (660009, 1, 4603, 'rencai:task:delete', '删除人才识别', 'proxy', 'enabled', NOW(), NOW(), 1, 1, 0)
+ON DUPLICATE KEY UPDATE
+  menu_id = VALUES(menu_id),
+  name = VALUES(name),
+  action = VALUES(action),
+  status = VALUES(status),
+  updated_at = NOW(),
+  updated_by = 1,
+  deleted = 0;
+
+INSERT INTO sys_permission (
+  id, tenant_id, menu_id, code, name, action, status, created_at, updated_at, created_by, updated_by, deleted
+) VALUES
+  (660010, 1, 4603, 'rencai:task:download', '下载人才识别', 'proxy', 'enabled', NOW(), NOW(), 1, 1, 0)
+ON DUPLICATE KEY UPDATE
+  menu_id = VALUES(menu_id),
+  name = VALUES(name),
+  action = VALUES(action),
+  status = VALUES(status),
+  updated_at = NOW(),
+  updated_by = 1,
+  deleted = 0;
+
+
+INSERT INTO sys_role_permission (
+  id, tenant_id, role_id, permission_id, created_at, updated_at, created_by, updated_by, deleted
+) VALUES
+  (6600309, 1, 2000, 660008, NOW(), NOW(), 1, 1, 0)
+ON DUPLICATE KEY UPDATE deleted = 0;
+INSERT INTO sys_role_permission (
+  id, tenant_id, role_id, permission_id, created_at, updated_at, created_by, updated_by, deleted
+) VALUES
+  (6600310, 1, 2000, 660009, NOW(), NOW(), 1, 1, 0)
+ON DUPLICATE KEY UPDATE deleted = 0;
+INSERT INTO sys_role_permission (
+  id, tenant_id, role_id, permission_id, created_at, updated_at, created_by, updated_by, deleted
+) VALUES
+  (6600311, 1, 2000, 660010, NOW(), NOW(), 1, 1, 0)
+ON DUPLICATE KEY UPDATE deleted = 0;

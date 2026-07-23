@@ -181,9 +181,27 @@ public class RencaishibieClient {
     if (planId != null) {
       headers.set("X-Plan-Id", String.valueOf(planId));
     }
+    // 转发当前请求的 Authorization header（用户 token，含 Bearer 前缀）
+    String authorization = getCurrentAuthorization();
+    if (StringUtils.hasText(authorization)) {
+      headers.set("Authorization", authorization);
+    }
     if (StringUtils.hasText(properties.internalToken())) {
       headers.set("X-Internal-Token", properties.internalToken());
     }
+  }
+
+  /**
+   * 从当前 HTTP 请求线程提取 Authorization header。
+   * 返回原始值（含 "Bearer " 前缀），直接转发给 Python。
+   * 仅在 HTTP 请求线程有效；异步线程返回 null。
+   */
+  private String getCurrentAuthorization() {
+    var attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+    if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
+      return servletAttrs.getRequest().getHeader("Authorization");
+    }
+    return null;
   }
 
   private BusinessException translateError(RestClientResponseException e) {

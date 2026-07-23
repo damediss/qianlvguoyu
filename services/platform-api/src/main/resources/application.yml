@@ -233,9 +233,10 @@ platform:
     vision-api-key: ${COACH_VISION_API_KEY:}
     vision-model: ${COACH_VISION_MODEL:MiniMax-M3}
   rencaishibie:
-    # 本地开发默认直连线上引擎；同机生产请在 .env 设 RENCAI_BASE_URL=http://127.0.0.1:8001
+    # 本地开发默认直连线上引擎；同机生产请在 .env 设 RENCAI_BASE_URL=http://http://127.0.0.1:8001
     enabled: ${RENCAI_ENABLED:true}
-    base-url: ${RENCAI_BASE_URL:http://43.138.163.7:8001}
+#    base-url: ${RENCAI_BASE_URL:http://43.138.163.7:8001}
+    base-url: http://127.0.0.1:8001
     internal-token: ${RENCAI_INTERNAL_TOKEN:}
     connect-timeout-seconds: ${RENCAI_CONNECT_TIMEOUT:15}
     read-timeout-seconds: ${RENCAI_READ_TIMEOUT:300}
