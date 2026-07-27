@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guoyu.platform.ai.event.FaqEnhancementStartEvent;
 import com.guoyu.platform.ai.infrastructure.FaqLlmClient;
 import com.guoyu.platform.ai.infrastructure.FaqLlmClientException;
 import com.guoyu.platform.ai.infrastructure.FaqLlmException;
@@ -50,9 +51,12 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.event.TransactionPhase;
 
 /**
  * FAQ 转换编排服务 — 读题 → 调 LLM → 入库 → 更新进度。
@@ -89,6 +93,7 @@ public class FaqConversionApplicationService {
   private final ObjectMapper objectMapper;
   private final ThreadPoolTaskExecutor faqConversionExecutor;
   private final ThreadPoolTaskExecutor faqRecordExecutor;
+  private final ApplicationEventPublisher eventPublisher;
 
   public FaqConversionApplicationService(
       ExamExamDetailMapper examDetailMapper,
@@ -104,7 +109,8 @@ public class FaqConversionApplicationService {
       FaqLlmResponseParser llmParser,
       ObjectMapper objectMapper,
       @Qualifier("faqConversionExecutor") ThreadPoolTaskExecutor faqConversionExecutor,
-      @Qualifier("faqRecordExecutor") ThreadPoolTaskExecutor faqRecordExecutor) {
+      @Qualifier("faqRecordExecutor") ThreadPoolTaskExecutor faqRecordExecutor,
+      ApplicationEventPublisher eventPublisher) {
     this.examDetailMapper = examDetailMapper;
     this.workTypeMapper = workTypeMapper;
     this.knowledgeStructureMapper = knowledgeStructureMapper;
@@ -119,6 +125,7 @@ public class FaqConversionApplicationService {
     this.objectMapper = objectMapper;
     this.faqConversionExecutor = faqConversionExecutor;
     this.faqRecordExecutor = faqRecordExecutor;
+    this.eventPublisher = eventPublisher;
   }
 
   /**
@@ -171,14 +178,11 @@ public class FaqConversionApplicationService {
 
     log.info("FAQ 转换批次已创建并写入明细：batchId={}, examCount={}", batch.getId(), exams.size());
 
-    // 所有批次统一走异步 LLM 增强，HTTP 立即返回 batchId，前端轮询进度
+    // 所有批次统一走异步 LLM 增强，HTTP 立即返回 batchId，前端轮询进度。
+    // 异步在事务成功提交后由 @TransactionalEventListener(AFTER_COMMIT) 启动，
+    // 避免事务未提交时异步线程查询不到 pending 记录。
     Long batchId = batch.getId();
-    CompletableFuture.runAsync(() -> {
-      processLlmEnhancementAsync(batchId, tenantId, userId, req.modelCode());
-    }, faqConversionExecutor).exceptionally(ex -> {
-      log.error("FAQ LLM 异步增强未捕获异常：batchId={}, error={}", batchId, ex.getMessage(), ex);
-      return null;
-    });
+    eventPublisher.publishEvent(new FaqEnhancementStartEvent(batchId, tenantId, userId, req.modelCode()));
 
     return FaqBatchVO.from(batch);
   }
@@ -598,11 +602,21 @@ public class FaqConversionApplicationService {
     ExamFaqConversionBatchEntity batch = batchService.getBatchEntity(tenantId, batchId);
     log.info("FAQ 重试失败记录启动异步 LLM：batchId={}, count={}", batchId, failedRecords.size());
 
-    String modelCode = batch.getModelCode();
+    // 异步在事务成功提交后由 @TransactionalEventListener(AFTER_COMMIT) 启动
+    eventPublisher.publishEvent(new FaqEnhancementStartEvent(batchId, tenantId, userId, batch.getModelCode()));
+  }
+
+  /**
+   * FAQ 增强启动事件监听器：事务成功提交后启动异步 LLM 处理。
+   */
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+  public void onFaqEnhancementStart(FaqEnhancementStartEvent event) {
+    log.info("FAQ 异步增强启动：batchId={}, tenantId={}, modelCode={}",
+        event.batchId(), event.tenantId(), event.modelCode());
     CompletableFuture.runAsync(() -> {
-      processLlmEnhancementAsync(batchId, tenantId, userId, modelCode);
+      processLlmEnhancementAsync(event.batchId(), event.tenantId(), event.userId(), event.modelCode());
     }, faqConversionExecutor).exceptionally(ex -> {
-      log.error("FAQ 重试失败记录异步 LLM 未捕获异常：batchId={}, error={}", batchId, ex.getMessage(), ex);
+      log.error("FAQ 异步增强未捕获异常：batchId={}, error={}", event.batchId(), ex.getMessage(), ex);
       return null;
     });
   }
