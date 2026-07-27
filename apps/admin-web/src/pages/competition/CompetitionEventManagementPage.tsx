@@ -4,6 +4,8 @@ import {
   EditOutlined,
   EyeOutlined,
   FileTextOutlined,
+  CopyOutlined,
+  DownloadOutlined,
   PlusOutlined,
   SendOutlined,
   ReloadOutlined,
@@ -28,6 +30,7 @@ import {
   message,
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
+import QRCode from 'qrcode';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -139,6 +142,28 @@ function dateTimeValue(value?: string | null) {
 
 function toDateTime(value?: Dayjs) {
   return value?.format('YYYY-MM-DDTHH:mm:ss');
+}
+
+async function copyText(value: string, successText: string) {
+  try {
+    await navigator.clipboard.writeText(value);
+    message.success(successText);
+  } catch {
+    message.error('复制失败，请手动复制');
+  }
+}
+
+function playerEntryQrPayload(entryCode: string) {
+  return `qianlvguoyu-player://competition/activate?entry=${encodeURIComponent(entryCode)}`;
+}
+
+function downloadDataUrl(dataUrl: string, fileName: string) {
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 export function CompetitionEventManagementPage() {
@@ -270,10 +295,7 @@ function CompetitionEventListPage({
 
   return (
     <div className="competition-page">
-      <section className="competition-page-heading competition-list-hero">
-        <div>
-          <Typography.Title level={2}>竞赛计划</Typography.Title>
-        </div>
+      <div className="competition-list-actions">
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => queryClient.invalidateQueries({ queryKey: ['competition-events'] })}>
             刷新
@@ -284,7 +306,7 @@ function CompetitionEventListPage({
             </Button>
           )}
         </Space>
-      </section>
+      </div>
 
       <Card bordered={false} className="competition-filter-card competition-filter-card--workspace">
         <div className="competition-filter-card__head">
@@ -592,10 +614,30 @@ function CompetitionEventDetailPage({
     queryFn: () => getCompetitionEvent(eventId),
     enabled: canView,
   });
+  const entryCode = eventQuery.data?.playerEntryCode || '';
+  const [entryQrDataUrl, setEntryQrDataUrl] = useState('');
+
+  useEffect(() => {
+    let disposed = false;
+    if (!entryCode) {
+      setEntryQrDataUrl('');
+      return () => { disposed = true; };
+    }
+    QRCode.toDataURL(playerEntryQrPayload(entryCode), {
+      width: 360,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+    }).then((dataUrl) => {
+      if (!disposed) setEntryQrDataUrl(dataUrl);
+    }).catch(() => {
+      if (!disposed) setEntryQrDataUrl('');
+    });
+    return () => { disposed = true; };
+  }, [entryCode]);
   const publishMutation = useMutation({
     mutationFn: publishCompetitionEvent,
-    onSuccess: () => {
-      message.success('赛事已发布');
+    onSuccess: (result) => {
+      message.success(result.playerEntryCode ? '赛事已发布，入口码已生成' : '赛事已发布');
       queryClient.invalidateQueries({ queryKey: ['competition-event', eventId] });
       queryClient.invalidateQueries({ queryKey: ['competition-events'] });
     },
@@ -643,6 +685,48 @@ function CompetitionEventDetailPage({
           <Descriptions column={{ xs: 1, sm: 2 }}>
             <Descriptions.Item label="计划名称">{event.name}</Descriptions.Item>
             <Descriptions.Item label="计划编码">{event.code}</Descriptions.Item>
+            {event.status === 'published' && (
+              <Descriptions.Item label="选手端赛事入口码" span={2}>
+                {event.playerEntryCode ? (
+                  <Space size={8} wrap>
+                    <Typography.Text code copyable={{ text: event.playerEntryCode, tooltips: ['复制入口码', '已复制'] }}>
+                      {event.playerEntryCode}
+                    </Typography.Text>
+                    <Button
+                      size="small"
+                      icon={<CopyOutlined />}
+                      onClick={() => void copyText(event.playerEntryCode!, '选手端入口码已复制')}
+                    >
+                      复制入口码
+                    </Button>
+                    <Typography.Text type="secondary">用于打开选手端 H5 的 entry 参数</Typography.Text>
+                  </Space>
+                ) : (
+                  <Typography.Text type="warning">入口码未生成，请联系管理员核查发布记录。</Typography.Text>
+                )}
+              </Descriptions.Item>
+            )}
+            {event.status === 'published' && entryCode && (
+              <Descriptions.Item label="赛事激活二维码" span={2}>
+                <Space size={16} align="start" wrap>
+                  {entryQrDataUrl ? (
+                    <img className="competition-entry-qr" src={entryQrDataUrl} alt={`${event.name} 选手端激活二维码`} />
+                  ) : <Spin size="small" />}
+                  <div className="competition-entry-qr__actions">
+                    <Typography.Text>请在选手端 App 首页点击“扫一扫”后扫描</Typography.Text>
+                    <Typography.Text type="secondary">二维码不含选手个人信息，仅指向本赛事激活入口。</Typography.Text>
+                    <Button
+                      size="small"
+                      icon={<DownloadOutlined />}
+                      disabled={!entryQrDataUrl}
+                      onClick={() => downloadDataUrl(entryQrDataUrl, `${event.code}-选手端赛事二维码.png`)}
+                    >
+                      下载二维码
+                    </Button>
+                  </div>
+                </Space>
+              </Descriptions.Item>
+            )}
             <Descriptions.Item label="开始时间">{formatDate(event.startAt)}</Descriptions.Item>
             <Descriptions.Item label="结束时间">{formatDate(event.endAt)}</Descriptions.Item>
             <Descriptions.Item label="所属组织">{event.ownerOrgId ? idValue(event.ownerOrgId) : '平台'}</Descriptions.Item>

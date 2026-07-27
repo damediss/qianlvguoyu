@@ -24,6 +24,26 @@ services:
     volumes:
       - guoyu_platform_redis:/data
 
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: guoyu-platform-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guoyu
+      RABBITMQ_DEFAULT_PASS: guoyu_dev_password
+      RABBITMQ_DEFAULT_VHOST: /
+      TZ: Asia/Shanghai
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - guoyu_platform_rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   guoyu_platform_mysql:
   guoyu_platform_redis:
+  guoyu_platform_rabbitmq:

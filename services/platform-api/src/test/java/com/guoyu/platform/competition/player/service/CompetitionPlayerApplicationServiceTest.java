@@ -1,6 +1,7 @@
 package com.guoyu.platform.competition.player.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -18,12 +19,16 @@ import com.guoyu.platform.competition.player.domain.CompetitionPlayerSensitiveDa
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerActivationSendReq;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerActivationVerifyReq;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerLoginReq;
+import com.guoyu.platform.competition.player.security.CompetitionPlayerPrincipal;
 import com.guoyu.platform.competition.player.sms.CompetitionPlayerSmsChallengeResult;
 import com.guoyu.platform.competition.player.sms.CompetitionPlayerSmsChallengeService;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 class CompetitionPlayerApplicationServiceTest {
@@ -45,6 +50,7 @@ class CompetitionPlayerApplicationServiceTest {
   @AfterEach
   void clearTenant() {
     TenantContextHolder.clear();
+    SecurityContextHolder.clearContext();
   }
 
   @Test
@@ -69,25 +75,105 @@ class CompetitionPlayerApplicationServiceTest {
 
   @Test
   void loginVerifiesPasswordBoundToStoredPlayerAndIssuesPlayerToken() {
-    TenantContextHolder.setTenantId(1L);
     CompetitionPlayerIdentityEntity player = player();
     player.setPasswordHash("{bcrypt}password-hash");
     when(playerIdentityService.normalizeMobile("13800138000")).thenReturn("13800138000");
     when(crypto.lookupHash("13800138000")).thenReturn("hash");
-    when(playerMapper.selectOne(any())).thenReturn(player);
+    when(playerMapper.selectForUpdateByMobileLookupHashGlobally("hash")).thenReturn(List.of(player));
     when(passwordEncoder.matches("123456", "{bcrypt}password-hash")).thenReturn(true);
     when(stpLogic.getTokenValue()).thenReturn("player-token");
     when(stpLogic.getTokenTimeout()).thenReturn(7200L);
 
     var result = service.login(new CompetitionPlayerLoginReq("13800138000", "123456"));
 
-    assertThat(result.playerId()).isEqualTo(9001L);
-    assertThat(result.token()).isEqualTo("player-token");
+    assertThat(result.status()).isEqualTo("active");
+    assertThat(result.session().playerId()).isEqualTo(9001L);
+    assertThat(result.session().token()).isEqualTo("player-token");
     Mockito.verify(stpLogic).login(9001L);
   }
 
   @Test
-  void activationInitializesBcryptPasswordFromLastSixIdCardDigitsWithoutIssuingSession() {
+  void loginReturnsPendingActivationWithoutIssuingSession() {
+    CompetitionPlayerIdentityEntity player = player();
+    player.setStatus("pending_activation");
+    player.setPasswordHash("{bcrypt}password-hash");
+    when(playerIdentityService.normalizeMobile("13800138000")).thenReturn("13800138000");
+    when(crypto.lookupHash("13800138000")).thenReturn("hash");
+    when(playerMapper.selectForUpdateByMobileLookupHashGlobally("hash")).thenReturn(List.of(player));
+    when(passwordEncoder.matches("123456", "{bcrypt}password-hash")).thenReturn(true);
+
+    var result = service.login(new CompetitionPlayerLoginReq("13800138000", "123456"));
+
+    assertThat(result.status()).isEqualTo("pending_activation");
+    assertThat(result.session()).isNull();
+    Mockito.verify(stpLogic, Mockito.never()).login(any());
+  }
+
+  @Test
+  void loginLazilyInitializesMissingHistoricalPasswordHash() {
+    CompetitionPlayerIdentityEntity player = player();
+    player.setStatus("pending_activation");
+    player.setIdCardCiphertext("id-card-ciphertext");
+    when(playerIdentityService.normalizeMobile("13800138000")).thenReturn("13800138000");
+    when(crypto.lookupHash("13800138000")).thenReturn("hash");
+    when(playerMapper.selectForUpdateByMobileLookupHashGlobally("hash")).thenReturn(List.of(player));
+    when(crypto.decrypt("id-card-ciphertext")).thenReturn("452128199903165016");
+    when(passwordEncoder.encode("165016")).thenReturn("{bcrypt}initial-password-hash");
+    when(playerMapper.initializePasswordIfAbsentGlobally(
+        Mockito.eq(9001L), Mockito.eq(1L), Mockito.eq("{bcrypt}initial-password-hash"), any()))
+        .thenReturn(1);
+    when(passwordEncoder.matches("165016", "{bcrypt}initial-password-hash")).thenReturn(true);
+
+    var result = service.login(new CompetitionPlayerLoginReq("13800138000", "165016"));
+
+    assertThat(result.status()).isEqualTo("pending_activation");
+    assertThat(player.getPasswordHash()).isEqualTo("{bcrypt}initial-password-hash");
+  }
+
+  @Test
+  void loginRejectsWrongPasswordWithoutStartingActivation() {
+    CompetitionPlayerIdentityEntity player = player();
+    player.setPasswordHash("{bcrypt}password-hash");
+    when(playerIdentityService.normalizeMobile("13800138000")).thenReturn("13800138000");
+    when(crypto.lookupHash("13800138000")).thenReturn("hash");
+    when(playerMapper.selectForUpdateByMobileLookupHashGlobally("hash")).thenReturn(List.of(player));
+    when(passwordEncoder.matches("000000", "{bcrypt}password-hash")).thenReturn(false);
+
+    assertThatThrownBy(() -> service.login(new CompetitionPlayerLoginReq("13800138000", "000000")))
+        .hasMessage("账号或密码错误");
+    Mockito.verify(stpLogic, Mockito.never()).login(any());
+  }
+
+  @Test
+  void loginRejectsUnknownAccount() {
+    when(playerIdentityService.normalizeMobile("13800138000")).thenReturn("13800138000");
+    when(crypto.lookupHash("13800138000")).thenReturn("hash");
+    when(playerMapper.selectForUpdateByMobileLookupHashGlobally("hash")).thenReturn(List.of());
+
+    assertThatThrownBy(() -> service.login(new CompetitionPlayerLoginReq("13800138000", "123456")))
+        .hasMessage("账号不存在");
+  }
+
+  @Test
+  void meUsesNonLockingPlayerLookupInsideReadOnlyTransaction() {
+    CompetitionPlayerIdentityEntity player = player();
+    CompetitionPlayerPrincipal principal = new CompetitionPlayerPrincipal(9001L, 1L);
+    SecurityContextHolder.getContext().setAuthentication(
+        new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities()));
+    when(playerMapper.selectById(9001L)).thenReturn(player);
+    when(crypto.decrypt("ciphertext")).thenReturn("13800138000");
+
+    var result = service.me();
+
+    assertThat(result.playerId()).isEqualTo(9001L);
+    assertThat(result.status()).isEqualTo("active");
+    assertThat(result.maskedMobile()).isEqualTo("138****8000");
+    Mockito.verify(playerMapper).selectById(9001L);
+    Mockito.verify(playerMapper, Mockito.never()).selectForUpdateById(9001L);
+  }
+
+  @Test
+  void activationInitializesBcryptPasswordAndIssuesSession() {
     TenantContextHolder.setTenantId(1L);
     CompetitionPlayerIdentityEntity player = player();
     player.setStatus("pending_activation");
@@ -102,13 +188,16 @@ class CompetitionPlayerApplicationServiceTest {
     when(crypto.decrypt("id-card-ciphertext")).thenReturn("452128199903165016");
     when(passwordEncoder.encode("165016")).thenReturn("{bcrypt}initial-password-hash");
     when(playerMapper.updateById(player)).thenReturn(1);
+    when(stpLogic.getTokenValue()).thenReturn("player-token");
+    when(stpLogic.getTokenTimeout()).thenReturn(7200L);
 
-    service.verifyActivation(new CompetitionPlayerActivationVerifyReq(
+    var session = service.verifyActivation(new CompetitionPlayerActivationVerifyReq(
         "entry-code", "13800138000", 7001L, "123456"));
 
     assertThat(player.getStatus()).isEqualTo("active");
     assertThat(player.getPasswordHash()).isEqualTo("{bcrypt}initial-password-hash");
-    Mockito.verify(stpLogic, Mockito.never()).login(any());
+    assertThat(session.token()).isEqualTo("player-token");
+    Mockito.verify(stpLogic).login(9001L);
   }
 
   private CompetitionEventEntity event() {

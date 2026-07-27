@@ -3,6 +3,7 @@ package com.guoyu.platform.competition.messaging.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 
 class CompetitionNoticeDeliveryConsumerTest {
 
@@ -53,6 +55,28 @@ class CompetitionNoticeDeliveryConsumerTest {
       assertThat(message.getType()).isEqualTo("notice_published");
       assertThat(message.getReceivedAt()).isNotNull();
     });
+    assertThat(TenantContextHolder.getTenantId()).isNull();
+  }
+
+  @Test
+  void acceptsEventWithoutRecipientsAndClearsWorkerTenantContext() {
+    when(registrationMapper.selectActivePlayerIdsByEvent(1L, 1001L)).thenReturn(List.of());
+
+    consumer.consume("""
+        {"tenantId":1,"eventId":1001,"noticeId":9001,"publishedAt":"2026-07-21T14:00:00"}
+        """);
+
+    verifyNoInteractions(playerMessageMapper);
+    assertThat(TenantContextHolder.getTenantId()).isNull();
+  }
+
+  @Test
+  void rejectsMalformedPayloadWithoutLeakingTenantContext() {
+    org.assertj.core.api.Assertions.assertThatThrownBy(
+            () -> consumer.consume("{\"tenantId\":1}"))
+        .isInstanceOf(AmqpRejectAndDontRequeueException.class);
+
+    verifyNoInteractions(registrationMapper, playerMessageMapper);
     assertThat(TenantContextHolder.getTenantId()).isNull();
   }
 }

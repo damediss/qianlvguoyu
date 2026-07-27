@@ -26,10 +26,13 @@
     "echarts-for-react": "^3.0.6",
     "heic2any": "^0.0.4",
     "json-bigint": "^1.0.0",
+    "markdown-it": "^14.3.0",
+    "md-editor-rt": "^6.5.4",
     "pinyin-pro": "^3.28.1",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "sanitize-html": "^2.17.6",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.2"
   },

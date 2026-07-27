@@ -8,6 +8,7 @@ import com.guoyu.platform.competition.player.dto.CompetitionPlayerChangeMobileSe
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerChangeMobileVerifyReq;
 import com.guoyu.platform.competition.player.service.CompetitionPlayerApplicationService;
 import com.guoyu.platform.competition.player.vo.CompetitionPlayerEntryVO;
+import com.guoyu.platform.competition.player.vo.CompetitionPlayerLoginResultVO;
 import com.guoyu.platform.competition.player.vo.CompetitionPlayerMeVO;
 import com.guoyu.platform.competition.player.vo.CompetitionPlayerSessionVO;
 import com.guoyu.platform.competition.player.vo.CompetitionPlayerSmsChallengeVO;
@@ -47,14 +48,13 @@ public class CompetitionPlayerAuthController {
   }
 
   @PostMapping("/activation/verify")
-  public ApiResponse<Void> verifyActivation(
+  public ApiResponse<CompetitionPlayerSessionVO> verifyActivation(
       @Valid @RequestBody CompetitionPlayerActivationVerifyReq request) {
-    service.verifyActivation(request);
-    return ApiResponse.ok();
+    return ApiResponse.ok(service.verifyActivation(request));
   }
 
   @PostMapping("/auth/login")
-  public ApiResponse<CompetitionPlayerSessionVO> login(
+  public ApiResponse<CompetitionPlayerLoginResultVO> login(
       @Valid @RequestBody CompetitionPlayerLoginReq request) {
     return ApiResponse.ok(service.login(request));
   }

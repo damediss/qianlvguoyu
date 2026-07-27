@@ -10,6 +10,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Pattern;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,12 +24,15 @@ public class CompetitionPlayerIdentityDomainService {
 
   private final CompetitionPlayerIdentityMapper playerMapper;
   private final CompetitionPlayerSensitiveDataCrypto crypto;
+  private final PasswordEncoder passwordEncoder;
 
   public CompetitionPlayerIdentityDomainService(
       CompetitionPlayerIdentityMapper playerMapper,
-      CompetitionPlayerSensitiveDataCrypto crypto) {
+      CompetitionPlayerSensitiveDataCrypto crypto,
+      PasswordEncoder passwordEncoder) {
     this.playerMapper = playerMapper;
     this.crypto = crypto;
+    this.passwordEncoder = passwordEncoder;
   }
 
   @Transactional
@@ -65,6 +69,8 @@ public class CompetitionPlayerIdentityDomainService {
     player.setMobileCiphertext(crypto.encrypt(normalizedMobile));
     player.setMobileLookupHash(mobileHash);
     player.setCryptoKeyVersion(crypto.keyVersion());
+    player.setPasswordHash(passwordEncoder.encode(initialPassword(normalizedIdCard)));
+    player.setPasswordInitializedAt(java.time.LocalDateTime.now());
     player.setStatus(CompetitionPlayerStatus.PENDING_ACTIVATION.getCode());
     player.setDeleted(0);
     try {
@@ -114,8 +120,12 @@ public class CompetitionPlayerIdentityDomainService {
     player.setMobileCiphertext(crypto.encrypt(normalizedMobile));
     player.setMobileLookupHash(newMobileHash);
     player.setCryptoKeyVersion(crypto.keyVersion());
-    if (playerMapper.updateById(player) != 1) {
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "手机号更新失败");
+    try {
+      if (playerMapper.updateById(player) != 1) {
+        throw new BusinessException(ErrorCode.INTERNAL_ERROR, "手机号更新失败");
+      }
+    } catch (DuplicateKeyException ex) {
+      throw new BusinessException(ErrorCode.CONFLICT, "手机号已绑定其他选手");
     }
     return player;
   }
@@ -129,6 +139,13 @@ public class CompetitionPlayerIdentityDomainService {
       throw new BusinessException(ErrorCode.CONFLICT, "手机号已绑定其他选手");
     }
     return newMobileHash;
+  }
+
+  private String initialPassword(String idCardNo) {
+    if (idCardNo == null || idCardNo.length() < 6) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "Initial competition player password cannot be generated");
+    }
+    return idCardNo.substring(idCardNo.length() - 6);
   }
 
   private boolean hasValidIdCardCheckCode(String idCardNo) {

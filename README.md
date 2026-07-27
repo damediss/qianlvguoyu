@@ -96,9 +96,10 @@ macOS 下可双击根目录 `start-dev.command` 启动一期开发环境。
 
 1. `3306` 已有服务时，跳过本项目 MySQL 容器
 2. `6379` 已有服务时，跳过本项目 Redis 容器
-3. 端口未占用时，通过 `infra/docker/docker-compose.platform-api-dev.yml` 启动对应容器
+3. 端口未占用时，通过 `infra/docker/docker-compose.platform-api-dev.yml` 启动 MySQL、Redis 和 RabbitMQ
 4. 再启动 `services/platform-api` 和 `apps/admin-web`
-5. 如果 `8080` 被占用，后端自动改用 `18080`；如果 `5173` 被占用，前端自动改用 `15173`
+5. 竞赛公告链路需要设置 `COMPETITION_MESSAGING_ENABLED=true`
+6. 如果 `8080` 被占用，后端自动改用 `18080`；如果 `5173` 被占用，前端自动改用 `15173`
 
 启动后访问：
 
@@ -112,6 +113,12 @@ http://localhost:5173
 
 ```text
 http://localhost:8080/api/actuator/health
+```
+
+RabbitMQ 管理页面：
+
+```text
+http://localhost:15672
 ```
 
 日志输出：

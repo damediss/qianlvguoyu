@@ -1,7 +1,9 @@
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
+  DownloadOutlined,
   ReloadOutlined,
+  UserAddOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import {
@@ -10,6 +12,8 @@ import {
   Descriptions,
   Empty,
   Form,
+  Input,
+  Modal,
   Result,
   Select,
   Space,
@@ -25,11 +29,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import {
   confirmCompetitionRosterImport,
+  downloadCompetitionRosterTemplate,
   getCompetitionEvent,
   getCompetitionRosterImport,
   pageCompetitionEventOrganizations,
   pageCompetitionRosterImports,
   precheckCompetitionRoster,
+  precheckSingleCompetitionRoster,
 } from '../../api/competition';
 import { uploadPlatformFile } from '../../api/files';
 import type {
@@ -65,6 +71,33 @@ function idValue(value: string | number) {
   return String(value);
 }
 
+const ID_CARD_WEIGHTS = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
+const ID_CARD_CHECK_CODES = ['1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'];
+
+function normalizeIdCard(value: string) {
+  return value.trim().replace(/\s+/g, '').toUpperCase();
+}
+
+function isValidIdCard(value?: string) {
+  if (!value) return false;
+  const normalized = normalizeIdCard(value);
+  if (!/^\d{17}[0-9X]$/.test(normalized)) return false;
+  const sum = ID_CARD_WEIGHTS.reduce(
+    (total, weight, index) => total + Number(normalized[index]) * weight,
+    0,
+  );
+  return ID_CARD_CHECK_CODES[sum % 11] === normalized[17];
+}
+
+interface SingleRosterFormValues {
+  employeeNo: string;
+  name: string;
+  idCardNo: string;
+  mobile: string;
+  workType?: string;
+  level?: string;
+}
+
 export function CompetitionRosterImportPage({
   eventId,
   onNavigate,
@@ -82,6 +115,8 @@ export function CompetitionRosterImportPage({
   const [selectedFile, setSelectedFile] = useState<File>();
   const [uploadFileList, setUploadFileList] = useState<UploadFile[]>([]);
   const [orgId, setOrgId] = useState<string>();
+  const [singleOpen, setSingleOpen] = useState(false);
+  const [singleForm] = Form.useForm<SingleRosterFormValues>();
   const [query, setQuery] = useState<CompetitionRosterImportListQuery>({ page: 1, pageSize: 10 });
   const [itemQuery, setItemQuery] = useState<CompetitionRosterImportPageQuery>({ page: 1, pageSize: 20 });
   const queryClient = useQueryClient();
@@ -139,6 +174,22 @@ export function CompetitionRosterImportPage({
     onError: (error) => message.error(error instanceof Error ? error.message : '名单预检失败'),
   });
 
+  const singlePrecheckMutation = useMutation({
+    mutationFn: (values: SingleRosterFormValues) => {
+      if (!orgId) throw new Error('请选择参赛企业');
+      return precheckSingleCompetitionRoster(eventId, { orgId, ...values });
+    },
+    onSuccess: (detail) => {
+      message.success('单个选手预检完成，请确认名单');
+      setSingleOpen(false);
+      singleForm.resetFields();
+      setSelectedBatchId(idValue(detail.batchId || detail.id));
+      setItemQuery({ page: 1, pageSize: 20 });
+      queryClient.invalidateQueries({ queryKey: ['competition-roster-imports', eventId] });
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : '单个选手录入失败'),
+  });
+
   const confirmMutation = useMutation({
     mutationFn: () => confirmCompetitionRosterImport(selectedBatchId!),
     onSuccess: () => {
@@ -174,6 +225,20 @@ export function CompetitionRosterImportPage({
     confirmMutation.mutate();
   };
 
+  const downloadTemplate = async () => {
+    try {
+      const blob = await downloadCompetitionRosterTemplate();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'competition-roster-template.xlsx';
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '模板下载失败');
+    }
+  };
+
   const itemColumns = [
     { title: '工号', dataIndex: 'employeeNo', width: 160 },
     { title: '姓名', dataIndex: 'name', width: 140 },
@@ -191,8 +256,31 @@ export function CompetitionRosterImportPage({
   }
 
   const batchColumns = [
-    { title: '批次号', dataIndex: 'batchNo', render: (value: string, record: CompetitionRosterImport) => <Button type="link" onClick={() => { setSelectedBatchId(idValue(record.batchId)); setItemQuery({ page: 1, pageSize: 20 }); }}>{value}</Button> },
-    { title: '参与企业', dataIndex: 'orgName', render: (value: string | null | undefined, record: CompetitionRosterImport) => value || idValue(record.orgId) },
+    {
+      title: '批次号',
+      dataIndex: 'batchNo',
+      width: 180,
+      ellipsis: true,
+      render: (value: string, record: CompetitionRosterImport) => (
+        <Button
+          type="link"
+          className="competition-roster-batch-link"
+          title={value}
+          onClick={() => { setSelectedBatchId(idValue(record.batchId)); setItemQuery({ page: 1, pageSize: 20 }); }}
+        >
+          {value}
+        </Button>
+      ),
+    },
+    {
+      title: '参与企业',
+      dataIndex: 'orgName',
+      width: 260,
+      render: (value: string | null | undefined, record: CompetitionRosterImport) => {
+        const name = value || idValue(record.orgId);
+        return <span className="competition-roster-org-name" title={name}>{name}</span>;
+      },
+    },
     { title: '状态', dataIndex: 'status', width: 120, render: (value: CompetitionRosterImportStatus) => <Tag color={importStatusMeta[value]?.color}>{importStatusMeta[value]?.label || value}</Tag> },
     { title: '总数', dataIndex: 'totalCount', width: 80 },
     { title: '有效', dataIndex: 'validCount', width: 80 },
@@ -212,26 +300,57 @@ export function CompetitionRosterImportPage({
     <CompetitionEventFrame event={eventQuery.data} activeSection="rosters" onNavigate={onNavigate}>
       {canImport ? (
         <Card bordered={false} className="competition-filter-card">
-          <Form layout="inline" onFinish={() => precheckMutation.mutate()}>
+          <Form layout="inline" className="competition-roster-import-form" onFinish={() => precheckMutation.mutate()}>
             <Form.Item label="参赛企业" required>
-              <Select value={orgId} onChange={setOrgId} options={organizationOptions} placeholder="请选择企业" style={{ width: 260 }} loading={organizationsQuery.isLoading} />
+              <Select value={orgId} onChange={setOrgId} options={organizationOptions} placeholder="请选择企业" style={{ width: 250 }} loading={organizationsQuery.isLoading} />
             </Form.Item>
             <Form.Item>
-              <Button icon={<ReloadOutlined />} loading={batchesQuery.isFetching} onClick={() => batchesQuery.refetch()}>刷新</Button>
-            </Form.Item>
-            <Form.Item required>
-              <Upload {...uploadProps}>
-                <Button icon={<UploadOutlined />}>选择文件</Button>
-              </Upload>
+              <Button
+                size="small"
+                shape="circle"
+                icon={<ReloadOutlined />}
+                aria-label="刷新"
+                title="刷新"
+                loading={batchesQuery.isFetching}
+                onClick={() => batchesQuery.refetch()}
+              />
             </Form.Item>
             <Form.Item>
-              <Button type="primary" htmlType="submit" loading={precheckMutation.isPending} disabled={!selectedFile || !orgId} style={{ width: 80 }}>上传</Button>
+              <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>下载模板</Button>
+            </Form.Item>
+            <Form.Item>
+              <Button icon={<UserAddOutlined />} disabled={!orgId} onClick={() => setSingleOpen(true)}>单个录入</Button>
+            </Form.Item>
+            <Form.Item required className="competition-roster-upload-actions">
+              <Space size={6}>
+                <Upload {...uploadProps}>
+                  <Button icon={<UploadOutlined />}>选择文件</Button>
+                </Upload>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  className="competition-roster-upload-submit"
+                  loading={precheckMutation.isPending}
+                  disabled={!selectedFile || !orgId}
+                  style={{ width: 64 }}
+                >
+                  上传
+                </Button>
+              </Space>
             </Form.Item>
           </Form>
         </Card>
       ) : (
         <section className="competition-page-heading">
-          <Button icon={<ReloadOutlined />} loading={batchesQuery.isFetching} onClick={() => batchesQuery.refetch()}>刷新</Button>
+          <Button
+            size="small"
+            shape="circle"
+            icon={<ReloadOutlined />}
+            aria-label="刷新"
+            title="刷新"
+            loading={batchesQuery.isFetching}
+            onClick={() => batchesQuery.refetch()}
+          />
         </section>
       )}
 
@@ -245,7 +364,7 @@ export function CompetitionRosterImportPage({
           loading={batchesQuery.isFetching}
           dataSource={batchesQuery.data?.items || []}
           columns={batchColumns}
-          scroll={{ x: 950 }}
+          scroll={{ x: 1120 }}
           pagination={{ current: query.page, pageSize: query.pageSize, total: batchesQuery.data?.total || 0, showSizeChanger: true, onChange: (page, pageSize) => setQuery((current) => ({ ...current, page, pageSize })) }}
         />
       </Card>
@@ -267,6 +386,41 @@ export function CompetitionRosterImportPage({
           </>}
         </Card>
       )}
+
+      <Modal
+        title="单个选手录入"
+        open={singleOpen}
+        destroyOnClose
+        confirmLoading={singlePrecheckMutation.isPending}
+        onCancel={() => { setSingleOpen(false); singleForm.resetFields(); }}
+        onOk={() => singleForm.submit()}
+      >
+        <Form<SingleRosterFormValues> form={singleForm} layout="vertical" onFinish={(values) => singlePrecheckMutation.mutate(values)}>
+          <Form.Item label="参赛企业"><Input value={organizationOptions.find((item) => item.value === orgId)?.label || orgId} disabled /></Form.Item>
+          <Form.Item name="employeeNo" label="工号" rules={[{ required: true, whitespace: true, message: '请输入工号' }]}><Input maxLength={64} /></Form.Item>
+          <Form.Item name="name" label="姓名" rules={[{ required: true, whitespace: true, message: '请输入姓名' }]}><Input maxLength={128} /></Form.Item>
+          <Form.Item
+            name="idCardNo"
+            label="身份证号"
+            normalize={(value: string) => normalizeIdCard(value || '')}
+            rules={[
+              { required: true, whitespace: true, message: '请输入身份证号' },
+              {
+                validator: (_, value: string) => (
+                  !value || isValidIdCard(value)
+                    ? Promise.resolve()
+                    : Promise.reject(new Error('请输入校验码正确的18位身份证号'))
+                ),
+              },
+            ]}
+          >
+            <Input maxLength={18} />
+          </Form.Item>
+          <Form.Item name="mobile" label="手机号" rules={[{ required: true, pattern: /^1\d{10}$/, message: '请输入11位手机号' }]}><Input maxLength={11} /></Form.Item>
+          <Form.Item name="workType" label="工种"><Input maxLength={64} /></Form.Item>
+          <Form.Item name="level" label="等级"><Input maxLength={32} /></Form.Item>
+        </Form>
+      </Modal>
     </CompetitionEventFrame>
   );
 }

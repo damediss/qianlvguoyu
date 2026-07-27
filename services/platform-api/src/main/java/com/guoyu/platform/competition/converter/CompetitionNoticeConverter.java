@@ -3,6 +3,7 @@ package com.guoyu.platform.competition.converter;
 import com.guoyu.platform.competition.dto.CompetitionNoticeCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionNoticeUpdateReq;
 import com.guoyu.platform.competition.entity.CompetitionNoticeEntity;
+import com.guoyu.platform.competition.enums.CompetitionNoticeContentType;
 import com.guoyu.platform.competition.vo.CompetitionNoticeVO;
 
 public final class CompetitionNoticeConverter {
@@ -16,7 +17,8 @@ public final class CompetitionNoticeConverter {
     }
     CompetitionNoticeEntity target = new CompetitionNoticeEntity();
     target.setTitle(source.title().trim());
-    target.setContent(source.content());
+    target.setContent(source.content() == null ? "" : source.content());
+    target.setContentType(CompetitionNoticeContentType.normalize(source.contentType()));
     target.setVersion(source.version());
     return target;
   }
@@ -26,7 +28,8 @@ public final class CompetitionNoticeConverter {
       return;
     }
     target.setTitle(source.title().trim());
-    target.setContent(source.content());
+    target.setContent(source.content() == null ? "" : source.content());
+    target.setContentType(CompetitionNoticeContentType.normalize(source.contentType()));
     if (source.version() != null) {
       target.setVersion(source.version());
     }
@@ -40,6 +43,7 @@ public final class CompetitionNoticeConverter {
     target.setId(source.getId());
     target.setEventId(source.getEventId());
     target.setTitle(source.getTitle());
+    target.setContentType(source.getContentType());
     target.setContent(source.getContent());
     target.setVersion(source.getVersion());
     target.setStatus(source.getStatus());

@@ -18,6 +18,7 @@ import com.guoyu.platform.competition.dto.CompetitionNoticeCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionNoticeQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionNoticeUpdateReq;
 import com.guoyu.platform.competition.service.CompetitionNoticeApplicationService;
+import com.guoyu.platform.competition.vo.CompetitionNoticeAssetVO;
 import com.guoyu.platform.competition.vo.CompetitionNoticePublishResultVO;
 import com.guoyu.platform.competition.vo.CompetitionNoticeVO;
 import java.util.List;
@@ -56,6 +57,47 @@ class CompetitionNoticeControllerApiTest {
         .andExpect(jsonPath("$.data.status").value("draft"));
 
     verify(service).create(any(Long.class), any(CompetitionNoticeCreateReq.class));
+  }
+
+  @Test
+  void legacyCreateRequestDeserializesWithoutContentType() throws Exception {
+    CompetitionNoticeVO notice = notice(9101L, "draft");
+    notice.setContentType("markdown");
+    when(service.create(any(Long.class), any(CompetitionNoticeCreateReq.class))).thenReturn(notice);
+
+    mockMvc.perform(post("/competition/events/1001/notices")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {"title":"Title","content":"Content","version":1}
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.contentType").value("markdown"));
+
+    var requestCaptor = org.mockito.ArgumentCaptor.forClass(CompetitionNoticeCreateReq.class);
+    verify(service).create(Mockito.eq(1001L), requestCaptor.capture());
+    org.assertj.core.api.Assertions.assertThat(requestCaptor.getValue().contentType()).isNull();
+  }
+
+  @Test
+  void detailSerializesContentTypeAssetsAndAssetIdAsString() throws Exception {
+    CompetitionNoticeVO notice = notice(9101L, "draft");
+    notice.setContentType("pdf");
+    CompetitionNoticeAssetVO asset = new CompetitionNoticeAssetVO();
+    asset.setAssetId(9007199254740993L);
+    asset.setAssetType("pdf");
+    asset.setOriginalName("rules.pdf");
+    asset.setContentType("application/pdf");
+    asset.setSizeBytes(1024L);
+    asset.setSourceUri("notice-asset://9007199254740993");
+    notice.setAssets(List.of(asset));
+    when(service.getById(9101L)).thenReturn(notice);
+
+    mockMvc.perform(get("/competition/notices/9101"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.contentType").value("pdf"))
+        .andExpect(jsonPath("$.data.assets[0].assetId").value("9007199254740993"))
+        .andExpect(jsonPath("$.data.assets[0].sourceUri")
+            .value("notice-asset://9007199254740993"));
   }
 
   @Test

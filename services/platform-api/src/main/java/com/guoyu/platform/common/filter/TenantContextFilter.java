@@ -44,7 +44,8 @@ public class TenantContextFilter extends OncePerRequestFilter {
       "GET:/api/auth/tenants",
       "GET:/api/auth/captcha/generate",
       "POST:/api/auth/captcha/verify",
-      "GET:/api/competition/player/entry/resolve"
+      "GET:/api/competition/player/entry/resolve",
+      "POST:/api/competition/player/auth/login"
   );
 
   @Override

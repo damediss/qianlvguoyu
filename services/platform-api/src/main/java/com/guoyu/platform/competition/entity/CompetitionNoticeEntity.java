@@ -9,6 +9,7 @@ public class CompetitionNoticeEntity extends BaseEntity {
 
   private Long eventId;
   private String title;
+  private String contentType;
   private String content;
   private Integer version;
   private String status;
@@ -19,6 +20,8 @@ public class CompetitionNoticeEntity extends BaseEntity {
   public void setEventId(Long eventId) { this.eventId = eventId; }
   public String getTitle() { return title; }
   public void setTitle(String title) { this.title = title; }
+  public String getContentType() { return contentType; }
+  public void setContentType(String contentType) { this.contentType = contentType; }
   public String getContent() { return content; }
   public void setContent(String content) { this.content = content; }
   public Integer getVersion() { return version; }

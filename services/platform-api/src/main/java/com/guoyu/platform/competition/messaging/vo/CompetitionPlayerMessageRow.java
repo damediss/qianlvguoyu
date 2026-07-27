@@ -9,6 +9,7 @@ public class CompetitionPlayerMessageRow {
   private Long noticeId;
   private String type;
   private String title;
+  private String contentType;
   private String content;
   private LocalDateTime publishedAt;
   private LocalDateTime receivedAt;
@@ -24,6 +25,8 @@ public class CompetitionPlayerMessageRow {
   public void setType(String type) { this.type = type; }
   public String getTitle() { return title; }
   public void setTitle(String title) { this.title = title; }
+  public String getContentType() { return contentType; }
+  public void setContentType(String contentType) { this.contentType = contentType; }
   public String getContent() { return content; }
   public void setContent(String content) { this.content = content; }
   public LocalDateTime getPublishedAt() { return publishedAt; }

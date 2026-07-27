@@ -27,6 +27,7 @@ import com.guoyu.platform.competition.player.security.CompetitionPlayerSecurityC
 import com.guoyu.platform.competition.player.sms.CompetitionPlayerSmsChallengeResult;
 import com.guoyu.platform.competition.player.sms.CompetitionPlayerSmsChallengeService;
 import com.guoyu.platform.competition.player.vo.CompetitionPlayerEntryVO;
+import com.guoyu.platform.competition.player.vo.CompetitionPlayerLoginResultVO;
 import com.guoyu.platform.competition.player.vo.CompetitionPlayerMeVO;
 import com.guoyu.platform.competition.player.vo.CompetitionPlayerSessionVO;
 import com.guoyu.platform.competition.player.vo.CompetitionPlayerSmsChallengeVO;
@@ -101,7 +102,7 @@ public class CompetitionPlayerApplicationService {
   }
 
   @Transactional
-  public void verifyActivation(
+  public CompetitionPlayerSessionVO verifyActivation(
       CompetitionPlayerActivationVerifyReq request) {
     CompetitionRegistrationEntity registration = findEligibleActivationRegistration(
         request.entryCode(), request.mobile());
@@ -122,37 +123,60 @@ public class CompetitionPlayerApplicationService {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "选手激活失败");
     }
     registrationMapper.activateEligibleRegistrations(currentTenantId(), player.getId(), null, now);
+    return issueSession(player);
   }
 
   @Transactional
-  public CompetitionPlayerSessionVO login(CompetitionPlayerLoginReq request) {
-    Long tenantId = currentTenantId();
-    String mobile = playerIdentityService.normalizeMobile(request.mobile());
-    CompetitionPlayerIdentityEntity player = playerMapper.selectOne(
-        new LambdaQueryWrapper<CompetitionPlayerIdentityEntity>()
-            .eq(CompetitionPlayerIdentityEntity::getMobileLookupHash, crypto.lookupHash(mobile))
-            .eq(CompetitionPlayerIdentityEntity::getDeleted, 0));
-    if (player == null) {
-      log.warn("Competition player password login failed, tenantId={}, mobileLookupHash={}",
-          tenantId, crypto.lookupHash(mobile));
-      throw new BusinessException(ErrorCode.UNAUTHORIZED, "手机号或密码错误");
+  public CompetitionPlayerLoginResultVO login(CompetitionPlayerLoginReq request) {
+    String mobile = playerIdentityService.normalizeMobile(request.account());
+    String mobileLookupHash = crypto.lookupHash(mobile);
+    List<CompetitionPlayerIdentityEntity> players =
+        playerMapper.selectForUpdateByMobileLookupHashGlobally(mobileLookupHash);
+    if (players != null && players.size() > 1) {
+      log.error("Competition player login found duplicate global mobile identity, mobileLookupHash={}",
+          mobileLookupHash);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "竞赛账号数据异常");
     }
-    if (!CompetitionPlayerStatus.ACTIVE.getCode().equals(player.getStatus())) {
+    CompetitionPlayerIdentityEntity player = players == null || players.isEmpty() ? null : players.getFirst();
+    if (player == null) {
+      log.warn("Competition player login account does not exist, mobileLookupHash={}", mobileLookupHash);
+      throw new BusinessException(ErrorCode.NOT_FOUND, "账号不存在");
+    }
+    if (CompetitionPlayerStatus.DISABLED.getCode().equals(player.getStatus())) {
       throw new BusinessException(ErrorCode.FORBIDDEN, "选手身份已停用");
     }
-    if (player.getPasswordHash() == null
-        || !passwordEncoder.matches(request.password(), player.getPasswordHash())) {
-      log.warn("Competition player password login failed, tenantId={}, mobileLookupHash={}",
-          tenantId, crypto.lookupHash(mobile));
-      throw new BusinessException(ErrorCode.UNAUTHORIZED, "手机号或密码错误");
+    if (player.getPasswordHash() == null || player.getPasswordHash().isBlank()) {
+      String idCardNo = crypto.decrypt(player.getIdCardCiphertext());
+      if (!initialPassword(idCardNo).equals(request.password())) {
+        log.warn("Competition player password login failed, tenantId={}, mobileLookupHash={}",
+            player.getTenantId(), mobileLookupHash);
+        throw new BusinessException(ErrorCode.UNAUTHORIZED, "账号或密码错误");
+      }
+      LocalDateTime initializedAt = LocalDateTime.now();
+      String passwordHash = passwordEncoder.encode(request.password());
+      int updated = playerMapper.initializePasswordIfAbsentGlobally(
+          player.getId(), player.getTenantId(), passwordHash, initializedAt);
+      if (updated != 1) {
+        throw new BusinessException(ErrorCode.INTERNAL_ERROR, "竞赛账号初始密码设置失败");
+      }
+      player.setPasswordHash(passwordHash);
+      player.setPasswordInitializedAt(initializedAt);
     }
-    return issueSession(player);
+    if (!passwordEncoder.matches(request.password(), player.getPasswordHash())) {
+      log.warn("Competition player password login failed, tenantId={}, mobileLookupHash={}",
+          player.getTenantId(), mobileLookupHash);
+      throw new BusinessException(ErrorCode.UNAUTHORIZED, "账号或密码错误");
+    }
+    if (CompetitionPlayerStatus.PENDING_ACTIVATION.getCode().equals(player.getStatus())) {
+      return CompetitionPlayerLoginResultVO.pendingActivation();
+    }
+    return CompetitionPlayerLoginResultVO.active(issueSession(player));
   }
 
   @Transactional(readOnly = true)
   public CompetitionPlayerMeVO me() {
     CompetitionPlayerPrincipal principal = currentPlayer();
-    CompetitionPlayerIdentityEntity player = findPlayer(principal.getPlayerId());
+    CompetitionPlayerIdentityEntity player = findPlayerWithoutLock(principal.getPlayerId());
     if (!CompetitionPlayerStatus.ACTIVE.getCode().equals(player.getStatus())) {
       throw new BusinessException(ErrorCode.FORBIDDEN, "选手身份已停用");
     }
@@ -161,8 +185,9 @@ public class CompetitionPlayerApplicationService {
             .eq(CompetitionRegistrationEntity::getPlayerId, player.getId())
             .eq(CompetitionRegistrationEntity::getStatus, CompetitionRegistrationStatus.ELIGIBLE_ACTIVATED.getCode())
             .eq(CompetitionRegistrationEntity::getDeleted, 0));
+    String maskedMobile = maskMobile(crypto.decrypt(player.getMobileCiphertext()));
     if (registrations == null || registrations.isEmpty()) {
-      return new CompetitionPlayerMeVO(player.getId(), player.getStatus(), List.of());
+      return new CompetitionPlayerMeVO(player.getId(), player.getStatus(), maskedMobile, List.of());
     }
     List<Long> eventIds = registrations.stream().map(CompetitionRegistrationEntity::getEventId).distinct().toList();
     List<CompetitionEventEntity> events = eventMapper.selectBatchIds(eventIds);
@@ -176,7 +201,7 @@ public class CompetitionPlayerApplicationService {
         .map(event -> new CompetitionPlayerMeVO.EventSummary(
             event.getId(), event.getName(), CompetitionRegistrationStatus.ELIGIBLE_ACTIVATED.getCode()))
         .toList();
-    return new CompetitionPlayerMeVO(player.getId(), player.getStatus(), summaries);
+    return new CompetitionPlayerMeVO(player.getId(), player.getStatus(), maskedMobile, summaries);
   }
 
   public void logout() {
@@ -245,6 +270,14 @@ public class CompetitionPlayerApplicationService {
     return player;
   }
 
+  private CompetitionPlayerIdentityEntity findPlayerWithoutLock(Long playerId) {
+    CompetitionPlayerIdentityEntity player = playerMapper.selectById(playerId);
+    if (player == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "选手身份不存在");
+    }
+    return player;
+  }
+
   private CompetitionPlayerSessionVO issueSession(CompetitionPlayerIdentityEntity player) {
     competitionPlayerStpLogic.login(player.getId());
     String token = competitionPlayerStpLogic.getTokenValue();
@@ -266,6 +299,13 @@ public class CompetitionPlayerApplicationService {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "选手初始密码生成失败");
     }
     return idCardNo.substring(idCardNo.length() - 6);
+  }
+
+  private String maskMobile(String mobile) {
+    if (mobile == null || mobile.length() < 7) {
+      return "****";
+    }
+    return mobile.substring(0, 3) + "****" + mobile.substring(mobile.length() - 4);
   }
 
   private CompetitionPlayerPrincipal currentPlayer() {

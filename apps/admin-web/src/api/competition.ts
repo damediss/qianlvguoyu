@@ -12,6 +12,8 @@ import type {
   CompetitionRosterImportListQuery,
   CompetitionRosterImportPageQuery,
   CompetitionNotice,
+  CompetitionNoticeAsset,
+  CompetitionNoticeAssetType,
   CompetitionNoticeCreateRequest,
   CompetitionNoticePageQuery,
   CompetitionNoticePublishResult,
@@ -105,6 +107,28 @@ export function precheckCompetitionRoster(
   );
 }
 
+export function precheckSingleCompetitionRoster(
+  eventId: CompetitionId,
+  payload: {
+    orgId: CompetitionId;
+    employeeNo: string;
+    name: string;
+    idCardNo: string;
+    mobile: string;
+    workType?: string;
+    level?: string;
+  },
+) {
+  return unwrap<CompetitionRosterImportDetail>(
+    apiClient.post(`/competition/events/${eventId}/roster-imports/single`, payload),
+  );
+}
+
+export async function downloadCompetitionRosterTemplate(): Promise<Blob> {
+  const response = await apiClient.get('/competition/roster-import-template', { responseType: 'blob' });
+  return response.data as Blob;
+}
+
 export { uploadPlatformFile };
 
 export function confirmCompetitionRosterImport(batchId: CompetitionId) {
@@ -143,5 +167,38 @@ export function updateCompetitionNotice(
 export function publishCompetitionNotice(noticeId: CompetitionId) {
   return unwrap<CompetitionNoticePublishResult>(
     apiClient.post(`/competition/notices/${noticeId}/publish`),
+  );
+}
+
+export function uploadCompetitionNoticeAsset(
+  noticeId: CompetitionId,
+  file: File,
+  assetType: CompetitionNoticeAssetType,
+) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('assetType', assetType);
+  return unwrap<CompetitionNoticeAsset>(
+    apiClient.post(`/competition/notices/${noticeId}/assets`, formData),
+  );
+}
+
+export async function getCompetitionNoticeAsset(
+  noticeId: CompetitionId,
+  assetId: CompetitionId,
+): Promise<Blob> {
+  const response = await apiClient.get(
+    `/competition/notices/${noticeId}/assets/${assetId}`,
+    { responseType: 'blob', timeout: 120000 },
+  );
+  return response.data as Blob;
+}
+
+export function deleteCompetitionNoticeAsset(
+  noticeId: CompetitionId,
+  assetId: CompetitionId,
+) {
+  return unwrap<void>(
+    apiClient.delete(`/competition/notices/${noticeId}/assets/${assetId}`),
   );
 }

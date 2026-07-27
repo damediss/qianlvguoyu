@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ResponseEntity;
 
 @RestController
 @RequestMapping("/competition/player/messages")
@@ -36,5 +38,11 @@ public class CompetitionPlayerMessageController {
   public ApiResponse<Void> markRead(@PathVariable Long messageId) {
     service.markRead(messageId);
     return ApiResponse.ok();
+  }
+
+  @GetMapping("/{messageId}/assets/{assetId}")
+  public ResponseEntity<Resource> getAsset(
+      @PathVariable Long messageId, @PathVariable Long assetId) {
+    return service.downloadAsset(messageId, assetId);
   }
 }

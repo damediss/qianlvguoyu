@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.competition.dto.CompetitionRegistrationAuditRequest;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
+import com.guoyu.platform.competition.entity.CompetitionEventMemberEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventOrgEntity;
 import com.guoyu.platform.competition.entity.CompetitionRegistrationEntity;
 import com.guoyu.platform.competition.entity.CompetitionRosterImportEntity;
@@ -26,6 +27,7 @@ import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.Mockito;
 
 class CompetitionRegistrationServiceTest {
@@ -37,8 +39,24 @@ class CompetitionRegistrationServiceTest {
   private final CompetitionRegistrationMapper registrationMapper = Mockito.mock(CompetitionRegistrationMapper.class);
   private final OrgMapper orgMapper = Mockito.mock(OrgMapper.class);
   private final UserMapper userMapper = Mockito.mock(UserMapper.class);
+  private final CompetitionEventMemberService eventMemberService = Mockito.mock(CompetitionEventMemberService.class);
   private final CompetitionRegistrationService service = new CompetitionRegistrationService(
-      eventMapper, eventOrgMapper, importMapper, itemMapper, registrationMapper, orgMapper, userMapper);
+      eventMapper, eventOrgMapper, importMapper, itemMapper, registrationMapper, orgMapper, userMapper,
+      null, eventMemberService);
+
+  @BeforeEach
+  void setUpRoleMembership() {
+    when(eventMemberService.createContestantMember(any(), any(), any(), any(), any()))
+        .thenAnswer(invocation -> {
+          CompetitionEventMemberEntity member = new CompetitionEventMemberEntity();
+          member.setId(6001L);
+          return member;
+        });
+    org.mockito.Mockito.doAnswer(invocation -> {
+      ((CompetitionRegistrationEntity) invocation.getArgument(0)).setId(70001L);
+      return 1;
+    }).when(registrationMapper).insert(any(CompetitionRegistrationEntity.class));
+  }
 
   @Test
   void confirmsBatchAndGeneratesPendingAuditRegistrations() {

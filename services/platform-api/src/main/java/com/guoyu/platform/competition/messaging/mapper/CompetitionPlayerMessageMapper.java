@@ -21,7 +21,7 @@ public interface CompetitionPlayerMessageMapper extends BaseMapper<CompetitionPl
 
   @Select("""
       SELECT m.id AS message_id, m.event_id, m.notice_id, m.type, m.received_at, m.read_at,
-             n.title, n.content, n.published_at
+             n.title, n.content_type, n.content, n.published_at
       FROM competition_player_message m
       JOIN competition_notice n ON n.id = m.notice_id
         AND n.tenant_id = m.tenant_id AND n.status = 'published' AND n.deleted = 0

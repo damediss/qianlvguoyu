@@ -7,6 +7,7 @@ export interface CompetitionEvent {
   id: CompetitionId;
   name: string;
   code: string;
+  playerEntryCode?: string | null;
   scope: CompetitionEventScope;
   ownerOrgId?: CompetitionId | null;
   status: CompetitionEventStatus;
@@ -48,6 +49,7 @@ export interface CompetitionEventUpdateRequest {
 export interface CompetitionEventPublishResult {
   eventId: CompetitionId;
   eventCode: string;
+  playerEntryCode?: string | null;
   eventScope: CompetitionEventScope;
   ownerOrgId?: CompetitionId | null;
   previousStatus: CompetitionEventStatus;
@@ -150,12 +152,25 @@ export interface CompetitionRosterImportPageQuery {
 }
 
 export type CompetitionNoticeStatus = 'draft' | 'published';
+export type CompetitionNoticeContentType = 'markdown' | 'pdf';
+export type CompetitionNoticeAssetType = 'inline_image' | 'pdf';
+
+export interface CompetitionNoticeAsset {
+  assetId: CompetitionId;
+  assetType: CompetitionNoticeAssetType;
+  originalName: string;
+  contentType: string;
+  sizeBytes: number;
+  sourceUri: string;
+}
 
 export interface CompetitionNotice {
   id: CompetitionId;
   eventId: CompetitionId;
   title: string;
   content: string;
+  contentType: CompetitionNoticeContentType;
+  assets: CompetitionNoticeAsset[];
   version: number;
   status: CompetitionNoticeStatus;
   publishedBy?: CompetitionId | null;
@@ -169,11 +184,13 @@ export interface CompetitionNoticePageQuery {
   page: number;
   pageSize: number;
   status?: CompetitionNoticeStatus;
+  contentType?: CompetitionNoticeContentType;
 }
 
 export interface CompetitionNoticeCreateRequest {
   title: string;
   content: string;
+  contentType?: CompetitionNoticeContentType;
   version: number;
 }
 

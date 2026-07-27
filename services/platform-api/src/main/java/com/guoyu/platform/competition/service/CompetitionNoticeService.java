@@ -9,20 +9,31 @@ import com.guoyu.platform.competition.dto.CompetitionNoticeCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionNoticeQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionNoticeUpdateReq;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
+import com.guoyu.platform.competition.entity.CompetitionNoticeAssetEntity;
 import com.guoyu.platform.competition.entity.CompetitionNoticeEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventScope;
+import com.guoyu.platform.competition.enums.CompetitionNoticeAssetType;
+import com.guoyu.platform.competition.enums.CompetitionNoticeContentType;
 import com.guoyu.platform.competition.enums.CompetitionNoticeStatus;
+import com.guoyu.platform.competition.mapper.CompetitionNoticeAssetMapper;
 import com.guoyu.platform.competition.mapper.CompetitionNoticeMapper;
 import com.guoyu.platform.competition.messaging.service.CompetitionOutboxApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionNoticePublishResultVO;
+import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.entity.OrgEntity;
 import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -32,32 +43,53 @@ import org.springframework.util.StringUtils;
 public class CompetitionNoticeService {
 
   private static final int MAX_TITLE_LENGTH = 256;
-  private static final int MAX_CONTENT_LENGTH = 16000;
+  private static final int MAX_MARKDOWN_LENGTH = 100000;
+  private static final int MAX_PDF_DESCRIPTION_LENGTH = 2000;
+  private static final Pattern EXACT_MARKDOWN_IMAGE_PATTERN =
+      Pattern.compile("!\\[[^\\]\\r\\n]*]\\(notice-asset://(\\d+)\\)");
+  private static final Pattern RAW_HTML_PATTERN =
+      Pattern.compile("(?is)<(?:!--|!DOCTYPE|\\?|/?\\s*[A-Za-z])[^>]*>");
 
   private final CompetitionNoticeMapper mapper;
   private final CompetitionEventService eventService;
   private final UserMapper userMapper;
   private final OrgMapper orgMapper;
   private final CompetitionOutboxApplicationService outboxApplicationService;
+  private final CompetitionNoticeAssetMapper assetMapper;
+  private final FileApplicationService fileService;
 
+  @Autowired
   public CompetitionNoticeService(
       CompetitionNoticeMapper mapper,
       CompetitionEventService eventService,
       UserMapper userMapper,
       OrgMapper orgMapper,
-      CompetitionOutboxApplicationService outboxApplicationService) {
+      CompetitionOutboxApplicationService outboxApplicationService,
+      CompetitionNoticeAssetMapper assetMapper,
+      FileApplicationService fileService) {
     this.mapper = mapper;
     this.eventService = eventService;
     this.userMapper = userMapper;
     this.orgMapper = orgMapper;
     this.outboxApplicationService = outboxApplicationService;
+    this.assetMapper = assetMapper;
+    this.fileService = fileService;
+  }
+
+  CompetitionNoticeService(
+      CompetitionNoticeMapper mapper,
+      CompetitionEventService eventService,
+      UserMapper userMapper,
+      OrgMapper orgMapper,
+      CompetitionOutboxApplicationService outboxApplicationService) {
+    this(mapper, eventService, userMapper, orgMapper, outboxApplicationService, null, null);
   }
 
   @Transactional
   public CompetitionNoticeEntity create(
       PlatformUserPrincipal principal, Long eventId, CompetitionNoticeCreateReq req) {
     requireAccessibleEvent(principal, eventId);
-    validateContent(req.title(), req.content(), req.version());
+    validateDraft(req.title(), req.content(), req.contentType(), req.version());
 
     CompetitionNoticeEntity entity = CompetitionNoticeConverter.toEntity(req);
     entity.setTenantId(principal.getTenantId());
@@ -82,6 +114,10 @@ public class CompetitionNoticeService {
     if (StringUtils.hasText(req.getStatus())) {
       wrapper.eq(CompetitionNoticeEntity::getStatus, validateStatus(req.getStatus()));
     }
+    if (StringUtils.hasText(req.getContentType())) {
+      wrapper.eq(CompetitionNoticeEntity::getContentType,
+          CompetitionNoticeContentType.normalize(req.getContentType()));
+    }
     Page<CompetitionNoticeEntity> page = mapper.selectPage(
         new Page<>(req.getPage(), req.getPageSize()), wrapper);
     if (page == null) {
@@ -99,6 +135,25 @@ public class CompetitionNoticeService {
     return notice;
   }
 
+  /**
+   * Serializes every asset mutation with publish by locking the owning notice row first.
+   */
+  @Transactional
+  public CompetitionNoticeEntity lockDraftForAssetMutation(
+      PlatformUserPrincipal principal, Long noticeId) {
+    CompetitionNoticeEntity notice = mapper.selectForUpdate(principal.getTenantId(), noticeId);
+    if (notice == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "通知不存在");
+    }
+    requireAccessibleEvent(principal, notice.getEventId());
+    if (!CompetitionNoticeStatus.DRAFT.getCode().equals(notice.getStatus())) {
+      log.warn("Competition notice asset mutation status conflict, tenantId={}, noticeId={}, status={}",
+          principal.getTenantId(), noticeId, notice.getStatus());
+      throw new BusinessException(ErrorCode.CONFLICT, "已发布公告的文件不可修改");
+    }
+    return notice;
+  }
+
   @Transactional
   public CompetitionNoticeEntity updateDraft(
       PlatformUserPrincipal principal, Long noticeId, CompetitionNoticeUpdateReq req) {
@@ -112,7 +167,7 @@ public class CompetitionNoticeService {
           principal.getTenantId(), noticeId, notice.getStatus());
       throw new BusinessException(ErrorCode.CONFLICT, "仅草稿通知允许修改");
     }
-    validateContent(req.title(), req.content(), req.version());
+    validateDraft(req.title(), req.content(), req.contentType(), req.version());
     CompetitionNoticeConverter.applyUpdate(notice, req);
     notice.setUpdatedBy(principal.getUserId());
     notice.setUpdatedAt(LocalDateTime.now());
@@ -135,6 +190,7 @@ public class CompetitionNoticeService {
           principal.getTenantId(), noticeId, notice.getStatus());
       throw new BusinessException(ErrorCode.CONFLICT, "仅草稿通知允许发布");
     }
+    validateForPublish(notice);
 
     String beforeStatus = notice.getStatus();
     notice.setStatus(CompetitionNoticeStatus.PUBLISHED.getCode());
@@ -198,16 +254,86 @@ public class CompetitionNoticeService {
         && Objects.equals(organization.getDeleted(), 0);
   }
 
-  private void validateContent(String title, String content, Integer version) {
+  private void validateDraft(String title, String content, String contentType, Integer version) {
     String normalizedTitle = title == null ? null : title.trim();
     if (!StringUtils.hasText(normalizedTitle) || normalizedTitle.length() > MAX_TITLE_LENGTH) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "通知标题不能为空且长度不能超过256个字符");
     }
-    if (!StringUtils.hasText(content) || content.length() > MAX_CONTENT_LENGTH) {
-      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "通知内容不能为空且长度不能超过16000个字符");
+    String normalizedType = CompetitionNoticeContentType.normalize(contentType);
+    int maxLength = CompetitionNoticeContentType.PDF.getCode().equals(normalizedType)
+        ? MAX_PDF_DESCRIPTION_LENGTH : MAX_MARKDOWN_LENGTH;
+    if (content != null && content.length() > maxLength) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+          CompetitionNoticeContentType.PDF.getCode().equals(normalizedType)
+              ? "PDF公告简介不能超过2000个字符" : "Markdown公告正文不能超过100000个字符");
     }
     if (version != null && version < 1) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "通知版本必须大于0");
+    }
+  }
+
+  private void validateForPublish(CompetitionNoticeEntity notice) {
+    String type = CompetitionNoticeContentType.normalize(notice.getContentType());
+    List<CompetitionNoticeAssetEntity> assets = assetMapper == null
+        ? List.of()
+        : assetMapper.selectList(new LambdaQueryWrapper<CompetitionNoticeAssetEntity>()
+            .eq(CompetitionNoticeAssetEntity::getTenantId, notice.getTenantId())
+            .eq(CompetitionNoticeAssetEntity::getNoticeId, notice.getId())
+            .eq(CompetitionNoticeAssetEntity::getDeleted, 0));
+    if (assets == null) {
+      assets = List.of();
+    }
+    for (CompetitionNoticeAssetEntity asset : assets) {
+      if (fileService != null) {
+        fileService.getExistingFile(notice.getTenantId(), asset.getFileId());
+      }
+    }
+    if (CompetitionNoticeContentType.PDF.getCode().equals(type)) {
+      if (notice.getContent() != null
+          && notice.getContent().length() > MAX_PDF_DESCRIPTION_LENGTH) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "PDF公告简介不能超过2000个字符");
+      }
+      long pdfCount = assets.stream()
+          .filter(asset -> CompetitionNoticeAssetType.PDF.getCode().equals(asset.getAssetType()))
+          .count();
+      if (pdfCount != 1 || assets.size() != 1) {
+        throw new BusinessException(
+            ErrorCode.UNPROCESSABLE_ENTITY, "PDF公告发布前必须且只能上传一个PDF文件");
+      }
+      return;
+    }
+    if (!StringUtils.hasText(notice.getContent())) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "Markdown公告正文不能为空");
+    }
+    if (notice.getContent().length() > MAX_MARKDOWN_LENGTH) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "Markdown公告正文不能超过100000个字符");
+    }
+    if (assets.stream().anyMatch(
+        asset -> !CompetitionNoticeAssetType.INLINE_IMAGE.getCode().equals(asset.getAssetType()))) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "Markdown公告不能绑定PDF文件");
+    }
+    Set<Long> ownedAssetIds = assets.stream()
+        .map(CompetitionNoticeAssetEntity::getId)
+        .collect(Collectors.toSet());
+    if (RAW_HTML_PATTERN.matcher(notice.getContent()).find()) {
+      throw new BusinessException(
+          ErrorCode.UNPROCESSABLE_ENTITY, "Markdown公告不允许包含原始HTML");
+    }
+    int searchFrom = 0;
+    while (true) {
+      int imageStart = notice.getContent().indexOf("![", searchFrom);
+      if (imageStart < 0) {
+        break;
+      }
+      Matcher exactMatcher = EXACT_MARKDOWN_IMAGE_PATTERN.matcher(notice.getContent());
+      exactMatcher.region(imageStart, notice.getContent().length());
+      if (!exactMatcher.lookingAt()
+          || !ownedAssetIds.contains(Long.valueOf(exactMatcher.group(1)))) {
+        throw new BusinessException(
+            ErrorCode.UNPROCESSABLE_ENTITY,
+            "Markdown图片必须使用当前公告资产的精确语法");
+      }
+      searchFrom = exactMatcher.end();
     }
   }
 

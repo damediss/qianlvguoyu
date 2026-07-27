@@ -11,6 +11,11 @@ public class CompetitionPlayerSmsProperties {
   private int dailyLimitPerPlayer = 5;
   private int maxFailedAttempts = 5;
   private int lockSeconds = 1800;
+  /**
+   * Local-only activation code used with the fake SMS sender. It is ignored whenever the
+   * Aliyun sender is enabled, so a production SMS cannot accidentally become predictable.
+   */
+  private String developmentTestCode;
   private final Aliyun aliyun = new Aliyun();
 
   public int getCodeTtlSeconds() { return codeTtlSeconds; }
@@ -25,6 +30,10 @@ public class CompetitionPlayerSmsProperties {
   public void setMaxFailedAttempts(int maxFailedAttempts) { this.maxFailedAttempts = maxFailedAttempts; }
   public int getLockSeconds() { return lockSeconds; }
   public void setLockSeconds(int lockSeconds) { this.lockSeconds = lockSeconds; }
+  public String getDevelopmentTestCode() { return developmentTestCode; }
+  public void setDevelopmentTestCode(String developmentTestCode) {
+    this.developmentTestCode = developmentTestCode;
+  }
   public Aliyun getAliyun() { return aliyun; }
 
   public static class Aliyun {

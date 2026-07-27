@@ -69,7 +69,7 @@ public class CompetitionPlayerSmsChallengeService {
     challenge.setPlayerId(playerId);
     challenge.setPurpose(purpose.getCode());
     challenge.setMobileLookupHash(mobileLookupHash);
-    String code = sixDigitCode();
+    String code = resolveCode();
     challenge.setCodeHash(codeHash(challenge.getId(), code));
     challenge.setStatus(CompetitionPlayerSmsChallengeStatus.PENDING.getCode());
     challenge.setFailedAttempts(0);
@@ -148,6 +148,17 @@ public class CompetitionPlayerSmsChallengeService {
 
   private String sixDigitCode() {
     return String.format("%06d", SECURE_RANDOM.nextInt(1_000_000));
+  }
+
+  private String resolveCode() {
+    String configuredCode = properties.getDevelopmentTestCode();
+    if (properties.getAliyun().isEnabled() || configuredCode == null || configuredCode.isBlank()) {
+      return sixDigitCode();
+    }
+    if (!configuredCode.matches("\\d{6}")) {
+      throw new IllegalStateException("platform.competition.player.sms.development-test-code must be six digits");
+    }
+    return configuredCode;
   }
 
   private String codeHash(Long challengeId, String code) {

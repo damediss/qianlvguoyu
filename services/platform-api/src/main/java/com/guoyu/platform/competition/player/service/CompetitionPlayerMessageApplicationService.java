@@ -10,21 +10,37 @@ import com.guoyu.platform.competition.messaging.vo.CompetitionPlayerMessageRow;
 import com.guoyu.platform.competition.player.security.CompetitionPlayerPrincipal;
 import com.guoyu.platform.competition.player.security.CompetitionPlayerSecurityContext;
 import com.guoyu.platform.competition.player.vo.CompetitionPlayerMessageVO;
+import com.guoyu.platform.competition.service.CompetitionNoticeAssetApplicationService;
+import com.guoyu.platform.competition.vo.CompetitionNoticeAssetVO;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 @Slf4j
 public class CompetitionPlayerMessageApplicationService {
 
   private final CompetitionPlayerMessageMapper playerMessageMapper;
+  private final CompetitionNoticeAssetApplicationService assetService;
+
+  @Autowired
+  public CompetitionPlayerMessageApplicationService(
+      CompetitionPlayerMessageMapper playerMessageMapper,
+      CompetitionNoticeAssetApplicationService assetService) {
+    this.playerMessageMapper = playerMessageMapper;
+    this.assetService = assetService;
+  }
 
   public CompetitionPlayerMessageApplicationService(CompetitionPlayerMessageMapper playerMessageMapper) {
     this.playerMessageMapper = playerMessageMapper;
+    this.assetService = null;
   }
 
   @Transactional(readOnly = true)
@@ -38,8 +54,18 @@ public class CompetitionPlayerMessageApplicationService {
       return PageResponse.empty(query.getPage(), query.getPageSize());
     }
     List<CompetitionPlayerMessageVO> items = new ArrayList<>();
+    Map<Long, List<CompetitionNoticeAssetVO>> assetsByNotice =
+        assetService == null || page.getRecords() == null
+            ? Map.of()
+            : assetService.listByNoticeIds(
+                player.getTenantId(),
+                page.getRecords().stream()
+                    .map(CompetitionPlayerMessageRow::getNoticeId)
+                    .distinct()
+                    .toList());
     if (page.getRecords() != null) {
-      page.getRecords().forEach(row -> items.add(toVO(row)));
+      page.getRecords().forEach(row ->
+          items.add(toVO(row, assetsByNotice.getOrDefault(row.getNoticeId(), List.of()))));
     }
     return new PageResponse<>(items, page.getCurrent(), page.getSize(), page.getTotal());
   }
@@ -62,6 +88,13 @@ public class CompetitionPlayerMessageApplicationService {
     }
   }
 
+  public ResponseEntity<Resource> downloadAsset(Long messageId, Long assetId) {
+    if (assetService == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "公告文件不存在");
+    }
+    return assetService.playerDownload(messageId, assetId);
+  }
+
   private CompetitionPlayerPrincipal currentPlayer() {
     try {
       return CompetitionPlayerSecurityContext.currentPlayer();
@@ -71,14 +104,31 @@ public class CompetitionPlayerMessageApplicationService {
     }
   }
 
-  private CompetitionPlayerMessageVO toVO(CompetitionPlayerMessageRow row) {
+  private CompetitionPlayerMessageVO toVO(
+      CompetitionPlayerMessageRow row, List<CompetitionNoticeAssetVO> assets) {
     CompetitionPlayerMessageVO vo = new CompetitionPlayerMessageVO();
     vo.setMessageId(row.getMessageId());
     vo.setEventId(row.getEventId());
     vo.setNoticeId(row.getNoticeId());
     vo.setType(row.getType());
     vo.setTitle(row.getTitle());
+    vo.setContentType(row.getContentType());
     vo.setContent(row.getContent());
+    if (assets != null && !assets.isEmpty()) {
+      List<CompetitionNoticeAssetVO> playerAssets = new ArrayList<>();
+      for (CompetitionNoticeAssetVO asset : assets) {
+        CompetitionNoticeAssetVO playerAsset = new CompetitionNoticeAssetVO();
+        playerAsset.setAssetId(asset.getAssetId());
+        playerAsset.setAssetType(asset.getAssetType());
+        playerAsset.setOriginalName(asset.getOriginalName());
+        playerAsset.setContentType(asset.getContentType());
+        playerAsset.setSizeBytes(asset.getSizeBytes());
+        playerAsset.setSourceUri("/api/competition/player/messages/" + row.getMessageId()
+            + "/assets/" + asset.getAssetId());
+        playerAssets.add(playerAsset);
+      }
+      vo.setAssets(playerAssets);
+    }
     vo.setPublishedAt(row.getPublishedAt());
     vo.setReceivedAt(row.getReceivedAt());
     vo.setReadAt(row.getReadAt());

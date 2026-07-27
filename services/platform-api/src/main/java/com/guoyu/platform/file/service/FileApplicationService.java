@@ -39,6 +39,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -93,23 +95,51 @@ public class FileApplicationService {
 
   @Transactional
   public FileVO upload(MultipartFile file, String accessPolicy) {
+    return uploadForTenant(getTenantIdSafe(), file, accessPolicy);
+  }
+
+  @Transactional
+  public FileVO uploadForTenant(Long tenantId, MultipartFile file, String accessPolicy) {
     if (file == null || file.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File is empty");
     }
 
-    Long tenantId = getTenantIdSafe();
+    if (tenantId == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "Tenant is required");
+    }
     String safeName = sanitizeFileName(file.getOriginalFilename());
     String objectKey = buildObjectKey(tenantId, safeName);
+    UploadResult uploadResult = null;
     try {
-      UploadResult r = copyAndUpload(file, objectKey);
+      uploadResult = copyAndUpload(file, objectKey);
 
       FileEntity entity = newFileEntity(tenantId, objectKey, safeName,
-          file.getContentType(), file.getSize(), r.sha256(), accessPolicy);
+          file.getContentType(), file.getSize(), uploadResult.sha256(), accessPolicy);
       fileMapper.insert(entity);
-      return toVO(entity, r.url());
+      registerRollbackCleanup(objectKey);
+      return toVO(entity, uploadResult.url());
     } catch (IOException ex) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File upload failed");
+    } catch (RuntimeException ex) {
+      if (uploadResult != null) {
+        storage.delete(objectKey);
+      }
+      throw ex;
     }
+  }
+
+  private void registerRollbackCleanup(String objectKey) {
+    if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+      return;
+    }
+    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+      @Override
+      public void afterCompletion(int status) {
+        if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+          storage.delete(objectKey);
+        }
+      }
+    });
   }
 
   /**
@@ -211,9 +241,14 @@ public class FileApplicationService {
   @Transactional(readOnly = true)
   public ResponseEntity<Resource> buildDownloadResponse(Long id, boolean inline) {
     FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
-    // 读满字节再返回，避免 COS InputStream + chunked 传输导致浏览器拿到残缺图片无法显示
-    byte[] bytes = readBytes(entity);
-    return buildDownloadResponse(entity, new ByteArrayResource(bytes), inline);
+    return buildDownloadResponse(entity, loadResource(entity), inline);
+  }
+
+  @Transactional(readOnly = true)
+  public ResponseEntity<Resource> buildDownloadResponse(
+      Long tenantId, Long id, boolean inline) {
+    FileEntity entity = getExistingFile(tenantId, id);
+    return buildDownloadResponse(entity, loadResource(entity), inline);
   }
 
   private ResponseEntity<Resource> buildDownloadResponse(FileEntity entity, Resource resource, boolean inline) {
@@ -225,13 +260,8 @@ public class FileApplicationService {
     ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
         .header(HttpHeaders.CONTENT_DISPOSITION, dispositionType + "; filename*=UTF-8''" + encodedName)
         .contentType(MediaType.parseMediaType(contentType));
-    try {
-      long length = resource.contentLength();
-      if (length >= 0) {
-        builder.contentLength(length);
-      }
-    } catch (IOException ignored) {
-      // contentLength 不可用时退回 chunked
+    if (entity.getSizeBytes() != null && entity.getSizeBytes() >= 0) {
+      builder.contentLength(entity.getSizeBytes());
     }
     return builder.body(resource);
   }
@@ -291,10 +321,37 @@ public class FileApplicationService {
   @Transactional
   public void delete(Long id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    deleteForTenant(tenantId, id);
+  }
+
+  @Transactional
+  public void deleteForTenant(Long tenantId, Long id) {
     FileEntity entity = getExistingFile(tenantId, id);
     entity.setStatus("deleted");
     fileMapper.updateById(entity);
     storage.delete(entity.getObjectKey());
+  }
+
+  /**
+   * Marks metadata deleted in the current transaction and removes the storage object only after
+   * commit. A database rollback therefore never restores a row whose object has already gone.
+   */
+  @Transactional
+  public void deleteAfterCommitForTenant(Long tenantId, Long id) {
+    FileEntity entity = getExistingFile(tenantId, id);
+    entity.setStatus("deleted");
+    fileMapper.updateById(entity);
+    String objectKey = entity.getObjectKey();
+    if (TransactionSynchronizationManager.isSynchronizationActive()) {
+      TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+        @Override
+        public void afterCommit() {
+          storage.delete(objectKey);
+        }
+      });
+    } else {
+      storage.delete(objectKey);
+    }
   }
 
   @Transactional(readOnly = true)

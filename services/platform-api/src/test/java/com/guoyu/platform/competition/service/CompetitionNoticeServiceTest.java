@@ -13,11 +13,14 @@ import com.guoyu.platform.competition.dto.CompetitionNoticeCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionNoticeQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionNoticeUpdateReq;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
+import com.guoyu.platform.competition.entity.CompetitionNoticeAssetEntity;
 import com.guoyu.platform.competition.entity.CompetitionNoticeEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventScope;
+import com.guoyu.platform.competition.mapper.CompetitionNoticeAssetMapper;
 import com.guoyu.platform.competition.mapper.CompetitionNoticeMapper;
 import com.guoyu.platform.competition.messaging.service.CompetitionOutboxApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionNoticePublishResultVO;
+import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.entity.OrgEntity;
 import com.guoyu.platform.system.entity.UserEntity;
@@ -35,8 +38,12 @@ class CompetitionNoticeServiceTest {
   private final OrgMapper orgMapper = Mockito.mock(OrgMapper.class);
   private final CompetitionOutboxApplicationService outboxApplicationService =
       Mockito.mock(CompetitionOutboxApplicationService.class);
+  private final CompetitionNoticeAssetMapper assetMapper =
+      Mockito.mock(CompetitionNoticeAssetMapper.class);
+  private final FileApplicationService fileService = Mockito.mock(FileApplicationService.class);
   private final CompetitionNoticeService service = new CompetitionNoticeService(
-      mapper, eventService, userMapper, orgMapper, outboxApplicationService);
+      mapper, eventService, userMapper, orgMapper, outboxApplicationService,
+      assetMapper, fileService);
 
   @Test
   void createsDraftNoticeWithServerManagedStatus() {
@@ -52,6 +59,31 @@ class CompetitionNoticeServiceTest {
     assertThat(result.getVersion()).isEqualTo(1);
     assertThat(result.getStatus()).isEqualTo("draft");
     verify(mapper).insert(Mockito.any(CompetitionNoticeEntity.class));
+  }
+
+  @Test
+  void legacyCreateWithoutContentTypeDefaultsToMarkdown() {
+    PlatformUserPrincipal principal = principal(1000L, 1L, "admin", List.of("PLATFORM_ADMIN"));
+    when(eventService.getById(1L, 1001L)).thenReturn(platformEvent(1001L));
+
+    CompetitionNoticeEntity result = service.create(
+        principal, 1001L, new CompetitionNoticeCreateReq("Title", "Content", 1));
+
+    assertThat(result.getContentType()).isEqualTo("markdown");
+  }
+
+  @Test
+  void createsIncompleteMarkdownAndPdfDrafts() {
+    PlatformUserPrincipal principal = principal(1000L, 1L, "admin", List.of("PLATFORM_ADMIN"));
+    when(eventService.getById(1L, 1001L)).thenReturn(platformEvent(1001L));
+
+    CompetitionNoticeEntity markdown = service.create(
+        principal, 1001L, new CompetitionNoticeCreateReq("Markdown", "", "markdown", 1));
+    CompetitionNoticeEntity pdf = service.create(
+        principal, 1001L, new CompetitionNoticeCreateReq("PDF", "", "pdf", 1));
+
+    assertThat(markdown.getContentType()).isEqualTo("markdown");
+    assertThat(pdf.getContentType()).isEqualTo("pdf");
   }
 
   @Test
@@ -89,6 +121,112 @@ class CompetitionNoticeServiceTest {
     assertThat(notice.getPublishedBy()).isEqualTo(1000L);
     assertThat(notice.getPublishedAt()).isNotNull();
     verify(outboxApplicationService).enqueueNoticePublished(notice, 1000L);
+  }
+
+  @Test
+  void rejectsMarkdownPublishWhenBodyIsBlank() {
+    CompetitionNoticeEntity notice = publishableNotice("markdown", " ");
+    stubNoticeForPublish(notice);
+
+    assertPublishRejected(notice);
+  }
+
+  @Test
+  void rejectsMarkdownPublishForExternalDataAndJavascriptImages() {
+    for (String uri : List.of(
+        "https://example.com/a.png",
+        "data:image/png;base64,AAAA",
+        "javascript:alert(1)")) {
+      CompetitionNoticeEntity notice = publishableNotice("markdown", "![](" + uri + ")");
+      stubNoticeForPublish(notice);
+
+      assertPublishRejected(notice);
+    }
+  }
+
+  @Test
+  void rejectsMarkdownRawHtmlReferenceImagesAndNonExactImageSyntax() {
+    for (String content : List.of(
+        "<img src=\"https://example.com/a.png\">",
+        "<!-- raw html comment -->",
+        "![diagram][asset]\n[asset]: notice-asset://7001",
+        "![diagram](notice-asset://7001 \"title\")",
+        "![diagram]( notice-asset://7001 )")) {
+      CompetitionNoticeEntity notice = publishableNotice("markdown", content);
+      when(assetMapper.selectList(any()))
+          .thenReturn(List.of(asset(7001L, "inline_image", 5001L)));
+      stubNoticeForPublish(notice);
+
+      assertPublishRejected(notice);
+    }
+  }
+
+  @Test
+  void rejectsMarkdownPublishWhenReferencedAssetBelongsToAnotherNotice() {
+    CompetitionNoticeEntity notice = publishableNotice(
+        "markdown", "![diagram](notice-asset://7002)");
+    when(assetMapper.selectList(any())).thenReturn(List.of(asset(7001L, "inline_image", 5001L)));
+    stubNoticeForPublish(notice);
+
+    assertPublishRejected(notice);
+  }
+
+  @Test
+  void rejectsMarkdownPublishWhenPdfIsBound() {
+    CompetitionNoticeEntity notice = publishableNotice("markdown", "Body");
+    when(assetMapper.selectList(any())).thenReturn(List.of(asset(7001L, "pdf", 5001L)));
+    stubNoticeForPublish(notice);
+
+    assertPublishRejected(notice);
+  }
+
+  @Test
+  void publishesMarkdownWithOwnedInlineImage() {
+    CompetitionNoticeEntity notice = publishableNotice(
+        "markdown", "![diagram](notice-asset://7001)");
+    when(assetMapper.selectList(any()))
+        .thenReturn(List.of(asset(7001L, "inline_image", 5001L)));
+    stubNoticeForPublish(notice);
+
+    CompetitionNoticePublishResultVO result = service.publish(principal(), notice.getId());
+
+    assertThat(result.getAfterStatus()).isEqualTo("published");
+    verify(fileService).getExistingFile(1L, 5001L);
+  }
+
+  @Test
+  void rejectsPdfPublishWithoutExactlyOnePdfAsset() {
+    CompetitionNoticeEntity missing = publishableNotice("pdf", "Description");
+    when(assetMapper.selectList(any())).thenReturn(List.of());
+    stubNoticeForPublish(missing);
+    assertPublishRejected(missing);
+
+    CompetitionNoticeEntity multiple = publishableNotice("pdf", "Description");
+    when(assetMapper.selectList(any())).thenReturn(List.of(
+        asset(7001L, "pdf", 5001L),
+        asset(7002L, "pdf", 5002L)));
+    stubNoticeForPublish(multiple);
+    assertPublishRejected(multiple);
+  }
+
+  @Test
+  void rejectsPdfPublishWithDescriptionOverLimit() {
+    CompetitionNoticeEntity notice = publishableNotice("pdf", "x".repeat(2001));
+    when(assetMapper.selectList(any())).thenReturn(List.of(asset(7001L, "pdf", 5001L)));
+    stubNoticeForPublish(notice);
+
+    assertPublishRejected(notice);
+  }
+
+  @Test
+  void publishesPdfWithExactlyOnePdfAsset() {
+    CompetitionNoticeEntity notice = publishableNotice("pdf", "Description");
+    when(assetMapper.selectList(any())).thenReturn(List.of(asset(7001L, "pdf", 5001L)));
+    stubNoticeForPublish(notice);
+
+    CompetitionNoticePublishResultVO result = service.publish(principal(), notice.getId());
+
+    assertThat(result.getAfterStatus()).isEqualTo("published");
   }
 
   @Test
@@ -207,6 +345,41 @@ class CompetitionNoticeServiceTest {
     notice.setStatus(status);
     notice.setDeleted(0);
     return notice;
+  }
+
+  private CompetitionNoticeEntity publishableNotice(String contentType, String content) {
+    CompetitionNoticeEntity notice = notice(9101L, 1001L, "draft");
+    notice.setContentType(contentType);
+    notice.setContent(content);
+    return notice;
+  }
+
+  private CompetitionNoticeAssetEntity asset(Long id, String assetType, Long fileId) {
+    CompetitionNoticeAssetEntity asset = new CompetitionNoticeAssetEntity();
+    asset.setId(id);
+    asset.setTenantId(1L);
+    asset.setNoticeId(9101L);
+    asset.setFileId(fileId);
+    asset.setAssetType(assetType);
+    asset.setDeleted(0);
+    return asset;
+  }
+
+  private void stubNoticeForPublish(CompetitionNoticeEntity notice) {
+    when(mapper.selectForUpdate(1L, notice.getId())).thenReturn(notice);
+    when(eventService.getById(1L, notice.getEventId())).thenReturn(platformEvent(notice.getEventId()));
+    when(mapper.updateById(notice)).thenReturn(1);
+  }
+
+  private void assertPublishRejected(CompetitionNoticeEntity notice) {
+    assertThatThrownBy(() -> service.publish(principal(), notice.getId()))
+        .isInstanceOf(BusinessException.class)
+        .extracting(ex -> ((BusinessException) ex).getCode())
+        .isEqualTo("422");
+  }
+
+  private PlatformUserPrincipal principal() {
+    return principal(1000L, 1L, "admin", List.of("PLATFORM_ADMIN"));
   }
 
   private PlatformUserPrincipal principal(

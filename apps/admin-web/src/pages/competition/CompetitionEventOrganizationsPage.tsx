@@ -9,7 +9,6 @@ import {
   Button,
   Card,
   Form,
-  Input,
   InputNumber,
   Modal,
   Result,
@@ -28,6 +27,7 @@ import {
   pageCompetitionEventOrganizations,
   updateCompetitionEventOrganizationStatus,
 } from '../../api/competition';
+import { listOrgs } from '../../api/system';
 import type {
   CompetitionEventOrg,
   CompetitionEventOrgCreateRequest,
@@ -41,7 +41,7 @@ import './CompetitionEventManagementPage.css';
 import { CompetitionEventFrame } from './CompetitionEventFrame';
 
 interface OrganizationFormValues {
-  orgId: string;
+  orgId: CompetitionId;
   quota?: number;
   importPermission: number;
 }
@@ -108,6 +108,15 @@ export function CompetitionEventOrganizationsPage({
     queryFn: () => pageCompetitionEventOrganizations(eventId, query),
     enabled: canView,
   });
+  const selectableOrganizationsQuery = useQuery({
+    queryKey: ['competition-selectable-organizations'],
+    queryFn: listOrgs,
+    enabled: canManage,
+  });
+  const selectableOrganizationOptions = useMemo(() => (selectableOrganizationsQuery.data || []).map((organization) => ({
+    value: idValue(organization.id),
+    label: `${organization.name}（ID: ${organization.id}）`,
+  })), [selectableOrganizationsQuery.data]);
 
   const addMutation = useMutation({
     mutationFn: (payload: CompetitionEventOrgCreateRequest) =>
@@ -203,13 +212,12 @@ export function CompetitionEventOrganizationsPage({
   const organizations = organizationsQuery.data?.items || [];
 
   const handleAdd = (values: OrganizationFormValues) => {
-    const orgId = values.orgId.trim();
-    if (!orgId) {
-      message.error('请输入企业 ID');
+    if (values.orgId === undefined || values.orgId === null || values.orgId === '') {
+      message.error('请选择企业');
       return;
     }
     addMutation.mutate({
-      orgId,
+      orgId: values.orgId,
       quota: values.quota,
       importPermission: values.importPermission,
     });
@@ -286,8 +294,14 @@ export function CompetitionEventOrganizationsPage({
           onFinish={handleAdd}
           requiredMark="optional"
         >
-          <Form.Item name="orgId" label="企业 ID" rules={[{ required: true, whitespace: true, message: '请输入企业 ID' }]}>
-            <Input placeholder="请输入企业 ID" />
+          <Form.Item name="orgId" label="参与企业" rules={[{ required: true, message: '请选择企业' }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              options={selectableOrganizationOptions}
+              loading={selectableOrganizationsQuery.isLoading}
+              placeholder="请选择已维护的组织企业"
+            />
           </Form.Item>
           <Form.Item name="quota" label="参赛名额" rules={[{ type: 'number', min: 0, message: '参赛名额不能小于 0' }]}>
             <InputNumber min={0} precision={0} style={{ width: '100%' }} placeholder="不限制可留空" />

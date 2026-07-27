@@ -22,6 +22,12 @@ type AppMenuItem = {
   children?: AppMenuItem[];
 };
 
+function menuDisplayName(menu: MenuVO) {
+  // Keep the renamed competition entry visible while an existing session still
+  // has the previous backend menu payload cached.
+  return menu.code === 'competition_event' ? '赛事创建' : menu.name;
+}
+
 /**
  * Render a menu label and only attach the hover Tooltip when the text is
  * actually truncated (i.e. the inner span would show an ellipsis). Untruncated
@@ -73,11 +79,12 @@ function buildMenuItems(
     .map((m) => {
       const hasChildren = Boolean(m.children && m.children.length > 0);
       const isEmptyDirectory = m.menuType === 'directory' && !hasChildren && !pageMap[m.code];
+      const name = menuDisplayName(m);
       const item: AppMenuItem = {
         key: m.code,
         icon: iconFromName(m.icon),
-        label: <TruncatedLabel text={m.name} />,
-        title: m.name,
+        label: <TruncatedLabel text={name} />,
+        title: name,
         disabled: isEmptyDirectory,
       };
       if (hasChildren) {
@@ -307,7 +314,7 @@ export function AppShell({
 
   const breadcrumbItems = useMemo(() => {
     const path = findMenuPath(menuTree, activeMenuKey) || [];
-    return path.map((node) => ({ title: node.name }));
+    return path.map((node) => ({ title: menuDisplayName(node) }));
   }, [activeMenuKey, menuTree]);
 
   return (
