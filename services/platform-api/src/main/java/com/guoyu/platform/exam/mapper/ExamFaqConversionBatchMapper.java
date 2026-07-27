@@ -32,4 +32,12 @@ public interface ExamFaqConversionBatchMapper extends BaseMapper<ExamFaqConversi
   /** 原子递减失败计数（retryFailed 场景：failed → pending） */
   @Update("UPDATE exam_faq_conversion_batch SET failed_count = GREATEST(failed_count - 1, 0), updated_at = NOW() WHERE id = #{batchId}")
   int decrementFailed(@Param("batchId") Long batchId);
+
+  /** 批量原子递增待转换计数（retryFailed 场景：一次性增加多条 pending） */
+  @Update("UPDATE exam_faq_conversion_batch SET pending_count = pending_count + #{count}, updated_at = NOW() WHERE id = #{batchId}")
+  int incrementPendingBy(@Param("batchId") Long batchId, @Param("count") int count);
+
+  /** 批量原子递减失败计数（retryFailed 场景：一次性减少多条 failed） */
+  @Update("UPDATE exam_faq_conversion_batch SET failed_count = GREATEST(failed_count - #{count}, 0), updated_at = NOW() WHERE id = #{batchId}")
+  int decrementFailedBy(@Param("batchId") Long batchId, @Param("count") int count);
 }

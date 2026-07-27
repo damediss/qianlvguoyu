@@ -186,6 +186,18 @@ public class FaqConversionBatchService {
     batchMapper.decrementFailed(batchId);
   }
 
+  /** 批量原子递增待转换计数（retryFailed 场景：一次性增加多条 pending） */
+  @Transactional
+  public void incrementPendingBy(Long batchId, int count) {
+    batchMapper.incrementPendingBy(batchId, count);
+  }
+
+  /** 批量原子递减失败计数（retryFailed 场景：一次性减少多条 failed） */
+  @Transactional
+  public void decrementFailedBy(Long batchId, int count) {
+    batchMapper.decrementFailedBy(batchId, count);
+  }
+
   /** 检查批次是否为运行中 */
   @Transactional(readOnly = true)
   public boolean isRunning(Long tenantId, Long batchId) {

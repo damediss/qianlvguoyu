@@ -1,6 +1,7 @@
 package com.guoyu.platform.exam.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -576,6 +577,9 @@ public class FaqConversionApplicationService {
 
   /**
    * 重试失败记录：重置 failed → pending + 重新启动异步处理。
+   *
+   * <p>性能优化：批量 UPDATE + 批量计数器调整，将 ~839 次 DB 操作压缩为 3 次，
+   * 避免 25 秒前端超时（279 条记录场景下原耗时 ~43 秒）。
    */
   @Transactional
   public void retryFailed(Long tenantId, Long userId, Long batchId) {
@@ -589,18 +593,22 @@ public class FaqConversionApplicationService {
       return;
     }
 
-    // 重置状态为 pending，调整批次计数器（failed--, pending++）
-    for (ExamFaqConversionEntity entity : failedRecords) {
-      entity.setConversionStatus("pending");
-      entity.setErrorMessage(null);
-      entity.setUpdatedAt(LocalDateTime.now());
-      faqConversionMapper.updateById(entity);
-      batchService.decrementFailed(batchId);
-      batchService.incrementPending(batchId);
-    }
+    // 1. 批量 UPDATE：一条 SQL 将所有 failed 重置为 pending
+    faqConversionMapper.update(null, new LambdaUpdateWrapper<ExamFaqConversionEntity>()
+        .eq(ExamFaqConversionEntity::getTenantId, tenantId)
+        .eq(ExamFaqConversionEntity::getBatchId, batchId)
+        .eq(ExamFaqConversionEntity::getConversionStatus, "failed")
+        .set(ExamFaqConversionEntity::getConversionStatus, "pending")
+        .set(ExamFaqConversionEntity::getErrorMessage, null)
+        .set(ExamFaqConversionEntity::getUpdatedAt, LocalDateTime.now()));
+
+    // 2. 计数器一次性调整（failedCount -= count, pendingCount += count）
+    int count = failedRecords.size();
+    batchService.decrementFailedBy(batchId, count);
+    batchService.incrementPendingBy(batchId, count);
 
     ExamFaqConversionBatchEntity batch = batchService.getBatchEntity(tenantId, batchId);
-    log.info("FAQ 重试失败记录启动异步 LLM：batchId={}, count={}", batchId, failedRecords.size());
+    log.info("FAQ 重试失败记录启动异步 LLM：batchId={}, count={}", batchId, count);
 
     // 异步在事务成功提交后由 @TransactionalEventListener(AFTER_COMMIT) 启动
     eventPublisher.publishEvent(new FaqEnhancementStartEvent(batchId, tenantId, userId, batch.getModelCode()));
