@@ -155,9 +155,21 @@ public class ExamTaskXimuController {
       if (contentType == null) {
         contentType = "application/octet-stream";
       }
-      return ResponseEntity.ok()
-          .contentType(MediaType.parseMediaType(contentType))
-          .body(resource);
+      ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
+          .contentType(MediaType.parseMediaType(contentType));
+      // 仅导出 zip 强制下载；证件照等仍需 inline 供 <img> 预览
+      if (fp.startsWith("down/")) {
+        String fileName = path.getFileName() != null ? path.getFileName().toString() : "download.zip";
+        ContentDisposition disposition = ContentDisposition.attachment()
+            .filename(fileName, StandardCharsets.UTF_8)
+            .build();
+        builder.header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString());
+      }
+      return builder.body(resource);
+    }
+    // 本地导出包（down/**）只存在本机，切勿 302 到生产 CDN（会变成 nginx 404）
+    if (fp.startsWith("down/")) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "文件不存在");
     }
     var remote = cdnFileServeHelper.remoteFallbackUrl(fp);
     if (remote.isPresent()) {
@@ -174,6 +186,8 @@ public class ExamTaskXimuController {
     if (idx < 0) {
       throw new IllegalArgumentException("Invalid CDN file path: " + uri);
     }
-    return uri.substring(idx + marker.length());
+    // getRequestURI() 保留百分号编码；中文文件名若不解码会找不到本地文件并误跳 CDN
+    String relative = uri.substring(idx + marker.length());
+    return java.net.URLDecoder.decode(relative, StandardCharsets.UTF_8);
   }
 }

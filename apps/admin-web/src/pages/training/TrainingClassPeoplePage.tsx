@@ -11,7 +11,6 @@ import {
   Modal,
   Pagination,
   Select,
-  Space,
   Table,
   Typography,
   Upload,
@@ -42,8 +41,27 @@ import type {
 } from '../../types/training';
 import './TrainingClassPeoplePage.css';
 import { TrainingProcessSteps } from './TrainingProcessSteps';
+import { ClassSignUpPeoplePanel } from './ClassSignUpPeoplePanel';
 
 const { Dragger } = Upload;
+
+/** 兼容 json-bigint：超大 ID 保持字符串，避免 Number 精度丢失 */
+type ApiId = number | string;
+
+function toApiId(value: unknown): ApiId | null {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  const s = String(value).trim();
+  if (!s) return null;
+  if (/^\d+$/.test(s)) {
+    const n = Number(s);
+    return Number.isSafeInteger(n) ? n : s;
+  }
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
 
 function resolveFileUrl(path?: string): string {
   if (!path) return '';
@@ -61,11 +79,11 @@ function normalizeClassStudent(raw: Record<string, unknown>): ClassStudent {
     return undefined;
   };
   return {
-    id: Number(pick('id')),
+    id: toApiId(pick('id')) ?? 0,
     realname: String(pick('realname', 'name') ?? ''),
     phone: pick('phone') != null ? String(pick('phone')) : undefined,
-    train_id: pick('train_id', 'trainId') != null ? Number(pick('train_id', 'trainId')) : undefined,
-    train_class_id: pick('train_class_id', 'trainClassId') != null ? Number(pick('train_class_id', 'trainClassId')) : undefined,
+    train_id: toApiId(pick('train_id', 'trainId')) ?? undefined,
+    train_class_id: toApiId(pick('train_class_id', 'trainClassId')) ?? undefined,
     id_card: pick('id_card', 'idCard') != null ? String(pick('id_card', 'idCard')) : undefined,
     is_leader: pick('is_leader', 'isLeader') != null ? Number(pick('is_leader', 'isLeader')) : undefined,
     is_leader_cn: pick('is_leader_cn', 'isLeaderCn') != null ? String(pick('is_leader_cn', 'isLeaderCn')) : undefined,
@@ -87,39 +105,92 @@ function StudentListModal({
   onClose,
   classId,
   trainInfoId,
+  mode = 'roster',
+  onProfileChanged,
 }: {
   open: boolean;
   onClose: () => void;
-  classId: number | null;
-  trainInfoId: number | null;
+  classId: ApiId | null;
+  trainInfoId: ApiId | null;
+  mode?: 'roster' | 'collection';
+  onProfileChanged?: () => void;
 }) {
+  const [collectionSignUpId, setCollectionSignUpId] = useState<ApiId | null>(null);
+  const [collectionTitle, setCollectionTitle] = useState<string | undefined>();
+  /** idle→loading→ready|error，避免打开瞬间误显示「未就绪」 */
+  const [collectionStatus, setCollectionStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [collectionError, setCollectionError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editForm] = Form.useForm();
   const [importOpen, setImportOpen] = useState(false);
   const [importByIdCardOpen, setImportByIdCardOpen] = useState(false);
   const [importKeyword, setImportKeyword] = useState('');
-  const [selectedSignUpIds, setSelectedSignUpIds] = useState<number[]>([]);
+  const [selectedSignUpIds, setSelectedSignUpIds] = useState<Array<number | string>>([]);
   const [idCardText, setIdCardText] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
 
-  useEffect(() => {
-    if (open) {
-      setCurrentPage(1);
-    }
-  }, [open, classId]);
+  const normalizedClassId = classId != null ? toApiId(classId) : null;
 
-  const normalizedClassId = classId != null ? Number(classId) : null;
+  const ensureCollectionMu = useMutation({
+    mutationFn: (id: ApiId) => trainApi.ensureClassCollection(id),
+    onSuccess: (res) => {
+      const sid = toApiId(res.signUpId);
+      if (sid == null) {
+        setCollectionStatus('error');
+        setCollectionError('后端未返回资料收集计划 ID');
+        message.error('打开资料收集失败：未返回计划 ID');
+        return;
+      }
+      setCollectionSignUpId(sid);
+      setCollectionTitle(res.title);
+      setCollectionStatus('ready');
+      setCollectionError(null);
+      onProfileChanged?.();
+    },
+    onError: (err: unknown) => {
+      const ax = err as { response?: { data?: { message?: string } }; message?: string };
+      const msg = ax.response?.data?.message || ax.message || '打开资料收集失败';
+      setCollectionStatus('error');
+      setCollectionError(msg);
+      message.error(msg);
+    },
+  });
+
+  useEffect(() => {
+    if (!open) {
+      setCurrentPage(1);
+      setCollectionSignUpId(null);
+      setCollectionTitle(undefined);
+      setCollectionStatus('idle');
+      setCollectionError(null);
+      return;
+    }
+    setCurrentPage(1);
+    if (mode === 'collection' && normalizedClassId != null) {
+      setCollectionSignUpId(null);
+      setCollectionTitle(undefined);
+      setCollectionError(null);
+      setCollectionStatus('loading');
+      ensureCollectionMu.mutate(normalizedClassId);
+    } else {
+      setCollectionSignUpId(null);
+      setCollectionTitle(undefined);
+      setCollectionStatus('idle');
+      setCollectionError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, classId, mode]);
 
   const { data, isLoading, refetch, isError } = useQuery({
     queryKey: ['class-students', normalizedClassId, currentPage, pageSize],
     queryFn: () => trainApi.listClassStudents(normalizedClassId!, currentPage, pageSize),
-    enabled: open && normalizedClassId != null && !Number.isNaN(normalizedClassId),
+    enabled: open && mode === 'roster' && normalizedClassId != null,
   });
 
   const { data: signUpData } = useQuery({
-    queryKey: ['sign-up-self', trainInfoId, importKeyword],
-    queryFn: () => trainApi.listSignUpSelf(trainInfoId!, importKeyword || undefined),
+    queryKey: ['sign-up-self', trainInfoId, normalizedClassId, importKeyword],
+    queryFn: () => trainApi.listSignUpSelf(trainInfoId!, importKeyword || undefined, normalizedClassId ?? undefined),
     enabled: importOpen && !!trainInfoId,
   });
 
@@ -130,13 +201,13 @@ function StudentListModal({
   });
 
   const deleteMu = useMutation({
-    mutationFn: (ids: number[]) => trainApi.deleteClassStudents(ids),
+    mutationFn: (ids: Array<number | string>) => trainApi.deleteClassStudents(ids),
     onSuccess: () => { message.success('删除成功'); refetch(); },
     onError: () => message.error('删除失败'),
   });
 
   const importMu = useMutation({
-    mutationFn: (p: { traininfoId: number; classId: number; studentIds: number[] }) => trainApi.importStudents(p),
+    mutationFn: (p: { traininfoId: ApiId; classId: ApiId; studentIds: Array<number | string> }) => trainApi.importStudents(p),
     onSuccess: () => {
       message.success('导入成功');
       setImportOpen(false);
@@ -147,7 +218,7 @@ function StudentListModal({
   });
 
   const importByIdCardMu = useMutation({
-    mutationFn: (p: { traininfoId: number; classId: number; studentIds: string }) => trainApi.importStudentsByIdCard(p),
+    mutationFn: (p: { traininfoId: ApiId; classId: ApiId; studentIds: string }) => trainApi.importStudentsByIdCard(p),
     onSuccess: () => {
       message.success('导入成功');
       setImportByIdCardOpen(false);
@@ -276,7 +347,7 @@ function StudentListModal({
       return;
     }
     if (!trainInfoId || normalizedClassId == null) {
-      message.error('班级未关联培训信息');
+      message.error('班级未关联培训信息，无法从报名导入');
       return;
     }
     importMu.mutate({ traininfoId: trainInfoId, classId: normalizedClassId, studentIds: selectedSignUpIds });
@@ -288,7 +359,7 @@ function StudentListModal({
       return;
     }
     if (!trainInfoId || normalizedClassId == null) {
-      message.error('班级未关联培训信息');
+      message.error('班级未关联培训信息，无法按身份证导入');
       return;
     }
     importByIdCardMu.mutate({ traininfoId: trainInfoId, classId: normalizedClassId, studentIds: idCardText });
@@ -297,7 +368,7 @@ function StudentListModal({
   return (
     <>
       <Modal
-        title="班级人员"
+        title={mode === 'collection' ? '资料收集' : '班级人员'}
         open={open}
         onCancel={onClose}
         footer={null}
@@ -307,39 +378,91 @@ function StudentListModal({
         rootClassName="class-student-list-modal"
         styles={{ body: { padding: '12px 16px 16px', maxHeight: '78vh', overflow: 'hidden' } }}
       >
-        <div className="student-toolbar">
-          <Button className="student-toolbar-btn" onClick={() => setImportOpen(true)}>
-            批量导入
-          </Button>
-          <Button className="student-toolbar-btn" onClick={() => setImportByIdCardOpen(true)}>
-            按身份证号导入
-          </Button>
-        </div>
-        <div className="class-student-table-scroll">
-          <Table
-            className="class-student-table"
-            rowKey="id"
-            bordered
-            size="middle"
-            loading={isLoading}
-            columns={studentColumns}
-            dataSource={studentRows}
-            rowSelection={{ columnWidth: 48 }}
-            scroll={{ x: 1100, y: 480 }}
-            pagination={false}
-            locale={{ emptyText: isError ? '加载失败，请关闭后重试' : '暂无数据' }}
-          />
-        </div>
-        <Pagination
-          className="student-pagination"
-          current={currentPage}
-          pageSize={pageSize}
-          total={data?.total ?? 0}
-          showSizeChanger={false}
-          showQuickJumper
-          showTotal={(t) => `共 ${t} 条`}
-          onChange={(p) => setCurrentPage(p)}
-        />
+        {mode === 'collection' ? (
+          collectionStatus === 'loading' || (collectionStatus === 'idle' && !collectionSignUpId) ? (
+            <div style={{ padding: 24, textAlign: 'center' }}>正在准备资料收集…</div>
+          ) : collectionStatus === 'ready' && collectionSignUpId != null ? (
+            <div className="class-student-table-scroll" style={{ maxHeight: '68vh', overflow: 'auto' }}>
+              <ClassSignUpPeoplePanel
+                signUpId={collectionSignUpId}
+                title={collectionTitle}
+                onChanged={() => {
+                  onProfileChanged?.();
+                }}
+              />
+            </div>
+          ) : (
+            <div style={{ padding: 24, textAlign: 'center' }}>
+              <div style={{ marginBottom: 12 }}>
+                {collectionError || '资料收集计划未就绪'}
+              </div>
+              {normalizedClassId != null ? (
+                <Button
+                  type="primary"
+                  loading={ensureCollectionMu.isPending}
+                  onClick={() => {
+                    setCollectionError(null);
+                    setCollectionStatus('loading');
+                    ensureCollectionMu.mutate(normalizedClassId);
+                  }}
+                >
+                  重试
+                </Button>
+              ) : null}
+            </div>
+          )
+        ) : (
+          <>
+            <div className="student-toolbar">
+              <Button
+                className="student-toolbar-btn"
+                disabled={!trainInfoId}
+                title={!trainInfoId ? '班级未关联培训信息' : undefined}
+                onClick={() => setImportOpen(true)}
+              >
+                批量导入
+              </Button>
+              <Button
+                className="student-toolbar-btn"
+                disabled={!trainInfoId}
+                title={!trainInfoId ? '班级未关联培训信息' : undefined}
+                onClick={() => setImportByIdCardOpen(true)}
+              >
+                按身份证号导入
+              </Button>
+              {isError ? (
+                <Button className="student-toolbar-btn" onClick={() => refetch()}>
+                  重新加载
+                </Button>
+              ) : null}
+            </div>
+            <div className="class-student-table-scroll">
+              <Table
+                className="class-student-table"
+                rowKey="id"
+                bordered
+                size="middle"
+                loading={isLoading}
+                columns={studentColumns}
+                dataSource={studentRows}
+                rowSelection={{ columnWidth: 48 }}
+                scroll={{ x: 1100, y: 480 }}
+                pagination={false}
+                locale={{ emptyText: isError ? '加载失败，请点击重新加载' : '暂无学员，可从报名或身份证导入' }}
+              />
+            </div>
+            <Pagination
+              className="student-pagination"
+              current={currentPage}
+              pageSize={pageSize}
+              total={data?.total ?? 0}
+              showSizeChanger={false}
+              showQuickJumper
+              showTotal={(t) => `共 ${t} 条`}
+              onChange={(p) => setCurrentPage(p)}
+            />
+          </>
+        )}
       </Modal>
 
       <Modal
@@ -405,7 +528,7 @@ function StudentListModal({
           bordered
           columns={signUpColumns}
           dataSource={signUpData?.lists ?? []}
-          rowSelection={{ columnWidth: 55, selectedRowKeys: selectedSignUpIds, onChange: (keys) => setSelectedSignUpIds(keys as number[]) }}
+          rowSelection={{ columnWidth: 55, selectedRowKeys: selectedSignUpIds, onChange: (keys) => setSelectedSignUpIds(keys as Array<number | string>) }}
           scroll={{ y: 400 }}
           pagination={false}
         />
@@ -450,8 +573,8 @@ function StaffModal({
 }: {
   open: boolean;
   onClose: () => void;
-  classId: number | null;
-  trainInfoId: number | null;
+  classId: ApiId | null;
+  trainInfoId: ApiId | null;
   tag: string;
   title: string;
 }) {
@@ -459,7 +582,7 @@ function StaffModal({
   const [editTitle, setEditTitle] = useState('');
   const [editForm] = Form.useForm();
   const [importOpen, setImportOpen] = useState(false);
-  const [selectedTeacherIds, setSelectedTeacherIds] = useState<number[]>([]);
+  const [selectedTeacherIds, setSelectedTeacherIds] = useState<Array<number | string>>([]);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['class-other', classId, tag],
@@ -480,24 +603,25 @@ function StaffModal({
   });
 
   const deleteMu = useMutation({
-    mutationFn: (ids: number[]) => trainApi.deleteClassOthers(ids),
+    mutationFn: (ids: Array<number | string>) => trainApi.deleteClassOthers(ids),
     onSuccess: () => { message.success('删除成功'); refetch(); },
     onError: () => message.error('删除失败'),
   });
 
   const importMu = useMutation({
-    mutationFn: (p: { traininfoId: number; classId: number; tag: string; ids: number[] }) => trainApi.importOthers(p),
+    mutationFn: (p: { traininfoId: ApiId; classId: ApiId; tag: string; ids: Array<number | string> }) => trainApi.importOthers(p),
     onSuccess: () => { message.success('导入成功'); setImportOpen(false); setSelectedTeacherIds([]); refetch(); },
     onError: () => message.error('导入失败'),
   });
 
   const openAdd = () => {
     editForm.resetFields();
+    // tag=fuzhe → type=inCharge；教务走教师库导入，不会进入此分支
     editForm.setFieldsValue({
       id: 0,
       train_id: trainInfoId,
       classid: classId,
-      type: 'inCharge',
+      type: tag === 'teacher' ? 'staff' : 'inCharge',
     });
     setEditTitle(modalTitle);
     setEditOpen(true);
@@ -653,7 +777,7 @@ function StaffModal({
           rowSelection={{
             columnWidth: 48,
             selectedRowKeys: selectedTeacherIds,
-            onChange: (keys) => setSelectedTeacherIds(keys as number[]),
+            onChange: (keys) => setSelectedTeacherIds(keys as Array<number | string>),
           }}
           scroll={{ y: 420 }}
           pagination={false}
@@ -673,12 +797,12 @@ function TrainTaskModal({
 }: {
   open: boolean;
   onClose: () => void;
-  classId: number | null;
+  classId: ApiId | null;
   kejianOptions: { value: number; label: string }[];
 }) {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm] = Form.useForm();
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<ApiId | null>(null);
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['class-tasks', classId],
@@ -687,7 +811,7 @@ function TrainTaskModal({
   });
 
   const saveMu = useMutation({
-    mutationFn: (p: { id?: number; classId?: number; ck_id?: number; date?: string }) => trainApi.saveClassTask(p),
+    mutationFn: (p: { id?: ApiId; classId?: ApiId; ck_id?: number; date?: string }) => trainApi.saveClassTask(p),
     onSuccess: () => { message.success('成功'); setEditOpen(false); refetch(); },
     onError: () => message.error('保存失败'),
   });
@@ -699,23 +823,20 @@ function TrainTaskModal({
     { title: '状态', dataIndex: 'status_cn', width: 160, align: 'center' },
     { title: '完成次数', dataIndex: 'times_cn', width: 160, align: 'center' },
     {
-      title: '操作', key: 'act', width: 150, fixed: 'right', align: 'center',
+      title: '操作', key: 'act', width: 100, fixed: 'right', align: 'center',
       render: (_, r) => (
-        <Space size="small">
-          <Button type="link" size="small" className="link-action" onClick={() => {
-            setEditingId(r.id);
-            editForm.setFieldsValue({ ck_id: r.ck_id, date: r.date ? dayjs(r.date) : undefined });
-            setEditOpen(true);
-          }}>编辑</Button>
-          <Button type="link" size="small" />
-        </Space>
+        <Button type="link" size="small" className="link-action" onClick={() => {
+          setEditingId(r.id);
+          editForm.setFieldsValue({ ck_id: r.ck_id, date: r.date ? dayjs(r.date) : undefined });
+          setEditOpen(true);
+        }}>编辑</Button>
       ),
     },
   ];
 
   return (
     <>
-      <Modal title="培训任务编辑" open={open} onCancel={onClose} footer={null} width="60%" destroyOnHidden>
+      <Modal title="培训任务" open={open} onCancel={onClose} footer={null} width="60%" destroyOnHidden>
         <div className="mar-b10">
           <Button onClick={() => {
             setEditingId(null);
@@ -724,7 +845,8 @@ function TrainTaskModal({
           }}>新增</Button>
         </div>
         <Table rowKey="id" bordered loading={isLoading} columns={columns}
-          dataSource={data?.list ?? []} scroll={{ y: 400 }} pagination={false} />
+          dataSource={data?.list ?? []} scroll={{ y: 400 }} pagination={false}
+          locale={{ emptyText: '暂无培训任务' }} />
       </Modal>
 
       <Modal
@@ -761,9 +883,9 @@ export function TrainingClassPeoplePage() {
   const processStep = 3;
   const queryClient = useQueryClient();
   const [form] = Form.useForm<{
-    id?: number;
+    id?: ApiId;
     title?: string;
-    trainInfoId?: number;
+    trainInfoId?: ApiId;
     nums?: number;
     dateStart?: dayjs.Dayjs;
     dateEnd?: dayjs.Dayjs;
@@ -772,6 +894,8 @@ export function TrainingClassPeoplePage() {
   }>();
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
+  const [keywordInput, setKeywordInput] = useState('');
+  const [keyword, setKeyword] = useState('');
   const [companyIdFilter, setCompanyIdFilter] = useState<number | undefined>();
   const [workTypeIdFilter, setWorkTypeIdFilter] = useState<number | undefined>();
   const [modalOpen, setModalOpen] = useState(false);
@@ -781,10 +905,11 @@ export function TrainingClassPeoplePage() {
   const [previewTarget, setPreviewTarget] = useState<FilePreviewTarget | null>(null);
 
   const [studentModal, setStudentModal] = useState(false);
+  const [studentModalMode, setStudentModalMode] = useState<'roster' | 'collection'>('roster');
   const [staffModal, setStaffModal] = useState(false);
   const [chargeModal, setChargeModal] = useState(false);
   const [taskModal, setTaskModal] = useState(false);
-  const [selectedClass, setSelectedClass] = useState<{ id: number; trainInfoId: number } | null>(null);
+  const [selectedClass, setSelectedClass] = useState<{ id: ApiId; trainInfoId: ApiId } | null>(null);
 
   const { data: publicData } = useQuery({
     queryKey: ['class-people-public-data'],
@@ -792,13 +917,14 @@ export function TrainingClassPeoplePage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: listData, isLoading } = useQuery({
-    queryKey: ['info-classes', currentPage, pageSize, companyIdFilter, workTypeIdFilter],
+  const { data: listData, isLoading, isError, refetch } = useQuery({
+    queryKey: ['info-classes', currentPage, pageSize, companyIdFilter, workTypeIdFilter, keyword],
     queryFn: () => trainApi.pageInfoClassList({
       page: currentPage,
       pageSize,
       companyId: companyIdFilter,
       workTypeId: workTypeIdFilter,
+      keyword: keyword || undefined,
     }),
   });
 
@@ -813,7 +939,7 @@ export function TrainingClassPeoplePage() {
   });
 
   const deleteMu = useMutation({
-    mutationFn: (id: number) => trainApi.batchDeleteInfoClasses([id]),
+    mutationFn: (id: ApiId) => trainApi.batchDeleteInfoClasses([id]),
     onSuccess: () => {
       message.success('删除成功');
       queryClient.invalidateQueries({ queryKey: ['info-classes'] });
@@ -877,37 +1003,25 @@ export function TrainingClassPeoplePage() {
   };
 
   const handleSubmit = async () => {
-    const v = form.getFieldsValue();
-    if (!v.title) {
-      message.error('请填写班级名称');
-      return;
+    try {
+      const v = await form.validateFields();
+      if (v.dateStart && v.dateEnd && dayjs(v.dateEnd).isBefore(dayjs(v.dateStart), 'day')) {
+        message.error('结束日期不能早于开始日期');
+        return;
+      }
+      const payload: TrainInfoClassCreateReq = {
+        id: v.id,
+        title: v.title,
+        trainInfoId: v.trainInfoId,
+        nums: Number(v.nums),
+        dateStart: dayjs.isDayjs(v.dateStart) ? v.dateStart.format('YYYY-MM-DD') : String(v.dateStart),
+        dateEnd: dayjs.isDayjs(v.dateEnd) ? v.dateEnd.format('YYYY-MM-DD') : String(v.dateEnd),
+        kcbiaoFile: v.kcbiaoFile,
+      };
+      saveMu.mutate(payload);
+    } catch {
+      // Form validation errors are shown inline
     }
-    if (!v.trainInfoId) {
-      message.error('请选择班级课程');
-      return;
-    }
-    if (!v.nums) {
-      message.error('请填写班级人数');
-      return;
-    }
-    if (!v.dateStart) {
-      message.error('请选择班级开始时间');
-      return;
-    }
-    if (!v.dateEnd) {
-      message.error('请选择班级结束时间');
-      return;
-    }
-    const payload: TrainInfoClassCreateReq = {
-      id: v.id,
-      title: v.title,
-      trainInfoId: v.trainInfoId,
-      nums: v.nums,
-      dateStart: dayjs.isDayjs(v.dateStart) ? v.dateStart.format('YYYY-MM-DD') : String(v.dateStart),
-      dateEnd: dayjs.isDayjs(v.dateEnd) ? v.dateEnd.format('YYYY-MM-DD') : String(v.dateEnd),
-      kcbiaoFile: v.kcbiaoFile,
-    };
-    saveMu.mutate(payload);
   };
 
   const kcbiaoUploadProps: UploadProps = {
@@ -944,22 +1058,43 @@ export function TrainingClassPeoplePage() {
   };
 
   const handleReset = () => {
+    setKeywordInput('');
+    setKeyword('');
     setCompanyIdFilter(undefined);
     setWorkTypeIdFilter(undefined);
     setCurrentPage(1);
   };
 
+  const applyKeywordSearch = () => {
+    setKeyword(keywordInput.trim());
+    setCurrentPage(1);
+  };
+
   const openSubDialog = (type: string, row: TrainInfoClassListItem) => {
-    setSelectedClass({
-      id: Number(row.id),
-      trainInfoId: Number(row.train_info_id ?? 0),
-    });
+    const id = toApiId(row.id);
+    const trainInfoId = toApiId(row.train_info_id) ?? 0;
+    if (id == null) {
+      message.error('班级 ID 无效');
+      return;
+    }
+    setSelectedClass({ id, trainInfoId });
     switch (type) {
-      case 'students': setStudentModal(true); break;
+      case 'students':
+        setStudentModalMode('roster');
+        setStudentModal(true);
+        break;
+      case 'collection':
+        setStudentModalMode('collection');
+        setStudentModal(true);
+        break;
       case 'staff': setStaffModal(true); break;
       case 'charge': setChargeModal(true); break;
       case 'tasks': setTaskModal(true); break;
     }
+  };
+
+  const closeStudentModal = () => {
+    setStudentModal(false);
   };
 
   const formatCreateTime = (row: TrainInfoClassListItem) => {
@@ -968,10 +1103,15 @@ export function TrainingClassPeoplePage() {
     return '-';
   };
 
+  const formatDateRange = (row: TrainInfoClassListItem) => {
+    if (!row.date_start && !row.date_end) return '-';
+    return `${row.date_start ?? '—'} ~ ${row.date_end ?? '—'}`;
+  };
+
   const handleDeleteClass = (row: TrainInfoClassListItem) => {
     Modal.confirm({
       title: '友情提示',
-      content: '确定要删除该班级吗？',
+      content: '确定要删除该班级吗？删除后关联学员数据需另行确认是否仍保留。',
       onOk: () => deleteMu.mutate(row.id),
     });
   };
@@ -980,10 +1120,11 @@ export function TrainingClassPeoplePage() {
     <div className="class-row-actions">
       <div className="class-row-actions-line">
         <button type="button" className="class-action-link" onClick={() => openSubDialog('students', row)}>学员列表</button>
+        <button type="button" className="class-action-link" onClick={() => openSubDialog('collection', row)}>资料收集</button>
         <button type="button" className="class-action-link" onClick={() => openSubDialog('staff', row)}>教务人员</button>
-        <button type="button" className="class-action-link" onClick={() => openSubDialog('charge', row)}>负责人</button>
       </div>
       <div className="class-row-actions-line">
+        <button type="button" className="class-action-link" onClick={() => openSubDialog('charge', row)}>负责人</button>
         <button type="button" className="class-action-link" onClick={() => openSubDialog('tasks', row)}>培训任务</button>
         <button type="button" className="class-action-link" onClick={() => openEdit(row)}>编辑</button>
         <button type="button" className="class-action-link class-action-link-danger" onClick={() => handleDeleteClass(row)}>删除</button>
@@ -1002,7 +1143,42 @@ export function TrainingClassPeoplePage() {
     { title: '班级名称', dataIndex: 'title', align: 'left', ellipsis: true },
     { title: '公司', dataIndex: 'company_name', align: 'left', ellipsis: true },
     { title: '工种', dataIndex: 'work_type_title', align: 'center', width: 140 },
-    { title: '人数', dataIndex: 'nums', width: 80, align: 'center' },
+    { title: '人数', dataIndex: 'nums', width: 72, align: 'center' },
+    {
+      title: '培训周期',
+      key: 'dateRange',
+      width: 200,
+      align: 'center',
+      render: (_, row) => formatDateRange(row),
+    },
+    {
+      title: '资料进度',
+      key: 'profile',
+      width: 120,
+      align: 'center',
+      render: (_, row) => {
+        const approved = Number(row.profile_approved ?? 0);
+        const total = Number(row.profile_total ?? 0);
+        if (!row.collection_sign_up_id && total === 0) {
+          return (
+            <button type="button" className="class-action-link" onClick={() => openSubDialog('collection', row)}>
+              去收集
+            </button>
+          );
+        }
+        return (
+          <button
+            type="button"
+            className="class-action-link"
+            style={{ color: row.profile_ready ? '#389e0d' : undefined }}
+            onClick={() => openSubDialog('collection', row)}
+            title="打开资料收集"
+          >
+            {approved}/{total}{row.profile_ready ? ' ✓' : ''}
+          </button>
+        );
+      },
+    },
     {
       title: '创建时间',
       key: 'createTime',
@@ -1013,7 +1189,7 @@ export function TrainingClassPeoplePage() {
     {
       title: '操作',
       key: 'act',
-      width: 240,
+      width: 280,
       align: 'center',
       fixed: 'right',
       render: (_, row) => renderRowActions(row),
@@ -1023,8 +1199,10 @@ export function TrainingClassPeoplePage() {
   return (
     <div className="training-class-people-page training-page">
       <section className="page-heading">
-        <Typography.Title level={4}>班级人员</Typography.Title>
-        <Typography.Text type="secondary">管理培训班级人员，维护学员、班委及跟班任务</Typography.Text>
+        <Typography.Title level={4}>开班准备</Typography.Title>
+        <Typography.Text type="secondary">
+          维护已分班班级的学员花名册、教务负责人、培训任务与资料收集
+        </Typography.Text>
       </section>
 
       <TrainingProcessSteps current={processStep} />
@@ -1032,6 +1210,15 @@ export function TrainingClassPeoplePage() {
       <Card size="small" style={{ marginBottom: 16 }}>
       <div className="search-filter-bar">
         <div className="filter-actions">
+          <Input.Search
+            className="filter-keyword"
+            allowClear
+            placeholder="搜索班级名称"
+            value={keywordInput}
+            onChange={(e) => setKeywordInput(e.target.value)}
+            onSearch={applyKeywordSearch}
+            enterButton="查询"
+          />
           <Select
             className="filter-select"
             allowClear
@@ -1058,8 +1245,9 @@ export function TrainingClassPeoplePage() {
             options={workTypeGroupedOptions}
             optionFilterProp="label"
           />
-          <Button type="primary" onClick={handleReset}>重置</Button>
+          <Button onClick={handleReset}>重置</Button>
           <Button type="primary" onClick={openCreate}>创建班级</Button>
+          {isError ? <Button onClick={() => refetch()}>重新加载</Button> : null}
         </div>
       </div>
       </Card>
@@ -1072,8 +1260,9 @@ export function TrainingClassPeoplePage() {
         loading={isLoading}
         columns={columns}
         dataSource={listData?.list ?? []}
-        scroll={{ x: 1100, y: 600 }}
+        scroll={{ x: 1280, y: 600 }}
         pagination={false}
+        locale={{ emptyText: isError ? '加载失败，请点击重新加载' : '暂无班级，可点击「创建班级」或先完成上游分班' }}
       />
 
       <Pagination
@@ -1100,19 +1289,19 @@ export function TrainingClassPeoplePage() {
       >
         <Form form={form} labelCol={{ style: { width: 120 } }} wrapperCol={{ span: 16 }}>
           <Form.Item name="id" hidden><Input /></Form.Item>
-          <Form.Item name="title" label="班级名称">
+          <Form.Item name="title" label="班级名称" rules={[{ required: true, message: '请填写班级名称' }]}>
             <Input placeholder="请输入班级名称" />
           </Form.Item>
-          <Form.Item name="trainInfoId" label="选择培训信息">
-            <Select placeholder="请选择培训信息" options={trainInfoOptions} />
+          <Form.Item name="trainInfoId" label="选择培训信息" rules={[{ required: true, message: '请选择培训信息' }]}>
+            <Select placeholder="请选择培训信息" options={trainInfoOptions} showSearch optionFilterProp="label" />
           </Form.Item>
-          <Form.Item name="nums" label="班级人数">
-            <Input type="number" placeholder="请输入班级人数" />
+          <Form.Item name="nums" label="班级人数" rules={[{ required: true, message: '请填写班级人数' }]}>
+            <Input type="number" placeholder="请输入班级人数" min={1} />
           </Form.Item>
-          <Form.Item name="dateStart" label="开始日期">
+          <Form.Item name="dateStart" label="开始日期" rules={[{ required: true, message: '请选择开始日期' }]}>
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" placeholder="选择开始日期" />
           </Form.Item>
-          <Form.Item name="dateEnd" label="结束日期">
+          <Form.Item name="dateEnd" label="结束日期" rules={[{ required: true, message: '请选择结束日期' }]}>
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" placeholder="选择结束日期" />
           </Form.Item>
           <Form.Item label="课程表">
@@ -1162,8 +1351,14 @@ export function TrainingClassPeoplePage() {
         onClose={() => setPreviewTarget(null)}
       />
 
-      <StudentListModal open={studentModal} onClose={() => setStudentModal(false)}
-        classId={selectedClass?.id ?? null} trainInfoId={selectedClass?.trainInfoId ?? null} />
+      <StudentListModal
+        open={studentModal}
+        onClose={closeStudentModal}
+        classId={selectedClass?.id ?? null}
+        trainInfoId={selectedClass?.trainInfoId ?? null}
+        mode={studentModalMode}
+        onProfileChanged={() => queryClient.invalidateQueries({ queryKey: ['info-classes'] })}
+      />
       <StaffModal open={staffModal} onClose={() => setStaffModal(false)}
         classId={selectedClass?.id ?? null} trainInfoId={selectedClass?.trainInfoId ?? null}
         tag="teacher" title="教务人员" />

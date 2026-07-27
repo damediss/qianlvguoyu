@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
 import com.guoyu.platform.trainingdepartment.vo.TrainSignUpSelfFileVO;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -12,6 +13,7 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.util.UriUtils;
 
 /** 解析 train_sign_up_self.files JSON 并生成可访问 URL（对齐 PHP selflist） */
 @Component
@@ -46,7 +48,7 @@ public class SignUpSelfFilesResolver {
         if (Files.exists(file)) {
           String fileName = normalized.substring(normalized.lastIndexOf('/') + 1);
           String fileType = inferFileType(fileName);
-          result.add(new TrainSignUpSelfFileVO(cdnUrl + "/" + normalized, fileName, fileType));
+          result.add(new TrainSignUpSelfFileVO(publicUrl(normalized), fileName, fileType));
         }
       }
       return result;
@@ -74,7 +76,8 @@ public class SignUpSelfFilesResolver {
 
   public String publicUrl(String relativePath) {
     String normalized = relativePath.startsWith("/") ? relativePath.substring(1) : relativePath;
-    return cdnUrl + "/" + normalized;
+    // 中文等非 ASCII 路径必须编码，否则浏览器点下载会 404 / 误跳 CDN
+    return cdnUrl + "/" + UriUtils.encodePath(normalized, StandardCharsets.UTF_8);
   }
 
   private static String inferFileType(String fileName) {

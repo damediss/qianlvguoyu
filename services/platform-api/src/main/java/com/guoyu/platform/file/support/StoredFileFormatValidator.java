@@ -2,10 +2,13 @@ package com.guoyu.platform.file.support;
 
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import javax.imageio.ImageIO;
 
 /** 上传后校验常见 Office / 图片文件魔数，避免损坏文件进入业务链路。 */
 public final class StoredFileFormatValidator {
@@ -46,24 +49,47 @@ public final class StoredFileFormatValidator {
         head = trimmed;
       }
       assertSupportedOfficeFile(filename, head);
-      // Path 版本拿不到 Multipart Content-Type，按扩展名识别图片
-      assertSupportedImageFile(filename, null, head);
+    }
+    // 图片校验需要完整内容做 ImageIO 兜底
+    if (looksLikeImage(filename, null)) {
+      assertSupportedImageFile(filename, null, Files.readAllBytes(path));
     }
   }
 
-  /** 按扩展名或 Content-Type 校验图片魔数，拦截「扩展名是 .png 但内容损坏」的上传。 */
-  public static void assertSupportedImageFile(String filename, String contentType, byte[] head) {
-    if (head == null || head.length == 0) {
+  /** 按扩展名或 Content-Type 校验图片；非标准文件头不再一刀切拒绝（兼容手机/微信导出）。 */
+  public static void assertSupportedImageFile(String filename, String contentType, byte[] content) {
+    if (content == null || content.length == 0) {
       return;
     }
     if (!looksLikeImage(filename, contentType)) {
       return;
     }
-    if (!isImageMagic(head)) {
+    if (isImageMagic(content) || canDecodeWithImageIo(content)) {
+      return;
+    }
+    // 明显不是图片的载荷（HTML/JSON/PDF/ZIP）仍拒绝，避免把错误页当图片存入
+    if (isObviouslyNonImagePayload(content)) {
       throw new BusinessException(
           ErrorCode.BAD_REQUEST,
           "上传的文件不是有效图片（内容已损坏或格式不支持），请用 JPG/PNG 重新导出后再上传");
     }
+  }
+
+  static boolean isObviouslyNonImagePayload(byte[] content) {
+    if (content.length >= 5) {
+      String head5 = new String(content, 0, 5, java.nio.charset.StandardCharsets.US_ASCII);
+      if (head5.startsWith("%PDF") || head5.startsWith("<!DOC") || head5.startsWith("<html") || head5.startsWith("<HTML")) {
+        return true;
+      }
+    }
+    if (content.length >= 1) {
+      byte b0 = content[0];
+      if (b0 == '{' || b0 == '[') {
+        return true;
+      }
+    }
+    // ZIP/OOXML
+    return content.length >= 2 && content[0] == 'P' && content[1] == 'K';
   }
 
   static boolean looksLikeImage(String filename, String contentType) {
@@ -77,13 +103,14 @@ public final class StoredFileFormatValidator {
     return lower.endsWith(".png")
         || lower.endsWith(".jpg")
         || lower.endsWith(".jpeg")
+        || lower.endsWith(".jfif")
         || lower.endsWith(".gif")
         || lower.endsWith(".bmp")
         || lower.endsWith(".webp");
   }
 
   static boolean isImageMagic(byte[] head) {
-    if (head.length < 3) {
+    if (head.length < 2) {
       return false;
     }
     // PNG
@@ -94,8 +121,8 @@ public final class StoredFileFormatValidator {
         && head[3] == 'G') {
       return true;
     }
-    // JPEG
-    if ((head[0] & 0xFF) == 0xFF && (head[1] & 0xFF) == 0xD8 && (head[2] & 0xFF) == 0xFF) {
+    // JPEG：仅校验 SOI (FF D8)，不强制第三字节为 FF
+    if ((head[0] & 0xFF) == 0xFF && (head[1] & 0xFF) == 0xD8) {
       return true;
     }
     // GIF
@@ -122,6 +149,15 @@ public final class StoredFileFormatValidator {
         && head[9] == 'E'
         && head[10] == 'B'
         && head[11] == 'P';
+  }
+
+  private static boolean canDecodeWithImageIo(byte[] content) {
+    try (InputStream in = new ByteArrayInputStream(content)) {
+      BufferedImage image = ImageIO.read(in);
+      return image != null && image.getWidth() > 0 && image.getHeight() > 0;
+    } catch (Exception ignored) {
+      return false;
+    }
   }
 
   static boolean isOfficeMagic(byte[] head) {

@@ -7,6 +7,7 @@ import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassUpdateReq;
 import com.guoyu.platform.trainingdepartment.security.TrainingAuthorityExpressions;
+import com.guoyu.platform.trainingdepartment.service.ClassCollectionApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainInfoClassApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainMaterialGenerateApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoClassVO;
@@ -36,11 +37,14 @@ public class TrainInfoClassController {
 
   private final TrainInfoClassApplicationService trainInfoClassApplicationService;
   private final TrainMaterialGenerateApplicationService trainMaterialGenerateApplicationService;
+  private final ClassCollectionApplicationService classCollectionApplicationService;
 
   public TrainInfoClassController(TrainInfoClassApplicationService trainInfoClassApplicationService,
-      TrainMaterialGenerateApplicationService trainMaterialGenerateApplicationService) {
+      TrainMaterialGenerateApplicationService trainMaterialGenerateApplicationService,
+      ClassCollectionApplicationService classCollectionApplicationService) {
     this.trainInfoClassApplicationService = trainInfoClassApplicationService;
     this.trainMaterialGenerateApplicationService = trainMaterialGenerateApplicationService;
+    this.classCollectionApplicationService = classCollectionApplicationService;
   }
 
   /** 分页查询培训班级列表（含企业名、工种名、培训标题等关联字段） */
@@ -136,5 +140,13 @@ public class TrainInfoClassController {
   @AuditLog(module = "training", action = "info-class:company-reject", targetType = "train_info_class")
   public ApiResponse<Map<String, Object>> companyReject(@PathVariable Long id, @RequestParam String reason) {
     return ApiResponse.ok(trainInfoClassApplicationService.companyReject(id, reason));
+  }
+
+  /** 开班准备：确保本班资料收集计划并从花名册种子人员 */
+  @PostMapping("/info-classes/{classId}/ensure-collection")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
+  @AuditLog(module = "training", action = "info-class:ensure-collection", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> ensureCollection(@PathVariable Long classId) {
+    return ApiResponse.ok(classCollectionApplicationService.ensureCollection(classId));
   }
 }

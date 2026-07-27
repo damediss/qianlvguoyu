@@ -51,6 +51,7 @@ public class SignUpRegisterTestService {
   private final TrainSignUpSelfMapper signUpMapper;
   private final TrainSignUpPeopleSelfMapper peopleMapper;
   private final ObjectMapper objectMapper;
+  private final ClassCollectionApplicationService classCollectionApplicationService;
 
   @Value("${platform.cdn.path:./data/cdn}")
   private String cdnPath;
@@ -223,6 +224,10 @@ public class SignUpRegisterTestService {
     e.setUpdateTime(LocalDateTime.now());
 
     peopleMapper.insert(e);
+    // 开班准备扫码：新建即同步花名册（审核通过也会再 upsert）
+    if (ClassCollectionApplicationService.SOURCE_CLASS_PREP.equals(plan.getCollectionSource())) {
+      classCollectionApplicationService.syncPersonToRoster(e);
+    }
     log.info("扫码报名成功 signUpId={} idCard={} id={} ip={}",
         signUpId, req.getIdCardNumber(), e.getId(), currentIp());
 

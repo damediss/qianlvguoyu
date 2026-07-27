@@ -27,7 +27,6 @@ import org.springframework.util.StringUtils;
 public class SignUpPeopleSelfAssembler {
 
   private static final String[] STATUS_CN = {"待审核", "已通过", "拒绝"};
-  private static final String[] COMPANY_STATUS_CN = {"待审核", "已通过", "未通过"};
 
   private final String cdnPath;
   private final String cdnUrl;
@@ -149,7 +148,6 @@ public class SignUpPeopleSelfAssembler {
       vo.setContractSign(safeResolve(() -> resolveStoredOrCdnUrl(vo.getContactSignPage(),
           idCard, signUpId, "sign_self.png", "_contact_sign_page.jpg")));
     } catch (Exception ex) {
-      // enrich 只做 URL 解析，单条失败也不能让 VO 半残
       log.warn("enrich resolve media failed, ignore", ex);
     }
 
@@ -162,7 +160,7 @@ public class SignUpPeopleSelfAssembler {
     }
   }
 
-  private String safeResolve(java.util.function.Supplier<String> supplier) {
+  private String safeResolve(Supplier<String> supplier) {
     try {
       return supplier.get();
     } catch (Exception ex) {
@@ -210,6 +208,18 @@ public class SignUpPeopleSelfAssembler {
     if (req.getEducation() != null) {
       entity.setEducation(req.getEducation());
     }
+    if (req.getIdCardFront() != null) {
+      entity.setIdCardFront(req.getIdCardFront());
+    }
+    if (req.getIdCardBack() != null) {
+      entity.setIdCardBack(req.getIdCardBack());
+    }
+    if (req.getIdCardHeader() != null) {
+      entity.setIdCardHeader(req.getIdCardHeader());
+    }
+    if (req.getIdCardHeader2() != null) {
+      entity.setIdCardHeader2(req.getIdCardHeader2());
+    }
     if (req.getPhoto() != null) {
       entity.setPhoto(req.getPhoto());
     }
@@ -231,11 +241,17 @@ public class SignUpPeopleSelfAssembler {
     if (req.getGraduateDate() != null) {
       entity.setGraduateDate(req.getGraduateDate());
     }
+    if (req.getSchoolPaper() != null) {
+      entity.setSchoolPaper(req.getSchoolPaper());
+    }
     if (req.getWorkTime() != null) {
       entity.setWorkTime(req.getWorkTime());
     }
     if (req.getTitleType() != null) {
       entity.setTitleType(req.getTitleType());
+    }
+    if (req.getTitlePaper() != null) {
+      entity.setTitlePaper(req.getTitlePaper());
     }
     if (req.getCompanyId() != null) {
       entity.setCompanyId(req.getCompanyId());
@@ -248,6 +264,9 @@ public class SignUpPeopleSelfAssembler {
     }
     if (req.getWorkTypePaperHas() != null) {
       entity.setWorkTypePaperHas(req.getWorkTypePaperHas());
+    }
+    if (req.getWorkTypePaper() != null) {
+      entity.setWorkTypePaper(req.getWorkTypePaper());
     }
     if (req.getWorkTypeId() != null) {
       entity.setWorkTypeId(req.getWorkTypeId());
@@ -346,15 +365,30 @@ public class SignUpPeopleSelfAssembler {
         || t.matches("^(image/)?(resize|quality|crop).*");
   }
 
+  /** 平台新上传路径 / 完整 URL：优先于旧 CDN 约定路径，避免把新图盖成旧文件。 */
+  private boolean isPlatformStoredUrl(String stored) {
+    if (!StringUtils.hasText(stored)) {
+      return false;
+    }
+    String t = stored.trim();
+    if (t.startsWith("http://") || t.startsWith("https://")) {
+      return true;
+    }
+    if (t.startsWith("/api/") || t.startsWith("api/")) {
+      return true;
+    }
+    return t.contains("/exam/files/") || t.contains("/files/");
+  }
+
   private String resolveIdCardImage(String idCard, Long signUpId, String stored, String side) {
     if (StringUtils.hasText(stored) && isInvalidImageStored(stored)) {
       stored = null;
     }
-    if (StringUtils.hasText(stored) && stored.startsWith("http")) {
-      return stored;
+    if (isPlatformStoredUrl(stored)) {
+      return toAbsoluteUrl(stored);
     }
     if (!StringUtils.hasText(idCard)) {
-      return stored;
+      return toAbsoluteUrl(stored);
     }
     String suffix = "front".equals(side) ? "_front" : "_back";
     Path oldPng = Paths.get(cdnPath, "idCard/old/headerOrigin", idCard + suffix + ".png");
@@ -372,8 +406,8 @@ public class SignUpPeopleSelfAssembler {
     if (StringUtils.hasText(stored) && isInvalidImageStored(stored)) {
       stored = null;
     }
-    if (StringUtils.hasText(stored) && stored.startsWith("http")) {
-      return stored;
+    if (isPlatformStoredUrl(stored)) {
+      return toAbsoluteUrl(stored);
     }
     if (!StringUtils.hasText(idCard)) {
       return toAbsoluteUrl(stored);
@@ -391,8 +425,8 @@ public class SignUpPeopleSelfAssembler {
 
   private String resolveStoredOrCdnUrl(
       String stored, String idCard, Long signUpId, String contractFile, String legacySuffix) {
-    if (StringUtils.hasText(stored) && stored.startsWith("http")) {
-      return stored;
+    if (isPlatformStoredUrl(stored)) {
+      return toAbsoluteUrl(stored);
     }
     if (StringUtils.hasText(stored) && !stored.startsWith("http")) {
       Path rel = Paths.get(cdnPath, stored.startsWith("/") ? stored.substring(1) : stored);
@@ -409,7 +443,7 @@ public class SignUpPeopleSelfAssembler {
     }
     Path legacy = Paths.get(cdnPath, "idCard/headerOrigin", idCard + "_" + signUpId + legacySuffix);
     if (Files.exists(legacy)) {
-      return cdnUrl + "/contract/" + idCard + "_" + signUpId + "_" + contractFile;
+      return cdnUrl + "/idCard/headerOrigin/" + idCard + "_" + signUpId + legacySuffix;
     }
     return toAbsoluteUrl(stored);
   }
@@ -418,10 +452,27 @@ public class SignUpPeopleSelfAssembler {
     if (!StringUtils.hasText(path) || isInvalidImageStored(path)) {
       return null;
     }
-    if (path.startsWith("http://") || path.startsWith("https://")) {
-      return path;
+    String trimmed = path.trim();
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      return trimmed;
     }
-    String normalized = path.startsWith("/") ? path.substring(1) : path;
+    // 平台文件接口：/api/files/{id}/download 或 /api/exam/files/{objectKey}
+    // 不能再拼 CDN 前缀，否则会变成 /api/exam/files/api/files/... 导致 404
+    if (trimmed.startsWith("/api/")) {
+      return trimmed;
+    }
+    if (trimmed.startsWith("api/")) {
+      return "/" + trimmed;
+    }
+    if (trimmed.contains("/exam/files/")) {
+      int idx = trimmed.indexOf("/exam/files/");
+      return "/api" + trimmed.substring(idx);
+    }
+    if (trimmed.contains("/files/") && trimmed.contains("/download")) {
+      int idx = trimmed.indexOf("/files/");
+      return "/api" + trimmed.substring(idx);
+    }
+    String normalized = trimmed.startsWith("/") ? trimmed.substring(1) : trimmed;
     return cdnUrl + "/" + normalized;
   }
 }

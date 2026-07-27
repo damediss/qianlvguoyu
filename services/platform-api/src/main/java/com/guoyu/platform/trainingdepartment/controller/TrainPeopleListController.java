@@ -113,9 +113,10 @@ public class TrainPeopleListController {
   @GetMapping("/sign-up-self-list")
   @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
   public ApiResponse<Map<String, Object>> signUpSelfList(
-      @RequestParam Long traininfoId,
+      @RequestParam(required = false) Long traininfoId,
+      @RequestParam(required = false) Long classId,
       @RequestParam(required = false) String keyword) {
-    return ApiResponse.ok(trainPeopleListApplicationService.signUpSelfList(traininfoId, keyword));
+    return ApiResponse.ok(trainPeopleListApplicationService.signUpSelfList(traininfoId, keyword, classId));
   }
 
   /** 从报名导入学员 */

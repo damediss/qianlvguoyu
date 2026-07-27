@@ -15,7 +15,15 @@
 }
 
 .training-class-people-page .filter-actions .filter-select {
+  width: 200px;
   min-width: 200px;
+  flex: 0 0 200px;
+}
+
+.training-class-people-page .filter-actions .filter-keyword {
+  width: 260px;
+  min-width: 260px;
+  flex: 0 0 260px;
 }
 
 .training-class-people-page .class-people-table {

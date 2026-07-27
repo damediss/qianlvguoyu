@@ -964,6 +964,8 @@ export interface TrainSignUpSelf {
   orgId?: number;
   orgName?: string;
   trainInfoId?: number;
+  trainClassId?: number;
+  collectionSource?: string;
   sortNumber?: number;
   peopleCount?: number;
   wxMiniQrcode?: string;
@@ -978,6 +980,8 @@ export interface TrainSignUpSelfQuery {
   keyword?: string;
   orgId?: number;
   trainInfoId?: number;
+  classId?: number;
+  collectionSource?: string;
 }
 
 export interface TrainSignUpSelfCreateReq {
@@ -1095,7 +1099,7 @@ export interface TrainSignUpOrcSelf {
 export interface TrainSignUpPeopleQuery {
   page?: number;
   pageSize?: number;
-  signUpId?: number;
+  signUpId?: number | string;
   keyword?: string;
   status?: number;
 }
@@ -1548,8 +1552,8 @@ export interface TrainInfoClassQuery {
 }
 
 export interface TrainInfoClassCreateReq {
-  id?: number;
-  trainInfoId?: number;
+  id?: number | string;
+  trainInfoId?: number | string;
   title?: string;
   nums?: number;
   companyId?: number;
@@ -2054,14 +2058,14 @@ export interface SolutionByDemand {
 
 /** 班级列表项（page 接口返回的 snake_case 字段） */
 export interface TrainInfoClassListItem {
-  id: number;
+  id: number | string;
   title: string;
   nums?: number;
   addtime?: number;
   addtime_cn?: string;
-  train_info_id?: number;
-  company_id?: number;
-  work_type_id?: number;
+  train_info_id?: number | string;
+  company_id?: number | string;
+  work_type_id?: number | string;
   company_name?: string;
   work_type_title?: string;
   train_title?: string;
@@ -2076,6 +2080,11 @@ export interface TrainInfoClassListItem {
   company_confirm_time?: string;
   company_confirm_username?: string;
   company_reject_reason?: string;
+  collection_sign_up_id?: number | null;
+  profile_total?: number;
+  profile_approved?: number;
+  profile_pending?: number;
+  profile_ready?: boolean;
 }
 
 export interface TrainInfoClassPageResponse {
@@ -2086,11 +2095,11 @@ export interface TrainInfoClassPageResponse {
 
 /** 学员列表项 */
 export interface ClassStudent {
-  id: number;
+  id: number | string;
   realname: string;
   phone?: string;
-  train_id?: number;
-  train_class_id?: number;
+  train_id?: number | string;
+  train_class_id?: number | string;
   id_card?: string;
   is_leader?: number;
   is_leader_cn?: string;
@@ -2110,9 +2119,9 @@ export interface ClassStudentPageResponse {
 
 /** 教务/负责人列表项 */
 export interface ClassOther {
-  id: number;
-  train_id?: number;
-  train_class_id?: number;
+  id: number | string;
+  train_id?: number | string;
+  train_class_id?: number | string;
   realname: string;
   phone?: string;
   id_card?: string;

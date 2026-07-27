@@ -296,18 +296,16 @@ public class TrainPeopleListApplicationService {
 
   /** 可导入的报名人员列表 */
   @Transactional(readOnly = true)
-  public Map<String, Object> signUpSelfList(Long traininfoId, String keyword) {
-    TrainSignUpSelfEntity signUp = signUpSelfMapper.selectOne(
-        new LambdaQueryWrapper<TrainSignUpSelfEntity>()
-            .eq(TrainSignUpSelfEntity::getTrainInfoId, traininfoId)
-            .eq(TrainSignUpSelfEntity::getDeleted, 0));
+  public Map<String, Object> signUpSelfList(Long traininfoId, String keyword, Long classId) {
+    TrainSignUpSelfEntity signUp = resolveSignUpForImport(traininfoId, classId);
     if (signUp == null) {
       Map<String, Object> result = new LinkedHashMap<>();
       result.put("lists", List.of());
       return result;
     }
     LambdaQueryWrapper<TrainSignUpPeopleSelfEntity> wrapper = new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
-        .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUp.getId());
+        .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUp.getId())
+        .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0);
     if (StringUtils.hasText(keyword)) {
       wrapper.and(w -> w
           .like(TrainSignUpPeopleSelfEntity::getName, keyword)
@@ -324,7 +322,35 @@ public class TrainPeopleListApplicationService {
     }).toList();
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("lists", lists);
+    result.put("signUpId", signUp.getId());
+    result.put("collectionSource", signUp.getCollectionSource());
     return result;
+  }
+
+  private TrainSignUpSelfEntity resolveSignUpForImport(Long traininfoId, Long classId) {
+    if (classId != null) {
+      TrainSignUpSelfEntity byClass = signUpSelfMapper.selectOne(
+          new LambdaQueryWrapper<TrainSignUpSelfEntity>()
+              .eq(TrainSignUpSelfEntity::getTrainClassId, classId)
+              .eq(TrainSignUpSelfEntity::getCollectionSource, ClassCollectionApplicationService.SOURCE_CLASS_PREP)
+              .eq(TrainSignUpSelfEntity::getDeleted, 0)
+              .last("LIMIT 1"));
+      if (byClass != null) {
+        return byClass;
+      }
+    }
+    if (traininfoId == null) {
+      return null;
+    }
+    return signUpSelfMapper.selectOne(
+        new LambdaQueryWrapper<TrainSignUpSelfEntity>()
+            .eq(TrainSignUpSelfEntity::getTrainInfoId, traininfoId)
+            .eq(TrainSignUpSelfEntity::getDeleted, 0)
+            .and(w -> w
+                .eq(TrainSignUpSelfEntity::getCollectionSource, "train_info")
+                .or()
+                .isNull(TrainSignUpSelfEntity::getCollectionSource))
+            .last("LIMIT 1"));
   }
 
   /** 从报名人员导入学员 */
@@ -374,10 +400,7 @@ public class TrainPeopleListApplicationService {
   public Map<String, Object> importStudentsByIdCard(Long traininfoId, Long classId, String idCardsText) {
     operatorScopeService.requireOrgOperator();
     assertClassViewable(classId);
-    TrainSignUpSelfEntity signUp = signUpSelfMapper.selectOne(
-        new LambdaQueryWrapper<TrainSignUpSelfEntity>()
-            .eq(TrainSignUpSelfEntity::getTrainInfoId, traininfoId)
-            .eq(TrainSignUpSelfEntity::getDeleted, 0));
+    TrainSignUpSelfEntity signUp = resolveSignUpForImport(traininfoId, classId);
     if (signUp == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "报名记录未找到");
     }

@@ -98,6 +98,11 @@ management:
     health:
       probes:
         enabled: true
+  health:
+    # 竞赛通知等才依赖 Rabbit；本地未起 MQ 时默认不把 rabbit 计入 health，避免整体 DOWN
+    # 需要监控时：RABBIT_HEALTH_ENABLED=true
+    rabbit:
+      enabled: ${RABBIT_HEALTH_ENABLED:false}
 
 mybatis-plus:
   configuration:

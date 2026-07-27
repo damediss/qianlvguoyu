@@ -33,7 +33,7 @@ public class TrainSignUpSelfEntity {
   /** 关联企业调研 */
   private Long researchOrgId;
 
-  /** 采集来源 train_info / research */
+  /** 采集来源 train_info / research / class_prep */
   private String collectionSource;
 
   /** 公开采集 token */
@@ -44,6 +44,9 @@ public class TrainSignUpSelfEntity {
 
   /** 培训信息ID */
   private Long trainInfoId;
+
+  /** 开班准备资料收集绑定的班级 */
+  private Long trainClassId;
 
   /** 排序号 */
   private Integer sortNumber;
@@ -80,6 +83,8 @@ public class TrainSignUpSelfEntity {
   public void setCollectionFieldOptions(String collectionFieldOptions) { this.collectionFieldOptions = collectionFieldOptions; }
   public Long getTrainInfoId() { return trainInfoId; }
   public void setTrainInfoId(Long trainInfoId) { this.trainInfoId = trainInfoId; }
+  public Long getTrainClassId() { return trainClassId; }
+  public void setTrainClassId(Long trainClassId) { this.trainClassId = trainClassId; }
   public Integer getSortNumber() { return sortNumber; }
   public void setSortNumber(Integer sortNumber) { this.sortNumber = sortNumber; }
   public String getFiles() { return files; }

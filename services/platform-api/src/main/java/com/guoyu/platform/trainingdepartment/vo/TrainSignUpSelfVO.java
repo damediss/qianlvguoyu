@@ -17,6 +17,10 @@ public record TrainSignUpSelfVO(
     Long orgId,
     /** 培训信息ID */
     Long trainInfoId,
+    /** 班级ID（class_prep） */
+    Long trainClassId,
+    /** 采集来源 */
+    String collectionSource,
     /** 排序号 */
     Integer sortNumber,
     /** 租户ID */

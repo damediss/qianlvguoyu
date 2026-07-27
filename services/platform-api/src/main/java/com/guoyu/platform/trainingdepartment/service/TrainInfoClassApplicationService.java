@@ -49,6 +49,7 @@ public class TrainInfoClassApplicationService {
   private final ExamWorkTypeMapper examWorkTypeMapper;
   private final TrainingOperatorScopeService operatorScopeService;
   private final ObjectMapper objectMapper = new ObjectMapper();
+  private final ClassCollectionApplicationService classCollectionApplicationService;
   private static final DateTimeFormatter ADD_TIME_FMT =
       DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Shanghai"));
 
@@ -57,13 +58,15 @@ public class TrainInfoClassApplicationService {
       TrainFileTempMapper trainFileTempMapper,
       OrgMapper orgMapper,
       ExamWorkTypeMapper examWorkTypeMapper,
-      TrainingOperatorScopeService operatorScopeService) {
+      TrainingOperatorScopeService operatorScopeService,
+      ClassCollectionApplicationService classCollectionApplicationService) {
     this.mapper = mapper;
     this.trainInfoListMapper = trainInfoListMapper;
     this.trainFileTempMapper = trainFileTempMapper;
     this.orgMapper = orgMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
     this.operatorScopeService = operatorScopeService;
+    this.classCollectionApplicationService = classCollectionApplicationService;
   }
 
   @Transactional(readOnly = true)
@@ -83,6 +86,9 @@ public class TrainInfoClassApplicationService {
     }
     if (req.getCompanyConfirmStatus() != null) {
       wrapper.eq(TrainInfoClassEntity::getCompanyConfirmStatus, req.getCompanyConfirmStatus());
+    }
+    if (req.getKeyword() != null && !req.getKeyword().isBlank()) {
+      wrapper.like(TrainInfoClassEntity::getTitle, req.getKeyword().trim());
     }
     Page<TrainInfoClassEntity> mpPage = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
 
@@ -110,6 +116,9 @@ public class TrainInfoClassApplicationService {
         : trainInfoListMapper.selectBatchIds(trainInfoIds).stream()
             .collect(Collectors.toMap(TrainInfoListEntity::getId, e -> e, (a, b) -> a));
 
+    List<Long> classIds = mpPage.getRecords().stream().map(TrainInfoClassEntity::getId).toList();
+    Map<Long, Map<String, Object>> profileMap = classCollectionApplicationService.batchProfileProgress(classIds);
+
     List<Map<String, Object>> list = mpPage.getRecords().stream().map(e -> {
       Map<String, Object> item = new LinkedHashMap<>();
       item.put("id", e.getId());
@@ -135,6 +144,12 @@ public class TrainInfoClassApplicationService {
       item.put("company_confirm_time", e.getCompanyConfirmTime());
       item.put("company_confirm_username", e.getCompanyConfirmUsername());
       item.put("company_reject_reason", e.getCompanyRejectReason());
+      Map<String, Object> profile = profileMap.getOrDefault(e.getId(), Map.of());
+      item.put("collection_sign_up_id", profile.get("signUpId"));
+      item.put("profile_total", profile.getOrDefault("profile_total", 0));
+      item.put("profile_approved", profile.getOrDefault("profile_approved", 0));
+      item.put("profile_pending", profile.getOrDefault("profile_pending", 0));
+      item.put("profile_ready", profile.getOrDefault("profile_ready", false));
       return item;
     }).toList();
 

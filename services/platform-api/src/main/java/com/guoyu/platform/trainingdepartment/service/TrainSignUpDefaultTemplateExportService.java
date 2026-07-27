@@ -33,6 +33,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 /** 默认模板异步导出（对齐 Yunxinxi peopleselfexport / peopleselfexportcheck） */
@@ -74,6 +76,9 @@ public class TrainSignUpDefaultTemplateExportService {
     this.cdnPath = cdnPath;
   }
 
+  /** 卡住超过该秒数的 endtime=0 任务视为失败，避免永久阻塞新导出 */
+  private static final long STUCK_TASK_TIMEOUT_SECONDS = 30 * 60;
+
   @Transactional
   public SignUpDefaultTemplateExportStartVO startExport(SignUpDefaultTemplateExportReq req) {
     TrainSignUpSelfEntity signUp = getSignUp(req.getSignUpId());
@@ -84,10 +89,18 @@ public class TrainSignUpDefaultTemplateExportService {
         .orderByDesc(TrainSignUpSelfTaskEntity::getId)
         .last("LIMIT 1"));
     if (running != null) {
-      if (running.getSignUpId().equals(signUp.getId())) {
+      if (isStuckTask(running)) {
+        failTask(running, "导出任务超时未完成，已自动取消，请重试");
+        running = null;
+      } else if (running.getSignUpId().equals(signUp.getId())) {
+        // 同计划已有进行中任务：若从未推进进度，可能是事务未提交就启动了异步线程，补提一次
+        if (readIdList(running.getIdsOut()).isEmpty()) {
+          submitExportAfterCommit(running.getId(), tenantId);
+        }
         return new SignUpDefaultTemplateExportStartVO(running.getId(), progressOf(running));
+      } else {
+        throw new BusinessException(ErrorCode.CONFLICT, "有未完成的任务在进行中，无法添加任务");
       }
-      throw new BusinessException(ErrorCode.CONFLICT, "有未完成的任务在进行中，无法添加任务");
     }
 
     List<Long> peopleIds = resolvePeopleIds(signUp.getId(), tenantId, req.getIds(), req.getStatus());
@@ -107,17 +120,37 @@ public class TrainSignUpDefaultTemplateExportService {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "创建导出任务失败");
     }
     taskMapper.insert(task);
-    Long taskId = task.getId();
-    Long tenantIdForJob = tenantId;
-    signUpExportExecutor.execute(() -> {
+    submitExportAfterCommit(task.getId(), tenantId);
+    return new SignUpDefaultTemplateExportStartVO(task.getId(), progressOf(task));
+  }
+
+  private boolean isStuckTask(TrainSignUpSelfTaskEntity task) {
+    if (task.getAddtime() == null) {
+      return true;
+    }
+    long age = System.currentTimeMillis() / 1000 - task.getAddtime();
+    return age >= STUCK_TASK_TIMEOUT_SECONDS;
+  }
+
+  private void submitExportAfterCommit(Long taskId, Long tenantIdForJob) {
+    Runnable job = () -> {
       try {
         TenantContextHolder.setTenantId(tenantIdForJob);
         runExport(taskId);
       } finally {
         TenantContextHolder.clear();
       }
-    });
-    return new SignUpDefaultTemplateExportStartVO(task.getId(), progressOf(task));
+    };
+    if (TransactionSynchronizationManager.isSynchronizationActive()) {
+      TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+        @Override
+        public void afterCommit() {
+          signUpExportExecutor.execute(job);
+        }
+      });
+    } else {
+      signUpExportExecutor.execute(job);
+    }
   }
 
   @Transactional(readOnly = true)

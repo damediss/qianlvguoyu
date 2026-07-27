@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
-  Button, DatePicker, Form, Image, Input, InputNumber, Modal, Select, Spin, Switch, message,
+  Button, DatePicker, Form, Input, InputNumber, Modal, Select, Spin, Switch, message,
 } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import dayjs, { type Dayjs } from 'dayjs';
 import * as trainApi from '../../api/training';
+import { uploadFile } from '../../api/knowledge';
 import type { DemandPublicData, TrainSignUpPerson } from '../../types/training';
-import { ApiAuthImage } from '../../components/ApiAuthImage';
+import { AuthImage } from '../../components/ApiAuthImage';
+import { toBrowserPublicFileSrc } from '../../api/files';
 import {
   EDUCATION_OPTIONS,
   HOUSE_TYPE_OPTIONS,
@@ -21,9 +24,44 @@ import './SignUpPeopleEditModal.css';
 
 const DATE_FORMAT = 'YYYY-MM-DD';
 
+/** 上传后用于预览/落库的地址：统一走鉴权下载，避免 COS 私有桶直链空白 */
+function resolveUploadedImageUrl(result: { id: number | string; url?: string | null }): string {
+  return `/api/files/${result.id}/download?inline=true`;
+}
+
+type EditableImageField =
+  | 'idCardFront'
+  | 'idCardBack'
+  | 'idCardHeader'
+  | 'idCardHeader2'
+  | 'schoolPaper'
+  | 'contactFirstPage'
+  | 'contactExpirePage'
+  | 'contactSignPage'
+  | 'workTypePaper'
+  | 'titlePaper';
+
 function pickImageUrl(...candidates: (string | undefined)[]): string {
-  for (const url of candidates) {
-    if (url) return url;
+  for (const raw of candidates) {
+    if (!raw?.trim()) continue;
+    const url = raw.trim();
+    if (url.includes('/exam/files/') || url.startsWith('/api/exam/files/')) {
+      return toBrowserPublicFileSrc(url);
+    }
+    if (url.includes('/files/') && url.includes('/download')) {
+      // 统一成可被 ApiAuthImage 识别的路径
+      const idx = url.indexOf('/files/');
+      return idx >= 0 ? `/api${url.substring(idx)}` : url;
+    }
+    if (url.startsWith('/api/') || url.startsWith('blob:') || url.startsWith('data:')
+      || url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    // 旧相对路径 idCard/... → 走 exam/files
+    if (/^(idCard|contract|upload|down)\//i.test(url.replace(/^\//, ''))) {
+      return toBrowserPublicFileSrc(`/api/exam/files/${url.replace(/^\//, '')}`);
+    }
+    return url;
   }
   return '';
 }
@@ -176,7 +214,10 @@ function personToFormValues(person: TrainSignUpPerson): PeopleEditFormValues {
   };
 }
 
-function formValuesToPayload(values: PeopleEditFormValues): Partial<TrainSignUpPerson> {
+function formValuesToPayload(
+  values: PeopleEditFormValues,
+  images: Partial<Record<EditableImageField, string>>,
+): Partial<TrainSignUpPerson> {
   return {
     platformUserId: values.platformUserId,
     name: values.name,
@@ -208,6 +249,16 @@ function formValuesToPayload(values: PeopleEditFormValues): Partial<TrainSignUpP
     status: values.status,
     companyStatus: values.companyStatus,
     hasPay: values.hasPay,
+    idCardFront: images.idCardFront,
+    idCardBack: images.idCardBack,
+    idCardHeader: images.idCardHeader,
+    idCardHeader2: images.idCardHeader2,
+    schoolPaper: images.schoolPaper,
+    contactFirstPage: images.contactFirstPage,
+    contactExpirePage: images.contactExpirePage,
+    contactSignPage: images.contactSignPage,
+    workTypePaper: images.workTypePaper,
+    titlePaper: images.titlePaper,
   };
 }
 
@@ -215,23 +266,98 @@ function ImagePreviewBox({
   label,
   url,
   boxClass,
+  editable,
+  uploading,
+  onUpload,
 }: {
   label: string;
   url?: string;
   boxClass: string;
+  editable?: boolean;
+  uploading?: boolean;
+  onUpload?: (file: File) => Promise<void>;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  if (!editable || !onUpload) {
+    return (
+      <div className="people-edit-image-block">
+        <div className="people-edit-image-label">{label}</div>
+        <div className={`people-edit-image-box ${boxClass}`}>
+          {url ? (
+            <AuthImage
+              url={url}
+              alt={label}
+              style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }}
+            />
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  const openPicker = () => {
+    if (uploading) return;
+    inputRef.current?.click();
+  };
+
+  const onFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // 允许连续选择同一文件
+    event.target.value = '';
+    if (!file) return;
+    const lower = file.name.toLowerCase();
+    const okExt = /\.(jpe?g|jfif|png|webp|gif|bmp|heic|heif)$/i.test(lower);
+    const okType = !file.type || file.type.startsWith('image/');
+    if (!okExt && !okType) {
+      message.error('请选择 JPG/PNG/WEBP 等图片文件');
+      return;
+    }
+    try {
+      await onUpload(file);
+    } catch {
+      // 错误已在 handleImageUpload 中提示
+    }
+  };
+
   return (
     <div className="people-edit-image-block">
       <div className="people-edit-image-label">{label}</div>
-      <div className={`people-edit-image-box ${boxClass}`}>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif,image/bmp,.jpg,.jpeg,.jfif,.png,.webp,.gif,.bmp,.heic,.heif"
+        style={{ display: 'none' }}
+        onChange={onFileChange}
+      />
+      <div
+        role="button"
+        tabIndex={0}
+        className={`people-edit-image-box ${boxClass} people-edit-image-box-editable${uploading ? ' is-uploading' : ''}`}
+        title="点击更换图片"
+        onClick={openPicker}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openPicker();
+          }
+        }}
+      >
         {url ? (
-          <ApiAuthImage
+          <AuthImage
             url={url}
-            width="100%"
-            height="100%"
-            style={{ objectFit: 'fill' }}
+            alt={label}
+            style={{ width: '100%', height: '100%', objectFit: 'fill', pointerEvents: 'none', display: 'block' }}
           />
-        ) : null}
+        ) : (
+          <div className="people-edit-image-empty">
+            <PlusOutlined />
+            <span>点击上传</span>
+          </div>
+        )}
+        <div className="people-edit-image-mask">
+          {uploading ? '上传中…' : (url ? '点击更换' : '点击上传')}
+        </div>
       </div>
     </div>
   );
@@ -252,6 +378,8 @@ export function SignUpPeopleEditModal({
 }: SignUpPeopleEditModalProps) {
   const [form] = Form.useForm<PeopleEditFormValues>();
   const [detail, setDetail] = useState<TrainSignUpPerson | null>(null);
+  const [imageDrafts, setImageDrafts] = useState<Partial<Record<EditableImageField, string>>>({});
+  const [uploadingField, setUploadingField] = useState<EditableImageField | null>(null);
   const reqLevel = Form.useWatch('reqLevel', form);
 
   const { data: publicData } = useQuery({
@@ -267,6 +395,18 @@ export function SignUpPeopleEditModal({
       const raw = await trainApi.getSignUpPerson(personId!);
       const person = normalizePersonDetail(raw as unknown as Record<string, unknown>);
       setDetail(person);
+      setImageDrafts({
+        idCardFront: pickImageUrl(person.idcardFront, person.idCardFront) || undefined,
+        idCardBack: pickImageUrl(person.idcardBack, person.idCardBack) || undefined,
+        idCardHeader: pickImageUrl(person.idcardHeader, person.idCardHeader) || undefined,
+        idCardHeader2: pickImageUrl(person.idCardHeader2) || undefined,
+        schoolPaper: pickImageUrl(person.schoolPaper) || undefined,
+        contactFirstPage: pickImageUrl(person.contractFirst, person.contactFirstPage) || undefined,
+        contactExpirePage: pickImageUrl(person.contractExpire, person.contactExpirePage) || undefined,
+        contactSignPage: pickImageUrl(person.contractSign, person.contactSignPage) || undefined,
+        workTypePaper: pickImageUrl(person.workTypePaper) || undefined,
+        titlePaper: pickImageUrl(person.titlePaper) || undefined,
+      });
       form.setFieldsValue(personToFormValues(person));
       return person;
     },
@@ -287,6 +427,8 @@ export function SignUpPeopleEditModal({
     if (!open) {
       form.resetFields();
       setDetail(null);
+      setImageDrafts({});
+      setUploadingField(null);
     }
   }, [open, form]);
 
@@ -316,26 +458,59 @@ export function SignUpPeopleEditModal({
     form.setFieldValue('declarationCondition', undefined);
   };
 
+  const handleImageUpload = async (field: EditableImageField, file: File) => {
+    setUploadingField(field);
+    // 先本地预览，上传成功后再换成服务端地址
+    const localPreview = URL.createObjectURL(file);
+    setImageDrafts((prev) => {
+      const old = prev[field];
+      if (old?.startsWith('blob:')) URL.revokeObjectURL(old);
+      return { ...prev, [field]: localPreview };
+    });
+    try {
+      const result = await uploadFile(file, 'public');
+      const url = resolveUploadedImageUrl(result);
+      setImageDrafts((prev) => {
+        const old = prev[field];
+        if (old?.startsWith('blob:')) URL.revokeObjectURL(old);
+        return { ...prev, [field]: url };
+      });
+      message.success('图片已更新，请点击保存生效');
+    } catch (err) {
+      setImageDrafts((prev) => {
+        const old = prev[field];
+        if (old?.startsWith('blob:')) URL.revokeObjectURL(old);
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+      const msg = err instanceof Error && err.message ? err.message : '图片上传失败';
+      message.error(msg);
+    } finally {
+      setUploadingField(null);
+    }
+  };
+
   const handleSave = async () => {
     if (!personId) return;
     try {
       const values = await form.validateFields();
-      saveMu.mutate(formValuesToPayload(values));
+      saveMu.mutate(formValuesToPayload(values, imageDrafts));
     } catch {
       // 表单校验
     }
   };
 
-  const idFront = pickImageUrl(detail?.idcardFront, detail?.idCardFront);
-  const idBack = pickImageUrl(detail?.idcardBack, detail?.idCardBack);
-  const photoHeader = pickImageUrl(detail?.idcardHeader, detail?.idCardHeader);
-  const photoOriginal = pickImageUrl(detail?.idCardHeader2, detail?.idCardHeader);
-  const schoolPaper = pickImageUrl(detail?.schoolPaper);
-  const contractFirst = pickImageUrl(detail?.contractFirst, detail?.contactFirstPage);
-  const contractExpire = pickImageUrl(detail?.contractExpire, detail?.contactExpirePage);
-  const contractSign = pickImageUrl(detail?.contractSign, detail?.contactSignPage);
-  const workTypePaper = pickImageUrl(detail?.workTypePaper);
-  const titlePaper = pickImageUrl(detail?.titlePaper);
+  const idFront = pickImageUrl(imageDrafts.idCardFront, detail?.idcardFront, detail?.idCardFront);
+  const idBack = pickImageUrl(imageDrafts.idCardBack, detail?.idcardBack, detail?.idCardBack);
+  const photoHeader = pickImageUrl(imageDrafts.idCardHeader, detail?.idcardHeader, detail?.idCardHeader);
+  const photoOriginal = pickImageUrl(imageDrafts.idCardHeader2, detail?.idCardHeader2);
+  const schoolPaper = pickImageUrl(imageDrafts.schoolPaper, detail?.schoolPaper);
+  const contractFirst = pickImageUrl(imageDrafts.contactFirstPage, detail?.contractFirst, detail?.contactFirstPage);
+  const contractExpire = pickImageUrl(imageDrafts.contactExpirePage, detail?.contractExpire, detail?.contactExpirePage);
+  const contractSign = pickImageUrl(imageDrafts.contactSignPage, detail?.contractSign, detail?.contactSignPage);
+  const workTypePaper = pickImageUrl(imageDrafts.workTypePaper, detail?.workTypePaper);
+  const titlePaper = pickImageUrl(imageDrafts.titlePaper, detail?.titlePaper);
   const workExpList = detail?.workExpList ?? [];
 
   return (
@@ -382,10 +557,38 @@ export function SignUpPeopleEditModal({
                 </Form.Item>
               </div>
               <div className="people-edit-images">
-                <ImagePreviewBox label="身份证正面" url={idFront} boxClass="id-card" />
-                <ImagePreviewBox label="身份证反面" url={idBack} boxClass="id-card" />
-                <ImagePreviewBox label="一寸证件照" url={photoHeader} boxClass="photo" />
-                <ImagePreviewBox label="原证件照" url={photoOriginal} boxClass="photo" />
+                <ImagePreviewBox
+                  label="身份证正面"
+                  url={idFront}
+                  boxClass="id-card"
+                  editable
+                  uploading={uploadingField === 'idCardFront'}
+                  onUpload={(file) => handleImageUpload('idCardFront', file)}
+                />
+                <ImagePreviewBox
+                  label="身份证反面"
+                  url={idBack}
+                  boxClass="id-card"
+                  editable
+                  uploading={uploadingField === 'idCardBack'}
+                  onUpload={(file) => handleImageUpload('idCardBack', file)}
+                />
+                <ImagePreviewBox
+                  label="一寸证件照"
+                  url={photoHeader}
+                  boxClass="photo"
+                  editable
+                  uploading={uploadingField === 'idCardHeader'}
+                  onUpload={(file) => handleImageUpload('idCardHeader', file)}
+                />
+                <ImagePreviewBox
+                  label="原证件照"
+                  url={photoOriginal}
+                  boxClass="photo"
+                  editable
+                  uploading={uploadingField === 'idCardHeader2'}
+                  onUpload={(file) => handleImageUpload('idCardHeader2', file)}
+                />
               </div>
             </div>
 
@@ -415,7 +618,14 @@ export function SignUpPeopleEditModal({
                 </Form.Item>
               </div>
               <div className="people-edit-images">
-                <ImagePreviewBox label="毕业证" url={schoolPaper} boxClass="id-card" />
+                <ImagePreviewBox
+                  label="毕业证"
+                  url={schoolPaper}
+                  boxClass="id-card"
+                  editable
+                  uploading={uploadingField === 'schoolPaper'}
+                  onUpload={(file) => handleImageUpload('schoolPaper', file)}
+                />
               </div>
             </div>
 
@@ -484,15 +694,48 @@ export function SignUpPeopleEditModal({
               </div>
               <div>
                 <div className="people-edit-contract-row">
-                  <Image.PreviewGroup>
-                    <ImagePreviewBox label="合同第一页" url={contractFirst} boxClass="contract" />
-                    <ImagePreviewBox label="合同到期页" url={contractExpire} boxClass="contract" />
-                    <ImagePreviewBox label="合同盖章页" url={contractSign} boxClass="contract" />
-                  </Image.PreviewGroup>
+                  <ImagePreviewBox
+                    label="合同第一页"
+                    url={contractFirst}
+                    boxClass="contract"
+                    editable
+                    uploading={uploadingField === 'contactFirstPage'}
+                    onUpload={(file) => handleImageUpload('contactFirstPage', file)}
+                  />
+                  <ImagePreviewBox
+                    label="合同到期页"
+                    url={contractExpire}
+                    boxClass="contract"
+                    editable
+                    uploading={uploadingField === 'contactExpirePage'}
+                    onUpload={(file) => handleImageUpload('contactExpirePage', file)}
+                  />
+                  <ImagePreviewBox
+                    label="合同盖章页"
+                    url={contractSign}
+                    boxClass="contract"
+                    editable
+                    uploading={uploadingField === 'contactSignPage'}
+                    onUpload={(file) => handleImageUpload('contactSignPage', file)}
+                  />
                 </div>
                 <div className="people-edit-cert-row">
-                  {workTypePaper ? <ImagePreviewBox label="上一等级证书" url={workTypePaper} boxClass="id-card" /> : null}
-                  {titlePaper ? <ImagePreviewBox label="职称证书" url={titlePaper} boxClass="id-card" /> : null}
+                  <ImagePreviewBox
+                    label="上一等级证书"
+                    url={workTypePaper}
+                    boxClass="id-card"
+                    editable
+                    uploading={uploadingField === 'workTypePaper'}
+                    onUpload={(file) => handleImageUpload('workTypePaper', file)}
+                  />
+                  <ImagePreviewBox
+                    label="职称证书"
+                    url={titlePaper}
+                    boxClass="id-card"
+                    editable
+                    uploading={uploadingField === 'titlePaper'}
+                    onUpload={(file) => handleImageUpload('titlePaper', file)}
+                  />
                 </div>
               </div>
             </div>

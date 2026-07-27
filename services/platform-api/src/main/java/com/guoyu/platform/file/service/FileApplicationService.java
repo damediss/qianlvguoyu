@@ -74,8 +74,7 @@ public class FileApplicationService {
     Long tenantId = getTenantIdSafe();
     String safeName = sanitizeFileName(originalName);
     StoredFileFormatValidator.assertSupportedOfficeFile(safeName, content);
-    byte[] head = content.length > 16 ? java.util.Arrays.copyOf(content, 16) : content;
-    StoredFileFormatValidator.assertSupportedImageFile(safeName, contentType, head);
+    StoredFileFormatValidator.assertSupportedImageFile(safeName, contentType, content);
     String objectKey = buildObjectKey(tenantId, safeName);
     try {
       String sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));

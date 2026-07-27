@@ -26,12 +26,15 @@ public class TrainSignUpPeopleSelfApplicationService {
 
   private final TrainSignUpPeopleSelfMapper mapper;
   private final SignUpPeopleSelfAssembler assembler;
+  private final ClassCollectionApplicationService classCollectionApplicationService;
 
   public TrainSignUpPeopleSelfApplicationService(
       TrainSignUpPeopleSelfMapper mapper,
-      SignUpPeopleSelfAssembler assembler) {
+      SignUpPeopleSelfAssembler assembler,
+      ClassCollectionApplicationService classCollectionApplicationService) {
     this.mapper = mapper;
     this.assembler = assembler;
+    this.classCollectionApplicationService = classCollectionApplicationService;
   }
 
   @Transactional(readOnly = true)
@@ -107,6 +110,9 @@ public class TrainSignUpPeopleSelfApplicationService {
     entity.setCreateTime(LocalDateTime.now());
     entity.setUpdateTime(LocalDateTime.now());
     mapper.insert(entity);
+    if (entity.getStatus() != null && entity.getStatus() == ClassCollectionApplicationService.STATUS_APPROVED) {
+      classCollectionApplicationService.syncPersonToRoster(entity);
+    }
     TrainSignUpPeopleSelfVO vo = assembler.toVo(entity);
     assembler.enrich(vo);
     return vo;
@@ -118,6 +124,9 @@ public class TrainSignUpPeopleSelfApplicationService {
     assembler.applyUpdate(entity, req);
     entity.setUpdateTime(LocalDateTime.now());
     mapper.updateById(entity);
+    if (entity.getStatus() != null && entity.getStatus() == ClassCollectionApplicationService.STATUS_APPROVED) {
+      classCollectionApplicationService.syncPersonToRoster(entity);
+    }
     TrainSignUpPeopleSelfVO vo = assembler.toVo(entity);
     assembler.enrich(vo);
     return vo;

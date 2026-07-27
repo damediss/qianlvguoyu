@@ -10,6 +10,8 @@ public class TrainInfoClassQueryReq extends PageQuery {
   private Long companyId;
   private Long workTypeId;
   private Integer companyConfirmStatus;
+  /** 班级名称关键字 */
+  private String keyword;
 
   public Long getTrainInfoId() {
     return trainInfoId;
@@ -41,5 +43,13 @@ public class TrainInfoClassQueryReq extends PageQuery {
 
   public void setCompanyConfirmStatus(Integer companyConfirmStatus) {
     this.companyConfirmStatus = companyConfirmStatus;
+  }
+
+  public String getKeyword() {
+    return keyword;
+  }
+
+  public void setKeyword(String keyword) {
+    this.keyword = keyword;
   }
 }

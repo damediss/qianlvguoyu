@@ -24,6 +24,7 @@
     "docx-preview": "^0.3.7",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.6",
+    "heic2any": "^0.0.4",
     "json-bigint": "^1.0.0",
     "pinyin-pro": "^3.28.1",
     "qrcode": "^1.5.4",

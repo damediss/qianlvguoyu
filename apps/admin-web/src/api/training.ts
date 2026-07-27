@@ -848,6 +848,7 @@ export function pageInfoClassList(params: {
   workTypeId?: number;
   trainInfoId?: number;
   companyConfirmStatus?: number;
+  keyword?: string;
 }) {
   return unwrap<TrainInfoClassPageResponse>(apiClient.get(`${BASE}/info-classes`, { params }));
 }
@@ -864,20 +865,36 @@ export function companyRejectInfoClass(id: number, reason: string) {
   );
 }
 
+export function ensureClassCollection(classId: number | string) {
+  return unwrap<{
+    signUpId: number;
+    title?: string;
+    trainClassId?: number;
+    trainInfoId?: number;
+    collectionSource?: string;
+    seeded?: number;
+    profile_total?: number;
+    profile_approved?: number;
+    profile_pending?: number;
+    profile_ready?: boolean;
+    roster_count?: number;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/ensure-collection`));
+}
+
 /** 新增/编辑班级 */
 export function saveInfoClass(payload: TrainInfoClassCreateReq) {
   return unwrap<{ id: number; title: string; nums: number }>(apiClient.post(`${BASE}/info-classes/save`, payload));
 }
 
 /** 批量删除班级 */
-export function batchDeleteInfoClasses(ids: number[]) {
+export function batchDeleteInfoClasses(ids: Array<number | string>) {
   return unwrap<{ count: number }>(apiClient.post(`${BASE}/info-classes/batch-delete`, { ids }));
 }
 
 // ==================== 班级学员 ====================
 
 /** 班级学员列表 */
-export function listClassStudents(classId: number, currentPage = 1, limit = 20) {
+export function listClassStudents(classId: number | string, currentPage = 1, limit = 20) {
   return unwrap<ClassStudentPageResponse>(apiClient.get(`${BASE}/class-student-list`, { params: { classId, currentPage, limit } }));
 }
 
@@ -887,29 +904,31 @@ export function saveClassStudent(params: Record<string, unknown>) {
 }
 
 /** 批量删除学员 */
-export function deleteClassStudents(studentIds: number[]) {
+export function deleteClassStudents(studentIds: Array<number | string>) {
   return unwrap<{ count: number }>(apiClient.post(`${BASE}/class-student-del`, { studentIds }));
 }
 
 /** 可导入报名人员 */
-export function listSignUpSelf(traininfoId: number, keyword?: string) {
-  return unwrap<{ lists: SignUpPerson[] }>(apiClient.get(`${BASE}/sign-up-self-list`, { params: { traininfoId, keyword } }));
+export function listSignUpSelf(traininfoId: number | string, keyword?: string, classId?: number | string) {
+  return unwrap<{ lists: SignUpPerson[]; signUpId?: number; collectionSource?: string }>(
+    apiClient.get(`${BASE}/sign-up-self-list`, { params: { traininfoId, keyword, classId } }),
+  );
 }
 
 /** 从报名导入学员 */
-export function importStudents(params: { traininfoId: number; classId: number; studentIds: number[] }) {
+export function importStudents(params: { traininfoId: number | string; classId: number | string; studentIds: Array<number | string> }) {
   return unwrap<{ count: number; failed: { id: number; reason: string }[] }>(apiClient.post(`${BASE}/class-student-import`, params));
 }
 
 /** 按身份证号导入学员 */
-export function importStudentsByIdCard(params: { traininfoId: number; classId: number; studentIds: string }) {
+export function importStudentsByIdCard(params: { traininfoId: number | string; classId: number | string; studentIds: string }) {
   return unwrap<{ count: number; failed: { idCard: string; reason: string }[] }>(apiClient.post(`${BASE}/class-student-import-by-idcard`, params));
 }
 
 // ==================== 教务/负责人 ====================
 
 /** 教务/负责人列表 */
-export function listClassOthers(train_info_id: number, id: number, tag: string) {
+export function listClassOthers(train_info_id: number | string, id: number | string, tag: string) {
   return unwrap<{ list: ClassOther[] }>(apiClient.get(`${BASE}/class-other`, { params: { train_info_id, id, tag } }));
 }
 
@@ -919,7 +938,7 @@ export function saveClassOther(params: Record<string, unknown>) {
 }
 
 /** 批量删除教务/负责人 */
-export function deleteClassOthers(ids: number[]) {
+export function deleteClassOthers(ids: Array<number | string>) {
   return unwrap<{ count: number }>(apiClient.post(`${BASE}/class-other-del`, { ids }));
 }
 
@@ -929,19 +948,19 @@ export function listOtherImportData(tag: string) {
 }
 
 /** 从教师库导入教务 */
-export function importOthers(params: { traininfoId: number; classId: number; tag: string; ids: number[] }) {
+export function importOthers(params: { traininfoId: number | string; classId: number | string; tag: string; ids: Array<number | string> }) {
   return unwrap<{ count: number; failed: { id: number; reason: string }[] }>(apiClient.post(`${BASE}/class-other-import`, params));
 }
 
 // ==================== 培训任务 ====================
 
 /** 班级培训任务列表 */
-export function listClassTasks(classId: number) {
+export function listClassTasks(classId: number | string) {
   return unwrap<{ list: ClassTask[] }>(apiClient.get(`${BASE}/class-task`, { params: { classId } }));
 }
 
 /** 新增/编辑培训任务 */
-export function saveClassTask(params: { id?: number; classId?: number; ck_id?: number; date?: string }) {
+export function saveClassTask(params: { id?: number | string; classId?: number | string; ck_id?: number; date?: string }) {
   return unwrap<{ id: number; ck_id: number; date: string; train_class_id: number }>(apiClient.post(`${BASE}/class-task-save`, params));
 }
 
@@ -1078,13 +1097,13 @@ export interface SignUpQrcodeResult {
   generated: boolean;
 }
 
-export function getSignUpQrcode(id: number) {
+export function getSignUpQrcode(id: number | string) {
   return unwrap<SignUpQrcodeResult>(
     apiClient.get(`${BASE}/sign-ups/${id}/qrcode`)
   );
 }
 
-export function generateSignUpQrcode(id: number) {
+export function generateSignUpQrcode(id: number | string) {
   return unwrap<SignUpQrcodeResult>(
     apiClient.get(`${BASE}/sign-ups/${id}/qrcode`, { params: { generate: true } })
   );
@@ -1098,7 +1117,7 @@ export function batchUpdateSignUpPeople(payload: { ids: number[]; field: string;
   return unwrap<number>(apiClient.put(`${BASE}/sign-up-people/batch`, payload));
 }
 
-export async function exportSignUpPeople(signUpId: number, ids?: number[]) {
+export async function exportSignUpPeople(signUpId: number | string, ids?: number[]) {
   const response = await apiClient.get(`${BASE}/sign-up-people/export`, {
     params: { signUpId, ids: ids?.length ? ids.join(',') : undefined },
     responseType: 'blob',
@@ -1120,7 +1139,7 @@ export function updateSignUpPerson(id: number, payload: Partial<TrainSignUpPerso
   return unwrap<TrainSignUpPerson>(apiClient.put(`${BASE}/sign-up-people/${id}`, payload));
 }
 
-export function importSignUpPeople(signUpId: number, file: File) {
+export function importSignUpPeople(signUpId: number | string, file: File) {
   const formData = new FormData();
   formData.append('signUpId', String(signUpId));
   formData.append('file', file);
@@ -1131,7 +1150,7 @@ export function downloadSignUpPeopleImportTemplate() {
   return fetchFileBlob(`${BASE}/sign-up-people/import/template`);
 }
 
-export function importSignUpStudents(signUpId: number, ids: number[]) {
+export function importSignUpStudents(signUpId: number | string, ids: number[]) {
   return unwrap<SignUpPeopleImportResult>(
     apiClient.post(`${BASE}/sign-up-people/import/students`, { signUpId, ids }),
   );

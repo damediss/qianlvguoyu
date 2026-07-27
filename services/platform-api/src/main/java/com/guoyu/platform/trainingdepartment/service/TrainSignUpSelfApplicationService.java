@@ -50,6 +50,18 @@ public class TrainSignUpSelfApplicationService {
     if (req.getTrainInfoId() != null) {
       wrapper.eq(TrainSignUpSelfEntity::getTrainInfoId, req.getTrainInfoId());
     }
+    if (req.getClassId() != null) {
+      wrapper.eq(TrainSignUpSelfEntity::getTrainClassId, req.getClassId())
+          .eq(TrainSignUpSelfEntity::getCollectionSource, ClassCollectionApplicationService.SOURCE_CLASS_PREP);
+    } else if (StringUtils.hasText(req.getCollectionSource())) {
+      wrapper.eq(TrainSignUpSelfEntity::getCollectionSource, req.getCollectionSource().trim());
+    } else {
+      // 旧报名计划 CRUD：排除调研/按班收集
+      wrapper.and(w -> w
+          .eq(TrainSignUpSelfEntity::getCollectionSource, "train_info")
+          .or()
+          .isNull(TrainSignUpSelfEntity::getCollectionSource));
+    }
     if (StringUtils.hasText(req.getKeyword())) {
       wrapper.like(TrainSignUpSelfEntity::getTitle, req.getKeyword());
     }
@@ -76,6 +88,7 @@ public class TrainSignUpSelfApplicationService {
     entity.setExamTime(req.getExamTime().trim());
     entity.setOrgId(req.getOrgId());
     entity.setTrainInfoId(normalizeTrainInfoId(req.getTrainInfoId()));
+    entity.setCollectionSource("train_info");
     entity.setSortNumber(req.getSortNumber() != null ? req.getSortNumber() : 0);
     entity.setDeleted(0);
     entity.setCreateTime(LocalDateTime.now());
@@ -155,10 +168,15 @@ public class TrainSignUpSelfApplicationService {
     if (normalized == null) {
       return;
     }
+    // 仅约束旧 train_info 信息收集；class_prep / research 可共享同一 train_info
     LambdaQueryWrapper<TrainSignUpSelfEntity> wrapper = new LambdaQueryWrapper<TrainSignUpSelfEntity>()
         .eq(TrainSignUpSelfEntity::getDeleted, 0)
         .eq(TrainSignUpSelfEntity::getTenantId, tenantId)
-        .eq(TrainSignUpSelfEntity::getTrainInfoId, normalized);
+        .eq(TrainSignUpSelfEntity::getTrainInfoId, normalized)
+        .and(w -> w
+            .eq(TrainSignUpSelfEntity::getCollectionSource, "train_info")
+            .or()
+            .isNull(TrainSignUpSelfEntity::getCollectionSource));
     if (excludeId != null) {
       wrapper.ne(TrainSignUpSelfEntity::getId, excludeId);
     }
@@ -187,6 +205,8 @@ public class TrainSignUpSelfApplicationService {
         e.getExamTime(),
         e.getOrgId(),
         e.getTrainInfoId(),
+        e.getTrainClassId(),
+        e.getCollectionSource(),
         e.getSortNumber(),
         e.getTenantId(),
         e.getCreateTime(),

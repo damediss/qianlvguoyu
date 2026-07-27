@@ -551,7 +551,9 @@ export function TrainingInformationPage() {
         status: peopleStatus,
       });
       setDefaultExportTitle(`当前进度：${res.jindu}`);
+      let pollCount = 0;
       defaultExportTimerRef.current = window.setInterval(async () => {
+        pollCount += 1;
         try {
           const check = await trainApi.checkDefaultTemplateExport({
             signUpId: activeSignUp.id,
@@ -564,17 +566,23 @@ export function TrainingInformationPage() {
               defaultExportTimerRef.current = null;
             }
             setDefaultExportTitle('导出成功');
-            setDefaultExportUrl(check.url);
-            window.open(check.url, '_blank');
+            const downloadUrl = toProxiedCdnUrl(check.url);
+            setDefaultExportUrl(downloadUrl);
+            window.open(downloadUrl, '_blank');
             queryClient.invalidateQueries({ queryKey: ['sign-up-collection'] });
-          } else if (check.jindu) {
-            setDefaultExportTitle(`当前进度：${check.jindu}`);
           } else if (check.error) {
             if (defaultExportTimerRef.current != null) {
               window.clearInterval(defaultExportTimerRef.current);
               defaultExportTimerRef.current = null;
             }
             setDefaultExportTitle(`导出失败，${check.msg ?? ''}`);
+          } else if (check.jindu) {
+            setDefaultExportTitle(`当前进度：${check.jindu}`);
+          }
+          if (pollCount >= 180 && defaultExportTimerRef.current != null) {
+            window.clearInterval(defaultExportTimerRef.current);
+            defaultExportTimerRef.current = null;
+            setDefaultExportTitle('导出超时，请稍后重试');
           }
         } catch {
           if (defaultExportTimerRef.current != null) {

@@ -48,6 +48,7 @@ public class TrainSignUpCollectionApplicationService {
   private final TrainingWxMiniQrcodeClient wxMiniQrcodeClient;
   private final QrCodeGenerationService qrCodeGenerationService;
   private final SignUpSelfFilesResolver filesResolver;
+  private final ClassCollectionApplicationService classCollectionApplicationService;
   private final String cdnPath;
   private final String cdnUrl;
   private final String appBaseUrl;
@@ -60,6 +61,7 @@ public class TrainSignUpCollectionApplicationService {
       TrainingWxMiniQrcodeClient wxMiniQrcodeClient,
       QrCodeGenerationService qrCodeGenerationService,
       SignUpSelfFilesResolver filesResolver,
+      ClassCollectionApplicationService classCollectionApplicationService,
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
       @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl,
       @Value("${platform.app-base-url:http://localhost:8080}") String appBaseUrl) {
@@ -70,6 +72,7 @@ public class TrainSignUpCollectionApplicationService {
     this.wxMiniQrcodeClient = wxMiniQrcodeClient;
     this.qrCodeGenerationService = qrCodeGenerationService;
     this.filesResolver = filesResolver;
+    this.classCollectionApplicationService = classCollectionApplicationService;
     this.cdnPath = cdnPath;
     this.cdnUrl = cdnUrl.endsWith("/") ? cdnUrl.substring(0, cdnUrl.length() - 1) : cdnUrl;
     this.appBaseUrl = appBaseUrl.endsWith("/") ? appBaseUrl.substring(0, appBaseUrl.length() - 1) : appBaseUrl;
@@ -86,6 +89,18 @@ public class TrainSignUpCollectionApplicationService {
     Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getOrgId());
     if (companyFilter != null) {
       wrapper.eq(TrainSignUpSelfEntity::getOrgId, companyFilter);
+    }
+    if (req.getClassId() != null) {
+      wrapper.eq(TrainSignUpSelfEntity::getTrainClassId, req.getClassId())
+          .eq(TrainSignUpSelfEntity::getCollectionSource, ClassCollectionApplicationService.SOURCE_CLASS_PREP);
+    } else if (StringUtils.hasText(req.getCollectionSource())) {
+      wrapper.eq(TrainSignUpSelfEntity::getCollectionSource, req.getCollectionSource().trim());
+    } else {
+      // 旧「信息收集」列表：不含调研与按班收集
+      wrapper.and(w -> w
+          .eq(TrainSignUpSelfEntity::getCollectionSource, "train_info")
+          .or()
+          .isNull(TrainSignUpSelfEntity::getCollectionSource));
     }
     if (req.getTrainInfoId() != null) {
       wrapper.eq(TrainSignUpSelfEntity::getTrainInfoId, req.getTrainInfoId());
@@ -172,7 +187,11 @@ public class TrainSignUpCollectionApplicationService {
       wrapper.set(TrainSignUpPeopleSelfEntity::getDeleted, 1);
     }
     wrapper.set(TrainSignUpPeopleSelfEntity::getUpdateTime, LocalDateTime.now());
-    return peopleMapper.update(null, wrapper);
+    int updated = peopleMapper.update(null, wrapper);
+    if ("status".equals(field) && value != null && value == ClassCollectionApplicationService.STATUS_APPROVED) {
+      classCollectionApplicationService.syncApprovedPeopleToRoster(ids);
+    }
+    return updated;
   }
 
   @Transactional(readOnly = true)
