@@ -41,6 +41,7 @@ import {
   importExamDetails,
   exportExamDetails,
 } from '../../api/exam';
+import { parseContentDispositionFilename } from '../../utils/download';
 import { useAuthStore } from '../../stores/authStore';
 import type {
   ExamKnowledgeStructure,
@@ -526,13 +527,7 @@ export function QuestionBankPage() {
       const blob = new Blob([resp.data], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
-      // Extract filename from Content-Disposition header
-      const disposition = resp.headers['content-disposition'];
-      let filename = '题库导出.xlsx';
-      if (disposition) {
-        const match = disposition.match(/filename\*?=(?:UTF-8'')?([^;\n]+)/i);
-        if (match) filename = decodeURIComponent(match[1]);
-      }
+      const filename = parseContentDispositionFilename(resp) || '命题导出.xlsx';
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;

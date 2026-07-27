@@ -2,6 +2,8 @@ package com.guoyu.platform.exam.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
@@ -23,11 +25,14 @@ import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.UserMapper;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -38,8 +43,11 @@ import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.jsoup.Jsoup;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -49,12 +57,19 @@ import org.springframework.web.multipart.MultipartFile;
 @Slf4j
 public class ExamExamDetailApplicationService {
 
+  private static final String PROPOSITION_TEMPLATE = "template/试题导入模板-命题.xlsx";
+  /** 命题模板答案区起始列（G 列，0-based） */
+  private static final int PROPOSITION_ANSWER_START_COL = 6;
+  /** 最多横向展开的选项列数（G 起） */
+  private static final int PROPOSITION_MAX_CHOICE_OPTIONS = 8;
+
   private final ExamExamDetailMapper mapper;
   private final ExamKnowledgeStructureMapper knowledgeMapper;
   private final ExamCourseMapper courseMapper;
   private final ExamWorkTypeMapper workTypeMapper;
   private final UserMapper userMapper;
   private final ExamKnowledgeStructureApplicationService knowledgeService;
+  private final ObjectMapper objectMapper;
 
   public ExamExamDetailApplicationService(
       ExamExamDetailMapper mapper,
@@ -62,13 +77,15 @@ public class ExamExamDetailApplicationService {
       ExamCourseMapper courseMapper,
       ExamWorkTypeMapper workTypeMapper,
       UserMapper userMapper,
-      ExamKnowledgeStructureApplicationService knowledgeService) {
+      ExamKnowledgeStructureApplicationService knowledgeService,
+      ObjectMapper objectMapper) {
     this.mapper = mapper;
     this.knowledgeMapper = knowledgeMapper;
     this.courseMapper = courseMapper;
     this.workTypeMapper = workTypeMapper;
     this.userMapper = userMapper;
     this.knowledgeService = knowledgeService;
+    this.objectMapper = objectMapper;
   }
 
   @Transactional(readOnly = true)
@@ -485,7 +502,7 @@ public class ExamExamDetailApplicationService {
     return entities.size();
   }
 
-  // ── Export to Excel ──
+  // ── Export to Excel (命题模板) ──
   @Transactional(readOnly = true)
   public ExportResultDTO exportByCourse(Integer courseId) {
     Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
@@ -506,67 +523,358 @@ public class ExamExamDetailApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "该科目下无试题数据");
     }
 
-    // Load knowledge title map for knowledge column
+    ExamCourseEntity course = courseMapper.selectById(courseId);
     Set<Integer> kIds = records.stream()
         .map(ExamExamDetailEntity::getKnowledgeId)
         .filter(kid -> kid != null && kid > 0)
         .collect(Collectors.toSet());
-    Map<Integer, String> knowledgeTitleMap = buildKnowledgePaths(tenantId, kIds);
+    Map<Integer, ExamKnowledgeStructureEntity> knowledgeMap = kIds.isEmpty()
+        ? Map.of()
+        : knowledgeMapper.selectBatchIds(kIds.stream().toList()).stream()
+            .collect(Collectors.toMap(ExamKnowledgeStructureEntity::getId, e -> e, (a, b) -> a));
 
-    try (Workbook workbook = new XSSFWorkbook()) {
-      Sheet sheet = workbook.createSheet("试题");
-
-      // Header row
-      Row header = sheet.createRow(0);
-      String[] headers = {"题型", "题干", "选项A", "选项B", "选项C", "选项D",
-          "答案", "解析", "难度", "关键词", "知识点"};
-      for (int i = 0; i < headers.length; i++) {
-        header.createCell(i).setCellValue(headers[i]);
-      }
+    try (InputStream in = openPropositionTemplate();
+        Workbook workbook = WorkbookFactory.create(in);
+        ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+      Sheet sheet = workbook.getSheetAt(0);
+      clearRowsFrom(sheet, 1);
 
       int rowIdx = 1;
       for (ExamExamDetailEntity entity : records) {
-        Row row = sheet.createRow(rowIdx++);
-        row.createCell(0).setCellValue(mapTypeCode(entity.getType()));
-
-        // Split content into stem + options
-        String[] parts = splitContent(entity.getContent());
-        row.createCell(1).setCellValue(parts[0]);
-        if (parts.length > 1) row.createCell(2).setCellValue(parts[1]);
-        if (parts.length > 2) row.createCell(3).setCellValue(parts[2]);
-        if (parts.length > 3) row.createCell(4).setCellValue(parts[3]);
-        if (parts.length > 4) row.createCell(5).setCellValue(parts[4]);
-
-        row.createCell(6).setCellValue(nvl(entity.getAnswer()));
-        row.createCell(7).setCellValue(nvl(entity.getResolve()));
-        row.createCell(8).setCellValue(mapDifficultyLabel(entity.getDifficulty()));
-        row.createCell(9).setCellValue(nvl(entity.getKeyword()));
-
-        String kTitle = entity.getKnowledgeId() != null
-            ? knowledgeTitleMap.getOrDefault(entity.getKnowledgeId(), "") : "";
-        row.createCell(10).setCellValue(kTitle);
+        List<Integer> correctIndices = writePropositionQuestionRow(
+            sheet, rowIdx, entity, course, knowledgeMap);
+        rowIdx++;
+        if (needsAnswerMarkerRow(entity.getType())) {
+          writePropositionAnswerMarkerRow(sheet, rowIdx, correctIndices);
+          rowIdx++;
+        }
       }
 
-      ByteArrayOutputStream out = new ByteArrayOutputStream();
       workbook.write(out);
-      byte[] data = out.toByteArray();
-      String filename = buildExportFilename(courseId, records.get(0).getType());
-      return new ExportResultDTO(data, filename);
+      return new ExportResultDTO(out.toByteArray(), buildPropositionFilename(course));
+    } catch (BusinessException e) {
+      throw e;
     } catch (IOException e) {
-      log.error("Failed to generate Excel", e);
+      log.error("Failed to generate proposition Excel", e);
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "Excel 文件生成失败: " + e.getMessage());
     }
   }
 
-  private String buildExportFilename(Integer courseId, String type) {
-    String courseTitle = "题库";
-    if (courseId != null) {
-      ExamCourseEntity course = courseMapper.selectById(courseId);
-      if (course != null) courseTitle = course.getTitle();
+  private InputStream openPropositionTemplate() {
+    ClassPathResource resource = new ClassPathResource(PROPOSITION_TEMPLATE);
+    if (!resource.exists()) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "命题导出模板不存在");
     }
-    String typeLabel = mapTypeCode(type);
+    try {
+      return resource.getInputStream();
+    } catch (IOException e) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "命题导出模板读取失败");
+    }
+  }
+
+  private void clearRowsFrom(Sheet sheet, int startRow) {
+    int lastRow = sheet.getLastRowNum();
+    for (int r = startRow; r <= lastRow; r++) {
+      Row row = sheet.getRow(r);
+      if (row == null) {
+        continue;
+      }
+      for (int c = 0; c <= row.getLastCellNum(); c++) {
+        Cell cell = row.getCell(c);
+        if (cell != null) {
+          cell.setBlank();
+        }
+      }
+    }
+  }
+
+  /**
+   * SaaS 题型码 → 命题模板数字码。
+   * 库中实际存英文码（single/multi/judge…），导入兼容拼音码（danxuan/pandan…）。
+   */
+  private Integer mapTypeToPropositionCode(String type) {
+    if (type == null) {
+      return null;
+    }
+    return switch (type.trim()) {
+      case "judge", "pandan" -> 1;
+      case "single", "danxuan" -> 2;
+      case "fill", "tiankong" -> 3;
+      case "short", "jianda" -> 4;
+      case "compute" -> 5;
+      case "essay", "lunshu", "composite" -> 6;
+      case "multi", "duoxuan" -> 7;
+      case "name" -> 8;
+      case "drawing", "drawing2" -> 9;
+      case "case", "anli" -> 10;
+      default -> null;
+    };
+  }
+
+  private String mapDifficultyToPropositionLabel(Integer difficulty) {
+    if (difficulty == null) {
+      return "中";
+    }
+    return switch (difficulty) {
+      case 1 -> "易";
+      case 3 -> "难";
+      default -> "中";
+    };
+  }
+
+  private String resolveKnowledgeSeriesNo(
+      Integer knowledgeId, Map<Integer, ExamKnowledgeStructureEntity> knowledgeMap) {
+    if (knowledgeId == null || knowledgeId <= 0) {
+      return "";
+    }
+    ExamKnowledgeStructureEntity ks = knowledgeMap.get(knowledgeId);
+    if (ks == null || !StringUtils.hasText(ks.getSeriesNo())) {
+      return "";
+    }
+    return ks.getSeriesNo().trim();
+  }
+
+  private boolean needsAnswerMarkerRow(String type) {
+    if (type == null) {
+      return false;
+    }
+    return switch (type.trim()) {
+      case "judge", "pandan", "single", "danxuan", "multi", "duoxuan" -> true;
+      default -> false;
+    };
+  }
+
+  /**
+   * 写入命题模板题目行，返回正确选项索引（0-based，相对 G 列）。
+   */
+  private List<Integer> writePropositionQuestionRow(
+      Sheet sheet,
+      int rowIdx,
+      ExamExamDetailEntity entity,
+      ExamCourseEntity course,
+      Map<Integer, ExamKnowledgeStructureEntity> knowledgeMap) {
+    Row row = sheet.getRow(rowIdx);
+    if (row == null) {
+      row = sheet.createRow(rowIdx);
+    }
+
+    setCellString(row, 0, resolveKnowledgeSeriesNo(entity.getKnowledgeId(), knowledgeMap));
+    if (course != null && course.getLevel() != null) {
+      setCellNumeric(row, 1, course.getLevel());
+    }
+
+    Integer typeCode = mapTypeToPropositionCode(entity.getType());
+    if (typeCode == null) {
+      log.warn("Proposition export: unknown type '{}' for exam detail id={}",
+          entity.getType(), entity.getId());
+    } else {
+      setCellNumeric(row, 2, typeCode);
+    }
+
+    String[] parts = splitContent(stripHtml(entity.getContent()));
+    setCellString(row, 3, parts[0]);
+    setCellString(row, 4, mapDifficultyToPropositionLabel(entity.getDifficulty()));
+
+    BigDecimal score = entity.getScore();
+    if (score != null) {
+      setCellNumeric(row, 5, score.doubleValue());
+    }
+
+    return writePropositionAnswerCells(row, entity.getType(), parts, entity.getAnswer());
+  }
+
+  private List<Integer> writePropositionAnswerCells(
+      Row row, String type, String[] parts, String answer) {
+    String normalized = type != null ? type.trim() : "";
+
+    // 优先解析 answer JSON 选项数组：[{content, isCorrect, score}, ...]
+    List<Map<String, Object>> jsonOptions = parseAnswerOptionsJson(answer);
+    if (!jsonOptions.isEmpty()) {
+      List<Integer> correctIndices = new ArrayList<>();
+      int limit = Math.min(jsonOptions.size(), PROPOSITION_MAX_CHOICE_OPTIONS);
+      for (int i = 0; i < limit; i++) {
+        Map<String, Object> opt = jsonOptions.get(i);
+        setCellString(row, PROPOSITION_ANSWER_START_COL + i, optionContentText(opt.get("content")));
+        if (isOptionCorrect(opt.get("isCorrect"))) {
+          correctIndices.add(i);
+        }
+      }
+      return correctIndices;
+    }
+
+    if ("judge".equals(normalized) || "pandan".equals(normalized)) {
+      String judgment = resolveJudgmentAnswer(answer);
+      setCellString(row, PROPOSITION_ANSWER_START_COL, judgment);
+      return List.of(0);
+    }
+    if ("single".equals(normalized) || "danxuan".equals(normalized)
+        || "multi".equals(normalized) || "duoxuan".equals(normalized)) {
+      // 兼容旧格式：content 中 A./B./C./D. 拆分 + answer 字母/数字
+      List<Integer> correctIndices = parseChoiceAnswerIndices(answer);
+      boolean wroteAny = false;
+      for (int i = 0; i < PROPOSITION_MAX_CHOICE_OPTIONS; i++) {
+        String optionText = parts.length > i + 1 ? nvl(parts[i + 1]) : "";
+        if (!StringUtils.hasText(optionText)) {
+          continue;
+        }
+        setCellString(row, PROPOSITION_ANSWER_START_COL + i, optionText);
+        wroteAny = true;
+      }
+      if (!wroteAny && StringUtils.hasText(answer)) {
+        setCellString(row, PROPOSITION_ANSWER_START_COL, answer);
+      }
+      return correctIndices;
+    }
+    setCellString(row, PROPOSITION_ANSWER_START_COL, nvl(answer));
+    return List.of();
+  }
+
+  private List<Map<String, Object>> parseAnswerOptionsJson(String answerJson) {
+    if (!StringUtils.hasText(answerJson)) {
+      return List.of();
+    }
+    String trimmed = answerJson.trim();
+    if (!trimmed.startsWith("[")) {
+      return List.of();
+    }
+    try {
+      List<Map<String, Object>> options = objectMapper.readValue(
+          trimmed, new TypeReference<List<Map<String, Object>>>() {});
+      return options != null ? options : List.of();
+    } catch (Exception e) {
+      log.debug("answer is not options JSON, fallback. err={}", e.getMessage());
+      return List.of();
+    }
+  }
+
+  private String optionContentText(Object content) {
+    if (content == null) {
+      return "";
+    }
+    if (content instanceof Number n) {
+      // 避免 85.0 这类浮点尾巴；整数写整数字符串
+      if (n instanceof Double d && d == Math.rint(d)) {
+        return String.valueOf(d.longValue());
+      }
+      if (n instanceof Float f && f == Math.rint(f)) {
+        return String.valueOf(f.longValue());
+      }
+      return String.valueOf(content);
+    }
+    return stripHtml(String.valueOf(content));
+  }
+
+  private String stripHtml(String html) {
+    if (!StringUtils.hasText(html)) {
+      return "";
+    }
+    return Jsoup.parse(html).text().trim();
+  }
+
+  private boolean isOptionCorrect(Object isCorrect) {
+    if (isCorrect instanceof Boolean b) {
+      return b;
+    }
+    if (isCorrect instanceof Number n) {
+      return n.intValue() != 0;
+    }
+    if (isCorrect == null) {
+      return false;
+    }
+    String s = String.valueOf(isCorrect).trim();
+    return "true".equalsIgnoreCase(s) || "1".equals(s) || "是".equals(s);
+  }
+
+  private void writePropositionAnswerMarkerRow(
+      Sheet sheet, int rowIdx, List<Integer> correctIndices) {
+    if (correctIndices == null || correctIndices.isEmpty()) {
+      return;
+    }
+    Row row = sheet.getRow(rowIdx);
+    if (row == null) {
+      row = sheet.createRow(rowIdx);
+    }
+    for (Integer idx : correctIndices) {
+      if (idx != null && idx >= 0 && idx < PROPOSITION_MAX_CHOICE_OPTIONS) {
+        setCellString(row, PROPOSITION_ANSWER_START_COL + idx, "是");
+      }
+    }
+  }
+
+  private String resolveJudgmentAnswer(String answer) {
+    if (!StringUtils.hasText(answer)) {
+      return "";
+    }
+    String normalized = answer.trim().toUpperCase();
+    if ("A".equals(normalized) || "对".equals(normalized) || "正确".equals(normalized)
+        || "是".equals(normalized) || "TRUE".equals(normalized) || "T".equals(normalized)
+        || "1".equals(normalized)) {
+      return "对";
+    }
+    if ("B".equals(normalized) || "错".equals(normalized) || "错误".equals(normalized)
+        || "否".equals(normalized) || "FALSE".equals(normalized) || "F".equals(normalized)
+        || "0".equals(normalized)) {
+      return "错";
+    }
+    return answer.trim();
+  }
+
+  private List<Integer> parseChoiceAnswerIndices(String answer) {
+    if (!StringUtils.hasText(answer)) {
+      return List.of();
+    }
+    Set<Integer> indices = new LinkedHashSet<>();
+    String normalized = answer.trim().toUpperCase();
+    for (char c : normalized.toCharArray()) {
+      if (c >= 'A' && c <= 'H') {
+        indices.add(c - 'A');
+      } else if (c >= '1' && c <= '8') {
+        indices.add(c - '1');
+      }
+    }
+    if (!indices.isEmpty()) {
+      return new ArrayList<>(indices);
+    }
+    for (String token : normalized.split("[,，、\\s]+")) {
+      if (token.isBlank()) {
+        continue;
+      }
+      if (token.length() == 1) {
+        char c = token.charAt(0);
+        if (c >= 'A' && c <= 'H') {
+          indices.add(c - 'A');
+        } else if (c >= '1' && c <= '8') {
+          indices.add(c - '1');
+        }
+      }
+    }
+    return new ArrayList<>(indices);
+  }
+
+  private String buildPropositionFilename(ExamCourseEntity course) {
+    String courseTitle = course != null && StringUtils.hasText(course.getTitle())
+        ? course.getTitle() : "题库";
     String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
-    return courseTitle + "_" + typeLabel + "_" + ts + ".xlsx";
+    return courseTitle + "_命题导出_" + ts + ".xlsx";
+  }
+
+  private void setCellString(Row row, int col, String value) {
+    if (!StringUtils.hasText(value)) {
+      return;
+    }
+    Cell cell = row.getCell(col);
+    if (cell == null) {
+      cell = row.createCell(col);
+    }
+    cell.setCellValue(value);
+  }
+
+  private void setCellNumeric(Row row, int col, double value) {
+    Cell cell = row.getCell(col);
+    if (cell == null) {
+      cell = row.createCell(col);
+    }
+    cell.setCellValue(value);
   }
 
   // ── Excel helper methods ──
@@ -585,20 +893,6 @@ public class ExamExamDetailApplicationService {
     };
   }
 
-  private String mapTypeCode(String code) {
-    if (code == null) return "未知";
-    return switch (code) {
-      case "danxuan" -> "单选题";
-      case "duoxuan" -> "多选题";
-      case "pandan" -> "判断题";
-      case "tiankong" -> "填空题";
-      case "jianda" -> "简答题";
-      case "lunshu" -> "论述题";
-      case "anli" -> "案例分析题";
-      default -> code;
-    };
-  }
-
   private Integer parseDifficulty(String s) {
     if (s == null || s.isBlank()) return 2;
     return switch (s.trim()) {
@@ -609,15 +903,6 @@ public class ExamExamDetailApplicationService {
         try { yield Integer.parseInt(s.trim()); }
         catch (NumberFormatException e) { yield 2; }
       }
-    };
-  }
-
-  private String mapDifficultyLabel(Integer difficulty) {
-    if (difficulty == null) return "中等";
-    return switch (difficulty) {
-      case 1 -> "简单";
-      case 3 -> "困难";
-      default -> "中等";
     };
   }
 

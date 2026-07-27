@@ -12,11 +12,11 @@ import com.guoyu.platform.exam.vo.ExportResultDTO;
 import jakarta.validation.Valid;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.InputStreamResource;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -112,10 +112,11 @@ public class ExamExamDetailController {
     log.info("GET /exam/exam-details/export courseId={}", courseId);
     ExportResultDTO result = service.exportByCourse(courseId);
     InputStreamResource resource = new InputStreamResource(new ByteArrayInputStream(result.data()));
+    // 使用 RFC 5987 filename*，避免 Spring ContentDisposition 生成 =?UTF-8?Q?...?=
+    // 导致前端无法正确解析中文文件名
+    String encodedName = URLEncoder.encode(result.filename(), StandardCharsets.UTF_8).replace("+", "%20");
     return ResponseEntity.ok()
-        .header(HttpHeaders.CONTENT_DISPOSITION,
-            ContentDisposition.attachment()
-                .filename(result.filename(), StandardCharsets.UTF_8).build().toString())
+        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" + encodedName)
         .contentType(MediaType.parseMediaType(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
         .body(resource);
