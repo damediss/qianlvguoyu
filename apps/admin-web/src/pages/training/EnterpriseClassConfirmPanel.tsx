@@ -516,7 +516,7 @@ export function EnterpriseClassConfirmPanel() {
               icon={<CheckOutlined />}
               loading={actionLoading}
               onClick={() => runLegacyAction(
-                () => trainApi.companyConfirmInfoClass(currentClass!.id),
+                () => trainApi.companyConfirmInfoClass(Number(currentClass!.id)),
                 '已确认分班',
               )}
             >
@@ -580,7 +580,7 @@ export function EnterpriseClassConfirmPanel() {
             );
           } else if (currentClass) {
             await runLegacyAction(
-              () => trainApi.companyRejectInfoClass(currentClass.id, rejectReason.trim()),
+              () => trainApi.companyRejectInfoClass(Number(currentClass.id), rejectReason.trim()),
               '已驳回',
             );
             setLegacyDetailOpen(false);

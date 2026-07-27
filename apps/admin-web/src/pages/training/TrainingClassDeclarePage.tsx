@@ -289,7 +289,7 @@ export function TrainingClassDeclarePage() {
   const createFile = async (row: TrainInfoClassListItem) => {
     setGenerating(true);
     try {
-      const res = await trainApi.generateMaterials(row.id);
+      const res = await trainApi.generateMaterials(Number(row.id));
       if (res?.downUrl) {
         await downloadUrlFile(res.downUrl, `${row.title || '班级'}_申报材料.zip`);
         message.success('材料已生成');
@@ -304,7 +304,7 @@ export function TrainingClassDeclarePage() {
   };
 
   const manageFile = (row: TrainInfoClassListItem) => {
-    setClassId(row.id);
+    setClassId(Number(row.id));
     const ids = parseFileTempIds(row.file_temps);
     loadFileTemps(ids, true);
     setClassMaterialOpen(true);

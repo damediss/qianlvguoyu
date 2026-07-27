@@ -259,7 +259,7 @@ export function ClassSignUpPeoplePanel({ signUpId, title, onChanged }: ClassSign
     }, 1000);
     try {
       const start = await trainApi.startDefaultTemplateExport({
-        signUpId,
+        signUpId: Number(signUpId),
         ids: selectedPeopleIds.length ? selectedPeopleIds : undefined,
       });
       const taskId = start.taskId;
@@ -271,7 +271,7 @@ export function ClassSignUpPeoplePanel({ signUpId, title, onChanged }: ClassSign
       for (let i = 0; i < 90; i++) {
         await new Promise((r) => setTimeout(r, 2000));
         const check = await trainApi.checkDefaultTemplateExport({
-          signUpId,
+          signUpId: Number(signUpId),
           taskId: Number(taskId),
         });
         if (check.url) {
