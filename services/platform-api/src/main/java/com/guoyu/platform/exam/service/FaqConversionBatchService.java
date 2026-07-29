@@ -138,6 +138,19 @@ public class FaqConversionBatchService {
     log.info("FAQ 转换批次已恢复：batchId={}", batchId);
   }
 
+  /** 确保批次为运行中（非 running 时直接置为 running，用于 retryFailed） */
+  @Transactional
+  public void ensureRunning(Long tenantId, Long batchId) {
+    ExamFaqConversionBatchEntity entity = getBatchEntity(tenantId, batchId);
+    if (!STATUS_RUNNING.equals(entity.getStatus())) {
+      String oldStatus = entity.getStatus();
+      entity.setStatus(STATUS_RUNNING);
+      entity.setUpdatedAt(LocalDateTime.now());
+      batchMapper.updateById(entity);
+      log.info("FAQ 转换批次已恢复为运行中：batchId={}, oldStatus={}", batchId, oldStatus);
+    }
+  }
+
   /** 标记批次完成 */
   @Transactional
   public void completeBatch(Long tenantId, Long batchId) {

@@ -190,68 +190,65 @@ public class FaqConversionApplicationService {
 
   /**
    * LLM 增强 — 异步执行（CompletableFuture 分块并行）。
-   * 注意：此方法在编排线程（faqConversionExecutor）中执行，不能调 SecurityContext。
+   * 注意：此方法在编排线程（faqConversionExecutor）中执行，不能调 SecurityContext；
+   * 租户上下文在编排线程整个生命周期内保持，供 MyBatis-Plus 多租户拦截器使用。
    */
   public void processLlmEnhancementAsync(Long batchId, Long tenantId, Long userId, String modelCode) {
     log.info("FAQ LLM 异步增强开始：batchId={}, tenantId={}, modelCode={}", batchId, tenantId, modelCode);
 
-    // 编排线程：一次性加载 pending 记录 + 模型配置 + 批次信息 + 知识点缓存（TenantContextHolder 仅在加载期设置）
     TenantContextHolder.setTenantId(tenantId);
-    List<ExamFaqConversionEntity> pending;
-    ExamFaqModelConfigEntity modelConfig;
-    int concurrencyLimit;
-    Map<Integer, ExamKnowledgeStructureEntity> knowledgeMap;
     try {
-      pending = loadPendingRecords(batchId);
-      modelConfig = modelConfigService.findByModelCode(tenantId, modelCode);
+      // 编排线程：一次性加载 pending 记录 + 模型配置 + 批次信息 + 知识点缓存
+      List<ExamFaqConversionEntity> pending = loadPendingRecords(batchId);
+      ExamFaqModelConfigEntity modelConfig = modelConfigService.findByModelCode(tenantId, modelCode);
       if (modelConfig == null) {
         log.error("模型配置不存在：tenantId={}, modelCode={}", tenantId, modelCode);
         return;
       }
       ExamFaqConversionBatchEntity batch = batchService.getBatchEntity(tenantId, batchId);
-      concurrencyLimit = (batch != null && batch.getConcurrencyLimit() != null)
+      int concurrencyLimit = (batch != null && batch.getConcurrencyLimit() != null)
           ? batch.getConcurrencyLimit() : 12; // 默认 12
-      knowledgeMap = loadKnowledgeMap(tenantId);
+      Map<Integer, ExamKnowledgeStructureEntity> knowledgeMap = loadKnowledgeMap(tenantId);
+
+      // 熔断器：批次级局部变量（每个批次一个实例，所有并发线程共享）
+      CircuitBreaker circuitBreaker = new CircuitBreaker(5);
+      Semaphore semaphore = new Semaphore(concurrencyLimit);
+
+      // 分块提交：chunkSize 独立于 concurrencyLimit，确保 semaphore 始终饱和。
+      // 暂停通过双重检查生效：块间检查 + 逐条检查，
+      // 排队的任务在获取许可后感知暂停立即退出，仅当前在跑的 LLM 调用跑完。
+      int chunkSize = 50;
+      for (int offset = 0; offset < pending.size(); offset += chunkSize) {
+        if (!batchService.isRunning(tenantId, batchId)) {
+          log.info("批次已暂停，停止提交新任务：batchId={}, offset={}", batchId, offset);
+          break;
+        }
+        List<ExamFaqConversionEntity> chunk = pending.subList(offset, Math.min(offset + chunkSize, pending.size()));
+        List<CompletableFuture<Void>> futures = chunk.stream()
+            .map(record -> CompletableFuture.runAsync(() -> {
+              // ⚠️ 关键：每条记录任务内部必须独立设置租户上下文（ThreadLocal 不跨线程传播）
+              TenantContextHolder.setTenantId(tenantId);
+              try {
+                // 秒级暂停响应：每条记录开头再检查一次
+                if (!batchService.isRunning(tenantId, batchId)) {
+                  return; // 记录保持 pending，resume 时续跑
+                }
+                processRecordWithPermit(record, semaphore, modelConfig, tenantId, batchId, circuitBreaker, knowledgeMap);
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+              } finally {
+                TenantContextHolder.clear();
+              }
+            }, faqRecordExecutor))
+            .toList();
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+      }
+
+      log.info("FAQ LLM 异步增强完成：batchId={}", batchId);
+      checkBatchCompletion(batchId, tenantId);
     } finally {
       TenantContextHolder.clear();
     }
-
-    // 熔断器：批次级局部变量（每个批次一个实例，所有并发线程共享）
-    CircuitBreaker circuitBreaker = new CircuitBreaker(5);
-    Semaphore semaphore = new Semaphore(concurrencyLimit);
-
-    // 分块提交：chunkSize 独立于 concurrencyLimit，确保 semaphore 始终饱和。
-    // 暂停通过双重检查生效：块间检查（line 221）+ 逐条检查（line 232），
-    // 排队的任务在获取许可后感知暂停立即退出，仅当前在跑的 LLM 调用跑完。
-    int chunkSize = 50;
-    for (int offset = 0; offset < pending.size(); offset += chunkSize) {
-      if (!batchService.isRunning(tenantId, batchId)) {
-        log.info("批次已暂停，停止提交新任务：batchId={}, offset={}", batchId, offset);
-        break;
-      }
-      List<ExamFaqConversionEntity> chunk = pending.subList(offset, Math.min(offset + chunkSize, pending.size()));
-      List<CompletableFuture<Void>> futures = chunk.stream()
-          .map(record -> CompletableFuture.runAsync(() -> {
-            // ⚠️ 关键：每条记录任务内部必须独立设置租户上下文（ThreadLocal 不跨线程传播）
-            TenantContextHolder.setTenantId(tenantId);
-            try {
-              // 秒级暂停响应：每条记录开头再检查一次
-              if (!batchService.isRunning(tenantId, batchId)) {
-                return; // 记录保持 pending，resume 时续跑
-              }
-              processRecordWithPermit(record, semaphore, modelConfig, tenantId, batchId, circuitBreaker, knowledgeMap);
-            } catch (InterruptedException e) {
-              Thread.currentThread().interrupt();
-            } finally {
-              TenantContextHolder.clear();
-            }
-          }, faqRecordExecutor))
-          .toList();
-      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-    }
-
-    log.info("FAQ LLM 异步增强完成：batchId={}", batchId);
-    checkBatchCompletion(batchId, tenantId);
   }
 
   /**
@@ -576,7 +573,7 @@ public class FaqConversionApplicationService {
   }
 
   /**
-   * 重试失败记录：重置 failed → pending + 重新启动异步处理。
+   * 重试失败记录：恢复批次 → 重置 failed → pending → 重新启动异步处理。
    *
    * <p>性能优化：批量 UPDATE + 批量计数器调整，将 ~839 次 DB 操作压缩为 3 次，
    * 避免 25 秒前端超时（279 条记录场景下原耗时 ~43 秒）。
@@ -593,7 +590,10 @@ public class FaqConversionApplicationService {
       return;
     }
 
-    // 1. 批量 UPDATE：一条 SQL 将所有 failed 重置为 pending
+    // 1. 先恢复批次为 running，否则异步启动后会因状态 paused 立即退出
+    batchService.ensureRunning(tenantId, batchId);
+
+    // 2. 批量 UPDATE：一条 SQL 将所有 failed 重置为 pending
     faqConversionMapper.update(null, new LambdaUpdateWrapper<ExamFaqConversionEntity>()
         .eq(ExamFaqConversionEntity::getTenantId, tenantId)
         .eq(ExamFaqConversionEntity::getBatchId, batchId)
@@ -602,7 +602,7 @@ public class FaqConversionApplicationService {
         .set(ExamFaqConversionEntity::getErrorMessage, null)
         .set(ExamFaqConversionEntity::getUpdatedAt, LocalDateTime.now()));
 
-    // 2. 计数器一次性调整（failedCount -= count, pendingCount += count）
+    // 3. 计数器一次性调整（failedCount -= count, pendingCount += count）
     int count = failedRecords.size();
     batchService.decrementFailedBy(batchId, count);
     batchService.incrementPendingBy(batchId, count);
