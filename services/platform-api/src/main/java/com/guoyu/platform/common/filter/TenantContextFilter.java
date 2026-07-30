@@ -35,6 +35,8 @@ public class TenantContextFilter extends OncePerRequestFilter {
       "/api/exam/files/",
       // 培训管理·扫码信息收集 - 测试专用
       "/api/training/sign-ups/",
+      // App 身份证 OCR / 证件照上传（扫码采集页调用，无管理端登录态）
+      "/api/training/app/",
       "/api/training/public/research-collection/",
       "/api/collect-test.html"
   );

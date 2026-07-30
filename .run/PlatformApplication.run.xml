@@ -5,7 +5,7 @@
     <option name="SPRING_BOOT_MAIN_CLASS" value="com.guoyu.platform.PlatformApplication" />
     <envs>
       <env name="RENCAI_ENABLED" value="true" />
-      <env name="RENCAI_BASE_URL" value="http://43.138.163.7:8001" />
+      <env name="RENCAI_BASE_URL" value="http://127.0.0.1:8001" />
     </envs>
     <method v="2">
       <option name="Make" enabled="true" />

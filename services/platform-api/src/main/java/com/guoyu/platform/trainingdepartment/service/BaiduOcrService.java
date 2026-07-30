@@ -154,8 +154,26 @@ public class BaiduOcrService {
       }
     } else {
       result.put("issue_authority", getField(wordsResult, "签发机关"));
+      // 百度身份证反面字段：签发日期 / 失效日期；部分返回合并在「有效期限」
       result.put("valid_date_start", getField(wordsResult, "签发日期"));
       result.put("valid_date_end", getField(wordsResult, "失效日期"));
+      if (!StringUtils.hasText((String) result.get("valid_date_start"))
+          && wordsResult.has("有效期限")) {
+        String period = getField(wordsResult, "有效期限");
+        if (StringUtils.hasText(period) && period.contains("-")) {
+          String[] parts = period.split("-", 2);
+          result.put("valid_date_start", parts[0].trim());
+          result.put("valid_date_end", parts.length > 1 ? parts[1].trim() : "");
+        }
+      }
+    }
+
+    // detect_card=true 时返回证件板裁剪图（base64，不含 data: 前缀）
+    if (root.has("card_image") && !root.get("card_image").isNull()) {
+      String cardImage = root.get("card_image").asText("");
+      if (StringUtils.hasText(cardImage)) {
+        result.put("card_image_base64", cardImage);
+      }
     }
 
     return result;

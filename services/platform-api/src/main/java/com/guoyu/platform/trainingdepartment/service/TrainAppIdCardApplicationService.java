@@ -29,6 +29,7 @@ public class TrainAppIdCardApplicationService {
   private final BaiduOcrService baiduOcrService;
   private final String cdnPath;
   private final String cdnUrl;
+  private final String cdnPublicUrl;
   private final String fileLocalRoot;
 
   public TrainAppIdCardApplicationService(
@@ -37,12 +38,14 @@ public class TrainAppIdCardApplicationService {
       BaiduOcrService baiduOcrService,
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
       @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl,
+      @Value("${platform.cdn.public-url:}") String cdnPublicUrl,
       @Value("${platform.file.local-root:D:/phpApp/qianlvguoyu_saas/storage/files}") String fileLocalRoot) {
     this.signUpPeopleMapper = signUpPeopleMapper;
     this.detailMapper = detailMapper;
     this.baiduOcrService = baiduOcrService;
     this.cdnPath = cdnPath;
-    this.cdnUrl = cdnUrl.endsWith("/") ? cdnUrl.substring(0, cdnUrl.length() - 1) : cdnUrl;
+    this.cdnUrl = trimSlash(cdnUrl);
+    this.cdnPublicUrl = trimSlash(cdnPublicUrl);
     this.fileLocalRoot = fileLocalRoot;
   }
 
@@ -57,7 +60,7 @@ public class TrainAppIdCardApplicationService {
       Files.createDirectories(targetDir);
       Path target = targetDir.resolve(normalizedId + "_header.jpg");
       Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
-      String url = cdnUrl + "/idCard/headerOrigin/" + normalizedId + "_header.jpg";
+      String url = publicCdnBase() + "/idCard/headerOrigin/" + normalizedId + "_header.jpg";
       updateDetailHeader(normalizedId, url);
       if (signUpId != null) {
         updateSignUpPhoto(signUpId, normalizedId, url);
@@ -75,26 +78,19 @@ public class TrainAppIdCardApplicationService {
   @Transactional
   public Map<String, Object> ocr(TrainIdCardOcrReq req) {
     String pic = req.getPic();
-    String url;
-    String relativePath;
-
-    if (StringUtils.hasText(pic) && (pic.startsWith("http://") || pic.startsWith("https://"))) {
-      url = pic;
-      if (pic.startsWith(cdnUrl + "/")) {
-        relativePath = pic.substring(cdnUrl.length() + 1);
-      } else {
-        relativePath = pic;
-      }
-    } else {
-      relativePath = pic;
-      url = cdnUrl + "/" + pic.replace("\\", "/");
+    if (!StringUtils.hasText(pic)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "图片为空");
     }
 
-    if (req.getSignUpId() != null) {
+    String relativePath = toRelativePath(pic);
+    String sourceUrl = toAbsoluteUrl(pic, relativePath);
+
+    // 仅在「已有身份证号」时校验报名人员；正面 OCR 常在尚无身份证号时调用
+    if (req.getSignUpId() != null && StringUtils.hasText(req.getIdcard())) {
       TrainSignUpPeopleSelfEntity people = signUpPeopleMapper.selectOne(
           new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
               .eq(TrainSignUpPeopleSelfEntity::getSignUpId, req.getSignUpId())
-              .eq(TrainSignUpPeopleSelfEntity::getIdCardNumber, req.getIdcard())
+              .eq(TrainSignUpPeopleSelfEntity::getIdCardNumber, req.getIdcard().trim())
               .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0));
       if (people == null) {
         throw new BusinessException(ErrorCode.NOT_FOUND, "报名记录不存在");
@@ -106,73 +102,169 @@ public class TrainAppIdCardApplicationService {
 
     if ("front".equals(type)) {
       String localFilePath = resolveLocalFilePath(relativePath);
-      Map<String, Object> ocrData = baiduOcrService.recognizeIdCard(localFilePath, url, "front");
-      if (ocrData != null && !ocrData.isEmpty()) {
-        String idcardNumber = (String) ocrData.get("id_card_number");
-        if (!StringUtils.hasText(idcardNumber)) {
-          idcardNumber = req.getIdcard();
-        }
-
-        Map<String, Object> cardInfo = new LinkedHashMap<>();
-        cardInfo.put("realname", ocrData.get("realname"));
-        cardInfo.put("nation", ocrData.get("nation"));
-        cardInfo.put("address", ocrData.get("address"));
-        cardInfo.put("id_card_number", idcardNumber);
-        cardInfo.put("birthday", ocrData.get("birthday"));
-        cardInfo.put("gender", ocrData.get("gender"));
-        cardInfo.put("age", ocrData.get("age"));
-        cardInfo.put("id_card_front", url);
-
-        if (StringUtils.hasText(idcardNumber)) {
-          updateDetailFront(idcardNumber, url, (String) ocrData.get("realname"),
-              (String) ocrData.get("nation"), (String) ocrData.get("address"),
-              (String) ocrData.get("birthday"), (String) ocrData.get("gender"));
-        }
-
-        result.put("idcard", cardInfo);
-      } else {
-        result.put("idcard", Map.of("id_card_number", req.getIdcard(), "id_card_front", url));
+      Map<String, Object> ocrData = baiduOcrService.recognizeIdCard(localFilePath, sourceUrl, "front");
+      if (ocrData == null || ocrData.isEmpty()) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "身份证正面识别失败，请重新拍摄清晰照片");
       }
+
+      String idcardNumber = (String) ocrData.get("id_card_number");
+      if (!StringUtils.hasText(idcardNumber)) {
+        idcardNumber = req.getIdcard();
+      }
+      if (!StringUtils.hasText(idcardNumber)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "未能识别身份证号，请重新拍摄");
+      }
+      idcardNumber = idcardNumber.trim().toUpperCase();
+
+      String displayUrl = saveCardImageIfPresent(
+          (String) ocrData.get("card_image_base64"), idcardNumber, "front", sourceUrl);
+
+      Map<String, Object> cardInfo = new LinkedHashMap<>();
+      cardInfo.put("realname", ocrData.get("realname"));
+      cardInfo.put("nation", ocrData.get("nation"));
+      cardInfo.put("address", ocrData.get("address"));
+      cardInfo.put("id_card_number", idcardNumber);
+      cardInfo.put("birthday", ocrData.get("birthday"));
+      cardInfo.put("gender", ocrData.get("gender"));
+      cardInfo.put("age", ocrData.get("age"));
+      cardInfo.put("id_card_front", displayUrl);
+      cardInfo.put("card_cropped", !displayUrl.equals(sourceUrl));
+
+      updateDetailFront(idcardNumber, displayUrl, (String) ocrData.get("realname"),
+          (String) ocrData.get("nation"), (String) ocrData.get("address"),
+          (String) ocrData.get("birthday"), (String) ocrData.get("gender"));
+
+      result.put("idcard", cardInfo);
 
     } else if ("back".equals(type)) {
       if (!StringUtils.hasText(req.getIdcard())) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "身份证号不能为空");
       }
+      String idcardNumber = req.getIdcard().trim().toUpperCase();
       String localFilePath = resolveLocalFilePath(relativePath);
-      Map<String, Object> ocrData = baiduOcrService.recognizeIdCard(localFilePath, url, "back");
-      if (ocrData != null && !ocrData.isEmpty()) {
-        updateDetailBack(req.getIdcard(), url,
-            (String) ocrData.get("valid_date_start"),
-            (String) ocrData.get("valid_date_end"));
+      Map<String, Object> ocrData = baiduOcrService.recognizeIdCard(localFilePath, sourceUrl, "back");
+      if (ocrData == null || ocrData.isEmpty()) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "身份证反面识别失败，请重新拍摄清晰照片");
       }
-      result.put("id_card_back", url);
+
+      String displayUrl = saveCardImageIfPresent(
+          (String) ocrData.get("card_image_base64"), idcardNumber, "back", sourceUrl);
+
+      updateDetailBack(idcardNumber, displayUrl,
+          (String) ocrData.get("valid_date_start"),
+          (String) ocrData.get("valid_date_end"));
+      result.put("id_card_back", displayUrl);
+      result.put("card_cropped", !displayUrl.equals(sourceUrl));
+      result.put("valid_date_start", ocrData.get("valid_date_start"));
+      result.put("valid_date_end", ocrData.get("valid_date_end"));
 
     } else if ("header".equals(type)) {
       if (StringUtils.hasText(req.getIdcard())) {
-        updateDetailHeader(req.getIdcard(), url);
+        updateDetailHeader(req.getIdcard(), sourceUrl);
         if (req.getSignUpId() != null) {
-          updateSignUpPhoto(req.getSignUpId(), req.getIdcard(), url);
+          updateSignUpPhoto(req.getSignUpId(), req.getIdcard(), sourceUrl);
         }
       }
-      result.put("id_card_header", url);
+      result.put("id_card_header", sourceUrl);
+    } else {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的 type：" + type);
     }
 
     return result;
   }
 
   /**
+   * 将百度 card_image 落到 CDN idCard/headerOrigin/{id}_{front|back}.jpg，返回公网 URL。
+   * 无裁剪图时回退原图 URL。
+   */
+  private String saveCardImageIfPresent(String base64, String idcard, String side, String fallbackUrl) {
+    if (!StringUtils.hasText(base64) || !StringUtils.hasText(idcard)) {
+      return fallbackUrl;
+    }
+    try {
+      String pure = base64;
+      int comma = base64.indexOf(',');
+      if (base64.startsWith("data:") && comma > 0) {
+        pure = base64.substring(comma + 1);
+      }
+      byte[] bytes = java.util.Base64.getDecoder().decode(pure);
+      if (bytes.length == 0) {
+        return fallbackUrl;
+      }
+      Path dir = Paths.get(cdnPath).resolve("idCard/headerOrigin");
+      Files.createDirectories(dir);
+      String filename = idcard + "_" + side + ".jpg";
+      Path target = dir.resolve(filename);
+      Files.write(target, bytes);
+      return publicCdnBase() + "/idCard/headerOrigin/" + filename;
+    } catch (Exception e) {
+      return fallbackUrl;
+    }
+  }
+
+  private String toRelativePath(String pic) {
+    String p = pic.trim().replace("\\", "/");
+    if (p.startsWith("http://") || p.startsWith("https://")) {
+      for (String base : new String[]{cdnPublicUrl, cdnUrl}) {
+        if (StringUtils.hasText(base) && p.startsWith(base + "/")) {
+          return p.substring(base.length() + 1);
+        }
+      }
+      // 兼容其它域名下仍以 /api/exam/files/ 或常见 CDN 前缀结尾的路径
+      int marker = p.indexOf("/api/exam/files/");
+      if (marker >= 0) {
+        return p.substring(marker + "/api/exam/files/".length());
+      }
+      int signUp = p.indexOf("/sign-up/");
+      if (signUp >= 0) {
+        return p.substring(signUp + 1);
+      }
+      int idCard = p.indexOf("/idCard/");
+      if (idCard >= 0) {
+        return p.substring(idCard + 1);
+      }
+      return p;
+    }
+    return p.startsWith("/") ? p.substring(1) : p;
+  }
+
+  private String toAbsoluteUrl(String pic, String relativePath) {
+    if (pic.startsWith("http://") || pic.startsWith("https://")) {
+      return pic;
+    }
+    return publicCdnBase() + "/" + relativePath.replace("\\", "/");
+  }
+
+  private String publicCdnBase() {
+    return StringUtils.hasText(cdnPublicUrl) ? cdnPublicUrl : cdnUrl;
+  }
+
+  private static String trimSlash(String raw) {
+    if (!StringUtils.hasText(raw)) {
+      return "";
+    }
+    String v = raw.trim();
+    return v.endsWith("/") ? v.substring(0, v.length() - 1) : v;
+  }
+
+  /**
    * 解析本地文件路径：先尝试 fileLocalRoot（新文件存储），再回退 cdnPath（旧 CDN 目录）
    */
   private String resolveLocalFilePath(String relativePath) {
-    Path newPath = Paths.get(fileLocalRoot).resolve(relativePath.replace("/", java.io.File.separator));
+    String normalized = relativePath.replace("\\", "/");
+    if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
+      // 无法映射相对路径时给一个不存在的路径，触发百度 URL 回退
+      return Paths.get(cdnPath, "_missing_", "remote-only.jpg").toString();
+    }
+    Path newPath = Paths.get(fileLocalRoot).resolve(normalized.replace("/", java.io.File.separator));
     if (Files.exists(newPath)) {
       return newPath.toString();
     }
-    Path oldPath = Paths.get(cdnPath).resolve(relativePath.replace("/", java.io.File.separator));
+    Path oldPath = Paths.get(cdnPath).resolve(normalized.replace("/", java.io.File.separator));
     if (Files.exists(oldPath)) {
       return oldPath.toString();
     }
-    return newPath.toString();
+    return oldPath.toString();
   }
 
   private void updateDetailFront(String idcard, String frontUrl, String realname,
@@ -254,7 +346,7 @@ public class TrainAppIdCardApplicationService {
     if (pic.startsWith("http://") || pic.startsWith("https://")) {
       url = pic;
     } else {
-      url = cdnUrl + "/" + pic.replace("\\", "/");
+      url = publicCdnBase() + "/" + pic.replace("\\", "/");
     }
 
     Map<String, Object> result = new LinkedHashMap<>();

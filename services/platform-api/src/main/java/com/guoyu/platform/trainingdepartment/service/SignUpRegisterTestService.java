@@ -98,6 +98,7 @@ public class SignUpRegisterTestService {
         .trainInfoId(plan.getTrainInfoId())
         .trainClassId(plan.getTrainClassId())
         .collectionSource(plan.getCollectionSource())
+        .tenantId(plan.getTenantId())
         .requireRoster(classPrep)
         .inRoster(inRoster)
         .peopleCount(count == null ? 0 : count.intValue())

@@ -17,6 +17,8 @@ public class SignUpDetailVO {
   private Long trainInfoId;
   private Long trainClassId;
   private String collectionSource;
+  /** 采集计划所属租户（App 调 OCR 等接口时带 X-Tenant-Id） */
+  private Long tenantId;
   /** class_prep 时为 true：提交前须通过花名册校验 */
   private Boolean requireRoster;
   /** 传入 idCardNumber 时返回：是否在本班学员花名册 */
