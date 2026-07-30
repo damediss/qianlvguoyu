@@ -38,8 +38,21 @@ public class SignUpRegisterTestController {
   private final SignUpRegisterTestService service;
 
   @GetMapping("/{id}/detail")
-  public ApiResponse<SignUpDetailVO> detail(@PathVariable Long id) {
-    return ApiResponse.ok(service.getDetail(id));
+  public ApiResponse<SignUpDetailVO> detail(
+      @PathVariable Long id,
+      @RequestParam(required = false) String idCardNumber) {
+    return ApiResponse.ok(service.getDetail(id, idCardNumber));
+  }
+
+  /**
+   * 扫码端验证前花名册校验。
+   * requireRoster=true 且 inRoster=false 时 App 不得进入填写页。
+   */
+  @GetMapping("/{id}/roster-check")
+  public ApiResponse<java.util.Map<String, Object>> rosterCheck(
+      @PathVariable Long id,
+      @RequestParam @NotBlank @Pattern(regexp = "^\\d{17}[\\dXx]$") String idCardNumber) {
+    return ApiResponse.ok(service.checkRoster(id, idCardNumber));
   }
 
   /** 通用文件上传 - 接收 multipart/form-data 的 file 字段，返回公网 URL */
@@ -60,25 +73,25 @@ public class SignUpRegisterTestController {
   // ==================== 扫码端·"我的报名" ====================
 
   /**
-   * 根据手机号 + 身份证号查"我"在该计划下的报名记录。
-   * 用 query 参数（不用 body）方便前端 GET 请求。
+   * 查"我"在该计划下的报名记录。
+   * class_prep：仅身份证（手机号可选，不对花名册手机号做门禁）。
+   * 其它计划：仍要手机号+身份证。
    */
   @GetMapping("/{id}/mine")
   public ApiResponse<SignUpMineVO> findMine(
       @PathVariable Long id,
-      @RequestParam @NotBlank @Pattern(regexp = "^1[3-9]\\d{9}$") String phone,
+      @RequestParam(required = false) String phone,
       @RequestParam @NotBlank @Pattern(regexp = "^\\d{17}[\\dXx]$") String idCardNumber) {
     return ApiResponse.ok(service.findMine(id, phone, idCardNumber));
   }
 
   /**
-   * 扫码端"修改我的报名"。身份校验用 query 参数里的 phone+idCardNumber，
-   * body 携带要修改的字段（与 register 一致）。
+   * 扫码端"修改我的报名"。class_prep 仅用身份证定位；其它计划仍要 phone+idCard。
    */
   @PutMapping(value = "/{id}/mine", consumes = MediaType.APPLICATION_JSON_VALUE)
   public ApiResponse<SignUpRegisterResultVO> updateMine(
       @PathVariable Long id,
-      @RequestParam @NotBlank @Pattern(regexp = "^1[3-9]\\d{9}$") String phone,
+      @RequestParam(required = false) String phone,
       @RequestParam @NotBlank @Pattern(regexp = "^\\d{17}[\\dXx]$") String idCardNumber,
       @Valid @RequestBody SignUpRegisterReq req) {
     return ApiResponse.ok(service.updateMine(id, phone, idCardNumber, req));

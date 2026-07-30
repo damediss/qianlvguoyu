@@ -4,13 +4,13 @@ import lombok.extern.slf4j.Slf4j;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassUpdateReq;
+import com.guoyu.platform.trainingdepartment.entity.TrainFileTempEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
@@ -283,16 +283,45 @@ public class TrainInfoClassApplicationService {
   }
 
   /**
-   * 挂载文件模板到班级
+   * 挂载文件模板到班级。同名模板只保留一份（新导入覆盖旧挂载）。
    */
   @Transactional
   public Map<String, Object> attachFileTemps(Long classId, List<Long> templateIds) {
+    if (templateIds == null || templateIds.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要挂载的模板");
+    }
     TrainInfoClassEntity entity = getExisting(classId);
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    List<Long> distinctIds = templateIds.stream()
+        .filter(id -> id != null && id > 0)
+        .distinct()
+        .collect(Collectors.toList());
+    if (distinctIds.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要挂载的模板");
+    }
+    List<TrainFileTempEntity> incoming = trainFileTempMapper.selectList(new LambdaQueryWrapper<TrainFileTempEntity>()
+        .eq(TrainFileTempEntity::getTenantId, tenantId)
+        .eq(TrainFileTempEntity::getDeleted, 0)
+        .in(TrainFileTempEntity::getId, distinctIds));
+    if (incoming.size() != distinctIds.size()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "部分模板不存在或已删除，请刷新后重试");
+    }
     List<Long> currentIds = parseFileTemps(entity.getFileTemps());
-    for (Long tid : templateIds) {
-      if (tid != null && !currentIds.contains(tid)) {
-        currentIds.add(tid);
+    Map<Long, String> existingTitleById = new LinkedHashMap<>();
+    if (!currentIds.isEmpty()) {
+      trainFileTempMapper.selectList(new LambdaQueryWrapper<TrainFileTempEntity>()
+              .eq(TrainFileTempEntity::getTenantId, tenantId)
+              .eq(TrainFileTempEntity::getDeleted, 0)
+              .in(TrainFileTempEntity::getId, currentIds))
+          .forEach(t -> existingTitleById.put(t.getId(), t.getTitle()));
+    }
+    for (TrainFileTempEntity neu : incoming) {
+      String title = neu.getTitle();
+      currentIds.removeIf(id -> title != null && title.equals(existingTitleById.get(id)));
+      if (!currentIds.contains(neu.getId())) {
+        currentIds.add(neu.getId());
       }
+      existingTitleById.put(neu.getId(), title);
     }
     try {
       entity.setFileTemps(objectMapper.writeValueAsString(currentIds));
@@ -302,7 +331,7 @@ public class TrainInfoClassApplicationService {
     mapper.updateById(entity);
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("classId", classId);
-    result.put("count", templateIds != null ? templateIds.size() : 0);
+    result.put("count", distinctIds.size());
     result.put("ids", currentIds);
     result.put("fileTemps", currentIds);
     return result;

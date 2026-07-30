@@ -22,6 +22,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -291,31 +292,47 @@ public class FileApplicationService {
 
   private Resource loadResource(FileEntity entity) {
     if ("cos".equalsIgnoreCase(entity.getStorageProvider())) {
-      if (!(storage instanceof TencentCosFileStorage cosStorage)) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST, "COS storage is not configured");
-      }
       try {
-        COSObject object = cosStorage.getObject(entity.getObjectKey());
-        return new InputStreamResource(object.getObjectContent());
-      } catch (Exception ex) {
-        log.warn("Failed to load COS file: id={}, objectKey={}", entity.getId(), entity.getObjectKey(), ex);
-        throw new BusinessException(ErrorCode.BAD_REQUEST, "File download failed");
+        InputStream cosIn = tryOpenCosInputStream(entity);
+        if (cosIn != null) {
+          return new InputStreamResource(cosIn);
+        }
+      } catch (BusinessException ex) {
+        log.warn("COS 下载失败，尝试本地回退: id={}, objectKey={}, msg={}",
+            entity.getId(), entity.getObjectKey(), ex.getMessage());
       }
+      Optional<Path> local = localPathResolver.resolveExisting(entity.getObjectKey());
+      if (local.isPresent()) {
+        try {
+          Resource resource = new UrlResource(local.get().toUri());
+          if (resource.exists() && resource.isReadable()) {
+            log.info("COS 不可用，已从本地回退下载: id={}, path={}", entity.getId(), local.get());
+            return resource;
+          }
+        } catch (IOException ex) {
+          log.warn("本地回退失败: id={}", entity.getId(), ex);
+        }
+      }
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "File download failed: COS 与本地均不可用（常见于生成材料只写本地却标记为 cos，请重新生成）");
     }
     Path path = localPathResolver.resolveExisting(entity.getObjectKey())
         .orElseGet(() -> localPathResolver.resolveConfigured(entity.getObjectKey()));
     try {
       Resource resource = new UrlResource(path.toUri());
-      if (!resource.exists() || !resource.isReadable()) {
-        log.warn("File content missing on disk: id={}, objectKey={}, path={}", entity.getId(), entity.getObjectKey(), path);
-        throw new BusinessException(ErrorCode.NOT_FOUND, "File content not found");
+      if (resource.exists() && resource.isReadable()) {
+        return resource;
       }
-      return resource;
-    } catch (BusinessException ex) {
-      throw ex;
     } catch (IOException ex) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "File download failed");
+      log.warn("本地文件读取异常: id={}, path={}", entity.getId(), path, ex);
     }
+    InputStream cosFallback = tryOpenCosInputStream(entity);
+    if (cosFallback != null) {
+      log.info("本地文件缺失，已从 COS 回退下载: id={}, objectKey={}", entity.getId(), entity.getObjectKey());
+      return new InputStreamResource(cosFallback);
+    }
+    log.warn("File content missing on disk: id={}, objectKey={}, path={}", entity.getId(), entity.getObjectKey(), path);
+    throw new BusinessException(ErrorCode.NOT_FOUND, "File content not found");
   }
 
   @Transactional
@@ -450,14 +467,30 @@ public class FileApplicationService {
   }
 
   private String buildObjectKey(Long tenantId, String fileName) {
-    LocalDate today = LocalDate.now();
-    return tenantId + "/" + today.getYear() + "/" + "%02d".formatted(today.getMonthValue())
-        + "/" + UUID.randomUUID() + "-" + fileName;
+    // objectKey 仅用 ASCII（UUID + 扩展名），避免中文文件名导致 COS 上传/下载异常
+    String ext = "";
+    if (fileName != null) {
+      int dot = fileName.lastIndexOf('.');
+      if (dot >= 0 && dot < fileName.length() - 1) {
+        ext = fileName.substring(dot).replaceAll("[^A-Za-z0-9.]", "").toLowerCase();
+      }
+    }
+    LocalDate now = LocalDate.now();
+    return String.format("%d/%d/%02d/%s%s",
+        tenantId == null ? 0L : tenantId,
+        now.getYear(),
+        now.getMonthValue(),
+        UUID.randomUUID(),
+        ext);
   }
 
   private String sanitizeFileName(String originalName) {
-    String name = StringUtils.hasText(originalName) ? originalName : "upload.bin";
-    return name.replace("\\", "_").replace("/", "_").replace(":", "_");
+    if (!StringUtils.hasText(originalName)) {
+      return "file.bin";
+    }
+    String name = Paths.get(originalName).getFileName().toString();
+    name = name.replaceAll("[\\\\/:*?\"<>|\\x00-\\x1F]", "_").trim();
+    return StringUtils.hasText(name) ? name : "file.bin";
   }
 
   private Long getTenantIdSafe() {

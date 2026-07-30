@@ -340,7 +340,13 @@ export function isPublicExamFileUrl(url?: string | null): boolean {
   return url.includes('/exam/files/');
 }
 
-/** 将 exam/files 地址规范为浏览器同源路径，便于走 Vite 代理并由 img 自然跟随 302 */
+/**
+ * 将 exam/files 地址规范为浏览器可访问路径。
+ * 一律改为同源 `/api/exam/files/...`（Vite 代理 → platform-api）：
+ * - 本地有文件：直接读盘
+ * - App 扫码上传（sign-up/**）本地没有：后端 302 到 platform.cdn.public-url（Nginx）
+ * 不要把远端绝对地址直接塞给 <img>：开发机若改写错误或 302 到 cdn.app 会造成整列裂图。
+ */
 export function toBrowserPublicFileSrc(url: string): string {
   if (!url) return url;
   if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -348,13 +354,13 @@ export function toBrowserPublicFileSrc(url: string): string {
       const parsed = new URL(url);
       const marker = '/exam/files/';
       const idx = parsed.pathname.indexOf(marker);
-      if (idx >= 0) {
-        return `/api${parsed.pathname.substring(idx)}${parsed.search}`;
+      if (idx < 0) {
+        return url;
       }
+      return `/api${parsed.pathname.substring(idx)}${parsed.search}`;
     } catch {
-      // fall through
+      return url;
     }
-    return url;
   }
   if (url.startsWith('/api/')) return url;
   if (url.startsWith('/exam/files/')) return `/api${url}`;

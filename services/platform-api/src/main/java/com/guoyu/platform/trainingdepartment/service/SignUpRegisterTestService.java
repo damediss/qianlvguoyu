@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -59,15 +60,34 @@ public class SignUpRegisterTestService {
   @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}")
   private String cdnUrl;
 
+  /**
+   * 写入库 / 返回给 App 的公网可访问 CDN 前缀。
+   * 生产务必走 Nginx（不要带 :8080），例如 http://43.138.163.7/api/exam/files
+   */
+  @Value("${platform.cdn.public-url:}")
+  private String cdnPublicUrl;
+
   // ==================== 详情 ====================
 
   @Transactional(readOnly = true)
   public SignUpDetailVO getDetail(Long signUpId) {
+    return getDetail(signUpId, null);
+  }
+
+  @Transactional(readOnly = true)
+  public SignUpDetailVO getDetail(Long signUpId, String idCardNumber) {
     TrainSignUpSelfEntity plan = mustGetSignUp(signUpId);
     Long count = peopleMapper.selectCount(
         new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
             .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUpId)
             .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0));
+    boolean classPrep = classCollectionApplicationService.isClassPrep(plan);
+    Boolean inRoster = null;
+    if (StringUtils.hasText(idCardNumber) && classPrep) {
+      Map<String, Object> check = classCollectionApplicationService.checkRosterAccess(plan, idCardNumber);
+      Object v = check.get("inRoster");
+      inRoster = v instanceof Boolean ? (Boolean) v : Boolean.FALSE;
+    }
     return SignUpDetailVO.builder()
         .signUpId(plan.getId())
         .title(plan.getTitle())
@@ -76,9 +96,20 @@ public class SignUpRegisterTestService {
         .examTime(plan.getExamTime())
         .orgId(plan.getOrgId())
         .trainInfoId(plan.getTrainInfoId())
+        .trainClassId(plan.getTrainClassId())
+        .collectionSource(plan.getCollectionSource())
+        .requireRoster(classPrep)
+        .inRoster(inRoster)
         .peopleCount(count == null ? 0 : count.intValue())
         .files(parseFiles(plan.getFiles()))
         .build();
+  }
+
+  /** 扫码验证：花名册门禁检查（App 点「验证」时先调） */
+  @Transactional(readOnly = true)
+  public Map<String, Object> checkRoster(Long signUpId, String idCardNumber) {
+    TrainSignUpSelfEntity plan = mustGetSignUp(signUpId);
+    return classCollectionApplicationService.checkRosterAccess(plan, idCardNumber);
   }
 
   // ==================== 文件上传 ====================
@@ -114,11 +145,39 @@ public class SignUpRegisterTestService {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "文件保存失败");
     }
 
-    // 公网 URL：用 platform.cdn.url 拼（dev 改成 http://localhost:8080/api/exam/files）
-    String base = cdnUrl.endsWith("/") ? cdnUrl.substring(0, cdnUrl.length() - 1) : cdnUrl;
+    // 公网 URL：优先 public-url（Nginx），避免写入 :8080 导致浏览器公网无法预览
+    String base = resolvePublicCdnBase();
     String url = base + "/sign-up/qrcode/" + today + "/" + filename;
     log.info("扫码上传文件成功 path={} url={}", target, url);
     return url;
+  }
+
+  /** 返回给客户端的 CDN 根地址（去掉非本机 :8080/:8081） */
+  private String resolvePublicCdnBase() {
+    String raw = StringUtils.hasText(cdnPublicUrl) ? cdnPublicUrl.trim() : cdnUrl;
+    if (!StringUtils.hasText(raw)) {
+      raw = "http://localhost:8080/api/exam/files";
+    }
+    String base = raw.endsWith("/") ? raw.substring(0, raw.length() - 1) : raw;
+    try {
+      java.net.URI uri = java.net.URI.create(base);
+      String host = uri.getHost();
+      int port = uri.getPort();
+      boolean local = host == null
+          || "localhost".equalsIgnoreCase(host)
+          || "127.0.0.1".equals(host);
+      if (!local && (port == 8080 || port == 8081)) {
+        String scheme = uri.getScheme() != null ? uri.getScheme() : "http";
+        String path = uri.getPath() != null ? uri.getPath() : "";
+        if (path.endsWith("/")) {
+          path = path.substring(0, path.length() - 1);
+        }
+        return scheme + "://" + host + path;
+      }
+    } catch (Exception ignored) {
+      // keep base
+    }
+    return base;
   }
 
   // ==================== 提交报名（完整字段） ====================
@@ -126,6 +185,8 @@ public class SignUpRegisterTestService {
   @Transactional
   public SignUpRegisterResultVO register(Long signUpId, SignUpRegisterReq req) {
     TrainSignUpSelfEntity plan = mustGetSignUp(signUpId);
+    // 开班准备：仅班级花名册内学员可提交
+    classCollectionApplicationService.assertIdCardInClassRoster(plan, req.getIdCardNumber());
 
     // 重复报名：同 signUpId 下身份证不可重复
     Long dup = peopleMapper.selectCount(
@@ -239,47 +300,75 @@ public class SignUpRegisterTestService {
   // ==================== 扫码端·"我的报名"查看 / 修改 ====================
 
   /**
-   * 根据手机号 + 身份证号查"我"在该计划下的报名记录。
-   * 身份校验：两条同时匹配才返回（防身份证号撞库）。
+   * 查"我"在该计划下的报名记录。
+   * class_prep：只按身份证（花名册门禁）；手机号可不对、可不传。
+   * 其它计划：手机号+身份证双因子。
    */
   @Transactional(readOnly = true)
   public SignUpMineVO findMine(Long signUpId, String phone, String idCardNumber) {
     TrainSignUpSelfEntity plan = mustGetSignUp(signUpId);
+    String normalizedId = normalizeIdCard(idCardNumber);
+    // 开班准备：先校验花名册，再查报名记录
+    classCollectionApplicationService.assertIdCardInClassRoster(plan, normalizedId);
 
-    TrainSignUpPeopleSelfEntity e = peopleMapper.selectOne(
+    boolean classPrep = classCollectionApplicationService.isClassPrep(plan);
+    if (!classPrep) {
+      requireValidPhone(phone);
+    }
+
+    LambdaQueryWrapper<TrainSignUpPeopleSelfEntity> q =
         new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
             .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUpId)
-            .eq(TrainSignUpPeopleSelfEntity::getPhone, phone)
-            .eq(TrainSignUpPeopleSelfEntity::getIdCardNumber, idCardNumber)
             .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0)
-            .last("LIMIT 1"));
+            .apply("UPPER(TRIM(id_card_number)) = {0}", normalizedId);
+    // 非开班准备仍要求手机号+身份证双因子，降低公开链路上的探测面
+    if (!classPrep) {
+      q.eq(TrainSignUpPeopleSelfEntity::getPhone, phone.trim());
+    }
+    TrainSignUpPeopleSelfEntity e = peopleMapper.selectOne(q.last("LIMIT 1"));
     if (e == null) {
-      // 故意不区分"手机号存在但身份证不匹配" vs "完全没记录"，防探测
-      throw new BusinessException(ErrorCode.NOT_FOUND, "未找到您的报名记录，请确认手机号与身份证号");
+      throw new BusinessException(ErrorCode.NOT_FOUND,
+          classPrep ? "未找到您的报名记录，请确认身份证号是否在本班名单中"
+              : "未找到您的报名记录，请确认手机号与身份证号");
     }
     boolean editable = isEditable(e);
     return SignUpMineVO.from(e, plan.getTitle(), editable);
   }
 
   /**
-   * 扫码端"修改我的报名" - 用手机号+身份证号做身份校验。
-   * 限制：仅在 status=0（待审核）时允许改；status=1（已通过）拒绝修改，
-   * 引导用户联系管理后台。
+   * 扫码端"修改我的报名"。
+   * class_prep：仅身份证定位；可把手机号改成学员自己的号。
+   * 其它计划：手机号+身份证。
+   * 限制：仅 status=0（待审核）可改。
    */
   @Transactional
   public SignUpRegisterResultVO updateMine(Long signUpId, String phone, String idCardNumber,
                                            SignUpRegisterReq req) {
     TrainSignUpSelfEntity plan = mustGetSignUp(signUpId);
+    String normalizedId = normalizeIdCard(idCardNumber);
+    classCollectionApplicationService.assertIdCardInClassRoster(plan, normalizedId);
+    if (StringUtils.hasText(req.getIdCardNumber())) {
+      classCollectionApplicationService.assertIdCardInClassRoster(plan, req.getIdCardNumber());
+    }
 
-    TrainSignUpPeopleSelfEntity e = peopleMapper.selectOne(
+    boolean classPrep = classCollectionApplicationService.isClassPrep(plan);
+    if (!classPrep) {
+      requireValidPhone(phone);
+    }
+
+    LambdaQueryWrapper<TrainSignUpPeopleSelfEntity> q =
         new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
             .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUpId)
-            .eq(TrainSignUpPeopleSelfEntity::getPhone, phone)
-            .eq(TrainSignUpPeopleSelfEntity::getIdCardNumber, idCardNumber)
             .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0)
-            .last("LIMIT 1"));
+            .apply("UPPER(TRIM(id_card_number)) = {0}", normalizedId);
+    if (!classPrep) {
+      q.eq(TrainSignUpPeopleSelfEntity::getPhone, phone.trim());
+    }
+    TrainSignUpPeopleSelfEntity e = peopleMapper.selectOne(q.last("LIMIT 1"));
     if (e == null) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "未找到您的报名记录，请确认手机号与身份证号");
+      throw new BusinessException(ErrorCode.NOT_FOUND,
+          classPrep ? "未找到您的报名记录，请确认身份证号是否在本班名单中"
+              : "未找到您的报名记录，请确认手机号与身份证号");
     }
     if (!isEditable(e)) {
       throw new BusinessException(ErrorCode.FORBIDDEN,
@@ -382,6 +471,19 @@ public class SignUpRegisterTestService {
   private boolean isEditable(TrainSignUpPeopleSelfEntity e) {
     Integer s = e.getStatus();
     return s == null || s == 0;
+  }
+
+  private static String normalizeIdCard(String idCardNumber) {
+    if (!StringUtils.hasText(idCardNumber)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请输入身份证号");
+    }
+    return idCardNumber.trim().toUpperCase();
+  }
+
+  private static void requireValidPhone(String phone) {
+    if (!StringUtils.hasText(phone) || !phone.trim().matches("^1[3-9]\\d{9}$")) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请输入正确的手机号");
+    }
   }
 
   // ==================== 工具方法 ====================

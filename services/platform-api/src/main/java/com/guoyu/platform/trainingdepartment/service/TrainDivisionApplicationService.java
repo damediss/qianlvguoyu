@@ -170,6 +170,7 @@ public class TrainDivisionApplicationService {
     assertReturnReady(plan);
     Long tenantId = SecurityContext.currentUser().getTenantId();
     boolean reuse = req.getReuseExisting() == null || Boolean.TRUE.equals(req.getReuseExisting());
+    String trainCompanyName = resolveTrainCompanyName(req.getTrainCompanyName());
 
     if (reuse) {
       LambdaQueryWrapper<TrainInfoListEntity> q = new LambdaQueryWrapper<TrainInfoListEntity>()
@@ -185,7 +186,16 @@ public class TrainDivisionApplicationService {
       }
       TrainInfoListEntity existing = trainInfoListMapper.selectOne(q);
       if (existing != null) {
-        return Map.of("trainInfoId", existing.getId(), "created", false, "title", existing.getTitle());
+        // 主流程历史数据常缺培训机构名，复用时补齐供 ${pxdw}
+        if (!StringUtils.hasText(existing.getTrainCompanyName()) && StringUtils.hasText(trainCompanyName)) {
+          existing.setTrainCompanyName(trainCompanyName);
+          trainInfoListMapper.updateById(existing);
+        }
+        return Map.of(
+            "trainInfoId", existing.getId(),
+            "created", false,
+            "title", existing.getTitle(),
+            "trainCompanyName", existing.getTrainCompanyName() != null ? existing.getTrainCompanyName() : "");
       }
     }
 
@@ -200,6 +210,7 @@ public class TrainDivisionApplicationService {
     entity.setThreeYearPlanId(planId);
     entity.setCompanyId(plan.getTargetOrgId());
     entity.setCompanyName(orgName);
+    entity.setTrainCompanyName(trainCompanyName);
     entity.setTitle(title);
     entity.setWorkTypeId(req.getWorkTypeId());
     entity.setWorkTypeLevel(req.getWorkTypeLevel());
@@ -208,7 +219,29 @@ public class TrainDivisionApplicationService {
     entity.setCreateTime(LocalDateTime.now());
     entity.setCompanyHasConfirm(0);
     trainInfoListMapper.insert(entity);
-    return Map.of("trainInfoId", entity.getId(), "created", true, "title", entity.getTitle());
+    return Map.of(
+        "trainInfoId", entity.getId(),
+        "created", true,
+        "title", entity.getTitle(),
+        "trainCompanyName", entity.getTrainCompanyName() != null ? entity.getTrainCompanyName() : "");
+  }
+
+  /**
+   * 培训机构名称（${pxdw}）：请求值 → 当前登录机构组织名 → 默认「千铝工投」。
+   * 与「需求转开班」对齐，避免三年规划→分班路径 train_company_name 为空。
+   */
+  private String resolveTrainCompanyName(String requested) {
+    if (StringUtils.hasText(requested)) {
+      return requested.trim();
+    }
+    TrainingOperatorScopeService.Scope scope = scopeService.currentScope();
+    if (scope.isOrgOperator() && scope.orgId() != null) {
+      OrgEntity operatorOrg = orgMapper.selectById(scope.orgId());
+      if (operatorOrg != null && StringUtils.hasText(operatorOrg.getName())) {
+        return operatorOrg.getName().trim();
+      }
+    }
+    return "千铝工投";
   }
 
   @Transactional
@@ -401,22 +434,19 @@ public class TrainDivisionApplicationService {
         unassigned.add(unassignedRow(r, "无身份证且配置排除"));
         continue;
       }
-      if (StringUtils.hasText(r.getIdCard())) {
-        String idKey = r.getIdCard().trim().toUpperCase();
-        if (!seenIdCards.add(idKey)) {
-          unassigned.add(unassignedRow(r, "名单内身份证重复，跳过"));
-          continue;
+        if (StringUtils.hasText(r.getIdCard())) {
+          String idKey = r.getIdCard().trim().toUpperCase();
+          if (!seenIdCards.add(idKey)) {
+            unassigned.add(unassignedRow(r, "名单内身份证重复，跳过"));
+            continue;
+          }
+          String activeTitle = releaseOrphanPeopleAndFindActiveClassTitle(
+              tenantId, trainInfo.getId(), r.getIdCard().trim());
+          if (activeTitle != null) {
+            unassigned.add(unassignedRow(r, "已在班级「" + activeTitle + "」中"));
+            continue;
+          }
         }
-        Long exists = peopleListMapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
-            .eq(TrainPeopleListEntity::getTenantId, tenantId)
-            .eq(TrainPeopleListEntity::getTrainId, trainInfo.getId())
-            .eq(TrainPeopleListEntity::getIdCard, r.getIdCard().trim())
-            .ne(TrainPeopleListEntity::getType, "teacher"));
-        if (exists != null && exists > 0) {
-          unassigned.add(unassignedRow(r, "已在该培训信息班级中"));
-          continue;
-        }
-      }
 
       if (poolHasPlanYear) {
         if (r.getPlanYear() == null) {
@@ -709,7 +739,6 @@ public class TrainDivisionApplicationService {
     int month = nowDate.getMonthValue();
 
     List<Map<String, Object>> classes = new ArrayList<>();
-    Set<Long> usedRosterIds = new HashSet<>();
     int assignedCount = 0;
     List<Map<String, Object>> warnings = new ArrayList<>();
 
@@ -720,9 +749,10 @@ public class TrainDivisionApplicationService {
             ? seed.getTitle().trim()
             : prefix + seq + "班";
         List<Map<String, Object>> members = new ArrayList<>();
+        Set<Long> inThisClass = new HashSet<>();
         if (seed.getRosterIds() != null) {
           for (Long rosterId : seed.getRosterIds()) {
-            if (rosterId == null || !usedRosterIds.add(rosterId)) {
+            if (rosterId == null || !inThisClass.add(rosterId)) {
               continue;
             }
             TrainPlanRosterEntity roster = rosterMapper.selectById(rosterId);
@@ -730,11 +760,6 @@ public class TrainDivisionApplicationService {
                 || !Objects.equals(roster.getPlanId(), plan.getId())) {
               throw new BusinessException(ErrorCode.BAD_REQUEST, "名单人员无效: " + rosterId);
             }
-            if (roster.getAssignStatus() != null && roster.getAssignStatus() != 0) {
-              throw new BusinessException(ErrorCode.BAD_REQUEST,
-                  roster.getPersonName() + " 已分班，无法放入草稿");
-            }
-            assertNotAlreadyInTrainInfo(tenantId, trainInfo.getId(), roster);
             members.add(memberDraft(roster));
           }
         }
@@ -800,7 +825,7 @@ public class TrainDivisionApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "班级已达人数上限 " + classMax);
     }
 
-    Set<Long> occupied = collectOccupiedRosterIds(classes, classIdx);
+    Set<Long> occupied = collectOccupiedRosterIdsInClass(classes, classIdx);
     PersonResolveResult resolved = resolveOrCreateRoster(
         task,
         req.getPersonName().trim(),
@@ -854,7 +879,7 @@ public class TrainDivisionApplicationService {
               + "（当前 " + members.size() + " + 导入 " + parsed.size() + "），请拆分后重试");
     }
 
-    Set<Long> occupied = collectOccupiedRosterIds(classes, classIdx);
+    Set<Long> occupied = collectOccupiedRosterIdsInClass(classes, classIdx);
     List<Map<String, Object>> skipped = new ArrayList<>();
     List<Map<String, Object>> unmatched = new ArrayList<>();
     List<Map<String, Object>> warnings = new ArrayList<>(readJsonList(task.getWarningJson()));
@@ -959,18 +984,47 @@ public class TrainDivisionApplicationService {
     throw new BusinessException(ErrorCode.BAD_REQUEST, "未找到班级：" + tempId);
   }
 
+  private static boolean allowsMultiClassMembership(String strategy) {
+    if (!StringUtils.hasText(strategy)) {
+      return false;
+    }
+    String s = strategy.trim();
+    return "manual".equalsIgnoreCase(s)
+        || "by_job_level_slot".equalsIgnoreCase(s)
+        || "by_attendable_slot".equalsIgnoreCase(s);
+  }
+
+  /** 跨班占用（一人一班策略）；excludeIdx 班级也会纳入，避免本班重复 */
   private static Set<Long> collectOccupiedRosterIds(List<Map<String, Object>> classes, int excludeIdx) {
     Set<Long> occupied = new HashSet<>();
     for (int i = 0; i < classes.size(); i++) {
-      if (i == excludeIdx) continue;
+      if (i == excludeIdx) {
+        continue;
+      }
       for (Map<String, Object> m : asMemberList(classes.get(i).get("members"))) {
         Long id = toLong(m.get("rosterId"));
-        if (id != null) occupied.add(id);
+        if (id != null) {
+          occupied.add(id);
+        }
       }
     }
     for (Map<String, Object> m : asMemberList(classes.get(excludeIdx).get("members"))) {
       Long id = toLong(m.get("rosterId"));
-      if (id != null) occupied.add(id);
+      if (id != null) {
+        occupied.add(id);
+      }
+    }
+    return occupied;
+  }
+
+  /** 仅本班占用：允许同一人出现在方案的其他班 */
+  private static Set<Long> collectOccupiedRosterIdsInClass(List<Map<String, Object>> classes, int classIdx) {
+    Set<Long> occupied = new HashSet<>();
+    for (Map<String, Object> m : asMemberList(classes.get(classIdx).get("members"))) {
+      Long id = toLong(m.get("rosterId"));
+      if (id != null) {
+        occupied.add(id);
+      }
     }
     return occupied;
   }
@@ -1002,19 +1056,56 @@ public class TrainDivisionApplicationService {
     if (!StringUtils.hasText(roster.getIdCard())) {
       return;
     }
-    Long exists = peopleListMapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
-        .eq(TrainPeopleListEntity::getTenantId, tenantId)
-        .eq(TrainPeopleListEntity::getTrainId, trainInfoId)
-        .eq(TrainPeopleListEntity::getIdCard, roster.getIdCard().trim())
-        .ne(TrainPeopleListEntity::getType, "teacher"));
-    if (exists != null && exists > 0) {
+    String activeTitle = releaseOrphanPeopleAndFindActiveClassTitle(
+        tenantId, trainInfoId, roster.getIdCard().trim());
+    if (activeTitle != null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST,
-          roster.getPersonName() + " 已在该培训信息班级中");
+          roster.getPersonName() + " 已在班级「" + activeTitle + "」中");
     }
   }
 
   /**
+   * 判断身份证是否仍在「未删除」的正式班级中。
+   * 若人员挂在已软删班级上（历史脏数据），自动清理人员记录，允许重新入草稿/建班。
+   *
+   * @return 所在有效班级名称；无人在有效班则返回 null
+   */
+  private String releaseOrphanPeopleAndFindActiveClassTitle(Long tenantId, Long trainInfoId, String idCard) {
+    if (!StringUtils.hasText(idCard) || trainInfoId == null) {
+      return null;
+    }
+    List<TrainPeopleListEntity> people = peopleListMapper.selectList(
+        new LambdaQueryWrapper<TrainPeopleListEntity>()
+            .eq(TrainPeopleListEntity::getTenantId, tenantId)
+            .eq(TrainPeopleListEntity::getTrainId, trainInfoId)
+            .eq(TrainPeopleListEntity::getIdCard, idCard.trim())
+            .ne(TrainPeopleListEntity::getType, "teacher"));
+    if (people.isEmpty()) {
+      return null;
+    }
+    String activeTitle = null;
+    for (TrainPeopleListEntity person : people) {
+      Long classId = person.getTrainClassId();
+      if (classId == null) {
+        peopleListMapper.deleteById(person.getId());
+        continue;
+      }
+      // train_info_class 带 @TableLogic：已删班级 selectById 为 null
+      TrainInfoClassEntity clazz = trainInfoClassMapper.selectById(classId);
+      if (clazz == null) {
+        peopleListMapper.deleteById(person.getId());
+        continue;
+      }
+      if (activeTitle == null) {
+        activeTitle = StringUtils.hasText(clazz.getTitle()) ? clazz.getTitle() : ("#" + clazz.getId());
+      }
+    }
+    return activeTitle;
+  }
+
+  /**
    * 匹配待分池或自动入库，再供入班使用。
+   * 手动/时段多班策略：可匹配已分班名单，且不因「已在其他正式班」拦截。
    */
   private PersonResolveResult resolveOrCreateRoster(
       TrainDivisionPackTaskEntity task,
@@ -1030,59 +1121,18 @@ public class TrainDivisionApplicationService {
     Long tenantId = task.getTenantId();
     Long planId = task.getPlanId();
     Long trainInfoId = task.getTrainInfoId();
+    boolean multiClass = allowsMultiClassMembership(task.getStrategy());
 
-    TrainPlanRosterEntity matched = null;
-    if (StringUtils.hasText(idCard)) {
-      String idKey = idCard.trim();
-      List<TrainPlanRosterEntity> hits = rosterMapper.selectList(
-          new LambdaQueryWrapper<TrainPlanRosterEntity>()
-              .eq(TrainPlanRosterEntity::getTenantId, tenantId)
-              .eq(TrainPlanRosterEntity::getPlanId, planId)
-              .eq(TrainPlanRosterEntity::getDeleted, 0)
-              .eq(TrainPlanRosterEntity::getAssignStatus, 0)
-              .eq(TrainPlanRosterEntity::getIdCard, idKey)
-              .orderByAsc(TrainPlanRosterEntity::getId)
-              .last("LIMIT 5"));
-      if (hits.isEmpty()) {
-        // 兼容大小写差异
-        hits = rosterMapper.selectList(
-            new LambdaQueryWrapper<TrainPlanRosterEntity>()
-                .eq(TrainPlanRosterEntity::getTenantId, tenantId)
-                .eq(TrainPlanRosterEntity::getPlanId, planId)
-                .eq(TrainPlanRosterEntity::getDeleted, 0)
-                .eq(TrainPlanRosterEntity::getAssignStatus, 0)
-                .apply("UPPER(TRIM(id_card)) = {0}", idKey.toUpperCase(Locale.ROOT))
-                .orderByAsc(TrainPlanRosterEntity::getId)
-                .last("LIMIT 5"));
-      }
-      if (!hits.isEmpty()) {
-        matched = hits.get(0);
-      }
-    } else {
-      List<TrainPlanRosterEntity> hits = rosterMapper.selectList(
-          new LambdaQueryWrapper<TrainPlanRosterEntity>()
-              .eq(TrainPlanRosterEntity::getTenantId, tenantId)
-              .eq(TrainPlanRosterEntity::getPlanId, planId)
-              .eq(TrainPlanRosterEntity::getDeleted, 0)
-              .eq(TrainPlanRosterEntity::getAssignStatus, 0)
-              .eq(TrainPlanRosterEntity::getPersonName, personName)
-              .orderByAsc(TrainPlanRosterEntity::getId)
-              .last("LIMIT 5"));
-      if (hits.size() > 1) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST,
-            "姓名「" + personName + "」在待分池中有多人，请补充身份证");
-      }
-      if (hits.size() == 1) {
-        matched = hits.get(0);
-      }
-    }
+    TrainPlanRosterEntity matched = findRosterForPack(tenantId, planId, personName, idCard, multiClass);
 
     if (matched != null) {
       if (occupiedRosterIds.contains(matched.getId())) {
         throw new BusinessException(ErrorCode.BAD_REQUEST,
-            matched.getPersonName() + " 已在本方案其他班或本班中");
+            matched.getPersonName() + " 已在本班中");
       }
-      assertNotAlreadyInTrainInfo(tenantId, trainInfoId, matched);
+      if (!multiClass) {
+        assertNotAlreadyInTrainInfo(tenantId, trainInfoId, matched);
+      }
       // 补全空字段
       boolean dirty = false;
       if (!StringUtils.hasText(matched.getPhone()) && StringUtils.hasText(phone)) {
@@ -1130,9 +1180,68 @@ public class TrainDivisionApplicationService {
     LocalDateTime now = LocalDateTime.now();
     created.setCreateTime(now);
     created.setUpdateTime(now);
-    assertNotAlreadyInTrainInfo(tenantId, trainInfoId, created);
+    if (!multiClass) {
+      assertNotAlreadyInTrainInfo(tenantId, trainInfoId, created);
+    }
     rosterMapper.insert(created);
     return new PersonResolveResult(created, true);
+  }
+
+  private TrainPlanRosterEntity findRosterForPack(
+      Long tenantId, Long planId, String personName, String idCard, boolean multiClass) {
+    if (StringUtils.hasText(idCard)) {
+      String idKey = idCard.trim();
+      List<TrainPlanRosterEntity> hits = selectRosterByIdCard(tenantId, planId, idKey, !multiClass);
+      if (hits.isEmpty()) {
+        LambdaQueryWrapper<TrainPlanRosterEntity> q = new LambdaQueryWrapper<TrainPlanRosterEntity>()
+            .eq(TrainPlanRosterEntity::getTenantId, tenantId)
+            .eq(TrainPlanRosterEntity::getPlanId, planId)
+            .eq(TrainPlanRosterEntity::getDeleted, 0)
+            .apply("UPPER(TRIM(id_card)) = {0}", idKey.toUpperCase(Locale.ROOT))
+            .orderByAsc(TrainPlanRosterEntity::getAssignStatus)
+            .orderByAsc(TrainPlanRosterEntity::getId)
+            .last("LIMIT 5");
+        if (!multiClass) {
+          q.eq(TrainPlanRosterEntity::getAssignStatus, 0);
+        }
+        hits = rosterMapper.selectList(q);
+      }
+      return hits.isEmpty() ? null : hits.get(0);
+    }
+
+    LambdaQueryWrapper<TrainPlanRosterEntity> q = new LambdaQueryWrapper<TrainPlanRosterEntity>()
+        .eq(TrainPlanRosterEntity::getTenantId, tenantId)
+        .eq(TrainPlanRosterEntity::getPlanId, planId)
+        .eq(TrainPlanRosterEntity::getDeleted, 0)
+        .eq(TrainPlanRosterEntity::getPersonName, personName)
+        .orderByAsc(TrainPlanRosterEntity::getAssignStatus)
+        .orderByAsc(TrainPlanRosterEntity::getId)
+        .last("LIMIT 5");
+    if (!multiClass) {
+      q.eq(TrainPlanRosterEntity::getAssignStatus, 0);
+    }
+    List<TrainPlanRosterEntity> hits = rosterMapper.selectList(q);
+    if (hits.size() > 1) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "姓名「" + personName + "」在名单中有多人，请补充身份证");
+    }
+    return hits.isEmpty() ? null : hits.get(0);
+  }
+
+  private List<TrainPlanRosterEntity> selectRosterByIdCard(
+      Long tenantId, Long planId, String idKey, boolean pendingOnly) {
+    LambdaQueryWrapper<TrainPlanRosterEntity> q = new LambdaQueryWrapper<TrainPlanRosterEntity>()
+        .eq(TrainPlanRosterEntity::getTenantId, tenantId)
+        .eq(TrainPlanRosterEntity::getPlanId, planId)
+        .eq(TrainPlanRosterEntity::getDeleted, 0)
+        .eq(TrainPlanRosterEntity::getIdCard, idKey)
+        .orderByAsc(TrainPlanRosterEntity::getAssignStatus)
+        .orderByAsc(TrainPlanRosterEntity::getId)
+        .last("LIMIT 5");
+    if (pendingOnly) {
+      q.eq(TrainPlanRosterEntity::getAssignStatus, 0);
+    }
+    return rosterMapper.selectList(q);
   }
 
   private static String trimToNull(String v) {
@@ -1493,8 +1602,7 @@ public class TrainDivisionApplicationService {
       List<TrainDivisionPackPatchReq.ClassDraft> classDrafts,
       List<TrainDivisionPackPatchReq.UnassignedDraft> unassignedDrafts) {
     Long tenantId = task.getTenantId();
-    boolean allowMultiClass = "by_job_level_slot".equalsIgnoreCase(task.getStrategy())
-        || "by_attendable_slot".equalsIgnoreCase(task.getStrategy());
+    boolean allowMultiClass = allowsMultiClassMembership(task.getStrategy());
     Set<Long> seen = new HashSet<>();
     List<Map<String, Object>> classes = new ArrayList<>();
     int assigned = 0;
@@ -1523,7 +1631,7 @@ public class TrainDivisionApplicationService {
               || !Objects.equals(roster.getPlanId(), task.getPlanId())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "名单人员无效: " + m.getRosterId());
           }
-          if (roster.getAssignStatus() != null && roster.getAssignStatus() != 0) {
+          if (roster.getAssignStatus() != null && roster.getAssignStatus() != 0 && !allowMultiClass) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
                 roster.getPersonName() + " 已分班，无法放入草稿");
           }
@@ -1546,7 +1654,9 @@ public class TrainDivisionApplicationService {
       String jobName = StringUtils.hasText(draft.getJobName())
           ? draft.getJobName().trim()
           : (members.isEmpty() ? null : textOf(members.get(0).get("jobName")));
-      String levelName = members.isEmpty() ? null : textOf(members.get(0).get("levelName"));
+      String levelName = StringUtils.hasText(draft.getLevelName())
+          ? draft.getLevelName().trim()
+          : (members.isEmpty() ? null : textOf(members.get(0).get("levelName")));
       fillClassWorkMeta(c, jobName, levelName, buildWorkTypeLookup());
       classes.add(c);
       assigned += members.size();
@@ -1585,8 +1695,7 @@ public class TrainDivisionApplicationService {
     if (classes.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "方案中无班级，无法创建");
     }
-    boolean multiClass = "by_job_level_slot".equalsIgnoreCase(task.getStrategy())
-        || "by_attendable_slot".equalsIgnoreCase(task.getStrategy());
+    boolean multiClass = allowsMultiClassMembership(task.getStrategy());
 
     LocalDateTime now = LocalDateTime.now();
     var user = SecurityContext.currentUser();
@@ -1625,21 +1734,23 @@ public class TrainDivisionApplicationService {
               roster.getPersonName() + " 已分入其他班级，请重新调整方案");
         }
         if (StringUtils.hasText(roster.getIdCard())) {
-          LambdaQueryWrapper<TrainPeopleListEntity> existsQ = new LambdaQueryWrapper<TrainPeopleListEntity>()
-              .eq(TrainPeopleListEntity::getTenantId, tenantId)
-              .eq(TrainPeopleListEntity::getTrainId, trainInfo.getId())
-              .eq(TrainPeopleListEntity::getIdCard, roster.getIdCard().trim())
-              .ne(TrainPeopleListEntity::getType, "teacher");
           if (multiClass) {
-            existsQ.eq(TrainPeopleListEntity::getTrainClassId, clazz.getId());
-          }
-          Long exists = peopleListMapper.selectCount(existsQ);
-          if (exists != null && exists > 0) {
-            if (multiClass) {
+            Long exists = peopleListMapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
+                .eq(TrainPeopleListEntity::getTenantId, tenantId)
+                .eq(TrainPeopleListEntity::getTrainId, trainInfo.getId())
+                .eq(TrainPeopleListEntity::getIdCard, roster.getIdCard().trim())
+                .eq(TrainPeopleListEntity::getTrainClassId, clazz.getId())
+                .ne(TrainPeopleListEntity::getType, "teacher"));
+            if (exists != null && exists > 0) {
               continue;
             }
-            throw new BusinessException(ErrorCode.BAD_REQUEST,
-                roster.getPersonName() + " 已在该培训信息班级中");
+          } else {
+            String activeTitle = releaseOrphanPeopleAndFindActiveClassTitle(
+                tenantId, trainInfo.getId(), roster.getIdCard().trim());
+            if (activeTitle != null) {
+              throw new BusinessException(ErrorCode.BAD_REQUEST,
+                  roster.getPersonName() + " 已在班级「" + activeTitle + "」中");
+            }
           }
         }
 
@@ -1971,14 +2082,11 @@ public class TrainDivisionApplicationService {
       if (!idCardsInRequest.add(key)) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "同一身份证不能分入多个班级：" + r.getIdCard());
       }
-      Long exists = peopleListMapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
-          .eq(TrainPeopleListEntity::getTenantId, tenantId)
-          .eq(TrainPeopleListEntity::getTrainId, trainInfo.getId())
-          .eq(TrainPeopleListEntity::getIdCard, r.getIdCard().trim())
-          .ne(TrainPeopleListEntity::getType, "teacher"));
-      if (exists != null && exists > 0) {
+      String activeTitle = releaseOrphanPeopleAndFindActiveClassTitle(
+          tenantId, trainInfo.getId(), r.getIdCard().trim());
+      if (activeTitle != null) {
         throw new BusinessException(ErrorCode.BAD_REQUEST,
-            "学员已在该培训信息的班级中：" + r.getPersonName() + "/" + r.getIdCard());
+            "学员已在班级「" + activeTitle + "」中：" + r.getPersonName() + "/" + r.getIdCard());
       }
     }
 

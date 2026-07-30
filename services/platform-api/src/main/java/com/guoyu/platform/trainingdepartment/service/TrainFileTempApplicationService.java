@@ -78,8 +78,15 @@ public class TrainFileTempApplicationService {
     }
     assertTitleMatchesFileType(req.getTitle(), req.getPathSource(), resolveExt(req.getPathSource(), req.getExt()));
     excelHeaderValidator.validate(req.getTitle(), req.getPathSource());
+
+    // 开班申请表：可只上传一份已含占位符的 Word；pathUsed 为空时自动等于 pathSource
+    String pathUsed = req.getPathUsed();
+    if ("开班申请表".equals(req.getTitle()) && !StringUtils.hasText(pathUsed)) {
+      pathUsed = req.getPathSource();
+      req.setPathUsed(pathUsed);
+    }
     if ("开班申请表".equals(req.getTitle())) {
-      docxTemplateValidator.validateKaiBanApplication(req.getPathUsed(), req.getPathSource());
+      docxTemplateValidator.validateKaiBanApplication(pathUsed, req.getPathSource());
     }
     String ext = resolveExt(req.getPathSource(), req.getExt());
     String city = "开班申请表".equals(req.getTitle()) ? req.getCity() : "";
@@ -92,7 +99,9 @@ public class TrainFileTempApplicationService {
       entity.setCity(city);
       entity.setPathSource(req.getPathSource());
       entity.setExt(ext);
-      if (StringUtils.hasText(req.getPathUsed())) {
+      if ("开班申请表".equals(req.getTitle())) {
+        entity.setPathUsed(pathUsed);
+      } else if (StringUtils.hasText(req.getPathUsed())) {
         entity.setPathUsed(req.getPathUsed());
       }
       mapper.updateById(entity);
@@ -105,7 +114,7 @@ public class TrainFileTempApplicationService {
       entity.setCity(city);
       entity.setPathSource(req.getPathSource());
       entity.setExt(ext);
-      entity.setPathUsed(req.getPathUsed());
+      entity.setPathUsed(pathUsed);
       entity.setDeleted(0);
       mapper.insert(entity);
     }

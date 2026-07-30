@@ -3,9 +3,8 @@ package com.guoyu.platform.trainingdepartment.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
-import com.guoyu.platform.file.config.FileStorageProperties;
-import com.guoyu.platform.file.entity.FileEntity;
-import com.guoyu.platform.file.mapper.FileMapper;
+import com.guoyu.platform.file.service.FileApplicationService;
+import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.trainingdepartment.entity.TrainFileDetailEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainFileListEntity;
@@ -18,16 +17,10 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.support.TrainClassMaterialPackService;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.security.MessageDigest;
 import java.time.LocalDateTime;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,28 +36,25 @@ public class TrainMaterialGenerateApplicationService {
   private final TrainInfoClassMapper classMapper;
   private final TrainInfoListMapper infoListMapper;
   private final TrainPeopleListMapper peopleListMapper;
-  private final FileMapper fileMapper;
+  private final FileApplicationService fileApplicationService;
   private final TrainFileListMapper trainFileListMapper;
   private final TrainFileDetailMapper trainFileDetailMapper;
-  private final FileStorageProperties fileStorageProperties;
   private final TrainClassMaterialPackService materialPackService;
 
   public TrainMaterialGenerateApplicationService(
       TrainInfoClassMapper classMapper,
       TrainInfoListMapper infoListMapper,
       TrainPeopleListMapper peopleListMapper,
-      FileMapper fileMapper,
+      FileApplicationService fileApplicationService,
       TrainFileListMapper trainFileListMapper,
       TrainFileDetailMapper trainFileDetailMapper,
-      FileStorageProperties fileStorageProperties,
       TrainClassMaterialPackService materialPackService) {
     this.classMapper = classMapper;
     this.infoListMapper = infoListMapper;
     this.peopleListMapper = peopleListMapper;
-    this.fileMapper = fileMapper;
+    this.fileApplicationService = fileApplicationService;
     this.trainFileListMapper = trainFileListMapper;
     this.trainFileDetailMapper = trainFileDetailMapper;
-    this.fileStorageProperties = fileStorageProperties;
     this.materialPackService = materialPackService;
   }
 
@@ -76,7 +66,6 @@ public class TrainMaterialGenerateApplicationService {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
 
-    // 1. 获取班级和培训信息
     TrainInfoClassEntity classEntity = classMapper.selectOne(
         new LambdaQueryWrapper<TrainInfoClassEntity>()
             .eq(TrainInfoClassEntity::getId, classId)
@@ -94,7 +83,6 @@ public class TrainMaterialGenerateApplicationService {
       infoEntity = infoListMapper.selectById(classEntity.getTrainInfoId());
     }
 
-    // 2. 获取学员列表
     List<TrainPeopleListEntity> students = peopleListMapper.selectList(
         new LambdaQueryWrapper<TrainPeopleListEntity>()
             .eq(TrainPeopleListEntity::getTrainClassId, classId)
@@ -104,7 +92,6 @@ public class TrainMaterialGenerateApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "该班级未添加任何人员");
     }
 
-    // 3. 获取教务人员列表
     List<TrainPeopleListEntity> staff = peopleListMapper.selectList(
         new LambdaQueryWrapper<TrainPeopleListEntity>()
             .eq(TrainPeopleListEntity::getTrainClassId, classId)
@@ -121,32 +108,12 @@ public class TrainMaterialGenerateApplicationService {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "生成申报材料失败: " + e.getMessage());
     }
 
-    // 4. 保存文件到存储
     String safeName = sanitizeFileName(classEntity.getTitle()) + "_申报材料.zip";
-    String objectKey = buildObjectKey(tenantId, safeName);
-
     try {
-      Path storagePath = Paths.get(fileStorageProperties.localRoot(), objectKey);
-      Files.createDirectories(storagePath.getParent());
-      Files.write(storagePath, zipBytes);
+      // 走统一文件服务：配置为 cos 时会真正上传 COS，避免只写本地却标记 cos 导致下载失败
+      FileVO stored = fileApplicationService.storeFromBytes(
+          zipBytes, safeName, "application/zip", "private");
 
-      String sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(zipBytes));
-
-      FileEntity fileEntity = new FileEntity();
-      fileEntity.setTenantId(tenantId);
-      fileEntity.setStorageProvider(fileStorageProperties.storageProvider());
-      fileEntity.setObjectKey(objectKey);
-      fileEntity.setOriginalName(safeName);
-      fileEntity.setContentType("application/zip");
-      fileEntity.setSizeBytes((long) zipBytes.length);
-      fileEntity.setSha256(sha256);
-      fileEntity.setAccessPolicy("private");
-      fileEntity.setStatus("uploaded");
-      fileEntity.setCreatedBy(userId);
-      fileEntity.setUpdatedBy(userId);
-      fileMapper.insert(fileEntity);
-
-      // 5. 创建培训文件记录
       TrainFileListEntity fileList = new TrainFileListEntity();
       fileList.setTableName("train_info_class");
       fileList.setPk(String.valueOf(classId));
@@ -161,7 +128,7 @@ public class TrainMaterialGenerateApplicationService {
       TrainFileDetailEntity fileDetail = new TrainFileDetailEntity();
       fileDetail.setFileId(fileList.getId());
       fileDetail.setTitle(safeName);
-      fileDetail.setPath("/api/files/" + fileEntity.getId() + "/download");
+      fileDetail.setPath("/api/files/" + stored.id() + "/download");
       fileDetail.setUserId(userId);
       fileDetail.setStatus(1);
       fileDetail.setSortNumber(0);
@@ -170,9 +137,11 @@ public class TrainMaterialGenerateApplicationService {
       trainFileDetailMapper.insert(fileDetail);
 
       Map<String, Object> result = new LinkedHashMap<>();
-      result.put("downUrl", "/api/files/" + fileEntity.getId() + "/download");
-      result.put("fileId", fileEntity.getId());
+      result.put("downUrl", "/api/files/" + stored.id() + "/download");
+      result.put("fileId", stored.id());
       return result;
+    } catch (BusinessException e) {
+      throw e;
     } catch (Exception e) {
       log.error("保存申报材料文件失败", e);
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "保存申报材料文件失败: " + e.getMessage());
@@ -180,14 +149,9 @@ public class TrainMaterialGenerateApplicationService {
   }
 
   private String sanitizeFileName(String name) {
-    if (name == null) return "material";
+    if (name == null) {
+      return "material";
+    }
     return name.replaceAll("[\\\\/:*?\"<>|]", "_");
-  }
-
-  private String buildObjectKey(Long tenantId, String safeName) {
-    LocalDateTime now = LocalDateTime.now();
-    return String.format("%d/%d/%02d/%s-%s",
-        tenantId, now.getYear(), now.getMonthValue(),
-        UUID.randomUUID().toString().substring(0, 8), safeName);
   }
 }

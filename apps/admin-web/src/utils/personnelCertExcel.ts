@@ -77,7 +77,13 @@ export function mockLookupCertificate(name: string, idCard: string): Omit<CertLo
   if (last === '0') {
     return { status: 'not_found', message: '未查到证书信息（Mock）' };
   }
-  const levelPool = ['五级/初级工', '四级/中级工', '三级/高级工', '二级/技师', '一级/高级技师'];
+  const levelPool = [
+    '劳动关系协调员(五级/初级工)',
+    '劳动关系协调员(四级/中级工)',
+    '劳动关系协调员(三级/高级工)',
+    '劳动关系协调员(二级/技师)',
+    '劳动关系协调员(一级/高级技师)',
+  ];
   const levelIdx = parseInt(last, 10) % levelPool.length;
   const year = 2018 + (parseInt(card.slice(-2), 10) % 7);
   const month = String((parseInt(card.slice(-3, -1), 10) % 12) + 1).padStart(2, '0');

@@ -97,6 +97,70 @@ public class ClassCollectionApplicationService {
     upsertRosterStudent(signUp.getTrainInfoId(), signUp.getTrainClassId(), person, signUp.getTenantId());
   }
 
+  /**
+   * class_prep（或已绑定班级）计划：身份证必须已在本班学员花名册中。
+   * 其它计划直接放行。
+   */
+  @Transactional(readOnly = true)
+  public void assertIdCardInClassRoster(TrainSignUpSelfEntity plan, String idCardNumber) {
+    if (!requiresRoster(plan)) {
+      return;
+    }
+    if (!isIdCardInClassRoster(plan, idCardNumber)) {
+      throw new BusinessException(ErrorCode.FORBIDDEN, "您不在本班学员名单中，无法填写资料");
+    }
+  }
+
+  /** 是否需要花名册门禁（开班准备 / 已绑定班级） */
+  public boolean requiresRoster(TrainSignUpSelfEntity plan) {
+    if (plan == null) {
+      return false;
+    }
+    return SOURCE_CLASS_PREP.equals(plan.getCollectionSource()) || plan.getTrainClassId() != null;
+  }
+
+  public boolean isClassPrep(TrainSignUpSelfEntity plan) {
+    return requiresRoster(plan);
+  }
+
+  /**
+   * 扫码验证用：返回是否需要花名册、是否在名单内、是否允许进入填写。
+   */
+  @Transactional(readOnly = true)
+  public Map<String, Object> checkRosterAccess(TrainSignUpSelfEntity plan, String idCardNumber) {
+    boolean requireRoster = requiresRoster(plan);
+    boolean inRoster = !requireRoster || isIdCardInClassRoster(plan, idCardNumber);
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("requireRoster", requireRoster);
+    m.put("inRoster", inRoster);
+    m.put("allowed", !requireRoster || inRoster);
+    m.put("trainClassId", plan != null ? plan.getTrainClassId() : null);
+    m.put("collectionSource", plan != null ? plan.getCollectionSource() : null);
+    return m;
+  }
+
+  private boolean isIdCardInClassRoster(TrainSignUpSelfEntity plan, String idCardNumber) {
+    if (plan == null || plan.getTrainClassId() == null) {
+      return false;
+    }
+    if (!StringUtils.hasText(idCardNumber)) {
+      return false;
+    }
+    String want = idCardNumber.trim().toUpperCase();
+    List<TrainPeopleListEntity> students = peopleListMapper.selectList(
+        new LambdaQueryWrapper<TrainPeopleListEntity>()
+            .eq(TrainPeopleListEntity::getTrainClassId, plan.getTrainClassId())
+            .eq(TrainPeopleListEntity::getType, "student")
+            .eq(TrainPeopleListEntity::getDeleted, 0)
+            .select(TrainPeopleListEntity::getId, TrainPeopleListEntity::getIdCard));
+    for (TrainPeopleListEntity s : students) {
+      if (s.getIdCard() != null && want.equals(s.getIdCard().trim().toUpperCase())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** 批量审核通过后同步 */
   @Transactional
   public void syncApprovedPeopleToRoster(List<Long> peopleIds) {

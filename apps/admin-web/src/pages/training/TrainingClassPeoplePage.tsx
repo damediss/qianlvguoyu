@@ -26,7 +26,7 @@ import dayjs from 'dayjs';
 import * as trainApi from '../../api/training';
 import { uploadFile } from '../../api/knowledge';
 import { FilePreviewModal, type FilePreviewTarget } from '../../components/FilePreviewModal';
-import { ApiAuthImage } from '../../components/ApiAuthImage';
+import { AuthImage } from '../../components/ApiAuthImage';
 import { fileNameFromUrl } from '../../api/files';
 import type {
   TrainInfoClassListItem,
@@ -253,14 +253,14 @@ function StudentListModal({
     if (!url) return <div className="student-photo-cell" />;
     return (
       <div className="student-photo-cell">
-        <ApiAuthImage
+        {/* 表格缩略图用原生 img：失败时隐藏，避免 ant-image-error 裂图图标 */}
+        <AuthImage
           url={url}
           alt="证件照"
           className="student-id-photo"
           width={72}
           height={96}
           style={{ objectFit: 'cover', borderRadius: 2 }}
-          preview={{ mask: '预览' }}
         />
       </div>
     );

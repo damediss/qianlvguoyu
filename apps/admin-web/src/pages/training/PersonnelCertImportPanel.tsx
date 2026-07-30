@@ -184,7 +184,7 @@ export function PersonnelCertImportPanel() {
         return <Tag color={meta.color}>{meta.label}</Tag>;
       },
     },
-    { title: '已有证书等级', dataIndex: 'certLevel', width: 120, render: (v) => v || '-' },
+    { title: '已有证书等级', dataIndex: 'certLevel', width: 220, ellipsis: true, render: (v) => v || '-' },
     { title: '证书编号', dataIndex: 'certNo', width: 140, ellipsis: true, render: (v) => v || '-' },
     { title: '发证日期', dataIndex: 'issueDate', width: 110, render: (v) => v || '-' },
     { title: '说明', dataIndex: 'message', ellipsis: true, render: (v) => v || '-' },

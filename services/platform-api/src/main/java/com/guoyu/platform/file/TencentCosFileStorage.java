@@ -13,7 +13,9 @@ import com.qcloud.cos.model.ObjectMetadata;
 import com.qcloud.cos.model.PutObjectRequest;
 import com.qcloud.cos.model.PutObjectResult;
 import com.qcloud.cos.region.Region;
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Path;
 import org.springframework.util.StringUtils;
 
 /**
@@ -57,17 +59,41 @@ public class TencentCosFileStorage implements FileStorage {
 
   @Override
   public String put(String objectKey, InputStream content, long sizeBytes, String contentType) {
+    // COS SDK 会消费流；先缓冲以便本地镜像双写（下载时可本地回退）
+    byte[] bytes;
+    try {
+      bytes = content.readAllBytes();
+    } catch (IOException ex) {
+      throw new RuntimeException("COS put read failed: " + objectKey, ex);
+    }
     ObjectMetadata meta = new ObjectMetadata();
-    meta.setContentLength(sizeBytes);
+    meta.setContentLength(bytes.length);
     if (StringUtils.hasText(contentType)) {
       meta.setContentType(contentType);
     }
-    PutObjectRequest req = new PutObjectRequest(bucket, objectKey, content, meta);
+    PutObjectRequest req = new PutObjectRequest(
+        bucket, objectKey, new java.io.ByteArrayInputStream(bytes), meta);
     PutObjectResult result = client.putObject(req);
     if (result == null || result.getETag() == null) {
       throw new RuntimeException("COS put returned no ETag for " + objectKey);
     }
+    mirrorLocal(objectKey, bytes);
     return joinUrl(urlPrefix, objectKey);
+  }
+
+  private void mirrorLocal(String objectKey, byte[] bytes) {
+    try {
+      Path root = java.nio.file.Paths.get(properties.localRoot()).toAbsolutePath().normalize();
+      Path target = root.resolve(objectKey).normalize();
+      if (!target.startsWith(root)) {
+        log.warn("[TencentCosFileStorage] skip local mirror invalid key: {}", objectKey);
+        return;
+      }
+      java.nio.file.Files.createDirectories(target.getParent());
+      java.nio.file.Files.write(target, bytes);
+    } catch (Exception ex) {
+      log.warn("[TencentCosFileStorage] local mirror failed: {} - {}", objectKey, ex.toString());
+    }
   }
 
   @Override

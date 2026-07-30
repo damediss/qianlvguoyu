@@ -454,7 +454,7 @@ public class SignUpPeopleSelfAssembler {
     }
     String trimmed = path.trim();
     if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-      return trimmed;
+      return stripInternalServicePort(trimmed);
     }
     // 平台文件接口：/api/files/{id}/download 或 /api/exam/files/{objectKey}
     // 不能再拼 CDN 前缀，否则会变成 /api/exam/files/api/files/... 导致 404
@@ -473,6 +473,35 @@ public class SignUpPeopleSelfAssembler {
       return "/api" + trimmed.substring(idx);
     }
     String normalized = trimmed.startsWith("/") ? trimmed.substring(1) : trimmed;
-    return cdnUrl + "/" + normalized;
+    return stripInternalServicePort(cdnUrl + "/" + normalized);
+  }
+
+  /**
+   * 公网预览时去掉非本机 :8080/:8081（直连常被防火墙拦截，应走 Nginx 80/443）。
+   */
+  private String stripInternalServicePort(String absoluteUrl) {
+    try {
+      java.net.URI uri = java.net.URI.create(absoluteUrl);
+      String host = uri.getHost();
+      int port = uri.getPort();
+      boolean local = host == null
+          || "localhost".equalsIgnoreCase(host)
+          || "127.0.0.1".equals(host);
+      if (!local && (port == 8080 || port == 8081)) {
+        String scheme = uri.getScheme() != null ? uri.getScheme() : "http";
+        StringBuilder sb = new StringBuilder();
+        sb.append(scheme).append("://").append(host);
+        if (uri.getRawPath() != null) {
+          sb.append(uri.getRawPath());
+        }
+        if (uri.getRawQuery() != null) {
+          sb.append('?').append(uri.getRawQuery());
+        }
+        return sb.toString();
+      }
+    } catch (Exception ignored) {
+      // keep original
+    }
+    return absoluteUrl;
   }
 }

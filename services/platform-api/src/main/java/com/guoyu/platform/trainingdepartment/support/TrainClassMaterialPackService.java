@@ -49,7 +49,7 @@ import org.springframework.util.StringUtils;
 public class TrainClassMaterialPackService {
 
   private static final String[] LEVEL_LABELS = {
-      "", "一级/高级技师", "二级/中技师", "三级/高级工", "四级/中级工", "五级/初级工"
+      "", "初级工", "中级工", "高级工", "技师", "高级技师"
   };
 
   private final TrainFileTempMapper fileTempMapper;
@@ -245,11 +245,15 @@ public class TrainClassMaterialPackService {
     byte[] templateBytes = Files.readAllBytes(local);
     if (!docxTemplateValidator.hasKaiBanMacros(templateBytes)) {
       throw new IllegalStateException(
-          "开班申请表模板未设置 Word 变量（需含 ${pxdw}、${company} 等）。"
-              + "请重新上传并在「设置变量后的Word」中保存含占位符的文档，或挂载正确模板。");
+          "开班申请表模板未设置 Word 变量（需含 ${pxdw}、${company}、${worktype} 等）。"
+              + "请在原 Word 文件对应位置插入占位符后重新上传，或挂载已含变量的模板。");
     }
     String wlevel = "";
-    int level = trainInfo != null && trainInfo.getWorkTypeLevel() != null ? trainInfo.getWorkTypeLevel() : 0;
+    Integer levelCode = clazz.getWorkTypeLevel();
+    if (levelCode == null || levelCode <= 0) {
+      levelCode = trainInfo != null ? trainInfo.getWorkTypeLevel() : null;
+    }
+    int level = levelCode != null ? levelCode : 0;
     if (level > 0 && level < LEVEL_LABELS.length) {
       wlevel = LEVEL_LABELS[level];
     }
@@ -258,7 +262,7 @@ public class TrainClassMaterialPackService {
       pxtime = clazz.getDateStart() + "至" + clazz.getDateEnd();
     }
     Map<String, String> vars = new LinkedHashMap<>();
-    vars.put("pxdw", trainInfo != null && trainInfo.getTrainCompanyName() != null ? trainInfo.getTrainCompanyName() : "");
+    vars.put("pxdw", resolvePxdw(trainInfo));
     vars.put("fzr", "");
     vars.put("fzrtel", "");
     vars.put("company", companyName);
@@ -281,7 +285,15 @@ public class TrainClassMaterialPackService {
     return TrainingDocxVariableReplacer.replaceAll(templateBytes, vars);
   }
 
-  /** 对齐 PHP：优先使用 path_used（设置变量后的 Word） */
+  /** ${pxdw}：培训机构名；库为空时兜底默认机构，避免开班申请表机构栏空白 */
+  private static String resolvePxdw(TrainInfoListEntity trainInfo) {
+    if (trainInfo != null && StringUtils.hasText(trainInfo.getTrainCompanyName())) {
+      return trainInfo.getTrainCompanyName().trim();
+    }
+    return "千铝工投";
+  }
+
+  /** 优先 path_used；为空时用 path_source（单文件上传场景） */
   private String resolveKaiBanTemplatePath(TrainFileTempEntity tmpl) {
     if (StringUtils.hasText(tmpl.getPathUsed())) {
       return tmpl.getPathUsed();

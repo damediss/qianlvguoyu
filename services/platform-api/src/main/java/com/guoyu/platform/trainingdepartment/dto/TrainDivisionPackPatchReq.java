@@ -28,6 +28,8 @@ public class TrainDivisionPackPatchReq {
     private String group;
     /** 班级工种（可选，用于展示与筛选） */
     private String jobName;
+    /** 班级等级文本（可多班不同等级） */
+    private String levelName;
     @Valid
     private List<MemberDraft> members = new ArrayList<>();
 
@@ -39,6 +41,8 @@ public class TrainDivisionPackPatchReq {
     public void setGroup(String group) { this.group = group; }
     public String getJobName() { return jobName; }
     public void setJobName(String jobName) { this.jobName = jobName; }
+    public String getLevelName() { return levelName; }
+    public void setLevelName(String levelName) { this.levelName = levelName; }
     public List<MemberDraft> getMembers() { return members; }
     public void setMembers(List<MemberDraft> members) { this.members = members; }
   }

@@ -9,6 +9,9 @@ public class TrainDivisionEnsureTrainInfoReq {
   private Integer workTypeLevel;
   @Size(max = 255)
   private String title;
+  /** 培训机构名称（写入 train_info_list.train_company_name → ${pxdw}） */
+  @Size(max = 255)
+  private String trainCompanyName;
   /** 默认 true：相同计划+年+工种复用已有培训信息 */
   private Boolean reuseExisting = true;
 
@@ -20,6 +23,8 @@ public class TrainDivisionEnsureTrainInfoReq {
   public void setWorkTypeLevel(Integer workTypeLevel) { this.workTypeLevel = workTypeLevel; }
   public String getTitle() { return title; }
   public void setTitle(String title) { this.title = title; }
+  public String getTrainCompanyName() { return trainCompanyName; }
+  public void setTrainCompanyName(String trainCompanyName) { this.trainCompanyName = trainCompanyName; }
   public Boolean getReuseExisting() { return reuseExisting; }
   public void setReuseExisting(Boolean reuseExisting) { this.reuseExisting = reuseExisting; }
 }

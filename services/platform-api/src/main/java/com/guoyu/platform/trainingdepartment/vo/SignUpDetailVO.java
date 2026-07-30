@@ -19,6 +19,8 @@ public class SignUpDetailVO {
   private String collectionSource;
   /** class_prep 时为 true：提交前须通过花名册校验 */
   private Boolean requireRoster;
+  /** 传入 idCardNumber 时返回：是否在本班学员花名册 */
+  private Boolean inRoster;
   private Integer peopleCount;
   private List<String> files;
 }

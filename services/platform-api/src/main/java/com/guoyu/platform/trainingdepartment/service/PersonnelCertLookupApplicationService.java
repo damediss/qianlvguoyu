@@ -98,7 +98,7 @@ public class PersonnelCertLookupApplicationService {
         name,
         idCard,
         "verified",
-        CertMappingSupport.displayCertLevel(primary),
+        CertMappingSupport.displayCertOccupationLevel(primary),
         primary.certNo(),
         primary.certDate(),
         null);

@@ -7,6 +7,7 @@ import {
   Alert,
   Button,
   Card,
+  Empty,
   Form,
   Input,
   Modal,
@@ -14,11 +15,12 @@ import {
   Select,
   Space,
   Table,
+  Tag,
   Typography,
   Upload,
   message,
 } from 'antd';
-import { InboxOutlined } from '@ant-design/icons';
+import { InboxOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadProps } from 'antd';
 import { useQuery } from '@tanstack/react-query';
@@ -39,7 +41,17 @@ import { TrainingProcessSteps } from './TrainingProcessSteps';
 
 const { Dragger } = Upload;
 
-const FILE_TEMP_TITLES = ['开班申请表', '导入表', '开班花名册', '课时导入表'];
+const FILE_TEMP_TITLES = ['开班申请表', '导入表', '开班花名册', '课时导入表'] as const;
+
+function materialCoverage(rows: TrainFileTempItem[]) {
+  const titles = new Set(rows.map((r) => r.title).filter(Boolean));
+  const missing = FILE_TEMP_TITLES.filter((t) => !titles.has(t));
+  return { titles, missing, ready: missing.length === 0 };
+}
+
+function errMsg(e: unknown, fallback: string): string {
+  return e instanceof Error && e.message ? e.message : fallback;
+}
 
 function uploadAcceptByTitle(title?: string): string {
   if (title === '开班申请表') return '.docx';
@@ -53,7 +65,7 @@ function isExcelExt(ext?: string): boolean {
 
 function fileTypeHint(title?: string): string {
   if (title === '开班申请表') {
-    return '先上传空白表到「文件路径」，再上传含 ${pxdw}、${company}、${worktype} 等变量的 Word 到「设置变量后的Word」';
+    return '上传已含 ${pxdw}、${company}、${worktype}、${level}、${nums}、${pxtime}、${teacher1} 等占位符的 Word 即可；生成材料时自动填入班级信息。「设置变量后的Word」可选，用于覆盖原件。';
   }
   if (title === '导入表' || title === '开班花名册' || title === '课时导入表') {
     return `上传 Excel 模板（.xlsx/.xls），须为人社部门提供的「${title}」标准表头`;
@@ -106,7 +118,10 @@ export function TrainingClassDeclarePage() {
 
   const [classMaterialOpen, setClassMaterialOpen] = useState(false);
   const [classId, setClassId] = useState(0);
+  const [classTitle, setClassTitle] = useState('');
   const [materialRows, setMaterialRows] = useState<TrainFileTempItem[]>([]);
+  const attachedTempIds = useMemo(() => new Set(materialRows.map((r) => r.id)), [materialRows]);
+  const coverage = useMemo(() => materialCoverage(materialRows), [materialRows]);
 
   const [previewTarget, setPreviewTarget] = useState<FilePreviewTarget | null>(null);
 
@@ -212,10 +227,6 @@ export function TrainingClassDeclarePage() {
       message.error('开班申请表须上传 Word 文档（.docx）');
       return;
     }
-    if (v.title === '开班申请表' && !v.pathUsed) {
-      message.error('请上传「设置变量后的Word」（须含 ${pxdw}、${company} 等占位符）');
-      return;
-    }
     if (v.title !== '开班申请表' && !isExcelExt(v.ext)) {
       message.error(`${v.title}须上传 Excel 文件（.xlsx/.xls）`);
       return;
@@ -275,18 +286,22 @@ export function TrainingClassDeclarePage() {
       return;
     }
     const ids = selectedTempKeys.map((k) => Number(k));
-    const res = await trainApi.attachFileTemps(classId, ids);
-    if (res?.count != null || res?.ids) {
-      message.success('导入成功');
-      setFileTempOpen(false);
-      setFileTempRows([]);
-      const newIds = res.ids ?? res.fileTemps ?? ids;
-      await loadFileTemps(newIds, true);
-      refetch();
+    try {
+      const res = await trainApi.attachFileTemps(classId, ids);
+      if (res?.count != null || res?.ids) {
+        message.success('导入成功（同名模板已自动替换）');
+        setFileTempOpen(false);
+        setFileTempRows([]);
+        const newIds = res.ids ?? res.fileTemps ?? ids;
+        await loadFileTemps(newIds, true);
+        refetch();
+      }
+    } catch (e) {
+      message.error(errMsg(e, '导入失败'));
     }
   };
 
-  const createFile = async (row: TrainInfoClassListItem) => {
+  const createFile = async (row: { id: number | string; title?: string }) => {
     setGenerating(true);
     try {
       const res = await trainApi.generateMaterials(Number(row.id));
@@ -296,8 +311,8 @@ export function TrainingClassDeclarePage() {
       } else {
         message.warning('未返回下载地址');
       }
-    } catch {
-      message.error('生成失败');
+    } catch (e) {
+      message.error(errMsg(e, '生成失败'));
     } finally {
       setGenerating(false);
     }
@@ -305,6 +320,7 @@ export function TrainingClassDeclarePage() {
 
   const manageFile = (row: TrainInfoClassListItem) => {
     setClassId(Number(row.id));
+    setClassTitle(row.title || '');
     const ids = parseFileTempIds(row.file_temps);
     loadFileTemps(ids, true);
     setClassMaterialOpen(true);
@@ -313,13 +329,17 @@ export function TrainingClassDeclarePage() {
   const handleMaterialDelete = (row: TrainFileTempItem) => {
     Modal.confirm({
       title: '友情提示',
-      content: '确定要删除该模板吗?',
+      content: `确定从本班移除「${row.title}」吗？模板本身不会删除。`,
       onOk: async () => {
-        const res = await trainApi.detachFileTemp(classId, row.id);
-        if (res?.fileTemps) {
-          message.success('删除成功');
-          await loadFileTemps(res.fileTemps, true);
-          refetch();
+        try {
+          const res = await trainApi.detachFileTemp(classId, row.id);
+          if (res?.fileTemps) {
+            message.success('已移除');
+            await loadFileTemps(res.fileTemps, true);
+            refetch();
+          }
+        } catch (e) {
+          message.error(errMsg(e, '移除失败'));
         }
       },
     });
@@ -332,12 +352,17 @@ export function TrainingClassDeclarePage() {
   };
 
   const onPreviewFile = (row: TrainFileTempItem, field: 'urlSource' | 'urlUsed' = 'urlSource') => {
-    const url = field === 'urlUsed' ? row.urlUsed : row.urlSource;
-    if (!url) return;
+    const url = field === 'urlUsed'
+      ? (row.urlUsed || row.path_used || row.urlSource || row.path_source)
+      : (row.urlSource || row.path_source);
+    if (!url) {
+      message.warning('暂无可预览文件');
+      return;
+    }
     const resolved = fileUrl(url);
     setPreviewTarget({
       fileUrl: resolved,
-      fileName: fileNameFromUrl(resolved),
+      fileName: fileNameFromUrl(resolved) || row.title || 'preview',
       fileType: row.ext,
     });
   };
@@ -354,16 +379,19 @@ export function TrainingClassDeclarePage() {
       title: '操作',
       width: 220,
       align: 'center',
-      render: (_, row) => (
-        <Space>
-          <Button type="link" className="link-action" loading={generating} onClick={() => createFile(row)}>
-            生成材料
-          </Button>
-          <Button type="link" className="link-action" onClick={() => manageFile(row)}>
-            材料管理
-          </Button>
-        </Space>
-      ),
+      render: (_, row) => {
+        const attached = parseFileTempIds(row.file_temps).length;
+        return (
+          <Space>
+            <Button type="link" className="link-action" loading={generating} onClick={() => createFile(row)}>
+              生成材料
+            </Button>
+            <Button type="link" className="link-action" onClick={() => manageFile(row)}>
+              材料管理{attached > 0 ? `(${attached})` : ''}
+            </Button>
+          </Space>
+        );
+      },
     },
   ];
 
@@ -414,28 +442,53 @@ export function TrainingClassDeclarePage() {
   ];
 
   const materialColumns: ColumnsType<TrainFileTempItem> = [
-    { title: '城市', dataIndex: 'city', width: 100 },
+    { title: '城市', dataIndex: 'city', width: 100, render: (v) => v || '-' },
     { title: '文件名称', dataIndex: 'title' },
-    { title: '文件类型', dataIndex: 'ext', width: 100 },
+    {
+      title: '文件类型',
+      dataIndex: 'ext',
+      width: 100,
+      render: (ext: string) => (ext ? <Tag>{ext}</Tag> : '-'),
+    },
     {
       title: '文件',
       width: 160,
-      render: (_, row) =>
-        row.ext === 'docx' ? (
-          row.path_used ? (
-            <Button type="link" onClick={() => onPreviewFile(row, 'urlUsed')}>预览</Button>
-          ) : null
-        ) : row.ext === 'xlsx' ? (
-          <Button type="link" onClick={() => onPreviewFile(row, 'urlSource')}>预览</Button>
-        ) : null,
+      render: (_, row) => {
+        const canPreviewUsed = Boolean(row.path_used || row.urlUsed);
+        const canPreviewSource = Boolean(row.path_source || row.urlSource);
+        if (row.ext === 'docx') {
+          if (canPreviewUsed) {
+            return <Button type="link" onClick={() => onPreviewFile(row, 'urlUsed')}>预览</Button>;
+          }
+          if (canPreviewSource) {
+            return <Button type="link" onClick={() => onPreviewFile(row, 'urlSource')}>预览</Button>;
+          }
+          return <Typography.Text type="secondary">未上传</Typography.Text>;
+        }
+        if (isExcelExt(row.ext) && canPreviewSource) {
+          return <Button type="link" onClick={() => onPreviewFile(row, 'urlSource')}>预览</Button>;
+        }
+        return <Typography.Text type="secondary">-</Typography.Text>;
+      },
     },
     {
       title: '操作',
-      width: 150,
+      width: 100,
       align: 'center',
       render: (_, row) => (
-        <Button type="link" onClick={() => handleMaterialDelete(row)}>删除</Button>
+        <Button type="link" danger onClick={() => handleMaterialDelete(row)}>移除</Button>
       ),
+    },
+  ];
+
+  const importTempColumns: ColumnsType<TrainFileTempItem> = [
+    ...tempColumns.filter((c) => c.title !== '操作'),
+    {
+      title: '状态',
+      width: 100,
+      align: 'center',
+      render: (_, row) =>
+        attachedTempIds.has(row.id) ? <Tag color="blue">已挂载</Tag> : <Tag>可选</Tag>,
     },
   ];
 
@@ -517,7 +570,7 @@ export function TrainingClassDeclarePage() {
           showIcon
           className="mar-b10"
           message="Word 与 Excel 需分别新建模板"
-          description="开班申请表需两步：①「文件路径」上传空白表；②「设置变量后的Word」上传在 Word 中插入 ${pxdw}、${company}、${worktype} 等变量后的文档（生成材料时按此文件填充）。Excel 模板（导入表/花名册/课时表）须单独新建。"
+          description="开班申请表：上传一份已插入 ${pxdw}、${company}、${worktype}、${level}、${nums}、${pxtime}、${teacher1} 等变量的 Word 即可；生成材料时自动写入班级信息。也可另传「设置变量后的Word」覆盖。Excel 模板（导入表/花名册/课时表）须单独新建。"
         />
         {fileTempImport ? (
           <Button className="mar-b10" type="primary" onClick={handleFileImport}>确认导入</Button>
@@ -528,13 +581,17 @@ export function TrainingClassDeclarePage() {
           rowKey="id"
           bordered
           size="small"
-          columns={tempColumns}
+          columns={fileTempImport ? importTempColumns : tempColumns}
           dataSource={fileTempRows}
           scroll={{ y: 300 }}
           pagination={false}
+          locale={{ emptyText: <Empty description={fileTempImport ? '暂无可用模板，请先在材料模板管理中新增' : '暂无模板'} /> }}
           rowSelection={fileTempImport ? {
             selectedRowKeys: selectedTempKeys,
             onChange: (keys) => setSelectedTempKeys(keys),
+            getCheckboxProps: (row) => ({
+              disabled: attachedTempIds.has(row.id),
+            }),
           } : undefined}
         />
       </Modal>
@@ -611,8 +668,7 @@ export function TrainingClassDeclarePage() {
                 <Form.Item
                   name="pathUsed"
                   label="设置变量后的Word"
-                  rules={[{ required: true, message: '请上传含 ${pxdw}、${company} 等变量的 Word' }]}
-                  extra="在 Word 空白表对应位置插入 ${pxdw}、${company}、${worktype}、${nums}、${level} 等占位符后上传"
+                  extra="可选。默认使用上方「文件」；若需单独一份含占位符的 Word，可在此上传覆盖"
                 >
                   <Input
                     readOnly
@@ -651,14 +707,40 @@ export function TrainingClassDeclarePage() {
 
       {/* 班级材料管理 */}
       <Modal
-        title="班级材料管理"
+        title={classTitle ? `班级材料管理 — ${classTitle}` : '班级材料管理'}
         open={classMaterialOpen}
         width="60%"
-        onCancel={() => { setClassMaterialOpen(false); setFileTempImport(false); setMaterialRows([]); }}
+        onCancel={() => {
+          setClassMaterialOpen(false);
+          setFileTempImport(false);
+          setMaterialRows([]);
+          setClassTitle('');
+        }}
         footer={null}
         destroyOnHidden
       >
-        <Button className="mar-b10" type="primary" onClick={handleMaterialAdd}>新增</Button>
+        <Alert
+          className="mar-b10"
+          showIcon
+          type={coverage.ready ? 'success' : 'warning'}
+          message={coverage.ready ? '四类模板已齐全，可生成申报材料包' : '模板尚未齐全'}
+          description={
+            coverage.ready
+              ? '包含：开班申请表、导入表、开班花名册、课时导入表'
+              : `缺少：${coverage.missing.join('、')}。请点击「新增」从模板库挂载。`
+          }
+        />
+        <Space className="mar-b10" wrap>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleMaterialAdd}>新增</Button>
+          <Button
+            type="primary"
+            loading={generating}
+            disabled={!materialRows.length}
+            onClick={() => createFile({ id: classId, title: classTitle })}
+          >
+            生成材料
+          </Button>
+        </Space>
         <Table
           rowKey="id"
           bordered
@@ -667,6 +749,16 @@ export function TrainingClassDeclarePage() {
           dataSource={materialRows}
           scroll={{ y: 300 }}
           pagination={false}
+          locale={{
+            emptyText: (
+              <Empty
+                description="尚未挂载模板"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              >
+                <Button type="primary" onClick={handleMaterialAdd}>从模板库导入</Button>
+              </Empty>
+            ),
+          }}
         />
       </Modal>
     </div>

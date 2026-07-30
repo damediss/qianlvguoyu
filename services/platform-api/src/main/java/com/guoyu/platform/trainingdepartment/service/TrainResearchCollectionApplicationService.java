@@ -38,6 +38,7 @@ import com.guoyu.platform.trainingdepartment.vo.TrainThreeYearPlanVO;
 import com.guoyu.platform.trainingdepartment.vo.CertVerifyBatchResultVO;
 import com.guoyu.platform.trainingdepartment.vo.CertVerifyDetail;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -305,7 +306,7 @@ public class TrainResearchCollectionApplicationService {
         ? req.title().trim()
         : research.getTitle() + "三年规划";
     MultipartFile file = new InMemoryMultipartFile(
-        "collection.xlsx",
+        buildRencaiInputFilename(research),
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         bytes);
     TrainThreeYearPlanCreateReq createReq = new TrainThreeYearPlanCreateReq(
@@ -458,6 +459,33 @@ public class TrainResearchCollectionApplicationService {
       return null;
     }
     return orgMapper.selectById(research.getTargetOrgId());
+  }
+
+  /**
+   * 上传到人才识别的分析文件名：企业/机构名称-企业名称-时间戳.xlsx
+   * （调研企业 title + 关联 sys_org.name + yyyyMMddHHmmss）
+   */
+  private String buildRencaiInputFilename(TrainResearchOrgEntity research) {
+    OrgEntity targetOrg = resolveTargetOrg(research);
+    String researchName = sanitizeFilenamePart(research.getTitle(), "调研企业");
+    String orgName = targetOrg != null && StringUtils.hasText(targetOrg.getName())
+        ? sanitizeFilenamePart(targetOrg.getName(), researchName)
+        : researchName;
+    String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"));
+    return researchName + "-" + orgName + "-" + ts + ".xlsx";
+  }
+
+  private static String sanitizeFilenamePart(String raw, String fallback) {
+    String value = StringUtils.hasText(raw) ? raw.trim() : fallback;
+    value = value.replaceAll("[\\\\/:*?\"<>|\\r\\n\\t]+", "_").replaceAll("\\s+", "");
+    if (!StringUtils.hasText(value)) {
+      value = fallback;
+    }
+    // 避免过长导致下游存储/展示截断异常
+    if (value.length() > 40) {
+      value = value.substring(0, 40);
+    }
+    return value;
   }
 
   private TrainSignUpSelfEntity resolveActiveSignUp(TrainResearchOrgEntity research, boolean required) {

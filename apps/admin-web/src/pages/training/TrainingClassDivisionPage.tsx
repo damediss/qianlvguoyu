@@ -95,6 +95,21 @@ function resolveClassJobName(row: DivisionAutoPackClass): string | undefined {
   return names.length === 1 ? names[0] : undefined;
 }
 
+const CLASS_LEVEL_OPTIONS = ['初级工', '中级工', '高级工', '技师', '高级技师'].map((v) => ({
+  value: v,
+  label: v,
+}));
+
+function resolveClassLevelName(row: DivisionAutoPackClass): string | undefined {
+  if (row.levelName?.trim()) return row.levelName.trim();
+  const names = Array.from(new Set(
+    (row.members ?? [])
+      .map((m) => m.levelName?.trim())
+      .filter((v): v is string => !!v),
+  ));
+  return names.length === 1 ? names[0] : undefined;
+}
+
 function buildPackPatch(pack: DivisionPackTaskResult): DivisionPackPatchReq {
   return {
     classes: pack.classes.map((c) => ({
@@ -102,6 +117,7 @@ function buildPackPatch(pack: DivisionPackTaskResult): DivisionPackPatchReq {
       title: c.title,
       group: c.group,
       jobName: (c.jobName ?? '').trim() || resolveClassJobName(c) || undefined,
+      levelName: (c.levelName ?? '').trim() || resolveClassLevelName(c) || undefined,
       members: c.members ?? [],
     })),
     unassigned: pack.unassigned,
@@ -489,7 +505,12 @@ export function TrainingClassDivisionPage() {
       applyLocalPack(res.task);
       setDraftDirty(false);
       const skipN = res.skipped?.length ?? 0;
-      message.success(`导入成功 ${res.added} 人${skipN ? `，跳过 ${skipN} 人` : ''}`);
+      if ((res.added ?? 0) === 0 && skipN > 0) {
+        const sample = res.skipped?.slice(0, 3).map((s) => `${s.personName || ''}：${s.reason || ''}`).join('；');
+        message.warning(`未导入成功（跳过 ${skipN} 人）。${sample || ''}`);
+      } else {
+        message.success(`导入成功 ${res.added} 人${skipN ? `，跳过 ${skipN} 人` : ''}`);
+      }
       queryClient.invalidateQueries({ queryKey: ['division-roster'] });
     },
     onError: (e: Error) => message.error(e.message || '导入失败'),
@@ -775,13 +796,15 @@ export function TrainingClassDivisionPage() {
 
   const addFromPoolToEditingClass = () => {
     if (editClassIdx == null || !packResult) return;
-    const occupied = new Set<number>();
-    packResult.classes.forEach((c) => (c.members ?? []).forEach((m) => occupied.add(m.rosterId)));
+    // 手动组班允许同一人进多个班：仅排除「当前编辑班」已有人员
+    const occupiedInCurrent = new Set(
+      (packResult.classes[editClassIdx]?.members ?? []).map((m) => m.rosterId),
+    );
     const candidates = poolRosterItems.filter(
-      (r) => poolSelectedIds.includes(r.id) && !occupied.has(r.id),
+      (r) => poolSelectedIds.includes(r.id) && !occupiedInCurrent.has(r.id),
     );
     if (candidates.length === 0) {
-      message.warning('请选择尚未入班的待分人员');
+      message.warning('请选择尚未在本班的待分人员（可同时属于其他班）');
       return;
     }
     const cls = packResult.classes[editClassIdx];
@@ -1127,7 +1150,7 @@ export function TrainingClassDivisionPage() {
                 onChange={(e) => setNewClassTitle(e.target.value)}
               />
               <Button icon={<PlusOutlined />} onClick={addEmptyClass}>新建班级</Button>
-              <Text type="secondary">手动组班：编辑学员时支持待分池勾选、上传名单、手填加人</Text>
+              <Text type="secondary">手动组班：同一人可进入多个班；编辑学员支持待分池勾选、上传名单、手填加人</Text>
             </Space>
           )}
 
@@ -1187,6 +1210,38 @@ export function TrainingClassDivisionPage() {
                                 const next = (vals?.[0] ?? '').trim();
                                 updateDraft((d) => {
                                   if (d.classes[idx]) d.classes[idx].jobName = next || undefined;
+                                });
+                              }}
+                            />
+                          );
+                        },
+                      },
+                      {
+                        title: '等级',
+                        dataIndex: 'levelName',
+                        width: 130,
+                        render: (_v, row, idx) => {
+                          const current = resolveClassLevelName(row);
+                          if (!editable) {
+                            return current ? <Tag>{current}</Tag> : <Text type="secondary">-</Text>;
+                          }
+                          return (
+                            <Select
+                              mode="tags"
+                              maxCount={1}
+                              allowClear
+                              showSearch
+                              placeholder="选择或输入等级"
+                              style={{ width: '100%' }}
+                              value={current ? [current] : []}
+                              options={CLASS_LEVEL_OPTIONS}
+                              optionFilterProp="label"
+                              tokenSeparators={[]}
+                              onChange={(vals) => {
+                                const next = (vals?.[0] ?? '').trim();
+                                updateDraft((d) => {
+                                  if (!d.classes[idx]) return;
+                                  d.classes[idx].levelName = next || undefined;
                                 });
                               }}
                             />

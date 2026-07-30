@@ -125,9 +125,9 @@ public class TrainSignUpCollectionApplicationService {
     Map<String, Object> result = buildQrcodeResult(signUpId, signUp.getTitle());
     
     // 生成 APP 扫码二维码（服务端生成，保存到 CDN）
-    // 二维码指向 collect-test.html 页面（信息收集表单）
+    // 内容需含 pages/research/Saasdetail?id=，供 App scanRouter 识别并跳原生页
     try {
-      String appSignUpUrl = appBaseUrl + "/api/collect-test.html?id=" + signUpId;
+      String appSignUpUrl = appBaseUrl + "/#/pages/research/Saasdetail?id=" + signUpId;
       String appQrCodeFileName = "app_signup_" + signUpId;
       // 每次重新生成以确保二维码内容与当前 URL 一致
       if (qrCodeGenerationService.qrCodeExists(appQrCodeFileName)) {

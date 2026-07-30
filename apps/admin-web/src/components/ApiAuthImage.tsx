@@ -115,12 +115,27 @@ type AuthImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'> & {
 /** 原生 img，适用于 Upload 预览、表格缩略图等（Ant Image 包裹会影响布局） */
 export function AuthImage({ url, alt, className, style, ...rest }: AuthImageProps) {
   const { src, loading } = useAuthImageSrc(url);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src, url]);
+
   if (!url) return null;
   if (loading && !src) {
     return <Spin size="small" />;
   }
-  if (!src) return null;
-  return <img src={src} alt={alt} className={className} style={style} {...rest} />;
+  if (!src || failed) return null;
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      style={style}
+      onError={() => setFailed(true)}
+      {...rest}
+    />
+  );
 }
 
 type ApiAuthImageProps = Omit<ImageProps, 'src'> & {

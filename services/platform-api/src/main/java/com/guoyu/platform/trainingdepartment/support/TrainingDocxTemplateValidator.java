@@ -38,7 +38,7 @@ public class TrainingDocxTemplateValidator {
     if (!hasKaiBanMacros(bytes)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST,
           "开班申请表须上传含 Word 变量的文档（如 ${pxdw}、${company}、${worktype}）。"
-              + "请在 Word 中插入占位符后，上传到「设置变量后的Word」字段。");
+              + "请在 Word 对应位置插入占位符后上传到「文件」；也可另传「设置变量后的Word」覆盖。");
     }
   }
 

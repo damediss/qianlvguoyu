@@ -2628,6 +2628,8 @@ export interface DivisionEnsureTrainInfoReq {
   workTypeId?: number;
   workTypeLevel?: number;
   title?: string;
+  /** 培训机构名称 → train_company_name / ${pxdw} */
+  trainCompanyName?: string;
   reuseExisting?: boolean;
 }
 
@@ -2635,6 +2637,7 @@ export interface DivisionEnsureTrainInfoResult {
   trainInfoId: number;
   created: boolean;
   title: string;
+  trainCompanyName?: string;
 }
 
 export interface DivisionRosterParseReq {
@@ -2754,6 +2757,10 @@ export interface DivisionAutoPackClass {
   group?: string;
   /** 班级工种（手动可选；自动分班时由名单推断） */
   jobName?: string;
+  /** 班级等级（可多班不同等级；对应 ${level}） */
+  levelName?: string;
+  /** 1~5，与名单/认定一致：初级工=1 … 高级技师=5 */
+  workTypeLevel?: number;
   nums: number;
   members?: DivisionAutoPackClassMember[];
 }
@@ -2816,6 +2823,7 @@ export interface DivisionPackPatchReq {
     title: string;
     group?: string;
     jobName?: string;
+    levelName?: string;
     members: DivisionAutoPackClassMember[];
   }[];
   unassigned?: DivisionAutoPackUnassigned[];

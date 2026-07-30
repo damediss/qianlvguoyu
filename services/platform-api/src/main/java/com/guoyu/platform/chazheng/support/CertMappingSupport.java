@@ -71,6 +71,20 @@ public final class CertMappingSupport {
     return StringUtils.hasText(levelText) ? levelText : primary.certName();
   }
 
+  /**
+   * Excel「已有证书等级」回填：工种(等级)，如 {@code 劳动关系协调员(四级/中级工)}。
+   * 与查证组装的 {@link CollectedCert#certName()} 一致。
+   */
+  public static String displayCertOccupationLevel(CollectedCert primary) {
+    if (primary == null) {
+      return null;
+    }
+    if (StringUtils.hasText(primary.certName())) {
+      return primary.certName().trim();
+    }
+    return displayCertLevel(primary);
+  }
+
   public static boolean isValidIdCard(String idCard) {
     if (!StringUtils.hasText(idCard)) {
       return false;

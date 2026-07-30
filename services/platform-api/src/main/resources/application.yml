@@ -193,8 +193,12 @@ platform:
     # 本地开发用 /api/exam/files/**（后端 ExamTaskXimuController 走 cdn.path + file.local-root 读盘）
     # 默认指向 gjjd_phalcon/cdn（PHP 老系统的 cdn 目录，已有大量图片素材）
     path: ${CDN_PATH:D:/phpApp/gjjd_phalcon/cdn}
+    # 后端读盘/本地开发直链（可带 :8080）
     url: ${CDN_URL:http://localhost:8080/api/exam/files}
-    # 本地磁盘无文件时回退到生产 CDN（数据库迁移后的 upload/common 等路径）
+    # 写入库/返回 App 的公网地址（生产务必走 Nginx，不要 :8080）
+    # 本地无 sign-up/** 文件时也会 302 到此地址（App 扫码上传只在 API 机磁盘，不在 cdn.app）
+    public-url: ${CDN_PUBLIC_URL:http://43.138.163.7/api/exam/files}
+    # 本地磁盘无文件时回退到历史 PHP CDN（idCard/upload 等；勿用于 sign-up/**）
     remote-fallback-url: ${CDN_REMOTE_FALLBACK_URL:https://cdn.app.gjjd168.com}
   wechat:
     mini:
