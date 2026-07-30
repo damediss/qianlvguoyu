@@ -1,0 +1,7 @@
+/unpackage/dist/
+/.hbuilderx/
+/node_modules/
+.windsurf/
+
+# 排除自动生成的文档文件夹
+/docs/

@@ -1,0 +1,15 @@
+﻿CREATE TABLE IF NOT EXISTS exam_work_type (
+  id INT NOT NULL AUTO_INCREMENT,
+  title VARCHAR(255) NULL COMMENT '名称',
+  series_no VARCHAR(200) NULL COMMENT '职业编码',
+  levels_no VARCHAR(200) NULL COMMENT '级别',
+  parent_id INT NULL DEFAULT NULL COMMENT '上级ID',
+  user_id INT NULL DEFAULT NULL,
+  deleted TINYINT NOT NULL DEFAULT 0 COMMENT '1已删除，0正常',
+  status INT NOT NULL DEFAULT 1 COMMENT '状态',
+  sort_number INT NOT NULL DEFAULT 1 COMMENT '排序号，降序排序',
+  tenant_id INT NOT NULL DEFAULT 10159 COMMENT '租户id',
+  create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (id),
+  INDEX idx_parent_id (parent_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='工种';

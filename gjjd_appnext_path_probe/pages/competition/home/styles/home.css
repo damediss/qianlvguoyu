@@ -1,0 +1,39 @@
+/* 页面全局 */
+page {
+	scroll-behavior: smooth;
+	-webkit-overflow-scrolling: touch;
+	background-color: #f8f8f8;
+}
+
+page::-webkit-scrollbar {
+	display: none;
+}
+
+/* 通用间距 */
+.content {
+	min-height: 100vh;
+	padding-bottom: 150rpx;
+}
+
+/* 公共过渡效果 */
+.transition-fast {
+	transition: all 0.3s ease;
+}
+
+.transition-slow {
+	transition: all 0.5s ease;
+}
+
+/* 通用阴影 */
+.shadow-light {
+	box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.06);
+}
+
+.shadow-normal {
+	box-shadow: 0 4rpx 12rpx rgba(0,0,0,0.1);
+}
+
+.shadow-heavy {
+	box-shadow: 0 8rpx 24rpx rgba(0,0,0,0.15);
+}
+

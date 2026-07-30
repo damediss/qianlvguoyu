@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "dev:h5": "node scripts/dev-h5.mjs",
+    "build:h5": "node scripts/build-h5.mjs",
+    "link:hx": "node scripts/link-hx-compiler.mjs"
+  },
+  "dependencies": {
+    "pinia": "2.1.7"
+  }
+}

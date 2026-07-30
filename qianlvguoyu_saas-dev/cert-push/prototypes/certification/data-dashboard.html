@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据面板 - 认定工作流程</title>
+    <link rel="stylesheet" href="common.css">
+        <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f0f2f5;
+        }
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 220px;
+            background-color: #ffffff;
+            color: #1f2937;
+            border-right: 1px solid #e8e8e8;
+            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.04);
+            padding: 16px 0;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+        .sidebar-logo {
+            padding: 0 16px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 8px;
+        }
+        .sidebar-logo h2 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .sidebar-logo p {
+            font-size: 12px;
+            color: #8c8c8c;
+            margin-top: 4px;
+        }
+        .sidebar-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+        }
+        .sidebar-item:hover {
+            background-color: #f5f5f5;
+        }
+        .sidebar-item.active {
+            background-color: #1890ff;
+            color: #ffffff;
+        }
+        .sidebar-item.active .sidebar-arrow {
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .sidebar-item-content {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .sidebar-icon {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+        }
+        .sidebar-arrow {
+            font-size: 12px;
+            transition: transform 0.3s;
+            color: #bfbfbf;
+        }
+        .sidebar-subitem.expanded .sidebar-arrow { transform: rotate(90deg); }
+        .sidebar-item.expanded .sidebar-arrow {
+            transform: rotate(90deg);
+        }
+        .sidebar-sublist {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .sidebar-sublist.expanded {
+            max-height: 1200px;
+        }
+        .sidebar-subitem {
+            padding: 10px 16px 10px 46px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+            color: #595959;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sidebar-subitem:hover {
+            background-color: #f5f5f5;
+            color: #1890ff;
+        }
+        .sidebar-subitem.active {
+            background-color: rgba(24, 144, 255, 0.2);
+            color: #1890ff;
+            border-right: 3px solid #1890ff;
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .header {
+            height: 64px;
+            background-color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+        .header h1 {
+            font-size: 18px;
+            color: #1f2937;
+        }
+        .header-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #666;
+            font-size: 14px;
+        }
+        .content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .dashboard-card {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 20px;
+        }
+        .dashboard-card h3 {
+            font-size: 15px;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        .chart-container {
+            width: 100%;
+            height: 220px;
+        }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+        .stat-item {
+            text-align: center;
+            padding: 16px;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1890ff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 6px;
+        }
+        .amount-display {
+            text-align: center;
+            padding: 24px 16px;
+        }
+        .amount-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #1890ff;
+        }
+        .amount-label {
+            font-size: 13px;
+            color: #666;
+            margin-top: 8px;
+        }
+        .flow-chart {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .flow-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .flow-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        .flow-subtitle {
+            font-size: 13px;
+            color: #6b7280;
+        }
+        .flow-container {
+            display: flex;
+            align-items: stretch;
+            gap: 12px;
+            padding: 10px 0;
+            overflow-x: auto;
+        }
+        .flow-step {
+            flex: 1;
+            min-width: 148px;
+            background: linear-gradient(135deg, #e6f0ff 0%, #f0f7ff 100%);
+            border: 1px solid #1890ff;
+            border-radius: 10px;
+            padding: 16px 12px;
+            position: relative;
+            transition: all 0.3s;
+            text-align: center;
+        }
+        .flow-step:hover {
+            box-shadow: 0 4px 16px rgba(24, 144, 255, 0.2);
+            transform: translateY(-2px);
+        }
+        .flow-step-number {
+            font-size: 11px;
+            color: #1890ff;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        .flow-step-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        .flow-arrow {
+            display: flex;
+            align-items: center;
+            color: #9ca3af;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+        .map-container {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 24px;
+        }
+        .map-container h3 {
+            font-size: 16px;
+            color: #1f2937;
+            margin-bottom: 16px;
+        }
+        .map-chart {
+            width: 100%;
+            height: 500px;
+        }
+        
+        /* 地图区域 - 突出显示 */
+        .map-section {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            padding: 28px;
+            margin-bottom: 24px;
+            border: 1px solid #e8e8e8;
+        }
+        .map-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .map-header h2 {
+            font-size: 20px;
+            color: #1f2937;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        .map-header p {
+            font-size: 14px;
+            color: #666;
+        }
+        .map-container-large {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid #f0f0f0;
+            position: relative;
+        }
+        .map-chart-large {
+            width: 100%;
+            height: 430px;
+        }
+        .map-layout {
+            display: flex;
+            align-items: stretch;
+            gap: 16px;
+        }
+        .map-legend {
+            flex: 0 0 240px;
+            background: white;
+            border: 1px solid #f0f0f0;
+            border-radius: 12px;
+            padding: 16px;
+        }
+        .map-legend-title {
+            font-size: 14px;
+            color: #1f2937;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        .legend-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 13px;
+            color: #666;
+        }
+        .legend-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .legend-chip {
+            width: 16px;
+            height: 16px;
+            border-radius: 5px;
+            border: 1px solid rgba(0,0,0,0.05);
+            flex-shrink: 0;
+        }
+        .legend-chip.c1 { background: #e0f3f8; }
+        .legend-chip.c2 { background: #abd9e9; }
+        .legend-chip.c3 { background: #74add1; }
+        .legend-chip.c4 { background: #4575b4; }
+        .legend-chip.c5 { background: #313695; }
+        .map-legend-hint {
+            margin-top: 14px;
+            font-size: 12px;
+            color: #8c8c8c;
+            line-height: 1.5;
+        }
+        .map-loading {
+            position: absolute;
+            inset: 16px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.75);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            font-size: 14px;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .action-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 1px solid transparent;
+        }
+        .action-card:hover {
+            border-color: #1890ff;
+            box-shadow: 0 4px 12px rgba(24, 144, 255, 0.1);
+        }
+        .action-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+        .action-content h4 {
+            font-size: 15px;
+            color: #1f2937;
+            margin-bottom: 4px;
+        }
+        .action-content p {
+            font-size: 13px;
+            color: #6b7280;
+        }
+        @media (max-width: 1100px) {
+            .map-layout { flex-direction: column; }
+            .map-legend { flex: none; }
+        }
+        .section-block {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .section-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        .mini-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+        .mini-card {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 14px;
+            border: 1px solid #f0f0f0;
+        }
+        .mini-label {
+            font-size: 12px;
+            color: #8c8c8c;
+            margin-bottom: 6px;
+        }
+        .mini-value {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        .mini-value.good { color: #52c41a; }
+        .mini-value.warn { color: #fa8c16; }
+        .mini-value.bad { color: #ff4d4f; }
+        .quality-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .quality-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #f8fafc;
+            border: 1px solid #f0f0f0;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 13px;
+            color: #1f2937;
+        }
+        .quality-tag {
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .quality-tag.warn { background: #fff7e6; color: #d46b08; }
+        .quality-tag.danger { background: #fff1f0; color: #cf1322; }
+        .quality-tag.good { background: #f6ffed; color: #389e0d; }
+
+        .role-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        }
+        .role-bar .hint { font-size: 13px; color: #666; }
+        .role-bar .role-group { display: flex; flex-wrap: wrap; gap: 8px; }
+        .role-btn {
+            padding: 6px 14px;
+            border-radius: 999px;
+            border: 1px solid #e5e7eb;
+            background: #fafafa;
+            font-size: 13px;
+            cursor: pointer;
+            color: #374151;
+        }
+        .role-btn.active { border-color: #1890ff; background: #e6f7ff; color: #1890ff; }
+        .command-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 16px;
+        }
+        .command-card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+        .command-card h3 { font-size: 15px; margin-bottom: 10px; color: #1f2937; }
+        .command-chart { height: 280px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 侧边�?-->
+        <div class="sidebar">
+            <div class="sidebar-logo">
+                <h2>认定工作流程</h2>
+                <p>系统原型</p>
+            </div>
+            
+            <!-- 数据面板 -->
+            <div class="sidebar-item active" onclick="window.location.href='data-dashboard.html'">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📊</span>
+                    <span>数据面板</span>
+                </div>
+            </div>
+            
+            <!-- 项目管理 - 可展开 -->
+            <div class="sidebar-item" id="projectMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📁</span>
+                    <span>任务管理</span>
+                </div>
+                <span class="sidebar-arrow">�?/span>
+            </div>
+            <div class="sidebar-sublist" id="projectSubmenu">
+                <div class="sidebar-subitem" onclick="window.location.href='project-management-home.html'">
+                    <span>📋</span> 任务准备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='request-order.html'">
+                    <span>🛒</span> 我要下单
+                </div>
+                <div class="sidebar-subitem" id="archiveMenu" onclick="toggleArchiveSubmenu(event)">
+                    <span>📦</span> 任务档案
+                    <span class="sidebar-arrow" style="margin-left: auto;">�?/span>
+                </div>
+                <div class="sidebar-sublist" id="archiveSubmenu">
+                    <div class="sidebar-subitem" onclick="window.location.href='exam-material.html'" style="padding-left: 56px;">
+                        <span>📝</span> 考试材料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='exam-site-material.html'" style="padding-left: 56px;">
+                        <span>🏫</span> 考场资料
+                    </div>
+                    <div class="sidebar-subitem" onclick="window.location.href='examinee-material.html'" style="padding-left: 56px;">
+                        <span>👤</span> 考生资料
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 认定流程 - 可展开 -->
+            <div class="sidebar-item" id="processMenu">
+                <div class="sidebar-item-content">
+                    <span class="sidebar-icon">📋</span>
+                    <span>认定流程</span>
+                </div>
+                <span class="sidebar-arrow">�?/span>
+            </div>
+            <div class="sidebar-sublist" id="processSubmenu">
+                <div class="sidebar-subitem" onclick="window.location.href='task-select.html'">
+                    <span>🏠</span> 任务选择
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='certification-process-home.html'">
+                    <span>📌</span> 流程首页
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='certification-prep.html'">
+                    <span>🔧</span> 认定筹备
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='认定�?html'">
+                    <span>📅</span> 认定�?                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='theory-exam.html'">
+                    <span>📝</span> 理论笔试
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='practical-exam.html'">
+                    <span>🔨</span> 实操考试
+                </div>
+                <div class="sidebar-subitem" onclick="window.location.href='certification-archive.html'">
+                    <span>📦</span> 认定归档
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 顶部�?-->
+            <div class="header">
+                <h1>数据面板</h1>
+                <div class="header-user">
+                    <span>👤 管理�?/span>
+                    <span>|</span>
+                    <span>2026-04-14</span>
+                </div>
+            </div>
+            
+            <!-- 内容�?-->
+            <div class="content">
+                <div class="role-bar">
+                    <div class="hint">视角切换（原型）�?strong>指挥�?/strong>面向总经�?/ 部门主管�?strong>业务数据</strong>面向认定部门工作人员�?/div>
+                    <div class="role-group">
+                        <button type="button" class="role-btn" data-dashboard-role="gm">总经�?/button>
+                        <button type="button" class="role-btn" data-dashboard-role="dept">部门主管</button>
+                        <button type="button" class="role-btn" data-dashboard-role="staff">认定部门工作人员</button>
+                    </div>
+                </div>
+
+                <div id="commandDashboard" style="display: none;">
+                    <div class="page-header-section" style="margin-bottom: 16px; background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                        <h2 style="font-size: 20px; color: #1f2937;">🛰�?指挥台总览</h2>
+                        <p style="font-size: 14px; color: #666; margin-top: 8px;">全区认定站点、认定财务概况、项目完成与在途情况（示意数据）�?/p>
+                    </div>
+                    <div class="command-grid">
+                        <div class="command-card">
+                            <h3>全区认定站点�?/h3>
+                            <div id="cmdSiteChart" class="command-chart"></div>
+                        </div>
+                        <div class="command-card">
+                            <h3>认定财务（收�?/ 支出�?/h3>
+                            <div id="cmdFinanceChart" class="command-chart"></div>
+                        </div>
+                        <div class="command-card" style="grid-column: 1 / -1;">
+                            <h3>项目完成与在�?/h3>
+                            <div id="cmdProjectChart" class="command-chart" style="height: 320px;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="staffDashboard">
+                <!-- 认定站点分布地图 - 放在最上方突出显示 -->
+                <div class="map-section">
+                    <div class="map-header">
+                        <h2>🗺�?认定站点分布</h2>
+                        <p>广西全区职业技能认定站点布局情况</p>
+                    </div>
+                    <div class="map-layout">
+                        <div class="map-container-large">
+                            <div id="guangxiMap" class="map-chart-large"></div>
+                            <div id="mapLoading" class="map-loading">地图加载�?..</div>
+                        </div>
+                        <div class="map-legend">
+                            <div class="map-legend-title">站点数量图例</div>
+                            <div class="legend-list">
+                                <div class="legend-item">
+                                    <div class="legend-left">
+                                        <span class="legend-chip c1"></span>
+                                        <span>1个站�?/span>
+                                    </div>
+                                </div>
+                                <div class="legend-item">
+                                    <div class="legend-left">
+                                        <span class="legend-chip c2"></span>
+                                        <span>2个站�?/span>
+                                    </div>
+                                </div>
+                                <div class="legend-item">
+                                    <div class="legend-left">
+                                        <span class="legend-chip c3"></span>
+                                        <span>3个站�?/span>
+                                    </div>
+                                </div>
+                                <div class="legend-item">
+                                    <div class="legend-left">
+                                        <span class="legend-chip c4"></span>
+                                        <span>4个站�?/span>
+                                    </div>
+                                </div>
+                                <div class="legend-item">
+                                    <div class="legend-left">
+                                        <span class="legend-chip c5"></span>
+                                        <span>5个站�?/span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="map-legend-hint">点越大、颜色越深表示站点数量越多�?/div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 快捷入口 -->
+                <div class="quick-actions">
+                    <div class="action-card" onclick="window.location.href='project-management-home.html'">
+                        <div class="action-icon">📋</div>
+                        <div class="action-content">
+                            <h4>项目准备</h4>
+                            <p>进入项目管理工作�?/p>
+                        </div>
+                    </div>
+                    <div class="action-card" onclick="window.location.href='certification-process-home.html'">
+                        <div class="action-icon" style="background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%);">📊</div>
+                        <div class="action-content">
+                            <h4>认定流程</h4>
+                            <p>进入认定流程工作�?/p>
+                        </div>
+                    </div>
+                    <div class="action-card" onclick="showToast('功能开发中')">
+                        <div class="action-icon" style="background: linear-gradient(135deg, #fa8c16 0%, #d46b08 100%);">⚙️</div>
+                        <div class="action-content">
+                            <h4>系统设置</h4>
+                            <p>配置系统参数和权�?/p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 数据卡片 -->
+                <div class="dashboard-grid">
+                    <!-- 饼状�?-->
+                    <div class="dashboard-card">
+                        <h3>项目完成情况</h3>
+                        <div id="projectChart" class="chart-container"></div>
+                    </div>
+                    
+                    <!-- 统计数据 -->
+                    <div class="dashboard-card">
+                        <h3>关键指标</h3>
+                        <div class="stat-grid">
+                            <div class="stat-item">
+                                <div class="stat-value">15</div>
+                                <div class="stat-label">认定项目总数</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">3</div>
+                                <div class="stat-label">已完成项�?/div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">12</div>
+                                <div class="stat-label">进行中项�?/div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">86</div>
+                                <div class="stat-label">本月认定人数</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 总金�?-->
+                    <div class="dashboard-card">
+                        <h3>认定项目总金�?/h3>
+                        <div class="amount-display">
+                            <div class="amount-value">¥1,250,000</div>
+                            <div class="amount-label">累计认定服务收入</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 流程健康�?-->
+                <div class="section-block">
+                    <div class="section-title">🧭 流程健康�?/div>
+                    <div id="stageHealthChart" class="chart-container"></div>
+                </div>
+
+                <!-- 归档闭环与清单质�?-->
+                <div class="dashboard-grid">
+                    <div class="dashboard-card">
+                        <h3>📦 归档闭环监控</h3>
+                        <div id="archiveClosureChart" class="chart-container"></div>
+                    </div>
+                    <div class="dashboard-card">
+                        <h3>�?清单执行质量</h3>
+                        <div class="mini-grid" style="margin-bottom: 12px;">
+                            <div class="mini-card">
+                                <div class="mini-label">理论清单完成�?/div>
+                                <div class="mini-value good">95%</div>
+                            </div>
+                            <div class="mini-card">
+                                <div class="mini-label">实操清单完成�?/div>
+                                <div class="mini-value warn">88%</div>
+                            </div>
+                            <div class="mini-card">
+                                <div class="mini-label">附件完整�?/div>
+                                <div class="mini-value bad">83%</div>
+                            </div>
+                        </div>
+                        <div class="quality-list">
+                            <div class="quality-item"><span>实操检查清单：序号1-6现场图片</span><span class="quality-tag warn">�?�?/span></div>
+                            <div class="quality-item"><span>理论考试现场清单</span><span class="quality-tag good">完整</span></div>
+                            <div class="quality-item"><span>认定归档：成绩花名册备份记录</span><span class="quality-tag danger">待上�?/span></div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const DASHBOARD_ROLE_KEY = 'dashboardRole_v1';
+        let staffChartsInited = false;
+        let commandChartsInited = false;
+        let staffChartHandles = {};
+
+        function getDashboardRole() {
+            return localStorage.getItem(DASHBOARD_ROLE_KEY) || 'staff';
+        }
+
+        function setDashboardRole(role) {
+            localStorage.setItem(DASHBOARD_ROLE_KEY, role);
+            applyDashboardView();
+        }
+
+        function updateRoleButtons() {
+            const cur = getDashboardRole();
+            document.querySelectorAll('.role-btn').forEach((btn) => {
+                const r = btn.getAttribute('data-dashboard-role');
+                btn.classList.toggle('active', r === cur);
+            });
+        }
+
+        function applyDashboardView() {
+            const role = getDashboardRole();
+            const staffEl = document.getElementById('staffDashboard');
+            const cmdEl = document.getElementById('commandDashboard');
+            if (!staffEl || !cmdEl) return;
+
+            const isCommand = role === 'gm' || role === 'dept';
+            staffEl.style.display = isCommand ? 'none' : 'block';
+            cmdEl.style.display = isCommand ? 'block' : 'none';
+            updateRoleButtons();
+
+            if (isCommand) {
+                if (!commandChartsInited && typeof echarts !== 'undefined') {
+                    initCommandCharts();
+                    commandChartsInited = true;
+                } else if (commandChartsInited) {
+                    Object.values(window.__cmdCharts || {}).forEach((c) => c && c.resize && c.resize());
+                }
+            } else {
+                if (!staffChartsInited && typeof echarts !== 'undefined') {
+                    staffChartHandles.projectChart = initProjectChart();
+                    staffChartHandles.stageHealthChart = initStageHealthChart();
+                    staffChartHandles.archiveClosureChart = initArchiveClosureChart();
+                    staffChartsInited = true;
+                } else if (staffChartsInited) {
+                    ['projectChart', 'stageHealthChart', 'archiveClosureChart'].forEach((k) => {
+                        const c = staffChartHandles[k];
+                        if (c && c.resize) c.resize();
+                    });
+                }
+                if (!window.__mapLoadedPromise && typeof initGuangxiMap === 'function') {
+                    window.__mapLoadedPromise = initGuangxiMap();
+                }
+            }
+        }
+
+        function initCommandCharts() {
+            const site = echarts.init(document.getElementById('cmdSiteChart'));
+            site.setOption({
+                tooltip: { trigger: 'axis' },
+                grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                xAxis: { type: 'category', data: ['南宁', '柳州', '桂林', '玉林', '百色', '其他'] },
+                yAxis: { type: 'value', name: '站点�? },
+                series: [{ type: 'bar', data: [12, 9, 8, 7, 6, 18], itemStyle: { color: '#1890ff', borderRadius: [6, 6, 0, 0] } }]
+            });
+
+            const fin = echarts.init(document.getElementById('cmdFinanceChart'));
+            fin.setOption({
+                tooltip: { trigger: 'item' },
+                legend: { bottom: 0 },
+                series: [{
+                    type: 'pie',
+                    radius: ['42%', '68%'],
+                    data: [
+                        { value: 186, name: '已确认收�?, itemStyle: { color: '#52c41a' } },
+                        { value: 42, name: '在途应�?, itemStyle: { color: '#faad14' } },
+                        { value: 98, name: '已发生支�?, itemStyle: { color: '#ff7875' } }
+                    ]
+                }]
+            });
+
+            const proj = echarts.init(document.getElementById('cmdProjectChart'));
+            proj.setOption({
+                tooltip: { trigger: 'axis' },
+                legend: { data: ['已完�?, '执行�?, '筹备�?] },
+                grid: { left: '3%', right: '3%', bottom: '8%', containLabel: true },
+                xAxis: { type: 'category', data: ['1�?, '2�?, '3�?, '4�?, '5�?, '6�?] },
+                yAxis: { type: 'value', name: '任务�? },
+                series: [
+                    { name: '已完�?, type: 'line', smooth: true, data: [2, 3, 4, 5, 4, 6], itemStyle: { color: '#52c41a' } },
+                    { name: '执行�?, type: 'line', smooth: true, data: [5, 6, 7, 8, 9, 8], itemStyle: { color: '#1890ff' } },
+                    { name: '筹备�?, type: 'line', smooth: true, data: [3, 2, 2, 3, 4, 3], itemStyle: { color: '#faad14' } }
+                ]
+            });
+
+            window.__cmdCharts = { site, fin, proj };
+        }
+
+        // 侧边栏展开/收起功能
+        function initSidebar() {
+            const projectMenu = document.getElementById('projectMenu');
+            const projectSubmenu = document.getElementById('projectSubmenu');
+            const processMenu = document.getElementById('processMenu');
+            const processSubmenu = document.getElementById('processSubmenu');
+
+            projectMenu.addEventListener('click', () => {
+                projectMenu.classList.toggle('expanded');
+                projectSubmenu.classList.toggle('expanded');
+            });
+
+            processMenu.addEventListener('click', () => {
+                processMenu.classList.toggle('expanded');
+                processSubmenu.classList.toggle('expanded');
+            });
+        }
+
+        // 资料档案子菜单展开/收起
+        function toggleArchiveSubmenu(event) {
+            event.stopPropagation();
+            const archiveMenu = document.getElementById('archiveMenu');
+            const archiveSubmenu = document.getElementById('archiveSubmenu');
+            const arrow = archiveMenu.querySelector('.sidebar-arrow');
+
+            archiveMenu.classList.toggle('expanded');
+            archiveSubmenu.classList.toggle('expanded');
+
+            if (archiveMenu.classList.contains('expanded')) {
+                arrow.style.transform = 'rotate(90deg)';
+            } else {
+                arrow.style.transform = 'rotate(0deg)';
+            }
+        }
+        
+        // 初始化饼状图
+        function initProjectChart() {
+            const projectChart = echarts.init(document.getElementById('projectChart'));
+            
+            const option = {
+                tooltip: {
+                    trigger: 'item',
+                    formatter: '{b}: {c} ({d}%)'
+                },
+                legend: {
+                    bottom: '5%',
+                    left: 'center'
+                },
+                series: [
+                    {
+                        name: '项目状�?,
+                        type: 'pie',
+                        radius: ['40%', '65%'],
+                        center: ['50%', '45%'],
+                        avoidLabelOverlap: false,
+                        itemStyle: {
+                            borderRadius: 8,
+                            borderColor: '#fff',
+                            borderWidth: 2
+                        },
+                        label: {
+                            show: false,
+                            position: 'center'
+                        },
+                        emphasis: {
+                            label: {
+                                show: true,
+                                fontSize: 16,
+                                fontWeight: 'bold'
+                            }
+                        },
+                        labelLine: {
+                            show: false
+                        },
+                        data: [
+                            { value: 15, name: '认定项目总数', itemStyle: { color: '#1890ff' } },
+                            { value: 3, name: '已完成项�?, itemStyle: { color: '#52c41a' } },
+                            { value: 12, name: '进行中项�?, itemStyle: { color: '#faad14' } }
+                        ]
+                    }
+                ]
+            };
+            
+            projectChart.setOption(option);
+            return projectChart;
+        }
+
+        // 流程健康度图
+        function initStageHealthChart() {
+            const chart = echarts.init(document.getElementById('stageHealthChart'));
+            chart.setOption({
+                tooltip: { trigger: 'axis' },
+                grid: { left: '3%', right: '3%', top: '10%', bottom: '8%', containLabel: true },
+                xAxis: {
+                    type: 'category',
+                    data: ['认定筹备', '认定�?, '理论笔试', '实操考试', '认定归档'],
+                    axisLabel: { fontSize: 12 }
+                },
+                yAxis: { type: 'value', max: 100, axisLabel: { formatter: '{value}%' } },
+                series: [{
+                    name: '完成�?,
+                    type: 'bar',
+                    barWidth: 36,
+                    data: [92, 89, 95, 88, 74],
+                    itemStyle: {
+                        borderRadius: [6, 6, 0, 0],
+                        color: (params) => params.value < 80 ? '#fa8c16' : '#1890ff'
+                    },
+                    label: { show: true, position: 'top', formatter: '{c}%' }
+                }]
+            });
+            return chart;
+        }
+
+        // 归档闭环监控�?        function initArchiveClosureChart() {
+            const chart = echarts.init(document.getElementById('archiveClosureChart'));
+            chart.setOption({
+                tooltip: { trigger: 'item' },
+                legend: { bottom: '3%', left: 'center' },
+                series: [{
+                    name: '归档状�?,
+                    type: 'pie',
+                    radius: ['46%', '70%'],
+                    center: ['50%', '45%'],
+                    label: { formatter: '{b}\n{c}�? },
+                    data: [
+                        { value: 6, name: '已完�?, itemStyle: { color: '#52c41a' } },
+                        { value: 2, name: '待复�?, itemStyle: { color: '#faad14' } },
+                        { value: 1, name: '待备�?, itemStyle: { color: '#ff4d4f' } }
+                    ]
+                }]
+            });
+            return chart;
+        }
+        
+        // 初始化广西地�?        async function initGuangxiMapEcharts() {
+            const mapDom = document.getElementById('guangxiMap');
+            if (!mapDom) return;
+            
+            const guangxiMap = echarts.init(mapDom);
+            
+            // 认定站点数据
+            const sites = [
+                { name: '南宁', value: [108.320004, 22.82402, 5] },
+                { name: '柳州', value: [109.40411, 24.315592, 3] },
+                { name: '桂林', value: [110.299798, 25.274152, 4] },
+                { name: '梧州', value: [111.304954, 23.426174, 2] },
+                { name: '北海', value: [109.120117, 21.491916, 2] },
+                { name: '防城�?, value: [108.366134, 21.621582, 1] },
+                { name: '钦州', value: [108.617753, 21.978921, 2] },
+                { name: '贵港', value: [109.607844, 23.094492, 2] },
+                { name: '玉林', value: [110.165548, 22.639626, 3] },
+                { name: '百色', value: [106.614133, 23.900818, 2] },
+                { name: '贺州', value: [111.553096, 24.405873, 1] },
+                { name: '河池', value: [108.059778, 24.72743, 2] },
+                { name: '来宾', value: [109.231197, 23.762163, 1] },
+                { name: '崇左', value: [107.390645, 22.403469, 1] }
+            ];
+            
+            // 兜底：不依赖广西边界底图，直接用经纬度散点显示（确保“至少能看到内容”）
+            const timeoutMs = 8000;
+            const fallbackData = sites.map(s => ({
+                name: s.name,
+                value: [s.value[0], s.value[1], s.value[2]]
+            }));
+
+            const cartesianSeries = {
+                name: '认定站点',
+                type: 'effectScatter',
+                data: fallbackData,
+                symbolSize: function(val) {
+                    return 6 + val[2] * 10;
+                },
+                showEffectOn: 'render',
+                rippleEffect: { brushType: 'stroke', scale: 3 },
+                label: {
+                    show: true,
+                    position: 'right',
+                    formatter: function(p) {
+                        const c = p.value && p.value.length ? p.value[2] : '';
+                        return p.name + '\\n' + c + '�?;
+                    },
+                    color: '#1f2937',
+                    fontWeight: 600,
+                    fontSize: 10
+                },
+                itemStyle: { shadowBlur: 12, shadowColor: '#1f2937' },
+                zlevel: 1
+            };
+
+            // 先展示经纬度散点，避免出现“底图加载失败但页面全空白”的情况
+            guangxiMap.setOption({
+                tooltip: {
+                    trigger: 'item',
+                    formatter: function(params) {
+                        if (params && params.value) {
+                            return params.name + '<br/>站点数量�? + params.value[2] + ' �?;
+                        }
+                        return params.name;
+                    }
+                },
+                xAxis: {
+                    type: 'value',
+                    min: 105,
+                    max: 112,
+                    axisLabel: { show: false },
+                    splitLine: { show: false }
+                },
+                yAxis: {
+                    type: 'value',
+                    min: 20,
+                    max: 26,
+                    axisLabel: { show: false },
+                    splitLine: { show: false }
+                },
+                grid: { left: 0, right: 0, top: 0, bottom: 0 },
+                series: [cartesianSeries]
+            }, true);
+
+            const loadingEl0 = document.getElementById('mapLoading');
+            if (loadingEl0) loadingEl0.style.display = 'none';
+
+            try {
+                // 底图加载时不覆盖兜底散点（避免用户看到“空白”）
+
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+                // 广西地图底图：替换为 GitHub raw（比部分外网 DataV 源更稳定�?                const response = await fetch('https://raw.githubusercontent.com/guiguzigang/mapJson/master/province/450000_full.json', { signal: controller.signal });
+                const guangxiData = await response.json();
+                clearTimeout(timer);
+                
+                // 注册广西地图
+                echarts.registerMap('guangxi', guangxiData);
+                
+                // 广西底图成功后，隐藏兜底经纬度散点的标签，避免重复遮�?                const cartesianSeriesForBackup = Object.assign({}, cartesianSeries, {
+                    label: Object.assign({}, cartesianSeries.label, { show: false })
+                });
+                
+                const mapOption = {
+                    tooltip: {
+                        trigger: 'item',
+                        formatter: function(params) {
+                            if (params.seriesType === 'effectScatter') {
+                                return params.name + '<br/>站点数量�? + params.value[2] + ' �?;
+                            }
+                            return params.name;
+                        }
+                    },
+                    visualMap: {
+                        type: 'piecewise',
+                        min: 1,
+                        max: 5,
+                        left: 'left',
+                        bottom: 20,
+                        show: false, /* 视觉图例使用右侧面板，不重复展示 */
+                        pieces: [
+                            { value: 1, color: '#e0f3f8' },
+                            { value: 2, color: '#abd9e9' },
+                            { value: 3, color: '#74add1' },
+                            { value: 4, color: '#4575b4' },
+                            { value: 5, color: '#313695' }
+                        ]
+                    },
+                    geo: {
+                        map: 'guangxi',
+                        roam: true,
+                        zoom: 1.1,
+                        label: {
+                            show: true,
+                            fontSize: 11,
+                            color: '#666'
+                        },
+                        itemStyle: {
+                            areaColor: '#f5f5f5',
+                            borderColor: '#1890ff',
+                            borderWidth: 1.5
+                        },
+                        emphasis: {
+                            itemStyle: {
+                                areaColor: '#e6f7ff'
+                            },
+                            label: {
+                                color: '#1890ff'
+                            }
+                        }
+                    },
+                    // 保留兜底经纬度散点系列：即使广西边界渲染异常，也不至于全空白
+                    xAxis: {
+                        type: 'value',
+                        min: 105,
+                        max: 112,
+                        axisLabel: { show: false },
+                        splitLine: { show: false }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        min: 20,
+                        max: 26,
+                        axisLabel: { show: false },
+                        splitLine: { show: false }
+                    },
+                    grid: { left: 0, right: 0, top: 0, bottom: 0 },
+                    series: [
+                        {
+                            name: '认定站点',
+                            type: 'effectScatter',
+                            coordinateSystem: 'geo',
+                            data: sites,
+                            symbolSize: function(val) {
+                                // val = [lng, lat, count]
+                                return 6 + val[2] * 10;
+                            },
+                            showEffectOn: 'render',
+                            rippleEffect: {
+                                brushType: 'stroke',
+                                scale: 3
+                            },
+                            label: {
+                                show: true,
+                                position: 'right',
+                                formatter: function(p) {
+                                    const c = p.value && p.value.length ? p.value[2] : '';
+                                    return p.name + '\\n' + c + '�?;
+                                },
+                                color: '#1f2937',
+                                fontWeight: 600,
+                                fontSize: 10
+                            },
+                            itemStyle: {
+                                shadowBlur: 12,
+                                shadowColor: '#1f2937'
+                            },
+                            zlevel: 1
+                        },
+                        cartesianSeriesForBackup
+                    ]
+                };
+                
+                guangxiMap.setOption(mapOption);
+                const loading = document.getElementById('mapLoading');
+                if (loading) loading.style.display = 'none';
+                return guangxiMap;
+            } catch (error) {
+                console.error('Failed to load map data:', error);
+                const loading = document.getElementById('mapLoading');
+                if (loading) {
+                    loading.textContent = '地图加载失败/超时，请检查网络连�?;
+                    loading.style.display = 'none';
+                }
+                showToast('地图加载失败：请检查网络连接（可能被外网访问限制）');
+                guangxiMap.setOption({
+                    title: {
+                        text: '地图加载失败，请检查网络连�?,
+                        left: 'center',
+                        top: 'center',
+                        textStyle: {
+                            color: '#999',
+                            fontSize: 14
+                        }
+                    }
+                });
+                return guangxiMap;
+            }
+        }
+
+        // 初始化广西地图（Leaflet + leaflet-heat�?        function initGuangxiMap() {
+            const mapDom = document.getElementById('guangxiMap');
+            if (!mapDom) return;
+            // 兜底：确保地图容器在首次布局阶段不会出现 clientWidth/clientHeight=0
+            if (!mapDom.style.height) mapDom.style.height = '430px';
+            if (!mapDom.style.width) mapDom.style.width = '100%';
+
+            // 认定站点数据：value = [lng, lat, count]
+            const sites = [
+                { name: '南宁', value: [108.320004, 22.82402, 5] },
+                { name: '柳州', value: [109.40411, 24.315592, 3] },
+                { name: '桂林', value: [110.299798, 25.274152, 4] },
+                { name: '梧州', value: [111.304954, 23.426174, 2] },
+                { name: '北海', value: [109.120117, 21.491916, 2] },
+                { name: '防城�?, value: [108.366134, 21.621582, 1] },
+                { name: '钦州', value: [108.617753, 21.978921, 2] },
+                { name: '贵港', value: [109.607844, 23.094492, 2] },
+                { name: '玉林', value: [110.165548, 22.639626, 3] },
+                { name: '百色', value: [106.614133, 23.900818, 2] },
+                { name: '贺州', value: [111.553096, 24.405873, 1] },
+                { name: '河池', value: [108.059778, 24.72743, 2] },
+                { name: '来宾', value: [109.231197, 23.762163, 1] },
+                { name: '崇左', value: [107.390645, 22.403469, 1] }
+            ];
+
+            const timeoutMs = 8000;
+            const mapLoadingEl = document.getElementById('mapLoading');
+
+            const showLoading = (text) => {
+                if (!mapLoadingEl) return;
+                mapLoadingEl.textContent = text || '地图加载�?..';
+                mapLoadingEl.style.display = 'flex';
+            };
+            const hideLoading = () => {
+                if (mapLoadingEl) mapLoadingEl.style.display = 'none';
+            };
+
+            // 先保�?Leaflet 尺寸就绪后再创建 heat/circleMarker，避�?leaflet-heat 初始化时�?canvas 宽高�?0
+            const guangxiMap = L.map(mapDom, { zoomControl: true });
+            guangxiMap.setView([23.7, 108.6], 7);
+
+            // 再异步加载广西边界（8s 超时兜底�?            showLoading('地图加载�?..');
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+            // tileLayer 与热力层：不依赖边界加载成功。边界慢/失败也不应阻断热力点显示�?            guangxiMap.whenReady(() => {
+                guangxiMap.invalidateSize();
+
+                // 外网瓦片（允许失败：失败不影响点�?热力�?                try {
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        maxZoom: 18,
+                        attribution: '&copy; OpenStreetMap contributors'
+                    }).addTo(guangxiMap);
+                } catch (e) {}
+
+                const maxCount = 5;
+                const heatPoints = sites.map(s => [s.value[1], s.value[0], s.value[2] / maxCount]); // [lat,lng,intensity]
+                let heatAdded = false;
+
+                // leaflet-heat �?circleMarker 都依赖容器尺寸；当首次布局未完成时容器可能�?0
+                const tryInitMarkers = (triesLeft) => {
+                    const w = mapDom.clientWidth;
+                    const h = mapDom.clientHeight;
+                    if (w > 0 && h > 0) {
+                        // �?circleMarker 提供悬浮 tooltip（满足“鼠标悬浮查看”）
+                        sites.forEach(s => {
+                            const lng = s.value[0];
+                            const lat = s.value[1];
+                            const count = s.value[2];
+                            const radius = 4 + count * 2;
+
+                            const marker = L.circleMarker([lat, lng], {
+                                radius,
+                                color: '#1890ff',
+                                weight: 1,
+                                fillColor: '#1890ff',
+                                fillOpacity: 0.25
+                            }).addTo(guangxiMap);
+
+                            marker.bindTooltip(
+                                s.name + '<br/>站点数量�? + count + ' �?,
+                                { direction: 'top', offset: [0, -8], opacity: 0.95 }
+                            );
+                        });
+
+                        // 初始化热力图（容器尺寸已就绪时再做，避免 canvas width=0�?                        if (!heatAdded) {
+                            try {
+                                L.heatLayer(heatPoints, {
+                                    radius: 30,
+                                    blur: 20,
+                                    maxZoom: 12,
+                                    minOpacity: 0.2
+                                }).addTo(guangxiMap);
+                                heatAdded = true;
+                            } catch (e2) {
+                                console.error('leaflet-heat 初始化失败：', e2);
+                            }
+                        }
+
+                        // heat/marker 已经渲染出来后，优先隐藏加载遮罩，避免用户误以为“底图未加载�?                        hideLoading();
+                        return;
+                    }
+
+                    if (triesLeft <= 0) {
+                        // 最终兜底：至少尝试隐藏加载遮罩，避免遮罩常�?                        hideLoading();
+                        return;
+                    }
+                    setTimeout(() => tryInitMarkers(triesLeft - 1), 100);
+                };
+
+                tryInitMarkers(50); // 最长等待约 5 �?            });
+
+            fetch('https://raw.githubusercontent.com/guiguzigang/mapJson/master/province/450000_full.json', { signal: controller.signal })
+                .then(res => res.json())
+                .then(guangxiData => {
+                    clearTimeout(timer);
+                    const geoLayer = L.geoJSON(guangxiData, {
+                        style: function() {
+                            return {
+                                color: '#1890ff',
+                                weight: 1.2,
+                                fillColor: '#f5f5f5',
+                                fillOpacity: 0.25
+                            };
+                        }
+                    }).addTo(guangxiMap);
+
+                    // 拟合边界视野
+                    try {
+                        const bounds = geoLayer.getBounds();
+                        if (bounds && bounds.isValid && bounds.isValid()) {
+                            guangxiMap.fitBounds(bounds, { padding: [20, 20] });
+                        }
+                    } catch (e) {}
+                })
+                .catch(() => {
+                    clearTimeout(timer);
+                    if (mapLoadingEl) {
+                        mapLoadingEl.textContent = '地图加载失败，请检查网络连�?;
+                        mapLoadingEl.style.display = 'flex';
+                    } else {
+                        hideLoading();
+                    }
+                    showToast('地图加载失败，请检查网络连�?);
+                });
+
+            window.__guangxiMapRef = guangxiMap;
+            return guangxiMap;
+        }
+
+        // Toast 提示
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.style.cssText = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 12px 24px; border-radius: 6px; z-index: 9999; font-size: 14px;';
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.remove();
+            }, 2000);
+        }
+        
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', async () => {
+            initSidebar();
+
+            document.querySelectorAll('.role-btn').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const r = btn.getAttribute('data-dashboard-role');
+                    if (r) setDashboardRole(r);
+                });
+            });
+
+            applyDashboardView();
+            await (window.__mapLoadedPromise || Promise.resolve());
+
+            window.addEventListener('resize', () => {
+                ['projectChart', 'stageHealthChart', 'archiveClosureChart'].forEach((k) => {
+                    const c = staffChartHandles[k];
+                    if (c && c.resize) c.resize();
+                });
+                Object.values(window.__cmdCharts || {}).forEach((c) => c && c.resize && c.resize());
+                const gm = window.__guangxiMapRef;
+                if (gm && typeof gm.invalidateSize === 'function') {
+                    gm.invalidateSize();
+                } else if (gm && typeof gm.resize === 'function') {
+                    gm.resize();
+                }
+            });
+        });
+    </script>
+<script src="common.js"></script>
+</body>
+</html>

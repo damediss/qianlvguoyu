@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>竞赛模块｜超级管理员后台原型</title>
+  <link rel="stylesheet" href="prototype.css" />
+  <link rel="stylesheet" href="competition-p0-v2.css" />
+</head>
+<body>
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <div class="side-brand"><b>G</b><span>千铝国昱云平台<small>超级管理员 · 竞赛运营</small></span></div>
+      <div class="side-label">竞赛概览</div>
+      <button class="side-item active" data-page="dashboard"><i>⌘</i><span>竞赛数据看板</span></button>
+      <div class="side-label">赛事运营</div>
+      <button class="side-item" data-page="wizard"><i>✦</i><span>创建竞赛（6步）</span></button>
+      <button class="side-item" data-page="competitions"><i>◈</i><span>赛事管理</span></button>
+      <button class="side-item" data-page="stages"><i>◫</i><span>赛段管理</span></button>
+      <button class="side-item" data-page="units"><i>▦</i><span>参赛单位管理</span></button>
+      <button class="side-item" data-page="users"><i>♙</i><span>参赛用户管理</span></button>
+      <div class="side-label">规则与激励</div>
+      <button class="side-item" data-page="checkin"><i>☀</i><span>签到规则配置</span></button>
+      <button class="side-item" data-page="learning"><i>▤</i><span>学习规则配置</span></button>
+      <button class="side-item" data-page="gate"><i>⚡</i><span>闯关规则配置</span></button>
+      <button class="side-item" data-page="points"><i>◉</i><span>积分管理</span></button>
+      <div class="side-label">内容运营</div>
+      <button class="side-item" data-page="review"><i>☑</i><span>风采审核</span></button>
+      <button class="side-item" data-page="noticeFiles"><i>▤</i><span>须知文件管理</span></button>
+      <div class="side-label">结果与晋级</div>
+      <button class="side-item" data-page="ranking"><i>♛</i><span>排行榜管理</span></button>
+      <button class="side-item" data-page="promotion"><i>↗</i><span>晋级管理</span></button>
+    </aside>
+    <div class="admin-main">
+      <header class="admin-header"><div class="breadcrumb">竞赛模块 <span> / </span><b id="crumb">竞赛数据看板</b></div><div class="header-right"><a href="index.html" style="color:#7b8799;font-size:12px">原型总览</a><button class="role-switch" onclick="showToast('当前为超级管理员视角')">超级管理员⌄</button><span>🔔</span><div class="profile"><div class="profile-avatar">林超</div><span>林超</span></div></div></header>
+      <main class="admin-content" id="superContent"></main>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script src="prototype.js"></script>
+  <script src="competition-p0-v2.js"></script>
+  <script src="super-admin-v3.js"></script>
+  <script src="super-admin-v4.js"></script>
+</body>
+</html>

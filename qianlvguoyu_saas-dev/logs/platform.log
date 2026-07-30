@@ -1,0 +1,528 @@
+2026-06-10 09:46:26.338 [background-preinit] INFO  [] o.h.validator.internal.util.Version.<clinit>(21) - HV000001: Hibernate Validator 8.0.1.Final
+2026-06-10 09:46:26.431 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarting(50) - Starting PlatformApplication using Java 21.0.11 with PID 9876 (D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes started by pc in D:\qianlvguoyu\qianlvguoyu_saas-dev)
+2026-06-10 09:46:26.432 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStartupProfileInfo(654) - No active profile set, falling back to 1 default profile: "default"
+2026-06-10 09:46:30.844 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.initialize(111) - Tomcat initialized with port 8080 (http)
+2026-06-10 09:46:30.870 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Initializing ProtocolHandler ["http-nio-8080"]
+2026-06-10 09:46:30.873 [main] INFO  [] o.a.catalina.core.StandardService.log(173) - Starting service [Tomcat]
+2026-06-10 09:46:30.874 [main] INFO  [] o.a.catalina.core.StandardEngine.log(173) - Starting Servlet engine: [Apache Tomcat/10.1.33]
+2026-06-10 09:46:31.066 [main] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring embedded WebApplicationContext
+2026-06-10 09:46:31.066 [main] INFO  [] o.s.b.w.s.c.ServletWebServerApplicationContext.prepareWebApplicationContext(296) - Root WebApplicationContext: initialization completed in 4574 ms
+2026-06-10 09:46:32.167 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(109) - HikariPool-1 - Starting...
+2026-06-10 09:46:32.525 [main] INFO  [] com.zaxxer.hikari.pool.HikariPool.checkFailFast(554) - HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@6ba355e4
+2026-06-10 09:46:32.530 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(122) - HikariPool-1 - Start completed.
+2026-06-10 09:46:32.616 [main] INFO  [] org.flywaydb.core.FlywayExecutor.info(37) - Database: jdbc:mysql://192.168.1.200:3308/gjjd_test (MySQL 8.4)
+2026-06-10 09:46:32.644 [main] WARN  [] o.f.c.i.database.base.Database.warn(41) - Flyway upgrade recommended: MySQL 8.4 is newer than this version of Flyway and support has not been tested. The latest supported version of MySQL is 8.1.
+2026-06-10 09:46:32.867 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Current version of schema `gjjd_test`: 20260610.001
+2026-06-10 09:46:32.868 [main] WARN  [] o.f.core.internal.command.DbMigrate.warn(41) - outOfOrder mode is active. Migration of schema `gjjd_test` may not be reproducible.
+2026-06-10 09:46:32.873 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Schema `gjjd_test` is up to date. No migration necessary.
+2026-06-10 09:46:35.318 [main] INFO  [] o.f.s.b.e.EventRegistryAutoConfiguration.discoverDeploymentResources(106) - No deployment resources were found for autodeployment
+2026-06-10 09:46:35.514 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(132) - Creating thread pool queue of size 100
+2026-06-10 09:46:35.515 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(138) - Creating thread factory with naming pattern flowable-async-task-invoker-%d
+2026-06-10 09:46:35.516 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(146) - Creating executor service with corePoolSize 8, maxPoolSize 8 and keepAliveTime 5000
+2026-06-10 09:46:35.644 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1076) - Found 2 Engine Configurators in total:
+2026-06-10 09:46:35.645 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 09:46:35.645 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 09:46:35.645 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 09:46:35.653 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 09:46:36.883 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 09:46:36.899 [main] INFO  [] o.f.e.impl.EventRegistryEngineImpl.<init>(53) - EventRegistryEngine default created
+2026-06-10 09:46:36.900 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 09:46:36.913 [main] INFO  [] o.f.idm.engine.impl.IdmEngineImpl.<init>(52) - IdmEngine default created
+2026-06-10 09:46:36.977 [main] INFO  [] o.f.engine.impl.ProcessEngineImpl.<init>(89) - ProcessEngine default created
+2026-06-10 09:46:37.007 [main] INFO  [] o.f.e.impl.cmd.ValidateV5EntitiesCmd.execute(43) - Total of v5 deployments found: 0
+2026-06-10 09:46:39.567 [main] WARN  [] o.s.b.a.s.s.UserDetailsServiceAutoConfiguration.getOrDeducePassword(86) - 
+
+Using generated security password: ee86e03f-0bdf-4323-903d-c97e57bdd74f
+
+This generated password is for development use only. Your security configuration must be updated before running your application in production.
+
+2026-06-10 09:46:39.577 [main] INFO  [] o.s.s.c.a.a.c.InitializeUserDetailsBeanManagerConfigurer$InitializeUserDetailsManagerConfigurer.configure(113) - Global AuthenticationManager configured with UserDetailsService bean with name inMemoryUserDetailsManager
+2026-06-10 09:46:40.101 [main] INFO  [] o.s.b.a.e.web.EndpointLinksResolver.<init>(60) - Exposing 2 endpoints beneath base path '/actuator'
+2026-06-10 09:46:41.421 [main] INFO  [] o.f.s.c.DefaultAutoDeploymentStrategy.deployResources(91) - Deploying resources [file [D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes\workflows\bpmn\certification-document-review.bpmn20.xml]] for engine org.flowable.engine.impl.ProcessEngineImpl@752957da deployment name hint SpringBootAutoDeployment
+2026-06-10 09:46:41.443 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Starting ProtocolHandler ["http-nio-8080"]
+2026-06-10 09:46:41.467 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.start(243) - Tomcat started on port 8080 (http) with context path '/api'
+2026-06-10 09:46:41.481 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarted(56) - Started PlatformApplication in 15.785 seconds (process running for 16.563)
+2026-06-10 09:50:08.854 [http-nio-8080-exec-1] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-06-10 09:53:12.140 [http-nio-8080-exec-2] INFO  [d0f761da-ed86-4a69-8734-06ee2e04734d] c.g.p.config.SaTokenListenerConfig.doLogin(14) - Sa-Token login: loginType=login, loginId=1000
+2026-06-10 11:16:53.206 [http-nio-8080-exec-1] WARN  [14fd7ed1-6d43-4ebc-be84-ece2677fce4c] c.g.p.c.e.GlobalExceptionHandler.handleDataIntegrity(57) - Data integrity violation: 
+### Error updating database.  Cause: java.sql.SQLIntegrityConstraintViolationException: Duplicate entry '1-2064262730184568834-450102198602022345-1' for key 'certification_candidate.uk_cert_candidate_id_card'
+### The error may exist in com/guoyu/platform/certification/mapper/CertificationCandidateMapper.java (best guess)
+### The error may involve com.guoyu.platform.certification.mapper.CertificationCandidateMapper.deleteById-Inline
+### The error occurred while setting parameters
+### SQL: UPDATE certification_candidate SET updated_at = ?, updated_by = ?, deleted = 1 WHERE id = ? AND deleted = 0 AND tenant_id = 1
+### Cause: java.sql.SQLIntegrityConstraintViolationException: Duplicate entry '1-2064262730184568834-450102198602022345-1' for key 'certification_candidate.uk_cert_candidate_id_card'
+; Duplicate entry '1-2064262730184568834-450102198602022345-1' for key 'certification_candidate.uk_cert_candidate_id_card'
+2026-06-10 11:17:02.895 [http-nio-8080-exec-9] WARN  [fa5c0798-2aba-4647-a3df-4be958df7774] c.g.p.c.e.GlobalExceptionHandler.handleDataIntegrity(57) - Data integrity violation: 
+### Error updating database.  Cause: java.sql.SQLIntegrityConstraintViolationException: Duplicate entry '1-2064262730184568834-450102198602022345-1' for key 'certification_candidate.uk_cert_candidate_id_card'
+### The error may exist in com/guoyu/platform/certification/mapper/CertificationCandidateMapper.java (best guess)
+### The error may involve com.guoyu.platform.certification.mapper.CertificationCandidateMapper.deleteById-Inline
+### The error occurred while setting parameters
+### SQL: UPDATE certification_candidate SET updated_at = ?, updated_by = ?, deleted = 1 WHERE id = ? AND deleted = 0 AND tenant_id = 1
+### Cause: java.sql.SQLIntegrityConstraintViolationException: Duplicate entry '1-2064262730184568834-450102198602022345-1' for key 'certification_candidate.uk_cert_candidate_id_card'
+; Duplicate entry '1-2064262730184568834-450102198602022345-1' for key 'certification_candidate.uk_cert_candidate_id_card'
+2026-06-10 11:47:29.401 [SpringApplicationShutdownHook] INFO  [] com.zaxxer.hikari.HikariDataSource.close(349) - HikariPool-1 - Shutdown initiated...
+2026-06-10 11:47:29.444 [SpringApplicationShutdownHook] INFO  [] com.zaxxer.hikari.HikariDataSource.close(351) - HikariPool-1 - Shutdown completed.
+2026-06-10 11:47:38.065 [background-preinit] INFO  [] o.h.validator.internal.util.Version.<clinit>(21) - HV000001: Hibernate Validator 8.0.1.Final
+2026-06-10 11:47:38.145 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarting(50) - Starting PlatformApplication using Java 21.0.11 with PID 19980 (D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes started by pc in D:\qianlvguoyu\qianlvguoyu_saas-dev)
+2026-06-10 11:47:38.145 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStartupProfileInfo(654) - No active profile set, falling back to 1 default profile: "default"
+2026-06-10 11:47:42.445 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.initialize(111) - Tomcat initialized with port 8080 (http)
+2026-06-10 11:47:42.464 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Initializing ProtocolHandler ["http-nio-8080"]
+2026-06-10 11:47:42.468 [main] INFO  [] o.a.catalina.core.StandardService.log(173) - Starting service [Tomcat]
+2026-06-10 11:47:42.470 [main] INFO  [] o.a.catalina.core.StandardEngine.log(173) - Starting Servlet engine: [Apache Tomcat/10.1.33]
+2026-06-10 11:47:42.676 [main] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring embedded WebApplicationContext
+2026-06-10 11:47:42.677 [main] INFO  [] o.s.b.w.s.c.ServletWebServerApplicationContext.prepareWebApplicationContext(296) - Root WebApplicationContext: initialization completed in 4481 ms
+2026-06-10 11:47:43.840 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(109) - HikariPool-1 - Starting...
+2026-06-10 11:47:44.154 [main] INFO  [] com.zaxxer.hikari.pool.HikariPool.checkFailFast(554) - HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@7b2f8152
+2026-06-10 11:47:44.160 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(122) - HikariPool-1 - Start completed.
+2026-06-10 11:47:44.224 [main] INFO  [] org.flywaydb.core.FlywayExecutor.info(37) - Database: jdbc:mysql://192.168.1.200:3308/gjjd_test (MySQL 8.4)
+2026-06-10 11:47:44.252 [main] WARN  [] o.f.c.i.database.base.Database.warn(41) - Flyway upgrade recommended: MySQL 8.4 is newer than this version of Flyway and support has not been tested. The latest supported version of MySQL is 8.1.
+2026-06-10 11:47:44.460 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Current version of schema `gjjd_test`: 20260610.005
+2026-06-10 11:47:44.460 [main] WARN  [] o.f.core.internal.command.DbMigrate.warn(41) - outOfOrder mode is active. Migration of schema `gjjd_test` may not be reproducible.
+2026-06-10 11:47:44.460 [main] WARN  [] o.f.core.internal.command.DbMigrate.warn(41) - Schema `gjjd_test` has a version (20260610.005) that is newer than the latest available migration (20260610.001) !
+2026-06-10 11:47:44.460 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Schema `gjjd_test` is up to date. No migration necessary.
+2026-06-10 11:47:46.992 [main] INFO  [] o.f.s.b.e.EventRegistryAutoConfiguration.discoverDeploymentResources(106) - No deployment resources were found for autodeployment
+2026-06-10 11:47:47.246 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(132) - Creating thread pool queue of size 100
+2026-06-10 11:47:47.247 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(138) - Creating thread factory with naming pattern flowable-async-task-invoker-%d
+2026-06-10 11:47:47.249 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(146) - Creating executor service with corePoolSize 8, maxPoolSize 8 and keepAliveTime 5000
+2026-06-10 11:47:47.377 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1076) - Found 2 Engine Configurators in total:
+2026-06-10 11:47:47.377 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 11:47:47.377 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 11:47:47.377 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 11:47:47.387 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 11:47:50.174 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 11:47:50.205 [main] INFO  [] o.f.e.impl.EventRegistryEngineImpl.<init>(53) - EventRegistryEngine default created
+2026-06-10 11:47:50.205 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 11:47:50.224 [main] INFO  [] o.f.idm.engine.impl.IdmEngineImpl.<init>(52) - IdmEngine default created
+2026-06-10 11:47:50.310 [main] INFO  [] o.f.engine.impl.ProcessEngineImpl.<init>(89) - ProcessEngine default created
+2026-06-10 11:47:50.343 [main] INFO  [] o.f.e.impl.cmd.ValidateV5EntitiesCmd.execute(43) - Total of v5 deployments found: 0
+2026-06-10 11:47:53.369 [main] WARN  [] o.s.b.a.s.s.UserDetailsServiceAutoConfiguration.getOrDeducePassword(86) - 
+
+Using generated security password: 9d982c34-4f83-45a2-925d-d83c9ea79842
+
+This generated password is for development use only. Your security configuration must be updated before running your application in production.
+
+2026-06-10 11:47:53.378 [main] INFO  [] o.s.s.c.a.a.c.InitializeUserDetailsBeanManagerConfigurer$InitializeUserDetailsManagerConfigurer.configure(113) - Global AuthenticationManager configured with UserDetailsService bean with name inMemoryUserDetailsManager
+2026-06-10 11:47:53.959 [main] INFO  [] o.s.b.a.e.web.EndpointLinksResolver.<init>(60) - Exposing 2 endpoints beneath base path '/actuator'
+2026-06-10 11:47:55.039 [main] INFO  [] o.f.s.c.DefaultAutoDeploymentStrategy.deployResources(91) - Deploying resources [file [D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes\workflows\bpmn\certification-document-review.bpmn20.xml]] for engine org.flowable.engine.impl.ProcessEngineImpl@519f6adb deployment name hint SpringBootAutoDeployment
+2026-06-10 11:47:55.066 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Starting ProtocolHandler ["http-nio-8080"]
+2026-06-10 11:47:55.081 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.start(243) - Tomcat started on port 8080 (http) with context path '/api'
+2026-06-10 11:47:55.093 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarted(56) - Started PlatformApplication in 17.604 seconds (process running for 18.442)
+2026-06-10 11:48:21.217 [http-nio-8080-exec-1] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-06-10 11:48:22.801 [http-nio-8080-exec-2] INFO  [f1096867-8f88-4a5c-8ab7-214d855e5fa3] c.g.p.config.SaTokenListenerConfig.doLogin(14) - Sa-Token login: loginType=login, loginId=1000
+2026-06-10 11:48:37.156 [http-nio-8080-exec-6] WARN  [f87e2aa1-594b-49c7-b5e7-dd2e33f5e063] c.g.p.c.e.GlobalExceptionHandler.handleDataIntegrity(57) - Data integrity violation: 
+### Error updating database.  Cause: java.sql.SQLIntegrityConstraintViolationException: Duplicate entry '1-2064262730184568834-450102198602022345-1' for key 'certification_candidate.uk_cert_candidate_id_card'
+### The error may exist in com/guoyu/platform/certification/mapper/CertificationCandidateMapper.java (best guess)
+### The error may involve com.guoyu.platform.certification.mapper.CertificationCandidateMapper.deleteById-Inline
+### The error occurred while setting parameters
+### SQL: UPDATE certification_candidate SET updated_at = ?, updated_by = ?, deleted = 1 WHERE id = ? AND deleted = 0 AND tenant_id = 1
+### Cause: java.sql.SQLIntegrityConstraintViolationException: Duplicate entry '1-2064262730184568834-450102198602022345-1' for key 'certification_candidate.uk_cert_candidate_id_card'
+; Duplicate entry '1-2064262730184568834-450102198602022345-1' for key 'certification_candidate.uk_cert_candidate_id_card'
+2026-06-10 11:48:42.093 [http-nio-8080-exec-5] WARN  [3d2d1897-e983-4c77-a643-281492c92012] c.g.p.c.e.GlobalExceptionHandler.handleDataIntegrity(57) - Data integrity violation: 
+### Error updating database.  Cause: java.sql.SQLIntegrityConstraintViolationException: Duplicate entry '1-2064262730184568834-450102198602022345-1' for key 'certification_candidate.uk_cert_candidate_id_card'
+### The error may exist in com/guoyu/platform/certification/mapper/CertificationCandidateMapper.java (best guess)
+### The error may involve com.guoyu.platform.certification.mapper.CertificationCandidateMapper.deleteById-Inline
+### The error occurred while setting parameters
+### SQL: UPDATE certification_candidate SET updated_at = ?, updated_by = ?, deleted = 1 WHERE id = ? AND deleted = 0 AND tenant_id = 1
+### Cause: java.sql.SQLIntegrityConstraintViolationException: Duplicate entry '1-2064262730184568834-450102198602022345-1' for key 'certification_candidate.uk_cert_candidate_id_card'
+; Duplicate entry '1-2064262730184568834-450102198602022345-1' for key 'certification_candidate.uk_cert_candidate_id_card'
+2026-06-10 11:52:28.950 [SpringApplicationShutdownHook] INFO  [] com.zaxxer.hikari.HikariDataSource.close(349) - HikariPool-1 - Shutdown initiated...
+2026-06-10 11:52:28.963 [SpringApplicationShutdownHook] INFO  [] com.zaxxer.hikari.HikariDataSource.close(351) - HikariPool-1 - Shutdown completed.
+2026-06-10 11:52:37.335 [background-preinit] INFO  [] o.h.validator.internal.util.Version.<clinit>(21) - HV000001: Hibernate Validator 8.0.1.Final
+2026-06-10 11:52:37.412 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarting(50) - Starting PlatformApplication using Java 21.0.11 with PID 10320 (D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes started by pc in D:\qianlvguoyu\qianlvguoyu_saas-dev)
+2026-06-10 11:52:37.413 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStartupProfileInfo(654) - No active profile set, falling back to 1 default profile: "default"
+2026-06-10 11:52:40.905 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.initialize(111) - Tomcat initialized with port 8080 (http)
+2026-06-10 11:52:40.927 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Initializing ProtocolHandler ["http-nio-8080"]
+2026-06-10 11:52:40.932 [main] INFO  [] o.a.catalina.core.StandardService.log(173) - Starting service [Tomcat]
+2026-06-10 11:52:40.933 [main] INFO  [] o.a.catalina.core.StandardEngine.log(173) - Starting Servlet engine: [Apache Tomcat/10.1.33]
+2026-06-10 11:52:41.114 [main] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring embedded WebApplicationContext
+2026-06-10 11:52:41.115 [main] INFO  [] o.s.b.w.s.c.ServletWebServerApplicationContext.prepareWebApplicationContext(296) - Root WebApplicationContext: initialization completed in 3651 ms
+2026-06-10 11:52:42.100 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(109) - HikariPool-1 - Starting...
+2026-06-10 11:52:42.321 [main] INFO  [] com.zaxxer.hikari.pool.HikariPool.checkFailFast(554) - HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@1826475
+2026-06-10 11:52:42.324 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(122) - HikariPool-1 - Start completed.
+2026-06-10 11:52:42.395 [main] INFO  [] org.flywaydb.core.FlywayExecutor.info(37) - Database: jdbc:mysql://192.168.1.200:3308/gjjd_test (MySQL 8.4)
+2026-06-10 11:52:42.411 [main] WARN  [] o.f.c.i.database.base.Database.warn(41) - Flyway upgrade recommended: MySQL 8.4 is newer than this version of Flyway and support has not been tested. The latest supported version of MySQL is 8.1.
+2026-06-10 11:52:42.564 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Current version of schema `gjjd_test`: 20260610.006
+2026-06-10 11:52:42.564 [main] WARN  [] o.f.core.internal.command.DbMigrate.warn(41) - outOfOrder mode is active. Migration of schema `gjjd_test` may not be reproducible.
+2026-06-10 11:52:42.565 [main] WARN  [] o.f.core.internal.command.DbMigrate.warn(41) - Schema `gjjd_test` has a version (20260610.006) that is newer than the latest available migration (20260610.001) !
+2026-06-10 11:52:42.571 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Schema `gjjd_test` is up to date. No migration necessary.
+2026-06-10 11:52:44.862 [main] INFO  [] o.f.s.b.e.EventRegistryAutoConfiguration.discoverDeploymentResources(106) - No deployment resources were found for autodeployment
+2026-06-10 11:52:45.069 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(132) - Creating thread pool queue of size 100
+2026-06-10 11:52:45.071 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(138) - Creating thread factory with naming pattern flowable-async-task-invoker-%d
+2026-06-10 11:52:45.074 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(146) - Creating executor service with corePoolSize 8, maxPoolSize 8 and keepAliveTime 5000
+2026-06-10 11:52:45.180 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1076) - Found 2 Engine Configurators in total:
+2026-06-10 11:52:45.180 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 11:52:45.181 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 11:52:45.181 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 11:52:45.191 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 11:52:46.370 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 11:52:46.387 [main] INFO  [] o.f.e.impl.EventRegistryEngineImpl.<init>(53) - EventRegistryEngine default created
+2026-06-10 11:52:46.388 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 11:52:46.399 [main] INFO  [] o.f.idm.engine.impl.IdmEngineImpl.<init>(52) - IdmEngine default created
+2026-06-10 11:52:46.447 [main] INFO  [] o.f.engine.impl.ProcessEngineImpl.<init>(89) - ProcessEngine default created
+2026-06-10 11:52:46.473 [main] INFO  [] o.f.e.impl.cmd.ValidateV5EntitiesCmd.execute(43) - Total of v5 deployments found: 0
+2026-06-10 11:52:48.731 [main] WARN  [] o.s.b.a.s.s.UserDetailsServiceAutoConfiguration.getOrDeducePassword(86) - 
+
+Using generated security password: 883c4d52-b52e-4344-b39e-1921ce768a30
+
+This generated password is for development use only. Your security configuration must be updated before running your application in production.
+
+2026-06-10 11:52:48.739 [main] INFO  [] o.s.s.c.a.a.c.InitializeUserDetailsBeanManagerConfigurer$InitializeUserDetailsManagerConfigurer.configure(113) - Global AuthenticationManager configured with UserDetailsService bean with name inMemoryUserDetailsManager
+2026-06-10 11:52:49.322 [main] INFO  [] o.s.b.a.e.web.EndpointLinksResolver.<init>(60) - Exposing 2 endpoints beneath base path '/actuator'
+2026-06-10 11:52:50.381 [main] INFO  [] o.f.s.c.DefaultAutoDeploymentStrategy.deployResources(91) - Deploying resources [file [D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes\workflows\bpmn\certification-document-review.bpmn20.xml]] for engine org.flowable.engine.impl.ProcessEngineImpl@4e38b4ea deployment name hint SpringBootAutoDeployment
+2026-06-10 11:52:50.395 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Starting ProtocolHandler ["http-nio-8080"]
+2026-06-10 11:52:50.414 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.start(243) - Tomcat started on port 8080 (http) with context path '/api'
+2026-06-10 11:52:50.425 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarted(56) - Started PlatformApplication in 13.669 seconds (process running for 14.452)
+2026-06-10 13:53:58.891 [http-nio-8080-exec-1] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-06-10 14:04:02.526 [background-preinit] INFO  [] o.h.validator.internal.util.Version.<clinit>(21) - HV000001: Hibernate Validator 8.0.1.Final
+2026-06-10 14:04:02.618 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarting(50) - Starting PlatformApplication using Java 21.0.11 with PID 27228 (D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes started by pc in D:\qianlvguoyu\qianlvguoyu_saas-dev)
+2026-06-10 14:04:02.620 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStartupProfileInfo(654) - No active profile set, falling back to 1 default profile: "default"
+2026-06-10 14:04:06.651 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.initialize(111) - Tomcat initialized with port 8080 (http)
+2026-06-10 14:04:06.677 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Initializing ProtocolHandler ["http-nio-8080"]
+2026-06-10 14:04:06.681 [main] INFO  [] o.a.catalina.core.StandardService.log(173) - Starting service [Tomcat]
+2026-06-10 14:04:06.682 [main] INFO  [] o.a.catalina.core.StandardEngine.log(173) - Starting Servlet engine: [Apache Tomcat/10.1.33]
+2026-06-10 14:04:06.909 [main] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring embedded WebApplicationContext
+2026-06-10 14:04:06.909 [main] INFO  [] o.s.b.w.s.c.ServletWebServerApplicationContext.prepareWebApplicationContext(296) - Root WebApplicationContext: initialization completed in 4217 ms
+2026-06-10 14:04:08.128 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(109) - HikariPool-1 - Starting...
+2026-06-10 14:04:08.385 [main] INFO  [] com.zaxxer.hikari.pool.HikariPool.checkFailFast(554) - HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@767d9b9
+2026-06-10 14:04:08.389 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(122) - HikariPool-1 - Start completed.
+2026-06-10 14:04:08.489 [main] INFO  [] org.flywaydb.core.FlywayExecutor.info(37) - Database: jdbc:mysql://192.168.1.200:3308/gjjd_test (MySQL 8.4)
+2026-06-10 14:04:08.509 [main] WARN  [] o.f.c.i.database.base.Database.warn(41) - Flyway upgrade recommended: MySQL 8.4 is newer than this version of Flyway and support has not been tested. The latest supported version of MySQL is 8.1.
+2026-06-10 14:04:08.705 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Current version of schema `gjjd_test`: 20260610.006
+2026-06-10 14:04:08.706 [main] WARN  [] o.f.core.internal.command.DbMigrate.warn(41) - outOfOrder mode is active. Migration of schema `gjjd_test` may not be reproducible.
+2026-06-10 14:04:08.706 [main] WARN  [] o.f.core.internal.command.DbMigrate.warn(41) - Schema `gjjd_test` has a version (20260610.006) that is newer than the latest available migration (20260610.001) !
+2026-06-10 14:04:08.711 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Schema `gjjd_test` is up to date. No migration necessary.
+2026-06-10 14:04:11.552 [main] INFO  [] o.f.s.b.e.EventRegistryAutoConfiguration.discoverDeploymentResources(106) - No deployment resources were found for autodeployment
+2026-06-10 14:04:11.868 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(132) - Creating thread pool queue of size 100
+2026-06-10 14:04:11.870 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(138) - Creating thread factory with naming pattern flowable-async-task-invoker-%d
+2026-06-10 14:04:11.876 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(146) - Creating executor service with corePoolSize 8, maxPoolSize 8 and keepAliveTime 5000
+2026-06-10 14:04:12.051 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1076) - Found 2 Engine Configurators in total:
+2026-06-10 14:04:12.052 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 14:04:12.052 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 14:04:12.052 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 14:04:12.065 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 14:04:13.621 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 14:04:13.653 [main] INFO  [] o.f.e.impl.EventRegistryEngineImpl.<init>(53) - EventRegistryEngine default created
+2026-06-10 14:04:13.655 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 14:04:13.675 [main] INFO  [] o.f.idm.engine.impl.IdmEngineImpl.<init>(52) - IdmEngine default created
+2026-06-10 14:04:13.768 [main] INFO  [] o.f.engine.impl.ProcessEngineImpl.<init>(89) - ProcessEngine default created
+2026-06-10 14:04:13.817 [main] INFO  [] o.f.e.impl.cmd.ValidateV5EntitiesCmd.execute(43) - Total of v5 deployments found: 0
+2026-06-10 14:04:16.298 [main] WARN  [] o.s.b.a.s.s.UserDetailsServiceAutoConfiguration.getOrDeducePassword(86) - 
+
+Using generated security password: fea38edb-2095-4323-acae-d0621fab208c
+
+This generated password is for development use only. Your security configuration must be updated before running your application in production.
+
+2026-06-10 14:04:16.306 [main] INFO  [] o.s.s.c.a.a.c.InitializeUserDetailsBeanManagerConfigurer$InitializeUserDetailsManagerConfigurer.configure(113) - Global AuthenticationManager configured with UserDetailsService bean with name inMemoryUserDetailsManager
+2026-06-10 14:04:16.982 [main] INFO  [] o.s.b.a.e.web.EndpointLinksResolver.<init>(60) - Exposing 2 endpoints beneath base path '/actuator'
+2026-06-10 14:04:18.168 [main] INFO  [] o.f.s.c.DefaultAutoDeploymentStrategy.deployResources(91) - Deploying resources [file [D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes\workflows\bpmn\certification-document-review.bpmn20.xml]] for engine org.flowable.engine.impl.ProcessEngineImpl@b4f7e1c deployment name hint SpringBootAutoDeployment
+2026-06-10 14:04:18.191 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Starting ProtocolHandler ["http-nio-8080"]
+2026-06-10 14:04:18.218 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.start(243) - Tomcat started on port 8080 (http) with context path '/api'
+2026-06-10 14:04:18.235 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarted(56) - Started PlatformApplication in 16.415 seconds (process running for 17.384)
+2026-06-10 14:04:51.712 [http-nio-8080-exec-1] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-06-10 14:04:53.086 [http-nio-8080-exec-5] INFO  [765e4cc1-521a-4a69-9544-41de6a07b01d] c.g.p.config.SaTokenListenerConfig.doLogin(14) - Sa-Token login: loginType=login, loginId=1000
+2026-06-10 15:46:06.628 [background-preinit] INFO  [] o.h.validator.internal.util.Version.<clinit>(21) - HV000001: Hibernate Validator 8.0.1.Final
+2026-06-10 15:46:06.721 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarting(50) - Starting PlatformApplication using Java 21.0.11 with PID 28260 (D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes started by pc in D:\qianlvguoyu\qianlvguoyu_saas-dev)
+2026-06-10 15:46:06.722 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStartupProfileInfo(654) - No active profile set, falling back to 1 default profile: "default"
+2026-06-10 15:46:10.671 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.initialize(111) - Tomcat initialized with port 8080 (http)
+2026-06-10 15:46:10.695 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Initializing ProtocolHandler ["http-nio-8080"]
+2026-06-10 15:46:10.701 [main] INFO  [] o.a.catalina.core.StandardService.log(173) - Starting service [Tomcat]
+2026-06-10 15:46:10.701 [main] INFO  [] o.a.catalina.core.StandardEngine.log(173) - Starting Servlet engine: [Apache Tomcat/10.1.33]
+2026-06-10 15:46:10.905 [main] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring embedded WebApplicationContext
+2026-06-10 15:46:10.906 [main] INFO  [] o.s.b.w.s.c.ServletWebServerApplicationContext.prepareWebApplicationContext(296) - Root WebApplicationContext: initialization completed in 4133 ms
+2026-06-10 15:46:12.163 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(109) - HikariPool-1 - Starting...
+2026-06-10 15:46:12.429 [main] INFO  [] com.zaxxer.hikari.pool.HikariPool.checkFailFast(554) - HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@1cca3e8c
+2026-06-10 15:46:12.433 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(122) - HikariPool-1 - Start completed.
+2026-06-10 15:46:12.508 [main] INFO  [] org.flywaydb.core.FlywayExecutor.info(37) - Database: jdbc:mysql://192.168.1.200:3308/gjjd_test (MySQL 8.4)
+2026-06-10 15:46:12.524 [main] WARN  [] o.f.c.i.database.base.Database.warn(41) - Flyway upgrade recommended: MySQL 8.4 is newer than this version of Flyway and support has not been tested. The latest supported version of MySQL is 8.1.
+2026-06-10 15:46:12.702 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Current version of schema `gjjd_test`: 20260610.007
+2026-06-10 15:46:12.703 [main] WARN  [] o.f.core.internal.command.DbMigrate.warn(41) - outOfOrder mode is active. Migration of schema `gjjd_test` may not be reproducible.
+2026-06-10 15:46:12.703 [main] WARN  [] o.f.core.internal.command.DbMigrate.warn(41) - Schema `gjjd_test` has a version (20260610.007) that is newer than the latest available migration (20260610.001) !
+2026-06-10 15:46:12.710 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Schema `gjjd_test` is up to date. No migration necessary.
+2026-06-10 15:46:15.200 [main] INFO  [] o.f.s.b.e.EventRegistryAutoConfiguration.discoverDeploymentResources(106) - No deployment resources were found for autodeployment
+2026-06-10 15:46:15.401 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(132) - Creating thread pool queue of size 100
+2026-06-10 15:46:15.403 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(138) - Creating thread factory with naming pattern flowable-async-task-invoker-%d
+2026-06-10 15:46:15.406 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(146) - Creating executor service with corePoolSize 8, maxPoolSize 8 and keepAliveTime 5000
+2026-06-10 15:46:15.490 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1076) - Found 2 Engine Configurators in total:
+2026-06-10 15:46:15.490 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 15:46:15.490 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 15:46:15.491 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 15:46:15.499 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 15:46:16.845 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 15:46:16.862 [main] INFO  [] o.f.e.impl.EventRegistryEngineImpl.<init>(53) - EventRegistryEngine default created
+2026-06-10 15:46:16.863 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 15:46:16.877 [main] INFO  [] o.f.idm.engine.impl.IdmEngineImpl.<init>(52) - IdmEngine default created
+2026-06-10 15:46:16.941 [main] INFO  [] o.f.engine.impl.ProcessEngineImpl.<init>(89) - ProcessEngine default created
+2026-06-10 15:46:16.972 [main] INFO  [] o.f.e.impl.cmd.ValidateV5EntitiesCmd.execute(43) - Total of v5 deployments found: 0
+2026-06-10 15:46:19.304 [main] WARN  [] o.s.b.a.s.s.UserDetailsServiceAutoConfiguration.getOrDeducePassword(86) - 
+
+Using generated security password: 347ef815-0a25-4c47-a910-40852109d217
+
+This generated password is for development use only. Your security configuration must be updated before running your application in production.
+
+2026-06-10 15:46:19.312 [main] INFO  [] o.s.s.c.a.a.c.InitializeUserDetailsBeanManagerConfigurer$InitializeUserDetailsManagerConfigurer.configure(113) - Global AuthenticationManager configured with UserDetailsService bean with name inMemoryUserDetailsManager
+2026-06-10 15:46:19.830 [main] INFO  [] o.s.b.a.e.web.EndpointLinksResolver.<init>(60) - Exposing 2 endpoints beneath base path '/actuator'
+2026-06-10 15:46:20.895 [main] INFO  [] o.f.s.c.DefaultAutoDeploymentStrategy.deployResources(91) - Deploying resources [file [D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes\workflows\bpmn\certification-document-review.bpmn20.xml]] for engine org.flowable.engine.impl.ProcessEngineImpl@26cd77cc deployment name hint SpringBootAutoDeployment
+2026-06-10 15:46:20.916 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Starting ProtocolHandler ["http-nio-8080"]
+2026-06-10 15:46:20.939 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.start(243) - Tomcat started on port 8080 (http) with context path '/api'
+2026-06-10 15:46:20.953 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarted(56) - Started PlatformApplication in 15.015 seconds (process running for 15.757)
+2026-06-10 15:46:28.280 [http-nio-8080-exec-1] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-06-10 15:47:04.825 [http-nio-8080-exec-2] INFO  [688ee88a-b22f-43b0-b903-14d2f7deb15a] c.g.p.config.SaTokenListenerConfig.doLogin(14) - Sa-Token login: loginType=login, loginId=1000
+2026-06-10 15:50:12.644 [http-nio-8080-exec-8] ERROR [8c47dec2-faf0-439a-b3b3-d481ae317ac9] c.g.p.c.e.GlobalExceptionHandler.handleException(64) - Unhandled exception
+org.springframework.web.servlet.resource.NoResourceFoundException: No static resource certification/preparation/tasks/2064262730184568834/candidate-staging.
+	at org.springframework.web.servlet.resource.ResourceHttpRequestHandler.handleRequest(ResourceHttpRequestHandler.java:586)
+	at org.springframework.web.servlet.mvc.HttpRequestHandlerAdapter.handle(HttpRequestHandlerAdapter.java:52)
+	at org.springframework.web.servlet.DispatcherServlet.doDispatch(DispatcherServlet.java:1089)
+	at org.springframework.web.servlet.DispatcherServlet.doService(DispatcherServlet.java:979)
+	at org.springframework.web.servlet.FrameworkServlet.processRequest(FrameworkServlet.java:1014)
+	at org.springframework.web.servlet.FrameworkServlet.doGet(FrameworkServlet.java:903)
+	at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:564)
+	at org.springframework.web.servlet.FrameworkServlet.service(FrameworkServlet.java:885)
+	at jakarta.servlet.http.HttpServlet.service(HttpServlet.java:658)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:195)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at org.apache.tomcat.websocket.server.WsFilter.doFilter(WsFilter.java:51)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:164)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:110)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:164)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:110)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:164)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at org.springframework.web.filter.CompositeFilter$VirtualFilterChain.doFilter(CompositeFilter.java:108)
+	at org.springframework.security.web.FilterChainProxy.lambda$doFilterInternal$3(FilterChainProxy.java:231)
+	at org.springframework.security.web.ObservationFilterChainDecorator$FilterObservation$SimpleFilterObservation.lambda$wrap$1(ObservationFilterChainDecorator.java:479)
+	at org.springframework.security.web.ObservationFilterChainDecorator$AroundFilterObservation$SimpleAroundFilterObservation.lambda$wrap$1(ObservationFilterChainDecorator.java:340)
+	at org.springframework.security.web.ObservationFilterChainDecorator.lambda$wrapSecured$0(ObservationFilterChainDecorator.java:82)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:128)
+	at org.springframework.security.web.access.intercept.AuthorizationFilter.doFilter(AuthorizationFilter.java:100)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:227)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at org.springframework.security.web.access.ExceptionTranslationFilter.doFilter(ExceptionTranslationFilter.java:126)
+	at org.springframework.security.web.access.ExceptionTranslationFilter.doFilter(ExceptionTranslationFilter.java:120)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:227)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at org.springframework.security.web.session.SessionManagementFilter.doFilter(SessionManagementFilter.java:131)
+	at org.springframework.security.web.session.SessionManagementFilter.doFilter(SessionManagementFilter.java:85)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:227)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at org.springframework.security.web.authentication.AnonymousAuthenticationFilter.doFilter(AnonymousAuthenticationFilter.java:100)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:227)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter.doFilter(SecurityContextHolderAwareRequestFilter.java:179)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:227)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at org.springframework.security.web.savedrequest.RequestCacheAwareFilter.doFilter(RequestCacheAwareFilter.java:63)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:227)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at com.guoyu.platform.common.filter.TenantContextFilter.doFilterInternal(TenantContextFilter.java:58)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:227)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at com.guoyu.platform.security.filter.SaTokenBridgeFilter.doFilterInternal(SaTokenBridgeFilter.java:56)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:227)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at org.springframework.security.web.authentication.logout.LogoutFilter.doFilter(LogoutFilter.java:107)
+	at org.springframework.security.web.authentication.logout.LogoutFilter.doFilter(LogoutFilter.java:93)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:227)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at org.springframework.web.filter.CorsFilter.doFilterInternal(CorsFilter.java:91)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:227)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at org.springframework.security.web.header.HeaderWriterFilter.doHeadersAfter(HeaderWriterFilter.java:90)
+	at org.springframework.security.web.header.HeaderWriterFilter.doFilterInternal(HeaderWriterFilter.java:75)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:227)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at org.springframework.security.web.context.SecurityContextHolderFilter.doFilter(SecurityContextHolderFilter.java:82)
+	at org.springframework.security.web.context.SecurityContextHolderFilter.doFilter(SecurityContextHolderFilter.java:69)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:227)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter.doFilterInternal(WebAsyncManagerIntegrationFilter.java:62)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:227)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at org.springframework.security.web.session.DisableEncodeUrlFilter.doFilterInternal(DisableEncodeUrlFilter.java:42)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.wrapFilter(ObservationFilterChainDecorator.java:240)
+	at org.springframework.security.web.ObservationFilterChainDecorator$AroundFilterObservation$SimpleAroundFilterObservation.lambda$wrap$0(ObservationFilterChainDecorator.java:323)
+	at org.springframework.security.web.ObservationFilterChainDecorator$ObservationFilter.doFilter(ObservationFilterChainDecorator.java:224)
+	at org.springframework.security.web.ObservationFilterChainDecorator$VirtualFilterChain.doFilter(ObservationFilterChainDecorator.java:137)
+	at org.springframework.security.web.FilterChainProxy.doFilterInternal(FilterChainProxy.java:233)
+	at org.springframework.security.web.FilterChainProxy.doFilter(FilterChainProxy.java:191)
+	at org.springframework.web.filter.CompositeFilter$VirtualFilterChain.doFilter(CompositeFilter.java:113)
+	at org.springframework.web.servlet.handler.HandlerMappingIntrospector.lambda$createCacheFilter$3(HandlerMappingIntrospector.java:195)
+	at org.springframework.web.filter.CompositeFilter$VirtualFilterChain.doFilter(CompositeFilter.java:113)
+	at org.springframework.web.filter.CompositeFilter.doFilter(CompositeFilter.java:74)
+	at org.springframework.security.config.annotation.web.configuration.WebMvcSecurityConfiguration$CompositeFilterChainProxy.doFilter(WebMvcSecurityConfiguration.java:230)
+	at org.springframework.web.filter.DelegatingFilterProxy.invokeDelegate(DelegatingFilterProxy.java:362)
+	at org.springframework.web.filter.DelegatingFilterProxy.doFilter(DelegatingFilterProxy.java:278)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:164)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at cn.dev33.satoken.filter.SaFirewallCheckFilterForJakartaServlet.doFilter(SaFirewallCheckFilterForJakartaServlet.java:69)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:164)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at cn.dev33.satoken.filter.SaTokenCorsFilterForJakartaServlet.doFilter(SaTokenCorsFilterForJakartaServlet.java:52)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:164)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at cn.dev33.satoken.filter.SaTokenContextFilterForJakartaServlet.doFilter(SaTokenContextFilterForJakartaServlet.java:40)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:164)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at org.springframework.web.filter.RequestContextFilter.doFilterInternal(RequestContextFilter.java:100)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:164)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at org.springframework.web.filter.FormContentFilter.doFilterInternal(FormContentFilter.java:93)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:164)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at org.springframework.web.filter.ServerHttpObservationFilter.doFilterInternal(ServerHttpObservationFilter.java:113)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:164)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at org.springframework.web.filter.CharacterEncodingFilter.doFilterInternal(CharacterEncodingFilter.java:201)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:164)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at com.guoyu.platform.common.web.TraceIdFilter.doFilterInternal(TraceIdFilter.java:35)
+	at org.springframework.web.filter.OncePerRequestFilter.doFilter(OncePerRequestFilter.java:116)
+	at org.apache.catalina.core.ApplicationFilterChain.internalDoFilter(ApplicationFilterChain.java:164)
+	at org.apache.catalina.core.ApplicationFilterChain.doFilter(ApplicationFilterChain.java:140)
+	at org.apache.catalina.core.StandardWrapperValve.invoke(StandardWrapperValve.java:167)
+	at org.apache.catalina.core.StandardContextValve.invoke(StandardContextValve.java:90)
+	at org.apache.catalina.authenticator.AuthenticatorBase.invoke(AuthenticatorBase.java:483)
+	at org.apache.catalina.core.StandardHostValve.invoke(StandardHostValve.java:115)
+	at org.apache.catalina.valves.ErrorReportValve.invoke(ErrorReportValve.java:93)
+	at org.apache.catalina.core.StandardEngineValve.invoke(StandardEngineValve.java:74)
+	at org.apache.catalina.connector.CoyoteAdapter.service(CoyoteAdapter.java:344)
+	at org.apache.coyote.http11.Http11Processor.service(Http11Processor.java:397)
+	at org.apache.coyote.AbstractProcessorLight.process(AbstractProcessorLight.java:63)
+	at org.apache.coyote.AbstractProtocol$ConnectionHandler.process(AbstractProtocol.java:905)
+	at org.apache.tomcat.util.net.NioEndpoint$SocketProcessor.doRun(NioEndpoint.java:1741)
+	at org.apache.tomcat.util.net.SocketProcessorBase.run(SocketProcessorBase.java:52)
+	at org.apache.tomcat.util.threads.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1190)
+	at org.apache.tomcat.util.threads.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:659)
+	at org.apache.tomcat.util.threads.TaskThread$WrappingRunnable.run(TaskThread.java:63)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+2026-06-10 15:52:27.447 [SpringApplicationShutdownHook] INFO  [] com.zaxxer.hikari.HikariDataSource.close(349) - HikariPool-1 - Shutdown initiated...
+2026-06-10 15:52:27.459 [SpringApplicationShutdownHook] INFO  [] com.zaxxer.hikari.HikariDataSource.close(351) - HikariPool-1 - Shutdown completed.
+2026-06-10 16:32:21.100 [background-preinit] INFO  [] o.h.validator.internal.util.Version.<clinit>(21) - HV000001: Hibernate Validator 8.0.1.Final
+2026-06-10 16:32:21.188 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarting(50) - Starting PlatformApplication using Java 21.0.11 with PID 32224 (D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes started by pc in D:\qianlvguoyu\qianlvguoyu_saas-dev)
+2026-06-10 16:32:21.190 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStartupProfileInfo(654) - No active profile set, falling back to 1 default profile: "default"
+2026-06-10 16:32:24.985 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.initialize(111) - Tomcat initialized with port 8080 (http)
+2026-06-10 16:32:25.041 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Initializing ProtocolHandler ["http-nio-8080"]
+2026-06-10 16:32:25.047 [main] INFO  [] o.a.catalina.core.StandardService.log(173) - Starting service [Tomcat]
+2026-06-10 16:32:25.049 [main] INFO  [] o.a.catalina.core.StandardEngine.log(173) - Starting Servlet engine: [Apache Tomcat/10.1.33]
+2026-06-10 16:32:25.373 [main] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring embedded WebApplicationContext
+2026-06-10 16:32:25.374 [main] INFO  [] o.s.b.w.s.c.ServletWebServerApplicationContext.prepareWebApplicationContext(296) - Root WebApplicationContext: initialization completed in 4129 ms
+2026-06-10 16:32:27.008 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(109) - HikariPool-1 - Starting...
+2026-06-10 16:32:27.324 [main] INFO  [] com.zaxxer.hikari.pool.HikariPool.checkFailFast(554) - HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@1d3546f9
+2026-06-10 16:32:27.327 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(122) - HikariPool-1 - Start completed.
+2026-06-10 16:32:27.385 [main] INFO  [] org.flywaydb.core.FlywayExecutor.info(37) - Database: jdbc:mysql://192.168.1.200:3308/gjjd_test (MySQL 8.4)
+2026-06-10 16:32:27.400 [main] WARN  [] o.f.c.i.database.base.Database.warn(41) - Flyway upgrade recommended: MySQL 8.4 is newer than this version of Flyway and support has not been tested. The latest supported version of MySQL is 8.1.
+2026-06-10 16:32:27.580 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Current version of schema `gjjd_test`: 20260610.007
+2026-06-10 16:32:27.580 [main] WARN  [] o.f.core.internal.command.DbMigrate.warn(41) - outOfOrder mode is active. Migration of schema `gjjd_test` may not be reproducible.
+2026-06-10 16:32:27.616 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Migrating schema `gjjd_test` to version "20260610.008 - ensure candidate source staging"
+2026-06-10 16:32:27.647 [main] WARN  [] o.f.c.i.s.DefaultSqlScriptExecutor.warn(41) - DB: Table 'certification_candidate_source_staging' already exists (SQL State: 42S01 - Error Code: 1050)
+2026-06-10 16:32:27.713 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Successfully applied 1 migration to schema `gjjd_test`, now at version v20260610.008 (execution time 00:00.053s)
+2026-06-10 16:32:30.374 [main] INFO  [] o.f.s.b.e.EventRegistryAutoConfiguration.discoverDeploymentResources(106) - No deployment resources were found for autodeployment
+2026-06-10 16:32:30.536 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(132) - Creating thread pool queue of size 100
+2026-06-10 16:32:30.537 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(138) - Creating thread factory with naming pattern flowable-async-task-invoker-%d
+2026-06-10 16:32:30.539 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(146) - Creating executor service with corePoolSize 8, maxPoolSize 8 and keepAliveTime 5000
+2026-06-10 16:32:30.635 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1076) - Found 2 Engine Configurators in total:
+2026-06-10 16:32:30.635 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 16:32:30.636 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 16:32:30.636 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 16:32:30.645 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 16:32:32.018 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 16:32:32.038 [main] INFO  [] o.f.e.impl.EventRegistryEngineImpl.<init>(53) - EventRegistryEngine default created
+2026-06-10 16:32:32.039 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 16:32:32.054 [main] INFO  [] o.f.idm.engine.impl.IdmEngineImpl.<init>(52) - IdmEngine default created
+2026-06-10 16:32:32.116 [main] INFO  [] o.f.engine.impl.ProcessEngineImpl.<init>(89) - ProcessEngine default created
+2026-06-10 16:32:32.146 [main] INFO  [] o.f.e.impl.cmd.ValidateV5EntitiesCmd.execute(43) - Total of v5 deployments found: 0
+2026-06-10 16:32:34.624 [main] WARN  [] o.s.b.a.s.s.UserDetailsServiceAutoConfiguration.getOrDeducePassword(86) - 
+
+Using generated security password: 98f711a7-4f77-4fe1-8acb-57ed0726cb14
+
+This generated password is for development use only. Your security configuration must be updated before running your application in production.
+
+2026-06-10 16:32:34.632 [main] INFO  [] o.s.s.c.a.a.c.InitializeUserDetailsBeanManagerConfigurer$InitializeUserDetailsManagerConfigurer.configure(113) - Global AuthenticationManager configured with UserDetailsService bean with name inMemoryUserDetailsManager
+2026-06-10 16:32:35.195 [main] INFO  [] o.s.b.a.e.web.EndpointLinksResolver.<init>(60) - Exposing 2 endpoints beneath base path '/actuator'
+2026-06-10 16:32:36.693 [main] INFO  [] o.f.s.c.DefaultAutoDeploymentStrategy.deployResources(91) - Deploying resources [file [D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes\workflows\bpmn\certification-document-review.bpmn20.xml]] for engine org.flowable.engine.impl.ProcessEngineImpl@92537b5 deployment name hint SpringBootAutoDeployment
+2026-06-10 16:32:36.719 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Starting ProtocolHandler ["http-nio-8080"]
+2026-06-10 16:32:36.745 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.start(243) - Tomcat started on port 8080 (http) with context path '/api'
+2026-06-10 16:32:36.759 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarted(56) - Started PlatformApplication in 16.29 seconds (process running for 17.115)
+2026-06-10 16:32:44.690 [http-nio-8080-exec-1] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-06-10 16:32:46.415 [http-nio-8080-exec-6] INFO  [6d842873-bb6b-43b8-8340-52141c6ca990] c.g.p.config.SaTokenListenerConfig.doLogin(14) - Sa-Token login: loginType=login, loginId=1000
+2026-06-10 16:34:19.726 [http-nio-8080-exec-10] WARN  [efaee39c-1978-4f84-9366-b9cb8d5f71b6] c.g.p.f.s.FileApplicationService.loadResource(151) - File content missing on disk: id=2064622088777498626, objectKey=1/2026/06/40d7d968-0da9-4f7d-a9d8-e472575c0f90-占露-职业技能等级认定申请表.docx, path=D:\qianlvguoyu\qianlvguoyu_saas-dev\storage\files\1\2026\06\40d7d968-0da9-4f7d-a9d8-e472575c0f90-占露-职业技能等级认定申请表.docx
+2026-06-10 16:34:24.276 [http-nio-8080-exec-1] WARN  [258fa554-c247-452c-94a6-6a31546ec8b5] c.g.p.f.s.FileApplicationService.loadResource(151) - File content missing on disk: id=2064622164266582018, objectKey=1/2026/06/9908a424-5bdf-4b8e-b3fb-6c0f1067ae1c-舒建-职业技能等级认定申请表.docx, path=D:\qianlvguoyu\qianlvguoyu_saas-dev\storage\files\1\2026\06\9908a424-5bdf-4b8e-b3fb-6c0f1067ae1c-舒建-职业技能等级认定申请表.docx
+2026-06-10 16:34:33.761 [http-nio-8080-exec-5] WARN  [c45decfb-b5d0-4db3-9937-4cf662d6f160] c.g.p.f.s.FileApplicationService.loadResource(151) - File content missing on disk: id=2064622088777498626, objectKey=1/2026/06/40d7d968-0da9-4f7d-a9d8-e472575c0f90-占露-职业技能等级认定申请表.docx, path=D:\qianlvguoyu\qianlvguoyu_saas-dev\storage\files\1\2026\06\40d7d968-0da9-4f7d-a9d8-e472575c0f90-占露-职业技能等级认定申请表.docx
+2026-06-10 16:34:41.293 [http-nio-8080-exec-8] WARN  [be123af6-51c6-4c6b-a490-6924f8a1574f] c.g.p.f.s.FileApplicationService.loadResource(151) - File content missing on disk: id=2064622164266582018, objectKey=1/2026/06/9908a424-5bdf-4b8e-b3fb-6c0f1067ae1c-舒建-职业技能等级认定申请表.docx, path=D:\qianlvguoyu\qianlvguoyu_saas-dev\storage\files\1\2026\06\9908a424-5bdf-4b8e-b3fb-6c0f1067ae1c-舒建-职业技能等级认定申请表.docx
+2026-06-10 16:35:34.782 [http-nio-8080-exec-9] WARN  [cf083029-4144-47d7-984c-8285275ab957] c.g.p.f.s.FileApplicationService.loadResource(151) - File content missing on disk: id=2064621967075573761, objectKey=1/2026/06/8ec05728-29dd-4c78-910f-89df230700fe-两寸证件照(测试).png, path=D:\qianlvguoyu\qianlvguoyu_saas-dev\storage\files\1\2026\06\8ec05728-29dd-4c78-910f-89df230700fe-两寸证件照(测试).png
+2026-06-10 16:36:01.596 [http-nio-8080-exec-4] WARN  [fafaeaa7-f187-4b0f-9ed1-e7ea11951740] c.g.p.f.s.FileApplicationService.loadResource(151) - File content missing on disk: id=2064622088777498626, objectKey=1/2026/06/40d7d968-0da9-4f7d-a9d8-e472575c0f90-占露-职业技能等级认定申请表.docx, path=D:\qianlvguoyu\qianlvguoyu_saas-dev\storage\files\1\2026\06\40d7d968-0da9-4f7d-a9d8-e472575c0f90-占露-职业技能等级认定申请表.docx
+2026-06-10 16:45:36.968 [SpringApplicationShutdownHook] INFO  [] com.zaxxer.hikari.HikariDataSource.close(349) - HikariPool-1 - Shutdown initiated...
+2026-06-10 16:45:36.979 [SpringApplicationShutdownHook] INFO  [] com.zaxxer.hikari.HikariDataSource.close(351) - HikariPool-1 - Shutdown completed.
+2026-06-10 16:45:43.391 [background-preinit] INFO  [] o.h.validator.internal.util.Version.<clinit>(21) - HV000001: Hibernate Validator 8.0.1.Final
+2026-06-10 16:45:43.511 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarting(50) - Starting PlatformApplication using Java 21.0.11 with PID 8340 (D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes started by pc in D:\qianlvguoyu\qianlvguoyu_saas-dev)
+2026-06-10 16:45:43.513 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStartupProfileInfo(654) - No active profile set, falling back to 1 default profile: "default"
+2026-06-10 16:45:47.544 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.initialize(111) - Tomcat initialized with port 8080 (http)
+2026-06-10 16:45:47.570 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Initializing ProtocolHandler ["http-nio-8080"]
+2026-06-10 16:45:47.576 [main] INFO  [] o.a.catalina.core.StandardService.log(173) - Starting service [Tomcat]
+2026-06-10 16:45:47.577 [main] INFO  [] o.a.catalina.core.StandardEngine.log(173) - Starting Servlet engine: [Apache Tomcat/10.1.33]
+2026-06-10 16:45:47.771 [main] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring embedded WebApplicationContext
+2026-06-10 16:45:47.772 [main] INFO  [] o.s.b.w.s.c.ServletWebServerApplicationContext.prepareWebApplicationContext(296) - Root WebApplicationContext: initialization completed in 4190 ms
+2026-06-10 16:45:49.074 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(109) - HikariPool-1 - Starting...
+2026-06-10 16:45:49.358 [main] INFO  [] com.zaxxer.hikari.pool.HikariPool.checkFailFast(554) - HikariPool-1 - Added connection com.mysql.cj.jdbc.ConnectionImpl@491cc0eb
+2026-06-10 16:45:49.362 [main] INFO  [] com.zaxxer.hikari.HikariDataSource.getConnection(122) - HikariPool-1 - Start completed.
+2026-06-10 16:45:49.433 [main] INFO  [] org.flywaydb.core.FlywayExecutor.info(37) - Database: jdbc:mysql://192.168.1.200:3308/gjjd_test (MySQL 8.4)
+2026-06-10 16:45:49.449 [main] WARN  [] o.f.c.i.database.base.Database.warn(41) - Flyway upgrade recommended: MySQL 8.4 is newer than this version of Flyway and support has not been tested. The latest supported version of MySQL is 8.1.
+2026-06-10 16:45:49.632 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Current version of schema `gjjd_test`: 20260610.008
+2026-06-10 16:45:49.633 [main] WARN  [] o.f.core.internal.command.DbMigrate.warn(41) - outOfOrder mode is active. Migration of schema `gjjd_test` may not be reproducible.
+2026-06-10 16:45:49.639 [main] INFO  [] o.f.core.internal.command.DbMigrate.info(37) - Schema `gjjd_test` is up to date. No migration necessary.
+2026-06-10 16:45:53.456 [main] INFO  [] o.f.s.b.e.EventRegistryAutoConfiguration.discoverDeploymentResources(106) - No deployment resources were found for autodeployment
+2026-06-10 16:45:53.702 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(132) - Creating thread pool queue of size 100
+2026-06-10 16:45:53.703 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(138) - Creating thread factory with naming pattern flowable-async-task-invoker-%d
+2026-06-10 16:45:53.705 [main] INFO  [] o.f.c.e.i.a.DefaultAsyncTaskExecutor.initializeExecutor(146) - Creating executor service with corePoolSize 8, maxPoolSize 8 and keepAliveTime 5000
+2026-06-10 16:45:53.832 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1076) - Found 2 Engine Configurators in total:
+2026-06-10 16:45:53.832 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 16:45:53.832 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.initConfigurators(1078) - class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 16:45:53.832 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 16:45:53.842 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsBeforeInit(1104) - Executing beforeInit() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 16:45:55.478 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.eventregistry.spring.configurator.SpringEventRegistryConfigurator (priority:100000)
+2026-06-10 16:45:55.564 [main] INFO  [] o.f.e.impl.EventRegistryEngineImpl.<init>(53) - EventRegistryEngine default created
+2026-06-10 16:45:55.566 [main] INFO  [] o.f.s.SpringProcessEngineConfiguration.configuratorsAfterInit(1111) - Executing configure() of class org.flowable.idm.engine.configurator.IdmEngineConfigurator (priority:150000)
+2026-06-10 16:45:55.587 [main] INFO  [] o.f.idm.engine.impl.IdmEngineImpl.<init>(52) - IdmEngine default created
+2026-06-10 16:45:55.665 [main] INFO  [] o.f.engine.impl.ProcessEngineImpl.<init>(89) - ProcessEngine default created
+2026-06-10 16:45:55.738 [main] INFO  [] o.f.e.impl.cmd.ValidateV5EntitiesCmd.execute(43) - Total of v5 deployments found: 0
+2026-06-10 16:45:59.437 [main] WARN  [] o.s.b.a.s.s.UserDetailsServiceAutoConfiguration.getOrDeducePassword(86) - 
+
+Using generated security password: 944000a5-a6ce-4113-a926-d8e634dc0ebb
+
+This generated password is for development use only. Your security configuration must be updated before running your application in production.
+
+2026-06-10 16:45:59.448 [main] INFO  [] o.s.s.c.a.a.c.InitializeUserDetailsBeanManagerConfigurer$InitializeUserDetailsManagerConfigurer.configure(113) - Global AuthenticationManager configured with UserDetailsService bean with name inMemoryUserDetailsManager
+2026-06-10 16:46:00.151 [main] INFO  [] o.s.b.a.e.web.EndpointLinksResolver.<init>(60) - Exposing 2 endpoints beneath base path '/actuator'
+2026-06-10 16:46:01.467 [main] INFO  [] o.f.s.c.DefaultAutoDeploymentStrategy.deployResources(91) - Deploying resources [file [D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\classes\workflows\bpmn\certification-document-review.bpmn20.xml]] for engine org.flowable.engine.impl.ProcessEngineImpl@35c344ce deployment name hint SpringBootAutoDeployment
+2026-06-10 16:46:01.488 [main] INFO  [] o.a.coyote.http11.Http11NioProtocol.log(173) - Starting ProtocolHandler ["http-nio-8080"]
+2026-06-10 16:46:01.514 [main] INFO  [] o.s.b.w.e.tomcat.TomcatWebServer.start(243) - Tomcat started on port 8080 (http) with context path '/api'
+2026-06-10 16:46:01.530 [main] INFO  [] c.guoyu.platform.PlatformApplication.logStarted(56) - Started PlatformApplication in 18.828 seconds (process running for 19.886)
+2026-06-10 16:46:30.034 [http-nio-8080-exec-1] INFO  [] o.a.c.c.C.[.[localhost].[/api].log(173) - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-06-10 16:46:31.686 [http-nio-8080-exec-4] INFO  [70d435e9-b7b0-46e4-a28f-f646eeffa4b3] c.g.p.config.SaTokenListenerConfig.doLogin(14) - Sa-Token login: loginType=login, loginId=1000
+2026-06-10 16:46:50.922 [http-nio-8080-exec-1] INFO  [b1f5aeef-9919-4f8f-bb0b-d28f510da2d1] c.g.p.f.s.FileApplicationService.storageRoot(230) - Using file storage root: D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\storage\files
+2026-06-10 16:46:50.922 [http-nio-8080-exec-1] WARN  [b1f5aeef-9919-4f8f-bb0b-d28f510da2d1] c.g.p.f.s.FileApplicationService.loadResource(155) - File content missing on disk: id=2064622088777498626, objectKey=1/2026/06/40d7d968-0da9-4f7d-a9d8-e472575c0f90-占露-职业技能等级认定申请表.docx, path=D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\storage\files\1\2026\06\40d7d968-0da9-4f7d-a9d8-e472575c0f90-占露-职业技能等级认定申请表.docx
+2026-06-10 16:47:03.091 [http-nio-8080-exec-10] WARN  [2c67fec6-15de-4443-8a8a-804c93c90a0f] c.g.p.f.s.FileApplicationService.loadResource(155) - File content missing on disk: id=2064622164266582018, objectKey=1/2026/06/9908a424-5bdf-4b8e-b3fb-6c0f1067ae1c-舒建-职业技能等级认定申请表.docx, path=D:\qianlvguoyu\qianlvguoyu_saas-dev\qianlvguoyu_saas-dev-c0c8c9aec83ff243d28d42cf263e4f6deaf1bd5b\services\platform-api\target\storage\files\1\2026\06\9908a424-5bdf-4b8e-b3fb-6c0f1067ae1c-舒建-职业技能等级认定申请表.docx

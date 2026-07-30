@@ -1,0 +1,342 @@
+/* 对齐 yun_shang classMembers.vue / 班级人员截图 */
+.training-class-people-page {
+  padding: 20px;
+}
+
+.training-class-people-page .class-people-steps {
+  margin-bottom: 18px;
+}
+
+.training-class-people-page .search-filter-bar {
+  margin-bottom: 14px;
+}
+
+.training-class-people-page .filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.training-class-people-page .filter-actions .filter-select {
+  min-width: 200px;
+}
+
+.training-class-people-page .class-people-table {
+  margin-top: 4px;
+}
+
+.training-class-people-page .ant-table-thead > tr > th {
+  background: #f8f9fa !important;
+  color: #909399;
+  font-weight: 500;
+}
+
+.training-class-people-page .class-people-pagination {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.training-class-people-page .class-row-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  line-height: 1.5;
+}
+
+.training-class-people-page .class-row-actions-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0 12px;
+}
+
+.training-class-people-page .class-action-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #409eff;
+  font-size: 14px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.training-class-people-page .class-action-link:hover {
+  color: #66b1ff;
+}
+
+.training-class-people-page .class-action-link-danger {
+  color: #ff7875;
+}
+
+.training-class-people-page .class-action-link-danger:hover {
+  color: #ff9c99;
+}
+
+.training-class-people-page .link-action {
+  color: #409eff;
+  padding: 0;
+}
+
+.training-class-people-page .link-action-danger {
+  color: #ff7875;
+  padding: 0;
+}
+
+/* 学员列表证件照 — 对齐 yun_shang classMembers.vue 120×168 */
+.training-class-people-page .student-id-photo {
+  width: 120px;
+  height: 168px;
+  object-fit: cover;
+  display: block;
+  margin: 0 auto;
+}
+
+.training-class-people-page .mar-b10 {
+  margin-bottom: 10px;
+}
+
+.training-class-people-page .mar-r20 {
+  margin-right: 20px;
+}
+
+/* 学员列表弹窗 — 对齐截图 */
+.class-student-list-modal .ant-modal-header {
+  margin-bottom: 0;
+}
+
+.class-student-list-modal .student-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.class-student-list-modal .student-toolbar-btn {
+  height: 32px;
+  padding: 0 15px;
+  font-size: 14px;
+  color: #606266;
+  background: #fff;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.class-student-list-modal .student-toolbar-btn:hover {
+  color: #409eff;
+  border-color: #c6e2ff;
+  background: #ecf5ff;
+}
+
+.class-student-list-modal .class-student-table-scroll {
+  width: 100%;
+}
+
+.class-student-list-modal .class-student-table .ant-table-content > table {
+  min-width: 1060px;
+}
+
+.class-student-list-modal .class-student-table .ant-table {
+  font-size: 14px;
+  color: #606266;
+}
+
+.class-student-list-modal .class-student-table .ant-table-thead > tr > th {
+  background: #f8f9fa !important;
+  color: #909399;
+  font-weight: 500;
+  padding: 12px 8px;
+  border-bottom: 1px solid #ebeef5 !important;
+  border-inline-end: 1px solid #ebeef5 !important;
+}
+
+.class-student-list-modal .class-student-table .ant-table-tbody > tr > td {
+  padding: 12px 8px;
+  border-bottom: 1px solid #ebeef5 !important;
+  border-inline-end: 1px solid #ebeef5 !important;
+  vertical-align: middle;
+}
+
+.class-student-list-modal .class-student-table .ant-table-tbody > tr:hover > td {
+  background: #f5f7fa !important;
+}
+
+.class-student-list-modal .class-student-table .ant-table-selection-column {
+  padding-inline: 12px !important;
+}
+
+.class-student-list-modal .student-photo-cell {
+  width: 72px;
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  padding: 4px 0;
+}
+
+.class-student-list-modal .student-id-photo {
+  width: 72px;
+  height: 96px;
+  object-fit: cover;
+  display: block;
+  border-radius: 2px;
+}
+
+.class-student-list-modal .student-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.class-student-list-modal .student-action-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #409eff;
+  font-size: 14px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.class-student-list-modal .student-action-link:hover {
+  color: #66b1ff;
+}
+
+.class-student-list-modal .student-action-link-danger {
+  color: #ff7875;
+}
+
+.class-student-list-modal .student-action-link-danger:hover {
+  color: #ff9c99;
+}
+
+.class-student-list-modal .mar-b10 {
+  margin-bottom: 10px;
+}
+
+.class-student-list-modal .student-pagination {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.class-student-list-modal .student-pagination .ant-pagination-total-text {
+  color: #606266;
+  font-size: 14px;
+}
+
+/* 教务人员 / 负责人弹窗 — 对齐截图 */
+.class-staff-modal .ant-modal-header {
+  margin-bottom: 0;
+}
+
+.class-staff-modal .staff-toolbar {
+  margin-bottom: 12px;
+}
+
+.class-staff-modal .staff-toolbar-btn {
+  height: 32px;
+  padding: 0 15px;
+  font-size: 14px;
+  color: #606266;
+  background: #fff;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.class-staff-modal .staff-toolbar-btn:hover {
+  color: #409eff;
+  border-color: #c6e2ff;
+  background: #ecf5ff;
+}
+
+.class-staff-modal .class-staff-table .ant-table {
+  font-size: 14px;
+  color: #606266;
+}
+
+.class-staff-modal .class-staff-table .ant-table-thead > tr > th {
+  background: #f8f9fa !important;
+  color: #909399;
+  font-weight: 500;
+  padding: 12px 8px;
+  border-bottom: 1px solid #ebeef5 !important;
+}
+
+.class-staff-modal .class-staff-table .ant-table-tbody > tr > td {
+  padding: 12px 8px;
+  border-bottom: 1px solid #ebeef5 !important;
+  vertical-align: middle;
+}
+
+.class-staff-modal .class-staff-table .ant-table-tbody > tr:hover > td {
+  background: #f5f7fa !important;
+}
+
+.class-staff-modal .class-staff-table .ant-empty-description {
+  color: #909399;
+}
+
+.class-staff-modal .staff-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.class-staff-modal .staff-action-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #409eff;
+  font-size: 14px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.class-staff-modal .staff-action-link:hover {
+  color: #66b1ff;
+}
+
+.class-staff-modal .staff-action-link-danger {
+  color: #ff7875;
+}
+
+.class-staff-modal .staff-action-link-danger:hover {
+  color: #ff9c99;
+}
+
+.class-staff-modal .staff-import-actions {
+  margin-bottom: 12px;
+}
+
+.training-class-people-page .idcard-import-textarea {
+  max-width: 480px;
+  margin-right: 20px;
+}
+
+.training-class-people-page .idcard-import-actions {
+  margin-top: 20px;
+}
+
+.training-class-people-page .kcbiao-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.training-class-people-page .file-preview-container iframe {
+  border: none;
+}
+
+.training-class-people-page .bg-ff {
+  background-color: #fff;
+}

@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: platform/exam
+title: 考试模块
+scope: []
+source_files: []
+depends_on:
+    - path: platform/utils
+related_to: []

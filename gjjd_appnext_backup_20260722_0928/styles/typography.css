@@ -1,0 +1,56 @@
+/* ==================== 文字类 ==================== */
+
+/* 字体粗细 */
+.font-wb { font-weight: bold; }
+
+/* 字体大小 */
+.font-s10 { font-size: 10px; }
+.font-s12 { font-size: 12px; }
+.font-s14 { font-size: 14px; }
+.font-s15 { font-size: 15px; }
+.font-s16 { font-size: 16px; }
+.font-s18 { font-size: 18px; }
+.font-s20 { font-size: 20px; }
+.font-s22 { font-size: 22px; }
+.font-s24 { font-size: 24px; }
+.font-s26 { font-size: 26px; }
+.font-s28 { font-size: 28px; }
+.font-s30 { font-size: 30px; }
+.font-s32 { font-size: 32px; }
+.font-s40 { font-size: 40px; }
+.font-s48 { font-size: 48px; }
+.font-s64 { font-size: 64px; }
+.font-s80 { font-size: 80rpx; }
+
+/* 文字对齐 */
+.text-L { text-align: left; }
+.text-R { text-align: right; }
+.text-C { text-align: center; }
+
+/* 行高 */
+.line-h-14 { line-height: 1.4; }
+.line-h-15 { line-height: 1.5; }
+.line-h-16 { line-height: 1.6; }
+.line-h-18 { line-height: 1.8; }
+.line-h-2 { line-height: 2; }
+
+/* 空格处理 */
+.nowrap { white-space: nowrap; }
+.pre-wrap { white-space: pre-wrap; }
+
+/* 单词换行 */
+.break-all { word-break: break-all; }
+
+/* 文本在单行内显示超出时显示省略号，需要确保文本不会换行 */
+.ellipsis-no{
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+/* 文本在行内显示超出2行时显示省略号 */
+.ellipsis-row2{
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2; /* 限制文本显示为2行 */
+	overflow: hidden;
+}

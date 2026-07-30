@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>流程模板库 - 比赛管理</title>
+  <link rel="stylesheet" href="common.css">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#1f2937;font-size:14px}
+    .container{display:flex;min-height:100vh}
+
+    /* Sidebar */
+    .sidebar{width:220px;background:#fff;border-right:1px solid #e8e8e8;box-shadow:2px 0 8px rgba(0,0,0,.04);flex-shrink:0;padding:16px 0;position:sticky;top:0;height:100vh;overflow-y:auto}
+    .logo{padding:0 16px 16px;border-bottom:1px solid #f0f0f0;margin-bottom:8px}
+    .logo h2{font-size:16px;font-weight:600;color:#1e293b}
+    .logo p{font-size:12px;color:#8c8c8c;margin-top:4px}
+    .menu-item{padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:.2s;user-select:none}
+    .menu-item:hover{background:#f5f7fa}
+    .menu-item.active{background:#e6f4ff;color:#165dff}
+    .menu-item.active .arrow{color:#165dff}
+    .menu-item .arrow{margin-left:auto;font-size:12px;color:#bfbfbf}
+    .menu-item.expanded .arrow{transform:rotate(90deg)}
+    .sub-list{max-height:0;overflow:hidden;transition:max-height .3s}
+    .sub-list.expanded{max-height:600px}
+    .sub-item{padding:9px 16px 9px 46px;cursor:pointer;font-size:13px;color:#4b5563;transition:.2s}
+    .sub-item:hover{background:#f5f7fa;color:#165dff}
+    .sub-item.active{background:#e6f4ff;color:#165dff;border-right:3px solid #165dff}
+
+    /* Main */
+    main{flex:1;min-width:0;display:flex;flex-direction:column}
+    .header{height:60px;background:#fff;border-bottom:1px solid #e8e8e8;display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:10}
+    .crumb{color:#8c8c8c;font-size:13px}
+    .crumb .now{color:#1f2937;font-weight:500}
+    .header-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+    .bell{font-size:18px;cursor:pointer}
+    .avatar{width:32px;height:32px;border-radius:50%;background:#165dff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;cursor:pointer}
+
+    /* Page 1: Template Library */
+    .toolbar{height:64px;background:#fff;padding:0 24px;display:flex;align-items:center;gap:16px;border-bottom:1px solid #f0f0f0}
+    .toolbar h1{font-size:16px;font-weight:600;margin-right:8px}
+    .filter-select{padding:6px 12px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;font-size:13px;cursor:pointer;min-width:140px}
+    .filter-select:focus{outline:none;border-color:#165dff}
+    .toolbar-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+    .btn{padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;border:1px solid transparent;transition:.2s;display:inline-flex;align-items:center;gap:6px}
+    .btn-primary{background:#165dff;color:#fff;border-color:#165dff}
+    .btn-primary:hover{background:#0e4ad6}
+    .btn-secondary{background:#fff;color:#1f2937;border-color:#d9d9d9}
+    .btn-secondary:hover{border-color:#165dff;color:#165dff}
+    .search-box{position:relative}
+    .search-box input{padding:7px 12px 7px 32px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;width:220px;background:#fff}
+    .search-box::before{content:"🔍";position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;color:#8c8c8c}
+
+    .grid-wrap{padding:24px;display:grid;grid-template-columns:repeat(4,1fr);gap:24px}
+    .tpl-card{background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.08);height:280px;display:flex;flex-direction:column;overflow:hidden;transition:.2s;cursor:pointer}
+    .tpl-card:hover{box-shadow:0 6px 20px rgba(0,0,0,.12);transform:translateY(-2px)}
+    .tpl-head{padding:14px 16px 12px;display:flex;align-items:flex-start;gap:8px}
+    .tpl-name{font-size:14px;font-weight:600;flex:1;line-height:1.4}
+    .tpl-tag{font-size:11px;padding:2px 8px;background:#e6f4ff;color:#165dff;border-radius:4px;white-space:nowrap}
+    .tpl-tag.warn{background:#fff7e6;color:#d48806}
+    .tpl-tag.ok{background:#f6ffed;color:#389e0d}
+    .tpl-more{width:24px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:4px;cursor:pointer;color:#8c8c8c;font-size:16px}
+    .tpl-more:hover{background:#f5f7fa}
+
+    .tpl-steps{padding:0 16px;flex:1;display:flex;align-items:center}
+    .step-strip{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;overflow:hidden;width:100%}
+    .step-dot{width:60px;padding:6px 0;background:#f5f7fa;border:1px solid #e8e8e8;border-radius:4px;font-size:11px;color:#4b5563;text-align:center;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .step-arrow{color:#bfbfbf;font-size:12px;flex-shrink:0}
+    .step-more{font-size:11px;color:#8c8c8c;background:#fafafa;padding:6px 8px;border-radius:4px;flex-shrink:0}
+
+    .tpl-foot{padding:12px 16px;border-top:1px solid #f5f5f5;display:flex;align-items:center;gap:8px}
+    .meta{font-size:12px;color:#8c8c8c;flex:1;display:flex;gap:12px}
+    .meta span::before{content:"";display:inline-block;width:3px;height:3px;background:#d9d9d9;border-radius:50%;margin-right:8px;vertical-align:middle}
+    .meta span:first-child::before{display:none}
+    .tpl-foot .btn{padding:5px 14px;font-size:12px}
+  </style>
+</head>
+<body>
+<div class="container">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <h2>数字化管理平台</h2>
+      <p>qianlvguoyu saas</p>
+    </div>
+    <div class="menu-item" onclick="window.location.href='#'">📊 <span>数据看板</span></div>
+    <div class="menu-item expanded" onclick="toggle('comp', this)">
+      🏆 <span>比赛管理</span><span class="arrow">▶</span>
+    </div>
+    <div class="sub-list expanded" id="comp">
+      <div class="sub-item" onclick="window.location.href='#'">📋 比赛列表</div>
+      <div class="sub-item active" onclick="window.location.href='01-template-library.html'">📚 流程模板库</div>
+      <div class="sub-item" onclick="window.location.href='02-competition-create-flow.html'">➕ 新建比赛</div>
+    </div>
+    <div class="menu-item" onclick="toggle('task', this)">
+      ✅ <span>任务中心</span><span class="arrow">▶</span>
+    </div>
+    <div class="sub-list" id="task">
+      <div class="sub-item" onclick="window.location.href='04-task-kanban.html'">📋 全部任务</div>
+      <div class="sub-item" onclick="window.location.href='05-task-gantt.html'">📅 甘特图视图</div>
+    </div>
+    <div class="menu-item" onclick="window.location.href='#'">📚 知识库</div>
+    <div class="menu-item" onclick="window.location.href='#'">📝 题库管理</div>
+    <div class="menu-item" onclick="window.location.href='#'">🎓 培训管理</div>
+    <div class="menu-item" onclick="window.location.href='#'">⚙️ 系统设置</div>
+  </aside>
+
+  <main>
+    <!-- Header -->
+    <header class="header">
+      <div class="crumb">比赛管理 <span style="margin:0 6px">/</span> <span class="now">流程模板库</span></div>
+      <div class="header-right">
+        <span class="bell">🔔</span>
+        <div class="avatar">王</div>
+      </div>
+    </header>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <h1>流程模板库</h1>
+      <select class="filter-select">
+        <option>全部分类</option><option>国赛</option><option>省赛</option><option>市赛</option><option>校赛</option><option>行业赛</option>
+      </select>
+      <div class="toolbar-right">
+        <div class="search-box"><input placeholder="搜索模板名称"></div>
+        <button class="btn btn-secondary">📥 导入模板</button>
+        <button class="btn btn-primary">➕ 新建模板</button>
+      </div>
+    </div>
+
+    <!-- Grid -->
+    <div class="grid-wrap">
+      <!-- card 1 -->
+      <div class="tpl-card">
+        <div class="tpl-head">
+          <div class="tpl-name">国赛标准流程</div>
+          <span class="tpl-tag warn">国赛</span>
+          <div class="tpl-more">⋯</div>
+        </div>
+        <div class="tpl-steps">
+          <div class="step-strip">
+            <div class="step-dot">竞赛通知</div><span class="step-arrow">→</span>
+            <div class="step-dot">报名活动</div><span class="step-arrow">→</span>
+            <div class="step-dot">技术文件</div><span class="step-arrow">→</span>
+            <div class="step-dot">赛前培训</div><span class="step-arrow">→</span>
+            <div class="step-dot">初赛</div><span class="step-more">+5</span>
+          </div>
+        </div>
+        <div class="tpl-foot">
+          <div class="meta"><span>2025-12-10</span><span>使用 28 次</span></div>
+          <button class="btn btn-primary">使用模板</button>
+        </div>
+      </div>
+
+      <!-- card 2 -->
+      <div class="tpl-card">
+        <div class="tpl-head">
+          <div class="tpl-name">省赛精简流程</div>
+          <span class="tpl-tag">省赛</span>
+          <div class="tpl-more">⋯</div>
+        </div>
+        <div class="tpl-steps">
+          <div class="step-strip">
+            <div class="step-dot">竞赛通知</div><span class="step-arrow">→</span>
+            <div class="step-dot">报名</div><span class="step-arrow">→</span>
+            <div class="step-dot">初赛</div><span class="step-arrow">→</span>
+            <div class="step-dot">复赛</div><span class="step-arrow">→</span>
+            <div class="step-dot">决赛</div>
+          </div>
+        </div>
+        <div class="tpl-foot">
+          <div class="meta"><span>2026-01-15</span><span>使用 12 次</span></div>
+          <button class="btn btn-primary">使用模板</button>
+        </div>
+      </div>
+
+      <!-- card 3 -->
+      <div class="tpl-card">
+        <div class="tpl-head">
+          <div class="tpl-name">行业技能大赛流程</div>
+          <span class="tpl-tag ok">行业</span>
+          <div class="tpl-more">⋯</div>
+        </div>
+        <div class="tpl-steps">
+          <div class="step-strip">
+            <div class="step-dot">技术论坛</div><span class="step-arrow">→</span>
+            <div class="step-dot">报名</div><span class="step-arrow">→</span>
+            <div class="step-dot">培训</div><span class="step-arrow">→</span>
+            <div class="step-dot">实操</div><span class="step-arrow">→</span>
+            <div class="step-dot">决赛</div>
+          </div>
+        </div>
+        <div class="tpl-foot">
+          <div class="meta"><span>2026-02-20</span><span>使用 5 次</span></div>
+          <button class="btn btn-primary">使用模板</button>
+        </div>
+      </div>
+
+      <!-- card 4 -->
+      <div class="tpl-card">
+        <div class="tpl-head">
+          <div class="tpl-name">校级选拔流程</div>
+          <span class="tpl-tag">校赛</span>
+          <div class="tpl-more">⋯</div>
+        </div>
+        <div class="tpl-steps">
+          <div class="step-strip">
+            <div class="step-dot">通知</div><span class="step-arrow">→</span>
+            <div class="step-dot">报名</div><span class="step-arrow">→</span>
+            <div class="step-dot">初赛</div><span class="step-arrow">→</span>
+            <div class="step-dot">决赛</div><span class="step-arrow">→</span>
+            <div class="step-dot">闭幕</div>
+          </div>
+        </div>
+        <div class="tpl-foot">
+          <div class="meta"><span>2026-03-01</span><span>使用 18 次</span></div>
+          <button class="btn btn-primary">使用模板</button>
+        </div>
+      </div>
+
+      <!-- card 5 -->
+      <div class="tpl-card">
+        <div class="tpl-head">
+          <div class="tpl-name">国赛标准流程 v2</div>
+          <span class="tpl-tag warn">国赛</span>
+          <div class="tpl-more">⋯</div>
+        </div>
+        <div class="tpl-steps">
+          <div class="step-strip">
+            <div class="step-dot">通知</div><span class="step-arrow">→</span>
+            <div class="step-dot">报名</div><span class="step-arrow">→</span>
+            <div class="step-dot">培训</div><span class="step-arrow">→</span>
+            <div class="step-dot">复赛</div><span class="step-arrow">→</span>
+            <div class="step-dot">闭幕</div>
+          </div>
+        </div>
+        <div class="tpl-foot">
+          <div class="meta"><span>2026-03-12</span><span>使用 7 次</span></div>
+          <button class="btn btn-primary">使用模板</button>
+        </div>
+      </div>
+
+      <!-- card 6 -->
+      <div class="tpl-card">
+        <div class="tpl-head">
+          <div class="tpl-name">市赛常规流程</div>
+          <span class="tpl-tag">市赛</span>
+          <div class="tpl-more">⋯</div>
+        </div>
+        <div class="tpl-steps">
+          <div class="step-strip">
+            <div class="step-dot">通知</div><span class="step-arrow">→</span>
+            <div class="step-dot">报名</div><span class="step-arrow">→</span>
+            <div class="step-dot">技术文件</div><span class="step-arrow">→</span>
+            <div class="step-dot">初赛</div><span class="step-arrow">→</span>
+            <div class="step-dot">决赛</div>
+          </div>
+        </div>
+        <div class="tpl-foot">
+          <div class="meta"><span>2026-04-05</span><span>使用 3 次</span></div>
+          <button class="btn btn-primary">使用模板</button>
+        </div>
+      </div>
+
+      <!-- card 7 -->
+      <div class="tpl-card">
+        <div class="tpl-head">
+          <div class="tpl-name">AI+智能制造大赛</div>
+          <span class="tpl-tag warn">国赛</span>
+          <div class="tpl-more">⋯</div>
+        </div>
+        <div class="tpl-steps">
+          <div class="step-strip">
+            <div class="step-dot">论坛</div><span class="step-arrow">→</span>
+            <div class="step-dot">报名</div><span class="step-arrow">→</span>
+            <div class="step-dot">培训</div><span class="step-arrow">→</span>
+            <div class="step-dot">实操</div><span class="step-arrow">→</span>
+            <div class="step-dot">决赛</div>
+          </div>
+        </div>
+        <div class="tpl-foot">
+          <div class="meta"><span>2026-04-18</span><span>使用 9 次</span></div>
+          <button class="btn btn-primary">使用模板</button>
+        </div>
+      </div>
+
+      <!-- card 8 -->
+      <div class="tpl-card">
+        <div class="tpl-head">
+          <div class="tpl-name">企业内训赛流程</div>
+          <span class="tpl-tag ok">内训</span>
+          <div class="tpl-more">⋯</div>
+        </div>
+        <div class="tpl-steps">
+          <div class="step-strip">
+            <div class="step-dot">通知</div><span class="step-arrow">→</span>
+            <div class="step-dot">报名</div><span class="step-arrow">→</span>
+            <div class="step-dot">初赛</div><span class="step-arrow">→</span>
+            <div class="step-dot">复赛</div><span class="step-arrow">→</span>
+            <div class="step-dot">闭幕</div>
+          </div>
+        </div>
+        <div class="tpl-foot">
+          <div class="meta"><span>2026-05-02</span><span>使用 2 次</span></div>
+          <button class="btn btn-primary">使用模板</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggle(id, el){
+  document.getElementById(id).classList.toggle('expanded');
+  el.classList.toggle('expanded');
+}
+</script>
+</body>
+</html>

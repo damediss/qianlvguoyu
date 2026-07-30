@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>新建比赛-流程配置 - 比赛管理</title>
+  <link rel="stylesheet" href="common.css">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#1f2937;font-size:14px}
+    .container{display:flex;min-height:100vh}
+    .sidebar{width:220px;background:#fff;border-right:1px solid #e8e8e8;flex-shrink:0;padding:16px 0;position:sticky;top:0;height:100vh;overflow-y:auto}
+    .logo{padding:0 16px 16px;border-bottom:1px solid #f0f0f0;margin-bottom:8px}
+    .logo h2{font-size:16px;font-weight:600}.logo p{font-size:12px;color:#8c8c8c;margin-top:4px}
+    .menu-item{padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:.2s}
+    .menu-item:hover{background:#f5f7fa}.menu-item.active{background:#e6f4ff;color:#165dff}
+    .menu-item .arrow{margin-left:auto;font-size:12px;color:#bfbfbf;transition:.2s}
+    .menu-item.expanded .arrow{transform:rotate(90deg)}
+    .sub-list{max-height:0;overflow:hidden;transition:max-height .3s}.sub-list.expanded{max-height:600px}
+    .sub-item{padding:9px 16px 9px 46px;cursor:pointer;font-size:13px;color:#4b5563;transition:.2s}
+    .sub-item:hover{background:#f5f7fa;color:#165dff}
+    .sub-item.active{background:#e6f4ff;color:#165dff;border-right:3px solid #165dff}
+    main{flex:1;min-width:0;display:flex;flex-direction:column}
+    .header{height:60px;background:#fff;border-bottom:1px solid #e8e8e8;display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:10}
+    .crumb{color:#8c8c8c;font-size:13px}.crumb .now{color:#1f2937;font-weight:500}
+    .header-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+    .avatar{width:32px;height:32px;border-radius:50%;background:#165dff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500}
+
+    /* Stepper */
+    .stepper{height:64px;background:#fff;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;padding:0 24px;gap:24px}
+    .step{display:flex;align-items:center;gap:8px;font-size:14px}
+    .step .dot{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+    .step.done .dot{background:#e6f4ff;color:#165dff;border:1px solid #91caff}
+    .step.done .dot::before{content:"✓"}
+    .step.done .label{color:#8c8c8c}
+    .step.current .dot{background:#165dff;color:#fff;box-shadow:0 0 0 4px rgba(22,93,255,.18)}
+    .step.current .label{color:#165dff;font-weight:600}
+    .step.todo .dot{background:#f5f7fa;color:#bfbfbf;border:1px solid #d9d9d9}
+    .step.todo .label{color:#8c8c8c}
+    .step-line{width:48px;height:1px;background:#d9d9d9}
+    .step.done+.step-line,.step-line.done{background:#165dff}
+    .stepper-right{margin-left:auto;display:flex;gap:8px}
+    .btn{padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;border:1px solid transparent;transition:.2s;display:inline-flex;align-items:center;gap:6px}
+    .btn-primary{background:#165dff;color:#fff;border-color:#165dff}.btn-primary:hover{background:#0e4ad6}
+    .btn-secondary{background:#fff;color:#1f2937;border-color:#d9d9d9}.btn-secondary:hover{border-color:#165dff;color:#165dff}
+
+    /* Page 2: Flow config */
+    .p2-body{padding:20px 24px;display:flex;flex-direction:column;gap:16px}
+    .info-card{height:120px;background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06);padding:18px 24px;display:flex;align-items:center;gap:32px}
+    .info-block{display:flex;flex-direction:column;gap:6px}
+    .info-label{font-size:12px;color:#8c8c8c}
+    .info-val{font-size:14px;font-weight:500;color:#1f2937}
+    .info-modify{margin-left:auto;font-size:13px;color:#165dff;cursor:pointer}
+
+    .combo-row{display:flex;gap:24px;height:480px}
+    .lib-card{width:320px;background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06);display:flex;flex-direction:column;overflow:hidden}
+    .lib-head{padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+    .lib-title{font-size:16px;font-weight:600;flex:1}
+    .lib-search{position:relative;flex:1}
+    .lib-search input{width:100%;padding:6px 10px 6px 28px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;background:#fff}
+    .lib-search::before{content:"🔍";position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:11px;color:#8c8c8c}
+    .lib-list{flex:1;overflow-y:auto;padding:6px 0}
+    .lib-row{height:48px;padding:0 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:.15s}
+    .lib-row:hover{background:#f5f7fa}
+    .lib-row .name{font-size:14px}
+    .lib-row .add{font-size:13px;color:#165dff;cursor:pointer}
+    .lib-foot{padding:12px 16px;border-top:1px solid #f0f0f0}
+    .lib-foot .btn{width:100%;justify-content:center}
+
+    .canvas-card{flex:1;background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06);display:flex;flex-direction:column;overflow:hidden}
+    .canvas-head{padding:14px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px}
+    .canvas-title{font-size:16px;font-weight:600}
+    .canvas-hint{font-size:12px;color:#8c8c8c;margin-left:6px}
+    .canvas-body{background:#f5f7fa;flex:1;padding:24px;display:flex;flex-direction:column;gap:12px;overflow-y:auto}
+    .sel-card{height:56px;background:#fff;border-left:4px solid #165dff;border-radius:4px;padding:0 16px;display:flex;align-items:center;gap:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);cursor:move}
+    .sel-card .ord{width:22px;height:22px;background:#165dff;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+    .sel-card .name{font-size:14px;font-weight:500;flex:1}
+    .sel-card .dur{font-size:12px;color:#8c8c8c;background:#f5f7fa;padding:3px 10px;border-radius:4px}
+    .sel-card .del{width:24px;height:24px;display:flex;align-items:center;justify-content:center;color:#8c8c8c;cursor:pointer;border-radius:4px}
+    .sel-card .del:hover{background:#fff1f0;color:#cf1322}
+    .drop-placeholder{height:8px;border:2px dashed #91caff;border-radius:4px;background:rgba(22,93,255,.06)}
+
+    .rules-card{height:240px;background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06);padding:18px 24px;display:flex;flex-direction:column;gap:14px}
+    .rules-title{font-size:14px;font-weight:600}
+    .rules-form{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:18px;align-items:end}
+    .form-cell{display:flex;flex-direction:column;gap:6px}
+    .form-label{font-size:12px;color:#4b5563}
+    .form-input{padding:7px 10px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;background:#fff}
+    .radio-group{display:flex;gap:12px;padding:6px 0}
+    .radio{display:flex;align-items:center;gap:4px;font-size:13px}
+    .switch{position:relative;width:36px;height:20px;background:#d9d9d9;border-radius:10px;cursor:pointer;transition:.2s}
+    .switch::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:.2s}
+    .switch.on{background:#165dff}.switch.on::after{left:18px}
+    .switch-row{display:flex;gap:24px;align-items:center}
+    .rules-foot{display:flex;justify-content:flex-end;margin-top:auto}
+
+    .p2-foot{height:64px;background:#fff;border-top:1px solid #f0f0f0;display:flex;align-items:center;justify-content:flex-end;padding:0 24px;gap:12px;position:sticky;bottom:0}
+  </style>
+</head>
+<body>
+<div class="container">
+  <aside class="sidebar">
+    <div class="logo"><h2>数字化管理平台</h2><p>qianlvguoyu saas</p></div>
+    <div class="menu-item">📊 <span>数据看板</span></div>
+    <div class="menu-item expanded">🏆 <span>比赛管理</span><span class="arrow">▶</span></div>
+    <div class="sub-list expanded">
+      <div class="sub-item" onclick="window.location.href='#'">📋 比赛列表</div>
+      <div class="sub-item" onclick="window.location.href='01-template-library.html'">📚 流程模板库</div>
+      <div class="sub-item active" onclick="window.location.href='02-competition-create-flow.html'">➕ 新建比赛</div>
+    </div>
+    <div class="menu-item">✅ <span>任务中心</span><span class="arrow">▶</span></div>
+    <div class="sub-list"><div class="sub-item" onclick="window.location.href='04-task-kanban.html'">📋 全部任务</div><div class="sub-item" onclick="window.location.href='05-task-gantt.html'">📅 甘特图</div></div>
+    <div class="menu-item">📚 <span>知识库</span></div>
+    <div class="menu-item">📝 <span>题库管理</span></div>
+    <div class="menu-item">🎓 <span>培训管理</span></div>
+    <div class="menu-item">⚙️ <span>系统设置</span></div>
+  </aside>
+
+  <main>
+    <header class="header">
+      <div class="crumb">比赛管理 <span style="margin:0 6px">/</span> 新建比赛 <span style="margin:0 6px">/</span> <span class="now">流程配置</span></div>
+      <div class="header-right"><div class="avatar">王</div></div>
+    </header>
+
+    <!-- Stepper -->
+    <div class="stepper">
+      <div class="step done"><div class="dot"></div><span class="label">基础信息</span></div>
+      <div class="step-line done"></div>
+      <div class="step current"><div class="dot">2</div><span class="label">流程配置</span></div>
+      <div class="step-line"></div>
+      <div class="step todo"><div class="dot">3</div><span class="label">任务预览</span></div>
+      <div class="step-line"></div>
+      <div class="step todo"><div class="dot">4</div><span class="label">完成</span></div>
+      <div class="stepper-right">
+        <button class="btn btn-secondary">💾 保存草稿</button>
+      </div>
+    </div>
+
+    <div class="p2-body">
+      <!-- Info card -->
+      <div class="info-card">
+        <div class="info-block"><div class="info-label">比赛名称</div><div class="info-val">2026 年全国职业技能大赛</div></div>
+        <div class="info-block"><div class="info-label">主办单位</div><div class="info-val">人社部 + 教育部</div></div>
+        <div class="info-block"><div class="info-label">总时间范围</div><div class="info-val">2026-07-01 至 2026-08-15</div></div>
+        <div class="info-modify">修改基础信息</div>
+      </div>
+
+      <!-- Combo row -->
+      <div class="combo-row">
+        <!-- Library -->
+        <div class="lib-card">
+          <div class="lib-head">
+            <div class="lib-title">可选环节库</div>
+          </div>
+          <div style="padding:8px 16px;border-bottom:1px solid #f0f0f0">
+            <div class="lib-search"><input placeholder="搜索环节"></div>
+          </div>
+          <div class="lib-list">
+            <div class="lib-row"><span class="name">竞赛通知</span><span class="add">+ 添加</span></div>
+            <div class="lib-row"><span class="name">报名活动</span><span class="add">+ 添加</span></div>
+            <div class="lib-row"><span class="name">发布技术文件</span><span class="add">+ 添加</span></div>
+            <div class="lib-row"><span class="name">组织技术论坛</span><span class="add">+ 添加</span></div>
+            <div class="lib-row"><span class="name">赛前培训</span><span class="add">+ 添加</span></div>
+            <div class="lib-row"><span class="name">开幕仪式</span><span class="add">+ 添加</span></div>
+            <div class="lib-row"><span class="name">初赛</span><span class="add">+ 添加</span></div>
+            <div class="lib-row"><span class="name">复赛</span><span class="add">+ 添加</span></div>
+            <div class="lib-row"><span class="name">决赛</span><span class="add">+ 添加</span></div>
+            <div class="lib-row"><span class="name">闭幕仪式</span><span class="add">+ 添加</span></div>
+          </div>
+          <div class="lib-foot">
+            <button class="btn btn-secondary">+ 自定义环节</button>
+          </div>
+        </div>
+
+        <!-- Canvas -->
+        <div class="canvas-card">
+          <div class="canvas-head">
+            <div class="canvas-title">已选流程</div>
+            <span class="canvas-hint">（可拖拽排序）</span>
+          </div>
+          <div class="canvas-body">
+            <div class="sel-card"><div class="ord">1</div><div class="name">竞赛通知</div><div class="dur">1 天</div><div class="del">🗑</div></div>
+            <div class="sel-card"><div class="ord">2</div><div class="name">报名活动</div><div class="dur">14 天</div><div class="del">🗑</div></div>
+            <div class="sel-card"><div class="ord">3</div><div class="name">发布技术文件</div><div class="dur">3 天</div><div class="del">🗑</div></div>
+            <div class="sel-card"><div class="ord">4</div><div class="name">赛前培训</div><div class="dur">5 天</div><div class="del">🗑</div></div>
+            <div class="drop-placeholder"></div>
+            <div class="sel-card"><div class="ord">5</div><div class="name">开幕仪式</div><div class="dur">1 天</div><div class="del">🗑</div></div>
+            <div class="sel-card"><div class="ord">6</div><div class="name">初赛</div><div class="dur">7 天</div><div class="del">🗑</div></div>
+            <div class="sel-card"><div class="ord">7</div><div class="name">复赛</div><div class="dur">5 天</div><div class="del">🗑</div></div>
+            <div class="sel-card"><div class="ord">8</div><div class="name">决赛</div><div class="dur">3 天</div><div class="del">🗑</div></div>
+            <div class="sel-card"><div class="ord">9</div><div class="name">闭幕仪式</div><div class="dur">1 天</div><div class="del">🗑</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rules card -->
+      <div class="rules-card">
+        <div class="rules-title">📋 依赖与时间规则 <span style="font-size:12px;color:#8c8c8c;font-weight:400;margin-left:8px">（已选: 决赛）</span></div>
+        <div class="rules-form">
+          <div class="form-cell">
+            <div class="form-label">依赖环节</div>
+            <select class="form-input"><option>复赛</option><option>无</option><option>初赛</option></select>
+          </div>
+          <div class="form-cell">
+            <div class="form-label">计划时间类型</div>
+            <div class="radio-group">
+              <label class="radio"><input type="radio" name="t"> 绝对时间</label>
+              <label class="radio"><input type="radio" name="t" checked> 相对时间</label>
+            </div>
+          </div>
+          <div class="form-cell">
+            <div class="form-label">相对时间值</div>
+            <input class="form-input" value="依赖环节结束后 第 2 天">
+          </div>
+          <div class="form-cell">
+            <div class="form-label">高级设置</div>
+            <div class="switch-row">
+              <div style="display:flex;align-items:center;gap:6px;font-size:13px"><div class="switch on"></div>必选</div>
+              <div style="display:flex;align-items:center;gap:6px;font-size:13px"><div class="switch"></div>可重复</div>
+            </div>
+          </div>
+        </div>
+        <div class="rules-foot">
+          <button class="btn btn-primary">💾 保存规则</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Foot -->
+    <div class="p2-foot">
+      <button class="btn btn-secondary">← 上一步</button>
+      <button class="btn btn-secondary">💾 保存草稿</button>
+      <button class="btn btn-primary">下一步：生成任务 →</button>
+    </div>
+  </main>
+</div>
+</body>
+</html>

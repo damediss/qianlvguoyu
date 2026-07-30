@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: platform/api
+title: API 接口层
+scope: []
+source_files: []
+depends_on:
+    - path: platform/utils
+related_to: []

@@ -1,0 +1,102 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: master
+exported_at: "2026-06-06T15:48:23Z"
+modules:
+    platform:
+        dir_name: 工匠基地平台
+        title: 工匠基地平台
+        scope: []
+        source_files: []
+        children:
+            - platform/team
+            - platform/user
+            - platform/store
+            - platform/promote
+            - platform/styles
+            - platform/competition
+            - platform/exam
+            - platform/utils
+            - platform/api
+        depends_on: []
+        related_to: []
+    platform/api:
+        dir_name: API 接口层
+        title: API 接口层
+        scope: []
+        source_files: []
+        children: []
+        depends_on:
+            - path: platform/utils
+        related_to: []
+    platform/competition:
+        dir_name: 竞赛模块
+        title: 竞赛模块
+        scope: []
+        source_files: []
+        children: []
+        depends_on:
+            - path: platform/store
+            - path: platform/api
+        related_to: []
+    platform/exam:
+        dir_name: 考试模块
+        title: 考试模块
+        scope: []
+        source_files: []
+        children: []
+        depends_on:
+            - path: platform/utils
+        related_to: []
+    platform/promote:
+        dir_name: 提升模块
+        title: 提升模块
+        scope: []
+        source_files: []
+        children: []
+        depends_on:
+            - path: platform/api
+        related_to: []
+    platform/store:
+        dir_name: Pinia 状态管理
+        title: Pinia 状态管理
+        scope: []
+        source_files: []
+        children: []
+        depends_on:
+            - path: platform/utils
+        related_to: []
+    platform/styles:
+        dir_name: 全局样式系统
+        title: 全局样式系统
+        scope: []
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    platform/team:
+        dir_name: 团队模块
+        title: 团队模块
+        scope: []
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    platform/user:
+        dir_name: 用户模块
+        title: 用户模块
+        scope: []
+        source_files: []
+        children: []
+        depends_on:
+            - path: platform/store
+        related_to: []
+    platform/utils:
+        dir_name: 工具函数模块
+        title: 工具函数模块
+        scope: []
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []

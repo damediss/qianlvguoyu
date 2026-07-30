@@ -1,0 +1,9 @@
+[35m[plugin:vite:esbuild-transpile][39m [31mTransform failed with 1 error:
+app-service.js:1:0: ERROR: Unexpected "\x88"[39m
+[33m  
+  [33mUnexpected "\x88"[33m
+  1  |  
+     |  ^
+  2  |  if (typeof Promise !== 'undefined' && !Promise.prototype.finally) {
+  3  |    Promise.prototype.finally = function(callback) {
+  [39m

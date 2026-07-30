@@ -1,0 +1,546 @@
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { ConfigProvider } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AppShell } from './layouts/AppShell';
+import { AuthGate } from './components/AuthGate';
+import { KnowledgePage } from './pages/knowledge/KnowledgePage';
+import { RencaishibieEmbedPage } from './pages/knowledge/RencaishibieEmbedPage';
+import { WorkTypePage } from './pages/exam/WorkTypePage';
+import { CoursePage } from './pages/exam/CoursePage';
+import { DevTaskDetailPage } from './pages/exam/DevTaskDetailPage';
+import { TaskExamAuditAssignListPage } from './pages/exam/TaskExamAuditAssignListPage';
+import { TaskExamshicaoAuditAssignListPage } from './pages/exam/TaskExamshicaoAuditAssignListPage';
+import { TaskExamsubAuditAssignListPage } from './pages/exam/TaskExamsubAuditAssignListPage';
+import { TrainingInfoPage } from './pages/training/TrainingInfoPage';
+import { TrainingClassPeoplePage } from './pages/training/TrainingClassPeoplePage';
+import { TrainingClassDivisionPage } from './pages/training/TrainingClassDivisionPage';
+import { TrainingClassDeclarePage } from './pages/training/TrainingClassDeclarePage';
+import { UserAuthCoursePage } from './pages/exam/UserAuthCoursePage';
+import { UserListPage } from './pages/chazheng/UserListPage';
+import { CertQueryPage } from './pages/chazheng/CertQueryPage';
+import { RequirementsManagementPage } from './pages/training/RequirementsManagementPage';
+import { EnterpriseTrainingDemandPage } from './pages/training/EnterpriseTrainingDemandPage';
+import { EnterpriseTalentDemandPage } from './pages/training/EnterpriseTalentDemandPage';
+import { TrainingProgramPage } from './pages/training/TrainingProgramPage';
+import { TrainingSchedulePage } from './pages/training/TrainingSchedulePage';
+import { TrainingGraduationPage } from './pages/training/TrainingGraduationPage';
+import { TrainingCapabilityPage } from './pages/training/TrainingCapabilityPage';
+import { TrainingSummaryPage } from './pages/training/TrainingSummaryPage';
+import { TrainingCertificateTemplatePage } from './pages/training/TrainingCertificateTemplatePage';
+import { TrainingInformationPage } from './pages/training/TrainingInformationPage';
+import { TrainingStudentPage } from './pages/training/TrainingStudentPage';
+import { EnterpriseResearchPage } from './pages/training/EnterpriseResearchPage';
+import { SolutionPlanningPage } from './pages/training/SolutionPlanningPage';
+import { EnterprisePlanReviewPage } from './pages/training/EnterprisePlanReviewPage';
+import { DataPanelPage } from './pages/zhixunplatform/DataPanelPage';
+import { TaskManagementPage } from './pages/zhixunplatform/TaskManagementPage';
+import { TaskArchivesPage } from './pages/zhixunplatform/TaskArchivesPage';
+import { TrainingProcessPage } from './pages/zhixunplatform/TrainingProcessPage';
+import { ProjectArchivesPage } from './pages/zhixunplatform/ProjectArchivesPage';
+import { MaterialArchivesPage } from './pages/zhixunplatform/MaterialArchivesPage';
+import { TalentIdentificationPage } from './pages/zhixunplatform/TalentIdentificationPage';
+import { PreliminaryPlanPage } from './pages/zhixunplatform/PreliminaryPlanPage';
+import { CreateTaskPage } from './pages/zhixunplatform/CreateTaskPage';
+import { FinalPlanPage } from './pages/zhixunplatform/FinalPlanPage';
+import { ClassDeclarationPage } from './pages/zhixunplatform/ClassDeclarationPage';
+import { TrainingImplementationPage } from './pages/zhixunplatform/TrainingImplementationPage';
+import { CertificationPage } from './pages/zhixunplatform/CertificationPage';
+import { DeclarationServicePage } from './pages/zhixunplatform/DeclarationServicePage';
+import { GraduationPage } from './pages/zhixunplatform/GraduationPage';
+import { RefundPage } from './pages/zhixunplatform/RefundPage';
+import { PersonnelArchivePage } from './pages/zhixunplatform/PersonnelArchivePage';
+import { createArchiveTablePage } from './pages/zhixunplatform/ArchiveTablePage';
+import { createPmFormPage } from './pages/zhixunplatform/PmFormPage';
+import { TaskStartPage } from './pages/expert/TaskStartPage';
+import { QuestionBankPage } from './pages/exam/QuestionBankPage';
+import { CompanyQuestionPage } from './pages/exam/CompanyQuestionPage';
+import { MakeExamPlanPage } from './pages/exam/MakeExamPlanPage';
+import { KnowledgeRatePage } from './pages/exam/KnowledgeRatePage';
+import { KnowledgeStructurePage } from './pages/exam/KnowledgeStructurePage';
+import { FaqConversionPage } from './pages/exam/FaqConversionPage';
+import { TrainExamListPage } from './pages/training/TrainExamListPage';
+import { TabletAssessorApp } from './pages/assessor/TabletAssessorApp';
+import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
+import { CompetitionEventManagementPage } from './pages/competition/CompetitionEventManagementPage';
+
+// Pre-instantiate factory components for stable React references
+const ArchiveEquipmentPage = createArchiveTablePage('equipment');
+const ArchiveMaterialsPage = createArchiveTablePage('materials');
+const ArchiveRulesPage = createArchiveTablePage('rules');
+const ArchiveEnvironmentPage = createArchiveTablePage('environment');
+const PmStrategicPage = createPmFormPage('strategic');
+const PmOrgPerfPage = createPmFormPage('orgPerf');
+const PmPbcPage = createPmFormPage('pbc');
+const PmCharterPage = createPmFormPage('charter');
+const PmMilestonePage = createPmFormPage('milestone');
+const PmRiskPage = createPmFormPage('risk');
+const PmIssuePage = createPmFormPage('issue');
+const PmChangePage = createPmFormPage('change');
+const PmMeetingPage = createPmFormPage('meeting');
+const PmKnowledgePage = createPmFormPage('knowledge');
+const PmWbsPage = createPmFormPage('wbs');
+const PmCommunicationPage = createPmFormPage('communication');
+const PmStatusPage = createPmFormPage('status');
+import { ProductPlaceholder } from './pages/product/ProductPlaceholder';
+import { TaskEndPage } from './pages/expert/TaskEndPage';
+import { ProjectManagementPage } from './pages/certification/ProjectManagementPage';
+import { CertificationDataPanelPage } from './pages/certification/CertificationDataPanelPage';
+import { PracticalConfigurationPage } from './pages/certification/PracticalConfigurationPage';
+import { PreparationPage } from './pages/certification/PreparationPage';
+import { CollectionTaskListPage } from './pages/certification/collection/CollectionTaskListPage';
+import { CollectionManagePage } from './pages/certification/collection/CollectionManagePage';
+import { ArchivePage } from './pages/certification/ArchivePage';
+import { TaskArchivePage } from './pages/certification/TaskArchivePage';
+import { AssessorInfoPage } from './pages/certification/info/AssessorInfoPage';
+import { ExamSiteInfoPage } from './pages/certification/info/ExamSiteInfoPage';
+import { ExamEquipmentInfoPage } from './pages/certification/info/ExamEquipmentInfoPage';
+import { ExamStaffInfoPage } from './pages/certification/info/ExamStaffInfoPage';
+import { TenantPage } from './pages/system/TenantPage';
+import { UserPage } from './pages/system/UserPage';
+import { OrgPage } from './pages/system/OrgPage';
+import { PostPage } from './pages/system/PostPage';
+import { RolePage } from './pages/system/RolePage';
+import { MenuPage } from './pages/system/MenuPage';
+import { DictPage } from './pages/system/DictPage';
+import { AuditLogPage } from './pages/system/AuditLogPage';
+import { PermissionPage } from './pages/system/PermissionPage';
+import { appTheme } from './theme';
+import './styles/tokens.css';
+import './styles/global.css';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
+
+const pageMap: Record<string, React.ReactNode> = {
+  knowledge: <KnowledgePage />,
+  exam_work_type: <WorkTypePage />,
+  dev_task_detail: <DevTaskDetailPage />,
+  // 题库审核指派(管理端 3 子菜单,挂在开发任务下)
+  task_exam_audit_assign: <TaskExamAuditAssignListPage />,
+  task_examshicao_audit_assign: <TaskExamshicaoAuditAssignListPage />,
+  task_examsub_audit_assign: <TaskExamsubAuditAssignListPage />,
+  exam_course: <CoursePage />,
+  'train_info-list': <TrainingInfoPage />,
+  fen_ban: <TrainingClassDivisionPage />,
+  'train_people-list': <TrainingClassPeoplePage />,
+  train_people: <TrainingClassPeoplePage />,
+  train_declares: <TrainingClassDeclarePage />,
+  exam_user_auth_course: <UserAuthCoursePage />,
+  chazheng_user_list: <UserListPage />,
+  chazheng_cert_query: <CertQueryPage />,
+  // 培训管理 → 战略规划
+  pxyan_jiu: <EnterpriseResearchPage />,
+  pxan_fang_gui_hua: <SolutionPlanningPage />,
+  train_needs: <RequirementsManagementPage />,
+  'train_demand-train': <EnterpriseTrainingDemandPage />,
+  company_demand_train: <EnterpriseTrainingDemandPage />,
+  company_plan_review: <EnterprisePlanReviewPage />,
+  'train_demand-employee': <EnterpriseTalentDemandPage />,
+  company_demand_employee: <EnterpriseTalentDemandPage />,
+  train_solutions: <TrainingProgramPage />,
+  train_schedule: <TrainingSchedulePage />,
+  train_graduation: <TrainingGraduationPage />,
+  'train_user-ability': <TrainingCapabilityPage />,
+  train_summary: <TrainingSummaryPage />,
+  train_certificates: <TrainingCertificateTemplatePage />,
+  'train_sign-up': <TrainingInformationPage />,
+  'train_sign-up-people': <TrainingInformationPage />,
+  'train_user-info': <TrainingStudentPage />,
+  knowledge_spaces: <KnowledgePage />,
+  knowledge_search: <KnowledgePage />,
+  knowledge_rencaishibie: <RencaishibieEmbedPage />,
+  zhixun_data_panel: <DataPanelPage />,
+  zhixun_task_management: <TaskManagementPage />,
+  zhixun_task_archives: <TaskArchivesPage />,
+  zhixun_training_process: <TrainingProcessPage />,
+  zhixun_project_archives: <ProjectArchivesPage />,
+  zhixun_material_archives: <MaterialArchivesPage />,
+  zhixun_talent_identification: <TalentIdentificationPage />,
+  zhixun_preliminary_plan: <PreliminaryPlanPage />,
+  zhixun_create_task: <CreateTaskPage />,
+  zhixun_final_plan: <FinalPlanPage />,
+  zhixun_class_declaration: <ClassDeclarationPage />,
+  zhixun_training_implementation: <TrainingImplementationPage />,
+  zhixun_certification: <CertificationPage />,
+  zhixun_declaration_service: <DeclarationServicePage />,
+  zhixun_graduation: <GraduationPage />,
+  zhixun_refund: <RefundPage />,
+  zhixun_archive_personnel: <PersonnelArchivePage />,
+  zhixun_archive_equipment: <ArchiveEquipmentPage />,
+  zhixun_archive_materials: <ArchiveMaterialsPage />,
+  zhixun_archive_rules: <ArchiveRulesPage />,
+  zhixun_archive_environment: <ArchiveEnvironmentPage />,
+  zhixun_table_strategic: <PmStrategicPage />,
+  zhixun_table_org_perf: <PmOrgPerfPage />,
+  zhixun_table_pbc: <PmPbcPage />,
+  zhixun_table_charter: <PmCharterPage />,
+  zhixun_table_milestone: <PmMilestonePage />,
+  zhixun_table_risk: <PmRiskPage />,
+  zhixun_table_issue: <PmIssuePage />,
+  zhixun_table_change: <PmChangePage />,
+  zhixun_table_meeting: <PmMeetingPage />,
+  zhixun_table_knowledge: <PmKnowledgePage />,
+  zhixun_table_wbs: <PmWbsPage />,
+  zhixun_table_communication: <PmCommunicationPage />,
+  zhixun_table_status: <PmStatusPage />,
+  exam_question_bank: <QuestionBankPage />,
+  gong_si_shi_ti_guan_li: <CompanyQuestionPage />,
+  zu_juan_ji_hua: <MakeExamPlanPage />,
+  'train_exam-list': <TrainExamListPage />,
+  kao_shi_ji_hua: <TrainExamListPage />,
+  exam_knowledge_rate: <KnowledgeRatePage />,
+  zhi_shi_jie_gou_xi_mu_biao_guan_li: <KnowledgeStructurePage />,
+  exam_faq_conversion: <FaqConversionPage />,
+  expert_task_start: <TaskStartPage />,
+  expert_task_end: <TaskEndPage />,
+  certification_dashboard: <CertificationDataPanelPage />,
+  certification_project: <ProjectManagementPage />,
+  certification_preparation: <PreparationPage />,
+  certification_practical_config: <PracticalConfigurationPage />,
+  certification_practical_collection: <CollectionTaskListPage />,
+  certification_archive: <ArchivePage />,
+  certification_task_archive: <TaskArchivePage />,
+  certification_info_assessor: <AssessorInfoPage />,
+  certification_info_site: <ExamSiteInfoPage />,
+  certification_info_equipment: <ExamEquipmentInfoPage />,
+  certification_info_exam_staff: <ExamStaffInfoPage />,
+  // System management pages
+  system_tenant: <TenantPage />,
+  system_user: <UserPage />,
+  system_org: <OrgPage />,
+  system_post: <PostPage />,
+  system_role: <RolePage />,
+  system_menu: <MenuPage />,
+  system_dict: <DictPage />,
+  system_audit_log: <AuditLogPage />,
+  system_permission: <PermissionPage />,
+  // kebab-case aliases for page-internal navigation (navStore.setSelectedKey)
+  'certification-dashboard': <CertificationDataPanelPage />,
+  'zhixun-data-panel': <DataPanelPage />,
+  'zhixun-task-management': <TaskManagementPage />,
+  'zhixun-task-archives': <TaskArchivesPage />,
+  'zhixun-training-process': <TrainingProcessPage />,
+  'zhixun-project-archives': <ProjectArchivesPage />,
+  'zhixun-material-archives': <MaterialArchivesPage />,
+  'zhixun-talent-identification': <TalentIdentificationPage />,
+  'zhixun-preliminary-plan': <PreliminaryPlanPage />,
+  'zhixun-create-task': <CreateTaskPage />,
+  'zhixun-final-plan': <FinalPlanPage />,
+  'zhixun-class-declaration': <ClassDeclarationPage />,
+  'zhixun-training-implementation': <TrainingImplementationPage />,
+  'zhixun-certification': <CertificationPage />,
+  'zhixun-declaration-service': <DeclarationServicePage />,
+  'zhixun-graduation': <GraduationPage />,
+  'zhixun-refund': <RefundPage />,
+  'zhixun-archive-personnel': <PersonnelArchivePage />,
+  'zhixun-archive-equipment': <ArchiveEquipmentPage />,
+  'zhixun-archive-materials': <ArchiveMaterialsPage />,
+  'zhixun-archive-rules': <ArchiveRulesPage />,
+  'zhixun-archive-environment': <ArchiveEnvironmentPage />,
+  'zhixun-table-strategic': <PmStrategicPage />,
+  'zhixun-table-org-perf': <PmOrgPerfPage />,
+  'zhixun-table-pbc': <PmPbcPage />,
+  'zhixun-table-charter': <PmCharterPage />,
+  'zhixun-table-milestone': <PmMilestonePage />,
+  'zhixun-table-risk': <PmRiskPage />,
+  'zhixun-table-issue': <PmIssuePage />,
+  'zhixun-table-change': <PmChangePage />,
+  'zhixun-table-meeting': <PmMeetingPage />,
+  'zhixun-table-knowledge': <PmKnowledgePage />,
+  'zhixun-table-wbs': <PmWbsPage />,
+  'zhixun-table-communication': <PmCommunicationPage />,
+  'zhixun-table-status': <PmStatusPage />,
+  'certification-task-archive': <TaskArchivePage />,
+  'certification-practical-config': <PracticalConfigurationPage />,
+  // 战略规划 → 产品规划 模块
+  strate_talent_standard: <ProductPlaceholder moduleCode="strate_talent_standard" />,
+  strate_talent_check: <ProductPlaceholder moduleCode="strate_talent_check" />,
+  product_ai_industry: <ProductPlaceholder moduleCode="product_ai_industry" />,
+  product_ai_college: <ProductPlaceholder moduleCode="product_ai_college" />,
+  product_ai_enterprise: <ProductPlaceholder moduleCode="product_ai_enterprise" />,
+  product_ai_individual: <ProductPlaceholder moduleCode="product_ai_individual" />,
+  product_course_dev: <ProductPlaceholder moduleCode="product_course_dev" />,
+  product_knowledge_nonferrous: <ProductPlaceholder moduleCode="product_knowledge_nonferrous" />,
+  product_qianlv_ecosystem: <ProductPlaceholder moduleCode="product_qianlv_ecosystem" />,
+  product_simulation: <ProductPlaceholder moduleCode="product_simulation" />,
+  product_training_base: <ProductPlaceholder moduleCode="product_training_base" />,
+  product_apprentice: <ProductPlaceholder moduleCode="product_apprentice" />,
+  product_cert_agency: <ProductPlaceholder moduleCode="product_cert_agency" />,
+  product_competition: <ProductPlaceholder moduleCode="product_competition" />,
+  product_studio_apply: <ProductPlaceholder moduleCode="product_studio_apply" />,
+  product_course_ops: <ProductPlaceholder moduleCode="product_course_ops" />,
+  product_ai_nonferrous_assess: <ProductPlaceholder moduleCode="product_ai_nonferrous_assess" />,
+  product_qianlv_knowledge: <ProductPlaceholder moduleCode="product_qianlv_knowledge" />,
+  product_smart_classroom: <ProductPlaceholder moduleCode="product_smart_classroom" />,
+  product_expert_system: <ProductPlaceholder moduleCode="product_expert_system" />,
+  product_ai_learning: <ProductPlaceholder moduleCode="product_ai_learning" />,
+  product_ai_assess: <ProductPlaceholder moduleCode="product_ai_assess" />,
+  product_ai_agency_apply: <ProductPlaceholder moduleCode="product_ai_agency_apply" />,
+  product_ai_individual_apply: <ProductPlaceholder moduleCode="product_ai_individual_apply" />,
+  product_ai_class_manage: <ProductPlaceholder moduleCode="product_ai_class_manage" />,
+  product_ai_skill_manage: <ProductPlaceholder moduleCode="product_ai_skill_manage" />,
+  // 业务规划 13 个部门
+  biz_product_design: <ProductPlaceholder moduleCode="biz_product_design" />,
+  biz_market_expand: <ProductPlaceholder moduleCode="biz_market_expand" />,
+  biz_course_dev: <ProductPlaceholder moduleCode="biz_course_dev" />,
+  biz_agent_dev: <ProductPlaceholder moduleCode="biz_agent_dev" />,
+  biz_cloud_dev: <ProductPlaceholder moduleCode="biz_cloud_dev" />,
+  biz_simulation_dev: <ProductPlaceholder moduleCode="biz_simulation_dev" />,
+  biz_training_ops: <ProductPlaceholder moduleCode="biz_training_ops" />,
+  biz_cert_ops: <ProductPlaceholder moduleCode="biz_cert_ops" />,
+  biz_competition_ops: <ProductPlaceholder moduleCode="biz_competition_ops" />,
+  biz_hr: <ProductPlaceholder moduleCode="biz_hr" />,
+  biz_finance: <ProductPlaceholder moduleCode="biz_finance" />,
+  biz_admin: <ProductPlaceholder moduleCode="biz_admin" />,
+  biz_platform_coop: <ProductPlaceholder moduleCode="biz_platform_coop" />,
+  // 人才规划
+  talent_three_year: <ProductPlaceholder moduleCode="talent_three_year" />,
+  talent_five_year: <ProductPlaceholder moduleCode="talent_five_year" />,
+  // 计划管理
+  plan_work_year: <ProductPlaceholder moduleCode="plan_work_year" />,
+  plan_work_quarter: <ProductPlaceholder moduleCode="plan_work_quarter" />,
+  plan_work_month: <ProductPlaceholder moduleCode="plan_work_month" />,
+  plan_train_year: <ProductPlaceholder moduleCode="plan_train_year" />,
+  plan_train_quarter: <ProductPlaceholder moduleCode="plan_train_quarter" />,
+  plan_train_month: <ProductPlaceholder moduleCode="plan_train_month" />,
+  // 运营流程 - 线索招生
+  ops_lead_collect: <ProductPlaceholder moduleCode="ops_lead_collect" />,
+  ops_lead_assign: <ProductPlaceholder moduleCode="ops_lead_assign" />,
+  ops_lead_follow: <ProductPlaceholder moduleCode="ops_lead_follow" />,
+  ops_lead_convert: <ProductPlaceholder moduleCode="ops_lead_convert" />,
+  // 运营流程 - 客户管理
+  ops_customer_archive: <ProductPlaceholder moduleCode="ops_customer_archive" />,
+  ops_customer_tag: <ProductPlaceholder moduleCode="ops_customer_tag" />,
+  ops_customer_intent: <ProductPlaceholder moduleCode="ops_customer_intent" />,
+  ops_customer_visit: <ProductPlaceholder moduleCode="ops_customer_visit" />,
+  ops_customer_remind: <ProductPlaceholder moduleCode="ops_customer_remind" />,
+  // 运营流程 - 订单财务
+  ops_order_center: <ProductPlaceholder moduleCode="ops_order_center" />,
+  ops_contract_mgmt: <ProductPlaceholder moduleCode="ops_contract_mgmt" />,
+  ops_receipt_record: <ProductPlaceholder moduleCode="ops_receipt_record" />,
+  ops_invoice_mgmt: <ProductPlaceholder moduleCode="ops_invoice_mgmt" />,
+  ops_settlement: <ProductPlaceholder moduleCode="ops_settlement" />,
+  // 运营流程 - 营销推广
+  ops_enroll_brochure: <ProductPlaceholder moduleCode="ops_enroll_brochure" />,
+  ops_activity_mkt: <ProductPlaceholder moduleCode="ops_activity_mkt" />,
+  ops_coupon_card: <ProductPlaceholder moduleCode="ops_coupon_card" />,
+  ops_channel_qrcode: <ProductPlaceholder moduleCode="ops_channel_qrcode" />,
+  ops_distribution: <ProductPlaceholder moduleCode="ops_distribution" />,
+  // 运营流程 - 数据看板
+  ops_dashboard_funnel: <ProductPlaceholder moduleCode="ops_dashboard_funnel" />,
+  ops_dashboard_rank: <ProductPlaceholder moduleCode="ops_dashboard_rank" />,
+  ops_dashboard_convert: <ProductPlaceholder moduleCode="ops_dashboard_convert" />,
+  ops_dashboard_target: <ProductPlaceholder moduleCode="ops_dashboard_target" />,
+  ops_dashboard_roi: <ProductPlaceholder moduleCode="ops_dashboard_roi" />,
+  // 运营流程 - 课程开发流程
+  ops_std_dev_flow: <ProductPlaceholder moduleCode="ops_std_dev_flow" />,
+  ops_question_dev_flow: <ProductPlaceholder moduleCode="ops_question_dev_flow" />,
+  ops_video_dev_flow: <ProductPlaceholder moduleCode="ops_video_dev_flow" />,
+  ops_simulation_dev_flow: <ProductPlaceholder moduleCode="ops_simulation_dev_flow" />,
+  ops_tech_doc_dev_flow: <ProductPlaceholder moduleCode="ops_tech_doc_dev_flow" />,
+  // 运营流程 - 培训运营流程
+  ops_train_demand_survey: <ProductPlaceholder moduleCode="ops_train_demand_survey" />,
+  ops_train_solution_design: <ProductPlaceholder moduleCode="ops_train_solution_design" />,
+  ops_train_class_mgmt: <ProductPlaceholder moduleCode="ops_train_class_mgmt" />,
+  ops_train_implementation: <ProductPlaceholder moduleCode="ops_train_implementation" />,
+  ops_train_cert_issue: <ProductPlaceholder moduleCode="ops_train_cert_issue" />,
+  ops_train_graduation: <ProductPlaceholder moduleCode="ops_train_graduation" />,
+  ops_train_project_close: <ProductPlaceholder moduleCode="ops_train_project_close" />,
+  ops_train_project_apply: <ProductPlaceholder moduleCode="ops_train_project_apply" />,
+  // 培训运营 - 需求调研
+  ops_talent_demand: <ProductPlaceholder moduleCode="ops_talent_demand" />,
+  ops_training_demand: <ProductPlaceholder moduleCode="ops_training_demand" />,
+  // 培训运营 - 方案设计
+  ops_class_split_setting: <ProductPlaceholder moduleCode="ops_class_split_setting" />,
+  ops_schedule_setting: <ProductPlaceholder moduleCode="ops_schedule_setting" />,
+  ops_incentive_setting: <ProductPlaceholder moduleCode="ops_incentive_setting" />,
+  ops_budget_setting: <ProductPlaceholder moduleCode="ops_budget_setting" />,
+  ops_ai_learning_task_setting: <ProductPlaceholder moduleCode="ops_ai_learning_task_setting" />,
+  ops_academic_division_setting: <ProductPlaceholder moduleCode="ops_academic_division_setting" />,
+  // 培训运营 - 开班管理
+  ops_material_generate: <ProductPlaceholder moduleCode="ops_material_generate" />,
+  ops_material_apply: <ProductPlaceholder moduleCode="ops_material_apply" />,
+  ops_mobilization_meeting: <ProductPlaceholder moduleCode="ops_mobilization_meeting" />,
+  // 培训运营 - 培训实施
+  ops_attendance_mgmt: <ProductPlaceholder moduleCode="ops_attendance_mgmt" />,
+  ops_pass_rate_mgmt: <ProductPlaceholder moduleCode="ops_pass_rate_mgmt" />,
+  ops_homework_mgmt: <ProductPlaceholder moduleCode="ops_homework_mgmt" />,
+  ops_evaluation_mgmt: <ProductPlaceholder moduleCode="ops_evaluation_mgmt" />,
+  ops_record_mgmt: <ProductPlaceholder moduleCode="ops_record_mgmt" />,
+  // 培训运营 - 项目结题
+  ops_subsidy_material_apply: <ProductPlaceholder moduleCode="ops_subsidy_material_apply" />,
+  ops_subsidy_material_export: <ProductPlaceholder moduleCode="ops_subsidy_material_export" />,
+  // 培训运营 - 项目申报
+  ops_qianlv_reward_apply: <ProductPlaceholder moduleCode="ops_qianlv_reward_apply" />,
+  ops_gov_reward_guide: <ProductPlaceholder moduleCode="ops_gov_reward_guide" />,
+  ops_enterprise_reward_apply: <ProductPlaceholder moduleCode="ops_enterprise_reward_apply" />,
+  ops_college_reward_apply: <ProductPlaceholder moduleCode="ops_college_reward_apply" />,
+  ops_student_service_flow: <ProductPlaceholder moduleCode="ops_student_service_flow" />,
+  ops_title_apply_flow: <ProductPlaceholder moduleCode="ops_title_apply_flow" />,
+  ops_subsidy_apply_flow: <ProductPlaceholder moduleCode="ops_subsidy_apply_flow" />,
+  ops_points_exchange_flow: <ProductPlaceholder moduleCode="ops_points_exchange_flow" />,
+  ops_expert_apply_flow: <ProductPlaceholder moduleCode="ops_expert_apply_flow" />,
+  ops_honor_apply_flow: <ProductPlaceholder moduleCode="ops_honor_apply_flow" />,
+  // 认定运营流程
+  ops_cert_notice_mgmt: <ProductPlaceholder moduleCode="ops_cert_notice_mgmt" />,
+  ops_cert_qualification: <ProductPlaceholder moduleCode="ops_cert_qualification" />,
+  ops_cert_plan_mgmt: <ProductPlaceholder moduleCode="ops_cert_plan_mgmt" />,
+  ops_cert_exam_arrange: <ProductPlaceholder moduleCode="ops_cert_exam_arrange" />,
+  ops_cert_pre_exam_prep: <ProductPlaceholder moduleCode="ops_cert_pre_exam_prep" />,
+  ops_cert_exam_meeting: <ProductPlaceholder moduleCode="ops_cert_exam_meeting" />,
+  ops_cert_assessment: <ProductPlaceholder moduleCode="ops_cert_assessment" />,
+  ops_cert_score_publish: <ProductPlaceholder moduleCode="ops_cert_score_publish" />,
+  // 竞赛运营流程
+  ops_comp_apply: <ProductPlaceholder moduleCode="ops_comp_apply" />,
+  ops_comp_register: <ProductPlaceholder moduleCode="ops_comp_register" />,
+  ops_comp_tech_seminar: <ProductPlaceholder moduleCode="ops_comp_tech_seminar" />,
+  ops_comp_enterprise_sel: <ProductPlaceholder moduleCode="ops_comp_enterprise_sel" />,
+  ops_comp_preliminary: <ProductPlaceholder moduleCode="ops_comp_preliminary" />,
+  ops_comp_semifinal: <ProductPlaceholder moduleCode="ops_comp_semifinal" />,
+  ops_comp_pre_training: <ProductPlaceholder moduleCode="ops_comp_pre_training" />,
+  ops_comp_opening: <ProductPlaceholder moduleCode="ops_comp_opening" />,
+  ops_comp_final: <ProductPlaceholder moduleCode="ops_comp_final" />,
+  ops_comp_closing: <ProductPlaceholder moduleCode="ops_comp_closing" />,
+  ops_comp_project_close: <ProductPlaceholder moduleCode="ops_comp_project_close" />,
+  // 竞赛结题
+  ops_comp_close_report: <ProductPlaceholder moduleCode="ops_comp_close_report" />,
+  ops_comp_close_settlement: <ProductPlaceholder moduleCode="ops_comp_close_settlement" />,
+  ops_comp_close_apply: <ProductPlaceholder moduleCode="ops_comp_close_apply" />,
+  // 支持保障 - 政策库
+  sup_policy_national: <ProductPlaceholder moduleCode="sup_policy_national" />,
+  sup_policy_provincial: <ProductPlaceholder moduleCode="sup_policy_provincial" />,
+  sup_policy_city: <ProductPlaceholder moduleCode="sup_policy_city" />,
+  sup_policy_company: <ProductPlaceholder moduleCode="sup_policy_company" />,
+  // 支持保障 - 专家库
+  sup_expert_question: <ProductPlaceholder moduleCode="sup_expert_question" />,
+  sup_trainer_mgmt: <ProductPlaceholder moduleCode="sup_trainer_mgmt" />,
+  sup_assessor_mgmt: <ProductPlaceholder moduleCode="sup_assessor_mgmt" />,
+  sup_referee_mgmt: <ProductPlaceholder moduleCode="sup_referee_mgmt" />,
+  sup_academic_staff: <ProductPlaceholder moduleCode="sup_academic_staff" />,
+  sup_exam_staff: <ProductPlaceholder moduleCode="sup_exam_staff" />,
+  sup_comp_staff: <ProductPlaceholder moduleCode="sup_comp_staff" />,
+  // 支持保障 - 设备库
+  sup_equip_practical: <ProductPlaceholder moduleCode="sup_equip_practical" />,
+  sup_equip_training: <ProductPlaceholder moduleCode="sup_equip_training" />,
+  sup_equip_cert: <ProductPlaceholder moduleCode="sup_equip_cert" />,
+  sup_equip_comp: <ProductPlaceholder moduleCode="sup_equip_comp" />,
+  // 支持保障 - 物料库
+  sup_job_mgmt: <ProductPlaceholder moduleCode="sup_job_mgmt" />,
+  sup_post_mgmt: <ProductPlaceholder moduleCode="sup_post_mgmt" />,
+  sup_standard_mgmt: <ProductPlaceholder moduleCode="sup_standard_mgmt" />,
+  sup_question_bank: <ProductPlaceholder moduleCode="sup_question_bank" />,
+  sup_textbook_mgmt: <ProductPlaceholder moduleCode="sup_textbook_mgmt" />,
+  sup_video_mgmt: <ProductPlaceholder moduleCode="sup_video_mgmt" />,
+  sup_material_mgmt: <ProductPlaceholder moduleCode="sup_material_mgmt" />,
+  sup_ad_mgmt: <ProductPlaceholder moduleCode="sup_ad_mgmt" />,
+  sup_logo_mgmt: <ProductPlaceholder moduleCode="sup_logo_mgmt" />,
+  sup_budget_mgmt: <ProductPlaceholder moduleCode="sup_budget_mgmt" />,
+  // 支持保障 - 方法库
+  sup_rule_standard: <ProductPlaceholder moduleCode="sup_rule_standard" />,
+  sup_rule_question: <ProductPlaceholder moduleCode="sup_rule_question" />,
+  sup_rule_textbook: <ProductPlaceholder moduleCode="sup_rule_textbook" />,
+  sup_rule_video: <ProductPlaceholder moduleCode="sup_rule_video" />,
+  sup_rule_practical: <ProductPlaceholder moduleCode="sup_rule_practical" />,
+  sup_rule_forum: <ProductPlaceholder moduleCode="sup_rule_forum" />,
+  sup_rule_training: <ProductPlaceholder moduleCode="sup_rule_training" />,
+  sup_rule_cert: <ProductPlaceholder moduleCode="sup_rule_cert" />,
+  sup_rule_comp: <ProductPlaceholder moduleCode="sup_rule_comp" />,
+  sup_rule_ceremony: <ProductPlaceholder moduleCode="sup_rule_ceremony" />,
+  // 支持保障 - 环境库
+  sup_env_forum: <ProductPlaceholder moduleCode="sup_env_forum" />,
+  sup_env_question_accept: <ProductPlaceholder moduleCode="sup_env_question_accept" />,
+  sup_env_ceremony: <ProductPlaceholder moduleCode="sup_env_ceremony" />,
+  sup_env_training_class: <ProductPlaceholder moduleCode="sup_env_training_class" />,
+  sup_env_cert_exam: <ProductPlaceholder moduleCode="sup_env_cert_exam" />,
+  sup_env_comp_site: <ProductPlaceholder moduleCode="sup_env_comp_site" />,
+  // 绩效人才
+  perf_assess_structure: <ProductPlaceholder moduleCode="perf_assess_structure" />,
+  perf_assess_qualification: <ProductPlaceholder moduleCode="perf_assess_qualification" />,
+  perf_assess_resource: <ProductPlaceholder moduleCode="perf_assess_resource" />,
+  perf_skill_map: <ProductPlaceholder moduleCode="perf_skill_map" />,
+  perf_pipeline_build: <ProductPlaceholder moduleCode="perf_pipeline_build" />,
+  perf_talent_map: <ProductPlaceholder moduleCode="perf_talent_map" />,
+  // 机构风控
+  risk_product_design: <ProductPlaceholder moduleCode="risk_product_design" />,
+  risk_market_expand: <ProductPlaceholder moduleCode="risk_market_expand" />,
+  risk_course_dev: <ProductPlaceholder moduleCode="risk_course_dev" />,
+  risk_agent_dev: <ProductPlaceholder moduleCode="risk_agent_dev" />,
+  risk_cloud_dev: <ProductPlaceholder moduleCode="risk_cloud_dev" />,
+  risk_simulation_dev: <ProductPlaceholder moduleCode="risk_simulation_dev" />,
+  risk_training_ops: <ProductPlaceholder moduleCode="risk_training_ops" />,
+  risk_cert_ops: <ProductPlaceholder moduleCode="risk_cert_ops" />,
+  risk_competition_ops: <ProductPlaceholder moduleCode="risk_competition_ops" />,
+  risk_hr: <ProductPlaceholder moduleCode="risk_hr" />,
+  risk_finance: <ProductPlaceholder moduleCode="risk_finance" />,
+  risk_admin: <ProductPlaceholder moduleCode="risk_admin" />,
+  risk_platform_coop: <ProductPlaceholder moduleCode="risk_platform_coop" />,
+  'certification-practical-collection': <CollectionTaskListPage />,
+  competition_event: <CompetitionEventManagementPage />,
+};
+
+const assessorMode = window.location.pathname.startsWith('/assessor-scoring');
+const practicalCollectionMode = window.location.pathname.startsWith('/practical-collection');
+const collectionManageTaskId = (() => {
+  const match = window.location.pathname.match(/^\/certification\/practical-collection\/([^/]+)\/manage\/?$/);
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+})();
+const collectionManageMode = Boolean(collectionManageTaskId);
+const competitionEventMode = window.location.pathname.startsWith('/competition/events');
+
+function CollectionManageShell({ taskId }: { taskId: string }) {
+  const [manageActive, setManageActive] = React.useState(true);
+
+  return (
+    <AppShell
+      pageMap={pageMap}
+      selectedMenuKeyOverride={manageActive ? 'certification_practical_collection' : undefined}
+      contentOverride={manageActive ? <CollectionManagePage taskId={taskId} /> : undefined}
+      onMenuNavigate={() => setManageActive(false)}
+    />
+  );
+}
+
+function CompetitionEventShell() {
+  const [eventActive, setEventActive] = React.useState(true);
+
+  return (
+    <AppShell
+      pageMap={pageMap}
+      selectedMenuKeyOverride={eventActive ? 'competition_event' : undefined}
+      contentOverride={eventActive ? <CompetitionEventManagementPage /> : undefined}
+      onMenuNavigate={() => setEventActive(false)}
+      hideBreadcrumb={eventActive}
+    />
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <ConfigProvider locale={zhCN} theme={appTheme}>
+      <QueryClientProvider client={queryClient}>
+        <AuthGate mode={assessorMode ? 'assessor' : practicalCollectionMode ? 'collection' : 'admin'}>
+          {assessorMode ? (
+            <TabletAssessorApp />
+          ) : practicalCollectionMode ? (
+            <PracticalCollectionApp />
+          ) : collectionManageMode ? (
+            <CollectionManageShell taskId={collectionManageTaskId!} />
+          ) : competitionEventMode ? (
+            <CompetitionEventShell />
+          ) : (
+            <AppShell pageMap={pageMap} />
+          )}
+        </AuthGate>
+      </QueryClientProvider>
+    </ConfigProvider>
+  </React.StrictMode>,
+);
+

@@ -1,0 +1,23 @@
+weknora:
+  base-url: http://43.138.163.7:8088
+  channel-id: aa3a676b-a1cb-4719-8e06-6636932d9bb2
+  publish-token: em_bGamXW2XC6nrSKsFSWAJiy7evIqpM10gV3kHsC3hOOk
+  origin: http://localhost:5173
+
+# Local development only: the fake SMS sender does not deliver a real message.
+# This value is ignored if the real Aliyun SMS sender is enabled.
+platform:
+  competition:
+    player:
+      sms:
+        development-test-code: "123456"
+
+# This development machine uses the shared database. Never run Flyway repair/migrations here.
+spring:
+  flyway:
+    enabled: false
+
+management:
+  health:
+    rabbit:
+      enabled: false

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>竞赛运营中心 · 组织方后台</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#dashboard"><span>G</span><div>千铝国昱云平台<small>竞赛运营中心</small></div></a>
+      <nav id="nav" aria-label="组织方后台导航"></nav>
+      <a class="overview-link" href="index.html">← 返回原型总览</a>
+    </aside>
+    <section class="workspace">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" id="menuBtn" aria-label="展开菜单">☰</button>
+        <div class="crumb"><span>竞赛运营</span><i>/</i><b id="crumb">数据驾驶舱</b></div>
+        <div class="top-actions">
+          <label class="competition-switch"><span>当前赛事</span><select id="competitionSelect"><option>2026年铝电解工职业技能竞赛</option><option>2026年焊工岗位技能竞赛</option><option>集团青年创新竞赛</option></select></label>
+          <button class="icon-btn" data-action="notify">🔔<em>3</em></button>
+          <button class="role-btn" id="roleBtn">组织方管理员⌄</button>
+          <div class="avatar">林</div>
+        </div>
+      </header>
+      <main class="content" id="content"></main>
+    </section>
+  </div>
+
+  <div class="overlay" id="overlay"></div>
+  <section class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <header><div><small id="modalKicker">操作</small><h2 id="modalTitle">弹窗标题</h2></div><button class="icon-btn close-layer">×</button></header>
+    <div class="modal-body" id="modalBody"></div>
+    <footer id="modalFooter"><button class="btn ghost close-layer">取消</button><button class="btn primary" id="modalConfirm">确认</button></footer>
+  </section>
+  <aside class="drawer" id="drawer" aria-labelledby="drawerTitle">
+    <header><div><small>详情</small><h2 id="drawerTitle">详情抽屉</h2></div><button class="icon-btn close-layer">×</button></header>
+    <div class="drawer-body" id="drawerBody"></div>
+    <footer><button class="btn ghost close-layer">关闭</button><button class="btn primary" id="drawerEditButton" data-action="edit-from-drawer">编辑</button></footer>
+  </aside>
+  <div class="toast" id="toast"></div>
+  <script src="admin.js"></script>
+</body>
+</html>

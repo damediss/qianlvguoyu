@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath"
+             targetNamespace="http://guoyu.com/certification/workflow">
+  <process id="certificationDocumentReview" name="Certification Document Review" isExecutable="true">
+    <startEvent id="startEvent" name="Start"/>
+    <sequenceFlow id="flow_start_initial" sourceRef="startEvent" targetRef="initialReviewTask"/>
+
+    <userTask id="initialReviewTask"
+              name="Supervisor Initial Review"
+              flowable:candidateGroups="certification.project.document.initialReview"/>
+    <sequenceFlow id="flow_initial_gateway" sourceRef="initialReviewTask" targetRef="initialReviewGateway"/>
+
+    <exclusiveGateway id="initialReviewGateway" name="Initial Review Result"/>
+    <sequenceFlow id="flow_initial_approved" sourceRef="initialReviewGateway" targetRef="finalReviewTask">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${initialReviewApproved == true}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_initial_rejected" sourceRef="initialReviewGateway" targetRef="initialRejectedEnd">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${initialReviewApproved == false}]]></conditionExpression>
+    </sequenceFlow>
+
+    <userTask id="finalReviewTask"
+              name="Supervisor Final Review"
+              flowable:candidateGroups="certification.project.document.finalReview"/>
+    <sequenceFlow id="flow_final_gateway" sourceRef="finalReviewTask" targetRef="finalReviewGateway"/>
+
+    <exclusiveGateway id="finalReviewGateway" name="Final Review Result"/>
+    <sequenceFlow id="flow_final_approved" sourceRef="finalReviewGateway" targetRef="archiveServiceTask">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${finalReviewApproved == true}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_final_rejected" sourceRef="finalReviewGateway" targetRef="finalRejectedEnd">
+      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${finalReviewApproved == false}]]></conditionExpression>
+    </sequenceFlow>
+
+    <serviceTask id="archiveServiceTask"
+                 name="Archive Document"
+                 flowable:delegateExpression="${certificationDocumentArchiveDelegate}"/>
+    <sequenceFlow id="flow_archive_end" sourceRef="archiveServiceTask" targetRef="archivedEnd"/>
+
+    <endEvent id="initialRejectedEnd" name="Initial Rejected"/>
+    <endEvent id="finalRejectedEnd" name="Final Rejected"/>
+    <endEvent id="archivedEnd" name="Archived"/>
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_certificationDocumentReview">
+    <bpmndi:BPMNPlane id="BPMNPlane_certificationDocumentReview" bpmnElement="certificationDocumentReview">
+      <bpmndi:BPMNShape id="BPMNShape_startEvent" bpmnElement="startEvent">
+        <omgdc:Bounds x="60" y="120" width="30" height="30"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_initialReviewTask" bpmnElement="initialReviewTask">
+        <omgdc:Bounds x="130" y="95" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_initialReviewGateway" bpmnElement="initialReviewGateway">
+        <omgdc:Bounds x="340" y="110" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_finalReviewTask" bpmnElement="finalReviewTask">
+        <omgdc:Bounds x="440" y="95" width="160" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_finalReviewGateway" bpmnElement="finalReviewGateway">
+        <omgdc:Bounds x="650" y="110" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_archiveServiceTask" bpmnElement="archiveServiceTask">
+        <omgdc:Bounds x="750" y="95" width="140" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_archivedEnd" bpmnElement="archivedEnd">
+        <omgdc:Bounds x="940" y="120" width="30" height="30"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_initialRejectedEnd" bpmnElement="initialRejectedEnd">
+        <omgdc:Bounds x="350" y="220" width="30" height="30"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_finalRejectedEnd" bpmnElement="finalRejectedEnd">
+        <omgdc:Bounds x="660" y="220" width="30" height="30"/>
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

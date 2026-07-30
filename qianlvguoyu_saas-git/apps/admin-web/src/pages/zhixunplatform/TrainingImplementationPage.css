@@ -1,0 +1,116 @@
+/* ============================================================
+   培训实施页 - TrainingImplementationPage.css
+   ============================================================ */
+
+/* ---- topbar ---- */
+.tpx-topbar {
+  background: #fff; box-shadow: 0 4px 24px rgba(42,109,255,.06); padding: 16px 32px;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  position: sticky; top: 0; z-index: 50;
+}
+.tpx-topbar-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.tpx-back-link {
+  display: inline-flex; align-items: center; gap: 8px; color: #64748B;
+  text-decoration: none; font-size: 14px; font-weight: 500; padding: 8px 14px; border-radius: 10px; cursor: pointer;
+}
+.tpx-back-link:hover { background: #E8F0FF; color: #2A6DFF; }
+.tpx-title { font-size: 20px; font-weight: 700; margin: 0; }
+.tpx-sub { font-size: 13px; color: #64748B; }
+.tpx-process-badge {
+  font-size: 12px; padding: 6px 12px; background: #E8F0FF; color: #2A6DFF; border-radius: 20px; font-weight: 500;
+}
+
+/* ---- page ---- */
+.tpx-page-body { max-width: 1280px; margin: 0 auto; padding: 28px 24px 64px; }
+
+/* ---- stat ---- */
+.tpx-stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.tpx-stat-card { background: #fff; border-radius: 20px; padding: 20px; box-shadow: 0 4px 24px rgba(42,109,255,.06); }
+.tpx-stat-val { font-size: 26px; font-weight: 700; color: #2A6DFF; }
+.tpx-stat-val.success { color: #10B981; }
+.tpx-stat-val.warn { color: #F59E0B; }
+.tpx-stat-lbl { font-size: 13px; color: #64748B; margin-top: 4px; }
+
+/* ---- card ---- */
+.tpx-card { background: #fff; border-radius: 20px; box-shadow: 0 4px 24px rgba(42,109,255,.06); padding: 24px 28px; margin-bottom: 24px; }
+.tpx-card-head {
+  font-size: 16px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+}
+.tpx-card-head-title { display: flex; align-items: center; gap: 10px; color: #2A6DFF; }
+.tpx-hint { font-size: 12px; color: #64748B; font-weight: 400; }
+
+/* ---- form ---- */
+.tpx-form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.tpx-form-group label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; }
+.tpx-form-group { margin-bottom: 0; }
+
+/* ---- project banner ---- */
+.tpx-project-banner {
+  margin-top: 16px; padding: 16px 20px; background: #E8F0FF; border-radius: 12px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px 24px; font-size: 13px;
+}
+.tpx-banner-item label { display: block; color: #64748B; font-size: 12px; margin-bottom: 4px; }
+.tpx-banner-item strong { font-weight: 600; }
+
+/* ---- empty ---- */
+.tpx-empty {
+  text-align: center; padding: 48px 24px; color: #64748B;
+  background: #fff; border-radius: 20px; box-shadow: 0 4px 24px rgba(42,109,255,.06); margin-bottom: 24px;
+}
+
+/* ---- alert ---- */
+.tpx-alert {
+  padding: 14px 18px; border-radius: 12px; font-size: 14px; margin-bottom: 20px;
+  display: flex; align-items: flex-start; gap: 12px;
+}
+.tpx-alert.warn { background: #FEF3C7; color: #92400E; }
+
+/* ---- toolbar ---- */
+.tpx-toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; align-items: flex-end; }
+
+/* ---- footer ---- */
+.tpx-footer-actions { display: flex; gap: 12px; justify-content: flex-end; flex-wrap: wrap; }
+
+/* ---- progress bar ---- */
+.tpx-progress-bar { height: 8px; background: #F5F7FC; border-radius: 4px; overflow: hidden; min-width: 80px; }
+.tpx-progress-fill { height: 100%; background: #2A6DFF; border-radius: 4px; }
+
+/* ---- status ---- */
+.st-normal { background: #D1FAE5; color: #059669; }
+.st-warn { background: #FEF3C7; color: #D97706; }
+.st-danger { background: #FEE2E2; color: #DC2626; }
+
+/* ---- action buttons ---- */
+.action-btns { display: flex; gap: 6px; }
+.action-btn {
+  width: 32px; height: 32px; border: none; border-radius: 8px;
+  background: #F5F7FC; color: #64748B; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.action-btn:hover { background: #E8F0FF; color: #2A6DFF; }
+
+/* ---- attendance ---- */
+.tpx-att-card { padding: 16px 20px; margin-bottom: 12px; border: 1px solid #E2E8F0; border-radius: 12px; }
+.tpx-att-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #E2E8F0; font-size: 14px; flex-wrap: wrap; }
+.tpx-att-row:last-child { border-bottom: none; }
+.tpx-check-label { margin: 0; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+.tpx-check-label input { width: auto; }
+
+/* ---- evidence ---- */
+.tpx-evidence-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.tpx-evidence-thumb {
+  aspect-ratio: 4/3; background: #F5F7FC; border-radius: 12px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; font-size: 12px; color: #64748B; border: 1px dashed #E2E8F0;
+}
+
+/* ---- logs & exceptions ---- */
+.tpx-log-item, .tpx-exc-item {
+  padding: 14px 16px; background: #F5F7FC; border-radius: 12px; margin-bottom: 10px; font-size: 14px;
+}
+.tpx-log-meta, .tpx-exc-meta { font-size: 12px; color: #64748B; margin-bottom: 6px; }
+
+/* ---- modal ---- */
+.tpx-modal-form .tpx-form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+
+/* ---- table ---- */
+.tpx-card .ant-table-thead > tr > th { background: #FAFBFD; color: #64748B; font-size: 12px; font-weight: 600; }

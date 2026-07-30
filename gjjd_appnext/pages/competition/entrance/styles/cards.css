@@ -1,0 +1,82 @@
+/* 卡片网格布局 */
+.card-grid {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	grid-gap: 15rpx;
+	align-items: start;
+}
+
+/* 卡片基础样式 */
+.card-item {
+	padding: 18rpx 20rpx;
+	position: relative;
+	overflow: hidden;
+	transition: all 0.3s;
+}
+
+.card-item:active {
+	transform: scale(0.96);
+	box-shadow: 0 1rpx 4rpx rgba(0,0,0,0.12);
+}
+
+/* 卡片尺寸 */
+.small-card {
+	grid-column: span 1;
+}
+
+.large-card {
+	grid-column: span 1;
+}
+
+.full-width-card {
+	grid-column: span 2;
+}
+
+/* 卡片装饰图案 */
+.card-pattern {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	opacity: 0.2;
+}
+
+/* 卡片背景图片 */
+.green-bg-0 {
+	background: url("/static/images/green-bg-0.png");
+	background-size: cover;
+}
+
+.blue-bg-2 {
+	background: url("/static/images/blue-bg-2.png");
+	background-size: cover;
+}
+
+.blue-bg-3 {
+	background: url("/static/images/blue-bg-3.png");
+	background-size: cover;
+}
+
+.orange-bg-0 {
+	background: url("/static/images/orange-bg-0.png");
+	background-size: cover;
+}
+
+.blue-bg-0 {
+	background: url("/static/images/blue-bg-0.png");
+	background-size: cover;
+}
+
+/* 卡片内容元素 */
+.card-icon {
+	margin-right: 12rpx;
+	z-index: 2;
+}
+
+.card-text {
+	z-index: 2;
+	line-height: 1.4;
+	white-space: nowrap;
+}
+

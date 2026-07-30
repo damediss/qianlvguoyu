@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>试题管理（重构后 · Ant Design Pro 版 · 含分类导航）</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@5.22.6/dist/reset.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@ant-design/pro-components@2.8.10/dist/style.css">
+  <style>
+    /* ==========================================================
+       试题管理 · 主页面
+       含：分类导航树(280px) + 顶部摘要条 + ProForm查询 + ProTable
+       无侧边菜单，外层套一个深色 #001529 header
+       ========================================================== */
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:rgba(0,0,0,.88);font-size:14px}
+
+    /* 模拟 ProLayout 顶部 header + 面包屑 */
+    .app-header{height:48px;background:#001529;display:flex;align-items:center;padding:0 24px;gap:16px;color:rgba(255,255,255,.85);position:sticky;top:0;z-index:100}
+    .app-header .crumb{font-size:13px;color:rgba(255,255,255,.65);display:flex;align-items:center;gap:8px}
+    .app-header .crumb .now{color:#fff;font-weight:500}
+    .app-header .crumb .sep{color:rgba(255,255,255,.35)}
+    .app-header .actions{margin-left:auto;display:flex;align-items:center;gap:18px;font-size:13px}
+    .app-header .actions .ico{cursor:pointer;transition:.2s}
+    .app-header .actions .ico:hover{color:#fff}
+    .app-header .avatar{width:28px;height:28px;border-radius:50%;background:#165dff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;cursor:pointer}
+
+    /* 主体三栏：树 + 主区 */
+    .body-wrap{display:flex;min-height:calc(100vh - 48px)}
+
+    /* ============== 左：分类导航树 ============== */
+    .tree-pane{width:280px;background:#fff;border-right:1px solid #f0f0f0;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden}
+    .tree-head{padding:14px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px;background:#fafbfc}
+    .tree-head h3{font-size:14px;font-weight:600;color:rgba(0,0,0,.88);display:flex;align-items:center;gap:6px;flex:1}
+    .tree-head .badge{font-size:11px;background:#e6f4ff;color:#1677ff;padding:1px 8px;border-radius:10px;font-weight:500}
+    .tree-search{padding:10px 16px;border-bottom:1px solid #f0f0f0}
+    .tree-search input{width:100%;padding:6px 10px 6px 30px;border:1px solid #d9d9d9;border-radius:6px;font-size:13px;background:#fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%238c8c8c' stroke-width='2' viewBox='0 0 24 24'><circle cx='11' cy='11' r='8'/><path d='m21 21-4.35-4.35'/></svg>") no-repeat 9px center;color:rgba(0,0,0,.88)}
+    .tree-search input:focus{outline:none;border-color:#1677ff;box-shadow:0 0 0 2px rgba(22,119,255,.1)}
+    .tree-body{flex:1;overflow-y:auto;padding:8px 0}
+    .tree-node{display:flex;align-items:center;gap:6px;padding:6px 16px;cursor:pointer;font-size:13px;color:rgba(0,0,0,.85);transition:background .15s;position:relative;user-select:none}
+    .tree-node:hover{background:#f5f7fa}
+    .tree-node.active{background:#e6f4ff;color:#1677ff;font-weight:500}
+    .tree-node.active::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#1677ff}
+    .tree-node .caret{width:14px;color:rgba(0,0,0,.25);font-size:10px;display:inline-flex;align-items:center;justify-content:center;transition:transform .2s;flex-shrink:0}
+    .tree-node .caret.open{transform:rotate(90deg)}
+    .tree-node .caret.leaf{visibility:hidden}
+    .tree-node .icon{font-size:14px;width:18px;text-align:center;flex-shrink:0}
+    .tree-node .label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .tree-node .count{font-size:11px;color:rgba(0,0,0,.45);background:#f5f5f5;padding:0 6px;border-radius:8px;min-width:22px;text-align:center;flex-shrink:0}
+    .tree-node.active .count{background:#1677ff;color:#fff}
+    .tree-children{max-height:0;overflow:hidden;transition:max-height .25s}
+    .tree-children.open{max-height:1500px}
+    .tree-node.indent-1{padding-left:34px}
+    .tree-node.indent-2{padding-left:54px}
+    .tree-node.indent-3{padding-left:74px}
+    .tree-node.indent-4{padding-left:94px}
+
+    /* ============== 右：主区 ============== */
+    .main-pane{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+    .page-content{padding:16px 20px 20px;overflow-y:auto;flex:1}
+
+    /* 路径上下文条 */
+    .path-bar{background:#fff;border-radius:8px;padding:10px 16px;margin-bottom:12px;border:1px solid #f0f0f0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
+    .path-bar .lbl{color:rgba(0,0,0,.45);display:flex;align-items:center;gap:4px;white-space:nowrap}
+    .path-bar .path-node{color:#1677ff;background:#e6f4ff;padding:2px 10px;border-radius:4px;font-size:12px;white-space:nowrap}
+    .path-bar .path-node.cur{background:#1677ff;color:#fff;font-weight:500}
+    .path-bar .path-sep{color:rgba(0,0,0,.25);font-size:12px}
+    .path-bar .ctx-stat{font-size:12px;color:rgba(0,0,0,.65);margin-left:4px;display:flex;align-items:center;gap:6px}
+    .path-bar .ctx-stat b{color:#1677ff;font-weight:600}
+    .path-bar .ctx-stat .lbl{color:rgba(0,0,0,.45);margin-right:2px}
+    .path-bar .ctx-chips{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:6px;padding-left:14px;border-left:1px solid #f0f0f0}
+    .path-bar .ctx-chip{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid #91caff;color:#1677ff;padding:2px 8px;border-radius:12px;font-size:12px}
+    .path-bar .ctx-chip .x{color:rgba(0,0,0,.35);cursor:pointer;font-size:11px;margin-left:2px}
+    .path-bar .path-edit{margin-left:auto;color:#1677ff;font-size:12px;cursor:pointer;white-space:nowrap}
+
+    /* ProForm 查询 */
+    .pro-query{padding:14px 20px;background:#fafafa;border:1px solid #f0f0f0;border-radius:8px 8px 0 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:0}
+    .ant-input,.ant-select-selector{padding:4px 11px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px;background:#fff;height:32px;display:inline-flex;align-items:center;color:rgba(0,0,0,.88);min-width:120px;transition:all .2s}
+    .ant-input.search{width:240px;padding-left:32px;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%238c8c8c' stroke-width='2' viewBox='0 0 24 24'><circle cx='11' cy='11' r='8'/><path d='m21 21-4.35-4.35'/></svg>");background-repeat:no-repeat;background-position:10px center}
+    .ant-input:focus,.ant-select-selector:focus{outline:none;border-color:#1677ff;box-shadow:0 0 0 2px rgba(22,119,255,.1)}
+    .ant-select-selector{padding:0 11px;justify-content:space-between;cursor:pointer;min-width:130px}
+    .ant-select-selector::after{content:"▾";color:rgba(0,0,0,.25);font-size:10px}
+    .ant-btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 15px;border-radius:6px;font-size:14px;border:1px solid #d9d9d9;background:#fff;cursor:pointer;color:rgba(0,0,0,.88);transition:all .2s;line-height:1}
+    .ant-btn:hover{color:#1677ff;border-color:#1677ff}
+    .ant-btn-primary{background:#1677ff;border-color:#1677ff;color:#fff}
+    .ant-btn-primary:hover{background:#4096ff;border-color:#4096ff;color:#fff}
+    .ant-btn-danger{color:#ff4d4f;border-color:#ffccc7;background:#fff}
+    .ant-btn-danger:hover{color:#ff7875;border-color:#ffa39e;background:#fff1f0}
+    .ant-btn .icon{font-size:14px}
+
+    /* ProTable 容器 */
+    .pro-table{background:#fff;border:1px solid #f0f0f0;border-top:none;border-radius:0 0 8px 8px;overflow:hidden}
+    .pro-toolbar{padding:12px 20px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .pro-toolbar .tb-title{font-size:15px;font-weight:600;color:rgba(0,0,0,.88);margin-right:4px}
+    .view-toggle{display:flex;border:1px solid #d9d9d9;border-radius:6px;overflow:hidden}
+    .view-toggle .vt{padding:4px 12px;font-size:13px;cursor:pointer;background:#fff;color:rgba(0,0,0,.65);border-right:1px solid #d9d9d9;display:inline-flex;align-items:center;gap:4px}
+    .view-toggle .vt:last-child{border-right:none}
+    .view-toggle .vt.active{background:#1677ff;color:#fff;border-color:#1677ff}
+    .pro-toolbar .tb-sub{font-size:12px;color:rgba(0,0,0,.45);margin-right:auto}
+    .col-setting{color:rgba(0,0,0,.45);cursor:pointer;font-size:13px;display:flex;align-items:center;gap:4px}
+
+    /* 批量操作条（按截图：浅蓝底 + 蓝色虚线边） */
+    .batch-bar{background:#e6f4ff;padding:8px 20px;border-bottom:1px dashed #91caff;display:flex;align-items:center;gap:14px;font-size:13px;color:#1677ff}
+    .batch-bar strong{font-weight:600}
+    .batch-bar a{color:#1677ff;cursor:pointer}
+    .batch-bar a:hover{text-decoration:underline}
+    .batch-bar a.danger{color:#ff4d4f}
+    .batch-bar .clr{margin-left:auto;color:rgba(0,0,0,.45);cursor:pointer}
+
+    /* 表格 */
+    .pro-table-area{padding:0}
+    table.qtable{width:100%;border-collapse:collapse;font-size:13px}
+    table.qtable thead th{background:#fafafa;color:rgba(0,0,0,.85);font-weight:500;text-align:left;padding:12px 16px;border-bottom:1px solid #f0f0f0;white-space:nowrap;font-size:13px}
+    table.qtable thead th.w-checkbox{width:48px;text-align:center}
+    table.qtable thead th.w-no{width:56px;text-align:center}
+    table.qtable thead th.w-source{width:72px}
+    table.qtable thead th.w-type{width:80px}
+    table.qtable thead th.w-diff{width:80px}
+    table.qtable thead th.w-time{width:130px}
+    table.qtable thead th.w-op{width:180px}
+    table.qtable tbody td{padding:16px;border-bottom:1px solid #f0f0f0;vertical-align:top;font-size:13px;line-height:1.7}
+    table.qtable tbody tr:hover{background:#fafbff}
+    table.qtable tbody tr.selected{background:#e6f4ff}
+    .qtext{color:rgba(0,0,0,.88)}
+    .qtext .kplink{color:#1677ff;font-size:13px;margin-right:6px;font-weight:500}
+    .qtext .kplink:hover{text-decoration:underline;cursor:pointer}
+    .qtext .qtitle{font-size:13px;color:rgba(0,0,0,.88);margin-bottom:4px}
+    .qtext .qopts{color:rgba(0,0,0,.65);font-size:13px;line-height:1.8}
+    .qtext .qopts .opt{display:block}
+    .qtext .qopts .opt b{color:#1677ff;margin-right:4px;font-weight:600}
+    .qtext .qans{color:rgba(0,0,0,.65);font-size:12px;margin-top:4px;display:block}
+    .qtext .qans .ans-label{background:#fff1f0;color:#ff4d4f;padding:1px 6px;border-radius:3px;font-weight:500;margin-right:4px}
+    .ant-tag{font-size:12px;padding:0 7px;line-height:20px;border-radius:4px;background:#f0f0f0;color:rgba(0,0,0,.65);border:1px solid #d9d9d9;display:inline-block}
+    .ant-tag-blue{color:#1677ff;background:#e6f4ff;border-color:#91caff}
+    .ant-tag-orange{color:#fa8c16;background:#fff7e6;border-color:#ffd591}
+    .diff{font-size:12px;display:inline-flex;gap:3px;align-items:center}
+    .diff i{width:7px;height:7px;border-radius:50%;background:#d9d9d9;display:inline-block}
+    .diff.i-1 i:nth-child(1){background:#52c41a}
+    .diff.i-2 i:nth-child(-n+2){background:#fa8c16}
+    .diff.i-3 i{background:#ff4d4f}
+    .op-btns a{color:#1677ff;margin-right:14px;font-size:13px;cursor:pointer}
+    .op-btns a:hover{text-decoration:underline}
+    .op-btns a.danger{color:#ff4d4f}
+    .check-center{text-align:center}
+    .ant-checkbox{width:16px;height:16px;border:1px solid #d9d9d9;border-radius:2px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;background:#fff;position:relative}
+    .ant-checkbox.checked{background:#1677ff;border-color:#1677ff}
+    .ant-checkbox.checked::after{content:"✓";color:#fff;font-size:11px;font-weight:700}
+    .ant-checkbox.indet{background:#1677ff;border-color:#1677ff}
+    .ant-checkbox.indet::after{content:"−";color:#fff;font-size:14px;font-weight:700;line-height:1}
+
+    /* 表格底部 */
+    .table-footer{display:flex;align-items:center;padding:12px 20px;background:#fff;border-top:1px solid #f0f0f0;gap:14px;font-size:13px;color:rgba(0,0,0,.65)}
+    .density-group{display:flex;align-items:center;gap:6px;padding:0 10px;border-right:1px solid #f0f0f0;height:24px}
+    .density-group .d-opt{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:rgba(0,0,0,.45);border-radius:4px}
+    .density-group .d-opt:hover{background:#f0f0f0;color:#1677ff}
+    .density-group .d-opt.active{background:#e6f4ff;color:#1677ff}
+    .pager{display:flex;gap:6px;margin-left:auto;align-items:center}
+    .pager .pg{min-width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;padding:0 8px;border:1px solid #d9d9d9;border-radius:6px;cursor:pointer;background:#fff;font-size:14px}
+    .pager .pg:hover{color:#1677ff;border-color:#1677ff}
+    .pager .pg.active{background:#1677ff;border-color:#1677ff;color:#fff}
+    .pager .pg.disabled{color:rgba(0,0,0,.25);cursor:not-allowed;background:#f5f5f5}
+    .size-sel{padding:0 10px;height:32px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;font-size:13px}
+
+    /* 浮动按钮组 */
+    .fab-group{position:fixed;right:32px;bottom:32px;display:flex;flex-direction:column;gap:12px;z-index:100}
+    .fab{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;box-shadow:0 6px 16px rgba(0,0,0,.12);color:#fff;transition:all .2s;position:relative}
+    .fab:hover{transform:scale(1.08)}
+    .fab.primary{background:#1677ff}
+    .fab.green{background:#52c41a}
+    .fab .lbl{position:absolute;right:60px;background:rgba(0,0,0,.75);color:#fff;padding:4px 10px;border-radius:4px;font-size:12px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .2s}
+    .fab:hover .lbl{opacity:1}
+
+    /* 重构新增角标 */
+    .annotate{position:relative}
+    .annotate::after{content:attr(data-note);position:absolute;top:-6px;right:-6px;background:#fa8c16;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;white-space:nowrap;font-weight:500;z-index:10;letter-spacing:.3px}
+  </style>
+</head>
+<body>
+
+<!-- =========== 顶部 ProLayout 顶栏（无侧边菜单） =========== -->
+<div class="app-header">
+  <div style="font-size:15px;font-weight:600;color:#fff;letter-spacing:.5px">📚 qianlvguoyu 数字化管理平台</div>
+  <div style="width:1px;height:18px;background:rgba(255,255,255,.15);margin:0 8px"></div>
+  <div class="crumb">
+    <span>业务管理</span>
+    <span class="sep">/</span>
+    <span>题库管理</span>
+    <span class="sep">/</span>
+    <span class="now">试题管理</span>
+  </div>
+  <div class="actions">
+    <span class="ico">📤 导出</span>
+    <div class="avatar">王</div>
+  </div>
+</div>
+
+<div class="body-wrap">
+
+  <!-- =========== 左：分类导航 =========== -->
+  <aside class="tree-pane">
+    <div class="tree-head">
+      <h3>📚 分类导航</h3>
+      <span class="badge">5 工种 · 12 科目</span>
+    </div>
+    <div class="tree-search">
+      <input placeholder="搜索工种/科目/知识点">
+    </div>
+    <div class="tree-body">
+
+      <!-- 工种 1：展开 -->
+      <div class="tree-node indent-0" onclick="toggleTree(this,'t1')">
+        <span class="caret open">▶</span>
+        <span class="icon">🏭</span>
+        <span class="label">铝电解槽操作工</span>
+        <span class="count">5</span>
+      </div>
+      <div class="tree-children open" id="t1">
+        <div class="tree-node indent-1" onclick="event.stopPropagation()">
+          <span class="caret open">▶</span>
+          <span class="icon">📖</span>
+          <span class="label">1-1 初级（初级）</span>
+          <span class="count">86</span>
+        </div>
+        <div class="tree-children open">
+          <div class="tree-node indent-2"><span class="caret">▶</span><span class="icon">📂</span><span class="label">基本要求</span><span class="count">12</span></div>
+          <div class="tree-node indent-2"><span class="caret">▶</span><span class="icon">📂</span><span class="label">基础知识</span><span class="count">28</span></div>
+          <div class="tree-node indent-2"><span class="caret">▶</span><span class="icon">📂</span><span class="label">相关知识</span><span class="count">46</span></div>
+        </div>
+        <div class="tree-node indent-1" onclick="event.stopPropagation()">
+          <span class="caret open">▶</span>
+          <span class="icon">📖</span>
+          <span class="label">1-2 中级（中级）</span>
+          <span class="count">142</span>
+        </div>
+        <div class="tree-children open">
+          <div class="tree-node indent-2"><span class="caret open">▶</span><span class="icon">📂</span><span class="label">基本要求</span><span class="count">18</span></div>
+          <div class="tree-children open">
+            <div class="tree-node indent-3"><span class="caret leaf">▶</span><span class="icon">📑</span><span class="label">职业道德</span><span class="count">6</span></div>
+            <div class="tree-node indent-3"><span class="caret leaf">▶</span><span class="icon">📑</span><span class="label">基础知识</span><span class="count">12</span></div>
+          </div>
+          <div class="tree-node indent-2"><span class="caret">▶</span><span class="icon">📂</span><span class="label">基础知识</span><span class="count">56</span></div>
+          <div class="tree-node indent-2 active"><span class="caret leaf">▶</span><span class="icon">📂</span><span class="label">相关知识 · 铝电解槽…</span><span class="count">68</span></div>
+        </div>
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">1-3 高级（高级）</span><span class="count">118</span></div>
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">1-4 技师（技师）</span><span class="count">95</span></div>
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">1-5 高级技师</span><span class="count">62</span></div>
+      </div>
+
+      <!-- 工种 2：折叠 -->
+      <div class="tree-node indent-0" onclick="toggleTree(this,'t2')">
+        <span class="caret">▶</span>
+        <span class="icon">🔥</span>
+        <span class="label">锅炉操作工</span>
+        <span class="count">3</span>
+      </div>
+      <div class="tree-children" id="t2">
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">2-1 初级</span><span class="count">48</span></div>
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">2-2 中级</span><span class="count">72</span></div>
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">2-3 高级</span><span class="count">56</span></div>
+      </div>
+
+      <!-- 工种 3 -->
+      <div class="tree-node indent-0" onclick="toggleTree(this,'t3')">
+        <span class="caret">▶</span>
+        <span class="icon">⚙️</span>
+        <span class="label">钳工</span>
+        <span class="count">4</span>
+      </div>
+      <div class="tree-children" id="t3">
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">3-1 初级</span><span class="count">62</span></div>
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">3-2 中级</span><span class="count">88</span></div>
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">3-3 高级</span><span class="count">74</span></div>
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">3-4 技师</span><span class="count">52</span></div>
+      </div>
+
+      <!-- 工种 4 -->
+      <div class="tree-node indent-0" onclick="toggleTree(this,'t4')">
+        <span class="caret">▶</span>
+        <span class="icon">🔧</span>
+        <span class="label">电工</span>
+        <span class="count">3</span>
+      </div>
+      <div class="tree-children" id="t4">
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">4-1 初级</span><span class="count">58</span></div>
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">4-2 中级</span><span class="count">82</span></div>
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">4-3 高级</span><span class="count">64</span></div>
+      </div>
+
+      <!-- 工种 5 -->
+      <div class="tree-node indent-0" onclick="toggleTree(this,'t5')">
+        <span class="caret">▶</span>
+        <span class="icon">📐</span>
+        <span class="label">焊工</span>
+        <span class="count">3</span>
+      </div>
+      <div class="tree-children" id="t5">
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">5-1 初级</span><span class="count">42</span></div>
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">5-2 中级</span><span class="count">68</span></div>
+        <div class="tree-node indent-1"><span class="caret">▶</span><span class="icon">📖</span><span class="label">5-3 高级</span><span class="count">54</span></div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- =========== 右：主区 =========== -->
+  <section class="main-pane">
+    <div class="page-content">
+
+      <!-- 路径上下文条（重构新增） -->
+      <div class="path-bar annotate" data-note="重构新增·摘要条">
+        <div class="lbl">📍 当前范围：</div>
+        <span class="path-node">铝电解槽操作工</span>
+        <span class="path-sep">›</span>
+        <span class="path-node">中级（1-2）</span>
+        <span class="path-sep">›</span>
+        <span class="path-node cur">相关知识</span>
+        <a class="path-edit">✎ 切换</a>
+        <div style="width:1px;height:18px;background:#f0f0f0"></div>
+        <div class="ctx-stat">
+          <span class="lbl">📊 题目统计</span>
+          共 <b>68</b> 题 · 内部 <b>52</b> · 外部 <b>16</b> · 已选 <b>0</b>
+        </div>
+        <div class="ctx-chips">
+          <span class="lbl" style="color:rgba(0,0,0,.45)">🔖 筛选</span>
+          <span class="ctx-chip">来源：全部 <span class="x">×</span></span>
+          <span class="ctx-chip">题型：全部 <span class="x">×</span></span>
+          <span class="ctx-chip">难度：全部 <span class="x">×</span></span>
+        </div>
+      </div>
+
+      <!-- ProForm 查询 -->
+      <div class="pro-query">
+        <span class="ant-select-selector">题型：全部</span>
+        <span class="ant-select-selector">来源：全部</span>
+        <span class="ant-select-selector">难度：全部</span>
+        <span class="ant-select-selector">状态：全部</span>
+        <input class="ant-input search" placeholder="搜索题干/选项/答案">
+        <div style="flex:1"></div>
+        <button class="ant-btn">↺ 重置</button>
+        <button class="ant-btn ant-btn-primary">+ 新建试题</button>
+      </div>
+
+      <!-- ProTable -->
+      <div class="pro-table">
+
+        <div class="pro-toolbar">
+          <span class="tb-title">试题列表</span>
+          <div class="view-toggle">
+            <span class="vt active">📃 列表</span>
+            <span class="vt">📂 按知识点分组</span>
+          </div>
+          <span class="tb-sub">已加载 10/68</span>
+          <span class="col-setting">⚙ 列设置</span>
+        </div>
+
+        <!-- 批量操作条 -->
+        <div class="batch-bar">
+          <span>已选 <strong>0</strong> 题 ·</span>
+          <a>📌 批量修改知识点</a>
+          <span style="color:rgba(0,0,0,.25)">|</span>
+          <a>🔀 批量移动到其他科目</a>
+          <span style="color:rgba(0,0,0,.25)">|</span>
+          <a class="danger">🗑 批量删除</a>
+          <span class="clr">取消选择</span>
+        </div>
+
+        <div class="pro-table-area">
+          <table class="qtable">
+            <thead>
+              <tr>
+                <th class="w-checkbox check-center"><span class="ant-checkbox"></span></th>
+                <th class="w-no">序号</th>
+                <th class="w-source">来源</th>
+                <th class="w-type">题型</th>
+                <th>题干与选项</th>
+                <th class="w-diff">难度</th>
+                <th class="w-time">更新时间</th>
+                <th class="w-op">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="check-center"><span class="ant-checkbox"></span></td>
+                <td style="text-align:center">1</td>
+                <td><span class="ant-tag ant-tag-blue">内部</span></td>
+                <td>单选题</td>
+                <td>
+                  <div class="qtext">
+                    <a class="kplink">📂 铝电解槽操作</a>
+                    <div class="qtitle">"工匠精神"的基础是（&nbsp;&nbsp;）。</div>
+                    <div class="qopts">
+                      <span class="opt"><b>A.</b>精益求精</span>
+                      <span class="opt"><b>B.</b>爱岗敬业</span>
+                      <span class="opt"><b>C.</b>持之以恒</span>
+                      <span class="opt"><b>D.</b>以上都是</span>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="diff i-1"><i></i><i></i><i></i></span></td>
+                <td>2026-06-08 14:23</td>
+                <td><div class="op-btns"><a>查看</a><a>修改</a><a>复制</a><a class="danger">删除</a></div></td>
+              </tr>
+              <tr class="selected">
+                <td class="check-center"><span class="ant-checkbox checked"></span></td>
+                <td style="text-align:center">2</td>
+                <td><span class="ant-tag ant-tag-blue">内部</span></td>
+                <td>单选题</td>
+                <td>
+                  <div class="qtext">
+                    <a class="kplink">📂 铝电解槽操作</a>
+                    <div class="qtitle">"工匠精神"的核心是（&nbsp;&nbsp;）。</div>
+                    <div class="qopts">
+                      <span class="opt"><b>A.</b>追求卓越</span>
+                      <span class="opt"><b>B.</b>敬业精神</span>
+                      <span class="opt"><b>C.</b>专业能力</span>
+                      <span class="opt"><b>D.</b>团队合作</span>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="diff i-1"><i></i><i></i><i></i></span></td>
+                <td>2026-06-08 14:23</td>
+                <td><div class="op-btns"><a>查看</a><a>修改</a><a>复制</a><a class="danger">删除</a></div></td>
+              </tr>
+              <tr>
+                <td class="check-center"><span class="ant-checkbox"></span></td>
+                <td style="text-align:center">3</td>
+                <td><span class="ant-tag ant-tag-blue">内部</span></td>
+                <td>单选题</td>
+                <td>
+                  <div class="qtext">
+                    <a class="kplink">📂 铝电解槽操作</a>
+                    <div class="qtitle">以下关于培养"工匠精神"说法正确的是（&nbsp;&nbsp;）。</div>
+                    <div class="qopts">
+                      <span class="opt"><b>A.</b>只需要提高技能</span>
+                      <span class="opt"><b>B.</b>需要从思想、行为、习惯等多方面培养</span>
+                      <span class="opt"><b>C.</b>与企业无关</span>
+                      <span class="opt"><b>D.</b>短期培训即可</span>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="diff i-2"><i></i><i></i><i></i></span></td>
+                <td>2026-06-07 16:45</td>
+                <td><div class="op-btns"><a>查看</a><a>修改</a><a>复制</a><a class="danger">删除</a></div></td>
+              </tr>
+              <tr>
+                <td class="check-center"><span class="ant-checkbox"></span></td>
+                <td style="text-align:center">4</td>
+                <td><span class="ant-tag ant-tag-blue">内部</span></td>
+                <td>单选题</td>
+                <td>
+                  <div class="qtext">
+                    <a class="kplink">📂 设备管理</a>
+                    <div class="qtitle">"工匠精神"培养要点的正确顺序是（&nbsp;&nbsp;）。</div>
+                    <div class="qopts">
+                      <span class="opt"><b>A.</b>认知→认同→践行→习惯</span>
+                      <span class="opt"><b>B.</b>践行→认知→习惯→认同</span>
+                      <span class="opt"><b>C.</b>认同→认知→践行→习惯</span>
+                      <span class="opt"><b>D.</b>习惯→践行→认同→认知</span>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="diff i-2"><i></i><i></i><i></i></span></td>
+                <td>2026-06-07 16:45</td>
+                <td><div class="op-btns"><a>查看</a><a>修改</a><a>复制</a><a class="danger">删除</a></div></td>
+              </tr>
+              <tr>
+                <td class="check-center"><span class="ant-checkbox"></span></td>
+                <td style="text-align:center">5</td>
+                <td><span class="ant-tag ant-tag-blue">内部</span></td>
+                <td>判断题</td>
+                <td>
+                  <div class="qtext">
+                    <a class="kplink">📂 铝电解槽操作</a>
+                    <div class="qtitle">铝电解的工匠精神就是生产指标优异。（&nbsp;&nbsp;）</div>
+                    <div class="qans"><span class="ans-label">答案 错误</span>解析：工匠精神更强调过程中的精益求精和职业道德，不能仅用生产指标衡量。</div>
+                  </div>
+                </td>
+                <td><span class="diff i-1"><i></i><i></i><i></i></span></td>
+                <td>2026-06-07 11:20</td>
+                <td><div class="op-btns"><a>查看</a><a>修改</a><a>复制</a><a class="danger">删除</a></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table-footer">
+          <div class="density-group">
+            <span class="d-opt" title="紧凑">▭</span>
+            <span class="d-opt active" title="默认">▤</span>
+            <span class="d-opt" title="宽松">▥</span>
+          </div>
+          <span>共 <b style="color:rgba(0,0,0,.88)">68</b> 条</span>
+          <select class="size-sel">
+            <option>10 条/页</option>
+            <option>20 条/页</option>
+            <option>50 条/页</option>
+          </select>
+          <div class="pager">
+            <span class="pg disabled">‹</span>
+            <span class="pg active">1</span>
+            <span class="pg">2</span>
+            <span class="pg">3</span>
+            <span class="pg">4</span>
+            <span class="pg">5</span>
+            <span class="pg" style="border:none;background:transparent">···</span>
+            <span class="pg">7</span>
+            <span class="pg">›</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- 浮动按钮组 -->
+<div class="fab-group">
+  <div class="fab green" title="导入 Excel"><span>📥</span><span class="lbl">导入 Excel</span></div>
+  <div class="fab primary" title="新建试题"><span style="font-size:28px;line-height:1">+</span><span class="lbl">新建试题 (N)</span></div>
+</div>
+
+<script>
+  // 树展开/折叠
+  function toggleTree(node, id){
+    const c = document.getElementById(id);
+    const caret = node.querySelector('.caret');
+    if(c.classList.contains('open')){
+      c.classList.remove('open');
+      caret.classList.remove('open');
+    } else {
+      c.classList.add('open');
+      caret.classList.add('open');
+    }
+    event.stopPropagation();
+  }
+  // 行选中
+  document.querySelectorAll('table.qtable tbody tr').forEach(tr => {
+    const cb = tr.querySelector('.ant-checkbox');
+    cb.addEventListener('click', e => {
+      e.stopPropagation();
+      cb.classList.toggle('checked');
+      tr.classList.toggle('selected', cb.classList.contains('checked'));
+      updateBatch();
+    });
+  });
+  document.querySelector('thead .ant-checkbox').addEventListener('click', e => {
+    const c = e.currentTarget;
+    c.classList.toggle('checked');
+    const checked = c.classList.contains('checked');
+    document.querySelectorAll('tbody .ant-checkbox').forEach(cb => {
+      cb.classList.toggle('checked', checked);
+      cb.closest('tr').classList.toggle('selected', checked);
+    });
+    updateBatch();
+  });
+  function updateBatch(){
+    const n = document.querySelectorAll('tbody .ant-checkbox.checked').length;
+    const bar = document.querySelector('.batch-bar strong');
+    if(bar) bar.textContent = n;
+  }
+  // 密度切换
+  document.querySelectorAll('.d-opt').forEach(el => {
+    el.addEventListener('click', () => {
+      document.querySelectorAll('.d-opt').forEach(x => x.classList.remove('active'));
+      el.classList.add('active');
+    });
+  });
+</script>
+</body>
+</html>

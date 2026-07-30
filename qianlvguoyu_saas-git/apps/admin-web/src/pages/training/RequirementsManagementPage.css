@@ -1,0 +1,44 @@
+/* 对齐 yun_shang requirementsManagement.vue */
+.requirements-management-page {
+  padding: 20px;
+}
+
+.requirements-management-page .search-filter-bar {
+  margin-bottom: 0;
+}
+
+.requirements-management-page .filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.requirements-management-page .filter-actions .filter-select {
+  min-width: 200px;
+}
+
+.requirements-management-page .filter-actions .tab-btn-spacer {
+  margin-left: 4px;
+}
+
+/* table */
+.requirements-management-page .requirements-table {
+  margin-top: 4px;
+}
+
+.requirements-management-page .ant-table-thead > tr > th {
+  background: #f8f9fa !important;
+}
+
+/* pagination */
+.requirements-management-page .requirements-pagination {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* modal form */
+.requirements-management-page .convert-form {
+  padding-top: 8px;
+}

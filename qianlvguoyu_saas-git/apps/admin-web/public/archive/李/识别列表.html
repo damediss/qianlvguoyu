@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>广西现代职业技术学院管理平台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#2E86AB',
+                        identify: '#F18F01',
+                        level: '#F59E0B',
+                        portrait: '#8B5CF6',
+                        map: '#EC4899',
+                        path: '#06B6D4',
+                        skill: '#22c55e',
+                        high: '#f59e0b',
+                        leader: '#ef4444',
+                    },
+                    fontFamily: {
+                        sans: ['Inter','system-ui','sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto { content-visibility: auto; }
+            .card { @apply rounded-xl shadow bg-white p-6 transition-all hover:shadow-lg; }
+            .nav-item { @apply flex items-center p-3 rounded-lg hover:bg-gray-100 cursor-pointer transition-all; }
+            .nav-item.active { @apply bg-identify/10 text-identify font-medium; }
+            .sub-nav-item { @apply flex items-center px-4 py-3 rounded-lg cursor-pointer transition-all; }
+            .sub-nav-item.active { @apply bg-identify/10 text-identify font-medium; }
+            .sub-nav-item:hover:not(.active) { @apply bg-gray-100; }
+            .tag { @apply px-2 py-1 rounded text-xs bg-gray-100 text-gray-700; }
+            .step-item { @apply flex flex-col items-center relative; }
+            .timeline-item { @apply relative pl-10 pb-8 border-l-2 border-path ml-6; }
+            .timeline-dot { @apply absolute -left-[9px] w-4 h-4 rounded-full bg-path; }
+            .node-skill { @apply bg-skill text-white px-3 py-1 rounded-full text-xs font-medium; }
+            .node-high { @apply bg-high text-white px-3 py-1 rounded-full text-xs font-medium; }
+            .node-leader { @apply bg-leader text-white px-3 py-1 rounded-full text-xs font-medium; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans">
+
+<!-- 顶部导航 -->
+<header class="bg-white shadow fixed top-0 left-0 right-0 z-50">
+    <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+        <div class="flex items-center space-x-2">
+            <i class="fa fa-cogs text-primary text-2xl"></i>
+            <h1 class="text-xl font-bold text-gray-800">广西现代职业技术学院管理平台</h1>
+        </div>
+        <div class="flex items-center space-x-4">
+            <button class="text-gray-600 hover:text-primary"><i class="fa fa-bell text-lg"></i></button>
+            <div class="flex items-center space-x-2">
+                <img src="https://picsum.photos/id/1005/40/40" class="w-8 h-8 rounded-full">
+                <span>管理员</span>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- 主内容区 -->
+<div class="container mx-auto px-4 pt-24 pb-10 flex">
+
+<!-- 左侧菜单 -->
+<aside class="w-64 fixed left-4 top-24 bottom-4 bg-white rounded-lg shadow-md overflow-y-auto">
+    <nav class="p-4">
+        <div class="space-y-1">
+            <a href="驾驶舱.html" class="nav-item flex items-center p-3 rounded-lg hover:bg-gray-100">
+                <i class="fa fa-tachometer w-6 text-center"></i><span>驾驶舱</span>
+            </a>
+            <div class="nav-item-group">
+                <a href="#" class="nav-item active flex items-center p-3 rounded-lg bg-identify/10 text-identify font-medium justify-between">
+                    <div class="flex items-center">
+                        <i class="fa fa-user-circle w-6 text-center"></i><span>识别</span>
+                    </div>
+                </a>
+
+            </div>
+            <a href="#" class="nav-item flex items-center p-3 rounded-lg hover:bg-gray-100">
+                <i class="fa fa-line-chart w-6 text-center"></i><span>发展</span>
+            </a>
+            <div class="nav-item-group">
+                <a href="#" class="nav-item flex items-center p-3 rounded-lg hover:bg-gray-100 justify-between">
+                    <div class="flex items-center">
+                        <i class="fa fa-search w-6 text-center"></i><span>发现</span>
+                    </div>
+                    <i class="fa fa-chevron-down text-xs transition-transform duration-300"></i>
+                </a>
+                <div class="pl-10 pr-4 py-2 space-y-1">
+                    <a href="#" class="sub-nav-item" onclick="showPanel('data-warehouse')">
+                        <i class="fa fa-database w-5 text-center mr-2"></i><span>数据仓</span>
+                    </a>
+                    <a href="#" class="sub-nav-item" onclick="showPanel('process-management')">
+                        <i class="fa fa-sitemap w-5 text-center mr-2"></i><span>流程管理</span>
+                    </a>
+                    <a href="#" class="sub-nav-item" onclick="showPanel('support')">
+                        <i class="fa fa-shield w-5 text-center mr-2"></i><span>支持保障</span>
+                    </a>
+                    <a href="#" class="sub-nav-item" onclick="showPanel('project-management')">
+                        <i class="fa fa-tasks w-5 text-center mr-2"></i><span>项目管理</span>
+                    </a>
+                </div>
+            </div>
+            <a href="#" class="nav-item flex items-center p-3 rounded-lg hover:bg-gray-100">
+                <i class="fa fa-check-square-o w-6 text-center"></i><span>评价</span>
+            </a>
+	            <a href="#" class="nav-item flex items-center p-3 rounded-lg hover:bg-gray-100">
+                <i class="fa fa-line-chart w-6 text-center"></i><span>竞赛</span>
+            </a>
+            <a href="#" class="nav-item flex items-center p-3 rounded-lg hover:bg-gray-100">
+                <i class="fa fa-check-square-o w-6 text-center"></i><span>激励</span>
+            </a>
+            <a href="#" class="nav-item flex items-center p-3 rounded-lg hover:bg-gray-100">
+                <i class="fa fa-check-square-o w-6 text-center"></i><span>管理</span>
+            </a>			
+        </div>
+
+		
+	
+    </nav>
+</aside>
+
+<!-- 右侧内容 -->
+<main class="ml-72 flex-1">
+
+<!-- ===================== 单位列表面板 ===================== -->
+<div id="company-panel" class="panel block">
+    <!-- 操作按钮区 -->
+    <div class="mb-6 flex justify-end">
+        <button id="importBtn" class="text-white bg-identify hover:bg-identify/90 px-4 py-2 rounded-lg flex items-center transition-all">
+            <i class="fa fa-upload mr-2"></i>Excel导入
+        </button>
+    </div>
+
+    <!-- 单位列表卡片 -->
+    <div class="card">
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead>
+                    <tr class="border-b border-gray-200">
+                        <th class="text-left py-3 px-4 text-sm font-medium text-gray-700">单位名称</th>
+                        <th class="text-left py-3 px-4 text-sm font-medium text-gray-700">未识别人员数量</th>
+                        <th class="text-left py-3 px-4 text-sm font-medium text-gray-700">待确认数量</th>
+                        <th class="text-left py-3 px-4 text-sm font-medium text-gray-700">已确认数量</th>
+                        <th class="text-left py-3 px-4 text-sm font-medium text-gray-700">状态</th>					
+                        <th class="text-left py-3 px-4 text-sm font-medium text-gray-700">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">南南铝业股份有限公司</td>
+                        <td class="py-3 px-4 text-red-600 font-medium">286</td>
+                        <td class="py-3 px-4 text-yellow-600 font-medium">42</td>
+                        <td class="py-3 px-4 text-green-600 font-medium">897</td>
+                        <td class="py-3 px-4 text-green-600 font-medium">已审核</td>					
+                        <td class="py-3 px-4">
+                            <a href="技能识别.html" > <button class="text-primary mr-3 hover:text-primary/80"><i class="fa fa-eye mr-1"></i>查看详情</button></a>
+                            <button class="text-level mr-3 hover:text-level/80"><i class="fa fa-edit mr-1"></i>编辑</button>
+                            <button class="text-red-500 hover:text-red-600"><i class="fa fa-trash mr-1"></i>删除</button>
+                            <a href="企业确认.html" target="_blank" >  <button class="text-level mr-3 hover:text-level/80"><i class="fa fa-edit mr-1"></i>送企业确认</button></a>
+								
+                        </td>
+                    </tr>
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">华锡集团</td>
+                        <td class="py-3 px-4 text-red-600 font-medium">156</td>
+                        <td class="py-3 px-4 text-yellow-600 font-medium">28</td>
+                        <td class="py-3 px-4 text-green-600 font-medium">521</td>
+                        <td class="py-3 px-4 text-yellow-600 font-medium">已确认</td>							
+                        <td class="py-3 px-4">
+                            <button class="text-primary mr-3 hover:text-primary/80"><i class="fa fa-eye mr-1"></i>查看详情</button>
+                            <button class="text-level mr-3 hover:text-level/80"><i class="fa fa-edit mr-1"></i>编辑</button>
+                            <button class="text-red-500 hover:text-red-600"><i class="fa fa-trash mr-1"></i>删除</button>
+
+								<button class="text-primary mr-3 hover:text-primary/80"><i class="fa fa-eye mr-1"></i>送发展规划</button>							
+                        </td>
+                    </tr>
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">金海不锈钢</td>
+                        <td class="py-3 px-4 text-red-600 font-medium">98</td>
+                        <td class="py-3 px-4 text-yellow-600 font-medium">15</td>
+                        <td class="py-3 px-4 text-green-600 font-medium">368</td>
+                        <td class="py-3 px-4 text-red-600 font-medium">未审核</td>							
+                        <td class="py-3 px-4">
+                            <button class="text-primary mr-3 hover:text-primary/80"><i class="fa fa-eye mr-1"></i>查看详情</button>
+                            <button class="text-level mr-3 hover:text-level/80"><i class="fa fa-edit mr-1"></i>编辑</button>
+                            <button class="text-red-500 hover:text-red-600"><i class="fa fa-trash mr-1"></i>删除</button>
+                            <a href="技能识别.html" ><button class="text-red-500 hover:text-red-600"><i class="fa fa-edit mr-1"></i>审核</button></a>							
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <!-- 分页 -->
+        <div class="mt-6 flex justify-between items-center">
+            <p class="text-sm text-gray-500">共 3 条记录</p>
+            <div class="flex space-x-2">
+                <button class="px-3 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50" disabled>上一页</button>
+                <button class="px-3 py-1 rounded border border-identify bg-identify/10 text-identify">1</button>
+                <button class="px-3 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50" disabled>下一页</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== 数据仓面板 ===================== -->
+<div id="data-warehouse-panel" class="panel hidden">
+    <div class="card">
+        <h2 class="text-xl font-bold mb-4">数据仓</h2>
+        <p class="text-gray-600 mb-6">数据仓面板内容</p>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-blue-50 p-4 rounded-lg">
+                <h3 class="font-medium text-blue-800">人员数据</h3>
+                <p class="text-2xl font-bold text-blue-600">1,234</p>
+            </div>
+            <div class="bg-green-50 p-4 rounded-lg">
+                <h3 class="font-medium text-green-800">技能数据</h3>
+                <p class="text-2xl font-bold text-green-600">567</p>
+            </div>
+            <div class="bg-yellow-50 p-4 rounded-lg">
+                <h3 class="font-medium text-yellow-800">项目数据</h3>
+                <p class="text-2xl font-bold text-yellow-600">234</p>
+            </div>
+            <div class="bg-purple-50 p-4 rounded-lg">
+                <h3 class="font-medium text-purple-800">其他数据</h3>
+                <p class="text-2xl font-bold text-purple-600">789</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== 流程管理面板 ===================== -->
+<div id="process-management-panel" class="panel hidden">
+    <div class="card">
+        <h2 class="text-xl font-bold mb-4">流程管理</h2>
+        <div class="relative">
+            <!-- 流程步骤图 -->
+            <div class="space-y-8">
+                <div class="timeline-item cursor-pointer hover:bg-gray-50 p-4 rounded-lg transition-all" onclick="showProcessStep(1)">
+                    <div class="timeline-dot"></div>
+                    <h3 class="font-medium text-lg">步骤 1: 数据收集</h3>
+                    <p class="text-gray-600 mt-2">收集相关人员和技能数据</p>
+                </div>
+                <div class="timeline-item cursor-pointer hover:bg-gray-50 p-4 rounded-lg transition-all" onclick="showProcessStep(2)">
+                    <div class="timeline-dot"></div>
+                    <h3 class="font-medium text-lg">步骤 2: 技能识别</h3>
+                    <p class="text-gray-600 mt-2">识别人员的技能水平</p>
+                </div>
+                <div class="timeline-item cursor-pointer hover:bg-gray-50 p-4 rounded-lg transition-all" onclick="showProcessStep(3)">
+                    <div class="timeline-dot"></div>
+                    <h3 class="font-medium text-lg">步骤 3: 企业确认</h3>
+                    <p class="text-gray-600 mt-2">企业确认技能评估结果</p>
+                </div>
+                <div class="timeline-item cursor-pointer hover:bg-gray-50 p-4 rounded-lg transition-all" onclick="showProcessStep(4)">
+                    <div class="timeline-dot"></div>
+                    <h3 class="font-medium text-lg">步骤 4: 发展规划</h3>
+                    <p class="text-gray-600 mt-2">制定技能发展规划</p>
+                </div>
+                <div class="timeline-item cursor-pointer hover:bg-gray-50 p-4 rounded-lg transition-all" onclick="showProcessStep(5)">
+                    <div class="timeline-dot"></div>
+                    <h3 class="font-medium text-lg">步骤 5: 实施跟踪</h3>
+                    <p class="text-gray-600 mt-2">跟踪技能发展实施情况</p>
+                </div>
+            </div>
+        </div>
+        <!-- 流程操作区 -->
+        <div id="process-step-content" class="mt-8 p-4 bg-gray-50 rounded-lg">
+            <h3 class="font-medium text-lg mb-2">选择步骤查看操作</h3>
+            <p class="text-gray-600">点击左侧流程步骤查看相应的操作内容</p>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== 支持保障面板 ===================== -->
+<div id="support-panel" class="panel hidden">
+    <div class="card">
+        <h2 class="text-xl font-bold mb-4">支持保障</h2>
+        <p class="text-gray-600 mb-6">支持保障面板内容</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="border rounded-lg p-4">
+                <h3 class="font-medium text-primary mb-2">技术支持</h3>
+                <p class="text-gray-600">提供技术咨询和问题解决</p>
+            </div>
+            <div class="border rounded-lg p-4">
+                <h3 class="font-medium text-primary mb-2">培训支持</h3>
+                <p class="text-gray-600">提供系统使用培训</p>
+            </div>
+            <div class="border rounded-lg p-4">
+                <h3 class="font-medium text-primary mb-2">资源支持</h3>
+                <p class="text-gray-600">提供必要的资源保障</p>
+            </div>
+            <div class="border rounded-lg p-4">
+                <h3 class="font-medium text-primary mb-2">政策支持</h3>
+                <p class="text-gray-600">提供相关政策指导</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== 项目管理面板 ===================== -->
+<div id="project-management-panel" class="panel hidden">
+    <div class="card">
+        <h2 class="text-xl font-bold mb-4">项目管理</h2>
+        <p class="text-gray-600 mb-6">项目十大管理表</p>
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead>
+                    <tr class="border-b border-gray-200">
+                        <th class="text-left py-3 px-4 text-sm font-medium text-gray-700">管理类别</th>
+                        <th class="text-left py-3 px-4 text-sm font-medium text-gray-700">管理内容</th>
+                        <th class="text-left py-3 px-4 text-sm font-medium text-gray-700">状态</th>
+                        <th class="text-left py-3 px-4 text-sm font-medium text-gray-700">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">范围管理</td>
+                        <td class="py-3 px-4">项目范围定义与控制</td>
+                        <td class="py-3 px-4 text-green-600">进行中</td>
+                        <td class="py-3 px-4">
+                            <button class="text-primary hover:text-primary/80"><i class="fa fa-eye mr-1"></i>查看</button>
+                        </td>
+                    </tr>
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">时间管理</td>
+                        <td class="py-3 px-4">项目进度计划与控制</td>
+                        <td class="py-3 px-4 text-green-600">进行中</td>
+                        <td class="py-3 px-4">
+                            <button class="text-primary hover:text-primary/80"><i class="fa fa-eye mr-1"></i>查看</button>
+                        </td>
+                    </tr>
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">成本管理</td>
+                        <td class="py-3 px-4">项目成本估算与控制</td>
+                        <td class="py-3 px-4 text-yellow-600">待开始</td>
+                        <td class="py-3 px-4">
+                            <button class="text-primary hover:text-primary/80"><i class="fa fa-eye mr-1"></i>查看</button>
+                        </td>
+                    </tr>
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">质量管理</td>
+                        <td class="py-3 px-4">项目质量计划与控制</td>
+                        <td class="py-3 px-4 text-green-600">进行中</td>
+                        <td class="py-3 px-4">
+                            <button class="text-primary hover:text-primary/80"><i class="fa fa-eye mr-1"></i>查看</button>
+                        </td>
+                    </tr>
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">人力资源管理</td>
+                        <td class="py-3 px-4">项目团队管理</td>
+                        <td class="py-3 px-4 text-green-600">进行中</td>
+                        <td class="py-3 px-4">
+                            <button class="text-primary hover:text-primary/80"><i class="fa fa-eye mr-1"></i>查看</button>
+                        </td>
+                    </tr>
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">沟通管理</td>
+                        <td class="py-3 px-4">项目沟通计划与执行</td>
+                        <td class="py-3 px-4 text-yellow-600">待开始</td>
+                        <td class="py-3 px-4">
+                            <button class="text-primary hover:text-primary/80"><i class="fa fa-eye mr-1"></i>查看</button>
+                        </td>
+                    </tr>
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">风险管理</td>
+                        <td class="py-3 px-4">项目风险识别与应对</td>
+                        <td class="py-3 px-4 text-yellow-600">待开始</td>
+                        <td class="py-3 px-4">
+                            <button class="text-primary hover:text-primary/80"><i class="fa fa-eye mr-1"></i>查看</button>
+                        </td>
+                    </tr>
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">采购管理</td>
+                        <td class="py-3 px-4">项目采购计划与执行</td>
+                        <td class="py-3 px-4 text-red-600">未开始</td>
+                        <td class="py-3 px-4">
+                            <button class="text-primary hover:text-primary/80"><i class="fa fa-eye mr-1"></i>查看</button>
+                        </td>
+                    </tr>
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">集成管理</td>
+                        <td class="py-3 px-4">项目整体管理</td>
+                        <td class="py-3 px-4 text-green-600">进行中</td>
+                        <td class="py-3 px-4">
+                            <button class="text-primary hover:text-primary/80"><i class="fa fa-eye mr-1"></i>查看</button>
+                        </td>
+                    </tr>
+                    <tr class="border-b border-gray-100 hover:bg-gray-50">
+                        <td class="py-3 px-4">干系人管理</td>
+                        <td class="py-3 px-4">项目干系人识别与管理</td>
+                        <td class="py-3 px-4 text-yellow-600">待开始</td>
+                        <td class="py-3 px-4">
+                            <button class="text-primary hover:text-primary/80"><i class="fa fa-eye mr-1"></i>查看</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Excel导入弹窗 (默认隐藏) -->
+<div id="importModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6 transform transition-all">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold text-gray-800">Excel导入</h3>
+            <button id="closeModal" class="text-gray-500 hover:text-gray-700">
+                <i class="fa fa-times text-lg"></i>
+            </button>
+        </div>
+        <div class="space-y-4">
+            <!-- 单位选择下拉框 -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">选择单位</label>
+                <select class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-identify/50 focus:border-identify outline-none">
+                    <option value="">请选择单位</option>
+                    <option value="1">南南铝业股份有限公司</option>
+                    <option value="2">广西现代职业技术学院</option>
+                    <option value="3">广西冶金集团</option>
+                </select>
+            </div>
+            <!-- Excel文件上传 -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">上传Excel文件</label>
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-identify transition-colors">
+                    <input type="file" id="excelFile" accept=".xlsx,.xls" class="hidden">
+                    <label for="excelFile" class="cursor-pointer">
+                        <i class="fa fa-file-excel-o text-4xl text-identify mb-2"></i>
+                        <p class="text-gray-600 mb-1">点击上传Excel文件</p>
+                        <p class="text-xs text-gray-500">支持 .xlsx / .xls 格式</p>
+                    </label>
+                </div>
+            </div>
+            <!-- 已上传文件预览 (默认隐藏) -->
+            <div id="filePreview" class="hidden bg-gray-50 rounded-lg p-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <i class="fa fa-file-excel-o text-identify mr-2"></i>
+                        <span id="fileName" class="text-sm text-gray-700">示例文件.xlsx</span>
+                    </div>
+                    <button id="removeFile" class="text-red-500 hover:text-red-600 text-sm">
+                        <i class="fa fa-times"></i> 移除
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="mt-6 flex justify-end space-x-3">
+            <button id="cancelImport" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
+                取消
+            </button>
+            <button id="confirmImport" class="px-4 py-2 bg-identify text-white rounded-lg hover:bg-identify/90 transition-colors">
+                确认导入
+            </button>
+        </div>
+    </div>
+</div>
+
+</main>
+</div>
+
+<script>
+// 弹窗控制逻辑
+const importModal = document.getElementById('importModal');
+const importBtn = document.getElementById('importBtn');
+const closeModal = document.getElementById('closeModal');
+const cancelImport = document.getElementById('cancelImport');
+const excelFile = document.getElementById('excelFile');
+const filePreview = document.getElementById('filePreview');
+const fileName = document.getElementById('fileName');
+const removeFile = document.getElementById('removeFile');
+
+// 打开弹窗
+importBtn.addEventListener('click', () => {
+    importModal.classList.remove('hidden');
+    // 重置弹窗状态
+    excelFile.value = '';
+    filePreview.classList.add('hidden');
+});
+
+// 关闭弹窗
+function closeModalFunc() {
+    importModal.classList.add('hidden');
+}
+closeModal.addEventListener('click', closeModalFunc);
+cancelImport.addEventListener('click', closeModalFunc);
+
+// 点击弹窗外部关闭
+importModal.addEventListener('click', (e) => {
+    if (e.target === importModal) {
+        closeModalFunc();
+    }
+});
+
+// 文件上传预览
+excelFile.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        fileName.textContent = file.name;
+        filePreview.classList.remove('hidden');
+    }
+});
+
+// 移除已上传文件
+removeFile.addEventListener('click', () => {
+    excelFile.value = '';
+    filePreview.classList.add('hidden');
+});
+
+// 确认导入 (示例逻辑)
+document.getElementById('confirmImport').addEventListener('click', () => {
+    const file = excelFile.files[0];
+    const unitSelect = document.querySelector('select');
+    
+    if (!unitSelect.value) {
+        alert('请选择单位');
+        return;
+    }
+    
+    if (!file) {
+        alert('请上传Excel文件');
+        return;
+    }
+    
+    // 模拟导入请求
+    alert(`正在导入【${unitSelect.options[unitSelect.selectedIndex].text}】的Excel文件：${file.name}`);
+    closeModalFunc();
+    // 实际项目中可在此处添加文件上传的AJAX请求逻辑
+});
+
+// 面板切换函数 (保持和原页面逻辑一致)
+function showPanel(panelName) {
+    // 隐藏所有面板
+    document.querySelectorAll('.panel').forEach(panel => {
+        panel.classList.add('hidden');
+    });
+    // 显示目标面板
+    document.getElementById(`${panelName}-panel`).classList.remove('hidden');
+    
+    // 更新子导航激活状态
+    document.querySelectorAll('.sub-nav-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    // 此处可根据实际需求绑定子导航激活逻辑
+}
+
+// 流程步骤点击功能
+function showProcessStep(step) {
+    const stepContent = document.getElementById('process-step-content');
+    const steps = {
+        1: {
+            title: '步骤 1: 数据收集',
+            content: '1. 收集企业员工基本信息\n2. 收集员工技能证书信息\n3. 收集员工工作经历信息\n4. 收集员工培训记录信息'
+        },
+        2: {
+            title: '步骤 2: 技能识别',
+            content: '1. 分析员工技能数据\n2. 评估员工技能水平\n3. 识别员工技能优势与不足\n4. 生成技能识别报告'
+        },
+        3: {
+            title: '步骤 3: 企业确认',
+            content: '1. 向企业发送技能识别结果\n2. 收集企业反馈意见\n3. 调整技能识别结果\n4. 企业最终确认'
+        },
+        4: {
+            title: '步骤 4: 发展规划',
+            content: '1. 根据技能识别结果制定发展规划\n2. 确定技能提升目标\n3. 制定培训计划\n4. 设定时间节点'
+        },
+        5: {
+            title: '步骤 5: 实施跟踪',
+            content: '1. 实施技能发展计划\n2. 定期跟踪进展情况\n3. 调整发展规划\n4. 评估实施效果'
+        }
+    };
+    
+    if (steps[step]) {
+        stepContent.innerHTML = `
+            <h3 class="font-medium text-lg mb-2">${steps[step].title}</h3>
+            <pre class="text-gray-600 whitespace-pre-line">${steps[step].content}</pre>
+        `;
+    }
+}
+
+// 菜单展开/折叠功能
+document.addEventListener('DOMContentLoaded', function() {
+    const navItemGroups = document.querySelectorAll('.nav-item-group');
+    navItemGroups.forEach(group => {
+        const navItem = group.querySelector('.nav-item');
+        navItem.addEventListener('click', function(e) {
+            e.preventDefault();
+            const subNav = group.querySelector('.pl-10');
+            const chevron = navItem.querySelector('.fa-chevron-down');
+            
+            if (subNav.style.display === 'none') {
+                subNav.style.display = 'block';
+                chevron.style.transform = 'rotate(180deg)';
+            } else {
+                subNav.style.display = 'block';
+                chevron.style.transform = 'rotate(0deg)';
+            }
+        });
+    });
+});
+</script>
+
+</body>
+</html>

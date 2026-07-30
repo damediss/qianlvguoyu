@@ -1,0 +1,1 @@
+function t(t){const r=String(t||"").trim();if(!r)return"";if(!r.startsWith("qianlvguoyu-player://competition/activate"))return"";const n=r.indexOf("?");if(n<0)return"";const i=r.substring(n+1).split("#")[0].split("&").find((t=>t.startsWith("entry=")));if(!i)return"";try{return decodeURIComponent(i.substring("entry=".length)).trim()}catch(e){return""}}export{t as p};

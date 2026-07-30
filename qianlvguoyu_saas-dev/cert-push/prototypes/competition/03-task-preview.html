@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>任务自动生成预览 - 新建比赛</title>
+  <link rel="stylesheet" href="common.css">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#1f2937;font-size:14px}
+    .container{display:flex;min-height:100vh}
+    .sidebar{width:220px;background:#fff;border-right:1px solid #e8e8e8;flex-shrink:0;padding:16px 0;position:sticky;top:0;height:100vh;overflow-y:auto}
+    .logo{padding:0 16px 16px;border-bottom:1px solid #f0f0f0;margin-bottom:8px}
+    .logo h2{font-size:16px;font-weight:600}.logo p{font-size:12px;color:#8c8c8c;margin-top:4px}
+    .menu-item{padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:.2s}
+    .menu-item:hover{background:#f5f7fa}.menu-item.active{background:#e6f4ff;color:#165dff}
+    .menu-item .arrow{margin-left:auto;font-size:12px;color:#bfbfbf;transition:.2s}
+    .menu-item.expanded .arrow{transform:rotate(90deg)}
+    .sub-list{max-height:0;overflow:hidden;transition:max-height .3s}.sub-list.expanded{max-height:600px}
+    .sub-item{padding:9px 16px 9px 46px;cursor:pointer;font-size:13px;color:#4b5563;transition:.2s}
+    .sub-item:hover{background:#f5f7fa;color:#165dff}
+    .sub-item.active{background:#e6f4ff;color:#165dff;border-right:3px solid #165dff}
+    main{flex:1;min-width:0;display:flex;flex-direction:column}
+    .header{height:60px;background:#fff;border-bottom:1px solid #e8e8e8;display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:10}
+    .crumb{color:#8c8c8c;font-size:13px}.crumb .now{color:#1f2937;font-weight:500}
+    .header-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+    .avatar{width:32px;height:32px;border-radius:50%;background:#165dff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500}
+
+    .stepper{height:64px;background:#fff;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;padding:0 24px;gap:24px}
+    .step{display:flex;align-items:center;gap:8px;font-size:14px}
+    .step .dot{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+    .step.done .dot{background:#e6f4ff;color:#165dff;border:1px solid #91caff}
+    .step.done .dot::before{content:"✓"}
+    .step.done .label{color:#8c8c8c}
+    .step.current .dot{background:#165dff;color:#fff;box-shadow:0 0 0 4px rgba(22,93,255,.18)}
+    .step.current .label{color:#165dff;font-weight:600}
+    .step.todo .dot{background:#f5f7fa;color:#bfbfbf;border:1px solid #d9d9d9}
+    .step.todo .label{color:#8c8c8c}
+    .step-line{width:48px;height:1px;background:#d9d9d9}
+    .step.done+.step-line,.step-line.done{background:#165dff}
+
+    /* Page 3 */
+    .p3-tip{height:64px;background:#e6f7ff;display:flex;align-items:center;padding:0 24px;gap:12px}
+    .p3-tip .ico{font-size:18px}
+    .p3-tip .txt{font-size:13px;color:#1f2937;flex:1}
+    .p3-tip a{font-size:13px;color:#165dff;cursor:pointer;font-weight:500}
+
+    .p3-body{padding:20px 24px}
+    .task-card{background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.06);min-height:520px;display:flex;flex-direction:column}
+    .task-head{padding:14px 20px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:12px}
+    .task-title{font-size:16px;font-weight:600;flex:1}
+    .select-all{display:flex;align-items:center;gap:6px;font-size:13px;color:#4b5563;cursor:pointer}
+    .select-all input{width:14px;height:14px}
+    .group{border-bottom:1px solid #f5f5f5}
+    .group:last-child{border-bottom:none}
+    .group-head{padding:12px 20px;display:flex;align-items:center;gap:10px;background:#fafbfc;cursor:pointer;user-select:none}
+    .group-head:hover{background:#f5f7fa}
+    .group-caret{font-size:12px;color:#8c8c8c;transition:.2s;width:14px}
+    .group-head.collapsed .group-caret{transform:rotate(-90deg)}
+    .group-name{font-size:14px;font-weight:500;flex:1}
+    .group-cnt{font-size:12px;color:#8c8c8c;background:#fff;padding:2px 8px;border-radius:10px;border:1px solid #e8e8e8}
+    .group-body{display:flex;flex-direction:column}
+    .group-body.collapsed{display:none}
+    .task-row{height:48px;display:flex;align-items:center;padding:0 20px 0 44px;gap:14px;border-top:1px solid #f5f5f5}
+    .task-row:hover{background:#fafbfc}
+    .task-row .ck{width:14px;height:14px}
+    .task-row .name{flex:1;font-size:13px}
+    .task-row .due{font-size:12px;color:#4b5563;width:140px;cursor:pointer;border-bottom:1px dashed transparent}
+    .task-row .due:hover{border-bottom-color:#165dff;color:#165dff}
+    .task-row .executor{width:130px}
+    .task-row .executor select{width:100%;padding:5px 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:12px;background:#fff}
+    .task-row .del{width:24px;height:24px;display:flex;align-items:center;justify-content:center;color:#bfbfbf;cursor:pointer;border-radius:4px}
+    .task-row .del:hover{background:#fff1f0;color:#cf1322}
+
+    .p3-foot{height:64px;background:#fff;border-top:1px solid #f0f0f0;display:flex;align-items:center;justify-content:flex-end;padding:0 24px;gap:12px;position:sticky;bottom:0;margin-top:auto}
+    .btn{padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;gap:6px}
+    .btn-primary{background:#165dff;color:#fff;border-color:#165dff}
+    .btn-primary:hover{background:#0e4ad6}
+    .btn-secondary{background:#fff;color:#1f2937;border-color:#d9d9d9}
+    .danger-hint{color:#cf1322;font-size:12px;margin-right:auto;display:flex;align-items:center;gap:4px}
+  </style>
+</head>
+<body>
+<div class="container">
+  <aside class="sidebar">
+    <div class="logo"><h2>数字化管理平台</h2><p>qianlvguoyu saas</p></div>
+    <div class="menu-item">📊 <span>数据看板</span></div>
+    <div class="menu-item expanded">🏆 <span>比赛管理</span><span class="arrow">▶</span></div>
+    <div class="sub-list expanded">
+      <div class="sub-item">📋 比赛列表</div>
+      <div class="sub-item" onclick="window.location.href='01-template-library.html'">📚 流程模板库</div>
+      <div class="sub-item active" onclick="window.location.href='02-competition-create-flow.html'">➕ 新建比赛</div>
+    </div>
+    <div class="menu-item">✅ <span>任务中心</span><span class="arrow">▶</span></div>
+    <div class="sub-list"><div class="sub-item" onclick="window.location.href='04-task-kanban.html'">📋 全部任务</div><div class="sub-item" onclick="window.location.href='05-task-gantt.html'">📅 甘特图</div></div>
+    <div class="menu-item">📚 <span>知识库</span></div>
+    <div class="menu-item">📝 <span>题库管理</span></div>
+    <div class="menu-item">🎓 <span>培训管理</span></div>
+    <div class="menu-item">⚙️ <span>系统设置</span></div>
+  </aside>
+
+  <main>
+    <header class="header">
+      <div class="crumb">比赛管理 <span style="margin:0 6px">/</span> 新建比赛 <span style="margin:0 6px">/</span> <span class="now">任务预览</span></div>
+      <div class="header-right"><div class="avatar">王</div></div>
+    </header>
+
+    <div class="stepper">
+      <div class="step done"><div class="dot"></div><span class="label">基础信息</span></div>
+      <div class="step-line done"></div>
+      <div class="step done"><div class="dot"></div><span class="label">流程配置</span></div>
+      <div class="step-line done"></div>
+      <div class="step current"><div class="dot">3</div><span class="label">任务预览</span></div>
+      <div class="step-line"></div>
+      <div class="step todo"><div class="dot">4</div><span class="label">完成</span></div>
+    </div>
+
+    <div class="p3-tip">
+      <span class="ico">💡</span>
+      <span class="txt">系统已根据您配置的流程自动生成以下赛务任务，您可调整后确认生成</span>
+      <a>← 返回调整流程</a>
+    </div>
+
+    <div class="p3-body">
+      <div class="task-card">
+        <div class="task-head">
+          <div class="task-title">赛务任务清单</div>
+          <div style="font-size:12px;color:#8c8c8c">共 9 个环节 / 27 个任务</div>
+          <label class="select-all"><input type="checkbox" checked> 全选/反选</label>
+        </div>
+
+        <!-- Group 1 -->
+        <div class="group">
+          <div class="group-head" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+            <span class="group-caret">▼</span>
+            <span class="group-name">📢 竞赛通知</span>
+            <span class="group-cnt">3 个任务</span>
+          </div>
+          <div class="group-body">
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">发布竞赛通知公告</span><span class="due">📅 2026-07-01</span><div class="executor"><select><option>张老师</option></select></div><span class="del">🗑</span></div>
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">通知相关单位</span><span class="due">📅 2026-07-01</span><div class="executor"><select><option>王主任</option></select></div><span class="del">🗑</span></div>
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">通知媒体宣传</span><span class="due">📅 2026-07-02</span><div class="executor"><select><option>李宣传</option></select></div><span class="del">🗑</span></div>
+          </div>
+        </div>
+
+        <!-- Group 2 -->
+        <div class="group">
+          <div class="group-head" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+            <span class="group-caret">▼</span>
+            <span class="group-name">📝 报名活动</span>
+            <span class="group-cnt">4 个任务</span>
+          </div>
+          <div class="group-body">
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">开通报名通道</span><span class="due">📅 2026-07-02</span><div class="executor"><select><option>张老师</option></select></div><span class="del">🗑</span></div>
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">审核报名材料</span><span class="due">📅 2026-07-05</span><div class="executor"><select><option>赵审核</option></select></div><span class="del">🗑</span></div>
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">汇总报名名单</span><span class="due">📅 2026-07-15</span><div class="executor"><select><option>钱统计</option></select></div><span class="del">🗑</span></div>
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">发送报名确认通知</span><span class="due">📅 2026-07-16</span><div class="executor"><select><option>孙通知</option></select></div><span class="del">🗑</span></div>
+          </div>
+        </div>
+
+        <!-- Group 3 -->
+        <div class="group">
+          <div class="group-head" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+            <span class="group-caret">▼</span>
+            <span class="group-name">📄 发布技术文件</span>
+            <span class="group-cnt">2 个任务</span>
+          </div>
+          <div class="group-body">
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">编写技术文件</span><span class="due">📅 2026-07-18</span><div class="executor"><select><option>周专家</option></select></div><span class="del">🗑</span></div>
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">发布并通知下载</span><span class="due">📅 2026-07-20</span><div class="executor"><select><option>吴发布</option></select></div><span class="del">🗑</span></div>
+          </div>
+        </div>
+
+        <!-- Group 4 -->
+        <div class="group">
+          <div class="group-head" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+            <span class="group-caret">▼</span>
+            <span class="group-name">🎓 赛前培训</span>
+            <span class="group-cnt">3 个任务</span>
+          </div>
+          <div class="group-body">
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">安排培训讲师</span><span class="due">📅 2026-07-22</span><div class="executor"><select><option>郑讲师</option></select></div><span class="del">🗑</span></div>
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">通知学员参加</span><span class="due">📅 2026-07-23</span><div class="executor"><select><option>王主任</option></select></div><span class="del">🗑</span></div>
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">整理培训材料</span><span class="due">📅 2026-07-25</span><div class="executor"><select><option>冯材料</option></select></div><span class="del">🗑</span></div>
+          </div>
+        </div>
+
+        <!-- Group 5 (collapsed) -->
+        <div class="group">
+          <div class="group-head collapsed" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">
+            <span class="group-caret">▼</span>
+            <span class="group-name">🏆 初赛</span>
+            <span class="group-cnt">4 个任务</span>
+          </div>
+          <div class="group-body collapsed">
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">安排初赛考场</span><span class="due">📅 2026-07-28</span><div class="executor"><select><option>陈考务</option></select></div><span class="del">🗑</span></div>
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">组织初赛</span><span class="due">📅 2026-07-30</span><div class="executor"><select><option>褚监考</option></select></div><span class="del">🗑</span></div>
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">初赛阅卷评分</span><span class="due">📅 2026-08-02</span><div class="executor"><select><option>卫阅卷</option></select></div><span class="del">🗑</span></div>
+            <div class="task-row"><input type="checkbox" class="ck" checked><span class="name">公布初赛结果</span><span class="due">📅 2026-08-03</span><div class="executor"><select><option>蒋发布</option></select></div><span class="del">🗑</span></div>
+          </div>
+        </div>
+
+        <div style="flex:1;padding:20px;color:#8c8c8c;text-align:center;font-size:12px">已折叠 4 个环节（复赛/决赛/闭幕仪式等）⋯ 点击展开</div>
+      </div>
+    </div>
+
+    <div class="p3-foot">
+      <div class="danger-hint">⚠️ 生成后将自动发送任务通知</div>
+      <button class="btn btn-secondary">← 返回调整流程</button>
+      <button class="btn btn-secondary">💾 保存草稿</button>
+      <button class="btn btn-primary">✅ 确认生成任务</button>
+    </div>
+  </main>
+</div>
+</body>
+</html>

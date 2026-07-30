@@ -1,0 +1,112 @@
+/* 项目管理表 — 类 Excel 表单版式 */
+.pm-sheet-wrap { margin-bottom: 24px; }
+.pm-section-head {
+  background: #c5d9f1;
+  color: #1a2332;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 10px 14px;
+  border: 1px solid #94a3b8;
+  border-bottom: none;
+}
+.pm-sheet {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: #fff;
+  margin-bottom: 0;
+}
+.pm-sheet th,
+.pm-sheet td {
+  border: 1px solid #94a3b8;
+  padding: 10px 12px;
+  vertical-align: middle;
+}
+.pm-sheet th.pm-label {
+  background: #e8f0fe;
+  font-weight: 600;
+  width: 120px;
+  text-align: left;
+  white-space: nowrap;
+}
+.pm-sheet input,
+.pm-sheet select,
+.pm-sheet textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+}
+.pm-sheet textarea { min-height: 72px; resize: vertical; }
+.pm-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  background: #fafbfc;
+  border: 1px solid #94a3b8;
+  border-top: none;
+  line-height: 1.6;
+}
+.pm-criteria {
+  font-size: 12px;
+  line-height: 1.8;
+  padding: 12px 14px;
+  background: #fafbfc;
+  border: 1px solid #94a3b8;
+  border-top: none;
+}
+.pm-sub-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 0;
+}
+.list-panel .record-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-btn);
+  margin-bottom: 10px;
+  background: var(--card);
+  transition: all 0.2s;
+}
+.list-panel .record-card:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow);
+}
+.list-panel .record-card h4 { font-size: 15px; margin-bottom: 4px; }
+.list-panel .record-card p { font-size: 12px; color: var(--text-secondary); }
+.form-view { display: none; }
+.form-view.active { display: block; }
+.list-view.hidden { display: none; }
+.form-actions-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.pm-check-group {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+}
+.pm-check-group label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { color: var(--primary); border-color: var(--primary); }
+.empty-hint { text-align: center; color: var(--text-secondary); padding: 32px; font-size: 14px; }
+.table-actions { display: flex; gap: 8px; flex-shrink: 0; }

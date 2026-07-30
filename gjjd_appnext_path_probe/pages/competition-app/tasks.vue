@@ -1,0 +1,3 @@
+<template><PlayerPageShell title="赛事任务" subtitle="任务由赛事规则和计划发布后提供"><view class="card"><text class="headline">暂无待办任务</text><text>当前阶段未配置学习、签到或答题任务。成绩、排名与晋级名单规则尚未发布，因此不会在此页面预判结果。</text></view></PlayerPageShell></template>
+<script>import PlayerPageShell from './components/PlayerPageShell.vue';import{guardCompetitionPlayerRoute}from'@/utils/competition-route-guard';export default{components:{PlayerPageShell},onLoad(){guardCompetitionPlayerRoute()}}</script>
+<style scoped>.card{display:flex;flex-direction:column;gap:18rpx;padding:32rpx;background:#fff;border-radius:20rpx;color:#71819a;font-size:26rpx;line-height:1.7}.headline{font-size:31rpx;font-weight:700;color:#1e3963}</style>

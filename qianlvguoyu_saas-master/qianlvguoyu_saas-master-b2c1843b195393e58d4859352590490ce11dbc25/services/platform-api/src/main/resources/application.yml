@@ -1,0 +1,66 @@
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: platform-api
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://192.168.1.200:3308/gjjd_test?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:guoyu_dev!513}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    out-of-order: true
+    validate-on-migrate: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+platform:
+  security:
+    jwt-secret: ${JWT_SECRET:dev-only-change-me-dev-only-change-me}
+    access-token-ttl-seconds: ${ACCESS_TOKEN_TTL_SECONDS:7200}
+    refresh-token-ttl-seconds: ${REFRESH_TOKEN_TTL_SECONDS:604800}
+  file:
+    storage-provider: ${FILE_STORAGE_PROVIDER:local}
+    local-root: ${FILE_LOCAL_ROOT:./storage/files}
+
+# Sa-Token
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 259200
+  active-timeout: -1
+  is-concurrent: true
+  is-share: true
+  is-log: true
+  token-style: tik
+  is-read-cookie: false

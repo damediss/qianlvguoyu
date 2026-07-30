@@ -1,0 +1,109 @@
+{
+  "id": "lime-circle",
+  "displayName": "lime-circle 进度环-圆形进度条",
+  "version": "0.3.0",
+  "description": "lime-circle 进度环 提供css和canvas渲染的圆形进度环, 弧形进度条, 环形进度条, 有渐变色, 仪表盘等配置。兼容uniapp/uniappx",
+  "keywords": [
+    "进度环",
+    "弧形进度条",
+    "圆形进度条",
+    "渐变进度条",
+    "仪表盘进度条"
+],
+  "repository": "",
+  "engines": {
+    "HBuilderX": "^3.6.4",
+    "uni-app": "^4.75",
+    "uni-app-x": "^4.75"
+  },
+  "dcloudext": {
+    "type": "component-vue",
+    "sale": {
+      "regular": {
+        "price": "0.00"
+      },
+      "sourcecode": {
+        "price": "0.00"
+      }
+    },
+    "contact": {
+      "qq": ""
+    },
+    "declaration": {
+      "ads": "无",
+      "data": "无",
+      "permissions": "无"
+    },
+    "npmurl": "",
+    "darkmode": "√",
+    "i18n": "x",
+    "widescreen": "x"
+  },
+  "uni_modules": {
+    "dependencies": [
+      "lime-shared"
+    ],
+    "encrypt": [],
+    "platforms": {
+      "cloud": {
+        "tcb": "√",
+        "aliyun": "√",
+        "alipay": "x"
+      },
+      "client": {
+        "uni-app": {
+          "vue": {
+            "vue2": "√",
+            "vue3": "√"
+          },
+          "web": {
+            "safari": "√",
+            "chrome": "√"
+          },
+          "app": {
+            "vue": "√",
+            "nvue": "√",
+            "android": {
+                "extVersion": "",
+                "minVersion": "21"
+            },
+            "ios": "√",
+            "harmony": "√"
+          },
+          "mp": {
+            "weixin": "√",
+            "alipay": "√",
+            "toutiao": "√",
+            "baidu": "√",
+            "kuaishou": "√",
+            "jd": "√",
+            "harmony": "√",
+            "qq": "√",
+            "lark": "√"
+          },
+          "quickapp": {
+            "huawei": "-",
+            "union": "-"
+          }
+        },
+        "uni-app-x": {
+          "web": {
+            "safari": "√",
+            "chrome": "√"
+          },
+          "app": {
+            "android": {
+                "extVersion": "",
+                "minVersion": "21"
+            },
+            "ios": "√",
+            "harmony": "√"
+          },
+          "mp": {
+            "weixin": "√"
+          }
+        }
+      }
+    }
+  }
+}

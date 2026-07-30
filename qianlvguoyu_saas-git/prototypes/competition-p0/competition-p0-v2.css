@@ -1,0 +1,87 @@
+/* 第二版增强样式：赛事赛段流程卡 */
+.stage-flow{
+  display:flex;
+  align-items:stretch;
+  gap:0;
+  overflow-x:auto;
+  padding:4px 2px 15px;
+  margin:0 -2px;
+}
+.stage-flow-card{
+  min-width:250px;
+  flex:1;
+  padding:17px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#fff;
+  box-shadow:0 4px 13px rgba(29,62,111,.035);
+}
+.stage-flow-card.active{
+  border-color:#a8d0ff;
+  background:linear-gradient(145deg,#fff,#f3f9ff);
+  box-shadow:0 9px 21px rgba(22,119,255,.12);
+}
+.stage-flow-card .stage-number{display:flex;justify-content:space-between;color:#7b899e}
+.stage-flow-card h3{font-size:16px;margin:13px 0 8px}
+.stage-flow-card p{font-size:12px;line-height:1.7;color:#8793a4}
+.stage-flow-card .stage-foot{padding-top:12px;border-top:1px solid #edf1f5;font-size:12px}
+.stage-flow-arrow{
+  width:62px;
+  min-width:62px;
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.stage-flow-arrow::before{
+  content:"";
+  position:absolute;
+  top:50%;
+  left:8px;
+  right:7px;
+  height:3px;
+  border-radius:4px;
+  background:#8bc1ff;
+}
+.stage-flow-arrow span{
+  position:relative;
+  z-index:1;
+  display:grid;
+  width:25px;
+  height:25px;
+  place-items:center;
+  border-radius:50%;
+  color:#fff;
+  font-size:15px;
+  background:var(--blue);
+  box-shadow:0 0 0 5px #f5f7fb;
+}
+.stage-add{
+  min-width:190px;
+  flex:none;
+  display:grid;
+  place-items:center;
+  align-content:center;
+  gap:8px;
+  border:1px dashed #a9bed9;
+  border-radius:12px;
+  color:#6281a7;
+  background:#fbfdff;
+}
+.stage-add b{
+  display:grid;
+  width:31px;
+  height:31px;
+  place-items:center;
+  border-radius:50%;
+  color:var(--blue);
+  font-size:23px;
+  background:#e8f3ff;
+}
+.stage-add small{font-size:12px}
+
+@media(max-width:850px){
+  .stage-flow-card{min-width:230px}
+  .stage-flow-arrow{width:42px;min-width:42px}
+  .stage-add{min-width:150px}
+}

@@ -1,0 +1,247 @@
+<template>
+	<view ref="circleRef" class="l-circle" :class="classes" :style="[styles]">
+		<!-- #ifndef APP-IOS || APP-ANDROID || APP-HARMONY -->
+		<view class="check"></view>
+		<view v-if="!useCanvas" class="l-circle__trail" :style="trailStyles">
+			<view class="cap start"></view>
+			<view class="cap end"></view>
+		</view>
+		<view v-if="!useCanvas" class="l-circle__stroke" :style="strokeStyles">
+			<view class="l-circle__stroke-line"></view>
+			<view class="cap start" v-if="current"></view>
+			<view class="cap end" v-if="current"></view>
+		</view>
+		<canvas v-if="useCanvas" :id="innerCanvasId" :canvas-id="innerCanvasId"  class="l-circle__canvas"></canvas>
+		<!-- #endif -->
+		<!-- #ifdef APP-HARMONY -->
+		<canvas ref="canvasRef" :id="innerCanvasId"  class="l-circle__canvas"></canvas>
+		<!-- #endif -->
+		<view class="l-circle__inner" :style="contentStyles">
+			<slot></slot>
+		</view>
+	</view>
+</template>
+
+<script lang="uts" setup>
+	/**
+	 * Circle 环形进度条组件
+	 * @description 用于展示任务进度或数据指标的环形可视化组件
+	 * <br> 插件类型：LCircleComponentPublicInstance 
+	 * @tutorial https://ext.dcloud.net.cn/plugin?name=lime-circle
+	 * 
+	 * @property {string} [canvasId] 画布标识（多实例时需唯一）
+	 * @property {string} size 画布尺寸（支持CSS单位，如'200px'）
+	 * @property {number} percent 当前进度百分比（0-100）
+	 * @property {'butt' | 'round' | 'square'} lineCap 进度条端点样式
+	 * @value butt
+	 * @value round
+	 * @value square
+	 * @property {number | string} strokeWidth 进度条宽度（支持CSS单位）
+	 * @property {string | string[]} strokeColor 进度条颜色（支持渐变色数组）
+	 * @property {number | string} trailWidth 轨道宽度（支持CSS单位）
+	 * @property {string} trailColor 轨道颜色（支持CSS颜色值）
+	 * @property {boolean} dashboard 仪表盘模式（带缺口圆环）
+	 * @property {boolean} clockwise 是否顺时针绘制
+	 * @property {number} duration 动画时长（单位：毫秒）
+	 * @property {number} max 最大进度值（默认100）
+	 * @property {number} gapDegree 缺口角度（0-360）
+	 * @property {'top' | 'bottom' | 'left' | 'right'} gapPosition 缺口位置
+	 * @value top
+	 * @value bottom
+	 * @value left
+	 * @value right
+	 */
+	import {CircleProps} from './type'
+	import { unitConvert } from '@/uni_modules/lime-shared/unitConvert';
+	import { addUnit } from '@/uni_modules/lime-shared/addUnit';
+	import { useTransition, UseTransitionOptions } from '@/uni_modules/lime-shared/animation/useTransition';
+	const themeVars = inject('limeConfigProviderThemeVars', computed(()=> ({})))
+	// #ifndef APP
+	import { Circle } from './circle.esm'
+	import { getCircleStyle } from './utils';
+	import { isCanvas2d } from './getCanvas';
+	// #endif
+	// #ifdef APP
+	import { Circle, CircleOptions } from './circle.uts'
+	// #endif
+	
+	const emits = defineEmits(['update:current'])
+	const props = withDefaults(defineProps<CircleProps>(), {
+		size: '120px',
+		percent: 0,
+		lineCap: 'round',
+		strokeWidth: 6,
+		// strokeColor: '#3283ff',
+		trailWidth: 6,
+		// trailColor: '#eaeef2',
+		dashboard: false,
+		clockwise: true,
+		duration: 300,
+		max: 100,
+		gapDegree: 90,
+		gapPosition: 'bottom'
+	})
+	const instance = getCurrentInstance()!
+	const context = instance.proxy!
+	const uuid = Math.random().toString(16).slice(2)
+	const innerCanvasId = `l-circle-${props.canvasId ?? (instance.uid + uuid)}`;
+	
+	const classes = computed<Map<string, boolean>>(() :Map<string, boolean> => {
+		const cls = new Map<string, boolean>()
+		cls.set('clockwise', !props.clockwise)
+		cls.set('is-'+props.lineCap, true)
+		return cls //!props.clockwise ? 'clockwise' : ''
+	})
+	const contentStyles = computed<string>(() : string => {
+		return !props.clockwise ? `transform: scale(-1,1)` : ''
+	})
+	const styles = computed<Map<string, string>>(() : Map<string, string> => {
+		const style = new Map<string, string>()
+		const size = addUnit(props.size)
+		if(size!=null){
+			style.set('width', size)
+			style.set('height', size)
+		}
+		return style
+	})
+	
+	const circleRef = ref<UniElement | null>(null)
+	let circle : Circle | null = null
+	
+	// #ifndef APP
+	const useCanvas = ref(props.canvas)
+	// #endif
+	
+	const percent = ref<number>(0)
+	const current = useTransition(percent, {
+		duration: props.duration,
+		immediate: true,
+	} as UseTransitionOptions);
+	
+	const stopCurrent = watch(current, (v:number) =>{
+		const value = Math.floor(v*100)/100;
+		// #ifdef APP
+		circle?.play(value)
+		// #endif
+		//.toFixed(2)
+		emits('update:current', value)
+	})
+	
+	
+	const stopPercent = watch(():number => props.percent, (v:number) => {
+		percent.value = Math.min(v, props.max)
+		// #ifndef APP
+		circle && circle.play(v)
+		// #endif
+	})
+	// #ifndef APP
+	const trailStyles = computed(() => {
+		const { size, trailWidth, trailColor, dashboard, gapDegree, gapPosition } = props
+		return getCircleStyle('trail', unitConvert(props.size), 1, dashboard ? gapDegree : 0, gapPosition, trailColor, unitConvert(trailWidth))
+	})
+	const strokeStyles = computed(() => {
+		const { size, strokeWidth, strokeColor, dashboard, max, gapDegree, gapPosition } = props
+		return getCircleStyle('stroke', unitConvert(props.size), Math.min(current.value / props.max, 1), dashboard ? gapDegree : 0, gapPosition, strokeColor, unitConvert(strokeWidth))
+	})
+	const widths = computed(()=>{
+		return [
+			unitConvert(props.trailWidth),
+			unitConvert(props.strokeWidth)
+		]
+	})
+	
+	const getProps = () => {
+		const strokeColor = props.strokeColor ?? `${themeVars.value['circleStrokeColor'] ?? '#3283ff'}`
+		const trailColor  = props.trailColor ?? `${themeVars.value['circleTrailColor'] ?? '#eaeef2'}`
+		
+		return Object.assign({}, props, { strokeColor, trailColor, trailWidth: widths.value[0], strokeWidth: widths.value[1] })
+	}
+	// #endif
+	onMounted(() => {
+		nextTick(() => {
+			//  #ifdef APP-ANDROID || APP-IOS || APP-HARMONY
+			const option : CircleOptions = {
+				size: unitConvert(props.size),
+				lineCap: props.lineCap,
+				strokeWidth: unitConvert(props.strokeWidth),
+				strokeColor: props.strokeColor ?? `${themeVars.value['circleStrokeColor'] ?? '#3283ff'}`,
+				trailColor: props.trailColor ?? `${themeVars.value['circleTrailColor'] ?? '#eaeef2'}`,
+				trailWidth: unitConvert(props.trailWidth),
+				
+				dashboard: props.dashboard,
+				max: props.max,
+				gapDegree: props.gapDegree,
+				gapPosition: props.gapPosition,
+			} 
+			// #endif
+			//  #ifdef APP-ANDROID || APP-IOS
+			const ctx = circleRef.value!.getDrawableContext()
+			circle = new Circle(ctx!)
+			circle!.setOption(option)
+			// #endif
+			//  #ifdef APP-HARMONY
+			uni.createCanvasContextAsync({
+			    id: innerCanvasId,
+			    component: context,
+			    success: (context : CanvasContext) => {
+					const canvasContext = context.getContext('2d')!;
+					const canvas = canvasContext.canvas;
+					
+					const dpr = uni.getDeviceInfo().devicePixelRatio ?? 1;
+					canvas.width = canvas.offsetWidth * dpr;
+					canvas.height = canvas.offsetHeight * dpr;
+					canvasContext.scale(dpr, dpr); // 仅需调用一次，当调用 reset 方法后需要再次 scale
+
+					circle = new Circle(canvasContext)
+					circle!.setOption(option)
+			    }
+			})
+			// #endif
+			//  #ifndef APP-ANDROID || APP-IOS || APP-HARMONY
+			uni.createSelectorQuery().in(context).select('.check').boundingClientRect((res)=>{
+				useCanvas.value = !(res['height'] > 0 && !props.canvas)
+				if(!useCanvas.value) return
+				nextTick(()=>{
+					uni.createCanvasContextAsync({
+					    id: innerCanvasId,
+					    component: context,
+					    success: (context : CanvasContext) => {
+							const canvasContext = context.getContext('2d')!;
+							const canvas = canvasContext.canvas;
+							circle = new Circle(canvas, {
+								size: unitConvert(props.size),
+								run: (v : number) => current.value = v,
+								pixelRatio: isCanvas2d ? uni.getDeviceInfo().devicePixelRatio : 1,
+							})
+							circle!.setOption(getProps())
+							circle!.play(props.percent)
+					    }
+					})
+				})
+			}).exec()
+			// #endif
+			percent.value = props.percent
+		})
+	})
+	
+	//  #ifdef APP-ANDROID || APP-IOS || APP-ANDROID
+	watchEffect(()=>{
+		const strokeColor = props.strokeColor ?? `${themeVars.value['circleStrokeColor'] ?? '#3283ff'}`
+		const trailColor = props.trailColor ?? `${themeVars.value['circleTrailColor'] ?? '#eaeef2'}`
+		circle?.setOption({
+			dashboard: props.dashboard,
+			strokeColor,
+			trailColor,
+		} as CircleOptions)
+		circle?.render()
+	})
+	// #endif
+	
+	onUnmounted(()=>{
+		stopCurrent()
+		stopPercent()
+	})
+</script>
+<style lang="scss">
+	@import './index-u.scss';
+</style>

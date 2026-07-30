@@ -1,0 +1,218 @@
+/* ==================== 布局类 ==================== */
+
+/* Margin Left */
+.mar-L5 { margin-left: 5rpx; }
+.mar-L10 { margin-left: 10rpx; }
+.mar-L20 { margin-left: 20rpx; }
+.mar-L30 { margin-left: 30rpx; }
+.mar-L40 { margin-left: 40rpx; }
+.mar-L50 { margin-left: 50rpx; }
+
+/* Margin Right */
+.mar-R5 { margin-right: 5rpx; }
+.mar-R10 { margin-right: 10rpx; }
+.mar-R20 { margin-right: 20rpx; }
+.mar-R30 { margin-right: 30rpx; }
+.mar-R40 { margin-right: 40rpx; }
+.mar-R50 { margin-right: 50rpx; }
+
+/* Margin Top */
+.mar-T5 { margin-top: 5rpx; }
+.mar-T10 { margin-top: 10rpx; }
+.mar-T20 { margin-top: 20rpx; }
+.mar-T30 { margin-top: 30rpx; }
+.mar-T40 { margin-top: 40rpx; }
+.mar-T50 { margin-top: 50rpx; }
+
+/* Margin Bottom */
+.mar-B5 { margin-bottom: 5rpx; }
+.mar-B10 { margin-bottom: 10rpx; }
+.mar-B20 { margin-bottom: 20rpx; }
+.mar-B30 { margin-bottom: 30rpx; }
+.mar-B40 { margin-bottom: 40rpx; }
+.mar-B50 { margin-bottom: 50rpx; }
+
+/* Padding Left */
+.pad-L10 { padding-left: 10rpx; }
+.pad-L20 { padding-left: 20rpx; }
+.pad-L30 { padding-left: 30rpx; }
+.pad-L40 { padding-left: 40rpx; }
+.pad-L50 { padding-left: 50rpx; }
+
+/* Padding Right */
+.pad-R10 { padding-right: 10rpx; }
+.pad-R20 { padding-right: 20rpx; }
+.pad-R30 { padding-right: 30rpx; }
+.pad-R40 { padding-right: 40rpx; }
+.pad-R50 { padding-right: 50rpx; }
+
+/* Padding Top */
+.pad-T10 { padding-top: 10rpx; }
+.pad-T20 { padding-top: 20rpx; }
+.pad-T30 { padding-top: 30rpx; }
+.pad-T40 { padding-top: 40rpx; }
+.pad-T50 { padding-top: 50rpx; }
+
+/* Padding Bottom */
+.pad-B10 { padding-bottom: 10rpx; }
+.pad-B20 { padding-bottom: 20rpx; }
+.pad-B30 { padding-bottom: 30rpx; }
+.pad-B40 { padding-bottom: 40rpx; }
+.pad-B50 { padding-bottom: 50rpx; }
+
+/* Padding All */
+.pad-10 { padding: 10rpx; }
+.pad-20 { padding: 20rpx; }
+.pad-25 { padding: 25rpx; }
+.pad-30 { padding: 30rpx; }
+.pad-40 { padding: 40rpx; }
+.pad-12-20 { padding: 12rpx 20rpx; }
+
+/* Padding Bottom 特殊 */
+.pb-120 { padding-bottom: 120rpx; }
+.pad-B15 { padding-bottom: 15rpx; }
+.pb-140 { padding-bottom: 140rpx; }
+.pb-150 { padding-bottom: 150rpx; }
+
+/* Flex 基础 */
+.dis-flex { display: flex; }
+.flex-column { flex-direction: column; }
+
+/* Flex 居中组合 */
+.dis-flex-hv {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+}
+
+/* Flex 水平对齐 */
+.dis-flex-hs {
+	display: flex;
+	justify-content: start;
+}
+.dis-flex-hc {
+	display: flex;
+	justify-content: center;
+}
+.dis-flex-he {
+	display: flex;
+	justify-content: end;
+}
+.dis-flex-hsb {
+	display: flex;
+	justify-content: space-between;
+}
+.dis-flex-ha {
+	display: flex;
+	justify-content: space-around;
+}
+
+/* Flex 垂直对齐 */
+.dis-flex-vs {
+	display: flex;
+	align-items: start;
+}
+.dis-flex-vc {
+	display: flex;
+	align-items: center;
+}
+.dis-flex-ve {
+	display: flex;
+	align-items: end;
+}
+
+/* Flex 宽度 */
+.w-full { flex: 1; }
+
+/* Flex-shrink */
+.flex-shrink-0 { flex-shrink: 0; }
+
+/* Gap */
+.gap-5 { gap: 5rpx; }
+.gap-8 { gap: 8rpx; }
+.gap-10 { gap: 10rpx; }
+.gap-15 { gap: 15rpx; }
+.gap-20 { gap: 20rpx; }
+
+/* Grid布局 */
+.grid-2 {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+}
+.grid-7 {
+	display: grid;
+	grid-template-columns: repeat(7, 1fr);
+}
+
+/* 定位 */
+.pos-fixed { position: fixed; }
+.pos-absolute { position: absolute; }
+.pos-relative { position: relative; }
+.sticky {
+	position: sticky;
+	z-index: 2;
+}
+
+/* 固定定位组合 */
+.fixed-full {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+}
+
+/* Z-index */
+.z-100 { z-index: 100; }
+.z-1000 { z-index: 1000; }
+.z-9999 { z-index: 9999; }
+.z-10000 { z-index: 10000; }
+
+/* 溢出 */
+.overflow-hidden { overflow: hidden; }
+
+/* 宽度 */
+.w-25 { width: 25%; }
+.w-60 { width: 60rpx; }
+.w-80 { width: 80rpx; }
+.w-100 { width: 100rpx; }
+.w-110 { width: 110rpx; }
+.w-120 { width: 120rpx; }
+.w-130 { width: 130rpx; }
+.w-140 { width: 140rpx; }
+.w-150 { width: 150rpx; }
+.w-160 { width: 160rpx; }
+.w-200 { width: 200rpx; }
+.w-300 { width: 300rpx; }
+.w-400 { width: 400rpx; }
+.w-full-percent { width: 100%; }
+.max-w-550 { max-width: 550rpx; }
+
+/* 高度 */
+.h-50 { height: 50rpx; }
+.h-60 { height: 60rpx; }
+.h-70 { height: 70rpx; }
+.h-75 { height: 75rpx; }
+.h-80 { height: 80rpx; }
+.h-90 { height: 90rpx; }
+.h-100 { height: 100rpx; }
+.h-110 { height: 110rpx; }
+.h-120 { height: 120rpx; }
+.h-150 { height: 150rpx; }
+.h-160 { height: 160rpx; }
+.h-200 { height: 200rpx; }
+.h-300 { height: 300rpx; }
+.h-500 { height: 500rpx; }
+
+/* 最小高度 */
+.min-h-100 { min-height: 100rpx; }
+.min-h-110 { min-height: 110rpx; }
+.min-h-120 { min-height: 120rpx; }
+.min-h-160 { min-height: 160rpx; }
+.min-h-100vh { min-height: 100vh; }
+
+/* 宽高比 */
+.aspect-1 { aspect-ratio: 1; }
+.aspect-16-9 { aspect-ratio: 16 / 9; }
+.aspect-4-3 { aspect-ratio: 4 / 3; }
+.aspect-3-2 { aspect-ratio: 3 / 2; }

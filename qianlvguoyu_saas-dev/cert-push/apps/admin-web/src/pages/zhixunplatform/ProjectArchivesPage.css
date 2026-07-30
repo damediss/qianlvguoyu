@@ -1,0 +1,65 @@
+/* ============================================================
+   ProjectArchivesPage —— 对照原型 styles 原封不动照搬
+   ============================================================ */
+
+.pa-page { max-width: 1280px; margin: 0 auto; padding: 28px 24px 64px; }
+
+/* ---- page-header（原型 .page-header lines 181-194） ---- */
+.pa-page .page-header { margin-bottom: 28px; }
+.pa-page .page-header h2 {
+  font-size: 24px; font-weight: 700; color: #1A2332; margin-bottom: 8px;
+}
+.pa-page .page-header p {
+  font-size: 14px; color: #64748B;
+}
+
+/* ---- archive-section-title（原型 .archive-section-title lines 828-837） ---- */
+.archive-section-title {
+  font-size: 15px; font-weight: 600; color: #1A2332;
+  margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+}
+.archive-section-title .anticon { color: #2A6DFF; }
+
+/* ---- archive-entry-list（原型 .archive-entry-list lines 947-948） ---- */
+.archive-entry-list { display: flex; flex-direction: column; gap: 0; }
+.archive-entry-list .pa-entry-card { margin-bottom: 16px; }
+
+/* ---- archive-entry-list-compact（原型 .archive-entry-list-compact lines 949-954） ---- */
+.archive-entry-list-compact {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.archive-entry-list-compact .pa-entry-card { margin-bottom: 0; }
+
+/* ---- pa-entry-card（原型 .create-task-entry lines 631-672） ---- */
+.pa-entry-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  padding: 28px 32px;
+  background: linear-gradient(135deg, #E8F0FF 0%, #fff 60%);
+  border: 2px dashed rgba(42, 109, 255, 0.25);
+  border-radius: 20px; text-decoration: none; color: inherit;
+  cursor: pointer; transition: all 0.25s ease;
+}
+.pa-entry-card:hover {
+  border-color: #2A6DFF;
+  box-shadow: 0 12px 40px rgba(42, 109, 255, 0.12);
+  transform: translateY(-2px);
+}
+.pa-entry-card .entry-text h3 {
+  font-size: 18px; font-weight: 700; color: #2A6DFF; margin-bottom: 6px;
+}
+.pa-entry-card .entry-text h3 .anticon { color: #2A6DFF; }
+.pa-entry-card .entry-text p {
+  font-size: 13px; color: #64748B; max-width: 520px; margin: 0;
+}
+.pa-entry-card .entry-btn {
+  flex-shrink: 0; padding: 14px 28px; background: #2A6DFF; color: #fff;
+  border-radius: 12px; font-weight: 600; font-size: 14px;
+  display: inline-flex; align-items: center; gap: 10px; white-space: nowrap;
+}
+
+/* ---- pa-entry-card-sm（原型 .create-task-entry-sm lines 955-959） ---- */
+.pa-entry-card-sm { padding: 18px 22px; }
+.pa-entry-card-sm .entry-text h3 { font-size: 15px; margin-bottom: 0; }
+.pa-entry-card-sm .entry-btn { padding: 10px 16px; font-size: 13px; }

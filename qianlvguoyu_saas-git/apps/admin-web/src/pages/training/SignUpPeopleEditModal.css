@@ -1,0 +1,161 @@
+/* 报名人员编辑弹窗 — 对齐 information.vue L199-461 */
+.people-edit-modal .ant-modal-body {
+  padding-top: 12px;
+}
+
+.people-edit-modal-body {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.people-edit-section-title {
+  height: 30px;
+  line-height: 30px;
+  background-color: #626262;
+  color: #fff;
+  padding-left: 10px;
+  margin-bottom: 10px;
+}
+
+.people-edit-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.people-edit-fields {
+  flex: 1;
+  min-width: 320px;
+}
+
+.people-edit-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.people-edit-image-block {
+  padding: 0 12px;
+}
+
+.people-edit-image-label {
+  margin-bottom: 8px;
+}
+
+.people-edit-image-box {
+  border: 1px solid #ddd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #fafafa;
+  position: relative;
+}
+
+.people-edit-image-box.id-card {
+  width: 243px;
+  height: 153px;
+}
+
+.people-edit-image-box.photo {
+  width: 120px;
+  height: 168px;
+}
+
+.people-edit-image-box.contract {
+  width: 243px;
+  height: 353px;
+}
+
+.people-edit-image-box-editable {
+  cursor: pointer;
+}
+
+.people-edit-image-box-editable:hover .people-edit-image-mask,
+.people-edit-image-box-editable.is-uploading .people-edit-image-mask {
+  opacity: 1;
+}
+
+.people-edit-image-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #999;
+  font-size: 12px;
+}
+
+.people-edit-image-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.people-edit-images .ant-upload,
+.people-edit-contract-row .ant-upload,
+.people-edit-cert-row .ant-upload {
+  display: block;
+}
+
+.people-edit-image-box .ant-image,
+.people-edit-image-box img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: fill;
+}
+
+.people-edit-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.people-edit-modal .people-input,
+.people-edit-modal .ant-select.people-input {
+  width: 400px;
+  max-width: 100%;
+}
+
+.people-edit-modal .ant-form-item-label {
+  width: 160px;
+  flex: 0 0 160px;
+}
+
+.people-edit-work-exp-item {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background: #fafafa;
+  border-radius: 4px;
+  line-height: 1.6;
+}
+
+.people-edit-contract-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.people-edit-cert-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.people-edit-footer {
+  text-align: right;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+}

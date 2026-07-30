@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>任务详情抽屉</title>
+  <link rel="stylesheet" href="common.css">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#1f2937;font-size:14px;overflow:hidden}
+    .container{display:flex;min-height:100vh}
+    .sidebar{width:220px;background:#fff;border-right:1px solid #e8e8e8;flex-shrink:0;padding:16px 0;position:sticky;top:0;height:100vh;overflow-y:auto}
+    .logo{padding:0 16px 16px;border-bottom:1px solid #f0f0f0;margin-bottom:8px}
+    .logo h2{font-size:16px;font-weight:600}.logo p{font-size:12px;color:#8c8c8c;margin-top:4px}
+    .menu-item{padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:.2s}
+    .menu-item:hover{background:#f5f7fa}.menu-item.active{background:#e6f4ff;color:#165dff}
+    .menu-item .arrow{margin-left:auto;font-size:12px;color:#bfbfbf;transition:.2s}
+    .menu-item.expanded .arrow{transform:rotate(90deg)}
+    .sub-list{max-height:0;overflow:hidden;transition:max-height .3s}.sub-list.expanded{max-height:600px}
+    .sub-item{padding:9px 16px 9px 46px;cursor:pointer;font-size:13px;color:#4b5563;transition:.2s}
+    .sub-item:hover{background:#f5f7fa;color:#165dff}
+    .sub-item.active{background:#e6f4ff;color:#165dff;border-right:3px solid #165dff}
+    main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+    .header{height:60px;background:#fff;border-bottom:1px solid #e8e8e8;display:flex;align-items:center;padding:0 24px;gap:16px;position:sticky;top:0;z-index:10}
+    .crumb{color:#8c8c8c;font-size:13px}.crumb .now{color:#1f2937;font-weight:500}
+    .header-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+    .avatar{width:32px;height:32px;border-radius:50%;background:#165dff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500}
+
+    /* Page 6: Drawer */
+    .stage{flex:1;background:#f0f2f5;padding:24px;overflow-y:auto}
+    .stage-hint{color:#8c8c8c;font-size:13px;padding:12px;background:#fff;border-radius:6px;border:1px dashed #d9d9d9;max-width:600px;margin:80px auto;text-align:center}
+
+    /* Drawer overlay */
+    .drawer-mask{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.35);z-index:50}
+    .drawer{position:fixed;top:0;right:0;bottom:0;width:600px;background:#fff;z-index:60;display:flex;flex-direction:column;box-shadow:-4px 0 20px rgba(0,0,0,.15)}
+    .drawer-head{height:64px;padding:0 24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #f0f0f0;flex-shrink:0}
+    .drawer-head .name{font-size:16px;font-weight:600;flex:1}
+    .drawer-head .st{font-size:12px;padding:3px 10px;background:#e6f4ff;color:#165dff;border-radius:10px}
+    .drawer-head .st.ok{background:#f6ffed;color:#389e0d}
+    .drawer-head .st.bad{background:#fff1f0;color:#cf1322}
+    .drawer-close{width:32px;height:32px;display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:4px;font-size:18px;color:#8c8c8c}
+    .drawer-close:hover{background:#f5f7fa}
+
+    .drawer-body{flex:1;overflow-y:auto;padding:20px 24px;background:#fafbfc;display:flex;flex-direction:column;gap:16px}
+    .info-card{background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.04);padding:18px 20px}
+    .card-title{font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:6px}
+    .card-title::before{content:"";display:inline-block;width:3px;height:14px;background:#165dff;border-radius:2px}
+    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 24px}
+    .info-item{display:flex;flex-direction:column;gap:4px}
+    .info-item .lbl{font-size:12px;color:#8c8c8c}
+    .info-item .val{font-size:13px;color:#1f2937}
+    .info-item .val.prio.h{color:#cf1322;font-weight:500}
+    .info-item .val.prio.m{color:#d48806;font-weight:500}
+    .info-item .val.prio.l{color:#389e0d;font-weight:500}
+    .desc-box{margin-top:14px;padding:10px 12px;background:#f5f7fa;border-radius:4px;font-size:13px;color:#4b5563;line-height:1.6;border-left:3px solid #91caff}
+
+    /* Progress card */
+    .timeline{position:relative;padding-left:18px;margin-top:10px}
+    .timeline::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:#e8e8e8}
+    .tl-item{position:relative;padding:0 0 14px 0;font-size:12px}
+    .tl-item::before{content:"";position:absolute;left:-15px;top:4px;width:8px;height:8px;border-radius:50%;background:#165dff;border:2px solid #fff;box-shadow:0 0 0 1px #165dff}
+    .tl-item.done::before{background:#52c41a;box-shadow:0 0 0 1px #52c41a}
+    .tl-item .ts{color:#8c8c8c;font-size:11px}
+    .tl-item .txt{color:#1f2937;margin-top:2px}
+    .progress-row{display:flex;align-items:center;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid #f0f0f0}
+    .prog-bar{flex:1;height:8px;background:#f5f7fa;border-radius:4px;overflow:hidden;position:relative}
+    .prog-fill{position:absolute;left:0;top:0;bottom:0;width:60%;background:linear-gradient(90deg,#165dff,#4080ff);border-radius:4px}
+    .prog-input{flex:1;padding:7px 10px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px}
+    .btn{padding:7px 16px;border-radius:6px;font-size:13px;cursor:pointer;border:1px solid transparent;display:inline-flex;align-items:center;gap:6px}
+    .btn-primary{background:#165dff;color:#fff;border-color:#165dff}
+    .btn-secondary{background:#fff;color:#1f2937;border-color:#d9d9d9}
+    .btn-sm{padding:5px 12px;font-size:12px}
+
+    /* Attachments */
+    .upload-zone{height:100px;border:2px dashed #d9d9d9;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#8c8c8c;font-size:13px;cursor:pointer;margin-bottom:10px}
+    .upload-zone:hover{border-color:#165dff;color:#165dff;background:#fafcff}
+    .file-row{height:40px;display:flex;align-items:center;padding:0 12px;background:#fafbfc;border-radius:4px;margin-bottom:6px;gap:10px;font-size:12px}
+    .file-row .ico{font-size:18px;color:#165dff}
+    .file-row .name{flex:1;color:#1f2937}
+    .file-row .sz{color:#8c8c8c}
+    .file-row .ts{color:#8c8c8c;font-size:11px;width:120px}
+    .file-row .del{color:#bfbfbf;cursor:pointer}
+
+    /* Comments */
+    .comments-list{display:flex;flex-direction:column;gap:14px;margin-bottom:12px}
+    .comment{display:flex;gap:10px}
+    .comment .av{width:32px;height:32px;border-radius:50%;background:#165dff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
+    .comment .body{flex:1;background:#fafbfc;padding:10px 12px;border-radius:6px}
+    .comment .meta{font-size:12px;color:#8c8c8c;margin-bottom:4px}
+    .comment .meta .nm{color:#1f2937;font-weight:500;margin-right:8px}
+    .comment .txt{font-size:13px;color:#1f2937;line-height:1.5}
+    .mention{color:#165dff;background:#e6f4ff;padding:0 4px;border-radius:3px}
+    .comment-input{width:100%;min-height:60px;padding:10px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px;resize:vertical}
+    .comment-tools{display:flex;align-items:center;gap:10px;margin-top:6px;font-size:12px;color:#8c8c8c}
+    .comment-tools .ct-act{cursor:pointer;display:flex;align-items:center;gap:3px}
+    .comment-tools .ct-act:hover{color:#165dff}
+
+    /* Footer */
+    .drawer-foot{height:64px;background:#fff;border-top:1px solid #f0f0f0;display:flex;align-items:center;justify-content:flex-end;padding:0 24px;gap:10px;flex-shrink:0}
+  </style>
+</head>
+<body>
+<div class="container">
+  <aside class="sidebar">
+    <div class="logo"><h2>数字化管理平台</h2><p>qianlvguoyu saas</p></div>
+    <div class="menu-item">📊 <span>数据看板</span></div>
+    <div class="menu-item">🏆 <span>比赛管理</span><span class="arrow">▶</span></div>
+    <div class="sub-list">
+      <div class="sub-item">📋 比赛列表</div>
+      <div class="sub-item" onclick="window.location.href='01-template-library.html'">📚 流程模板库</div>
+      <div class="sub-item" onclick="window.location.href='02-competition-create-flow.html'">➕ 新建比赛</div>
+    </div>
+    <div class="menu-item expanded">✅ <span>任务中心</span><span class="arrow">▶</span></div>
+    <div class="sub-list expanded">
+      <div class="sub-item" onclick="window.location.href='04-task-kanban.html'">📋 全部任务</div>
+      <div class="sub-item" onclick="window.location.href='05-task-gantt.html'">📅 甘特图</div>
+    </div>
+    <div class="menu-item">📚 <span>知识库</span></div>
+    <div class="menu-item">📝 <span>题库管理</span></div>
+    <div class="menu-item">🎓 <span>培训管理</span></div>
+    <div class="menu-item">⚙️ <span>系统设置</span></div>
+  </aside>
+
+  <main>
+    <header class="header">
+      <div class="crumb">任务中心 <span style="margin:0 6px">/</span> 全部任务 <span style="margin:0 6px">/</span> <span class="now">任务详情</span></div>
+      <div class="header-right"><div class="avatar">王</div></div>
+    </header>
+
+    <div class="stage">
+      <div class="stage-hint">⌖ 任务详情抽屉（从右侧滑出 600px）<br>点击任务卡片 / 任务行触发，全局通用</div>
+    </div>
+  </main>
+</div>
+
+<!-- Drawer overlay -->
+<div class="drawer-mask"></div>
+<aside class="drawer">
+  <!-- Head -->
+  <div class="drawer-head">
+    <div class="name">初赛阅卷评分</div>
+    <span class="st">进行中</span>
+    <div class="drawer-close">✕</div>
+  </div>
+
+  <!-- Body -->
+  <div class="drawer-body">
+    <!-- Info -->
+    <div class="info-card">
+      <div class="card-title">任务基本信息</div>
+      <div class="info-grid">
+        <div class="info-item"><div class="lbl">任务 ID</div><div class="val">#TASK-2026-0712-001</div></div>
+        <div class="info-item"><div class="lbl">关联比赛 / 环节</div><div class="val">2026 国赛 / 初赛</div></div>
+        <div class="info-item"><div class="lbl">执行人</div><div class="val">👤 卫阅卷 + 3 人协作</div></div>
+        <div class="info-item"><div class="lbl">计划时间</div><div class="val">2026-08-02 ~ 2026-08-05</div></div>
+        <div class="info-item"><div class="lbl">优先级</div><div class="val prio h">● 高</div></div>
+        <div class="info-item"><div class="lbl">创建时间</div><div class="val">2026-07-28 14:32</div></div>
+      </div>
+      <div class="desc-box">
+        📝 任务描述：对 380 份初赛答卷进行双盲评阅，统计每题得分，记录异常答卷；评分结束后 24h 内完成汇总。
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div class="info-card" style="height:auto">
+      <div class="card-title">执行记录与进度</div>
+      <div class="timeline">
+        <div class="tl-item done"><div class="ts">2026-08-02 09:15</div><div class="txt">卫阅卷 开始执行任务</div></div>
+        <div class="tl-item done"><div class="ts">2026-08-02 16:48</div><div class="txt">完成第一轮评阅，进度 25%</div></div>
+        <div class="tl-item done"><div class="ts">2026-08-03 11:20</div><div class="txt">完成第二轮评阅，进度 60%</div></div>
+        <div class="tl-item"><div class="ts">2026-08-04 09:00</div><div class="txt">正在进行第三轮评阅（复核争议卷）⋯</div></div>
+        <div class="tl-item"><div class="ts">预计</div><div class="txt">2026-08-05 完成全部评阅 + 提交审核</div></div>
+      </div>
+      <div class="progress-row">
+        <span style="font-size:12px;color:#8c8c8c">进度</span>
+        <div class="prog-bar"><div class="prog-fill"></div></div>
+        <span style="font-size:13px;font-weight:600;color:#165dff">60%</span>
+        <input class="prog-input" placeholder="进度备注，例如: 完成第二轮复核">
+        <button class="btn btn-primary btn-sm">更新进度</button>
+      </div>
+    </div>
+
+    <!-- Attachments -->
+    <div class="info-card" style="height:auto">
+      <div class="card-title">附件 (3)</div>
+      <div class="upload-zone">📎 拖拽文件到此处上传，或点击选择文件</div>
+      <div class="file-row">
+        <span class="ico">📄</span>
+        <span class="name">初赛理论答卷扫描件.zip</span>
+        <span class="sz">128.5 MB</span>
+        <span class="ts">2026-08-02 09:30</span>
+        <span class="del">🗑</span>
+      </div>
+      <div class="file-row">
+        <span class="ico">📊</span>
+        <span class="name">评分标准与答案.pdf</span>
+        <span class="sz">2.3 MB</span>
+        <span class="ts">2026-07-30 15:18</span>
+        <span class="del">🗑</span>
+      </div>
+      <div class="file-row">
+        <span class="ico">📷</span>
+        <span class="name">异常答卷照片_12张.zip</span>
+        <span class="sz">45.8 MB</span>
+        <span class="ts">2026-08-03 17:42</span>
+        <span class="del">🗑</span>
+      </div>
+    </div>
+
+    <!-- Comments -->
+    <div class="info-card" style="height:auto">
+      <div class="card-title">留言沟通 (4)</div>
+      <div class="comments-list">
+        <div class="comment">
+          <div class="av">卫</div>
+          <div class="body">
+            <div class="meta"><span class="nm">卫阅卷</span>2026-08-02 16:50</div>
+            <div class="txt">第一轮评阅完成，<span class="mention">@王主任</span> 请确认争议题（第 7、第 12 题）的判分标准。</div>
+          </div>
+        </div>
+        <div class="comment">
+          <div class="av" style="background:#722ed1">王</div>
+          <div class="body">
+            <div class="meta"><span class="nm">王主任</span>2026-08-02 17:22</div>
+            <div class="txt">第 7 题以最终答案为准，第 12 题过程分给一半。继续加油！</div>
+          </div>
+        </div>
+        <div class="comment">
+          <div class="av">卫</div>
+          <div class="body">
+            <div class="meta"><span class="nm">卫阅卷</span>2026-08-03 11:25</div>
+            <div class="txt">第二轮评阅完成，已上传复核表 12 份。剩余 8 份争议卷需专家组复议。</div>
+          </div>
+        </div>
+        <div class="comment">
+          <div class="av" style="background:#fa8c16">专</div>
+          <div class="body">
+            <div class="meta"><span class="nm">专家组·周老师</span>2026-08-03 14:08</div>
+            <div class="txt">收到，下午组织复议。争议卷复议结果今晚出。</div>
+          </div>
+        </div>
+      </div>
+      <textarea class="comment-input" placeholder="回复 / @ 同事 / 上传图片…"></textarea>
+      <div class="comment-tools">
+        <span class="ct-act">@ 提及</span>
+        <span class="ct-act">🖼 图片</span>
+        <span class="ct-act">📎 附件</span>
+        <span class="ct-act">😊 表情</span>
+        <span style="margin-left:auto">⌘+Enter 发送</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Foot -->
+  <div class="drawer-foot">
+    <button class="btn btn-secondary">⏸ 暂停</button>
+    <button class="btn btn-secondary">🔄 转交任务</button>
+    <button class="btn btn-secondary">⏰ 申请延期</button>
+    <button class="btn btn-secondary">📤 提交审核</button>
+    <button class="btn btn-primary">✅ 标记完成</button>
+  </div>
+</aside>
+</body>
+</html>

@@ -1,0 +1,153 @@
+/* ============================================================
+   人才识别页 - TalentIdentificationPage.css
+   ============================================================ */
+
+/* ---- topbar ---- */
+.ti-topbar {
+  background: #fff;
+  box-shadow: 0 4px 24px rgba(42, 109, 255, 0.06);
+  padding: 16px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+.ti-topbar-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.ti-back-link {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: #64748B; text-decoration: none; font-size: 14px; font-weight: 500;
+  padding: 8px 14px; border-radius: 10px; cursor: pointer;
+}
+.ti-back-link:hover { background: #E8F0FF; color: #2A6DFF; }
+.ti-title { font-size: 20px; font-weight: 700; margin: 0; }
+.ti-sub { font-size: 13px; color: #64748B; }
+.ti-process-badge {
+  font-size: 12px; padding: 6px 12px;
+  background: #FFF7ED; color: #F18F01;
+  border-radius: 20px; font-weight: 600;
+}
+
+/* ---- page ---- */
+.ti-page { max-width: 1400px; margin: 0 auto; padding: 24px 24px 64px; }
+
+/* ---- flow hint ---- */
+.ti-flow-hint {
+  padding: 14px 18px;
+  background: #E8F0FF;
+  border-radius: 10px;
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+.ti-flow-hint strong { color: #2A6DFF; }
+
+/* ---- stat row ---- */
+.ti-stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+@media (max-width: 900px) { .ti-stat-row { grid-template-columns: repeat(2, 1fr); } }
+.ti-stat-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 24px rgba(42, 109, 255, 0.06);
+  border-left: 4px solid #2A6DFF;
+}
+.ti-stat-card.warn { border-left-color: #F59E0B; }
+.ti-stat-card.danger { border-left-color: #EF4444; }
+.ti-stat-card.success { border-left-color: #10B981; }
+.ti-stat-card.identify { border-left-color: #F18F01; }
+.ti-stat-val { font-size: 28px; font-weight: 700; }
+.ti-stat-val.red { color: #EF4444; }
+.ti-stat-val.yellow { color: #F59E0B; }
+.ti-stat-val.green { color: #10B981; }
+.ti-stat-lbl { font-size: 13px; color: #64748B; margin-top: 6px; }
+
+/* ---- card ---- */
+.ti-card {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(42, 109, 255, 0.06);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+/* ---- toolbar ---- */
+.ti-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.ti-toolbar-left { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.ti-form-inline { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+
+/* ---- buttons ---- */
+.btn-identify { background: #F18F01; color: #fff; border-color: #F18F01; }
+.btn-identify:hover { background: #D97A01 !important; color: #fff !important; border-color: #D97A01 !important; }
+.btn-identify:not(:hover) { background: #F18F01; color: #fff; border-color: #F18F01; }
+
+/* ---- status badges ---- */
+.status-badge {
+  display: inline-block; padding: 4px 10px; border-radius: 6px;
+  font-size: 12px; font-weight: 600;
+}
+.st-audited { background: #D1FAE5; color: #059669; }
+.st-confirmed { background: #FEF3C7; color: #D97706; }
+.st-pending { background: #FEE2E2; color: #DC2626; }
+
+/* ---- actions ---- */
+.ti-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+
+/* ---- footer ---- */
+.ti-footer-actions {
+  display: flex; justify-content: flex-end; gap: 12px;
+  margin-top: 24px; flex-wrap: wrap;
+}
+
+/* ---- detail ---- */
+.ti-detail-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20px; flex-wrap: wrap; gap: 12px;
+}
+.ti-detail-header h2 { font-size: 18px; font-weight: 700; margin: 0; }
+
+/* ---- filter tabs ---- */
+.ti-filter-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.ti-filter-tab {
+  padding: 8px 16px; border: 1px solid #E2E8F0; border-radius: 20px;
+  background: #fff; font-size: 13px; cursor: pointer;
+}
+.ti-filter-tab.active { background: #F18F01; color: #fff; border-color: #F18F01; }
+
+/* ---- form ---- */
+.ti-form-group { margin-bottom: 16px; }
+.ti-form-group label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; }
+
+/* ---- upload ---- */
+.ti-upload-zone {
+  border: 2px dashed #E2E8F0; border-radius: 10px;
+  padding: 32px; text-align: center; cursor: pointer;
+  transition: border-color 0.2s;
+}
+.ti-upload-zone:hover { border-color: #F18F01; background: #FFF7ED; }
+
+.ti-file-preview {
+  display: none; margin-top: 12px; padding: 12px;
+  background: #F5F7FC; border-radius: 10px; font-size: 13px;
+  justify-content: space-between; align-items: center;
+}
+.ti-file-preview.show { display: flex; }
+
+/* ---- table ---- */
+.ti-card .ant-table-thead > tr > th {
+  background: #FAFBFD; color: #64748B; font-size: 12px; font-weight: 600;
+}

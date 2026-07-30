@@ -1,0 +1,1 @@
+import{u as o,g as a,r}from"./competitionPlayer.CcEtIPuI.js";function e(){var e,l;const n=o(),i=Boolean(n.playerId||(null==(e=n.playerInfo)?void 0:e.playerId)||(null==(l=n.playerInfo)?void 0:l.id)),s=Boolean(a())&&i;return s||(n.clearSession(),r()),s}export{e as g};

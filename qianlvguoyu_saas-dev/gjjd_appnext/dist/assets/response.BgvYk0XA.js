@@ -1,0 +1,1 @@
+import{ab as n}from"./index-utmHwysM.js";const o=1;function t(n){return n&&n.code===o}function i(o,t="操作失败"){const i=(null==o?void 0:o.msg)||t;n({title:i,icon:"none",duration:2e3})}function s(o,t="操作成功"){const i=(null==o?void 0:o.msg)||t;n({title:i,icon:"success",duration:1500})}export{i as a,t as i,s};

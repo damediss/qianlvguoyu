@@ -1,0 +1,35 @@
+-- 分班方案任务：一键自动分班先出草稿供机构编辑，提交企业审核通过后再物化为培训班
+-- status: draft(机构编辑中) / pending(待企业审核) / rejected / materialized / superseded
+
+CREATE TABLE IF NOT EXISTS train_division_pack_task (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  tenant_id BIGINT NOT NULL,
+  plan_id BIGINT NOT NULL COMMENT '三年规划ID',
+  train_info_id BIGINT NOT NULL COMMENT '关联培训信息ID',
+  company_id BIGINT NULL COMMENT '企业组织ID（审核范围）',
+  strategy VARCHAR(32) NOT NULL DEFAULT 'by_job_level',
+  class_max INT NOT NULL DEFAULT 50,
+  year INT NOT NULL,
+  month INT NOT NULL,
+  class_name_prefix VARCHAR(80) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'draft' COMMENT 'draft/pending/rejected/materialized/superseded',
+  class_count INT NOT NULL DEFAULT 0,
+  assigned_count INT NOT NULL DEFAULT 0,
+  unassigned_count INT NOT NULL DEFAULT 0,
+  classes_json MEDIUMTEXT NOT NULL COMMENT '预览班级与学员',
+  unassigned_json MEDIUMTEXT NULL,
+  warning_json MEDIUMTEXT NULL,
+  reject_reason VARCHAR(500) NULL,
+  submit_user_id BIGINT NULL,
+  submit_username VARCHAR(64) NULL,
+  confirm_user_id BIGINT NULL,
+  confirm_username VARCHAR(64) NULL,
+  confirm_time DATETIME NULL,
+  create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted TINYINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (id),
+  KEY idx_tdpt_plan (tenant_id, plan_id, deleted),
+  KEY idx_tdpt_train (tenant_id, train_info_id, deleted),
+  KEY idx_tdpt_company_status (tenant_id, company_id, status, deleted)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='名单排班自动分班方案（草稿/待企业审核）';

@@ -1,0 +1,235 @@
+.collection-task-page {
+  min-width: 0;
+}
+
+.collection-task-heading {
+  align-items: flex-start;
+}
+
+.collection-task-toolbar {
+  justify-content: flex-end;
+}
+
+.collection-task-table {
+  cursor: pointer;
+}
+
+.collection-task-table .ant-table-thead > tr > th {
+  white-space: nowrap;
+}
+
+.collection-task-table .ant-table-cell {
+  vertical-align: middle;
+}
+
+.collection-task-drawer {
+  width: 100%;
+}
+
+.collection-drawer-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.collection-drawer-stats > div {
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid #e5eaf2;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.collection-drawer-stats span {
+  display: block;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.collection-drawer-stats strong {
+  display: block;
+  margin-top: 4px;
+  color: #0f172a;
+  font-size: 22px;
+  line-height: 28px;
+}
+
+.collection-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.collection-manage-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.collection-manage-heading {
+  align-items: flex-start;
+}
+
+.collection-manage-task-card {
+  border-color: #e5eaf2;
+  border-radius: 8px;
+}
+
+.collection-manage-stats {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(112px, 1fr));
+  gap: 12px;
+}
+
+.collection-manage-stats .ant-card {
+  border-color: #e5eaf2;
+  border-radius: 8px;
+}
+
+.collection-manage-stats .ant-card-body {
+  padding: 14px;
+}
+
+.collection-manage-stats .ant-statistic-title {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.collection-manage-stats .ant-statistic-content {
+  color: #0f172a;
+  font-size: 24px;
+  line-height: 30px;
+}
+
+.collection-manage-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(300px, 3fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.collection-manage-candidate-card,
+.collection-manage-side .ant-card {
+  border-color: #e5eaf2;
+  border-radius: 8px;
+}
+
+.collection-manage-table-toolbar {
+  margin-bottom: 12px;
+}
+
+.collection-manage-candidate-card .ant-table-row {
+  cursor: pointer;
+}
+
+.collection-manage-row-actions {
+  white-space: nowrap;
+}
+
+.collection-manage-row-actions .ant-btn-sm {
+  height: 24px;
+  padding-inline: 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 22px;
+}
+
+.collection-manage-row-actions .ant-btn-sm .ant-btn-icon {
+  margin-inline-end: 3px;
+}
+
+.collection-manage-side {
+  width: 100%;
+}
+
+.collection-manage-inline-alert {
+  margin-bottom: 12px;
+}
+
+.collection-tablet-url {
+  padding: 8px 10px;
+  border: 1px solid #e5eaf2;
+  border-radius: 8px;
+  background: #f8fafc;
+  word-break: break-all;
+}
+
+.collection-exception-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.collection-exception-summary .ant-statistic {
+  padding: 8px;
+  border: 1px solid #e5eaf2;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.collection-exception-summary .ant-statistic-title {
+  font-size: 12px;
+}
+
+.collection-exception-summary .ant-statistic-content {
+  font-size: 20px;
+}
+
+.collection-detail-drawer {
+  width: 100%;
+}
+
+.collection-candidate-drawer .current-candidate-panel {
+  min-height: calc(100vh - 142px);
+}
+
+.collection-manage-modules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.collection-manage-module {
+  border-color: #e5eaf2;
+  border-radius: 8px;
+}
+
+.collection-manage-module .ant-typography {
+  margin-bottom: 0;
+}
+
+.collection-manage-module-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 18px;
+}
+
+@media (max-width: 1100px) {
+  .collection-task-toolbar {
+    justify-content: flex-start;
+  }
+
+  .collection-manage-stats {
+    grid-template-columns: repeat(4, minmax(112px, 1fr));
+  }
+
+  .collection-manage-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .collection-manage-stats,
+  .collection-exception-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

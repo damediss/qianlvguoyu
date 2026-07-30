@@ -1,0 +1,1 @@
+import{d as o,w as s,i as t,o as a,j as e}from"./index-utmHwysM.js";import{_ as n}from"./_plugin-vue_export-helper.BCo6x5W8.js";const r=n({data:()=>({}),onLoad(){},onShow(){},methods:{}},[["render",function(n,r,d,i,p,u){const c=t;return a(),o(c,{class:"content"},{default:s((()=>[e(" 积分商城 ")])),_:1})}]]);export{r as default};

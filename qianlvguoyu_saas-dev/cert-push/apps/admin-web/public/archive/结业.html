@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>培训结业 - 智训企业版</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    :root {
+      --primary: #2A6DFF;
+      --primary-hover: #1E5AE8;
+      --primary-light: #E8F0FF;
+      --bg: #F5F7FC;
+      --card: #FFFFFF;
+      --text: #1A2332;
+      --text-secondary: #64748B;
+      --border: #E2E8F0;
+      --shadow: 0 4px 24px rgba(42, 109, 255, 0.06);
+      --radius-card: 20px;
+      --radius-btn: 12px;
+      --success: #10B981;
+      --warning: #F59E0B;
+      --danger: #EF4444;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .topbar {
+      background: var(--card);
+      box-shadow: var(--shadow);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 16px; }
+    .back-link {
+      display: inline-flex; align-items: center; gap: 8px;
+      color: var(--text-secondary); text-decoration: none; font-size: 14px; font-weight: 500;
+      padding: 8px 14px; border-radius: var(--radius-btn); transition: all 0.2s;
+    }
+    .back-link:hover { background: var(--primary-light); color: var(--primary); }
+    .topbar h1 { font-size: 20px; font-weight: 700; }
+    .topbar .sub { font-size: 13px; color: var(--text-secondary); }
+    .process-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; padding: 6px 12px;
+      background: var(--primary-light); color: var(--primary);
+      border-radius: 20px; font-weight: 500;
+    }
+    .page { max-width: 1280px; margin: 0 auto; padding: 28px 24px 64px; }
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--card);
+      border-radius: var(--radius-card);
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+    .stat-card .val { font-size: 26px; font-weight: 700; color: var(--primary); }
+    .stat-card .val.success { color: var(--success); }
+    .stat-card .val.warn { color: var(--warning); }
+    .stat-card .lbl { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+    .card {
+      background: var(--card);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow);
+      padding: 24px 28px;
+      margin-bottom: 24px;
+    }
+    .card-head {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .card-head .title-wrap { display: flex; align-items: center; gap: 10px; }
+    .card-head i { color: var(--primary); }
+    .form-group label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 8px; }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-btn);
+      font-family: inherit;
+      font-size: 14px;
+    }
+    .btn {
+      padding: 11px 22px;
+      border: none;
+      border-radius: var(--radius-btn);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-sm { padding: 8px 16px; font-size: 13px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+    .project-banner {
+      margin-top: 16px;
+      padding: 16px 20px;
+      background: var(--primary-light);
+      border-radius: var(--radius-btn);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px 24px;
+      font-size: 13px;
+    }
+    .project-banner .item label { display: block; color: var(--text-secondary); font-size: 12px; margin-bottom: 4px; }
+    .workspace-empty {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--text-secondary);
+      background: var(--card);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+    .workspace-empty i { font-size: 40px; color: var(--border); margin-bottom: 16px; display: block; }
+    .flow-steps { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .flow-step {
+      flex: 1; min-width: 120px; text-align: center; padding: 12px 8px;
+      border-radius: var(--radius-btn); background: var(--bg);
+      font-size: 12px; color: var(--text-secondary);
+    }
+    .flow-step.done { background: #D1FAE5; color: #059669; font-weight: 600; }
+    .flow-step.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+    .flow-step i { display: block; font-size: 18px; margin-bottom: 6px; }
+    .filter-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 16px; }
+    .filter-bar .form-group { margin: 0; min-width: 160px; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .data-table th {
+      text-align: left; padding: 12px 14px; font-size: 12px; color: var(--text-secondary);
+      background: #FAFBFD; border-bottom: 2px solid var(--border);
+    }
+    .data-table td { padding: 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .status-badge {
+      display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 500;
+    }
+    .st-pending { background: #FEF3C7; color: #D97706; }
+    .st-done { background: #D1FAE5; color: #059669; }
+    .st-draft { background: #F1F5F9; color: #64748B; }
+    .tab-bar { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+    .tab-btn {
+      padding: 10px 18px; border: 1px solid var(--border); border-radius: var(--radius-btn);
+      background: var(--card); font-family: inherit; font-size: 14px; font-weight: 500;
+      cursor: pointer; color: var(--text-secondary);
+    }
+    .tab-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .panel { display: none; }
+    .panel.active { display: block; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="培训管理系统 主页面.html?panel=process" class="back-link">
+        <i class="fas fa-arrow-left"></i> 返回培训流程
+      </a>
+      <div>
+        <h1>培训结业</h1>
+        <span class="sub" id="pageSub">培训结业与档案归档 · 步骤 8 / 9</span>
+      </div>
+    </div>
+    <span class="process-badge"><i class="fas fa-graduation-cap"></i> … → 培训结业 → 项目回款 → …</span>
+  </header>
+
+  <main class="page">
+    <div class="card">
+      <div class="card-head">
+        <div class="title-wrap"><i class="fas fa-folder-open"></i> 培训项目</div>
+        <a href="任务档案.html" class="btn btn-secondary btn-sm"><i class="fas fa-list"></i> 任务档案</a>
+      </div>
+      <div class="form-group">
+        <label>选择企业培训项目</label>
+        <select id="projectSelect"><option value="">请选择项目…</option></select>
+      </div>
+      <div id="projectBanner" class="project-banner" style="display:none"></div>
+    </div>
+
+    <div id="workspaceEmpty" class="workspace-empty">
+      <i class="fas fa-hand-pointer"></i>
+      <p>请先选择<strong>企业培训项目</strong>，再办理结业统计、证书发放与档案归档。</p>
+      <p style="margin-top:8px;font-size:13px">建议先完成培训与认定；也可从<a href="任务档案.html">任务档案</a>进入。</p>
+    </div>
+
+    <div id="jieyeWorkspace" style="display:none">
+      <div id="noStudentAlert" class="alert-banner warn" style="display:none;padding:14px 18px;background:#FEF3C7;border-radius:12px;margin-bottom:20px;font-size:14px;color:#92400E">
+        <i class="fas fa-exclamation-triangle"></i>
+        本项目尚无学员数据，请先完成 <a href="人才识别.html" id="linkRencai">分班</a>。
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="val" id="statTotal">0</div>
+          <div class="lbl">应结业人数</div>
+        </div>
+        <div class="stat-card">
+          <div class="val success" id="statIssued">0</div>
+          <div class="lbl">证书已发</div>
+        </div>
+        <div class="stat-card">
+          <div class="val warn" id="statPending">0</div>
+          <div class="lbl">待发证</div>
+        </div>
+        <div class="stat-card">
+          <div class="val" id="statArchived">0</div>
+          <div class="lbl">已归档</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="title-wrap"><i class="fas fa-route"></i> 结业流程</div>
+          <span style="font-size:12px;color:var(--text-secondary)">结课统计 → 材料整理 → 结课通知 → 证书/档案归档</span>
+        </div>
+        <div class="flow-steps" id="flowSteps"></div>
+        <div class="toolbar">
+          <button type="button" class="btn btn-primary btn-sm" id="btnStats">
+            <i class="fas fa-chart-bar"></i> 结课统计
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnPackage">
+            <i class="fas fa-file-archive"></i> 整理结课材料包
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnNotify">
+            <i class="fas fa-bell"></i> 发送结课通知
+          </button>
+          <button type="button" class="btn btn-success btn-sm" id="btnBatchCert">
+            <i class="fas fa-award"></i> 批量发放结业证
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnArchive">
+            <i class="fas fa-archive"></i> 学员档案归档
+          </button>
+        </div>
+
+        <div class="tab-bar">
+          <button type="button" class="tab-btn active" data-tab="class">班级汇总</button>
+          <button type="button" class="tab-btn" data-tab="student">学员明细</button>
+        </div>
+
+        <div id="panel-class" class="panel active">
+          <div class="table-wrap" style="overflow-x:auto">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>班级</th>
+                  <th>应结业</th>
+                  <th>已发证</th>
+                  <th>待发</th>
+                  <th>结课日期</th>
+                  <th>材料包</th>
+                </tr>
+              </thead>
+              <tbody id="classBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="panel-student" class="panel">
+          <div class="filter-bar">
+            <div class="form-group">
+              <label>班级</label>
+              <select id="filterClass"><option value="">全部</option></select>
+            </div>
+            <div class="form-group">
+              <label>证书状态</label>
+              <select id="filterCert">
+                <option value="">全部</option>
+                <option value="待发证">待发证</option>
+                <option value="已发证">已发证</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap" style="overflow-x:auto">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>姓名</th>
+                  <th>班级</th>
+                  <th>认定结果</th>
+                  <th>结业证</th>
+                  <th>结业日期</th>
+                  <th>档案</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="studentBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap">
+        <a href="申报.html" class="btn btn-secondary" id="linkBackShenbao"><i class="fas fa-file-upload"></i> 返回申报</a>
+        <a href="培训管理系统 主页面.html?panel=process" class="btn btn-secondary">保存并返回流程</a>
+        <button type="button" class="btn btn-success" id="btnNextStep">
+          <i class="fas fa-arrow-right"></i> 完成培训结业，进入项目回款
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const STORAGE_TASKS = 'zhixun_tasks';
+    const STORAGE_FENBAN = 'zhixun_fenban_by_project';
+    const STORAGE_RENDING = 'zhixun_rending_by_project';
+    const STORAGE_JIEYE = 'zhixun_jieye_by_project';
+
+    const FLOW_LABELS = ['结课统计', '材料整理', '结课通知', '证书归档'];
+
+    let tasks = [];
+    let currentProjectId = null;
+    let currentProject = null;
+    let graduates = [];
+    let classSummaries = [];
+    let bundleMeta = { packageReady: false, notified: false, statsDone: false };
+
+    function loadTasks() {
+      try { tasks = JSON.parse(localStorage.getItem(STORAGE_TASKS) || '[]'); }
+      catch (e) { tasks = []; }
+    }
+
+    function getStore(key) {
+      try { return JSON.parse(localStorage.getItem(key) || '{}'); }
+      catch (e) { return {}; }
+    }
+
+    function todayStr() {
+      return new Date().toISOString().slice(0, 10);
+    }
+
+    function getRendingMap(projectId) {
+      const rending = getStore(STORAGE_RENDING)[String(projectId)];
+      const map = {};
+      (rending?.candidates || []).forEach(s => { map[s.studentId] = s; });
+      return map;
+    }
+
+    function buildGraduates(projectId, saved) {
+      const fenban = getStore(STORAGE_FENBAN)[String(projectId)];
+      if (!fenban) return [];
+      const registry = fenban.studentRegistry || {};
+      const rendingMap = getRendingMap(projectId);
+      const savedMap = {};
+      (saved || []).forEach(s => { savedMap[s.studentId] = s; });
+
+      const list = [];
+      (fenban.classes || []).forEach(cls => {
+        (cls.studentIds || []).forEach(sid => {
+          const base = registry[sid] || { id: sid, name: '学员' + String(sid).slice(-2) };
+          const rd = rendingMap[sid];
+          const existing = savedMap[sid];
+          const eligible = !rd || rd.result === '通过' || rd.result === '待考';
+          if (!eligible && rd?.result === '未通过') return;
+
+          if (existing) {
+            list.push({ ...existing, className: cls.name, classId: cls.id, rendingResult: rd?.result || '—' });
+            return;
+          }
+          list.push({
+            studentId: sid,
+            name: base.name,
+            classId: cls.id,
+            className: cls.name,
+            rendingResult: rd?.result || '待考',
+            graduateCertStatus: rd?.certStatus === '已发证' ? '已发证' : '待发证',
+            graduateCertNo: rd?.certNo ? 'JY' + rd.certNo : '',
+            graduateDate: '',
+            archived: false,
+            notified: false
+          });
+        });
+      });
+      return list;
+    }
+
+    function buildClassSummaries() {
+      const map = {};
+      graduates.forEach(g => {
+        if (!map[g.classId]) {
+          map[g.classId] = {
+            classId: g.classId,
+            className: g.className,
+            total: 0,
+            issued: 0,
+            pending: 0,
+            graduateDate: g.graduateDate || '',
+            packageReady: false
+          };
+        }
+        const c = map[g.classId];
+        c.total++;
+        if (g.graduateCertStatus === '已发证') c.issued++;
+        else c.pending++;
+        if (g.graduateDate) c.graduateDate = g.graduateDate;
+      });
+      classSummaries = Object.values(map);
+    }
+
+    function loadProjectData(projectId) {
+      const project = tasks.find(t => t.id === projectId);
+      if (!project) return;
+      currentProjectId = projectId;
+      currentProject = project;
+
+      const all = getStore(STORAGE_JIEYE);
+      const bundle = all[String(projectId)] || {};
+      graduates = buildGraduates(projectId, bundle.graduates);
+      bundleMeta = {
+        packageReady: !!bundle.packageReady,
+        notified: !!bundle.notified,
+        statsDone: !!bundle.statsDone
+      };
+
+      if (!all[String(projectId)]) {
+        saveData();
+      }
+
+      document.getElementById('linkRencai').href = `人才识别.html?projectId=${projectId}`;
+      document.getElementById('linkBackShenbao').href = `申报.html?projectId=${projectId}`;
+
+      buildClassSummaries();
+      renderProjectBanner();
+      populateClassFilter();
+      toggleWorkspace(true);
+      document.getElementById('noStudentAlert').style.display = graduates.length ? 'none' : 'block';
+      renderAll();
+    }
+
+    function saveData() {
+      if (!currentProjectId) return;
+      const all = getStore(STORAGE_JIEYE);
+      all[String(currentProjectId)] = {
+        projectId: currentProjectId,
+        graduates,
+        packageReady: bundleMeta.packageReady,
+        notified: bundleMeta.notified,
+        statsDone: bundleMeta.statsDone
+      };
+      localStorage.setItem(STORAGE_JIEYE, JSON.stringify(all));
+    }
+
+    function renderProjectBanner() {
+      const p = currentProject;
+      document.getElementById('projectBanner').style.display = 'grid';
+      const issued = graduates.filter(g => g.graduateCertStatus === '已发证').length;
+      document.getElementById('projectBanner').innerHTML = `
+        <div class="item"><label>企业</label><strong>${p.enterprise || '—'}</strong></div>
+        <div class="item"><label>培训项目</label><strong>${p.name || '—'}</strong></div>
+        <div class="item"><label>应结业</label><strong>${graduates.length} 人</strong></div>
+        <div class="item"><label>已发证</label><strong>${issued} 人</strong></div>
+        <div class="item"><label>结课材料</label><strong>${bundleMeta.packageReady ? '已整理' : '未整理'}</strong></div>
+      `;
+      document.getElementById('pageSub').textContent = `${p.enterprise || ''} · ${p.name || ''} · 步骤 8 / 9`;
+    }
+
+    function toggleWorkspace(show) {
+      document.getElementById('jieyeWorkspace').style.display = show ? 'block' : 'none';
+      document.getElementById('workspaceEmpty').style.display = show ? 'none' : 'block';
+    }
+
+    function populateProjectSelect() {
+      document.getElementById('projectSelect').innerHTML =
+        '<option value="">请选择项目…</option>' +
+        tasks.map(t => `<option value="${t.id}">${t.enterprise || '—'} · ${t.name}</option>`).join('');
+    }
+
+    function populateClassFilter() {
+      const names = [...new Set(graduates.map(g => g.className))];
+      document.getElementById('filterClass').innerHTML =
+        '<option value="">全部</option>' + names.map(n => `<option value="${n}">${n}</option>`).join('');
+    }
+
+    function updateStats() {
+      const total = graduates.length;
+      const issued = graduates.filter(g => g.graduateCertStatus === '已发证').length;
+      const pending = total - issued;
+      const archived = graduates.filter(g => g.archived).length;
+      document.getElementById('statTotal').textContent = total;
+      document.getElementById('statIssued').textContent = issued;
+      document.getElementById('statPending').textContent = pending;
+      document.getElementById('statArchived').textContent = archived;
+    }
+
+    function flowStep() {
+      if (archivedCount() === graduates.length && graduates.length) return 4;
+      if (graduates.every(g => g.graduateCertStatus === '已发证') && graduates.length) return 3;
+      if (bundleMeta.notified) return 2;
+      if (bundleMeta.packageReady) return 1;
+      if (bundleMeta.statsDone) return 1;
+      return 0;
+    }
+
+    function archivedCount() {
+      return graduates.filter(g => g.archived).length;
+    }
+
+    function renderFlowSteps() {
+      const step = Math.min(flowStep(), 3);
+      const icons = ['fa-chart-bar', 'fa-folder-open', 'fa-bell', 'fa-archive'];
+      document.getElementById('flowSteps').innerHTML = FLOW_LABELS.map((label, i) => {
+        let cls = 'flow-step';
+        if (i < step) cls += ' done';
+        else if (i === step) cls += ' active';
+        return `<div class="${cls}"><i class="fas ${icons[i]}"></i>${label}</div>`;
+      }).join('');
+    }
+
+    function renderClassTable() {
+      buildClassSummaries();
+      const tbody = document.getElementById('classBody');
+      if (!classSummaries.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-secondary)">暂无班级</td></tr>';
+        return;
+      }
+      tbody.innerHTML = classSummaries.map(c => `
+        <tr>
+          <td><strong>${c.className}</strong></td>
+          <td>${c.total}</td>
+          <td>${c.issued}</td>
+          <td>${c.pending}</td>
+          <td>${c.graduateDate || '—'}</td>
+          <td><span class="status-badge ${bundleMeta.packageReady ? 'st-done' : 'st-draft'}">${bundleMeta.packageReady ? '已整理' : '待整理'}</span></td>
+        </tr>
+      `).join('');
+    }
+
+    function filteredGraduates() {
+      const cls = document.getElementById('filterClass').value;
+      const cert = document.getElementById('filterCert').value;
+      return graduates.filter(g => {
+        if (cls && g.className !== cls) return false;
+        if (cert && g.graduateCertStatus !== cert) return false;
+        return true;
+      });
+    }
+
+    function renderStudentTable() {
+      const tbody = document.getElementById('studentBody');
+      const list = filteredGraduates();
+      if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--text-secondary)">暂无学员</td></tr>';
+        return;
+      }
+      tbody.innerHTML = list.map(g => `
+        <tr>
+          <td><strong>${g.name}</strong></td>
+          <td>${g.className}</td>
+          <td>${g.rendingResult}</td>
+          <td><span class="status-badge ${g.graduateCertStatus === '已发证' ? 'st-done' : 'st-pending'}">${g.graduateCertStatus}</span>
+            ${g.graduateCertNo ? '<br><small>' + g.graduateCertNo + '</small>' : ''}</td>
+          <td>${g.graduateDate || '—'}</td>
+          <td><span class="status-badge ${g.archived ? 'st-done' : 'st-draft'}">${g.archived ? '已归档' : '未归档'}</span></td>
+          <td>
+            <button type="button" class="btn btn-secondary btn-sm issue-one" data-id="${g.studentId}">
+              ${g.graduateCertStatus === '已发证' ? '已发证' : '发证'}
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function renderAll() {
+      updateStats();
+      renderFlowSteps();
+      renderClassTable();
+      renderStudentTable();
+      renderProjectBanner();
+    }
+
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    document.getElementById('filterClass').addEventListener('change', renderStudentTable);
+    document.getElementById('filterCert').addEventListener('change', renderStudentTable);
+
+    document.getElementById('btnStats').addEventListener('click', () => {
+      bundleMeta.statsDone = true;
+      saveData();
+      renderAll();
+      const issued = graduates.filter(g => g.graduateCertStatus === '已发证').length;
+      alert(`结课统计完成：应结业 ${graduates.length} 人，已发证 ${issued} 人，待发 ${graduates.length - issued} 人`);
+    });
+
+    document.getElementById('btnPackage').addEventListener('click', () => {
+      bundleMeta.packageReady = true;
+      saveData();
+      renderAll();
+      alert('结课材料包已整理（含考勤、过程留痕、考核与获证汇总，演示）');
+    });
+
+    document.getElementById('btnNotify').addEventListener('click', () => {
+      graduates.forEach(g => { g.notified = true; });
+      bundleMeta.notified = true;
+      saveData();
+      renderAll();
+      alert(`已向企业与学员发送结课通知（${graduates.length} 人，演示）`);
+    });
+
+    document.getElementById('btnBatchCert').addEventListener('click', () => {
+      const pending = graduates.filter(g => g.graduateCertStatus !== '已发证');
+      if (!pending.length) { alert('暂无待发证学员'); return; }
+      const today = todayStr();
+      pending.forEach((g, i) => {
+        g.graduateCertStatus = '已发证';
+        g.graduateCertNo = g.graduateCertNo || ('JY' + currentProjectId + String(g.studentId).slice(-4));
+        g.graduateDate = today;
+      });
+      saveData();
+      renderAll();
+      alert(`已为 ${pending.length} 名学员发放结业证书（演示）`);
+    });
+
+    document.getElementById('btnArchive').addEventListener('click', () => {
+      const issued = graduates.filter(g => g.graduateCertStatus === '已发证');
+      if (!issued.length) { alert('请先发放结业证'); return; }
+      issued.forEach(g => { g.archived = true; });
+      saveData();
+      renderAll();
+      alert(`已归档 ${issued.length} 名学员培训档案（演示）`);
+    });
+
+    document.getElementById('studentBody').addEventListener('click', e => {
+      const btn = e.target.closest('.issue-one');
+      if (!btn) return;
+      const g = graduates.find(x => x.studentId === parseInt(btn.dataset.id));
+      if (!g) return;
+      if (g.graduateCertStatus === '已发证') return;
+      g.graduateCertStatus = '已发证';
+      g.graduateCertNo = 'JY' + currentProjectId + String(g.studentId).slice(-4);
+      g.graduateDate = todayStr();
+      saveData();
+      renderAll();
+    });
+
+    document.getElementById('btnNextStep').addEventListener('click', () => {
+      if (!currentProjectId) { alert('请先选择项目'); return; }
+      saveData();
+      alert(`项目「${currentProject?.name || ''}」结业信息已保存`);
+      window.location.href = '回款.html?projectId=' + currentProjectId;
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadTasks();
+      populateProjectSelect();
+      const params = new URLSearchParams(window.location.search);
+      const pid = params.get('projectId');
+      if (pid && tasks.some(t => String(t.id) === String(pid))) {
+        document.getElementById('projectSelect').value = pid;
+        loadProjectData(parseInt(pid, 10));
+      } else {
+        toggleWorkspace(false);
+      }
+      document.getElementById('projectSelect').addEventListener('change', e => {
+        const v = e.target.value;
+        if (!v) {
+          if (currentProjectId) saveData();
+          currentProjectId = null;
+          currentProject = null;
+          graduates = [];
+          toggleWorkspace(false);
+          document.getElementById('projectBanner').style.display = 'none';
+          document.getElementById('pageSub').textContent = '培训结业与档案归档 · 步骤 8 / 9';
+          const url = new URL(window.location.href);
+          url.searchParams.delete('projectId');
+          history.replaceState(null, '', url);
+          return;
+        }
+        if (currentProjectId) saveData();
+        const url = new URL(window.location.href);
+        url.searchParams.set('projectId', v);
+        history.replaceState(null, '', url);
+        loadProjectData(parseInt(v, 10));
+      });
+    });
+  </script>
+</body>
+</html>

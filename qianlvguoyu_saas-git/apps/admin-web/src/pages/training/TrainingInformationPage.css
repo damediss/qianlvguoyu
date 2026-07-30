@@ -1,0 +1,264 @@
+/* 对齐 yun_shang company/information.vue */
+.training-list-container {
+  padding: 20px;
+}
+
+.training-list-container .top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.training-list-container .pagination-container {
+  margin-top: 20px;
+  text-align: right;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.training-list-container .ant-table-thead > tr > th {
+  background: #f8f9fa !important;
+}
+
+.training-list-container .text-C {
+  text-align: center;
+}
+
+.training-list-container .tools {
+  margin-bottom: 16px;
+}
+
+.training-list-container .status-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.training-list-container .status-tag.approved,
+.training-list-container .status-tag.passed,
+.training-list-container .status-tag.status-1 {
+  background-color: #f0f7ea;
+  color: #52c41a;
+}
+
+.training-list-container .status-tag.pending,
+.training-list-container .status-tag.status-0 {
+  background-color: #fffbe6;
+  color: #faad14;
+}
+
+.training-list-container .status-tag.rejected,
+.training-list-container .status-tag.failed,
+.training-list-container .status-tag.status-2 {
+  background-color: #fff2f0;
+  color: #f5222d;
+}
+
+.training-list-container .operate-btn {
+  padding: 0 6px;
+  color: #1890ff;
+}
+
+.training-list-container .operate-btn-danger {
+  color: #f5222d !important;
+}
+
+.training-list-container .cover-table-cell {
+  width: 60px;
+  height: 40px;
+  line-height: 0;
+}
+
+.training-list-container .cover-table-thumb {
+  width: 60px;
+  height: 40px;
+  display: block;
+  object-fit: cover;
+  border-radius: 2px;
+}
+
+.training-list-container .cover-uploader .cover {
+  width: 178px;
+  height: 178px;
+  display: block;
+  object-fit: cover;
+}
+
+.training-list-container .cover-uploader {
+  border: 1px dashed #ccc;
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  display: inline-block;
+}
+
+.training-list-container .cover-uploader:hover {
+  border-color: #409eff;
+}
+
+.training-list-container .cover-uploader-icon {
+  font-size: 28px;
+  color: #8c939d;
+  width: 178px;
+  height: 178px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.training-list-container .people-input {
+  width: 400px;
+}
+
+.training-list-container .people-search-row {
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+/* Modal 通过 portal 挂到 body，样式不能依赖 .training-list-container */
+.people-modal-body .people-search-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.people-modal-body .people-search-row .people-search-input,
+.people-modal-body .people-search-row .people-search-input.ant-input-affix-wrapper {
+  width: 200px;
+  flex: 0 0 200px;
+}
+
+.people-modal-body .people-search-row .people-search-status,
+.people-modal-body .people-search-row .people-search-status.ant-select {
+  width: 160px;
+  flex: 0 0 160px;
+}
+
+.people-modal-body .tools {
+  margin-bottom: 16px;
+}
+
+.training-list-container .people-search-row .ant-input-affix-wrapper,
+.training-list-container .people-search-row .ant-input {
+  width: 200px;
+  margin-right: 20px;
+}
+
+.training-list-container .people-search-row .ant-select {
+  width: 200px;
+  flex: 0 0 auto;
+}
+
+.training-list-container .sign-up-form .ant-form-item-label {
+  width: 120px;
+  flex: 0 0 120px;
+}
+
+.training-list-container .sign-up-form .ant-select,
+.training-list-container .sign-up-form .ant-input {
+  max-width: 400px;
+}
+
+.training-list-container .qrcode-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+/* 报名计划编辑弹窗（portal 渲染，不依赖 .training-list-container） */
+.sign-up-form .cover-uploader .cover {
+  width: 178px;
+  height: 178px;
+  display: block;
+  object-fit: cover;
+}
+
+.sign-up-form .cover-uploader {
+  border: 1px dashed #ccc;
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  display: inline-block;
+}
+
+.sign-up-form .cover-uploader:hover {
+  border-color: #409eff;
+}
+
+.sign-up-form .cover-uploader-icon {
+  font-size: 28px;
+  color: #8c939d;
+  width: 178px;
+  height: 178px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 二维码弹窗（portal 渲染，不依赖 .training-list-container） */
+.qrcode-modal-body .qrcode-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 32px;
+}
+
+.qrcode-modal-body .qrcode-col {
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+.qrcode-modal-body .qrcode-title {
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.qrcode-modal-body .text-C {
+  text-align: center;
+  margin-top: 8px;
+}
+
+.qrcode-modal-body .wx-qrcode-placeholder {
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.training-list-container .qrcode-col {
+  text-align: center;
+}
+
+.training-list-container .wx-qrcode-placeholder {
+  width: 120px;
+  height: 120px;
+  line-height: 120px;
+  text-align: center;
+  margin: 0 auto;
+}
+
+.training-list-container .people-modal-body {
+  background-color: #fff;
+}
+
+.training-list-container .tools .ant-btn {
+  margin-right: 0;
+}
+
+.training-list-container .people-status-text {
+  color: rgba(0, 0, 0, 0.88);
+}
