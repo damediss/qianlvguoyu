@@ -72,7 +72,10 @@ class CompetitionRegistrationServiceTest {
     CompetitionRosterImportEntity result = service.confirmAndGenerate(1L, 7001L, 1000L);
 
     assertThat(result.getStatus()).isEqualTo("confirmed");
-    verify(registrationMapper).insert(any(CompetitionRegistrationEntity.class));
+    var registrationCaptor =
+        org.mockito.ArgumentCaptor.forClass(CompetitionRegistrationEntity.class);
+    verify(registrationMapper).insert(registrationCaptor.capture());
+    assertThat(registrationCaptor.getValue().getMemberId()).isEqualTo(6001L);
     verify(importMapper).updateById(result);
   }
 

@@ -101,6 +101,8 @@ public class CompetitionRegistrationApplicationService {
     CompetitionEventEntity event = eventService.getById(principal.getTenantId(), eventId);
     if (CompetitionEventScope.ENTERPRISE_INTERNAL.getCode().equals(event.getScope())) {
       if (!orgId.equals(event.getOwnerOrgId())) {
+        log.warn("Registration event access denied for enterprise-internal event, userId={}, tenantId={}, eventId={}, orgId={}",
+            principal.getUserId(), principal.getTenantId(), eventId, orgId);
         throw new BusinessException(ErrorCode.FORBIDDEN, "无权查询该赛事的参赛资格");
       }
       return;
@@ -112,6 +114,8 @@ public class CompetitionRegistrationApplicationService {
         .eq(CompetitionEventOrgEntity::getStatus, CompetitionEventOrgStatus.ACTIVE.getCode())
         .eq(CompetitionEventOrgEntity::getDeleted, 0));
     if (relation == null) {
+      log.warn("Registration event access denied because active organization relation is missing, userId={}, tenantId={}, eventId={}, orgId={}",
+          principal.getUserId(), principal.getTenantId(), eventId, orgId);
       throw new BusinessException(ErrorCode.FORBIDDEN, "当前企业不是有效赛事参与企业");
     }
   }

@@ -8,10 +8,14 @@ import com.guoyu.platform.competition.dto.CompetitionStageCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionStageQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionStageUpdateReq;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
+import com.guoyu.platform.competition.entity.CompetitionEventOrgEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageEntity;
+import com.guoyu.platform.competition.enums.CompetitionEventOrgStatus;
 import com.guoyu.platform.competition.enums.CompetitionEventScope;
 import com.guoyu.platform.competition.enums.CompetitionEventStatus;
+import com.guoyu.platform.competition.mapper.CompetitionEventOrgMapper;
 import com.guoyu.platform.competition.vo.CompetitionStageVO;
+import com.guoyu.platform.security.PlatformAdminSupport;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.UserEntity;
@@ -29,21 +33,24 @@ public class CompetitionStageApplicationService {
 
   private final CompetitionEventService eventService;
   private final CompetitionStageService stageService;
+  private final CompetitionEventOrgMapper eventOrgMapper;
   private final UserMapper userMapper;
 
   public CompetitionStageApplicationService(
       CompetitionEventService eventService,
       CompetitionStageService stageService,
+      CompetitionEventOrgMapper eventOrgMapper,
       UserMapper userMapper) {
     this.eventService = eventService;
     this.stageService = stageService;
+    this.eventOrgMapper = eventOrgMapper;
     this.userMapper = userMapper;
   }
 
   @Transactional(readOnly = true)
   public PageResponse<CompetitionStageVO> page(Long eventId, CompetitionStageQueryReq req) {
     PlatformUserPrincipal principal = currentUser();
-    CompetitionEventEntity event = accessibleEvent(principal, eventId);
+    CompetitionEventEntity event = accessibleEvent(principal, eventId, false);
     var page = stageService.page(principal.getTenantId(), event.getId(), req);
     List<CompetitionStageVO> items = new ArrayList<>();
     if (page.getRecords() != null) {
@@ -55,7 +62,7 @@ public class CompetitionStageApplicationService {
   @Transactional
   public CompetitionStageVO create(Long eventId, CompetitionStageCreateReq req) {
     PlatformUserPrincipal principal = currentUser();
-    CompetitionEventEntity event = accessibleEvent(principal, eventId);
+    CompetitionEventEntity event = accessibleEvent(principal, eventId, true);
     requireDraftEvent(event);
     return CompetitionStageConverter.toVO(stageService.create(principal.getTenantId(), event.getId(), req));
   }
@@ -64,20 +71,48 @@ public class CompetitionStageApplicationService {
   public CompetitionStageVO update(Long stageId, CompetitionStageUpdateReq req) {
     PlatformUserPrincipal principal = currentUser();
     CompetitionStageEntity stage = stageService.getById(principal.getTenantId(), stageId);
-    CompetitionEventEntity event = accessibleEvent(principal, stage.getEventId());
+    CompetitionEventEntity event = accessibleEvent(principal, stage.getEventId(), true);
     requireDraftEvent(event);
     return CompetitionStageConverter.toVO(stageService.update(principal.getTenantId(), stageId, req));
   }
 
-  private CompetitionEventEntity accessibleEvent(PlatformUserPrincipal principal, Long eventId) {
+  private CompetitionEventEntity accessibleEvent(
+      PlatformUserPrincipal principal,
+      Long eventId,
+      boolean manage) {
     CompetitionEventEntity event = eventService.getById(principal.getTenantId(), eventId);
-    if (CompetitionEventScope.ENTERPRISE_INTERNAL.getCode().equals(event.getScope())
-        && !currentUserOrgId(principal).equals(event.getOwnerOrgId())) {
+    if (PlatformAdminSupport.isSuperAdmin(principal)) {
+      return event;
+    }
+    Long orgId = currentUserOrgId(principal);
+    if (CompetitionEventScope.ENTERPRISE_INTERNAL.getCode().equals(event.getScope())) {
+      if (orgId.equals(event.getOwnerOrgId())) {
+        return event;
+      }
       log.warn("User attempted to access stages outside organization scope, eventId={}, userId={}, tenantId={}",
           eventId, principal.getUserId(), principal.getTenantId());
       throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该赛事");
     }
-    return event;
+    if (manage && CompetitionEventScope.PLATFORM.getCode().equals(event.getScope())) {
+      log.warn(
+          "Enterprise participant attempted to manage platform event stages, "
+              + "eventId={}, userId={}, orgId={}",
+          eventId, principal.getUserId(), orgId);
+      throw new BusinessException(ErrorCode.FORBIDDEN, "平台赛事赛段仅平台管理员可管理");
+    }
+    CompetitionEventOrgEntity relation = eventOrgMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionEventOrgEntity>()
+            .eq(CompetitionEventOrgEntity::getTenantId, principal.getTenantId())
+            .eq(CompetitionEventOrgEntity::getEventId, eventId)
+            .eq(CompetitionEventOrgEntity::getOrgId, orgId)
+            .eq(CompetitionEventOrgEntity::getStatus, CompetitionEventOrgStatus.ACTIVE.getCode())
+            .eq(CompetitionEventOrgEntity::getDeleted, 0));
+    if (relation != null) {
+      return event;
+    }
+    log.warn("User attempted to access stages without active event organization, eventId={}, orgId={}, userId={}, tenantId={}",
+        eventId, orgId, principal.getUserId(), principal.getTenantId());
+    throw new BusinessException(ErrorCode.FORBIDDEN, "当前企业不是有效赛事参与企业");
   }
 
   private void requireDraftEvent(CompetitionEventEntity event) {

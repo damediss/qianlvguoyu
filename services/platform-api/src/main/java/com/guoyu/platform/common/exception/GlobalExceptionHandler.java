@@ -115,6 +115,9 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(AuthorizationDeniedException.class)
   public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AuthorizationDeniedException ex) {
+    log.warn(
+        "Request denied by method authorization, exceptionType={}",
+        ex.getClass().getSimpleName());
     return ResponseEntity.status(HttpStatus.FORBIDDEN)
         .body(ApiResponse.fail(ErrorCode.FORBIDDEN, "Forbidden"));
   }
