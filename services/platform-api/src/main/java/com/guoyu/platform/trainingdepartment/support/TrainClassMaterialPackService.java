@@ -131,7 +131,7 @@ public class TrainClassMaterialPackService {
       for (TrainFileTempEntity tmpl : templates) {
         String title = tmpl.getTitle();
         if ("docx".equalsIgnoreCase(tmpl.getExt()) && "开班申请表".equals(title)) {
-          byte[] doc = buildKaiBanDocx(tmpl, clazz, trainInfo, companyName, workTypeTitle, teachers);
+          byte[] doc = buildKaiBanDocx(tmpl, clazz, trainInfo, companyName, workTypeTitle, teachers, students);
           if (doc != null) {
             addZipEntry(zos, "开班申请表/开班申请表.docx", doc);
           }
@@ -239,7 +239,8 @@ public class TrainClassMaterialPackService {
       TrainInfoListEntity trainInfo,
       String companyName,
       String workTypeTitle,
-      List<TrainPeopleListEntity> teachers) throws Exception {
+      List<TrainPeopleListEntity> teachers,
+      List<TrainPeopleListEntity> students) throws Exception {
     String templatePath = resolveKaiBanTemplatePath(tmpl);
     Path local = fileResolver.resolveLocalPath(templatePath);
     byte[] templateBytes = Files.readAllBytes(local);
@@ -278,7 +279,7 @@ public class TrainClassMaterialPackService {
     vars.put("wktype", workTypeTitle);
     vars.put("worktype", workTypeTitle);
     vars.put("level", wlevel);
-    vars.put("nums", clazz.getNums() != null ? String.valueOf(clazz.getNums()) : "");
+    vars.put("nums", String.valueOf(students != null ? students.size() : 0));
     vars.put("keshi", "");
     vars.put("pxchengnuo", "培训承诺*****");
 

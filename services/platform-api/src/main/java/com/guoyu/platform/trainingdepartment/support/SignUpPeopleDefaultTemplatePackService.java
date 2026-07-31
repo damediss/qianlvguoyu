@@ -56,14 +56,17 @@ public class SignUpPeopleDefaultTemplatePackService {
   private final String cdnPath;
   private final ObjectMapper objectMapper;
   private final SignUpExportAssetService assetService;
+  private final IdCardImageInsetCropper idCardCropper;
 
   public SignUpPeopleDefaultTemplatePackService(
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
       ObjectMapper objectMapper,
-      SignUpExportAssetService assetService) {
+      SignUpExportAssetService assetService,
+      IdCardImageInsetCropper idCardCropper) {
     this.cdnPath = cdnPath;
     this.objectMapper = objectMapper;
     this.assetService = assetService;
+    this.idCardCropper = idCardCropper;
   }
 
   public String run(
@@ -187,6 +190,7 @@ public class SignUpPeopleDefaultTemplatePackService {
         "idCard/headerOrigin/" + idCard + "_front.jpg",
         "idCard/old/headerOrigin/" + idCard + "_front.png",
         person.getIdCardFront())) {
+      idCardCropper.tightenInPlace(front);
       assets.front = front;
     }
 
@@ -195,6 +199,7 @@ public class SignUpPeopleDefaultTemplatePackService {
         "idCard/headerOrigin/" + idCard + "_back.jpg",
         "idCard/old/headerOrigin/" + idCard + "_back.png",
         person.getIdCardBack())) {
+      idCardCropper.tightenInPlace(back);
       assets.back = back;
     }
 

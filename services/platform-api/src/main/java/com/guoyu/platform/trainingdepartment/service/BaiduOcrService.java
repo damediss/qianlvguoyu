@@ -168,12 +168,23 @@ public class BaiduOcrService {
       }
     }
 
-    // detect_card=true 时返回证件板裁剪图（base64，不含 data: 前缀）
+    // detect_card=true 时返回证件板裁剪图（base64，不含 data: 前缀）及位置
     if (root.has("card_image") && !root.get("card_image").isNull()) {
       String cardImage = root.get("card_image").asText("");
       if (StringUtils.hasText(cardImage)) {
         result.put("card_image_base64", cardImage);
       }
+    }
+    JsonNode cardLocation = root.get("card_location");
+    if (cardLocation != null && !cardLocation.isNull()
+        && cardLocation.has("left") && cardLocation.has("top")
+        && cardLocation.has("width") && cardLocation.has("height")) {
+      Map<String, Object> loc = new LinkedHashMap<>();
+      loc.put("left", cardLocation.get("left").asInt());
+      loc.put("top", cardLocation.get("top").asInt());
+      loc.put("width", cardLocation.get("width").asInt());
+      loc.put("height", cardLocation.get("height").asInt());
+      result.put("card_location", loc);
     }
 
     return result;

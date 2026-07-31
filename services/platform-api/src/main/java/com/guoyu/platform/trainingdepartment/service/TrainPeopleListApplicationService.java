@@ -280,14 +280,21 @@ public class TrainPeopleListApplicationService {
   public Map<String, Object> batchDeleteStudents(List<Long> ids) {
     operatorScopeService.requireOrgOperator();
     int count = 0;
+    java.util.Set<Long> classIds = new java.util.HashSet<>();
     for (Long id : ids) {
       TrainPeopleListEntity entity = mapper.selectById(id);
       if (entity != null && entity.getDeleted() == 0) {
         assertClassViewable(entity.getTrainClassId());
+        if (entity.getTrainClassId() != null) {
+          classIds.add(entity.getTrainClassId());
+        }
         entity.setDeleted(1);
         mapper.deleteById(entity.getId());
         count++;
       }
+    }
+    for (Long classId : classIds) {
+      syncClassStudentNums(classId);
     }
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("count", count);
@@ -389,6 +396,7 @@ public class TrainPeopleListApplicationService {
       insertPeople(entity);
       count++;
     }
+    syncClassStudentNums(classId);
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("count", count);
     result.put("failed", failed);
@@ -446,6 +454,7 @@ public class TrainPeopleListApplicationService {
       insertPeople(entity);
       count++;
     }
+    syncClassStudentNums(classId);
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("count", count);
     result.put("failed", failed);
@@ -627,6 +636,30 @@ public class TrainPeopleListApplicationService {
       entity.setCreateTime(LocalDateTime.now());
     }
     mapper.insert(entity);
+  }
+
+  /** 将班级 nums 同步为花名册学员实时人数，供开班申报材料等使用 */
+  private void syncClassStudentNums(Long classId) {
+    if (classId == null) {
+      return;
+    }
+    Long count = mapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
+        .eq(TrainPeopleListEntity::getTrainClassId, classId)
+        .eq(TrainPeopleListEntity::getType, "student")
+        .eq(TrainPeopleListEntity::getDeleted, 0));
+    TrainInfoClassEntity clazz = trainInfoClassMapper.selectOne(
+        new LambdaQueryWrapper<TrainInfoClassEntity>()
+            .eq(TrainInfoClassEntity::getId, classId)
+            .eq(TrainInfoClassEntity::getDeleted, 0));
+    if (clazz == null) {
+      return;
+    }
+    int nums = count == null ? 0 : count.intValue();
+    if (clazz.getNums() != null && clazz.getNums() == nums) {
+      return;
+    }
+    clazz.setNums(nums);
+    trainInfoClassMapper.updateById(clazz);
   }
 
   private void assertClassViewable(Long classId) {

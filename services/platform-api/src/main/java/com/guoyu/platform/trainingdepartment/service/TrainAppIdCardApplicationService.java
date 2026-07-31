@@ -8,6 +8,7 @@ import com.guoyu.platform.trainingdepartment.entity.PlatformUserDetailEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserDetailMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
+import com.guoyu.platform.trainingdepartment.support.IdCardImageInsetCropper;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -27,6 +28,7 @@ public class TrainAppIdCardApplicationService {
   private final TrainSignUpPeopleSelfMapper signUpPeopleMapper;
   private final PlatformUserDetailMapper detailMapper;
   private final BaiduOcrService baiduOcrService;
+  private final IdCardImageInsetCropper idCardCropper;
   private final String cdnPath;
   private final String cdnUrl;
   private final String cdnPublicUrl;
@@ -36,6 +38,7 @@ public class TrainAppIdCardApplicationService {
       TrainSignUpPeopleSelfMapper signUpPeopleMapper,
       PlatformUserDetailMapper detailMapper,
       BaiduOcrService baiduOcrService,
+      IdCardImageInsetCropper idCardCropper,
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
       @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl,
       @Value("${platform.cdn.public-url:}") String cdnPublicUrl,
@@ -43,6 +46,7 @@ public class TrainAppIdCardApplicationService {
     this.signUpPeopleMapper = signUpPeopleMapper;
     this.detailMapper = detailMapper;
     this.baiduOcrService = baiduOcrService;
+    this.idCardCropper = idCardCropper;
     this.cdnPath = cdnPath;
     this.cdnUrl = trimSlash(cdnUrl);
     this.cdnPublicUrl = trimSlash(cdnPublicUrl);
@@ -116,8 +120,13 @@ public class TrainAppIdCardApplicationService {
       }
       idcardNumber = idcardNumber.trim().toUpperCase();
 
-      String displayUrl = saveCardImageIfPresent(
-          (String) ocrData.get("card_image_base64"), idcardNumber, "front", sourceUrl);
+      String displayUrl = saveTightCardImage(
+          localFilePath,
+          ocrData.get("card_location"),
+          (String) ocrData.get("card_image_base64"),
+          idcardNumber,
+          "front",
+          sourceUrl);
 
       Map<String, Object> cardInfo = new LinkedHashMap<>();
       cardInfo.put("realname", ocrData.get("realname"));
@@ -147,8 +156,13 @@ public class TrainAppIdCardApplicationService {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "身份证反面识别失败，请重新拍摄清晰照片");
       }
 
-      String displayUrl = saveCardImageIfPresent(
-          (String) ocrData.get("card_image_base64"), idcardNumber, "back", sourceUrl);
+      String displayUrl = saveTightCardImage(
+          localFilePath,
+          ocrData.get("card_location"),
+          (String) ocrData.get("card_image_base64"),
+          idcardNumber,
+          "back",
+          sourceUrl);
 
       updateDetailBack(idcardNumber, displayUrl,
           (String) ocrData.get("valid_date_start"),
@@ -174,21 +188,41 @@ public class TrainAppIdCardApplicationService {
   }
 
   /**
-   * 将百度 card_image 落到 CDN idCard/headerOrigin/{id}_{front|back}.jpg，返回公网 URL。
-   * 无裁剪图时回退原图 URL。
+   * 优先按 card_location 在原图上裁剪并内收边距；否则对百度 card_image 做同等内收。
+   * 无可用裁剪结果时回退原图 URL。
    */
-  private String saveCardImageIfPresent(String base64, String idcard, String side, String fallbackUrl) {
-    if (!StringUtils.hasText(base64) || !StringUtils.hasText(idcard)) {
+  @SuppressWarnings("unchecked")
+  private String saveTightCardImage(
+      String localFilePath,
+      Object locationObj,
+      String cardImageBase64,
+      String idcard,
+      String side,
+      String fallbackUrl) {
+    if (!StringUtils.hasText(idcard)) {
       return fallbackUrl;
     }
     try {
-      String pure = base64;
-      int comma = base64.indexOf(',');
-      if (base64.startsWith("data:") && comma > 0) {
-        pure = base64.substring(comma + 1);
+      byte[] bytes = null;
+      Map<String, Object> loc = locationObj instanceof Map<?, ?> ? (Map<String, Object>) locationObj : null;
+      if (StringUtils.hasText(localFilePath) && loc != null) {
+        Path local = Paths.get(localFilePath);
+        if (Files.exists(local)) {
+          bytes = idCardCropper.cropFromOriginal(
+              local, toInt(loc.get("left")), toInt(loc.get("top")),
+              toInt(loc.get("width")), toInt(loc.get("height")));
+        }
       }
-      byte[] bytes = java.util.Base64.getDecoder().decode(pure);
-      if (bytes.length == 0) {
+      if (bytes == null && StringUtils.hasText(cardImageBase64)) {
+        String pure = cardImageBase64;
+        int comma = cardImageBase64.indexOf(',');
+        if (cardImageBase64.startsWith("data:") && comma > 0) {
+          pure = cardImageBase64.substring(comma + 1);
+        }
+        byte[] raw = java.util.Base64.getDecoder().decode(pure);
+        bytes = idCardCropper.tightenBytes(raw);
+      }
+      if (bytes == null || bytes.length == 0) {
         return fallbackUrl;
       }
       Path dir = Paths.get(cdnPath).resolve("idCard/headerOrigin");
@@ -199,6 +233,20 @@ public class TrainAppIdCardApplicationService {
       return publicCdnBase() + "/idCard/headerOrigin/" + filename;
     } catch (Exception e) {
       return fallbackUrl;
+    }
+  }
+
+  private static int toInt(Object v) {
+    if (v instanceof Number n) {
+      return n.intValue();
+    }
+    if (v == null) {
+      return 0;
+    }
+    try {
+      return Integer.parseInt(v.toString());
+    } catch (NumberFormatException e) {
+      return 0;
     }
   }
 

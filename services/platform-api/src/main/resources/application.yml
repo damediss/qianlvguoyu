@@ -208,6 +208,9 @@ platform:
   baidu:
     api-key: ${BAIDU_API_KEY:JHKuRKyAaLiqdWRi79Bfriim}
     secret-key: ${BAIDU_SECRET_KEY:nLJlBKKsan5ArKiJNzw8NgVmU4RT94yb}
+    # 身份证裁剪内收比例（相对宽/高，四周各收一圈，减小 card_image / card_location 多余背景边）
+    # 0=不内收；建议 0.02~0.06，过大可能切到证件内容
+    idcard-crop-inset-ratio: ${BAIDU_IDCARD_CROP_INSET_RATIO:0.04}
   # 报名页面公开访问地址（用于生成二维码，扫码跳转用）
   # 本地开发：http://localhost:8080  生产：https://api.gjjd168.com
   app-base-url: ${APP_BASE_URL:http://localhost:8080}

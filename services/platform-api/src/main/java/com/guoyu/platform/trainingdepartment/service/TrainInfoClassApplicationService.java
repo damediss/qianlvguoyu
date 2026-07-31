@@ -13,11 +13,13 @@ import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassUpdateReq;
 import com.guoyu.platform.trainingdepartment.entity.TrainFileTempEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.system.entity.OrgEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainFileTempMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoClassVO;
@@ -28,6 +30,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +48,7 @@ public class TrainInfoClassApplicationService {
   private final TrainInfoClassMapper mapper;
   private final TrainInfoListMapper trainInfoListMapper;
   private final TrainFileTempMapper trainFileTempMapper;
+  private final TrainPeopleListMapper peopleListMapper;
   private final OrgMapper orgMapper;
   private final ExamWorkTypeMapper examWorkTypeMapper;
   private final TrainingOperatorScopeService operatorScopeService;
@@ -56,6 +60,7 @@ public class TrainInfoClassApplicationService {
   public TrainInfoClassApplicationService(TrainInfoClassMapper mapper,
       TrainInfoListMapper trainInfoListMapper,
       TrainFileTempMapper trainFileTempMapper,
+      TrainPeopleListMapper peopleListMapper,
       OrgMapper orgMapper,
       ExamWorkTypeMapper examWorkTypeMapper,
       TrainingOperatorScopeService operatorScopeService,
@@ -63,6 +68,7 @@ public class TrainInfoClassApplicationService {
     this.mapper = mapper;
     this.trainInfoListMapper = trainInfoListMapper;
     this.trainFileTempMapper = trainFileTempMapper;
+    this.peopleListMapper = peopleListMapper;
     this.orgMapper = orgMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
     this.operatorScopeService = operatorScopeService;
@@ -118,12 +124,14 @@ public class TrainInfoClassApplicationService {
 
     List<Long> classIds = mpPage.getRecords().stream().map(TrainInfoClassEntity::getId).toList();
     Map<Long, Map<String, Object>> profileMap = classCollectionApplicationService.batchProfileProgress(classIds);
+    Map<Long, Integer> studentNumsMap = countStudentsByClassIds(classIds);
 
     List<Map<String, Object>> list = mpPage.getRecords().stream().map(e -> {
       Map<String, Object> item = new LinkedHashMap<>();
       item.put("id", e.getId());
       item.put("title", e.getTitle());
-      item.put("nums", e.getNums());
+      // 列表人数以花名册实时统计为准，避免开班准备导入后 nums 冗余字段滞后
+      item.put("nums", studentNumsMap.getOrDefault(e.getId(), 0));
       item.put("addtime", e.getAddtime());
       item.put("addtime_cn", formatAddtime(e.getAddtime()));
       item.put("train_info_id", e.getTrainInfoId());
@@ -418,6 +426,27 @@ public class TrainInfoClassApplicationService {
       }
       return ids;
     }
+  }
+
+  /** 按班级批量统计花名册学员人数（type=student 且未删除） */
+  private Map<Long, Integer> countStudentsByClassIds(List<Long> classIds) {
+    if (classIds == null || classIds.isEmpty()) {
+      return Map.of();
+    }
+    List<TrainPeopleListEntity> rows = peopleListMapper.selectList(
+        new LambdaQueryWrapper<TrainPeopleListEntity>()
+            .select(TrainPeopleListEntity::getId, TrainPeopleListEntity::getTrainClassId)
+            .in(TrainPeopleListEntity::getTrainClassId, classIds)
+            .eq(TrainPeopleListEntity::getType, "student")
+            .eq(TrainPeopleListEntity::getDeleted, 0));
+    Map<Long, Integer> map = new HashMap<>();
+    for (TrainPeopleListEntity row : rows) {
+      if (row.getTrainClassId() == null) {
+        continue;
+      }
+      map.merge(row.getTrainClassId(), 1, Integer::sum);
+    }
+    return map;
   }
 
   private TrainInfoClassEntity getExisting(Long id) {

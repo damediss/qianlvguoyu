@@ -566,7 +566,7 @@ export function ClassSignUpPeoplePanel({ signUpId, title, onChanged }: ClassSign
             { title: 'ID', dataIndex: 'id', width: 80 },
             { title: '姓名', dataIndex: 'realname', width: 100 },
             { title: '手机', dataIndex: 'phone', width: 120 },
-            { title: '身份证', dataIndex: 'idCard', ellipsis: true },
+            { title: '身份证', dataIndex: 'idcard', ellipsis: true },
           ] as ColumnsType<PlatformUser>}
         />
         <Pagination
