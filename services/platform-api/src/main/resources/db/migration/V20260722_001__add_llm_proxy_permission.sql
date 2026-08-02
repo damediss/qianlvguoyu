@@ -61,6 +61,19 @@ ON DUPLICATE KEY UPDATE
   updated_by = 1,
   deleted = 0;
 
+INSERT INTO sys_permission (
+    id, tenant_id, menu_id, code, name, action, status, created_at, updated_at, created_by, updated_by, deleted
+) VALUES
+    (660011, 1, 4603, 'rencai:rule:manage', '人才识别规则管理', 'proxy', 'enabled', NOW(), NOW(), 1, 1, 0)
+    ON DUPLICATE KEY UPDATE
+                         menu_id = VALUES(menu_id),
+                         name = VALUES(name),
+                         action = VALUES(action),
+                         status = VALUES(status),
+                         updated_at = NOW(),
+                         updated_by = 1,
+                         deleted = 0;
+
 
 INSERT INTO sys_role_permission (
   id, tenant_id, role_id, permission_id, created_at, updated_at, created_by, updated_by, deleted
@@ -77,3 +90,10 @@ INSERT INTO sys_role_permission (
 ) VALUES
   (6600311, 1, 2000, 660010, NOW(), NOW(), 1, 1, 0)
 ON DUPLICATE KEY UPDATE deleted = 0;
+
+
+INSERT INTO sys_role_permission (
+    id, tenant_id, role_id, permission_id, created_at, updated_at, created_by, updated_by, deleted
+) VALUES
+    (6600312, 1, 2000, 660011, NOW(), NOW(), 1, 1, 0)
+    ON DUPLICATE KEY UPDATE deleted = 0;

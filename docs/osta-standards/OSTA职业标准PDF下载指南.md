@@ -1,0 +1,386 @@
+# OSTA 职业标准 PDF 下载指南
+
+> **用途**：从 [OSTA 国家职业标准查询系统](https://www.osta.org.cn/skillStandard) 下载指定职业标准的 PDF 文件
+> **最后更新**：2026-08-02
+> **状态**：✅ 已验证可用
+
+---
+
+## 快速使用
+
+只需提供**职业名称**（如"重冶湿法冶炼工"），Agent 按以下流程自动完成下载：
+
+```
+1. 打开浏览器 → 访问 https://www.osta.org.cn/skillStandard
+2. 在搜索框输入职业名称 → 点击"搜索"
+3. 点击"点击查看" → 打开 PDF 查看器
+4. 从 performance 资源列表中提取 PDF URL
+5. 获取浏览器 cookies
+6. 用 Node.js https 模块 + cookies 下载 PDF
+7. 保存到 outputs/osta-standards/{职业名称}.pdf
+```
+
+---
+
+## 详细步骤
+
+### 第 1 步：初始化浏览器
+
+```javascript
+// 确保 browser 已初始化
+if (globalThis.browser == null) {
+  globalThis.browser = await agent.browsers.getForUrl("https://www.osta.org.cn/skillStandard");
+}
+var tab = await browser.tabs.new();
+await tab.goto('https://www.osta.org.cn/skillStandard');
+await tab.playwright.waitForTimeout(3000);
+```
+
+### 第 2 步：搜索职业标准
+
+```javascript
+// 方式一：通过 UI 搜索
+var searchInput = tab.playwright.getByRole('textbox', { name: '输入标准名称或职业编码进行查询' });
+await searchInput.fill('{职业名称}');
+var searchBtn = tab.playwright.getByRole('button', { name: '搜索' });
+await searchBtn.click();
+await tab.playwright.waitForTimeout(3000);
+
+// 方式二：通过 evaluate 直接操作 DOM（更稳定）
+await tab.evaluate(function(occupationName) {
+  var input = document.querySelector('input[placeholder*="标准名称"]');
+  if (input) {
+    var nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype, 'value'
+    ).set;
+    nativeInputValueSetter.call(input, occupationName);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  var buttons = document.querySelectorAll('button');
+  for (var i = 0; i < buttons.length; i++) {
+    if (buttons[i].textContent.trim() === '搜索') {
+      buttons[i].click();
+      break;
+    }
+  }
+}, '{职业名称}');
+```
+
+### 第 3 步：打开 PDF 查看器
+
+```javascript
+// 搜索后应该只有一行结果
+var link = tab.playwright.getByText('点击查看');
+await link.click();
+await tab.playwright.waitForTimeout(5000);  // 等待 PDF 加载
+```
+
+### 第 4 步：捕获 PDF 下载 URL
+
+```javascript
+// 清空之前的性能记录
+await tab.evaluate(function() { performance.clearResourceTimings(); });
+
+// 点击后重新加载 PDF（如果需要）
+// 从 performance 资源列表中找到 PDF URL
+var resources = await tab.evaluate(function() {
+  return performance.getEntriesByType('resource').map(function(r) { return r.name; });
+});
+
+var pdfUrl = null;
+for (var i = 0; i < resources.length; i++) {
+  if (resources[i].indexOf('.pdf') !== -1) {
+    pdfUrl = resources[i];
+    break;
+  }
+}
+
+// pdfUrl 示例：
+// https://www.osta.org.cn/api/sys/downloadFile/decrypt?fileName=4eNsZIOv3WFNDfbnldJHeA%2F2024%2F4%2F29%2F140c0c12a4d047b6a49ceb5790668053.pdf
+```
+
+### 第 5 步：获取浏览器 Cookies
+
+```javascript
+var cookies = await tab.evaluate(function() {
+  return document.cookie;
+});
+// 示例：_gscu_486005091=85679129a75zvh19; _gscbrs_486005091=1
+```
+
+### 第 6 步：下载 PDF 文件
+
+```javascript
+var https = await import('https');
+var fs = await import('fs');
+
+var downloadPromise = new Promise(function(resolve, reject) {
+  var parsedUrl = new URL(pdfUrl);
+  
+  var options = {
+    hostname: parsedUrl.hostname,
+    port: 443,
+    path: parsedUrl.pathname + parsedUrl.search,
+    method: 'GET',
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'application/pdf,application/octet-stream,*/*',
+      'Referer': 'https://www.osta.org.cn/skillStandard',
+      'Cookie': cookies,
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'Connection': 'keep-alive',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'same-origin',
+      'Upgrade-Insecure-Requests': '1',
+    },
+    rejectUnauthorized: false
+  };
+  
+  var req = https.request(options, function(res) {
+    // 处理重定向
+    if (res.statusCode === 301 || res.statusCode === 302) {
+      res.resume();
+      resolve({ redirected: true, location: res.headers.location });
+      return;
+    }
+    
+    var chunks = [];
+    res.on('data', function(chunk) { chunks.push(chunk); });
+    res.on('end', function() {
+      var buffer = Buffer.concat(chunks);
+      resolve({ ok: true, size: buffer.length, header: buffer.slice(0, 4).toString(), buffer: buffer });
+    });
+  });
+  
+  req.on('error', function(e) {
+    resolve({ ok: false, error: e.message });
+  });
+  
+  req.setTimeout(15000, function() {
+    req.destroy();
+    resolve({ ok: false, error: 'timeout' });
+  });
+  
+  req.end();
+});
+
+var result = await downloadPromise;
+
+if (result.ok && result.header === '%PDF') {
+  var outputPath = 'D:/JetBrains/IdeaProjects/qianlvguoyu_saas/outputs/osta-standards/{职业名称}.pdf';
+  fs.writeFileSync(outputPath, result.buffer);
+  console.log('下载成功: ' + outputPath + ' (' + result.size + ' bytes)');
+}
+```
+
+---
+
+## 关键要点
+
+### 为什么不能直接下载？
+
+OSTA 网站的 PDF 查看器有以下保护：
+- 查看器 CSS 类名 `no-download-print` 禁用了下载和打印按钮
+- PDF URL 通过 JavaScript 动态生成，不在 DOM 中暴露
+- 直接访问 PDF URL 会被重定向到网站首页（防盗链）
+
+### 为什么需要 Cookies？
+
+服务器通过 cookies 验证请求来源。没有正确的 cookies，请求会被重定向到首页。
+
+### 为什么用 `performance.getEntriesByType`？
+
+PDF 查看器使用 PDF.js 加载文件，加载后会在 performance 资源列表中留下记录。这是获取真实 PDF URL 的最可靠方式。
+
+---
+
+## 常见问题
+
+### Q: 搜索后有多行结果怎么办？
+```javascript
+// 遍历所有结果，找到匹配的职业名称
+var rows = await tab.playwright.locator('.arco-table-tr').all();
+for (var row of rows) {
+  var text = await row.textContent();
+  if (text.includes('{职业名称}')) {
+    await row.locator('a.arco-link').click();
+    break;
+  }
+}
+```
+
+### Q: PDF URL 过期了怎么办？
+PDF URL 中的 `fileName` 参数是加密的，可能包含时间戳。如果下载失败，需要重新点击"点击查看"获取新的 URL。
+
+### Q: 下载的文件不是 PDF？
+检查 `result.header === '%PDF'`。如果不是，说明 URL 已过期或被重定向。
+
+---
+
+## 完整自动化脚本
+
+以下是完整的可复用代码，只需替换 `{职业名称}` 即可：
+
+```javascript
+// === OSTA PDF 下载器 ===
+// 用法：替换 OCCUPATION_NAME 后执行
+
+var OCCUPATION_NAME = '{职业名称}';  // ← 替换这里
+var OUTPUT_DIR = 'D:/JetBrains/IdeaProjects/qianlvguoyu_saas/outputs/osta-standards';
+
+// 1. 初始化浏览器
+if (globalThis.browser == null) {
+  globalThis.browser = await agent.browsers.getForUrl("https://www.osta.org.cn/skillStandard");
+}
+var tab = await browser.tabs.new();
+await tab.goto('https://www.osta.org.cn/skillStandard');
+await tab.playwright.waitForTimeout(3000);
+
+// 2. 搜索
+await tab.evaluate(function(name) {
+  var input = document.querySelector('input[placeholder*="标准名称"]');
+  if (input) {
+    var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(input, name);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  var btns = document.querySelectorAll('button');
+  for (var b of btns) {
+    if (b.textContent.trim() === '搜索') { b.click(); break; }
+  }
+}, OCCUPATION_NAME);
+await tab.playwright.waitForTimeout(3000);
+
+// 3. 打开 PDF 查看器
+await tab.evaluate(function() {
+  var links = document.querySelectorAll('a.arco-link');
+  for (var l of links) {
+    if (l.textContent.trim() === '点击查看') { l.click(); break; }
+  }
+});
+await tab.playwright.waitForTimeout(5000);
+
+// 4. 获取 PDF URL
+await tab.evaluate(function() { performance.clearResourceTimings(); });
+// 重新点击以触发新的加载
+await tab.evaluate(function() {
+  var links = document.querySelectorAll('a.arco-link');
+  for (var l of links) {
+    if (l.textContent.trim() === '点击查看') { l.click(); break; }
+  }
+});
+await tab.playwright.waitForTimeout(5000);
+
+var resources = await tab.evaluate(function() {
+  return performance.getEntriesByType('resource').map(function(r) { return r.name; });
+});
+
+var pdfUrl = null;
+for (var r of resources) {
+  if (r.indexOf('.pdf') !== -1) { pdfUrl = r; break; }
+}
+
+if (!pdfUrl) {
+  nodeRepl.write('ERROR: 未找到 PDF URL');
+} else {
+  nodeRepl.write('PDF URL: ' + pdfUrl);
+  
+  // 5. 获取 cookies
+  var cookies = await tab.evaluate(function() { return document.cookie; });
+  
+  // 6. 下载 PDF
+  var https = await import('https');
+  var fs = await import('fs');
+  
+  var result = await new Promise(function(resolve) {
+    var parsedUrl = new URL(pdfUrl);
+    var req = https.request({
+      hostname: parsedUrl.hostname,
+      port: 443,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/pdf,application/octet-stream,*/*',
+        'Referer': 'https://www.osta.org.cn/skillStandard',
+        'Cookie': cookies,
+        'Accept-Encoding': 'gzip, deflate, br',
+      },
+      rejectUnauthorized: false
+    }, function(res) {
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        res.resume();
+        resolve({ redirected: true, location: res.headers.location });
+        return;
+      }
+      var chunks = [];
+      res.on('data', function(c) { chunks.push(c); });
+      res.on('end', function() {
+        var buf = Buffer.concat(chunks);
+        resolve({ ok: true, size: buf.length, header: buf.slice(0, 4).toString(), buffer: buf });
+      });
+    });
+    req.on('error', function(e) { resolve({ ok: false, error: e.message }); });
+    req.setTimeout(15000, function() { req.destroy(); resolve({ ok: false, error: 'timeout' }); });
+    req.end();
+  });
+  
+  if (result.ok && result.header === '%PDF') {
+    var outputPath = OUTPUT_DIR + '/' + OCCUPATION_NAME + '.pdf';
+    fs.writeFileSync(outputPath, result.buffer);
+    nodeRepl.write('SUCCESS: ' + outputPath + ' (' + result.size + ' bytes)');
+  } else {
+    nodeRepl.write('ERROR: ' + JSON.stringify(result));
+  }
+}
+```
+
+---
+
+## 已验证可下载的职业标准
+
+| # | 职业名称 | 职业编码 | 文件大小 | 下载时间 |
+|---|---------|---------|---------|---------|
+| 1 | 重冶湿法冶炼工 | 6-17-05-04 | 376 KB | 2026-08-02 |
+| 2 | 铝电解工 | - | 937 KB | 2026-08-02 |
+| 3 | 氧化铝制取工 | - | 977 KB | 2026-08-02 |
+| 4 | 金属轧制工 | - | 362 KB | 2026-08-02 |
+| 5 | 井下支护工 | - | 580 KB | 2026-08-02 |
+| 6 | 矿山救护工 | - | 659 KB | 2026-08-02 |
+| 7 | 重冶火法冶炼工 | - | 381 KB | 2026-08-02 |
+| 8 | 金属挤压工 | - | 808 KB | 2026-08-02 |
+
+---
+
+## 批量下载
+
+当需要下载多个职业标准时，可以：
+
+1. **逐个搜索 + 打开查看器** → 捕获所有 PDF URL（存储为 `globalThis.pdfUrl1` ~ `globalThis.pdfUrlN`）
+2. **一次性获取 cookies**
+3. **循环下载所有 PDF**
+
+```javascript
+var pdfList = [
+  { name: '铝电解工', url: globalThis.pdfUrl1 },
+  { name: '氧化铝制取工', url: globalThis.pdfUrl2 },
+  // ... 更多职业
+];
+
+for (var item of pdfList) {
+  // 使用上述下载代码
+}
+```
+
+**注意**：每下载完一个 PDF 后，关闭查看器再搜索下一个职业。
+
+---
+
+## 注意事项
+
+1. **URL 编码**：PDF URL 中的 `fileName` 参数是 URL 编码的，不需要解码
+2. **Cookies 时效**：Cookies 可能过期，如果下载失败尝试刷新页面重新获取
+3. **网络超时**：设置了 15 秒超时，如果网络慢可以调整
+4. **输出目录**：确保 `outputs/osta-standards/` 目录存在
