@@ -38,7 +38,8 @@ public class AppAuthController {
     return LegacyAppResponse.ok("成功", null);
   }
 
-  @PostMapping("/setlogin")
+  //仅凭身份证+手机号、不验密码就签发 token 写入 platform_user_token,感觉风险较大先注释
+//  @PostMapping("/setlogin")
   public LegacyAppResponse setLogin(@RequestBody Map<String, Object> body) {
     String idcard = str(body, "idcard");
     String phone = str(body, "phone");

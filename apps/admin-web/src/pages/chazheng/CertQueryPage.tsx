@@ -27,6 +27,7 @@ import {
   pageUsers,
   getYmdList,
   importUsers,
+  triggerCertCheckByYmd,
   certCheck,
   exportUsers,
   getEnterprises,
@@ -76,9 +77,17 @@ export function CertQueryPage() {
       setImporting(true);
       try {
         const result = await importUsers(file);
-        message.success("导入成功：" + result.imported + " 条记录");
+        message.success("导入成功：" + result.imported + " 条记录，批次 " + result.ymd);
         queryClient.invalidateQueries({ queryKey: ["chazheng-certs"] });
         queryClient.invalidateQueries({ queryKey: ["chazheng-ymd-list"] });
+
+        try {
+          const batch = await triggerCertCheckByYmd(result.ymd, file.name);
+          message.success("批量查证已启动：" + batch.total + " 条");
+          openProgress();
+        } catch (err: any) {
+          message.error(err?.message || "批量查证启动失败");
+        }
       } catch (err: any) {
         message.error(err?.message || "导入失败");
       } finally {
@@ -86,7 +95,7 @@ export function CertQueryPage() {
       }
       return false;
     },
-    [queryClient],
+    [queryClient, openProgress],
   );
 
   const handleDownloadTemplate = useCallback(async () => {

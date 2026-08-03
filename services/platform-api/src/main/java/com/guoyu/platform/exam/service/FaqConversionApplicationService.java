@@ -290,8 +290,11 @@ public class FaqConversionApplicationService {
       Map<String, String> promptCtx = faqConverter.buildLlmPromptContext(toExamDetail(entity), knowledgePath);
 
       // 一次 LLM 调用生成 similar + negative
-      String mergedPrompt = promptBuilder.buildMergedPrompt(promptCtx);
-      String rawContent = callLlmWithRetry(mergedPrompt, modelConfig, tenantId, circuitBreaker);
+      // system 放稳定前缀（DeepSeek 上下文缓存），user 放题目变量
+      String systemPrompt = promptBuilder.buildSystemPrompt();
+      String userPrompt = promptBuilder.buildMergedUserPrompt(promptCtx);
+      String rawContent = callLlmWithRetry(
+          systemPrompt, userPrompt, modelConfig, tenantId, circuitBreaker);
 
       // 解析合并响应
       MergedResult result = llmParser.extractMergedResult(rawContent);
@@ -339,16 +342,20 @@ public class FaqConversionApplicationService {
    * LLM 调用（含指数退避重试 + 熔断计数）。
    * 瞬时异常（429/5xx/超时/截断/部分结果）退避重试 3 次；
    * 确定性异常（解析失败/4xx 非 429）不重试直接抛出。
+   *
+   * <p>对 DeepSeek 启用 JSON Output（jsonMode=true），空 content 由 FaqLlmClient 内部重试 3 次后返回空字符串。
    */
-  private String callLlmWithRetry(String prompt, ExamFaqModelConfigEntity modelConfig,
+  private String callLlmWithRetry(String systemPrompt, String userPrompt,
+                                  ExamFaqModelConfigEntity modelConfig,
                                   Long tenantId, CircuitBreaker circuitBreaker) {
     long[] backoffMs = {2000, 4000, 8000};
     for (int attempt = 0; attempt <= backoffMs.length; attempt++) {
       try {
         String result = llmClient.chatCompletion(
             modelConfig.getBaseUrl(), modelConfig.getApiKey(),
-            modelConfig.getModelId(), prompt, modelConfig.getMaxTokens(),
-            modelConfig.getThinking(), tenantId);
+            modelConfig.getModelId(), systemPrompt, userPrompt,
+            modelConfig.getMaxTokens(), modelConfig.getThinking(),
+            true, tenantId);
         circuitBreaker.onSuccess(); // 成功时复位连续 429 计数
         return result;
       } catch (FaqLlmRateLimitException e) {

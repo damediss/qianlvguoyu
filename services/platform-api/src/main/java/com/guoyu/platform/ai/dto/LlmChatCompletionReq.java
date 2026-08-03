@@ -18,6 +18,12 @@ public record LlmChatCompletionReq(
 
     BigDecimal temperature,
     Integer maxTokens,
-    String thinking
+    String thinking,
+
+    /**
+     * 是否请求 JSON Output（仅 DeepSeek 生效）。
+     * true 时后端会对 DeepSeek 自动附加 {@code response_format: {"type": "json_object"}}。
+     */
+    Boolean responseFormatJson
 ) {
 }

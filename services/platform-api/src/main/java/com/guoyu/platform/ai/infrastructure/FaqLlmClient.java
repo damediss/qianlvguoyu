@@ -91,57 +91,68 @@ public class FaqLlmClient {
    * 调用 LLM 生成 similar_questions + negative_questions（合并后单次调用）。
    * 执行 HTTP 级 + 内容级双重分类；返回 content 文本。
    *
+   * <p>兼容旧调用：将整个 prompt 作为 user 消息发送，不启用 JSON mode。
+   *
    * @return LLM 返回的 content 文本（finish_reason=stop 且 content 非空）
    */
   public String chatCompletion(String baseUrl, String apiKey, String modelId,
                                String fullPrompt, int maxTokens, String thinking, Long tenantId) {
+    return chatCompletion(baseUrl, apiKey, modelId, null, fullPrompt, maxTokens, thinking,
+        false, tenantId);
+  }
+
+  /**
+   * 调用 LLM 生成 similar_questions + negative_questions（合并后单次调用）。
+   * 支持 system/user 分离，以便 DeepSeek 上下文硬盘缓存命中稳定前缀。
+   *
+   * <p>DeepSeek 特殊处理：
+   * <ul>
+   *   <li>开启 jsonMode 时自动添加 {@code response_format: {"type": "json_object"}}</li>
+   *   <li>DeepSeek JSON mode 有概率返回空 content，将自动重试最多 3 次；
+   *       仍为空时返回空字符串，由调用方（解析器）按格式异常处理</li>
+   * </ul>
+   *
+   * @param systemPrompt system 消息（稳定前缀，可传 null）
+   * @param userPrompt   user 消息（题目变量）
+   * @param jsonMode     是否请求 JSON Output（仅 DeepSeek 生效）
+   * @return LLM 返回的 content 文本；DeepSeek JSON mode 重试后仍为空则返回 ""
+   */
+  public String chatCompletion(String baseUrl, String apiKey, String modelId,
+                               String systemPrompt, String userPrompt, int maxTokens,
+                               String thinking, boolean jsonMode, Long tenantId) {
     String url = trimTrailingSlash(baseUrl) + "/chat/completions";
+    boolean deepSeekJsonMode = jsonMode && isDeepSeek(baseUrl);
 
     // 构造 OpenAI 兼容请求体
-    // 注意：LongCat 不支持 response_format 字段，不要传
-    ObjectNode requestBody = objectMapper.createObjectNode();
-    requestBody.put("model", modelId);
-    requestBody.put("max_tokens", maxTokens);
-    requestBody.put("temperature", 0.7);
-
-    // LongCat 思考模式：baseURL 含 longcat 且 thinking 非空时传
-    if (isLongCat(baseUrl) && thinking != null && !thinking.isBlank()) {
-      ObjectNode thinkingNode = objectMapper.createObjectNode();
-      thinkingNode.put("type", thinking);
-      requestBody.set("thinking", thinkingNode);
-    }
-
-    // fullPrompt 已包含完整的 system + user 上下文，直接作为 user 消息发送
-    ArrayNode messages = requestBody.putArray("messages");
-    ObjectNode userMsg = messages.addObject();
-    userMsg.put("role", "user");
-    userMsg.put("content", fullPrompt);
+    ObjectNode requestBody = buildRequestBody(
+        modelId, maxTokens, 0.7, thinking, baseUrl, deepSeekJsonMode, systemPrompt, userPrompt);
 
     // 共享层：HTTP 调用 + HTTP 级异常分类
     JsonNode response = executeChatCompletion(requestBody, url, apiKey, tenantId);
 
-    // ──── 以下内容级分类（仅 FAQ 模式执行，代理模式跳过）────
+    // 内容级分类
+    String content = extractContent(response, url, tenantId);
 
-    // 提取 choices[0]
-    JsonNode choices = response.path("choices");
-    if (!choices.isArray() || choices.isEmpty()) {
-      log.error("FAQ LLM 响应缺少 choices：tenantId={}, url={}", tenantId, url);
-      throw new FaqLlmServerException("LLM 响应缺少 choices");
+    // DeepSeek JSON mode 空 content 重试（最多 3 次）
+    if ((content == null || content.isBlank()) && deepSeekJsonMode) {
+      int maxRetries = 3;
+      for (int attempt = 1; attempt <= maxRetries; attempt++) {
+        log.warn("DeepSeek JSON mode 返回空 content，开始第 {}/{} 次重试：tenantId={}, url={}",
+            attempt, maxRetries, tenantId, url);
+        JsonNode retryResponse = executeChatCompletion(requestBody, url, apiKey, tenantId);
+        content = extractContent(retryResponse, url, tenantId);
+        if (content != null && !content.isBlank()) {
+          return content;
+        }
+      }
+      log.warn("DeepSeek JSON mode 重试 {} 次后仍为空 content，返回空字符串：tenantId={}, url={}",
+          maxRetries, tenantId, url);
+      return "";
     }
-    JsonNode firstChoice = choices.get(0);
 
-    // finish_reason 检测
-    String finishReason = firstChoice.path("finish_reason").asText(null);
-    if ("length".equals(finishReason)) {
-      log.warn("FAQ LLM 输出被截断（finish_reason=length）：tenantId={}, url={}", tenantId, url);
-      throw new FaqLlmTruncatedException("LLM 输出被 max_tokens 截断（finish_reason=length）");
-    }
-
-    // 提取 content
-    String content = firstChoice.path("message").path("content").asText(null);
     if (content == null || content.isBlank()) {
-      log.warn("FAQ LLM 响应 content 为空（finish_reason={}）：tenantId={}, url={}", finishReason, tenantId, url);
-      throw new FaqLlmServerException("LLM 响应 content 为空（finish_reason=" + finishReason + "）");
+      log.warn("FAQ LLM 响应 content 为空：tenantId={}, url={}", tenantId, url);
+      throw new FaqLlmServerException("LLM 响应 content 为空");
     }
     return content;
   }
@@ -152,12 +163,15 @@ public class FaqLlmClient {
    *
    * @param messages    OpenAI 标准 messages 数组（JsonNode 透传，Jackson 解析 JSON 数组为 ArrayNode）
    * @param temperature 采样温度（null 时使用模型配置默认值 0.7）
+   * @param jsonMode    是否请求 JSON Output（仅 DeepSeek 生效）
    * @return 完整 LLM 响应 JsonNode（含 choices / usage / model / finish_reason）
    */
   public JsonNode chatCompletionMessages(String baseUrl, String apiKey, String modelId,
                                          JsonNode messages, int maxTokens,
-                                         BigDecimal temperature, String thinking, Long tenantId) {
+                                         BigDecimal temperature, String thinking,
+                                         boolean jsonMode, Long tenantId) {
     String url = trimTrailingSlash(baseUrl) + "/chat/completions";
+    boolean deepSeekJsonMode = jsonMode && isDeepSeek(baseUrl);
 
     ObjectNode requestBody = objectMapper.createObjectNode();
     requestBody.put("model", modelId);
@@ -171,11 +185,83 @@ public class FaqLlmClient {
       requestBody.set("thinking", thinkingNode);
     }
 
+    // DeepSeek JSON mode：官方支持 response_format: {"type": "json_object"}
+    if (deepSeekJsonMode) {
+      ObjectNode responseFormat = objectMapper.createObjectNode();
+      responseFormat.put("type", "json_object");
+      requestBody.set("response_format", responseFormat);
+    }
+
     // messages 原样透传（ArrayNode）
     requestBody.set("messages", messages);
 
     // 共享层：HTTP 调用 + HTTP 级异常分类，返回原始响应
     return executeChatCompletion(requestBody, url, apiKey, tenantId);
+  }
+
+  // ──────────────────────── 请求体 / 响应提取辅助方法 ────────────────────────
+
+  /**
+   * 构造 OpenAI 兼容请求体。
+   */
+  private ObjectNode buildRequestBody(String modelId, int maxTokens, double temperature,
+                                      String thinking, String baseUrl, boolean deepSeekJsonMode,
+                                      String systemPrompt, String userPrompt) {
+    ObjectNode requestBody = objectMapper.createObjectNode();
+    requestBody.put("model", modelId);
+    requestBody.put("max_tokens", maxTokens);
+    requestBody.put("temperature", temperature);
+
+    // LongCat 思考模式：baseURL 含 longcat 且 thinking 非空时传
+    if (isLongCat(baseUrl) && thinking != null && !thinking.isBlank()) {
+      ObjectNode thinkingNode = objectMapper.createObjectNode();
+      thinkingNode.put("type", thinking);
+      requestBody.set("thinking", thinkingNode);
+    }
+
+    // DeepSeek JSON mode：官方支持 response_format: {"type": "json_object"}
+    if (deepSeekJsonMode) {
+      ObjectNode responseFormat = objectMapper.createObjectNode();
+      responseFormat.put("type", "json_object");
+      requestBody.set("response_format", responseFormat);
+    }
+
+    // messages：system 放稳定前缀，user 放题目变量
+    ArrayNode messages = requestBody.putArray("messages");
+    if (systemPrompt != null && !systemPrompt.isBlank()) {
+      ObjectNode systemMsg = messages.addObject();
+      systemMsg.put("role", "system");
+      systemMsg.put("content", systemPrompt);
+    }
+    ObjectNode userMsg = messages.addObject();
+    userMsg.put("role", "user");
+    userMsg.put("content", userPrompt);
+
+    return requestBody;
+  }
+
+  /**
+   * 从 LLM 响应中提取 content，并检测 finish_reason=length 截断。
+   *
+   * @return content 文本；若 content 为空则返回 null
+   * @throws FaqLlmServerException  响应缺少 choices
+   * @throws FaqLlmTruncatedException finish_reason=length
+   */
+  private String extractContent(JsonNode response, String url, Long tenantId) {
+    JsonNode choices = response.path("choices");
+    if (!choices.isArray() || choices.isEmpty()) {
+      log.error("FAQ LLM 响应缺少 choices：tenantId={}, url={}", tenantId, url);
+      throw new FaqLlmServerException("LLM 响应缺少 choices");
+    }
+    JsonNode firstChoice = choices.get(0);
+
+    String finishReason = firstChoice.path("finish_reason").asText(null);
+    if ("length".equals(finishReason)) {
+      log.warn("FAQ LLM 输出被截断（finish_reason=length）：tenantId={}, url={}", tenantId, url);
+      throw new FaqLlmTruncatedException("LLM 输出被 max_tokens 截断（finish_reason=length）");
+    }
+
+    return firstChoice.path("message").path("content").asText(null);
   }
 
   // ──────────────────────── 共享层 ────────────────────────
@@ -270,5 +356,10 @@ public class FaqLlmClient {
   /** 判断是否为 LongCat 模型（baseURL 含 longcat 关键词） */
   private boolean isLongCat(String baseUrl) {
     return baseUrl != null && baseUrl.toLowerCase().contains("longcat");
+  }
+
+  /** 判断是否为 DeepSeek 模型（baseURL 含 deepseek 关键词） */
+  private boolean isDeepSeek(String baseUrl) {
+    return baseUrl != null && baseUrl.toLowerCase().contains("deepseek");
   }
 }

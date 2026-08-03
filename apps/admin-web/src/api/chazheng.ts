@@ -13,8 +13,16 @@ export function getYmdList() {
 export function importUsers(file: File) {
   const formData = new FormData();
   formData.append('file', file);
-  return unwrap<{ imported: number }>(
+  return unwrap<{ imported: number; ymd: string; message: string }>(
     apiClient.post('/chazheng/users/import', formData),
+  );
+}
+
+export function triggerCertCheckByYmd(ymd: string, sourceFilename?: string) {
+  return unwrap<{ batchId: number; total: number; message: string }>(
+    apiClient.post(`/chazheng/users/import/${encodeURIComponent(ymd)}/cert`, null, {
+      params: { sourceFilename: sourceFilename || undefined },
+    }),
   );
 }
 

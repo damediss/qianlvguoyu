@@ -24,32 +24,56 @@ public class FaqLlmPromptBuilder {
       4. **分级意识**：初级工侧重"是什么"，中高级工侧重"怎么做"和"为什么"，编制时要符合对应鉴定层级的认知要求
 
       每次收到题目，你都将当前题目涵盖的国家职业标准上下文（工种名称、职业等级、鉴定范围），再按要求生成输出。
+
+      所有输出必须为合法 JSON，不要包含 markdown 代码块或其他说明文字。
       """;
 
   /**
-   * 生成 similar_questions 的完整 prompt（system + user）。
+   * 返回 System Prompt（稳定前缀，用于 DeepSeek 上下文缓存）。
    */
+  public String buildSystemPrompt() {
+    return SYSTEM_PROMPT;
+  }
+
+  /**
+   * 生成合并调用的 User Prompt（仅含题目相关变量，放在稳定内容之后）。
+   */
+  public String buildMergedUserPrompt(Map<String, String> ctx) {
+    return buildMergedUserPromptInternal(ctx);
+  }
+
+  /**
+   * 生成 similar_questions 的完整 prompt（system + user）。
+   *
+   * @deprecated 请改用 {@link #buildSystemPrompt()} + {@link #buildMergedUserPrompt(Map)}，
+   *             以便将 system 作为独立消息提升缓存命中率。
+   */
+  @Deprecated
   public String buildSimilarQuestionsPrompt(Map<String, String> ctx) {
     return SYSTEM_PROMPT + "\n\n" + buildSimilarUserPrompt(ctx);
   }
 
   /**
    * 生成 negative_questions 的完整 prompt（system + user）。
+   *
+   * @deprecated 请改用 {@link #buildSystemPrompt()} + {@link #buildMergedUserPrompt(Map)}。
    */
+  @Deprecated
   public String buildNegativeQuestionsPrompt(Map<String, String> ctx) {
     return SYSTEM_PROMPT + "\n\n" + buildNegativeUserPrompt(ctx);
   }
 
   /**
    * 合并生成 similar_questions + negative_questions 的完整 prompt（system + user）。
-   * 一次调用生成 3 条相似问 + 3 条反例，共享题目上下文。
-   * 使用 buildLlmPromptContext 已有的键（knowledgePath/typeLabel/diffLabel/contentStripped/correctOptions/wrongOptions/keyConcepts）。
+   *
+   * @deprecated 请改用 {@link #buildSystemPrompt()} + {@link #buildMergedUserPrompt(Map)}。
    */
+  @Deprecated
   public String buildMergedPrompt(Map<String, String> ctx) {
-    return SYSTEM_PROMPT + "\n\n" + buildMergedUserPrompt(ctx);
+    return SYSTEM_PROMPT + "\n\n" + buildMergedUserPromptInternal(ctx);
   }
 
-  private String buildMergedUserPrompt(Map<String, String> ctx) {
+  private String buildMergedUserPromptInternal(Map<String, String> ctx) {
     return """
         ## 题目上下文
         - 鉴定范围：%s

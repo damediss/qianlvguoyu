@@ -61,6 +61,7 @@ public class LlmProxyService {
     int maxTokens = req.maxTokens() != null ? req.maxTokens() : modelConfig.getMaxTokens();
     var temperature = req.temperature() != null ? req.temperature() : modelConfig.getTemperature();
     String thinking = req.thinking() != null ? req.thinking() : modelConfig.getThinking();
+    boolean jsonMode = req.responseFormatJson() != null && req.responseFormatJson();
 
     log.info("LLM 代理调用：userId={}, tenantId={}, modelCode={}, modelId={}, messages={}",
         userId, tenantId, req.modelCode(), modelConfig.getModelId(), messages.size());
@@ -71,7 +72,7 @@ public class LlmProxyService {
     JsonNode response = llmClient.chatCompletionMessages(
         modelConfig.getBaseUrl(), modelConfig.getApiKey(),
         modelConfig.getModelId(), messages, maxTokens,
-        temperature, thinking, tenantId);
+        temperature, thinking, jsonMode, tenantId);
 
     long elapsed = System.currentTimeMillis() - startMs;
 
