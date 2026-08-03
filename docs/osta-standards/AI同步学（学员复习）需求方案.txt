@@ -2,9 +2,9 @@ AI同步学（学员复习）需求方案
 
 # 一、背景与目标
 
-提高学员刷题练习积极性，提高认定考试成绩和考试通过率。
+我们公司是一家职业技能培训机构，学员都在手机端学习，成绩在php管理端查询和管理，现亟需提高学员刷题练习积极性，提高认定考试成绩和考试通过率。
 
-我需要有一个AI模型充当我的培训学员的职业技能等级认定专家老师，我在PHP 库（`gjjddb` @ 114.132.67.185:3308）有一个题库表exam_exam_detail，学员在参加认定考试前会刷题练习，模型需要根据train_exam_review表记录，在考试前合理的将题库中的题安排给学员练习，自动排出每天应复习的知识点和试题，刷某个工种等级的题，比如职业为重冶湿法冶炼工的重冶浸出工初级工总题量1200题，每天的题量根据复习天数自动排出，复习时间20天，每天复习题量根据总题量和计划复习天数动态规划。在SaaS平台新建接口能力，在手机端应用中，我需要在”提升”-”复习任务”-”复习/考试”页面内的顶部增加”同步练习”菜单，点击菜单后调用接口返回模型规划的题目。
+我需要有一个AI模型（如DeepSeek）充当我的培训学员的职业技能等级认定专家老师，每天给各个学员有针对性的安排复习题，并不断鼓励学员练习，全面掌控学员的学习进度。我在PHP 库（`gjjddb` @ 114.132.67.185:3308）有一个题库表exam_exam_detail，学员在参加认定考试前会刷题练习，模型需要根据train_exam_review表记录，在考试前合理的将题库中的题安排给学员练习，自动排出每天应复习的知识点和试题，刷某个工种等级的题，比如职业为重冶湿法冶炼工的重冶浸出工初级工总题量1200题，每天的题量根据复习天数自动排出，复习时间20天，每天复习题量根据总题量和计划复习天数动态规划。在SaaS平台新建接口能力，在手机端应用中，我需要在”提升”-”复习任务”-”复习/考试”页面内的顶部增加”同步练习”菜单，点击菜单后调用接口返回模型规划的题目。
 
 ## 1、每日题量规划（三阶段法）
 
@@ -134,19 +134,22 @@ train_exam_review 考试复习表
 exam_exam_detail 题库表，命题详情
 exam_knowledge_structure 知识结构，知识要求
 train_exam_work_type_list 考试复习工种和等级
+exam_result 答题结果表
 
-SaaS 库（`gjjddb2026` @ 43.138.163.7:3308），我希望如果需要新建表都尽量建在SaaS 库，PHP 库（`gjjddb` @ 114.132.67.185:3308）用于查询数据。
+SaaS 库（`gjjddb2026` @ 43.138.163.7:3308），我希望如果需要新建表都尽量建在SaaS 库，PHP 库（`gjjddb` @ 114.132.67.185:3308）主要用于查询数据，如有必要也可以在表中增加字段。
 
-# 五、其它知识和材料
-D:\workspace\gjjd_appnext\docs\手机端调用SaaS鉴权方案.md
+# 五、其它需要你掌握的知识和材料和代码
+D:\JetBrains\IdeaProjects\gjjd_appnext\docs\手机端调用SaaS鉴权方案.mddocs
 重冶湿法冶炼工的职业标准，含理论知识权重表：
-D:\workspace\qianlvguoyu_saas\docs\osta-standards\重冶湿法冶炼工_docx.md
+docs\osta-standards\重冶湿法冶炼工_docx.md
 重冶浸出工的题目数据：
-D:\workspace\八月工作\exam_exam_detail_202608031832.md
+docs/osta-standards/exam_exam_detail_202608031832.md
 知识结构表数据：
-D:\workspace\qianlvguoyu_saas\docs\osta-standards\exam_knowledge_structure_202608031838.md
+docs\osta-standards\exam_knowledge_structure_202608031838.md
 PHP后端代码目录：
-
+D:\JetBrains\IdeaProjects\gjjd_phalcon
 需要掌握业务逻辑的php接口：
 appreview/sortlist
 手机端前端代码目录：
+D:\JetBrains\IdeaProjects\gjjd_appnext
+
