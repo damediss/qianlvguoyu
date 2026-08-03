@@ -218,7 +218,7 @@ platform:
     # H5 前端地址（企业调研人员采集二维码跳转）
     base-url: ${H5_BASE_URL:https://h5.gjjd168.com}
   # App 首页轮播图等未登录可访问资源的默认租户（PHP 端硬编码 10159）
-  default-tenant-id: ${APP_DEFAULT_TENANT_ID:10159}
+  default-tenant-id: ${APP_DEFAULT_TENANT_ID:1}
   # 我的页客服电话/协议链接
   kefu-phone: ${APP_KEFU_PHONE:18977081413}
   agreement-url: ${APP_AGREEMENT_URL:}

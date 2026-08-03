@@ -50,7 +50,7 @@ public class AppHomeApplicationService {
       CmsArticleCategoryMapper categoryMapper,
       SysIndexSwiperMapper swiperMapper,
       ObjectMapper objectMapper,
-      @Value("${platform.app.default-tenant-id:10159}") long defaultTenantId,
+      @Value("${platform.app.default-tenant-id:1}") long defaultTenantId,
       @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl) {
     this.articleMapper = articleMapper;
     this.contentMapper = contentMapper;

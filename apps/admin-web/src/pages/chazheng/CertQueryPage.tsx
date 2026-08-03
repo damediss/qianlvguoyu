@@ -72,6 +72,27 @@ export function CertQueryPage() {
     },
   });
 
+  const openProgress = useCallback(() => {
+    setProgressOpen(true);
+    setProgressData({ total: 0, checked: 0 });
+    const poll = async () => {
+      try {
+        const data = await getCertProgress();
+        setProgressData(data);
+        if (data.total > 0 && data.checked >= data.total) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          message.success("查证全部完成");
+          queryClient.invalidateQueries({ queryKey: ["chazheng-certs"] });
+        }
+      } catch {
+        // ignore poll errors
+      }
+    };
+    poll();
+    pollRef.current = setInterval(poll, 2000);
+  }, [queryClient]);
+
   const handleImport = useCallback(
     async (file: File) => {
       setImporting(true);
@@ -116,27 +137,6 @@ export function CertQueryPage() {
       message.error("下载模板失败");
     }
   }, []);
-
-  const openProgress = useCallback(() => {
-    setProgressOpen(true);
-    setProgressData({ total: 0, checked: 0 });
-    const poll = async () => {
-      try {
-        const data = await getCertProgress();
-        setProgressData(data);
-        if (data.total > 0 && data.checked >= data.total) {
-          if (pollRef.current) clearInterval(pollRef.current);
-          pollRef.current = null;
-          message.success("查证全部完成");
-          queryClient.invalidateQueries({ queryKey: ["chazheng-certs"] });
-        }
-      } catch {
-        // ignore poll errors
-      }
-    };
-    poll();
-    pollRef.current = setInterval(poll, 2000);
-  }, [queryClient]);
 
   const closeProgress = useCallback(() => {
     setProgressOpen(false);
