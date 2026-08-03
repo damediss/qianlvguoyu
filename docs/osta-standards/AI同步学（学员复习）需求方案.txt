@@ -145,3 +145,8 @@ D:\workspace\qianlvguoyu_saas\docs\osta-standards\重冶湿法冶炼工_docx.md
 D:\workspace\八月工作\exam_exam_detail_202608031832.md
 知识结构表数据：
 D:\workspace\qianlvguoyu_saas\docs\osta-standards\exam_knowledge_structure_202608031838.md
+PHP后端代码目录：
+
+需要掌握业务逻辑的php接口：
+appreview/sortlist
+手机端前端代码目录：
