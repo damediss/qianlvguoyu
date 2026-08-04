@@ -134,70 +134,8 @@ public class AppAuthApplicationService {
     return data;
   }
 
-  public Map<String, Object> setLogin(String idcard, String phone, String isAuth) {
-    if (!StringUtils.hasText(idcard) || !StringUtils.hasText(phone) || !StringUtils.hasText(isAuth)) {
-      throw new AppSmsException(-1, "信息不完整");
-    }
-    if (!"reg".equals(isAuth) && !"login".equals(isAuth)) {
-      throw new AppSmsException(-1, "信息不正确");
-    }
-    PlatformUserEntity user = userMapper.selectOne(
-        new LambdaQueryWrapper<PlatformUserEntity>()
-            .eq(PlatformUserEntity::getIdcard, idcard.trim())
-            .eq(PlatformUserEntity::getDeleted, 0)
-            .last("LIMIT 1"));
-    if (user == null) {
-      throw new AppSmsException(-1, "您还没在平台创建账号");
-    }
-    if (!phone.trim().equals(user.getPhone())) {
-      user.setPhone(phone.trim());
-      userMapper.updateById(user);
-    }
-    PlatformUserDetailEntity detail = detailMapper.selectOne(
-        new LambdaQueryWrapper<PlatformUserDetailEntity>()
-            .eq(PlatformUserDetailEntity::getIdcard, idcard.trim())
-            .eq(PlatformUserDetailEntity::getDeleted, 0)
-            .last("LIMIT 1"));
-    if (detail == null) {
-      detail = new PlatformUserDetailEntity();
-      detail.setPhone(phone.trim());
-      detail.setIdcard(idcard.trim());
-      detail.setDeleted(0);
-      detailMapper.insert(detail);
-    } else if (!phone.trim().equals(detail.getPhone())) {
-      detail.setPhone(phone.trim());
-      detailMapper.updateById(detail);
-    }
-
-    tokenMapper.delete(new LambdaQueryWrapper<PlatformUserTokenEntity>()
-        .eq(PlatformUserTokenEntity::getUserId, user.getId()));
-
-    String token = sha1Secret(user.getPassword() + Instant.now().getEpochSecond());
-    PlatformUserTokenEntity tokenEntity = new PlatformUserTokenEntity();
-    tokenEntity.setUserId(user.getId());
-    tokenEntity.setToken(token);
-    tokenEntity.setAddtime(Instant.now().getEpochSecond());
-    tokenMapper.insert(tokenEntity);
-
-    Map<String, Object> detailMap = new LinkedHashMap<>();
-    detailMap.put("id", detail.getId());
-    detailMap.put("phone", detail.getPhone());
-    detailMap.put("idcard", detail.getIdcard());
-    detailMap.put("realname", detail.getRealname());
-    detailMap.put("age", calcAgeFromIdCard(detail.getIdcard()));
-
-    String realname = StringUtils.hasText(user.getRealname()) ? user.getRealname() : user.getPhone();
-    Map<String, Object> userMap = new LinkedHashMap<>();
-    userMap.put("id", user.getId());
-    userMap.put("realname", realname);
-    userMap.put("expert_id", user.getExpertId() != null ? user.getExpertId() : 0);
-
-    Map<String, Object> data = new LinkedHashMap<>();
-    data.put("token", token);
-    data.put("detail", detailMap);
-    data.put("user", userMap);
-    return data;
-  }
+  // setLogin 方法已按《手机端调用SaaS鉴权方案》Q3 决策随 /appauth/setlogin 端点一并删除。
+  // token 只能由 PHP /appauth/login 统一签发，SaaS 只验票不发票。
 
   private static Integer calcAgeFromIdCard(String idcard) {
     if (!StringUtils.hasText(idcard) || idcard.length() < 14) {

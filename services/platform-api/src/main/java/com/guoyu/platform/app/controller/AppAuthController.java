@@ -38,14 +38,8 @@ public class AppAuthController {
     return LegacyAppResponse.ok("成功", null);
   }
 
-  //仅凭身份证+手机号、不验密码就签发 token 写入 platform_user_token,感觉风险较大先注释
-//  @PostMapping("/setlogin")
-  public LegacyAppResponse setLogin(@RequestBody Map<String, Object> body) {
-    String idcard = str(body, "idcard");
-    String phone = str(body, "phone");
-    String isAuth = str(body, "isAuth");
-    return LegacyAppResponse.ok("成功", authService.setLogin(idcard, phone, isAuth));
-  }
+  // /setlogin 已按《手机端调用SaaS鉴权方案》Q3 决策永久下线（仅凭身份证+手机号、不验密码即发 token，
+  // 存在越权发 token 风险）。token 只能由 PHP /appauth/login 统一签发，SaaS 只验票不发票。
 
   /** 退出登录：服务端删除当前 token，前端再清本地存储 */
   @PostMapping("/logout")

@@ -217,8 +217,10 @@ platform:
   h5:
     # H5 前端地址（企业调研人员采集二维码跳转）
     base-url: ${H5_BASE_URL:https://h5.gjjd168.com}
-  # App 首页轮播图等未登录可访问资源的默认租户（PHP 端硬编码 10159）
-  default-tenant-id: ${APP_DEFAULT_TENANT_ID:1}
+  # App 端默认租户（AppHomeApplicationService 读取 platform.app.default-tenant-id）
+  # PHP 库 10159 与 SaaS 库 1 为同一租户，SaaS 侧统一以 1 为准（鉴权方案 v1.2 Q2，2026-08-03 已与需求方确认）
+  app:
+    default-tenant-id: ${APP_DEFAULT_TENANT_ID:1}
   # 我的页客服电话/协议链接
   kefu-phone: ${APP_KEFU_PHONE:18977081413}
   agreement-url: ${APP_AGREEMENT_URL:}
@@ -253,6 +255,24 @@ platform:
     internal-token: ${RENCAI_INTERNAL_TOKEN:}
     connect-timeout-seconds: ${RENCAI_CONNECT_TIMEOUT:15}
     read-timeout-seconds: ${RENCAI_READ_TIMEOUT:300}
+  # PHP→SaaS 三表轮询同步（platform_user / platform_user_token / platform_user_detail）
+  # 对应《手机端调用SaaS鉴权方案》§3.5.3；PHP 库只读第二数据源，不挂多租户拦截器
+  sync:
+    enabled: ${PLATFORM_SYNC_ENABLED:true}
+    interval-ms: ${PLATFORM_SYNC_INTERVAL_MS:3000}
+    initial-delay-ms: ${PLATFORM_SYNC_INITIAL_DELAY_MS:10000}
+    batch-size: ${PLATFORM_SYNC_BATCH_SIZE:500}
+    fail-alert-threshold: ${PLATFORM_SYNC_FAIL_ALERT_THRESHOLD:20}
+    # 试运行：只读 PHP 库记录将发生的变更，不写镜像、不推进水位线
+    dry-run: ${PLATFORM_SYNC_DRY_RUN:false}
+    daily-reconcile-cron: "${PLATFORM_SYNC_DAILY_CRON:0 30 3 * * *}"
+    php:
+      url: ${PHP_MYSQL_URL:jdbc:mysql://114.132.67.185:3308/gjjddb?connectTimeout=3000&socketTimeout=10000&useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true}
+      username: ${PHP_MYSQL_USERNAME:gjjddb}
+      password: ${PHP_MYSQL_PASSWORD:q-#Z+=g7jgtbbJsJLjD8}
+      max-active: ${PHP_MYSQL_MAX_ACTIVE:3}
+      max-wait-ms: ${PHP_MYSQL_MAX_WAIT_MS:3000}
+      query-timeout-seconds: ${PHP_MYSQL_QUERY_TIMEOUT:10}
 
 # Sa-Token
 sa-token:

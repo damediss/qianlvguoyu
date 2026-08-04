@@ -139,17 +139,19 @@ exam_result 答题结果表
 SaaS 库（`gjjddb2026` @ 43.138.163.7:3308），我希望如果需要新建表都尽量建在SaaS 库，PHP 库（`gjjddb` @ 114.132.67.185:3308）主要用于查询数据，如有必要也可以在表中增加字段。
 
 # 五、其它需要你掌握的知识和材料和代码
-D:\JetBrains\IdeaProjects\gjjd_appnext\docs\手机端调用SaaS鉴权方案.mddocs
+D:\workspace\gjjd_appnext\docs\手机端调用SaaS鉴权方案.md
 重冶湿法冶炼工的职业标准，含理论知识权重表：
-docs\osta-standards\重冶湿法冶炼工_docx.md
+D:\workspace\qianlvguoyu_saas\docs\osta-standards\重冶湿法冶炼工_docx.md
+理论知识权重表：
+‪D:\workspace\qianlvguoyu_saas\docs\osta-standards\铝电解精炼工_理论知识权重表.md
 重冶浸出工的题目数据：
-docs/osta-standards/exam_exam_detail_202608031832.md
+D:\workspace\qianlvguoyu_saas\docs\osta-standards\exam_exam_detail_202608031832.md
 知识结构表数据：
-docs\osta-standards\exam_knowledge_structure_202608031838.md
+D:\workspace\qianlvguoyu_saas\docs\osta-standards\exam_knowledge_structure_202608031838.md
 PHP后端代码目录：
-D:\JetBrains\IdeaProjects\gjjd_phalcon
+D:\workspace\gjjd_phalcon
 需要掌握业务逻辑的php接口：
 appreview/sortlist
 手机端前端代码目录：
-D:\JetBrains\IdeaProjects\gjjd_appnext
+D:\workspace\gjjd_appnext
 

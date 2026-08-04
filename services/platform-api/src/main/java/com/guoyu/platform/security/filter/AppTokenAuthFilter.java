@@ -66,9 +66,12 @@ public class AppTokenAuthFilter extends OncePerRequestFilter {
     log.info("AppTokenAuthFilter: checking token for URI={}", request.getRequestURI());
 
     try {
+      // token 在 PHP 源库允许重复（同秒同密码 sha1 相同，现网实测 85 组），
+      // 按 id 升序取首行，与 PHP Phalcon findFirst 语义一致，保证两端鉴权结果相同
       PlatformUserTokenEntity tokenEntity = tokenMapper.selectOne(
           new LambdaQueryWrapper<PlatformUserTokenEntity>()
               .eq(PlatformUserTokenEntity::getToken, token)
+              .orderByAsc(PlatformUserTokenEntity::getId)
               .last("LIMIT 1"));
 
       if (tokenEntity == null) {

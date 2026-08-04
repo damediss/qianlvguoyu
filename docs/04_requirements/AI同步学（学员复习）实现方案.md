@@ -1,8 +1,11 @@
 # AI 同步学（学员复习）功能接口实现方案
 
-> 版本：v1.0　日期：2026-08-03
+> 版本：v1.1　日期：2026-08-04
+> 修订记录：
+> - v1.0（2026-08-03）：初版
+> - v1.1（2026-08-04）：① 新增 D5/D6 决策（权重以国标为锚、阶段1每日新题权重配比增强版）；② 新增 §5.7 权重数据来源与回退链（`exam_knowledge_rate type=3` 约定，type=1 为实操既有约定，配套《标准理论知识权重映射配置指南》）；③ §5.2/§5.3/§5.6 接入权重双轨与回退链；④ §7.8 新增 itemMastery + estimatedScore 加权预估得分；⑤ §12 分期改三层（AI 错题讲解 7.9 列为"一期可选增量"）；⑥ 新增 §10.5 量化验收标准、§10.6 上线 Checklist；⑦ 新增 §13 执行顺序与依赖（相对鉴权方案），原"开放问题"顺延为 §14
 > 需求来源：`docs/osta-standards/AI同步学（学员复习）需求方案.txt`
-> 鉴权依据：`gjjd_appnext/docs/手机端调用SaaS鉴权方案.md`（v1.2，令牌透传）
+> 鉴权依据：`gjjd_appnext/docs/手机端调用SaaS鉴权方案.md`（v1.3，令牌透传）
 > 涉及项目：`qianlvguoyu_saas`（SaaS/platform-api，本期主体）、`gjjd_appnext`（手机端）、`gjjd_phalcon`（PHP，零改动）
 
 ## 0. 已确认决策（需求方拍板，2026-08-03）
@@ -13,6 +16,8 @@
 | D2 | AI 角色定位 | **规则引擎为主 + LLM 辅助**：排题/题量/错题淘汰/中断补救全部 Java 规则实现；LLM（DeepSeek）只做鼓励语、顽固错题讲解、周报总结 |
 | D3 | 第三阶段仿真模考 | **SaaS 自组卷模考**：从 PHP 题库按规则组卷，SaaS 判分 |
 | D4 | 答题数据归属 | SaaS 新表为主记录，**异步回写 PHP 库 `exam_result`**（`exam_type=5` AI同步练习），失败补偿重试 |
+| D5 | 理论知识权重来源（2026-08-04 拍板） | **模考/学情以职业标准"理论知识权重表"为锚**：复用 PHP 库 `exam_knowledge_rate(_detail)`，`type=3` 标记国标权重（挂知识树理论两树 L1 节点），配置方法见 `docs/04_requirements/标准理论知识权重映射配置指南.md`；回退链：type=3 国标 → type=0 人工规则 → 题量占比 |
+| D6 | 阶段1每日新题构成（2026-08-04 拍板） | **增强版**：每日新题按权重配比（贴近考试结构）+ 完成保底双轨；无权重配置时兜底"覆盖优先、不配比" |
 
 ## 1. 背景与目标
 
@@ -25,7 +30,7 @@
 | PHP 库（`gjjddb` @ 114.132.67.185:3308）持有全部活数据：题库、复习计划、学员关联、答题历史、token | SaaS 必须读 PHP 库 |
 | SaaS 库（`gjjddb2026` @ 43.138.163.7:3308）有 `exam_*`/`train_*` 同名表，但是 2026-07-03 前快照：`exam_result`=0 行、`train_exam_people_list`=0 行、`platform_user_token`=0 行、`platform_user` 仅 33 测试号 | **本功能业务数据一律以 PHP 库为准实时查询**，不用 SaaS 快照表 |
 | SaaS 已有 `FaqLlmClient`（DeepSeek/OpenAI 兼容客户端，含限流/超时/JSON mode 重试）、`exam_faq_model_config`（模型配置）、`AsyncConfig` 线程池、`/appcoach` 等 App 接口先例 | LLM 与 App 接口直接复用，不重复建设 |
-| SaaS 已有 `exam_knowledge_rate`（权重表，course_id + 考核项目 + 权重） | 组卷与薄弱点加权可复用 |
+| SaaS 已有 `exam_knowledge_rate(_detail)`（比重表，course_id + knowledge_id + rate%） | 权重配置载体（D5）：PHP 库同表现有 26 行 `type` 全为 0（人工组卷规则），**type=3 预留给国标权重**；知识树每门课固定 3 棵 L0 根（基本要求/相关知识/技能要求），题目只挂理论两树（实测 183 技能树题量=0），权重挂理论两树 L1 节点 |
 | PHP 取题链路（`appreview/sortlist`）：`train_exam_list.source` → `train_exam_work_type_list`（工种+等级）→ `exam_course` → 三级知识点（level=3,type=0）→ `exam_exam_detail`（source 一致 + knowledge_id IN + final_check_status=1 + deleted=0） | 本功能"题目全集"解析算法原样复刻到 SaaS（读 PHP 库） |
 | 需求文本数字矛盾：三阶段表写"第一阶段每日新题 100-120"，理论章节两处写"前 10 天每天 150 题" | **参数化**：`daily_new_cap` 默认 120，算法按"剩余题量÷剩余天数"动态计算并封顶，见 §5.2 |
 
@@ -231,8 +236,13 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 
 每天物化时（`remaining_new` = 必做题中尚未进过任何每日任务的题）：
 
-- **阶段 1（地毯式扫荡）**：`new = min(daily_new_cap, ceil(remaining_new / 剩余阶段1天数))`；`review = 昨日新错题（全部红牌）+ 到期红牌/黄牌`；若 `new + review > daily_total_cap` → 新题让位：`new = max(0, daily_total_cap - review)`，让位新题顺延；
-- **阶段 2（定向爆破）**：`review = 全部未移除错题（红牌优先、加星优先、按 last_wrong_time 倒序）`，封顶 300；`new = 薄弱知识点剩余题`（按学员各知识点错题率倒序取，≤50）；复盘优先，新题可让位至 0；
+- **阶段 1（地毯式扫荡）**：`new = min(daily_new_cap, ceil(remaining_new / 剩余阶段1天数))`；`review = 昨日新错题（全部红牌）+ 到期红牌/黄牌`；若 `new + review > daily_total_cap` → 新题让位：`new = max(0, daily_total_cap - review)`，让位新题顺延。
+  - **新题知识点构成（D6 增强版，权重双轨）**：当日 `new` 题在考核项目（权重配置所挂 L1 节点）间的分配取两轨较大值：
+    1. **权重理想配额**：`round(new × 项目归一化权重)`（权重来源见 §5.7）——让每天的新题构成就贴近考试结构；
+    2. **完成保底配额**：`ceil(该项目必做池剩余题数 / 阶段1剩余天数)`——题库构成与权重偏差大时（如实测 183 职业道德题占 49% 而权重仅 5%）保证阶段1结束时必做池必定扫完；
+    配额合计若超出 `new`，按"保底优先、理想按权重比例压缩"收敛；项目内选题优先重要度 X>Y>Z、错题率高的 L3。阶段1最后一天强制清空剩余必做题（覆盖优先是硬约束，权重只调过程结构不改总量）。
+  - **兜底（无权重配置）**：回退"覆盖优先、不配比"——按 L3 知识点半径轮转取题，保证每天的知识点面最大；
+- **阶段 2（定向爆破）**：`review = 全部未移除错题（红牌优先、加星优先、按 last_wrong_time 倒序）`，封顶 300；`new = 薄弱知识点剩余题`（按学员各知识点错题率倒序取，同错题率时**项目权重大者优先**（§5.7），≤50）；复盘优先，新题可让位至 0；
 - **阶段 3（仿真模考）**：每日 1 套自组模考卷（默认 100 题，`ai_review_mock_size`）；考前最后 1 天可 2 套（二期开关，一期 1 套）；模考错题当日入错题本，次日穿插复盘。
 
 ### 5.3 题库冗余裁剪（"真干货"选题）
@@ -240,7 +250,7 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 目标：从 N 题选出 target 题，**知识点覆盖率 100%**。贪心：
 
 1. 每个三级知识点先取 1 题（优先级：重要度 X > Y > Z 的知识点优先保证；同知识点内：多选 > 单选 > 判断 > 其他，取难度中等者优先）；
-2. 剩余名额按"知识点权重（exam_knowledge_rate 无则用知识点题量占比）× 题型权重（多选 3、单选 2、判断 1）"加权轮转填满；
+2. 剩余名额按"考核项目权重（§5.7 回退链，归一化）× 题型权重（多选 3、单选 2、判断 1）"加权轮转填满——项目权重先摊到其下 L3（按 L3 题量占比），再参与轮转；
 3. 被裁掉的题标记为"扩展题"（不进必做池，不进任何每日任务）；
 4. 中断补救情况 A 的"再删尾部 10%~15% 偏题"：在必做池内按 `重要度 Z 的知识点题 → cal/answer/essay 题型 → 难度 difficulty 最高` 排序删除，删除量 = `ceil(target × 15%)` 且以"每日 ≤180 题"收敛为止。
 
@@ -278,10 +288,32 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 
 1. 题量：`ai_review_mock_size`（默认 100）；
 2. 题型比例：按必做池内题型自然分布取整（如 单选:判断:多选 ≈ 5:4:3），多选不少于 20%；
-3. 知识点配额：按 `exam_knowledge_rate` 权重分配（无权重配置则按知识点题量占比），学员错题率高的知识点 ×1.5 加权；
+3. 知识点配额：**按 §5.7 权重回退链取考核项目（L1）归一化权重分配大配额**，项目内按 L3 题量占比细分；学员错题率高的 L3 ×1.5 加权；某项目题量不足配额时差额按剩余项目权重再分配（water-filling）；
 4. 组卷快照落 `ai_review_mock_paper(+_item)`（题序随机，脱离题库顺序——需求"训练考场应变"）；
 5. 判分：单选/判断全对得分；多选按 PHP 口径（answer JSON 内各选项 score 权重，错选不得分，少选按 PHP trainsave 口径取部分分——实现时以 PHP `trainsaveAction` 判分代码为准逐行对齐）；
 6. 交卷：写 `ai_review_answer`（round_type=mock）→ 错题入册 → 异步回写 PHP exam_result → 返回得分/及格判定（pass_score=total×0.6）/错题清单。
+
+### 5.7 理论知识权重数据来源与回退链（D5）
+
+**结论：复用 PHP 库 `exam_knowledge_rate` + `exam_knowledge_rate_detail`，不建新表不加字段。** 职业标准"理论知识权重表"以 `type=3` 主表行承载，detail 挂知识树**理论两树（基本要求/相关知识）的 L1 节点**（"技能要求"树不挂题、不参与）。配置与映射方法（含已生成的 10 门课程国标权重 SQL）见 `docs/04_requirements/标准理论知识权重映射配置指南.md`。
+
+**权重解析 `PhpExamQueryService#loadCourseWeights(courseId)`（计划生成时加载并快照入 plan）**：
+
+```
+① 国标权重：exam_knowledge_rate WHERE course_id=? AND type=3 AND deleted=0 AND status=1
+   （多条取 id 最大者并 warn）→ 读 detail（deleted=0）得 {L1 knowledge_id → rate%}
+→ ② 人工规则：同表 type=0 最新一条（id 最大）→ 同上
+→ ③ 题量占比兜底：按理论两树 L1 节点下题量占比（与真实考试偏差大，如实测 183
+   职业道德题占 49% 而标准权重仅 5%，仅作无配置时的兜底，命中③记 warn 日志）
+```
+
+**使用规则**：
+
+1. **归一化**：已配项目的 rate 合计可能 ≠100（映射缺项/跳项），引擎一律按 `rate_i / Σrate` 归一化后使用；
+2. **L1→L3 细分**：项目权重要摊到 L3 时，按该项目下各 L3 的**题量占比**分配；L3 题量为 0 的项目参与归一化但分不到题；
+3. **计划快照**：权重在计划生成（§5.1）时解析并连同 `work_type_id/level/course_id/source` 一起固化进 plan（权重配置后续变更不影响进行中的计划；新计划用新配置）；
+4. **作用域**：阶段1 每日新题构成（§5.2）、冗余裁剪剩余名额（§5.3）、组卷知识点配额（§5.6）、学情加权掌握度（§7.8）；阶段2 仅作同错题率时的 tie-breaker；
+5. **配置变更约定**：权重修订走"新增一行 type=3 + 旧行 deleted=1"，不原地 update（见配置指南 §7）。
 
 ## 6. LLM 辅助设计（D2）
 
@@ -337,7 +369,8 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 
 ### 7.8 POST /appreviewsync/progress — 学情总览
 
-- 入：`{examId}` → 出：`{knowledgeCoverage:[{knowledgeId,title,total,done,accuracy}], typeAccuracy:{single,multi,judge}, wrongStats, dailyTrend:[{date,newDone,reviewDone,accuracy}], weekReport|null}`
+- 入：`{examId}` → 出：`{knowledgeCoverage:[{knowledgeId,title,total,done,accuracy}], typeAccuracy:{single,multi,judge}, wrongStats, dailyTrend:[{date,newDone,reviewDone,accuracy}], itemMastery:[{item,rate,mastery}], estimatedScore, weekReport|null}`
+- 说明：`itemMastery` 按考核项目（§5.7 权重配置 L1 粒度）汇总掌握度（项目下已答题正确率）；`estimatedScore = Σ(项目归一化权重 × 项目掌握度)`——按真实考试权重加权的**预估考试得分**，比裸正确率更能预测通过概率（无权重配置时为 null，前端隐藏）。
 
 ### 7.9 POST /appreviewsync/explain — 顽固错题 AI 讲解
 
@@ -372,6 +405,7 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 - **错题状态机**：红→黄（连续 3 对）、黄→绿（连续 2 对且间隔>3 天）、答错回退与加星、当日新错题不可移除、加星题 3 天必现、周日清理、中断清洗（绿牌回黄、计数清零）——全部状态迁移路径枚举测试；
 - **中断 ABCD**：各阶段 × 不同 gap 天数 → 断言重排结果与决策表一致；D 类零星中断（7 天内 2 次）转 3 日滚动；
 - **组卷**：题型比例、知识点配额加权、无重复题、快照落库；
+- **权重回退链（§5.7）**：type=3 命中 / 仅 type=0 / 全无配置三态；Σrate≠100 归一化；L1→L3 题量细分；题量不足项目配额 water-filling；阶段1 每日新题"权重理想配额 vs 完成保底配额"双轨取大（含 183 式极端偏差题库：某项目题占 49% 权重仅 5%，断言阶段1 末日必做池清空）；estimatedScore = Σ(权重×掌握度) 计算与 null 兜底；
 - **判分**：单/多/判 + 多选少选部分分（与 PHP trainsave 口径对齐的用例集）。
 
 ### 10.2 集成测试（Spring Boot Test + MockMvc + Testcontainers）
@@ -394,6 +428,50 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 4. 模拟中断（改 last_active_date）→ 次日任务按 ABCD 重排；
 5. PHP 侧回归：原"顺序练习/随机练习/模拟考试"不受影响。
 
+### 10.5 量化验收标准
+
+> 本节为验收唯一量化依据，逐项达成方可上线；验证方式列指向对应测试章节。
+
+| 验收项 | 通过标准 | 验证方式 |
+|---|---|---|
+| 冗余裁剪覆盖率 | 触发裁剪后必做池知识点覆盖率 = 100%（每个 L3 ≥1 题） | §10.1（3000 题/20 天用例） |
+| 阶段1 扫尾 | 任意题库构成（含 183 式"职业道德题占 49% 而权重仅 5%"极端偏差），阶段1 末日必做池清空率 = 100% | §10.1 双轨配额断言 |
+| 每日配额上限 | 任意一天 `new + review ≤ daily_total_cap` 100% 成立；阶段3 只出模考卷 | §10.1 |
+| 判分一致性 | 单/多/判及多选少选用例集与 PHP `trainsave` 判分结果一致率 = 100% | §10.1 对拍用例 |
+| 错题状态机 | 全部状态迁移路径单测通过；无非法迁移（红牌直接移除、当日新错题被移除等） | §10.1 |
+| 中断 ABCD 重排 | 决策表全路径重排结果与 §5.5 一致；已完成任务日零改动 | §10.1 |
+| 权重回退链 | type=3 命中 / 仅 type=0 / 无配置三态解析正确；Σrate≠100 时归一化正确；`estimatedScore = Σ(归一化权重 × 项目掌握度)`，无配置时 = null | §10.1 / §10.2 |
+| 回写 exam_result | 最终回写成功率 = 100%（补偿 job 收敛）；幂等无重复行；字段口径 `exam_type=5`、`tenant_id=10159` 正确 | §10.2 |
+| 身份与租户隔离 | 伪造 body.userId 不生效；PHP 数据源查询不拼 `tenant_id=1`（独立 SqlSessionFactory 无租户拦截器） | §10.2 |
+| LLM 降级 | LLM 超时/异常时主链路仍 200、响应时间增幅 < 50ms、预置文案兜底；留痕落 `ai_generation_draft`（来源/模型/时间/操作人齐全） | §10.3 |
+| 性能 | `overview`/`today` P95 ≤ 1s；`question`（50 题批量）P95 ≤ 1.5s；每日 04:00 物化 job 全量 active 计划 ≤ 10min；对 PHP 库 QPS ≤ 5（Caffeine 缓存命中后） | 压测 + 日志 |
+| 接口幂等 | `answer` 相同（plan_id+day_id+question_id+attempt_seq）重复提交不重复计分、不重复回写 | §10.2 |
+
+### 10.6 上线 Checklist（先灰度后全量）
+
+**配置与数据**
+- [ ] Flyway 迁移在目标库执行成功（执行前 `SELECT MAX(version) FROM flyway_schema_history` 核对版本）
+- [ ] `sys_dict` 5 参数已配：`ai_review_daily_new_cap=120` / `ai_review_daily_total_cap=200` / `ai_review_mock_size=100` / `ai_review_default_days=20` / `ai_review_interrupt_gap=2`
+- [ ] `exam_faq_model_config` 新增 `model_code='deepseek-review'`（baseUrl=`https://api.deepseek.com`、maxTokens=6000、thinking 留空）
+- [ ] 国标权重已落库且验证 SQL 通过（`exam_knowledge_rate type=3`，每 course 一条、detail 合计=100，见《标准理论知识权重映射配置指南》§5/§6）
+- [ ] PHP 库账号权限复核：3 表 + 本功能 12 表 SELECT、`exam_result` **仅 INSERT**、限来源 IP（与鉴权方案合并一次开通）
+
+**鉴权通道前置（依赖鉴权方案 §6.5 全部完成）**
+- [ ] 3 表同步任务连续 24h 正常（`sync_checkpoint.fail_count=0`）
+- [ ] 手机端 `saasRequest` Bearer 透传 + 401 退避重试已上线
+- [ ] `platform.app.default-tenant-id=1` 已生效；SaaS 侧 `/appauth/setlogin` 已下线
+- [ ] `g.saas.pro` 已切 HTTPS
+
+**代码与运行时**
+- [ ] 线程池 AbortPolicy + 全局 503 处理确认；`applicationTaskExecutor` Bean 存在
+- [ ] 题目详情 Caffeine 缓存生效（命中率日志）；下发题已剥离 `isCorrect/score/resolve`
+- [ ] §10.1~§10.4 全部通过，§10.5 验收表逐项确认签字
+
+**灰度与观察**
+- [ ] 灰度：选 1 个复习计划（建议浸出工初级 course 183 的在册计划）试点 1 周
+- [ ] 灰度期观察：每日物化 job 耗时、回写补偿死信数、PHP 库慢查询、401 退避触发频率、estimatedScore 分布合理性
+- [ ] 灰度达标后全量；同步任务与回写补偿告警纳入日常值班
+
 ## 11. 安全与性能
 
 - 生产必须 HTTPS（`g.saas.pro` 当前 http，鉴权方案已列整改项）；
@@ -408,9 +486,45 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 | 期 | 内容 |
 |---|---|
 | 一期（本方案） | 第二数据源 + PHP 查询层；计划生成/每日物化/错题状态机/中断 ABCD/自组卷模考；接口 7.1~7.8；回写 exam_result + 补偿；LLM 鼓励语（含降级）；手机端同步练习三页 |
-| 二期 | AI 错题讲解（7.9）、周报、考前 1 天绿牌速览清单、主动推送鼓励（对接 PHP WS/短信）、管理端参数配置页、一日两套模考开关 |
+| 一期可选增量 | **AI 错题讲解（7.9）**：完全独立于规则引擎（不碰排题/状态机），复用一期建成的 `LlmAssistService`/`FaqLlmClient`/`ai_generation_draft` 留痕/模型配置，实质工作量 = 1 接口 + 1 提示词模板 + 缓存（约 1~2 天）。**执行口径：一期主链路（上行内容）按时交付且有富余人力时搭车做；主链路有延误风险则自然滑入二期，不挤占主链路排期** |
+| 二期 | 周报、考前 1 天绿牌速览清单、主动推送鼓励（对接 PHP WS/短信）、管理端参数配置页、一日两套模考开关；（若一期可选增量未做）AI 错题讲解（7.9） |
 
-## 13. 开放问题（实现时按默认口径执行，异议即提出）
+> 说明：7.9 仅对"加星红牌题"开放（首次答错→红牌→复盘再错→加星，至少跨 2 天），上线初期可讲题量随学员使用自然积累，一期末/二期初上线均不影响可用性。
+
+## 13. 执行顺序与依赖（相对鉴权方案）
+
+### 13.1 优先级结论：**鉴权方案先，本方案后**
+
+本方案对《手机端调用SaaS鉴权方案》（v1.3）是硬依赖，依赖点：
+
+| 鉴权方案交付物 | 本方案依赖位置 |
+|---|---|
+| (c) 3 表同步任务（`platform_user_token` 镜像到 SaaS 库） | D1/§2：`AppTokenAuthFilter` 查的是 SaaS 库镜像表，**不同步 = 新登录用户全部 401** |
+| (b) SaaS 侧核查（`/api/app**` 约定、`default-tenant-id=1`、`/appauth/setlogin` 下线） | §7 接口设计前置条件（"遵循鉴权方案"） |
+| (a) 手机端 `saasRequest` 改造（Bearer 透传 + 401 退避重试） | §9 手机端前置条件（"按鉴权方案完成改造后"） |
+| PHP 库只读账号开通 | §3.2 本功能 12 表 SELECT + `exam_result` INSERT |
+| 鉴权方案 §6.5 上线验收通过 | §10.4 E2E 冒烟第 1 步（PHP 登录拿 itoken → 调 overview） |
+
+### 13.2 交错节奏（非严格串行）
+
+| 步骤 | 内容 |
+|---|---|
+| 第 1 步 | 鉴权方案 (c) 数据同步 + (b) SaaS 侧核查 + PHP 库只读账号开通（**账号权限一次性合并两方案清单**，见 13.3-②）——关键路径 |
+| 第 2 步 | 鉴权方案 (a) 手机端 saasRequest 改造（可与第 1 步并行） |
+| 并行 | 本方案**不依赖鉴权通道**的部分（约占 70% 工作量）：规则引擎（纯逻辑可单测）、第二数据源、PHP 查询层、Flyway 新表、§10.1/§10.2 测试（Testcontainers 模拟 PHP 库，不需要真通道） |
+| 汇合点 | 鉴权方案 §6.5 验收通过 → 本方案 §10.4 E2E 冒烟 → §10.6 灰度上线（硬性先后顺序仅在此处） |
+
+### 13.3 后执行注意事项（本方案必须遵守）
+
+1. **先验收地基再联调**：E2E 前逐项确认鉴权方案 §6.5 Checklist 全部完成——同步任务 `sync_checkpoint` 连续成功、saasRequest 透传+退避生效、`default-tenant-id=1`、`/appauth/setlogin` 已下线。任一缺失，E2E 第 1 步即卡住。
+2. **运维操作合并一次到位**：PHP 库账号 `saas_sync` 授权按"鉴权方案 3 表 SELECT + 本方案 12 表 SELECT + `exam_result` 仅 INSERT"的完整清单**一次授完**（§3.2），防火墙一次放行——禁止分两次执行导致二次变更生产库权限。
+3. **第二数据源"谁先建谁定义"**：鉴权方案同步任务与本方案 `PhpDataSourceConfig` 共用同一套配置（§3.2 注）。先约定配置键名（`PHP_MYSQL_URL` / `PHP_MYSQL_USERNAME` / `PHP_MYSQL_PASSWORD`）与 Bean 归属，后到者复用不重写，禁止出现两套第二数据源。
+4. **同文件改动串行**：两方案都碰 `SecurityConfig`、`application.yml`、线程池配置——按 AGENTS.md 并行约束，同一文件同一时间只允许一方修改，鉴权方案先改先合入。
+5. **降级自测仅限开发期**：若鉴权通道延期，后端可在 SaaS 库 `platform_user_token` 手工插测试 token 自测接口逻辑；上线前必须换真通道，且测试行须清理（手工行 id 取 ≥10 亿区间，避免与同步任务对账冲突）。
+6. **本方案是鉴权通道的"试金石"**：上线后第一周把同步任务告警、401 退避触发频率纳入观察清单——退避重试频繁触发说明同步延迟超标，须回头调鉴权方案的轮询频率（token 表 3s）。
+7. **租户口径不扩约**：新接口一律 `TenantContextHolder.getTenantId()`（header=1），禁止为调试方便临时放宽白名单或改用 `principal.getTenantId()`（App token 下恒为 0，鉴权方案 §3.3.3 明令禁止）——破约定会传染后续所有 App 接口。
+
+## 14. 开放问题（实现时按默认口径执行，异议即提出）
 
 | # | 问题 | 默认口径 |
 |---|---|---|
