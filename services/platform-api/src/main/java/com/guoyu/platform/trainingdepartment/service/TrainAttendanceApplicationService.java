@@ -12,19 +12,46 @@ import com.guoyu.platform.trainingdepartment.dto.TrainAttendanceCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainAttendanceQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainAttendanceUpdateReq;
 import com.guoyu.platform.trainingdepartment.entity.TrainAttendanceEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainAttendanceMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
+import com.guoyu.platform.trainingdepartment.service.TrainAttendanceImportSupport.MergedDay;
+import com.guoyu.platform.trainingdepartment.service.TrainAttendanceImportSupport.ParsedRow;
+import com.guoyu.platform.trainingdepartment.vo.TrainAttendanceImportResultVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainAttendanceVO;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @Slf4j
 public class TrainAttendanceApplicationService {
 
-  private final TrainAttendanceMapper mapper;
+  private static final int MAX_FAILURES = 100;
 
-  public TrainAttendanceApplicationService(TrainAttendanceMapper mapper) { this.mapper = mapper; }
+  private final TrainAttendanceMapper mapper;
+  private final TrainPeopleListMapper peopleListMapper;
+  private final TrainInfoClassMapper infoClassMapper;
+  private final TrainAttendanceImportSupport importSupport;
+
+  public TrainAttendanceApplicationService(
+      TrainAttendanceMapper mapper,
+      TrainPeopleListMapper peopleListMapper,
+      TrainInfoClassMapper infoClassMapper,
+      TrainAttendanceImportSupport importSupport) {
+    this.mapper = mapper;
+    this.peopleListMapper = peopleListMapper;
+    this.infoClassMapper = infoClassMapper;
+    this.importSupport = importSupport;
+  }
 
   @Transactional(readOnly = true)
   public PageResponse<TrainAttendanceVO> page(TrainAttendanceQueryReq req) {
@@ -102,6 +129,153 @@ public class TrainAttendanceApplicationService {
   @Transactional
   public TrainAttendanceVO signIn(TrainAttendanceCreateReq req) {
     return create(req);
+  }
+
+  /**
+   * 导入人社/培训平台「考勤信息列表」Excel，按身份证匹配本班学员，
+   * 同日多课次合并后 upsert（classId + peopleId + attendanceDate）。
+   */
+  @Transactional
+  public TrainAttendanceImportResultVO importFromExcel(Long classId, MultipartFile file) {
+    if (classId == null || classId <= 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "班级ID无效");
+    }
+    if (file == null || file.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请上传考勤 Excel 文件（.xls/.xlsx）");
+    }
+    String filename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase(Locale.ROOT);
+    if (!filename.endsWith(".xls") && !filename.endsWith(".xlsx")) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持 .xls / .xlsx 考勤文件");
+    }
+
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    Long operatorId = SecurityContext.currentUser().getUserId();
+    TrainInfoClassEntity clazz = infoClassMapper.selectById(classId);
+    if (clazz == null || (clazz.getDeleted() != null && clazz.getDeleted() == 1)) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
+    }
+
+    byte[] bytes;
+    try {
+      bytes = file.getBytes();
+    } catch (Exception e) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "读取上传文件失败");
+    }
+
+    List<ParsedRow> parsed = importSupport.parse(bytes);
+    List<MergedDay> merged = importSupport.mergeByPersonDay(parsed);
+
+    Map<String, TrainPeopleListEntity> studentByIdCard = loadStudentIdCardMap(classId);
+
+    List<TrainAttendanceImportResultVO.FailureItem> failures = new ArrayList<>();
+    int created = 0;
+    int updated = 0;
+    int skipped = 0;
+
+    for (ParsedRow row : parsed) {
+      if (!StringUtils.hasText(row.idCard)) {
+        addFailure(failures, row.excelRowNum, row.name, row.idCard, row.attendanceDate, "缺少身份证号码");
+        skipped++;
+        continue;
+      }
+      if (!StringUtils.hasText(row.attendanceDate) || !row.attendanceDate.matches("\\d{4}-\\d{2}-\\d{2}")) {
+        addFailure(failures, row.excelRowNum, row.name, row.idCard, row.attendanceDate, "上课日期无效");
+        skipped++;
+        continue;
+      }
+      if (!studentByIdCard.containsKey(row.idCard)) {
+        addFailure(failures, row.excelRowNum, row.name, row.idCard, row.attendanceDate, "本班花名册未匹配到该身份证");
+        skipped++;
+      }
+    }
+
+    for (MergedDay day : merged) {
+      TrainPeopleListEntity student = studentByIdCard.get(day.idCard);
+      if (student == null) {
+        continue;
+      }
+      TrainAttendanceEntity existing = mapper.selectOne(new LambdaQueryWrapper<TrainAttendanceEntity>()
+          .eq(TrainAttendanceEntity::getTenantId, tenantId)
+          .eq(TrainAttendanceEntity::getClassId, classId)
+          .eq(TrainAttendanceEntity::getUserId, student.getId())
+          .eq(TrainAttendanceEntity::getAttendanceDate, day.attendanceDate)
+          .eq(TrainAttendanceEntity::getDeleted, 0)
+          .last("LIMIT 1"));
+
+      if (existing == null) {
+        TrainAttendanceEntity entity = new TrainAttendanceEntity();
+        entity.setTenantId(tenantId);
+        entity.setCreatedBy(operatorId);
+        entity.setProjectId(clazz.getTrainInfoId());
+        entity.setClassId(classId);
+        entity.setUserId(student.getId());
+        entity.setUserName(StringUtils.hasText(day.name) ? day.name : student.getRealname());
+        entity.setAttendanceDate(day.attendanceDate);
+        entity.setStatus(day.status);
+        entity.setCheckInTime(blankToNull(day.checkInTime));
+        entity.setCheckOutTime(blankToNull(day.checkOutTime));
+        entity.setRemark(day.remark);
+        entity.setDeleted(0);
+        mapper.insert(entity);
+        created++;
+      } else {
+        existing.setStatus(day.status);
+        if (StringUtils.hasText(day.checkInTime)) existing.setCheckInTime(day.checkInTime);
+        if (StringUtils.hasText(day.checkOutTime)) existing.setCheckOutTime(day.checkOutTime);
+        if (StringUtils.hasText(day.name)) existing.setUserName(day.name);
+        existing.setRemark(day.remark);
+        mapper.updateById(existing);
+        updated++;
+      }
+    }
+
+    log.info("attendance import classId={} totalRows={} merged={} created={} updated={} skipped={}",
+        classId, parsed.size(), merged.size(), created, updated, skipped);
+
+    return new TrainAttendanceImportResultVO(
+        parsed.size(),
+        merged.size(),
+        created,
+        updated,
+        skipped,
+        failures);
+  }
+
+  private Map<String, TrainPeopleListEntity> loadStudentIdCardMap(Long classId) {
+    // 与班级学员列表一致：按 train_class_id + student
+    List<TrainPeopleListEntity> students = peopleListMapper.selectList(
+        new LambdaQueryWrapper<TrainPeopleListEntity>()
+            .eq(TrainPeopleListEntity::getTrainClassId, classId)
+            .eq(TrainPeopleListEntity::getType, "student")
+            .eq(TrainPeopleListEntity::getDeleted, 0));
+    Map<String, TrainPeopleListEntity> map = new HashMap<>();
+    for (TrainPeopleListEntity s : students) {
+      String idCard = TrainAttendanceImportSupport.normalizeIdCard(s.getIdCard());
+      if (StringUtils.hasText(idCard)) {
+        map.putIfAbsent(idCard, s);
+      }
+    }
+    return map;
+  }
+
+  private void addFailure(
+      List<TrainAttendanceImportResultVO.FailureItem> failures,
+      int rowNum,
+      String name,
+      String idCard,
+      String date,
+      String reason) {
+    if (failures.size() >= MAX_FAILURES) return;
+    failures.add(new TrainAttendanceImportResultVO.FailureItem(
+        rowNum,
+        name == null ? "" : name,
+        idCard == null ? "" : idCard,
+        date == null ? "" : date,
+        reason));
+  }
+
+  private static String blankToNull(String s) {
+    return StringUtils.hasText(s) ? s : null;
   }
 
   private TrainAttendanceEntity getExisting(Long id) {

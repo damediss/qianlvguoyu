@@ -63,7 +63,7 @@ import type {
   DivisionOrgSplitReq, DivisionTrainInfoSummary,
   DivisionAutoPackReq, DivisionAutoPackResult, DivisionManualPackReq, DivisionAddPersonReq,
   DivisionPackPatchReq, DivisionPackTaskResult,
-  DivisionPackTaskStatus,
+  DivisionPackTaskStatus, PlatformUserSyncResult,
   ShiftAssignGenerateReq, ShiftAssignPreviewResult, ShiftAssignPrecheckResult,
   ShiftAssignTaskResult, ShiftAssignBindClassReq, ShiftAssignPatchReq,
   ShiftAssignMaterializeReq, ShiftAssignGenerateMaterializeReq, ShiftAssignMaterializeResult,
@@ -881,6 +881,197 @@ export function ensureClassCollection(classId: number | string) {
   }>(apiClient.post(`${BASE}/info-classes/${classId}/ensure-collection`));
 }
 
+export interface ClassPracticeScope {
+  classId: number;
+  classTitle?: string;
+  workTypeId?: number;
+  workTypeLevel?: number;
+  configured: boolean;
+  enabled: number;
+  remark?: string;
+  /** 刷题开放开始，空=不限 */
+  practiceStartTime?: string | null;
+  /** 刷题截止，空=不过期 */
+  practiceEndTime?: string | null;
+  courseIds: number[];
+  knowledgeIds: number[];
+  courses: { courseId: number; title: string }[];
+  knowledges: { knowledgeId: number; courseId: number; title: string }[];
+  appBound?: boolean;
+  hint?: string;
+}
+
+export function getClassPracticeScope(classId: number | string) {
+  return unwrap<ClassPracticeScope>(apiClient.get(`${BASE}/info-classes/${classId}/practice-scope`));
+}
+
+export function listPracticeScopeCourses(params?: { keyword?: string; workTypeId?: number }) {
+  return unwrap<{ items: { id: number; title: string; level?: number; workTypeId?: number }[] }>(
+    apiClient.get(`${BASE}/practice-scope/options/courses`, { params }),
+  );
+}
+
+export function listPracticeScopeKnowledgeTree(courseId: number) {
+  return unwrap<{ id: number; title: string; courseId?: number; parentId?: number; children?: unknown[] }[]>(
+    apiClient.get(`${BASE}/practice-scope/options/knowledge-tree`, { params: { courseId } }),
+  );
+}
+
+export function suggestClassPracticeCourses(classId: number | string) {
+  return unwrap<{
+    classId: number;
+    workTypeId?: number;
+    workTypeLevel?: number;
+    courses: { courseId: number; title: string; level?: number }[];
+  }>(apiClient.get(`${BASE}/info-classes/${classId}/practice-scope/suggest-courses`));
+}
+
+export function saveClassPracticeScope(
+  classId: number | string,
+  payload: {
+    enabled?: number;
+    remark?: string;
+    practiceStartTime?: string | null;
+    practiceEndTime?: string | null;
+    courseIds?: number[];
+    knowledgeIds?: number[];
+  },
+) {
+  return unwrap<ClassPracticeScope>(
+    apiClient.put(`${BASE}/info-classes/${classId}/practice-scope`, payload),
+  );
+}
+
+export interface PracticeAnalyticsQuery {
+  from?: string;
+  to?: string;
+  inScopeOnly?: boolean;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+  limit?: number;
+}
+
+export interface PracticeAnalyticsSummary {
+  classId: number;
+  classTitle?: string;
+  from: string;
+  to: string;
+  inScopeOnly: boolean;
+  scopeKnowledgeCount?: number | null;
+  rosterCount: number;
+  withAccountCount: number;
+  activeUserCount: number;
+  participationRate: number | null;
+  answerCount: number;
+  rightCount: number;
+  accuracyRate: number | null;
+  avgAnswersPerActive: number;
+  activeUserCount7d: number;
+  hint?: string | null;
+}
+
+export interface PracticeAnalyticsStudentRow {
+  peopleId: number;
+  realname?: string;
+  phone?: string;
+  idCard?: string;
+  platformUserId?: number;
+  hasAccount: boolean;
+  answerCount: number;
+  rightCount: number;
+  accuracyRate: number | null;
+  paperCount: number;
+  practiceDays: number;
+  lastPracticeAt?: string | null;
+  idleDays?: number | null;
+}
+
+export interface PracticeAnalyticsKnowledgeRow {
+  knowledgeId: number;
+  title: string;
+  courseId?: number | null;
+  answerCount: number;
+  wrongCount: number;
+  rightCount: number;
+  wrongRate: number | null;
+  userCount: number;
+}
+
+export interface PracticeAnalyticsDailyRow {
+  bizDate: string;
+  answerCount: number;
+  rightCount: number;
+  accuracyRate: number | null;
+  userCount: number;
+  paperCount: number;
+}
+
+function practiceAnalyticsParams(params?: PracticeAnalyticsQuery) {
+  return {
+    from: params?.from,
+    to: params?.to,
+    inScopeOnly: params?.inScopeOnly ?? true,
+    keyword: params?.keyword,
+    page: params?.page,
+    pageSize: params?.pageSize,
+    limit: params?.limit,
+  };
+}
+
+export function getClassPracticeAnalyticsSummary(classId: number | string, params?: PracticeAnalyticsQuery) {
+  return unwrap<PracticeAnalyticsSummary>(
+    apiClient.get(`${BASE}/info-classes/${classId}/practice-analytics/summary`, {
+      params: practiceAnalyticsParams(params),
+    }),
+  );
+}
+
+export function getClassPracticeAnalyticsStudents(classId: number | string, params?: PracticeAnalyticsQuery) {
+  return unwrap<{
+    classId: number;
+    from: string;
+    to: string;
+    inScopeOnly: boolean;
+    page: number;
+    pageSize: number;
+    total: number;
+    items: PracticeAnalyticsStudentRow[];
+  }>(
+    apiClient.get(`${BASE}/info-classes/${classId}/practice-analytics/students`, {
+      params: practiceAnalyticsParams(params),
+    }),
+  );
+}
+
+export function getClassPracticeAnalyticsKnowledges(classId: number | string, params?: PracticeAnalyticsQuery) {
+  return unwrap<{
+    classId: number;
+    from: string;
+    to: string;
+    inScopeOnly: boolean;
+    items: PracticeAnalyticsKnowledgeRow[];
+  }>(
+    apiClient.get(`${BASE}/info-classes/${classId}/practice-analytics/knowledges`, {
+      params: practiceAnalyticsParams(params),
+    }),
+  );
+}
+
+export function getClassPracticeAnalyticsDaily(classId: number | string, params?: PracticeAnalyticsQuery) {
+  return unwrap<{
+    classId: number;
+    from: string;
+    to: string;
+    inScopeOnly: boolean;
+    items: PracticeAnalyticsDailyRow[];
+  }>(
+    apiClient.get(`${BASE}/info-classes/${classId}/practice-analytics/daily`, {
+      params: practiceAnalyticsParams(params),
+    }),
+  );
+}
+
 /** 新增/编辑班级 */
 export function saveInfoClass(payload: TrainInfoClassCreateReq) {
   return unwrap<{ id: number; title: string; nums: number }>(apiClient.post(`${BASE}/info-classes/save`, payload));
@@ -1602,6 +1793,18 @@ export function companyConfirmDivisionPackTask(taskId: number) {
   );
 }
 
+export function syncDivisionPackPlatformUsers(taskId: number) {
+  return unwrap<{
+    taskId: number;
+    trainInfoId: number;
+    candidates: number;
+    linked: number;
+    platformUserSync: PlatformUserSyncResult;
+  }>(
+    apiClient.post(`${BASE}/division/pack-tasks/${taskId}/sync-platform-users`, undefined, { timeout: 180000 }),
+  );
+}
+
 export function companyRejectDivisionPackTask(taskId: number, reason: string) {
   return unwrap<DivisionPackTaskResult>(
     apiClient.post(`${BASE}/division/pack-tasks/${taskId}/company-reject`, null, {
@@ -1661,5 +1864,103 @@ export function materializeShiftAssign(taskId: number, payload: ShiftAssignMater
 export function generateAndMaterializeShiftAssign(payload: ShiftAssignGenerateMaterializeReq) {
   return unwrap<ShiftAssignMaterializeResult & ShiftAssignTaskResult>(
     apiClient.post(`${BASE}/shift-assign/generate-and-materialize`, payload, { timeout: 180000 }),
+  );
+}
+
+// ==================== 跟班考勤 ====================
+
+export interface TrainAttendanceItem {
+  id: number;
+  projectId?: number;
+  classId?: number;
+  userId?: number;
+  userName?: string;
+  attendanceDate?: string;
+  status?: number;
+  checkInTime?: string;
+  checkOutTime?: string;
+  photoPath?: string;
+  videoPath?: string;
+  remark?: string;
+}
+
+export function pageAttendances(params: {
+  page?: number;
+  pageSize?: number;
+  classId?: number;
+  userId?: number;
+  attendanceDate?: string;
+  status?: number;
+  keyword?: string;
+}) {
+  return unwrap<PageResponse<TrainAttendanceItem>>(apiClient.get(`${BASE}/attendances`, { params }));
+}
+
+export function createAttendance(payload: {
+  projectId?: number;
+  classId?: number;
+  userId: number;
+  userName?: string;
+  attendanceDate: string;
+  status?: number;
+  checkInTime?: string;
+  remark?: string;
+}) {
+  return unwrap<TrainAttendanceItem>(apiClient.post(`${BASE}/attendances`, payload));
+}
+
+export function updateAttendance(
+  id: number,
+  payload: {
+    status?: number;
+    checkInTime?: string;
+    checkOutTime?: string;
+    remark?: string;
+    photoPath?: string;
+    videoPath?: string;
+  },
+) {
+  return unwrap<TrainAttendanceItem>(apiClient.put(`${BASE}/attendances/${id}`, payload));
+}
+
+export function signInAttendance(payload: {
+  projectId?: number;
+  classId?: number;
+  userId: number;
+  userName?: string;
+  attendanceDate: string;
+  status?: number;
+  checkInTime?: string;
+  remark?: string;
+}) {
+  return unwrap<TrainAttendanceItem>(apiClient.post(`${BASE}/attendances/sign-in`, payload));
+}
+
+export interface TrainAttendanceImportFailure {
+  rowNum: number;
+  name?: string;
+  idCard?: string;
+  attendanceDate?: string;
+  reason: string;
+}
+
+export interface TrainAttendanceImportResult {
+  totalRows: number;
+  parsedRows: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failures: TrainAttendanceImportFailure[];
+}
+
+/** 导入人社/培训平台考勤信息列表 Excel（按身份证匹配本班学员，同日多课次合并） */
+export async function importClassAttendances(classId: number, file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  return unwrap<TrainAttendanceImportResult>(
+    apiClient.post(`${BASE}/classes/${classId}/attendances/import`, form, {
+      timeout: 120000,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
   );
 }

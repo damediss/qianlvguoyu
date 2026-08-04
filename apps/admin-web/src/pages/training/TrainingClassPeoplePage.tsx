@@ -909,7 +909,7 @@ export function TrainingClassPeoplePage() {
   const [staffModal, setStaffModal] = useState(false);
   const [chargeModal, setChargeModal] = useState(false);
   const [taskModal, setTaskModal] = useState(false);
-  const [selectedClass, setSelectedClass] = useState<{ id: ApiId; trainInfoId: ApiId } | null>(null);
+  const [selectedClass, setSelectedClass] = useState<{ id: ApiId; trainInfoId: ApiId; title?: string } | null>(null);
 
   const { data: publicData } = useQuery({
     queryKey: ['class-people-public-data'],
@@ -1077,7 +1077,7 @@ export function TrainingClassPeoplePage() {
       message.error('班级 ID 无效');
       return;
     }
-    setSelectedClass({ id, trainInfoId });
+    setSelectedClass({ id, trainInfoId, title: row.title });
     switch (type) {
       case 'students':
         setStudentModalMode('roster');
@@ -1111,7 +1111,17 @@ export function TrainingClassPeoplePage() {
   const handleDeleteClass = (row: TrainInfoClassListItem) => {
     Modal.confirm({
       title: '友情提示',
-      content: '确定要删除该班级吗？删除后关联学员数据需另行确认是否仍保留。',
+      content: (
+        <div>
+          <p>确定删除班级「{row.title}」吗？将同时：</p>
+          <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+            <li>删除本班花名册、培训任务、资料收集记录</li>
+            <li>把对应名单人员回滚为「待分班」，便于重新分班</li>
+            <li>解绑排课记录中的班级关联</li>
+          </ul>
+          <p style={{ marginTop: 8, color: '#666' }}>不会删除学员 App 账号（学员信息仍保留）。</p>
+        </div>
+      ),
       onOk: () => deleteMu.mutate(row.id),
     });
   };
@@ -1201,7 +1211,7 @@ export function TrainingClassPeoplePage() {
       <section className="page-heading">
         <Typography.Title level={4}>开班准备</Typography.Title>
         <Typography.Text type="secondary">
-          维护已分班班级的学员花名册、教务负责人、培训任务与资料收集
+          维护已分班班级的学员花名册、教务负责人、培训任务与资料收集；试题配置与刷题学情请到「跟班」工作台
         </Typography.Text>
       </section>
 

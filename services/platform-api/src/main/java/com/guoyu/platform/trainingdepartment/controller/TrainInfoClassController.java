@@ -6,12 +6,16 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassUpdateReq;
+import com.guoyu.platform.trainingdepartment.dto.ClassPracticeScopeSaveReq;
 import com.guoyu.platform.trainingdepartment.security.TrainingAuthorityExpressions;
 import com.guoyu.platform.trainingdepartment.service.ClassCollectionApplicationService;
+import com.guoyu.platform.trainingdepartment.service.ClassPracticeAnalyticsApplicationService;
+import com.guoyu.platform.trainingdepartment.service.ClassPracticeScopeApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainInfoClassApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainMaterialGenerateApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoClassVO;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -38,13 +42,19 @@ public class TrainInfoClassController {
   private final TrainInfoClassApplicationService trainInfoClassApplicationService;
   private final TrainMaterialGenerateApplicationService trainMaterialGenerateApplicationService;
   private final ClassCollectionApplicationService classCollectionApplicationService;
+  private final ClassPracticeScopeApplicationService classPracticeScopeApplicationService;
+  private final ClassPracticeAnalyticsApplicationService classPracticeAnalyticsApplicationService;
 
   public TrainInfoClassController(TrainInfoClassApplicationService trainInfoClassApplicationService,
       TrainMaterialGenerateApplicationService trainMaterialGenerateApplicationService,
-      ClassCollectionApplicationService classCollectionApplicationService) {
+      ClassCollectionApplicationService classCollectionApplicationService,
+      ClassPracticeScopeApplicationService classPracticeScopeApplicationService,
+      ClassPracticeAnalyticsApplicationService classPracticeAnalyticsApplicationService) {
     this.trainInfoClassApplicationService = trainInfoClassApplicationService;
     this.trainMaterialGenerateApplicationService = trainMaterialGenerateApplicationService;
     this.classCollectionApplicationService = classCollectionApplicationService;
+    this.classPracticeScopeApplicationService = classPracticeScopeApplicationService;
+    this.classPracticeAnalyticsApplicationService = classPracticeAnalyticsApplicationService;
   }
 
   /** 分页查询培训班级列表（含企业名、工种名、培训标题等关联字段） */
@@ -148,5 +158,96 @@ public class TrainInfoClassController {
   @AuditLog(module = "training", action = "info-class:ensure-collection", targetType = "train_info_class")
   public ApiResponse<Map<String, Object>> ensureCollection(@PathVariable Long classId) {
     return ApiResponse.ok(classCollectionApplicationService.ensureCollection(classId));
+  }
+
+  /** 班级练习范围可选科目（培训权限，不依赖 exam:course:view） */
+  @GetMapping("/practice-scope/options/courses")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
+  public ApiResponse<Map<String, Object>> practiceScopeCourseOptions(
+      @RequestParam(required = false) String keyword,
+      @RequestParam(required = false) Long workTypeId) {
+    return ApiResponse.ok(classPracticeScopeApplicationService.listCourseOptions(keyword, workTypeId));
+  }
+
+  /** 班级练习范围知识点树 */
+  @GetMapping("/practice-scope/options/knowledge-tree")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
+  public ApiResponse<List<Map<String, Object>>> practiceScopeKnowledgeTree(
+      @RequestParam Integer courseId) {
+    return ApiResponse.ok(classPracticeScopeApplicationService.knowledgeTree(courseId));
+  }
+
+  /** 班级练习范围（科目 + 知识点白名单） */
+  @GetMapping("/info-classes/{classId}/practice-scope")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
+  public ApiResponse<Map<String, Object>> getPracticeScope(@PathVariable Long classId) {
+    return ApiResponse.ok(classPracticeScopeApplicationService.getScope(classId));
+  }
+
+  /** 按班级工种推荐科目（不落库） */
+  @GetMapping("/info-classes/{classId}/practice-scope/suggest-courses")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
+  public ApiResponse<Map<String, Object>> suggestPracticeCourses(@PathVariable Long classId) {
+    return ApiResponse.ok(classPracticeScopeApplicationService.suggestCourses(classId));
+  }
+
+  /** 保存班级练习范围 */
+  @PutMapping("/info-classes/{classId}/practice-scope")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_SAVE)
+  @AuditLog(module = "training", action = "info-class:practice-scope-save", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> savePracticeScope(
+      @PathVariable Long classId,
+      @Valid @RequestBody ClassPracticeScopeSaveReq req) {
+    return ApiResponse.ok(classPracticeScopeApplicationService.saveScope(classId, req));
+  }
+
+  /** 班级刷题学情：总览 */
+  @GetMapping("/info-classes/{classId}/practice-analytics/summary")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
+  public ApiResponse<Map<String, Object>> practiceAnalyticsSummary(
+      @PathVariable Long classId,
+      @RequestParam(required = false) LocalDate from,
+      @RequestParam(required = false) LocalDate to,
+      @RequestParam(required = false, defaultValue = "true") boolean inScopeOnly) {
+    return ApiResponse.ok(classPracticeAnalyticsApplicationService.summary(classId, from, to, inScopeOnly));
+  }
+
+  /** 班级刷题学情：学员明细 */
+  @GetMapping("/info-classes/{classId}/practice-analytics/students")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
+  public ApiResponse<Map<String, Object>> practiceAnalyticsStudents(
+      @PathVariable Long classId,
+      @RequestParam(required = false) LocalDate from,
+      @RequestParam(required = false) LocalDate to,
+      @RequestParam(required = false, defaultValue = "true") boolean inScopeOnly,
+      @RequestParam(required = false) String keyword,
+      @RequestParam(required = false, defaultValue = "1") int page,
+      @RequestParam(required = false, defaultValue = "20") int pageSize) {
+    return ApiResponse.ok(classPracticeAnalyticsApplicationService.students(
+        classId, from, to, inScopeOnly, keyword, page, pageSize));
+  }
+
+  /** 班级刷题学情：薄弱知识点 */
+  @GetMapping("/info-classes/{classId}/practice-analytics/knowledges")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
+  public ApiResponse<Map<String, Object>> practiceAnalyticsKnowledges(
+      @PathVariable Long classId,
+      @RequestParam(required = false) LocalDate from,
+      @RequestParam(required = false) LocalDate to,
+      @RequestParam(required = false, defaultValue = "true") boolean inScopeOnly,
+      @RequestParam(required = false, defaultValue = "30") int limit) {
+    return ApiResponse.ok(classPracticeAnalyticsApplicationService.knowledges(
+        classId, from, to, inScopeOnly, limit));
+  }
+
+  /** 班级刷题学情：每日趋势 */
+  @GetMapping("/info-classes/{classId}/practice-analytics/daily")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
+  public ApiResponse<Map<String, Object>> practiceAnalyticsDaily(
+      @PathVariable Long classId,
+      @RequestParam(required = false) LocalDate from,
+      @RequestParam(required = false) LocalDate to,
+      @RequestParam(required = false, defaultValue = "true") boolean inScopeOnly) {
+    return ApiResponse.ok(classPracticeAnalyticsApplicationService.daily(classId, from, to, inScopeOnly));
   }
 }

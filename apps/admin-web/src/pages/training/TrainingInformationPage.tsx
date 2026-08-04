@@ -804,7 +804,7 @@ export function TrainingInformationPage() {
         <Typography.Text type="secondary">创建报名计划、生成扫码二维码，收集学员报名资料</Typography.Text>
       </section>
 
-      <TrainingProcessSteps current={5} />
+      <TrainingProcessSteps current={4} />
 
       <div className="top-bar">
         <div>

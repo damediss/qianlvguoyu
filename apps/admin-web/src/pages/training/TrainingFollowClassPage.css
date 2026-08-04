@@ -1,0 +1,71 @@
+.training-follow-class-page .page-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.training-follow-class-page .follow-workbench-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.training-follow-class-page .follow-class-card-grid {
+  min-height: 120px;
+}
+
+.training-follow-class-page .follow-class-card {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 72px;
+  padding: 16px;
+  border: 1px solid #e8eef5;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.training-follow-class-page .follow-class-card:hover {
+  border-color: #91caff;
+  box-shadow: 0 6px 18px rgba(22, 119, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.training-follow-class-page .follow-class-card:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+}
+
+.training-follow-class-page .follow-class-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.training-follow-class-page .follow-class-card-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.4;
+}
+
+.training-follow-class-page .follow-class-card-company {
+  display: block;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.training-follow-class-page .follow-class-card-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}

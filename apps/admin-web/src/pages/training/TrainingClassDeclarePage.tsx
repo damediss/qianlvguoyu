@@ -5,6 +5,7 @@
 import { useMemo, useState } from 'react';
 import {
   Alert,
+  AutoComplete,
   Button,
   Card,
   Empty,
@@ -653,8 +654,17 @@ export function TrainingClassDeclarePage() {
           <Form.Item noStyle shouldUpdate={(p, c) => p.title !== c.title}>
             {() =>
               formFileTemp.getFieldValue('title') === '开班申请表' ? (
-                <Form.Item name="city" label="地市" rules={[{ required: true, message: '请选择地市' }]}>
-                  <Select placeholder="请选择地市" options={GUANGXI_CITIES.map((c) => ({ value: c, label: c }))} />
+                <Form.Item name="city" label="地市" rules={[{ required: true, message: '请选择或输入地市' }]}>
+                  <AutoComplete
+                    allowClear
+                    placeholder="请选择或输入地市"
+                    options={GUANGXI_CITIES.map((c) => ({ value: c }))}
+                    filterOption={(input, option) =>
+                      String(option?.value ?? '')
+                        .toLowerCase()
+                        .includes(input.trim().toLowerCase())
+                    }
+                  />
                 </Form.Item>
               ) : null
             }

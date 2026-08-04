@@ -17,6 +17,7 @@ import { TrainingInfoPage } from './pages/training/TrainingInfoPage';
 import { TrainingClassPeoplePage } from './pages/training/TrainingClassPeoplePage';
 import { TrainingClassDivisionPage } from './pages/training/TrainingClassDivisionPage';
 import { TrainingClassDeclarePage } from './pages/training/TrainingClassDeclarePage';
+import { TrainingFollowClassPage } from './pages/training/TrainingFollowClassPage';
 import { UserAuthCoursePage } from './pages/exam/UserAuthCoursePage';
 import { UserListPage } from './pages/chazheng/UserListPage';
 import { CertQueryPage } from './pages/chazheng/CertQueryPage';
@@ -153,6 +154,7 @@ const pageMap: Record<string, React.ReactNode> = {
   train_certificates: <TrainingCertificateTemplatePage />,
   'train_sign-up': <TrainingInformationPage />,
   'train_sign-up-people': <TrainingInformationPage />,
+  train_follow: <TrainingFollowClassPage />,
   'train_user-info': <TrainingStudentPage />,
   knowledge_spaces: <KnowledgePage />,
   knowledge_search: <KnowledgePage />,

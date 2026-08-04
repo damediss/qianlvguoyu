@@ -158,11 +158,32 @@ export function EnterpriseClassConfirmPanel() {
     })
     : legacyList;
 
-  const runPackAction = async (fn: () => Promise<unknown>, successMsg: string) => {
+  const formatPlatformUserSyncMsg = (result: DivisionPackTaskResult | unknown, fallback: string) => {
+    const sync = (result as DivisionPackTaskResult | null | undefined)?.platformUserSync
+      ?? (result as DivisionPackTaskResult | null | undefined)?.materialized?.platformUserSync;
+    if (!sync) return fallback;
+    const parts = [
+      fallback,
+      `学员账号：新建 ${sync.created ?? 0}，复用 ${sync.reused ?? 0}，更新 ${sync.updated ?? 0}，跳过 ${sync.skipped ?? 0}`,
+    ];
+    if ((sync.created ?? 0) > 0) {
+      parts.push('新建账号默认密码 123123');
+    }
+    if (sync.warnings?.length) {
+      parts.push(`有 ${sync.warnings.length} 条同步告警，请到学员信息核对`);
+    }
+    return parts.join('；');
+  };
+
+  const runPackAction = async (
+    fn: () => Promise<unknown>,
+    successMsg: string,
+    formatMsg?: (result: unknown) => string,
+  ) => {
     setActionLoading(true);
     try {
-      await fn();
-      message.success(successMsg);
+      const result = await fn();
+      message.success(formatMsg ? formatMsg(result) : successMsg);
       refreshPack();
       setDetailOpen(false);
       setCurrentTask(null);
@@ -411,6 +432,7 @@ export function EnterpriseClassConfirmPanel() {
               onClick={() => runPackAction(
                 () => trainApi.companyConfirmDivisionPackTask(detail.taskId),
                 '已通过，培训班级已创建',
+                (result) => formatPlatformUserSyncMsg(result, '已通过，培训班级已创建'),
               )}
             >
               通过并建班
@@ -428,7 +450,7 @@ export function EnterpriseClassConfirmPanel() {
               showIcon
               icon={<TeamOutlined />}
               message="机构分班方案"
-              description="请核对班级与学员名单。通过后系统将创建培训班级；驳回后机构可调整再提交。"
+              description="请核对班级与学员名单。通过后系统将创建培训班级并为学员开通 App 账号（默认密码 123123）；驳回后机构可调整再提交。"
               style={{ marginBottom: 16 }}
             />
             <Descriptions column={2} size="small" bordered style={{ marginBottom: 16 }}>
