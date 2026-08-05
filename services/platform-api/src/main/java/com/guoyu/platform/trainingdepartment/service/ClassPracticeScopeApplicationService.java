@@ -18,6 +18,7 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainClassPracticeKnowledgeM
 import com.guoyu.platform.trainingdepartment.mapper.TrainClassPracticeScopeMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -175,15 +176,15 @@ public class ClassPracticeScopeApplicationService {
     out.put("enabled", scope == null ? 1 : (scope.getEnabled() == null ? 1 : scope.getEnabled()));
     out.put("remark", scope == null ? null : scope.getRemark());
     out.put("practiceStartTime", scope == null || scope.getPracticeStartTime() == null
-        ? null : scope.getPracticeStartTime().toString().replace('T', ' '));
+        ? null : scope.getPracticeStartTime().toLocalDate().toString());
     out.put("practiceEndTime", scope == null || scope.getPracticeEndTime() == null
-        ? null : scope.getPracticeEndTime().toString().replace('T', ' '));
+        ? null : scope.getPracticeEndTime().toLocalDate().toString());
     out.put("courseIds", courseIds);
     out.put("knowledgeIds", knowledgeIds);
     out.put("courses", courseRows);
     out.put("knowledges", knowledgeRows);
     out.put("appBound", true);
-    out.put("hint", "未设置刷题时间则不过期；设置后仅在时间窗内允许学员按班刷题");
+    out.put("hint", "未设置刷题日期则不过期；设置后仅在起止日期（含当天）内允许学员按班刷题");
     return out;
   }
 
@@ -281,12 +282,17 @@ public class ClassPracticeScopeApplicationService {
         .eq(TrainClassPracticeScopeEntity::getClassId, classId));
     int enabled = req.getEnabled() != null && req.getEnabled() == 0 ? 0 : 1;
     String remark = StringUtils.hasText(req.getRemark()) ? req.getRemark().trim() : null;
-    LocalDateTime practiceStart = req.getPracticeStartTime();
-    LocalDateTime practiceEnd = req.getPracticeEndTime();
-    if (practiceStart != null && practiceEnd != null && practiceStart.isAfter(practiceEnd)) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "刷题开始时间不能晚于截止时间");
+    // 按日：开始日 00:00:00，截止日 23:59:59（含当天）
+    LocalDateTime practiceStart = req.getPracticeStartTime() == null
+        ? null : req.getPracticeStartTime().atStartOfDay();
+    LocalDateTime practiceEnd = req.getPracticeEndTime() == null
+        ? null : req.getPracticeEndTime().atTime(23, 59, 59);
+    if (practiceStart != null && practiceEnd != null && practiceStart.toLocalDate().isAfter(practiceEnd.toLocalDate())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "刷题开始日期不能晚于截止日期");
     }
     if (scope == null) {
+      // 软删行仍占 uk_class_practice_scope(tenant_id, class_id)，插入前物理清幽灵
+      scopeMapper.physicalDeleteByClass(tenantId, classId);
       scope = new TrainClassPracticeScopeEntity();
       scope.setTenantId(tenantId);
       scope.setClassId(classId);
@@ -310,7 +316,7 @@ public class ClassPracticeScopeApplicationService {
     return getScope(clazz.getId());
   }
 
-  /** 删班时清理练习范围（物理逻辑删） */
+  /** 删班时清理练习范围（物理删，避免唯一键被软删行占住） */
   @Transactional
   public int cleanupByClassId(Long classId) {
     if (classId == null) {
@@ -318,20 +324,9 @@ public class ClassPracticeScopeApplicationService {
     }
     Long tenantId = SecurityContext.currentUser().getTenantId();
     int n = 0;
-    n += knowledgeMapper.delete(new LambdaQueryWrapper<TrainClassPracticeKnowledgeEntity>()
-        .eq(TrainClassPracticeKnowledgeEntity::getTenantId, tenantId)
-        .eq(TrainClassPracticeKnowledgeEntity::getClassId, classId));
-    n += courseMapper.delete(new LambdaQueryWrapper<TrainClassPracticeCourseEntity>()
-        .eq(TrainClassPracticeCourseEntity::getTenantId, tenantId)
-        .eq(TrainClassPracticeCourseEntity::getClassId, classId));
-    List<TrainClassPracticeScopeEntity> scopes = scopeMapper.selectList(
-        new LambdaQueryWrapper<TrainClassPracticeScopeEntity>()
-            .eq(TrainClassPracticeScopeEntity::getTenantId, tenantId)
-            .eq(TrainClassPracticeScopeEntity::getClassId, classId));
-    for (TrainClassPracticeScopeEntity row : scopes) {
-      scopeMapper.deleteById(row.getId());
-      n++;
-    }
+    n += knowledgeMapper.physicalDeleteByClass(tenantId, classId);
+    n += courseMapper.physicalDeleteByClass(tenantId, classId);
+    n += scopeMapper.physicalDeleteByClass(tenantId, classId);
     return n;
   }
 
@@ -389,9 +384,8 @@ public class ClassPracticeScopeApplicationService {
   }
 
   private void replaceCourses(Long tenantId, Long classId, Set<Integer> courseIds, LocalDateTime now) {
-    courseMapper.delete(new LambdaQueryWrapper<TrainClassPracticeCourseEntity>()
-        .eq(TrainClassPracticeCourseEntity::getTenantId, tenantId)
-        .eq(TrainClassPracticeCourseEntity::getClassId, classId));
+    // 物理删：全局 logic-delete 软删会与 uk_class_practice_course 冲突
+    courseMapper.physicalDeleteByClass(tenantId, classId);
     for (Integer courseId : courseIds) {
       TrainClassPracticeCourseEntity row = new TrainClassPracticeCourseEntity();
       row.setTenantId(tenantId);
@@ -409,9 +403,8 @@ public class ClassPracticeScopeApplicationService {
       Set<Integer> knowledgeIds,
       Map<Integer, ExamKnowledgeStructureEntity> knowledgeMap,
       LocalDateTime now) {
-    knowledgeMapper.delete(new LambdaQueryWrapper<TrainClassPracticeKnowledgeEntity>()
-        .eq(TrainClassPracticeKnowledgeEntity::getTenantId, tenantId)
-        .eq(TrainClassPracticeKnowledgeEntity::getClassId, classId));
+    // 物理删：全局 logic-delete 软删会与 uk_class_practice_knowledge 冲突
+    knowledgeMapper.physicalDeleteByClass(tenantId, classId);
     for (Integer knowledgeId : knowledgeIds) {
       ExamKnowledgeStructureEntity node = knowledgeMap.get(knowledgeId);
       if (node == null) {

@@ -135,6 +135,12 @@ public class PlatformUserEnsureService {
     if (!StringUtils.hasText(existing.getRealname()) && StringUtils.hasText(name)) {
       existing.setRealname(name);
       changed = true;
+    } else if (StringUtils.hasText(name)
+        && StringUtils.hasText(existing.getRealname())
+        && existing.getRealname().equals(trim(existing.getPhone()))) {
+      // 旧档用手机号占位姓名时，用花名册/报名真名覆盖
+      existing.setRealname(name);
+      changed = true;
     }
 
     if (existing.getCompanyId() == null && companyId != null && companyId > 0) {

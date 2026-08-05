@@ -2076,6 +2076,8 @@ export interface TrainInfoClassListItem {
   file_temps?: string;
   kcbiao_file?: string;
   kcbiao_src?: string;
+  schedule_manual_edited?: number;
+  schedule_imported_at?: string | null;
   company_confirm_status?: number;
   company_confirm_time?: string;
   company_confirm_username?: string;
@@ -2755,7 +2757,9 @@ export interface DivisionAutoPackClass {
   classId?: number;
   title: string;
   group?: string;
-  /** 班级工种（手动可选；自动分班时由名单推断） */
+  /** 班级工种 ID（exam_work_type.id，与开班准备一致） */
+  workTypeId?: number;
+  /** 班级工种名称（展示/兼容；以 workTypeId 为准） */
   jobName?: string;
   /** 班级等级（可多班不同等级；对应 ${level}） */
   levelName?: string;
@@ -2832,6 +2836,7 @@ export interface DivisionPackPatchReq {
     tempId?: string;
     title: string;
     group?: string;
+    workTypeId?: number;
     jobName?: string;
     levelName?: string;
     members: DivisionAutoPackClassMember[];

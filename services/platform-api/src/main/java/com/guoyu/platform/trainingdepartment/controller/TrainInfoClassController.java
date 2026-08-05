@@ -18,6 +18,7 @@ import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -249,5 +250,17 @@ public class TrainInfoClassController {
       @RequestParam(required = false) LocalDate to,
       @RequestParam(required = false, defaultValue = "true") boolean inScopeOnly) {
     return ApiResponse.ok(classPracticeAnalyticsApplicationService.daily(classId, from, to, inScopeOnly));
+  }
+
+  /** 班级刷题学情：导出 Excel（指定日期或全部历史） */
+  @GetMapping("/info-classes/{classId}/practice-analytics/export")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
+  public ResponseEntity<byte[]> practiceAnalyticsExport(
+      @PathVariable Long classId,
+      @RequestParam(required = false) LocalDate from,
+      @RequestParam(required = false) LocalDate to,
+      @RequestParam(required = false, defaultValue = "true") boolean inScopeOnly,
+      @RequestParam(required = false, defaultValue = "false") boolean allTime) {
+    return classPracticeAnalyticsApplicationService.exportExcel(classId, from, to, inScopeOnly, allTime);
   }
 }

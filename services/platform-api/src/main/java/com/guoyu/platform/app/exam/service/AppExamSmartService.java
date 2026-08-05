@@ -530,24 +530,20 @@ public class AppExamSmartService {
     assertPracticeWindowOpen(scope);
   }
 
-  /** 未配置开始/截止则不过期；有配置则必须落在时间窗内 */
+  /** 未配置开始/截止则不过期；有配置则按自然日判断（截止日含当天） */
   private static void assertPracticeWindowOpen(TrainClassPracticeScopeEntity scope) {
     if (scope == null) {
       return;
     }
-    LocalDateTime now = LocalDateTime.now();
+    LocalDate today = LocalDate.now();
     LocalDateTime start = scope.getPracticeStartTime();
     LocalDateTime end = scope.getPracticeEndTime();
-    if (start != null && now.isBefore(start)) {
-      throw new AppSmsException(-1, "本班刷题尚未开始（开放时间：" + formatDt(start) + "）");
+    if (start != null && today.isBefore(start.toLocalDate())) {
+      throw new AppSmsException(-1, "本班刷题尚未开始（开放日期：" + start.toLocalDate() + "）");
     }
-    if (end != null && now.isAfter(end)) {
-      throw new AppSmsException(-1, "本班刷题时间已截止（截止时间：" + formatDt(end) + "）");
+    if (end != null && today.isAfter(end.toLocalDate())) {
+      throw new AppSmsException(-1, "本班刷题已截止（截止日期：" + end.toLocalDate() + "）");
     }
-  }
-
-  private static String formatDt(LocalDateTime dt) {
-    return dt == null ? "" : dt.toString().replace('T', ' ');
   }
 
   private static Integer questionsCourseHint(Set<Integer> allowedCourses) {

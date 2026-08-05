@@ -55,7 +55,7 @@ function collectKeys(nodes: DataNode[]): string[] {
 
 function parseScopeTime(v?: string | null): Dayjs | null {
   if (!v) return null;
-  const d = dayjs(v.replace('T', ' '));
+  const d = dayjs(String(v).slice(0, 10));
   return d.isValid() ? d : null;
 }
 
@@ -164,8 +164,8 @@ export function ClassPracticeScopeModal({ open, onClose, classId, classTitle, ti
     mutationFn: () => trainApi.saveClassPracticeScope(classId!, {
       enabled: enabled ? 1 : 0,
       remark: remark.trim() || undefined,
-      practiceStartTime: practiceRange?.[0]?.format('YYYY-MM-DD HH:mm:ss') ?? null,
-      practiceEndTime: practiceRange?.[1]?.format('YYYY-MM-DD HH:mm:ss') ?? null,
+      practiceStartTime: practiceRange?.[0]?.format('YYYY-MM-DD') ?? null,
+      practiceEndTime: practiceRange?.[1]?.format('YYYY-MM-DD') ?? null,
       courseIds,
       knowledgeIds,
     }),
@@ -244,7 +244,7 @@ export function ClassPracticeScopeModal({ open, onClose, classId, classTitle, ti
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="配置本班可刷科目、知识点与刷题时间。未设置时间则不过期；到期后学员无法从班级入口刷题。"
+        message="配置本班可刷科目、知识点与刷题日期。未设置日期则不过期；过了截止日学员无法从班级入口刷题。"
       />
       {scopeQuery.isLoading ? (
         <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>
@@ -257,11 +257,10 @@ export function ClassPracticeScopeModal({ open, onClose, classId, classTitle, ti
             </Text>
           </Form.Item>
           <Form.Item
-            label="刷题时间"
-            extra="可不设。清空表示不过期；设置后仅在时间窗内允许按班刷题。"
+            label="刷题日期"
+            extra="按日设置，可不填。清空表示不过期；截止日期当天仍可刷题。"
           >
             <RangePicker
-              showTime
               allowClear
               style={{ width: '100%' }}
               value={practiceRange}
@@ -272,7 +271,7 @@ export function ClassPracticeScopeModal({ open, onClose, classId, classTitle, ti
                   setPracticeRange(null);
                 }
               }}
-              placeholder={['开始时间（可选）', '截止时间（可选）']}
+              placeholder={['开始日期（可选）', '截止日期（可选）']}
             />
           </Form.Item>
           <Form.Item

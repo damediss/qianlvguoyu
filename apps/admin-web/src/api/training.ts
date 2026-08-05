@@ -1,5 +1,6 @@
 import { apiClient, unwrap } from './client';
 import { fetchFileBlob } from './files';
+import { parseContentDispositionFilename } from '../utils/download';
 import type { PageResponse } from '../types/api';
 import type {
   TrainNeed, TrainNeedQuery, TrainNeedCreateReq, TrainNeedUpdateReq,
@@ -889,9 +890,9 @@ export interface ClassPracticeScope {
   configured: boolean;
   enabled: number;
   remark?: string;
-  /** 刷题开放开始，空=不限 */
+  /** 刷题开放开始日 yyyy-MM-dd，空=不限 */
   practiceStartTime?: string | null;
-  /** 刷题截止，空=不过期 */
+  /** 刷题截止日 yyyy-MM-dd（含当天），空=不过期 */
   practiceEndTime?: string | null;
   courseIds: number[];
   knowledgeIds: number[];
@@ -1072,6 +1073,33 @@ export function getClassPracticeAnalyticsDaily(classId: number | string, params?
   );
 }
 
+/** 导出班级刷题学情 Excel：指定日期区间，或 allTime=true 导出全部历史 */
+export async function exportClassPracticeAnalytics(
+  classId: number | string,
+  params?: PracticeAnalyticsQuery & { allTime?: boolean },
+) {
+  const response = await apiClient.get(`${BASE}/info-classes/${classId}/practice-analytics/export`, {
+    params: {
+      from: params?.allTime ? undefined : params?.from,
+      to: params?.allTime ? undefined : params?.to,
+      inScopeOnly: params?.inScopeOnly ?? true,
+      allTime: params?.allTime ?? false,
+    },
+    responseType: 'blob',
+  });
+  const blob = new Blob([response.data], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const filename =
+    parseContentDispositionFilename(response) || `刷题学情_${classId}.xlsx`;
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
 /** 新增/编辑班级 */
 export function saveInfoClass(payload: TrainInfoClassCreateReq) {
   return unwrap<{ id: number; title: string; nums: number }>(apiClient.post(`${BASE}/info-classes/save`, payload));
@@ -1108,12 +1136,32 @@ export function listSignUpSelf(traininfoId: number | string, keyword?: string, c
 
 /** 从报名导入学员 */
 export function importStudents(params: { traininfoId: number | string; classId: number | string; studentIds: Array<number | string> }) {
-  return unwrap<{ count: number; failed: { id: number; reason: string }[] }>(apiClient.post(`${BASE}/class-student-import`, params));
+  return unwrap<{
+    count: number;
+    failed: { id?: number; idCard?: string; name?: string; reason: string }[];
+    platformUserSync?: {
+      created: number;
+      reused: number;
+      updated: number;
+      skipped: number;
+      warnings: { name: string; idCard: string; reason: string }[];
+    };
+  }>(apiClient.post(`${BASE}/class-student-import`, params));
 }
 
 /** 按身份证号导入学员 */
 export function importStudentsByIdCard(params: { traininfoId: number | string; classId: number | string; studentIds: string }) {
-  return unwrap<{ count: number; failed: { idCard: string; reason: string }[] }>(apiClient.post(`${BASE}/class-student-import-by-idcard`, params));
+  return unwrap<{
+    count: number;
+    failed: { id?: number; idCard?: string; name?: string; reason: string }[];
+    platformUserSync?: {
+      created: number;
+      reused: number;
+      updated: number;
+      skipped: number;
+      warnings: { name: string; idCard: string; reason: string }[];
+    };
+  }>(apiClient.post(`${BASE}/class-student-import-by-idcard`, params));
 }
 
 // ==================== 教务/负责人 ====================
@@ -1240,14 +1288,46 @@ export function notifyGraduation(classId: number) {
 
 // ==================== 课表配置 ====================
 
-/** 获取班级课表 */
+/** 获取班级课表（空且有开班课表文件时后端会自动解析导入） */
 export function getClassSchedule(classId: number) {
   return unwrap<Record<string, unknown>[]>(apiClient.get(`${BASE}/info-classes/${classId}/schedule`));
 }
 
-/** 批量保存课表 */
+/** 批量保存课表（跟班调课；不回写开班上传文件） */
 export function saveClassSchedule(classId: number, items: Record<string, unknown>[]) {
   return unwrap<{ classId: number; count: number }>(apiClient.put(`${BASE}/info-classes/${classId}/schedule`, { items }));
+}
+
+/** 从开班准备上传的 Excel 导入/重导结构化课表 */
+export function importClassScheduleFromKcbiao(
+  classId: number,
+  force = false,
+  confirmOverwriteManual = false,
+) {
+  return unwrap<{
+    classId: number;
+    count?: number;
+    imported?: number;
+    skipped?: boolean;
+    reason?: string;
+    manualEdited?: boolean;
+  }>(
+    apiClient.post(`${BASE}/info-classes/${classId}/schedule/import-from-kcbiao`, null, {
+      params: { force, confirmOverwriteManual },
+    }),
+  );
+}
+
+/** 课表双源状态 */
+export function getClassScheduleStatus(classId: number) {
+  return unwrap<{
+    classId: number;
+    hasKcbiaoFile: boolean;
+    kcbiaoFile?: string;
+    manualEdited: boolean;
+    importedAt?: string | null;
+    sessionCount: number;
+  }>(apiClient.get(`${BASE}/info-classes/${classId}/schedule/status`));
 }
 
 /** 导出课表 */

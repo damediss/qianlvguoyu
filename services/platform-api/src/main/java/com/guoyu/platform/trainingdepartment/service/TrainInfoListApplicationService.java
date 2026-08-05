@@ -165,6 +165,26 @@ public class TrainInfoListApplicationService {
     entity.setCate(req.getCate());
     entity.setCompanyId(req.getCompanyId());
     entity.setCompanyName(req.getCompanyName());
+    // 仅有企业名称时尝试解析组织，便于班级列表按 companyId 展示公司名
+    if (entity.getCompanyId() == null && StringUtils.hasText(req.getCompanyName())) {
+      OrgEntity org = orgMapper.selectOne(new LambdaQueryWrapper<OrgEntity>()
+          .eq(OrgEntity::getTenantId, tenantId)
+          .eq(OrgEntity::getDeleted, 0)
+          .eq(OrgEntity::getName, req.getCompanyName().trim())
+          .in(OrgEntity::getOrgType, "company", "master")
+          .last("LIMIT 1"));
+      if (org != null) {
+        entity.setCompanyId(org.getId());
+        entity.setCompanyName(org.getName());
+      } else {
+        entity.setCompanyName(req.getCompanyName().trim());
+      }
+    } else if (entity.getCompanyId() != null && !StringUtils.hasText(entity.getCompanyName())) {
+      OrgEntity org = orgMapper.selectById(entity.getCompanyId());
+      if (org != null) {
+        entity.setCompanyName(org.getName());
+      }
+    }
     entity.setCompanyAddress(req.getCompanyAddress());
     entity.setWorkTypeId(req.getWorkTypeId());
     entity.setWorkTypeLevel(req.getWorkTypeLevel());

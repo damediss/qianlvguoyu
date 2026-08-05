@@ -95,6 +95,18 @@ function resolveClassJobName(row: DivisionAutoPackClass): string | undefined {
   return names.length === 1 ? names[0] : undefined;
 }
 
+/** 优先用已存 workTypeId；否则按工种名称在选项中反查（兼容旧草稿）。 */
+function resolveClassWorkTypeId(
+  row: DivisionAutoPackClass,
+  flatOptions: { value: number; label: string }[],
+): number | undefined {
+  if (row.workTypeId != null && row.workTypeId > 0) return Number(row.workTypeId);
+  const name = resolveClassJobName(row);
+  if (!name) return undefined;
+  const hit = flatOptions.find((o) => o.label === name);
+  return hit?.value;
+}
+
 const CLASS_LEVEL_OPTIONS = ['初级工', '中级工', '高级工', '技师', '高级技师'].map((v) => ({
   value: v,
   label: v,
@@ -116,6 +128,7 @@ function buildPackPatch(pack: DivisionPackTaskResult): DivisionPackPatchReq {
       tempId: c.tempId,
       title: c.title,
       group: c.group,
+      workTypeId: c.workTypeId != null && c.workTypeId > 0 ? Number(c.workTypeId) : undefined,
       jobName: (c.jobName ?? '').trim() || resolveClassJobName(c) || undefined,
       levelName: (c.levelName ?? '').trim() || resolveClassLevelName(c) || undefined,
       members: c.members ?? [],
@@ -725,32 +738,17 @@ export function TrainingClassDivisionPage() {
       .map((name) => ({ label: name, value: name }));
   }, [rosterQuery.data?.items]);
 
-  const classJobOptions = useMemo(() => {
-    const names = new Set<string>();
-    const groups = (workTypePublicQuery.data as DemandPublicData | undefined)?.worktype_list ?? [];
-    for (const g of groups) {
-      for (const o of g.options ?? []) {
-        const title = o.title?.trim();
-        if (title) names.add(title);
-      }
-    }
-    for (const opt of poolJobOptions) names.add(opt.value);
-    for (const cls of packResult?.classes ?? []) {
-      const own = cls.jobName?.trim();
-      if (own) names.add(own);
-      for (const m of cls.members ?? []) {
-        const name = m.jobName?.trim();
-        if (name) names.add(name);
-      }
-    }
-    for (const u of packResult?.unassigned ?? []) {
-      const name = u.jobName?.trim();
-      if (name) names.add(name);
-    }
-    return Array.from(names)
-      .sort((a, b) => a.localeCompare(b, 'zh-CN'))
-      .map((name) => ({ label: name, value: name }));
-  }, [workTypePublicQuery.data, poolJobOptions, packResult]);
+  /** 与开班准备一致：分组 Select，value = exam_work_type.id */
+  const classWorkTypeGroupedOptions = useMemo(() => {
+    return (workTypePublicQuery.data as DemandPublicData | undefined)?.worktype_list?.map((g) => ({
+      label: g.title,
+      options: (g.options ?? []).map((o) => ({ value: o.id, label: o.title })),
+    })) ?? [];
+  }, [workTypePublicQuery.data]);
+
+  const classWorkTypeFlatOptions = useMemo(() => {
+    return classWorkTypeGroupedOptions.flatMap((g) => g.options ?? []);
+  }, [classWorkTypeGroupedOptions]);
 
   const applyPoolFilters = () => {
     setRosterPage(1);
@@ -1216,29 +1214,35 @@ export function TrainingClassDivisionPage() {
                       { title: '分组', dataIndex: 'group', width: 120 },
                       {
                         title: '工种',
-                        dataIndex: 'jobName',
+                        dataIndex: 'workTypeId',
                         width: 160,
                         render: (_v, row, idx) => {
+                          const workTypeId = resolveClassWorkTypeId(row, classWorkTypeFlatOptions);
+                          const label =
+                            (workTypeId != null
+                              ? classWorkTypeFlatOptions.find((o) => o.value === workTypeId)?.label
+                              : undefined) || resolveClassJobName(row);
                           if (!editable) {
-                            const value = resolveClassJobName(row);
-                            return value ? <Tag>{value}</Tag> : <Text type="secondary">-</Text>;
+                            return label ? <Tag>{label}</Tag> : <Text type="secondary">-</Text>;
                           }
                           return (
                             <Select
-                              mode="tags"
-                              maxCount={1}
                               allowClear
                               showSearch
-                              placeholder="选择或输入工种"
+                              placeholder="选择工种"
                               style={{ width: '100%' }}
-                              value={row.jobName?.trim() ? [row.jobName.trim()] : []}
-                              options={classJobOptions}
+                              value={workTypeId}
+                              options={classWorkTypeGroupedOptions}
                               optionFilterProp="label"
-                              tokenSeparators={[]}
-                              onChange={(vals) => {
-                                const next = (vals?.[0] ?? '').trim();
+                              onChange={(id) => {
+                                const nextId = id != null ? Number(id) : undefined;
+                                const nextLabel = nextId != null
+                                  ? classWorkTypeFlatOptions.find((o) => o.value === nextId)?.label
+                                  : undefined;
                                 updateDraft((d) => {
-                                  if (d.classes[idx]) d.classes[idx].jobName = next || undefined;
+                                  if (!d.classes[idx]) return;
+                                  d.classes[idx].workTypeId = nextId;
+                                  d.classes[idx].jobName = nextLabel || undefined;
                                 });
                               }}
                             />
