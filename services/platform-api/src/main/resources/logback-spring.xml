@@ -36,12 +36,13 @@
     </appender>
 
     <!-- ========== 错误文件（只记 ERROR，立即 flush，90天） ========== -->
+    <!-- immediateFlush 自 logback 1.2 起必须挂在 appender 级（写在 encoder 里仅告警兼容） -->
     <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${ERROR_FILE}</file>
+        <immediateFlush>true</immediateFlush>
         <encoder>
             <pattern>${LOG_PATTERN}</pattern>
             <charset>UTF-8</charset>
-            <immediateFlush>true</immediateFlush>
         </encoder>
         <filter class="ch.qos.logback.classic.filter.LevelFilter">
             <level>ERROR</level>
@@ -52,13 +53,6 @@
             <fileNamePattern>${LOG_PATH}/error.%d{yyyy-MM-dd}.log</fileNamePattern>
             <maxHistory>90</maxHistory>
         </rollingPolicy>
-    </appender>
-
-    <!-- ========== 异步文件（仅 prod 使用） ========== -->
-    <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
-        <queueSize>2048</queueSize>
-        <discardingThreshold>0</discardingThreshold>
-        <appender-ref ref="FILE"/>
     </appender>
 
     <!-- ========== Profile: dev ========== -->
@@ -80,6 +74,12 @@
 
     <!-- ========== Profile: prod ========== -->
     <springProfile name="prod">
+        <!-- 异步文件 appender 定义在 prod 块内：仅 prod 创建，非 prod 不再报 "not referenced" 警告 -->
+        <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+            <queueSize>2048</queueSize>
+            <discardingThreshold>0</discardingThreshold>
+            <appender-ref ref="FILE"/>
+        </appender>
         <root level="INFO">
             <appender-ref ref="ASYNC_FILE"/>
             <appender-ref ref="ERROR_FILE"/>
