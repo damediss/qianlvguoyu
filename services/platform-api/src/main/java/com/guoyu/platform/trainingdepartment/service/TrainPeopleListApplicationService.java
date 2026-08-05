@@ -9,6 +9,8 @@ import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.security.SecurityContext;
+import com.guoyu.platform.system.entity.UserEntity;
+import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.trainingdepartment.dto.SignupAuditReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListQueryReq;
@@ -16,6 +18,7 @@ import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListUpdateReq;
 import com.guoyu.platform.trainingdepartment.entity.PlatformUserDetailEntity;
 import com.guoyu.platform.trainingdepartment.entity.CourseKejianEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
@@ -23,6 +26,7 @@ import com.guoyu.platform.trainingdepartment.entity.TrainTeacherBankEntity;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserDetailMapper;
 import com.guoyu.platform.trainingdepartment.mapper.CourseKejianMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
@@ -54,9 +58,12 @@ public class TrainPeopleListApplicationService {
   private final TrainTeacherBankMapper teacherBankMapper;
   private final CourseKejianMapper courseKejianMapper;
   private final TrainInfoClassMapper trainInfoClassMapper;
+  private final TrainInfoListMapper trainInfoListMapper;
   private final TrainingOperatorScopeService operatorScopeService;
   private final TrainingIdCardHeaderResolver idCardHeaderResolver;
   private final PlatformUserDetailMapper platformUserDetailMapper;
+  private final PlatformUserEnsureService platformUserEnsureService;
+  private final UserMapper userMapper;
 
   public TrainPeopleListApplicationService(TrainPeopleListMapper mapper,
       TrainSignUpSelfMapper signUpSelfMapper,
@@ -64,18 +71,24 @@ public class TrainPeopleListApplicationService {
       TrainTeacherBankMapper teacherBankMapper,
       CourseKejianMapper courseKejianMapper,
       TrainInfoClassMapper trainInfoClassMapper,
+      TrainInfoListMapper trainInfoListMapper,
       TrainingOperatorScopeService operatorScopeService,
       TrainingIdCardHeaderResolver idCardHeaderResolver,
-      PlatformUserDetailMapper platformUserDetailMapper) {
+      PlatformUserDetailMapper platformUserDetailMapper,
+      PlatformUserEnsureService platformUserEnsureService,
+      UserMapper userMapper) {
     this.mapper = mapper;
     this.signUpSelfMapper = signUpSelfMapper;
     this.signUpPeopleSelfMapper = signUpPeopleSelfMapper;
     this.teacherBankMapper = teacherBankMapper;
     this.courseKejianMapper = courseKejianMapper;
     this.trainInfoClassMapper = trainInfoClassMapper;
+    this.trainInfoListMapper = trainInfoListMapper;
     this.operatorScopeService = operatorScopeService;
     this.idCardHeaderResolver = idCardHeaderResolver;
     this.platformUserDetailMapper = platformUserDetailMapper;
+    this.platformUserEnsureService = platformUserEnsureService;
+    this.userMapper = userMapper;
   }
 
   // ==================== 基础CRUD ====================
@@ -360,11 +373,15 @@ public class TrainPeopleListApplicationService {
             .last("LIMIT 1"));
   }
 
-  /** 从报名人员导入学员 */
+  /** 从报名人员导入学员（同步开 App / 学员管理账号） */
   @Transactional
   public Map<String, Object> importStudents(Long traininfoId, Long classId, List<Long> studentIds) {
     operatorScopeService.requireOrgOperator();
     assertClassViewable(classId);
+    Long companyId = resolveCompanyId(traininfoId, classId);
+    Long orgId = resolveImportPlatformOrgId();
+    PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
+
     List<TrainSignUpPeopleSelfEntity> signUpPeople = signUpPeopleSelfMapper.selectBatchIds(studentIds);
     int count = 0;
     List<Map<String, Object>> failed = new ArrayList<>();
@@ -378,32 +395,26 @@ public class TrainPeopleListApplicationService {
         failed.add(f);
         continue;
       }
-      Long existCount = mapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
-          .eq(TrainPeopleListEntity::getType, "student")
-          .eq(TrainPeopleListEntity::getDeleted, 0)
-          .eq(TrainPeopleListEntity::getTrainId, traininfoId)
-          .eq(TrainPeopleListEntity::getTrainClassId, classId)
-          .eq(TrainPeopleListEntity::getPlatformUserId, sp.getPlatformUserId()));
-      if (existCount != null && existCount > 0) {
+      ImportOneResult one = importOneFromSignUp(traininfoId, classId, sp, companyId, orgId, syncStats);
+      if (one.ok()) {
+        count++;
+      } else {
         Map<String, Object> f = new LinkedHashMap<>();
         f.put("id", sid);
-        f.put("reason", "已存在该学员");
+        f.put("name", sp.getName());
+        f.put("reason", one.failReason());
         failed.add(f);
-        continue;
       }
-
-      TrainPeopleListEntity entity = buildStudentFromSignUp(traininfoId, classId, sp);
-      insertPeople(entity);
-      count++;
     }
     syncClassStudentNums(classId);
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("count", count);
     result.put("failed", failed);
+    result.put("platformUserSync", syncStats.toMap());
     return result;
   }
 
-  /** 按身份证号导入学员 */
+  /** 按身份证号导入学员（同步开 App / 学员管理账号） */
   @Transactional
   public Map<String, Object> importStudentsByIdCard(Long traininfoId, Long classId, String idCardsText) {
     operatorScopeService.requireOrgOperator();
@@ -412,6 +423,10 @@ public class TrainPeopleListApplicationService {
     if (signUp == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "报名记录未找到");
     }
+    Long companyId = resolveCompanyId(traininfoId, classId);
+    Long orgId = resolveImportPlatformOrgId();
+    PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
+
     String[] lines = idCardsText.split("[\\n,，\\s]+");
     int count = 0;
     List<Map<String, Object>> failed = new ArrayList<>();
@@ -436,29 +451,118 @@ public class TrainPeopleListApplicationService {
         failed.add(f);
         continue;
       }
-      Long existCount = mapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
-          .eq(TrainPeopleListEntity::getType, "student")
-          .eq(TrainPeopleListEntity::getDeleted, 0)
-          .eq(TrainPeopleListEntity::getTrainId, traininfoId)
-          .eq(TrainPeopleListEntity::getTrainClassId, classId)
-          .eq(TrainPeopleListEntity::getPlatformUserId, sp.getPlatformUserId()));
-      if (existCount != null && existCount > 0) {
+      ImportOneResult one = importOneFromSignUp(traininfoId, classId, sp, companyId, orgId, syncStats);
+      if (one.ok()) {
+        count++;
+      } else {
         Map<String, Object> f = new LinkedHashMap<>();
         f.put("idCard", idCard);
-        f.put("reason", "已存在该学员");
+        f.put("name", sp.getName());
+        f.put("reason", one.failReason());
         failed.add(f);
-        continue;
       }
-
-      TrainPeopleListEntity entity = buildStudentFromSignUp(traininfoId, classId, sp);
-      insertPeople(entity);
-      count++;
     }
     syncClassStudentNums(classId);
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("count", count);
     result.put("failed", failed);
+    result.put("platformUserSync", syncStats.toMap());
     return result;
+  }
+
+  private record ImportOneResult(boolean ok, String failReason) {
+    static ImportOneResult success() {
+      return new ImportOneResult(true, null);
+    }
+
+    static ImportOneResult fail(String reason) {
+      return new ImportOneResult(false, reason);
+    }
+  }
+
+  /**
+   * 开账号 → 写花名册 → 回写报名 platformUserId。
+   * 与分班确认共用 {@link PlatformUserEnsureService#ensureFromDivisionPerson}。
+   */
+  private ImportOneResult importOneFromSignUp(
+      Long traininfoId,
+      Long classId,
+      TrainSignUpPeopleSelfEntity sp,
+      Long companyId,
+      Long orgId,
+      PlatformUserEnsureService.SyncStats syncStats) {
+    PlatformUserEnsureService.EnsureResult ensure = platformUserEnsureService.ensureFromDivisionPerson(
+        sp.getName(),
+        sp.getIdCardNumber(),
+        sp.getPhone(),
+        companyId,
+        orgId);
+    syncStats.accept(ensure, sp.getName(), PlatformUserEnsureService.normalizeIdCard(sp.getIdCardNumber()));
+
+    if (ensure.platformUserId() != null
+        && (sp.getPlatformUserId() == null || !ensure.platformUserId().equals(sp.getPlatformUserId()))) {
+      // 回写报名人员，便于下次导入直接带上账号
+      sp.setPlatformUserId(ensure.platformUserId());
+      signUpPeopleSelfMapper.updateById(sp);
+    }
+
+    String idCard = PlatformUserEnsureService.normalizeIdCard(sp.getIdCardNumber());
+    LambdaQueryWrapper<TrainPeopleListEntity> existQ = new LambdaQueryWrapper<TrainPeopleListEntity>()
+        .eq(TrainPeopleListEntity::getType, "student")
+        .eq(TrainPeopleListEntity::getDeleted, 0)
+        .eq(TrainPeopleListEntity::getTrainId, traininfoId)
+        .eq(TrainPeopleListEntity::getTrainClassId, classId);
+    if (StringUtils.hasText(idCard)) {
+      existQ.eq(TrainPeopleListEntity::getIdCard, idCard);
+    } else if (ensure.platformUserId() != null) {
+      existQ.eq(TrainPeopleListEntity::getPlatformUserId, ensure.platformUserId());
+    } else if (sp.getPlatformUserId() != null) {
+      existQ.eq(TrainPeopleListEntity::getPlatformUserId, sp.getPlatformUserId());
+    } else {
+      existQ.eq(TrainPeopleListEntity::getPhone, sp.getPhone());
+    }
+    Long existCount = mapper.selectCount(existQ);
+    if (existCount != null && existCount > 0) {
+      return ImportOneResult.fail("已存在该学员");
+    }
+
+    TrainPeopleListEntity entity = buildStudentFromSignUp(traininfoId, classId, sp);
+    if (ensure.platformUserId() != null) {
+      entity.setPlatformUserId(ensure.platformUserId());
+    }
+    insertPeople(entity);
+    return ImportOneResult.success();
+  }
+
+  private Long resolveCompanyId(Long traininfoId, Long classId) {
+    if (traininfoId != null) {
+      TrainInfoListEntity ti = trainInfoListMapper.selectById(traininfoId);
+      if (ti != null && ti.getCompanyId() != null && ti.getCompanyId() > 0) {
+        return ti.getCompanyId();
+      }
+    }
+    if (classId != null) {
+      TrainInfoClassEntity clazz = trainInfoClassMapper.selectById(classId);
+      if (clazz != null && clazz.getCompanyId() != null && clazz.getCompanyId() > 0) {
+        return clazz.getCompanyId();
+      }
+    }
+    return null;
+  }
+
+  /** 与学员管理列表过滤同源：优先当前操作者所属培训机构 orgId */
+  private Long resolveImportPlatformOrgId() {
+    TrainingOperatorScopeService.Scope scope = operatorScopeService.currentScope();
+    if (scope.isOrgOperator() && scope.orgId() != null && scope.orgId() > 0) {
+      return scope.orgId();
+    }
+    UserEntity user = userMapper.selectById(SecurityContext.currentUser().getUserId());
+    if (user != null && user.getOrgId() != null && user.getOrgId() > 0) {
+      return user.getOrgId();
+    }
+    return SecurityContext.currentUser().getTenantId() != null
+        ? SecurityContext.currentUser().getTenantId()
+        : 0L;
   }
 
   private TrainPeopleListEntity buildStudentFromSignUp(

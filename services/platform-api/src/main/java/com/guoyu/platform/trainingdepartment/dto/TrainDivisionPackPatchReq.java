@@ -26,7 +26,9 @@ public class TrainDivisionPackPatchReq {
     @NotNull
     private String title;
     private String group;
-    /** 班级工种（可选，用于展示与筛选） */
+    /** 班级工种 ID（exam_work_type.id，与开班准备一致） */
+    private Long workTypeId;
+    /** 班级工种名称（展示/兼容；以 workTypeId 为准） */
     private String jobName;
     /** 班级等级文本（可多班不同等级） */
     private String levelName;
@@ -39,6 +41,8 @@ public class TrainDivisionPackPatchReq {
     public void setTitle(String title) { this.title = title; }
     public String getGroup() { return group; }
     public void setGroup(String group) { this.group = group; }
+    public Long getWorkTypeId() { return workTypeId; }
+    public void setWorkTypeId(Long workTypeId) { this.workTypeId = workTypeId; }
     public String getJobName() { return jobName; }
     public void setJobName(String jobName) { this.jobName = jobName; }
     public String getLevelName() { return levelName; }

@@ -84,6 +84,9 @@ export function TrainingFollowClassPage() {
                       <Typography.Text type="secondary" className="follow-class-card-company" ellipsis={{ tooltip: row.company_name || '—' }}>
                         {row.company_name || '—'}
                       </Typography.Text>
+                      <Typography.Text type="secondary" className="follow-class-card-meta">
+                        {row.nums ?? 0} 人
+                      </Typography.Text>
                     </div>
                   </button>
                 </Col>

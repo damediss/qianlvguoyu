@@ -48,6 +48,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * 培训信息班级管理服务实现
@@ -166,14 +167,20 @@ public class TrainInfoClassApplicationService {
       item.put("train_info_id", e.getTrainInfoId());
       item.put("company_id", e.getCompanyId());
       item.put("work_type_id", e.getWorkTypeId());
-      item.put("company_name", companyNameMap.getOrDefault(e.getCompanyId(), null));
+      TrainInfoListEntity ti = trainInfoMap.get(e.getTrainInfoId());
+      String companyName = e.getCompanyId() != null ? companyNameMap.get(e.getCompanyId()) : null;
+      if (!StringUtils.hasText(companyName) && ti != null && StringUtils.hasText(ti.getCompanyName())) {
+        companyName = ti.getCompanyName();
+      }
+      item.put("company_name", companyName);
       item.put("work_type_title", workTypeNameMap.getOrDefault(e.getWorkTypeId(), null));
       item.put("date_start", e.getDateStart());
       item.put("date_end", e.getDateEnd());
       item.put("file_temps", e.getFileTemps());
       item.put("kcbiao_file", e.getKcbiaoFile());
       item.put("kcbiao_src", resolveKcbiaoSrc(e.getKcbiaoFile()));
-      TrainInfoListEntity ti = trainInfoMap.get(e.getTrainInfoId());
+      item.put("schedule_manual_edited", e.getScheduleManualEdited() != null ? e.getScheduleManualEdited() : 0);
+      item.put("schedule_imported_at", e.getScheduleImportedAt());
       item.put("train_title", ti != null ? ti.getTitle() : null);
       item.put("position", ti != null ? ti.getPosition() : null);
       item.put("course_num", ti != null ? ti.getCourseNum() : null);

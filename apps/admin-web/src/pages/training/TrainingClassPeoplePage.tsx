@@ -3,14 +3,17 @@
  */
 import { useMemo, useState, useEffect } from 'react';
 import {
+  AutoComplete,
   Button,
   Card,
   DatePicker,
   Form,
   Input,
+  InputNumber,
   Modal,
   Pagination,
   Select,
+  Space,
   Table,
   Typography,
   Upload,
@@ -18,19 +21,24 @@ import {
 } from 'antd';
 import {
   InboxOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { UploadProps } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import dayjs from 'dayjs';
+import dayjs, { type Dayjs } from 'dayjs';
 import * as trainApi from '../../api/training';
+import { apiClient, unwrap } from '../../api/client';
 import { uploadFile } from '../../api/knowledge';
 import { FilePreviewModal, type FilePreviewTarget } from '../../components/FilePreviewModal';
 import { AuthImage } from '../../components/ApiAuthImage';
 import { fileNameFromUrl } from '../../api/files';
+import { useAuthStore } from '../../stores/authStore';
 import type {
   TrainInfoClassListItem,
   TrainInfoClassCreateReq,
+  TrainInfoListCreateReq,
+  TrainInfoList,
   DemandPublicData,
   ClassStudent,
   ClassStudentPageResponse,
@@ -44,6 +52,15 @@ import { TrainingProcessSteps } from './TrainingProcessSteps';
 import { ClassSignUpPeoplePanel } from './ClassSignUpPeoplePanel';
 
 const { Dragger } = Upload;
+
+/** 与需求管理等页一致的工种等级选项 */
+const WORK_LEVELS = [
+  { value: 5, label: '五级/初级工' },
+  { value: 4, label: '四级/中级工' },
+  { value: 3, label: '三级/高级工' },
+  { value: 2, label: '二级/技师' },
+  { value: 1, label: '一级/高级技师' },
+];
 
 /** 兼容 json-bigint：超大 ID 保持字符串，避免 Number 精度丢失 */
 type ApiId = number | string;
@@ -208,8 +225,17 @@ function StudentListModal({
 
   const importMu = useMutation({
     mutationFn: (p: { traininfoId: ApiId; classId: ApiId; studentIds: Array<number | string> }) => trainApi.importStudents(p),
-    onSuccess: () => {
-      message.success('导入成功');
+    onSuccess: (res) => {
+      const sync = res?.platformUserSync;
+      const created = sync?.created ?? 0;
+      const skipped = sync?.skipped ?? 0;
+      if (created > 0) {
+        message.success(`导入成功，新建学员账号 ${created} 人（默认密码 123123）`);
+      } else if (skipped > 0) {
+        message.warning(`导入完成，但有 ${skipped} 人未能开通学员账号，请查看失败原因`);
+      } else {
+        message.success('导入成功');
+      }
       setImportOpen(false);
       setSelectedSignUpIds([]);
       refetch();
@@ -219,8 +245,17 @@ function StudentListModal({
 
   const importByIdCardMu = useMutation({
     mutationFn: (p: { traininfoId: ApiId; classId: ApiId; studentIds: string }) => trainApi.importStudentsByIdCard(p),
-    onSuccess: () => {
-      message.success('导入成功');
+    onSuccess: (res) => {
+      const sync = res?.platformUserSync;
+      const created = sync?.created ?? 0;
+      const skipped = sync?.skipped ?? 0;
+      if (created > 0) {
+        message.success(`导入成功，新建学员账号 ${created} 人（默认密码 123123）`);
+      } else if (skipped > 0) {
+        message.warning(`导入完成，但有 ${skipped} 人未能开通学员账号，请查看失败原因`);
+      } else {
+        message.success('导入成功');
+      }
       setImportByIdCardOpen(false);
       setIdCardText('');
       refetch();
@@ -882,15 +917,25 @@ function TrainTaskModal({
 export function TrainingClassPeoplePage() {
   const processStep = 3;
   const queryClient = useQueryClient();
+  const canCreateTrainInfo = useAuthStore((s) => s.permissionCodes.includes('train:info-list:create'));
   const [form] = Form.useForm<{
     id?: ApiId;
     title?: string;
     trainInfoId?: ApiId;
     nums?: number;
-    dateStart?: dayjs.Dayjs;
-    dateEnd?: dayjs.Dayjs;
+    dateStart?: Dayjs;
+    dateEnd?: Dayjs;
     kcbiaoFile?: string;
     kcbiaoFileDisplay?: string;
+  }>();
+  const [trainInfoForm] = Form.useForm<{
+    title?: string;
+    companyName?: string;
+    workTypeId?: number;
+    workTypeLevel?: number;
+    num?: number;
+    startDate?: Dayjs;
+    endDate?: Dayjs;
   }>();
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(20);
@@ -899,6 +944,10 @@ export function TrainingClassPeoplePage() {
   const [companyIdFilter, setCompanyIdFilter] = useState<number | undefined>();
   const [workTypeIdFilter, setWorkTypeIdFilter] = useState<number | undefined>();
   const [modalOpen, setModalOpen] = useState(false);
+  const [isCreateMode, setIsCreateMode] = useState(true);
+  const [trainInfoModalOpen, setTrainInfoModalOpen] = useState(false);
+  /** 本页刚创建的培训，避免 publicData 刷新前 Select 无选项 */
+  const [extraTrainInfoOptions, setExtraTrainInfoOptions] = useState<{ value: ApiId; label: string }[]>([]);
   const [kcbiaoSrc, setKcbiaoSrc] = useState('');
 
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -947,6 +996,50 @@ export function TrainingClassPeoplePage() {
     onError: () => message.error('删除失败'),
   });
 
+  const createTrainInfoMu = useMutation({
+    mutationFn: (payload: TrainInfoListCreateReq) =>
+      unwrap<TrainInfoList>(
+        apiClient.post('/training/info-lists', payload, { silentError: true }),
+      ),
+    onSuccess: async (created) => {
+      message.success('培训信息已创建');
+      setExtraTrainInfoOptions((prev) => [
+        { value: created.id, label: created.title || `培训#${created.id}` },
+        ...prev.filter((o) => String(o.value) !== String(created.id)),
+      ]);
+      await queryClient.invalidateQueries({ queryKey: ['class-people-public-data'] });
+      const patch: {
+        trainInfoId?: ApiId;
+        nums?: number;
+        dateStart?: Dayjs;
+        dateEnd?: Dayjs;
+      } = { trainInfoId: created.id };
+      const classVals = form.getFieldsValue();
+      if (classVals.nums == null && created.num != null) {
+        patch.nums = created.num;
+      }
+      if (!classVals.dateStart && created.startDate) {
+        patch.dateStart = dayjs(created.startDate);
+      }
+      if (!classVals.dateEnd && created.endDate) {
+        patch.dateEnd = dayjs(created.endDate);
+      }
+      form.setFieldsValue(patch);
+      setTrainInfoModalOpen(false);
+      trainInfoForm.resetFields();
+    },
+    onError: (err: unknown) => {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      const dataMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      const msg = dataMsg || (err instanceof Error ? err.message : '');
+      if (status === 403 || /权限|forbidden|access denied/i.test(msg)) {
+        message.error('无创建培训信息权限（需要 train:info-list:create）');
+        return;
+      }
+      message.error(msg || '创建培训信息失败');
+    },
+  });
+
   const workTypeGroupedOptions = useMemo(() => {
     return (publicData as DemandPublicData | undefined)?.worktype_list?.map((g) => ({
       label: g.title,
@@ -962,11 +1055,14 @@ export function TrainingClassPeoplePage() {
   }, [publicData]);
 
   const trainInfoOptions = useMemo(() => {
-    return (publicData as DemandPublicData | undefined)?.traininfo_list?.map((t) => ({
-      value: t.id,
+    const fromPublic = (publicData as DemandPublicData | undefined)?.traininfo_list?.map((t) => ({
+      value: t.id as ApiId,
       label: t.title,
     })) ?? [];
-  }, [publicData]);
+    const known = new Set(fromPublic.map((o) => String(o.value)));
+    const extras = extraTrainInfoOptions.filter((o) => !known.has(String(o.value)));
+    return [...extras, ...fromPublic];
+  }, [publicData, extraTrainInfoOptions]);
 
   const kejianOptions = useMemo(() => {
     return (publicData as DemandPublicData | undefined)?.kejian_list?.map((k) => ({
@@ -977,17 +1073,21 @@ export function TrainingClassPeoplePage() {
 
   const closeModal = () => {
     setModalOpen(false);
+    setTrainInfoModalOpen(false);
     setKcbiaoSrc('');
     form.resetFields();
+    trainInfoForm.resetFields();
   };
 
   const openCreate = () => {
     form.resetFields();
     setKcbiaoSrc('');
+    setIsCreateMode(true);
     setModalOpen(true);
   };
 
   const openEdit = (row: TrainInfoClassListItem) => {
+    setIsCreateMode(false);
     form.setFieldsValue({
       id: row.id,
       title: row.title,
@@ -1000,6 +1100,46 @@ export function TrainingClassPeoplePage() {
     });
     setKcbiaoSrc(row.kcbiao_src ?? resolveFileUrl(row.kcbiao_file));
     setModalOpen(true);
+  };
+
+  const openCreateTrainInfo = () => {
+    if (!canCreateTrainInfo) {
+      message.error('无创建培训信息权限（需要 train:info-list:create）');
+      return;
+    }
+    trainInfoForm.resetFields();
+    setTrainInfoModalOpen(true);
+  };
+
+  const handleCreateTrainInfo = async () => {
+    try {
+      const v = await trainInfoForm.validateFields();
+      if (v.startDate && v.endDate && dayjs(v.endDate).isBefore(dayjs(v.startDate), 'day')) {
+        message.error('结束日期不能早于开始日期');
+        return;
+      }
+      const companyName = String(v.companyName ?? '').trim();
+      if (!companyName) {
+        message.error('请选择或输入企业');
+        return;
+      }
+      const matchedCompany = companyOptions.find(
+        (c) => String(c.label).trim() === companyName,
+      );
+      createTrainInfoMu.mutate({
+        title: v.title,
+        companyId: matchedCompany?.value as number | undefined,
+        companyName,
+        workTypeId: v.workTypeId,
+        workTypeLevel: v.workTypeLevel,
+        num: v.num,
+        startDate: v.startDate ? dayjs(v.startDate).format('YYYY-MM-DD') : undefined,
+        endDate: v.endDate ? dayjs(v.endDate).format('YYYY-MM-DD') : undefined,
+        status: 0,
+      });
+    } catch {
+      // Form validation errors are shown inline
+    }
   };
 
   const handleSubmit = async () => {
@@ -1302,8 +1442,27 @@ export function TrainingClassPeoplePage() {
           <Form.Item name="title" label="班级名称" rules={[{ required: true, message: '请填写班级名称' }]}>
             <Input placeholder="请输入班级名称" />
           </Form.Item>
-          <Form.Item name="trainInfoId" label="选择培训信息" rules={[{ required: true, message: '请选择培训信息' }]}>
-            <Select placeholder="请选择培训信息" options={trainInfoOptions} showSearch optionFilterProp="label" />
+          <Form.Item label="选择培训信息" required>
+            <Space.Compact style={{ width: '100%' }}>
+              <Form.Item
+                name="trainInfoId"
+                noStyle
+                rules={[{ required: true, message: '请选择培训信息' }]}
+              >
+                <Select
+                  placeholder="请选择培训信息"
+                  options={trainInfoOptions}
+                  showSearch
+                  optionFilterProp="label"
+                  style={{ width: canCreateTrainInfo && isCreateMode ? 'calc(100% - 88px)' : '100%' }}
+                />
+              </Form.Item>
+              {canCreateTrainInfo && isCreateMode ? (
+                <Button icon={<PlusOutlined />} onClick={openCreateTrainInfo}>
+                  新建
+                </Button>
+              ) : null}
+            </Space.Compact>
           </Form.Item>
           <Form.Item name="nums" label="班级人数" rules={[{ required: true, message: '请填写班级人数' }]}>
             <Input type="number" placeholder="请输入班级人数" min={1} />
@@ -1334,6 +1493,67 @@ export function TrainingClassPeoplePage() {
               }}
             </Form.Item>
             <Form.Item name="kcbiaoFile" hidden><Input /></Form.Item>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="新建培训信息"
+        open={trainInfoModalOpen}
+        onOk={handleCreateTrainInfo}
+        onCancel={() => {
+          setTrainInfoModalOpen(false);
+          trainInfoForm.resetFields();
+        }}
+        confirmLoading={createTrainInfoMu.isPending}
+        okText="创建并选用"
+        cancelText="取消"
+        destroyOnHidden
+        width={520}
+      >
+        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
+          创建后自动选入上方「选择培训信息」，再继续填写班级并保存。
+        </Typography.Paragraph>
+        <Form form={trainInfoForm} labelCol={{ style: { width: 100 } }} wrapperCol={{ span: 16 }}>
+          <Form.Item name="title" label="培训标题" rules={[{ required: true, message: '请填写培训标题' }]}>
+            <Input placeholder="请输入培训信息标题" maxLength={255} />
+          </Form.Item>
+          <Form.Item
+            name="companyName"
+            label="企业"
+            rules={[{ required: true, message: '请选择或输入企业' }]}
+          >
+            <AutoComplete
+              allowClear
+              style={{ width: '100%' }}
+              placeholder="请选择或输入企业"
+              options={companyOptions.map((c) => ({ value: c.label }))}
+              filterOption={(input, option) =>
+                String(option?.value ?? '')
+                  .toLowerCase()
+                  .includes(input.trim().toLowerCase())
+              }
+            />
+          </Form.Item>
+          <Form.Item name="workTypeId" label="工种" rules={[{ required: true, message: '请选择工种' }]}>
+            <Select
+              placeholder="请选择工种"
+              options={workTypeGroupedOptions}
+              showSearch
+              optionFilterProp="label"
+            />
+          </Form.Item>
+          <Form.Item name="workTypeLevel" label="工种等级">
+            <Select placeholder="请选择等级（可选）" options={WORK_LEVELS} allowClear />
+          </Form.Item>
+          <Form.Item name="num" label="计划人数">
+            <InputNumber min={1} style={{ width: '100%' }} placeholder="可选，可同步到班级人数" />
+          </Form.Item>
+          <Form.Item name="startDate" label="开始日期">
+            <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" placeholder="可选" />
+          </Form.Item>
+          <Form.Item name="endDate" label="结束日期">
+            <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" placeholder="可选" />
           </Form.Item>
         </Form>
       </Modal>

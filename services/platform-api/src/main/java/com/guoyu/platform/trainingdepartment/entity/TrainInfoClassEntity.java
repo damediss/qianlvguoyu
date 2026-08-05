@@ -38,6 +38,10 @@ public class TrainInfoClassEntity {
   private String fileTemps;
   /** 课表文件 */
   private String kcbiaoFile;
+  /** 1=跟班已手工保存课表，重导开班 Excel 需确认 */
+  private Integer scheduleManualEdited;
+  /** 最近一次从 kcbiao_file 导入时间 */
+  private LocalDateTime scheduleImportedAt;
   /** 企业确认状态 0待确认 1已确认 2已驳回 */
   private Integer companyConfirmStatus;
   private LocalDateTime companyConfirmTime;
@@ -73,6 +77,14 @@ public class TrainInfoClassEntity {
   public void setFileTemps(String fileTemps) { this.fileTemps = fileTemps; }
   public String getKcbiaoFile() { return kcbiaoFile; }
   public void setKcbiaoFile(String kcbiaoFile) { this.kcbiaoFile = kcbiaoFile; }
+  public Integer getScheduleManualEdited() { return scheduleManualEdited; }
+  public void setScheduleManualEdited(Integer scheduleManualEdited) {
+    this.scheduleManualEdited = scheduleManualEdited;
+  }
+  public LocalDateTime getScheduleImportedAt() { return scheduleImportedAt; }
+  public void setScheduleImportedAt(LocalDateTime scheduleImportedAt) {
+    this.scheduleImportedAt = scheduleImportedAt;
+  }
   public Integer getCompanyConfirmStatus() { return companyConfirmStatus; }
   public void setCompanyConfirmStatus(Integer companyConfirmStatus) { this.companyConfirmStatus = companyConfirmStatus; }
   public LocalDateTime getCompanyConfirmTime() { return companyConfirmTime; }

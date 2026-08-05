@@ -17,8 +17,11 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainClassPracticeKnowledgeM
 import com.guoyu.platform.trainingdepartment.mapper.TrainClassPracticeScopeMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -31,6 +34,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -69,8 +78,13 @@ public class ClassPracticeAnalyticsApplicationService {
 
   @Transactional(readOnly = true)
   public Map<String, Object> summary(Long classId, LocalDate from, LocalDate to, boolean inScopeOnly) {
+    return summary(classId, from, to, inScopeOnly, false);
+  }
+
+  private Map<String, Object> summary(
+      Long classId, LocalDate from, LocalDate to, boolean inScopeOnly, boolean allTime) {
     TrainInfoClassEntity clazz = requireClass(classId);
-    DateRange range = resolveRange(from, to);
+    DateRange range = resolveRange(from, to, allTime);
     List<Integer> scopeKnowledgeIds = inScopeOnly ? resolveScopeKnowledgeFilter(classId) : null;
 
     List<TrainPeopleListEntity> students = listStudents(classId);
@@ -129,50 +143,7 @@ public class ClassPracticeAnalyticsApplicationService {
     requireClass(classId);
     DateRange range = resolveRange(from, to);
     List<Integer> scopeKnowledgeIds = inScopeOnly ? resolveScopeKnowledgeFilter(classId) : null;
-    List<TrainPeopleListEntity> students = listStudents(classId);
-    if (StringUtils.hasText(keyword)) {
-      String kw = keyword.trim().toLowerCase();
-      students = students.stream().filter(s ->
-          (s.getRealname() != null && s.getRealname().toLowerCase().contains(kw))
-              || (s.getPhone() != null && s.getPhone().contains(kw))
-              || (s.getIdCard() != null && s.getIdCard().toLowerCase().contains(kw))
-      ).toList();
-    }
-
-    List<Map<String, Object>> byUser = answerLogMapper.aggregateByUser(
-        SecurityContext.currentUser().getTenantId(), classId, range.from(), range.toExclusive(), scopeKnowledgeIds);
-    Map<Long, Map<String, Object>> userStats = indexByUserId(byUser);
-
-    LocalDate today = LocalDate.now();
-    List<Map<String, Object>> rows = new ArrayList<>();
-    for (TrainPeopleListEntity s : students) {
-      Map<String, Object> row = new LinkedHashMap<>();
-      row.put("peopleId", s.getId());
-      row.put("realname", s.getRealname());
-      row.put("phone", maskPhone(s.getPhone()));
-      row.put("idCard", maskIdCard(s.getIdCard()));
-      row.put("platformUserId", s.getPlatformUserId());
-      row.put("hasAccount", s.getPlatformUserId() != null && s.getPlatformUserId() > 0);
-      Map<String, Object> st = s.getPlatformUserId() == null ? null : userStats.get(s.getPlatformUserId());
-      long answers = st == null ? 0 : toLong(st.get("answerCount"));
-      long rights = st == null ? 0 : toLong(st.get("rightCount"));
-      long papers = st == null ? 0 : toLong(st.get("paperCount"));
-      long days = st == null ? 0 : toLong(st.get("practiceDays"));
-      LocalDateTime last = st == null ? null : toDateTime(st.get("lastPracticeAt"));
-      row.put("answerCount", answers);
-      row.put("rightCount", rights);
-      row.put("accuracyRate", rate(rights, answers));
-      row.put("paperCount", papers);
-      row.put("practiceDays", days);
-      row.put("lastPracticeAt", last);
-      row.put("idleDays", last == null ? null : ChronoUnit.DAYS.between(last.toLocalDate(), today));
-      rows.add(row);
-    }
-
-    rows.sort(Comparator
-        .comparing((Map<String, Object> r) -> r.get("lastPracticeAt") == null ? 1 : 0)
-        .thenComparing((Map<String, Object> r) -> (LocalDateTime) r.get("lastPracticeAt"),
-            Comparator.nullsLast(Comparator.reverseOrder())));
+    List<Map<String, Object>> rows = buildStudentRows(classId, range, scopeKnowledgeIds, keyword, true);
 
     int p = Math.max(page, 1);
     int ps = Math.min(Math.max(pageSize, 1), 100);
@@ -194,8 +165,13 @@ public class ClassPracticeAnalyticsApplicationService {
 
   @Transactional(readOnly = true)
   public Map<String, Object> knowledges(Long classId, LocalDate from, LocalDate to, boolean inScopeOnly, int limit) {
+    return knowledges(classId, from, to, inScopeOnly, limit, false);
+  }
+
+  private Map<String, Object> knowledges(
+      Long classId, LocalDate from, LocalDate to, boolean inScopeOnly, int limit, boolean allTime) {
     requireClass(classId);
-    DateRange range = resolveRange(from, to);
+    DateRange range = resolveRange(from, to, allTime);
     List<Integer> scopeKnowledgeIds = inScopeOnly ? resolveScopeKnowledgeFilter(classId) : null;
     int lim = Math.min(Math.max(limit, 1), 100);
 
@@ -236,8 +212,13 @@ public class ClassPracticeAnalyticsApplicationService {
 
   @Transactional(readOnly = true)
   public Map<String, Object> daily(Long classId, LocalDate from, LocalDate to, boolean inScopeOnly) {
+    return daily(classId, from, to, inScopeOnly, false);
+  }
+
+  private Map<String, Object> daily(
+      Long classId, LocalDate from, LocalDate to, boolean inScopeOnly, boolean allTime) {
     requireClass(classId);
-    DateRange range = resolveRange(from, to);
+    DateRange range = resolveRange(from, to, allTime);
     List<Integer> scopeKnowledgeIds = inScopeOnly ? resolveScopeKnowledgeFilter(classId) : null;
 
     List<Map<String, Object>> raw = answerLogMapper.aggregateDaily(
@@ -264,6 +245,209 @@ public class ClassPracticeAnalyticsApplicationService {
     out.put("inScopeOnly", inScopeOnly);
     out.put("items", items);
     return out;
+  }
+
+  /**
+   * 导出刷题学情 Excel。
+   *
+   * @param allTime true=全部历史汇总（不限 180 天）；false=按 from/to（缺省近 30 天）
+   */
+  @Transactional(readOnly = true)
+  public ResponseEntity<byte[]> exportExcel(
+      Long classId, LocalDate from, LocalDate to, boolean inScopeOnly, boolean allTime) {
+    TrainInfoClassEntity clazz = requireClass(classId);
+    DateRange range = resolveRange(from, to, allTime);
+    List<Integer> scopeKnowledgeIds = inScopeOnly ? resolveScopeKnowledgeFilter(classId) : null;
+
+    Map<String, Object> summary = summary(classId, range.fromDate(), range.toDate(), inScopeOnly, allTime);
+    List<Map<String, Object>> studentRows = buildStudentRows(classId, range, scopeKnowledgeIds, null, false);
+    Map<String, Object> daily = daily(classId, range.fromDate(), range.toDate(), inScopeOnly, allTime);
+    Map<String, Object> knowledges =
+        knowledges(classId, range.fromDate(), range.toDate(), inScopeOnly, 100, allTime);
+
+    @SuppressWarnings("unchecked")
+    List<Map<String, Object>> dailyItems = (List<Map<String, Object>>) daily.getOrDefault("items", List.of());
+    @SuppressWarnings("unchecked")
+    List<Map<String, Object>> knowledgeItems =
+        (List<Map<String, Object>>) knowledges.getOrDefault("items", List.of());
+
+    try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+      writeSummarySheet(wb.createSheet("班级汇总"), clazz, range, inScopeOnly, allTime, summary);
+      writeStudentSheet(wb.createSheet("学员明细"), studentRows);
+      writeDailySheet(wb.createSheet("每日趋势"), dailyItems);
+      writeKnowledgeSheet(wb.createSheet("薄弱知识点"), knowledgeItems);
+      wb.write(bos);
+      byte[] bytes = bos.toByteArray();
+      String safeTitle = (clazz.getTitle() == null ? "班级" : clazz.getTitle())
+          .replaceAll("[\\\\/:*?\"<>|]", "_");
+      String scopeLabel = allTime ? "全部" : (range.fromDate() + "_" + range.toDate());
+      String filename = safeTitle + "_刷题学情_" + scopeLabel + ".xlsx";
+      return ResponseEntity.ok()
+          .header(HttpHeaders.CONTENT_DISPOSITION,
+              "attachment; filename*=UTF-8''" + URLEncoder.encode(filename, StandardCharsets.UTF_8)
+                  .replace("+", "%20"))
+          .contentType(MediaType.parseMediaType(
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+          .body(bytes);
+    } catch (BusinessException ex) {
+      throw ex;
+    } catch (Exception ex) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "导出刷题学情失败：" + ex.getMessage());
+    }
+  }
+
+  private List<Map<String, Object>> buildStudentRows(
+      Long classId,
+      DateRange range,
+      List<Integer> scopeKnowledgeIds,
+      String keyword,
+      boolean maskSensitive) {
+    List<TrainPeopleListEntity> students = listStudents(classId);
+    if (StringUtils.hasText(keyword)) {
+      String kw = keyword.trim().toLowerCase();
+      students = students.stream().filter(s ->
+          (s.getRealname() != null && s.getRealname().toLowerCase().contains(kw))
+              || (s.getPhone() != null && s.getPhone().contains(kw))
+              || (s.getIdCard() != null && s.getIdCard().toLowerCase().contains(kw))
+      ).toList();
+    }
+
+    List<Map<String, Object>> byUser = answerLogMapper.aggregateByUser(
+        SecurityContext.currentUser().getTenantId(), classId, range.from(), range.toExclusive(),
+        scopeKnowledgeIds);
+    Map<Long, Map<String, Object>> userStats = indexByUserId(byUser);
+
+    LocalDate today = LocalDate.now();
+    List<Map<String, Object>> rows = new ArrayList<>();
+    for (TrainPeopleListEntity s : students) {
+      Map<String, Object> row = new LinkedHashMap<>();
+      row.put("peopleId", s.getId());
+      row.put("realname", s.getRealname());
+      row.put("phone", maskSensitive ? maskPhone(s.getPhone()) : s.getPhone());
+      row.put("idCard", maskSensitive ? maskIdCard(s.getIdCard()) : s.getIdCard());
+      row.put("platformUserId", s.getPlatformUserId());
+      row.put("hasAccount", s.getPlatformUserId() != null && s.getPlatformUserId() > 0);
+      Map<String, Object> st = s.getPlatformUserId() == null ? null : userStats.get(s.getPlatformUserId());
+      long answers = st == null ? 0 : toLong(st.get("answerCount"));
+      long rights = st == null ? 0 : toLong(st.get("rightCount"));
+      long papers = st == null ? 0 : toLong(st.get("paperCount"));
+      long days = st == null ? 0 : toLong(st.get("practiceDays"));
+      LocalDateTime last = st == null ? null : toDateTime(st.get("lastPracticeAt"));
+      row.put("answerCount", answers);
+      row.put("rightCount", rights);
+      row.put("accuracyRate", rate(rights, answers));
+      row.put("paperCount", papers);
+      row.put("practiceDays", days);
+      row.put("lastPracticeAt", last);
+      row.put("idleDays", last == null ? null : ChronoUnit.DAYS.between(last.toLocalDate(), today));
+      rows.add(row);
+    }
+
+    rows.sort(Comparator
+        .comparing((Map<String, Object> r) -> r.get("lastPracticeAt") == null ? 1 : 0)
+        .thenComparing((Map<String, Object> r) -> (LocalDateTime) r.get("lastPracticeAt"),
+            Comparator.nullsLast(Comparator.reverseOrder())));
+    return rows;
+  }
+
+  private void writeSummarySheet(
+      Sheet sheet,
+      TrainInfoClassEntity clazz,
+      DateRange range,
+      boolean inScopeOnly,
+      boolean allTime,
+      Map<String, Object> summary) {
+    int r = 0;
+    setCells(sheet, r++, "班级", clazz.getTitle());
+    setCells(sheet, r++, "统计区间", allTime ? "全部" : (range.fromDate() + " ~ " + range.toDate()));
+    setCells(sheet, r++, "仅练习范围", inScopeOnly ? "是" : "否");
+    setCells(sheet, r++, "在册学员", summary.get("rosterCount"));
+    setCells(sheet, r++, "已开 App", summary.get("withAccountCount"));
+    setCells(sheet, r++, "有刷题人数", summary.get("activeUserCount"));
+    setCells(sheet, r++, "参与率(%)", summary.get("participationRate"));
+    setCells(sheet, r++, "答题总数", summary.get("answerCount"));
+    setCells(sheet, r++, "正确数", summary.get("rightCount"));
+    setCells(sheet, r++, "正确率(%)", summary.get("accuracyRate"));
+    setCells(sheet, r++, "人均答题", summary.get("avgAnswersPerActive"));
+    setCells(sheet, r++, "近7日活跃", summary.get("activeUserCount7d"));
+    sheet.setColumnWidth(0, 4000);
+    sheet.setColumnWidth(1, 8000);
+  }
+
+  private void writeStudentSheet(Sheet sheet, List<Map<String, Object>> rows) {
+    String[] headers = {
+        "姓名", "手机", "身份证", "App账号", "答题数", "正确数", "正确率(%)",
+        "练习次数", "练习天数", "最近练习", "未练天数"
+    };
+    Row head = sheet.createRow(0);
+    for (int i = 0; i < headers.length; i++) {
+      head.createCell(i).setCellValue(headers[i]);
+    }
+    int r = 1;
+    for (Map<String, Object> row : rows) {
+      Row excelRow = sheet.createRow(r++);
+      excelRow.createCell(0).setCellValue(str(row.get("realname")));
+      excelRow.createCell(1).setCellValue(str(row.get("phone")));
+      excelRow.createCell(2).setCellValue(str(row.get("idCard")));
+      excelRow.createCell(3).setCellValue(Boolean.TRUE.equals(row.get("hasAccount")) ? "已开通" : "未开通");
+      excelRow.createCell(4).setCellValue(toLong(row.get("answerCount")));
+      excelRow.createCell(5).setCellValue(toLong(row.get("rightCount")));
+      excelRow.createCell(6).setCellValue(row.get("accuracyRate") == null ? "" : String.valueOf(row.get("accuracyRate")));
+      excelRow.createCell(7).setCellValue(toLong(row.get("paperCount")));
+      excelRow.createCell(8).setCellValue(toLong(row.get("practiceDays")));
+      LocalDateTime last = toDateTime(row.get("lastPracticeAt"));
+      excelRow.createCell(9).setCellValue(last == null ? "" : last.toString().replace('T', ' ').substring(0, 19));
+      excelRow.createCell(10).setCellValue(row.get("idleDays") == null ? "" : String.valueOf(row.get("idleDays")));
+    }
+    for (int i = 0; i < headers.length; i++) {
+      sheet.setColumnWidth(i, 3500);
+    }
+  }
+
+  private void writeDailySheet(Sheet sheet, List<Map<String, Object>> items) {
+    String[] headers = {"日期", "答题数", "正确数", "正确率(%)", "练习人数", "练习次数"};
+    Row head = sheet.createRow(0);
+    for (int i = 0; i < headers.length; i++) {
+      head.createCell(i).setCellValue(headers[i]);
+    }
+    int r = 1;
+    for (Map<String, Object> item : items) {
+      Row excelRow = sheet.createRow(r++);
+      excelRow.createCell(0).setCellValue(str(item.get("bizDate")));
+      excelRow.createCell(1).setCellValue(toLong(item.get("answerCount")));
+      excelRow.createCell(2).setCellValue(toLong(item.get("rightCount")));
+      excelRow.createCell(3).setCellValue(item.get("accuracyRate") == null ? "" : String.valueOf(item.get("accuracyRate")));
+      excelRow.createCell(4).setCellValue(toLong(item.get("userCount")));
+      excelRow.createCell(5).setCellValue(toLong(item.get("paperCount")));
+    }
+  }
+
+  private void writeKnowledgeSheet(Sheet sheet, List<Map<String, Object>> items) {
+    String[] headers = {"知识点", "答题数", "错误数", "正确数", "错误率(%)", "覆盖学员"};
+    Row head = sheet.createRow(0);
+    for (int i = 0; i < headers.length; i++) {
+      head.createCell(i).setCellValue(headers[i]);
+    }
+    int r = 1;
+    for (Map<String, Object> item : items) {
+      Row excelRow = sheet.createRow(r++);
+      excelRow.createCell(0).setCellValue(str(item.get("title")));
+      excelRow.createCell(1).setCellValue(toLong(item.get("answerCount")));
+      excelRow.createCell(2).setCellValue(toLong(item.get("wrongCount")));
+      excelRow.createCell(3).setCellValue(toLong(item.get("rightCount")));
+      excelRow.createCell(4).setCellValue(item.get("wrongRate") == null ? "" : String.valueOf(item.get("wrongRate")));
+      excelRow.createCell(5).setCellValue(toLong(item.get("userCount")));
+    }
+  }
+
+  private static void setCells(Sheet sheet, int rowIdx, String k, Object v) {
+    Row row = sheet.createRow(rowIdx);
+    row.createCell(0).setCellValue(k);
+    row.createCell(1).setCellValue(v == null ? "" : String.valueOf(v));
+  }
+
+  private static String str(Object v) {
+    return v == null ? "" : String.valueOf(v);
   }
 
   private List<TrainPeopleListEntity> listStudents(Long classId) {
@@ -321,6 +505,18 @@ public class ClassPracticeAnalyticsApplicationService {
   private record DateRange(LocalDate fromDate, LocalDate toDate, LocalDateTime from, LocalDateTime toExclusive) {}
 
   private DateRange resolveRange(LocalDate from, LocalDate to) {
+    return resolveRange(from, to, false);
+  }
+
+  /**
+   * @param allTime true 时忽略 from/to，导出自 2018-01-01 至今的全部历史（不限 180 天）
+   */
+  private DateRange resolveRange(LocalDate from, LocalDate to, boolean allTime) {
+    if (allTime) {
+      LocalDate start = LocalDate.of(2018, 1, 1);
+      LocalDate end = LocalDate.now();
+      return new DateRange(start, end, start.atStartOfDay(), end.plusDays(1).atStartOfDay());
+    }
     LocalDate end = to != null ? to : LocalDate.now();
     LocalDate start = from != null ? from : end.minusDays(29);
     if (start.isAfter(end)) {

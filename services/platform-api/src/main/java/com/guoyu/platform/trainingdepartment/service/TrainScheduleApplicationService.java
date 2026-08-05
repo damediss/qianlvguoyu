@@ -1,7 +1,5 @@
 package com.guoyu.platform.trainingdepartment.service;
 
-import lombok.extern.slf4j.Slf4j;
-
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
@@ -13,6 +11,8 @@ import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainScheduleEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainScheduleMapper;
+import com.guoyu.platform.trainingdepartment.support.TrainKcbiaoScheduleParser;
+import com.guoyu.platform.trainingdepartment.support.TrainingStoredFileResolver;
 import com.guoyu.platform.trainingdepartment.vo.TrainScheduleConflictVO;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -28,6 +28,7 @@ import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 @Service
 @Slf4j
@@ -37,21 +38,27 @@ public class TrainScheduleApplicationService {
   private final TrainInfoClassMapper classMapper;
   private final FileMapper fileMapper;
   private final FileStorageProperties fileStorageProperties;
+  private final TrainingStoredFileResolver fileResolver;
+  private final TrainKcbiaoScheduleParser kcbiaoParser;
 
-  public TrainScheduleApplicationService(TrainScheduleMapper mapper,
+  public TrainScheduleApplicationService(
+      TrainScheduleMapper mapper,
       TrainInfoClassMapper classMapper,
       FileMapper fileMapper,
-      FileStorageProperties fileStorageProperties) {
+      FileStorageProperties fileStorageProperties,
+      TrainingStoredFileResolver fileResolver,
+      TrainKcbiaoScheduleParser kcbiaoParser) {
     this.mapper = mapper;
     this.classMapper = classMapper;
     this.fileMapper = fileMapper;
     this.fileStorageProperties = fileStorageProperties;
+    this.fileResolver = fileResolver;
+    this.kcbiaoParser = kcbiaoParser;
   }
 
   @Transactional(readOnly = true)
   public List<TrainScheduleConflictVO> checkConflicts(Long classId) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
-    // Query all schedules for the same tenant (cross-class conflict detection)
     LambdaQueryWrapper<TrainScheduleEntity> wrapper = new LambdaQueryWrapper<TrainScheduleEntity>()
         .eq(TrainScheduleEntity::getTenantId, tenantId)
         .eq(TrainScheduleEntity::getDeleted, 0);
@@ -64,17 +71,13 @@ public class TrainScheduleApplicationService {
         TrainScheduleEntity s1 = allSchedules.get(i);
         TrainScheduleEntity s2 = allSchedules.get(j);
 
-        // At least one schedule must belong to the queried class
         if (!Objects.equals(s1.getClassId(), classId) && !Objects.equals(s2.getClassId(), classId)) {
           continue;
         }
-
-        // Must be on the same day
         if (!isSameDay(s1, s2)) {
           continue;
         }
 
-        // Check teacher time overlap
         if (s1.getTeacherId() != null && s2.getTeacherId() != null
             && Objects.equals(s1.getTeacherId(), s2.getTeacherId())
             && hasTimeOverlap(s1, s2)) {
@@ -87,7 +90,6 @@ public class TrainScheduleApplicationService {
           ));
         }
 
-        // Check room time overlap
         if (s1.getRoomName() != null && s2.getRoomName() != null
             && Objects.equals(s1.getRoomName(), s2.getRoomName())
             && hasTimeOverlap(s1, s2)) {
@@ -108,7 +110,6 @@ public class TrainScheduleApplicationService {
     if (s1.getScheduleDate() != null && s2.getScheduleDate() != null) {
       return Objects.equals(s1.getScheduleDate(), s2.getScheduleDate());
     }
-    // Fall back to dayOfWeek comparison if scheduleDate is not set
     return s1.getDayOfWeek() != null && Objects.equals(s1.getDayOfWeek(), s2.getDayOfWeek());
   }
 
@@ -117,66 +118,137 @@ public class TrainScheduleApplicationService {
         || s2.getStartTime() == null || s2.getEndTime() == null) {
       return false;
     }
-    // Overlap exists when one starts before the other ends and vice versa
     return s1.getStartTime().compareTo(s2.getEndTime()) < 0
         && s2.getStartTime().compareTo(s1.getEndTime()) < 0;
   }
 
-  /** 获取班级课表 */
-  @Transactional(readOnly = true)
+  /**
+   * 获取班级课表。若结构化课次为空且开班已上传 kcbiao_file，则自动解析导入一次。
+   */
+  @Transactional
   public List<Map<String, Object>> getByClassId(Long classId) {
-    Long tenantId = SecurityContext.currentUser().getTenantId();
-    List<TrainScheduleEntity> schedules = mapper.selectList(
-        new LambdaQueryWrapper<TrainScheduleEntity>()
-            .eq(TrainScheduleEntity::getClassId, classId)
-            .eq(TrainScheduleEntity::getTenantId, tenantId)
-            .eq(TrainScheduleEntity::getDeleted, 0)
-            .orderByAsc(TrainScheduleEntity::getScheduleDate)
-            .orderByAsc(TrainScheduleEntity::getStartTime));
-
-    List<Map<String, Object>> list = new ArrayList<>();
-    for (TrainScheduleEntity s : schedules) {
-      Map<String, Object> item = new LinkedHashMap<>();
-      item.put("id", s.getId());
-      item.put("classId", s.getClassId());
-      item.put("courseId", s.getCourseId());
-      item.put("courseName", s.getCourseName());
-      item.put("teacherId", s.getTeacherId());
-      item.put("teacherName", s.getTeacherName());
-      item.put("roomName", s.getRoomName());
-      item.put("scheduleDate", s.getScheduleDate());
-      item.put("dayOfWeek", s.getDayOfWeek());
-      item.put("startTime", s.getStartTime());
-      item.put("endTime", s.getEndTime());
-      item.put("status", s.getStatus());
-      list.add(item);
+    List<Map<String, Object>> list = listMaps(classId);
+    if (!list.isEmpty()) {
+      return list;
     }
-    return list;
+    TrainInfoClassEntity clazz = requireClass(classId);
+    if (!StringUtils.hasText(clazz.getKcbiaoFile())) {
+      return list;
+    }
+    try {
+      importFromKcbiao(classId, false, false);
+      return listMaps(classId);
+    } catch (BusinessException ex) {
+      log.warn("自动导入开班课表失败 classId={} msg={}", classId, ex.getMessage());
+      return list;
+    }
   }
 
-  /** 批量保存课表（全量替换班级课表） */
+  /**
+   * 从开班准备上传的课程表 Excel 导入 train_schedule。
+   *
+   * @param force true=覆盖已有结构化课表；false=已有课次则跳过
+   * @param confirmOverwriteManual 课表已跟班调过课时，force 覆盖须再确认
+   */
+  @Transactional
+  public Map<String, Object> importFromKcbiao(Long classId, boolean force, boolean confirmOverwriteManual) {
+    TrainInfoClassEntity clazz = requireClass(classId);
+    if (!StringUtils.hasText(clazz.getKcbiaoFile())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "该班尚未在开班准备上传课程表文件");
+    }
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    long existing = mapper.selectCount(new LambdaQueryWrapper<TrainScheduleEntity>()
+        .eq(TrainScheduleEntity::getClassId, classId)
+        .eq(TrainScheduleEntity::getTenantId, tenantId)
+        .eq(TrainScheduleEntity::getDeleted, 0));
+    if (existing > 0 && !force) {
+      Map<String, Object> skipped = new LinkedHashMap<>();
+      skipped.put("classId", classId);
+      skipped.put("imported", 0);
+      skipped.put("skipped", true);
+      skipped.put("reason", "已有结构化课表，未覆盖；如需重导请传 force=true");
+      skipped.put("manualEdited", Objects.equals(clazz.getScheduleManualEdited(), 1));
+      return skipped;
+    }
+    if (existing > 0 && force
+        && Objects.equals(clazz.getScheduleManualEdited(), 1)
+        && !confirmOverwriteManual) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "本班课表已在跟班手工调整过，重导开班课表将覆盖调课结果。请确认后重试（confirmOverwriteManual=true）");
+    }
+
+    Path local;
+    try {
+      local = fileResolver.resolveLocalPath(clazz.getKcbiaoFile());
+    } catch (BusinessException ex) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "无法读取开班课程表文件：" + ex.getMessage());
+    }
+
+    List<Map<String, Object>> items;
+    try {
+      items = kcbiaoParser.parse(local);
+    } catch (Exception ex) {
+      log.error("解析开班课程表失败 classId={}", classId, ex);
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "解析开班课程表失败：" + ex.getMessage());
+    }
+    if (items.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "开班课程表未解析到有效课次，请确认 Excel 含「日期」表头及日期/时间/课程列");
+    }
+
+    Map<String, Object> saved = replaceScheduleRows(classId, items, false);
+    clazz.setScheduleImportedAt(LocalDateTime.now());
+    clazz.setScheduleManualEdited(0);
+    classMapper.updateById(clazz);
+
+    Map<String, Object> result = new LinkedHashMap<>(saved);
+    result.put("imported", saved.get("count"));
+    result.put("skipped", false);
+    result.put("source", "kcbiao_file");
+    result.put("manualEdited", false);
+    return result;
+  }
+
+  /** 课表状态：是否有开班文件、是否手工调过、课次数 */
+  @Transactional(readOnly = true)
+  public Map<String, Object> getScheduleStatus(Long classId) {
+    TrainInfoClassEntity clazz = requireClass(classId);
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    long count = mapper.selectCount(new LambdaQueryWrapper<TrainScheduleEntity>()
+        .eq(TrainScheduleEntity::getClassId, classId)
+        .eq(TrainScheduleEntity::getTenantId, tenantId)
+        .eq(TrainScheduleEntity::getDeleted, 0));
+    Map<String, Object> out = new LinkedHashMap<>();
+    out.put("classId", classId);
+    out.put("hasKcbiaoFile", StringUtils.hasText(clazz.getKcbiaoFile()));
+    out.put("kcbiaoFile", clazz.getKcbiaoFile());
+    out.put("manualEdited", Objects.equals(clazz.getScheduleManualEdited(), 1));
+    out.put("importedAt", clazz.getScheduleImportedAt());
+    out.put("sessionCount", count);
+    return out;
+  }
+
+  /** 批量保存课表（全量替换班级课表；不回写开班 kcbiao_file；标记手工调课） */
   @Transactional
   public Map<String, Object> saveSchedule(Long classId, List<Map<String, Object>> items) {
+    TrainInfoClassEntity clazz = requireClass(classId);
+    Map<String, Object> result = replaceScheduleRows(classId, items, true);
+    clazz.setScheduleManualEdited(1);
+    classMapper.updateById(clazz);
+    result.put("manualEdited", true);
+    return result;
+  }
+
+  private Map<String, Object> replaceScheduleRows(
+      Long classId, List<Map<String, Object>> items, boolean fromManualSave) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
-
-    // Verify class exists
-    TrainInfoClassEntity classEntity = classMapper.selectById(classId);
-    if (classEntity == null || classEntity.getDeleted() == 1) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
+    if (items == null) {
+      items = List.of();
     }
 
-    // Delete existing schedules for this class
-    List<TrainScheduleEntity> existing = mapper.selectList(
-        new LambdaQueryWrapper<TrainScheduleEntity>()
-            .eq(TrainScheduleEntity::getClassId, classId)
-            .eq(TrainScheduleEntity::getDeleted, 0));
-    for (TrainScheduleEntity e : existing) {
-      e.setDeleted(1);
-      mapper.deleteById(e.getId());
-    }
+    mapper.physicalDeleteByClass(classId, tenantId);
 
-    // Insert new schedules
     int count = 0;
     for (Map<String, Object> item : items) {
       TrainScheduleEntity entity = new TrainScheduleEntity();
@@ -194,6 +266,7 @@ public class TrainScheduleApplicationService {
       entity.setTenantId(tenantId);
       entity.setCreatedBy(userId);
       entity.setUpdatedBy(userId);
+      entity.setDeleted(0);
       mapper.insert(entity);
       count++;
     }
@@ -201,21 +274,17 @@ public class TrainScheduleApplicationService {
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("classId", classId);
     result.put("count", count);
+    result.put("fromManualSave", fromManualSave);
     return result;
   }
 
-  /** 导出课表为CSV文件 */
   @Transactional
   public Map<String, Object> exportSchedule(Long classId) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
 
-    TrainInfoClassEntity classEntity = classMapper.selectById(classId);
-    if (classEntity == null || classEntity.getDeleted() == 1) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
-    }
-
-    List<Map<String, Object>> schedules = getByClassId(classId);
+    TrainInfoClassEntity classEntity = requireClass(classId);
+    List<Map<String, Object>> schedules = listMaps(classId);
 
     StringBuilder csv = new StringBuilder();
     csv.append("日期,星期,课程名称,讲师,教室,开始时间,结束时间\n");
@@ -263,6 +332,44 @@ public class TrainScheduleApplicationService {
       log.error("导出课表失败", e);
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "导出课表失败: " + e.getMessage());
     }
+  }
+
+  private List<Map<String, Object>> listMaps(Long classId) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    List<TrainScheduleEntity> schedules = mapper.selectList(
+        new LambdaQueryWrapper<TrainScheduleEntity>()
+            .eq(TrainScheduleEntity::getClassId, classId)
+            .eq(TrainScheduleEntity::getTenantId, tenantId)
+            .eq(TrainScheduleEntity::getDeleted, 0)
+            .orderByAsc(TrainScheduleEntity::getScheduleDate)
+            .orderByAsc(TrainScheduleEntity::getStartTime));
+
+    List<Map<String, Object>> list = new ArrayList<>();
+    for (TrainScheduleEntity s : schedules) {
+      Map<String, Object> item = new LinkedHashMap<>();
+      item.put("id", s.getId());
+      item.put("classId", s.getClassId());
+      item.put("courseId", s.getCourseId());
+      item.put("courseName", s.getCourseName());
+      item.put("teacherId", s.getTeacherId());
+      item.put("teacherName", s.getTeacherName());
+      item.put("roomName", s.getRoomName());
+      item.put("scheduleDate", s.getScheduleDate());
+      item.put("dayOfWeek", s.getDayOfWeek());
+      item.put("startTime", s.getStartTime());
+      item.put("endTime", s.getEndTime());
+      item.put("status", s.getStatus());
+      list.add(item);
+    }
+    return list;
+  }
+
+  private TrainInfoClassEntity requireClass(Long classId) {
+    TrainInfoClassEntity classEntity = classMapper.selectById(classId);
+    if (classEntity == null || Objects.equals(classEntity.getDeleted(), 1)) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
+    }
+    return classEntity;
   }
 
   private String escapeCsv(Object val) {

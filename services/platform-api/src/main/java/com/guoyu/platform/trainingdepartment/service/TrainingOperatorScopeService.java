@@ -91,7 +91,8 @@ public class TrainingOperatorScopeService {
     }
   }
 
-  private boolean isPlatformAdmin() {
+  /** 平台管理员 / 超级管理员：可跨机构查看培训相关数据 */
+  public boolean isPlatformAdmin() {
     PlatformUserPrincipal principal = SecurityContext.currentUser();
     List<String> roleCodes = principal.getRoleCodes() == null ? List.of() : principal.getRoleCodes();
     return "admin".equals(principal.getUserType())

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
@@ -9,6 +9,7 @@ import {
   Form,
   Input,
   Modal,
+  Popconfirm,
   Progress,
   Row,
   Select,
@@ -17,6 +18,7 @@ import {
   Table,
   Tabs,
   Tag,
+  TimePicker,
   Typography,
   Upload,
   message,
@@ -24,10 +26,12 @@ import {
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
+  DeleteOutlined,
   EditOutlined,
   HistoryOutlined,
   LineChartOutlined,
   PlusOutlined,
+  ReloadOutlined,
   StarOutlined,
   TeamOutlined,
   UploadOutlined,
@@ -35,10 +39,23 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs, { type Dayjs } from 'dayjs';
+import { downloadUrlFile } from '../../../api/files';
 import * as trainApi from '../../../api/training';
 import type { ClassOther, ClassStudent, TrainInfoClassListItem } from '../../../types/training';
 import { StudentAttendanceDetailDrawer } from './StudentAttendanceDetailDrawer';
 import { FollowPracticeTab } from './FollowPracticeTab';
+
+type ScheduleDraftItem = Record<string, unknown> & {
+  _key: string;
+  id?: number | string;
+  scheduleDate?: string;
+  dayOfWeek?: number;
+  courseName?: string;
+  teacherName?: string;
+  roomName?: string;
+  startTime?: string;
+  endTime?: string;
+};
 
 type ApiId = number | string;
 
@@ -99,19 +116,176 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const [studentPage, setStudentPage] = useState(1);
   const [detailStudent, setDetailStudent] = useState<ClassStudent | null>(null);
   const [importResult, setImportResult] = useState<trainApi.TrainAttendanceImportResult | null>(null);
+  const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraftItem[]>([]);
+  const [scheduleDirty, setScheduleDirty] = useState(false);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [editingScheduleKey, setEditingScheduleKey] = useState<string | null>(null);
+  const [scheduleForm] = Form.useForm();
 
   const dateStr = bizDate.format('YYYY-MM-DD');
+  const { data: scheduleStatus, refetch: refetchScheduleStatus } = useQuery({
+    queryKey: ['follow-schedule-status', classIdNum],
+    queryFn: () => trainApi.getClassScheduleStatus(classIdNum!),
+    enabled: classIdNum != null && classIdNum > 0,
+  });
 
-  const { data: scheduleData } = useQuery({
+  const hasKcbiaoFile = Boolean(
+    scheduleStatus?.hasKcbiaoFile || classItem.kcbiao_file || classItem.kcbiao_src,
+  );
+  const scheduleManualEdited = Boolean(scheduleStatus?.manualEdited);
+
+  const { data: scheduleData, isLoading: scheduleLoading } = useQuery({
     queryKey: ['follow-schedule', classIdNum],
     queryFn: () => trainApi.getClassSchedule(classIdNum!),
     enabled: classIdNum != null && classIdNum > 0,
   });
 
+  const { data: practiceScope, isLoading: practiceScopeLoading } = useQuery({
+    queryKey: ['class-practice-scope', classId],
+    queryFn: () => trainApi.getClassPracticeScope(classId),
+    enabled: !!classId,
+  });
+
+  useEffect(() => {
+    if (scheduleDirty) return;
+    const list = ((scheduleData ?? []) as Record<string, unknown>[]).map((row, idx) => ({
+      ...row,
+      _key: String(row.id ?? `tmp-${idx}-${row.scheduleDate}-${row.startTime}`),
+    }));
+    list.sort((a, b) => {
+      const da = String(a.scheduleDate ?? '');
+      const db = String(b.scheduleDate ?? '');
+      if (da !== db) return da.localeCompare(db);
+      return String(a.startTime ?? '').localeCompare(String(b.startTime ?? ''));
+    });
+    setScheduleDraft(list as ScheduleDraftItem[]);
+  }, [scheduleData, scheduleDirty]);
+
+  const scheduleList = scheduleDraft;
+
   const scheduleItems = useMemo(() => {
-    const list = (scheduleData ?? []) as Record<string, unknown>[];
-    return list.filter((s) => String(s.scheduleDate ?? '') === dateStr);
-  }, [scheduleData, dateStr]);
+    return scheduleList.filter((s) => String(s.scheduleDate ?? '') === dateStr);
+  }, [scheduleList, dateStr]);
+
+  const dayOfWeekLabel = (v: unknown) => {
+    const n = typeof v === 'number' ? v : Number(v);
+    return ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'][n] ?? '';
+  };
+
+  const saveScheduleMu = useMutation({
+    mutationFn: () => {
+      if (classIdNum == null) return Promise.reject(new Error('无效班级'));
+      const items = scheduleDraft.map(({ _key, ...rest }) => {
+        void _key;
+        return rest;
+      });
+      return trainApi.saveClassSchedule(classIdNum, items);
+    },
+    onSuccess: () => {
+      message.success('课表已保存');
+      setScheduleDirty(false);
+      queryClient.invalidateQueries({ queryKey: ['follow-schedule', classIdNum] });
+      void refetchScheduleStatus();
+    },
+    onError: (e: Error) => message.error(e.message || '保存课表失败'),
+  });
+
+  const importKcbiaoMu = useMutation({
+    mutationFn: (opts: { force: boolean; confirmOverwriteManual?: boolean }) => {
+      if (classIdNum == null) return Promise.reject(new Error('无效班级'));
+      return trainApi.importClassScheduleFromKcbiao(
+        classIdNum,
+        opts.force,
+        opts.confirmOverwriteManual ?? false,
+      );
+    },
+    onSuccess: (res) => {
+      if (res.skipped) {
+        message.info(res.reason || '已有课表，未覆盖');
+      } else {
+        message.success(`已从开班课表导入 ${res.imported ?? res.count ?? 0} 节`);
+      }
+      setScheduleDirty(false);
+      queryClient.invalidateQueries({ queryKey: ['follow-schedule', classIdNum] });
+      void refetchScheduleStatus();
+    },
+    onError: (e: Error) => message.error(e.message || '导入开班课表失败'),
+  });
+
+  const runImportKcbiao = (force: boolean) => {
+    if (force && scheduleManualEdited) {
+      Modal.confirm({
+        title: '确认覆盖已调课课表？',
+        content:
+          '本班课表已在跟班手工调整过。用开班 Excel 重导将覆盖当前结构化课次，开班原文件不会被改写。',
+        okText: '确认覆盖',
+        okButtonProps: { danger: true },
+        onOk: () => importKcbiaoMu.mutateAsync({ force: true, confirmOverwriteManual: true }),
+      });
+      return;
+    }
+    importKcbiaoMu.mutate({ force, confirmOverwriteManual: false });
+  };
+
+  const openScheduleEditor = (row?: ScheduleDraftItem) => {
+    if (row) {
+      setEditingScheduleKey(row._key);
+      scheduleForm.setFieldsValue({
+        scheduleDate: row.scheduleDate ? dayjs(String(row.scheduleDate)) : undefined,
+        courseName: row.courseName,
+        teacherName: row.teacherName,
+        roomName: row.roomName,
+        timeRange:
+          row.startTime && row.endTime
+            ? [dayjs(String(row.startTime), 'HH:mm'), dayjs(String(row.endTime), 'HH:mm')]
+            : undefined,
+      });
+    } else {
+      setEditingScheduleKey(null);
+      scheduleForm.setFieldsValue({
+        scheduleDate: bizDate,
+        courseName: undefined,
+        teacherName: undefined,
+        roomName: undefined,
+        timeRange: undefined,
+      });
+    }
+    setScheduleModalOpen(true);
+  };
+
+  const submitScheduleEditor = async () => {
+    const v = await scheduleForm.validateFields();
+    const scheduleDate = (v.scheduleDate as Dayjs).format('YYYY-MM-DD');
+    const startTime = (v.timeRange[0] as Dayjs).format('HH:mm');
+    const endTime = (v.timeRange[1] as Dayjs).format('HH:mm');
+    const dayOfWeek = dayjs(scheduleDate).day() === 0 ? 7 : dayjs(scheduleDate).day();
+    const next: ScheduleDraftItem = {
+      ...(editingScheduleKey
+        ? scheduleDraft.find((x) => x._key === editingScheduleKey) ?? { _key: editingScheduleKey }
+        : { _key: `new-${Date.now()}` }),
+      scheduleDate,
+      dayOfWeek,
+      courseName: String(v.courseName).trim(),
+      teacherName: v.teacherName ? String(v.teacherName).trim() : undefined,
+      roomName: v.roomName ? String(v.roomName).trim() : undefined,
+      startTime,
+      endTime,
+      status: 0,
+    };
+    setScheduleDraft((prev) => {
+      if (editingScheduleKey) {
+        return prev.map((x) => (x._key === editingScheduleKey ? next : x));
+      }
+      return [...prev, next];
+    });
+    setScheduleDirty(true);
+    setScheduleModalOpen(false);
+  };
+
+  const removeScheduleRow = (key: string) => {
+    setScheduleDraft((prev) => prev.filter((x) => x._key !== key));
+    setScheduleDirty(true);
+  };
 
   const { data: studentsData, isLoading: studentsLoading } = useQuery({
     queryKey: ['follow-students', classId, studentPage],
@@ -258,13 +432,15 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
     }
     const cumulativeRate = sumTotal > 0 ? Math.round((sumPresent / sumTotal) * 1000) / 10 : 0;
 
+    const expected = rosterTotal > 0 ? rosterTotal : allStudents.length;
     const dailyTrend = [...byDate.entries()]
       .map(([date, v]) => ({
         date,
         present: v.present,
         absent: v.absent,
-        total: v.total,
-        rate: v.total > 0 ? Math.round((v.present / v.total) * 1000) / 10 : 0,
+        /** 应到：班级总人数 */
+        total: expected,
+        rate: expected > 0 ? Math.round((v.present / expected) * 1000) / 10 : 0,
       }))
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 14);
@@ -286,7 +462,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       warnings,
       loading: allAttendanceLoading,
     };
-  }, [allAttendancePage?.items, allStudents, allAttendanceLoading]);
+  }, [allAttendancePage?.items, allStudents, allAttendanceLoading, rosterTotal]);
 
   const signInMu = useMutation({
     mutationFn: (student: ClassStudent) => {
@@ -373,11 +549,6 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const attendanceColumns: ColumnsType<ClassStudent> = [
     { title: '姓名', dataIndex: 'realname', width: 120 },
     { title: '手机', dataIndex: 'phone', width: 130, render: (v?: string) => v || '—' },
-    {
-      title: '班长',
-      width: 70,
-      render: (_, row) => (Number(row.is_leader) === 1 ? <Tag color="blue">是</Tag> : '—'),
-    },
     {
       title: '考勤状态',
       width: 100,
@@ -582,7 +753,12 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
 
                 <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
                   <Col xs={24} lg={12}>
-                    <Card size="small" title="近日出勤率" loading={classStats.loading}>
+                    <Card
+                      size="small"
+                      className="follow-overview-scroll-card"
+                      title="近日出勤率"
+                      loading={classStats.loading}
+                    >
                       {classStats.dailyTrend.length === 0 ? (
                         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无考勤记录，可导入考勤表或当日登记" />
                       ) : (
@@ -590,11 +766,12 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                           size="small"
                           rowKey="date"
                           pagination={false}
+                          sticky
                           dataSource={classStats.dailyTrend}
                           columns={[
                             { title: '日期', dataIndex: 'date', width: 120 },
                             {
-                              title: '实到/登记',
+                              title: '实到/应到',
                               width: 110,
                               render: (_, r) => `${r.present}/${r.total}`,
                             },
@@ -643,6 +820,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                   <Col xs={24} lg={12}>
                     <Card
                       size="small"
+                      className="follow-overview-scroll-card"
                       title="学员预警"
                       extra={<Typography.Text type="secondary">缺勤≥2 或个人出勤率&lt;80%</Typography.Text>}
                       loading={classStats.loading}
@@ -654,6 +832,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                           size="small"
                           rowKey="userId"
                           pagination={false}
+                          sticky
                           dataSource={classStats.warnings}
                           columns={[
                             { title: '姓名', dataIndex: 'name', width: 100 },
@@ -690,6 +869,245 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     </Card>
                   </Col>
                 </Row>
+
+                <Card
+                  size="small"
+                  className="follow-overview-scroll-card"
+                  title="班级课程表"
+                  style={{ marginBottom: 16 }}
+                  loading={scheduleLoading || importKcbiaoMu.isPending || saveScheduleMu.isPending}
+                  extra={
+                    <Space wrap size="small">
+                      <Typography.Text type="secondary">
+                        共 {scheduleList.length} 节
+                        {scheduleItems.length > 0 ? ` · 业务日 ${scheduleItems.length} 节` : ''}
+                        {scheduleDirty ? ' · 未保存' : ''}
+                        {scheduleManualEdited ? ' · 已调课' : ''}
+                      </Typography.Text>
+                      <Button size="small" icon={<PlusOutlined />} onClick={() => openScheduleEditor()}>
+                        添加
+                      </Button>
+                      {hasKcbiaoFile ? (
+                        <Popconfirm
+                          title="用开班上传的课表覆盖当前结构化课次？"
+                          description={
+                            scheduleManualEdited
+                              ? '本班已在跟班调过课，将弹出二次确认；开班原 Excel 不会被改写。'
+                              : '跟班已改过的课次将被替换；开班原 Excel 文件不会被改写。'
+                          }
+                          onConfirm={() => runImportKcbiao(true)}
+                          disabled={!hasKcbiaoFile}
+                        >
+                          <Button size="small" icon={<ReloadOutlined />} loading={importKcbiaoMu.isPending}>
+                            重导开班课表
+                          </Button>
+                        </Popconfirm>
+                      ) : null}
+                      <Button
+                        size="small"
+                        type="primary"
+                        disabled={!scheduleDirty}
+                        loading={saveScheduleMu.isPending}
+                        onClick={() => saveScheduleMu.mutate()}
+                      >
+                        保存课表
+                      </Button>
+                    </Space>
+                  }
+                >
+                  {scheduleManualEdited ? (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      style={{ marginBottom: 8 }}
+                      message="当前课表已在跟班手工调整，以结构化课次为准；重导开班 Excel 需二次确认。"
+                    />
+                  ) : null}
+                  {scheduleList.length === 0 ? (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description={
+                        hasKcbiaoFile
+                          ? '尚未导入结构化课次；可从开班上传的课表导入，或直接添加'
+                          : '暂无课表：请先在开班准备上传课程表，或在此直接添加课次'
+                      }
+                    >
+                      <Space>
+                        {hasKcbiaoFile ? (
+                          <Button
+                            type="primary"
+                            loading={importKcbiaoMu.isPending}
+                            onClick={() => runImportKcbiao(false)}
+                          >
+                            从开班课表导入
+                          </Button>
+                        ) : null}
+                        <Button onClick={() => openScheduleEditor()}>添加课次</Button>
+                        {hasKcbiaoFile && (classItem.kcbiao_src || classItem.kcbiao_file) ? (
+                          <Button
+                            type="link"
+                            onClick={() => {
+                              const url = classItem.kcbiao_src || classItem.kcbiao_file;
+                              if (url) void downloadUrlFile(url, '开班课程表');
+                            }}
+                          >
+                            下载原文件
+                          </Button>
+                        ) : null}
+                      </Space>
+                    </Empty>
+                  ) : (
+                    <Table
+                      size="small"
+                      rowKey={(r) => r._key}
+                      pagination={false}
+                      sticky
+                      dataSource={scheduleList}
+                      scroll={{ x: 820 }}
+                      rowClassName={(r) =>
+                        String(r.scheduleDate ?? '') === dateStr ? 'follow-schedule-row-today' : ''
+                      }
+                      columns={[
+                        {
+                          title: '日期',
+                          dataIndex: 'scheduleDate',
+                          width: 120,
+                          render: (v: string) => (
+                            <Space size={4}>
+                              <span>{v || '—'}</span>
+                              {v === dateStr ? <Tag color="processing">今日</Tag> : null}
+                            </Space>
+                          ),
+                        },
+                        {
+                          title: '星期',
+                          dataIndex: 'dayOfWeek',
+                          width: 70,
+                          render: (v) => dayOfWeekLabel(v) || '—',
+                        },
+                        {
+                          title: '课程',
+                          dataIndex: 'courseName',
+                          ellipsis: true,
+                          render: (v?: string) => v || '—',
+                        },
+                        {
+                          title: '时间',
+                          width: 130,
+                          render: (_, r) =>
+                            `${String(r.startTime || '—')}-${String(r.endTime || '—')}`,
+                        },
+                        {
+                          title: '讲师',
+                          dataIndex: 'teacherName',
+                          width: 100,
+                          ellipsis: true,
+                          render: (v?: string) => v || '—',
+                        },
+                        {
+                          title: '教室',
+                          dataIndex: 'roomName',
+                          width: 100,
+                          ellipsis: true,
+                          render: (v?: string) => v || '—',
+                        },
+                        {
+                          title: '操作',
+                          width: 150,
+                          fixed: 'right',
+                          render: (_, r) => (
+                            <Space size={0}>
+                              <Button
+                                type="link"
+                                size="small"
+                                icon={<EditOutlined />}
+                                onClick={() => openScheduleEditor(r)}
+                              >
+                                调课
+                              </Button>
+                              <Popconfirm title="删除该课次？" onConfirm={() => removeScheduleRow(r._key)}>
+                                <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                                  删
+                                </Button>
+                              </Popconfirm>
+                              <Button
+                                type="link"
+                                size="small"
+                                disabled={!r.scheduleDate}
+                                onClick={() => {
+                                  if (r.scheduleDate) {
+                                    setBizDate(dayjs(String(r.scheduleDate)));
+                                    setSessionKey(String(r.id ?? 'day'));
+                                    setActiveTab('attendance');
+                                  }
+                                }}
+                              >
+                                考勤
+                              </Button>
+                            </Space>
+                          ),
+                        },
+                      ]}
+                    />
+                  )}
+                </Card>
+
+                <Card
+                  size="small"
+                  title="班级刷题试题"
+                  style={{ marginBottom: 16 }}
+                  loading={practiceScopeLoading}
+                  extra={
+                    <Button type="link" style={{ padding: 0 }} onClick={() => setActiveTab('practice')}>
+                      {practiceScope?.configured ? '查看学情 / 调整配置 →' : '去配置 →'}
+                    </Button>
+                  }
+                >
+                  {!practiceScope?.configured || !(practiceScope.courses?.length > 0) ? (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="尚未配置本班可刷科目；学员从 App 班级入口刷题前需先配置"
+                    >
+                      <Button type="primary" size="small" onClick={() => setActiveTab('practice')}>
+                        去刷题 Tab 配置
+                      </Button>
+                    </Empty>
+                  ) : (
+                    <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                      <div>
+                        <Typography.Text type="secondary" style={{ marginRight: 8 }}>
+                          科目
+                        </Typography.Text>
+                        <Space wrap size={[4, 4]}>
+                          {practiceScope.courses.map((c) => (
+                            <Tag key={c.courseId} color="blue">
+                              {c.title || `科目#${c.courseId}`}
+                            </Tag>
+                          ))}
+                        </Space>
+                        {practiceScope.enabled === 0 && (
+                          <Tag color="default" style={{ marginLeft: 8 }}>
+                            已停用
+                          </Tag>
+                        )}
+                      </div>
+                      <Typography.Text type="secondary">
+                        知识点：
+                        {practiceScope.knowledgeIds?.length
+                          ? `已限定 ${practiceScope.knowledgeIds.length} 个`
+                          : '所选科目下不限知识点'}
+                        {' · '}
+                        开放日期：
+                        {practiceScope.practiceStartTime || practiceScope.practiceEndTime
+                          ? `${practiceScope.practiceStartTime || '不限'} ~ ${practiceScope.practiceEndTime || '不过期'}`
+                          : '不限（不过期）'}
+                      </Typography.Text>
+                      {practiceScope.remark ? (
+                        <Typography.Text type="secondary">备注：{practiceScope.remark}</Typography.Text>
+                      ) : null}
+                    </Space>
+                  )}
+                </Card>
 
                 <Row gutter={[12, 12]}>
                   <Col xs={24} md={12}>
@@ -794,61 +1212,6 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                 classId={classId}
                 classTitle={classItem.title}
                 active={activeTab === 'practice'}
-              />
-            ),
-          },
-          {
-            key: 'students',
-            label: '学员',
-            children: (
-              <Table
-                rowKey={(r) => String(r.id)}
-                loading={studentsLoading}
-                dataSource={students}
-                pagination={{
-                  current: studentPage,
-                  pageSize: 50,
-                  total: studentTotal,
-                  onChange: setStudentPage,
-                }}
-                columns={[
-                  { title: '姓名', dataIndex: 'realname', width: 120 },
-                  { title: '手机', dataIndex: 'phone', width: 130, render: (v?: string) => v || '—' },
-                  {
-                    title: '班长',
-                    width: 80,
-                    render: (_, row) => (Number(row.is_leader) === 1 ? <Tag color="blue">是</Tag> : '否'),
-                  },
-                  {
-                    title: '班委',
-                    width: 80,
-                    render: (_, row) => (Number(row.is_committee) === 1 ? '是' : '否'),
-                  },
-                  {
-                    title: '当日考勤',
-                    width: 100,
-                    render: (_, row) => {
-                      const att = attendanceMap.get(String(row.id));
-                      if (!att || att.status == null) return '未登记';
-                      return ATTENDANCE_STATUS[att.status]?.text ?? String(att.status);
-                    },
-                  },
-                  {
-                    title: '预警',
-                    width: 80,
-                    render: () => <Tag>—</Tag>,
-                  },
-                  {
-                    title: '操作',
-                    width: 90,
-                    fixed: 'right',
-                    render: (_, row) => (
-                      <Button type="link" size="small" onClick={() => setDetailStudent(row)}>
-                        考勤明细
-                      </Button>
-                    ),
-                  },
-                ]}
               />
             ),
           },
@@ -1007,6 +1370,37 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
             )}
           </Space>
         )}
+      </Modal>
+
+      <Modal
+        title={editingScheduleKey ? '调课' : '添加课次'}
+        open={scheduleModalOpen}
+        onCancel={() => setScheduleModalOpen(false)}
+        onOk={() => void submitScheduleEditor()}
+        destroyOnHidden
+        width={520}
+      >
+        <Form form={scheduleForm} layout="vertical">
+          <Form.Item name="scheduleDate" label="日期" rules={[{ required: true, message: '请选择日期' }]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="courseName" label="课程名称" rules={[{ required: true, message: '请输入课程名称' }]}>
+            <Input placeholder="课程名称" />
+          </Form.Item>
+          <Form.Item
+            name="timeRange"
+            label="上课时间"
+            rules={[{ required: true, message: '请选择起止时间' }]}
+          >
+            <TimePicker.RangePicker format="HH:mm" style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="teacherName" label="讲师">
+            <Input placeholder="讲师姓名" />
+          </Form.Item>
+          <Form.Item name="roomName" label="教室">
+            <Input placeholder="教室" />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

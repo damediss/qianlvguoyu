@@ -1712,7 +1712,16 @@ public class TrainDivisionApplicationService {
       String levelName = StringUtils.hasText(draft.getLevelName())
           ? draft.getLevelName().trim()
           : (members.isEmpty() ? null : textOf(members.get(0).get("levelName")));
-      fillClassWorkMeta(c, jobName, levelName, buildWorkTypeLookup());
+      Long explicitWorkTypeId = draft.getWorkTypeId() != null && draft.getWorkTypeId() > 0
+          ? draft.getWorkTypeId()
+          : null;
+      if (explicitWorkTypeId != null) {
+        ExamWorkTypeEntity wt = examWorkTypeMapper.selectById(explicitWorkTypeId.intValue());
+        if (wt != null && StringUtils.hasText(wt.getTitle())) {
+          jobName = wt.getTitle().trim();
+        }
+      }
+      fillClassWorkMeta(c, explicitWorkTypeId, jobName, levelName, buildWorkTypeLookup());
       classes.add(c);
       assigned += members.size();
     }
@@ -1987,13 +1996,25 @@ public class TrainDivisionApplicationService {
   /** 草稿班级写入工种文本，并尽量解析 exam_work_type.id / 等级数字。 */
   private static void fillClassWorkMeta(
       Map<String, Object> row, String jobName, String levelName, WorkTypeLookup lookup) {
+    fillClassWorkMeta(row, null, jobName, levelName, lookup);
+  }
+
+  /** preferredWorkTypeId 优先于按名称解析（与开班准备绑定 exam_work_type.id 一致）。 */
+  private static void fillClassWorkMeta(
+      Map<String, Object> row,
+      Long preferredWorkTypeId,
+      String jobName,
+      String levelName,
+      WorkTypeLookup lookup) {
     if (StringUtils.hasText(jobName)) {
       row.put("jobName", jobName.trim());
     }
     if (StringUtils.hasText(levelName)) {
       row.put("levelName", levelName.trim());
     }
-    Long workTypeId = lookup != null ? lookup.resolveId(jobName) : null;
+    Long workTypeId = preferredWorkTypeId != null && preferredWorkTypeId > 0
+        ? preferredWorkTypeId
+        : (lookup != null ? lookup.resolveId(jobName) : null);
     if (workTypeId != null) {
       row.put("workTypeId", workTypeId);
     }
@@ -2016,7 +2037,8 @@ public class TrainDivisionApplicationService {
     if (!StringUtils.hasText(levelName)) {
       levelName = textOf(members.get(0).get("levelName"));
     }
-    fillClassWorkMeta(clazz, jobName, levelName, buildWorkTypeLookup());
+    Long preferredId = toLong(clazz.get("workTypeId"));
+    fillClassWorkMeta(clazz, preferredId, jobName, levelName, buildWorkTypeLookup());
   }
 
   private void applyWorkTypeToClass(

@@ -57,11 +57,14 @@ public class PlatformUserApplicationService {
 
   @Transactional(readOnly = true)
   public PageResponse<PlatformUserVO> page(PlatformUserQueryReq req) {
-    Long orgId = resolveOrgId();
+    boolean platformAdmin = operatorScopeService.isPlatformAdmin();
     LambdaQueryWrapper<PlatformUserEntity> wrapper = new LambdaQueryWrapper<PlatformUserEntity>()
         .eq(PlatformUserEntity::getDeleted, 0)
-        .eq(PlatformUserEntity::getOrgId, orgId)
         .orderByDesc(PlatformUserEntity::getId);
+    // 机构账号仅看本机构；平台管理员可看全部（可选再按企业筛选）
+    if (!platformAdmin) {
+      wrapper.eq(PlatformUserEntity::getOrgId, resolveOrgId());
+    }
     Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getCompanyId());
     if (companyFilter != null) {
       wrapper.eq(PlatformUserEntity::getCompanyId, companyFilter);
@@ -156,10 +159,13 @@ public class PlatformUserApplicationService {
   }
 
   private PlatformUserEntity getExisting(Long id, Long orgId) {
-    PlatformUserEntity entity = mapper.selectOne(new LambdaQueryWrapper<PlatformUserEntity>()
+    LambdaQueryWrapper<PlatformUserEntity> wrapper = new LambdaQueryWrapper<PlatformUserEntity>()
         .eq(PlatformUserEntity::getId, id)
-        .eq(PlatformUserEntity::getOrgId, orgId)
-        .eq(PlatformUserEntity::getDeleted, 0));
+        .eq(PlatformUserEntity::getDeleted, 0);
+    if (!operatorScopeService.isPlatformAdmin()) {
+      wrapper.eq(PlatformUserEntity::getOrgId, orgId);
+    }
+    PlatformUserEntity entity = mapper.selectOne(wrapper);
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "学员不存在");
     }

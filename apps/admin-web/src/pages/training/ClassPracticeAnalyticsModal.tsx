@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Alert,
+  Button,
   Col,
   DatePicker,
   Input,
@@ -13,8 +14,10 @@ import {
   Table,
   Tabs,
   Typography,
+  message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { DownloadOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import dayjs, { type Dayjs } from 'dayjs';
 import * as trainApi from '../../api/training';
@@ -50,6 +53,7 @@ export function ClassPracticeAnalyticsPanel({ classId, enabled = true }: PanelPr
   const [keyword, setKeyword] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [exporting, setExporting] = useState(false);
 
   const active = enabled && classId != null;
 
@@ -58,6 +62,22 @@ export function ClassPracticeAnalyticsPanel({ classId, enabled = true }: PanelPr
     to: range[1].format('YYYY-MM-DD'),
     inScopeOnly,
   }), [range, inScopeOnly]);
+
+  const handleExport = async (allTime: boolean) => {
+    if (classId == null) return;
+    setExporting(true);
+    try {
+      await trainApi.exportClassPracticeAnalytics(classId, {
+        ...queryParams,
+        allTime,
+      });
+      message.success(allTime ? '已导出全部刷题数据' : '已导出当前区间刷题数据');
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : '导出失败');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const summaryQuery = useQuery({
     queryKey: ['class-practice-analytics-summary', classId, queryParams],
@@ -180,6 +200,20 @@ export function ClassPracticeAnalyticsPanel({ classId, enabled = true }: PanelPr
             }}
           />
         </Space>
+        <Button
+          icon={<DownloadOutlined />}
+          loading={exporting}
+          onClick={() => handleExport(false)}
+        >
+          导出当前区间
+        </Button>
+        <Button
+          icon={<DownloadOutlined />}
+          loading={exporting}
+          onClick={() => handleExport(true)}
+        >
+          导出全部
+        </Button>
       </Space>
 
       {summaryQuery.isLoading ? (
