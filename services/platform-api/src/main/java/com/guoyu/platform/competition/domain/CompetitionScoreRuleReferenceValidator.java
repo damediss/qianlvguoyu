@@ -23,8 +23,20 @@ public class CompetitionScoreRuleReferenceValidator {
       Long stageId,
       Long eventWorkTypeId,
       Long scoreRuleId) {
-    CompetitionScoringReadinessVO readiness =
-        readinessDomainService.check(tenantId, eventId, stageId, eventWorkTypeId);
+    validatePublishedRule(tenantId, eventId, stageId, eventWorkTypeId, null, scoreRuleId);
+  }
+
+  public void validatePublishedRule(
+      Long tenantId,
+      Long eventId,
+      Long stageId,
+      Long eventWorkTypeId,
+      Long eventWorkTypeLevelId,
+      Long scoreRuleId) {
+    CompetitionScoringReadinessVO readiness = eventWorkTypeLevelId == null
+        ? readinessDomainService.check(tenantId, eventId, stageId, eventWorkTypeId)
+        : readinessDomainService.check(
+            tenantId, eventId, stageId, eventWorkTypeId, eventWorkTypeLevelId);
     if (readiness == null
         || !readiness.isReady()
         || !Objects.equals(readiness.getPublishedScoreRuleVersionId(), scoreRuleId)) {

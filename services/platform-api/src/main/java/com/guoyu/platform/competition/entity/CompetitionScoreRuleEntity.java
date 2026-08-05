@@ -11,10 +11,13 @@ public class CompetitionScoreRuleEntity extends BaseEntity {
   private Long eventId;
   private Long stageId;
   private Long eventWorkTypeId;
+  private Long eventWorkTypeLevelId;
   private String scoringSystem;
   private String theoryTemplate;
   private BigDecimal theoryWeight;
   private BigDecimal simulationPracticalWeight;
+  private BigDecimal simulationWeight;
+  private BigDecimal practicalWeight;
   private String status;
   private Integer ruleVersion;
   private LocalDateTime publishedAt;
@@ -26,6 +29,8 @@ public class CompetitionScoreRuleEntity extends BaseEntity {
   public void setStageId(Long stageId) { this.stageId = stageId; }
   public Long getEventWorkTypeId() { return eventWorkTypeId; }
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
+  public Long getEventWorkTypeLevelId() { return eventWorkTypeLevelId; }
+  public void setEventWorkTypeLevelId(Long eventWorkTypeLevelId) { this.eventWorkTypeLevelId = eventWorkTypeLevelId; }
   public String getScoringSystem() { return scoringSystem; }
   public void setScoringSystem(String scoringSystem) { this.scoringSystem = scoringSystem; }
   public String getTheoryTemplate() { return theoryTemplate; }
@@ -36,6 +41,10 @@ public class CompetitionScoreRuleEntity extends BaseEntity {
   public void setSimulationPracticalWeight(BigDecimal simulationPracticalWeight) {
     this.simulationPracticalWeight = simulationPracticalWeight;
   }
+  public BigDecimal getSimulationWeight() { return simulationWeight; }
+  public void setSimulationWeight(BigDecimal simulationWeight) { this.simulationWeight = simulationWeight; }
+  public BigDecimal getPracticalWeight() { return practicalWeight; }
+  public void setPracticalWeight(BigDecimal practicalWeight) { this.practicalWeight = practicalWeight; }
   public String getStatus() { return status; }
   public void setStatus(String status) { this.status = status; }
   public Integer getRuleVersion() { return ruleVersion; }

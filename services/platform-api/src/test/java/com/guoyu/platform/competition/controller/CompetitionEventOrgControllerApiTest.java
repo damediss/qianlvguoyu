@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.guoyu.platform.competition.dto.CompetitionEventOrgCreateReq;
+import com.guoyu.platform.competition.dto.CompetitionEventOrgImportPermissionUpdateReq;
 import com.guoyu.platform.competition.dto.CompetitionEventOrgQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionEventOrgStatusUpdateReq;
 import com.guoyu.platform.competition.service.CompetitionEventOrgApplicationService;
@@ -63,15 +64,17 @@ class CompetitionEventOrgControllerApiTest {
   }
 
   @Test
-  void createOrganizationReturnsInvitedRelation() throws Exception {
+  void createOrganizationReturnsActiveRelation() throws Exception {
+    CompetitionEventOrgVO created = relation(2002L, 3001L);
+    created.setStatus("active");
     when(service.create(Mockito.eq(1001L), any(CompetitionEventOrgCreateReq.class)))
-        .thenReturn(relation(2002L, 3001L));
+        .thenReturn(created);
 
     mockMvc.perform(post("/competition/events/1001/organizations")
             .contentType(MediaType.APPLICATION_JSON)
             .content("""
                 {
-                  "orgId": 3001,
+                  "orgName": "新参与企业",
                   "quota": 20,
                   "importPermission": 1
                 }
@@ -79,7 +82,7 @@ class CompetitionEventOrgControllerApiTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.code").value("0"))
         .andExpect(jsonPath("$.data.orgId").value(3001))
-        .andExpect(jsonPath("$.data.status").value("invited"));
+        .andExpect(jsonPath("$.data.status").value("active"));
 
     verify(service).create(Mockito.eq(1001L), any(CompetitionEventOrgCreateReq.class));
   }
@@ -99,6 +102,25 @@ class CompetitionEventOrgControllerApiTest {
         .andExpect(jsonPath("$.data.status").value("active"));
 
     verify(service).updateStatus(Mockito.eq(1001L), Mockito.eq(3001L), any(CompetitionEventOrgStatusUpdateReq.class));
+  }
+
+  @Test
+  void updateOrganizationImportPermissionReturnsUpdatedRelation() throws Exception {
+    CompetitionEventOrgVO relation = relation(2004L, 3001L);
+    relation.setImportPermission(1);
+    when(service.updateImportPermission(
+        Mockito.eq(1001L), Mockito.eq(3001L), any(CompetitionEventOrgImportPermissionUpdateReq.class)))
+        .thenReturn(relation);
+
+    mockMvc.perform(put("/competition/events/1001/organizations/3001/import-permission")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"importPermission\":1}"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.code").value("0"))
+        .andExpect(jsonPath("$.data.importPermission").value(1));
+
+    verify(service).updateImportPermission(
+        Mockito.eq(1001L), Mockito.eq(3001L), any(CompetitionEventOrgImportPermissionUpdateReq.class));
   }
 
   @Test

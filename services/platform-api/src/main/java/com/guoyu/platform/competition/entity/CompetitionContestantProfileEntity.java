@@ -13,6 +13,7 @@ public class CompetitionContestantProfileEntity extends BaseEntity {
   private String groupCode;
   private Long currentStageId;
   private Long eventWorkTypeId;
+  private Long eventWorkTypeLevelId;
   private String workTypeMatchStatus;
   private String workTypeMatchNote;
   private String promotionStatus;
@@ -30,6 +31,8 @@ public class CompetitionContestantProfileEntity extends BaseEntity {
   public void setCurrentStageId(Long currentStageId) { this.currentStageId = currentStageId; }
   public Long getEventWorkTypeId() { return eventWorkTypeId; }
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
+  public Long getEventWorkTypeLevelId() { return eventWorkTypeLevelId; }
+  public void setEventWorkTypeLevelId(Long eventWorkTypeLevelId) { this.eventWorkTypeLevelId = eventWorkTypeLevelId; }
   public String getWorkTypeMatchStatus() { return workTypeMatchStatus; }
   public void setWorkTypeMatchStatus(String workTypeMatchStatus) {
     this.workTypeMatchStatus = workTypeMatchStatus;

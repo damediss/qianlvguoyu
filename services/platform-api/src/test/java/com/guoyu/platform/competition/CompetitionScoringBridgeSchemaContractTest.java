@@ -120,6 +120,19 @@ class CompetitionScoringBridgeSchemaContractTest {
             "deleted TINYINT NOT NULL DEFAULT 0");
   }
 
+  @Test
+  void correctiveMigrationKeepsDatabaseTemplateConstraintAlignedWithDomainEnum()
+      throws IOException {
+    try (var input = getClass().getClassLoader().getResourceAsStream(
+        "db/migration/V20260801_005__allow_custom_competition_theory_template.sql")) {
+      assertThat(input).isNotNull();
+      String migration = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+      assertThat(migration)
+          .contains("DROP CHECK chk_competition_score_rule_template")
+          .contains("'THEORY_90', 'THEORY_120', 'CUSTOM'");
+    }
+  }
+
   private String migration() throws IOException {
     try (var input = getClass().getClassLoader().getResourceAsStream(
         "db/migration/V20260727_005__bridge_competition_scoring_readiness.sql")) {

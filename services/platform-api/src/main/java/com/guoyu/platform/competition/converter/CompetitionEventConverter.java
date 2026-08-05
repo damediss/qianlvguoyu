@@ -68,6 +68,9 @@ public final class CompetitionEventConverter {
     target.setScope(source.getScope());
     target.setOwnerOrgId(source.getOwnerOrgId());
     target.setStatus(source.getStatus());
+    target.setStagePlanStatus(source.getStagePlanStatus());
+    target.setStagePlanConfirmedBy(source.getStagePlanConfirmedBy());
+    target.setStagePlanConfirmedAt(source.getStagePlanConfirmedAt());
     target.setRegistrationAuditRequired(source.getRegistrationAuditRequired());
     target.setStartAt(source.getStartAt());
     target.setEndAt(source.getEndAt());

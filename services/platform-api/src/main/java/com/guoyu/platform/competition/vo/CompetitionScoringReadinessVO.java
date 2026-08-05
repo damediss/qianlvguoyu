@@ -8,6 +8,7 @@ public class CompetitionScoringReadinessVO {
   private Long eventId;
   private Long stageId;
   private Long eventWorkTypeId;
+  private Long eventWorkTypeLevelId;
   private boolean ready;
   private Long publishedScoreRuleVersionId;
   private List<CompetitionScoringReadinessCheckVO> checks = new ArrayList<>();
@@ -18,6 +19,10 @@ public class CompetitionScoringReadinessVO {
   public void setStageId(Long stageId) { this.stageId = stageId; }
   public Long getEventWorkTypeId() { return eventWorkTypeId; }
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
+  public Long getEventWorkTypeLevelId() { return eventWorkTypeLevelId; }
+  public void setEventWorkTypeLevelId(Long eventWorkTypeLevelId) {
+    this.eventWorkTypeLevelId = eventWorkTypeLevelId;
+  }
   public boolean isReady() { return ready; }
   public void setReady(boolean ready) { this.ready = ready; }
   public Long getPublishedScoreRuleVersionId() { return publishedScoreRuleVersionId; }

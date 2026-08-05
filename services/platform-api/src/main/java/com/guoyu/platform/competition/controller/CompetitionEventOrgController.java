@@ -4,6 +4,7 @@ import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.competition.dto.CompetitionEventOrgCreateReq;
+import com.guoyu.platform.competition.dto.CompetitionEventOrgImportPermissionUpdateReq;
 import com.guoyu.platform.competition.dto.CompetitionEventOrgQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionEventOrgStatusUpdateReq;
 import com.guoyu.platform.competition.service.CompetitionEventOrgApplicationService;
@@ -58,5 +59,15 @@ public class CompetitionEventOrgController {
       @PathVariable Long orgId,
       @Valid @RequestBody CompetitionEventOrgStatusUpdateReq req) {
     return ApiResponse.ok(service.updateStatus(eventId, orgId, req));
+  }
+
+  @PutMapping("/{orgId}/import-permission")
+  @PreAuthorize("hasAuthority('competition:event-org:manage')")
+  @AuditLog(module = "competition", action = "event-org:import-permission-update", targetType = "competition_event_org")
+  public ApiResponse<CompetitionEventOrgVO> updateImportPermission(
+      @PathVariable Long eventId,
+      @PathVariable Long orgId,
+      @Valid @RequestBody CompetitionEventOrgImportPermissionUpdateReq req) {
+    return ApiResponse.ok(service.updateImportPermission(eventId, orgId, req));
   }
 }

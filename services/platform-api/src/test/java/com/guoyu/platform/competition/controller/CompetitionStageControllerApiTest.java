@@ -17,6 +17,7 @@ import com.guoyu.platform.competition.dto.CompetitionStageQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionStageUpdateReq;
 import com.guoyu.platform.competition.service.CompetitionStageApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionStageVO;
+import com.guoyu.platform.competition.vo.CompetitionEventVO;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -81,6 +82,61 @@ class CompetitionStageControllerApiTest {
         .andExpect(jsonPath("$.data.name").value("Practice"));
 
     verify(service).create(Mockito.eq(1001L), any(CompetitionStageCreateReq.class));
+  }
+
+  @Test
+  void saveDraftReturnsCompleteStageList() throws Exception {
+    when(service.saveDraft(Mockito.eq(1001L), any()))
+        .thenReturn(List.of(stage(5001L, "初赛")));
+
+    mockMvc.perform(put("/competition/events/1001/stages/draft")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "stages": [
+                    {
+                      "id": "5001",
+                      "stageType": "preliminary",
+                      "startAt": "2099-01-01T09:00:00",
+                      "endAt": "2099-01-01T12:00:00",
+                      "description": "初赛安排"
+                    }
+                  ]
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.code").value("0"))
+        .andExpect(jsonPath("$.data[0].id").value(5001))
+        .andExpect(jsonPath("$.data[0].name").value("初赛"));
+
+    verify(service).saveDraft(Mockito.eq(1001L), any());
+  }
+
+  @Test
+  void saveDraftRejectsEmptyStageListBeforeCallingService() throws Exception {
+    mockMvc.perform(put("/competition/events/1001/stages/draft")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("{\"stages\": []}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("400"));
+
+    verifyNoInteractions(service);
+  }
+
+  @Test
+  void confirmStagePlanReturnsConfirmedEvent() throws Exception {
+    CompetitionEventVO event = new CompetitionEventVO();
+    event.setId(1001L);
+    event.setStatus("draft");
+    event.setStagePlanStatus("confirmed");
+    when(service.confirmStagePlan(1001L)).thenReturn(event);
+
+    mockMvc.perform(post("/competition/events/1001/stages/confirm"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.code").value("0"))
+        .andExpect(jsonPath("$.data.stagePlanStatus").value("confirmed"));
+
+    verify(service).confirmStagePlan(1001L);
   }
 
   @Test

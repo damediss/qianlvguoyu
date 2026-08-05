@@ -19,6 +19,7 @@ import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreRuleMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStageMapper;
+import com.guoyu.platform.competition.mapper.CompetitionTheoryRequirementMapper;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,9 +35,11 @@ class CompetitionScoreRuleDomainServiceTest {
   private final CompetitionStageMapper stageMapper = Mockito.mock(CompetitionStageMapper.class);
   private final CompetitionEventWorkTypeMapper workTypeMapper =
       Mockito.mock(CompetitionEventWorkTypeMapper.class);
+  private final CompetitionTheoryRequirementMapper theoryRequirementMapper =
+      Mockito.mock(CompetitionTheoryRequirementMapper.class);
   private final CompetitionScoreRuleDomainService service =
       new CompetitionScoreRuleDomainService(
-          ruleMapper, eventMapper, stageMapper, workTypeMapper);
+          ruleMapper, eventMapper, stageMapper, workTypeMapper, theoryRequirementMapper);
 
   @BeforeEach
   void setUpValidScope() {
@@ -97,7 +100,7 @@ class CompetitionScoreRuleDomainServiceTest {
     assertThatThrownBy(() -> service.publish(1L, 9L, 4001L))
         .isInstanceOfSatisfying(BusinessException.class,
             ex -> assertThat(ex.getCode()).isEqualTo("422"))
-        .hasMessage("发布前必须选择THEORY_90或THEORY_120理论模板");
+        .hasMessage("发布前必须选择THEORY_90、THEORY_120或CUSTOM理论模板");
     verify(ruleMapper, never()).deprecatePublishedInScope(
         anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), any());
   }
@@ -111,6 +114,30 @@ class CompetitionScoreRuleDomainServiceTest {
         .isInstanceOfSatisfying(BusinessException.class,
             ex -> assertThat(ex.getCode()).isEqualTo("400"))
         .hasMessage("赛段不存在或不属于当前赛事");
+    verify(ruleMapper, never()).insert(any(CompetitionScoreRuleEntity.class));
+  }
+
+  @Test
+  void rejectsInactiveStageReference() {
+    when(stageMapper.selectOne(any())).thenReturn(stageWithStatus("closed"));
+
+    assertThatThrownBy(() ->
+        service.create(1L, 9L, 1001L, createReq("THEORY_120", "40", "60")))
+        .isInstanceOfSatisfying(BusinessException.class,
+            ex -> assertThat(ex.getCode()).isEqualTo("422"))
+        .hasMessage("评分规则只能关联有效赛段");
+    verify(ruleMapper, never()).insert(any(CompetitionScoreRuleEntity.class));
+  }
+
+  @Test
+  void rejectsInactiveEventWorkTypeReference() {
+    when(workTypeMapper.selectOne(any())).thenReturn(workType(1001L, "inactive"));
+
+    assertThatThrownBy(() ->
+        service.create(1L, 9L, 1001L, createReq("THEORY_120", "40", "60")))
+        .isInstanceOfSatisfying(BusinessException.class,
+            ex -> assertThat(ex.getCode()).isEqualTo("422"))
+        .hasMessage("评分规则只能关联有效赛事工种");
     verify(ruleMapper, never()).insert(any(CompetitionScoreRuleEntity.class));
   }
 
@@ -135,6 +162,7 @@ class CompetitionScoreRuleDomainServiceTest {
     assertThat(versionTwo.getRuleVersion()).isEqualTo(2);
 
     when(ruleMapper.selectForUpdate(1L, 4002L)).thenReturn(versionTwo);
+    when(theoryRequirementMapper.selectCount(any())).thenReturn(1L);
     when(ruleMapper.selectPublishedForUpdate(1L, 1001L, 2001L, 3001L))
         .thenReturn(List.of(published));
     when(ruleMapper.updateById(versionTwo)).thenReturn(1);
@@ -149,6 +177,18 @@ class CompetitionScoreRuleDomainServiceTest {
         Mockito.eq(1L), Mockito.eq(1001L), Mockito.eq(2001L), Mockito.eq(3001L),
         currentRuleId.capture(), Mockito.eq(9L), any());
     assertThat(currentRuleId.getValue()).isEqualTo(4002L);
+  }
+
+  @Test
+  void publishingRequiresTheoryRequirement() {
+    CompetitionScoreRuleEntity draft = completeRule(4003L, 1, "draft");
+    when(ruleMapper.selectForUpdate(1L, 4003L)).thenReturn(draft);
+    when(theoryRequirementMapper.selectCount(any())).thenReturn(0L);
+
+    assertThatThrownBy(() -> service.publish(1L, 9L, 4003L))
+        .isInstanceOf(BusinessException.class)
+        .hasMessage("发布评分规则前必须配置唯一的理论考试要求");
+    verify(ruleMapper, never()).updateById(any(CompetitionScoreRuleEntity.class));
   }
 
   private CompetitionScoreRuleCreateReq createReq(
@@ -190,11 +230,19 @@ class CompetitionScoreRuleDomainServiceTest {
   }
 
   private CompetitionStageEntity stage(Long eventId) {
+    return stageWithStatus("active", eventId);
+  }
+
+  private CompetitionStageEntity stageWithStatus(String status) {
+    return stageWithStatus(status, 1001L);
+  }
+
+  private CompetitionStageEntity stageWithStatus(String status, Long eventId) {
     CompetitionStageEntity entity = new CompetitionStageEntity();
     entity.setId(2001L);
     entity.setTenantId(1L);
     entity.setEventId(eventId);
-    entity.setStatus("active");
+    entity.setStatus(status);
     return entity;
   }
 

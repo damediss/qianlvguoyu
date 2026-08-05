@@ -1,5 +1,4 @@
 import {
-  BellOutlined,
   CalendarOutlined,
   HomeOutlined,
   TeamOutlined,
@@ -10,7 +9,7 @@ import type { ReactNode } from 'react';
 import type { CompetitionEvent, CompetitionEventStatus } from '../../types/competition';
 import { useAuthStore } from '../../stores/authStore';
 
-type EventSection = 'overview' | 'organizations' | 'rosters' | 'notices';
+type EventSection = 'overview' | 'organizations' | 'rosters' | 'notices' | 'theory-exam' | 'scores';
 
 interface CompetitionEventFrameProps {
   event: CompetitionEvent;
@@ -38,11 +37,11 @@ const sections: Array<{
   icon: ReactNode;
   path: (id: string) => string;
   permission?: string;
+  anyPermissions?: string[];
 }> = [
   { key: 'overview', label: '计划总览', icon: <HomeOutlined />, path: (id) => `/competition/events/${id}` },
   { key: 'organizations', label: '参与企业', icon: <TeamOutlined />, path: (id) => `/competition/events/${id}/organizations`, permission: 'competition:event-org:view' },
   { key: 'rosters', label: '名单导入', icon: <UploadOutlined />, path: (id) => `/competition/events/${id}/rosters`, permission: 'competition:roster:view' },
-  { key: 'notices', label: '公告设置', icon: <BellOutlined />, path: (id) => `/competition/events/${id}/notices`, permission: 'competition:notice:view' },
 ];
 
 function formatDate(value?: string | null) {
@@ -58,7 +57,9 @@ export function CompetitionEventFrame({
   children,
 }: CompetitionEventFrameProps) {
   const permissions = useAuthStore((state) => state.permissionCodes);
-  const visibleSections = sections.filter((section) => !section.permission || permissions.includes(section.permission));
+  const visibleSections = sections.filter((section) =>
+    (!section.permission || permissions.includes(section.permission))
+    && (!section.anyPermissions || section.anyPermissions.some((permission) => permissions.includes(permission))));
   const status = statusMeta[event.status];
   const eventId = String(event.id);
 

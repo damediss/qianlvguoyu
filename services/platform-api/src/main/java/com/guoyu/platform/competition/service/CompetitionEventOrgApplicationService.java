@@ -6,6 +6,7 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.competition.converter.CompetitionEventOrgConverter;
 import com.guoyu.platform.competition.dto.CompetitionEventOrgCreateReq;
+import com.guoyu.platform.competition.dto.CompetitionEventOrgImportPermissionUpdateReq;
 import com.guoyu.platform.competition.dto.CompetitionEventOrgQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionEventOrgStatusUpdateReq;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
@@ -23,9 +24,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 @Service
 @Slf4j
@@ -84,8 +87,10 @@ public class CompetitionEventOrgApplicationService {
           eventId, principal.getUserId(), principal.getTenantId());
       throw new BusinessException(ErrorCode.FORBIDDEN, "企业内部赛事不能配置其他企业");
     }
-    ensureTenantOrganization(principal.getTenantId(), req.orgId());
-    return toVO(eventOrgService.create(principal.getTenantId(), event.getId(), req), principal.getTenantId());
+    Long orgId = resolveOrganizationId(principal.getTenantId(), req);
+    CompetitionEventOrgCreateReq relationReq = new CompetitionEventOrgCreateReq(
+        orgId, null, req.quota(), req.importPermission());
+    return toVO(eventOrgService.create(principal.getTenantId(), event.getId(), relationReq), principal.getTenantId());
   }
 
   @Transactional
@@ -94,6 +99,16 @@ public class CompetitionEventOrgApplicationService {
     PlatformUserPrincipal principal = currentUser();
     CompetitionEventEntity event = accessibleEvent(principal, eventId);
     CompetitionEventOrgEntity relation = eventOrgService.updateStatus(
+        principal.getTenantId(), event.getId(), orgId, req);
+    return toVO(relation, principal.getTenantId());
+  }
+
+  @Transactional
+  public CompetitionEventOrgVO updateImportPermission(
+      Long eventId, Long orgId, CompetitionEventOrgImportPermissionUpdateReq req) {
+    PlatformUserPrincipal principal = currentUser();
+    CompetitionEventEntity event = accessibleEvent(principal, eventId);
+    CompetitionEventOrgEntity relation = eventOrgService.updateImportPermission(
         principal.getTenantId(), event.getId(), orgId, req);
     return toVO(relation, principal.getTenantId());
   }
@@ -117,6 +132,42 @@ public class CompetitionEventOrgApplicationService {
     if (organization == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "参与企业不存在或不属于当前租户");
     }
+  }
+
+  private Long resolveOrganizationId(Long tenantId, CompetitionEventOrgCreateReq req) {
+    if (req.orgId() != null) {
+      ensureTenantOrganization(tenantId, req.orgId());
+      return req.orgId();
+    }
+    if (!StringUtils.hasText(req.orgName())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请输入企业名称");
+    }
+
+    String orgName = req.orgName().trim();
+    OrgEntity existing = orgMapper.selectOne(new LambdaQueryWrapper<OrgEntity>()
+        .eq(OrgEntity::getTenantId, tenantId)
+        .eq(OrgEntity::getOrgType, "company")
+        .eq(OrgEntity::getName, orgName)
+        .eq(OrgEntity::getDeleted, 0));
+    if (existing != null) {
+      return existing.getId();
+    }
+
+    OrgEntity organization = new OrgEntity();
+    organization.setTenantId(tenantId);
+    organization.setParentId(0L);
+    organization.setOrgType("company");
+    organization.setCode("company-" + UUID.randomUUID().toString().replace("-", ""));
+    organization.setName(orgName);
+    organization.setSortOrder(0);
+    organization.setStatus("enabled");
+    organization.setDeleted(0);
+    orgMapper.insert(organization);
+    if (organization.getId() == null) {
+      log.error("Organization creation returned no id, tenantId={}, name={}", tenantId, orgName);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "企业创建失败");
+    }
+    return organization.getId();
   }
 
   private String findOrgName(Long tenantId, Long orgId) {

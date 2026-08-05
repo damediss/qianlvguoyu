@@ -160,7 +160,7 @@ public class CompetitionRegistrationService {
         throw new BusinessException(ErrorCode.INTERNAL_ERROR, "创建参赛资格失败");
       }
       requireEventMemberService().createContestantProfile(
-          tenantId, member.getId(), registration.getId(), confirmedBy);
+          tenantId, member.getId(), registration.getId(), confirmedBy, batch.getEventWorkTypeId());
     }
 
     batch.setStatus(CompetitionRosterImportStatus.CONFIRMED.getCode());

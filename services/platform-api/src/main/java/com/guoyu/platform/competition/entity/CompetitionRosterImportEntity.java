@@ -9,6 +9,7 @@ public class CompetitionRosterImportEntity extends BaseEntity {
 
   private Long eventId;
   private Long orgId;
+  private Long eventWorkTypeId;
   private String batchNo;
   private Long sourceFileId;
   private String status;
@@ -23,6 +24,8 @@ public class CompetitionRosterImportEntity extends BaseEntity {
   public void setEventId(Long eventId) { this.eventId = eventId; }
   public Long getOrgId() { return orgId; }
   public void setOrgId(Long orgId) { this.orgId = orgId; }
+  public Long getEventWorkTypeId() { return eventWorkTypeId; }
+  public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
   public String getBatchNo() { return batchNo; }
   public void setBatchNo(String batchNo) { this.batchNo = batchNo; }
   public Long getSourceFileId() { return sourceFileId; }

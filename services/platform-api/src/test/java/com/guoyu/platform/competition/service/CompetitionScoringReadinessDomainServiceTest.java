@@ -18,6 +18,7 @@ import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRegistrationMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreRuleMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStageMapper;
+import com.guoyu.platform.competition.mapper.CompetitionTheoryRequirementMapper;
 import com.guoyu.platform.competition.vo.CompetitionScoringReadinessCheckVO;
 import com.guoyu.platform.competition.vo.CompetitionScoringReadinessVO;
 import java.math.BigDecimal;
@@ -51,7 +52,8 @@ class CompetitionScoringReadinessDomainServiceTest {
     registrationMapper = Mockito.mock(CompetitionRegistrationMapper.class);
     CompetitionScoreRuleDomainService ruleDomainService =
         new CompetitionScoreRuleDomainService(
-            ruleMapper, eventMapper, stageMapper, workTypeMapper);
+            ruleMapper, eventMapper, stageMapper, workTypeMapper,
+            Mockito.mock(CompetitionTheoryRequirementMapper.class));
     service = new CompetitionScoringReadinessDomainService(
         eventMapper, stageMapper, workTypeMapper, ruleMapper, profileMapper,
         memberMapper, registrationMapper, ruleDomainService);
@@ -183,6 +185,37 @@ class CompetitionScoringReadinessDomainServiceTest {
     assertThat(result.getPublishedScoreRuleVersionId()).isEqualTo(4001L);
     assertThat(result.getChecks()).hasSize(7);
     assertThat(result.getChecks()).allMatch(CompetitionScoringReadinessCheckVO::passed);
+  }
+
+  @Test
+  void ignoresProfileWhoseContestantMemberBelongsToAnotherEvent() {
+    CompetitionContestantProfileEntity staleProfile = profile("matched");
+    CompetitionEventMemberEntity staleMember = member("active");
+    staleMember.setEventId(2002L);
+    when(profileMapper.selectList(any())).thenReturn(List.of(staleProfile), List.of());
+    when(memberMapper.selectList(any())).thenReturn(List.of(staleMember));
+
+    CompetitionScoringReadinessVO result = service.check(1L, 1001L, 2001L, 3001L);
+
+    assertThat(result.isReady()).isTrue();
+    assertThat(checks(result).get("CONTESTANT_INELIGIBLE").passed()).isTrue();
+  }
+
+  @Test
+  void contestantAssignedToAnotherStageDoesNotBlockCurrentStage() {
+    CompetitionContestantProfileEntity otherStageProfile = profile("matched");
+    otherStageProfile.setCurrentStageId(2002L);
+    CompetitionRegistrationEntity registration = registration();
+    when(profileMapper.selectList(any())).thenReturn(List.of(), List.of(otherStageProfile));
+    when(registrationMapper.selectList(any()))
+        .thenReturn(List.of(registration), List.of(registration));
+    when(memberMapper.selectList(any())).thenReturn(List.of(member("inactive")));
+
+    CompetitionScoringReadinessVO result = service.check(1L, 1001L, 2001L, 3001L);
+
+    assertThat(result.isReady()).isTrue();
+    assertThat(checks(result).get("CONTESTANT_WORK_TYPE_UNRESOLVED").passed()).isTrue();
+    assertThat(checks(result).get("CONTESTANT_INELIGIBLE").passed()).isTrue();
   }
 
   private Map<String, CompetitionScoringReadinessCheckVO> checks(

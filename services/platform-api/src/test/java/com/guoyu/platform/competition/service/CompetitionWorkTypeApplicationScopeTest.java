@@ -13,7 +13,6 @@ import com.guoyu.platform.competition.dto.CompetitionEventWorkTypeCreateReq;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventOrgEntity;
 import com.guoyu.platform.competition.mapper.CompetitionEventOrgMapper;
-import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.UserMapper;
@@ -32,15 +31,12 @@ class CompetitionWorkTypeApplicationScopeTest {
       Mockito.mock(CompetitionEventWorkTypeDomainService.class);
   private final CompetitionContestantWorkTypeDomainService contestantDomainService =
       Mockito.mock(CompetitionContestantWorkTypeDomainService.class);
-  private final ExamWorkTypeMapper examWorkTypeMapper =
-      Mockito.mock(ExamWorkTypeMapper.class);
   private final CompetitionEventOrgMapper eventOrgMapper =
       Mockito.mock(CompetitionEventOrgMapper.class);
   private final UserMapper userMapper = Mockito.mock(UserMapper.class);
   private final CompetitionEventWorkTypeApplicationService eventWorkTypeService =
       new CompetitionEventWorkTypeApplicationService(
-          eventService, eventWorkTypeDomainService, examWorkTypeMapper,
-          eventOrgMapper, userMapper);
+          eventService, eventWorkTypeDomainService, eventOrgMapper, userMapper);
   private final CompetitionContestantWorkTypeApplicationService contestantService =
       new CompetitionContestantWorkTypeApplicationService(
           eventService, contestantDomainService, eventOrgMapper, userMapper);

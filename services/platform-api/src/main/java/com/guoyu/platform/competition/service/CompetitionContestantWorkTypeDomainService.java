@@ -24,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 @Slf4j
@@ -38,16 +39,28 @@ public class CompetitionContestantWorkTypeDomainService {
   private final CompetitionEventMemberMapper memberMapper;
   private final CompetitionRegistrationMapper registrationMapper;
   private final CompetitionEventWorkTypeDomainService eventWorkTypeService;
+  private final CompetitionContestantScopeChangeGuard scopeChangeGuard;
 
   public CompetitionContestantWorkTypeDomainService(
       CompetitionContestantProfileMapper profileMapper,
       CompetitionEventMemberMapper memberMapper,
       CompetitionRegistrationMapper registrationMapper,
       CompetitionEventWorkTypeDomainService eventWorkTypeService) {
+    this(profileMapper, memberMapper, registrationMapper, eventWorkTypeService, null);
+  }
+
+  @Autowired
+  public CompetitionContestantWorkTypeDomainService(
+      CompetitionContestantProfileMapper profileMapper,
+      CompetitionEventMemberMapper memberMapper,
+      CompetitionRegistrationMapper registrationMapper,
+      CompetitionEventWorkTypeDomainService eventWorkTypeService,
+      CompetitionContestantScopeChangeGuard scopeChangeGuard) {
     this.profileMapper = profileMapper;
     this.memberMapper = memberMapper;
     this.registrationMapper = registrationMapper;
     this.eventWorkTypeService = eventWorkTypeService;
+    this.scopeChangeGuard = scopeChangeGuard;
   }
 
   @Transactional(readOnly = true)
@@ -102,13 +115,18 @@ public class CompetitionContestantWorkTypeDomainService {
       throw new BusinessException(ErrorCode.CONFLICT, "仅有效赛事选手可确认工种");
     }
 
-    CompetitionContestantProfileEntity profile = profileMapper.selectOne(
-        new LambdaQueryWrapper<CompetitionContestantProfileEntity>()
-            .eq(CompetitionContestantProfileEntity::getTenantId, tenantId)
-            .eq(CompetitionContestantProfileEntity::getMemberId, contestantMemberId)
-            .eq(CompetitionContestantProfileEntity::getDeleted, 0));
+    CompetitionContestantProfileEntity profile = scopeChangeGuard == null
+        ? profileMapper.selectOne(
+            new LambdaQueryWrapper<CompetitionContestantProfileEntity>()
+                .eq(CompetitionContestantProfileEntity::getTenantId, tenantId)
+                .eq(CompetitionContestantProfileEntity::getMemberId, contestantMemberId)
+                .eq(CompetitionContestantProfileEntity::getDeleted, 0))
+        : profileMapper.selectForUpdateByTenantAndMember(tenantId, contestantMemberId);
     if (profile == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "赛事选手扩展不存在");
+    }
+    if (scopeChangeGuard != null) {
+      scopeChangeGuard.assertChangeAllowed(tenantId, eventId, profile);
     }
     if (orgId != null) {
       var registration = registrationMapper.selectOne(

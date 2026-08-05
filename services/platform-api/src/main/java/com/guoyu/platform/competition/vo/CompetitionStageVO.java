@@ -13,6 +13,10 @@ public class CompetitionStageVO {
   private LocalDateTime endAt;
   private String status;
   private String description;
+  private LocalDateTime frozenAt;
+  private LocalDateTime readyAt;
+  private LocalDateTime closedAt;
+  private LocalDateTime resultPublishedAt;
 
   public Long getId() { return id; }
   public void setId(Long id) { this.id = id; }
@@ -32,4 +36,12 @@ public class CompetitionStageVO {
   public void setStatus(String status) { this.status = status; }
   public String getDescription() { return description; }
   public void setDescription(String description) { this.description = description; }
+  public LocalDateTime getFrozenAt() { return frozenAt; }
+  public void setFrozenAt(LocalDateTime frozenAt) { this.frozenAt = frozenAt; }
+  public LocalDateTime getReadyAt() { return readyAt; }
+  public void setReadyAt(LocalDateTime readyAt) { this.readyAt = readyAt; }
+  public LocalDateTime getClosedAt() { return closedAt; }
+  public void setClosedAt(LocalDateTime closedAt) { this.closedAt = closedAt; }
+  public LocalDateTime getResultPublishedAt() { return resultPublishedAt; }
+  public void setResultPublishedAt(LocalDateTime resultPublishedAt) { this.resultPublishedAt = resultPublishedAt; }
 }

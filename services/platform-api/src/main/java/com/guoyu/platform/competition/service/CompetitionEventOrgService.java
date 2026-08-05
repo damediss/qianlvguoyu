@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.competition.dto.CompetitionEventOrgCreateReq;
+import com.guoyu.platform.competition.dto.CompetitionEventOrgImportPermissionUpdateReq;
 import com.guoyu.platform.competition.dto.CompetitionEventOrgQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionEventOrgStatusUpdateReq;
 import com.guoyu.platform.competition.entity.CompetitionEventOrgEntity;
@@ -61,7 +62,7 @@ public class CompetitionEventOrgService {
     entity.setEventId(eventId);
     entity.setOrgId(req.orgId());
     entity.setQuota(req.quota());
-    entity.setStatus(CompetitionEventOrgStatus.INVITED.getCode());
+    entity.setStatus(CompetitionEventOrgStatus.ACTIVE.getCode());
     entity.setImportPermission(req.importPermission() == null ? 0 : req.importPermission());
     entity.setDeleted(0);
     mapper.insert(entity);
@@ -73,6 +74,19 @@ public class CompetitionEventOrgService {
       Long tenantId, Long eventId, Long orgId, CompetitionEventOrgStatusUpdateReq req) {
     CompetitionEventOrgEntity entity = findExisting(tenantId, eventId, orgId);
     entity.setStatus(validateStatus(req.status()));
+    mapper.updateById(entity);
+    return entity;
+  }
+
+  @Transactional
+  public CompetitionEventOrgEntity updateImportPermission(
+      Long tenantId, Long eventId, Long orgId, CompetitionEventOrgImportPermissionUpdateReq req) {
+    if (req == null || req.importPermission() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "名单导入权限必须为0或1");
+    }
+    validateImportPermission(req.importPermission());
+    CompetitionEventOrgEntity entity = findExisting(tenantId, eventId, orgId);
+    entity.setImportPermission(req.importPermission());
     mapper.updateById(entity);
     return entity;
   }

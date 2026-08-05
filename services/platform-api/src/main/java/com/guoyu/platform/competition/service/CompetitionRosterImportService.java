@@ -17,7 +17,6 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +38,25 @@ public class CompetitionRosterImportService {
 
   private static final Set<String> ALLOWED_FIELDS = Set.of(
       "employeeNo", "name", "idCardNo", "mobile", "workType", "level");
+  private static final Set<String> REQUIRED_FIELDS = Set.of(
+      "employeeNo", "name", "idCardNo", "mobile");
+
+  private static final Map<String, String> HEADER_ALIASES = Map.ofEntries(
+      Map.entry("employeeNo", "employeeNo"),
+      Map.entry("员工编号", "employeeNo"),
+      Map.entry("工号", "employeeNo"),
+      Map.entry("name", "name"),
+      Map.entry("姓名", "name"),
+      Map.entry("idCardNo", "idCardNo"),
+      Map.entry("身份证号", "idCardNo"),
+      Map.entry("身份证号码", "idCardNo"),
+      Map.entry("mobile", "mobile"),
+      Map.entry("手机号", "mobile"),
+      Map.entry("手机号码", "mobile"),
+      Map.entry("workType", "workType"),
+      Map.entry("工种", "workType"),
+      Map.entry("level", "level"),
+      Map.entry("等级", "level"));
 
   private final CompetitionRosterImportMapper importMapper;
   private final CompetitionRosterItemMapper itemMapper;
@@ -55,12 +73,36 @@ public class CompetitionRosterImportService {
 
   @Transactional
   public CompetitionRosterImportEntity precheck(
-      Long tenantId, Long eventId, Long orgId, Long fileId, byte[] fileBytes) {
+      Long tenantId, Long eventId, Long orgId, Long fileId, Long eventWorkTypeId,
+      String selectedWorkTypeName, byte[] fileBytes) {
     List<ParsedRow> rows = parse(fileBytes);
-    return validateAndPersist(tenantId, eventId, orgId, fileId, rows, "ROSTER-");
+    return validateAndPersist(tenantId, eventId, orgId, fileId, eventWorkTypeId,
+        selectedWorkTypeName, rows, "ROSTER-");
+  }
+
+  public CompetitionRosterImportEntity precheck(
+      Long tenantId, Long eventId, Long orgId, Long fileId, byte[] fileBytes) {
+    return precheck(tenantId, eventId, orgId, fileId, null, null, fileBytes);
   }
 
   @Transactional
+  public CompetitionRosterImportEntity precheckSingle(
+      Long tenantId,
+      Long eventId,
+      Long orgId,
+      Long eventWorkTypeId,
+      String selectedWorkTypeName,
+      String employeeNo,
+      String name,
+      String idCardNo,
+      String mobile,
+      String workType,
+      String level) {
+    return validateAndPersist(tenantId, eventId, orgId, null, eventWorkTypeId, selectedWorkTypeName,
+        List.of(new ParsedRow(employeeNo, name, idCardNo, mobile, workType, level, null, List.of())),
+        "SINGLE-");
+  }
+
   public CompetitionRosterImportEntity precheckSingle(
       Long tenantId,
       Long eventId,
@@ -71,16 +113,15 @@ public class CompetitionRosterImportService {
       String mobile,
       String workType,
       String level) {
-    return validateAndPersist(tenantId, eventId, orgId, null,
-        List.of(new ParsedRow(employeeNo, name, idCardNo, mobile, workType, level, null, List.of())),
-        "SINGLE-");
+    return precheckSingle(tenantId, eventId, orgId, null, null, employeeNo, name, idCardNo,
+        mobile, workType, level);
   }
 
   public byte[] createTemplate() {
     try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-      Sheet sheet = workbook.createSheet("roster");
+      Sheet sheet = workbook.createSheet("名单导入");
       Row header = sheet.createRow(0);
-      String[] fields = {"employeeNo", "name", "idCardNo", "mobile", "workType", "level"};
+      String[] fields = {"员工编号", "姓名", "身份证号", "手机号", "工种", "等级"};
       for (int i = 0; i < fields.length; i++) {
         header.createCell(i).setCellValue(fields[i]);
         sheet.setColumnWidth(i, 20 * 256);
@@ -98,17 +139,23 @@ public class CompetitionRosterImportService {
       Long eventId,
       Long orgId,
       Long fileId,
+      Long eventWorkTypeId,
+      String selectedWorkTypeName,
       List<ParsedRow> rows,
       String batchPrefix) {
     if (rows == null || rows.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "名单不能为空");
+    }
+    if (selectedWorkTypeName != null && selectedWorkTypeName.trim().length() > 64) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "赛事工种名称长度不能超过64");
     }
     Map<String, Integer> employeeNoCounts = countValues(rows, ParsedRow::employeeNo);
     Map<String, Integer> idCardCounts = countValues(rows, ParsedRow::idCardNo);
     Map<String, Integer> mobileCounts = countValues(rows, ParsedRow::mobile);
 
     List<ParsedRow> validatedRows = rows.stream()
-        .map(row -> validateRow(row, employeeNoCounts, idCardCounts, mobileCounts))
+        .map(row -> validateRow(row, employeeNoCounts, idCardCounts, mobileCounts,
+            selectedWorkTypeName))
         .map(row -> resolvePlayer(row, tenantId))
         .toList();
     int invalidCount = (int) validatedRows.stream().filter(row -> !row.errors().isEmpty()).count();
@@ -117,6 +164,7 @@ public class CompetitionRosterImportService {
     batch.setTenantId(tenantId);
     batch.setEventId(eventId);
     batch.setOrgId(orgId);
+    batch.setEventWorkTypeId(eventWorkTypeId);
     batch.setBatchNo(batchPrefix + UUID.randomUUID().toString().replace("-", ""));
     batch.setSourceFileId(fileId);
     batch.setStatus(invalidCount == 0
@@ -136,7 +184,8 @@ public class CompetitionRosterImportService {
       item.setPlayerId(row.playerId());
       item.setEmployeeNo(row.employeeNo());
       item.setName(row.name());
-      item.setWorkType(row.workType());
+      item.setWorkType(selectedWorkTypeName == null || selectedWorkTypeName.isBlank()
+          ? row.workType() : selectedWorkTypeName);
       item.setLevel(row.level());
       item.setValidationStatus(row.errors().isEmpty()
           ? CompetitionRosterValidationStatus.VALID.getCode()
@@ -248,20 +297,21 @@ public class CompetitionRosterImportService {
     DataFormatter formatter = new DataFormatter();
     Map<String, Integer> indexes = new LinkedHashMap<>();
     for (int i = 0; i < header.getLastCellNum(); i++) {
-      String field = formatter.formatCellValue(header.getCell(i)).trim();
-      if (field.isBlank()) {
+      String headerText = formatter.formatCellValue(header.getCell(i)).trim();
+      if (headerText.isBlank()) {
         continue;
       }
-      if (!ALLOWED_FIELDS.contains(field)) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST, "名单包含不允许的字段: " + field);
+      String field = HEADER_ALIASES.get(headerText);
+      if (field == null || !ALLOWED_FIELDS.contains(field)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "名单包含不允许的字段: " + headerText);
       }
       if (indexes.put(field, i) != null) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST, "名单字段重复: " + field);
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "名单字段重复: " + headerText);
       }
     }
-    if (!indexes.keySet().equals(new HashSet<>(ALLOWED_FIELDS))) {
+    if (!indexes.keySet().containsAll(REQUIRED_FIELDS)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST,
-          "名单必须包含 employeeNo、name、idCardNo、mobile、workType、level 字段");
+          "名单必须包含：员工编号、姓名、身份证号、手机号");
     }
     return indexes;
   }
@@ -270,7 +320,8 @@ public class CompetitionRosterImportService {
       ParsedRow row,
       Map<String, Integer> employeeNoCounts,
       Map<String, Integer> idCardCounts,
-      Map<String, Integer> mobileCounts) {
+      Map<String, Integer> mobileCounts,
+      String selectedWorkTypeName) {
     List<String> errors = new ArrayList<>();
     if (isBlank(row.employeeNo())) {
       errors.add("employeeNo不能为空");
@@ -308,6 +359,11 @@ public class CompetitionRosterImportService {
     }
     if (row.workType() != null && row.workType().length() > 64) {
       errors.add("workType长度不能超过64");
+    }
+    if (!isBlank(selectedWorkTypeName) && !isBlank(row.workType())
+        && !selectedWorkTypeName.trim().equals(row.workType().trim())) {
+      errors.add("模板工种与所选赛事工种不一致：模板为“" + row.workType().trim()
+          + "”，所选为“" + selectedWorkTypeName.trim() + "”");
     }
     if (row.level() != null && row.level().length() > 32) {
       errors.add("level长度不能超过32");

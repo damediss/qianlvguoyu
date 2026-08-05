@@ -36,6 +36,7 @@ public final class CompetitionRosterImportConverter {
     target.setBatchId(source.getId());
     target.setEventId(source.getEventId());
     target.setOrgId(source.getOrgId());
+    target.setEventWorkTypeId(source.getEventWorkTypeId());
     target.setBatchNo(source.getBatchNo());
     target.setSourceFileId(source.getSourceFileId());
     target.setStatus(source.getStatus());
@@ -58,6 +59,7 @@ public final class CompetitionRosterImportConverter {
     target.setBatchNo(source.getBatchNo());
     target.setEventId(source.getEventId());
     target.setOrgId(source.getOrgId());
+    target.setEventWorkTypeId(source.getEventWorkTypeId());
     target.setOrgName(orgName);
     target.setSourceFileId(source.getSourceFileId());
     target.setStatus(source.getStatus());

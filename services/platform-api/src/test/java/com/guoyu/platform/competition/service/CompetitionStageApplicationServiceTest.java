@@ -47,13 +47,13 @@ class CompetitionStageApplicationServiceTest {
     when(eventService.getById(1L, 1001L)).thenReturn(event(1001L, "platform", null, "draft"));
     CompetitionStageEntity created = stage(5001L, 1001L);
     when(stageService.create(1L, 1001L, new CompetitionStageCreateReq(
-        "Preparation", "preparation", 1, null, null, null))).thenReturn(created);
+        "Preparation", "preparation", 1, null, null, null, null))).thenReturn(created);
 
     service.create(1001L, new CompetitionStageCreateReq(
-        "Preparation", "preparation", 1, null, null, null));
+        "Preparation", "preparation", 1, null, null, null, null));
 
     verify(stageService).create(1L, 1001L, new CompetitionStageCreateReq(
-        "Preparation", "preparation", 1, null, null, null));
+        "Preparation", "preparation", 1, null, null, null, null));
   }
 
   @Test
@@ -84,6 +84,35 @@ class CompetitionStageApplicationServiceTest {
   }
 
   @Test
+  void rejectsStageModificationAfterStagePlanIsConfirmed() {
+    authenticate(1000L, 1L, "admin", List.of("PLATFORM_ADMIN"));
+    CompetitionEventEntity event = event(1001L, "platform", null, "draft");
+    event.setStagePlanStatus("confirmed");
+    when(stageService.getById(1L, 5001L)).thenReturn(stage(5001L, 1001L));
+    when(eventService.getById(1L, 1001L)).thenReturn(event);
+
+    assertThatThrownBy(() -> service.update(5001L,
+        new CompetitionStageUpdateReq("Updated", "preparation", 2, null, null, null, null)))
+        .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)
+        .hasMessage("当前赛事的赛段编排已确认，不能继续修改");
+    verify(stageService, never()).update(any(), any(), any());
+  }
+
+  @Test
+  void confirmsSavedStagePlan() {
+    authenticate(1000L, 1L, "admin", List.of("PLATFORM_ADMIN"));
+    CompetitionEventEntity event = event(1001L, "platform", null, "draft");
+    when(eventService.getById(1L, 1001L)).thenReturn(event);
+    when(stageService.list(1L, 1001L)).thenReturn(List.of(stage(5001L, 1001L)));
+    CompetitionEventEntity confirmed = event(1001L, "platform", null, "draft");
+    confirmed.setStagePlanStatus("confirmed");
+    when(eventService.confirmStagePlan(1L, 1000L, 1001L)).thenReturn(confirmed);
+
+    assertThat(service.confirmStagePlan(1001L).getStagePlanStatus()).isEqualTo("confirmed");
+    verify(eventService).confirmStagePlan(1L, 1000L, 1001L);
+  }
+
+  @Test
   void rejectsEnterpriseEventOutsideOwnerOrganization() {
     authenticate(1000L, 1L, "enterprise-admin", List.of("ENTERPRISE_ADMIN"));
     when(eventService.getById(1L, 1001L)).thenReturn(event(1001L,
@@ -93,7 +122,7 @@ class CompetitionStageApplicationServiceTest {
     when(userMapper.selectOne(any())).thenReturn(user);
 
     assertThatThrownBy(() -> service.create(1001L,
-        new CompetitionStageCreateReq("Preparation", "preparation", 1, null, null, null)))
+        new CompetitionStageCreateReq("Preparation", "preparation", 1, null, null, null, null)))
         .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)
         .hasMessage("无权访问该赛事");
     verify(stageService, never()).create(any(), any(), any());
@@ -129,7 +158,7 @@ class CompetitionStageApplicationServiceTest {
     user.setOrgId(3001L);
     when(userMapper.selectOne(any())).thenReturn(user);
     CompetitionStageCreateReq req =
-        new CompetitionStageCreateReq("Theory", "theory", 1, null, null, null);
+        new CompetitionStageCreateReq("Theory", "theory", 1, null, null, null, null);
 
     assertThatThrownBy(() -> service.create(1001L, req))
         .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)

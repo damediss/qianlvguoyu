@@ -13,6 +13,9 @@ public class CompetitionEventEntity extends BaseEntity {
   private String scope;
   private Long ownerOrgId;
   private String status;
+  private String stagePlanStatus;
+  private Long stagePlanConfirmedBy;
+  private LocalDateTime stagePlanConfirmedAt;
   private Integer registrationAuditRequired;
   private LocalDateTime startAt;
   private LocalDateTime endAt;
@@ -30,6 +33,12 @@ public class CompetitionEventEntity extends BaseEntity {
   public void setOwnerOrgId(Long ownerOrgId) { this.ownerOrgId = ownerOrgId; }
   public String getStatus() { return status; }
   public void setStatus(String status) { this.status = status; }
+  public String getStagePlanStatus() { return stagePlanStatus; }
+  public void setStagePlanStatus(String stagePlanStatus) { this.stagePlanStatus = stagePlanStatus; }
+  public Long getStagePlanConfirmedBy() { return stagePlanConfirmedBy; }
+  public void setStagePlanConfirmedBy(Long stagePlanConfirmedBy) { this.stagePlanConfirmedBy = stagePlanConfirmedBy; }
+  public LocalDateTime getStagePlanConfirmedAt() { return stagePlanConfirmedAt; }
+  public void setStagePlanConfirmedAt(LocalDateTime stagePlanConfirmedAt) { this.stagePlanConfirmedAt = stagePlanConfirmedAt; }
   public Integer getRegistrationAuditRequired() { return registrationAuditRequired; }
   public void setRegistrationAuditRequired(Integer registrationAuditRequired) { this.registrationAuditRequired = registrationAuditRequired; }
   public LocalDateTime getStartAt() { return startAt; }

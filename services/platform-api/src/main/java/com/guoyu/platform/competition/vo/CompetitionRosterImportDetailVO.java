@@ -10,6 +10,7 @@ public class CompetitionRosterImportDetailVO {
   private Long eventId;
   private Long orgId;
   private String orgName;
+  private Long eventWorkTypeId;
   private String batchNo;
   private Long sourceFileId;
   private String status;
@@ -33,6 +34,8 @@ public class CompetitionRosterImportDetailVO {
   public void setOrgId(Long orgId) { this.orgId = orgId; }
   public String getOrgName() { return orgName; }
   public void setOrgName(String orgName) { this.orgName = orgName; }
+  public Long getEventWorkTypeId() { return eventWorkTypeId; }
+  public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
   public String getBatchNo() { return batchNo; }
   public void setBatchNo(String batchNo) { this.batchNo = batchNo; }
   public Long getSourceFileId() { return sourceFileId; }

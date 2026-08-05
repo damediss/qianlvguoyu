@@ -13,6 +13,7 @@ import com.guoyu.platform.competition.entity.CompetitionEventOrgEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventOrgStatus;
 import com.guoyu.platform.competition.enums.CompetitionEventScope;
 import com.guoyu.platform.competition.enums.CompetitionEventStatus;
+import com.guoyu.platform.competition.enums.CompetitionStagePlanStatus;
 import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventOrgMapper;
 import com.guoyu.platform.competition.vo.CompetitionEventPublishResultVO;
@@ -68,6 +69,7 @@ public class CompetitionEventService {
     entity.setScope(scope);
     entity.setOwnerOrgId(ownerOrgId);
     entity.setStatus(CompetitionEventStatus.DRAFT.getCode());
+    entity.setStagePlanStatus(CompetitionStagePlanStatus.DRAFT.getCode());
     entity.setRegistrationAuditRequired(
         req.registrationAuditRequired() == null ? 0 : req.registrationAuditRequired());
     entity.setDeleted(0);
@@ -140,6 +142,29 @@ public class CompetitionEventService {
     validateRegistrationAuditRequired(req.registrationAuditRequired());
     CompetitionEventConverter.applyUpdate(entity, req);
     mapper.updateById(entity);
+    return entity;
+  }
+
+  @Transactional
+  public CompetitionEventEntity confirmStagePlan(Long tenantId, Long userId, Long eventId) {
+    CompetitionEventEntity entity = mapper.selectForUpdate(tenantId, eventId);
+    if (entity == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "赛事不存在");
+    }
+    if (!CompetitionEventStatus.DRAFT.getCode().equals(entity.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "只有草稿状态赛事可以确认赛段编排");
+    }
+    if (CompetitionStagePlanStatus.CONFIRMED.getCode().equals(entity.getStagePlanStatus())) {
+      return entity;
+    }
+    entity.setStagePlanStatus(CompetitionStagePlanStatus.CONFIRMED.getCode());
+    entity.setStagePlanConfirmedBy(userId);
+    entity.setStagePlanConfirmedAt(LocalDateTime.now());
+    entity.setUpdatedBy(userId);
+    entity.setUpdatedAt(LocalDateTime.now());
+    if (mapper.updateById(entity) != 1) {
+      throw new BusinessException(ErrorCode.CONFLICT, "赛事赛段编排状态已发生变化，请刷新后重试");
+    }
     return entity;
   }
 

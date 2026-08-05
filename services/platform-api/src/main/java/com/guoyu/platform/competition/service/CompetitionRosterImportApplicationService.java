@@ -33,6 +33,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,6 +48,27 @@ public class CompetitionRosterImportApplicationService {
   private final FileApplicationService fileApplicationService;
   private final OrgMapper orgMapper;
   private final UserMapper userMapper;
+  private final CompetitionEventWorkTypeDomainService eventWorkTypeService;
+
+  @Autowired
+  public CompetitionRosterImportApplicationService(
+      CompetitionEventService eventService,
+      CompetitionEventOrgMapper eventOrgMapper,
+      CompetitionRosterImportService importService,
+      CompetitionRegistrationService registrationService,
+      FileApplicationService fileApplicationService,
+      OrgMapper orgMapper,
+      UserMapper userMapper,
+      CompetitionEventWorkTypeDomainService eventWorkTypeService) {
+    this.eventService = eventService;
+    this.eventOrgMapper = eventOrgMapper;
+    this.importService = importService;
+    this.registrationService = registrationService;
+    this.fileApplicationService = fileApplicationService;
+    this.orgMapper = orgMapper;
+    this.userMapper = userMapper;
+    this.eventWorkTypeService = eventWorkTypeService;
+  }
 
   public CompetitionRosterImportApplicationService(
       CompetitionEventService eventService,
@@ -56,24 +78,23 @@ public class CompetitionRosterImportApplicationService {
       FileApplicationService fileApplicationService,
       OrgMapper orgMapper,
       UserMapper userMapper) {
-    this.eventService = eventService;
-    this.eventOrgMapper = eventOrgMapper;
-    this.importService = importService;
-    this.registrationService = registrationService;
-    this.fileApplicationService = fileApplicationService;
-    this.orgMapper = orgMapper;
-    this.userMapper = userMapper;
+    this(eventService, eventOrgMapper, importService, registrationService, fileApplicationService,
+        orgMapper, userMapper, null);
   }
 
   @Transactional
   public CompetitionRosterImportDetailVO precheck(Long eventId, CompetitionRosterPrecheckReq req) {
     PlatformUserPrincipal principal = currentUser();
     CompetitionEventEntity event = assertCanImport(principal, eventId, req.orgId());
+    String workTypeName = req.eventWorkTypeId() == null ? null : requireActiveEventWorkType(
+        principal.getTenantId(), event.getId(), req.eventWorkTypeId());
     FileEntity file = fileApplicationService.getExistingFile(principal.getTenantId(), req.fileId());
     validateExcelFile(file);
     byte[] fileBytes = fileApplicationService.readFileBytesById(req.fileId());
-    CompetitionRosterImportEntity batch = importService.precheck(
-        principal.getTenantId(), event.getId(), req.orgId(), req.fileId(), fileBytes);
+    CompetitionRosterImportEntity batch = req.eventWorkTypeId() == null
+        ? importService.precheck(principal.getTenantId(), event.getId(), req.orgId(), req.fileId(), fileBytes)
+        : importService.precheck(principal.getTenantId(), event.getId(), req.orgId(), req.fileId(),
+            req.eventWorkTypeId(), workTypeName, fileBytes);
     return detail(principal.getTenantId(), batch, new CompetitionRosterImportQueryReq());
   }
 
@@ -82,9 +103,11 @@ public class CompetitionRosterImportApplicationService {
       Long eventId, CompetitionRosterSingleImportReq req) {
     PlatformUserPrincipal principal = currentUser();
     CompetitionEventEntity event = assertCanImport(principal, eventId, req.orgId());
+    String workTypeName = req.eventWorkTypeId() == null || eventWorkTypeService == null ? null
+        : requireActiveEventWorkType(principal.getTenantId(), event.getId(), req.eventWorkTypeId());
     CompetitionRosterImportEntity batch = importService.precheckSingle(
-        principal.getTenantId(), event.getId(), req.orgId(), req.employeeNo(), req.name(),
-        req.idCardNo(), req.mobile(), req.workType(), req.level());
+        principal.getTenantId(), event.getId(), req.orgId(), req.eventWorkTypeId(), workTypeName,
+        req.employeeNo(), req.name(), req.idCardNo(), req.mobile(), req.workType(), req.level());
     return detail(principal.getTenantId(), batch, new CompetitionRosterImportQueryReq());
   }
 
@@ -222,6 +245,14 @@ public class CompetitionRosterImportApplicationService {
         .ne(CompetitionEventOrgEntity::getStatus, CompetitionEventOrgStatus.CLOSED.getCode())
         .eq(CompetitionEventOrgEntity::getDeleted, 0));
     return relation != null;
+  }
+
+  private String requireActiveEventWorkType(Long tenantId, Long eventId, Long eventWorkTypeId) {
+    var workType = eventWorkTypeService.getById(tenantId, eventWorkTypeId);
+    if (!eventId.equals(workType.getEventId()) || !"active".equals(workType.getStatus())) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "赛事工种无效或不属于当前赛事");
+    }
+    return workType.getDisplayName();
   }
 
   private void ensureTenantOrganization(Long tenantId, Long orgId) {

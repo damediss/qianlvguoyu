@@ -1,0 +1,115 @@
+.stage-content-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.stage-content-panel--compact {
+  gap: 12px;
+}
+
+.stage-content-panel--compact .stage-content-panel__header,
+.stage-content-panel--compact .stage-content-panel__weight-head {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stage-content-panel--compact .stage-content-panel__header > .ant-space {
+  gap: 6px !important;
+}
+
+.stage-content-panel__header,
+.stage-content-panel__weight-head,
+.stage-content-panel__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.stage-content-panel__options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stage-content-panel--compact .stage-content-panel__options,
+.stage-content-panel--compact .stage-content-weight-list {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.stage-content-option {
+  min-height: 122px;
+  cursor: pointer;
+  transition: border-color .2s, box-shadow .2s;
+}
+
+.stage-content-panel--compact .stage-content-option {
+  min-height: auto;
+}
+
+.stage-content-option__topline,
+.stage-content-weight-row__label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.stage-content-option__topline {
+  margin-bottom: 10px;
+}
+
+.stage-content-option__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+}
+
+.stage-content-option__hint {
+  margin-top: 8px;
+  color: #ad6800;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.stage-content-weight-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stage-content-weight-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #e8edf3;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.stage-content-panel--compact .stage-content-weight-row {
+  padding: 10px;
+}
+
+.stage-content-weight-row--disabled {
+  background: #fafafa;
+}
+
+@media (max-width: 900px) {
+  .stage-content-panel__options,
+  .stage-content-weight-list {
+    grid-template-columns: 1fr;
+  }
+
+  .stage-content-panel__header,
+  .stage-content-panel__weight-head,
+  .stage-content-panel__actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

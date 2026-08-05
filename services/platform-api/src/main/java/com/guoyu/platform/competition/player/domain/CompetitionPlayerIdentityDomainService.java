@@ -130,6 +130,50 @@ public class CompetitionPlayerIdentityDomainService {
     return player;
   }
 
+  @Transactional
+  public CompetitionPlayerIdentityEntity updateSensitiveData(
+      Long tenantId, Long playerId, String idCardNo, String mobile) {
+    CompetitionPlayerIdentityEntity player = playerMapper.selectForUpdateById(playerId);
+    if (player == null || !Objects.equals(tenantId, player.getTenantId())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "选手身份不存在");
+    }
+    String normalizedIdCard = normalizeIdCard(idCardNo);
+    String normalizedMobile = normalizeMobile(mobile);
+    String idCardHash = crypto.lookupHash(normalizedIdCard);
+    String mobileHash = crypto.lookupHash(normalizedMobile);
+    List<CompetitionPlayerIdentityEntity> matches = playerMapper.selectForUpdateByIdentityHashes(
+        idCardHash, mobileHash);
+    if (matches != null) {
+      for (CompetitionPlayerIdentityEntity match : matches) {
+        if (!Objects.equals(match.getId(), playerId)) {
+          throw identityConflict();
+        }
+      }
+    }
+    player.setIdCardCiphertext(crypto.encrypt(normalizedIdCard));
+    player.setIdCardLookupHash(idCardHash);
+    player.setMobileCiphertext(crypto.encrypt(normalizedMobile));
+    player.setMobileLookupHash(mobileHash);
+    player.setCryptoKeyVersion(crypto.keyVersion());
+    try {
+      if (playerMapper.updateById(player) != 1) {
+        throw new BusinessException(ErrorCode.CONFLICT, "选手身份更新失败，请刷新后重试");
+      }
+    } catch (DuplicateKeyException ex) {
+      throw identityConflict();
+    }
+    return player;
+  }
+
+  @Transactional(readOnly = true)
+  public CompetitionPlayerIdentityEntity resolveExisting(Long tenantId, Long playerId) {
+    CompetitionPlayerIdentityEntity player = playerMapper.selectById(playerId);
+    if (player == null || !Objects.equals(tenantId, player.getTenantId())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "选手身份不存在");
+    }
+    return player;
+  }
+
   @Transactional(readOnly = true)
   public String assertMobileAvailable(Long playerId, String newMobile) {
     String normalizedMobile = normalizeMobile(newMobile);

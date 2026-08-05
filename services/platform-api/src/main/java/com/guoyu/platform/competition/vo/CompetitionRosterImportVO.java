@@ -10,6 +10,7 @@ public class CompetitionRosterImportVO {
   private Long eventId;
   private Long orgId;
   private String orgName;
+  private Long eventWorkTypeId;
   private Long sourceFileId;
   private String status;
   private Integer totalCount;
@@ -32,6 +33,8 @@ public class CompetitionRosterImportVO {
   public void setOrgId(Long orgId) { this.orgId = orgId; }
   public String getOrgName() { return orgName; }
   public void setOrgName(String orgName) { this.orgName = orgName; }
+  public Long getEventWorkTypeId() { return eventWorkTypeId; }
+  public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
   public Long getSourceFileId() { return sourceFileId; }
   public void setSourceFileId(Long sourceFileId) { this.sourceFileId = sourceFileId; }
   public String getStatus() { return status; }

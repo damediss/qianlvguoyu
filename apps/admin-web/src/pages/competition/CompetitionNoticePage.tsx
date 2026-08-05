@@ -54,9 +54,11 @@ function formatDate(value?: string | null) {
 export function CompetitionNoticePage({
   eventId,
   onNavigate,
+  embedded = false,
 }: {
   eventId: string;
   onNavigate: (path: string) => void;
+  embedded?: boolean;
 }) {
   const permissions = useAuthStore((state) => state.permissionCodes);
   const canView = permissions.includes('competition:notice:view');
@@ -170,8 +172,8 @@ export function CompetitionNoticePage({
     return <Result status="error" title="公告加载失败" extra={<Button onClick={() => noticesQuery.refetch()}>重新加载</Button>} />;
   }
 
-  return (
-    <CompetitionEventFrame event={eventQuery.data} activeSection="notices" onNavigate={onNavigate}>
+  const content = (
+    <>
       <Card bordered={false} className="competition-filter-card">
         <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
           <Space wrap>
@@ -241,6 +243,7 @@ export function CompetitionNoticePage({
         }}
         onSaved={() => queryClient.invalidateQueries({ queryKey: ['competition-notices', eventId] })}
       />
-    </CompetitionEventFrame>
+    </>
   );
+  return embedded ? content : <CompetitionEventFrame event={eventQuery.data} activeSection="notices" onNavigate={onNavigate}>{content}</CompetitionEventFrame>;
 }

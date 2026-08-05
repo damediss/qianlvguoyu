@@ -3,8 +3,11 @@ package com.guoyu.platform.competition.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -18,6 +21,8 @@ import com.guoyu.platform.competition.vo.CompetitionRosterImportDetailVO;
 import com.guoyu.platform.competition.vo.CompetitionRosterImportVO;
 import com.guoyu.platform.competition.vo.CompetitionRosterItemVO;
 import java.util.List;
+import java.nio.charset.StandardCharsets;
+import org.springframework.http.HttpHeaders;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -46,7 +51,7 @@ class CompetitionRosterImportControllerApiTest {
 
     mockMvc.perform(post("/competition/events/1001/roster-imports/precheck")
             .contentType(MediaType.APPLICATION_JSON)
-            .content("{\"fileId\":8001,\"orgId\":3001}"))
+            .content("{\"fileId\":8001,\"orgId\":3001,\"eventWorkTypeId\":5001}"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.code").value("0"))
         .andExpect(jsonPath("$.data.status").value("pending_confirm"))
@@ -91,6 +96,22 @@ class CompetitionRosterImportControllerApiTest {
         .andExpect(jsonPath("$.data.items[0].batchId").value(7001))
         .andExpect(jsonPath("$.data.items[0].batchNo").value("ROSTER-1"));
     verify(service).page(Mockito.eq(1001L), any(CompetitionRosterImportListQueryReq.class));
+  }
+
+  @Test
+  void downloadTemplateReturnsUtf8EncodedExcelAttachment() throws Exception {
+    byte[] template = "xlsx-content".getBytes(StandardCharsets.UTF_8);
+    when(service.createTemplate()).thenReturn(template);
+
+    mockMvc.perform(get("/competition/roster-import-template"))
+        .andExpect(status().isOk())
+        .andExpect(content().contentType(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION,
+            containsString("filename*=UTF-8''%E8%B5%9B%E4%BA%8B%E5%90%8D%E5%8D%95%E5%AF%BC%E5%85%A5%E6%A8%A1%E6%9D%BF.xlsx")))
+        .andExpect(content().bytes(template));
+
+    verify(service).createTemplate();
   }
 
   private CompetitionRosterImportDetailVO detail() {

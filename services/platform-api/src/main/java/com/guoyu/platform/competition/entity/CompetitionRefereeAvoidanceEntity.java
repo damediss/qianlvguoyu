@@ -10,6 +10,7 @@ public class CompetitionRefereeAvoidanceEntity extends BaseEntity {
   private Long eventId;
   private Long stageId;
   private Long eventWorkTypeId;
+  private Long eventWorkTypeLevelId;
   private Long refereeMemberId;
   private Long contestantMemberId;
   private String relationType;
@@ -25,6 +26,8 @@ public class CompetitionRefereeAvoidanceEntity extends BaseEntity {
   public void setStageId(Long stageId) { this.stageId = stageId; }
   public Long getEventWorkTypeId() { return eventWorkTypeId; }
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
+  public Long getEventWorkTypeLevelId() { return eventWorkTypeLevelId; }
+  public void setEventWorkTypeLevelId(Long eventWorkTypeLevelId) { this.eventWorkTypeLevelId = eventWorkTypeLevelId; }
   public Long getRefereeMemberId() { return refereeMemberId; }
   public void setRefereeMemberId(Long refereeMemberId) { this.refereeMemberId = refereeMemberId; }
   public Long getContestantMemberId() { return contestantMemberId; }

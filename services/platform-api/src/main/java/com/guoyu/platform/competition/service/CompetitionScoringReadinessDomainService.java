@@ -11,6 +11,7 @@ import com.guoyu.platform.competition.entity.CompetitionStageEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventMemberRole;
 import com.guoyu.platform.competition.enums.CompetitionEventStatus;
 import com.guoyu.platform.competition.enums.CompetitionScoreRuleStatus;
+import com.guoyu.platform.competition.enums.CompetitionStageStatus;
 import com.guoyu.platform.competition.mapper.CompetitionContestantProfileMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventMemberMapper;
@@ -72,6 +73,16 @@ public class CompetitionScoringReadinessDomainService {
   @Transactional(readOnly = true)
   public CompetitionScoringReadinessVO check(
       Long tenantId, Long eventId, Long stageId, Long eventWorkTypeId) {
+    return check(tenantId, eventId, stageId, eventWorkTypeId, null);
+  }
+
+  @Transactional(readOnly = true)
+  public CompetitionScoringReadinessVO check(
+      Long tenantId,
+      Long eventId,
+      Long stageId,
+      Long eventWorkTypeId,
+      Long eventWorkTypeLevelId) {
     List<CompetitionScoringReadinessCheckVO> checks = new ArrayList<>();
 
     CompetitionEventEntity event = findEvent(tenantId, eventId);
@@ -82,7 +93,7 @@ public class CompetitionScoringReadinessDomainService {
         eventReady ? "赛事已发布" : "赛事不存在或尚未发布"));
 
     CompetitionStageEntity stage = findStage(tenantId, eventId, stageId);
-    boolean stageReady = stage != null && "active".equals(stage.getStatus());
+    boolean stageReady = stage != null && isScoringStageReady(stage.getStatus());
     checks.add(check(
         "STAGE_MISSING", stageReady,
         stageReady ? "赛段有效" : "未指定当前赛事的有效赛段"));
@@ -97,7 +108,7 @@ public class CompetitionScoringReadinessDomainService {
 
     List<CompetitionScoreRuleEntity> publishedRules =
         stageReady && eventWorkTypeReady
-            ? findPublishedRules(tenantId, eventId, stageId, eventWorkTypeId)
+            ? findPublishedRules(tenantId, eventId, stageId, eventWorkTypeId, eventWorkTypeLevelId)
             : Collections.emptyList();
     boolean uniquePublishedRule = publishedRules.size() == 1;
     checks.add(check(
@@ -114,7 +125,7 @@ public class CompetitionScoringReadinessDomainService {
             : validRule ? "已发布评分规则配置有效" : "已发布评分规则模板或权重不合法"));
 
     CandidateChecks candidateChecks = eventWorkTypeReady
-        ? checkCandidates(tenantId, eventId, eventWorkTypeId)
+        ? checkCandidates(tenantId, eventId, stageId, eventWorkTypeId, eventWorkTypeLevelId)
         : CandidateChecks.notApplicable();
     checks.add(check(
         "CONTESTANT_WORK_TYPE_UNRESOLVED",
@@ -129,6 +140,7 @@ public class CompetitionScoringReadinessDomainService {
     result.setEventId(eventId);
     result.setStageId(stageId);
     result.setEventWorkTypeId(eventWorkTypeId);
+    result.setEventWorkTypeLevelId(eventWorkTypeLevelId);
     result.setChecks(checks);
     result.setReady(checks.stream().allMatch(CompetitionScoringReadinessCheckVO::passed));
     if (uniquePublishedRule && validRule) {
@@ -137,11 +149,21 @@ public class CompetitionScoringReadinessDomainService {
     return result;
   }
 
-  private CandidateChecks checkCandidates(Long tenantId, Long eventId, Long eventWorkTypeId) {
+  private CandidateChecks checkCandidates(
+      Long tenantId,
+      Long eventId,
+      Long stageId,
+      Long eventWorkTypeId,
+      Long eventWorkTypeLevelId) {
     List<CompetitionContestantProfileEntity> scopeProfiles = safeList(
         profileMapper.selectList(new LambdaQueryWrapper<CompetitionContestantProfileEntity>()
             .eq(CompetitionContestantProfileEntity::getTenantId, tenantId)
             .eq(CompetitionContestantProfileEntity::getEventWorkTypeId, eventWorkTypeId)
+            .eq(eventWorkTypeLevelId != null,
+                CompetitionContestantProfileEntity::getEventWorkTypeLevelId, eventWorkTypeLevelId)
+            .and(query -> query.isNull(CompetitionContestantProfileEntity::getCurrentStageId)
+                .or()
+                .eq(CompetitionContestantProfileEntity::getCurrentStageId, stageId))
             .eq(CompetitionContestantProfileEntity::getDeleted, 0)),
         "scope profiles", tenantId, eventId);
 
@@ -183,30 +205,55 @@ public class CompetitionScoringReadinessDomainService {
             .filter(profile -> profile.getRegistrationId() != null)
             .collect(Collectors.groupingBy(CompetitionContestantProfileEntity::getRegistrationId));
 
-    boolean unresolvedEligibleRegistration = eligibleRegistrations.stream()
-        .anyMatch(registration -> !hasResolvedProfile(
-            registration, profilesByMember, profilesByRegistration));
-    boolean unresolvedScopeProfile = scopeProfiles.stream().anyMatch(profile ->
-        profile.getEventWorkTypeId() == null
-            || !"matched".equals(profile.getWorkTypeMatchStatus()));
-    boolean workTypesResolved = !unresolvedEligibleRegistration && !unresolvedScopeProfile;
-
     Map<Long, CompetitionEventMemberEntity> membersById =
         findMembers(tenantId, memberIds).stream()
             .filter(member -> member.getId() != null)
             .collect(Collectors.toMap(
                 CompetitionEventMemberEntity::getId, Function.identity(), (left, right) -> left));
+    // competition_contestant_profile has no event_id of its own. Keep readiness
+    // anchored to the event member before evaluating the candidate flags, so a
+    // stale profile from another event cannot contaminate this scoring scope.
+    List<CompetitionContestantProfileEntity> eventScopeProfiles = scopeProfiles.stream()
+        .filter(profile -> {
+          CompetitionEventMemberEntity member = membersById.get(profile.getMemberId());
+          return member != null && Objects.equals(member.getEventId(), eventId);
+        })
+        .toList();
+    boolean unresolvedEligibleRegistration = eligibleRegistrations.stream()
+        .anyMatch(registration -> !hasResolvedProfile(
+            registration, profilesByMember, profilesByRegistration));
+    boolean unresolvedScopeProfile = eventScopeProfiles.stream().anyMatch(profile ->
+        profile.getEventWorkTypeId() == null
+            || !"matched".equals(profile.getWorkTypeMatchStatus()));
+    boolean workTypesResolved = !unresolvedEligibleRegistration && !unresolvedScopeProfile;
+
     Map<Long, CompetitionRegistrationEntity> registrationsById =
         findRegistrations(tenantId, registrationIds).stream()
             .filter(registration -> registration.getId() != null)
             .collect(Collectors.toMap(
                 CompetitionRegistrationEntity::getId, Function.identity(), (left, right) -> left));
 
-    boolean allScopeProfilesEligible = scopeProfiles.stream().allMatch(profile ->
+    boolean allScopeProfilesEligible = eventScopeProfiles.stream().allMatch(profile ->
         isEligibleCandidate(eventId, profile, membersById, registrationsById));
+    Set<Long> scopeMemberIds = eventScopeProfiles.stream()
+        .map(CompetitionContestantProfileEntity::getMemberId)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
+    Set<Long> scopeRegistrationIds = eventScopeProfiles.stream()
+        .map(CompetitionContestantProfileEntity::getRegistrationId)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
     boolean allEligibleRegistrationsStructured = eligibleRegistrations.stream().allMatch(
-        registration -> isEligibleRegistrationStructure(
-            eventId, registration, profilesByMember, profilesByRegistration, membersById));
+        registration -> {
+          boolean currentScope = scopeMemberIds.contains(registration.getMemberId())
+              || scopeRegistrationIds.contains(registration.getId());
+          if (!currentScope && hasResolvedProfile(
+              registration, profilesByMember, profilesByRegistration)) {
+            return true;
+          }
+          return isEligibleRegistrationStructure(
+              eventId, registration, profilesByMember, profilesByRegistration, membersById);
+        });
     boolean allCandidatesEligible =
         allScopeProfilesEligible && allEligibleRegistrationsStructured;
     return new CandidateChecks(
@@ -315,16 +362,31 @@ public class CompetitionScoringReadinessDomainService {
   }
 
   private List<CompetitionScoreRuleEntity> findPublishedRules(
-      Long tenantId, Long eventId, Long stageId, Long eventWorkTypeId) {
+      Long tenantId,
+      Long eventId,
+      Long stageId,
+      Long eventWorkTypeId,
+      Long eventWorkTypeLevelId) {
     return safeList(scoreRuleMapper.selectList(
         new LambdaQueryWrapper<CompetitionScoreRuleEntity>()
             .eq(CompetitionScoreRuleEntity::getTenantId, tenantId)
             .eq(CompetitionScoreRuleEntity::getEventId, eventId)
             .eq(CompetitionScoreRuleEntity::getStageId, stageId)
             .eq(CompetitionScoreRuleEntity::getEventWorkTypeId, eventWorkTypeId)
+            .eq(eventWorkTypeLevelId != null,
+                CompetitionScoreRuleEntity::getEventWorkTypeLevelId, eventWorkTypeLevelId)
             .eq(CompetitionScoreRuleEntity::getStatus, CompetitionScoreRuleStatus.PUBLISHED.getCode())
             .eq(CompetitionScoreRuleEntity::getDeleted, 0)),
         "published score rules", tenantId, eventId);
+  }
+
+  private boolean isScoringStageReady(String status) {
+    return "active".equals(status)
+        || CompetitionStageStatus.READY_LOCKED.getCode().equals(status)
+        || CompetitionStageStatus.IN_PROGRESS.getCode().equals(status)
+        || CompetitionStageStatus.CLOSED.getCode().equals(status)
+        || CompetitionStageStatus.SETTLED.getCode().equals(status)
+        || CompetitionStageStatus.RESULT_PUBLISHED.getCode().equals(status);
   }
 
   private List<CompetitionContestantProfileEntity> findRelatedProfiles(
