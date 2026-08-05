@@ -267,12 +267,21 @@ platform:
     dry-run: ${PLATFORM_SYNC_DRY_RUN:false}
     daily-reconcile-cron: "${PLATFORM_SYNC_DAILY_CRON:0 30 3 * * *}"
     php:
-      url: ${PHP_MYSQL_URL:jdbc:mysql://114.132.67.185:3308/gjjddb?connectTimeout=3000&socketTimeout=10000&useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true}
+      # 注意：URL 必须带 tinyInt1isBit=false——mysql-connector-j 默认把 TINYINT(1) 映射为 Boolean，
+      # 会丢失 level=2/3 的真实值（2026-08-04 权重解析因此全部归一化为空的线上事故）
+      url: ${PHP_MYSQL_URL:jdbc:mysql://114.132.67.185:3308/gjjddb?connectTimeout=3000&socketTimeout=10000&useSSL=false&tinyInt1isBit=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true}
       username: ${PHP_MYSQL_USERNAME:gjjddb}
       password: ${PHP_MYSQL_PASSWORD:q-#Z+=g7jgtbbJsJLjD8}
       max-active: ${PHP_MYSQL_MAX_ACTIVE:3}
       max-wait-ms: ${PHP_MYSQL_MAX_WAIT_MS:3000}
       query-timeout-seconds: ${PHP_MYSQL_QUERY_TIMEOUT:10}
+  # AI 同步学定时任务（与三表同步共用 PHP 数据源）
+  review-sync:
+    jobs-enabled: ${REVIEW_SYNC_JOBS_ENABLED:true}
+    daily-cron: "${REVIEW_SYNC_DAILY_CRON:0 0 4 * * *}"
+    weekly-cron: "${REVIEW_SYNC_WEEKLY_CRON:0 0 5 * * SUN}"
+    writeback-compensate-ms: ${REVIEW_SYNC_WRITEBACK_COMPENSATE_MS:300000}
+    writeback-compensate-initial-ms: ${REVIEW_SYNC_WRITEBACK_COMPENSATE_INITIAL_MS:60000}
 
 # Sa-Token
 sa-token:

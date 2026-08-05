@@ -3,3 +3,6 @@
 platform:
   sync:
     enabled: false
+  # 关闭 AI 同步学定时任务
+  review-sync:
+    jobs-enabled: false

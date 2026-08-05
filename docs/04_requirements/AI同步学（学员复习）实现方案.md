@@ -1,9 +1,11 @@
 # AI 同步学（学员复习）功能接口实现方案
 
-> 版本：v1.1　日期：2026-08-04
+> 版本：v1.3　日期：2026-08-04
 > 修订记录：
 > - v1.0（2026-08-03）：初版
 > - v1.1（2026-08-04）：① 新增 D5/D6 决策（权重以国标为锚、阶段1每日新题权重配比增强版）；② 新增 §5.7 权重数据来源与回退链（`exam_knowledge_rate type=3` 约定，type=1 为实操既有约定，配套《标准理论知识权重映射配置指南》）；③ §5.2/§5.3/§5.6 接入权重双轨与回退链；④ §7.8 新增 itemMastery + estimatedScore 加权预估得分；⑤ §12 分期改三层（AI 错题讲解 7.9 列为"一期可选增量"）；⑥ 新增 §10.5 量化验收标准、§10.6 上线 Checklist；⑦ 新增 §13 执行顺序与依赖（相对鉴权方案），原"开放问题"顺延为 §14
+> - v1.2（2026-08-04）：明确多模型共存时的选型机制——三条链路各按 model_code 解析（FAQ 转换=前端传、LLM 代理=外部传、AI 同步学=sys_dict `ai_review_model_code` 默认 `deepseek-review`），§4.6/§6/§10.6 同步补充
+> - v1.3（2026-08-04）：**一期开发完成并 E2E 冒烟通过**（计划 454/学员 608 真库实测：懒生成→物化→剥离答案→作答判分→错题卡→exam_type=5 回写→学情→组卷判卷全链路）。冒烟修复 5 个问题并沉淀为工程约束：①Flyway 版本号与他 workspace 撞车（新建迁移前必须查库，本次 006→007）；②**mysql-connector-j 把 TINYINT(1) 映射为 Boolean 导致 level 解析全空**（PHP 数据源 URL 必加 `tinyInt1isBit=false`，AGENTS.md 坑 #23）；③人工权重配置可挂任意层级（实测挂 L2），WeightResolver 统一归并 L1 祖先、完全错位时落题量兜底；④雪花 id 超 JS 安全整数，App 接口一律字符串下发（AGENTS.md 坑 #24）；⑤判分对齐 PHP trainsave 前端口径（错选 0 分/少选满分），其宽松性在模考空答多选时自动得分——见 §14 O7
 > 需求来源：`docs/osta-standards/AI同步学（学员复习）需求方案.txt`
 > 鉴权依据：`gjjd_appnext/docs/手机端调用SaaS鉴权方案.md`（v1.3，令牌透传）
 > 涉及项目：`qianlvguoyu_saas`（SaaS/platform-api，本期主体）、`gjjd_appnext`（手机端）、`gjjd_phalcon`（PHP，零改动）
@@ -213,7 +215,7 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 ### 4.6 复用与留痕
 
 - LLM 调用留痕：复用现有 `ai_generation_draft`（来源/模型/时间/操作人，AGENTS.md AI 规则），`biz_type='ai_review_encourage' / 'ai_review_explain' / 'ai_review_weekly'`。
-- 参数配置：一期用 `sys_dict`（`ai_review_daily_new_cap=120`、`ai_review_daily_total_cap=200`、`ai_review_mock_size=100`、`ai_review_default_days=20`、`ai_review_interrupt_gap=2`），不做管理界面。
+- 参数配置：一期用 `sys_dict`（`ai_review_daily_new_cap=120`、`ai_review_daily_total_cap=200`、`ai_review_mock_size=100`、`ai_review_default_days=20`、`ai_review_interrupt_gap=2`、`ai_review_model_code=deepseek-review`），不做管理界面。
 
 ### 4.7 PHP 库回写（exam_result，仅 INSERT）
 
@@ -323,7 +325,8 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 | 顽固错题讲解 | 学员在加星红牌题答错后点"AI 讲解" | 题干、选项、正确答案、解析、学员错答 | 通俗讲解+记忆锚点，≤200 字 | 直接展示官方 resolve 解析 |
 | 周学情报告 | 每周日清理日 job | 本周各知识点正确率、错题牌级分布、题量完成度 | 周报 + 下周建议 | 仅展示统计数据，无文字报告 |
 
-- 客户端：`FaqLlmClient`（复用），模型配置取 `exam_faq_model_config`（`model_code='deepseek-review'` 新配置一行）；
+- 客户端：`FaqLlmClient`（复用），模型配置取 `exam_faq_model_config`；
+- **模型选型机制（多模型共存时如何指定）**：`exam_faq_model_config` 多行共存、无"激活"概念，每行由 `(tenant_id, model_code)` 标识，统一经 `FaqModelConfigApplicationService.findByModelCode(tenantId, modelCode)`（含 `status='enabled'` 过滤）解析。三条链路各用各的 code 互不干扰：FAQ 转换 = 建批次时前端传 code；LLM 代理 = 外部请求传 code；**AI 同步学 = `sys_dict` 参数 `ai_review_model_code`（默认 `deepseek-review`，需在 `exam_faq_model_config` 新配一行同名 code）**。换模型两条路径：①改 `deepseek-review` 行的 `modelId`（如 pro↔flash）；②把 `ai_review_model_code` 指向另一行配置（如临时切备用模型）——均不改代码。配置行被禁用/删除 → `findByModelCode` 返回 null → 走降级文案，主链路不受影响；
 - 约束：调用前核对目标模型文档，不支持的字段一律不传（AGENTS.md 坑 #13）；超时 8s、重试 1 次；生成内容写 `ai_generation_draft` 留痕；
 - 全部异步执行（`ThreadPoolTaskExecutor` 具体类型 Bean + `@Qualifier`，AGENTS.md 坑 #14），主链路不等待。
 
@@ -451,8 +454,8 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 
 **配置与数据**
 - [ ] Flyway 迁移在目标库执行成功（执行前 `SELECT MAX(version) FROM flyway_schema_history` 核对版本）
-- [ ] `sys_dict` 5 参数已配：`ai_review_daily_new_cap=120` / `ai_review_daily_total_cap=200` / `ai_review_mock_size=100` / `ai_review_default_days=20` / `ai_review_interrupt_gap=2`
-- [ ] `exam_faq_model_config` 新增 `model_code='deepseek-review'`（baseUrl=`https://api.deepseek.com`、maxTokens=6000、thinking 留空）
+- [ ] `sys_dict` 6 参数已配：`ai_review_daily_new_cap=120` / `ai_review_daily_total_cap=200` / `ai_review_mock_size=100` / `ai_review_default_days=20` / `ai_review_interrupt_gap=2` / `ai_review_model_code=deepseek-review`
+- [ ] `exam_faq_model_config` 新增 `model_code='deepseek-review'`（baseUrl=`https://api.deepseek.com`、maxTokens=6000、thinking 留空；code 与 sys_dict `ai_review_model_code` 一致）
 - [ ] 国标权重已落库且验证 SQL 通过（`exam_knowledge_rate type=3`，每 course 一条、detail 合计=100，见《标准理论知识权重映射配置指南》§5/§6）
 - [ ] PHP 库账号权限复核：3 表 + 本功能 12 表 SELECT、`exam_result` **仅 INSERT**、限来源 IP（与鉴权方案合并一次开通）
 
@@ -534,3 +537,4 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 | O4 | exam_result.exam_type=5 与 PHP 端统计口径 | 新增枚举不影响旧逻辑；PHP 端如需在统计页展示"AI 同步练习"另行提需 |
 | O5 | 模考卷题量/及格线 | 100 题/卷、60% 及格，sys_dict 可调 |
 | O6 | 学员同时多个复习计划 | 各计划独立 plan，互不影响；App 按 examId 维度进入 |
+| O7 | 多选判分宽松性：错选 0 分、少选满分（PHP trainsave 前端口径）导致**模考空答多选也自动得分**（E2E 实测：100 题空答 97 道，其中 20 道多选自动判对）。练习场景与 PHP 一致无妨；模考场景偏宽松。备选：模考启用严格规则（未选满正确项不得分/按选项 score 字段部分给分，PHP 答案 JSON 已带 score 权重）。一期先与 PHP 对齐，待需求方拍板是否加 `ai_review_mock_strict_judge` 开关 |

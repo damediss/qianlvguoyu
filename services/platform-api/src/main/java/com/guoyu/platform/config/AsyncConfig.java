@@ -76,4 +76,22 @@ public class AsyncConfig {
     executor.initialize();
     return executor;
   }
+
+  /**
+   * AI 同步学异步任务池（exam_result 回写、鼓励语生成）。
+   * AbortPolicy：队列满时拒绝，由调用方捕获转补偿 job（AGENTS.md 坑 #12/#14）。
+   */
+  @Bean(name = "reviewSyncExecutor")
+  public ThreadPoolTaskExecutor reviewSyncExecutor() {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(2);
+    executor.setMaxPoolSize(4);
+    executor.setQueueCapacity(200);
+    executor.setThreadNamePrefix("review-sync-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(30);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
 }
