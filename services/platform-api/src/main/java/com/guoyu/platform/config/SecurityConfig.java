@@ -2,7 +2,6 @@ package com.guoyu.platform.config;
 
 import lombok.extern.slf4j.Slf4j;
 
-import cn.dev33.satoken.stp.StpLogic;
 import com.guoyu.platform.common.filter.TenantContextFilter;
 import com.guoyu.platform.security.RestAccessDeniedHandler;
 import com.guoyu.platform.security.RestAuthenticationEntryPoint;
@@ -13,7 +12,6 @@ import com.guoyu.platform.file.config.FileStorageProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -123,18 +121,6 @@ public class SecurityConfig {
         .addFilterBefore(competitionPlayerTokenBridgeFilter, AppTokenAuthFilter.class)
         .addFilterBefore(tenantContextFilter, CompetitionPlayerTokenBridgeFilter.class);
     return http.build();
-  }
-
-  /**
-   * Sa-Token 默认 StpLogic（login type = login）。
-   * 项目中另有 competitionExamStpLogic / competitionPlayerStpLogic 两个自定义 StpLogic，
-   * 必须存在名为 stpLogic 的默认 bean，且编译保留参数名，否则 SaBeanInject.setStpLogic
-   * 按类型注入会因候选 bean 过多而启动失败。
-   */
-  @Bean
-  @Primary
-  public StpLogic stpLogic() {
-    return new StpLogic("login");
   }
 
   /**
