@@ -323,6 +323,9 @@ public class ReviewPlanApplicationService {
     }
     Map<Long, PhpQuestionDetail> details = phpQuery.loadQuestionDetails(new ArrayList<>(scoreByQid.keySet()));
 
+    // O7：模考多选严格判分开关（错选 0 分、少选按选项 score 部分给分）；练习轮仍与 PHP 宽松口径一致
+    boolean strictJudge = dictInt("ai_review_mock_strict_judge", 1, tenantId) == 1;
+
     AiReviewPlanDayEntity todayDay = findDay(plan.getId(), plan.getCurrentDayIndex());
     BigDecimal score = BigDecimal.ZERO;
     int correctCount = 0;
@@ -335,32 +338,53 @@ public class ReviewPlanApplicationService {
       }
       String userAnswer = userAnswerByQid.getOrDefault(item.getQuestionId(), "");
       List<AnswerJudgeDomainService.AnswerOption> options = parseOptions(detail.answerJson());
-      AnswerJudgeDomainService.JudgeResult judged = AnswerJudgeDomainService.judge(
-          detail.type(), options, userAnswer, parseUserMultiAnswer(userAnswer));
-      if (judged.correct()) {
-        score = score.add(item.getScore() != null ? item.getScore() : BigDecimal.ZERO);
-        correctCount++;
+      AnswerJudgeDomainService.JudgeResult judged;
+      if (strictJudge && "multi".equals(detail.type())) {
+        judged = AnswerJudgeDomainService.judgeStrictMulti(options, parseUserMultiAnswer(userAnswer),
+            item.getScore());
       } else {
+        judged = AnswerJudgeDomainService.judge(detail.type(), options, userAnswer,
+            parseUserMultiAnswer(userAnswer));
+      }
+      // 实得分：严格多选判分给 earnedScore；其余 对=题分/错=0
+      BigDecimal earned;
+      if (judged.earnedScore() != null) {
+        earned = judged.earnedScore();
+      } else {
+        earned = judged.correct() ? (item.getScore() != null ? item.getScore() : BigDecimal.ZERO)
+            : BigDecimal.ZERO;
+      }
+      if (judged.correct()) {
+        correctCount++;
+      }
+      score = score.add(earned);
+      if (!judged.correct()) {
         Map<String, Object> wrong = new LinkedHashMap<>();
         wrong.put("questionId", item.getQuestionId());
         wrong.put("correctAnswer", judged.correctAnswerText());
         wrong.put("resolve", detail.resolve());
+        if (earned.compareTo(BigDecimal.ZERO) > 0) {
+          wrong.put("partialScore", earned); // 少选部分分（展示用）
+        }
         wrongList.add(wrong);
       }
-      // 写作答（幂等：同卷同题跳过）
+      // 写作答（幂等键：计划+题+卷——同卷重复提交跳过，跨卷重答是合法新尝试）
       AiReviewAnswerEntity existing = answerMapper.selectOne(new LambdaQueryWrapper<AiReviewAnswerEntity>()
           .eq(AiReviewAnswerEntity::getPlanId, plan.getId())
           .eq(AiReviewAnswerEntity::getQuestionId, item.getQuestionId())
           .eq(AiReviewAnswerEntity::getRoundType, "mock")
+          .eq(AiReviewAnswerEntity::getMockPaperId, mockPaperId)
           .last("LIMIT 1"));
       if (existing == null) {
         AiReviewAnswerEntity answer = new AiReviewAnswerEntity();
         answer.setPlanId(plan.getId());
         answer.setDayId(todayDay != null ? todayDay.getId() : null);
+        answer.setMockPaperId(mockPaperId);
         answer.setPlatformUserId(platformUserId);
         answer.setExamPlanId(examId);
         answer.setQuestionId(item.getQuestionId());
         answer.setQuestionScore(item.getScore());
+        answer.setEarnedScore(earned);
         answer.setKnowledgeId(detail.knowledgeId());
         answer.setQuestionType(detail.type());
         answer.setRoundType("mock");
@@ -1269,12 +1293,29 @@ public class ReviewPlanApplicationService {
       for (Map<String, Object> item : raw) {
         options.add(new AnswerJudgeDomainService.AnswerOption(
             item.get("content") != null ? String.valueOf(item.get("content")) : "",
-            Boolean.TRUE.equals(item.get("isCorrect")) || "true".equals(String.valueOf(item.get("isCorrect")))));
+            Boolean.TRUE.equals(item.get("isCorrect")) || "true".equals(String.valueOf(item.get("isCorrect"))),
+            parseOptionScore(item.get("score"))));
       }
     } catch (Exception e) {
       log.warn("[AI复习] 答案 JSON 解析失败：{}", e.getMessage());
     }
     return options;
+  }
+
+  /** 选项 score 兼容解析：PHP 数据有数值/字符串两种形态，非数值按 null（该题回退少选不得分） */
+  private static java.math.BigDecimal parseOptionScore(Object score) {
+    if (score == null) {
+      return null;
+    }
+    try {
+      String text = String.valueOf(score).trim();
+      if (text.isEmpty()) {
+        return null;
+      }
+      return new java.math.BigDecimal(text);
+    } catch (Exception e) {
+      return null;
+    }
   }
 
   /** 剥离答案标记：只留 content 列表（§3.4 防抓包背答案） */

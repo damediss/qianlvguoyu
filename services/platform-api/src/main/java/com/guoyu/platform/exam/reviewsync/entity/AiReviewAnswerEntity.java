@@ -15,6 +15,8 @@ public class AiReviewAnswerEntity extends BaseEntity {
   private Long planId;
   /** 每日任务 id（模考可空） */
   private Long dayId;
+  /** 模考卷 id（round_type=mock 时，作答幂等键用） */
+  private Long mockPaperId;
   private Long platformUserId;
   /** 冗余：train_exam_list.id（回写 PHP exam_result.exam_plan_id 用） */
   private Long examPlanId;
@@ -22,6 +24,8 @@ public class AiReviewAnswerEntity extends BaseEntity {
   private Long questionId;
   /** 冗余：题目分值（回写 get_score 用） */
   private java.math.BigDecimal questionScore;
+  /** 实得分（严格判分部分分；空 = 按 is_correct 推导） */
+  private java.math.BigDecimal earnedScore;
   private Long knowledgeId;
   /** single/multi/judge/... */
   private String questionType;

@@ -20,12 +20,20 @@ public final class AnswerJudgeDomainService {
   private AnswerJudgeDomainService() {
   }
 
-  /** 答案选项（exam_exam_detail.answer JSON 元素） */
-  public record AnswerOption(String content, boolean correct) {
+  /** 答案选项（exam_exam_detail.answer JSON 元素；score 为该正确选项的分值，PHP 数据有字符串形态） */
+  public record AnswerOption(String content, boolean correct, java.math.BigDecimal score) {
+
+    public AnswerOption(String content, boolean correct) {
+      this(content, correct, null);
+    }
   }
 
   /** 判分结果 */
-  public record JudgeResult(boolean correct, String correctAnswerText) {
+  public record JudgeResult(boolean correct, String correctAnswerText, java.math.BigDecimal earnedScore) {
+
+    public JudgeResult(boolean correct, String correctAnswerText) {
+      this(correct, correctAnswerText, null);
+    }
   }
 
   /**
@@ -56,6 +64,56 @@ public final class AnswerJudgeDomainService {
     }
     boolean correct = correctContent != null && correctContent.equals(userSingle);
     return new JudgeResult(correct, correctText(options));
+  }
+
+  /**
+   * 模考严格多选判分（O7，sys_dict ai_review_mock_strict_judge=1 时启用）：
+   * <ul>
+   *   <li>错选（选中任一 !isCorrect 选项）→ 0 分、计错；</li>
+   *   <li>全选对（选齐全部正确项且无错选）→ 满分、计对；</li>
+   *   <li>少选（未错选但未选齐）→ 部分分 = Σ选中正确项的 score、计错（进错题本）；
+   *       若该题选项 score 数据不可用（缺失/非数值/全为 0），回退"少选不得分"。</li>
+   * </ul>
+   */
+  public static JudgeResult judgeStrictMulti(List<AnswerOption> options, List<String> userMulti,
+      java.math.BigDecimal questionScore) {
+    List<String> selected = userMulti != null ? userMulti : List.of();
+    // 错选即 0 分
+    for (AnswerOption option : options) {
+      if (!option.correct() && selected.contains(option.content())) {
+        return new JudgeResult(false, correctText(options), java.math.BigDecimal.ZERO);
+      }
+    }
+    // 统计正确项覆盖与部分分
+    int correctTotal = 0;
+    int correctHit = 0;
+    java.math.BigDecimal earned = java.math.BigDecimal.ZERO;
+    boolean scoreDataUsable = true;
+    for (AnswerOption option : options) {
+      if (!option.correct()) {
+        continue;
+      }
+      correctTotal++;
+      if (option.score() == null) {
+        scoreDataUsable = false;
+      }
+      if (selected.contains(option.content())) {
+        correctHit++;
+        if (option.score() != null) {
+          earned = earned.add(option.score());
+        }
+      }
+    }
+    if (correctHit == correctTotal && correctTotal > 0) {
+      // 全对：按题分给满分（不依赖选项 score 数据质量）
+      return new JudgeResult(true, correctText(options),
+          questionScore != null ? questionScore : earned);
+    }
+    // 少选：选项 score 不可用（缺失/非数值/全 0）→ 少选不得分
+    if (!scoreDataUsable || earned.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+      return new JudgeResult(false, correctText(options), java.math.BigDecimal.ZERO);
+    }
+    return new JudgeResult(false, correctText(options), earned);
   }
 
   private static String correctText(List<AnswerOption> options) {

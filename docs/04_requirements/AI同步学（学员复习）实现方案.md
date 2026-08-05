@@ -6,6 +6,7 @@
 > - v1.1（2026-08-04）：① 新增 D5/D6 决策（权重以国标为锚、阶段1每日新题权重配比增强版）；② 新增 §5.7 权重数据来源与回退链（`exam_knowledge_rate type=3` 约定，type=1 为实操既有约定，配套《标准理论知识权重映射配置指南》）；③ §5.2/§5.3/§5.6 接入权重双轨与回退链；④ §7.8 新增 itemMastery + estimatedScore 加权预估得分；⑤ §12 分期改三层（AI 错题讲解 7.9 列为"一期可选增量"）；⑥ 新增 §10.5 量化验收标准、§10.6 上线 Checklist；⑦ 新增 §13 执行顺序与依赖（相对鉴权方案），原"开放问题"顺延为 §14
 > - v1.2（2026-08-04）：明确多模型共存时的选型机制——三条链路各按 model_code 解析（FAQ 转换=前端传、LLM 代理=外部传、AI 同步学=sys_dict `ai_review_model_code` 默认 `deepseek-review`），§4.6/§6/§10.6 同步补充
 > - v1.3（2026-08-04）：**一期开发完成并 E2E 冒烟通过**（计划 454/学员 608 真库实测：懒生成→物化→剥离答案→作答判分→错题卡→exam_type=5 回写→学情→组卷判卷全链路）。冒烟修复 5 个问题并沉淀为工程约束：①Flyway 版本号与他 workspace 撞车（新建迁移前必须查库，本次 006→007）；②**mysql-connector-j 把 TINYINT(1) 映射为 Boolean 导致 level 解析全空**（PHP 数据源 URL 必加 `tinyInt1isBit=false`，AGENTS.md 坑 #23）；③人工权重配置可挂任意层级（实测挂 L2），WeightResolver 统一归并 L1 祖先、完全错位时落题量兜底；④雪花 id 超 JS 安全整数，App 接口一律字符串下发（AGENTS.md 坑 #24）；⑤判分对齐 PHP trainsave 前端口径（错选 0 分/少选满分），其宽松性在模考空答多选时自动得分——见 §14 O7
+> - v1.4（2026-08-05）：**O7 拍板并实施**——模考多选严格判分开关 `ai_review_mock_strict_judge`（默认 1）：错选 0 分、少选按选项 score 部分给分、计错进错题本；选项 score 脏数据回退"少选不得分"；练习轮保持 PHP 宽松口径不变。新增 `ai_review_answer.earned_score/mock_paper_id` 列（V20260805_001），回写 get_score 按实得分；E2E 实测：少选 1 项得 0.2 部分分、空答多选不再白送分、PHP 回写 get_score=0.2 ✓
 > 需求来源：`docs/osta-standards/AI同步学（学员复习）需求方案.txt`
 > 鉴权依据：`gjjd_appnext/docs/手机端调用SaaS鉴权方案.md`（v1.3，令牌透传）
 > 涉及项目：`qianlvguoyu_saas`（SaaS/platform-api，本期主体）、`gjjd_appnext`（手机端）、`gjjd_phalcon`（PHP，零改动）
@@ -537,4 +538,4 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 | O4 | exam_result.exam_type=5 与 PHP 端统计口径 | 新增枚举不影响旧逻辑；PHP 端如需在统计页展示"AI 同步练习"另行提需 |
 | O5 | 模考卷题量/及格线 | 100 题/卷、60% 及格，sys_dict 可调 |
 | O6 | 学员同时多个复习计划 | 各计划独立 plan，互不影响；App 按 examId 维度进入 |
-| O7 | 多选判分宽松性：错选 0 分、少选满分（PHP trainsave 前端口径）导致**模考空答多选也自动得分**（E2E 实测：100 题空答 97 道，其中 20 道多选自动判对）。练习场景与 PHP 一致无妨；模考场景偏宽松。备选：模考启用严格规则（未选满正确项不得分/按选项 score 字段部分给分，PHP 答案 JSON 已带 score 权重）。一期先与 PHP 对齐，待需求方拍板是否加 `ai_review_mock_strict_judge` 开关 |
+| O7 | 多选判分宽松性（PHP trainsave 口径：错选 0 分、少选满分） | **已拍板并实施（2026-08-05，v1.4）**：模考启用严格规则——`ai_review_mock_strict_judge=1`（sys_dict，默认开）：错选 0 分；少选按答案选项 `score` 字段部分给分（实测 PHP 数据 99.99% 多选带分值，语义为绝对分值）；少选计错进错题本；选项 score 脏数据（缺失/非数值/全 0）回退"少选不得分"。练习轮（new/review）保持 PHP 宽松口径不变，避免与 PHP 侧既有统计口径分叉。回写 `exam_result.get_score` 按实得分（earned_score） |

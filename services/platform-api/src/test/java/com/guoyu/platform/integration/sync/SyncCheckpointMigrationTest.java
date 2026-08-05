@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 class SyncCheckpointMigrationTest {
 
   private static final Path MIGRATION = Path.of(
-      "src/main/resources/db/migration/V20260804_003__create_sync_checkpoint.sql");
+      "src/main/resources/db/migration/V20260805_002__create_sync_checkpoint.sql");
 
   @Test
   void migrationCreatesSyncCheckpointTable() throws IOException {

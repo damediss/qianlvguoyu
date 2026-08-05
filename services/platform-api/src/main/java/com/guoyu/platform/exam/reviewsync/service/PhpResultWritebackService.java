@@ -68,7 +68,7 @@ public class PhpResultWritebackService {
           answer.getQuestionId(),
           answer.getPlatformUserId(),
           answer.getUserAnswer(),
-          answer.getIsCorrect() != null && answer.getIsCorrect() == 1 ? scoreOf(answer) : BigDecimal.ZERO);
+          getScoreOf(answer));
       update.setPhpSynced(1);
       update.setPhpSyncTime(LocalDateTime.now());
       answerMapper.updateById(update);
@@ -109,7 +109,12 @@ public class PhpResultWritebackService {
     answerMapper.updateById(update);
   }
 
-  private static BigDecimal scoreOf(AiReviewAnswerEntity answer) {
-    return answer.getQuestionScore() != null ? answer.getQuestionScore() : BigDecimal.ZERO;
+  /** 回写 get_score 口径：优先实得分（严格判分部分分）；无实得分则 对=题分/错=0 */
+  private static BigDecimal getScoreOf(AiReviewAnswerEntity answer) {
+    if (answer.getEarnedScore() != null) {
+      return answer.getEarnedScore();
+    }
+    return answer.getIsCorrect() != null && answer.getIsCorrect() == 1
+        && answer.getQuestionScore() != null ? answer.getQuestionScore() : BigDecimal.ZERO;
   }
 }
