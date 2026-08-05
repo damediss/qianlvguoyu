@@ -468,6 +468,35 @@ export function TrainingClassDivisionPage() {
     onError: (e: Error) => message.error(e.message || '提交失败'),
   });
 
+  const syncPlatformUsersMu = useMutation({
+    mutationFn: () => {
+      const pack = packResultRef.current;
+      if (!pack) throw new Error('无方案');
+      return trainApi.syncDivisionPackPlatformUsers(pack.taskId);
+    },
+    onSuccess: (res) => {
+      const sync = res.platformUserSync;
+      message.success(
+        `补开完成：新建 ${sync.created}，复用 ${sync.reused}，更新 ${sync.updated}，跳过 ${sync.skipped}`
+        + (sync.created > 0 ? '；新建默认密码 123123' : '')
+        + (sync.warnings?.length ? `；告警 ${sync.warnings.length} 条` : ''),
+      );
+      if (sync.warnings?.length) {
+        Modal.warning({
+          title: '部分学员未开账号',
+          content: (
+            <div style={{ maxHeight: 280, overflow: 'auto' }}>
+              {sync.warnings.map((w, i) => (
+                <div key={`${w.idCard}-${i}`}>{w.name || '-'}：{w.reason}</div>
+              ))}
+            </div>
+          ),
+        });
+      }
+    },
+    onError: (e: Error) => message.error(e.message || '补开失败'),
+  });
+
   const addPersonMu = useMutation({
     mutationFn: async (payload: DivisionAddPersonReq) => {
       const pack = packResultRef.current;
@@ -1115,8 +1144,8 @@ export function TrainingClassDivisionPage() {
               style={{ marginBottom: 16 }}
               message="企业已通过，培训班级已创建"
               description={packResult.materialized
-                ? `已建 ${packResult.materialized.classCount} 班 / ${packResult.materialized.peopleCount} 人`
-                : undefined}
+                ? `已建 ${packResult.materialized.classCount} 班 / ${packResult.materialized.peopleCount} 人。若学员无法登录 App，可点击「补开 App 账号」。`
+                : '若学员无法登录 App，可点击「补开 App 账号」。'}
             />
           )}
           {editable && (
@@ -1371,6 +1400,12 @@ export function TrainingClassDivisionPage() {
             {packResult.status === 'materialized' && (
               <>
                 <Button type="primary" onClick={() => navigateTo('train_people-list')}>去班级人员</Button>
+                <Button
+                  loading={syncPlatformUsersMu.isPending}
+                  onClick={() => syncPlatformUsersMu.mutate()}
+                >
+                  补开 App 账号
+                </Button>
                 <Button onClick={() => navigateTo('company_plan_review')}>去企业分班确认</Button>
               </>
             )}

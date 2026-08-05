@@ -14,6 +14,10 @@ public class AppExamUserAnswerLogEntity {
 
   private Long userId;
   private Long tenantId;
+  private Long classId;
+  private Long peopleId;
+  private Integer courseId;
+  private java.time.LocalDate bizDate;
   private Integer questionId;
   private Integer knowledgeId;
   private String questionType;
@@ -30,6 +34,14 @@ public class AppExamUserAnswerLogEntity {
   public void setUserId(Long userId) { this.userId = userId; }
   public Long getTenantId() { return tenantId; }
   public void setTenantId(Long tenantId) { this.tenantId = tenantId; }
+  public Long getClassId() { return classId; }
+  public void setClassId(Long classId) { this.classId = classId; }
+  public Long getPeopleId() { return peopleId; }
+  public void setPeopleId(Long peopleId) { this.peopleId = peopleId; }
+  public Integer getCourseId() { return courseId; }
+  public void setCourseId(Integer courseId) { this.courseId = courseId; }
+  public java.time.LocalDate getBizDate() { return bizDate; }
+  public void setBizDate(java.time.LocalDate bizDate) { this.bizDate = bizDate; }
   public Integer getQuestionId() { return questionId; }
   public void setQuestionId(Integer questionId) { this.questionId = questionId; }
   public Integer getKnowledgeId() { return knowledgeId; }

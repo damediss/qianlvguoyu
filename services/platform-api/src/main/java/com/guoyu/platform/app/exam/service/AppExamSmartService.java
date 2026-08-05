@@ -12,14 +12,25 @@ import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
+import com.guoyu.platform.trainingdepartment.entity.TrainClassPracticeCourseEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainClassPracticeKnowledgeEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainClassPracticeScopeEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
+import com.guoyu.platform.trainingdepartment.mapper.TrainClassPracticeCourseMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainClassPracticeKnowledgeMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainClassPracticeScopeMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
@@ -49,15 +60,27 @@ public class AppExamSmartService {
   private final ExamKnowledgeStructureMapper knowledgeMapper;
   private final AppExamMockPaperMapper mockPaperMapper;
   private final AppExamUserAnswerLogMapper answerLogMapper;
+  private final TrainPeopleListMapper peopleListMapper;
+  private final TrainClassPracticeScopeMapper practiceScopeMapper;
+  private final TrainClassPracticeCourseMapper practiceCourseMapper;
+  private final TrainClassPracticeKnowledgeMapper practiceKnowledgeMapper;
 
   public AppExamSmartService(ExamExamDetailMapper examDetailMapper,
                              ExamKnowledgeStructureMapper knowledgeMapper,
                              AppExamMockPaperMapper mockPaperMapper,
-                             AppExamUserAnswerLogMapper answerLogMapper) {
+                             AppExamUserAnswerLogMapper answerLogMapper,
+                             TrainPeopleListMapper peopleListMapper,
+                             TrainClassPracticeScopeMapper practiceScopeMapper,
+                             TrainClassPracticeCourseMapper practiceCourseMapper,
+                             TrainClassPracticeKnowledgeMapper practiceKnowledgeMapper) {
     this.examDetailMapper = examDetailMapper;
     this.knowledgeMapper = knowledgeMapper;
     this.mockPaperMapper = mockPaperMapper;
     this.answerLogMapper = answerLogMapper;
+    this.peopleListMapper = peopleListMapper;
+    this.practiceScopeMapper = practiceScopeMapper;
+    this.practiceCourseMapper = practiceCourseMapper;
+    this.practiceKnowledgeMapper = practiceKnowledgeMapper;
   }
 
   // ============================================================
@@ -66,15 +89,14 @@ public class AppExamSmartService {
   public Map<String, Object> generatePaper(Map<String, Object> body) {
     PlatformUserPrincipal user = requireLogin();
     Long tenantId = user.getTenantId();
-    Long userId = user.getUserId();
 
     Integer courseId = intVal(body, "courseId", null);
     Integer total = intVal(body, "total", DEFAULT_QUESTION_COUNT);
     Integer timeLimit = intVal(body, "timeLimit", DEFAULT_TIME_LIMIT_MIN);
     Integer difficultyMax = intVal(body, "difficultyMax", 5);
     String title = strVal(body, "title", "智能组卷");
+    PracticeContext ctx = resolvePracticeContext(body, user);
 
-    // 1) 抽题候选：按课程/考点过滤
     LambdaQueryWrapper<ExamExamDetailEntity> q = new LambdaQueryWrapper<ExamExamDetailEntity>()
         .eq(ExamExamDetailEntity::getTenantId, tenantId.intValue())
         .eq(ExamExamDetailEntity::getDeleted, 0)
@@ -84,17 +106,16 @@ public class AppExamSmartService {
       q.eq(ExamExamDetailEntity::getExamId, courseId);
     }
     List<ExamExamDetailEntity> pool = examDetailMapper.selectList(q);
+    pool = applyPracticeScopeFilter(pool, ctx);
     if (pool.isEmpty()) {
       throw new AppSmsException(-1, "题库为空，无法组卷");
     }
 
-    // 2) 按考点分组
     Map<Integer, List<ExamExamDetailEntity>> byKnowledge = pool.stream()
         .filter(e -> e.getKnowledgeId() != null)
         .collect(Collectors.groupingBy(ExamExamDetailEntity::getKnowledgeId));
     List<Integer> knowledgeIds = new ArrayList<>(byKnowledge.keySet());
 
-    // 3) 分层抽样：按考点数量平均分配题量，剩余随机补足
     List<ExamExamDetailEntity> picked = new ArrayList<>();
     if (!knowledgeIds.isEmpty() && total > 0) {
       int perKnowledge = Math.max(1, total / knowledgeIds.size());
@@ -104,7 +125,6 @@ public class AppExamSmartService {
         picked.addAll(ks.subList(0, Math.min(perKnowledge, ks.size())));
       }
     }
-    // 不归属考点的题目作随机补充池
     List<ExamExamDetailEntity> orphan = pool.stream()
         .filter(e -> e.getKnowledgeId() == null).collect(Collectors.toList());
     Collections.shuffle(orphan);
@@ -112,7 +132,6 @@ public class AppExamSmartService {
     while (picked.size() < total && i < orphan.size()) {
       picked.add(orphan.get(i++));
     }
-    // 仍不足则从已选池重复随机（保证题量）
     while (picked.size() < total && picked.size() < pool.size()) {
       picked.add(pool.get(ThreadLocalRandom.current().nextInt(pool.size())));
     }
@@ -120,16 +139,14 @@ public class AppExamSmartService {
       picked = new ArrayList<>(picked.subList(0, total));
     }
 
-    return persistPaper(user, title, "mock", picked, timeLimit);
+    return persistPaper(user, title, "mock", picked, timeLimit, ctx);
   }
 
-  // ============================================================
-  // 2. 随机练习：不生成试卷，直接返回题目
-  // ============================================================
   public Map<String, Object> randomPractice(Map<String, Object> body) {
     PlatformUserPrincipal user = requireLogin();
     Integer courseId = intVal(body, "courseId", null);
     Integer total = intVal(body, "total", DEFAULT_QUESTION_COUNT);
+    PracticeContext ctx = resolvePracticeContext(body, user);
 
     LambdaQueryWrapper<ExamExamDetailEntity> q = new LambdaQueryWrapper<ExamExamDetailEntity>()
         .eq(ExamExamDetailEntity::getTenantId, user.getTenantId().intValue())
@@ -139,21 +156,20 @@ public class AppExamSmartService {
       q.eq(ExamExamDetailEntity::getExamId, courseId);
     }
     List<ExamExamDetailEntity> pool = examDetailMapper.selectList(q);
+    pool = applyPracticeScopeFilter(pool, ctx);
     if (pool.isEmpty()) {
       throw new AppSmsException(-1, "题库为空");
     }
     Collections.shuffle(pool);
     List<ExamExamDetailEntity> picked = pool.subList(0, Math.min(total, pool.size()));
-    return persistPaper(user, "随机练习", "random", picked, 0);
+    return persistPaper(user, "随机练习", "random", picked, 0, ctx);
   }
 
-  // ============================================================
-  // 3. 错题重练：把用户历史错题组成一张卷
-  // ============================================================
   public Map<String, Object> wrongReplay(Map<String, Object> body) {
     PlatformUserPrincipal user = requireLogin();
     Long tenantId = user.getTenantId();
     Long userId = user.getUserId();
+    PracticeContext ctx = resolvePracticeContext(body, user);
 
     Integer knowledgeId = intVal(body, "knowledgeId", null);
     Integer limit = intVal(body, "limit", WRONG_REPLAY_LIMIT);
@@ -165,7 +181,11 @@ public class AppExamSmartService {
     List<ExamExamDetailEntity> questions = examDetailMapper.selectBatchIds(wrongIds).stream()
         .filter(e -> e.getDeleted() == 0)
         .collect(Collectors.toList());
-    return persistPaper(user, "错题重练", "wrong", questions, 0);
+    questions = applyPracticeScopeFilter(questions, ctx);
+    if (questions.isEmpty()) {
+      throw new AppSmsException(-1, "暂无错题，快去刷题吧");
+    }
+    return persistPaper(user, "错题重练", "wrong", questions, 0, ctx);
   }
 
   // ============================================================
@@ -294,6 +314,9 @@ public class AppExamSmartService {
     if (!"done".equals(paper.getStatus()) && !paper.getUserId().equals(user.getUserId())) {
       throw new AppSmsException(-1, "无权操作此试卷");
     }
+    if (paper.getClassId() != null && paper.getClassId() > 0) {
+      assertClassPracticeWindowOpen(paper.getClassId());
+    }
 
     // answers: [{questionId, answer, spendMs}]
     Object answersObj = body == null ? null : body.get("answers");
@@ -331,7 +354,7 @@ public class AppExamSmartService {
           score = score.add(q.getScore());
         }
       }
-      // 写答题明细
+      // 写答题明细（班级上下文从试卷带回，避免客户端交卷漏传 classId）
       AppExamUserAnswerLogEntity log = new AppExamUserAnswerLogEntity();
       log.setUserId(user.getUserId());
       log.setTenantId(user.getTenantId());
@@ -343,6 +366,10 @@ public class AppExamSmartService {
       log.setSource(paper.getMode());
       log.setPaperId(paper.getId());
       log.setSpendMs(spendMs);
+      log.setClassId(paper.getClassId());
+      log.setPeopleId(paper.getPeopleId());
+      log.setCourseId(paper.getCourseId() != null ? paper.getCourseId() : q.getExamId());
+      log.setBizDate(now.toLocalDate());
       log.setCreateTime(now);
       answerLogMapper.insert(log);
 
@@ -406,7 +433,8 @@ public class AppExamSmartService {
   // ============================================================
 
   private Map<String, Object> persistPaper(PlatformUserPrincipal user, String title, String mode,
-                                           List<ExamExamDetailEntity> questions, int timeLimit) {
+                                           List<ExamExamDetailEntity> questions, int timeLimit,
+                                           PracticeContext ctx) {
     AppExamMockPaperEntity paper = new AppExamMockPaperEntity();
     paper.setUserId(user.getUserId());
     paper.setTenantId(user.getTenantId());
@@ -421,9 +449,143 @@ public class AppExamSmartService {
     paper.setMode(mode);
     paper.setStatus("pending");
     paper.setCreateTime(LocalDateTime.now());
+    if (ctx != null) {
+      paper.setClassId(ctx.classId());
+      paper.setPeopleId(ctx.peopleId());
+      paper.setCourseId(ctx.courseId());
+    }
     mockPaperMapper.insert(paper);
-    return paperToView(paper, true);
+    Map<String, Object> view = paperToView(paper, true);
+    if (ctx != null && ctx.classId() != null) {
+      view.put("classId", ctx.classId());
+      view.put("peopleId", ctx.peopleId());
+    }
+    return view;
   }
+
+  /**
+   * 解析班级刷题上下文：有 classId 则校验花名册、练习范围开关，并准备抽题白名单。
+   */
+  private PracticeContext resolvePracticeContext(Map<String, Object> body, PlatformUserPrincipal user) {
+    Long classId = longVal(body, "classId", null);
+    Integer courseId = intVal(body, "courseId", null);
+    if (classId == null || classId <= 0) {
+      return new PracticeContext(null, null, courseId, null, null, true);
+    }
+
+    TrainPeopleListEntity people = peopleListMapper.selectOne(
+        new LambdaQueryWrapper<TrainPeopleListEntity>()
+            .eq(TrainPeopleListEntity::getTrainClassId, classId)
+            .eq(TrainPeopleListEntity::getPlatformUserId, user.getUserId())
+            .last("LIMIT 1"));
+    if (people == null) {
+      throw new AppSmsException(-1, "您不在该班级花名册中，无法按班刷题");
+    }
+
+    TrainClassPracticeScopeEntity scope = practiceScopeMapper.selectOne(
+        new LambdaQueryWrapper<TrainClassPracticeScopeEntity>()
+            .eq(TrainClassPracticeScopeEntity::getClassId, classId)
+            .last("LIMIT 1"));
+    if (scope != null && scope.getEnabled() != null && scope.getEnabled() == 0) {
+      throw new AppSmsException(-1, "本班练习范围已关闭，请从全局刷题入口练习");
+    }
+    assertPracticeWindowOpen(scope);
+
+    Set<Integer> allowedCourses = null;
+    Set<Integer> allowedKnowledges = null;
+    List<TrainClassPracticeCourseEntity> courses = practiceCourseMapper.selectList(
+        new LambdaQueryWrapper<TrainClassPracticeCourseEntity>()
+            .eq(TrainClassPracticeCourseEntity::getClassId, classId));
+    if (!courses.isEmpty()) {
+      allowedCourses = courses.stream()
+          .map(TrainClassPracticeCourseEntity::getExamCourseId)
+          .filter(java.util.Objects::nonNull)
+          .collect(Collectors.toCollection(HashSet::new));
+    }
+    List<TrainClassPracticeKnowledgeEntity> knowledges = practiceKnowledgeMapper.selectList(
+        new LambdaQueryWrapper<TrainClassPracticeKnowledgeEntity>()
+            .eq(TrainClassPracticeKnowledgeEntity::getClassId, classId));
+    if (!knowledges.isEmpty()) {
+      allowedKnowledges = knowledges.stream()
+          .map(TrainClassPracticeKnowledgeEntity::getKnowledgeId)
+          .filter(java.util.Objects::nonNull)
+          .collect(Collectors.toCollection(HashSet::new));
+    }
+
+    Integer resolvedCourse = courseId;
+    if (resolvedCourse == null) {
+      resolvedCourse = questionsCourseHint(allowedCourses);
+    }
+    return new PracticeContext(classId, people.getId(), resolvedCourse, allowedCourses, allowedKnowledges, false);
+  }
+
+  private void assertClassPracticeWindowOpen(Long classId) {
+    TrainClassPracticeScopeEntity scope = practiceScopeMapper.selectOne(
+        new LambdaQueryWrapper<TrainClassPracticeScopeEntity>()
+            .eq(TrainClassPracticeScopeEntity::getClassId, classId)
+            .last("LIMIT 1"));
+    if (scope != null && scope.getEnabled() != null && scope.getEnabled() == 0) {
+      throw new AppSmsException(-1, "本班练习范围已关闭，请从全局刷题入口练习");
+    }
+    assertPracticeWindowOpen(scope);
+  }
+
+  /** 未配置开始/截止则不过期；有配置则必须落在时间窗内 */
+  private static void assertPracticeWindowOpen(TrainClassPracticeScopeEntity scope) {
+    if (scope == null) {
+      return;
+    }
+    LocalDateTime now = LocalDateTime.now();
+    LocalDateTime start = scope.getPracticeStartTime();
+    LocalDateTime end = scope.getPracticeEndTime();
+    if (start != null && now.isBefore(start)) {
+      throw new AppSmsException(-1, "本班刷题尚未开始（开放时间：" + formatDt(start) + "）");
+    }
+    if (end != null && now.isAfter(end)) {
+      throw new AppSmsException(-1, "本班刷题时间已截止（截止时间：" + formatDt(end) + "）");
+    }
+  }
+
+  private static String formatDt(LocalDateTime dt) {
+    return dt == null ? "" : dt.toString().replace('T', ' ');
+  }
+
+  private static Integer questionsCourseHint(Set<Integer> allowedCourses) {
+    if (allowedCourses == null || allowedCourses.isEmpty()) {
+      return null;
+    }
+    return allowedCourses.iterator().next();
+  }
+
+  private List<ExamExamDetailEntity> applyPracticeScopeFilter(List<ExamExamDetailEntity> pool, PracticeContext ctx) {
+    if (ctx == null || ctx.skipScopeFilter() || pool == null || pool.isEmpty()) {
+      return pool;
+    }
+    Set<Integer> courses = ctx.allowedCourses();
+    Set<Integer> knowledges = ctx.allowedKnowledges();
+    if ((courses == null || courses.isEmpty()) && (knowledges == null || knowledges.isEmpty())) {
+      return pool;
+    }
+    return pool.stream().filter(q -> {
+      if (courses != null && !courses.isEmpty()) {
+        if (q.getExamId() == null || !courses.contains(q.getExamId())) {
+          return false;
+        }
+      }
+      if (knowledges != null && !knowledges.isEmpty()) {
+        return q.getKnowledgeId() != null && knowledges.contains(q.getKnowledgeId());
+      }
+      return true;
+    }).collect(Collectors.toList());
+  }
+
+  private record PracticeContext(
+      Long classId,
+      Long peopleId,
+      Integer courseId,
+      Set<Integer> allowedCourses,
+      Set<Integer> allowedKnowledges,
+      boolean skipScopeFilter) {}
 
   private Map<String, Object> paperToView(AppExamMockPaperEntity paper, boolean withQuestions) {
     Map<String, Object> data = new LinkedHashMap<>();

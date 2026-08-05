@@ -39,4 +39,79 @@ public interface AppExamUserAnswerLogMapper extends BaseMapper<AppExamUserAnswer
                                      @Param("userId") Long userId,
                                      @Param("knowledgeId") Integer knowledgeId,
                                      @Param("limit") Integer limit);
+
+  @Select("""
+      <script>
+      SELECT user_id AS userId,
+             COUNT(*) AS answerCount,
+             SUM(CASE WHEN is_right = 1 THEN 1 ELSE 0 END) AS rightCount,
+             COUNT(DISTINCT paper_id) AS paperCount,
+             COUNT(DISTINCT COALESCE(biz_date, DATE(create_time))) AS practiceDays,
+             MAX(create_time) AS lastPracticeAt
+      FROM exam_user_answer_log
+      WHERE tenant_id = #{tenantId} AND class_id = #{classId}
+        AND create_time &gt;= #{from} AND create_time &lt; #{to}
+      <if test="knowledgeIds != null and knowledgeIds.size() &gt; 0">
+        AND knowledge_id IN
+        <foreach collection="knowledgeIds" item="kid" open="(" separator="," close=")">#{kid}</foreach>
+      </if>
+      GROUP BY user_id
+      </script>
+      """)
+  List<Map<String, Object>> aggregateByUser(@Param("tenantId") Long tenantId,
+                                            @Param("classId") Long classId,
+                                            @Param("from") java.time.LocalDateTime from,
+                                            @Param("to") java.time.LocalDateTime to,
+                                            @Param("knowledgeIds") List<Integer> knowledgeIds);
+
+  @Select("""
+      <script>
+      SELECT knowledge_id AS knowledgeId,
+             COUNT(*) AS answerCount,
+             SUM(CASE WHEN is_right = 0 THEN 1 ELSE 0 END) AS wrongCount,
+             SUM(CASE WHEN is_right = 1 THEN 1 ELSE 0 END) AS rightCount,
+             COUNT(DISTINCT user_id) AS userCount
+      FROM exam_user_answer_log
+      WHERE tenant_id = #{tenantId} AND class_id = #{classId}
+        AND create_time &gt;= #{from} AND create_time &lt; #{to}
+        AND knowledge_id IS NOT NULL
+      <if test="knowledgeIds != null and knowledgeIds.size() &gt; 0">
+        AND knowledge_id IN
+        <foreach collection="knowledgeIds" item="kid" open="(" separator="," close=")">#{kid}</foreach>
+      </if>
+      GROUP BY knowledge_id
+      ORDER BY wrongCount DESC, answerCount DESC
+      LIMIT #{limit}
+      </script>
+      """)
+  List<Map<String, Object>> aggregateByKnowledge(@Param("tenantId") Long tenantId,
+                                                 @Param("classId") Long classId,
+                                                 @Param("from") java.time.LocalDateTime from,
+                                                 @Param("to") java.time.LocalDateTime to,
+                                                 @Param("knowledgeIds") List<Integer> knowledgeIds,
+                                                 @Param("limit") Integer limit);
+
+  @Select("""
+      <script>
+      SELECT COALESCE(biz_date, DATE(create_time)) AS bizDate,
+             COUNT(*) AS answerCount,
+             SUM(CASE WHEN is_right = 1 THEN 1 ELSE 0 END) AS rightCount,
+             COUNT(DISTINCT user_id) AS userCount,
+             COUNT(DISTINCT paper_id) AS paperCount
+      FROM exam_user_answer_log
+      WHERE tenant_id = #{tenantId} AND class_id = #{classId}
+        AND create_time &gt;= #{from} AND create_time &lt; #{to}
+      <if test="knowledgeIds != null and knowledgeIds.size() &gt; 0">
+        AND knowledge_id IN
+        <foreach collection="knowledgeIds" item="kid" open="(" separator="," close=")">#{kid}</foreach>
+      </if>
+      GROUP BY COALESCE(biz_date, DATE(create_time))
+      ORDER BY bizDate ASC
+      </script>
+      """)
+  List<Map<String, Object>> aggregateDaily(@Param("tenantId") Long tenantId,
+                                           @Param("classId") Long classId,
+                                           @Param("from") java.time.LocalDateTime from,
+                                           @Param("to") java.time.LocalDateTime to,
+                                           @Param("knowledgeIds") List<Integer> knowledgeIds);
 }

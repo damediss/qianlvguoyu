@@ -14,6 +14,9 @@ public class AppExamMockPaperEntity {
 
   private Long userId;
   private Long tenantId;
+  private Long classId;
+  private Long peopleId;
+  private Integer courseId;
   private String title;
   private String questionIds;
   private Integer totalCount;
@@ -33,6 +36,12 @@ public class AppExamMockPaperEntity {
   public void setUserId(Long userId) { this.userId = userId; }
   public Long getTenantId() { return tenantId; }
   public void setTenantId(Long tenantId) { this.tenantId = tenantId; }
+  public Long getClassId() { return classId; }
+  public void setClassId(Long classId) { this.classId = classId; }
+  public Long getPeopleId() { return peopleId; }
+  public void setPeopleId(Long peopleId) { this.peopleId = peopleId; }
+  public Integer getCourseId() { return courseId; }
+  public void setCourseId(Integer courseId) { this.courseId = courseId; }
   public String getTitle() { return title; }
   public void setTitle(String title) { this.title = title; }
   public String getQuestionIds() { return questionIds; }

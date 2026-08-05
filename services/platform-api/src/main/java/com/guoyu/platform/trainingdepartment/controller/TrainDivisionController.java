@@ -175,6 +175,13 @@ public class TrainDivisionController {
     return ApiResponse.ok(divisionService.companyConfirmPackTask(taskId));
   }
 
+  @PostMapping("/pack-tasks/{taskId}/sync-platform-users")
+  @PreAuthorize(TrainingAuthorityExpressions.DIVISION_MANAGE)
+  @AuditLog(module = "training", action = "division:sync-platform-users", targetType = "train_division_pack_task")
+  public ApiResponse<Map<String, Object>> syncPlatformUsersForPackTask(@PathVariable Long taskId) {
+    return ApiResponse.ok(divisionService.syncPlatformUsersForPackTask(taskId));
+  }
+
   @PostMapping("/pack-tasks/{taskId}/company-reject")
   @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_ENTERPRISE_CONFIRM)
   @AuditLog(module = "training", action = "division:pack-reject", targetType = "train_division_pack_task")

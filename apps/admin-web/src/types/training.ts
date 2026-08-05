@@ -2811,7 +2811,17 @@ export interface DivisionPackTaskResult {
     classCount: number;
     peopleCount: number;
     classes: { classId: number; title: string; nums: number }[];
+    platformUserSync?: PlatformUserSyncResult;
   };
+  platformUserSync?: PlatformUserSyncResult;
+}
+
+export interface PlatformUserSyncResult {
+  created: number;
+  reused: number;
+  updated: number;
+  skipped: number;
+  warnings?: { name?: string; idCard?: string; reason: string }[];
 }
 
 /** @deprecated 使用 DivisionPackTaskResult */

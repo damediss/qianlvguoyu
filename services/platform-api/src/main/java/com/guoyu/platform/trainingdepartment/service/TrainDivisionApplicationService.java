@@ -14,7 +14,9 @@ import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.OrgEntity;
+import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.OrgMapper;
+import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.trainingdepartment.dto.TrainDivisionAddPersonReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainDivisionAutoPackReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainDivisionEnsureTrainInfoReq;
@@ -106,6 +108,8 @@ public class TrainDivisionApplicationService {
   private final ObjectMapper objectMapper;
   private final ExcelScheduleParseService excelScheduleParseService;
   private final ScheduleAlgorithmService scheduleAlgorithmService;
+  private final PlatformUserEnsureService platformUserEnsureService;
+  private final UserMapper userMapper;
 
   private static final Set<String> EDITABLE_PACK_STATUS = Set.of("draft", "rejected");
   private static final Set<String> ACTIVE_PACK_STATUS = Set.of("draft", "pending", "rejected");
@@ -692,6 +696,57 @@ public class TrainDivisionApplicationService {
 
     Map<String, Object> result = toPackTaskVo(task);
     result.put("materialized", materialized);
+    Object sync = materialized.get("platformUserSync");
+    if (sync != null) {
+      result.put("platformUserSync", sync);
+    }
+    return result;
+  }
+
+  /**
+   * 历史补跑：对已物化方案中 platform_user_id 为空的花名册学员开 App 账号。
+   */
+  @Transactional
+  public Map<String, Object> syncPlatformUsersForPackTask(Long taskId) {
+    TrainDivisionPackTaskEntity task = requirePackTask(taskId, false);
+    if (!"materialized".equals(task.getStatus())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅已建班的方案可补开 App 账号");
+    }
+    scopeService.requireOrgOperator();
+    Long tenantId = task.getTenantId();
+    TrainInfoListEntity trainInfo = requireTrainInfoLinked(task.getTrainInfoId(), task.getPlanId(), tenantId);
+    Long orgId = resolvePlatformOrgIdForPack(task);
+    Long companyId = trainInfo.getCompanyId() != null ? trainInfo.getCompanyId() : task.getCompanyId();
+
+    List<TrainPeopleListEntity> people = peopleListMapper.selectList(new LambdaQueryWrapper<TrainPeopleListEntity>()
+        .eq(TrainPeopleListEntity::getTenantId, tenantId)
+        .eq(TrainPeopleListEntity::getTrainId, trainInfo.getId())
+        .eq(TrainPeopleListEntity::getType, "student")
+        .isNull(TrainPeopleListEntity::getPlatformUserId));
+
+    PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
+    int linked = 0;
+    for (TrainPeopleListEntity row : people) {
+      PlatformUserEnsureService.EnsureResult ensure = platformUserEnsureService.ensureFromDivisionPerson(
+          row.getRealname(),
+          row.getIdCard(),
+          row.getPhone(),
+          companyId,
+          orgId);
+      syncStats.accept(ensure, row.getRealname(), PlatformUserEnsureService.normalizeIdCard(row.getIdCard()));
+      if (ensure.platformUserId() != null) {
+        row.setPlatformUserId(ensure.platformUserId());
+        peopleListMapper.updateById(row);
+        linked++;
+      }
+    }
+
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("taskId", task.getId());
+    result.put("trainInfoId", trainInfo.getId());
+    result.put("candidates", people.size());
+    result.put("linked", linked);
+    result.put("platformUserSync", syncStats.toMap());
     return result;
   }
 
@@ -1696,6 +1751,9 @@ public class TrainDivisionApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "方案中无班级，无法创建");
     }
     boolean multiClass = allowsMultiClassMembership(task.getStrategy());
+    Long orgId = resolvePlatformOrgIdForPack(task);
+    Long companyId = trainInfo.getCompanyId() != null ? trainInfo.getCompanyId() : task.getCompanyId();
+    PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
 
     LocalDateTime now = LocalDateTime.now();
     var user = SecurityContext.currentUser();
@@ -1710,7 +1768,7 @@ public class TrainDivisionApplicationService {
       TrainInfoClassEntity clazz = new TrainInfoClassEntity();
       clazz.setTrainInfoId(trainInfo.getId());
       clazz.setTitle(title);
-      clazz.setCompanyId(trainInfo.getCompanyId() != null ? trainInfo.getCompanyId() : task.getCompanyId());
+      clazz.setCompanyId(companyId);
       applyWorkTypeToClass(clazz, c, trainInfo, workTypeLookup);
       clazz.setNums(members.size());
       clazz.setAddtime((int) (System.currentTimeMillis() / 1000));
@@ -1754,6 +1812,17 @@ public class TrainDivisionApplicationService {
           }
         }
 
+        PlatformUserEnsureService.EnsureResult ensure = platformUserEnsureService.ensureFromDivisionPerson(
+            roster.getPersonName(),
+            roster.getIdCard(),
+            roster.getPhone(),
+            companyId,
+            orgId);
+        syncStats.accept(
+            ensure,
+            roster.getPersonName(),
+            PlatformUserEnsureService.normalizeIdCard(roster.getIdCard()));
+
         TrainPeopleListEntity peopleRow = new TrainPeopleListEntity();
         peopleRow.setTenantId(tenantId);
         peopleRow.setTrainId(trainInfo.getId());
@@ -1762,6 +1831,7 @@ public class TrainDivisionApplicationService {
         peopleRow.setRealname(roster.getPersonName());
         peopleRow.setPhone(roster.getPhone());
         peopleRow.setIdCard(roster.getIdCard());
+        peopleRow.setPlatformUserId(ensure.platformUserId());
         peopleRow.setDeleted(0);
         peopleRow.setCreateTime(now);
         peopleListMapper.insert(peopleRow);
@@ -1790,7 +1860,26 @@ public class TrainDivisionApplicationService {
     out.put("classCount", created.size());
     out.put("peopleCount", people);
     out.put("classes", created);
+    out.put("platformUserSync", syncStats.toMap());
     return out;
+  }
+
+  /**
+   * 学员信息列表按培训机构 orgId 过滤；企业确认时不能用企业账号 orgId。
+   * 优先取提交方案的机构账号 orgId，其次当前机构账号，最后回退 tenantId。
+   */
+  private Long resolvePlatformOrgIdForPack(TrainDivisionPackTaskEntity task) {
+    if (task.getSubmitUserId() != null) {
+      UserEntity submitter = userMapper.selectById(task.getSubmitUserId());
+      if (submitter != null && submitter.getOrgId() != null && submitter.getOrgId() > 0) {
+        return submitter.getOrgId();
+      }
+    }
+    TrainingOperatorScopeService.Scope scope = scopeService.currentScope();
+    if (scope.isOrgOperator() && scope.orgId() != null && scope.orgId() > 0) {
+      return scope.orgId();
+    }
+    return task.getTenantId() != null ? task.getTenantId() : 0L;
   }
 
   private Map<String, Object> toPackTaskVo(TrainDivisionPackTaskEntity task) {

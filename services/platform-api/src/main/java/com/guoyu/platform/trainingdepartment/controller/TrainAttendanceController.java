@@ -7,11 +7,13 @@ import com.guoyu.platform.trainingdepartment.dto.TrainAttendanceCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainAttendanceQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainAttendanceUpdateReq;
 import com.guoyu.platform.trainingdepartment.service.TrainAttendanceApplicationService;
+import com.guoyu.platform.trainingdepartment.vo.TrainAttendanceImportResultVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainAttendanceVO;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 培训考勤管理接口
@@ -72,5 +74,17 @@ public class TrainAttendanceController {
   @AuditLog(module = "training", action = "attendance:sign-in", targetType = "train_attendance")
   public ApiResponse<TrainAttendanceVO> signIn(@Valid @RequestBody TrainAttendanceCreateReq req) {
     return ApiResponse.ok(trainAttendanceApplicationService.signIn(req));
+  }
+
+  /**
+   * 导入考勤信息列表 Excel（.xls/.xlsx），按身份证匹配本班学员并写入/更新按日考勤。
+   */
+  @PostMapping("/classes/{classId}/attendances/import")
+  @PreAuthorize("hasAuthority('train:attendance:create')")
+  @AuditLog(module = "training", action = "attendance:import", targetType = "train_attendance")
+  public ApiResponse<TrainAttendanceImportResultVO> importExcel(
+      @PathVariable Long classId,
+      @RequestParam("file") MultipartFile file) {
+    return ApiResponse.ok(trainAttendanceApplicationService.importFromExcel(classId, file));
   }
 }
