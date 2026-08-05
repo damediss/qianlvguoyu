@@ -11,6 +11,7 @@ public class CompetitionScoreSourceEntity extends BaseEntity {
   private Long eventId;
   private Long stageId;
   private Long eventWorkTypeId;
+  private Long eventWorkTypeLevelId;
   private Long contestantMemberId;
   private String sourceType;
   private BigDecimal rawScore;
@@ -30,6 +31,8 @@ public class CompetitionScoreSourceEntity extends BaseEntity {
   public void setStageId(Long stageId) { this.stageId = stageId; }
   public Long getEventWorkTypeId() { return eventWorkTypeId; }
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
+  public Long getEventWorkTypeLevelId() { return eventWorkTypeLevelId; }
+  public void setEventWorkTypeLevelId(Long eventWorkTypeLevelId) { this.eventWorkTypeLevelId = eventWorkTypeLevelId; }
   public Long getContestantMemberId() { return contestantMemberId; }
   public void setContestantMemberId(Long contestantMemberId) {
     this.contestantMemberId = contestantMemberId;

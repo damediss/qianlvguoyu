@@ -11,6 +11,7 @@ import com.guoyu.platform.competition.service.CompetitionRosterImportApplication
 import com.guoyu.platform.competition.vo.CompetitionRosterImportDetailVO;
 import com.guoyu.platform.competition.vo.CompetitionRosterImportVO;
 import jakarta.validation.Valid;
+import java.nio.charset.StandardCharsets;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -64,7 +65,7 @@ public class CompetitionRosterImportController {
         .contentType(MediaType.parseMediaType(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
         .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-            .filename("competition-roster-template.xlsx").build().toString())
+            .filename("赛事名单导入模板.xlsx", StandardCharsets.UTF_8).build().toString())
         .body(content);
   }
 

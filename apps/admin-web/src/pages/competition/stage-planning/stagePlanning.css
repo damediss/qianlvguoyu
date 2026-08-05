@@ -1,0 +1,241 @@
+.stage-planning-shell {
+  display: grid;
+  grid-template-columns: 210px minmax(500px, 1fr) 300px;
+  gap: 12px;
+  min-height: 620px;
+}
+
+.stage-planning-library,
+.stage-planning-inspector {
+  background: #fff;
+  border: 1px solid #e8eef5;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.stage-planning-inspector {
+  max-height: 620px;
+  overflow-y: auto;
+}
+
+.stage-planning-inspector__stage-title {
+  margin: 0 0 6px !important;
+  color: #0f2942;
+  font-size: 20px !important;
+  line-height: 28px !important;
+}
+
+.stage-planning-inspector__divider {
+  margin: 16px 0;
+}
+
+.stage-planning-inspector__content-loading {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.stage-planning-library__hint {
+  font-size: 12px;
+}
+
+.stage-planning-library__items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.stage-library-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #d7e4f2;
+  border-radius: 8px;
+  cursor: grab;
+  background: #f8fbff;
+}
+
+.stage-library-item.is-disabled {
+  cursor: not-allowed;
+  opacity: .5;
+  background: #f5f5f5;
+}
+
+.stage-library-item__order,
+.stage-canvas-node__index {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #1677ff;
+  background: #e6f4ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stage-library-item strong,
+.stage-library-item small {
+  display: block;
+}
+
+.stage-library-item small {
+  color: #8c98a8;
+  margin-top: 3px;
+}
+
+.stage-planning-canvas {
+  position: relative;
+  min-height: 620px;
+  overflow: hidden;
+  border: 1px solid #e8eef5;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f5f9fd 100%);
+}
+
+.stage-planning-canvas .react-flow {
+  min-height: 620px;
+}
+
+.stage-planning-svg-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.stage-canvas-node {
+  width: 210px;
+  border: 1px solid #b9d5f7;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 5px 16px rgba(46, 101, 160, .12);
+}
+
+.stage-canvas-node.is-selected {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, .16), 0 5px 16px rgba(46, 101, 160, .12);
+}
+
+.stage-canvas-node__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.stage-canvas-node__header strong {
+  flex: 1;
+}
+
+.stage-canvas-node__header .ant-tag {
+  margin-inline-end: 0;
+  font-size: 11px;
+}
+
+.stage-canvas-node__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.stage-canvas-node__description {
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-marker-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.stage-marker-node__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.stage-edge {
+  stroke: #1677ff;
+  stroke-width: 2;
+  color: #1677ff;
+}
+
+.stage-edge--marker {
+  stroke: #94a3b8;
+  stroke-dasharray: 5 4;
+  color: #94a3b8;
+}
+
+.stage-edge.is-selected {
+  stroke-width: 3;
+}
+
+.stage-edge-label {
+  padding: 3px 7px;
+  border: 1px solid #b9d5f7;
+  border-radius: 5px;
+  background: #fff;
+  color: #315a85;
+  font-size: 11px;
+  pointer-events: all;
+}
+
+.stage-edge-label.is-selected {
+  border-color: #1677ff;
+}
+
+.stage-planning-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+}
+
+.stage-planning-toolbar .ant-typography {
+  margin: 0;
+}
+
+.stage-validation-panel__summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.stage-validation-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stage-planning-inspector--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 1200px) {
+  .stage-planning-shell {
+    grid-template-columns: 180px minmax(420px, 1fr) 270px;
+  }
+}

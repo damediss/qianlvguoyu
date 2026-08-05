@@ -20,6 +20,7 @@ public final class CompetitionStageConverter {
     target.setSortOrder(source.sortOrder());
     target.setStartAt(source.startAt());
     target.setEndAt(source.endAt());
+    target.setStatus(source.status());
     target.setDescription(source.description());
     return target;
   }
@@ -35,9 +36,8 @@ public final class CompetitionStageConverter {
     }
     target.setStartAt(source.startAt());
     target.setEndAt(source.endAt());
-    if (source.status() != null && !source.status().isBlank()) {
-      target.setStatus(source.status());
-    }
+    // Lifecycle is server-owned. The deprecated request field is intentionally ignored;
+    // callers must use the named stage domain-action endpoints.
     target.setDescription(source.description());
   }
 
@@ -55,6 +55,10 @@ public final class CompetitionStageConverter {
     target.setEndAt(source.getEndAt());
     target.setStatus(source.getStatus());
     target.setDescription(source.getDescription());
+    target.setFrozenAt(source.getFrozenAt());
+    target.setReadyAt(source.getReadyAt());
+    target.setClosedAt(source.getClosedAt());
+    target.setResultPublishedAt(source.getResultPublishedAt());
     return target;
   }
 }

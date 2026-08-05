@@ -2,7 +2,8 @@ package com.guoyu.platform.competition.enums;
 
 public enum CompetitionTheoryTemplate {
   THEORY_90,
-  THEORY_120;
+  THEORY_120,
+  CUSTOM;
 
   public static boolean supports(String value) {
     if (value == null) {

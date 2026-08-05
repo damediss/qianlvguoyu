@@ -9,6 +9,7 @@ import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
 import com.guoyu.platform.competition.entity.CompetitionScoreRuleEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageEntity;
+import com.guoyu.platform.competition.entity.CompetitionTheoryRequirementEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventStatus;
 import com.guoyu.platform.competition.enums.CompetitionScoreRuleStatus;
 import com.guoyu.platform.competition.enums.CompetitionTheoryTemplate;
@@ -16,6 +17,7 @@ import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreRuleMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStageMapper;
+import com.guoyu.platform.competition.mapper.CompetitionTheoryRequirementMapper;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -36,16 +38,19 @@ public class CompetitionScoreRuleDomainService {
   private final CompetitionEventMapper eventMapper;
   private final CompetitionStageMapper stageMapper;
   private final CompetitionEventWorkTypeMapper eventWorkTypeMapper;
+  private final CompetitionTheoryRequirementMapper theoryRequirementMapper;
 
   public CompetitionScoreRuleDomainService(
       CompetitionScoreRuleMapper scoreRuleMapper,
       CompetitionEventMapper eventMapper,
       CompetitionStageMapper stageMapper,
-      CompetitionEventWorkTypeMapper eventWorkTypeMapper) {
+      CompetitionEventWorkTypeMapper eventWorkTypeMapper,
+      CompetitionTheoryRequirementMapper theoryRequirementMapper) {
     this.scoreRuleMapper = scoreRuleMapper;
     this.eventMapper = eventMapper;
     this.stageMapper = stageMapper;
     this.eventWorkTypeMapper = eventWorkTypeMapper;
+    this.theoryRequirementMapper = theoryRequirementMapper;
   }
 
   @Transactional(readOnly = true)
@@ -80,7 +85,8 @@ public class CompetitionScoreRuleDomainService {
     requireScopeReferences(tenantId, eventId, req.stageId(), req.eventWorkTypeId());
     validateDraftRule(
         req.scoringSystem(), req.theoryTemplate(),
-        req.theoryWeight(), req.simulationPracticalWeight());
+        req.theoryWeight(), req.simulationWeight(), req.practicalWeight(),
+        req.simulationPracticalWeight());
 
     Integer maxVersion = scoreRuleMapper.selectMaxRuleVersion(
         tenantId, eventId, req.stageId(), req.eventWorkTypeId());
@@ -89,9 +95,12 @@ public class CompetitionScoreRuleDomainService {
     entity.setEventId(eventId);
     entity.setStageId(req.stageId());
     entity.setEventWorkTypeId(req.eventWorkTypeId());
+    entity.setEventWorkTypeLevelId(req.eventWorkTypeLevelId());
     entity.setScoringSystem(normalizeScoringSystem(req.scoringSystem()));
     entity.setTheoryTemplate(normalizeTemplate(req.theoryTemplate()));
     entity.setTheoryWeight(req.theoryWeight());
+    entity.setSimulationWeight(req.simulationWeight());
+    entity.setPracticalWeight(req.practicalWeight());
     entity.setSimulationPracticalWeight(req.simulationPracticalWeight());
     entity.setStatus(CompetitionScoreRuleStatus.DRAFT.getCode());
     entity.setRuleVersion(maxVersion == null ? 1 : maxVersion + 1);
@@ -120,10 +129,13 @@ public class CompetitionScoreRuleDomainService {
     }
     validateDraftRule(
         req.scoringSystem(), req.theoryTemplate(),
-        req.theoryWeight(), req.simulationPracticalWeight());
+        req.theoryWeight(), req.simulationWeight(), req.practicalWeight(),
+        req.simulationPracticalWeight());
     entity.setScoringSystem(normalizeScoringSystem(req.scoringSystem()));
     entity.setTheoryTemplate(normalizeTemplate(req.theoryTemplate()));
     entity.setTheoryWeight(req.theoryWeight());
+    entity.setSimulationWeight(req.simulationWeight());
+    entity.setPracticalWeight(req.practicalWeight());
     entity.setSimulationPracticalWeight(req.simulationPracticalWeight());
     entity.setUpdatedBy(userId);
     if (scoreRuleMapper.updateById(entity) != 1) {
@@ -143,7 +155,17 @@ public class CompetitionScoreRuleDomainService {
     }
     validatePublishedRule(
         entity.getScoringSystem(), entity.getTheoryTemplate(),
-        entity.getTheoryWeight(), entity.getSimulationPracticalWeight());
+        entity.getTheoryWeight(), entity.getSimulationWeight(), entity.getPracticalWeight(),
+        entity.getSimulationPracticalWeight());
+    Long requirementCount = theoryRequirementMapper.selectCount(
+        new LambdaQueryWrapper<CompetitionTheoryRequirementEntity>()
+            .eq(CompetitionTheoryRequirementEntity::getTenantId, tenantId)
+            .eq(CompetitionTheoryRequirementEntity::getScoreRuleId, ruleId)
+            .eq(CompetitionTheoryRequirementEntity::getDeleted, 0));
+    if (requirementCount == null || requirementCount != 1L) {
+      throw new BusinessException(
+          ErrorCode.UNPROCESSABLE_ENTITY, "发布评分规则前必须配置唯一的理论考试要求");
+    }
 
     List<CompetitionScoreRuleEntity> published = scoreRuleMapper.selectPublishedForUpdate(
         tenantId, entity.getEventId(), entity.getStageId(), entity.getEventWorkTypeId());
@@ -186,7 +208,8 @@ public class CompetitionScoreRuleDomainService {
     try {
       validatePublishedRule(
           entity.getScoringSystem(), entity.getTheoryTemplate(),
-          entity.getTheoryWeight(), entity.getSimulationPracticalWeight());
+          entity.getTheoryWeight(), entity.getSimulationWeight(), entity.getPracticalWeight(),
+          entity.getSimulationPracticalWeight());
       return true;
     } catch (BusinessException ex) {
       return false;
@@ -222,17 +245,28 @@ public class CompetitionScoreRuleDomainService {
         new LambdaQueryWrapper<CompetitionStageEntity>()
             .eq(CompetitionStageEntity::getTenantId, tenantId)
             .eq(CompetitionStageEntity::getId, stageId)
-            .eq(CompetitionStageEntity::getEventId, eventId));
+            .eq(CompetitionStageEntity::getEventId, eventId)
+            .eq(CompetitionStageEntity::getDeleted, 0));
     if (stage == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "赛段不存在或不属于当前赛事");
+    }
+    if (!"active".equals(stage.getStatus())
+        && !"draft".equals(stage.getStatus())
+        && !"configuring".equals(stage.getStatus())
+        && !"ready_locked".equals(stage.getStatus())) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "评分规则只能关联有效赛段");
     }
     CompetitionEventWorkTypeEntity eventWorkType = eventWorkTypeMapper.selectOne(
         new LambdaQueryWrapper<CompetitionEventWorkTypeEntity>()
             .eq(CompetitionEventWorkTypeEntity::getTenantId, tenantId)
             .eq(CompetitionEventWorkTypeEntity::getId, eventWorkTypeId)
-            .eq(CompetitionEventWorkTypeEntity::getEventId, eventId));
+            .eq(CompetitionEventWorkTypeEntity::getEventId, eventId)
+            .eq(CompetitionEventWorkTypeEntity::getDeleted, 0));
     if (eventWorkType == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "赛事工种不存在或不属于当前赛事");
+    }
+    if (!"active".equals(eventWorkType.getStatus())) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "评分规则只能关联有效赛事工种");
     }
   }
 
@@ -240,15 +274,27 @@ public class CompetitionScoreRuleDomainService {
       String scoringSystem,
       String theoryTemplate,
       BigDecimal theoryWeight,
+      BigDecimal simulationWeight,
+      BigDecimal practicalWeight,
       BigDecimal simulationPracticalWeight) {
     if (!SCORING_SYSTEM_B.equals(normalizeScoringSystem(scoringSystem))) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "本期仅支持赛制B");
     }
     String normalizedTemplate = normalizeTemplate(theoryTemplate);
     if (normalizedTemplate != null && !CompetitionTheoryTemplate.supports(normalizedTemplate)) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "理论模板仅支持THEORY_90或THEORY_120");
+      throw new BusinessException(
+          ErrorCode.BAD_REQUEST, "理论模板仅支持THEORY_90、THEORY_120或CUSTOM");
     }
     requireOptionalPercentage(theoryWeight, "理论权重", ErrorCode.BAD_REQUEST);
+    requireOptionalPercentage(simulationWeight, "仿真权重", ErrorCode.BAD_REQUEST);
+    requireOptionalPercentage(practicalWeight, "实操权重", ErrorCode.BAD_REQUEST);
+    if (simulationWeight != null || practicalWeight != null) {
+      if (theoryWeight == null || simulationWeight == null || practicalWeight == null
+          || theoryWeight.add(simulationWeight).add(practicalWeight).compareTo(TOTAL_WEIGHT) != 0) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "理论、仿真、实操权重之和必须为100");
+      }
+      return;
+    }
     requireOptionalPercentage(
         simulationPracticalWeight, "仿真实操组合权重", ErrorCode.BAD_REQUEST);
     if (theoryWeight != null && simulationPracticalWeight != null
@@ -261,13 +307,30 @@ public class CompetitionScoreRuleDomainService {
       String scoringSystem,
       String theoryTemplate,
       BigDecimal theoryWeight,
+      BigDecimal simulationWeight,
+      BigDecimal practicalWeight,
       BigDecimal simulationPracticalWeight) {
     if (!SCORING_SYSTEM_B.equals(normalizeScoringSystem(scoringSystem))) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "本期仅支持赛制B");
     }
     if (!CompetitionTheoryTemplate.supports(normalizeTemplate(theoryTemplate))) {
       throw new BusinessException(
-          ErrorCode.UNPROCESSABLE_ENTITY, "发布前必须选择THEORY_90或THEORY_120理论模板");
+          ErrorCode.UNPROCESSABLE_ENTITY,
+          "发布前必须选择THEORY_90、THEORY_120或CUSTOM理论模板");
+    }
+    if (simulationWeight != null || practicalWeight != null) {
+      if (theoryWeight == null || simulationWeight == null || practicalWeight == null) {
+        throw new BusinessException(
+            ErrorCode.UNPROCESSABLE_ENTITY, "发布前必须完整填写理论、仿真和实操权重");
+      }
+      requireOptionalPercentage(theoryWeight, "理论权重", ErrorCode.UNPROCESSABLE_ENTITY);
+      requireOptionalPercentage(simulationWeight, "仿真权重", ErrorCode.UNPROCESSABLE_ENTITY);
+      requireOptionalPercentage(practicalWeight, "实操权重", ErrorCode.UNPROCESSABLE_ENTITY);
+      if (theoryWeight.add(simulationWeight).add(practicalWeight).compareTo(TOTAL_WEIGHT) != 0) {
+        throw new BusinessException(
+            ErrorCode.UNPROCESSABLE_ENTITY, "理论、仿真、实操权重之和必须为100");
+      }
+      return;
     }
     if (theoryWeight == null || simulationPracticalWeight == null) {
       throw new BusinessException(

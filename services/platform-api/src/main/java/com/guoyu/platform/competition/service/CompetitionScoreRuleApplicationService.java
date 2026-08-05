@@ -113,7 +113,7 @@ public class CompetitionScoreRuleApplicationService {
     return event;
   }
 
-  private CompetitionEventEntity manageableEvent(
+  CompetitionEventEntity manageableEvent(
       PlatformUserPrincipal principal, Long eventId) {
     CompetitionEventEntity event = eventService.getById(principal.getTenantId(), eventId);
     if (PlatformAdminSupport.isSuperAdmin(principal)) {

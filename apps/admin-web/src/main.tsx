@@ -14,10 +14,10 @@ import { TaskExamAuditAssignListPage } from './pages/exam/TaskExamAuditAssignLis
 import { TaskExamshicaoAuditAssignListPage } from './pages/exam/TaskExamshicaoAuditAssignListPage';
 import { TaskExamsubAuditAssignListPage } from './pages/exam/TaskExamsubAuditAssignListPage';
 import { TrainingInfoPage } from './pages/training/TrainingInfoPage';
+import { TrainingFollowClassPage } from './pages/training/TrainingFollowClassPage';
 import { TrainingClassPeoplePage } from './pages/training/TrainingClassPeoplePage';
 import { TrainingClassDivisionPage } from './pages/training/TrainingClassDivisionPage';
 import { TrainingClassDeclarePage } from './pages/training/TrainingClassDeclarePage';
-import { TrainingFollowClassPage } from './pages/training/TrainingFollowClassPage';
 import { UserAuthCoursePage } from './pages/exam/UserAuthCoursePage';
 import { UserListPage } from './pages/chazheng/UserListPage';
 import { CertQueryPage } from './pages/chazheng/CertQueryPage';
@@ -65,6 +65,10 @@ import { TrainExamListPage } from './pages/training/TrainExamListPage';
 import { TabletAssessorApp } from './pages/assessor/TabletAssessorApp';
 import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
 import { CompetitionEventManagementPage } from './pages/competition/CompetitionEventManagementPage';
+import { CompetitionEventModulePage, type CompetitionEventModule } from './pages/competition/CompetitionEventModulePage';
+import { findCompetitionMenuCode, isCompetitionPath } from './routes/competitionRoute';
+import { useAuthStore } from './stores/authStore';
+import { NavigationBlockerProvider, useNavigationBlocker } from './hooks/useUnsavedChangesBlocker';
 
 // Pre-instantiate factory components for stable React references
 const ArchiveEquipmentPage = createArchiveTablePage('equipment');
@@ -130,6 +134,7 @@ const pageMap: Record<string, React.ReactNode> = {
   task_examsub_audit_assign: <TaskExamsubAuditAssignListPage />,
   exam_course: <CoursePage />,
   'train_info-list': <TrainingInfoPage />,
+  train_follow: <TrainingFollowClassPage />,
   fen_ban: <TrainingClassDivisionPage />,
   'train_people-list': <TrainingClassPeoplePage />,
   train_people: <TrainingClassPeoplePage />,
@@ -154,7 +159,6 @@ const pageMap: Record<string, React.ReactNode> = {
   train_certificates: <TrainingCertificateTemplatePage />,
   'train_sign-up': <TrainingInformationPage />,
   'train_sign-up-people': <TrainingInformationPage />,
-  train_follow: <TrainingFollowClassPage />,
   'train_user-info': <TrainingStudentPage />,
   knowledge_spaces: <KnowledgePage />,
   knowledge_search: <KnowledgePage />,
@@ -486,16 +490,24 @@ const pageMap: Record<string, React.ReactNode> = {
   risk_platform_coop: <ProductPlaceholder moduleCode="risk_platform_coop" />,
   'certification-practical-collection': <CollectionTaskListPage />,
   competition_event: <CompetitionEventManagementPage />,
+  competition_player: <CompetitionEventManagementPage />,
+  competition_stage: <CompetitionModuleShell module="stages" />,
+  competition_notice: <CompetitionModuleShell module="notices" />,
+  competition_theory_exam: <CompetitionModuleShell module="theory-exam" />,
+  competition_score_ranking: <CompetitionModuleShell module="scores" />,
 };
 
-const assessorMode = window.location.pathname.startsWith('/assessor-scoring');
-const practicalCollectionMode = window.location.pathname.startsWith('/practical-collection');
-const collectionManageTaskId = (() => {
-  const match = window.location.pathname.match(/^\/certification\/practical-collection\/([^/]+)\/manage\/?$/);
-  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
-})();
-const collectionManageMode = Boolean(collectionManageTaskId);
-const competitionEventMode = window.location.pathname.startsWith('/competition/events');
+function useBrowserPathname() {
+  const [pathname, setPathname] = React.useState(() => window.location.pathname);
+
+  React.useEffect(() => {
+    const syncPathname = () => setPathname(window.location.pathname);
+    window.addEventListener('popstate', syncPathname);
+    return () => window.removeEventListener('popstate', syncPathname);
+  }, []);
+
+  return pathname;
+}
 
 function CollectionManageShell({ taskId }: { taskId: string }) {
   const [manageActive, setManageActive] = React.useState(true);
@@ -510,17 +522,62 @@ function CollectionManageShell({ taskId }: { taskId: string }) {
   );
 }
 
-function CompetitionEventShell() {
+function CompetitionModuleShell({ module }: { module: CompetitionEventModule }) {
+  const { confirmNavigation } = useNavigationBlocker();
+  const navigate = async (path: string) => {
+    if (!(await confirmNavigation())) return;
+    window.history.pushState({}, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
+  return <CompetitionEventModulePage module={module} onNavigate={navigate} />;
+}
+
+function CompetitionEventShell({ pathname }: { pathname: string }) {
   const [eventActive, setEventActive] = React.useState(true);
+  const menuTree = useAuthStore((state) => state.menuTree);
+  const competitionMenuKey = findCompetitionMenuCode(menuTree, pathname) || 'competition_event';
+  const competitionPage = pageMap[competitionMenuKey] || pageMap.competition_event;
+
+  React.useEffect(() => {
+    setEventActive(true);
+  }, [pathname]);
 
   return (
     <AppShell
       pageMap={pageMap}
-      selectedMenuKeyOverride={eventActive ? 'competition_event' : undefined}
-      contentOverride={eventActive ? <CompetitionEventManagementPage /> : undefined}
+      selectedMenuKeyOverride={eventActive ? competitionMenuKey : undefined}
+      contentOverride={eventActive ? <React.Fragment key={pathname}>{competitionPage}</React.Fragment> : undefined}
       onMenuNavigate={() => setEventActive(false)}
       hideBreadcrumb={eventActive}
     />
+  );
+}
+
+function App() {
+  const pathname = useBrowserPathname();
+  const assessorMode = pathname.startsWith('/assessor-scoring');
+  const practicalCollectionMode = pathname.startsWith('/practical-collection');
+  const collectionManageTaskId = pathname.match(/^\/certification\/practical-collection\/([^/]+)\/manage\/?$/)?.[1];
+  const collectionManageMode = Boolean(collectionManageTaskId);
+  const competitionEventMode = isCompetitionPath(pathname);
+
+  return (
+    <NavigationBlockerProvider>
+      <AuthGate mode={assessorMode ? 'assessor' : practicalCollectionMode ? 'collection' : 'admin'}>
+        {assessorMode ? (
+          <TabletAssessorApp />
+        ) : practicalCollectionMode ? (
+          <PracticalCollectionApp />
+        ) : collectionManageMode ? (
+          <CollectionManageShell taskId={decodeURIComponent(collectionManageTaskId!)} />
+        ) : competitionEventMode ? (
+          <CompetitionEventShell pathname={pathname} />
+        ) : (
+          <AppShell pageMap={pageMap} />
+        )}
+      </AuthGate>
+    </NavigationBlockerProvider>
   );
 }
 
@@ -528,21 +585,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ConfigProvider locale={zhCN} theme={appTheme}>
       <QueryClientProvider client={queryClient}>
-        <AuthGate mode={assessorMode ? 'assessor' : practicalCollectionMode ? 'collection' : 'admin'}>
-          {assessorMode ? (
-            <TabletAssessorApp />
-          ) : practicalCollectionMode ? (
-            <PracticalCollectionApp />
-          ) : collectionManageMode ? (
-            <CollectionManageShell taskId={collectionManageTaskId!} />
-          ) : competitionEventMode ? (
-            <CompetitionEventShell />
-          ) : (
-            <AppShell pageMap={pageMap} />
-          )}
-        </AuthGate>
+        <App />
       </QueryClientProvider>
     </ConfigProvider>
   </React.StrictMode>,
 );
-

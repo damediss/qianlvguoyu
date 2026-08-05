@@ -40,12 +40,33 @@ class CompetitionEventOrgApplicationServiceTest {
     authenticate(1000L, 1L, "admin", List.of("PLATFORM_ADMIN"));
     when(eventService.getById(1L, 1001L)).thenReturn(event(1001L, CompetitionEventScope.PLATFORM.getCode(), null));
     when(orgMapper.selectOne(any())).thenReturn(org(3001L, 1L));
-    when(eventOrgService.create(1L, 1001L, new CompetitionEventOrgCreateReq(3001L, 20, 1)))
+    when(eventOrgService.create(1L, 1001L, new CompetitionEventOrgCreateReq(3001L, null, 20, 1)))
         .thenReturn(relation(2001L, 1001L, 3001L));
 
-    service.create(1001L, new CompetitionEventOrgCreateReq(3001L, 20, 1));
+    service.create(1001L, new CompetitionEventOrgCreateReq(3001L, null, 20, 1));
 
-    verify(eventOrgService).create(1L, 1001L, new CompetitionEventOrgCreateReq(3001L, 20, 1));
+    verify(eventOrgService).create(1L, 1001L, new CompetitionEventOrgCreateReq(3001L, null, 20, 1));
+  }
+
+  @Test
+  void createsOrganizationFromNameBeforeAddingToPlatformEvent() {
+    authenticate(1000L, 1L, "admin", List.of("PLATFORM_ADMIN"));
+    when(eventService.getById(1L, 1001L)).thenReturn(event(1001L, CompetitionEventScope.PLATFORM.getCode(), null));
+    when(orgMapper.selectOne(any())).thenReturn(null);
+    OrgEntity created = org(3002L, 1L);
+    created.setName("新参与企业");
+    when(orgMapper.insert(any(OrgEntity.class))).thenAnswer(invocation -> {
+      OrgEntity entity = invocation.getArgument(0);
+      entity.setId(created.getId());
+      return 1;
+    });
+    when(eventOrgService.create(1L, 1001L, new CompetitionEventOrgCreateReq(3002L, null, 20, 1)))
+        .thenReturn(relation(2002L, 1001L, 3002L));
+
+    service.create(1001L, new CompetitionEventOrgCreateReq(null, " 新参与企业 ", 20, 1));
+
+    verify(orgMapper).insert(any(OrgEntity.class));
+    verify(eventOrgService).create(1L, 1001L, new CompetitionEventOrgCreateReq(3002L, null, 20, 1));
   }
 
   @Test
@@ -54,7 +75,7 @@ class CompetitionEventOrgApplicationServiceTest {
     when(eventService.getById(1L, 1001L)).thenReturn(event(1001L, CompetitionEventScope.PLATFORM.getCode(), null));
     when(orgMapper.selectOne(any())).thenReturn(null);
 
-    assertThatThrownBy(() -> service.create(1001L, new CompetitionEventOrgCreateReq(9001L, null, null)))
+    assertThatThrownBy(() -> service.create(1001L, new CompetitionEventOrgCreateReq(9001L, null, null, null)))
         .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)
         .hasMessage("参与企业不存在或不属于当前租户");
     verify(eventOrgService, never()).create(any(), any(), any());
@@ -69,7 +90,7 @@ class CompetitionEventOrgApplicationServiceTest {
     user.setOrgId(3001L);
     when(userMapper.selectOne(any())).thenReturn(user);
 
-    assertThatThrownBy(() -> service.create(1001L, new CompetitionEventOrgCreateReq(4001L, null, null)))
+    assertThatThrownBy(() -> service.create(1001L, new CompetitionEventOrgCreateReq(4001L, null, null, null)))
         .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)
         .hasMessage("企业内部赛事不能配置其他企业");
     verify(eventOrgService, never()).create(any(), any(), any());

@@ -60,10 +60,21 @@ public class CompetitionEventMemberService {
   }
 
   public void createContestantProfile(Long tenantId, Long memberId, Long registrationId, Long operatorUserId) {
+    createContestantProfile(tenantId, memberId, registrationId, operatorUserId, null);
+  }
+
+  public void createContestantProfile(
+      Long tenantId,
+      Long memberId,
+      Long registrationId,
+      Long operatorUserId,
+      Long eventWorkTypeId) {
     CompetitionContestantProfileEntity profile = new CompetitionContestantProfileEntity();
     profile.setTenantId(tenantId);
     profile.setMemberId(memberId);
     profile.setRegistrationId(registrationId);
+    profile.setEventWorkTypeId(eventWorkTypeId);
+    profile.setWorkTypeMatchStatus(eventWorkTypeId == null ? null : "matched");
     profile.setPromotionStatus("pending");
     profile.setTotalScore(BigDecimal.ZERO);
     profile.setCreatedBy(operatorUserId);

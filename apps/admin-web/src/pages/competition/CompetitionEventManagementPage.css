@@ -34,6 +34,7 @@
 .competition-audit-card { margin-bottom: 16px; }
 
 .competition-filter-card--workspace .ant-card-body { padding: 18px; }
+.competition-filter-card--compact .ant-card-body { padding: 12px 18px; }
 .competition-filter-card__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .competition-filter-card__head .ant-typography { margin: 0; }
 .competition-filter-card__body { width: 100%; }
@@ -46,6 +47,8 @@
 .competition-roster-import-form > .ant-form-item .ant-form-item-label { padding-inline-end: 6px; }
 .competition-roster-upload-actions .ant-space { display: flex; }
 .competition-roster-upload-submit.ant-btn-primary:disabled { color: #6c9ff0; border-color: #b8d2ff; background: #e8f1ff; }
+.competition-roster-import-wizard__body { margin-top: 28px; }
+.competition-roster-import-wizard__body .competition-card-heading { margin-bottom: 12px; }
 
 .competition-event-hero { display: flex; justify-content: space-between; gap: 24px; padding: 22px 24px; margin-bottom: 14px; border: 1px solid #e2eaf5; border-radius: 15px; background: radial-gradient(circle at 95% 8%, rgba(48, 130, 246, .13), transparent 28%), linear-gradient(135deg, #fff, #f5f9ff); box-shadow: 0 12px 30px rgba(27, 49, 88, .07); }
 .competition-event-hero__main { min-width: 0; }
@@ -131,6 +134,10 @@
 .competition-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 24px; }
 .competition-loading { display: block; margin: 120px auto; }
 .competition-selected-row td { background: #f3f8ff !important; }
+.competition-score-context .ant-card-body { padding: 20px; }
+.competition-score-readiness { margin-bottom: 16px; }
+.competition-ranking-draft-actions { width: 100%; margin: 16px 0; }
+.competition-ranking-draft-actions + .ant-pro-table { margin-bottom: 14px; }
 .competition-notice-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 18px; }
 .competition-notice-pdf { padding: 18px; border: 1px solid #e5eaf1; border-radius: 10px; background: #fafcff; }
 .competition-notice-pdf__icon { color: #d4380d; font-size: 23px; }

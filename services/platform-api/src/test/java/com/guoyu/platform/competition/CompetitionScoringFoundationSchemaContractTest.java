@@ -56,9 +56,11 @@ class CompetitionScoringFoundationSchemaContractTest {
       String table = entity.getAnnotation(TableName.class).value();
       String ddl = tableDdl(migration, table);
       for (Field field : entity.getDeclaredFields()) {
-        assertThat(ddl)
+        String column = snakeCase(field.getName());
+        assertThat(ddl.contains("\n  " + column + " ")
+            || migration.toLowerCase().contains("add column " + column + " "))
             .as(table + "." + field.getName())
-            .contains("\n  " + snakeCase(field.getName()) + " ");
+            .isTrue();
       }
     }
   }
@@ -85,9 +87,13 @@ class CompetitionScoringFoundationSchemaContractTest {
 
   private String migration() throws IOException {
     try (var input = getClass().getClassLoader().getResourceAsStream(
-        "db/migration/V20260727_006__create_competition_scoring_foundation.sql")) {
+        "db/migration/V20260727_006__create_competition_scoring_foundation.sql");
+         var additiveInput = getClass().getClassLoader().getResourceAsStream(
+             "db/migration/V20260802_003__extend_competition_scoring_to_levels.sql")) {
       assertThat(input).isNotNull();
-      return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+      assertThat(additiveInput).isNotNull();
+      return new String(input.readAllBytes(), StandardCharsets.UTF_8)
+          + "\n" + new String(additiveInput.readAllBytes(), StandardCharsets.UTF_8);
     }
   }
 

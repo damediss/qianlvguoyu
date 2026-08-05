@@ -8,6 +8,17 @@ import org.apache.ibatis.annotations.Select;
 
 public interface CompetitionContestantProfileMapper extends BaseMapper<CompetitionContestantProfileEntity> {
 
+  @Select("""
+      SELECT p.*
+      FROM competition_contestant_profile p
+      WHERE p.tenant_id = #{tenantId} AND p.member_id = #{contestantMemberId}
+        AND p.deleted = 0
+      LIMIT 1 FOR UPDATE
+      """)
+  CompetitionContestantProfileEntity selectForUpdateByTenantAndMember(
+      @Param("tenantId") Long tenantId,
+      @Param("contestantMemberId") Long contestantMemberId);
+
   @Select({
       "<script>",
       "SELECT p.id AS profile_id, p.member_id AS contestant_member_id,",

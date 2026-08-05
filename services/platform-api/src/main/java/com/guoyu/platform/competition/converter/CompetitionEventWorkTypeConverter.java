@@ -19,6 +19,7 @@ public final class CompetitionEventWorkTypeConverter {
     target.setDisplayName(source.displayName());
     target.setStatus(source.status());
     target.setSortOrder(source.sortOrder());
+    target.setStagePlanStatus("draft");
     return target;
   }
 
@@ -52,6 +53,9 @@ public final class CompetitionEventWorkTypeConverter {
     target.setDisplayName(source.getDisplayName());
     target.setStatus(source.getStatus());
     target.setSortOrder(source.getSortOrder());
+    target.setStagePlanStatus(source.getStagePlanStatus());
+    target.setStagePlanConfirmedBy(source.getStagePlanConfirmedBy());
+    target.setStagePlanConfirmedAt(source.getStagePlanConfirmedAt());
     return target;
   }
 }

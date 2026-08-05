@@ -97,4 +97,65 @@ public interface CompetitionRegistrationMapper extends BaseMapper<CompetitionReg
       @Param("status") String status,
       @Param("employeeNo") String employeeNo,
       @Param("name") String name);
+
+  @Select({
+      "<script>",
+      "SELECT r.id AS registration_id, r.event_id, e.name AS event_name,",
+      "r.org_id, o.name AS org_name, r.roster_item_id, r.player_id, r.member_id,",
+      "p.id AS profile_id, p.event_work_type_id, wt.display_name AS event_work_type_name,",
+      "i.employee_no, i.name, i.work_type, i.level, r.status, pi.status AS player_status,",
+      "pi.id_card_ciphertext, pi.mobile_ciphertext, r.created_at",
+      "FROM competition_registration r",
+      "JOIN competition_roster_item i ON i.id = r.roster_item_id",
+      "AND i.tenant_id = r.tenant_id AND i.deleted = 0",
+      "JOIN competition_event e ON e.id = r.event_id",
+      "AND e.tenant_id = r.tenant_id AND e.deleted = 0",
+      "LEFT JOIN sys_org o ON o.id = r.org_id",
+      "AND o.tenant_id = r.tenant_id AND o.deleted = 0",
+      "LEFT JOIN competition_player_identity pi ON pi.id = r.player_id",
+      "AND pi.tenant_id = r.tenant_id AND pi.deleted = 0",
+      "LEFT JOIN competition_contestant_profile p ON p.member_id = r.member_id",
+      "AND p.tenant_id = r.tenant_id AND p.deleted = 0",
+      "LEFT JOIN competition_event_work_type wt ON wt.id = p.event_work_type_id",
+      "AND wt.tenant_id = r.tenant_id AND wt.deleted = 0",
+      "WHERE r.tenant_id = #{tenantId} AND r.deleted = 0 AND r.player_id IS NOT NULL",
+      "<if test='eventId != null'> AND r.event_id = #{eventId}</if>",
+      "<if test='orgId != null'> AND r.org_id = #{orgId}</if>",
+      "<if test='eventWorkTypeId != null'> AND p.event_work_type_id = #{eventWorkTypeId}</if>",
+      "<if test='keyword != null and keyword != \"\"'> AND (i.employee_no LIKE CONCAT('%', #{keyword}, '%') OR i.name LIKE CONCAT('%', #{keyword}, '%'))</if>",
+      "<if test='employeeNo != null and employeeNo != \"\"'> AND i.employee_no LIKE CONCAT('%', #{employeeNo}, '%')</if>",
+      "<if test='name != null and name != \"\"'> AND i.name LIKE CONCAT('%', #{name}, '%')</if>",
+      "<if test='status != null and status != \"\"'> AND r.status = #{status}</if>",
+      "ORDER BY r.event_id ASC, r.created_at DESC, r.id DESC",
+      "</script>"
+  })
+  Page<CompetitionPlayerQueryRow> selectPlayerPage(
+      Page<CompetitionPlayerQueryRow> page,
+      @Param("tenantId") Long tenantId,
+      @Param("eventId") Long eventId,
+      @Param("orgId") Long orgId,
+      @Param("eventWorkTypeId") Long eventWorkTypeId,
+      @Param("keyword") String keyword,
+      @Param("employeeNo") String employeeNo,
+      @Param("name") String name,
+      @Param("status") String status);
+
+  @Select({
+      "SELECT r.id AS registration_id, r.event_id, e.name AS event_name,",
+      "r.org_id, o.name AS org_name, r.roster_item_id, r.player_id, r.member_id,",
+      "p.id AS profile_id, p.event_work_type_id, wt.display_name AS event_work_type_name,",
+      "i.employee_no, i.name, i.work_type, i.level, r.status, pi.status AS player_status,",
+      "pi.id_card_ciphertext, pi.mobile_ciphertext, r.created_at",
+      "FROM competition_registration r",
+      "JOIN competition_roster_item i ON i.id = r.roster_item_id AND i.tenant_id = r.tenant_id AND i.deleted = 0",
+      "JOIN competition_event e ON e.id = r.event_id AND e.tenant_id = r.tenant_id AND e.deleted = 0",
+      "LEFT JOIN sys_org o ON o.id = r.org_id AND o.tenant_id = r.tenant_id AND o.deleted = 0",
+      "LEFT JOIN competition_player_identity pi ON pi.id = r.player_id AND pi.tenant_id = r.tenant_id AND pi.deleted = 0",
+      "LEFT JOIN competition_contestant_profile p ON p.member_id = r.member_id AND p.tenant_id = r.tenant_id AND p.deleted = 0",
+      "LEFT JOIN competition_event_work_type wt ON wt.id = p.event_work_type_id AND wt.tenant_id = r.tenant_id AND wt.deleted = 0",
+      "WHERE r.tenant_id = #{tenantId} AND r.id = #{registrationId} AND r.deleted = 0 LIMIT 1"
+  })
+  CompetitionPlayerQueryRow selectPlayerByRegistrationId(
+      @Param("tenantId") Long tenantId,
+      @Param("registrationId") Long registrationId);
 }

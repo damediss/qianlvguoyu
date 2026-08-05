@@ -21,6 +21,10 @@ class CompetitionStageControllerPermissionTest {
         .containsExactly("/events/{eventId}/stages");
     assertThat(method("create").getAnnotation(PostMapping.class).value())
         .containsExactly("/events/{eventId}/stages");
+    assertThat(method("saveDraft").getAnnotation(PutMapping.class).value())
+        .containsExactly("/events/{eventId}/stages/draft");
+    assertThat(method("confirmStagePlan").getAnnotation(PostMapping.class).value())
+        .containsExactly("/events/{eventId}/stages/confirm");
     assertThat(method("update").getAnnotation(PutMapping.class).value())
         .containsExactly("/stages/{stageId}");
   }
@@ -37,6 +41,20 @@ class CompetitionStageControllerPermissionTest {
     assertThat(create.getAnnotation(PreAuthorize.class).value())
         .isEqualTo("hasAuthority('competition:stage:manage')");
     assertAudit(create, "stage:create");
+
+    Method saveDraft = method("saveDraft");
+    assertThat(saveDraft.getAnnotation(PreAuthorize.class).value())
+        .isEqualTo("hasAuthority('competition:stage:manage')");
+    assertAudit(saveDraft, "stage:draft-save");
+
+    Method confirmStagePlan = method("confirmStagePlan");
+    assertThat(confirmStagePlan.getAnnotation(PreAuthorize.class).value())
+        .isEqualTo("hasAuthority('competition:stage:manage')");
+    AuditLog confirmAudit = confirmStagePlan.getAnnotation(AuditLog.class);
+    assertThat(confirmAudit).isNotNull();
+    assertThat(confirmAudit.module()).isEqualTo("competition");
+    assertThat(confirmAudit.action()).isEqualTo("stage:confirm");
+    assertThat(confirmAudit.targetType()).isEqualTo("competition_event");
 
     Method update = method("update");
     assertThat(update.getAnnotation(PreAuthorize.class).value())

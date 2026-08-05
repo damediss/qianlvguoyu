@@ -7,9 +7,9 @@ import {
   CopyOutlined,
   DownloadOutlined,
   PlusOutlined,
-  SendOutlined,
   ReloadOutlined,
   SearchOutlined,
+  SaveOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import {
@@ -32,39 +32,51 @@ import {
 import dayjs, { type Dayjs } from 'dayjs';
 import QRCode from 'qrcode';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createCompetitionEvent,
+  createCompetitionEventWorkType,
   getCompetitionEvent,
+  listCompetitionEventWorkTypes,
   pageCompetitionEvents,
-  publishCompetitionEvent,
+  updateCompetitionEventWorkType,
   updateCompetitionEvent,
 } from '../../api/competition';
+import { treeWorkTypes } from '../../api/exam';
 import type {
   CompetitionEvent,
   CompetitionEventCreateRequest,
   CompetitionEventPageQuery,
   CompetitionEventScope,
   CompetitionEventStatus,
+  CompetitionEventWorkType,
   CompetitionEventUpdateRequest,
   CompetitionId,
 } from '../../types/competition';
+import type { ExamWorkType } from '../../types/exam';
 import { useAuthStore } from '../../stores/authStore';
+import { useNavigationBlocker } from '../../hooks/useUnsavedChangesBlocker';
 import './CompetitionEventManagementPage.css';
 import { CompetitionEventFrame } from './CompetitionEventFrame';
 import { CompetitionEventOrganizationsPage } from './CompetitionEventOrganizationsPage';
 import { CompetitionRosterImportPage } from './CompetitionRosterImportPage';
+import { CompetitionPlayerManagementPage } from './CompetitionPlayerManagementPage';
 import { CompetitionNoticePage } from './CompetitionNoticePage';
+import { CompetitionScoreRankingPage } from './CompetitionScoreRankingPage';
+import { CompetitionTheoryExamPage } from './CompetitionTheoryExamPage';
+import { CompetitionEventModulePage, type CompetitionEventModule } from './CompetitionEventModulePage';
 
 type CompetitionWorkspaceRoute = {
-  mode: 'organizations' | 'rosters' | 'notices';
+  mode: 'organizations' | 'rosters' | 'notices' | 'theory-exam' | 'scores';
   eventId: string;
 };
 
 type EventRoute =
   | { mode: 'list' | 'create'; eventId?: never }
   | { mode: 'detail' | 'edit'; eventId: string }
-  | CompetitionWorkspaceRoute;
+  | CompetitionWorkspaceRoute
+  | { mode: 'players' }
+  | { mode: 'module'; module: CompetitionEventModule };
 
 interface EventFormValues {
   name: string;
@@ -96,6 +108,25 @@ const statusMeta: Record<CompetitionEventStatus, { label: string; color: string 
 };
 
 function eventRoute(): EventRoute {
+  const modulePathMap: Record<string, CompetitionEventModule> = {
+    '/competition/stages': 'stages',
+    '/competition/notices': 'notices',
+    '/competition/theory-exams': 'theory-exam',
+    '/competition/scores': 'scores',
+  };
+  const module = modulePathMap[window.location.pathname.replace(/\/$/, '')];
+  if (module) return { mode: 'module', module };
+  if (window.location.pathname.replace(/\/$/, '') === '/competition/players') {
+    return { mode: 'players' };
+  }
+  const theoryExamMatch = window.location.pathname.match(/^\/competition\/events\/([^/]+)\/theory-exam\/?$/);
+  if (theoryExamMatch?.[1]) {
+    return { mode: 'theory-exam', eventId: decodeURIComponent(theoryExamMatch[1]) };
+  }
+  const scoresMatch = window.location.pathname.match(/^\/competition\/events\/([^/]+)\/scores\/?$/);
+  if (scoresMatch?.[1]) {
+    return { mode: 'scores', eventId: decodeURIComponent(scoresMatch[1]) };
+  }
   const noticesMatch = window.location.pathname.match(/^\/competition\/events\/([^/]+)\/notices\/?$/);
   if (noticesMatch?.[1]) {
     return { mode: 'notices', eventId: decodeURIComponent(noticesMatch[1]) };
@@ -168,15 +199,30 @@ function downloadDataUrl(dataUrl: string, fileName: string) {
 
 export function CompetitionEventManagementPage() {
   const [route, setRoute] = useState<EventRoute>(eventRoute);
+  const { confirmNavigation } = useNavigationBlocker();
+  const currentPathRef = useRef(window.location.pathname);
 
   useEffect(() => {
-    const onPopState = () => setRoute(eventRoute());
+    const onPopState = () => {
+      const nextPath = window.location.pathname;
+      void confirmNavigation().then((allowed) => {
+        if (!allowed) {
+          window.history.pushState({}, '', currentPathRef.current);
+          setRoute(eventRoute());
+          return;
+        }
+        currentPathRef.current = nextPath;
+        setRoute(eventRoute());
+      });
+    };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, []);
+  }, [confirmNavigation]);
 
-  const navigate = (path: string) => {
+  const navigate = async (path: string) => {
+    if (!(await confirmNavigation())) return;
     window.history.pushState({}, '', path);
+    currentPathRef.current = path;
     setRoute(eventRoute());
   };
 
@@ -192,7 +238,16 @@ export function CompetitionEventManagementPage() {
   if (route.mode === 'detail') {
     return <CompetitionEventListPage onNavigate={navigate} initialDetailEventId={route.eventId} />;
   }
-  if (route.mode === 'organizations' || route.mode === 'rosters' || route.mode === 'notices') {
+  if (route.mode === 'module') {
+    return <CompetitionEventModulePage module={route.module} onNavigate={navigate} />;
+  }
+  if (route.mode === 'players') {
+    return <CompetitionPlayerManagementPage onNavigate={navigate} />;
+  }
+  if (route.mode === 'notices' || route.mode === 'theory-exam' || route.mode === 'scores') {
+    return <CompetitionEventModulePage module={route.mode} onNavigate={navigate} initialEventId={route.eventId} />;
+  }
+  if (route.mode === 'organizations' || route.mode === 'rosters') {
     return <CompetitionEventListPage onNavigate={navigate} initialWorkspaceRoute={route} />;
   }
   return null;
@@ -362,7 +417,7 @@ function CompetitionEventListPage({
         title={editingEventId ? '编辑竞赛计划' : detailEventId ? '赛事详情' : workspaceRoute ? competitionWorkspaceTitle(workspaceRoute.mode) : '创建竞赛计划'}
         open={modalOpen}
         centered
-        width={920}
+        width={workspaceRoute?.mode === 'scores' || workspaceRoute?.mode === 'theory-exam' ? 1320 : 920}
         footer={null}
         destroyOnClose
         className="competition-create-modal"
@@ -392,6 +447,8 @@ function competitionWorkspaceTitle(mode: CompetitionWorkspaceRoute['mode']) {
         organizations: '参与企业',
         rosters: '名单导入',
         notices: '公告设置',
+        'theory-exam': '理论考试',
+        scores: '成绩与排名',
       }[mode];
 }
 
@@ -404,6 +461,8 @@ function CompetitionEventWorkspaceModalContent({
 }) {
   if (route.mode === 'organizations') return <CompetitionEventOrganizationsPage eventId={route.eventId} onNavigate={onNavigate} />;
   if (route.mode === 'rosters') return <CompetitionRosterImportPage eventId={route.eventId} onNavigate={onNavigate} />;
+  if (route.mode === 'theory-exam') return <CompetitionTheoryExamPage eventId={route.eventId} onNavigate={onNavigate} />;
+  if (route.mode === 'scores') return <CompetitionScoreRankingPage eventId={route.eventId} onNavigate={onNavigate} />;
   return <CompetitionNoticePage eventId={route.eventId} onNavigate={onNavigate} />;
 }
 
@@ -607,8 +666,6 @@ function CompetitionEventDetailPage({
   const permissions = useAuthStore((state) => state.permissionCodes);
   const canView = permissions.includes('competition:event:view');
   const canUpdate = permissions.includes('competition:event:update');
-  const canPublish = permissions.includes('competition:event:publish');
-  const queryClient = useQueryClient();
   const eventQuery = useQuery({
     queryKey: ['competition-event', eventId],
     queryFn: () => getCompetitionEvent(eventId),
@@ -634,15 +691,6 @@ function CompetitionEventDetailPage({
     });
     return () => { disposed = true; };
   }, [entryCode]);
-  const publishMutation = useMutation({
-    mutationFn: publishCompetitionEvent,
-    onSuccess: (result) => {
-      message.success(result.playerEntryCode ? '赛事已发布，入口码已生成' : '赛事已发布');
-      queryClient.invalidateQueries({ queryKey: ['competition-event', eventId] });
-      queryClient.invalidateQueries({ queryKey: ['competition-events'] });
-    },
-  });
-
   if (!canView) return <Result status="403" title="暂无赛事查看权限" />;
   if (eventQuery.isLoading) return <Spin className="competition-loading" />;
   if (eventQuery.isError || !eventQuery.data) {
@@ -655,16 +703,6 @@ function CompetitionEventDetailPage({
     <Space wrap>
       {isDraft && canUpdate && (
         <Button icon={<EditOutlined />} onClick={() => onNavigate(`/competition/events/${event.id}/edit`)}>编辑计划</Button>
-      )}
-      {isDraft && canPublish && (
-        <Button
-          type="primary"
-          icon={<SendOutlined />}
-          loading={publishMutation.isPending}
-          onClick={() => publishMutation.mutate(event.id)}
-        >
-          发布计划
-        </Button>
       )}
     </Space>
   );
@@ -735,6 +773,12 @@ function CompetitionEventDetailPage({
           </Descriptions>
         </Card>
 
+        <CompetitionEventWorkTypeCard
+          eventId={idValue(event.id)}
+          canView={permissions.includes('competition:event-work-type:view')}
+          canManage={permissions.includes('competition:event-work-type:manage')}
+        />
+
       </section>
 
       <Card bordered={false} className="competition-detail-card competition-audit-card">
@@ -749,4 +793,203 @@ function CompetitionEventDetailPage({
   );
 
   return inModal ? <div className="competition-detail-modal-content">{detailContent}</div> : detailContent;
+}
+
+type CompetitionWorkTypeOption = {
+  value: string;
+  label: string;
+  title: string;
+  disabled?: boolean;
+};
+
+function flattenExamWorkTypes(
+  nodes: ExamWorkType[],
+  parentPath = '',
+): Array<{ id: number; label: string; title: string; status: number }> {
+  return nodes.flatMap((node) => {
+    const label = parentPath ? `${parentPath} / ${node.title}` : node.title;
+    return [
+      { id: node.id, label, title: node.title, status: node.status },
+      ...flattenExamWorkTypes(node.children || [], label),
+    ];
+  });
+}
+
+function CompetitionEventWorkTypeCard({
+  eventId,
+  canView,
+  canManage,
+}: {
+  eventId: string;
+  canView: boolean;
+  canManage: boolean;
+}) {
+  const eventWorkTypesQuery = useQuery({
+    queryKey: ['competition-event-work-types', eventId],
+    queryFn: () => listCompetitionEventWorkTypes(eventId),
+    enabled: canView,
+  });
+  const sourceWorkTypesQuery = useQuery({
+    queryKey: ['exam-work-types-tree'],
+    queryFn: treeWorkTypes,
+    enabled: canView && canManage,
+  });
+  const queryClient = useQueryClient();
+  const [selectedWorkTypeIds, setSelectedWorkTypeIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (eventWorkTypesQuery.data) {
+      setSelectedWorkTypeIds(
+        eventWorkTypesQuery.data
+          .filter((item) => item.status === 'active')
+          .map((item) => idValue(item.workTypeId)),
+      );
+    }
+  }, [eventWorkTypesQuery.data]);
+
+  const sourceOptions = useMemo<CompetitionWorkTypeOption[]>(() => {
+    const options = new Map<string, CompetitionWorkTypeOption>();
+    flattenExamWorkTypes(sourceWorkTypesQuery.data || []).forEach((item) => {
+      options.set(String(item.id), {
+        value: String(item.id),
+        label: item.status === 1 ? item.label : `${item.label}（已停用）`,
+        title: item.title,
+        disabled: item.status !== 1,
+      });
+    });
+    return Array.from(options.values());
+  }, [sourceWorkTypesQuery.data]);
+
+  const options = useMemo<CompetitionWorkTypeOption[]>(() => {
+    const optionMap = new Map(sourceOptions.map((option) => [option.value, option]));
+    (eventWorkTypesQuery.data || [])
+      .filter((item) => item.status === 'active')
+      .forEach((item) => {
+        const value = idValue(item.workTypeId);
+        if (!optionMap.has(value)) {
+          optionMap.set(value, {
+            value,
+            label: `${item.displayName || item.workTypeName || value}（工种已不可用）`,
+            title: item.displayName || item.workTypeName || value,
+            disabled: true,
+          });
+        }
+      });
+    return Array.from(optionMap.values());
+  }, [eventWorkTypesQuery.data, sourceOptions]);
+
+  const optionById = useMemo(
+    () => new Map(options.map((option) => [option.value, option])),
+    [options],
+  );
+  const activeEventWorkTypes = useMemo(
+    () => (eventWorkTypesQuery.data || []).filter((item) => item.status === 'active'),
+    [eventWorkTypesQuery.data],
+  );
+  const isDirty = useMemo(() => {
+    const selected = [...selectedWorkTypeIds].sort();
+    const persisted = activeEventWorkTypes.map((item) => idValue(item.workTypeId)).sort();
+    return selected.length !== persisted.length || selected.some((id, index) => id !== persisted[index]);
+  }, [activeEventWorkTypes, selectedWorkTypeIds]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const existingByWorkTypeId = new Map<string, CompetitionEventWorkType>();
+      (eventWorkTypesQuery.data || []).forEach((item) => {
+        existingByWorkTypeId.set(idValue(item.workTypeId), item);
+      });
+
+      for (const [index, workTypeId] of selectedWorkTypeIds.entries()) {
+        const option = optionById.get(workTypeId);
+        const existing = existingByWorkTypeId.get(workTypeId);
+        if (!option || option.disabled) continue;
+
+        const payload = {
+          workTypeId: Number(workTypeId),
+          displayName: existing?.displayName || option.title,
+          status: 'active',
+          sortOrder: index,
+        };
+        if (!existing) {
+          await createCompetitionEventWorkType(eventId, payload);
+        } else if (
+          existing.status !== 'active'
+          || existing.sortOrder !== index
+          || existing.displayName !== payload.displayName
+        ) {
+          await updateCompetitionEventWorkType(eventId, existing.id, payload);
+        }
+      }
+
+      for (const existing of eventWorkTypesQuery.data || []) {
+        if (existing.status !== 'active' || selectedWorkTypeIds.includes(idValue(existing.workTypeId))) continue;
+        await updateCompetitionEventWorkType(eventId, existing.id, {
+          workTypeId: Number(existing.workTypeId),
+          displayName: existing.displayName || existing.workTypeName || undefined,
+          status: 'inactive',
+          sortOrder: existing.sortOrder,
+        });
+      }
+    },
+    onSuccess: () => {
+      message.success('参赛工种已保存');
+      queryClient.invalidateQueries({ queryKey: ['competition-event-work-types', eventId] });
+    },
+  });
+
+  return (
+    <Card bordered={false} className="competition-detail-card competition-event-work-type-card">
+      <div className="competition-card-heading">
+        <div>
+          <Typography.Title level={4}>参赛工种</Typography.Title>
+          <Typography.Text type="secondary">
+            从课程管理的工种管理中选择本赛事参赛工种，支持多选
+          </Typography.Text>
+        </div>
+      </div>
+
+      {!canView ? (
+        <Typography.Text type="secondary">暂无参赛工种查看权限</Typography.Text>
+      ) : eventWorkTypesQuery.isLoading || (canManage && sourceWorkTypesQuery.isLoading) ? (
+        <Spin size="small" />
+      ) : eventWorkTypesQuery.isError ? (
+        <Typography.Text type="danger">参赛工种加载失败，请刷新重试</Typography.Text>
+      ) : canManage ? (
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Select
+            mode="multiple"
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            style={{ width: '100%' }}
+            placeholder="请选择参赛工种（支持多选）"
+            value={selectedWorkTypeIds}
+            options={options}
+            loading={sourceWorkTypesQuery.isFetching}
+            onChange={(values) => setSelectedWorkTypeIds(values.map(String))}
+          />
+          <Space>
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              loading={saveMutation.isPending}
+              disabled={!isDirty || sourceWorkTypesQuery.isError}
+              onClick={() => saveMutation.mutate()}
+            >
+              保存参赛工种
+            </Button>
+            <Typography.Text type="secondary">
+              赛事绑定只影响本赛事，不会修改课程管理中的工种
+            </Typography.Text>
+          </Space>
+        </Space>
+      ) : (
+        <Space wrap>
+          {activeEventWorkTypes.length ? activeEventWorkTypes.map((item) => (
+            <Tag key={item.id}>{item.displayName || item.workTypeName || idValue(item.workTypeId)}</Tag>
+          )) : <Typography.Text type="secondary">暂未设置参赛工种</Typography.Text>}
+        </Space>
+      )}
+    </Card>
+  );
 }

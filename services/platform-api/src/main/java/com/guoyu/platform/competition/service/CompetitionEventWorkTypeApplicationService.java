@@ -13,8 +13,6 @@ import com.guoyu.platform.competition.enums.CompetitionEventOrgStatus;
 import com.guoyu.platform.competition.enums.CompetitionEventScope;
 import com.guoyu.platform.competition.mapper.CompetitionEventOrgMapper;
 import com.guoyu.platform.competition.vo.CompetitionEventWorkTypeVO;
-import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
-import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.security.PlatformAdminSupport;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
@@ -33,19 +31,16 @@ public class CompetitionEventWorkTypeApplicationService {
 
   private final CompetitionEventService eventService;
   private final CompetitionEventWorkTypeDomainService domainService;
-  private final ExamWorkTypeMapper examWorkTypeMapper;
   private final CompetitionEventOrgMapper eventOrgMapper;
   private final UserMapper userMapper;
 
   public CompetitionEventWorkTypeApplicationService(
       CompetitionEventService eventService,
       CompetitionEventWorkTypeDomainService domainService,
-      ExamWorkTypeMapper examWorkTypeMapper,
       CompetitionEventOrgMapper eventOrgMapper,
       UserMapper userMapper) {
     this.eventService = eventService;
     this.domainService = domainService;
-    this.examWorkTypeMapper = examWorkTypeMapper;
     this.eventOrgMapper = eventOrgMapper;
     this.userMapper = userMapper;
   }
@@ -57,9 +52,24 @@ public class CompetitionEventWorkTypeApplicationService {
     List<CompetitionEventWorkTypeVO> result = new ArrayList<>();
     for (CompetitionEventWorkTypeEntity entity :
         domainService.list(principal.getTenantId(), eventId)) {
-      result.add(toVO(entity));
+      result.add(toVO(principal.getTenantId(), entity));
     }
     return result;
+  }
+
+  @Transactional(readOnly = true)
+  public CompetitionEventWorkTypeVO get(Long eventId, Long eventWorkTypeId) {
+    PlatformUserPrincipal principal = currentUser();
+    accessibleEvent(principal, eventId, false);
+    CompetitionEventWorkTypeEntity entity = domainService.getById(principal.getTenantId(), eventWorkTypeId);
+    if (entity == null || !Objects.equals(eventId, entity.getEventId())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "赛事工种不存在");
+    }
+    return toVO(principal.getTenantId(), entity);
+  }
+
+  public void assertAccessible(Long eventId, boolean manage) {
+    accessibleEvent(currentUser(), eventId, manage);
   }
 
   @Transactional
@@ -68,7 +78,8 @@ public class CompetitionEventWorkTypeApplicationService {
       CompetitionEventWorkTypeCreateReq req) {
     PlatformUserPrincipal principal = currentUser();
     accessibleEvent(principal, eventId, true);
-    return toVO(domainService.create(principal.getTenantId(), eventId, req));
+    return toVO(principal.getTenantId(),
+        domainService.create(principal.getTenantId(), eventId, req));
   }
 
   @Transactional
@@ -78,14 +89,12 @@ public class CompetitionEventWorkTypeApplicationService {
       CompetitionEventWorkTypeUpdateReq req) {
     PlatformUserPrincipal principal = currentUser();
     accessibleEvent(principal, eventId, true);
-    return toVO(domainService.update(
+    return toVO(principal.getTenantId(), domainService.update(
         principal.getTenantId(), eventId, eventWorkTypeId, req));
   }
 
-  private CompetitionEventWorkTypeVO toVO(CompetitionEventWorkTypeEntity entity) {
-    ExamWorkTypeEntity source = examWorkTypeMapper.selectById(
-        Math.toIntExact(entity.getWorkTypeId()));
-    String sourceName = source == null ? null : source.getTitle();
+  private CompetitionEventWorkTypeVO toVO(Long tenantId, CompetitionEventWorkTypeEntity entity) {
+    String sourceName = domainService.findActiveSourceName(tenantId, entity.getWorkTypeId());
     return CompetitionEventWorkTypeConverter.toVO(entity, sourceName);
   }
 
