@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Spin } from 'antd';
 import { TeamOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../../stores/authStore';
@@ -13,7 +13,6 @@ import { useAuthStore } from '../../stores/authStore';
  */
 export function RencaishibieEmbedPage() {
   const [loading, setLoading] = useState(true);
-  const [tokenReady, setTokenReady] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const token = useAuthStore((s) => s.token);
   const tenantId = useAuthStore((s) => s.tenantId);
@@ -22,21 +21,18 @@ export function RencaishibieEmbedPage() {
   const targetOrigin = `${window.location.protocol}//${window.location.host}`;
 
   // iframe 加载完成后，通过 postMessage 把 token 传过去
+  const sendToken = useCallback(() => {
+    if (!iframeRef.current?.contentWindow || !token) return;
+    iframeRef.current.contentWindow.postMessage(
+      { type: 'saas-auth', token, tenantId },
+      targetOrigin  // 动态 origin，适配本机和服务器
+    );
+  }, [token, tenantId, targetOrigin]);
+
+  // token/tenantId 变化时发送；iframe 刷新后也会触发 onLoad 重新发送
   useEffect(() => {
-    if (!iframeRef.current || !token || tokenReady) return;
-
-    const sendToken = () => {
-      iframeRef.current?.contentWindow?.postMessage(
-        { type: 'saas-auth', token, tenantId },
-        targetOrigin  // 动态 origin，适配本机和服务器
-      );
-      setTokenReady(true);
-    };
-
-    // 等 iframe 加载后再发，确保对方监听器已就绪
-    const timer = setTimeout(sendToken, 1000);
-    return () => clearTimeout(timer);
-  }, [token, tenantId, tokenReady, targetOrigin]);
+    sendToken();
+  }, [sendToken]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: 'calc(100vh - 104px)' }}>
@@ -65,7 +61,11 @@ export function RencaishibieEmbedPage() {
           border: 0,
           display: 'block',
         }}
-        onLoad={() => setLoading(false)}
+        onLoad={() => {
+          setLoading(false);
+          // iframe 每次加载完成（包括刷新）都重新下发 token
+          sendToken();
+        }}
       />
     </div>
   );

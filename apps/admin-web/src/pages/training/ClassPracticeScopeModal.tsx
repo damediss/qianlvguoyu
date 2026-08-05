@@ -15,6 +15,7 @@ import {
   message,
 } from 'antd';
 import type { DataNode } from 'antd/es/tree';
+import type { Key } from 'rc-tree/es/interface';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs, { type Dayjs } from 'dayjs';
 import * as trainApi from '../../api/training';
@@ -204,7 +205,7 @@ export function ClassPracticeScopeModal({ open, onClose, classId, classTitle, ti
     });
   };
 
-  const onCheckKnowledge = (checked: string[] | { checked: string[]; halfChecked: string[] }) => {
+  const onCheckKnowledge = (checked: Key[] | { checked: Key[]; halfChecked: Key[] }) => {
     if (activeCourseId == null) return;
     const keys = Array.isArray(checked) ? checked : checked.checked;
     const activeKeys = new Set(keys.map(String));
