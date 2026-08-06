@@ -94,6 +94,20 @@ async function exerciseStageCanvas(page: Page, assertSaved: () => Promise<Array<
   await expect(page.getByTestId('stage-node-semifinal')).toBeVisible();
   await expect(page.getByTestId('stage-node-final')).toBeVisible();
 
+  await page.getByTestId('stage-node-preliminary').click({ button: 'right' });
+  const openContextMenu = page.locator('.ant-dropdown:not(.ant-dropdown-hidden)');
+  await expect(openContextMenu).toHaveCount(1);
+  await expect(openContextMenu.getByText('理论配置', { exact: true })).toBeVisible();
+  await expect(openContextMenu.locator('li.ant-dropdown-menu-submenu-disabled')).toHaveCount(3);
+  await page.getByTestId('stage-node-final').click({ button: 'right' });
+  await expect(page.getByTestId('stage-node-final')).toHaveClass(/is-selected/);
+  await expect(page.getByTestId('stage-inspector')).toContainText('决赛');
+  await expect(openContextMenu).toHaveCount(1);
+  await expect(openContextMenu.getByText('理论配置', { exact: true })).toBeVisible();
+  await expect(openContextMenu.locator('li.ant-dropdown-menu-submenu-disabled')).toHaveCount(3);
+  await page.keyboard.press('Escape');
+  await expect(openContextMenu).toHaveCount(0);
+
   await dragToCanvas(page, 'stage-node-semifinal', 360, 300);
   // Normalize the drop positions before selecting nodes again; this keeps the
   // real browser path deterministic even when fitView scales the canvas.

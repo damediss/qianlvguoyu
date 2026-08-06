@@ -57,6 +57,7 @@ import {
   updateCertificationTask,
   pageCertificationTasks,
 } from '../../api/certification';
+import { treeWorkTypes } from '../../api/exam';
 import { PermissionGate } from '../../directives/permission';
 import { useNavStore } from '../../stores/navStore';
 import type {
@@ -73,6 +74,7 @@ import type {
   CertificationWorkbench,
   CertificationWbsItem,
 } from '../../types/certification';
+import { flattenWorkTypeOptions } from '../../utils/workTypeOptions';
 import { CharterEditor, type CharterDraft } from './charter/CharterEditor';
 import { CharterViewer } from './charter/CharterViewer';
 import { WbsEditor } from './wbs/WbsEditor';
@@ -118,6 +120,24 @@ interface TaskFormValues {
   status?: string;
   currentPhase?: string;
   remark?: string;
+}
+
+function hasDuplicateScopeLevel(
+  scopes: TaskFormValues['scopes'],
+  currentIndex: number,
+): boolean {
+  const currentScope = scopes?.[currentIndex];
+  const workTypeName = currentScope?.workTypeName?.trim();
+  const levelCode = currentScope?.levelCode;
+  if (!workTypeName || !levelCode) {
+    return false;
+  }
+
+  return (scopes ?? []).some((scope, index) => (
+    index !== currentIndex
+    && scope?.workTypeName?.trim() === workTypeName
+    && scope.levelCode === levelCode
+  ));
 }
 
 interface EditorFormValues {
@@ -240,6 +260,18 @@ export function ProjectManagementPage() {
     queryKey: ['certification-tasks', query],
     queryFn: () => pageCertificationTasks(query),
   });
+
+  const workTypeQuery = useQuery({
+    queryKey: ['exam-work-types-tree'],
+    queryFn: treeWorkTypes,
+    enabled: taskModalOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const workTypeOptions = useMemo(
+    () => flattenWorkTypeOptions(workTypeQuery.data ?? []),
+    [workTypeQuery.data],
+  );
 
   const tasks = useMemo(() => tasksQuery.data?.items || [], [tasksQuery.data]);
 
@@ -945,10 +977,44 @@ export function ProjectManagementPage() {
                           alignItems: 'start',
                         }}
                       >
-                        <Form.Item {...restField} name={[name, 'workTypeName']} label="工种" rules={[{ required: true, message: '请输入工种' }]}>
-                          <Input placeholder="例如：电工" />
+                        <Form.Item
+                          {...restField}
+                          name={[name, 'workTypeName']}
+                          label="工种"
+                          rules={[
+                            { required: true, message: '请选择工种' },
+                            {
+                              validator: async () => {
+                                if (!hasDuplicateScopeLevel(taskForm.getFieldValue('scopes'), name)) {
+                                  return;
+                                }
+                                throw new Error('同一工种下等级编码不可重复');
+                              },
+                            },
+                          ]}
+                        >
+                          <Select
+                            showSearch
+                            optionFilterProp="label"
+                            options={workTypeOptions}
+                            loading={workTypeQuery.isLoading}
+                            placeholder="请选择工种"
+                            notFoundContent={workTypeQuery.isError ? '工种数据加载失败' : undefined}
+                          />
                         </Form.Item>
-                        <Form.Item {...restField} name={[name, 'levelCode']} label="等级编码">
+                        <Form.Item
+                          {...restField}
+                          name={[name, 'levelCode']}
+                          label="等级编码"
+                          rules={[{
+                            validator: async () => {
+                              if (!hasDuplicateScopeLevel(taskForm.getFieldValue('scopes'), name)) {
+                                return;
+                              }
+                              throw new Error('同一工种下等级编码不可重复');
+                            },
+                          }]}
+                        >
                           <Select
                             allowClear
                             options={levelOptions}

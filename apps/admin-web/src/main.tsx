@@ -524,13 +524,22 @@ function CollectionManageShell({ taskId }: { taskId: string }) {
 
 function CompetitionModuleShell({ module }: { module: CompetitionEventModule }) {
   const { confirmNavigation } = useNavigationBlocker();
+  const searchParams = new URLSearchParams(window.location.search);
   const navigate = async (path: string) => {
     if (!(await confirmNavigation())) return;
     window.history.pushState({}, '', path);
     window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
-  return <CompetitionEventModulePage module={module} onNavigate={navigate} />;
+  return (
+    <CompetitionEventModulePage
+      module={module}
+      onNavigate={navigate}
+      initialEventId={searchParams.get('eventId') || undefined}
+      initialStageId={searchParams.get('stageId') || undefined}
+      initialEventWorkTypeId={searchParams.get('eventWorkTypeId') || undefined}
+    />
+  );
 }
 
 function CompetitionEventShell({ pathname }: { pathname: string }) {
@@ -548,7 +557,17 @@ function CompetitionEventShell({ pathname }: { pathname: string }) {
       pageMap={pageMap}
       selectedMenuKeyOverride={eventActive ? competitionMenuKey : undefined}
       contentOverride={eventActive ? <React.Fragment key={pathname}>{competitionPage}</React.Fragment> : undefined}
-      onMenuNavigate={() => setEventActive(false)}
+      onMenuNavigate={(node) => {
+        if (node?.path && isCompetitionPath(node.path)) {
+          setEventActive(true);
+          if (node.path !== window.location.pathname) {
+            window.history.pushState({}, '', node.path);
+            window.dispatchEvent(new PopStateEvent('popstate'));
+          }
+          return;
+        }
+        setEventActive(false);
+      }}
       hideBreadcrumb={eventActive}
     />
   );

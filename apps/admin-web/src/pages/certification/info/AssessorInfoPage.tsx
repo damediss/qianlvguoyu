@@ -40,7 +40,7 @@ export function AssessorInfoPage() {
         { name: 'accountUsername', label: '平板登录账号', createRequired: true },
         { name: 'accountPassword', label: '平板登录密码', type: 'password', createRequired: true },
         { name: 'certificateNo', label: '证号', required: true },
-        { name: 'workTypeScopes', label: '工种', required: true, type: 'select-multiple', placeholder: '可输入或粘贴工种，多个用顿号分隔' },
+        { name: 'workTypeScopes', label: '工种', required: true, type: 'work-type-multiple', placeholder: '请选择工种，可多选' },
         { name: 'levelScope', label: '等级范围', type: 'levelRange' },
         { name: 'validUntil', label: '有效期至', type: 'date', required: true },
         { name: 'phone', label: '联系电话' },

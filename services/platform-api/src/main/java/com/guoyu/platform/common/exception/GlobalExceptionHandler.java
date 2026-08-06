@@ -142,13 +142,19 @@ public class GlobalExceptionHandler {
 
   private HttpStatus resolveStatus(String code) {
     return switch (code) {
+      case ErrorCode.BAD_REQUEST -> HttpStatus.BAD_REQUEST;
       case ErrorCode.UNAUTHORIZED -> HttpStatus.UNAUTHORIZED;
       case ErrorCode.FORBIDDEN -> HttpStatus.FORBIDDEN;
       case ErrorCode.NOT_FOUND -> HttpStatus.NOT_FOUND;
       case ErrorCode.CONFLICT -> HttpStatus.CONFLICT;
       case ErrorCode.UNPROCESSABLE_ENTITY -> HttpStatus.UNPROCESSABLE_ENTITY;
+      case ErrorCode.INTERNAL_ERROR -> HttpStatus.INTERNAL_SERVER_ERROR;
+      case ErrorCode.NOT_IMPLEMENTED -> HttpStatus.NOT_IMPLEMENTED;
       case ErrorCode.BAD_GATEWAY -> HttpStatus.BAD_GATEWAY;
-      default -> HttpStatus.BAD_REQUEST;
+      case ErrorCode.TOO_MANY_REQUESTS -> HttpStatus.TOO_MANY_REQUESTS;
+      case ErrorCode.SERVICE_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
+      case ErrorCode.GATEWAY_TIMEOUT -> HttpStatus.GATEWAY_TIMEOUT;
+      default -> HttpStatus.INTERNAL_SERVER_ERROR;
     };
   }
 }

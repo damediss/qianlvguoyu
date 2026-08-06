@@ -1,17 +1,26 @@
 package com.guoyu.platform.competition.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.guoyu.platform.common.domain.BaseEntity;
 import java.time.LocalDateTime;
 
-/** Isolated competition-player login subject; sensitive values are application-layer ciphertexts. */
+/**
+ * Isolated competition-player login subject.
+ *
+ * The database column names are retained for compatibility, but the two legacy ciphertext columns
+ * now contain the normalized plain ID card and mobile values by product decision.
+ */
 @TableName("competition_player_identity")
 public class CompetitionPlayerIdentityEntity extends BaseEntity {
 
-  private String idCardCiphertext;
+  @TableField("id_card_ciphertext")
+  private String idCardNo;
   private String idCardLookupHash;
-  private String mobileCiphertext;
+  @TableField("mobile_ciphertext")
+  private String mobile;
   private String mobileLookupHash;
+  /** Legacy NOT NULL column retained for database compatibility; no encryption version is used. */
   private String cryptoKeyVersion;
   private String passwordHash;
   private LocalDateTime passwordInitializedAt;
@@ -20,12 +29,12 @@ public class CompetitionPlayerIdentityEntity extends BaseEntity {
   private LocalDateTime disabledAt;
   private String disabledReason;
 
-  public String getIdCardCiphertext() { return idCardCiphertext; }
-  public void setIdCardCiphertext(String idCardCiphertext) { this.idCardCiphertext = idCardCiphertext; }
+  public String getIdCardNo() { return idCardNo; }
+  public void setIdCardNo(String idCardNo) { this.idCardNo = idCardNo; }
   public String getIdCardLookupHash() { return idCardLookupHash; }
   public void setIdCardLookupHash(String idCardLookupHash) { this.idCardLookupHash = idCardLookupHash; }
-  public String getMobileCiphertext() { return mobileCiphertext; }
-  public void setMobileCiphertext(String mobileCiphertext) { this.mobileCiphertext = mobileCiphertext; }
+  public String getMobile() { return mobile; }
+  public void setMobile(String mobile) { this.mobile = mobile; }
   public String getMobileLookupHash() { return mobileLookupHash; }
   public void setMobileLookupHash(String mobileLookupHash) { this.mobileLookupHash = mobileLookupHash; }
   public String getCryptoKeyVersion() { return cryptoKeyVersion; }

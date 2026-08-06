@@ -21,7 +21,7 @@ import com.guoyu.platform.competition.mapper.CompetitionTheoryExamSessionMapper;
 import com.guoyu.platform.competition.mapper.CompetitionTheoryExamSessionTokenAuditMapper;
 import com.guoyu.platform.competition.mapper.CompetitionTheoryPaperQuestionMapper;
 import com.guoyu.platform.competition.player.domain.CompetitionPlayerIdentityDomainService;
-import com.guoyu.platform.competition.player.domain.CompetitionPlayerSensitiveDataCrypto;
+import com.guoyu.platform.competition.player.domain.CompetitionPlayerDataHash;
 import java.time.Clock;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -34,7 +34,7 @@ class CompetitionExamApplicationServiceTest {
     CompetitionPlayerIdentityMapper playerMapper = mock(CompetitionPlayerIdentityMapper.class);
     CompetitionPlayerIdentityDomainService identityService =
         mock(CompetitionPlayerIdentityDomainService.class);
-    CompetitionPlayerSensitiveDataCrypto crypto = mock(CompetitionPlayerSensitiveDataCrypto.class);
+    CompetitionPlayerDataHash dataHash = mock(CompetitionPlayerDataHash.class);
     PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
     CompetitionTheoryCandidateAssignmentMapper assignmentMapper =
         mock(CompetitionTheoryCandidateAssignmentMapper.class);
@@ -44,7 +44,7 @@ class CompetitionExamApplicationServiceTest {
     player.setStatus(CompetitionPlayerStatus.ACTIVE.getCode());
     player.setPasswordHash("encoded");
     when(identityService.normalizeMobile("13800000000")).thenReturn("13800000000");
-    when(crypto.lookupHash("13800000000")).thenReturn("lookup");
+    when(dataHash.lookupHash("13800000000")).thenReturn("lookup");
     when(playerMapper.selectForUpdateByMobileLookupHashGlobally("lookup"))
         .thenReturn(List.of(player));
     when(passwordEncoder.matches("secret12", "encoded")).thenReturn(true);
@@ -52,7 +52,7 @@ class CompetitionExamApplicationServiceTest {
     CompetitionExamApplicationService service = new CompetitionExamApplicationService(
         playerMapper,
         identityService,
-        crypto,
+        dataHash,
         passwordEncoder,
         assignmentMapper,
         mock(CompetitionTheoryAttemptMapper.class),

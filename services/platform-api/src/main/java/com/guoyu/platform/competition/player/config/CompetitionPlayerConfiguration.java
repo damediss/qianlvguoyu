@@ -4,6 +4,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties({CompetitionPlayerCryptoProperties.class, CompetitionPlayerSmsProperties.class})
+@EnableConfigurationProperties(CompetitionPlayerSmsProperties.class)
 public class CompetitionPlayerConfiguration {
 }

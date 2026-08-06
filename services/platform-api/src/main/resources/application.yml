@@ -134,10 +134,6 @@ weknora:
 platform:
   competition:
     player:
-      crypto:
-        aes-key-base64: ${COMPETITION_PLAYER_CRYPTO_AES_KEY_BASE64:}
-        lookup-pepper: ${COMPETITION_PLAYER_CRYPTO_LOOKUP_PEPPER:}
-        key-version: ${COMPETITION_PLAYER_CRYPTO_KEY_VERSION:}
       sms:
         code-ttl-seconds: ${COMPETITION_PLAYER_SMS_CODE_TTL_SECONDS:300}
         resend-cooldown-seconds: ${COMPETITION_PLAYER_SMS_RESEND_COOLDOWN_SECONDS:60}

@@ -21,8 +21,8 @@ public class CompetitionPlayerQueryRow {
   private String level;
   private String status;
   private String playerStatus;
-  private String idCardCiphertext;
-  private String mobileCiphertext;
+  private String idCardNo;
+  private String mobile;
   private LocalDateTime createdAt;
 
   public Long getRegistrationId() { return registrationId; }
@@ -59,10 +59,10 @@ public class CompetitionPlayerQueryRow {
   public void setStatus(String status) { this.status = status; }
   public String getPlayerStatus() { return playerStatus; }
   public void setPlayerStatus(String playerStatus) { this.playerStatus = playerStatus; }
-  public String getIdCardCiphertext() { return idCardCiphertext; }
-  public void setIdCardCiphertext(String idCardCiphertext) { this.idCardCiphertext = idCardCiphertext; }
-  public String getMobileCiphertext() { return mobileCiphertext; }
-  public void setMobileCiphertext(String mobileCiphertext) { this.mobileCiphertext = mobileCiphertext; }
+  public String getIdCardNo() { return idCardNo; }
+  public void setIdCardNo(String idCardNo) { this.idCardNo = idCardNo; }
+  public String getMobile() { return mobile; }
+  public void setMobile(String mobile) { this.mobile = mobile; }
   public LocalDateTime getCreatedAt() { return createdAt; }
   public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

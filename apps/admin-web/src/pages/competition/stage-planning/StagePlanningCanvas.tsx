@@ -8,13 +8,16 @@ import {
   type Connection,
   type EdgeChange,
   type NodeChange,
+  type NodeMouseHandler,
   type NodeProps,
   type OnSelectionChangeParams,
 } from '@xyflow/react';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import '@xyflow/react/dist/style.css';
+import type { CompetitionStageContentType } from '../../../types/competition';
 import type { StageEdge, StageNode, StageType } from '../../../types/competitionStagePlanning';
 import { StageEdge as StageEdgeComponent } from './StageEdge';
+import { StageContextMenu } from './StageContextMenu';
 import { StageNode as StageNodeComponent } from './StageNode';
 import './stagePlanning.css';
 
@@ -30,15 +33,35 @@ interface StagePlanningCanvasProps {
   onConnect: (connection: Connection) => void;
   onSelectionChange: (selection: OnSelectionChangeParams) => void;
   onAddStage: (stageType: StageType, position: { x: number; y: number }) => void;
+  onStageContextMenu: (nodeId: string) => void;
+  onStageContentTypeClick: (nodeId: string, contentType: CompetitionStageContentType) => void;
   onFitViewReady: (fitView: () => void) => void;
 }
 
-function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, onNodesChange, onEdgesChange, onConnect, onSelectionChange, onAddStage, onFitViewReady }: StagePlanningCanvasProps) {
+function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, onNodesChange, onEdgesChange, onConnect, onSelectionChange, onAddStage, onStageContextMenu, onStageContentTypeClick, onFitViewReady }: StagePlanningCanvasProps) {
   const { screenToFlowPosition, fitView } = useReactFlow<StageNode, StageEdge>();
+  const [contextMenu, setContextMenu] = useState<{
+    nodeId: string;
+    position: { x: number; y: number };
+    enabledContentTypes: CompetitionStageContentType[];
+  } | null>(null);
   const nodeTypes = useMemo(() => ({
     stage: (props: NodeProps<StageNode>) => <StageNodeComponent {...props} stagePlanConfirmed={stagePlanConfirmed} />,
     marker: (props: NodeProps<StageNode>) => <StageNodeComponent {...props} stagePlanConfirmed={stagePlanConfirmed} />,
   }), [stagePlanConfirmed]);
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+  const handleNodeContextMenu: NodeMouseHandler<StageNode> = useCallback((event, node) => {
+    if (node.data.kind !== 'stage') return;
+    event.preventDefault();
+    event.stopPropagation();
+    onStageContextMenu(node.id);
+    setContextMenu({
+      nodeId: node.id,
+      position: { x: event.clientX, y: event.clientY },
+      enabledContentTypes: node.data.contents?.map((content) => content.contentType) ?? [],
+    });
+  }, [onStageContextMenu]);
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -69,6 +92,13 @@ function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, 
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onSelectionChange={onSelectionChange}
+        onNodeContextMenu={handleNodeContextMenu}
+        onPaneClick={closeContextMenu}
+        onPaneContextMenu={(event) => {
+          event.preventDefault();
+          closeContextMenu();
+        }}
+        onMoveStart={closeContextMenu}
         nodesDraggable={editable}
         nodesConnectable={editable}
         edgesReconnectable={editable}
@@ -85,6 +115,18 @@ function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, 
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable nodeColor={(node) => node.type === 'marker' ? '#94a3b8' : '#1677ff'} />
       </ReactFlow>
+      {contextMenu && (
+        <StageContextMenu
+          position={contextMenu.position}
+          enabledContentTypes={contextMenu.enabledContentTypes}
+          onClose={closeContextMenu}
+          onContentTypeClick={(contentType) => {
+            const nodeId = contextMenu.nodeId;
+            closeContextMenu();
+            onStageContentTypeClick(nodeId, contentType);
+          }}
+        />
+      )}
     </div>
   );
 }

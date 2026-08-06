@@ -22,6 +22,7 @@ import {
   message,
 } from 'antd';
 import type { UploadFile, UploadProps } from 'antd';
+import axios from 'axios';
 import dayjs from 'dayjs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
@@ -56,6 +57,10 @@ function formatDate(value?: string | null) {
 
 function idValue(value: string | number) {
   return String(value);
+}
+
+function isHandledApiError(error: unknown): boolean {
+  return axios.isAxiosError(error) && Boolean(error.response);
 }
 
 export function CompetitionRosterImportPage({
@@ -146,7 +151,11 @@ export function CompetitionRosterImportPage({
       setItemQuery({ page: 1, pageSize: 20 });
       queryClient.invalidateQueries({ queryKey: ['competition-roster-import', detail.batchId || detail.id] });
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '名单预检失败'),
+    onError: (error) => {
+      if (!isHandledApiError(error)) {
+        message.error(error instanceof Error ? error.message : '名单预检失败');
+      }
+    },
   });
 
   const confirmMutation = useMutation({
@@ -156,7 +165,11 @@ export function CompetitionRosterImportPage({
       queryClient.invalidateQueries({ queryKey: ['competition-roster-import', selectedBatchId] });
       queryClient.invalidateQueries({ queryKey: ['competition-players'] });
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '名单确认失败'),
+    onError: (error) => {
+      if (!isHandledApiError(error)) {
+        message.error(error instanceof Error ? error.message : '名单确认失败');
+      }
+    },
   });
 
   const uploadProps: UploadProps = {

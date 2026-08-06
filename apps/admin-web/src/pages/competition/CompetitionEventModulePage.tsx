@@ -14,6 +14,14 @@ import { CompetitionTheoryExamPage } from './CompetitionTheoryExamPage';
 
 export type CompetitionEventModule = 'stages' | 'notices' | 'theory-exam' | 'scores';
 
+const DEFAULT_COMPETITION_WORK_TYPE_LEVELS = [
+  { value: '5', label: '\u521d\u7ea7\u5de5' },
+  { value: '4', label: '\u4e2d\u7ea7\u5de5' },
+  { value: '3', label: '\u9ad8\u7ea7\u5de5' },
+  { value: '2', label: '\u6280\u5e08' },
+  { value: '1', label: '\u9ad8\u7ea7\u6280\u5e08' },
+];
+
 const moduleMeta: Record<CompetitionEventModule, {
   title: string;
   description: string;
@@ -50,10 +58,14 @@ export function CompetitionEventModulePage({
   module,
   onNavigate,
   initialEventId,
+  initialStageId,
+  initialEventWorkTypeId,
 }: {
   module: CompetitionEventModule;
   onNavigate: (path: string) => void;
   initialEventId?: string;
+  initialStageId?: string;
+  initialEventWorkTypeId?: string;
 }) {
   const meta = moduleMeta[module];
   const { confirmNavigation } = useNavigationBlocker();
@@ -95,6 +107,17 @@ export function CompetitionEventModulePage({
       setSelectedEventWorkTypeId(String(activeEventWorkTypes[0].id));
     }
   }, [activeEventWorkTypes, selectedEventWorkTypeId]);
+  const [selectedEventWorkTypeLevelCode, setSelectedEventWorkTypeLevelCode] = useState<string>(
+    DEFAULT_COMPETITION_WORK_TYPE_LEVELS[0].value,
+  );
+  useEffect(() => {
+    if (
+      !selectedEventWorkTypeLevelCode
+      || !DEFAULT_COMPETITION_WORK_TYPE_LEVELS.some((level) => level.value === selectedEventWorkTypeLevelCode)
+    ) {
+      setSelectedEventWorkTypeLevelCode(DEFAULT_COMPETITION_WORK_TYPE_LEVELS[0].value);
+    }
+  }, [selectedEventWorkTypeLevelCode]);
 
   if (!canView) {
     return <Result status="403" title={`暂无${meta.title}查看权限`} />;
@@ -132,6 +155,7 @@ export function CompetitionEventModulePage({
             onChange={async (eventId) => {
               if (!(await confirmNavigation())) return;
               setSelectedEventWorkTypeId(undefined);
+              setSelectedEventWorkTypeLevelCode(DEFAULT_COMPETITION_WORK_TYPE_LEVELS[0].value);
               setSelectedEventId(eventId || undefined);
             }}
           />
@@ -150,7 +174,21 @@ export function CompetitionEventModulePage({
                   value: String(workType.id),
                   label: workType.displayName || workType.workTypeName || String(workType.id),
                 }))}
-                onChange={(workTypeId) => setSelectedEventWorkTypeId(workTypeId || undefined)}
+                onChange={(workTypeId) => {
+                  setSelectedEventWorkTypeLevelCode(DEFAULT_COMPETITION_WORK_TYPE_LEVELS[0].value);
+                  setSelectedEventWorkTypeId(workTypeId || undefined);
+                }}
+              />
+              <Typography.Text type="secondary">选择等级</Typography.Text>
+              <Select
+                showSearch
+                optionFilterProp="label"
+                value={selectedEventWorkTypeLevelCode}
+                disabled={!selectedEventWorkTypeId}
+                placeholder="请选择等级"
+                style={{ width: 180, maxWidth: '100%' }}
+                options={DEFAULT_COMPETITION_WORK_TYPE_LEVELS}
+                onChange={(levelCode) => setSelectedEventWorkTypeLevelCode(levelCode || DEFAULT_COMPETITION_WORK_TYPE_LEVELS[0].value)}
               />
             </>
           )}
@@ -158,7 +196,15 @@ export function CompetitionEventModulePage({
       </Card>
       {selectedEvent && module === 'notices' && <CompetitionNoticePage eventId={String(selectedEvent.id)} onNavigate={onNavigate} embedded />}
       {selectedEvent && module === 'stages' && <CompetitionStagePlanningPage eventId={String(selectedEvent.id)} eventWorkTypeId={selectedEventWorkTypeId} onNavigate={onNavigate} embedded />}
-      {selectedEvent && module === 'theory-exam' && <CompetitionTheoryExamPage eventId={String(selectedEvent.id)} onNavigate={onNavigate} embedded />}
+      {selectedEvent && module === 'theory-exam' && (
+        <CompetitionTheoryExamPage
+          eventId={String(selectedEvent.id)}
+          initialStageId={initialStageId}
+          initialEventWorkTypeId={initialEventWorkTypeId}
+          onNavigate={onNavigate}
+          embedded
+        />
+      )}
       {selectedEvent && module === 'scores' && <CompetitionScoreRankingPage eventId={String(selectedEvent.id)} onNavigate={onNavigate} embedded />}
     </div>
   );

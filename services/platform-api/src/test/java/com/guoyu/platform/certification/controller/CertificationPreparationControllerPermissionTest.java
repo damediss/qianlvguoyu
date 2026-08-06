@@ -20,6 +20,8 @@ class CertificationPreparationControllerPermissionTest {
         .containsExactly("/tasks/{taskId}/complete");
 
     assertThat(mapping(CertificationPreparationCandidateController.class)).containsExactly("/certification/preparation");
+    assertThat(get(CertificationPreparationCandidateController.class, "downloadExcelTemplate"))
+        .containsExactly("/candidate-import-template");
     assertThat(post(CertificationPreparationCandidateController.class, "createImportBatch"))
         .containsExactly("/tasks/{taskId}/candidate-imports");
     assertThat(get(CertificationPreparationCandidateController.class, "pageCandidates"))

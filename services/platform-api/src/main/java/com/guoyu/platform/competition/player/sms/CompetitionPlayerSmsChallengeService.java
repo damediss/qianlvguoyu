@@ -9,7 +9,7 @@ import com.guoyu.platform.competition.enums.CompetitionPlayerSmsDeliveryStatus;
 import com.guoyu.platform.competition.enums.CompetitionPlayerSmsPurpose;
 import com.guoyu.platform.competition.mapper.CompetitionPlayerSmsChallengeMapper;
 import com.guoyu.platform.competition.player.config.CompetitionPlayerSmsProperties;
-import com.guoyu.platform.competition.player.domain.CompetitionPlayerSensitiveDataCrypto;
+import com.guoyu.platform.competition.player.domain.CompetitionPlayerDataHash;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -25,19 +25,19 @@ public class CompetitionPlayerSmsChallengeService {
   private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
   private final CompetitionPlayerSmsChallengeMapper challengeMapper;
-  private final CompetitionPlayerSensitiveDataCrypto crypto;
+  private final CompetitionPlayerDataHash dataHash;
   private final CompetitionPlayerSmsRateLimitService rateLimitService;
   private final CompetitionSmsSender smsSender;
   private final CompetitionPlayerSmsProperties properties;
 
   public CompetitionPlayerSmsChallengeService(
       CompetitionPlayerSmsChallengeMapper challengeMapper,
-      CompetitionPlayerSensitiveDataCrypto crypto,
+      CompetitionPlayerDataHash dataHash,
       CompetitionPlayerSmsRateLimitService rateLimitService,
       CompetitionSmsSender smsSender,
       CompetitionPlayerSmsProperties properties) {
     this.challengeMapper = challengeMapper;
-    this.crypto = crypto;
+    this.dataHash = dataHash;
     this.rateLimitService = rateLimitService;
     this.smsSender = smsSender;
     this.properties = properties;
@@ -60,7 +60,7 @@ public class CompetitionPlayerSmsChallengeService {
     if (activeLock != null) {
       throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "验证码校验已锁定，请稍后再试");
     }
-    String mobileLookupHash = crypto.lookupHash(normalizedMobile);
+    String mobileLookupHash = dataHash.lookupHash(normalizedMobile);
     rateLimitService.acquire(tenantId, playerId, mobileLookupHash, purpose);
 
     CompetitionPlayerSmsChallengeEntity challenge = new CompetitionPlayerSmsChallengeEntity();
@@ -162,6 +162,6 @@ public class CompetitionPlayerSmsChallengeService {
   }
 
   private String codeHash(Long challengeId, String code) {
-    return crypto.lookupHash("competition-player-sms:" + challengeId + ":" + code);
+    return dataHash.lookupHash("competition-player-sms:" + challengeId + ":" + code);
   }
 }

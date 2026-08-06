@@ -16,7 +16,7 @@ import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
 import com.guoyu.platform.competition.mapper.CompetitionPlayerIdentityMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRegistrationMapper;
 import com.guoyu.platform.competition.player.domain.CompetitionPlayerIdentityDomainService;
-import com.guoyu.platform.competition.player.domain.CompetitionPlayerSensitiveDataCrypto;
+import com.guoyu.platform.competition.player.domain.CompetitionPlayerDataHash;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerActivationSendReq;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerActivationVerifyReq;
 import com.guoyu.platform.competition.player.dto.CompetitionPlayerLoginReq;
@@ -50,7 +50,7 @@ public class CompetitionPlayerApplicationService {
   private final CompetitionRegistrationMapper registrationMapper;
   private final CompetitionPlayerIdentityMapper playerMapper;
   private final CompetitionPlayerIdentityDomainService playerIdentityService;
-  private final CompetitionPlayerSensitiveDataCrypto crypto;
+  private final CompetitionPlayerDataHash dataHash;
   private final CompetitionPlayerSmsChallengeService smsChallengeService;
   private final StpLogic competitionPlayerStpLogic;
   private final PasswordEncoder passwordEncoder;
@@ -60,7 +60,7 @@ public class CompetitionPlayerApplicationService {
       CompetitionRegistrationMapper registrationMapper,
       CompetitionPlayerIdentityMapper playerMapper,
       CompetitionPlayerIdentityDomainService playerIdentityService,
-      CompetitionPlayerSensitiveDataCrypto crypto,
+      CompetitionPlayerDataHash dataHash,
       CompetitionPlayerSmsChallengeService smsChallengeService,
       @Qualifier("competitionPlayerStpLogic") StpLogic competitionPlayerStpLogic,
       PasswordEncoder passwordEncoder) {
@@ -68,7 +68,7 @@ public class CompetitionPlayerApplicationService {
     this.registrationMapper = registrationMapper;
     this.playerMapper = playerMapper;
     this.playerIdentityService = playerIdentityService;
-    this.crypto = crypto;
+    this.dataHash = dataHash;
     this.smsChallengeService = smsChallengeService;
     this.competitionPlayerStpLogic = competitionPlayerStpLogic;
     this.passwordEncoder = passwordEncoder;
@@ -96,7 +96,7 @@ public class CompetitionPlayerApplicationService {
       throw new BusinessException(ErrorCode.FORBIDDEN, "选手身份已停用");
     }
     CompetitionPlayerSmsChallengeResult challenge = smsChallengeService.requestChallenge(
-        currentTenantId(), player.getId(), crypto.decrypt(player.getMobileCiphertext()),
+        currentTenantId(), player.getId(), player.getMobile(),
         CompetitionPlayerSmsPurpose.ACTIVATION, requestIpHash(servletRequest), requestDeviceHash(servletRequest));
     return new CompetitionPlayerSmsChallengeVO(challenge.challengeId(), challenge.expiresAt());
   }
@@ -115,7 +115,7 @@ public class CompetitionPlayerApplicationService {
       player.setActivatedAt(now);
     }
     if (player.getPasswordHash() == null || player.getPasswordHash().isBlank()) {
-      String idCardNo = crypto.decrypt(player.getIdCardCiphertext());
+      String idCardNo = player.getIdCardNo();
       player.setPasswordHash(passwordEncoder.encode(initialPassword(idCardNo)));
       player.setPasswordInitializedAt(now);
     }
@@ -129,7 +129,7 @@ public class CompetitionPlayerApplicationService {
   @Transactional
   public CompetitionPlayerLoginResultVO login(CompetitionPlayerLoginReq request) {
     String mobile = playerIdentityService.normalizeMobile(request.account());
-    String mobileLookupHash = crypto.lookupHash(mobile);
+    String mobileLookupHash = dataHash.lookupHash(mobile);
     List<CompetitionPlayerIdentityEntity> players =
         playerMapper.selectForUpdateByMobileLookupHashGlobally(mobileLookupHash);
     if (players != null && players.size() > 1) {
@@ -146,7 +146,7 @@ public class CompetitionPlayerApplicationService {
       throw new BusinessException(ErrorCode.FORBIDDEN, "选手身份已停用");
     }
     if (player.getPasswordHash() == null || player.getPasswordHash().isBlank()) {
-      String idCardNo = crypto.decrypt(player.getIdCardCiphertext());
+      String idCardNo = player.getIdCardNo();
       if (!initialPassword(idCardNo).equals(request.password())) {
         log.warn("Competition player password login failed, tenantId={}, mobileLookupHash={}",
             player.getTenantId(), mobileLookupHash);
@@ -185,7 +185,7 @@ public class CompetitionPlayerApplicationService {
             .eq(CompetitionRegistrationEntity::getPlayerId, player.getId())
             .eq(CompetitionRegistrationEntity::getStatus, CompetitionRegistrationStatus.ELIGIBLE_ACTIVATED.getCode())
             .eq(CompetitionRegistrationEntity::getDeleted, 0));
-    String maskedMobile = maskMobile(crypto.decrypt(player.getMobileCiphertext()));
+    String maskedMobile = maskMobile(player.getMobile());
     if (registrations == null || registrations.isEmpty()) {
       return new CompetitionPlayerMeVO(player.getId(), player.getStatus(), maskedMobile, List.of());
     }
@@ -214,7 +214,7 @@ public class CompetitionPlayerApplicationService {
     CompetitionPlayerIdentityEntity player = findPlayer(currentPlayer().getPlayerId());
     assertPlayerActive(player);
     CompetitionPlayerSmsChallengeResult challenge = smsChallengeService.requestChallenge(
-        currentTenantId(), player.getId(), crypto.decrypt(player.getMobileCiphertext()),
+        currentTenantId(), player.getId(), player.getMobile(),
         CompetitionPlayerSmsPurpose.CHANGE_MOBILE_OLD,
         requestIpHash(servletRequest), requestDeviceHash(servletRequest));
     return new CompetitionPlayerSmsChallengeVO(challenge.challengeId(), challenge.expiresAt());
@@ -255,7 +255,7 @@ public class CompetitionPlayerApplicationService {
     assertCurrentTenant(event.getTenantId());
     String normalizedMobile = playerIdentityService.normalizeMobile(mobile);
     CompetitionRegistrationEntity registration = registrationMapper.selectEligibleUnactivatedForPlayerActivation(
-        event.getTenantId(), event.getId(), crypto.lookupHash(normalizedMobile));
+        event.getTenantId(), event.getId(), dataHash.lookupHash(normalizedMobile));
     if (registration == null || registration.getPlayerId() == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "激活信息无效");
     }
@@ -334,11 +334,11 @@ public class CompetitionPlayerApplicationService {
   }
 
   private String requestIpHash(HttpServletRequest request) {
-    return request == null ? null : crypto.lookupHash("ip:" + request.getRemoteAddr());
+    return request == null ? null : dataHash.lookupHash("ip:" + request.getRemoteAddr());
   }
 
   private String requestDeviceHash(HttpServletRequest request) {
     String userAgent = request == null ? null : request.getHeader("User-Agent");
-    return userAgent == null || userAgent.isBlank() ? null : crypto.lookupHash("device:" + userAgent);
+    return userAgent == null || userAgent.isBlank() ? null : dataHash.lookupHash("device:" + userAgent);
   }
 }

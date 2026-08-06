@@ -25,7 +25,6 @@ import com.guoyu.platform.competition.mapper.CompetitionPlayerQueryRow;
 import com.guoyu.platform.competition.mapper.CompetitionRegistrationMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRosterItemMapper;
 import com.guoyu.platform.competition.player.domain.CompetitionPlayerIdentityDomainService;
-import com.guoyu.platform.competition.player.domain.CompetitionPlayerSensitiveDataCrypto;
 import com.guoyu.platform.competition.vo.CompetitionPlayerVO;
 import com.guoyu.platform.security.PlatformAdminSupport;
 import com.guoyu.platform.security.PlatformUserPrincipal;
@@ -56,7 +55,6 @@ public class CompetitionPlayerManagementService {
   private final CompetitionRosterImportService rosterImportService;
   private final CompetitionRegistrationService registrationService;
   private final CompetitionPlayerIdentityDomainService playerIdentityService;
-  private final CompetitionPlayerSensitiveDataCrypto crypto;
   private final CompetitionContestantScopeChangeGuard scopeChangeGuard;
   private final OrgMapper orgMapper;
   private final UserMapper userMapper;
@@ -72,7 +70,6 @@ public class CompetitionPlayerManagementService {
       CompetitionRosterImportService rosterImportService,
       CompetitionRegistrationService registrationService,
       CompetitionPlayerIdentityDomainService playerIdentityService,
-      CompetitionPlayerSensitiveDataCrypto crypto,
       CompetitionContestantScopeChangeGuard scopeChangeGuard,
       OrgMapper orgMapper,
       UserMapper userMapper) {
@@ -86,7 +83,6 @@ public class CompetitionPlayerManagementService {
     this.rosterImportService = rosterImportService;
     this.registrationService = registrationService;
     this.playerIdentityService = playerIdentityService;
-    this.crypto = crypto;
     this.scopeChangeGuard = scopeChangeGuard;
     this.orgMapper = orgMapper;
     this.userMapper = userMapper;
@@ -166,9 +162,9 @@ public class CompetitionPlayerManagementService {
       throw new BusinessException(ErrorCode.CONFLICT, "选手名单已发生变化，请刷新后重试");
     }
     String idCardNo = StringUtils.hasText(req.idCardNo())
-        ? req.idCardNo() : crypto.decrypt(findPlayerCiphertext(principal.getTenantId(), registration.getPlayerId(), true));
+        ? req.idCardNo() : findPlayerSensitiveValue(principal.getTenantId(), registration.getPlayerId(), true);
     String mobile = StringUtils.hasText(req.mobile())
-        ? req.mobile() : crypto.decrypt(findPlayerCiphertext(principal.getTenantId(), registration.getPlayerId(), false));
+        ? req.mobile() : findPlayerSensitiveValue(principal.getTenantId(), registration.getPlayerId(), false);
     playerIdentityService.updateSensitiveData(
         principal.getTenantId(), registration.getPlayerId(), idCardNo, mobile);
     registration.setOrgId(req.orgId());
@@ -306,9 +302,9 @@ public class CompetitionPlayerManagementService {
     return item.getId();
   }
 
-  private String findPlayerCiphertext(Long tenantId, Long playerId, boolean idCard) {
+  private String findPlayerSensitiveValue(Long tenantId, Long playerId, boolean idCard) {
     var player = playerIdentityService.resolveExisting(tenantId, playerId);
-    return idCard ? player.getIdCardCiphertext() : player.getMobileCiphertext();
+    return idCard ? player.getIdCardNo() : player.getMobile();
   }
 
   private void ensureOrganization(Long tenantId, Long orgId) {
@@ -349,8 +345,8 @@ public class CompetitionPlayerManagementService {
     vo.setEventWorkTypeName(row.getEventWorkTypeName() == null ? row.getWorkType() : row.getEventWorkTypeName());
     vo.setEmployeeNo(row.getEmployeeNo());
     vo.setName(row.getName());
-    vo.setIdCardNo(maskIdCard(row.getIdCardCiphertext()));
-    vo.setMobile(maskMobile(row.getMobileCiphertext()));
+    vo.setIdCardNo(maskIdCard(row.getIdCardNo()));
+    vo.setMobile(maskMobile(row.getMobile()));
     vo.setLevel(row.getLevel());
     vo.setStatus(row.getStatus());
     vo.setPlayerStatus(row.getPlayerStatus());
@@ -358,26 +354,14 @@ public class CompetitionPlayerManagementService {
     return vo;
   }
 
-  private String maskIdCard(String ciphertext) {
-    if (!StringUtils.hasText(ciphertext)) return "-";
-    try {
-      String value = crypto.decrypt(ciphertext);
-      return value.length() <= 8 ? "********" : value.substring(0, 3) + "********" + value.substring(value.length() - 4);
-    } catch (RuntimeException ex) {
-      log.warn("Competition player id card masking failed");
-      return "********";
-    }
+  private String maskIdCard(String idCardNo) {
+    if (!StringUtils.hasText(idCardNo)) return "-";
+    return idCardNo.length() <= 8 ? "********" : idCardNo.substring(0, 3) + "********" + idCardNo.substring(idCardNo.length() - 4);
   }
 
-  private String maskMobile(String ciphertext) {
-    if (!StringUtils.hasText(ciphertext)) return "-";
-    try {
-      String value = crypto.decrypt(ciphertext);
-      return value.length() < 7 ? "****" : value.substring(0, 3) + "****" + value.substring(value.length() - 4);
-    } catch (RuntimeException ex) {
-      log.warn("Competition player mobile masking failed");
-      return "****";
-    }
+  private String maskMobile(String mobile) {
+    if (!StringUtils.hasText(mobile)) return "-";
+    return mobile.length() < 7 ? "****" : mobile.substring(0, 3) + "****" + mobile.substring(mobile.length() - 4);
   }
 
   private PlatformUserPrincipal currentUser() {

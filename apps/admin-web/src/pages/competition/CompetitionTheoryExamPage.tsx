@@ -120,10 +120,14 @@ function downloadBlob(blob: Blob, fileName: string) {
 export function CompetitionTheoryExamPage({
   eventId,
   onNavigate,
+  initialStageId,
+  initialEventWorkTypeId,
   embedded = false,
 }: {
   eventId: string;
   onNavigate: (path: string) => void;
+  initialStageId?: string;
+  initialEventWorkTypeId?: string;
   embedded?: boolean;
 }) {
   const permissions = useAuthStore((state) => state.permissionCodes);
@@ -145,8 +149,8 @@ export function CompetitionTheoryExamPage({
   const hasWorkspacePermission = canViewPaper || canViewSchedule || canViewMonitor || canViewResults;
 
   const [activeTab, setActiveTab] = useState('paper');
-  const [stageId, setStageId] = useState<string>();
-  const [eventWorkTypeId, setEventWorkTypeId] = useState<string>();
+  const [stageId, setStageId] = useState<string | undefined>(initialStageId);
+  const [eventWorkTypeId, setEventWorkTypeId] = useState<string | undefined>(initialEventWorkTypeId);
   const [scoreRuleId, setScoreRuleId] = useState<string>();
   const [courseId, setCourseId] = useState<string>();
   const [selectedVersionId, setSelectedVersionId] = useState<string>();
@@ -189,10 +193,18 @@ export function CompetitionTheoryExamPage({
   });
 
   useEffect(() => {
-    if (!stageId && stagesQuery.data?.items.length) setStageId(idValue(stagesQuery.data.items[0].id));
+    const stages = stagesQuery.data?.items || [];
+    if (!stages.length) return;
+    if (!stageId || !stages.some((stage) => idValue(stage.id) === stageId)) {
+      setStageId(idValue(stages[0].id));
+    }
   }, [stageId, stagesQuery.data?.items]);
   useEffect(() => {
-    if (!eventWorkTypeId && workTypesQuery.data?.length) setEventWorkTypeId(idValue(workTypesQuery.data[0].id));
+    const workTypes = workTypesQuery.data || [];
+    if (!workTypes.length) return;
+    if (!eventWorkTypeId || !workTypes.some((workType) => idValue(workType.id) === eventWorkTypeId)) {
+      setEventWorkTypeId(idValue(workTypes[0].id));
+    }
   }, [eventWorkTypeId, workTypesQuery.data]);
   useEffect(() => {
     const rules = rulesQuery.data || [];

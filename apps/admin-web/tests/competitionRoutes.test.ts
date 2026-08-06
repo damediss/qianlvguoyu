@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { findCompetitionMenuCode, isCompetitionPath } from '../src/routes/competitionRoute';
+import {
+  buildCompetitionTheoryWorkbenchPath,
+  findCompetitionMenuCode,
+  isCompetitionPath,
+} from '../src/routes/competitionRoute';
 
 const menuTree = [{
   id: 1,
@@ -72,4 +76,11 @@ test('competition paths are recognized without a hard-coded child-menu whitelist
 
 test('event detail URLs resolve to the event menu by longest path match', () => {
   assert.equal(findCompetitionMenuCode(menuTree, '/competition/events/1001/organizations'), 'competition_event');
+});
+
+test('theory workbench path preserves the current event, stage and work type', () => {
+  assert.equal(
+    buildCompetitionTheoryWorkbenchPath({ eventId: 1001, stageId: 2001, eventWorkTypeId: 3001 }),
+    '/competition/theory-exams?eventId=1001&stageId=2001&eventWorkTypeId=3001',
+  );
 });

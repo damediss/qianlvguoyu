@@ -62,7 +62,7 @@ SecurityConfig、TenantContextFilter、Sa-Token 配置和 Flyway 迁移均为共
 迁移按单一 Flyway 任务依次创建：
 
 1. 选手身份、选手入口码与报名资格关联。
-2. 短信挑战、短信发送投影与敏感数据密钥版本字段。
+2. 短信挑战、短信发送投影与选手身份字段。
 3. Outbox、公告接收人与选手消息收件箱。
 4. 权限种子与现有角色授权。
 
@@ -72,11 +72,11 @@ competition_player_identity 最小字段：
 
     id BIGINT PK
     tenant_id BIGINT NOT NULL
-    id_card_ciphertext TEXT NOT NULL
+    id_card_ciphertext TEXT NOT NULL -- 兼容历史列名，实际保存规范化身份证号
     id_card_lookup_hash CHAR(64) NOT NULL
-    mobile_ciphertext TEXT NOT NULL
+    mobile_ciphertext TEXT NOT NULL -- 兼容历史列名，实际保存规范化手机号
     mobile_lookup_hash CHAR(64) NOT NULL
-    crypto_key_version VARCHAR(32) NOT NULL
+    crypto_key_version VARCHAR(32) NOT NULL -- 兼容历史列，固定 plain-v1
     status VARCHAR(32) NOT NULL
     activated_at, disabled_at DATETIME NULL
     disabled_reason VARCHAR(500) NULL
@@ -100,9 +100,9 @@ competition_sms_challenge 核心字段：id、tenant_id、player_id（激活前�
 
 ## 5. 敏感数据、导入与单个录入
 
-手机号规范化为 11 位中国大陆号码；身份证 trim 后统一大写 X。原文使用 AES-256-GCM 加密，密文包含随机 nonce、算法与密钥版本。唯一匹配使用 HMAC-SHA-256(规范化值, lookupPepper)，不能使用普通 SHA-256。
+手机号规范化为 11 位中国大陆号码；身份证 trim 后统一大写 X。按当前产品决策，身份证号和手机号直接保存到现有历史列名中，不再使用 AES 加密，也不再依赖 AES 密钥或 lookupPepper。唯一匹配使用无配置的 SHA-256 摘要列。
 
-AES 主密钥与 lookupPepper 分别从 KMS 或受控环境变量取得，均不得进库或进 Git。PII 仅存在于导入/单录入请求 DTO 和加密实体；VO、日志、异常、审计、错误报告、Outbox Payload 均禁止明文。
+PII 仅存在于导入/单录入请求 DTO 和身份实体；管理端 VO 继续只返回脱敏值，日志、异常、审计、错误报告、Outbox Payload 均禁止明文。
 
 模板固定列：employee_no、name、id_card_no、mobile、work_type、level。
 
@@ -110,7 +110,7 @@ AES 主密钥与 lookupPepper 分别从 KMS 或受控环境变量取得，均不
 
     解析单行（仅内存，禁止日志 PII）
     → 校验工号、姓名、身份证、手机号
-    → 计算两个 HMAC
+    → 计算两个 SHA-256 摘要
     → 锁定身份证或手机号命中的 player_identity
     → 无命中：创建 pending_activation Player
     → 同 Player 命中：复用 Player
@@ -158,7 +158,7 @@ Redis 用于 60 秒重发、手机号/选手日上限、IP/设备频控；数据
 
 ### 6.4 外部短信 SDK 引入时点
 
-外部短信 SDK 只在 P5“短信挑战与 Adapter”任务引入，前提是 P1 至 P4 已完成并通过迁移、加密、独立 Player 会话和权限测试。不得在 Player 建表、名单导入、H5 页面或验证码领域规则开发阶段提前添加供应商 SDK。
+外部短信 SDK 只在 P5“短信挑战与 Adapter”任务引入，前提是 P1 至 P4 已完成并通过迁移、身份摘要、独立 Player 会话和权限测试。不得在 Player 建表、名单导入、H5 页面或验证码领域规则开发阶段提前添加供应商 SDK。
 
 P5 先定义 CompetitionSmsSender 接口和 FakeCompetitionSmsSender；本地与自动化测试默认使用 Fake 实现，既不调用外部网络也不在日志中输出验证码。仅当下列条件齐备时，才新增已选短信供应商的官方 SDK 和 Production Adapter：
 
@@ -209,7 +209,7 @@ H5 仅维护竞赛专用 tenantId、entryCode、currentEvent、playerSession、u
 | --- | --- | --- | --- |
 | P1 | Flyway、Entity、Mapper | 迁移、player/entity | 空库迁移；BaseEntity/唯一键检查 |
 | P2 | 名单模板、预检、单个录入 | roster/registration | 冲突、名额、跨企业、脱敏错误 |
-| P3 | 加密与 Player 身份 | player/domain、config | 加解密/HMAC/无 PII 日志 |
+| P3 | Player 身份与脱敏 | player/domain、config | 明文字段规范化、SHA-256 唯一匹配、无 PII 日志 |
 | P4 | Player Sa-Token 与 Filter | SecurityConfig、TenantContextFilter | 401/403、Header 篡改、停用失效 |
 | P5 | 短信挑战与 Adapter | player/sms、challenge | 重发、过期、失败、Redis 503 |
 | P6 | 激活、登录、换绑 API | player/controller/application | MockMvc 正反、并发验证 |

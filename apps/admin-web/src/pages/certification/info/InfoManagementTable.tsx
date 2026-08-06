@@ -6,13 +6,15 @@ import type { FormInstance, UploadFile } from 'antd';
 import dayjs from 'dayjs';
 import { useMemo, useState } from 'react';
 import { uploadPlatformFile } from '../../../api/files';
+import { treeWorkTypes } from '../../../api/exam';
 import { FilePreviewModal, type FilePreviewTarget } from '../../../components/FilePreviewModal';
 import { LevelScopeRangeSelect } from '../../../components/LevelScopeRangeSelect';
 import { PermissionGate } from '../../../directives/permission';
 import type { PageResponse } from '../../../types/api';
 import type { CertificationInfoQuery, InfoReviewPayload } from '../../../types/certificationInfo';
+import { flattenWorkTypeOptions } from '../../../utils/workTypeOptions';
 
-type FieldType = 'text' | 'password' | 'textarea' | 'date' | 'number' | 'select' | 'select-multiple' | 'levelRange' | 'imageUpload';
+type FieldType = 'text' | 'password' | 'textarea' | 'date' | 'number' | 'select' | 'select-multiple' | 'work-type-multiple' | 'levelRange' | 'imageUpload';
 
 export interface InfoField<T> {
   name: keyof T & string;
@@ -123,6 +125,18 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
     queryKey: [queryKey, query],
     queryFn: () => pageApi(query),
   });
+
+  const hasWorkTypeField = fields.some((field) => field.type === 'work-type-multiple');
+  const workTypeQuery = useQuery({
+    queryKey: ['exam-work-types-tree'],
+    queryFn: treeWorkTypes,
+    enabled: hasWorkTypeField,
+    staleTime: 5 * 60 * 1000,
+  });
+  const workTypeOptions = useMemo(
+    () => flattenWorkTypeOptions(workTypeQuery.data ?? []),
+    [workTypeQuery.data],
+  );
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: [queryKey] });
 
@@ -343,7 +357,14 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
                 message: `请填写${field.label}`,
               }]}
             >
-              {renderField(field, form, modalMode === 'view')}
+              {renderField(
+                field,
+                form,
+                modalMode === 'view',
+                workTypeOptions,
+                workTypeQuery.isLoading,
+                workTypeQuery.isError,
+              )}
             </Form.Item>
           ))}
         </Form>
@@ -395,7 +416,14 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
   );
 }
 
-function renderField<T>(field: InfoField<T>, form: FormInstance, readOnly = false) {
+function renderField<T>(
+  field: InfoField<T>,
+  form: FormInstance,
+  readOnly = false,
+  workTypeOptions: { label: string; value: string }[] = [],
+  workTypeLoading = false,
+  workTypeError = false,
+) {
   if (field.type === 'password') return readOnly ? <SecretText /> : <Input.Password autoComplete="new-password" />;
   if (field.type === 'textarea') return <Input.TextArea rows={3} />;
   if (field.type === 'date') return <DatePicker style={{ width: '100%' }} />;
@@ -409,6 +437,19 @@ function renderField<T>(field: InfoField<T>, form: FormInstance, readOnly = fals
       maxTagCount="responsive"
       placeholder={field.placeholder}
       tokenSeparators={[',', '，', '、']}
+    />
+  );
+  if (field.type === 'work-type-multiple') return (
+    <Select
+      mode="multiple"
+      allowClear
+      showSearch
+      optionFilterProp="label"
+      maxTagCount="responsive"
+      placeholder={field.placeholder}
+      options={workTypeOptions}
+      loading={workTypeLoading}
+      notFoundContent={workTypeError ? '工种数据加载失败' : undefined}
     />
   );
   if (field.type === 'levelRange') return <LevelScopeRangeSelect />;

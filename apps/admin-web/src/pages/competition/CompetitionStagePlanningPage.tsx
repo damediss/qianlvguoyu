@@ -34,9 +34,11 @@ import type {
   CompetitionEventWorkType,
   CompetitionId,
   CompetitionStage,
+  CompetitionStageContentType,
   CompetitionWorkTypeStageConfig,
 } from '../../types/competition';
 import type { StageDraftSavePayload } from '../../types/competitionStagePlanning';
+import { buildCompetitionTheoryWorkbenchPath } from '../../routes/competitionRoute';
 
 function errorText(error: unknown, fallback = '保存失败，请刷新后重试') {
   return error instanceof Error ? error.message : fallback;
@@ -155,6 +157,19 @@ export function CompetitionStagePlanningPage({
   const selectedStageContents = draft.selectedNode && isBusinessStageNode(draft.selectedNode)
     ? draft.selectedNode.data.contents ?? selectedStageWorkspaceQuery.data?.contents ?? []
     : [];
+  const onStageContentTypeClick = useCallback((nodeId: string, contentType: CompetitionStageContentType) => {
+    if (contentType !== 'theory') return;
+    const node = draft.nodes.find((item) => item.id === nodeId);
+    if (!node || !isBusinessStageNode(node) || node.data.stageId === undefined || node.data.stageId === null) {
+      message.warning('请先保存当前赛段草稿，再进入理论工作台');
+      return;
+    }
+    void onNavigate(buildCompetitionTheoryWorkbenchPath({
+      eventId,
+      stageId: node.data.stageId,
+      eventWorkTypeId,
+    }));
+  }, [draft.nodes, eventId, eventWorkTypeId, onNavigate]);
   useEffect(() => {
     if (!eventWorkTypeId) {
       setPromotionDraft([]);
@@ -428,6 +443,8 @@ export function CompetitionStagePlanningPage({
           onConnect={draft.onConnect}
           onSelectionChange={draft.onSelectionChange}
           onAddStage={draft.addStage}
+          onStageContextMenu={draft.selectNode}
+          onStageContentTypeClick={onStageContentTypeClick}
           onFitViewReady={onFitViewReady}
         />
         <StageInspector

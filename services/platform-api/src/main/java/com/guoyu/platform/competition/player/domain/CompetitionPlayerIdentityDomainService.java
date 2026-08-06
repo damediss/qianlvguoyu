@@ -23,15 +23,15 @@ public class CompetitionPlayerIdentityDomainService {
   private static final char[] ID_CARD_CHECK_CODES = {'1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'};
 
   private final CompetitionPlayerIdentityMapper playerMapper;
-  private final CompetitionPlayerSensitiveDataCrypto crypto;
+  private final CompetitionPlayerDataHash dataHash;
   private final PasswordEncoder passwordEncoder;
 
   public CompetitionPlayerIdentityDomainService(
       CompetitionPlayerIdentityMapper playerMapper,
-      CompetitionPlayerSensitiveDataCrypto crypto,
+      CompetitionPlayerDataHash dataHash,
       PasswordEncoder passwordEncoder) {
     this.playerMapper = playerMapper;
-    this.crypto = crypto;
+    this.dataHash = dataHash;
     this.passwordEncoder = passwordEncoder;
   }
 
@@ -43,8 +43,8 @@ public class CompetitionPlayerIdentityDomainService {
     }
     String normalizedIdCard = normalizeIdCard(idCardNo);
     String normalizedMobile = normalizeMobile(mobile);
-    String idCardHash = crypto.lookupHash(normalizedIdCard);
-    String mobileHash = crypto.lookupHash(normalizedMobile);
+    String idCardHash = dataHash.lookupHash(normalizedIdCard);
+    String mobileHash = dataHash.lookupHash(normalizedMobile);
     List<CompetitionPlayerIdentityEntity> matches = playerMapper.selectForUpdateByIdentityHashes(
         idCardHash, mobileHash);
     if (matches == null) {
@@ -64,11 +64,11 @@ public class CompetitionPlayerIdentityDomainService {
 
     CompetitionPlayerIdentityEntity player = new CompetitionPlayerIdentityEntity();
     player.setTenantId(tenantId);
-    player.setIdCardCiphertext(crypto.encrypt(normalizedIdCard));
+    player.setIdCardNo(normalizedIdCard);
     player.setIdCardLookupHash(idCardHash);
-    player.setMobileCiphertext(crypto.encrypt(normalizedMobile));
+    player.setMobile(normalizedMobile);
     player.setMobileLookupHash(mobileHash);
-    player.setCryptoKeyVersion(crypto.keyVersion());
+    player.setCryptoKeyVersion("plain-v1");
     player.setPasswordHash(passwordEncoder.encode(initialPassword(normalizedIdCard)));
     player.setPasswordInitializedAt(java.time.LocalDateTime.now());
     player.setStatus(CompetitionPlayerStatus.PENDING_ACTIVATION.getCode());
@@ -117,9 +117,9 @@ public class CompetitionPlayerIdentityDomainService {
       throw new BusinessException(ErrorCode.NOT_FOUND, "选手身份不存在");
     }
     String newMobileHash = assertMobileAvailable(player.getId(), normalizedMobile);
-    player.setMobileCiphertext(crypto.encrypt(normalizedMobile));
+    player.setMobile(normalizedMobile);
     player.setMobileLookupHash(newMobileHash);
-    player.setCryptoKeyVersion(crypto.keyVersion());
+    player.setCryptoKeyVersion("plain-v1");
     try {
       if (playerMapper.updateById(player) != 1) {
         throw new BusinessException(ErrorCode.INTERNAL_ERROR, "手机号更新失败");
@@ -139,8 +139,8 @@ public class CompetitionPlayerIdentityDomainService {
     }
     String normalizedIdCard = normalizeIdCard(idCardNo);
     String normalizedMobile = normalizeMobile(mobile);
-    String idCardHash = crypto.lookupHash(normalizedIdCard);
-    String mobileHash = crypto.lookupHash(normalizedMobile);
+    String idCardHash = dataHash.lookupHash(normalizedIdCard);
+    String mobileHash = dataHash.lookupHash(normalizedMobile);
     List<CompetitionPlayerIdentityEntity> matches = playerMapper.selectForUpdateByIdentityHashes(
         idCardHash, mobileHash);
     if (matches != null) {
@@ -150,11 +150,11 @@ public class CompetitionPlayerIdentityDomainService {
         }
       }
     }
-    player.setIdCardCiphertext(crypto.encrypt(normalizedIdCard));
+    player.setIdCardNo(normalizedIdCard);
     player.setIdCardLookupHash(idCardHash);
-    player.setMobileCiphertext(crypto.encrypt(normalizedMobile));
+    player.setMobile(normalizedMobile);
     player.setMobileLookupHash(mobileHash);
-    player.setCryptoKeyVersion(crypto.keyVersion());
+    player.setCryptoKeyVersion("plain-v1");
     try {
       if (playerMapper.updateById(player) != 1) {
         throw new BusinessException(ErrorCode.CONFLICT, "选手身份更新失败，请刷新后重试");
@@ -177,7 +177,7 @@ public class CompetitionPlayerIdentityDomainService {
   @Transactional(readOnly = true)
   public String assertMobileAvailable(Long playerId, String newMobile) {
     String normalizedMobile = normalizeMobile(newMobile);
-    String newMobileHash = crypto.lookupHash(normalizedMobile);
+    String newMobileHash = dataHash.lookupHash(normalizedMobile);
     CompetitionPlayerIdentityEntity bound = playerMapper.selectForUpdateByMobileLookupHash(newMobileHash);
     if (bound != null && !Objects.equals(bound.getId(), playerId)) {
       throw new BusinessException(ErrorCode.CONFLICT, "手机号已绑定其他选手");

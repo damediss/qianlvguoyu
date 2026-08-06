@@ -156,7 +156,7 @@ interface AppShellProps {
   pageMap: Record<string, ReactNode>;
   contentOverride?: ReactNode;
   selectedMenuKeyOverride?: string;
-  onMenuNavigate?: () => void;
+  onMenuNavigate?: (node: MenuVO | null) => void;
   hideBreadcrumb?: boolean;
 }
 
@@ -303,7 +303,7 @@ export function AppShell({
   }, [openExternalMenu, pageMap, setSelectedKey]);
 
   const handleMenuNavigate = useCallback((node: MenuVO | null) => {
-    onMenuNavigate?.();
+    onMenuNavigate?.(node);
     navigateToNode(node);
   }, [navigateToNode, onMenuNavigate]);
 

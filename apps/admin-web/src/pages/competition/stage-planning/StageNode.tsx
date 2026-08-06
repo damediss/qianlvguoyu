@@ -3,9 +3,16 @@ import { Tag } from 'antd';
 import type { NodeProps } from '@xyflow/react';
 import { stageStatusLabel, stageTypeDefinition, stageTypeDisplayOrder, type StageNode as StageNodeModel } from '../../../types/competitionStagePlanning';
 
-type StageNodeProps = NodeProps<StageNodeModel> & { stagePlanConfirmed?: boolean };
+type StageNodeProps = NodeProps<StageNodeModel> & {
+  stagePlanConfirmed?: boolean;
+};
 
-export function StageNode({ id, data, selected, stagePlanConfirmed = false }: StageNodeProps) {
+export function StageNode({
+  id,
+  data,
+  selected,
+  stagePlanConfirmed = false,
+}: StageNodeProps) {
   if (data.kind === 'marker') {
     return (
       <div className="stage-marker-node" data-testid={`stage-marker-${data.marker}`}>

@@ -36,7 +36,7 @@ import com.guoyu.platform.competition.mapper.CompetitionTheoryExamSessionMapper;
 import com.guoyu.platform.competition.mapper.CompetitionTheoryExamSessionTokenAuditMapper;
 import com.guoyu.platform.competition.mapper.CompetitionTheoryPaperQuestionMapper;
 import com.guoyu.platform.competition.player.domain.CompetitionPlayerIdentityDomainService;
-import com.guoyu.platform.competition.player.domain.CompetitionPlayerSensitiveDataCrypto;
+import com.guoyu.platform.competition.player.domain.CompetitionPlayerDataHash;
 import com.guoyu.platform.competition.service.CompetitionContestantScopeValidator;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -64,7 +64,7 @@ public class CompetitionExamApplicationService {
 
   private final CompetitionPlayerIdentityMapper playerMapper;
   private final CompetitionPlayerIdentityDomainService playerIdentityService;
-  private final CompetitionPlayerSensitiveDataCrypto crypto;
+  private final CompetitionPlayerDataHash dataHash;
   private final PasswordEncoder passwordEncoder;
   private final CompetitionTheoryCandidateAssignmentMapper assignmentMapper;
   private final CompetitionTheoryAttemptMapper attemptMapper;
@@ -82,7 +82,7 @@ public class CompetitionExamApplicationService {
   public CompetitionExamApplicationService(
       CompetitionPlayerIdentityMapper playerMapper,
       CompetitionPlayerIdentityDomainService playerIdentityService,
-      CompetitionPlayerSensitiveDataCrypto crypto,
+      CompetitionPlayerDataHash dataHash,
       PasswordEncoder passwordEncoder,
       CompetitionTheoryCandidateAssignmentMapper assignmentMapper,
       CompetitionTheoryAttemptMapper attemptMapper,
@@ -95,7 +95,7 @@ public class CompetitionExamApplicationService {
       @Qualifier("competitionExamStpLogic") StpLogic examStpLogic,
       ObjectMapper objectMapper,
       Clock clock) {
-    this(playerMapper, playerIdentityService, crypto, passwordEncoder, assignmentMapper, attemptMapper,
+    this(playerMapper, playerIdentityService, dataHash, passwordEncoder, assignmentMapper, attemptMapper,
         sessionMapper, questionMapper, answerMapper, saveRequestMapper, auditMapper, submissionService,
         examStpLogic, objectMapper, clock, null);
   }
@@ -104,7 +104,7 @@ public class CompetitionExamApplicationService {
   public CompetitionExamApplicationService(
       CompetitionPlayerIdentityMapper playerMapper,
       CompetitionPlayerIdentityDomainService playerIdentityService,
-      CompetitionPlayerSensitiveDataCrypto crypto,
+      CompetitionPlayerDataHash dataHash,
       PasswordEncoder passwordEncoder,
       CompetitionTheoryCandidateAssignmentMapper assignmentMapper,
       CompetitionTheoryAttemptMapper attemptMapper,
@@ -120,7 +120,7 @@ public class CompetitionExamApplicationService {
       CompetitionContestantScopeValidator contestantScopeValidator) {
     this.playerMapper = playerMapper;
     this.playerIdentityService = playerIdentityService;
-    this.crypto = crypto;
+    this.dataHash = dataHash;
     this.passwordEncoder = passwordEncoder;
     this.assignmentMapper = assignmentMapper;
     this.attemptMapper = attemptMapper;
@@ -139,7 +139,7 @@ public class CompetitionExamApplicationService {
   @Transactional
   public CompetitionExamLoginVO login(CompetitionExamLoginReq request) {
     String mobile = playerIdentityService.normalizeMobile(request.account());
-    String lookupHash = crypto.lookupHash(mobile);
+    String lookupHash = dataHash.lookupHash(mobile);
     List<CompetitionPlayerIdentityEntity> players =
         playerMapper.selectForUpdateByMobileLookupHashGlobally(lookupHash);
     if (players == null || players.isEmpty()) {

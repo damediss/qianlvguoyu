@@ -10,6 +10,26 @@ export function isCompetitionPath(pathname: string) {
   return /^\/competition(?:\/|$)/.test(normalizePathname(pathname));
 }
 
+export interface CompetitionTheoryWorkbenchContext {
+  eventId: string | number;
+  stageId?: string | number;
+  eventWorkTypeId?: string | number;
+}
+
+/** Build the existing theory workbench URL while preserving the current competition scope. */
+export function buildCompetitionTheoryWorkbenchPath({
+  eventId,
+  stageId,
+  eventWorkTypeId,
+}: CompetitionTheoryWorkbenchContext) {
+  const params = new URLSearchParams({ eventId: String(eventId) });
+  if (stageId !== undefined && stageId !== null) params.set('stageId', String(stageId));
+  if (eventWorkTypeId !== undefined && eventWorkTypeId !== null) {
+    params.set('eventWorkTypeId', String(eventWorkTypeId));
+  }
+  return `/competition/theory-exams?${params.toString()}`;
+}
+
 /**
  * Resolve the menu code from the server-owned menu tree instead of maintaining
  * another client-side whitelist of competition child URLs.

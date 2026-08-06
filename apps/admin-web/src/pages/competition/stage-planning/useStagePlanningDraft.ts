@@ -161,6 +161,18 @@ export function useStagePlanningDraft({
     setSelection({ nodeId: next.nodes[0]?.id, edgeId: next.edges[0]?.id });
   }, []);
 
+  const selectNode = useCallback((nodeId: string) => {
+    setSelection({ nodeId });
+    setNodes((current) => current.map((node) => ({
+      ...node,
+      selected: node.id === nodeId,
+    })));
+    setEdges((current) => current.map((edge) => ({
+      ...edge,
+      selected: false,
+    })));
+  }, []);
+
   const addStage = useCallback((stageType: StageType, position?: { x: number; y: number }) => {
     if (!editable || nodes.some((node) => node.data.kind === 'stage' && node.data.stageType === stageType)) return;
     const definition = stageTypeDefinition(stageType);
@@ -263,6 +275,7 @@ export function useStagePlanningDraft({
     currentNotes,
     setSaving,
     setSelection,
+    selectNode,
     onNodesChange,
     onEdgesChange,
     onConnect,
