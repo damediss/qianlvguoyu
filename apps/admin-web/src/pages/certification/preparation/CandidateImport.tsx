@@ -10,6 +10,7 @@ import {
 import { ProCard } from '@ant-design/pro-components';
 import {
   Button,
+  DatePicker,
   Form,
   Input,
   Modal,
@@ -25,12 +26,14 @@ import {
 import type { UploadFile } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import { useMemo, useState, type Key } from 'react';
 import { pagePeople } from '../../../api/training';
 import { getCertificationTask } from '../../../api/certification';
 import {
   createPreparationCandidate,
   deletePreparationCandidate,
+  getPreparationCandidateApplicationSource,
   importPreparationCandidates,
   importPreparationCandidatesExcel,
   downloadPreparationCandidateExcelTemplate,
@@ -431,8 +434,9 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
     setCandidateModalOpen(true);
   }
 
-  function openEdit(record: PreparationCandidate) {
+  async function openEdit(record: PreparationCandidate) {
     setEditingCandidate(record);
+    candidateForm.resetFields();
     candidateForm.setFieldsValue({
       candidateName: record.candidateName,
       admissionTicketNo: record.admissionTicketNo,
@@ -440,15 +444,66 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
       phone: record.phone || record.maskedPhone,
       levelCode: record.levelCode,
       levelName: record.levelName,
-      importSource: record.importSource,
+      importSource: record.importSource || 'other',
       orgName: record.orgName,
+      taskScopeId: record.taskScopeId,
+      remark: undefined,
     });
     setCandidateModalOpen(true);
+    try {
+      const source = await getPreparationCandidateApplicationSource(taskId!, record.id);
+      if (!source) {
+        return;
+      }
+      candidateForm.setFieldsValue({
+        gender: source.gender,
+        education: source.education,
+        graduateDate: source.graduateDate ? dayjs(source.graduateDate) : undefined,
+        companyAddress: source.companyAddress,
+        zipCode: source.zipCode,
+        workStartDate: source.workStartDate ? dayjs(source.workStartDate) : undefined,
+        originalWorkTypeName: source.originalWorkTypeName,
+        originalLevelName: source.originalLevelName,
+        originalCertNo: source.originalCertNo,
+        applyWorkYears: source.applyWorkYears,
+        companyCreditCode: source.companyCreditCode,
+        workTypeCode: source.workTypeCode,
+        workDirection: source.workDirection,
+        workResume: source.workResume,
+        trainingSummary: source.trainingSummary,
+        homeAddress: source.homeAddress,
+        school: source.school,
+        major: source.major,
+        nation: source.nation,
+        orgName: source.companyName || record.orgName,
+        remark: source.remark,
+      });
+    } catch {
+      // Editing still works with candidate base fields when source snapshot is absent.
+    }
+  }
+
+  function toDateString(value: unknown): string | undefined {
+    if (!value) {
+      return undefined;
+    }
+    if (dayjs.isDayjs(value)) {
+      return value.format('YYYY-MM-DD');
+    }
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+    return undefined;
   }
 
   function submitCandidate() {
     candidateForm.validateFields().then((values) => {
-      const payload = { ...values, importSource: values.importSource || 'other' };
+      const payload: PreparationCandidatePayload = {
+        ...values,
+        importSource: values.importSource || 'other',
+        graduateDate: toDateString(values.graduateDate),
+        workStartDate: toDateString(values.workStartDate),
+      };
       if (editingCandidate) {
         updateMutation.mutate({ id: editingCandidate.id, payload });
         return;
@@ -730,10 +785,14 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
         onOk={submitCandidate}
         onCancel={() => setCandidateModalOpen(false)}
         confirmLoading={createMutation.isPending || updateMutation.isPending}
-        width={720}
+        width={960}
+        styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
       >
         <Form form={candidateForm} layout="vertical">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+          <Typography.Text type="secondary">
+            以下字段会写入职业技能等级认定申请表；未填写的项生成申请表时保持空白。
+          </Typography.Text>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 12 }}>
             <Form.Item name="candidateName" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}>
               <Input />
             </Form.Item>
@@ -747,8 +806,39 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
             >
               <Input />
             </Form.Item>
+            <Form.Item name="gender" label="性别">
+              <Select
+                allowClear
+                options={[
+                  { value: '男', label: '男' },
+                  { value: '女', label: '女' },
+                ]}
+                placeholder="可留空，默认按身份证识别"
+              />
+            </Form.Item>
             <Form.Item name="phone" label="手机号" rules={[{ pattern: /^1[3-9]\d{9}$/, message: '请输入有效手机号' }]}>
               <Input />
+            </Form.Item>
+            <Form.Item name="nation" label="民族">
+              <Input placeholder="如：汉族" />
+            </Form.Item>
+            <Form.Item name="education" label="文化程度">
+              <Input placeholder="如：初中/高中/大专/本科" />
+            </Form.Item>
+            <Form.Item name="graduateDate" label="毕业时间">
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="school" label="毕业学校">
+              <Input />
+            </Form.Item>
+            <Form.Item name="major" label="所学专业">
+              <Input placeholder="初中、高中学历可填无" />
+            </Form.Item>
+            <Form.Item name="homeAddress" label="身份证地址">
+              <Input />
+            </Form.Item>
+            <Form.Item name="taskScopeId" label="认定班级（工种/等级）">
+              <Select allowClear options={scopeOptions} placeholder="用于填入申报/认定职业与等级" />
             </Form.Item>
             <Form.Item name="levelCode" label="等级">
               <Select
@@ -763,13 +853,49 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
             <Form.Item name="levelName" label="等级名称">
               <Input />
             </Form.Item>
-            <Form.Item name="orgName" label="组织">
+            <Form.Item name="orgName" label="工作单位">
+              <Input />
+            </Form.Item>
+            <Form.Item name="companyAddress" label="单位地址">
+              <Input />
+            </Form.Item>
+            <Form.Item name="zipCode" label="邮编">
+              <Input maxLength={12} />
+            </Form.Item>
+            <Form.Item name="companyCreditCode" label="统一社会信用代码">
+              <Input />
+            </Form.Item>
+            <Form.Item name="workStartDate" label="参加工作时间">
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="applyWorkYears" label="申报工种工龄">
+              <Input placeholder="如：5年" />
+            </Form.Item>
+            <Form.Item name="workTypeCode" label="职业代码">
+              <Input />
+            </Form.Item>
+            <Form.Item name="workDirection" label="工种方向">
+              <Input />
+            </Form.Item>
+            <Form.Item name="originalWorkTypeName" label="原职业（工种）">
+              <Input />
+            </Form.Item>
+            <Form.Item name="originalLevelName" label="原技术等级">
+              <Input />
+            </Form.Item>
+            <Form.Item name="originalCertNo" label="原证书编号">
               <Input />
             </Form.Item>
             <Form.Item name="importSource" label="导入途径" hidden>
               <Input />
             </Form.Item>
-            <Form.Item name="remark" label="备注">
+            <Form.Item name="workResume" label="个人工作简历" style={{ gridColumn: '1 / -1' }}>
+              <Input.TextArea rows={3} placeholder="有则如实填写；空则申请表对应栏留空" />
+            </Form.Item>
+            <Form.Item name="trainingSummary" label="参加培训情况" style={{ gridColumn: '1 / -1' }}>
+              <Input.TextArea rows={3} placeholder="时间、期限、内容等；空则申请表对应栏留空" />
+            </Form.Item>
+            <Form.Item name="remark" label="备注" style={{ gridColumn: '1 / -1' }}>
               <Input />
             </Form.Item>
           </div>

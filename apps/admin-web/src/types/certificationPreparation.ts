@@ -75,6 +75,25 @@ export interface PreparationCandidatePayload {
   orgName?: string;
   remark?: string;
   taskScopeId?: string;
+  gender?: string;
+  education?: string;
+  graduateDate?: string;
+  companyAddress?: string;
+  zipCode?: string;
+  workStartDate?: string;
+  originalWorkTypeName?: string;
+  originalLevelName?: string;
+  originalCertNo?: string;
+  applyWorkYears?: string;
+  companyCreditCode?: string;
+  workTypeCode?: string;
+  workDirection?: string;
+  workResume?: string;
+  trainingSummary?: string;
+  homeAddress?: string;
+  school?: string;
+  major?: string;
+  nation?: string;
 }
 
 export interface PreparationCandidateImportPayload {
@@ -176,12 +195,21 @@ export interface PreparationCandidateStaging {
   birthDate?: string;
   education?: string;
   graduateDate?: string;
+  school?: string;
+  major?: string;
+  nation?: string;
   idCardNo?: string;
   phone?: string;
+  homeAddress?: string;
   companyName?: string;
   companyAddress?: string;
   zipCode?: string;
   companyCreditCode?: string;
+  industrialPark?: string;
+  workStartDate?: string;
+  originalWorkTypeName?: string;
+  originalLevelName?: string;
+  originalCertNo?: string;
   applyWorkTypeName?: string;
   certWorkTypeName?: string;
   workDirection?: string;

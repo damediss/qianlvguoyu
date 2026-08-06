@@ -3,7 +3,6 @@ package com.guoyu.platform.certification.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -68,9 +67,11 @@ class CertificationCandidateCsvImportServiceTest {
 
     try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(service.templateBytes()))) {
       assertThat(workbook.getNumberOfSheets()).isEqualTo(1);
-      assertThat(workbook.getSheetAt(0).getRow(0).getLastCellNum()).isEqualTo((short) 24);
+      // Base 25 columns + 8 optional application-form columns.
+      assertThat(workbook.getSheetAt(0).getRow(0).getLastCellNum()).isEqualTo((short) 33);
       assertThat(workbook.getSheetAt(0).getRow(0).getCell(0).getStringCellValue()).isEqualTo("序号");
-      assertThat(workbook.getSheetAt(0).getRow(0).getCell(23).getStringCellValue()).isEqualTo("原证书编号");
+      assertThat(workbook.getSheetAt(0).getRow(0).getCell(24).getStringCellValue()).isEqualTo("原证书编号");
+      assertThat(workbook.getSheetAt(0).getRow(0).getCell(32).getStringCellValue()).isEqualTo("参加培训情况");
       assertThat(workbook.getSheetAt(0).getLastRowNum()).isEqualTo(5);
       assertThat(workbook.getSheetAt(0).getRow(1).getCell(1).getStringCellValue()).isEqualTo("测试考生一");
     }
@@ -152,8 +153,8 @@ class CertificationCandidateCsvImportServiceTest {
     when(fileApplicationService.upload(any(), eq("private"))).thenReturn(
         new FileVO(30L, "考生信息批量导入模板.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             1L, "private", "active", LocalDateTime.now(), ""));
-    when(candidateMapper.selectByTaskAndIdCardIncludingDeleted(any(), eq(10L), any())).thenReturn(existing);
-    when(stagingMapper.selectCount(any())).thenReturn(0L);
+    when(preparationService.createCandidateForImport(eq(10L), any(PreparationCandidateSaveReq.class), any()))
+        .thenReturn(existing);
 
     MockMultipartFile file = new MockMultipartFile(
         "file", "考生信息批量导入模板.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", service.templateBytes());
@@ -162,8 +163,7 @@ class CertificationCandidateCsvImportServiceTest {
 
     assertThat(result.successCount()).isEqualTo(5);
     assertThat(result.failedCount()).isZero();
-    verify(preparationService, never()).createCandidateForImport(any(), any(), any());
-    verify(candidateMapper, times(5)).updateById(existing);
+    verify(preparationService, times(5)).createCandidateForImport(eq(10L), any(PreparationCandidateSaveReq.class), any());
     verify(stagingMapper, times(5)).insert(any(CertificationCandidateSourceStagingEntity.class));
   }
 

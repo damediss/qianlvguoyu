@@ -6,6 +6,7 @@ import com.guoyu.platform.certification.dto.PreparationCandidateSaveReq;
 import com.guoyu.platform.certification.service.CertificationPreparationApplicationService;
 import com.guoyu.platform.certification.service.CertificationCandidateCsvImportService;
 import com.guoyu.platform.certification.vo.PreparationCandidateVO;
+import com.guoyu.platform.certification.vo.PreparationCandidateStagingVO;
 import com.guoyu.platform.certification.vo.PreparationImportBatchVO;
 import com.guoyu.platform.certification.vo.PreparationImportErrorVO;
 import com.guoyu.platform.common.api.ApiResponse;
@@ -124,6 +125,15 @@ public class CertificationPreparationCandidateController {
       @Valid @RequestBody PreparationCandidateSaveReq req
   ) {
     return ApiResponse.ok(service.createCandidate(taskId, req));
+  }
+
+  @GetMapping("/tasks/{taskId}/candidates/{candidateId}/application-source")
+  @PreAuthorize("hasAuthority('certification.preparation.candidate.view')")
+  public ApiResponse<PreparationCandidateStagingVO> getCandidateApplicationSource(
+      @PathVariable Long taskId,
+      @PathVariable Long candidateId
+  ) {
+    return ApiResponse.ok(service.getCandidateApplicationSource(taskId, candidateId));
   }
 
   @PutMapping("/tasks/{taskId}/candidates/{candidateId}")

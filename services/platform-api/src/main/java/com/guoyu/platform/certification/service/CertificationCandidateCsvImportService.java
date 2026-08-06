@@ -60,6 +60,10 @@ public class CertificationCandidateCsvImportService {
       "毕业时间", "参加工作时间(第一次工作时间）", "民族", "政治面貌", "所在单位", "所在岗位", "入职时间",
       "劳动合同签订开始时间", "劳动合同签订结束时间", "负责人", "负责人电话", "原工种", "原技能等级", "原证书编号");
 
+  /** Optional trailing columns for 职业技能等级认定申请表 fields; old templates without them remain valid. */
+  private static final List<String> APPLICATION_FORM_EXTRA_HEADERS = List.of(
+      "单位地址", "邮编", "统一社会信用代码", "申报工种工龄", "职业代码", "工种方向", "个人工作简历", "参加培训情况");
+
   private final CertificationTaskScopeMapper scopeMapper;
   private final CertificationCandidateImportBatchMapper batchMapper;
   private final CertificationCandidateImportErrorMapper errorMapper;
@@ -96,9 +100,11 @@ public class CertificationCandidateCsvImportService {
     try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       Sheet sheet = workbook.createSheet("考生信息");
       Row header = sheet.createRow(0);
-      for (int column = 0; column < HEADERS.size(); column++) {
-        header.createCell(column).setCellValue(HEADERS.get(column));
-        sheet.setColumnWidth(column, Math.min(HEADERS.get(column).length() * 2 + 4, 50) * 256);
+      List<String> templateHeaders = new ArrayList<>(HEADERS);
+      templateHeaders.addAll(APPLICATION_FORM_EXTRA_HEADERS);
+      for (int column = 0; column < templateHeaders.size(); column++) {
+        header.createCell(column).setCellValue(templateHeaders.get(column));
+        sheet.setColumnWidth(column, Math.min(templateHeaders.get(column).length() * 2 + 4, 50) * 256);
       }
       for (int index = 0; index < SAMPLE_ROWS.size(); index++) {
         Row row = sheet.createRow(index + 1);
@@ -266,17 +272,13 @@ public class CertificationCandidateCsvImportService {
       DataFormatter formatter = new DataFormatter();
       Row headerRow = sheet.getRow(sheet.getFirstRowNum());
       int headerSize = headerRow == null ? 0 : headerRow.getLastCellNum();
-      boolean hasParticipationColumn = headerSize == HEADERS.size() + 1;
-      if (headerRow == null || (headerSize != HEADERS.size() && !hasParticipationColumn)) {
+      List<String> expectedHeaders = resolveExpectedHeaders(headerSize);
+      if (headerRow == null || expectedHeaders == null) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "XLSX 表头必须与考生信息导入模板完全一致");
       }
       List<String> header = new ArrayList<>();
-      for (int column = 0; column < headerSize; column++) {
+      for (int column = 0; column < expectedHeaders.size(); column++) {
         header.add(cellValue(headerRow, column, formatter));
-      }
-      List<String> expectedHeaders = new ArrayList<>(HEADERS);
-      if (hasParticipationColumn) {
-        expectedHeaders.add(PARTICIPATION_HEADER);
       }
       if (!expectedHeaders.equals(header)) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "XLSX 表头必须与考生信息导入模板完全一致");
@@ -289,7 +291,7 @@ public class CertificationCandidateCsvImportService {
         }
         Map<String, String> values = new LinkedHashMap<>();
         boolean hasValue = false;
-        for (int column = 0; column < headerSize; column++) {
+        for (int column = 0; column < expectedHeaders.size(); column++) {
           String value = cellValue(row, column, formatter);
           values.put(expectedHeaders.get(column), value);
           hasValue |= StringUtils.hasText(value);
@@ -297,7 +299,7 @@ public class CertificationCandidateCsvImportService {
         if (!hasValue) {
           continue;
         }
-        if (row.getLastCellNum() > headerSize) {
+        if (row.getLastCellNum() > expectedHeaders.size()) {
           throw new BusinessException(ErrorCode.BAD_REQUEST, "第 " + (rowIndex + 1) + " 行列数与模板不一致");
         }
         rows.add(new SpreadsheetRow(rowIndex + 1, values));
@@ -306,6 +308,32 @@ public class CertificationCandidateCsvImportService {
     } catch (IOException ex) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "XLSX 文件读取失败");
     }
+  }
+
+  /**
+   * Supports the base template, the same template plus optional application-form columns,
+   * and either variant with a trailing 参加环节 column.
+   */
+  private List<String> resolveExpectedHeaders(int headerSize) {
+    List<String> withFormFields = new ArrayList<>(HEADERS);
+    withFormFields.addAll(APPLICATION_FORM_EXTRA_HEADERS);
+    List<String> baseWithParticipation = new ArrayList<>(HEADERS);
+    baseWithParticipation.add(PARTICIPATION_HEADER);
+    List<String> formWithParticipation = new ArrayList<>(withFormFields);
+    formWithParticipation.add(PARTICIPATION_HEADER);
+    if (headerSize == HEADERS.size()) {
+      return new ArrayList<>(HEADERS);
+    }
+    if (headerSize == withFormFields.size()) {
+      return withFormFields;
+    }
+    if (headerSize == baseWithParticipation.size()) {
+      return baseWithParticipation;
+    }
+    if (headerSize == formWithParticipation.size()) {
+      return formWithParticipation;
+    }
+    return null;
   }
 
   private void saveSnapshot(
@@ -340,6 +368,14 @@ public class CertificationCandidateCsvImportService {
     entity.setPoliticalStatus(value(row, "政治面貌"));
     entity.setCompanyName(value(row, "所在单位"));
     entity.setPositionName(value(row, "所在岗位"));
+    entity.setCompanyAddress(nullableValue(row, "单位地址"));
+    entity.setZipCode(nullableValue(row, "邮编"));
+    entity.setCompanyCreditCode(nullableValue(row, "统一社会信用代码"));
+    entity.setApplyWorkYears(nullableValue(row, "申报工种工龄"));
+    entity.setWorkTypeCode(nullableValue(row, "职业代码"));
+    entity.setWorkDirection(nullableValue(row, "工种方向"));
+    entity.setWorkResume(nullableValue(row, "个人工作简历"));
+    entity.setTrainingSummary(nullableValue(row, "参加培训情况"));
     entity.setEntryDate(date(row, "入职时间"));
     entity.setLaborContractStartDate(date(row, "劳动合同签订开始时间"));
     entity.setLaborContractEndDate(date(row, "劳动合同签订结束时间"));

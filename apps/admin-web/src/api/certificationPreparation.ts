@@ -203,6 +203,12 @@ export function createPreparationCandidate(taskId: string, payload: PreparationC
   return unwrap<PreparationCandidate>(apiClient.post(`${base}/tasks/${taskId}/candidates`, payload));
 }
 
+export function getPreparationCandidateApplicationSource(taskId: string, candidateId: string) {
+  return unwrap<PreparationCandidateStaging | null>(
+    apiClient.get(`${base}/tasks/${taskId}/candidates/${candidateId}/application-source`),
+  );
+}
+
 export function updatePreparationCandidate(taskId: string, candidateId: string, payload: PreparationCandidatePayload) {
   return unwrap<PreparationCandidate>(apiClient.put(`${base}/tasks/${taskId}/candidates/${candidateId}`, payload));
 }
