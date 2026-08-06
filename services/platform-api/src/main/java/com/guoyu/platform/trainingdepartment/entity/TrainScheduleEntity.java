@@ -20,46 +20,54 @@ public class TrainScheduleEntity {
     private Long teacherId;
     /** 讲师姓名 */
     private String teacherName;
-    /** 课程名称 */
-    private String courseName;
-    private String roomName;
-    private Integer dayOfWeek;
-    /** 开始时间 */
-    private String startTime;
-    /** 结束时间 */
-    private String endTime;
-    private String scheduleDate;
-    /** 状态 */
-    private Integer status;
-    /**  租户ID */
-    @TableField(fill = FieldFill.INSERT)
-    private Long tenantId;
-    @TableField(fill = FieldFill.INSERT)
-    private LocalDateTime createdAt;
-    @TableField(fill = FieldFill.INSERT_UPDATE)
-    private LocalDateTime updatedAt;
-    @TableField(fill = FieldFill.INSERT)
-    private Long createdBy;
-    @TableField(fill = FieldFill.INSERT_UPDATE)
-    private Long updatedBy;
-    /**  逻辑删除标记 0-未删除 1-已删除 */
-    @TableLogic
-    private Integer deleted;
+  /** 课程名称 */
+  private String courseName;
+  /** 学时（开班课表 Excel 原值，如 2 / 2.0） */
+  private String classHours;
+  /** 授课形式（理论/实操等） */
+  private String teachForm;
+  private String roomName;
+  private Integer dayOfWeek;
+  /** 开始时间 */
+  private String startTime;
+  /** 结束时间 */
+  private String endTime;
+  private String scheduleDate;
+  /** 状态 */
+  private Integer status;
+  /**  租户ID */
+  @TableField(fill = FieldFill.INSERT)
+  private Long tenantId;
+  @TableField(fill = FieldFill.INSERT)
+  private LocalDateTime createdAt;
+  @TableField(fill = FieldFill.INSERT_UPDATE)
+  private LocalDateTime updatedAt;
+  @TableField(fill = FieldFill.INSERT)
+  private Long createdBy;
+  @TableField(fill = FieldFill.INSERT_UPDATE)
+  private Long updatedBy;
+  /**  逻辑删除标记 0-未删除 1-已删除 */
+  @TableLogic
+  private Integer deleted;
 
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public Long getClassId() { return classId; }
-    public void setClassId(Long classId) { this.classId = classId; }
-    public Long getCourseId() { return courseId; }
-    public void setCourseId(Long courseId) { this.courseId = courseId; }
-    public Long getTeacherId() { return teacherId; }
-    public void setTeacherId(Long teacherId) { this.teacherId = teacherId; }
-    public String getTeacherName() { return teacherName; }
-    public void setTeacherName(String teacherName) { this.teacherName = teacherName; }
-    public String getCourseName() { return courseName; }
-    public void setCourseName(String courseName) { this.courseName = courseName; }
-    public String getRoomName() { return roomName; }
-    public void setRoomName(String roomName) { this.roomName = roomName; }
+  public Long getId() { return id; }
+  public void setId(Long id) { this.id = id; }
+  public Long getClassId() { return classId; }
+  public void setClassId(Long classId) { this.classId = classId; }
+  public Long getCourseId() { return courseId; }
+  public void setCourseId(Long courseId) { this.courseId = courseId; }
+  public Long getTeacherId() { return teacherId; }
+  public void setTeacherId(Long teacherId) { this.teacherId = teacherId; }
+  public String getTeacherName() { return teacherName; }
+  public void setTeacherName(String teacherName) { this.teacherName = teacherName; }
+  public String getCourseName() { return courseName; }
+  public void setCourseName(String courseName) { this.courseName = courseName; }
+  public String getClassHours() { return classHours; }
+  public void setClassHours(String classHours) { this.classHours = classHours; }
+  public String getTeachForm() { return teachForm; }
+  public void setTeachForm(String teachForm) { this.teachForm = teachForm; }
+  public String getRoomName() { return roomName; }
+  public void setRoomName(String roomName) { this.roomName = roomName; }
     public Integer getDayOfWeek() { return dayOfWeek; }
     public void setDayOfWeek(Integer dayOfWeek) { this.dayOfWeek = dayOfWeek; }
     public String getStartTime() { return startTime; }

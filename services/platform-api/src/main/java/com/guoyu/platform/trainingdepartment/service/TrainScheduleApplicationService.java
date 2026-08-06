@@ -255,6 +255,8 @@ public class TrainScheduleApplicationService {
       entity.setClassId(classId);
       entity.setCourseId(item.get("courseId") != null ? Long.valueOf(item.get("courseId").toString()) : null);
       entity.setCourseName(item.get("courseName") != null ? item.get("courseName").toString() : null);
+      entity.setClassHours(item.get("classHours") != null ? item.get("classHours").toString() : null);
+      entity.setTeachForm(item.get("teachForm") != null ? item.get("teachForm").toString() : null);
       entity.setTeacherId(item.get("teacherId") != null ? Long.valueOf(item.get("teacherId").toString()) : null);
       entity.setTeacherName(item.get("teacherName") != null ? item.get("teacherName").toString() : null);
       entity.setRoomName(item.get("roomName") != null ? item.get("roomName").toString() : null);
@@ -287,17 +289,20 @@ public class TrainScheduleApplicationService {
     List<Map<String, Object>> schedules = listMaps(classId);
 
     StringBuilder csv = new StringBuilder();
-    csv.append("日期,星期,课程名称,讲师,教室,开始时间,结束时间\n");
+    csv.append("日期,星期,时间,培训内容,学时,授课形式,老师\n");
     String[] weekDays = {"", "周一", "周二", "周三", "周四", "周五", "周六", "周日"};
     for (Map<String, Object> s : schedules) {
       csv.append(s.get("scheduleDate") != null ? s.get("scheduleDate") : "").append(",");
       Integer dow = s.get("dayOfWeek") != null ? (Integer) s.get("dayOfWeek") : null;
       csv.append(dow != null && dow > 0 && dow < 8 ? weekDays[dow] : "").append(",");
+      String start = s.get("startTime") != null ? String.valueOf(s.get("startTime")) : "";
+      String end = s.get("endTime") != null ? String.valueOf(s.get("endTime")) : "";
+      String timeRange = (start.isEmpty() && end.isEmpty()) ? "" : (start + "-" + end);
+      csv.append(escapeCsv(timeRange)).append(",");
       csv.append(escapeCsv(s.get("courseName"))).append(",");
-      csv.append(escapeCsv(s.get("teacherName"))).append(",");
-      csv.append(escapeCsv(s.get("roomName"))).append(",");
-      csv.append(s.get("startTime") != null ? s.get("startTime") : "").append(",");
-      csv.append(s.get("endTime") != null ? s.get("endTime") : "").append("\n");
+      csv.append(escapeCsv(s.get("classHours"))).append(",");
+      csv.append(escapeCsv(s.get("teachForm"))).append(",");
+      csv.append(escapeCsv(s.get("teacherName"))).append("\n");
     }
 
     String safeName = classEntity.getTitle().replaceAll("[\\\\/:*?\"<>|]", "_") + "_课表.csv";
@@ -351,6 +356,8 @@ public class TrainScheduleApplicationService {
       item.put("classId", s.getClassId());
       item.put("courseId", s.getCourseId());
       item.put("courseName", s.getCourseName());
+      item.put("classHours", s.getClassHours());
+      item.put("teachForm", s.getTeachForm());
       item.put("teacherId", s.getTeacherId());
       item.put("teacherName", s.getTeacherName());
       item.put("roomName", s.getRoomName());

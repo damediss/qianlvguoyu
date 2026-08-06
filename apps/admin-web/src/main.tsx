@@ -15,6 +15,8 @@ import { TaskExamshicaoAuditAssignListPage } from './pages/exam/TaskExamshicaoAu
 import { TaskExamsubAuditAssignListPage } from './pages/exam/TaskExamsubAuditAssignListPage';
 import { TrainingInfoPage } from './pages/training/TrainingInfoPage';
 import { TrainingFollowClassPage } from './pages/training/TrainingFollowClassPage';
+import { TrainingFollowExamPage } from './pages/training/TrainingFollowExamPage';
+import { TrainingSubsidyDeclarePage } from './pages/training/TrainingSubsidyDeclarePage';
 import { TrainingClassPeoplePage } from './pages/training/TrainingClassPeoplePage';
 import { TrainingClassDivisionPage } from './pages/training/TrainingClassDivisionPage';
 import { TrainingClassDeclarePage } from './pages/training/TrainingClassDeclarePage';
@@ -32,6 +34,7 @@ import { TrainingSummaryPage } from './pages/training/TrainingSummaryPage';
 import { TrainingCertificateTemplatePage } from './pages/training/TrainingCertificateTemplatePage';
 import { TrainingInformationPage } from './pages/training/TrainingInformationPage';
 import { TrainingStudentPage } from './pages/training/TrainingStudentPage';
+import { TrainingAcademicManagePage } from './pages/training/TrainingAcademicManagePage';
 import { EnterpriseResearchPage } from './pages/training/EnterpriseResearchPage';
 import { SolutionPlanningPage } from './pages/training/SolutionPlanningPage';
 import { EnterprisePlanReviewPage } from './pages/training/EnterprisePlanReviewPage';
@@ -135,6 +138,8 @@ const pageMap: Record<string, React.ReactNode> = {
   exam_course: <CoursePage />,
   'train_info-list': <TrainingInfoPage />,
   train_follow: <TrainingFollowClassPage />,
+  train_follow_exam: <TrainingFollowExamPage />,
+  train_subsidy_declare: <TrainingSubsidyDeclarePage />,
   fen_ban: <TrainingClassDivisionPage />,
   'train_people-list': <TrainingClassPeoplePage />,
   train_people: <TrainingClassPeoplePage />,
@@ -160,6 +165,7 @@ const pageMap: Record<string, React.ReactNode> = {
   'train_sign-up': <TrainingInformationPage />,
   'train_sign-up-people': <TrainingInformationPage />,
   'train_user-info': <TrainingStudentPage />,
+  'train_teacher-bank': <TrainingAcademicManagePage />,
   knowledge_spaces: <KnowledgePage />,
   knowledge_search: <KnowledgePage />,
   knowledge_rencaishibie: <RencaishibieEmbedPage />,

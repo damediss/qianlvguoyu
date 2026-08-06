@@ -66,19 +66,24 @@ public class TrainKcbiaoScheduleParser {
       if (!afterHeader) {
         continue;
       }
-      // 标准版式（与材料打包一致）：col1=日期 col2=时间 col3=课程 col6=讲师
+      // 标准版式（与材料打包一致）：col1=日期 col2=时间 col3=课程 col4=学时 col5=授课形式 col6=讲师
       String dateRaw = cellText(row, 1);
       String timeRange = cellText(row, 2);
       String courseName = cellText(row, 3);
+      String classHours = cellText(row, 4);
+      String teachForm = cellText(row, 5);
       String teacherName = cellText(row, 6);
       if (!StringUtils.hasText(dateRaw) && StringUtils.hasText(cellText(row, 0))) {
         // 退化：有的表把日期放在第一列
         dateRaw = cellText(row, 0);
         timeRange = cellText(row, 1);
         courseName = cellText(row, 2);
+        classHours = cellText(row, 3);
+        teachForm = cellText(row, 4);
         teacherName = cellText(row, 5);
         if (!StringUtils.hasText(teacherName)) {
           teacherName = cellText(row, 4);
+          teachForm = "";
         }
       }
       if (!StringUtils.hasText(dateRaw) || !StringUtils.hasText(courseName)) {
@@ -95,6 +100,12 @@ public class TrainKcbiaoScheduleParser {
       item.put("courseName", courseName.trim());
       item.put("startTime", times[0]);
       item.put("endTime", times[1]);
+      if (StringUtils.hasText(classHours)) {
+        item.put("classHours", classHours.trim());
+      }
+      if (StringUtils.hasText(teachForm)) {
+        item.put("teachForm", teachForm.trim());
+      }
       if (StringUtils.hasText(teacherName)) {
         item.put("teacherName", teacherName.trim());
       }
