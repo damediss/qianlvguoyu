@@ -355,8 +355,9 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 ### 7.4 POST /appreviewsync/answer — 单题作答
 
 - 入：`{examId, dayId, questionId, roundType, userAnswer, useTimeSec}`
-- 出：`{correct, correctAnswer, resolve, cardChange:{from,to,star}|null, encourageText|null}`
-- 逻辑：服务端判分 → 写 `ai_review_answer` → 驱动错题状态机（§5.4）→ 更新 day 计数 → 异步回写 PHP（§4.7）；加星题可带 `explainAvailable=1`。
+- 出：`{correct, correctAnswer, correctOptions, resolve, cardChange:{from,to,star}|null, encourageText|null}`
+- 逻辑：服务端判分 → 写 `ai_review_answer` → 驱动错题状态机（§5.4）→ 更新 day 计数 → 异步回写 PHP（§4.7）；加星题可带 `explainAvailable=1`
+- **幂等与改答案语义（v1.4 实测修正）**：以（plan+day+question+roundType）最近一次尝试为基准——答案相同或此前已答对 → 纯回放（防双击/倒退刷分，不写库）；此前答错且新答案不同 → 记为新尝试（重判分、驱动状态机、计数只加差额不重复计 done）。回放/判定一律按 attemptSeq 倒序取最新尝试。
 
 ### 7.5 POST /appreviewsync/mock/start — 开始模考
 

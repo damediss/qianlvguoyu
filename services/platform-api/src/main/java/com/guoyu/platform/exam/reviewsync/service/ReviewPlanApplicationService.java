@@ -111,7 +111,7 @@ public class ReviewPlanApplicationService {
     result.put("dayIndex", plan.getCurrentDayIndex());
     result.put("totalDays", plan.getTotalDays());
     result.put("examDate", plan.getExamDate() != null ? plan.getExamDate().toString() : null);
-    result.put("today", todayView(day));
+    result.put("today", todayView(plan, day));
     result.put("progress", progressView(plan));
     result.put("wrongStats", wrongStatsView(plan.getId()));
     if (interrupt != null) {
@@ -146,16 +146,16 @@ public class ReviewPlanApplicationService {
       item.put("done", doneIds.contains(qid));
       newQuestions.add(item);
     }
-    Map<Long, AiReviewWrongItemEntity> wrongByQid = wrongMapByQuestionId(plan.getId());
+    // 复盘队列动态取当前在册错题：当天新产生的错题实时进入清算，不依赖物化时的快照
+    List<AiReviewWrongItemEntity> reviewList = reviewListForDay(plan, day);
     List<Map<String, Object>> wrongQuestions = new ArrayList<>();
-    for (Long qid : parseIds(day.getReviewQuestionIds())) {
-      AiReviewWrongItemEntity wrong = wrongByQid.get(qid);
+    for (AiReviewWrongItemEntity wrong : reviewList) {
       Map<String, Object> item = new LinkedHashMap<>();
-      item.put("questionId", qid);
-      item.put("cardLevel", wrong != null ? wrong.getCardLevel() : "red");
-      item.put("star", wrong != null ? wrong.getStar() : 0);
-      item.put("wrongCount", wrong != null ? wrong.getWrongCount() : 0);
-      item.put("done", doneIds.contains(qid));
+      item.put("questionId", wrong.getQuestionId());
+      item.put("cardLevel", wrong.getCardLevel());
+      item.put("star", wrong.getStar());
+      item.put("wrongCount", wrong.getWrongCount());
+      item.put("done", doneIds.contains(wrong.getQuestionId()));
       wrongQuestions.add(item);
     }
 
@@ -205,20 +205,29 @@ public class ReviewPlanApplicationService {
     AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
     AiReviewPlanDayEntity day = requireDay(plan.getId(), dayId);
 
-    // 幂等：同（plan, day, question, roundType）已有作答 → 直接回放旧结果
+    // 幂等与改答案语义：
+    //  - 答案相同 或 此前已答对 → 纯回放（防双击/倒退刷分，不写库不计数）
+    //  - 此前答错 + 新答案不同 → 改答案（新尝试：重判分、驱动错题卡、计数只加差额）
     AiReviewAnswerEntity existing = answerMapper.selectOne(new LambdaQueryWrapper<AiReviewAnswerEntity>()
         .eq(AiReviewAnswerEntity::getPlanId, plan.getId())
         .eq(AiReviewAnswerEntity::getDayId, dayId)
         .eq(AiReviewAnswerEntity::getQuestionId, questionId)
         .eq(AiReviewAnswerEntity::getRoundType, roundType)
+        .orderByDesc(AiReviewAnswerEntity::getAttemptSeq)
         .last("LIMIT 1"));
     PhpQuestionDetail detail = phpQuery.loadQuestionDetail(questionId);
     if (detail == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "题目不存在");
     }
     List<AnswerJudgeDomainService.AnswerOption> options = parseOptions(detail.answerJson());
+    boolean correction = false;
     if (existing != null) {
-      return answerView(existing.getIsCorrect() == 1, options, detail.resolve(), null);
+      boolean sameAnswer = java.util.Objects.equals(existing.getUserAnswer(), userAnswer);
+      boolean wasCorrect = existing.getIsCorrect() != null && existing.getIsCorrect() == 1;
+      if (sameAnswer || wasCorrect) {
+        return answerView(existing.getIsCorrect() == 1, options, detail.resolve(), null);
+      }
+      correction = true;
     }
 
     // 判分
@@ -247,8 +256,8 @@ public class ReviewPlanApplicationService {
     // 错题状态机
     Map<String, Object> cardChange = applyWrongCard(plan, platformUserId, detail, judged.correct());
 
-    // 计数
-    bumpDayCounters(day, roundType, judged.correct());
+    // 计数：改答案不重复计 done，只补作答次数与对错差额
+    bumpDayCounters(day, roundType, judged.correct(), correction);
     plan.setLastActiveDate(LocalDate.now());
     planMapper.updateById(plan);
 
@@ -420,15 +429,23 @@ public class ReviewPlanApplicationService {
       Integer useTimeSec, Long tenantId) {
     AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
     AiReviewPlanDayEntity day = requireDay(plan.getId(), dayId);
+
+    // 同一天多次练习允许中途退出；只有全部完成才允许真正「结束」
+    int newDone = day.getNewDone() != null ? day.getNewDone() : 0;
+    int reviewDone = day.getReviewDone() != null ? day.getReviewDone() : 0;
+    int newTarget = day.getNewTarget() != null ? day.getNewTarget() : 0;
+    int reviewTarget = day.getReviewTarget() != null ? day.getReviewTarget() : 0;
+    if (newDone < newTarget || reviewDone < reviewTarget) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          String.format("今日任务未完成（新题 %d/%d，错题复盘 %d/%d），请全部完成后再结束",
+              newDone, newTarget, reviewDone, reviewTarget));
+    }
+
     day.setStatus("done");
     dayMapper.updateById(day);
     plan.setLastActiveDate(LocalDate.now());
-    // 推进到第二天
-    int nextIndex = plan.getCurrentDayIndex() + 1;
-    if (nextIndex <= plan.getTotalDays()) {
-      plan.setCurrentDayIndex(nextIndex);
-      plan.setCurrentStage(stageOfDay(plan, nextIndex));
-    } else {
+    // 不再在这里推进 current_day_index；跨天进入时由 getOrMaterializeDay 按日期自动推进
+    if (plan.getCurrentDayIndex() >= plan.getTotalDays()) {
       plan.setStatus("completed");
     }
     planMapper.updateById(plan);
@@ -490,6 +507,11 @@ public class ReviewPlanApplicationService {
     List<Map<String, Object>> coverage = new ArrayList<>();
     if (!mustDo.isEmpty()) {
       Map<Long, PhpQuestion> metaById = questionMetaByIds(plan, mustDo);
+      // 知识点标题：知识结构表（exam_knowledge_structure）title 字段
+      Map<Long, String> titleById = new HashMap<>();
+      for (PhpKnowledgeNode node : phpQuery.loadKnowledgeTree(plan.getCourseId())) {
+        titleById.put(node.id(), node.title());
+      }
       Map<Long, int[]> l3Totals = new HashMap<>();
       for (Long qid : mustDo) {
         PhpQuestion meta = metaById.get(qid);
@@ -501,12 +523,17 @@ public class ReviewPlanApplicationService {
           }
         }
       }
-      for (Map.Entry<Long, int[]> entry : l3Totals.entrySet()) {
+      List<Map.Entry<Long, int[]>> entries = new ArrayList<>(l3Totals.entrySet());
+      entries.sort(Map.Entry.comparingByKey());
+      for (Map.Entry<Long, int[]> entry : entries) {
         int[] answered = byL3.getOrDefault(entry.getKey(), new int[2]);
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("knowledgeId", entry.getKey());
+        item.put("title", titleById.getOrDefault(entry.getKey(), "知识点 " + entry.getKey()));
         item.put("total", entry.getValue()[0]);
         item.put("done", entry.getValue()[1]);
+        // 覆盖率 = 已做题数 / 该知识点总题数；accuracy 为正确率（含改错前的首次作答）
+        item.put("coverage", accuracy(entry.getValue()[1], entry.getValue()[0]));
         item.put("accuracy", accuracy(answered[1], answered[0]));
         coverage.add(item);
       }
@@ -680,10 +707,24 @@ public class ReviewPlanApplicationService {
       LocalDate date, InterruptInfo interrupt) {
     AiReviewPlanDayEntity existing = findDay(plan.getId(), dayIndex);
     if (existing != null) {
-      if (interrupt != null && interrupt.strategyText() != null
-          && (existing.getStrategyNote() == null || existing.getStrategyNote().isBlank())) {
-        existing.setStrategyNote(interrupt.strategyText());
-        dayMapper.updateById(existing);
+      // 同一天多次进入：直接复用当天记录，碎片时间练习累计到同一天
+      if (existing.getPlanDate().equals(date)) {
+        if (interrupt != null && interrupt.strategyText() != null
+            && (existing.getStrategyNote() == null || existing.getStrategyNote().isBlank())) {
+          existing.setStrategyNote(interrupt.strategyText());
+          dayMapper.updateById(existing);
+        }
+        return existing;
+      }
+      // 跨天进入：把指针推进到下一天，再物化新一天
+      if (existing.getPlanDate().isBefore(date)) {
+        int nextIndex = dayIndex + 1;
+        if (nextIndex <= plan.getTotalDays()) {
+          plan.setCurrentDayIndex(nextIndex);
+          plan.setCurrentStage(stageOfDay(plan, nextIndex));
+          planMapper.updateById(plan);
+          return getOrMaterializeDay(plan, nextIndex, date, interrupt);
+        }
       }
       return existing;
     }
@@ -1162,14 +1203,17 @@ public class ReviewPlanApplicationService {
         .eq(AiReviewAnswerEntity::getQuestionId, questionId)).intValue();
   }
 
-  private void bumpDayCounters(AiReviewPlanDayEntity day, String roundType, boolean correct) {
-    if ("new".equals(roundType)) {
-      day.setNewDone((day.getNewDone() != null ? day.getNewDone() : 0) + 1);
-    } else if ("review".equals(roundType)) {
-      day.setReviewDone((day.getReviewDone() != null ? day.getReviewDone() : 0) + 1);
+  private void bumpDayCounters(AiReviewPlanDayEntity day, String roundType, boolean correct, boolean correction) {
+    if (!correction) {
+      if ("new".equals(roundType)) {
+        day.setNewDone((day.getNewDone() != null ? day.getNewDone() : 0) + 1);
+      } else if ("review".equals(roundType)) {
+        day.setReviewDone((day.getReviewDone() != null ? day.getReviewDone() : 0) + 1);
+      }
     }
     day.setAnswerCount((day.getAnswerCount() != null ? day.getAnswerCount() : 0) + 1);
     if (correct) {
+      // 改答案前次必为答错，差额恒 +1；首答按实际
       day.setCorrectCount((day.getCorrectCount() != null ? day.getCorrectCount() : 0) + 1);
     }
     if ("pending".equals(day.getStatus())) {
@@ -1190,12 +1234,23 @@ public class ReviewPlanApplicationService {
     return items;
   }
 
-  private Map<Long, AiReviewWrongItemEntity> wrongMapByQuestionId(long planId) {
-    Map<Long, AiReviewWrongItemEntity> map = new HashMap<>();
-    for (AiReviewWrongItemEntity item : activeWrongItems(planId)) {
-      map.put(item.getQuestionId(), item);
+  /** 当日复盘队列（动态）：按当前在册错题实时计算，当天新错题立即进入清算 */
+  private List<AiReviewWrongItemEntity> reviewListForDay(AiReviewPlanEntity plan, AiReviewPlanDayEntity day) {
+    List<AiReviewWrongItemEntity> activeWrong = activeWrongItems(plan.getId());
+    int stage = day.getStage() != null ? day.getStage() : 1;
+    int cap;
+    if (stage == 1) {
+      int[] capped = PlanScheduleDomainService.applyTotalCap(
+          day.getNewTarget() != null ? day.getNewTarget() : 0,
+          activeWrong.size(),
+          plan.getDailyTotalCap() != null ? plan.getDailyTotalCap() : 200);
+      cap = capped[1];
+    } else if (stage == 2) {
+      cap = PlanScheduleDomainService.STAGE2_REVIEW_CAP;
+    } else {
+      cap = 0;
     }
-    return map;
+    return activeWrong.subList(0, Math.min(cap, activeWrong.size()));
   }
 
   private Map<Long, Double> wrongRateByL3(long planId) {
@@ -1370,11 +1425,11 @@ public class ReviewPlanApplicationService {
   // 视图组装
   // ------------------------------------------------------------------
 
-  private Map<String, Object> todayView(AiReviewPlanDayEntity day) {
+  private Map<String, Object> todayView(AiReviewPlanEntity plan, AiReviewPlanDayEntity day) {
     Map<String, Object> view = new LinkedHashMap<>();
     view.put("dayId", String.valueOf(day.getId()));
     view.put("newTarget", day.getNewTarget());
-    view.put("reviewTarget", day.getReviewTarget());
+    view.put("reviewTarget", reviewListForDay(plan, day).size());
     view.put("newDone", day.getNewDone());
     view.put("reviewDone", day.getReviewDone());
     view.put("mock", mockView(day));
@@ -1446,15 +1501,19 @@ public class ReviewPlanApplicationService {
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("correct", correct ? 1 : 0);
     StringBuilder correctAnswer = new StringBuilder();
+    List<String> correctOptions = new ArrayList<>();
     for (AnswerJudgeDomainService.AnswerOption option : options) {
       if (option.correct()) {
         if (correctAnswer.length() > 0) {
           correctAnswer.append("、");
         }
         correctAnswer.append(option.content());
+        correctOptions.add(option.content());
       }
     }
     result.put("correctAnswer", correctAnswer.toString());
+    // 正确选项原文数组：选项文本可能含"、"等分隔符，前端高亮必须用它而非 split（2026-08-05 含顿号选项不高亮问题）
+    result.put("correctOptions", correctOptions);
     result.put("resolve", resolve);
     result.put("cardChange", cardChange);
     result.put("encourageText", null);
