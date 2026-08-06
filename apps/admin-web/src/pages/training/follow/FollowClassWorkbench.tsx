@@ -148,7 +148,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
 
   useEffect(() => {
     if (scheduleDirty) return;
-    const list = ((scheduleData ?? []) as Record<string, unknown>[]).map((row, idx) => ({
+    const list = ((scheduleData ?? []) as ScheduleDraftItem[]).map((row, idx) => ({
       ...row,
       _key: String(row.id ?? `tmp-${idx}-${row.scheduleDate}-${row.startTime}`),
     }));

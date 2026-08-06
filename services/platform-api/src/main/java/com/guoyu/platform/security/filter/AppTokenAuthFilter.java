@@ -3,6 +3,7 @@ package com.guoyu.platform.security.filter;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.app.entity.PlatformUserTokenEntity;
 import com.guoyu.platform.app.mapper.PlatformUserTokenMapper;
+import com.guoyu.platform.integration.php.PhpTokenQueryService;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.trainingdepartment.entity.PlatformUserEntity;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserMapper;
@@ -20,6 +21,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * 识别 platform_user_token 中的 SHA-1 token（对齐 PHP 旧系统）。
  * 在 SaTokenBridgeFilter 之前执行，优先匹配 App 端 token。
+ *
+ * <p>镜像 miss 兜底：token 同步为快周期任务（默认 3s），PHP 单点登录 re-login 后
+ * 新 token 在窗口内不在镜像中，会假性 401 把学员踢到登录页。此时直查 PHP 源库
+ * （只读）并回种镜像，鉴权结果与 PHP 实时一致。
  */
 @Slf4j
 public class AppTokenAuthFilter extends OncePerRequestFilter {
@@ -28,12 +33,15 @@ public class AppTokenAuthFilter extends OncePerRequestFilter {
 
   private final PlatformUserTokenMapper tokenMapper;
   private final PlatformUserMapper userMapper;
+  private final PhpTokenQueryService phpTokenQueryService;
 
   public AppTokenAuthFilter(
       PlatformUserTokenMapper tokenMapper,
-      PlatformUserMapper userMapper) {
+      PlatformUserMapper userMapper,
+      PhpTokenQueryService phpTokenQueryService) {
     this.tokenMapper = tokenMapper;
     this.userMapper = userMapper;
+    this.phpTokenQueryService = phpTokenQueryService;
   }
 
   @Override
@@ -74,13 +82,20 @@ public class AppTokenAuthFilter extends OncePerRequestFilter {
               .orderByAsc(PlatformUserTokenEntity::getId)
               .last("LIMIT 1"));
 
-      if (tokenEntity == null) {
-        log.debug("AppTokenAuthFilter: token not found in platform_user_token");
-        filterChain.doFilter(request, response);
-        return;
+      Long userId;
+      if (tokenEntity != null) {
+        userId = tokenEntity.getUserId();
+      } else {
+        // 镜像 miss：直查 PHP 源库兜底（消除快周期同步窗口的假性 401），命中已回种镜像
+        userId = phpTokenQueryService.findUserIdByToken(token);
+        if (userId == null) {
+          log.debug("AppTokenAuthFilter: token not found in mirror or PHP source");
+          filterChain.doFilter(request, response);
+          return;
+        }
       }
 
-      PlatformUserEntity user = userMapper.selectById(tokenEntity.getUserId());
+      PlatformUserEntity user = userMapper.selectById(userId);
       if (user == null || user.getDeleted() != 0) {
         log.debug("AppTokenAuthFilter: user not found or deleted");
         filterChain.doFilter(request, response);
