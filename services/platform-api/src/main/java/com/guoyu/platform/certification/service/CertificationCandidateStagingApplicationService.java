@@ -8,6 +8,7 @@ import com.guoyu.platform.certification.dto.PreparationCandidateSaveReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateStagingPromoteReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateStagingQueryReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateStagingSaveReq;
+import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
 import com.guoyu.platform.certification.entity.CertificationCandidateSourceStagingEntity;
 import com.guoyu.platform.certification.mapper.CertificationCandidateSourceStagingMapper;
 import com.guoyu.platform.certification.support.IdCardSupport;
@@ -103,6 +104,74 @@ public class CertificationCandidateStagingApplicationService {
     applyStaging(entity, req);
     stagingMapper.insert(entity);
     return PreparationCandidateStagingVO.from(entity);
+  }
+
+  /**
+   * Upserts the application-form source snapshot for single/manual candidate create or update.
+   * Empty request fields are stored as null/empty so the generated form leaves those cells blank.
+   */
+  @Transactional
+  public CertificationCandidateSourceStagingEntity upsertApplicationFormSource(
+      Long taskId,
+      CertificationCandidateEntity candidate,
+      PreparationCandidateSaveReq req
+  ) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    CertificationCandidateSourceStagingEntity entity = findStagingByCandidate(taskId, candidate.getId());
+    boolean creating = entity == null;
+    if (creating) {
+      entity = new CertificationCandidateSourceStagingEntity();
+      entity.setTenantId(tenantId);
+      entity.setTaskId(taskId);
+      entity.setCandidateId(candidate.getId());
+      entity.setSourceType(StringUtils.hasText(req.importSource()) ? req.importSource() : "other");
+      entity.setPromoteStatus("promoted");
+      entity.setPromotedAt(LocalDateTime.now());
+      entity.setDeleted(0);
+    }
+    entity.setTaskScopeId(candidate.getTaskScopeId());
+    entity.setCandidateName(req.candidateName());
+    entity.setIdCardNo(req.idCardNo());
+    entity.setPhone(req.phone());
+    entity.setGender(firstNonBlank(req.gender(), IdCardSupport.parseGender(req.idCardNo())));
+    entity.setBirthDate(IdCardSupport.parseBirthDate(req.idCardNo()));
+    entity.setEducation(blankToNull(req.education()));
+    entity.setGraduateDate(req.graduateDate());
+    entity.setSchool(blankToNull(req.school()));
+    entity.setMajor(blankToNull(req.major()));
+    entity.setNation(blankToNull(req.nation()));
+    entity.setHomeAddress(blankToNull(req.homeAddress()));
+    entity.setCompanyName(firstNonBlank(req.orgName(), candidate.getOrgName()));
+    entity.setCompanyAddress(blankToNull(req.companyAddress()));
+    entity.setZipCode(blankToNull(req.zipCode()));
+    entity.setCompanyCreditCode(blankToNull(req.companyCreditCode()));
+    entity.setWorkStartDate(req.workStartDate());
+    entity.setOriginalWorkTypeName(blankToNull(req.originalWorkTypeName()));
+    entity.setOriginalLevelName(blankToNull(req.originalLevelName()));
+    entity.setOriginalCertNo(blankToNull(req.originalCertNo()));
+    entity.setApplyWorkTypeId(candidate.getWorkTypeId());
+    entity.setApplyWorkTypeName(candidate.getWorkTypeName());
+    entity.setCertWorkTypeId(candidate.getWorkTypeId());
+    entity.setCertWorkTypeName(candidate.getWorkTypeName());
+    entity.setWorkDirection(blankToNull(req.workDirection()));
+    entity.setWorkTypeCode(blankToNull(req.workTypeCode()));
+    entity.setApplyLevelCode(candidate.getLevelCode());
+    entity.setApplyLevelName(candidate.getLevelName());
+    entity.setCertLevelName(candidate.getLevelName());
+    entity.setApplyWorkYears(blankToNull(req.applyWorkYears()));
+    entity.setWorkResume(blankToNull(req.workResume()));
+    entity.setTrainingSummary(blankToNull(req.trainingSummary()));
+    entity.setRemark(blankToNull(req.remark()));
+    if (creating) {
+      stagingMapper.insert(entity);
+    } else {
+      stagingMapper.updateById(entity);
+    }
+    return entity;
+  }
+
+  private String blankToNull(String value) {
+    return StringUtils.hasText(value) ? value.trim() : null;
   }
 
   @Transactional(readOnly = true)

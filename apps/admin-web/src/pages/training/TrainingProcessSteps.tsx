@@ -1,8 +1,10 @@
 import { Card, Steps } from 'antd';
 import {
+  AccountBookOutlined,
   ApartmentOutlined,
   BulbOutlined,
   EditOutlined,
+  FormOutlined,
   PictureOutlined,
   PlayCircleOutlined,
   SolutionOutlined,
@@ -18,6 +20,8 @@ export const TRAINING_PROCESS_STEP_ROUTES = [
   'train_people-list',
   'train_declares',
   'train_follow',
+  'train_follow_exam',
+  'train_subsidy_declare',
 ] as const;
 
 export const TRAINING_PROCESS_STEPS = [
@@ -27,10 +31,12 @@ export const TRAINING_PROCESS_STEPS = [
   { title: '开班准备', icon: <PictureOutlined /> },
   { title: '开班申报', icon: <EditOutlined /> },
   { title: '跟班', icon: <PlayCircleOutlined /> },
+  { title: '考试', icon: <FormOutlined /> },
+  { title: '申报补贴', icon: <AccountBookOutlined /> },
 ];
 
 type TrainingProcessStepsProps = {
-  /** 当前流程步骤索引，0=企业调研 … 5=跟班 */
+  /** 当前流程步骤索引，0=企业调研 … 5=跟班 … 6=考试 … 7=申报补贴 */
   current: number;
   /** 自定义各步骤跳转路由，默认使用 TRAINING_PROCESS_STEP_ROUTES */
   stepRoutes?: readonly string[];

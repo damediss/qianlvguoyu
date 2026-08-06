@@ -215,15 +215,30 @@ public class CertificationApplicationFormGenerationService {
     variables.put("nation", text(staging.getNation()));
     variables.put("home_address", text(staging.getHomeAddress()));
     variables.put("apply_condition", text(staging.getApplyCondition()));
+    // 人事意见与诚信声明为表单固定表述，不从学员导入数据生成。
     variables.put("hr_opinion", "经审查，该同志填报简历情况属实，同意申报。");
     variables.put("integrity_declaration", "本人承诺以上内容真实有效，如有虚假，由此引发的一切后果由本人承担。");
-  String applyWorkType = variables.get("apply_work_type");
+    String applyWorkType = variables.get("apply_work_type");
     String applyLevel = variables.get("apply_level");
     String certWorkType = variables.get("cert_work_type");
     String certLevel = variables.get("cert_level");
-    variables.put(
-        "cert_conclusion",
-        "经审查，该同志符合" + applyWorkType + applyLevel + "申报条件，且考试合格，同意认定为" + certWorkType + certLevel + "。");
+    // 认定结论依赖申报/认定工种与等级；导入数据不足时留空，避免模板样例残留。
+    if (StringUtils.hasText(applyWorkType)
+        && StringUtils.hasText(applyLevel)
+        && StringUtils.hasText(certWorkType)
+        && StringUtils.hasText(certLevel)) {
+      variables.put(
+          "cert_conclusion",
+          "经审查，该同志符合"
+              + applyWorkType
+              + applyLevel
+              + "申报条件，且考试合格，同意认定为"
+              + certWorkType
+              + certLevel
+              + "。");
+    } else {
+      variables.put("cert_conclusion", "");
+    }
     return variables;
   }
 

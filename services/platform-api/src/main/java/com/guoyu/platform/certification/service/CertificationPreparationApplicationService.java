@@ -77,6 +77,7 @@ import com.guoyu.platform.certification.vo.PreparationAssessorGroupVO;
 import com.guoyu.platform.certification.vo.PreparationAssessorTaskVO;
 import com.guoyu.platform.certification.vo.PreparationAssessorVO;
 import com.guoyu.platform.certification.vo.PreparationCandidateDocumentVO;
+import com.guoyu.platform.certification.vo.PreparationCandidateStagingVO;
 import com.guoyu.platform.certification.vo.PreparationCandidateVO;
 import com.guoyu.platform.certification.vo.PreparationChecklistItemVO;
 import com.guoyu.platform.certification.vo.PreparationChecklistVO;
@@ -434,7 +435,11 @@ public class CertificationPreparationApplicationService {
 
   @Transactional
   public PreparationCandidateVO createCandidate(Long taskId, PreparationCandidateSaveReq req) {
-    return PreparationCandidateVO.from(createCandidateForImport(taskId, req, null));
+    CertificationCandidateEntity entity = createCandidateForImport(taskId, req, null);
+    if (shouldPersistApplicationFormSource(req.importSource())) {
+      stagingApplicationService.upsertApplicationFormSource(taskId, entity, req);
+    }
+    return PreparationCandidateVO.from(entity);
   }
 
   /** Creates a candidate for a specific import batch so material generation can remain batch-scoped. */
@@ -504,8 +509,30 @@ public class CertificationPreparationApplicationService {
     validateCandidate(task, req, candidateId);
     applyCandidate(entity, task, req);
     candidateMapper.updateById(entity);
+    if (shouldPersistApplicationFormSource(req.importSource())
+        || shouldPersistApplicationFormSource(entity.getImportSource())
+        || stagingApplicationService.findStagingByCandidate(taskId, candidateId) != null) {
+      stagingApplicationService.upsertApplicationFormSource(taskId, entity, req);
+    }
     touchTask(taskId);
     return PreparationCandidateVO.from(entity);
+  }
+
+  @Transactional(readOnly = true)
+  public PreparationCandidateStagingVO getCandidateApplicationSource(Long taskId, Long candidateId) {
+    findTask(taskId);
+    requireCandidate(taskId, candidateId);
+    CertificationCandidateSourceStagingEntity staging =
+        stagingApplicationService.findStagingByCandidate(taskId, candidateId);
+    return staging == null ? null : PreparationCandidateStagingVO.from(staging);
+  }
+
+  private boolean shouldPersistApplicationFormSource(String importSource) {
+    if (!StringUtils.hasText(importSource)) {
+      return true;
+    }
+    String normalized = importSource.trim().toLowerCase(Locale.ROOT);
+    return "other".equals(normalized) || "manual".equals(normalized);
   }
 
   @Transactional
