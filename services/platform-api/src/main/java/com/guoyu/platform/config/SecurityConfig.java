@@ -1,6 +1,5 @@
 package com.guoyu.platform.config;
 
-import cn.dev33.satoken.stp.StpLogic;
 import lombok.extern.slf4j.Slf4j;
 
 import com.guoyu.platform.common.filter.TenantContextFilter;
@@ -13,7 +12,6 @@ import com.guoyu.platform.file.config.FileStorageProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -37,17 +35,6 @@ import org.springframework.web.cors.CorsConfigurationSource;
 @EnableConfigurationProperties({FileStorageProperties.class})
 @Slf4j
 public class SecurityConfig {
-
-  /**
-   * Sa-Token's Spring bridge injects the default logic by type. Competition
-   * modules intentionally expose separate qualified logics, so keep the
-   * platform login flow backed by an explicit primary default logic.
-   */
-  @Bean(name = "stpLogic")
-  @Primary
-  public StpLogic stpLogic() {
-    return new StpLogic("login");
-  }
 
   @Bean
   public AppTokenAuthFilter appTokenAuthFilter(
