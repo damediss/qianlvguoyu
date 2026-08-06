@@ -138,12 +138,23 @@ public class ReviewPlanApplicationService {
     InterruptInfo interrupt = applyInterruptIfNeeded(plan, today);
     AiReviewPlanDayEntity day = getOrMaterializeDay(plan, plan.getCurrentDayIndex(), today, interrupt);
 
-    Set<Long> doneIds = answeredIdsOfDay(day.getId());
+    // done 标记按轮次独立：新题区只认 round=new，清算区只认 round=review
+    // （同一题可能先在「新题」答过又进入清算队列，不能互相算作完成）
+    Set<Long> doneNewIds = new HashSet<>();
+    Set<Long> doneReviewIds = new HashSet<>();
+    for (AiReviewAnswerEntity a : answerMapper.selectList(new LambdaQueryWrapper<AiReviewAnswerEntity>()
+        .eq(AiReviewAnswerEntity::getDayId, day.getId()))) {
+      if ("new".equals(a.getRoundType())) {
+        doneNewIds.add(a.getQuestionId());
+      } else if ("review".equals(a.getRoundType())) {
+        doneReviewIds.add(a.getQuestionId());
+      }
+    }
     List<Map<String, Object>> newQuestions = new ArrayList<>();
     for (Long qid : parseIds(day.getNewQuestionIds())) {
       Map<String, Object> item = new LinkedHashMap<>();
       item.put("questionId", qid);
-      item.put("done", doneIds.contains(qid));
+      item.put("done", doneNewIds.contains(qid));
       newQuestions.add(item);
     }
     // 复盘队列动态取当前在册错题：当天新产生的错题实时进入清算，不依赖物化时的快照
@@ -155,7 +166,7 @@ public class ReviewPlanApplicationService {
       item.put("cardLevel", wrong.getCardLevel());
       item.put("star", wrong.getStar());
       item.put("wrongCount", wrong.getWrongCount());
-      item.put("done", doneIds.contains(wrong.getQuestionId()));
+      item.put("done", doneReviewIds.contains(wrong.getQuestionId()));
       wrongQuestions.add(item);
     }
 
