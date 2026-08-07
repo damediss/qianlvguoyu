@@ -28,9 +28,13 @@ public final class CertificationTaskPhaseSupport {
       "project_creation"
   );
 
+  /** 任务创建阶段：五份资料尚未补齐归档时的阶段行状态。 */
+  public static final String PHASE_STATUS_PENDING_COMPLETE = "pending_complete";
+
   static final List<PhaseSeed> PHASES = List.of(
-      new PhaseSeed(TASK_CREATION, "任务创建阶段", 1, "running"),
-      new PhaseSeed(PREPARATION, "认定筹备阶段", 2, "pending"),
+      // 新建任务即进入认定筹备：任务创建阶段标记为「待补充完整」，筹备阶段为进行中
+      new PhaseSeed(TASK_CREATION, "任务创建阶段", 1, PHASE_STATUS_PENDING_COMPLETE),
+      new PhaseSeed(PREPARATION, "认定筹备阶段", 2, "running"),
       new PhaseSeed(ARCHIVE, "认定归档阶段", 3, "pending"),
       new PhaseSeed(CERTIFICATION_COMPLETED, "认定完成", 4, "pending")
   );
@@ -177,17 +181,17 @@ public final class CertificationTaskPhaseSupport {
     ensurePhaseExists(phaseMapper, task, ARCHIVE, "认定归档阶段", 3, "pending", now);
     ensurePhaseExists(phaseMapper, task, CERTIFICATION_COMPLETED, "认定完成", 4, "pending", now);
 
-    // 5. 重新计算阶段进度并同步任务上
+    // 5. 重新对齐阶段行状态，再按实际 completed 行数同步任务进度
     String currentPhase = task.getCurrentPhase();
     if (!CertificationTaskPhases.isValid(currentPhase)) {
       currentPhase = TASK_CREATION;
       task.setCurrentPhase(currentPhase);
     }
+    realignPhaseStatuses(phaseMapper, taskId, currentPhase, now);
     task.setPhaseTotalCount(PHASES.size());
-    task.setPhaseCompletedCount(stageCompletedCount(currentPhase));
+    task.setPhaseCompletedCount(countCompletedPhases(phaseMapper, taskId));
     task.setLastBusinessUpdatedAt(now);
     taskMapper.updateById(task);
-    realignPhaseStatuses(phaseMapper, taskId, currentPhase, now);
   }
 
   private static boolean needsPhaseRepair(List<CertificationTaskPhaseEntity> phases) {
@@ -240,15 +244,27 @@ public final class CertificationTaskPhaseSupport {
         continue;
       }
       if (order < targetOrder || reachedFinal) {
-        phase.setStatus("completed");
-        if (phase.getStartedAt() == null) {
-          phase.setStartedAt(now);
-        }
-        if (phase.getCompletedAt() == null) {
-          phase.setCompletedAt(now);
+        // 任务创建阶段资料未齐时保持「待补充完整」，不因已进入筹备而强制 completed
+        if (!reachedFinal
+            && TASK_CREATION.equals(phase.getPhaseCode())
+            && PHASE_STATUS_PENDING_COMPLETE.equals(phase.getStatus())) {
+          if (phase.getStartedAt() == null) {
+            phase.setStartedAt(now);
+          }
+          phase.setCompletedAt(null);
+        } else {
+          phase.setStatus("completed");
+          if (phase.getStartedAt() == null) {
+            phase.setStartedAt(now);
+          }
+          if (phase.getCompletedAt() == null) {
+            phase.setCompletedAt(now);
+          }
         }
       } else if (order.equals(targetOrder)) {
-        phase.setStatus("running");
+        if (!PHASE_STATUS_PENDING_COMPLETE.equals(phase.getStatus())) {
+          phase.setStatus("running");
+        }
         if (phase.getStartedAt() == null) {
           phase.setStartedAt(now);
         }
@@ -260,16 +276,6 @@ public final class CertificationTaskPhaseSupport {
       }
       phaseMapper.updateById(phase);
     }
-  }
-
-  private static int stageCompletedCount(String currentPhase) {
-    return switch (currentPhase) {
-      case TASK_CREATION -> 0;
-      case PREPARATION -> 1;
-      case ARCHIVE -> 2;
-      case CERTIFICATION_COMPLETED -> PHASES.size();
-      default -> 0;
-    };
   }
 
   private static List<CertificationTaskPhaseEntity> listPhases(

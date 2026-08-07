@@ -2,6 +2,7 @@ package com.guoyu.platform.certification.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
@@ -36,6 +37,7 @@ import com.guoyu.platform.security.PlatformUserPrincipal;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -151,12 +153,73 @@ class CertificationProjectApplicationServiceTest {
         "备注"
     );
 
+    ArgumentCaptor<CertificationTaskEntity> taskCaptor = ArgumentCaptor.forClass(CertificationTaskEntity.class);
+    ArgumentCaptor<CertificationTaskPhaseEntity> phaseCaptor = ArgumentCaptor.forClass(CertificationTaskPhaseEntity.class);
+
     service.createTask(req);
 
-    verify(taskMapper).insert(any(CertificationTaskEntity.class));
-    // 四阶段流程：项目创建 → 认定筹备 → 认定归档 → 认定完成
-    verify(phaseMapper, Mockito.times(4)).insert(any(CertificationTaskPhaseEntity.class));
+    verify(taskMapper).insert(taskCaptor.capture());
+    assertThat(taskCaptor.getValue().getCurrentPhase()).isEqualTo(CertificationTaskPhases.PREPARATION);
+    assertThat(taskCaptor.getValue().getStatus()).isEqualTo(CertificationTaskStatuses.PENDING_COMPLETE);
+    // 四阶段流程：任务创建(待补充完整) → 认定筹备(进行中) → 认定归档 → 认定完成
+    verify(phaseMapper, Mockito.times(4)).insert(phaseCaptor.capture());
+    assertThat(phaseCaptor.getAllValues())
+        .extracting(CertificationTaskPhaseEntity::getPhaseCode, CertificationTaskPhaseEntity::getStatus)
+        .containsExactly(
+            tuple(
+                CertificationTaskPhases.TASK_CREATION,
+                CertificationTaskPhaseSupport.PHASE_STATUS_PENDING_COMPLETE
+            ),
+            tuple(CertificationTaskPhases.PREPARATION, "running"),
+            tuple(CertificationTaskPhases.ARCHIVE, "pending"),
+            tuple(CertificationTaskPhases.CERTIFICATION_COMPLETED, "pending")
+        );
     verify(documentMapper, Mockito.times(5)).insert(any(CertificationTaskDocumentEntity.class));
+  }
+
+  @Test
+  void finalReviewAllDocumentsWhileInPreparationCompletesTaskCreationPhase() {
+    CertificationTaskEntity task = existingTask();
+    task.setStatus(CertificationTaskStatuses.PENDING_COMPLETE);
+    task.setCurrentPhase(CertificationTaskPhases.PREPARATION);
+    when(taskMapper.selectById(1L)).thenReturn(task);
+
+    CertificationTaskDocumentEntity current = currentDocument();
+    current.setStatus("final_reviewing");
+    when(documentMapper.selectOne(any())).thenReturn(current);
+    java.util.List<CertificationTaskDocumentEntity> documents = new java.util.ArrayList<>();
+    documents.add(current);
+    for (int i = 0; i < 4; i++) {
+      CertificationTaskDocumentEntity document = currentDocument();
+      document.setId(100L + i);
+      document.setDocumentType("doc-" + i);
+      document.setStatus("archived");
+      documents.add(document);
+    }
+    when(documentMapper.selectList(any())).thenReturn(documents);
+
+    CertificationTaskPhaseEntity creationPhase = new CertificationTaskPhaseEntity();
+    creationPhase.setId(11L);
+    creationPhase.setTaskId(1L);
+    creationPhase.setPhaseCode(CertificationTaskPhases.TASK_CREATION);
+    creationPhase.setStatus(CertificationTaskPhaseSupport.PHASE_STATUS_PENDING_COMPLETE);
+    when(phaseMapper.selectOne(any())).thenReturn(creationPhase);
+    when(phaseMapper.selectCount(any())).thenReturn(1L);
+
+    service.finalReviewDocument(1L, "charter", new CertificationDocumentReviewReq(true, "final ok"));
+
+    assertThat(current.getStatus()).isEqualTo("archived");
+    assertThat(creationPhase.getStatus()).isEqualTo("completed");
+    ArgumentCaptor<CertificationTaskEntity> taskCaptor = ArgumentCaptor.forClass(CertificationTaskEntity.class);
+    verify(taskMapper, Mockito.atLeastOnce()).updateById(taskCaptor.capture());
+    assertThat(taskCaptor.getAllValues().stream().map(CertificationTaskEntity::getStatus))
+        .contains(CertificationTaskStatuses.IN_PROGRESS);
+    // 已在筹备阶段时不再重复改写 current_phase
+    assertThat(taskCaptor.getAllValues().stream()
+        .map(CertificationTaskEntity::getCurrentPhase)
+        .filter(Objects::nonNull)
+        .distinct())
+        .containsOnly(CertificationTaskPhases.PREPARATION);
   }
 
   @Test

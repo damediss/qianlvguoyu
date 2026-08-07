@@ -103,13 +103,13 @@ public record CertificationTaskVO(
     };
   }
 
-  // 把历史 status 取值规范化为新的 4 状态枚举
+  // 把历史 status 取值规范化为当前状态枚举
   private static String normalizeStatus(String status) {
     if (status == null) {
       return "in_progress";
     }
     return switch (status) {
-      case "in_progress", "pending_review", "rejected", "completed" -> status;
+      case "pending_complete", "in_progress", "pending_review", "rejected", "completed" -> status;
       case "approved" -> "completed";
       case "running", "draft" -> "in_progress";
       case "archive_completed", "certification_completed" -> "completed";
@@ -121,6 +121,7 @@ public record CertificationTaskVO(
 
   private static String statusName(String status) {
     return switch (status == null ? "" : status) {
+      case "pending_complete" -> "待补充完整";
       case "in_progress" -> "进行中";
       case "pending_review" -> "待审核";
       case "rejected" -> "已驳回";

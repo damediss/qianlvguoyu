@@ -30,7 +30,7 @@ function TaskFlowSteps({ phases, onPhaseClick }: TaskFlowPanelProps) {
       }}
       items={phases.map((phase) => ({
         title: phase.phaseName,
-        status: phase.status === 'completed' ? 'finish' : phase.status === 'running' ? 'process' : 'wait',
+        status: resolveStepsStatus(phase.status),
         disabled: !isClickableStatus(phase.status),
         description: renderPhaseStatus(phase.status),
       }))}
@@ -39,15 +39,32 @@ function TaskFlowSteps({ phases, onPhaseClick }: TaskFlowPanelProps) {
 }
 
 function isClickableStatus(status?: string) {
-  return status === 'completed' || status === 'running';
+  return status === 'completed' || status === 'running' || status === 'pending_complete';
+}
+
+function resolveStepsStatus(status?: string): 'finish' | 'process' | 'wait' {
+  if (status === 'completed') {
+    return 'finish';
+  }
+  if (status === 'running' || status === 'pending_complete') {
+    return 'process';
+  }
+  return 'wait';
 }
 
 function renderPhaseStatus(status?: string) {
   const labelMap: Record<string, string> = {
     pending: '待开始',
     running: '进行中',
+    pending_complete: '待补充完整',
     completed: '已完成',
   };
-  const color = status === 'completed' ? 'success' : status === 'running' ? 'processing' : 'default';
+  const color = status === 'completed'
+    ? 'success'
+    : status === 'pending_complete'
+      ? 'warning'
+      : status === 'running'
+        ? 'processing'
+        : 'default';
   return <Tag color={color}>{status ? labelMap[status] || status : '-'}</Tag>;
 }
