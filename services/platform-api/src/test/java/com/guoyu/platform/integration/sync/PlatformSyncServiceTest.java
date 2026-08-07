@@ -45,6 +45,8 @@ class PlatformSyncServiceTest {
   @BeforeEach
   void setUp() {
     properties = new SyncProperties();
+    // 用例多在同毫秒内连续跑多个周期：置 0 使每周期指纹必跑，保持原有语义；节流行为由专门用例覆盖
+    properties.setFingerprintIntervalMs(0L);
     service = new PlatformSyncService(primary, php, properties, lockManager, alertService);
     when(lockManager.tryLock()).thenReturn(true);
     // 默认：三表 checkpoint 初始（水位线 0、连续失败 0）
@@ -175,5 +177,28 @@ class PlatformSyncServiceTest {
 
     verifyNoInteractions(php);
     verify(primary, never()).batchUpdate(anyString(), anyList());
+  }
+
+  @Test
+  void fingerprintIsThrottledForUserAndDetailButTokenStillReconcilesEveryCycle() {
+    properties.setFingerprintIntervalMs(60_000L);
+
+    // 第 1 周期：指纹必跑（首轮），三表各 1 次
+    service.runCycleSafely();
+    verify(php, times(3)).queryForList(argThat((String s) -> s.contains("AS h FROM platform_")));
+
+    // 第 2 周期（间隔未到）：user/detail 指纹跳过，水位线仍跑；token 指纹仍每周期跑
+    stubFingerprints(php, PlatformSyncService.TABLE_TOKEN, Map.of());
+    stubFingerprints(primary, PlatformSyncService.TABLE_TOKEN, Map.of(5L, "b"));
+    service.runCycleSafely();
+
+    // 两周期合计指纹查询 4 次 = user 1 + detail 1（仅首周期）+ token 2（每周期）
+    verify(php, times(4)).queryForList(argThat((String s) -> s.contains("AS h FROM platform_")));
+    // 水位线快路径不受节流影响：2 周期 × 3 表 = 6 次
+    verify(php, times(6)).queryForList(contains("WHERE id > ?"), eq(Long.class), any(), any());
+    // token 表删除逻辑不受节流影响：本地多出的 id=5 在第二周期被删
+    verify(primary).update(contains("DELETE FROM platform_user_token"), aryEq(new Object[]{5L}));
+    // 跳过指纹的周期 checkpoint 仍正常推进（三表各写一次 ×2 周期）
+    verify(primary, times(6)).update(contains("INSERT INTO sync_checkpoint"), any(Object[].class));
   }
 }

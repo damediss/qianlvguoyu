@@ -14,8 +14,9 @@ import org.springframework.stereotype.Service;
  *
  * <p>双通道检测（PHP 表无 updatetime）：
  * <ol>
- *   <li>新增：id 水位线快路径 {@code WHERE id > lastMaxId}；</li>
- *   <li>修改/软删：全表 {@code MD5(CONCAT_WS('|', 显式列))} 指纹比对，不一致的行回源拉全列 upsert。</li>
+ *   <li>新增：id 水位线快路径 {@code WHERE id > lastMaxId}，每周期执行（主键索引，代价极低）；</li>
+ *   <li>修改/软删：全表 {@code MD5(CONCAT_WS('|', 显式列))} 指纹比对，不一致的行回源拉全列 upsert；
+ *       因是全表扫描，user/detail 按 {@code fingerprint-interval-ms}（默认 60s）节流，token 表除外。</li>
  * </ol>
  *
  * <p>语义约束：
@@ -58,6 +59,9 @@ public class PlatformSyncService {
   private final SyncLockManager lockManager;
   private final SyncAlertService alertService;
 
+  /** 上次执行 user/detail 指纹比对的时间戳（0 = 尚未执行，首周期必跑）。单实例调度，volatile 足够 */
+  private volatile long lastFingerprintAt = 0L;
+
   public PlatformSyncService(
       JdbcTemplate jdbcTemplate,
       @Qualifier("phpJdbcTemplate") JdbcTemplate phpJdbcTemplate,
@@ -71,7 +75,7 @@ public class PlatformSyncService {
     this.alertService = alertService;
   }
 
-  /** 快周期入口（scheduler 每 3s 调用）：user/detail 水位线+指纹，token 全量对账 */
+  /** 快周期入口（scheduler 每 3s 调用）：user/detail 水位线+（节流的）指纹，token 全量对账 */
   public void runCycleSafely() {
     if (!properties.isEnabled()) {
       return;
@@ -81,15 +85,28 @@ public class PlatformSyncService {
       return;
     }
     try {
-      syncTable(TABLE_USER, USER_COLUMNS, false);
-      syncTable(TABLE_DETAIL, DETAIL_COLUMNS, false);
-      syncTable(TABLE_TOKEN, TOKEN_COLUMNS, true);
+      // 指纹比对（全表 MD5 扫描）按 fingerprint-interval-ms 节流，水位线快路径仍每周期跑；
+      // token 表小且踢人敏感，每周期全量对账不受节流影响
+      boolean fingerprintDue = markFingerprintIfDue();
+      syncTable(TABLE_USER, USER_COLUMNS, false, fingerprintDue);
+      syncTable(TABLE_DETAIL, DETAIL_COLUMNS, false, fingerprintDue);
+      syncTable(TABLE_TOKEN, TOKEN_COLUMNS, true, true);
     } catch (Exception e) {
       // 不应到达：各表内部已按表兜底；双保险防锁泄漏
       log.error("[SYNC] 同步周期未捕获异常", e);
     } finally {
       lockManager.unlock();
     }
+  }
+
+  /** 指纹节流判定：到达间隔则记录本次时间并返回 true；首周期（lastFingerprintAt=0）必返回 true */
+  private boolean markFingerprintIfDue() {
+    long now = System.currentTimeMillis();
+    if (now - lastFingerprintAt >= properties.getFingerprintIntervalMs()) {
+      lastFingerprintAt = now;
+      return true;
+    }
+    return false;
   }
 
   /** 每日全量对账入口（scheduler cron 调用）：三表全量 diff + 物理删除修复 + 漂移大闸 */
@@ -116,12 +133,12 @@ public class PlatformSyncService {
   // 快周期：单表水位线 + 指纹比对
   // ------------------------------------------------------------------
 
-  void syncTable(String table, List<String> columns, boolean processDeletes) {
+  void syncTable(String table, List<String> columns, boolean processDeletes, boolean runFingerprint) {
     long startedAt = System.currentTimeMillis();
     try {
       Checkpoint checkpoint = loadCheckpoint(table);
 
-      // ① 新增快路径：id 水位线
+      // ① 新增快路径：id 水位线（走主键索引，每周期执行，代价极低）
       List<Long> newIds = phpJdbcTemplate.queryForList(
           "SELECT id FROM " + table + " WHERE id > ? ORDER BY id LIMIT ?",
           Long.class, checkpoint.lastMaxId(), properties.getBatchSize());
@@ -137,40 +154,44 @@ public class PlatformSyncService {
         newMaxId = Math.max(newMaxId, newIds.get(newIds.size() - 1));
       }
 
-      // ② 指纹比对抓修改/软删（两侧同一条 SQL，显式列名，禁 SELECT *）
-      Map<Long, String> sourceFingerprints = selectFingerprints(phpJdbcTemplate, table, columns);
-      Map<Long, String> localFingerprints = selectFingerprints(jdbcTemplate, table, columns);
-      SyncDiffer.Diff diff = SyncDiffer.diffByFingerprint(sourceFingerprints, localFingerprints);
-
+      // ② 指纹比对抓修改/软删（两侧同一条 SQL，显式列名，禁 SELECT *）；
+      //    全表 MD5 扫描代价高，按 fingerprint-interval-ms 节流，未到间隔的周期整段跳过
       int updated = 0;
-      if (!diff.toUpsert().isEmpty()) {
-        List<Map<String, Object>> rows = selectRowsByIds(phpJdbcTemplate, table, columns, diff.toUpsert());
-        rows = filterUnsyncableRows(table, rows);
-        if (!properties.isDryRun()) {
-          upsertRows(table, columns, rows);
-        }
-        updated = rows.size();
-      }
-
-      // ③ 物理删除（仅 token 快周期处理；user/detail 交每日对账）。本地删除只作用于 PHP 来源区间
       int deleted = 0;
-      if (processDeletes) {
-        List<Long> deleteCandidates = new ArrayList<>();
-        for (Long id : diff.toDelete()) {
-          if (id < LOCAL_ID_BOUNDARY) {
-            deleteCandidates.add(id);
-          }
-        }
-        if (!deleteCandidates.isEmpty()) {
+      if (runFingerprint) {
+        Map<Long, String> sourceFingerprints = selectFingerprints(phpJdbcTemplate, table, columns);
+        Map<Long, String> localFingerprints = selectFingerprints(jdbcTemplate, table, columns);
+        SyncDiffer.Diff diff = SyncDiffer.diffByFingerprint(sourceFingerprints, localFingerprints);
+
+        if (!diff.toUpsert().isEmpty()) {
+          List<Map<String, Object>> rows = selectRowsByIds(phpJdbcTemplate, table, columns, diff.toUpsert());
+          rows = filterUnsyncableRows(table, rows);
           if (!properties.isDryRun()) {
-            deleted = deleteRowsByIds(table, deleteCandidates);
-          } else {
-            deleted = deleteCandidates.size();
+            upsertRows(table, columns, rows);
+          }
+          updated = rows.size();
+        }
+
+        // ③ 物理删除（仅 token 快周期处理；user/detail 交每日对账）。本地删除只作用于 PHP 来源区间
+        if (processDeletes) {
+          List<Long> deleteCandidates = new ArrayList<>();
+          for (Long id : diff.toDelete()) {
+            if (id < LOCAL_ID_BOUNDARY) {
+              deleteCandidates.add(id);
+            }
+          }
+          if (!deleteCandidates.isEmpty()) {
+            if (!properties.isDryRun()) {
+              deleted = deleteRowsByIds(table, deleteCandidates);
+            } else {
+              deleted = deleteCandidates.size();
+            }
           }
         }
       }
 
-      String stats = "new=" + inserted + ",updated=" + updated + ",deleted=" + deleted;
+      String stats = "new=" + inserted + ",updated=" + updated + ",deleted=" + deleted
+          + (runFingerprint ? "" : ",fingerprint=skipped");
       if (!properties.isDryRun()) {
         writeCheckpointSuccess(table, newMaxId, stats);
       }

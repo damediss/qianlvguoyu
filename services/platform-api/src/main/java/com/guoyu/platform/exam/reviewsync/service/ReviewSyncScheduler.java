@@ -15,7 +15,8 @@ import org.springframework.scheduling.annotation.Scheduled;
  * {@code TenantContextHolder.setTenantId(1L)} + finally clear——MyBatis-Plus 多租户拦截器
  * 依赖该上下文；job 内不调 SecurityContext。
  *
- * <p>开关：{@code platform.review-sync.jobs-enabled=false} 时整体不装配（默认 true；
+ * <p>开关：{@code platform.review-sync.jobs-enabled=false} 时整体不装配（application.yml 默认 false，
+ * 仅生产服务器 env 显式 {@code REVIEW_SYNC_JOBS_ENABLED=true} 开启——任务会读 PHP 库，本机调试不打生产库；
  * 测试环境 src/test/resources 已关闭）。
  */
 @Slf4j

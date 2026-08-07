@@ -8,8 +8,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 /**
  * 三表同步调度器（鉴权方案 §3.5.3：轮询周期 3s；§3.5.5：每日全量对账）。
  *
- * <p>开关：{@code platform.sync.enabled=false} 时整个调度器不装配（测试环境 src/test/resources 已关闭），
- * 生产默认开启。{@code @EnableScheduling} 放在本条件装配内，不影响其他模块的调度语义
+ * <p>开关：{@code platform.sync.enabled=false} 时整个调度器不装配（application.yml 默认 false，
+ * 仅生产服务器 env 显式 {@code PLATFORM_SYNC_ENABLED=true} 开启——轮询会对 PHP 库做全表指纹扫描
+ * 并产生跨公网流量，本机调试不打 PHP 生产库；测试环境 src/test/resources 已关闭）。
+ * {@code @EnableScheduling} 放在本条件装配内，不影响其他模块的调度语义
  * （与 CompetitionMessagingConfiguration 同一模式）。
  */
 @Configuration

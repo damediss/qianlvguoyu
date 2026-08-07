@@ -254,9 +254,14 @@ platform:
   # PHP→SaaS 三表轮询同步（platform_user / platform_user_token / platform_user_detail）
   # 对应《手机端调用SaaS鉴权方案》§3.5.3；PHP 库只读第二数据源，不挂多租户拦截器
   sync:
-    enabled: ${PLATFORM_SYNC_ENABLED:true}
+    # 默认关闭：指纹比对是 PHP 库全表 MD5 扫描（消耗其 CPU/IO），且轮询产生跨公网流量。
+    # 本机调试保持 false；仅生产服务器（43.138.163.7）部署时 env 显式 PLATFORM_SYNC_ENABLED=true
+    enabled: ${PLATFORM_SYNC_ENABLED:false}
     interval-ms: ${PLATFORM_SYNC_INTERVAL_MS:3000}
     initial-delay-ms: ${PLATFORM_SYNC_INITIAL_DELAY_MS:10000}
+    # user/detail 指纹比对节流间隔：水位线快路径（走主键索引，代价极低）仍每周期跑，
+    # 指纹比对按本间隔执行；token 表小且踢人敏感，不受本配置影响（仍每周期全量对账）
+    fingerprint-interval-ms: ${PLATFORM_SYNC_FINGERPRINT_INTERVAL_MS:60000}
     batch-size: ${PLATFORM_SYNC_BATCH_SIZE:500}
     fail-alert-threshold: ${PLATFORM_SYNC_FAIL_ALERT_THRESHOLD:20}
     # 试运行：只读 PHP 库记录将发生的变更，不写镜像、不推进水位线
@@ -264,7 +269,7 @@ platform:
     daily-reconcile-cron: "${PLATFORM_SYNC_DAILY_CRON:0 30 3 * * *}"
     php:
       # 注意：URL 必须带 tinyInt1isBit=false——mysql-connector-j 默认把 TINYINT(1) 映射为 Boolean，
-      # 会丢失 level=2/3 的真实值（2026-08-04 权重解析因此全部归一化为空的线上事故）
+      # 会丢失 level=2/3 的真实值（2026-08-04 权重解析因此全部归一化为空的线上事故）172.16.16.8
       url: ${PHP_MYSQL_URL:jdbc:mysql://114.132.67.185:3308/gjjddb?connectTimeout=3000&socketTimeout=10000&useSSL=false&tinyInt1isBit=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true}
       username: ${PHP_MYSQL_USERNAME:gjjddb}
       password: ${PHP_MYSQL_PASSWORD:q-#Z+=g7jgtbbJsJLjD8}
@@ -273,7 +278,8 @@ platform:
       query-timeout-seconds: ${PHP_MYSQL_QUERY_TIMEOUT:10}
   # AI 同步学定时任务（与三表同步共用 PHP 数据源）
   review-sync:
-    jobs-enabled: ${REVIEW_SYNC_JOBS_ENABLED:true}
+    # 同 platform.sync.enabled：定时任务会读 PHP 库，本机调试默认关闭，生产显式 =true
+    jobs-enabled: ${REVIEW_SYNC_JOBS_ENABLED:false}
     daily-cron: "${REVIEW_SYNC_DAILY_CRON:0 0 4 * * *}"
     weekly-cron: "${REVIEW_SYNC_WEEKLY_CRON:0 0 5 * * SUN}"
     writeback-compensate-ms: ${REVIEW_SYNC_WRITEBACK_COMPENSATE_MS:300000}

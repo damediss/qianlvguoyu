@@ -19,6 +19,13 @@ public class SyncProperties {
   /** 快周期间隔（毫秒），默认 3 秒 */
   private long intervalMs = 3000;
 
+  /**
+   * user/detail 指纹比对节流间隔（毫秒），默认 60 秒。
+   * 指纹比对是 PHP 库全表 MD5 扫描（CPU/IO + 跨公网传输 id+hash），与快周期解耦：
+   * 水位线快路径仍每周期跑（主键索引，代价极低）；token 表小且踢人敏感，不受本配置影响。
+   */
+  private long fingerprintIntervalMs = 60_000;
+
   /** 启动后首次执行延迟（毫秒），避开应用启动窗口 */
   private long initialDelayMs = 10_000;
 
@@ -48,6 +55,14 @@ public class SyncProperties {
 
   public void setIntervalMs(long intervalMs) {
     this.intervalMs = intervalMs;
+  }
+
+  public long getFingerprintIntervalMs() {
+    return fingerprintIntervalMs;
+  }
+
+  public void setFingerprintIntervalMs(long fingerprintIntervalMs) {
+    this.fingerprintIntervalMs = fingerprintIntervalMs;
   }
 
   public long getInitialDelayMs() {
