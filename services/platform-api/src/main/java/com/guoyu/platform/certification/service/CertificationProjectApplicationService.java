@@ -70,9 +70,9 @@ import org.springframework.util.StringUtils;
 public class CertificationProjectApplicationService {
 
   private static final Pattern MOBILE_PATTERN = Pattern.compile("^1[3-9]\\d{9}$");
-  // 任务创建时默认阶段为“任务创建阶段”，状态为“进行中”
-  private static final String DEFAULT_PHASE = CertificationTaskPhases.TASK_CREATION;
-  private static final String DEFAULT_TASK_STATUS = CertificationTaskStatuses.IN_PROGRESS;
+  // 新建任务弹窗提交后直接进入认定筹备；任务创建阶段资料未齐时状态为「待补充完整」
+  private static final String DEFAULT_PHASE = CertificationTaskPhases.PREPARATION;
+  private static final String DEFAULT_TASK_STATUS = CertificationTaskStatuses.PENDING_COMPLETE;
   private static final String DEFAULT_DOCUMENT_STATUS = "draft";
   private static final String STATUS_SUBMITTED = "submitted";
   private static final String STATUS_INITIAL_REVIEWING = "initial_reviewing";
@@ -252,6 +252,7 @@ public class CertificationProjectApplicationService {
     entity.setStatus(DEFAULT_TASK_STATUS);
     entity.setDocumentCompletedCount(0);
     entity.setDocumentTotalCount(DOCUMENTS.size());
+    // 任务创建阶段仍为「待补充完整」，尚未计入已完成阶段
     entity.setPhaseCompletedCount(0);
     entity.setPhaseTotalCount(PHASES.size());
     entity.setLastBusinessUpdatedAt(LocalDateTime.now());
@@ -260,6 +261,7 @@ public class CertificationProjectApplicationService {
 
     saveScopes(entity, req.scopes());
 
+    LocalDateTime now = LocalDateTime.now();
     PHASES.forEach(seed -> {
       CertificationTaskPhaseEntity phase = new CertificationTaskPhaseEntity();
       phase.setTaskId(entity.getId());
@@ -267,6 +269,10 @@ public class CertificationProjectApplicationService {
       phase.setPhaseName(seed.name());
       phase.setPhaseOrder(seed.order());
       phase.setStatus(seed.status());
+      if (CertificationTaskPhaseSupport.PHASE_STATUS_PENDING_COMPLETE.equals(seed.status())
+          || "running".equals(seed.status())) {
+        phase.setStartedAt(now);
+      }
       phase.setDeleted(0);
       phaseMapper.insert(phase);
     });
@@ -996,14 +1002,6 @@ public class CertificationProjectApplicationService {
     if (task == null) {
       return;
     }
-    // 已经离开“任务创建阶段”的任务不再回退，由各自阶段的应用服务管理 status
-    String currentPhase = task.getCurrentPhase();
-    if (!CertificationTaskPhases.TASK_CREATION.equals(currentPhase)
-        && CertificationTaskPhases.isValid(currentPhase)) {
-      task.setLastBusinessUpdatedAt(LocalDateTime.now());
-      refreshDocumentCounts(task);
-      return;
-    }
 
     List<CertificationTaskDocumentEntity> documents = documentMapper.selectList(
         new LambdaQueryWrapper<CertificationTaskDocumentEntity>()
@@ -1028,51 +1026,93 @@ public class CertificationProjectApplicationService {
     task.setDocumentTotalCount(DOCUMENTS.size());
     task.setLastBusinessUpdatedAt(LocalDateTime.now());
 
-    if (allDocumentsArchived) {
-      // 所有资料复审通过 -> 推进到“认定筹备阶段”，状态置为“进行中”
+    String currentPhase = task.getCurrentPhase();
+    boolean inTaskCreation = CertificationTaskPhases.TASK_CREATION.equals(currentPhase)
+        || !CertificationTaskPhases.isValid(currentPhase);
+    boolean creationPhasePendingComplete = isTaskCreationPendingComplete(taskId);
+
+    // 任务创建阶段已闭环（且不在历史 task_creation）：只同步文档计数
+    if (!inTaskCreation && !creationPhasePendingComplete) {
       taskMapper.updateById(task);
-      CertificationTaskPhaseSupport.advancePhase(
-          taskMapper,
-          phaseMapper,
-          taskId,
-          CertificationTaskPhases.TASK_CREATION,
-          CertificationTaskPhases.PREPARATION,
-          CertificationTaskStatuses.IN_PROGRESS
-      );
       return;
     }
 
-    // 仍在任务创建阶段时，根据材料状态推断阶段内的 status
-    task.setCurrentPhase(CertificationTaskPhases.TASK_CREATION);
+    if (allDocumentsArchived) {
+      taskMapper.updateById(task);
+      if (inTaskCreation) {
+        // 历史任务仍停在任务创建阶段：五份资料归档后推进到认定筹备
+        CertificationTaskPhaseSupport.advancePhase(
+            taskMapper,
+            phaseMapper,
+            taskId,
+            CertificationTaskPhases.TASK_CREATION,
+            CertificationTaskPhases.PREPARATION,
+            CertificationTaskStatuses.IN_PROGRESS
+        );
+      } else {
+        // 新建任务已在认定筹备：资料补齐后仅闭环任务创建阶段，不重复推进 current_phase
+        CertificationTaskPhaseSupport.completePhase(
+            phaseMapper, taskId, CertificationTaskPhases.TASK_CREATION
+        );
+        CertificationTaskPhaseSupport.syncPhaseProgress(taskMapper, phaseMapper, taskId);
+        CertificationTaskEntity refreshed = taskMapper.selectById(taskId);
+        if (refreshed != null) {
+          refreshed.setStatus(CertificationTaskStatuses.IN_PROGRESS);
+          refreshed.setLastBusinessUpdatedAt(LocalDateTime.now());
+          taskMapper.updateById(refreshed);
+        }
+      }
+      return;
+    }
+
+    // 资料未齐：根据审核态推断提示状态；已进筹备的任务保持 current_phase=preparation
     String nextStatus;
     if (rejectedCount > 0) {
       nextStatus = CertificationTaskStatuses.REJECTED;
     } else if (reviewingCount > 0) {
       nextStatus = CertificationTaskStatuses.PENDING_REVIEW;
+    } else if (!inTaskCreation) {
+      nextStatus = CertificationTaskStatuses.PENDING_COMPLETE;
     } else {
       nextStatus = CertificationTaskStatuses.IN_PROGRESS;
     }
+    if (inTaskCreation) {
+      task.setCurrentPhase(CertificationTaskPhases.TASK_CREATION);
+    }
     task.setStatus(nextStatus);
     taskMapper.updateById(task);
+
+    if (!inTaskCreation && creationPhasePendingComplete) {
+      // 确保流程条上任务创建阶段持续展示「待补充完整」
+      markTaskCreationPendingComplete(taskId);
+    }
   }
 
-  private void refreshDocumentCounts(CertificationTaskEntity task) {
-    if (task == null || task.getId() == null) {
+  private boolean isTaskCreationPendingComplete(Long taskId) {
+    CertificationTaskPhaseEntity phase = phaseMapper.selectOne(
+        new LambdaQueryWrapper<CertificationTaskPhaseEntity>()
+            .eq(CertificationTaskPhaseEntity::getTaskId, taskId)
+            .eq(CertificationTaskPhaseEntity::getPhaseCode, CertificationTaskPhases.TASK_CREATION));
+    return phase != null
+        && CertificationTaskPhaseSupport.PHASE_STATUS_PENDING_COMPLETE.equals(phase.getStatus());
+  }
+
+  private void markTaskCreationPendingComplete(Long taskId) {
+    CertificationTaskPhaseEntity phase = phaseMapper.selectOne(
+        new LambdaQueryWrapper<CertificationTaskPhaseEntity>()
+            .eq(CertificationTaskPhaseEntity::getTaskId, taskId)
+            .eq(CertificationTaskPhaseEntity::getPhaseCode, CertificationTaskPhases.TASK_CREATION));
+    if (phase == null
+        || CertificationTaskPhaseSupport.PHASE_STATUS_PENDING_COMPLETE.equals(phase.getStatus())
+        || "completed".equals(phase.getStatus())) {
       return;
     }
-    List<CertificationTaskDocumentEntity> documents = documentMapper.selectList(
-        new LambdaQueryWrapper<CertificationTaskDocumentEntity>()
-            .eq(CertificationTaskDocumentEntity::getTaskId, task.getId())
-            .eq(CertificationTaskDocumentEntity::getIsCurrent, 1));
-    if (documents == null) {
-      documents = List.of();
+    phase.setStatus(CertificationTaskPhaseSupport.PHASE_STATUS_PENDING_COMPLETE);
+    if (phase.getStartedAt() == null) {
+      phase.setStartedAt(LocalDateTime.now());
     }
-    long archivedCount = documents.stream()
-        .filter(document -> STATUS_ARCHIVED.equals(document.getStatus()))
-        .count();
-    task.setDocumentCompletedCount((int) archivedCount);
-    task.setDocumentTotalCount(DOCUMENTS.size());
-    taskMapper.updateById(task);
+    phase.setCompletedAt(null);
+    phaseMapper.updateById(phase);
   }
 
   private void touchTask(Long taskId) {

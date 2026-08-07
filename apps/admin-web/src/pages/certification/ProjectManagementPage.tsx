@@ -154,6 +154,7 @@ const stageOptions = [
 
 // 任务状态（status）映射阶段内的工作进度
 const statusOptions = [
+  { label: '待补充完整', value: 'pending_complete' },
   { label: '进行中', value: 'in_progress' },
   { label: '待审核', value: 'pending_review' },
   { label: '已驳回', value: 'rejected' },
@@ -598,8 +599,8 @@ export function ProjectManagementPage() {
       examDate: order ? dayjs(order.examDate) : now.add(14, 'day'),
       certificationType: 'with_question_bank',
       sourceType: order ? 'order' : 'manual',
-      status: 'in_progress',
-      currentPhase: 'task_creation',
+      status: 'pending_complete',
+      currentPhase: 'preparation',
     });
     setTaskModalOpen(true);
   }, [taskForm]);
@@ -1055,12 +1056,16 @@ export function ProjectManagementPage() {
                 { label: '任务订单', value: 'order' },
               ]} />
             </Form.Item>
-            <Form.Item name="currentPhase" label="任务阶段">
-              <Select options={stageOptions} placeholder="选择任务阶段" />
-            </Form.Item>
-            <Form.Item name="status" label="任务状态">
-              <Select options={statusOptions} placeholder="选择任务状态" />
-            </Form.Item>
+            {editingTask ? (
+              <>
+                <Form.Item name="currentPhase" label="任务阶段">
+                  <Select options={stageOptions} placeholder="选择任务阶段" />
+                </Form.Item>
+                <Form.Item name="status" label="任务状态">
+                  <Select options={statusOptions} placeholder="选择任务状态" />
+                </Form.Item>
+              </>
+            ) : null}
           </div>
           <Form.Item name="remark" label="备注">
             <Input.TextArea rows={3} maxLength={1000} />
@@ -1733,15 +1738,17 @@ function isDocumentEditable(status?: string) {
   return !status || status === 'draft' || status === 'initial_rejected' || status === 'final_rejected';
 }
 
-// 任务状态（4 值）的标签颜色
+// 任务状态的标签颜色
 function renderTaskStatus(status: string, statusName?: string) {
   const labelMap: Record<string, string> = {
+    pending_complete: '待补充完整',
     in_progress: '进行中',
     pending_review: '待审核',
     rejected: '已驳回',
     completed: '已完成',
   };
   const colorMap: Record<string, string> = {
+    pending_complete: 'warning',
     in_progress: 'processing',
     pending_review: 'warning',
     rejected: 'error',
@@ -1888,9 +1895,9 @@ function buildTaskFormValues(task: CertificationTask): TaskFormValues {
   };
 }
 
-// 任务状态（status）只允许 4 个取值
+// 任务状态（status）允许的取值
 function normalizeTaskStatus(status?: string): string | undefined {
-  const allowed = new Set(['in_progress', 'pending_review', 'rejected', 'completed']);
+  const allowed = new Set(['pending_complete', 'in_progress', 'pending_review', 'rejected', 'completed']);
   if (status && allowed.has(status)) {
     return status;
   }

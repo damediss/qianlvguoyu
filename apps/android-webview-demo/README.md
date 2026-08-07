@@ -38,7 +38,7 @@ Android 模拟器访问宿主机服务时使用 `10.0.2.2`。真机访问局域�
 
 | 变体 | 用途 | 包名 | 默认 H5（信息采集平板端） |
 |---|---|---|---|
-| `prodDebug` | 远程服务器（现有） | `com.example.webviewshelldemo` | `43.138.163.7:5173/practical-collection/workbench/{taskId}` |
+| `prodDebug` | 正式环境 | `com.example.webviewshelldemo` | `https://java.app.gjjd168.com/practical-collection` |
 | `localTestDebug` | 本机联调 | `com.example.webviewshelldemo.localtest` | `192.168.1.98:5173/practical-collection/workbench/{taskId}` |
 
 两个变体可同时安装，互不影响。
@@ -80,15 +80,15 @@ adb install -r app/build/outputs/apk/prod/debug/app-prod-debug.apk
 
 adb shell am start `
   -n com.example.webviewshelldemo/.MainActivity `
-  --es web_url "http://43.138.163.7:5173/practical-collection/workbench/2069972938644135937"
+  --es web_url "https://java.app.gjjd168.com/practical-collection"
 ```
 
-临时测试服务器 IP 地址时，可用：
+临时覆盖 H5 地址时，可用：
 
 ```powershell
 adb shell am start `
   -n com.example.webviewshelldemo/.MainActivity `
-  --es web_url "http://43.138.163.7:5173/practical-collection/workbench/2069972938644135937"
+  --es web_url "https://java.app.gjjd168.com/practical-collection/workbench/{taskId}"
 ```
 
 也支持通过 `VIEW` data URL 启动：

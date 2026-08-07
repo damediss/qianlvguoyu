@@ -63,6 +63,7 @@ export type CertificationTaskPhase =
 
 // 任务状态（status）
 export type CertificationTaskStatus =
+  | 'pending_complete'
   | 'in_progress'
   | 'pending_review'
   | 'rejected'
@@ -76,6 +77,7 @@ export const CERTIFICATION_TASK_PHASES: readonly CertificationTaskPhase[] = [
 ] as const;
 
 export const CERTIFICATION_TASK_STATUSES: readonly CertificationTaskStatus[] = [
+  'pending_complete',
   'in_progress',
   'pending_review',
   'rejected',
@@ -90,6 +92,7 @@ export const CERTIFICATION_TASK_PHASE_LABELS: Record<CertificationTaskPhase, str
 };
 
 export const CERTIFICATION_TASK_STATUS_LABELS: Record<CertificationTaskStatus, string> = {
+  pending_complete: '待补充完整',
   in_progress: '进行中',
   pending_review: '待审核',
   rejected: '已驳回',
