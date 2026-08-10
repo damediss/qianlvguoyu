@@ -45,6 +45,7 @@ import type {
   TrainSolutionList, TrainSolutionDetail, TrainSolutionBadge, TrainSolutionSaveReq,
   TrainStudent, SolutionByDemand,
   TrainInfoClassListItem, TrainInfoClassPageResponse, ClassStudent, ClassStudentPageResponse, ClassOther, ClassTask, SignUpPerson, TeacherBankItem,
+  TrainClassRole, TrainClassRoleSummary,
   TrainSummary, TrainSummaryQuery, TrainSummaryCreateReq, TrainSummaryUpdateReq,
   TrainCertificate, TrainCertificateQuery, TrainCertificateCreateReq, TrainCertificateUpdateReq,
   TrainResearchOrg, TrainResearchOrgQuery, TrainResearchOrgCreateReq, TrainResearchOrgUpdateReq,
@@ -1191,6 +1192,37 @@ export function importOthers(params: { traininfoId: number | string; classId: nu
   return unwrap<{ count: number; failed: { id: number; reason: string }[] }>(apiClient.post(`${BASE}/class-other-import`, params));
 }
 
+/** 班级角色列表 */
+export function listClassRoles(classId: number | string) {
+  return unwrap<TrainClassRole[]>(apiClient.get(`${BASE}/classes/${classId}/roles`));
+}
+
+/** 班级角色摘要（跟班） */
+export function getClassRoleSummary(classId: number | string) {
+  return unwrap<TrainClassRoleSummary>(apiClient.get(`${BASE}/classes/${classId}/role-summary`));
+}
+
+/** 指派班级角色 */
+export function assignClassRole(
+  classId: number | string,
+  payload: {
+    roleCode: string;
+    subjectType?: string;
+    subjectId: number | string;
+    peopleId?: number | string;
+    displayName?: string;
+    phone?: string;
+    idCard?: string;
+  },
+) {
+  return unwrap<TrainClassRole>(apiClient.post(`${BASE}/classes/${classId}/roles/assign`, payload));
+}
+
+/** 卸任班级角色 */
+export function endClassRole(classId: number | string, roleId: number | string) {
+  return unwrap<void>(apiClient.post(`${BASE}/classes/${classId}/roles/${roleId}/end`));
+}
+
 // ==================== 培训任务 ====================
 
 /** 班级培训任务列表 */
@@ -1333,6 +1365,217 @@ export function getClassScheduleStatus(classId: number) {
 /** 导出课表 */
 export function exportClassSchedule(classId: number) {
   return unwrap<{ fileId: number; downUrl: string; fileName: string }>(apiClient.get(`${BASE}/info-classes/${classId}/schedule/export`));
+}
+
+// ==================== 调课申请审批（S2） ====================
+
+export type ScheduleChangeRequest = {
+  id: string | number;
+  classId: number;
+  scheduleId?: number | null;
+  changeType: string;
+  changeTypeName?: string;
+  beforeSnapshot?: string | null;
+  afterPayload?: string | null;
+  reason?: string | null;
+  status: string;
+  statusName?: string;
+  applicantPlatformUserId?: number;
+  applicantRoleCode?: string | null;
+  reviewerUserId?: number | null;
+  reviewedAt?: string | null;
+  rejectReason?: string | null;
+  createdAt?: string | null;
+};
+
+export function listScheduleChangeRequests(params?: { classId?: number; status?: string }) {
+  return unwrap<ScheduleChangeRequest[]>(
+    apiClient.get(`${BASE}/schedule-change-requests`, { params }),
+  );
+}
+
+export function getScheduleChangeRequest(id: number | string) {
+  return unwrap<ScheduleChangeRequest>(apiClient.get(`${BASE}/schedule-change-requests/${id}`));
+}
+
+export function approveScheduleChangeRequest(id: number | string, force = false) {
+  return unwrap<ScheduleChangeRequest>(
+    apiClient.post(`${BASE}/schedule-change-requests/${id}/approve`, null, {
+      params: { force },
+    }),
+  );
+}
+
+export function rejectScheduleChangeRequest(
+  id: number | string,
+  body?: { rejectReason?: string },
+) {
+  return unwrap<ScheduleChangeRequest>(
+    apiClient.post(`${BASE}/schedule-change-requests/${id}/reject`, body ?? {}),
+  );
+}
+
+// ==================== 跟班作业 / 随堂练（M3） ====================
+
+export type FollowTask = {
+  id: string | number;
+  classId: number;
+  trainInfoId?: number | null;
+  scheduleId?: number | null;
+  bizDate?: string | null;
+  taskType: string;
+  taskTypeName?: string;
+  title: string;
+  description?: string | null;
+  deadlineAt?: string | null;
+  status: string;
+  statusName?: string;
+  passScore?: number | null;
+  passRule?: string | null;
+  showAnalysisAfterSubmit?: boolean;
+  publishedAt?: string | null;
+  createdAt?: string | null;
+  questionCount?: number;
+  totalCount?: number | null;
+  submittedCount?: number | null;
+  gradedCount?: number | null;
+  completionRate?: number | null;
+};
+
+export type FollowTaskItem = {
+  id: string | number;
+  taskId: string | number;
+  peopleId: number;
+  userName?: string | null;
+  status: string;
+  statusName?: string;
+  score?: number | null;
+  passed?: boolean | null;
+  submittedAt?: string | null;
+  gradedAt?: string | null;
+  comment?: string | null;
+  correctCount?: number | null;
+  questionCount?: number | null;
+  accuracyRate?: number | null;
+  startedAt?: string | null;
+  durationSeconds?: number | null;
+};
+
+export type FollowTaskAnswerResult = {
+  questionId: string;
+  sortNumber?: number;
+  questionType?: string;
+  stem?: string;
+  optionsJson?: string | null;
+  userAnswerJson?: string | null;
+  correctAnswerJson?: string | null;
+  analysis?: string | null;
+  correct?: boolean | null;
+  score?: number | null;
+  fullScore?: number | null;
+};
+
+export type FollowTaskResult = {
+  taskId: string;
+  itemId: string;
+  status: string;
+  score?: number | null;
+  passed?: boolean | null;
+  showAnalysis?: boolean;
+  correctCount?: number | null;
+  questionCount?: number | null;
+  accuracyRate?: number | null;
+  durationSeconds?: number | null;
+  answers: FollowTaskAnswerResult[];
+};
+
+export type FollowTaskQuestionStat = {
+  questionId: string;
+  sortNumber?: number;
+  questionType?: string;
+  stemPreview?: string;
+  answeredCount?: number;
+  correctCount?: number;
+  accuracyRate?: number | null;
+};
+
+export type FollowTaskStats = {
+  taskId: string;
+  questionCount?: number;
+  totalCount?: number;
+  submittedCount?: number;
+  avgScore?: number | null;
+  passRate?: number | null;
+  avgAccuracyRate?: number | null;
+  avgDurationSeconds?: number | null;
+  questionStats?: FollowTaskQuestionStat[];
+};
+
+export type HomeworkWarning = {
+  peopleId?: number;
+  userName?: string;
+  type?: string;
+  message?: string;
+  consecutiveMiss?: number;
+  avgAccuracyRate?: number;
+};
+
+export function listFollowTasks(classId: number) {
+  return unwrap<FollowTask[]>(apiClient.get(`${BASE}/follow-tasks/classes/${classId}/tasks`));
+}
+
+export function getFollowTask(id: number | string) {
+  return unwrap<FollowTask>(apiClient.get(`${BASE}/follow-tasks/${id}`));
+}
+
+export function listFollowTaskItems(id: number | string) {
+  return unwrap<FollowTaskItem[]>(apiClient.get(`${BASE}/follow-tasks/${id}/items`));
+}
+
+export function getFollowTaskItemAnswers(taskId: number | string, itemId: number | string) {
+  return unwrap<FollowTaskResult>(
+    apiClient.get(`${BASE}/follow-tasks/${taskId}/items/${itemId}/answers`),
+  );
+}
+
+export function getFollowTaskStats(id: number | string) {
+  return unwrap<FollowTaskStats>(apiClient.get(`${BASE}/follow-tasks/${id}/stats`));
+}
+
+export async function exportFollowTaskAnswers(id: number | string) {
+  const response = await apiClient.get(`${BASE}/follow-tasks/${id}/export-answers`, {
+    responseType: 'blob',
+  });
+  const blob = new Blob([response.data], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const filename =
+    parseContentDispositionFilename(response) || `作业答卷_${id}.xlsx`;
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+export function getHomeworkMetrics(classId: number) {
+  return unwrap<{
+    classId: number;
+    taskCount: number;
+    totalItems: number;
+    gradedItems: number;
+    passedItems: number;
+    completionRate: number;
+    avgAccuracyRate?: number | null;
+    warnings?: HomeworkWarning[];
+  }>(apiClient.get(`${BASE}/follow-tasks/classes/${classId}/homework-metrics`));
+}
+
+export function syncFollowTaskRoster(id: number | string) {
+  return unwrap<{ taskId: string; added: number }>(
+    apiClient.post(`${BASE}/follow-tasks/${id}/sync-roster`),
+  );
 }
 
 // ==================== 信息收集 (sign-up collection) ====================

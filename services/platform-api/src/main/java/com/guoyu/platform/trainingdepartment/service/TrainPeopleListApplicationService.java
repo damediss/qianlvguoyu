@@ -41,6 +41,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -64,6 +65,8 @@ public class TrainPeopleListApplicationService {
   private final PlatformUserDetailMapper platformUserDetailMapper;
   private final PlatformUserEnsureService platformUserEnsureService;
   private final UserMapper userMapper;
+  private final TrainClassRoleApplicationService classRoleApplicationService;
+  private final TrainFollowTaskApplicationService followTaskApplicationService;
 
   public TrainPeopleListApplicationService(TrainPeopleListMapper mapper,
       TrainSignUpSelfMapper signUpSelfMapper,
@@ -76,7 +79,9 @@ public class TrainPeopleListApplicationService {
       TrainingIdCardHeaderResolver idCardHeaderResolver,
       PlatformUserDetailMapper platformUserDetailMapper,
       PlatformUserEnsureService platformUserEnsureService,
-      UserMapper userMapper) {
+      UserMapper userMapper,
+      @Lazy TrainClassRoleApplicationService classRoleApplicationService,
+      @Lazy TrainFollowTaskApplicationService followTaskApplicationService) {
     this.mapper = mapper;
     this.signUpSelfMapper = signUpSelfMapper;
     this.signUpPeopleSelfMapper = signUpPeopleSelfMapper;
@@ -89,6 +94,8 @@ public class TrainPeopleListApplicationService {
     this.platformUserDetailMapper = platformUserDetailMapper;
     this.platformUserEnsureService = platformUserEnsureService;
     this.userMapper = userMapper;
+    this.classRoleApplicationService = classRoleApplicationService;
+    this.followTaskApplicationService = followTaskApplicationService;
   }
 
   // ==================== 基础CRUD ====================
@@ -282,6 +289,9 @@ public class TrainPeopleListApplicationService {
     if (params.get("is_leader") != null) entity.setIsLeader(Integer.valueOf(params.get("is_leader").toString()));
     if (params.get("is_committee") != null) entity.setIsCommittee(Integer.valueOf(params.get("is_committee").toString()));
     mapper.updateById(entity);
+    if (params.get("is_leader") != null) {
+      classRoleApplicationService.syncMonitorFromStudent(entity);
+    }
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("id", entity.getId());
     result.put("realname", entity.getRealname());
@@ -300,6 +310,10 @@ public class TrainPeopleListApplicationService {
         assertClassViewable(entity.getTrainClassId());
         if (entity.getTrainClassId() != null) {
           classIds.add(entity.getTrainClassId());
+        }
+        if (entity.getIsLeader() != null && entity.getIsLeader() == 1) {
+          entity.setIsLeader(0);
+          classRoleApplicationService.syncMonitorFromStudent(entity);
         }
         entity.setDeleted(1);
         mapper.deleteById(entity.getId());
@@ -621,6 +635,9 @@ public class TrainPeopleListApplicationService {
       if (params.get("phone") != null) entity.setPhone(params.get("phone").toString());
       if (params.get("id_card") != null) entity.setIdCard(params.get("id_card").toString());
       mapper.updateById(entity);
+      if ("staff".equals(entity.getType()) || "inCharge".equals(entity.getType())) {
+        classRoleApplicationService.syncFromLegacyPeople(entity);
+      }
       Map<String, Object> result = new LinkedHashMap<>();
       result.put("id", entity.getId());
       return result;
@@ -636,6 +653,9 @@ public class TrainPeopleListApplicationService {
       entity.setIdCard(params.get("id_card") != null ? params.get("id_card").toString() : null);
       entity.setDeleted(0);
       insertPeople(entity);
+      if ("staff".equals(entity.getType()) || "inCharge".equals(entity.getType())) {
+        classRoleApplicationService.syncFromLegacyPeople(entity);
+      }
       Map<String, Object> result = new LinkedHashMap<>();
       result.put("id", entity.getId());
       return result;
@@ -651,6 +671,7 @@ public class TrainPeopleListApplicationService {
       TrainPeopleListEntity entity = mapper.selectById(id);
       if (entity != null && entity.getDeleted() == 0) {
         assertClassViewable(entity.getTrainClassId());
+        classRoleApplicationService.endFromLegacyPeople(entity);
         entity.setDeleted(1);
         mapper.deleteById(entity.getId());
         count++;
@@ -724,6 +745,7 @@ public class TrainPeopleListApplicationService {
       entity.setIdCard(t.getIdCardNumber());
       entity.setDeleted(0);
       insertPeople(entity);
+      classRoleApplicationService.syncFromLegacyPeople(entity);
       count++;
     }
     Map<String, Object> result = new LinkedHashMap<>();
@@ -740,6 +762,17 @@ public class TrainPeopleListApplicationService {
       entity.setCreateTime(LocalDateTime.now());
     }
     mapper.insert(entity);
+    if ("student".equals(entity.getType())
+        && entity.getTrainClassId() != null
+        && entity.getId() != null) {
+      try {
+        followTaskApplicationService.issuePendingItemsForNewStudent(
+            entity.getTrainClassId(), entity.getId());
+      } catch (Exception ex) {
+        log.warn("插班补发作业失败 classId={} peopleId={}: {}",
+            entity.getTrainClassId(), entity.getId(), ex.getMessage());
+      }
+    }
   }
 
   /** 将班级 nums 同步为花名册学员实时人数，供开班申报材料等使用 */
