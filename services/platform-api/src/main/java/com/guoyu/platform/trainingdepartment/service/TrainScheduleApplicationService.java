@@ -3,11 +3,15 @@ package com.guoyu.platform.trainingdepartment.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.file.config.FileStorageProperties;
 import com.guoyu.platform.file.entity.FileEntity;
 import com.guoyu.platform.file.mapper.FileMapper;
 import com.guoyu.platform.security.SecurityContext;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainScheduleChangeRequestEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainScheduleEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainScheduleMapper;
@@ -40,6 +44,7 @@ public class TrainScheduleApplicationService {
   private final FileStorageProperties fileStorageProperties;
   private final TrainingStoredFileResolver fileResolver;
   private final TrainKcbiaoScheduleParser kcbiaoParser;
+  private final ObjectMapper objectMapper;
 
   public TrainScheduleApplicationService(
       TrainScheduleMapper mapper,
@@ -47,13 +52,144 @@ public class TrainScheduleApplicationService {
       FileMapper fileMapper,
       FileStorageProperties fileStorageProperties,
       TrainingStoredFileResolver fileResolver,
-      TrainKcbiaoScheduleParser kcbiaoParser) {
+      TrainKcbiaoScheduleParser kcbiaoParser,
+      ObjectMapper objectMapper) {
     this.mapper = mapper;
     this.classMapper = classMapper;
     this.fileMapper = fileMapper;
     this.fileStorageProperties = fileStorageProperties;
     this.fileResolver = fileResolver;
     this.kcbiaoParser = kcbiaoParser;
+    this.objectMapper = objectMapper;
+  }
+
+  /**
+   * 审批通过：按申请单应用单课次补丁；写完置 schedule_manual_edited=1。
+   *
+   * @param force true 时忽略教师/教室冲突
+   */
+  @Transactional
+  public void applyChangeRequest(
+      TrainScheduleChangeRequestEntity request, boolean force, Long operatorUserId) {
+    if (request == null || request.getClassId() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "申请无效");
+    }
+    TrainInfoClassEntity clazz = requireClass(request.getClassId());
+    String type = request.getChangeType();
+    Map<String, Object> after = parsePayload(request.getAfterPayload());
+    Long affectedScheduleId = request.getScheduleId();
+
+    if ("cancel".equals(type)) {
+      if (request.getScheduleId() == null) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "停课申请缺少课次");
+      }
+      TrainScheduleEntity s = mapper.selectById(request.getScheduleId());
+      if (s == null || Objects.equals(s.getDeleted(), 1)
+          || !Objects.equals(s.getClassId(), request.getClassId())) {
+        throw new BusinessException(ErrorCode.NOT_FOUND, "课次不存在或已删除");
+      }
+      s.setUpdatedBy(operatorUserId);
+      mapper.deleteById(s.getId());
+    } else if ("add".equals(type)) {
+      TrainScheduleEntity entity = new TrainScheduleEntity();
+      entity.setClassId(request.getClassId());
+      applyPayloadFields(entity, after);
+      entity.setStatus(0);
+      Long tenantId = request.getTenantId();
+      if (tenantId == null || tenantId <= 0) {
+        tenantId = SecurityContext.currentUser().getTenantId();
+      }
+      entity.setTenantId(tenantId);
+      entity.setCreatedBy(operatorUserId);
+      entity.setUpdatedBy(operatorUserId);
+      entity.setDeleted(0);
+      mapper.insert(entity);
+      affectedScheduleId = entity.getId();
+    } else {
+      // reschedule / replace_teacher
+      if (request.getScheduleId() == null) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "申请缺少课次");
+      }
+      TrainScheduleEntity s = mapper.selectById(request.getScheduleId());
+      if (s == null || Objects.equals(s.getDeleted(), 1)
+          || !Objects.equals(s.getClassId(), request.getClassId())) {
+        throw new BusinessException(ErrorCode.NOT_FOUND, "课次不存在或已删除");
+      }
+      applyPayloadFields(s, after);
+      s.setUpdatedBy(operatorUserId);
+      mapper.updateById(s);
+    }
+
+    clazz.setScheduleManualEdited(1);
+    classMapper.updateById(clazz);
+
+    if (!force && !"cancel".equals(type) && affectedScheduleId != null) {
+      List<TrainScheduleConflictVO> conflicts = checkConflicts(request.getClassId());
+      Long sid = affectedScheduleId;
+      List<TrainScheduleConflictVO> related = conflicts.stream()
+          .filter(c -> Objects.equals(c.scheduleId1(), sid) || Objects.equals(c.scheduleId2(), sid))
+          .toList();
+      if (!related.isEmpty()) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST,
+            "审批后存在排课冲突：" + related.get(0).description() + "。可勾选强制通过后重试");
+      }
+    }
+  }
+
+  private Map<String, Object> parsePayload(String json) {
+    if (!StringUtils.hasText(json)) {
+      return Map.of();
+    }
+    try {
+      return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+    } catch (Exception ex) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "申请目标数据无效");
+    }
+  }
+
+  private static void applyPayloadFields(TrainScheduleEntity entity, Map<String, Object> after) {
+    if (after == null) {
+      return;
+    }
+    if (after.containsKey("scheduleDate")) {
+      entity.setScheduleDate(asString(after.get("scheduleDate")));
+    }
+    if (after.containsKey("startTime")) {
+      entity.setStartTime(asString(after.get("startTime")));
+    }
+    if (after.containsKey("endTime")) {
+      entity.setEndTime(asString(after.get("endTime")));
+    }
+    if (after.containsKey("roomName")) {
+      entity.setRoomName(asString(after.get("roomName")));
+    }
+    if (after.containsKey("teacherName")) {
+      entity.setTeacherName(asString(after.get("teacherName")));
+    }
+    if (after.containsKey("courseName")) {
+      entity.setCourseName(asString(after.get("courseName")));
+    }
+    if (after.containsKey("classHours")) {
+      entity.setClassHours(asString(after.get("classHours")));
+    }
+    if (after.containsKey("teachForm")) {
+      entity.setTeachForm(asString(after.get("teachForm")));
+    }
+    if (after.containsKey("dayOfWeek") && after.get("dayOfWeek") != null) {
+      entity.setDayOfWeek(Integer.valueOf(after.get("dayOfWeek").toString()));
+    }
+    if (after.containsKey("teacherId")) {
+      Object tid = after.get("teacherId");
+      entity.setTeacherId(tid == null || "".equals(tid.toString()) ? null : Long.valueOf(tid.toString()));
+    }
+  }
+
+  private static String asString(Object v) {
+    if (v == null) {
+      return null;
+    }
+    String s = v.toString().trim();
+    return s.isEmpty() ? null : s;
   }
 
   @Transactional(readOnly = true)
@@ -142,6 +278,30 @@ public class TrainScheduleApplicationService {
       log.warn("自动导入开班课表失败 classId={} msg={}", classId, ex.getMessage());
       return list;
     }
+  }
+
+  /**
+   * App 班成员只读课表：用请求头租户（TenantContextHolder），不走管理端 principal.tenantId；
+   * 不做 Excel 自动导入（避免 App 读请求产生写副作用）。
+   */
+  @Transactional(readOnly = true)
+  public List<Map<String, Object>> getByClassIdForApp(Long classId) {
+    requireClass(classId);
+    Long tenantId = TenantContextHolder.getTenantId();
+    LambdaQueryWrapper<TrainScheduleEntity> wrapper = new LambdaQueryWrapper<TrainScheduleEntity>()
+        .eq(TrainScheduleEntity::getClassId, classId)
+        .eq(TrainScheduleEntity::getDeleted, 0)
+        .orderByAsc(TrainScheduleEntity::getScheduleDate)
+        .orderByAsc(TrainScheduleEntity::getStartTime);
+    if (tenantId != null && tenantId > 0) {
+      wrapper.eq(TrainScheduleEntity::getTenantId, tenantId);
+    }
+    List<TrainScheduleEntity> schedules = mapper.selectList(wrapper);
+    List<Map<String, Object>> list = new ArrayList<>();
+    for (TrainScheduleEntity s : schedules) {
+      list.add(toScheduleMap(s));
+    }
+    return list;
   }
 
   /**
@@ -351,24 +511,28 @@ public class TrainScheduleApplicationService {
 
     List<Map<String, Object>> list = new ArrayList<>();
     for (TrainScheduleEntity s : schedules) {
-      Map<String, Object> item = new LinkedHashMap<>();
-      item.put("id", s.getId());
-      item.put("classId", s.getClassId());
-      item.put("courseId", s.getCourseId());
-      item.put("courseName", s.getCourseName());
-      item.put("classHours", s.getClassHours());
-      item.put("teachForm", s.getTeachForm());
-      item.put("teacherId", s.getTeacherId());
-      item.put("teacherName", s.getTeacherName());
-      item.put("roomName", s.getRoomName());
-      item.put("scheduleDate", s.getScheduleDate());
-      item.put("dayOfWeek", s.getDayOfWeek());
-      item.put("startTime", s.getStartTime());
-      item.put("endTime", s.getEndTime());
-      item.put("status", s.getStatus());
-      list.add(item);
+      list.add(toScheduleMap(s));
     }
     return list;
+  }
+
+  private static Map<String, Object> toScheduleMap(TrainScheduleEntity s) {
+    Map<String, Object> item = new LinkedHashMap<>();
+    item.put("id", s.getId());
+    item.put("classId", s.getClassId());
+    item.put("courseId", s.getCourseId());
+    item.put("courseName", s.getCourseName());
+    item.put("classHours", s.getClassHours());
+    item.put("teachForm", s.getTeachForm());
+    item.put("teacherId", s.getTeacherId());
+    item.put("teacherName", s.getTeacherName());
+    item.put("roomName", s.getRoomName());
+    item.put("scheduleDate", s.getScheduleDate());
+    item.put("dayOfWeek", s.getDayOfWeek());
+    item.put("startTime", s.getStartTime());
+    item.put("endTime", s.getEndTime());
+    item.put("status", s.getStatus());
+    return item;
   }
 
   private TrainInfoClassEntity requireClass(Long classId) {

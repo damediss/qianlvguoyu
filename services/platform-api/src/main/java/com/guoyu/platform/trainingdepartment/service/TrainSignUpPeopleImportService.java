@@ -275,15 +275,24 @@ public class TrainSignUpPeopleImportService {
 
     getSignUp(signUpId);
     Long tenantId = SecurityContext.currentUser().getTenantId();
-    Long platformOrgId = resolvePlatformOrgId();
 
-    List<PlatformUserEntity> users = platformUserMapper.selectList(
-        new LambdaQueryWrapper<PlatformUserEntity>()
-            .in(PlatformUserEntity::getId, ids)
-            .eq(PlatformUserEntity::getOrgId, platformOrgId)
-            .eq(PlatformUserEntity::getDeleted, 0));
+    // 与 GET /sign-up-people/import/students 列表口径一致：
+    // 平台管理员可跨机构；机构账号仅本机构；企业账号再按企业过滤
+    LambdaQueryWrapper<PlatformUserEntity> userQuery = new LambdaQueryWrapper<PlatformUserEntity>()
+        .in(PlatformUserEntity::getId, ids)
+        .eq(PlatformUserEntity::getDeleted, 0);
+    if (!operatorScopeService.isPlatformAdmin()) {
+      userQuery.eq(PlatformUserEntity::getOrgId, resolvePlatformOrgId());
+    }
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
+    if (companyFilter != null) {
+      userQuery.eq(PlatformUserEntity::getCompanyId, companyFilter);
+    }
+
+    List<PlatformUserEntity> users = platformUserMapper.selectList(userQuery);
     if (users.isEmpty()) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "未找到可导入的学员");
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "未找到可导入的学员（可能机构不匹配、已删除，或所选 ID 无效）。请刷新学员库后重选。");
     }
 
     List<String> idCards = users.stream()

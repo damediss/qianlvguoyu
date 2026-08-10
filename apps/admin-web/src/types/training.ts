@@ -2130,6 +2130,28 @@ export interface ClassOther {
   type?: string;
 }
 
+/** 班级岗位角色（train_class_role） */
+export interface TrainClassRole {
+  id: string;
+  classId: number;
+  roleCode: string;
+  roleName: string;
+  subjectType: string;
+  subjectId: number;
+  platformUserId?: number | null;
+  peopleId?: number | null;
+  displayName?: string;
+  phone?: string;
+  status: string;
+  unboundWarning?: boolean;
+}
+
+export interface TrainClassRoleSummary {
+  classId: number;
+  roles: TrainClassRole[];
+  unboundCount: number;
+}
+
 /** 培训任务列表项 */
 export interface ClassTask {
   id: number;

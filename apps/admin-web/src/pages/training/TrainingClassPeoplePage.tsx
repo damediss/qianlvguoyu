@@ -46,6 +46,7 @@ import type {
   ClassTask,
   SignUpPerson,
   TeacherBankItem,
+  TrainClassRole,
 } from '../../types/training';
 import './TrainingClassPeoplePage.css';
 import { TrainingProcessSteps } from './TrainingProcessSteps';
@@ -598,6 +599,193 @@ function StudentListModal({
 }
 
 // ==================== 教务/负责人弹窗（对齐 yun_shang classMembers.vue） ====================
+function ClassRolesModal({
+  open,
+  onClose,
+  classId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  classId: ApiId | null;
+}) {
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [importOpen, setImportOpen] = useState(false);
+  const [assignRoleCode, setAssignRoleCode] = useState('follow_staff');
+  const [selectedTeacherIds, setSelectedTeacherIds] = useState<Array<number | string>>([]);
+
+  const { data: roles = [], isLoading, refetch } = useQuery({
+    queryKey: ['class-roles', classId],
+    queryFn: () => trainApi.listClassRoles(classId!),
+    enabled: open && !!classId,
+  });
+
+  const { data: importData } = useQuery({
+    queryKey: ['class-roles-teachers'],
+    queryFn: () => trainApi.listOtherImportData('teacher'),
+    enabled: importOpen,
+  });
+
+  const assignMu = useMutation({
+    mutationFn: async (payload: {
+      roleCode: string;
+      ids: Array<number | string>;
+      subjectType: string;
+    }) => {
+      for (const id of payload.ids) {
+        await trainApi.assignClassRole(classId!, {
+          roleCode: payload.roleCode,
+          subjectType: payload.subjectType,
+          subjectId: id,
+        });
+      }
+    },
+    onSuccess: () => {
+      message.success('指派成功');
+      setImportOpen(false);
+      setSelectedTeacherIds([]);
+      refetch();
+    },
+    onError: (e: Error) => message.error(e.message || '指派失败'),
+  });
+
+  const endMu = useMutation({
+    mutationFn: (roleId: string) => trainApi.endClassRole(classId!, roleId),
+    onSuccess: () => {
+      message.success('已卸任');
+      refetch();
+    },
+    onError: (e: Error) => message.error(e.message || '卸任失败'),
+  });
+
+  const filtered = roleFilter === 'all' ? roles : roles.filter((r) => r.roleCode === roleFilter);
+
+  const columns: ColumnsType<TrainClassRole> = [
+    { title: '角色', dataIndex: 'roleName', width: 120 },
+    { title: '姓名', dataIndex: 'displayName', ellipsis: true },
+    { title: '手机', dataIndex: 'phone', width: 130, render: (v?: string) => v || '—' },
+    {
+      title: 'App账号',
+      width: 100,
+      align: 'center',
+      render: (_, row) =>
+        row.unboundWarning ? (
+          <Typography.Text type="warning">未绑定</Typography.Text>
+        ) : (
+          <Typography.Text type="success">已绑定</Typography.Text>
+        ),
+    },
+    {
+      title: '操作',
+      width: 90,
+      align: 'center',
+      render: (_, row) =>
+        row.roleCode === 'monitor' ? (
+          <Typography.Text type="secondary">花名册</Typography.Text>
+        ) : (
+          <button
+            type="button"
+            className="staff-action-link staff-action-link-danger"
+            onClick={() =>
+              Modal.confirm({
+                title: '确认卸任？',
+                onOk: () => endMu.mutate(row.id),
+              })
+            }
+          >
+            卸任
+          </button>
+        ),
+    },
+  ];
+
+  return (
+    <>
+      <Modal title="班级角色" open={open} onCancel={onClose} footer={null} width="64%" destroyOnHidden>
+        <Space style={{ marginBottom: 12 }} wrap>
+          <Select
+            value={roleFilter}
+            style={{ width: 160 }}
+            onChange={setRoleFilter}
+            options={[
+              { value: 'all', label: '全部角色' },
+              { value: 'head_teacher', label: '企业班主任' },
+              { value: 'follow_staff', label: '跟班教务' },
+              { value: 'lead_teacher', label: '主讲' },
+              { value: 'assistant', label: '助教' },
+              { value: 'monitor', label: '班长' },
+            ]}
+          />
+          <Button
+            type="primary"
+            onClick={() => {
+              setAssignRoleCode('follow_staff');
+              setImportOpen(true);
+            }}
+          >
+            从师资库指派
+          </Button>
+          <Typography.Text type="secondary">班长请在「学员列表」设置是否班长</Typography.Text>
+        </Space>
+        <Table
+          rowKey="id"
+          loading={isLoading}
+          dataSource={filtered}
+          columns={columns}
+          pagination={false}
+          locale={{ emptyText: '暂无角色，请从师资库指派或设置班长' }}
+          size="small"
+        />
+      </Modal>
+      <Modal
+        title="从师资库指派"
+        open={importOpen}
+        onCancel={() => setImportOpen(false)}
+        onOk={() => {
+          if (!selectedTeacherIds.length) {
+            message.warning('请选择人员');
+            return;
+          }
+          return assignMu.mutateAsync({
+            roleCode: assignRoleCode,
+            subjectType: 'teacher_bank',
+            ids: selectedTeacherIds,
+          });
+        }}
+        confirmLoading={assignMu.isPending}
+        width={560}
+        destroyOnHidden
+      >
+        <Form.Item label="角色">
+          <Select
+            value={assignRoleCode}
+            onChange={setAssignRoleCode}
+            options={[
+              { value: 'follow_staff', label: '跟班教务' },
+              { value: 'head_teacher', label: '企业班主任' },
+              { value: 'lead_teacher', label: '主讲' },
+              { value: 'assistant', label: '助教' },
+            ]}
+          />
+        </Form.Item>
+        <Table
+          rowKey="id"
+          size="small"
+          dataSource={importData?.list ?? []}
+          columns={[
+            { title: '姓名', dataIndex: 'name' },
+            { title: '手机', dataIndex: 'phone', width: 140 },
+          ]}
+          rowSelection={{
+            selectedRowKeys: selectedTeacherIds,
+            onChange: (keys) => setSelectedTeacherIds(keys as Array<number | string>),
+          }}
+          pagination={{ pageSize: 8 }}
+        />
+      </Modal>
+    </>
+  );
+}
+
 function StaffModal({
   open,
   onClose,
@@ -957,6 +1145,7 @@ export function TrainingClassPeoplePage() {
   const [studentModalMode, setStudentModalMode] = useState<'roster' | 'collection'>('roster');
   const [staffModal, setStaffModal] = useState(false);
   const [chargeModal, setChargeModal] = useState(false);
+  const [rolesModal, setRolesModal] = useState(false);
   const [taskModal, setTaskModal] = useState(false);
   const [selectedClass, setSelectedClass] = useState<{ id: ApiId; trainInfoId: ApiId; title?: string } | null>(null);
 
@@ -1229,6 +1418,7 @@ export function TrainingClassPeoplePage() {
         break;
       case 'staff': setStaffModal(true); break;
       case 'charge': setChargeModal(true); break;
+      case 'roles': setRolesModal(true); break;
       case 'tasks': setTaskModal(true); break;
     }
   };
@@ -1272,6 +1462,7 @@ export function TrainingClassPeoplePage() {
         <button type="button" className="class-action-link" onClick={() => openSubDialog('students', row)}>学员列表</button>
         <button type="button" className="class-action-link" onClick={() => openSubDialog('collection', row)}>资料收集</button>
         <button type="button" className="class-action-link" onClick={() => openSubDialog('staff', row)}>教务人员</button>
+        <button type="button" className="class-action-link" onClick={() => openSubDialog('roles', row)}>班级角色</button>
       </div>
       <div className="class-row-actions-line">
         <button type="button" className="class-action-link" onClick={() => openSubDialog('charge', row)}>负责人</button>
@@ -1595,6 +1786,11 @@ export function TrainingClassPeoplePage() {
       <StaffModal open={chargeModal} onClose={() => setChargeModal(false)}
         classId={selectedClass?.id ?? null} trainInfoId={selectedClass?.trainInfoId ?? null}
         tag="fuzhe" title="负责人" />
+      <ClassRolesModal
+        open={rolesModal}
+        onClose={() => setRolesModal(false)}
+        classId={selectedClass?.id ?? null}
+      />
       <TrainTaskModal open={taskModal} onClose={() => setTaskModal(false)}
         classId={selectedClass?.id ?? null} kejianOptions={kejianOptions} />
     </div>
