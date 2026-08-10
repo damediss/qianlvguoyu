@@ -6,12 +6,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewAnswerEntity;
+import com.guoyu.platform.exam.reviewsync.entity.AiReviewGrayWhitelistEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewMockPaperEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewMockPaperItemEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewPlanDayEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewPlanEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewWrongItemEntity;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewAnswerMapper;
+import com.guoyu.platform.exam.reviewsync.mapper.AiReviewGrayWhitelistMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewMockPaperItemMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewMockPaperMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewPlanDayMapper;
@@ -59,6 +61,7 @@ public class ReviewPlanApplicationService {
   private final AiReviewWrongItemMapper wrongMapper;
   private final AiReviewMockPaperMapper mockPaperMapper;
   private final AiReviewMockPaperItemMapper mockItemMapper;
+  private final AiReviewGrayWhitelistMapper grayWhitelistMapper;
   private final PhpExamQueryService phpQuery;
   private final PhpResultWritebackService writebackService;
   private final ReviewLlmAssistService llmAssistService;
@@ -72,6 +75,7 @@ public class ReviewPlanApplicationService {
       AiReviewWrongItemMapper wrongMapper,
       AiReviewMockPaperMapper mockPaperMapper,
       AiReviewMockPaperItemMapper mockItemMapper,
+      AiReviewGrayWhitelistMapper grayWhitelistMapper,
       PhpExamQueryService phpQuery,
       PhpResultWritebackService writebackService,
       ReviewLlmAssistService llmAssistService,
@@ -83,6 +87,7 @@ public class ReviewPlanApplicationService {
     this.wrongMapper = wrongMapper;
     this.mockPaperMapper = mockPaperMapper;
     this.mockItemMapper = mockItemMapper;
+    this.grayWhitelistMapper = grayWhitelistMapper;
     this.phpQuery = phpQuery;
     this.writebackService = writebackService;
     this.llmAssistService = llmAssistService;
@@ -91,11 +96,33 @@ public class ReviewPlanApplicationService {
   }
 
   // ==================================================================
+  // D8 灰度发布（方案 §15.2）：总开关 ai_review_gray_enabled + exam/user 双粒度白名单
+  // ==================================================================
+
+  /** 灰度拦截：开关开启时，examId 或 userId 任一命中白名单才放行；开关关闭/缺失=全员开放 */
+  private void gateGrayRelease(long examId, long platformUserId, Long tenantId) {
+    if (!dictBool("ai_review_gray_enabled", false, tenantId)) {
+      return;
+    }
+    boolean allowed = grayWhitelistMapper.selectCount(new LambdaQueryWrapper<AiReviewGrayWhitelistEntity>()
+            .eq(AiReviewGrayWhitelistEntity::getScopeType, "exam")
+            .eq(AiReviewGrayWhitelistEntity::getScopeId, examId)) > 0
+        || grayWhitelistMapper.selectCount(new LambdaQueryWrapper<AiReviewGrayWhitelistEntity>()
+            .eq(AiReviewGrayWhitelistEntity::getScopeType, "user")
+            .eq(AiReviewGrayWhitelistEntity::getScopeId, platformUserId)) > 0;
+    if (!allowed) {
+      log.warn("[AI复习] 灰度拦截：user={} exam={} 不在白名单", platformUserId, examId);
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "同步练习正在小范围试点中，敬请期待");
+    }
+  }
+
+  // ==================================================================
   // 7.1 计划概览（懒生成入口）
   // ==================================================================
 
   @Transactional
   public Map<String, Object> overview(long platformUserId, long examId, Long tenantId) {
+    gateGrayRelease(examId, platformUserId, tenantId);
     AiReviewPlanEntity plan = getOrCreatePlan(platformUserId, examId, tenantId);
     LocalDate today = LocalDate.now();
 
@@ -133,6 +160,7 @@ public class ReviewPlanApplicationService {
 
   @Transactional
   public Map<String, Object> todayTask(long platformUserId, long examId, Long tenantId) {
+    gateGrayRelease(examId, platformUserId, tenantId);
     AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
     LocalDate today = LocalDate.now();
     InterruptInfo interrupt = applyInterruptIfNeeded(plan, today);
@@ -185,6 +213,7 @@ public class ReviewPlanApplicationService {
   // ==================================================================
 
   public Map<String, Object> questions(long platformUserId, long examId, List<Long> questionIds) {
+    gateGrayRelease(examId, platformUserId, null);
     requirePlan(platformUserId, examId);
     if (questionIds == null || questionIds.isEmpty() || questionIds.size() > 50) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "questionIds 数量须为 1~50");
@@ -213,6 +242,7 @@ public class ReviewPlanApplicationService {
   @Transactional
   public Map<String, Object> answer(long platformUserId, long examId, long dayId, long questionId,
       String roundType, String userAnswer, Integer useTimeSec, Long tenantId) {
+    gateGrayRelease(examId, platformUserId, tenantId);
     AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
     AiReviewPlanDayEntity day = requireDay(plan.getId(), dayId);
 
@@ -269,7 +299,7 @@ public class ReviewPlanApplicationService {
 
     // 计数：改答案不重复计 done，只补作答次数与对错差额
     bumpDayCounters(day, roundType, judged.correct(), correction);
-    plan.setLastActiveDate(LocalDate.now());
+    touchLastActiveDate(plan, day);
     planMapper.updateById(plan);
 
     // 异步回写 PHP
@@ -279,7 +309,44 @@ public class ReviewPlanApplicationService {
     if (cardChange != null && Boolean.TRUE.equals(cardChange.get("explainAvailable"))) {
       result.put("explainAvailable", 1);
     }
+
+    // D9 连对/连错即时鼓励（§15.3）：回放路径不触发（上方已 return），仅真实作答/改错触发
+    StreakEncourageDomainService.Streak streak = computeDayStreak(day.getId());
+    int tier = StreakEncourageDomainService.tierOf(streak);
+    if (StreakEncourageDomainService.shouldFire(streak, tier)) {
+      String text = llmAssistService.streakEncouragement(plan.getId(), day.getDayIndex(),
+          streak.type(), tier, day.getAnswerCount() != null ? day.getAnswerCount() : 0);
+      if (text != null) {
+        Map<String, Object> streakView = new LinkedHashMap<>();
+        streakView.put("type", streak.type());
+        streakView.put("count", streak.count());
+        result.put("streak", streakView);
+        result.put("encourageText", text);
+      }
+    }
     return result;
+  }
+
+  /** 当日作答流水（含改错重答，按时间序）计算当前连对/连错（D9） */
+  private StreakEncourageDomainService.Streak computeDayStreak(long dayId) {
+    List<AiReviewAnswerEntity> dayAnswers = answerMapper.selectList(new LambdaQueryWrapper<AiReviewAnswerEntity>()
+        .eq(AiReviewAnswerEntity::getDayId, dayId)
+        .orderByAsc(AiReviewAnswerEntity::getCreatedAt)
+        .orderByAsc(AiReviewAnswerEntity::getId));
+    List<Integer> flags = new ArrayList<>(dayAnswers.size());
+    for (AiReviewAnswerEntity a : dayAnswers) {
+      flags.add(a.getIsCorrect() != null && a.getIsCorrect() == 1 ? 1 : 0);
+    }
+    return StreakEncourageDomainService.computeStreak(flags);
+  }
+
+  /** D7 §15.1-②：lastActiveDate 语义为"任务已覆盖到哪天"——超前完成的天按 plan_date 计，
+   * 超前完成换来的休息天数不算中断 */
+  private void touchLastActiveDate(AiReviewPlanEntity plan, AiReviewPlanDayEntity day) {
+    LocalDate now = LocalDate.now();
+    LocalDate covered = day.getPlanDate() != null && day.getPlanDate().isAfter(now) ? day.getPlanDate() : now;
+    plan.setLastActiveDate(plan.getLastActiveDate() != null && plan.getLastActiveDate().isAfter(covered)
+        ? plan.getLastActiveDate() : covered);
   }
 
   // ==================================================================
@@ -288,6 +355,7 @@ public class ReviewPlanApplicationService {
 
   @Transactional
   public Map<String, Object> mockStart(long platformUserId, long examId, Long tenantId) {
+    gateGrayRelease(examId, platformUserId, tenantId);
     AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
     AiReviewMockPaperEntity paper = composeMockPaper(plan, tenantId);
     List<AiReviewMockPaperItemEntity> items = mockItemMapper.selectList(
@@ -313,7 +381,8 @@ public class ReviewPlanApplicationService {
 
   @Transactional
   public Map<String, Object> mockSubmit(long platformUserId, long examId, long mockPaperId,
-      List<Map<String, Object>> answers, Integer totalUseTimeSec, Long tenantId) {
+      List<Map<String, Object>> answers, Integer useTimeSec, Long tenantId) {
+    gateGrayRelease(examId, platformUserId, tenantId);
     AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
     AiReviewMockPaperEntity paper = mockPaperMapper.selectById(mockPaperId);
     if (paper == null || !paper.getPlanId().equals(plan.getId())) {
@@ -438,6 +507,7 @@ public class ReviewPlanApplicationService {
   @Transactional
   public Map<String, Object> finish(long platformUserId, long examId, long dayId,
       Integer useTimeSec, Long tenantId) {
+    gateGrayRelease(examId, platformUserId, tenantId);
     AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
     AiReviewPlanDayEntity day = requireDay(plan.getId(), dayId);
 
@@ -454,7 +524,8 @@ public class ReviewPlanApplicationService {
 
     day.setStatus("done");
     dayMapper.updateById(day);
-    plan.setLastActiveDate(LocalDate.now());
+    // D7 §15.1-②：超前完成的天按 plan_date 覆盖，换来的休息天数不算中断
+    touchLastActiveDate(plan, day);
     // 不再在这里推进 current_day_index；跨天进入时由 getOrMaterializeDay 按日期自动推进
     if (plan.getCurrentDayIndex() >= plan.getTotalDays()) {
       plan.setStatus("completed");
@@ -478,9 +549,62 @@ public class ReviewPlanApplicationService {
     result.put("summary", summary);
     result.put("tomorrowPreview", tomorrow);
     result.put("planStatus", plan.getStatus());
+    // D7：前端据此显示「继续挑战：提前做明天的任务」按钮
+    result.put("canAdvance", canAdvanceToday(plan, LocalDate.now()));
     result.put("encourageText", llmAssistService.getEncouragement(
         plan.getId(), day.getDayIndex(), day.getStage(), false));
     return result;
+  }
+
+  // ==================================================================
+  // D7 超前学习：提前解锁明日任务（方案 §15.1）
+  // ==================================================================
+
+  /**
+   * 提前解锁下一天任务。前置：当前日已 done、计划未完结、当日提前额度未满。
+   * 下一天的 plan_date 仍写真实明天日期（日历语义不变），次日进入时自然复用。
+   *
+   * @return 新一天的任务清单（todayTask 同构视图）+ advanced=true
+   */
+  @Transactional
+  public Map<String, Object> advanceDay(long platformUserId, long examId, Long tenantId) {
+    gateGrayRelease(examId, platformUserId, tenantId);
+    AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
+    LocalDate today = LocalDate.now();
+    AiReviewPlanDayEntity current = findDay(plan.getId(), plan.getCurrentDayIndex());
+    if (current == null || !"done".equals(current.getStatus())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请先完成今日任务，再挑战明天的任务");
+    }
+    if (!canAdvanceToday(plan, today)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          plan.getCurrentDayIndex() >= plan.getTotalDays()
+              ? "计划已全部完成，每天回来清算错题保持手感就好"
+              : "今日挑战次数已用完，明天再来吧，错题清算随时可以做");
+    }
+    int nextIndex = plan.getCurrentDayIndex() + 1;
+    plan.setCurrentDayIndex(nextIndex);
+    plan.setCurrentStage(stageOfDay(plan, nextIndex));
+    planMapper.updateById(plan);
+    AiReviewPlanDayEntity day = materializeDay(plan, nextIndex, today.plusDays(1), null);
+    log.info("[AI复习] 超前解锁：planId={} user={} dayIndex={} planDate={}",
+        plan.getId(), platformUserId, nextIndex, day.getPlanDate());
+
+    Map<String, Object> result = todayTask(platformUserId, examId, tenantId);
+    result.put("advanced", true);
+    return result;
+  }
+
+  /** 当日是否还能提前解锁：计划未完结 + 当日提前次数 < ai_review_advance_max_per_day（默认 1） */
+  private boolean canAdvanceToday(AiReviewPlanEntity plan, LocalDate today) {
+    if (!"active".equals(plan.getStatus()) || plan.getCurrentDayIndex() >= plan.getTotalDays()) {
+      return false;
+    }
+    int maxAdvance = dictInt("ai_review_advance_max_per_day", 1, plan.getTenantId());
+    long advancedToday = dayMapper.selectCount(new LambdaQueryWrapper<AiReviewPlanDayEntity>()
+        .eq(AiReviewPlanDayEntity::getPlanId, plan.getId())
+        .apply("DATE(created_at) = CURDATE()")
+        .gt(AiReviewPlanDayEntity::getPlanDate, today));
+    return advancedToday < maxAdvance;
   }
 
   // ==================================================================
@@ -488,6 +612,7 @@ public class ReviewPlanApplicationService {
   // ==================================================================
 
   public Map<String, Object> progress(long platformUserId, long examId, Long tenantId) {
+    gateGrayRelease(examId, platformUserId, tenantId);
     AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
     List<AiReviewAnswerEntity> answers = answerMapper.selectList(new LambdaQueryWrapper<AiReviewAnswerEntity>()
         .eq(AiReviewAnswerEntity::getPlanId, plan.getId()));
@@ -1415,6 +1540,23 @@ public class ReviewPlanApplicationService {
     } catch (Exception e) {
       return List.of();
     }
+  }
+
+  /** 字典布尔值：value ∈ {true,1,yes} 视为开；缺失/异常回默认值 */
+  private boolean dictBool(String code, boolean defaultValue, Long tenantId) {
+    try {
+      List<DictEntity> dicts = dictMapper.selectList(new LambdaQueryWrapper<DictEntity>()
+          .eq(DictEntity::getCode, code)
+          .eq(DictEntity::getDeleted, 0)
+          .last("LIMIT 1"));
+      if (!dicts.isEmpty() && dicts.get(0).getValue() != null) {
+        String v = dicts.get(0).getValue().trim().toLowerCase();
+        return "true".equals(v) || "1".equals(v) || "yes".equals(v);
+      }
+    } catch (Exception e) {
+      log.warn("[AI复习] 读取字典 {} 失败，用默认值 {}：{}", code, defaultValue, e.getMessage());
+    }
+    return defaultValue;
   }
 
   private int dictInt(String code, int defaultValue, Long tenantId) {
