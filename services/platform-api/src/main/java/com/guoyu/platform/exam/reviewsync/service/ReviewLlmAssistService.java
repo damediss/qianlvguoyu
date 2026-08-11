@@ -164,10 +164,14 @@ public class ReviewLlmAssistService {
     }
     String dayKey = planId + ":" + dayIndex;
     if (Boolean.TRUE.equals(streakFiredCache.getIfPresent(dayKey + ":" + streakType + ":" + tier))) {
+      log.debug("[AI复习] 即时鼓励压制（本档今日已发）：planId={} dayIndex={} type={} tier={}",
+          planId, dayIndex, streakType, tier);
       return null;
     }
     Integer lastShown = streakLastShownCache.getIfPresent(dayKey);
     if (lastShown != null && answerCountOfDay - lastShown < 5) {
+      log.debug("[AI复习] 即时鼓励压制（距上条不足 5 题）：planId={} dayIndex={} type={} tier={} lastShown={} now={}",
+          planId, dayIndex, streakType, tier, lastShown, answerCountOfDay);
       return null;
     }
     Map<Integer, List<String>> pool = StreakEncourageDomainService.TYPE_CORRECT.equals(streakType)
@@ -178,6 +182,8 @@ public class ReviewLlmAssistService {
     }
     streakFiredCache.put(dayKey + ":" + streakType + ":" + tier, Boolean.TRUE);
     streakLastShownCache.put(dayKey, answerCountOfDay);
+    log.info("[AI复习] 即时鼓励发放：planId={} dayIndex={} type={} tier={} answerCount={}",
+        planId, dayIndex, streakType, tier, answerCountOfDay);
     return candidates.get(random.nextInt(candidates.size()));
   }
 
@@ -215,7 +221,7 @@ public class ReviewLlmAssistService {
       String systemPrompt = "你是一位职业技能等级认定考试的教练老师，负责给学员写每日鼓励语。"
           + "要求：中文、不超过 60 字、口语化、有力量感、结合学员当前阶段，不要 emoji。";
       String content = llmClient.chatCompletion(config.getBaseUrl(), config.getApiKey(), config.getModelId(),
-          systemPrompt, prompt, 200, null, false, tenantId);
+          systemPrompt, prompt, 200, null, config.getReasoningEffort(), false, tenantId);
       if (content == null || content.isBlank()) {
         return null;
       }

@@ -101,19 +101,28 @@ public class ReviewPlanApplicationService {
 
   /** 灰度拦截：开关开启时，examId 或 userId 任一命中白名单才放行；开关关闭/缺失=全员开放 */
   private void gateGrayRelease(long examId, long platformUserId, Long tenantId) {
-    if (!dictBool("ai_review_gray_enabled", false, tenantId)) {
-      return;
+    if (!isGrayAllowed(examId, platformUserId, tenantId)) {
+      log.warn("[AI复习] 灰度拦截：user={} exam={} 不在白名单", platformUserId, examId);
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "同步练习正在小范围试点中，敬请期待");
     }
-    boolean allowed = grayWhitelistMapper.selectCount(new LambdaQueryWrapper<AiReviewGrayWhitelistEntity>()
+  }
+
+  /** 灰度准入判定（不抛异常）：菜单预检与各用例拦截共用 */
+  private boolean isGrayAllowed(long examId, long platformUserId, Long tenantId) {
+    if (!dictBool("ai_review_gray_enabled", false, tenantId)) {
+      return true;
+    }
+    return grayWhitelistMapper.selectCount(new LambdaQueryWrapper<AiReviewGrayWhitelistEntity>()
             .eq(AiReviewGrayWhitelistEntity::getScopeType, "exam")
             .eq(AiReviewGrayWhitelistEntity::getScopeId, examId)) > 0
         || grayWhitelistMapper.selectCount(new LambdaQueryWrapper<AiReviewGrayWhitelistEntity>()
             .eq(AiReviewGrayWhitelistEntity::getScopeType, "user")
             .eq(AiReviewGrayWhitelistEntity::getScopeId, platformUserId)) > 0;
-    if (!allowed) {
-      log.warn("[AI复习] 灰度拦截：user={} exam={} 不在白名单", platformUserId, examId);
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "同步练习正在小范围试点中，敬请期待");
-    }
+  }
+
+  /** 灰度准入预检（D8 配套）：App 菜单页据此决定是否渲染「同步练习」入口，本接口不做灰度拦截 */
+  public Map<String, Object> grayAvailability(long platformUserId, long examId, Long tenantId) {
+    return Map.of("allowed", isGrayAllowed(examId, platformUserId, tenantId));
   }
 
   // ==================================================================
@@ -1213,15 +1222,31 @@ public class ReviewPlanApplicationService {
       wrongMapper.updateById(item);
     }
 
-    if (transition.levelChanged() || transition.star()) {
-      Map<String, Object> change = new LinkedHashMap<>();
-      change.put("from", transition.fromLevel());
-      change.put("to", transition.toLevel());
-      change.put("star", transition.star() ? 1 : 0);
-      change.put("explainAvailable", transition.star() && !correct);
-      return change;
+    // starNew = 本次作答新打上星（此前无星 → 现有星）；已加星红牌答对/再答错时 star 仍为 1，
+    // 但那不是"新变化"，前端只在 starNew=1 时提示"加星标记（顽固盲区）"
+    // （2026-08-11 实测缺陷：已加星红牌在清算区答对，旧 star 状态被当成新变化下发，误报加星）
+    boolean starNew = transition.star() && !state.star();
+    return buildCardChange(transition, starNew, correct);
+  }
+
+  /**
+   * cardChange 视图组装（§7.4 出参）。
+   *
+   * <p>答错：恒回（新入册/降级/加星/已错次数刷新 + AI 讲解入口 explainAvailable）；
+   * 答对：仅牌级变化（红→黄、黄→绿移除）才回，无变化回 null。
+   */
+  public static Map<String, Object> buildCardChange(WrongCardDomainService.CardTransition transition,
+      boolean starNew, boolean correct) {
+    if (correct && !transition.levelChanged()) {
+      return null;
     }
-    return null;
+    Map<String, Object> change = new LinkedHashMap<>();
+    change.put("from", transition.fromLevel());
+    change.put("to", transition.toLevel());
+    change.put("star", transition.star() ? 1 : 0);
+    change.put("starNew", starNew ? 1 : 0);
+    change.put("explainAvailable", transition.star() && !correct);
+    return change;
   }
 
   private static WrongCardDomainService.CardState toCardState(AiReviewWrongItemEntity item) {

@@ -61,6 +61,9 @@ public class LlmProxyService {
     int maxTokens = req.maxTokens() != null ? req.maxTokens() : modelConfig.getMaxTokens();
     var temperature = req.temperature() != null ? req.temperature() : modelConfig.getTemperature();
     String thinking = req.thinking() != null ? req.thinking() : modelConfig.getThinking();
+    // reasoning_effort：请求传了用请求值，否则用配置值（DB 默认 high；仅 DeepSeek+thinking=enabled 发送）
+    String reasoningEffort = req.reasoningEffort() != null
+        ? req.reasoningEffort() : modelConfig.getReasoningEffort();
     boolean jsonMode = req.responseFormatJson() != null && req.responseFormatJson();
 
     log.info("LLM 代理调用：userId={}, tenantId={}, modelCode={}, modelId={}, messages={}",
@@ -72,7 +75,7 @@ public class LlmProxyService {
     JsonNode response = llmClient.chatCompletionMessages(
         modelConfig.getBaseUrl(), modelConfig.getApiKey(),
         modelConfig.getModelId(), messages, maxTokens,
-        temperature, thinking, jsonMode, tenantId);
+        temperature, thinking, reasoningEffort, jsonMode, tenantId);
 
     long elapsed = System.currentTimeMillis() - startMs;
 

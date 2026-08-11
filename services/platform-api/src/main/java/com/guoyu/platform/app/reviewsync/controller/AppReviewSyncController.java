@@ -130,6 +130,14 @@ public class AppReviewSyncController {
         reviewService.advanceDay(userId, examId(body), TenantContextHolder.getTenantId()));
   }
 
+  /** D8 灰度准入预检（§15.2 配套）：App 菜单页据此决定是否渲染「同步练习」入口。本接口不做灰度拦截 */
+  @PostMapping("/availability")
+  public LegacyAppResponse availability(@RequestBody Map<String, Object> body) {
+    long userId = requireUserId();
+    return LegacyAppResponse.ok("成功",
+        reviewService.grayAvailability(userId, examId(body), TenantContextHolder.getTenantId()));
+  }
+
   // ------------------------------------------------------------------
   // 内部
   // ------------------------------------------------------------------

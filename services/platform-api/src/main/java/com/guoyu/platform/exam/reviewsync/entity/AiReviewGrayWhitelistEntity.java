@@ -11,9 +11,9 @@ import lombok.EqualsAndHashCode;
 @TableName("ai_review_gray_whitelist")
 public class AiReviewGrayWhitelistEntity extends BaseEntity {
 
-  /** 范围类型：exam=按考试/工种；user=按学员 */
+  /** 范围类型：exam=按考试/工种（train_exam_list.id）；user=按学员（platform_user.id） */
   private String scopeType;
-  /** 范围 ID：examId 或 platform_user.id */
+  /** 范围 ID：PHP 库 train_exam_list.id 或 platform_user.id */
   private Long scopeId;
   private String remark;
 }

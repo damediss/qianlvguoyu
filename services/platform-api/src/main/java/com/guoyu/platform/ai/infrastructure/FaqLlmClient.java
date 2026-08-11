@@ -98,7 +98,7 @@ public class FaqLlmClient {
   public String chatCompletion(String baseUrl, String apiKey, String modelId,
                                String fullPrompt, int maxTokens, String thinking, Long tenantId) {
     return chatCompletion(baseUrl, apiKey, modelId, null, fullPrompt, maxTokens, thinking,
-        false, tenantId);
+        null, false, tenantId);
   }
 
   /**
@@ -112,20 +112,23 @@ public class FaqLlmClient {
    *       仍为空时返回空字符串，由调用方（解析器）按格式异常处理</li>
    * </ul>
    *
-   * @param systemPrompt system 消息（稳定前缀，可传 null）
-   * @param userPrompt   user 消息（题目变量）
-   * @param jsonMode     是否请求 JSON Output（仅 DeepSeek 生效）
+   * @param systemPrompt    system 消息（稳定前缀，可传 null）
+   * @param userPrompt      user 消息（题目变量）
+   * @param reasoningEffort DeepSeek 推理强度 low/high/max；仅 thinking=enabled 且为 DeepSeek 时随
+   *                        thinking 节点发送（thinking 对象内字段），其它模型/场景一律不传
+   * @param jsonMode        是否请求 JSON Output（仅 DeepSeek 生效）
    * @return LLM 返回的 content 文本；DeepSeek JSON mode 重试后仍为空则返回 ""
    */
   public String chatCompletion(String baseUrl, String apiKey, String modelId,
                                String systemPrompt, String userPrompt, int maxTokens,
-                               String thinking, boolean jsonMode, Long tenantId) {
+                               String thinking, String reasoningEffort, boolean jsonMode, Long tenantId) {
     String url = trimTrailingSlash(baseUrl) + "/chat/completions";
     boolean deepSeekJsonMode = jsonMode && isDeepSeek(baseUrl);
 
     // 构造 OpenAI 兼容请求体
     ObjectNode requestBody = buildRequestBody(
-        modelId, maxTokens, 0.7, thinking, baseUrl, deepSeekJsonMode, systemPrompt, userPrompt);
+        modelId, maxTokens, 0.7, thinking, reasoningEffort, baseUrl, deepSeekJsonMode,
+        systemPrompt, userPrompt);
 
     // 共享层：HTTP 调用 + HTTP 级异常分类
     JsonNode response = executeChatCompletion(requestBody, url, apiKey, tenantId);
@@ -169,7 +172,7 @@ public class FaqLlmClient {
   public JsonNode chatCompletionMessages(String baseUrl, String apiKey, String modelId,
                                          JsonNode messages, int maxTokens,
                                          BigDecimal temperature, String thinking,
-                                         boolean jsonMode, Long tenantId) {
+                                         String reasoningEffort, boolean jsonMode, Long tenantId) {
     String url = trimTrailingSlash(baseUrl) + "/chat/completions";
     boolean deepSeekJsonMode = jsonMode && isDeepSeek(baseUrl);
 
@@ -178,12 +181,7 @@ public class FaqLlmClient {
     requestBody.put("max_tokens", maxTokens);
     requestBody.put("temperature", temperature != null ? temperature.doubleValue() : 0.7);
 
-    // LongCat 思考模式：baseURL 含 longcat 且 thinking 非空时传
-    if (isLongCat(baseUrl) && thinking != null && !thinking.isBlank()) {
-      ObjectNode thinkingNode = objectMapper.createObjectNode();
-      thinkingNode.put("type", thinking);
-      requestBody.set("thinking", thinkingNode);
-    }
+    putThinkingNode(requestBody, baseUrl, thinking, reasoningEffort);
 
     // DeepSeek JSON mode：官方支持 response_format: {"type": "json_object"}
     if (deepSeekJsonMode) {
@@ -205,19 +203,15 @@ public class FaqLlmClient {
    * 构造 OpenAI 兼容请求体。
    */
   private ObjectNode buildRequestBody(String modelId, int maxTokens, double temperature,
-                                      String thinking, String baseUrl, boolean deepSeekJsonMode,
+                                      String thinking, String reasoningEffort, String baseUrl,
+                                      boolean deepSeekJsonMode,
                                       String systemPrompt, String userPrompt) {
     ObjectNode requestBody = objectMapper.createObjectNode();
     requestBody.put("model", modelId);
     requestBody.put("max_tokens", maxTokens);
     requestBody.put("temperature", temperature);
 
-    // LongCat 思考模式：baseURL 含 longcat 且 thinking 非空时传
-    if (isLongCat(baseUrl) && thinking != null && !thinking.isBlank()) {
-      ObjectNode thinkingNode = objectMapper.createObjectNode();
-      thinkingNode.put("type", thinking);
-      requestBody.set("thinking", thinkingNode);
-    }
+    putThinkingNode(requestBody, baseUrl, thinking, reasoningEffort);
 
     // DeepSeek JSON mode：官方支持 response_format: {"type": "json_object"}
     if (deepSeekJsonMode) {
@@ -303,8 +297,8 @@ public class FaqLlmClient {
       } catch (Exception e) {
         responseStr = response.toString();
       }
-      if (responseStr.length() > 200) {
-        responseStr = responseStr.substring(0, 200) + "...(truncated)";
+      if (responseStr.length() > 300) {
+        responseStr = responseStr.substring(0, 300) + "...(truncated)";
       }
       log.info("LLM 响应：tenantId={}, url={}, body={}", tenantId, url, responseStr);
 
@@ -361,5 +355,41 @@ public class FaqLlmClient {
   /** 判断是否为 DeepSeek 模型（baseURL 含 deepseek 关键词） */
   private boolean isDeepSeek(String baseUrl) {
     return baseUrl != null && baseUrl.toLowerCase().contains("deepseek");
+  }
+
+  /**
+   * 写入 thinking 节点（2026-08-11 新增 reasoning_effort 支持）。
+   *
+   * <p>DeepSeek 官方文档（/api/create-chat-completion）：{@code reasoning_effort} 是
+   * {@code thinking} 对象内字段（low/high/max，默认 high），仅 {@code type=enabled} 时生效；
+   * 仅 deepseek-v4-flash 支持三档，v4-pro 的 low 按 high 处理。
+   *
+   * <p>发送口径（需求方拍板）：
+   * <ul>
+   *   <li>DeepSeek：thinking=enabled 且 reasoningEffort 非空 → {type:enabled, reasoning_effort:值}；
+   *       thinking=disabled → 仅 {type:disabled}；thinking 为空 → 不发 thinking 节点</li>
+   *   <li>LongCat：维持现状仅发 {type:值}，不发 reasoning_effort（其文档不支持，AGENTS.md 坑 #13）</li>
+   *   <li>其它模型：一律不发 thinking 节点</li>
+   * </ul>
+   */
+  private void putThinkingNode(ObjectNode requestBody, String baseUrl, String thinking,
+      String reasoningEffort) {
+    if (thinking == null || thinking.isBlank()) {
+      return;
+    }
+    if (isLongCat(baseUrl)) {
+      ObjectNode thinkingNode = objectMapper.createObjectNode();
+      thinkingNode.put("type", thinking);
+      requestBody.set("thinking", thinkingNode);
+      return;
+    }
+    if (isDeepSeek(baseUrl)) {
+      ObjectNode thinkingNode = objectMapper.createObjectNode();
+      thinkingNode.put("type", thinking);
+      if ("enabled".equals(thinking) && reasoningEffort != null && !reasoningEffort.isBlank()) {
+        thinkingNode.put("reasoning_effort", reasoningEffort);
+      }
+      requestBody.set("thinking", thinkingNode);
+    }
   }
 }

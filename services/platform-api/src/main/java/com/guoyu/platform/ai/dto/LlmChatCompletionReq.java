@@ -21,6 +21,12 @@ public record LlmChatCompletionReq(
     String thinking,
 
     /**
+     * DeepSeek 推理强度：low/high/max（thinking 对象内字段，仅 type=enabled 时生效）。
+     * 传了用请求值，否则用 exam_faq_model_config.reasoning_effort（默认 high）。
+     */
+    String reasoningEffort,
+
+    /**
      * 是否请求 JSON Output（仅 DeepSeek 生效）。
      * true 时后端会对 DeepSeek 自动附加 {@code response_format: {"type": "json_object"}}。
      */

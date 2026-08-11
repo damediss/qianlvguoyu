@@ -359,8 +359,9 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 ### 7.4 POST /appreviewsync/answer — 单题作答
 
 - 入：`{examId, dayId, questionId, roundType, userAnswer, useTimeSec}`
-- 出：`{correct, correctAnswer, correctOptions, resolve, cardChange:{from,to,star}|null, encourageText|null}`
-- 逻辑：服务端判分 → 写 `ai_review_answer` → 驱动错题状态机（§5.4）→ 更新 day 计数 → 异步回写 PHP（§4.7）；加星题可带 `explainAvailable=1`
+- 出：`{correct, correctAnswer, correctOptions, resolve, cardChange:{from,to,star,starNew,explainAvailable}|null, encourageText|null}`
+  - `starNew=1` 表示**本次作答新加星**（此前无星 → 现有星），前端仅在此情况下提示"加星标记（顽固盲区）"；`star=1` 仅表示当前卡处于加星状态，不代表本次新增
+  - `explainAvailable=1` 表示该题当前是加星红牌且本次作答错误，可展示"AI 讲解"入口
 - **幂等与改答案语义（v1.4 实测修正）**：以（plan+day+question+roundType）最近一次尝试为基准——答案相同或此前已答对 → 纯回放（防双击/倒退刷分，不写库）；此前答错且新答案不同 → 记为新尝试（重判分、驱动状态机、计数只加差额不重复计 done）。回放/判定一律按 attemptSeq 倒序取最新尝试。
 
 ### 7.5 POST /appreviewsync/mock/start — 开始模考
@@ -569,9 +570,11 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 | 配置 | 说明 |
 |---|---|
 | `sys_dict: ai_review_gray_enabled` | `true`=仅白名单可用；`false`/缺失=全员开放（现状） |
-| `ai_review_gray_whitelist`（新 Flyway 表，含完整 BaseEntity 列） | `scope_type`：`exam`（按考试/工种整批试点）/ `user`（按学员 platform_user.id 指定种子学员）；`scope_id`、`remark`；唯一键 `(tenant_id, scope_type, scope_id)` |
+| `ai_review_gray_whitelist`（新 Flyway 表，含完整 BaseEntity 列） | `scope_type`：`exam`（按考试/工种整批试点，scope_id = **PHP 库 `train_exam_list.id`**，即复习/考试任务主键，非 exam_course.id）/ `user`（按学员，scope_id = `platform_user.id`）；`remark`；唯一键 `(tenant_id, scope_type, scope_id)` |
 
 **拦截点**：`ReviewPlanApplicationService` 各公开用例入口（overview/today/answer/finish/progress/mock/explain/advance-day）统一调 `gateGrayRelease(examId, userId, tenantId)`：灰度开启时，`examId ∈ 白名单(exam)` **或** `userId ∈ 白名单(user)` 才放行，否则抛业务异常「同步练习正在小范围试点中，敬请期待」。选应用层而非 Controller，8+1 个接口天然全覆盖、无遗漏面。
+
+**入口隐藏（2026-08-11 需求方拍板）**：非白名单学员直接**不渲染**「同步练习」菜单，而非点进去才报错——配套预检接口 `POST /appreviewsync/availability`（只查开关+白名单返回 `{allowed}`，不建计划、自身不做灰度拦截），`pages/promote/exam.vue` 加载时调用，`allowed=false` 或请求失败（fail-closed）均隐藏入口。
 
 **运营流程**：挑 1~2 个工种 + 3~5 名种子学员 → SQL 插白名单 → 字典开灰度 → 观察 §10.6 指标 1 周 → 字典改 `false` 全量，**零发布**。二期并入管理端参数配置页（§12 已有条目）。
 
@@ -618,6 +621,7 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 | 变更 | 内容 |
 |---|---|
 | 新接口 | `POST /appreviewsync/advance-day`（§15.1），入 `{examId}` → 出：新一天 todayTask 视图 + `advanced: true` |
+| 新接口 | `POST /appreviewsync/availability`（§15.2 配套），入 `{examId}` → 出 `{allowed: bool}`；菜单预检用，自身不做灰度拦截 |
 | `answer` 响应 | 新增 `streak {type, count}`、`encourageText`（§15.3，null=未触发） |
 | `finish` 响应 | 新增 `canAdvance: bool`（当日提前额度是否未满且计划未完结，前端据此显示「继续挑战」按钮） |
 | 新 Flyway | `ai_review_gray_whitelist`（§15.2；建迁移前先 `SELECT MAX(version) FROM flyway_schema_history`，AGENTS.md 坑 #7） |

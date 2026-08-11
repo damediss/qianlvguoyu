@@ -355,7 +355,7 @@ public class FaqConversionApplicationService {
             modelConfig.getBaseUrl(), modelConfig.getApiKey(),
             modelConfig.getModelId(), systemPrompt, userPrompt,
             modelConfig.getMaxTokens(), modelConfig.getThinking(),
-            true, tenantId);
+            modelConfig.getReasoningEffort(), true, tenantId);
         circuitBreaker.onSuccess(); // 成功时复位连续 429 计数
         return result;
       } catch (FaqLlmRateLimitException e) {

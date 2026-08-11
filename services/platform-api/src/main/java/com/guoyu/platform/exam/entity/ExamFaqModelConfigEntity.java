@@ -25,6 +25,8 @@ public class ExamFaqModelConfigEntity {
   private Integer maxTokens;
   /** LongCat 思考模式：enabled / disabled，非 LongCat 模型留空 */
   private String thinking;
+  /** DeepSeek 推理强度：low/high/max，默认 high；仅 thinking=enabled 时随 thinking 节点发送 */
+  private String reasoningEffort;
   private String extraConfig;
   private String status;
   private LocalDateTime createdAt;
@@ -57,6 +59,8 @@ public class ExamFaqModelConfigEntity {
   public void setMaxTokens(Integer maxTokens) { this.maxTokens = maxTokens; }
   public String getThinking() { return thinking; }
   public void setThinking(String thinking) { this.thinking = thinking; }
+  public String getReasoningEffort() { return reasoningEffort; }
+  public void setReasoningEffort(String reasoningEffort) { this.reasoningEffort = reasoningEffort; }
   public String getExtraConfig() { return extraConfig; }
   public void setExtraConfig(String extraConfig) { this.extraConfig = extraConfig; }
   public String getStatus() { return status; }

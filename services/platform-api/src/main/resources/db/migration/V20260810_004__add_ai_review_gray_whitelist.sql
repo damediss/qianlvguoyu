@@ -1,5 +1,6 @@
 -- AI 同步学灰度白名单（D8，方案 §15.2）
--- scope_type: exam=按考试/工种整批试点；user=按学员 platform_user.id 指定种子学员
+-- scope_type: exam=按考试/工种整批试点（scope_id = PHP 库 train_exam_list.id，复习/考试任务主键）；
+--             user=按学员（scope_id = PHP 库 platform_user.id）
 CREATE TABLE IF NOT EXISTS ai_review_gray_whitelist (
     id          BIGINT       NOT NULL COMMENT '雪花 ID',
     tenant_id   BIGINT       NOT NULL DEFAULT 1 COMMENT '租户 ID',
