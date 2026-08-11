@@ -1,0 +1,96 @@
+-- V20260810_002: 跟班作业/随堂练四表（M3-a）
+-- 《跟班作业与随堂练实现方案》§3
+
+CREATE TABLE IF NOT EXISTS train_follow_task (
+  id                          BIGINT       NOT NULL COMMENT '雪花 ID',
+  class_id                    BIGINT       NOT NULL COMMENT 'train_info_class.id',
+  train_info_id               BIGINT       NULL COMMENT '开班项目冗余',
+  schedule_id                 BIGINT       NULL COMMENT 'train_schedule.id，可空',
+  biz_date                    VARCHAR(16)  NULL COMMENT '无课次时的业务日 YYYY-MM-DD',
+  task_type                   VARCHAR(16)  NOT NULL COMMENT 'homework/practice',
+  title                       VARCHAR(200) NOT NULL,
+  description                 VARCHAR(1000) NULL,
+  deadline_at                 DATETIME     NULL,
+  status                      VARCHAR(16)  NOT NULL DEFAULT 'draft' COMMENT 'draft/published/closed',
+  pass_score                  DECIMAL(10,2) NULL COMMENT '达标分数，空则交卷即达标',
+  pass_rule                   VARCHAR(32)  NULL COMMENT 'submitted/score',
+  show_analysis_after_submit  TINYINT      NOT NULL DEFAULT 0 COMMENT '交卷后是否立即显示解析',
+  published_at                DATETIME     NULL,
+  tenant_id                   BIGINT       NOT NULL,
+  deleted                     TINYINT      NOT NULL DEFAULT 0,
+  created_by                  BIGINT       NULL,
+  updated_by                  BIGINT       NULL,
+  created_at                  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at                  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_tft_class_status (class_id, status, deleted),
+  KEY idx_tft_schedule (schedule_id),
+  KEY idx_tft_tenant (tenant_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='跟班作业/随堂练任务';
+
+CREATE TABLE IF NOT EXISTS train_follow_task_question (
+  id                      BIGINT       NOT NULL COMMENT '雪花 ID',
+  task_id                 BIGINT       NOT NULL,
+  sort_number             INT          NOT NULL DEFAULT 1,
+  question_type           VARCHAR(16)  NOT NULL COMMENT 'single/multi/judge',
+  stem                    TEXT         NOT NULL,
+  options_json            TEXT         NULL COMMENT '选项 JSON',
+  answer_json             TEXT         NOT NULL COMMENT '标准答案 JSON',
+  score                   DECIMAL(10,2) NOT NULL DEFAULT 1,
+  source_exam_detail_id   BIGINT       NULL,
+  analysis                TEXT         NULL,
+  tenant_id               BIGINT       NOT NULL,
+  deleted                 TINYINT      NOT NULL DEFAULT 0,
+  created_by              BIGINT       NULL,
+  updated_by              BIGINT       NULL,
+  created_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_tftq_task (task_id, deleted),
+  KEY idx_tftq_tenant (tenant_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='跟班作业题目快照';
+
+CREATE TABLE IF NOT EXISTS train_follow_task_item (
+  id              BIGINT       NOT NULL COMMENT '雪花 ID',
+  task_id         BIGINT       NOT NULL,
+  people_id       BIGINT       NOT NULL COMMENT 'train_people_list.id',
+  user_name       VARCHAR(64)  NULL,
+  status          VARCHAR(16)  NOT NULL DEFAULT 'pending' COMMENT 'pending/submitted/graded',
+  score           DECIMAL(10,2) NULL,
+  passed          TINYINT      NULL COMMENT '是否达标 0/1',
+  submitted_at    DATETIME     NULL,
+  graded_at       DATETIME     NULL,
+  graded_by       BIGINT       NULL,
+  comment_text    VARCHAR(500) NULL,
+  tenant_id       BIGINT       NOT NULL,
+  deleted         TINYINT      NOT NULL DEFAULT 0,
+  created_by      BIGINT       NULL,
+  updated_by      BIGINT       NULL,
+  created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_tfti_task_people (task_id, people_id, deleted),
+  KEY idx_tfti_people_status (people_id, status, deleted),
+  KEY idx_tfti_tenant (tenant_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='跟班作业学员任务态';
+
+CREATE TABLE IF NOT EXISTS train_follow_task_answer (
+  id              BIGINT       NOT NULL COMMENT '雪花 ID',
+  task_id         BIGINT       NOT NULL,
+  item_id         BIGINT       NOT NULL,
+  question_id     BIGINT       NOT NULL,
+  people_id       BIGINT       NOT NULL,
+  answer_json     TEXT         NULL,
+  is_correct      TINYINT      NULL,
+  score           DECIMAL(10,2) NULL,
+  tenant_id       BIGINT       NOT NULL,
+  deleted         TINYINT      NOT NULL DEFAULT 0,
+  created_by      BIGINT       NULL,
+  updated_by      BIGINT       NULL,
+  created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_tfta_item_question (item_id, question_id, deleted),
+  KEY idx_tfta_task (task_id),
+  KEY idx_tfta_tenant (tenant_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='跟班作业作答明细';

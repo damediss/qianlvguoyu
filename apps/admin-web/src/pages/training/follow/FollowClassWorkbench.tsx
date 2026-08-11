@@ -42,9 +42,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs, { type Dayjs } from 'dayjs';
 import { downloadUrlFile } from '../../../api/files';
 import * as trainApi from '../../../api/training';
-import type { ClassOther, ClassStudent, TrainInfoClassListItem } from '../../../types/training';
+import type { ClassStudent, TrainInfoClassListItem } from '../../../types/training';
 import { StudentAttendanceDetailDrawer } from './StudentAttendanceDetailDrawer';
 import { FollowPracticeTab } from './FollowPracticeTab';
+import { FollowScheduleChangeTab } from './FollowScheduleChangeTab';
+import { FollowHomeworkTab } from './FollowHomeworkTab';
 
 type ScheduleDraftItem = Record<string, unknown> & {
   _key: string;
@@ -143,6 +145,13 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
     queryFn: () => trainApi.getClassSchedule(classIdNum!),
     enabled: classIdNum != null && classIdNum > 0,
   });
+
+  const { data: pendingChangeRequests } = useQuery({
+    queryKey: ['schedule-change-requests', classIdNum, 'pending'],
+    queryFn: () => trainApi.listScheduleChangeRequests({ classId: classIdNum!, status: 'pending' }),
+    enabled: classIdNum != null && classIdNum > 0,
+  });
+  const pendingChangeCount = pendingChangeRequests?.length ?? 0;
 
   const { data: practiceScope, isLoading: practiceScopeLoading } = useQuery({
     queryKey: ['class-practice-scope', classId],
@@ -388,21 +397,12 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const allStudents = allStudentsData?.list ?? students;
   const rosterTotal = allStudentsData?.total ?? studentTotal;
 
-  const { data: staffData } = useQuery({
-    queryKey: ['follow-staff', trainInfoId, classId],
-    queryFn: () => trainApi.listClassOthers(trainInfoId!, classId, 'teacher'),
-    enabled: trainInfoId != null && !!classId,
+  const { data: roleSummary } = useQuery({
+    queryKey: ['follow-role-summary', classId],
+    queryFn: () => trainApi.getClassRoleSummary(classId),
+    enabled: !!classId,
   });
-
-  const { data: chargeData } = useQuery({
-    queryKey: ['follow-charge', trainInfoId, classId],
-    queryFn: () => trainApi.listClassOthers(trainInfoId!, classId, 'fuzhe'),
-    enabled: trainInfoId != null && !!classId,
-  });
-
-  const staffList = staffData?.list ?? [];
-  const chargeList = chargeData?.list ?? [];
-  const leaders = allStudents.filter((s) => Number(s.is_leader) === 1);
+  const classRoles = roleSummary?.roles ?? [];
 
   const { data: attendancePage, isLoading: attendanceLoading, isError: attendanceError } = useQuery({
     queryKey: ['follow-attendance', classIdNum, dateStr],
@@ -426,6 +426,13 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
         pageSize: 5000,
         classId: classIdNum!,
       }),
+    enabled: classIdNum != null && classIdNum > 0,
+    retry: false,
+  });
+
+  const { data: homeworkMetrics, isLoading: homeworkMetricsLoading } = useQuery({
+    queryKey: ['homework-metrics', classIdNum],
+    queryFn: () => trainApi.getHomeworkMetrics(classIdNum!),
     enabled: classIdNum != null && classIdNum > 0,
     retry: false,
   });
@@ -670,36 +677,19 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   ];
 
   const roleRows = useMemo(() => {
-    const rows: { key: string; role: string; name: string; phone?: string; source: string }[] = [];
-    for (const s of leaders) {
-      rows.push({
-        key: `leader-${s.id}`,
-        role: '班长',
-        name: s.realname,
-        phone: s.phone,
-        source: '开班准备 is_leader',
-      });
-    }
-    for (const s of staffList) {
-      rows.push({
-        key: `staff-${s.id}`,
-        role: '跟班教务（教务）',
-        name: s.realname,
-        phone: s.phone,
-        source: '班级教务 staff',
-      });
-    }
-    for (const s of chargeList) {
-      rows.push({
-        key: `charge-${s.id}`,
-        role: '负责人 / 班主任候选',
-        name: s.realname,
-        phone: s.phone,
-        source: '班级负责人 inCharge',
-      });
-    }
-    return rows;
-  }, [leaders, staffList, chargeList]);
+    return classRoles.map((r) => ({
+      key: r.id,
+      role: r.roleName,
+      name: r.displayName || '—',
+      phone: r.phone,
+      source: r.unboundWarning ? 'train_class_role（未绑定 App 账号）' : 'train_class_role',
+    }));
+  }, [classRoles]);
+
+  const leaders = classRoles.filter((r) => r.roleCode === 'monitor');
+  const staffList = classRoles.filter((r) => r.roleCode === 'follow_staff');
+  const chargeList = classRoles.filter((r) => r.roleCode === 'head_teacher');
+  const leadTeachers = classRoles.filter((r) => r.roleCode === 'lead_teacher' || r.roleCode === 'assistant');
 
   const handleSaveLog = async () => {
     const values = await logForm.validateFields();
@@ -970,6 +960,73 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                   </Col>
                 </Row>
 
+                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                  <Col xs={24} lg={12}>
+                    <Card
+                      size="small"
+                      title="作业完成情况"
+                      loading={homeworkMetricsLoading}
+                      extra={
+                        <Button type="link" style={{ padding: 0 }} onClick={() => setActiveTab('homework')}>
+                          作业明细 →
+                        </Button>
+                      }
+                    >
+                      <Space size="large" wrap>
+                        <Statistic title="已发布" value={homeworkMetrics?.taskCount ?? 0} />
+                        <Statistic
+                          title="完成率"
+                          value={homeworkMetrics?.completionRate ?? 0}
+                          suffix="%"
+                        />
+                        <Statistic
+                          title="平均正确率"
+                          value={homeworkMetrics?.avgAccuracyRate ?? '—'}
+                          suffix={homeworkMetrics?.avgAccuracyRate != null ? '%' : undefined}
+                        />
+                        <Statistic
+                          title="已交/应交"
+                          value={`${homeworkMetrics?.gradedItems ?? 0}/${homeworkMetrics?.totalItems ?? 0}`}
+                        />
+                      </Space>
+                    </Card>
+                  </Col>
+                  <Col xs={24} lg={12}>
+                    <Card
+                      size="small"
+                      className="follow-overview-scroll-card"
+                      title="作业预警"
+                      extra={
+                        <Typography.Text type="secondary">连续未交≥2 或平均正确率&lt;60%</Typography.Text>
+                      }
+                      loading={homeworkMetricsLoading}
+                    >
+                      {(homeworkMetrics?.warnings?.length ?? 0) === 0 ? (
+                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无作业预警" />
+                      ) : (
+                        <Table
+                          size="small"
+                          rowKey={(r) => `${r.peopleId}-${r.type}`}
+                          pagination={false}
+                          sticky
+                          dataSource={homeworkMetrics?.warnings ?? []}
+                          columns={[
+                            { title: '姓名', dataIndex: 'userName', width: 100 },
+                            {
+                              title: '类型',
+                              dataIndex: 'type',
+                              width: 100,
+                              render: (t: string) =>
+                                t === 'miss' ? <Tag color="warning">未交</Tag> : <Tag color="error">正确率低</Tag>,
+                            },
+                            { title: '说明', dataIndex: 'message', ellipsis: true },
+                          ]}
+                        />
+                      )}
+                    </Card>
+                  </Col>
+                </Row>
+
                 <Card
                   size="small"
                   title="班级课程表"
@@ -1103,9 +1160,10 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                   <Col xs={24} md={12}>
                     <Card size="small" title="角色摘要">
                       <Space direction="vertical" style={{ width: '100%' }}>
-                        <div>班长：{leaders.map((s) => s.realname).join('、') || '未设置'}</div>
-                        <div>教务：{staffList.map((s: ClassOther) => s.realname).join('、') || '未设置'}</div>
-                        <div>负责人：{chargeList.map((s: ClassOther) => s.realname).join('、') || '未设置'}</div>
+                        <div>班长：{leaders.map((s) => s.displayName).join('、') || '未设置'}</div>
+                        <div>跟班教务：{staffList.map((s) => s.displayName).join('、') || '未设置'}</div>
+                        <div>班主任：{chargeList.map((s) => s.displayName).join('、') || '未设置'}</div>
+                        <div>主讲/助教：{leadTeachers.map((s) => s.displayName).join('、') || '未设置'}</div>
                         <Typography.Text type="secondary">正式班主任/主讲角色指派将在角色 Tab 完善。</Typography.Text>
                       </Space>
                     </Card>
@@ -1359,7 +1417,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                                 icon={<EditOutlined />}
                                 onClick={() => openScheduleEditor(r)}
                               >
-                                调课
+                                直接改课
                               </Button>
                               <Popconfirm title="删除该课次？" onConfirm={() => removeScheduleRow(r._key)}>
                                 <Button type="link" size="small" danger icon={<DeleteOutlined />}>
@@ -1391,6 +1449,16 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
             ),
           },
           {
+            key: 'schedule-change',
+            label: pendingChangeCount > 0 ? `调课审批 (${pendingChangeCount})` : '调课审批',
+            children:
+              classIdNum != null && classIdNum > 0 ? (
+                <FollowScheduleChangeTab classId={classIdNum} />
+              ) : (
+                <Empty description="无效班级" />
+              ),
+          },
+          {
             key: 'evidence',
             label: '留痕',
             children: comingSoon('过程留痕', '照片/视频证据将挂载课次或按日；上传通道复用现有文件服务（M2）'),
@@ -1398,7 +1466,12 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
           {
             key: 'homework',
             label: '作业',
-            children: comingSoon('作业与随堂练', 'SaaS 独立作业布置/批改将在本 Tab 落地（M3），不影响 App promote'),
+            children:
+              classIdNum != null && classIdNum > 0 ? (
+                <FollowHomeworkTab classId={classIdNum} />
+              ) : (
+                <Empty description="无效班级" />
+              ),
           },
           {
             key: 'practice',
@@ -1420,14 +1493,18 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                   type="info"
                   showIcon
                   style={{ marginBottom: 12 }}
-                  message="当前展示开班准备已有人员映射"
-                  description="班长 ← is_leader；跟班教务 ← 教务 staff；负责人 ← inCharge（班主任双轨正式表 train_class_role 待后端）。人员维护请前往「开班准备」。"
+                  message="班级角色来自 train_class_role"
+                  description={
+                    (roleSummary?.unboundCount ?? 0) > 0
+                      ? `有 ${roleSummary?.unboundCount} 人未绑定 App 账号，指派后需确保 PHP/SaaS 账号可登录。维护入口：开班准备 → 班级角色。`
+                      : '人员维护请前往「开班准备 → 班级角色」；班长仍可在学员列表设置。'
+                  }
                 />
                 <Table
                   rowKey="key"
                   dataSource={roleRows}
                   pagination={false}
-                  locale={{ emptyText: '暂无角色人员，请先在开班准备设置班长/教务/负责人' }}
+                  locale={{ emptyText: '暂无角色人员，请先在开班准备设置班级角色/班长' }}
                   columns={[
                     { title: '角色', dataIndex: 'role', width: 180 },
                     { title: '姓名', dataIndex: 'name', width: 140 },
@@ -1569,7 +1646,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       </Modal>
 
       <Modal
-        title={editingScheduleKey ? '调课' : '添加课次'}
+        title={editingScheduleKey ? '直接改课' : '添加课次'}
         open={scheduleModalOpen}
         onCancel={() => setScheduleModalOpen(false)}
         onOk={() => void submitScheduleEditor()}

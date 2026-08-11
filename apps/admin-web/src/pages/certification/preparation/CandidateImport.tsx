@@ -26,7 +26,7 @@ import {
 import type { UploadFile } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import dayjs from 'dayjs';
+import dayjs, { type Dayjs } from 'dayjs';
 import { useMemo, useState, type Key } from 'react';
 import { pagePeople } from '../../../api/training';
 import { getCertificationTask } from '../../../api/certification';
@@ -83,7 +83,11 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   const [editingCandidate, setEditingCandidate] = useState<PreparationCandidate | null>(null);
   const [documentCandidate, setDocumentCandidate] = useState<PreparationCandidate | null>(null);
   const [lastImportBatch, setLastImportBatch] = useState<PreparationImportBatch | null>(null);
-  const [candidateForm] = Form.useForm<PreparationCandidatePayload>();
+  type CandidateFormValues = Omit<PreparationCandidatePayload, 'graduateDate' | 'workStartDate'> & {
+    graduateDate?: Dayjs;
+    workStartDate?: Dayjs;
+  };
+  const [candidateForm] = Form.useForm<CandidateFormValues>();
   const [importFileList, setImportFileList] = useState<UploadFile[]>([]);
   const [importRawFile, setImportRawFile] = useState<File | null>(null);
   const [trainingQuery, setTrainingQuery] = useState<TrainPeopleQuery>({ page: 1, pageSize: 10, type: 'student' });

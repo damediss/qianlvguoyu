@@ -122,6 +122,14 @@ public class AppReviewSyncController {
         reviewService.progress(userId, examId(body), TenantContextHolder.getTenantId()));
   }
 
+  /** D7 超前学习：今日任务完成后提前解锁明日任务（§15.1） */
+  @PostMapping("/advance-day")
+  public LegacyAppResponse advanceDay(@RequestBody Map<String, Object> body) {
+    long userId = requireUserId();
+    return LegacyAppResponse.ok("成功",
+        reviewService.advanceDay(userId, examId(body), TenantContextHolder.getTenantId()));
+  }
+
   // ------------------------------------------------------------------
   // 内部
   // ------------------------------------------------------------------
