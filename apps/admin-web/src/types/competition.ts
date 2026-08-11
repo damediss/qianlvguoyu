@@ -786,8 +786,8 @@ export interface CompetitionTheoryPaperSnapshot {
   eventId: CompetitionId;
   stageId: CompetitionId;
   eventWorkTypeId: CompetitionId;
-  scoreRuleId: CompetitionId;
-  requirementId: CompetitionId;
+  scoreRuleId?: CompetitionId | null;
+  requirementId?: CompetitionId | null;
   paperCode: 'A' | 'B';
   versionNo: number;
   sourceCourseId: CompetitionId;
@@ -803,6 +803,24 @@ export interface CompetitionTheoryPaperSnapshot {
   importedAt?: string | null;
   importedBy?: CompetitionId | null;
   publishedAt?: string | null;
+}
+
+export interface CompetitionTheoryPaperPreviewQuestion {
+  sortOrder: number;
+  content: string;
+  questionType: string;
+  score: CompetitionDecimal;
+}
+
+export interface CompetitionTheoryPaperPreview {
+  id: CompetitionId;
+  paperCode: 'A' | 'B';
+  versionNo: number;
+  sourceTitle: string;
+  durationMinutes: number;
+  questionCount: number;
+  totalScore: CompetitionDecimal;
+  questions: CompetitionTheoryPaperPreviewQuestion[];
 }
 
 export interface CompetitionTheoryRoom {

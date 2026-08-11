@@ -766,6 +766,70 @@ public class PracticalScoringApplicationService {
     return startService.completeCandidate(taskId, candidateId, summaryFileName);
   }
 
+  /**
+   * Closes the practical scoring work after every generated candidate result has been settled.
+   * Scoring rows remain as audit history; only assessor-group memberships are released.
+   */
+  @Transactional
+  public PracticalScoringModels.CompleteTaskView completeTask(Long taskId) {
+    requireTask(taskId);
+    List<CertificationAssessorTaskEntity> scoringTasks = assessorTaskMapper.selectList(
+        new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
+            .eq(CertificationAssessorTaskEntity::getTaskId, taskId)
+            .isNotNull(CertificationAssessorTaskEntity::getCandidateId)
+            .isNotNull(CertificationAssessorTaskEntity::getPaperQuestionId));
+    if (CollectionUtils.isEmpty(scoringTasks)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前认定任务尚未生成实操评分任务，不能完成评分任务");
+    }
+
+    Set<Long> candidateIds = scoringTasks.stream()
+        .map(CertificationAssessorTaskEntity::getCandidateId)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
+    List<CertificationPracticalCandidateResultEntity> candidateResults = candidateResultMapper.selectList(
+            new LambdaQueryWrapper<CertificationPracticalCandidateResultEntity>()
+                .eq(CertificationPracticalCandidateResultEntity::getTaskId, taskId));
+    Map<Long, String> resultStatuses = (candidateResults == null ? List.<CertificationPracticalCandidateResultEntity>of() : candidateResults)
+        .stream()
+        .filter(Objects::nonNull)
+        .collect(Collectors.toMap(
+            CertificationPracticalCandidateResultEntity::getCandidateId,
+            CertificationPracticalCandidateResultEntity::getStatus,
+            (left, right) -> left));
+    long unsettled = candidateIds.stream()
+        .filter(candidateId -> !"completed".equals(resultStatuses.get(candidateId))
+            && !"absent".equals(resultStatuses.get(candidateId)))
+        .count();
+    if (unsettled > 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "仍有 " + unsettled + " 名考生的实操评分未完成，不能结束评分任务");
+    }
+
+    Set<Long> groupIds = scoringTasks.stream()
+        .map(CertificationAssessorTaskEntity::getGroupId)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
+    if (groupIds.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "评分任务缺少考评组绑定，不能结束评分任务");
+    }
+    List<CertificationTaskAssessorEntity> bindings = taskAssessorMapper.selectList(
+        new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
+            .eq(CertificationTaskAssessorEntity::getTaskId, taskId)
+            .in(CertificationTaskAssessorEntity::getGroupId, groupIds));
+    if (bindings == null || bindings.isEmpty()) {
+      return new PracticalScoringModels.CompleteTaskView(groupIds.size(), 0);
+    }
+    Set<Long> assessorIds = bindings.stream()
+        .map(CertificationTaskAssessorEntity::getAssessorId)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
+    taskAssessorMapper.delete(new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
+        .eq(CertificationTaskAssessorEntity::getTaskId, taskId)
+        .in(CertificationTaskAssessorEntity::getGroupId, groupIds));
+    assessorIds.forEach(this::refreshAssessorWorkStatus);
+    return new PracticalScoringModels.CompleteTaskView(groupIds.size(), assessorIds.size());
+  }
+
   @Transactional(readOnly = true)
   public PracticalScoringModels.ProgressView progress(Long taskId) {
     requireTask(taskId);
@@ -3712,6 +3776,22 @@ public class PracticalScoringApplicationService {
       throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未绑定有效考评员档案");
     }
     return assessor;
+  }
+
+  private void refreshAssessorWorkStatus(Long assessorId) {
+    List<CertificationTaskAssessorEntity> remainingBindings = taskAssessorMapper.selectList(
+        new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
+            .eq(CertificationTaskAssessorEntity::getAssessorId, assessorId));
+    String workStatus = (remainingBindings == null || remainingBindings.isEmpty())
+        ? "idle"
+        : remainingBindings.stream().anyMatch(binding -> "assigned".equals(binding.getWorkStatus()))
+            ? "assigned"
+            : "preparing";
+    CertificationInfoAssessorEntity assessor = assessorMapper.selectById(assessorId);
+    if (assessor != null && !Objects.equals(assessor.getWorkStatus(), workStatus)) {
+      assessor.setWorkStatus(workStatus);
+      assessorMapper.updateById(assessor);
+    }
   }
 
   private CertificationTaskEntity requireTask(Long taskId) {

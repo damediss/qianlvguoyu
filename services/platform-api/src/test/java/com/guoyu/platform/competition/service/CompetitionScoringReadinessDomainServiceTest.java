@@ -18,7 +18,6 @@ import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRegistrationMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreRuleMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStageMapper;
-import com.guoyu.platform.competition.mapper.CompetitionTheoryRequirementMapper;
 import com.guoyu.platform.competition.vo.CompetitionScoringReadinessCheckVO;
 import com.guoyu.platform.competition.vo.CompetitionScoringReadinessVO;
 import java.math.BigDecimal;
@@ -52,8 +51,7 @@ class CompetitionScoringReadinessDomainServiceTest {
     registrationMapper = Mockito.mock(CompetitionRegistrationMapper.class);
     CompetitionScoreRuleDomainService ruleDomainService =
         new CompetitionScoreRuleDomainService(
-            ruleMapper, eventMapper, stageMapper, workTypeMapper,
-            Mockito.mock(CompetitionTheoryRequirementMapper.class));
+            ruleMapper, eventMapper, stageMapper, workTypeMapper);
     service = new CompetitionScoringReadinessDomainService(
         eventMapper, stageMapper, workTypeMapper, ruleMapper, profileMapper,
         memberMapper, registrationMapper, ruleDomainService);

@@ -7,6 +7,7 @@ import com.guoyu.platform.competition.dto.CompetitionTheoryPaperImportReq;
 import com.guoyu.platform.competition.dto.CompetitionTheoryRequirementUpsertReq;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
 import com.guoyu.platform.competition.entity.CompetitionScoreRuleEntity;
+import com.guoyu.platform.competition.entity.CompetitionStageEntity;
 import com.guoyu.platform.competition.entity.CompetitionTheoryPaperQuestionEntity;
 import com.guoyu.platform.competition.entity.CompetitionTheoryPaperSnapshotEntity;
 import com.guoyu.platform.competition.entity.CompetitionTheoryRequirementEntity;
@@ -19,6 +20,8 @@ import com.guoyu.platform.competition.service.CompetitionTheoryAnswerSnapshotAda
 import com.guoyu.platform.competition.service.CompetitionTheoryPaperSourceAdapter.SourcePaper;
 import com.guoyu.platform.competition.service.CompetitionTheoryPaperSourceAdapter.SourceQuestion;
 import com.guoyu.platform.competition.vo.CompetitionTheoryCourseSourceVO;
+import com.guoyu.platform.competition.vo.CompetitionTheoryPaperPreviewQuestionVO;
+import com.guoyu.platform.competition.vo.CompetitionTheoryPaperPreviewVO;
 import com.guoyu.platform.competition.vo.CompetitionTheoryPaperSnapshotVO;
 import com.guoyu.platform.competition.vo.CompetitionTheoryPaperSourceVO;
 import com.guoyu.platform.competition.vo.CompetitionTheoryRequirementVO;
@@ -49,6 +52,7 @@ public class CompetitionTheoryPaperApplicationService {
 
   private final CompetitionScoreRuleDomainService scoreRuleDomainService;
   private final CompetitionScoreRuleApplicationService scoreRuleApplicationService;
+  private final CompetitionStageService stageService;
   private final CompetitionEventWorkTypeDomainService eventWorkTypeDomainService;
   private final CompetitionTheoryRequirementMapper requirementMapper;
   private final CompetitionTheoryPaperSnapshotMapper snapshotMapper;
@@ -59,6 +63,7 @@ public class CompetitionTheoryPaperApplicationService {
   public CompetitionTheoryPaperApplicationService(
       CompetitionScoreRuleDomainService scoreRuleDomainService,
       CompetitionScoreRuleApplicationService scoreRuleApplicationService,
+      CompetitionStageService stageService,
       CompetitionEventWorkTypeDomainService eventWorkTypeDomainService,
       CompetitionTheoryRequirementMapper requirementMapper,
       CompetitionTheoryPaperSnapshotMapper snapshotMapper,
@@ -67,6 +72,7 @@ public class CompetitionTheoryPaperApplicationService {
       CompetitionTheoryAnswerSnapshotAdapter answerAdapter) {
     this.scoreRuleDomainService = scoreRuleDomainService;
     this.scoreRuleApplicationService = scoreRuleApplicationService;
+    this.stageService = stageService;
     this.eventWorkTypeDomainService = eventWorkTypeDomainService;
     this.requirementMapper = requirementMapper;
     this.snapshotMapper = snapshotMapper;
@@ -172,21 +178,46 @@ public class CompetitionTheoryPaperApplicationService {
     return records.stream().map(CompetitionTheoryPaperSnapshotVO::from).toList();
   }
 
+  @Transactional(readOnly = true)
+  public CompetitionTheoryPaperPreviewVO previewSnapshot(Long eventId, Long snapshotId) {
+    PlatformUserPrincipal principal = currentUser();
+    scoreRuleApplicationService.accessibleEvent(principal, eventId);
+    CompetitionTheoryPaperSnapshotEntity snapshot = snapshotMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionTheoryPaperSnapshotEntity>()
+            .eq(CompetitionTheoryPaperSnapshotEntity::getTenantId, principal.getTenantId())
+            .eq(CompetitionTheoryPaperSnapshotEntity::getEventId, eventId)
+            .eq(CompetitionTheoryPaperSnapshotEntity::getId, snapshotId)
+            .eq(CompetitionTheoryPaperSnapshotEntity::getDeleted, 0));
+    if (snapshot == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "试卷快照不存在或不属于当前赛事");
+    }
+    List<CompetitionTheoryPaperQuestionEntity> questions = questionMapper.selectByPaper(snapshotId);
+    if (questions == null) {
+      log.warn("Theory paper question mapper returned null list, tenantId={}, eventId={}, snapshotId={}",
+          principal.getTenantId(), eventId, snapshotId);
+      questions = Collections.emptyList();
+    }
+    List<CompetitionTheoryPaperPreviewQuestionVO> previewQuestions = questions.stream()
+        .map(question -> new CompetitionTheoryPaperPreviewQuestionVO(
+            question.getSortOrder(), question.getContent(), question.getQuestionType(),
+            question.getScore()))
+        .toList();
+    return CompetitionTheoryPaperPreviewVO.from(snapshot, previewQuestions);
+  }
+
   @Transactional
   public List<CompetitionTheoryPaperSnapshotVO> importPair(
       Long eventId, CompetitionTheoryPaperImportReq req) {
     PlatformUserPrincipal principal = currentUser();
     scoreRuleApplicationService.manageableEvent(principal, eventId);
     CompetitionScoreRuleEntity rule =
-        scoreRuleDomainService.getById(principal.getTenantId(), req.scoreRuleId());
+        resolveImportScope(principal, eventId, req);
     if (!Objects.equals(eventId, rule.getEventId())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "评分规则不属于当前赛事");
     }
     if (!CompetitionScoreRuleStatus.PUBLISHED.getCode().equals(rule.getStatus())) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "只能为已发布评分规则导入试卷");
     }
-    CompetitionTheoryRequirementEntity requirement =
-        requireRequirement(principal.getTenantId(), rule.getId());
     CompetitionEventWorkTypeEntity eventWorkType =
         requireEventWorkType(principal.getTenantId(), eventId, rule.getEventWorkTypeId());
     if (Objects.equals(req.paperAId(), req.paperBId())) {
@@ -199,22 +230,21 @@ public class CompetitionTheoryPaperApplicationService {
     if (Objects.equals(paperA.planId(), paperB.planId())) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "A卷和B卷必须来自两个独立组卷计划");
     }
-    PreparedPaper preparedA = preparePaper(requirement, paperA);
-    PreparedPaper preparedB = preparePaper(requirement, paperB);
+    PreparedPaper preparedA = preparePaper(paperA);
+    PreparedPaper preparedB = preparePaper(paperB);
     requireEquivalent(preparedA, preparedB);
     LocalDateTime now = LocalDateTime.now();
     List<CompetitionTheoryPaperSnapshotVO> result = new ArrayList<>();
     result.add(CompetitionTheoryPaperSnapshotVO.from(
-        persistSnapshot(principal, rule, requirement, "A", preparedA, now)));
+        persistSnapshot(principal, rule, "A", preparedA, now)));
     result.add(CompetitionTheoryPaperSnapshotVO.from(
-        persistSnapshot(principal, rule, requirement, "B", preparedB, now)));
+        persistSnapshot(principal, rule, "B", preparedB, now)));
     return result;
   }
 
   private CompetitionTheoryPaperSnapshotEntity persistSnapshot(
       PlatformUserPrincipal principal,
       CompetitionScoreRuleEntity rule,
-      CompetitionTheoryRequirementEntity requirement,
       String paperCode,
       PreparedPaper prepared,
       LocalDateTime now) {
@@ -240,7 +270,8 @@ public class CompetitionTheoryPaperApplicationService {
     snapshot.setStageId(rule.getStageId());
     snapshot.setEventWorkTypeId(rule.getEventWorkTypeId());
     snapshot.setScoreRuleId(rule.getId());
-    snapshot.setRequirementId(requirement.getId());
+    // 课程组卷计划已经携带时长、分值和题型要求，竞赛侧不再重复创建理论要求。
+    snapshot.setRequirementId(null);
     snapshot.setPaperCode(paperCode);
     snapshot.setVersionNo(maxVersion == null ? 1 : maxVersion + 1);
     snapshot.setSourceCourseId(prepared.source().courseId());
@@ -310,51 +341,27 @@ public class CompetitionTheoryPaperApplicationService {
     return entity;
   }
 
-  private PreparedPaper preparePaper(
-      CompetitionTheoryRequirementEntity requirement, SourcePaper source) {
-    requireEqual(requirement.getDurationMinutes(), source.durationMinutes(), "考试时长");
-    requireDecimal(requirement.getTotalScore(), source.totalScore(), "试卷总分");
-    requireDecimal(requirement.getPassScore(), source.passScore(), "试卷及格分");
+  private PreparedPaper preparePaper(SourcePaper source) {
     List<PreparedQuestion> questions = new ArrayList<>();
-    int singleCount = 0;
-    int multiCount = 0;
-    int judgeCount = 0;
-    BigDecimal totalScore = BigDecimal.ZERO;
     for (SourceQuestion sourceQuestion : source.questions()) {
       ParsedAnswer parsed = answerAdapter.parse(
           sourceQuestion.type(), sourceQuestion.content(), sourceQuestion.answerJson());
-      BigDecimal expectedScore;
       switch (parsed.normalizedType()) {
-        case "single" -> {
-          singleCount++;
-          expectedScore = requirement.getSingleScore();
-        }
-        case "multi" -> {
-          multiCount++;
-          expectedScore = requirement.getMultiScore();
-        }
-        case "judge" -> {
-          judgeCount++;
-          expectedScore = requirement.getJudgeScore();
+        case "single", "multi", "judge" -> {
+          // 题型、分值和总分以课程试卷为准，不再与竞赛侧理论要求二次比对。
         }
         default -> throw new IllegalStateException("Unexpected objective question type");
       }
-      requireDecimal(expectedScore, sourceQuestion.score(), parsed.normalizedType() + "单题分值");
-      totalScore = totalScore.add(sourceQuestion.score());
       questions.add(new PreparedQuestion(sourceQuestion, parsed));
     }
-    requireEqual(requirement.getSingleCount(), singleCount, "单选题数量");
-    requireEqual(requirement.getMultiCount(), multiCount, "多选题数量");
-    requireEqual(requirement.getJudgeCount(), judgeCount, "判断题数量");
-    requireDecimal(requirement.getTotalScore(), totalScore, "题目分值汇总");
     return new PreparedPaper(source, questions, sourceHash(source, questions));
   }
 
   private void requireEquivalent(PreparedPaper first, PreparedPaper second) {
-    requireEqual(first.source().durationMinutes(), second.source().durationMinutes(), "A/B考试时长");
-    requireDecimal(first.source().totalScore(), second.source().totalScore(), "A/B总分");
-    requireDecimal(first.source().passScore(), second.source().passScore(), "A/B及格分");
-    requireEqual(first.questions().size(), second.questions().size(), "A/B题目总数");
+    requirePairEqual(first.source().durationMinutes(), second.source().durationMinutes(), "A/B考试时长");
+    requirePairDecimal(first.source().totalScore(), second.source().totalScore(), "A/B总分");
+    requirePairDecimal(first.source().passScore(), second.source().passScore(), "A/B及格分");
+    requirePairEqual(first.questions().size(), second.questions().size(), "A/B题目总数");
   }
 
   private String sourceHash(SourcePaper source, List<PreparedQuestion> questions) {
@@ -426,6 +433,25 @@ public class CompetitionTheoryPaperApplicationService {
     entity.setPassScore(req.passScore());
   }
 
+  private CompetitionScoreRuleEntity resolveImportScope(
+      PlatformUserPrincipal principal,
+      Long eventId,
+      CompetitionTheoryPaperImportReq req) {
+    CompetitionStageEntity stage =
+        stageService.getById(principal.getTenantId(), req.stageId());
+    if (!Objects.equals(eventId, stage.getEventId())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "Competition stage does not belong to the current event");
+    }
+    requireEventWorkType(principal.getTenantId(), eventId, req.eventWorkTypeId());
+    CompetitionScoreRuleEntity scope = new CompetitionScoreRuleEntity();
+    scope.setEventId(eventId);
+    scope.setStageId(req.stageId());
+    scope.setEventWorkTypeId(req.eventWorkTypeId());
+    scope.setStatus(PUBLISHED);
+    return scope;
+  }
+
   private CompetitionEventWorkTypeEntity requireEventWorkType(
       Long tenantId, Long eventId, Long eventWorkTypeId) {
     CompetitionEventWorkTypeEntity eventWorkType =
@@ -434,14 +460,6 @@ public class CompetitionTheoryPaperApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "赛事工种不属于当前赛事");
     }
     return eventWorkType;
-  }
-
-  private CompetitionTheoryRequirementEntity requireRequirement(Long tenantId, Long ruleId) {
-    CompetitionTheoryRequirementEntity requirement = findRequirement(tenantId, ruleId);
-    if (requirement == null) {
-      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "评分规则尚未配置理论考试要求");
-    }
-    return requirement;
   }
 
   private CompetitionTheoryRequirementEntity findRequirement(Long tenantId, Long ruleId) {
@@ -469,6 +487,20 @@ public class CompetitionTheoryPaperApplicationService {
     if (expected == null || actual == null || expected.compareTo(actual) != 0) {
       throw new BusinessException(
           ErrorCode.UNPROCESSABLE_ENTITY, name + "不符合竞赛理论考试要求");
+    }
+  }
+
+  private void requirePairEqual(Object expected, Object actual, String name) {
+    if (!Objects.equals(expected, actual)) {
+      throw new BusinessException(
+          ErrorCode.UNPROCESSABLE_ENTITY, name + "不一致");
+    }
+  }
+
+  private void requirePairDecimal(BigDecimal expected, BigDecimal actual, String name) {
+    if (expected == null || actual == null || expected.compareTo(actual) != 0) {
+      throw new BusinessException(
+          ErrorCode.UNPROCESSABLE_ENTITY, name + "不一致");
     }
   }
 

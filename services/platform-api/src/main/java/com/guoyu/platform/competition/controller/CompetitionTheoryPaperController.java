@@ -6,6 +6,7 @@ import com.guoyu.platform.competition.dto.CompetitionTheoryPaperImportReq;
 import com.guoyu.platform.competition.dto.CompetitionTheoryRequirementUpsertReq;
 import com.guoyu.platform.competition.service.CompetitionTheoryPaperApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionTheoryCourseSourceVO;
+import com.guoyu.platform.competition.vo.CompetitionTheoryPaperPreviewVO;
 import com.guoyu.platform.competition.vo.CompetitionTheoryPaperSnapshotVO;
 import com.guoyu.platform.competition.vo.CompetitionTheoryPaperSourceVO;
 import com.guoyu.platform.competition.vo.CompetitionTheoryRequirementVO;
@@ -76,6 +77,14 @@ public class CompetitionTheoryPaperController {
       @RequestParam(required = false) Long scoreRuleId) {
     return ApiResponse.ok(
         service.listSnapshots(eventId, stageId, eventWorkTypeId, scoreRuleId));
+  }
+
+  @GetMapping("/events/{eventId}/theory-exam/paper-snapshots/{snapshotId}/preview")
+  @PreAuthorize("hasAuthority('competition:theory-paper:view')")
+  public ApiResponse<CompetitionTheoryPaperPreviewVO> previewSnapshot(
+      @PathVariable Long eventId,
+      @PathVariable Long snapshotId) {
+    return ApiResponse.ok(service.previewSnapshot(eventId, snapshotId));
   }
 
   @PostMapping("/events/{eventId}/theory-exam/paper-snapshots/import")

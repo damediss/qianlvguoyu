@@ -70,15 +70,29 @@ class CompetitionTheoryPaperSchemaContractTest {
         .contains("AND rp.role_id = 2000");
   }
 
+  @Test
+  void coursePaperSnapshotsDoNotRequireCompetitionTheoryRequirement() throws IOException {
+    assertThat(migration()).contains("MODIFY COLUMN requirement_id BIGINT NULL");
+  }
+
+  @Test
+  void coursePaperSnapshotsDoNotRequireCompetitionScoreRule() throws IOException {
+    assertThat(migration()).contains("MODIFY COLUMN score_rule_id BIGINT NULL");
+  }
+
   private String migration() throws IOException {
     try (var input = getClass().getClassLoader().getResourceAsStream(
         "db/migration/V20260801_002__create_competition_theory_paper_snapshots.sql");
          var additiveInput = getClass().getClassLoader().getResourceAsStream(
-             "db/migration/V20260802_003__extend_competition_scoring_to_levels.sql")) {
+             "db/migration/V20260802_003__extend_competition_scoring_to_levels.sql");
+         var decouplingInput = getClass().getClassLoader().getResourceAsStream(
+             "db/migration/V20260810_003__allow_competition_theory_paper_import_without_score_rule.sql")) {
       assertThat(input).isNotNull();
       assertThat(additiveInput).isNotNull();
+      assertThat(decouplingInput).isNotNull();
       return new String(input.readAllBytes(), StandardCharsets.UTF_8)
-          + "\n" + new String(additiveInput.readAllBytes(), StandardCharsets.UTF_8);
+          + "\n" + new String(additiveInput.readAllBytes(), StandardCharsets.UTF_8)
+          + "\n" + new String(decouplingInput.readAllBytes(), StandardCharsets.UTF_8);
     }
   }
 

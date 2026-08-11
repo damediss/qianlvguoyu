@@ -154,6 +154,10 @@ public final class PracticalScoringModels {
   ) {
   }
 
+  /** Result of closing a practical scoring task and releasing its assessor-group bindings. */
+  public record CompleteTaskView(int releasedGroups, int releasedAssessors) {
+  }
+
   public record ImportPaperView(
       Long paperId,
       String title,

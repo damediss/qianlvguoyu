@@ -21,7 +21,8 @@ MCP 工具服务，供 AI 在授权范围内调用平台能力。本目录是仓
 - 传输方式：Streamable HTTP 使用 `/mcp`；兼容旧版 SSE，使用 `/sse` 和 `/messages`
 - 入站认证：`Authorization: Bearer <MCP_BEARER_TOKEN>`
 - 上游调用：只调用 `platform-api`，不直接连接 MySQL
-- 平台鉴权：向平台发送 `Authorization: Bearer ${PLATFORM_API_TOKEN}` 和 `X-Tenant-Id: ${PLATFORM_TENANT_ID}`
+- 平台鉴权：使用服务账号自动登录拿 token；请求带 `Authorization: Bearer <accessToken>` 和 `X-Tenant-Id`
+- Token 过期（HTTP 401）时 MCP 自动重新登录并重试一次，无需手工更新 `PLATFORM_API_TOKEN`
 
 已提供工具：
 
@@ -32,7 +33,29 @@ MCP 工具服务，供 AI 在授权范围内调用平台能力。本目录是仓
 
 ## 本地启动
 
-参见 `.env.example` 配置环境变量。缺少必需 Token 时，服务会主动快速失败，避免以不完整配置启动。
+参见 `.env.example` 配置环境变量。
+
+必需项：
+
+| 变量 | 说明 |
+| --- | --- |
+| `MCP_BEARER_TOKEN` | WeKnora / 调用方访问本 MCP 的入站 Bearer |
+| `PLATFORM_API_BASE_URL` | 平台 API 根路径，例如 `http://localhost:8080/api` |
+| `PLATFORM_TENANT_CODE` | 租户 **编码**（如 `demo`），不是展示名「千铝工投」 |
+| `PLATFORM_API_USERNAME` | 服务账号用户名，需具备 `certification.dashboard.view` |
+| `PLATFORM_API_PASSWORD` | 服务账号密码 |
+
+可选项：
+
+| 变量 | 说明 |
+| --- | --- |
+| `PLATFORM_API_TOKEN` | 启动时缓存的平台 token；可空，首次请求会自动登录 |
+| `PLATFORM_TENANT_ID` | 启动时缓存的租户 ID；登录成功后以响应为准覆盖 |
+| `PLATFORM_REQUEST_TIMEOUT_MS` | 上游超时，默认 10000 |
+
+缺少必需账号配置时，服务会主动快速失败，避免以不完整配置启动。
+
+生产若用 PM2：`ecosystem.config.cjs` 的 `env` 与 `.env` 需同步写入上述账号变量；`config` 会在启动时从 cwd `.env` 补齐空缺项。`PLATFORM_API_TOKEN` 可留空或填任意失效值，首次业务请求会自动登录。
 
 ```powershell
 cd services/mcp-server

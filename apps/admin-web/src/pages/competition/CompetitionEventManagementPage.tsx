@@ -804,14 +804,12 @@ type CompetitionWorkTypeOption = {
 
 function flattenExamWorkTypes(
   nodes: ExamWorkType[],
-  parentPath = '',
 ): Array<{ id: number; label: string; title: string; status: number }> {
   return nodes.flatMap((node) => {
-    const label = parentPath ? `${parentPath} / ${node.title}` : node.title;
-    return [
-      { id: node.id, label, title: node.title, status: node.status },
-      ...flattenExamWorkTypes(node.children || [], label),
-    ];
+    if (node.children?.length) {
+      return flattenExamWorkTypes(node.children);
+    }
+    return [{ id: node.id, label: node.title, title: node.title, status: node.status }];
   });
 }
 

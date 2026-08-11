@@ -20,7 +20,8 @@ import {
 import { useUnsavedChangesBlocker } from '../../hooks/useUnsavedChangesBlocker';
 import './CompetitionEventManagementPage.css';
 import { CompetitionEventFrame } from './CompetitionEventFrame';
-import { stageContentConfigsAreValid } from './stage-planning/StageContentPanel';
+import { CompetitionTheoryExamPage } from './CompetitionTheoryExamPage';
+import { selectedContentTypes, stageContentConfigsAreValid } from './stage-planning/StageContentPanel';
 import { StageInspector } from './stage-planning/StageInspector';
 import { StageNodeLibrary } from './stage-planning/StageNodeLibrary';
 import { StagePlanningCanvas } from './stage-planning/StagePlanningCanvas';
@@ -38,7 +39,6 @@ import type {
   CompetitionWorkTypeStageConfig,
 } from '../../types/competition';
 import type { StageDraftSavePayload } from '../../types/competitionStagePlanning';
-import { buildCompetitionTheoryWorkbenchPath } from '../../routes/competitionRoute';
 
 function errorText(error: unknown, fallback = '保存失败，请刷新后重试') {
   return error instanceof Error ? error.message : fallback;
@@ -81,6 +81,10 @@ export function CompetitionStagePlanningPage({
   const queryClient = useQueryClient();
   const [validationOpen, setValidationOpen] = useState(false);
   const [validationIssues, setValidationIssues] = useState<StageValidationIssue[]>([]);
+  const [theoryWorkbench, setTheoryWorkbench] = useState<{
+    stageId: string;
+    eventWorkTypeId?: string;
+  } | null>(null);
   const [promotionDraft, setPromotionDraft] = useState<CompetitionWorkTypeStageConfig[]>([]);
   const [promotionDirty, setPromotionDirty] = useState(false);
   const fitViewRef = useRef<() => void>(() => undefined);
@@ -157,6 +161,10 @@ export function CompetitionStagePlanningPage({
   const selectedStageContents = draft.selectedNode && isBusinessStageNode(draft.selectedNode)
     ? draft.selectedNode.data.contents ?? selectedStageWorkspaceQuery.data?.contents ?? []
     : [];
+  const stageContentTypesByNodeId = useMemo(() => {
+    if (!draft.selectedNode || !isBusinessStageNode(draft.selectedNode)) return {};
+    return { [draft.selectedNode.id]: selectedContentTypes(selectedStageContents) };
+  }, [draft.selectedNode, selectedStageContents]);
   const onStageContentTypeClick = useCallback((nodeId: string, contentType: CompetitionStageContentType) => {
     if (contentType !== 'theory') return;
     const node = draft.nodes.find((item) => item.id === nodeId);
@@ -164,12 +172,13 @@ export function CompetitionStagePlanningPage({
       message.warning('请先保存当前赛段草稿，再进入理论工作台');
       return;
     }
-    void onNavigate(buildCompetitionTheoryWorkbenchPath({
-      eventId,
-      stageId: node.data.stageId,
-      eventWorkTypeId,
-    }));
-  }, [draft.nodes, eventId, eventWorkTypeId, onNavigate]);
+    setTheoryWorkbench({
+      stageId: String(node.data.stageId),
+      eventWorkTypeId: eventWorkTypeId === undefined || eventWorkTypeId === null
+        ? undefined
+        : String(eventWorkTypeId),
+    });
+  }, [draft.nodes, eventWorkTypeId]);
   useEffect(() => {
     if (!eventWorkTypeId) {
       setPromotionDraft([]);
@@ -445,6 +454,7 @@ export function CompetitionStagePlanningPage({
           onAddStage={draft.addStage}
           onStageContextMenu={draft.selectNode}
           onStageContentTypeClick={onStageContentTypeClick}
+          stageContentTypesByNodeId={stageContentTypesByNodeId}
           onFitViewReady={onFitViewReady}
         />
         <StageInspector
@@ -481,6 +491,30 @@ export function CompetitionStagePlanningPage({
         destroyOnClose
       >
         <StageValidationPanel issues={validationIssues} onSelectIssue={onSelectValidationIssue} />
+      </Modal>
+
+      <Modal
+        title="理论配置"
+        open={Boolean(theoryWorkbench)}
+        onCancel={() => setTheoryWorkbench(null)}
+        footer={null}
+        centered
+        width="min(1440px, calc(100vw - 48px))"
+        className="stage-theory-workbench-modal"
+        styles={{ body: { maxHeight: 'calc(100vh - 132px)', overflowY: 'auto', padding: 0 } }}
+        destroyOnClose
+        data-testid="stage-theory-workbench-modal"
+      >
+        {theoryWorkbench && (
+          <CompetitionTheoryExamPage
+            eventId={eventId}
+            initialStageId={theoryWorkbench.stageId}
+            initialEventWorkTypeId={theoryWorkbench.eventWorkTypeId}
+            onNavigate={onNavigate}
+            embedded
+            stagePlanningEditor
+          />
+        )}
       </Modal>
     </>
   );

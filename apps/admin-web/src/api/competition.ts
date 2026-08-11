@@ -47,6 +47,7 @@ import type {
   CompetitionTheoryRequirement,
   CompetitionTheoryRequirementRequest,
   CompetitionTheoryCourseSource,
+  CompetitionTheoryPaperPreview,
   CompetitionTheoryPaperSource,
   CompetitionTheoryPaperSnapshot,
   CompetitionTheoryRoom,
@@ -645,9 +646,24 @@ export function listCompetitionTheoryPaperSnapshots(
   );
 }
 
+export function getCompetitionTheoryPaperPreview(
+  eventId: CompetitionId,
+  snapshotId: CompetitionId,
+) {
+  return unwrap<CompetitionTheoryPaperPreview>(
+    apiClient.get(`/competition/events/${eventId}/theory-exam/paper-snapshots/${snapshotId}/preview`),
+  );
+}
+
 export function importCompetitionTheoryPaperPair(
   eventId: CompetitionId,
-  payload: { scoreRuleId: CompetitionId; courseId: CompetitionId; paperAId: CompetitionId; paperBId: CompetitionId },
+  payload: {
+    stageId: CompetitionId;
+    eventWorkTypeId: CompetitionId;
+    courseId: CompetitionId;
+    paperAId: CompetitionId;
+    paperBId: CompetitionId;
+  },
 ) {
   return unwrap<CompetitionTheoryPaperSnapshot[]>(
     apiClient.post(`/competition/events/${eventId}/theory-exam/paper-snapshots/import`, payload),

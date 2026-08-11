@@ -103,9 +103,18 @@ export function TabletAssessorApp() {
     },
   });
 
+  // A response started before a leader switches tasks can arrive afterwards. Never render that
+  // stale task in the tablet list; opening it would fail the server-side context check.
+  const visibleExams = useMemo(() => {
+    const activeWorkbenchTaskId = workbenchContextQuery.data?.activeTaskId;
+    return activeWorkbenchTaskId
+      ? (examsQuery.data || []).filter((exam) => exam.taskId === activeWorkbenchTaskId)
+      : [];
+  }, [examsQuery.data, workbenchContextQuery.data?.activeTaskId]);
+
   const selectedExam = useMemo(
-    () => (examsQuery.data || []).find((exam) => examKey(exam) === selectedExamKey),
-    [examsQuery.data, selectedExamKey],
+    () => visibleExams.find((exam) => examKey(exam) === selectedExamKey),
+    [selectedExamKey, visibleExams],
   );
 
   const examQuery = useQuery({
@@ -123,10 +132,10 @@ export function TabletAssessorApp() {
   }, [activeTaskId, examQuery.data]);
 
   useEffect(() => {
-    if (!selectedExamKey && examsQuery.data?.length) {
-      setSelectedExamKey(examKey(examsQuery.data[0]));
+    if (!selectedExamKey && visibleExams.length) {
+      setSelectedExamKey(examKey(visibleExams[0]));
     }
-  }, [examsQuery.data, selectedExamKey]);
+  }, [selectedExamKey, visibleExams]);
 
   useEffect(() => {
     const currentTaskId = workbenchContextQuery.data?.activeTaskId;
@@ -445,7 +454,7 @@ export function TabletAssessorApp() {
           </div>
           <Spin spinning={examsQuery.isFetching}>
             <List
-              dataSource={examsQuery.data || []}
+              dataSource={visibleExams}
               locale={{ emptyText: <Empty description="暂无考试任务" /> }}
               renderItem={(exam) => (
                 <List.Item

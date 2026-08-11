@@ -35,15 +35,15 @@ interface StagePlanningCanvasProps {
   onAddStage: (stageType: StageType, position: { x: number; y: number }) => void;
   onStageContextMenu: (nodeId: string) => void;
   onStageContentTypeClick: (nodeId: string, contentType: CompetitionStageContentType) => void;
+  stageContentTypesByNodeId?: Readonly<Record<string, readonly CompetitionStageContentType[]>>;
   onFitViewReady: (fitView: () => void) => void;
 }
 
-function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, onNodesChange, onEdgesChange, onConnect, onSelectionChange, onAddStage, onStageContextMenu, onStageContentTypeClick, onFitViewReady }: StagePlanningCanvasProps) {
+function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, onNodesChange, onEdgesChange, onConnect, onSelectionChange, onAddStage, onStageContextMenu, onStageContentTypeClick, stageContentTypesByNodeId, onFitViewReady }: StagePlanningCanvasProps) {
   const { screenToFlowPosition, fitView } = useReactFlow<StageNode, StageEdge>();
   const [contextMenu, setContextMenu] = useState<{
     nodeId: string;
     position: { x: number; y: number };
-    enabledContentTypes: CompetitionStageContentType[];
   } | null>(null);
   const nodeTypes = useMemo(() => ({
     stage: (props: NodeProps<StageNode>) => <StageNodeComponent {...props} stagePlanConfirmed={stagePlanConfirmed} />,
@@ -59,9 +59,17 @@ function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, 
     setContextMenu({
       nodeId: node.id,
       position: { x: event.clientX, y: event.clientY },
-      enabledContentTypes: node.data.contents?.map((content) => content.contentType) ?? [],
     });
   }, [onStageContextMenu]);
+
+  const contextMenuNode = contextMenu
+    ? nodes.find((node) => node.id === contextMenu.nodeId)
+    : undefined;
+  const enabledContentTypes = contextMenuNode?.data.kind === 'stage'
+    ? contextMenuNode.data.contents?.map((content) => content.contentType)
+      ?? stageContentTypesByNodeId?.[contextMenuNode.id]
+      ?? []
+    : [];
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -118,7 +126,7 @@ function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, 
       {contextMenu && (
         <StageContextMenu
           position={contextMenu.position}
-          enabledContentTypes={contextMenu.enabledContentTypes}
+          enabledContentTypes={enabledContentTypes}
           onClose={closeContextMenu}
           onContentTypeClick={(contentType) => {
             const nodeId = contextMenu.nodeId;

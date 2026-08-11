@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { StageContextMenu } from '../src/pages/competition/stage-planning/StageContextMenu';
 import { StagePlanningCanvas } from '../src/pages/competition/stage-planning/StagePlanningCanvas';
+import type { CompetitionStageContentType } from '../src/types/competition';
 import type { StageNode } from '../src/types/competitionStagePlanning';
 
 const preliminaryNode: StageNode = {
@@ -21,7 +22,11 @@ const preliminaryNode: StageNode = {
   },
 };
 
-function renderCanvas(nodes: StageNode[], onStageContextMenu = vi.fn()) {
+function renderCanvas(
+  nodes: StageNode[],
+  onStageContextMenu = vi.fn(),
+  stageContentTypesByNodeId: Readonly<Record<string, readonly CompetitionStageContentType[]>> = {},
+) {
   const onStageContentTypeClick = vi.fn();
   render(
     <div style={{ width: 900, height: 700 }}>
@@ -37,6 +42,7 @@ function renderCanvas(nodes: StageNode[], onStageContextMenu = vi.fn()) {
         onAddStage={vi.fn()}
         onStageContextMenu={onStageContextMenu}
         onStageContentTypeClick={onStageContentTypeClick}
+        stageContentTypesByNodeId={stageContentTypesByNodeId}
         onFitViewReady={vi.fn()}
       />
     </div>,
@@ -68,6 +74,24 @@ describe('stage context menu', () => {
     expect(screen.getByText('实操配置')).toBeInTheDocument();
     expect(screen.getByText('仿真设置')).toBeInTheDocument();
     expect(onStageContextMenu).toHaveBeenCalledWith('stage:preliminary');
+  });
+
+  it('uses the selected stage workspace contents when the node has no local draft contents', async () => {
+    const nodeWithoutLocalContents: StageNode = {
+      ...preliminaryNode,
+      data: { ...preliminaryNode.data, contents: undefined },
+    };
+    renderCanvas([nodeWithoutLocalContents], vi.fn(), { 'stage:preliminary': ['theory'] });
+
+    fireEvent.contextMenu(await screen.findByTestId('stage-node-preliminary'), {
+      clientX: 240,
+      clientY: 280,
+    });
+
+    expect(await screen.findByText('理论配置')).toBeInTheDocument();
+    expect(screen.getByText('理论配置').closest('li')).not.toHaveClass('ant-dropdown-menu-submenu-disabled');
+    expect(screen.getByText('实操配置').closest('li')).toHaveClass('ant-dropdown-menu-submenu-disabled');
+    expect(screen.getByText('仿真设置').closest('li')).toHaveClass('ant-dropdown-menu-submenu-disabled');
   });
 
   it('does not open for a marker node', async () => {

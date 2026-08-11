@@ -9,7 +9,6 @@ import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
 import com.guoyu.platform.competition.entity.CompetitionScoreRuleEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageEntity;
-import com.guoyu.platform.competition.entity.CompetitionTheoryRequirementEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventStatus;
 import com.guoyu.platform.competition.enums.CompetitionScoreRuleStatus;
 import com.guoyu.platform.competition.enums.CompetitionTheoryTemplate;
@@ -17,7 +16,6 @@ import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreRuleMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStageMapper;
-import com.guoyu.platform.competition.mapper.CompetitionTheoryRequirementMapper;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -38,19 +36,15 @@ public class CompetitionScoreRuleDomainService {
   private final CompetitionEventMapper eventMapper;
   private final CompetitionStageMapper stageMapper;
   private final CompetitionEventWorkTypeMapper eventWorkTypeMapper;
-  private final CompetitionTheoryRequirementMapper theoryRequirementMapper;
-
   public CompetitionScoreRuleDomainService(
       CompetitionScoreRuleMapper scoreRuleMapper,
       CompetitionEventMapper eventMapper,
       CompetitionStageMapper stageMapper,
-      CompetitionEventWorkTypeMapper eventWorkTypeMapper,
-      CompetitionTheoryRequirementMapper theoryRequirementMapper) {
+      CompetitionEventWorkTypeMapper eventWorkTypeMapper) {
     this.scoreRuleMapper = scoreRuleMapper;
     this.eventMapper = eventMapper;
     this.stageMapper = stageMapper;
     this.eventWorkTypeMapper = eventWorkTypeMapper;
-    this.theoryRequirementMapper = theoryRequirementMapper;
   }
 
   @Transactional(readOnly = true)
@@ -157,16 +151,6 @@ public class CompetitionScoreRuleDomainService {
         entity.getScoringSystem(), entity.getTheoryTemplate(),
         entity.getTheoryWeight(), entity.getSimulationWeight(), entity.getPracticalWeight(),
         entity.getSimulationPracticalWeight());
-    Long requirementCount = theoryRequirementMapper.selectCount(
-        new LambdaQueryWrapper<CompetitionTheoryRequirementEntity>()
-            .eq(CompetitionTheoryRequirementEntity::getTenantId, tenantId)
-            .eq(CompetitionTheoryRequirementEntity::getScoreRuleId, ruleId)
-            .eq(CompetitionTheoryRequirementEntity::getDeleted, 0));
-    if (requirementCount == null || requirementCount != 1L) {
-      throw new BusinessException(
-          ErrorCode.UNPROCESSABLE_ENTITY, "发布评分规则前必须配置唯一的理论考试要求");
-    }
-
     List<CompetitionScoreRuleEntity> published = scoreRuleMapper.selectPublishedForUpdate(
         tenantId, entity.getEventId(), entity.getStageId(), entity.getEventWorkTypeId());
     if (published == null) {
@@ -313,10 +297,11 @@ public class CompetitionScoreRuleDomainService {
     if (!SCORING_SYSTEM_B.equals(normalizeScoringSystem(scoringSystem))) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "本期仅支持赛制B");
     }
-    if (!CompetitionTheoryTemplate.supports(normalizeTemplate(theoryTemplate))) {
+    String normalizedTemplate = normalizeTemplate(theoryTemplate);
+    if (normalizedTemplate != null && !CompetitionTheoryTemplate.supports(normalizedTemplate)) {
       throw new BusinessException(
           ErrorCode.UNPROCESSABLE_ENTITY,
-          "发布前必须选择THEORY_90、THEORY_120或CUSTOM理论模板");
+          "理论模板仅支持THEORY_90、THEORY_120或CUSTOM");
     }
     if (simulationWeight != null || practicalWeight != null) {
       if (theoryWeight == null || simulationWeight == null || practicalWeight == null) {

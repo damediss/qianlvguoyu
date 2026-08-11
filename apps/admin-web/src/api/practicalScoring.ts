@@ -7,6 +7,7 @@ import type {
   AssessorScoringTaskDetail,
   PracticalAdjustScorePayload,
   PracticalBatchGenerateResult,
+  PracticalCompleteTaskResult,
   PracticalGenerateResult,
   PracticalImportPaperResult,
   PracticalSaveScorePayload,
@@ -80,6 +81,10 @@ export function importPracticalPaper(taskId: string, file: File) {
 
 export function getPracticalScoringProgress(taskId: string) {
   return unwrap<PracticalScoringProgress>(apiClient.get(`${adminBase}/tasks/${taskId}/progress`));
+}
+
+export function completePracticalScoringTask(taskId: string) {
+  return unwrap<PracticalCompleteTaskResult>(apiClient.post(`${adminBase}/tasks/${taskId}/complete`));
 }
 
 export function exportPracticalSummary(taskId: string, candidateIds: string[]) {

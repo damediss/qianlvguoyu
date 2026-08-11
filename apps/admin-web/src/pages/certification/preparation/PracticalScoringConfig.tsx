@@ -31,6 +31,7 @@ import {
 } from '../../../api/certificationPreparation';
 import {
   batchLinkPracticalCandidateTemplates,
+  completePracticalScoringTask,
   adjustPracticalScoringTaskScore,
   exportPracticalSummary,
   getPracticalScoringTaskDetail,
@@ -46,6 +47,7 @@ import type {
 } from '../../../types/certificationPreparation';
 import type {
   PracticalCandidateProgress,
+  PracticalCompleteTaskResult,
   PracticalPaperOption,
   PracticalScoreItem,
   PracticalScopeOption,
@@ -338,6 +340,13 @@ export function PracticalScoringConfig({
       message.success('实操评分表已生成');
     },
   });
+  const completeTaskMutation = useMutation({
+    mutationFn: () => completePracticalScoringTask(taskId!),
+    onSuccess: (result: PracticalCompleteTaskResult) => {
+      message.success(`评分任务已完成，已释放 ${result.releasedGroups} 个考评组、${result.releasedAssessors} 名考评员`);
+      refresh();
+    },
+  });
 
   if (!taskId) return <Typography.Text type="secondary">请选择认定任务。</Typography.Text>;
 
@@ -571,6 +580,23 @@ export function PracticalScoringConfig({
       {showProgress && (
         <ProCard title="评分进度">
           <Space wrap style={{ marginBottom: 16 }}>
+            <Button
+              type="primary"
+              danger
+              loading={completeTaskMutation.isPending}
+              onClick={() => {
+                Modal.confirm({
+                  title: '确认完成评分任务？',
+                  content: '仅全部考生实操成绩已完成或已标记缺考时可执行。完成后将释放本任务考生所绑定考评组的考评员，历史评分记录会保留。',
+                  okText: '完成任务并释放考评员',
+                  cancelText: '取消',
+                  okButtonProps: { danger: true },
+                  onOk: () => completeTaskMutation.mutateAsync(),
+                });
+              }}
+            >
+              完成任务
+            </Button>
             <Button
               icon={<DownloadOutlined />}
               disabled={selectedSummaryCandidateIds.length === 0}

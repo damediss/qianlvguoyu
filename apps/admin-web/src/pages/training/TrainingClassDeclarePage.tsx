@@ -148,7 +148,7 @@ export function TrainingClassDeclarePage() {
     return groups.flatMap((g: { title: string; options?: { id: number; title: string }[] }) =>
       (g.options ?? []).map((o: { id: number; title: string }) => ({
         value: o.id,
-        label: `${g.title} / ${o.title}`,
+        label: o.title,
       })),
     );
   }, [publicData]);

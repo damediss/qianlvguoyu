@@ -1,5 +1,6 @@
 import {
   DownloadOutlined,
+  EyeOutlined,
   PlusOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
@@ -28,14 +29,14 @@ import {
   message,
 } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   createCompetitionTheorySchedule,
   deleteCompetitionTheoryRoom,
   deleteCompetitionTheorySession,
   downloadCompetitionTheoryRoster,
   getCompetitionEvent,
-  getCompetitionTheoryRequirement,
+  getCompetitionTheoryPaperPreview,
   getCompetitionTheorySchedule,
   getCompetitionTheorySchedulePreflight,
   importCompetitionTheoryPaperPair,
@@ -54,22 +55,21 @@ import {
   randomAllocateCompetitionTheorySchedule,
   saveCompetitionTheoryRoom,
   saveCompetitionTheorySession,
-  updateCompetitionTheoryRequirement,
   withdrawCompetitionTheorySchedule,
 } from '../../api/competition';
 import { useAuthStore } from '../../stores/authStore';
 import type {
   CompetitionId,
   CompetitionTheoryMonitor,
-  CompetitionTheoryRequirementRequest,
+  CompetitionTheoryPaperPreview,
   CompetitionTheoryRoom,
   CompetitionTheorySession,
 } from '../../types/competition';
 import { CompetitionEventFrame } from './CompetitionEventFrame';
 import './CompetitionEventManagementPage.css';
 
-type RequirementFormValues = CompetitionTheoryRequirementRequest;
 type RoomFormValues = Omit<CompetitionTheoryRoom, 'id' | 'eventId'>;
+type ImportFormValues = { paperIds: CompetitionId[] };
 type SessionFormValues = {
   sessionCode: 'A' | 'B';
   sessionName: string;
@@ -78,6 +78,22 @@ type SessionFormValues = {
   roomIds: CompetitionId[];
 };
 type MonitorAction = 'force-offline' | 'force-submit' | 'restore-absence';
+
+const questionTypeLabels: Record<string, string> = {
+  single: '单选题',
+  multi: '多选题',
+  multiple: '多选题',
+  judge: '判断题',
+};
+
+const previewQuestionText = (value?: string) => {
+  if (!value) return '';
+  const source = value
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/(?:p|div|li|h[1-6])>/gi, ' ');
+  const parsed = new DOMParser().parseFromString(source, 'text/html');
+  return (parsed.body.textContent ?? '').replace(/\s+/g, ' ').trim();
+};
 
 const monitorActionLabel: Record<MonitorAction, string> = {
   'force-offline': '强制下线',
@@ -91,6 +107,10 @@ function idValue(value?: CompetitionId | null) {
 
 function formatDate(value?: string | null) {
   return value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-';
+}
+
+function questionTypeText(value?: string | null) {
+  return value ? questionTypeLabels[value] || value : '-';
 }
 
 function statusTag(status?: string | null) {
@@ -123,12 +143,14 @@ export function CompetitionTheoryExamPage({
   initialStageId,
   initialEventWorkTypeId,
   embedded = false,
+  stagePlanningEditor = false,
 }: {
   eventId: string;
   onNavigate: (path: string) => void;
   initialStageId?: string;
   initialEventWorkTypeId?: string;
   embedded?: boolean;
+  stagePlanningEditor?: boolean;
 }) {
   const permissions = useAuthStore((state) => state.permissionCodes);
   const canViewEvent = permissions.includes('competition:event:view');
@@ -144,8 +166,8 @@ export function CompetitionTheoryExamPage({
   const canRestoreAbsence = permissions.includes('competition:theory-monitor:restore-absence');
   const canViewResults = permissions.includes('competition:theory-result:view');
   const canReadDimensions = permissions.includes('competition:stage:view')
-    && permissions.includes('competition:event-work-type:view')
-    && permissions.includes('competition:score-rule:view');
+    && permissions.includes('competition:event-work-type:view');
+  const canReadScoreRules = permissions.includes('competition:score-rule:view');
   const hasWorkspacePermission = canViewPaper || canViewSchedule || canViewMonitor || canViewResults;
 
   const [activeTab, setActiveTab] = useState('paper');
@@ -154,7 +176,7 @@ export function CompetitionTheoryExamPage({
   const [scoreRuleId, setScoreRuleId] = useState<string>();
   const [courseId, setCourseId] = useState<string>();
   const [selectedVersionId, setSelectedVersionId] = useState<string>();
-  const [requirementOpen, setRequirementOpen] = useState(false);
+  const [previewSnapshotId, setPreviewSnapshotId] = useState<string>();
   const [importOpen, setImportOpen] = useState(false);
   const [roomOpen, setRoomOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<CompetitionTheoryRoom>();
@@ -162,14 +184,14 @@ export function CompetitionTheoryExamPage({
   const [editingSession, setEditingSession] = useState<CompetitionTheorySession>();
   const [monitorAction, setMonitorAction] = useState<{ action: MonitorAction; record: CompetitionTheoryMonitor }>();
   const [withdrawOpen, setWithdrawOpen] = useState(false);
-  const [requirementForm] = Form.useForm<RequirementFormValues>();
-  const [importForm] = Form.useForm<{ paperAId: CompetitionId; paperBId: CompetitionId }>();
+  const [importForm] = Form.useForm<ImportFormValues>();
   const [roomForm] = Form.useForm<RoomFormValues>();
   const [sessionForm] = Form.useForm<SessionFormValues>();
   const [actionForm] = Form.useForm<{ reason: string; confirmation: string }>();
   const [withdrawForm] = Form.useForm<{ reason: string }>();
   const queryClient = useQueryClient();
   const scopeReady = Boolean(stageId && eventWorkTypeId && scoreRuleId);
+  const paperScopeReady = Boolean(stageId && eventWorkTypeId);
 
   const eventQuery = useQuery({
     queryKey: ['competition-event', eventId],
@@ -189,7 +211,7 @@ export function CompetitionTheoryExamPage({
   const rulesQuery = useQuery({
     queryKey: ['competition-score-rules', eventId, stageId, eventWorkTypeId],
     queryFn: () => listCompetitionScoreRules(eventId, { stageId, eventWorkTypeId }),
-    enabled: canReadDimensions && Boolean(stageId && eventWorkTypeId),
+    enabled: canReadScoreRules && Boolean(stageId && eventWorkTypeId),
   });
 
   useEffect(() => {
@@ -214,11 +236,6 @@ export function CompetitionTheoryExamPage({
     }
   }, [rulesQuery.data, scoreRuleId]);
 
-  const requirementQuery = useQuery({
-    queryKey: ['competition-theory-requirement', scoreRuleId],
-    queryFn: () => getCompetitionTheoryRequirement(scoreRuleId!),
-    enabled: canViewPaper && Boolean(scoreRuleId),
-  });
   const coursesQuery = useQuery({
     queryKey: ['competition-theory-courses', eventId, eventWorkTypeId],
     queryFn: () => listCompetitionTheoryCourses(eventId, eventWorkTypeId!),
@@ -236,9 +253,14 @@ export function CompetitionTheoryExamPage({
     enabled: canViewPaper && Boolean(eventWorkTypeId && courseId),
   });
   const snapshotsQuery = useQuery({
-    queryKey: ['competition-theory-paper-snapshots', eventId, stageId, eventWorkTypeId, scoreRuleId],
-    queryFn: () => listCompetitionTheoryPaperSnapshots(eventId, { stageId, eventWorkTypeId, scoreRuleId }),
-    enabled: canViewPaper && scopeReady,
+    queryKey: ['competition-theory-paper-snapshots', eventId, stageId, eventWorkTypeId],
+    queryFn: () => listCompetitionTheoryPaperSnapshots(eventId, { stageId, eventWorkTypeId }),
+    enabled: canViewPaper && paperScopeReady,
+  });
+  const previewQuery = useQuery<CompetitionTheoryPaperPreview>({
+    queryKey: ['competition-theory-paper-preview', eventId, previewSnapshotId],
+    queryFn: () => getCompetitionTheoryPaperPreview(eventId, previewSnapshotId!),
+    enabled: canViewPaper && Boolean(previewSnapshotId),
   });
   const roomsQuery = useQuery({
     queryKey: ['competition-theory-rooms', eventId],
@@ -286,20 +308,16 @@ export function CompetitionTheoryExamPage({
     ]);
   };
 
-  const requirementMutation = useMutation({
-    mutationFn: (payload: RequirementFormValues) => updateCompetitionTheoryRequirement(scoreRuleId!, payload),
-    onSuccess: () => {
-      message.success('组卷要求已保存');
-      setRequirementOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['competition-theory-requirement', scoreRuleId] });
-    },
-  });
   const importMutation = useMutation({
-    mutationFn: (values: { paperAId: CompetitionId; paperBId: CompetitionId }) => importCompetitionTheoryPaperPair(eventId, {
-      scoreRuleId: scoreRuleId!, courseId: courseId!, ...values,
+    mutationFn: (values: ImportFormValues) => importCompetitionTheoryPaperPair(eventId, {
+      stageId: stageId!,
+      eventWorkTypeId: eventWorkTypeId!,
+      courseId: courseId!,
+      paperAId: values.paperIds[0],
+      paperBId: values.paperIds[1],
     }),
     onSuccess: () => {
-      message.success('A/B 卷已固化为竞赛快照');
+      message.success('试卷已导入并生成快照');
       setImportOpen(false);
       importForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ['competition-theory-paper-snapshots'] });
@@ -373,9 +391,14 @@ export function CompetitionTheoryExamPage({
   });
 
   const selectedSchedule = scheduleQuery.data;
-  const paperOptions = (sourcePapersQuery.data || []).map((paper) => ({
-    label: `${paper.paperTitle}（${paper.questionCount}题 / ${paper.totalScore}分）`, value: idValue(paper.paperId),
+  const completedSourcePapers = (sourcePapersQuery.data || []).filter((paper) => paper.questionCount > 0);
+  const paperOptions = completedSourcePapers.map((paper) => ({
+    label: `${paper.planTitle}（${paper.paperTitle} · ${paper.questionCount}题 / ${paper.totalScore}分）`,
+    value: idValue(paper.paperId),
   }));
+  const sourcePlanTitleById = new Map(
+    (sourcePapersQuery.data || []).map((paper) => [idValue(paper.planId), paper.planTitle]),
+  );
   const snapshotOptions = (snapshotsQuery.data || []).map((snapshot) => ({
     label: `${snapshot.paperCode}卷 v${snapshot.versionNo} · ${snapshot.sourceTitle}`,
     value: idValue(snapshot.id),
@@ -391,47 +414,22 @@ export function CompetitionTheoryExamPage({
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       {!canViewPaper ? <Result status="403" title="暂无试卷管理查看权限" /> : (
         <>
-          <Card size="small" title="组卷要求" extra={canManagePaper && <Button onClick={() => {
-            const requirement = requirementQuery.data;
-            requirementForm.setFieldsValue(requirement ? {
-              templateCode: requirement.templateCode,
-              durationMinutes: requirement.durationMinutes,
-              singleCount: requirement.singleCount,
-              singleScore: requirement.singleScore,
-              multiCount: requirement.multiCount,
-              multiScore: requirement.multiScore,
-              judgeCount: requirement.judgeCount,
-              judgeScore: requirement.judgeScore,
-              totalScore: requirement.totalScore,
-              passScore: requirement.passScore,
-            } : { templateCode: 'A_B', durationMinutes: 60, singleCount: 40, singleScore: 1, multiCount: 10, multiScore: 2, judgeCount: 40, judgeScore: 1, totalScore: 100, passScore: 60 });
-            setRequirementOpen(true);
-          }}>配置要求</Button>}>
-            {requirementQuery.data ? (
-              <Descriptions size="small" column={4}>
-                <Descriptions.Item label="模板">{requirementQuery.data.templateCode}</Descriptions.Item>
-                <Descriptions.Item label="时长">{requirementQuery.data.durationMinutes} 分钟</Descriptions.Item>
-                <Descriptions.Item label="单选">{requirementQuery.data.singleCount} × {requirementQuery.data.singleScore}</Descriptions.Item>
-                <Descriptions.Item label="多选">{requirementQuery.data.multiCount} × {requirementQuery.data.multiScore}</Descriptions.Item>
-                <Descriptions.Item label="判断">{requirementQuery.data.judgeCount} × {requirementQuery.data.judgeScore}</Descriptions.Item>
-                <Descriptions.Item label="总分">{requirementQuery.data.totalScore}</Descriptions.Item>
-                <Descriptions.Item label="及格线">{requirementQuery.data.passScore}</Descriptions.Item>
-              </Descriptions>
-            ) : <Alert type="warning" showIcon message="当前评分规则尚未配置理论组卷要求" />}
-          </Card>
-          <Card size="small" title="A/B 卷快照" extra={canManagePaper && <Button type="primary" icon={<PlusOutlined />} disabled={!requirementQuery.data || !courseId} onClick={() => setImportOpen(true)}>导入 A/B 卷</Button>}>
+          <Card size="small" title="试卷快照" extra={canManagePaper && <Button type="primary" icon={<PlusOutlined />} disabled={!courseId} onClick={() => { importForm.resetFields(); setImportOpen(true); }}>导入试卷</Button>}>
             <Space wrap style={{ marginBottom: 12 }}>
               <Select style={{ width: 360 }} placeholder="选择题库课程" value={courseId} onChange={(value) => { setCourseId(value); importForm.resetFields(); }} options={(coursesQuery.data || []).map((course) => ({ label: `${course.title}${course.version ? ` · ${course.version}` : ''}`, value: idValue(course.courseId) }))} />
             </Space>
+            {!sourcePapersQuery.isLoading && completedSourcePapers.length === 0 && <Alert style={{ marginBottom: 12 }} type="info" showIcon message="当前课程暂无已完成且包含试题的组卷计划" />}
             <Table rowKey={(row) => idValue(row.id)} size="small" pagination={false} dataSource={snapshotsQuery.data || []} columns={[
               { title: '试卷', dataIndex: 'paperCode', width: 70, render: (value) => <Tag color={value === 'A' ? 'blue' : 'purple'}>{value} 卷</Tag> },
               { title: '版本', dataIndex: 'versionNo', width: 80, render: (value) => `v${value}` },
-              { title: '来源标题', dataIndex: 'sourceTitle' },
+              { title: '组卷计划', dataIndex: 'sourcePlanId', render: (value, row) => sourcePlanTitleById.get(idValue(value)) || row.sourceTitle || '-' },
+              { title: '来源试卷', dataIndex: 'sourceTitle' },
               { title: '题量', dataIndex: 'questionCount', width: 80 },
               { title: '总分', dataIndex: 'totalScore', width: 80 },
               { title: '时长', dataIndex: 'durationMinutes', width: 90, render: (value) => `${value} 分钟` },
               { title: '状态', dataIndex: 'status', width: 100, render: statusTag },
               { title: '固化时间', dataIndex: 'importedAt', width: 175, render: formatDate },
+              { title: '操作', width: 90, render: (_, row) => <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setPreviewSnapshotId(idValue(row.id))}>预览</Button> },
             ]} />
           </Card>
         </>
@@ -532,53 +530,101 @@ export function CompetitionTheoryExamPage({
     <>
       <Card bordered={false} className="competition-filter-card competition-filter-card--workspace">
         <div className="competition-filter-card__head">
-          <div><Typography.Title level={4}>理论试卷与考试执行</Typography.Title><Typography.Text type="secondary">按阶段、工种与已发布评分规则管理竞赛专用理论考试</Typography.Text></div>
+          <div><Typography.Title level={4}>理论试卷与考试执行</Typography.Title><Typography.Text type="secondary">按阶段、工种与课程组卷计划管理竞赛专用理论试卷</Typography.Text></div>
           <Tag color="blue"><SafetyCertificateOutlined /> 专用考试身份域</Tag>
         </div>
         <Space wrap className="competition-filter-card__body">
           <Select style={{ width: 220 }} placeholder="选择阶段" value={stageId} onChange={(value) => { setStageId(value); setScoreRuleId(undefined); }} options={(stagesQuery.data?.items || []).map((stage) => ({ label: stage.name, value: idValue(stage.id) }))} />
           <Select style={{ width: 220 }} placeholder="选择工种" value={eventWorkTypeId} onChange={(value) => { setEventWorkTypeId(value); setScoreRuleId(undefined); }} options={(workTypesQuery.data || []).map((workType) => ({ label: workType.displayName || workType.workTypeName || idValue(workType.id), value: idValue(workType.id) }))} />
-          <Select style={{ width: 260 }} placeholder="选择评分规则" value={scoreRuleId} onChange={setScoreRuleId} options={(rulesQuery.data || []).map((rule) => ({ label: `v${rule.ruleVersion} · ${rule.status}`, value: idValue(rule.id) }))} />
-          <Select style={{ width: 190 }} placeholder="选择排考版本" allowClear value={selectedVersionId} onChange={setSelectedVersionId} options={versionOptions} />
+          {activeTab === 'schedule' && canReadScoreRules && <Select style={{ width: 260 }} placeholder="选择评分规则" value={scoreRuleId} onChange={setScoreRuleId} options={(rulesQuery.data || []).map((rule) => ({ label: `v${rule.ruleVersion} · ${rule.status}`, value: idValue(rule.id) }))} />}
+          {!stagePlanningEditor && <Select style={{ width: 190 }} placeholder="选择排考版本" allowClear value={selectedVersionId} onChange={setSelectedVersionId} options={versionOptions} />}
         </Space>
       </Card>
-      {!canReadDimensions && <Alert type="warning" showIcon message="缺少阶段、工种或评分规则查看权限，无法选择考试范围。" />}
+      {!canReadDimensions && <Alert type="warning" showIcon message="缺少阶段或工种查看权限，无法选择考试范围。" />}
       <Card bordered={false} className="competition-table-card" style={{ marginTop: 16 }}>
-        <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
-          { key: 'paper', label: '试卷', children: paperContent },
-          { key: 'schedule', label: '排考', children: scheduleContent },
-          { key: 'roster', label: '名册', children: rosterContent },
-          { key: 'monitor', label: '监考', children: monitorContent },
-        ]} />
+        {stagePlanningEditor ? paperContent : (
+          <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
+            { key: 'paper', label: '试卷', children: paperContent },
+            { key: 'schedule', label: '排考', children: scheduleContent },
+            { key: 'roster', label: '名册', children: rosterContent },
+            { key: 'monitor', label: '监考', children: monitorContent },
+          ]} />
+        )}
       </Card>
 
-      <Modal title="配置组卷要求" open={requirementOpen} onCancel={() => setRequirementOpen(false)} onOk={() => requirementForm.submit()} confirmLoading={requirementMutation.isPending} destroyOnClose>
-        <Form form={requirementForm} layout="vertical" onFinish={(values) => requirementMutation.mutate(values)}>
-          <Form.Item name="templateCode" label="模板编码" rules={[{ required: true }]}><Input /></Form.Item>
-          <Space wrap>
-            <Form.Item name="durationMinutes" label="时长（分钟）" rules={[{ required: true }]}><InputNumber min={1} /></Form.Item>
-            <Form.Item name="totalScore" label="总分" rules={[{ required: true }]}><InputNumber min={1} max={100} /></Form.Item>
-            <Form.Item name="passScore" label="及格线" rules={[{ required: true }]}><InputNumber min={0} max={100} /></Form.Item>
-          </Space>
-          <Space wrap>
-            <Form.Item name="singleCount" label="单选题数" rules={[{ required: true }]}><InputNumber min={0} /></Form.Item>
-            <Form.Item name="singleScore" label="单选分值" rules={[{ required: true }]}><InputNumber min={0} /></Form.Item>
-            <Form.Item name="multiCount" label="多选题数" rules={[{ required: true }]}><InputNumber min={0} /></Form.Item>
-            <Form.Item name="multiScore" label="多选分值" rules={[{ required: true }]}><InputNumber min={0} /></Form.Item>
-            <Form.Item name="judgeCount" label="判断题数" rules={[{ required: true }]}><InputNumber min={0} /></Form.Item>
-            <Form.Item name="judgeScore" label="判断分值" rules={[{ required: true }]}><InputNumber min={0} /></Form.Item>
-          </Space>
-        </Form>
-      </Modal>
-      <Modal title="导入 A/B 卷快照" open={importOpen} onCancel={() => setImportOpen(false)} onOk={() => importForm.submit()} confirmLoading={importMutation.isPending} destroyOnClose>
+      <Modal title="导入试卷" open={importOpen} onCancel={() => setImportOpen(false)} onOk={() => importForm.submit()} confirmLoading={importMutation.isPending} destroyOnClose>
         <Alert style={{ marginBottom: 16 }} type="info" showIcon message="导入后固化题目、选项、标准答案和来源版本；选手端与监考端不会获得标准答案。" />
         <Form form={importForm} layout="vertical" onFinish={(values) => {
-          if (idValue(values.paperAId) === idValue(values.paperBId)) return message.error('A/B 卷必须选择不同试卷');
+          if (values.paperIds.length !== 2) return message.error('请选择两份已完成组卷的试卷');
+          const selectedPlans = values.paperIds
+            .map((paperId) => sourcePapersQuery.data?.find((paper) => idValue(paper.paperId) === idValue(paperId))?.planId)
+            .filter((planId): planId is CompetitionId => planId !== undefined);
+          if (new Set(selectedPlans.map(idValue)).size !== 2) return message.error('请选择来自两个不同组卷计划的试卷');
           importMutation.mutate(values);
         }}>
-          <Form.Item name="paperAId" label="A 卷来源" rules={[{ required: true }]}><Select options={paperOptions} /></Form.Item>
-          <Form.Item name="paperBId" label="B 卷来源" rules={[{ required: true }]}><Select options={paperOptions} /></Form.Item>
+          <Form.Item name="paperIds" label="选择已完成组卷计划" rules={[{ required: true, type: 'array', min: 2, max: 2, message: '请选择两份试卷' }]}>
+            <Select
+              mode="multiple"
+              maxCount={2}
+              maxTagCount={2}
+              placeholder="请选择两份已完成组卷的试卷"
+              options={paperOptions}
+              optionFilterProp="label"
+              showSearch
+            />
+          </Form.Item>
         </Form>
+      </Modal>
+      <Modal
+        title="试卷预览（题干、题型和分值）"
+        open={Boolean(previewSnapshotId)}
+        onCancel={() => setPreviewSnapshotId(undefined)}
+        footer={null}
+        width={680}
+        destroyOnClose
+      >
+        <Alert
+          style={{ marginBottom: 16 }}
+          type="info"
+          showIcon
+          message="预览显示题号、题干、题型和分值；长题干会省略展示，悬停可查看完整内容，不显示选项、标准答案或解析。"
+        />
+        {previewQuery.isLoading ? <Spin /> : previewQuery.data ? (
+          <>
+            <Descriptions size="small" column={3} style={{ marginBottom: 16 }}>
+              <Descriptions.Item label="试卷">{previewQuery.data.paperCode} 卷</Descriptions.Item>
+              <Descriptions.Item label="版本">v{previewQuery.data.versionNo}</Descriptions.Item>
+              <Descriptions.Item label="题量">{previewQuery.data.questionCount}</Descriptions.Item>
+              <Descriptions.Item label="总分">{previewQuery.data.totalScore}</Descriptions.Item>
+              <Descriptions.Item label="时长">{previewQuery.data.durationMinutes} 分钟</Descriptions.Item>
+            </Descriptions>
+          <Table
+              rowKey={(row) => String(row.sortOrder)}
+              size="small"
+              pagination={{ pageSize: 20 }}
+              dataSource={previewQuery.data.questions}
+              scroll={{ x: 620 }}
+              columns={[
+                { title: '题号', dataIndex: 'sortOrder', width: 90 },
+                {
+                  title: '题干',
+                  dataIndex: 'content',
+                  width: 420,
+                  render: (value) => {
+                    const text = previewQuestionText(value as string | undefined);
+                    return (
+                      <Typography.Text ellipsis={{ tooltip: true }} style={{ display: 'block' }}>
+                        {text || '-'}
+                      </Typography.Text>
+                    );
+                  },
+                },
+                { title: '题型', dataIndex: 'questionType', render: questionTypeText },
+                { title: '分值', dataIndex: 'score', width: 120 },
+              ]}
+            />
+          </>
+        ) : <Alert type="warning" showIcon message="暂时无法加载试卷预览" />}
       </Modal>
       <Modal title={editingRoom ? '编辑考场' : '新增考场'} open={roomOpen} onCancel={() => setRoomOpen(false)} onOk={() => roomForm.submit()} confirmLoading={roomMutation.isPending} destroyOnClose>
         <Form form={roomForm} layout="vertical" onFinish={(values) => roomMutation.mutate(values)}>

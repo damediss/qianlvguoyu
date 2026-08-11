@@ -135,6 +135,13 @@ public class CertificationPracticalScoringController {
     return ApiResponse.ok(service.progress(taskId));
   }
 
+  @PostMapping("/practical-scoring/tasks/{taskId}/complete")
+  @PreAuthorize("hasAuthority('certification.practical.progress')")
+  @AuditLog(module = "certification", action = "practical-scoring:complete-task", targetType = "certification_task_assessor")
+  public ApiResponse<PracticalScoringModels.CompleteTaskView> completeTask(@PathVariable Long taskId) {
+    return ApiResponse.ok(service.completeTask(taskId));
+  }
+
   @GetMapping("/practical-scoring/tasks/{taskId}/summary/export")
   @PreAuthorize("hasAuthority('certification.practical.progress')")
   @AuditLog(module = "certification", action = "practical-scoring:summary-export", targetType = "certification_practical_candidate_result")

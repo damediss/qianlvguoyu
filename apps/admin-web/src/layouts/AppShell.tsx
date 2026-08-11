@@ -22,6 +22,16 @@ type AppMenuItem = {
   children?: AppMenuItem[];
 };
 
+const hiddenMenuCodes = new Set(['competition_theory_exam']);
+
+function filterHiddenMenuNodes(tree: MenuVO[]): MenuVO[] {
+  return tree
+    .filter((node) => !hiddenMenuCodes.has(node.code))
+    .map((node) => node.children?.length
+      ? { ...node, children: filterHiddenMenuNodes(node.children) }
+      : node);
+}
+
 function menuDisplayName(menu: MenuVO) {
   // Keep the renamed competition entry visible while an existing session still
   // has the previous backend menu payload cached.
@@ -176,6 +186,7 @@ export function AppShell({
   const setSelectedKey = useNavStore((s) => s.setSelectedKey);
   const [openKeys, setOpenKeys] = useState<string[]>([]);
   const activeMenuKey = selectedMenuKeyOverride || selectedKey;
+  const visibleMenuTree = useMemo(() => filterHiddenMenuNodes(menuTree), [menuTree]);
   const prevActiveMenuKeyRef = useRef<string | null>(null);
   const appliedDefaultExpandedRef = useRef(false);
 
@@ -201,15 +212,15 @@ export function AppShell({
     if (prevKey === null || prevKey === activeMenuKey) {
       return;
     }
-    const ancestors = findAncestorCodes(menuTree, activeMenuKey);
+    const ancestors = findAncestorCodes(visibleMenuTree, activeMenuKey);
     if (ancestors && ancestors.length > 0) {
       setOpenKeys((prev) => [...new Set([...prev, ...ancestors])]);
     }
-  }, [activeMenuKey, menuTree]);
+  }, [activeMenuKey, visibleMenuTree]);
 
   // 根据菜单配置的 expanded 字段初始化默认展开的目录（仅首次）
   useEffect(() => {
-    if (!menuTree.length || appliedDefaultExpandedRef.current) return;
+    if (!visibleMenuTree.length || appliedDefaultExpandedRef.current) return;
     const collectExpanded = (nodes: MenuVO[]): string[] => {
       return nodes.reduce((keys: string[], node) => {
         if (node.menuType === 'directory' && node.expanded === 1) keys.push(node.code);
@@ -217,22 +228,22 @@ export function AppShell({
         return keys;
       }, []);
     };
-    const expandedKeys = collectExpanded(menuTree);
+    const expandedKeys = collectExpanded(visibleMenuTree);
     appliedDefaultExpandedRef.current = true;
     if (expandedKeys.length > 0) {
       setOpenKeys((prev) => [...new Set([...prev, ...expandedKeys])]);
     }
-  }, [menuTree]);
+  }, [visibleMenuTree]);
 
   useEffect(() => {
     if (!menuTree.length || !selectedKey) return;
-    const node = findMenuNode(menuTree, selectedKey);
+    const node = findMenuNode(visibleMenuTree, selectedKey);
     if (!node || pageMap[node.code] || node.menuType === 'external') return;
     const target = findFirstNavigableNode(node.children || [], pageMap);
     if (target && target.code !== selectedKey && target.menuType !== 'external') {
       setSelectedKey(target.code);
     }
-  }, [menuTree, pageMap, selectedKey, setSelectedKey]);
+  }, [visibleMenuTree, pageMap, selectedKey, setSelectedKey]);
 
   const handleLogout = async () => {
     try {
@@ -308,14 +319,14 @@ export function AppShell({
   }, [navigateToNode, onMenuNavigate]);
 
   const menuItems = useMemo(
-    () => buildMenuItems(menuTree, pageMap),
-    [menuTree, pageMap],
+    () => buildMenuItems(visibleMenuTree, pageMap),
+    [visibleMenuTree, pageMap],
   );
 
   const breadcrumbItems = useMemo(() => {
-    const path = findMenuPath(menuTree, activeMenuKey) || [];
+    const path = findMenuPath(visibleMenuTree, activeMenuKey) || [];
     return path.map((node) => ({ title: menuDisplayName(node) }));
-  }, [activeMenuKey, menuTree]);
+  }, [activeMenuKey, visibleMenuTree]);
 
   return (
     <Layout className="app-shell">
@@ -335,7 +346,7 @@ export function AppShell({
           openKeys={openKeys}
           onOpenChange={setOpenKeys}
           onClick={({ key }) => {
-            handleMenuNavigate(findMenuNode(menuTree, String(key)));
+            handleMenuNavigate(findMenuNode(visibleMenuTree, String(key)));
           }}
           items={menuItems as MenuProps['items']}
         />

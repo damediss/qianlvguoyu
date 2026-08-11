@@ -112,6 +112,10 @@ public class CompetitionTheoryPaperSourceAdapter {
                 .eq(ExamPaperDetailEntity::getTenantId, sourceTenantId)
                 .eq(ExamPaperDetailEntity::getPaperId, paper.getId())
                 .eq(ExamPaperDetailEntity::getStatus, 1));
+        if (count == null || count <= 0) {
+          // 课程试卷只有题目明细落库后，才算可被竞赛导入的已完成组卷。
+          continue;
+        }
         result.add(new CompetitionTheoryPaperSourceVO(
             paper.getId().longValue(),
             plan.getId().longValue(),
@@ -121,7 +125,7 @@ public class CompetitionTheoryPaperSourceAdapter {
             paper.getTime(),
             decimal(paper.getTotalPoint()),
             decimal(paper.getPassPoint()),
-            count == null ? 0 : Math.toIntExact(count)));
+            Math.toIntExact(count)));
       }
     }
     return result;

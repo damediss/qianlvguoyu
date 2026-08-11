@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -802,6 +803,49 @@ class PracticalScoringApplicationServiceTest {
     assertThatThrownBy(() -> service.markCandidateAbsent(1L, 11L))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("submitted practical scores");
+  }
+
+  @Test
+  void completeTaskReleasesFinishedCandidateGroupsAndKeepsRemainingAssignmentStatus() {
+    CertificationAssessorTaskEntity scoringTask = task(50L, 9L, 0);
+    scoringTask.setGroupId(30L);
+    CertificationTaskAssessorEntity releasedBinding = members(1).get(0);
+    releasedBinding.setAssessorId(9L);
+    CertificationTaskAssessorEntity remainingBinding = members(1).get(0);
+    remainingBinding.setAssessorId(9L);
+    remainingBinding.setWorkStatus("assigned");
+    CertificationPracticalCandidateResultEntity result = new CertificationPracticalCandidateResultEntity();
+    result.setCandidateId(11L);
+    result.setStatus("completed");
+    CertificationInfoAssessorEntity assessor = assessor(9L);
+    assessor.setWorkStatus("preparing");
+
+    when(taskMapper.selectById(1L)).thenReturn(taskEntity());
+    when(assessorTaskMapper.selectList(any())).thenReturn(List.of(scoringTask));
+    when(candidateResultMapper.selectList(any())).thenReturn(List.of(result));
+    when(taskAssessorMapper.selectList(any())).thenReturn(List.of(releasedBinding), List.of(remainingBinding));
+    when(assessorMapper.selectById(9L)).thenReturn(assessor);
+
+    PracticalScoringModels.CompleteTaskView view = service.completeTask(1L);
+
+    assertThat(view.releasedGroups()).isEqualTo(1);
+    assertThat(view.releasedAssessors()).isEqualTo(1);
+    assertThat(assessor.getWorkStatus()).isEqualTo("assigned");
+    verify(taskAssessorMapper).delete(any());
+    verify(assessorMapper).updateById(assessor);
+  }
+
+  @Test
+  void completeTaskRejectsUnsettledCandidateScores() {
+    CertificationAssessorTaskEntity scoringTask = task(50L, 9L, 0);
+    scoringTask.setGroupId(30L);
+    when(taskMapper.selectById(1L)).thenReturn(taskEntity());
+    when(assessorTaskMapper.selectList(any())).thenReturn(List.of(scoringTask));
+    when(candidateResultMapper.selectList(any())).thenReturn(List.of());
+
+    assertThatThrownBy(() -> service.completeTask(1L))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("实操评分未完成");
   }
 
   @Test

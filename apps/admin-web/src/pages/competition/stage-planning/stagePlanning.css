@@ -228,6 +228,18 @@
   cursor: pointer;
 }
 
+.stage-theory-workbench-modal .ant-modal-content {
+  overflow: hidden;
+}
+
+.stage-theory-workbench-modal .ant-modal-body {
+  min-width: 0;
+}
+
+.stage-theory-workbench-modal .competition-page {
+  padding: 8px 24px 24px;
+}
+
 .stage-planning-inspector--empty {
   display: flex;
   align-items: center;

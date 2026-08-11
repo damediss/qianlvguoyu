@@ -66,7 +66,8 @@ class CompetitionTheoryPaperControllerSecurityTest {
             .contentType("application/json")
             .content("""
                 {
-                  "scoreRuleId": 2001,
+                  "stageId": 2001,
+                  "eventWorkTypeId": 3001,
                   "courseId": 2501,
                   "paperAId": 3001,
                   "paperBId": 3002

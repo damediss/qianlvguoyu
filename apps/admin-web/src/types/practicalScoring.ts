@@ -70,6 +70,11 @@ export interface PracticalGenerateResult {
   questions: number;
 }
 
+export interface PracticalCompleteTaskResult {
+  releasedGroups: number;
+  releasedAssessors: number;
+}
+
 export interface PracticalBatchGenerateResult {
   createdTasks: number;
   existingTasks: number;

@@ -19,7 +19,6 @@ import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreRuleMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStageMapper;
-import com.guoyu.platform.competition.mapper.CompetitionTheoryRequirementMapper;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,11 +34,9 @@ class CompetitionScoreRuleDomainServiceTest {
   private final CompetitionStageMapper stageMapper = Mockito.mock(CompetitionStageMapper.class);
   private final CompetitionEventWorkTypeMapper workTypeMapper =
       Mockito.mock(CompetitionEventWorkTypeMapper.class);
-  private final CompetitionTheoryRequirementMapper theoryRequirementMapper =
-      Mockito.mock(CompetitionTheoryRequirementMapper.class);
   private final CompetitionScoreRuleDomainService service =
       new CompetitionScoreRuleDomainService(
-          ruleMapper, eventMapper, stageMapper, workTypeMapper, theoryRequirementMapper);
+          ruleMapper, eventMapper, stageMapper, workTypeMapper);
 
   @BeforeEach
   void setUpValidScope() {
@@ -86,7 +83,7 @@ class CompetitionScoreRuleDomainServiceTest {
   }
 
   @Test
-  void allowsIncompleteDraftButRejectsPublishingWithoutTemplate() {
+  void allowsIncompleteDraftButRejectsPublishingWithoutWeights() {
     when(ruleMapper.selectMaxRuleVersion(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn(0);
     when(ruleMapper.insert(any(CompetitionScoreRuleEntity.class))).thenReturn(1);
 
@@ -100,7 +97,7 @@ class CompetitionScoreRuleDomainServiceTest {
     assertThatThrownBy(() -> service.publish(1L, 9L, 4001L))
         .isInstanceOfSatisfying(BusinessException.class,
             ex -> assertThat(ex.getCode()).isEqualTo("422"))
-        .hasMessage("发布前必须选择THEORY_90、THEORY_120或CUSTOM理论模板");
+        .hasMessage("发布前必须填写理论权重和仿真实操组合权重");
     verify(ruleMapper, never()).deprecatePublishedInScope(
         anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), anyLong(), any());
   }
@@ -162,7 +159,6 @@ class CompetitionScoreRuleDomainServiceTest {
     assertThat(versionTwo.getRuleVersion()).isEqualTo(2);
 
     when(ruleMapper.selectForUpdate(1L, 4002L)).thenReturn(versionTwo);
-    when(theoryRequirementMapper.selectCount(any())).thenReturn(1L);
     when(ruleMapper.selectPublishedForUpdate(1L, 1001L, 2001L, 3001L))
         .thenReturn(List.of(published));
     when(ruleMapper.updateById(versionTwo)).thenReturn(1);
@@ -180,15 +176,18 @@ class CompetitionScoreRuleDomainServiceTest {
   }
 
   @Test
-  void publishingRequiresTheoryRequirement() {
+  void publishesWithoutCompetitionTheoryRequirement() {
     CompetitionScoreRuleEntity draft = completeRule(4003L, 1, "draft");
+    draft.setTheoryTemplate(null);
     when(ruleMapper.selectForUpdate(1L, 4003L)).thenReturn(draft);
-    when(theoryRequirementMapper.selectCount(any())).thenReturn(0L);
+    when(ruleMapper.selectPublishedForUpdate(1L, 1001L, 2001L, 3001L))
+        .thenReturn(List.of());
+    when(ruleMapper.updateById(draft)).thenReturn(1);
 
-    assertThatThrownBy(() -> service.publish(1L, 9L, 4003L))
-        .isInstanceOf(BusinessException.class)
-        .hasMessage("发布评分规则前必须配置唯一的理论考试要求");
-    verify(ruleMapper, never()).updateById(any(CompetitionScoreRuleEntity.class));
+    CompetitionScoreRuleEntity result = service.publish(1L, 9L, 4003L);
+
+    assertThat(result.getStatus()).isEqualTo("published");
+    verify(ruleMapper).updateById(draft);
   }
 
   private CompetitionScoreRuleCreateReq createReq(
