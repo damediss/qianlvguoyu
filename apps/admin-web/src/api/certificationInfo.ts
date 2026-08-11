@@ -4,6 +4,7 @@ import type {
   AssessorInfo,
   AssessorAccountPayload,
   AssessorInfoPayload,
+  AssessorLedgerImport,
   ExamStaffInfo,
   ExamStaffInfoPayload,
   CertificationInfoQuery,
@@ -55,6 +56,14 @@ export function enableAssessorInfo(id: string) {
 
 export function deleteAssessorInfo(id: string) {
   return unwrap<void>(apiClient.delete(`${base}/assessors/${id}`));
+}
+
+export function startAssessorLedgerImport(fileId: string) {
+  return unwrap<AssessorLedgerImport>(apiClient.post(`${base}/assessors/imports`, { fileId }));
+}
+
+export function getAssessorLedgerImport(id: string) {
+  return unwrap<AssessorLedgerImport>(apiClient.get(`${base}/assessors/imports/${id}`));
 }
 
 export function pageExamStaffInfo(params: CertificationInfoQuery) {

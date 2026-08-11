@@ -7,6 +7,7 @@ import { loadConfig } from "./config.js";
 import { log, sanitizeError } from "./logger.js";
 import { PlatformClient } from "./platformClient.js";
 import { createCertificationMcpServer } from "./tools.js";
+import { decodeBotActorContext } from "./context/botActorContext.js";
 
 const config = loadConfig();
 const platformClient = new PlatformClient(config);
@@ -22,6 +23,53 @@ app.get("/health", (_req, res) => {
     service: "certification-data-assistant"
   });
 });
+
+// Internal binary bridge for WeKnora's delivery worker. Binary bytes never enter an MCP tool
+// result or model context; this route only reuses the MCP service's platform credentials and
+// signs the verified actor context before streaming the platform-file response.
+app.get(
+  "/internal/artifacts/platform-file/:fileId/content",
+  requireBearerToken,
+  async (req: Request, res: Response) => {
+    const startedAt = Date.now();
+    try {
+      const encodedActor = req.header("x-weknora-bot-actor-context") || "";
+      const actor = decodeBotActorContext(encodedActor);
+      const content = await platformClient.getFileArtifactContent(req.params.fileId, actor);
+      res.setHeader("Content-Type", content.mimeType || "application/octet-stream");
+      res.setHeader("Content-Length", String(content.size));
+      res.setHeader("X-File-Id", content.fileId);
+      // HTTP header values are Latin-1 constrained in Node. Base64 keeps Chinese filenames intact.
+      res.setHeader("X-File-Name-Base64", Buffer.from(content.filename, "utf8").toString("base64"));
+      res.setHeader("X-File-Mime-Type", content.mimeType);
+      res.setHeader("X-File-Size", String(content.size));
+      if (content.sha256) {
+        res.setHeader("X-File-SHA256", content.sha256);
+      }
+      res.status(200).send(Buffer.from(content.data));
+      log("info", "artifact content proxied to delivery worker", {
+        fileId: content.fileId,
+        requestId: actor.request_id,
+        tenantId: actor.tenant_id,
+        size: content.size,
+        durationMs: Date.now() - startedAt
+      });
+    } catch (error) {
+      const status = error instanceof Error && "status" in error && typeof error.status === "number"
+        ? error.status
+        : 400;
+      log("warn", "artifact content proxy rejected request", {
+        fileId: req.params.fileId,
+        status,
+        durationMs: Date.now() - startedAt,
+        error: sanitizeError(error)
+      });
+      if (!res.headersSent) {
+        res.status(status).json({ error: status === 400 ? "Invalid artifact request" : "Artifact fetch failed" });
+      }
+    }
+  }
+);
 
 app.all("/mcp", requireBearerToken, async (req: Request, res: Response) => {
   const startedAt = Date.now();

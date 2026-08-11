@@ -3,6 +3,8 @@ server:
   servlet:
     context-path: /api
   forward-headers-strategy: native
+  undertow:
+    max-http-post-size: 1GB
   tomcat:
     max-http-form-post-size: 50MB
 
@@ -12,8 +14,8 @@ spring:
   servlet:
     multipart:
       enabled: true
-      max-file-size: 100MB
-      max-request-size: 100MB
+      max-file-size: 1GB
+      max-request-size: 1GB
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     serialization:

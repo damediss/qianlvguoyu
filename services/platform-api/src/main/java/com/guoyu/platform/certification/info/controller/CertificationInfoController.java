@@ -1,7 +1,9 @@
 package com.guoyu.platform.certification.info.controller;
 
 import com.guoyu.platform.certification.info.application.CertificationInfoApplicationService;
+import com.guoyu.platform.certification.info.application.AssessorLedgerImportService;
 import com.guoyu.platform.certification.info.dto.AssessorInfoSaveReq;
+import com.guoyu.platform.certification.info.dto.AssessorLedgerImportStartReq;
 import com.guoyu.platform.certification.info.dto.AssessorAccountCreateReq;
 import com.guoyu.platform.certification.info.dto.CertificationInfoQueryReq;
 import com.guoyu.platform.certification.info.dto.ExamEquipmentInfoSaveReq;
@@ -10,6 +12,7 @@ import com.guoyu.platform.certification.info.dto.ExamStaffInfoSaveReq;
 import com.guoyu.platform.certification.info.dto.InfoDisableReq;
 import com.guoyu.platform.certification.info.dto.InfoReviewReq;
 import com.guoyu.platform.certification.info.vo.AssessorInfoVO;
+import com.guoyu.platform.certification.info.vo.AssessorLedgerImportVO;
 import com.guoyu.platform.certification.info.vo.ExamEquipmentInfoVO;
 import com.guoyu.platform.certification.info.vo.ExamSiteInfoVO;
 import com.guoyu.platform.certification.info.vo.ExamStaffInfoVO;
@@ -38,9 +41,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class CertificationInfoController {
 
   private final CertificationInfoApplicationService service;
+  private final AssessorLedgerImportService assessorLedgerImportService;
 
-  public CertificationInfoController(CertificationInfoApplicationService service) {
+  public CertificationInfoController(
+      CertificationInfoApplicationService service,
+      AssessorLedgerImportService assessorLedgerImportService
+  ) {
     this.service = service;
+    this.assessorLedgerImportService = assessorLedgerImportService;
   }
 
   @GetMapping("/assessors")
@@ -54,6 +62,21 @@ public class CertificationInfoController {
   @AuditLog(module = "certification", action = "info-assessor:create", targetType = "certification_assessor")
   public ApiResponse<AssessorInfoVO> createAssessor(@Valid @RequestBody AssessorInfoSaveReq req) {
     return ApiResponse.ok(service.createAssessor(req));
+  }
+
+  @PostMapping("/assessors/imports")
+  @PreAuthorize("hasAuthority('certification.info.assessor.create')")
+  @AuditLog(module = "certification", action = "info-assessor:ledger-import", targetType = "certification_assessor")
+  public ApiResponse<AssessorLedgerImportVO> startAssessorLedgerImport(
+      @Valid @RequestBody AssessorLedgerImportStartReq req
+  ) {
+    return ApiResponse.ok(assessorLedgerImportService.start(req.fileId()));
+  }
+
+  @GetMapping("/assessors/imports/{id}")
+  @PreAuthorize("hasAuthority('certification.info.assessor.view')")
+  public ApiResponse<AssessorLedgerImportVO> getAssessorLedgerImport(@PathVariable Long id) {
+    return ApiResponse.ok(assessorLedgerImportService.get(id));
   }
 
   @GetMapping("/assessors/{id}")

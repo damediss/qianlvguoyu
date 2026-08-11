@@ -1,5 +1,6 @@
-import { Tag } from 'antd';
+import { Button, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import { useState } from 'react';
 import {
   createAssessorInfo,
   createAssessorAccount,
@@ -12,6 +13,8 @@ import {
   updateAssessorInfo,
 } from '../../../api/certificationInfo';
 import type { AssessorInfo, AssessorInfoPayload } from '../../../types/certificationInfo';
+import { FilePreviewModal, type FilePreviewTarget } from '../../../components/FilePreviewModal';
+import { AssessorLedgerImportButton } from './AssessorLedgerImportButton';
 import { InfoManagementTable } from './InfoManagementTable';
 
 const columns: ColumnsType<AssessorInfo> = [
@@ -19,6 +22,10 @@ const columns: ColumnsType<AssessorInfo> = [
   { title: '平板账号', dataIndex: 'userId', width: 110, render: (value) => <Tag color={value ? 'success' : 'warning'}>{value ? '已创建' : '未绑定'}</Tag> },
   { title: '在岗状态', dataIndex: 'workStatus', width: 130, render: (value) => <Tag>{statusLabel(value)}</Tag> },
   { title: '证号', dataIndex: 'certificateNo', width: 160 },
+  {
+    title: '考评员证', dataIndex: 'certificatePhotoFileId', width: 110,
+    render: (value, record) => <AssessorCertificatePreview fileId={value} fileName={record.certificatePhotoFileName} />,
+  },
   { title: '工种', dataIndex: 'workTypeScope', width: 180 },
   { title: '等级范围', dataIndex: 'levelScope', width: 120 },
   { title: '有效期至', dataIndex: 'validUntil', width: 120 },
@@ -37,9 +44,12 @@ export function AssessorInfoPage() {
       auditColumnIndex={1}
       fields={[
         { name: 'assessorName', label: '姓名', required: true },
+        { name: 'identityNo', label: '身份证号' },
         { name: 'accountUsername', label: '平板登录账号', createRequired: true },
         { name: 'accountPassword', label: '平板登录密码', type: 'password', createRequired: true },
         { name: 'certificateNo', label: '证号', required: true },
+        { name: 'certificatePhotoFileId', label: '考评员证', type: 'imageUpload', fileNameField: 'certificatePhotoFileName' },
+        { name: 'certificatePhotoFileName', label: '考评员证文件名', hidden: true },
         { name: 'workTypeScopes', label: '工种', required: true, type: 'work-type-multiple', placeholder: '请选择工种，可多选' },
         { name: 'levelScope', label: '等级范围', type: 'levelRange' },
         { name: 'validUntil', label: '有效期至', type: 'date', required: true },
@@ -65,7 +75,23 @@ export function AssessorInfoPage() {
       enableApi={enableAssessorInfo}
       deleteApi={deleteAssessorInfo}
       createAccountApi={createAssessorAccount}
+      toolbarExtra={<AssessorLedgerImportButton />}
     />
+  );
+}
+
+function AssessorCertificatePreview({ fileId, fileName }: { fileId?: string; fileName?: string }) {
+  const [target, setTarget] = useState<FilePreviewTarget | null>(null);
+  if (!fileId) return '-';
+  return (
+    <>
+      <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={() => setTarget({
+        fileId, fileName: fileName || '考评员证', fileType: 'image/*',
+      })}>
+        查看考评员证
+      </Button>
+      <FilePreviewModal open={Boolean(target)} target={target} onClose={() => setTarget(null)} />
+    </>
   );
 }
 

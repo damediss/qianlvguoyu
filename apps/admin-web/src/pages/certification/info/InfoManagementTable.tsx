@@ -4,7 +4,7 @@ import { Button, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Select
 import type { ColumnsType } from 'antd/es/table';
 import type { FormInstance, UploadFile } from 'antd';
 import dayjs from 'dayjs';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { uploadPlatformFile } from '../../../api/files';
 import { treeWorkTypes } from '../../../api/exam';
 import { FilePreviewModal, type FilePreviewTarget } from '../../../components/FilePreviewModal';
@@ -52,6 +52,7 @@ interface InfoManagementTableProps<T extends { id: string; auditStatus: string }
   enableApi: (id: string) => Promise<void>;
   deleteApi: (id: string) => Promise<void>;
   createAccountApi?: (id: string, payload: { username: string; password: string }) => Promise<T>;
+  toolbarExtra?: ReactNode;
 }
 
 const auditOptions = [
@@ -110,6 +111,7 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
   enableApi,
   deleteApi,
   createAccountApi,
+  toolbarExtra,
 }: InfoManagementTableProps<T, P>) {
   const queryClient = useQueryClient();
   const [form] = Form.useForm();
@@ -285,6 +287,7 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
           <Typography.Text type="secondary">基础档案建档、提交审核、主管审核和状态维护</Typography.Text>
         </div>
         <Space>
+          {toolbarExtra}
           <PermissionGate code={`${permissionPrefix}.export`}>
             <Button icon={<ExportOutlined />} onClick={() => message.info('导出任务已提交')}>导出</Button>
           </PermissionGate>

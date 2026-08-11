@@ -70,11 +70,23 @@ public class FileApplicationService {
 
   @Transactional
   public FileVO storeFromBytes(byte[] content, String originalName, String contentType, String accessPolicy) {
+    return storeFromBytesForTenant(getTenantIdSafe(), content, originalName, contentType, accessPolicy);
+  }
+
+  /**
+   * Stores generated/imported content for an explicit tenant. Callers running in worker threads
+   * must pass the tenant captured from the request thread instead of using SecurityContext.
+   */
+  @Transactional
+  public FileVO storeFromBytesForTenant(
+      Long tenantId, byte[] content, String originalName, String contentType, String accessPolicy) {
     if (content == null || content.length == 0) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File is empty");
     }
 
-    Long tenantId = getTenantIdSafe();
+    if (tenantId == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "Tenant is required");
+    }
     String safeName = sanitizeFileName(originalName);
     StoredFileFormatValidator.assertSupportedOfficeFile(safeName, content);
     StoredFileFormatValidator.assertSupportedImageFile(safeName, contentType, content);
@@ -234,6 +246,22 @@ public class FileApplicationService {
       return in.readAllBytes();
     } catch (IOException ex) {
       log.warn("读取文件失败: id={}, objectKey={}, provider={}", id, entity.getObjectKey(),
+          entity.getStorageProvider(), ex);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取文件失败: " + ex.getMessage());
+    }
+  }
+
+  /**
+   * Opens an uploaded file for an internal worker without relying on SecurityContext.
+   * The caller owns and must close the returned stream.
+   */
+  @Transactional(propagation = Propagation.NOT_SUPPORTED, readOnly = true)
+  public InputStream openFileInputStreamById(Long id) {
+    FileEntity entity = findUploadedFile(id);
+    try {
+      return openInputStream(entity);
+    } catch (IOException ex) {
+      log.warn("打开文件流失败: id={}, objectKey={}, provider={}", id, entity.getObjectKey(),
           entity.getStorageProvider(), ex);
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取文件失败: " + ex.getMessage());
     }

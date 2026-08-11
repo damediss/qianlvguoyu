@@ -12,6 +12,8 @@ export interface AppConfig {
   platformTenantCode: string;
   platformUsername: string;
   platformPassword: string;
+  /** Shared HMAC secret used only for signed BotActorContext headers. */
+  botActorContextSecret: string;
   platformRequestTimeoutMs: number;
 }
 
@@ -89,6 +91,7 @@ export function loadConfig(): AppConfig {
     platformTenantCode: required("PLATFORM_TENANT_CODE"),
     platformUsername: required("PLATFORM_API_USERNAME"),
     platformPassword: required("PLATFORM_API_PASSWORD"),
+    botActorContextSecret: optional("BOT_ACTOR_CONTEXT_SECRET"),
     platformRequestTimeoutMs: integer("PLATFORM_REQUEST_TIMEOUT_MS", 10000)
   };
 }

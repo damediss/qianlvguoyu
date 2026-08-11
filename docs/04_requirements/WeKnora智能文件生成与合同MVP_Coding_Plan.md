@@ -61,8 +61,8 @@
 
 ### 2.3 当前关键缺口
 
-1. 企微入站请求在 WeKnora 中仍使用 `system-{tenantID}` 合成用户，无法直接作为合同权限主体。
-2. MCP Server 当前主要使用固定平台服务账号，缺少“当前企微用户”的可信委托身份。
+1. 企业微信通过 Bot ID 和管理端可用范围控制谁能使用 Bot；WeKnora 能取得消息发送人的企微 UserID，但当前平台审计尚未完整保存 Bot、企微用户、会话和 MCP 请求之间的关联。
+2. MCP Server 当前使用固定平台服务账号调用业务 API。MVP 可将该账号视为 Bot 的受限业务身份，但必须限制权限和数据范围，不能使用全权限管理员账号。
 3. WeKnora Go MCP Client 当前只保留 text/image，丢弃 `structuredContent` 和 `resource_link`。
 4. `ToolResult` 没有通用文件产物引用，Agent 结果无法自动进入文件交付链路。
 5. 当前文件发送仅由 slash command 触发，没有持久化交付任务、状态、审计和服务重启恢复。
@@ -118,6 +118,8 @@ MCP 工具只接受 `contractId/documentId` 等业务 ID，不接受 `chatId/use
 
 实际接收人必须由 WeKnora 当前认证会话或已持久化的可信 `sessionRef` 注入。任何模型输出中的接收人字段都应忽略或拒绝。
 
+第一阶段合同文件只允许交付到当前企微私聊会话。群聊中的合同生成请求可以回答说明或生成任务，但不得直接发送敏感合同文件，避免群成员共同可见。
+
 ### AD-04：文件生成与文件发送解耦
 
 - platform-api 负责生成、版本和存储。
@@ -136,6 +138,16 @@ DOCX 渲染、PDF 转换和多文件生成采用“快速返回 taskId + Worker 
 第一阶段固定为“软件技术服务框架协议”，使用一份审批通过的 DOCX 模板和一组已审核标准条款。
 
 暂不包含：电子签章、自动法务审批、对外发送、批量生成、复杂审批流和自动正式合同编号。
+
+### AD-07：MVP 以 Bot 可用范围作为授权边界
+
+第一阶段不强制建立“企微用户 -> 云平台登录账号”的一对一绑定，采用以下边界：
+
+- 企业微信管理员通过 Bot 可用范围决定哪些内部人员可以使用该能力。
+- Bot 对应一个最小权限的平台服务账号，只能调用合同草稿、文件读取和交付所需 API。
+- WeKnora 使用 `bot_id + wecom_user_id + chat_id + channel_session_id` 记录实际发起人和会话审计。
+- 平台业务权限按 Bot 的能力范围裁决，不假设每位企微用户都拥有云平台账号。
+- 如果后续要求同一 Bot 内按部门、岗位或个人区分合同数据权限，再增加企微用户与平台用户绑定；该能力不阻塞 MVP。
 
 ## 4. 总体实现结构
 
@@ -184,69 +196,58 @@ feat/weknora-artifact-delivery
 
 验收：输出只读基线报告，不改数据库、不部署。
 
-## Phase 1：可信用户身份和调用上下文
+## Phase 1：Bot 授权上下文和实际发起人审计
 
-这是合同权限、文件权限和审计的前置条件，必须先于合同生成开发。
+第一阶段以企业微信管理员配置的 Bot 可用范围作为人员准入控制，不要求企微用户必须先拥有或绑定云平台账号。
 
-### P1-01 平台外部身份绑定
+### P1-01 Bot 业务身份最小授权
 
-在 `platform-api/integration/` 增加通用外部身份绑定，而不是合同专用绑定。
+为当前 Bot 配置独立的平台服务账号：
 
-建议表：`sys_external_identity_binding`
+- 只授予合同查询、草稿生成、文件读取和当前会话交付所需权限。
+- 不授予系统管理、跨租户、任意文件读取或其他业务模块管理权限。
+- Bot 可访问的数据范围与企业微信管理端配置的使用人群保持一致。
+- 平台审计同时记录服务账号和外部实际发起人，不能只记录服务账号。
 
-核心字段：
+### P1-02 WeKnora BotActorContext
 
-- `tenant_id`
-- `provider`：第一阶段 `wecom`
-- `external_tenant_key`
-- `external_bot_key`
-- `external_user_id`
-- `platform_user_id`
-- `status`
-- BaseEntity 全部字段
+建议扩展 Agent Tool 执行上下文，增加由 WeKnora 服务端注入的 `BotActorContext`：
 
-接口：
+```text
+tenant_id
+bot_id / im_channel_id
+wecom_user_id
+chat_id
+chat_type
+channel_session_id
+weknora_session_id
+request_id
+```
 
-- 管理端绑定/解绑/查询。
-- 内部接口：根据 bot + 企微用户解析平台用户。
-- 返回短期签名的 `actorContextToken`，包含租户、平台用户、外部身份、会话引用、签发和过期时间。
+处理要求：
 
-安全要求：
+1. 数据必须来自已验证的企微长连接消息和 WeKnora ChannelSession，不能来自模型参数。
+2. `wecom_user_id` 用于记录“谁发起了操作”，服务账号用于 platform-api 系统间鉴权。
+3. 企微 UserID、Bot ID、业务 taskId 和 requestId 必须能够在审计日志中串联。
+4. 敏感合同交付检测 `chat_type`，群聊直接拒绝文件发送。
 
-- 内部接口使用独立 S2S 凭证和时间戳/重放保护。
-- 不允许调用方直接声明任意 `platformUserId`。
-- 未绑定、停用、跨租户均拒绝合同工具调用。
-
-### P1-02 WeKnora IM 身份解析
-
-建议修改：
-
-- `internal/im/service.go`
-- 新增 `internal/im/external_identity.go`
-- 扩展 Agent Tool 执行上下文。
-
-处理流程：
-
-1. 收到企微消息后，用 `IMChannel.BotIdentity + IncomingMessage.UserID` 调用平台身份解析接口。
-2. 成功时将平台用户、平台租户、`actorContextToken` 和当前 `ChannelSession.ID` 注入请求 Context。
-3. 未绑定时允许普通知识问答，但合同写工具返回清晰的“账号未绑定”错误。
-4. 禁止把 `actorContextToken` 写入普通日志、模型 Prompt 或消息历史。
-
-### P1-03 MCP 隐藏上下文透传
+### P1-03 MCP 隐藏审计上下文透传
 
 修改 WeKnora MCP 客户端和 `mcp-server`：
 
-- WeKnora 使用 MCP `CallToolParams._meta` 注入 actor token、sessionRef、requestId。
+- WeKnora 使用 MCP `CallToolParams._meta` 注入 BotActorContext。
 - 调用前删除模型参数中所有保留字段，防止模型伪造 `_meta`。
-- MCP Server 从协议元数据读取可信上下文，并透传给 platform-api。
-- platform-api 验证 token 后构建真实 `SecurityContext/TenantContext`，做最终权限裁决。
+- MCP Server 将 BotActorContext 转换为受控审计 Header 透传给 platform-api。
+- platform-api 使用服务账号做权限裁决，并将外部实际发起人写入业务审计详情。
+- BotActorContext 不进入模型 Prompt、普通回答和可复制的错误信息。
 
 验收：
 
-- 已绑定用户调用只读测试工具成功，审计记录真实平台用户。
-- 未绑定用户失败。
-- 用户尝试在 Prompt 或工具参数伪造他人 ID 失败。
-- 跨租户 token 失败。
+- 企业微信管理端未授权人员无法使用 Bot，由企业微信侧拦截。
+- 已授权用户调用测试工具成功。
+- 张三、李四共用同一个 Bot 服务账号时，平台仍能在审计详情中区分实际企微发起人。
+- Prompt 或工具参数伪造其他 userId/chatId 不会改变审计和发送目标。
+- 群聊请求不能直接收到合同文件。
 
 ## Phase 2：平台通用 Generated Artifact 与文件交付桥
 
@@ -310,11 +311,11 @@ GeneratedArtifactRef
 
 第一阶段只实现 `platform-file` provider。
 
-platform-api 增加仅供受控服务调用的文件内容接口：
+platform-api 增加仅供受控 Bot 服务账号调用的文件内容接口：
 
-- 输入：文件 ID + actor context。
+- 输入：文件 ID；BotActorContext 由 MCP/WeKnora 通过受控 Header 注入。
 - 输出：流式二进制和可信文件元数据 Header。
-- 必须重新执行文件归属和业务权限校验。
+- 必须重新执行租户、文件归属和 Bot 服务账号业务权限校验。
 - 不能复用无权限检查的 `readFileBytesById` 直接对外暴露。
 
 ### P2-04 交付 Worker 与重试
@@ -478,7 +479,7 @@ platform-api 增加仅供受控服务调用的文件内容接口：
 - `generatePreview` 快速返回 taskId；完成后返回 artifact envelope。
 - `finalizeDocument` 必须经过 MCP Human Approval 和平台确认记录双重校验。
 - `deliverDocuments` 输入只接受合同/文档 ID，不接受接收人。
-- 工具调用全部带 requestId、actor context，并写平台审计。
+- 工具调用全部带 requestId、BotActorContext，并写平台审计。
 
 ### P5-03 MCP Server 重构
 
@@ -488,7 +489,7 @@ platform-api 增加仅供受控服务调用的文件内容接口：
 src/tools/certification.ts
 src/tools/contract.ts
 src/clients/platformClient.ts
-src/context/actorContext.ts
+src/context/botActorContext.ts
 src/artifacts/schema.ts
 ```
 
@@ -556,7 +557,7 @@ platform-api：
 mcp-server：
 
 - Zod 输入校验。
-- actor context 缺失/伪造。
+- BotActorContext 缺失/伪造。
 - platform-api 401刷新与业务403不重试。
 - artifact structuredContent 合同。
 - 不接受 receiver/chatId。
@@ -575,7 +576,7 @@ WeKnora：
 
 验收用例：
 
-1. 已绑定企微用户请求生成软件技术服务框架协议。
+1. 企业微信管理端已获权用户请求生成软件技术服务框架协议。
 2. Agent 检索历史合同和 Wiki。
 3. Agent 询问缺失字段。
 4. 用户补充后生成结构化草稿。
@@ -588,9 +589,10 @@ WeKnora：
 
 安全用例：
 
-- 未绑定企微用户不能生成合同。
-- 无权限用户不能读取或交付其他部门合同。
+- 企业微信管理端未授权人员不能使用 Bot。
+- Bot 服务账号不能读取超出其授权范围的合同和文件。
 - Prompt 指定他人 userId/chatId 无效。
+- 群聊不能直接交付合同 DOCX/PDF。
 - 作废模板和条款不能使用。
 - 跨租户文件 ID 无法读取。
 - 文件发送失败保留生成结果并可重试。
@@ -612,7 +614,7 @@ WeKnora：
 Review 通过后，不建议立即并行开发完整合同系统。第一批只做公共基础闭环：
 
 1. P0：工作区和数据库基线。
-2. P1：企微用户与平台用户绑定、可信 actor context。
+2. P1：Bot 最小权限服务账号、BotActorContext 和实际企微发起人审计。
 3. P2：MCP structuredContent/artifact ref、持久化交付和 platform-file resolver。
 4. 用一个平台生成的测试 TXT/PDF 验证“业务文件 ID -> MCP -> WeKnora -> 当前企微会话”。
 
@@ -624,10 +626,11 @@ Review 通过后，不建议立即并行开发完整合同系统。第一批只�
 
 1. 是否同意合同核心业务进入 `platform-api/contract`，不单独拆微服务。
 2. 是否同意 MCP 只返回 artifact 引用，文件字节由 WeKnora 后台受控读取。
-3. 是否同意优先实现企微用户与平台用户绑定，未绑定用户不能执行合同工具。
+3. 是否同意 MVP 以企业微信 Bot 可用范围作为人员授权边界，不强制绑定云平台个人账号。
 4. 是否同意第一阶段只支持“软件技术服务框架协议”。
 5. 是否同意正式合同必须人工确认，第一阶段禁止发给非当前会话。
 6. 是否同意先完成 P0-P2 公共底座，再开始 P3-P8 合同业务。
+7. 是否同意第一阶段合同文件只发送到当前私聊会话，群聊不直接发送敏感文件。
 
 Review 结果记录为：
 
@@ -647,4 +650,3 @@ Review 结果记录为：
 - 未创建数据库迁移。
 - 未构建镜像。
 - 未重启或停止任何生产容器。
-

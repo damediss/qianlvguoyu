@@ -80,7 +80,7 @@ class CertificationInfoApplicationServiceTest {
   void createAssessorSavesDraftAndMasksPhone() {
     when(assessorMapper.selectCount(any())).thenReturn(0L);
     AssessorInfoVO vo = service.createAssessor(new AssessorInfoSaveReq(
-        "张三", "assessor.zhangsan", "Assessor@123", "CERT-001", "电工", List.of("电工"), "高级", LocalDate.of(2027, 6, 30),
+        "张三", null, "assessor.zhangsan", "Assessor@123", "CERT-001", null, null, "电工", List.of("电工"), "高级", LocalDate.of(2027, 6, 30),
         "13800001234", "材料齐全说明", "备注"
     ));
 
@@ -99,7 +99,7 @@ class CertificationInfoApplicationServiceTest {
     when(assessorMapper.selectCount(any())).thenReturn(1L);
 
     assertThatThrownBy(() -> service.createAssessor(new AssessorInfoSaveReq(
-        "张三", "assessor.zhangsan", "Assessor@123", "CERT-001", "电工", List.of("电工"), null, LocalDate.of(2027, 6, 30),
+        "张三", null, "assessor.zhangsan", "Assessor@123", "CERT-001", null, null, "电工", List.of("电工"), null, LocalDate.of(2027, 6, 30),
         null, null, null
     )))
         .isInstanceOf(BusinessException.class)
@@ -144,7 +144,7 @@ class CertificationInfoApplicationServiceTest {
     when(userMapper.exists(any())).thenReturn(false);
 
     AssessorInfoVO result = service.updateAssessor(1L, new AssessorInfoSaveReq(
-        "李四", "assessor.new", "NewPass@123", "CERT-002", "焊工", List.of("焊工"), "中级",
+        "李四", null, "assessor.new", "NewPass@123", "CERT-002", null, null, "焊工", List.of("焊工"), "中级",
         LocalDate.of(2028, 6, 30), "13900001234", "更新后的材料说明", "更新备注"
     ));
 
