@@ -132,6 +132,9 @@ weknora:
   origin: ${WEKNORA_ORIGIN:http://localhost:5173}
 
 platform:
+  bot:
+    # MCP 与 platform-api 必须配置相同的随机值（至少 32 字符），禁止提交真实密钥。
+    actor-context-secret: ${BOT_ACTOR_CONTEXT_SECRET:}
   competition:
     player:
       sms:

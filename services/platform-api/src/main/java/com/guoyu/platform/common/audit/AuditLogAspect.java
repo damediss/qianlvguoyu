@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.web.TraceIdHolder;
+import com.guoyu.platform.integration.bot.BotActorContext;
+import com.guoyu.platform.integration.bot.BotActorContextHolder;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.entity.AuditLogEntity;
 import com.guoyu.platform.system.mapper.AuditLogMapper;
@@ -103,6 +105,10 @@ public class AuditLogAspect {
   private String toDetailJson(JoinPoint joinPoint, Object result, AuditLog auditLog) {
     Map<String, Object> detail = new LinkedHashMap<>();
     detail.put("method", joinPoint.getSignature().toShortString());
+    BotActorContext actorContext = BotActorContextHolder.get();
+    if (actorContext != null) {
+      detail.put("botActorContext", actorContext);
+    }
     if (auditLog.includeResult()) {
       detail.put("result", sanitizeArg(result));
     } else {
