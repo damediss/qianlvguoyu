@@ -31,6 +31,7 @@ public final class PermissionCodes {
   public static final String POST_UPDATE = "post:update";
   public static final String POST_DELETE = "post:delete";
   public static final String FILE_ACCESS = "file:access";
+  public static final String FILE_ARTIFACT_READ = "file:artifact:read";
   public static final String KNOWLEDGE_VIEW = "knowledge:view";
   public static final String KNOWLEDGE_CREATE = "knowledge:create";
   public static final String KNOWLEDGE_UPDATE = "knowledge:update";

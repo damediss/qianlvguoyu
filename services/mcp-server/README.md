@@ -30,6 +30,9 @@ MCP 工具服务，供 AI 在授权范围内调用平台能力。本目录是仓
 - `certification.getTaskOverview`
 - `certification.getCollectionProgress`
 - `certification.getPracticalScoreProgress`
+- `file.getArtifactMetadata`
+
+artifact/合同工具通过 MCP `_meta.guoyu/bot-actor-context` 接收 WeKnora 服务端注入的企微发起人和当前会话，不接受模型参数中的 `receiver`、`chatId` 或 `userId` 作为发送目标。MCP Server 使用 `BOT_ACTOR_CONTEXT_SECRET` 对上下文签名后透传给 platform-api；文件二进制不经过 MCP 返回。
 
 ## 本地启动
 
@@ -44,6 +47,7 @@ MCP 工具服务，供 AI 在授权范围内调用平台能力。本目录是仓
 | `PLATFORM_TENANT_CODE` | 租户 **编码**（如 `demo`），不是展示名「千铝工投」 |
 | `PLATFORM_API_USERNAME` | 服务账号用户名，需具备 `certification.dashboard.view` |
 | `PLATFORM_API_PASSWORD` | 服务账号密码 |
+| `BOT_ACTOR_CONTEXT_SECRET` | 与 platform-api 相同的至少 32 位 HMAC 密钥；artifact/合同工具必填 |
 
 可选项：
 

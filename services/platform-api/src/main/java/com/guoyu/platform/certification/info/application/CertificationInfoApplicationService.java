@@ -712,7 +712,10 @@ public class CertificationInfoApplicationService {
 
   private void applyAssessor(CertificationInfoAssessorEntity entity, AssessorInfoSaveReq req) {
     entity.setAssessorName(req.assessorName());
+    entity.setIdentityNo(req.identityNo());
     entity.setCertificateNo(req.certificateNo());
+    entity.setCertificatePhotoFileId(req.certificatePhotoFileId());
+    entity.setCertificatePhotoFileName(req.certificatePhotoFileName());
     String joinedScopes = req.workTypeScopes() == null
         ? ""
         : req.workTypeScopes().stream()
@@ -1107,7 +1110,8 @@ public class CertificationInfoApplicationService {
       }
     }
     return new AssessorInfoVO(entity.getId(), entity.getUserId(), accountUsername, entity.getAccountPassword(),
-        entity.getAssessorName(), entity.getCertificateNo(),
+        entity.getAssessorName(), entity.getIdentityNo(), entity.getCertificateNo(),
+        entity.getCertificatePhotoFileId(), entity.getCertificatePhotoFileName(),
         entity.getWorkTypeScope(),
         parseWorkTypeScopes(entity.getWorkTypeJson(), entity.getWorkTypeScope()),
         entity.getLevelScope(), entity.getValidUntil(),

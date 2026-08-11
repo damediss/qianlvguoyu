@@ -12,7 +12,10 @@ export interface AssessorInfo {
   accountUsername?: string;
   accountPassword?: string;
   assessorName: string;
+  identityNo?: string;
   certificateNo: string;
+  certificatePhotoFileId?: string;
+  certificatePhotoFileName?: string;
   /** @deprecated 旧字段，多个工种以"、"拼接。优先使用 workTypeScopes。 */
   workTypeScope: string;
   workTypeScopes: string[];
@@ -27,9 +30,12 @@ export interface AssessorInfo {
 
 export interface AssessorInfoPayload {
   assessorName: string;
+  identityNo?: string;
   accountUsername?: string;
   accountPassword?: string;
   certificateNo: string;
+  certificatePhotoFileId?: string;
+  certificatePhotoFileName?: string;
   /** @deprecated 旧字段。优先使用 workTypeScopes。 */
   workTypeScope?: string;
   workTypeScopes: string[];
@@ -43,6 +49,18 @@ export interface AssessorInfoPayload {
 export interface AssessorAccountPayload {
   username: string;
   password: string;
+}
+
+export interface AssessorLedgerImport {
+  id: string;
+  status: 'queued' | 'processing' | 'completed' | 'failed';
+  totalCount: number;
+  importedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  resultMessage?: string;
+  startedAt?: string;
+  completedAt?: string;
 }
 
 export interface ExamStaffInfo {

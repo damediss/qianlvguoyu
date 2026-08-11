@@ -234,19 +234,32 @@ function toJpegFile(blob: Blob, originalName: string): File | null {
   return new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
 }
 
-export async function uploadPlatformFile(file: File | Blob, accessPolicy?: string): Promise<FileVO> {
+export async function uploadPlatformFile(
+  file: File | Blob,
+  accessPolicy?: string,
+  timeout = 120000,
+): Promise<FileVO> {
   const resolved = resolveUploadFile(file);
   if (!(resolved instanceof Blob)) {
     throw new Error('无法读取文件，请重新选择');
   }
-  const uploadBody = await materializeUploadFile(resolved);
+  // 非图片（特别是大尺寸 xlsx）无需读取到浏览器内存，直接流式交给浏览器上传。
+  const name = resolved instanceof File ? resolved.name : 'upload.bin';
+  const uploadBody = looksLikeImageUpload(name, resolved.type)
+    ? await materializeUploadFile(resolved)
+    : resolved instanceof File
+      ? resolved
+      : new File([resolved], name, { type: resolved.type || 'application/octet-stream' });
+  if (uploadBody.size <= 0) {
+    throw new Error('文件为空，请重新选择');
+  }
   const form = new FormData();
   form.append('file', uploadBody, uploadBody.name);
   if (accessPolicy) {
     form.append('accessPolicy', accessPolicy);
   }
   const response = await apiClient.post<ApiResponse<FileVO>>('/files', form, {
-    timeout: 120000,
+    timeout,
   });
   if (!response.data.data) {
     throw new Error(response.data.message || '文件上传失败');

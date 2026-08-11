@@ -9,11 +9,6 @@ import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.vo.DownloadUrlVO;
 import com.guoyu.platform.file.vo.FileVO;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.Part;
-import java.io.IOException;
-import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import org.springframework.core.io.Resource;
@@ -28,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/files")
@@ -64,50 +60,19 @@ public class FileController {
 
   @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
   @AuditLog(module = "file", action = "file:upload", targetType = "file")
-  public ApiResponse<FileVO> upload(HttpServletRequest request) throws IOException, ServletException {
-    Part filePart = null;
-    String accessPolicy = null;
-    String originalName = null;
-    for (Part part : request.getParts()) {
-      if ("file".equals(part.getName())) {
-        filePart = part;
-      } else if ("accessPolicy".equals(part.getName())) {
-        accessPolicy = readPartAsString(part);
-      } else if ("originalName".equals(part.getName())) {
-        originalName = readPartAsString(part);
-      }
-    }
-    if (filePart == null) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "File is required");
-    }
-    byte[] content;
-    try (InputStream input = filePart.getInputStream()) {
-      content = input.readAllBytes();
-    }
-    if (content.length == 0) {
-      log.warn(
-          "Upload rejected: partSize={}, contentType={}, submittedFileName={}",
-          filePart.getSize(),
-          filePart.getContentType(),
-          filePart.getSubmittedFileName());
+  public ApiResponse<FileVO> upload(
+      @RequestParam("file") MultipartFile file,
+      @RequestParam(required = false) String accessPolicy
+  ) {
+    if (file == null || file.isEmpty()) {
+      log.warn("Upload rejected: empty multipart file");
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File is empty");
     }
-    String storedName = hasText(originalName) ? originalName.trim() : filePart.getSubmittedFileName();
-    return ApiResponse.ok(fileApplicationService.storeFromBytes(
-        content,
-        storedName,
-        filePart.getContentType(),
-        accessPolicy));
+    return ApiResponse.ok(fileApplicationService.upload(file, accessPolicy));
   }
 
   private static boolean hasText(String value) {
     return value != null && !value.isBlank();
-  }
-
-  private static String readPartAsString(Part part) throws IOException {
-    try (InputStream input = part.getInputStream()) {
-      return new String(input.readAllBytes(), StandardCharsets.UTF_8);
-    }
   }
 
   private static String decodeFilename(String header) {

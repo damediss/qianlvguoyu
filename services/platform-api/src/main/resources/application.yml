@@ -3,6 +3,8 @@ server:
   servlet:
     context-path: /api
   forward-headers-strategy: native
+  undertow:
+    max-http-post-size: 1GB
   tomcat:
     max-http-form-post-size: 50MB
 
@@ -12,8 +14,8 @@ spring:
   servlet:
     multipart:
       enabled: true
-      max-file-size: 100MB
-      max-request-size: 100MB
+      max-file-size: 1GB
+      max-request-size: 1GB
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     serialization:
@@ -132,6 +134,9 @@ weknora:
   origin: ${WEKNORA_ORIGIN:http://localhost:5173}
 
 platform:
+  bot:
+    # MCP 与 platform-api 必须配置相同的随机值（至少 32 字符），禁止提交真实密钥。
+    actor-context-secret: ${BOT_ACTOR_CONTEXT_SECRET:}
   competition:
     player:
       sms:

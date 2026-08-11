@@ -94,4 +94,18 @@ public class AsyncConfig {
     executor.initialize();
     return executor;
   }
+
+  @Bean(name = "assessorLedgerImportExecutor")
+  public ThreadPoolTaskExecutor assessorLedgerImportExecutor() {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(1);
+    executor.setMaxPoolSize(1);
+    executor.setQueueCapacity(5);
+    executor.setThreadNamePrefix("assessor-ledger-import-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(120);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
 }

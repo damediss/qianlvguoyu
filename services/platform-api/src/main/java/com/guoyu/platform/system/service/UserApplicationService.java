@@ -104,6 +104,15 @@ public class UserApplicationService {
   @Transactional
   public UserVO create(UserCreateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    return createForTenant(tenantId, req);
+  }
+
+  /**
+   * Creates a user for an explicitly supplied tenant. This is intended for audited background
+   * imports, where SecurityContext is intentionally unavailable outside the HTTP thread.
+   */
+  @Transactional
+  public UserVO createForTenant(Long tenantId, UserCreateReq req) {
     validateOrg(tenantId, req.orgId());
     validatePost(tenantId, req.postId());
     validateRoles(tenantId, req.roleIds());

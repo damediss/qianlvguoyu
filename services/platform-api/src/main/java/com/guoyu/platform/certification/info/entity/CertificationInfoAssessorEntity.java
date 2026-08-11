@@ -15,7 +15,10 @@ public class CertificationInfoAssessorEntity extends BaseEntity {
   private String accountUsername;
   private String accountPassword;
   private String assessorName;
+  private String identityNo;
   private String certificateNo;
+  private Long certificatePhotoFileId;
+  private String certificatePhotoFileName;
   private String workTypeScope;
   private String workTypeJson;
   private String levelScope;

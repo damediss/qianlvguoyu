@@ -9,9 +9,12 @@ import java.util.List;
 
 public record AssessorInfoSaveReq(
     @NotBlank String assessorName,
+    @Size(max = 32) String identityNo,
     @Size(max = 64) String accountUsername,
     @Size(min = 8, max = 128) String accountPassword,
-    @NotBlank String certificateNo,
+    @Size(max = 120) String certificateNo,
+    Long certificatePhotoFileId,
+    @Size(max = 255) String certificatePhotoFileName,
     @Deprecated String workTypeScope,
     @NotEmpty List<@NotBlank String> workTypeScopes,
     String levelScope,
