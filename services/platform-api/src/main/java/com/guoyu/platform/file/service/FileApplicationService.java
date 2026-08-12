@@ -504,12 +504,31 @@ public class FileApplicationService {
       }
     }
     LocalDate now = LocalDate.now();
-    return String.format("%d/%d/%02d/%s%s",
+    return normalizeObjectKeyPrefix(properties.objectKeyPrefix()) + String.format("%d/%d/%02d/%s%s",
         tenantId == null ? 0L : tenantId,
         now.getYear(),
         now.getMonthValue(),
         UUID.randomUUID(),
         ext);
+  }
+
+  private String normalizeObjectKeyPrefix(String configuredPrefix) {
+    if (!StringUtils.hasText(configuredPrefix)) {
+      return "";
+    }
+    String prefix = configuredPrefix.trim();
+    if (prefix.startsWith("/")
+        || prefix.endsWith("/")
+        || prefix.contains("\\")
+        || !prefix.matches("[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*")) {
+      throw new IllegalStateException("Invalid file object key prefix");
+    }
+    for (String segment : prefix.split("/")) {
+      if (segment.equals(".") || segment.equals("..")) {
+        throw new IllegalStateException("Invalid file object key prefix");
+      }
+    }
+    return prefix + "/";
   }
 
   private String sanitizeFileName(String originalName) {

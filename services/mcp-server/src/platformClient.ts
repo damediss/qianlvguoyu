@@ -51,6 +51,14 @@ export interface FileArtifactContent {
   sha256: string;
 }
 
+export interface GenerateContractPreviewArgs {
+  partyA: string;
+  partyB: string;
+  amount: string;
+  contractTitle?: string;
+  serviceScope?: string;
+}
+
 const MAX_OUTBOUND_FILE_BYTES = 20 * 1024 * 1024;
 
 export class PlatformApiError extends Error {
@@ -88,6 +96,13 @@ export class PlatformClient {
 
   getPracticalScoreProgress(taskId: string, actorContext?: BotActorContext): Promise<unknown> {
     return this.get(`certification/mcp/tasks/${encodeURIComponent(taskId)}/practical-score-progress`, {}, actorContext);
+  }
+
+  generateContractPreview(
+    args: GenerateContractPreviewArgs,
+    actorContext: BotActorContext
+  ): Promise<unknown> {
+    return this.post("contract/mcp/preview", { ...args }, actorContext);
   }
 
   getFileArtifactMetadata(fileId: string, actorContext: BotActorContext): Promise<FileArtifactMetadata> {
@@ -131,6 +146,23 @@ export class PlatformClient {
       });
       await this.refreshToken();
       return this.requestGet<T>(path, params, actorContext);
+    }
+  }
+
+  private async post<T>(
+    path: string,
+    body: Record<string, unknown>,
+    actorContext: BotActorContext
+  ): Promise<T> {
+    await this.ensureToken();
+    try {
+      return await this.requestPost<T>(path, body, actorContext);
+    } catch (error) {
+      if (!(error instanceof PlatformApiError) || error.status !== 401) {
+        throw error;
+      }
+      await this.refreshToken();
+      return this.requestPost<T>(path, body, actorContext);
     }
   }
 
@@ -260,6 +292,52 @@ export class PlatformClient {
     }
   }
 
+  private async requestPost<T>(
+    path: string,
+    body: Record<string, unknown>,
+    actorContext: BotActorContext
+  ): Promise<T> {
+    const url = new URL(path.replace(/^\/+/, ""), this.config.platformApiBaseUrl);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.platformRequestTimeoutMs);
+    try {
+      const signed = encodeSignedBotActorContext(actorContext, this.config.botActorContextSecret);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${this.accessToken}`,
+          "X-Tenant-Id": this.tenantId,
+          "X-Request-Id": actorContext.request_id,
+          "X-Bot-Actor-Context": signed.encoded,
+          "X-Bot-Actor-Signature": signed.signature
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+      const text = await response.text();
+      if (!response.ok) {
+        throw new PlatformApiError(`platform-api request failed with HTTP ${response.status}`, response.status);
+      }
+      const payload = parseJson<ApiResponse<T>>(text);
+      if (payload.code !== "0") {
+        throw new PlatformApiError(payload.message || `platform-api returned code ${payload.code}`, response.status, payload.traceId);
+      }
+      return payload.data;
+    } catch (error) {
+      if (error instanceof PlatformApiError) {
+        throw error;
+      }
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new PlatformApiError("platform-api request timed out");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   private async requestGetContent(
     fileId: string,
     actorContext: BotActorContext
@@ -296,7 +374,7 @@ export class PlatformClient {
       return {
         data,
         fileId: requiredHeader(response, "x-file-id"),
-        filename: requiredHeader(response, "x-file-name"),
+        filename: decodeUtf8Base64Header(response, "x-file-name-base64"),
         mimeType: requiredHeader(response, "x-file-mime-type"),
         size: declaredSize,
         sha256: response.headers.get("x-file-sha256") || ""
@@ -312,6 +390,19 @@ export class PlatformClient {
     } finally {
       clearTimeout(timeout);
     }
+  }
+}
+
+function decodeUtf8Base64Header(response: Response, name: string): string {
+  const encoded = requiredHeader(response, name);
+  try {
+    const decoded = Buffer.from(encoded, "base64").toString("utf8");
+    if (!decoded || decoded.includes("\uFFFD")) {
+      throw new Error("invalid UTF-8 filename");
+    }
+    return decoded;
+  } catch {
+    throw new PlatformApiError(`platform-api artifact response has invalid ${name}`, 502);
   }
 }
 

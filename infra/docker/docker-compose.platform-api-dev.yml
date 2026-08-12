@@ -19,10 +19,21 @@ services:
   redis:
     image: redis:7.4
     container_name: guoyu-platform-redis
+    restart: unless-stopped
     ports:
-      - "6379:6379"
+      # WeKnora Redis stays on the Docker network, so Platform Redis can match
+      # production and own the host's loopback-facing Redis port.
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
-      - guoyu_platform_redis:/data
+      - type: bind
+        source: ${PLATFORM_REDIS_DATA_ROOT:-D:/Weknora_agent/.docker-data/platform-redis}
+        target: /data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   rabbitmq:
     image: rabbitmq:3.13-management
@@ -45,5 +56,4 @@ services:
 
 volumes:
   guoyu_platform_mysql:
-  guoyu_platform_redis:
   guoyu_platform_rabbitmq:

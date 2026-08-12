@@ -8,6 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record FileStorageProperties(
     String storageProvider,
     String localRoot,
+    String objectKeyPrefix,
     Cos cos
 ) {
   public record Cos(

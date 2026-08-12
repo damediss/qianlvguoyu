@@ -1,6 +1,7 @@
 package com.guoyu.platform.file.service;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -14,6 +15,7 @@ import com.guoyu.platform.file.mapper.FileMapper;
 import com.guoyu.platform.file.support.FileLocalPathResolver;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -22,7 +24,7 @@ class FileApplicationServiceTest {
 
   private final FileMapper mapper = Mockito.mock(FileMapper.class);
   private final FileStorage storage = Mockito.mock(FileStorage.class);
-  private final FileStorageProperties properties = new FileStorageProperties("local", "./target/test-files",
+  private final FileStorageProperties properties = new FileStorageProperties("local", "./target/test-files", "dev",
       new FileStorageProperties.Cos(null, null, null, null, null));
   private final FileApplicationService service = new FileApplicationService(
       mapper,
@@ -81,7 +83,7 @@ class FileApplicationServiceTest {
     assertThatThrownBy(() -> service.uploadForTenant(1L, file, "private"))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("insert failed");
-    verify(storage).delete(Mockito.argThat(key -> key.endsWith("-note.txt")));
+    verify(storage).delete(Mockito.argThat(key -> key.startsWith("dev/1/") && key.endsWith(".txt")));
   }
 
   @Test
@@ -98,9 +100,24 @@ class FileApplicationServiceTest {
 
       TransactionSynchronizationManager.getSynchronizations()
           .forEach(sync -> sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
-      verify(storage).delete(Mockito.argThat(key -> key.endsWith("-note.txt")));
+      verify(storage).delete(Mockito.argThat(key -> key.startsWith("dev/1/") && key.endsWith(".txt")));
     } finally {
       TransactionSynchronizationManager.clearSynchronization();
     }
+  }
+
+  @Test
+  void prefixesNewObjectKeysWithConfiguredEnvironment() {
+    when(storage.providerName()).thenReturn("cos");
+    when(storage.put(any(), any(), any(Long.class), any())).thenReturn("https://example.invalid/file");
+    MockMultipartFile textFile =
+        new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes());
+    service.uploadForTenant(1L, textFile, "private");
+
+    ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+    verify(storage).put(keyCaptor.capture(), any(), any(Long.class), any());
+    assertThat(keyCaptor.getValue())
+        .startsWith("dev/1/")
+        .endsWith(".txt");
   }
 }
