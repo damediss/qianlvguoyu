@@ -405,11 +405,20 @@ public class ExamMakeExamPlanApplicationService {
 
     // 获取 L3 知识点
     List<Integer> l3Ids = knowledgeService.getLevel3IdsByCourse(plan.getCourseId());
-    if (l3Ids.isEmpty()) return;
+    if (l3Ids.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "该科目下无可用三级知识点，无法组卷；请先在题库配置知识点树");
+    }
+
+    boolean isAll = plan.getIsAll() != null && plan.getIsAll() == 1;
+    if (!isAll && (detailList == null || detailList.isEmpty())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "自定义组卷请至少添加一种题型配置，或改用「全选(自动统计)」模式");
+    }
 
     // 加载比重详情 (如果有 rateId)
     List<ExamKnowledgeRateDetailEntity> rateDetailList = new ArrayList<>();
-    if (plan.getRateId() != null && (plan.getIsAll() == null || plan.getIsAll() != 1)) {
+    if (plan.getRateId() != null && !isAll) {
       rateDetailList = knowledgeRateDetailMapper.selectList(
           new LambdaQueryWrapper<ExamKnowledgeRateDetailEntity>()
               .eq(ExamKnowledgeRateDetailEntity::getKnowledgeRateId, plan.getRateId()));
@@ -420,7 +429,7 @@ public class ExamMakeExamPlanApplicationService {
     final Integer finalPaperId = paper.getId();
     final Integer tenantId = plan.getTenantId();
 
-    if (plan.getIsAll() != null && plan.getIsAll() == 1) {
+    if (isAll) {
       // 全选模式：抽取所有终审通过的试题
       List<ExamExamDetailEntity> examList = examDetailMapper.selectList(
           new LambdaQueryWrapper<ExamExamDetailEntity>()
@@ -437,22 +446,24 @@ public class ExamMakeExamPlanApplicationService {
       for (ExamMakeExamPlanDetailEntity detail : detailList) {
         List<ExamPaperDetailEntity> tmpList = new ArrayList<>();
         double num = detail.getNum() != null ? detail.getNum() : 0;
+        String type = normalizePlanQuestionType(detail.getType());
+        int diffStart = detail.getDifficultyStart() != null ? detail.getDifficultyStart() : 0;
+        int diffEnd = detail.getDifficultyEnd() != null ? detail.getDifficultyEnd() : 4;
+        int scoreStart = detail.getStartPoint() != null ? detail.getStartPoint() : 0;
+        int scoreEnd = detail.getEndPoint() != null ? detail.getEndPoint() : 100;
 
-        boolean isSubjectiveType = isSubjectiveType(detail.getType());
+        boolean isSubjectiveType = isSubjectiveType(type);
 
         if (isSubjectiveType) {
           // 主观题：直接从 L3 知识点中按题型+难度+分值抽
           List<ExamExamDetailEntity> examList = examDetailMapper.selectList(
-              new LambdaQueryWrapper<ExamExamDetailEntity>()
-                  .in(ExamExamDetailEntity::getKnowledgeId, l3Ids)
-                  .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
-                  .eq(ExamExamDetailEntity::getTenantId, tenantId)
-                  .eq(ExamExamDetailEntity::getType, detail.getType())
-                  .between(ExamExamDetailEntity::getDifficulty,
-                      detail.getDifficultyStart(), detail.getDifficultyEnd())
-                  .between(ExamExamDetailEntity::getScore,
-                      detail.getStartPoint(), detail.getEndPoint())
-                  .last("ORDER BY RAND()"));
+              applyDrawFilters(
+                  new LambdaQueryWrapper<ExamExamDetailEntity>()
+                      .in(ExamExamDetailEntity::getKnowledgeId, l3Ids)
+                      .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
+                      .eq(ExamExamDetailEntity::getTenantId, tenantId)
+                      .eq(ExamExamDetailEntity::getType, type),
+                  diffStart, diffEnd, scoreStart, scoreEnd, addedExamIds));
 
           for (int i = 0; i < num && i < examList.size(); i++) {
             ExamExamDetailEntity exam = examList.get(i);
@@ -469,22 +480,14 @@ public class ExamMakeExamPlanApplicationService {
 
             double subNum = Math.ceil((double) detail.getNum() * rateDetail.getRate() / 100);
 
-            LambdaQueryWrapper<ExamExamDetailEntity> wrapper = new LambdaQueryWrapper<ExamExamDetailEntity>()
-                .in(ExamExamDetailEntity::getKnowledgeId, subL3Ids)
-                .eq(ExamExamDetailEntity::getType, detail.getType())
-                .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
-                .eq(ExamExamDetailEntity::getTenantId, tenantId)
-                .between(ExamExamDetailEntity::getDifficulty,
-                    detail.getDifficultyStart(), detail.getDifficultyEnd())
-                .between(ExamExamDetailEntity::getScore,
-                    detail.getStartPoint(), detail.getEndPoint())
-                .last("ORDER BY RAND()");
-
-            if (!addedExamIds.isEmpty()) {
-              wrapper.notIn(ExamExamDetailEntity::getId, addedExamIds);
-            }
-
-            List<ExamExamDetailEntity> examList = examDetailMapper.selectList(wrapper);
+            List<ExamExamDetailEntity> examList = examDetailMapper.selectList(
+                applyDrawFilters(
+                    new LambdaQueryWrapper<ExamExamDetailEntity>()
+                        .in(ExamExamDetailEntity::getKnowledgeId, subL3Ids)
+                        .eq(ExamExamDetailEntity::getType, type)
+                        .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
+                        .eq(ExamExamDetailEntity::getTenantId, tenantId),
+                    diffStart, diffEnd, scoreStart, scoreEnd, addedExamIds));
             for (int i = 0; i < subNum && i < examList.size(); i++) {
               ExamExamDetailEntity exam = examList.get(i);
               addedExamIds.add(exam.getId());
@@ -495,22 +498,14 @@ public class ExamMakeExamPlanApplicationService {
           }
         } else {
           // 无比重：直接从 L3 中按题型+难度+分值抽
-          LambdaQueryWrapper<ExamExamDetailEntity> wrapper = new LambdaQueryWrapper<ExamExamDetailEntity>()
-              .in(ExamExamDetailEntity::getKnowledgeId, l3Ids)
-              .eq(ExamExamDetailEntity::getType, detail.getType())
-              .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
-              .eq(ExamExamDetailEntity::getTenantId, tenantId)
-              .between(ExamExamDetailEntity::getDifficulty,
-                  detail.getDifficultyStart(), detail.getDifficultyEnd())
-              .between(ExamExamDetailEntity::getScore,
-                  detail.getStartPoint(), detail.getEndPoint())
-              .last("ORDER BY RAND()");
-
-          if (!addedExamIds.isEmpty()) {
-            wrapper.notIn(ExamExamDetailEntity::getId, addedExamIds);
-          }
-
-          List<ExamExamDetailEntity> examList = examDetailMapper.selectList(wrapper);
+          List<ExamExamDetailEntity> examList = examDetailMapper.selectList(
+              applyDrawFilters(
+                  new LambdaQueryWrapper<ExamExamDetailEntity>()
+                      .in(ExamExamDetailEntity::getKnowledgeId, l3Ids)
+                      .eq(ExamExamDetailEntity::getType, type)
+                      .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
+                      .eq(ExamExamDetailEntity::getTenantId, tenantId),
+                  diffStart, diffEnd, scoreStart, scoreEnd, addedExamIds));
           for (int i = 0; i < num && i < examList.size(); i++) {
             ExamExamDetailEntity exam = examList.get(i);
             addedExamIds.add(exam.getId());
@@ -527,10 +522,51 @@ public class ExamMakeExamPlanApplicationService {
       }
     }
 
+    if (paperDetails.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          isAll
+              ? "该科目下暂无终审通过的试题，无法生成正式卷"
+              : "按当前题型/难度/分值条件未抽到试题，请调整配置或改用全选模式");
+    }
+
     // 批量插入试卷详情
     for (ExamPaperDetailEntity pd : paperDetails) {
       paperDetailMapper.insert(pd);
     }
+  }
+
+  private LambdaQueryWrapper<ExamExamDetailEntity> applyDrawFilters(
+      LambdaQueryWrapper<ExamExamDetailEntity> wrapper,
+      int diffStart,
+      int diffEnd,
+      int scoreStart,
+      int scoreEnd,
+      List<Integer> addedExamIds) {
+    wrapper.between(ExamExamDetailEntity::getDifficulty, diffStart, diffEnd)
+        .between(ExamExamDetailEntity::getScore, scoreStart, scoreEnd);
+    if (addedExamIds != null && !addedExamIds.isEmpty()) {
+      wrapper.notIn(ExamExamDetailEntity::getId, addedExamIds);
+    }
+    wrapper.last("ORDER BY RAND()");
+    return wrapper;
+  }
+
+  /** 表单历史值 multiple → 题库实际存储 multi */
+  private String normalizePlanQuestionType(String type) {
+    if (type == null) {
+      return null;
+    }
+    String t = type.trim().toLowerCase();
+    if ("multiple".equals(t) || "duoxuan".equals(t) || "多选".equals(type)) {
+      return "multi";
+    }
+    if ("danxuan".equals(t) || "单选".equals(type)) {
+      return "single";
+    }
+    if ("pandan".equals(t) || "判断".equals(type)) {
+      return "judge";
+    }
+    return type;
   }
 
   /**

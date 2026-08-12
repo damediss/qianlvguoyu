@@ -3,6 +3,8 @@ package com.guoyu.platform.trainingdepartment.controller;
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.FollowBankDrawReq;
+import com.guoyu.platform.trainingdepartment.dto.FollowMockFromPlanReq;
+import com.guoyu.platform.trainingdepartment.dto.FollowMockWithPlanReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowTaskSaveReq;
 import com.guoyu.platform.trainingdepartment.service.TrainFollowTaskApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.FollowTaskItemVO;
@@ -88,6 +90,28 @@ public class TrainFollowTaskAdminController {
       @PathVariable Long classId,
       @RequestParam(required = false) Long excludeTaskId) {
     return ApiResponse.ok(taskService.listMockUsedQuestionIds(classId, excludeTaskId));
+  }
+
+  @GetMapping("/classes/{classId}/mock-plan-options")
+  @PreAuthorize("hasAuthority('train:info-class:view')")
+  public ApiResponse<List<Map<String, Object>>> mockPlanOptions(@PathVariable Long classId) {
+    return ApiResponse.ok(taskService.listMockPlanOptionsAdmin(classId));
+  }
+
+  @PostMapping("/classes/{classId}/mock-with-plan")
+  @PreAuthorize("hasAuthority('train:info-class:update')")
+  @AuditLog(module = "training", action = "follow-task:mock-with-plan", targetType = "train_follow_task")
+  public ApiResponse<Map<String, Object>> mockWithPlan(
+      @PathVariable Long classId, @RequestBody FollowMockWithPlanReq body) {
+    return ApiResponse.ok(taskService.createMockWithPlanAdmin(classId, body));
+  }
+
+  @PostMapping("/classes/{classId}/mock-from-plan")
+  @PreAuthorize("hasAuthority('train:info-class:update')")
+  @AuditLog(module = "training", action = "follow-task:mock-from-plan", targetType = "train_follow_task")
+  public ApiResponse<Map<String, Object>> mockFromPlan(
+      @PathVariable Long classId, @RequestBody FollowMockFromPlanReq body) {
+    return ApiResponse.ok(taskService.createMockFromPlanAdmin(classId, body));
   }
 
   @GetMapping("/classes/{classId}/bank-scope")

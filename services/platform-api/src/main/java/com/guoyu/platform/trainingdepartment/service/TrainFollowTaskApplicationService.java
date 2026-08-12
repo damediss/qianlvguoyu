@@ -9,14 +9,25 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
+import com.guoyu.platform.exam.dto.ExamMakeExamPlanCreateReq;
 import com.guoyu.platform.exam.entity.ExamCourseEntity;
 import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
 import com.guoyu.platform.exam.entity.ExamKnowledgeStructureEntity;
+import com.guoyu.platform.exam.entity.ExamMakeExamPlanEntity;
+import com.guoyu.platform.exam.entity.ExamPaperDetailEntity;
+import com.guoyu.platform.exam.entity.ExamPaperEntity;
 import com.guoyu.platform.exam.mapper.ExamCourseMapper;
 import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
+import com.guoyu.platform.exam.mapper.ExamMakeExamPlanMapper;
+import com.guoyu.platform.exam.mapper.ExamPaperDetailMapper;
+import com.guoyu.platform.exam.mapper.ExamPaperMapper;
+import com.guoyu.platform.exam.service.ExamMakeExamPlanApplicationService;
+import com.guoyu.platform.exam.vo.ExamMakeExamPlanVO;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.trainingdepartment.dto.FollowBankDrawReq;
+import com.guoyu.platform.trainingdepartment.dto.FollowMockFromPlanReq;
+import com.guoyu.platform.trainingdepartment.dto.FollowMockWithPlanReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowTaskAnswerReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowTaskQuestionReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowTaskSaveReq;
@@ -135,6 +146,10 @@ public class TrainFollowTaskApplicationService {
   private final TrainClassPracticeKnowledgeMapper practiceKnowledgeMapper;
   private final FollowTaskBankQuestionConverter bankConverter;
   private final ObjectMapper objectMapper;
+  private final ExamMakeExamPlanApplicationService makeExamPlanService;
+  private final ExamMakeExamPlanMapper makeExamPlanMapper;
+  private final ExamPaperMapper examPaperMapper;
+  private final ExamPaperDetailMapper examPaperDetailMapper;
 
   public TrainFollowTaskApplicationService(
       TrainFollowTaskMapper taskMapper,
@@ -151,7 +166,11 @@ public class TrainFollowTaskApplicationService {
       TrainClassPracticeCourseMapper practiceCourseMapper,
       TrainClassPracticeKnowledgeMapper practiceKnowledgeMapper,
       FollowTaskBankQuestionConverter bankConverter,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      ExamMakeExamPlanApplicationService makeExamPlanService,
+      ExamMakeExamPlanMapper makeExamPlanMapper,
+      ExamPaperMapper examPaperMapper,
+      ExamPaperDetailMapper examPaperDetailMapper) {
     this.taskMapper = taskMapper;
     this.questionMapper = questionMapper;
     this.itemMapper = itemMapper;
@@ -167,6 +186,10 @@ public class TrainFollowTaskApplicationService {
     this.practiceKnowledgeMapper = practiceKnowledgeMapper;
     this.bankConverter = bankConverter;
     this.objectMapper = objectMapper;
+    this.makeExamPlanService = makeExamPlanService;
+    this.makeExamPlanMapper = makeExamPlanMapper;
+    this.examPaperMapper = examPaperMapper;
+    this.examPaperDetailMapper = examPaperDetailMapper;
   }
 
   // ---------- 老师 App ----------
@@ -905,6 +928,224 @@ public class TrainFollowTaskApplicationService {
     taskMapper.insert(task);
     replaceQuestions(task, resolveQuestions(req, classId, tenantId), userId);
     return toTaskVO(task, true, false);
+  }
+
+  /**
+   * 跟班添加组卷：调用题库组卷计划 create，再快照为本班 mock 草稿。
+   * 同一事务：挂接失败则计划一并回滚。
+   */
+  @Transactional
+  public Map<String, Object> createMockWithPlanAdmin(Long classId, FollowMockWithPlanReq req) {
+    requireClass(classId);
+    if (req == null || req.getPlan() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请填写组卷计划参数");
+    }
+    ExamMakeExamPlanCreateReq planReq = req.getPlan();
+    if (planReq.examType() == null || planReq.examType() != 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "跟班模拟考仅支持理论组卷");
+    }
+    assertCourseAllowedForClass(classId, planReq.courseId());
+    ExamMakeExamPlanVO plan = makeExamPlanService.create(planReq);
+    return attachMockFromMakePlan(
+        classId,
+        plan.getId(),
+        StringUtils.hasText(req.getTitle()) ? req.getTitle().trim() : plan.getTitle(),
+        req.getDescription(),
+        req.getBizDate(),
+        req.getPassScore() != null
+            ? req.getPassScore()
+            : (plan.getPassPoint() != null ? BigDecimal.valueOf(plan.getPassPoint()) : null),
+        req.getShowAnalysisAfterSubmit(),
+        !Boolean.FALSE.equals(req.getExcludeOtherMock()));
+  }
+
+  /** 选用已有组卷计划，快照为本班 mock 草稿（不新建计划）。 */
+  @Transactional
+  public Map<String, Object> createMockFromPlanAdmin(Long classId, FollowMockFromPlanReq req) {
+    requireClass(classId);
+    if (req == null || req.getMakeExamPlanId() == null || req.getMakeExamPlanId() <= 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择组卷计划");
+    }
+    ExamMakeExamPlanEntity plan = makeExamPlanMapper.selectById(req.getMakeExamPlanId());
+    if (plan == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "组卷计划不存在");
+    }
+    if (plan.getExamType() == null || plan.getExamType() != 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "跟班模拟考仅支持理论组卷计划");
+    }
+    assertCourseAllowedForClass(classId, plan.getCourseId());
+    return attachMockFromMakePlan(
+        classId,
+        plan.getId(),
+        StringUtils.hasText(req.getTitle()) ? req.getTitle().trim() : plan.getTitle(),
+        req.getDescription(),
+        req.getBizDate(),
+        req.getPassScore() != null
+            ? req.getPassScore()
+            : (plan.getPassPoint() != null ? BigDecimal.valueOf(plan.getPassPoint()) : null),
+        req.getShowAnalysisAfterSubmit(),
+        !Boolean.FALSE.equals(req.getExcludeOtherMock()));
+  }
+
+  /** 本班可用的理论组卷计划下拉（科目落在本班练习/推荐范围内）。 */
+  @Transactional(readOnly = true)
+  public List<Map<String, Object>> listMockPlanOptionsAdmin(Long classId) {
+    requireClass(classId);
+    Long tenantId = resolveTenantId(classId);
+    ScopeFilter scope = loadScopeFilter(classId, tenantId);
+    List<Integer> courseIds = scope.courseIds.isEmpty() ? scope.fallbackCourseIds : scope.courseIds;
+
+    LambdaQueryWrapper<ExamMakeExamPlanEntity> qw = new LambdaQueryWrapper<ExamMakeExamPlanEntity>()
+        .eq(ExamMakeExamPlanEntity::getExamType, 0)
+        .orderByDesc(ExamMakeExamPlanEntity::getId)
+        .last("LIMIT 200");
+    if (tenantId != null && tenantId > 0) {
+      qw.eq(ExamMakeExamPlanEntity::getTenantId, tenantId.intValue());
+    }
+    if (!courseIds.isEmpty()) {
+      qw.in(ExamMakeExamPlanEntity::getCourseId, courseIds);
+    }
+    List<ExamMakeExamPlanEntity> plans = makeExamPlanMapper.selectList(qw);
+    Map<Integer, String> courseTitles = Map.of();
+    if (!plans.isEmpty()) {
+      Set<Integer> ids = plans.stream()
+          .map(ExamMakeExamPlanEntity::getCourseId)
+          .filter(Objects::nonNull)
+          .collect(Collectors.toSet());
+      if (!ids.isEmpty()) {
+        courseTitles = examCourseMapper.selectBatchIds(ids).stream()
+            .collect(Collectors.toMap(ExamCourseEntity::getId, ExamCourseEntity::getTitle, (a, b) -> a));
+      }
+    }
+    List<Map<String, Object>> out = new ArrayList<>();
+    for (ExamMakeExamPlanEntity p : plans) {
+      Map<String, Object> row = new LinkedHashMap<>();
+      row.put("id", p.getId());
+      row.put("title", p.getTitle());
+      row.put("courseId", p.getCourseId());
+      row.put("courseTitle", courseTitles.getOrDefault(p.getCourseId(), "#" + p.getCourseId()));
+      row.put("totalPoint", p.getTotalPoint());
+      row.put("passPoint", p.getPassPoint());
+      row.put("time", p.getTime());
+      row.put("createTime", p.getCreateTime());
+      out.add(row);
+    }
+    return out;
+  }
+
+  private Map<String, Object> attachMockFromMakePlan(
+      Long classId,
+      Integer makeExamPlanId,
+      String title,
+      String description,
+      String bizDate,
+      BigDecimal passScore,
+      Boolean showAnalysisAfterSubmit,
+      boolean excludeOtherMock) {
+    ExamMakeExamPlanEntity plan = makeExamPlanMapper.selectById(makeExamPlanId);
+    if (plan == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "组卷计划不存在");
+    }
+    ExamPaperEntity paper = examPaperMapper.selectOne(new LambdaQueryWrapper<ExamPaperEntity>()
+        .eq(ExamPaperEntity::getMakeId, makeExamPlanId)
+        .orderByDesc(ExamPaperEntity::getId)
+        .last("LIMIT 1"));
+    if (paper == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "该组卷计划尚未生成正式卷，请先在题库完成组卷");
+    }
+    List<ExamPaperDetailEntity> paperDetails = examPaperDetailMapper.selectList(
+        new LambdaQueryWrapper<ExamPaperDetailEntity>()
+            .eq(ExamPaperDetailEntity::getPaperId, paper.getId())
+            .orderByAsc(ExamPaperDetailEntity::getSortNumber)
+            .orderByAsc(ExamPaperDetailEntity::getId));
+    if (paperDetails.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "正式卷无题目，无法挂接模拟考。请确认该科目有终审通过试题，或自定义模式已配置题型");
+    }
+
+    LinkedHashSet<Integer> bankIds = new LinkedHashSet<>();
+    int subjectiveSkipped = 0;
+    for (ExamPaperDetailEntity pd : paperDetails) {
+      if (pd.getExamId() == null || pd.getExamId() <= 0) {
+        continue;
+      }
+      if (!FollowTaskBankQuestionConverter.isObjective(pd.getType())) {
+        subjectiveSkipped++;
+        continue;
+      }
+      bankIds.add(pd.getExamId());
+    }
+    int paperObjectiveCount = bankIds.size();
+    int excludedByOtherMock = 0;
+    if (excludeOtherMock) {
+      Set<Integer> used = new HashSet<>(listMockUsedExamDetailIds(classId, null));
+      LinkedHashSet<Integer> filtered = new LinkedHashSet<>();
+      for (Integer id : bankIds) {
+        if (used.contains(id)) {
+          excludedByOtherMock++;
+        } else {
+          filtered.add(id);
+        }
+      }
+      bankIds = filtered;
+    }
+    if (bankIds.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          excludeOtherMock && excludedByOtherMock > 0
+              ? "排除本班其他模拟卷已选题后无可挂客观题，请取消排除或换计划"
+              : "正式卷中无可挂接的客观题（单选/多选/判断）");
+    }
+
+    Long tenantId = resolveTenantId(classId);
+    Long userId = currentAdminUserId();
+    TrainInfoClassEntity clazz = requireClass(classId);
+
+    FollowTaskSaveReq saveReq = new FollowTaskSaveReq();
+    saveReq.setClassId(classId);
+    saveReq.setTaskType(TYPE_MOCK);
+    saveReq.setTitle(StringUtils.hasText(title) ? title : plan.getTitle());
+    saveReq.setDescription(description);
+    saveReq.setBizDate(bizDate);
+    saveReq.setPassScore(passScore);
+    saveReq.setShowAnalysisAfterSubmit(
+        showAnalysisAfterSubmit != null ? showAnalysisAfterSubmit : false);
+    saveReq.setSourceExamDetailIds(new ArrayList<>(bankIds));
+
+    TrainFollowTaskEntity task = new TrainFollowTaskEntity();
+    fillTaskFromReq(task, saveReq, clazz, TYPE_MOCK, tenantId, userId);
+    task.setStatus(STATUS_DRAFT);
+    task.setMakeExamPlanId(makeExamPlanId);
+    task.setSourcePaperId(paper.getId());
+    taskMapper.insert(task);
+    replaceQuestions(task, resolveQuestions(saveReq, classId, tenantId), userId);
+
+    FollowTaskVO taskVo = toTaskVO(task, true, false);
+    Map<String, Object> importStats = new LinkedHashMap<>();
+    importStats.put("paperQuestionCount", paperDetails.size());
+    importStats.put("paperObjectiveCount", paperObjectiveCount);
+    importStats.put("importedCount", bankIds.size());
+    importStats.put("subjectiveSkipped", subjectiveSkipped);
+    importStats.put("excludedByOtherMock", excludedByOtherMock);
+    importStats.put("excludeOtherMock", excludeOtherMock);
+
+    Map<String, Object> out = new LinkedHashMap<>();
+    out.put("task", taskVo);
+    out.put("makeExamPlanId", makeExamPlanId);
+    out.put("paperId", paper.getId());
+    out.put("importStats", importStats);
+    return out;
+  }
+
+  private void assertCourseAllowedForClass(Long classId, Integer courseId) {
+    if (courseId == null || courseId <= 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请指定科目");
+    }
+    Long tenantId = resolveTenantId(classId);
+    ScopeFilter scope = loadScopeFilter(classId, tenantId);
+    List<Integer> allowed = scope.courseIds.isEmpty() ? scope.fallbackCourseIds : scope.courseIds;
+    if (!allowed.isEmpty() && !allowed.contains(courseId)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "科目不在本班练习/推荐范围内");
+    }
   }
 
   @Transactional
@@ -2399,7 +2640,18 @@ public class TrainFollowTaskApplicationService {
         submitted,
         graded,
         rate,
-        qs);
+        qs,
+        t.getMakeExamPlanId(),
+        t.getSourcePaperId(),
+        resolveMakeExamPlanTitle(t.getMakeExamPlanId()));
+  }
+
+  private String resolveMakeExamPlanTitle(Integer makeExamPlanId) {
+    if (makeExamPlanId == null || makeExamPlanId <= 0) {
+      return null;
+    }
+    ExamMakeExamPlanEntity plan = makeExamPlanMapper.selectById(makeExamPlanId);
+    return plan != null ? plan.getTitle() : null;
   }
 
   private FollowTaskQuestionVO toQuestionVO(TrainFollowTaskQuestionEntity q, boolean includeAnswer) {

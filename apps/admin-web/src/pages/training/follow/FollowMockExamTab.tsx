@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
@@ -20,12 +20,19 @@ import {
   Typography,
   message,
 } from 'antd';
-import { DownloadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, PlusOutlined, SyncOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../../api/training';
+import {
+  MakeExamPlanForm,
+  buildMakeExamPlanCreatePayload,
+} from '../../exam/MakeExamPlanForm';
 
 type Props = { classId: number };
+
+/** 模拟考实时刷新间隔（毫秒），对齐竞赛理论监考 */
+const LIVE_POLL_MS = 5000;
 
 const STATUS_COLOR: Record<string, string> = {
   draft: 'default',
@@ -69,24 +76,33 @@ function formatAnswerJson(raw?: string | null) {
   }
 }
 
+function summarizeImport(stats?: trainApi.MockPlanAttachResult['importStats']) {
+  if (!stats) return '';
+  const parts = [`已挂接客观题 ${stats.importedCount ?? 0} 道`];
+  if ((stats.subjectiveSkipped ?? 0) > 0) {
+    parts.push(`跳过非客观题 ${stats.subjectiveSkipped}`);
+  }
+  if ((stats.excludedByOtherMock ?? 0) > 0) {
+    parts.push(`排除他卷占用 ${stats.excludedByOtherMock}`);
+  }
+  return parts.join('；');
+}
+
 export function FollowMockExamTab({ classId }: Props) {
   const queryClient = useQueryClient();
   const [taskId, setTaskId] = useState<string | number | null>(null);
   const [answerItem, setAnswerItem] = useState<trainApi.FollowTaskItem | null>(null);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [drawnIds, setDrawnIds] = useState<number[]>([]);
-  const [drawnPreview, setDrawnPreview] = useState<
-    { id: number; questionType?: string; stemPreview?: string; score?: number }[]
-  >([]);
-  const [drawMeta, setDrawMeta] = useState<{
-    drawn: Record<string, number>;
-    shortage: Record<string, number>;
-    typeCounts: Record<string, number>;
-  } | null>(null);
-  const [form] = Form.useForm();
+  const [addPlanOpen, setAddPlanOpen] = useState(false);
+  const [pickPlanOpen, setPickPlanOpen] = useState(false);
+  const [addForm] = Form.useForm();
+  const [pickForm] = Form.useForm();
   const [exporting, setExporting] = useState(false);
-  const watchedCourseId = Form.useWatch('courseId', form) as number | undefined;
-  const watchedExcludeOther = Form.useWatch('excludeOtherMock', form) as boolean | undefined;
+  /** 实时刷新：列表 + 打开的答卷详情/学员答卷 */
+  const [liveRefresh, setLiveRefresh] = useState(true);
+  const [lastLiveAt, setLastLiveAt] = useState<Date | null>(null);
+
+  const modalBusy = addPlanOpen || pickPlanOpen;
+  const pollMs = liveRefresh && !modalBusy ? LIVE_POLL_MS : false;
 
   const { data: usedMeta } = useQuery({
     queryKey: ['mock-used-q', classId],
@@ -97,132 +113,159 @@ export function FollowMockExamTab({ classId }: Props) {
   const { data: bankScope } = useQuery({
     queryKey: ['follow-bank-scope', classId],
     queryFn: () => trainApi.getFollowBankScope(classId),
-    enabled: classId > 0 && editorOpen,
-  });
-
-  const {
-    data: poolTypeCounts,
-    isFetching: poolCountsLoading,
-  } = useQuery({
-    queryKey: [
-      'follow-bank-type-counts',
-      classId,
-      watchedCourseId,
-      !!watchedExcludeOther,
-    ],
-    queryFn: () =>
-      trainApi.getFollowBankTypeCounts(classId, {
-        courseId: watchedCourseId!,
-        excludeOtherMock: !!watchedExcludeOther,
-      }),
-    enabled: classId > 0 && editorOpen && watchedCourseId != null && watchedCourseId > 0,
-  });
-
-  const poolCounts = poolTypeCounts?.typeCounts;
-
-  const { data: tasks, isLoading, refetch } = useQuery({
-    queryKey: ['follow-tasks', classId, 'mock'],
-    queryFn: () => trainApi.listFollowTasks(classId, 'mock'),
     enabled: classId > 0,
   });
 
-  const { data: items, isLoading: itemsLoading } = useQuery({
+  const { data: planOptions, isLoading: planOptionsLoading } = useQuery({
+    queryKey: ['mock-plan-options', classId],
+    queryFn: () => trainApi.listMockPlanOptions(classId),
+    enabled: classId > 0 && pickPlanOpen,
+  });
+
+  const {
+    data: tasks,
+    isLoading,
+    isFetching: tasksFetching,
+    dataUpdatedAt: tasksUpdatedAt,
+    refetch,
+  } = useQuery({
+    queryKey: ['follow-tasks', classId, 'mock'],
+    queryFn: () => trainApi.listFollowTasks(classId, 'mock'),
+    enabled: classId > 0,
+    refetchInterval: pollMs,
+    refetchIntervalInBackground: false,
+  });
+
+  const selectedTask = useMemo(
+    () => (tasks || []).find((t) => String(t.id) === String(taskId)) ?? null,
+    [tasks, taskId],
+  );
+
+  const {
+    data: items,
+    isLoading: itemsLoading,
+    isFetching: itemsFetching,
+    dataUpdatedAt: itemsUpdatedAt,
+  } = useQuery({
     queryKey: ['follow-task-items', taskId],
     queryFn: () => trainApi.listFollowTaskItems(taskId!),
     enabled: taskId != null,
+    refetchInterval: taskId != null ? pollMs : false,
+    refetchIntervalInBackground: false,
   });
 
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    isFetching: statsFetching,
+    dataUpdatedAt: statsUpdatedAt,
+  } = useQuery({
     queryKey: ['follow-task-stats', taskId],
     queryFn: () => trainApi.getFollowTaskStats(taskId!),
     enabled: taskId != null,
+    refetchInterval: taskId != null ? pollMs : false,
+    refetchIntervalInBackground: false,
   });
 
   const weakQuestions = useMemo(() => {
     const list = stats?.questionStats ?? [];
     return [...list]
       .filter((q) => q.accuracyRate != null)
-      .sort((a, b) => (a.accuracyRate ?? 100) - (b.accuracyRate ?? 100))
-      .slice(0, 5);
+      .sort((a, b) => (a.accuracyRate ?? 100) - (b.accuracyRate ?? 100));
   }, [stats]);
 
-  const { data: answers, isLoading: answersLoading } = useQuery({
+  const {
+    data: answers,
+    isLoading: answersLoading,
+    isFetching: answersFetching,
+    dataUpdatedAt: answersUpdatedAt,
+  } = useQuery({
     queryKey: ['follow-task-answers', taskId, answerItem?.id],
     queryFn: () => trainApi.getFollowTaskItemAnswers(taskId!, answerItem!.id),
     enabled: taskId != null && answerItem != null,
+    refetchInterval: taskId != null && answerItem != null ? pollMs : false,
+    refetchIntervalInBackground: false,
   });
+
+  // 明细刷新后同步当前选中学员行（状态/得分变化）
+  useEffect(() => {
+    if (!answerItem || !items?.length) return;
+    const latest = items.find((i) => String(i.id) === String(answerItem.id));
+    if (!latest) return;
+    if (
+      latest.status !== answerItem.status ||
+      latest.score !== answerItem.score ||
+      latest.submittedAt !== answerItem.submittedAt ||
+      latest.accuracyRate !== answerItem.accuracyRate ||
+      latest.correctCount !== answerItem.correctCount
+    ) {
+      setAnswerItem(latest);
+    }
+  }, [items, answerItem]);
+
+  useEffect(() => {
+    const stamps = [tasksUpdatedAt, itemsUpdatedAt, statsUpdatedAt, answersUpdatedAt].filter(
+      (t) => t != null && t > 0,
+    );
+    if (!stamps.length) return;
+    setLastLiveAt(new Date(Math.max(...stamps)));
+  }, [tasksUpdatedAt, itemsUpdatedAt, statsUpdatedAt, answersUpdatedAt]);
+
+  const liveFetching =
+    liveRefresh && (tasksFetching || itemsFetching || statsFetching || answersFetching);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['follow-tasks', classId, 'mock'] });
     void queryClient.invalidateQueries({ queryKey: ['mock-used-q', classId] });
+    void queryClient.invalidateQueries({ queryKey: ['mock-plan-options', classId] });
+    if (taskId != null) {
+      void queryClient.invalidateQueries({ queryKey: ['follow-task-items', taskId] });
+      void queryClient.invalidateQueries({ queryKey: ['follow-task-stats', taskId] });
+    }
   };
 
-  const createMu = useMutation({
+  const addPlanMu = useMutation({
     mutationFn: async () => {
-      const v = await form.validateFields();
-      if (!drawnIds.length) throw new Error('请先智能抽题');
-      return trainApi.createFollowTask({
-        classId,
-        taskType: 'mock',
-        title: v.title,
+      const v = await addForm.validateFields();
+      const plan = buildMakeExamPlanCreatePayload(v);
+      plan.examType = 0;
+      return trainApi.createMockWithPlan(classId, {
+        plan,
+        title: plan.title,
+        passScore: plan.passPoint,
+        showAnalysisAfterSubmit: false,
+        excludeOtherMock: true,
+      });
+    },
+    onSuccess: (res) => {
+      message.success(`模拟考草稿已创建（${summarizeImport(res.importStats) || '已挂接'}）`);
+      setAddPlanOpen(false);
+      addForm.resetFields();
+      invalidate();
+    },
+    onError: (e: Error) => message.error(e.message || '添加组卷失败'),
+  });
+
+  const pickPlanMu = useMutation({
+    mutationFn: async () => {
+      const v = await pickForm.validateFields();
+      return trainApi.createMockFromPlan(classId, {
+        makeExamPlanId: v.makeExamPlanId,
+        title: v.title || undefined,
         description: v.description,
         bizDate: v.bizDate || undefined,
         passScore: v.passScore,
         showAnalysisAfterSubmit: !!v.showAnalysisAfterSubmit,
-        sourceExamDetailIds: drawnIds,
-      });
-    },
-    onSuccess: () => {
-      message.success('模拟卷草稿已创建');
-      setEditorOpen(false);
-      setDrawnIds([]);
-      setDrawnPreview([]);
-      setDrawMeta(null);
-      form.resetFields();
-      invalidate();
-    },
-    onError: (e: Error) => message.error(e.message || '创建失败'),
-  });
-
-  const drawMu = useMutation({
-    mutationFn: async () => {
-      const v = await form.validateFields(['courseId', 'singleCount', 'multiCount', 'judgeCount']);
-      return trainApi.drawFollowBankQuestions(classId, {
-        courseId: v.courseId,
-        singleCount: v.singleCount ?? 0,
-        multiCount: v.multiCount ?? 0,
-        judgeCount: v.judgeCount ?? 0,
-        excludeOtherMock: !!form.getFieldValue('excludeOtherMock'),
+        excludeOtherMock: !!v.excludeOtherMock,
       });
     },
     onSuccess: (res) => {
-      const ids = (res.items || []).map((i) => i.id).filter(Boolean);
-      setDrawnIds(ids);
-      setDrawnPreview(res.items || []);
-      setDrawMeta({
-        drawn: {
-          single: Number(res.drawn?.single ?? 0),
-          multi: Number(res.drawn?.multi ?? 0),
-          judge: Number(res.drawn?.judge ?? 0),
-        },
-        shortage: {
-          single: Number(res.shortage?.single ?? 0),
-          multi: Number(res.shortage?.multi ?? 0),
-          judge: Number(res.shortage?.judge ?? 0),
-        },
-        typeCounts: {
-          single: Number(res.typeCounts?.single ?? 0),
-          multi: Number(res.typeCounts?.multi ?? 0),
-          judge: Number(res.typeCounts?.judge ?? 0),
-        },
-      });
-      if (!ids.length) {
-        message.warning(res.hint || '未抽到题目，请调整范围或取消「未抽题」');
-      } else {
-        message.success(res.hint || `已抽 ${ids.length} 题`);
-      }
+      message.success(`模拟考草稿已创建（${summarizeImport(res.importStats) || '已挂接'}）`);
+      setPickPlanOpen(false);
+      pickForm.resetFields();
+      invalidate();
     },
-    onError: (e: Error) => message.error(e.message || '抽题失败'),
+    onError: (e: Error) => message.error(e.message || '选用计划失败'),
   });
 
   const publishMu = useMutation({
@@ -252,17 +295,23 @@ export function FollowMockExamTab({ classId }: Props) {
     onError: (e: Error) => message.error(e.message || '重新打开失败'),
   });
 
-  const courseOptions = useMemo(
+  const planCourses = useMemo(
     () =>
       (bankScope?.courses || []).map((c) => ({
-        value: c.courseId,
-        label: c.title,
+        id: c.courseId,
+        title: c.title,
       })),
     [bankScope],
   );
 
   const taskColumns: ColumnsType<trainApi.FollowTask> = [
     { title: '标题', dataIndex: 'title', ellipsis: true },
+    {
+      title: '来源计划',
+      width: 160,
+      ellipsis: true,
+      render: (_, r) => r.makeExamPlanTitle || (r.makeExamPlanId != null ? `#${r.makeExamPlanId}` : '—'),
+    },
     {
       title: '题量',
       width: 70,
@@ -289,7 +338,7 @@ export function FollowMockExamTab({ classId }: Props) {
     },
     {
       title: '操作',
-      width: 220,
+      width: 240,
       render: (_, r) => (
         <Space size="small" wrap>
           <Button
@@ -300,7 +349,7 @@ export function FollowMockExamTab({ classId }: Props) {
               setAnswerItem(null);
             }}
           >
-            明细
+            答卷详情
           </Button>
           {r.status === 'draft' ? (
             <Button
@@ -383,14 +432,14 @@ export function FollowMockExamTab({ classId }: Props) {
     },
     {
       title: '操作',
-      width: 80,
+      width: 100,
       render: (_, r) =>
         r.status !== 'pending' ? (
           <Button type="link" size="small" onClick={() => setAnswerItem(r)}>
-            答卷
+            答卷详情
           </Button>
         ) : (
-          '—'
+          <Typography.Text type="secondary">未交</Typography.Text>
         ),
     },
   ];
@@ -433,34 +482,72 @@ export function FollowMockExamTab({ classId }: Props) {
       <Alert
         type="info"
         showIcon
-        message="班级模拟考：同卷统考；配卷时可排除本班其他模拟卷已抽题。答卷落跟班任务表，与班级刷题分离。"
+        message="班级模拟考：通过题库「组卷计划」添加组卷或选用已有计划；开启实时更新后可自动刷新交卷进度与答卷详情。"
         description={
           usedMeta != null
             ? `本班其他模拟卷已占用题库题 ${usedMeta.count ?? 0} 道（草稿+已发布）`
             : undefined
         }
       />
-      <Space>
-        <Button
-          type="primary"
-          onClick={() => {
-            form.setFieldsValue({
-              title: '模拟考',
-              singleCount: 10,
-              multiCount: 5,
-              judgeCount: 5,
-              excludeOtherMock: true,
-              showAnalysisAfterSubmit: false,
-            });
-            setDrawnIds([]);
-            setDrawnPreview([]);
-            setDrawMeta(null);
-            setEditorOpen(true);
-          }}
-        >
-          新建模拟卷
-        </Button>
-        <Button onClick={() => void refetch()}>刷新</Button>
+      <Space wrap align="center" style={{ width: '100%', justifyContent: 'space-between' }}>
+        <Space wrap>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              addForm.resetFields();
+              addForm.setFieldsValue({
+                examType: 0,
+                isAll: 0,
+                isComputer: true,
+                isPrint: false,
+                courseId: planCourses[0]?.id,
+              });
+              setAddPlanOpen(true);
+            }}
+          >
+            添加组卷
+          </Button>
+          <Button
+            onClick={() => {
+              pickForm.setFieldsValue({
+                excludeOtherMock: true,
+                showAnalysisAfterSubmit: false,
+              });
+              setPickPlanOpen(true);
+            }}
+          >
+            选用已有计划
+          </Button>
+          <Button
+            icon={<SyncOutlined spin={tasksFetching} />}
+            onClick={() => {
+              void refetch();
+              if (taskId != null) {
+                void queryClient.invalidateQueries({ queryKey: ['follow-task-items', taskId] });
+                void queryClient.invalidateQueries({ queryKey: ['follow-task-stats', taskId] });
+              }
+            }}
+          >
+            刷新
+          </Button>
+        </Space>
+        <Space size="middle" align="center">
+          {liveRefresh && lastLiveAt ? (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {liveFetching ? '同步中…' : `最近更新 ${lastLiveAt.toLocaleTimeString()}`}
+            </Typography.Text>
+          ) : null}
+          <Space size={6} align="center">
+            <Typography.Text>实时更新</Typography.Text>
+            <Switch
+              checked={liveRefresh}
+              onChange={setLiveRefresh}
+              checkedChildren="开"
+              unCheckedChildren="关"
+            />
+          </Space>
+        </Space>
       </Space>
 
       <Table
@@ -470,11 +557,24 @@ export function FollowMockExamTab({ classId }: Props) {
         dataSource={tasks || []}
         pagination={false}
         size="middle"
-        locale={{ emptyText: <Empty description="暂无模拟卷" /> }}
+        locale={{ emptyText: <Empty description="暂无模拟卷，请添加组卷或选用已有计划" /> }}
       />
 
       <Drawer
-        title="模拟考提交明细"
+        title={
+          <Space>
+            <span>
+              {selectedTask
+                ? `答卷详情 — ${selectedTask.title}`
+                : '答卷详情'}
+            </span>
+            {liveRefresh ? (
+              <Tag color="processing" icon={<SyncOutlined spin={itemsFetching || statsFetching} />}>
+                实时
+              </Tag>
+            ) : null}
+          </Space>
+        }
         open={taskId != null}
         onClose={() => {
           setTaskId(null);
@@ -504,6 +604,15 @@ export function FollowMockExamTab({ classId }: Props) {
           ) : null
         }
       >
+        {selectedTask?.makeExamPlanTitle || selectedTask?.makeExamPlanId != null ? (
+          <Alert
+            type="success"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={`来源组卷计划：${selectedTask.makeExamPlanTitle || `#${selectedTask.makeExamPlanId}`}`}
+          />
+        ) : null}
+
         <Space size="large" style={{ marginBottom: 12 }} wrap>
           <Statistic title="应交" value={stats?.totalCount ?? 0} loading={statsLoading} />
           <Statistic title="已交" value={stats?.submittedCount ?? 0} loading={statsLoading} />
@@ -529,7 +638,9 @@ export function FollowMockExamTab({ classId }: Props) {
 
         {weakQuestions.length > 0 ? (
           <div style={{ marginBottom: 12 }}>
-            <Typography.Text type="secondary">薄弱题（正确率最低）</Typography.Text>
+            <Typography.Text type="secondary">
+              薄弱题（按正确率从低到高，共 {weakQuestions.length} 题）
+            </Typography.Text>
             <Table
               style={{ marginTop: 8 }}
               rowKey={(r) => String(r.questionId)}
@@ -537,6 +648,7 @@ export function FollowMockExamTab({ classId }: Props) {
               pagination={false}
               columns={qStatColumns}
               dataSource={weakQuestions}
+              scroll={{ y: 200 }}
             />
           </div>
         ) : null}
@@ -549,11 +661,31 @@ export function FollowMockExamTab({ classId }: Props) {
           pagination={false}
           size="small"
           scroll={{ x: 900 }}
+          locale={{
+            emptyText: (
+              <Empty
+                description={
+                  selectedTask?.status === 'draft'
+                    ? '草稿尚未发布，暂无学员答卷'
+                    : '暂无学员交卷记录'
+                }
+              />
+            ),
+          }}
         />
       </Drawer>
 
       <Drawer
-        title={`答卷 — ${answerItem?.userName || ''}`}
+        title={
+          <Space>
+            <span>{`答卷详情 — ${answerItem?.userName || ''}`}</span>
+            {liveRefresh ? (
+              <Tag color="processing" icon={<SyncOutlined spin={answersFetching} />}>
+                实时
+              </Tag>
+            ) : null}
+          </Space>
+        }
         open={answerItem != null}
         onClose={() => setAnswerItem(null)}
         width={640}
@@ -563,6 +695,14 @@ export function FollowMockExamTab({ classId }: Props) {
           <Typography.Text type="secondary">加载中…</Typography.Text>
         ) : answers ? (
           <>
+            {selectedTask?.makeExamPlanTitle || selectedTask?.makeExamPlanId != null ? (
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 12 }}
+                message={`来源计划：${selectedTask.makeExamPlanTitle || `#${selectedTask.makeExamPlanId}`}`}
+              />
+            ) : null}
             <Descriptions size="small" column={2} style={{ marginBottom: 12 }}>
               <Descriptions.Item label="得分">{answers.score ?? '—'}</Descriptions.Item>
               <Descriptions.Item label="达标">
@@ -591,46 +731,50 @@ export function FollowMockExamTab({ classId }: Props) {
                   : '—'}
               </Descriptions.Item>
             </Descriptions>
-            {(answers.answers ?? []).map((a) => (
-              <div
-                key={String(a.questionId)}
-                style={{
-                  marginBottom: 12,
-                  padding: 12,
-                  background: '#fafafa',
-                  borderRadius: 8,
-                  border: `1px solid ${a.correct ? '#b7eb8f' : '#ffccc7'}`,
-                }}
-              >
-                <Typography.Text strong>
-                  {a.sortNumber}. [{a.questionType}] {stripHtml(a.stem)}
-                </Typography.Text>
-                <div style={{ marginTop: 8 }}>
-                  <Typography.Text type="secondary">你的选择：</Typography.Text>{' '}
-                  <Typography.Text>{formatAnswerJson(a.userAnswerJson)}</Typography.Text>
-                </div>
-                <div>
-                  <Typography.Text type="secondary">正确答案：</Typography.Text>{' '}
-                  <Typography.Text type="success">
-                    {formatAnswerJson(a.correctAnswerJson)}
+            {(answers.answers ?? []).length === 0 ? (
+              <Empty description="暂无答题明细" />
+            ) : (
+              (answers.answers ?? []).map((a) => (
+                <div
+                  key={String(a.questionId)}
+                  style={{
+                    marginBottom: 12,
+                    padding: 12,
+                    background: '#fafafa',
+                    borderRadius: 8,
+                    border: `1px solid ${a.correct ? '#b7eb8f' : '#ffccc7'}`,
+                  }}
+                >
+                  <Typography.Text strong>
+                    {a.sortNumber}. [{a.questionType}] {stripHtml(a.stem)}
                   </Typography.Text>
-                </div>
-                <div style={{ marginTop: 6 }}>
-                  <Tag color={a.correct ? 'green' : 'red'}>{a.correct ? '正确' : '错误'}</Tag>
-                  <Typography.Text type="secondary">
-                    {' '}
-                    {a.score ?? 0}/{a.fullScore ?? 0}
-                  </Typography.Text>
-                </div>
-                {a.analysis ? (
-                  <div style={{ marginTop: 4 }}>
-                    <Typography.Text type="secondary">
-                      解析：{stripHtml(a.analysis)}
+                  <div style={{ marginTop: 8 }}>
+                    <Typography.Text type="secondary">学员作答：</Typography.Text>{' '}
+                    <Typography.Text>{formatAnswerJson(a.userAnswerJson)}</Typography.Text>
+                  </div>
+                  <div>
+                    <Typography.Text type="secondary">正确答案：</Typography.Text>{' '}
+                    <Typography.Text type="success">
+                      {formatAnswerJson(a.correctAnswerJson)}
                     </Typography.Text>
                   </div>
-                ) : null}
-              </div>
-            ))}
+                  <div style={{ marginTop: 6 }}>
+                    <Tag color={a.correct ? 'green' : 'red'}>{a.correct ? '正确' : '错误'}</Tag>
+                    <Typography.Text type="secondary">
+                      {' '}
+                      {a.score ?? 0}/{a.fullScore ?? 0}
+                    </Typography.Text>
+                  </div>
+                  {a.analysis ? (
+                    <div style={{ marginTop: 4 }}>
+                      <Typography.Text type="secondary">
+                        解析：{stripHtml(a.analysis)}
+                      </Typography.Text>
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            )}
           </>
         ) : (
           <Empty />
@@ -638,18 +782,72 @@ export function FollowMockExamTab({ classId }: Props) {
       </Drawer>
 
       <Modal
-        title="新建模拟卷"
-        open={editorOpen}
-        onCancel={() => setEditorOpen(false)}
-        onOk={() => createMu.mutate()}
-        confirmLoading={createMu.isPending}
+        title="添加组卷计划"
+        open={addPlanOpen}
+        onCancel={() => {
+          setAddPlanOpen(false);
+          addForm.resetFields();
+        }}
+        onOk={() => addPlanMu.mutate()}
+        confirmLoading={addPlanMu.isPending}
+        width={900}
+        destroyOnHidden
+        okText="生成计划并挂接模拟考"
+      >
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="与题库「组卷计划 → 添加」同一套表单与生成逻辑；提交后写入组卷计划列表，并自动挂接为本班模拟考草稿。"
+        />
+        <MakeExamPlanForm
+          form={addForm}
+          courses={planCourses}
+          examTypeLocked={0}
+          coursePlaceholder={
+            planCourses.length ? '选择科目' : '暂无科目，请先配置本班练习范围'
+          }
+        />
+      </Modal>
+
+      <Modal
+        title="选用已有组卷计划"
+        open={pickPlanOpen}
+        onCancel={() => setPickPlanOpen(false)}
+        onOk={() => pickPlanMu.mutate()}
+        confirmLoading={pickPlanMu.isPending}
         width={640}
         destroyOnHidden
-        okText="保存草稿"
+        okText="挂接为模拟考草稿"
       >
-        <Form form={form} layout="vertical">
-          <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
-            <Input placeholder="如：一模" maxLength={200} />
+        <Form form={pickForm} layout="vertical">
+          <Form.Item
+            name="makeExamPlanId"
+            label="组卷计划"
+            rules={[{ required: true, message: '请选择组卷计划' }]}
+          >
+            <Select
+              loading={planOptionsLoading}
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择理论组卷计划"
+              options={(planOptions || []).map((p) => ({
+                value: p.id,
+                label: `${p.title}（${p.courseTitle || p.courseId}）`,
+              }))}
+              onChange={(id: number) => {
+                const opt = (planOptions || []).find((p) => p.id === id);
+                if (opt) {
+                  pickForm.setFieldsValue({
+                    title: opt.title,
+                    passScore: opt.passPoint ?? undefined,
+                  });
+                }
+              }}
+            />
+          </Form.Item>
+          <Form.Item name="title" label="模拟考标题">
+            <Input maxLength={200} />
           </Form.Item>
           <Form.Item name="bizDate" label="业务日（可选）">
             <Input placeholder="YYYY-MM-DD" />
@@ -664,142 +862,8 @@ export function FollowMockExamTab({ classId }: Props) {
             <Switch />
           </Form.Item>
           <Form.Item name="excludeOtherMock" valuePropName="checked">
-            <Checkbox>抽题时排除本班其他模拟卷已抽题</Checkbox>
+            <Checkbox>挂接时排除本班其他模拟卷已选题</Checkbox>
           </Form.Item>
-          <Form.Item name="courseId" label="科目" rules={[{ required: true, message: '请选择科目' }]}>
-            <Select
-              options={courseOptions}
-              placeholder={courseOptions.length ? '选择科目' : '暂无科目，请先配置练习范围'}
-              allowClear
-              onChange={() => {
-                setDrawnIds([]);
-                setDrawnPreview([]);
-                setDrawMeta(null);
-              }}
-            />
-          </Form.Item>
-
-          {watchedCourseId ? (
-            <Alert
-              type="success"
-              showIcon
-              style={{ marginBottom: 16 }}
-              message="当前科目可抽题型题数"
-              description={
-                poolCountsLoading ? (
-                  <Typography.Text type="secondary">统计中…</Typography.Text>
-                ) : (
-                  <Space size="large" wrap style={{ marginTop: 8 }}>
-                    <Statistic title="单选" value={Number(poolCounts?.single ?? 0)} />
-                    <Statistic title="多选" value={Number(poolCounts?.multi ?? 0)} />
-                    <Statistic title="判断" value={Number(poolCounts?.judge ?? 0)} />
-                    <Statistic title="合计" value={Number(poolCounts?.total ?? 0)} />
-                  </Space>
-                )
-              }
-            />
-          ) : (
-            <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-              请先选择科目，将显示该科目下单选/多选/判断可抽题数
-            </Typography.Text>
-          )}
-
-          <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
-            抽取配置
-          </Typography.Text>
-          <Space wrap size="middle" style={{ marginBottom: 8 }}>
-            <Form.Item name="singleCount" label="单选" style={{ marginBottom: 0 }}>
-              <InputNumber min={0} max={50} />
-            </Form.Item>
-            <Form.Item name="multiCount" label="多选" style={{ marginBottom: 0 }}>
-              <InputNumber min={0} max={50} />
-            </Form.Item>
-            <Form.Item name="judgeCount" label="判断" style={{ marginBottom: 0 }}>
-              <InputNumber min={0} max={50} />
-            </Form.Item>
-            <Button
-              type="primary"
-              loading={drawMu.isPending}
-              disabled={!watchedCourseId}
-              onClick={() => drawMu.mutate()}
-            >
-              智能抽题
-            </Button>
-          </Space>
-          {drawMeta ? (
-            <Alert
-              type="info"
-              showIcon
-              style={{ marginBottom: 12 }}
-              message={
-                <Space wrap size="middle">
-                  <span>
-                    单选 已抽 <b>{drawMeta.drawn.single}</b>
-                    {drawMeta.shortage.single > 0 ? (
-                      <Typography.Text type="danger">（缺 {drawMeta.shortage.single}）</Typography.Text>
-                    ) : null}
-                  </span>
-                  <span>
-                    多选 已抽 <b>{drawMeta.drawn.multi}</b>
-                    {drawMeta.shortage.multi > 0 ? (
-                      <Typography.Text type="danger">（缺 {drawMeta.shortage.multi}）</Typography.Text>
-                    ) : null}
-                  </span>
-                  <span>
-                    判断 已抽 <b>{drawMeta.drawn.judge}</b>
-                    {drawMeta.shortage.judge > 0 ? (
-                      <Typography.Text type="danger">（缺 {drawMeta.shortage.judge}）</Typography.Text>
-                    ) : null}
-                  </span>
-                  <span>
-                    合计 <b>{drawnIds.length}</b> 题
-                  </span>
-                </Space>
-              }
-            />
-          ) : null}
-          <div>
-            <Typography.Text type="secondary">
-              题目预览{drawnPreview.length ? `（${drawnPreview.length} 题）` : ''}
-            </Typography.Text>
-            {drawnPreview.length === 0 ? (
-              <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>尚未抽题</div>
-            ) : (
-              <div
-                style={{
-                  marginTop: 8,
-                  maxHeight: 220,
-                  overflowY: 'auto',
-                  paddingRight: 8,
-                  border: '1px solid #f0f0f0',
-                  borderRadius: 6,
-                  background: '#fafafa',
-                }}
-              >
-                {drawnPreview.map((q, idx) => (
-                  <div
-                    key={q.id}
-                    style={{
-                      fontSize: 12,
-                      color: '#666',
-                      padding: '6px 10px',
-                      borderBottom: idx === drawnPreview.length - 1 ? 'none' : '1px solid #f0f0f0',
-                    }}
-                  >
-                    {idx + 1}. #{q.id} [
-                    {q.questionType === 'single'
-                      ? '单选'
-                      : q.questionType === 'multi'
-                        ? '多选'
-                        : q.questionType === 'judge'
-                          ? '判断'
-                          : q.questionType}
-                    ] {q.stemPreview}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </Form>
       </Modal>
     </Space>
