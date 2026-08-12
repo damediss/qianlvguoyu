@@ -21,7 +21,7 @@ class FileLocalPathResolverTest {
     Files.writeString(file, "demo");
 
     FileLocalPathResolver resolver = new FileLocalPathResolver(
-        new FileStorageProperties("local", root.toString(), null));
+        new FileStorageProperties("local", root.toString(), "dev", null));
     assertThat(resolver.resolveExisting("1/2026/07/demo.docx")).contains(file);
   }
 }

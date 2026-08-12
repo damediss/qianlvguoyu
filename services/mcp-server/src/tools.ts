@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as z from "zod/v4";
 import { log, sanitizeError } from "./logger.js";
-import type { PlatformClient, SearchTasksArgs } from "./platformClient.js";
+import type { GenerateContractPreviewArgs, PlatformClient, SearchTasksArgs } from "./platformClient.js";
 import {
   actorRequestId,
   readBotActorContext,
@@ -92,6 +92,27 @@ export function createCertificationMcpServer(platformClient: PlatformClient): Mc
       "certification.getPracticalScoreProgress",
       (actor) => platformClient.getPracticalScoreProgress(taskId, actor),
       extra
+    )
+  );
+
+  server.registerTool(
+    "contract.generatePreview",
+    {
+      description:
+        "Generate a draft DOCX contract preview in platform-api and return a guoyu.generated-artifacts/v1 envelope. Use this when the current private-chat user asks to generate a contract file. The verified current-chat recipient is injected out of band; never ask for receiver, chatId, or userId.",
+      inputSchema: {
+        partyA: z.string().trim().min(1).max(120).describe("甲方名称。"),
+        partyB: z.string().trim().min(1).max(120).describe("乙方名称。"),
+        amount: z.string().trim().min(1).max(80).describe("合同金额及币种，例如人民币1000元。"),
+        contractTitle: z.string().trim().min(1).max(120).optional().describe("合同标题，默认信息化技术服务合同。"),
+        serviceScope: z.string().trim().min(1).max(2000).optional().describe("服务范围或交付说明。")
+      }
+    },
+    async (args, extra) => runTool(
+      "contract.generatePreview",
+      (actor) => platformClient.generateContractPreview(args as GenerateContractPreviewArgs, actor!),
+      extra,
+      true
     )
   );
 

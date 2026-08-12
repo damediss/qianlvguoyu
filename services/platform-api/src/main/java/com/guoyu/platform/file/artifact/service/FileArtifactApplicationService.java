@@ -8,6 +8,8 @@ import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.integration.bot.BotActorContext;
 import com.guoyu.platform.integration.bot.BotActorContextHolder;
 import java.util.Objects;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -44,7 +46,10 @@ public class FileArtifactApplicationService {
     HttpHeaders headers = new HttpHeaders();
     headers.putAll(base.getHeaders());
     headers.set("X-File-Id", String.valueOf(file.getId()));
-    headers.set("X-File-Name", file.getOriginalName());
+    // HTTP response headers are byte-oriented and Node/undici rejects raw CJK header values.
+    // Base64 preserves the exact UTF-8 filename across the platform -> MCP boundary.
+    headers.set("X-File-Name-Base64", Base64.getEncoder().encodeToString(
+        file.getOriginalName().getBytes(StandardCharsets.UTF_8)));
     headers.set("X-File-Mime-Type", StringUtils.hasText(file.getContentType())
         ? file.getContentType() : "application/octet-stream");
     headers.set("X-File-Size", String.valueOf(file.getSizeBytes()));
