@@ -28,5 +28,8 @@ public record FollowTaskVO(
     Integer submittedCount,
     Integer gradedCount,
     BigDecimal completionRate,
-    List<FollowTaskQuestionVO> questions
+    List<FollowTaskQuestionVO> questions,
+    Integer makeExamPlanId,
+    Integer sourcePaperId,
+    String makeExamPlanTitle
 ) {}

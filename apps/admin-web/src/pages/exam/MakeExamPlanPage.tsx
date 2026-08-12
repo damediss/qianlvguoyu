@@ -4,7 +4,6 @@ import {
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
-  MinusCircleOutlined,
   ApartmentOutlined,
   BookOutlined,
   DownOutlined,
@@ -14,16 +13,12 @@ import {
   Card,
   Form,
   Input,
-  InputNumber,
   Modal,
-  Select,
   Space,
-  Switch,
   Table,
   Tabs,
   Tag,
   Tree,
-  Typography,
   message,
   Popconfirm,
   Spin,
@@ -36,36 +31,18 @@ import {
   createMakeExamPlan,
   updateMakeExamPlan,
   deleteMakeExamPlan,
-  listKnowledgeRates,
   pageWorkTypes,
 } from '../../api/exam';
 import { pageCourses } from '../../api/exam';
 import type {
   ExamMakeExamPlan,
   ExamMakeExamPlanCreateReq,
-  ExamMakeExamPlanDetailReq,
-  ExamKnowledgeRate,
   ExamCourse,
-  ExamWorkType,
 } from '../../types/exam';
+import { MakeExamPlanForm, buildMakeExamPlanCreatePayload } from './MakeExamPlanForm';
 import './MakeExamPlanPage.css';
 
-const { Title } = Typography;
-
 const EXAM_TYPE_MAP: Record<number, string> = { 0: '理论', 1: '实操' };
-
-const QUESTION_TYPES = [
-  { label: '单选题', value: 'single' },
-  { label: '多选题', value: 'multiple' },
-  { label: '判断题', value: 'judge' },
-  { label: '填空题', value: 'fill' },
-  { label: '简答题', value: 'essay' },
-  { label: '论述题', value: 'explain' },
-  { label: '计算题', value: 'cal' },
-  { label: '简答题(答)', value: 'answer' },
-  { label: '分析题', value: 'analysis' },
-  { label: '简单填空', value: 'simple_fill' },
-];
 
 export function MakeExamPlanPage() {
   const queryClient = useQueryClient();
@@ -202,13 +179,6 @@ export function MakeExamPlanPage() {
     }
   }, [defaultExpandAll, expandedKeys.length]);
 
-  // 知识比重列表(下拉用)
-  const rateQuery = useQuery({
-    queryKey: ['knowledge-rates-list', selectedCourseId],
-    queryFn: () => listKnowledgeRates(selectedCourseId),
-    enabled: !!selectedCourseId,
-  });
-
   // 组卷计划分页
   const listQuery = useQuery({
     queryKey: ['make-exam-plans', { ...query, courseId: selectedCourseId, examType }],
@@ -278,11 +248,7 @@ export function MakeExamPlanPage() {
   const handleSubmit = useCallback(async () => {
     try {
       const values = await form.validateFields();
-      const payload: ExamMakeExamPlanCreateReq = {
-        ...values,
-        isComputer: values.isComputer ? 1 : 0,
-        isPrint: values.isPrint ? 1 : 0,
-      };
+      const payload = buildMakeExamPlanCreatePayload(values);
       if (editingId) {
         updateMutation.mutate({ id: editingId, payload });
       } else {
@@ -328,7 +294,6 @@ export function MakeExamPlanPage() {
   ];
 
   const courses = courseQuery.data?.items || [];
-  const rates = rateQuery.data || [];
 
   const handleTreeSelect = useCallback(
     (keys: React.Key[]) => {
@@ -438,7 +403,7 @@ export function MakeExamPlanPage() {
         />
       </div>
 
-      {/* 弹窗表单 */}
+      {/* 弹窗表单：与跟班「添加组卷」共用 MakeExamPlanForm */}
       <Modal
         title={editingId ? '编辑组卷计划' : '添加组卷计划'}
         open={modalOpen}
@@ -451,129 +416,7 @@ export function MakeExamPlanPage() {
         width={900}
         destroyOnHidden
       >
-        <Form
-          form={form}
-          layout="horizontal"
-          labelCol={{ flex: '80px' }}
-          wrapperCol={{ flex: 1 }}
-          labelAlign="right"
-        >
-          <Form.Item name="title" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
-            <Input />
-          </Form.Item>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-            <Form.Item name="courseId" label="科目" rules={[{ required: true }]}>
-              <Select
-                placeholder="选择科目"
-                options={courses.map((c: ExamCourse) => ({ label: c.title, value: c.id }))}
-                showSearch
-                optionFilterProp="label"
-              />
-            </Form.Item>
-            <Form.Item name="examType" label="考试类型" rules={[{ required: true }]}>
-              <Select
-                options={[
-                  { label: '理论', value: 0 },
-                  { label: '实操', value: 1 },
-                ]}
-              />
-            </Form.Item>
-            <Form.Item name="time" label="时长(分钟)">
-              <InputNumber min={0} style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item name="rateId" label="知识比重">
-              <Select
-                allowClear
-                placeholder="选择比重(可选)"
-                options={rates.map((r: ExamKnowledgeRate) => ({ label: r.title, value: r.id }))}
-              />
-            </Form.Item>
-            <Form.Item name="totalPoint" label="总分">
-              <InputNumber min={0} style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item name="passPoint" label="及格分">
-              <InputNumber min={0} style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item name="isComputer" label="机考" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            <Form.Item name="isPrint" label="打印" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            <Form.Item name="isAll" label="全选模式">
-              <Select
-                options={[
-                  { label: '全选(自动统计)', value: 1 },
-                  { label: '自定义', value: 0 },
-                ]}
-              />
-            </Form.Item>
-          </div>
-          <Form.Item name="comments" label="备注">
-            <Input.TextArea rows={2} />
-          </Form.Item>
-
-          {/* 题型配置(自定义模式时显示) */}
-          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.isAll !== cur.isAll}>
-            {({ getFieldValue }) =>
-              getFieldValue('isAll') !== 1 && (
-                <>
-                  <Title level={5}>题型配置</Title>
-                  <Form.List name="detailList">
-                    {(fields, { add, remove }) => (
-                      <>
-                        {fields.map((field) => (
-                          <Card
-                            key={field.key}
-                            size="small"
-                            style={{ marginBottom: 8 }}
-                            extra={
-                              <MinusCircleOutlined
-                                onClick={() => remove(field.name)}
-                                style={{ color: '#ff4d4f' }}
-                              />
-                            }
-                          >
-                            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
-                              <Form.Item name={[field.name, 'type']} label="题型" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
-                                <Select options={QUESTION_TYPES} />
-                              </Form.Item>
-                              <Form.Item name={[field.name, 'num']} label="数量" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
-                                <InputNumber min={1} style={{ width: '100%' }} />
-                              </Form.Item>
-                              <Form.Item name={[field.name, 'point']} label="每题分值" style={{ marginBottom: 0 }}>
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                              </Form.Item>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                                <Form.Item name={[field.name, 'difficultyStart']} label="难度起" style={{ marginBottom: 0 }}>
-                                  <InputNumber min={0} max={4} style={{ width: '100%' }} />
-                                </Form.Item>
-                                <Form.Item name={[field.name, 'difficultyEnd']} label="难度止" style={{ marginBottom: 0 }}>
-                                  <InputNumber min={0} max={4} style={{ width: '100%' }} />
-                                </Form.Item>
-                              </div>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginTop: 8 }}>
-                              <Form.Item name={[field.name, 'startPoint']} label="分值起" style={{ marginBottom: 0 }}>
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                              </Form.Item>
-                              <Form.Item name={[field.name, 'endPoint']} label="分值止" style={{ marginBottom: 0 }}>
-                                <InputNumber min={0} style={{ width: '100%' }} />
-                              </Form.Item>
-                            </div>
-                          </Card>
-                        ))}
-                        <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
-                          添加题型
-                        </Button>
-                      </>
-                    )}
-                  </Form.List>
-                </>
-              )
-            }
-          </Form.Item>
-        </Form>
+        <MakeExamPlanForm form={form} courses={courses} />
       </Modal>
     </div>
   );

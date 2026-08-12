@@ -29,4 +29,8 @@ public class TrainFollowTaskEntity extends BaseEntity {
   private String passRule;
   private Integer showAnalysisAfterSubmit;
   private LocalDateTime publishedAt;
+  /** 来源组卷计划 exam_make_exam_plan.id */
+  private Integer makeExamPlanId;
+  /** 来源正式卷 exam_paper.id */
+  private Integer sourcePaperId;
 }

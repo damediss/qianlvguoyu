@@ -1534,11 +1534,6 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
               ),
           },
           {
-            key: 'evidence',
-            label: '留痕',
-            children: comingSoon('过程留痕', '照片/视频证据将挂载课次或按日；上传通道复用现有文件服务（M2）'),
-          },
-          {
             key: 'homework',
             label: '作业',
             children:
@@ -1664,6 +1659,11 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                 </Col>
               </Row>
             ),
+          },
+          {
+            key: 'evidence',
+            label: '留痕',
+            children: comingSoon('过程留痕', '照片/视频证据将挂载课次或按日；上传通道复用现有文件服务（M2）'),
           },
         ]}
       />

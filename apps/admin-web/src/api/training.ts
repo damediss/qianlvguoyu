@@ -1440,6 +1440,9 @@ export type FollowTask = {
   submittedCount?: number | null;
   gradedCount?: number | null;
   completionRate?: number | null;
+  makeExamPlanId?: number | null;
+  sourcePaperId?: number | null;
+  makeExamPlanTitle?: string | null;
 };
 
 export type FollowTaskItem = {
@@ -1576,6 +1579,94 @@ export function getMockUsedQuestionIds(classId: number, excludeTaskId?: number |
     apiClient.get(`${BASE}/follow-tasks/classes/${classId}/mock-used-question-ids`, {
       params: excludeTaskId != null ? { excludeTaskId } : undefined,
     }),
+  );
+}
+
+export type MockPlanOption = {
+  id: number;
+  title: string;
+  courseId?: number;
+  courseTitle?: string;
+  totalPoint?: number | null;
+  passPoint?: number | null;
+  time?: number | null;
+  createTime?: string | null;
+};
+
+export type MockPlanAttachResult = {
+  task: FollowTask;
+  makeExamPlanId: number;
+  paperId: number;
+  importStats?: {
+    paperQuestionCount?: number;
+    paperObjectiveCount?: number;
+    importedCount?: number;
+    subjectiveSkipped?: number;
+    excludedByOtherMock?: number;
+    excludeOtherMock?: boolean;
+  };
+};
+
+export function listMockPlanOptions(classId: number) {
+  return unwrap<MockPlanOption[]>(
+    apiClient.get(`${BASE}/follow-tasks/classes/${classId}/mock-plan-options`),
+  );
+}
+
+export function createMockWithPlan(
+  classId: number,
+  payload: {
+    plan: {
+      title: string;
+      courseId: number;
+      examType: number;
+      rateId?: number;
+      type?: number;
+      time?: number;
+      isComputer?: number;
+      isPrint?: number;
+      openRate?: number;
+      totalPoint?: number;
+      passPoint?: number;
+      isAll?: number;
+      comments?: string;
+      detailList?: {
+        type: string;
+        num: number;
+        point?: number;
+        startPoint?: number;
+        endPoint?: number;
+        difficultyStart?: number;
+        difficultyEnd?: number;
+      }[];
+    };
+    title?: string;
+    description?: string;
+    bizDate?: string;
+    passScore?: number;
+    showAnalysisAfterSubmit?: boolean;
+    excludeOtherMock?: boolean;
+  },
+) {
+  return unwrap<MockPlanAttachResult>(
+    apiClient.post(`${BASE}/follow-tasks/classes/${classId}/mock-with-plan`, payload),
+  );
+}
+
+export function createMockFromPlan(
+  classId: number,
+  payload: {
+    makeExamPlanId: number;
+    title?: string;
+    description?: string;
+    bizDate?: string;
+    passScore?: number;
+    showAnalysisAfterSubmit?: boolean;
+    excludeOtherMock?: boolean;
+  },
+) {
+  return unwrap<MockPlanAttachResult>(
+    apiClient.post(`${BASE}/follow-tasks/classes/${classId}/mock-from-plan`, payload),
   );
 }
 
