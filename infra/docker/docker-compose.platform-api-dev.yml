@@ -21,9 +21,9 @@ services:
     container_name: guoyu-platform-redis
     restart: unless-stopped
     ports:
-      # WeKnora Redis owns host port 6379. Keep the same two-Redis topology as
-      # production while exposing Platform Redis on a non-conflicting DEV port.
-      - "${REDIS_PORT:-6380}:6379"
+      # WeKnora Redis stays on the Docker network, so Platform Redis can match
+      # production and own the host's loopback-facing Redis port.
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - type: bind
         source: ${PLATFORM_REDIS_DATA_ROOT:-D:/Weknora_agent/.docker-data/platform-redis}
