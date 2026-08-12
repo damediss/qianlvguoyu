@@ -14,6 +14,7 @@ import {
 import {
   DeleteOutlined,
   EditOutlined,
+  LineChartOutlined,
   PlusOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
@@ -26,6 +27,16 @@ import {
 import type { TrainExam, TrainExamQuery } from '../../types/training';
 import { TrainExamListFormModal } from './TrainExamListFormModal';
 import { TrainExamPeopleModal } from './TrainExamPeopleModal';
+import { useAuthStore } from '../../stores/authStore';
+
+/** PHP 来源行 id 上界（AI同步学统计方案 v1.1 §3.2）：id < 100000 即 PHP 一次性导入行，只读 */
+const PHP_SOURCE_EXAM_ID_BOUNDARY = 100_000;
+
+/** 统计隐藏路由跳转（与 main.tsx 约定：pushState + popstate） */
+function navigateTo(path: string) {
+  window.history.pushState({}, '', path);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
 
 const TYPE_OPTIONS = [
   { value: 0, label: '线上' },
@@ -38,6 +49,8 @@ const SOURCE_OPTIONS = [
 
 export function TrainExamListPage() {
   const queryClient = useQueryClient();
+  const hasPerm = useAuthStore((s) => s.hasPermission);
+  const canViewStats = hasPerm('exam:review-sync:stats:view');
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
   const [keyword, setKeyword] = useState('');
@@ -95,25 +108,49 @@ export function TrainExamListPage() {
     },
     { title: '创建时间', dataIndex: 'createTime', width: 160 },
     {
-      title: '操作', key: 'act', width: 240, fixed: 'right',
-      render: (_, r) => (
-        <Space size="small">
-          <Button
-            type="link" size="small" icon={<EditOutlined />}
-            onClick={() => { setEditingId(r.id); setFormOpen(true); }}
-          >编辑</Button>
-          <Button
-            type="link" size="small" icon={<TeamOutlined />}
-            onClick={() => { setPeopleExamId(r.id); setPeopleExamTitle(r.title ?? ''); }}
-          >考生</Button>
-          <Popconfirm
-            title="确定删除该考试计划?"
-            onConfirm={() => r.id != null && deleteMu.mutate(r.id)}
-          >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
-          </Popconfirm>
-        </Space>
-      ),
+      title: '操作', key: 'act', width: 300, fixed: 'right',
+      render: (_, r) => {
+        // PHP 来源行（id < 100000）：编辑/考生/删除只读置灰（后端 requireSaaSLocalExam 兜底拦截）；
+        // 「AI同步学统计」为只读功能，不受影响
+        const isPhpSource = r.id != null && r.id < PHP_SOURCE_EXAM_ID_BOUNDARY;
+        const phpSourceTip = '来源于工匠基地平台，请前往原平台维护';
+        return (
+          <Space size="small">
+            <Button
+              type="link" size="small" icon={<EditOutlined />}
+              disabled={isPhpSource}
+              title={isPhpSource ? phpSourceTip : undefined}
+              onClick={() => { setEditingId(r.id); setFormOpen(true); }}
+            >编辑</Button>
+            <Button
+              type="link" size="small" icon={<TeamOutlined />}
+              disabled={isPhpSource}
+              title={isPhpSource ? phpSourceTip : undefined}
+              onClick={() => { setPeopleExamId(r.id); setPeopleExamTitle(r.title ?? ''); }}
+            >考生</Button>
+            {canViewStats && (
+              <Button
+                type="link" size="small" icon={<LineChartOutlined />}
+                onClick={() => r.id != null && navigateTo(`/training/exam-lists/${r.id}/review-sync-stats`)}
+              >AI同步学统计</Button>
+            )}
+            {isPhpSource ? (
+              <Button
+                type="link" size="small" danger icon={<DeleteOutlined />}
+                disabled
+                title={phpSourceTip}
+              >删除</Button>
+            ) : (
+              <Popconfirm
+                title="确定删除该考试计划?"
+                onConfirm={() => r.id != null && deleteMu.mutate(r.id)}
+              >
+                <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+              </Popconfirm>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 

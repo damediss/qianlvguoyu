@@ -65,6 +65,8 @@ import { KnowledgeRatePage } from './pages/exam/KnowledgeRatePage';
 import { KnowledgeStructurePage } from './pages/exam/KnowledgeStructurePage';
 import { FaqConversionPage } from './pages/exam/FaqConversionPage';
 import { TrainExamListPage } from './pages/training/TrainExamListPage';
+import { StatsOverviewPage } from './pages/exam/reviewSyncStats/StatsOverviewPage';
+import { StudentDetailPage } from './pages/exam/reviewSyncStats/StudentDetailPage';
 import { TabletAssessorApp } from './pages/assessor/TabletAssessorApp';
 import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
 import { CompetitionEventManagementPage } from './pages/competition/CompetitionEventManagementPage';
@@ -579,6 +581,39 @@ function CompetitionEventShell({ pathname }: { pathname: string }) {
   );
 }
 
+/** AI 同步学统计隐藏路由：/training/exam-lists/:examId/review-sync-stats[/student/:planId]
+ *  （《AI同步学统计功能设计方案》v1.1 §6.1：仅考试管理列表页行内按钮进入，不进菜单） */
+function isReviewSyncStatsPath(pathname: string) {
+  return /^\/training\/exam-lists\/\d+\/review-sync-stats/.test(pathname);
+}
+
+function ReviewSyncStatsShell({ pathname }: { pathname: string }) {
+  const [statsActive, setStatsActive] = React.useState(true);
+  const match = pathname.match(/^\/training\/exam-lists\/(\d+)\/review-sync-stats(?:\/student\/(\d+))?\/?$/);
+  const examId = match ? Number(match[1]) : 0;
+  const planId = match?.[2];
+
+  React.useEffect(() => {
+    setStatsActive(true);
+  }, [pathname]);
+
+  return (
+    <AppShell
+      pageMap={pageMap}
+      selectedMenuKeyOverride={statsActive ? 'train_exam-list' : undefined}
+      contentOverride={statsActive ? (
+        <React.Fragment key={pathname}>
+          {planId
+            ? <StudentDetailPage examId={examId} planId={planId} />
+            : <StatsOverviewPage examId={examId} />}
+        </React.Fragment>
+      ) : undefined}
+      onMenuNavigate={() => setStatsActive(false)}
+      hideBreadcrumb={statsActive}
+    />
+  );
+}
+
 function App() {
   const pathname = useBrowserPathname();
   const assessorMode = pathname.startsWith('/assessor-scoring');
@@ -586,6 +621,7 @@ function App() {
   const collectionManageTaskId = pathname.match(/^\/certification\/practical-collection\/([^/]+)\/manage\/?$/)?.[1];
   const collectionManageMode = Boolean(collectionManageTaskId);
   const competitionEventMode = isCompetitionPath(pathname);
+  const reviewSyncStatsMode = isReviewSyncStatsPath(pathname);
 
   return (
     <NavigationBlockerProvider>
@@ -596,6 +632,8 @@ function App() {
           <PracticalCollectionApp />
         ) : collectionManageMode ? (
           <CollectionManageShell taskId={decodeURIComponent(collectionManageTaskId!)} />
+        ) : reviewSyncStatsMode ? (
+          <ReviewSyncStatsShell pathname={pathname} />
         ) : competitionEventMode ? (
           <CompetitionEventShell pathname={pathname} />
         ) : (
