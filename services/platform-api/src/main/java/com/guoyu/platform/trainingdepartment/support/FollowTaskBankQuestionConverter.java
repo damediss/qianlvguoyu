@@ -103,6 +103,10 @@ public class FollowTaskBankQuestionConverter {
       correctKeys.addAll(parseChoiceAnswerKeys(detail.getAnswer(), qType, options));
     }
 
+    if ("judge".equals(qType)) {
+      normalizeJudgeOptions(options, correctKeys);
+    }
+
     if (options.isEmpty() && !"judge".equals(qType)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST,
           "题库题 #" + detail.getId() + " 缺少选项，无法布置");
@@ -126,6 +130,70 @@ public class FollowTaskBankQuestionConverter {
     req.setAnalysis(StringUtils.hasText(detail.getResolve()) ? detail.getResolve().trim() : null);
     req.setSourceExamDetailId(detail.getId() == null ? null : detail.getId().longValue());
     return req;
+  }
+
+  /**
+   * 题库常把判断题做成 A.对 B.错 C.C D.D；快照只保留两个有效选项。
+   */
+  private static void normalizeJudgeOptions(
+      List<Map<String, Object>> options, List<String> correctKeys) {
+    List<Map<String, Object>> kept = new ArrayList<>();
+    for (Map<String, Object> opt : options) {
+      String text = optionContentText(opt.get("text"));
+      String key = opt.get("key") == null ? "" : String.valueOf(opt.get("key")).trim();
+      if (!StringUtils.hasText(text)) {
+        continue;
+      }
+      // 纯字母占位（C / D / text==key）丢掉
+      if (text.matches("(?i)^[A-D]$")) {
+        continue;
+      }
+      if (StringUtils.hasText(key) && text.equalsIgnoreCase(key) && key.matches("(?i)^[A-D]$")) {
+        continue;
+      }
+      kept.add(opt);
+      if (kept.size() >= 2) {
+        break;
+      }
+    }
+    if (kept.isEmpty()) {
+      kept.add(Map.of("key", "true", "text", "正确"));
+      kept.add(Map.of("key", "false", "text", "错误"));
+      // 原 correctKeys 可能是 A/B，按语义重映射
+      List<String> remapped = new ArrayList<>();
+      for (String k : correctKeys) {
+        String n = k == null ? "" : k.trim().toLowerCase(Locale.ROOT);
+        if ("a".equals(n) || "true".equals(n) || "对".equals(n) || "正确".equals(n) || "1".equals(n)) {
+          remapped.add("true");
+        } else if ("b".equals(n)
+            || "false".equals(n)
+            || "错".equals(n)
+            || "错误".equals(n)
+            || "0".equals(n)) {
+          remapped.add("false");
+        }
+      }
+      correctKeys.clear();
+      if (!remapped.isEmpty()) {
+        correctKeys.add(remapped.get(0));
+      } else {
+        correctKeys.add("true");
+      }
+    } else {
+      options.clear();
+      options.addAll(kept);
+      correctKeys.removeIf(
+          k ->
+              kept.stream()
+                  .noneMatch(o -> String.valueOf(o.get("key")).equalsIgnoreCase(String.valueOf(k))));
+      if (correctKeys.isEmpty() && !kept.isEmpty()) {
+        // 保留第一个选项为兜底（不应常态发生；isCorrect 通常在 A/对）
+        correctKeys.add(String.valueOf(kept.get(0).get("key")));
+      }
+      return;
+    }
+    options.clear();
+    options.addAll(kept);
   }
 
   private List<String> parseChoiceAnswerKeys(

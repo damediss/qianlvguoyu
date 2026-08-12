@@ -33,4 +33,31 @@ public interface ExamExamDetailMapper extends BaseMapper<ExamExamDetailEntity> {
       GROUP BY knowledge_id
       """)
   List<Map<String, Object>> countByKnowledgeIdGrouped(@Param("tenantId") Integer tenantId);
+
+  /** 班级刷题口径：有效客观题按知识点计数（与 /appsmart 抽题池一致）。 */
+  @Select("""
+      SELECT knowledge_id AS knowledgeId, COUNT(*) AS cnt
+      FROM exam_exam_detail
+      WHERE tenant_id = #{tenantId}
+        AND deleted = 0
+        AND status = 1
+        AND type IN ('single', 'multi', 'judge')
+        AND knowledge_id IS NOT NULL
+      GROUP BY knowledge_id
+      """)
+  List<Map<String, Object>> countPracticeQuestionsByKnowledgeGrouped(@Param("tenantId") Integer tenantId);
+
+  /** 按知识点 + 题型统计有效客观题量。 */
+  @Select("""
+      SELECT knowledge_id AS knowledgeId, type AS questionType, COUNT(*) AS cnt
+      FROM exam_exam_detail
+      WHERE tenant_id = #{tenantId}
+        AND deleted = 0
+        AND status = 1
+        AND type IN ('single', 'multi', 'judge')
+        AND knowledge_id IS NOT NULL
+      GROUP BY knowledge_id, type
+      """)
+  List<Map<String, Object>> countPracticeQuestionsByKnowledgeAndTypeGrouped(
+      @Param("tenantId") Integer tenantId);
 }

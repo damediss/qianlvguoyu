@@ -99,13 +99,18 @@ public class TrainFollowTaskApplicationService {
 
   public static final String TYPE_HOMEWORK = "homework";
   public static final String TYPE_PRACTICE = "practice";
+  /** 班级模拟考（跟班同卷；答卷仍落 follow 四表） */
+  public static final String TYPE_MOCK = "mock";
+  /** 列表过滤：作业 Tab / 老师布置（不含模拟考） */
+  public static final String FILTER_ASSIGNMENT = "assignment";
 
-  private static final Set<String> TASK_TYPES = Set.of(TYPE_HOMEWORK, TYPE_PRACTICE);
+  private static final Set<String> TASK_TYPES = Set.of(TYPE_HOMEWORK, TYPE_PRACTICE, TYPE_MOCK);
   private static final Set<String> Q_TYPES = Set.of("single", "multi", "judge");
 
   private static final Map<String, String> TASK_TYPE_NAMES = Map.of(
       TYPE_HOMEWORK, "课堂作业",
-      TYPE_PRACTICE, "随堂练");
+      TYPE_PRACTICE, "随堂练",
+      TYPE_MOCK, "模拟考");
   private static final Map<String, String> STATUS_NAMES = Map.of(
       STATUS_DRAFT, "草稿",
       STATUS_PUBLISHED, "已发布",
@@ -174,8 +179,8 @@ public class TrainFollowTaskApplicationService {
     }
     assertTeacher(platformUserId, classId);
     TrainInfoClassEntity clazz = requireClass(classId);
-    validateMount(req);
     String taskType = normalizeTaskType(req.getTaskType());
+    validateMount(req, taskType);
     Long tenantId = resolveTenantId(classId);
 
     TrainFollowTaskEntity task = new TrainFollowTaskEntity();
@@ -196,8 +201,8 @@ public class TrainFollowTaskApplicationService {
     if (!Objects.equals(task.getCreatedBy(), platformUserId)) {
       throw new BusinessException(ErrorCode.FORBIDDEN, "仅布置人可修改草稿");
     }
-    validateMount(req);
     String taskType = normalizeTaskType(req.getTaskType());
+    validateMount(req, taskType);
     TrainInfoClassEntity clazz = requireClass(task.getClassId());
     fillTaskFromReq(task, req, clazz, taskType, task.getTenantId(), platformUserId);
     taskMapper.updateById(task);
@@ -321,6 +326,10 @@ public class TrainFollowTaskApplicationService {
   @Transactional(readOnly = true)
   public Map<String, Object> bankScopeMeta(Long platformUserId, Long classId) {
     assertTeacher(platformUserId, classId);
+    return bankScopeMetaInternal(classId);
+  }
+
+  private Map<String, Object> bankScopeMetaInternal(Long classId) {
     requireClass(classId);
     Long tenantId = resolveTenantId(classId);
     ScopeFilter scope = loadScopeFilter(classId, tenantId);
@@ -419,7 +428,17 @@ public class TrainFollowTaskApplicationService {
   public Map<String, Object> drawBankQuestions(
       Long platformUserId, Long classId, FollowBankDrawReq req) {
     assertTeacher(platformUserId, classId);
+    return drawBankQuestionsInternal(classId, req);
+  }
+
+  /** 管理端抽题（PreAuthorize 控权，不校验 App 老师角色） */
+  @Transactional(readOnly = true)
+  public Map<String, Object> drawBankQuestionsAdmin(Long classId, FollowBankDrawReq req) {
     requireClass(classId);
+    return drawBankQuestionsInternal(classId, req);
+  }
+
+  private Map<String, Object> drawBankQuestionsInternal(Long classId, FollowBankDrawReq req) {
     if (req == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请配置抽题数量");
     }
@@ -451,6 +470,9 @@ public class TrainFollowTaskApplicationService {
           exclude.add(id);
         }
       }
+    }
+    if (Boolean.TRUE.equals(req.getExcludeOtherMock())) {
+      exclude.addAll(listMockUsedExamDetailIds(classId, req.getExcludeTaskId()));
     }
 
     if (bankScope.impossible()) {
@@ -614,38 +636,27 @@ public class TrainFollowTaskApplicationService {
   public FollowTaskVO publish(Long platformUserId, Long taskId) {
     TrainFollowTaskEntity task = requireTask(taskId);
     assertTeacher(platformUserId, task.getClassId());
-    if (!STATUS_DRAFT.equals(task.getStatus())) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅草稿可发布");
-    }
-    List<TrainFollowTaskQuestionEntity> qs = listQuestions(taskId);
-    if (qs.isEmpty()) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "请先添加题目");
-    }
-    task.setStatus(STATUS_PUBLISHED);
-    task.setPublishedAt(LocalDateTime.now());
-    task.setUpdatedBy(platformUserId);
-    taskMapper.updateById(task);
-    generateItems(task, platformUserId);
-    return toTaskVO(task, false, true);
+    return publishInternal(task, platformUserId);
   }
 
   @Transactional
   public FollowTaskVO close(Long platformUserId, Long taskId) {
     TrainFollowTaskEntity task = requireTask(taskId);
     assertTeacher(platformUserId, task.getClassId());
-    if (!STATUS_PUBLISHED.equals(task.getStatus())) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅已发布任务可关闭");
-    }
-    task.setStatus(STATUS_CLOSED);
-    task.setUpdatedBy(platformUserId);
-    taskMapper.updateById(task);
-    return toTaskVO(task, false, true);
+    return closeInternal(task, platformUserId);
+  }
+
+  @Transactional
+  public FollowTaskVO reopen(Long platformUserId, Long taskId) {
+    TrainFollowTaskEntity task = requireTask(taskId);
+    assertTeacher(platformUserId, task.getClassId());
+    return reopenInternal(task, platformUserId);
   }
 
   @Transactional(readOnly = true)
   public List<FollowTaskVO> listByClassForTeacher(Long platformUserId, Long classId) {
     assertTeacher(platformUserId, classId);
-    return listByClassInternal(classId, true);
+    return listByClassInternal(classId, true, FILTER_ASSIGNMENT);
   }
 
   @Transactional(readOnly = true)
@@ -659,13 +670,20 @@ public class TrainFollowTaskApplicationService {
 
   @Transactional(readOnly = true)
   public List<FollowStudentTaskVO> listStudentTasks(Long platformUserId, Long classId) {
+    return listStudentTasks(platformUserId, classId, FILTER_ASSIGNMENT);
+  }
+
+  @Transactional(readOnly = true)
+  public List<FollowStudentTaskVO> listStudentTasks(Long platformUserId, Long classId, String taskTypeFilter) {
     roleService.assertClassMember(platformUserId, classId);
     TrainPeopleListEntity people = requireStudentPeople(platformUserId, classId);
-    List<TrainFollowTaskEntity> tasks = taskMapper.selectList(new LambdaQueryWrapper<TrainFollowTaskEntity>()
+    LambdaQueryWrapper<TrainFollowTaskEntity> q = new LambdaQueryWrapper<TrainFollowTaskEntity>()
         .eq(TrainFollowTaskEntity::getClassId, classId)
         .in(TrainFollowTaskEntity::getStatus, STATUS_PUBLISHED, STATUS_CLOSED)
         .eq(TrainFollowTaskEntity::getDeleted, 0)
-        .orderByDesc(TrainFollowTaskEntity::getPublishedAt));
+        .orderByDesc(TrainFollowTaskEntity::getPublishedAt);
+    applyTaskTypeFilter(q, taskTypeFilter);
+    List<TrainFollowTaskEntity> tasks = taskMapper.selectList(q);
     List<FollowStudentTaskVO> out = new ArrayList<>();
     for (TrainFollowTaskEntity t : tasks) {
       TrainFollowTaskItemEntity item = findItem(t.getId(), people.getId());
@@ -767,7 +785,10 @@ public class TrainFollowTaskApplicationService {
     }
     boolean alreadyDone = ITEM_GRADED.equals(item.getStatus()) || ITEM_SUBMITTED.equals(item.getStatus());
     if (alreadyDone && hasAnyAnswerContent(item.getId())) {
-      // 正常已交卷：直接回看结果
+      if (TYPE_MOCK.equals(task.getTaskType())) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "模拟考不可重考");
+      }
+      // 作业：正常已交卷直接回看结果
       return buildResult(task, item, true);
     }
 
@@ -856,8 +877,116 @@ public class TrainFollowTaskApplicationService {
 
   @Transactional(readOnly = true)
   public List<FollowTaskVO> listByClassAdmin(Long classId) {
+    return listByClassAdmin(classId, FILTER_ASSIGNMENT);
+  }
+
+  @Transactional(readOnly = true)
+  public List<FollowTaskVO> listByClassAdmin(Long classId, String taskTypeFilter) {
     requireClass(classId);
-    return listByClassInternal(classId, true);
+    return listByClassInternal(classId, true, taskTypeFilter);
+  }
+
+  /** 管理端创建草稿（模拟考配卷等） */
+  @Transactional
+  public FollowTaskVO createDraftAdmin(FollowTaskSaveReq req) {
+    Long classId = req.getClassId();
+    if (classId == null || classId <= 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "classId 无效");
+    }
+    TrainInfoClassEntity clazz = requireClass(classId);
+    String taskType = normalizeTaskType(req.getTaskType());
+    validateMount(req, taskType);
+    Long tenantId = resolveTenantId(classId);
+    Long userId = currentAdminUserId();
+
+    TrainFollowTaskEntity task = new TrainFollowTaskEntity();
+    fillTaskFromReq(task, req, clazz, taskType, tenantId, userId);
+    task.setStatus(STATUS_DRAFT);
+    taskMapper.insert(task);
+    replaceQuestions(task, resolveQuestions(req, classId, tenantId), userId);
+    return toTaskVO(task, true, false);
+  }
+
+  @Transactional
+  public FollowTaskVO updateDraftAdmin(Long taskId, FollowTaskSaveReq req) {
+    TrainFollowTaskEntity task = requireTask(taskId);
+    if (!STATUS_DRAFT.equals(task.getStatus())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅草稿可修改");
+    }
+    String taskType = normalizeTaskType(req.getTaskType());
+    validateMount(req, taskType);
+    Long userId = currentAdminUserId();
+    TrainInfoClassEntity clazz = requireClass(task.getClassId());
+    fillTaskFromReq(task, req, clazz, taskType, task.getTenantId(), userId);
+    taskMapper.updateById(task);
+    replaceQuestions(task, resolveQuestions(req, task.getClassId(), task.getTenantId()), userId);
+    return toTaskVO(task, true, false);
+  }
+
+  @Transactional
+  public FollowTaskVO publishAdmin(Long taskId) {
+    return publishInternal(requireTask(taskId), currentAdminUserId());
+  }
+
+  @Transactional
+  public FollowTaskVO closeAdmin(Long taskId) {
+    return closeInternal(requireTask(taskId), currentAdminUserId());
+  }
+
+  @Transactional
+  public FollowTaskVO reopenAdmin(Long taskId) {
+    return reopenInternal(requireTask(taskId), currentAdminUserId());
+  }
+
+  @Transactional(readOnly = true)
+  public Map<String, Object> listMockUsedQuestionIds(Long classId, Long excludeTaskId) {
+    requireClass(classId);
+    List<Integer> usedIds = listMockUsedExamDetailIds(classId, excludeTaskId);
+    Map<String, Object> out = new LinkedHashMap<>();
+    out.put("classId", classId);
+    out.put("excludeTaskId", excludeTaskId);
+    out.put("usedIds", usedIds);
+    out.put("count", usedIds.size());
+    return out;
+  }
+
+  @Transactional(readOnly = true)
+  public Map<String, Object> bankScopeMetaAdmin(Long classId) {
+    requireClass(classId);
+    return bankScopeMetaInternal(classId);
+  }
+
+  /**
+   * 管理端：选定科目后查询可抽客观题题型题数（可选排除本班其他模拟卷已选题）。
+   */
+  @Transactional(readOnly = true)
+  public Map<String, Object> bankTypeCountsAdmin(
+      Long classId, Integer courseId, boolean excludeOtherMock, Long excludeTaskId) {
+    requireClass(classId);
+    if (courseId == null || courseId <= 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请指定科目");
+    }
+    Long tenantId = resolveTenantId(classId);
+    ScopeFilter scope = loadScopeFilter(classId, tenantId);
+    List<Integer> scopedCourses = !scope.courseIds.isEmpty()
+        ? scope.courseIds
+        : scope.fallbackCourseIds;
+    List<Integer> filterCourses = resolveFilterCourses(courseId, scope, scopedCourses);
+    BankScopeQuery bankScope = resolveBankScopeQuery(filterCourses, scope.knowledgeIds, null);
+    List<Integer> exclude = excludeOtherMock
+        ? listMockUsedExamDetailIds(classId, excludeTaskId)
+        : List.of();
+    Map<String, Object> typeCounts = aggregateTypeCounts(tenantId, bankScope, exclude);
+    Map<String, Object> out = new LinkedHashMap<>();
+    out.put("classId", classId);
+    out.put("courseId", courseId);
+    out.put("excludeOtherMock", excludeOtherMock);
+    out.put("excludedCount", exclude.size());
+    out.put("typeCounts", typeCounts);
+    out.put("hint", excludeOtherMock && !exclude.isEmpty()
+        ? "已排除本班其他模拟卷占用题 " + exclude.size() + " 道后的可抽题量"
+        : "当前科目在本班练习范围内的可抽客观题量");
+    return out;
   }
 
   @Transactional(readOnly = true)
@@ -1005,10 +1134,23 @@ public class TrainFollowTaskApplicationService {
 
   @Transactional(readOnly = true)
   public Map<String, Object> homeworkMetrics(Long classId) {
+    return channelMetrics(classId, List.of(TYPE_HOMEWORK, TYPE_PRACTICE), "作业");
+  }
+
+  @Transactional(readOnly = true)
+  public Map<String, Object> mockMetrics(Long classId) {
+    return channelMetrics(classId, List.of(TYPE_MOCK), "模拟考");
+  }
+
+  /**
+   * 班级跟班通道汇总（作业/模拟考共用）：已发布任务数、交卷、正确率、预警。
+   */
+  private Map<String, Object> channelMetrics(Long classId, List<String> taskTypes, String label) {
     requireClass(classId);
     List<TrainFollowTaskEntity> tasks = taskMapper.selectList(new LambdaQueryWrapper<TrainFollowTaskEntity>()
         .eq(TrainFollowTaskEntity::getClassId, classId)
         .in(TrainFollowTaskEntity::getStatus, STATUS_PUBLISHED, STATUS_CLOSED)
+        .in(TrainFollowTaskEntity::getTaskType, taskTypes)
         .eq(TrainFollowTaskEntity::getDeleted, 0)
         .orderByDesc(TrainFollowTaskEntity::getPublishedAt));
     int taskCount = tasks.size();
@@ -1049,7 +1191,6 @@ public class TrainFollowTaskApplicationService {
           }
           consecutiveMiss.putIfAbsent(it.getPeopleId(), 0);
         } else {
-          // 连续未交：仅统计较新任务序列中从头连续 pending
           Integer cur = consecutiveMiss.get(it.getPeopleId());
           if (cur == null) {
             consecutiveMiss.put(it.getPeopleId(), 1);
@@ -1062,7 +1203,7 @@ public class TrainFollowTaskApplicationService {
 
     BigDecimal rate = totalItems == 0
         ? BigDecimal.ZERO
-        : BigDecimal.valueOf(passedItems * 100.0 / totalItems).setScale(1, RoundingMode.HALF_UP);
+        : BigDecimal.valueOf(gradedItems * 100.0 / totalItems).setScale(1, RoundingMode.HALF_UP);
     BigDecimal avgAccuracy = accuracyN == 0
         ? null
         : accuracySum.divide(BigDecimal.valueOf(accuracyN), 1, RoundingMode.HALF_UP);
@@ -1074,7 +1215,7 @@ public class TrainFollowTaskApplicationService {
         w.put("peopleId", e.getKey());
         w.put("userName", peopleNames.getOrDefault(e.getKey(), String.valueOf(e.getKey())));
         w.put("type", "miss");
-        w.put("message", "连续未交 " + e.getValue() + " 次作业");
+        w.put("message", "连续未交 " + e.getValue() + " 次" + label);
         w.put("consecutiveMiss", e.getValue());
         warnings.add(w);
       }
@@ -1091,7 +1232,7 @@ public class TrainFollowTaskApplicationService {
         w.put("peopleId", e.getKey());
         w.put("userName", peopleNames.getOrDefault(e.getKey(), String.valueOf(e.getKey())));
         w.put("type", "low_accuracy");
-        w.put("message", "作业平均正确率 " + avg + "%");
+        w.put("message", label + "平均正确率 " + avg + "%");
         w.put("avgAccuracyRate", avg);
         warnings.add(w);
       }
@@ -1168,11 +1309,114 @@ public class TrainFollowTaskApplicationService {
         TrainClassRoleApplicationService.ASSISTANT);
   }
 
-  private List<FollowTaskVO> listByClassInternal(Long classId, boolean withStats) {
-    List<TrainFollowTaskEntity> tasks = taskMapper.selectList(new LambdaQueryWrapper<TrainFollowTaskEntity>()
+  private FollowTaskVO publishInternal(TrainFollowTaskEntity task, Long userId) {
+    if (!STATUS_DRAFT.equals(task.getStatus())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅草稿可发布");
+    }
+    List<TrainFollowTaskQuestionEntity> qs = listQuestions(task.getId());
+    if (qs.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请先添加题目");
+    }
+    task.setStatus(STATUS_PUBLISHED);
+    task.setPublishedAt(LocalDateTime.now());
+    task.setUpdatedBy(userId);
+    taskMapper.updateById(task);
+    generateItems(task, userId);
+    return toTaskVO(task, false, true);
+  }
+
+  private FollowTaskVO closeInternal(TrainFollowTaskEntity task, Long userId) {
+    if (!STATUS_PUBLISHED.equals(task.getStatus())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅已发布任务可关闭");
+    }
+    task.setStatus(STATUS_CLOSED);
+    task.setUpdatedBy(userId);
+    taskMapper.updateById(task);
+    return toTaskVO(task, false, true);
+  }
+
+  /** 已关闭 → 已发布；保留原名单与答卷，未交学员可继续交。 */
+  private FollowTaskVO reopenInternal(TrainFollowTaskEntity task, Long userId) {
+    if (!STATUS_CLOSED.equals(task.getStatus())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "仅已关闭任务可重新打开");
+    }
+    List<TrainFollowTaskQuestionEntity> qs = listQuestions(task.getId());
+    if (qs.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "题目为空，无法重新打开");
+    }
+    task.setStatus(STATUS_PUBLISHED);
+    if (task.getPublishedAt() == null) {
+      task.setPublishedAt(LocalDateTime.now());
+    }
+    task.setUpdatedBy(userId);
+    taskMapper.updateById(task);
+    return toTaskVO(task, false, true);
+  }
+
+  private List<Integer> listMockUsedExamDetailIds(Long classId, Long excludeTaskId) {
+    List<TrainFollowTaskEntity> mocks = taskMapper.selectList(new LambdaQueryWrapper<TrainFollowTaskEntity>()
+        .eq(TrainFollowTaskEntity::getClassId, classId)
+        .eq(TrainFollowTaskEntity::getTaskType, TYPE_MOCK)
+        .in(TrainFollowTaskEntity::getStatus, STATUS_DRAFT, STATUS_PUBLISHED)
+        .eq(TrainFollowTaskEntity::getDeleted, 0)
+        .select(TrainFollowTaskEntity::getId));
+    if (mocks.isEmpty()) {
+      return List.of();
+    }
+    List<Long> taskIds = mocks.stream()
+        .map(TrainFollowTaskEntity::getId)
+        .filter(id -> excludeTaskId == null || !Objects.equals(id, excludeTaskId))
+        .toList();
+    if (taskIds.isEmpty()) {
+      return List.of();
+    }
+    List<TrainFollowTaskQuestionEntity> qs = questionMapper.selectList(
+        new LambdaQueryWrapper<TrainFollowTaskQuestionEntity>()
+            .in(TrainFollowTaskQuestionEntity::getTaskId, taskIds)
+            .eq(TrainFollowTaskQuestionEntity::getDeleted, 0)
+            .isNotNull(TrainFollowTaskQuestionEntity::getSourceExamDetailId)
+            .select(TrainFollowTaskQuestionEntity::getSourceExamDetailId));
+    LinkedHashSet<Integer> ids = new LinkedHashSet<>();
+    for (TrainFollowTaskQuestionEntity q : qs) {
+      if (q.getSourceExamDetailId() != null && q.getSourceExamDetailId() > 0) {
+        ids.add(q.getSourceExamDetailId().intValue());
+      }
+    }
+    return new ArrayList<>(ids);
+  }
+
+  private void applyTaskTypeFilter(LambdaQueryWrapper<TrainFollowTaskEntity> q, String filter) {
+    if (!StringUtils.hasText(filter) || "all".equalsIgnoreCase(filter.trim())) {
+      return;
+    }
+    String f = filter.trim();
+    if (TYPE_MOCK.equals(f)) {
+      q.eq(TrainFollowTaskEntity::getTaskType, TYPE_MOCK);
+    } else if (FILTER_ASSIGNMENT.equals(f) || TYPE_HOMEWORK.equals(f) || TYPE_PRACTICE.equals(f)) {
+      q.in(TrainFollowTaskEntity::getTaskType, TYPE_HOMEWORK, TYPE_PRACTICE);
+    } else {
+      q.eq(TrainFollowTaskEntity::getTaskType, f);
+    }
+  }
+
+  private Long currentAdminUserId() {
+    try {
+      Long id = SecurityContext.currentUser().getUserId();
+      if (id != null && id > 0) {
+        return id;
+      }
+    } catch (Exception ignored) {
+    }
+    return 0L;
+  }
+
+  private List<FollowTaskVO> listByClassInternal(Long classId, boolean withStats, String taskTypeFilter) {
+    LambdaQueryWrapper<TrainFollowTaskEntity> q = new LambdaQueryWrapper<TrainFollowTaskEntity>()
         .eq(TrainFollowTaskEntity::getClassId, classId)
         .eq(TrainFollowTaskEntity::getDeleted, 0)
-        .orderByDesc(TrainFollowTaskEntity::getCreatedAt));
+        .orderByDesc(TrainFollowTaskEntity::getCreatedAt);
+    applyTaskTypeFilter(q, taskTypeFilter);
+    List<TrainFollowTaskEntity> tasks = taskMapper.selectList(q);
     List<FollowTaskVO> out = new ArrayList<>();
     for (TrainFollowTaskEntity t : tasks) {
       out.add(toTaskVO(t, false, withStats));
@@ -1710,6 +1954,11 @@ public class TrainFollowTaskApplicationService {
 
   /** 当前范围内各客观题型题量（不受题型 chip / 关键词影响）。 */
   private Map<String, Object> aggregateTypeCounts(Long tenantId, BankScopeQuery bankScope) {
+    return aggregateTypeCounts(tenantId, bankScope, null);
+  }
+
+  private Map<String, Object> aggregateTypeCounts(
+      Long tenantId, BankScopeQuery bankScope, Collection<Integer> excludeIds) {
     Map<String, Object> out = emptyTypeCounts();
     if (bankScope == null || bankScope.impossible()) {
       return out;
@@ -1717,6 +1966,9 @@ public class TrainFollowTaskApplicationService {
     QueryWrapper<ExamExamDetailEntity> qw = baseObjectiveAggWrapper(tenantId);
     qw.select("type", "COUNT(*) AS cnt");
     applyBankScopeToQueryWrapper(qw, bankScope);
+    if (excludeIds != null && !excludeIds.isEmpty()) {
+      qw.notIn("id", excludeIds);
+    }
     qw.groupBy("type");
     long total = 0L;
     for (Map<String, Object> row : examDetailMapper.selectMaps(qw)) {
@@ -2253,7 +2505,11 @@ public class TrainFollowTaskApplicationService {
     return clazz;
   }
 
-  private void validateMount(FollowTaskSaveReq req) {
+  private void validateMount(FollowTaskSaveReq req, String taskType) {
+    if (TYPE_MOCK.equals(taskType)) {
+      // 模拟考挂载可选：有课次/业务日则展示，无则仅按班级
+      return;
+    }
     boolean hasSchedule = req.getScheduleId() != null && req.getScheduleId() > 0;
     boolean hasDate = StringUtils.hasText(req.getBizDate());
     if (!hasSchedule && !hasDate) {
@@ -2263,7 +2519,7 @@ public class TrainFollowTaskApplicationService {
 
   private String normalizeTaskType(String type) {
     if (!StringUtils.hasText(type) || !TASK_TYPES.contains(type.trim())) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "taskType 须为 homework 或 practice");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "taskType 须为 homework、practice 或 mock");
     }
     return type.trim();
   }

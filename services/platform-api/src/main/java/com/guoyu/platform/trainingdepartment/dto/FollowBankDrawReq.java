@@ -16,6 +16,10 @@ public class FollowBankDrawReq {
   private Integer judgeCount = 0;
   /** 已选题目，抽取时排除 */
   private List<Integer> excludeIds = new ArrayList<>();
+  /** 模拟考配卷：排除本班其他 mock 任务已占用的题库题 */
+  private Boolean excludeOtherMock;
+  /** 编辑当前草稿时不排除本任务已选题 */
+  private Long excludeTaskId;
 
   public Integer getCourseId() {
     return courseId;
@@ -63,5 +67,21 @@ public class FollowBankDrawReq {
 
   public void setExcludeIds(List<Integer> excludeIds) {
     this.excludeIds = excludeIds;
+  }
+
+  public Boolean getExcludeOtherMock() {
+    return excludeOtherMock;
+  }
+
+  public void setExcludeOtherMock(Boolean excludeOtherMock) {
+    this.excludeOtherMock = excludeOtherMock;
+  }
+
+  public Long getExcludeTaskId() {
+    return excludeTaskId;
+  }
+
+  public void setExcludeTaskId(Long excludeTaskId) {
+    this.excludeTaskId = excludeTaskId;
   }
 }

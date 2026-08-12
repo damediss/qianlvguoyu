@@ -47,6 +47,7 @@ import { StudentAttendanceDetailDrawer } from './StudentAttendanceDetailDrawer';
 import { FollowPracticeTab } from './FollowPracticeTab';
 import { FollowScheduleChangeTab } from './FollowScheduleChangeTab';
 import { FollowHomeworkTab } from './FollowHomeworkTab';
+import { FollowMockExamTab } from './FollowMockExamTab';
 
 type ScheduleDraftItem = Record<string, unknown> & {
   _key: string;
@@ -433,6 +434,13 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const { data: homeworkMetrics, isLoading: homeworkMetricsLoading } = useQuery({
     queryKey: ['homework-metrics', classIdNum],
     queryFn: () => trainApi.getHomeworkMetrics(classIdNum!),
+    enabled: classIdNum != null && classIdNum > 0,
+    retry: false,
+  });
+
+  const { data: mockMetrics, isLoading: mockMetricsLoading } = useQuery({
+    queryKey: ['mock-metrics', classIdNum],
+    queryFn: () => trainApi.getMockMetrics(classIdNum!),
     enabled: classIdNum != null && classIdNum > 0,
     retry: false,
   });
@@ -964,6 +972,36 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                   <Col xs={24} lg={12}>
                     <Card
                       size="small"
+                      title="模拟卷概览"
+                      loading={mockMetricsLoading}
+                      extra={
+                        <Button type="link" style={{ padding: 0 }} onClick={() => setActiveTab('mock')}>
+                          模拟考明细 →
+                        </Button>
+                      }
+                    >
+                      <Space size="large" wrap>
+                        <Statistic title="已发布" value={mockMetrics?.taskCount ?? 0} />
+                        <Statistic
+                          title="完成率"
+                          value={mockMetrics?.completionRate ?? 0}
+                          suffix="%"
+                        />
+                        <Statistic
+                          title="平均正确率"
+                          value={mockMetrics?.avgAccuracyRate ?? '—'}
+                          suffix={mockMetrics?.avgAccuracyRate != null ? '%' : undefined}
+                        />
+                        <Statistic
+                          title="已交/应交"
+                          value={`${mockMetrics?.gradedItems ?? 0}/${mockMetrics?.totalItems ?? 0}`}
+                        />
+                      </Space>
+                    </Card>
+                  </Col>
+                  <Col xs={24} lg={12}>
+                    <Card
+                      size="small"
                       title="作业完成情况"
                       loading={homeworkMetricsLoading}
                       extra={
@@ -989,6 +1027,43 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                           value={`${homeworkMetrics?.gradedItems ?? 0}/${homeworkMetrics?.totalItems ?? 0}`}
                         />
                       </Space>
+                    </Card>
+                  </Col>
+                </Row>
+
+                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                  <Col xs={24} lg={12}>
+                    <Card
+                      size="small"
+                      className="follow-overview-scroll-card"
+                      title="模拟卷预警"
+                      extra={
+                        <Typography.Text type="secondary">连续未交≥2 或平均正确率&lt;60%</Typography.Text>
+                      }
+                      loading={mockMetricsLoading}
+                    >
+                      {(mockMetrics?.warnings?.length ?? 0) === 0 ? (
+                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无模拟卷预警" />
+                      ) : (
+                        <Table
+                          size="small"
+                          rowKey={(r) => `mock-${r.peopleId}-${r.type}`}
+                          pagination={false}
+                          sticky
+                          dataSource={mockMetrics?.warnings ?? []}
+                          columns={[
+                            { title: '姓名', dataIndex: 'userName', width: 100 },
+                            {
+                              title: '类型',
+                              dataIndex: 'type',
+                              width: 100,
+                              render: (t: string) =>
+                                t === 'miss' ? <Tag color="warning">未交</Tag> : <Tag color="error">正确率低</Tag>,
+                            },
+                            { title: '说明', dataIndex: 'message', ellipsis: true },
+                          ]}
+                        />
+                      )}
                     </Card>
                   </Col>
                   <Col xs={24} lg={12}>
@@ -1483,6 +1558,16 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                 active={activeTab === 'practice'}
               />
             ),
+          },
+          {
+            key: 'mock',
+            label: '模拟考',
+            children:
+              classIdNum != null && classIdNum > 0 ? (
+                <FollowMockExamTab classId={classIdNum} />
+              ) : (
+                <Empty description="无效班级" />
+              ),
           },
           {
             key: 'roles',

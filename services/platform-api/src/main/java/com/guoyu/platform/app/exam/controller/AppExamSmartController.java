@@ -5,6 +5,8 @@ import com.guoyu.platform.app.exam.service.AppExamSmartService;
 import com.guoyu.platform.app.sms.AppSmsException;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -58,6 +60,24 @@ public class AppExamSmartController {
     return LegacyAppResponse.ok("成功", smartService.wrongBook(body == null ? Map.of() : body));
   }
 
+  /** 5b. 错题重练答对后移出错题本（内部复用单题进度） */
+  @PostMapping("/wrong/resolve")
+  public LegacyAppResponse resolveWrong(@RequestBody(required = false) Map<String, Object> body) {
+    return LegacyAppResponse.ok("成功", smartService.resolveWrongOnCorrect(body == null ? Map.of() : body));
+  }
+
+  /** 5c. 练习单题进度：揭晓后即时写入，驱动本班覆盖实时更新 */
+  @PostMapping("/paper/progress")
+  public LegacyAppResponse paperProgress(@RequestBody(required = false) Map<String, Object> body) {
+    return LegacyAppResponse.ok("成功", smartService.recordPaperProgress(body == null ? Map.of() : body));
+  }
+
+  /** AI 精准学 E-P0：首页四宫格摘要（聚合层，不改原错题/预测契约） */
+  @PostMapping("/precise/overview")
+  public LegacyAppResponse preciseOverview(@RequestBody(required = false) Map<String, Object> body) {
+    return LegacyAppResponse.ok("成功", smartService.preciseOverview(body == null ? Map.of() : body));
+  }
+
   /** 6. 试卷详情（含题目列表，未交卷不返回答案） */
   @PostMapping("/paper/detail/{paperId}")
   public LegacyAppResponse paperDetail(@PathVariable Integer paperId) {
@@ -78,8 +98,13 @@ public class AppExamSmartController {
   }
 
   @ExceptionHandler(AppSmsException.class)
-  public LegacyAppResponse handle(AppSmsException ex) {
-    return LegacyAppResponse.fail(ex.getCode(), ex.getMessage());
+  public ResponseEntity<LegacyAppResponse> handle(AppSmsException ex) {
+    LegacyAppResponse body = LegacyAppResponse.fail(ex.getCode(), ex.getMessage());
+    // /appsmart 本身 permitAll，业务「请先登录」若仍返回 200，App saasRequest 不会走 401 退避/静默重登
+    if (isLoginRequired(ex)) {
+      return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
+    }
+    return ResponseEntity.ok(body);
   }
 
   /** 兜底：把 NPE/RuntimeException 等也转成 App 友好响应，并在日志打印堆栈 */
@@ -87,5 +112,13 @@ public class AppExamSmartController {
   public LegacyAppResponse handleAny(Exception ex) {
     log.error("[appsmart] 未处理异常", ex);
     return LegacyAppResponse.fail(500, "服务异常：" + ex.getMessage());
+  }
+
+  private static boolean isLoginRequired(AppSmsException ex) {
+    String msg = ex.getMessage();
+    if (msg == null || msg.isBlank()) {
+      return false;
+    }
+    return msg.contains("请先登录") || msg.contains("未登录") || msg.contains("登录已过期");
   }
 }

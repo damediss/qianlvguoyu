@@ -8,6 +8,9 @@ import com.guoyu.platform.trainingdepartment.dto.FollowBankDrawReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowTaskSaveReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowTaskSubmitReq;
 import com.guoyu.platform.trainingdepartment.dto.ScheduleChangeSubmitReq;
+import com.guoyu.platform.trainingdepartment.service.ClassAssistantApplicationService;
+import com.guoyu.platform.trainingdepartment.service.ClassPracticeCoverageApplicationService;
+import com.guoyu.platform.trainingdepartment.service.ClassPracticeScopeApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainClassRoleApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainFollowTaskApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainScheduleApplicationService;
@@ -49,16 +52,25 @@ public class TrainFollowAppController {
   private final TrainScheduleApplicationService scheduleService;
   private final TrainScheduleChangeRequestApplicationService changeRequestService;
   private final TrainFollowTaskApplicationService taskService;
+  private final ClassAssistantApplicationService assistantService;
+  private final ClassPracticeScopeApplicationService practiceScopeService;
+  private final ClassPracticeCoverageApplicationService practiceCoverageService;
 
   public TrainFollowAppController(
       TrainClassRoleApplicationService roleService,
       TrainScheduleApplicationService scheduleService,
       TrainScheduleChangeRequestApplicationService changeRequestService,
-      TrainFollowTaskApplicationService taskService) {
+      TrainFollowTaskApplicationService taskService,
+      ClassAssistantApplicationService assistantService,
+      ClassPracticeScopeApplicationService practiceScopeService,
+      ClassPracticeCoverageApplicationService practiceCoverageService) {
     this.roleService = roleService;
     this.scheduleService = scheduleService;
     this.changeRequestService = changeRequestService;
     this.taskService = taskService;
+    this.assistantService = assistantService;
+    this.practiceScopeService = practiceScopeService;
+    this.practiceCoverageService = practiceCoverageService;
   }
 
   @GetMapping("/my-classes")
@@ -137,6 +149,35 @@ public class TrainFollowAppController {
     return ApiResponse.ok(taskService.drawBankQuestions(requirePlatformUserId(), classId, body));
   }
 
+  /** AI 班级助理：快捷指令元信息（规则版，无 LLM） */
+  @GetMapping("/classes/{classId}/assistant/bootstrap")
+  public ApiResponse<Map<String, Object>> assistantBootstrap(@PathVariable Long classId) {
+    return ApiResponse.ok(assistantService.bootstrap(requirePlatformUserId(), classId));
+  }
+
+  /** AI 班级助理：对话（规则意图 + 只读查询） */
+  @PostMapping("/classes/{classId}/assistant/chat")
+  public ApiResponse<Map<String, Object>> assistantChat(
+      @PathVariable Long classId,
+      @RequestBody(required = false) Map<String, Object> body) {
+    return ApiResponse.ok(assistantService.chat(requirePlatformUserId(), classId, body == null ? Map.of() : body));
+  }
+
+  /** App：本班刷题练习范围（对齐后台跟班「试题配置」，班成员只读） */
+  @GetMapping("/classes/{classId}/practice-scope")
+  public ApiResponse<Map<String, Object>> practiceScope(@PathVariable Long classId) {
+    roleService.assertClassMember(requirePlatformUserId(), classId);
+    return ApiResponse.ok(practiceScopeService.getScopeForAppMember(classId));
+  }
+
+  /** App：本班刷题已做/未做覆盖进度 */
+  @GetMapping("/classes/{classId}/practice-coverage")
+  public ApiResponse<Map<String, Object>> practiceCoverage(@PathVariable Long classId) {
+    Long userId = requirePlatformUserId();
+    roleService.assertClassMember(userId, classId);
+    return ApiResponse.ok(practiceCoverageService.getCoverageForAppMember(classId, userId));
+  }
+
   @PostMapping("/tasks")
   public ApiResponse<FollowTaskVO> createTask(@Valid @RequestBody FollowTaskSaveReq body) {
     return ApiResponse.ok(taskService.createDraft(requirePlatformUserId(), body));
@@ -158,6 +199,11 @@ public class TrainFollowAppController {
     return ApiResponse.ok(taskService.close(requirePlatformUserId(), id));
   }
 
+  @PostMapping("/tasks/{id}/reopen")
+  public ApiResponse<FollowTaskVO> reopenTask(@PathVariable Long id) {
+    return ApiResponse.ok(taskService.reopen(requirePlatformUserId(), id));
+  }
+
   @GetMapping("/tasks/{id}/items")
   public ApiResponse<List<FollowTaskItemVO>> taskItems(@PathVariable Long id) {
     return ApiResponse.ok(taskService.listItemsForTeacher(requirePlatformUserId(), id));
@@ -177,8 +223,15 @@ public class TrainFollowAppController {
   // ---------- 跟班作业（学员） ----------
 
   @GetMapping("/student/tasks")
-  public ApiResponse<List<FollowStudentTaskVO>> studentTasks(@RequestParam Long classId) {
-    return ApiResponse.ok(taskService.listStudentTasks(requirePlatformUserId(), classId));
+  public ApiResponse<List<FollowStudentTaskVO>> studentTasks(
+      @RequestParam Long classId,
+      @RequestParam(required = false) String taskType) {
+    return ApiResponse.ok(taskService.listStudentTasks(
+        requirePlatformUserId(),
+        classId,
+        taskType == null || taskType.isBlank()
+            ? TrainFollowTaskApplicationService.FILTER_ASSIGNMENT
+            : taskType.trim()));
   }
 
   @GetMapping("/tasks/{id}/paper")

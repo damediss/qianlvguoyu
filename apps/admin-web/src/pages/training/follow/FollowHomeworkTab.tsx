@@ -75,8 +75,8 @@ export function FollowHomeworkTab({ classId }: Props) {
   });
 
   const { data: tasks, isLoading, refetch } = useQuery({
-    queryKey: ['follow-tasks', classId],
-    queryFn: () => trainApi.listFollowTasks(classId),
+    queryKey: ['follow-tasks', classId, 'assignment'],
+    queryFn: () => trainApi.listFollowTasks(classId, 'assignment'),
     enabled: classId > 0,
   });
 
@@ -108,6 +108,26 @@ export function FollowHomeworkTab({ classId }: Props) {
       void queryClient.invalidateQueries({ queryKey: ['follow-task-stats', id] });
     },
     onError: (e: Error) => message.error(e.message || '补发失败'),
+  });
+
+  const closeMu = useMutation({
+    mutationFn: (id: string | number) => trainApi.closeFollowTask(id),
+    onSuccess: () => {
+      message.success('已关闭');
+      void queryClient.invalidateQueries({ queryKey: ['follow-tasks', classId] });
+      void queryClient.invalidateQueries({ queryKey: ['homework-metrics', classId] });
+    },
+    onError: (e: Error) => message.error(e.message || '关闭失败'),
+  });
+
+  const reopenMu = useMutation({
+    mutationFn: (id: string | number) => trainApi.reopenFollowTask(id),
+    onSuccess: () => {
+      message.success('已重新打开');
+      void queryClient.invalidateQueries({ queryKey: ['follow-tasks', classId] });
+      void queryClient.invalidateQueries({ queryKey: ['homework-metrics', classId] });
+    },
+    onError: (e: Error) => message.error(e.message || '重新打开失败'),
   });
 
   const weakQuestions = useMemo(() => {
@@ -152,7 +172,7 @@ export function FollowHomeworkTab({ classId }: Props) {
     },
     {
       title: '操作',
-      width: 160,
+      width: 220,
       render: (_, r) => (
         <Space size="small">
           <Button
@@ -166,13 +186,34 @@ export function FollowHomeworkTab({ classId }: Props) {
             明细
           </Button>
           {r.status === 'published' ? (
+            <>
+              <Button
+                type="link"
+                size="small"
+                loading={syncMu.isPending}
+                onClick={() => syncMu.mutate(r.id)}
+              >
+                补发名单
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                danger
+                loading={closeMu.isPending}
+                onClick={() => closeMu.mutate(r.id)}
+              >
+                关闭
+              </Button>
+            </>
+          ) : null}
+          {r.status === 'closed' ? (
             <Button
               type="link"
               size="small"
-              loading={syncMu.isPending}
-              onClick={() => syncMu.mutate(r.id)}
+              loading={reopenMu.isPending}
+              onClick={() => reopenMu.mutate(r.id)}
             >
-              补发名单
+              重新打开
             </Button>
           ) : null}
         </Space>

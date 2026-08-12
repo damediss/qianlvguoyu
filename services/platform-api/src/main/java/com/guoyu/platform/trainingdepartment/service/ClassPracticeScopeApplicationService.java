@@ -3,9 +3,11 @@ package com.guoyu.platform.trainingdepartment.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.exam.entity.ExamCourseEntity;
 import com.guoyu.platform.exam.entity.ExamKnowledgeStructureEntity;
 import com.guoyu.platform.exam.mapper.ExamCourseMapper;
+import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.trainingdepartment.dto.ClassPracticeScopeSaveReq;
@@ -19,7 +21,10 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainClassPracticeScopeMappe
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -43,6 +48,7 @@ public class ClassPracticeScopeApplicationService {
   private final TrainClassPracticeKnowledgeMapper knowledgeMapper;
   private final ExamCourseMapper examCourseMapper;
   private final ExamKnowledgeStructureMapper knowledgeStructureMapper;
+  private final ExamExamDetailMapper examDetailMapper;
   private final TrainingOperatorScopeService operatorScopeService;
 
   public ClassPracticeScopeApplicationService(
@@ -52,6 +58,7 @@ public class ClassPracticeScopeApplicationService {
       TrainClassPracticeKnowledgeMapper knowledgeMapper,
       ExamCourseMapper examCourseMapper,
       ExamKnowledgeStructureMapper knowledgeStructureMapper,
+      ExamExamDetailMapper examDetailMapper,
       TrainingOperatorScopeService operatorScopeService) {
     this.classMapper = classMapper;
     this.scopeMapper = scopeMapper;
@@ -59,6 +66,7 @@ public class ClassPracticeScopeApplicationService {
     this.knowledgeMapper = knowledgeMapper;
     this.examCourseMapper = examCourseMapper;
     this.knowledgeStructureMapper = knowledgeStructureMapper;
+    this.examDetailMapper = examDetailMapper;
     this.operatorScopeService = operatorScopeService;
   }
 
@@ -128,7 +136,33 @@ public class ClassPracticeScopeApplicationService {
   public Map<String, Object> getScope(Long classId) {
     TrainInfoClassEntity clazz = requireClass(classId);
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    return buildScopeView(clazz, tenantId);
+  }
 
+  /**
+   * App 班成员只读练习范围（跟班刷题对齐）。
+   * 不走管理端组织权限；租户取 {@link TenantContextHolder}（App principal.tenantId 恒为 0）。
+   */
+  @Transactional(readOnly = true)
+  public Map<String, Object> getScopeForAppMember(Long classId) {
+    if (classId == null || classId <= 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "班级 ID 无效");
+    }
+    TrainInfoClassEntity clazz = classMapper.selectOne(new LambdaQueryWrapper<TrainInfoClassEntity>()
+        .eq(TrainInfoClassEntity::getId, classId)
+        .eq(TrainInfoClassEntity::getDeleted, 0));
+    if (clazz == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
+    }
+    Long tenantId = TenantContextHolder.getTenantId();
+    if (tenantId == null || tenantId <= 0) {
+      tenantId = 1L;
+    }
+    return buildScopeView(clazz, tenantId);
+  }
+
+  private Map<String, Object> buildScopeView(TrainInfoClassEntity clazz, Long tenantId) {
+    Long classId = clazz.getId();
     TrainClassPracticeScopeEntity scope = scopeMapper.selectOne(new LambdaQueryWrapper<TrainClassPracticeScopeEntity>()
         .eq(TrainClassPracticeScopeEntity::getTenantId, tenantId)
         .eq(TrainClassPracticeScopeEntity::getClassId, classId));
@@ -149,6 +183,8 @@ public class ClassPracticeScopeApplicationService {
 
     Map<Integer, String> courseTitles = loadCourseTitles(courseIds);
     Map<Integer, ExamKnowledgeStructureEntity> knowledgeMap = loadKnowledges(knowledgeIds);
+    Map<Integer, Map<String, Long>> knowledgeTypeCounts =
+        loadWhitelistTypeCounts(tenantId, courseIds, knowledgeIds);
 
     List<Map<String, Object>> courseRows = new ArrayList<>();
     for (Integer id : courseIds) {
@@ -158,14 +194,37 @@ public class ClassPracticeScopeApplicationService {
       courseRows.add(row);
     }
     List<Map<String, Object>> knowledgeRows = new ArrayList<>();
+    long scopeSingle = 0;
+    long scopeMulti = 0;
+    long scopeJudge = 0;
     for (TrainClassPracticeKnowledgeEntity k : knowledges) {
       ExamKnowledgeStructureEntity node = knowledgeMap.get(k.getKnowledgeId());
+      Map<String, Long> tc = knowledgeTypeCounts.getOrDefault(k.getKnowledgeId(), Map.of());
+      long single = tc.getOrDefault("single", 0L);
+      long multi = tc.getOrDefault("multi", 0L);
+      long judge = tc.getOrDefault("judge", 0L);
+      scopeSingle += single;
+      scopeMulti += multi;
+      scopeJudge += judge;
+      Map<String, Object> typeCounts = new LinkedHashMap<>();
+      typeCounts.put("single", single);
+      typeCounts.put("multi", multi);
+      typeCounts.put("judge", judge);
+      typeCounts.put("total", single + multi + judge);
       Map<String, Object> row = new LinkedHashMap<>();
       row.put("knowledgeId", k.getKnowledgeId());
       row.put("courseId", k.getExamCourseId());
       row.put("title", node != null ? node.getTitle() : ("#" + k.getKnowledgeId()));
+      row.put("questionCount", single + multi + judge);
+      row.put("typeCounts", typeCounts);
       knowledgeRows.add(row);
     }
+
+    Map<String, Object> scopeTypeCounts = new LinkedHashMap<>();
+    scopeTypeCounts.put("single", scopeSingle);
+    scopeTypeCounts.put("multi", scopeMulti);
+    scopeTypeCounts.put("judge", scopeJudge);
+    scopeTypeCounts.put("total", scopeSingle + scopeMulti + scopeJudge);
 
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("classId", classId);
@@ -183,6 +242,7 @@ public class ClassPracticeScopeApplicationService {
     out.put("knowledgeIds", knowledgeIds);
     out.put("courses", courseRows);
     out.put("knowledges", knowledgeRows);
+    out.put("typeCounts", scopeTypeCounts);
     out.put("appBound", true);
     out.put("hint", "未设置刷题日期则不过期；设置后仅在起止日期（含当天）内允许学员按班刷题");
     return out;
@@ -449,6 +509,173 @@ public class ClassPracticeScopeApplicationService {
     }
     return knowledgeStructureMapper.selectBatchIds(knowledgeIds).stream()
         .collect(Collectors.toMap(ExamKnowledgeStructureEntity::getId, k -> k, (a, b) -> a));
+  }
+
+  /**
+   * 白名单知识点题量：含自身 + 子孙挂题（与 App 抽题 expand 口径一致）。
+   */
+  private Map<Integer, Long> loadWhitelistQuestionCounts(
+      Long tenantId, List<Integer> courseIds, List<Integer> whitelistIds) {
+    Map<Integer, Map<String, Long>> byType = loadWhitelistTypeCounts(tenantId, courseIds, whitelistIds);
+    Map<Integer, Long> out = new LinkedHashMap<>();
+    for (Map.Entry<Integer, Map<String, Long>> e : byType.entrySet()) {
+      long sum = e.getValue().values().stream().mapToLong(Long::longValue).sum();
+      out.put(e.getKey(), sum);
+    }
+    return out;
+  }
+
+  /** 白名单知识点分题型题量（含子孙）。 */
+  private Map<Integer, Map<String, Long>> loadWhitelistTypeCounts(
+      Long tenantId, List<Integer> courseIds, List<Integer> whitelistIds) {
+    if (whitelistIds == null || whitelistIds.isEmpty()) {
+      return Map.of();
+    }
+    int tid = tenantId == null || tenantId <= 0 ? 1 : tenantId.intValue();
+    // knowledgeId -> (type -> count) 叶子直接挂题
+    Map<Integer, Map<String, Long>> direct = new HashMap<>();
+    List<Map<String, Object>> raw =
+        examDetailMapper.countPracticeQuestionsByKnowledgeAndTypeGrouped(tid);
+    if (raw != null) {
+      for (Map<String, Object> row : raw) {
+        Integer kid = toInt(firstPresent(row, "knowledgeId", "knowledge_id", "KNOWLEDGEID"));
+        String type = normalizeTypeKey(firstPresent(row, "questionType", "type", "TYPE"));
+        long cnt = toLong(firstPresent(row, "cnt", "CNT", "count"));
+        if (kid == null || type == null || cnt <= 0) {
+          continue;
+        }
+        direct.computeIfAbsent(kid, k -> new HashMap<>()).merge(type, cnt, Long::sum);
+      }
+    }
+
+    Set<Integer> courseHint = new HashSet<>();
+    if (courseIds != null) {
+      for (Integer cid : courseIds) {
+        if (cid != null && cid > 0) {
+          courseHint.add(cid);
+        }
+      }
+    }
+    if (courseHint.isEmpty()) {
+      for (ExamKnowledgeStructureEntity n : knowledgeStructureMapper.selectBatchIds(whitelistIds)) {
+        if (n != null && n.getCourseId() != null && n.getCourseId() > 0) {
+          courseHint.add(n.getCourseId());
+        }
+      }
+    }
+
+    Map<Integer, List<Integer>> children = new HashMap<>();
+    List<ExamKnowledgeStructureEntity> treeNodes = courseHint.isEmpty()
+        ? knowledgeStructureMapper.selectBatchIds(whitelistIds)
+        : knowledgeStructureMapper.selectList(
+            new LambdaQueryWrapper<ExamKnowledgeStructureEntity>()
+                .in(ExamKnowledgeStructureEntity::getCourseId, courseHint)
+                .eq(ExamKnowledgeStructureEntity::getDeleted, 0)
+                .select(
+                    ExamKnowledgeStructureEntity::getId,
+                    ExamKnowledgeStructureEntity::getParentId));
+    for (ExamKnowledgeStructureEntity n : treeNodes) {
+      if (n == null || n.getId() == null) {
+        continue;
+      }
+      int pid = n.getParentId() == null ? 0 : n.getParentId();
+      children.computeIfAbsent(pid, k -> new ArrayList<>()).add(n.getId());
+    }
+
+    Map<Integer, Map<String, Long>> out = new LinkedHashMap<>();
+    for (Integer root : whitelistIds) {
+      if (root == null || root <= 0) {
+        continue;
+      }
+      Map<String, Long> sum = new LinkedHashMap<>();
+      sum.put("single", 0L);
+      sum.put("multi", 0L);
+      sum.put("judge", 0L);
+      ArrayDeque<Integer> dq = new ArrayDeque<>();
+      Set<Integer> seen = new HashSet<>();
+      dq.add(root);
+      while (!dq.isEmpty()) {
+        Integer cur = dq.poll();
+        if (cur == null || !seen.add(cur)) {
+          continue;
+        }
+        Map<String, Long> d = direct.get(cur);
+        if (d != null) {
+          for (Map.Entry<String, Long> e : d.entrySet()) {
+            sum.merge(e.getKey(), e.getValue(), Long::sum);
+          }
+        }
+        for (Integer c : children.getOrDefault(cur, List.of())) {
+          dq.add(c);
+        }
+      }
+      out.put(root, sum);
+    }
+    return out;
+  }
+
+  private static String normalizeTypeKey(Object raw) {
+    if (raw == null) {
+      return null;
+    }
+    String t = String.valueOf(raw).trim().toLowerCase();
+    return switch (t) {
+      case "single", "danxuan", "单选", "1" -> "single";
+      case "multi", "duoxuan", "多选", "2" -> "multi";
+      case "judge", "pandan", "判断", "3" -> "judge";
+      default -> null;
+    };
+  }
+
+  private static Object firstPresent(Map<String, Object> row, String... keys) {
+    if (row == null || keys == null) {
+      return null;
+    }
+    for (String k : keys) {
+      if (row.containsKey(k) && row.get(k) != null) {
+        return row.get(k);
+      }
+    }
+    // 兼容部分驱动返回大小写不一的 key
+    for (Map.Entry<String, Object> e : row.entrySet()) {
+      if (e.getKey() == null || e.getValue() == null) {
+        continue;
+      }
+      for (String k : keys) {
+        if (e.getKey().equalsIgnoreCase(k)) {
+          return e.getValue();
+        }
+      }
+    }
+    return null;
+  }
+
+  private static Integer toInt(Object o) {
+    if (o == null) {
+      return null;
+    }
+    if (o instanceof Number n) {
+      return n.intValue();
+    }
+    try {
+      return Integer.parseInt(String.valueOf(o).trim());
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
+  private static long toLong(Object o) {
+    if (o == null) {
+      return 0L;
+    }
+    if (o instanceof Number n) {
+      return n.longValue();
+    }
+    try {
+      return Long.parseLong(String.valueOf(o).trim());
+    } catch (NumberFormatException e) {
+      return 0L;
+    }
   }
 
   private static Set<Integer> normalizeIds(List<Integer> raw) {

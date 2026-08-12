@@ -1520,8 +1520,109 @@ export type HomeworkWarning = {
   avgAccuracyRate?: number;
 };
 
-export function listFollowTasks(classId: number) {
-  return unwrap<FollowTask[]>(apiClient.get(`${BASE}/follow-tasks/classes/${classId}/tasks`));
+export function listFollowTasks(classId: number, taskType: string = 'assignment') {
+  return unwrap<FollowTask[]>(
+    apiClient.get(`${BASE}/follow-tasks/classes/${classId}/tasks`, { params: { taskType } }),
+  );
+}
+
+export function createFollowTask(payload: {
+  classId: number;
+  taskType: string;
+  title: string;
+  description?: string;
+  bizDate?: string;
+  scheduleId?: number;
+  passScore?: number;
+  showAnalysisAfterSubmit?: boolean;
+  sourceExamDetailIds?: number[];
+  questions?: unknown[];
+}) {
+  return unwrap<FollowTask>(apiClient.post(`${BASE}/follow-tasks`, payload));
+}
+
+export function updateFollowTask(
+  id: number | string,
+  payload: {
+    classId?: number;
+    taskType: string;
+    title: string;
+    description?: string;
+    bizDate?: string;
+    scheduleId?: number;
+    passScore?: number;
+    showAnalysisAfterSubmit?: boolean;
+    sourceExamDetailIds?: number[];
+    questions?: unknown[];
+  },
+) {
+  return unwrap<FollowTask>(apiClient.put(`${BASE}/follow-tasks/${id}`, payload));
+}
+
+export function publishFollowTask(id: number | string) {
+  return unwrap<FollowTask>(apiClient.post(`${BASE}/follow-tasks/${id}/publish`));
+}
+
+export function closeFollowTask(id: number | string) {
+  return unwrap<FollowTask>(apiClient.post(`${BASE}/follow-tasks/${id}/close`));
+}
+
+export function reopenFollowTask(id: number | string) {
+  return unwrap<FollowTask>(apiClient.post(`${BASE}/follow-tasks/${id}/reopen`));
+}
+
+export function getMockUsedQuestionIds(classId: number, excludeTaskId?: number | string) {
+  return unwrap<{ classId: number; usedIds: number[]; count: number }>(
+    apiClient.get(`${BASE}/follow-tasks/classes/${classId}/mock-used-question-ids`, {
+      params: excludeTaskId != null ? { excludeTaskId } : undefined,
+    }),
+  );
+}
+
+export function getFollowBankScope(classId: number) {
+  return unwrap<{
+    classId: number;
+    scopeConfigured?: boolean;
+    courses: { courseId: number; title: string }[];
+    knowledgeIds?: number[];
+    hint?: string;
+  }>(apiClient.get(`${BASE}/follow-tasks/classes/${classId}/bank-scope`));
+}
+
+export function getFollowBankTypeCounts(
+  classId: number,
+  params: { courseId: number; excludeOtherMock?: boolean; excludeTaskId?: number | string },
+) {
+  return unwrap<{
+    classId: number;
+    courseId: number;
+    excludeOtherMock?: boolean;
+    excludedCount?: number;
+    typeCounts: { single?: number; multi?: number; judge?: number; total?: number };
+    hint?: string;
+  }>(apiClient.get(`${BASE}/follow-tasks/classes/${classId}/bank-type-counts`, { params }));
+}
+
+export function drawFollowBankQuestions(
+  classId: number,
+  payload: {
+    courseId?: number;
+    knowledgeId?: number;
+    singleCount?: number;
+    multiCount?: number;
+    judgeCount?: number;
+    excludeIds?: number[];
+    excludeOtherMock?: boolean;
+    excludeTaskId?: number | string;
+  },
+) {
+  return unwrap<{
+    items: { id: number; questionType?: string; stemPreview?: string; score?: number }[];
+    drawn?: Record<string, number>;
+    shortage?: Record<string, number>;
+    typeCounts?: Record<string, number>;
+    hint?: string;
+  }>(apiClient.post(`${BASE}/follow-tasks/classes/${classId}/bank-draw`, payload));
 }
 
 export function getFollowTask(id: number | string) {
@@ -1570,6 +1671,19 @@ export function getHomeworkMetrics(classId: number) {
     avgAccuracyRate?: number | null;
     warnings?: HomeworkWarning[];
   }>(apiClient.get(`${BASE}/follow-tasks/classes/${classId}/homework-metrics`));
+}
+
+export function getMockMetrics(classId: number) {
+  return unwrap<{
+    classId: number;
+    taskCount: number;
+    totalItems: number;
+    gradedItems: number;
+    passedItems: number;
+    completionRate: number;
+    avgAccuracyRate?: number | null;
+    warnings?: HomeworkWarning[];
+  }>(apiClient.get(`${BASE}/follow-tasks/classes/${classId}/mock-metrics`));
 }
 
 export function syncFollowTaskRoster(id: number | string) {

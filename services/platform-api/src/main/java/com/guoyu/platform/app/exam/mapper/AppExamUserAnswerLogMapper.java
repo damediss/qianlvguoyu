@@ -24,21 +24,40 @@ public interface AppExamUserAnswerLogMapper extends BaseMapper<AppExamUserAnswer
   List<Map<String, Object>> wrongStatsByKnowledge(@Param("tenantId") Long tenantId,
                                                    @Param("userId") Long userId);
 
-  /** 错题 id 列表（按错题时间倒序，可选限定考点） */
+  /**
+   * 错题 id 列表：仅保留「最近一次作答仍为错」的题（答对后自动出本）。
+   * 按首次入本时间升序；limit 为空或 ≤0 表示全部。
+   */
   @Select("""
       <script>
-      SELECT DISTINCT question_id
-      FROM exam_user_answer_log
-      WHERE tenant_id = #{tenantId} AND user_id = #{userId} AND is_right = 0
-      <if test="knowledgeId != null"> AND knowledge_id = #{knowledgeId} </if>
-      ORDER BY id DESC
-      LIMIT #{limit}
+      SELECT t.question_id
+      FROM exam_user_answer_log t
+      INNER JOIN (
+        SELECT question_id, MAX(id) AS max_id
+        FROM exam_user_answer_log
+        WHERE tenant_id = #{tenantId} AND user_id = #{userId}
+        GROUP BY question_id
+      ) latest ON t.id = latest.max_id
+      WHERE t.is_right = 0
+      <if test="knowledgeId != null"> AND t.knowledge_id = #{knowledgeId} </if>
+      ORDER BY t.id ASC
+      <if test="limit != null and limit &gt; 0"> LIMIT #{limit} </if>
       </script>
       """)
   List<Integer> findWrongQuestionIds(@Param("tenantId") Long tenantId,
                                      @Param("userId") Long userId,
                                      @Param("knowledgeId") Integer knowledgeId,
                                      @Param("limit") Integer limit);
+
+  /** 删除指定用户某题的历史错题记录（答对出本时可选用） */
+  @org.apache.ibatis.annotations.Delete("""
+      DELETE FROM exam_user_answer_log
+      WHERE tenant_id = #{tenantId} AND user_id = #{userId}
+        AND question_id = #{questionId} AND is_right = 0
+      """)
+  int deleteWrongLogsByQuestion(@Param("tenantId") Long tenantId,
+                                @Param("userId") Long userId,
+                                @Param("questionId") Integer questionId);
 
   @Select("""
       <script>
@@ -114,4 +133,43 @@ public interface AppExamUserAnswerLogMapper extends BaseMapper<AppExamUserAnswer
                                            @Param("from") java.time.LocalDateTime from,
                                            @Param("to") java.time.LocalDateTime to,
                                            @Param("knowledgeIds") List<Integer> knowledgeIds);
+
+  @Select("SELECT IFNULL(MAX(id), 0) FROM exam_user_answer_log")
+  Long selectMaxId();
+
+  /**
+   * 本班学员每题最近一次作答（用于覆盖进度：已做 / 仍错）。
+   */
+  @Select("""
+      SELECT t.question_id AS questionId,
+             t.is_right AS isRight,
+             t.knowledge_id AS knowledgeId,
+             t.question_type AS questionType
+      FROM exam_user_answer_log t
+      INNER JOIN (
+        SELECT question_id, MAX(id) AS max_id
+        FROM exam_user_answer_log
+        WHERE tenant_id = #{tenantId}
+          AND user_id = #{userId}
+          AND class_id = #{classId}
+          AND question_id IS NOT NULL
+        GROUP BY question_id
+      ) latest ON t.id = latest.max_id
+      """)
+  List<Map<String, Object>> findLatestAnswersByClassUser(@Param("tenantId") Long tenantId,
+                                                         @Param("userId") Long userId,
+                                                         @Param("classId") Long classId);
+
+  /** 本班已做过的题目 id（去重，不论对错） */
+  @Select("""
+      SELECT DISTINCT question_id
+      FROM exam_user_answer_log
+      WHERE tenant_id = #{tenantId}
+        AND user_id = #{userId}
+        AND class_id = #{classId}
+        AND question_id IS NOT NULL
+      """)
+  List<Integer> findDoneQuestionIdsByClass(@Param("tenantId") Long tenantId,
+                                           @Param("userId") Long userId,
+                                           @Param("classId") Long classId);
 }

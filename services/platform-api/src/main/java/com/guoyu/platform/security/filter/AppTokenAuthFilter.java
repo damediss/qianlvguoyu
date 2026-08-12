@@ -14,7 +14,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Collections;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -55,9 +57,17 @@ public class AppTokenAuthFilter extends OncePerRequestFilter {
       HttpServletResponse response,
       FilterChain filterChain
   ) throws ServletException, IOException {
-    if (SecurityContextHolder.getContext().getAuthentication() != null) {
+    Authentication existing = SecurityContextHolder.getContext().getAuthentication();
+    // 已有 App 主体则跳过；Anonymous 不能挡住 Bearer itoken 验票
+    if (existing != null
+        && existing.isAuthenticated()
+        && !(existing instanceof AnonymousAuthenticationToken)
+        && existing.getPrincipal() instanceof PlatformUserPrincipal) {
       filterChain.doFilter(request, response);
       return;
+    }
+    if (existing instanceof AnonymousAuthenticationToken) {
+      SecurityContextHolder.clearContext();
     }
 
     String authHeader = request.getHeader("Authorization");

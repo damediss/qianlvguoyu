@@ -200,6 +200,35 @@ public class TrainClassRoleApplicationService {
   }
 
   /**
+   * App：当前用户在本班的主角色（与 listMyClasses 优先级一致）。
+   * 仅读，不影响现有角色分配逻辑。
+   */
+  @Transactional(readOnly = true)
+  public String primaryRoleOfMember(Long platformUserId, Long classId) {
+    assertClassMember(platformUserId, classId);
+    List<String> codes = new ArrayList<>();
+    List<TrainClassRoleEntity> roles = roleMapper.selectList(new LambdaQueryWrapper<TrainClassRoleEntity>()
+        .eq(TrainClassRoleEntity::getClassId, classId)
+        .eq(TrainClassRoleEntity::getPlatformUserId, platformUserId)
+        .eq(TrainClassRoleEntity::getDeleted, 0)
+        .eq(TrainClassRoleEntity::getStatus, "active"));
+    for (TrainClassRoleEntity r : roles) {
+      if (StringUtils.hasText(r.getRoleCode())) {
+        codes.add(r.getRoleCode());
+      }
+    }
+    long studentHit = peopleMapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
+        .eq(TrainPeopleListEntity::getTrainClassId, classId)
+        .eq(TrainPeopleListEntity::getPlatformUserId, platformUserId)
+        .eq(TrainPeopleListEntity::getType, "student")
+        .eq(TrainPeopleListEntity::getDeleted, 0));
+    if (studentHit > 0 && !codes.contains("student")) {
+      codes.add("student");
+    }
+    return pickPrimaryRole(codes);
+  }
+
+  /**
    * App：须持有本班任一指定活跃角色，返回命中的角色码（按 allowed 顺序优先）。
    */
   public String requireAnyActiveRole(Long platformUserId, Long classId, String... allowedRoleCodes) {
