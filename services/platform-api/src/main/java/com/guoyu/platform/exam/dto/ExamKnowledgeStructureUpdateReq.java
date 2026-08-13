@@ -8,7 +8,7 @@ public record ExamKnowledgeStructureUpdateReq(
     Integer courseId,
     Integer parentId,
     @Size(max = 200) String seriesNo,
-    Integer important,
+    String important,
     Integer status,
     Integer sortNumber,
     @Size(max = 500) String cover,

@@ -19,7 +19,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
     "com.guoyu.platform.chazheng.mapper",
     "com.guoyu.platform.competition.mapper",
     "com.guoyu.platform.competition.messaging.mapper",
-    "com.guoyu.platform.exam.reviewsync.mapper"
+    "com.guoyu.platform.exam.reviewsync.mapper",
+    "com.guoyu.platform.exam.standard.mapper"
 })
 @SpringBootApplication
 public class PlatformApplication {

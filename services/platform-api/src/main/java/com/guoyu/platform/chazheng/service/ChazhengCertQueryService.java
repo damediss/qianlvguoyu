@@ -75,6 +75,14 @@ public class ChazhengCertQueryService {
       reqData.put("username", name);
       processOneTemplate(apiUrl, reqData, name, idCard, templateIdx, result);
     }
+
+    // 所有模板都没拿到正常业务响应（HTTP 错误 / 网络异常 / JSON 解析失败 / 业务层错误）
+    // 说明上游查证接口故障，不能当作"成功无证"处理，必须抛异常让批次重试机制感知并记录错误
+    if (!result.anyNormal) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR,
+          "广西技能人才评价工作网接口报错");
+    }
+
     return new CertQueryOutcome(result.anyNormal, result.anyCertFound, List.copyOf(result.certs));
   }
 
@@ -246,11 +254,16 @@ public class ChazhengCertQueryService {
     }
     Path logFile = logDir.resolve("certs_" + safeUserName + "_" + idCard + ".log");
 
+    // 用 LinkedHashMap 而非 Map.of：Map.of 不允许 null 值，
+    // 当 detail 为 null（如响应缺 errorCode 字段，仅 statusCode/status 异常）时会抛 NPE
+    Map<String, Object> logPayload = new LinkedHashMap<>();
+    logPayload.put("template", reqData);
+    logPayload.put("detail", detail);
     String entry;
     try {
       entry = String.format("--- %s %s ---%n%s%n",
           parseStatus, Instant.now(),
-          objectMapper.writeValueAsString(Map.of("template", reqData, "detail", detail)));
+          objectMapper.writeValueAsString(logPayload));
     } catch (JsonProcessingException e) {
       entry = String.format("--- %s %s ---%ntemplate=%s, detail=%s%n",
           parseStatus, Instant.now(), reqData, detail);

@@ -1,0 +1,271 @@
+package com.guoyu.platform.exam.standard.parser.model;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * docx 文本清洗与编号识别工具（规则来自《DOCX转Markdown转换指南》坑 2/3/4/5 与实测）。
+ */
+public final class DocxTextUtil {
+
+  private DocxTextUtil() {
+  }
+
+  /** 职业编码碎片，如 "职业编码：6- 18-02-04"（页眉/正文混入） */
+  private static final Pattern SERIES_NO_JUNK = Pattern.compile("职业编码[:：][\\d\\s\\-—.]+");
+  /** 页码碎片：整段纯数字与空格（如 "105105"、"1 101 10"） */
+  private static final Pattern PAGE_NO_LINE = Pattern.compile("^[\\d\\s　]+$");
+  /** 编号标题：1. / 2.1 / 2.1.1 + 中文。编号后必须跟中文，避免误判职业编码（坑3） */
+  private static final Pattern HEADING = Pattern.compile(
+      "^(\\d{1,2})(?:\\s*\\.\\s*(\\d{1,2}))?(?:\\s*\\.\\s*(\\d{1,2}))?\\s*\\.?\\s*([\\u4e00-\\u9fff].*)$");
+  /** 全文搜索 plausible 标题（用于页眉垃圾与标题粘连的段落） */
+  private static final Pattern HEADING_SEARCH = Pattern.compile(
+      "(\\d)\\s*\\.\\s*(\\d{1,2})(?:\\s*\\.\\s*(\\d{1,2}))?\\s*\\.?\\s*([\\u4e00-\\u9fff][^　]*)$");
+  /** 表格单元格内的点号编号项，如 1.1.1 / 2.1（可能带空格：1. 1. 1） */
+  private static final Pattern DOTTED_ITEM = Pattern.compile(
+      "(\\d{1,2}(?:\\s*\\.\\s*\\d{1,2}){1,2})\\s*\\.?\\s*");
+  /** （1）/ (1) 编号项 */
+  private static final Pattern PAREN_ITEM = Pattern.compile("[（(]\\s*(\\d{1,2})\\s*[)）]\\s*");
+  /** 1) / 1）编号项（仅右括号） */
+  private static final Pattern CLOSE_PAREN_ITEM = Pattern.compile("(?<![\\d.])\\s*(\\d{1,2})[)）]\\s*");
+  /** 阿拉伯数字顿号编号 1、xxx */
+  private static final Pattern DUNHAO_ITEM = Pattern.compile("(?<!\\d)(\\d{1,2})、");
+  /** 技能条目安全标记 ★ */
+  private static final Pattern STAR = Pattern.compile("[★☆]");
+
+  /** 清洗段落文本：去职业编码碎片、压缩空白（不动结构换行由调用方控制） */
+  public static String cleanParagraph(String raw) {
+    if (raw == null) {
+      return "";
+    }
+    String s = raw.replace(' ', ' ').replace('　', ' ');
+    s = SERIES_NO_JUNK.matcher(s).replaceAll(" ");
+    // 中文之间/中文与标点之间的空格（坑2：只清空格与Tab，不动换行）
+    s = s.replaceAll("([\\u4e00-\\u9fff])[ \\t]+([\\u4e00-\\u9fff])", "$1$2");
+    s = s.replaceAll("([\\u4e00-\\u9fff])[ \\t]+([，。、；：！？,.;:!?])", "$1$2");
+    s = s.replaceAll("([，。、；：！？,.;:!?])[ \\t]+([\\u4e00-\\u9fff])", "$1$2");
+    s = s.replaceAll("([（(])[ \\t]+", "$1");
+    s = s.replaceAll("[ \\t]+([）)])", "$1");
+    return s.trim();
+  }
+
+  /** 是否页码等纯数字垃圾行 */
+  public static boolean isPageJunk(String cleanedText) {
+    return cleanedText.isEmpty() || PAGE_NO_LINE.matcher(cleanedText).matches();
+  }
+
+  /**
+   * 标题检测。返回 int[]{depth, number1, number2, number3} + title 的 Heading 对象；非标题返回 null。
+   * depth = 编号段数（1/2/3）。
+   */
+  public static Heading detectHeading(String cleanedText) {
+    if (cleanedText == null || cleanedText.isEmpty()) {
+      return null;
+    }
+    String text = cleanedText.trim();
+    if (text.startsWith("（") || text.startsWith("(")) {
+      return null;
+    }
+    if (text.equals("续表") || text.equals("∗") || text.equals("*") || text.startsWith("注:") || text.startsWith("注：")) {
+      return null;
+    }
+    // 直接匹配
+    Heading h = matchHeading(text);
+    if (h != null) {
+      return h;
+    }
+    // 页眉/页码垃圾与标题粘连（如 "105105职业编码：…4. 1 理论知识权重表"）：取最后一个 plausible 匹配
+    Matcher m = HEADING_SEARCH.matcher(text);
+    Heading last = null;
+    int lastStart = -1;
+    while (m.find()) {
+      int n1 = Integer.parseInt(m.group(1));
+      int n2 = Integer.parseInt(m.group(2));
+      if (n1 >= 1 && n1 <= 9 && n2 <= 30) {
+        int n3 = m.group(3) != null ? Integer.parseInt(m.group(3)) : -1;
+        if (n3 > 30) {
+          continue;
+        }
+        last = new Heading(n3 >= 0 ? 3 : 2, n1, n2, n3, m.group(4).trim());
+        lastStart = m.start();
+      }
+    }
+    // 粘连匹配要求标题前存在垃圾（否则直接匹配已成功）
+    return lastStart > 0 ? last : null;
+  }
+
+  private static Heading matchHeading(String text) {
+    String cleaned = text.replaceAll("\\s+", "");
+    Matcher m = HEADING.matcher(cleaned);
+    if (!m.matches()) {
+      return null;
+    }
+    int n1 = Integer.parseInt(m.group(1));
+    if (n1 < 1 || n1 > 9) {
+      return null; // "60分（含）以上者为合格" 之类
+    }
+    int n2 = m.group(2) != null ? Integer.parseInt(m.group(2)) : -1;
+    int n3 = m.group(3) != null ? Integer.parseInt(m.group(3)) : -1;
+    if (n2 > 30 || n3 > 30) {
+      return null;
+    }
+    int depth = n3 >= 0 ? 3 : (n2 >= 0 ? 2 : 1);
+    return new Heading(depth, n1, n2, n3, m.group(4).trim());
+  }
+
+  /**
+   * 拆分单元格/段落文本为编号素材条目。
+   * 支持 `1.1.1 xxx`、`（1）xxx`、`(1)`、`1) xxx`、`1、xxx` 等写法；无编号时整体作为单条（非空）。
+   */
+  public static List<String> splitItems(String rawText) {
+    List<String> items = new ArrayList<>();
+    if (rawText == null || rawText.isBlank()) {
+      return items;
+    }
+    String text = rawText.replace('\r', '\n');
+    // 段落换行先并成一行，再按编号切（编号项内部一般无换行；跨页断行在逻辑网格层已拼接）
+    String flat = text.replaceAll("\\s*\\n\\s*", " ").trim();
+    Matcher dotted = DOTTED_ITEM.matcher(flat);
+    List<int[]> anchors = new ArrayList<>();
+    while (dotted.find()) {
+      anchors.add(new int[]{dotted.start(), dotted.end()});
+    }
+    if (anchors.isEmpty()) {
+      Matcher paren = PAREN_ITEM.matcher(flat);
+      while (paren.find()) {
+        anchors.add(new int[]{paren.start(), paren.end()});
+      }
+    }
+    if (anchors.isEmpty()) {
+      Matcher closeParen = CLOSE_PAREN_ITEM.matcher(flat);
+      while (closeParen.find()) {
+        anchors.add(new int[]{closeParen.start(), closeParen.end()});
+      }
+    }
+    if (anchors.isEmpty()) {
+      Matcher dunhao = DUNHAO_ITEM.matcher(flat);
+      while (dunhao.find()) {
+        anchors.add(new int[]{dunhao.start(), dunhao.end()});
+      }
+    }
+    if (anchors.isEmpty()) {
+      String single = STAR.matcher(flat).replaceAll("").trim();
+      if (!single.isEmpty()) {
+        items.add(single);
+      }
+      return items;
+    }
+    for (int i = 0; i < anchors.size(); i++) {
+      int start = anchors.get(i)[1];
+      int end = i + 1 < anchors.size() ? anchors.get(i + 1)[0] : flat.length();
+      String item = flat.substring(start, end).trim();
+      item = STAR.matcher(item).replaceAll("").trim();
+      if (!item.isEmpty()) {
+        items.add(item);
+      }
+    }
+    return items;
+  }
+
+  /** 点号编号归一化："1. 1. 1" → "1.1.1"；编号后须有点/顿号/空格分隔，无匹配返回 null */
+  public static String normalizeDottedNumber(String text) {
+    if (text == null) {
+      return null;
+    }
+    Matcher m = Pattern.compile("^(\\d{1,2}(?:\\s*\\.\\s*\\d{1,2}){0,2})(?:\\s*[.、]|\\s+)")
+        .matcher(text.trim());
+    if (!m.find()) {
+      return null;
+    }
+    return m.group(1).replaceAll("\\s*", "").replaceAll("\\.$", "");
+  }
+
+  /** 剥离标题前的点号编号："1. 1 安全检查" → "安全检查"；编号后须有点/顿号/空格分隔，否则不剥 */
+  public static String stripLeadingNumber(String text) {
+    if (text == null) {
+      return "";
+    }
+    return text.trim()
+        .replaceAll("^\\d{1,2}(?:\\s*\\.\\s*\\d{1,2}){0,2}(?:\\s*[.、]|\\s+)\\s*", "")
+        .trim();
+  }
+
+  /** 权重表项目名归一化：去空格、去（必选）/（必选）后缀 */
+  public static String normalizeItemName(String name) {
+    if (name == null) {
+      return "";
+    }
+    String s = name.replaceAll("[\\s　]+", "");
+    s = s.replaceAll("[（(](必选|任选)[)）]$", "");
+    return s;
+  }
+
+  /** 表格单元格文本：多段落以 \n 拼接后整体清洗（保留段落间换行） */
+  public static String cleanCell(String rawText) {
+    if (rawText == null) {
+      return "";
+    }
+    String[] parts = rawText.replace('\r', '\n').split("\\n");
+    StringBuilder sb = new StringBuilder();
+    for (String p : parts) {
+      String c = cleanParagraph(p);
+      if (!c.isEmpty()) {
+        if (sb.length() > 0) {
+          sb.append('\n');
+        }
+        sb.append(c);
+      }
+    }
+    return sb.toString();
+  }
+
+  /**
+   * 表格原文的编号规范化（细目表"技能要求/相关知识"列版式对齐样例）：
+   * "1. 1. 1 能…" → "1.1.1能…"（折叠编号内部空格、去编号与正文间空格）。
+   */
+  public static String normalizeNumbering(String text) {
+    if (text == null) {
+      return "";
+    }
+    String s = text;
+    String prev;
+    do {
+      prev = s;
+      // 必须有空格邻接点才折叠（"1. 1"/"1 .1"），避免 "1.1" 自匹配阻断链式折叠
+      s = s.replaceAll("(\\d)\\s*\\.\\s+(\\d)", "$1.$2");
+      s = s.replaceAll("(\\d)\\s+\\.\\s*(\\d)", "$1.$2");
+    } while (!s.equals(prev));
+    // 点号编号与中文正文之间的空格（"1.1.1 能" → "1.1.1能"）
+    s = s.replaceAll("(\\d{1,2}(?:\\.\\d{1,2})+)[ \\t]+(?=[\\u4e00-\\u9fff])", "$1");
+    return s;
+  }
+
+  /** 标题检测结果 */
+  public static final class Heading {
+    public final int depth;
+    public final int n1;
+    public final int n2;
+    public final int n3;
+    public final String title;
+
+    public Heading(int depth, int n1, int n2, int n3, String title) {
+      this.depth = depth;
+      this.n1 = n1;
+      this.n2 = n2;
+      this.n3 = n3;
+      this.title = title;
+    }
+
+    public String number() {
+      if (depth == 1) {
+        return String.valueOf(n1);
+      }
+      if (depth == 2) {
+        return n1 + "." + n2;
+      }
+      return n1 + "." + n2 + "." + n3;
+    }
+  }
+}

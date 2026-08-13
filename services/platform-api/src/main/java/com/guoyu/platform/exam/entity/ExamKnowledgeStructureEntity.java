@@ -21,7 +21,7 @@ public class ExamKnowledgeStructureEntity {
   private String title;
   private String seriesNo;
   private Integer level;
-  private Integer important;
+  private String important;
   private Integer userId;
   private Integer status;
   private Integer sortNumber;
@@ -54,8 +54,8 @@ public class ExamKnowledgeStructureEntity {
   public void setSeriesNo(String seriesNo) { this.seriesNo = seriesNo; }
   public Integer getLevel() { return level; }
   public void setLevel(Integer level) { this.level = level; }
-  public Integer getImportant() { return important; }
-  public void setImportant(Integer important) { this.important = important; }
+  public String getImportant() { return important; }
+  public void setImportant(String important) { this.important = important; }
   public Integer getUserId() { return userId; }
   public void setUserId(Integer userId) { this.userId = userId; }
   public Integer getStatus() { return status; }

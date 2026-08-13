@@ -101,7 +101,7 @@ public class ExamKnowledgeStructureApplicationService {
     entity.setParentId(req.parentId() != null ? req.parentId() : 0);
     entity.setSeriesNo(req.seriesNo());
     entity.setLevel(level);
-    entity.setImportant(req.important() != null ? req.important() : 0);
+    entity.setImportant(req.important() != null ? req.important() : "0");
     entity.setCover(req.cover());
     entity.setIntro(req.intro());
     entity.setAmount(req.amount() != null ? req.amount() : 0);
@@ -236,7 +236,7 @@ public class ExamKnowledgeStructureApplicationService {
       entity.setParentId(parentId);
       entity.setSeriesNo(seriesNo);
       entity.setLevel(level);
-      entity.setImportant(0);
+      entity.setImportant(null);
       entity.setUserId(userId.intValue());
       entity.setStatus(1);
       entity.setSortNumber(count + 1);
@@ -351,7 +351,10 @@ public class ExamKnowledgeStructureApplicationService {
         if (!StringUtils.hasText(title)) continue;
 
         String seriesNo = getCellString(row.getCell(1));
-        Integer importance = parseIntOrNull(getCellString(row.getCell(2)));
+        String importance = getCellString(row.getCell(2));
+        if (importance != null && importance.isBlank()) {
+          importance = null;
+        }
         Integer sortNumber = parseIntOrNull(getCellString(row.getCell(3)));
         Integer levelVal = parseIntOrNull(getCellString(row.getCell(4)));
         int level = levelVal != null ? Math.min(levelVal, 3) : 0;
@@ -386,7 +389,7 @@ public class ExamKnowledgeStructureApplicationService {
         entity.setParentId(parentId);
         entity.setSeriesNo(seriesNo);
         entity.setLevel(level);
-        entity.setImportant(importance != null ? importance : 0);
+        entity.setImportant(importance);
         entity.setAmount(0);
         entity.setUserId(userId.intValue());
         entity.setStatus(1);
@@ -441,7 +444,7 @@ public class ExamKnowledgeStructureApplicationService {
         row.createCell(1).setCellValue(entity.getSeriesNo() != null ? entity.getSeriesNo() : "");
         row.createCell(2).setCellValue(entity.getType() != null && entity.getType() == 1 ? "实操" : "理论");
         row.createCell(3).setCellValue(entity.getLevel() != null ? entity.getLevel() : 0);
-        row.createCell(4).setCellValue(entity.getImportant() != null ? entity.getImportant() : 0);
+        row.createCell(4).setCellValue(entity.getImportant() != null ? entity.getImportant() : "");
         row.createCell(5).setCellValue(entity.getSortNumber() != null ? entity.getSortNumber() : 0);
       }
 

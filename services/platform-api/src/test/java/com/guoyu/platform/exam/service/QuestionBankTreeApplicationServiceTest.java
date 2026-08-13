@@ -6,7 +6,6 @@ import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.guoyu.platform.exam.entity.ExamCourseEntity;
-import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
 import com.guoyu.platform.exam.entity.ExamKnowledgeStructureEntity;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.exam.mapper.ExamCourseMapper;
@@ -93,9 +92,9 @@ class QuestionBankTreeApplicationServiceTest {
     when(knowledgeMapper.selectList(any(Wrapper.class)))
         .thenReturn(List.of(knowledge(1000, 100, 0, "氩弧焊", 3, 1, 0)));
 
-    // 1 道题
-    when(examDetailMapper.selectList(any(Wrapper.class)))
-        .thenReturn(List.of(detail(5000, 1000)));
+    // 1 道题（服务走 MySQL 端 GROUP BY：countByKnowledgeIdGrouped）
+    when(examDetailMapper.countByKnowledgeIdGrouped(any()))
+        .thenReturn(List.of(countRow(1000, 1)));
 
     List<QuestionBankTreeNodeVO> tree = service.buildTree();
 
@@ -149,12 +148,12 @@ class QuestionBankTreeApplicationServiceTest {
             knowledge(201, 20, 0, "L0-电", 0, 1, 0),
             knowledge(202, 20, 201, "L3-电-A", 3, 1, 0)));
 
-    // 题: 焊课 L3-A 上 2 道; 焊课 L3-B 上 1 道; 电课 L3-电-A 上 3 道
-    when(examDetailMapper.selectList(any(Wrapper.class)))
+    // 题: 焊课 L3-A 上 2 道; 焊课 L3-B 上 1 道; 电课 L3-电-A 上 3 道（GROUP BY 聚合行）
+    when(examDetailMapper.countByKnowledgeIdGrouped(any()))
         .thenReturn(List.of(
-            detail(9001, 104), detail(9002, 104),
-            detail(9003, 105),
-            detail(9004, 202), detail(9005, 202), detail(9006, 202)));
+            countRow(104, 2),
+            countRow(105, 1),
+            countRow(202, 3)));
 
     List<QuestionBankTreeNodeVO> tree = service.buildTree();
     assertThat(tree).hasSize(2);
@@ -218,12 +217,11 @@ class QuestionBankTreeApplicationServiceTest {
             knowledge(103, 10, 0, "启用-B", 3, 1, 0)));
 
     // 题目: 启用-A 上 2 道, 启用-B 上 1 道, 停用节点 102 上 5 道 (这些应被忽略)
-    when(examDetailMapper.selectList(any(Wrapper.class)))
+    when(examDetailMapper.countByKnowledgeIdGrouped(any()))
         .thenReturn(List.of(
-            detail(9001, 101), detail(9002, 101),
-            detail(9003, 103),
-            detail(9004, 102), detail(9005, 102), detail(9006, 102),
-            detail(9007, 102), detail(9008, 102)));
+            countRow(101, 2),
+            countRow(103, 1),
+            countRow(102, 5)));
 
     List<QuestionBankTreeNodeVO> tree = service.buildTree();
     QuestionBankTreeNodeVO wt = tree.get(0);
@@ -250,9 +248,9 @@ class QuestionBankTreeApplicationServiceTest {
     when(knowledgeMapper.selectList(any(Wrapper.class)))
         .thenReturn(List.of(knowledge(101, 10, 0, "L3", 3, 1, 0)));
 
-    // 模拟拦截器已经把 deleted=1 的过滤掉,只剩 deleted=0 的 2 条
-    when(examDetailMapper.selectList(any(Wrapper.class)))
-        .thenReturn(List.of(detail(9001, 101), detail(9002, 101)));
+    // 模拟拦截器已经把 deleted=1 的过滤掉,只剩 deleted=0 的 2 条（GROUP BY 聚合行）
+    when(examDetailMapper.countByKnowledgeIdGrouped(any()))
+        .thenReturn(List.of(countRow(101, 2)));
 
     List<QuestionBankTreeNodeVO> tree = service.buildTree();
     assertThat(tree.get(0).getQuestionCount()).isEqualTo(2L);
@@ -271,7 +269,7 @@ class QuestionBankTreeApplicationServiceTest {
     // 知识节点: 无
     when(knowledgeMapper.selectList(any(Wrapper.class)))
         .thenReturn(Collections.emptyList());
-    when(examDetailMapper.selectList(any(Wrapper.class)))
+    when(examDetailMapper.countByKnowledgeIdGrouped(any()))
         .thenReturn(Collections.emptyList());
 
     List<QuestionBankTreeNodeVO> tree = service.buildTree();
@@ -344,13 +342,12 @@ class QuestionBankTreeApplicationServiceTest {
     return e;
   }
 
-  private static ExamExamDetailEntity detail(int id, Integer knowledgeId) {
-    ExamExamDetailEntity e = new ExamExamDetailEntity();
-    e.setId(id);
-    e.setKnowledgeId(knowledgeId);
-    e.setTenantId(1);
-    e.setDeleted(0);
-    return e;
+  /** GROUP BY 聚合行（对应 ExamExamDetailMapper.countByKnowledgeIdGrouped 返回结构） */
+  private static java.util.Map<String, Object> countRow(int knowledgeId, long cnt) {
+    java.util.Map<String, Object> row = new java.util.HashMap<>();
+    row.put("knowledgeId", knowledgeId);
+    row.put("cnt", cnt);
+    return row;
   }
 
   private static QuestionBankTreeNodeVO findById(List<QuestionBankTreeNodeVO> list, String key) {
