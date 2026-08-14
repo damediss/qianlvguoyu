@@ -13,6 +13,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainScheduleChangeRequestEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainScheduleEntity;
+import com.guoyu.platform.trainingdepartment.follow.FollowOpEventCode;
+import com.guoyu.platform.trainingdepartment.follow.FollowOpLogCommand;
+import com.guoyu.platform.trainingdepartment.follow.FollowOpLogWriter;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainScheduleMapper;
 import com.guoyu.platform.trainingdepartment.support.TrainKcbiaoScheduleParser;
@@ -45,6 +48,7 @@ public class TrainScheduleApplicationService {
   private final TrainingStoredFileResolver fileResolver;
   private final TrainKcbiaoScheduleParser kcbiaoParser;
   private final ObjectMapper objectMapper;
+  private final FollowOpLogWriter opLogWriter;
 
   public TrainScheduleApplicationService(
       TrainScheduleMapper mapper,
@@ -53,7 +57,8 @@ public class TrainScheduleApplicationService {
       FileStorageProperties fileStorageProperties,
       TrainingStoredFileResolver fileResolver,
       TrainKcbiaoScheduleParser kcbiaoParser,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      FollowOpLogWriter opLogWriter) {
     this.mapper = mapper;
     this.classMapper = classMapper;
     this.fileMapper = fileMapper;
@@ -61,6 +66,7 @@ public class TrainScheduleApplicationService {
     this.fileResolver = fileResolver;
     this.kcbiaoParser = kcbiaoParser;
     this.objectMapper = objectMapper;
+    this.opLogWriter = opLogWriter;
   }
 
   /**
@@ -366,6 +372,15 @@ public class TrainScheduleApplicationService {
     result.put("skipped", false);
     result.put("source", "kcbiao_file");
     result.put("manualEdited", false);
+
+    Map<String, Object> reimportDetail = new LinkedHashMap<>();
+    reimportDetail.put("count", saved.getOrDefault("count", 0));
+    reimportDetail.put("force", force);
+    opLogWriter.write(FollowOpLogCommand.of(classId, FollowOpEventCode.SCHEDULE_REIMPORT)
+        .title("重导开班课表")
+        .summary("导入 " + saved.get("count") + " 个课次")
+        .detail(reimportDetail));
+
     return result;
   }
 
@@ -396,6 +411,14 @@ public class TrainScheduleApplicationService {
     clazz.setScheduleManualEdited(1);
     classMapper.updateById(clazz);
     result.put("manualEdited", true);
+
+    Map<String, Object> saveDetail = new LinkedHashMap<>();
+    saveDetail.put("count", result.get("count"));
+    opLogWriter.write(FollowOpLogCommand.of(classId, FollowOpEventCode.SCHEDULE_SAVE)
+        .title("保存跟班课表")
+        .summary("保存 " + result.get("count") + " 个课次")
+        .detail(saveDetail));
+
     return result;
   }
 

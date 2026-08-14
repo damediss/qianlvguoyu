@@ -24,6 +24,8 @@ public class TrainAttendanceEntity {
   private Long userId;
   private String userName;
   private String attendanceDate;
+  /** 课次 ID（train_schedule.id）；空=按日考勤 */
+  private Long scheduleId;
   /** 状态 */
   private Integer status;
   private String checkInTime;
@@ -58,6 +60,8 @@ public class TrainAttendanceEntity {
   public void setUserName(String userName) { this.userName = userName; }
   public String getAttendanceDate() { return attendanceDate; }
   public void setAttendanceDate(String attendanceDate) { this.attendanceDate = attendanceDate; }
+  public Long getScheduleId() { return scheduleId; }
+  public void setScheduleId(Long scheduleId) { this.scheduleId = scheduleId; }
   public Integer getStatus() { return status; }
   public void setStatus(Integer status) { this.status = status; }
   public String getCheckInTime() { return checkInTime; }

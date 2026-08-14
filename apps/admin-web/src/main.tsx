@@ -30,6 +30,7 @@ import { EnterpriseTalentDemandPage } from './pages/training/EnterpriseTalentDem
 import { TrainingProgramPage } from './pages/training/TrainingProgramPage';
 import { TrainingSchedulePage } from './pages/training/TrainingSchedulePage';
 import { TrainingGraduationPage } from './pages/training/TrainingGraduationPage';
+import { TrainingGraduationCeremonyPage } from './pages/training/TrainingGraduationCeremonyPage';
 import { TrainingCapabilityPage } from './pages/training/TrainingCapabilityPage';
 import { TrainingSummaryPage } from './pages/training/TrainingSummaryPage';
 import { TrainingCertificateTemplatePage } from './pages/training/TrainingCertificateTemplatePage';
@@ -144,6 +145,7 @@ const pageMap: Record<string, React.ReactNode> = {
   'train_info-list': <TrainingInfoPage />,
   train_follow: <TrainingFollowClassPage />,
   train_follow_exam: <TrainingFollowExamPage />,
+  train_graduation_ceremony: <TrainingGraduationCeremonyPage />,
   train_subsidy_declare: <TrainingSubsidyDeclarePage />,
   fen_ban: <TrainingClassDivisionPage />,
   'train_people-list': <TrainingClassPeoplePage />,
@@ -369,7 +371,7 @@ const pageMap: Record<string, React.ReactNode> = {
   ops_train_class_mgmt: <ProductPlaceholder moduleCode="ops_train_class_mgmt" />,
   ops_train_implementation: <ProductPlaceholder moduleCode="ops_train_implementation" />,
   ops_train_cert_issue: <ProductPlaceholder moduleCode="ops_train_cert_issue" />,
-  ops_train_graduation: <ProductPlaceholder moduleCode="ops_train_graduation" />,
+  ops_train_graduation: <TrainingGraduationCeremonyPage />,
   ops_train_project_close: <ProductPlaceholder moduleCode="ops_train_project_close" />,
   ops_train_project_apply: <ProductPlaceholder moduleCode="ops_train_project_apply" />,
   // 培训运营 - 需求调研

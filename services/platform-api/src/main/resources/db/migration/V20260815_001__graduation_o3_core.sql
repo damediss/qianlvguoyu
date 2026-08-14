@@ -1,0 +1,25 @@
+-- O3 结业与毕业典礼：状态字段 + 通知 + 归档 + 证书轻关联列
+-- 本库列与表已预执行完成。Druid WallFilter 禁止 PREPARE；裸 ADD COLUMN 遇已有列会失败。
+-- 故本脚本仅作 Flyway 版本占位。全新库缺对象时请手工执行 docs/ 方案或下列 DDL。
+--
+-- ALTER TABLE train_people_list
+--   ADD COLUMN graduate_status TINYINT NOT NULL DEFAULT 0 COMMENT '0未结业/1已结业/2不合格' AFTER id_card,
+--   ADD COLUMN graduate_at DATETIME NULL COMMENT '结业时间' AFTER graduate_status,
+--   ADD COLUMN graduate_by BIGINT NULL COMMENT '结业操作人' AFTER graduate_at,
+--   ADD COLUMN graduate_remark VARCHAR(500) NULL COMMENT '结业备注' AFTER graduate_by;
+--
+-- ALTER TABLE train_info_class
+--   ADD COLUMN graduate_status VARCHAR(16) NOT NULL DEFAULT 'pending' COMMENT 'pending/partial/done' AFTER company_reject_reason,
+--   ADD COLUMN graduate_at DATETIME NULL COMMENT '班级结业完成时间' AFTER graduate_status,
+--   ADD COLUMN certificate_temp_id BIGINT NULL COMMENT '结业证模板 train_file_temp.id' AFTER graduate_at;
+--
+-- ALTER TABLE train_certificate
+--   ADD COLUMN class_id BIGINT NULL COMMENT '班级ID' AFTER project_id,
+--   ADD COLUMN people_id BIGINT NULL COMMENT '花名册学员ID' AFTER class_id,
+--   ADD COLUMN template_id BIGINT NULL COMMENT '模板 train_file_temp.id' AFTER people_id;
+--
+-- CREATE TABLE IF NOT EXISTS train_graduation_notice (...);
+-- CREATE TABLE IF NOT EXISTS train_graduation_notice_item (...);
+-- CREATE TABLE IF NOT EXISTS train_graduation_archive (...);
+
+SELECT 1;

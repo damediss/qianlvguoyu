@@ -49,6 +49,11 @@ public class TrainInfoClassEntity {
   private String companyConfirmUsername;
   private String companyRejectReason;
 
+  /** pending / partial / done */
+  private String graduateStatus;
+  private LocalDateTime graduateAt;
+  private Long certificateTempId;
+
   /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
@@ -95,6 +100,12 @@ public class TrainInfoClassEntity {
   public void setCompanyConfirmUsername(String companyConfirmUsername) { this.companyConfirmUsername = companyConfirmUsername; }
   public String getCompanyRejectReason() { return companyRejectReason; }
   public void setCompanyRejectReason(String companyRejectReason) { this.companyRejectReason = companyRejectReason; }
+  public String getGraduateStatus() { return graduateStatus; }
+  public void setGraduateStatus(String graduateStatus) { this.graduateStatus = graduateStatus; }
+  public LocalDateTime getGraduateAt() { return graduateAt; }
+  public void setGraduateAt(LocalDateTime graduateAt) { this.graduateAt = graduateAt; }
+  public Long getCertificateTempId() { return certificateTempId; }
+  public void setCertificateTempId(Long certificateTempId) { this.certificateTempId = certificateTempId; }
   public Integer getDeleted() { return deleted; }
   public void setDeleted(Integer deleted) { this.deleted = deleted; }
 }

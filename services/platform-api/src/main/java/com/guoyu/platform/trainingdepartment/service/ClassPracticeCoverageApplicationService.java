@@ -5,21 +5,30 @@ import com.guoyu.platform.app.exam.mapper.AppExamUserAnswerLogMapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
+import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
 import com.guoyu.platform.exam.entity.ExamKnowledgeStructureEntity;
+import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
+import com.guoyu.platform.trainingdepartment.dto.FollowTaskQuestionReq;
 import com.guoyu.platform.trainingdepartment.entity.TrainClassPracticeKnowledgeEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainClassPracticeKnowledgeMapper;
+import com.guoyu.platform.trainingdepartment.support.FollowTaskBankQuestionConverter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * 学员本班刷题覆盖进度：范围内题池 vs exam_user_answer_log（带 class_id）。
@@ -31,16 +40,22 @@ public class ClassPracticeCoverageApplicationService {
   private final AppExamUserAnswerLogMapper answerLogMapper;
   private final TrainClassPracticeKnowledgeMapper practiceKnowledgeMapper;
   private final ExamKnowledgeStructureMapper knowledgeStructureMapper;
+  private final ExamExamDetailMapper examDetailMapper;
+  private final FollowTaskBankQuestionConverter bankQuestionConverter;
 
   public ClassPracticeCoverageApplicationService(
       ClassPracticeScopeApplicationService scopeService,
       AppExamUserAnswerLogMapper answerLogMapper,
       TrainClassPracticeKnowledgeMapper practiceKnowledgeMapper,
-      ExamKnowledgeStructureMapper knowledgeStructureMapper) {
+      ExamKnowledgeStructureMapper knowledgeStructureMapper,
+      ExamExamDetailMapper examDetailMapper,
+      FollowTaskBankQuestionConverter bankQuestionConverter) {
     this.scopeService = scopeService;
     this.answerLogMapper = answerLogMapper;
     this.practiceKnowledgeMapper = practiceKnowledgeMapper;
     this.knowledgeStructureMapper = knowledgeStructureMapper;
+    this.examDetailMapper = examDetailMapper;
+    this.bankQuestionConverter = bankQuestionConverter;
   }
 
   @Transactional(readOnly = true)
@@ -207,6 +222,326 @@ public class ClassPracticeCoverageApplicationService {
     out.put("knowledges", knowledgeOut);
     out.put("hint", "仅统计从本班入口练习的记录；已做=做过至少一次，仍错=最近一次答错");
     return out;
+  }
+
+  /**
+   * 分页列出本班已做题（轻量字段：题干预览 + 最近对错）。
+   *
+   * @param status done=全部已做（默认）；wrong=仍错
+   */
+  @Transactional(readOnly = true)
+  public Map<String, Object> listCoverageQuestionsForAppMember(
+      Long classId, Long userId, String status, String type, int page, int pageSize) {
+    if (classId == null || classId <= 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "班级无效");
+    }
+    if (userId == null || userId <= 0) {
+      throw new BusinessException(ErrorCode.UNAUTHORIZED, "请先登录");
+    }
+    Long tenantId = TenantContextHolder.getTenantId();
+    if (tenantId == null || tenantId <= 0) {
+      tenantId = 1L;
+    }
+
+    String statusKey = StringUtils.hasText(status) ? status.trim().toLowerCase(Locale.ROOT) : "done";
+    if (!"done".equals(statusKey) && !"wrong".equals(statusKey)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "status 仅支持 done / wrong");
+    }
+    String typeKey = normalizeType(type);
+
+    Map<String, Object> scope = scopeService.getScopeForAppMember(classId);
+    @SuppressWarnings("unchecked")
+    List<Map<String, Object>> knowledgeRows =
+        scope.get("knowledges") instanceof List
+            ? (List<Map<String, Object>>) scope.get("knowledges")
+            : List.of();
+    List<Integer> courseIds = toIntList(scope.get("courseIds"));
+    List<Integer> whitelistIds = knowledgeRows.stream()
+        .map(r -> toInt(r.get("knowledgeId")))
+        .filter(id -> id != null && id > 0)
+        .toList();
+    Map<Integer, Set<Integer>> expandedByRoot = buildExpandedByRoot(tenantId, courseIds, whitelistIds);
+    Set<Integer> allExpanded = new HashSet<>();
+    for (Set<Integer> s : expandedByRoot.values()) {
+      allExpanded.addAll(s);
+    }
+    Map<Integer, String> knowledgeTitles = new HashMap<>();
+    for (Map<String, Object> kr : knowledgeRows) {
+      Integer kid = toInt(kr.get("knowledgeId"));
+      if (kid != null) {
+        knowledgeTitles.put(kid, String.valueOf(kr.getOrDefault("title", "#" + kid)));
+      }
+    }
+
+    List<Map<String, Object>> latest =
+        answerLogMapper.findLatestAnswersByClassUser(tenantId, userId, classId);
+    if (latest == null) {
+      latest = List.of();
+    }
+
+    List<Map<String, Object>> filtered = new ArrayList<>();
+    Set<Integer> seenQ = new HashSet<>();
+    for (Map<String, Object> row : latest) {
+      Integer qid = toInt(row.get("questionId"));
+      Integer kid = toInt(firstPresent(row, "knowledgeId", "knowledge_id"));
+      String qType = normalizeType(firstPresent(row, "questionType", "question_type", "type"));
+      Integer rightVal = toInt(firstPresent(row, "isRight", "is_right"));
+      int isRight = rightVal == null ? 0 : rightVal;
+      if (qid == null || qType == null) {
+        continue;
+      }
+      if (!allExpanded.isEmpty() && kid != null && !allExpanded.contains(kid)) {
+        continue;
+      }
+      if (!seenQ.add(qid)) {
+        continue;
+      }
+      if ("wrong".equals(statusKey) && isRight == 1) {
+        continue;
+      }
+      if (typeKey != null && !typeKey.equals(qType)) {
+        continue;
+      }
+      Map<String, Object> item = new LinkedHashMap<>();
+      item.put("questionId", qid);
+      item.put("knowledgeId", kid);
+      item.put("questionType", qType);
+      item.put("latestRight", isRight == 1);
+      item.put("status", isRight == 1 ? "right" : "wrong");
+      Object userAns = firstPresent(row, "userAnswer", "user_answer");
+      item.put("userAnswerRaw", userAns == null ? null : String.valueOf(userAns));
+      filtered.add(item);
+    }
+
+    filtered.sort(Comparator.comparing((Map<String, Object> m) -> toInt(m.get("questionId")),
+        Comparator.nullsLast(Integer::compareTo)).reversed());
+
+    int p = Math.max(page, 1);
+    int size = Math.min(Math.max(pageSize, 1), 50);
+    int total = filtered.size();
+    int from = Math.min((p - 1) * size, total);
+    int to = Math.min(from + size, total);
+    List<Map<String, Object>> pageRows = filtered.subList(from, to);
+
+    Set<Integer> qids = pageRows.stream()
+        .map(r -> toInt(r.get("questionId")))
+        .filter(Objects::nonNull)
+        .collect(Collectors.toSet());
+    Map<Integer, ExamExamDetailEntity> detailMap = new HashMap<>();
+    if (!qids.isEmpty()) {
+      for (ExamExamDetailEntity d : examDetailMapper.selectBatchIds(qids)) {
+        if (d != null && d.getId() != null) {
+          detailMap.put(d.getId(), d);
+        }
+      }
+    }
+
+    List<Map<String, Object>> items = new ArrayList<>();
+    for (Map<String, Object> row : pageRows) {
+      Integer qid = toInt(row.get("questionId"));
+      ExamExamDetailEntity detail = qid == null ? null : detailMap.get(qid);
+      Integer kid = toInt(row.get("knowledgeId"));
+      if (kid == null && detail != null) {
+        kid = detail.getKnowledgeId();
+      }
+      String title = kid == null ? null : knowledgeTitles.get(kid);
+      if (title == null && kid != null) {
+        ExamKnowledgeStructureEntity node = knowledgeStructureMapper.selectById(kid);
+        title = node != null ? node.getTitle() : ("#" + kid);
+      }
+      Map<String, Object> item = new LinkedHashMap<>(row);
+      item.put("knowledgeId", kid);
+      item.put("knowledgeTitle", title);
+      item.put("stemPreview", stemPreview(detail != null ? detail.getContent() : null));
+
+      String userRaw = row.get("userAnswerRaw") == null ? null : String.valueOf(row.get("userAnswerRaw"));
+      item.remove("userAnswerRaw");
+      if (detail != null) {
+        try {
+          FollowTaskQuestionReq snap = bankQuestionConverter.convert(detail, 0);
+          item.put("correctAnswerText", formatCorrectAnswerText(snap));
+          item.put("userAnswerText", formatUserAnswerText(snap, userRaw));
+          if (StringUtils.hasText(snap.getAnalysis())) {
+            item.put("analysis", stripHtml(snap.getAnalysis()));
+          }
+        } catch (Exception ex) {
+          item.put("correctAnswerText", fallbackAnswerText(detail.getAnswer()));
+          item.put("userAnswerText", StringUtils.hasText(userRaw) ? userRaw.trim() : "—");
+          if (StringUtils.hasText(detail.getResolve())) {
+            item.put("analysis", stripHtml(detail.getResolve()));
+          }
+        }
+      } else {
+        item.put("correctAnswerText", "—");
+        item.put("userAnswerText", StringUtils.hasText(userRaw) ? userRaw.trim() : "—");
+      }
+      items.add(item);
+    }
+
+    Map<String, Object> out = new LinkedHashMap<>();
+    out.put("classId", classId);
+    out.put("status", statusKey);
+    out.put("type", typeKey);
+    out.put("page", p);
+    out.put("pageSize", size);
+    out.put("total", total);
+    out.put("items", items);
+    return out;
+  }
+
+  private static String stemPreview(String content) {
+    if (!StringUtils.hasText(content)) {
+      return "";
+    }
+    String first = content.split("\n", 2)[0];
+    return ellipsize(stripHtml(first), 80);
+  }
+
+  private static String stripHtml(String raw) {
+    if (!StringUtils.hasText(raw)) {
+      return "";
+    }
+    return raw
+        .replaceAll("(?i)<br\\s*/?>", " ")
+        .replaceAll("(?i)</p\\s*>", " ")
+        .replaceAll("<[^>]+>", "")
+        .replace("&nbsp;", " ")
+        .replaceAll("\\s+", " ")
+        .trim();
+  }
+
+  private static String ellipsize(String s, int max) {
+    if (s == null) {
+      return "";
+    }
+    if (s.length() <= max) {
+      return s;
+    }
+    return s.substring(0, max) + "…";
+  }
+
+  private static String formatCorrectAnswerText(FollowTaskQuestionReq snap) {
+    if (snap == null) {
+      return "—";
+    }
+    Map<String, String> optText = optionTextByKey(snap.getOptions());
+    Object ans = snap.getAnswer();
+    List<String> keys = answerKeys(ans);
+    if (keys.isEmpty()) {
+      return ans == null ? "—" : String.valueOf(ans);
+    }
+    List<String> parts = new ArrayList<>();
+    for (String key : keys) {
+      String text = optText.get(key);
+      if (StringUtils.hasText(text)) {
+        parts.add(key + ". " + text);
+      } else {
+        parts.add(displayJudgeOrKey(key));
+      }
+    }
+    return String.join("；", parts);
+  }
+
+  private static String formatUserAnswerText(FollowTaskQuestionReq snap, String userRaw) {
+    if (!StringUtils.hasText(userRaw)) {
+      return "—";
+    }
+    Map<String, String> optText = optionTextByKey(snap == null ? null : snap.getOptions());
+    List<String> keys = answerKeys(userRaw);
+    if (keys.isEmpty()) {
+      return userRaw.trim();
+    }
+    List<String> parts = new ArrayList<>();
+    for (String key : keys) {
+      String text = optText.get(key);
+      if (StringUtils.hasText(text)) {
+        parts.add(key + ". " + text);
+      } else {
+        parts.add(displayJudgeOrKey(key));
+      }
+    }
+    return String.join("；", parts);
+  }
+
+  private static Map<String, String> optionTextByKey(List<?> options) {
+    Map<String, String> map = new LinkedHashMap<>();
+    if (options == null) {
+      return map;
+    }
+    for (Object raw : options) {
+      if (!(raw instanceof Map<?, ?> om)) {
+        continue;
+      }
+      Object keyObj = om.get("key");
+      Object textObj = om.get("text");
+      if (keyObj == null) {
+        continue;
+      }
+      String key = String.valueOf(keyObj).trim();
+      String text = textObj == null ? "" : stripHtml(String.valueOf(textObj));
+      if (StringUtils.hasText(key)) {
+        map.put(key, text);
+        map.put(key.toUpperCase(Locale.ROOT), text);
+        map.put(key.toLowerCase(Locale.ROOT), text);
+      }
+    }
+    return map;
+  }
+
+  private static List<String> answerKeys(Object ans) {
+    LinkedHashSet<String> keys = new LinkedHashSet<>();
+    if (ans == null) {
+      return List.of();
+    }
+    if (ans instanceof List<?> list) {
+      for (Object o : list) {
+        if (o != null && StringUtils.hasText(String.valueOf(o))) {
+          keys.add(String.valueOf(o).trim());
+        }
+      }
+      return new ArrayList<>(keys);
+    }
+    String raw = String.valueOf(ans).trim();
+    if (!StringUtils.hasText(raw)) {
+      return List.of();
+    }
+    // JSON array string
+    if (raw.startsWith("[") && raw.endsWith("]")) {
+      String inner = raw.substring(1, raw.length() - 1);
+      for (String part : inner.split(",")) {
+        String p = part.trim().replace("\"", "").replace("'", "");
+        if (StringUtils.hasText(p)) {
+          keys.add(p);
+        }
+      }
+      if (!keys.isEmpty()) {
+        return new ArrayList<>(keys);
+      }
+    }
+    for (String part : raw.replace("，", ",").split("[,\\s|/]+")) {
+      String p = part.trim();
+      if (StringUtils.hasText(p)) {
+        keys.add(p);
+      }
+    }
+    return new ArrayList<>(keys);
+  }
+
+  private static String displayJudgeOrKey(String key) {
+    String n = key == null ? "" : key.trim().toLowerCase(Locale.ROOT);
+    return switch (n) {
+      case "true", "1", "对", "正确", "a" -> "正确";
+      case "false", "0", "错", "错误", "b" -> "错误";
+      default -> key;
+    };
+  }
+
+  private static String fallbackAnswerText(String answer) {
+    if (!StringUtils.hasText(answer)) {
+      return "—";
+    }
+    String plain = stripHtml(answer);
+    return ellipsize(plain, 120);
   }
 
   /** 本班已做 question_id 集合（供抽题 excludeDone）。 */

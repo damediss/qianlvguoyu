@@ -1,6 +1,6 @@
 import { Image, Spin } from 'antd';
 import type { ImageProps } from 'antd';
-import { useEffect, useState, type ImgHTMLAttributes } from 'react';
+import { useEffect, useState, type CSSProperties, type ImgHTMLAttributes } from 'react';
 import {
   fetchFileBlob,
   fetchUrlFileBlob,
@@ -155,4 +155,54 @@ export function ApiAuthImage({ url, ...imageProps }: ApiAuthImageProps) {
   if (!src) return null;
 
   return <Image src={src} {...imageProps} />;
+}
+
+type ApiAuthVideoProps = {
+  url?: string;
+  width?: number | string;
+  height?: number | string;
+  style?: CSSProperties;
+  className?: string;
+  controls?: boolean;
+  onClick?: () => void;
+};
+
+/** 鉴权拉取后的可播放 video（blob URL） */
+export function ApiAuthVideo({
+  url,
+  width = 160,
+  height = 90,
+  style,
+  className,
+  controls = true,
+  onClick,
+}: ApiAuthVideoProps) {
+  const { src, loading } = useAuthImageSrc(url);
+
+  if (!url) return null;
+  if (loading && !src) {
+    return <Spin size="small" />;
+  }
+  if (!src) {
+    return <span style={{ color: '#999', fontSize: 12 }}>视频不可用</span>;
+  }
+
+  return (
+    <video
+      src={src}
+      controls={controls}
+      className={className}
+      style={{
+        width,
+        height,
+        objectFit: 'cover',
+        borderRadius: 4,
+        background: '#111',
+        display: 'block',
+        ...style,
+      }}
+      onClick={onClick}
+      preload="metadata"
+    />
+  );
 }

@@ -1296,26 +1296,116 @@ export function generateMaterials(classId: number) {
   return unwrap<{ downUrl: string; fileId: number }>(apiClient.post(`${BASE}/info-classes/${classId}/materials/generate`));
 }
 
-// ==================== 毕业管理 ====================
+// ==================== 毕业管理 / 毕业典礼（O3） ====================
 
 /** 可毕业班级列表 */
-export function listGraduationCandidates(params: { page?: number; pageSize?: number }) {
-  return unwrap<{ list: Record<string, unknown>[]; total: number }>(apiClient.get(`${BASE}/info-classes/graduation-candidates`, { params }));
+export function listGraduationCandidates(params: {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  graduateStatus?: string;
+}) {
+  return unwrap<{ list: Record<string, unknown>[]; total: number }>(
+    apiClient.get(`${BASE}/info-classes/graduation-candidates`, { params }),
+  );
 }
 
 /** 班级可毕业学员列表 */
 export function listGraduationStudents(classId: number) {
-  return unwrap<{ classTitle: string; list: Record<string, unknown>[]; total: number }>(apiClient.get(`${BASE}/info-classes/${classId}/graduation-students`));
+  return unwrap<{
+    classTitle: string;
+    graduateStatus?: string;
+    certificateTempId?: number | null;
+    templateTitle?: string | null;
+    list: Record<string, unknown>[];
+    total: number;
+  }>(apiClient.get(`${BASE}/info-classes/${classId}/graduation-students`));
 }
 
 /** 执行毕业 */
-export function graduateClass(classId: number) {
-  return unwrap<{ classId: number; trainInfoId: number; graduateCount: number; status: string }>(apiClient.post(`${BASE}/info-classes/${classId}/graduate`));
+export function graduateClass(
+  classId: number,
+  payload?: {
+    mode?: 'all' | 'selected';
+    peopleIds?: number[];
+    allowUnqualified?: boolean;
+    remark?: string;
+  },
+) {
+  return unwrap<{
+    classId: number;
+    trainInfoId?: number;
+    changedCount?: number;
+    skippedCount?: number;
+    graduateCount?: number;
+    graduateStatus?: string;
+    status: string;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/graduate`, payload ?? {}));
 }
 
-/** 发送毕业通知 */
+/** 发送毕业通知（站内信） */
 export function notifyGraduation(classId: number) {
-  return unwrap<{ classId: number; notifiedCount: number; message: string }>(apiClient.post(`${BASE}/info-classes/${classId}/graduation-notify`));
+  return unwrap<{
+    classId: number;
+    noticeId?: number | string;
+    notifiedCount: number;
+    successCount?: number;
+    failCount?: number;
+    message: string;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/graduation-notify`));
+}
+
+export function listGraduationNotices(classId: number) {
+  return unwrap<Record<string, unknown>[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/graduation-notices`),
+  );
+}
+
+export function bindGraduationCertificateTemplate(classId: number, certificateTempId: number | null) {
+  return unwrap<{ classId: number; certificateTempId: number | null }>(
+    apiClient.patch(`${BASE}/info-classes/${classId}/certificate-template`, { certificateTempId }),
+  );
+}
+
+export function batchIssueGraduationCertificates(classId: number) {
+  return unwrap<{ classId: number; created: number; skipped: number }>(
+    apiClient.post(`${BASE}/info-classes/${classId}/certificates/batch-issue`),
+  );
+}
+
+export function createGraduationArchive(classId: number) {
+  return unwrap<{
+    id: number | string;
+    classId: number;
+    fileId: number | string;
+    filePath: string;
+    versionNo: number;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/graduation-archive`));
+}
+
+export function listGraduationArchives(classId: number) {
+  return unwrap<Record<string, unknown>[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/graduation-archives`),
+  );
+}
+
+export async function exportGraduationLedger(classId?: number) {
+  const response = await apiClient.get(`${BASE}/graduation-ledger/export`, {
+    params: classId != null ? { classId } : undefined,
+    responseType: 'blob',
+  });
+  const blob = new Blob([response.data], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const filename =
+    parseContentDispositionFilename(response) ||
+    (classId != null ? `结业台账_${classId}.xlsx` : '结业台账.xlsx');
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
 }
 
 // ==================== 课表配置 ====================
@@ -1781,6 +1871,569 @@ export function syncFollowTaskRoster(id: number | string) {
   return unwrap<{ taskId: string; added: number }>(
     apiClient.post(`${BASE}/follow-tasks/${id}/sync-roster`),
   );
+}
+
+// ==================== 跟班课堂影像 / 培训照片 ====================
+
+export type FollowEvidence = {
+  id: number | string;
+  classId: number | string;
+  scheduleId?: number | string | null;
+  bizDate?: string | null;
+  mediaType?: string;
+  durationSeconds?: number | null;
+  fileId?: number | string | null;
+  filePath?: string;
+  url?: string | null;
+  caption?: string | null;
+  uploaderUserId?: number | string | null;
+  uploaderRole?: string | null;
+  reviewStatus?: string;
+  reviewedBy?: number | string | null;
+  reviewedAt?: string | null;
+  rejectReason?: string | null;
+  sortNo?: number;
+  scheduleDate?: string | null;
+  courseName?: string | null;
+  teachForm?: string | null;
+  classHours?: string | null;
+  actualClassHours?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  createdAt?: string;
+};
+
+export type FollowEvidenceCoverageItem = {
+  scheduleId: number;
+  scheduleDate?: string;
+  courseName?: string;
+  teachForm?: string;
+  teachFormLabel?: string;
+  classHours?: string;
+  actualClassHours?: string;
+  hoursDisplay?: string;
+  startTime?: string;
+  endTime?: string;
+  photoCount: number;
+  approvedCount: number;
+  pendingCount: number;
+  minRequired: number;
+  minPhotos?: number;
+  videoCount?: number;
+  videoApprovedCount?: number;
+  videoPendingCount?: number;
+  minVideos?: number;
+  videoDurationTargetSec?: number;
+  photoOk?: boolean;
+  videoOk?: boolean;
+  coverageOk: boolean;
+};
+
+export type FollowEvidenceCoverage = {
+  requiredSessions: number;
+  okSessions: number;
+  missingSessions: number;
+  ready: boolean;
+  minPhotos?: number;
+  minVideos?: number;
+  videoDurationTargetSec?: number;
+  items: FollowEvidenceCoverageItem[];
+};
+
+export function listFollowEvidences(
+  classId: number,
+  params?: { scheduleId?: number; bizDate?: string; reviewStatus?: string; mediaType?: string },
+) {
+  return unwrap<FollowEvidence[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/evidences`, { params }),
+  );
+}
+
+export function getFollowEvidenceCoverage(classId: number) {
+  return unwrap<FollowEvidenceCoverage>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/evidence-coverage`),
+  );
+}
+
+export async function uploadFollowEvidence(
+  classId: number,
+  file: File | Blob,
+  fields: {
+    scheduleId?: number;
+    bizDate?: string;
+    teachFormOverride?: string;
+    classHoursOverride?: string;
+    caption?: string;
+    mediaType?: string;
+    durationSeconds?: number;
+  },
+) {
+  const form = new FormData();
+  form.append('file', file);
+  if (fields.scheduleId != null) form.append('scheduleId', String(fields.scheduleId));
+  if (fields.bizDate) form.append('bizDate', fields.bizDate);
+  if (fields.teachFormOverride) form.append('teachFormOverride', fields.teachFormOverride);
+  if (fields.classHoursOverride) form.append('classHoursOverride', fields.classHoursOverride);
+  if (fields.caption) form.append('caption', fields.caption);
+  if (fields.mediaType) form.append('mediaType', fields.mediaType);
+  if (fields.durationSeconds != null) form.append('durationSeconds', String(fields.durationSeconds));
+  return unwrap<FollowEvidence>(
+    apiClient.post(`${BASE}/info-classes/${classId}/follow/evidences/upload`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000,
+    }),
+  );
+}
+
+export function reviewFollowEvidence(id: number | string, payload: { reviewStatus: string; rejectReason?: string }) {
+  return unwrap<FollowEvidence>(apiClient.post(`${BASE}/follow-evidences/${id}/review`, payload));
+}
+
+export function deleteFollowEvidence(id: number | string) {
+  return unwrap<void>(apiClient.delete(`${BASE}/follow-evidences/${id}`));
+}
+
+export function generateFollowPhotoPack(classId: number) {
+  return unwrap<{
+    packId: number | string;
+    fileId?: number;
+    filePath?: string;
+    url?: string;
+    title?: string;
+    generatedAt?: string;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/follow/photo-pack/generate`, undefined, { timeout: 180000 }));
+}
+
+export function getLatestFollowPhotoPack(classId: number) {
+  return unwrap<{
+    exists: boolean;
+    packId?: number | string;
+    fileId?: number;
+    filePath?: string;
+    url?: string;
+    title?: string;
+    generatedAt?: string;
+  }>(apiClient.get(`${BASE}/info-classes/${classId}/follow/photo-pack/latest`));
+}
+
+// ==================== 跟班日志 · 过程动态 / 工作日志 ====================
+
+export type FollowOpLog = {
+  id: string | number;
+  classId: string | number;
+  scheduleId?: string | number | null;
+  bizDate?: string;
+  eventCode: string;
+  eventCategory: string;
+  title: string;
+  summary?: string;
+  detailJson?: string;
+  actorUserId?: string | number | null;
+  actorName?: string;
+  actorRole?: string;
+  targetType?: string;
+  targetId?: string | number | null;
+  severityLevel?: string;
+  client?: string;
+  requestId?: string;
+  createdAt?: string;
+};
+
+export type FollowWorkLog = {
+  id: string | number;
+  classId: string | number;
+  scheduleId?: string | number | null;
+  bizDate: string;
+  authorUserId?: string | number | null;
+  authorName?: string;
+  attendanceSummary?: string;
+  exceptionNote?: string;
+  content?: string;
+  sourceOpIdsJson?: string;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export function listFollowOpLogs(
+  classId: number,
+  params?: {
+    bizDate?: string;
+    from?: string;
+    to?: string;
+    category?: string;
+    actorUserId?: number;
+    minSeverity?: string;
+  },
+) {
+  return unwrap<FollowOpLog[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/op-logs`, { params }),
+  );
+}
+
+export function listFollowWorkLogs(
+  classId: number,
+  params?: { bizDate?: string; from?: string; to?: string },
+) {
+  return unwrap<FollowWorkLog[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/logs`, { params }),
+  );
+}
+
+export function createFollowWorkLog(
+  classId: number,
+  payload: {
+    bizDate: string;
+    authorName?: string;
+    attendanceSummary?: string;
+    exceptionNote?: string;
+    content?: string;
+    status?: string;
+    sourceOpIdsJson?: string;
+  },
+) {
+  return unwrap<FollowWorkLog>(
+    apiClient.post(`${BASE}/info-classes/${classId}/follow/logs`, payload),
+  );
+}
+
+export function updateFollowWorkLog(
+  id: number | string,
+  payload: {
+    bizDate?: string;
+    authorName?: string;
+    attendanceSummary?: string;
+    exceptionNote?: string;
+    content?: string;
+    status?: string;
+  },
+) {
+  return unwrap<FollowWorkLog>(apiClient.put(`${BASE}/follow-logs/${id}`, payload));
+}
+
+export function deleteFollowWorkLog(id: number | string) {
+  return unwrap<void>(apiClient.delete(`${BASE}/follow-logs/${id}`));
+}
+
+export function draftFollowWorkLogFromOps(classId: number, bizDate: string) {
+  return unwrap<FollowWorkLog>(
+    apiClient.post(`${BASE}/info-classes/${classId}/follow/logs/draft-from-ops`, { bizDate }),
+  );
+}
+
+// ==================== 督导检查 / 整改 / 满意度 / 质量指标 ====================
+
+export type FollowSupervisionItem = {
+  id: number | string;
+  supervisionId?: number | string;
+  itemCode?: string;
+  itemTitle?: string;
+  sortNo?: number;
+  result?: string | null;
+  remark?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type FollowSupervision = {
+  id: number | string;
+  classId?: number | string;
+  bizDate?: string;
+  scheduleId?: number | string | null;
+  inspectorUserId?: number | string | null;
+  inspectorName?: string | null;
+  status?: string;
+  conclusion?: string | null;
+  remark?: string | null;
+  submittedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  items?: FollowSupervisionItem[];
+  openIssueCount?: number | null;
+};
+
+export type FollowIssue = {
+  id: number | string;
+  classId?: number | string;
+  supervisionId?: number | string | null;
+  itemId?: number | string | null;
+  title?: string;
+  description?: string | null;
+  severity?: string;
+  status?: string;
+  assigneeName?: string | null;
+  dueDate?: string | null;
+  resolveNote?: string | null;
+  openedBy?: number | string | null;
+  openedAt?: string;
+  closedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type FollowSurveyResponse = {
+  id: number | string;
+  classId?: number | string;
+  bizDate?: string | null;
+  respondentName?: string | null;
+  score?: number;
+  commentText?: string | null;
+  source?: string;
+  createdAt?: string;
+};
+
+export type FollowQualityMetrics = {
+  classId?: number | string;
+  attendanceDayRate?: number | null;
+  attendanceCumulativeRate?: number | null;
+  homeworkCompletionRate?: number | null;
+  mockPassRate?: number | null;
+  examPassRate?: number | null;
+  satisfactionCount?: number;
+  satisfactionAvg?: number | null;
+  evidenceReady?: boolean;
+  evidenceOkSessions?: number;
+  evidenceRequiredSessions?: number;
+  openIssueCount?: number;
+  criticalIssueCount?: number;
+  subsidyId?: number | string | null;
+  subsidyReadySlots?: number | null;
+  subsidyTotalSlots?: number | null;
+  subsidyReady?: boolean | null;
+  subsidyMaterialStatus?: number | null;
+  alerts?: Array<{ level?: string; code?: string; message?: string }>;
+};
+
+export function listFollowSupervisions(classId: number, params?: { bizDate?: string }) {
+  return unwrap<FollowSupervision[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/supervisions`, { params }),
+  );
+}
+
+export function getFollowSupervision(id: number | string) {
+  return unwrap<FollowSupervision>(apiClient.get(`${BASE}/follow-supervisions/${id}`));
+}
+
+export function createFollowSupervision(
+  classId: number,
+  payload: { bizDate: string; scheduleId?: number; inspectorName?: string; remark?: string },
+) {
+  return unwrap<FollowSupervision>(
+    apiClient.post(`${BASE}/info-classes/${classId}/follow/supervisions`, payload),
+  );
+}
+
+export function patchFollowSupervisionItem(
+  itemId: number | string,
+  payload: { result?: string; remark?: string },
+) {
+  return unwrap<FollowSupervisionItem>(
+    apiClient.patch(`${BASE}/follow-supervision-items/${itemId}`, payload),
+  );
+}
+
+export function submitFollowSupervision(
+  id: number | string,
+  payload: { conclusion?: string; remark?: string },
+) {
+  return unwrap<FollowSupervision>(
+    apiClient.post(`${BASE}/follow-supervisions/${id}/submit`, payload),
+  );
+}
+
+export function closeFollowSupervision(id: number | string) {
+  return unwrap<FollowSupervision>(apiClient.post(`${BASE}/follow-supervisions/${id}/close`));
+}
+
+export function listFollowIssues(classId: number, params?: { status?: string }) {
+  return unwrap<FollowIssue[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/issues`, { params }),
+  );
+}
+
+export function createFollowIssue(
+  classId: number,
+  payload: {
+    title: string;
+    description?: string;
+    severity?: string;
+    assigneeName?: string;
+    dueDate?: string;
+    supervisionId?: number | string;
+  },
+) {
+  return unwrap<FollowIssue>(
+    apiClient.post(`${BASE}/info-classes/${classId}/follow/issues`, payload),
+  );
+}
+
+export function transitionFollowIssue(
+  id: number | string,
+  payload: { status: string; resolveNote?: string; assigneeName?: string },
+) {
+  return unwrap<FollowIssue>(apiClient.post(`${BASE}/follow-issues/${id}/transition`, payload));
+}
+
+export function listFollowSurveys(classId: number) {
+  return unwrap<FollowSurveyResponse[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/surveys`),
+  );
+}
+
+export function createFollowSurvey(
+  classId: number,
+  payload: { score: number; respondentName?: string; commentText?: string; bizDate?: string },
+) {
+  return unwrap<FollowSurveyResponse>(
+    apiClient.post(`${BASE}/info-classes/${classId}/follow/surveys`, payload),
+  );
+}
+
+export function getFollowQualityMetrics(classId: number) {
+  return unwrap<FollowQualityMetrics>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/quality-metrics`),
+  );
+}
+
+// ==================== 申报补贴台账 / 材料配方 ====================
+
+export type TrainSubsidy = {
+  id: number | string;
+  projectId?: number | string | null;
+  classId?: number | string | null;
+  trainInfoId?: number | string | null;
+  className?: string | null;
+  policyTemplate?: string | null;
+  subsidyAmount?: number | null;
+  studentCount?: number | null;
+  materialPackagePath?: string | null;
+  materialStatus?: number | null;
+  phase?: string;
+  regionCode?: string | null;
+  regionName?: string | null;
+  trainMode?: string | null;
+  policyYear?: number | null;
+  profileId?: number | string | null;
+  profileVersion?: string | null;
+  profileLocked?: number | null;
+  checklistJson?: string | null;
+  remark?: string | null;
+  status?: number | null;
+  createTime?: string;
+  updateTime?: string;
+};
+
+export type SubsidyPackProfile = {
+  id: number | string;
+  regionCode: string;
+  regionName: string;
+  trainMode: string;
+  policyYear: number;
+  profileVersion: string;
+  title: string;
+  status: string;
+  isDefault?: number;
+  remark?: string | null;
+  slots: Array<{
+    id: number | string;
+    slotCode: string;
+    title: string;
+    required: boolean;
+    sortOrder?: number;
+    renderer: string;
+    folderPath?: string | null;
+    remark?: string | null;
+  }>;
+};
+
+export function pageSubsidies(params: Record<string, unknown>) {
+  return unwrap<PageResponse<TrainSubsidy>>(apiClient.get(`${BASE}/subsidies`, { params }));
+}
+
+export function getSubsidy(id: number | string) {
+  return unwrap<TrainSubsidy>(apiClient.get(`${BASE}/subsidies/${id}`));
+}
+
+export function createSubsidy(payload: {
+  classId: number | string;
+  trainMode: string;
+  regionCode?: string;
+  regionName?: string;
+  policyYear?: number;
+  profileId?: number | string;
+  subsidyAmount?: number;
+  studentCount?: number;
+  remark?: string;
+}) {
+  return unwrap<TrainSubsidy>(apiClient.post(`${BASE}/subsidies`, payload));
+}
+
+export function updateSubsidy(id: number | string, payload: Record<string, unknown>) {
+  return unwrap<TrainSubsidy>(apiClient.put(`${BASE}/subsidies/${id}`, payload));
+}
+
+export function deleteSubsidy(id: number | string) {
+  return unwrap<void>(apiClient.delete(`${BASE}/subsidies/${id}`));
+}
+
+export function transitionSubsidy(id: number | string, toPhase: string, remark?: string) {
+  return unwrap<TrainSubsidy>(apiClient.post(`${BASE}/subsidies/${id}/transition`, { toPhase, remark }));
+}
+
+export function listSubsidyEvents(id: number | string) {
+  return unwrap<
+    Array<{
+      id: number | string;
+      action: string;
+      fromPhase?: string;
+      toPhase?: string;
+      remark?: string;
+      createdAt?: string;
+    }>
+  >(apiClient.get(`${BASE}/subsidies/${id}/events`));
+}
+
+export function listSubsidySlotFiles(id: number | string) {
+  return unwrap<
+    Array<{ id: number | string; slotCode: string; fileId?: number; filePath?: string; fileName?: string }>
+  >(apiClient.get(`${BASE}/subsidies/${id}/slot-files`));
+}
+
+export async function uploadSubsidySlotFile(id: number | string, slotCode: string, file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('slotCode', slotCode);
+  return unwrap<{ id: number | string; slotCode: string; fileId?: number; filePath?: string; fileName?: string }>(
+    apiClient.post(`${BASE}/subsidies/${id}/slot-files`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    }),
+  );
+}
+
+export function generateSubsidyMaterials(id: number | string) {
+  return unwrap<{
+    ok: boolean;
+    message?: string;
+    missing?: string[];
+    checklist?: Array<Record<string, unknown>>;
+    fileId?: number | string;
+    filePath?: string;
+    url?: string;
+  }>(apiClient.post(`${BASE}/subsidies/${id}/materials/generate`, undefined, { timeout: 180000 }));
+}
+
+export function listSubsidyPackProfiles(params?: {
+  regionCode?: string;
+  trainMode?: string;
+  policyYear?: number;
+  status?: string;
+}) {
+  return unwrap<SubsidyPackProfile[]>(apiClient.get(`${BASE}/subsidy-pack-profiles`, { params }));
+}
+
+export function getSubsidyPackProfile(id: number | string) {
+  return unwrap<SubsidyPackProfile>(apiClient.get(`${BASE}/subsidy-pack-profiles/${id}`));
 }
 
 // ==================== 信息收集 (sign-up collection) ====================
@@ -2404,6 +3057,8 @@ export interface TrainAttendanceItem {
   userId?: number;
   userName?: string;
   attendanceDate?: string;
+  /** 课次 ID；空=按日考勤 */
+  scheduleId?: number | null;
   status?: number;
   checkInTime?: string;
   checkOutTime?: string;
@@ -2418,6 +3073,10 @@ export function pageAttendances(params: {
   classId?: number;
   userId?: number;
   attendanceDate?: string;
+  /** 按课次筛选 */
+  scheduleId?: number;
+  /** true=仅 schedule_id IS NULL 的按日记录 */
+  unscheduledOnly?: boolean;
   status?: number;
   keyword?: string;
 }) {
@@ -2430,6 +3089,7 @@ export function createAttendance(payload: {
   userId: number;
   userName?: string;
   attendanceDate: string;
+  scheduleId?: number | null;
   status?: number;
   checkInTime?: string;
   remark?: string;
@@ -2444,6 +3104,7 @@ export function updateAttendance(
     checkInTime?: string;
     checkOutTime?: string;
     remark?: string;
+    scheduleId?: number | null;
     photoPath?: string;
     videoPath?: string;
   },
@@ -2457,6 +3118,7 @@ export function signInAttendance(payload: {
   userId: number;
   userName?: string;
   attendanceDate: string;
+  scheduleId?: number | null;
   status?: number;
   checkInTime?: string;
   remark?: string;

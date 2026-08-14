@@ -50,6 +50,9 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainFollowTaskQuestionMappe
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainScheduleMapper;
+import com.guoyu.platform.trainingdepartment.follow.FollowOpEventCode;
+import com.guoyu.platform.trainingdepartment.follow.FollowOpLogCommand;
+import com.guoyu.platform.trainingdepartment.follow.FollowOpLogWriter;
 import com.guoyu.platform.trainingdepartment.support.FollowTaskBankQuestionConverter;
 import com.guoyu.platform.trainingdepartment.vo.FollowStudentTaskVO;
 import com.guoyu.platform.trainingdepartment.vo.FollowTaskAnswerResultVO;
@@ -64,6 +67,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeFormatter;
@@ -150,6 +154,7 @@ public class TrainFollowTaskApplicationService {
   private final ExamMakeExamPlanMapper makeExamPlanMapper;
   private final ExamPaperMapper examPaperMapper;
   private final ExamPaperDetailMapper examPaperDetailMapper;
+  private final FollowOpLogWriter opLogWriter;
 
   public TrainFollowTaskApplicationService(
       TrainFollowTaskMapper taskMapper,
@@ -170,7 +175,8 @@ public class TrainFollowTaskApplicationService {
       ExamMakeExamPlanApplicationService makeExamPlanService,
       ExamMakeExamPlanMapper makeExamPlanMapper,
       ExamPaperMapper examPaperMapper,
-      ExamPaperDetailMapper examPaperDetailMapper) {
+      ExamPaperDetailMapper examPaperDetailMapper,
+      FollowOpLogWriter opLogWriter) {
     this.taskMapper = taskMapper;
     this.questionMapper = questionMapper;
     this.itemMapper = itemMapper;
@@ -190,6 +196,7 @@ public class TrainFollowTaskApplicationService {
     this.makeExamPlanMapper = makeExamPlanMapper;
     this.examPaperMapper = examPaperMapper;
     this.examPaperDetailMapper = examPaperDetailMapper;
+    this.opLogWriter = opLogWriter;
   }
 
   // ---------- 老师 App ----------
@@ -385,7 +392,8 @@ public class TrainFollowTaskApplicationService {
 
   /**
    * 题库选题：某科目下的知识点分类树。
-   * 有白名单时裁剪为「白名单节点 + 其祖先」（便于导航）；选题时选中父节点会展开为子孙白名单。
+   * 有白名单时展示「白名单 + 祖先 + 子孙」（子孙与学员刷题展开口径一致）；
+   * 选题时选中父节点会展开为子孙范围内客观题。
    */
   @Transactional(readOnly = true)
   public Map<String, Object> bankKnowledgeTree(Long platformUserId, Long classId, Integer courseId) {
@@ -440,7 +448,9 @@ public class TrainFollowTaskApplicationService {
     out.put("typeCounts", typeCounts);
     out.put("hint", tree.isEmpty()
         ? "该科目下暂无知识点分类"
-        : (whitelist.isEmpty() ? "按知识点分类选题" : "仅展示本班练习范围知识点"));
+        : (whitelist.isEmpty()
+            ? "按知识点分类选题"
+            : "题量含本班练习范围知识点及其子节点（与学员刷题一致）"));
     return out;
   }
 
@@ -659,21 +669,21 @@ public class TrainFollowTaskApplicationService {
   public FollowTaskVO publish(Long platformUserId, Long taskId) {
     TrainFollowTaskEntity task = requireTask(taskId);
     assertTeacher(platformUserId, task.getClassId());
-    return publishInternal(task, platformUserId);
+    return publishInternal(task, platformUserId, "app");
   }
 
   @Transactional
   public FollowTaskVO close(Long platformUserId, Long taskId) {
     TrainFollowTaskEntity task = requireTask(taskId);
     assertTeacher(platformUserId, task.getClassId());
-    return closeInternal(task, platformUserId);
+    return closeInternal(task, platformUserId, "app");
   }
 
   @Transactional
   public FollowTaskVO reopen(Long platformUserId, Long taskId) {
     TrainFollowTaskEntity task = requireTask(taskId);
     assertTeacher(platformUserId, task.getClassId());
-    return reopenInternal(task, platformUserId);
+    return reopenInternal(task, platformUserId, "app");
   }
 
   @Transactional(readOnly = true)
@@ -876,6 +886,23 @@ public class TrainFollowTaskApplicationService {
     item.setDurationSeconds((int) Math.max(0, Math.min(secs, Integer.MAX_VALUE)));
     item.setUpdatedBy(platformUserId);
     itemMapper.updateById(item);
+
+    Map<String, Object> submitDetail = new LinkedHashMap<>();
+    submitDetail.put("score", total);
+    submitDetail.put("passed", item.getPassed() != null && item.getPassed() == 1);
+    submitDetail.put("peopleId", people.getId());
+    emitTaskOp(
+        task,
+        FollowOpEventCode.TASK_SUBMIT,
+        "学员提交" + taskTypeLabel(task.getTaskType()) + "：" + nullToDash(task.getTitle()),
+        people.getRealname() != null ? people.getRealname() : ("学员#" + people.getId()),
+        platformUserId,
+        "student",
+        "app",
+        "task_item",
+        item.getId(),
+        false,
+        submitDetail);
 
     // 交卷后始终返回学员作答与正确答案对照（解析文案仍随任务配置）
     return buildResult(task, item, true);
@@ -1166,17 +1193,17 @@ public class TrainFollowTaskApplicationService {
 
   @Transactional
   public FollowTaskVO publishAdmin(Long taskId) {
-    return publishInternal(requireTask(taskId), currentAdminUserId());
+    return publishInternal(requireTask(taskId), currentAdminUserId(), "admin");
   }
 
   @Transactional
   public FollowTaskVO closeAdmin(Long taskId) {
-    return closeInternal(requireTask(taskId), currentAdminUserId());
+    return closeInternal(requireTask(taskId), currentAdminUserId(), "admin");
   }
 
   @Transactional
   public FollowTaskVO reopenAdmin(Long taskId) {
-    return reopenInternal(requireTask(taskId), currentAdminUserId());
+    return reopenInternal(requireTask(taskId), currentAdminUserId(), "admin");
   }
 
   @Transactional(readOnly = true)
@@ -1550,7 +1577,7 @@ public class TrainFollowTaskApplicationService {
         TrainClassRoleApplicationService.ASSISTANT);
   }
 
-  private FollowTaskVO publishInternal(TrainFollowTaskEntity task, Long userId) {
+  private FollowTaskVO publishInternal(TrainFollowTaskEntity task, Long userId, String client) {
     if (!STATUS_DRAFT.equals(task.getStatus())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅草稿可发布");
     }
@@ -1563,21 +1590,61 @@ public class TrainFollowTaskApplicationService {
     task.setUpdatedBy(userId);
     taskMapper.updateById(task);
     generateItems(task, userId);
+
+    String typeLabel = taskTypeLabel(task.getTaskType());
+    Map<String, Object> publishDetail = new LinkedHashMap<>();
+    publishDetail.put("taskType", task.getTaskType());
+    publishDetail.put("questionCount", qs.size());
+    if (StringUtils.hasText(task.getBizDate())) {
+      publishDetail.put("taskBizDate", task.getBizDate());
+    }
+    if (task.getScheduleId() != null) {
+      publishDetail.put("scheduleId", task.getScheduleId());
+    }
+    emitTaskOp(
+        task,
+        FollowOpEventCode.TASK_PUBLISH,
+        "布置" + typeLabel + "：" + nullToDash(task.getTitle()),
+        null,
+        userId,
+        "app".equals(client) ? "lead_teacher" : null,
+        client,
+        "follow_task",
+        task.getId(),
+        false,
+        publishDetail);
+
     return toTaskVO(task, false, true);
   }
 
-  private FollowTaskVO closeInternal(TrainFollowTaskEntity task, Long userId) {
+  private FollowTaskVO closeInternal(TrainFollowTaskEntity task, Long userId, String client) {
     if (!STATUS_PUBLISHED.equals(task.getStatus())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅已发布任务可关闭");
     }
     task.setStatus(STATUS_CLOSED);
     task.setUpdatedBy(userId);
     taskMapper.updateById(task);
+
+    Map<String, Object> closeDetail = new LinkedHashMap<>();
+    closeDetail.put("taskType", task.getTaskType());
+    emitTaskOp(
+        task,
+        FollowOpEventCode.TASK_CLOSE,
+        "关闭" + taskTypeLabel(task.getTaskType()) + "：" + nullToDash(task.getTitle()),
+        null,
+        userId,
+        "app".equals(client) ? "lead_teacher" : null,
+        client,
+        "follow_task",
+        task.getId(),
+        true,
+        closeDetail);
+
     return toTaskVO(task, false, true);
   }
 
   /** 已关闭 → 已发布；保留原名单与答卷，未交学员可继续交。 */
-  private FollowTaskVO reopenInternal(TrainFollowTaskEntity task, Long userId) {
+  private FollowTaskVO reopenInternal(TrainFollowTaskEntity task, Long userId, String client) {
     if (!STATUS_CLOSED.equals(task.getStatus())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅已关闭任务可重新打开");
     }
@@ -1591,6 +1658,22 @@ public class TrainFollowTaskApplicationService {
     }
     task.setUpdatedBy(userId);
     taskMapper.updateById(task);
+
+    Map<String, Object> reopenDetail = new LinkedHashMap<>();
+    reopenDetail.put("taskType", task.getTaskType());
+    emitTaskOp(
+        task,
+        FollowOpEventCode.TASK_REOPEN,
+        "重新开放" + taskTypeLabel(task.getTaskType()) + "：" + nullToDash(task.getTitle()),
+        null,
+        userId,
+        "app".equals(client) ? "lead_teacher" : null,
+        client,
+        "follow_task",
+        task.getId(),
+        false,
+        reopenDetail);
+
     return toTaskVO(task, false, true);
   }
 
@@ -1995,6 +2078,7 @@ public class TrainFollowTaskApplicationService {
 
   /**
    * 解析选题范围：科目 → 知识点树；白名单与科目求交。
+   * 白名单与学员刷题一致：勾选父级时展开为自身+子孙。
    * 不依赖 exam_exam_detail.exam_id（存量常为 0）。
    */
   private BankScopeQuery resolveBankScopeQuery(
@@ -2011,11 +2095,13 @@ public class TrainFollowTaskApplicationService {
 
     List<Integer> courseKnowledges = listKnowledgeIdsByCourses(filterCourses);
     if (!scopeKnowledgeIds.isEmpty()) {
+      // 与学员刷题 / practice-scope 题量口径一致：白名单父节点含子孙挂题
+      List<Integer> expandedWhitelist = expandKnowledgeDescendants(scopeKnowledgeIds, filterCourses);
       if (filterCourses.isEmpty() || courseKnowledges.isEmpty()) {
-        return BankScopeQuery.byKnowledgeIds(scopeKnowledgeIds, null);
+        return BankScopeQuery.byKnowledgeIds(expandedWhitelist, null);
       }
       Set<Integer> courseSet = new HashSet<>(courseKnowledges);
-      List<Integer> intersected = scopeKnowledgeIds.stream().filter(courseSet::contains).distinct().toList();
+      List<Integer> intersected = expandedWhitelist.stream().filter(courseSet::contains).distinct().toList();
       if (intersected.isEmpty()) {
         return BankScopeQuery.impossible("所选科目与本班知识点白名单无交集，暂无试题");
       }
@@ -2080,7 +2166,8 @@ public class TrainFollowTaskApplicationService {
     }
 
     if (!scopeKnowledgeIds.isEmpty()) {
-      Set<Integer> allow = new HashSet<>(scopeKnowledgeIds);
+      // 白名单同样展开子孙，避免父级勾选后抽不到子节点挂题
+      Set<Integer> allow = new HashSet<>(expandKnowledgeDescendants(scopeKnowledgeIds, courseIds));
       List<Integer> hit = collected.stream().filter(allow::contains).toList();
       if (!hit.isEmpty()) {
         return hit;
@@ -2093,6 +2180,67 @@ public class TrainFollowTaskApplicationService {
     return new ArrayList<>(collected);
   }
 
+  /**
+   * 白名单节点展开为自身 + 子孙（与 AppExamSmartService / practice-scope 题量口径一致）。
+   */
+  private List<Integer> expandKnowledgeDescendants(
+      Collection<Integer> seeds, Collection<Integer> courseHint) {
+    if (seeds == null || seeds.isEmpty()) {
+      return List.of();
+    }
+    Set<Integer> seedSet = seeds.stream()
+        .filter(id -> id != null && id > 0)
+        .collect(Collectors.toCollection(LinkedHashSet::new));
+    if (seedSet.isEmpty()) {
+      return List.of();
+    }
+    Set<Integer> courseIds = new HashSet<>();
+    if (courseHint != null) {
+      for (Integer cid : courseHint) {
+        if (cid != null && cid > 0) {
+          courseIds.add(cid);
+        }
+      }
+    }
+    if (courseIds.isEmpty()) {
+      List<ExamKnowledgeStructureEntity> seedNodes = knowledgeStructureMapper.selectBatchIds(seedSet);
+      for (ExamKnowledgeStructureEntity n : seedNodes) {
+        if (n != null && n.getCourseId() != null && n.getCourseId() > 0) {
+          courseIds.add(n.getCourseId());
+        }
+      }
+    }
+    List<ExamKnowledgeStructureEntity> all = courseIds.isEmpty()
+        ? knowledgeStructureMapper.selectBatchIds(seedSet)
+        : knowledgeStructureMapper.selectList(
+            new LambdaQueryWrapper<ExamKnowledgeStructureEntity>()
+                .in(ExamKnowledgeStructureEntity::getCourseId, courseIds)
+                .eq(ExamKnowledgeStructureEntity::getDeleted, 0));
+    Map<Integer, List<Integer>> children = new HashMap<>();
+    for (ExamKnowledgeStructureEntity n : all) {
+      if (n == null || n.getId() == null) {
+        continue;
+      }
+      int pid = n.getParentId() == null ? 0 : n.getParentId();
+      children.computeIfAbsent(pid, k -> new ArrayList<>()).add(n.getId());
+    }
+    LinkedHashSet<Integer> out = new LinkedHashSet<>();
+    java.util.ArrayDeque<Integer> dq = new java.util.ArrayDeque<>(seedSet);
+    while (!dq.isEmpty()) {
+      Integer id = dq.poll();
+      if (id == null || !out.add(id)) {
+        continue;
+      }
+      for (Integer c : children.getOrDefault(id, List.of())) {
+        dq.add(c);
+      }
+    }
+    return new ArrayList<>(out);
+  }
+
+  /**
+   * 树展示保留：白名单 + 祖先（导航）+ 子孙（与刷题展开口径一致，便于看题量/细选）。
+   */
   private Set<Integer> resolveKnowledgeTreeKeepIds(
       List<ExamKnowledgeStructureEntity> all,
       Set<Integer> whitelist) {
@@ -2103,6 +2251,14 @@ public class TrainFollowTaskApplicationService {
     Map<Integer, ExamKnowledgeStructureEntity> byId = all.stream()
         .filter(n -> n.getId() != null)
         .collect(Collectors.toMap(ExamKnowledgeStructureEntity::getId, n -> n, (a, b) -> a));
+    Map<Integer, List<Integer>> children = new HashMap<>();
+    for (ExamKnowledgeStructureEntity n : all) {
+      if (n == null || n.getId() == null) {
+        continue;
+      }
+      int pid = n.getParentId() == null ? 0 : n.getParentId();
+      children.computeIfAbsent(pid, k -> new ArrayList<>()).add(n.getId());
+    }
     Set<Integer> keep = new HashSet<>();
     for (Integer wid : whitelist) {
       Integer cur = wid;
@@ -2112,6 +2268,18 @@ public class TrainFollowTaskApplicationService {
           break;
         }
         cur = n.getParentId();
+      }
+    }
+    java.util.ArrayDeque<Integer> dq = new java.util.ArrayDeque<>(whitelist);
+    Set<Integer> seenDesc = new HashSet<>();
+    while (!dq.isEmpty()) {
+      Integer id = dq.poll();
+      if (id == null || !seenDesc.add(id)) {
+        continue;
+      }
+      keep.add(id);
+      for (Integer c : children.getOrDefault(id, List.of())) {
+        dq.add(c);
       }
     }
     return keep;
@@ -2858,6 +3026,54 @@ public class TrainFollowTaskApplicationService {
     }
     String t = s.trim();
     return t.isEmpty() ? null : t;
+  }
+
+  private void emitTaskOp(
+      TrainFollowTaskEntity task,
+      FollowOpEventCode event,
+      String summary,
+      String actorName,
+      Long actorUserId,
+      String actorRole,
+      String client,
+      String targetType,
+      Long targetId,
+      boolean warn,
+      Map<String, Object> detail) {
+    if (task == null || task.getClassId() == null || event == null) {
+      return;
+    }
+    try {
+      // 过程动态按「操作发生日」展示；课次/业务日写入 detail，避免挂课次导致今日筛不到
+      String opDay = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
+      String fullSummary = summary;
+      if (StringUtils.hasText(task.getBizDate()) && !opDay.equals(task.getBizDate().trim())) {
+        fullSummary = summary + "（挂载日 " + task.getBizDate().trim() + "）";
+      }
+      FollowOpLogCommand cmd = FollowOpLogCommand.of(task.getClassId(), event)
+          .tenantId(task.getTenantId())
+          .bizDate(opDay)
+          .scheduleId(task.getScheduleId())
+          .title(event.defaultTitle())
+          .summary(fullSummary)
+          .actor(actorUserId, actorName, actorRole)
+          .target(targetType, targetId)
+          .severity(warn ? "warn" : "info")
+          .detail(detail)
+          .client(StringUtils.hasText(client) ? client : "admin");
+      opLogWriter.write(cmd);
+    } catch (Exception ex) {
+      log.error("[跟班任务] 写过程日志失败 classId={} taskId={} err={}",
+          task.getClassId(), task.getId(), ex.getMessage(), ex);
+    }
+  }
+
+  private static String taskTypeLabel(String taskType) {
+    return TASK_TYPE_NAMES.getOrDefault(taskType, "任务");
+  }
+
+  private static String nullToDash(String s) {
+    return StringUtils.hasText(s) ? s.trim() : "—";
   }
 
   private record GradeResult(boolean correct, BigDecimal score) {}

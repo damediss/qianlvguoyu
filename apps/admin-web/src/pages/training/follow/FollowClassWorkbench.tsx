@@ -48,6 +48,9 @@ import { FollowPracticeTab } from './FollowPracticeTab';
 import { FollowScheduleChangeTab } from './FollowScheduleChangeTab';
 import { FollowHomeworkTab } from './FollowHomeworkTab';
 import { FollowMockExamTab } from './FollowMockExamTab';
+import { FollowEvidenceTab } from './FollowEvidenceTab';
+import { FollowLogsSupervisionTab } from './FollowLogsSupervisionTab';
+import { ClassRolesPanel } from '../ClassRolesPanel';
 
 type ScheduleDraftItem = Record<string, unknown> & {
   _key: string;
@@ -77,31 +80,6 @@ function toNumId(id: ApiId): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function todayStr() {
-  return dayjs().format('YYYY-MM-DD');
-}
-
-type FollowLog = {
-  id: string;
-  date: string;
-  author: string;
-  content: string;
-  createdAt: string;
-};
-
-function loadLogs(classId: ApiId): FollowLog[] {
-  try {
-    const raw = localStorage.getItem(`follow_logs_${classId}`);
-    return raw ? (JSON.parse(raw) as FollowLog[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveLogs(classId: ApiId, logs: FollowLog[]) {
-  localStorage.setItem(`follow_logs_${classId}`, JSON.stringify(logs));
-}
-
 type Props = {
   classItem: TrainInfoClassListItem;
   onBack: () => void;
@@ -116,9 +94,6 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const [activeTab, setActiveTab] = useState('overview');
   const [bizDate, setBizDate] = useState<Dayjs | null>(dayjs());
   const [sessionKey, setSessionKey] = useState<string>('day');
-  const [logModalOpen, setLogModalOpen] = useState(false);
-  const [logForm] = Form.useForm();
-  const [logs, setLogs] = useState<FollowLog[]>(() => loadLogs(classId));
   const [studentPage, setStudentPage] = useState(1);
   const [detailStudent, setDetailStudent] = useState<ClassStudent | null>(null);
   const [importResult, setImportResult] = useState<trainApi.TrainAttendanceImportResult | null>(null);
@@ -130,6 +105,13 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
 
   const dateStr = bizDate ? bizDate.format('YYYY-MM-DD') : '';
   const hasBizDate = Boolean(dateStr);
+  /** 课次跟班：sessionKey 为课次 id；day=按日（schedule_id 空） */
+  const selectedScheduleId = useMemo(() => {
+    if (sessionKey === 'day') return null;
+    const n = Number(sessionKey);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [sessionKey]);
+  const isSessionAttendance = selectedScheduleId != null;
   const { data: scheduleStatus, refetch: refetchScheduleStatus } = useQuery({
     queryKey: ['follow-schedule-status', classIdNum],
     queryFn: () => trainApi.getClassScheduleStatus(classIdNum!),
@@ -406,13 +388,14 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const classRoles = roleSummary?.roles ?? [];
 
   const { data: attendancePage, isLoading: attendanceLoading, isError: attendanceError } = useQuery({
-    queryKey: ['follow-attendance', classIdNum, dateStr],
+    queryKey: ['follow-attendance', classIdNum, dateStr, sessionKey],
     queryFn: () =>
       trainApi.pageAttendances({
         page: 1,
         pageSize: 500,
         classId: classIdNum!,
         attendanceDate: dateStr,
+        ...(isSessionAttendance ? { scheduleId: selectedScheduleId! } : {}),
       }),
     enabled: classIdNum != null && classIdNum > 0 && hasBizDate,
     retry: false,
@@ -445,13 +428,42 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
     retry: false,
   });
 
+  const { data: qualityMetrics, isLoading: qualityMetricsLoading } = useQuery({
+    queryKey: ['follow-quality-metrics', classIdNum],
+    queryFn: () => trainApi.getFollowQualityMetrics(classIdNum!),
+    enabled: classIdNum != null && classIdNum > 0,
+    retry: false,
+  });
+
   const attendanceMap = useMemo(() => {
     const map = new Map<string, trainApi.TrainAttendanceItem>();
-    for (const row of attendancePage?.items ?? []) {
-      if (row.userId != null) map.set(String(row.userId), row);
+    const rows = attendancePage?.items ?? [];
+    if (isSessionAttendance) {
+      for (const row of rows) {
+        if (row.userId != null) map.set(String(row.userId), row);
+      }
+      return map;
+    }
+    // 按日：优先 schedule_id 空；否则同日多课次「任一有效出勤即出勤」
+    const byUser = new Map<string, trainApi.TrainAttendanceItem[]>();
+    for (const row of rows) {
+      if (row.userId == null) continue;
+      const key = String(row.userId);
+      const list = byUser.get(key) ?? [];
+      list.push(row);
+      byUser.set(key, list);
+    }
+    for (const [uid, list] of byUser) {
+      const dayLevel = list.find((r) => r.scheduleId == null || r.scheduleId === undefined);
+      if (dayLevel) {
+        map.set(uid, dayLevel);
+        continue;
+      }
+      const present = list.find((r) => r.status != null && r.status > 0);
+      map.set(uid, present ?? list[0]);
     }
     return map;
-  }, [attendancePage?.items]);
+  }, [attendancePage?.items, isSessionAttendance]);
 
   const dayStats = useMemo(() => {
     let onTime = 0;
@@ -568,10 +580,17 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       const uid = toNumId(student.id);
       if (uid == null) return Promise.reject(new Error('无效学员ID'));
       const existing = attendanceMap.get(String(student.id));
-      if (existing?.id) {
+      // 按日视图若折叠自课次记录，不可直接 update 课次行冒充按日
+      const canUpdateExisting =
+        existing?.id &&
+        (isSessionAttendance
+          ? Number(existing.scheduleId) === selectedScheduleId
+          : existing.scheduleId == null || existing.scheduleId === undefined);
+      if (canUpdateExisting && existing?.id) {
         return trainApi.updateAttendance(existing.id, {
           status: 1,
           checkInTime: dayjs().format('HH:mm:ss'),
+          scheduleId: selectedScheduleId,
         });
       }
       return trainApi.signInAttendance({
@@ -580,15 +599,17 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
         userId: uid,
         userName: student.realname,
         attendanceDate: dateStr,
+        scheduleId: selectedScheduleId,
         status: 1,
         checkInTime: dayjs().format('HH:mm:ss'),
       });
     },
     onSuccess: () => {
-      message.success('已标记出勤');
+      message.success(isSessionAttendance ? '已标记本课次出勤' : '已标记当日出勤');
       queryClient.invalidateQueries({ queryKey: ['follow-attendance', classIdNum] });
       queryClient.invalidateQueries({ queryKey: ['follow-attendance-all', classIdNum] });
       queryClient.invalidateQueries({ queryKey: ['follow-student-attendance-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['follow-quality-metrics', classIdNum] });
     },
     onError: (e: Error) => message.error(e.message || '考勤操作失败（请确认账号具备 train:attendance 权限）'),
   });
@@ -599,8 +620,16 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       const uid = toNumId(student.id);
       if (uid == null) return Promise.reject(new Error('无效学员ID'));
       const existing = attendanceMap.get(String(student.id));
-      if (existing?.id) {
-        return trainApi.updateAttendance(existing.id, { status: 0 });
+      const canUpdateExisting =
+        existing?.id &&
+        (isSessionAttendance
+          ? Number(existing.scheduleId) === selectedScheduleId
+          : existing.scheduleId == null || existing.scheduleId === undefined);
+      if (canUpdateExisting && existing?.id) {
+        return trainApi.updateAttendance(existing.id, {
+          status: 0,
+          scheduleId: selectedScheduleId,
+        });
       }
       return trainApi.createAttendance({
         classId: classIdNum ?? undefined,
@@ -608,14 +637,16 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
         userId: uid,
         userName: student.realname,
         attendanceDate: dateStr,
+        scheduleId: selectedScheduleId,
         status: 0,
       });
     },
     onSuccess: () => {
-      message.success('已标记缺勤');
+      message.success(isSessionAttendance ? '已标记本课次缺勤' : '已标记当日缺勤');
       queryClient.invalidateQueries({ queryKey: ['follow-attendance', classIdNum] });
       queryClient.invalidateQueries({ queryKey: ['follow-attendance-all', classIdNum] });
       queryClient.invalidateQueries({ queryKey: ['follow-student-attendance-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['follow-quality-metrics', classIdNum] });
     },
     onError: (e: Error) => message.error(e.message || '考勤操作失败'),
   });
@@ -684,37 +715,16 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
     },
   ];
 
-  const roleRows = useMemo(() => {
-    return classRoles.map((r) => ({
-      key: r.id,
-      role: r.roleName,
-      name: r.displayName || '—',
-      phone: r.phone,
-      source: r.unboundWarning ? 'train_class_role（未绑定 App 账号）' : 'train_class_role',
-    }));
-  }, [classRoles]);
-
   const leaders = classRoles.filter((r) => r.roleCode === 'monitor');
   const staffList = classRoles.filter((r) => r.roleCode === 'follow_staff');
   const chargeList = classRoles.filter((r) => r.roleCode === 'head_teacher');
   const leadTeachers = classRoles.filter((r) => r.roleCode === 'lead_teacher' || r.roleCode === 'assistant');
 
-  const handleSaveLog = async () => {
-    const values = await logForm.validateFields();
-    const next: FollowLog = {
-      id: `${Date.now()}`,
-      date: values.date ? dayjs(values.date).format('YYYY-MM-DD') : todayStr(),
-      author: values.author || '班主任',
-      content: values.content,
-      createdAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-    };
-    const merged = [next, ...logs];
-    setLogs(merged);
-    saveLogs(classId, merged);
-    setLogModalOpen(false);
-    logForm.resetFields();
-    message.success('日志已保存（本地暂存，待跟班日志 API 落库）');
-  };
+  const workLogCountQuery = useQuery({
+    queryKey: ['follow-work-logs', classIdNum, 'overview-count'],
+    queryFn: () => trainApi.listFollowWorkLogs(classIdNum!),
+    enabled: classIdNum != null && classIdNum > 0,
+  });
 
   const comingSoon = (title: string, desc: string) => (
     <Empty
@@ -780,9 +790,11 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
           </span>
           <Tag>
             {hasBizDate
-              ? scheduleItems.length
-                ? `当日课次 ${scheduleItems.length}`
-                : '无排课 · 按日模式'
+              ? isSessionAttendance
+                ? '课次考勤'
+                : scheduleItems.length
+                  ? `按日汇总 · 当日 ${scheduleItems.length} 课次`
+                  : '按日考勤 · 无排课'
               : '未选业务日'}
           </Tag>
         </Space>
@@ -803,12 +815,12 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Card size="small">
-                      <Statistic title="当日实到" value={presentCount} suffix={`/ ${dayStats.base || '—'}`} />
+                      <Statistic title={isSessionAttendance ? '本课次实到' : '当日实到'} value={presentCount} suffix={`/ ${dayStats.base || '—'}`} />
                     </Card>
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Card size="small">
-                      <Statistic title="当日出勤率" value={attendanceRate} suffix="%" />
+                      <Statistic title={isSessionAttendance ? '本课次出勤率' : '当日出勤率'} value={attendanceRate} suffix="%" />
                       <Progress
                         percent={attendanceRate}
                         showInfo={false}
@@ -831,11 +843,11 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     </Card>
                   </Col>
                   <Col xs={12} sm={8} md={4}>
-                    <Card size="small"><Statistic title="跟班日志" value={logs.length} prefix={<HistoryOutlined />} /></Card>
+                    <Card size="small"><Statistic title="跟班日志" value={workLogCountQuery.data?.length ?? 0} prefix={<HistoryOutlined />} /></Card>
                   </Col>
                 </Row>
 
-                <Card size="small" title={`当日考勤构成（${hasBizDate ? dateStr : '未选日期'}）`} style={{ marginBottom: 16 }}>
+                <Card size="small" title={`${isSessionAttendance ? '本课次' : '当日'}考勤构成（${hasBizDate ? dateStr : '未选日期'}）`} style={{ marginBottom: 16 }}>
                   <Row gutter={[12, 12]}>
                     <Col xs={12} sm={8} md={4}><Statistic title="出勤" value={dayStats.onTime} valueStyle={{ color: '#389e0d' }} /></Col>
                     <Col xs={12} sm={8} md={4}><Statistic title="迟到" value={dayStats.late} valueStyle={{ color: '#d48806' }} /></Col>
@@ -967,141 +979,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     </Card>
                   </Col>
                 </Row>
-
-                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-                  <Col xs={24} lg={12}>
-                    <Card
-                      size="small"
-                      title="模拟卷概览"
-                      loading={mockMetricsLoading}
-                      extra={
-                        <Button type="link" style={{ padding: 0 }} onClick={() => setActiveTab('mock')}>
-                          模拟考明细 →
-                        </Button>
-                      }
-                    >
-                      <Space size="large" wrap>
-                        <Statistic title="已发布" value={mockMetrics?.taskCount ?? 0} />
-                        <Statistic
-                          title="完成率"
-                          value={mockMetrics?.completionRate ?? 0}
-                          suffix="%"
-                        />
-                        <Statistic
-                          title="平均正确率"
-                          value={mockMetrics?.avgAccuracyRate ?? '—'}
-                          suffix={mockMetrics?.avgAccuracyRate != null ? '%' : undefined}
-                        />
-                        <Statistic
-                          title="已交/应交"
-                          value={`${mockMetrics?.gradedItems ?? 0}/${mockMetrics?.totalItems ?? 0}`}
-                        />
-                      </Space>
-                    </Card>
-                  </Col>
-                  <Col xs={24} lg={12}>
-                    <Card
-                      size="small"
-                      title="作业完成情况"
-                      loading={homeworkMetricsLoading}
-                      extra={
-                        <Button type="link" style={{ padding: 0 }} onClick={() => setActiveTab('homework')}>
-                          作业明细 →
-                        </Button>
-                      }
-                    >
-                      <Space size="large" wrap>
-                        <Statistic title="已发布" value={homeworkMetrics?.taskCount ?? 0} />
-                        <Statistic
-                          title="完成率"
-                          value={homeworkMetrics?.completionRate ?? 0}
-                          suffix="%"
-                        />
-                        <Statistic
-                          title="平均正确率"
-                          value={homeworkMetrics?.avgAccuracyRate ?? '—'}
-                          suffix={homeworkMetrics?.avgAccuracyRate != null ? '%' : undefined}
-                        />
-                        <Statistic
-                          title="已交/应交"
-                          value={`${homeworkMetrics?.gradedItems ?? 0}/${homeworkMetrics?.totalItems ?? 0}`}
-                        />
-                      </Space>
-                    </Card>
-                  </Col>
-                </Row>
-
-                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-                  <Col xs={24} lg={12}>
-                    <Card
-                      size="small"
-                      className="follow-overview-scroll-card"
-                      title="模拟卷预警"
-                      extra={
-                        <Typography.Text type="secondary">连续未交≥2 或平均正确率&lt;60%</Typography.Text>
-                      }
-                      loading={mockMetricsLoading}
-                    >
-                      {(mockMetrics?.warnings?.length ?? 0) === 0 ? (
-                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无模拟卷预警" />
-                      ) : (
-                        <Table
-                          size="small"
-                          rowKey={(r) => `mock-${r.peopleId}-${r.type}`}
-                          pagination={false}
-                          sticky
-                          dataSource={mockMetrics?.warnings ?? []}
-                          columns={[
-                            { title: '姓名', dataIndex: 'userName', width: 100 },
-                            {
-                              title: '类型',
-                              dataIndex: 'type',
-                              width: 100,
-                              render: (t: string) =>
-                                t === 'miss' ? <Tag color="warning">未交</Tag> : <Tag color="error">正确率低</Tag>,
-                            },
-                            { title: '说明', dataIndex: 'message', ellipsis: true },
-                          ]}
-                        />
-                      )}
-                    </Card>
-                  </Col>
-                  <Col xs={24} lg={12}>
-                    <Card
-                      size="small"
-                      className="follow-overview-scroll-card"
-                      title="作业预警"
-                      extra={
-                        <Typography.Text type="secondary">连续未交≥2 或平均正确率&lt;60%</Typography.Text>
-                      }
-                      loading={homeworkMetricsLoading}
-                    >
-                      {(homeworkMetrics?.warnings?.length ?? 0) === 0 ? (
-                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无作业预警" />
-                      ) : (
-                        <Table
-                          size="small"
-                          rowKey={(r) => `${r.peopleId}-${r.type}`}
-                          pagination={false}
-                          sticky
-                          dataSource={homeworkMetrics?.warnings ?? []}
-                          columns={[
-                            { title: '姓名', dataIndex: 'userName', width: 100 },
-                            {
-                              title: '类型',
-                              dataIndex: 'type',
-                              width: 100,
-                              render: (t: string) =>
-                                t === 'miss' ? <Tag color="warning">未交</Tag> : <Tag color="error">正确率低</Tag>,
-                            },
-                            { title: '说明', dataIndex: 'message', ellipsis: true },
-                          ]}
-                        />
-                      )}
-                    </Card>
-                  </Col>
-                </Row>
-
+                
                 <Card
                   size="small"
                   title="班级课程表"
@@ -1173,6 +1051,144 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     </Space>
                   )}
                 </Card>
+
+                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col xs={24} lg={12}>
+                    <Card
+                      size="small"
+                      title="作业完成情况"
+                      loading={homeworkMetricsLoading}
+                      extra={
+                        <Button type="link" style={{ padding: 0 }} onClick={() => setActiveTab('homework')}>
+                          作业明细 →
+                        </Button>
+                      }
+                    >
+                      <Space size="large" wrap>
+                        <Statistic title="已发布" value={homeworkMetrics?.taskCount ?? 0} />
+                        <Statistic
+                          title="完成率"
+                          value={homeworkMetrics?.completionRate ?? 0}
+                          suffix="%"
+                        />
+                        <Statistic
+                          title="平均正确率"
+                          value={homeworkMetrics?.avgAccuracyRate ?? '—'}
+                          suffix={homeworkMetrics?.avgAccuracyRate != null ? '%' : undefined}
+                        />
+                        <Statistic
+                          title="已交/应交"
+                          value={`${homeworkMetrics?.gradedItems ?? 0}/${homeworkMetrics?.totalItems ?? 0}`}
+                        />
+                      </Space>
+                    </Card>
+                  </Col>
+                  <Col xs={24} lg={12}>
+                    <Card
+                      size="small"
+                      title="模拟卷概览"
+                      loading={mockMetricsLoading}
+                      extra={
+                        <Button type="link" style={{ padding: 0 }} onClick={() => setActiveTab('mock')}>
+                          模拟考明细 →
+                        </Button>
+                      }
+                    >
+                      <Space size="large" wrap>
+                        <Statistic title="已发布" value={mockMetrics?.taskCount ?? 0} />
+                        <Statistic
+                          title="完成率"
+                          value={mockMetrics?.completionRate ?? 0}
+                          suffix="%"
+                        />
+                        <Statistic
+                          title="平均正确率"
+                          value={mockMetrics?.avgAccuracyRate ?? '—'}
+                          suffix={mockMetrics?.avgAccuracyRate != null ? '%' : undefined}
+                        />
+                        <Statistic
+                          title="已交/应交"
+                          value={`${mockMetrics?.gradedItems ?? 0}/${mockMetrics?.totalItems ?? 0}`}
+                        />
+                      </Space>
+                    </Card>
+                  </Col>
+                 
+                </Row>
+
+                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col xs={24} lg={12}>
+                    <Card
+                      size="small"
+                      className="follow-overview-scroll-card"
+                      title="作业预警"
+                      extra={
+                        <Typography.Text type="secondary">连续未交≥2 或平均正确率&lt;60%</Typography.Text>
+                      }
+                      loading={homeworkMetricsLoading}
+                    >
+                      {(homeworkMetrics?.warnings?.length ?? 0) === 0 ? (
+                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无作业预警" />
+                      ) : (
+                        <Table
+                          size="small"
+                          rowKey={(r) => `${r.peopleId}-${r.type}`}
+                          pagination={false}
+                          sticky
+                          dataSource={homeworkMetrics?.warnings ?? []}
+                          columns={[
+                            { title: '姓名', dataIndex: 'userName', width: 100 },
+                            {
+                              title: '类型',
+                              dataIndex: 'type',
+                              width: 100,
+                              render: (t: string) =>
+                                t === 'miss' ? <Tag color="warning">未交</Tag> : <Tag color="error">正确率低</Tag>,
+                            },
+                            { title: '说明', dataIndex: 'message', ellipsis: true },
+                          ]}
+                        />
+                      )}
+                    </Card>
+                  </Col>
+                  <Col xs={24} lg={12}>
+                    <Card
+                      size="small"
+                      className="follow-overview-scroll-card"
+                      title="模拟卷预警"
+                      extra={
+                        <Typography.Text type="secondary">连续未交≥2 或平均正确率&lt;60%</Typography.Text>
+                      }
+                      loading={mockMetricsLoading}
+                    >
+                      {(mockMetrics?.warnings?.length ?? 0) === 0 ? (
+                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无模拟卷预警" />
+                      ) : (
+                        <Table
+                          size="small"
+                          rowKey={(r) => `mock-${r.peopleId}-${r.type}`}
+                          pagination={false}
+                          sticky
+                          dataSource={mockMetrics?.warnings ?? []}
+                          columns={[
+                            { title: '姓名', dataIndex: 'userName', width: 100 },
+                            {
+                              title: '类型',
+                              dataIndex: 'type',
+                              width: 100,
+                              render: (t: string) =>
+                                t === 'miss' ? <Tag color="warning">未交</Tag> : <Tag color="error">正确率低</Tag>,
+                            },
+                            { title: '说明', dataIndex: 'message', ellipsis: true },
+                          ]}
+                        />
+                      )}
+                    </Card>
+                  </Col>
+                
+                </Row>
+
+                
 
                 <Card
                   size="small"
@@ -1297,7 +1313,8 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     </Button>
                   </Upload>
                   <Typography.Text type="secondary">
-                    支持人社/培训平台「考勤信息列表」.xls/.xlsx；按身份证匹配本班学员，同日多课次合并写入
+                    支持人社/培训平台「考勤信息列表」.xls/.xlsx；按身份证匹配本班学员，同日多课次合并为「按日」记录（schedule 空）。
+                    顶部选择具体课次后，出勤/缺勤写入该课次。
                   </Typography.Text>
                 </Space>
                 <Table
@@ -1567,103 +1584,178 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
           {
             key: 'roles',
             label: '角色',
-            children: (
-              <div>
-                <Alert
-                  type="info"
-                  showIcon
-                  style={{ marginBottom: 12 }}
-                  message="班级角色来自 train_class_role"
-                  description={
-                    (roleSummary?.unboundCount ?? 0) > 0
-                      ? `有 ${roleSummary?.unboundCount} 人未绑定 App 账号，指派后需确保 PHP/SaaS 账号可登录。维护入口：开班准备 → 班级角色。`
-                      : '人员维护请前往「开班准备 → 班级角色」；班长仍可在学员列表设置。'
-                  }
+            children:
+              classId != null ? (
+                <ClassRolesPanel
+                  classId={classId}
+                  contextHint="在此指派后，开班准备「班级角色」将同步显示。"
                 />
-                <Table
-                  rowKey="key"
-                  dataSource={roleRows}
-                  pagination={false}
-                  locale={{ emptyText: '暂无角色人员，请先在开班准备设置班级角色/班长' }}
-                  columns={[
-                    { title: '角色', dataIndex: 'role', width: 180 },
-                    { title: '姓名', dataIndex: 'name', width: 140 },
-                    { title: '手机', dataIndex: 'phone', width: 140, render: (v?: string) => v || '—' },
-                    { title: '来源', dataIndex: 'source' },
-                  ]}
-                />
-              </div>
-            ),
+              ) : (
+                <Empty description="无效班级" />
+              ),
+          },
+          {
+            key: 'evidence',
+            label: '留痕',
+            children:
+              classIdNum != null ? (
+                <FollowEvidenceTab classId={classIdNum} />
+              ) : (
+                <Empty description="无效班级" />
+              ),
           },
           {
             key: 'logs',
             label: '日志·督导',
-            children: (
-              <div>
-                <Space style={{ marginBottom: 12 }}>
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => {
-                      logForm.setFieldsValue({ date: bizDate ?? dayjs(), author: '班主任', content: '' });
-                      setLogModalOpen(true);
-                    }}
-                  >
-                    新增跟班日志
-                  </Button>
-                  <Typography.Text type="secondary">督导检查 / 异常闭环将在 M4 接入</Typography.Text>
-                </Space>
-                <Table
-                  rowKey="id"
-                  dataSource={logs}
-                  pagination={false}
-                  locale={{ emptyText: '暂无日志' }}
-                  columns={[
-                    { title: '日期', dataIndex: 'date', width: 120 },
-                    { title: '记录人', dataIndex: 'author', width: 120 },
-                    { title: '内容', dataIndex: 'content' },
-                    { title: '写入时间', dataIndex: 'createdAt', width: 170 },
-                  ]}
-                />
-              </div>
-            ),
+            children:
+              classIdNum != null ? (
+                <FollowLogsSupervisionTab classId={classIdNum} defaultBizDate={bizDate} />
+              ) : (
+                <Empty description="无效班级" />
+              ),
           },
           {
             key: 'metrics',
             label: '指标',
             children: (
-              <Row gutter={[12, 12]}>
-                <Col xs={12} md={6}>
-                  <Card size="small">
-                    <Statistic title="出勤率（当日）" value={attendanceRate} suffix="%" prefix={<CheckCircleOutlined />} />
-                  </Card>
-                </Col>
-                <Col xs={12} md={6}>
-                  <Card size="small" loading={classStats.loading}>
-                    <Statistic title="出勤率（累计）" value={classStats.cumulativeRate} suffix="%" prefix={<LineChartOutlined />} />
-                  </Card>
-                </Col>
-                <Col xs={12} md={6}>
-                  <Card size="small"><Statistic title="作业完成率" value="—" prefix={<EditOutlined />} /></Card>
-                </Col>
-                <Col xs={12} md={6}>
-                  <Card size="small"><Statistic title="满意度" value="—" prefix={<StarOutlined />} /></Card>
-                </Col>
-                <Col span={24}>
-                  <Alert
-                    type="info"
-                    showIcon
-                    message="出勤率已接入考勤数据；作业/通过率/满意度将在后续里程碑对接"
-                    description={`口径：当日实到÷学员数；累计=有效出勤记录（出勤/迟到/早退）÷全部考勤记录。当前累计覆盖 ${classStats.recordDays} 个有考勤日。`}
-                  />
-                </Col>
-              </Row>
+              <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                <Row gutter={[12, 12]}>
+                  <Col xs={12} md={6}>
+                    <Card size="small">
+                      <Statistic
+                        title="出勤率（当日）"
+                        value={attendanceRate}
+                        suffix="%"
+                        prefix={<CheckCircleOutlined />}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={classStats.loading}>
+                      <Statistic
+                        title="出勤率（累计）"
+                        value={classStats.cumulativeRate}
+                        suffix="%"
+                        prefix={<LineChartOutlined />}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading || homeworkMetricsLoading}>
+                      <Statistic
+                        title="作业完成率"
+                        value={qualityMetrics?.homeworkCompletionRate ?? homeworkMetrics?.completionRate ?? '—'}
+                        suffix={
+                          qualityMetrics?.homeworkCompletionRate != null || homeworkMetrics?.completionRate != null
+                            ? '%'
+                            : undefined
+                        }
+                        prefix={<EditOutlined />}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading}>
+                      <Statistic
+                        title="满意度"
+                        value={qualityMetrics?.satisfactionAvg ?? '—'}
+                        suffix={
+                          qualityMetrics?.satisfactionCount
+                            ? `（${qualityMetrics.satisfactionCount} 份）`
+                            : undefined
+                        }
+                        prefix={<StarOutlined />}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading || mockMetricsLoading}>
+                      <Statistic
+                        title="模拟通过率"
+                        value={qualityMetrics?.mockPassRate ?? '—'}
+                        suffix={qualityMetrics?.mockPassRate != null ? '%' : undefined}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading}>
+                      <Statistic
+                        title="考试通过率"
+                        value={qualityMetrics?.examPassRate ?? '—'}
+                        suffix={qualityMetrics?.examPassRate != null ? '%' : undefined}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading}>
+                      <Statistic
+                        title="影像留痕"
+                        value={
+                          qualityMetrics?.evidenceRequiredSessions
+                            ? `${qualityMetrics.evidenceOkSessions ?? 0}/${qualityMetrics.evidenceRequiredSessions}`
+                            : '—'
+                        }
+                        suffix={qualityMetrics?.evidenceReady ? '齐套' : undefined}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading}>
+                      <Statistic
+                        title="补贴材料齐套"
+                        value={
+                          qualityMetrics?.subsidyId == null
+                            ? '未建单'
+                            : qualityMetrics.subsidyTotalSlots
+                              ? `${qualityMetrics.subsidyReadySlots ?? 0}/${qualityMetrics.subsidyTotalSlots}`
+                              : qualityMetrics.subsidyReady
+                                ? '已齐套'
+                                : '—'
+                        }
+                        valueStyle={{
+                          color:
+                            qualityMetrics?.subsidyReady === true
+                              ? '#3f8600'
+                              : qualityMetrics?.subsidyReady === false
+                                ? '#cf1322'
+                                : undefined,
+                        }}
+                      />
+                    </Card>
+                  </Col>
+                </Row>
+
+                <Card size="small" title="质量预警" loading={qualityMetricsLoading}>
+                  {(qualityMetrics?.alerts?.length ?? 0) === 0 ? (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无预警" />
+                  ) : (
+                    <Space direction="vertical" style={{ width: '100%' }}>
+                      {(qualityMetrics?.alerts ?? []).map((a, idx) => (
+                        <Alert
+                          key={`${a.code}-${idx}`}
+                          type={a.level === 'critical' ? 'error' : 'warning'}
+                          showIcon
+                          message={a.message || a.code}
+                        />
+                      ))}
+                    </Space>
+                  )}
+                </Card>
+
+                <Alert
+                  type="info"
+                  showIcon
+                  message="口径说明"
+                  description={
+                    <>
+                      当日出勤=实到÷名单人数；累计出勤=有效出勤记录÷全部考勤记录（覆盖 {classStats.recordDays}{' '}
+                      个有考勤日）。作业完成率=已交有效份数÷应发份数。模拟通过率=已评通过份数÷已评份数。考试通过率=得分≥及格线人数÷有成绩人数。满意度=答卷均分（1～5）。补贴齐套=配方必填槽位均已有材料（或已生成材料包）。
+                      预警阈值：累计出勤/作业完成率 &lt;80%、满意度 &lt;3.5、影像未齐套、严重整改未关、补贴缺项。
+                    </>
+                  }
+                />
+              </Space>
             ),
-          },
-          {
-            key: 'evidence',
-            label: '留痕',
-            children: comingSoon('过程留痕', '照片/视频证据将挂载课次或按日；上传通道复用现有文件服务（M2）'),
           },
         ]}
       />
@@ -1674,26 +1766,6 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
         student={detailStudent}
         onClose={() => setDetailStudent(null)}
       />
-
-      <Modal
-        title="新增跟班日志"
-        open={logModalOpen}
-        onCancel={() => setLogModalOpen(false)}
-        onOk={handleSaveLog}
-        destroyOnHidden
-      >
-        <Form form={logForm} layout="vertical">
-          <Form.Item name="date" label="日期" rules={[{ required: true }]}>
-            <DatePicker style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="author" label="记录人" rules={[{ required: true, message: '请输入记录人' }]}>
-            <Input placeholder="班主任 / 跟班教务" />
-          </Form.Item>
-          <Form.Item name="content" label="内容" rules={[{ required: true, message: '请输入日志内容' }]}>
-            <Input.TextArea rows={4} placeholder="出勤概况、异常学员、沟通与处理…" />
-          </Form.Item>
-        </Form>
-      </Modal>
 
       <Modal
         title="考勤导入结果"

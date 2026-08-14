@@ -8,13 +8,16 @@ import com.guoyu.platform.trainingdepartment.dto.FollowBankDrawReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowTaskSaveReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowTaskSubmitReq;
 import com.guoyu.platform.trainingdepartment.dto.ScheduleChangeSubmitReq;
+import com.guoyu.platform.trainingdepartment.dto.FollowEvidenceReviewReq;
 import com.guoyu.platform.trainingdepartment.service.ClassAssistantApplicationService;
 import com.guoyu.platform.trainingdepartment.service.ClassPracticeCoverageApplicationService;
 import com.guoyu.platform.trainingdepartment.service.ClassPracticeScopeApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainClassRoleApplicationService;
+import com.guoyu.platform.trainingdepartment.service.TrainFollowEvidenceApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainFollowTaskApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainScheduleApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainScheduleChangeRequestApplicationService;
+import com.guoyu.platform.trainingdepartment.vo.FollowEvidenceVO;
 import com.guoyu.platform.trainingdepartment.vo.FollowStudentTaskVO;
 import com.guoyu.platform.trainingdepartment.vo.FollowTaskItemVO;
 import com.guoyu.platform.trainingdepartment.vo.FollowTaskResultVO;
@@ -25,9 +28,12 @@ import com.guoyu.platform.trainingdepartment.vo.TrainScheduleChangeRequestVO;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,6 +42,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * App 跟班入口 API —— A1 / 课表 S1–S2 / 作业 M3-b。
@@ -55,6 +62,7 @@ public class TrainFollowAppController {
   private final ClassAssistantApplicationService assistantService;
   private final ClassPracticeScopeApplicationService practiceScopeService;
   private final ClassPracticeCoverageApplicationService practiceCoverageService;
+  private final TrainFollowEvidenceApplicationService evidenceService;
 
   public TrainFollowAppController(
       TrainClassRoleApplicationService roleService,
@@ -63,7 +71,8 @@ public class TrainFollowAppController {
       TrainFollowTaskApplicationService taskService,
       ClassAssistantApplicationService assistantService,
       ClassPracticeScopeApplicationService practiceScopeService,
-      ClassPracticeCoverageApplicationService practiceCoverageService) {
+      ClassPracticeCoverageApplicationService practiceCoverageService,
+      TrainFollowEvidenceApplicationService evidenceService) {
     this.roleService = roleService;
     this.scheduleService = scheduleService;
     this.changeRequestService = changeRequestService;
@@ -71,6 +80,7 @@ public class TrainFollowAppController {
     this.assistantService = assistantService;
     this.practiceScopeService = practiceScopeService;
     this.practiceCoverageService = practiceCoverageService;
+    this.evidenceService = evidenceService;
   }
 
   @GetMapping("/my-classes")
@@ -178,6 +188,21 @@ public class TrainFollowAppController {
     return ApiResponse.ok(practiceCoverageService.getCoverageForAppMember(classId, userId));
   }
 
+  /** App：本班已做题列表（分页，轻量题干预览） */
+  @GetMapping("/classes/{classId}/practice-coverage/questions")
+  public ApiResponse<Map<String, Object>> practiceCoverageQuestions(
+      @PathVariable Long classId,
+      @RequestParam(required = false, defaultValue = "done") String status,
+      @RequestParam(required = false) String type,
+      @RequestParam(required = false, defaultValue = "1") int page,
+      @RequestParam(required = false, defaultValue = "20") int pageSize) {
+    Long userId = requirePlatformUserId();
+    roleService.assertClassMember(userId, classId);
+    return ApiResponse.ok(
+        practiceCoverageService.listCoverageQuestionsForAppMember(
+            classId, userId, status, type, page, pageSize));
+  }
+
   @PostMapping("/tasks")
   public ApiResponse<FollowTaskVO> createTask(@Valid @RequestBody FollowTaskSaveReq body) {
     return ApiResponse.ok(taskService.createDraft(requirePlatformUserId(), body));
@@ -253,6 +278,64 @@ public class TrainFollowAppController {
   @GetMapping("/tasks/{id}/result")
   public ApiResponse<FollowTaskResultVO> result(@PathVariable Long id) {
     return ApiResponse.ok(taskService.getResult(requirePlatformUserId(), id));
+  }
+
+  @GetMapping("/classes/{classId}/evidences")
+  public ApiResponse<List<FollowEvidenceVO>> evidences(
+      @PathVariable Long classId,
+      @RequestParam(required = false) Long scheduleId,
+      @RequestParam(required = false) String bizDate,
+      @RequestParam(required = false) String reviewStatus,
+      @RequestParam(required = false) String mediaType) {
+    roleService.assertClassMember(requirePlatformUserId(), classId);
+    return ApiResponse.ok(evidenceService.list(classId, scheduleId, bizDate, reviewStatus, mediaType));
+  }
+
+  @GetMapping("/classes/{classId}/evidence-coverage")
+  public ApiResponse<Map<String, Object>> evidenceCoverage(@PathVariable Long classId) {
+    roleService.assertClassMember(requirePlatformUserId(), classId);
+    return ApiResponse.ok(evidenceService.coverage(classId));
+  }
+
+  @PostMapping(value = "/classes/{classId}/evidences/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public ApiResponse<FollowEvidenceVO> uploadEvidence(
+      @PathVariable Long classId,
+      @RequestParam("file") MultipartFile file,
+      @RequestParam(required = false) Long scheduleId,
+      @RequestParam(required = false) String bizDate,
+      @RequestParam(required = false) String teachFormOverride,
+      @RequestParam(required = false) String classHoursOverride,
+      @RequestParam(required = false) String caption,
+      @RequestParam(required = false, defaultValue = "photo") String mediaType,
+      @RequestParam(required = false) Integer durationSeconds) {
+    return ApiResponse.ok(evidenceService.createAppMultipart(
+        classId,
+        requirePlatformUserId(),
+        file,
+        scheduleId,
+        bizDate,
+        teachFormOverride,
+        classHoursOverride,
+        caption,
+        mediaType,
+        durationSeconds));
+  }
+
+  @GetMapping("/evidences/{id}/preview")
+  public ResponseEntity<byte[]> previewEvidence(@PathVariable Long id) {
+    return evidenceService.previewApp(id, requirePlatformUserId());
+  }
+
+  @PostMapping("/evidences/{id}/review")
+  public ApiResponse<FollowEvidenceVO> reviewEvidence(
+      @PathVariable Long id, @RequestBody FollowEvidenceReviewReq body) {
+    return ApiResponse.ok(evidenceService.reviewApp(id, requirePlatformUserId(), body));
+  }
+
+  @DeleteMapping("/evidences/{id}")
+  public ApiResponse<Void> deleteEvidence(@PathVariable Long id) {
+    evidenceService.delete(id, requirePlatformUserId(), true);
+    return ApiResponse.ok(null);
   }
 
   private static long requirePlatformUserId() {

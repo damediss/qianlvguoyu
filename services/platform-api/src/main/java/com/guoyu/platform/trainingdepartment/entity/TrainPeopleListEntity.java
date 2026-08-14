@@ -40,6 +40,12 @@ public class TrainPeopleListEntity {
   private LocalDateTime createTime;
   private String idCard;
 
+  /** 0未结业 / 1已结业 / 2不合格 */
+  private Integer graduateStatus;
+  private LocalDateTime graduateAt;
+  private Long graduateBy;
+  private String graduateRemark;
+
   @TableLogic
   private Integer deleted;
 }

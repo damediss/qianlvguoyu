@@ -72,6 +72,12 @@ export function StudentAttendanceDetailDrawer({ open, classId, student, onClose 
       render: (v?: string) => v || '—',
     },
     {
+      title: '课次',
+      dataIndex: 'scheduleId',
+      width: 100,
+      render: (v?: number | null) => (v != null ? `课次#${v}` : '按日'),
+    },
+    {
       title: '状态',
       dataIndex: 'status',
       width: 90,
@@ -104,7 +110,7 @@ export function StudentAttendanceDetailDrawer({ open, classId, student, onClose 
   return (
     <Drawer
       title={student ? `${student.realname} · 考勤明细` : '考勤明细'}
-      width={640}
+      width={720}
       open={open}
       onClose={onClose}
       destroyOnClose
@@ -126,7 +132,7 @@ export function StudentAttendanceDetailDrawer({ open, classId, student, onClose 
 
           <Row gutter={[12, 12]}>
             <Col span={8}>
-              <Statistic title="登记天数" value={summary.recorded} />
+              <Statistic title="登记条数" value={summary.recorded} />
             </Col>
             <Col span={8}>
               <Statistic title="有效出勤" value={summary.effectivePresent} suffix={`/ ${summary.recorded || 0}`} />
