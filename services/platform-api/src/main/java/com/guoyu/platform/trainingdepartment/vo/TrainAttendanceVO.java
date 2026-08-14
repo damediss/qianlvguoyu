@@ -16,6 +16,8 @@ public record TrainAttendanceVO(
     Long userId,
     String userName,
     String attendanceDate,
+    /** 课次 ID；空=按日 */
+    Long scheduleId,
     /** 状态 */
     Integer status,
     String checkInTime,

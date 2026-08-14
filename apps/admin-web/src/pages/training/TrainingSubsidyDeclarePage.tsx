@@ -348,6 +348,7 @@ export function TrainingSubsidyDeclarePage() {
     {
       title: '班级',
       dataIndex: 'className',
+      width: 260,
       ellipsis: true,
       render: (v, r) => (
         <Button type="link" style={{ padding: 0, height: 'auto' }} onClick={() => void openDetail(r)}>
@@ -358,7 +359,7 @@ export function TrainingSubsidyDeclarePage() {
     {
       title: '地市',
       dataIndex: 'regionName',
-      width: 120,
+      width: 80,
       render: (v, r) => v || r.regionCode || '—',
     },
     {
@@ -451,7 +452,7 @@ export function TrainingSubsidyDeclarePage() {
         </Space>
       </section>
 
-      <TrainingProcessSteps current={7} />
+      <TrainingProcessSteps current={8} />
 
       <Alert
         type="info"

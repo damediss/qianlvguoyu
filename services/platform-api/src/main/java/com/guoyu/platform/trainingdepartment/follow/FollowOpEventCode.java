@@ -28,7 +28,13 @@ public enum FollowOpEventCode {
   TASK_REOPEN("task.reopen", "task", "重新开放任务"),
 
   CLASS_ROLE_ASSIGN("class_role.assign", "role", "指派班级角色"),
-  CLASS_ROLE_UNBIND("class_role.unbind", "role", "解绑班级角色");
+  CLASS_ROLE_UNBIND("class_role.unbind", "role", "解绑班级角色"),
+
+  SUPERVISION_SUBMIT("supervision.submit", "supervision", "提交督导检查"),
+  SUPERVISION_CLOSE("supervision.close", "supervision", "关闭督导检查"),
+  ISSUE_OPEN("supervision.issue.open", "supervision", "开立整改单"),
+  ISSUE_TRANSITION("supervision.issue.transition", "supervision", "整改状态变更"),
+  SURVEY_SUBMIT("survey.submit", "system", "录入满意度");
 
   private final String code;
   private final String category;

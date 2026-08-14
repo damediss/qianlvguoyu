@@ -1296,26 +1296,116 @@ export function generateMaterials(classId: number) {
   return unwrap<{ downUrl: string; fileId: number }>(apiClient.post(`${BASE}/info-classes/${classId}/materials/generate`));
 }
 
-// ==================== 毕业管理 ====================
+// ==================== 毕业管理 / 毕业典礼（O3） ====================
 
 /** 可毕业班级列表 */
-export function listGraduationCandidates(params: { page?: number; pageSize?: number }) {
-  return unwrap<{ list: Record<string, unknown>[]; total: number }>(apiClient.get(`${BASE}/info-classes/graduation-candidates`, { params }));
+export function listGraduationCandidates(params: {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  graduateStatus?: string;
+}) {
+  return unwrap<{ list: Record<string, unknown>[]; total: number }>(
+    apiClient.get(`${BASE}/info-classes/graduation-candidates`, { params }),
+  );
 }
 
 /** 班级可毕业学员列表 */
 export function listGraduationStudents(classId: number) {
-  return unwrap<{ classTitle: string; list: Record<string, unknown>[]; total: number }>(apiClient.get(`${BASE}/info-classes/${classId}/graduation-students`));
+  return unwrap<{
+    classTitle: string;
+    graduateStatus?: string;
+    certificateTempId?: number | null;
+    templateTitle?: string | null;
+    list: Record<string, unknown>[];
+    total: number;
+  }>(apiClient.get(`${BASE}/info-classes/${classId}/graduation-students`));
 }
 
 /** 执行毕业 */
-export function graduateClass(classId: number) {
-  return unwrap<{ classId: number; trainInfoId: number; graduateCount: number; status: string }>(apiClient.post(`${BASE}/info-classes/${classId}/graduate`));
+export function graduateClass(
+  classId: number,
+  payload?: {
+    mode?: 'all' | 'selected';
+    peopleIds?: number[];
+    allowUnqualified?: boolean;
+    remark?: string;
+  },
+) {
+  return unwrap<{
+    classId: number;
+    trainInfoId?: number;
+    changedCount?: number;
+    skippedCount?: number;
+    graduateCount?: number;
+    graduateStatus?: string;
+    status: string;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/graduate`, payload ?? {}));
 }
 
-/** 发送毕业通知 */
+/** 发送毕业通知（站内信） */
 export function notifyGraduation(classId: number) {
-  return unwrap<{ classId: number; notifiedCount: number; message: string }>(apiClient.post(`${BASE}/info-classes/${classId}/graduation-notify`));
+  return unwrap<{
+    classId: number;
+    noticeId?: number | string;
+    notifiedCount: number;
+    successCount?: number;
+    failCount?: number;
+    message: string;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/graduation-notify`));
+}
+
+export function listGraduationNotices(classId: number) {
+  return unwrap<Record<string, unknown>[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/graduation-notices`),
+  );
+}
+
+export function bindGraduationCertificateTemplate(classId: number, certificateTempId: number | null) {
+  return unwrap<{ classId: number; certificateTempId: number | null }>(
+    apiClient.patch(`${BASE}/info-classes/${classId}/certificate-template`, { certificateTempId }),
+  );
+}
+
+export function batchIssueGraduationCertificates(classId: number) {
+  return unwrap<{ classId: number; created: number; skipped: number }>(
+    apiClient.post(`${BASE}/info-classes/${classId}/certificates/batch-issue`),
+  );
+}
+
+export function createGraduationArchive(classId: number) {
+  return unwrap<{
+    id: number | string;
+    classId: number;
+    fileId: number | string;
+    filePath: string;
+    versionNo: number;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/graduation-archive`));
+}
+
+export function listGraduationArchives(classId: number) {
+  return unwrap<Record<string, unknown>[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/graduation-archives`),
+  );
+}
+
+export async function exportGraduationLedger(classId?: number) {
+  const response = await apiClient.get(`${BASE}/graduation-ledger/export`, {
+    params: classId != null ? { classId } : undefined,
+    responseType: 'blob',
+  });
+  const blob = new Blob([response.data], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const filename =
+    parseContentDispositionFilename(response) ||
+    (classId != null ? `结业台账_${classId}.xlsx` : '结业台账.xlsx');
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
 }
 
 // ==================== 课表配置 ====================
@@ -2028,6 +2118,180 @@ export function deleteFollowWorkLog(id: number | string) {
 export function draftFollowWorkLogFromOps(classId: number, bizDate: string) {
   return unwrap<FollowWorkLog>(
     apiClient.post(`${BASE}/info-classes/${classId}/follow/logs/draft-from-ops`, { bizDate }),
+  );
+}
+
+// ==================== 督导检查 / 整改 / 满意度 / 质量指标 ====================
+
+export type FollowSupervisionItem = {
+  id: number | string;
+  supervisionId?: number | string;
+  itemCode?: string;
+  itemTitle?: string;
+  sortNo?: number;
+  result?: string | null;
+  remark?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type FollowSupervision = {
+  id: number | string;
+  classId?: number | string;
+  bizDate?: string;
+  scheduleId?: number | string | null;
+  inspectorUserId?: number | string | null;
+  inspectorName?: string | null;
+  status?: string;
+  conclusion?: string | null;
+  remark?: string | null;
+  submittedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  items?: FollowSupervisionItem[];
+  openIssueCount?: number | null;
+};
+
+export type FollowIssue = {
+  id: number | string;
+  classId?: number | string;
+  supervisionId?: number | string | null;
+  itemId?: number | string | null;
+  title?: string;
+  description?: string | null;
+  severity?: string;
+  status?: string;
+  assigneeName?: string | null;
+  dueDate?: string | null;
+  resolveNote?: string | null;
+  openedBy?: number | string | null;
+  openedAt?: string;
+  closedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type FollowSurveyResponse = {
+  id: number | string;
+  classId?: number | string;
+  bizDate?: string | null;
+  respondentName?: string | null;
+  score?: number;
+  commentText?: string | null;
+  source?: string;
+  createdAt?: string;
+};
+
+export type FollowQualityMetrics = {
+  classId?: number | string;
+  attendanceDayRate?: number | null;
+  attendanceCumulativeRate?: number | null;
+  homeworkCompletionRate?: number | null;
+  mockPassRate?: number | null;
+  examPassRate?: number | null;
+  satisfactionCount?: number;
+  satisfactionAvg?: number | null;
+  evidenceReady?: boolean;
+  evidenceOkSessions?: number;
+  evidenceRequiredSessions?: number;
+  openIssueCount?: number;
+  criticalIssueCount?: number;
+  subsidyId?: number | string | null;
+  subsidyReadySlots?: number | null;
+  subsidyTotalSlots?: number | null;
+  subsidyReady?: boolean | null;
+  subsidyMaterialStatus?: number | null;
+  alerts?: Array<{ level?: string; code?: string; message?: string }>;
+};
+
+export function listFollowSupervisions(classId: number, params?: { bizDate?: string }) {
+  return unwrap<FollowSupervision[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/supervisions`, { params }),
+  );
+}
+
+export function getFollowSupervision(id: number | string) {
+  return unwrap<FollowSupervision>(apiClient.get(`${BASE}/follow-supervisions/${id}`));
+}
+
+export function createFollowSupervision(
+  classId: number,
+  payload: { bizDate: string; scheduleId?: number; inspectorName?: string; remark?: string },
+) {
+  return unwrap<FollowSupervision>(
+    apiClient.post(`${BASE}/info-classes/${classId}/follow/supervisions`, payload),
+  );
+}
+
+export function patchFollowSupervisionItem(
+  itemId: number | string,
+  payload: { result?: string; remark?: string },
+) {
+  return unwrap<FollowSupervisionItem>(
+    apiClient.patch(`${BASE}/follow-supervision-items/${itemId}`, payload),
+  );
+}
+
+export function submitFollowSupervision(
+  id: number | string,
+  payload: { conclusion?: string; remark?: string },
+) {
+  return unwrap<FollowSupervision>(
+    apiClient.post(`${BASE}/follow-supervisions/${id}/submit`, payload),
+  );
+}
+
+export function closeFollowSupervision(id: number | string) {
+  return unwrap<FollowSupervision>(apiClient.post(`${BASE}/follow-supervisions/${id}/close`));
+}
+
+export function listFollowIssues(classId: number, params?: { status?: string }) {
+  return unwrap<FollowIssue[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/issues`, { params }),
+  );
+}
+
+export function createFollowIssue(
+  classId: number,
+  payload: {
+    title: string;
+    description?: string;
+    severity?: string;
+    assigneeName?: string;
+    dueDate?: string;
+    supervisionId?: number | string;
+  },
+) {
+  return unwrap<FollowIssue>(
+    apiClient.post(`${BASE}/info-classes/${classId}/follow/issues`, payload),
+  );
+}
+
+export function transitionFollowIssue(
+  id: number | string,
+  payload: { status: string; resolveNote?: string; assigneeName?: string },
+) {
+  return unwrap<FollowIssue>(apiClient.post(`${BASE}/follow-issues/${id}/transition`, payload));
+}
+
+export function listFollowSurveys(classId: number) {
+  return unwrap<FollowSurveyResponse[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/surveys`),
+  );
+}
+
+export function createFollowSurvey(
+  classId: number,
+  payload: { score: number; respondentName?: string; commentText?: string; bizDate?: string },
+) {
+  return unwrap<FollowSurveyResponse>(
+    apiClient.post(`${BASE}/info-classes/${classId}/follow/surveys`, payload),
+  );
+}
+
+export function getFollowQualityMetrics(classId: number) {
+  return unwrap<FollowQualityMetrics>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/quality-metrics`),
   );
 }
 
@@ -2793,6 +3057,8 @@ export interface TrainAttendanceItem {
   userId?: number;
   userName?: string;
   attendanceDate?: string;
+  /** 课次 ID；空=按日考勤 */
+  scheduleId?: number | null;
   status?: number;
   checkInTime?: string;
   checkOutTime?: string;
@@ -2807,6 +3073,10 @@ export function pageAttendances(params: {
   classId?: number;
   userId?: number;
   attendanceDate?: string;
+  /** 按课次筛选 */
+  scheduleId?: number;
+  /** true=仅 schedule_id IS NULL 的按日记录 */
+  unscheduledOnly?: boolean;
   status?: number;
   keyword?: string;
 }) {
@@ -2819,6 +3089,7 @@ export function createAttendance(payload: {
   userId: number;
   userName?: string;
   attendanceDate: string;
+  scheduleId?: number | null;
   status?: number;
   checkInTime?: string;
   remark?: string;
@@ -2833,6 +3104,7 @@ export function updateAttendance(
     checkInTime?: string;
     checkOutTime?: string;
     remark?: string;
+    scheduleId?: number | null;
     photoPath?: string;
     videoPath?: string;
   },
@@ -2846,6 +3118,7 @@ export function signInAttendance(payload: {
   userId: number;
   userName?: string;
   attendanceDate: string;
+  scheduleId?: number | null;
   status?: number;
   checkInTime?: string;
   remark?: string;

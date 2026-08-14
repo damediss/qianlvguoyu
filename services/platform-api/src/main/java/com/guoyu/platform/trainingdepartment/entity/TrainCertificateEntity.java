@@ -18,6 +18,12 @@ public class TrainCertificateEntity {
 
   /** 项目ID */
   private Long projectId;
+  /** 班级ID */
+  private Long classId;
+  /** 花名册学员ID */
+  private Long peopleId;
+  /** 模板ID */
+  private Long templateId;
   /** 用户ID */
   private Long userId;
   private String userName;
@@ -53,6 +59,12 @@ public class TrainCertificateEntity {
   public void setId(Long id) { this.id = id; }
   public Long getProjectId() { return projectId; }
   public void setProjectId(Long projectId) { this.projectId = projectId; }
+  public Long getClassId() { return classId; }
+  public void setClassId(Long classId) { this.classId = classId; }
+  public Long getPeopleId() { return peopleId; }
+  public void setPeopleId(Long peopleId) { this.peopleId = peopleId; }
+  public Long getTemplateId() { return templateId; }
+  public void setTemplateId(Long templateId) { this.templateId = templateId; }
   public Long getUserId() { return userId; }
   public void setUserId(Long userId) { this.userId = userId; }
   public String getUserName() { return userName; }

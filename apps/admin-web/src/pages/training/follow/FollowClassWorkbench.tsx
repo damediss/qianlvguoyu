@@ -50,6 +50,7 @@ import { FollowHomeworkTab } from './FollowHomeworkTab';
 import { FollowMockExamTab } from './FollowMockExamTab';
 import { FollowEvidenceTab } from './FollowEvidenceTab';
 import { FollowLogsSupervisionTab } from './FollowLogsSupervisionTab';
+import { ClassRolesPanel } from '../ClassRolesPanel';
 
 type ScheduleDraftItem = Record<string, unknown> & {
   _key: string;
@@ -104,6 +105,13 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
 
   const dateStr = bizDate ? bizDate.format('YYYY-MM-DD') : '';
   const hasBizDate = Boolean(dateStr);
+  /** 课次跟班：sessionKey 为课次 id；day=按日（schedule_id 空） */
+  const selectedScheduleId = useMemo(() => {
+    if (sessionKey === 'day') return null;
+    const n = Number(sessionKey);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [sessionKey]);
+  const isSessionAttendance = selectedScheduleId != null;
   const { data: scheduleStatus, refetch: refetchScheduleStatus } = useQuery({
     queryKey: ['follow-schedule-status', classIdNum],
     queryFn: () => trainApi.getClassScheduleStatus(classIdNum!),
@@ -380,13 +388,14 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const classRoles = roleSummary?.roles ?? [];
 
   const { data: attendancePage, isLoading: attendanceLoading, isError: attendanceError } = useQuery({
-    queryKey: ['follow-attendance', classIdNum, dateStr],
+    queryKey: ['follow-attendance', classIdNum, dateStr, sessionKey],
     queryFn: () =>
       trainApi.pageAttendances({
         page: 1,
         pageSize: 500,
         classId: classIdNum!,
         attendanceDate: dateStr,
+        ...(isSessionAttendance ? { scheduleId: selectedScheduleId! } : {}),
       }),
     enabled: classIdNum != null && classIdNum > 0 && hasBizDate,
     retry: false,
@@ -419,13 +428,42 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
     retry: false,
   });
 
+  const { data: qualityMetrics, isLoading: qualityMetricsLoading } = useQuery({
+    queryKey: ['follow-quality-metrics', classIdNum],
+    queryFn: () => trainApi.getFollowQualityMetrics(classIdNum!),
+    enabled: classIdNum != null && classIdNum > 0,
+    retry: false,
+  });
+
   const attendanceMap = useMemo(() => {
     const map = new Map<string, trainApi.TrainAttendanceItem>();
-    for (const row of attendancePage?.items ?? []) {
-      if (row.userId != null) map.set(String(row.userId), row);
+    const rows = attendancePage?.items ?? [];
+    if (isSessionAttendance) {
+      for (const row of rows) {
+        if (row.userId != null) map.set(String(row.userId), row);
+      }
+      return map;
+    }
+    // 按日：优先 schedule_id 空；否则同日多课次「任一有效出勤即出勤」
+    const byUser = new Map<string, trainApi.TrainAttendanceItem[]>();
+    for (const row of rows) {
+      if (row.userId == null) continue;
+      const key = String(row.userId);
+      const list = byUser.get(key) ?? [];
+      list.push(row);
+      byUser.set(key, list);
+    }
+    for (const [uid, list] of byUser) {
+      const dayLevel = list.find((r) => r.scheduleId == null || r.scheduleId === undefined);
+      if (dayLevel) {
+        map.set(uid, dayLevel);
+        continue;
+      }
+      const present = list.find((r) => r.status != null && r.status > 0);
+      map.set(uid, present ?? list[0]);
     }
     return map;
-  }, [attendancePage?.items]);
+  }, [attendancePage?.items, isSessionAttendance]);
 
   const dayStats = useMemo(() => {
     let onTime = 0;
@@ -542,10 +580,17 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       const uid = toNumId(student.id);
       if (uid == null) return Promise.reject(new Error('无效学员ID'));
       const existing = attendanceMap.get(String(student.id));
-      if (existing?.id) {
+      // 按日视图若折叠自课次记录，不可直接 update 课次行冒充按日
+      const canUpdateExisting =
+        existing?.id &&
+        (isSessionAttendance
+          ? Number(existing.scheduleId) === selectedScheduleId
+          : existing.scheduleId == null || existing.scheduleId === undefined);
+      if (canUpdateExisting && existing?.id) {
         return trainApi.updateAttendance(existing.id, {
           status: 1,
           checkInTime: dayjs().format('HH:mm:ss'),
+          scheduleId: selectedScheduleId,
         });
       }
       return trainApi.signInAttendance({
@@ -554,15 +599,17 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
         userId: uid,
         userName: student.realname,
         attendanceDate: dateStr,
+        scheduleId: selectedScheduleId,
         status: 1,
         checkInTime: dayjs().format('HH:mm:ss'),
       });
     },
     onSuccess: () => {
-      message.success('已标记出勤');
+      message.success(isSessionAttendance ? '已标记本课次出勤' : '已标记当日出勤');
       queryClient.invalidateQueries({ queryKey: ['follow-attendance', classIdNum] });
       queryClient.invalidateQueries({ queryKey: ['follow-attendance-all', classIdNum] });
       queryClient.invalidateQueries({ queryKey: ['follow-student-attendance-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['follow-quality-metrics', classIdNum] });
     },
     onError: (e: Error) => message.error(e.message || '考勤操作失败（请确认账号具备 train:attendance 权限）'),
   });
@@ -573,8 +620,16 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       const uid = toNumId(student.id);
       if (uid == null) return Promise.reject(new Error('无效学员ID'));
       const existing = attendanceMap.get(String(student.id));
-      if (existing?.id) {
-        return trainApi.updateAttendance(existing.id, { status: 0 });
+      const canUpdateExisting =
+        existing?.id &&
+        (isSessionAttendance
+          ? Number(existing.scheduleId) === selectedScheduleId
+          : existing.scheduleId == null || existing.scheduleId === undefined);
+      if (canUpdateExisting && existing?.id) {
+        return trainApi.updateAttendance(existing.id, {
+          status: 0,
+          scheduleId: selectedScheduleId,
+        });
       }
       return trainApi.createAttendance({
         classId: classIdNum ?? undefined,
@@ -582,14 +637,16 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
         userId: uid,
         userName: student.realname,
         attendanceDate: dateStr,
+        scheduleId: selectedScheduleId,
         status: 0,
       });
     },
     onSuccess: () => {
-      message.success('已标记缺勤');
+      message.success(isSessionAttendance ? '已标记本课次缺勤' : '已标记当日缺勤');
       queryClient.invalidateQueries({ queryKey: ['follow-attendance', classIdNum] });
       queryClient.invalidateQueries({ queryKey: ['follow-attendance-all', classIdNum] });
       queryClient.invalidateQueries({ queryKey: ['follow-student-attendance-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['follow-quality-metrics', classIdNum] });
     },
     onError: (e: Error) => message.error(e.message || '考勤操作失败'),
   });
@@ -657,16 +714,6 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       ),
     },
   ];
-
-  const roleRows = useMemo(() => {
-    return classRoles.map((r) => ({
-      key: r.id,
-      role: r.roleName,
-      name: r.displayName || '—',
-      phone: r.phone,
-      source: r.unboundWarning ? 'train_class_role（未绑定 App 账号）' : 'train_class_role',
-    }));
-  }, [classRoles]);
 
   const leaders = classRoles.filter((r) => r.roleCode === 'monitor');
   const staffList = classRoles.filter((r) => r.roleCode === 'follow_staff');
@@ -743,9 +790,11 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
           </span>
           <Tag>
             {hasBizDate
-              ? scheduleItems.length
-                ? `当日课次 ${scheduleItems.length}`
-                : '无排课 · 按日模式'
+              ? isSessionAttendance
+                ? '课次考勤'
+                : scheduleItems.length
+                  ? `按日汇总 · 当日 ${scheduleItems.length} 课次`
+                  : '按日考勤 · 无排课'
               : '未选业务日'}
           </Tag>
         </Space>
@@ -766,12 +815,12 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Card size="small">
-                      <Statistic title="当日实到" value={presentCount} suffix={`/ ${dayStats.base || '—'}`} />
+                      <Statistic title={isSessionAttendance ? '本课次实到' : '当日实到'} value={presentCount} suffix={`/ ${dayStats.base || '—'}`} />
                     </Card>
                   </Col>
                   <Col xs={12} sm={8} md={4}>
                     <Card size="small">
-                      <Statistic title="当日出勤率" value={attendanceRate} suffix="%" />
+                      <Statistic title={isSessionAttendance ? '本课次出勤率' : '当日出勤率'} value={attendanceRate} suffix="%" />
                       <Progress
                         percent={attendanceRate}
                         showInfo={false}
@@ -798,7 +847,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                   </Col>
                 </Row>
 
-                <Card size="small" title={`当日考勤构成（${hasBizDate ? dateStr : '未选日期'}）`} style={{ marginBottom: 16 }}>
+                <Card size="small" title={`${isSessionAttendance ? '本课次' : '当日'}考勤构成（${hasBizDate ? dateStr : '未选日期'}）`} style={{ marginBottom: 16 }}>
                   <Row gutter={[12, 12]}>
                     <Col xs={12} sm={8} md={4}><Statistic title="出勤" value={dayStats.onTime} valueStyle={{ color: '#389e0d' }} /></Col>
                     <Col xs={12} sm={8} md={4}><Statistic title="迟到" value={dayStats.late} valueStyle={{ color: '#d48806' }} /></Col>
@@ -1264,7 +1313,8 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     </Button>
                   </Upload>
                   <Typography.Text type="secondary">
-                    支持人社/培训平台「考勤信息列表」.xls/.xlsx；按身份证匹配本班学员，同日多课次合并写入
+                    支持人社/培训平台「考勤信息列表」.xls/.xlsx；按身份证匹配本班学员，同日多课次合并为「按日」记录（schedule 空）。
+                    顶部选择具体课次后，出勤/缺勤写入该课次。
                   </Typography.Text>
                 </Space>
                 <Table
@@ -1534,33 +1584,15 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
           {
             key: 'roles',
             label: '角色',
-            children: (
-              <div>
-                <Alert
-                  type="info"
-                  showIcon
-                  style={{ marginBottom: 12 }}
-                  message="班级角色来自 train_class_role"
-                  description={
-                    (roleSummary?.unboundCount ?? 0) > 0
-                      ? `有 ${roleSummary?.unboundCount} 人未绑定 App 账号，指派后需确保 PHP/SaaS 账号可登录。维护入口：开班准备 → 班级角色。`
-                      : '人员维护请前往「开班准备 → 班级角色」；班长仍可在学员列表设置。'
-                  }
+            children:
+              classId != null ? (
+                <ClassRolesPanel
+                  classId={classId}
+                  contextHint="在此指派后，开班准备「班级角色」将同步显示。"
                 />
-                <Table
-                  rowKey="key"
-                  dataSource={roleRows}
-                  pagination={false}
-                  locale={{ emptyText: '暂无角色人员，请先在开班准备设置班级角色/班长' }}
-                  columns={[
-                    { title: '角色', dataIndex: 'role', width: 180 },
-                    { title: '姓名', dataIndex: 'name', width: 140 },
-                    { title: '手机', dataIndex: 'phone', width: 140, render: (v?: string) => v || '—' },
-                    { title: '来源', dataIndex: 'source' },
-                  ]}
-                />
-              </div>
-            ),
+              ) : (
+                <Empty description="无效班级" />
+              ),
           },
           {
             key: 'evidence',
@@ -1586,32 +1618,143 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
             key: 'metrics',
             label: '指标',
             children: (
-              <Row gutter={[12, 12]}>
-                <Col xs={12} md={6}>
-                  <Card size="small">
-                    <Statistic title="出勤率（当日）" value={attendanceRate} suffix="%" prefix={<CheckCircleOutlined />} />
-                  </Card>
-                </Col>
-                <Col xs={12} md={6}>
-                  <Card size="small" loading={classStats.loading}>
-                    <Statistic title="出勤率（累计）" value={classStats.cumulativeRate} suffix="%" prefix={<LineChartOutlined />} />
-                  </Card>
-                </Col>
-                <Col xs={12} md={6}>
-                  <Card size="small"><Statistic title="作业完成率" value="—" prefix={<EditOutlined />} /></Card>
-                </Col>
-                <Col xs={12} md={6}>
-                  <Card size="small"><Statistic title="满意度" value="—" prefix={<StarOutlined />} /></Card>
-                </Col>
-                <Col span={24}>
-                  <Alert
-                    type="info"
-                    showIcon
-                    message="出勤率已接入考勤数据；作业/通过率/满意度将在后续里程碑对接"
-                    description={`口径：当日实到÷学员数；累计=有效出勤记录（出勤/迟到/早退）÷全部考勤记录。当前累计覆盖 ${classStats.recordDays} 个有考勤日。`}
-                  />
-                </Col>
-              </Row>
+              <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                <Row gutter={[12, 12]}>
+                  <Col xs={12} md={6}>
+                    <Card size="small">
+                      <Statistic
+                        title="出勤率（当日）"
+                        value={attendanceRate}
+                        suffix="%"
+                        prefix={<CheckCircleOutlined />}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={classStats.loading}>
+                      <Statistic
+                        title="出勤率（累计）"
+                        value={classStats.cumulativeRate}
+                        suffix="%"
+                        prefix={<LineChartOutlined />}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading || homeworkMetricsLoading}>
+                      <Statistic
+                        title="作业完成率"
+                        value={qualityMetrics?.homeworkCompletionRate ?? homeworkMetrics?.completionRate ?? '—'}
+                        suffix={
+                          qualityMetrics?.homeworkCompletionRate != null || homeworkMetrics?.completionRate != null
+                            ? '%'
+                            : undefined
+                        }
+                        prefix={<EditOutlined />}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading}>
+                      <Statistic
+                        title="满意度"
+                        value={qualityMetrics?.satisfactionAvg ?? '—'}
+                        suffix={
+                          qualityMetrics?.satisfactionCount
+                            ? `（${qualityMetrics.satisfactionCount} 份）`
+                            : undefined
+                        }
+                        prefix={<StarOutlined />}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading || mockMetricsLoading}>
+                      <Statistic
+                        title="模拟通过率"
+                        value={qualityMetrics?.mockPassRate ?? '—'}
+                        suffix={qualityMetrics?.mockPassRate != null ? '%' : undefined}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading}>
+                      <Statistic
+                        title="考试通过率"
+                        value={qualityMetrics?.examPassRate ?? '—'}
+                        suffix={qualityMetrics?.examPassRate != null ? '%' : undefined}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading}>
+                      <Statistic
+                        title="影像留痕"
+                        value={
+                          qualityMetrics?.evidenceRequiredSessions
+                            ? `${qualityMetrics.evidenceOkSessions ?? 0}/${qualityMetrics.evidenceRequiredSessions}`
+                            : '—'
+                        }
+                        suffix={qualityMetrics?.evidenceReady ? '齐套' : undefined}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading}>
+                      <Statistic
+                        title="补贴材料齐套"
+                        value={
+                          qualityMetrics?.subsidyId == null
+                            ? '未建单'
+                            : qualityMetrics.subsidyTotalSlots
+                              ? `${qualityMetrics.subsidyReadySlots ?? 0}/${qualityMetrics.subsidyTotalSlots}`
+                              : qualityMetrics.subsidyReady
+                                ? '已齐套'
+                                : '—'
+                        }
+                        valueStyle={{
+                          color:
+                            qualityMetrics?.subsidyReady === true
+                              ? '#3f8600'
+                              : qualityMetrics?.subsidyReady === false
+                                ? '#cf1322'
+                                : undefined,
+                        }}
+                      />
+                    </Card>
+                  </Col>
+                </Row>
+
+                <Card size="small" title="质量预警" loading={qualityMetricsLoading}>
+                  {(qualityMetrics?.alerts?.length ?? 0) === 0 ? (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无预警" />
+                  ) : (
+                    <Space direction="vertical" style={{ width: '100%' }}>
+                      {(qualityMetrics?.alerts ?? []).map((a, idx) => (
+                        <Alert
+                          key={`${a.code}-${idx}`}
+                          type={a.level === 'critical' ? 'error' : 'warning'}
+                          showIcon
+                          message={a.message || a.code}
+                        />
+                      ))}
+                    </Space>
+                  )}
+                </Card>
+
+                <Alert
+                  type="info"
+                  showIcon
+                  message="口径说明"
+                  description={
+                    <>
+                      当日出勤=实到÷名单人数；累计出勤=有效出勤记录÷全部考勤记录（覆盖 {classStats.recordDays}{' '}
+                      个有考勤日）。作业完成率=已交有效份数÷应发份数。模拟通过率=已评通过份数÷已评份数。考试通过率=得分≥及格线人数÷有成绩人数。满意度=答卷均分（1～5）。补贴齐套=配方必填槽位均已有材料（或已生成材料包）。
+                      预警阈值：累计出勤/作业完成率 &lt;80%、满意度 &lt;3.5、影像未齐套、严重整改未关、补贴缺项。
+                    </>
+                  }
+                />
+              </Space>
             ),
           },
         ]}

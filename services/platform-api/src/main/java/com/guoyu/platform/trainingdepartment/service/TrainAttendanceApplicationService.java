@@ -14,12 +14,14 @@ import com.guoyu.platform.trainingdepartment.dto.TrainAttendanceUpdateReq;
 import com.guoyu.platform.trainingdepartment.entity.TrainAttendanceEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainScheduleEntity;
 import com.guoyu.platform.trainingdepartment.follow.FollowOpEventCode;
 import com.guoyu.platform.trainingdepartment.follow.FollowOpLogCommand;
 import com.guoyu.platform.trainingdepartment.follow.FollowOpLogWriter;
 import com.guoyu.platform.trainingdepartment.mapper.TrainAttendanceMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainScheduleMapper;
 import com.guoyu.platform.trainingdepartment.service.TrainAttendanceImportSupport.MergedDay;
 import com.guoyu.platform.trainingdepartment.service.TrainAttendanceImportSupport.ParsedRow;
 import com.guoyu.platform.trainingdepartment.vo.TrainAttendanceImportResultVO;
@@ -29,6 +31,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -43,6 +46,7 @@ public class TrainAttendanceApplicationService {
   private final TrainAttendanceMapper mapper;
   private final TrainPeopleListMapper peopleListMapper;
   private final TrainInfoClassMapper infoClassMapper;
+  private final TrainScheduleMapper scheduleMapper;
   private final TrainAttendanceImportSupport importSupport;
   private final FollowOpLogWriter opLogWriter;
 
@@ -50,11 +54,13 @@ public class TrainAttendanceApplicationService {
       TrainAttendanceMapper mapper,
       TrainPeopleListMapper peopleListMapper,
       TrainInfoClassMapper infoClassMapper,
+      TrainScheduleMapper scheduleMapper,
       TrainAttendanceImportSupport importSupport,
       FollowOpLogWriter opLogWriter) {
     this.mapper = mapper;
     this.peopleListMapper = peopleListMapper;
     this.infoClassMapper = infoClassMapper;
+    this.scheduleMapper = scheduleMapper;
     this.importSupport = importSupport;
     this.opLogWriter = opLogWriter;
   }
@@ -70,7 +76,14 @@ public class TrainAttendanceApplicationService {
     if (req.getClassId() != null) wrapper.eq(TrainAttendanceEntity::getClassId, req.getClassId());
     if (req.getUserId() != null) wrapper.eq(TrainAttendanceEntity::getUserId, req.getUserId());
     if (req.getStatus() != null) wrapper.eq(TrainAttendanceEntity::getStatus, req.getStatus());
-    if (StringUtils.hasText(req.getAttendanceDate())) wrapper.eq(TrainAttendanceEntity::getAttendanceDate, req.getAttendanceDate());
+    if (StringUtils.hasText(req.getAttendanceDate())) {
+      wrapper.eq(TrainAttendanceEntity::getAttendanceDate, req.getAttendanceDate());
+    }
+    if (req.getScheduleId() != null) {
+      wrapper.eq(TrainAttendanceEntity::getScheduleId, req.getScheduleId());
+    } else if (Boolean.TRUE.equals(req.getUnscheduledOnly())) {
+      wrapper.isNull(TrainAttendanceEntity::getScheduleId);
+    }
     if (StringUtils.hasText(req.getKeyword())) {
       wrapper.like(TrainAttendanceEntity::getUserName, req.getKeyword());
     }
@@ -86,6 +99,17 @@ public class TrainAttendanceApplicationService {
   public TrainAttendanceVO create(TrainAttendanceCreateReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
+    Long scheduleId = normalizeScheduleId(req.getClassId(), req.getAttendanceDate(), req.getScheduleId());
+
+    TrainAttendanceEntity existing = findByScope(
+        tenantId, req.getClassId(), req.getUserId(), req.getAttendanceDate(), scheduleId);
+    if (existing != null) {
+      applyMutableFields(existing, req, scheduleId);
+      mapper.updateById(existing);
+      writeSignLog(existing, "更新考勤");
+      return toVO(existing);
+    }
+
     TrainAttendanceEntity entity = new TrainAttendanceEntity();
     entity.setTenantId(tenantId);
     entity.setCreatedBy(userId);
@@ -94,6 +118,7 @@ public class TrainAttendanceApplicationService {
     entity.setUserId(req.getUserId());
     entity.setUserName(req.getUserName());
     entity.setAttendanceDate(req.getAttendanceDate());
+    entity.setScheduleId(scheduleId);
     entity.setStatus(req.getStatus());
     entity.setCheckInTime(req.getCheckInTime());
     entity.setCheckOutTime(req.getCheckOutTime());
@@ -103,15 +128,7 @@ public class TrainAttendanceApplicationService {
     entity.setSortNumber(req.getSortNumber());
     entity.setDeleted(0);
     mapper.insert(entity);
-
-    if (req.getClassId() != null) {
-      opLogWriter.write(FollowOpLogCommand.of(req.getClassId(), FollowOpEventCode.ATTENDANCE_SIGN_IN)
-          .bizDate(req.getAttendanceDate())
-          .summary((req.getUserName() != null ? req.getUserName() : "学员")
-              + " · " + (req.getStatus() != null ? req.getStatus() : ""))
-          .target("attendance", entity.getId()));
-    }
-
+    writeSignLog(entity, null);
     return toVO(entity);
   }
 
@@ -123,6 +140,14 @@ public class TrainAttendanceApplicationService {
     if (req.getUserId() != null) entity.setUserId(req.getUserId());
     if (req.getUserName() != null) entity.setUserName(req.getUserName());
     if (req.getAttendanceDate() != null) entity.setAttendanceDate(req.getAttendanceDate());
+    if (req.getScheduleId() != null || (req.getAttendanceDate() != null && entity.getScheduleId() != null)) {
+      Long classId = req.getClassId() != null ? req.getClassId() : entity.getClassId();
+      String date = req.getAttendanceDate() != null ? req.getAttendanceDate() : entity.getAttendanceDate();
+      Long scheduleId = req.getScheduleId() != null
+          ? normalizeScheduleId(classId, date, req.getScheduleId())
+          : entity.getScheduleId();
+      entity.setScheduleId(scheduleId);
+    }
     if (req.getStatus() != null) entity.setStatus(req.getStatus());
     if (req.getCheckInTime() != null) entity.setCheckInTime(req.getCheckInTime());
     if (req.getCheckOutTime() != null) entity.setCheckOutTime(req.getCheckOutTime());
@@ -135,6 +160,7 @@ public class TrainAttendanceApplicationService {
     if (entity.getClassId() != null) {
       opLogWriter.write(FollowOpLogCommand.of(entity.getClassId(), FollowOpEventCode.ATTENDANCE_BATCH_UPDATE)
           .bizDate(entity.getAttendanceDate())
+          .scheduleId(entity.getScheduleId())
           .title("更新考勤")
           .summary((entity.getUserName() != null ? entity.getUserName() : "学员")
               + " · " + (entity.getStatus() != null ? entity.getStatus() : ""))
@@ -158,7 +184,7 @@ public class TrainAttendanceApplicationService {
 
   /**
    * 导入人社/培训平台「考勤信息列表」Excel，按身份证匹配本班学员，
-   * 同日多课次合并后 upsert（classId + peopleId + attendanceDate）。
+   * 同日多课次合并后 upsert（classId + peopleId + attendanceDate，schedule_id 空=按日）。
    */
   @Transactional
   public TrainAttendanceImportResultVO importFromExcel(Long classId, MultipartFile file) {
@@ -219,13 +245,9 @@ public class TrainAttendanceApplicationService {
       if (student == null) {
         continue;
       }
-      TrainAttendanceEntity existing = mapper.selectOne(new LambdaQueryWrapper<TrainAttendanceEntity>()
-          .eq(TrainAttendanceEntity::getTenantId, tenantId)
-          .eq(TrainAttendanceEntity::getClassId, classId)
-          .eq(TrainAttendanceEntity::getUserId, student.getId())
-          .eq(TrainAttendanceEntity::getAttendanceDate, day.attendanceDate)
-          .eq(TrainAttendanceEntity::getDeleted, 0)
-          .last("LIMIT 1"));
+      // 导入写入按日维度（schedule_id IS NULL）
+      TrainAttendanceEntity existing = findByScope(
+          tenantId, classId, student.getId(), day.attendanceDate, null);
 
       if (existing == null) {
         TrainAttendanceEntity entity = new TrainAttendanceEntity();
@@ -236,6 +258,7 @@ public class TrainAttendanceApplicationService {
         entity.setUserId(student.getId());
         entity.setUserName(StringUtils.hasText(day.name) ? day.name : student.getRealname());
         entity.setAttendanceDate(day.attendanceDate);
+        entity.setScheduleId(null);
         entity.setStatus(day.status);
         entity.setCheckInTime(blankToNull(day.checkInTime));
         entity.setCheckOutTime(blankToNull(day.checkOutTime));
@@ -275,8 +298,79 @@ public class TrainAttendanceApplicationService {
         failures);
   }
 
+  private void applyMutableFields(TrainAttendanceEntity entity, TrainAttendanceCreateReq req, Long scheduleId) {
+    if (req.getProjectId() != null) entity.setProjectId(req.getProjectId());
+    if (req.getClassId() != null) entity.setClassId(req.getClassId());
+    if (req.getUserName() != null) entity.setUserName(req.getUserName());
+    entity.setScheduleId(scheduleId);
+    if (req.getStatus() != null) entity.setStatus(req.getStatus());
+    if (req.getCheckInTime() != null) entity.setCheckInTime(req.getCheckInTime());
+    if (req.getCheckOutTime() != null) entity.setCheckOutTime(req.getCheckOutTime());
+    if (req.getPhotoPath() != null) entity.setPhotoPath(req.getPhotoPath());
+    if (req.getVideoPath() != null) entity.setVideoPath(req.getVideoPath());
+    if (req.getRemark() != null) entity.setRemark(req.getRemark());
+    if (req.getSortNumber() != null) entity.setSortNumber(req.getSortNumber());
+  }
+
+  private void writeSignLog(TrainAttendanceEntity entity, String title) {
+    if (entity.getClassId() == null) {
+      return;
+    }
+    FollowOpLogCommand cmd = FollowOpLogCommand.of(entity.getClassId(), FollowOpEventCode.ATTENDANCE_SIGN_IN)
+        .bizDate(entity.getAttendanceDate())
+        .scheduleId(entity.getScheduleId())
+        .summary((entity.getUserName() != null ? entity.getUserName() : "学员")
+            + " · " + (entity.getStatus() != null ? entity.getStatus() : ""))
+        .target("attendance", entity.getId());
+    if (title != null) {
+      cmd.title(title);
+    }
+    opLogWriter.write(cmd);
+  }
+
+  /**
+   * 校验课次归属班级与业务日；返回规范化 scheduleId（非法则抛错）。
+   */
+  private Long normalizeScheduleId(Long classId, String attendanceDate, Long scheduleId) {
+    if (scheduleId == null) {
+      return null;
+    }
+    TrainScheduleEntity schedule = scheduleMapper.selectById(scheduleId);
+    if (schedule == null || (schedule.getDeleted() != null && schedule.getDeleted() == 1)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "课次不存在");
+    }
+    if (classId != null && !Objects.equals(schedule.getClassId(), classId)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "课次不属于当前班级");
+    }
+    if (StringUtils.hasText(attendanceDate)
+        && StringUtils.hasText(schedule.getScheduleDate())
+        && !attendanceDate.equals(schedule.getScheduleDate())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "课次日期与考勤业务日不一致");
+    }
+    return scheduleId;
+  }
+
+  private TrainAttendanceEntity findByScope(
+      Long tenantId, Long classId, Long userId, String attendanceDate, Long scheduleId) {
+    if (classId == null || userId == null || !StringUtils.hasText(attendanceDate)) {
+      return null;
+    }
+    LambdaQueryWrapper<TrainAttendanceEntity> wrapper = new LambdaQueryWrapper<TrainAttendanceEntity>()
+        .eq(TrainAttendanceEntity::getTenantId, tenantId)
+        .eq(TrainAttendanceEntity::getClassId, classId)
+        .eq(TrainAttendanceEntity::getUserId, userId)
+        .eq(TrainAttendanceEntity::getAttendanceDate, attendanceDate)
+        .eq(TrainAttendanceEntity::getDeleted, 0)
+        .last("LIMIT 1");
+    if (scheduleId == null) {
+      wrapper.isNull(TrainAttendanceEntity::getScheduleId);
+    } else {
+      wrapper.eq(TrainAttendanceEntity::getScheduleId, scheduleId);
+    }
+    return mapper.selectOne(wrapper);
+  }
+
   private Map<String, TrainPeopleListEntity> loadStudentIdCardMap(Long classId) {
-    // 与班级学员列表一致：按 train_class_id + student
     List<TrainPeopleListEntity> students = peopleListMapper.selectList(
         new LambdaQueryWrapper<TrainPeopleListEntity>()
             .eq(TrainPeopleListEntity::getTrainClassId, classId)
@@ -324,8 +418,8 @@ public class TrainAttendanceApplicationService {
 
   private TrainAttendanceVO toVO(TrainAttendanceEntity entity) {
     return new TrainAttendanceVO(entity.getId(), entity.getProjectId(), entity.getClassId(),
-        entity.getUserId(), entity.getUserName(), entity.getAttendanceDate(), entity.getStatus(),
-        entity.getCheckInTime(), entity.getCheckOutTime(), entity.getPhotoPath(),
+        entity.getUserId(), entity.getUserName(), entity.getAttendanceDate(), entity.getScheduleId(),
+        entity.getStatus(), entity.getCheckInTime(), entity.getCheckOutTime(), entity.getPhotoPath(),
         entity.getVideoPath(), entity.getRemark(), entity.getSortNumber(), entity.getTenantId(),
         entity.getCreatedBy(), entity.getCreateTime(), entity.getUpdateTime());
   }

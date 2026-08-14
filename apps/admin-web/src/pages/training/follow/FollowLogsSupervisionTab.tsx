@@ -1,13 +1,12 @@
 /**
  * 跟班 · 日志·督导
- * 过程动态（自动）/ 工作日志（手写）/ 督导（M4 占位）
+ * 过程动态（自动）/ 工作日志（手写）/ 督导检查与整改（L5）
  */
 import { useMemo, useState } from 'react';
 import {
   Alert,
   Button,
   DatePicker,
-  Empty,
   Form,
   Input,
   Modal,
@@ -31,6 +30,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs, { type Dayjs } from 'dayjs';
 import * as trainApi from '../../../api/training';
 import type { FollowOpLog, FollowWorkLog } from '../../../api/training';
+import { FollowSupervisionPanel } from './FollowSupervisionPanel';
 
 type Props = {
   classId: number;
@@ -46,6 +46,7 @@ const CATEGORY_OPTIONS = [
   { value: 'work_log', label: '工作日志' },
   { value: 'task', label: '任务' },
   { value: 'role', label: '角色' },
+  { value: 'supervision', label: '督导' },
 ];
 
 function severityTag(level?: string) {
@@ -376,7 +377,11 @@ export function FollowLogsSupervisionTab({ classId, defaultBizDate }: Props) {
             dataSource={opQuery.data || []}
             columns={opColumns}
             pagination={{ pageSize: 20 }}
-            locale={{ emptyText: '当日暂无过程动态；完成跟班操作后将自动出现' }}
+            locale={{
+              emptyText: dayStr
+                ? '当日暂无过程动态；完成跟班操作后将自动出现'
+                : '暂无过程动态；完成跟班操作后将自动出现',
+            }}
             rowClassName={(row) =>
               row.severityLevel === 'warn' || row.severityLevel === 'critical' ? 'follow-op-warn-row' : ''
             }
@@ -396,20 +401,7 @@ export function FollowLogsSupervisionTab({ classId, defaultBizDate }: Props) {
         />
       )}
 
-      {section === 'supervision' && (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={
-            <div>
-              <Typography.Text strong>督导检查 / 异常闭环</Typography.Text>
-              <br />
-              <Typography.Text type="secondary">
-                将在方案 L5（M4）接入检查单与整改流转；过程动态与工作日志已可用。
-              </Typography.Text>
-            </div>
-          }
-        />
-      )}
+      {section === 'supervision' && <FollowSupervisionPanel classId={classId} bizDate={bizDate} />}
 
       <Modal
         title={editing ? '编辑工作日志' : '新增工作日志'}
