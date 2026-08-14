@@ -14,6 +14,9 @@ import com.guoyu.platform.trainingdepartment.dto.TrainAttendanceUpdateReq;
 import com.guoyu.platform.trainingdepartment.entity.TrainAttendanceEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
+import com.guoyu.platform.trainingdepartment.follow.FollowOpEventCode;
+import com.guoyu.platform.trainingdepartment.follow.FollowOpLogCommand;
+import com.guoyu.platform.trainingdepartment.follow.FollowOpLogWriter;
 import com.guoyu.platform.trainingdepartment.mapper.TrainAttendanceMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
@@ -41,16 +44,19 @@ public class TrainAttendanceApplicationService {
   private final TrainPeopleListMapper peopleListMapper;
   private final TrainInfoClassMapper infoClassMapper;
   private final TrainAttendanceImportSupport importSupport;
+  private final FollowOpLogWriter opLogWriter;
 
   public TrainAttendanceApplicationService(
       TrainAttendanceMapper mapper,
       TrainPeopleListMapper peopleListMapper,
       TrainInfoClassMapper infoClassMapper,
-      TrainAttendanceImportSupport importSupport) {
+      TrainAttendanceImportSupport importSupport,
+      FollowOpLogWriter opLogWriter) {
     this.mapper = mapper;
     this.peopleListMapper = peopleListMapper;
     this.infoClassMapper = infoClassMapper;
     this.importSupport = importSupport;
+    this.opLogWriter = opLogWriter;
   }
 
   @Transactional(readOnly = true)
@@ -97,6 +103,15 @@ public class TrainAttendanceApplicationService {
     entity.setSortNumber(req.getSortNumber());
     entity.setDeleted(0);
     mapper.insert(entity);
+
+    if (req.getClassId() != null) {
+      opLogWriter.write(FollowOpLogCommand.of(req.getClassId(), FollowOpEventCode.ATTENDANCE_SIGN_IN)
+          .bizDate(req.getAttendanceDate())
+          .summary((req.getUserName() != null ? req.getUserName() : "学员")
+              + " · " + (req.getStatus() != null ? req.getStatus() : ""))
+          .target("attendance", entity.getId()));
+    }
+
     return toVO(entity);
   }
 
@@ -116,6 +131,16 @@ public class TrainAttendanceApplicationService {
     if (req.getRemark() != null) entity.setRemark(req.getRemark());
     if (req.getSortNumber() != null) entity.setSortNumber(req.getSortNumber());
     mapper.updateById(entity);
+
+    if (entity.getClassId() != null) {
+      opLogWriter.write(FollowOpLogCommand.of(entity.getClassId(), FollowOpEventCode.ATTENDANCE_BATCH_UPDATE)
+          .bizDate(entity.getAttendanceDate())
+          .title("更新考勤")
+          .summary((entity.getUserName() != null ? entity.getUserName() : "学员")
+              + " · " + (entity.getStatus() != null ? entity.getStatus() : ""))
+          .target("attendance", entity.getId()));
+    }
+
     return toVO(entity);
   }
 
@@ -231,6 +256,15 @@ public class TrainAttendanceApplicationService {
 
     log.info("attendance import classId={} totalRows={} merged={} created={} updated={} skipped={}",
         classId, parsed.size(), merged.size(), created, updated, skipped);
+
+    opLogWriter.write(FollowOpLogCommand.of(classId, FollowOpEventCode.ATTENDANCE_IMPORT)
+        .title("导入考勤")
+        .summary("新建 " + created + "，更新 " + updated + "，跳过 " + skipped)
+        .detail(Map.of(
+            "totalRows", parsed.size(),
+            "created", created,
+            "updated", updated,
+            "skipped", skipped)));
 
     return new TrainAttendanceImportResultVO(
         parsed.size(),

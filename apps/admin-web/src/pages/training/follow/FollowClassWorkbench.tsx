@@ -48,6 +48,8 @@ import { FollowPracticeTab } from './FollowPracticeTab';
 import { FollowScheduleChangeTab } from './FollowScheduleChangeTab';
 import { FollowHomeworkTab } from './FollowHomeworkTab';
 import { FollowMockExamTab } from './FollowMockExamTab';
+import { FollowEvidenceTab } from './FollowEvidenceTab';
+import { FollowLogsSupervisionTab } from './FollowLogsSupervisionTab';
 
 type ScheduleDraftItem = Record<string, unknown> & {
   _key: string;
@@ -77,31 +79,6 @@ function toNumId(id: ApiId): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function todayStr() {
-  return dayjs().format('YYYY-MM-DD');
-}
-
-type FollowLog = {
-  id: string;
-  date: string;
-  author: string;
-  content: string;
-  createdAt: string;
-};
-
-function loadLogs(classId: ApiId): FollowLog[] {
-  try {
-    const raw = localStorage.getItem(`follow_logs_${classId}`);
-    return raw ? (JSON.parse(raw) as FollowLog[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveLogs(classId: ApiId, logs: FollowLog[]) {
-  localStorage.setItem(`follow_logs_${classId}`, JSON.stringify(logs));
-}
-
 type Props = {
   classItem: TrainInfoClassListItem;
   onBack: () => void;
@@ -116,9 +93,6 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const [activeTab, setActiveTab] = useState('overview');
   const [bizDate, setBizDate] = useState<Dayjs | null>(dayjs());
   const [sessionKey, setSessionKey] = useState<string>('day');
-  const [logModalOpen, setLogModalOpen] = useState(false);
-  const [logForm] = Form.useForm();
-  const [logs, setLogs] = useState<FollowLog[]>(() => loadLogs(classId));
   const [studentPage, setStudentPage] = useState(1);
   const [detailStudent, setDetailStudent] = useState<ClassStudent | null>(null);
   const [importResult, setImportResult] = useState<trainApi.TrainAttendanceImportResult | null>(null);
@@ -699,22 +673,11 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const chargeList = classRoles.filter((r) => r.roleCode === 'head_teacher');
   const leadTeachers = classRoles.filter((r) => r.roleCode === 'lead_teacher' || r.roleCode === 'assistant');
 
-  const handleSaveLog = async () => {
-    const values = await logForm.validateFields();
-    const next: FollowLog = {
-      id: `${Date.now()}`,
-      date: values.date ? dayjs(values.date).format('YYYY-MM-DD') : todayStr(),
-      author: values.author || '班主任',
-      content: values.content,
-      createdAt: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-    };
-    const merged = [next, ...logs];
-    setLogs(merged);
-    saveLogs(classId, merged);
-    setLogModalOpen(false);
-    logForm.resetFields();
-    message.success('日志已保存（本地暂存，待跟班日志 API 落库）');
-  };
+  const workLogCountQuery = useQuery({
+    queryKey: ['follow-work-logs', classIdNum, 'overview-count'],
+    queryFn: () => trainApi.listFollowWorkLogs(classIdNum!),
+    enabled: classIdNum != null && classIdNum > 0,
+  });
 
   const comingSoon = (title: string, desc: string) => (
     <Empty
@@ -831,7 +794,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     </Card>
                   </Col>
                   <Col xs={12} sm={8} md={4}>
-                    <Card size="small"><Statistic title="跟班日志" value={logs.length} prefix={<HistoryOutlined />} /></Card>
+                    <Card size="small"><Statistic title="跟班日志" value={workLogCountQuery.data?.length ?? 0} prefix={<HistoryOutlined />} /></Card>
                   </Col>
                 </Row>
 
@@ -967,141 +930,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     </Card>
                   </Col>
                 </Row>
-
-                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-                  <Col xs={24} lg={12}>
-                    <Card
-                      size="small"
-                      title="模拟卷概览"
-                      loading={mockMetricsLoading}
-                      extra={
-                        <Button type="link" style={{ padding: 0 }} onClick={() => setActiveTab('mock')}>
-                          模拟考明细 →
-                        </Button>
-                      }
-                    >
-                      <Space size="large" wrap>
-                        <Statistic title="已发布" value={mockMetrics?.taskCount ?? 0} />
-                        <Statistic
-                          title="完成率"
-                          value={mockMetrics?.completionRate ?? 0}
-                          suffix="%"
-                        />
-                        <Statistic
-                          title="平均正确率"
-                          value={mockMetrics?.avgAccuracyRate ?? '—'}
-                          suffix={mockMetrics?.avgAccuracyRate != null ? '%' : undefined}
-                        />
-                        <Statistic
-                          title="已交/应交"
-                          value={`${mockMetrics?.gradedItems ?? 0}/${mockMetrics?.totalItems ?? 0}`}
-                        />
-                      </Space>
-                    </Card>
-                  </Col>
-                  <Col xs={24} lg={12}>
-                    <Card
-                      size="small"
-                      title="作业完成情况"
-                      loading={homeworkMetricsLoading}
-                      extra={
-                        <Button type="link" style={{ padding: 0 }} onClick={() => setActiveTab('homework')}>
-                          作业明细 →
-                        </Button>
-                      }
-                    >
-                      <Space size="large" wrap>
-                        <Statistic title="已发布" value={homeworkMetrics?.taskCount ?? 0} />
-                        <Statistic
-                          title="完成率"
-                          value={homeworkMetrics?.completionRate ?? 0}
-                          suffix="%"
-                        />
-                        <Statistic
-                          title="平均正确率"
-                          value={homeworkMetrics?.avgAccuracyRate ?? '—'}
-                          suffix={homeworkMetrics?.avgAccuracyRate != null ? '%' : undefined}
-                        />
-                        <Statistic
-                          title="已交/应交"
-                          value={`${homeworkMetrics?.gradedItems ?? 0}/${homeworkMetrics?.totalItems ?? 0}`}
-                        />
-                      </Space>
-                    </Card>
-                  </Col>
-                </Row>
-
-                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-                  <Col xs={24} lg={12}>
-                    <Card
-                      size="small"
-                      className="follow-overview-scroll-card"
-                      title="模拟卷预警"
-                      extra={
-                        <Typography.Text type="secondary">连续未交≥2 或平均正确率&lt;60%</Typography.Text>
-                      }
-                      loading={mockMetricsLoading}
-                    >
-                      {(mockMetrics?.warnings?.length ?? 0) === 0 ? (
-                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无模拟卷预警" />
-                      ) : (
-                        <Table
-                          size="small"
-                          rowKey={(r) => `mock-${r.peopleId}-${r.type}`}
-                          pagination={false}
-                          sticky
-                          dataSource={mockMetrics?.warnings ?? []}
-                          columns={[
-                            { title: '姓名', dataIndex: 'userName', width: 100 },
-                            {
-                              title: '类型',
-                              dataIndex: 'type',
-                              width: 100,
-                              render: (t: string) =>
-                                t === 'miss' ? <Tag color="warning">未交</Tag> : <Tag color="error">正确率低</Tag>,
-                            },
-                            { title: '说明', dataIndex: 'message', ellipsis: true },
-                          ]}
-                        />
-                      )}
-                    </Card>
-                  </Col>
-                  <Col xs={24} lg={12}>
-                    <Card
-                      size="small"
-                      className="follow-overview-scroll-card"
-                      title="作业预警"
-                      extra={
-                        <Typography.Text type="secondary">连续未交≥2 或平均正确率&lt;60%</Typography.Text>
-                      }
-                      loading={homeworkMetricsLoading}
-                    >
-                      {(homeworkMetrics?.warnings?.length ?? 0) === 0 ? (
-                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无作业预警" />
-                      ) : (
-                        <Table
-                          size="small"
-                          rowKey={(r) => `${r.peopleId}-${r.type}`}
-                          pagination={false}
-                          sticky
-                          dataSource={homeworkMetrics?.warnings ?? []}
-                          columns={[
-                            { title: '姓名', dataIndex: 'userName', width: 100 },
-                            {
-                              title: '类型',
-                              dataIndex: 'type',
-                              width: 100,
-                              render: (t: string) =>
-                                t === 'miss' ? <Tag color="warning">未交</Tag> : <Tag color="error">正确率低</Tag>,
-                            },
-                            { title: '说明', dataIndex: 'message', ellipsis: true },
-                          ]}
-                        />
-                      )}
-                    </Card>
-                  </Col>
-                </Row>
-
+                
                 <Card
                   size="small"
                   title="班级课程表"
@@ -1173,6 +1002,144 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     </Space>
                   )}
                 </Card>
+
+                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col xs={24} lg={12}>
+                    <Card
+                      size="small"
+                      title="作业完成情况"
+                      loading={homeworkMetricsLoading}
+                      extra={
+                        <Button type="link" style={{ padding: 0 }} onClick={() => setActiveTab('homework')}>
+                          作业明细 →
+                        </Button>
+                      }
+                    >
+                      <Space size="large" wrap>
+                        <Statistic title="已发布" value={homeworkMetrics?.taskCount ?? 0} />
+                        <Statistic
+                          title="完成率"
+                          value={homeworkMetrics?.completionRate ?? 0}
+                          suffix="%"
+                        />
+                        <Statistic
+                          title="平均正确率"
+                          value={homeworkMetrics?.avgAccuracyRate ?? '—'}
+                          suffix={homeworkMetrics?.avgAccuracyRate != null ? '%' : undefined}
+                        />
+                        <Statistic
+                          title="已交/应交"
+                          value={`${homeworkMetrics?.gradedItems ?? 0}/${homeworkMetrics?.totalItems ?? 0}`}
+                        />
+                      </Space>
+                    </Card>
+                  </Col>
+                  <Col xs={24} lg={12}>
+                    <Card
+                      size="small"
+                      title="模拟卷概览"
+                      loading={mockMetricsLoading}
+                      extra={
+                        <Button type="link" style={{ padding: 0 }} onClick={() => setActiveTab('mock')}>
+                          模拟考明细 →
+                        </Button>
+                      }
+                    >
+                      <Space size="large" wrap>
+                        <Statistic title="已发布" value={mockMetrics?.taskCount ?? 0} />
+                        <Statistic
+                          title="完成率"
+                          value={mockMetrics?.completionRate ?? 0}
+                          suffix="%"
+                        />
+                        <Statistic
+                          title="平均正确率"
+                          value={mockMetrics?.avgAccuracyRate ?? '—'}
+                          suffix={mockMetrics?.avgAccuracyRate != null ? '%' : undefined}
+                        />
+                        <Statistic
+                          title="已交/应交"
+                          value={`${mockMetrics?.gradedItems ?? 0}/${mockMetrics?.totalItems ?? 0}`}
+                        />
+                      </Space>
+                    </Card>
+                  </Col>
+                 
+                </Row>
+
+                <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col xs={24} lg={12}>
+                    <Card
+                      size="small"
+                      className="follow-overview-scroll-card"
+                      title="作业预警"
+                      extra={
+                        <Typography.Text type="secondary">连续未交≥2 或平均正确率&lt;60%</Typography.Text>
+                      }
+                      loading={homeworkMetricsLoading}
+                    >
+                      {(homeworkMetrics?.warnings?.length ?? 0) === 0 ? (
+                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无作业预警" />
+                      ) : (
+                        <Table
+                          size="small"
+                          rowKey={(r) => `${r.peopleId}-${r.type}`}
+                          pagination={false}
+                          sticky
+                          dataSource={homeworkMetrics?.warnings ?? []}
+                          columns={[
+                            { title: '姓名', dataIndex: 'userName', width: 100 },
+                            {
+                              title: '类型',
+                              dataIndex: 'type',
+                              width: 100,
+                              render: (t: string) =>
+                                t === 'miss' ? <Tag color="warning">未交</Tag> : <Tag color="error">正确率低</Tag>,
+                            },
+                            { title: '说明', dataIndex: 'message', ellipsis: true },
+                          ]}
+                        />
+                      )}
+                    </Card>
+                  </Col>
+                  <Col xs={24} lg={12}>
+                    <Card
+                      size="small"
+                      className="follow-overview-scroll-card"
+                      title="模拟卷预警"
+                      extra={
+                        <Typography.Text type="secondary">连续未交≥2 或平均正确率&lt;60%</Typography.Text>
+                      }
+                      loading={mockMetricsLoading}
+                    >
+                      {(mockMetrics?.warnings?.length ?? 0) === 0 ? (
+                        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无模拟卷预警" />
+                      ) : (
+                        <Table
+                          size="small"
+                          rowKey={(r) => `mock-${r.peopleId}-${r.type}`}
+                          pagination={false}
+                          sticky
+                          dataSource={mockMetrics?.warnings ?? []}
+                          columns={[
+                            { title: '姓名', dataIndex: 'userName', width: 100 },
+                            {
+                              title: '类型',
+                              dataIndex: 'type',
+                              width: 100,
+                              render: (t: string) =>
+                                t === 'miss' ? <Tag color="warning">未交</Tag> : <Tag color="error">正确率低</Tag>,
+                            },
+                            { title: '说明', dataIndex: 'message', ellipsis: true },
+                          ]}
+                        />
+                      )}
+                    </Card>
+                  </Col>
+                
+                </Row>
+
+                
 
                 <Card
                   size="small"
@@ -1596,37 +1563,24 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
             ),
           },
           {
+            key: 'evidence',
+            label: '留痕',
+            children:
+              classIdNum != null ? (
+                <FollowEvidenceTab classId={classIdNum} />
+              ) : (
+                <Empty description="无效班级" />
+              ),
+          },
+          {
             key: 'logs',
             label: '日志·督导',
-            children: (
-              <div>
-                <Space style={{ marginBottom: 12 }}>
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => {
-                      logForm.setFieldsValue({ date: bizDate ?? dayjs(), author: '班主任', content: '' });
-                      setLogModalOpen(true);
-                    }}
-                  >
-                    新增跟班日志
-                  </Button>
-                  <Typography.Text type="secondary">督导检查 / 异常闭环将在 M4 接入</Typography.Text>
-                </Space>
-                <Table
-                  rowKey="id"
-                  dataSource={logs}
-                  pagination={false}
-                  locale={{ emptyText: '暂无日志' }}
-                  columns={[
-                    { title: '日期', dataIndex: 'date', width: 120 },
-                    { title: '记录人', dataIndex: 'author', width: 120 },
-                    { title: '内容', dataIndex: 'content' },
-                    { title: '写入时间', dataIndex: 'createdAt', width: 170 },
-                  ]}
-                />
-              </div>
-            ),
+            children:
+              classIdNum != null ? (
+                <FollowLogsSupervisionTab classId={classIdNum} defaultBizDate={bizDate} />
+              ) : (
+                <Empty description="无效班级" />
+              ),
           },
           {
             key: 'metrics',
@@ -1660,11 +1614,6 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
               </Row>
             ),
           },
-          {
-            key: 'evidence',
-            label: '留痕',
-            children: comingSoon('过程留痕', '照片/视频证据将挂载课次或按日；上传通道复用现有文件服务（M2）'),
-          },
         ]}
       />
 
@@ -1674,26 +1623,6 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
         student={detailStudent}
         onClose={() => setDetailStudent(null)}
       />
-
-      <Modal
-        title="新增跟班日志"
-        open={logModalOpen}
-        onCancel={() => setLogModalOpen(false)}
-        onOk={handleSaveLog}
-        destroyOnHidden
-      >
-        <Form form={logForm} layout="vertical">
-          <Form.Item name="date" label="日期" rules={[{ required: true }]}>
-            <DatePicker style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="author" label="记录人" rules={[{ required: true, message: '请输入记录人' }]}>
-            <Input placeholder="班主任 / 跟班教务" />
-          </Form.Item>
-          <Form.Item name="content" label="内容" rules={[{ required: true, message: '请输入日志内容' }]}>
-            <Input.TextArea rows={4} placeholder="出勤概况、异常学员、沟通与处理…" />
-          </Form.Item>
-        </Form>
-      </Modal>
 
       <Modal
         title="考勤导入结果"

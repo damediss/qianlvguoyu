@@ -1,0 +1,85 @@
+.training-subsidy-declare-page .page-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.training-subsidy-declare-page .subsidy-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.training-subsidy-declare-page .subsidy-phase-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.training-subsidy-declare-page .subsidy-phase-chip {
+  cursor: pointer;
+  user-select: none;
+}
+
+.training-subsidy-declare-page .subsidy-stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.training-subsidy-declare-page .subsidy-stat-card {
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.training-subsidy-declare-page .subsidy-stat-card .label {
+  color: #8c8c8c;
+  font-size: 12px;
+}
+
+.training-subsidy-declare-page .subsidy-stat-card .value {
+  margin-top: 4px;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #1f1f1f;
+}
+
+.training-subsidy-declare-page .subsidy-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.training-subsidy-declare-page .slot-file-name {
+  color: #8c8c8c;
+  font-size: 12px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training-subsidy-declare-page .profile-hint {
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .training-subsidy-declare-page .subsidy-stat-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

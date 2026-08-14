@@ -54,7 +54,10 @@ public class MybatisPlusConfig {
             || "cms_article".equalsIgnoreCase(tableName)
             || "cms_article_category".equalsIgnoreCase(tableName)
             || "cms_article_content".equalsIgnoreCase(tableName)
-            || "sys_index_swiper".equalsIgnoreCase(tableName);
+            || "sys_index_swiper".equalsIgnoreCase(tableName)
+            // platform-shared subsidy pack recipes (tenant_id=0 seeds + tenant overlays)
+            || "train_subsidy_pack_profile".equalsIgnoreCase(tableName)
+            || "train_subsidy_pack_slot".equalsIgnoreCase(tableName);
       }
     }));
     return interceptor;

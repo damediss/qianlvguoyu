@@ -493,17 +493,29 @@ public class TrainDivisionApplicationService {
 
     WorkTypeLookup workTypeLookup = buildWorkTypeLookup();
 
-    List<Map<String, Object>> classes;
-    int assignedCount;
+    List<Map<String, Object>> classes = new ArrayList<>();
+    int assignedCount = 0;
     if ("by_job_level_slot".equalsIgnoreCase(strategy)
         || "by_attendable_slot".equalsIgnoreCase(strategy)) {
       SlotPackResult slotPack = buildJobLevelSlotClasses(
           plan, assignable, prefix, classMax, year, month, warnings, workTypeLookup);
-      classes = slotPack.classes;
-      assignedCount = slotPack.assignedCount;
-      unassigned.addAll(slotPack.extraUnassigned);
-      strategy = "by_job_level_slot";
-    } else {
+      if (!slotPack.classes.isEmpty()) {
+        classes = slotPack.classes;
+        assignedCount = slotPack.assignedCount;
+        unassigned.addAll(slotPack.extraUnassigned);
+        strategy = "by_job_level_slot";
+      } else {
+        // 时段策略对不上人：自动降级为推荐策略，避免卡死
+        warnings.add(Map.of(
+            "level", "WARNING",
+            "code", "SLOT_FALLBACK_JOB_LEVEL",
+            "message", StringUtils.hasText(slotPack.failReason)
+                ? ("按时段分班失败（" + slotPack.failReason + "），已自动改用「按工种/等级切班」")
+                : "按时段分班未匹配到人，已自动改用「按工种/等级切班」"));
+        strategy = "by_job_level";
+      }
+    }
+    if (classes.isEmpty()) {
       Map<String, List<TrainPlanRosterEntity>> groups = new LinkedHashMap<>();
       if ("by_roster_order".equalsIgnoreCase(strategy)) {
         groups.put("混合", new ArrayList<>(assignable));
@@ -537,8 +549,6 @@ public class TrainDivisionApplicationService {
           groups.computeIfAbsent(group, k -> new ArrayList<>()).add(r);
         }
       }
-      classes = new ArrayList<>();
-      assignedCount = 0;
       for (Map.Entry<String, List<TrainPlanRosterEntity>> ge : groups.entrySet()) {
         String groupName = ge.getKey();
         List<TrainPlanRosterEntity> members = new ArrayList<>(ge.getValue());
@@ -570,7 +580,10 @@ public class TrainDivisionApplicationService {
     }
 
     if (classes.isEmpty()) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "未生成任何班级，请检查名单与排班是否匹配");
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "未生成任何班级。可分班人数=" + assignable.size()
+              + "，未分入=" + unassigned.size()
+              + "。请检查名单工种/等级、所选年月份与排班过滤条件");
     }
 
     supersedeActivePackTasks(tenantId, trainInfo.getId());
@@ -1433,17 +1446,27 @@ public class TrainDivisionApplicationService {
     Map<String, TrainPlanRosterEntity> byEmp = new HashMap<>();
     for (TrainPlanRosterEntity r : assignable) {
       if (StringUtils.hasText(r.getIdCard())) {
-        byId.putIfAbsent(r.getIdCard().trim().toUpperCase(Locale.ROOT), r);
+        String id = r.getIdCard().trim().toUpperCase(Locale.ROOT);
+        byId.putIfAbsent(id, r);
+        // 排班表偶发把证件号当工号列
+        byEmp.putIfAbsent(id, r);
       }
       if (StringUtils.hasText(r.getPersonName())) {
-        byName.putIfAbsent(r.getPersonName().trim(), r);
+        String raw = r.getPersonName().trim();
+        byName.putIfAbsent(raw, r);
+        String norm = normalizePersonName(raw);
+        if (StringUtils.hasText(norm)) {
+          byName.putIfAbsent(norm, r);
+        }
       }
-      // 工号偶发写在身份证字段；姓名也可被排班用作 personKey
     }
 
     // algoClassName -> job|level -> LinkedHashMap rosterId -> roster
     Map<String, Map<String, Map<Long, TrainPlanRosterEntity>>> buckets = new LinkedHashMap<>();
     Set<Long> coveredRosterIds = new HashSet<>();
+    int scheduleAssigned = assign.getPersonDayClass() == null ? 0 : assign.getPersonDayClass().size();
+    int matchMiss = 0;
+    List<String> sampleMiss = new ArrayList<>();
 
     if (assign.getPersonDayClass() != null) {
       for (Map.Entry<String, Map<LocalDate, Map<String, String>>> pe : assign.getPersonDayClass().entrySet()) {
@@ -1454,6 +1477,12 @@ public class TrainDivisionApplicationService {
             assign.getPersonKeyToEmployeeNo() != null ? assign.getPersonKeyToEmployeeNo().get(personKey) : null,
             byId, byName, byEmp);
         if (roster == null) {
+          matchMiss++;
+          if (sampleMiss.size() < 5) {
+            String nm = assign.getPersonKeyToName() != null
+                ? assign.getPersonKeyToName().get(personKey) : null;
+            sampleMiss.add(StringUtils.hasText(nm) ? nm + "(" + personKey + ")" : personKey);
+          }
           continue;
         }
         coveredRosterIds.add(roster.getId());
@@ -1516,6 +1545,24 @@ public class TrainDivisionApplicationService {
       }
     }
 
+    if (classes.isEmpty()) {
+      int schedulePersons = assign.getPersonKeyToName() != null ? assign.getPersonKeyToName().size() : 0;
+      int algoUnassigned = assign.getUnassignedPersons() != null ? assign.getUnassignedPersons().size() : 0;
+      String failReason;
+      if (scheduleAssigned <= 0) {
+        failReason = "排班算法未排出任何上午/下午班（解析到 "
+            + schedulePersons + " 人，其中未排入 " + algoUnassigned
+            + " 人；请核对所选年月 " + year + "-" + String.format("%02d", month)
+            + " 与排班表月份、班次是否可上课）";
+      } else {
+        failReason = "排班已排入 " + scheduleAssigned + " 人，与名单匹配成功 0 人（未匹配 "
+            + matchMiss + "）"
+            + (sampleMiss.isEmpty() ? "" : "，样例：" + String.join("、", sampleMiss))
+            + "；请核对名单姓名与排班表是否同一批人";
+      }
+      return new SlotPackResult(List.of(), 0, List.of(), failReason);
+    }
+
     List<Map<String, Object>> extraUnassigned = new ArrayList<>();
     for (TrainPlanRosterEntity r : assignable) {
       if (!coveredRosterIds.contains(r.getId())) {
@@ -1549,13 +1596,27 @@ public class TrainDivisionApplicationService {
         "code", "SLOT_STRATEGY",
         "message", "已按工种/等级 + 上午/下午时段生成 " + classes.size() + " 个班级草稿（同人可属多个时段班）"));
 
-    return new SlotPackResult(classes, assignedSeats, extraUnassigned);
+    return new SlotPackResult(classes, assignedSeats, extraUnassigned, null);
   }
 
   private static String jobLevelKey(TrainPlanRosterEntity r) {
     String job = StringUtils.hasText(r.getJobName()) ? r.getJobName().trim() : "未填工种";
     String level = StringUtils.hasText(r.getLevelName()) ? r.getLevelName().trim() : "未填等级";
     return job + "-" + level;
+  }
+
+  /** 去掉空白/全角空格等，提高名单与排班表姓名匹配率 */
+  private static String normalizePersonName(String name) {
+    if (name == null) return "";
+    String s = name.trim()
+        .replace('\u00A0', ' ')
+        .replace('\u3000', ' ')
+        .replace("・", "")
+        .replace("·", "")
+        .replace(".", "")
+        .replace("．", "");
+    s = s.replaceAll("\\s+", "");
+    return s;
   }
 
   private static TrainPlanRosterEntity matchRosterForSlot(
@@ -1569,15 +1630,25 @@ public class TrainDivisionApplicationService {
       String pk = personKey.trim();
       TrainPlanRosterEntity hit = byId.get(pk.toUpperCase(Locale.ROOT));
       if (hit != null) return hit;
+      hit = byEmp.get(pk.toUpperCase(Locale.ROOT));
+      if (hit != null) return hit;
       hit = byName.get(pk);
+      if (hit != null) return hit;
+      hit = byName.get(normalizePersonName(pk));
       if (hit != null) return hit;
     }
     if (StringUtils.hasText(employeeNo)) {
-      TrainPlanRosterEntity hit = byId.get(employeeNo.trim().toUpperCase(Locale.ROOT));
+      String emp = employeeNo.trim().toUpperCase(Locale.ROOT);
+      TrainPlanRosterEntity hit = byEmp.get(emp);
+      if (hit != null) return hit;
+      hit = byId.get(emp);
       if (hit != null) return hit;
     }
     if (StringUtils.hasText(name)) {
-      return byName.get(name.trim());
+      String raw = name.trim();
+      TrainPlanRosterEntity hit = byName.get(raw);
+      if (hit != null) return hit;
+      return byName.get(normalizePersonName(raw));
     }
     return null;
   }
@@ -1600,14 +1671,17 @@ public class TrainDivisionApplicationService {
     final List<Map<String, Object>> classes;
     final int assignedCount;
     final List<Map<String, Object>> extraUnassigned;
+    final String failReason;
 
     SlotPackResult(
         List<Map<String, Object>> classes,
         int assignedCount,
-        List<Map<String, Object>> extraUnassigned) {
+        List<Map<String, Object>> extraUnassigned,
+        String failReason) {
       this.classes = classes;
       this.assignedCount = assignedCount;
       this.extraUnassigned = extraUnassigned;
+      this.failReason = failReason;
     }
   }
 

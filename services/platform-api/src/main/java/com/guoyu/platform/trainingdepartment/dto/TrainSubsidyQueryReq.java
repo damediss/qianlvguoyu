@@ -1,18 +1,15 @@
 package com.guoyu.platform.trainingdepartment.dto;
 
-/**
- * 培训补贴查询请求
- */
 public class TrainSubsidyQueryReq {
   private Integer page = 1;
   private Integer pageSize = 20;
-  /** 项目ID */
   private Long projectId;
-  private Integer materialStatus;
-  private Integer rssbStatus;
-  /** 状态 */
+  private Long classId;
+  private String phase;
+  private String regionCode;
+  private String trainMode;
+  private Integer policyYear;
   private Integer status;
-  /** 搜索关键词 */
   private String keyword;
 
   public Integer getPage() { return page; }
@@ -21,10 +18,16 @@ public class TrainSubsidyQueryReq {
   public void setPageSize(Integer pageSize) { this.pageSize = pageSize; }
   public Long getProjectId() { return projectId; }
   public void setProjectId(Long projectId) { this.projectId = projectId; }
-  public Integer getMaterialStatus() { return materialStatus; }
-  public void setMaterialStatus(Integer materialStatus) { this.materialStatus = materialStatus; }
-  public Integer getRssbStatus() { return rssbStatus; }
-  public void setRssbStatus(Integer rssbStatus) { this.rssbStatus = rssbStatus; }
+  public Long getClassId() { return classId; }
+  public void setClassId(Long classId) { this.classId = classId; }
+  public String getPhase() { return phase; }
+  public void setPhase(String phase) { this.phase = phase; }
+  public String getRegionCode() { return regionCode; }
+  public void setRegionCode(String regionCode) { this.regionCode = regionCode; }
+  public String getTrainMode() { return trainMode; }
+  public void setTrainMode(String trainMode) { this.trainMode = trainMode; }
+  public Integer getPolicyYear() { return policyYear; }
+  public void setPolicyYear(Integer policyYear) { this.policyYear = policyYear; }
   public Integer getStatus() { return status; }
   public void setStatus(Integer status) { this.status = status; }
   public String getKeyword() { return keyword; }

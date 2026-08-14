@@ -1783,6 +1783,395 @@ export function syncFollowTaskRoster(id: number | string) {
   );
 }
 
+// ==================== 跟班课堂影像 / 培训照片 ====================
+
+export type FollowEvidence = {
+  id: number | string;
+  classId: number | string;
+  scheduleId?: number | string | null;
+  bizDate?: string | null;
+  mediaType?: string;
+  durationSeconds?: number | null;
+  fileId?: number | string | null;
+  filePath?: string;
+  url?: string | null;
+  caption?: string | null;
+  uploaderUserId?: number | string | null;
+  uploaderRole?: string | null;
+  reviewStatus?: string;
+  reviewedBy?: number | string | null;
+  reviewedAt?: string | null;
+  rejectReason?: string | null;
+  sortNo?: number;
+  scheduleDate?: string | null;
+  courseName?: string | null;
+  teachForm?: string | null;
+  classHours?: string | null;
+  actualClassHours?: string | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  createdAt?: string;
+};
+
+export type FollowEvidenceCoverageItem = {
+  scheduleId: number;
+  scheduleDate?: string;
+  courseName?: string;
+  teachForm?: string;
+  teachFormLabel?: string;
+  classHours?: string;
+  actualClassHours?: string;
+  hoursDisplay?: string;
+  startTime?: string;
+  endTime?: string;
+  photoCount: number;
+  approvedCount: number;
+  pendingCount: number;
+  minRequired: number;
+  minPhotos?: number;
+  videoCount?: number;
+  videoApprovedCount?: number;
+  videoPendingCount?: number;
+  minVideos?: number;
+  videoDurationTargetSec?: number;
+  photoOk?: boolean;
+  videoOk?: boolean;
+  coverageOk: boolean;
+};
+
+export type FollowEvidenceCoverage = {
+  requiredSessions: number;
+  okSessions: number;
+  missingSessions: number;
+  ready: boolean;
+  minPhotos?: number;
+  minVideos?: number;
+  videoDurationTargetSec?: number;
+  items: FollowEvidenceCoverageItem[];
+};
+
+export function listFollowEvidences(
+  classId: number,
+  params?: { scheduleId?: number; bizDate?: string; reviewStatus?: string; mediaType?: string },
+) {
+  return unwrap<FollowEvidence[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/evidences`, { params }),
+  );
+}
+
+export function getFollowEvidenceCoverage(classId: number) {
+  return unwrap<FollowEvidenceCoverage>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/evidence-coverage`),
+  );
+}
+
+export async function uploadFollowEvidence(
+  classId: number,
+  file: File | Blob,
+  fields: {
+    scheduleId?: number;
+    bizDate?: string;
+    teachFormOverride?: string;
+    classHoursOverride?: string;
+    caption?: string;
+    mediaType?: string;
+    durationSeconds?: number;
+  },
+) {
+  const form = new FormData();
+  form.append('file', file);
+  if (fields.scheduleId != null) form.append('scheduleId', String(fields.scheduleId));
+  if (fields.bizDate) form.append('bizDate', fields.bizDate);
+  if (fields.teachFormOverride) form.append('teachFormOverride', fields.teachFormOverride);
+  if (fields.classHoursOverride) form.append('classHoursOverride', fields.classHoursOverride);
+  if (fields.caption) form.append('caption', fields.caption);
+  if (fields.mediaType) form.append('mediaType', fields.mediaType);
+  if (fields.durationSeconds != null) form.append('durationSeconds', String(fields.durationSeconds));
+  return unwrap<FollowEvidence>(
+    apiClient.post(`${BASE}/info-classes/${classId}/follow/evidences/upload`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000,
+    }),
+  );
+}
+
+export function reviewFollowEvidence(id: number | string, payload: { reviewStatus: string; rejectReason?: string }) {
+  return unwrap<FollowEvidence>(apiClient.post(`${BASE}/follow-evidences/${id}/review`, payload));
+}
+
+export function deleteFollowEvidence(id: number | string) {
+  return unwrap<void>(apiClient.delete(`${BASE}/follow-evidences/${id}`));
+}
+
+export function generateFollowPhotoPack(classId: number) {
+  return unwrap<{
+    packId: number | string;
+    fileId?: number;
+    filePath?: string;
+    url?: string;
+    title?: string;
+    generatedAt?: string;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/follow/photo-pack/generate`, undefined, { timeout: 180000 }));
+}
+
+export function getLatestFollowPhotoPack(classId: number) {
+  return unwrap<{
+    exists: boolean;
+    packId?: number | string;
+    fileId?: number;
+    filePath?: string;
+    url?: string;
+    title?: string;
+    generatedAt?: string;
+  }>(apiClient.get(`${BASE}/info-classes/${classId}/follow/photo-pack/latest`));
+}
+
+// ==================== 跟班日志 · 过程动态 / 工作日志 ====================
+
+export type FollowOpLog = {
+  id: string | number;
+  classId: string | number;
+  scheduleId?: string | number | null;
+  bizDate?: string;
+  eventCode: string;
+  eventCategory: string;
+  title: string;
+  summary?: string;
+  detailJson?: string;
+  actorUserId?: string | number | null;
+  actorName?: string;
+  actorRole?: string;
+  targetType?: string;
+  targetId?: string | number | null;
+  severityLevel?: string;
+  client?: string;
+  requestId?: string;
+  createdAt?: string;
+};
+
+export type FollowWorkLog = {
+  id: string | number;
+  classId: string | number;
+  scheduleId?: string | number | null;
+  bizDate: string;
+  authorUserId?: string | number | null;
+  authorName?: string;
+  attendanceSummary?: string;
+  exceptionNote?: string;
+  content?: string;
+  sourceOpIdsJson?: string;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export function listFollowOpLogs(
+  classId: number,
+  params?: {
+    bizDate?: string;
+    from?: string;
+    to?: string;
+    category?: string;
+    actorUserId?: number;
+    minSeverity?: string;
+  },
+) {
+  return unwrap<FollowOpLog[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/op-logs`, { params }),
+  );
+}
+
+export function listFollowWorkLogs(
+  classId: number,
+  params?: { bizDate?: string; from?: string; to?: string },
+) {
+  return unwrap<FollowWorkLog[]>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/logs`, { params }),
+  );
+}
+
+export function createFollowWorkLog(
+  classId: number,
+  payload: {
+    bizDate: string;
+    authorName?: string;
+    attendanceSummary?: string;
+    exceptionNote?: string;
+    content?: string;
+    status?: string;
+    sourceOpIdsJson?: string;
+  },
+) {
+  return unwrap<FollowWorkLog>(
+    apiClient.post(`${BASE}/info-classes/${classId}/follow/logs`, payload),
+  );
+}
+
+export function updateFollowWorkLog(
+  id: number | string,
+  payload: {
+    bizDate?: string;
+    authorName?: string;
+    attendanceSummary?: string;
+    exceptionNote?: string;
+    content?: string;
+    status?: string;
+  },
+) {
+  return unwrap<FollowWorkLog>(apiClient.put(`${BASE}/follow-logs/${id}`, payload));
+}
+
+export function deleteFollowWorkLog(id: number | string) {
+  return unwrap<void>(apiClient.delete(`${BASE}/follow-logs/${id}`));
+}
+
+export function draftFollowWorkLogFromOps(classId: number, bizDate: string) {
+  return unwrap<FollowWorkLog>(
+    apiClient.post(`${BASE}/info-classes/${classId}/follow/logs/draft-from-ops`, { bizDate }),
+  );
+}
+
+// ==================== 申报补贴台账 / 材料配方 ====================
+
+export type TrainSubsidy = {
+  id: number | string;
+  projectId?: number | string | null;
+  classId?: number | string | null;
+  trainInfoId?: number | string | null;
+  className?: string | null;
+  policyTemplate?: string | null;
+  subsidyAmount?: number | null;
+  studentCount?: number | null;
+  materialPackagePath?: string | null;
+  materialStatus?: number | null;
+  phase?: string;
+  regionCode?: string | null;
+  regionName?: string | null;
+  trainMode?: string | null;
+  policyYear?: number | null;
+  profileId?: number | string | null;
+  profileVersion?: string | null;
+  profileLocked?: number | null;
+  checklistJson?: string | null;
+  remark?: string | null;
+  status?: number | null;
+  createTime?: string;
+  updateTime?: string;
+};
+
+export type SubsidyPackProfile = {
+  id: number | string;
+  regionCode: string;
+  regionName: string;
+  trainMode: string;
+  policyYear: number;
+  profileVersion: string;
+  title: string;
+  status: string;
+  isDefault?: number;
+  remark?: string | null;
+  slots: Array<{
+    id: number | string;
+    slotCode: string;
+    title: string;
+    required: boolean;
+    sortOrder?: number;
+    renderer: string;
+    folderPath?: string | null;
+    remark?: string | null;
+  }>;
+};
+
+export function pageSubsidies(params: Record<string, unknown>) {
+  return unwrap<PageResponse<TrainSubsidy>>(apiClient.get(`${BASE}/subsidies`, { params }));
+}
+
+export function getSubsidy(id: number | string) {
+  return unwrap<TrainSubsidy>(apiClient.get(`${BASE}/subsidies/${id}`));
+}
+
+export function createSubsidy(payload: {
+  classId: number | string;
+  trainMode: string;
+  regionCode?: string;
+  regionName?: string;
+  policyYear?: number;
+  profileId?: number | string;
+  subsidyAmount?: number;
+  studentCount?: number;
+  remark?: string;
+}) {
+  return unwrap<TrainSubsidy>(apiClient.post(`${BASE}/subsidies`, payload));
+}
+
+export function updateSubsidy(id: number | string, payload: Record<string, unknown>) {
+  return unwrap<TrainSubsidy>(apiClient.put(`${BASE}/subsidies/${id}`, payload));
+}
+
+export function deleteSubsidy(id: number | string) {
+  return unwrap<void>(apiClient.delete(`${BASE}/subsidies/${id}`));
+}
+
+export function transitionSubsidy(id: number | string, toPhase: string, remark?: string) {
+  return unwrap<TrainSubsidy>(apiClient.post(`${BASE}/subsidies/${id}/transition`, { toPhase, remark }));
+}
+
+export function listSubsidyEvents(id: number | string) {
+  return unwrap<
+    Array<{
+      id: number | string;
+      action: string;
+      fromPhase?: string;
+      toPhase?: string;
+      remark?: string;
+      createdAt?: string;
+    }>
+  >(apiClient.get(`${BASE}/subsidies/${id}/events`));
+}
+
+export function listSubsidySlotFiles(id: number | string) {
+  return unwrap<
+    Array<{ id: number | string; slotCode: string; fileId?: number; filePath?: string; fileName?: string }>
+  >(apiClient.get(`${BASE}/subsidies/${id}/slot-files`));
+}
+
+export async function uploadSubsidySlotFile(id: number | string, slotCode: string, file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('slotCode', slotCode);
+  return unwrap<{ id: number | string; slotCode: string; fileId?: number; filePath?: string; fileName?: string }>(
+    apiClient.post(`${BASE}/subsidies/${id}/slot-files`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    }),
+  );
+}
+
+export function generateSubsidyMaterials(id: number | string) {
+  return unwrap<{
+    ok: boolean;
+    message?: string;
+    missing?: string[];
+    checklist?: Array<Record<string, unknown>>;
+    fileId?: number | string;
+    filePath?: string;
+    url?: string;
+  }>(apiClient.post(`${BASE}/subsidies/${id}/materials/generate`, undefined, { timeout: 180000 }));
+}
+
+export function listSubsidyPackProfiles(params?: {
+  regionCode?: string;
+  trainMode?: string;
+  policyYear?: number;
+  status?: string;
+}) {
+  return unwrap<SubsidyPackProfile[]>(apiClient.get(`${BASE}/subsidy-pack-profiles`, { params }));
+}
+
+export function getSubsidyPackProfile(id: number | string) {
+  return unwrap<SubsidyPackProfile>(apiClient.get(`${BASE}/subsidy-pack-profiles/${id}`));
+}
+
 // ==================== 信息收集 (sign-up collection) ====================
 
 export function pageSignUpCollection(params: TrainSignUpSelfQuery) {

@@ -24,8 +24,12 @@ public class TrainScheduleEntity {
   private String courseName;
   /** 学时（开班课表 Excel 原值，如 2 / 2.0） */
   private String classHours;
+  /** 实际学时（空则用 classHours） */
+  private String actualClassHours;
   /** 授课形式（理论/实操等） */
   private String teachForm;
+  /** 是否须课堂影像 1/0 */
+  private Integer evidenceRequired;
   private String roomName;
   private Integer dayOfWeek;
   /** 开始时间 */
@@ -64,8 +68,12 @@ public class TrainScheduleEntity {
   public void setCourseName(String courseName) { this.courseName = courseName; }
   public String getClassHours() { return classHours; }
   public void setClassHours(String classHours) { this.classHours = classHours; }
+  public String getActualClassHours() { return actualClassHours; }
+  public void setActualClassHours(String actualClassHours) { this.actualClassHours = actualClassHours; }
   public String getTeachForm() { return teachForm; }
   public void setTeachForm(String teachForm) { this.teachForm = teachForm; }
+  public Integer getEvidenceRequired() { return evidenceRequired; }
+  public void setEvidenceRequired(Integer evidenceRequired) { this.evidenceRequired = evidenceRequired; }
   public String getRoomName() { return roomName; }
   public void setRoomName(String roomName) { this.roomName = roomName; }
     public Integer getDayOfWeek() { return dayOfWeek; }

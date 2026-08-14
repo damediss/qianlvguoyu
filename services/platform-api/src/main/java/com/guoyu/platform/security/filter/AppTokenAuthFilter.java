@@ -114,9 +114,19 @@ public class AppTokenAuthFilter extends OncePerRequestFilter {
 
       log.info("AppTokenAuthFilter: authenticated user {}", user.getId());
 
+      Long tenantId = 1L;
+      String tenantHeader = request.getHeader("X-Tenant-Id");
+      if (tenantHeader != null && !tenantHeader.isBlank()) {
+        try {
+          tenantId = Long.parseLong(tenantHeader.trim());
+        } catch (NumberFormatException ignored) {
+          // keep default SaaS tenant
+        }
+      }
+
       PlatformUserPrincipal principal = new PlatformUserPrincipal(
           user.getId(),
-          0L,
+          tenantId,
           user.getPhone(),
           user.getRealname() != null ? user.getRealname() : user.getPhone(),
           "student",

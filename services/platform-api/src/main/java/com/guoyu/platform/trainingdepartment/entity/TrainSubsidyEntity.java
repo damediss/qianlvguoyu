@@ -7,20 +7,15 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-/**
- * 培训补贴实体
- */
 @TableName("train_subsidy")
 public class TrainSubsidyEntity {
 
-  /**  主键ID */
   @TableId(type = IdType.AUTO)
   private Long id;
-
-  /** 项目ID */
   private Long projectId;
+  private Long classId;
+  private Long trainInfoId;
   private String policyTemplate;
-  /** 补贴金额 */
   private BigDecimal subsidyAmount;
   private Integer studentCount;
   private String materialPackagePath;
@@ -31,22 +26,23 @@ public class TrainSubsidyEntity {
   private String rssbRejectReason;
   private BigDecimal grantedAmount;
   private String grantTime;
-  /** 备注 */
   private String remark;
-  /** 状态 */
   private Integer status;
-  /** 排序号 */
+  private String phase;
+  private String regionCode;
+  private String regionName;
+  private String trainMode;
+  private Integer policyYear;
+  private Long profileId;
+  private String profileVersion;
+  private Integer profileLocked;
+  private String checklistJson;
+  private String evidenceIndexPath;
   private Integer sortNumber;
-  /** 租户ID */
   private Long tenantId;
-  /** 用户ID */
   private Long userId;
-  /** 创建时间 */
   private LocalDateTime createTime;
-  /** 更新时间 */
   private LocalDateTime updateTime;
-
-  /**  逻辑删除标记 0-未删除 1-已删除 */
   @TableLogic
   private Integer deleted;
 
@@ -54,6 +50,10 @@ public class TrainSubsidyEntity {
   public void setId(Long id) { this.id = id; }
   public Long getProjectId() { return projectId; }
   public void setProjectId(Long projectId) { this.projectId = projectId; }
+  public Long getClassId() { return classId; }
+  public void setClassId(Long classId) { this.classId = classId; }
+  public Long getTrainInfoId() { return trainInfoId; }
+  public void setTrainInfoId(Long trainInfoId) { this.trainInfoId = trainInfoId; }
   public String getPolicyTemplate() { return policyTemplate; }
   public void setPolicyTemplate(String policyTemplate) { this.policyTemplate = policyTemplate; }
   public BigDecimal getSubsidyAmount() { return subsidyAmount; }
@@ -80,6 +80,26 @@ public class TrainSubsidyEntity {
   public void setRemark(String remark) { this.remark = remark; }
   public Integer getStatus() { return status; }
   public void setStatus(Integer status) { this.status = status; }
+  public String getPhase() { return phase; }
+  public void setPhase(String phase) { this.phase = phase; }
+  public String getRegionCode() { return regionCode; }
+  public void setRegionCode(String regionCode) { this.regionCode = regionCode; }
+  public String getRegionName() { return regionName; }
+  public void setRegionName(String regionName) { this.regionName = regionName; }
+  public String getTrainMode() { return trainMode; }
+  public void setTrainMode(String trainMode) { this.trainMode = trainMode; }
+  public Integer getPolicyYear() { return policyYear; }
+  public void setPolicyYear(Integer policyYear) { this.policyYear = policyYear; }
+  public Long getProfileId() { return profileId; }
+  public void setProfileId(Long profileId) { this.profileId = profileId; }
+  public String getProfileVersion() { return profileVersion; }
+  public void setProfileVersion(String profileVersion) { this.profileVersion = profileVersion; }
+  public Integer getProfileLocked() { return profileLocked; }
+  public void setProfileLocked(Integer profileLocked) { this.profileLocked = profileLocked; }
+  public String getChecklistJson() { return checklistJson; }
+  public void setChecklistJson(String checklistJson) { this.checklistJson = checklistJson; }
+  public String getEvidenceIndexPath() { return evidenceIndexPath; }
+  public void setEvidenceIndexPath(String evidenceIndexPath) { this.evidenceIndexPath = evidenceIndexPath; }
   public Integer getSortNumber() { return sortNumber; }
   public void setSortNumber(Integer sortNumber) { this.sortNumber = sortNumber; }
   public Long getTenantId() { return tenantId; }

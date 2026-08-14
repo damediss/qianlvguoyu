@@ -415,7 +415,12 @@ export function TrainingClassDivisionPage() {
       setDraftDirty(false);
       setStep(2);
       setResultTab('classes');
-      message.success(`已生成分班草稿：${res.classCount} 个班 / ${res.assignedCount} 人，请核对后提交企业审核`);
+      const fallback = res.warnings?.find((w) => w.code === 'SLOT_FALLBACK_JOB_LEVEL');
+      if (fallback?.message) {
+        message.warning(fallback.message);
+      } else {
+        message.success(`已生成分班草稿：${res.classCount} 个班 / ${res.assignedCount} 人，请核对后提交企业审核`);
+      }
       queryClient.invalidateQueries({ queryKey: ['division-roster'] });
       queryClient.invalidateQueries({ queryKey: ['division-plans'] });
       queryClient.invalidateQueries({ queryKey: ['division-pack-tasks'] });

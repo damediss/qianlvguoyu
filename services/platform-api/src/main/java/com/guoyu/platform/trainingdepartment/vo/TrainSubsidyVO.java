@@ -1,18 +1,17 @@
 package com.guoyu.platform.trainingdepartment.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-/**
- * 培训补贴视图对象
- */
 public record TrainSubsidyVO(
-    /** 主键ID */
-    Long id,
-    /** 项目ID */
-    Long projectId,
+    @JsonSerialize(using = ToStringSerializer.class) Long id,
+    @JsonSerialize(using = ToStringSerializer.class) Long projectId,
+    @JsonSerialize(using = ToStringSerializer.class) Long classId,
+    @JsonSerialize(using = ToStringSerializer.class) Long trainInfoId,
+    String className,
     String policyTemplate,
-    /** 补贴金额 */
     BigDecimal subsidyAmount,
     Integer studentCount,
     String materialPackagePath,
@@ -23,18 +22,21 @@ public record TrainSubsidyVO(
     String rssbRejectReason,
     BigDecimal grantedAmount,
     String grantTime,
-    /** 备注 */
     String remark,
-    /** 状态 */
     Integer status,
-    /** 排序号 */
+    String phase,
+    String regionCode,
+    String regionName,
+    String trainMode,
+    Integer policyYear,
+    @JsonSerialize(using = ToStringSerializer.class) Long profileId,
+    String profileVersion,
+    Integer profileLocked,
+    String checklistJson,
+    String evidenceIndexPath,
     Integer sortNumber,
-    /** 租户ID */
-    Long tenantId,
-    /** 用户ID */
-    Long userId,
-    /** 创建时间 */
+    @JsonSerialize(using = ToStringSerializer.class) Long tenantId,
+    @JsonSerialize(using = ToStringSerializer.class) Long userId,
     LocalDateTime createTime,
-    /** 更新时间 */
     LocalDateTime updateTime
 ) {}

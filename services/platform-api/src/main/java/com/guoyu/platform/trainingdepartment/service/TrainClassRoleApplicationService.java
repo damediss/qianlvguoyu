@@ -11,6 +11,9 @@ import com.guoyu.platform.trainingdepartment.entity.TrainClassRoleEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainTeacherBankEntity;
+import com.guoyu.platform.trainingdepartment.follow.FollowOpEventCode;
+import com.guoyu.platform.trainingdepartment.follow.FollowOpLogCommand;
+import com.guoyu.platform.trainingdepartment.follow.FollowOpLogWriter;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainClassRoleMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
@@ -69,6 +72,7 @@ public class TrainClassRoleApplicationService {
   private final TrainTeacherBankMapper teacherBankMapper;
   private final PlatformUserMapper platformUserMapper;
   private final TrainingOperatorScopeService operatorScopeService;
+  private final FollowOpLogWriter opLogWriter;
 
   public TrainClassRoleApplicationService(
       TrainClassRoleMapper roleMapper,
@@ -76,13 +80,15 @@ public class TrainClassRoleApplicationService {
       TrainPeopleListMapper peopleMapper,
       TrainTeacherBankMapper teacherBankMapper,
       PlatformUserMapper platformUserMapper,
-      TrainingOperatorScopeService operatorScopeService) {
+      TrainingOperatorScopeService operatorScopeService,
+      FollowOpLogWriter opLogWriter) {
     this.roleMapper = roleMapper;
     this.classMapper = classMapper;
     this.peopleMapper = peopleMapper;
     this.teacherBankMapper = teacherBankMapper;
     this.platformUserMapper = platformUserMapper;
     this.operatorScopeService = operatorScopeService;
+    this.opLogWriter = opLogWriter;
   }
 
   @Transactional(readOnly = true)
@@ -250,7 +256,7 @@ public class TrainClassRoleApplicationService {
         return code;
       }
     }
-    throw new BusinessException(ErrorCode.FORBIDDEN, "当前角色无权提交调课申请");
+    throw new BusinessException(ErrorCode.FORBIDDEN, "当前角色无权执行此操作");
   }
 
   private static String pickPrimaryRole(List<String> roleCodes) {
@@ -321,6 +327,8 @@ public class TrainClassRoleApplicationService {
       }
       roleMapper.updateById(existing);
       dualWriteLegacy(classId, roleCode, existing, false);
+      emitRoleOp(classId, FollowOpEventCode.CLASS_ROLE_ASSIGN, existing,
+          "更新角色指派：" + roleLabel(roleCode) + " · " + nullToDash(displayName), false);
       return toVO(existing);
     }
 
@@ -341,6 +349,8 @@ public class TrainClassRoleApplicationService {
     roleMapper.insert(entity);
 
     dualWriteLegacy(classId, roleCode, entity, false);
+    emitRoleOp(classId, FollowOpEventCode.CLASS_ROLE_ASSIGN, entity,
+        "指派" + roleLabel(roleCode) + "：" + nullToDash(displayName), false);
     return toVO(entity);
   }
 
@@ -362,6 +372,8 @@ public class TrainClassRoleApplicationService {
     entity.setEndDate(LocalDate.now());
     roleMapper.updateById(entity);
     dualWriteLegacy(classId, entity.getRoleCode(), entity, true);
+    emitRoleOp(classId, FollowOpEventCode.CLASS_ROLE_UNBIND, entity,
+        "解除" + roleLabel(entity.getRoleCode()) + "：" + nullToDash(entity.getDisplayName()), true);
   }
 
   /** 花名册班长开关同步 monitor */
@@ -400,10 +412,14 @@ public class TrainClassRoleApplicationService {
       entity.setStartDate(LocalDate.now());
       entity.setTenantId(resolveTenantId(classId));
       roleMapper.insert(entity);
+      emitRoleOp(classId, FollowOpEventCode.CLASS_ROLE_ASSIGN, entity,
+          "设置班长：" + nullToDash(student.getRealname()), false);
     } else if (existing != null) {
       existing.setStatus("ended");
       existing.setEndDate(LocalDate.now());
       roleMapper.updateById(existing);
+      emitRoleOp(classId, FollowOpEventCode.CLASS_ROLE_UNBIND, existing,
+          "取消班长：" + nullToDash(existing.getDisplayName()), true);
     }
   }
 
@@ -647,6 +663,47 @@ public class TrainClassRoleApplicationService {
         e.getPhone(),
         e.getStatus(),
         unbound);
+  }
+
+  private void emitRoleOp(
+      Long classId,
+      FollowOpEventCode event,
+      TrainClassRoleEntity entity,
+      String summary,
+      boolean warn) {
+    if (classId == null || entity == null || event == null) {
+      return;
+    }
+    try {
+      Map<String, Object> detail = new LinkedHashMap<>();
+      detail.put("roleCode", entity.getRoleCode());
+      detail.put("roleName", roleLabel(entity.getRoleCode()));
+      detail.put("displayName", entity.getDisplayName());
+      detail.put("subjectType", entity.getSubjectType());
+      detail.put("subjectId", entity.getSubjectId());
+      detail.put("peopleId", entity.getPeopleId());
+      detail.put("platformUserId", entity.getPlatformUserId());
+      opLogWriter.write(FollowOpLogCommand.of(classId, event)
+          .title(event.defaultTitle())
+          .summary(summary)
+          .target("class_role", entity.getId())
+          .severity(warn ? "warn" : "info")
+          .detail(detail));
+    } catch (Exception ex) {
+      log.warn("[班级角色] 写过程日志失败 classId={} roleId={} err={}",
+          classId, entity.getId(), ex.getMessage());
+    }
+  }
+
+  private static String roleLabel(String roleCode) {
+    if (!StringUtils.hasText(roleCode)) {
+      return "角色";
+    }
+    return ROLE_NAMES.getOrDefault(roleCode, roleCode);
+  }
+
+  private static String nullToDash(String s) {
+    return StringUtils.hasText(s) ? s.trim() : "—";
   }
 
   private static String firstNonBlank(String a, String b) {

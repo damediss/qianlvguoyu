@@ -98,7 +98,7 @@ export function FollowMockExamTab({ classId }: Props) {
   const [pickForm] = Form.useForm();
   const [exporting, setExporting] = useState(false);
   /** 实时刷新：列表 + 打开的答卷详情/学员答卷 */
-  const [liveRefresh, setLiveRefresh] = useState(true);
+  const [liveRefresh, setLiveRefresh] = useState(false);
   const [lastLiveAt, setLastLiveAt] = useState<Date | null>(null);
 
   const modalBusy = addPlanOpen || pickPlanOpen;

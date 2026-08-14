@@ -144,7 +144,8 @@ public interface AppExamUserAnswerLogMapper extends BaseMapper<AppExamUserAnswer
       SELECT t.question_id AS questionId,
              t.is_right AS isRight,
              t.knowledge_id AS knowledgeId,
-             t.question_type AS questionType
+             t.question_type AS questionType,
+             t.user_answer AS userAnswer
       FROM exam_user_answer_log t
       INNER JOIN (
         SELECT question_id, MAX(id) AS max_id
