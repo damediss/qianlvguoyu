@@ -21,5 +21,6 @@ public record StandardTaskVO(
     String parseWarnings,
     String llmModelId,
     LocalDateTime llmFinishedAt,
-    LocalDateTime createdAt) {
+    LocalDateTime createdAt,
+    Map<String, List<Integer>> directionLevels) {
 }

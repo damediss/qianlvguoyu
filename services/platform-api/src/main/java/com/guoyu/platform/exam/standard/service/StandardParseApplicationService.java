@@ -3,6 +3,7 @@ package com.guoyu.platform.exam.standard.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
@@ -117,6 +118,7 @@ public class StandardParseApplicationService {
         .map(l -> Map.of("levelCode", l.getLevelCode(), "levelName", l.getLevelName()))
         .toList()));
     task.setWeightsJson(writeJson(weightsToJson(parsed)));
+    task.setDirectionLevelsJson(writeJson(parsed.getDirectionLevels()));
     task.setParseWarnings(String.join("\n", parsed.getParseWarnings()));
     taskMapper.insert(task);
 
@@ -414,7 +416,22 @@ public class StandardParseApplicationService {
         task.getParseWarnings(),
         task.getLlmModelId(),
         task.getLlmFinishedAt(),
-        task.getCreatedAt());
+        task.getCreatedAt(),
+        readDirectionLevels(task.getDirectionLevelsJson()));
+  }
+
+  @SuppressWarnings("unchecked")
+  private Map<String, List<Integer>> readDirectionLevels(String json) {
+    if (json == null || json.isBlank()) {
+      return new LinkedHashMap<>();
+    }
+    try {
+      return new LinkedHashMap<>(objectMapper.readValue(json,
+          new TypeReference<LinkedHashMap<String, List<Integer>>>() {}));
+    } catch (Exception e) {
+      log.warn("[细目表] directionLevelsJson 解析失败: {}, json={}", e.getMessage(), json);
+      return new LinkedHashMap<>();
+    }
   }
 
   private Map<String, Object> weightsToJson(ParsedStandard parsed) {

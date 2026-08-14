@@ -21,6 +21,8 @@ public class ExamStandardTaskEntity extends BaseEntity {
   private String levelsJson;
   /** 双权重表 JSON（导出/权重校验用） */
   private String weightsJson;
+  /** 工种 -> 可用 levelCode 列表的 JSON（来自 docx 1.4 节） */
+  private String directionLevelsJson;
   private String parseWarnings;
   private String llmModelId;
   private LocalDateTime llmFinishedAt;
@@ -95,6 +97,14 @@ public class ExamStandardTaskEntity extends BaseEntity {
 
   public void setWeightsJson(String weightsJson) {
     this.weightsJson = weightsJson;
+  }
+
+  public String getDirectionLevelsJson() {
+    return directionLevelsJson;
+  }
+
+  public void setDirectionLevelsJson(String directionLevelsJson) {
+    this.directionLevelsJson = directionLevelsJson;
   }
 
   public String getParseWarnings() {

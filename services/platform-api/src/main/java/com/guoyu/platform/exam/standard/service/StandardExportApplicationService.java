@@ -32,7 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 细目表导出编排（方案 §9/§11 #9~#11）：理论细目表 Excel / 操作技能细目表 Excel / 入库 SQL。
- * 导出前置校验：存在 pending 叶节点 → 禁止导出并定位提示（§12 / C4）。
+ * 导出不再强制要求叶节点已审核；review-done 仍要求无 pending。
  */
 @Service
 public class StandardExportApplicationService {
@@ -62,7 +62,6 @@ public class StandardExportApplicationService {
   public ExportFile exportTheoryExcel(Long taskId, Integer levelCode, String direction,
       Long tenantId) throws IOException {
     ExamStandardTaskEntity task = findTask(taskId, tenantId);
-    assertExportable(taskId);
     List<TreeScope> scopes = resolveScopes(taskId, levelCode, direction);
     markExported(task);
     if (scopes.size() == 1) {
@@ -89,7 +88,6 @@ public class StandardExportApplicationService {
   public ExportFile exportSkillExcel(Long taskId, Integer levelCode, String direction,
       Long tenantId) throws IOException {
     ExamStandardTaskEntity task = findTask(taskId, tenantId);
-    assertExportable(taskId);
     Map<String, StandardWeightTable> weights =
         StandardExportSupport.restoreWeights(task.getWeightsJson());
     StandardWeightTable skillTable = weights.get("skill");
@@ -138,7 +136,6 @@ public class StandardExportApplicationService {
   @Transactional
   public ExportFile exportSql(Long taskId, Long tenantId, String operatorName, String mode) {
     ExamStandardTaskEntity task = findTask(taskId, tenantId);
-    assertExportable(taskId);
     List<TreeScope> scopes = resolveScopes(taskId, null, null);
     markExported(task);
     Map<String, ExportTree> trees = new LinkedHashMap<>();
@@ -160,28 +157,6 @@ public class StandardExportApplicationService {
   // ============================================================
   // 共用
   // ============================================================
-
-  /** 导出前置校验：存在 pending 叶节点 → 禁止导出并定位提示 */
-  private void assertExportable(Long taskId) {
-    List<ExamStandardNodeEntity> pending = nodeMapper.selectList(
-        new LambdaQueryWrapper<ExamStandardNodeEntity>()
-            .eq(ExamStandardNodeEntity::getTaskId, taskId)
-            .eq(ExamStandardNodeEntity::getNodeLevel, 3)
-            .eq(ExamStandardNodeEntity::getReviewStatus, "pending")
-            .orderByAsc(ExamStandardNodeEntity::getNodeKey)
-            .last("LIMIT 5"));
-    if (!pending.isEmpty()) {
-      StringBuilder locations = new StringBuilder();
-      for (ExamStandardNodeEntity node : pending) {
-        if (locations.length() > 0) {
-          locations.append("；");
-        }
-        locations.append(node.getNodeKey()).append('(').append(node.getTitle()).append(')');
-      }
-      throw new BusinessException(ErrorCode.BAD_REQUEST,
-          "存在待审核叶节点，禁止导出。请先审核或执行「全部标已审」。待审节点（前 5 个）：" + locations);
-    }
-  }
 
   /** 解析导出范围：参数缺省时覆盖任务内全部 等级×方向 */
   private List<TreeScope> resolveScopes(Long taskId, Integer levelCode, String direction) {

@@ -20,6 +20,10 @@ import com.guoyu.platform.common.tenant.TenantContextHolder;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -48,6 +52,12 @@ public class StandardLlmSummarizeService {
   static final int SKILL_MAX_FACTOR = 2;
   /** 解析失败最大重试次数（含首次共 3 次尝试） */
   static final int MAX_ATTEMPTS = 3;
+  /** 小节级并行线程数（控制 LLM 并发与 DB 连接占用） */
+  static final int SECTION_PARALLELISM = 3;
+  /** 理论通道 max_tokens 上限（4~8 点 × ~60 token + JSON 开销） */
+  static final int THEORY_MAX_TOKENS = 1024;
+  /** 技能通道 max_tokens 上限 */
+  static final int SKILL_MAX_TOKENS = 2048;
 
   private final ExamStandardTaskMapper taskMapper;
   private final ExamStandardNodeMapper nodeMapper;
@@ -145,6 +155,7 @@ public class StandardLlmSummarizeService {
 
   private void runSummarize(Long taskId, Long tenantId, Long userId) {
     TenantContextHolder.setTenantId(tenantId);
+    ExecutorService sectionPool = null;
     try {
       ExamStandardTaskEntity task = taskMapper.selectById(taskId);
       if (task == null) {
@@ -163,40 +174,62 @@ public class StandardLlmSummarizeService {
               .orderByAsc(ExamStandardNodeEntity::getLevelCode)
               .orderByAsc(ExamStandardNodeEntity::getDirection)
               .orderByAsc(ExamStandardNodeEntity::getNodeKey));
-      int success = 0;
-      int failed = 0;
+
+      // ---- 小节级并行：3 线程（A2），TenantContextHolder 手动传递（坑#15） ----
+      sectionPool = Executors.newFixedThreadPool(SECTION_PARALLELISM, r -> {
+        Thread t = new Thread(r, "standard-section-worker");
+        t.setDaemon(true);
+        return t;
+      });
+      AtomicInteger success = new AtomicInteger();
+      AtomicInteger failed = new AtomicInteger();
+
+      List<CompletableFuture<Void>> futures = new ArrayList<>();
       for (ExamStandardNodeEntity l2 : sections) {
-        try {
-          summarizeOneSection(task, l2, "theory", splitMaterials(l2.getRelatedKnowledge()),
-              config, tenantId, userId);
-          success++;
-        } catch (Exception e) {
-          failed++;
-          log.warn("[细目表] 理论通道小节失败：taskId={} node={} error={}", taskId, l2.getNodeKey(),
-              e.getMessage());
-        }
-        if (l2.getSkillRequirement() != null && !l2.getSkillRequirement().isBlank()) {
+        final ExamStandardNodeEntity section = l2;
+        futures.add(CompletableFuture.runAsync(() -> {
+          TenantContextHolder.setTenantId(tenantId);
           try {
-            summarizeOneSection(task, l2, "skill", splitMaterials(l2.getSkillRequirement()),
-                config, tenantId, userId);
-            success++;
-          } catch (Exception e) {
-            failed++;
-            log.warn("[细目表] 技能通道小节失败：taskId={} node={} error={}", taskId, l2.getNodeKey(),
-                e.getMessage());
+            try {
+              summarizeOneSection(task, section, "theory",
+                  splitMaterials(section.getRelatedKnowledge()), config, tenantId, userId);
+              success.incrementAndGet();
+            } catch (Exception e) {
+              failed.incrementAndGet();
+              log.warn("[细目表] 理论通道小节失败：taskId={} node={} error={}", taskId,
+                  section.getNodeKey(), e.getMessage());
+            }
+            if (section.getSkillRequirement() != null && !section.getSkillRequirement().isBlank()) {
+              try {
+                summarizeOneSection(task, section, "skill",
+                    splitMaterials(section.getSkillRequirement()), config, tenantId, userId);
+                success.incrementAndGet();
+              } catch (Exception e) {
+                failed.incrementAndGet();
+                log.warn("[细目表] 技能通道小节失败：taskId={} node={} error={}", taskId,
+                    section.getNodeKey(), e.getMessage());
+              }
+            }
+          } finally {
+            TenantContextHolder.clear();
           }
-        }
+        }, sectionPool));
       }
+      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
       ExamStandardTaskEntity done = new ExamStandardTaskEntity();
       done.setId(taskId);
       done.setStatus(StandardParseApplicationService.STATUS_REVIEWING);
       done.setLlmFinishedAt(LocalDateTime.now());
       taskMapper.updateById(done);
-      log.info("[细目表] LLM 概括完成：taskId={} 小节成功={} 失败={}", taskId, success, failed);
+      log.info("[细目表] LLM 概括完成：taskId={} 小节成功={} 失败={}", taskId, success.get(), failed.get());
     } catch (Exception e) {
       log.error("[细目表] LLM 概括异常：taskId={} error={}", taskId, e.getMessage(), e);
       markTaskStatus(taskId, StandardParseApplicationService.STATUS_PARSED);
     } finally {
+      if (sectionPool != null) {
+        sectionPool.shutdown();
+      }
       TenantContextHolder.clear();
     }
   }
@@ -217,8 +250,11 @@ public class StandardLlmSummarizeService {
       ExamFaqModelConfigEntity config, Long tenantId, Long userId) {
     boolean skill = "skill".equals(dimension);
     String sectionPath = sectionPath(task, l2);
-    String systemPrompt = skill ? buildSkillSystemPrompt(task, l2) : buildTheorySystemPrompt(task, l2);
+    // C2：统一 system 前缀（不分理论/技能），差异下沉到 user prompt
+    String systemPrompt = buildSystemPrompt(task, l2);
     String userPrompt = buildUserPrompt(sectionPath, materials, skill);
+    // B2：max_tokens 按通道和素材条数自适应
+    int maxTokens = computeMaxTokens(materials, skill);
 
     StandardLlmPoint.ParseResult result = null;
     String lastError = null;
@@ -228,7 +264,7 @@ public class StandardLlmSummarizeService {
           : userPrompt + "\n\n上次输出解析失败：" + lastError + "。请严格以 JSON 输出 {\"points\":[...]}。";
       try {
         String content = llmClient.chatCompletion(config.getBaseUrl(), config.getApiKey(),
-            config.getModelId(), systemPrompt, prompt, config.getMaxTokens(),
+            config.getModelId(), systemPrompt, prompt, maxTokens,
             config.getThinking(), config.getReasoningEffort(), true, tenantId);
         lastContent = content;
         int maxCount = skill ? Math.max(1, materials.size() * SKILL_MAX_FACTOR) : THEORY_MAX_POINTS;
@@ -361,21 +397,34 @@ public class StandardLlmSummarizeService {
   }
 
   // ============================================================
-  // prompt 构造
+  // prompt 构造（C2：统一 system 前缀，差异在 user prompt 尾部）
   // ============================================================
 
-  private String buildTheorySystemPrompt(ExamStandardTaskEntity task, ExamStandardNodeEntity l2) {
+  /**
+   * 统一 system prompt：不分理论/技能，保证同一「职业+等级」下所有小节共享同一前缀，
+   * 最大化 DeepSeek 上下文硬盘缓存命中率。
+   */
+  private String buildSystemPrompt(ExamStandardTaskEntity task, ExamStandardNodeEntity l2) {
     return "你是职业技能鉴定命题专家，正在为「" + task.getWorkTypeTitle() + " "
-        + levelName(l2.getLevelCode()) + "」编写理论知识考评点。";
+        + levelName(l2.getLevelCode()) + "」编写考评点。";
   }
 
-  private String buildSkillSystemPrompt(ExamStandardTaskEntity task, ExamStandardNodeEntity l2) {
-    return "你是职业技能鉴定命题专家，正在为「" + task.getWorkTypeTitle() + " "
-        + levelName(l2.getLevelCode()) + "」编写操作技能考评点。";
+  /**
+   * B2：按通道和素材条数自适应 max_tokens。
+   * 理论：4~8 点 × ~60 token + JSON 开销 ≈ 1024 封顶；
+   * 技能：素材条数 × 40 token + 256 开销，封顶 2048。
+   */
+  public static int computeMaxTokens(List<String> materials, boolean skill) {
+    if (skill) {
+      int n = Math.max(1, materials.size());
+      return Math.min(SKILL_MAX_TOKENS, n * 40 + 256);
+    }
+    return THEORY_MAX_TOKENS;
   }
 
   private String buildUserPrompt(String sectionPath, List<String> materials, boolean skill) {
     StringBuilder sb = new StringBuilder();
+    // C2：小节路径+素材放最前（变量部分），要求/格式放最后（稳定部分）
     sb.append("小节路径：").append(sectionPath).append('\n');
     sb.append(skill ? "技能要求原文：\n" : "原文素材：\n");
     if (materials.isEmpty()) {
@@ -385,15 +434,16 @@ public class StandardLlmSummarizeService {
         sb.append("（").append(i + 1).append("）").append(materials.get(i)).append('\n');
       }
     }
+    // C2：理论/技能差异全部在 user prompt 尾部，system 前缀保持一致
     if (skill) {
-      sb.append("要求：\n"
+      sb.append("要求（操作技能考评点）：\n"
           + "1. 每条原文概括 1 个操作技能考评点，动宾/行为短语 ≤25 字，保留关键对象与动作，"
           + "去掉\"能\"字能力句式（如「检查风门、风筒的损坏状况」）；\n"
           + "2. 每个考评点给重要程度：X=核心操作，Y=重要，Z=辅助/了解；\n"
           + "3. 以 JSON 输出（必须含 \"points\" 数组），格式："
           + "{\"points\":[{\"title\":\"…\",\"important\":\"X\"}]}");
     } else {
-      sb.append("要求：\n"
+      sb.append("要求（理论知识考评点）：\n"
           + "1. 概括 4~8 个考评点，每个为 ≤20 字的名词性短语，不得照抄长句；\n"
           + "2. 每个考评点给重要程度：X=核心必考，Y=重要（法律法规、安全规程类），Z=一般了解；\n"
           + "3. 以 JSON 输出（必须含 \"points\" 数组），格式："

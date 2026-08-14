@@ -26,6 +26,8 @@ export interface StandardTask {
   llmModelId: string | null;
   llmFinishedAt: string | null;
   createdAt: string | null;
+  /** 工种 -> 可用 levelCode 列表（来自 docx 1.4 节解析），旧任务可能缺失 */
+  directionLevels?: Record<string, number[]>;
 }
 
 export interface StandardNode {

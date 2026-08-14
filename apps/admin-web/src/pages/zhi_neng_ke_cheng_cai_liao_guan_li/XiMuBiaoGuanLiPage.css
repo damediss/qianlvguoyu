@@ -1,0 +1,65 @@
+/* 细目表管理页样式 */
+
+/* 上传解析中提示文字：闪烁动画，提示用户系统正在处理 */
+@keyframes xmb-uploading-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.xmb-uploading-hint {
+  animation: xmb-uploading-blink 1.2s ease-in-out infinite;
+  color: #1677ff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* AI 概括进行中：待审/总数数字蓝色脉冲（呼吸缩放） */
+@keyframes xmb-leaf-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.06);
+  }
+}
+
+.xmb-leaf-pulse {
+  display: inline-block;
+  color: #1677ff;
+  font-weight: 600;
+  animation: xmb-leaf-pulse 1.2s ease-in-out infinite;
+}
+
+/* AI 概括进行中：leafTotal 增量「+N」绿色浮现后渐隐（约 2.5s 一轮） */
+@keyframes xmb-delta-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.xmb-leaf-delta {
+  display: inline-block;
+  color: #52c41a;
+  font-size: 12px;
+  font-weight: 600;
+  animation: xmb-delta-fade 2.5s ease-out forwards;
+}

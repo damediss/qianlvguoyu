@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.guoyu.platform.exam.standard.service.StandardLlmPoint;
 import com.guoyu.platform.exam.standard.service.StandardLlmSummarizeService;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -96,5 +97,22 @@ class StandardLlmGuardrailTest {
     StandardLlmPoint.ParseResult theory =
         StandardLlmSummarizeService.parsePointsResponse(content, 10, false);
     assertTrue(theory.getWarnings().isEmpty());
+  }
+
+  /** B2：max_tokens 按通道和素材条数自适应 */
+  @Test
+  void b2_adaptiveMaxTokens() {
+    // 理论：固定 1024
+    assertEquals(1024, StandardLlmSummarizeService.computeMaxTokens(List.of(), false));
+    assertEquals(1024, StandardLlmSummarizeService.computeMaxTokens(List.of("a", "b"), false));
+    // 技能：素材条数 × 40 + 256，封顶 2048
+    assertEquals(296, StandardLlmSummarizeService.computeMaxTokens(List.of("a"), true));
+    assertEquals(416, StandardLlmSummarizeService.computeMaxTokens(List.of("a", "b", "c", "d"), true));
+    assertEquals(2048, StandardLlmSummarizeService.computeMaxTokens(
+        List.of("1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+            "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+            "21", "22", "23", "24", "25", "26", "27", "28", "29", "30",
+            "31", "32", "33", "34", "35", "36", "37", "38", "39", "40",
+            "41", "42", "43", "44", "45"), true), "45 条素材封顶 2048");
   }
 }

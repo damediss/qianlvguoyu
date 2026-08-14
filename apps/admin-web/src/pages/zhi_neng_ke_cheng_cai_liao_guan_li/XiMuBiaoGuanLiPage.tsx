@@ -12,6 +12,7 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Progress,
   Radio,
   Select,
   Space,
@@ -30,6 +31,7 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
+  LoadingOutlined,
   PlusOutlined,
   ReloadOutlined,
   RobotOutlined,
@@ -56,6 +58,7 @@ import {
   type StandardNode,
   type StandardTask,
 } from './api';
+import './XiMuBiaoGuanLiPage.css';
 
 const STATUS_TEXT: Record<StandardTask['status'], { text: string; color: string }> = {
   uploaded: { text: '已上传', color: 'default' },
@@ -118,6 +121,21 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
   const [keyword, setKeyword] = useState('');
   const canGenerate = hasPermission('ximubiaoguanli:generate');
   const canExport = hasPermission('ximubiaoguanli:export');
+  const [uploading, setUploading] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState(0);
+  const uploadTimerRef = useRef<number | null>(null);
+  // AI 概括感知：上一轮 leafTotal 快照、增量提示（+N）、触发中的任务 id
+  const prevLeafRef = useRef<Map<string, number>>(new Map());
+  const [leafDeltas, setLeafDeltas] = useState<Record<string, number>>({});
+  const [summarizingId, setSummarizingId] = useState<string | null>(null);
+
+  // 组件卸载时清理模拟进度定时器
+  useEffect(
+    () => () => {
+      if (uploadTimerRef.current !== null) window.clearInterval(uploadTimerRef.current);
+    },
+    [],
+  );
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['standard-tasks', page, keyword],
@@ -132,7 +150,41 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
     return () => clearInterval(timer);
   }, [data, refetch]);
 
+  // AI 概括感知：对比上一轮 leafTotal 快照，计算增量触发 +N 渐隐动画
+  useEffect(() => {
+    const items = data?.items || [];
+    const deltas: Record<string, number> = {};
+    for (const t of items) {
+      const prev = prevLeafRef.current.get(t.id);
+      if (t.status === 'llm_running' && prev !== undefined && t.leafTotal > prev) {
+        deltas[t.id] = t.leafTotal - prev;
+      }
+      prevLeafRef.current.set(t.id, t.leafTotal);
+    }
+    if (Object.keys(deltas).length > 0) {
+      setLeafDeltas(deltas);
+      const timer = window.setTimeout(() => setLeafDeltas({}), 2600);
+      return () => window.clearTimeout(timer);
+    }
+  }, [data]);
+
+  // 触发概括后：按钮 loading 保持到任务状态变为 llm_running
+  useEffect(() => {
+    if (!summarizingId) return;
+    const t = (data?.items || []).find((x) => x.id === summarizingId);
+    if (t && t.status === 'llm_running') setSummarizingId(null);
+  }, [data, summarizingId]);
+
   const handleUpload = async (file: File) => {
+    // 解析为同步接口、服务端无进度回调：用模拟进度条提示「处理中」，上限 95%，完成后跳 100%
+    setUploading(true);
+    setUploadPercent(0);
+    if (uploadTimerRef.current !== null) window.clearInterval(uploadTimerRef.current);
+    uploadTimerRef.current = window.setInterval(() => {
+      setUploadPercent((p) =>
+        p >= 95 ? p : Math.min(95, p + Math.max(1, Math.round((95 - p) / 10))),
+      );
+    }, 300);
     try {
       const task = await uploadStandardDocx(file);
       message.success(`解析完成：${task.workTypeTitle}（${task.levels.length} 个等级）`);
@@ -140,16 +192,28 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
       onEnter(task.id);
     } catch (e: any) {
       message.error(e?.response?.data?.message || e?.message || '上传解析失败');
+    } finally {
+      if (uploadTimerRef.current !== null) {
+        window.clearInterval(uploadTimerRef.current);
+        uploadTimerRef.current = null;
+      }
+      setUploadPercent(100);
+      window.setTimeout(() => {
+        setUploading(false);
+        setUploadPercent(0);
+      }, 500);
     }
   };
 
   const handleSummarize = async (task: StandardTask) => {
+    setSummarizingId(task.id);
     try {
       await triggerSummarize(task.id);
       message.success('LLM 概括已触发（异步执行，状态自动刷新）');
       refetch();
     } catch (e: any) {
       message.error(e?.response?.data?.message || e?.message || '触发失败');
+      setSummarizingId(null);
     }
   };
 
@@ -179,15 +243,35 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
     {
       title: '状态',
       dataIndex: 'status',
-      width: 100,
+      width: 110,
       render: (s: StandardTask['status']) => (
-        <Tag color={STATUS_TEXT[s]?.color}>{STATUS_TEXT[s]?.text || s}</Tag>
+        <Tag
+          icon={s === 'llm_running' ? <LoadingOutlined spin /> : undefined}
+          color={STATUS_TEXT[s]?.color}
+        >
+          {STATUS_TEXT[s]?.text || s}
+        </Tag>
       ),
     },
     {
       title: '待审/总数',
-      width: 90,
-      render: (_, t) => `${t.leafPending}/${t.leafTotal}`,
+      width: 130,
+      render: (_, t) => {
+        const running = t.status === 'llm_running';
+        const delta = leafDeltas[t.id];
+        return (
+          <Space size={4}>
+            <span className={running ? 'xmb-leaf-pulse' : undefined}>
+              {t.leafPending}/{t.leafTotal}
+            </span>
+            {running && delta !== undefined && delta > 0 && (
+              <span key={`${t.id}-${t.leafTotal}`} className="xmb-leaf-delta">
+                +{delta}
+              </span>
+            )}
+          </Space>
+        );
+      },
     },
     {
       title: '解析警告',
@@ -216,7 +300,8 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
               size="small"
               type="link"
               icon={<RobotOutlined />}
-              disabled={t.status === 'llm_running'}
+              disabled={t.status === 'llm_running' || summarizingId === t.id}
+              loading={summarizingId === t.id}
               onClick={() => handleSummarize(t)}
             >
               AI概括
@@ -267,19 +352,47 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
             }}
           />
           {canGenerate && (
-            <Upload
-              accept=".docx"
-              showUploadList={false}
-              customRequest={({ file }) => handleUpload(file as File)}
-            >
-              <Button type="primary" icon={<UploadOutlined />}>
-                上传标准 docx
-              </Button>
-            </Upload>
+            <Space size={8}>
+              <Upload
+                accept=".docx"
+                showUploadList={false}
+                disabled={uploading}
+                customRequest={({ file }) => handleUpload(file as File)}
+              >
+                <Button
+                  type="primary"
+                  icon={<UploadOutlined />}
+                  loading={uploading}
+                  disabled={uploading}
+                >
+                  {uploading ? '解析中…' : '上传标准 docx'}
+                </Button>
+              </Upload>
+              {uploading && (
+                <>
+                  <Progress
+                    percent={uploadPercent}
+                    size="small"
+                    status="active"
+                    style={{ width: 160, margin: 0 }}
+                  />
+                  <span className="xmb-uploading-hint">正在解析标准文档，请勿关闭页面…</span>
+                </>
+              )}
+            </Space>
           )}
         </Space>
       }
     >
+      {(data?.items || []).some((t) => t.status === 'llm_running') && (
+        <Alert
+          type="info"
+          showIcon
+          icon={<LoadingOutlined spin />}
+          message="AI 概括进行中：每 5 秒自动刷新，全量概括约需数分钟，可离开本页稍后回来查看。"
+          style={{ marginBottom: 12 }}
+        />
+      )}
       <Table<StandardTask>
         rowKey="id"
         loading={isLoading}
@@ -379,12 +492,19 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
     refetchInterval: (q) => (q.state.data?.status === 'llm_running' ? 5000 : false),
   });
 
-  // 可选范围 = levels × directions（剔除解析期跳过的组合：查询后无节点时由后端返空）
+  // 可选范围 = levels × directions，按 1.4 节工种可用等级矩阵过滤，旧任务无矩阵则保留全组合
   const scopes = useMemo(() => {
     if (!task) return [];
     const out: Array<{ levelCode: number; direction: string; label: string }> = [];
+    const constraints =
+      task.directionLevels && Object.keys(task.directionLevels).length > 0
+        ? task.directionLevels
+        : null;
     for (const level of task.levels) {
       for (const direction of task.directions) {
+        if (constraints && !constraints[direction]?.includes(level.levelCode)) {
+          continue;
+        }
         out.push({
           levelCode: level.levelCode,
           direction,
@@ -395,7 +515,13 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
     return out;
   }, [task]);
 
-  const activeScope = scope || scopes[0] || null;
+  const activeScope = useMemo(() => {
+    if (!scopes.length) return null;
+    const match = scopes.find(
+      (s) => s.levelCode === scope?.levelCode && s.direction === scope?.direction,
+    );
+    return match ?? scopes[0];
+  }, [scopes, scope]);
 
   const { data: flatNodes, isLoading, refetch } = useQuery({
     queryKey: ['standard-tree', taskId, activeScope?.levelCode, activeScope?.direction, dimension],
@@ -481,7 +607,7 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
       dataIndex: 'dimension',
       width: 70,
       render: (d: string, n) =>
-        n.nodeLevel === 3 ? (d === 'skill' ? <Tag color="geekblue">技</Tag> : <Tag>理</Tag>) : '-',
+        n.nodeLevel === 3 ? (d === 'skill' ? <Tag color="geekblue">技能</Tag> : <Tag>理论</Tag>) : '-',
     },
     {
       title: '重要程度',
@@ -609,7 +735,7 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
             {task.workTypeTitle}（{task.seriesNo}，{task.version}年版）
           </span>
           <Tag color={STATUS_TEXT[task.status]?.color}>{STATUS_TEXT[task.status]?.text}</Tag>
-          <span>
+          <span className={task.status === 'llm_running' ? 'xmb-leaf-pulse' : undefined}>
             待审 {task.leafPending}/{task.leafTotal}
           </span>
         </Space>

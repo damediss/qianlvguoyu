@@ -1,6 +1,7 @@
 package com.guoyu.platform.exam.standard;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -110,27 +111,53 @@ class StandardServiceTest {
     assertEquals("409", ex.getCode());
   }
 
-  /** C4：导出前置校验——存在 pending 叶节点 → 禁止导出 + 定位信息 */
+  /** C4：导出允许待审核叶节点，不再 400 拦截 */
   @Test
-  void c4_exportBlockedByPendingLeaves() {
+  void c4_exportAllowsPendingLeaves() {
     ExamStandardTaskMapper taskMapper = mock(ExamStandardTaskMapper.class);
     ExamStandardNodeMapper nodeMapper = mock(ExamStandardNodeMapper.class);
     ExamStandardTaskEntity task = new ExamStandardTaskEntity();
     task.setId(1L);
     task.setStatus("reviewing");
+    task.setWorkTypeTitle("测试职业");
+    task.setSeriesNo("1-1-1");
+    task.setVersion("2024");
     when(taskMapper.selectOne(any())).thenReturn(task);
-    ExamStandardNodeEntity pendingLeaf = new ExamStandardNodeEntity();
-    pendingLeaf.setNodeKey("A-A-A-001");
-    pendingLeaf.setTitle("工匠精神的基本内涵");
-    when(nodeMapper.selectList(any())).thenReturn(List.of(pendingLeaf));
+
+    ExamStandardNodeEntity rootA = new ExamStandardNodeEntity();
+    rootA.setId(1L);
+    rootA.setTaskId(1L);
+    rootA.setNodeLevel(0);
+    rootA.setNodeKey("A");
+    rootA.setTitle("基本要求");
+    rootA.setSortNumber(1);
+    rootA.setDirection("默认");
+    rootA.setLevelCode(0);
+    rootA.setReviewStatus("approved");
+
+    ExamStandardNodeEntity leaf = new ExamStandardNodeEntity();
+    leaf.setId(2L);
+    leaf.setParentId(1L);
+    leaf.setTaskId(1L);
+    leaf.setNodeLevel(3);
+    leaf.setNodeKey("A-A-001");
+    leaf.setTitle("工匠精神");
+    leaf.setSortNumber(1);
+    leaf.setDirection("默认");
+    leaf.setLevelCode(0);
+    leaf.setDimension("theory");
+    leaf.setReviewStatus("pending");
+
+    when(nodeMapper.selectList(any())).thenReturn(List.of(rootA, leaf));
 
     StandardExportApplicationService service =
         new StandardExportApplicationService(taskMapper, nodeMapper);
-    BusinessException ex = assertThrows(BusinessException.class,
-        () -> service.exportTheoryExcel(1L, 0, "默认", 1L));
-    assertEquals("400", ex.getCode());
-    assertTrue(ex.getMessage().contains("A-A-A-001"), "定位信息应含 nodeKey");
-    assertTrue(ex.getMessage().contains("待审核"));
+    StandardExportApplicationService.ExportFile file =
+        service.exportSql(1L, 1L, "tester", "create");
+    assertNotNull(file);
+    assertTrue(file.fileName().startsWith("测试职业"));
+    assertTrue(new String(file.content(), java.nio.charset.StandardCharsets.UTF_8)
+        .contains("INSERT INTO"), "SQL 导出应包含 INSERT");
   }
 
   /** C6：LLM 配置缺失 → 触发报错且任务保持 parsed（降级：可人工补叶导出） */
