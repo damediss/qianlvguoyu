@@ -1691,12 +1691,17 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                       <Statistic
                         title="影像留痕"
                         value={
-                          qualityMetrics?.evidenceRequiredSessions
-                            ? `${qualityMetrics.evidenceOkSessions ?? 0}/${qualityMetrics.evidenceRequiredSessions}`
-                            : '—'
+                          qualityMetrics?.evidencePhotoCount != null
+                            ? Number(qualityMetrics.evidencePhotoCount)
+                            : qualityMetrics?.evidenceReady
+                              ? 1
+                              : 0
                         }
-                        suffix={qualityMetrics?.evidenceReady ? '齐套' : undefined}
+                        suffix="张"
                       />
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {qualityMetrics?.evidenceReady ? '可生成培训照片' : '请在留痕页手动添加'}
+                      </Typography.Text>
                     </Card>
                   </Col>
                   <Col xs={12} md={6}>

@@ -6,6 +6,7 @@ import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.trainingdepartment.dto.FollowEvidenceCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowEvidencePatchReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowEvidenceReviewReq;
+import com.guoyu.platform.trainingdepartment.dto.FollowPhotoPackGenerateReq;
 import com.guoyu.platform.trainingdepartment.service.TrainFollowEvidenceApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.FollowEvidenceVO;
 import jakarta.validation.Valid;
@@ -114,11 +115,19 @@ public class TrainFollowEvidenceAdminController {
     return evidenceService.previewContent(id);
   }
 
+  @GetMapping("/info-classes/{classId}/follow/photo-pack/defaults")
+  @PreAuthorize("hasAuthority('train:info-class:view')")
+  public ApiResponse<Map<String, Object>> photoPackDefaults(@PathVariable Long classId) {
+    return ApiResponse.ok(evidenceService.photoPackDefaults(classId));
+  }
+
   @PostMapping("/info-classes/{classId}/follow/photo-pack/generate")
   @PreAuthorize("hasAuthority('train:info-class:update')")
   @AuditLog(module = "training", action = "follow-photo-pack:generate", targetType = "train_follow_photo_pack")
-  public ApiResponse<Map<String, Object>> generate(@PathVariable Long classId) {
-    return ApiResponse.ok(evidenceService.generatePhotoPack(classId));
+  public ApiResponse<Map<String, Object>> generate(
+      @PathVariable Long classId,
+      @RequestBody(required = false) FollowPhotoPackGenerateReq body) {
+    return ApiResponse.ok(evidenceService.generatePhotoPack(classId, body));
   }
 
   @GetMapping("/info-classes/{classId}/follow/photo-pack/latest")

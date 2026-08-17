@@ -8,12 +8,18 @@ import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.vo.FileVO;
+import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
+import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
+import com.guoyu.platform.system.entity.OrgEntity;
+import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.trainingdepartment.dto.FollowEvidenceCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowEvidencePatchReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowEvidenceReviewReq;
+import com.guoyu.platform.trainingdepartment.dto.FollowPhotoPackGenerateReq;
 import com.guoyu.platform.trainingdepartment.entity.TrainFollowEvidenceEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainFollowPhotoPackEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainScheduleEntity;
 import com.guoyu.platform.trainingdepartment.follow.FollowOpEventCode;
 import com.guoyu.platform.trainingdepartment.follow.FollowOpLogCommand;
@@ -21,6 +27,7 @@ import com.guoyu.platform.trainingdepartment.follow.FollowOpLogWriter;
 import com.guoyu.platform.trainingdepartment.mapper.TrainFollowEvidenceMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainFollowPhotoPackMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainScheduleMapper;
 import com.guoyu.platform.trainingdepartment.support.TrainFollowPhotoPackGenerator;
 import com.guoyu.platform.trainingdepartment.vo.FollowEvidenceVO;
@@ -61,6 +68,9 @@ public class TrainFollowEvidenceApplicationService {
   private final TrainFollowPhotoPackMapper photoPackMapper;
   private final TrainScheduleMapper scheduleMapper;
   private final TrainInfoClassMapper classMapper;
+  private final TrainInfoListMapper trainInfoListMapper;
+  private final ExamWorkTypeMapper examWorkTypeMapper;
+  private final OrgMapper orgMapper;
   private final TrainClassRoleApplicationService roleService;
   private final FileApplicationService fileApplicationService;
   private final TrainFollowPhotoPackGenerator photoPackGenerator;
@@ -68,11 +78,18 @@ public class TrainFollowEvidenceApplicationService {
   private final TrainFollowEvidenceApplicationService self;
   private final ObjectMapper objectMapper = new ObjectMapper();
 
+  private static final String[] LEVEL_LABELS = {
+      "", "初级工", "中级工", "高级工", "技师", "高级技师"
+  };
+
   public TrainFollowEvidenceApplicationService(
       TrainFollowEvidenceMapper evidenceMapper,
       TrainFollowPhotoPackMapper photoPackMapper,
       TrainScheduleMapper scheduleMapper,
       TrainInfoClassMapper classMapper,
+      TrainInfoListMapper trainInfoListMapper,
+      ExamWorkTypeMapper examWorkTypeMapper,
+      OrgMapper orgMapper,
       TrainClassRoleApplicationService roleService,
       FileApplicationService fileApplicationService,
       TrainFollowPhotoPackGenerator photoPackGenerator,
@@ -82,6 +99,9 @@ public class TrainFollowEvidenceApplicationService {
     this.photoPackMapper = photoPackMapper;
     this.scheduleMapper = scheduleMapper;
     this.classMapper = classMapper;
+    this.trainInfoListMapper = trainInfoListMapper;
+    this.examWorkTypeMapper = examWorkTypeMapper;
+    this.orgMapper = orgMapper;
     this.roleService = roleService;
     this.fileApplicationService = fileApplicationService;
     this.photoPackGenerator = photoPackGenerator;
@@ -117,86 +137,38 @@ public class TrainFollowEvidenceApplicationService {
 
   public Map<String, Object> coverage(Long classId) {
     requireClass(classId);
-    Map<Long, TrainScheduleEntity> scheduleMap = loadSchedules(classId);
     List<TrainFollowEvidenceEntity> all = evidenceMapper.selectList(
         new LambdaQueryWrapper<TrainFollowEvidenceEntity>()
             .eq(TrainFollowEvidenceEntity::getTenantId, tenantId())
             .eq(TrainFollowEvidenceEntity::getClassId, classId)
             .eq(TrainFollowEvidenceEntity::getDeleted, 0));
 
-    Map<Long, List<TrainFollowEvidenceEntity>> bySchedule = all.stream()
-        .filter(e -> e.getScheduleId() != null)
-        .collect(Collectors.groupingBy(TrainFollowEvidenceEntity::getScheduleId));
+    long photoApproved = all.stream()
+        .filter(e -> "photo".equals(e.getMediaType()) && "approved".equals(e.getReviewStatus()))
+        .count();
+    long photoPending = all.stream()
+        .filter(e -> "photo".equals(e.getMediaType()) && "pending".equals(e.getReviewStatus()))
+        .count();
+    long videoApproved = all.stream()
+        .filter(e -> "video".equals(e.getMediaType()) && "approved".equals(e.getReviewStatus()))
+        .count();
 
-    List<Map<String, Object>> items = new ArrayList<>();
-    int required = 0;
-    int ok = 0;
-    for (TrainScheduleEntity s : scheduleMap.values().stream()
-        .sorted((a, b) -> {
-          String da = a.getScheduleDate() != null ? a.getScheduleDate() : "";
-          String db = b.getScheduleDate() != null ? b.getScheduleDate() : "";
-          int c = da.compareTo(db);
-          if (c != 0) return c;
-          String ta = a.getStartTime() != null ? a.getStartTime() : "";
-          String tb = b.getStartTime() != null ? b.getStartTime() : "";
-          return ta.compareTo(tb);
-        }).toList()) {
-      if (s.getEvidenceRequired() != null && s.getEvidenceRequired() == 0) {
-        continue;
-      }
-      required++;
-      List<TrainFollowEvidenceEntity> list = bySchedule.getOrDefault(s.getId(), List.of());
-      List<TrainFollowEvidenceEntity> photos = list.stream()
-          .filter(e -> "photo".equals(e.getMediaType())).toList();
-      List<TrainFollowEvidenceEntity> videos = list.stream()
-          .filter(e -> "video".equals(e.getMediaType())).toList();
-      long photoApproved = photos.stream().filter(e -> "approved".equals(e.getReviewStatus())).count();
-      long photoPending = photos.stream().filter(e -> "pending".equals(e.getReviewStatus())).count();
-      long videoApproved = videos.stream().filter(e -> "approved".equals(e.getReviewStatus())).count();
-      long videoPending = videos.stream().filter(e -> "pending".equals(e.getReviewStatus())).count();
-      String form = TrainFollowPhotoPackGenerator.normalizeTeachForm(s.getTeachForm());
-      boolean photoOk = photoApproved >= MIN_PHOTOS_PER_SESSION;
-      boolean videoOk = videoApproved >= MIN_VIDEOS_PER_SESSION;
-      boolean pass = photoOk && videoOk;
-      if (pass) {
-        ok++;
-      }
-      Map<String, Object> row = new LinkedHashMap<>();
-      row.put("scheduleId", s.getId());
-      row.put("scheduleDate", s.getScheduleDate());
-      row.put("courseName", s.getCourseName());
-      row.put("teachForm", s.getTeachForm());
-      row.put("teachFormLabel", form);
-      row.put("classHours", s.getClassHours());
-      row.put("actualClassHours", s.getActualClassHours());
-      row.put("hoursDisplay", TrainFollowPhotoPackGenerator.resolveHours(s, null));
-      row.put("startTime", s.getStartTime());
-      row.put("endTime", s.getEndTime());
-      row.put("photoCount", photos.size());
-      row.put("approvedCount", photoApproved);
-      row.put("pendingCount", photoPending);
-      row.put("minRequired", MIN_PHOTOS_PER_SESSION);
-      row.put("minPhotos", MIN_PHOTOS_PER_SESSION);
-      row.put("videoCount", videos.size());
-      row.put("videoApprovedCount", videoApproved);
-      row.put("videoPendingCount", videoPending);
-      row.put("minVideos", MIN_VIDEOS_PER_SESSION);
-      row.put("videoDurationTargetSec", VIDEO_DURATION_TARGET_SEC);
-      row.put("photoOk", photoOk);
-      row.put("videoOk", videoOk);
-      row.put("coverageOk", pass);
-      items.add(row);
-    }
+    // 手动添加模式：有已通过照片即可视为齐套（不再按课表逐课次考核）
+    boolean ready = photoApproved > 0;
 
     Map<String, Object> result = new LinkedHashMap<>();
-    result.put("requiredSessions", required);
-    result.put("okSessions", ok);
-    result.put("missingSessions", Math.max(0, required - ok));
-    result.put("ready", required > 0 && ok == required);
+    result.put("mode", "manual");
+    result.put("requiredSessions", 0);
+    result.put("okSessions", ready ? 1 : 0);
+    result.put("missingSessions", ready ? 0 : 1);
+    result.put("ready", ready);
+    result.put("photoApprovedCount", photoApproved);
+    result.put("photoPendingCount", photoPending);
+    result.put("videoApprovedCount", videoApproved);
     result.put("minPhotos", MIN_PHOTOS_PER_SESSION);
     result.put("minVideos", MIN_VIDEOS_PER_SESSION);
     result.put("videoDurationTargetSec", VIDEO_DURATION_TARGET_SEC);
-    result.put("items", items);
+    result.put("items", List.of());
     return result;
   }
 
@@ -207,15 +179,8 @@ public class TrainFollowEvidenceApplicationService {
 
   @Transactional
   public FollowEvidenceVO createApp(Long classId, Long platformUserId, FollowEvidenceCreateReq req) {
-    String role = roleService.requireAnyActiveRole(
-        platformUserId,
-        classId,
-        TrainClassRoleApplicationService.MONITOR,
-        TrainClassRoleApplicationService.HEAD_TEACHER,
-        TrainClassRoleApplicationService.FOLLOW_STAFF,
-        TrainClassRoleApplicationService.LEAD_TEACHER,
-        TrainClassRoleApplicationService.ASSISTANT);
-    return createInternal(classId, req, platformUserId, role);
+    throw new BusinessException(ErrorCode.BAD_REQUEST,
+        "课堂影像请由管理员在跟班工作台「留痕」中手动添加，App 端已关闭上传");
   }
 
   /**
@@ -232,32 +197,8 @@ public class TrainFollowEvidenceApplicationService {
       String caption,
       String mediaType,
       Integer durationSeconds) {
-    if (file == null || file.isEmpty()) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择文件");
-    }
-    // 先鉴权，避免无效上传
-    roleService.requireAnyActiveRole(
-        platformUserId,
-        classId,
-        TrainClassRoleApplicationService.MONITOR,
-        TrainClassRoleApplicationService.HEAD_TEACHER,
-        TrainClassRoleApplicationService.FOLLOW_STAFF,
-        TrainClassRoleApplicationService.LEAD_TEACHER,
-        TrainClassRoleApplicationService.ASSISTANT);
-    // App 主体 tenantId 常为 0，按请求租户落库，避免管理端按租户下载对不上
-    FileVO stored = fileApplicationService.uploadForTenant(tenantId(), file, "private");
-    FollowEvidenceCreateReq req = new FollowEvidenceCreateReq();
-    req.setScheduleId(scheduleId);
-    req.setBizDate(bizDate);
-    req.setTeachFormOverride(teachFormOverride);
-    req.setClassHoursOverride(classHoursOverride);
-    req.setCaption(caption);
-    req.setMediaType(StringUtils.hasText(mediaType) ? mediaType : "photo");
-    req.setDurationSeconds(durationSeconds);
-    req.setFileId(stored.id());
-    // 必须保留 /api/files/{id}/download，培训照片打包依赖此路径解析 fileId
-    req.setFilePath("/api/files/" + stored.id() + "/download");
-    return self.createApp(classId, platformUserId, req);
+    throw new BusinessException(ErrorCode.BAD_REQUEST,
+        "课堂影像请由管理员在跟班工作台「留痕」中手动添加，App 端已关闭上传");
   }
 
   public FollowEvidenceVO createAdminMultipart(
@@ -331,11 +272,20 @@ public class TrainFollowEvidenceApplicationService {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "课次不存在或不属于本班");
       }
     } else {
+      // 手动添加：不挂课表，必填业务日 + 图注说明
       if (!StringUtils.hasText(req.getBizDate())) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST, "无课次时请填写业务日期");
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "请填写照片日期");
       }
-      if (!StringUtils.hasText(req.getTeachFormOverride())) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST, "无课次时请选择理论/实操");
+      if (!StringUtils.hasText(req.getCaption())) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "请填写图注说明（如：开班、公共课）");
+      }
+      String period = req.getTeachFormOverride() != null ? req.getTeachFormOverride().trim() : "";
+      if (StringUtils.hasText(period) && !"上午".equals(period) && !"下午".equals(period)
+          && !"全天".equals(period)) {
+        // 兼容旧「理论/实操」字段；手动模式下仅接受时段
+        if (!period.contains("理论") && !period.contains("实操")) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST, "时段请选择：上午 / 下午 / 全天");
+        }
       }
     }
 
@@ -360,7 +310,13 @@ public class TrainFollowEvidenceApplicationService {
     entity.setCaption(req.getCaption());
     entity.setUploaderUserId(uploaderId);
     entity.setUploaderRole(uploaderRole);
-    entity.setReviewStatus("pending");
+    // 管理端手动添加直接视为已通过，无需再审
+    boolean adminUpload = "admin".equals(uploaderRole);
+    entity.setReviewStatus(adminUpload ? "approved" : "pending");
+    if (adminUpload) {
+      entity.setReviewedBy(uploaderId);
+      entity.setReviewedAt(LocalDateTime.now());
+    }
     entity.setSortNo(req.getSortNo() != null ? req.getSortNo() : nextSortNo(classId, req.getScheduleId()));
     entity.setCreatedBy(uploaderId);
     entity.setUpdatedBy(uploaderId);
@@ -368,9 +324,11 @@ public class TrainFollowEvidenceApplicationService {
 
     String mediaLabel = "video".equals(media) ? "视频" : "照片";
     String actorLabel = evidenceActorLabel(uploaderRole);
-    String title = StringUtils.hasText(actorLabel)
-        ? actorLabel + "上传课堂" + mediaLabel
-        : "上传课堂" + mediaLabel;
+    String title = adminUpload
+        ? ("管理员添加课堂" + mediaLabel)
+        : (StringUtils.hasText(actorLabel)
+            ? actorLabel + "上传课堂" + mediaLabel
+            : "上传课堂" + mediaLabel);
     Map<String, Object> detail = new LinkedHashMap<>();
     detail.put("mediaType", media);
     if (entity.getFileId() != null) {
@@ -502,9 +460,10 @@ public class TrainFollowEvidenceApplicationService {
             TrainClassRoleApplicationService.FOLLOW_STAFF);
       }
     }
-    entity.setDeleted(1);
+    // @TableLogic：必须用 deleteById，updateById 不会写入 deleted 字段
     entity.setUpdatedBy(actorId);
     evidenceMapper.updateById(entity);
+    evidenceMapper.deleteById(evidenceId);
 
     opLogWriter.write(FollowOpLogCommand.of(entity.getClassId(), FollowOpEventCode.EVIDENCE_DELETE)
         .bizDate(entity.getBizDate())
@@ -516,8 +475,22 @@ public class TrainFollowEvidenceApplicationService {
         .client(appMode ? "app" : "admin"));
   }
 
+  @Transactional(readOnly = true)
+  public Map<String, Object> photoPackDefaults(Long classId) {
+    TrainInfoClassEntity clazz = requireClass(classId);
+    TrainFollowPhotoPackGenerator.HeaderMeta meta = resolvePhotoPackHeader(clazz, null);
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("title", meta.title());
+    result.put("workType", meta.workType());
+    result.put("level", meta.level());
+    result.put("trainTime", meta.trainTime());
+    result.put("trainUnit", meta.trainUnit());
+    result.put("trainAddress", meta.trainAddress());
+    return result;
+  }
+
   @Transactional
-  public Map<String, Object> generatePhotoPack(Long classId) {
+  public Map<String, Object> generatePhotoPack(Long classId, FollowPhotoPackGenerateReq req) {
     TrainInfoClassEntity clazz = requireClass(classId);
     List<TrainFollowEvidenceEntity> photos = evidenceMapper.selectList(
         new LambdaQueryWrapper<TrainFollowEvidenceEntity>()
@@ -531,8 +504,9 @@ public class TrainFollowEvidenceApplicationService {
     }
     Map<Long, TrainScheduleEntity> scheduleMap = loadSchedules(classId);
     var sections = TrainFollowPhotoPackGenerator.groupSections(photos, scheduleMap);
-    String title = (clazz.getTitle() != null ? clazz.getTitle() : ("班级" + classId)) + "培训照片";
-    FileVO file = photoPackGenerator.generateAndStore(clazz, sections, tenantId(), title);
+    TrainFollowPhotoPackGenerator.HeaderMeta header = resolvePhotoPackHeader(clazz, req);
+    String title = header.title();
+    FileVO file = photoPackGenerator.generateAndStore(clazz, sections, tenantId(), title, header);
 
     TrainFollowPhotoPackEntity pack = new TrainFollowPhotoPackEntity();
     pack.setTenantId(tenantId());
@@ -550,6 +524,11 @@ public class TrainFollowEvidenceApplicationService {
       snap.put("sectionCount", sections.size());
       snap.put("scheduleIds", photos.stream().map(TrainFollowEvidenceEntity::getScheduleId)
           .filter(Objects::nonNull).distinct().toList());
+      snap.put("workType", header.workType());
+      snap.put("level", header.level());
+      snap.put("trainTime", header.trainTime());
+      snap.put("trainUnit", header.trainUnit());
+      snap.put("trainAddress", header.trainAddress());
       pack.setSnapshotJson(objectMapper.writeValueAsString(snap));
     } catch (Exception ignored) {
       pack.setSnapshotJson(null);
@@ -574,6 +553,114 @@ public class TrainFollowEvidenceApplicationService {
     result.put("title", title);
     result.put("generatedAt", pack.getGeneratedAt());
     return result;
+  }
+
+  private TrainFollowPhotoPackGenerator.HeaderMeta resolvePhotoPackHeader(
+      TrainInfoClassEntity clazz, FollowPhotoPackGenerateReq req) {
+    TrainInfoListEntity trainInfo = clazz.getTrainInfoId() != null
+        ? trainInfoListMapper.selectById(clazz.getTrainInfoId()) : null;
+
+    String workType = firstNonBlank(req != null ? req.getWorkType() : null, resolveWorkTypeTitle(clazz));
+    String level = firstNonBlank(req != null ? req.getLevel() : null, resolveLevelLabel(clazz, trainInfo));
+    String trainTime = firstNonBlank(req != null ? req.getTrainTime() : null, resolveTrainTime(clazz, trainInfo));
+    String trainUnit = firstNonBlank(
+        req != null ? req.getTrainUnit() : null,
+        trainInfo != null ? trainInfo.getTrainCompanyName() : null,
+        "千铝工投");
+    String trainAddress = firstNonBlank(
+        req != null ? req.getTrainAddress() : null,
+        trainInfo != null ? trainInfo.getCompanyAddress() : null,
+        resolveCompanyName(clazz, trainInfo));
+
+    String title = firstNonBlank(req != null ? req.getTitle() : null, null);
+    if (!StringUtils.hasText(title)) {
+      String base = StringUtils.hasText(clazz.getTitle()) ? clazz.getTitle().trim() : ("班级" + clazz.getId());
+      if (StringUtils.hasText(workType) && StringUtils.hasText(level) && !base.contains(workType)) {
+        title = base + workType + level + "培训照片";
+      } else if (!base.endsWith("培训照片") && !base.endsWith("照片")) {
+        title = base + "培训照片";
+      } else {
+        title = base;
+      }
+    }
+
+    return new TrainFollowPhotoPackGenerator.HeaderMeta(
+        title.trim(),
+        nullToEmpty(workType),
+        nullToEmpty(level),
+        nullToEmpty(trainTime),
+        nullToEmpty(trainUnit),
+        nullToEmpty(trainAddress));
+  }
+
+  private String resolveWorkTypeTitle(TrainInfoClassEntity clazz) {
+    if (clazz.getWorkTypeId() == null) {
+      return "";
+    }
+    ExamWorkTypeEntity wt = examWorkTypeMapper.selectById(clazz.getWorkTypeId());
+    return wt != null && StringUtils.hasText(wt.getTitle()) ? wt.getTitle().trim() : "";
+  }
+
+  private String resolveLevelLabel(TrainInfoClassEntity clazz, TrainInfoListEntity trainInfo) {
+    Integer levelCode = clazz.getWorkTypeLevel();
+    if (levelCode == null || levelCode <= 0) {
+      levelCode = trainInfo != null ? trainInfo.getWorkTypeLevel() : null;
+    }
+    int level = levelCode != null ? levelCode : 0;
+    if (level > 0 && level < LEVEL_LABELS.length) {
+      return LEVEL_LABELS[level];
+    }
+    return "";
+  }
+
+  private String resolveTrainTime(TrainInfoClassEntity clazz, TrainInfoListEntity trainInfo) {
+    String start = clazz.getDateStart();
+    String end = clazz.getDateEnd();
+    if (!StringUtils.hasText(start) && trainInfo != null) {
+      start = trainInfo.getStartDate();
+    }
+    if (!StringUtils.hasText(end) && trainInfo != null) {
+      end = trainInfo.getEndDate();
+    }
+    if (StringUtils.hasText(start) && StringUtils.hasText(end)) {
+      return start.trim() + "至" + end.trim();
+    }
+    if (StringUtils.hasText(start)) {
+      return start.trim();
+    }
+    if (StringUtils.hasText(end)) {
+      return end.trim();
+    }
+    return "";
+  }
+
+  private String resolveCompanyName(TrainInfoClassEntity clazz, TrainInfoListEntity trainInfo) {
+    if (clazz.getCompanyId() != null) {
+      OrgEntity org = orgMapper.selectById(clazz.getCompanyId());
+      if (org != null && StringUtils.hasText(org.getName())) {
+        return org.getName().trim();
+      }
+    }
+    if (trainInfo != null && StringUtils.hasText(trainInfo.getCompanyName())) {
+      return trainInfo.getCompanyName().trim();
+    }
+    return "";
+  }
+
+  private static String firstNonBlank(String... values) {
+    if (values == null) {
+      return "";
+    }
+    for (String v : values) {
+      if (StringUtils.hasText(v)) {
+        return v.trim();
+      }
+    }
+    return "";
+  }
+
+  private static String nullToEmpty(String v) {
+    return v != null ? v : "";
   }
 
   public Map<String, Object> latestPhotoPack(Long classId) {

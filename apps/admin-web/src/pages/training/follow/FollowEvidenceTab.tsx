@@ -1,21 +1,20 @@
 /**
- * 跟班 · 课堂影像留痕 + 培训照片生成
- * 课次齐套表为主；点「查看」弹出该课次影像墙。
+ * 跟班 · 课堂影像留痕（手动添加）+ 培训照片生成
+ * 不再按课表齐套；管理员直接添加图片并填写图注。
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
+  AutoComplete,
   Button,
   Card,
-  Checkbox,
+  DatePicker,
   Empty,
+  Form,
   Image,
   Input,
   Modal,
-  Progress,
   Select,
   Space,
-  Spin,
   Table,
   Tag,
   Typography,
@@ -24,179 +23,108 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
-  CheckOutlined,
-  CloseOutlined,
   DeleteOutlined,
-  DownloadOutlined,
   PlusOutlined,
   ReloadOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiAuthImage, ApiAuthVideo } from '../../../components/ApiAuthImage';
+import dayjs, { type Dayjs } from 'dayjs';
+import { ApiAuthImage } from '../../../components/ApiAuthImage';
 import { downloadUrlFile } from '../../../api/files';
 import * as trainApi from '../../../api/training';
-import type { FollowEvidence, FollowEvidenceCoverageItem } from '../../../api/training';
+import type { FollowEvidence, FollowPhotoPackMeta } from '../../../api/training';
+
+const CAPTION_OPTIONS = [
+  { value: '开班' },
+  { value: '公共课' },
+  { value: '实操课' },
+];
 
 type Props = {
   classId: number;
 };
 
-function readVideoDurationSeconds(file: File): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const video = document.createElement('video');
-    video.preload = 'metadata';
-    video.onloadedmetadata = () => {
-      const sec = Math.round(video.duration || 0);
-      URL.revokeObjectURL(url);
-      resolve(sec);
-    };
-    video.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('无法读取视频时长'));
-    };
-    video.src = url;
-  });
-}
-
-function statusTag(v?: string) {
-  if (v === 'approved') return <Tag color="success">已通过</Tag>;
-  if (v === 'rejected') return <Tag color="error">已驳回</Tag>;
-  return <Tag color="processing">待审</Tag>;
-}
-
 export function FollowEvidenceTab({ classId }: Props) {
   const qc = useQueryClient();
-  const [wallSession, setWallSession] = useState<FollowEvidenceCoverageItem | null>(null);
-  const [wallStatus, setWallStatus] = useState<string | undefined>();
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [uploadScheduleId, setUploadScheduleId] = useState<number | undefined>();
-  const [uploadMediaType, setUploadMediaType] = useState<'photo' | 'video'>('photo');
+  const [addOpen, setAddOpen] = useState(false);
+  const [genOpen, setGenOpen] = useState(false);
   const [caption, setCaption] = useState('');
-  const [rejectOpen, setRejectOpen] = useState<FollowEvidence | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-  const [batchRejectOpen, setBatchRejectOpen] = useState(false);
-  const [batchRejectReason, setBatchRejectReason] = useState('');
-  const [videoPreview, setVideoPreview] = useState<FollowEvidence | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Array<string | number>>([]);
+  const [bizDate, setBizDate] = useState<Dayjs | null>(dayjs());
+  const [dayPeriod, setDayPeriod] = useState<'上午' | '下午' | '全天'>('上午');
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [genForm] = Form.useForm<FollowPhotoPackMeta>();
 
-  const coverageQ = useQuery({
-    queryKey: ['follow-evidence-coverage', classId],
-    queryFn: () => trainApi.getFollowEvidenceCoverage(classId),
-  });
+  const clearPendingImage = () => {
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setPendingFile(null);
+  };
 
-  const wallScheduleId = wallSession?.scheduleId;
+  const resetAddForm = () => {
+    setCaption('');
+    setBizDate(dayjs());
+    setDayPeriod('上午');
+    clearPendingImage();
+  };
 
-  const wallQ = useQuery({
-    queryKey: ['follow-evidences-wall', classId, wallScheduleId, wallStatus],
+  const closeAddModal = () => {
+    setAddOpen(false);
+    resetAddForm();
+  };
+
+  const listQ = useQuery({
+    queryKey: ['follow-evidences-manual', classId],
     queryFn: () =>
       trainApi.listFollowEvidences(classId, {
-        scheduleId: wallScheduleId,
-        reviewStatus: wallStatus,
+        mediaType: 'photo',
       }),
-    enabled: wallScheduleId != null,
-  });
-
-  const latestQ = useQuery({
-    queryKey: ['follow-photo-pack-latest', classId],
-    queryFn: () => trainApi.getLatestFollowPhotoPack(classId),
   });
 
   const invalidate = () => {
-    void qc.invalidateQueries({ queryKey: ['follow-evidence-coverage', classId] });
-    void qc.invalidateQueries({ queryKey: ['follow-evidences-wall', classId] });
+    void qc.invalidateQueries({ queryKey: ['follow-evidences-manual', classId] });
     void qc.invalidateQueries({ queryKey: ['follow-photo-pack-latest', classId] });
+    void qc.invalidateQueries({ queryKey: ['follow-evidence-coverage', classId] });
+    void qc.invalidateQueries({ queryKey: ['follow-quality-metrics', classId] });
   };
 
-  const openWall = (row: FollowEvidenceCoverageItem) => {
-    setWallStatus(undefined);
-    setSelectedIds([]);
-    setWallSession(row);
-  };
+  const photos = useMemo(() => {
+    const list = [...(listQ.data ?? [])].filter((r) => r.mediaType !== 'video');
+    list.sort((a, b) => {
+      const da = String(a.bizDate ?? '');
+      const db = String(b.bizDate ?? '');
+      if (da !== db) return da.localeCompare(db);
+      const sa = Number(a.sortNo ?? 0);
+      const sb = Number(b.sortNo ?? 0);
+      if (sa !== sb) return sa - sb;
+      return String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+    });
+    return list;
+  }, [listQ.data]);
 
-  const closeWall = () => {
-    setWallSession(null);
-    setWallStatus(undefined);
-    setSelectedIds([]);
-    setBatchRejectOpen(false);
-    setBatchRejectReason('');
-  };
-
-  const uploadMu = useMutation({
-    mutationFn: async (file: File) => {
-      if (uploadScheduleId == null) {
-        throw new Error('请选择课次');
-      }
-      let durationSeconds: number | undefined;
-      if (uploadMediaType === 'video') {
-        durationSeconds = await readVideoDurationSeconds(file);
-        if (durationSeconds < 13 || durationSeconds > 17) {
-          throw new Error(`视频须约 15 秒（允许 13～17），当前 ${durationSeconds} 秒`);
-        }
-      }
-      return trainApi.uploadFollowEvidence(classId, file, {
-        scheduleId: uploadScheduleId,
-        caption: caption || undefined,
-        mediaType: uploadMediaType,
-        durationSeconds,
+  const addMu = useMutation({
+    mutationFn: async (payload: {
+      file: File;
+      caption: string;
+      bizDate: Dayjs;
+      dayPeriod: '上午' | '下午' | '全天';
+    }) => {
+      return trainApi.uploadFollowEvidence(classId, payload.file, {
+        bizDate: payload.bizDate.format('YYYY-MM-DD'),
+        caption: payload.caption.trim(),
+        teachFormOverride: payload.dayPeriod,
+        mediaType: 'photo',
       });
     },
     onSuccess: () => {
-      message.success('已上传，待审核');
-      setUploadOpen(false);
-      setCaption('');
+      message.success('已添加');
+      closeAddModal();
       invalidate();
     },
-    onError: (e: Error) => message.error(e.message || '上传失败'),
-  });
-
-  const reviewMu = useMutation({
-    mutationFn: (p: { id: number | string; reviewStatus: string; rejectReason?: string }) =>
-      trainApi.reviewFollowEvidence(p.id, { reviewStatus: p.reviewStatus, rejectReason: p.rejectReason }),
-    onSuccess: () => {
-      message.success('已更新审核状态');
-      setRejectOpen(null);
-      setRejectReason('');
-      invalidate();
-    },
-    onError: (e: Error) => message.error(e.message || '审核失败'),
-  });
-
-  const batchReviewMu = useMutation({
-    mutationFn: async (p: {
-      ids: Array<number | string>;
-      reviewStatus: 'approved' | 'rejected';
-      rejectReason?: string;
-    }) => {
-      let ok = 0;
-      const errors: string[] = [];
-      for (const id of p.ids) {
-        try {
-          await trainApi.reviewFollowEvidence(id, {
-            reviewStatus: p.reviewStatus,
-            rejectReason: p.rejectReason,
-          });
-          ok += 1;
-        } catch (e) {
-          errors.push(`${id}: ${e instanceof Error ? e.message : '失败'}`);
-        }
-      }
-      return { ok, fail: p.ids.length - ok, errors };
-    },
-    onSuccess: (res, vars) => {
-      const action = vars.reviewStatus === 'approved' ? '通过' : '驳回';
-      if (res.fail === 0) {
-        message.success(`已批量${action} ${res.ok} 条`);
-      } else {
-        message.warning(`批量${action}：成功 ${res.ok}，失败 ${res.fail}`);
-      }
-      setSelectedIds([]);
-      setBatchRejectOpen(false);
-      setBatchRejectReason('');
-      invalidate();
-    },
-    onError: (e: Error) => message.error(e.message || '批量审核失败'),
+    onError: (e: Error) => message.error(e.message || '添加失败'),
   });
 
   const deleteMu = useMutation({
@@ -208,10 +136,87 @@ export function FollowEvidenceTab({ classId }: Props) {
     onError: (e: Error) => message.error(e.message || '删除失败'),
   });
 
+  const pickImageFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      message.warning('请选择图片文件');
+      return;
+    }
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+    setPendingFile(file);
+  };
+
+  const extractClipboardImage = (clipboardData: DataTransfer | null): File | null => {
+    if (!clipboardData) return null;
+    const items = clipboardData.items;
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i];
+      if (!item.type.startsWith('image/')) continue;
+      const blob = item.getAsFile();
+      if (!blob) continue;
+      const ext = item.type.includes('png')
+        ? 'png'
+        : item.type.includes('webp')
+          ? 'webp'
+          : item.type.includes('gif')
+            ? 'gif'
+            : 'jpg';
+      return new File([blob], blob.name || `paste-${Date.now()}.${ext}`, {
+        type: blob.type || item.type || 'image/png',
+      });
+    }
+    return null;
+  };
+
+  const pickImageRef = useRef(pickImageFile);
+  pickImageRef.current = pickImageFile;
+
+  useEffect(() => {
+    if (!addOpen) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const file = extractClipboardImage(e.clipboardData);
+      if (!file) return;
+      e.preventDefault();
+      pickImageRef.current(file);
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [addOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const confirmAdd = () => {
+    if (!pendingFile) {
+      message.warning('请先选择或粘贴图片');
+      return;
+    }
+    if (!bizDate) {
+      message.warning('请选择日期');
+      return;
+    }
+    if (!caption.trim()) {
+      message.warning('请填写图注说明');
+      return;
+    }
+    addMu.mutate({
+      file: pendingFile,
+      caption: caption.trim(),
+      bizDate,
+      dayPeriod,
+    });
+  };
+
   const genMu = useMutation({
-    mutationFn: () => trainApi.generateFollowPhotoPack(classId),
+    mutationFn: (payload: FollowPhotoPackMeta) => trainApi.generateFollowPhotoPack(classId, payload),
     onSuccess: async (res) => {
       message.success('培训照片已生成，开始下载');
+      setGenOpen(false);
       invalidate();
       const path = res.filePath || res.url;
       const name = `${res.title || '培训照片'}.docx`;
@@ -226,654 +231,308 @@ export function FollowEvidenceTab({ classId }: Props) {
     onError: (e: Error) => message.error(e.message || '生成失败'),
   });
 
-  const downloadLatest = async () => {
-    const latest = latestQ.data;
-    if (!latest?.exists) {
-      message.warning('尚无生成记录');
-      return;
-    }
-    const path = latest.filePath || latest.url;
-    if (!path) {
-      message.error('缺少文件路径');
-      return;
-    }
+  const openGenerateModal = async () => {
+    setGenOpen(true);
     try {
-      await downloadUrlFile(path, `${latest.title || '培训照片'}.docx`);
+      const defaults = await trainApi.getFollowPhotoPackDefaults(classId);
+      genForm.setFieldsValue({
+        title: defaults.title || '',
+        workType: defaults.workType || '',
+        level: defaults.level || '',
+        trainTime: defaults.trainTime || '',
+        trainUnit: defaults.trainUnit || '',
+        trainAddress: defaults.trainAddress || '',
+      });
     } catch (e) {
-      message.error(e instanceof Error ? e.message : '下载失败');
+      message.error(e instanceof Error ? e.message : '加载默认信息失败');
     }
   };
 
-  const scheduleOptions = useMemo(() => {
-    const items = coverageQ.data?.items ?? [];
-    return items.map((it) => ({
-      value: it.scheduleId,
-      label: `${it.scheduleDate || ''} ${it.courseName || '课次'}（${it.teachFormLabel || it.teachForm || '—'}）学时${it.hoursDisplay || '—'}`,
-    }));
-  }, [coverageQ.data]);
-
-  const minPhotos = coverageQ.data?.minPhotos ?? 5;
-  const minVideos = coverageQ.data?.minVideos ?? 3;
-
-  /** 弹窗内用最新 coverage 行刷新进度（审核后） */
-  const liveSession = useMemo(() => {
-    if (!wallSession) return null;
-    const fresh = (coverageQ.data?.items ?? []).find(
-      (it) => String(it.scheduleId) === String(wallSession.scheduleId),
-    );
-    return fresh || wallSession;
-  }, [coverageQ.data, wallSession]);
-
-  const wallItems = wallQ.data ?? [];
-  const wallPhotos = wallItems.filter((i) => i.mediaType !== 'video');
-  const wallVideos = wallItems.filter((i) => i.mediaType === 'video');
-  const pendingItems = wallItems.filter((i) => i.reviewStatus === 'pending');
-  const pendingIds = pendingItems.map((i) => i.id);
-  const selectedPendingIds = selectedIds.filter((id) =>
-    pendingItems.some((p) => String(p.id) === String(id)),
-  );
-  const allPendingSelected =
-    pendingIds.length > 0 && pendingIds.every((id) => selectedIds.some((s) => String(s) === String(id)));
-
-  const toggleSelect = (id: number | string, checked: boolean) => {
-    setSelectedIds((prev) => {
-      if (checked) {
-        if (prev.some((x) => String(x) === String(id))) return prev;
-        return [...prev, id];
-      }
-      return prev.filter((x) => String(x) !== String(id));
+  const submitGenerate = async () => {
+    const values = await genForm.validateFields();
+    if (!String(values.title || '').trim()) {
+      message.warning('请填写标题');
+      return;
+    }
+    genMu.mutate({
+      title: String(values.title || '').trim(),
+      workType: String(values.workType || '').trim(),
+      level: String(values.level || '').trim(),
+      trainTime: String(values.trainTime || '').trim(),
+      trainUnit: String(values.trainUnit || '').trim(),
+      trainAddress: String(values.trainAddress || '').trim(),
     });
   };
 
-  const selectAllPending = () => {
-    setSelectedIds(pendingIds);
+  const periodLabel = (row: FollowEvidence) => {
+    const t = String(row.teachFormOverride || row.teachForm || '').trim();
+    if (t === '上午' || t === '下午' || t === '全天') return t;
+    return '—';
   };
 
-  const clearSelection = () => setSelectedIds([]);
-
-  const runBatchApprove = () => {
-    if (!selectedPendingIds.length) {
-      message.warning('请先勾选待审影像');
-      return;
-    }
-    Modal.confirm({
-      title: `批量通过 ${selectedPendingIds.length} 条？`,
-      content: '仅对待审影像生效',
-      onOk: () =>
-        batchReviewMu.mutateAsync({
-          ids: selectedPendingIds,
-          reviewStatus: 'approved',
-        }),
-    });
-  };
-
-  const openBatchReject = () => {
-    if (!selectedPendingIds.length) {
-      message.warning('请先勾选待审影像');
-      return;
-    }
-    setBatchRejectReason('');
-    setBatchRejectOpen(true);
-  };
-
-  const coverageColumns: ColumnsType<FollowEvidenceCoverageItem> = [
-    { title: '日期', dataIndex: 'scheduleDate', width: 110 },
-    { title: '课程', dataIndex: 'courseName', ellipsis: true },
+  const columns: ColumnsType<FollowEvidence> = [
     {
-      title: '形式',
-      dataIndex: 'teachFormLabel',
-      width: 80,
-      render: (v, row) => v || row.teachForm || '—',
+      title: '序号',
+      width: 70,
+      render: (_, __, index) => `图${index + 1}`,
     },
     {
-      title: '学时',
-      width: 90,
-      render: (_, row) => row.hoursDisplay || row.classHours || '—',
-    },
-    {
-      title: '照片',
-      width: 130,
-      render: (_, row) => (
-        <span>
-          已审 {row.approvedCount}/{row.minPhotos ?? row.minRequired ?? 5}
-          {row.pendingCount ? ` · 待审 ${row.pendingCount}` : ''}
-        </span>
-      ),
-    },
-    {
-      title: '视频',
-      width: 130,
-      render: (_, row) => (
-        <span>
-          已审 {row.videoApprovedCount ?? 0}/{row.minVideos ?? 3}
-          {row.videoPendingCount ? ` · 待审 ${row.videoPendingCount}` : ''}
-        </span>
-      ),
-    },
-    {
-      title: '齐套',
-      width: 80,
+      title: '预览',
+      width: 100,
       render: (_, row) =>
-        row.coverageOk ? <Tag color="success">达标</Tag> : <Tag color="warning">缺项</Tag>,
+        row.id ? (
+          <Image.PreviewGroup>
+            <ApiAuthImage
+              url={`/training/follow-evidences/${row.id}/preview`}
+              width={72}
+              height={54}
+              style={{ objectFit: 'cover', borderRadius: 4 }}
+            />
+          </Image.PreviewGroup>
+        ) : (
+          '—'
+        ),
+    },
+    {
+      title: '图注说明',
+      dataIndex: 'caption',
+      ellipsis: true,
+      render: (v?: string) => v || '—',
+    },
+    {
+      title: '日期',
+      width: 120,
+      dataIndex: 'bizDate',
+      render: (v?: string) => v || '—',
+    },
+    {
+      title: '时段',
+      width: 80,
+      render: (_, row) => periodLabel(row),
+    },
+    {
+      title: '状态',
+      width: 90,
+      render: (_, row) =>
+        row.reviewStatus === 'approved' ? (
+          <Tag color="success">已通过</Tag>
+        ) : (
+          <Tag>{row.reviewStatus || '—'}</Tag>
+        ),
     },
     {
       title: '操作',
-      width: 140,
+      width: 90,
       fixed: 'right',
       render: (_, row) => (
-        <Space size={0}>
-          <Button type="link" size="small" onClick={() => openWall(row)}>
-            查看
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            onClick={() => {
-              setUploadScheduleId(row.scheduleId);
-              setUploadMediaType('photo');
-              setUploadOpen(true);
-            }}
-          >
-            补传
-          </Button>
-        </Space>
+        <Button
+          type="link"
+          size="small"
+          danger
+          icon={<DeleteOutlined />}
+          onClick={() => {
+            Modal.confirm({
+              title: '删除该照片？',
+              onOk: () => deleteMu.mutateAsync(row.id),
+            });
+          }}
+        >
+          删除
+        </Button>
       ),
     },
   ];
 
-  const cov = coverageQ.data;
-  const photoPct = liveSession
-    ? Math.min(
-        100,
-        Math.round(
-          ((Number(liveSession.approvedCount) || 0) / (liveSession.minPhotos ?? minPhotos ?? 5)) * 100,
-        ),
-      )
-    : 0;
-  const videoPct = liveSession
-    ? Math.min(
-        100,
-        Math.round(
-          ((Number(liveSession.videoApprovedCount) || 0) /
-            (liveSession.minVideos ?? minVideos ?? 3)) *
-            100,
-        ),
-      )
-    : 0;
-
-  const renderMediaCard = (row: FollowEvidence) => {
-    const isVideo = row.mediaType === 'video';
-    const isPending = row.reviewStatus === 'pending';
-    const checked = selectedIds.some((id) => String(id) === String(row.id));
-    return (
-      <div
-        key={String(row.id)}
-        style={{
-          border: checked ? '1px solid #1677ff' : '1px solid #f0f0f0',
-          borderRadius: 8,
-          overflow: 'hidden',
-          background: '#fff',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: checked ? '0 0 0 1px rgba(22,119,255,0.2)' : undefined,
-        }}
-      >
-        <div
-          style={{
-            height: 140,
-            background: '#111',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            position: 'relative',
-            cursor: isVideo ? 'pointer' : 'default',
-          }}
-          onClick={() => {
-            if (isVideo) setVideoPreview(row);
-          }}
-        >
-          {isPending && (
-            <div
-              style={{ position: 'absolute', right: 8, top: 8, zIndex: 2 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Checkbox
-                checked={checked}
-                onChange={(e) => toggleSelect(row.id, e.target.checked)}
-              />
-            </div>
-          )}
-          {isVideo ? (
-            <div style={{ color: '#fff', textAlign: 'center' }}>
-              <div style={{ fontSize: 28, lineHeight: 1 }}>▶</div>
-              <div style={{ fontSize: 12, marginTop: 6, opacity: 0.85 }}>
-                {row.durationSeconds ?? 15}s · 点击播放
-              </div>
-            </div>
-          ) : row.id ? (
-            <Image.PreviewGroup>
-              <ApiAuthImage
-                url={`/training/follow-evidences/${row.id}/preview`}
-                width="100%"
-                height={140}
-                style={{ objectFit: 'cover', width: '100%', height: 140 }}
-              />
-            </Image.PreviewGroup>
-          ) : (
-            '—'
-          )}
-          <div style={{ position: 'absolute', left: 8, top: 8 }}>{statusTag(row.reviewStatus)}</div>
-        </div>
-        <div style={{ padding: '8px 10px', flex: 1 }}>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }} ellipsis>
-            {row.caption || (isVideo ? '课堂视频' : '课堂照片')}
-          </Typography.Text>
-        </div>
-        <div style={{ padding: '0 8px 8px', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-          {isPending && (
-            <>
-              <Button
-                size="small"
-                type="link"
-                icon={<CheckOutlined />}
-                onClick={() => reviewMu.mutate({ id: row.id, reviewStatus: 'approved' })}
-              >
-                通过
-              </Button>
-              <Button
-                size="small"
-                type="link"
-                danger
-                icon={<CloseOutlined />}
-                onClick={() => setRejectOpen(row)}
-              >
-                驳回
-              </Button>
-            </>
-          )}
-          <Button
-            size="small"
-            type="link"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => {
-              Modal.confirm({
-                title: '删除该影像？',
-                onOk: () => deleteMu.mutateAsync(row.id),
-              });
-            }}
-          >
-            删除
-          </Button>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
-      <Alert
-        type="info"
-        showIcon
-        message={`每节课须：照片 ${minPhotos} 张 + 视频 ${minVideos} 段×约 15 秒（审核通过后算达标）。点「查看」打开该课次影像墙。`}
-      />
-
       <Card
         size="small"
-        title="课次齐套"
+        title={`已添加照片（${photos.length}）`}
         extra={
-          <Space>
+          <Space wrap>
             <Button icon={<ReloadOutlined />} onClick={() => invalidate()}>
               刷新
             </Button>
             <Button
               type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                resetAddForm();
+                setAddOpen(true);
+              }}
+            >
+              添加照片
+            </Button>
+            <Button
+              type="primary"
+              ghost
               icon={<ThunderboltOutlined />}
-              loading={genMu.isPending}
-              onClick={() => genMu.mutate()}
+              disabled={!photos.length}
+              onClick={() => void openGenerateModal()}
             >
               生成培训照片
             </Button>
-            {latestQ.data?.exists && (latestQ.data.filePath || latestQ.data.url) && (
-              <Button icon={<DownloadOutlined />} onClick={() => void downloadLatest()}>
-                下载最近生成
-              </Button>
-            )}
           </Space>
         }
       >
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          应采 {cov?.requiredSessions ?? 0} 课次 · 达标 {cov?.okSessions ?? 0} · 缺项{' '}
-          {cov?.missingSessions ?? 0}
-          {cov?.ready ? ' · 已齐套' : ''}
-        </Typography.Paragraph>
         <Table
           size="small"
-          rowKey="scheduleId"
-          loading={coverageQ.isFetching}
-          columns={coverageColumns}
-          dataSource={cov?.items ?? []}
-          pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 课次` }}
-          scroll={{ x: 900 }}
-          onRow={(row) => ({
-            onDoubleClick: () => openWall(row),
-          })}
+          rowKey={(r) => String(r.id)}
+          loading={listQ.isFetching}
+          columns={columns}
+          dataSource={photos}
+          pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 张` }}
+          locale={{
+            emptyText: <Empty description="暂无照片，请点击「添加照片」" />,
+          }}
+          scroll={{ x: 720 }}
         />
       </Card>
 
-      {/* 课次影像墙弹窗 */}
       <Modal
-        title={
-          liveSession
-            ? `影像墙 · ${liveSession.scheduleDate || ''} ${liveSession.courseName || '课次'}`
-            : '影像墙'
-        }
-        open={!!wallSession}
-        onCancel={closeWall}
-        footer={null}
-        width={960}
+        title="添加照片"
+        open={addOpen}
+        onCancel={closeAddModal}
         destroyOnHidden
-        styles={{ body: { maxHeight: '72vh', overflowY: 'auto' } }}
-      >
-        {liveSession && (
-          <Space direction="vertical" style={{ width: '100%' }} size="middle">
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: 16,
-                background: '#fafafa',
-                borderRadius: 8,
-                padding: 12,
-              }}
-            >
-              <div>
-                <Typography.Text type="secondary">课次信息</Typography.Text>
-                <div style={{ marginTop: 4 }}>
-                  {liveSession.teachFormLabel || liveSession.teachForm || '—'} · 学时{' '}
-                  {liveSession.hoursDisplay || liveSession.classHours || '—'}
-                  {liveSession.startTime
-                    ? ` · ${liveSession.startTime}${liveSession.endTime ? `–${liveSession.endTime}` : ''}`
-                    : ''}
-                </div>
-                <div style={{ marginTop: 8 }}>
-                  {liveSession.coverageOk ? (
-                    <Tag color="success">已达标</Tag>
-                  ) : (
-                    <Tag color="warning">缺项</Tag>
-                  )}
-                </div>
-              </div>
-              <div>
-                <div style={{ marginBottom: 8 }}>
-                  <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                    <span>
-                      照片 {liveSession.approvedCount}/{liveSession.minPhotos ?? minPhotos}
-                    </span>
-                    <Typography.Text type="secondary">
-                      待审 {liveSession.pendingCount || 0}
-                    </Typography.Text>
-                  </Space>
-                  <Progress percent={photoPct} size="small" status={liveSession.photoOk ? 'success' : 'active'} />
-                </div>
-                <div>
-                  <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                    <span>
-                      视频 {liveSession.videoApprovedCount ?? 0}/{liveSession.minVideos ?? minVideos}
-                    </span>
-                    <Typography.Text type="secondary">
-                      待审 {liveSession.videoPendingCount || 0}
-                    </Typography.Text>
-                  </Space>
-                  <Progress percent={videoPct} size="small" status={liveSession.videoOk ? 'success' : 'active'} />
-                </div>
-              </div>
-            </div>
-
-            <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Space wrap>
-                <Select
-                  allowClear
-                  placeholder="审核状态"
-                  style={{ width: 140 }}
-                  value={wallStatus}
-                  onChange={(v) => {
-                    setWallStatus(v);
-                    setSelectedIds([]);
-                  }}
-                  options={[
-                    { value: 'pending', label: '待审' },
-                    { value: 'approved', label: '已通过' },
-                    { value: 'rejected', label: '已驳回' },
-                  ]}
-                />
-                <Checkbox
-                  checked={allPendingSelected}
-                  indeterminate={selectedPendingIds.length > 0 && !allPendingSelected}
-                  disabled={!pendingIds.length}
-                  onChange={(e) => {
-                    if (e.target.checked) selectAllPending();
-                    else clearSelection();
-                  }}
-                >
-                  全选待审（{pendingIds.length}）
-                </Checkbox>
-                {selectedPendingIds.length > 0 && (
-                  <Typography.Text type="secondary">已选 {selectedPendingIds.length}</Typography.Text>
-                )}
-              </Space>
-              <Space wrap>
-                <Button
-                  icon={<CheckOutlined />}
-                  type="primary"
-                  disabled={!selectedPendingIds.length}
-                  loading={batchReviewMu.isPending}
-                  onClick={runBatchApprove}
-                >
-                  批量通过
-                </Button>
-                <Button
-                  danger
-                  icon={<CloseOutlined />}
-                  disabled={!selectedPendingIds.length}
-                  loading={batchReviewMu.isPending}
-                  onClick={openBatchReject}
-                >
-                  批量驳回
-                </Button>
-                <Button
-                  icon={<ReloadOutlined />}
-                  onClick={() => {
-                    void wallQ.refetch();
-                    invalidate();
-                  }}
-                >
-                  刷新
-                </Button>
-                <Button
-                  type="primary"
-                  ghost
-                  icon={<PlusOutlined />}
-                  onClick={() => {
-                    setUploadScheduleId(liveSession.scheduleId);
-                    setUploadMediaType('photo');
-                    setUploadOpen(true);
-                  }}
-                >
-                  补传影像
-                </Button>
-              </Space>
-            </Space>
-
-            <Spin spinning={wallQ.isFetching}>
-              {!wallItems.length ? (
-                <Empty description="本课次暂无影像，可点补传" />
-              ) : (
-                <Space direction="vertical" style={{ width: '100%' }} size="large">
-                  <div>
-                    <Typography.Title level={5} style={{ margin: '0 0 12px' }}>
-                      照片（{wallPhotos.length}）
-                    </Typography.Title>
-                    {wallPhotos.length ? (
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-                          gap: 12,
-                        }}
-                      >
-                        {wallPhotos.map(renderMediaCard)}
-                      </div>
-                    ) : (
-                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无照片" />
-                    )}
-                  </div>
-                  <div>
-                    <Typography.Title level={5} style={{ margin: '0 0 12px' }}>
-                      视频（{wallVideos.length}）
-                    </Typography.Title>
-                    {wallVideos.length ? (
-                      <div
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-                          gap: 12,
-                        }}
-                      >
-                        {wallVideos.map(renderMediaCard)}
-                      </div>
-                    ) : (
-                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无视频" />
-                    )}
-                  </div>
-                </Space>
-              )}
-            </Spin>
-          </Space>
-        )}
-      </Modal>
-
-      <Modal
-        title="补传课堂影像"
-        open={uploadOpen}
-        onCancel={() => setUploadOpen(false)}
-        footer={null}
-        destroyOnHidden
+        okText="确认添加"
+        confirmLoading={addMu.isPending}
+        onOk={confirmAdd}
+        okButtonProps={{ disabled: !pendingFile }}
       >
         <Space direction="vertical" style={{ width: '100%' }} size="middle">
           <div>
-            <Typography.Text type="secondary">课次</Typography.Text>
-            <Select
+            <Typography.Text type="secondary">图注说明</Typography.Text>
+            <AutoComplete
               style={{ width: '100%', marginTop: 8 }}
-              options={scheduleOptions}
-              value={uploadScheduleId}
-              onChange={setUploadScheduleId}
-              placeholder="选择课次"
+              options={CAPTION_OPTIONS}
+              placeholder="选择或输入，如：开班"
+              value={caption}
+              onChange={(v) => setCaption(String(v ?? '').slice(0, 100))}
+              filterOption={(input, option) =>
+                String(option?.value ?? '')
+                  .toLowerCase()
+                  .includes(input.trim().toLowerCase())
+              }
+              allowClear
             />
           </div>
           <div>
-            <Typography.Text type="secondary">类型</Typography.Text>
+            <Typography.Text type="secondary">日期</Typography.Text>
+            <div style={{ marginTop: 8 }}>
+              <DatePicker
+                style={{ width: '100%' }}
+                value={bizDate}
+                onChange={(d) => setBizDate(d)}
+                allowClear={false}
+              />
+            </div>
+          </div>
+          <div>
+            <Typography.Text type="secondary">时段</Typography.Text>
             <Select
               style={{ width: '100%', marginTop: 8 }}
-              value={uploadMediaType}
-              onChange={(v) => setUploadMediaType(v)}
+              value={dayPeriod}
+              onChange={setDayPeriod}
               options={[
-                { value: 'photo', label: '照片' },
-                { value: 'video', label: '视频（约 15 秒）' },
+                { value: '上午', label: '上午' },
+                { value: '下午', label: '下午' },
+                { value: '全天', label: '全天' },
               ]}
             />
           </div>
-          <Input
-            placeholder="说明（可选）"
-            value={caption}
-            onChange={(e) => setCaption(e.target.value)}
-          />
-          <Upload
-            accept={uploadMediaType === 'video' ? 'video/*' : 'image/*'}
-            showUploadList={false}
-            beforeUpload={(file) => {
-              uploadMu.mutate(file);
-              return false;
+          <div
+            style={{
+              border: '1px dashed #d9d9d9',
+              borderRadius: 8,
+              padding: 12,
+              textAlign: 'center',
+              background: '#fafafa',
             }}
           >
-            <Button type="primary" loading={uploadMu.isPending} block>
-              {uploadMediaType === 'video' ? '选择视频上传' : '选择图片上传'}
-            </Button>
-          </Upload>
+            {previewUrl ? (
+              <div>
+                <Image
+                  src={previewUrl}
+                  alt="预览"
+                  style={{ maxHeight: 220, objectFit: 'contain' }}
+                />
+                <div style={{ marginTop: 12 }}>
+                  <Space>
+                    <Upload
+                      accept="image/*"
+                      showUploadList={false}
+                      beforeUpload={(file) => {
+                        pickImageFile(file);
+                        return false;
+                      }}
+                    >
+                      <Button>重新选择</Button>
+                    </Upload>
+                    <Button danger onClick={clearPendingImage}>
+                      清除图片
+                    </Button>
+                  </Space>
+                </div>
+              </div>
+            ) : (
+              <>
+                <Typography.Text type="secondary">
+                  先选择或粘贴图片（Ctrl+V / ⌘+V），再填写说明后确认添加
+                </Typography.Text>
+                <div style={{ marginTop: 12 }}>
+                  <Upload
+                    accept="image/*"
+                    showUploadList={false}
+                    beforeUpload={(file) => {
+                      pickImageFile(file);
+                      return false;
+                    }}
+                  >
+                    <Button type="primary" icon={<PlusOutlined />}>
+                      选择图片
+                    </Button>
+                  </Upload>
+                </div>
+              </>
+            )}
+          </div>
         </Space>
       </Modal>
 
       <Modal
-        title="驳回影像"
-        open={!!rejectOpen}
-        onCancel={() => setRejectOpen(null)}
-        onOk={() => {
-          if (!rejectOpen) return;
-          if (!rejectReason.trim()) {
-            message.warning('请填写驳回原因');
-            return;
-          }
-          reviewMu.mutate({
-            id: rejectOpen.id,
-            reviewStatus: 'rejected',
-            rejectReason: rejectReason.trim(),
-          });
-        }}
-        confirmLoading={reviewMu.isPending}
+        title="生成培训照片"
+        open={genOpen}
+        onCancel={() => setGenOpen(false)}
+        okText="生成并下载"
+        confirmLoading={genMu.isPending}
+        onOk={() => void submitGenerate()}
         destroyOnHidden
+        width={560}
       >
-        <Input.TextArea
-          rows={3}
-          placeholder="驳回原因"
-          value={rejectReason}
-          onChange={(e) => setRejectReason(e.target.value)}
-        />
-      </Modal>
-
-      <Modal
-        title={`批量驳回（${selectedPendingIds.length} 条）`}
-        open={batchRejectOpen}
-        onCancel={() => setBatchRejectOpen(false)}
-        onOk={() => {
-          if (!batchRejectReason.trim()) {
-            message.warning('请填写驳回原因');
-            return;
-          }
-          batchReviewMu.mutate({
-            ids: selectedPendingIds,
-            reviewStatus: 'rejected',
-            rejectReason: batchRejectReason.trim(),
-          });
-        }}
-        confirmLoading={batchReviewMu.isPending}
-        destroyOnHidden
-        okButtonProps={{ danger: true }}
-      >
-        <Input.TextArea
-          rows={3}
-          placeholder="统一驳回原因"
-          value={batchRejectReason}
-          onChange={(e) => setBatchRejectReason(e.target.value)}
-        />
-      </Modal>
-
-      <Modal
-        title={`视频预览${videoPreview?.durationSeconds ? `（${videoPreview.durationSeconds}s）` : ''}`}
-        open={!!videoPreview}
-        onCancel={() => setVideoPreview(null)}
-        footer={null}
-        width={720}
-        destroyOnHidden
-        zIndex={1100}
-      >
-        {videoPreview?.id ? (
-          <ApiAuthVideo
-            url={`/training/follow-evidences/${videoPreview.id}/preview`}
-            width="100%"
-            height={400}
-            style={{ objectFit: 'contain', maxHeight: 480 }}
-          />
-        ) : null}
+        <Form form={genForm} layout="vertical" style={{ marginTop: 8 }}>
+          <Form.Item
+            name="title"
+            label="标题"
+            rules={[{ required: true, message: '请填写标题' }]}
+          >
+            <Input placeholder="如：华友锂业浸出工高级培训照片" maxLength={120} />
+          </Form.Item>
+          <Form.Item name="workType" label="培训工种">
+            <Input placeholder="如：浸出工" maxLength={80} />
+          </Form.Item>
+          <Form.Item name="level" label="培训级别">
+            <Input placeholder="如：高级工" maxLength={40} />
+          </Form.Item>
+          <Form.Item name="trainTime" label="培训时间">
+            <Input placeholder="如：2024-06-01至2024-06-30" maxLength={80} />
+          </Form.Item>
+          <Form.Item name="trainUnit" label="培训单位">
+            <Input placeholder="培训机构名称" maxLength={120} />
+          </Form.Item>
+          <Form.Item name="trainAddress" label="培训地址">
+            <Input placeholder="培训地点" maxLength={200} />
+          </Form.Item>
+        </Form>
       </Modal>
     </Space>
   );

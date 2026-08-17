@@ -9,12 +9,17 @@ import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainScheduleEntity;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.Document;
@@ -22,14 +27,29 @@ import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPPr;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSpacing;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STLineSpacingRule;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * 按已审照片生成「培训照片」Word（理论/实操 + 学时标题 + 插图）。
+ * 按已审照片生成「培训照片」Word。
+ * 版式对齐申报材料：标题 + 培训工种/级别/时间/单位/地址 + 插图图注。
  */
 @Component
 public class TrainFollowPhotoPackGenerator {
+
+  private static final DateTimeFormatter CN_DATE =
+      DateTimeFormatter.ofPattern("yyyy年M月d日", Locale.CHINA);
+
+  private static final String FONT_FANGSONG = "仿宋_GB2312";
+  /** 中文二号 ≈ 22pt */
+  private static final int FONT_SIZE_ER_HAO = 22;
+  /** 中文四号 ≈ 14pt */
+  private static final int FONT_SIZE_SI_HAO = 14;
+  /** 中文小四 ≈ 12pt */
+  private static final int FONT_SIZE_XIAO_SI = 12;
 
   private final TrainingStoredFileResolver fileResolver;
   private final FileApplicationService fileApplicationService;
@@ -41,12 +61,25 @@ public class TrainFollowPhotoPackGenerator {
     this.fileApplicationService = fileApplicationService;
   }
 
+  /** 封面元信息（弹窗可编辑） */
+  public record HeaderMeta(
+      String title,
+      String workType,
+      String level,
+      String trainTime,
+      String trainUnit,
+      String trainAddress) {}
+
   public record Section(
       Long scheduleId,
       String bizDate,
       String titleLine,
       String teachFormLabel,
       String hoursLabel,
+      String courseName,
+      String startTime,
+      /** 上午 / 下午 / 全天；手动添加时优先用此字段 */
+      String dayPeriod,
       List<TrainFollowEvidenceEntity> photos) {}
 
   public FileVO generateAndStore(
@@ -54,39 +87,42 @@ public class TrainFollowPhotoPackGenerator {
       List<Section> sections,
       Long tenantId,
       String fileTitle) {
+    return generateAndStore(clazz, sections, tenantId, fileTitle, null);
+  }
+
+  public FileVO generateAndStore(
+      TrainInfoClassEntity clazz,
+      List<Section> sections,
+      Long tenantId,
+      String fileTitle,
+      HeaderMeta header) {
     try (XWPFDocument doc = new XWPFDocument();
         ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
-      addTitle(doc, fileTitle != null ? fileTitle : defaultTitle(clazz));
-      addSubtitle(doc, "说明：以下为课堂过程影像，按课次标注授课形式与学时。");
+      String title = fileTitle != null ? fileTitle : defaultTitle(clazz);
+      if (header != null && StringUtils.hasText(header.title())) {
+        title = header.title().trim();
+      }
+      addTitle(doc, title);
+      addHeaderMeta(doc, header);
 
-      double theoryHours = 0;
-      double practiceHours = 0;
+      int figureNo = 0;
       for (Section section : sections) {
         if (section.photos() == null || section.photos().isEmpty()) {
           continue;
         }
-        addHeading(doc, section.titleLine());
         for (TrainFollowEvidenceEntity photo : section.photos()) {
+          figureNo += 1;
           appendImage(doc, photo);
-          if (StringUtils.hasText(photo.getCaption())) {
-            addCaption(doc, photo.getCaption());
-          }
-        }
-        double h = parseHours(section.hoursLabel());
-        String form = section.teachFormLabel() == null ? "" : section.teachFormLabel();
-        if (form.contains("实操") || form.contains("实作") || form.contains("操作")) {
-          practiceHours += h;
-        } else if (form.contains("理论")) {
-          theoryHours += h;
+          addCaption(doc, buildFigureCaption(figureNo, photo, section));
         }
       }
 
-      addHeading(doc, "学时合计");
-      addBody(doc, String.format("理论学时合计：%s　实操学时合计：%s",
-          formatHours(theoryHours), formatHours(practiceHours)));
+      if (figureNo == 0) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "暂无可用照片");
+      }
 
       doc.write(bos);
-      String name = sanitizeFileName(clazz.getTitle()) + "_培训照片.docx";
+      String name = sanitizeFileName(title) + ".docx";
       return fileApplicationService.storeFromBytesForTenant(
           tenantId, bos.toByteArray(), name,
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -95,6 +131,143 @@ public class TrainFollowPhotoPackGenerator {
       throw ex;
     } catch (Exception ex) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "生成培训照片失败: " + ex.getMessage());
+    }
+  }
+
+  private static void addHeaderMeta(XWPFDocument doc, HeaderMeta header) {
+    if (header == null) {
+      return;
+    }
+    addMetaLine(doc, "培训工种：", header.workType());
+    addMetaLine(doc, "培训级别：", header.level());
+    addMetaLine(doc, "培训时间：", header.trainTime());
+    addMetaLine(doc, "培训单位：", header.trainUnit());
+    addMetaLine(doc, "培训地址：", header.trainAddress());
+    // 与图片之间留空行
+    doc.createParagraph();
+  }
+
+  private static void addMetaLine(XWPFDocument doc, String label, String value) {
+    XWPFParagraph p = doc.createParagraph();
+    p.setAlignment(ParagraphAlignment.BOTH);
+    setExactLineSpacing(p, 22);
+    XWPFRun labelRun = p.createRun();
+    applyFangSong(labelRun, FONT_SIZE_SI_HAO, false);
+    labelRun.setText(label);
+    XWPFRun valueRun = p.createRun();
+    applyFangSong(valueRun, FONT_SIZE_SI_HAO, false);
+    valueRun.setText(value != null ? value : "");
+  }
+
+  private static void applyFangSong(XWPFRun run, int fontSizePt, boolean bold) {
+    run.setBold(bold);
+    run.setFontSize(fontSizePt);
+    run.setFontFamily(FONT_FANGSONG);
+    run.setFontFamily(FONT_FANGSONG, XWPFRun.FontCharRange.eastAsia);
+    run.setFontFamily(FONT_FANGSONG, XWPFRun.FontCharRange.cs);
+  }
+
+  /** 固定行距（磅 → twips，1pt = 20 twips） */
+  private static void setExactLineSpacing(XWPFParagraph p, int points) {
+    CTPPr pPr = p.getCTP().isSetPPr() ? p.getCTP().getPPr() : p.getCTP().addNewPPr();
+    CTSpacing spacing = pPr.isSetSpacing() ? pPr.getSpacing() : pPr.addNewSpacing();
+    spacing.setLine(BigInteger.valueOf(points * 20L));
+    spacing.setLineRule(STLineSpacingRule.EXACT);
+    spacing.setAfter(BigInteger.ZERO);
+    spacing.setBefore(BigInteger.ZERO);
+  }
+
+  /** 单倍行距 */
+  private static void setSingleLineSpacing(XWPFParagraph p) {
+    CTPPr pPr = p.getCTP().isSetPPr() ? p.getCTP().getPPr() : p.getCTP().addNewPPr();
+    CTSpacing spacing = pPr.isSetSpacing() ? pPr.getSpacing() : pPr.addNewSpacing();
+    spacing.setLine(BigInteger.valueOf(240));
+    spacing.setLineRule(STLineSpacingRule.AUTO);
+    spacing.setAfter(BigInteger.ZERO);
+    spacing.setBefore(BigInteger.ZERO);
+  }
+
+  /**
+   * 图注：图1：开班、公共课                                 2024年6月6日上午
+   */
+  public static String buildFigureCaption(int figureNo, TrainFollowEvidenceEntity photo, Section section) {
+    String desc = resolveCaptionDesc(photo, section);
+    String datePart = formatChineseDate(
+        photo != null && StringUtils.hasText(photo.getBizDate())
+            ? photo.getBizDate()
+            : (section != null ? section.bizDate() : null));
+    String period = resolveDayPeriod(photo, section);
+    String right = datePart + period;
+    return "图" + figureNo + "：" + desc + "                                 " + right;
+  }
+
+  private static String resolveCaptionDesc(TrainFollowEvidenceEntity photo, Section section) {
+    if (photo != null && StringUtils.hasText(photo.getCaption())) {
+      return photo.getCaption().trim();
+    }
+    if (section != null && StringUtils.hasText(section.courseName())) {
+      return section.courseName().trim();
+    }
+    if (section != null && StringUtils.hasText(section.teachFormLabel())
+        && !isDayPeriod(section.teachFormLabel())
+        && !"综合".equals(section.teachFormLabel())) {
+      return section.teachFormLabel();
+    }
+    return "课堂";
+  }
+
+  private static String resolveDayPeriod(TrainFollowEvidenceEntity photo, Section section) {
+    if (photo != null && isDayPeriod(photo.getTeachFormOverride())) {
+      return photo.getTeachFormOverride().trim();
+    }
+    if (section != null && StringUtils.hasText(section.dayPeriod())) {
+      return section.dayPeriod();
+    }
+    if (section != null) {
+      return periodFromStartTime(section.startTime());
+    }
+    return "";
+  }
+
+  public static boolean isDayPeriod(String raw) {
+    if (!StringUtils.hasText(raw)) {
+      return false;
+    }
+    String t = raw.trim();
+    return "上午".equals(t) || "下午".equals(t) || "全天".equals(t);
+  }
+
+  /** 从课表开始时间推断上午/下午；无时间则空。 */
+  public static String periodFromStartTime(String startTime) {
+    if (!StringUtils.hasText(startTime)) {
+      return "";
+    }
+    String t = startTime.trim();
+    int colon = t.indexOf(':');
+    if (colon <= 0) {
+      return "";
+    }
+    try {
+      int hour = Integer.parseInt(t.substring(0, colon));
+      if (hour < 12) {
+        return "上午";
+      }
+      return "下午";
+    } catch (NumberFormatException ex) {
+      return "";
+    }
+  }
+
+  public static String formatChineseDate(String yyyyMmDd) {
+    if (!StringUtils.hasText(yyyyMmDd)) {
+      return "";
+    }
+    String raw = yyyyMmDd.trim();
+    try {
+      LocalDate d = LocalDate.parse(raw.length() >= 10 ? raw.substring(0, 10) : raw);
+      return d.format(CN_DATE);
+    } catch (DateTimeParseException ex) {
+      return raw;
     }
   }
 
@@ -172,9 +345,9 @@ public class TrainFollowPhotoPackGenerator {
   private static void addTitle(XWPFDocument doc, String text) {
     XWPFParagraph p = doc.createParagraph();
     p.setAlignment(ParagraphAlignment.CENTER);
+    p.setSpacingAfter(200);
     XWPFRun run = p.createRun();
-    run.setBold(true);
-    run.setFontSize(18);
+    applyFangSong(run, FONT_SIZE_ER_HAO, true);
     run.setText(text);
   }
 
@@ -204,10 +377,10 @@ public class TrainFollowPhotoPackGenerator {
 
   private static void addCaption(XWPFDocument doc, String text) {
     XWPFParagraph p = doc.createParagraph();
-    p.setAlignment(ParagraphAlignment.CENTER);
+    p.setAlignment(ParagraphAlignment.LEFT);
+    setSingleLineSpacing(p);
     XWPFRun run = p.createRun();
-    run.setFontSize(9);
-    run.setColor("555555");
+    applyFangSong(run, FONT_SIZE_XIAO_SI, false);
     run.setText(text);
   }
 
@@ -266,12 +439,22 @@ public class TrainFollowPhotoPackGenerator {
           ? schedule.getTeachForm()
           : first.getTeachFormOverride();
       String hours = resolveHours(schedule, first.getClassHoursOverride());
+      String courseName = schedule != null && StringUtils.hasText(schedule.getCourseName())
+          ? schedule.getCourseName()
+          : null;
+      String startTime = schedule != null ? schedule.getStartTime() : null;
+      String dayPeriod = isDayPeriod(first.getTeachFormOverride())
+          ? first.getTeachFormOverride().trim()
+          : periodFromStartTime(startTime);
       sections.add(new Section(
           first.getScheduleId(),
           first.getBizDate(),
           buildSectionTitle(schedule, first.getBizDate(), teachForm, hours),
-          normalizeTeachForm(teachForm),
+          normalizeTeachForm(isDayPeriod(teachForm) ? null : teachForm),
           hours,
+          courseName,
+          startTime,
+          dayPeriod,
           entry.getValue()));
     }
     return sections;
@@ -287,6 +470,7 @@ public class TrainFollowPhotoPackGenerator {
       }
       return "s|" + e.getScheduleId();
     }
+    // 手动相册：仅按业务日分组排序，图序与列表一致（sortNo、id 由外层 Comparator 决定）
     return "d|" + (e.getBizDate() != null ? e.getBizDate() : "");
   }
 }

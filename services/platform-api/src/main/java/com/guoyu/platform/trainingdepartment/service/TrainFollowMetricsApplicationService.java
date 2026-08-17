@@ -124,6 +124,8 @@ public class TrainFollowMetricsApplicationService {
     result.put("evidenceReady", coverage.get("ready"));
     result.put("evidenceOkSessions", coverage.get("okSessions"));
     result.put("evidenceRequiredSessions", coverage.get("requiredSessions"));
+    result.put("evidencePhotoCount", coverage.get("photoApprovedCount"));
+    result.put("evidenceMode", coverage.get("mode"));
 
     long openIssueCount = issueMapper.selectCount(openIssueQuery(classId, tenantId, null));
     long criticalIssueCount = issueMapper.selectCount(openIssueQuery(classId, tenantId, "critical"));
@@ -282,14 +284,14 @@ public class TrainFollowMetricsApplicationService {
           "平均满意度 " + satisfactionAvg + "，低于 3.5"));
     }
 
-    Object requiredSessions = coverage.get("requiredSessions");
     Object evidenceReady = coverage.get("ready");
-    int required = requiredSessions instanceof Number n ? n.intValue() : 0;
     boolean ready = evidenceReady instanceof Boolean b && b;
-    if (required > 0 && !ready) {
-      Object okSessions = coverage.get("okSessions");
+    if (!ready) {
+      Object photoCount = coverage.get("photoApprovedCount");
       alerts.add(alert("warn", "evidence_incomplete",
-          "课堂影像留痕未齐套（" + okSessions + "/" + required + " 课次达标）"));
+          photoCount != null
+              ? "课堂影像尚未添加（当前已通过照片 " + photoCount + " 张）"
+              : "课堂影像留痕未齐套，请在「留痕」中手动添加照片"));
     }
 
     if (criticalIssueCount > 0) {

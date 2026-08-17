@@ -1993,7 +1993,22 @@ export function deleteFollowEvidence(id: number | string) {
   return unwrap<void>(apiClient.delete(`${BASE}/follow-evidences/${id}`));
 }
 
-export function generateFollowPhotoPack(classId: number) {
+export type FollowPhotoPackMeta = {
+  title?: string;
+  workType?: string;
+  level?: string;
+  trainTime?: string;
+  trainUnit?: string;
+  trainAddress?: string;
+};
+
+export function getFollowPhotoPackDefaults(classId: number) {
+  return unwrap<FollowPhotoPackMeta>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/photo-pack/defaults`),
+  );
+}
+
+export function generateFollowPhotoPack(classId: number, payload?: FollowPhotoPackMeta) {
   return unwrap<{
     packId: number | string;
     fileId?: number;
@@ -2001,7 +2016,7 @@ export function generateFollowPhotoPack(classId: number) {
     url?: string;
     title?: string;
     generatedAt?: string;
-  }>(apiClient.post(`${BASE}/info-classes/${classId}/follow/photo-pack/generate`, undefined, { timeout: 180000 }));
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/follow/photo-pack/generate`, payload ?? {}, { timeout: 180000 }));
 }
 
 export function getLatestFollowPhotoPack(classId: number) {
