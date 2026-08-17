@@ -735,7 +735,10 @@ public class TrainDivisionApplicationService {
         .eq(TrainPeopleListEntity::getTenantId, tenantId)
         .eq(TrainPeopleListEntity::getTrainId, trainInfo.getId())
         .eq(TrainPeopleListEntity::getType, "student")
-        .isNull(TrainPeopleListEntity::getPlatformUserId));
+        .and(w -> w.isNull(TrainPeopleListEntity::getPlatformUserId)
+            .or()
+            .ge(TrainPeopleListEntity::getPlatformUserId,
+                com.guoyu.platform.integration.php.UserProvisioningProperties.LOCAL_ID_BOUNDARY)));
 
     PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
     int linked = 0;
@@ -748,9 +751,12 @@ public class TrainDivisionApplicationService {
           orgId);
       syncStats.accept(ensure, row.getRealname(), PlatformUserEnsureService.normalizeIdCard(row.getIdCard()));
       if (ensure.platformUserId() != null) {
-        row.setPlatformUserId(ensure.platformUserId());
-        peopleListMapper.updateById(row);
-        linked++;
+        Long oldId = row.getPlatformUserId();
+        if (oldId == null || !oldId.equals(ensure.platformUserId())) {
+          row.setPlatformUserId(ensure.platformUserId());
+          peopleListMapper.updateById(row);
+          linked++;
+        }
       }
     }
 

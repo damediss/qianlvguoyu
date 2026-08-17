@@ -1165,6 +1165,24 @@ export function importStudentsByIdCard(params: { traininfoId: number | string; c
   }>(apiClient.post(`${BASE}/class-student-import-by-idcard`, params));
 }
 
+/** 班级花名册补开 / 对齐 App 账号（PHP 双写） */
+export function syncAppAccountsForClass(classId: number | string) {
+  return unwrap<{
+    classId: number | string;
+    candidates: number;
+    linked: number;
+    platformUserSync?: {
+      created: number;
+      reused: number;
+      updated: number;
+      skipped: number;
+      phpWritten?: number;
+      loginReady?: number;
+      warnings: { name: string; idCard: string; reason: string }[];
+    };
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/people/sync-app-accounts`, undefined, { timeout: 180000 }));
+}
+
 // ==================== 教务/负责人 ====================
 
 /** 教务/负责人列表 */
@@ -2207,6 +2225,7 @@ export type FollowQualityMetrics = {
   satisfactionCount?: number;
   satisfactionAvg?: number | null;
   evidenceReady?: boolean;
+  evidencePhotoCount?: number | null;
   evidenceOkSessions?: number;
   evidenceRequiredSessions?: number;
   openIssueCount?: number;

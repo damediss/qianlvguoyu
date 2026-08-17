@@ -11,6 +11,7 @@ import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.UserMapper;
+import com.guoyu.platform.integration.php.UserProvisioningProperties;
 import com.guoyu.platform.trainingdepartment.dto.SignupAuditReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListQueryReq;
@@ -480,6 +481,56 @@ public class TrainPeopleListApplicationService {
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("count", count);
     result.put("failed", failed);
+    result.put("platformUserSync", syncStats.toMap());
+    return result;
+  }
+
+  /**
+   * 班级维度补开 / 对齐 App 账号：platform_user_id 为空或 SaaS 高位孤儿。
+   */
+  @Transactional
+  public Map<String, Object> syncAppAccountsForClass(Long classId) {
+    operatorScopeService.requireOrgOperator();
+    assertClassViewable(classId);
+    TrainInfoClassEntity clazz = trainInfoClassMapper.selectById(classId);
+    if (clazz == null || (clazz.getDeleted() != null && clazz.getDeleted() == 1)) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
+    }
+    Long companyId = resolveCompanyId(clazz.getTrainInfoId(), classId);
+    Long orgId = resolveImportPlatformOrgId();
+
+    List<TrainPeopleListEntity> people = mapper.selectList(new LambdaQueryWrapper<TrainPeopleListEntity>()
+        .eq(TrainPeopleListEntity::getTrainClassId, classId)
+        .eq(TrainPeopleListEntity::getType, "student")
+        .eq(TrainPeopleListEntity::getDeleted, 0)
+        .and(w -> w.isNull(TrainPeopleListEntity::getPlatformUserId)
+            .or()
+            .ge(TrainPeopleListEntity::getPlatformUserId, UserProvisioningProperties.LOCAL_ID_BOUNDARY)));
+
+    PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
+    int linked = 0;
+    for (TrainPeopleListEntity row : people) {
+      PlatformUserEnsureService.EnsureResult ensure = platformUserEnsureService.ensureFromDivisionPerson(
+          row.getRealname(),
+          row.getIdCard(),
+          row.getPhone(),
+          companyId,
+          orgId);
+      syncStats.accept(ensure, row.getRealname(), PlatformUserEnsureService.normalizeIdCard(row.getIdCard()));
+      if (ensure.platformUserId() != null) {
+        Long oldId = row.getPlatformUserId();
+        if (oldId == null || !oldId.equals(ensure.platformUserId())) {
+          row.setPlatformUserId(ensure.platformUserId());
+          mapper.updateById(row);
+          linked++;
+        }
+      }
+    }
+
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("classId", classId);
+    result.put("candidates", people.size());
+    result.put("linked", linked);
     result.put("platformUserSync", syncStats.toMap());
     return result;
   }

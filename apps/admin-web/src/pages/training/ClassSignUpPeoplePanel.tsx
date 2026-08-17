@@ -332,7 +332,16 @@ export function ClassSignUpPeoplePanel({ signUpId, title, onChanged }: ClassSign
       setImportLoading(true);
       try {
         const result = await trainApi.importSignUpPeople(signUpId, file as File);
-        message.success(`导入完成：成功 ${result.inserted ?? 0}，跳过 ${result.skipped ?? 0}`);
+        const sync = result.platformUserSync;
+        const syncHint = sync
+          ? `，App账号就绪 ${sync.loginReady ?? 0}（新建 ${sync.created ?? 0}/复用 ${sync.reused ?? 0}）`
+          : '';
+        const skippedHint = (result.skipped ?? 0) > 0 ? `，跳过重复 ${result.skipped} 人` : '';
+        const errHint = result.errors?.length ? `；注意：${result.errors.slice(0, 2).join('；')}` : '';
+        message.success(`导入成功: ${result.inserted ?? 0} 人${skippedHint}${syncHint}${errHint}`);
+        if (result.errors?.some((e) => e.includes('php-write-enabled=false') || e.includes('PHP'))) {
+          message.warning(result.errors.find((e) => e.includes('php-write') || e.includes('PHP'))!);
+        }
         setImportOpen(false);
         notifyChanged();
         onSuccess?.(result);
@@ -352,8 +361,16 @@ export function ClassSignUpPeoplePanel({ signUpId, title, onChanged }: ClassSign
     setImportStudentLoading(true);
     try {
       const result = await trainApi.importSignUpStudents(signUpId, selectedStudentIds);
-      const skippedHint = result.skipped > 0 ? `，跳过 ${result.skipped} 人` : '';
-      message.success(`导入成功: ${result.inserted} 人${skippedHint}`);
+      const sync = result.platformUserSync;
+      const syncHint = sync
+        ? `，App账号就绪 ${sync.loginReady ?? 0}（新建 ${sync.created ?? 0}/复用 ${sync.reused ?? 0}）`
+        : '';
+      const skippedHint = result.skipped > 0 ? `，跳过重复 ${result.skipped} 人` : '';
+      const errHint = result.errors?.length ? `；注意：${result.errors.slice(0, 2).join('；')}` : '';
+      message.success(`导入成功: ${result.inserted} 人${skippedHint}${syncHint}${errHint}`);
+      if (result.errors?.some((e) => e.includes('php-write-enabled=false') || e.includes('PHP'))) {
+        message.warning(result.errors.find((e) => e.includes('php-write') || e.includes('PHP'))!);
+      }
       setImportStudentOpen(false);
       setSelectedStudentIds([]);
       notifyChanged();

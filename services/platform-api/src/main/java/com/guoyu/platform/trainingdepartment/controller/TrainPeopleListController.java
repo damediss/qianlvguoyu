@@ -195,4 +195,12 @@ public class TrainPeopleListController {
         .toList();
     return ApiResponse.ok(trainPeopleListApplicationService.importOthers(traininfoId, classId, ids));
   }
+
+  /** 班级花名册补开 / 对齐 App 账号（PHP 双写） */
+  @PostMapping("/info-classes/{classId}/people/sync-app-accounts")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_CREATE)
+  @AuditLog(module = "training", action = "people:sync-app-accounts", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> syncAppAccounts(@PathVariable Long classId) {
+    return ApiResponse.ok(trainPeopleListApplicationService.syncAppAccountsForClass(classId));
+  }
 }

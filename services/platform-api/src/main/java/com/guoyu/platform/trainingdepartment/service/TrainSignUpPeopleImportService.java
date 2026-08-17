@@ -18,6 +18,7 @@ import com.guoyu.platform.trainingdepartment.mapper.PlatformUserDetailMapper;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
+import com.guoyu.platform.integration.php.UserProvisioningProperties;
 import com.guoyu.platform.trainingdepartment.vo.SignUpPeopleImportResultVO;
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,7 +26,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Period;
@@ -74,6 +74,8 @@ public class TrainSignUpPeopleImportService {
   private final OrgMapper orgMapper;
   private final UserMapper userMapper;
   private final TrainingOperatorScopeService operatorScopeService;
+  private final PlatformUserEnsureService platformUserEnsureService;
+  private final UserProvisioningProperties userProvisioningProperties;
   private final ObjectMapper objectMapper;
   private final String cdnPath;
 
@@ -85,6 +87,8 @@ public class TrainSignUpPeopleImportService {
       OrgMapper orgMapper,
       UserMapper userMapper,
       TrainingOperatorScopeService operatorScopeService,
+      PlatformUserEnsureService platformUserEnsureService,
+      UserProvisioningProperties userProvisioningProperties,
       ObjectMapper objectMapper,
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath) {
     this.signUpMapper = signUpMapper;
@@ -94,6 +98,8 @@ public class TrainSignUpPeopleImportService {
     this.orgMapper = orgMapper;
     this.userMapper = userMapper;
     this.operatorScopeService = operatorScopeService;
+    this.platformUserEnsureService = platformUserEnsureService;
+    this.userProvisioningProperties = userProvisioningProperties;
     this.objectMapper = objectMapper;
     this.cdnPath = cdnPath;
   }
@@ -154,6 +160,10 @@ public class TrainSignUpPeopleImportService {
     int skipped = 0;
     int invalid = 0;
     List<String> errors = new ArrayList<>();
+    PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
+    if (!userProvisioningProperties.isPhpWriteEnabled()) {
+      errors.add("警告: platform.user-provisioning.php-write-enabled=false，仅写 SaaS，PHP/App 不会开户");
+    }
 
     int rowIdx = 0;
     for (List<String> row : rows) {
@@ -186,7 +196,22 @@ public class TrainSignUpPeopleImportService {
               .eq(TrainSignUpPeopleSelfEntity::getIdCardNumber, idCard)
               .eq(TrainSignUpPeopleSelfEntity::getTenantId, tenantId)
               .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0));
+
+      PlatformUserEnsureService.EnsureResult ensure = platformUserEnsureService.ensureFromDivisionPerson(
+          realname, idCard, phone, signUp.getOrgId(), platformOrgId);
+      syncStats.accept(ensure, realname, idCard);
+      if (StringUtils.hasText(ensure.warning())) {
+        errors.add("第" + rowIdx + "行 " + safeName(realname) + ": " + ensure.warning());
+      }
+
       if (exists != null) {
+        if (ensure.platformUserId() != null
+            && (exists.getPlatformUserId() == null
+                || !ensure.platformUserId().equals(exists.getPlatformUserId()))) {
+          exists.setPlatformUserId(ensure.platformUserId());
+          exists.setUpdateTime(LocalDateTime.now());
+          peopleMapper.updateById(exists);
+        }
         skipped++;
         continue;
       }
@@ -237,22 +262,20 @@ public class TrainSignUpPeopleImportService {
         entity.setWorkTypePaperHas(1);
       }
 
-      PlatformUserEntity platformUser = platformUserMapper.selectOne(
-          new LambdaQueryWrapper<PlatformUserEntity>()
-              .eq(PlatformUserEntity::getIdcard, idCard)
-              .eq(PlatformUserEntity::getDeleted, 0));
-      if (platformUser != null) {
-        platformUser.setOrgId(platformOrgId);
-        platformUserMapper.updateById(platformUser);
-        entity.setPlatformUserId(platformUser.getId());
-        entity.setName(platformUser.getRealname());
-        entity.setPhone(platformUser.getPhone());
+      if (ensure.platformUserId() != null) {
+        entity.setPlatformUserId(ensure.platformUserId());
+        PlatformUserEntity platformUser = platformUserMapper.selectById(ensure.platformUserId());
+        if (platformUser != null) {
+          if (StringUtils.hasText(platformUser.getRealname())) {
+            entity.setName(platformUser.getRealname());
+          }
+          if (StringUtils.hasText(platformUser.getPhone())) {
+            entity.setPhone(platformUser.getPhone());
+          }
+        }
+        enrichDetailFromImportRow(ensure.platformUserId(), realname, idCard, phone, row);
         mergeFromUserDetail(entity, idCard);
       } else {
-        Long userId = createPlatformUser(realname, idCard, phone, platformOrgId, signUp.getOrgId(), row);
-        if (userId != null) {
-          entity.setPlatformUserId(userId);
-        }
         entity.setAge(calcAgeFromIdCard(idCard));
       }
 
@@ -261,7 +284,7 @@ public class TrainSignUpPeopleImportService {
     }
 
     appendSignUpFile(signUp, storedPath);
-    return new SignUpPeopleImportResultVO(inserted, skipped, invalid, storedPath, errors);
+    return new SignUpPeopleImportResultVO(inserted, skipped, invalid, storedPath, errors, syncStats.toMap());
   }
 
   @Transactional
@@ -273,8 +296,9 @@ public class TrainSignUpPeopleImportService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择导入的学员");
     }
 
-    getSignUp(signUpId);
+    TrainSignUpSelfEntity signUp = getSignUp(signUpId);
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    Long platformOrgId = resolvePlatformOrgId();
 
     // 与 GET /sign-up-people/import/students 列表口径一致：
     // 平台管理员可跨机构；机构账号仅本机构；企业账号再按企业过滤
@@ -282,7 +306,7 @@ public class TrainSignUpPeopleImportService {
         .in(PlatformUserEntity::getId, ids)
         .eq(PlatformUserEntity::getDeleted, 0);
     if (!operatorScopeService.isPlatformAdmin()) {
-      userQuery.eq(PlatformUserEntity::getOrgId, resolvePlatformOrgId());
+      userQuery.eq(PlatformUserEntity::getOrgId, platformOrgId);
     }
     Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
     if (companyFilter != null) {
@@ -317,6 +341,10 @@ public class TrainSignUpPeopleImportService {
     int skipped = 0;
     List<String> errors = new ArrayList<>();
     LocalDateTime now = LocalDateTime.now();
+    PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
+    if (!userProvisioningProperties.isPhpWriteEnabled()) {
+      errors.add("警告: platform.user-provisioning.php-write-enabled=false，仅写 SaaS，PHP/App 不会开户");
+    }
 
     for (PlatformUserEntity user : users) {
       if (!StringUtils.hasText(user.getIdcard())) {
@@ -331,7 +359,23 @@ public class TrainSignUpPeopleImportService {
               .eq(TrainSignUpPeopleSelfEntity::getIdCardNumber, user.getIdcard())
               .eq(TrainSignUpPeopleSelfEntity::getTenantId, tenantId)
               .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0));
+
+      Long companyId = user.getCompanyId() != null ? user.getCompanyId() : signUp.getOrgId();
+      Long orgId = user.getOrgId() != null && user.getOrgId() > 0 ? user.getOrgId() : platformOrgId;
+      PlatformUserEnsureService.EnsureResult ensure = platformUserEnsureService.ensureFromDivisionPerson(
+          user.getRealname(), user.getIdcard(), user.getPhone(), companyId, orgId);
+      syncStats.accept(ensure, user.getRealname(), user.getIdcard());
+      if (StringUtils.hasText(ensure.warning())) {
+        errors.add(safeName(user.getRealname()) + "(" + user.getIdcard() + "): " + ensure.warning());
+      }
+      Long platformUserId = ensure.platformUserId() != null ? ensure.platformUserId() : user.getId();
+
       if (exists != null) {
+        if (exists.getPlatformUserId() == null || !platformUserId.equals(exists.getPlatformUserId())) {
+          exists.setPlatformUserId(platformUserId);
+          exists.setUpdateTime(now);
+          peopleMapper.updateById(exists);
+        }
         skipped++;
         continue;
       }
@@ -339,7 +383,7 @@ public class TrainSignUpPeopleImportService {
       TrainSignUpPeopleSelfEntity entity = new TrainSignUpPeopleSelfEntity();
       entity.setSignUpId(signUpId);
       entity.setTenantId(tenantId);
-      entity.setPlatformUserId(user.getId());
+      entity.setPlatformUserId(platformUserId);
       entity.setIdCardNumber(user.getIdcard());
       entity.setName(user.getRealname());
       entity.setPhone(user.getPhone());
@@ -361,7 +405,7 @@ public class TrainSignUpPeopleImportService {
       inserted++;
     }
 
-    return new SignUpPeopleImportResultVO(inserted, skipped, users.size(), null, errors);
+    return new SignUpPeopleImportResultVO(inserted, skipped, users.size(), null, errors, syncStats.toMap());
   }
 
   private void applyDetailFields(TrainSignUpPeopleSelfEntity entity, PlatformUserDetailEntity detail) {
@@ -473,33 +517,22 @@ public class TrainSignUpPeopleImportService {
     applyDetailFields(entity, detail);
   }
 
-  private Long createPlatformUser(
-      String realname,
-      String idCard,
-      String phone,
-      Long orgId,
-      Long companyId,
-      List<String> row) {
-    PlatformUserEntity entity = new PlatformUserEntity();
-    entity.setRealname(realname);
-    entity.setIdcard(idCard);
-    entity.setPhone(phone);
-    entity.setOrgId(orgId);
-    entity.setCompanyId(companyId);
-    entity.setAddtime(System.currentTimeMillis() / 1000);
-    entity.setDeleted(0);
-    String stat = randomStat();
-    entity.setStat(stat);
-    entity.setPassword(md5("123123", stat));
-    platformUserMapper.insert(entity);
-
+  /**
+   * Excel 导入后补齐 detail 扩展字段（ensure 只建轻量壳）。
+   * 已有值不覆盖，避免冲掉既有档案。
+   */
+  private void enrichDetailFromImportRow(
+      Long userId, String realname, String idCard, String phone, List<String> row) {
+    if (userId == null || !StringUtils.hasText(idCard) || idCard.length() < 14) {
+      return;
+    }
     PlatformUserDetailEntity exists = platformUserDetailMapper.selectOne(
         new LambdaQueryWrapper<PlatformUserDetailEntity>()
             .eq(PlatformUserDetailEntity::getIdcard, idCard)
             .eq(PlatformUserDetailEntity::getDeleted, 0));
     if (exists == null) {
       PlatformUserDetailEntity detail = new PlatformUserDetailEntity();
-      detail.setUserId(entity.getId());
+      detail.setUserId(userId);
       detail.setRealname(realname);
       detail.setPhone(phone);
       detail.setIdcard(idCard);
@@ -511,8 +544,32 @@ public class TrainSignUpPeopleImportService {
       detail.setEducation(cell(row, 6));
       detail.setDeleted(0);
       platformUserDetailMapper.insert(detail);
+      return;
     }
-    return entity.getId();
+    boolean changed = false;
+    if (exists.getUserId() == null) {
+      exists.setUserId(userId);
+      changed = true;
+    }
+    if (!StringUtils.hasText(exists.getNation()) && StringUtils.hasText(cell(row, 12))) {
+      exists.setNation(cell(row, 12));
+      changed = true;
+    }
+    if (!StringUtils.hasText(exists.getAddress()) && StringUtils.hasText(cell(row, 3))) {
+      exists.setAddress(cell(row, 3));
+      changed = true;
+    }
+    if (!StringUtils.hasText(exists.getPolitical()) && StringUtils.hasText(cell(row, 13))) {
+      exists.setPolitical(cell(row, 13));
+      changed = true;
+    }
+    if (!StringUtils.hasText(exists.getEducation()) && StringUtils.hasText(cell(row, 6))) {
+      exists.setEducation(cell(row, 6));
+      changed = true;
+    }
+    if (changed) {
+      platformUserDetailMapper.updateById(exists);
+    }
   }
 
   private void appendSignUpFile(TrainSignUpSelfEntity signUp, String storedPath) {
@@ -609,23 +666,5 @@ public class TrainSignUpPeopleImportService {
     }
     int digit = Character.getNumericValue(idCard.charAt(idCard.length() - 2));
     return digit % 2 > 0 ? 0 : 1;
-  }
-
-  private static String randomStat() {
-    return UUID.randomUUID().toString().replace("-", "").substring(0, 4);
-  }
-
-  private static String md5(String password, String stat) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("MD5");
-      byte[] bytes = digest.digest((password + stat).getBytes(StandardCharsets.UTF_8));
-      StringBuilder sb = new StringBuilder(bytes.length * 2);
-      for (byte b : bytes) {
-        sb.append(String.format("%02x", b));
-      }
-      return sb.toString();
-    } catch (Exception e) {
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "密码加密失败");
-    }
   }
 }

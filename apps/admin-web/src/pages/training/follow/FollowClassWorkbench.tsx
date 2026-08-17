@@ -726,19 +726,6 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
     enabled: classIdNum != null && classIdNum > 0,
   });
 
-  const comingSoon = (title: string, desc: string) => (
-    <Empty
-      image={Empty.PRESENTED_IMAGE_SIMPLE}
-      description={
-        <div>
-          <Typography.Text strong>{title}</Typography.Text>
-          <br />
-          <Typography.Text type="secondary">{desc}</Typography.Text>
-        </div>
-      }
-    />
-  );
-
   return (
     <div className="follow-workbench">
       <div className="follow-workbench-header">

@@ -25,7 +25,8 @@ spring:
     # connectTimeout/socketTimeout/tcpKeepAlive：远程 MySQL 经公网/NAT 时降低 Communications link failure 概率
     url: ${MYSQL_URL:jdbc:mysql://43.138.163.7:3308/gjjddb2026?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&connectTimeout=5000&socketTimeout=60000&tcpKeepAlive=true}
     username: ${MYSQL_USERNAME:gjjd}
-    password: ${MYSQL_PASSWORD:w-#Y+=g7jdsJLjD8}
+    # 密码含 # 必须加引号，否则 YAML 会把 # 后整段当注释截断
+    password: "${MYSQL_PASSWORD:w-#Y+=g7jdsJLjD8}"
 #    url: jdbc:mysql://192.168.1.200:3308/gjjd_test?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
 #    username: root
 #    password: guoyu_dev!513
@@ -279,10 +280,16 @@ platform:
       # 会丢失 level=2/3 的真实值（2026-08-04 权重解析因此全部归一化为空的线上事故）172.16.16.8
       url: ${PHP_MYSQL_URL:jdbc:mysql://114.132.67.185:3308/gjjddb?connectTimeout=3000&socketTimeout=10000&useSSL=false&tinyInt1isBit=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8&allowPublicKeyRetrieval=true}
       username: ${PHP_MYSQL_USERNAME:gjjddb}
-      password: ${PHP_MYSQL_PASSWORD:q-#Z+=g7jgtbbJsJLjD8}
+      # 密码含 # 必须加引号，否则 YAML 会把 # 后整段当注释截断 → 实际密码变成 q- → Access denied → Druid 报 Failed to obtain JDBC Connection
+      password: "${PHP_MYSQL_PASSWORD:q-#Z+=g7jgtbbJsJLjD8}"
       max-active: ${PHP_MYSQL_MAX_ACTIVE:3}
-      max-wait-ms: ${PHP_MYSQL_MAX_WAIT_MS:3000}
+      max-wait-ms: ${PHP_MYSQL_MAX_WAIT_MS:10000}
       query-timeout-seconds: ${PHP_MYSQL_QUERY_TIMEOUT:10}
+  # 学员开户双写：先写 PHP platform_user，再同 id 镜像 SaaS（App 登录认 PHP）
+  # 默认 true：报名/分班导入后可直接 App 登录。无 PHP 写权限的本机可设 PLATFORM_USER_PHP_WRITE_ENABLED=false
+  user-provisioning:
+    php-write-enabled: ${PLATFORM_USER_PHP_WRITE_ENABLED:true}
+    fail-soft: ${PLATFORM_USER_PHP_FAIL_SOFT:true}
   # AI 同步学定时任务（与三表同步共用 PHP 数据源）
   review-sync:
     # 同 platform.sync.enabled：定时任务会读 PHP 库，本机调试默认关闭，生产显式 =true

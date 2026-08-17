@@ -1002,6 +1002,7 @@ export interface SignUpPeopleImportResult {
   invalid: number;
   filePath?: string;
   errors?: string[];
+  platformUserSync?: PlatformUserSyncResult;
 }
 
 export interface SignUpDefaultTemplateExportStart {
@@ -2847,6 +2848,8 @@ export interface PlatformUserSyncResult {
   reused: number;
   updated: number;
   skipped: number;
+  phpWritten?: number;
+  loginReady?: number;
   warnings?: { name?: string; idCard?: string; reason: string }[];
 }
 
