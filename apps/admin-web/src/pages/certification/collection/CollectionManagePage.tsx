@@ -108,8 +108,8 @@ const overallFilterOptions: Array<{ label: string; value: OverallFilter }> = [
   { label: '已入队', value: 'QUEUED' },
   { label: '采集中', value: 'COLLECTING' },
   { label: '待补采', value: 'PENDING_RETRY' },
-  { label: '信息异常', value: 'INFO_ERROR' },
-  { label: '异常放行', value: 'EXCEPTION_RELEASED' },
+  { label: '异常', value: 'INFO_ERROR' },
+  { label: '已放行', value: 'EXCEPTION_RELEASED' },
   { label: '已完成', value: 'COMPLETED' },
   { label: '已取消', value: 'CANCELLED' },
 ];
@@ -118,7 +118,7 @@ const exceptionFilterOptions: Array<{ label: string; value: ExceptionFilter }> =
   { label: '全部异常', value: 'all' },
   { label: '有异常', value: 'hasException' },
   { label: '待补采', value: 'PENDING_RETRY' },
-  { label: '信息异常', value: 'INFO_ERROR' },
+  { label: '异常', value: 'INFO_ERROR' },
   { label: '已放行', value: 'RELEASED' },
   { label: '无异常', value: 'NONE' },
 ];
@@ -149,11 +149,29 @@ function shortHash(value?: string) {
 function statusColor(value?: string) {
   if (!value) return 'default';
   if (['COMPLETED', 'DONE', 'SUCCESS', 'ACTIVE'].includes(value)) return 'green';
-  if (['COLLECTING', 'CAPTURING', 'SIGNING', 'ARRIVED', 'QUEUED', 'ISSUED'].includes(value)) return 'blue';
+  if (['COLLECTING', 'CAPTURING', 'SIGNING', 'ARRIVED', 'QUEUED', 'ISSUED', 'EXCEPTION_RELEASED', 'RELEASED'].includes(value)) return 'blue';
   if (['PENDING_RETRY'].includes(value)) return 'orange';
   if (['INFO_ERROR', 'FAILED'].includes(value)) return 'red';
-  if (['EXCEPTION_RELEASED', 'RELEASED'].includes(value)) return 'purple';
   return 'default';
+}
+
+function isReleasedCandidate(candidate: CandidateCollectionItemVO) {
+  return candidate.overallStatus === 'EXCEPTION_RELEASED' || candidate.exceptionStatus === 'RELEASED';
+}
+
+function canSelectForExport(candidate: CandidateCollectionItemVO) {
+  return candidate.collectionEligible === true
+    && (candidate.overallStatus === 'COMPLETED' || isReleasedCandidate(candidate));
+}
+
+function exportDisabledTitle(candidate: CandidateCollectionItemVO) {
+  if (candidate.collectionEligible !== true) {
+    return '资料未完成，不能生成采集表';
+  }
+  if (candidate.overallStatus === 'COMPLETED' || isReleasedCandidate(candidate)) {
+    return undefined;
+  }
+  return '仅已完成或已放行的考生可生成采集表';
 }
 
 function statusTag(value?: string, label?: string, textMap?: Record<string, string>) {
@@ -380,7 +398,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
       reason,
     }),
     onSuccess: () => {
-      message.success('已标记信息异常');
+      message.success('已标记异常');
       setInfoErrorCandidate(null);
       refreshAll();
     },
@@ -389,7 +407,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   const releaseMutation = useMutation({
     mutationFn: (values: Parameters<typeof exceptionRelease>[0]) => exceptionRelease(values),
     onSuccess: () => {
-      message.success('异常放行已记录');
+      message.success('免考放行已记录');
       setReleaseCandidate(null);
       refreshAll();
     },
@@ -647,7 +665,10 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
           </Button>
           <Button
             size="small"
+            danger
             icon={<WarningOutlined />}
+            disabled={candidate.overallStatus === 'COMPLETED'}
+            title={candidate.overallStatus === 'COMPLETED' ? '采集已完成，不能标记异常' : undefined}
             onClick={(event) => {
               event.stopPropagation();
               setInfoErrorCandidate(candidate);
@@ -657,13 +678,23 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
           </Button>
           <Button
             size="small"
-            danger
+            disabled={
+              candidate.overallStatus === 'CANCELLED'
+              || candidate.overallStatus === 'EXCEPTION_RELEASED'
+            }
+            title={
+              candidate.overallStatus === 'CANCELLED'
+                ? '已取消的考生不能免考放行'
+                : candidate.overallStatus === 'EXCEPTION_RELEASED'
+                  ? '该考生已放行'
+                  : undefined
+            }
             onClick={(event) => {
               event.stopPropagation();
               setReleaseCandidate(candidate);
             }}
           >
-            异常放行
+            免考放行
           </Button>
         </Space>
       ),
@@ -806,8 +837,8 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
               selectedRowKeys: selectedCandidateIds.map(String),
               onChange: (keys) => setSelectedCandidateIds(keys.map(String)),
               getCheckboxProps: (candidate) => ({
-                disabled: candidate.collectionEligible !== true || candidate.overallStatus !== 'COMPLETED',
-                title: candidate.collectionEligible !== true ? '资料未完成，不能生成采集表' : '信息采集未完成，不能生成采集表',
+                disabled: !canSelectForExport(candidate),
+                title: exportDisabledTitle(candidate),
               }),
             }}
             onRow={(candidate) => ({
@@ -1022,7 +1053,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
             taskId,
             candidateId: releaseCandidate.candidateId,
             exceptionType: values.exceptionType,
-            releaseScope: values.releaseScope,
+            releaseScope: 'ALL',
             reason: values.reason,
           });
         }}

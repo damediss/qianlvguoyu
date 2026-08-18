@@ -4,7 +4,7 @@ import {
   SafetyCertificateOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { Button, Descriptions, Empty, Input, Modal, Space, Tag, Typography, message } from 'antd';
+import { Button, Descriptions, Empty, Input, Modal, Space, Typography, message } from 'antd';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { completeCollection, markInfoError, submitFingerprint } from '../../../api/certificationPracticalCollection';
@@ -16,10 +16,8 @@ import type {
   CandidateCollectionContext,
   CandidateCollectionDetailVO,
   CandidateMatchVO,
-  CollectionEntrySource,
   SnowflakeId,
 } from '../../../types/certificationPracticalCollection';
-import { CollectionOverallStatusText } from '../../../types/certificationPracticalCollection';
 
 interface CurrentCandidateCollectionPanelProps {
   candidate?: CandidateCollectionDetailVO | null;
@@ -30,12 +28,6 @@ interface CurrentCandidateCollectionPanelProps {
   onClearCurrent?: () => void;
   onAfterStatusChanged?: () => void;
 }
-
-const entrySourceText: Record<CollectionEntrySource, string> = {
-  QR_SCAN: '二维码扫码匹配',
-  CANDIDATE_ROW: '考生列表选择',
-  SEARCH: '搜索选择',
-};
 
 function asMatchCandidate(candidate: CandidateCollectionDetailVO): CandidateMatchVO {
   return {
@@ -94,7 +86,6 @@ function getSignatureStatusText(candidate: CandidateCollectionDetailVO) {
 
 export function CurrentCandidateCollectionPanel({
   candidate,
-  collectionContext,
   taskId,
   onRefresh,
   onCancelCurrent,
@@ -219,7 +210,6 @@ export function CurrentCandidateCollectionPanel({
   const canOperate = candidate.overallStatus === 'COLLECTING';
   const signatureDisabledReason = getSignatureDisabledReason(candidate);
   const fingerprintButtonText = candidate.latestFingerprint?.fingerprintImageFileId ? '重新采集指纹' : '指纹采集';
-  const source = collectionContext?.entrySource || 'QR_SCAN';
   const panelLoading = completeMutation.isPending || infoErrorMutation.isPending;
 
   const handleComplete = () => {
@@ -246,28 +236,13 @@ export function CurrentCandidateCollectionPanel({
   return (
     <div className="collection-panel current-candidate-panel">
       <div className="current-candidate-hero">
-        <div>
-          <Typography.Text type="secondary">当前采集对象</Typography.Text>
-          <Typography.Title level={2}>{candidate.name}</Typography.Title>
-          <Space wrap>
-            <Tag color="processing">当前</Tag>
-            <Tag>后四位 {candidate.idCardLast4 || '-'}</Tag>
-            <Tag>{entrySourceText[source]}</Tag>
-          </Space>
-        </div>
+        <Typography.Text type="secondary">当前采集对象</Typography.Text>
+        <Typography.Title level={2}>{candidate.name}</Typography.Title>
       </div>
 
       <Descriptions className="current-candidate-desc" column={2} size="small" bordered>
-        <Descriptions.Item label="单位">{candidate.unitName || '-'}</Descriptions.Item>
         <Descriptions.Item label="身份证号">{candidate.maskedIdCardNo || '-'}</Descriptions.Item>
-        <Descriptions.Item label="工种/等级">
-          {[candidate.workType, candidate.level].filter(Boolean).join(' / ') || '-'}
-        </Descriptions.Item>
         <Descriptions.Item label="准考证号">{candidate.admissionNo || '-'}</Descriptions.Item>
-        <Descriptions.Item label="采集状态">
-          {candidate.overallStatusLabel || CollectionOverallStatusText[candidate.overallStatus]}
-        </Descriptions.Item>
-        <Descriptions.Item label="入口来源">{entrySourceText[source]}</Descriptions.Item>
         <Descriptions.Item label="指纹状态">{getFingerprintStatusText(candidate)}</Descriptions.Item>
         <Descriptions.Item label="电子签名">{getSignatureStatusText(candidate)}</Descriptions.Item>
       </Descriptions>

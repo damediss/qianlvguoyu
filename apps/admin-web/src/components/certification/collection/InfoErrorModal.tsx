@@ -12,7 +12,7 @@ export function InfoErrorModal({ open, loading, onCancel, onSubmit }: InfoErrorM
 
   return (
     <Modal
-      title="标记信息异常"
+      title="标记异常"
       open={open}
       onCancel={onCancel}
       footer={[
@@ -30,7 +30,7 @@ export function InfoErrorModal({ open, loading, onCancel, onSubmit }: InfoErrorM
       destroyOnHidden
     >
       <Form form={form} layout="vertical">
-        <Form.Item name="reason" label="信息异常原因" rules={[{ required: true, message: '请填写信息异常原因' }]}>
+        <Form.Item name="reason" label="异常原因" rules={[{ required: true, message: '请填写异常原因' }]}>
           <Input.TextArea rows={4} maxLength={1000} showCount />
         </Form.Item>
       </Form>

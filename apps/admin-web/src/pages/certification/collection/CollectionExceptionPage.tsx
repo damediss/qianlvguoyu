@@ -19,7 +19,7 @@ export function CollectionExceptionPage({ taskId }: CollectionExceptionPageProps
       <div className="collection-section-heading">
         <div>
           <Typography.Title level={4}>异常记录</Typography.Title>
-          <Typography.Text type="secondary">查看待补采、信息异常和异常放行留痕</Typography.Text>
+          <Typography.Text type="secondary">查看待补采、异常和免考放行留痕</Typography.Text>
         </div>
         <Button icon={<ReloadOutlined />} loading={exceptionsQuery.isFetching} onClick={() => exceptionsQuery.refetch()}>
           刷新

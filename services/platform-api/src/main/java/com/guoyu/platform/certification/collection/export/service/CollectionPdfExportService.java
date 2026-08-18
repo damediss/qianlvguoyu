@@ -130,8 +130,9 @@ public class CollectionPdfExportService {
         continue;
       }
       PracticalCollectionStatusEntity status = statusMap.get(candidateId);
-      if (status == null || !CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
-        errors.add(candidateLabel(candidate) + "：实操信息采集尚未完成");
+      if (status == null || !CollectionOverallStatusEnum.canExportCollectionForm(
+          status.getOverallStatus(), status.getExceptionStatus())) {
+        errors.add(candidateLabel(candidate) + "：仅已完成或已放行的考生可生成打印版 PDF");
         continue;
       }
       PracticalFingerprintTraceEntity fingerprint = latestFingerprintTrace(tenantId, request.examTaskId(), candidateId);

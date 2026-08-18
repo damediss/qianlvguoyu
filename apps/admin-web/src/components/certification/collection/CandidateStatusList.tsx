@@ -23,9 +23,9 @@ const groupOrder: CollectionOverallStatus[] = [
 
 function colorFor(status: CollectionOverallStatus) {
   if (status === 'COMPLETED') return 'success';
-  if (status === 'COLLECTING') return 'processing';
+  if (status === 'COLLECTING' || status === 'EXCEPTION_RELEASED') return 'processing';
   if (status === 'PENDING_RETRY') return 'warning';
-  if (status === 'INFO_ERROR' || status === 'EXCEPTION_RELEASED') return 'error';
+  if (status === 'INFO_ERROR') return 'error';
   return 'default';
 }
 

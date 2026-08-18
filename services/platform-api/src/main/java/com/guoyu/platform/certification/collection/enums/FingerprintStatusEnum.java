@@ -6,8 +6,8 @@ public enum FingerprintStatusEnum {
   NOT_STARTED("NOT_STARTED", "未开始"),
   CAPTURING("CAPTURING", "采集中"),
   DONE("DONE", "已完成"),
-  FAILED("FAILED", "失败"),
-  EXCEPTION_RELEASED("EXCEPTION_RELEASED", "异常放行");
+  FAILED("FAILED", "异常"),
+  EXCEPTION_RELEASED("EXCEPTION_RELEASED", "已放行");
 
   private final String code;
   private final String label;

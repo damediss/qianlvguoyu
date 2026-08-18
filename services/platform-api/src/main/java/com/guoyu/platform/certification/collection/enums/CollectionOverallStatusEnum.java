@@ -10,8 +10,8 @@ public enum CollectionOverallStatusEnum {
   QUEUED("QUEUED", "已入队"),
   COLLECTING("COLLECTING", "采集中"),
   PENDING_RETRY("PENDING_RETRY", "待补采"),
-  INFO_ERROR("INFO_ERROR", "信息异常"),
-  EXCEPTION_RELEASED("EXCEPTION_RELEASED", "异常放行"),
+  INFO_ERROR("INFO_ERROR", "异常"),
+  EXCEPTION_RELEASED("EXCEPTION_RELEASED", "已放行"),
   COMPLETED("COMPLETED", "已完成"),
   CANCELLED("CANCELLED", "已取消");
 
@@ -37,5 +37,18 @@ public enum CollectionOverallStatusEnum {
 
   public static boolean isValid(String code) {
     return fromCode(code) != null;
+  }
+
+  public static boolean isExemptReleased(String overallStatus, String exceptionStatus) {
+    return EXCEPTION_RELEASED.getCode().equals(overallStatus) || "RELEASED".equals(exceptionStatus);
+  }
+
+  public static boolean canExportCollectionForm(String overallStatus) {
+    return canExportCollectionForm(overallStatus, null);
+  }
+
+  public static boolean canExportCollectionForm(String overallStatus, String exceptionStatus) {
+    CollectionOverallStatusEnum status = fromCode(overallStatus);
+    return status == COMPLETED || isExemptReleased(overallStatus, exceptionStatus);
   }
 }

@@ -17,8 +17,8 @@ import type {
 } from '../../../types/certificationPracticalCollection';
 import './SignaturePad.css';
 
-const CANVAS_HEIGHT = 280;
 const MIN_CANVAS_WIDTH = 320;
+const MIN_CANVAS_HEIGHT = 420;
 
 interface Point {
   x: number;
@@ -136,7 +136,7 @@ export function SignaturePad({
 
     const dpr = Math.max(window.devicePixelRatio || 1, 1);
     const width = Math.max(Math.floor(host.clientWidth || MIN_CANVAS_WIDTH), MIN_CANVAS_WIDTH);
-    const height = CANVAS_HEIGHT;
+    const height = Math.max(Math.floor(host.clientHeight || MIN_CANVAS_HEIGHT), MIN_CANVAS_HEIGHT);
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
     canvas.width = Math.floor(width * dpr);
@@ -490,6 +490,7 @@ export function SignaturePad({
 
           <div className="signature-pad-actions">
             <Button
+              size="small"
               danger
               icon={<DeleteOutlined />}
               disabled={submitting || isAlreadySigned || isExceptionReleased}
@@ -498,6 +499,7 @@ export function SignaturePad({
               清空重签
             </Button>
             <Button
+              size="small"
               type="primary"
               icon={<CheckCircleOutlined />}
               loading={submitting}

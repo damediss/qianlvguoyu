@@ -604,23 +604,37 @@ public class PracticalCollectionApplicationService {
         errors.add(candidateLabel(candidate) + "：" + (eligibility == null ? "资料状态无法确认" : eligibility.reasonMessage()));
         continue;
       }
-      if (status == null || !CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
-        errors.add(candidateLabel(candidate) + "：实操信息采集尚未完成");
+      if (status == null || !CollectionOverallStatusEnum.canExportCollectionForm(
+          status.getOverallStatus(), status.getExceptionStatus())) {
+        errors.add(candidateLabel(candidate) + "：仅已完成或已放行的考生可生成采集表");
         continue;
       }
+      boolean released = CollectionOverallStatusEnum.isExemptReleased(
+          status.getOverallStatus(), status.getExceptionStatus());
       try {
         byte[] avatar = readImageFile(tenantId, eligibility.avatarFileId(), "证件照");
         PracticalFingerprintTraceEntity fingerprint = latestFingerprintTrace(tenantId, taskId, candidateId);
-        if (fingerprint == null || !FingerprintCollectStatusEnum.SUCCESS.getCode().equals(fingerprint.getCollectStatus())
-            || fingerprint.getFingerprintImageFileId() == null) {
-          throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少有效指纹图片");
-        }
-        byte[] fingerprintImage = readImageFile(tenantId, fingerprint.getFingerprintImageFileId(), "指纹图片");
         PracticalSignatureRecordEntity signature = latestSignatureRecord(tenantId, taskId, candidateId);
-        if (signature == null || signature.getSignatureFileId() == null) {
-          throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少有效电子签名图片");
+        byte[] fingerprintImage;
+        byte[] signatureImage;
+        if (released) {
+          fingerprintImage = fingerprint == null
+              ? new byte[0]
+              : readImageFileOrEmpty(tenantId, fingerprint.getFingerprintImageFileId(), "指纹图片");
+          signatureImage = signature == null
+              ? new byte[0]
+              : readImageFileOrEmpty(tenantId, signature.getSignatureFileId(), "电子签名图片");
+        } else {
+          if (fingerprint == null || !FingerprintCollectStatusEnum.SUCCESS.getCode().equals(fingerprint.getCollectStatus())
+              || fingerprint.getFingerprintImageFileId() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少有效指纹图片");
+          }
+          fingerprintImage = readImageFile(tenantId, fingerprint.getFingerprintImageFileId(), "指纹图片");
+          if (signature == null || signature.getSignatureFileId() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少有效电子签名图片");
+          }
+          signatureImage = readImageFile(tenantId, signature.getSignatureFileId(), "电子签名图片");
         }
-        byte[] signatureImage = readImageFile(tenantId, signature.getSignatureFileId(), "电子签名图片");
         exportCandidates.add(new CollectionFormCandidate(candidate, avatar, fingerprintImage, signatureImage));
       } catch (BusinessException ex) {
         errors.add(candidateLabel(candidate) + "：" + ex.getMessage());
@@ -906,7 +920,22 @@ public class PracticalCollectionApplicationService {
     if (value != null) cell.setCellValue(value);
   }
 
+  private byte[] readImageFileOrEmpty(Long tenantId, Long fileId, String label) {
+    if (fileId == null) {
+      return new byte[0];
+    }
+    try {
+      return readImageFile(tenantId, fileId, label);
+    } catch (BusinessException ex) {
+      log.warn("Optional collection export image skipped: label={}, fileId={}, reason={}", label, fileId, ex.getMessage());
+      return new byte[0];
+    }
+  }
+
   private void addImage(Workbook workbook, Sheet sheet, byte[] source, int col, int row, int colSpan, int rowSpan) {
+    if (source == null || source.length == 0) {
+      return;
+    }
     try {
       BufferedImage image = ImageIO.read(new java.io.ByteArrayInputStream(source));
       if (image == null) throw new IOException("not an image");
@@ -1830,9 +1859,11 @@ public class PracticalCollectionApplicationService {
     PlatformUserPrincipal user = current();
     CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
     PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
-    domainService.assertNotCompleted(status.getOverallStatus(), "标记信息异常");
+    domainService.assertNotCompleted(status.getOverallStatus(), "标记异常");
     removeActiveQueue(user.getTenantId(), request.taskId(), request.candidateId(), user.getUserId(), request.reason());
     status.setOverallStatus(CollectionOverallStatusEnum.INFO_ERROR.getCode());
+    status.setFingerprintStatus(FingerprintStatusEnum.FAILED.getCode());
+    status.setSignatureStatus(SignatureStatusEnum.FAILED.getCode());
     status.setQueueStatus(CollectionQueueStatusEnum.REMOVED.getCode());
     status.setExceptionStatus(CollectionExceptionStatusEnum.INFO_ERROR.getCode());
     status.setLastOperatorId(user.getUserId());
@@ -1843,12 +1874,12 @@ public class PracticalCollectionApplicationService {
         request.candidateId(),
         CollectionExceptionTypeEnum.INFO_ERROR.getCode(),
         CollectionExceptionStatusEnum.INFO_ERROR.getCode(),
-        CollectionReleaseScopeEnum.INFO.getCode(),
+        CollectionReleaseScopeEnum.ALL.getCode(),
         request.reason(),
         null,
         null
     );
-    return converter.toActionResultVO(status, null, "已标记信息异常");
+    return converter.toActionResultVO(status, null, "已标记异常");
   }
 
   @Transactional
@@ -1862,19 +1893,9 @@ public class PracticalCollectionApplicationService {
     }
     domainService.assertCanExceptionRelease(status.getOverallStatus(), request.releaseScope(), request.reason());
     CollectionReleaseScopeEnum scope = CollectionReleaseScopeEnum.fromCode(request.releaseScope());
-    if (scope == CollectionReleaseScopeEnum.FINGERPRINT || scope == CollectionReleaseScopeEnum.ALL) {
-      status.setFingerprintStatus(FingerprintStatusEnum.EXCEPTION_RELEASED.getCode());
-    }
-    if (scope == CollectionReleaseScopeEnum.SIGNATURE || scope == CollectionReleaseScopeEnum.ALL) {
-      status.setSignatureStatus(SignatureStatusEnum.EXCEPTION_RELEASED.getCode());
-    }
-    if (scope == CollectionReleaseScopeEnum.ALL
-        || scope == CollectionReleaseScopeEnum.INFO
-        || scope == CollectionReleaseScopeEnum.OTHER) {
-      removeActiveQueue(user.getTenantId(), request.taskId(), request.candidateId(), user.getUserId(), request.reason());
-      status.setOverallStatus(CollectionOverallStatusEnum.EXCEPTION_RELEASED.getCode());
-      status.setQueueStatus(CollectionQueueStatusEnum.REMOVED.getCode());
-    }
+    removeActiveQueue(user.getTenantId(), request.taskId(), request.candidateId(), user.getUserId(), request.reason());
+    status.setOverallStatus(CollectionOverallStatusEnum.EXCEPTION_RELEASED.getCode());
+    status.setQueueStatus(CollectionQueueStatusEnum.REMOVED.getCode());
     status.setExceptionStatus(CollectionExceptionStatusEnum.RELEASED.getCode());
     status.setLastOperatorId(user.getUserId());
     statusMapper.updateById(status);
@@ -1889,7 +1910,7 @@ public class PracticalCollectionApplicationService {
         request.deviceSn(),
         request.deviceStatus()
     );
-    return converter.toActionResultVO(status, activeQueueItem(user.getTenantId(), candidate, status), "已记录异常放行");
+    return converter.toActionResultVO(status, activeQueueItem(user.getTenantId(), candidate, status), "已记录免考放行");
   }
 
   private void applyCandidateTaskFilter(

@@ -104,15 +104,14 @@ public class PracticalCollectionDomainService {
 
   public void assertCanExceptionRelease(String overallStatusCode, String releaseScopeCode, String reason) {
     CollectionOverallStatusEnum overallStatus = overallStatus(overallStatusCode);
-    if (overallStatus == CollectionOverallStatusEnum.COMPLETED
-        || overallStatus == CollectionOverallStatusEnum.CANCELLED) {
-      throw new BusinessException(ErrorCode.CONFLICT, "已完成或已取消的考生不能异常放行");
+    if (overallStatus == CollectionOverallStatusEnum.CANCELLED) {
+      throw new BusinessException(ErrorCode.CONFLICT, "已取消的考生不能免考放行");
     }
     if (!StringUtils.hasText(reason)) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "异常放行原因不能为空");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "免考放行原因不能为空");
     }
     if (CollectionReleaseScopeEnum.fromCode(releaseScopeCode) == null) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "异常放行范围不正确");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "免考放行范围不正确");
     }
   }
 

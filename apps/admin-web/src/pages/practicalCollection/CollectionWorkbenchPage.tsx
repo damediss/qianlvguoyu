@@ -90,7 +90,7 @@ interface CollectionWorkbenchPageProps {
 
 
 
-type TabletCandidateStatus = 'CURRENT' | 'COMPLETED' | 'PENDING' | 'EXCEPTION';
+type TabletCandidateStatus = 'CURRENT' | 'COMPLETED' | 'PENDING' | 'EXCEPTION' | 'RELEASED';
 
 
 
@@ -103,6 +103,8 @@ const tabletStatusText: Record<TabletCandidateStatus, string> = {
   PENDING: '未采集',
 
   EXCEPTION: '异常',
+
+  RELEASED: '已放行',
 
 };
 
@@ -117,6 +119,8 @@ const tabletStatusColor: Record<TabletCandidateStatus, string> = {
   PENDING: 'default',
 
   EXCEPTION: 'red',
+
+  RELEASED: 'blue',
 
 };
 
@@ -150,21 +154,21 @@ function getTabletCandidateStatus(
 
   }
 
+  if (candidate.overallStatus === 'EXCEPTION_RELEASED' || candidate.exceptionStatus === 'RELEASED') {
+
+    return 'RELEASED';
+
+  }
+
   if (
 
     candidate.overallStatus === 'PENDING_RETRY'
 
     || candidate.overallStatus === 'INFO_ERROR'
 
-    || candidate.overallStatus === 'EXCEPTION_RELEASED'
-
     || candidate.fingerprintStatus === 'FAILED'
 
-    || candidate.fingerprintStatus === 'EXCEPTION_RELEASED'
-
     || candidate.signatureStatus === 'FAILED'
-
-    || candidate.signatureStatus === 'EXCEPTION_RELEASED'
 
     || (candidate.exceptionStatus && candidate.exceptionStatus !== 'NONE')
 

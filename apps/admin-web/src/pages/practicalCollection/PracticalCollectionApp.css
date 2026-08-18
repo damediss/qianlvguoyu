@@ -501,27 +501,44 @@
   min-height: calc(100vh - 104px);
 }
 
+.current-candidate-hero,
+.current-candidate-desc,
+.current-candidate-actions {
+  flex-shrink: 0;
+}
+
+.current-candidate-panel .signature-pad {
+  flex: 1;
+  min-height: 0;
+}
+
 .empty-current-candidate {
   display: grid;
   place-items: center;
 }
 
 .current-candidate-hero {
-  padding: 16px;
+  padding: 8px 16px;
   border-radius: 8px;
   background: #f0fdf4;
   border: 1px solid #bbf7d0;
 }
 
 .current-candidate-hero h2.ant-typography {
-  margin: 2px 0 8px;
+  margin: 2px 0 0;
   color: #14532d;
   font-size: 30px;
   letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.current-candidate-desc .ant-descriptions-view {
+  table-layout: fixed;
 }
 
 .current-candidate-desc .ant-descriptions-item-label,
 .current-candidate-desc .ant-descriptions-item-content {
+  padding: 4px 10px !important;
   font-size: 15px;
 }
 

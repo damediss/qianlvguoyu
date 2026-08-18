@@ -1,7 +1,6 @@
 import { Button, Form, Input, Modal, Select } from 'antd';
 import type {
   CollectionExceptionType,
-  CollectionReleaseScope,
 } from '../../../types/certificationPracticalCollection';
 
 interface ExceptionReleaseModalProps {
@@ -10,7 +9,6 @@ interface ExceptionReleaseModalProps {
   onCancel: () => void;
   onSubmit: (values: {
     exceptionType: CollectionExceptionType;
-    releaseScope: CollectionReleaseScope;
     reason: string;
   }) => void;
 }
@@ -18,36 +16,33 @@ interface ExceptionReleaseModalProps {
 export function ExceptionReleaseModal({ open, loading, onCancel, onSubmit }: ExceptionReleaseModalProps) {
   const [form] = Form.useForm<{
     exceptionType: CollectionExceptionType;
-    releaseScope: CollectionReleaseScope;
     reason: string;
   }>();
 
   return (
     <Modal
-      title="异常放行"
+      title="免考放行"
       open={open}
       onCancel={onCancel}
       footer={[
         <Button key="cancel" onClick={onCancel}>取消</Button>,
         <Button
           key="submit"
-          danger
           type="primary"
           loading={loading}
           onClick={() => {
             form.validateFields().then((values) => {
               Modal.confirm({
-                title: '确认异常放行？',
-                content: '异常放行会写入审计和异常记录，请确认现场已完成核验。',
+                title: '确认免考放行？',
+                content: '免考放行后，该考生采集状态将变为已放行，并写入审计记录。',
                 okText: '确认放行',
-                okButtonProps: { danger: true },
                 cancelText: '取消',
                 onOk: () => onSubmit(values),
               });
             });
           }}
         >
-          异常放行
+          免考放行
         </Button>,
       ]}
       destroyOnHidden
@@ -55,9 +50,9 @@ export function ExceptionReleaseModal({ open, loading, onCancel, onSubmit }: Exc
       <Form
         form={form}
         layout="vertical"
-        initialValues={{ exceptionType: 'OTHER', releaseScope: 'FINGERPRINT' }}
+        initialValues={{ exceptionType: 'OTHER' }}
       >
-        <Form.Item name="exceptionType" label="异常类型" rules={[{ required: true }]}>
+        <Form.Item name="exceptionType" label="放行类型" rules={[{ required: true }]}>
           <Select
             options={[
               { value: 'DEVICE_ERROR', label: '设备异常' },
@@ -68,18 +63,7 @@ export function ExceptionReleaseModal({ open, loading, onCancel, onSubmit }: Exc
             ]}
           />
         </Form.Item>
-        <Form.Item name="releaseScope" label="放行范围" rules={[{ required: true }]}>
-          <Select
-            options={[
-              { value: 'FINGERPRINT', label: '指纹' },
-              { value: 'SIGNATURE', label: '签名' },
-              { value: 'ALL', label: '全部' },
-              { value: 'INFO', label: '信息' },
-              { value: 'OTHER', label: '其他' },
-            ]}
-          />
-        </Form.Item>
-        <Form.Item name="reason" label="放行原因" rules={[{ required: true, message: '请填写异常放行原因' }]}>
+        <Form.Item name="reason" label="放行原因" rules={[{ required: true, message: '请填写免考放行原因' }]}>
           <Input.TextArea rows={4} maxLength={1000} showCount />
         </Form.Item>
       </Form>

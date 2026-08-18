@@ -96,8 +96,8 @@ export const CollectionOverallStatusText: Record<CollectionOverallStatus, string
   QUEUED: '已入队',
   COLLECTING: '采集中',
   PENDING_RETRY: '待补采',
-  INFO_ERROR: '信息异常',
-  EXCEPTION_RELEASED: '异常放行',
+  INFO_ERROR: '异常',
+  EXCEPTION_RELEASED: '已放行',
   COMPLETED: '已完成',
   CANCELLED: '已取消',
 };
@@ -115,22 +115,22 @@ export const FingerprintStatusText: Record<FingerprintStatus, string> = {
   NOT_STARTED: '未开始',
   CAPTURING: '采集中',
   DONE: '已采集',
-  FAILED: '采集失败',
-  EXCEPTION_RELEASED: '异常放行',
+  FAILED: '异常',
+  EXCEPTION_RELEASED: '已放行',
 };
 
 export const SignatureStatusText: Record<SignatureStatus, string> = {
   NOT_STARTED: '未开始',
   SIGNING: '签名中',
   DONE: '已签名',
-  FAILED: '签名失败',
-  EXCEPTION_RELEASED: '异常放行',
+  FAILED: '异常',
+  EXCEPTION_RELEASED: '已放行',
 };
 
 export const CollectionExceptionStatusText: Record<CollectionExceptionStatus, string> = {
   NONE: '无异常',
   PENDING_RETRY: '待补采',
-  INFO_ERROR: '信息异常',
+  INFO_ERROR: '异常',
   RELEASED: '已放行',
   RESOLVED: '已处理',
 };

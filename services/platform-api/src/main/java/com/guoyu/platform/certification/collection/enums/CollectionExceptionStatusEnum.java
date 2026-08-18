@@ -5,7 +5,7 @@ import java.util.Arrays;
 public enum CollectionExceptionStatusEnum {
   NONE("NONE", "无异常"),
   PENDING_RETRY("PENDING_RETRY", "待补采"),
-  INFO_ERROR("INFO_ERROR", "信息异常"),
+  INFO_ERROR("INFO_ERROR", "异常"),
   RELEASED("RELEASED", "已放行"),
   RESOLVED("RESOLVED", "已处理");
 
