@@ -32,6 +32,7 @@ import com.guoyu.platform.certification.mapper.CertificationTaskAssessorMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskScopeMapper;
 import com.guoyu.platform.common.exception.BusinessException;
+import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.entity.ExamOperatePaperDetailEntity;
 import com.guoyu.platform.exam.entity.ExamOperatePaperEntity;
 import com.guoyu.platform.exam.mapper.ExamOperatePaperDetailMapper;
@@ -43,6 +44,7 @@ import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -53,6 +55,8 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.ss.util.CellReference;
+import org.apache.poi.xssf.usermodel.XSSFPicture;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -90,6 +94,8 @@ class PracticalScoringApplicationServiceTest {
       Mockito.mock(PracticalStartApplicationService.class);
   private final AssessorWorkbenchContextService workbenchContextService =
       Mockito.mock(AssessorWorkbenchContextService.class);
+  private final PracticalCompleteSignatureApplicationService completeSignatureService =
+      Mockito.mock(PracticalCompleteSignatureApplicationService.class);
   private PracticalScoringApplicationService service;
 
   @BeforeEach
@@ -102,14 +108,21 @@ class PracticalScoringApplicationServiceTest {
     service = new PracticalScoringApplicationService(
         taskMapper, scopeMapper, candidateMapper, groupMapper, taskAssessorMapper, assessorMapper,
         assessorTaskMapper, scoreMapper, configMapper, questionResultMapper, candidateResultMapper,
-        historyMapper, paperMapper, paperDetailMapper, new ObjectMapper(), startService, workbenchContextService);
+        historyMapper, paperMapper, paperDetailMapper, new ObjectMapper(), startService, workbenchContextService,
+        completeSignatureService);
     CertificationInfoAssessorEntity assessor = new CertificationInfoAssessorEntity();
     assessor.setId(9L);
     assessor.setUserId(100L);
     assessor.setAuditStatus("approved");
     when(assessorMapper.selectOne(any())).thenReturn(assessor);
     when(workbenchContextService.current()).thenReturn(
-        new PracticalScoringModels.AssessorWorkbenchContext(false, null, null, null, List.of()));
+        new PracticalScoringModels.AssessorWorkbenchContext(
+            false, null, null, null, List.of(), PracticalCompleteSignatureApplicationService.emptyView(null)));
+    Mockito.doNothing().when(completeSignatureService).requireAllSigned(any());
+    Mockito.doNothing().when(completeSignatureService).markConsumed(any());
+    when(completeSignatureService.viewForTask(any())).thenReturn(
+        PracticalCompleteSignatureApplicationService.emptyView(1L));
+    when(completeSignatureService.loadSignedImages(any())).thenReturn(List.of());
   }
 
   @AfterEach
@@ -806,33 +819,64 @@ class PracticalScoringApplicationServiceTest {
   }
 
   @Test
-  void completeTaskReleasesFinishedCandidateGroupsAndKeepsRemainingAssignmentStatus() {
+  void completeTaskMarksBindingsIdleAndKeepsHistoryInsteadOfDeleting() {
     CertificationAssessorTaskEntity scoringTask = task(50L, 9L, 0);
     scoringTask.setGroupId(30L);
-    CertificationTaskAssessorEntity releasedBinding = members(1).get(0);
-    releasedBinding.setAssessorId(9L);
-    CertificationTaskAssessorEntity remainingBinding = members(1).get(0);
-    remainingBinding.setAssessorId(9L);
-    remainingBinding.setWorkStatus("assigned");
+    CertificationTaskAssessorEntity thisBinding = members(1).get(0);
+    thisBinding.setAssessorId(9L);
+    thisBinding.setWorkStatus("assigned");
     CertificationPracticalCandidateResultEntity result = new CertificationPracticalCandidateResultEntity();
     result.setCandidateId(11L);
     result.setStatus("completed");
     CertificationInfoAssessorEntity assessor = assessor(9L);
-    assessor.setWorkStatus("preparing");
+    assessor.setWorkStatus("assigned");
 
     when(taskMapper.selectById(1L)).thenReturn(taskEntity());
     when(assessorTaskMapper.selectList(any())).thenReturn(List.of(scoringTask));
     when(candidateResultMapper.selectList(any())).thenReturn(List.of(result));
-    when(taskAssessorMapper.selectList(any())).thenReturn(List.of(releasedBinding), List.of(remainingBinding));
+    when(taskAssessorMapper.selectList(any())).thenReturn(List.of(thisBinding));
     when(assessorMapper.selectById(9L)).thenReturn(assessor);
 
     PracticalScoringModels.CompleteTaskView view = service.completeTask(1L);
 
     assertThat(view.releasedGroups()).isEqualTo(1);
     assertThat(view.releasedAssessors()).isEqualTo(1);
-    assertThat(assessor.getWorkStatus()).isEqualTo("assigned");
-    verify(taskAssessorMapper).delete(any());
+    assertThat(thisBinding.getWorkStatus()).isEqualTo("idle");
+    assertThat(assessor.getWorkStatus()).isEqualTo("idle");
+    verify(taskAssessorMapper, Mockito.never()).delete(any());
+    verify(taskAssessorMapper).updateById(thisBinding);
     verify(assessorMapper).updateById(assessor);
+  }
+
+  @Test
+  void completeTaskKeepsAssessorAssignedWhenOtherTaskStillAssigned() {
+    CertificationAssessorTaskEntity scoringTask = task(50L, 9L, 0);
+    scoringTask.setGroupId(30L);
+    CertificationTaskAssessorEntity thisBinding = members(1).get(0);
+    thisBinding.setAssessorId(9L);
+    thisBinding.setWorkStatus("assigned");
+    CertificationTaskAssessorEntity otherBinding = members(1).get(0);
+    otherBinding.setAssessorId(9L);
+    otherBinding.setTaskId(2L);
+    otherBinding.setWorkStatus("assigned");
+    CertificationPracticalCandidateResultEntity result = new CertificationPracticalCandidateResultEntity();
+    result.setCandidateId(11L);
+    result.setStatus("completed");
+    CertificationInfoAssessorEntity assessor = assessor(9L);
+    assessor.setWorkStatus("assigned");
+
+    when(taskMapper.selectById(1L)).thenReturn(taskEntity());
+    when(assessorTaskMapper.selectList(any())).thenReturn(List.of(scoringTask));
+    when(candidateResultMapper.selectList(any())).thenReturn(List.of(result));
+    when(taskAssessorMapper.selectList(any())).thenReturn(List.of(thisBinding), List.of(thisBinding, otherBinding));
+    when(assessorMapper.selectById(9L)).thenReturn(assessor);
+
+    PracticalScoringModels.CompleteTaskView view = service.completeTask(1L);
+
+    assertThat(view.releasedAssessors()).isEqualTo(1);
+    assertThat(thisBinding.getWorkStatus()).isEqualTo("idle");
+    assertThat(assessor.getWorkStatus()).isEqualTo("assigned");
+    verify(taskAssessorMapper, Mockito.never()).delete(any());
   }
 
   @Test
@@ -846,6 +890,26 @@ class PracticalScoringApplicationServiceTest {
     assertThatThrownBy(() -> service.completeTask(1L))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("实操评分未完成");
+  }
+
+  @Test
+  void completeTaskRejectsWhenAssessorsHaveNotSigned() {
+    CertificationAssessorTaskEntity scoringTask = task(50L, 9L, 0);
+    scoringTask.setGroupId(30L);
+    CertificationPracticalCandidateResultEntity result = new CertificationPracticalCandidateResultEntity();
+    result.setCandidateId(11L);
+    result.setStatus("completed");
+    Mockito.doThrow(new BusinessException(ErrorCode.BAD_REQUEST, "请先通知三名考评员签字确认"))
+        .when(completeSignatureService).requireAllSigned(1L);
+    when(taskMapper.selectById(1L)).thenReturn(taskEntity());
+    when(assessorTaskMapper.selectList(any())).thenReturn(List.of(scoringTask));
+    when(candidateResultMapper.selectList(any())).thenReturn(List.of(result));
+
+    assertThatThrownBy(() -> service.completeTask(1L))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("签字确认");
+    Mockito.verify(taskAssessorMapper, Mockito.never()).delete(any());
+    Mockito.verify(taskAssessorMapper, Mockito.never()).updateById(org.mockito.ArgumentMatchers.any(CertificationTaskAssessorEntity.class));
   }
 
   @Test
@@ -925,8 +989,12 @@ class PracticalScoringApplicationServiceTest {
       assertThat(formatter.formatCellValue(sheet.getRow(1).getCell(3))).isEqualTo("考 点 ：Test site");
       assertThat(formatter.formatCellValue(sheet.getRow(2).getCell(0))).isEqualTo("计划名称：Template export");
       assertThat(formatter.formatCellValue(sheet.getRow(2).getCell(3))).isEqualTo("考试时间：2026-06-23");
+      assertThat(formatter.formatCellValue(sheet.getRow(3).getCell(0))).contains("考评员1(签字)");
       assertThat(formatter.formatCellValue(sheet.getRow(3).getCell(0)))
           .doesNotContain("Signer A", "Signer B", "Signer C");
+      assertThat(formatter.formatCellValue(sheet.getRow(3).getCell(10))).contains("考评员2(签字)");
+      assertThat(formatter.formatCellValue(sheet.getRow(3).getCell(20))).contains("考评员3(签字)");
+      assertThat(formatter.formatCellValue(sheet.getRow(3).getCell(30))).contains("核分人");
       assertThat(sheet.getRow(6).getCell(1).getStringCellValue()).isEqualTo("Candidate 1");
       assertThat(sheet.getRow(7).getCell(1).getStringCellValue()).isEqualTo("Candidate 2");
       assertThat(sheet.getRow(6).getCell(2).getStringCellValue()).isEqualTo("2607134501032300013");
@@ -959,14 +1027,13 @@ class PracticalScoringApplicationServiceTest {
         Sheet templateSheet = templateWorkbook.getSheetAt(0);
         assertThat(sheet.getColumnWidth(0)).isEqualTo(templateSheet.getColumnWidth(0));
         assertThat(sheet.getRow(0).getHeight()).isEqualTo(templateSheet.getRow(0).getHeight());
-        assertThat(formatter.formatCellValue(sheet.getRow(3).getCell(0)))
-            .isEqualTo(formatter.formatCellValue(templateSheet.getRow(3).getCell(0)));
       }
       assertThat(workbook.getNumberOfSheets()).isEqualTo(19);
       Sheet firstRecordSheet = workbook.getSheet("评分记录表1-Signer A");
       assertThat(firstRecordSheet).isNotNull();
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(0).getCell(0))).isEqualTo("表1:评分记录表");
-      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(2).getCell(0))).contains("考评员  签字：Signer A");
+      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(2).getCell(0))).contains("考评员  签字：");
+      assertThat(formatter.formatCellValue(firstRecordSheet.getRow(2).getCell(0))).doesNotContain("Signer A");
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(3).getCell(3))).isEqualTo("试题1、试题1(10分)");
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(5).getCell(4))).isEqualTo("评分项1");
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(1))).isEqualTo("Candidate 1");
@@ -977,7 +1044,8 @@ class PracticalScoringApplicationServiceTest {
       assertThat(formatter.formatCellValue(firstRecordSheet.getRow(11).getCell(6))).isEqualTo("11.5");
       Sheet secondAssessorSheet = workbook.getSheet("评分记录表1-Signer B");
       assertThat(secondAssessorSheet).isNotNull();
-      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(2).getCell(0))).contains("考评员  签字：Signer B");
+      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(2).getCell(0))).contains("考评员  签字：");
+      assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(2).getCell(0))).doesNotContain("Signer B");
       assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(11).getCell(4))).isEqualTo("1.5");
       assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(11).getCell(5))).isEqualTo("8.5");
       assertThat(formatter.formatCellValue(secondAssessorSheet.getRow(11).getCell(6))).isEqualTo("12.0");
@@ -1005,6 +1073,50 @@ class PracticalScoringApplicationServiceTest {
           .isGreaterThan(expandedRecordSheet.getRow(6).getHeightInPoints());
       assertThat(expandedRecordSheet.getRow(7).getHeightInPoints())
           .isGreaterThan(expandedRecordSheet.getRow(8).getHeightInPoints());
+    }
+  }
+
+  @Test
+  void exportSummaryEmbedsCompleteTaskSignatureImages() throws Exception {
+    CertificationTaskEntity task = taskEntity();
+    task.setTaskNo("PLAN-SIGN");
+    task.setTaskName("Signature export");
+    task.setCompanyName("Sign site");
+    task.setExamDate(LocalDate.of(2026, 8, 18));
+    CertificationCandidateEntity candidate = candidate(11L, "Candidate 1", 100L, true);
+    candidate.setCandidateNo("C-001");
+    candidate.setAdmissionTicketNo("2607134501032300013");
+    List<CertificationPracticalQuestionResultEntity> questionResults = exportQuestionResults(List.of(candidate));
+    List<CertificationAssessorTaskEntity> scoreTasks = exportScoreTasks(List.of(candidate));
+    List<CertificationTaskAssessorEntity> assessors = members(3);
+    assessors.get(0).setAssessorName("Signer A");
+    assessors.get(1).setAssessorName("Signer B");
+    assessors.get(2).setAssessorName("Signer C");
+    byte[] png = Base64.getDecoder().decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+    when(completeSignatureService.loadSignedImages(1L)).thenReturn(List.of(
+        new PracticalCompleteSignatureApplicationService.AssessorSignImage(201L, "Signer A", png),
+        new PracticalCompleteSignatureApplicationService.AssessorSignImage(202L, "Signer B", png),
+        new PracticalCompleteSignatureApplicationService.AssessorSignImage(203L, "Signer C", png)));
+
+    when(taskMapper.selectById(1L)).thenReturn(task);
+    when(candidateMapper.selectList(any())).thenReturn(List.of(candidate));
+    when(candidateResultMapper.selectList(any())).thenReturn(List.of(exportCandidateResult(candidate.getId(), "100.0")));
+    when(questionResultMapper.selectList(any())).thenReturn(questionResults);
+    when(assessorTaskMapper.selectList(any())).thenReturn(scoreTasks);
+    when(scoreMapper.selectList(any())).thenReturn(exportScoreRows(scoreTasks));
+    when(taskAssessorMapper.selectList(any())).thenReturn(assessors);
+
+    ExportResultDTO result = service.exportSummary(1L, List.of(candidate.getId()));
+
+    try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(result.data()))) {
+      assertThat(workbook.getAllPictures()).hasSize(3);
+      assertThat(pictureCount(workbook.getSheetAt(0))).isEqualTo(3);
+      Sheet firstRecordSheet = workbook.getSheet("评分记录表1-Signer A");
+      assertThat(firstRecordSheet).isNotNull();
+      assertThat(pictureCount(firstRecordSheet)).isEqualTo(1);
+      Sheet secondAssessorSheet = workbook.getSheet("评分记录表1-Signer B");
+      assertThat(pictureCount(secondAssessorSheet)).isEqualTo(1);
     }
   }
 
@@ -1168,6 +1280,13 @@ class PracticalScoringApplicationServiceTest {
 
   private int excelColumnWidth(double characters) {
     return (int) Math.round(characters * 256D);
+  }
+
+  private long pictureCount(Sheet sheet) {
+    if (!(sheet instanceof XSSFSheet xssfSheet) || xssfSheet.getDrawingPatriarch() == null) {
+      return 0;
+    }
+    return xssfSheet.getDrawingPatriarch().getShapes().stream().filter(XSSFPicture.class::isInstance).count();
   }
 
   private void assertMerged(Sheet sheet, String ref) {

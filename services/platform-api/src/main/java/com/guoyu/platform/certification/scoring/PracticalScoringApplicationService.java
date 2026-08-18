@@ -61,6 +61,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.ClientAnchor;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.HorizontalAlignment;
 import org.apache.poi.ss.usermodel.PrintSetup;
@@ -69,6 +70,9 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.xssf.usermodel.XSSFClientAnchor;
+import org.apache.poi.xssf.usermodel.XSSFDrawing;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
@@ -102,6 +106,12 @@ public class PracticalScoringApplicationService {
   private static final int SUMMARY_WEIGHT_COLUMN_WIDTH = excelColumnWidth(4D);
   private static final int SUMMARY_TOTAL_DISPLAY_COLUMN_WIDTH = excelColumnWidth(6D);
   private static final int SUMMARY_WEIGHT_VALUE = 100;
+  private static final int SUMMARY_SIGN_SLOT_COUNT = 4;
+  private static final String[] SUMMARY_SIGN_LABELS = {
+      "考评员1(签字):", "考评员2(签字):", "考评员3(签字):", "核分人:"
+  };
+  private static final float SUMMARY_SIGN_ROW_HEIGHT_POINTS = 42f;
+  private static final float SCORE_RECORD_SIGN_ROW_HEIGHT_POINTS = 36f;
   private static final int SCORE_RECORD_SCORE_START_COLUMN = 4;
   private static final int SCORE_RECORD_CANDIDATE_START_ROW = 11;
   private static final int SCORE_RECORD_TEMPLATE_CANDIDATE_ROW = 18;
@@ -127,6 +137,7 @@ public class PracticalScoringApplicationService {
   private final ObjectMapper objectMapper;
   private final PracticalStartApplicationService startService;
   private final AssessorWorkbenchContextService workbenchContextService;
+  private final PracticalCompleteSignatureApplicationService completeSignatureService;
 
   private static int excelColumnWidth(double characters) {
     return (int) Math.round(characters * EXCEL_COLUMN_WIDTH_UNIT);
@@ -149,7 +160,8 @@ public class PracticalScoringApplicationService {
       ExamOperatePaperDetailMapper paperDetailMapper,
       ObjectMapper objectMapper,
       PracticalStartApplicationService startService,
-      AssessorWorkbenchContextService workbenchContextService
+      AssessorWorkbenchContextService workbenchContextService,
+      PracticalCompleteSignatureApplicationService completeSignatureService
   ) {
     this.taskMapper = taskMapper;
     this.scopeMapper = scopeMapper;
@@ -168,6 +180,7 @@ public class PracticalScoringApplicationService {
     this.objectMapper = objectMapper;
     this.startService = startService;
     this.workbenchContextService = workbenchContextService;
+    this.completeSignatureService = completeSignatureService;
   }
 
   @Transactional(readOnly = true)
@@ -768,7 +781,8 @@ public class PracticalScoringApplicationService {
 
   /**
    * Closes the practical scoring work after every generated candidate result has been settled.
-   * Scoring rows remain as audit history; only assessor-group memberships are released.
+   * Scoring rows and task-assessor bindings remain as audit history; assessors are released by
+   * switching work status from assigned/preparing to idle, not by deleting the membership.
    */
   @Transactional
   public PracticalScoringModels.CompleteTaskView completeTask(Long taskId) {
@@ -804,6 +818,7 @@ public class PracticalScoringApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST,
           "仍有 " + unsettled + " 名考生的实操评分未完成，不能结束评分任务");
     }
+    completeSignatureService.requireAllSigned(taskId);
 
     Set<Long> groupIds = scoringTasks.stream()
         .map(CertificationAssessorTaskEntity::getGroupId)
@@ -817,16 +832,21 @@ public class PracticalScoringApplicationService {
             .eq(CertificationTaskAssessorEntity::getTaskId, taskId)
             .in(CertificationTaskAssessorEntity::getGroupId, groupIds));
     if (bindings == null || bindings.isEmpty()) {
+      completeSignatureService.markConsumed(taskId);
       return new PracticalScoringModels.CompleteTaskView(groupIds.size(), 0);
     }
     Set<Long> assessorIds = bindings.stream()
         .map(CertificationTaskAssessorEntity::getAssessorId)
         .filter(Objects::nonNull)
         .collect(Collectors.toSet());
-    taskAssessorMapper.delete(new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
-        .eq(CertificationTaskAssessorEntity::getTaskId, taskId)
-        .in(CertificationTaskAssessorEntity::getGroupId, groupIds));
+    for (CertificationTaskAssessorEntity binding : bindings) {
+      if (!"idle".equalsIgnoreCase(binding.getWorkStatus())) {
+        binding.setWorkStatus("idle");
+        taskAssessorMapper.updateById(binding);
+      }
+    }
     assessorIds.forEach(this::refreshAssessorWorkStatus);
+    completeSignatureService.markConsumed(taskId);
     return new PracticalScoringModels.CompleteTaskView(groupIds.size(), assessorIds.size());
   }
 
@@ -909,7 +929,8 @@ public class PracticalScoringApplicationService {
               questionResultStatus,
               scoreDeviation,
               "review_required".equals(questionResultStatus));
-        }).toList()
+        }).toList(),
+        completeSignatureService.viewForTask(taskId)
     );
   }
 
@@ -1019,8 +1040,11 @@ public class PracticalScoringApplicationService {
             CertificationAssessorTaskScoreEntity::getAssessorTaskId,
             LinkedHashMap::new,
             Collectors.toList()));
+    List<PracticalCompleteSignatureApplicationService.AssessorSignImage> signImages =
+        completeSignatureService.loadSignedImages(taskId);
     byte[] data = buildSummaryWorkbookFromTemplate(task, candidates, resultByCandidate,
-        questionResultsByCandidate, tasksByCandidateQuestion, scoresByAssessorTask, assessors, questionCount);
+        questionResultsByCandidate, tasksByCandidateQuestion, scoresByAssessorTask, assessors,
+        questionCount, signImages);
     String filename = "评分记录汇总表_" + task.getTaskNo() + "_" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss")
         .format(LocalDateTime.now()) + ".xlsx";
     return new ExportResultDTO(data, filename);
@@ -1038,7 +1062,8 @@ public class PracticalScoringApplicationService {
       Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion,
       Map<Long, List<CertificationAssessorTaskScoreEntity>> scoresByAssessorTask,
       List<CertificationTaskAssessorEntity> assessors,
-      int questionCount
+      int questionCount,
+      List<PracticalCompleteSignatureApplicationService.AssessorSignImage> signImages
   ) {
     ClassPathResource template = new ClassPathResource(SUMMARY_TEMPLATE_RESOURCE);
     try (InputStream input = template.getInputStream();
@@ -1092,11 +1117,13 @@ public class PracticalScoringApplicationService {
         writeDecimalCell(row, actualTotalColumn, questionFinalTotal.setScale(1, RoundingMode.HALF_UP));
       }
       trimSummarySheet(sheet, questionCount);
+      Map<Long, Integer> signaturePictures = registerSignaturePictures(workbook, signImages);
+      applySummaryAssessorSignatures(sheet, questionCount, assessors, signaturePictures);
       applySummaryColumnWidths(sheet, questionCount);
       applySummaryInfoRowsLayout(sheet);
       applySummaryNumberStyles(sheet, questionCount, candidates.size(), summaryDecimalStyle, integerStyle);
       appendScoreRecordSheets(workbook, task, candidates, questionResultsByCandidate,
-          tasksByCandidateQuestion, scoresByAssessorTask, assessors, decimalStyle);
+          tasksByCandidateQuestion, scoresByAssessorTask, assessors, decimalStyle, signaturePictures);
       workbook.write(output);
       return output.toByteArray();
     } catch (Exception ex) {
@@ -1180,8 +1207,15 @@ public class PracticalScoringApplicationService {
     // 计划名称（row 2 左） + 考试时间（row 2 右）
     sheet.addMergedRegion(new CellRangeAddress(2, 2, 0, infoDivider - 1));
     sheet.addMergedRegion(new CellRangeAddress(2, 2, infoDivider, lastColumn));
-    // 签字行（row 3）跨全部实际列
-    sheet.addMergedRegion(new CellRangeAddress(3, 3, 0, lastColumn));
+    // 签字行（row 3）拆成考评员1/2/3 与核分人四个槽位
+    int slotWidth = Math.max(1, (lastColumn + 1) / SUMMARY_SIGN_SLOT_COUNT);
+    for (int slot = 0; slot < SUMMARY_SIGN_SLOT_COUNT; slot++) {
+      int start = slot * slotWidth;
+      int end = slot == SUMMARY_SIGN_SLOT_COUNT - 1 ? lastColumn : Math.min(lastColumn, start + slotWidth - 1);
+      if (start <= end && end > start) {
+        sheet.addMergedRegion(new CellRangeAddress(3, 3, start, end));
+      }
+    }
     // 序号（col 0）、姓名（col 1）、准考证号（col 2）竖向合并 row 4-5
     for (int col = 0; col < SUMMARY_FIRST_QUESTION_COLUMN; col++) {
       sheet.addMergedRegion(new CellRangeAddress(4, 5, col, col));
@@ -1193,6 +1227,100 @@ public class PracticalScoringApplicationService {
     }
     // 合计得分列竖向合并 row 4-5
     sheet.addMergedRegion(new CellRangeAddress(4, 5, targetTotalColumn, targetTotalColumn));
+  }
+
+  private void applySummaryAssessorSignatures(
+      Sheet sheet,
+      int questionCount,
+      List<CertificationTaskAssessorEntity> assessors,
+      Map<Long, Integer> signaturePictures
+  ) {
+    int lastColumn = SUMMARY_FIRST_QUESTION_COLUMN + questionCount * SUMMARY_SCORE_COLUMNS_PER_QUESTION;
+    int slotWidth = Math.max(1, (lastColumn + 1) / SUMMARY_SIGN_SLOT_COUNT);
+    CellStyle labelStyle = null;
+    Row row = sheet.getRow(3);
+    if (row != null && row.getCell(0) != null) {
+      labelStyle = row.getCell(0).getCellStyle();
+    }
+    boolean hasPicture = false;
+    for (int slot = 0; slot < SUMMARY_SIGN_SLOT_COUNT; slot++) {
+      int start = slot * slotWidth;
+      if (start > lastColumn) {
+        break;
+      }
+      writeTemplateCell(sheet, 3, start, SUMMARY_SIGN_LABELS[slot]);
+      if (labelStyle != null) {
+        Row signRow = sheet.getRow(3);
+        Cell cell = signRow.getCell(start);
+        if (cell != null) {
+          cell.setCellStyle(labelStyle);
+        }
+      }
+      if (slot >= 3) {
+        continue;
+      }
+      CertificationTaskAssessorEntity assessor = assessorAt(assessors, slot);
+      Integer pictureIndex = assessor == null || signaturePictures == null
+          ? null
+          : signaturePictures.get(assessor.getAssessorId());
+      if (pictureIndex == null) {
+        continue;
+      }
+      int end = slot == SUMMARY_SIGN_SLOT_COUNT - 1 ? lastColumn : Math.min(lastColumn, start + slotWidth - 1);
+      int pictureStart = Math.min(end, start + Math.max(1, slotWidth / 2));
+      embedSignaturePicture(sheet, pictureIndex, 3, pictureStart, end + 1);
+      hasPicture = true;
+    }
+    if (hasPicture && sheet.getRow(3) != null) {
+      sheet.getRow(3).setHeightInPoints(Math.max(
+          sheet.getRow(3).getHeightInPoints(), SUMMARY_SIGN_ROW_HEIGHT_POINTS));
+    }
+  }
+
+  private CertificationTaskAssessorEntity assessorAt(List<CertificationTaskAssessorEntity> assessors, int index) {
+    if (assessors == null || index < 0 || index >= assessors.size()) {
+      return null;
+    }
+    return assessors.get(index);
+  }
+
+  private Map<Long, Integer> registerSignaturePictures(
+      Workbook workbook,
+      List<PracticalCompleteSignatureApplicationService.AssessorSignImage> images
+  ) {
+    Map<Long, Integer> pictureIndexByAssessor = new HashMap<>();
+    if (images == null || images.isEmpty()) {
+      return pictureIndexByAssessor;
+    }
+    for (PracticalCompleteSignatureApplicationService.AssessorSignImage image : images) {
+      if (image == null || image.assessorId() == null || image.imageBytes() == null || image.imageBytes().length == 0) {
+        continue;
+      }
+      int pictureIndex = workbook.addPicture(image.imageBytes(), detectPictureType(image.imageBytes()));
+      pictureIndexByAssessor.put(image.assessorId(), pictureIndex);
+    }
+    return pictureIndexByAssessor;
+  }
+
+  private int detectPictureType(byte[] bytes) {
+    if (bytes.length >= 3 && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8) {
+      return Workbook.PICTURE_TYPE_JPEG;
+    }
+    return Workbook.PICTURE_TYPE_PNG;
+  }
+
+  private void embedSignaturePicture(Sheet sheet, int pictureIndex, int rowIndex, int col1, int col2) {
+    if (!(sheet instanceof XSSFSheet xssfSheet) || pictureIndex < 0 || col2 <= col1) {
+      return;
+    }
+    XSSFDrawing drawing = xssfSheet.createDrawingPatriarch();
+    XSSFClientAnchor anchor = new XSSFClientAnchor();
+    anchor.setAnchorType(ClientAnchor.AnchorType.MOVE_AND_RESIZE);
+    anchor.setCol1(col1);
+    anchor.setRow1(rowIndex);
+    anchor.setCol2(col2);
+    anchor.setRow2(rowIndex + 1);
+    drawing.createPicture(anchor, pictureIndex);
   }
 
   private void writeTemplateCell(Sheet sheet, int rowIndex, int column, Object value) {
@@ -1381,7 +1509,8 @@ public class PracticalScoringApplicationService {
       Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion,
       Map<Long, List<CertificationAssessorTaskScoreEntity>> scoresByAssessorTask,
       List<CertificationTaskAssessorEntity> assessors,
-      CellStyle decimalStyle
+      CellStyle decimalStyle,
+      Map<Long, Integer> signaturePictures
   ) {
     int questionCount = questionResultsByCandidate.values().stream()
         .mapToInt(List::size)
@@ -1405,7 +1534,7 @@ public class PracticalScoringApplicationService {
           Sheet sheet = copyTemplateSheet(workbook, sourceSheet,
               scoreRecordSheetName(questionIndex + 1, assessorIndex + 1, assessor.name()));
           appendScoreRecordSheet(sheet, task, assessorCandidates, questionResultsByCandidate,
-              tasksByCandidateQuestion, scoresByAssessorTask, questionIndex, assessor);
+              tasksByCandidateQuestion, scoresByAssessorTask, questionIndex, assessor, signaturePictures);
         }
       }
     } catch (Exception ex) {
@@ -1422,7 +1551,8 @@ public class PracticalScoringApplicationService {
       Map<String, List<CertificationAssessorTaskEntity>> tasksByCandidateQuestion,
       Map<Long, List<CertificationAssessorTaskScoreEntity>> scoresByAssessorTask,
       int questionIndex,
-      ScoreRecordAssessor assessor
+      ScoreRecordAssessor assessor,
+      Map<Long, Integer> signaturePictures
   ) {
     String questionTitle = scoreRecordQuestionTitle(candidates, questionResultsByCandidate,
         tasksByCandidateQuestion, questionIndex);
@@ -1439,7 +1569,16 @@ public class PracticalScoringApplicationService {
     writeTemplateCell(sheet, 1, 0, "计划编码：" + nvlText(task.getTaskNo())
         + "                                 考 点 ：" + nvlText(task.getCompanyName()));
     writeTemplateCell(sheet, 2, 0, "计划名称：" + nvlText(task.getTaskName())
-        + "        考试时间：" + formatChineseDate(task.getExamDate()) + "        考评员  签字：" + nvlText(assessor.name()));
+        + "        考试时间：" + formatChineseDate(task.getExamDate()) + "        考评员  签字：");
+    Integer signaturePicture = signaturePictures == null ? null : signaturePictures.get(assessor.assessorId());
+    if (signaturePicture != null) {
+      int signStart = Math.max(0, (int) Math.round(totalColumn * 0.72D));
+      embedSignaturePicture(sheet, signaturePicture, 2, signStart, totalColumn + 1);
+      Row signRow = sheet.getRow(2);
+      if (signRow != null) {
+        signRow.setHeightInPoints(Math.max(signRow.getHeightInPoints(), SCORE_RECORD_SIGN_ROW_HEIGHT_POINTS));
+      }
+    }
     writeTemplateCell(sheet, 3, 3, "试题" + (questionIndex + 1) + "、" + questionTitle
         + "(" + scoreRecordQuestionScore(candidates, questionResultsByCandidate, tasksByCandidateQuestion,
         scoresByAssessorTask, questionIndex) + "分)");
@@ -3782,16 +3921,25 @@ public class PracticalScoringApplicationService {
     List<CertificationTaskAssessorEntity> remainingBindings = taskAssessorMapper.selectList(
         new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
             .eq(CertificationTaskAssessorEntity::getAssessorId, assessorId));
-    String workStatus = (remainingBindings == null || remainingBindings.isEmpty())
-        ? "idle"
-        : remainingBindings.stream().anyMatch(binding -> "assigned".equals(binding.getWorkStatus()))
-            ? "assigned"
-            : "preparing";
+    String workStatus = resolveAssessorWorkStatus(remainingBindings);
     CertificationInfoAssessorEntity assessor = assessorMapper.selectById(assessorId);
     if (assessor != null && !Objects.equals(assessor.getWorkStatus(), workStatus)) {
       assessor.setWorkStatus(workStatus);
       assessorMapper.updateById(assessor);
     }
+  }
+
+  private String resolveAssessorWorkStatus(List<CertificationTaskAssessorEntity> remainingBindings) {
+    if (remainingBindings == null || remainingBindings.isEmpty()) {
+      return "idle";
+    }
+    if (remainingBindings.stream().anyMatch(binding -> "assigned".equalsIgnoreCase(binding.getWorkStatus()))) {
+      return "assigned";
+    }
+    if (remainingBindings.stream().anyMatch(binding -> "preparing".equalsIgnoreCase(binding.getWorkStatus()))) {
+      return "preparing";
+    }
+    return "idle";
   }
 
   private CertificationTaskEntity requireTask(Long taskId) {

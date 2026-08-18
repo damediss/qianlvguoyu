@@ -75,6 +75,24 @@ export interface PracticalCompleteTaskResult {
   releasedAssessors: number;
 }
 
+export interface PracticalCompleteSignAssessor {
+  assessorId: string;
+  assessorName?: string;
+  signed: boolean;
+  signedAt?: string;
+}
+
+export interface PracticalCompleteSign {
+  sessionId?: string;
+  taskId?: string;
+  status: 'none' | 'pending' | 'signed' | 'consumed';
+  signedCount: number;
+  requiredCount: number;
+  currentAssessorSigned: boolean;
+  currentAssessorPending: boolean;
+  assessors: PracticalCompleteSignAssessor[];
+}
+
 export interface PracticalBatchGenerateResult {
   createdTasks: number;
   existingTasks: number;
@@ -174,6 +192,7 @@ export interface AssessorWorkbenchContext {
   leaderAssessorName?: string;
   activeTaskId?: string;
   switchableTasks: AssessorWorkbenchTask[];
+  completeSign?: PracticalCompleteSign;
 }
 
 export interface PracticalStartSession {
@@ -229,6 +248,7 @@ export interface PracticalScoringProgress {
   totalQuestions: number;
   candidates: PracticalCandidateProgress[];
   scoringTasks: PracticalTaskProgressItem[];
+  completeSign?: PracticalCompleteSign;
 }
 
 export interface PracticalSaveScorePayload {

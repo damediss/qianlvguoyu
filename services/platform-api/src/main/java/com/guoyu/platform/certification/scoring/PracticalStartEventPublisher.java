@@ -51,4 +51,29 @@ public class PracticalStartEventPublisher {
       }
     }
   }
+
+  public void publishCompleteSign(Long tenantId, Long taskId, PracticalScoringModels.CompleteSignView view) {
+    String payload;
+    try {
+      payload = objectMapper.writeValueAsString(new CompleteSignEvent("complete-sign", view));
+    } catch (JsonProcessingException ex) {
+      log.error("Unable to serialize practical complete-sign event", ex);
+      return;
+    }
+    for (WebSocketSession session : sessions) {
+      if (!session.isOpen()
+          || !tenantId.equals(session.getAttributes().get("tenantId"))
+          || !taskId.equals(session.getAttributes().get("taskId"))) {
+        continue;
+      }
+      try {
+        session.sendMessage(new TextMessage(payload));
+      } catch (IOException ex) {
+        log.warn("Unable to send practical complete-sign event to session {}: {}", session.getId(), ex.getMessage());
+      }
+    }
+  }
+
+  public record CompleteSignEvent(String type, PracticalScoringModels.CompleteSignView completeSign) {
+  }
 }

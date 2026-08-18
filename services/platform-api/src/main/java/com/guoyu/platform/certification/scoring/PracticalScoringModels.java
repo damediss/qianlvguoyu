@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -158,6 +159,33 @@ public final class PracticalScoringModels {
   public record CompleteTaskView(int releasedGroups, int releasedAssessors) {
   }
 
+  public record SubmitCompleteSignReq(
+      @NotNull Long signatureFileId,
+      @NotBlank @Size(min = 64, max = 64) String signatureHash,
+      @Size(max = 2000) String deviceInfo
+  ) {
+  }
+
+  public record CompleteSignAssessorView(
+      Long assessorId,
+      String assessorName,
+      boolean signed,
+      LocalDateTime signedAt
+  ) {
+  }
+
+  public record CompleteSignView(
+      Long sessionId,
+      Long taskId,
+      String status,
+      int signedCount,
+      int requiredCount,
+      boolean currentAssessorSigned,
+      boolean currentAssessorPending,
+      List<CompleteSignAssessorView> assessors
+  ) {
+  }
+
   public record ImportPaperView(
       Long paperId,
       String title,
@@ -255,7 +283,8 @@ public final class PracticalScoringModels {
       Long leaderAssessorId,
       String leaderAssessorName,
       Long activeTaskId,
-      List<AssessorWorkbenchTask> switchableTasks
+      List<AssessorWorkbenchTask> switchableTasks,
+      CompleteSignView completeSign
   ) {
   }
 
@@ -317,7 +346,8 @@ public final class PracticalScoringModels {
       int completedQuestions,
       int totalQuestions,
       List<CandidateProgress> candidates,
-      List<TaskProgressItem> scoringTasks
+      List<TaskProgressItem> scoringTasks,
+      CompleteSignView completeSign
   ) {
   }
 }

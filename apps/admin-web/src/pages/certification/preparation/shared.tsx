@@ -95,6 +95,7 @@ export function statusTag(status?: string) {
     in_progress: '填写中',
     rework: '需整改',
     preparing: '筹备中',
+    idle: '空闲',
     project_prepared: '认定准备已完成',
     preparation_completed: '认定筹备已完成',
     archive_completed: '认定归档已完成',
@@ -111,6 +112,7 @@ export function statusTag(status?: string) {
     || status === 'reviewed'
     || status === 'project_prepared'
     || status === 'archive_completed'
+    || status === 'idle'
       ? 'success'
       : status === 'rejected' || status === 'failed' || status === 'returned'
         ? 'error'

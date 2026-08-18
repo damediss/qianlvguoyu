@@ -5,6 +5,7 @@ import com.guoyu.platform.certification.scoring.PracticalScoringModels;
 import com.guoyu.platform.certification.scoring.PracticalStartApplicationService;
 import com.guoyu.platform.certification.scoring.PracticalWebSocketTicketService;
 import com.guoyu.platform.certification.scoring.AssessorWorkbenchContextService;
+import com.guoyu.platform.certification.scoring.PracticalCompleteSignatureApplicationService;
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.exam.vo.ExportResultDTO;
@@ -40,17 +41,20 @@ public class CertificationPracticalScoringController {
   private final PracticalStartApplicationService startService;
   private final PracticalWebSocketTicketService ticketService;
   private final AssessorWorkbenchContextService workbenchContextService;
+  private final PracticalCompleteSignatureApplicationService completeSignatureService;
 
   public CertificationPracticalScoringController(
       PracticalScoringApplicationService service,
       PracticalStartApplicationService startService,
       PracticalWebSocketTicketService ticketService,
-      AssessorWorkbenchContextService workbenchContextService
+      AssessorWorkbenchContextService workbenchContextService,
+      PracticalCompleteSignatureApplicationService completeSignatureService
   ) {
     this.service = service;
     this.startService = startService;
     this.ticketService = ticketService;
     this.workbenchContextService = workbenchContextService;
+    this.completeSignatureService = completeSignatureService;
   }
 
   @GetMapping("/practical-scoring/tasks/{taskId}/setup")
@@ -140,6 +144,19 @@ public class CertificationPracticalScoringController {
   @AuditLog(module = "certification", action = "practical-scoring:complete-task", targetType = "certification_task_assessor")
   public ApiResponse<PracticalScoringModels.CompleteTaskView> completeTask(@PathVariable Long taskId) {
     return ApiResponse.ok(service.completeTask(taskId));
+  }
+
+  @PostMapping("/practical-scoring/tasks/{taskId}/complete-sign/request")
+  @PreAuthorize("hasAuthority('certification.practical.progress')")
+  @AuditLog(module = "certification", action = "practical-scoring:request-complete-sign", targetType = "certification_practical_complete_sign_session")
+  public ApiResponse<PracticalScoringModels.CompleteSignView> requestCompleteSign(@PathVariable Long taskId) {
+    return ApiResponse.ok(completeSignatureService.requestSignatures(taskId));
+  }
+
+  @GetMapping("/practical-scoring/tasks/{taskId}/complete-sign")
+  @PreAuthorize("hasAuthority('certification.practical.progress')")
+  public ApiResponse<PracticalScoringModels.CompleteSignView> completeSign(@PathVariable Long taskId) {
+    return ApiResponse.ok(completeSignatureService.viewForTask(taskId));
   }
 
   @GetMapping("/practical-scoring/tasks/{taskId}/summary/export")
@@ -285,6 +302,24 @@ public class CertificationPracticalScoringController {
   @PreAuthorize("hasAuthority('certification.practical.score')")
   public ApiResponse<String> websocketTicket() {
     return ApiResponse.ok(ticketService.issue());
+  }
+
+  @GetMapping("/assessor-scoring/complete-sign")
+  @PreAuthorize("hasAuthority('certification.practical.score')")
+  public ApiResponse<PracticalScoringModels.CompleteSignView> myCompleteSign(
+      @RequestParam Long taskId
+  ) {
+    return ApiResponse.ok(completeSignatureService.viewForTask(taskId));
+  }
+
+  @PostMapping("/assessor-scoring/tasks/{taskId}/complete-sign")
+  @PreAuthorize("hasAuthority('certification.practical.score')")
+  @AuditLog(module = "certification", action = "practical-scoring:complete-sign", targetType = "certification_practical_complete_signature")
+  public ApiResponse<PracticalScoringModels.CompleteSignView> submitCompleteSign(
+      @PathVariable Long taskId,
+      @Valid @RequestBody PracticalScoringModels.SubmitCompleteSignReq req
+  ) {
+    return ApiResponse.ok(completeSignatureService.submitMine(taskId, req));
   }
 
   @PutMapping("/assessor-scoring/tasks/{assessorTaskId}/draft")

@@ -44,6 +44,7 @@ import type {
   AssessorExamListItem,
   AssessorWorkbenchContext,
   AssessorScoringTaskDetail,
+  PracticalCompleteSign,
   PracticalSaveScorePayload,
   PracticalStartSession,
 } from '../../types/practicalScoring';
@@ -53,6 +54,7 @@ import {
   loadAssessorDraft,
   saveAssessorDraft,
 } from '../../utils/assessorDraftDb';
+import { AssessorCompleteSignModal } from './AssessorCompleteSignModal';
 import './TabletAssessorApp.css';
 
 const FULL_SCORE = 100;
@@ -79,7 +81,10 @@ export function TabletAssessorApp() {
   const workbenchContextQuery = useQuery({
     queryKey: ['my-practical-scoring-workbench-context'],
     queryFn: () => getMyAssessorWorkbenchContext(),
-    refetchInterval: online ? 10_000 : false,
+    refetchInterval: (query) => {
+      if (!online) return false;
+      return query.state.data?.completeSign?.status === 'pending' ? 3_000 : 10_000;
+    },
     staleTime: 0,
   });
 
@@ -287,7 +292,12 @@ export function TabletAssessorApp() {
       });
       socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/practical-scoring?${params}`);
       socket.onmessage = (event) => {
-        const startSession = JSON.parse(event.data);
+        const data = JSON.parse(event.data);
+        if (data?.type === 'complete-sign') {
+          queryClient.invalidateQueries({ queryKey: ['my-practical-scoring-workbench-context'] });
+          return;
+        }
+        const startSession = data as PracticalStartSession;
         patchStartSessionCache(queryClient, examQuery.data, startSession);
         if (startSession.status === 'started') {
           message.success('考生与三名考评员均已确认，现在统一开始评分');
@@ -299,6 +309,35 @@ export function TabletAssessorApp() {
       socket?.close();
     };
   }, [examQuery.data, online, queryClient, tenantId, token]);
+
+  useEffect(() => {
+    const taskId = workbenchContextQuery.data?.activeTaskId;
+    if (!taskId || !token || !tenantId || !online) {
+      return;
+    }
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let socket: WebSocket | undefined;
+    let disposed = false;
+    createPracticalWebSocketTicket().then((ticket) => {
+      if (disposed) return;
+      const params = new URLSearchParams({
+        ticket,
+        tenantId: String(tenantId),
+        taskId: String(taskId),
+      });
+      socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/practical-scoring?${params}`);
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data?.type === 'complete-sign') {
+          queryClient.invalidateQueries({ queryKey: ['my-practical-scoring-workbench-context'] });
+        }
+      };
+    });
+    return () => {
+      disposed = true;
+      socket?.close();
+    };
+  }, [online, queryClient, tenantId, token, workbenchContextQuery.data?.activeTaskId]);
 
   useEffect(() => {
     if (!payload || !activeDetail || !currentUser) return;
@@ -409,6 +448,19 @@ export function TabletAssessorApp() {
 
   return (
     <div className="assessor-tablet-shell">
+      <AssessorCompleteSignModal
+        open={Boolean(
+          workbenchContextQuery.data?.completeSign?.status === 'pending'
+          && workbenchContextQuery.data?.completeSign?.currentAssessorPending,
+        )}
+        taskId={workbenchContextQuery.data?.activeTaskId}
+        signerName={currentUser?.displayName || '考评员'}
+        signedCount={workbenchContextQuery.data?.completeSign?.signedCount || 0}
+        requiredCount={workbenchContextQuery.data?.completeSign?.requiredCount || 3}
+        onSigned={(view) => {
+          patchCompleteSignCache(queryClient, view);
+        }}
+      />
       <header className="assessor-tablet-header">
         <div>
           <Typography.Title level={3}>实操考评</Typography.Title>
@@ -728,6 +780,17 @@ function payloadFromDetail(detail: AssessorScoringTaskDetail): PracticalSaveScor
     })),
     note: detail.progressNote,
   };
+}
+
+function patchCompleteSignCache(
+  queryClient: ReturnType<typeof useQueryClient>,
+  completeSign?: PracticalCompleteSign,
+) {
+  if (!completeSign) return;
+  queryClient.setQueryData<AssessorWorkbenchContext>(
+    ['my-practical-scoring-workbench-context'],
+    (current) => (current ? { ...current, completeSign } : current),
+  );
 }
 
 function patchQuestionCache(

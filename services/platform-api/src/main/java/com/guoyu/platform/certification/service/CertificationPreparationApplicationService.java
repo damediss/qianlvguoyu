@@ -2612,6 +2612,10 @@ public class CertificationPreparationApplicationService {
     if (bindings == null || bindings.isEmpty()) {
       return;
     }
+    bindings = bindings.stream().filter(CertificationTaskAssessorEntity::isOccupying).toList();
+    if (bindings.isEmpty()) {
+      return;
+    }
     List<Long> groupIds = bindings.stream().map(CertificationTaskAssessorEntity::getGroupId)
         .filter(Objects::nonNull).distinct().toList();
     List<Long> taskIds = bindings.stream().map(CertificationTaskAssessorEntity::getTaskId)
@@ -2728,7 +2732,8 @@ public class CertificationPreparationApplicationService {
       return;
     }
     long used = safeCount(taskAssessorMapper.selectCount(new LambdaQueryWrapper<CertificationTaskAssessorEntity>()
-        .eq(CertificationTaskAssessorEntity::getAssessorId, assessorId)));
+        .eq(CertificationTaskAssessorEntity::getAssessorId, assessorId)
+        .in(CertificationTaskAssessorEntity::getWorkStatus, List.of("assigned", "preparing"))));
     if (used > 0) {
       return;
     }

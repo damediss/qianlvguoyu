@@ -215,26 +215,42 @@ function toSignatureResult(payload: NativeSignaturePayload): SignatureCaptureRes
 }
 
 export class AndroidSignatureAdapter implements SignatureAdapter {
-  private signing = false;
-
   async open(candidate: CandidateCollectionDetailVO): Promise<SignatureCaptureResult> {
-    if (this.signing) {
-      throw new Error('已有签名任务进行中，请等待原生回调完成');
-    }
-
-    this.signing = true;
-    try {
-      const payload = await invokeNativeSignature({
-        taskId: String(candidate.taskId),
-        candidateId: String(candidate.candidateId),
-        sessionId: candidate.sessionId ? String(candidate.sessionId) : undefined,
-        signerType: 'CANDIDATE',
-        signerName: candidate.name,
-        ...buildNativeFileUploadPayload(),
-      }, 300000);
-      return toSignatureResult(payload);
-    } finally {
-      this.signing = false;
-    }
+    return openNativeSignaturePad({
+      taskId: String(candidate.taskId),
+      candidateId: String(candidate.candidateId),
+      sessionId: candidate.sessionId ? String(candidate.sessionId) : undefined,
+      signerType: 'CANDIDATE',
+      signerName: candidate.name,
+    });
   }
 }
+
+export async function openNativeSignaturePad(options: {
+  taskId: string;
+  candidateId?: string;
+  sessionId?: string;
+  signerType?: SignerType;
+  signerName: string;
+}): Promise<SignatureCaptureResult> {
+  const adapterGuard = androidSigningGuard;
+  if (adapterGuard.signing) {
+    throw new Error('已有签名任务进行中，请等待原生回调完成');
+  }
+  adapterGuard.signing = true;
+  try {
+    const payload = await invokeNativeSignature({
+      taskId: options.taskId,
+      candidateId: options.candidateId,
+      sessionId: options.sessionId,
+      signerType: options.signerType || 'EVALUATOR',
+      signerName: options.signerName,
+      ...buildNativeFileUploadPayload(),
+    }, 300000);
+    return toSignatureResult(payload);
+  } finally {
+    adapterGuard.signing = false;
+  }
+}
+
+const androidSigningGuard = { signing: false };

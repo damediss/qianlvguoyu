@@ -37,6 +37,7 @@ public class AssessorWorkbenchContextService {
   private final CertificationTaskMapper taskMapper;
   private final CertificationAssessorWorkbenchContextMapper contextMapper;
   private final CertificationPracticalStartSessionMapper sessionMapper;
+  private final PracticalCompleteSignatureApplicationService completeSignatureService;
 
   public AssessorWorkbenchContextService(
       CertificationInfoAssessorMapper assessorMapper,
@@ -44,7 +45,8 @@ public class AssessorWorkbenchContextService {
       CertificationTaskAssessorGroupMapper groupMapper,
       CertificationTaskMapper taskMapper,
       CertificationAssessorWorkbenchContextMapper contextMapper,
-      CertificationPracticalStartSessionMapper sessionMapper
+      CertificationPracticalStartSessionMapper sessionMapper,
+      PracticalCompleteSignatureApplicationService completeSignatureService
   ) {
     this.assessorMapper = assessorMapper;
     this.taskAssessorMapper = taskAssessorMapper;
@@ -52,6 +54,7 @@ public class AssessorWorkbenchContextService {
     this.taskMapper = taskMapper;
     this.contextMapper = contextMapper;
     this.sessionMapper = sessionMapper;
+    this.completeSignatureService = completeSignatureService;
   }
 
   @Transactional(readOnly = true)
@@ -115,8 +118,11 @@ public class AssessorWorkbenchContextService {
             .toList()
         : List.of();
     String leaderName = resolved.leader() ? assessor.getAssessorName() : resolved.leaderName();
+    PracticalScoringModels.CompleteSignView completeSign = resolved.activeTaskId() == null
+        ? PracticalCompleteSignatureApplicationService.emptyView(null)
+        : completeSignatureService.viewForAssessor(resolved.activeTaskId(), assessor.getId());
     return new PracticalScoringModels.AssessorWorkbenchContext(
-        resolved.leader(), resolved.leaderAssessorId(), leaderName, resolved.activeTaskId(), tasks);
+        resolved.leader(), resolved.leaderAssessorId(), leaderName, resolved.activeTaskId(), tasks, completeSign);
   }
 
   private PracticalScoringModels.AssessorWorkbenchTask taskView(CertificationTaskEntity task) {
@@ -142,6 +148,7 @@ public class AssessorWorkbenchContextService {
     Map<Long, CertificationTaskEntity> tasks = byId(taskMapper.selectBatchIds(taskIds));
     List<TaskBinding> bindings = memberships.stream()
         .map(member -> new TaskBinding(member, groups.get(member.getGroupId()), tasks.get(member.getTaskId())))
+        .filter(binding -> binding.member() != null && binding.member().isOccupying())
         .filter(binding -> binding.group() != null && binding.group().getLeaderAssessorId() != null
             && binding.task() != null && !"completed".equals(binding.task().getStatus()))
         .toList();

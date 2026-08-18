@@ -22,4 +22,12 @@ public class CertificationTaskAssessorEntity extends BaseEntity {
   private String workStatus;
   private Integer sortOrder;
   private String remark;
+
+  /** 筹备中或认定任务中的绑定仍占用考评员；空闲绑定只作历史留痕。 */
+  public boolean isOccupying() {
+    if (workStatus == null || workStatus.isBlank()) {
+      return true;
+    }
+    return "assigned".equalsIgnoreCase(workStatus) || "preparing".equalsIgnoreCase(workStatus);
+  }
 }

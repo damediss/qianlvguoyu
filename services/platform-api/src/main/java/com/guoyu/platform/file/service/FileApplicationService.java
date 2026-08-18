@@ -99,7 +99,13 @@ public class FileApplicationService {
       }
 
       FileEntity entity = newFileEntity(tenantId, objectKey, safeName, contentType, content.length, sha256, accessPolicy);
-      fileMapper.insert(entity);
+      try {
+        fileMapper.insert(entity);
+      } catch (RuntimeException ex) {
+        storage.delete(objectKey);
+        throw ex;
+      }
+      registerRollbackCleanup(objectKey);
       return toVO(entity, url);
     } catch (IOException | NoSuchAlgorithmException ex) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "File store failed");

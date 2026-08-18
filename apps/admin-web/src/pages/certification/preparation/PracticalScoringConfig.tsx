@@ -17,6 +17,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   Upload,
   message,
@@ -32,6 +33,7 @@ import {
 import {
   batchLinkPracticalCandidateTemplates,
   completePracticalScoringTask,
+  requestPracticalCompleteSign,
   adjustPracticalScoringTaskScore,
   exportPracticalSummary,
   getPracticalScoringTaskDetail,
@@ -151,6 +153,20 @@ export function PracticalScoringConfig({
     [progressQuery.data?.candidates],
   );
   const totalCandidateCount = progressQuery.data?.candidates.length || 0;
+  const completeSign = progressQuery.data?.completeSign;
+  const scoresSettled = totalCandidateCount > 0
+    && (progressQuery.data?.candidates || []).every((row) => row.status === 'completed' || row.status === 'absent');
+  const signStatus = completeSign?.status || 'none';
+  const waitingSign = signStatus === 'pending';
+  const allSigned = signStatus === 'signed';
+  const completeDisabled = !scoresSettled || waitingSign || signStatus === 'consumed';
+  const completeDisabledReason = !scoresSettled
+    ? '仅全部考生实操成绩已完成或已标记缺考时可执行'
+    : waitingSign
+      ? `等待三名考评员签字确认（${completeSign?.signedCount || 0}/${completeSign?.requiredCount || 3}）`
+      : signStatus === 'consumed'
+        ? '评分任务已完成'
+        : undefined;
   const assessorGroupsByCandidate = useMemo(() => {
     const groups = new Map<string, Map<string, { id: string; name: string; tasks: PracticalTaskProgressItem[] }>>();
     for (const task of progressQuery.data?.scoringTasks || []) {
@@ -343,7 +359,14 @@ export function PracticalScoringConfig({
   const completeTaskMutation = useMutation({
     mutationFn: () => completePracticalScoringTask(taskId!),
     onSuccess: (result: PracticalCompleteTaskResult) => {
-      message.success(`评分任务已完成，已释放 ${result.releasedGroups} 个考评组、${result.releasedAssessors} 名考评员`);
+      message.success(`评分任务已完成，已将 ${result.releasedAssessors} 名考评员改为空闲（${result.releasedGroups} 个考评组历史绑定已保留）`);
+      refresh();
+    },
+  });
+  const requestCompleteSignMutation = useMutation({
+    mutationFn: () => requestPracticalCompleteSign(taskId!),
+    onSuccess: (result) => {
+      message.success(`已通知考评员签字确认（${result.signedCount}/${result.requiredCount}）`);
       refresh();
     },
   });
@@ -580,23 +603,47 @@ export function PracticalScoringConfig({
       {showProgress && (
         <ProCard title="评分进度">
           <Space wrap style={{ marginBottom: 16 }}>
-            <Button
-              type="primary"
-              danger
-              loading={completeTaskMutation.isPending}
-              onClick={() => {
-                Modal.confirm({
-                  title: '确认完成评分任务？',
-                  content: '仅全部考生实操成绩已完成或已标记缺考时可执行。完成后将释放本任务考生所绑定考评组的考评员，历史评分记录会保留。',
-                  okText: '完成任务并释放考评员',
-                  cancelText: '取消',
-                  okButtonProps: { danger: true },
-                  onOk: () => completeTaskMutation.mutateAsync(),
-                });
-              }}
-            >
-              完成任务
-            </Button>
+            <Tooltip title={completeDisabled ? completeDisabledReason : undefined}>
+              <span>
+                <Button
+                  type="primary"
+                  danger
+                  disabled={completeDisabled}
+                  loading={completeTaskMutation.isPending || requestCompleteSignMutation.isPending}
+                  onClick={() => {
+                    if (!allSigned) {
+                      Modal.confirm({
+                        title: '确认完成评分任务？',
+                        content: (
+                          <Space direction="vertical" size={8}>
+                            <Typography.Paragraph style={{ marginBottom: 0 }}>
+                              仅全部考生实操成绩已完成或已标记缺考时可执行。完成后会把本任务考评员从「认定任务中」改为「空闲」，考评组绑定和历史评分记录会保留。
+                            </Typography.Paragraph>
+                            <Typography.Paragraph strong style={{ marginBottom: 0 }}>
+                              三名考评员签字确认后，完成任务按钮才会生效。
+                            </Typography.Paragraph>
+                          </Space>
+                        ),
+                        okText: '通知考评员签字',
+                        cancelText: '取消',
+                        onOk: () => requestCompleteSignMutation.mutateAsync(),
+                      });
+                      return;
+                    }
+                    Modal.confirm({
+                      title: '确认完成评分任务？',
+                      content: '三名考评员已签字确认。完成后会把本任务考评员从「认定任务中」改为「空闲」，考评组绑定和历史评分记录会保留，签名将写入评分记录表。',
+                      okText: '完成任务并释放考评员',
+                      cancelText: '取消',
+                      okButtonProps: { danger: true },
+                      onOk: () => completeTaskMutation.mutateAsync(),
+                    });
+                  }}
+                >
+                  完成任务
+                </Button>
+              </span>
+            </Tooltip>
             <Button
               icon={<DownloadOutlined />}
               disabled={selectedSummaryCandidateIds.length === 0}
@@ -606,6 +653,24 @@ export function PracticalScoringConfig({
               导出实操评分表
             </Button>
           </Space>
+          {waitingSign && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="三名考评员签字确认"
+              description={`已通知实操评分端弹出电子签名。当前 ${completeSign?.signedCount || 0}/${completeSign?.requiredCount || 3} 名考评员已签字，全部签字完成后“完成任务”按钮将可用。`}
+            />
+          )}
+          {allSigned && (
+            <Alert
+              type="success"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="三名考评员已签字确认"
+              description="现在可以点击“完成任务”，把考评员改为空闲并保留历史绑定。"
+            />
+          )}
           {abnormalCandidates.length > 0 && (
             <Alert
               type="error"

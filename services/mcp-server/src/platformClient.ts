@@ -3,6 +3,11 @@ import type { AppConfig } from "./config.js";
 import type { BotActorContext } from "./context/botActorContext.js";
 import { encodeSignedBotActorContext } from "./context/botActorContext.js";
 import { log } from "./logger.js";
+import type {
+  ContractDerivationRequest,
+  ContractSourceResolution,
+  ResolveContractSourceRequest
+} from "./contracts/schema.js";
 
 interface ApiResponse<T> {
   code: string;
@@ -51,14 +56,6 @@ export interface FileArtifactContent {
   sha256: string;
 }
 
-export interface GenerateContractPreviewArgs {
-  partyA: string;
-  partyB: string;
-  amount: string;
-  contractTitle?: string;
-  serviceScope?: string;
-}
-
 const MAX_OUTBOUND_FILE_BYTES = 20 * 1024 * 1024;
 
 export class PlatformApiError extends Error {
@@ -99,10 +96,17 @@ export class PlatformClient {
   }
 
   generateContractPreview(
-    args: GenerateContractPreviewArgs,
+    args: ContractDerivationRequest,
     actorContext: BotActorContext
   ): Promise<unknown> {
     return this.post("contract/mcp/preview", { ...args }, actorContext);
+  }
+
+  resolveContractSource(
+    args: ResolveContractSourceRequest,
+    actorContext: BotActorContext
+  ): Promise<ContractSourceResolution> {
+    return this.post("contract/mcp/source/resolve", { ...args }, actorContext);
   }
 
   getFileArtifactMetadata(fileId: string, actorContext: BotActorContext): Promise<FileArtifactMetadata> {

@@ -1,7 +1,7 @@
 # WeKnora 智能文件生成与合同 MVP Coding Plan
 
-> 状态：Draft，等待 Review，未授权进入编码阶段  
-> 日期：2026-08-10  
+> 状态：源文档派生 POC、三份拟真源 DOCX 结构回归与本地 MySQL 迁移验证已通过，待逐页视觉验收及真实历史样本复核
+> 日期：2026-08-14
 > 需求来源：`C:\Users\admin\Desktop\基于 WeKnora、MCP 与企业微信智能机器人的合同智能生成系统需求分析.md`  
 > 本计划覆盖：云平台通用智能文件成果交付底座 + 第一类合同生成 MVP
 
@@ -13,10 +13,13 @@
 
 ```text
 企微当前用户提出业务需求
-  -> WeKnora Agent 检索 RAG / Wiki 并补齐信息
+  -> WeKnora Agent 检索 RAG / Wiki，返回相似历史合同候选
+  -> 用户 / Agent 选定可派生的历史 DOCX，锁定原文件哈希与结构清单版本
+  -> Agent 补齐字段，生成结构化修改指令
   -> MCP 调用云平台受控业务 API
   -> platform-api 创建异步生成任务
-  -> 确定性生成 DOCX / PDF
+  -> 受控读取并复制原始 DOCX，保留结构与版式执行确定性修改
+  -> 扫描旧字段残留、空占位符与结构异常，生成 DOCX / PDF
   -> 文件进入腾讯云 COS，数据库只保存文件元数据
   -> MCP 返回文件产物引用，不返回大二进制
   -> WeKnora 校验产物引用并写入文件交付任务
@@ -27,21 +30,19 @@
 
 本计划不是把合同业务写进 WeKnora。职责必须保持：
 
-- WeKnora：对话、RAG、Wiki、Agent 编排、MCP 调用、当前会话绑定、渠道交付。
-- `platform-api`：合同业务主状态、权限、模板、条款、草稿、版本、文件元数据和审计。
+- WeKnora：对话、RAG、Wiki、历史合同候选检索、Agent 编排、MCP 调用、当前会话绑定、渠道交付；同时保留知识文档的原始 DOCX，不只保留文本分块。
+- `platform-api`：合同业务主状态、权限、源文档选择记录、结构清单、条款、草稿、版本、原 DOCX 派生渲染、文件元数据和审计。
 - `mcp-server`：将平台受控 API 暴露为 MCP 工具，不直连数据库和 COS。
 - 平台文件模块：统一管理 local/COS 存储，不让合同代码直接依赖腾讯云 SDK。
 
 ## 2. 已完成基线
 
-### 2.1 WeKnora 服务器基线
+### 2.1 WeKnora 与文件交付基线
 
-- 服务器目录：`/opt/guoyu-platform/WeKnora`
-- 当前功能分支：`feat/weknora-file-reply`
-- 当前提交：`1f603f2 feat(wecom): support websocket file replies`
-- 已部署镜像：`wechatopenai/weknora-app:file-reply-20260810`
-- 回滚镜像：`wechatopenai/weknora-app:rollback-20260810-163453`
-- `/sendfile` 真实企微会话验收通过。
+- 服务器目录：`/opt/guoyu-platform/WeKnora`。
+- 2026-08-11 已完成真实 DOCX 的 `platform-api -> MCP -> WeKnora -> 企微原生 file 消息` 端到端验收。
+- 2026-08-12 已验证 UTF-8 中文文件名可原样交付。
+- 详细安全与交付契约见 `docs/05_decisions/WeKnora_Artifact_Delivery_Contract.md`。
 
 已完成能力：
 
@@ -51,6 +52,10 @@
 - 长连接单读循环按 `req_id` 分发响应，避免并发读取 WebSocket。
 - 原生 `file` 消息发送至当前会话。
 - 命令层 `CommandResult.File` 文件结果。
+- MCP `structuredContent` 保留和 `guoyu.generated-artifacts/v1` 严格解析。
+- `BotActorContext` 的企微用户、会话、租户与 requestId 受控透传。
+- `im_file_deliveries` 持久化交付、幂等、重试与重启恢复。
+- `platform-file` 元数据/二进制内部桥接，以及 ID、大小和 SHA-256 复核。
 
 ### 2.2 云平台仓库现有基线
 
@@ -58,15 +63,35 @@
 - 文件模块已有 local/COS 适配、SHA-256、文件元数据、字节读取和下载能力。
 - `mcp-server` 已使用 TypeScript MCP SDK，并能通过受控平台账号调用 `platform-api`。
 - WeKnora 已支持 MCP Tool、Agent ToolResult、IM ChannelSession 和 Agent 完成事件。
+- `contract.generatePreview` 已作为 E2E 联调桩返回可交付 DOCX，但其内容仍是空白文档上的硬编码段落。
 
-### 2.3 当前关键缺口
+### 2.3 POC 编码前关键缺口
 
-1. 企业微信通过 Bot ID 和管理端可用范围控制谁能使用 Bot；WeKnora 能取得消息发送人的企微 UserID，但当前平台审计尚未完整保存 Bot、企微用户、会话和 MCP 请求之间的关联。
-2. MCP Server 当前使用固定平台服务账号调用业务 API。MVP 可将该账号视为 Bot 的受限业务身份，但必须限制权限和数据范围，不能使用全权限管理员账号。
-3. WeKnora Go MCP Client 当前只保留 text/image，丢弃 `structuredContent` 和 `resource_link`。
-4. `ToolResult` 没有通用文件产物引用，Agent 结果无法自动进入文件交付链路。
-5. 当前文件发送仅由 slash command 触发，没有持久化交付任务、状态、审计和服务重启恢复。
-6. 合同领域模型、模板、条款、草稿、版本、生成任务和文档渲染尚未实现。
+1. 当前 `ContractPreviewGenerationService` 只是从空白 `XWPFDocument` 生成的 E2E 联调桩，没有复用 RAG 命中的历史 DOCX 结构与样式。
+2. 还没有把 WeKnora `knowledgeId` 解析为平台受控、私有、不可变的 source snapshot。
+3. 历史 DOCX 的结构清单、稳定锚点、`derivable` 治理状态和原文件哈希锁定尚未实现。
+4. `contract.generatePreview` 尚未接受 `guoyu.contract-derivation-request/v1`，也没有执行跨 run、表格、页眉页脚和内容控件的保样式替换。
+5. 合同领域模型、草稿、源文档关系、版本差异、残留扫描和正式确认尚未实现。
+
+### 2.4 2026-08-14 POC 实施进度
+
+已完成：
+
+- 新增 `biz_contract_source_snapshot` 与 `biz_contract_source_manifest` 迁移、Entity 和 Mapper。
+- 新增 `POST /contract/mcp/source/resolve`：从 WeKnora 受控读取原 DOCX，校验知识库归属、格式、解析/启用状态、大小与哈希，固化平台私有快照并生成结构清单。
+- `contract.generatePreview` 已改为接受 `guoyu.contract-derivation-request/v1`，并交叉校验快照、知识文档、源哈希和 manifest 版本。
+- POC 支持甲方、乙方、金额、项目名和服务范围；支持跨 run、正文、表格、页眉和页脚替换，并执行旧值残留扫描。
+- MCP 已增加 `contract.resolveSourceDocument`，旧的简单生成参数已替换为受控派生 Schema。
+- platform-api 编译、4 个定向单元测试、mcp-server TypeScript 构建和 MCP Schema 注册冒烟均通过。
+- `V20260816_002` 已在一次性本地 MySQL 8.4 空库中连续执行两次并通过；未连接共享数据库。
+- 已生成三份完整拟真合同源文档，覆盖跨 run、表格字段、多页、多 section、横向附件、页眉页脚和签署区；源/派生文档拓扑断言通过。
+
+尚未执行：
+
+- 未对共享数据库应用 `V20260816_002`，未部署或重启服务。
+- 原仓库没有 3 份合适的脱敏历史合同；现有两个合同/需求类 `.docx` 归档不是可读 OOXML ZIP。现已用三份拟真源文档完成技术回归，但正式上线前仍需真实历史样本复核。
+- 当前机器未安装 LibreOffice/Word 渲染引擎，标准 `render_docx.py` 无法生成逐页 PNG；结构检查已通过，但未宣称视觉验收通过。
+- 章节级编辑、内容控件专用锚点、草稿水印、异步任务、PDF、完整合同版本/审计领域和管理端仍属于后续 P3-P8。
 
 ## 3. 必须先确认的架构决策
 
@@ -133,13 +158,22 @@ DOCX 渲染、PDF 转换和多文件生成采用“快速返回 taskId + Worker 
 
 异步线程必须显式传递 `tenantId/userId`，每条 Worker 线程设置并在 `finally` 清理 `TenantContextHolder`，整个异步调用链不得读取 `SecurityContext`。
 
-### AD-06：MVP 只支持一种合同
+### AD-06：MVP 只支持一种合同和受控源文档
 
-第一阶段固定为“软件技术服务框架协议”，使用一份审批通过的 DOCX 模板和一组已审核标准条款。
+第一阶段固定为“软件技术服务框架协议”。生成时不从空白 Word 新建结构，而是从 WeKnora RAG 检索结果中选择一份“可派生”的历史 DOCX，复制原文件后执行受控修改。
+
+历史文档只有在原始 DOCX 可读、租户与权限有效、未作废、已生成结构清单且经人工标记为 `derivable` 后才能成为源文档。标准模板是候选源之一，不再是唯一生成来源。
 
 暂不包含：电子签章、自动法务审批、对外发送、批量生成、复杂审批流和自动正式合同编号。
 
-### AD-07：MVP 以 Bot 可用范围作为授权边界
+### AD-07：知识文档采用“语义索引 + 原始文件”双轨模型
+
+- RAG 文本分块、摘要和向量只用于检索、对比和生成修改建议，不作为 Word 版式的恢复来源。
+- 原始 DOCX 作为不可变源文件保留，派生时通过受控接口按 `knowledgeId + fileHash` 取得。
+- 字体、字号、行距、编号、表格、页眉页脚、分页和签章区从原 DOCX 继承，模型不直接输出 OOXML 或最终排版。
+- 每份派生文档必须记录源知识文档 ID、源文件哈希、结构清单版本、字段来源和修改差异。
+
+### AD-08：MVP 以 Bot 可用范围作为授权边界
 
 第一阶段不强制建立“企微用户 -> 云平台登录账号”的一对一绑定，采用以下边界：
 
@@ -155,9 +189,15 @@ DOCX 渲染、PDF 转换和多文件生成采用“快速返回 taskId + Worker 
 flowchart LR
     U["企微当前用户"] --> W["WeKnora Agent"]
     W --> R["WeKnora RAG / Wiki"]
+    R --> O["原始历史 DOCX + 语义索引"]
+    R --> X["相似合同候选 / knowledgeId"]
+    X --> W
     W --> M["TypeScript MCP Server"]
     M --> P["platform-api 合同域"]
-    P --> F["平台 FileService"]
+    P --> K["受控源文档读取"]
+    K --> O
+    P --> E["复制原 DOCX + 结构化修改 + 残留扫描"]
+    E --> F["平台 FileService"]
     F --> C["腾讯云 COS 私有桶"]
     P --> M
     M --> A["GeneratedArtifactRef"]
@@ -169,6 +209,8 @@ flowchart LR
 ## 5. 分阶段 Coding Plan
 
 ## Phase 0：开发前基线与工作区隔离
+
+> 状态：持续性前置检查，每次进入新的编码切片前重新执行。
 
 ### P0-01 保护现有修改
 
@@ -197,6 +239,8 @@ feat/weknora-artifact-delivery
 验收：输出只读基线报告，不改数据库、不部署。
 
 ## Phase 1：Bot 授权上下文和实际发起人审计
+
+> 状态：已完成并进入现有企微文件交付基线。
 
 第一阶段以企业微信管理员配置的 Bot 可用范围作为人员准入控制，不要求企微用户必须先拥有或绑定云平台账号。
 
@@ -250,6 +294,8 @@ request_id
 - 群聊请求不能直接收到合同文件。
 
 ## Phase 2：平台通用 Generated Artifact 与文件交付桥
+
+> 状态：已完成并通过真实 DOCX 与中文文件名验收。
 
 本阶段完成后，合同以外的报表、题库、证书、课件等模块也能复用。
 
@@ -339,6 +385,8 @@ platform-api 增加仅供受控 Bot 服务账号调用的文件内容接口：
 
 ## Phase 3：合同领域模型、权限和 API
 
+> 状态：源快照/manifest POC 子集已实现；完整领域模型仍待后续扩展。
+
 ### P3-01 Flyway 与实体
 
 建议新增表：
@@ -351,6 +399,8 @@ platform-api 增加仅供受控 Bot 服务账号调用的文件内容接口：
 - `biz_contract_version`
 - `biz_contract_document`
 - `biz_contract_reference`
+- `biz_contract_source_snapshot`
+- `biz_contract_source_manifest`
 - `biz_contract_delivery`
 - `biz_contract_audit_event`
 
@@ -383,7 +433,9 @@ platform-api 增加仅供受控 Bot 服务账号调用的文件内容接口：
 按 Controller/Application/Domain/Repository/Entity/DTO/VO/Converter 分层实现：
 
 - 合同类型查询。
-- 模板上传、版本、启停和占位符检查。
+- 历史合同候选查询，返回 WeKnora `knowledgeId`、原文件哈希、业务元数据、可派生状态和结构清单版本。
+- 源文档登记、结构扫描、可派生标记、作废和版本锁定。
+- 标准模板上传、版本、启停和占位符检查；标准模板与历史合同统一抽象为可选源文档。
 - 标准条款查询，第一阶段固定种子条款，只允许管理员启停。
 - 合同任务创建和状态查询。
 - 草稿创建、读取、更新。
@@ -397,6 +449,8 @@ platform-api 增加仅供受控 Bot 服务账号调用的文件内容接口：
 
 为“软件技术服务框架协议”定义稳定 JSON Schema，至少包含：
 
+- 源知识库、源知识文档、原文件名和 SHA-256
+- 源文档选择原因、用户确认状态、结构清单 ID / 版本
 - 双方主体
 - 合同名称和类型
 - 合作背景/范围
@@ -408,11 +462,13 @@ platform-api 增加仅供受控 Bot 服务账号调用的文件内容接口：
 - 数据安全与保密
 - 违约、解除和争议解决
 - 参考文档
+- 字段替换指令和章节编辑指令
+- 版式保留策略
 - 字段来源
 - 未确认项
 - 风险项
 
-每个重要字段保存 `value/source/sourceDocumentId/confirmed`。
+每个重要字段保存 `value/source/sourceDocumentId/confirmed`。模型不得提交文件路径、下载 URL、OOXML 片段或企微接收人。详细接口以 `guoyu.contract-derivation-request/v1` Schema 为准。
 
 ### P4-02 校验服务
 
@@ -424,6 +480,8 @@ platform-api 增加仅供受控 Bot 服务账号调用的文件内容接口：
 - 金额格式及大小写金额。
 - 付款比例合计 100%。
 - 旧公司名、旧日期、旧项目名残留检测。
+- 源 `knowledgeId`、租户、读权限、DOCX MIME、原文件 SHA-256 和 `derivable` 状态校验。
+- 结构清单版本、结构锚点存在性和修改操作白名单校验。
 - 空占位符检测。
 - 模板和条款状态校验。
 - 条款互斥/必选规则。
@@ -432,10 +490,14 @@ platform-api 增加仅供受控 Bot 服务账号调用的文件内容接口：
 
 ### P4-03 DOCX 确定性渲染
 
-- 使用 Apache POI 填充审批通过的固定 DOCX 模板。
-- 模型只输出结构化字段和条款 ID，不直接生成最终 Word 排版。
+- `resolveSourceDocument` 先通过 WeKnora 受控文档读取能力，按已选定的 `knowledgeId` 取得原始 DOCX，校验后固化为平台私有不可变 source snapshot；不允许模型传入任意 URL 或存储路径。
+- 生成 Worker 按 `sourceSnapshotId + sourceFileHash + manifestId/version` 读取已锁定源文档，不在异步阶段重新执行 RAG 检索或临时下载。
+- 先复制原 DOCX，再按结构清单中的 content control、bookmark、标题或表格单元格锚点执行受控替换。
+- 默认保留源文档字体、字号、行距、段落样式、编号、表格、页眉页脚、分页和签章区。
+- 替换实现必须覆盖跨 `run` 文本、表格、页眉页脚和内容控件，不得只对 `paragraph.getText()` 做简单字符串替换。
+- 模型只输出结构化字段、章节编辑与条款 ID，不直接生成最终 Word 排版或 OOXML。
 - 草稿加入“草稿／未经审核不得签署”水印。
-- 渲染后执行占位符扫描和文档结构检查。
+- 渲染后执行占位符、旧主体/旧金额/旧日期残留扫描和文档结构检查。
 - 文件通过 `FileApplicationService` 进入 COS，并保存 SHA-256。
 
 ### P4-04 PDF 转换 Worker
@@ -462,10 +524,10 @@ platform-api 增加仅供受控 Bot 服务账号调用的文件内容接口：
 
 - `contract.findSimilarContracts`
 - `contract.getRequirements`
-- `contract.resolveTemplate`
+- `contract.resolveSourceDocument`
 - `contract.validateDraft`
 
-说明：历史内容检索仍以 WeKnora RAG 为主；`findSimilarContracts` 负责受控元数据过滤、同企业/同类型优先级、作废排除和参考关系，不复制另一套向量库。
+说明：历史内容检索仍以 WeKnora RAG 为主；`findSimilarContracts` 负责受控元数据过滤、同企业/同类型优先级、作废排除和参考关系，不复制另一套向量库。`resolveSourceDocument` 将 RAG 候选解析为受控源文档，返回 `knowledgeId`、`sourceFileHash`、`manifestId/version`、可用锚点和可派生状态。
 
 ### P5-02 生成和交付工具
 
@@ -476,7 +538,8 @@ platform-api 增加仅供受控 Bot 服务账号调用的文件内容接口：
 
 规则：
 
-- `generatePreview` 快速返回 taskId；完成后返回 artifact envelope。
+- `generatePreview` 接受 `guoyu.contract-derivation-request/v1`，必须包含已锁定的 `sourceSnapshotId`、源知识文档、原文件哈希、结构清单版本和结构化修改；快速返回 taskId，完成后返回 artifact envelope。
+- 工具不接受原文件 URL / 路径、DOCX Base64、OOXML、未登记锚点或任意接收人。
 - `finalizeDocument` 必须经过 MCP Human Approval 和平台确认记录双重校验。
 - `deliverDocuments` 输入只接受合同/文档 ID，不接受接收人。
 - 工具调用全部带 requestId、BotActorContext，并写平台审计。
@@ -504,7 +567,7 @@ src/artifacts/schema.ts
 - 绑定合同 RAG 知识库。
 - 绑定合同 Wiki。
 - 仅启用必要合同 MCP 工具。
-- 固定生成流程：检索 -> 字段提取 -> 缺失确认 -> 校验 -> 预览 -> 用户确认 -> 正式生成。
+- 固定生成流程：检索 -> 候选对比 -> 源 DOCX 选择/确认 -> 字段提取 -> 缺失确认 -> 结构化修改 -> 校验 -> 预览 -> 用户确认 -> 正式生成。
 - 禁止跳过确认、自由创建正式法律条款、指定任意接收人。
 
 ### P6-02 RAG 元数据治理
@@ -514,9 +577,13 @@ src/artifacts/schema.ts
 - 企业、合同类型、业务类型、年份、状态、是否签署。
 - 主合同/补充协议关系。
 - 模板版本、保密级别、所属部门。
+- 原文件 MIME、SHA-256、文件版本、结构清单版本和 `derivable` 状态。
+- 可替换字段、内容控件/书签/章节锚点和已知版式异常。
 - 作废和失效标记。
 
 检索排序：同企业同类型 > 同企业相似类型 > 同行业同类型 > 标准模板；补充协议和新版本优先。
+
+RAG 入库必须同时保留原始 DOCX。只有解析文本而无法受控读取原文件的记录，可用于问答和内容参考，不能用于合同派生。
 
 ### P6-03 Wiki 规则
 
@@ -548,15 +615,17 @@ src/artifacts/schema.ts
 platform-api：
 
 - Domain/Service 单元测试。
-- 权限失败、跨租户、作废模板、未确认正式生成。
+- 权限失败、跨租户、作废源文档、非 DOCX、哈希变更、非 `derivable`、未确认正式生成。
 - Flyway 空库迁移。
 - 异步 Worker 不读取 SecurityContext。
-- DOCX 占位符、水印、版本和 SHA-256。
+- DOCX 跨 run 替换、表格、页眉页脚、内容控件、原样式保留、占位符、旧字段残留、水印、版本和 SHA-256。
 - PDF 成功/失败不影响 DOCX。
 
 mcp-server：
 
 - Zod 输入校验。
+- `guoyu.contract-derivation-request/v1` 与 JSON Schema 一致性测试。
+- 拒绝 URL、文件路径、Base64、OOXML、未登记锚点和伪造源文档哈希。
 - BotActorContext 缺失/伪造。
 - platform-api 401刷新与业务403不重试。
 - artifact structuredContent 合同。
@@ -577,15 +646,16 @@ WeKnora：
 验收用例：
 
 1. 企业微信管理端已获权用户请求生成软件技术服务框架协议。
-2. Agent 检索历史合同和 Wiki。
-3. Agent 询问缺失字段。
-4. 用户补充后生成结构化草稿。
-5. 校验通过，异步生成 DOCX/PDF。
-6. 两个文件发送到当前企微会话。
-7. 用户修改付款比例，系统生成 V2，V1 保留。
-8. 未确认时禁止正式生成。
-9. 确认后生成无草稿水印的正式版本并发送。
-10. 平台可查看来源、模板、条款、版本、哈希和发送审计。
+2. Agent 检索历史合同和 Wiki，展示符合权限且可派生的候选文档。
+3. 用户选定或确认一份源 DOCX，系统锁定 `knowledgeId + sourceFileHash + manifestVersion`。
+4. Agent 询问缺失字段。
+5. 用户补充后生成结构化草稿与修改指令。
+6. 校验通过，异步复制并编辑源 DOCX，版式与结构保持，再生成 PDF。
+7. 两个文件发送到当前企微会话。
+8. 用户修改付款比例，系统生成 V2，V1 保留。
+9. 未确认时禁止正式生成。
+10. 确认后生成无草稿水印的正式版本并发送。
+11. 平台可查看源知识文档、原文件哈希、结构清单版本、字段来源、修改差异、版本和发送审计。
 
 安全用例：
 
@@ -611,14 +681,17 @@ WeKnora：
 
 ## 6. 第一批建议实施范围
 
-Review 通过后，不建议立即并行开发完整合同系统。第一批只做公共基础闭环：
+公共基础闭环已完成并通过真实企微 DOCX 验收：BotActorContext、MCP `structuredContent`、`guoyu.generated-artifacts/v1`、持久化交付、`platform-file` resolver 和当前私聊会话交付均已具备。
 
-1. P0：工作区和数据库基线。
-2. P1：Bot 最小权限服务账号、BotActorContext 和实际企微发起人审计。
-3. P2：MCP structuredContent/artifact ref、持久化交付和 platform-file resolver。
-4. 用一个平台生成的测试 TXT/PDF 验证“业务文件 ID -> MCP -> WeKnora -> 当前企微会话”。
+下一批不并行开发完整合同系统，先用最小范围验证“历史 DOCX 派生”能否稳定保留真实文档结构和版式。
 
-第一批验收通过后再进入合同表结构、模板和渲染开发。这样可以确保后续合同、报表、题库、证书等模块都使用同一个公共交付机制。
+合同业务的第一个纵向切片不直接实现完整合同域，而是完成“源文档派生 POC”：
+
+1. 准备 3 份脱敏且结构不同的历史 DOCX。
+2. 实现 `resolveSourceDocument`，固化 source snapshot 并生成 manifest。
+3. 只支持甲方、乙方、金额、项目名和服务范围五类变量。
+4. 生成后验证跨 run、表格、页眉页脚与原样式保留，并扫描旧字段残留。
+5. POC 通过后再扩展章节级编辑、PDF、完整版本和管理端。
 
 ## 7. Review Gate
 
@@ -628,25 +701,27 @@ Review 通过后，不建议立即并行开发完整合同系统。第一批只�
 2. 是否同意 MCP 只返回 artifact 引用，文件字节由 WeKnora 后台受控读取。
 3. 是否同意 MVP 以企业微信 Bot 可用范围作为人员授权边界，不强制绑定云平台个人账号。
 4. 是否同意第一阶段只支持“软件技术服务框架协议”。
-5. 是否同意正式合同必须人工确认，第一阶段禁止发给非当前会话。
-6. 是否同意先完成 P0-P2 公共底座，再开始 P3-P8 合同业务。
-7. 是否同意第一阶段合同文件只发送到当前私聊会话，群聊不直接发送敏感文件。
+5. 是否同意“语义索引 + 原始 DOCX”双轨存储，RAG 负责选源，platform-api 负责复制原 DOCX 并确定性编辑。
+6. 是否同意只有锁定原文件哈希、具备结构清单并经人工标记为 `derivable` 的历史 DOCX 才可用于自动派生。
+7. 是否同意正式合同必须人工确认，第一阶段禁止发给非当前会话。
+8. 是否同意在已验收的 P0-P2 公共底座上，先实施源文档派生 POC，通过后再扩展完整 P3-P8 合同业务。
+9. 是否同意第一阶段合同文件只发送到当前私聊会话，群聊不直接发送敏感文件。
 
 Review 结果记录为：
 
 ```text
-状态：待确认 / 通过 / 调整后通过 / 拒绝
-确认人：
-确认时间：
-调整项：
+状态：通过
+确认人：需求方（当前对话用户）
+确认时间：2026-08-14 17:22:50 +08:00
+调整项：无，Review Gate 第 1-9 项全部同意。
 ```
 
-## 8. 本轮不执行事项
+## 8. 当前执行边界
 
-本轮仅产出 Coding Plan。未执行：
+本轮已进入 POC 编码，已修改 `platform-api`、`mcp-server`，并创建新的 Flyway 迁移；仍保持以下边界：
 
-- 未修改服务器 WeKnora 代码。
-- 未修改 platform-api、mcp-server 或前端生产代码。
-- 未创建数据库迁移。
-- 未构建镜像。
+- 未修改或部署服务器 WeKnora 代码。
+- 未对共享数据库应用新迁移。
+- 未构建或发布生产镜像。
 - 未重启或停止任何生产容器。
+- 未触碰工作区中与本需求无关的既有修改和测试产物。

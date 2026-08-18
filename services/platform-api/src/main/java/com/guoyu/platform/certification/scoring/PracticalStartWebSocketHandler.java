@@ -49,7 +49,7 @@ public class PracticalStartWebSocketHandler extends TextWebSocketHandler {
     Long taskId = parseLong(query.get("taskId"));
     Long candidateId = parseLong(query.get("candidateId"));
     PracticalWebSocketTicketService.Ticket ticket = ticketService.consume(query.get("ticket"));
-    if (tenantId == null || taskId == null || candidateId == null
+    if (tenantId == null || taskId == null
         || ticket == null
         || !tenantId.equals(ticket.tenantId())
         || !canSubscribe(ticket, taskId, candidateId)) {
@@ -58,7 +58,9 @@ public class PracticalStartWebSocketHandler extends TextWebSocketHandler {
     }
     session.getAttributes().put("tenantId", tenantId);
     session.getAttributes().put("taskId", taskId);
-    session.getAttributes().put("candidateId", candidateId);
+    if (candidateId != null) {
+      session.getAttributes().put("candidateId", candidateId);
+    }
     publisher.register(session);
   }
 
@@ -78,10 +80,13 @@ public class PracticalStartWebSocketHandler extends TextWebSocketHandler {
     if (assessor == null) {
       return false;
     }
-    Long count = assessorTaskMapper.selectCount(new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
+    LambdaQueryWrapper<CertificationAssessorTaskEntity> query = new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
         .eq(CertificationAssessorTaskEntity::getTaskId, taskId)
-        .eq(CertificationAssessorTaskEntity::getCandidateId, candidateId)
-        .eq(CertificationAssessorTaskEntity::getAssessorId, assessor.getId()));
+        .eq(CertificationAssessorTaskEntity::getAssessorId, assessor.getId());
+    if (candidateId != null) {
+      query.eq(CertificationAssessorTaskEntity::getCandidateId, candidateId);
+    }
+    Long count = assessorTaskMapper.selectCount(query);
     return count != null && count > 0;
   }
 

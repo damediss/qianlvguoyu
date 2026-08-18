@@ -1,0 +1,64 @@
+.assessor-complete-sign-modal .ant-modal {
+  top: 3vh;
+  max-width: 1480px;
+  padding-bottom: 0;
+}
+
+.assessor-complete-sign-modal .ant-modal-content {
+  padding: 20px 28px 24px;
+}
+
+.assessor-complete-sign-modal .ant-modal-header {
+  margin-bottom: 12px;
+}
+
+.assessor-complete-sign-modal .ant-modal-title {
+  font-size: 22px;
+}
+
+.assessor-complete-sign-modal .assessor-complete-sign-intro {
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.assessor-complete-sign-modal .signature-pad {
+  padding: 18px;
+}
+
+.assessor-complete-sign-modal .signature-pad-canvas-host {
+  min-height: 48vh;
+}
+
+.assessor-complete-sign-modal .signature-pad-canvas {
+  height: 48vh;
+  min-height: 420px;
+}
+
+.assessor-complete-sign-modal .signature-pad-hint {
+  font-size: 32px;
+}
+
+.assessor-complete-sign-modal .signature-pad-actions .ant-btn,
+.assessor-complete-sign-modal .signature-pad-native-panel .ant-btn {
+  min-height: 56px;
+  min-width: 140px;
+  padding-inline: 28px;
+  font-size: 18px;
+}
+
+.assessor-complete-sign-modal .signature-pad-native-panel {
+  min-height: 220px;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-height: 800px) {
+  .assessor-complete-sign-modal .signature-pad-canvas-host {
+    min-height: 42vh;
+  }
+
+  .assessor-complete-sign-modal .signature-pad-canvas {
+    height: 42vh;
+    min-height: 360px;
+  }
+}

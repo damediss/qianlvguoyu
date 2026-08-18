@@ -1,12 +1,31 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="PlatformApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
-    <option name="ACTIVE_PROFILES" value="" />
-    <module name="platform-api" />
-    <option name="SPRING_BOOT_MAIN_CLASS" value="com.guoyu.platform.PlatformApplication" />
     <envs>
+      <env name="SERVER_PORT" value="8080" />
+      <env name="REDIS_HOST" value="127.0.0.1" />
+      <env name="REDIS_PORT" value="6379" />
+      <env name="REDIS_DATABASE" value="1" />
+      <env name="FILE_STORAGE_PROVIDER" value="cos" />
+      <env name="FILE_LOCAL_ROOT" value="$PROJECT_DIR$/../../Weknora_agent/.runtime/platform-files" />
+      <env name="FILE_OBJECT_KEY_PREFIX" value="dev" />
+      <env name="SPRING_FLYWAY_ENABLED" value="false" />
+      <env name="PLATFORM_SYNC_ENABLED" value="false" />
+      <env name="REVIEW_SYNC_JOBS_ENABLED" value="false" />
+      <env name="COMPETITION_MESSAGING_ENABLED" value="false" />
+      <env name="SMS_ENABLED" value="false" />
+      <env name="MANAGEMENT_HEALTH_RABBIT_ENABLED" value="false" />
+      <env name="FLOWABLE_ASYNC_EXECUTOR_ACTIVATE" value="false" />
+      <env name="SPRING_TASK_SCHEDULING_ENABLED" value="false" />
+      <env name="WEKNORA_BASE_URL" value="http://127.0.0.1:18080" />
+      <env name="WEKNORA_PUBLIC_BASE_URL" value="http://127.0.0.1:8088" />
       <env name="RENCAI_ENABLED" value="true" />
       <env name="RENCAI_BASE_URL" value="http://127.0.0.1:8001" />
     </envs>
+    <module name="platform-api" />
+    <option name="PROGRAM_PARAMETERS" value="--server.port=8080" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.guoyu.platform.PlatformApplication" />
+    <option name="VM_PARAMETERS" value="-Dserver.port=8080" />
+    <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$" />
     <method v="2">
       <option name="Make" enabled="true" />
     </method>

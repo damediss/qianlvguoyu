@@ -35,6 +35,8 @@ class AssessorWorkbenchContextServiceTest {
   private final CertificationTaskMapper taskMapper = mock(CertificationTaskMapper.class);
   private final CertificationAssessorWorkbenchContextMapper contextMapper = mock(CertificationAssessorWorkbenchContextMapper.class);
   private final CertificationPracticalStartSessionMapper sessionMapper = mock(CertificationPracticalStartSessionMapper.class);
+  private final PracticalCompleteSignatureApplicationService completeSignatureService =
+      mock(PracticalCompleteSignatureApplicationService.class);
   private AssessorWorkbenchContextService service;
 
   @BeforeEach
@@ -68,8 +70,11 @@ class AssessorWorkbenchContextServiceTest {
     when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
     when(contextMapper.selectOne(any())).thenReturn(null);
     when(sessionMapper.selectCount(any())).thenReturn(0L);
+    when(completeSignatureService.viewForAssessor(any(), any())).thenReturn(
+        PracticalCompleteSignatureApplicationService.emptyView(1L));
     service = new AssessorWorkbenchContextService(
-        assessorMapper, taskAssessorMapper, groupMapper, taskMapper, contextMapper, sessionMapper);
+        assessorMapper, taskAssessorMapper, groupMapper, taskMapper, contextMapper, sessionMapper,
+        completeSignatureService);
   }
 
   @AfterEach
@@ -89,6 +94,22 @@ class AssessorWorkbenchContextServiceTest {
     service.switchTask(1L);
 
     verify(contextMapper).insert(any(com.guoyu.platform.certification.entity.CertificationAssessorWorkbenchContextEntity.class));
+  }
+
+  @Test
+  void idleMembershipIsIgnoredAsReleasedHistory() {
+    CertificationTaskAssessorEntity membership = new CertificationTaskAssessorEntity();
+    membership.setId(10L);
+    membership.setTaskId(1L);
+    membership.setGroupId(2L);
+    membership.setAssessorId(9L);
+    membership.setWorkStatus("idle");
+    when(taskAssessorMapper.selectList(any())).thenReturn(List.of(membership));
+
+    PracticalScoringModels.AssessorWorkbenchContext context = service.current();
+
+    assertThat(context.activeTaskId()).isNull();
+    assertThat(context.switchableTasks()).isEmpty();
   }
 
   @Test

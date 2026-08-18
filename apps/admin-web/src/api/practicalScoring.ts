@@ -7,6 +7,7 @@ import type {
   AssessorScoringTaskDetail,
   PracticalAdjustScorePayload,
   PracticalBatchGenerateResult,
+  PracticalCompleteSign,
   PracticalCompleteTaskResult,
   PracticalGenerateResult,
   PracticalImportPaperResult,
@@ -85,6 +86,17 @@ export function getPracticalScoringProgress(taskId: string) {
 
 export function completePracticalScoringTask(taskId: string) {
   return unwrap<PracticalCompleteTaskResult>(apiClient.post(`${adminBase}/tasks/${taskId}/complete`));
+}
+
+export function requestPracticalCompleteSign(taskId: string) {
+  return unwrap<PracticalCompleteSign>(apiClient.post(`${adminBase}/tasks/${taskId}/complete-sign/request`));
+}
+
+export function submitMyPracticalCompleteSign(
+  taskId: string,
+  payload: { signatureFileId: string | number; signatureHash: string; deviceInfo?: string },
+) {
+  return unwrap<PracticalCompleteSign>(apiClient.post(`${assessorBase}/tasks/${taskId}/complete-sign`, payload));
 }
 
 export function exportPracticalSummary(taskId: string, candidateIds: string[]) {
