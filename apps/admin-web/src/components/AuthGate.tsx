@@ -75,7 +75,7 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
       setTenantId(data.tenantId);
       setCurrentUser(data.user);
       if ((mode === 'assessor' || mode === 'defense') && !isAssessorAccount(data.user)) {
-        message.error(mode === 'defense' ? '当前账号无考评员阅卷端权限' : '当前账号无平板考评端权限');
+        message.error(mode === 'defense' ? '当前账号无考评员综合答辩端权限' : '当前账号无平板考评端权限');
         clearAuth();
         return;
       }
@@ -107,7 +107,7 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
 
   useEffect(() => {
     if ((mode === 'assessor' || mode === 'defense') && resolvedUser && !isAssessorAccount(resolvedUser)) {
-      message.error(mode === 'defense' ? '当前账号无考评员阅卷端权限' : '当前账号无平板考评端权限');
+      message.error(mode === 'defense' ? '当前账号无考评员综合答辩端权限' : '当前账号无平板考评端权限');
       clearAuth();
       return;
     }
@@ -145,7 +145,7 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
               {mode === 'assessor'
                 ? '平板考评端登录'
                 : mode === 'defense'
-                  ? '考评员阅卷端登录'
+                  ? '考评员综合答辩端登录'
                   : mode === 'collection'
                     ? '平板信息采集端登录'
                     : '管理端登录'}

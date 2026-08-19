@@ -192,14 +192,14 @@ export function DefenseScoringConfig({ taskId }: Props) {
                 }
               }}
             >
-              打开阅卷端
+              打开综合答辩端
             </Button>
           </Space>
         )}
       >
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           <Typography.Text type="secondary">
-            选择本任务综合答辩考评组后，按考生匹配上传业绩评估报告 PDF。考评员使用考评员信息中创建的账号，从阅卷端竖屏阅览报告。
+            选择本任务综合答辩考评组后，按考生匹配上传业绩评估报告 PDF。考评员使用考评员信息中创建的账号，从综合答辩端竖屏阅览报告，并完成论文答辩评分与业绩评估报告评分。
           </Typography.Text>
           <Space wrap>
             <Select

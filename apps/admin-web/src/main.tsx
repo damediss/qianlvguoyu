@@ -1,3 +1,4 @@
+import './utils/legacyBrowserPolyfills';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ConfigProvider } from 'antd';
@@ -102,6 +103,7 @@ import { ProjectManagementPage } from './pages/certification/ProjectManagementPa
 import { CertificationDataPanelPage } from './pages/certification/CertificationDataPanelPage';
 import { PracticalConfigurationPage } from './pages/certification/PracticalConfigurationPage';
 import { PreparationPage } from './pages/certification/PreparationPage';
+import { DefenseManagementPage } from './pages/certification/DefenseManagementPage';
 import { CollectionTaskListPage } from './pages/certification/collection/CollectionTaskListPage';
 import { CollectionManagePage } from './pages/certification/collection/CollectionManagePage';
 import { ArchivePage } from './pages/certification/ArchivePage';
@@ -225,6 +227,7 @@ const pageMap: Record<string, React.ReactNode> = {
   certification_project: <ProjectManagementPage />,
   certification_preparation: <PreparationPage />,
   certification_practical_config: <PracticalConfigurationPage />,
+  certification_defense_management: <DefenseManagementPage />,
   certification_practical_collection: <CollectionTaskListPage />,
   certification_archive: <ArchivePage />,
   certification_task_archive: <TaskArchivePage />,
@@ -280,6 +283,7 @@ const pageMap: Record<string, React.ReactNode> = {
   'zhixun-table-status': <PmStatusPage />,
   'certification-task-archive': <TaskArchivePage />,
   'certification-practical-config': <PracticalConfigurationPage />,
+  'certification-defense-management': <DefenseManagementPage />,
   // 战略规划 → 产品规划 模块
   strate_talent_standard: <ProductPlaceholder moduleCode="strate_talent_standard" />,
   strate_talent_check: <ProductPlaceholder moduleCode="strate_talent_check" />,

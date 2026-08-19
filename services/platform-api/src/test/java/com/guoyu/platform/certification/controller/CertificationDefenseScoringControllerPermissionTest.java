@@ -17,6 +17,12 @@ class CertificationDefenseScoringControllerPermissionTest {
     assertThat(post("matchReports")).containsExactly("/defense-scoring/tasks/{taskId}/reports/match");
     assertThat(get("myReports")).containsExactly("/assessor-defense/reports");
     assertThat(get("myReport")).containsExactly("/assessor-defense/reports/{reportId}");
+    assertThat(get("scoreSheets")).containsExactly("/assessor-defense/reports/{reportId}/score-sheets");
+    assertThat(put("saveScoreSheet")).containsExactly("/assessor-defense/reports/{reportId}/score-sheets/{sheetType}");
+    assertThat(post("submitScoreSheet")).containsExactly("/assessor-defense/reports/{reportId}/score-sheets/{sheetType}/submit");
+    assertThat(get("progress")).containsExactly("/defense-scoring/tasks/{taskId}/progress");
+    assertThat(post("complete")).containsExactly("/defense-scoring/tasks/{taskId}/complete");
+    assertThat(get("exportSummary")).containsExactly("/defense-scoring/tasks/{taskId}/summary/export");
   }
 
   @Test
@@ -27,6 +33,15 @@ class CertificationDefenseScoringControllerPermissionTest {
         .isEqualTo("hasAnyAuthority('certification.defense.upload', 'certification.preparation.task.view')");
     assertThat(preAuthorize("myReports")).isEqualTo("hasAuthority('certification.defense.review')");
     assertThat(preAuthorize("myReport")).isEqualTo("hasAuthority('certification.defense.review')");
+    assertThat(preAuthorize("scoreSheets")).isEqualTo("hasAuthority('certification.defense.review')");
+    assertThat(preAuthorize("saveScoreSheet")).isEqualTo("hasAuthority('certification.defense.review')");
+    assertThat(preAuthorize("submitScoreSheet")).isEqualTo("hasAuthority('certification.defense.review')");
+    assertThat(preAuthorize("progress"))
+        .isEqualTo("hasAnyAuthority('certification.defense.progress', 'certification.preparation.task.view')");
+    assertThat(preAuthorize("complete"))
+        .isEqualTo("hasAnyAuthority('certification.defense.complete', 'certification.preparation.task.view')");
+    assertThat(preAuthorize("exportSummary"))
+        .isEqualTo("hasAnyAuthority('certification.defense.export', 'certification.preparation.task.view')");
   }
 
   private String[] mapping(Class<?> controller) {

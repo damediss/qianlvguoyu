@@ -16,6 +16,7 @@ import com.guoyu.platform.certification.info.mapper.CertificationInfoAssessorMap
 import com.guoyu.platform.certification.mapper.CertificationCandidateMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseConfigMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseReportMapper;
+import com.guoyu.platform.certification.mapper.CertificationDefenseScoreMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskAssessorGroupMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskAssessorMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskMapper;
@@ -40,6 +41,7 @@ class DefenseScoringApplicationServiceTest {
   private final CertificationInfoAssessorMapper assessorMapper = Mockito.mock(CertificationInfoAssessorMapper.class);
   private final CertificationDefenseConfigMapper configMapper = Mockito.mock(CertificationDefenseConfigMapper.class);
   private final CertificationDefenseReportMapper reportMapper = Mockito.mock(CertificationDefenseReportMapper.class);
+  private final CertificationDefenseScoreMapper scoreMapper = Mockito.mock(CertificationDefenseScoreMapper.class);
   private final FileApplicationService fileApplicationService = Mockito.mock(FileApplicationService.class);
 
   private DefenseScoringApplicationService service;
@@ -54,7 +56,7 @@ class DefenseScoringApplicationServiceTest {
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
     service = new DefenseScoringApplicationService(
         taskMapper, candidateMapper, groupMapper, taskAssessorMapper, assessorMapper,
-        configMapper, reportMapper, fileApplicationService);
+        configMapper, reportMapper, scoreMapper, fileApplicationService);
     CertificationInfoAssessorEntity assessor = new CertificationInfoAssessorEntity();
     assessor.setId(9L);
     assessor.setUserId(100L);
@@ -174,6 +176,7 @@ class DefenseScoringApplicationServiceTest {
     report.setFileId(9001L);
     report.setFileName("report.pdf");
     when(reportMapper.selectList(any())).thenReturn(List.of(report));
+    when(scoreMapper.selectList(any())).thenReturn(List.of());
     when(taskMapper.selectBatchIds(any())).thenReturn(List.of(certTask()));
     when(candidateMapper.selectBatchIds(any())).thenReturn(List.of(candidate(11L, "张三", "110101199001011234")));
 

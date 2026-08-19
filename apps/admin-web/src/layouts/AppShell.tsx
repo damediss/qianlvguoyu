@@ -270,7 +270,7 @@ export function AppShell({
     try {
       await logout();
     } catch {
-      // 切换入口时仍强制清理旧登录态，避免管理账号误入阅卷端
+      // 切换入口时仍强制清理旧登录态，避免管理账号误入综合答辩端
     } finally {
       clearAuth();
       window.location.assign('/assessor-defense');
@@ -287,7 +287,7 @@ export function AppShell({
     {
       key: 'defense',
       icon: <Icons.MobileOutlined />,
-      label: '考评员阅卷端',
+      label: '考评员综合答辩端',
       onClick: handleOpenDefense,
     },
     {

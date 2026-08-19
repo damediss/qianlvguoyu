@@ -1,4 +1,4 @@
-import { LeftOutlined, LogoutOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ExportOutlined, LeftOutlined, LogoutOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Button, Empty, List, Spin, Tag, Typography, message } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -6,26 +6,38 @@ import { logout } from '../../api/auth';
 import { getMyDefenseReport, listMyDefenseReports } from '../../api/defenseScoring';
 import { fetchPlatformFileBlob } from '../../api/files';
 import { useAuthStore } from '../../stores/authStore';
+import { DefensePdfViewer, openPdfExternally } from './DefensePdfViewer';
+import { DefenseScorePanel } from './DefenseScorePanel';
+import { formatScore, statusLabel } from './defenseScoreCatalog';
 import './DefenseReviewApp.css';
+
+type DefenseView = 'list' | 'pdf' | 'score';
 
 export function DefenseReviewApp() {
   const currentUser = useAuthStore((state) => state.currentUser);
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const [selectedReportId, setSelectedReportId] = useState<string>();
+  const [view, setView] = useState<DefenseView>('list');
 
   useEffect(() => {
     const previous = document.querySelector('meta[name="viewport"]');
     const content = previous?.getAttribute('content');
-    previous?.setAttribute(
-      'content',
-      'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover',
-    );
     document.body.classList.add('defense-review-portrait');
     return () => {
       if (content) previous?.setAttribute('content', content);
       document.body.classList.remove('defense-review-portrait');
     };
   }, []);
+
+  useEffect(() => {
+    const previous = document.querySelector('meta[name="viewport"]');
+    previous?.setAttribute(
+      'content',
+      view === 'pdf'
+        ? 'width=device-width, initial-scale=1, maximum-scale=4, user-scalable=yes, viewport-fit=cover'
+        : 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover',
+    );
+  }, [view]);
 
   const listQuery = useQuery({
     queryKey: ['my-defense-reports'],
@@ -35,7 +47,7 @@ export function DefenseReviewApp() {
   const detailQuery = useQuery({
     queryKey: ['my-defense-report', selectedReportId],
     queryFn: () => getMyDefenseReport(selectedReportId!),
-    enabled: Boolean(selectedReportId),
+    enabled: Boolean(selectedReportId) && view === 'pdf',
   });
 
   async function handleLogout() {
@@ -49,13 +61,38 @@ export function DefenseReviewApp() {
     }
   }
 
+  function openList() {
+    setSelectedReportId(undefined);
+    setView('list');
+  }
+
   const selected = listQuery.data?.find((item) => item.reportId === selectedReportId);
+  const pdfFileId = detailQuery.data?.fileId || selected?.fileId;
+  const pdfFileName = detailQuery.data?.fileName || selected?.fileName;
+
+  async function handleOpenExternal() {
+    if (!pdfFileId) {
+      message.error('报告文件尚未加载完成');
+      return;
+    }
+    try {
+      const blob = await fetchPlatformFileBlob(pdfFileId);
+      await openPdfExternally(blob, pdfFileName);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '无法打开外部阅读器');
+    }
+  }
 
   return (
-    <div className="defense-phone-shell">
+    <div className={`defense-phone-shell${view === 'score' ? ' defense-phone-shell-score' : ''}`}>
       <header className="defense-phone-header">
-        <div>
-          <Typography.Text type="secondary">考评员阅卷端</Typography.Text>
+        {view !== 'list' ? (
+          <Button className="defense-phone-back" icon={<LeftOutlined />} onClick={openList}>
+            返回列表
+          </Button>
+        ) : null}
+        <div className="defense-phone-title">
+          <Typography.Text type="secondary">考评员综合答辩端</Typography.Text>
           <Typography.Title level={4}>{currentUser?.displayName || currentUser?.username || '考评员'}</Typography.Title>
         </div>
         <div className="defense-phone-actions">
@@ -64,15 +101,10 @@ export function DefenseReviewApp() {
         </div>
       </header>
 
-      {selectedReportId ? (
+      {view === 'score' && selectedReportId ? (
+        <DefenseScorePanel reportId={selectedReportId} />
+      ) : view === 'pdf' && selectedReportId ? (
         <section className="defense-phone-reader">
-          <Button
-            className="defense-phone-back"
-            icon={<LeftOutlined />}
-            onClick={() => setSelectedReportId(undefined)}
-          >
-            返回列表
-          </Button>
           <div className="defense-phone-candidate">
             <Typography.Title level={3}>{detailQuery.data?.candidateName || selected?.candidateName || '考生'}</Typography.Title>
             <Typography.Text type="secondary">
@@ -81,7 +113,7 @@ export function DefenseReviewApp() {
                 .join(' · ') || '业绩评估报告'}
             </Typography.Text>
           </div>
-          <MobilePdfViewer fileId={detailQuery.data?.fileId || selected?.fileId} />
+          <DefensePdfViewer fileId={pdfFileId} />
         </section>
       ) : (
         <section className="defense-phone-list">
@@ -93,13 +125,44 @@ export function DefenseReviewApp() {
             <List
               dataSource={listQuery.data}
               renderItem={(item) => (
-                <List.Item className="defense-phone-card" onClick={() => setSelectedReportId(item.reportId)}>
-                  <div>
+                <List.Item
+                  className="defense-phone-card"
+                  extra={(
+                    <div className="defense-phone-card-actions">
+                      <Button
+                        type="primary"
+                        onClick={() => {
+                          setSelectedReportId(item.reportId);
+                          setView('pdf');
+                        }}
+                      >
+                        考前阅卷
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          setSelectedReportId(item.reportId);
+                          setView('score');
+                        }}
+                      >
+                        答辩评分
+                      </Button>
+                    </div>
+                  )}
+                >
+                  <div className="defense-phone-card-main">
                     <Typography.Title level={5}>{item.candidateName || '考生'}</Typography.Title>
-                    <Typography.Text type="secondary">{item.maskedIdCardNo || '-'}</Typography.Text>
+                    <Typography.Text type="secondary">{item.admissionTicketNo || item.maskedIdCardNo || '-'}</Typography.Text>
                     <div className="defense-phone-meta">
                       {item.workTypeName ? <Tag>{item.workTypeName}</Tag> : null}
                       {item.levelName ? <Tag>{item.levelName}</Tag> : null}
+                      <Tag color={item.thesisStatus === 'submitted' ? 'green' : item.thesisStatus === 'draft' ? 'gold' : 'default'}>
+                        论文{statusLabel(item.thesisStatus)}
+                        {item.thesisStatus === 'submitted' ? ` ${formatScore(item.thesisFinalScore)}` : ''}
+                      </Tag>
+                      <Tag color={item.performanceStatus === 'submitted' ? 'green' : item.performanceStatus === 'draft' ? 'gold' : 'default'}>
+                        业绩{statusLabel(item.performanceStatus)}
+                        {item.performanceStatus === 'submitted' ? ` ${formatScore(item.performanceFinalScore)}` : ''}
+                      </Tag>
                     </div>
                     <Typography.Text type="secondary">{item.fileName || '业绩评估报告.pdf'}</Typography.Text>
                   </div>
@@ -109,41 +172,18 @@ export function DefenseReviewApp() {
           )}
         </section>
       )}
+
+      {view === 'pdf' ? (
+        <footer className="defense-phone-footer">
+          <Button icon={<ExportOutlined />} onClick={() => void handleOpenExternal()}>
+            外部阅读器打开
+          </Button>
+          <Button type="primary" onClick={() => setView('score')}>
+            答辩评分
+          </Button>
+        </footer>
+      ) : null}
     </div>
   );
 }
 
-function MobilePdfViewer({ fileId }: { fileId?: string }) {
-  const query = useQuery({
-    queryKey: ['defense-pdf', fileId],
-    queryFn: async () => {
-      const blob = await fetchPlatformFileBlob(fileId!);
-      return URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
-    },
-    enabled: Boolean(fileId),
-  });
-
-  if (!fileId || query.isLoading) {
-    return <Spin className="defense-phone-spin" />;
-  }
-  if (!query.data) {
-    return <Empty description="报告加载失败" />;
-  }
-  return (
-    <div className="defense-pdf-wrap">
-      <iframe title="业绩评估报告" src={`${query.data}#toolbar=0&navpanes=0&view=FitH`} />
-      <Button
-        className="defense-pdf-open"
-        block
-        onClick={() => {
-          const opened = window.open(query.data, '_blank');
-          if (!opened) {
-            message.warning('请允许弹出窗口后使用系统阅读器打开');
-          }
-        }}
-      >
-        使用系统阅读器打开
-      </Button>
-    </div>
-  );
-}

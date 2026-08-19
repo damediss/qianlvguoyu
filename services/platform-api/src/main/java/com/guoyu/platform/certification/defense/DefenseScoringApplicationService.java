@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
 import com.guoyu.platform.certification.entity.CertificationDefenseConfigEntity;
 import com.guoyu.platform.certification.entity.CertificationDefenseReportEntity;
+import com.guoyu.platform.certification.entity.CertificationDefenseScoreEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskAssessorEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskAssessorGroupEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskEntity;
@@ -12,6 +13,7 @@ import com.guoyu.platform.certification.info.mapper.CertificationInfoAssessorMap
 import com.guoyu.platform.certification.mapper.CertificationCandidateMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseConfigMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseReportMapper;
+import com.guoyu.platform.certification.mapper.CertificationDefenseScoreMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskAssessorGroupMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskAssessorMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskMapper;
@@ -50,6 +52,7 @@ public class DefenseScoringApplicationService {
   private final CertificationInfoAssessorMapper assessorMapper;
   private final CertificationDefenseConfigMapper configMapper;
   private final CertificationDefenseReportMapper reportMapper;
+  private final CertificationDefenseScoreMapper scoreMapper;
   private final FileApplicationService fileApplicationService;
 
   public DefenseScoringApplicationService(
@@ -60,6 +63,7 @@ public class DefenseScoringApplicationService {
       CertificationInfoAssessorMapper assessorMapper,
       CertificationDefenseConfigMapper configMapper,
       CertificationDefenseReportMapper reportMapper,
+      CertificationDefenseScoreMapper scoreMapper,
       FileApplicationService fileApplicationService
   ) {
     this.taskMapper = taskMapper;
@@ -69,6 +73,7 @@ public class DefenseScoringApplicationService {
     this.assessorMapper = assessorMapper;
     this.configMapper = configMapper;
     this.reportMapper = reportMapper;
+    this.scoreMapper = scoreMapper;
     this.fileApplicationService = fileApplicationService;
   }
 
@@ -210,6 +215,7 @@ public class DefenseScoringApplicationService {
         .map(CertificationDefenseReportEntity::getCandidateId)
         .filter(Objects::nonNull)
         .collect(Collectors.toSet()));
+    Map<String, CertificationDefenseScoreEntity> scoreMap = loadScoreMap(assessor.getId(), reports);
     List<DefenseScoringModels.AssessorReportListItem> items = new ArrayList<>();
     for (CertificationDefenseReportEntity report : reports) {
       Long expectedGroupId = groupByTask.get(report.getTaskId());
@@ -221,7 +227,13 @@ public class DefenseScoringApplicationService {
       }
       CertificationTaskEntity certTask = taskMap.get(report.getTaskId());
       CertificationCandidateEntity candidate = candidateMap.get(report.getCandidateId());
-      items.add(toListItem(report, certTask, candidate));
+      items.add(toListItem(
+          report,
+          certTask,
+          candidate,
+          scoreMap.get(scoreKey(report, DefenseScoreCatalog.SHEET_THESIS)),
+          scoreMap.get(scoreKey(report, DefenseScoreCatalog.SHEET_PERFORMANCE))
+      ));
     }
     return items;
   }
@@ -231,18 +243,38 @@ public class DefenseScoringApplicationService {
     CertificationDefenseReportEntity report = requireVisibleReport(reportId);
     CertificationTaskEntity certTask = requireTask(report.getTaskId());
     CertificationCandidateEntity candidate = requireCandidate(report.getTaskId(), report.getCandidateId());
+    CertificationInfoAssessorEntity assessor = currentAssessor();
+    CertificationDefenseScoreEntity thesis = loadScore(assessor.getId(), report, DefenseScoreCatalog.SHEET_THESIS);
+    CertificationDefenseScoreEntity performance = loadScore(assessor.getId(), report, DefenseScoreCatalog.SHEET_PERFORMANCE);
+    return toDetail(report, certTask, candidate, thesis, performance);
+  }
+
+  DefenseScoringModels.AssessorReportDetail toDetail(
+      CertificationDefenseReportEntity report,
+      CertificationTaskEntity certTask,
+      CertificationCandidateEntity candidate,
+      CertificationDefenseScoreEntity thesisScore,
+      CertificationDefenseScoreEntity performanceScore
+  ) {
     return new DefenseScoringModels.AssessorReportDetail(
         report.getId(),
         report.getTaskId(),
-        certTask.getTaskName(),
-        candidate.getId(),
-        candidate.getCandidateName(),
-        candidate.getMaskedIdCardNo(),
-        candidate.getWorkTypeName(),
-        candidate.getLevelName(),
-        candidate.getOrgName(),
+        certTask == null ? null : certTask.getTaskName(),
+        candidate == null ? null : candidate.getId(),
+        candidate == null ? null : candidate.getCandidateName(),
+        candidate == null ? null : candidate.getMaskedIdCardNo(),
+        candidate == null ? null : candidate.getAdmissionTicketNo(),
+        candidate == null ? null : candidate.getWorkTypeName(),
+        candidate == null ? null : candidate.getLevelName(),
+        candidate == null ? null : candidate.getOrgName(),
         report.getFileId(),
-        report.getFileName()
+        report.getFileName(),
+        statusOf(thesisScore),
+        thesisScore == null ? null : thesisScore.getFinalScore(),
+        thesisScore != null && Integer.valueOf(1).equals(thesisScore.getRejected()),
+        statusOf(performanceScore),
+        performanceScore == null ? null : performanceScore.getFinalScore(),
+        performanceScore != null && Integer.valueOf(1).equals(performanceScore.getRejected())
     );
   }
 
@@ -394,6 +426,16 @@ public class DefenseScoringApplicationService {
       CertificationTaskEntity certTask,
       CertificationCandidateEntity candidate
   ) {
+    return toListItem(report, certTask, candidate, null, null);
+  }
+
+  private DefenseScoringModels.AssessorReportListItem toListItem(
+      CertificationDefenseReportEntity report,
+      CertificationTaskEntity certTask,
+      CertificationCandidateEntity candidate,
+      CertificationDefenseScoreEntity thesisScore,
+      CertificationDefenseScoreEntity performanceScore
+  ) {
     return new DefenseScoringModels.AssessorReportListItem(
         report.getId(),
         report.getTaskId(),
@@ -401,11 +443,80 @@ public class DefenseScoringApplicationService {
         report.getCandidateId(),
         candidate == null ? null : candidate.getCandidateName(),
         candidate == null ? null : candidate.getMaskedIdCardNo(),
+        candidate == null ? null : candidate.getAdmissionTicketNo(),
         candidate == null ? null : candidate.getWorkTypeName(),
         candidate == null ? null : candidate.getLevelName(),
         report.getFileId(),
-        report.getFileName()
+        report.getFileName(),
+        statusOf(thesisScore),
+        thesisScore == null ? null : thesisScore.getFinalScore(),
+        thesisScore != null && Integer.valueOf(1).equals(thesisScore.getRejected()),
+        statusOf(performanceScore),
+        performanceScore == null ? null : performanceScore.getFinalScore(),
+        performanceScore != null && Integer.valueOf(1).equals(performanceScore.getRejected())
     );
+  }
+
+  private static String statusOf(CertificationDefenseScoreEntity score) {
+    if (score == null || !StringUtils.hasText(score.getStatus())) {
+      return DefenseScoreCatalog.STATUS_EMPTY;
+    }
+    return score.getStatus();
+  }
+
+  private Map<String, CertificationDefenseScoreEntity> loadScoreMap(
+      Long assessorId,
+      List<CertificationDefenseReportEntity> reports
+  ) {
+    if (assessorId == null || reports == null || reports.isEmpty()) {
+      return Map.of();
+    }
+    List<Long> candidateIds = reports.stream()
+        .map(CertificationDefenseReportEntity::getCandidateId)
+        .filter(Objects::nonNull)
+        .distinct()
+        .toList();
+    List<Long> taskIds = reports.stream()
+        .map(CertificationDefenseReportEntity::getTaskId)
+        .filter(Objects::nonNull)
+        .distinct()
+        .toList();
+    if (candidateIds.isEmpty() || taskIds.isEmpty()) {
+      return Map.of();
+    }
+    List<CertificationDefenseScoreEntity> scores = safeList(scoreMapper.selectList(
+        new LambdaQueryWrapper<CertificationDefenseScoreEntity>()
+            .eq(CertificationDefenseScoreEntity::getAssessorId, assessorId)
+            .in(CertificationDefenseScoreEntity::getTaskId, taskIds)
+            .in(CertificationDefenseScoreEntity::getCandidateId, candidateIds)));
+    Map<String, CertificationDefenseScoreEntity> map = new HashMap<>();
+    for (CertificationDefenseScoreEntity score : scores) {
+      if (score.getTaskId() == null || score.getCandidateId() == null || score.getSheetType() == null) {
+        continue;
+      }
+      map.put(score.getTaskId() + ":" + score.getCandidateId() + ":" + score.getSheetType(), score);
+    }
+    return map;
+  }
+
+  private CertificationDefenseScoreEntity loadScore(
+      Long assessorId,
+      CertificationDefenseReportEntity report,
+      String sheetType
+  ) {
+    if (assessorId == null || report == null) {
+      return null;
+    }
+    return scoreMapper.selectOne(new LambdaQueryWrapper<CertificationDefenseScoreEntity>()
+        .eq(CertificationDefenseScoreEntity::getAssessorId, assessorId)
+        .eq(CertificationDefenseScoreEntity::getTaskId, report.getTaskId())
+        .eq(CertificationDefenseScoreEntity::getCandidateId, report.getCandidateId())
+        .eq(CertificationDefenseScoreEntity::getSheetType, sheetType)
+        .last("LIMIT 1"));
+  }
+
+  private static String scoreKey(CertificationDefenseReportEntity report, String sheetType) {
+    return report.getTaskId() + ":" + report.getCandidateId() + ":" + sheetType;
   }
 
   private void requirePdf(Long fileId, String fileName) {
@@ -419,7 +530,7 @@ public class DefenseScoringApplicationService {
     }
   }
 
-  private CertificationDefenseReportEntity requireVisibleReport(Long reportId) {
+  CertificationDefenseReportEntity requireVisibleReport(Long reportId) {
     CertificationInfoAssessorEntity assessor = currentAssessor();
     CertificationDefenseReportEntity report = reportMapper.selectById(reportId);
     if (report == null) {
@@ -443,7 +554,7 @@ public class DefenseScoringApplicationService {
     return report;
   }
 
-  private CertificationTaskEntity requireTask(Long taskId) {
+  CertificationTaskEntity requireTask(Long taskId) {
     CertificationTaskEntity task = taskMapper.selectById(taskId);
     if (task == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "认定任务不存在");
@@ -459,7 +570,7 @@ public class DefenseScoringApplicationService {
     return group;
   }
 
-  private CertificationCandidateEntity requireCandidate(Long taskId, Long candidateId) {
+  CertificationCandidateEntity requireCandidate(Long taskId, Long candidateId) {
     CertificationCandidateEntity candidate = candidateMapper.selectById(candidateId);
     if (candidate == null || !taskId.equals(candidate.getTaskId()) || "inactive".equalsIgnoreCase(candidate.getStatus())) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "考生不存在");
@@ -467,7 +578,7 @@ public class DefenseScoringApplicationService {
     return candidate;
   }
 
-  private CertificationInfoAssessorEntity currentAssessor() {
+  CertificationInfoAssessorEntity currentAssessor() {
     PlatformUserPrincipal user = SecurityContext.currentUser();
     CertificationInfoAssessorEntity assessor = assessorMapper.selectOne(
         new LambdaQueryWrapper<CertificationInfoAssessorEntity>()

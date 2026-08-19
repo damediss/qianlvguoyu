@@ -1,11 +1,22 @@
 package com.guoyu.platform.certification.controller;
 
+import com.guoyu.platform.certification.defense.DefenseManagementApplicationService;
 import com.guoyu.platform.certification.defense.DefenseScoringApplicationService;
 import com.guoyu.platform.certification.defense.DefenseScoringModels;
+import com.guoyu.platform.certification.defense.DefenseScoreSheetApplicationService;
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.exam.vo.ExportResultDTO;
 import jakarta.validation.Valid;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,9 +34,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class CertificationDefenseScoringController {
 
   private final DefenseScoringApplicationService service;
+  private final DefenseScoreSheetApplicationService scoreSheetService;
+  private final DefenseManagementApplicationService managementService;
 
-  public CertificationDefenseScoringController(DefenseScoringApplicationService service) {
+  public CertificationDefenseScoringController(
+      DefenseScoringApplicationService service,
+      DefenseScoreSheetApplicationService scoreSheetService,
+      DefenseManagementApplicationService managementService
+  ) {
     this.service = service;
+    this.scoreSheetService = scoreSheetService;
+    this.managementService = managementService;
   }
 
   @GetMapping("/defense-scoring/tasks/{taskId}/setup")
@@ -86,5 +105,60 @@ public class CertificationDefenseScoringController {
   @PreAuthorize("hasAuthority('certification.defense.review')")
   public ApiResponse<DefenseScoringModels.AssessorReportDetail> myReport(@PathVariable Long reportId) {
     return ApiResponse.ok(service.myReport(reportId));
+  }
+
+  @GetMapping("/assessor-defense/reports/{reportId}/score-sheets")
+  @PreAuthorize("hasAuthority('certification.defense.review')")
+  public ApiResponse<DefenseScoringModels.ScoreSheetsView> scoreSheets(@PathVariable Long reportId) {
+    return ApiResponse.ok(scoreSheetService.scoreSheets(reportId));
+  }
+
+  @PutMapping("/assessor-defense/reports/{reportId}/score-sheets/{sheetType}")
+  @PreAuthorize("hasAuthority('certification.defense.review')")
+  @AuditLog(module = "certification", action = "defense-scoring:save-sheet", targetType = "certification_defense_score")
+  public ApiResponse<DefenseScoringModels.ScoreSheetView> saveScoreSheet(
+      @PathVariable Long reportId,
+      @PathVariable String sheetType,
+      @Valid @RequestBody DefenseScoringModels.SaveScoreSheetReq req
+  ) {
+    return ApiResponse.ok(scoreSheetService.save(reportId, sheetType, req));
+  }
+
+  @PostMapping("/assessor-defense/reports/{reportId}/score-sheets/{sheetType}/submit")
+  @PreAuthorize("hasAuthority('certification.defense.review')")
+  @AuditLog(module = "certification", action = "defense-scoring:submit-sheet", targetType = "certification_defense_score")
+  public ApiResponse<DefenseScoringModels.ScoreSheetView> submitScoreSheet(
+      @PathVariable Long reportId,
+      @PathVariable String sheetType,
+      @Valid @RequestBody DefenseScoringModels.SubmitScoreSheetReq req
+  ) {
+    return ApiResponse.ok(scoreSheetService.submit(reportId, sheetType, req));
+  }
+
+  @GetMapping("/defense-scoring/tasks/{taskId}/progress")
+  @PreAuthorize("hasAnyAuthority('certification.defense.progress', 'certification.preparation.task.view')")
+  public ApiResponse<DefenseScoringModels.ProgressView> progress(@PathVariable Long taskId) {
+    return ApiResponse.ok(managementService.progress(taskId));
+  }
+
+  @PostMapping("/defense-scoring/tasks/{taskId}/complete")
+  @PreAuthorize("hasAnyAuthority('certification.defense.complete', 'certification.preparation.task.view')")
+  @AuditLog(module = "certification", action = "defense-scoring:complete", targetType = "certification_defense_config")
+  public ApiResponse<DefenseScoringModels.CompleteView> complete(@PathVariable Long taskId) {
+    return ApiResponse.ok(managementService.complete(taskId));
+  }
+
+  @GetMapping("/defense-scoring/tasks/{taskId}/summary/export")
+  @PreAuthorize("hasAnyAuthority('certification.defense.export', 'certification.preparation.task.view')")
+  @AuditLog(module = "certification", action = "defense-scoring:summary-export", targetType = "certification_defense_score")
+  public ResponseEntity<InputStreamResource> exportSummary(@PathVariable Long taskId) throws IOException {
+    ExportResultDTO result = managementService.exportSummary(taskId);
+    InputStreamResource resource = new InputStreamResource(new ByteArrayInputStream(result.data()));
+    return ResponseEntity.ok()
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            ContentDisposition.attachment().filename(result.filename(), StandardCharsets.UTF_8).build().toString())
+        .contentType(MediaType.parseMediaType(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+        .body(resource);
   }
 }

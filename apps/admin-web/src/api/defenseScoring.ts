@@ -3,9 +3,16 @@ import type {
   DefenseAssessorReportDetail,
   DefenseAssessorReportListItem,
   DefenseCandidateRow,
+  DefenseCompleteResult,
   DefenseConfig,
   DefenseMatchResult,
+  DefenseProgress,
+  DefenseSaveScoreSheetReq,
+  DefenseScoreSheetType,
+  DefenseScoreSheetView,
+  DefenseScoreSheetsView,
   DefenseSetup,
+  DefenseSubmitScoreSheetReq,
 } from '../types/defenseScoring';
 
 const adminBase = '/certification/defense-scoring';
@@ -43,4 +50,42 @@ export function listMyDefenseReports() {
 
 export function getMyDefenseReport(reportId: string) {
   return unwrap<DefenseAssessorReportDetail>(apiClient.get(`${assessorBase}/reports/${reportId}`));
+}
+
+export function getDefenseScoreSheets(reportId: string) {
+  return unwrap<DefenseScoreSheetsView>(apiClient.get(`${assessorBase}/reports/${reportId}/score-sheets`));
+}
+
+export function saveDefenseScoreSheet(
+  reportId: string,
+  sheetType: DefenseScoreSheetType,
+  payload: DefenseSaveScoreSheetReq,
+) {
+  return unwrap<DefenseScoreSheetView>(
+    apiClient.put(`${assessorBase}/reports/${reportId}/score-sheets/${sheetType}`, payload),
+  );
+}
+
+export function submitDefenseScoreSheet(
+  reportId: string,
+  sheetType: DefenseScoreSheetType,
+  payload: DefenseSubmitScoreSheetReq,
+) {
+  return unwrap<DefenseScoreSheetView>(
+    apiClient.post(`${assessorBase}/reports/${reportId}/score-sheets/${sheetType}/submit`, payload),
+  );
+}
+
+export function getDefenseProgress(taskId: string) {
+  return unwrap<DefenseProgress>(apiClient.get(`${adminBase}/tasks/${taskId}/progress`));
+}
+
+export function completeDefenseTask(taskId: string) {
+  return unwrap<DefenseCompleteResult>(apiClient.post(`${adminBase}/tasks/${taskId}/complete`));
+}
+
+export function exportDefenseSummary(taskId: string) {
+  return apiClient.get(`${adminBase}/tasks/${taskId}/summary/export`, {
+    responseType: 'blob',
+  });
 }

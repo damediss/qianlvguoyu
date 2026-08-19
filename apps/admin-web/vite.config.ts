@@ -10,6 +10,12 @@ export default defineConfig({
     target: 'esnext',
     minify: false,
   },
+  optimizeDeps: {
+    include: ['pdfjs-dist/legacy/build/pdf.mjs'],
+  },
+  worker: {
+    format: 'es',
+  },
   server: {
     port: 5173,
     host: '0.0.0.0',
