@@ -19,6 +19,7 @@ public class CertificationExamSessionEntity extends BaseEntity {
   private LocalDateTime startTime;
   private LocalDateTime endTime;
   private Long examSiteId;
+  private String examVenue;
   private String status;
   private Boolean identityCheckRequired;
   private Boolean fingerprintRequired;

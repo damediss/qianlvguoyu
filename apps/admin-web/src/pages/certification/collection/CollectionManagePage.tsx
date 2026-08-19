@@ -582,7 +582,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
     {
       title: '资料状态',
       dataIndex: 'documentStatus',
-      width: 220,
+      width: 120,
       render: (_value: string, candidate) => {
         const complete = candidate.collectionEligible === true;
         const label = complete ? '已完成' : candidate.documentStatus === 'INVALID' ? '资料异常' : '待补充';
@@ -831,7 +831,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
             dataSource={filteredCandidates}
             loading={workbenchQuery.isFetching}
             pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 名考生` }}
-            scroll={{ x: 1540 }}
+            scroll={{ x: 1440 }}
             locale={{ emptyText: <Empty description="暂无考生" /> }}
             rowSelection={{
               selectedRowKeys: selectedCandidateIds.map(String),

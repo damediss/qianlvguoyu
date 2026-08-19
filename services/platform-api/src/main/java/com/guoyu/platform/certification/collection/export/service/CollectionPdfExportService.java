@@ -8,6 +8,7 @@ import com.guoyu.platform.certification.collection.enums.SignatureRecordStatusEn
 import com.guoyu.platform.certification.collection.export.dto.CollectionExportPdfDTO;
 import com.guoyu.platform.certification.collection.export.vo.CollectionPdfExportVO;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
+import com.guoyu.platform.certification.entity.CertificationExamSessionEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskExamSiteEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskScopeEntity;
@@ -15,6 +16,7 @@ import com.guoyu.platform.certification.entity.PracticalCollectionStatusEntity;
 import com.guoyu.platform.certification.entity.PracticalFingerprintTraceEntity;
 import com.guoyu.platform.certification.entity.PracticalSignatureRecordEntity;
 import com.guoyu.platform.certification.mapper.CertificationCandidateMapper;
+import com.guoyu.platform.certification.mapper.CertificationExamSessionMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskExamSiteMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskScopeMapper;
@@ -28,6 +30,7 @@ import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.security.SecurityContext;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -50,9 +53,12 @@ import org.springframework.util.StringUtils;
 public class CollectionPdfExportService {
 
   private static final DateTimeFormatter FILE_TS_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+  private static final DateTimeFormatter SESSION_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+  private static final DateTimeFormatter SESSION_TIME_FORMAT = DateTimeFormatter.ofPattern("H:mm");
 
   private final CertificationTaskMapper taskMapper;
   private final CertificationCandidateMapper candidateMapper;
+  private final CertificationExamSessionMapper examSessionMapper;
   private final CertificationTaskExamSiteMapper taskExamSiteMapper;
   private final CertificationTaskScopeMapper taskScopeMapper;
   private final PracticalCollectionStatusMapper statusMapper;
@@ -65,6 +71,7 @@ public class CollectionPdfExportService {
   public CollectionPdfExportService(
       CertificationTaskMapper taskMapper,
       CertificationCandidateMapper candidateMapper,
+      CertificationExamSessionMapper examSessionMapper,
       CertificationTaskExamSiteMapper taskExamSiteMapper,
       CertificationTaskScopeMapper taskScopeMapper,
       PracticalCollectionStatusMapper statusMapper,
@@ -76,6 +83,7 @@ public class CollectionPdfExportService {
   ) {
     this.taskMapper = taskMapper;
     this.candidateMapper = candidateMapper;
+    this.examSessionMapper = examSessionMapper;
     this.taskExamSiteMapper = taskExamSiteMapper;
     this.taskScopeMapper = taskScopeMapper;
     this.statusMapper = statusMapper;
@@ -154,6 +162,7 @@ public class CollectionPdfExportService {
               + "名不满足打印版 PDF 生成条件：\n" + String.join("\n", errors) + "\n请补充资料后重新生成。");
     }
 
+    CertificationExamSessionEntity session = resolveExportSession(statusMap);
     CertificationTaskExamSiteEntity site = taskExamSiteMapper.selectOne(new LambdaQueryWrapper<CertificationTaskExamSiteEntity>()
         .eq(CertificationTaskExamSiteEntity::getTenantId, tenantId)
         .eq(CertificationTaskExamSiteEntity::getTaskId, request.examTaskId())
@@ -164,15 +173,11 @@ public class CollectionPdfExportService {
         .eq(CertificationTaskScopeEntity::getTaskId, request.examTaskId())
         .eq(CertificationTaskScopeEntity::getDeleted, 0)
         .orderByAsc(CertificationTaskScopeEntity::getSortOrder).last("LIMIT 1"));
-    String examDate = site != null && site.getExamDate() != null ? site.getExamDate().toString()
-        : task.getExamDate() == null ? "-" : task.getExamDate().toString();
-    String examTime = examDate + (site == null ? "" : " " + nullToEmpty(site.getStartTime())
-        + (StringUtils.hasText(site.getEndTime()) ? "-" + site.getEndTime() : ""));
+    String examSite = resolveExamVenue(session, site);
+    String examTime = resolveExamTime(task, site, session);
+    String examType = examTypeLabel(resolveExamType(session, site));
     String workType = scope == null ? "" : nullToEmpty(scope.getWorkTypeName());
     String level = scope == null ? "" : nullToEmpty(scope.getLevelName());
-    String siteName = site == null ? "" : nullToEmpty(site.getSiteName());
-    String address = site == null ? "" : nullToEmpty(site.getAddress());
-    String examSite = siteName + (StringUtils.hasText(address) ? "（" + address + "）" : "");
     if (!StringUtils.hasText(workType) || !StringUtils.hasText(level)) {
       log.debug("PDF export scope is incomplete: taskId={}, workType={}, level={}", request.examTaskId(), workType, level);
     }
@@ -180,7 +185,7 @@ public class CollectionPdfExportService {
     try {
       pdf = CollectionPdfTemplate.render(
           new CollectionPdfTemplate.PdfTask(nullToEmpty(task.getTaskName()), examTime, examSite,
-              nullToEmpty(workType) + " / " + nullToEmpty(level)),
+              nullToEmpty(workType) + " / " + nullToEmpty(level), examType),
           pdfCandidates, fontPath);
     } catch (IOException | RuntimeException ex) {
       log.error("Practical collection PDF export failed: taskId={}", request.examTaskId(), ex);
@@ -255,6 +260,117 @@ public class CollectionPdfExportService {
 
   private String safeFilename(String value) {
     return StringUtils.hasText(value) ? value.replaceAll("[\\\\/:*?\"<>|]", "_") : "任务";
+  }
+
+  private CertificationExamSessionEntity resolveExportSession(
+      Map<Long, PracticalCollectionStatusEntity> statusMap
+  ) {
+    if (examSessionMapper == null || statusMap == null || statusMap.isEmpty()) {
+      return null;
+    }
+    Long sessionId = statusMap.values().stream()
+        .map(PracticalCollectionStatusEntity::getExamSessionId)
+        .filter(Objects::nonNull)
+        .findFirst()
+        .orElse(null);
+    return sessionId == null ? null : examSessionMapper.selectById(sessionId);
+  }
+
+  private String resolveExamVenue(
+      CertificationExamSessionEntity session,
+      CertificationTaskExamSiteEntity site
+  ) {
+    if (session != null && StringUtils.hasText(session.getExamVenue())) {
+      return session.getExamVenue().trim();
+    }
+    if (site != null && StringUtils.hasText(site.getSiteName())) {
+      return site.getSiteName().trim();
+    }
+    if (site != null && StringUtils.hasText(site.getAddress())) {
+      return site.getAddress().trim();
+    }
+    return "";
+  }
+
+  private String resolveExamType(
+      CertificationExamSessionEntity session,
+      CertificationTaskExamSiteEntity site
+  ) {
+    if (session != null && StringUtils.hasText(session.getExamType())) {
+      return session.getExamType();
+    }
+    return site == null ? null : site.getExamType();
+  }
+
+  private String examTypeLabel(String examType) {
+    if (!StringUtils.hasText(examType)) {
+      return "";
+    }
+    String value = examType.trim();
+    String upper = value.toUpperCase(java.util.Locale.ROOT);
+    if ("PRACTICE".equals(upper) || "PRACTICAL".equals(upper) || "实操".equals(value)) {
+      return "实操";
+    }
+    if ("DEFENSE".equals(upper) || "答辩".equals(value)) {
+      return "答辩";
+    }
+    if ("THEORY".equals(upper) || "理论".equals(value)) {
+      return "理论";
+    }
+    return value;
+  }
+
+  private String resolveExamTime(
+      CertificationTaskEntity task,
+      CertificationTaskExamSiteEntity site,
+      CertificationExamSessionEntity session
+  ) {
+    if (session != null) {
+      return formatExamTime(session.getExamType(), session.getExamDate(),
+          session.getStartTime(), session.getEndTime(), null, null);
+    }
+    LocalDate examDate = site != null && site.getExamDate() != null
+        ? site.getExamDate()
+        : task == null ? null : task.getExamDate();
+    return formatExamTime(site == null ? null : site.getExamType(), examDate, null, null,
+        site == null ? null : site.getStartTime(), site == null ? null : site.getEndTime());
+  }
+
+  private String formatExamTime(
+      String examType,
+      LocalDate examDate,
+      LocalDateTime startTime,
+      LocalDateTime endTime,
+      String startText,
+      String endText
+  ) {
+    String typeLabel = !StringUtils.hasText(examType) ? ""
+        : "PRACTICE".equalsIgnoreCase(examType.trim()) ? "实操" : "理论";
+    String startPart = formatDateTimePart(examDate, startTime, startText);
+    LocalDate endDate = endTime != null ? endTime.toLocalDate() : examDate;
+    String endPart = formatDateTimePart(endDate, endTime, endText);
+    String range;
+    if (StringUtils.hasText(startPart) && StringUtils.hasText(endPart) && !startPart.equals(endPart)) {
+      range = startPart + "~" + endPart;
+    } else {
+      range = StringUtils.hasText(startPart) ? startPart : endPart;
+    }
+    if (StringUtils.hasText(typeLabel) && StringUtils.hasText(range)) {
+      return typeLabel + " " + range;
+    }
+    return StringUtils.hasText(typeLabel) ? typeLabel : nullToEmpty(range);
+  }
+
+  private String formatDateTimePart(LocalDate examDate, LocalDateTime dateTime, String clockText) {
+    if (dateTime != null) {
+      return dateTime.toLocalDate().format(SESSION_DATE_FORMAT) + " " + dateTime.format(SESSION_TIME_FORMAT);
+    }
+    String dateText = examDate == null ? "" : examDate.format(SESSION_DATE_FORMAT);
+    String timeText = nullToEmpty(clockText).trim();
+    if (StringUtils.hasText(dateText) && StringUtils.hasText(timeText)) {
+      return dateText + " " + timeText;
+    }
+    return StringUtils.hasText(dateText) ? dateText : timeText;
   }
 
   private String nullToEmpty(String value) {

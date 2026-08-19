@@ -72,7 +72,7 @@ public final class CollectionPdfTemplate {
             int column = slot % COLUMNS;
             float x = MARGIN + column * BLOCK_WIDTH;
             float y = GRID_TOP - (row + 1) * BLOCK_HEIGHT;
-            drawCandidateBlock(content, font, document, candidate, x, y);
+            drawCandidateBlock(content, font, document, candidate, task, x, y);
           }
         }
       }
@@ -100,6 +100,7 @@ public final class CollectionPdfTemplate {
       PDFont font,
       PDDocument document,
       PdfCandidate candidate,
+      PdfTask task,
       float x,
       float y
   ) throws IOException {
@@ -112,8 +113,8 @@ public final class CollectionPdfTemplate {
     content.lineTo(x + BLOCK_WIDTH, y + INFO_HEIGHT);
     content.stroke();
     for (int col = 1; col < 3; col++) {
-      content.moveTo(x + subWidth * col, y);
-      content.lineTo(x + subWidth * col, y + INFO_HEIGHT);
+      content.moveTo(x + subWidth * col, y + INFO_HEIGHT);
+      content.lineTo(x + subWidth * col, y + BLOCK_HEIGHT);
       content.stroke();
     }
 
@@ -139,24 +140,22 @@ public final class CollectionPdfTemplate {
     content.moveTo(x + subWidth, y);
     content.lineTo(x + subWidth, y + INFO_HEIGHT);
     content.stroke();
-    content.moveTo(x + subWidth * 2, y);
-    content.lineTo(x + subWidth * 2, y + INFO_HEIGHT);
-    content.stroke();
     if (candidate == null) {
       return;
     }
+    float valueCenterX = x + subWidth * 2f;
     drawCenteredText(content, font, safe(candidate.name()), 8f,
         x + subWidth / 2f, y + rowHeight * 2 + 7f);
-    drawCenteredText(content, font, "实操", 8f,
-        x + subWidth * 1.5f, y + rowHeight * 2 + 7f);
+    drawCenteredText(content, font, safe(task.examType()), 8f,
+        valueCenterX, y + rowHeight * 2 + 7f);
     drawCenteredText(content, font, "证件号", 7f,
         x + subWidth / 2f, y + rowHeight + 7f);
     drawCenteredText(content, font, safe(candidate.idCardNo()), 6.6f,
-        x + subWidth * 1.5f, y + rowHeight + 7f);
+        valueCenterX, y + rowHeight + 7f);
     drawCenteredText(content, font, "准考证", 7f,
         x + subWidth / 2f, y + 7f);
     drawCenteredText(content, font, safe(candidate.admissionNo()), 6.6f,
-        x + subWidth * 1.5f, y + 7f);
+        valueCenterX, y + 7f);
   }
 
   private static void drawSignatureColumn(
@@ -353,7 +352,7 @@ public final class CollectionPdfTemplate {
     return StringUtils.hasText(value) ? value.trim() : "-";
   }
 
-  public record PdfTask(String taskName, String examTime, String examSite, String workTypeLevel) {
+  public record PdfTask(String taskName, String examTime, String examSite, String workTypeLevel, String examType) {
   }
 
   public record PdfCandidate(

@@ -38,7 +38,7 @@ class CollectionPdfTemplateTest {
     }
     byte[] output = CollectionPdfTemplate.render(
         new CollectionPdfTemplate.PdfTask("PDF 固定版式测试任务", "2026-07-14 09:00-11:00", "一号考场（测试地址）",
-            "铝电解工 / 三级"),
+            "铝电解工 / 三级", "理论"),
         candidates,
         "");
     Path outputPath = Path.of("outputs/practical-collection-qa/generated-collection-form-test.pdf");
@@ -53,6 +53,9 @@ class CollectionPdfTemplateTest {
           org.assertj.core.data.Offset.offset(0.01f));
       String text = new PDFTextStripper().getText(document);
       assertThat(text).contains("PDF 固定版式测试任务", "考生01", "考生10", "暂无采集图片");
+      assertThat(text).contains("考场地址：一号考场（测试地址）");
+      assertThat(text).contains("考试时间：2026-07-14 09:00-11:00");
+      assertThat(text).contains("理论");
     }
   }
 

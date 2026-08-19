@@ -121,6 +121,7 @@ export interface CertificationExamSession {
   startTime?: string;
   endTime?: string;
   examSiteId?: string;
+  examVenue?: string;
   status: CertificationExamSessionStatus;
   identityCheckRequired: boolean;
   fingerprintRequired: boolean;
@@ -149,6 +150,7 @@ export interface CertificationExamSessionPayload {
   startTime?: string;
   endTime?: string;
   examSiteId?: string;
+  examVenue?: string;
   status?: CertificationExamSessionStatus;
   identityCheckRequired: boolean;
   fingerprintRequired: boolean;

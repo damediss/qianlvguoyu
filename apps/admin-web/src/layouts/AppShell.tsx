@@ -266,12 +266,29 @@ export function AppShell({
     }
   };
 
+  const handleOpenDefense = async () => {
+    try {
+      await logout();
+    } catch {
+      // 切换入口时仍强制清理旧登录态，避免管理账号误入阅卷端
+    } finally {
+      clearAuth();
+      window.location.assign('/assessor-defense');
+    }
+  };
+
   const userDropdownItems = [
     {
       key: 'assessor',
       icon: <Icons.TabletOutlined />,
       label: '平板考评端',
       onClick: handleOpenAssessor,
+    },
+    {
+      key: 'defense',
+      icon: <Icons.MobileOutlined />,
+      label: '考评员阅卷端',
+      onClick: handleOpenDefense,
     },
     {
       key: 'logout',

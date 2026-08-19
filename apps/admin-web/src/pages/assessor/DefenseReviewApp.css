@@ -1,0 +1,121 @@
+body.defense-review-portrait {
+  min-width: 0 !important;
+  background: #0f172a;
+}
+
+.defense-phone-shell {
+  display: flex;
+  flex-direction: column;
+  width: min(480px, 100vw);
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: #eef3f8;
+  color: #172033;
+}
+
+.defense-phone-header {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px calc(14px + env(safe-area-inset-top));
+  padding-top: calc(14px + env(safe-area-inset-top));
+  border-bottom: 1px solid #dbe4ee;
+  background: rgba(255, 255, 255, 0.97);
+}
+
+.defense-phone-header h4.ant-typography {
+  margin: 0;
+}
+
+.defense-phone-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.defense-phone-list,
+.defense-phone-reader {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 12px calc(16px + env(safe-area-inset-bottom));
+}
+
+.defense-phone-card {
+  padding: 16px !important;
+  margin-bottom: 10px;
+  border: 1px solid #dbe4ee !important;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.defense-phone-card h5.ant-typography {
+  margin: 0 0 4px;
+}
+
+.defense-phone-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.defense-phone-back {
+  height: 44px;
+  margin-bottom: 10px;
+}
+
+.defense-phone-candidate {
+  margin-bottom: 12px;
+}
+
+.defense-phone-candidate h3.ant-typography {
+  margin: 0 0 4px;
+}
+
+.defense-pdf-wrap {
+  display: flex;
+  flex: 1;
+  min-height: calc(100dvh - 220px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #dbe4ee;
+  border-radius: 16px;
+  background: #525659;
+}
+
+.defense-pdf-wrap iframe {
+  width: 100%;
+  min-height: 62vh;
+  flex: 1;
+  border: 0;
+  background: #525659;
+}
+
+.defense-pdf-open {
+  height: 48px;
+  border-radius: 0;
+}
+
+.defense-phone-spin {
+  display: block;
+  margin: 48px auto;
+}
+
+@media (orientation: landscape) {
+  .defense-phone-shell::after {
+    position: fixed;
+    z-index: 40;
+    right: 12px;
+    bottom: 12px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.85);
+    color: #fff;
+    font-size: 12px;
+    content: '请竖屏阅览业绩评估报告';
+    pointer-events: none;
+  }
+}

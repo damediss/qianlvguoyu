@@ -70,6 +70,7 @@ import { TrainExamListPage } from './pages/training/TrainExamListPage';
 import { StatsOverviewPage } from './pages/exam/reviewSyncStats/StatsOverviewPage';
 import { StudentDetailPage } from './pages/exam/reviewSyncStats/StudentDetailPage';
 import { TabletAssessorApp } from './pages/assessor/TabletAssessorApp';
+import { DefenseReviewApp } from './pages/assessor/DefenseReviewApp';
 import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
 import { CompetitionEventManagementPage } from './pages/competition/CompetitionEventManagementPage';
 import { CompetitionEventModulePage, type CompetitionEventModule } from './pages/competition/CompetitionEventModulePage';
@@ -622,6 +623,7 @@ function ReviewSyncStatsShell({ pathname }: { pathname: string }) {
 function App() {
   const pathname = useBrowserPathname();
   const assessorMode = pathname.startsWith('/assessor-scoring');
+  const defenseMode = pathname.startsWith('/assessor-defense');
   const practicalCollectionMode = pathname.startsWith('/practical-collection');
   const collectionManageTaskId = pathname.match(/^\/certification\/practical-collection\/([^/]+)\/manage\/?$/)?.[1];
   const collectionManageMode = Boolean(collectionManageTaskId);
@@ -630,9 +632,11 @@ function App() {
 
   return (
     <NavigationBlockerProvider>
-      <AuthGate mode={assessorMode ? 'assessor' : practicalCollectionMode ? 'collection' : 'admin'}>
+      <AuthGate mode={assessorMode ? 'assessor' : defenseMode ? 'defense' : practicalCollectionMode ? 'collection' : 'admin'}>
         {assessorMode ? (
           <TabletAssessorApp />
+        ) : defenseMode ? (
+          <DefenseReviewApp />
         ) : practicalCollectionMode ? (
           <PracticalCollectionApp />
         ) : collectionManageMode ? (

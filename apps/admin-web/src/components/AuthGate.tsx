@@ -10,12 +10,16 @@ import { SliderCaptcha } from './SliderCaptcha';
 
 const ASSESSOR_ROLE = 'CERTIFICATION_ASSESSOR';
 const ASSESSOR_PERMISSION = 'certification.practical.score';
+const DEFENSE_REVIEW_PERMISSION = 'certification.defense.review';
 const COLLECTION_OPERATE_PERMISSION = 'certification.practical.collection.operate';
 
 function isAssessorAccount(user?: CurrentUserVO) {
   return Boolean(
     user?.roles?.includes(ASSESSOR_ROLE)
-    && user?.permissions?.includes(ASSESSOR_PERMISSION),
+    && (
+      user?.permissions?.includes(ASSESSOR_PERMISSION)
+      || user?.permissions?.includes(DEFENSE_REVIEW_PERMISSION)
+    ),
   );
 }
 
@@ -25,7 +29,7 @@ function isCollectionOperator(user?: CurrentUserVO) {
 
 interface AuthGateProps {
   children: ReactNode;
-  mode?: 'admin' | 'assessor' | 'collection';
+  mode?: 'admin' | 'assessor' | 'collection' | 'defense';
 }
 
 export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
@@ -70,8 +74,8 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
       setToken(data.accessToken);
       setTenantId(data.tenantId);
       setCurrentUser(data.user);
-      if (mode === 'assessor' && !isAssessorAccount(data.user)) {
-        message.error('当前账号无平板考评端权限');
+      if ((mode === 'assessor' || mode === 'defense') && !isAssessorAccount(data.user)) {
+        message.error(mode === 'defense' ? '当前账号无考评员阅卷端权限' : '当前账号无平板考评端权限');
         clearAuth();
         return;
       }
@@ -102,8 +106,8 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
   const resolvedUser = currentUser || userQuery.data;
 
   useEffect(() => {
-    if (mode === 'assessor' && resolvedUser && !isAssessorAccount(resolvedUser)) {
-      message.error('当前账号无平板考评端权限');
+    if ((mode === 'assessor' || mode === 'defense') && resolvedUser && !isAssessorAccount(resolvedUser)) {
+      message.error(mode === 'defense' ? '当前账号无考评员阅卷端权限' : '当前账号无平板考评端权限');
       clearAuth();
       return;
     }
@@ -117,8 +121,8 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
   // or by /api/auth/me on page refresh). This avoids blocking the UI on the
   // /api/auth/me round-trip after a fresh login.
   if (resolvedUser) {
-    if (mode === 'assessor' && !isAssessorAccount(resolvedUser)) {
-      return <div className="boot-screen">正在校验平板考评端权限...</div>;
+    if ((mode === 'assessor' || mode === 'defense') && !isAssessorAccount(resolvedUser)) {
+      return <div className="boot-screen">正在校验考评员权限...</div>;
     }
     if (mode === 'collection' && !isCollectionOperator(resolvedUser)) {
       return <div className="boot-screen">正在校验平板信息采集端权限...</div>;
@@ -132,7 +136,7 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
 
   return (
     <div className="login-screen">
-      <div className="login-panel">
+      <div className={`login-panel${mode === 'defense' ? ' login-panel-phone' : ''}`}>
         <div className="login-title-row">
           <div className="login-mark">千铝</div>
           <div>
@@ -140,9 +144,11 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
             <Typography.Text>
               {mode === 'assessor'
                 ? '平板考评端登录'
-                : mode === 'collection'
-                  ? '平板信息采集端登录'
-                  : '管理端登录'}
+                : mode === 'defense'
+                  ? '考评员阅卷端登录'
+                  : mode === 'collection'
+                    ? '平板信息采集端登录'
+                    : '管理端登录'}
             </Typography.Text>
           </div>
         </div>
