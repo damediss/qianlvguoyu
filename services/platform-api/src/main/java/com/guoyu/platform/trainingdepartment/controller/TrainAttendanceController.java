@@ -77,7 +77,7 @@ public class TrainAttendanceController {
   }
 
   /**
-   * 导入考勤信息列表 Excel（.xls/.xlsx），按身份证匹配本班学员并写入/更新按日考勤。
+   * 导入考勤信息列表 Excel（.xls/.xlsx），按身份证匹配本班学员；有时段则按课次行落库。
    */
   @PostMapping("/classes/{classId}/attendances/import")
   @PreAuthorize("hasAuthority('train:attendance:create')")

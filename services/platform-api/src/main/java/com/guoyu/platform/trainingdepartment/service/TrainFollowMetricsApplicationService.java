@@ -62,6 +62,7 @@ public class TrainFollowMetricsApplicationService {
   private final TrainFollowIssueMapper issueMapper;
   private final TrainInfoClassMapper classMapper;
   private final TrainPeopleListMapper peopleListMapper;
+  private final TrainFollowClassHourApplicationService classHourService;
   private final ObjectMapper objectMapper;
 
   public TrainFollowMetricsApplicationService(
@@ -78,6 +79,7 @@ public class TrainFollowMetricsApplicationService {
       TrainFollowIssueMapper issueMapper,
       TrainInfoClassMapper classMapper,
       TrainPeopleListMapper peopleListMapper,
+      TrainFollowClassHourApplicationService classHourService,
       ObjectMapper objectMapper) {
     this.taskService = taskService;
     this.evidenceService = evidenceService;
@@ -92,6 +94,7 @@ public class TrainFollowMetricsApplicationService {
     this.issueMapper = issueMapper;
     this.classMapper = classMapper;
     this.peopleListMapper = peopleListMapper;
+    this.classHourService = classHourService;
     this.objectMapper = objectMapper;
   }
 
@@ -138,6 +141,7 @@ public class TrainFollowMetricsApplicationService {
     result.put("criticalIssueCount", criticalIssueCount);
 
     appendSubsidyPack(result, classId, tenantId);
+    classHourService.appendMetrics(result, classId, tenantId);
     result.put("alerts", buildAlerts(
         attendanceCumulativeRate,
         homeworkCompletionRate,

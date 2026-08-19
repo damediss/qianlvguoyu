@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -8,6 +8,7 @@ import {
   Empty,
   Form,
   Input,
+  InputNumber,
   Modal,
   Popconfirm,
   Progress,
@@ -80,6 +81,93 @@ function toNumId(id: ApiId): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function formatClassHours(value?: number | string | null): string {
+  if (value == null || value === '') return '—';
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return '—';
+  return n.toFixed(1);
+}
+
+/** 师资库下拉：可搜索、可选手动输入姓名（antd Select 搜索不自动提交，用 onSearch/onBlur 提交）。 */
+function TeacherBankSelect({ value, onChange }: { value?: string; onChange?: (v?: string) => void }) {
+  const [searchText, setSearchText] = useState('');
+  const deferredKeyword = useDeferredValue(searchText.trim());
+
+  const { data, isFetching } = useQuery({
+    queryKey: ['teacher-banks-pick', deferredKeyword],
+    queryFn: () =>
+      trainApi.pageTeacherBanks({
+        page: 1,
+        pageSize: 50,
+        keyword: deferredKeyword || undefined,
+      }),
+  });
+
+  const bankOptions = useMemo(() => {
+    const items = data?.items ?? [];
+    const seen = new Set<string>();
+    const opts: { value: string; label: string }[] = [];
+    for (const t of items) {
+      const name = String(t.name ?? '').trim();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      opts.push({
+        value: name,
+        label: t.phone ? `${name} · ${t.phone}` : name,
+      });
+    }
+    return opts;
+  }, [data?.items]);
+
+  const options = useMemo(() => {
+    const all = [...bankOptions];
+    const current = String(value ?? '').trim();
+    if (current && !all.some((o) => o.value === current)) {
+      all.unshift({ value: current, label: current });
+    }
+    const typed = searchText.trim();
+    if (typed && !all.some((o) => o.value === typed)) {
+      all.unshift({ value: typed, label: `${typed}（手动输入）` });
+    }
+    return all;
+  }, [bankOptions, value, searchText]);
+
+  const commit = (raw?: string) => {
+    const next = raw?.trim() || undefined;
+    if (next !== value) onChange?.(next);
+  };
+
+  return (
+    <Select
+      showSearch
+      allowClear
+      placeholder="从师资库选择或手动输入"
+      loading={isFetching}
+      value={value || undefined}
+      searchValue={searchText}
+      options={options}
+      filterOption={false}
+      notFoundContent={isFetching ? '加载中…' : '无匹配，回车或失焦可手动录入'}
+      onSearch={setSearchText}
+      onChange={(v) => {
+        setSearchText('');
+        commit(v as string | undefined);
+      }}
+      onBlur={() => {
+        if (searchText.trim() && searchText.trim() !== value) commit(searchText);
+      }}
+      onInputKeyDown={(e) => {
+        if (e.key === 'Enter' && searchText.trim() && searchText.trim() !== value) {
+          e.preventDefault();
+          commit(searchText);
+          setSearchText('');
+        }
+      }}
+      style={{ width: '100%' }}
+    />
+  );
+}
+
 type Props = {
   classItem: TrainInfoClassListItem;
   onBack: () => void;
@@ -102,6 +190,16 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [editingScheduleKey, setEditingScheduleKey] = useState<string | null>(null);
   const [scheduleForm] = Form.useForm();
+  /** 课程表 Tab：课表列表 | 教师上课时长 */
+  const [schedulePanel, setSchedulePanel] = useState<'list' | 'teacherHours'>('list');
+  /** 本班课酬编辑草稿：key = teacherName|teachForm */
+  const [teacherPayDraft, setTeacherPayDraft] = useState<
+    Record<string, { ratePerDay?: number | null }>
+  >({});
+  const teacherPayDraftRef = useRef(teacherPayDraft);
+  teacherPayDraftRef.current = teacherPayDraft;
+  const teacherPaySaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const teacherPaySavingRef = useRef(false);
 
   const dateStr = bizDate ? bizDate.format('YYYY-MM-DD') : '';
   const hasBizDate = Boolean(dateStr);
@@ -214,18 +312,22 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   };
 
   const saveScheduleMu = useMutation({
-    mutationFn: () => {
+    mutationFn: (items?: ScheduleDraftItem[]) => {
       if (classIdNum == null) return Promise.reject(new Error('无效班级'));
-      const items = scheduleDraft.map(({ _key, ...rest }) => {
+      const source = items ?? scheduleDraft;
+      const payload = source.map(({ _key, ...rest }) => {
         void _key;
         return rest;
       });
-      return trainApi.saveClassSchedule(classIdNum, items);
+      return trainApi.saveClassSchedule(classIdNum, payload);
     },
     onSuccess: () => {
       message.success('课表已保存');
       setScheduleDirty(false);
       queryClient.invalidateQueries({ queryKey: ['follow-schedule', classIdNum] });
+      queryClient.invalidateQueries({ queryKey: ['follow-class-hours', classIdNum] });
+      queryClient.invalidateQueries({ queryKey: ['follow-teacher-days', classIdNum] });
+      queryClient.invalidateQueries({ queryKey: ['follow-quality-metrics', classIdNum] });
       void refetchScheduleStatus();
     },
     onError: (e: Error) => message.error(e.message || '保存课表失败'),
@@ -248,6 +350,9 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       }
       setScheduleDirty(false);
       queryClient.invalidateQueries({ queryKey: ['follow-schedule', classIdNum] });
+      queryClient.invalidateQueries({ queryKey: ['follow-class-hours', classIdNum] });
+      queryClient.invalidateQueries({ queryKey: ['follow-teacher-days', classIdNum] });
+      queryClient.invalidateQueries({ queryKey: ['follow-quality-metrics', classIdNum] });
       void refetchScheduleStatus();
     },
     onError: (e: Error) => message.error(e.message || '导入开班课表失败'),
@@ -347,19 +452,20 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       endTime,
       status: 0,
     };
-    setScheduleDraft((prev) => {
-      if (editingScheduleKey) {
-        return prev.map((x) => (x._key === editingScheduleKey ? next : x));
-      }
-      return [...prev, next];
-    });
+    const nextDraft = editingScheduleKey
+      ? scheduleDraft.map((x) => (x._key === editingScheduleKey ? next : x))
+      : [...scheduleDraft, next];
+    setScheduleDraft(nextDraft);
     setScheduleDirty(true);
     setScheduleModalOpen(false);
+    await saveScheduleMu.mutateAsync(nextDraft);
   };
 
-  const removeScheduleRow = (key: string) => {
-    setScheduleDraft((prev) => prev.filter((x) => x._key !== key));
+  const removeScheduleRow = async (key: string) => {
+    const nextDraft = scheduleDraft.filter((x) => x._key !== key);
+    setScheduleDraft(nextDraft);
     setScheduleDirty(true);
+    await saveScheduleMu.mutateAsync(nextDraft);
   };
 
   const { data: studentsData, isLoading: studentsLoading } = useQuery({
@@ -434,6 +540,121 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
     enabled: classIdNum != null && classIdNum > 0,
     retry: false,
   });
+
+  const { data: classHoursData, isLoading: classHoursLoading } = useQuery({
+    queryKey: ['follow-class-hours', classIdNum],
+    queryFn: () => trainApi.getFollowClassHours(classIdNum!),
+    enabled: classIdNum != null && classIdNum > 0,
+    retry: false,
+  });
+
+  const { data: teacherDaysData, isLoading: teacherDaysLoading } = useQuery({
+    queryKey: ['follow-teacher-days', classIdNum],
+    queryFn: () => trainApi.getFollowTeacherDays(classIdNum!),
+    enabled: classIdNum != null && classIdNum > 0 && schedulePanel === 'teacherHours',
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (teacherPaySavingRef.current) return;
+    const next: Record<string, { ratePerDay?: number | null }> = {};
+    for (const row of teacherDaysData?.teachers ?? []) {
+      const key = `${row.teacherName}|${row.teachForm ?? '未填'}`;
+      next[key] = { ratePerDay: row.ratePerDay ?? null };
+    }
+    setTeacherPayDraft(next);
+  }, [teacherDaysData]);
+
+  const teacherPayDisplaySum = useMemo(() => {
+    let sum = 0;
+    let any = false;
+    for (const row of teacherDaysData?.teachers ?? []) {
+      const key = `${row.teacherName}|${row.teachForm ?? '未填'}`;
+      const draft = teacherPayDraft[key];
+      const rate = draft?.ratePerDay ?? row.ratePerDay;
+      const days = row.taughtDays;
+      if (rate != null && days != null) {
+        sum += Math.round(Number(rate) * Number(days));
+        any = true;
+      }
+    }
+    return any ? sum : null;
+  }, [teacherDaysData, teacherPayDraft]);
+
+  const saveTeacherPayMu = useMutation({
+    mutationFn: (items: Array<{
+      teacherName: string;
+      teachForm?: string;
+      ratePerDay?: number | null;
+    }>) => trainApi.saveFollowTeacherPay(classIdNum!, items),
+    onSuccess: (data) => {
+      teacherPaySavingRef.current = false;
+      queryClient.setQueryData(['follow-teacher-days', classIdNum], data);
+      message.success('课酬已保存', 1);
+    },
+    onError: (e: Error) => {
+      teacherPaySavingRef.current = false;
+      message.error(e.message || '保存课酬失败');
+    },
+  });
+
+  const buildTeacherPayItems = (
+    draft: Record<string, { ratePerDay?: number | null }>,
+  ) =>
+    (teacherDaysData?.teachers ?? []).map((row) => {
+      const key = `${row.teacherName}|${row.teachForm ?? '未填'}`;
+      return {
+        teacherName: row.teacherName,
+        teachForm: row.teachForm ?? '未填',
+        ratePerDay: (draft[key] ?? {}).ratePerDay ?? null,
+      };
+    });
+
+  const flushSaveTeacherPay = (draft?: Record<string, { ratePerDay?: number | null }>) => {
+    if (teacherPaySaveTimerRef.current) {
+      clearTimeout(teacherPaySaveTimerRef.current);
+      teacherPaySaveTimerRef.current = null;
+    }
+    if (classIdNum == null || classIdNum <= 0) return;
+    const items = buildTeacherPayItems(draft ?? teacherPayDraftRef.current);
+    if (items.length === 0) return;
+    teacherPaySavingRef.current = true;
+    saveTeacherPayMu.mutate(items);
+  };
+
+  const scheduleSaveTeacherPay = (draft: Record<string, { ratePerDay?: number | null }>) => {
+    teacherPayDraftRef.current = draft;
+    if (teacherPaySaveTimerRef.current) {
+      clearTimeout(teacherPaySaveTimerRef.current);
+    }
+    teacherPaySaveTimerRef.current = setTimeout(() => {
+      teacherPaySaveTimerRef.current = null;
+      flushSaveTeacherPay(draft);
+    }, 600);
+  };
+
+  useEffect(
+    () => () => {
+      if (teacherPaySaveTimerRef.current) {
+        clearTimeout(teacherPaySaveTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const exportTeacherDaysMu = useMutation({
+    mutationFn: () => trainApi.exportFollowTeacherDays(classIdNum!),
+    onSuccess: () => message.success('已开始下载'),
+    onError: (e: Error) => message.error(e.message || '导出失败'),
+  });
+
+  const hoursByPeopleId = useMemo(() => {
+    const map = new Map<string, trainApi.FollowStudentClassHours>();
+    for (const row of classHoursData?.students ?? []) {
+      if (row.peopleId != null) map.set(String(row.peopleId), row);
+    }
+    return map;
+  }, [classHoursData?.students]);
 
   const attendanceMap = useMemo(() => {
     const map = new Map<string, trainApi.TrainAttendanceItem>();
@@ -610,6 +831,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       queryClient.invalidateQueries({ queryKey: ['follow-attendance-all', classIdNum] });
       queryClient.invalidateQueries({ queryKey: ['follow-student-attendance-detail'] });
       queryClient.invalidateQueries({ queryKey: ['follow-quality-metrics', classIdNum] });
+      queryClient.invalidateQueries({ queryKey: ['follow-class-hours', classIdNum] });
     },
     onError: (e: Error) => message.error(e.message || '考勤操作失败（请确认账号具备 train:attendance 权限）'),
   });
@@ -647,6 +869,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       queryClient.invalidateQueries({ queryKey: ['follow-attendance-all', classIdNum] });
       queryClient.invalidateQueries({ queryKey: ['follow-student-attendance-detail'] });
       queryClient.invalidateQueries({ queryKey: ['follow-quality-metrics', classIdNum] });
+      queryClient.invalidateQueries({ queryKey: ['follow-class-hours', classIdNum] });
     },
     onError: (e: Error) => message.error(e.message || '考勤操作失败'),
   });
@@ -661,6 +884,8 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       queryClient.invalidateQueries({ queryKey: ['follow-attendance', classIdNum] });
       queryClient.invalidateQueries({ queryKey: ['follow-attendance-all', classIdNum] });
       queryClient.invalidateQueries({ queryKey: ['follow-student-attendance-detail'] });
+      queryClient.invalidateQueries({ queryKey: ['follow-class-hours', classIdNum] });
+      queryClient.invalidateQueries({ queryKey: ['follow-quality-metrics', classIdNum] });
       const ok = (result.created ?? 0) + (result.updated ?? 0);
       if (ok > 0) {
         message.success(`导入完成：新增 ${result.created}，更新 ${result.updated}`);
@@ -696,6 +921,24 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       render: (_, row) => attendanceMap.get(String(row.id))?.checkInTime || '—',
     },
     {
+      title: '已上课时',
+      width: 100,
+      render: (_, row) => {
+        const hours = hoursByPeopleId.get(String(row.id));
+        if (!hours || hours.attendedHours == null) return '—';
+        return formatClassHours(hours.attendedHours);
+      },
+    },
+    {
+      title: '完成率',
+      width: 90,
+      render: (_, row) => {
+        const hours = hoursByPeopleId.get(String(row.id));
+        if (!hours || hours.completionRate == null) return '—';
+        return `${Number(hours.completionRate).toFixed(1)}%`;
+      },
+    },
+    {
       title: '操作',
       width: 220,
       fixed: 'right',
@@ -719,9 +962,9 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const staffList = classRoles.filter((r) => r.roleCode === 'follow_staff');
   const chargeList = classRoles.filter((r) => r.roleCode === 'head_teacher');
 
-  const workLogCountQuery = useQuery({
-    queryKey: ['follow-work-logs', classIdNum, 'overview-count'],
-    queryFn: () => trainApi.listFollowWorkLogs(classIdNum!),
+  const followLogCountQuery = useQuery({
+    queryKey: ['follow-op-logs', classIdNum, 'overview-count'],
+    queryFn: () => trainApi.listFollowOpLogs(classIdNum!),
     enabled: classIdNum != null && classIdNum > 0,
   });
 
@@ -769,7 +1012,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                 { value: 'day', label: scheduleItems.length ? '按日（无指定课次）' : '按日跟班（当日无排课）' },
                 ...scheduleItems.map((s, idx) => ({
                   value: String(s.id ?? `s-${idx}`),
-                  label: `${String(s.courseName || '课程')} ${String(s.startTime || '')}-${String(s.endTime || '')}`,
+                  label: `${String(s.startTime || '—')}-${String(s.endTime || '—')}`,
                 })),
               ]}
             />
@@ -824,12 +1067,22 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     </Card>
                   </Col>
                   <Col xs={12} sm={8} md={4}>
-                    <Card size="small">
-                      <Statistic title="当日未登记" value={dayStats.unregistered} />
-                    </Card>
+                    <Card size="small"><Statistic title="当日未登记" value={dayStats.unregistered} /></Card>
                   </Col>
                   <Col xs={12} sm={8} md={4}>
-                    <Card size="small"><Statistic title="跟班日志" value={workLogCountQuery.data?.length ?? 0} prefix={<HistoryOutlined />} /></Card>
+                    <Card
+                      size="small"
+                      hoverable
+                      onClick={() => setActiveTab('logs')}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <Statistic
+                        title="跟班日志"
+                        value={followLogCountQuery.data?.length ?? 0}
+                        prefix={<HistoryOutlined />}
+                        loading={followLogCountQuery.isLoading}
+                      />
+                    </Card>
                   </Col>
                 </Row>
 
@@ -994,8 +1247,8 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                         </Col>
                         <Col xs={12} sm={8} md={4}>
                           <Statistic
-                            title="学时合计"
-                            value={scheduleStats.totalHours}
+                            title="计划学时"
+                            value={formatClassHours(classHoursData?.plannedHours ?? scheduleStats.totalHours)}
                             suffix="课时"
                           />
                         </Col>
@@ -1020,13 +1273,21 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                           {scheduleStats.practiceCount > 0 ? (
                             <Tag color="green">实操 {scheduleStats.practiceCount} 节</Tag>
                           ) : null}
-                          {scheduleStats.hoursKnown < scheduleStats.sessionCount ? (
+                          {(classHoursData?.unconvertibleSessions ?? 0) > 0 ? (
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              有 {classHoursData?.unconvertibleSessions} 节无法折算（无时间也无学时），不计入计划/已上课时
+                            </Typography.Text>
+                          ) : scheduleStats.hoursKnown < scheduleStats.sessionCount ? (
                             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                               {scheduleStats.hoursKnown === 0
-                                ? '学时未录入，合计为 0；可重导开班课表或手工补全'
-                                : `有 ${scheduleStats.sessionCount - scheduleStats.hoursKnown} 节未填学时`}
+                                ? '部分课次未填学时；有起止时间的已按 45 分钟折算计划学时'
+                                : `有 ${scheduleStats.sessionCount - scheduleStats.hoursKnown} 节未填学时，有时间的已按 45 分钟折算`}
                             </Typography.Text>
-                          ) : null}
+                          ) : (
+                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                              计划学时按课表起止时间 ÷ 45 分钟；无时间则用课表学时
+                            </Typography.Text>
+                          )}
                           {scheduleDirty ? <Tag color="warning">未保存</Tag> : null}
                           {scheduleManualEdited ? <Tag>已调课</Tag> : null}
                         </Space>
@@ -1299,8 +1560,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     </Button>
                   </Upload>
                   <Typography.Text type="secondary">
-                    支持人社/培训平台「考勤信息列表」.xls/.xlsx；按身份证匹配本班学员，同日多课次合并为「按日」记录（schedule 空）。
-                    顶部选择具体课次后，出勤/缺勤写入该课次。
+                    支持人社/培训平台「考勤信息列表」.xls/.xlsx；按身份证匹配本班学员，有上课/下课时间时按课次行写入（匹配课表，必要时自动补建课次），并按「是否旷课」计课时。无时段时仍合并为按日记录。
                   </Typography.Text>
                 </Space>
                 <Table
@@ -1315,7 +1575,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     onChange: setStudentPage,
                     showTotal: (t) => `共 ${t} 人`,
                   }}
-                  scroll={{ x: 720 }}
+                  scroll={{ x: 920 }}
                   locale={{ emptyText: '暂无学员，请先在开班准备维护名单' }}
                 />
               </div>
@@ -1328,10 +1588,60 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
               <div>
                 <Card
                   size="small"
-                  title="班级课程表"
+                  title={
+                    <Space size="middle" wrap>
+                      <Button
+                        type="link"
+                        style={{
+                          padding: 0,
+                          height: 'auto',
+                          fontWeight: schedulePanel === 'list' ? 600 : 400,
+                          color: schedulePanel === 'list' ? undefined : 'rgba(0,0,0,0.45)',
+                        }}
+                        onClick={() => setSchedulePanel('list')}
+                      >
+                        班级课程表
+                      </Button>
+                      <Button
+                        type="link"
+                        style={{
+                          padding: 0,
+                          height: 'auto',
+                          fontWeight: schedulePanel === 'teacherHours' ? 600 : 400,
+                          color: schedulePanel === 'teacherHours' ? undefined : 'rgba(0,0,0,0.65)',
+                        }}
+                        onClick={() => setSchedulePanel('teacherHours')}
+                      >
+                        教师上课时长
+                      </Button>
+                    </Space>
+                  }
                   style={{ marginBottom: 16 }}
-                  loading={scheduleLoading || importKcbiaoMu.isPending || saveScheduleMu.isPending}
+                  loading={
+                    schedulePanel === 'list'
+                      ? scheduleLoading || importKcbiaoMu.isPending || saveScheduleMu.isPending
+                      : false
+                  }
                   extra={
+                    schedulePanel === 'teacherHours' ? (
+                      <Space wrap size="small">
+                        <Button
+                          size="small"
+                          icon={<ExportOutlined />}
+                          loading={exportTeacherDaysMu.isPending}
+                          disabled={(teacherDaysData?.teachers?.length ?? 0) === 0}
+                          onClick={() => exportTeacherDaysMu.mutate()}
+                        >
+                          导出课酬表
+                        </Button>
+                        {saveTeacherPayMu.isPending ? (
+                          <Typography.Text type="secondary">保存中…</Typography.Text>
+                        ) : null}
+                        <Button size="small" onClick={() => setSchedulePanel('list')}>
+                          返回课表
+                        </Button>
+                      </Space>
+                    ) : (
                     <Space wrap size="small">
                       <Typography.Text type="secondary">
                         共 {scheduleList.length} 节
@@ -1377,8 +1687,179 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                         保存课表
                       </Button>
                     </Space>
+                    )
                   }
                 >
+                  {schedulePanel === 'teacherHours' ? (
+                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                      <Alert
+                        type="info"
+                        showIcon
+                        message="天数按本班课表现算（1 课次 = 0.5 天，同日最多 2 节）；课酬为本班单价，修改后自动保存；合计 = 已上天数 × 单价（四舍五入到元）。按老师×授课形式分行。"
+                      />
+                      <Row gutter={[12, 12]}>
+                        <Col xs={12} sm={8} md={4}>
+                          <Statistic
+                            title="已上天数合计"
+                            value={teacherDaysData?.taughtDaysSum ?? '—'}
+                            suffix="天"
+                            loading={teacherDaysLoading}
+                          />
+                        </Col>
+                        <Col xs={12} sm={8} md={4}>
+                          <Statistic
+                            title="计划天数合计"
+                            value={teacherDaysData?.plannedDaysSum ?? '—'}
+                            suffix="天"
+                            loading={teacherDaysLoading}
+                          />
+                        </Col>
+                        <Col xs={12} sm={8} md={4}>
+                          <Statistic
+                            title="课酬合计"
+                            value={teacherPayDisplaySum ?? '—'}
+                            suffix="元"
+                            loading={teacherDaysLoading}
+                          />
+                        </Col>
+                        <Col xs={12} sm={8} md={4}>
+                          <Statistic
+                            title="未指派老师课次"
+                            value={teacherDaysData?.unassignedSessionCount ?? 0}
+                            loading={teacherDaysLoading}
+                          />
+                        </Col>
+                        <Col xs={12} sm={8} md={4}>
+                          <Statistic
+                            title="超限课次"
+                            value={teacherDaysData?.overflowSessionCount ?? 0}
+                            valueStyle={
+                              (teacherDaysData?.overflowSessionCount ?? 0) > 0
+                                ? { color: '#d48806' }
+                                : undefined
+                            }
+                            loading={teacherDaysLoading}
+                          />
+                        </Col>
+                      </Row>
+                      {(teacherDaysData?.teachers?.length ?? 0) === 0 && !teacherDaysLoading ? (
+                        <Empty
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          description="本班课次尚未指派老师，请回课表补充「老师」"
+                        >
+                          <Button type="primary" onClick={() => setSchedulePanel('list')}>
+                            返回课表
+                          </Button>
+                        </Empty>
+                      ) : (
+                        <Table
+                          size="small"
+                          rowKey={(r) => `${r.teacherName}|${r.teachForm ?? '未填'}`}
+                          loading={teacherDaysLoading}
+                          pagination={false}
+                          dataSource={teacherDaysData?.teachers ?? []}
+                          columns={[
+                            { title: '授课老师', dataIndex: 'teacherName', ellipsis: true, width: 120 },
+                            {
+                              title: '授课形式',
+                              dataIndex: 'teachForm',
+                              width: 88,
+                              render: (v?: string) => v || '未填',
+                            },
+                            {
+                              title: '已上课次',
+                              dataIndex: 'taughtSessionCount',
+                              width: 96,
+                              align: 'right',
+                            },
+                            {
+                              title: '已上天数',
+                              dataIndex: 'taughtDays',
+                              width: 96,
+                              align: 'right',
+                              render: (v?: number | null) =>
+                                v == null ? '—' : Number(v).toFixed(1),
+                            },
+                            {
+                              title: '计划课次',
+                              dataIndex: 'plannedSessionCount',
+                              width: 96,
+                              align: 'right',
+                            },
+                            {
+                              title: '计划天数',
+                              dataIndex: 'plannedDays',
+                              width: 96,
+                              align: 'right',
+                              render: (v?: number | null) =>
+                                v == null ? '—' : Number(v).toFixed(1),
+                            },
+                            {
+                              title: '超限',
+                              dataIndex: 'overflowSessionCount',
+                              width: 72,
+                              align: 'right',
+                              render: (v?: number) =>
+                                (v ?? 0) > 0 ? <Tag color="warning">{v}</Tag> : '—',
+                            },
+                            {
+                              title: '课酬（元/天）',
+                              dataIndex: 'ratePerDay',
+                              width: 140,
+                              render: (_: unknown, row: trainApi.FollowTeacherDayRow) => {
+                                const key = `${row.teacherName}|${row.teachForm ?? '未填'}`;
+                                const draft = teacherPayDraft[key];
+                                return (
+                                  <InputNumber
+                                    size="small"
+                                    min={0}
+                                    precision={2}
+                                    style={{ width: '100%' }}
+                                    value={draft?.ratePerDay ?? undefined}
+                                    placeholder="未设"
+                                    onChange={(val) => {
+                                      const rate = val == null ? null : Number(val);
+                                      const next = {
+                                        ...teacherPayDraftRef.current,
+                                        [key]: {
+                                          ...teacherPayDraftRef.current[key],
+                                          ratePerDay: rate,
+                                        },
+                                      };
+                                      teacherPayDraftRef.current = next;
+                                      setTeacherPayDraft(next);
+                                      scheduleSaveTeacherPay(next);
+                                    }}
+                                    onBlur={() => {
+                                      if (teacherPaySaveTimerRef.current) {
+                                        flushSaveTeacherPay();
+                                      }
+                                    }}
+                                  />
+                                );
+                              },
+                            },
+                            {
+                              title: '合计课酬',
+                              key: 'payTotal',
+                              width: 100,
+                              align: 'right',
+                              render: (_: unknown, row: trainApi.FollowTeacherDayRow) => {
+                                const key = `${row.teacherName}|${row.teachForm ?? '未填'}`;
+                                const draft = teacherPayDraft[key];
+                                const rate = draft?.ratePerDay ?? row.ratePerDay;
+                                const days = row.taughtDays;
+                                if (rate == null || days == null) return '—';
+                                return Math.round(Number(rate) * Number(days));
+                              },
+                            },
+                           
+                          ]}
+                        />
+                      )}
+                    </Space>
+                  ) : (
+                  <>
                   {scheduleManualEdited ? (
                     <Alert
                       type="warning"
@@ -1497,7 +1978,10 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                               >
                                 直接改课
                               </Button>
-                              <Popconfirm title="删除该课次？" onConfirm={() => removeScheduleRow(r._key)}>
+                              <Popconfirm
+                                title="删除该课次？"
+                                onConfirm={() => removeScheduleRow(r._key)}
+                              >
                                 <Button type="link" size="small" danger icon={<DeleteOutlined />}>
                                   删除
                                 </Button>
@@ -1521,6 +2005,8 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                         },
                       ]}
                     />
+                  )}
+                  </>
                   )}
                 </Card>
               </div>
@@ -1655,6 +2141,33 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     </Card>
                   </Col>
                   <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading}>
+                      <Statistic
+                        title="计划学时"
+                        value={formatClassHours(qualityMetrics?.plannedHours)}
+                        suffix="课时"
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading}>
+                      <Statistic
+                        title="已上课时（人均）"
+                        value={formatClassHours(qualityMetrics?.attendedHoursAvg)}
+                        suffix="课时"
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
+                    <Card size="small" loading={qualityMetricsLoading}>
+                      <Statistic
+                        title="课时完成率"
+                        value={qualityMetrics?.hoursCompletionAvg ?? '—'}
+                        suffix={qualityMetrics?.hoursCompletionAvg != null ? '%' : undefined}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={12} md={6}>
                     <Card size="small" loading={qualityMetricsLoading || mockMetricsLoading}>
                       <Statistic
                         title="模拟通过率"
@@ -1740,7 +2253,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                   description={
                     <>
                       当日出勤=实到÷名单人数；累计出勤=有效出勤记录÷全部考勤记录（覆盖 {classStats.recordDays}{' '}
-                      个有考勤日）。作业完成率=已交有效份数÷应发份数。模拟通过率=已评通过份数÷已评份数。考试通过率=得分≥及格线人数÷有成绩人数。满意度=答卷均分（1～5）。补贴齐套=配方必填槽位均已有材料（或已生成材料包）。
+                      个有考勤日）。计划学时=课表起止时间÷45 分钟（无时间用课表学时）。已上课时=今日及以前课次中未旷课的课时之和（未来课次不计）；未登记视为未旷课。课时完成率=已上课时/全课表计划学时。作业完成率=已交有效份数÷应发份数。模拟通过率=已评通过份数÷已评份数。考试通过率=得分≥及格线人数÷有成绩人数。满意度=答卷均分（1～5）。补贴齐套=配方必填槽位均已有材料（或已生成材料包）。
                       预警阈值：累计出勤/作业完成率 &lt;80%、满意度 &lt;3.5、影像未齐套、严重整改未关、补贴缺项。
                     </>
                   }
@@ -1755,6 +2268,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
         open={!!detailStudent}
         classId={classIdNum}
         student={detailStudent}
+        hoursRow={detailStudent ? hoursByPeopleId.get(String(detailStudent.id)) : undefined}
         onClose={() => setDetailStudent(null)}
       />
 
@@ -1797,7 +2311,8 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
         title={editingScheduleKey ? '直接改课' : '添加课次'}
         open={scheduleModalOpen}
         onCancel={() => setScheduleModalOpen(false)}
-        onOk={() => void submitScheduleEditor()}
+        onOk={() => submitScheduleEditor()}
+        confirmLoading={saveScheduleMu.isPending}
         destroyOnHidden
         width={520}
       >
@@ -1829,7 +2344,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
             />
           </Form.Item>
           <Form.Item name="teacherName" label="老师">
-            <Input placeholder="老师姓名" />
+            <TeacherBankSelect />
           </Form.Item>
         </Form>
       </Modal>
