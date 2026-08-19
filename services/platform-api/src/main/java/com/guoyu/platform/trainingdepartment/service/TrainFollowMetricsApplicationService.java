@@ -13,6 +13,7 @@ import com.guoyu.platform.trainingdepartment.entity.TrainFollowIssueEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainFollowPhotoPackEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainFollowSurveyResponseEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSubsidyEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSubsidyPackSlotEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSubsidySlotFileEntity;
@@ -23,6 +24,7 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainFollowIssueMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainFollowPhotoPackMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainFollowSurveyResponseMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidyMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidySlotFileMapper;
 import java.math.BigDecimal;
@@ -59,6 +61,7 @@ public class TrainFollowMetricsApplicationService {
   private final TrainFollowSurveyResponseMapper surveyMapper;
   private final TrainFollowIssueMapper issueMapper;
   private final TrainInfoClassMapper classMapper;
+  private final TrainPeopleListMapper peopleListMapper;
   private final ObjectMapper objectMapper;
 
   public TrainFollowMetricsApplicationService(
@@ -74,6 +77,7 @@ public class TrainFollowMetricsApplicationService {
       TrainFollowSurveyResponseMapper surveyMapper,
       TrainFollowIssueMapper issueMapper,
       TrainInfoClassMapper classMapper,
+      TrainPeopleListMapper peopleListMapper,
       ObjectMapper objectMapper) {
     this.taskService = taskService;
     this.evidenceService = evidenceService;
@@ -87,6 +91,7 @@ public class TrainFollowMetricsApplicationService {
     this.surveyMapper = surveyMapper;
     this.issueMapper = issueMapper;
     this.classMapper = classMapper;
+    this.peopleListMapper = peopleListMapper;
     this.objectMapper = objectMapper;
   }
 
@@ -110,7 +115,7 @@ public class TrainFollowMetricsApplicationService {
     Map<String, Object> mock = taskService.mockMetrics(classId);
     result.put("mockPassRate", computeMockPassRate(mock));
 
-    result.put("examPassRate", computeExamPassRate(clazz));
+    result.put("examPassRate", computeExamPassRate(clazz, tenantId));
 
     List<TrainFollowSurveyResponseEntity> surveys = surveyMapper.selectList(
         new LambdaQueryWrapper<TrainFollowSurveyResponseEntity>()
@@ -421,33 +426,56 @@ public class TrainFollowMetricsApplicationService {
     return BigDecimal.valueOf(passedItems * 100.0 / gradedItems).setScale(1, RoundingMode.HALF_UP);
   }
 
-  private BigDecimal computeExamPassRate(TrainInfoClassEntity clazz) {
-    if (clazz.getTrainInfoId() == null) {
-      return null;
+  private BigDecimal computeExamPassRate(TrainInfoClassEntity clazz, Long tenantId) {
+    if (clazz.getTrainInfoId() != null) {
+      List<TrainExamListEntity> exams = examListMapper.selectList(
+          new LambdaQueryWrapper<TrainExamListEntity>()
+              .eq(TrainExamListEntity::getTrainId, clazz.getTrainInfoId())
+              .eq(TrainExamListEntity::getDeleted, 0));
+      if (!exams.isEmpty()) {
+        List<Long> examIds = exams.stream().map(TrainExamListEntity::getId).toList();
+        List<TrainExamPeopleListEntity> people = examPeopleMapper.selectList(
+            new LambdaQueryWrapper<TrainExamPeopleListEntity>()
+                .in(TrainExamPeopleListEntity::getExamId, examIds)
+                .isNotNull(TrainExamPeopleListEntity::getScore)
+                .eq(TrainExamPeopleListEntity::getDeleted, 0));
+        if (!people.isEmpty()) {
+          int passed = 0;
+          for (TrainExamPeopleListEntity person : people) {
+            if (isExamPass(person)) {
+              passed++;
+            }
+          }
+          return BigDecimal.valueOf(passed * 100.0 / people.size()).setScale(1, RoundingMode.HALF_UP);
+        }
+      }
     }
-    List<TrainExamListEntity> exams = examListMapper.selectList(
-        new LambdaQueryWrapper<TrainExamListEntity>()
-            .eq(TrainExamListEntity::getTrainId, clazz.getTrainInfoId())
-            .eq(TrainExamListEntity::getDeleted, 0));
-    if (exams.isEmpty()) {
-      return null;
+    return computeRosterExamPassRate(clazz.getId(), tenantId);
+  }
+
+  private BigDecimal computeRosterExamPassRate(Long classId, Long tenantId) {
+    List<TrainPeopleListEntity> students = peopleListMapper.selectList(
+        new LambdaQueryWrapper<TrainPeopleListEntity>()
+            .eq(TrainPeopleListEntity::getTrainClassId, classId)
+            .eq(TrainPeopleListEntity::getType, "student")
+            .eq(TrainPeopleListEntity::getDeleted, 0)
+            .isNotNull(TrainPeopleListEntity::getExamScore));
+    if (tenantId != null) {
+      students = students.stream()
+          .filter(s -> s.getTenantId() == null || tenantId.equals(s.getTenantId()))
+          .toList();
     }
-    List<Long> examIds = exams.stream().map(TrainExamListEntity::getId).toList();
-    List<TrainExamPeopleListEntity> people = examPeopleMapper.selectList(
-        new LambdaQueryWrapper<TrainExamPeopleListEntity>()
-            .in(TrainExamPeopleListEntity::getExamId, examIds)
-            .isNotNull(TrainExamPeopleListEntity::getScore)
-            .eq(TrainExamPeopleListEntity::getDeleted, 0));
-    if (people.isEmpty()) {
+    if (students.isEmpty()) {
       return null;
     }
     int passed = 0;
-    for (TrainExamPeopleListEntity person : people) {
-      if (isExamPass(person)) {
+    for (TrainPeopleListEntity student : students) {
+      if (student.getExamScore() != null
+          && student.getExamScore().compareTo(BigDecimal.valueOf(60)) >= 0) {
         passed++;
       }
     }
-    return BigDecimal.valueOf(passed * 100.0 / people.size()).setScale(1, RoundingMode.HALF_UP);
+    return BigDecimal.valueOf(passed * 100.0 / students.size()).setScale(1, RoundingMode.HALF_UP);
   }
 
   private static boolean isExamPass(TrainExamPeopleListEntity person) {

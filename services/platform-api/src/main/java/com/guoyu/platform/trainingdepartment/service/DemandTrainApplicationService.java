@@ -333,6 +333,8 @@ public class DemandTrainApplicationService {
         m.put("id", t.getId());
         m.put("title", t.getTitle());
         m.put("company_id", t.getCompanyId());
+        m.put("company_name", t.getCompanyName());
+        m.put("work_type_id", t.getWorkTypeId());
         return m;
       }).toList();
       data.put("traininfo_list", traininfoList);

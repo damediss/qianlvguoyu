@@ -167,6 +167,7 @@ public class TrainInfoClassApplicationService {
       item.put("train_info_id", e.getTrainInfoId());
       item.put("company_id", e.getCompanyId());
       item.put("work_type_id", e.getWorkTypeId());
+      item.put("work_type_level", e.getWorkTypeLevel());
       TrainInfoListEntity ti = trainInfoMap.get(e.getTrainInfoId());
       String companyName = e.getCompanyId() != null ? companyNameMap.get(e.getCompanyId()) : null;
       if (!StringUtils.hasText(companyName) && ti != null && StringUtils.hasText(ti.getCompanyName())) {
@@ -221,6 +222,15 @@ public class TrainInfoClassApplicationService {
       entity.setDateStart(req.getDateStart());
       entity.setDateEnd(req.getDateEnd());
       entity.setKcbiaoFile(req.getKcbiaoFile());
+      if (req.getTrainInfoId() != null) {
+        entity.setTrainInfoId(req.getTrainInfoId());
+        applyCompanyAndWorkTypeFromTrainInfo(entity, req.getTrainInfoId(), req.getWorkTypeId());
+      } else if (req.getWorkTypeId() != null && req.getWorkTypeId() > 0) {
+        entity.setWorkTypeId(req.getWorkTypeId());
+      }
+      if (req.getWorkTypeLevel() != null && req.getWorkTypeLevel() > 0) {
+        entity.setWorkTypeLevel(req.getWorkTypeLevel());
+      }
       mapper.updateById(entity);
       Map<String, Object> result = new LinkedHashMap<>();
       result.put("id", entity.getId());
@@ -236,21 +246,15 @@ public class TrainInfoClassApplicationService {
       entity.setDateEnd(req.getDateEnd());
       entity.setKcbiaoFile(req.getKcbiaoFile());
 
-      // Auto-populate from train_info_list
-      if (req.getTrainInfoId() != null) {
-        TrainInfoListEntity ti = trainInfoListMapper.selectById(req.getTrainInfoId());
-        if (ti != null) {
-          entity.setCompanyId(ti.getCompanyId());
-          entity.setWorkTypeId(ti.getWorkTypeId());
-          entity.setWorkTypeLevel(ti.getWorkTypeLevel());
-          if (req.getNums() == null || req.getNums() == 0) {
-            entity.setNums(ti.getNum());
-          } else {
-            entity.setNums(req.getNums());
-          }
-        } else {
-          entity.setNums(req.getNums());
-        }
+      TrainInfoListEntity ti = applyCompanyAndWorkTypeFromTrainInfo(
+          entity, req.getTrainInfoId(), req.getWorkTypeId());
+      if (req.getWorkTypeLevel() != null && req.getWorkTypeLevel() > 0) {
+        entity.setWorkTypeLevel(req.getWorkTypeLevel());
+      } else if (ti != null) {
+        entity.setWorkTypeLevel(ti.getWorkTypeLevel());
+      }
+      if (req.getNums() == null || req.getNums() == 0) {
+        entity.setNums(ti != null ? ti.getNum() : null);
       } else {
         entity.setNums(req.getNums());
       }
@@ -599,6 +603,31 @@ public class TrainInfoClassApplicationService {
       return kcbiaoFile;
     }
     return kcbiaoFile.startsWith("/") ? kcbiaoFile : "/" + kcbiaoFile;
+  }
+
+  /** 企业、工种跟培训信息；工种等级由班级自己保存 */
+  private TrainInfoListEntity applyCompanyAndWorkTypeFromTrainInfo(
+      TrainInfoClassEntity entity, Long trainInfoId, Long requestWorkTypeId) {
+    if (trainInfoId == null) {
+      if (requestWorkTypeId != null && requestWorkTypeId > 0) {
+        entity.setWorkTypeId(requestWorkTypeId);
+      }
+      return null;
+    }
+    TrainInfoListEntity ti = trainInfoListMapper.selectById(trainInfoId);
+    if (ti == null) {
+      if (requestWorkTypeId != null && requestWorkTypeId > 0) {
+        entity.setWorkTypeId(requestWorkTypeId);
+      }
+      return null;
+    }
+    entity.setCompanyId(ti.getCompanyId());
+    if (requestWorkTypeId != null && requestWorkTypeId > 0) {
+      entity.setWorkTypeId(requestWorkTypeId);
+    } else {
+      entity.setWorkTypeId(ti.getWorkTypeId());
+    }
+    return ti;
   }
 
   private TrainInfoClassVO toVO(TrainInfoClassEntity entity) {

@@ -24,19 +24,23 @@ type ApiId = number | string;
 
 const ROLE_FILTER_OPTIONS = [
   { value: 'all', label: '全部角色' },
-  { value: 'head_teacher', label: '企业班主任' },
-  { value: 'follow_staff', label: '跟班教务' },
-  { value: 'lead_teacher', label: '主讲' },
-  { value: 'assistant', label: '助教' },
+  { value: 'follow_staff', label: '教务人员' },
+  { value: 'lead_teacher', label: '理论老师' },
+  { value: 'assistant', label: '实操老师' },
   { value: 'monitor', label: '班长' },
 ];
 
 const ASSIGN_ROLE_OPTIONS = [
-  { value: 'follow_staff', label: '跟班教务' },
-  { value: 'head_teacher', label: '企业班主任' },
-  { value: 'lead_teacher', label: '主讲' },
-  { value: 'assistant', label: '助教' },
+  { value: 'lead_teacher', label: '理论老师' },
+  { value: 'assistant', label: '实操老师' },
+  { value: 'follow_staff', label: '教务人员' },
 ];
+
+function matchesRoleFilter(roleCode: string, filter: string): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'follow_staff') return roleCode === 'follow_staff' || roleCode === 'head_teacher';
+  return roleCode === filter;
+}
 
 function invalidateRoleQueries(qc: ReturnType<typeof useQueryClient>, classId: ApiId) {
   void qc.invalidateQueries({ queryKey: ['class-roles', classId] });
@@ -57,7 +61,7 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
   const qc = useQueryClient();
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [importOpen, setImportOpen] = useState(false);
-  const [assignRoleCode, setAssignRoleCode] = useState('follow_staff');
+  const [assignRoleCode, setAssignRoleCode] = useState('lead_teacher');
   const [selectedTeacherIds, setSelectedTeacherIds] = useState<Array<number | string>>([]);
 
   const { data: roles = [], isLoading, refetch, isFetching } = useQuery({
@@ -104,7 +108,7 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
     onError: (e: Error) => message.error(e.message || '卸任失败'),
   });
 
-  const filtered = roleFilter === 'all' ? roles : roles.filter((r) => r.roleCode === roleFilter);
+  const filtered = roles.filter((r) => matchesRoleFilter(r.roleCode, roleFilter));
   const unboundCount = roles.filter((r) => r.unboundWarning).length;
 
   const columns: ColumnsType<TrainClassRole> = [
@@ -161,7 +165,7 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
             <>
               {unboundCount > 0
                 ? `有 ${unboundCount} 人未绑定 App 账号，指派后需确保可登录。`
-                : '可从师资库指派班主任/教务/主讲/助教。'}
+                : '可从师资库指派理论老师、实操老师、教务人员。'}
               {' '}
               班长请在开班准备「学员列表」设置是否班长（系统自动同步）。
               {contextHint ? ` ${contextHint}` : ''}
@@ -181,7 +185,7 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
           type="primary"
           icon={<PlusOutlined />}
           onClick={() => {
-            setAssignRoleCode('follow_staff');
+            setAssignRoleCode('lead_teacher');
             setImportOpen(true);
           }}
         >

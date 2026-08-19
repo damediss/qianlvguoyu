@@ -3,7 +3,6 @@
  */
 import { useMemo, useState, useEffect } from 'react';
 import {
-  AutoComplete,
   Button,
   Card,
   DatePicker,
@@ -20,6 +19,7 @@ import {
   message,
 } from 'antd';
 import {
+  EditOutlined,
   InboxOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
@@ -38,6 +38,7 @@ import type {
   TrainInfoClassListItem,
   TrainInfoClassCreateReq,
   TrainInfoListCreateReq,
+  TrainInfoListUpdateReq,
   TrainInfoList,
   DemandPublicData,
   ClassStudent,
@@ -62,6 +63,17 @@ const WORK_LEVELS = [
   { value: 2, label: '二级/技师' },
   { value: 1, label: '一级/高级技师' },
 ];
+
+function workLevelLabel(level?: number | string | null): string {
+  const n = Number(level);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return WORK_LEVELS.find((o) => o.value === n)?.label ?? `${n}级`;
+}
+
+function toPositiveInt(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
 
 /** 兼容 json-bigint：超大 ID 保持字符串，避免 Number 精度丢失 */
 type ApiId = number | string;
@@ -123,6 +135,9 @@ function StudentListModal({
   onClose,
   classId,
   trainInfoId,
+  workTypeTitle,
+  workTypeLevel,
+  workTypeId,
   mode = 'roster',
   onProfileChanged,
 }: {
@@ -130,6 +145,9 @@ function StudentListModal({
   onClose: () => void;
   classId: ApiId | null;
   trainInfoId: ApiId | null;
+  workTypeTitle?: string;
+  workTypeLevel?: number;
+  workTypeId?: number;
   mode?: 'roster' | 'collection';
   onProfileChanged?: () => void;
 }) {
@@ -144,6 +162,7 @@ function StudentListModal({
   const [importByIdCardOpen, setImportByIdCardOpen] = useState(false);
   const [importKeyword, setImportKeyword] = useState('');
   const [selectedSignUpIds, setSelectedSignUpIds] = useState<Array<number | string>>([]);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Array<number | string>>([]);
   const [idCardText, setIdCardText] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
@@ -182,6 +201,7 @@ function StudentListModal({
       setCollectionTitle(undefined);
       setCollectionStatus('idle');
       setCollectionError(null);
+      setSelectedStudentIds([]);
       return;
     }
     setCurrentPage(1);
@@ -220,7 +240,11 @@ function StudentListModal({
 
   const deleteMu = useMutation({
     mutationFn: (ids: Array<number | string>) => trainApi.deleteClassStudents(ids),
-    onSuccess: () => { message.success('删除成功'); refetch(); },
+    onSuccess: (_res, ids) => {
+      message.success(ids.length > 1 ? `已删除 ${ids.length} 人` : '删除成功');
+      setSelectedStudentIds((prev) => prev.filter((id) => !ids.map(String).includes(String(id))));
+      refetch();
+    },
     onError: () => message.error('删除失败'),
   });
 
@@ -306,7 +330,20 @@ function StudentListModal({
     Modal.confirm({
       title: '友情提示',
       content: '确定要删除该学员吗？',
-      onOk: () => deleteMu.mutate([row.id]),
+      onOk: () => deleteMu.mutateAsync([row.id]),
+    });
+  };
+
+  const handleBatchDeleteStudents = () => {
+    if (!selectedStudentIds.length) {
+      message.warning('请先勾选要删除的学员');
+      return;
+    }
+    Modal.confirm({
+      title: '友情提示',
+      content: `确定删除已选的 ${selectedStudentIds.length} 名学员吗？不会删除学员 App 账号。`,
+      okButtonProps: { danger: true },
+      onOk: () => deleteMu.mutateAsync(selectedStudentIds),
     });
   };
 
@@ -422,6 +459,9 @@ function StudentListModal({
               <ClassSignUpPeoplePanel
                 signUpId={collectionSignUpId}
                 title={collectionTitle}
+                classWorkTypeTitle={workTypeTitle}
+                classWorkTypeLevel={workTypeLevel}
+                classWorkTypeId={workTypeId}
                 onChanged={() => {
                   onProfileChanged?.();
                 }}
@@ -466,6 +506,15 @@ function StudentListModal({
               >
                 按身份证号导入
               </Button>
+              <Button
+                className="student-toolbar-btn"
+                danger
+                disabled={!selectedStudentIds.length}
+                loading={deleteMu.isPending}
+                onClick={handleBatchDeleteStudents}
+              >
+                批量删除
+              </Button>
               {isError ? (
                 <Button className="student-toolbar-btn" onClick={() => refetch()}>
                   重新加载
@@ -481,7 +530,11 @@ function StudentListModal({
                 loading={isLoading}
                 columns={studentColumns}
                 dataSource={studentRows}
-                rowSelection={{ columnWidth: 48 }}
+                rowSelection={{
+                  columnWidth: 48,
+                  selectedRowKeys: selectedStudentIds,
+                  onChange: (keys) => setSelectedStudentIds(keys as Array<number | string>),
+                }}
                 scroll={{ x: 1100, y: 480 }}
                 pagination={false}
                 locale={{ emptyText: isError ? '加载失败，请点击重新加载' : '暂无学员，可从报名或身份证导入' }}
@@ -920,10 +973,13 @@ export function TrainingClassPeoplePage() {
   const processStep = 3;
   const queryClient = useQueryClient();
   const canCreateTrainInfo = useAuthStore((s) => s.permissionCodes.includes('train:info-list:create'));
+  const canUpdateTrainInfo = useAuthStore((s) => s.permissionCodes.includes('train:info-list:update'));
   const [form] = Form.useForm<{
     id?: ApiId;
     title?: string;
     trainInfoId?: ApiId;
+    workTypeId?: number;
+    workTypeLevel?: number;
     nums?: number;
     dateStart?: Dayjs;
     dateEnd?: Dayjs;
@@ -933,8 +989,6 @@ export function TrainingClassPeoplePage() {
   const [trainInfoForm] = Form.useForm<{
     title?: string;
     companyName?: string;
-    workTypeId?: number;
-    workTypeLevel?: number;
     num?: number;
     startDate?: Dayjs;
     endDate?: Dayjs;
@@ -948,8 +1002,14 @@ export function TrainingClassPeoplePage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [isCreateMode, setIsCreateMode] = useState(true);
   const [trainInfoModalOpen, setTrainInfoModalOpen] = useState(false);
+  const [editingTrainInfoId, setEditingTrainInfoId] = useState<ApiId | null>(null);
+  const [trainInfoDetailLoading, setTrainInfoDetailLoading] = useState(false);
+  const selectedTrainInfoId = Form.useWatch('trainInfoId', form);
   /** 本页刚创建的培训，避免 publicData 刷新前 Select 无选项 */
   const [extraTrainInfoOptions, setExtraTrainInfoOptions] = useState<{ value: ApiId; label: string }[]>([]);
+  /** 手填企业名，并入下拉（含本页刚录入、以及历史培训信息里的自由文本企业） */
+  const [extraCompanyNames, setExtraCompanyNames] = useState<string[]>([]);
+  const [companySearch, setCompanySearch] = useState('');
   const [kcbiaoSrc, setKcbiaoSrc] = useState('');
 
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -961,7 +1021,14 @@ export function TrainingClassPeoplePage() {
   const [chargeModal, setChargeModal] = useState(false);
   const [rolesModal, setRolesModal] = useState(false);
   const [taskModal, setTaskModal] = useState(false);
-  const [selectedClass, setSelectedClass] = useState<{ id: ApiId; trainInfoId: ApiId; title?: string } | null>(null);
+  const [selectedClass, setSelectedClass] = useState<{
+    id: ApiId;
+    trainInfoId: ApiId;
+    title?: string;
+    workTypeTitle?: string;
+    workTypeLevel?: number;
+    workTypeId?: number;
+  } | null>(null);
 
   const { data: publicData } = useQuery({
     queryKey: ['class-people-public-data'],
@@ -1030,6 +1097,7 @@ export function TrainingClassPeoplePage() {
       form.setFieldsValue(patch);
       setTrainInfoModalOpen(false);
       trainInfoForm.resetFields();
+      setEditingTrainInfoId(null);
     },
     onError: (err: unknown) => {
       const status = (err as { response?: { status?: number } })?.response?.status;
@@ -1040,6 +1108,34 @@ export function TrainingClassPeoplePage() {
         return;
       }
       message.error(msg || '创建培训信息失败');
+    },
+  });
+
+  const updateTrainInfoMu = useMutation({
+    mutationFn: ({ id, payload }: { id: ApiId; payload: TrainInfoListUpdateReq }) =>
+      trainApi.updateInfoList(id, payload),
+    onSuccess: async (updated, vars) => {
+      message.success('培训信息已保存');
+      setExtraTrainInfoOptions((prev) => {
+        const label = updated.title || `培训#${updated.id}`;
+        const next = prev.filter((o) => String(o.value) !== String(vars.id) && String(o.value) !== String(updated.id));
+        return [{ value: updated.id, label }, ...next];
+      });
+      await queryClient.invalidateQueries({ queryKey: ['class-people-public-data'] });
+      await queryClient.invalidateQueries({ queryKey: ['info-classes'] });
+      setTrainInfoModalOpen(false);
+      trainInfoForm.resetFields();
+      setEditingTrainInfoId(null);
+    },
+    onError: (err: unknown) => {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      const dataMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      const msg = dataMsg || (err instanceof Error ? err.message : '');
+      if (status === 403 || /权限|forbidden|access denied/i.test(msg)) {
+        message.error('无编辑培训信息权限（需要 train:info-list:update）');
+        return;
+      }
+      message.error(msg || '保存培训信息失败');
     },
   });
 
@@ -1056,6 +1152,26 @@ export function TrainingClassPeoplePage() {
       label: c.title,
     })) ?? [];
   }, [publicData]);
+
+  const companyNameOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const names: string[] = [];
+    const add = (raw?: string | null) => {
+      const n = String(raw ?? '').trim();
+      if (!n) return;
+      const key = n.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      names.push(n);
+    };
+    for (const c of companyOptions) add(c.label);
+    for (const t of (publicData as DemandPublicData | undefined)?.traininfo_list ?? []) {
+      add(t.company_name);
+    }
+    for (const n of extraCompanyNames) add(n);
+    add(companySearch);
+    return names.map((value) => ({ value, label: value }));
+  }, [companyOptions, publicData, extraCompanyNames, companySearch]);
 
   const trainInfoOptions = useMemo(() => {
     const fromPublic = (publicData as DemandPublicData | undefined)?.traininfo_list?.map((t) => ({
@@ -1077,6 +1193,7 @@ export function TrainingClassPeoplePage() {
   const closeModal = () => {
     setModalOpen(false);
     setTrainInfoModalOpen(false);
+    setEditingTrainInfoId(null);
     setKcbiaoSrc('');
     form.resetFields();
     trainInfoForm.resetFields();
@@ -1095,6 +1212,8 @@ export function TrainingClassPeoplePage() {
       id: row.id,
       title: row.title,
       trainInfoId: row.train_info_id,
+      workTypeId: toPositiveInt(row.work_type_id),
+      workTypeLevel: toPositiveInt(row.work_type_level),
       nums: row.nums,
       dateStart: row.date_start ? dayjs(row.date_start) : undefined,
       dateEnd: row.date_end ? dayjs(row.date_end) : undefined,
@@ -1110,11 +1229,61 @@ export function TrainingClassPeoplePage() {
       message.error('无创建培训信息权限（需要 train:info-list:create）');
       return;
     }
+    setEditingTrainInfoId(null);
     trainInfoForm.resetFields();
+    setCompanySearch('');
     setTrainInfoModalOpen(true);
   };
 
-  const handleCreateTrainInfo = async () => {
+  const openEditTrainInfo = async () => {
+    const id = toApiId(form.getFieldValue('trainInfoId'));
+    if (id == null) {
+      message.warning('请先选择培训信息');
+      return;
+    }
+    if (!canUpdateTrainInfo) {
+      message.error('无编辑培训信息权限（需要 train:info-list:update）');
+      return;
+    }
+    setTrainInfoDetailLoading(true);
+    try {
+      const detail = await trainApi.getInfoList(id);
+      const raw = detail as TrainInfoList & {
+        company_name?: string;
+      };
+      setEditingTrainInfoId(id);
+      setCompanySearch('');
+      trainInfoForm.setFieldsValue({
+        title: detail.title,
+        companyName: detail.companyName ?? raw.company_name,
+      });
+      const companyName = String(detail.companyName ?? raw.company_name ?? '').trim();
+      if (
+        companyName
+        && !companyOptions.some((c) => String(c.label).trim() === companyName)
+      ) {
+        setExtraCompanyNames((prev) =>
+          prev.some((n) => n.toLowerCase() === companyName.toLowerCase())
+            ? prev
+            : [...prev, companyName],
+        );
+      }
+      setTrainInfoModalOpen(true);
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      const dataMsg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      const msg = dataMsg || (err instanceof Error ? err.message : '');
+      if (status === 403 || /权限|forbidden|access denied/i.test(msg)) {
+        message.error('无查看培训信息权限（需要 train:info-list:view）');
+        return;
+      }
+      message.error(msg || '加载培训信息失败');
+    } finally {
+      setTrainInfoDetailLoading(false);
+    }
+  };
+
+  const handleSubmitTrainInfo = async () => {
     try {
       const v = await trainInfoForm.validateFields();
       if (v.startDate && v.endDate && dayjs(v.endDate).isBefore(dayjs(v.startDate), 'day')) {
@@ -1129,17 +1298,26 @@ export function TrainingClassPeoplePage() {
       const matchedCompany = companyOptions.find(
         (c) => String(c.label).trim() === companyName,
       );
-      createTrainInfoMu.mutate({
+      if (!matchedCompany) {
+        setExtraCompanyNames((prev) =>
+          prev.some((n) => n.toLowerCase() === companyName.toLowerCase())
+            ? prev
+            : [...prev, companyName],
+        );
+      }
+      const payload: TrainInfoListCreateReq = {
         title: v.title,
         companyId: matchedCompany?.value as number | undefined,
         companyName,
-        workTypeId: v.workTypeId,
-        workTypeLevel: v.workTypeLevel,
         num: v.num,
         startDate: v.startDate ? dayjs(v.startDate).format('YYYY-MM-DD') : undefined,
         endDate: v.endDate ? dayjs(v.endDate).format('YYYY-MM-DD') : undefined,
-        status: 0,
-      });
+      };
+      if (editingTrainInfoId != null) {
+        updateTrainInfoMu.mutate({ id: editingTrainInfoId, payload });
+        return;
+      }
+      createTrainInfoMu.mutate({ ...payload, status: 0 });
     } catch {
       // Form validation errors are shown inline
     }
@@ -1156,6 +1334,8 @@ export function TrainingClassPeoplePage() {
         id: v.id,
         title: v.title,
         trainInfoId: v.trainInfoId,
+        workTypeId: toPositiveInt(v.workTypeId),
+        workTypeLevel: toPositiveInt(v.workTypeLevel),
         nums: Number(v.nums),
         dateStart: dayjs.isDayjs(v.dateStart) ? v.dateStart.format('YYYY-MM-DD') : String(v.dateStart),
         dateEnd: dayjs.isDayjs(v.dateEnd) ? v.dateEnd.format('YYYY-MM-DD') : String(v.dateEnd),
@@ -1213,6 +1393,10 @@ export function TrainingClassPeoplePage() {
     setCurrentPage(1);
   };
 
+  const showCreateTrainInfoBtn = canCreateTrainInfo && isCreateMode;
+  const showEditTrainInfoBtn = canUpdateTrainInfo && selectedTrainInfoId != null;
+  const trainInfoSelectExtraPx = (showCreateTrainInfoBtn ? 88 : 0) + (showEditTrainInfoBtn ? 72 : 0);
+
   const openSubDialog = (type: string, row: TrainInfoClassListItem) => {
     const id = toApiId(row.id);
     const trainInfoId = toApiId(row.train_info_id) ?? 0;
@@ -1220,7 +1404,14 @@ export function TrainingClassPeoplePage() {
       message.error('班级 ID 无效');
       return;
     }
-    setSelectedClass({ id, trainInfoId, title: row.title });
+    setSelectedClass({
+      id,
+      trainInfoId,
+      title: row.title,
+      workTypeTitle: row.work_type_title,
+      workTypeLevel: toPositiveInt(row.work_type_level),
+      workTypeId: toPositiveInt(row.work_type_id),
+    });
     switch (type) {
       case 'students':
         setStudentModalMode('roster');
@@ -1275,12 +1466,12 @@ export function TrainingClassPeoplePage() {
       <div className="class-row-actions-line">
         <button type="button" className="class-action-link" onClick={() => openSubDialog('students', row)}>学员列表</button>
         <button type="button" className="class-action-link" onClick={() => openSubDialog('collection', row)}>资料收集</button>
-        <button type="button" className="class-action-link" onClick={() => openSubDialog('staff', row)}>教务人员</button>
+        {/* <button type="button" className="class-action-link" onClick={() => openSubDialog('staff', row)}>教务人员</button> */}
         <button type="button" className="class-action-link" onClick={() => openSubDialog('roles', row)}>班级角色</button>
       </div>
       <div className="class-row-actions-line">
         <button type="button" className="class-action-link" onClick={() => openSubDialog('charge', row)}>负责人</button>
-        <button type="button" className="class-action-link" onClick={() => openSubDialog('tasks', row)}>培训任务</button>
+        {/* <button type="button" className="class-action-link" onClick={() => openSubDialog('tasks', row)}>培训任务</button> */}
         <button type="button" className="class-action-link" onClick={() => openEdit(row)}>编辑</button>
         <button type="button" className="class-action-link class-action-link-danger" onClick={() => handleDeleteClass(row)}>删除</button>
       </div>
@@ -1298,6 +1489,13 @@ export function TrainingClassPeoplePage() {
     { title: '班级名称', dataIndex: 'title', align: 'left', ellipsis: true },
     { title: '公司', dataIndex: 'company_name', align: 'left', ellipsis: true },
     { title: '工种', dataIndex: 'work_type_title', align: 'center', width: 140 },
+    {
+      title: '等级',
+      dataIndex: 'work_type_level',
+      align: 'center',
+      width: 130,
+      render: (v?: number) => workLevelLabel(v) || '-',
+    },
     { title: '人数', dataIndex: 'nums', width: 72, align: 'center' },
     {
       title: '培训周期',
@@ -1459,15 +1657,41 @@ export function TrainingClassPeoplePage() {
                   options={trainInfoOptions}
                   showSearch
                   optionFilterProp="label"
-                  style={{ width: canCreateTrainInfo && isCreateMode ? 'calc(100% - 88px)' : '100%' }}
+                  style={{
+                    width: trainInfoSelectExtraPx > 0 ? `calc(100% - ${trainInfoSelectExtraPx}px)` : '100%',
+                  }}
+                  onChange={(id) => {
+                    if (form.getFieldValue('workTypeId')) return;
+                    const matched = (publicData as DemandPublicData | undefined)?.traininfo_list
+                      ?.find((t) => String(t.id) === String(id));
+                    if (matched?.work_type_id) {
+                      form.setFieldValue('workTypeId', matched.work_type_id);
+                    }
+                  }}
                 />
               </Form.Item>
-              {canCreateTrainInfo && isCreateMode ? (
+              {showCreateTrainInfoBtn ? (
                 <Button icon={<PlusOutlined />} onClick={openCreateTrainInfo}>
                   新建
                 </Button>
               ) : null}
+              {showEditTrainInfoBtn ? (
+                <Button icon={<EditOutlined />} onClick={openEditTrainInfo} loading={trainInfoDetailLoading}>
+                  编辑
+                </Button>
+              ) : null}
             </Space.Compact>
+          </Form.Item>
+          <Form.Item name="workTypeId" label="预约工种" rules={[{ required: true, message: '请选择工种' }]}>
+            <Select
+              placeholder="请选择本班工种"
+              options={workTypeGroupedOptions}
+              showSearch
+              optionFilterProp="label"
+            />
+          </Form.Item>
+          <Form.Item name="workTypeLevel" label="预约工种等级" rules={[{ required: true, message: '请选择工种等级' }]}>
+            <Select placeholder="请选择本班等级" options={WORK_LEVELS} />
           </Form.Item>
           <Form.Item name="nums" label="班级人数" rules={[{ required: true, message: '请填写班级人数' }]}>
             <Input type="number" placeholder="请输入班级人数" min={1} />
@@ -1503,62 +1727,90 @@ export function TrainingClassPeoplePage() {
       </Modal>
 
       <Modal
-        title="新建培训信息"
+        title={editingTrainInfoId != null ? '编辑培训信息' : '新建培训信息'}
         open={trainInfoModalOpen}
-        onOk={handleCreateTrainInfo}
+        onOk={handleSubmitTrainInfo}
         onCancel={() => {
           setTrainInfoModalOpen(false);
+          setEditingTrainInfoId(null);
           trainInfoForm.resetFields();
         }}
-        confirmLoading={createTrainInfoMu.isPending}
-        okText="创建并选用"
+        confirmLoading={createTrainInfoMu.isPending || updateTrainInfoMu.isPending}
+        okText={editingTrainInfoId != null ? '保存' : '创建并选用'}
         cancelText="取消"
         destroyOnHidden
         width={520}
       >
         <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          创建后自动选入上方「选择培训信息」，再继续填写班级并保存。
+          {editingTrainInfoId != null
+            ? '修改标题、企业后保存。工种和等级请在班级信息里按班填写，互不影响。'
+            : '创建后自动选入上方「选择培训信息」。同一企业可挂多个班级，各班工种和等级分别设置。'}
         </Typography.Paragraph>
         <Form form={trainInfoForm} labelCol={{ style: { width: 100 } }} wrapperCol={{ span: 16 }}>
-          <Form.Item name="title" label="培训标题" rules={[{ required: true, message: '请填写培训标题' }]}>
+          <Form.Item name="title" label="培训信息" rules={[{ required: true, message: '请填写培训信息' }]}>
             <Input placeholder="请输入培训信息标题" maxLength={255} />
           </Form.Item>
           <Form.Item
             name="companyName"
-            label="企业"
+            label="企业名称"
             rules={[{ required: true, message: '请选择或输入企业' }]}
           >
-            <AutoComplete
+            <Select
               allowClear
+              showSearch
               style={{ width: '100%' }}
               placeholder="请选择或输入企业"
-              options={companyOptions.map((c) => ({ value: c.label }))}
+              options={companyNameOptions}
+              searchValue={companySearch}
+              onSearch={setCompanySearch}
               filterOption={(input, option) =>
-                String(option?.value ?? '')
+                String(option?.label ?? '')
                   .toLowerCase()
                   .includes(input.trim().toLowerCase())
               }
+              onChange={(v) => {
+                setCompanySearch('');
+                const name = String(v ?? '').trim();
+                if (
+                  name
+                  && !companyOptions.some((c) => String(c.label).trim() === name)
+                ) {
+                  setExtraCompanyNames((prev) =>
+                    prev.some((n) => n.toLowerCase() === name.toLowerCase())
+                      ? prev
+                      : [...prev, name],
+                  );
+                }
+              }}
+              onBlur={() => {
+                const typed = companySearch.trim();
+                if (!typed) return;
+                trainInfoForm.setFieldValue('companyName', typed);
+                if (!companyOptions.some((c) => String(c.label).trim() === typed)) {
+                  setExtraCompanyNames((prev) =>
+                    prev.some((n) => n.toLowerCase() === typed.toLowerCase())
+                      ? prev
+                      : [...prev, typed],
+                  );
+                }
+                setCompanySearch('');
+              }}
+              onInputKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                const typed = companySearch.trim();
+                if (!typed) return;
+                e.preventDefault();
+                trainInfoForm.setFieldValue('companyName', typed);
+                if (!companyOptions.some((c) => String(c.label).trim() === typed)) {
+                  setExtraCompanyNames((prev) =>
+                    prev.some((n) => n.toLowerCase() === typed.toLowerCase())
+                      ? prev
+                      : [...prev, typed],
+                  );
+                }
+                setCompanySearch('');
+              }}
             />
-          </Form.Item>
-          <Form.Item name="workTypeId" label="工种" rules={[{ required: true, message: '请选择工种' }]}>
-            <Select
-              placeholder="请选择工种"
-              options={workTypeGroupedOptions}
-              showSearch
-              optionFilterProp="label"
-            />
-          </Form.Item>
-          <Form.Item name="workTypeLevel" label="工种等级">
-            <Select placeholder="请选择等级（可选）" options={WORK_LEVELS} allowClear />
-          </Form.Item>
-          <Form.Item name="num" label="计划人数">
-            <InputNumber min={1} style={{ width: '100%' }} placeholder="可选，可同步到班级人数" />
-          </Form.Item>
-          <Form.Item name="startDate" label="开始日期">
-            <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" placeholder="可选" />
-          </Form.Item>
-          <Form.Item name="endDate" label="结束日期">
-            <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" placeholder="可选" />
           </Form.Item>
         </Form>
       </Modal>
@@ -1591,6 +1843,9 @@ export function TrainingClassPeoplePage() {
         onClose={closeStudentModal}
         classId={selectedClass?.id ?? null}
         trainInfoId={selectedClass?.trainInfoId ?? null}
+        workTypeTitle={selectedClass?.workTypeTitle}
+        workTypeLevel={selectedClass?.workTypeLevel}
+        workTypeId={selectedClass?.workTypeId}
         mode={studentModalMode}
         onProfileChanged={() => queryClient.invalidateQueries({ queryKey: ['info-classes'] })}
       />

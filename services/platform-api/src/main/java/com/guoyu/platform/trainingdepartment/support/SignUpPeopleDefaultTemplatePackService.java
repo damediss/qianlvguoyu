@@ -2,9 +2,13 @@ package com.guoyu.platform.trainingdepartment.support;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
+import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.system.entity.OrgEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
+import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -29,6 +33,7 @@ import org.apache.poi.xwpf.usermodel.Document;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.xwpf.usermodel.XWPFPicture;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
@@ -46,6 +51,10 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class SignUpPeopleDefaultTemplatePackService {
 
+  /** 身份证正反面合并文档：宽 8.6cm、高 5.4cm（不按原图纵横比缩放）。 */
+  private static final double ID_CARD_MERGE_WIDTH_CM = 8.6;
+  private static final double ID_CARD_MERGE_HEIGHT_CM = 5.4;
+
   private static final String[] LEVEL_LABELS = {
       "初级工/五级", "中级工/四级", "高级工/三级", "技师/二级", "高级技师/一级"
   };
@@ -57,16 +66,22 @@ public class SignUpPeopleDefaultTemplatePackService {
   private final ObjectMapper objectMapper;
   private final SignUpExportAssetService assetService;
   private final IdCardImageInsetCropper idCardCropper;
+  private final TrainInfoClassMapper classMapper;
+  private final ExamWorkTypeMapper examWorkTypeMapper;
 
   public SignUpPeopleDefaultTemplatePackService(
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
       ObjectMapper objectMapper,
       SignUpExportAssetService assetService,
-      IdCardImageInsetCropper idCardCropper) {
+      IdCardImageInsetCropper idCardCropper,
+      TrainInfoClassMapper classMapper,
+      ExamWorkTypeMapper examWorkTypeMapper) {
     this.cdnPath = cdnPath;
     this.objectMapper = objectMapper;
     this.assetService = assetService;
     this.idCardCropper = idCardCropper;
+    this.classMapper = classMapper;
+    this.examWorkTypeMapper = examWorkTypeMapper;
   }
 
   public String run(
@@ -75,6 +90,7 @@ public class SignUpPeopleDefaultTemplatePackService {
       List<TrainSignUpPeopleSelfEntity> people,
       ProgressCallback callback) throws Exception {
     ExportContext ctx = new ExportContext(cdnPath, signUp, company);
+    ctx.appointment = resolveClassAppointment(signUp);
     initDirectories(ctx);
     initSummaryExcels(ctx);
 
@@ -245,13 +261,13 @@ public class SignUpPeopleDefaultTemplatePackService {
   private Map<String, ImageSlot> buildImageSlots(PersonAssets assets) {
     Map<String, ImageSlot> images = new LinkedHashMap<>();
     if (assets.header != null) {
-      images.put("header", new ImageSlot(assets.header, 120, 168));
+      images.put("header", ImageSlot.px(assets.header, 120, 168));
     }
     if (assets.front != null) {
-      images.put("front", new ImageSlot(assets.front, 243, 153));
+      images.put("front", ImageSlot.px(assets.front, 243, 153));
     }
     if (assets.back != null) {
-      images.put("back", new ImageSlot(assets.back, 243, 153));
+      images.put("back", ImageSlot.px(assets.back, 243, 153));
     }
     return images;
   }
@@ -296,8 +312,19 @@ public class SignUpPeopleDefaultTemplatePackService {
     vars.put("com_zipcode", companyZip);
     vars.put("com_code", companyCode);
     vars.put("com_user", safe(exp.proveName()));
-    vars.put("req_work_type", safe(person.getReqWorkTypeName()));
-    vars.put("req_work_level", levelLabel(person.getReqLevel()));
+    String reqWorkType = firstNonBlank(
+        person.getReqWorkTypeName(),
+        lookupWorkTypeTitle(person.getReqWorkTypeId()),
+        ctx.appointment.workTypeName());
+    Integer reqLevelIndex = resolveReqLevelIndex(
+        person.getReqLevel(),
+        person.getReqWorkTypeId(),
+        person.getReqWorkTypeName(),
+        ctx.appointment.workTypeId(),
+        ctx.appointment.classLevel());
+    vars.put("req_work_type", reqWorkType);
+    vars.put("req_work_level", levelLabel(reqLevelIndex));
+    vars.put("req_work_code", firstNonBlank(lookupWorkTypeCode(person.getReqWorkTypeId()), ctx.appointment.workTypeCode()));
     vars.put("req_work_age", reqAge + "年");
     vars.put("work_type", safe(person.getWorkTypeName()));
     vars.put("work_type_level", levelLabel(person.getLevel()));
@@ -350,8 +377,8 @@ public class SignUpPeopleDefaultTemplatePackService {
     if (ctx.examGxWb != null) {
       Sheet sheet = ctx.examGxWb.getSheetAt(0);
       setCell(sheet, rowNum, 0, String.valueOf(sequence));
-      setCell(sheet, rowNum, 1, safe(person.getReqWorkTypeName()));
-      setCell(sheet, rowNum, 2, levelLabel(person.getReqLevel()));
+      setCell(sheet, rowNum, 1, vars.get("req_work_type"));
+      setCell(sheet, rowNum, 2, vars.get("req_work_level"));
       setCell(sheet, rowNum, 3, safe(person.getDeclarationCondition()));
       setCell(sheet, rowNum, 4, "居民身份证");
       setCell(sheet, rowNum, 5, idCard);
@@ -384,8 +411,8 @@ public class SignUpPeopleDefaultTemplatePackService {
       Sheet sheet = ctx.examAllWb.getSheetAt(0);
       String isInit = person.getWorkTypeId() != null && person.getWorkTypeId() > 0 ? "再次认定" : "初次认定";
       setCell(sheet, rowNum, 0, String.valueOf(sequence));
-      setCell(sheet, rowNum, 1, safe(person.getReqWorkTypeName()));
-      setCell(sheet, rowNum, 2, levelLabel(person.getReqLevel()));
+      setCell(sheet, rowNum, 1, vars.get("req_work_type"));
+      setCell(sheet, rowNum, 2, vars.get("req_work_level"));
       setCell(sheet, rowNum, 3, isInit);
       setCell(sheet, rowNum, 4, "晋级认定");
       setCell(sheet, rowNum, 5, safe(person.getDeclarationCondition()));
@@ -462,8 +489,8 @@ public class SignUpPeopleDefaultTemplatePackService {
   /** 无模板时仍生成正反面合并 docx（对齐参考包命名）。 */
   private void writeIdCardMergeDocx(Path target, Path front, Path back) {
     Map<String, ImageSlot> images = Map.of(
-        "front", new ImageSlot(front, 243, 153),
-        "back", new ImageSlot(back, 243, 153));
+        "front", ImageSlot.idCardMerge(front),
+        "back", ImageSlot.idCardMerge(back));
     ClassPathResource resource = new ClassPathResource("template/身份证正反面合并模板.docx");
     if (resource.exists()) {
       fillDocxTemplate("template/身份证正反面合并模板.docx", target, Map.of(), images);
@@ -478,8 +505,8 @@ public class SignUpPeopleDefaultTemplatePackService {
     try {
       Files.createDirectories(target.getParent());
       try (XWPFDocument doc = new XWPFDocument()) {
-        addCenteredImage(doc, front, 243, 153);
-        addCenteredImage(doc, back, 243, 153);
+        addCenteredImage(doc, front, cmToEmu(ID_CARD_MERGE_WIDTH_CM), cmToEmu(ID_CARD_MERGE_HEIGHT_CM), false);
+        addCenteredImage(doc, back, cmToEmu(ID_CARD_MERGE_WIDTH_CM), cmToEmu(ID_CARD_MERGE_HEIGHT_CM), false);
         try (OutputStream out = Files.newOutputStream(target)) {
           doc.write(out);
         }
@@ -489,17 +516,13 @@ public class SignUpPeopleDefaultTemplatePackService {
     }
   }
 
-  private void addCenteredImage(XWPFDocument doc, Path image, int widthPx, int heightPx) throws Exception {
+  private void addCenteredImage(XWPFDocument doc, Path image, int widthEmu, int heightEmu, boolean lockAspect)
+      throws Exception {
     XWPFParagraph p = doc.createParagraph();
     p.setAlignment(ParagraphAlignment.CENTER);
     XWPFRun run = p.createRun();
     try (InputStream in = Files.newInputStream(image)) {
-      run.addPicture(
-          in,
-          pictureType(image),
-          image.getFileName().toString(),
-          Units.pixelToEMU(widthPx),
-          Units.pixelToEMU(heightPx));
+      insertPicture(run, in, pictureType(image), image.getFileName().toString(), widthEmu, heightEmu, lockAspect);
     }
   }
 
@@ -542,12 +565,14 @@ public class SignUpPeopleDefaultTemplatePackService {
       run.setText("", 0);
       ImageSlot slot = e.getValue();
       try (InputStream in = Files.newInputStream(slot.path())) {
-        run.addPicture(
+        insertPicture(
+            run,
             in,
             pictureType(slot.path()),
             slot.path().getFileName().toString(),
-            Units.pixelToEMU(slot.widthPx()),
-            Units.pixelToEMU(slot.heightPx()));
+            slot.widthEmu(),
+            slot.heightEmu(),
+            slot.lockAspect());
       } catch (Exception ex) {
         log.warn("插入图片失败 key={} path={}", e.getKey(), slot.path(), ex);
         run.setText(token, 0);
@@ -687,6 +712,101 @@ public class SignUpPeopleDefaultTemplatePackService {
     return LEVEL_LABELS[level];
   }
 
+  /**
+   * 班级工种等级 1=一级/高级技师 … 5=五级/初级工 → 报名人员 req_level 0=五级 … 4=一级。
+   */
+  static Integer classLevelToReqIndex(Integer classLevel) {
+    if (classLevel == null || classLevel < 1 || classLevel > 5) {
+      return null;
+    }
+    return 5 - classLevel;
+  }
+
+  /**
+   * 申请表申报工种/等级：人员未填预约报考时回退到班级设置，避免库默认 req_level=0 写成「初级工/五级」。
+   */
+  static Integer resolveReqLevelIndex(
+      Integer personReqLevel,
+      Long personReqWorkTypeId,
+      String personReqWorkTypeName,
+      Long classWorkTypeId,
+      Integer classLevel) {
+    Integer classReq = classLevelToReqIndex(classLevel);
+    boolean hasOwnId = personReqWorkTypeId != null && personReqWorkTypeId > 0;
+    boolean hasOwnName = StringUtils.hasText(personReqWorkTypeName);
+    boolean sameAsClass = hasOwnId && classWorkTypeId != null && personReqWorkTypeId.equals(classWorkTypeId);
+    if (personReqLevel != null && classLevel != null
+        && personReqLevel.equals(classLevel)
+        && classLevel >= 1 && classLevel <= 5) {
+      return classReq;
+    }
+    if (personReqLevel != null && personReqLevel > 0 && personReqLevel <= 4) {
+      return personReqLevel;
+    }
+    if (personReqLevel != null && personReqLevel == 0 && (hasOwnId || hasOwnName) && !sameAsClass) {
+      return 0;
+    }
+    if (classReq != null) {
+      return classReq;
+    }
+    return personReqLevel != null && personReqLevel >= 0 && personReqLevel <= 4 ? personReqLevel : null;
+  }
+
+  static String resolveReqWorkTypeName(String personName, String className) {
+    if (StringUtils.hasText(personName)) {
+      return personName.trim();
+    }
+    return className != null ? className : "";
+  }
+
+  private ClassAppointment resolveClassAppointment(TrainSignUpSelfEntity signUp) {
+    if (signUp == null || signUp.getTrainClassId() == null || signUp.getTrainClassId() <= 0) {
+      return ClassAppointment.EMPTY;
+    }
+    TrainInfoClassEntity clazz = classMapper.selectById(signUp.getTrainClassId());
+    if (clazz == null) {
+      return ClassAppointment.EMPTY;
+    }
+    Long workTypeId = clazz.getWorkTypeId();
+    String workTypeName = "";
+    String workTypeCode = "";
+    if (workTypeId != null && workTypeId > 0) {
+      ExamWorkTypeEntity type = examWorkTypeMapper.selectById(workTypeId.intValue());
+      if (type != null) {
+        if (StringUtils.hasText(type.getTitle())) {
+          workTypeName = type.getTitle();
+        }
+        workTypeCode = lookupWorkTypeCode(workTypeId);
+      }
+    }
+    return new ClassAppointment(workTypeId, workTypeName, clazz.getWorkTypeLevel(), workTypeCode);
+  }
+
+  private String lookupWorkTypeTitle(Long workTypeId) {
+    if (workTypeId == null || workTypeId <= 0) {
+      return "";
+    }
+    ExamWorkTypeEntity type = examWorkTypeMapper.selectById(workTypeId.intValue());
+    return type != null && StringUtils.hasText(type.getTitle()) ? type.getTitle() : "";
+  }
+
+  private String lookupWorkTypeCode(Long workTypeId) {
+    if (workTypeId == null || workTypeId <= 0) {
+      return "";
+    }
+    ExamWorkTypeEntity type = examWorkTypeMapper.selectById(workTypeId.intValue());
+    if (type == null) {
+      return "";
+    }
+    if (type.getParentId() != null && type.getParentId() > 0) {
+      ExamWorkTypeEntity parent = examWorkTypeMapper.selectById(type.getParentId());
+      if (parent != null && StringUtils.hasText(parent.getSeriesNo())) {
+        return parent.getSeriesNo();
+      }
+    }
+    return StringUtils.hasText(type.getSeriesNo()) ? type.getSeriesNo() : "";
+  }
+
   private static int workAge(String startDate) {
     if (!StringUtils.hasText(startDate) || startDate.length() < 4) {
       return 0;
@@ -783,7 +903,55 @@ public class SignUpPeopleDefaultTemplatePackService {
     void onProgress(int done, int total);
   }
 
-  private record ImageSlot(Path path, int widthPx, int heightPx) {}
+  private static int cmToEmu(double cm) {
+    return (int) Math.round(cm * Units.EMU_PER_CENTIMETER);
+  }
+
+  private static void insertPicture(
+      XWPFRun run,
+      InputStream in,
+      int pictureType,
+      String filename,
+      int widthEmu,
+      int heightEmu,
+      boolean lockAspect)
+      throws Exception {
+    XWPFPicture picture = run.addPicture(in, pictureType, filename, widthEmu, heightEmu);
+    var cNvPicPr = picture.getCTPicture().getNvPicPr().getCNvPicPr();
+    var picLocks = cNvPicPr.isSetPicLocks() ? cNvPicPr.getPicLocks() : cNvPicPr.addNewPicLocks();
+    picLocks.setNoChangeAspect(lockAspect);
+    if (run.getCTR().sizeOfDrawingArray() > 0) {
+      var drawing = run.getCTR().getDrawingArray(run.getCTR().sizeOfDrawingArray() - 1);
+      if (drawing.sizeOfInlineArray() > 0) {
+        var inline = drawing.getInlineArray(drawing.sizeOfInlineArray() - 1);
+        var framePr = inline.isSetCNvGraphicFramePr()
+            ? inline.getCNvGraphicFramePr()
+            : inline.addNewCNvGraphicFramePr();
+        var frameLocks = framePr.isSetGraphicFrameLocks()
+            ? framePr.getGraphicFrameLocks()
+            : framePr.addNewGraphicFrameLocks();
+        frameLocks.setNoChangeAspect(lockAspect);
+      }
+    }
+  }
+
+  private record ImageSlot(Path path, int widthEmu, int heightEmu, boolean lockAspect) {
+    static ImageSlot px(Path path, int widthPx, int heightPx) {
+      return new ImageSlot(path, Units.pixelToEMU(widthPx), Units.pixelToEMU(heightPx), true);
+    }
+
+    static ImageSlot idCardMerge(Path path) {
+      return new ImageSlot(
+          path,
+          cmToEmu(ID_CARD_MERGE_WIDTH_CM),
+          cmToEmu(ID_CARD_MERGE_HEIGHT_CM),
+          false);
+    }
+  }
+
+  private record ClassAppointment(Long workTypeId, String workTypeName, Integer classLevel, String workTypeCode) {
+    static final ClassAppointment EMPTY = new ClassAppointment(null, "", null, "");
+  }
 
   private static final class PersonAssets {
     private Path header;
@@ -814,6 +982,7 @@ public class SignUpPeopleDefaultTemplatePackService {
     private Workbook bmallWb;
     private Workbook examGxWb;
     private Workbook examAllWb;
+    private ClassAppointment appointment = ClassAppointment.EMPTY;
 
     private ExportContext(String cdnRoot, TrainSignUpSelfEntity signUp, OrgEntity company) {
       this.folderName = sanitize(signUp.getTitle());

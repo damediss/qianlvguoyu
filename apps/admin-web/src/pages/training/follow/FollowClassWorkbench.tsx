@@ -718,7 +718,6 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const leaders = classRoles.filter((r) => r.roleCode === 'monitor');
   const staffList = classRoles.filter((r) => r.roleCode === 'follow_staff');
   const chargeList = classRoles.filter((r) => r.roleCode === 'head_teacher');
-  const leadTeachers = classRoles.filter((r) => r.roleCode === 'lead_teacher' || r.roleCode === 'assistant');
 
   const workLogCountQuery = useQuery({
     queryKey: ['follow-work-logs', classIdNum, 'overview-count'],
@@ -1239,10 +1238,10 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                     <Card size="small" title="角色摘要">
                       <Space direction="vertical" style={{ width: '100%' }}>
                         <div>班长：{leaders.map((s) => s.displayName).join('、') || '未设置'}</div>
-                        <div>跟班教务：{staffList.map((s) => s.displayName).join('、') || '未设置'}</div>
-                        <div>班主任：{chargeList.map((s) => s.displayName).join('、') || '未设置'}</div>
-                        <div>主讲/助教：{leadTeachers.map((s) => s.displayName).join('、') || '未设置'}</div>
-                        <Typography.Text type="secondary">正式班主任/主讲角色指派将在角色 Tab 完善。</Typography.Text>
+                        <div>教务人员：{[...staffList, ...chargeList].map((s) => s.displayName).join('、') || '未设置'}</div>
+                        <div>理论老师：{classRoles.filter((r) => r.roleCode === 'lead_teacher').map((s) => s.displayName).join('、') || '未设置'}</div>
+                        <div>实操老师：{classRoles.filter((r) => r.roleCode === 'assistant').map((s) => s.displayName).join('、') || '未设置'}</div>
+                        <Typography.Text type="secondary">角色在开班准备「班级角色」与本页同步维护。</Typography.Text>
                       </Space>
                     </Card>
                   </Col>

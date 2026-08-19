@@ -182,7 +182,55 @@ function normalizePersonDetail(raw: Record<string, unknown>): TrainSignUpPerson 
   };
 }
 
-function personToFormValues(person: TrainSignUpPerson): PeopleEditFormValues {
+/** 0 在选项里是「五级/初级工」，也是库字段默认值；无扫码/证书痕迹时按未填写处理 */
+function optionalCurrentWorkLevel(person: TrainSignUpPerson): number | undefined {
+  const level = person.level;
+  if (level == null || Number.isNaN(level) || level < 0) return undefined;
+  if (level > 0) return level;
+  const scannedOrFilled = Boolean(person.workTypeId)
+    || Boolean(person.paperNo?.trim())
+    || (person.workTypePaperHas ?? 0) > 0
+    || Boolean(person.workTypePaper?.trim());
+  return scannedOrFilled ? 0 : undefined;
+}
+
+/** 班级工种等级 5=五级…1=一级 → 报名人员表单 0=五级…4=一级 */
+function classLevelToPersonReqLevel(classLevel?: number): number | undefined {
+  if (classLevel == null || classLevel < 1 || classLevel > 5) return undefined;
+  return 5 - classLevel;
+}
+
+function optionalReqLevel(person: TrainSignUpPerson): number | undefined {
+  const level = person.reqLevel;
+  if (level == null || Number.isNaN(level) || level < 0) return undefined;
+  if (level > 0) return level;
+  return person.reqWorkTypeId ? 0 : undefined;
+}
+
+function resolveWorkTypeOptionValue(
+  id: unknown,
+  title: string | undefined,
+  options: Array<{ value: number; label: string }>,
+): number | undefined {
+  if (options.length === 0) return undefined;
+  const byId = id != null && id !== '' && Number(id) > 0
+    ? options.find((o) => String(o.value) === String(id))
+    : undefined;
+  if (byId) return byId.value;
+  const name = title?.trim();
+  if (!name) return undefined;
+  const byTitle = options.find((o) => o.label === name);
+  return byTitle?.value;
+}
+
+function personToFormValues(
+  person: TrainSignUpPerson,
+  classDefaults?: { workTypeId?: number; workTypeTitle?: string; workTypeLevel?: number },
+  workTypeOptions: Array<{ value: number; label: string }> = [],
+): PeopleEditFormValues {
+  const ownReqWorkTypeId = person.reqWorkTypeId && person.reqWorkTypeId > 0
+    ? person.reqWorkTypeId
+    : undefined;
   return {
     platformUserId: person.platformUserId,
     name: person.name,
@@ -205,11 +253,18 @@ function personToFormValues(person: TrainSignUpPerson): PeopleEditFormValues {
     workDateStart: parseDateValue(person.workDateStart),
     workDateEnd: parseDateValue(person.workDateEnd),
     workTypePaperHas: (person.workTypePaperHas ?? 0) > 0,
-    workTypeId: person.workTypeId,
-    level: person.level,
+    workTypeId: person.workTypeId || undefined,
+    level: optionalCurrentWorkLevel(person),
     paperNo: person.paperNo,
-    reqWorkTypeId: person.reqWorkTypeId,
-    reqLevel: person.reqLevel,
+    reqWorkTypeId: ownReqWorkTypeId ?? resolveWorkTypeOptionValue(
+      classDefaults?.workTypeId,
+      classDefaults?.workTypeTitle,
+      workTypeOptions,
+    ) ?? (classDefaults?.workTypeId && classDefaults.workTypeId > 0
+      ? classDefaults.workTypeId
+      : undefined),
+    reqLevel: optionalReqLevel(person)
+      ?? classLevelToPersonReqLevel(classDefaults?.workTypeLevel),
     declarationCondition: person.declarationCondition,
     status: person.status ?? 0,
     companyStatus: person.companyStatus ?? 0,
@@ -371,6 +426,10 @@ export interface SignUpPeopleEditModalProps {
   personId: number | null;
   onClose: () => void;
   onSaved: () => void;
+  /** 资料收集所属班级的预约工种/等级（1-5），人员未填时回填，与列表一致 */
+  classWorkTypeId?: number;
+  classWorkTypeTitle?: string;
+  classWorkTypeLevel?: number;
 }
 
 export function SignUpPeopleEditModal({
@@ -378,6 +437,9 @@ export function SignUpPeopleEditModal({
   personId,
   onClose,
   onSaved,
+  classWorkTypeId,
+  classWorkTypeTitle,
+  classWorkTypeLevel,
 }: SignUpPeopleEditModalProps) {
   const [form] = Form.useForm<PeopleEditFormValues>();
   const [detail, setDetail] = useState<TrainSignUpPerson | null>(null);
@@ -393,7 +455,7 @@ export function SignUpPeopleEditModal({
   });
 
   const { isLoading: detailLoading } = useQuery({
-    queryKey: ['sign-up-person-detail', personId],
+    queryKey: ['sign-up-person-detail', personId, classWorkTypeId, classWorkTypeLevel],
     queryFn: async () => {
       const raw = await trainApi.getSignUpPerson(personId!);
       const person = normalizePersonDetail(raw as unknown as Record<string, unknown>);
@@ -410,7 +472,11 @@ export function SignUpPeopleEditModal({
         workTypePaper: pickImageUrl(person.workTypePaper) || undefined,
         titlePaper: pickImageUrl(person.titlePaper) || undefined,
       });
-      form.setFieldsValue(personToFormValues(person));
+      form.setFieldsValue(personToFormValues(person, {
+        workTypeId: classWorkTypeId,
+        workTypeTitle: classWorkTypeTitle,
+        workTypeLevel: classWorkTypeLevel,
+      }));
       return person;
     },
     enabled: open && !!personId,
@@ -446,6 +512,27 @@ export function SignUpPeopleEditModal({
     const groups = (publicData as DemandPublicData | undefined)?.worktype_list ?? [];
     return groups.flatMap((g) => (g.options ?? []).map((o) => ({ value: o.id, label: o.title })));
   }, [publicData]);
+
+  useEffect(() => {
+    if (!open || !detail || workTypeOptions.length === 0) return;
+    const values = personToFormValues(detail, {
+      workTypeId: classWorkTypeId,
+      workTypeTitle: classWorkTypeTitle,
+      workTypeLevel: classWorkTypeLevel,
+    }, workTypeOptions);
+    const current = form.getFieldValue('reqWorkTypeId');
+    if ((current == null || current === '') && values.reqWorkTypeId != null) {
+      form.setFieldValue('reqWorkTypeId', values.reqWorkTypeId);
+    }
+  }, [
+    open,
+    detail,
+    workTypeOptions,
+    classWorkTypeId,
+    classWorkTypeTitle,
+    classWorkTypeLevel,
+    form,
+  ]);
 
   const allConditions = useMemo((): ConditionOption[] => (
     (publicData as DemandPublicData | undefined)?.condition_list ?? []

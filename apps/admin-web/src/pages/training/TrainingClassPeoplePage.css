@@ -136,6 +136,24 @@
   background: #ecf5ff;
 }
 
+.class-student-list-modal .student-toolbar-btn.ant-btn-dangerous {
+  color: #ff4d4f;
+  border-color: #ffccc7;
+}
+
+.class-student-list-modal .student-toolbar-btn.ant-btn-dangerous:hover {
+  color: #fff;
+  border-color: #ff4d4f;
+  background: #ff4d4f;
+}
+
+.class-student-list-modal .student-toolbar-btn:disabled,
+.class-student-list-modal .student-toolbar-btn.ant-btn-dangerous:disabled {
+  color: #c0c4cc;
+  background: #fff;
+  border-color: #ebeef5;
+}
+
 .class-student-list-modal .class-student-table-scroll {
   width: 100%;
 }

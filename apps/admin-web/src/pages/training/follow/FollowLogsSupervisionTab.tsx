@@ -420,7 +420,7 @@ export function FollowLogsSupervisionTab({ classId, defaultBizDate }: Props) {
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="author" label="记录人" rules={[{ required: true, message: '请输入记录人' }]}>
-            <Input placeholder="班主任 / 跟班教务" />
+            <Input placeholder="教务人员" />
           </Form.Item>
           <Form.Item name="status" label="状态" initialValue="published">
             <Select

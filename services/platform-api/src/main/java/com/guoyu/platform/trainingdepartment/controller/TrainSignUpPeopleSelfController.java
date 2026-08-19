@@ -9,6 +9,7 @@ import com.guoyu.platform.trainingdepartment.dto.SignUpStudentImportReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSignUpPeopleSelfCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSignUpPeopleSelfQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSignUpPeopleSelfUpdateReq;
+import com.guoyu.platform.trainingdepartment.service.ClassPrepRosterImportService;
 import com.guoyu.platform.trainingdepartment.service.PlatformUserApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainSignUpCollectionApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainSignUpPeopleImportService;
@@ -33,16 +34,19 @@ public class TrainSignUpPeopleSelfController {
   private final TrainSignUpPeopleSelfApplicationService trainSignUpPeopleSelfApplicationService;
   private final TrainSignUpCollectionApplicationService collectionService;
   private final TrainSignUpPeopleImportService importService;
+  private final ClassPrepRosterImportService classPrepRosterImportService;
   private final PlatformUserApplicationService platformUserApplicationService;
 
   public TrainSignUpPeopleSelfController(
       TrainSignUpPeopleSelfApplicationService trainSignUpPeopleSelfApplicationService,
       TrainSignUpCollectionApplicationService collectionService,
       TrainSignUpPeopleImportService importService,
+      ClassPrepRosterImportService classPrepRosterImportService,
       PlatformUserApplicationService platformUserApplicationService) {
     this.trainSignUpPeopleSelfApplicationService = trainSignUpPeopleSelfApplicationService;
     this.collectionService = collectionService;
     this.importService = importService;
+    this.classPrepRosterImportService = classPrepRosterImportService;
     this.platformUserApplicationService = platformUserApplicationService;
   }
 
@@ -96,6 +100,16 @@ public class TrainSignUpPeopleSelfController {
       @RequestParam Long signUpId,
       @RequestParam("file") MultipartFile file) {
     return ApiResponse.ok(importService.importExcel(signUpId, file));
+  }
+
+  /** 开班准备资料收集 · 学徒制花名册导入 */
+  @PostMapping("/sign-up-people/import-class-roster")
+  @PreAuthorize("hasAuthority('train:sign-up-people:create')")
+  @AuditLog(module = "training", action = "sign-up-people:import-class-roster", targetType = "sign-up-people")
+  public ApiResponse<SignUpPeopleImportResultVO> importClassRoster(
+      @RequestParam Long signUpId,
+      @RequestParam("file") MultipartFile file) {
+    return ApiResponse.ok(classPrepRosterImportService.importExcel(signUpId, file));
   }
 
   /** 下载 Excel 批量导入模板 */

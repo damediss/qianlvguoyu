@@ -1559,6 +1559,7 @@ export interface TrainInfoClassCreateReq {
   nums?: number;
   companyId?: number;
   workTypeId?: number;
+  workTypeLevel?: number;
   dateStart?: string;
   dateEnd?: string;
   fileTemps?: string;
@@ -1951,6 +1952,8 @@ export interface DemandConvertReq {
 
 export interface TrainInfoOption extends SimpleItem {
   company_id?: number;
+  company_name?: string;
+  work_type_id?: number;
 }
 
 export interface DemandPublicData {
@@ -2067,6 +2070,7 @@ export interface TrainInfoClassListItem {
   train_info_id?: number | string;
   company_id?: number | string;
   work_type_id?: number | string;
+  work_type_level?: number;
   company_name?: string;
   work_type_title?: string;
   train_title?: string;
@@ -3000,4 +3004,118 @@ export interface ShiftAssignMaterializeResult {
   generatedAndMaterialized?: boolean;
   recordCount?: number;
   algoClassNames?: string[];
+}
+
+// ==================== Exam score import (人社成绩花名册) ====================
+
+export interface ExamScoreImportClassOption {
+  id: number | string;
+  title: string;
+  companyId?: number | string;
+  companyName?: string;
+  trainInfoId?: number | string;
+  trainTitle?: string;
+  workTypeId?: number | string;
+  workTypeTitle?: string;
+  workTypeLevel?: number;
+}
+
+export interface ExamScoreImportTarget {
+  peopleId: number | string;
+  classId: number | string;
+  classTitle?: string;
+  rosterName?: string;
+  oldExamScore?: number | null;
+  oldRealScore?: number | null;
+  nameMismatch?: boolean;
+  jobMismatch?: boolean;
+}
+
+export interface ExamScoreImportItem {
+  rowNo: number;
+  idCard?: string;
+  name?: string;
+  ticketNo?: string;
+  jobName?: string;
+  levelName?: string;
+  theoryScore?: number | null;
+  skillScore?: number | null;
+  examScore?: number | null;
+  theoryFallback?: boolean;
+  status: string;
+  targets: ExamScoreImportTarget[];
+}
+
+export interface ExamScoreImportRosterGap {
+  peopleId?: number | string;
+  classId?: number | string;
+  classTitle?: string;
+  rosterName?: string;
+  idCard?: string;
+}
+
+export interface ExamScoreImportPreview {
+  previewId: string;
+  planName?: string;
+  planCode?: string;
+  examTimeText?: string;
+  layout?: string;
+  classIds: Array<number | string>;
+  totalRows: number;
+  matched: number;
+  nameWarn: number;
+  jobWarn: number;
+  unmatched: number;
+  emptyScore: number;
+  sheetDup: number;
+  classMissingOnSheet: number;
+  classMissingIdCard: number;
+  items: ExamScoreImportItem[];
+  classMissingPeople: ExamScoreImportRosterGap[];
+  missingIdCardPeople: ExamScoreImportRosterGap[];
+}
+
+export interface ExamScoreImportCommitResult {
+  batchId: number | string;
+  written: number;
+  overwritten: number;
+  skipped: number;
+  unmatched: number;
+}
+
+export interface ExamScoreImportBatch {
+  id: number | string;
+  fileName?: string;
+  planName?: string;
+  planCode?: string;
+  examTimeText?: string;
+  layout?: string;
+  classIds?: Array<number | string>;
+  totalRows: number;
+  matchedCount: number;
+  writtenCount: number;
+  overwrittenCount: number;
+  skippedCount: number;
+  unmatchedCount: number;
+  operatorUsername?: string;
+  createdAt?: string;
+}
+
+export interface ExamScoreImportBatchItem {
+  id: number | string;
+  rowNo?: number;
+  idCard?: string;
+  name?: string;
+  ticketNo?: string;
+  theoryScore?: number | null;
+  skillScore?: number | null;
+  comprehensiveScore?: number | null;
+  peopleId?: number | string;
+  classId?: number | string;
+  resultCode: string;
+  oldExamScore?: number | null;
+  newExamScore?: number | null;
+  oldRealScore?: number | null;
+  newRealScore?: number | null;
+  theoryFallback?: boolean;
 }

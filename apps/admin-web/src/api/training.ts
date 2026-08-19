@@ -524,13 +524,13 @@ export function pageInfoLists(params: TrainInfoListQuery) {
     }),
   );
 }
-export function getInfoList(id: number) {
+export function getInfoList(id: number | string) {
   return unwrap<TrainInfoList>(apiClient.get(`${BASE}/info-lists/${id}`));
 }
 export function createInfoList(payload: TrainInfoListCreateReq) {
   return unwrap<TrainInfoList>(apiClient.post(`${BASE}/info-lists`, payload));
 }
-export function updateInfoList(id: number, payload: TrainInfoListUpdateReq) {
+export function updateInfoList(id: number | string, payload: TrainInfoListUpdateReq) {
   return unwrap<TrainInfoList>(apiClient.put(`${BASE}/info-lists/${id}`, payload));
 }
 export function deleteInfoList(id: number) {
@@ -2552,6 +2552,15 @@ export function importSignUpPeople(signUpId: number | string, file: File) {
   return unwrap<SignUpPeopleImportResult>(apiClient.post(`${BASE}/sign-up-people/import`, formData));
 }
 
+export function importClassPrepRoster(signUpId: number | string, file: File) {
+  const formData = new FormData();
+  formData.append('signUpId', String(signUpId));
+  formData.append('file', file);
+  return unwrap<SignUpPeopleImportResult>(
+    apiClient.post(`${BASE}/sign-up-people/import-class-roster`, formData, { timeout: 120000 }),
+  );
+}
+
 export function downloadSignUpPeopleImportTemplate() {
   return fetchFileBlob(`${BASE}/sign-up-people/import/template`);
 }
@@ -3187,4 +3196,52 @@ export async function importClassAttendances(classId: number, file: File) {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
   );
+}
+
+export function listExamScoreImportClasses(params?: {
+  companyId?: number;
+  trainInfoId?: number;
+  keyword?: string;
+}) {
+  return unwrap<import('../types/training').ExamScoreImportClassOption[]>(
+    apiClient.get(`${BASE}/exam-score-imports/classes`, { params }),
+  );
+}
+
+export function downloadExamScoreImportTemplate() {
+  return fetchFileBlob(`${BASE}/exam-score-imports/template`);
+}
+
+export function previewExamScoreImport(classIds: Array<number | string>, file: File) {
+  const form = new FormData();
+  classIds.forEach((id) => form.append('classIds', String(id)));
+  form.append('file', file);
+  return unwrap<import('../types/training').ExamScoreImportPreview>(
+    apiClient.post(`${BASE}/exam-score-imports/preview`, form, { timeout: 120000 }),
+  );
+}
+
+export function commitExamScoreImport(previewId: string, peopleIds: Array<number | string>) {
+  return unwrap<import('../types/training').ExamScoreImportCommitResult>(
+    apiClient.post(`${BASE}/exam-score-imports/commit`, { previewId, peopleIds }),
+  );
+}
+
+export function pageExamScoreImportBatches(params?: { page?: number; pageSize?: number }) {
+  return unwrap<PageResponse<import('../types/training').ExamScoreImportBatch>>(
+    apiClient.get(`${BASE}/exam-score-imports/batches`, { params }),
+  );
+}
+
+export function pageExamScoreImportBatchItems(
+  batchId: number | string,
+  params?: { page?: number; pageSize?: number },
+) {
+  return unwrap<PageResponse<import('../types/training').ExamScoreImportBatchItem>>(
+    apiClient.get(`${BASE}/exam-score-imports/batches/${batchId}/items`, { params }),
+  );
+}
+
+export function downloadExamScoreImportFailures(batchId: number | string) {
+  return fetchFileBlob(`${BASE}/exam-score-imports/batches/${batchId}/failures.xlsx`);
 }

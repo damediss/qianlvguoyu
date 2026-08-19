@@ -60,10 +60,10 @@ public class TrainClassRoleApplicationService {
       MONITOR, 20);
 
   private static final Map<String, String> ROLE_NAMES = Map.of(
-      HEAD_TEACHER, "企业班主任",
-      FOLLOW_STAFF, "跟班教务",
-      LEAD_TEACHER, "主讲",
-      ASSISTANT, "助教",
+      HEAD_TEACHER, "教务人员",
+      FOLLOW_STAFF, "教务人员",
+      LEAD_TEACHER, "理论老师",
+      ASSISTANT, "实操老师",
       MONITOR, "班长");
 
   private final TrainClassRoleMapper roleMapper;
