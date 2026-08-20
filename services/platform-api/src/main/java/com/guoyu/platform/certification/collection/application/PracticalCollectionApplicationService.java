@@ -94,6 +94,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.security.SecureRandom;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -117,12 +118,16 @@ import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Drawing;
 import org.apache.poi.ss.usermodel.FillPatternType;
-import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.HorizontalAlignment;
 import org.apache.poi.ss.usermodel.Picture;
 import org.apache.poi.ss.usermodel.PictureData;
+import org.apache.poi.ss.usermodel.PrintSetup;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.VerticalAlignment;
+import org.apache.poi.xssf.usermodel.DefaultIndexedColorMap;
+import org.apache.poi.xssf.usermodel.XSSFCellStyle;
+import org.apache.poi.xssf.usermodel.XSSFColor;
+import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.xssf.usermodel.XSSFClientAnchor;
@@ -152,12 +157,19 @@ public class PracticalCollectionApplicationService {
       Pattern.compile("(?:collectionToken|collectToken|token)=([^&\\s]+)", Pattern.CASE_INSENSITIVE);
   private static final DateTimeFormatter FILE_TS_FORMAT =
       DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
-  private static final int COLLECTION_TEMPLATE_COLUMN_COUNT = 9;
-  private static final int COLLECTION_TEMPLATE_ROW_COUNT = 23;
+  private static final DateTimeFormatter SESSION_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+  private static final DateTimeFormatter SESSION_TIME_FORMAT = DateTimeFormatter.ofPattern("H:mm");
+  private static final int COLLECTION_TEMPLATE_COLUMN_COUNT = 15;
+  private static final int COLLECTION_TEMPLATE_ROW_COUNT = 30;
   private static final int COLLECTION_FIRST_BLOCK_ROW = 2;
   private static final int COLLECTION_BLOCK_ROW_STEP = 7;
-  private static final int COLLECTION_BLOCK_COUNT = 3;
-  private static final int COLLECTION_CANDIDATES_PER_PAGE = COLLECTION_BLOCK_COUNT * 3;
+  private static final int COLLECTION_BLOCK_COUNT = 4;
+  private static final int COLLECTION_CANDIDATES_PER_ROW = 5;
+  private static final int COLLECTION_CANDIDATES_PER_PAGE =
+      COLLECTION_BLOCK_COUNT * COLLECTION_CANDIDATES_PER_ROW;
+  private static final int[] COLLECTION_BLOCK_START_COLUMNS = {0, 3, 6, 9, 12};
+  private static final byte[] COLLECTION_HEADER_FILL = new byte[] {(byte) 0xF9, (byte) 0xFA, (byte) 0xFB};
+  private static final byte[] COLLECTION_LABEL_FILL = new byte[] {(byte) 0xE5, (byte) 0xE7, (byte) 0xEB};
   private static final String LEGACY_COLLECTION_SESSION_NAME = "历史实操考试";
   /**
    * Excel 单元格屏幕像素约为 96DPI；按 4x 生成嵌入图，打印/缩放后笔画不易发虚断点。
@@ -660,7 +672,8 @@ public class PracticalCollectionApplicationService {
         .eq(CertificationTaskScopeEntity::getDeleted, 0)
         .orderByAsc(CertificationTaskScopeEntity::getSortOrder)
         .last("LIMIT 1"));
-    byte[] data = buildCollectionFormWorkbook(task, site, scope, exportCandidates);
+    CertificationExamSessionEntity session = resolveExportExamSession(taskId, statuses);
+    byte[] data = buildCollectionFormWorkbook(task, site, scope, session, exportCandidates);
     String filename = "职业技能等级认定座次签到表_" + safeFilename(task.getTaskName()) + "_"
         + LocalDateTime.now().format(FILE_TS_FORMAT) + ".xlsx";
     return new CollectionFormExportVO(data, filename);
@@ -672,26 +685,54 @@ public class PracticalCollectionApplicationService {
       CertificationTaskScopeEntity scope,
       List<CollectionFormCandidate> candidates
   ) {
-    try (java.io.InputStream input = getClass().getResourceAsStream("/templates/职业技能等级认定座次签到表.xlsx");
-         Workbook workbook = input == null ? buildNormalizedCollectionTemplate() : createTemplateWorkbook(input);
+    return buildCollectionFormWorkbook(task, site, scope, null, candidates);
+  }
+
+  private byte[] buildCollectionFormWorkbook(
+      CertificationTaskEntity task,
+      CertificationTaskExamSiteEntity site,
+      CertificationTaskScopeEntity scope,
+      CertificationExamSessionEntity session,
+      List<CollectionFormCandidate> candidates
+  ) {
+    try (Workbook workbook = openCollectionTemplateWorkbook();
          ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-       int pageCount = (candidates.size() + COLLECTION_CANDIDATES_PER_PAGE - 1)
-           / COLLECTION_CANDIDATES_PER_PAGE;
-       Sheet template = workbook.getSheetAt(0);
-       Sheet first = copyCollectionTemplateSheet(workbook, template, 1);
-       workbook.removeSheetAt(workbook.getSheetIndex(template));
-       for (int page = 0; page < pageCount; page++) {
-         Sheet sheet = page == 0 ? first : copyCollectionTemplateSheet(workbook, template, page + 1);
-         fillCollectionSheet(sheet, task, site, scope,
-             candidates.subList(page * COLLECTION_CANDIDATES_PER_PAGE,
-                 Math.min((page + 1) * COLLECTION_CANDIDATES_PER_PAGE, candidates.size())), workbook);
-       }
+      int pageCount = (candidates.size() + COLLECTION_CANDIDATES_PER_PAGE - 1)
+          / COLLECTION_CANDIDATES_PER_PAGE;
+      Sheet template = workbook.getSheetAt(0);
+      List<Sheet> pages = new ArrayList<>();
+      for (int page = 0; page < pageCount; page++) {
+        pages.add(copyCollectionTemplateSheet(workbook, template, page + 1));
+      }
+      workbook.removeSheetAt(workbook.getSheetIndex(template));
+      CollectionFormHeader header = collectionFormHeader(task, site, session);
+      for (int page = 0; page < pageCount; page++) {
+        fillCollectionSheet(pages.get(page), header,
+            candidates.subList(page * COLLECTION_CANDIDATES_PER_PAGE,
+                Math.min((page + 1) * COLLECTION_CANDIDATES_PER_PAGE, candidates.size())), workbook);
+      }
       workbook.write(output);
       return output.toByteArray();
     } catch (IOException ex) {
       log.error("Practical collection form export failed", ex);
       throw new BusinessException(ErrorCode.BAD_REQUEST, "采集表模板读取或生成失败，请检查模板文件");
     }
+  }
+
+  private Workbook openCollectionTemplateWorkbook() {
+    try (java.io.InputStream input = getClass().getResourceAsStream("/templates/职业技能等级认定座次签到表.xlsx")) {
+      if (input != null) {
+        Workbook workbook = createTemplateWorkbook(input);
+        if (isCurrentCollectionTemplate(workbook)) {
+          return workbook;
+        }
+        log.warn("Classpath seat-chart template is the legacy 9-column layout; generating the current 5x4 template");
+        workbook.close();
+      }
+    } catch (IOException ex) {
+      log.warn("Classpath seat-chart template could not be read; generating the current 5x4 template", ex);
+    }
+    return buildNormalizedCollectionTemplate();
   }
 
   private Workbook createTemplateWorkbook(java.io.InputStream input) {
@@ -703,94 +744,124 @@ public class PracticalCollectionApplicationService {
     }
   }
 
+  private boolean isCurrentCollectionTemplate(Workbook workbook) {
+    if (workbook == null || workbook.getNumberOfSheets() < 1) {
+      return false;
+    }
+    Sheet sheet = workbook.getSheetAt(0);
+    boolean headerFifteenCols = false;
+    boolean fourthRowPhoto = false;
+    boolean fifthColumnPhoto = false;
+    for (int i = 0; i < sheet.getNumMergedRegions(); i++) {
+      org.apache.poi.ss.util.CellRangeAddress region = sheet.getMergedRegion(i);
+      if (region.getFirstRow() == 0 && region.getFirstColumn() == 0 && region.getLastColumn() >= 14) {
+        headerFifteenCols = true;
+      }
+      if (region.getFirstRow() == COLLECTION_FIRST_BLOCK_ROW + 3 * COLLECTION_BLOCK_ROW_STEP
+          && region.getFirstColumn() == 0
+          && region.getLastRow() >= COLLECTION_FIRST_BLOCK_ROW + 3 * COLLECTION_BLOCK_ROW_STEP + 3) {
+        fourthRowPhoto = true;
+      }
+      if (region.getFirstRow() == COLLECTION_FIRST_BLOCK_ROW && region.getFirstColumn() == 12) {
+        fifthColumnPhoto = true;
+      }
+    }
+    return headerFifteenCols && fourthRowPhoto && fifthColumnPhoto;
+  }
+
   private Workbook buildNormalizedCollectionTemplate() {
-    Workbook workbook = new XSSFWorkbook();
+    XSSFWorkbook workbook = new XSSFWorkbook();
     Sheet sheet = workbook.createSheet("座次签到表_优化");
-    sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, 8));
-    sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(1, 1, 0, 8));
-    CellStyle titleStyle = workbook.createCellStyle();
-    titleStyle.setAlignment(HorizontalAlignment.CENTER);
-    titleStyle.setVerticalAlignment(VerticalAlignment.CENTER);
-    Font titleFont = workbook.createFont();
+    XSSFFont titleFont = workbook.createFont();
     titleFont.setFontName("Microsoft YaHei");
     titleFont.setFontHeightInPoints((short) 18);
     titleFont.setBold(true);
-    titleStyle.setFont(titleFont);
-    CellStyle infoStyle = workbook.createCellStyle();
-    infoStyle.setFillForegroundColor(org.apache.poi.ss.usermodel.IndexedColors.GREY_25_PERCENT.getIndex());
-    infoStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-    CellStyle labelStyle = workbook.createCellStyle();
-    labelStyle.setFillForegroundColor(org.apache.poi.ss.usermodel.IndexedColors.GREY_25_PERCENT.getIndex());
-    labelStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-    labelStyle.setAlignment(HorizontalAlignment.CENTER);
-    labelStyle.setVerticalAlignment(VerticalAlignment.CENTER);
-    Font labelFont = workbook.createFont();
+    XSSFFont infoFont = workbook.createFont();
+    infoFont.setFontName("Microsoft YaHei");
+    infoFont.setFontHeightInPoints((short) 13);
+    XSSFFont labelFont = workbook.createFont();
     labelFont.setFontName("Microsoft YaHei");
+    labelFont.setFontHeightInPoints((short) 10);
     labelFont.setBold(true);
-    labelStyle.setFont(labelFont);
-    CellStyle bodyStyle = workbook.createCellStyle();
-    bodyStyle.setAlignment(HorizontalAlignment.CENTER);
-    bodyStyle.setVerticalAlignment(VerticalAlignment.CENTER);
-    bodyStyle.setBorderTop(BorderStyle.THIN);
-    bodyStyle.setBorderBottom(BorderStyle.THIN);
-    bodyStyle.setBorderLeft(BorderStyle.THIN);
-    bodyStyle.setBorderRight(BorderStyle.THIN);
+    XSSFFont bodyFont = workbook.createFont();
+    bodyFont.setFontName("Microsoft YaHei");
+    bodyFont.setFontHeightInPoints((short) 10);
+    CellStyle titleStyle = rgbStyle(workbook, titleFont, null, HorizontalAlignment.CENTER,
+        VerticalAlignment.CENTER, true, false);
+    CellStyle infoStyle = rgbStyle(workbook, infoFont, COLLECTION_HEADER_FILL, HorizontalAlignment.LEFT,
+        VerticalAlignment.CENTER, true, false);
+    CellStyle labelStyle = rgbStyle(workbook, labelFont, COLLECTION_LABEL_FILL, HorizontalAlignment.CENTER,
+        VerticalAlignment.CENTER, true, true);
+    CellStyle bodyStyle = rgbStyle(workbook, bodyFont, COLLECTION_HEADER_FILL, HorizontalAlignment.CENTER,
+        VerticalAlignment.CENTER, true, true);
+
+    sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, COLLECTION_TEMPLATE_COLUMN_COUNT - 1));
+    sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(1, 1, 0, COLLECTION_TEMPLATE_COLUMN_COUNT - 1));
+    for (int col = 0; col < COLLECTION_TEMPLATE_COLUMN_COUNT; col++) {
+      sheet.setColumnWidth(col, col % 3 == 0 ? 3651 : 2304);
+    }
     Row title = sheet.createRow(0);
     title.setHeightInPoints(36);
-    title.createCell(0).setCellValue("职业技能等级认定座次签到表");
-    title.getCell(0).setCellStyle(titleStyle);
+    Cell titleCell = title.createCell(0);
+    titleCell.setCellValue("职业技能等级认定座次签到表");
+    titleCell.setCellStyle(titleStyle);
+    for (int col = 1; col < COLLECTION_TEMPLATE_COLUMN_COUNT; col++) {
+      title.createCell(col).setCellStyle(titleStyle);
+    }
     Row info = sheet.createRow(1);
-    info.setHeightInPoints(22);
-    info.createCell(0).setCellValue("考场地址：                                      考试时间：");
-    info.getCell(0).setCellStyle(infoStyle);
-     for (int row = COLLECTION_FIRST_BLOCK_ROW; row < COLLECTION_TEMPLATE_ROW_COUNT; row++) {
-      sheet.createRow(row).setHeightInPoints(40);
-     }
-     for (int col = 0; col < COLLECTION_TEMPLATE_COLUMN_COUNT; col++) {
-       int blockColumn = col % 3;
-      sheet.setColumnWidth(col, blockColumn == 0 ? 5280 : blockColumn == 1 ? 3328 : 4352);
-     }
-     for (int block = 0; block < COLLECTION_BLOCK_COUNT; block++) {
-       int blockStartRow = COLLECTION_FIRST_BLOCK_ROW + block * COLLECTION_BLOCK_ROW_STEP;
-       for (int start : new int[]{0, 3, 6}) {
-         sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(
-             blockStartRow, blockStartRow + 3, start, start));
-         sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(
-             blockStartRow, blockStartRow + 3, start + 1, start + 1));
-       }
-       for (int row = blockStartRow; row < blockStartRow + COLLECTION_BLOCK_ROW_STEP; row++) {
-         for (int col = 0; col < COLLECTION_TEMPLATE_COLUMN_COUNT; col++) {
-           sheet.getRow(row).getCell(col).setCellStyle(bodyStyle);
-         }
-       }
-       for (int start : new int[]{0, 3, 6}) {
-         sheet.getRow(blockStartRow).getCell(start + 2).setCellValue("考场签到");
-         sheet.getRow(blockStartRow).getCell(start + 2).setCellStyle(labelStyle);
-         sheet.getRow(blockStartRow + 2).getCell(start + 2).setCellValue("交卷确认");
-         sheet.getRow(blockStartRow + 2).getCell(start + 2).setCellStyle(labelStyle);
-         sheet.getRow(blockStartRow + 4).getCell(start + 1).setCellValue("理论/实操");
-         sheet.getRow(blockStartRow + 4).getCell(start + 1).setCellStyle(labelStyle);
-         sheet.getRow(blockStartRow + 5).getCell(start).setCellValue("证件号");
-         sheet.getRow(blockStartRow + 5).getCell(start).setCellStyle(labelStyle);
-         sheet.getRow(blockStartRow + 6).getCell(start).setCellValue("准考证");
-         sheet.getRow(blockStartRow + 6).getCell(start).setCellStyle(labelStyle);
-       }
+    info.setHeightInPoints(32);
+    Cell infoCell = info.createCell(0);
+    infoCell.setCellValue("考场地址：                                      考试时间：");
+    infoCell.setCellStyle(infoStyle);
+    for (int col = 1; col < COLLECTION_TEMPLATE_COLUMN_COUNT; col++) {
+      info.createCell(col).setCellStyle(infoStyle);
+    }
+    for (int row = COLLECTION_FIRST_BLOCK_ROW; row < COLLECTION_TEMPLATE_ROW_COUNT; row++) {
+      Row target = sheet.createRow(row);
+      target.setHeightInPoints(40);
+      for (int col = 0; col < COLLECTION_TEMPLATE_COLUMN_COUNT; col++) {
+        target.createCell(col).setCellStyle(bodyStyle);
+      }
+    }
+    for (int block = 0; block < COLLECTION_BLOCK_COUNT; block++) {
+      int blockStartRow = COLLECTION_FIRST_BLOCK_ROW + block * COLLECTION_BLOCK_ROW_STEP;
+      for (int start : COLLECTION_BLOCK_START_COLUMNS) {
+        sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(
+            blockStartRow, blockStartRow + 3, start, start));
+        sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(
+            blockStartRow, blockStartRow + 3, start + 1, start + 1));
+        sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(
+            blockStartRow + 4, blockStartRow + 4, start + 1, start + 2));
+        sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(
+            blockStartRow + 5, blockStartRow + 5, start + 1, start + 2));
+        sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(
+            blockStartRow + 6, blockStartRow + 6, start + 1, start + 2));
+        Cell checkIn = sheet.getRow(blockStartRow).getCell(start + 2);
+        checkIn.setCellValue("考场签到");
+        checkIn.setCellStyle(labelStyle);
+        Cell submit = sheet.getRow(blockStartRow + 2).getCell(start + 2);
+        submit.setCellValue("交卷确认");
+        submit.setCellStyle(labelStyle);
+        sheet.getRow(blockStartRow + 5).getCell(start).setCellValue("证件号");
+        sheet.getRow(blockStartRow + 6).getCell(start).setCellValue("准考证");
+      }
     }
     sheet.setDisplayGridlines(false);
     sheet.setPrintGridlines(false);
-    sheet.setFitToPage(false);
+    sheet.setFitToPage(true);
     sheet.setAutobreaks(true);
-    sheet.setHorizontallyCenter(false);
+    sheet.setHorizontallyCenter(true);
     sheet.setVerticallyCenter(false);
-    sheet.getPrintSetup().setLandscape(false);
-    sheet.getPrintSetup().setPaperSize((short) 1);
-    sheet.getPrintSetup().setScale((short) 100);
-    sheet.getPrintSetup().setFitWidth((short) 1);
-    sheet.getPrintSetup().setFitHeight((short) 1);
-    sheet.setMargin(Sheet.LeftMargin, 0.7);
-    sheet.setMargin(Sheet.RightMargin, 0.7);
-    sheet.setMargin(Sheet.TopMargin, 0.75);
-    sheet.setMargin(Sheet.BottomMargin, 0.75);
+    PrintSetup printSetup = sheet.getPrintSetup();
+    printSetup.setLandscape(false);
+    printSetup.setPaperSize(PrintSetup.A4_PAPERSIZE);
+    printSetup.setScale((short) 100);
+    printSetup.setFitWidth((short) 1);
+    printSetup.setFitHeight((short) 1);
+    sheet.setMargin(Sheet.LeftMargin, 0.4);
+    sheet.setMargin(Sheet.RightMargin, 0.4);
+    sheet.setMargin(Sheet.TopMargin, 0.5);
+    sheet.setMargin(Sheet.BottomMargin, 0.5);
     workbook.setPrintArea(workbook.getSheetIndex(sheet), 0, COLLECTION_TEMPLATE_COLUMN_COUNT - 1,
         0, COLLECTION_TEMPLATE_ROW_COUNT - 1);
     return workbook;
@@ -858,40 +929,213 @@ public class PracticalCollectionApplicationService {
 
   private void fillCollectionSheet(
       Sheet sheet,
-      CertificationTaskEntity task,
-      CertificationTaskExamSiteEntity site,
-      CertificationTaskScopeEntity scope,
+      CollectionFormHeader header,
       List<CollectionFormCandidate> candidates,
       Workbook workbook
   ) {
     setCellValue(sheet, 0, 0, "职业技能等级认定座次签到表");
-    String address = site == null ? "" : nullToEmpty(site.getAddress());
-    String examTime = site == null ? nullToEmpty(task.getExamDate() == null ? null : task.getExamDate().toString())
-        : nullToEmpty(site.getExamDate() == null ? task.getExamDate() == null ? null : task.getExamDate().toString() : site.getExamDate().toString())
-            + " " + nullToEmpty(site.getStartTime()) + (StringUtils.hasText(site.getEndTime()) ? "-" + site.getEndTime() : "");
-    setCellValue(sheet, 1, 0, "考场地址：" + address + "    考试时间：" + examTime);
-     int candidateIndex = 0;
-     for (int block = 0; block < COLLECTION_BLOCK_COUNT; block++) {
-       int blockStartRow = COLLECTION_FIRST_BLOCK_ROW + block * COLLECTION_BLOCK_ROW_STEP;
-       for (int start : new int[]{0, 3, 6}) {
-         CollectionFormCandidate candidate = candidateIndex < candidates.size()
-             ? candidates.get(candidateIndex) : null;
-         candidateIndex++;
-         clearPictureCells(sheet, start, blockStartRow);
-         clearCandidateCells(sheet, start, blockStartRow);
-         if (candidate == null) {
-           continue;
-         }
-         setCellValue(sheet, blockStartRow + 4, start, candidate.candidate().getCandidateName());
-         setCellValue(sheet, blockStartRow + 4, start + 1, "实操");
-         setCellValue(sheet, blockStartRow + 5, start + 1, candidate.candidate().getIdCardNo());
-         setCellValue(sheet, blockStartRow + 6, start + 1, candidate.candidate().getAdmissionTicketNo());
-         addImage(workbook, sheet, candidate.avatar(), start, blockStartRow, 1, 4);
-         addImage(workbook, sheet, candidate.fingerprint(), start + 1, blockStartRow, 1, 4);
-         addImage(workbook, sheet, candidate.signature(), start + 2, blockStartRow + 1, 1, 1);
-         addImage(workbook, sheet, candidate.signature(), start + 2, blockStartRow + 3, 1, 1);
-       }
-     }
+    setCellValue(sheet, 1, 0, header.headerLine());
+    int candidateIndex = 0;
+    for (int block = 0; block < COLLECTION_BLOCK_COUNT; block++) {
+      int blockStartRow = COLLECTION_FIRST_BLOCK_ROW + block * COLLECTION_BLOCK_ROW_STEP;
+      for (int start : COLLECTION_BLOCK_START_COLUMNS) {
+        CollectionFormCandidate candidate = candidateIndex < candidates.size()
+            ? candidates.get(candidateIndex) : null;
+        candidateIndex++;
+        clearPictureCells(sheet, start, blockStartRow);
+        clearCandidateCells(sheet, start, blockStartRow);
+        if (candidate == null) {
+          continue;
+        }
+        setCellValue(sheet, blockStartRow + 4, start, candidate.candidate().getCandidateName());
+        setCellValue(sheet, blockStartRow + 4, start + 1, header.secondColumnText());
+        setCellValue(sheet, blockStartRow + 5, start + 1, candidate.candidate().getIdCardNo());
+        setCellValue(sheet, blockStartRow + 6, start + 1, candidate.candidate().getAdmissionTicketNo());
+        addImage(workbook, sheet, candidate.avatar(), start, blockStartRow, 1, 4);
+        addImage(workbook, sheet, candidate.fingerprint(), start + 1, blockStartRow, 1, 4);
+        addImage(workbook, sheet, candidate.signature(), start + 2, blockStartRow + 1, 1, 1);
+        addImage(workbook, sheet, candidate.signature(), start + 2, blockStartRow + 3, 1, 1);
+      }
+    }
+  }
+
+  private CertificationExamSessionEntity resolveExportExamSession(
+      Long taskId,
+      Map<Long, PracticalCollectionStatusEntity> statuses
+  ) {
+    if (examSessionMapper == null) {
+      return null;
+    }
+    if (statuses != null && !statuses.isEmpty()) {
+      List<Long> sessionIds = statuses.values().stream()
+          .map(PracticalCollectionStatusEntity::getExamSessionId)
+          .filter(Objects::nonNull)
+          .distinct()
+          .toList();
+      if (!sessionIds.isEmpty()) {
+        CertificationExamSessionEntity linked = examSessionMapper.selectById(sessionIds.get(0));
+        if (linked != null) {
+          return linked;
+        }
+      }
+    }
+    if (taskId == null) {
+      return null;
+    }
+    List<CertificationExamSessionEntity> sessions = examSessionMapper.selectList(
+        new LambdaQueryWrapper<CertificationExamSessionEntity>()
+            .eq(CertificationExamSessionEntity::getTaskId, taskId)
+            .eq(CertificationExamSessionEntity::getDeleted, 0)
+            .orderByAsc(CertificationExamSessionEntity::getExamDate)
+            .orderByAsc(CertificationExamSessionEntity::getStartTime)
+            .orderByAsc(CertificationExamSessionEntity::getId));
+    return sessions == null || sessions.isEmpty() ? null : sessions.get(0);
+  }
+
+  private CollectionFormHeader collectionFormHeader(
+      CertificationTaskEntity task,
+      CertificationTaskExamSiteEntity site,
+      CertificationExamSessionEntity session
+  ) {
+    String venue = resolveExamVenue(session, site);
+    String examTime = resolveExamTimeText(task, site, session);
+    String examType = examTypeLabel(resolveExamType(session, site));
+    String headerLine = "考场地址：" + venue
+        + "                                                                           考试时间：" + examTime;
+    return new CollectionFormHeader(headerLine, examType, venue, examTime);
+  }
+
+  private String resolveExamType(
+      CertificationExamSessionEntity session,
+      CertificationTaskExamSiteEntity site
+  ) {
+    if (session != null && StringUtils.hasText(session.getExamType())) {
+      return session.getExamType();
+    }
+    return site == null ? null : site.getExamType();
+  }
+
+  private String resolveExamVenue(
+      CertificationExamSessionEntity session,
+      CertificationTaskExamSiteEntity site
+  ) {
+    if (session != null && StringUtils.hasText(session.getExamVenue())) {
+      return session.getExamVenue().trim();
+    }
+    if (site != null && StringUtils.hasText(site.getSiteName())) {
+      return site.getSiteName().trim();
+    }
+    if (site != null && StringUtils.hasText(site.getAddress())) {
+      return site.getAddress().trim();
+    }
+    return "";
+  }
+
+  private String resolveExamTimeText(
+      CertificationTaskEntity task,
+      CertificationTaskExamSiteEntity site,
+      CertificationExamSessionEntity session
+  ) {
+    if (session != null) {
+      return formatExamTime(
+          session.getExamType(),
+          session.getExamDate(),
+          session.getStartTime(),
+          session.getEndTime(),
+          null,
+          null);
+    }
+    LocalDate examDate = site != null && site.getExamDate() != null
+        ? site.getExamDate()
+        : task == null ? null : task.getExamDate();
+    return formatExamTime(
+        site == null ? null : site.getExamType(),
+        examDate,
+        null,
+        null,
+        site == null ? null : site.getStartTime(),
+        site == null ? null : site.getEndTime());
+  }
+
+  private String formatExamTime(
+      String examType,
+      LocalDate examDate,
+      LocalDateTime startTime,
+      LocalDateTime endTime,
+      String startText,
+      String endText
+  ) {
+    String typeLabel = examTypeLabel(examType);
+    String startPart = formatDateTimePart(examDate, startTime, startText);
+    LocalDate endDate = endTime != null ? endTime.toLocalDate() : examDate;
+    String endPart = formatDateTimePart(endDate, endTime, endText);
+    String range;
+    if (StringUtils.hasText(startPart) && StringUtils.hasText(endPart) && !startPart.equals(endPart)) {
+      range = startPart + "~" + endPart;
+    } else {
+      range = StringUtils.hasText(startPart) ? startPart : endPart;
+    }
+    if (StringUtils.hasText(typeLabel) && StringUtils.hasText(range)) {
+      return typeLabel + " " + range;
+    }
+    return StringUtils.hasText(typeLabel) ? typeLabel : nullToEmpty(range);
+  }
+
+  private String formatDateTimePart(LocalDate examDate, LocalDateTime dateTime, String clockText) {
+    if (dateTime != null) {
+      return dateTime.toLocalDate().format(SESSION_DATE_FORMAT) + " " + dateTime.format(SESSION_TIME_FORMAT);
+    }
+    String dateText = examDate == null ? "" : examDate.format(SESSION_DATE_FORMAT);
+    String timeText = nullToEmpty(clockText).trim();
+    if (StringUtils.hasText(dateText) && StringUtils.hasText(timeText)) {
+      return dateText + " " + timeText;
+    }
+    return StringUtils.hasText(dateText) ? dateText : timeText;
+  }
+
+  private String examTypeLabel(String examType) {
+    if (!StringUtils.hasText(examType)) {
+      return "";
+    }
+    String value = examType.trim();
+    String upper = value.toUpperCase(java.util.Locale.ROOT);
+    if ("PRACTICE".equals(upper) || "PRACTICAL".equals(upper) || "实操".equals(value)) {
+      return "实操";
+    }
+    if ("DEFENSE".equals(upper) || "答辩".equals(value)) {
+      return "答辩";
+    }
+    if ("THEORY".equals(upper) || "理论".equals(value)) {
+      return "理论";
+    }
+    return value;
+  }
+
+  private CellStyle rgbStyle(
+      XSSFWorkbook workbook,
+      XSSFFont font,
+      byte[] rgb,
+      HorizontalAlignment horizontal,
+      VerticalAlignment vertical,
+      boolean wrap,
+      boolean border
+  ) {
+    XSSFCellStyle style = workbook.createCellStyle();
+    style.setFont(font);
+    style.setAlignment(horizontal);
+    style.setVerticalAlignment(vertical);
+    style.setWrapText(wrap);
+    if (rgb != null) {
+      style.setFillForegroundColor(new XSSFColor(rgb, new DefaultIndexedColorMap()));
+      style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+    }
+    if (border) {
+      style.setBorderTop(BorderStyle.THIN);
+      style.setBorderBottom(BorderStyle.THIN);
+      style.setBorderLeft(BorderStyle.THIN);
+      style.setBorderRight(BorderStyle.THIN);
+    }
+    return style;
   }
 
   private void clearPictureCells(Sheet sheet, int start, int blockStartRow) {
@@ -1087,6 +1331,14 @@ public class PracticalCollectionApplicationService {
       byte[] avatar,
       byte[] fingerprint,
       byte[] signature
+  ) {
+  }
+
+  private record CollectionFormHeader(
+      String headerLine,
+      String secondColumnText,
+      String examVenue,
+      String examTimeText
   ) {
   }
 

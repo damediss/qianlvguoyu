@@ -14,6 +14,7 @@ public record CertificationExamSessionVO(
     LocalDateTime startTime,
     LocalDateTime endTime,
     Long examSiteId,
+    String examVenue,
     String status,
     Boolean identityCheckRequired,
     Boolean fingerprintRequired,
@@ -23,7 +24,8 @@ public record CertificationExamSessionVO(
   public static CertificationExamSessionVO from(CertificationExamSessionEntity entity) {
     return new CertificationExamSessionVO(entity.getId(), entity.getTaskId(), entity.getTaskScopeId(),
         entity.getExamType(), entity.getSessionName(), entity.getExamDate(), entity.getStartTime(),
-        entity.getEndTime(), entity.getExamSiteId(), entity.getStatus(), entity.getIdentityCheckRequired(),
-        entity.getFingerprintRequired(), entity.getSignatureRequired(), entity.getRemark());
+        entity.getEndTime(), entity.getExamSiteId(), entity.getExamVenue(), entity.getStatus(),
+        entity.getIdentityCheckRequired(), entity.getFingerprintRequired(), entity.getSignatureRequired(),
+        entity.getRemark());
   }
 }

@@ -84,6 +84,7 @@ export function FollowScheduleChangeTab({ classId }: Props) {
       void queryClient.invalidateQueries({ queryKey: ['schedule-change-requests'] });
       void queryClient.invalidateQueries({ queryKey: ['follow-schedule', classId] });
       void queryClient.invalidateQueries({ queryKey: ['follow-schedule-status', classId] });
+      void queryClient.invalidateQueries({ queryKey: ['follow-teacher-days', classId] });
     },
     onError: (e: Error) => message.error(e.message || '审批失败'),
   });

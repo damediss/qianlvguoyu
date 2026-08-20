@@ -31,7 +31,20 @@ const STATUS_MAP: Record<number, { label: string }> = {
   2: { label: '未通过' },
 };
 
-const LEVEL_LABELS = ['五级/初级工', '四级/中级工', '三级/高级工', '二级/技师', '一级/高级技师'];
+/** 与开班准备班级列表一致：5=五级 … 1=一级 */
+const CLASS_LEVEL_LABELS: Record<number, string> = {
+  5: '五级/初级工',
+  4: '四级/中级工',
+  3: '三级/高级工',
+  2: '二级/技师',
+  1: '一级/高级技师',
+};
+
+function classLevelLabel(level?: number | string | null): string {
+  const n = Number(level);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return CLASS_LEVEL_LABELS[n] ?? `${n}级`;
+}
 
 function calcAgeFromIdCard(idCard?: string): number | undefined {
   if (!idCard) return undefined;
@@ -95,10 +108,21 @@ function renderPeopleStatus(status?: number, statusCn?: string) {
 export type ClassSignUpPeoplePanelProps = {
   signUpId: number | string;
   title?: string;
+  /** 开班准备班级工种/等级，资料收集列表与班级列表保持一致 */
+  classWorkTypeId?: number;
+  classWorkTypeTitle?: string;
+  classWorkTypeLevel?: number;
   onChanged?: () => void;
 };
 
-export function ClassSignUpPeoplePanel({ signUpId, title, onChanged }: ClassSignUpPeoplePanelProps) {
+export function ClassSignUpPeoplePanel({
+  signUpId,
+  title,
+  classWorkTypeTitle,
+  classWorkTypeLevel,
+  classWorkTypeId,
+  onChanged,
+}: ClassSignUpPeoplePanelProps) {
   const [peopleKeyword, setPeopleKeyword] = useState('');
   const [peopleStatus, setPeopleStatus] = useState<number | undefined>();
   const [peoplePage, setPeoplePage] = useState(1);
@@ -107,6 +131,8 @@ export function ClassSignUpPeoplePanel({ signUpId, title, onChanged }: ClassSign
   const [editingPersonId, setEditingPersonId] = useState<number | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
+  const [rosterImportOpen, setRosterImportOpen] = useState(false);
+  const [rosterImportLoading, setRosterImportLoading] = useState(false);
   const [templateDownloading, setTemplateDownloading] = useState(false);
   const [importStudentOpen, setImportStudentOpen] = useState(false);
   const [importStudentLoading, setImportStudentLoading] = useState(false);
@@ -353,6 +379,40 @@ export function ClassSignUpPeoplePanel({ signUpId, title, onChanged }: ClassSign
     },
   };
 
+  const rosterImportUploadProps: UploadProps = {
+    accept: '.xls,.xlsx',
+    maxCount: 1,
+    showUploadList: false,
+    customRequest: async (options) => {
+      const { file, onSuccess, onError } = options;
+      setRosterImportLoading(true);
+      try {
+        const result = await trainApi.importClassPrepRoster(signUpId, file as File);
+        const sync = result.platformUserSync;
+        const syncHint = sync
+          ? `，App账号就绪 ${sync.loginReady ?? 0}（新建 ${sync.created ?? 0}/复用 ${sync.reused ?? 0}）`
+          : '';
+        const skippedHint = (result.skipped ?? 0) > 0 ? `，跳过重复 ${result.skipped} 人` : '';
+        const failedHint = (result.invalid ?? 0) > 0 ? `，失败 ${result.invalid} 人` : '';
+        const errHint = result.errors?.length ? `；注意：${result.errors.slice(0, 5).join('；')}` : '';
+        message.success(
+          `导入成功 ${result.inserted ?? 0} 人${skippedHint}${failedHint}${syncHint}${errHint}`,
+        );
+        if (result.errors?.some((e) => e.includes('php-write-enabled=false') || e.includes('PHP'))) {
+          message.warning(result.errors.find((e) => e.includes('php-write') || e.includes('PHP'))!);
+        }
+        setRosterImportOpen(false);
+        notifyChanged();
+        onSuccess?.(result);
+      } catch (err) {
+        onError?.(err as Error);
+        message.error((err as Error)?.message || '花名册导入失败');
+      } finally {
+        setRosterImportLoading(false);
+      }
+    },
+  };
+
   const handleImportStudents = async () => {
     if (selectedStudentIds.length === 0) {
       message.error('请选择要导入的学员');
@@ -387,12 +447,17 @@ export function ClassSignUpPeoplePanel({ signUpId, title, onChanged }: ClassSign
     { title: '手机号', dataIndex: 'phone', width: 120 },
     { title: '身份证', dataIndex: 'idCardNumber', width: 170 },
     { title: '年龄', dataIndex: 'age', width: 64, render: (v?: number) => v ?? '' },
-    { title: '工种', dataIndex: 'workTypeName', ellipsis: true, render: (v?: string) => v || '' },
+    {
+      title: '工种',
+      dataIndex: 'workTypeName',
+      ellipsis: true,
+      render: () => classWorkTypeTitle || '-',
+    },
     {
       title: '等级',
       dataIndex: 'level',
-      width: 110,
-      render: (v?: number) => (v != null ? (LEVEL_LABELS[v] ?? v) : ''),
+      width: 130,
+      render: () => classLevelLabel(classWorkTypeLevel) || '-',
     },
     {
       title: '审核',
@@ -494,6 +559,9 @@ export function ClassSignUpPeoplePanel({ signUpId, title, onChanged }: ClassSign
           >
             从学员中导入
           </Button>
+          <Button type="primary" onClick={() => setRosterImportOpen(true)}>
+            花名册导入
+          </Button>
         </Space>
       </div>
 
@@ -526,6 +594,9 @@ export function ClassSignUpPeoplePanel({ signUpId, title, onChanged }: ClassSign
       <SignUpPeopleEditModal
         open={peopleEditOpen}
         personId={editingPersonId}
+        classWorkTypeId={classWorkTypeId}
+        classWorkTypeTitle={classWorkTypeTitle}
+        classWorkTypeLevel={classWorkTypeLevel}
         onClose={() => { setPeopleEditOpen(false); setEditingPersonId(null); }}
         onSaved={() => {
           setPeopleEditOpen(false);
@@ -548,6 +619,22 @@ export function ClassSignUpPeoplePanel({ signUpId, title, onChanged }: ClassSign
             <a onClick={handleDownloadImportTemplate}>
               {templateDownloading ? '模板下载中…' : '下载导入模板'}
             </a>
+          </p>
+        </Upload.Dragger>
+      </Modal>
+
+      <Modal
+        title="花名册导入"
+        open={rosterImportOpen}
+        onCancel={() => setRosterImportOpen(false)}
+        footer={null}
+        destroyOnHidden
+      >
+        <Upload.Dragger {...rosterImportUploadProps} disabled={rosterImportLoading}>
+          <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+          <p className="ant-upload-text">点击或拖拽《新型学徒制培训学员花名册》到此处</p>
+          <p className="ant-upload-hint">
+            需含姓名、身份证号码、联系电话。导入本班资料收集并同步学员名单、开 App 账号。
           </p>
         </Upload.Dragger>
       </Modal>

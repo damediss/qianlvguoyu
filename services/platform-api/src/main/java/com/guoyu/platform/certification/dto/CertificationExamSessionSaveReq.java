@@ -13,6 +13,7 @@ public record CertificationExamSessionSaveReq(
     LocalDateTime startTime,
     LocalDateTime endTime,
     Long examSiteId,
+    String examVenue,
     String status,
     @NotNull Boolean identityCheckRequired,
     @NotNull Boolean fingerprintRequired,

@@ -29,6 +29,7 @@ interface Props {
 interface SessionFormValues {
   examType: CertificationExamType;
   sessionName: string;
+  examVenue?: string;
   examDate?: Dayjs;
   startTime?: Dayjs;
   endTime?: Dayjs;
@@ -128,6 +129,7 @@ export function ExamSessionConfig({ taskId, onChanged }: Props) {
     form.setFieldsValue({
       examType: record.examType,
       sessionName: record.sessionName,
+      examVenue: record.examVenue,
       examDate: record.examDate ? dayjs(record.examDate) : undefined,
       startTime: record.startTime ? dayjs(record.startTime) : undefined,
       endTime: record.endTime ? dayjs(record.endTime) : undefined,
@@ -152,6 +154,7 @@ export function ExamSessionConfig({ taskId, onChanged }: Props) {
 
   const columns: ColumnsType<CertificationExamSession> = [
     { title: '场次名称', dataIndex: 'sessionName', width: 220 },
+    { title: '考场场地', dataIndex: 'examVenue', width: 180, render: (value?: string) => value || '-' },
     {
       title: '考试类型',
       dataIndex: 'examType',
@@ -252,7 +255,7 @@ export function ExamSessionConfig({ taskId, onChanged }: Props) {
         dataSource={sessionsQuery.data || []}
         columns={columns}
         pagination={false}
-        scroll={{ x: 1100 }}
+        scroll={{ x: 1280 }}
         locale={{ emptyText: taskId ? '暂无考试场次，请先新增理论或实操场次' : '请先选择认定任务' }}
       />
       <Modal
@@ -269,6 +272,13 @@ export function ExamSessionConfig({ taskId, onChanged }: Props) {
           </Form.Item>
           <Form.Item name="sessionName" label="场次名称" rules={[{ required: true, message: '请输入场次名称' }]}>
             <Input placeholder="如：理论考试第一场" />
+          </Form.Item>
+          <Form.Item
+            name="examVenue"
+            label="考场场地"
+            rules={[{ max: 200, message: '考场场地不能超过200个字符' }]}
+          >
+            <Input placeholder="如：百色银海铝会议室、理论一号考场" />
           </Form.Item>
           <Form.Item name="examDate" label="考试日期">
             <DatePicker style={{ width: '100%' }} />

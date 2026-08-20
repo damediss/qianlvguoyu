@@ -12,10 +12,18 @@ const ATTENDANCE_STATUS: Record<number, { text: string; color: string }> = {
   3: { text: '早退', color: 'orange' },
 };
 
+function formatClassHours(value?: number | string | null): string {
+  if (value == null || value === '') return '—';
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return '—';
+  return n.toFixed(1);
+}
+
 type Props = {
   open: boolean;
   classId: number | null;
   student: ClassStudent | null;
+  hoursRow?: trainApi.FollowStudentClassHours;
   onClose: () => void;
 };
 
@@ -24,7 +32,7 @@ function toNumId(id: number | string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-export function StudentAttendanceDetailDrawer({ open, classId, student, onClose }: Props) {
+export function StudentAttendanceDetailDrawer({ open, classId, student, hoursRow, onClose }: Props) {
   const userId = student ? toNumId(student.id) : null;
 
   const { data, isLoading, isError } = useQuery({
@@ -110,7 +118,7 @@ export function StudentAttendanceDetailDrawer({ open, classId, student, onClose 
   return (
     <Drawer
       title={student ? `${student.realname} · 考勤明细` : '考勤明细'}
-      width={720}
+      width={800}
       open={open}
       onClose={onClose}
       destroyOnClose
@@ -131,12 +139,37 @@ export function StudentAttendanceDetailDrawer({ open, classId, student, onClose 
           )}
 
           <Row gutter={[12, 12]}>
-            <Col span={8}>
+            <Col span={6}>
               <Statistic title="登记条数" value={summary.recorded} />
             </Col>
-            <Col span={8}>
+            <Col span={6}>
               <Statistic title="有效出勤" value={summary.effectivePresent} suffix={`/ ${summary.recorded || 0}`} />
             </Col>
+            <Col span={6}>
+              <Statistic
+                title="已上课时"
+                value={formatClassHours(hoursRow?.attendedHours)}
+                suffix={hoursRow?.attendedHours != null ? '课时' : undefined}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="计划学时"
+                value={formatClassHours(hoursRow?.plannedHours)}
+                suffix={hoursRow?.plannedHours != null ? '课时' : undefined}
+              />
+            </Col>
+          </Row>
+          {hoursRow && hoursRow.completionRate != null ? (
+            <div>
+              <Typography.Text type="secondary">
+                课时完成率 {Number(hoursRow.completionRate).toFixed(1)}%
+                {hoursRow.hoursStatus === 'unrecorded' ? '（无考勤记录，按未旷课计）' : ''}
+              </Typography.Text>
+              <Progress percent={Number(hoursRow.completionRate)} size="small" showInfo={false} style={{ marginTop: 4 }} />
+            </div>
+          ) : null}
+          <Row gutter={[12, 12]}>
             <Col span={8}>
               <Statistic title="出勤率" value={summary.rate} suffix="%" />
               <Progress percent={summary.rate} size="small" showInfo={false} style={{ marginTop: 4 }} />

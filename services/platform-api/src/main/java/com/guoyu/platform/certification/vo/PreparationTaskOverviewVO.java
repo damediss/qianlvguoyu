@@ -1,5 +1,7 @@
 package com.guoyu.platform.certification.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.guoyu.platform.certification.entity.CertificationTaskEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskScopeEntity;
 import java.time.LocalDate;
@@ -8,7 +10,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 public record PreparationTaskOverviewVO(
-    Long id,
+    @JsonSerialize(using = ToStringSerializer.class) Long id,
     String taskNo,
     String taskName,
     String batchName,

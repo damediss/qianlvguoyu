@@ -178,6 +178,20 @@ export function CollectionTaskListPage() {
       title: '认定日期',
       dataIndex: 'examDate',
       width: 120,
+      sorter: (a, b) => {
+        const left = a.examDate || '';
+        const right = b.examDate || '';
+        if (!left && !right) {
+          return 0;
+        }
+        if (!left) {
+          return 1;
+        }
+        if (!right) {
+          return -1;
+        }
+        return left.localeCompare(right);
+      },
       render: (value: string) => value || '-',
     },
     {

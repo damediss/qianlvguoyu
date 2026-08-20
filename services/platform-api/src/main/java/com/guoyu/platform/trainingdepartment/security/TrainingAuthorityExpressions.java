@@ -14,7 +14,7 @@ public final class TrainingAuthorityExpressions {
   public static final String PUBLIC_DATA_VIEW =
       "hasAnyAuthority('train:demand-train:view', 'train:need:view', "
           + "'train:info-list:view', 'train:info-class:view', 'train:people-list:view', "
-          + "'train:solution:view', 'train:declare:view')";
+          + "'train:solution:view', 'train:declare:view', 'train:follow-exam:view')";
 
   /** 需求管理待办/回收站（菜单 train_needs） */
   public static final String DEMAND_PIPELINE_VIEW =
@@ -112,4 +112,11 @@ public final class TrainingAuthorityExpressions {
       "hasAnyAuthority('train:division:view', 'train:class-list:create', 'train:class-list:update', "
           + "'train:info-class:create', 'train:info-class:update', "
           + "'train:people-list:create', 'train:people-list:update', 'pxanfangguihua:manage')";
+
+  /** 人社成绩单导入（考试页 + 考试计划/花名册写权限） */
+  public static final String EXAM_SCORE_IMPORT_VIEW =
+      "hasAnyAuthority('train:follow-exam:view', 'train:exam-list:view', 'train:people-list:view')";
+  public static final String EXAM_SCORE_IMPORT_UPDATE =
+      "hasAnyAuthority('train:follow-exam:update', 'train:follow-exam:view', "
+          + "'train:exam-list:update', 'train:people-list:update')";
 }

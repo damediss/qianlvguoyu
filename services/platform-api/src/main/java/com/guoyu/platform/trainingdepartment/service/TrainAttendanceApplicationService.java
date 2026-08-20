@@ -28,10 +28,12 @@ import com.guoyu.platform.trainingdepartment.vo.TrainAttendanceImportResultVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainAttendanceVO;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -183,8 +185,9 @@ public class TrainAttendanceApplicationService {
   }
 
   /**
-   * 导入人社/培训平台「考勤信息列表」Excel，按身份证匹配本班学员，
-   * 同日多课次合并后 upsert（classId + peopleId + attendanceDate，schedule_id 空=按日）。
+   * 导入人社/培训平台「考勤信息列表」Excel，按身份证匹配本班学员。
+   * 有上课/下课时间时按「课次行」落库（匹配或补建课表 schedule_id）；
+   * 无时段时仍合并为按日记录。
    */
   @Transactional
   public TrainAttendanceImportResultVO importFromExcel(Long classId, MultipartFile file) {
@@ -214,14 +217,16 @@ public class TrainAttendanceApplicationService {
     }
 
     List<ParsedRow> parsed = importSupport.parse(bytes);
-    List<MergedDay> merged = importSupport.mergeByPersonDay(parsed);
-
     Map<String, TrainPeopleListEntity> studentByIdCard = loadStudentIdCardMap(classId);
+    Map<String, TrainScheduleEntity> scheduleByKey = loadScheduleKeyMap(classId, tenantId);
 
     List<TrainAttendanceImportResultVO.FailureItem> failures = new ArrayList<>();
+    List<ParsedRow> dayFallbackRows = new ArrayList<>();
     int created = 0;
     int updated = 0;
     int skipped = 0;
+    int sessionRows = 0;
+    Set<String> clearedDayLevel = new HashSet<>();
 
     for (ParsedRow row : parsed) {
       if (!StringUtils.hasText(row.idCard)) {
@@ -234,68 +239,208 @@ public class TrainAttendanceApplicationService {
         skipped++;
         continue;
       }
-      if (!studentByIdCard.containsKey(row.idCard)) {
+      TrainPeopleListEntity student = studentByIdCard.get(row.idCard);
+      if (student == null) {
         addFailure(failures, row.excelRowNum, row.name, row.idCard, row.attendanceDate, "本班花名册未匹配到该身份证");
         skipped++;
+        continue;
       }
+
+      boolean hasSessionTime = StringUtils.hasText(row.startTime) && StringUtils.hasText(row.endTime);
+      if (!hasSessionTime) {
+        dayFallbackRows.add(row);
+        continue;
+      }
+
+      TrainScheduleEntity schedule = resolveOrCreateSchedule(
+          scheduleByKey, classId, tenantId, operatorId, row);
+      if (schedule == null || schedule.getId() == null) {
+        addFailure(failures, row.excelRowNum, row.name, row.idCard, row.attendanceDate,
+            "无法匹配或创建课次（上课/下课时间）");
+        skipped++;
+        continue;
+      }
+
+      String dayKey = student.getId() + "|" + row.attendanceDate;
+      if (clearedDayLevel.add(dayKey)) {
+        softDeleteDayLevel(tenantId, classId, student.getId(), row.attendanceDate);
+      }
+
+      String remark = "导入课次：" + row.startTime + "-" + row.endTime;
+      boolean isNew = upsertAttendance(
+          tenantId, operatorId, clazz, classId, student, row.attendanceDate, schedule.getId(),
+          row.status, row.checkInTime, row.checkOutTime,
+          StringUtils.hasText(row.name) ? row.name : student.getRealname(),
+          remark);
+      if (isNew) {
+        created++;
+      } else {
+        updated++;
+      }
+      sessionRows++;
     }
 
-    for (MergedDay day : merged) {
+    List<MergedDay> mergedDays = importSupport.mergeByPersonDay(dayFallbackRows);
+    for (MergedDay day : mergedDays) {
       TrainPeopleListEntity student = studentByIdCard.get(day.idCard);
       if (student == null) {
         continue;
       }
-      // 导入写入按日维度（schedule_id IS NULL）
-      TrainAttendanceEntity existing = findByScope(
-          tenantId, classId, student.getId(), day.attendanceDate, null);
-
-      if (existing == null) {
-        TrainAttendanceEntity entity = new TrainAttendanceEntity();
-        entity.setTenantId(tenantId);
-        entity.setCreatedBy(operatorId);
-        entity.setProjectId(clazz.getTrainInfoId());
-        entity.setClassId(classId);
-        entity.setUserId(student.getId());
-        entity.setUserName(StringUtils.hasText(day.name) ? day.name : student.getRealname());
-        entity.setAttendanceDate(day.attendanceDate);
-        entity.setScheduleId(null);
-        entity.setStatus(day.status);
-        entity.setCheckInTime(blankToNull(day.checkInTime));
-        entity.setCheckOutTime(blankToNull(day.checkOutTime));
-        entity.setRemark(day.remark);
-        entity.setDeleted(0);
-        mapper.insert(entity);
+      boolean isNew = upsertAttendance(
+          tenantId, operatorId, clazz, classId, student, day.attendanceDate, null,
+          day.status, day.checkInTime, day.checkOutTime,
+          StringUtils.hasText(day.name) ? day.name : student.getRealname(),
+          day.remark);
+      if (isNew) {
         created++;
       } else {
-        existing.setStatus(day.status);
-        if (StringUtils.hasText(day.checkInTime)) existing.setCheckInTime(day.checkInTime);
-        if (StringUtils.hasText(day.checkOutTime)) existing.setCheckOutTime(day.checkOutTime);
-        if (StringUtils.hasText(day.name)) existing.setUserName(day.name);
-        existing.setRemark(day.remark);
-        mapper.updateById(existing);
         updated++;
       }
     }
 
-    log.info("attendance import classId={} totalRows={} merged={} created={} updated={} skipped={}",
-        classId, parsed.size(), merged.size(), created, updated, skipped);
+    int applied = sessionRows + mergedDays.size();
+    log.info("attendance import classId={} totalRows={} sessionRows={} dayRows={} created={} updated={} skipped={}",
+        classId, parsed.size(), sessionRows, mergedDays.size(), created, updated, skipped);
 
     opLogWriter.write(FollowOpLogCommand.of(classId, FollowOpEventCode.ATTENDANCE_IMPORT)
         .title("导入考勤")
-        .summary("新建 " + created + "，更新 " + updated + "，跳过 " + skipped)
+        .summary("课次 " + sessionRows + "，按日 " + mergedDays.size()
+            + "，新建 " + created + "，更新 " + updated + "，跳过 " + skipped)
         .detail(Map.of(
             "totalRows", parsed.size(),
+            "sessionRows", sessionRows,
+            "dayRows", mergedDays.size(),
             "created", created,
             "updated", updated,
             "skipped", skipped)));
 
     return new TrainAttendanceImportResultVO(
         parsed.size(),
-        merged.size(),
+        applied,
         created,
         updated,
         skipped,
         failures);
+  }
+
+  private Map<String, TrainScheduleEntity> loadScheduleKeyMap(Long classId, Long tenantId) {
+    List<TrainScheduleEntity> schedules = scheduleMapper.selectList(
+        new LambdaQueryWrapper<TrainScheduleEntity>()
+            .eq(TrainScheduleEntity::getClassId, classId)
+            .eq(TrainScheduleEntity::getDeleted, 0));
+    Map<String, TrainScheduleEntity> map = new HashMap<>();
+    for (TrainScheduleEntity s : schedules) {
+      if (tenantId != null && s.getTenantId() != null && !tenantId.equals(s.getTenantId())) {
+        continue;
+      }
+      String key = TrainAttendanceImportSupport.sessionMatchKey(
+          s.getScheduleDate(), s.getStartTime(), s.getEndTime());
+      map.putIfAbsent(key, s);
+      // 仅日期+开始时间也可命中（下课时间偶发不一致）
+      String startKey = TrainAttendanceImportSupport.sessionMatchKey(
+          s.getScheduleDate(), s.getStartTime(), "");
+      map.putIfAbsent(startKey, s);
+    }
+    return map;
+  }
+
+  private TrainScheduleEntity resolveOrCreateSchedule(
+      Map<String, TrainScheduleEntity> scheduleByKey,
+      Long classId,
+      Long tenantId,
+      Long operatorId,
+      ParsedRow row) {
+    String fullKey = TrainAttendanceImportSupport.sessionMatchKey(
+        row.attendanceDate, row.startTime, row.endTime);
+    TrainScheduleEntity hit = scheduleByKey.get(fullKey);
+    if (hit != null) {
+      return hit;
+    }
+    String startKey = TrainAttendanceImportSupport.sessionMatchKey(
+        row.attendanceDate, row.startTime, "");
+    hit = scheduleByKey.get(startKey);
+    if (hit != null) {
+      return hit;
+    }
+
+    TrainScheduleEntity created = new TrainScheduleEntity();
+    created.setTenantId(tenantId);
+    created.setCreatedBy(operatorId);
+    created.setClassId(classId);
+    created.setScheduleDate(row.attendanceDate);
+    created.setStartTime(TrainAttendanceImportSupport.normalizeTimeHm(row.startTime));
+    created.setEndTime(TrainAttendanceImportSupport.normalizeTimeHm(row.endTime));
+    created.setCourseName("考勤导入课次");
+    created.setTeacherName(null);
+    created.setDeleted(0);
+    created.setStatus(1);
+    scheduleMapper.insert(created);
+    scheduleByKey.put(fullKey, created);
+    scheduleByKey.putIfAbsent(startKey, created);
+    return created;
+  }
+
+  private void softDeleteDayLevel(Long tenantId, Long classId, Long userId, String attendanceDate) {
+    List<TrainAttendanceEntity> days = mapper.selectList(
+        new LambdaQueryWrapper<TrainAttendanceEntity>()
+            .eq(TrainAttendanceEntity::getTenantId, tenantId)
+            .eq(TrainAttendanceEntity::getClassId, classId)
+            .eq(TrainAttendanceEntity::getUserId, userId)
+            .eq(TrainAttendanceEntity::getAttendanceDate, attendanceDate)
+            .isNull(TrainAttendanceEntity::getScheduleId)
+            .eq(TrainAttendanceEntity::getDeleted, 0));
+    for (TrainAttendanceEntity day : days) {
+      mapper.deleteById(day.getId());
+    }
+  }
+
+  /** @return true=新建，false=更新 */
+  private boolean upsertAttendance(
+      Long tenantId,
+      Long operatorId,
+      TrainInfoClassEntity clazz,
+      Long classId,
+      TrainPeopleListEntity student,
+      String attendanceDate,
+      Long scheduleId,
+      Integer status,
+      String checkInTime,
+      String checkOutTime,
+      String userName,
+      String remark) {
+    TrainAttendanceEntity existing = findByScope(
+        tenantId, classId, student.getId(), attendanceDate, scheduleId);
+    if (existing == null) {
+      TrainAttendanceEntity entity = new TrainAttendanceEntity();
+      entity.setTenantId(tenantId);
+      entity.setCreatedBy(operatorId);
+      entity.setProjectId(clazz.getTrainInfoId());
+      entity.setClassId(classId);
+      entity.setUserId(student.getId());
+      entity.setUserName(userName);
+      entity.setAttendanceDate(attendanceDate);
+      entity.setScheduleId(scheduleId);
+      entity.setStatus(status);
+      entity.setCheckInTime(blankToNull(checkInTime));
+      entity.setCheckOutTime(blankToNull(checkOutTime));
+      entity.setRemark(remark);
+      entity.setDeleted(0);
+      mapper.insert(entity);
+      return true;
+    }
+    existing.setStatus(status);
+    if (StringUtils.hasText(checkInTime)) {
+      existing.setCheckInTime(checkInTime);
+    }
+    if (StringUtils.hasText(checkOutTime)) {
+      existing.setCheckOutTime(checkOutTime);
+    }
+    if (StringUtils.hasText(userName)) {
+      existing.setUserName(userName);
+    }
+    existing.setRemark(remark);
+    mapper.updateById(existing);
+    return false;
   }
 
   private void applyMutableFields(TrainAttendanceEntity entity, TrainAttendanceCreateReq req, Long scheduleId) {

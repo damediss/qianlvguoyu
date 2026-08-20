@@ -303,6 +303,9 @@ public class TrainPeopleListApplicationService {
   @Transactional
   public Map<String, Object> batchDeleteStudents(List<Long> ids) {
     operatorScopeService.requireOrgOperator();
+    if (ids == null || ids.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要删除的学员");
+    }
     int count = 0;
     java.util.Set<Long> classIds = new java.util.HashSet<>();
     for (Long id : ids) {

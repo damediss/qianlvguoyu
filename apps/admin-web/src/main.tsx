@@ -1,3 +1,4 @@
+import './utils/legacyBrowserPolyfills';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ConfigProvider } from 'antd';
@@ -70,6 +71,7 @@ import { TrainExamListPage } from './pages/training/TrainExamListPage';
 import { StatsOverviewPage } from './pages/exam/reviewSyncStats/StatsOverviewPage';
 import { StudentDetailPage } from './pages/exam/reviewSyncStats/StudentDetailPage';
 import { TabletAssessorApp } from './pages/assessor/TabletAssessorApp';
+import { DefenseReviewApp } from './pages/assessor/DefenseReviewApp';
 import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
 import { CompetitionEventManagementPage } from './pages/competition/CompetitionEventManagementPage';
 import { CompetitionEventModulePage, type CompetitionEventModule } from './pages/competition/CompetitionEventModulePage';
@@ -101,6 +103,7 @@ import { ProjectManagementPage } from './pages/certification/ProjectManagementPa
 import { CertificationDataPanelPage } from './pages/certification/CertificationDataPanelPage';
 import { PracticalConfigurationPage } from './pages/certification/PracticalConfigurationPage';
 import { PreparationPage } from './pages/certification/PreparationPage';
+import { DefenseManagementPage } from './pages/certification/DefenseManagementPage';
 import { CollectionTaskListPage } from './pages/certification/collection/CollectionTaskListPage';
 import { CollectionManagePage } from './pages/certification/collection/CollectionManagePage';
 import { ArchivePage } from './pages/certification/ArchivePage';
@@ -224,6 +227,7 @@ const pageMap: Record<string, React.ReactNode> = {
   certification_project: <ProjectManagementPage />,
   certification_preparation: <PreparationPage />,
   certification_practical_config: <PracticalConfigurationPage />,
+  certification_defense_management: <DefenseManagementPage />,
   certification_practical_collection: <CollectionTaskListPage />,
   certification_archive: <ArchivePage />,
   certification_task_archive: <TaskArchivePage />,
@@ -279,6 +283,7 @@ const pageMap: Record<string, React.ReactNode> = {
   'zhixun-table-status': <PmStatusPage />,
   'certification-task-archive': <TaskArchivePage />,
   'certification-practical-config': <PracticalConfigurationPage />,
+  'certification-defense-management': <DefenseManagementPage />,
   // 战略规划 → 产品规划 模块
   strate_talent_standard: <ProductPlaceholder moduleCode="strate_talent_standard" />,
   strate_talent_check: <ProductPlaceholder moduleCode="strate_talent_check" />,
@@ -622,6 +627,7 @@ function ReviewSyncStatsShell({ pathname }: { pathname: string }) {
 function App() {
   const pathname = useBrowserPathname();
   const assessorMode = pathname.startsWith('/assessor-scoring');
+  const defenseMode = pathname.startsWith('/assessor-defense');
   const practicalCollectionMode = pathname.startsWith('/practical-collection');
   const collectionManageTaskId = pathname.match(/^\/certification\/practical-collection\/([^/]+)\/manage\/?$/)?.[1];
   const collectionManageMode = Boolean(collectionManageTaskId);
@@ -630,9 +636,11 @@ function App() {
 
   return (
     <NavigationBlockerProvider>
-      <AuthGate mode={assessorMode ? 'assessor' : practicalCollectionMode ? 'collection' : 'admin'}>
+      <AuthGate mode={assessorMode ? 'assessor' : defenseMode ? 'defense' : practicalCollectionMode ? 'collection' : 'admin'}>
         {assessorMode ? (
           <TabletAssessorApp />
+        ) : defenseMode ? (
+          <DefenseReviewApp />
         ) : practicalCollectionMode ? (
           <PracticalCollectionApp />
         ) : collectionManageMode ? (

@@ -311,7 +311,7 @@ export function FollowHomeworkTab({ classId }: Props) {
         showIcon
         style={{ marginBottom: 12 }}
         message="课堂作业 / 随堂练"
-        description="老师在 App 主讲台布置；本页查看进度、正确率、答卷与导出。与提升「考前练习」、班级刷题分通道。"
+        description="老师在 App 理论老师台布置；本页查看进度、正确率、答卷与导出。与提升「考前练习」、班级刷题分通道。"
       />
       <Space size="large" style={{ marginBottom: 16 }} wrap>
         <Statistic

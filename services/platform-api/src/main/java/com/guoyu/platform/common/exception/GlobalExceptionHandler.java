@@ -119,7 +119,7 @@ public class GlobalExceptionHandler {
         "Request denied by method authorization, exceptionType={}",
         ex.getClass().getSimpleName());
     return ResponseEntity.status(HttpStatus.FORBIDDEN)
-        .body(ApiResponse.fail(ErrorCode.FORBIDDEN, "Forbidden"));
+        .body(ApiResponse.fail(ErrorCode.FORBIDDEN, "权限不足"));
   }
 
   /** 客户端主动断开（如下载未完成刷新页面），打 WARN 不打 ERROR */

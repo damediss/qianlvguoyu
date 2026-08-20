@@ -38,6 +38,7 @@ class PracticalCollectionTemplateExportSmokeTest {
     task.setExamDate(java.time.LocalDate.of(2026, 7, 13));
     CertificationTaskExamSiteEntity site = new CertificationTaskExamSiteEntity();
     site.setAddress("测试考场");
+    site.setExamType("THEORY");
     site.setStartTime("09:00");
     site.setEndTime("11:00");
 
@@ -61,7 +62,34 @@ class PracticalCollectionTemplateExportSmokeTest {
       assertThat(workbook.getNumberOfSheets()).isEqualTo(1);
       assertThat(workbook.getAllPictures()).hasSize(4);
       assertThat(workbook.getSheetAt(0).getRow(6).getCell(0).getStringCellValue()).isEqualTo("张三");
-      assertThat(workbook.getSheetAt(0).getRow(6).getCell(1).getStringCellValue()).isEqualTo("实操");
+      assertThat(workbook.getSheetAt(0).getRow(6).getCell(1).getStringCellValue()).isEqualTo("理论");
+      assertThat(workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue()).contains("考场地址：测试考场");
+      assertThat(workbook.getSheetAt(0).getRow(1).getCell(0).getStringCellValue()).contains("考试时间：");
+      assertThat(workbook.getPrintArea(0)).contains("$A$1:$O$30");
+      org.apache.poi.ss.usermodel.Sheet sheet = workbook.getSheetAt(0);
+      assertThat(sheet.getNumMergedRegions()).isGreaterThanOrEqualTo(100);
+      boolean headerFifteenCols = false;
+      boolean fourthRowPhoto = false;
+      boolean fifthColumnPhoto = false;
+      for (int i = 0; i < sheet.getNumMergedRegions(); i++) {
+        org.apache.poi.ss.util.CellRangeAddress region = sheet.getMergedRegion(i);
+        if (region.getFirstRow() == 0 && region.getFirstColumn() == 0 && region.getLastColumn() >= 14) {
+          headerFifteenCols = true;
+        }
+        if (region.getFirstRow() == 23 && region.getFirstColumn() == 0 && region.getLastRow() >= 26) {
+          fourthRowPhoto = true;
+        }
+        if (region.getFirstRow() == 2 && region.getFirstColumn() == 12) {
+          fifthColumnPhoto = true;
+        }
+      }
+      assertThat(headerFifteenCols).isTrue();
+      assertThat(fourthRowPhoto).isTrue();
+      assertThat(fifthColumnPhoto).isTrue();
+      assertThat(sheet.getRow(2).getCell(11).getStringCellValue()).isEqualTo("考场签到");
+      assertThat(sheet.getRow(7).getCell(9).getStringCellValue()).isEqualTo("证件号");
+      assertThat(sheet.getRow(23).getCell(14).getStringCellValue()).isEqualTo("考场签到");
+      assertThat(sheet.getRow(29).getCell(12).getStringCellValue()).isEqualTo("准考证");
       assertThat(workbook.getSheetAt(0).getRow(7).getCell(1).getStringCellValue())
           .isEqualTo("110101199001011234");
       assertThat(workbook.getSheetAt(0).getRow(8).getCell(1).getStringCellValue()).isEqualTo("20260001");
@@ -92,6 +120,7 @@ class PracticalCollectionTemplateExportSmokeTest {
     task.setExamDate(java.time.LocalDate.of(2026, 7, 13));
     CertificationTaskExamSiteEntity site = new CertificationTaskExamSiteEntity();
     site.setAddress("测试考场");
+    site.setExamType("THEORY");
     site.setStartTime("09:00");
     site.setEndTime("11:00");
 
@@ -101,7 +130,7 @@ class PracticalCollectionTemplateExportSmokeTest {
         CertificationCandidateEntity.class, byte[].class, byte[].class, byte[].class);
     formCandidateConstructor.setAccessible(true);
     List<Object> formCandidates = new java.util.ArrayList<>();
-    for (int index = 1; index <= 10; index++) {
+    for (int index = 1; index <= 21; index++) {
       CertificationCandidateEntity candidate = new CertificationCandidateEntity();
       candidate.setCandidateName("考生" + String.format("%02d", index));
       candidate.setIdCardNo("11010119900101" + String.format("%04d", index));
@@ -121,14 +150,15 @@ class PracticalCollectionTemplateExportSmokeTest {
 
     try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(output))) {
       assertThat(workbook.getNumberOfSheets()).isEqualTo(2);
-      assertThat(workbook.getAllPictures()).hasSize(40);
-      assertThat(workbook.getPrintArea(0)).contains("$A$1:$I$23");
-      assertThat(workbook.getPrintArea(1)).contains("$A$1:$I$23");
+      assertThat(workbook.getAllPictures()).hasSize(84);
+      assertThat(workbook.getPrintArea(0)).contains("$A$1:$O$30");
+      assertThat(workbook.getPrintArea(1)).contains("$A$1:$O$30");
       assertThat(workbook.getSheetAt(0).getRow(6).getCell(0).getStringCellValue()).isEqualTo("考生01");
-      assertThat(workbook.getSheetAt(0).getRow(13).getCell(0).getStringCellValue()).isEqualTo("考生04");
-      assertThat(workbook.getSheetAt(0).getRow(20).getCell(0).getStringCellValue()).isEqualTo("考生07");
-      assertThat(workbook.getSheetAt(1).getRow(6).getCell(0).getStringCellValue()).isEqualTo("考生10");
-      assertThat(((XSSFSheet) workbook.getSheetAt(0)).getDrawingPatriarch().getShapes()).hasSize(36);
+      assertThat(workbook.getSheetAt(0).getRow(6).getCell(12).getStringCellValue()).isEqualTo("考生05");
+      assertThat(workbook.getSheetAt(0).getRow(13).getCell(0).getStringCellValue()).isEqualTo("考生06");
+      assertThat(workbook.getSheetAt(0).getRow(27).getCell(12).getStringCellValue()).isEqualTo("考生20");
+      assertThat(workbook.getSheetAt(1).getRow(6).getCell(0).getStringCellValue()).isEqualTo("考生21");
+      assertThat(((XSSFSheet) workbook.getSheetAt(0)).getDrawingPatriarch().getShapes()).hasSize(80);
       assertThat(((XSSFSheet) workbook.getSheetAt(1)).getDrawingPatriarch().getShapes()).hasSize(4);
     }
   }

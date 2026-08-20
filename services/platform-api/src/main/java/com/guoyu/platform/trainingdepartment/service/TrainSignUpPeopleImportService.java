@@ -75,6 +75,7 @@ public class TrainSignUpPeopleImportService {
   private final UserMapper userMapper;
   private final TrainingOperatorScopeService operatorScopeService;
   private final PlatformUserEnsureService platformUserEnsureService;
+  private final ClassCollectionApplicationService classCollectionApplicationService;
   private final UserProvisioningProperties userProvisioningProperties;
   private final ObjectMapper objectMapper;
   private final String cdnPath;
@@ -88,6 +89,7 @@ public class TrainSignUpPeopleImportService {
       UserMapper userMapper,
       TrainingOperatorScopeService operatorScopeService,
       PlatformUserEnsureService platformUserEnsureService,
+      ClassCollectionApplicationService classCollectionApplicationService,
       UserProvisioningProperties userProvisioningProperties,
       ObjectMapper objectMapper,
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath) {
@@ -99,6 +101,7 @@ public class TrainSignUpPeopleImportService {
     this.userMapper = userMapper;
     this.operatorScopeService = operatorScopeService;
     this.platformUserEnsureService = platformUserEnsureService;
+    this.classCollectionApplicationService = classCollectionApplicationService;
     this.userProvisioningProperties = userProvisioningProperties;
     this.objectMapper = objectMapper;
     this.cdnPath = cdnPath;
@@ -212,6 +215,7 @@ public class TrainSignUpPeopleImportService {
           exists.setUpdateTime(LocalDateTime.now());
           peopleMapper.updateById(exists);
         }
+        classCollectionApplicationService.syncPersonToRoster(exists);
         skipped++;
         continue;
       }
@@ -280,6 +284,7 @@ public class TrainSignUpPeopleImportService {
       }
 
       peopleMapper.insert(entity);
+      classCollectionApplicationService.syncPersonToRoster(entity);
       inserted++;
     }
 
@@ -376,6 +381,7 @@ public class TrainSignUpPeopleImportService {
           exists.setUpdateTime(now);
           peopleMapper.updateById(exists);
         }
+        classCollectionApplicationService.syncPersonToRoster(exists);
         skipped++;
         continue;
       }
@@ -402,6 +408,7 @@ public class TrainSignUpPeopleImportService {
       }
 
       peopleMapper.insert(entity);
+      classCollectionApplicationService.syncPersonToRoster(entity);
       inserted++;
     }
 

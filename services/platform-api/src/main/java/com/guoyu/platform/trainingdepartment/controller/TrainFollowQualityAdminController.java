@@ -8,21 +8,28 @@ import com.guoyu.platform.trainingdepartment.dto.FollowSupervisionCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowSupervisionItemPatchReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowSupervisionSubmitReq;
 import com.guoyu.platform.trainingdepartment.dto.FollowSurveyCreateReq;
+import com.guoyu.platform.trainingdepartment.dto.FollowTeacherPaySaveReq;
+import com.guoyu.platform.trainingdepartment.service.TrainFollowClassHourApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainFollowMetricsApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainFollowSupervisionApplicationService;
+import com.guoyu.platform.trainingdepartment.service.TrainFollowTeacherDayApplicationService;
+import com.guoyu.platform.trainingdepartment.vo.FollowClassHoursVO;
 import com.guoyu.platform.trainingdepartment.vo.FollowIssueVO;
 import com.guoyu.platform.trainingdepartment.vo.FollowSupervisionItemVO;
 import com.guoyu.platform.trainingdepartment.vo.FollowSupervisionVO;
 import com.guoyu.platform.trainingdepartment.vo.FollowSurveyResponseVO;
+import com.guoyu.platform.trainingdepartment.vo.FollowTeacherDaysVO;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -38,12 +45,18 @@ public class TrainFollowQualityAdminController {
 
   private final TrainFollowSupervisionApplicationService supervisionService;
   private final TrainFollowMetricsApplicationService metricsService;
+  private final TrainFollowClassHourApplicationService classHourService;
+  private final TrainFollowTeacherDayApplicationService teacherDayService;
 
   public TrainFollowQualityAdminController(
       TrainFollowSupervisionApplicationService supervisionService,
-      TrainFollowMetricsApplicationService metricsService) {
+      TrainFollowMetricsApplicationService metricsService,
+      TrainFollowClassHourApplicationService classHourService,
+      TrainFollowTeacherDayApplicationService teacherDayService) {
     this.supervisionService = supervisionService;
     this.metricsService = metricsService;
+    this.classHourService = classHourService;
+    this.teacherDayService = teacherDayService;
   }
 
   @GetMapping("/info-classes/{classId}/follow/supervisions")
@@ -133,5 +146,31 @@ public class TrainFollowQualityAdminController {
   @PreAuthorize("hasAuthority('train:info-class:view')")
   public ApiResponse<Map<String, Object>> qualityMetrics(@PathVariable Long classId) {
     return ApiResponse.ok(metricsService.classQualityMetrics(classId));
+  }
+
+  @GetMapping("/info-classes/{classId}/follow/class-hours")
+  @PreAuthorize("hasAuthority('train:info-class:view')")
+  public ApiResponse<FollowClassHoursVO> classHours(@PathVariable Long classId) {
+    return ApiResponse.ok(classHourService.classHours(classId));
+  }
+
+  @GetMapping("/info-classes/{classId}/follow/teacher-days")
+  @PreAuthorize("hasAuthority('train:info-class:view')")
+  public ApiResponse<FollowTeacherDaysVO> teacherDays(@PathVariable Long classId) {
+    return ApiResponse.ok(teacherDayService.teacherDays(classId));
+  }
+
+  @PutMapping("/info-classes/{classId}/follow/teacher-pay")
+  @PreAuthorize("hasAuthority('train:info-class:update')")
+  @AuditLog(module = "training", action = "follow-teacher-pay:save", targetType = "train_info_class")
+  public ApiResponse<FollowTeacherDaysVO> saveTeacherPay(
+      @PathVariable Long classId, @Valid @RequestBody FollowTeacherPaySaveReq req) {
+    return ApiResponse.ok(teacherDayService.savePay(classId, req));
+  }
+
+  @GetMapping("/info-classes/{classId}/follow/teacher-days/export")
+  @PreAuthorize("hasAuthority('train:info-class:update')")
+  public ResponseEntity<byte[]> exportTeacherDays(@PathVariable Long classId) {
+    return teacherDayService.exportExcel(classId);
   }
 }

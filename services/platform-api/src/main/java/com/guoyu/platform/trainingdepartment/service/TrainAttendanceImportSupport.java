@@ -82,8 +82,8 @@ public class TrainAttendanceImportSupport {
         pr.name = trimToEmpty(name);
         pr.idCard = idCard;
         pr.attendanceDate = normalizeDate(dateRaw);
-        pr.startTime = normalizeTime(cell(row, header.col("上课时间")));
-        pr.endTime = normalizeTime(cell(row, header.col("下课时间")));
+        pr.startTime = normalizeTime(cellTime(row, header.col("上课时间")));
+        pr.endTime = normalizeTime(cellTime(row, header.col("下课时间")));
         pr.late = yesFlag(cell(row, header.col("是否迟到")));
         pr.earlyLeave = yesFlag(cell(row, header.col("是否早退")));
         pr.absent = yesFlag(cell(row, header.col("是否旷课")));
@@ -105,6 +105,7 @@ public class TrainAttendanceImportSupport {
 
   /**
    * 同日多课次合并：状态取最差；签到取最早；签退取最晚；备注汇总课次。
+   * @deprecated 导入已改为课次行落库；仅保留给无上课/下课时间的旧表兜底。
    */
   public List<MergedDay> mergeByPersonDay(List<ParsedRow> rows) {
     Map<String, MergedDay> map = new LinkedHashMap<>();
@@ -150,6 +151,33 @@ public class TrainAttendanceImportSupport {
   public static String normalizeIdCard(String raw) {
     if (!StringUtils.hasText(raw)) return "";
     return raw.trim().replace(" ", "").replace("\u3000", "").toUpperCase(Locale.ROOT);
+  }
+
+  /** 统一为 HH:mm，便于与课表匹配。 */
+  public static String normalizeTimeHm(String raw) {
+    if (!StringUtils.hasText(raw)) {
+      return "";
+    }
+    String v = raw.trim();
+    if (v.contains(" ")) {
+      v = v.substring(v.lastIndexOf(' ') + 1);
+    }
+    if (v.matches("\\d{1,2}:\\d{2}(:\\d{2})?")) {
+      String[] p = v.split(":");
+      String hh = p[0].length() == 1 ? "0" + p[0] : p[0];
+      return hh + ":" + p[1];
+    }
+    if (v.matches("^\\d{3,4}$")) {
+      if (v.length() == 3) {
+        v = "0" + v;
+      }
+      return v.substring(0, 2) + ":" + v.substring(2);
+    }
+    return v;
+  }
+
+  public static String sessionMatchKey(String date, String startTime, String endTime) {
+    return trimToEmpty(date) + "|" + normalizeTimeHm(startTime) + "|" + normalizeTimeHm(endTime);
   }
 
   private Integer resolveStatus(ParsedRow pr) {
@@ -285,20 +313,29 @@ public class TrainAttendanceImportSupport {
   }
 
   private String normalizeTime(String raw) {
-    if (!StringUtils.hasText(raw)) return "";
-    String v = raw.trim();
-    if (v.matches("\\d{1,2}:\\d{2}(:\\d{2})?")) {
-      String[] p = v.split(":");
-      String hh = p[0].length() == 1 ? "0" + p[0] : p[0];
-      return hh + ":" + p[1];
-    }
-    return v;
+    return normalizeTimeHm(raw);
   }
 
   private String cell(Row row, Integer col) {
     if (row == null || col == null) return "";
     Cell cell = row.getCell(col);
     if (cell == null) return "";
+    return formatter.formatCellValue(cell).trim();
+  }
+
+  /** 上课/下课时间：数值日期单元格取时分，避免被格式成日期串。 */
+  private String cellTime(Row row, Integer col) {
+    if (row == null || col == null) return "";
+    Cell cell = row.getCell(col);
+    if (cell == null) return "";
+    if (isNumericDateCell(cell)) {
+      try {
+        var ldt = cell.getLocalDateTimeCellValue();
+        return String.format("%02d:%02d", ldt.getHour(), ldt.getMinute());
+      } catch (Exception ignored) {
+        // fall through
+      }
+    }
     return formatter.formatCellValue(cell).trim();
   }
 

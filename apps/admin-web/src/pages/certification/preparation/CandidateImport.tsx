@@ -77,7 +77,7 @@ interface CandidateImportProps {
 export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState<PreparationCandidateQuery>({ page: 1, pageSize: 10 });
-  const [importChannel, setImportChannel] = useState<ImportChannel>('training');
+  const [importChannel, setImportChannel] = useState<ImportChannel>('other');
   const [selectedScopeId, setSelectedScopeId] = useState<string>();
   const [candidateModalOpen, setCandidateModalOpen] = useState(false);
   const [editingCandidate, setEditingCandidate] = useState<PreparationCandidate | null>(null);
@@ -94,7 +94,6 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   const [selectedTrainingPeople, setSelectedTrainingPeople] = useState<Map<number, TrainPeople>>(new Map());
   const [stagingQuery, setStagingQuery] = useState<PreparationCandidateStagingQuery>({ page: 1, pageSize: 10 });
   const [selectedStagingRows, setSelectedStagingRows] = useState<Map<string, PreparationCandidateStaging>>(new Map());
-  const [importRemark, setImportRemark] = useState('');
 
   const candidatesQuery = useQuery({
     queryKey: ['certification-preparation-candidates', taskId, query],
@@ -225,7 +224,6 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   const importMutation = useMutation({
     mutationFn: (payload: {
       sourceType: 'training';
-      remark?: string;
       trainingPeopleIds?: number[];
     }) => {
       if (!selectedScopeId) {
@@ -238,7 +236,6 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
         sourceType: payload.sourceType,
         trainingPeopleIds: payload.trainingPeopleIds,
         taskScopeId: selectedScopeId,
-        remark: payload.remark,
       });
     },
     onSuccess: (batch) => {
@@ -246,7 +243,6 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
       setLastImportBatch(batch);
       setImportFileList([]);
       setSelectedTrainingPeople(new Map());
-      setImportRemark('');
       refresh();
     },
     onError: (error: Error) => {
@@ -255,16 +251,16 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
   });
 
   const excelImportMutation = useMutation({
-    mutationFn: ({ file, remark }: { file: File; remark?: string }) => {
-      if (!selectedScopeId) throw new Error('请选择认定班级（工种和等级）');
-      return importPreparationCandidatesExcel(taskId!, selectedScopeId, file, remark);
+    mutationFn: (file: File) => {
+      const scopeId = selectedScopeId || scopeOptions[0]?.value;
+      if (!scopeId) throw new Error('当前任务尚未配置认定班级');
+      return importPreparationCandidatesExcel(taskId!, scopeId, file);
     },
     onSuccess: (batch) => {
       message.success(`XLSX 导入完成：成功 ${batch.successCount || 0}，失败 ${batch.failedCount || 0}`);
       setLastImportBatch(batch);
       setImportFileList([]);
       setImportRawFile(null);
-      setImportRemark('');
       refresh();
     },
     onError: (error: Error) => message.error(error.message || 'XLSX 导入失败'),
@@ -334,7 +330,6 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
     importMutation.mutate({
       sourceType: 'training',
       trainingPeopleIds: selectedPeople.map((person) => person.id),
-      remark: importRemark,
     });
   }
 
@@ -344,7 +339,7 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
       message.warning('请先选择要导入的 XLSX 文件');
       return;
     }
-    excelImportMutation.mutate({ file, remark: importRemark });
+    excelImportMutation.mutate(file);
   }
 
   async function downloadExcelTemplate() {
@@ -537,24 +532,10 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
             setSelectedStagingRows(new Map());
           }}
           options={[
-            { label: '培训途径', value: 'training' },
             { label: '认定途径', value: 'other' },
+            { label: '培训途径', value: 'training' },
           ]}
           style={{ marginBottom: 16 }}
-        />
-
-        <Select
-          allowClear
-          placeholder="选择认定班级（工种｜等级）"
-          value={selectedScopeId}
-          onChange={(value) => {
-            setSelectedScopeId(value);
-            setSelectedTrainingPeople(new Map());
-            setTrainingQuery((prev) => ({ ...prev, page: 1 }));
-          }}
-          options={scopeOptions}
-          loading={taskQuery.isFetching}
-          style={{ minWidth: 280, marginBottom: 16 }}
         />
 
         {importChannel === 'staging' ? (
@@ -605,6 +586,19 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
           </Space>
         ) : importChannel === 'training' ? (
           <Space direction="vertical" style={{ width: '100%' }} size={12}>
+            <Select
+              allowClear
+              placeholder="选择认定班级（工种｜等级）"
+              value={selectedScopeId}
+              onChange={(value) => {
+                setSelectedScopeId(value);
+                setSelectedTrainingPeople(new Map());
+                setTrainingQuery((prev) => ({ ...prev, page: 1 }));
+              }}
+              options={scopeOptions}
+              loading={taskQuery.isFetching}
+              style={{ minWidth: 280 }}
+            />
             <Input.Search
               allowClear
               placeholder="搜索姓名、手机号"
@@ -634,12 +628,6 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
               }}
             />
             <Space wrap>
-              <Input
-                placeholder="导入备注（可选）"
-                value={importRemark}
-                onChange={(event) => setImportRemark(event.target.value)}
-                style={{ width: 280 }}
-              />
               <PermissionGate code="certification.preparation.candidate.import">
                 <Button
                   type="primary"
@@ -655,8 +643,8 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
         ) : (
           <Space direction="vertical" style={{ width: '100%' }} size={12}>
             <Space wrap>
-              <Button icon={<DownloadOutlined />} onClick={downloadExcelTemplate}>
-                下载 XLSX 模板
+              <Button size="small" icon={<DownloadOutlined />} onClick={downloadExcelTemplate}>
+                下载模板
               </Button>
               <Upload
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -672,14 +660,8 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
                   setImportRawFile(null);
                 }}
               >
-                <Button icon={<UploadOutlined />}>选择 XLSX 文件</Button>
+                <Button size="small" icon={<UploadOutlined />}>选择文件</Button>
               </Upload>
-              <Input
-                placeholder="导入备注（可选）"
-                value={importRemark}
-                onChange={(event) => setImportRemark(event.target.value)}
-                style={{ width: 240 }}
-              />
               <PermissionGate code="certification.preparation.candidate.import">
                 <Button
                   type="primary"

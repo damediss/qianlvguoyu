@@ -542,6 +542,10 @@ body {
   box-shadow: 0 12px 30px rgba(16, 24, 40, 0.05);
 }
 
+.login-panel-phone {
+  width: min(410px, calc(100vw - 32px));
+}
+
 .login-title-row {
   display: flex;
   align-items: center;

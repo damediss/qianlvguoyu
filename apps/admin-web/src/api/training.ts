@@ -524,13 +524,13 @@ export function pageInfoLists(params: TrainInfoListQuery) {
     }),
   );
 }
-export function getInfoList(id: number) {
+export function getInfoList(id: number | string) {
   return unwrap<TrainInfoList>(apiClient.get(`${BASE}/info-lists/${id}`));
 }
 export function createInfoList(payload: TrainInfoListCreateReq) {
   return unwrap<TrainInfoList>(apiClient.post(`${BASE}/info-lists`, payload));
 }
-export function updateInfoList(id: number, payload: TrainInfoListUpdateReq) {
+export function updateInfoList(id: number | string, payload: TrainInfoListUpdateReq) {
   return unwrap<TrainInfoList>(apiClient.put(`${BASE}/info-lists/${id}`, payload));
 }
 export function deleteInfoList(id: number) {
@@ -2237,8 +2237,112 @@ export type FollowQualityMetrics = {
   subsidyTotalSlots?: number | null;
   subsidyReady?: boolean | null;
   subsidyMaterialStatus?: number | null;
+  plannedHours?: number | null;
+  plannedHoursFromExcel?: number | null;
+  attendedHoursSum?: number | null;
+  attendedHoursAvg?: number | null;
+  hoursCompletionAvg?: number | null;
+  unconvertibleSessions?: number | null;
+  hoursMinuteUnit?: number | null;
+  recordedStudentCount?: number | null;
+  unrecordedStudentCount?: number | null;
   alerts?: Array<{ level?: string; code?: string; message?: string }>;
 };
+
+export type FollowStudentClassHours = {
+  peopleId: number | string;
+  name?: string;
+  attendedHours?: number | null;
+  plannedHours?: number | null;
+  completionRate?: number | null;
+  presentSessions?: number;
+  absentSessions?: number;
+  hoursStatus?: 'ok' | 'unrecorded' | 'partial' | string;
+};
+
+export type FollowClassHours = {
+  plannedHours?: number | null;
+  plannedHoursFromExcel?: number | null;
+  minuteUnit?: number;
+  unconvertibleSessions?: number;
+  recordedStudentCount?: number;
+  unrecordedStudentCount?: number;
+  attendedHoursSum?: number | null;
+  attendedHoursAvg?: number | null;
+  hoursCompletionAvg?: number | null;
+  students?: FollowStudentClassHours[];
+};
+
+export function getFollowClassHours(classId: number) {
+  return unwrap<FollowClassHours>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/class-hours`),
+  );
+}
+
+export type FollowTeacherDayRow = {
+  teacherName: string;
+  teachForm?: string;
+  taughtSessionCount?: number;
+  taughtDays?: number | null;
+  plannedSessionCount?: number;
+  plannedDays?: number | null;
+  overflowSessionCount?: number;
+  ratePerDay?: number | null;
+  payTotal?: number | null;
+  remark?: string | null;
+};
+
+export type FollowTeacherDays = {
+  classId?: number | string;
+  classTitle?: string;
+  sessionUnitDays?: number;
+  maxSessionsPerDay?: number;
+  asOfDate?: string;
+  assignedSessionCount?: number;
+  unassignedSessionCount?: number;
+  overflowSessionCount?: number;
+  taughtDaysSum?: number | null;
+  plannedDaysSum?: number | null;
+  payTotalSum?: number | null;
+  teachers?: FollowTeacherDayRow[];
+};
+
+export function getFollowTeacherDays(classId: number) {
+  return unwrap<FollowTeacherDays>(
+    apiClient.get(`${BASE}/info-classes/${classId}/follow/teacher-days`),
+  );
+}
+
+export function saveFollowTeacherPay(
+  classId: number,
+  items: Array<{
+    teacherName: string;
+    teachForm?: string;
+    ratePerDay?: number | null;
+    remark?: string | null;
+  }>,
+) {
+  return unwrap<FollowTeacherDays>(
+    apiClient.put(`${BASE}/info-classes/${classId}/follow/teacher-pay`, { items }),
+  );
+}
+
+export async function exportFollowTeacherDays(classId: number) {
+  const response = await apiClient.get(`${BASE}/info-classes/${classId}/follow/teacher-days/export`, {
+    responseType: 'blob',
+  });
+  const blob = new Blob([response.data], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const filename =
+    parseContentDispositionFilename(response) || `教师课酬_${classId}.xlsx`;
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
 
 export function listFollowSupervisions(classId: number, params?: { bizDate?: string }) {
   return unwrap<FollowSupervision[]>(
@@ -2552,6 +2656,15 @@ export function importSignUpPeople(signUpId: number | string, file: File) {
   formData.append('signUpId', String(signUpId));
   formData.append('file', file);
   return unwrap<SignUpPeopleImportResult>(apiClient.post(`${BASE}/sign-up-people/import`, formData));
+}
+
+export function importClassPrepRoster(signUpId: number | string, file: File) {
+  const formData = new FormData();
+  formData.append('signUpId', String(signUpId));
+  formData.append('file', file);
+  return unwrap<SignUpPeopleImportResult>(
+    apiClient.post(`${BASE}/sign-up-people/import-class-roster`, formData, { timeout: 120000 }),
+  );
 }
 
 export function downloadSignUpPeopleImportTemplate() {
@@ -3189,4 +3302,52 @@ export async function importClassAttendances(classId: number, file: File) {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
   );
+}
+
+export function listExamScoreImportClasses(params?: {
+  companyId?: number;
+  trainInfoId?: number;
+  keyword?: string;
+}) {
+  return unwrap<import('../types/training').ExamScoreImportClassOption[]>(
+    apiClient.get(`${BASE}/exam-score-imports/classes`, { params }),
+  );
+}
+
+export function downloadExamScoreImportTemplate() {
+  return fetchFileBlob(`${BASE}/exam-score-imports/template`);
+}
+
+export function previewExamScoreImport(classIds: Array<number | string>, file: File) {
+  const form = new FormData();
+  classIds.forEach((id) => form.append('classIds', String(id)));
+  form.append('file', file);
+  return unwrap<import('../types/training').ExamScoreImportPreview>(
+    apiClient.post(`${BASE}/exam-score-imports/preview`, form, { timeout: 120000 }),
+  );
+}
+
+export function commitExamScoreImport(previewId: string, peopleIds: Array<number | string>) {
+  return unwrap<import('../types/training').ExamScoreImportCommitResult>(
+    apiClient.post(`${BASE}/exam-score-imports/commit`, { previewId, peopleIds }),
+  );
+}
+
+export function pageExamScoreImportBatches(params?: { page?: number; pageSize?: number }) {
+  return unwrap<PageResponse<import('../types/training').ExamScoreImportBatch>>(
+    apiClient.get(`${BASE}/exam-score-imports/batches`, { params }),
+  );
+}
+
+export function pageExamScoreImportBatchItems(
+  batchId: number | string,
+  params?: { page?: number; pageSize?: number },
+) {
+  return unwrap<PageResponse<import('../types/training').ExamScoreImportBatchItem>>(
+    apiClient.get(`${BASE}/exam-score-imports/batches/${batchId}/items`, { params }),
+  );
+}
+
+export function downloadExamScoreImportFailures(batchId: number | string) {
+  return fetchFileBlob(`${BASE}/exam-score-imports/batches/${batchId}/failures.xlsx`);
 }

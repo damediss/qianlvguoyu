@@ -336,6 +336,9 @@ public class CertificationExamSessionApplicationService {
     if (req.startTime() != null && req.endTime() != null && !req.startTime().isBefore(req.endTime())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "考试开始时间必须早于结束时间");
     }
+    if (StringUtils.hasText(req.examVenue()) && req.examVenue().trim().length() > 200) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "考场场地不能超过200个字符");
+    }
     if (req.taskScopeId() != null) {
       CertificationTaskScopeEntity scope = scopeMapper.selectById(req.taskScopeId());
       if (scope == null || !taskId.equals(scope.getTaskId())) {
@@ -352,6 +355,7 @@ public class CertificationExamSessionApplicationService {
     entity.setStartTime(req.startTime());
     entity.setEndTime(req.endTime());
     entity.setExamSiteId(req.examSiteId());
+    entity.setExamVenue(StringUtils.hasText(req.examVenue()) ? req.examVenue().trim() : null);
     // 认定规则固定：理论和实操均需完成现场信息采集，具体采集方式由现场采集流程统一处理。
     entity.setIdentityCheckRequired(true);
     entity.setFingerprintRequired(true);

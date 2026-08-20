@@ -796,10 +796,10 @@ public class TrainFollowEvidenceApplicationService {
     }
     return switch (role.trim()) {
       case "monitor" -> "班长";
-      case "head_teacher" -> "班主任";
-      case "follow_staff" -> "跟班教务";
-      case "lead_teacher" -> "主讲";
-      case "assistant" -> "助教";
+      case "head_teacher" -> "教务人员";
+      case "follow_staff" -> "教务人员";
+      case "lead_teacher" -> "理论老师";
+      case "assistant" -> "实操老师";
       case "admin" -> "管理端";
       default -> "";
     };

@@ -2,6 +2,7 @@ import {
   CheckSquareOutlined,
   DatabaseOutlined,
   DownOutlined,
+  FileProtectOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
   ScheduleOutlined,
@@ -26,9 +27,13 @@ import {
 } from './preparation/InformationCollection';
 import { PreparationWorkbench } from './preparation/PreparationWorkbench';
 import { PracticalScoringConfig } from './preparation/PracticalScoringConfig';
+import { DefenseScoringConfig } from './preparation/DefenseScoringConfig';
 import './PreparationPage.css';
 
-type PreparationTabKey = 'workbench' | 'collection' | 'sessions' | 'checklist' | 'equipment' | 'sites' | 'staff' | 'assessors' | 'scoring';
+type PreparationTabKey = 'workbench' | 'collection' | 'sessions' | 'checklist' | 'equipment' | 'sites' | 'staff' | 'assessors' | 'scoring' | 'defense';
+
+const MORE_TAB_KEYS: PreparationTabKey[] = ['staff', 'equipment', 'sites', 'checklist'];
+const MORE_TAB_PANE_KEY = '__more__';
 
 export function PreparationPage() {
   const queryClient = useQueryClient();
@@ -38,6 +43,7 @@ export function PreparationPage() {
   const [activeTab, setActiveTab] = useState<PreparationTabKey>('workbench');
   const [collectionSubTab, setCollectionSubTab] = useState<CollectionSubTabKey>('candidates');
   const [collapsedTabs, setCollapsedTabs] = useState(false);
+  const [moreSelectOpen, setMoreSelectOpen] = useState(false);
 
   const tasksQuery = useQuery({
     queryKey: ['certification-preparation-tasks', query],
@@ -77,6 +83,7 @@ export function PreparationPage() {
     if (selectedTaskId) {
       queryClient.invalidateQueries({ queryKey: ['certification-preparation-overview', selectedTaskId] });
       queryClient.invalidateQueries({ queryKey: ['practical-scoring-setup', selectedTaskId] });
+      queryClient.invalidateQueries({ queryKey: ['defense-scoring-setup', selectedTaskId] });
     }
   };
 
@@ -143,6 +150,12 @@ export function PreparationPage() {
       children: <PracticalScoringConfig taskId={selectedTaskId} showProgress={false} />,
     },
     {
+      key: 'defense',
+      label: '综合答辩配置',
+      icon: <FileProtectOutlined />,
+      children: <DefenseScoringConfig taskId={selectedTaskId} />,
+    },
+    {
       key: 'checklist',
       label: '清单核查',
       icon: <CheckSquareOutlined />,
@@ -154,15 +167,61 @@ export function PreparationPage() {
     'collection',
     'sessions',
     'assessors',
+    'scoring',
+    'defense',
     'staff',
     'equipment',
     'sites',
-    'scoring',
     'checklist',
   ];
   const orderedTabItems = [...tabItems].sort(
     (a, b) => tabOrder.indexOf(a.key as PreparationTabKey) - tabOrder.indexOf(b.key as PreparationTabKey),
   );
+  const moreTabKeySet = new Set<string>(MORE_TAB_KEYS);
+  const isMoreTab = moreTabKeySet.has(activeTab);
+  const moreTabItems = MORE_TAB_KEYS
+    .map((key) => orderedTabItems.find((item) => item.key === key))
+    .filter((item): item is (typeof orderedTabItems)[number] => Boolean(item));
+  const primaryTabItems = orderedTabItems.filter((item) => !moreTabKeySet.has(item.key));
+  const activeMoreItem = moreTabItems.find((item) => item.key === activeTab);
+  const visibleTabItems = [
+    ...primaryTabItems,
+    {
+      key: MORE_TAB_PANE_KEY,
+      label: (
+        <Select
+          className="preparation-more-select"
+          placeholder="更多"
+          value={isMoreTab ? activeTab : undefined}
+          open={moreSelectOpen}
+          options={moreTabItems.map((item) => ({
+            value: item.key,
+            label: (
+              <Space size={6}>
+                {item.icon}
+                {item.label}
+              </Space>
+            ),
+          }))}
+          variant="borderless"
+          suffixIcon={<DownOutlined />}
+          popupMatchSelectWidth={false}
+          getPopupContainer={() => document.body}
+          onOpenChange={setMoreSelectOpen}
+          onClick={(event) => {
+            event.stopPropagation();
+            setMoreSelectOpen(true);
+          }}
+          onMouseDown={(event) => event.stopPropagation()}
+          onChange={(key) => {
+            setActiveTab(key as PreparationTabKey);
+            setMoreSelectOpen(false);
+          }}
+        />
+      ),
+      children: activeMoreItem?.children ?? <Empty description="请从「更多」中选择模块" />,
+    },
+  ];
 
   return (
     <PermissionGate code="certification.preparation.task.view" fallback={<Empty description="暂无认定筹备访问权限" />}>
@@ -209,17 +268,6 @@ export function PreparationPage() {
               onChange={(value) => setSelectedTaskId(value || undefined)}
               style={{ width: 'min(100%, 520px)' }}
             />
-            {selectedTask && (
-              <Space size={8} wrap>
-                <Tag color="processing">{selectedTask.taskNo}</Tag>
-                <Typography.Text>{selectedTask.taskName}</Typography.Text>
-                <Typography.Text type="secondary">
-                  {[selectedTask.batchName, selectedTask.workTypeName, selectedTask.levelName]
-                    .filter(Boolean)
-                    .join(' / ') || '暂无任务详情'}
-                </Typography.Text>
-              </Space>
-            )}
           </Space>
         </Card>
 
@@ -243,9 +291,17 @@ export function PreparationPage() {
           {!collapsedTabs ? (
             <>
               <Tabs
-                activeKey={activeTab}
-                onChange={(key) => setActiveTab(key as PreparationTabKey)}
-                items={orderedTabItems}
+                className="preparation-workbench-tabs"
+                activeKey={isMoreTab ? MORE_TAB_PANE_KEY : activeTab}
+                onChange={(key) => {
+                  if (key === MORE_TAB_PANE_KEY) {
+                    setMoreSelectOpen(true);
+                    return;
+                  }
+                  setMoreSelectOpen(false);
+                  setActiveTab(key as PreparationTabKey);
+                }}
+                items={visibleTabItems}
               />
             </>
           ) : null}

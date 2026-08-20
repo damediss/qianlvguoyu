@@ -2,6 +2,8 @@ package com.guoyu.platform.trainingdepartment.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 /** 培训班级创建/保存请求（id=0或null新增, id>0编辑） */
 public class TrainInfoClassCreateReq {
@@ -22,7 +24,14 @@ public class TrainInfoClassCreateReq {
 
   private Long companyId;
 
+  @JsonProperty("workTypeId")
+  @JsonAlias("work_type_id")
   private Long workTypeId;
+
+  /** 班级工种等级 1-5，同一培训信息下各班可不同 */
+  @JsonProperty("workTypeLevel")
+  @JsonAlias("work_type_level")
+  private Integer workTypeLevel;
 
   /** 开始日期 */
   @Size(max = 10)
@@ -83,6 +92,14 @@ public class TrainInfoClassCreateReq {
 
   public void setWorkTypeId(Long workTypeId) {
     this.workTypeId = workTypeId;
+  }
+
+  public Integer getWorkTypeLevel() {
+    return workTypeLevel;
+  }
+
+  public void setWorkTypeLevel(Integer workTypeLevel) {
+    this.workTypeLevel = workTypeLevel;
   }
 
   public String getDateStart() {
