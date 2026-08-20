@@ -74,6 +74,20 @@ public class TrainTeacherBankCreateReq {
   /** 专业 */
   private String major;
 
+  @Size(max = 512)
+  private String skillName;
+  @Size(max = 255)
+  private String qualificationLevel;
+  @Size(max = 255)
+  private String professionalTitle;
+  private String certText;
+  @Size(max = 128)
+  private String teacherQualNo;
+  @Size(max = 128)
+  private String titleCertNo;
+  @Size(max = 255)
+  private String skillCertNo;
+
   /** 状态 */
   private Integer status;
 
@@ -225,6 +239,62 @@ public class TrainTeacherBankCreateReq {
 
   public void setMajor(String major) {
     this.major = major;
+  }
+
+  public String getSkillName() {
+    return skillName;
+  }
+
+  public void setSkillName(String skillName) {
+    this.skillName = skillName;
+  }
+
+  public String getQualificationLevel() {
+    return qualificationLevel;
+  }
+
+  public void setQualificationLevel(String qualificationLevel) {
+    this.qualificationLevel = qualificationLevel;
+  }
+
+  public String getProfessionalTitle() {
+    return professionalTitle;
+  }
+
+  public void setProfessionalTitle(String professionalTitle) {
+    this.professionalTitle = professionalTitle;
+  }
+
+  public String getCertText() {
+    return certText;
+  }
+
+  public void setCertText(String certText) {
+    this.certText = certText;
+  }
+
+  public String getTeacherQualNo() {
+    return teacherQualNo;
+  }
+
+  public void setTeacherQualNo(String teacherQualNo) {
+    this.teacherQualNo = teacherQualNo;
+  }
+
+  public String getTitleCertNo() {
+    return titleCertNo;
+  }
+
+  public void setTitleCertNo(String titleCertNo) {
+    this.titleCertNo = titleCertNo;
+  }
+
+  public String getSkillCertNo() {
+    return skillCertNo;
+  }
+
+  public void setSkillCertNo(String skillCertNo) {
+    this.skillCertNo = skillCertNo;
   }
 
   public Integer getStatus() {
