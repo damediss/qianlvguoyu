@@ -319,6 +319,7 @@ export function TrainingSubsidyDeclarePage() {
       });
     }
     return checklist.map((c) => ({
+      id: c.slotCode,
       slotCode: c.slotCode,
       title: c.title,
       required: c.required,
