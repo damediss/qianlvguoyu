@@ -207,7 +207,7 @@ function PdfJsPages({ blob }: { blob: Blob }) {
         if (widthTries < 20 && !cancelled) {
           widthTries += 1;
           window.clearTimeout(timer);
-          timer = window.setTimeout(() => schedule(measurePdfWidth(host)), 50);
+          timer = window.setTimeout(() => schedule(measurePdfWidth(host!)), 50);
           return;
         }
         width = 360;

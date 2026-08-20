@@ -49,7 +49,7 @@ function cloneStructured(value: unknown, seen: WeakMap<object, unknown>): unknow
   if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(value)) {
     const view = value as ArrayBufferView & { constructor: new (buffer: ArrayBuffer) => ArrayBufferView };
     const buffer = view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
-    return new view.constructor(buffer);
+    return new view.constructor(buffer as ArrayBuffer);
   }
   if (value instanceof Map) {
     const cloned = new Map();
