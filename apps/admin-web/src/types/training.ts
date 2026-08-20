@@ -1130,12 +1130,51 @@ export interface TrainTeacherBank {
   nation?: string;
   education?: string;
   major?: string;
+  skillName?: string;
+  qualificationLevel?: string;
+  professionalTitle?: string;
+  certText?: string;
+  teacherQualNo?: string;
+  titleCertNo?: string;
+  skillCertNo?: string;
+  idCardFrontFileId?: number | null;
+  idCardBackFileId?: number | null;
+  graduateFileId?: number | null;
+  educationFileId?: number | null;
+  teacherQualFileId?: number | null;
+  titleCertFileId?: number | null;
+  skillCertFileId?: number | null;
+  legacyId?: number | null;
+  source?: string | null;
   status?: number;
   tenantId?: number;
   userId?: number;
   createTime?: string;
   updateTime?: string;
   sortNumber?: number;
+  provisional?: boolean;
+  fileReadyCount?: number;
+  files?: TrainTeacherBankFile[];
+}
+
+export interface TrainTeacherBankFile {
+  id: number;
+  fileType: string;
+  fileId: number;
+  legacyUrl?: string | null;
+  certNo?: string | null;
+  sortNo?: number;
+  remark?: string | null;
+}
+
+export interface TrainTeacherBankImportResult {
+  total: number;
+  success: number;
+  created: number;
+  updated: number;
+  provisional: number;
+  failed?: Array<{ row?: number; name?: string; reason?: string }>;
+  warnings?: Array<{ row?: number; name?: string; reason?: string }>;
 }
 
 export interface TrainTeacherBankQuery {
@@ -1163,6 +1202,13 @@ export interface TrainTeacherBankCreateReq {
   nation?: string;
   education?: string;
   major?: string;
+  skillName?: string;
+  qualificationLevel?: string;
+  professionalTitle?: string;
+  certText?: string;
+  teacherQualNo?: string;
+  titleCertNo?: string;
+  skillCertNo?: string;
   status?: number;
   sortNumber?: number;
 }

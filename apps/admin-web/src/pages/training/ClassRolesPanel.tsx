@@ -2,11 +2,12 @@
  * 班级角色维护（train_class_role）
  * 开班准备弹窗与跟班工作台共用，数据同一真相源。
  */
-import { useState } from 'react';
+import { useDeferredValue, useState } from 'react';
 import {
   Alert,
   Button,
   Form,
+  Input,
   Modal,
   Select,
   Space,
@@ -15,7 +16,7 @@ import {
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
 import type { TrainClassRole } from '../../types/training';
@@ -63,6 +64,10 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
   const [importOpen, setImportOpen] = useState(false);
   const [assignRoleCode, setAssignRoleCode] = useState('lead_teacher');
   const [selectedTeacherIds, setSelectedTeacherIds] = useState<Array<number | string>>([]);
+  const [importPage, setImportPage] = useState(1);
+  const [importPageSize, setImportPageSize] = useState(8);
+  const [teacherKeyword, setTeacherKeyword] = useState('');
+  const deferredTeacherKeyword = useDeferredValue(teacherKeyword.trim());
 
   const { data: roles = [], isLoading, refetch, isFetching } = useQuery({
     queryKey: ['class-roles', classId],
@@ -70,9 +75,14 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
     enabled: !!classId,
   });
 
-  const { data: importData } = useQuery({
-    queryKey: ['class-roles-teachers'],
-    queryFn: () => trainApi.listOtherImportData('teacher'),
+  const { data: teacherPage, isFetching: teachersLoading } = useQuery({
+    queryKey: ['class-roles-teachers', importPage, importPageSize, deferredTeacherKeyword],
+    queryFn: () =>
+      trainApi.pageTeacherBanks({
+        page: importPage,
+        pageSize: importPageSize,
+        keyword: deferredTeacherKeyword || undefined,
+      }),
     enabled: importOpen,
   });
 
@@ -186,6 +196,9 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
           icon={<PlusOutlined />}
           onClick={() => {
             setAssignRoleCode('lead_teacher');
+            setTeacherKeyword('');
+            setImportPage(1);
+            setSelectedTeacherIds([]);
             setImportOpen(true);
           }}
         >
@@ -223,7 +236,7 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
           });
         }}
         confirmLoading={assignMu.isPending}
-        width={560}
+        width={720}
         destroyOnHidden
       >
         <Form.Item label="角色">
@@ -233,19 +246,52 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
             options={ASSIGN_ROLE_OPTIONS}
           />
         </Form.Item>
+        <Input
+          allowClear
+          prefix={<SearchOutlined />}
+          placeholder="搜索姓名 / 手机 / 身份证"
+          value={teacherKeyword}
+          onChange={(e) => {
+            setTeacherKeyword(e.target.value);
+            setImportPage(1);
+          }}
+          style={{ marginBottom: 12 }}
+        />
         <Table
           rowKey="id"
           size="small"
-          dataSource={importData?.list ?? []}
+          loading={teachersLoading}
+          dataSource={teacherPage?.items ?? []}
           columns={[
-            { title: '姓名', dataIndex: 'name' },
-            { title: '手机', dataIndex: 'phone', width: 140 },
+            { title: '姓名', dataIndex: 'name', width: 100 },
+            {
+              title: '身份证号',
+              width: 170,
+              render: (_, row) => {
+                const v = row.idCardNumber?.trim();
+                if (v && (/^[0-9Xx]{15}$/.test(v) || /^[0-9Xx]{18}$/.test(v))) return v;
+                return '—';
+              },
+            },
+            { title: '手机', dataIndex: 'phone', width: 130, render: (v?: string) => v || '—' },
           ]}
           rowSelection={{
             selectedRowKeys: selectedTeacherIds,
+            preserveSelectedRowKeys: true,
             onChange: (keys) => setSelectedTeacherIds(keys as Array<number | string>),
           }}
-          pagination={{ pageSize: 8 }}
+          pagination={{
+            current: importPage,
+            pageSize: importPageSize,
+            total: teacherPage?.total ?? 0,
+            showSizeChanger: true,
+            pageSizeOptions: ['8', '20', '50', '100'],
+            showTotal: (t) => `共 ${t} 人`,
+            onChange: (p, size) => {
+              setImportPage(p);
+              setImportPageSize(size);
+            },
+          }}
         />
       </Modal>
     </div>

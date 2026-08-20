@@ -52,6 +52,31 @@ public class TrainTeacherBankEntity {
   private String education;
   /** 专业 */
   private String major;
+  /** 职业技能名称 */
+  private String skillName;
+  /** 职业资格等级 */
+  private String qualificationLevel;
+  /** 专业技术职务 */
+  private String professionalTitle;
+  /** 资格证书原文 */
+  private String certText;
+  /** 教师资格证号 */
+  private String teacherQualNo;
+  /** 职称证号 */
+  private String titleCertNo;
+  /** 技能等级证号摘要 */
+  private String skillCertNo;
+  private Long idCardFrontFileId;
+  private Long idCardBackFileId;
+  private Long graduateFileId;
+  private Long educationFileId;
+  private Long teacherQualFileId;
+  private Long titleCertFileId;
+  private Long skillCertFileId;
+  /** PHP 原 id */
+  private Long legacyId;
+  /** legacy/excel/manual */
+  private String source;
   /** 状态 */
   private Integer status;
   /** 租户ID */
@@ -107,6 +132,38 @@ public class TrainTeacherBankEntity {
   public void setEducation(String education) { this.education = education; }
   public String getMajor() { return major; }
   public void setMajor(String major) { this.major = major; }
+  public String getSkillName() { return skillName; }
+  public void setSkillName(String skillName) { this.skillName = skillName; }
+  public String getQualificationLevel() { return qualificationLevel; }
+  public void setQualificationLevel(String qualificationLevel) { this.qualificationLevel = qualificationLevel; }
+  public String getProfessionalTitle() { return professionalTitle; }
+  public void setProfessionalTitle(String professionalTitle) { this.professionalTitle = professionalTitle; }
+  public String getCertText() { return certText; }
+  public void setCertText(String certText) { this.certText = certText; }
+  public String getTeacherQualNo() { return teacherQualNo; }
+  public void setTeacherQualNo(String teacherQualNo) { this.teacherQualNo = teacherQualNo; }
+  public String getTitleCertNo() { return titleCertNo; }
+  public void setTitleCertNo(String titleCertNo) { this.titleCertNo = titleCertNo; }
+  public String getSkillCertNo() { return skillCertNo; }
+  public void setSkillCertNo(String skillCertNo) { this.skillCertNo = skillCertNo; }
+  public Long getIdCardFrontFileId() { return idCardFrontFileId; }
+  public void setIdCardFrontFileId(Long idCardFrontFileId) { this.idCardFrontFileId = idCardFrontFileId; }
+  public Long getIdCardBackFileId() { return idCardBackFileId; }
+  public void setIdCardBackFileId(Long idCardBackFileId) { this.idCardBackFileId = idCardBackFileId; }
+  public Long getGraduateFileId() { return graduateFileId; }
+  public void setGraduateFileId(Long graduateFileId) { this.graduateFileId = graduateFileId; }
+  public Long getEducationFileId() { return educationFileId; }
+  public void setEducationFileId(Long educationFileId) { this.educationFileId = educationFileId; }
+  public Long getTeacherQualFileId() { return teacherQualFileId; }
+  public void setTeacherQualFileId(Long teacherQualFileId) { this.teacherQualFileId = teacherQualFileId; }
+  public Long getTitleCertFileId() { return titleCertFileId; }
+  public void setTitleCertFileId(Long titleCertFileId) { this.titleCertFileId = titleCertFileId; }
+  public Long getSkillCertFileId() { return skillCertFileId; }
+  public void setSkillCertFileId(Long skillCertFileId) { this.skillCertFileId = skillCertFileId; }
+  public Long getLegacyId() { return legacyId; }
+  public void setLegacyId(Long legacyId) { this.legacyId = legacyId; }
+  public String getSource() { return source; }
+  public void setSource(String source) { this.source = source; }
   public Integer getStatus() { return status; }
   public void setStatus(Integer status) { this.status = status; }
   public Long getTenantId() { return tenantId; }

@@ -1682,7 +1682,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                         type="primary"
                         disabled={!scheduleDirty}
                         loading={saveScheduleMu.isPending}
-                        onClick={() => saveScheduleMu.mutate(scheduleDraft)}
+                        onClick={() => saveScheduleMu.mutate(undefined)}
                       >
                         保存课表
                       </Button>

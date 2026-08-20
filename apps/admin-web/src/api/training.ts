@@ -25,6 +25,7 @@ import type {
   TrainTalentNeed, TrainTalentNeedQuery, TrainTalentNeedCreateReq, TrainTalentNeedUpdateReq,
   PlatformUser, PlatformUserQuery, PlatformUserCreateReq, PlatformUserUpdateReq,
   TrainTeacherBank, TrainTeacherBankQuery, TrainTeacherBankCreateReq, TrainTeacherBankUpdateReq,
+  TrainTeacherBankImportResult,
   TrainUserInfo, TrainUserInfoQuery, TrainUserInfoCreateReq, TrainUserInfoUpdateReq,
   TrainBudget, TrainBudgetQuery, TrainBudgetCreateReq, TrainBudgetUpdateReq,
   TrainFileList, TrainFileListQuery, TrainFileListCreateReq, TrainFileListUpdateReq,
@@ -441,6 +442,56 @@ export function updateTeacherBank(id: number, payload: TrainTeacherBankUpdateReq
 }
 export function deleteTeacherBank(id: number) {
   return unwrap<void>(apiClient.delete(`${BASE}/teacher-banks/${id}`));
+}
+
+export async function downloadTeacherBankImportTemplate() {
+  const response = await apiClient.get(`${BASE}/teacher-banks/import/template`, {
+    responseType: 'blob',
+  });
+  const blob = new Blob([response.data], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const filename =
+    parseContentDispositionFilename(response) || '教师信息导入模板.xlsx';
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+export function importTeacherBanks(file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  return unwrap<TrainTeacherBankImportResult>(
+    apiClient.post(`${BASE}/teacher-banks/import`, form),
+  );
+}
+
+export function migrateTeacherBanksFromLegacy(file: File, migrateImages = true) {
+  const form = new FormData();
+  form.append('file', file);
+  return unwrap<TrainTeacherBankImportResult>(
+    apiClient.post(`${BASE}/teacher-banks/migrate-from-legacy`, form, {
+      params: { migrateImages },
+      timeout: 600000,
+    }),
+  );
+}
+
+export function bindTeacherBankFile(id: number, fileType: string, fileId: number) {
+  return unwrap<TrainTeacherBank>(
+    apiClient.put(`${BASE}/teacher-banks/${id}/files/${encodeURIComponent(fileType)}`, {
+      fileId,
+    }),
+  );
+}
+
+export function clearTeacherBankFile(id: number, fileType: string) {
+  return unwrap<TrainTeacherBank>(
+    apiClient.delete(`${BASE}/teacher-banks/${id}/files/${encodeURIComponent(fileType)}`),
+  );
 }
 
 // ==================== User Info (用户信息) ====================
@@ -1914,9 +1965,7 @@ export type FollowEvidence = {
   scheduleDate?: string | null;
   courseName?: string | null;
   teachForm?: string | null;
-  teachFormOverride?: string | null;
   classHours?: string | null;
-  classHoursOverride?: string | null;
   actualClassHours?: string | null;
   startTime?: string | null;
   endTime?: string | null;
