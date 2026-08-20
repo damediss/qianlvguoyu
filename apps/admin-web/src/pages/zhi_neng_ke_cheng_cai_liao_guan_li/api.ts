@@ -91,8 +91,15 @@ export async function fetchTask(taskId: string): Promise<StandardTask> {
   return unwrap(apiClient.get(`${BASE}/tasks/${taskId}`));
 }
 
-export async function triggerSummarize(taskId: string): Promise<void> {
-  await apiClient.post(`${BASE}/tasks/${taskId}/summarize`);
+export interface SummarizeReq {
+  /** 选中的「等级×工种」组合 */
+  scopes: Array<{ levelCode: number; direction: string }>;
+  /** 理论通道重要程度档位（X/Y/Z 子集） */
+  importants: string[];
+}
+
+export async function triggerSummarize(taskId: string, req: SummarizeReq): Promise<void> {
+  await apiClient.post(`${BASE}/tasks/${taskId}/summarize`, req);
 }
 
 export async function reviewDone(taskId: string): Promise<StandardTask> {

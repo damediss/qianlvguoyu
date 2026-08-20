@@ -10,6 +10,7 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.entity.ExamFaqModelConfigEntity;
 import com.guoyu.platform.exam.service.FaqModelConfigApplicationService;
+import com.guoyu.platform.exam.standard.dto.StandardSummarizeReq;
 import com.guoyu.platform.exam.standard.entity.ExamStandardNodeEntity;
 import com.guoyu.platform.exam.standard.entity.ExamStandardTaskEntity;
 import com.guoyu.platform.exam.standard.mapper.ExamStandardNodeMapper;
@@ -19,7 +20,9 @@ import com.guoyu.platform.system.mapper.DictMapper;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -89,6 +92,17 @@ public class StandardLlmSummarizeService {
 
   /** 触发全任务 LLM 概括（异步）。同任务重复触发 → 409。 */
   public Long triggerSummarize(Long taskId, Long tenantId, Long userId) {
+    return triggerSummarize(taskId, tenantId, userId, null);
+  }
+
+  /**
+   * 触发 LLM 概括（异步）。
+   *
+   * @param req 弹窗选择：scopes=等级×工种组合（null=全部有效组合）；
+   *            importants=理论通道重要程度档位（null=XYZ 全档）。
+   *            同任务重复触发 → 409。
+   */
+  public Long triggerSummarize(Long taskId, Long tenantId, Long userId, StandardSummarizeReq req) {
     ExamStandardTaskEntity task = findTask(taskId, tenantId);
     if (StandardParseApplicationService.STATUS_LLM_RUNNING.equals(task.getStatus())) {
       throw new BusinessException(ErrorCode.CONFLICT, "该任务 LLM 概括正在进行中，请勿重复触发");
@@ -104,11 +118,13 @@ public class StandardLlmSummarizeService {
           "LLM 模型配置缺失（sys_dict[" + DICT_MODEL_CODE + "] 或默认 " + DEFAULT_MODEL_CODE
               + " 均未配置），任务保持 parsed 状态，可人工补叶后直接导出");
     }
+    List<String> importants = normalizeImportants(req == null ? null : req.importants());
+    Set<String> scopeKeys = resolveScopeKeys(task, req == null ? null : req.scopes());
     task.setStatus(StandardParseApplicationService.STATUS_LLM_RUNNING);
     task.setLlmModelId(config.getModelId());
     taskMapper.updateById(task);
     try {
-      executor.execute(() -> runSummarize(taskId, tenantId, userId));
+      executor.execute(() -> runSummarize(taskId, tenantId, userId, scopeKeys, importants));
     } catch (Exception e) {
       task.setStatus(StandardParseApplicationService.STATUS_PARSED);
       taskMapper.updateById(task);
@@ -116,6 +132,117 @@ public class StandardLlmSummarizeService {
       throw new BusinessException("503", "服务繁忙，请稍后重试");
     }
     return taskId;
+  }
+
+  /**
+   * 规范化重要程度档位：去重、大写、按 X→Y→Z 排序；null=XYZ 全档；空集或非法值 → 400。
+   */
+  public static List<String> normalizeImportants(List<String> raw) {
+    if (raw == null) {
+      return List.of("X", "Y", "Z");
+    }
+    Set<String> valid = new LinkedHashSet<>();
+    for (String v : raw) {
+      if (v == null) {
+        continue;
+      }
+      String up = v.trim().toUpperCase();
+      if (!List.of("X", "Y", "Z").contains(up)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "非法重要程度档位：" + v);
+      }
+      valid.add(up);
+    }
+    if (valid.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "重要程度至少选择一项（X/Y/Z）");
+    }
+    List<String> out = new ArrayList<>();
+    for (String x : List.of("X", "Y", "Z")) {
+      if (valid.contains(x)) {
+        out.add(x);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 解析有效「等级×工种」组合集合（key=levelCode|direction）：
+   * 有 directionLevels 矩阵时按其过滤无效组合；req.scopes 为 null 时返回全部有效组合。
+   */
+  private Set<String> resolveScopeKeys(ExamStandardTaskEntity task,
+      List<StandardSummarizeReq.Scope> scopes) {
+    Set<String> valid = new LinkedHashSet<>();
+    java.util.Map<String, List<Integer>> matrix = readDirectionLevels(task.getDirectionLevelsJson());
+    List<String> directions = readStringList(task.getDirectionsJson());
+    List<java.util.Map<String, Object>> levels = readLevels(task.getLevelsJson());
+    for (java.util.Map<String, Object> level : levels) {
+      int levelCode = ((Number) level.get("levelCode")).intValue();
+      for (String direction : directions) {
+        List<Integer> allowed = matrix.get(direction);
+        if (allowed != null && !allowed.contains(levelCode)) {
+          continue;
+        }
+        valid.add(levelCode + "|" + direction);
+      }
+    }
+    if (scopes == null) {
+      return valid;
+    }
+    Set<String> selected = new LinkedHashSet<>();
+    for (StandardSummarizeReq.Scope s : scopes) {
+      if (s == null || s.levelCode() == null || s.direction() == null) {
+        continue;
+      }
+      String key = s.levelCode() + "|" + s.direction();
+      if (valid.contains(key)) {
+        selected.add(key);
+      } else {
+        log.warn("[细目表] 忽略无效概括组合：taskId={} scope={}", task.getId(), key);
+      }
+    }
+    if (selected.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "未选择有效的工种×等级组合");
+    }
+    return selected;
+  }
+
+  // ---- task JSON 字段读取（与 StandardParseApplicationService 同规则） ----
+
+  private static List<String> readStringList(String json) {
+    if (json == null || json.isBlank()) {
+      return List.of();
+    }
+    try {
+      return new ObjectMapper().readValue(json,
+          new ObjectMapper().getTypeFactory().constructCollectionType(List.class, String.class));
+    } catch (Exception e) {
+      return List.of();
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private static List<java.util.Map<String, Object>> readLevels(String json) {
+    if (json == null || json.isBlank()) {
+      return List.of();
+    }
+    try {
+      return new ObjectMapper().readValue(json, List.class);
+    } catch (Exception e) {
+      return List.of();
+    }
+  }
+
+  private static java.util.Map<String, List<Integer>> readDirectionLevels(String json) {
+    if (json == null || json.isBlank()) {
+      return java.util.Map.of();
+    }
+    try {
+      return new ObjectMapper().readValue(json,
+          new com.fasterxml.jackson.core.type.TypeReference<
+              java.util.LinkedHashMap<String, List<Integer>>>() {});
+    } catch (Exception e) {
+      log.warn("[细目表] directionLevelsJson 解析失败: {}", e.getMessage());
+      return java.util.Map.of();
+    }
   }
 
   /** 单小节重新生成（同步，按 L2 节点 dimension 走对应通道） */
@@ -144,7 +271,7 @@ public class StandardLlmSummarizeService {
     List<String> materials = "skill".equals(dim)
         ? splitMaterials(l2.getSkillRequirement()) : splitMaterials(l2.getRelatedKnowledge());
     List<ExamStandardNodeEntity> created = summarizeOneSection(task, l2, dim, materials,
-        config, tenantId, userId);
+        config, tenantId, userId, List.of("X", "Y", "Z"));
     log.info("[细目表] 单小节重新生成：nodeId={} dim={} 新叶={}", l2NodeId, dim, created.size());
     return created;
   }
@@ -153,7 +280,8 @@ public class StandardLlmSummarizeService {
   // Worker 线程：全任务概括
   // ============================================================
 
-  private void runSummarize(Long taskId, Long tenantId, Long userId) {
+  private void runSummarize(Long taskId, Long tenantId, Long userId, Set<String> scopeKeys,
+      List<String> importants) {
     TenantContextHolder.setTenantId(tenantId);
     ExecutorService sectionPool = null;
     try {
@@ -166,14 +294,22 @@ public class StandardLlmSummarizeService {
         markTaskStatus(taskId, StandardParseApplicationService.STATUS_PARSED);
         return;
       }
-      // 一次性加载全部 L2 小节（坑#18：批处理内不变数据加载复用）
-      List<ExamStandardNodeEntity> sections = nodeMapper.selectList(
+      // 一次性加载全部 L2 小节（坑#18：批处理内不变数据加载复用），再按弹窗范围过滤
+      List<ExamStandardNodeEntity> allSections = nodeMapper.selectList(
           new LambdaQueryWrapper<ExamStandardNodeEntity>()
               .eq(ExamStandardNodeEntity::getTaskId, taskId)
               .eq(ExamStandardNodeEntity::getNodeLevel, 2)
               .orderByAsc(ExamStandardNodeEntity::getLevelCode)
               .orderByAsc(ExamStandardNodeEntity::getDirection)
               .orderByAsc(ExamStandardNodeEntity::getNodeKey));
+      List<ExamStandardNodeEntity> sections = new ArrayList<>();
+      for (ExamStandardNodeEntity l2 : allSections) {
+        if (scopeKeys.contains(l2.getLevelCode() + "|" + l2.getDirection())) {
+          sections.add(l2);
+        }
+      }
+      log.info("[细目表] LLM 概括范围：taskId={} 选中小节={}/{} 档位={}",
+          taskId, sections.size(), allSections.size(), importants);
 
       // ---- 小节级并行：3 线程（A2），TenantContextHolder 手动传递（坑#15） ----
       sectionPool = Executors.newFixedThreadPool(SECTION_PARALLELISM, r -> {
@@ -192,7 +328,8 @@ public class StandardLlmSummarizeService {
           try {
             try {
               summarizeOneSection(task, section, "theory",
-                  splitMaterials(section.getRelatedKnowledge()), config, tenantId, userId);
+                  splitMaterials(section.getRelatedKnowledge()), config, tenantId, userId,
+                  importants);
               success.incrementAndGet();
             } catch (Exception e) {
               failed.incrementAndGet();
@@ -202,7 +339,8 @@ public class StandardLlmSummarizeService {
             if (section.getSkillRequirement() != null && !section.getSkillRequirement().isBlank()) {
               try {
                 summarizeOneSection(task, section, "skill",
-                    splitMaterials(section.getSkillRequirement()), config, tenantId, userId);
+                    splitMaterials(section.getSkillRequirement()), config, tenantId, userId,
+                    importants);
                 success.incrementAndGet();
               } catch (Exception e) {
                 failed.incrementAndGet();
@@ -244,15 +382,26 @@ public class StandardLlmSummarizeService {
   /**
    * 单小节单通道概括：LLM 调用 + 护栏 + 落叶节点 + 留痕。
    * LLM 彻底失败时按原文素材逐条兜底（source=extract，标记待人工——§6.2）。
+   *
+   * <p>importants 仅作用于理论通道：prompt 限定可选档位、数量规则（不含 Z → 3~6 个；
+   * 含 Z → 4~8 个），越档产出归入最低允许档。技能通道保持「每条原文 1 点」一一对应。
+   *
+   * <p>生成前先清掉本小节该维度的 pending LLM 草稿叶（保留人工/已审改节点），保证重跑不重复。
    */
   private List<ExamStandardNodeEntity> summarizeOneSection(ExamStandardTaskEntity task,
       ExamStandardNodeEntity l2, String dimension, List<String> materials,
-      ExamFaqModelConfigEntity config, Long tenantId, Long userId) {
+      ExamFaqModelConfigEntity config, Long tenantId, Long userId, List<String> importants) {
     boolean skill = "skill".equals(dimension);
+    // 先清再生成：删除本小节该维度的 pending LLM 草稿叶
+    nodeMapper.delete(new LambdaQueryWrapper<ExamStandardNodeEntity>()
+        .eq(ExamStandardNodeEntity::getParentId, l2.getId())
+        .eq(ExamStandardNodeEntity::getDimension, dimension)
+        .eq(ExamStandardNodeEntity::getSource, "llm")
+        .eq(ExamStandardNodeEntity::getReviewStatus, "pending"));
     String sectionPath = sectionPath(task, l2);
     // C2：统一 system 前缀（不分理论/技能），差异下沉到 user prompt
     String systemPrompt = buildSystemPrompt(task, l2);
-    String userPrompt = buildUserPrompt(sectionPath, materials, skill);
+    String userPrompt = buildUserPrompt(sectionPath, materials, skill, importants);
     // B2：max_tokens 按通道和素材条数自适应
     int maxTokens = computeMaxTokens(materials, skill);
 
@@ -295,11 +444,33 @@ public class StandardLlmSummarizeService {
           dimension);
       return created;
     }
-    for (StandardLlmPoint point : result.getPoints()) {
+    // 理论通道：越档产出归入最低允许档（不丢弃考评点，防空结果）
+    List<StandardLlmPoint> points = skill ? result.getPoints()
+        : clampImportants(result.getPoints(), importants);
+    for (StandardLlmPoint point : points) {
       created.add(insertLeaf(l2, dimension, point.title(), point.important(), "llm",
           created.size(), tenantId));
     }
     return created;
+  }
+
+  /**
+   * 理论通道档位钳制：LLM 返回未选档位时，归入允许集合中的最低档（X&lt;Y&lt;Z，取列表末位）。
+   * importants 必须已按 X→Y→Z 排序（见 {@link #normalizeImportants}）。
+   */
+  public static List<StandardLlmPoint> clampImportants(List<StandardLlmPoint> points,
+      List<String> importants) {
+    String lowest = importants.get(importants.size() - 1);
+    List<StandardLlmPoint> out = new ArrayList<>(points.size());
+    for (StandardLlmPoint p : points) {
+      if (importants.contains(p.important())) {
+        out.add(p);
+      } else {
+        log.warn("[细目表] 考评点档位越界：{} → 归入 {}（{}）", p.important(), lowest, p.title());
+        out.add(new StandardLlmPoint(p.title(), lowest));
+      }
+    }
+    return out;
   }
 
   private ExamStandardNodeEntity insertLeaf(ExamStandardNodeEntity l2, String dimension,
@@ -422,7 +593,8 @@ public class StandardLlmSummarizeService {
     return THEORY_MAX_TOKENS;
   }
 
-  private String buildUserPrompt(String sectionPath, List<String> materials, boolean skill) {
+  private static String buildUserPrompt(String sectionPath, List<String> materials, boolean skill,
+      List<String> importants) {
     StringBuilder sb = new StringBuilder();
     // C2：小节路径+素材放最前（变量部分），要求/格式放最后（稳定部分）
     sb.append("小节路径：").append(sectionPath).append('\n');
@@ -443,11 +615,35 @@ public class StandardLlmSummarizeService {
           + "3. 以 JSON 输出（必须含 \"points\" 数组），格式："
           + "{\"points\":[{\"title\":\"…\",\"important\":\"X\"}]}");
     } else {
-      sb.append("要求（理论知识考评点）：\n"
-          + "1. 概括 4~8 个考评点，每个为 ≤20 字的名词性短语，不得照抄长句；\n"
-          + "2. 每个考评点给重要程度：X=核心必考，Y=重要（法律法规、安全规程类），Z=一般了解；\n"
-          + "3. 以 JSON 输出（必须含 \"points\" 数组），格式："
-          + "{\"points\":[{\"title\":\"…\",\"important\":\"X\"}]}");
+      sb.append("要求（理论知识考评点）：\n")
+          .append("1. 概括 ").append(theoryCountRange(importants))
+          .append(" 个考评点，每个为 ≤20 字的名词性短语，不得照抄长句；\n")
+          .append("2. ").append(theoryImportantRule(importants)).append("；\n")
+          .append("3. 以 JSON 输出（必须含 \"points\" 数组），格式：")
+          .append("{\"points\":[{\"title\":\"…\",\"important\":\"X\"}]}");
+    }
+    return sb.toString();
+  }
+
+  /** 理论通道数量规则：不含 Z → 3~6 个；含 Z → 4~8 个 */
+  public static String theoryCountRange(List<String> importants) {
+    return importants.contains("Z") ? "4~8" : "3~6";
+  }
+
+  /** 理论通道重要程度规则文案：全档=原三档说明；子集=仅允许所选档位 */
+  public static String theoryImportantRule(List<String> importants) {
+    java.util.Map<String, String> desc = java.util.Map.of(
+        "X", "X=核心必考", "Y", "Y=重要（法律法规、安全规程类）", "Z", "Z=一般了解");
+    if (importants.size() == 3) {
+      return "每个考评点给重要程度：" + desc.get("X") + "，" + desc.get("Y") + "，" + desc.get("Z");
+    }
+    StringBuilder sb = new StringBuilder("每个考评点给重要程度，仅允许取值 ");
+    sb.append(String.join("、", importants)).append("：");
+    for (int i = 0; i < importants.size(); i++) {
+      if (i > 0) {
+        sb.append("，");
+      }
+      sb.append(desc.get(importants.get(i)));
     }
     return sb.toString();
   }

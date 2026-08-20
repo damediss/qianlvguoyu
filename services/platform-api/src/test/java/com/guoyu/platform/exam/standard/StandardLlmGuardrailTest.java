@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.exam.standard.service.StandardLlmPoint;
 import com.guoyu.platform.exam.standard.service.StandardLlmSummarizeService;
 import java.util.List;
@@ -114,5 +115,54 @@ class StandardLlmGuardrailTest {
             "21", "22", "23", "24", "25", "26", "27", "28", "29", "30",
             "31", "32", "33", "34", "35", "36", "37", "38", "39", "40",
             "41", "42", "43", "44", "45"), true), "45 条素材封顶 2048");
+  }
+
+  /** 弹窗参数：importants 规范化（null=全档；去重排序；空集/非法 → 400） */
+  @Test
+  void summarize_normalizeImportants() {
+    assertEquals(List.of("X", "Y", "Z"), StandardLlmSummarizeService.normalizeImportants(null));
+    assertEquals(List.of("X", "Y"),
+        StandardLlmSummarizeService.normalizeImportants(List.of("y", "X", "x")));
+    assertThrows(BusinessException.class,
+        () -> StandardLlmSummarizeService.normalizeImportants(List.of()));
+    assertThrows(BusinessException.class,
+        () -> StandardLlmSummarizeService.normalizeImportants(List.of("W")));
+  }
+
+  /** 弹窗参数：理论通道数量规则——不含 Z → 3~6；含 Z → 4~8 */
+  @Test
+  void summarize_theoryCountRange() {
+    assertEquals("3~6", StandardLlmSummarizeService.theoryCountRange(List.of("X", "Y")));
+    assertEquals("3~6", StandardLlmSummarizeService.theoryCountRange(List.of("X")));
+    assertEquals("4~8", StandardLlmSummarizeService.theoryCountRange(List.of("X", "Y", "Z")));
+    assertEquals("4~8", StandardLlmSummarizeService.theoryCountRange(List.of("X", "Z")));
+  }
+
+  /** 弹窗参数：重要程度规则文案——子集限定取值，全档保留三档说明 */
+  @Test
+  void summarize_theoryImportantRule() {
+    String subset = StandardLlmSummarizeService.theoryImportantRule(List.of("X", "Y"));
+    assertTrue(subset.contains("仅允许取值 X、Y"), subset);
+    assertTrue(subset.contains("X=核心必考") && !subset.contains("Z=一般了解"), subset);
+    String full = StandardLlmSummarizeService.theoryImportantRule(List.of("X", "Y", "Z"));
+    assertTrue(full.contains("Z=一般了解") && !full.contains("仅允许"), full);
+  }
+
+  /** 弹窗参数：越档产出归入最低允许档，不丢考评点 */
+  @Test
+  void summarize_clampImportants() {
+    List<StandardLlmPoint> points = List.of(
+        new StandardLlmPoint("甲", "X"), new StandardLlmPoint("乙", "Z"),
+        new StandardLlmPoint("丙", "Y"));
+    List<StandardLlmPoint> clamped =
+        StandardLlmSummarizeService.clampImportants(points, List.of("X", "Y"));
+    assertEquals(3, clamped.size());
+    assertEquals("X", clamped.get(0).important());
+    assertEquals("Y", clamped.get(1).important(), "Z 越档归入最低允许档 Y");
+    assertEquals("Y", clamped.get(2).important());
+    // 仅选 X 时全部归 X
+    List<StandardLlmPoint> onlyX =
+        StandardLlmSummarizeService.clampImportants(points, List.of("X"));
+    assertTrue(onlyX.stream().allMatch(p -> "X".equals(p.important())));
   }
 }

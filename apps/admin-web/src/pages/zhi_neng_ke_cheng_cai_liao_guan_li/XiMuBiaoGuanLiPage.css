@@ -63,3 +63,31 @@
   font-weight: 600;
   animation: xmb-delta-fade 2.5s ease-out forwards;
 }
+
+/* AI 概括弹窗：工种×等级矩阵 */
+.xmb-scope-matrix {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.xmb-scope-matrix th,
+.xmb-scope-matrix td {
+  border: 1px solid #f0f0f0;
+  padding: 4px 8px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.xmb-scope-matrix th {
+  background: #fafafa;
+  font-weight: 600;
+}
+
+.xmb-scope-matrix td:first-child {
+  text-align: left;
+  white-space: nowrap;
+}
+
+.xmb-scope-na {
+  color: #bfbfbf;
+}

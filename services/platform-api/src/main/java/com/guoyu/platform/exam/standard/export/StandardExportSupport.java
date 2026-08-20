@@ -89,25 +89,75 @@ public final class StandardExportSupport {
     return c[0] + c[1] + c[2];
   }
 
+  /** L2 权重分配份额（最大余数法中间态） */
+  private record Share(ExamStandardNodeEntity l2, int idx, BigDecimal base, BigDecimal rem) {
+  }
+
   /**
-   * L2 考评权重：节点手工权重优先；否则 L1 权重 ×（L2 叶数 ÷ L1 总叶数），4 位小数。
+   * L2 考评权重批量分配：保证同一 L1 下所有 L2 权重之和严格等于 L1 权重（2 位小数，与导出显示精度一致）。
+   *
+   * <p>规则：
+   * <ul>
+   *   <li>L1 无权重 → 返回空 Map（导出留空）；</li>
+   *   <li>L2 有手工权重 → 固定不参与分配；</li>
+   *   <li>其余 L2 按理论叶数比例分配剩余权重，最大余数法凑整到 0.01
+   *       （先取 floor 份额，剩余按小数余数从大到小逐个 +0.01，余数相同按 L2 顺序）；</li>
+   *   <li>无手工权重且理论叶数为 0 的 L2 不分配（导出留空）。</li>
+   * </ul>
    */
-  public static BigDecimal l2Weight(ExportTree tree, ExamStandardNodeEntity l1,
-      ExamStandardNodeEntity l2) {
-    if (l2.getWeight() != null) {
-      return l2.getWeight();
+  public static Map<Long, BigDecimal> allocateL2Weights(ExportTree tree, ExamStandardNodeEntity l1) {
+    Map<Long, BigDecimal> result = new LinkedHashMap<>();
+    List<ExamStandardNodeEntity> l2List = tree.children(l1.getId());
+    if (l1.getWeight() == null || l2List.isEmpty()) {
+      return result;
     }
-    if (l1.getWeight() == null) {
-      return null;
+    BigDecimal target = l1.getWeight().setScale(2, RoundingMode.HALF_UP);
+
+    BigDecimal manualSum = BigDecimal.ZERO;
+    List<ExamStandardNodeEntity> auto = new ArrayList<>();
+    Map<Long, Integer> leafOf = new LinkedHashMap<>();
+    for (ExamStandardNodeEntity l2 : l2List) {
+      if (l2.getWeight() != null) {
+        result.put(l2.getId(), l2.getWeight());
+        manualSum = manualSum.add(l2.getWeight().setScale(2, RoundingMode.HALF_UP));
+      } else {
+        int count = leafCount(tree, l2.getId(), "theory");
+        if (count > 0) {
+          leafOf.put(l2.getId(), count);
+          auto.add(l2);
+        }
+      }
     }
-    int l1Total = leafCount(tree, l1.getId(), "theory");
-    int l2Count = leafCount(tree, l2.getId(), "theory");
-    if (l1Total == 0 || l2Count == 0) {
-      return null;
+    BigDecimal remaining = target.subtract(manualSum);
+    if (auto.isEmpty() || remaining.signum() <= 0) {
+      return result;
     }
-    return l1.getWeight()
-        .multiply(BigDecimal.valueOf(l2Count))
-        .divide(BigDecimal.valueOf(l1Total), 4, RoundingMode.HALF_UP);
+    int totalLeaf = auto.stream().mapToInt(l2 -> leafOf.get(l2.getId())).sum();
+
+    BigDecimal unit = new BigDecimal("0.01");
+    List<Share> shares = new ArrayList<>();
+    BigDecimal allocated = BigDecimal.ZERO;
+    for (int i = 0; i < auto.size(); i++) {
+      ExamStandardNodeEntity l2 = auto.get(i);
+      BigDecimal exact = remaining.multiply(BigDecimal.valueOf(leafOf.get(l2.getId())))
+          .divide(BigDecimal.valueOf(totalLeaf), 6, RoundingMode.HALF_UP);
+      BigDecimal base = exact.divideToIntegralValue(unit).multiply(unit);
+      shares.add(new Share(l2, i, base, exact.subtract(base)));
+      allocated = allocated.add(base);
+    }
+    shares.sort(Comparator.comparing(Share::rem).reversed().thenComparingInt(Share::idx));
+    BigDecimal leftover = remaining.subtract(allocated);
+    int idx = 0;
+    while (leftover.compareTo(BigDecimal.ZERO) > 0 && idx < shares.size()) {
+      Share s = shares.get(idx);
+      shares.set(idx, new Share(s.l2(), s.idx(), s.base().add(unit), s.rem()));
+      leftover = leftover.subtract(unit);
+      idx++;
+    }
+    for (Share s : shares) {
+      result.put(s.l2().getId(), s.base());
+    }
+    return result;
   }
 
   /** weights_json → 权重表（kind: theory/skill） */

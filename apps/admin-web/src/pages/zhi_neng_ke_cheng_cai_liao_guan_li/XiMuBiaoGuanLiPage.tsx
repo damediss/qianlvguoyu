@@ -8,6 +8,7 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Input,
   InputNumber,
   Modal,
@@ -57,6 +58,7 @@ import {
   type ExportKind,
   type StandardNode,
   type StandardTask,
+  type SummarizeReq,
 } from './api';
 import './XiMuBiaoGuanLiPage.css';
 
@@ -205,15 +207,16 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
     }
   };
 
-  const handleSummarize = async (task: StandardTask) => {
+  const handleSummarize = async (task: StandardTask, req: SummarizeReq) => {
     setSummarizingId(task.id);
     try {
-      await triggerSummarize(task.id);
+      await triggerSummarize(task.id, req);
       message.success('LLM 概括已触发（异步执行，状态自动刷新）');
       refetch();
     } catch (e: any) {
       message.error(e?.response?.data?.message || e?.message || '触发失败');
       setSummarizingId(null);
+      throw e;
     }
   };
 
@@ -227,6 +230,7 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
   };
 
   const [sqlTask, setSqlTask] = useState<StandardTask | null>(null);
+  const [summarizeTask, setSummarizeTask] = useState<StandardTask | null>(null);
 
   const columns: ColumnsType<StandardTask> = [
     { title: '职业名称', dataIndex: 'workTypeTitle', width: 140 },
@@ -302,7 +306,7 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
               icon={<RobotOutlined />}
               disabled={t.status === 'llm_running' || summarizingId === t.id}
               loading={summarizingId === t.id}
-              onClick={() => handleSummarize(t)}
+              onClick={() => setSummarizeTask(t)}
             >
               AI概括
             </Button>
@@ -412,6 +416,11 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
         taskId={sqlTask?.id || ''}
         onClose={() => setSqlTask(null)}
       />
+      <SummarizeModal
+        task={summarizeTask}
+        onClose={() => setSummarizeTask(null)}
+        onStart={(req) => handleSummarize(summarizeTask!, req)}
+      />
     </Card>
   );
 }
@@ -467,6 +476,163 @@ function SqlExportModal({ open, taskId, scope, onClose }: {
           message="复用模式执行前请先备份目标库：将删除匹配课程下全部旧知识树，再写入新树。"
         />
       )}
+    </Modal>
+  );
+}
+
+// ==================================================================
+// AI 概括范围选择弹窗：工种×等级矩阵 + 重要程度档位（默认 XY）
+// ==================================================================
+
+function SummarizeModal({ task, onClose, onStart }: {
+  task: StandardTask | null;
+  onClose: () => void;
+  onStart: (req: SummarizeReq) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [importants, setImportants] = useState<string[]>(['X', 'Y']);
+  const [loading, setLoading] = useState(false);
+
+  // 有效组合集合：directionLevels 为空（旧任务）时全部等级×工种有效
+  const validKeys = useMemo(() => {
+    const set = new Set<string>();
+    if (!task) return set;
+    const matrix =
+      task.directionLevels && Object.keys(task.directionLevels).length > 0
+        ? task.directionLevels
+        : null;
+    for (const level of task.levels) {
+      for (const dir of task.directions) {
+        if (matrix && !matrix[dir]?.includes(level.levelCode)) continue;
+        set.add(`${level.levelCode}|${dir}`);
+      }
+    }
+    return set;
+  }, [task]);
+
+  // 打开弹窗时重置默认：全部有效组合 + XY
+  useEffect(() => {
+    if (task) {
+      setSelected(new Set(validKeys));
+      setImportants(['X', 'Y']);
+    }
+  }, [task, validKeys]);
+
+  if (!task) return null;
+
+  const toggle = (key: string, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  };
+
+  const doStart = async () => {
+    if (selected.size === 0) {
+      message.warning('请至少选择一个工种×等级组合');
+      return;
+    }
+    if (importants.length === 0) {
+      message.warning('请至少选择一个重要程度');
+      return;
+    }
+    setLoading(true);
+    try {
+      await onStart({
+        scopes: [...selected].map((k) => {
+          const [lc, dir] = k.split('|');
+          return { levelCode: Number(lc), direction: dir };
+        }),
+        importants,
+      });
+      onClose();
+    } catch {
+      // onStart 内部已提示错误，弹窗保持打开便于调整
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      title={`AI 概括范围选择（${task.workTypeTitle}）`}
+      okText="开始概括"
+      confirmLoading={loading}
+      onCancel={onClose}
+      onOk={doStart}
+      width={640}
+    >
+      <Space direction="vertical" style={{ width: '100%' }} size={12}>
+        <div>
+          <Space style={{ marginBottom: 4 }}>
+            <Typography.Text strong>工种 × 等级</Typography.Text>
+            <Button type="link" size="small" onClick={() => setSelected(new Set(validKeys))}>
+              全选
+            </Button>
+            <Button type="link" size="small" onClick={() => setSelected(new Set())}>
+              清空
+            </Button>
+          </Space>
+          <table className="xmb-scope-matrix">
+            <thead>
+              <tr>
+                <th>工种 \ 等级</th>
+                {task.levels.map((l) => (
+                  <th key={l.levelCode}>{l.levelName}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {task.directions.map((dir) => (
+                <tr key={dir}>
+                  <td>{dir === '默认' ? '（不分工种）' : dir}</td>
+                  {task.levels.map((l) => {
+                    const key = `${l.levelCode}|${dir}`;
+                    return (
+                      <td key={key}>
+                        {validKeys.has(key) ? (
+                          <Checkbox
+                            checked={selected.has(key)}
+                            onChange={(e) => toggle(key, e.target.checked)}
+                          />
+                        ) : (
+                          <span className="xmb-scope-na">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <Typography.Text strong>重要程度（仅作用于理论考评点）</Typography.Text>
+          <div style={{ marginTop: 4 }}>
+            <Checkbox.Group
+              value={importants}
+              onChange={(v) => setImportants(v as string[])}
+              options={[
+                { value: 'X', label: 'X（核心必考）' },
+                { value: 'Y', label: 'Y（重要）' },
+                { value: 'Z', label: 'Z（一般了解）' },
+              ]}
+            />
+          </div>
+        </div>
+        <Alert
+          type="info"
+          showIcon
+          message={
+            importants.includes('Z')
+              ? '含 Z 档：每个 L2 小节生成 4~8 个理论考评点；技能考评点按原文逐条生成。'
+              : '未选 Z 档：每个 L2 小节生成 3~6 个理论考评点；技能考评点按原文逐条生成。'
+          }
+        />
+      </Space>
     </Modal>
   );
 }

@@ -7,6 +7,7 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.standard.dto.StandardNodeCreateReq;
 import com.guoyu.platform.exam.standard.dto.StandardNodeUpdateReq;
+import com.guoyu.platform.exam.standard.dto.StandardSummarizeReq;
 import com.guoyu.platform.exam.standard.service.StandardExportApplicationService;
 import com.guoyu.platform.exam.standard.service.StandardExportApplicationService.ExportFile;
 import com.guoyu.platform.exam.standard.service.StandardLlmSummarizeService;
@@ -95,13 +96,14 @@ public class StandardParseController {
     return ApiResponse.ok(parseService.getTask(id, SecurityContext.currentUser().getTenantId()));
   }
 
-  /** #3 触发 LLM 概括（异步；重复触发 409） */
+  /** #3 触发 LLM 概括（异步；重复触发 409；body 可选：scopes=工种×等级，importants=XYZ 档位） */
   @PostMapping("/tasks/{id}/summarize")
   @PreAuthorize("hasAuthority('ximubiaoguanli:generate')")
   @AuditLog(module = "exam", action = "standard:summarize", targetType = "exam_standard_task")
-  public ResponseEntity<ApiResponse<Long>> summarize(@PathVariable Long id) {
+  public ResponseEntity<ApiResponse<Long>> summarize(@PathVariable Long id,
+      @RequestBody(required = false) StandardSummarizeReq req) {
     PlatformUserPrincipal user = SecurityContext.currentUser();
-    Long taskId = llmService.triggerSummarize(id, user.getTenantId(), user.getUserId());
+    Long taskId = llmService.triggerSummarize(id, user.getTenantId(), user.getUserId(), req);
     return ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.ok(taskId));
   }
 

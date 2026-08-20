@@ -6,6 +6,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -154,15 +155,17 @@ public class MubiaoExcelExporter {
       sheet.addMergedRegion(new CellRangeAddress(startRow, endRow, 3, 3));
     }
 
+    // 本 L1 下所有 L2 权重一次性分配（最大余数法），保证合计严格等于 L1 权重
+    Map<Long, BigDecimal> l2Weights = StandardExportSupport.allocateL2Weights(tree, l1);
     int rowIdx = startRow;
     for (ExamStandardNodeEntity l2 : l2List) {
-      rowIdx = writeL2(sheet, tree, l1, l2, rowIdx, styles);
+      rowIdx = writeL2(sheet, tree, l1, l2, rowIdx, styles, l2Weights.get(l2.getId()));
     }
     return endRow + 1;
   }
 
   private int writeL2(Sheet sheet, ExportTree tree, ExamStandardNodeEntity l1,
-      ExamStandardNodeEntity l2, int startRow, Styles styles) {
+      ExamStandardNodeEntity l2, int startRow, Styles styles, BigDecimal l2Weight) {
     List<ExamStandardNodeEntity> leaves = theoryLeaves(tree, l2);
     int rows = Math.max(leaves.size(), 1);
     int endRow = startRow + rows - 1;
@@ -172,7 +175,7 @@ public class MubiaoExcelExporter {
     String l2Text = stripKeySuffix(l2.getTitle()) + "\n" + StandardExportSupport.lastSegment(l2.getNodeKey())
         + "\n" + StandardExportSupport.xyzText(xyz);
     setCell(first, 4, l2Text, styles.center);
-    setWeight(first, 5, StandardExportSupport.l2Weight(tree, l1, l2), styles);
+    setWeight(first, 5, l2Weight, styles);
     setCell(first, 6, l2.getRelatedKnowledge() != null ? l2.getRelatedKnowledge() : "", styles.left);
     if (endRow > startRow) {
       sheet.addMergedRegion(new CellRangeAddress(startRow, endRow, 4, 4));

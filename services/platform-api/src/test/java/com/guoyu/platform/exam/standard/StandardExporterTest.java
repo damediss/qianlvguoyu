@@ -90,6 +90,63 @@ class StandardExporterTest {
     assertEquals(expected[2], actual[2], msg + " [Z]");
   }
 
+  /** B8c：L2 权重最大余数法——合计严格等于 L1 权重（复现 0.03+0.03>0.05 的显示矛盾场景） */
+  @Test
+  void b8c_l2WeightLargestRemainder() {
+    List<ExamStandardNodeEntity> ns = new ArrayList<>();
+    ns.add(node(101L, 0L, "A", 0, "基本要求A", null, new BigDecimal("0.30"), "theory"));
+    ns.add(node(102L, 101L, "A-A", 1, "职业道德A-A", null, new BigDecimal("0.05"), "theory"));
+    ns.add(node(103L, 102L, "A-A-A", 2, "职业道德基本知识A-A-A", null, null, "theory"));
+    ns.add(node(104L, 102L, "A-A-B", 2, "职业守则A-A-B", null, null, "theory"));
+    // 两个 L2 各 8 理论叶（复现 2:3:3 / 5:1:2）
+    long id = 200L;
+    for (String imp : new String[]{"X", "X", "Y", "Y", "Y", "Z", "Z", "Z"}) {
+      ns.add(node(id++, 103L, "A-A-A-" + id, 3, "叶" + id, imp, null, "theory"));
+    }
+    for (String imp : new String[]{"X", "X", "X", "X", "X", "Y", "Z", "Z"}) {
+      ns.add(node(id++, 104L, "A-A-B-" + id, 3, "叶" + id, imp, null, "theory"));
+    }
+    ExportTree t = StandardExportSupport.assemble(ns);
+
+    ExamStandardNodeEntity l1 = t.children(101L).get(0);
+    Map<Long, BigDecimal> weights = StandardExportSupport.allocateL2Weights(t, l1);
+
+    BigDecimal w1 = weights.get(103L);
+    BigDecimal w2 = weights.get(104L);
+    assertNotNull(w1);
+    assertNotNull(w2);
+    // 精确值各 0.025：最大余数法后一个 0.03、一个 0.02，合计严格等于 L1 权重
+    assertEquals(0, w1.add(w2).compareTo(new BigDecimal("0.05")), "L2 权重合计必须等于 L1 权重");
+    assertEquals(0, w1.compareTo(new BigDecimal("0.03")), "余数并列按顺序，首个 L2 补到 0.03");
+    assertEquals(0, w2.compareTo(new BigDecimal("0.02")), "第二个 L2 为 0.02");
+  }
+
+  /** B8d：L2 手工权重固定，剩余权重按叶数比例分配（手工值参与合计核算） */
+  @Test
+  void b8d_l2WeightManualFixed() {
+    List<ExamStandardNodeEntity> ns = new ArrayList<>();
+    ns.add(node(101L, 0L, "A", 0, "基本要求A", null, new BigDecimal("0.30"), "theory"));
+    ns.add(node(102L, 101L, "A-A", 1, "职业道德A-A", null, new BigDecimal("0.05"), "theory"));
+    ns.add(node(103L, 102L, "A-A-A", 2, "职业道德基本知识A-A-A", null, null, "theory"));
+    ns.add(node(104L, 102L, "A-A-B", 2, "职业守则A-A-B", null, new BigDecimal("0.03"), "theory"));
+    long id = 200L;
+    for (int i = 0; i < 8; i++) {
+      ns.add(node(id++, 103L, "A-A-A-" + id, 3, "叶" + id, "X", null, "theory"));
+    }
+    for (int i = 0; i < 8; i++) {
+      ns.add(node(id++, 104L, "A-A-B-" + id, 3, "叶" + id, "X", null, "theory"));
+    }
+    ExportTree t = StandardExportSupport.assemble(ns);
+
+    ExamStandardNodeEntity l1 = t.children(101L).get(0);
+    Map<Long, BigDecimal> weights = StandardExportSupport.allocateL2Weights(t, l1);
+
+    assertEquals(0, weights.get(104L).compareTo(new BigDecimal("0.03")), "手工权重原样保留");
+    assertEquals(0, weights.get(103L).compareTo(new BigDecimal("0.02")), "剩余 0.02 分给自动 L2");
+    assertEquals(0, weights.get(103L).add(weights.get(104L)).compareTo(new BigDecimal("0.05")),
+        "合计仍等于 L1 权重");
+  }
+
   /** B7：SQL 导出——变量链连续、仅理论叶、文件头注释完整 */
   @Test
   void b7_sqlExport() {
