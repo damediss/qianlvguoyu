@@ -615,8 +615,12 @@ export function TrainingAcademicManagePage() {
             showSizeChanger: true,
             pageSizeOptions: ['10', '20', '50', '100'],
             onChange: (p, size) => {
-              setPage(p);
-              setPageSize(size);
+              if (typeof size === 'number' && size > 0 && size !== pageSize) {
+                setPageSize(size);
+                setPage(1);
+              } else {
+                setPage(p);
+              }
             },
             showTotal: (t) => `共 ${t} 人`,
           }}

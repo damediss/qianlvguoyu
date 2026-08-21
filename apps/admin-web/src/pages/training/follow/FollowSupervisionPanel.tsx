@@ -381,7 +381,7 @@ export function FollowSupervisionPanel({ classId, bizDate }: Props) {
           loading={listQuery.isLoading}
           dataSource={listQuery.data || []}
           columns={listColumns}
-          pagination={{ pageSize: 8 }}
+          pagination={{ pageSize: 8, showSizeChanger: false }}
           locale={{ emptyText: dayStr ? `${dayStr} 暂无督导检查` : '暂无督导检查' }}
         />
       </Card>
@@ -403,7 +403,7 @@ export function FollowSupervisionPanel({ classId, bizDate }: Props) {
               loading={issuesQuery.isLoading}
               dataSource={issuesQuery.data || []}
               columns={issueColumns}
-              pagination={{ pageSize: 8 }}
+              pagination={{ pageSize: 8, showSizeChanger: false }}
               locale={{ emptyText: '暂无整改单' }}
             />
           </Card>

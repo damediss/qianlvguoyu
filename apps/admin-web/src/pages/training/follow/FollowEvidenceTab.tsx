@@ -381,7 +381,7 @@ export function FollowEvidenceTab({ classId }: Props) {
           loading={listQ.isFetching}
           columns={columns}
           dataSource={photos}
-          pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 张` }}
+          pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (t) => `共 ${t} 张` }}
           locale={{
             emptyText: <Empty description="暂无照片，请点击「添加照片」" />,
           }}

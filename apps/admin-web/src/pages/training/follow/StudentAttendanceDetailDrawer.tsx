@@ -189,7 +189,7 @@ export function StudentAttendanceDetailDrawer({ open, classId, student, hoursRow
             loading={isLoading}
             columns={columns}
             dataSource={rows}
-            pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
+            pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (t) => `共 ${t} 条` }}
             locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无历史考勤记录" /> }}
             scroll={{ y: 420 }}
           />

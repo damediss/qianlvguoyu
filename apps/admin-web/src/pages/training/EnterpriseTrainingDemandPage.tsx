@@ -353,7 +353,14 @@ export function EnterpriseTrainingDemandPage() {
         pageSize={pageSize}
         showSizeChanger
         showTotal={(t) => `共 ${t} 条`}
-        onChange={(p, ps) => { setPage(p); setPageSize(ps); }}
+        onChange={(p, ps) => {
+          if (typeof ps === 'number' && ps > 0 && ps !== pageSize) {
+            setPageSize(ps);
+            setPage(1);
+          } else {
+            setPage(p);
+          }
+        }}
       />
 
       <Modal

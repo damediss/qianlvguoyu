@@ -212,7 +212,7 @@ export function FollowScheduleChangeTab({ classId }: Props) {
         loading={isLoading}
         columns={columns}
         dataSource={list}
-        pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (t) => `共 ${t} 条` }}
         locale={{ emptyText: <Empty description="暂无调课申请" /> }}
         size="small"
       />

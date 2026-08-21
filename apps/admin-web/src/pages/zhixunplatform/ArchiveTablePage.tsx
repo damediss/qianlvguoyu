@@ -312,11 +312,11 @@ export function createArchiveTablePage(module: ModuleKey) {
                 </div>
               </div>
               <div className="pa-table-wrap">
-                {module === 'equipment' && <Table columns={equipmentColumns} dataSource={getList()} rowKey="id" size="small" scroll={{ x: 900 }} pagination={{ pageSize: 10, showSizeChanger: true }} />}
-                {module === 'materials' && <Table columns={materialColumns} dataSource={getList()} rowKey="id" size="small" scroll={{ x: 1000 }} pagination={{ pageSize: 10, showSizeChanger: true }} rowClassName={(r: Material) => r.stock < r.safety ? 'row-warn' : ''} />}
+                {module === 'equipment' && <Table columns={equipmentColumns} dataSource={getList()} rowKey="id" size="small" scroll={{ x: 900 }} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'] }} />}
+                {module === 'materials' && <Table columns={materialColumns} dataSource={getList()} rowKey="id" size="small" scroll={{ x: 1000 }} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'] }} rowClassName={(r: Material) => r.stock < r.safety ? 'row-warn' : ''} />}
                 {module === 'rules' && (
                   <>
-                    <Table columns={ruleColumns} dataSource={getList()} rowKey="id" size="small" pagination={{ pageSize: 10, showSizeChanger: true }} />
+                    <Table columns={ruleColumns} dataSource={getList()} rowKey="id" size="small" pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50'] }} />
                     <div className="pa-rule-preview"><h4>规则摘要预览</h4><p>{rulePreview}</p></div>
                   </>
                 )}

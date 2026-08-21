@@ -199,6 +199,10 @@ export function TrainingFollowExamPage() {
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [classKeyword, setClassKeyword] = useState('');
   const [trainTitleFilters, setTrainTitleFilters] = useState<string[]>([]);
+  const [companyPage, setCompanyPage] = useState(1);
+  const [companyPageSize, setCompanyPageSize] = useState(20);
+  const [classPage, setClassPage] = useState(1);
+  const [classPageSize, setClassPageSize] = useState(10);
   const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
   const [rosterClass, setRosterClass] = useState<ExamScoreImportClassOption | null>(null);
   const [rosterKeyword, setRosterKeyword] = useState('');
@@ -434,6 +438,7 @@ export function TrainingFollowExamPage() {
     setActiveCompanyId(companyId);
     setClassKeyword('');
     setTrainTitleFilters([]);
+    setClassPage(1);
     setPreview(null);
     setLastCommit(null);
     setUploadFileName(null);
@@ -448,6 +453,8 @@ export function TrainingFollowExamPage() {
     setSelectedClassIds([]);
     setClassKeyword('');
     setTrainTitleFilters([]);
+    setClassPage(1);
+    setCompanyPage(1);
   };
 
   useEffect(() => {
@@ -835,7 +842,10 @@ export function TrainingFollowExamPage() {
               prefix={<SearchOutlined />}
               placeholder="搜索企业"
               value={companyKeyword}
-              onChange={(e) => setCompanyKeyword(e.target.value)}
+              onChange={(e) => {
+                setCompanyKeyword(e.target.value);
+                setCompanyPage(1);
+              }}
               style={{ width: 220 }}
             />
           }
@@ -846,7 +856,19 @@ export function TrainingFollowExamPage() {
             loading={publicQuery.isLoading || allClassesQuery.isLoading}
             columns={companyColumns}
             dataSource={filteredCompanies}
-            pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (n) => `共 ${n} 家企业` }}
+            pagination={{
+              current: companyPage,
+              pageSize: companyPageSize,
+              showSizeChanger: true,
+              pageSizeOptions: ['10', '20', '50', '100'],
+              showTotal: (n) => `共 ${n} 家企业`,
+              onChange: (page, size) => {
+                setCompanyPage(page);
+                if (typeof size === 'number' && size > 0) {
+                  setCompanyPageSize(size);
+                }
+              },
+            }}
             onRow={(row) => ({
               onClick: () => enterCompany(row.companyId),
               style: { cursor: 'pointer' },
@@ -879,7 +901,10 @@ export function TrainingFollowExamPage() {
                   prefix={<SearchOutlined />}
                   placeholder="搜索班级/项目"
                   value={classKeyword}
-                  onChange={(e) => setClassKeyword(e.target.value)}
+                  onChange={(e) => {
+                    setClassKeyword(e.target.value);
+                    setClassPage(1);
+                  }}
                   style={{ width: 180 }}
                 />
                 <Button
@@ -936,13 +961,35 @@ export function TrainingFollowExamPage() {
               columns={classColumns}
               dataSource={filteredClasses}
               scroll={{ x: 900 }}
-              pagination={{ pageSize: 10, showTotal: (n) => `共 ${n} 个班` }}
-              onChange={(_pagination, filters) => {
+              pagination={{
+                current: classPage,
+                pageSize: classPageSize,
+                showSizeChanger: true,
+                pageSizeOptions: ['10', '20', '50', '100'],
+                showTotal: (n) => `共 ${n} 个班`,
+              }}
+              onChange={(pagination, filters) => {
                 const raw = filters.trainTitle;
                 const next = Array.isArray(raw)
                   ? raw.map(String).filter(Boolean)
                   : [];
-                setTrainTitleFilters(next);
+                const filtersChanged =
+                  next.length !== trainTitleFilters.length
+                  || next.some((v, i) => v !== trainTitleFilters[i]);
+                if (filtersChanged) {
+                  setTrainTitleFilters(next);
+                  setClassPage(1);
+                } else if (pagination.current != null) {
+                  setClassPage(pagination.current);
+                }
+                if (
+                  typeof pagination.pageSize === 'number'
+                  && pagination.pageSize > 0
+                  && pagination.pageSize !== classPageSize
+                ) {
+                  setClassPageSize(pagination.pageSize);
+                  setClassPage(1);
+                }
               }}
               onRow={(row) => ({
                 style: { cursor: 'pointer' },

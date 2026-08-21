@@ -313,7 +313,7 @@ export function PersonnelArchivePage() {
             rowKey="id"
             size="small"
             scroll={{ x: activeTab === 'teachers' ? 1400 : 1700 }}
-            pagination={{ pageSize: 10, showSizeChanger: true, showTotal: t => `共 ${t} 条` }}
+            pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], showTotal: t => `共 ${t} 条` }}
             rowClassName={activeTab === 'teachers'
               ? ((r: Teacher & Student) => (isCertWarn(r as unknown as Teacher) || isAgreePending(r as unknown as Teacher)) ? 'row-warn' : '')
               : ((r: Teacher & Student) => isStudentWarn(r as unknown as Student) ? 'row-warn' : '')

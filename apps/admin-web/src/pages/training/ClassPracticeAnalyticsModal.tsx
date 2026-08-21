@@ -273,8 +273,12 @@ export function ClassPracticeAnalyticsPanel({ classId, enabled = true }: PanelPr
                     total: studentsQuery.data?.total ?? 0,
                     showSizeChanger: true,
                     onChange: (p, ps) => {
-                      setPage(p);
-                      setPageSize(ps);
+                      if (typeof ps === 'number' && ps > 0 && ps !== pageSize) {
+                        setPageSize(ps);
+                        setPage(1);
+                      } else {
+                        setPage(p);
+                      }
                     },
                   }}
                 />

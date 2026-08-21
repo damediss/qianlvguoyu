@@ -359,8 +359,15 @@ export function TrainingGraduationPage({
             pageSize: query.pageSize,
             total: data?.total ?? 0,
             showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50', '100'],
             showTotal: (t) => `共 ${t} 条`,
-            onChange: (p, ps) => setQuery({ ...query, page: p, pageSize: ps }),
+            onChange: (p, ps) => {
+              setQuery((prev) => ({
+                ...prev,
+                page: typeof ps === 'number' && ps !== prev.pageSize ? 1 : p,
+                pageSize: typeof ps === 'number' && ps > 0 ? ps : prev.pageSize,
+              }));
+            },
           }}
         />
       </Card>

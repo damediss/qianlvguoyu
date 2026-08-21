@@ -477,7 +477,7 @@ export function CompetitionScoreRankingPage({
                   dataSource={scoreSourcesQuery.data?.items || []}
                   columns={sourceColumns}
                   scroll={{ x: 1300 }}
-                  pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 条来源修订` }}
+                  pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], showTotal: (total) => `共 ${total} 条来源修订` }}
                   headerTitle={`当前规则共有 ${selectedRuleSources.length} 条来源修订`}
                   toolBarRender={() => canCalculate ? [
                     <Button
@@ -508,7 +508,7 @@ export function CompetitionScoreRankingPage({
                   dataSource={totalSnapshotsQuery.data?.items || []}
                   columns={totalColumns}
                   scroll={{ x: 1300 }}
-                  pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 条计算快照` }}
+                  pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], showTotal: (total) => `共 ${total} 条计算快照` }}
                   headerTitle="总分重算生成新版本，不覆盖历史快照"
                 />
               </Card>
@@ -527,7 +527,7 @@ export function CompetitionScoreRankingPage({
                     loading={rankingSnapshotsQuery.isFetching}
                     dataSource={rankingSnapshotsQuery.data?.items || []}
                     columns={snapshotColumns}
-                    pagination={{ pageSize: 8, showTotal: (total) => `共 ${total} 个快照版本` }}
+                    pagination={{ pageSize: 8, showSizeChanger: false, showTotal: (total) => `共 ${total} 个快照版本` }}
                     headerTitle="不可变排名快照"
                     toolBarRender={() => canGenerateRanking ? [
                       <Button
