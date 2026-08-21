@@ -1965,7 +1965,9 @@ export type FollowEvidence = {
   scheduleDate?: string | null;
   courseName?: string | null;
   teachForm?: string | null;
+  teachFormOverride?: string | null;
   classHours?: string | null;
+  classHoursOverride?: string | null;
   actualClassHours?: string | null;
   startTime?: string | null;
   endTime?: string | null;
