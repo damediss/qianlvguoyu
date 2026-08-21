@@ -3374,9 +3374,14 @@ export function listExamScoreImportClasses(params?: {
 
 export function pageExamScoreImportClassPeople(
   classId: number | string,
-  params?: { page?: number; pageSize?: number; keyword?: string },
+  params?: {
+    page?: number;
+    pageSize?: number;
+    keyword?: string;
+    examResultStatus?: string;
+  },
 ) {
-  return unwrap<PageResponse<import('../types/training').ExamScoreImportClassPeople>>(
+  return unwrap<import('../types/training').ExamScoreImportClassPeoplePage>(
     apiClient.get(`${BASE}/exam-score-imports/classes/${classId}/people`, { params }),
   );
 }

@@ -71,6 +71,21 @@ class ExamScoreImportApplicationServiceTest {
   }
 
   @Test
+  void examResult_passFailAbsent_byTheoryAndSkill60() {
+    assertThat(ExamScoreImportApplicationService.resolveExamResultStatus(null, null))
+        .isEqualTo("ABSENT");
+    assertThat(ExamScoreImportApplicationService.resolveExamResultStatus(
+            new BigDecimal("70"), new BigDecimal("71")))
+        .isEqualTo("PASS");
+    assertThat(ExamScoreImportApplicationService.resolveExamResultStatus(
+            new BigDecimal("58"), new BigDecimal("71")))
+        .isEqualTo("FAIL");
+    assertThat(ExamScoreImportApplicationService.resolveExamResultStatus(
+            new BigDecimal("70"), null))
+        .isEqualTo("FAIL");
+  }
+
+  @Test
   void resolveExamScore_usesComprehensiveOnly_noTheoryFallback() {
     var withBoth = RensheScoreRosterParseService.ParsedRow.ofScores(
         1, "A", "110101199001011234", null, null, null, null,

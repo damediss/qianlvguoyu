@@ -10,7 +10,7 @@ import com.guoyu.platform.trainingdepartment.security.TrainingAuthorityExpressio
 import com.guoyu.platform.trainingdepartment.service.ExamScoreImportApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportBatchItemVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportBatchVO;
-import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportClassPeopleVO;
+import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportClassPeoplePageVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportClassVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportCommitResultVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportPreviewVO;
@@ -58,12 +58,13 @@ public class ExamScoreImportController {
 
   @GetMapping("/classes/{classId}/people")
   @PreAuthorize(TrainingAuthorityExpressions.EXAM_SCORE_IMPORT_VIEW)
-  public ApiResponse<PageResponse<ExamScoreImportClassPeopleVO>> classPeople(
+  public ApiResponse<ExamScoreImportClassPeoplePageVO> classPeople(
       @PathVariable Long classId,
       @RequestParam(defaultValue = "1") long page,
       @RequestParam(defaultValue = "50") long pageSize,
-      @RequestParam(required = false) String keyword) {
-    return ApiResponse.ok(service.listClassPeople(classId, page, pageSize, keyword));
+      @RequestParam(required = false) String keyword,
+      @RequestParam(required = false) String examResultStatus) {
+    return ApiResponse.ok(service.listClassPeople(classId, page, pageSize, keyword, examResultStatus));
   }
 
   @PostMapping("/preview")

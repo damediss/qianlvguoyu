@@ -43,6 +43,8 @@ public class TrainPeopleListEntity {
   private Long tenantId;
   private LocalDateTime createTime;
   private String idCard;
+  /** 准考证号（人社成绩单导入） */
+  private String ticketNo;
 
   /** 0未结业 / 1已结业 / 2不合格 */
   private Integer graduateStatus;

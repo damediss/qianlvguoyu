@@ -12,4 +12,16 @@ public record ExamScoreImportClassVO(
     String trainTitle,
     @JsonSerialize(using = ToStringSerializer.class) Long workTypeId,
     String workTypeTitle,
-    Integer workTypeLevel) {}
+    Integer workTypeLevel,
+    /** 本班学员人数 */
+    int studentCount,
+    /** 至少有一项人社成绩（理论/技能/综合/业绩）的人数 */
+    int scoredCount,
+    /** NONE / PARTIAL / DONE */
+    String scoreImportStatus,
+    /** 理论≥60 且 技能≥60 */
+    int passedCount,
+    /** 理论与技能均无成绩 */
+    int absentCount,
+    /** 有成绩但未双科达标 */
+    int failedCount) {}

@@ -1,6 +1,7 @@
 package com.guoyu.platform.trainingdepartment.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,6 +28,8 @@ import com.guoyu.platform.trainingdepartment.service.RensheScoreRosterParseServi
 import com.guoyu.platform.trainingdepartment.service.RensheScoreRosterParseService.ParsedRow;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportBatchItemVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportBatchVO;
+import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportClassExamStatsVO;
+import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportClassPeoplePageVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportClassPeopleVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportClassVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportCommitResultVO;
@@ -165,12 +168,20 @@ public class ExamScoreImportApplicationService {
     }
     Map<Long, ClassContext> ctx = loadClassContext(classes);
     Map<Long, Long> companyByTrainInfo = resolveCompanyIdByTrainInfo(classes);
+    Map<Long, int[]> rosterStats = loadClassRosterScoreStats(
+        classes.stream().map(TrainInfoClassEntity::getId).toList());
     return classes.stream().map(c -> {
       ClassContext cc = ctx.get(c.getId());
       Long resolvedCompanyId = c.getCompanyId();
       if (resolvedCompanyId == null || resolvedCompanyId == 0L) {
         resolvedCompanyId = companyByTrainInfo.get(c.getTrainInfoId());
       }
+      int[] stats = rosterStats.getOrDefault(c.getId(), new int[] {0, 0, 0, 0, 0});
+      int studentCount = stats[0];
+      int scoredCount = stats[1];
+      int passedCount = stats[2];
+      int absentCount = stats[3];
+      int failedCount = stats[4];
       return new ExamScoreImportClassVO(
           c.getId(),
           c.getTitle(),
@@ -180,13 +191,105 @@ public class ExamScoreImportApplicationService {
           cc == null ? null : cc.trainTitle,
           c.getWorkTypeId(),
           cc == null ? null : cc.workTypeTitle,
-          c.getWorkTypeLevel());
+          c.getWorkTypeLevel(),
+          studentCount,
+          scoredCount,
+          resolveScoreImportStatus(studentCount, scoredCount),
+          passedCount,
+          absentCount,
+          failedCount);
     }).toList();
   }
 
+  /**
+   * [0]=学员数 [1]=已有成绩人数 [2]=合格 [3]=缺考 [4]=不合格
+   * 合格/缺考规则与人员抽屉一致：双科≥60 / 双科皆空。
+   */
+  private Map<Long, int[]> loadClassRosterScoreStats(List<Long> classIds) {
+    if (classIds.isEmpty()) {
+      return Map.of();
+    }
+    List<Map<String, Object>> rows = peopleMapper.selectMaps(
+        new QueryWrapper<TrainPeopleListEntity>()
+            .select(
+                "train_class_id AS class_id",
+                "COUNT(1) AS student_count",
+                "SUM(CASE WHEN exam_score IS NOT NULL OR real_score IS NOT NULL"
+                    + " OR theory_score IS NOT NULL OR performance_score IS NOT NULL"
+                    + " THEN 1 ELSE 0 END) AS scored_count",
+                "SUM(CASE WHEN theory_score IS NOT NULL AND theory_score >= 60"
+                    + " AND real_score IS NOT NULL AND real_score >= 60 THEN 1 ELSE 0 END) AS passed_count",
+                "SUM(CASE WHEN theory_score IS NULL AND real_score IS NULL THEN 1 ELSE 0 END) AS absent_count",
+                "SUM(CASE WHEN NOT (theory_score IS NULL AND real_score IS NULL)"
+                    + " AND NOT (theory_score IS NOT NULL AND theory_score >= 60"
+                    + " AND real_score IS NOT NULL AND real_score >= 60)"
+                    + " THEN 1 ELSE 0 END) AS failed_count")
+            .in("train_class_id", classIds)
+            .eq("type", "student")
+            .groupBy("train_class_id"));
+    Map<Long, int[]> map = new HashMap<>();
+    for (Map<String, Object> row : rows) {
+      Long classId = toLong(row.get("class_id"));
+      if (classId == null) {
+        continue;
+      }
+      map.put(classId, new int[] {
+          toInt(row.get("student_count")),
+          toInt(row.get("scored_count")),
+          toInt(row.get("passed_count")),
+          toInt(row.get("absent_count")),
+          toInt(row.get("failed_count"))
+      });
+    }
+    return map;
+  }
+
+  static String resolveScoreImportStatus(int studentCount, int scoredCount) {
+    if (studentCount <= 0 || scoredCount <= 0) {
+      return "NONE";
+    }
+    if (scoredCount >= studentCount) {
+      return "DONE";
+    }
+    return "PARTIAL";
+  }
+
+  private static Long toLong(Object v) {
+    if (v == null) {
+      return null;
+    }
+    if (v instanceof Number n) {
+      return n.longValue();
+    }
+    try {
+      return Long.parseLong(String.valueOf(v));
+    } catch (NumberFormatException ex) {
+      return null;
+    }
+  }
+
+  private static int toInt(Object v) {
+    if (v == null) {
+      return 0;
+    }
+    if (v instanceof Number n) {
+      return n.intValue();
+    }
+    try {
+      return Integer.parseInt(String.valueOf(v));
+    } catch (NumberFormatException ex) {
+      return 0;
+    }
+  }
+
+  static final BigDecimal PASS_SCORE = new BigDecimal("60");
+  static final String EXAM_PASS = "PASS";
+  static final String EXAM_FAIL = "FAIL";
+  static final String EXAM_ABSENT = "ABSENT";
+
   /** 考试页点击班级：查看本班学员结业成绩（综合/技能） */
-  public PageResponse<ExamScoreImportClassPeopleVO> listClassPeople(
-      Long classId, long page, long pageSize, String keyword) {
+  public ExamScoreImportClassPeoplePageVO listClassPeople(
+      Long classId, long page, long pageSize, String keyword, String examResultStatus) {
     if (classId == null || classId == 0L) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "班级参数不合法");
     }
@@ -198,6 +301,18 @@ public class ExamScoreImportApplicationService {
       throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在或已删除");
     }
     operatorScopeService.assertClassAccessible(clazz);
+
+    // 整班统计（不受搜索/分页/结果筛选影响）
+    List<TrainPeopleListEntity> allStudents = peopleMapper.selectList(
+        new LambdaQueryWrapper<TrainPeopleListEntity>()
+            .eq(TrainPeopleListEntity::getDeleted, 0)
+            .eq(TrainPeopleListEntity::getType, "student")
+            .eq(TrainPeopleListEntity::getTrainClassId, classId)
+            .select(
+                TrainPeopleListEntity::getId,
+                TrainPeopleListEntity::getTheoryScore,
+                TrainPeopleListEntity::getRealScore));
+    ExamScoreImportClassExamStatsVO stats = buildExamStats(allStudents);
 
     long p = page <= 0 ? 1 : page;
     long size = pageSize <= 0 ? 50 : Math.min(pageSize, 500);
@@ -214,19 +329,110 @@ public class ExamScoreImportApplicationService {
           .or()
           .like(TrainPeopleListEntity::getPhone, kw));
     }
+    applyExamResultStatusFilter(wrapper, examResultStatus);
     Page<TrainPeopleListEntity> mp = peopleMapper.selectPage(new Page<>(p, size), wrapper);
     List<ExamScoreImportClassPeopleVO> items = mp.getRecords().stream()
         .map(e -> new ExamScoreImportClassPeopleVO(
             e.getId(),
             e.getRealname(),
             e.getIdCard(),
+            e.getTicketNo(),
             e.getPhone(),
             e.getTheoryScore(),
             e.getRealScore(),
             e.getExamScore(),
-            e.getPerformanceScore()))
+            e.getPerformanceScore(),
+            resolveExamResultStatus(e.getTheoryScore(), e.getRealScore())))
         .toList();
-    return new PageResponse<>(items, p, size, mp.getTotal());
+    return new ExamScoreImportClassPeoplePageVO(items, p, size, mp.getTotal(), stats);
+  }
+
+  /** 按计算结果筛：PASS / FAIL / ABSENT（与 resolveExamResultStatus 一致） */
+  static void applyExamResultStatusFilter(
+      LambdaQueryWrapper<TrainPeopleListEntity> wrapper, String examResultStatus) {
+    if (!StringUtils.hasText(examResultStatus)) {
+      return;
+    }
+    String status = examResultStatus.trim().toUpperCase(Locale.ROOT);
+    if (EXAM_ABSENT.equals(status)) {
+      wrapper.isNull(TrainPeopleListEntity::getTheoryScore)
+          .isNull(TrainPeopleListEntity::getRealScore);
+      return;
+    }
+    if (EXAM_PASS.equals(status)) {
+      wrapper.ge(TrainPeopleListEntity::getTheoryScore, PASS_SCORE)
+          .ge(TrainPeopleListEntity::getRealScore, PASS_SCORE);
+      return;
+    }
+    if (EXAM_FAIL.equals(status)) {
+      // 非缺考 且 非双科达标
+      wrapper.and(w -> w.isNotNull(TrainPeopleListEntity::getTheoryScore)
+          .or()
+          .isNotNull(TrainPeopleListEntity::getRealScore));
+      wrapper.and(w -> w.isNull(TrainPeopleListEntity::getTheoryScore)
+          .or()
+          .lt(TrainPeopleListEntity::getTheoryScore, PASS_SCORE)
+          .or()
+          .isNull(TrainPeopleListEntity::getRealScore)
+          .or()
+          .lt(TrainPeopleListEntity::getRealScore, PASS_SCORE));
+    }
+  }
+
+  static ExamScoreImportClassExamStatsVO buildExamStats(List<TrainPeopleListEntity> students) {
+    int total = students.size();
+    int passed = 0;
+    int failed = 0;
+    int absent = 0;
+    int theoryPass = 0;
+    int theoryFail = 0;
+    int theoryAbsent = 0;
+    int skillPass = 0;
+    int skillFail = 0;
+    int skillAbsent = 0;
+    for (TrainPeopleListEntity e : students) {
+      BigDecimal theory = e.getTheoryScore();
+      BigDecimal skill = e.getRealScore();
+      String status = resolveExamResultStatus(theory, skill);
+      switch (status) {
+        case EXAM_PASS -> passed++;
+        case EXAM_ABSENT -> absent++;
+        default -> failed++;
+      }
+      if (theory == null) {
+        theoryAbsent++;
+      } else if (isPassScore(theory)) {
+        theoryPass++;
+      } else {
+        theoryFail++;
+      }
+      if (skill == null) {
+        skillAbsent++;
+      } else if (isPassScore(skill)) {
+        skillPass++;
+      } else {
+        skillFail++;
+      }
+    }
+    return new ExamScoreImportClassExamStatsVO(
+        total, passed, failed, absent,
+        theoryPass, theoryFail, theoryAbsent,
+        skillPass, skillFail, skillAbsent);
+  }
+
+  /** 理论与技能均无 → 缺考；均 ≥60 → 合格；其余 → 不合格 */
+  static String resolveExamResultStatus(BigDecimal theory, BigDecimal skill) {
+    if (theory == null && skill == null) {
+      return EXAM_ABSENT;
+    }
+    if (isPassScore(theory) && isPassScore(skill)) {
+      return EXAM_PASS;
+    }
+    return EXAM_FAIL;
+  }
+
+  static boolean isPassScore(BigDecimal score) {
+    return score != null && score.compareTo(PASS_SCORE) >= 0;
   }
 
   private Map<Long, Long> resolveCompanyIdByTrainInfo(List<TrainInfoClassEntity> classes) {
@@ -568,16 +774,22 @@ public class ExamScoreImportApplicationService {
       BigDecimal oldReal = person.getRealScore();
       BigDecimal oldTheory = person.getTheoryScore();
       BigDecimal oldPerformance = person.getPerformanceScore();
+      String oldTicket = person.getTicketNo();
       BigDecimal newExam = target.examScore;
       BigDecimal newReal = target.realScore;
       BigDecimal newTheory = target.theory;
       BigDecimal newPerformance = target.performance;
-      boolean hadOld = oldExam != null || oldReal != null || oldTheory != null || oldPerformance != null;
+      String newTicket = StringUtils.hasText(target.ticketNo) ? target.ticketNo.trim() : null;
+      boolean hadOld = oldExam != null || oldReal != null || oldTheory != null || oldPerformance != null
+          || StringUtils.hasText(oldTicket);
+      boolean ticketChanged = newTicket != null
+          && (oldTicket == null || !newTicket.equals(oldTicket.trim()));
       boolean changed = (newExam != null && (oldExam == null || oldExam.compareTo(newExam) != 0))
           || (newReal != null && (oldReal == null || oldReal.compareTo(newReal) != 0))
           || (newTheory != null && (oldTheory == null || oldTheory.compareTo(newTheory) != 0))
           || (newPerformance != null
-              && (oldPerformance == null || oldPerformance.compareTo(newPerformance) != 0));
+              && (oldPerformance == null || oldPerformance.compareTo(newPerformance) != 0))
+          || ticketChanged;
       if (!changed) {
         skipped++;
         auditItems.add(buildItem(null, target, peopleId, person.getTrainClassId(), SKIPPED,
@@ -595,6 +807,9 @@ public class ExamScoreImportApplicationService {
       }
       if (newPerformance != null) {
         person.setPerformanceScore(newPerformance);
+      }
+      if (newTicket != null) {
+        person.setTicketNo(newTicket);
       }
       peopleMapper.updateById(person);
       written++;

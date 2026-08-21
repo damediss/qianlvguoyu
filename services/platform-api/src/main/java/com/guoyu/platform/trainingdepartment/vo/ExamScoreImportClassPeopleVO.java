@@ -9,8 +9,11 @@ public record ExamScoreImportClassPeopleVO(
     @JsonSerialize(using = ToStringSerializer.class) Long id,
     String realname,
     String idCard,
+    String ticketNo,
     String phone,
     BigDecimal theoryScore,
     BigDecimal skillScore,
     BigDecimal examScore,
-    BigDecimal performanceScore) {}
+    BigDecimal performanceScore,
+    /** PASS / FAIL / ABSENT */
+    String examResultStatus) {}

@@ -22,7 +22,7 @@ import {
   UploadOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
 import type {
   DemandPublicData,
@@ -79,6 +79,7 @@ type WritableRow = {
   rowNo: number;
   name?: string;
   idCard?: string;
+  ticketNo?: string;
   theoryScore?: number | null;
   skillScore?: number | null;
   examScore?: number | null;
@@ -106,6 +107,7 @@ function flattenWritable(items: ExamScoreImportItem[]): WritableRow[] {
         rowNo: item.rowNo,
         name: item.name,
         idCard: item.idCard,
+        ticketNo: item.ticketNo,
         theoryScore: item.theoryScore,
         skillScore: item.skillScore,
         examScore: item.examScore,
@@ -131,15 +133,78 @@ function statusTag(code?: string) {
   return <Tag color={meta.color}>{meta.text}</Tag>;
 }
 
+const PASS_LINE = 60;
+
+function renderExamScoreCell(v: number | string | null | undefined) {
+  if (v == null || v === '') return '—';
+  const n = typeof v === 'number' ? v : Number(v);
+  if (Number.isNaN(n)) return v;
+  if (n < PASS_LINE) {
+    return <span className="exam-score-fail">{n}</span>;
+  }
+  return <span className="exam-score-pass">{n}</span>;
+}
+
+function examResultTag(status?: string) {
+  if (status === 'PASS') return <Tag color="success">合格</Tag>;
+  if (status === 'FAIL') return <Tag color="error">不合格</Tag>;
+  if (status === 'ABSENT') return <Tag>缺考</Tag>;
+  return <Tag>—</Tag>;
+}
+
+function examRosterRowClass(status?: string) {
+  if (status === 'PASS') return 'exam-roster-pass-row';
+  if (status === 'FAIL') return 'exam-roster-fail-row';
+  if (status === 'ABSENT') return 'exam-roster-absent-row';
+  return '';
+}
+
+/** 百分比展示：分母为 0 时显示 — */
+function formatRate(numerator: number, denominator: number, digits = 1) {
+  if (denominator <= 0) return '—';
+  const pct = (numerator / denominator) * 100;
+  return `${pct.toFixed(digits)}%`;
+}
+
+function buildExamRosterRateSummary(stats: {
+  total: number;
+  passed: number;
+  failed: number;
+  absent: number;
+  theoryPass: number;
+  theoryFail: number;
+  theoryAbsent: number;
+  skillPass: number;
+  skillFail: number;
+  skillAbsent: number;
+}) {
+  const attended = stats.passed + stats.failed;
+  return {
+    /** 合格 / 合计 */
+    passRate: formatRate(stats.passed, stats.total),
+    /** 参考（有成绩） / 合计 */
+    attendRate: formatRate(attended, stats.total),
+    /** 缺考 / 合计 */
+    absentRate: formatRate(stats.absent, stats.total),
+    /** 合格 / 参考人数（剔除缺考） */
+    passAmongAttended: formatRate(stats.passed, attended),
+    theoryPassRate: formatRate(stats.theoryPass, stats.theoryPass + stats.theoryFail),
+    skillPassRate: formatRate(stats.skillPass, stats.skillPass + stats.skillFail),
+  };
+}
+
 export function TrainingFollowExamPage() {
+  const queryClient = useQueryClient();
   const [companyKeyword, setCompanyKeyword] = useState('');
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [classKeyword, setClassKeyword] = useState('');
+  const [trainTitleFilters, setTrainTitleFilters] = useState<string[]>([]);
   const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
   const [rosterClass, setRosterClass] = useState<ExamScoreImportClassOption | null>(null);
   const [rosterKeyword, setRosterKeyword] = useState('');
   const [rosterPage, setRosterPage] = useState(1);
   const [rosterPageSize, setRosterPageSize] = useState(50);
+  const [rosterResultFilter, setRosterResultFilter] = useState<string | null>(null);
   const [preview, setPreview] = useState<ExamScoreImportPreview | null>(null);
   const [lastCommit, setLastCommit] = useState<{
     written: number;
@@ -179,12 +244,14 @@ export function TrainingFollowExamPage() {
       rosterPage,
       rosterPageSize,
       rosterKeyword,
+      rosterResultFilter,
     ],
     queryFn: () =>
       trainApi.pageExamScoreImportClassPeople(rosterClass!.id, {
         page: rosterPage,
         pageSize: rosterPageSize,
         keyword: rosterKeyword.trim() || undefined,
+        examResultStatus: rosterResultFilter || undefined,
       }),
     enabled: rosterClass != null,
   });
@@ -301,14 +368,45 @@ export function TrainingFollowExamPage() {
     });
   }, [activeCompanyId, companyClassesQuery.data, allClassesQuery.data, publicData]);
 
+  const trainTitleFilterOptions = useMemo(() => {
+    const set = new Set<string>();
+    let hasEmpty = false;
+    for (const c of companyClasses) {
+      const t = (c.trainTitle || '').trim();
+      if (!t) {
+        hasEmpty = true;
+        continue;
+      }
+      set.add(t);
+    }
+    const opts = [...set].sort((a, b) => a.localeCompare(b, 'zh-CN')).map((t) => ({
+      text: t,
+      value: t,
+    }));
+    if (hasEmpty) {
+      opts.push({ text: '（未关联项目）', value: '__EMPTY__' });
+    }
+    return opts;
+  }, [companyClasses]);
+
   const filteredClasses = useMemo(() => {
+    let list = companyClasses;
+    if (trainTitleFilters.length > 0) {
+      const allowEmpty = trainTitleFilters.includes('__EMPTY__');
+      const titles = new Set(trainTitleFilters.filter((t) => t !== '__EMPTY__'));
+      list = list.filter((c) => {
+        const t = (c.trainTitle || '').trim();
+        if (!t) return allowEmpty;
+        return titles.has(t);
+      });
+    }
     const kw = classKeyword.trim().toLowerCase();
-    if (!kw) return companyClasses;
-    return companyClasses.filter((c) => {
+    if (!kw) return list;
+    return list.filter((c) => {
       const blob = [c.title, c.trainTitle, c.workTypeTitle].filter(Boolean).join(' ').toLowerCase();
       return blob.includes(kw);
     });
-  }, [companyClasses, classKeyword]);
+  }, [companyClasses, classKeyword, trainTitleFilters]);
 
   const activeCompany = useMemo(
     () => companies.find((c) => c.companyId === activeCompanyId) ?? null,
@@ -335,6 +433,7 @@ export function TrainingFollowExamPage() {
   const enterCompany = (companyId: string) => {
     setActiveCompanyId(companyId);
     setClassKeyword('');
+    setTrainTitleFilters([]);
     setPreview(null);
     setLastCommit(null);
     setUploadFileName(null);
@@ -348,6 +447,7 @@ export function TrainingFollowExamPage() {
     setUploadFileName(null);
     setSelectedClassIds([]);
     setClassKeyword('');
+    setTrainTitleFilters([]);
   };
 
   useEffect(() => {
@@ -423,6 +523,8 @@ export function TrainingFollowExamPage() {
       message.success(
         `写入完成：成功 ${res.written} 人，覆盖 ${res.overwritten}，跳过 ${res.skipped}`,
       );
+      void queryClient.invalidateQueries({ queryKey: ['exam-score-import-classes'] });
+      void queryClient.invalidateQueries({ queryKey: ['exam-score-import-classes-all'] });
       if (rosterClass != null) {
         void classPeopleQuery.refetch();
       }
@@ -472,65 +574,172 @@ export function TrainingFollowExamPage() {
   const openClassRoster = (row: ExamScoreImportClassOption) => {
     setRosterKeyword('');
     setRosterPage(1);
+    setRosterResultFilter(null);
     setRosterClass(row);
   };
 
   const classColumns: ColumnsType<ExamScoreImportClassOption> = [
     {
       title: '班级',
+      width: 140,
       dataIndex: 'title',
       ellipsis: true,
       render: (v, row) => (
         <Typography.Link>{v || `班级#${row.id}`}</Typography.Link>
       ),
     },
-    { title: '培训项目', dataIndex: 'trainTitle', ellipsis: true, render: (v) => v || '—' },
     {
       title: '工种',
-      width: 160,
+      width: 140,
       render: (_, r) =>
         [r.workTypeTitle, r.workTypeLevel != null ? `Lv${r.workTypeLevel}` : null]
           .filter(Boolean)
           .join(' ') || '—',
     },
+    {
+      title: '人数',
+      dataIndex: 'studentCount',
+      width: 64,
+      align: 'right',
+      render: (v) => (v == null ? '—' : v),
+    },
+    {
+      title: '成绩导入',
+      width: 110,
+      render: (_, r) => {
+        const total = r.studentCount ?? 0;
+        const scored = r.scoredCount ?? 0;
+        const status = r.scoreImportStatus ?? 'NONE';
+        if (status === 'DONE') {
+          return <Tag color="success">已导入 {scored}/{total}</Tag>;
+        }
+        if (status === 'PARTIAL') {
+          return <Tag color="warning">部分 {scored}/{total}</Tag>;
+        }
+        return <Tag>未导入</Tag>;
+      },
+    },
+    {
+      title: '通过',
+      dataIndex: 'passedCount',
+      width: 64,
+      align: 'right',
+      render: (v) =>
+        v == null ? '—' : (
+          <Typography.Text type="success">{v}</Typography.Text>
+        ),
+    },
+    {
+      title: '通过率',
+      width: 80,
+      align: 'right',
+      render: (_, r) => {
+        const total = r.studentCount ?? 0;
+        const passed = r.passedCount ?? 0;
+        if (total <= 0) return '—';
+        return (
+          <Typography.Text type="success" strong>
+            {((passed / total) * 100).toFixed(1)}%
+          </Typography.Text>
+        );
+      },
+    },
+    {
+      title: '缺考',
+      dataIndex: 'absentCount',
+      width: 64,
+      align: 'right',
+      render: (v) => (v == null ? '—' : v),
+    },
+    {
+      title: '不合格',
+      dataIndex: 'failedCount',
+      width: 72,
+      align: 'right',
+      render: (v) =>
+        v == null ? '—' : (
+          <Typography.Text type="danger">{v}</Typography.Text>
+        ),
+    },
+    {
+      title: '培训项目',
+      width: 140,
+      dataIndex: 'trainTitle',
+      ellipsis: true,
+      filters: trainTitleFilterOptions,
+      filteredValue: trainTitleFilters.length > 0 ? trainTitleFilters : null,
+      filterSearch: true,
+      onFilter: () => true,
+      render: (v) => v || '—',
+    },
   ];
 
   const peopleColumns: ColumnsType<ExamScoreImportClassPeople> = [
-    { title: '姓名', dataIndex: 'realname', width: 110, render: (v) => v || '—' },
-    { title: '证件号码', dataIndex: 'idCard', width: 180, render: (v) => v || '—' },
+    {
+      title: '准考证号',
+      dataIndex: 'ticketNo',
+      width: 158,
+      ellipsis: true,
+      render: (v) => v || '—',
+    },
+    { title: '姓名', dataIndex: 'realname', width: 60, render: (v) => v || '—' },
+    { title: '证件号码', dataIndex: 'idCard', width: 140, render: (v) => v || '—' },
+   
     { title: '手机', dataIndex: 'phone', width: 120, render: (v) => v || '—' },
     {
       title: '理论',
       dataIndex: 'theoryScore',
-      width: 90,
-      render: (v) => (v == null || v === '' ? '—' : v),
+      width: 80,
+      render: (v) => renderExamScoreCell(v),
     },
     {
       title: '技能',
       dataIndex: 'skillScore',
-      width: 90,
-      render: (v) => (v == null || v === '' ? '—' : v),
+      width: 80,
+      render: (v) => renderExamScoreCell(v),
     },
     {
       title: '综合',
       dataIndex: 'examScore',
-      width: 90,
+      width: 80,
       render: (v) => (v == null || v === '' ? '—' : v),
     },
     {
       title: '工作业绩',
       dataIndex: 'performanceScore',
-      width: 100,
+      width: 90,
       render: (v) => (v == null || v === '' ? '—' : v),
+    },
+    {
+      title: '结果',
+      dataIndex: 'examResultStatus',
+      width: 100,
+      fixed: 'right',
+      filters: [
+        { text: '合格', value: 'PASS' },
+        { text: '不合格', value: 'FAIL' },
+        { text: '缺考', value: 'ABSENT' },
+      ],
+      filteredValue: rosterResultFilter ? [rosterResultFilter] : null,
+      filterMultiple: false,
+      onFilter: () => true,
+      render: (v) => examResultTag(v),
     },
   ];
 
   const writableColumns: ColumnsType<WritableRow> = [
     { title: '行号', dataIndex: 'rowNo', width: 70 },
-    { title: '成绩单姓名', dataIndex: 'name', width: 110 },
-    { title: '花名册姓名', dataIndex: 'rosterName', width: 110 },
-    { title: '证件号码', dataIndex: 'idCard', width: 180 },
-    { title: '班级', dataIndex: 'classTitle', ellipsis: true },
+    { title: '证件号码', dataIndex: 'idCard', width: 170 },
+    { title: '成绩单姓名', dataIndex: 'name', width: 100 },
+    { title: '花名册姓名', dataIndex: 'rosterName', width: 100 },
+    {
+      title: '准考证号',
+      dataIndex: 'ticketNo',
+      width: 140,
+      ellipsis: true,
+      render: (v) => v || '—',
+    },
+    { title: '班级', dataIndex: 'classTitle', width: 120, ellipsis: true },
     {
       title: '理论',
       dataIndex: 'theoryScore',
@@ -575,8 +784,15 @@ export function TrainingFollowExamPage() {
 
   const sheetColumns: ColumnsType<ExamScoreImportItem> = [
     { title: '行号', dataIndex: 'rowNo', width: 70 },
-    { title: '姓名', dataIndex: 'name', width: 110 },
-    { title: '证件号码', dataIndex: 'idCard', width: 180 },
+    { title: '姓名', dataIndex: 'name', width: 100 },
+    { title: '证件号码', dataIndex: 'idCard', width: 170 },
+    {
+      title: '准考证号',
+      dataIndex: 'ticketNo',
+      width: 140,
+      ellipsis: true,
+      render: (v) => v || '—',
+    },
     { title: '理论', dataIndex: 'theoryScore', width: 80, render: (v) => v ?? '—' },
     { title: '技能', dataIndex: 'skillScore', width: 80, render: (v) => v ?? '—' },
     { title: '综合', dataIndex: 'examScore', width: 80, render: (v) => v ?? '—' },
@@ -719,12 +935,24 @@ export function TrainingFollowExamPage() {
               rowKey={(r) => String(r.id)}
               columns={classColumns}
               dataSource={filteredClasses}
+              scroll={{ x: 900 }}
               pagination={{ pageSize: 10, showTotal: (n) => `共 ${n} 个班` }}
+              onChange={(_pagination, filters) => {
+                const raw = filters.trainTitle;
+                const next = Array.isArray(raw)
+                  ? raw.map(String).filter(Boolean)
+                  : [];
+                setTrainTitleFilters(next);
+              }}
               onRow={(row) => ({
                 style: { cursor: 'pointer' },
                 onClick: (e) => {
                   const el = e.target as HTMLElement | null;
-                  if (el?.closest('.ant-checkbox-wrapper, .ant-checkbox, input, button')) {
+                  if (
+                    el?.closest(
+                      '.ant-checkbox-wrapper, .ant-checkbox, input, button, .ant-table-filter-trigger, .ant-dropdown',
+                    )
+                  ) {
                     return;
                   }
                   openClassRoster(row);
@@ -800,7 +1028,7 @@ export function TrainingFollowExamPage() {
                         columns={writableColumns}
                         dataSource={writableRows}
                         pagination={false}
-                        scroll={{ x: 1100 }}
+                        scroll={{ x: 1280 }}
                         rowClassName={(r) =>
                           r.nameMismatch ||
                           r.jobMismatch ||
@@ -890,10 +1118,16 @@ export function TrainingFollowExamPage() {
             ? `${rosterClass.title || `班级#${rosterClass.id}`} · 人员考试信息`
             : '人员考试信息'
         }
-        width={820}
+        width={860}
         open={rosterClass != null}
-        onClose={() => setRosterClass(null)}
+        onClose={() => {
+          setRosterClass(null);
+          setRosterResultFilter(null);
+          setRosterKeyword('');
+          setRosterPage(1);
+        }}
         destroyOnClose
+        rootClassName="training-follow-exam-roster-drawer"
       >
         {rosterClass ? (
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -902,6 +1136,62 @@ export function TrainingFollowExamPage() {
                 .filter(Boolean)
                 .join(' · ') || '—'}
             </Typography.Text>
+            {classPeopleQuery.data?.stats ? (
+              (() => {
+                const stats = classPeopleQuery.data.stats;
+                const rates = buildExamRosterRateSummary(stats);
+                return (
+                  <div className="exam-roster-stats">
+                    <span className="stat-item">
+                      合计 <Typography.Text strong>{stats.total}</Typography.Text>
+                    </span>
+                    <span className="stat-item">
+                      合格{' '}
+                      <Typography.Text type="success" strong>
+                        {stats.passed}
+                      </Typography.Text>
+                    </span>
+                    <span className="stat-item">
+                      不合格{' '}
+                      <Typography.Text type="danger" strong>
+                        {stats.failed}
+                      </Typography.Text>
+                    </span>
+                    <span className="stat-item">
+                      缺考 <Typography.Text strong>{stats.absent}</Typography.Text>
+                    </span>
+                    <Typography.Text type="secondary">|</Typography.Text>
+                    <span className="stat-item">
+                      通过率{' '}
+                      <Typography.Text type="success" strong>
+                        {rates.passRate}
+                      </Typography.Text>
+                    </span>
+                    <span className="stat-item">
+                      参考通过率 <Typography.Text strong>{rates.passAmongAttended}</Typography.Text>
+                    </span>
+                    <span className="stat-item">
+                      参考率 <Typography.Text strong>{rates.attendRate}</Typography.Text>
+                    </span>
+                    <span className="stat-item">
+                      缺考率 <Typography.Text strong>{rates.absentRate}</Typography.Text>
+                    </span>
+                    <Typography.Text type="secondary">|</Typography.Text>
+                    <span className="stat-item">
+                      理论 过{stats.theoryPass}/不{stats.theoryFail}/缺{stats.theoryAbsent}
+                      （及格率 {rates.theoryPassRate}）
+                    </span>
+                    <span className="stat-item">
+                      技能 过{stats.skillPass}/不{stats.skillFail}/缺{stats.skillAbsent}
+                      （及格率 {rates.skillPassRate}）
+                    </span>
+                  </div>
+                );
+              })()
+            ) : null}
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              合格标准：理论≥60 且 技能≥60；理论与技能均无成绩记为缺考。通过率=合格/合计；参考通过率=合格/(合格+不合格)；参考率=(合格+不合格)/合计。行底色：绿=合格、红=不合格、灰=缺考。
+            </Typography.Paragraph>
             <Input
               allowClear
               prefix={<SearchOutlined />}
@@ -919,18 +1209,30 @@ export function TrainingFollowExamPage() {
               loading={classPeopleQuery.isLoading}
               columns={peopleColumns}
               dataSource={classPeopleQuery.data?.items ?? []}
+              rowClassName={(r) => examRosterRowClass(r.examResultStatus)}
+              onChange={(pagination, filters) => {
+                const raw = filters.examResultStatus;
+                const next =
+                  Array.isArray(raw) && raw.length > 0 ? String(raw[0]) : null;
+                if (next !== rosterResultFilter) {
+                  setRosterResultFilter(next);
+                  setRosterPage(1);
+                } else if (pagination.current != null) {
+                  setRosterPage(pagination.current);
+                }
+                if (pagination.pageSize != null && pagination.pageSize !== rosterPageSize) {
+                  setRosterPageSize(pagination.pageSize);
+                  setRosterPage(1);
+                }
+              }}
               pagination={{
                 current: rosterPage,
                 pageSize: rosterPageSize,
                 total: classPeopleQuery.data?.total ?? 0,
                 showSizeChanger: true,
                 showTotal: (n) => `共 ${n} 人`,
-                onChange: (page, size) => {
-                  setRosterPage(page);
-                  setRosterPageSize(size);
-                },
               }}
-              scroll={{ x: 780 }}
+              scroll={{ x: 1000 }}
             />
           </Space>
         ) : null}
