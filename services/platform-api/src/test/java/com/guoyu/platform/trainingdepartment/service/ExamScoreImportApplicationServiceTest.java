@@ -71,20 +71,78 @@ class ExamScoreImportApplicationServiceTest {
   }
 
   @Test
-  void resolveExamScore_prefersComprehensiveThenTheory() {
-    var withBoth = new RensheScoreRosterParseService.ParsedRow(
+  void resolveExamScore_usesComprehensiveOnly_noTheoryFallback() {
+    var withBoth = RensheScoreRosterParseService.ParsedRow.ofScores(
         1, "A", "110101199001011234", null, null, null, null,
         new BigDecimal("70"), new BigDecimal("80"), new BigDecimal("75"), null);
     assertThat(ExamScoreImportApplicationService.resolveExamScore(withBoth))
         .isEqualByComparingTo("75");
     assertThat(ExamScoreImportApplicationService.theoryFallback(withBoth)).isFalse();
 
-    var theoryOnly = new RensheScoreRosterParseService.ParsedRow(
+    var theoryOnly = RensheScoreRosterParseService.ParsedRow.ofScores(
         1, "A", "110101199001011234", null, null, null, null,
         new BigDecimal("70"), new BigDecimal("80"), null, null);
-    assertThat(ExamScoreImportApplicationService.resolveExamScore(theoryOnly))
-        .isEqualByComparingTo("70");
-    assertThat(ExamScoreImportApplicationService.theoryFallback(theoryOnly)).isTrue();
+    assertThat(ExamScoreImportApplicationService.resolveExamScore(theoryOnly)).isNull();
+    assertThat(ExamScoreImportApplicationService.theoryFallback(theoryOnly)).isFalse();
+  }
+
+  @Test
+  void mergeAttempts_makeupInheritsSkill_noConflict() {
+    var first = RensheScoreRosterParseService.ParsedRow.ofScores(
+            1, "张三", "110101199001011234", null, null, null, null,
+            new BigDecimal("55"), new BigDecimal("74.9"), null, null)
+        .withSessionMeta("2025-07-26 08:00 - 2025-07-26 17:00", "P1", "正考", 0, 1);
+    var makeup = RensheScoreRosterParseService.ParsedRow.ofScores(
+            2, "张三", "110101199001011234", null, null, null, null,
+            new BigDecimal("62"), null, null, null)
+        .withSessionMeta("2025-08-10 08:00 - 2025-08-10 12:00", "P2", "补考", 1, 2);
+
+    var result = ExamScoreAttemptMergeSupport.mergeByIdCard(List.of(first, makeup));
+    assertThat(result.conflictsByIdCard()).isEmpty();
+    assertThat(result.merged()).hasSize(1);
+    var merged = result.merged().get(0);
+    assertThat(merged.theory()).isEqualByComparingTo("62");
+    assertThat(merged.skill()).isEqualByComparingTo("74.9");
+    assertThat(merged.mergeNote()).contains("合并2场");
+  }
+
+  @Test
+  void mergeAttempts_sameSessionDifferentScores_conflict() {
+    var a = RensheScoreRosterParseService.ParsedRow.ofScores(
+            1, "张三", "110101199001011234", null, null, null, null,
+            new BigDecimal("55"), new BigDecimal("70"), null, null)
+        .withSessionMeta("2025-07-26 08:00", "P1", "正考", 0, 1);
+    var b = RensheScoreRosterParseService.ParsedRow.ofScores(
+            2, "张三", "110101199001011234", null, null, null, null,
+            new BigDecimal("60"), new BigDecimal("70"), null, null)
+        .withSessionMeta("2025-07-26 08:00", "P1", "正考", 0, 2);
+
+    var result = ExamScoreAttemptMergeSupport.mergeByIdCard(List.of(a, b));
+    assertThat(result.conflictsByIdCard()).containsKey("110101199001011234");
+    assertThat(result.merged()).isEmpty();
+  }
+
+  @Test
+  void mergeAttempts_retakeOverridesSkill() {
+    var first = RensheScoreRosterParseService.ParsedRow.ofScores(
+            1, "李四", "110101199001011235", null, null, null, null,
+            new BigDecimal("55"), new BigDecimal("50"), null, null)
+        .withSessionMeta("2025-07-01 08:00", "P1", "正考", 0, 1);
+    var makeup = RensheScoreRosterParseService.ParsedRow.ofScores(
+            2, "李四", "110101199001011235", null, null, null, null,
+            new BigDecimal("62"), null, null, null)
+        .withSessionMeta("2025-08-01 08:00", "P2", "补考", 1, 2);
+    var retake = RensheScoreRosterParseService.ParsedRow.ofScores(
+            3, "李四", "110101199001011235", null, null, null, null,
+            new BigDecimal("70"), new BigDecimal("65"), null, null)
+        .withSessionMeta("2025-09-01 08:00", "P3", "重考", 2, 3);
+
+    var result = ExamScoreAttemptMergeSupport.mergeByIdCard(List.of(first, makeup, retake));
+    assertThat(result.conflictsByIdCard()).isEmpty();
+    var merged = result.merged().get(0);
+    assertThat(merged.theory()).isEqualByComparingTo("70");
+    assertThat(merged.skill()).isEqualByComparingTo("65");
+    assertThat(merged.mergeNote()).contains("合并3场");
   }
 
   @Test

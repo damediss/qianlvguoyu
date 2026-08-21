@@ -285,7 +285,8 @@ public class DemandTrainApplicationService {
           .eq(OrgEntity::getDeleted, 0));
       List<Map<String, Object>> companyList = orgs.stream().map(o -> {
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("id", o.getId());
+        // 雪花 ID 必须以字符串下发，否则前端 Number 丢精度导致按企业筛班级为空
+        m.put("id", o.getId() == null ? null : String.valueOf(o.getId()));
         m.put("title", o.getName());
         m.put("tag", o.getOrgType());
         return m;
@@ -330,11 +331,11 @@ public class DemandTrainApplicationService {
               .eq(TrainInfoListEntity::getDeleted, 0));
       List<Map<String, Object>> traininfoList = trainInfoList.stream().map(t -> {
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("id", t.getId());
+        m.put("id", t.getId() == null ? null : String.valueOf(t.getId()));
         m.put("title", t.getTitle());
-        m.put("company_id", t.getCompanyId());
+        m.put("company_id", t.getCompanyId() == null ? null : String.valueOf(t.getCompanyId()));
         m.put("company_name", t.getCompanyName());
-        m.put("work_type_id", t.getWorkTypeId());
+        m.put("work_type_id", t.getWorkTypeId() == null ? null : String.valueOf(t.getWorkTypeId()));
         return m;
       }).toList();
       data.put("traininfo_list", traininfoList);

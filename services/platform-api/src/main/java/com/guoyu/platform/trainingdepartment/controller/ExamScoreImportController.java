@@ -10,6 +10,7 @@ import com.guoyu.platform.trainingdepartment.security.TrainingAuthorityExpressio
 import com.guoyu.platform.trainingdepartment.service.ExamScoreImportApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportBatchItemVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportBatchVO;
+import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportClassPeopleVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportClassVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportCommitResultVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportPreviewVO;
@@ -55,12 +56,22 @@ public class ExamScoreImportController {
     return ApiResponse.ok(service.listClasses(companyId, trainInfoId, keyword));
   }
 
+  @GetMapping("/classes/{classId}/people")
+  @PreAuthorize(TrainingAuthorityExpressions.EXAM_SCORE_IMPORT_VIEW)
+  public ApiResponse<PageResponse<ExamScoreImportClassPeopleVO>> classPeople(
+      @PathVariable Long classId,
+      @RequestParam(defaultValue = "1") long page,
+      @RequestParam(defaultValue = "50") long pageSize,
+      @RequestParam(required = false) String keyword) {
+    return ApiResponse.ok(service.listClassPeople(classId, page, pageSize, keyword));
+  }
+
   @PostMapping("/preview")
   @PreAuthorize(TrainingAuthorityExpressions.EXAM_SCORE_IMPORT_UPDATE)
   public ApiResponse<ExamScoreImportPreviewVO> preview(
       @RequestParam(value = "classIds", required = false) List<String> classIds,
-      @RequestParam("file") MultipartFile file) {
-    return ApiResponse.ok(service.preview(parseClassIds(classIds), file));
+      @RequestParam("file") List<MultipartFile> files) {
+    return ApiResponse.ok(service.preview(parseClassIds(classIds), files));
   }
 
   @PostMapping("/commit")

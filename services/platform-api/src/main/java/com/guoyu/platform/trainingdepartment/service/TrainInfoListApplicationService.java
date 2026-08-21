@@ -3,6 +3,7 @@ package com.guoyu.platform.trainingdepartment.service;
 import lombok.extern.slf4j.Slf4j;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
@@ -14,8 +15,10 @@ import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.system.entity.OrgEntity;
 import com.guoyu.platform.system.mapper.OrgMapper;
+import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSolutionEntity;
+import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSolutionMapper;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoListVO;
@@ -23,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,13 +43,15 @@ public class TrainInfoListApplicationService {
   private final TrainSolutionMapper solutionMapper;
   private final ExamWorkTypeMapper examWorkTypeMapper;
   private final OrgMapper orgMapper;
+  private final TrainInfoClassMapper classMapper;
 
   public TrainInfoListApplicationService(TrainInfoListMapper mapper, TrainSolutionMapper solutionMapper,
-      ExamWorkTypeMapper examWorkTypeMapper, OrgMapper orgMapper) {
+      ExamWorkTypeMapper examWorkTypeMapper, OrgMapper orgMapper, TrainInfoClassMapper classMapper) {
     this.mapper = mapper;
     this.solutionMapper = solutionMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
     this.orgMapper = orgMapper;
+    this.classMapper = classMapper;
   }
 
   @Transactional(readOnly = true)
@@ -163,28 +169,10 @@ public class TrainInfoListApplicationService {
     entity.setMasterType(req.getMasterType());
     entity.setType(req.getType());
     entity.setCate(req.getCate());
-    entity.setCompanyId(req.getCompanyId());
-    entity.setCompanyName(req.getCompanyName());
-    // 仅有企业名称时尝试解析组织，便于班级列表按 companyId 展示公司名
-    if (entity.getCompanyId() == null && StringUtils.hasText(req.getCompanyName())) {
-      OrgEntity org = orgMapper.selectOne(new LambdaQueryWrapper<OrgEntity>()
-          .eq(OrgEntity::getTenantId, tenantId)
-          .eq(OrgEntity::getDeleted, 0)
-          .eq(OrgEntity::getName, req.getCompanyName().trim())
-          .in(OrgEntity::getOrgType, "company", "master")
-          .last("LIMIT 1"));
-      if (org != null) {
-        entity.setCompanyId(org.getId());
-        entity.setCompanyName(org.getName());
-      } else {
-        entity.setCompanyName(req.getCompanyName().trim());
-      }
-    } else if (entity.getCompanyId() != null && !StringUtils.hasText(entity.getCompanyName())) {
-      OrgEntity org = orgMapper.selectById(entity.getCompanyId());
-      if (org != null) {
-        entity.setCompanyName(org.getName());
-      }
-    }
+    // 企业：可选用已有；输入新名称时自动创建 sys_org，班级/考试页才能按企业归属
+    ResolvedCompany company = resolveOrCreateCompany(tenantId, req.getCompanyId(), req.getCompanyName());
+    entity.setCompanyId(company.id());
+    entity.setCompanyName(company.name());
     entity.setCompanyAddress(req.getCompanyAddress());
     entity.setWorkTypeId(req.getWorkTypeId());
     entity.setWorkTypeLevel(req.getWorkTypeLevel());
@@ -252,11 +240,14 @@ public class TrainInfoListApplicationService {
     if (req.getCate() != null) {
       entity.setCate(req.getCate());
     }
-    if (req.getCompanyId() != null) {
-      entity.setCompanyId(req.getCompanyId());
-    }
-    if (req.getCompanyName() != null) {
-      entity.setCompanyName(req.getCompanyName());
+    boolean companyTouched = req.getCompanyId() != null || req.getCompanyName() != null;
+    if (companyTouched) {
+      Long tenantId = SecurityContext.currentUser().getTenantId();
+      Long companyId = req.getCompanyId() != null ? req.getCompanyId() : entity.getCompanyId();
+      String companyName = req.getCompanyName() != null ? req.getCompanyName() : entity.getCompanyName();
+      ResolvedCompany company = resolveOrCreateCompany(tenantId, companyId, companyName);
+      entity.setCompanyId(company.id());
+      entity.setCompanyName(company.name());
     }
     if (req.getCompanyAddress() != null) {
       entity.setCompanyAddress(req.getCompanyAddress());
@@ -370,8 +361,70 @@ public class TrainInfoListApplicationService {
       entity.setTraindemandId(req.getTraindemandId());
     }
     mapper.updateById(entity);
+    if (companyTouched && entity.getCompanyId() != null) {
+      syncClassesCompanyId(entity.getId(), entity.getCompanyId());
+    }
     return toVO(entity);
   }
+
+  /**
+   * 按企业 ID 或名称解析组织；名称不存在时新建企业组织（org_type=company）。
+   */
+  private ResolvedCompany resolveOrCreateCompany(Long tenantId, Long companyId, String companyName) {
+    if (companyId != null && companyId > 0) {
+      OrgEntity byId = orgMapper.selectOne(new LambdaQueryWrapper<OrgEntity>()
+          .eq(OrgEntity::getTenantId, tenantId)
+          .eq(OrgEntity::getId, companyId)
+          .eq(OrgEntity::getDeleted, 0)
+          .last("LIMIT 1"));
+      if (byId != null) {
+        return new ResolvedCompany(byId.getId(), byId.getName());
+      }
+    }
+    if (!StringUtils.hasText(companyName)) {
+      return new ResolvedCompany(null, null);
+    }
+    String name = companyName.trim();
+    OrgEntity existing = orgMapper.selectOne(new LambdaQueryWrapper<OrgEntity>()
+        .eq(OrgEntity::getTenantId, tenantId)
+        .eq(OrgEntity::getDeleted, 0)
+        .eq(OrgEntity::getName, name)
+        .in(OrgEntity::getOrgType, "company", "master")
+        .last("LIMIT 1"));
+    if (existing != null) {
+      return new ResolvedCompany(existing.getId(), existing.getName());
+    }
+    OrgEntity organization = new OrgEntity();
+    organization.setTenantId(tenantId);
+    organization.setParentId(0L);
+    organization.setOrgType("company");
+    organization.setCode("company-" + UUID.randomUUID().toString().replace("-", ""));
+    organization.setName(name);
+    organization.setSortOrder(0);
+    organization.setStatus("enabled");
+    organization.setDeleted(0);
+    orgMapper.insert(organization);
+    if (organization.getId() == null) {
+      log.error("Company org creation returned no id, tenantId={}, name={}", tenantId, name);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "企业创建失败");
+    }
+    log.info("Created company org from train info, tenantId={}, orgId={}, name={}",
+        tenantId, organization.getId(), name);
+    return new ResolvedCompany(organization.getId(), name);
+  }
+
+  /** 培训信息企业变更后，同步下属班级 company_id，保证考试页按企业可见 */
+  private void syncClassesCompanyId(Long trainInfoId, Long companyId) {
+    if (trainInfoId == null || companyId == null) {
+      return;
+    }
+    classMapper.update(null, new LambdaUpdateWrapper<TrainInfoClassEntity>()
+        .eq(TrainInfoClassEntity::getTrainInfoId, trainInfoId)
+        .eq(TrainInfoClassEntity::getDeleted, 0)
+        .set(TrainInfoClassEntity::getCompanyId, companyId));
+  }
+
+  private record ResolvedCompany(Long id, String name) {}
 
   @Transactional
   public void delete(Long id) {

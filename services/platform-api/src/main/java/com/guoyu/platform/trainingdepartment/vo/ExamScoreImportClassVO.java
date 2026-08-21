@@ -1,12 +1,15 @@
 package com.guoyu.platform.trainingdepartment.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+
 public record ExamScoreImportClassVO(
-    Long id,
+    @JsonSerialize(using = ToStringSerializer.class) Long id,
     String title,
-    Long companyId,
+    @JsonSerialize(using = ToStringSerializer.class) Long companyId,
     String companyName,
-    Long trainInfoId,
+    @JsonSerialize(using = ToStringSerializer.class) Long trainInfoId,
     String trainTitle,
-    Long workTypeId,
+    @JsonSerialize(using = ToStringSerializer.class) Long workTypeId,
     String workTypeTitle,
     Integer workTypeLevel) {}

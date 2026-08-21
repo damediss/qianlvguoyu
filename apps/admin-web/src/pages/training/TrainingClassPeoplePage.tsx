@@ -1078,6 +1078,7 @@ export function TrainingClassPeoplePage() {
         ...prev.filter((o) => String(o.value) !== String(created.id)),
       ]);
       await queryClient.invalidateQueries({ queryKey: ['class-people-public-data'] });
+      await queryClient.invalidateQueries({ queryKey: ['exam-score-import-public'] });
       const patch: {
         trainInfoId?: ApiId;
         nums?: number;
@@ -1122,6 +1123,7 @@ export function TrainingClassPeoplePage() {
         return [{ value: updated.id, label }, ...next];
       });
       await queryClient.invalidateQueries({ queryKey: ['class-people-public-data'] });
+      await queryClient.invalidateQueries({ queryKey: ['exam-score-import-public'] });
       await queryClient.invalidateQueries({ queryKey: ['info-classes'] });
       setTrainInfoModalOpen(false);
       trainInfoForm.resetFields();

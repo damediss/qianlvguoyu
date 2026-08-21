@@ -1997,9 +1997,9 @@ export interface DemandConvertReq {
 }
 
 export interface TrainInfoOption extends SimpleItem {
-  company_id?: number;
+  company_id?: number | string;
   company_name?: string;
-  work_type_id?: number;
+  work_type_id?: number | string;
 }
 
 export interface DemandPublicData {
@@ -2012,12 +2012,12 @@ export interface DemandPublicData {
 }
 
 export interface SimpleItem {
-  id: number;
+  id: number | string;
   title: string;
 }
 
 export interface CompanyOption {
-  id: number;
+  id: number | string;
   title: string;
   tag: string;
 }
@@ -3066,6 +3066,17 @@ export interface ExamScoreImportClassOption {
   workTypeLevel?: number;
 }
 
+export interface ExamScoreImportClassPeople {
+  id: number | string;
+  realname?: string;
+  idCard?: string;
+  phone?: string;
+  theoryScore?: number | null;
+  skillScore?: number | null;
+  examScore?: number | null;
+  performanceScore?: number | null;
+}
+
 export interface ExamScoreImportTarget {
   peopleId: number | string;
   classId: number | string;
@@ -3087,9 +3098,12 @@ export interface ExamScoreImportItem {
   theoryScore?: number | null;
   skillScore?: number | null;
   examScore?: number | null;
+  performanceScore?: number | null;
   theoryFallback?: boolean;
   status: string;
   targets: ExamScoreImportTarget[];
+  mergeNote?: string | null;
+  examTimeMissing?: boolean;
 }
 
 export interface ExamScoreImportRosterGap {

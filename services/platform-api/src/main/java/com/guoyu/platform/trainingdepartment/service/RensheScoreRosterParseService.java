@@ -291,7 +291,13 @@ public class RensheScoreRosterParseService {
         parseScore(cell(sheet, row, colMap.get("theory"))),
         parseScore(cell(sheet, row, colMap.get("skill"))),
         parseScore(cell(sheet, row, colMap.get("comprehensive"))),
-        parseScore(cell(sheet, row, colMap.get("performance"))));
+        parseScore(cell(sheet, row, colMap.get("performance"))),
+        null,
+        null,
+        null,
+        0,
+        null,
+        false);
   }
 
   static String normalizeIdCard(String raw) {
@@ -396,7 +402,80 @@ public class RensheScoreRosterParseService {
       BigDecimal theory,
       BigDecimal skill,
       BigDecimal comprehensive,
-      BigDecimal performance) {}
+      BigDecimal performance,
+      /** 页头考试时间原文 */
+      String examTimeText,
+      String planCode,
+      String planName,
+      /** 多文件上传时的文件序号（0-based） */
+      int fileIndex,
+      /** 合并后说明，如「合并2场」 */
+      String mergeNote,
+      boolean examTimeMissing) {
+
+    /** 解析后尚未打上场次元数据时的便捷构造 */
+    public static ParsedRow ofScores(
+        int rowNo,
+        String name,
+        String idCard,
+        String idCardRaw,
+        String ticketNo,
+        String jobName,
+        String levelName,
+        BigDecimal theory,
+        BigDecimal skill,
+        BigDecimal comprehensive,
+        BigDecimal performance) {
+      return new ParsedRow(
+          rowNo, name, idCard, idCardRaw, ticketNo, jobName, levelName,
+          theory, skill, comprehensive, performance,
+          null, null, null, 0, null, false);
+    }
+
+    public ParsedRow withSessionMeta(
+        String examTimeText, String planCode, String planName, int fileIndex, int rowNo) {
+      boolean missing = !StringUtils.hasText(examTimeText);
+      return new ParsedRow(
+          rowNo,
+          name,
+          idCard,
+          idCardRaw,
+          ticketNo,
+          jobName,
+          levelName,
+          theory,
+          skill,
+          comprehensive,
+          performance,
+          examTimeText,
+          planCode,
+          planName,
+          fileIndex,
+          null,
+          missing);
+    }
+
+    public ParsedRow withMergeResult(String mergeNote, boolean examTimeMissing) {
+      return new ParsedRow(
+          rowNo,
+          name,
+          idCard,
+          idCardRaw,
+          ticketNo,
+          jobName,
+          levelName,
+          theory,
+          skill,
+          comprehensive,
+          performance,
+          examTimeText,
+          planCode,
+          planName,
+          fileIndex,
+          mergeNote,
+          examTimeMissing);
+    }
+  }
 
   private static final class Meta {
     String planName;

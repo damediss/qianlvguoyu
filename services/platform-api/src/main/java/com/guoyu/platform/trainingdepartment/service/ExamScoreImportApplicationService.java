@@ -27,6 +27,7 @@ import com.guoyu.platform.trainingdepartment.service.RensheScoreRosterParseServi
 import com.guoyu.platform.trainingdepartment.service.RensheScoreRosterParseService.ParsedRow;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportBatchItemVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportBatchVO;
+import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportClassPeopleVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportClassVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportCommitResultVO;
 import com.guoyu.platform.trainingdepartment.vo.ExamScoreImportItemVO;
@@ -118,13 +119,39 @@ public class ExamScoreImportApplicationService {
   }
 
   public List<ExamScoreImportClassVO> listClasses(Long companyId, Long trainInfoId, String keyword) {
-    Long companyFilter = operatorScopeService.resolveCompanyFilter(companyId);
+    boolean unassignedOnly = companyId != null && companyId.longValue() == 0L;
+    // 注意：三元两侧勿混用 long / Long，否则会拆箱 NPE（resolveCompanyFilter 可为 null）
+    Long companyFilter;
+    if (unassignedOnly) {
+      companyFilter = 0L;
+    } else {
+      companyFilter = operatorScopeService.resolveCompanyFilter(companyId);
+    }
+    int limit = (companyFilter != null || unassignedOnly) ? 2000 : 500;
     LambdaQueryWrapper<TrainInfoClassEntity> wrapper = new LambdaQueryWrapper<TrainInfoClassEntity>()
         .eq(TrainInfoClassEntity::getDeleted, 0)
         .orderByDesc(TrainInfoClassEntity::getAddtime)
-        .last("LIMIT 300");
-    if (companyFilter != null) {
-      wrapper.eq(TrainInfoClassEntity::getCompanyId, companyFilter);
+        .last("LIMIT " + limit);
+    if (unassignedOnly) {
+      // 班级与培训需求均未挂企业
+      wrapper.and(w -> w.isNull(TrainInfoClassEntity::getCompanyId)
+          .or()
+          .eq(TrainInfoClassEntity::getCompanyId, 0L));
+      wrapper.and(w -> w.isNull(TrainInfoClassEntity::getTrainInfoId)
+          .or()
+          .eq(TrainInfoClassEntity::getTrainInfoId, 0L)
+          .or()
+          .notInSql(
+              TrainInfoClassEntity::getTrainInfoId,
+              "SELECT id FROM train_info_list WHERE deleted=0 AND company_id IS NOT NULL AND company_id<>0"));
+    } else if (companyFilter != null) {
+      // 班级 company_id 可能为空：同时按培训需求 train_info_list.company_id 归属
+      Long cid = companyFilter;
+      wrapper.and(w -> w.eq(TrainInfoClassEntity::getCompanyId, cid)
+          .or()
+          .inSql(
+              TrainInfoClassEntity::getTrainInfoId,
+              "SELECT id FROM train_info_list WHERE deleted=0 AND company_id=" + cid));
     }
     if (trainInfoId != null && trainInfoId != 0) {
       wrapper.eq(TrainInfoClassEntity::getTrainInfoId, trainInfoId);
@@ -137,12 +164,17 @@ public class ExamScoreImportApplicationService {
       return List.of();
     }
     Map<Long, ClassContext> ctx = loadClassContext(classes);
+    Map<Long, Long> companyByTrainInfo = resolveCompanyIdByTrainInfo(classes);
     return classes.stream().map(c -> {
       ClassContext cc = ctx.get(c.getId());
+      Long resolvedCompanyId = c.getCompanyId();
+      if (resolvedCompanyId == null || resolvedCompanyId == 0L) {
+        resolvedCompanyId = companyByTrainInfo.get(c.getTrainInfoId());
+      }
       return new ExamScoreImportClassVO(
           c.getId(),
           c.getTitle(),
-          c.getCompanyId(),
+          resolvedCompanyId,
           cc == null ? null : cc.companyName,
           c.getTrainInfoId(),
           cc == null ? null : cc.trainTitle,
@@ -152,11 +184,71 @@ public class ExamScoreImportApplicationService {
     }).toList();
   }
 
+  /** 考试页点击班级：查看本班学员结业成绩（综合/技能） */
+  public PageResponse<ExamScoreImportClassPeopleVO> listClassPeople(
+      Long classId, long page, long pageSize, String keyword) {
+    if (classId == null || classId == 0L) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "班级参数不合法");
+    }
+    TrainInfoClassEntity clazz = classMapper.selectOne(new LambdaQueryWrapper<TrainInfoClassEntity>()
+        .eq(TrainInfoClassEntity::getId, classId)
+        .eq(TrainInfoClassEntity::getDeleted, 0)
+        .last("LIMIT 1"));
+    if (clazz == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在或已删除");
+    }
+    operatorScopeService.assertClassAccessible(clazz);
+
+    long p = page <= 0 ? 1 : page;
+    long size = pageSize <= 0 ? 50 : Math.min(pageSize, 500);
+    LambdaQueryWrapper<TrainPeopleListEntity> wrapper = new LambdaQueryWrapper<TrainPeopleListEntity>()
+        .eq(TrainPeopleListEntity::getDeleted, 0)
+        .eq(TrainPeopleListEntity::getType, "student")
+        .eq(TrainPeopleListEntity::getTrainClassId, classId)
+        .orderByDesc(TrainPeopleListEntity::getId);
+    if (StringUtils.hasText(keyword)) {
+      String kw = keyword.trim();
+      wrapper.and(w -> w.like(TrainPeopleListEntity::getRealname, kw)
+          .or()
+          .like(TrainPeopleListEntity::getIdCard, kw)
+          .or()
+          .like(TrainPeopleListEntity::getPhone, kw));
+    }
+    Page<TrainPeopleListEntity> mp = peopleMapper.selectPage(new Page<>(p, size), wrapper);
+    List<ExamScoreImportClassPeopleVO> items = mp.getRecords().stream()
+        .map(e -> new ExamScoreImportClassPeopleVO(
+            e.getId(),
+            e.getRealname(),
+            e.getIdCard(),
+            e.getPhone(),
+            e.getTheoryScore(),
+            e.getRealScore(),
+            e.getExamScore(),
+            e.getPerformanceScore()))
+        .toList();
+    return new PageResponse<>(items, p, size, mp.getTotal());
+  }
+
+  private Map<Long, Long> resolveCompanyIdByTrainInfo(List<TrainInfoClassEntity> classes) {
+    List<Long> trainInfoIds = classes.stream()
+        .filter(c -> c.getCompanyId() == null || c.getCompanyId() == 0L)
+        .map(TrainInfoClassEntity::getTrainInfoId)
+        .filter(id -> id != null && id != 0L)
+        .distinct()
+        .toList();
+    if (trainInfoIds.isEmpty()) {
+      return Map.of();
+    }
+    return trainInfoListMapper.selectBatchIds(trainInfoIds).stream()
+        .filter(t -> t.getCompanyId() != null && t.getCompanyId() != 0L)
+        .collect(Collectors.toMap(TrainInfoListEntity::getId, TrainInfoListEntity::getCompanyId, (a, b) -> a));
+  }
+
   public ResponseEntity<byte[]> downloadTemplate() {
     try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
       Sheet sheet = wb.createSheet("成绩导入");
       Row header = sheet.createRow(0);
-      String[] cols = {"身份证号", "姓名", "综合", "理论", "技能"};
+      String[] cols = {"身份证号", "姓名", "理论", "技能", "综合", "工作业绩"};
       for (int i = 0; i < cols.length; i++) {
         header.createCell(i).setCellValue(cols[i]);
         sheet.setColumnWidth(i, 18 * 256);
@@ -174,12 +266,77 @@ public class ExamScoreImportApplicationService {
   }
 
   public ExamScoreImportPreviewVO preview(List<Long> classIds, MultipartFile file) {
+    return preview(classIds, file == null ? List.of() : List.of(file));
+  }
+
+  public ExamScoreImportPreviewVO preview(List<Long> classIds, List<MultipartFile> files) {
     List<Long> selected = normalizeClassIds(classIds);
     if (selected.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请先选择班级后再上传成绩单");
     }
-    byte[] bytes = readFile(file);
-    ParsedRoster parsed = parseService.parse(bytes);
+    if (files == null || files.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请上传成绩单文件");
+    }
+    List<MultipartFile> validFiles = files.stream()
+        .filter(f -> f != null && !f.isEmpty())
+        .toList();
+    if (validFiles.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请上传成绩单文件");
+    }
+    if (validFiles.size() > 20) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "一次最多上传 20 个成绩表");
+    }
+
+    List<ParsedRow> stampedRows = new ArrayList<>();
+    List<String> fileNames = new ArrayList<>();
+    String planName = null;
+    String planCode = null;
+    String examTimeText = null;
+    String layout = null;
+    int displayRowBase = 0;
+    for (int fileIndex = 0; fileIndex < validFiles.size(); fileIndex++) {
+      MultipartFile file = validFiles.get(fileIndex);
+      ParsedRoster part = parseService.parse(readFile(file));
+      String original = file.getOriginalFilename();
+      fileNames.add(StringUtils.hasText(original) ? original : "未命名.xlsx");
+      if (!StringUtils.hasText(planName) && StringUtils.hasText(part.planName())) {
+        planName = part.planName();
+      }
+      if (!StringUtils.hasText(planCode) && StringUtils.hasText(part.planCode())) {
+        planCode = part.planCode();
+      }
+      if (!StringUtils.hasText(examTimeText) && StringUtils.hasText(part.examTimeText())) {
+        examTimeText = part.examTimeText();
+      }
+      if (!StringUtils.hasText(layout) && StringUtils.hasText(part.layout())) {
+        layout = part.layout();
+      }
+      for (ParsedRow row : part.rows()) {
+        stampedRows.add(row.withSessionMeta(
+            part.examTimeText(),
+            part.planCode(),
+            part.planName(),
+            fileIndex,
+            displayRowBase + row.rowNo()));
+      }
+      displayRowBase += Math.max(part.rows().size(), 1) + 1000;
+    }
+
+    ExamScoreAttemptMergeSupport.MergeResult mergeResult =
+        ExamScoreAttemptMergeSupport.mergeByIdCard(stampedRows);
+    List<ParsedRow> mergedRows = mergeResult.merged();
+    Map<String, List<ParsedRow>> conflictGroups = mergeResult.conflictsByIdCard();
+
+    ParsedRoster parsed = new ParsedRoster(
+        layout == null ? "MERGED" : layout,
+        planName,
+        planCode,
+        examTimeText,
+        mergedRows);
+    String fileNameLabel = fileNames.size() == 1
+        ? fileNames.get(0)
+        : fileNames.get(0) + " 等" + fileNames.size() + "个文件";
+
     List<TrainInfoClassEntity> classes = loadAccessibleClasses(selected);
     Map<Long, ClassContext> classCtx = loadClassContext(classes);
     List<TrainPeopleListEntity> roster = loadRoster(selected);
@@ -195,7 +352,7 @@ public class ExamScoreImportApplicationService {
       bySheetId.computeIfAbsent(row.idCard(), k -> new ArrayList<>()).add(row);
     }
 
-    Set<String> sheetDupIds = new HashSet<>();
+    Set<String> sheetDupIds = new HashSet<>(conflictGroups.keySet());
     List<ExamScoreImportItemVO> items = new ArrayList<>();
     Map<Long, CachedTarget> byPeopleId = new LinkedHashMap<>();
 
@@ -203,19 +360,21 @@ public class ExamScoreImportApplicationService {
       items.add(toItem(row, NO_ID_CARD, resolveExamScore(row), false, List.of()));
     }
 
+    for (Map.Entry<String, List<ParsedRow>> conflictEntry : conflictGroups.entrySet()) {
+      for (ParsedRow row : conflictEntry.getValue()) {
+        items.add(toItem(row, SHEET_DUP_CONFLICT, resolveExamScore(row), false, List.of()));
+      }
+    }
+
     for (Map.Entry<String, List<ParsedRow>> e : bySheetId.entrySet()) {
-      List<ParsedRow> group = e.getValue();
-      if (group.size() > 1 && scoresConflict(group)) {
-        sheetDupIds.add(e.getKey());
-        for (ParsedRow row : group) {
-          items.add(toItem(row, SHEET_DUP_CONFLICT, resolveExamScore(row), theoryFallback(row), List.of()));
-        }
+      if (sheetDupIds.contains(e.getKey())) {
         continue;
       }
-      ParsedRow row = group.get(0);
+      // 合并后每人至多一行
+      ParsedRow row = e.getValue().get(0);
       BigDecimal examScore = resolveExamScore(row);
       boolean fallback = theoryFallback(row);
-      if (examScore == null && row.skill() == null) {
+      if (examScore == null && row.skill() == null && row.theory() == null && row.performance() == null) {
         items.add(toItem(row, EMPTY_SCORE, null, false, List.of()));
         continue;
       }
@@ -253,6 +412,7 @@ public class ExamScoreImportApplicationService {
             row.theory(),
             row.skill(),
             row.comprehensive(),
+            row.performance(),
             fallback));
       }
       String status;
@@ -268,7 +428,8 @@ public class ExamScoreImportApplicationService {
       items.add(toItem(row, status, examScore, fallback, targets));
     }
 
-    Set<String> sheetIds = bySheetId.keySet();
+    Set<String> sheetIds = new HashSet<>(bySheetId.keySet());
+    sheetIds.addAll(conflictGroups.keySet());
     List<ExamScoreImportRosterGapVO> missingOnSheet = new ArrayList<>();
     List<ExamScoreImportRosterGapVO> missingIdCard = new ArrayList<>();
     for (TrainPeopleListEntity person : roster) {
@@ -283,15 +444,13 @@ public class ExamScoreImportApplicationService {
             person.getIdCard()));
         continue;
       }
-      if (!sheetIds.contains(cid) || sheetDupIds.contains(cid)) {
-        if (!sheetIds.contains(cid)) {
-          missingOnSheet.add(new ExamScoreImportRosterGapVO(
-              person.getId(),
-              person.getTrainClassId(),
-              ctx == null ? null : ctx.title,
-              person.getRealname(),
-              cid));
-        }
+      if (!sheetIds.contains(cid)) {
+        missingOnSheet.add(new ExamScoreImportRosterGapVO(
+            person.getId(),
+            person.getTrainClassId(),
+            ctx == null ? null : ctx.title,
+            person.getRealname(),
+            cid));
       }
     }
 
@@ -329,7 +488,7 @@ public class ExamScoreImportApplicationService {
         parsed.examTimeText(),
         parsed.layout(),
         selected,
-        parsed.rows().size(),
+        stampedRows.size(),
         matched,
         nameWarn,
         jobWarn,
@@ -347,7 +506,7 @@ public class ExamScoreImportApplicationService {
         tenantId(),
         SecurityContext.currentUser().getUserId(),
         Instant.now().plus(PREVIEW_TTL),
-        file.getOriginalFilename(),
+        fileNameLabel,
         selected,
         parsed,
         vo,
@@ -407,11 +566,18 @@ public class ExamScoreImportApplicationService {
       }
       BigDecimal oldExam = person.getExamScore();
       BigDecimal oldReal = person.getRealScore();
+      BigDecimal oldTheory = person.getTheoryScore();
+      BigDecimal oldPerformance = person.getPerformanceScore();
       BigDecimal newExam = target.examScore;
       BigDecimal newReal = target.realScore;
-      boolean hadOld = oldExam != null || oldReal != null;
+      BigDecimal newTheory = target.theory;
+      BigDecimal newPerformance = target.performance;
+      boolean hadOld = oldExam != null || oldReal != null || oldTheory != null || oldPerformance != null;
       boolean changed = (newExam != null && (oldExam == null || oldExam.compareTo(newExam) != 0))
-          || (newReal != null && (oldReal == null || oldReal.compareTo(newReal) != 0));
+          || (newReal != null && (oldReal == null || oldReal.compareTo(newReal) != 0))
+          || (newTheory != null && (oldTheory == null || oldTheory.compareTo(newTheory) != 0))
+          || (newPerformance != null
+              && (oldPerformance == null || oldPerformance.compareTo(newPerformance) != 0));
       if (!changed) {
         skipped++;
         auditItems.add(buildItem(null, target, peopleId, person.getTrainClassId(), SKIPPED,
@@ -423,6 +589,12 @@ public class ExamScoreImportApplicationService {
       }
       if (newReal != null) {
         person.setRealScore(newReal);
+      }
+      if (newTheory != null) {
+        person.setTheoryScore(newTheory);
+      }
+      if (newPerformance != null) {
+        person.setPerformanceScore(newPerformance);
       }
       peopleMapper.updateById(person);
       written++;
@@ -462,6 +634,7 @@ public class ExamScoreImportApplicationService {
             item.theoryScore(),
             item.skillScore(),
             item.examScore(),
+            item.performanceScore(),
             item.theoryFallback());
         auditItems.add(buildItem(null, dummy, null, null, item.status(),
             null, item.examScore(), null, item.skillScore()));
@@ -673,9 +846,12 @@ public class ExamScoreImportApplicationService {
         row.theory(),
         row.skill(),
         examScore,
+        row.performance(),
         theoryFallback,
         status,
-        targets);
+        targets,
+        row.mergeNote(),
+        row.examTimeMissing());
   }
 
   private List<TrainInfoClassEntity> loadAccessibleClasses(List<Long> classIds) {
@@ -779,37 +955,20 @@ public class ExamScoreImportApplicationService {
   }
 
   static BigDecimal resolveExamScore(ParsedRow row) {
-    if (row.comprehensive() != null) {
-      return row.comprehensive();
-    }
-    return row.theory();
+    // 综合列只取成绩单「综合」；无综合则留空，不以理论顶替
+    return row.comprehensive();
   }
 
   static boolean theoryFallback(ParsedRow row) {
-    return row.comprehensive() == null && row.theory() != null;
-  }
-
-  static boolean scoresConflict(List<ParsedRow> group) {
-    ParsedRow first = group.get(0);
-    for (int i = 1; i < group.size(); i++) {
-      ParsedRow other = group.get(i);
-      if (!scoreEq(first.theory(), other.theory())
-          || !scoreEq(first.skill(), other.skill())
-          || !scoreEq(first.comprehensive(), other.comprehensive())) {
-        return true;
-      }
-    }
     return false;
   }
 
+  static boolean scoresConflict(List<ParsedRow> group) {
+    return ExamScoreAttemptMergeSupport.scoresConflict(group);
+  }
+
   static boolean scoreEq(BigDecimal a, BigDecimal b) {
-    if (a == null && b == null) {
-      return true;
-    }
-    if (a == null || b == null) {
-      return false;
-    }
-    return a.compareTo(b) == 0;
+    return ExamScoreAttemptMergeSupport.scoreEq(a, b);
   }
 
   static boolean nameMismatch(String sheetName, String rosterName) {
@@ -960,5 +1119,6 @@ public class ExamScoreImportApplicationService {
       BigDecimal theory,
       BigDecimal skill,
       BigDecimal comprehensive,
+      BigDecimal performance,
       boolean theoryFallback) {}
 }

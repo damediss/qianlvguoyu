@@ -3354,12 +3354,28 @@ export async function importClassAttendances(classId: number, file: File) {
 }
 
 export function listExamScoreImportClasses(params?: {
-  companyId?: number;
-  trainInfoId?: number;
+  companyId?: number | string;
+  trainInfoId?: number | string;
   keyword?: string;
 }) {
   return unwrap<import('../types/training').ExamScoreImportClassOption[]>(
-    apiClient.get(`${BASE}/exam-score-imports/classes`, { params }),
+    apiClient.get(`${BASE}/exam-score-imports/classes`, {
+      params: {
+        ...params,
+        // 雪花企业 ID 必须以字符串传，避免 Number 精度丢失
+        companyId: params?.companyId != null ? String(params.companyId) : undefined,
+        trainInfoId: params?.trainInfoId != null ? String(params.trainInfoId) : undefined,
+      },
+    }),
+  );
+}
+
+export function pageExamScoreImportClassPeople(
+  classId: number | string,
+  params?: { page?: number; pageSize?: number; keyword?: string },
+) {
+  return unwrap<PageResponse<import('../types/training').ExamScoreImportClassPeople>>(
+    apiClient.get(`${BASE}/exam-score-imports/classes/${classId}/people`, { params }),
   );
 }
 
@@ -3367,12 +3383,13 @@ export function downloadExamScoreImportTemplate() {
   return fetchFileBlob(`${BASE}/exam-score-imports/template`);
 }
 
-export function previewExamScoreImport(classIds: Array<number | string>, file: File) {
+export function previewExamScoreImport(classIds: Array<number | string>, files: File | File[]) {
   const form = new FormData();
   classIds.forEach((id) => form.append('classIds', String(id)));
-  form.append('file', file);
+  const list = Array.isArray(files) ? files : [files];
+  list.forEach((file) => form.append('file', file));
   return unwrap<import('../types/training').ExamScoreImportPreview>(
-    apiClient.post(`${BASE}/exam-score-imports/preview`, form, { timeout: 120000 }),
+    apiClient.post(`${BASE}/exam-score-imports/preview`, form, { timeout: 180000 }),
   );
 }
 
