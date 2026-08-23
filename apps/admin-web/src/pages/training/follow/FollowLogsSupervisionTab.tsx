@@ -376,7 +376,7 @@ export function FollowLogsSupervisionTab({ classId, defaultBizDate }: Props) {
             loading={opQuery.isLoading}
             dataSource={opQuery.data || []}
             columns={opColumns}
-            pagination={{ pageSize: 20 }}
+            pagination={{ pageSize: 20, showSizeChanger: false }}
             locale={{
               emptyText: dayStr
                 ? '当日暂无过程动态；完成跟班操作后将自动出现'

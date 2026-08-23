@@ -5,3 +5,41 @@
 .training-follow-exam-page .exam-score-import-warn-row > td {
   background: #fffbe6;
 }
+
+.training-follow-exam-roster-drawer .exam-roster-stats,
+.training-follow-exam-page .exam-roster-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+}
+
+.training-follow-exam-roster-drawer .exam-roster-stats .stat-item,
+.training-follow-exam-page .exam-roster-stats .stat-item {
+  white-space: nowrap;
+}
+
+.training-follow-exam-roster-drawer .exam-roster-pass-row > td {
+  background: #f6ffed;
+}
+
+.training-follow-exam-roster-drawer .exam-roster-fail-row > td {
+  background: #fff2f0;
+}
+
+.training-follow-exam-roster-drawer .exam-roster-absent-row > td {
+  background: #f5f5f5;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.training-follow-exam-roster-drawer .exam-score-fail {
+  color: #cf1322;
+  font-weight: 600;
+}
+
+.training-follow-exam-roster-drawer .exam-score-pass {
+  color: #389e0d;
+}

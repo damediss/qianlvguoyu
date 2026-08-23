@@ -317,7 +317,7 @@ export function CollectionTaskListPage() {
           columns={visibleColumns}
           dataSource={filteredTasks}
           loading={tasksQuery.isFetching}
-          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 个任务` }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], showTotal: (total) => `共 ${total} 个任务` }}
           scroll={{ x: 1200 }}
           locale={{ emptyText: <Empty description="暂无可采集任务" /> }}
           onRow={(task) => ({

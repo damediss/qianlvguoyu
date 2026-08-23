@@ -486,7 +486,7 @@ export function CompetitionTheoryExamPage({
 
   const rosterContent = !canViewSchedule ? <Result status="403" title="暂无名册查看权限" /> : (
     <Card size="small" title="考试名册" extra={<Space>{canExportRoster && <><Button icon={<DownloadOutlined />} disabled={!selectedVersionId} onClick={async () => downloadBlob(await downloadCompetitionTheoryRoster(selectedVersionId!, 'xlsx'), 'competition-theory-roster.xlsx')}>Excel</Button><Button icon={<DownloadOutlined />} disabled={!selectedVersionId} onClick={async () => downloadBlob(await downloadCompetitionTheoryRoster(selectedVersionId!, 'pdf'), 'competition-theory-roster.pdf')}>PDF</Button></>}</Space>}>
-      <Table rowKey={(row) => idValue(row.assignmentId)} size="small" dataSource={selectedSchedule?.assignments || []} pagination={{ pageSize: 20 }} columns={[
+      <Table rowKey={(row) => idValue(row.assignmentId)} size="small" dataSource={selectedSchedule?.assignments || []} pagination={{ pageSize: 20, showSizeChanger: false }} columns={[
         { title: '选手号', dataIndex: 'contestantNo', width: 120 }, { title: '姓名', dataIndex: 'contestantName', width: 110 },
         { title: '单位', dataIndex: 'orgName' }, { title: '工种', dataIndex: 'workTypeName', width: 140 },
         { title: '场次', dataIndex: 'sessionName', width: 140 }, { title: '考场', dataIndex: 'roomName', width: 140 },
@@ -500,7 +500,7 @@ export function CompetitionTheoryExamPage({
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Alert showIcon type="info" message="监考列表每 5 秒刷新；仅展示状态与最后保存时间，不加载答卷、标准答案或解析。" />
       {canViewMonitor && <Card size="small" title="实时监考" extra={<Button icon={<ReloadOutlined />} onClick={() => monitorQuery.refetch()}>刷新</Button>}>
-        <Table rowKey={(row) => idValue(row.attemptId)} size="small" loading={monitorQuery.isFetching} dataSource={monitorQuery.data || []} pagination={{ pageSize: 20 }} columns={[
+        <Table rowKey={(row) => idValue(row.attemptId)} size="small" loading={monitorQuery.isFetching} dataSource={monitorQuery.data || []} pagination={{ pageSize: 20, showSizeChanger: false }} columns={[
           { title: '选手号', dataIndex: 'contestantNo', width: 110 }, { title: '姓名', dataIndex: 'contestantName', width: 100 },
           { title: '单位', dataIndex: 'orgName' }, { title: '场次/座位', render: (_, row: CompetitionTheoryMonitor) => `${row.sessionName} / ${row.roomName} ${row.seatNo}` },
           { title: '答题状态', dataIndex: 'status', width: 140, render: statusTag },
@@ -510,7 +510,7 @@ export function CompetitionTheoryExamPage({
         ]} />
       </Card>}
       {canViewResults && <Card size="small" title="结果摘要（成绩未发布）">
-        <Table rowKey={(row) => idValue(row.attemptId)} size="small" loading={resultsQuery.isLoading} dataSource={resultsQuery.data || []} pagination={{ pageSize: 20 }} columns={[
+        <Table rowKey={(row) => idValue(row.attemptId)} size="small" loading={resultsQuery.isLoading} dataSource={resultsQuery.data || []} pagination={{ pageSize: 20, showSizeChanger: false }} columns={[
           { title: '选手号', dataIndex: 'contestantNo' }, { title: '姓名', dataIndex: 'contestantName' }, { title: '状态', dataIndex: 'status', render: statusTag },
           { title: '缺考', dataIndex: 'absent', render: (value: boolean) => value ? <Tag color="error">是</Tag> : '否' },
           { title: '客观题总分', dataIndex: 'totalScore', render: (value) => value ?? '-' }, { title: '确认状态', dataIndex: 'confirmationStatus', render: statusTag },
@@ -601,7 +601,7 @@ export function CompetitionTheoryExamPage({
           <Table
               rowKey={(row) => String(row.sortOrder)}
               size="small"
-              pagination={{ pageSize: 20 }}
+              pagination={{ pageSize: 20, showSizeChanger: false }}
               dataSource={previewQuery.data.questions}
               scroll={{ x: 620 }}
               columns={[

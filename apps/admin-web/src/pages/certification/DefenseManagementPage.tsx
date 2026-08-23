@@ -110,7 +110,7 @@ export function DefenseManagementPage() {
     mutationFn: () => exportDefenseSummary(selectedTaskId!),
     onSuccess: (resp) => {
       const filename = parseContentDispositionFilename({ headers: resp.headers as Record<string, string> })
-        || `技师、高级技师评价综合评定科目评审成绩汇总表_${selectedTaskId}.docx`;
+        || `技师、高级技师评价综合评定科目评审成绩汇总表_${selectedTaskId}.zip`;
       const url = window.URL.createObjectURL(resp.data as Blob);
       const link = document.createElement('a');
       link.href = url;
@@ -119,7 +119,7 @@ export function DefenseManagementPage() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      message.success('成绩汇总表已生成');
+      message.success('成绩汇总压缩包已生成');
     },
   });
 
@@ -213,7 +213,7 @@ export function DefenseManagementPage() {
                       onClick={() => {
                         Modal.confirm({
                           title: '确认完成答辩？',
-                          content: '全部考生的论文答辩和业绩评估均已提交。完成后可导出技师、高级技师评价综合评定科目评审成绩汇总表。',
+                          content: '全部考生的论文答辩和业绩评估均已提交。完成后可导出成绩汇总表及三名考评员评分表压缩包。',
                           okText: '完成答辩',
                           cancelText: '取消',
                           onOk: () => completeMutation.mutateAsync(),
@@ -254,7 +254,7 @@ export function DefenseManagementPage() {
                 showIcon
                 style={{ marginBottom: 16 }}
                 message="全部考生答辩评分已提交"
-                description="点击「完成答辩」后即可导出技师、高级技师评价综合评定科目评审成绩汇总表。"
+                description="点击「完成答辩」后即可导出成绩汇总表及三名考评员评分表压缩包。"
               />
             ) : null}
             <Space size={24} style={{ marginBottom: 16 }}>

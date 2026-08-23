@@ -286,7 +286,7 @@ export function DefenseScoringConfig({ taskId }: Props) {
             columns={columns}
             dataSource={setup?.candidates || []}
             loading={setupQuery.isFetching}
-            pagination={{ pageSize: 10 }}
+            pagination={{ pageSize: 10, showSizeChanger: false }}
             scroll={{ x: 1100 }}
             locale={{ emptyText: '暂无考生，请先完成考生导入' }}
           />

@@ -558,8 +558,12 @@ export function TrainingSubsidyDeclarePage() {
             showSizeChanger: true,
             showTotal: (t) => `共 ${t} 条`,
             onChange: (p, ps) => {
-              setPage(p);
-              setPageSize(ps);
+              if (typeof ps === 'number' && ps > 0 && ps !== pageSize) {
+                setPageSize(ps);
+                setPage(1);
+              } else {
+                setPage(p);
+              }
             },
           }}
         />

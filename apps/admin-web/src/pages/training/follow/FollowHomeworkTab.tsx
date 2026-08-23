@@ -363,7 +363,7 @@ export function FollowHomeworkTab({ classId }: Props) {
         loading={isLoading}
         columns={taskColumns}
         dataSource={tasks ?? []}
-        pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
+        pagination={{ pageSize: 20, showSizeChanger: false, showTotal: (t) => `共 ${t} 条` }}
         locale={{ emptyText: <Empty description="暂无课堂作业；请老师在 App 布置" /> }}
       />
 

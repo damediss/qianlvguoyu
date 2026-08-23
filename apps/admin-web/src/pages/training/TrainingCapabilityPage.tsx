@@ -91,7 +91,21 @@ export function TrainingCapabilityPage() {
         </Space>
         <Table rowKey="id" size="middle" loading={isLoading} columns={columns} dataSource={data?.items ?? []}
           scroll={{ x: 900 }}
-          pagination={{ current: query.page, pageSize: query.pageSize, total: data?.total ?? 0, showSizeChanger: true, showTotal: t => `共 ${t} 条`, onChange: (p, ps) => setQuery({ ...query, page: p, pageSize: ps }) }}
+          pagination={{
+            current: query.page,
+            pageSize: query.pageSize,
+            total: data?.total ?? 0,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50', '100'],
+            showTotal: (t) => `共 ${t} 条`,
+            onChange: (p, ps) => {
+              setQuery((prev) => ({
+                ...prev,
+                page: typeof ps === 'number' && ps !== prev.pageSize ? 1 : p,
+                pageSize: typeof ps === 'number' && ps > 0 ? ps : prev.pageSize,
+              }));
+            },
+          }}
         />
       </Card>
 

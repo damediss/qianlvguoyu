@@ -533,7 +533,7 @@ export function PracticalScoringConfig({
                   disabled: isCandidateUnavailable(row),
                 }),
               }}
-              pagination={{ pageSize: 10 }}
+              pagination={{ pageSize: 10, showSizeChanger: false }}
               locale={{
                 emptyText: selectedScopeId ? '当前工种等级下暂无已完成申报材料的学员' : '暂无已完成申报材料的学员',
               }}

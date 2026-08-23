@@ -201,8 +201,12 @@ public class TrainGraduationApplicationService {
       item.put("realname", s.getRealname());
       item.put("phone", s.getPhone());
       item.put("idCard", s.getIdCard());
-      item.put("normalScore", s.getNormalScore());
+      // 与考试模块（人社成绩）对齐：理论 / 技能 / 综合 / 工作业绩
+      item.put("theoryScore", s.getTheoryScore());
+      item.put("skillScore", s.getRealScore());
       item.put("examScore", s.getExamScore());
+      item.put("performanceScore", s.getPerformanceScore());
+      item.put("normalScore", s.getNormalScore());
       item.put("realScore", s.getRealScore());
       item.put("isLeader", s.getIsLeader());
       item.put("isCommittee", s.getIsCommittee());
@@ -211,6 +215,7 @@ public class TrainGraduationApplicationService {
       item.put("graduateAt", s.getGraduateAt());
       item.put("qualified", qualified);
       item.put("qualifyHint", qualifyHint(s, qualified));
+      item.put("examResultStatus", resolveExamResultStatus(s));
       item.put("templateTitle", templateTitle);
       item.put("certificateTempId", clazz.getCertificateTempId());
       item.put("certificateNo", cert != null ? cert.getCertificateNo() : null);
@@ -532,7 +537,7 @@ public class TrainGraduationApplicationService {
       Sheet sheet = wb.createSheet("结业台账");
       String[] headers = {
           "班级ID", "班级名称", "班级结业状态", "姓名", "手机", "身份证",
-          "平时", "考试", "实操", "学员结业状态", "结业时间", "证书编号", "是否达标"
+          "理论", "技能", "综合", "工作业绩", "学员结业状态", "结业时间", "证书编号", "是否达标"
       };
       Row head = sheet.createRow(0);
       for (int i = 0; i < headers.length; i++) {
@@ -550,9 +555,10 @@ public class TrainGraduationApplicationService {
           row.createCell(c++).setCellValue(nullToDash(s.getRealname()));
           row.createCell(c++).setCellValue(nullToDash(s.getPhone()));
           row.createCell(c++).setCellValue(nullToDash(s.getIdCard()));
-          row.createCell(c++).setCellValue(scoreStr(s.getNormalScore()));
-          row.createCell(c++).setCellValue(scoreStr(s.getExamScore()));
+          row.createCell(c++).setCellValue(scoreStr(s.getTheoryScore()));
           row.createCell(c++).setCellValue(scoreStr(s.getRealScore()));
+          row.createCell(c++).setCellValue(scoreStr(s.getExamScore()));
+          row.createCell(c++).setCellValue(scoreStr(s.getPerformanceScore()));
           row.createCell(c++).setCellValue(statusLabel(nzStatus(s.getGraduateStatus())));
           row.createCell(c++).setCellValue(s.getGraduateAt() == null ? "" : s.getGraduateAt().toString());
           TrainCertificateEntity cert = certs.get(s.getId());
@@ -580,7 +586,7 @@ public class TrainGraduationApplicationService {
     try (ZipOutputStream zos = new ZipOutputStream(bos); XSSFWorkbook wb = new XSSFWorkbook()) {
       Sheet sheet = wb.createSheet("结业名单");
       Row head = sheet.createRow(0);
-      String[] hs = {"姓名", "手机", "身份证", "平时", "考试", "实操", "结业状态", "结业时间", "是否达标"};
+      String[] hs = {"姓名", "手机", "身份证", "理论", "技能", "综合", "工作业绩", "结业状态", "结业时间", "是否达标"};
       for (int i = 0; i < hs.length; i++) {
         head.createCell(i).setCellValue(hs[i]);
       }
@@ -591,9 +597,10 @@ public class TrainGraduationApplicationService {
         row.createCell(c++).setCellValue(nullToDash(s.getRealname()));
         row.createCell(c++).setCellValue(nullToDash(s.getPhone()));
         row.createCell(c++).setCellValue(nullToDash(s.getIdCard()));
-        row.createCell(c++).setCellValue(scoreStr(s.getNormalScore()));
-        row.createCell(c++).setCellValue(scoreStr(s.getExamScore()));
+        row.createCell(c++).setCellValue(scoreStr(s.getTheoryScore()));
         row.createCell(c++).setCellValue(scoreStr(s.getRealScore()));
+        row.createCell(c++).setCellValue(scoreStr(s.getExamScore()));
+        row.createCell(c++).setCellValue(scoreStr(s.getPerformanceScore()));
         row.createCell(c++).setCellValue(statusLabel(nzStatus(s.getGraduateStatus())));
         row.createCell(c++).setCellValue(s.getGraduateAt() == null ? "" : s.getGraduateAt().toString());
         row.createCell(c).setCellValue(isQualified(s) ? "是" : "否");
@@ -673,25 +680,45 @@ public class TrainGraduationApplicationService {
     }
   }
 
+  /**
+   * 与考试模块一致：理论≥60 且 技能≥60 为达标；
+   * 理论与技能皆无时本期不拦结业（仍标「暂无成绩」）。
+   */
   private boolean isQualified(TrainPeopleListEntity s) {
-    List<BigDecimal> scores = new ArrayList<>();
-    if (s.getExamScore() != null) scores.add(s.getExamScore());
-    if (s.getRealScore() != null) scores.add(s.getRealScore());
-    if (s.getNormalScore() != null) scores.add(s.getNormalScore());
-    if (scores.isEmpty()) {
+    BigDecimal theory = s.getTheoryScore();
+    BigDecimal skill = s.getRealScore();
+    if (theory == null && skill == null) {
       return true;
     }
-    return scores.stream().allMatch(sc -> sc.compareTo(PASS_SCORE) >= 0);
+    return theory != null
+        && skill != null
+        && theory.compareTo(PASS_SCORE) >= 0
+        && skill.compareTo(PASS_SCORE) >= 0;
+  }
+
+  private String resolveExamResultStatus(TrainPeopleListEntity s) {
+    BigDecimal theory = s.getTheoryScore();
+    BigDecimal skill = s.getRealScore();
+    if (theory == null && skill == null) {
+      return "ABSENT";
+    }
+    if (theory != null
+        && skill != null
+        && theory.compareTo(PASS_SCORE) >= 0
+        && skill.compareTo(PASS_SCORE) >= 0) {
+      return "PASS";
+    }
+    return "FAIL";
   }
 
   private String qualifyHint(TrainPeopleListEntity s, boolean qualified) {
+    if (s.getTheoryScore() == null && s.getRealScore() == null) {
+      return "暂无成绩（本期不强制）";
+    }
     if (qualified) {
-      if (s.getExamScore() == null && s.getRealScore() == null && s.getNormalScore() == null) {
-        return "暂无成绩（本期不强制）";
-      }
       return "达标";
     }
-    return "未达标（成绩<60）";
+    return "未达标（理论与技能需均≥60）";
   }
 
   private Map<Long, TrainCertificateEntity> loadCertsByPeople(Long classId) {

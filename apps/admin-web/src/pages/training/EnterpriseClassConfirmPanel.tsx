@@ -512,7 +512,7 @@ export function EnterpriseClassConfirmPanel() {
                 <Table
                   rowKey={(r) => `${r.rosterId}-${r.reason}`}
                   size="small"
-                  pagination={{ pageSize: 8 }}
+                  pagination={{ pageSize: 8, showSizeChanger: false }}
                   dataSource={detail.unassigned}
                   columns={[
                     { title: '姓名', dataIndex: 'personName', width: 100 },

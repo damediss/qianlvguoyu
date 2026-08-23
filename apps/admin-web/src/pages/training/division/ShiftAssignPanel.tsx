@@ -263,7 +263,7 @@ export function ShiftAssignPanel({ planId, trainInfoId, shiftFileName }: Props) 
                     rowKey="id"
                     columns={recordColumns}
                     dataSource={task.records ?? []}
-                    pagination={{ pageSize: 20 }}
+                    pagination={{ pageSize: 20, showSizeChanger: false }}
                     scroll={{ x: 800 }}
                   />
                 </>

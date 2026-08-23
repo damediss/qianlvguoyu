@@ -16,15 +16,12 @@ import { pagePreparationTasks } from '../../api/certificationPreparation';
 import { PermissionGate } from '../../directives/permission';
 import type { PreparationTaskQuery } from '../../types/certificationPreparation';
 import { AssessorConfig } from './preparation/AssessorConfig';
+import { CandidateImport } from './preparation/CandidateImport';
 import { ChecklistReview } from './preparation/ChecklistReview';
 import { EquipmentConfig } from './preparation/EquipmentConfig';
 import { ExamSiteConfig } from './preparation/ExamSiteConfig';
 import { ExamStaffConfig } from './preparation/ExamStaffConfig';
 import { ExamSessionConfig } from './preparation/ExamSessionConfig';
-import {
-  CollectionSubTabKey,
-  InformationCollection,
-} from './preparation/InformationCollection';
 import { PreparationWorkbench } from './preparation/PreparationWorkbench';
 import { PracticalScoringConfig } from './preparation/PracticalScoringConfig';
 import { DefenseScoringConfig } from './preparation/DefenseScoringConfig';
@@ -41,7 +38,6 @@ export function PreparationPage() {
   const query: PreparationTaskQuery = { page: 1, pageSize: 500, currentPhase: 'preparation' };
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
   const [activeTab, setActiveTab] = useState<PreparationTabKey>('workbench');
-  const [collectionSubTab, setCollectionSubTab] = useState<CollectionSubTabKey>('candidates');
   const [collapsedTabs, setCollapsedTabs] = useState(false);
   const [moreSelectOpen, setMoreSelectOpen] = useState(false);
 
@@ -104,14 +100,7 @@ export function PreparationPage() {
       key: 'collection',
       label: '考生导入',
       icon: <DatabaseOutlined />,
-      children: (
-        <InformationCollection
-          taskId={selectedTaskId}
-          activeSubTab={collectionSubTab}
-          onSubTabChange={setCollectionSubTab}
-          onChanged={refreshAll}
-        />
-      ),
+      children: <CandidateImport taskId={selectedTaskId} onChanged={refreshAll} />,
     },
     {
       key: 'sessions',

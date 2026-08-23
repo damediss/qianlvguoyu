@@ -805,7 +805,14 @@ export const SolutionPlanningPage: React.FC = () => {
                     pageSize,
                     total: listQuery.data?.total ?? 0,
                     showSizeChanger: true,
-                    onChange: (p, ps) => { setPage(p); setPageSize(ps); },
+                    onChange: (p, ps) => {
+                      if (typeof ps === 'number' && ps > 0 && ps !== pageSize) {
+                        setPageSize(ps);
+                        setPage(1);
+                      } else {
+                        setPage(p);
+                      }
+                    },
                   }}
                 />
               </div>

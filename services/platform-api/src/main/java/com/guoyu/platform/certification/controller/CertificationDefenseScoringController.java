@@ -157,8 +157,10 @@ public class CertificationDefenseScoringController {
     return ResponseEntity.ok()
         .header(HttpHeaders.CONTENT_DISPOSITION,
             ContentDisposition.attachment().filename(result.filename(), StandardCharsets.UTF_8).build().toString())
-        .contentType(MediaType.parseMediaType(
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+        .contentType(result.filename() != null && result.filename().endsWith(".zip")
+            ? MediaType.parseMediaType("application/zip")
+            : MediaType.parseMediaType(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
         .body(resource);
   }
 }

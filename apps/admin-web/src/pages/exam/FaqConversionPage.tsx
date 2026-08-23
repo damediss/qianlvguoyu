@@ -263,7 +263,7 @@ export function FaqConversionPage() {
             size="small"
             rowKey="id"
             dataSource={batches}
-            pagination={{ pageSize: 5 }}
+            pagination={{ pageSize: 5, showSizeChanger: false }}
             onRow={(record) => ({ onClick: () => setSelectedBatchId(record.id), style: { cursor: 'pointer' } })}
             rowClassName={(record) => record.id === selectedBatchId ? 'ant-table-row-selected' : ''}
             columns={[
@@ -318,8 +318,18 @@ export function FaqConversionPage() {
               dataSource={records}
               columns={recordColumns}
               pagination={{
-                current: page, pageSize, total, showSizeChanger: true,
-                onChange: (p, ps) => { setPage(p); setPageSize(ps); },
+                current: page,
+                pageSize,
+                total,
+                showSizeChanger: true,
+                onChange: (p, ps) => {
+                  if (typeof ps === 'number' && ps > 0 && ps !== pageSize) {
+                    setPageSize(ps);
+                    setPage(1);
+                  } else {
+                    setPage(p);
+                  }
+                },
               }}
             />
           </Card>

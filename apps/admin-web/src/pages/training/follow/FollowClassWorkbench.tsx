@@ -2293,7 +2293,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                 size="small"
                 rowKey={(r) => `${r.rowNum}-${r.idCard}-${r.attendanceDate}`}
                 dataSource={importResult.failures}
-                pagination={{ pageSize: 8 }}
+                pagination={{ pageSize: 8, showSizeChanger: false }}
                 columns={[
                   { title: '行号', dataIndex: 'rowNum', width: 70 },
                   { title: '姓名', dataIndex: 'name', width: 100, render: (v?: string) => v || '—' },

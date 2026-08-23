@@ -389,7 +389,14 @@ export function EnterprisePlanReviewPanel() {
           current: page,
           pageSize,
           total: activeTab === 'all' ? list.length : (listQuery.data?.total ?? 0),
-          onChange: (p, ps) => { setPage(p); setPageSize(ps); },
+          onChange: (p, ps) => {
+            if (typeof ps === 'number' && ps > 0 && ps !== pageSize) {
+              setPageSize(ps);
+              setPage(1);
+            } else {
+              setPage(p);
+            }
+          },
           showTotal: (t) => `共 ${t} 条`,
         }}
       />

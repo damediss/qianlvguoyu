@@ -337,7 +337,18 @@ export function CompetitionRosterImportPage({
               dataSource={items}
               columns={itemColumns}
               scroll={{ x: 900 }}
-              pagination={{ current: itemQuery.page, pageSize: itemQuery.pageSize, total: detail.items?.total || 0, showSizeChanger: true, onChange: (page, pageSize) => setItemQuery({ page, pageSize }) }}
+              pagination={{
+                current: itemQuery.page,
+                pageSize: itemQuery.pageSize,
+                total: detail.items?.total || 0,
+                showSizeChanger: true,
+                onChange: (page, pageSize) =>
+                  setItemQuery((prev) => ({
+                    ...prev,
+                    page: typeof pageSize === 'number' && pageSize !== prev.pageSize ? 1 : page,
+                    pageSize: typeof pageSize === 'number' && pageSize > 0 ? pageSize : prev.pageSize,
+                  })),
+              }}
             />
           </>}
         </Card>

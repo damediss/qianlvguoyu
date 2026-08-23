@@ -383,7 +383,14 @@ export function DevTaskDetailPage() {
           total,
           showSizeChanger: true,
           showTotal: (t) => `共 ${t} 条`,
-          onChange: (p, ps) => { setPage(p); setPageSize(ps); },
+          onChange: (p, ps) => {
+            if (typeof ps === 'number' && ps > 0 && ps !== pageSize) {
+              setPageSize(ps);
+              setPage(1);
+            } else {
+              setPage(p);
+            }
+          },
         }}
       />
 

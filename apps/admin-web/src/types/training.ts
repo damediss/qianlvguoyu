@@ -1997,9 +1997,9 @@ export interface DemandConvertReq {
 }
 
 export interface TrainInfoOption extends SimpleItem {
-  company_id?: number;
+  company_id?: number | string;
   company_name?: string;
-  work_type_id?: number;
+  work_type_id?: number | string;
 }
 
 export interface DemandPublicData {
@@ -2012,12 +2012,12 @@ export interface DemandPublicData {
 }
 
 export interface SimpleItem {
-  id: number;
+  id: number | string;
   title: string;
 }
 
 export interface CompanyOption {
-  id: number;
+  id: number | string;
   title: string;
   tag: string;
 }
@@ -3064,6 +3064,53 @@ export interface ExamScoreImportClassOption {
   workTypeId?: number | string;
   workTypeTitle?: string;
   workTypeLevel?: number;
+  /** 本班学员人数 */
+  studentCount?: number;
+  /** 已有至少一项人社成绩的人数 */
+  scoredCount?: number;
+  /** NONE / PARTIAL / DONE */
+  scoreImportStatus?: 'NONE' | 'PARTIAL' | 'DONE' | string;
+  /** 理论≥60 且 技能≥60 */
+  passedCount?: number;
+  /** 理论与技能均无成绩 */
+  absentCount?: number;
+  /** 有成绩但未双科达标 */
+  failedCount?: number;
+}
+
+export interface ExamScoreImportClassPeople {
+  id: number | string;
+  realname?: string;
+  idCard?: string;
+  ticketNo?: string;
+  phone?: string;
+  theoryScore?: number | null;
+  skillScore?: number | null;
+  examScore?: number | null;
+  performanceScore?: number | null;
+  /** PASS / FAIL / ABSENT */
+  examResultStatus?: 'PASS' | 'FAIL' | 'ABSENT' | string;
+}
+
+export interface ExamScoreImportClassExamStats {
+  total: number;
+  passed: number;
+  failed: number;
+  absent: number;
+  theoryPass: number;
+  theoryFail: number;
+  theoryAbsent: number;
+  skillPass: number;
+  skillFail: number;
+  skillAbsent: number;
+}
+
+export interface ExamScoreImportClassPeoplePage {
+  items: ExamScoreImportClassPeople[];
+  page: number;
+  pageSize: number;
+  total: number;
+  stats: ExamScoreImportClassExamStats;
 }
 
 export interface ExamScoreImportTarget {
@@ -3087,9 +3134,12 @@ export interface ExamScoreImportItem {
   theoryScore?: number | null;
   skillScore?: number | null;
   examScore?: number | null;
+  performanceScore?: number | null;
   theoryFallback?: boolean;
   status: string;
   targets: ExamScoreImportTarget[];
+  mergeNote?: string | null;
+  examTimeMissing?: boolean;
 }
 
 export interface ExamScoreImportRosterGap {

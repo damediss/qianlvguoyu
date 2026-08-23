@@ -340,8 +340,12 @@ export function RequirementsManagementPage() {
             showQuickJumper
             showTotal={(t) => `共 ${t} 条`}
             onChange={(p, ps) => {
-              setCurrentPage(p);
-              setPageSize(ps);
+              if (typeof ps === 'number' && ps > 0 && ps !== pageSize) {
+                setPageSize(ps);
+                setCurrentPage(1);
+              } else {
+                setCurrentPage(p);
+              }
             }}
           />
         </>

@@ -966,7 +966,14 @@ export function TrainingClassDivisionPage() {
               total: plansQuery.data?.total ?? 0,
               showSizeChanger: true,
               showTotal: (t) => `共 ${t} 条`,
-              onChange: (p, ps) => { setPage(p); setPageSize(ps); },
+              onChange: (p, ps) => {
+                if (typeof ps === 'number' && ps > 0 && ps !== pageSize) {
+                  setPageSize(ps);
+                  setPage(1);
+                } else {
+                  setPage(p);
+                }
+              },
             }}
           />
         </Card>
@@ -1334,7 +1341,7 @@ export function TrainingClassDivisionPage() {
                   <Table
                     rowKey={(r) => `${r.rosterId}-${r.reason}`}
                     size="small"
-                    pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 人` }}
+                    pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (t) => `共 ${t} 人` }}
                     dataSource={packResult.unassigned}
                     columns={[
                       { title: '姓名', dataIndex: 'personName', width: 90 },

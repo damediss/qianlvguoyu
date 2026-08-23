@@ -178,7 +178,7 @@ export function StageSettlementPromotionPanel({ eventId, stage }: { eventId: Com
                     <Table
                       size="small"
                       rowKey="id"
-                      pagination={{ pageSize: 8 }}
+                      pagination={{ pageSize: 8, showSizeChanger: false }}
                       dataSource={referenceRows}
                       columns={[
                         { title: '选手', dataIndex: 'contestantMemberId' },

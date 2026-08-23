@@ -288,8 +288,12 @@ export function ClassRolesPanel({ classId, showAlert = true, contextHint }: Clas
             pageSizeOptions: ['8', '20', '50', '100'],
             showTotal: (t) => `共 ${t} 人`,
             onChange: (p, size) => {
-              setImportPage(p);
-              setImportPageSize(size);
+              if (typeof size === 'number' && size > 0 && size !== importPageSize) {
+                setImportPageSize(size);
+                setImportPage(1);
+              } else {
+                setImportPage(p);
+              }
             },
           }}
         />

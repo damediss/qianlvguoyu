@@ -223,9 +223,33 @@ export function TrainingGraduationPage({
     () => [
       { title: '姓名', dataIndex: 'realname', width: 90 },
       { title: '手机', dataIndex: 'phone', width: 120 },
-      { title: '平时', dataIndex: 'normalScore', width: 70, render: (v) => v ?? '—' },
-      { title: '考试', dataIndex: 'examScore', width: 70, render: (v) => v ?? '—' },
-      { title: '实操', dataIndex: 'realScore', width: 70, render: (v) => v ?? '—' },
+      {
+        title: '理论',
+        dataIndex: 'theoryScore',
+        width: 70,
+        render: (v) => (v == null || v === '' ? '—' : v),
+      },
+      {
+        title: '技能',
+        dataIndex: 'skillScore',
+        width: 70,
+        render: (v, r) => {
+          const score = v ?? r.realScore;
+          return score == null || score === '' ? '—' : score;
+        },
+      },
+      {
+        title: '综合',
+        dataIndex: 'examScore',
+        width: 70,
+        render: (v) => (v == null || v === '' ? '—' : v),
+      },
+      {
+        title: '工作业绩',
+        dataIndex: 'performanceScore',
+        width: 90,
+        render: (v) => (v == null || v === '' ? '—' : v),
+      },
       {
         title: '达标',
         dataIndex: 'qualified',
@@ -335,8 +359,15 @@ export function TrainingGraduationPage({
             pageSize: query.pageSize,
             total: data?.total ?? 0,
             showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50', '100'],
             showTotal: (t) => `共 ${t} 条`,
-            onChange: (p, ps) => setQuery({ ...query, page: p, pageSize: ps }),
+            onChange: (p, ps) => {
+              setQuery((prev) => ({
+                ...prev,
+                page: typeof ps === 'number' && ps !== prev.pageSize ? 1 : p,
+                pageSize: typeof ps === 'number' && ps > 0 ? ps : prev.pageSize,
+              }));
+            },
           }}
         />
       </Card>
@@ -400,7 +431,7 @@ export function TrainingGraduationPage({
 
         <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
           班级状态 {classStatusTag(studentData?.graduateStatus)} · 模板{' '}
-          {studentData?.templateTitle || '未绑定'} · 成绩源为花名册字段（本期不强制达标）
+          {studentData?.templateTitle || '未绑定'} · 成绩与考试模块一致（理论/技能/综合/工作业绩）；达标=理论与技能均≥60；暂无成绩本期不强制
         </Typography.Paragraph>
 
         <Table
@@ -410,7 +441,7 @@ export function TrainingGraduationPage({
           columns={studentColumns}
           dataSource={(studentData?.list ?? []) as Record<string, unknown>[]}
           pagination={false}
-          scroll={{ x: 900, y: 360 }}
+          scroll={{ x: 1100, y: 360 }}
           rowSelection={{
             selectedRowKeys,
             onChange: setSelectedRowKeys,

@@ -830,7 +830,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
             columns={candidateColumns}
             dataSource={filteredCandidates}
             loading={workbenchQuery.isFetching}
-            pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 名考生` }}
+            pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], showTotal: (total) => `共 ${total} 名考生` }}
             scroll={{ x: 1440 }}
             locale={{ emptyText: <Empty description="暂无考生" /> }}
             rowSelection={{

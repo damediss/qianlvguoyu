@@ -30,7 +30,11 @@ public class TrainPeopleListEntity {
   private Integer isLeader;
   private Integer isCommittee;
   private BigDecimal examScore;
+  /** 理论成绩（人社成绩单） */
+  private BigDecimal theoryScore;
   private BigDecimal realScore;
+  /** 工作业绩（人社成绩单） */
+  private BigDecimal performanceScore;
   private String paper;
   private BigDecimal normalScore;
   private String nationalPaper;
@@ -39,6 +43,8 @@ public class TrainPeopleListEntity {
   private Long tenantId;
   private LocalDateTime createTime;
   private String idCard;
+  /** 准考证号（人社成绩单导入） */
+  private String ticketNo;
 
   /** 0未结业 / 1已结业 / 2不合格 */
   private Integer graduateStatus;
