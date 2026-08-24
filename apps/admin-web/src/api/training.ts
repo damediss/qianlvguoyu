@@ -1373,9 +1373,26 @@ export function listGraduationCandidates(params: {
   pageSize?: number;
   keyword?: string;
   graduateStatus?: string;
+  trainTitle?: string[];
+  companyName?: string[];
+  workTypeName?: string[];
 }) {
-  return unwrap<{ list: Record<string, unknown>[]; total: number }>(
-    apiClient.get(`${BASE}/info-classes/graduation-candidates`, { params }),
+  return unwrap<{
+    list: Record<string, unknown>[];
+    total: number;
+    facets?: {
+      trainTitles?: string[];
+      companyNames?: string[];
+      workTypeNames?: string[];
+    };
+  }>(
+    apiClient.get(`${BASE}/info-classes/graduation-candidates`, {
+      params,
+      paramsSerializer: {
+        // Spring List 绑定：trainTitle=a&trainTitle=b（不要 trainTitle[]=）
+        indexes: null,
+      },
+    }),
   );
 }
 
@@ -1391,76 +1408,119 @@ export function listGraduationStudents(classId: number) {
   }>(apiClient.get(`${BASE}/info-classes/${classId}/graduation-students`));
 }
 
-/** 执行毕业 */
-export function graduateClass(
+export type GraduationStudentDetail = {
+  id: number;
+  classId: number;
+  classTitle?: string;
+  realname?: string;
+  phone?: string;
+  idCard?: string;
+  ticketNo?: string;
+  gender?: string;
+  nation?: string;
+  education?: string;
+  political?: string;
+  address?: string;
+  theoryScore?: number | string | null;
+  skillScore?: number | string | null;
+  examScore?: number | string | null;
+  performanceScore?: number | string | null;
+  normalScore?: number | string | null;
+  qualified?: boolean;
+  qualifyHint?: string;
+  graduateStatus?: number;
+  graduateStatusLabel?: string;
+  graduateAt?: string;
+  templateTitle?: string | null;
+  certificateNo?: string | null;
+  certificateFilePath?: string | null;
+  hasCertificate?: boolean;
+  idCardHeader?: string;
+  idCardFront?: string;
+  idCardBack?: string;
+  idCardHeader2?: string;
+};
+
+export function getGraduationStudentDetail(classId: number, peopleId: number) {
+  return unwrap<GraduationStudentDetail>(
+    apiClient.get(`${BASE}/info-classes/${classId}/graduation-students/${peopleId}`),
+  );
+}
+
+export function updateGraduationStudent(
   classId: number,
-  payload?: {
-    mode?: 'all' | 'selected';
-    peopleIds?: number[];
-    allowUnqualified?: boolean;
-    remark?: string;
+  peopleId: number,
+  payload: {
+    realname?: string;
+    phone?: string;
+    idCard?: string;
+    ticketNo?: string;
   },
 ) {
   return unwrap<{
-    classId: number;
-    trainInfoId?: number;
-    changedCount?: number;
-    skippedCount?: number;
-    graduateCount?: number;
-    graduateStatus?: string;
-    status: string;
-  }>(apiClient.post(`${BASE}/info-classes/${classId}/graduate`, payload ?? {}));
+    id: number;
+    realname?: string;
+    phone?: string;
+    idCard?: string;
+    ticketNo?: string;
+  }>(apiClient.patch(`${BASE}/info-classes/${classId}/graduation-students/${peopleId}`, payload));
 }
 
-/** 发送毕业通知（站内信） */
-export function notifyGraduation(classId: number) {
-  return unwrap<{
-    classId: number;
-    noticeId?: number | string;
-    notifiedCount: number;
-    successCount?: number;
-    failCount?: number;
-    message: string;
-  }>(apiClient.post(`${BASE}/info-classes/${classId}/graduation-notify`));
-}
+export type GraduationCertImportPreviewItem = {
+  fileName: string;
+  status: string;
+  message?: string;
+  warning?: string | null;
+  canCommit?: boolean;
+  idCard?: string;
+  certificateNo?: string;
+  parsedName?: string;
+  peopleId?: number;
+  classId?: number;
+  classTitle?: string;
+  realname?: string;
+  filePath?: string;
+};
 
-export function listGraduationNotices(classId: number) {
-  return unwrap<Record<string, unknown>[]>(
-    apiClient.get(`${BASE}/info-classes/${classId}/graduation-notices`),
+export type GraduationCertImportPreview = {
+  previewId: string;
+  classIds: Array<number | string>;
+  totalFiles: number;
+  matched: number;
+  blocked: number;
+  failed: number;
+  items: GraduationCertImportPreviewItem[];
+};
+
+/** 证书文件夹导入 · 预览匹配（按已选班身份证） */
+export function previewGraduationCertImport(classIds: Array<number | string>, files: File[]) {
+  const form = new FormData();
+  classIds.forEach((id) => form.append('classIds', String(id)));
+  files.forEach((file) => form.append('file', file));
+  return unwrap<GraduationCertImportPreview>(
+    apiClient.post(`${BASE}/graduation/certificates/import/preview`, form, { timeout: 300000 }),
   );
 }
 
-export function bindGraduationCertificateTemplate(classId: number, certificateTempId: number | null) {
-  return unwrap<{ classId: number; certificateTempId: number | null }>(
-    apiClient.patch(`${BASE}/info-classes/${classId}/certificate-template`, { certificateTempId }),
+/** 证书文件夹导入 · 确认回填证号+文件 */
+export function commitGraduationCertImport(previewId: string) {
+  return unwrap<{ written: number; updated: number; skipped: number; errors: string[] }>(
+    apiClient.post(`${BASE}/graduation/certificates/import/commit`, { previewId }),
   );
 }
 
-export function batchIssueGraduationCertificates(classId: number) {
-  return unwrap<{ classId: number; created: number; skipped: number }>(
-    apiClient.post(`${BASE}/info-classes/${classId}/certificates/batch-issue`),
-  );
-}
+export type CertifiedRosterScope = 'certified' | 'all';
 
-export function createGraduationArchive(classId: number) {
-  return unwrap<{
-    id: number | string;
-    classId: number;
-    fileId: number | string;
-    filePath: string;
-    versionNo: number;
-  }>(apiClient.post(`${BASE}/info-classes/${classId}/graduation-archive`));
-}
-
-export function listGraduationArchives(classId: number) {
-  return unwrap<Record<string, unknown>[]>(
-    apiClient.get(`${BASE}/info-classes/${classId}/graduation-archives`),
-  );
-}
-
-export async function exportGraduationLedger(classId?: number) {
-  const response = await apiClient.get(`${BASE}/graduation-ledger/export`, {
-    params: classId != null ? { classId } : undefined,
+export async function exportCertifiedRoster(
+  classId: number | string,
+  classTitle?: string,
+  scope: CertifiedRosterScope = 'certified',
+) {
+  const response = await apiClient.get(`${BASE}/info-classes/${classId}/certified-roster/export`, {
+    params: {
+      ...(classTitle ? { classTitle } : {}),
+      scope,
+    },
     responseType: 'blob',
   });
   const blob = new Blob([response.data], {
@@ -1468,7 +1528,38 @@ export async function exportGraduationLedger(classId?: number) {
   });
   const filename =
     parseContentDispositionFilename(response) ||
-    (classId != null ? `结业台账_${classId}.xlsx` : '结业台账.xlsx');
+    `职业技能等级认定获证人员名册_${classId}.xlsx`;
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+/** 导出获证人员名册（多班为 ZIP；单班为 xlsx） */
+export async function exportCertifiedRosters(
+  classIds: Array<number | string>,
+  scope: CertifiedRosterScope = 'certified',
+) {
+  const ids = classIds.map(String).filter(Boolean);
+  if (ids.length === 0) {
+    throw new Error('请选择班级');
+  }
+  const response = await apiClient.get(`${BASE}/graduation/certified-roster/export`, {
+    params: { classIds: ids, scope },
+    paramsSerializer: { indexes: null },
+    responseType: 'blob',
+  });
+  const isZip = ids.length > 1;
+  const blob = new Blob([response.data], {
+    type: isZip
+      ? 'application/zip'
+      : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const filename =
+    parseContentDispositionFilename(response) ||
+    (isZip ? `获证人员名册_已选${ids.length}班.zip` : `职业技能等级认定获证人员名册.xlsx`);
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
