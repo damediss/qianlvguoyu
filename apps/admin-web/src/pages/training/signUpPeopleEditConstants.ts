@@ -27,7 +27,7 @@ export const PAY_OPTIONS = [
 ];
 
 /** 对齐 PHP SysDictData dict_id=867 按预约等级筛选申报条件 */
-export function filterDeclarationConditions<T extends { id: number; title: string }>(
+export function filterDeclarationConditions<T extends { id: number | string; title: string }>(
   all: T[],
   reqLevel?: number,
 ): T[] {
@@ -42,6 +42,9 @@ export function filterDeclarationConditions<T extends { id: number; title: strin
   const range = ranges[reqLevel];
   if (!range) return all;
   const [min, max] = range;
-  const filtered = all.filter((item) => item.id >= min && item.id < max);
+  const filtered = all.filter((item) => {
+    const n = Number(item.id);
+    return !Number.isNaN(n) && n >= min && n < max;
+  });
   return filtered.length > 0 ? filtered : all;
 }

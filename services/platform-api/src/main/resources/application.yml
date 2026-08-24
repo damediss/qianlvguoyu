@@ -222,9 +222,10 @@ platform:
     # H5 前端地址（企业调研人员采集二维码跳转）
     base-url: ${H5_BASE_URL:https://h5.gjjd168.com}
   # App 端默认租户（AppHomeApplicationService 读取 platform.app.default-tenant-id）
-  # PHP 库 10159 与 SaaS 库 1 为同一租户，SaaS 侧统一以 1 为准（鉴权方案 v1.2 Q2，2026-08-03 已与需求方确认）
+  # PHP 库 10159 与 SaaS 库原 1 为同一租户；2026-08-24 起统一为 10159（数据库合并方案·决策 7，
+  # 取代鉴权方案 v1.2 Q2 的"SaaS 侧以 1 为准"旧口径），与 TenantContextHolder.DEFAULT_TENANT_ID 一致
   app:
-    default-tenant-id: ${APP_DEFAULT_TENANT_ID:1}
+    default-tenant-id: ${APP_DEFAULT_TENANT_ID:10159}
   # 我的页客服电话/协议链接
   kefu-phone: ${APP_KEFU_PHONE:18977081413}
   agreement-url: ${APP_AGREEMENT_URL:}

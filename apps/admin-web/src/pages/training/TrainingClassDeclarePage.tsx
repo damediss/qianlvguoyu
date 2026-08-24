@@ -34,6 +34,7 @@ import type {
   TrainFileTempSavePayload,
 } from '../../api/training';
 import type {
+  CompanyOption,
   DemandPublicData,
   TrainInfoClassListItem,
 } from '../../types/training';
@@ -512,8 +513,8 @@ export function TrainingClassDeclarePage() {
             style={{ width: 200 }}
             value={companyIdFilter}
             onChange={(v) => { setCompanyIdFilter(v); setCurrentPage(1); }}
-            options={(publicData as DemandPublicData | undefined)?.company_list?.map((c: { id: number; title: string }) => ({
-              value: c.id,
+            options={(publicData as DemandPublicData | undefined)?.company_list?.map((c: CompanyOption) => ({
+              value: Number(c.id),
               label: c.title,
             }))}
             filterOption={(input, opt) => (opt?.label as string ?? '').includes(input)}

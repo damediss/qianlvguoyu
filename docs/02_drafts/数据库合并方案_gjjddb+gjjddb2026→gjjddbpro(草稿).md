@@ -1,7 +1,7 @@
 # 数据库合并方案：gjjddb + gjjddb2026 → gjjddbpro（决策已确认·实施细化版）
 
 > 日期：2026-08-20（2026-08-21 细化分工；2026-08-24 你确认提供两台服务器 SSH 并授权我代执行服务器侧操作后，分工再调整）
-> 状态：**§6 六项决策已由你确认（2026-08-21）；实施步骤已按"AI 能做 / 必须你做"细化。未经你最终批准，未执行任何变更**
+> 状态：**§6 前六项决策已由你确认（2026-08-21）；决策 7（租户 id 统一 10159）2026-08-24 确认并当日已在 gjjddb2026 提前落地**；实施步骤已按"AI 能做 / 必须你做"细化。未经你最终批准，未执行任何变更
 > 分析数据来源：对两套生产库的实时只读盘点（information_schema + ID 重叠分析），原始数据在 `outputs/dbmerge-analysis/`
 
 ---
@@ -71,7 +71,7 @@
 **凭据安全约定（2026-08-24）**：SSH / MySQL root 密码由你私下提供，仅用于本机会话与运行期环境变量/交互输入，**不写入仓库、文档、脚本文件**；建议窗口期使用临时密码，合并完成后轮换；若后续确认可换密钥认证，切换后密码作废。
 
 **前置实测事实（2026-08-21 实测，决定分工边界）**:
-1. 本机可直连两套库（分析阶段已验证连通；mysql 客户端 `D:\mysql-8.4.9-winx64\bin\mysql.exe`)
+1. 本机可直连两套库（分析阶段已验证连通；mysql 客户端 `C:\Program Files\MySQL\MySQL Server 8.4\bin\mysql.exe`)
 2. **43 实例的 `gjjd` 账号无权创建 gjjddbpro**——实测 `SHOW GRANTS` 仅有 `gjjddb2026.*` 与 `qualification_mvp.*` 的权限，无全局 CREATE。建库、授权必须用 root（已授权我代执行，前置：你提供 MySQL root 密码）
 3. ~~我没有两台服务器的 SSH~~ **已解决（2026-08-24)：你确认提供两台服务器 SSH（root 直登，密码认证；是否可换密钥待你确认）**，platform-api 的 systemctl / .env、PHP 应用配置切换均已授权我代执行
 4. 本会话我没有 PHP 库（114.132.67.185:3308）的凭据（分析阶段曾使用）——正式执行前需你确认凭据可用或重新提供一次；43 实例 MySQL root 密码你说晚点提供（阶段 -1.1 的前置）
@@ -196,14 +196,16 @@
 | 4 | 停机窗口 | **可接受（1-2 小时量级）** | 具体停机日期/时段由你另定（建议业务低谷）；时长以阶段 0.2 预演实测为准修正 |
 | 5 | 旧库只读保留 1 周后归档下线 | **同意** | 阶段 3 / 阶段 4 |
 | 6 | 合并后 sync 镜像通道整体下线，SaaS 直接同库读 | **同意** | 两步走：2.2 切换时关开关；阶段 4.3 观察期满后移除代码。注意：此后 PHP 若回滚旧库需补增量同步（阶段 3 预案） |
+| 7 | 合并后租户 id 统一为 **10159**（PHP 口径）；推翻 2026-08-03 鉴权方案 v1.2 Q2「SaaS 侧统一以 1 为准」的旧口径 | **同意（2026-08-24，已于当日提前在 gjjddb2026 落地）** | SaaS 侧 194 张表 tenant_id 1→10159（458,119 行）+ sys_tenant 主键 1→10159 已执行完毕并复扫通过；代码 8 处默认租户兜底收敛为 `TenantContextHolder.DEFAULT_TENANT_ID=10159`，`APP_DEFAULT_TENANT_ID` 默认值同步修改。执行记录与备份见 `outputs/dbmerge-analysis/FRESHNESS_20260824.md` §4、备份 `outputs/dbmerge-archive/tenant1-backup-20260824.sql.gz`。PHP 侧零改动（代码硬编码 10159、数据本就 10159）。**阶段 1 不再需要租户归一步骤** |
 
 ## 7. 分析产物清单（outputs/dbmerge-analysis/，均已落盘）
 
-- `php_gjjddb_tables.tsv` / `saas_gjjddb2026_tables.tsv` / `php_gxwebsoft_core_tables.tsv` — 三库表清单+近似行数
+- `php_gjjddb_tables.tsv` / `saas_gjjddb2026_tables.tsv` / `php_gxwebsoft_core_tables.tsv` — 三库表清单+近似行数（2026-08-20 快照）
 - `common_tables.txt` / `php_only.txt` / `saas_only.txt` — 121 张同名表及各自独有表
-- `schema_diff_report.txt` — 121 张同名表逐列结构差异
-- `id_overlap_report.csv` — 115 张 id 主键表的 ID 重叠全量比对（both/only_php/only_saas)
+- `schema_diff_report.txt` — 121 张同名表逐列结构差异（**train_people_list 已过时**：20260820.020/20260821.010 新增 ticket_no 等列，预演前重取）
+- `id_overlap_report.csv` — 115 张 id 主键表的 ID 重叠全量比对（**platform_user 已过时**：SaaS 独有行 3→2，预演前重跑）
 - `php_columns.tsv` / `saas_columns.tsv` / `gx_columns.tsv` — 全量列定义快照
+- **2026-08-24 刷新版（精确 COUNT，非估值）**：`*_tables_20260824.tsv` × 3 + `FRESHNESS_20260824.md`（时效性核查结论：分类框架不变，2 个点位需预演前重核；information_schema TABLE_ROWS 估值不可用于小表比对）
 
 ## 8. 待产生物（方案执行时创建）
 

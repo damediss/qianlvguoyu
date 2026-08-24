@@ -70,7 +70,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
 
     if (isWhite) {
       if (tenantIdHeader == null || tenantIdHeader.isBlank()) {
-        TenantContextHolder.setTenantId(1L);
+        TenantContextHolder.setTenantId(TenantContextHolder.DEFAULT_TENANT_ID);
       } else {
         TenantContextHolder.setTenantId(Long.valueOf(tenantIdHeader.trim()));
       }

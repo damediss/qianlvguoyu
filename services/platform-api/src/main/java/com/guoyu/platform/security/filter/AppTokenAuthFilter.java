@@ -114,7 +114,7 @@ public class AppTokenAuthFilter extends OncePerRequestFilter {
 
       log.info("AppTokenAuthFilter: authenticated user {}", user.getId());
 
-      Long tenantId = 1L;
+      Long tenantId = com.guoyu.platform.common.tenant.TenantContextHolder.DEFAULT_TENANT_ID;
       String tenantHeader = request.getHeader("X-Tenant-Id");
       if (tenantHeader != null && !tenantHeader.isBlank()) {
         try {

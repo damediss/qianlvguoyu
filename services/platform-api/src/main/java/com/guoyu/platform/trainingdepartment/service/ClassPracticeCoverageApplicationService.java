@@ -68,7 +68,7 @@ public class ClassPracticeCoverageApplicationService {
     }
     Long tenantId = TenantContextHolder.getTenantId();
     if (tenantId == null || tenantId <= 0) {
-      tenantId = 1L;
+      tenantId = com.guoyu.platform.common.tenant.TenantContextHolder.DEFAULT_TENANT_ID;
     }
 
     Map<String, Object> scope = scopeService.getScopeForAppMember(classId);
@@ -240,7 +240,7 @@ public class ClassPracticeCoverageApplicationService {
     }
     Long tenantId = TenantContextHolder.getTenantId();
     if (tenantId == null || tenantId <= 0) {
-      tenantId = 1L;
+      tenantId = com.guoyu.platform.common.tenant.TenantContextHolder.DEFAULT_TENANT_ID;
     }
 
     String statusKey = StringUtils.hasText(status) ? status.trim().toLowerCase(Locale.ROOT) : "done";
@@ -549,7 +549,7 @@ public class ClassPracticeCoverageApplicationService {
   public Set<Integer> findDoneQuestionIds(Long classId, Long userId) {
     Long tenantId = TenantContextHolder.getTenantId();
     if (tenantId == null || tenantId <= 0) {
-      tenantId = 1L;
+      tenantId = com.guoyu.platform.common.tenant.TenantContextHolder.DEFAULT_TENANT_ID;
     }
     List<Integer> ids = answerLogMapper.findDoneQuestionIdsByClass(tenantId, userId, classId);
     return ids == null ? Set.of() : new HashSet<>(ids);

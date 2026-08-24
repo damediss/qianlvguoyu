@@ -156,7 +156,7 @@ public class ClassPracticeScopeApplicationService {
     }
     Long tenantId = TenantContextHolder.getTenantId();
     if (tenantId == null || tenantId <= 0) {
-      tenantId = 1L;
+      tenantId = com.guoyu.platform.common.tenant.TenantContextHolder.DEFAULT_TENANT_ID;
     }
     return buildScopeView(clazz, tenantId);
   }

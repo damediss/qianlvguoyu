@@ -111,7 +111,7 @@ interface PeopleEditFormValues {
 }
 
 interface ConditionOption {
-  id: number;
+  id: number | string;
   title: string;
 }
 

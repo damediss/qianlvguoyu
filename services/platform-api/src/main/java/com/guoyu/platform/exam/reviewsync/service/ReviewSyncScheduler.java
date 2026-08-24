@@ -12,7 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
  * AI 同步学定时任务（§8）。
  *
  * <p>线程边界（AGENTS.md 坑 #15/#17）：job 线程入口显式
- * {@code TenantContextHolder.setTenantId(1L)} + finally clear——MyBatis-Plus 多租户拦截器
+ * {@code TenantContextHolder.setTenantId(DEFAULT_TENANT_ID=10159)} + finally clear——MyBatis-Plus 多租户拦截器
  * 依赖该上下文；job 内不调 SecurityContext。
  *
  * <p>开关：{@code platform.review-sync.jobs-enabled=false} 时整体不装配（application.yml 默认 false，
@@ -65,7 +65,7 @@ public class ReviewSyncScheduler {
 
   private void runWithTenant(Runnable runnable) {
     try {
-      TenantContextHolder.setTenantId(1L);
+      TenantContextHolder.setTenantId(TenantContextHolder.DEFAULT_TENANT_ID);
       runnable.run();
     } catch (Exception e) {
       log.error("[AI复习] 定时任务异常：{}", e.getMessage(), e);

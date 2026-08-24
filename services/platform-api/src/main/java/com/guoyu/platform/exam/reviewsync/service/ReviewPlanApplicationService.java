@@ -49,7 +49,7 @@ import org.springframework.transaction.annotation.Transactional;
  * AI 同步学用例编排（§5 / §7）。
  *
  * <p>线程边界：所有公开方法以 platformUserId/tenantId 参数驱动，不调 SecurityContext；
- * 定时任务线程入口由 ReviewSyncScheduler 负责 TenantContextHolder.setTenantId(1L) + clear。
+ * 定时任务线程入口由 ReviewSyncScheduler 负责 TenantContextHolder.setTenantId(DEFAULT_TENANT_ID) + clear。
  */
 @Slf4j
 @Service

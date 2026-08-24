@@ -12,10 +12,12 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 导出共享支持：staging 节点装配为树、X/Y/Z 子树统计、L2 权重按叶数比例计算、权重表 JSON 还原。
  */
+@Slf4j
 public final class StandardExportSupport {
 
   private StandardExportSupport() {
@@ -99,10 +101,11 @@ public final class StandardExportSupport {
    * <p>规则：
    * <ul>
    *   <li>L1 无权重 → 返回空 Map（导出留空）；</li>
-   *   <li>L2 有手工权重 → 固定不参与分配；</li>
-   *   <li>其余 L2 按理论叶数比例分配剩余权重，最大余数法凑整到 0.01
-   *       （先取 floor 份额，剩余按小数余数从大到小逐个 +0.01，余数相同按 L2 顺序）；</li>
-   *   <li>无手工权重且理论叶数为 0 的 L2 不分配（导出留空）。</li>
+   *   <li>L2 有手工权重且其和 ≤ L1 权重 → 固定手工权重，剩余按理论叶数比例分配；</li>
+   *   <li>L2 有手工权重但其和 > L1 权重 → 忽略手工权重，全部 L2 按理论叶数比例重新分配
+   *       （避免下级合计超过上级）；</li>
+   *   <li>无手工权重 → 全部 L2 按理论叶数比例分配，最大余数法凑整到 0.01；</li>
+   *   <li>理论叶数为 0 的 L2 不分配（导出留空）。</li>
    * </ul>
    */
   public static Map<Long, BigDecimal> allocateL2Weights(ExportTree tree, ExamStandardNodeEntity l1) {
@@ -115,20 +118,30 @@ public final class StandardExportSupport {
 
     BigDecimal manualSum = BigDecimal.ZERO;
     List<ExamStandardNodeEntity> auto = new ArrayList<>();
+    List<ExamStandardNodeEntity> allLeafL2 = new ArrayList<>();
     Map<Long, Integer> leafOf = new LinkedHashMap<>();
     for (ExamStandardNodeEntity l2 : l2List) {
+      int count = leafCount(tree, l2.getId(), "theory");
+      if (count > 0) {
+        leafOf.put(l2.getId(), count);
+        allLeafL2.add(l2);
+      }
       if (l2.getWeight() != null) {
         result.put(l2.getId(), l2.getWeight());
         manualSum = manualSum.add(l2.getWeight().setScale(2, RoundingMode.HALF_UP));
-      } else {
-        int count = leafCount(tree, l2.getId(), "theory");
-        if (count > 0) {
-          leafOf.put(l2.getId(), count);
-          auto.add(l2);
-        }
+      } else if (count > 0) {
+        auto.add(l2);
       }
     }
     BigDecimal remaining = target.subtract(manualSum);
+    // 手工权重之和超过 L1 权重：数据异常，忽略手工权重，全部 L2 按叶数比例重新分配
+    if (manualSum.compareTo(target) > 0 && !allLeafL2.isEmpty()) {
+      log.warn("[细目表权重] L1={} 权重{}，其下 L2 手工权重合计{}，已超过 L1，忽略手工权重按叶数重新分配",
+          l1.getNodeKey(), target, manualSum);
+      result.clear();
+      auto = allLeafL2;
+      remaining = target;
+    }
     if (auto.isEmpty() || remaining.signum() <= 0) {
       return result;
     }

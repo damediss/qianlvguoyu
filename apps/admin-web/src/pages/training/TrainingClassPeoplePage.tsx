@@ -1187,7 +1187,7 @@ export function TrainingClassPeoplePage() {
 
   const kejianOptions = useMemo(() => {
     return (publicData as DemandPublicData | undefined)?.kejian_list?.map((k) => ({
-      value: k.id,
+      value: Number(k.id),
       label: k.title,
     })) ?? [];
   }, [publicData]);

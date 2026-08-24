@@ -41,7 +41,7 @@ public class ExamFaqWebhookController {
     } catch (Exception e) {
       // Webhook 场景无登录态，tenantId 必须从 payload 或签名里解析
       // 这里硬编码为默认租户（实际生产中应从 body 字段或签名里解析）
-      tenantId = 1L;
+      tenantId = com.guoyu.platform.common.tenant.TenantContextHolder.DEFAULT_TENANT_ID;
     }
 
     try {

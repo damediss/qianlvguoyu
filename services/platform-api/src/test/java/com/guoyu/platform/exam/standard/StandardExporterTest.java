@@ -246,6 +246,36 @@ class StandardExporterTest {
     }
   }
 
+  /** B8e：L2 手工权重之和超过 L1 时，应忽略手工权重按叶数重新分配，避免下级合计超过上级 */
+  @Test
+  void b8e_l2ManualWeightOverBudgetRedistributed() {
+    List<ExamStandardNodeEntity> ns = new ArrayList<>();
+    ns.add(node(101L, 0L, "A", 0, "基本要求A", null, new BigDecimal("0.30"), "theory"));
+    ns.add(node(102L, 101L, "A-A", 1, "职业道德A-A", null, new BigDecimal("0.05"), "theory"));
+    // 三个 L2，手工权重合计 0.09，超过 L1 的 0.05；每个 L2 各 8 理论叶
+    ns.add(node(103L, 102L, "A-A-A", 2, "职业道德基本知识A-A-A", null, new BigDecimal("0.04"), "theory"));
+    ns.add(node(104L, 102L, "A-A-B", 2, "职业守则A-A-B", null, new BigDecimal("0.04"), "theory"));
+    ns.add(node(105L, 102L, "A-A-C", 2, "基础知识A-A-C", null, new BigDecimal("0.01"), "theory"));
+    long id = 200L;
+    for (int l2 : new int[]{103, 104, 105}) {
+      for (int i = 0; i < 8; i++) {
+        ns.add(node(id++, (long) l2, "A-A-" + l2 + "-" + id, 3, "叶" + id, "X", null, "theory"));
+      }
+    }
+    ExportTree t = StandardExportSupport.assemble(ns);
+
+    ExamStandardNodeEntity l1 = t.children(101L).get(0);
+    Map<Long, BigDecimal> weights = StandardExportSupport.allocateL2Weights(t, l1);
+
+    BigDecimal sum = weights.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+    assertEquals(0, sum.compareTo(new BigDecimal("0.05")), "手工权重超限时必须按 L1 权重重新分配，下级合计严格等于上级");
+    assertEquals(0, weights.get(103L).add(weights.get(104L)).add(weights.get(105L)).compareTo(new BigDecimal("0.05")),
+        "三个 L2 权重之和等于 L1");
+    // 8:8:8 均分 0.05 → 最大余数法 0.02/0.02/0.01
+    assertTrue(weights.get(103L).compareTo(new BigDecimal("0.02")) >= 0, "首个 L2 至少 0.02");
+    assertTrue(weights.get(105L).compareTo(new BigDecimal("0.01")) >= 0, "末个 L2 至少 0.01");
+  }
+
   /** B8b：技能细目表 Excel——13 列、必考/任选一项、仅首个二级标比重、试题量留空 */
   @Test
   void b8_skillExcel() throws Exception {
