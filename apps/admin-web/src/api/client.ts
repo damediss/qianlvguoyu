@@ -35,7 +35,9 @@ apiClient.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
   const tenantId = useAuthStore.getState().tenantId;
-  if (tenantId) {
+  // 仅在已登录（有 token）时附带 X-Tenant-Id；登录前的 /auth/* 请求不应带可能过期的租户头，
+  // 否则租户归一等变更后浏览器残留的旧 tenantId 会让登录查询被多租户拦截器过滤 → 401。
+  if (token && tenantId) {
     config.headers['X-Tenant-Id'] = String(tenantId);
   }
   config.headers['X-Request-Id'] = generateUUID();

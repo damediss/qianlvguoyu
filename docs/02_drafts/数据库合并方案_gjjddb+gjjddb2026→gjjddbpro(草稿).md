@@ -79,6 +79,8 @@
 
 ### 阶段 -1：权限与凭据准备（不停机，约 0.5 天，一切动作的前置）
 
+> **✅ 阶段 -1 已于 2026-08-24 全部完成并实测通过**，执行记录见本节末「-1 执行实录」。
+
 | # | 步骤 | 责任 |
 |---|---|---|
 | -1.0 | SSH 凭据交付与连通验证：你提供两台服务器 root 密码（私下渠道）；我从本机 ssh 验证两台连通、`df -h` 查磁盘（对应 -1.4）、43 上 `mysql -uroot` 验证 root 可用、两台互 `telnet` 探内网（对应 -1.3） | 【协作】你提供，【AI】验证 |
@@ -88,6 +90,29 @@
 | -1.4 | 确认 43 服务器磁盘余量（新增约 1.1GB 数据 + 索引，建议余量 ≥10GB) | 【AI】 |
 | -1.5 | 提供/确认 PHP 库只读导出凭据（需 SELECT / LOCK TABLES / SHOW VIEW 权限） | 【你】提供，【AI】验证连通 |
 | -1.6 | 用新授权验证：能连 gjjddbpro / gjjddbpro_rehearsal 并建删测试表 | 【AI】 |
+
+#### 阶段 -1 执行实录（2026-08-24，全部实测通过）
+
+| 项 | 实测结果 |
+|---|---|
+| SSH ×2 | OpenSSH 10.3 + `SSH_ASKPASS_REQUIRE=force` 免安装方案跑通（本机无 sshpass/plink，无需安装）；两台均 root 直登成功 |
+| MySQL root@43 | `root@%` 可远程登录（未仅限 localhost），建库授权远程执行完成 |
+| 建库授权（-1.1） | `gjjddbpro` / `gjjddbpro_rehearsal` / `gxwebsoft_core` 三空库已建（utf8mb4 / general_ci）；`gjjd`@`%` 三库 ALL；新建 `php_gjjd`@`114.132.67.185` 与 `php_gjjd`@`172.16.16.8`（公网+内网两种来源形式），授权 `gjjddbpro.*` + `gjjddbpro_rehearsal.*` + `gxwebsoft_core.*` ALL；密码已私下交付（本会话），未写入任何仓库文件。注：43 启用了 validate_password，密码需含特殊字符 |
+| 安全组（-1.2） | 实测 114→43:3308 **公网已 OPEN**（控制台无需再操作）；本机→两台 22 已通 |
+| 同 VPC（-1.3） | **两台同子网 172.16.16.0/20**（114=172.16.16.8，43=172.16.16.2）；114→172.16.16.2:3308 内网实测 OPEN。**PHP 切换配置用内网 IP 172.16.16.2**，跨网延迟风险消除 |
+| 磁盘（-1.4） | ⚠️ 43 仅剩 **12G**（60G 用 81%），过 ≥10G 阈值但余量小，建议窗口前清理 `/opt/guoyu-platform/deploy-backups` 旧包；114 剩 17G、本机 D: 剩 19G |
+| PHP 凭据（-1.5） | 本机留有 114 root 凭据（gjjd_phalcon 备份配置中），已实测只读盘点可用 |
+| 授权验证（-1.6） | 从 114 以 `php_gjjd` 走内网连 43 成功，可见且仅见三个新库 |
+
+#### 2026-08-24 核查新发现（修正方案事实）
+
+1. **43 的 SaaS 服务名是 `guoyu-platform-api.service`**（非方案前文写的 `platform-api`）；部署目录 `/opt/guoyu-platform/`，`ExecStart` 指向 **`platform-api.jar` 符号链接**（按版本切换软链），配置在 `config/application-prod.yml` + `config/platform-api.env`，数据源 `localhost:3308/gjjddb2026`。阶段 1.1/2.2 的 systemctl 命令与 0.7/2.2 的 .env 路径以此为准。
+2. **生产事故记录（已处置）**：2026-08-24 16:29 生产重启时 `platform-api.jar` 软链误指 8-22 旧 jar（`platform-api-contract-sync-20260822.jar`），与当日租户归一后的数据（tenant_id=10159）不匹配，admin 登录 401。已于 16:43 将软链切至当日新构建 `platform-api-tenant10159-20260824.jar`（与本地构建 md5 一致）并重启恢复。**教训：部署/回滚以软链目标为准，重启前必须核对 `ls -la platform-api.jar`。**
+3. **114 的 PHP 应用布局**：`/www/wwwroot/default/gjjd_phalcon/`；DB 配置仅 `app/conf/config.php` 一处（现写本机公网 IP，切换时改 172.16.16.2）；**4 个 vhost 共用该应用**：`gjjd_phalcon.conf`（gjjdp.gjjd168.com）、`cdn.app.conf`、`match_admin.conf`、`wap.gjjd168.conf`——切换与冒烟必须全部覆盖。
+4. **PHP CLI 常驻任务 = 8 个 systemd service**（`Restart=always`）：`cli-exam-people-list` / `cli-exam-result` / `cli-match-exam` / `cli-people-self-list` / `cli-signup-export`（**当前唯一在跑**，考生报名导出）/ `cli-user-copy` / `cli-userid-to-company` / `cli-userphone-by-sysdetail`，脚本在 `gjjd_phalcon/cli/`。**窗口停写时必须 `systemctl stop cli-*`（全部 8 个），切换后视需要重启**；它们走同一个 config.php，随配置切换自动指向新库。
+5. **PHP 侧导出工具**：114 自带 MariaDB 10.11 mysqldump 非理想；已改用 **docker `mysql:8.4` 镜像内的 mysqldump**（与目标库同代），`docker run --rm -i mysql:8.4 mysqldump ...`。
+6. **PHP 预演入口（0.7）方案**：在 114 复制 `gjjd_phalcon.conf` 建临时 vhost（如 8085 端口），应用目录软链/复制一份并将其 `config.php` 指向 `gjjddbpro_rehearsal`，供页面级实测；实测后下线。
+7. 本机 `/d/workspace/gjjd_phalcon` 是备份副本，`configTask.php` 不在生产（生产只有 `config.php` 引用 gjjddb/gxwebsoft_core）。
 
 ### 阶段 0：脚本编写与预演（不停机，1-2 天）
 
@@ -107,7 +132,7 @@
 
 - 0.5 审预演报告 + PHP 保障专项结论，**签字 Go**（任何一项不通过则不进入窗口，回到方案修订）
 - 0.6 若 0.4 产生了代码改动：部署到生产（开关默认关闭，行为不变）
-- 0.7 PHP 侧【AI】：我在 114 上确认 `config.php` / `configTask.php` 的 host/dbname/账号位置，直接备好待切换的新配置文件（先不启用，旧文件留 `.bak`）；**用测试入口/备用站点连接 gjjddbpro_rehearsal 实测关键页面响应（验证跨网延迟，对应决策 3），页面观感与后台抽查由你做**
+- 0.7 PHP 侧【AI】：已查明 114 上 DB 配置仅 `app/conf/config.php` 一处（4 个 vhost 共用，见阶段 -1 实录第 3 条），备好待切换的新配置文件（先不启用，旧文件留 `.bak`）；**建临时 vhost（8085 端口）连接 gjjddbpro_rehearsal 实测关键页面响应（对应决策 3），页面观感与后台抽查由你做**
 - 0.8 发停机公告：时段由你定（建议业务低谷），时长以预演实测为准（预估 1-2 小时，决策 4 已接受该量级）
 
 ### C 类表 PHP 正常运行保障专项（决策 3 的前置条件，随阶段 0 预演完成）
@@ -125,7 +150,7 @@
 
 | # | 步骤 | 责任 |
 |---|---|---|
-| 1.1 | 停 PHP 写流量（维护页/停写入口，具体形式先与你确认）、`systemctl stop platform-api`、停 CLI 任务进程；确认 sync 开关已处关闭态 | 【AI】 |
+| 1.1 | 停 PHP 写流量（维护页/停写入口，具体形式先与你确认）、`systemctl stop guoyu-platform-api`、`systemctl stop 'cli-*'`（8 个 PHP CLI 常驻服务，见阶段 -1 实录第 4 条）；确认 sync 开关已处关闭态 | 【AI】 |
 | 1.2 | 冻结确认：两库 `SHOW PROCESSLIST` 无写入，截图留档；对 114 实例做最终增量快照比对（确认停机后无新写入） | 【AI】 |
 | 1.3 | 窗口 Go 决策（此刻原库仍未动一个字节，可随时中止） | 【你】 |
 | 1.4 | 执行 `03_migrate.sh`，顺序：① 灌 flyway_schema_history（同实例）→ ② SaaS 独有表（同实例 INSERT SELECT) → ③ PHP 独有表（mysqldump 跨网） → ④ A 类（PHP 全量覆盖） → ⑤ B/C 类（并集/追加，按预检清单） → ⑥ D 类（SaaS 为准；PHP 侧 sys_user 等先导出归档文件到 `outputs/dbmerge-archive/`) → ⑦ gxwebsoft_core 整库 → ⑧ MyISAM 7 张转 InnoDB → ⑨ B/C 类 auto_increment 抬升。每步日志落盘 | 【AI】（跨网传输方式见下注） |
@@ -138,7 +163,7 @@
 | # | 步骤 | 责任 |
 |---|---|---|
 | 2.1 | PHP 改配置指向 43(gjjddbpro + gxwebsoft_core 同实例；优先内网 IP，见 -1.3)→ 重启（以上我执行）→ 冒烟：App 登录（platform_user_token)、后台登录（sys_qlgt，同时作为决策 2 的最终确认）、考试报名、导出异步任务、后台名单页（核对保障专项第 3 条）（真机/App/后台页面只能你侧做） | 【AI】改配置重启，【你】冒烟 |
-| 2.2 | SaaS 改 `.env`:`MYSQL_URL=.../gjjddbpro`、`PLATFORM_SYNC_ENABLED=false`、`user-provisioning.php-write-enabled=false` → `systemctl restart platform-api`（以上我执行）→ 我跑 HTTP 冒烟脚本（登录/权限/题库/考试主链路），并确认 Flyway 校验通过、无新迁移执行 | 【AI】 |
+| 2.2 | SaaS 改 `config/platform-api.env`:`MYSQL_URL=.../gjjddbpro`、`PLATFORM_SYNC_ENABLED=false`、`user-provisioning.php-write-enabled=false` → `systemctl restart guoyu-platform-api`（以上我执行；重启前核对 `platform-api.jar` 软链指向目标版本）→ 我跑 HTTP 冒烟脚本（登录/权限/题库/考试主链路），并确认 Flyway 校验通过、无新迁移执行 | 【AI】 |
 | 2.3 | **Go / No-Go 决策**:No-Go → 双方配置切回原库（原库全程未动，秒级回滚，窗口结束） | 【你】 |
 
 ### 阶段 3：观察期（1 周，决策 5 已同意）
@@ -175,7 +200,7 @@
 | 风险 | 等级 | 对策 |
 |---|---|---|
 | 共有表结构差异导致 SaaS 代码读写异常（如 BaseEntity 列缺失、tinyint vs int) | **高** | 预演库全量跑 SaaS 单测/冒烟；逐表核对 schema_diff_report;SaaS 活跃表结构以 SaaS 为准 |
-| **PHP 跨公网访问 43 实例的延迟**（现状 PHP 与本机 MySQL 同机，合并后每查询跨网；页面多查询场景可能明显变慢） | **高** | -1.3 确认同地域走内网 IP；阶段 0.7 用预演库实测 PHP 关键页面响应；实测不可接受则方案需重审（ gxwebsoft_core 与 gjjddbpro 必须同实例是硬约束，不能分开放） |
+| ~~PHP 跨公网访问 43 实例的延迟~~（2026-08-24 实测：两台同 VPC 172.16.16.0/20，114→172.16.16.2:3308 内网 OPEN，延迟 <1ms） | ~~高~~ **低（已消解）** | 已实测同子网内网直连；阶段 0.7 仍用临时 vhost + 预演库做页面级回归兜底 |
 | gjjd 账号无权建新库（2026-08-21 实测 SHOW GRANTS 确认） | 中 | 阶段 -1.1 由你用 root 建库授权，是全部动作的前置 |
 | 5.7 → 8.4 兼容：零日期、sql_mode、保留字导致导入或 PHP 运行异常 | 中 | 预演全量暴露；导入会话级放宽 sql_mode;PHP 典型 SQL 预演回归（保障专项第 5 条） |
 | 停机窗口超预期 | 中 | 预演计时；SaaS 侧同实例直迁不出网；PHP 侧首选服务器间直传；窗口内只做全量 |

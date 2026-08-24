@@ -78,6 +78,10 @@ public class AuthApplicationService {
     if (tenant == null) {
       throw new BusinessException(ErrorCode.UNAUTHORIZED, "Invalid username or password");
     }
+    // 登录按 tenantCode 解析出租户后，立即把上下文租户设为该租户 id，再查用户/角色/菜单。
+    // 否则浏览器残留的旧 X-Tenant-Id（如租户归一前的 1）会让多租户拦截器把 user 查询过滤为空 → 401。
+    // TenantContextFilter 的 finally 会负责清理。
+    TenantContextHolder.setTenantId(tenant.getId());
 
     UserEntity user = userMapper.selectOne(new LambdaQueryWrapper<UserEntity>()
         .eq(UserEntity::getTenantId, tenant.getId())
