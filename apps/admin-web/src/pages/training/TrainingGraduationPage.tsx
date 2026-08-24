@@ -1,12 +1,12 @@
-import { useMemo, useState, type Key } from 'react';
+import { useMemo, useRef, useState, type Key } from 'react';
 import {
   Alert,
   Button,
   Card,
+  Dropdown,
   Form,
   Input,
   Modal,
-  Popconfirm,
   Select,
   Space,
   Table,
@@ -14,18 +14,19 @@ import {
   Typography,
   message,
 } from 'antd';
+import type { MenuProps } from 'antd';
 import {
+  DownOutlined,
   DownloadOutlined,
-  EyeOutlined,
-  FileZipOutlined,
-  NotificationOutlined,
+  FolderOpenOutlined,
   ReloadOutlined,
   SearchOutlined,
-  TrophyOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
+import type { CertifiedRosterScope, GraduationCertImportPreview } from '../../api/training';
 import { TrainingProcessSteps } from './TrainingProcessSteps';
 
 type Props = {
@@ -34,30 +35,48 @@ type Props = {
   pageSubtitle?: string;
 };
 
+const ROSTER_SCOPE_MENU_ITEMS: MenuProps['items'] = [
+  { key: 'certified', label: '已获证人员名册' },
+  { key: 'all', label: '班级全部人员名册' },
+];
+
 function classStatusTag(status?: string) {
   if (status === 'done') return <Tag color="success">已结业</Tag>;
   if (status === 'partial') return <Tag color="warning">部分结业</Tag>;
   return <Tag>未结业</Tag>;
 }
 
-function studentStatusTag(status?: number) {
-  if (status === 1) return <Tag color="success">已结业</Tag>;
-  if (status === 2) return <Tag color="error">不合格结业</Tag>;
-  return <Tag>未结业</Tag>;
-}
-
-async function downloadLedger(classId?: number) {
+async function downloadCertifiedRoster(opts: {
+  classId?: number | string;
+  classIds?: Array<number | string>;
+  classTitle?: string;
+  scope: CertifiedRosterScope;
+}) {
   try {
-    await trainApi.exportGraduationLedger(classId);
+    if (opts.classIds != null && opts.classIds.length > 0) {
+      await trainApi.exportCertifiedRosters(opts.classIds, opts.scope);
+      return;
+    }
+    if (opts.classId != null) {
+      await trainApi.exportCertifiedRoster(opts.classId, opts.classTitle, opts.scope);
+      return;
+    }
+    message.warning('请选择班级');
   } catch (e) {
     message.error((e as Error).message || '导出失败');
   }
 }
 
+/** 隐藏路由跳转（与 main.tsx 约定：pushState + popstate） */
+function navigateTo(path: string) {
+  window.history.pushState({}, '', path);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
 export function TrainingGraduationPage({
   processCurrent = 7,
   pageTitle = '毕业典礼',
-  pageSubtitle = '班级结业打标、站内信通知、台账导出与材料归档；证书模板轻关联可查',
+  pageSubtitle = '获证人员名册导出、证书文件夹回填；点击班级进入详情',
 }: Props) {
   const queryClient = useQueryClient();
   const [searchForm] = Form.useForm();
@@ -66,222 +85,286 @@ export function TrainingGraduationPage({
     pageSize: number;
     keyword?: string;
     graduateStatus?: string;
+    trainTitle?: string[];
+    companyName?: string[];
+    workTypeName?: string[];
   }>({ page: 1, pageSize: 20 });
-  const [studentModalOpen, setStudentModalOpen] = useState(false);
-  const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
-  const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
-  const [templateId, setTemplateId] = useState<number | null>(null);
+  const [selectedClassKeys, setSelectedClassKeys] = useState<Key[]>([]);
+  const [certImportOpen, setCertImportOpen] = useState(false);
+  const [certFiles, setCertFiles] = useState<File[]>([]);
+  const [certPreview, setCertPreview] = useState<GraduationCertImportPreview | null>(null);
+  const [certPreviewing, setCertPreviewing] = useState(false);
+  const [certCommitting, setCertCommitting] = useState(false);
+  const [certPreviewFilter, setCertPreviewFilter] = useState<'all' | 'matched' | 'blocked' | 'failed'>('all');
+  const [certPreviewPageSize, setCertPreviewPageSize] = useState(10);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['graduation-candidates', query],
-    queryFn: () => trainApi.listGraduationCandidates(query),
+    queryFn: () =>
+      trainApi.listGraduationCandidates({
+        page: query.page,
+        pageSize: query.pageSize,
+        keyword: query.keyword,
+        graduateStatus: query.graduateStatus,
+        trainTitle: query.trainTitle,
+        companyName: query.companyName,
+        workTypeName: query.workTypeName,
+      }),
   });
 
-  const { data: studentData, isLoading: studentLoading } = useQuery({
-    queryKey: ['graduation-students', selectedClassId],
-    queryFn: () => trainApi.listGraduationStudents(selectedClassId!),
-    enabled: !!selectedClassId,
-  });
+  const EMPTY_FILTER = '__EMPTY__';
 
-  const { data: notices } = useQuery({
-    queryKey: ['graduation-notices', selectedClassId],
-    queryFn: () => trainApi.listGraduationNotices(selectedClassId!),
-    enabled: !!selectedClassId && studentModalOpen,
-  });
+  const toFilterOptions = (values?: string[]) =>
+    (values ?? []).map((v) => ({
+      text: v === EMPTY_FILTER ? '（空）' : v,
+      value: v,
+    }));
 
-  const { data: archives } = useQuery({
-    queryKey: ['graduation-archives', selectedClassId],
-    queryFn: () => trainApi.listGraduationArchives(selectedClassId!),
-    enabled: !!selectedClassId && studentModalOpen,
-  });
-
-  const { data: fileTemps } = useQuery({
-    queryKey: ['file-temps-graduation'],
-    queryFn: () => trainApi.listFileTemps({ type: 1 }),
-  });
-
-  const invalidateClass = () => {
-    void queryClient.invalidateQueries({ queryKey: ['graduation-candidates'] });
-    void queryClient.invalidateQueries({ queryKey: ['graduation-students', selectedClassId] });
-    void queryClient.invalidateQueries({ queryKey: ['graduation-notices', selectedClassId] });
-    void queryClient.invalidateQueries({ queryKey: ['graduation-archives', selectedClassId] });
-  };
-
-  const graduateMu = useMutation({
-    mutationFn: (payload: Parameters<typeof trainApi.graduateClass>[1]) =>
-      trainApi.graduateClass(selectedClassId!, payload),
-    onSuccess: (res) => {
-      message.success(`结业完成：变更 ${res.changedCount ?? res.graduateCount ?? 0} 人`);
-      setSelectedRowKeys([]);
-      invalidateClass();
-    },
-    onError: (e: Error) => message.error(e.message || '结业失败'),
-  });
-
-  const notifyMu = useMutation({
-    mutationFn: () => trainApi.notifyGraduation(selectedClassId!),
-    onSuccess: (res) => {
-      message.success(res.message || '通知已发送');
-      invalidateClass();
-    },
-    onError: (e: Error) => message.error(e.message || '发送失败'),
-  });
-
-  const bindTplMu = useMutation({
-    mutationFn: () => trainApi.bindGraduationCertificateTemplate(selectedClassId!, templateId),
-    onSuccess: () => {
-      message.success('证书模板已绑定');
-      invalidateClass();
-    },
-    onError: (e: Error) => message.error(e.message || '绑定失败'),
-  });
-
-  const issueMu = useMutation({
-    mutationFn: () => trainApi.batchIssueGraduationCertificates(selectedClassId!),
-    onSuccess: (res) => {
-      message.success(`发证记录：新建 ${res.created}，跳过 ${res.skipped}`);
-      invalidateClass();
-    },
-    onError: (e: Error) => message.error(e.message || '发证失败'),
-  });
-
-  const archiveMu = useMutation({
-    mutationFn: () => trainApi.createGraduationArchive(selectedClassId!),
-    onSuccess: (res) => {
-      message.success(`归档包已生成 v${res.versionNo}`);
-      invalidateClass();
-      if (res.filePath) window.open(res.filePath, '_blank');
-    },
-    onError: (e: Error) => message.error(e.message || '归档失败'),
-  });
-
-  const openStudents = (classId: number, certTempId?: number | null) => {
-    setSelectedClassId(classId);
-    setTemplateId(certTempId ?? null);
-    setSelectedRowKeys([]);
-    setStudentModalOpen(true);
-  };
+  const trainTitleFilters = useMemo(
+    () => toFilterOptions(data?.facets?.trainTitles),
+    [data?.facets?.trainTitles],
+  );
+  const companyFilters = useMemo(
+    () => toFilterOptions(data?.facets?.companyNames),
+    [data?.facets?.companyNames],
+  );
+  const workTypeFilters = useMemo(
+    () => toFilterOptions(data?.facets?.workTypeNames),
+    [data?.facets?.workTypeNames],
+  );
 
   const handleSearch = () => {
     const values = searchForm.getFieldsValue();
-    setQuery({
+    setQuery((prev) => ({
+      ...prev,
       page: 1,
-      pageSize: query.pageSize,
       keyword: values.keyword || undefined,
       graduateStatus: values.graduateStatus || undefined,
-    });
+    }));
   };
 
-  const columns: ColumnsType<Record<string, unknown>> = [
-    { title: 'ID', dataIndex: 'id', width: 80 },
-    { title: '班级名称', dataIndex: 'title', width: 180, ellipsis: true },
-    { title: '培训项目', dataIndex: 'trainTitle', width: 180, ellipsis: true },
-    { title: '企业', dataIndex: 'companyName', width: 140, ellipsis: true },
-    { title: '工种', dataIndex: 'workTypeName', width: 120, ellipsis: true },
-    {
-      title: '结业进度',
-      width: 110,
-      render: (_, r) => `${r.graduatedCount ?? 0}/${r.studentCount ?? 0}`,
-    },
-    {
-      title: '状态',
-      dataIndex: 'graduateStatus',
-      width: 110,
-      render: (v?: string) => classStatusTag(v),
-    },
-    { title: '开始', dataIndex: 'dateStart', width: 110 },
-    { title: '结束', dataIndex: 'dateEnd', width: 110 },
-    {
-      title: '操作',
-      key: 'act',
-      width: 280,
-      fixed: 'right',
-      render: (_, r) => (
-        <Space size="small" wrap>
-          <Button
-            type="link"
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => openStudents(r.id as number, r.certificateTempId as number | null)}
-          >
-            学员与结业
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            icon={<DownloadOutlined />}
-            onClick={() => void downloadLedger(r.id as number)}
-          >
-            导出台账
-          </Button>
-        </Space>
-      ),
-    },
-  ];
+  const readFilterValues = (raw: unknown): string[] | undefined => {
+    if (!Array.isArray(raw) || raw.length === 0) return undefined;
+    return raw.map(String).filter(Boolean);
+  };
 
-  const studentColumns: ColumnsType<Record<string, unknown>> = useMemo(
+  const selectedClassLabels = useMemo(() => {
+    const list = (data?.list ?? []) as Record<string, unknown>[];
+    const byId = new Map(list.map((r) => [String(r.id), String(r.title || r.id)]));
+    return selectedClassKeys.map((k) => ({
+      id: String(k),
+      title: byId.get(String(k)) || String(k),
+    }));
+  }, [data?.list, selectedClassKeys]);
+
+  const mergeCertFiles = (incoming: FileList | File[]) => {
+    const next = Array.from(incoming).filter((f) => {
+      const n = f.name.toLowerCase();
+      return n.endsWith('.pdf') || n.endsWith('.zip');
+    });
+    if (next.length === 0) {
+      message.warning('请选择 PDF 或 ZIP 文件');
+      return;
+    }
+    setCertFiles((prev) => {
+      const map = new Map(prev.map((f) => [`${f.name}:${f.size}:${f.lastModified}`, f]));
+      next.forEach((f) => map.set(`${f.name}:${f.size}:${f.lastModified}`, f));
+      return Array.from(map.values());
+    });
+    setCertPreview(null);
+  };
+
+  const openCertImport = () => {
+    if (selectedClassKeys.length === 0) {
+      message.warning('请先勾选要回填的班级');
+      return;
+    }
+    setCertFiles([]);
+    setCertPreview(null);
+    setCertPreviewFilter('all');
+    setCertImportOpen(true);
+  };
+
+  const runCertPreview = async () => {
+    if (selectedClassKeys.length === 0) {
+      message.warning('请先勾选班级');
+      return;
+    }
+    if (certFiles.length === 0) {
+      message.warning('请先添加证书文件夹或 PDF/ZIP');
+      return;
+    }
+    setCertPreviewing(true);
+    try {
+      const res = await trainApi.previewGraduationCertImport(
+        selectedClassKeys.map(String),
+        certFiles,
+      );
+      setCertPreview(res);
+      setCertPreviewFilter('all');
+      message.success(
+        `预览完成：可回填 ${res.matched}，需处理 ${res.blocked}，失败 ${res.failed}`,
+      );
+    } catch (e) {
+      message.error((e as Error).message || '预览失败');
+    } finally {
+      setCertPreviewing(false);
+    }
+  };
+
+  const runCertCommit = async () => {
+    if (!certPreview?.previewId) {
+      message.warning('请先预览匹配');
+      return;
+    }
+    if ((certPreview.matched ?? 0) <= 0) {
+      message.warning('没有可回填的匹配项');
+      return;
+    }
+    setCertCommitting(true);
+    try {
+      const res = await trainApi.commitGraduationCertImport(certPreview.previewId);
+      message.success(
+        `回填完成：新建 ${res.written}，更新 ${res.updated}，跳过 ${res.skipped}`,
+      );
+      if (res.errors?.length) {
+        Modal.warning({
+          title: '部分跳过',
+          content: res.errors.slice(0, 8).join('\n'),
+        });
+      }
+      setCertImportOpen(false);
+      setCertFiles([]);
+      setCertPreview(null);
+      void queryClient.invalidateQueries({ queryKey: ['graduation-candidates'] });
+      void queryClient.invalidateQueries({ queryKey: ['graduation-students'] });
+    } catch (e) {
+      message.error((e as Error).message || '回填失败');
+    } finally {
+      setCertCommitting(false);
+    }
+  };
+
+  const certStatusTag = (status?: string) => {
+    if (status === 'MATCHED') return <Tag color="success">可写入</Tag>;
+    if (status === 'PARSE_FAILED') return <Tag color="error">解析失败</Tag>;
+    if (status === 'NOT_IN_SCOPE') return <Tag color="warning">未在已选班</Tag>;
+    if (status === 'DUP_IN_SELECTION') return <Tag color="error">身份证冲突</Tag>;
+    if (status === 'DUP_CERT_NO' || status === 'EXISTING_CERT_CONFLICT') {
+      return <Tag color="error">证号冲突</Tag>;
+    }
+    return <Tag>{status || '—'}</Tag>;
+  };
+
+  const certPreviewBucket = (item: { canCommit?: boolean; status?: string }) => {
+    if (item.canCommit) return 'matched' as const;
+    if (item.status === 'PARSE_FAILED') return 'failed' as const;
+    return 'blocked' as const;
+  };
+
+  const filteredCertPreviewItems = useMemo(() => {
+    const items = certPreview?.items ?? [];
+    if (certPreviewFilter === 'all') return items;
+    return items.filter((it) => certPreviewBucket(it) === certPreviewFilter);
+  }, [certPreview?.items, certPreviewFilter]);
+
+  const toggleCertPreviewFilter = (next: 'matched' | 'blocked' | 'failed') => {
+    setCertPreviewFilter((prev) => (prev === next ? 'all' : next));
+  };
+
+  const columns: ColumnsType<Record<string, unknown>> = useMemo(
     () => [
-      { title: '姓名', dataIndex: 'realname', width: 90 },
-      { title: '手机', dataIndex: 'phone', width: 120 },
+      { title: 'ID', dataIndex: 'id', width: 80 },
+      { title: '班级名称', dataIndex: 'title', width: 180, ellipsis: true },
       {
-        title: '理论',
-        dataIndex: 'theoryScore',
-        width: 70,
-        render: (v) => (v == null || v === '' ? '—' : v),
+        title: '培训项目',
+        dataIndex: 'trainTitle',
+        width: 180,
+        ellipsis: true,
+        filters: trainTitleFilters,
+        filteredValue: query.trainTitle ?? null,
+        filterSearch: true,
+        onFilter: () => true,
+        render: (v) => v || '—',
       },
       {
-        title: '技能',
-        dataIndex: 'skillScore',
-        width: 70,
-        render: (v, r) => {
-          const score = v ?? r.realScore;
-          return score == null || score === '' ? '—' : score;
+        title: '企业',
+        dataIndex: 'companyName',
+        width: 140,
+        ellipsis: true,
+        filters: companyFilters,
+        filteredValue: query.companyName ?? null,
+        filterSearch: true,
+        onFilter: () => true,
+        render: (v) => v || '—',
+      },
+      {
+        title: '工种',
+        dataIndex: 'workTypeName',
+        width: 120,
+        ellipsis: true,
+        filters: workTypeFilters,
+        filteredValue: query.workTypeName ?? null,
+        filterSearch: true,
+        onFilter: () => true,
+        render: (v) => v || '—',
+      },
+      {
+        title: '结业进度',
+        width: 110,
+        render: (_, r) => `${r.graduatedCount ?? 0}/${r.studentCount ?? 0}`,
+      },
+      {
+        title: '证书回填',
+        width: 120,
+        render: (_, r) => {
+          const backfill = Number(r.certBackfillCount ?? 0);
+          const total = Number(r.studentCount ?? 0);
+          if (backfill <= 0) {
+            return <Tag>未回填</Tag>;
+          }
+          return (
+            <Tag color="success">
+              已回填 {backfill}/{total}
+            </Tag>
+          );
         },
       },
       {
-        title: '综合',
-        dataIndex: 'examScore',
-        width: 70,
-        render: (v) => (v == null || v === '' ? '—' : v),
-      },
-      {
-        title: '工作业绩',
-        dataIndex: 'performanceScore',
-        width: 90,
-        render: (v) => (v == null || v === '' ? '—' : v),
-      },
-      {
-        title: '达标',
-        dataIndex: 'qualified',
-        width: 90,
-        render: (v: boolean, r) =>
-          v ? <Tag color="success">达标</Tag> : <Tag color="warning">{String(r.qualifyHint || '未达标')}</Tag>,
-      },
-      {
-        title: '结业状态',
+        title: '状态',
         dataIndex: 'graduateStatus',
         width: 110,
-        render: (v?: number) => studentStatusTag(v),
+        render: (v?: string) => classStatusTag(v),
       },
+      { title: '开始', dataIndex: 'dateStart', width: 110 },
+      { title: '结束', dataIndex: 'dateEnd', width: 110 },
       {
-        title: '证书',
-        width: 140,
-        render: (_, r) =>
-          r.hasCertificate ? (
-            <Typography.Text>{String(r.certificateNo || '已建证')}</Typography.Text>
-          ) : (
-            <Typography.Text type="secondary">未建证</Typography.Text>
-          ),
-      },
-      {
-        title: '模板',
-        dataIndex: 'templateTitle',
-        width: 120,
-        ellipsis: true,
-        render: (v?: string) => v || '—',
+        title: '操作',
+        key: 'act',
+        width: 160,
+        fixed: 'right',
+        render: (_, r) => (
+          <Dropdown
+            menu={{
+              items: ROSTER_SCOPE_MENU_ITEMS,
+              onClick: ({ key }) =>
+                void downloadCertifiedRoster({
+                  classId: r.id as number,
+                  classTitle: String(r.title || r.trainTitle || ''),
+                  scope: key as CertifiedRosterScope,
+                }),
+            }}
+          >
+            <Button type="link" size="small" icon={<DownloadOutlined />}>
+              导出人员名册 <DownOutlined />
+            </Button>
+          </Dropdown>
+        ),
       },
     ],
-    [],
+    [trainTitleFilters, companyFilters, workTypeFilters, query.trainTitle, query.companyName, query.workTypeName],
   );
 
   return (
@@ -299,7 +382,7 @@ export function TrainingGraduationPage({
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="结业以班级为粒度打标；项目完成状态仅在该培训下全部班级结业后回写。通知走站内信并落库。"
+        message="点击班级进入详情查看学员；可勾选班级上传证书文件夹回填证号，或导出获证人员名册。"
       />
 
       <Card size="small" style={{ marginBottom: 16 }}>
@@ -330,30 +413,107 @@ export function TrainingGraduationPage({
               查询
             </Button>
           </Form.Item>
-          <Form.Item>
-            <Button icon={<DownloadOutlined />} onClick={() => void downloadLedger()}>
-              导出全部台账
-            </Button>
-          </Form.Item>
         </Form>
       </Card>
 
       <Card size="small">
-        <Space style={{ marginBottom: 16 }}>
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => queryClient.invalidateQueries({ queryKey: ['graduation-candidates'] })}
-          >
-            刷新
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 12,
+            marginBottom: 16,
+            flexWrap: 'wrap',
+          }}
+        >
+          <Space wrap>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['graduation-candidates'] })}
+            >
+              刷新
+            </Button>
+            <Dropdown
+              menu={{
+                items: ROSTER_SCOPE_MENU_ITEMS,
+                onClick: ({ key }) =>
+                  void downloadCertifiedRoster({
+                    classIds: selectedClassKeys.map(String),
+                    scope: key as CertifiedRosterScope,
+                  }),
+              }}
+              disabled={selectedClassKeys.length === 0}
+            >
+              <Button icon={<DownloadOutlined />} disabled={selectedClassKeys.length === 0}>
+                导出已选名册 <DownOutlined />
+              </Button>
+            </Dropdown>
+            {selectedClassKeys.length > 0 ? (
+              <Button type="link" onClick={() => setSelectedClassKeys([])}>
+                清空选择
+              </Button>
+            ) : null}
+            <Typography.Text type="secondary">
+              已选 {selectedClassKeys.length} 个班
+            </Typography.Text>
+          </Space>
+          <Button icon={<FolderOpenOutlined />} onClick={openCertImport}>
+            上传证书文件夹
           </Button>
-        </Space>
+        </div>
         <Table
           rowKey="id"
           size="middle"
           loading={isLoading}
           columns={columns}
           dataSource={(data?.list ?? []) as Record<string, unknown>[]}
-          scroll={{ x: 1300 }}
+          scroll={{ x: 1420 }}
+          rowSelection={{
+            selectedRowKeys: selectedClassKeys,
+            onChange: (keys) => setSelectedClassKeys(keys),
+            preserveSelectedRowKeys: true,
+          }}
+          onRow={(row) => ({
+            style: { cursor: 'pointer' },
+            onClick: (e) => {
+              const el = e.target as HTMLElement | null;
+              if (
+                el?.closest(
+                  '.ant-checkbox-wrapper, .ant-checkbox, input, button, a, .ant-table-filter-trigger, .ant-dropdown',
+                )
+              ) {
+                return;
+              }
+              const id = Number(row.id);
+              if (!Number.isFinite(id) || id <= 0) return;
+              navigateTo(`/training/graduation/classes/${id}`);
+            },
+          })}
+          onChange={(pagination, filters) => {
+            const nextTrain = readFilterValues(filters.trainTitle);
+            const nextCompany = readFilterValues(filters.companyName);
+            const nextWorkType = readFilterValues(filters.workTypeName);
+            setQuery((prev) => {
+              const filtersChanged =
+                JSON.stringify(nextTrain ?? []) !== JSON.stringify(prev.trainTitle ?? [])
+                || JSON.stringify(nextCompany ?? []) !== JSON.stringify(prev.companyName ?? [])
+                || JSON.stringify(nextWorkType ?? []) !== JSON.stringify(prev.workTypeName ?? []);
+              const nextPageSize =
+                typeof pagination.pageSize === 'number' && pagination.pageSize > 0
+                  ? pagination.pageSize
+                  : prev.pageSize;
+              const sizeChanged = nextPageSize !== prev.pageSize;
+              return {
+                ...prev,
+                trainTitle: nextTrain,
+                companyName: nextCompany,
+                workTypeName: nextWorkType,
+                pageSize: nextPageSize,
+                page: filtersChanged || sizeChanged ? 1 : (pagination.current ?? prev.page),
+              };
+            });
+          }}
           pagination={{
             current: query.page,
             pageSize: query.pageSize,
@@ -361,143 +521,197 @@ export function TrainingGraduationPage({
             showSizeChanger: true,
             pageSizeOptions: ['10', '20', '50', '100'],
             showTotal: (t) => `共 ${t} 条`,
-            onChange: (p, ps) => {
-              setQuery((prev) => ({
-                ...prev,
-                page: typeof ps === 'number' && ps !== prev.pageSize ? 1 : p,
-                pageSize: typeof ps === 'number' && ps > 0 ? ps : prev.pageSize,
-              }));
-            },
           }}
         />
       </Card>
 
       <Modal
-        title={studentData?.classTitle ? `结业办理 · ${studentData.classTitle}` : '结业办理'}
-        open={studentModalOpen}
+        title="上传证书文件夹并回填"
+        open={certImportOpen}
         onCancel={() => {
-          setStudentModalOpen(false);
-          setSelectedClassId(null);
+          if (certPreviewing || certCommitting) return;
+          setCertImportOpen(false);
         }}
-        footer={null}
-        width={1080}
+        width={960}
         destroyOnHidden
+        footer={[
+          <Button
+            key="cancel"
+            onClick={() => setCertImportOpen(false)}
+            disabled={certPreviewing || certCommitting}
+          >
+            取消
+          </Button>,
+          <Button
+            key="preview"
+            loading={certPreviewing}
+            disabled={certCommitting || certFiles.length === 0}
+            onClick={() => void runCertPreview()}
+          >
+            预览匹配
+          </Button>,
+          <Button
+            key="commit"
+            type="primary"
+            loading={certCommitting}
+            disabled={certPreviewing || !certPreview || (certPreview.matched ?? 0) <= 0}
+            onClick={() => void runCertCommit()}
+          >
+            确认回填
+          </Button>,
+        ]}
       >
-        <Space wrap style={{ marginBottom: 12 }}>
-          <Select
-            style={{ width: 260 }}
-            placeholder="绑定结业证书模板"
-            allowClear
-            value={templateId ?? undefined}
-            options={(fileTemps?.list ?? []).map((t) => ({ value: t.id, label: t.title }))}
-            onChange={(v) => setTemplateId(v ?? null)}
-          />
-          <Button loading={bindTplMu.isPending} onClick={() => bindTplMu.mutate()}>
-            保存模板绑定
-          </Button>
-          <Popconfirm
-            title="对勾选学员执行结业？"
-            description="未勾选则结业全班未处理学员；不合格也可标记（不发证）"
-            onConfirm={() =>
-              graduateMu.mutate(
-                selectedRowKeys.length
-                  ? { mode: 'selected', peopleIds: selectedRowKeys.map(Number), allowUnqualified: true }
-                  : { mode: 'all', allowUnqualified: true },
-              )
-            }
-          >
-            <Button type="primary" icon={<TrophyOutlined />} loading={graduateMu.isPending}>
-              执行结业
-            </Button>
-          </Popconfirm>
-          <Button
-            icon={<NotificationOutlined />}
-            loading={notifyMu.isPending}
-            onClick={() => notifyMu.mutate()}
-          >
-            发送站内信
-          </Button>
-          <Button loading={issueMu.isPending} onClick={() => issueMu.mutate()}>
-            批量建证记录
-          </Button>
-          <Button
-            icon={<FileZipOutlined />}
-            loading={archiveMu.isPending}
-            onClick={() => archiveMu.mutate()}
-          >
-            生成归档包
-          </Button>
-        </Space>
-
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-          班级状态 {classStatusTag(studentData?.graduateStatus)} · 模板{' '}
-          {studentData?.templateTitle || '未绑定'} · 成绩与考试模块一致（理论/技能/综合/工作业绩）；达标=理论与技能均≥60；暂无成绩本期不强制
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="按证书 PDF 内身份证号匹配已选班级花名册；姓名不作主键。可多次添加文件夹或 PDF/ZIP。"
+        />
+        <Typography.Paragraph style={{ marginBottom: 8 }}>
+          已选班级（{selectedClassLabels.length}）：
+          {selectedClassLabels.map((c) => (
+            <Tag key={c.id} style={{ marginBottom: 4 }}>
+              {c.title}（{c.id}）
+            </Tag>
+          ))}
         </Typography.Paragraph>
-
-        <Table
-          rowKey="id"
-          size="small"
-          loading={studentLoading}
-          columns={studentColumns}
-          dataSource={(studentData?.list ?? []) as Record<string, unknown>[]}
-          pagination={false}
-          scroll={{ x: 1100, y: 360 }}
-          rowSelection={{
-            selectedRowKeys,
-            onChange: setSelectedRowKeys,
-            getCheckboxProps: (r) => ({
-              disabled: r.graduateStatus === 1 || r.graduateStatus === 2,
-            }),
+        <Space wrap style={{ marginBottom: 12 }}>
+          <Button icon={<FolderOpenOutlined />} onClick={() => folderInputRef.current?.click()}>
+            添加证书文件夹
+          </Button>
+          <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>
+            添加 PDF/ZIP
+          </Button>
+          {certFiles.length > 0 ? (
+            <Button
+              type="link"
+              onClick={() => {
+                setCertFiles([]);
+                setCertPreview(null);
+                setCertPreviewFilter('all');
+              }}
+            >
+              清空文件
+            </Button>
+          ) : null}
+          <Typography.Text type="secondary">已选文件 {certFiles.length} 个</Typography.Text>
+        </Space>
+        <input
+          ref={folderInputRef}
+          type="file"
+          multiple
+          style={{ display: 'none' }}
+          {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+          onChange={(e) => {
+            if (e.target.files?.length) mergeCertFiles(e.target.files);
+            e.target.value = '';
           }}
         />
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.zip,application/pdf,application/zip"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            if (e.target.files?.length) mergeCertFiles(e.target.files);
+            e.target.value = '';
+          }}
+        />
+        {certFiles.length > 0 ? (
+          <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ marginBottom: 12 }}>
+            {certFiles
+              .slice(0, 12)
+              .map((f) => f.name)
+              .join('、')}
+            {certFiles.length > 12 ? ` 等 ${certFiles.length} 个` : ''}
+          </Typography.Paragraph>
+        ) : null}
 
-        {(notices?.length || archives?.length) ? (
-          <Space direction="vertical" style={{ width: '100%', marginTop: 16 }} size="small">
-            {!!notices?.length && (
-              <Card size="small" title="通知历史">
-                <Table
-                  rowKey="id"
-                  size="small"
-                  pagination={false}
-                  dataSource={notices}
-                  columns={[
-                    { title: '时间', dataIndex: 'createdAt', width: 170 },
-                    { title: '标题', dataIndex: 'title', ellipsis: true },
-                    {
-                      title: '结果',
-                      width: 140,
-                      render: (_, r) => `成功 ${r.successCount ?? 0} / 失败 ${r.failCount ?? 0}`,
-                    },
-                  ]}
-                />
-              </Card>
-            )}
-            {!!archives?.length && (
-              <Card size="small" title="归档版本">
-                <Table
-                  rowKey="id"
-                  size="small"
-                  pagination={false}
-                  dataSource={archives}
-                  columns={[
-                    { title: '版本', dataIndex: 'versionNo', width: 80 },
-                    { title: '时间', dataIndex: 'createdAt', width: 170 },
-                    {
-                      title: '下载',
-                      render: (_, r) =>
-                        r.filePath ? (
-                          <a href={String(r.filePath)} target="_blank" rel="noreferrer">
-                            下载
-                          </a>
-                        ) : (
-                          '—'
-                        ),
-                    },
-                  ]}
-                />
-              </Card>
-            )}
-          </Space>
+        {certPreview ? (
+          <>
+            <Space style={{ marginBottom: 8 }} wrap>
+              <Tag
+                color="success"
+                style={{
+                  cursor: 'pointer',
+                  outline: certPreviewFilter === 'matched' ? '2px solid var(--ant-color-success)' : undefined,
+                  outlineOffset: 1,
+                }}
+                onClick={() => toggleCertPreviewFilter('matched')}
+              >
+                可回填 {certPreview.matched}
+              </Tag>
+              <Tag
+                color="warning"
+                style={{
+                  cursor: 'pointer',
+                  outline: certPreviewFilter === 'blocked' ? '2px solid var(--ant-color-warning)' : undefined,
+                  outlineOffset: 1,
+                }}
+                onClick={() => toggleCertPreviewFilter('blocked')}
+              >
+                需处理 {certPreview.blocked}
+              </Tag>
+              <Tag
+                color="error"
+                style={{
+                  cursor: 'pointer',
+                  outline: certPreviewFilter === 'failed' ? '2px solid var(--ant-color-error)' : undefined,
+                  outlineOffset: 1,
+                }}
+                onClick={() => toggleCertPreviewFilter('failed')}
+              >
+                失败 {certPreview.failed}
+              </Tag>
+              <Typography.Text type="secondary">
+                共 {certPreview.totalFiles} 个文件
+                {certPreviewFilter !== 'all'
+                  ? ` · 当前筛选 ${filteredCertPreviewItems.length} 条（再点标签可取消）`
+                  : ''}
+              </Typography.Text>
+            </Space>
+            <Table
+              rowKey={(r) => `${r.fileName}-${r.idCard || ''}-${r.status}`}
+              size="small"
+              pagination={{
+                pageSize: certPreviewPageSize,
+                showSizeChanger: true,
+                pageSizeOptions: ['10', '20', '50', '100'],
+                showTotal: (t) => `共 ${t} 条`,
+                onChange: (_p, ps) => {
+                  if (typeof ps === 'number' && ps > 0) {
+                    setCertPreviewPageSize(ps);
+                  }
+                },
+              }}
+              scroll={{ y: 320 }}
+              dataSource={filteredCertPreviewItems}
+              columns={[
+                { title: '文件', dataIndex: 'fileName', ellipsis: true, width: 220 },
+                { title: '证号', dataIndex: 'certificateNo', width: 180, ellipsis: true },
+                { title: '身份证', dataIndex: 'idCard', width: 160 },
+                {
+                  title: '匹配学员',
+                  width: 160,
+                  render: (_, r) =>
+                    r.realname
+                      ? `${r.realname}${r.classTitle ? ` · ${r.classTitle}` : ''}`
+                      : '—',
+                },
+                {
+                  title: '状态',
+                  width: 110,
+                  render: (_, r) => certStatusTag(r.status),
+                },
+                {
+                  title: '说明',
+                  ellipsis: true,
+                  render: (_, r) => r.warning || r.message || '—',
+                },
+              ]}
+            />
+          </>
         ) : null}
       </Modal>
     </div>

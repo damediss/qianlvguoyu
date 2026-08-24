@@ -32,6 +32,7 @@ import { TrainingProgramPage } from './pages/training/TrainingProgramPage';
 import { TrainingSchedulePage } from './pages/training/TrainingSchedulePage';
 import { TrainingGraduationPage } from './pages/training/TrainingGraduationPage';
 import { TrainingGraduationCeremonyPage } from './pages/training/TrainingGraduationCeremonyPage';
+import { TrainingGraduationClassDetailPage } from './pages/training/TrainingGraduationClassDetailPage';
 import { TrainingCapabilityPage } from './pages/training/TrainingCapabilityPage';
 import { TrainingSummaryPage } from './pages/training/TrainingSummaryPage';
 import { TrainingCertificateTemplatePage } from './pages/training/TrainingCertificateTemplatePage';
@@ -624,6 +625,37 @@ function ReviewSyncStatsShell({ pathname }: { pathname: string }) {
   );
 }
 
+/** 毕业典礼班级详情隐藏路由：/training/graduation/classes/:classId */
+function isGraduationClassDetailPath(pathname: string) {
+  return /^\/training\/graduation\/classes\/\d+\/?$/.test(pathname);
+}
+
+function GraduationClassDetailShell({ pathname }: { pathname: string }) {
+  const [detailActive, setDetailActive] = React.useState(true);
+  const match = pathname.match(/^\/training\/graduation\/classes\/(\d+)\/?$/);
+  const classId = match ? Number(match[1]) : 0;
+
+  React.useEffect(() => {
+    setDetailActive(true);
+  }, [pathname]);
+
+  return (
+    <AppShell
+      pageMap={pageMap}
+      selectedMenuKeyOverride={detailActive ? 'train_graduation_ceremony' : undefined}
+      contentOverride={
+        detailActive ? (
+          <React.Fragment key={pathname}>
+            <TrainingGraduationClassDetailPage classId={classId} />
+          </React.Fragment>
+        ) : undefined
+      }
+      onMenuNavigate={() => setDetailActive(false)}
+      hideBreadcrumb={detailActive}
+    />
+  );
+}
+
 function App() {
   const pathname = useBrowserPathname();
   const assessorMode = pathname.startsWith('/assessor-scoring');
@@ -633,6 +665,7 @@ function App() {
   const collectionManageMode = Boolean(collectionManageTaskId);
   const competitionEventMode = isCompetitionPath(pathname);
   const reviewSyncStatsMode = isReviewSyncStatsPath(pathname);
+  const graduationClassDetailMode = isGraduationClassDetailPath(pathname);
 
   return (
     <NavigationBlockerProvider>
@@ -645,6 +678,8 @@ function App() {
           <PracticalCollectionApp />
         ) : collectionManageMode ? (
           <CollectionManageShell taskId={decodeURIComponent(collectionManageTaskId!)} />
+        ) : graduationClassDetailMode ? (
+          <GraduationClassDetailShell pathname={pathname} />
         ) : reviewSyncStatsMode ? (
           <ReviewSyncStatsShell pathname={pathname} />
         ) : competitionEventMode ? (

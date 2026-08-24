@@ -84,9 +84,9 @@ public class TrainTeacherBankApplicationService {
     Long tenantId = tenantId();
     LambdaQueryWrapper<TrainTeacherBankEntity> wrapper =
         new LambdaQueryWrapper<TrainTeacherBankEntity>()
-            .eq(TrainTeacherBankEntity::getTenantId, tenantId)
-            .eq(TrainTeacherBankEntity::getDeleted, 0)
-            .orderByDesc(TrainTeacherBankEntity::getCreateTime);
+        .eq(TrainTeacherBankEntity::getTenantId, tenantId)
+        .eq(TrainTeacherBankEntity::getDeleted, 0)
+        .orderByDesc(TrainTeacherBankEntity::getCreateTime);
     if (StringUtils.hasText(req.getKeyword())) {
       String kw = req.getKeyword().trim();
       wrapper.and(
@@ -98,9 +98,9 @@ public class TrainTeacherBankApplicationService {
                   .like(TrainTeacherBankEntity::getIdCardNumber, kw)
                   .or()
                   .like(TrainTeacherBankEntity::getCompany, kw)
-                  .or()
+          .or()
                   .like(TrainTeacherBankEntity::getEducation, kw)
-                  .or()
+          .or()
                   .like(TrainTeacherBankEntity::getMajor, kw));
     }
     if (req.getStatus() != null) {
@@ -913,9 +913,9 @@ public class TrainTeacherBankApplicationService {
     TrainTeacherBankEntity entity =
         mapper.selectOne(
             new LambdaQueryWrapper<TrainTeacherBankEntity>()
-                .eq(TrainTeacherBankEntity::getTenantId, tenantId)
-                .eq(TrainTeacherBankEntity::getId, id)
-                .eq(TrainTeacherBankEntity::getDeleted, 0));
+        .eq(TrainTeacherBankEntity::getTenantId, tenantId)
+        .eq(TrainTeacherBankEntity::getId, id)
+        .eq(TrainTeacherBankEntity::getDeleted, 0));
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "师资不存在");
     }
