@@ -1,7 +1,7 @@
 # 数据库合并方案：gjjddb + gjjddb2026 → gjjddbpro（决策已确认·实施细化版）
 
 > 日期：2026-08-20（2026-08-21 细化分工；2026-08-24 你确认提供两台服务器 SSH 并授权我代执行服务器侧操作后，分工再调整）
-> 状态：**§6 前六项决策已由你确认（2026-08-21）；决策 7（租户 id 统一 10159）2026-08-24 确认并当日已在 gjjddb2026 提前落地**；实施步骤已按"AI 能做 / 必须你做"细化。未经你最终批准，未执行任何变更
+> 状态：**阶段 -1/0/1/2 全部完成，owner 已于 2026-08-25 页面级+真机冒烟后签字 Go，当前处于阶段 3 观察期（1 周）**；每日只读对账已由定时任务自动化（scripts/dbmerge/06_daily_check.py，每日 09:00，报告落 outputs/dbmerge-observe/）；执行与校验详见 `outputs/dbmerge-rehearsal/切换报告.md`
 > 分析数据来源：对两套生产库的实时只读盘点（information_schema + ID 重叠分析），原始数据在 `outputs/dbmerge-analysis/`
 
 ---
@@ -221,7 +221,15 @@
 | 4 | 停机窗口 | **可接受（1-2 小时量级）** | 具体停机日期/时段由你另定（建议业务低谷）；时长以阶段 0.2 预演实测为准修正 |
 | 5 | 旧库只读保留 1 周后归档下线 | **同意** | 阶段 3 / 阶段 4 |
 | 6 | 合并后 sync 镜像通道整体下线，SaaS 直接同库读 | **同意** | 两步走：2.2 切换时关开关；阶段 4.3 观察期满后移除代码。注意：此后 PHP 若回滚旧库需补增量同步（阶段 3 预案） |
-| 7 | 合并后租户 id 统一为 **10159**（PHP 口径）；推翻 2026-08-03 鉴权方案 v1.2 Q2「SaaS 侧统一以 1 为准」的旧口径 | **同意（2026-08-24，已于当日提前在 gjjddb2026 落地）** | SaaS 侧 194 张表 tenant_id 1→10159（458,119 行）+ sys_tenant 主键 1→10159 已执行完毕并复扫通过；代码 8 处默认租户兜底收敛为 `TenantContextHolder.DEFAULT_TENANT_ID=10159`，`APP_DEFAULT_TENANT_ID` 默认值同步修改。执行记录与备份见 `outputs/dbmerge-analysis/FRESHNESS_20260824.md` §4、备份 `outputs/dbmerge-archive/tenant1-backup-20260824.sql.gz`。PHP 侧零改动（代码硬编码 10159、数据本就 10159）。**阶段 1 不再需要租户归一步骤** |
+| 7 | 合并后租户 id 统一为 **10159**（PHP 口径）；推翻 2026-08-03 鉴权方案 v1.2 Q2「SaaS 侧统一以 1 为准」的旧口径 | **同意（2026-08-24，已于当日提前在 gjjddb2026 落地）** |
+| 8 | cms_article*（同名不同义，SaaS 结构是 PHP 子集）：PHP 为准（结构+数据），SaaS 侧 15/10/15 行测试数据不并入 | **默认采纳（PHP 优先），待最终确认** | SaaS 侧数据保留在 gjjddb2026 观察期只读库，可随时补回 |
+| 9 | platform_user 手机重复：SaaS 独有行 id=1000000001（phone 15926840001）与 PHP id=4778 同机同姓名 | **默认采纳：丢弃该 SaaS 行**（避免同机重复账号），待最终确认 | 保留在归档；id=1000000002 为 SaaS 真新增账号，正常并入 |
+| 10 | PHP 页面预演（决策 3 兜底）：8085 临时 vhost 连 rehearsal 库 | **待你确认后建**（8085 为公网新端口，连的是生产数据副本，故不擅自开放） | 预演报告 §六.3 |
+
+**切换配置已预备（2026-08-24，未启用，窗口秒级切换）**：
+- 43：`/opt/guoyu-platform/config/platform-api.env.dbmerge`（MYSQL_URL→gjjddbpro + 双 sync 开关=false；生产 config.php 未动）
+- 114：`/www/wwwroot/default/gjjd_phalcon/app/conf/config.php.dbmerge`（两 DB 段 host→172.16.16.2、账号→php_gjjd、库名→gjjddbpro/gxwebsoft_core；生产 config.php 未动）
+- 窗口切换动作 = 把 `.dbmerge` 覆盖回正式文件（`cp platform-api.env.dbmerge platform-api.env` / `cp config.php.dbmerge config.php`）+ 重启对应服务 SaaS 侧 194 张表 tenant_id 1→10159（458,119 行）+ sys_tenant 主键 1→10159 已执行完毕并复扫通过；代码 8 处默认租户兜底收敛为 `TenantContextHolder.DEFAULT_TENANT_ID=10159`，`APP_DEFAULT_TENANT_ID` 默认值同步修改。执行记录与备份见 `outputs/dbmerge-analysis/FRESHNESS_20260824.md` §4、备份 `outputs/dbmerge-archive/tenant1-backup-20260824.sql.gz`。PHP 侧零改动（代码硬编码 10159、数据本就 10159）。**阶段 1 不再需要租户归一步骤** |
 
 ## 7. 分析产物清单（outputs/dbmerge-analysis/，均已落盘）
 
