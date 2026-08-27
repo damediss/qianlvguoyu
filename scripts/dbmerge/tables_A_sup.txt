@@ -1,0 +1,3 @@
+exam_operate_paper_detail
+train_research_org
+train_solution_badge

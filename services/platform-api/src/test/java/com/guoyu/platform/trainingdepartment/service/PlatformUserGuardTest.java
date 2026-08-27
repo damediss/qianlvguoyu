@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -27,7 +26,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
-/** PHP 来源用户保护（鉴权方案 §3.5.4）：编辑/删除 id<10 亿的用户一律拒绝 */
+/**
+ * 用户侧 10 亿区间隔离移除回归（单库化 Q10）：合并库 platform_user id 为 int AUTO，
+ * requireSaaSLocalUser 已删除——小 id（原 PHP 来源）用户编辑/删除一律放行，不再按来源拦截。
+ */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class PlatformUserGuardTest {
@@ -70,33 +72,43 @@ class PlatformUserGuardTest {
     return req;
   }
 
+  private static PlatformUserEntity entity(Long id) {
+    PlatformUserEntity e = new PlatformUserEntity();
+    e.setId(id);
+    e.setRealname("原姓名");
+    e.setIdcard("450103199001011234");
+    e.setPhone("13800138000");
+    e.setDeleted(0);
+    return e;
+  }
+
   @Test
-  void updatePhpSourcedUserIsRejected() {
+  void updateSmallIdUserIsAllowed() {
+    // 原 PHP 来源用户（id<10 亿）：区间守卫移除后可正常编辑
     try (MockedStatic<SecurityContext> ignored = mockCurrentAdmin()) {
       when(mapper.selectCount(any())).thenReturn(0L);
-      assertThatThrownBy(() -> service.save(req(4695L)))
-          .isInstanceOf(BusinessException.class)
-          .hasMessageContaining("该用户来源于工匠基地平台，请前往原平台维护");
-      verify(mapper, never()).updateById(any(PlatformUserEntity.class));
+      when(mapper.selectOne(any())).thenReturn(entity(4695L));
+      service.save(req(4695L));
+      verify(mapper).updateById(any(PlatformUserEntity.class));
     }
   }
 
   @Test
-  void deletePhpSourcedUserIsRejected() {
-    assertThatThrownBy(() -> service.delete(4695L))
-        .isInstanceOf(BusinessException.class)
-        .hasMessageContaining("该用户来源于工匠基地平台，请前往原平台维护");
-    verify(mapper, never()).deleteById(any(Long.class));
+  void deleteSmallIdUserIsAllowed() {
+    try (MockedStatic<SecurityContext> ignored = mockCurrentAdmin()) {
+      when(mapper.selectOne(any())).thenReturn(entity(4695L));
+      service.delete(4695L);
+      verify(mapper).deleteById(4695L);
+    }
   }
 
   @Test
-  void deleteSaaSLocalUserIsAllowed() {
+  void deleteNonExistingUserStillRejected() {
+    // 守卫移除≠放开存在性校验：记录不存在仍报业务异常（防误删语义不变）
     try (MockedStatic<SecurityContext> ignored = mockCurrentAdmin()) {
-      PlatformUserEntity local = new PlatformUserEntity();
-      local.setId(2_000_000_000L);
-      when(mapper.selectOne(any())).thenReturn(local);
-      service.delete(2_000_000_000L);
-      verify(mapper).deleteById(2_000_000_000L);
+      when(mapper.selectOne(any())).thenReturn(null);
+      assertThatThrownBy(() -> service.delete(4695L))
+          .isInstanceOf(BusinessException.class);
     }
   }
 

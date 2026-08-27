@@ -1,6 +1,6 @@
 package com.guoyu.platform.exam.reviewsync.service;
 
-import com.guoyu.platform.integration.php.dto.PhpQuestion;
+import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestion;
 import java.util.List;
 
 /**

@@ -11,7 +11,6 @@ import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.UserMapper;
-import com.guoyu.platform.integration.php.UserProvisioningProperties;
 import com.guoyu.platform.trainingdepartment.dto.SignupAuditReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListQueryReq;
@@ -506,9 +505,7 @@ public class TrainPeopleListApplicationService {
         .eq(TrainPeopleListEntity::getTrainClassId, classId)
         .eq(TrainPeopleListEntity::getType, "student")
         .eq(TrainPeopleListEntity::getDeleted, 0)
-        .and(w -> w.isNull(TrainPeopleListEntity::getPlatformUserId)
-            .or()
-            .ge(TrainPeopleListEntity::getPlatformUserId, UserProvisioningProperties.LOCAL_ID_BOUNDARY)));
+        .isNull(TrainPeopleListEntity::getPlatformUserId));
 
     PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
     int linked = 0;

@@ -19,12 +19,13 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * AI 同步学 App 接口（/appreviewsync/**）—— 《AI同步学（学员复习）实现方案》§7。
  *
- * <p>鉴权约定（鉴权方案 v1.3 §3.3）：
+ * <p>鉴权约定（鉴权方案 v1.3 §3.3；单库化 Q7）：
  * <ul>
- *   <li>不加 SecurityConfig/TenantContextFilter 白名单——坏 token 由 EntryPoint 返 401，缺租户头返 400；</li>
+ *   <li>不加 SecurityConfig 白名单——坏 token 由 EntryPoint 返 401；</li>
  *   <li>不用 {@code @PreAuthorize}（App token 的 authorities 为空）；</li>
  *   <li>userId 只取 {@link PlatformUserPrincipal}（不信任前端传的任何 userId）；</li>
- *   <li>tenantId 取 {@link TenantContextHolder}（header=1，App principal 的 tenantId 恒为 0）。</li>
+ *   <li>tenantId 取 {@link TenantContextHolder}——TenantContextFilter 对本前缀强制 10159，
+ *       忽略 X-Tenant-Id header（旧版 App 仍发 1，服务端兜底，App 发版改默认值前即可上线）。</li>
  * </ul>
  * 响应：App 风格 {@code {code:0, msg:"成功", data:{}}}；业务异常 code=1。
  */

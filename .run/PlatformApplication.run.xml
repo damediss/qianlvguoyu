@@ -9,7 +9,6 @@
       <env name="FILE_LOCAL_ROOT" value="$PROJECT_DIR$/../../Weknora_agent/.runtime/platform-files" />
       <env name="FILE_OBJECT_KEY_PREFIX" value="dev" />
       <env name="SPRING_FLYWAY_ENABLED" value="false" />
-      <env name="PLATFORM_SYNC_ENABLED" value="false" />
       <env name="REVIEW_SYNC_JOBS_ENABLED" value="false" />
       <env name="COMPETITION_MESSAGING_ENABLED" value="false" />
       <env name="SMS_ENABLED" value="false" />

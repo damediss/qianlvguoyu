@@ -15,9 +15,9 @@ import org.springframework.scheduling.annotation.Scheduled;
  * {@code TenantContextHolder.setTenantId(DEFAULT_TENANT_ID=10159)} + finally clear——MyBatis-Plus 多租户拦截器
  * 依赖该上下文；job 内不调 SecurityContext。
  *
- * <p>开关：{@code platform.review-sync.jobs-enabled=false} 时整体不装配（application.yml 默认 false，
- * 仅生产服务器 env 显式 {@code REVIEW_SYNC_JOBS_ENABLED=true} 开启——任务会读 PHP 库，本机调试不打生产库；
- * 测试环境 src/test/resources 已关闭）。
+ * <p>单库化：exam_result 已改作答事务内同步直写（ExamResultWriteRepository），原 5min 回写补偿 job 拆除。
+ * 开关：{@code platform.review-sync.jobs-enabled=false} 时整体不装配（application.yml 默认 false，
+ * 仅生产服务器 env 显式 {@code REVIEW_SYNC_JOBS_ENABLED=true} 开启；测试环境 src/test/resources 已关闭）。
  */
 @Slf4j
 @Configuration
@@ -26,12 +26,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 public class ReviewSyncScheduler {
 
   private final ReviewPlanApplicationService reviewService;
-  private final PhpResultWritebackService writebackService;
 
-  public ReviewSyncScheduler(ReviewPlanApplicationService reviewService,
-      PhpResultWritebackService writebackService) {
+  public ReviewSyncScheduler(ReviewPlanApplicationService reviewService) {
     this.reviewService = reviewService;
-    this.writebackService = writebackService;
   }
 
   /** 每日 04:00：遍历 active 计划，中断检测 → 物化当日任务 → 异步鼓励语 */
@@ -49,18 +46,6 @@ public class ReviewSyncScheduler {
   @Scheduled(cron = "${platform.review-sync.weekly-cron:0 0 5 * * SUN}")
   public void weeklyCleanup() {
     runWithTenant(reviewService::weeklyCleanup);
-  }
-
-  /** 每 5min：exam_result 回写补偿（php_synced IN (0,2)，单批 ≤500） */
-  @Scheduled(fixedDelayString = "${platform.review-sync.writeback-compensate-ms:300000}",
-      initialDelayString = "${platform.review-sync.writeback-compensate-initial-ms:60000}")
-  public void writebackCompensate() {
-    runWithTenant(() -> {
-      int done = writebackService.compensateBatch();
-      if (done > 0) {
-        log.info("[AI复习] 回写补偿完成：处理 {} 条", done);
-      }
-    });
   }
 
   private void runWithTenant(Runnable runnable) {

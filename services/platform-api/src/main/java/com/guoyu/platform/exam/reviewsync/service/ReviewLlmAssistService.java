@@ -129,7 +129,7 @@ public class ReviewLlmAssistService {
       FaqModelConfigApplicationService modelConfigService,
       DictMapper dictMapper,
       AiGenerationDraftMapper draftMapper,
-      @Qualifier("reviewSyncExecutor") ThreadPoolTaskExecutor executor) {
+      @Qualifier("reviewLlmAssistExecutor") ThreadPoolTaskExecutor executor) {
     this.llmClient = llmClient;
     this.modelConfigService = modelConfigService;
     this.dictMapper = dictMapper;

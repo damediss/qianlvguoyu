@@ -50,6 +50,9 @@ public class TenantContextFilter extends OncePerRequestFilter {
       "POST:/api/competition/player/auth/login"
   );
 
+  /** AI 同步学 App 链路前缀：该前缀全部业务数据均属租户 10159（合并库 gjjddbpro 唯一租户） */
+  private static final String APP_REVIEW_SYNC_PREFIX = "/api/appreviewsync";
+
   @Override
   protected void doFilterInternal(
       HttpServletRequest request,
@@ -58,6 +61,20 @@ public class TenantContextFilter extends OncePerRequestFilter {
   ) throws ServletException, IOException {
     String path = request.getRequestURI();
     String method = request.getMethod();
+
+    // /appreviewsync/** 强制租户 10159，忽略 X-Tenant-Id header（单库化 Q7 第一轨：
+    // 旧版 App 仍发 header=1，若按 header 过滤会查空/写错/撞 uk_ai_review_plan_user_exam 唯一键）；
+    // header 缺失也不再 400——服务端兜底，App 发版改默认值前即可上线
+    if (path.equals(APP_REVIEW_SYNC_PREFIX) || path.startsWith(APP_REVIEW_SYNC_PREFIX + "/")) {
+      try {
+        TenantContextHolder.setTenantId(TenantContextHolder.DEFAULT_TENANT_ID);
+        filterChain.doFilter(request, response);
+      } finally {
+        TenantContextHolder.clear();
+      }
+      return;
+    }
+
     String tenantIdHeader = request.getHeader(TENANT_HEADER);
     if ((tenantIdHeader == null || tenantIdHeader.isBlank())
         && path.equals("/api/ws/practical-scoring")) {

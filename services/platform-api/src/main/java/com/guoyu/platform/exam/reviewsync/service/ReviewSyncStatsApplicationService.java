@@ -9,6 +9,7 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
 import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
+import com.guoyu.platform.exam.reviewsync.dto.ReviewKnowledgeNode;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewAnswerEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewMockPaperEntity;
 import com.guoyu.platform.exam.reviewsync.entity.AiReviewPlanEntity;
@@ -18,9 +19,6 @@ import com.guoyu.platform.exam.reviewsync.mapper.AiReviewMockPaperMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewPlanMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewWrongItemMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.ReviewSyncStatsMapper;
-import com.guoyu.platform.integration.php.PhpExamQueryService;
-import com.guoyu.platform.integration.php.dto.PhpKnowledgeNode;
-import com.guoyu.platform.integration.php.dto.PhpQuestionDetail;
 import com.guoyu.platform.trainingdepartment.entity.PlatformUserEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamListEntity;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserMapper;
@@ -37,10 +35,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * AI 同步学统计用例编排（《AI同步学统计功能设计方案》v1.1 §5）。
+ * AI 同步学统计用例编排（《AI同步学统计功能设计方案》v1.1 §5；单库化改造后全部读主库 gjjddbpro）。
  *
- * <p>全部只读；tenant_id 由多租户插件自动追加。考试计划标题读 SaaS 本地 train_exam_list
- * （一次性导入，方案 §3）；知识树标题读 PHP 库（失败降级为显示 id，统计主链路不挂）。
+ * <p>全部只读；tenant_id 由多租户插件自动追加。考试计划标题读主库 train_exam_list；
+ * 知识树标题读主库 exam_knowledge_structure（失败降级为显示 id，统计主链路不挂）。
  */
 @Slf4j
 @Service
@@ -61,7 +59,7 @@ public class ReviewSyncStatsApplicationService {
   private final ExamExamDetailMapper examDetailMapper;
   private final PlatformUserMapper platformUserMapper;
   private final TrainExamListMapper trainExamListMapper;
-  private final PhpExamQueryService phpQuery;
+  private final ReviewQuestionQueryService reviewQuery;
   private final ObjectMapper objectMapper;
 
   public ReviewSyncStatsApplicationService(ReviewSyncStatsMapper statsMapper,
@@ -72,7 +70,7 @@ public class ReviewSyncStatsApplicationService {
       ExamExamDetailMapper examDetailMapper,
       PlatformUserMapper platformUserMapper,
       TrainExamListMapper trainExamListMapper,
-      PhpExamQueryService phpQuery,
+      ReviewQuestionQueryService reviewQuery,
       ObjectMapper objectMapper) {
     this.statsMapper = statsMapper;
     this.planMapper = planMapper;
@@ -82,7 +80,7 @@ public class ReviewSyncStatsApplicationService {
     this.examDetailMapper = examDetailMapper;
     this.platformUserMapper = platformUserMapper;
     this.trainExamListMapper = trainExamListMapper;
-    this.phpQuery = phpQuery;
+    this.reviewQuery = reviewQuery;
     this.objectMapper = objectMapper;
   }
 
@@ -207,10 +205,10 @@ public class ReviewSyncStatsApplicationService {
     }
     List<Map<String, Object>> agg = nullToEmptyList(statsMapper.knowledgeAgg(examId, platformUserId));
     // 知识树：计划快照 course_id → PHP 全树（失败降级：L3 平铺、标题显示 id）
-    Map<Long, PhpKnowledgeNode> treeById = loadKnowledgeTreeSafe(examId);
+    Map<Long, ReviewKnowledgeNode> treeById = loadKnowledgeTreeSafe(examId);
     Map<Long, long[]> l1Agg = new LinkedHashMap<>(); // l1Id -> [answers, corrects, answeredL3, totalL3]
     Map<Long, Integer> l1TotalL3 = new HashMap<>();
-    for (PhpKnowledgeNode node : treeById.values()) {
+    for (ReviewKnowledgeNode node : treeById.values()) {
       if (node.level() != null && node.level() == 3) {
         Long l1 = findAncestorAtLevel(treeById, node, 1);
         if (l1 != null) {
@@ -226,7 +224,7 @@ public class ReviewSyncStatsApplicationService {
       }
       long answers = asLong(row.get("answers"));
       long corrects = asLong(row.get("corrects"));
-      PhpKnowledgeNode node = treeById.get(knowledgeId);
+      ReviewKnowledgeNode node = treeById.get(knowledgeId);
       Long l1 = node != null ? findAncestorAtLevel(treeById, node, 1) : null;
       long[] bucket = l1Agg.computeIfAbsent(l1 != null ? l1 : -1L, k -> new long[4]);
       bucket[0] += answers;
@@ -244,7 +242,7 @@ public class ReviewSyncStatsApplicationService {
     List<Map<String, Object>> l1List = new ArrayList<>();
     for (Map.Entry<Long, long[]> entry : l1Agg.entrySet()) {
       long[] v = entry.getValue();
-      PhpKnowledgeNode l1Node = treeById.get(entry.getKey());
+      ReviewKnowledgeNode l1Node = treeById.get(entry.getKey());
       Map<String, Object> item = new LinkedHashMap<>();
       item.put("knowledgeId", entry.getKey() == -1L ? null : entry.getKey());
       item.put("title", l1Node != null && l1Node.title() != null ? l1Node.title()
@@ -266,8 +264,8 @@ public class ReviewSyncStatsApplicationService {
   }
 
   /** 沿 parent 链向上找 level=targetLevel 的祖先 id；找不到返回 null（防循环，最多 8 层） */
-  private Long findAncestorAtLevel(Map<Long, PhpKnowledgeNode> treeById, PhpKnowledgeNode node, int targetLevel) {
-    PhpKnowledgeNode current = node;
+  private Long findAncestorAtLevel(Map<Long, ReviewKnowledgeNode> treeById, ReviewKnowledgeNode node, int targetLevel) {
+    ReviewKnowledgeNode current = node;
     for (int i = 0; i < 8 && current != null; i++) {
       if (current.level() != null && current.level() == targetLevel) {
         return current.id();
@@ -278,9 +276,9 @@ public class ReviewSyncStatsApplicationService {
     return null;
   }
 
-  /** PHP 知识树加载（失败降级空 Map，统计主链路不挂 —— 方案 §5.5） */
-  private Map<Long, PhpKnowledgeNode> loadKnowledgeTreeSafe(Long examId) {
-    Map<Long, PhpKnowledgeNode> treeById = new HashMap<>();
+  /** 主库知识树加载（失败降级空 Map，统计主链路不挂 —— 方案 §5.5） */
+  private Map<Long, ReviewKnowledgeNode> loadKnowledgeTreeSafe(Long examId) {
+    Map<Long, ReviewKnowledgeNode> treeById = new HashMap<>();
     try {
       AiReviewPlanEntity plan = planMapper.selectOne(new LambdaQueryWrapper<AiReviewPlanEntity>()
           .eq(AiReviewPlanEntity::getExamId, examId)
@@ -289,11 +287,11 @@ public class ReviewSyncStatsApplicationService {
       if (plan == null || plan.getCourseId() == null) {
         return treeById;
       }
-      for (PhpKnowledgeNode node : phpQuery.loadKnowledgeTree(plan.getCourseId())) {
+      for (ReviewKnowledgeNode node : reviewQuery.loadKnowledgeTree(plan.getCourseId())) {
         treeById.put(node.id(), node);
       }
     } catch (Exception e) {
-      log.warn("[AI复习统计] PHP 知识树加载失败，降级为显示知识点 id：examId={} error={}", examId, e.getMessage());
+      log.warn("[AI复习统计] 知识树加载失败，降级为显示知识点 id：examId={} error={}", examId, e.getMessage());
     }
     return treeById;
   }
@@ -462,8 +460,8 @@ public class ReviewSyncStatsApplicationService {
             .orderByDesc(AiReviewWrongItemEntity::getLastWrongTime)
             .last("LIMIT " + DETAIL_WRONG_LIMIT));
 
-    // 题目完整信息（题型/题目/选项/正确答案）：SaaS 本地 exam_exam_detail 优先（运维已同步 PHP 题库，同 id），
-    // 本地缺失的 id 回退 PHP 库；两者都失败降级为只显示题号（统计主链路不挂，方案 §5.5）
+    // 题目完整信息（题型/题目/选项/正确答案）：单库化后 exam_exam_detail 即合并表，一次主库直查；
+    // 缺失 id 降级为只显示题号（统计主链路不挂，方案 §5.5）
     List<Long> wrongQids = wrongItems.stream().map(AiReviewWrongItemEntity::getQuestionId).toList();
     Map<Long, QuestionView> detailByQid = loadQuestionViews(wrongQids);
     Map<Long, AiReviewAnswerEntity> latestAnswerByQid = latestAnswersByQuestion(plan.getId(), wrongQids);
@@ -551,8 +549,8 @@ public class ReviewSyncStatsApplicationService {
   }
 
   /**
-   * 题目详情批量加载：SaaS 本地 exam_exam_detail 优先（运维已将 PHP 题库同步过来，同 id），
-   * 本地缺失的 id 回退 PHP 库（本机无 PHP 数据源时该步整体跳过）；仍缺失则降级只显示题号。
+   * 题目详情批量加载：单库化后 exam_exam_detail 即合并库唯一题库，一次主库直查（原"本地优先→回退 PHP"
+   * 三重链已折叠）；查询异常整体降级只显示题号，统计主链路不挂。
    */
   private Map<Long, QuestionView> loadQuestionViews(List<Long> questionIds) {
     if (questionIds == null || questionIds.isEmpty()) {
@@ -568,24 +566,7 @@ public class ReviewSyncStatsApplicationService {
         }
       }
     } catch (Exception e) {
-      log.warn("[AI复习统计] 本地题库加载失败：error={}", e.getMessage());
-    }
-    List<Long> missing = questionIds.stream().filter(qid -> !result.containsKey(qid)).toList();
-    if (!missing.isEmpty()) {
-      try {
-        Map<Long, PhpQuestionDetail> phpDetails = phpQuery.loadQuestionDetails(missing);
-        if (phpDetails != null) {
-          for (Map.Entry<Long, PhpQuestionDetail> entry : phpDetails.entrySet()) {
-            PhpQuestionDetail d = entry.getValue();
-            if (d != null) {
-              result.put(entry.getKey(), new QuestionView(d.type(), d.content(), d.answerJson()));
-            }
-          }
-        }
-      } catch (Exception e) {
-        log.warn("[AI复习统计] PHP 题库回退加载失败，缺失题号降级显示：missing={} error={}",
-            missing.size(), e.getMessage());
-      }
+      log.warn("[AI复习统计] 题库加载失败，缺失题号降级显示：error={}", e.getMessage());
     }
     return result;
   }

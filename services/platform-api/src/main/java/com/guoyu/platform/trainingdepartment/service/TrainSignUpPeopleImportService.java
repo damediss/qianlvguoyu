@@ -18,7 +18,6 @@ import com.guoyu.platform.trainingdepartment.mapper.PlatformUserDetailMapper;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
-import com.guoyu.platform.integration.php.UserProvisioningProperties;
 import com.guoyu.platform.trainingdepartment.vo.SignUpPeopleImportResultVO;
 import java.io.IOException;
 import java.io.InputStream;
@@ -76,7 +75,6 @@ public class TrainSignUpPeopleImportService {
   private final TrainingOperatorScopeService operatorScopeService;
   private final PlatformUserEnsureService platformUserEnsureService;
   private final ClassCollectionApplicationService classCollectionApplicationService;
-  private final UserProvisioningProperties userProvisioningProperties;
   private final ObjectMapper objectMapper;
   private final String cdnPath;
 
@@ -90,7 +88,6 @@ public class TrainSignUpPeopleImportService {
       TrainingOperatorScopeService operatorScopeService,
       PlatformUserEnsureService platformUserEnsureService,
       ClassCollectionApplicationService classCollectionApplicationService,
-      UserProvisioningProperties userProvisioningProperties,
       ObjectMapper objectMapper,
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath) {
     this.signUpMapper = signUpMapper;
@@ -102,7 +99,6 @@ public class TrainSignUpPeopleImportService {
     this.operatorScopeService = operatorScopeService;
     this.platformUserEnsureService = platformUserEnsureService;
     this.classCollectionApplicationService = classCollectionApplicationService;
-    this.userProvisioningProperties = userProvisioningProperties;
     this.objectMapper = objectMapper;
     this.cdnPath = cdnPath;
   }
@@ -164,9 +160,6 @@ public class TrainSignUpPeopleImportService {
     int invalid = 0;
     List<String> errors = new ArrayList<>();
     PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
-    if (!userProvisioningProperties.isPhpWriteEnabled()) {
-      errors.add("警告: platform.user-provisioning.php-write-enabled=false，仅写 SaaS，PHP/App 不会开户");
-    }
 
     int rowIdx = 0;
     for (List<String> row : rows) {
@@ -347,9 +340,6 @@ public class TrainSignUpPeopleImportService {
     List<String> errors = new ArrayList<>();
     LocalDateTime now = LocalDateTime.now();
     PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
-    if (!userProvisioningProperties.isPhpWriteEnabled()) {
-      errors.add("警告: platform.user-provisioning.php-write-enabled=false，仅写 SaaS，PHP/App 不会开户");
-    }
 
     for (PlatformUserEntity user : users) {
       if (!StringUtils.hasText(user.getIdcard())) {

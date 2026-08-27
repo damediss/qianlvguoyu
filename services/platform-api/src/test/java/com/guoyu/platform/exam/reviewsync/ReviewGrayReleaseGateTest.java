@@ -17,8 +17,8 @@ import com.guoyu.platform.exam.reviewsync.mapper.AiReviewMockPaperMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewPlanDayMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewPlanMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewWrongItemMapper;
-import com.guoyu.platform.exam.reviewsync.service.PhpResultWritebackService;
-import com.guoyu.platform.integration.php.PhpExamQueryService;
+import com.guoyu.platform.exam.reviewsync.mapper.ExamResultWriteRepository;
+import com.guoyu.platform.exam.reviewsync.service.ReviewQuestionQueryService;
 import com.guoyu.platform.exam.reviewsync.service.ReviewLlmAssistService;
 import com.guoyu.platform.exam.reviewsync.service.ReviewPlanApplicationService;
 import com.guoyu.platform.system.entity.DictEntity;
@@ -40,8 +40,8 @@ class ReviewGrayReleaseGateTest {
       mock(AiReviewMockPaperMapper.class),
       mock(AiReviewMockPaperItemMapper.class),
       whitelistMapper,
-      mock(PhpExamQueryService.class),
-      mock(PhpResultWritebackService.class),
+      mock(ReviewQuestionQueryService.class),
+      mock(ExamResultWriteRepository.class),
       mock(ReviewLlmAssistService.class),
       dictMapper,
       new ObjectMapper());

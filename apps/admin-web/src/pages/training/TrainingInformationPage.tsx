@@ -405,9 +405,6 @@ export function TrainingInformationPage() {
       const skippedHint = result.skipped > 0 ? `，跳过重复 ${result.skipped} 人` : '';
       const errHint = result.errors?.length ? `；注意：${result.errors.slice(0, 2).join('；')}` : '';
       message.success(`导入成功: ${result.inserted} 人${skippedHint}${syncHint}${errHint}`);
-      if (result.errors?.some((e) => e.includes('php-write-enabled=false') || e.includes('PHP'))) {
-        message.warning(result.errors.find((e) => e.includes('php-write') || e.includes('PHP'))!);
-      }
       closeImportStudentModal();
       setSelectedPeopleIds([]);
       refetchPeople();
@@ -457,9 +454,6 @@ export function TrainingInformationPage() {
       const skippedHint = result.skipped > 0 ? `，跳过重复 ${result.skipped} 人` : '';
       const errHint = result.errors?.length ? `；注意：${result.errors.slice(0, 2).join('；')}` : '';
       message.success(`导入成功: ${result.inserted} 人${skippedHint}${syncHint}${errHint}`);
-      if (result.errors?.some((e) => e.includes('php-write-enabled=false') || e.includes('PHP'))) {
-        message.warning(result.errors.find((e) => e.includes('php-write') || e.includes('PHP'))!);
-      }
       closeImportModal();
       setSelectedPeopleIds([]);
       refetchPeople();

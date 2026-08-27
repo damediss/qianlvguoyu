@@ -1,8 +1,5 @@
 # 测试环境覆盖配置（与主 application.yml 按键合并，测试 classpath 优先）
-# 关闭三表同步调度：避免测试上下文启动后周期任务尝试连接 PHP 库
+# 关闭 AI 同步学定时任务（每日物化/周日清理），避免测试上下文启动后跑周期任务
 platform:
-  sync:
-    enabled: false
-  # 关闭 AI 同步学定时任务
   review-sync:
     jobs-enabled: false

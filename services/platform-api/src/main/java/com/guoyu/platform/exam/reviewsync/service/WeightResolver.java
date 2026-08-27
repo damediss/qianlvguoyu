@@ -1,8 +1,8 @@
 package com.guoyu.platform.exam.reviewsync.service;
 
-import com.guoyu.platform.integration.php.dto.PhpCourseWeights;
-import com.guoyu.platform.integration.php.dto.PhpKnowledgeNode;
-import com.guoyu.platform.integration.php.dto.PhpQuestion;
+import com.guoyu.platform.exam.reviewsync.dto.ReviewCourseWeights;
+import com.guoyu.platform.exam.reviewsync.dto.ReviewKnowledgeNode;
+import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestion;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -51,17 +51,17 @@ public final class WeightResolver {
    * @param tree          课程知识结构全树
    * @param questions     题目全集（必做池候选）
    */
-  public static ResolvedWeights resolve(PhpCourseWeights courseWeights, List<PhpKnowledgeNode> tree,
-      List<PhpQuestion> questions) {
-    Map<Long, PhpKnowledgeNode> nodeById = new HashMap<>();
-    for (PhpKnowledgeNode node : tree) {
+  public static ResolvedWeights resolve(ReviewCourseWeights courseWeights, List<ReviewKnowledgeNode> tree,
+      List<ReviewQuestion> questions) {
+    Map<Long, ReviewKnowledgeNode> nodeById = new HashMap<>();
+    for (ReviewKnowledgeNode node : tree) {
       nodeById.put(node.id(), node);
     }
 
     // L3 → L1 映射 + 每 L3 题数
     Map<Long, Long> l1ByL3 = new HashMap<>();
     Map<Long, Long> questionCountByL3 = new HashMap<>();
-    for (PhpQuestion question : questions) {
+    for (ReviewQuestion question : questions) {
       Long l3 = question.knowledgeId();
       if (l3 == null) {
         continue;
@@ -79,7 +79,7 @@ public final class WeightResolver {
         continue;
       }
       questionCountByL1.merge(l1, questionCountByL3.get(entry.getKey()), Long::sum);
-      PhpKnowledgeNode l1Node = nodeById.get(l1);
+      ReviewKnowledgeNode l1Node = nodeById.get(l1);
       l1Titles.putIfAbsent(l1, l1Node != null ? l1Node.title() : String.valueOf(l1));
     }
 
@@ -90,7 +90,7 @@ public final class WeightResolver {
       weightSource = courseWeights.sourceType() != null ? courseWeights.sourceType() : "custom";
       // 配置可能挂在任意层级（人工配置实测有挂 L2 的）：统一归并到 L1 祖先节点
       Map<Long, Integer> configured = new LinkedHashMap<>();
-      for (PhpCourseWeights.WeightItem item : courseWeights.items()) {
+      for (ReviewCourseWeights.WeightItem item : courseWeights.items()) {
         Long l1 = findL1(nodeById, item.knowledgeId());
         if (l1 != null) {
           configured.merge(l1, item.rate(), Integer::sum);
@@ -131,11 +131,11 @@ public final class WeightResolver {
   }
 
   /** 沿 parent 链爬到 level=1 的节点；爬不到返回 null（数据异常容忍） */
-  private static Long findL1(Map<Long, PhpKnowledgeNode> nodeById, long startId) {
+  private static Long findL1(Map<Long, ReviewKnowledgeNode> nodeById, long startId) {
     Long current = startId;
     int guard = 0;
     while (current != null && guard++ < 10) {
-      PhpKnowledgeNode node = nodeById.get(current);
+      ReviewKnowledgeNode node = nodeById.get(current);
       if (node == null) {
         return null;
       }

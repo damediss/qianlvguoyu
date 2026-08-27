@@ -39,9 +39,8 @@ public class SecurityConfig {
   @Bean
   public AppTokenAuthFilter appTokenAuthFilter(
       com.guoyu.platform.app.mapper.PlatformUserTokenMapper tokenMapper,
-      com.guoyu.platform.trainingdepartment.mapper.PlatformUserMapper userMapper,
-      com.guoyu.platform.integration.php.PhpTokenQueryService phpTokenQueryService) {
-    return new AppTokenAuthFilter(tokenMapper, userMapper, phpTokenQueryService);
+      com.guoyu.platform.trainingdepartment.mapper.PlatformUserMapper userMapper) {
+    return new AppTokenAuthFilter(tokenMapper, userMapper);
   }
 
   @Bean

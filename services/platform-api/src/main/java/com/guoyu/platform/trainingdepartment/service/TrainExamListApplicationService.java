@@ -43,24 +43,6 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class TrainExamListApplicationService {
 
-  /**
-   * PHP 来源考试计划 id 上界（AI同步学统计方案 v1.1 §3.2/§3.3）：
-   * train_exam_list 由 PHP 库一次性导入后 AUTO_INCREMENT=100000，
-   * id < 100000 即 PHP 来源行；SaaS 本地新建行走 100000 以上区间。
-   */
-  private static final long PHP_SOURCE_EXAM_ID_BOUNDARY = 100_000L;
-
-  /**
-   * PHP 来源行只读守卫：编辑/删除/考生写操作一律拦截（与同步重导的覆盖语义冲突），
-   * SaaS 本地新建计划放行。参照 PlatformUserApplicationService.requireSaaSLocalUser 模式。
-   */
-  private void requireSaaSLocalExam(Long examId) {
-    if (examId != null && examId < PHP_SOURCE_EXAM_ID_BOUNDARY) {
-      log.warn("[考试管理] 拦截对 PHP 来源考试计划的写操作：examId={}", examId);
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "该考试计划来源于工匠基地平台，请前往原平台维护");
-    }
-  }
-
   private final TrainExamListMapper mapper;
   private final TrainExamWorkTypeListMapper workTypeListMapper;
   private final TrainExamPeopleListMapper peopleListMapper;
@@ -175,7 +157,6 @@ public class TrainExamListApplicationService {
 
   @Transactional
   public TrainExamListVO update(Long id, TrainExamListUpdateReq req) {
-    requireSaaSLocalExam(id);
     TrainExamListEntity entity = getExisting(id);
     Long userId = SecurityContext.currentUser().getUserId();
     if (StringUtils.hasText(req.getTitle())) { entity.setTitle(req.getTitle()); }
@@ -216,7 +197,6 @@ public class TrainExamListApplicationService {
 
   @Transactional
   public void delete(Long id) {
-    requireSaaSLocalExam(id);
     TrainExamListEntity entity = getExisting(id);
     mapper.deleteById(entity.getId());
   }
@@ -247,7 +227,6 @@ public class TrainExamListApplicationService {
   public void updatePeopleGrade(Long id, Integer inWhiteList, BigDecimal normalScore,
       BigDecimal score, BigDecimal totalScore) {
     TrainExamPeopleListEntity entity = getPeopleExisting(id);
-    requireSaaSLocalExam(entity.getExamId());
     if (inWhiteList != null) {
       entity.setInWhiteList(inWhiteList);
     }
@@ -268,7 +247,6 @@ public class TrainExamListApplicationService {
     if (examId == null || examId == 0) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "考试ID不能为空");
     }
-    requireSaaSLocalExam(examId);
     if (!StringUtils.hasText(idCardNumbers)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "没有要导入的身份证号");
     }
@@ -313,9 +291,6 @@ public class TrainExamListApplicationService {
             .eq(TrainExamPeopleListEntity::getTenantId, tenantId)
             .in(TrainExamPeopleListEntity::getId, ids)
             .eq(TrainExamPeopleListEntity::getDeleted, 0));
-    for (TrainExamPeopleListEntity entity : existingEntities) {
-      requireSaaSLocalExam(entity.getExamId());
-    }
     List<Long> existing = existingEntities.stream().map(TrainExamPeopleListEntity::getId).toList();
     if (!existing.isEmpty()) {
       peopleListMapper.deleteByIds(existing);
@@ -332,7 +307,6 @@ public class TrainExamListApplicationService {
     if (examId == null || trainId == null) {
       return 0;
     }
-    requireSaaSLocalExam(examId);
     // 取培训信息以获得 workTypeId / workTypeLevel
     TrainInfoListEntity trainInfo = trainInfoListMapper.selectById(trainId);
     Long workTypeId = trainInfo != null ? trainInfo.getWorkTypeId() : null;

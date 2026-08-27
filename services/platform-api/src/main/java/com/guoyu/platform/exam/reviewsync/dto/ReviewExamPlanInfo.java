@@ -1,9 +1,9 @@
-package com.guoyu.platform.integration.php.dto;
+package com.guoyu.platform.exam.reviewsync.dto;
 
 import java.util.List;
 
-/** PHP 考试计划（train_exam_list）与其绑定的题目范围 */
-public record PhpExamPlanInfo(
+/** 考试计划（train_exam_list）与其绑定的题目范围 */
+public record ReviewExamPlanInfo(
     long id,
     String title,
     Integer source,

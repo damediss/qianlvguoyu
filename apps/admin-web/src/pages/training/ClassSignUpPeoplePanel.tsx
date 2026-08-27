@@ -365,9 +365,6 @@ export function ClassSignUpPeoplePanel({
         const skippedHint = (result.skipped ?? 0) > 0 ? `，跳过重复 ${result.skipped} 人` : '';
         const errHint = result.errors?.length ? `；注意：${result.errors.slice(0, 2).join('；')}` : '';
         message.success(`导入成功: ${result.inserted ?? 0} 人${skippedHint}${syncHint}${errHint}`);
-        if (result.errors?.some((e) => e.includes('php-write-enabled=false') || e.includes('PHP'))) {
-          message.warning(result.errors.find((e) => e.includes('php-write') || e.includes('PHP'))!);
-        }
         setImportOpen(false);
         notifyChanged();
         onSuccess?.(result);
@@ -398,9 +395,6 @@ export function ClassSignUpPeoplePanel({
         message.success(
           `导入成功 ${result.inserted ?? 0} 人${skippedHint}${failedHint}${syncHint}${errHint}`,
         );
-        if (result.errors?.some((e) => e.includes('php-write-enabled=false') || e.includes('PHP'))) {
-          message.warning(result.errors.find((e) => e.includes('php-write') || e.includes('PHP'))!);
-        }
         setRosterImportOpen(false);
         notifyChanged();
         onSuccess?.(result);
@@ -428,9 +422,6 @@ export function ClassSignUpPeoplePanel({
       const skippedHint = result.skipped > 0 ? `，跳过重复 ${result.skipped} 人` : '';
       const errHint = result.errors?.length ? `；注意：${result.errors.slice(0, 2).join('；')}` : '';
       message.success(`导入成功: ${result.inserted} 人${skippedHint}${syncHint}${errHint}`);
-      if (result.errors?.some((e) => e.includes('php-write-enabled=false') || e.includes('PHP'))) {
-        message.warning(result.errors.find((e) => e.includes('php-write') || e.includes('PHP'))!);
-      }
       setImportStudentOpen(false);
       setSelectedStudentIds([]);
       notifyChanged();

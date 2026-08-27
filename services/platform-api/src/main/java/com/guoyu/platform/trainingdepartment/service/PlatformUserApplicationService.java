@@ -98,7 +98,6 @@ public class PlatformUserApplicationService {
     validateIdentity(req.getIdcard(), req.getPhone(), req.getId());
     Long orgId = resolveOrgId();
     if (req.getId() != null && req.getId() > 0) {
-      requireSaaSLocalUser(req.getId());
       PlatformUserEntity entity = getExisting(req.getId(), orgId);
       entity.setRealname(trim(req.getRealname()));
       entity.setIdcard(trim(req.getIdcard()));
@@ -138,24 +137,9 @@ public class PlatformUserApplicationService {
   @Transactional
   public void delete(Long id) {
     operatorScopeService.requireOrgOperator();
-    requireSaaSLocalUser(id);
     PlatformUserEntity entity = getExisting(id, resolveOrgId());
     entity.setDeleted(1);
     mapper.deleteById(entity.getId());
-  }
-
-  /**
-   * PHP 来源用户保护（《手机端调用SaaS鉴权方案》§3.5.4）：
-   * PHP 库同步过来的用户 id < 10 亿，只读维护——编辑/删除会在下一同步周期被覆盖回 PHP 值，
-   * 物理删除甚至会被重新插入复活，故直接拒绝并引导到原平台维护。
-   * SaaS 本地新增用户 id ≥ 10 亿（AUTO_INCREMENT=1000000000），不受此限。
-   */
-  private static final long PHP_SOURCE_ID_BOUNDARY = 1_000_000_000L;
-
-  private void requireSaaSLocalUser(Long id) {
-    if (id != null && id < PHP_SOURCE_ID_BOUNDARY) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "该用户来源于工匠基地平台，请前往原平台维护");
-    }
   }
 
   private PlatformUserEntity getExisting(Long id, Long orgId) {

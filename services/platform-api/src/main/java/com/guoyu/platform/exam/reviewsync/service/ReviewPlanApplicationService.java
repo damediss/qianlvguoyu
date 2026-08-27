@@ -19,12 +19,12 @@ import com.guoyu.platform.exam.reviewsync.mapper.AiReviewMockPaperMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewPlanDayMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewPlanMapper;
 import com.guoyu.platform.exam.reviewsync.mapper.AiReviewWrongItemMapper;
-import com.guoyu.platform.integration.php.PhpExamQueryService;
-import com.guoyu.platform.integration.php.dto.PhpCourseWeights;
-import com.guoyu.platform.integration.php.dto.PhpExamPlanInfo;
-import com.guoyu.platform.integration.php.dto.PhpKnowledgeNode;
-import com.guoyu.platform.integration.php.dto.PhpQuestion;
-import com.guoyu.platform.integration.php.dto.PhpQuestionDetail;
+import com.guoyu.platform.exam.reviewsync.mapper.ExamResultWriteRepository;
+import com.guoyu.platform.exam.reviewsync.dto.ReviewCourseWeights;
+import com.guoyu.platform.exam.reviewsync.dto.ReviewExamPlanInfo;
+import com.guoyu.platform.exam.reviewsync.dto.ReviewKnowledgeNode;
+import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestion;
+import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestionDetail;
 import com.guoyu.platform.system.entity.DictEntity;
 import com.guoyu.platform.system.mapper.DictMapper;
 import java.math.BigDecimal;
@@ -62,8 +62,8 @@ public class ReviewPlanApplicationService {
   private final AiReviewMockPaperMapper mockPaperMapper;
   private final AiReviewMockPaperItemMapper mockItemMapper;
   private final AiReviewGrayWhitelistMapper grayWhitelistMapper;
-  private final PhpExamQueryService phpQuery;
-  private final PhpResultWritebackService writebackService;
+  private final ReviewQuestionQueryService reviewQuery;
+  private final ExamResultWriteRepository examResultWriteRepository;
   private final ReviewLlmAssistService llmAssistService;
   private final DictMapper dictMapper;
   private final ObjectMapper objectMapper;
@@ -76,8 +76,8 @@ public class ReviewPlanApplicationService {
       AiReviewMockPaperMapper mockPaperMapper,
       AiReviewMockPaperItemMapper mockItemMapper,
       AiReviewGrayWhitelistMapper grayWhitelistMapper,
-      PhpExamQueryService phpQuery,
-      PhpResultWritebackService writebackService,
+      ReviewQuestionQueryService reviewQuery,
+      ExamResultWriteRepository examResultWriteRepository,
       ReviewLlmAssistService llmAssistService,
       DictMapper dictMapper,
       ObjectMapper objectMapper) {
@@ -88,8 +88,8 @@ public class ReviewPlanApplicationService {
     this.mockPaperMapper = mockPaperMapper;
     this.mockItemMapper = mockItemMapper;
     this.grayWhitelistMapper = grayWhitelistMapper;
-    this.phpQuery = phpQuery;
-    this.writebackService = writebackService;
+    this.reviewQuery = reviewQuery;
+    this.examResultWriteRepository = examResultWriteRepository;
     this.llmAssistService = llmAssistService;
     this.dictMapper = dictMapper;
     this.objectMapper = objectMapper;
@@ -227,10 +227,10 @@ public class ReviewPlanApplicationService {
     if (questionIds == null || questionIds.isEmpty() || questionIds.size() > 50) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "questionIds 数量须为 1~50");
     }
-    Map<Long, PhpQuestionDetail> details = phpQuery.loadQuestionDetails(questionIds);
+    Map<Long, ReviewQuestionDetail> details = reviewQuery.loadQuestionDetails(questionIds);
     List<Map<String, Object>> list = new ArrayList<>();
     for (Long qid : questionIds) {
-      PhpQuestionDetail detail = details.get(qid);
+      ReviewQuestionDetail detail = details.get(qid);
       if (detail == null) {
         continue;
       }
@@ -265,7 +265,7 @@ public class ReviewPlanApplicationService {
         .eq(AiReviewAnswerEntity::getRoundType, roundType)
         .orderByDesc(AiReviewAnswerEntity::getAttemptSeq)
         .last("LIMIT 1"));
-    PhpQuestionDetail detail = phpQuery.loadQuestionDetail(questionId);
+    ReviewQuestionDetail detail = reviewQuery.loadQuestionDetail(questionId);
     if (detail == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "题目不存在");
     }
@@ -300,7 +300,8 @@ public class ReviewPlanApplicationService {
     answer.setIsCorrect(judged.correct() ? 1 : 0);
     answer.setUseTimeSec(useTimeSec != null ? useTimeSec : 0);
     answer.setAttemptSeq(attemptSeq);
-    answer.setPhpSynced(0);
+    // 单库化：exam_result 同事务同步直写成功即置 1（语义=已落 exam_result；回滚旧代码时补偿 job 不会重写）
+    answer.setPhpSynced(1);
     answerMapper.insert(answer);
 
     // 错题状态机
@@ -311,8 +312,15 @@ public class ReviewPlanApplicationService {
     touchLastActiveDate(plan, day);
     planMapper.updateById(plan);
 
-    // 异步回写 PHP
-    writebackService.writebackAsync(answer.getId());
+    // exam_result 事务内同步直写（exam_type=5，对齐 PHP trainsave 口径）；
+    // INSERT 失败整个作答事务回滚，学员收到错误可重试（方案 §4-C 明示的行为变化）
+    examResultWriteRepository.insertExamResult(
+        answer.getQuestionType(),
+        answer.getExamPlanId() == null ? 0 : answer.getExamPlanId(),
+        answer.getQuestionId(),
+        answer.getPlatformUserId(),
+        answer.getUserAnswer(),
+        examResultScoreOf(answer));
 
     Map<String, Object> result = answerView(judged.correct(), options, detail.resolve(), cardChange);
     if (cardChange != null && Boolean.TRUE.equals(cardChange.get("explainAvailable"))) {
@@ -419,7 +427,7 @@ public class ReviewPlanApplicationService {
         }
       }
     }
-    Map<Long, PhpQuestionDetail> details = phpQuery.loadQuestionDetails(new ArrayList<>(scoreByQid.keySet()));
+    Map<Long, ReviewQuestionDetail> details = reviewQuery.loadQuestionDetails(new ArrayList<>(scoreByQid.keySet()));
 
     // O7：模考多选严格判分开关（错选 0 分、少选按选项 score 部分给分）；练习轮仍与 PHP 宽松口径一致
     boolean strictJudge = dictInt("ai_review_mock_strict_judge", 1, tenantId) == 1;
@@ -430,7 +438,7 @@ public class ReviewPlanApplicationService {
     List<Map<String, Object>> wrongList = new ArrayList<>();
     LocalDate today = LocalDate.now();
     for (AiReviewMockPaperItemEntity item : items) {
-      PhpQuestionDetail detail = details.get(item.getQuestionId());
+      ReviewQuestionDetail detail = details.get(item.getQuestionId());
       if (detail == null) {
         continue;
       }
@@ -490,10 +498,17 @@ public class ReviewPlanApplicationService {
         answer.setIsCorrect(judged.correct() ? 1 : 0);
         answer.setUseTimeSec(0);
         answer.setAttemptSeq(countAttempts(plan.getId(), item.getQuestionId()) + 1);
-        answer.setPhpSynced(0);
+        answer.setPhpSynced(1);
         answerMapper.insert(answer);
         applyWrongCard(plan, platformUserId, detail, judged.correct());
-        writebackService.writebackAsync(answer.getId());
+        // exam_result 事务内同步直写（同 answer() 口径；失败回滚整卷提交）
+        examResultWriteRepository.insertExamResult(
+            answer.getQuestionType(),
+            answer.getExamPlanId() == null ? 0 : answer.getExamPlanId(),
+            answer.getQuestionId(),
+            answer.getPlatformUserId(),
+            answer.getUserAnswer(),
+            examResultScoreOf(answer));
       }
     }
     paper.setScore(score);
@@ -651,15 +666,15 @@ public class ReviewPlanApplicationService {
     List<Long> mustDo = parseIds(plan.getMustDoIds());
     List<Map<String, Object>> coverage = new ArrayList<>();
     if (!mustDo.isEmpty()) {
-      Map<Long, PhpQuestion> metaById = questionMetaByIds(plan, mustDo);
+      Map<Long, ReviewQuestion> metaById = questionMetaByIds(plan, mustDo);
       // 知识点标题：知识结构表（exam_knowledge_structure）title 字段
       Map<Long, String> titleById = new HashMap<>();
-      for (PhpKnowledgeNode node : phpQuery.loadKnowledgeTree(plan.getCourseId())) {
+      for (ReviewKnowledgeNode node : reviewQuery.loadKnowledgeTree(plan.getCourseId())) {
         titleById.put(node.id(), node.title());
       }
       Map<Long, int[]> l3Totals = new HashMap<>();
       for (Long qid : mustDo) {
-        PhpQuestion meta = metaById.get(qid);
+        ReviewQuestion meta = metaById.get(qid);
         if (meta != null && meta.knowledgeId() != null) {
           int[] counter = l3Totals.computeIfAbsent(meta.knowledgeId(), k -> new int[2]);
           counter[0]++;
@@ -762,10 +777,10 @@ public class ReviewPlanApplicationService {
   }
 
   private AiReviewPlanEntity createPlan(long platformUserId, long examId, Long tenantId) {
-    if (!phpQuery.isUserInExam(examId, platformUserId)) {
+    if (!reviewQuery.isUserInExam(examId, platformUserId)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "您不在该复习计划名单中");
     }
-    PhpExamPlanInfo planInfo = phpQuery.loadExamPlanInfo(examId);
+    ReviewExamPlanInfo planInfo = reviewQuery.loadExamPlanInfo(examId);
     if (planInfo == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "复习计划不存在");
     }
@@ -773,16 +788,16 @@ public class ReviewPlanApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "该计划没有正确绑定工种");
     }
     List<Long> courseIds = planInfo.bindings().stream()
-        .map(PhpExamPlanInfo.WorkTypeBinding::courseId)
+        .map(ReviewExamPlanInfo.WorkTypeBinding::courseId)
         .filter(id -> id != null && id > 0)
         .distinct()
         .toList();
     if (courseIds.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "该计划没有正确绑定工种（未匹配到科目）");
     }
-    List<Long> l3Ids = phpQuery.loadL3KnowledgeIds(courseIds);
+    List<Long> l3Ids = reviewQuery.loadL3KnowledgeIds(courseIds);
     int source = planInfo.source() != null ? planInfo.source() : 0;
-    List<PhpQuestion> questions = phpQuery.loadQuestionScope(source, l3Ids);
+    List<ReviewQuestion> questions = reviewQuery.loadQuestionScope(source, l3Ids);
     if (questions.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "该计划未绑定有效题库");
     }
@@ -797,8 +812,8 @@ public class ReviewPlanApplicationService {
     int[] stages = PlanScheduleDomainService.splitStages(totalDays);
 
     long primaryCourseId = courseIds.get(0);
-    PhpCourseWeights courseWeights = phpQuery.loadCourseWeights(primaryCourseId);
-    List<PhpKnowledgeNode> tree = phpQuery.loadKnowledgeTree(primaryCourseId);
+    ReviewCourseWeights courseWeights = reviewQuery.loadCourseWeights(primaryCourseId);
+    List<ReviewKnowledgeNode> tree = reviewQuery.loadKnowledgeTree(primaryCourseId);
     WeightResolver.ResolvedWeights weights = WeightResolver.resolve(courseWeights, tree, questions);
     if ("count".equals(weights.weightSource())) {
       log.warn("[AI复习] course={} 无权重配置，按题量占比兜底", primaryCourseId);
@@ -808,12 +823,12 @@ public class ReviewPlanApplicationService {
     boolean trimmed = questions.size() > target;
     List<Long> mustDoIds = trimmed
         ? QuestionSelectDomainService.trimQuestionBank(questions, tree, weights, target)
-        : questions.stream().map(PhpQuestion::id).toList();
+        : questions.stream().map(ReviewQuestion::id).toList();
 
     AiReviewPlanEntity plan = new AiReviewPlanEntity();
     plan.setPlatformUserId(platformUserId);
     plan.setExamId(examId);
-    PhpExamPlanInfo.WorkTypeBinding firstBinding = planInfo.bindings().get(0);
+    ReviewExamPlanInfo.WorkTypeBinding firstBinding = planInfo.bindings().get(0);
     plan.setWorkTypeId(firstBinding.workTypeId());
     plan.setLevel(firstBinding.level() != null ? String.valueOf(firstBinding.level()) : null);
     plan.setCourseId(primaryCourseId);
@@ -943,13 +958,13 @@ public class ReviewPlanApplicationService {
   private void materializeStage1(AiReviewPlanDayEntity day, AiReviewPlanEntity plan,
       List<Long> remainingNew, int newTargetRaw, boolean preheatSingleJudgeOnly) {
     WeightResolver.ResolvedWeights weights = weightsOfPlan(plan);
-    Map<Long, PhpQuestion> metaById = questionMetaByIds(plan, remainingNew);
+    Map<Long, ReviewQuestion> metaById = questionMetaByIds(plan, remainingNew);
 
     List<Long> candidateIds = remainingNew;
     if (preheatSingleJudgeOnly) {
       candidateIds = new ArrayList<>();
       for (Long id : remainingNew) {
-        PhpQuestion meta = metaById.get(id);
+        ReviewQuestion meta = metaById.get(id);
         if (meta != null && ("single".equals(meta.type()) || "judge".equals(meta.type()))) {
           candidateIds.add(id);
         }
@@ -966,7 +981,7 @@ public class ReviewPlanApplicationService {
     // 双轨构成
     Map<Long, Integer> remainingByL1 = new LinkedHashMap<>();
     for (Long id : candidateIds) {
-      PhpQuestion meta = metaById.get(id);
+      ReviewQuestion meta = metaById.get(id);
       Long l1 = meta != null ? weights.l1ByL3().get(meta.knowledgeId()) : null;
       if (l1 != null) {
         remainingByL1.merge(l1, 1, Integer::sum);
@@ -979,7 +994,7 @@ public class ReviewPlanApplicationService {
     // 按构成从各 L1 取题（池顺序优先重要度高的 L3）
     Map<Long, List<Long>> idsByL1 = new LinkedHashMap<>();
     for (Long id : candidateIds) {
-      PhpQuestion meta = metaById.get(id);
+      ReviewQuestion meta = metaById.get(id);
       Long l1 = meta != null ? weights.l1ByL3().get(meta.knowledgeId()) : null;
       if (l1 != null) {
         idsByL1.computeIfAbsent(l1, k -> new ArrayList<>()).add(id);
@@ -1032,10 +1047,10 @@ public class ReviewPlanApplicationService {
     // 薄弱 L3：按错题率倒序（错题本 wrong/(wrong+correct)）
     Map<Long, Double> wrongRateByL3 = wrongRateByL3(plan.getId());
     WeightResolver.ResolvedWeights weights = weightsOfPlan(plan);
-    Map<Long, PhpQuestion> metaById = questionMetaByIds(plan, remainingNew);
+    Map<Long, ReviewQuestion> metaById = questionMetaByIds(plan, remainingNew);
     List<Long> sortedRemaining = new ArrayList<>(remainingNew);
     sortedRemaining.sort(Comparator.comparingDouble((Long id) -> {
-      PhpQuestion meta = metaById.get(id);
+      ReviewQuestion meta = metaById.get(id);
       double rate = meta != null ? wrongRateByL3.getOrDefault(meta.knowledgeId(), 0.0) : 0.0;
       Long l1 = meta != null ? weights.l1ByL3().get(meta.knowledgeId()) : null;
       double weight = l1 != null ? weights.l1Weights().getOrDefault(l1, 0.0) : 0.0;
@@ -1058,10 +1073,10 @@ public class ReviewPlanApplicationService {
 
   private AiReviewMockPaperEntity composeMockPaper(AiReviewPlanEntity plan, Long tenantId) {
     List<Long> mustDo = parseIds(plan.getMustDoIds());
-    Map<Long, PhpQuestion> metaById = questionMetaByIds(plan, mustDo);
-    List<PhpQuestion> pool = new ArrayList<>();
+    Map<Long, ReviewQuestion> metaById = questionMetaByIds(plan, mustDo);
+    List<ReviewQuestion> pool = new ArrayList<>();
     for (Long id : mustDo) {
-      PhpQuestion meta = metaById.get(id);
+      ReviewQuestion meta = metaById.get(id);
       if (meta != null) {
         pool.add(meta);
       }
@@ -1076,7 +1091,7 @@ public class ReviewPlanApplicationService {
         .eq(AiReviewMockPaperEntity::getPlanId, plan.getId())).intValue() + 1;
     BigDecimal total = BigDecimal.ZERO;
     for (Long qid : questionIds) {
-      PhpQuestion meta = metaById.get(qid);
+      ReviewQuestion meta = metaById.get(qid);
       if (meta != null && meta.score() != null) {
         total = total.add(meta.score());
       }
@@ -1094,7 +1109,7 @@ public class ReviewPlanApplicationService {
 
     int sort = 1;
     for (Long qid : questionIds) {
-      PhpQuestion meta = metaById.get(qid);
+      ReviewQuestion meta = metaById.get(qid);
       AiReviewMockPaperItemEntity item = new AiReviewMockPaperItemEntity();
       item.setPaperId(paper.getId());
       item.setQuestionId(qid);
@@ -1171,7 +1186,7 @@ public class ReviewPlanApplicationService {
   // ==================================================================
 
   private Map<String, Object> applyWrongCard(AiReviewPlanEntity plan, long platformUserId,
-      PhpQuestionDetail detail, boolean correct) {
+      ReviewQuestionDetail detail, boolean correct) {
     AiReviewWrongItemEntity item = wrongMapper.selectOne(new LambdaQueryWrapper<AiReviewWrongItemEntity>()
         .eq(AiReviewWrongItemEntity::getPlanId, plan.getId())
         .eq(AiReviewWrongItemEntity::getQuestionId, detail.id())
@@ -1364,6 +1379,15 @@ public class ReviewPlanApplicationService {
         .eq(AiReviewAnswerEntity::getQuestionId, questionId)).intValue();
   }
 
+  /** exam_result get_score 口径：优先实得分（严格判分部分分）；无实得分则 对=题分/错=0 */
+  private static BigDecimal examResultScoreOf(AiReviewAnswerEntity answer) {
+    if (answer.getEarnedScore() != null) {
+      return answer.getEarnedScore();
+    }
+    return answer.getIsCorrect() != null && answer.getIsCorrect() == 1
+        && answer.getQuestionScore() != null ? answer.getQuestionScore() : BigDecimal.ZERO;
+  }
+
   private void bumpDayCounters(AiReviewPlanDayEntity day, String roundType, boolean correct, boolean correction) {
     if (!correction) {
       if ("new".equals(roundType)) {
@@ -1434,34 +1458,34 @@ public class ReviewPlanApplicationService {
     return rates;
   }
 
-  /** 题目轻量元数据（按 id 批量从 PHP 查，排题用） */
-  private Map<Long, PhpQuestion> questionMetaByIds(AiReviewPlanEntity plan, List<Long> questionIds) {
+  /** 题目轻量元数据（按 id 批量从主库查，排题用） */
+  private Map<Long, ReviewQuestion> questionMetaByIds(AiReviewPlanEntity plan, List<Long> questionIds) {
     if (questionIds.isEmpty()) {
       return Map.of();
     }
-    return phpQuery.loadQuestionMetaByIds(questionIds);
+    return reviewQuery.loadQuestionMetaByIds(questionIds);
   }
 
   private WeightResolver.ResolvedWeights weightsOfPlan(AiReviewPlanEntity plan) {
-    // 权重快照 + PHP 树重建 L3 权重（快照只有 L1 粒度）
+    // 权重快照 + 主库知识树重建 L3 权重（快照只有 L1 粒度）
     long courseId = plan.getCourseId();
-    List<PhpKnowledgeNode> tree = phpQuery.loadKnowledgeTree(courseId);
-    PhpCourseWeights snapshotWeights = snapshotToCourseWeights(plan);
-    List<PhpQuestion> pool = new ArrayList<>(questionMetaByIds(plan, parseIds(plan.getMustDoIds())).values());
+    List<ReviewKnowledgeNode> tree = reviewQuery.loadKnowledgeTree(courseId);
+    ReviewCourseWeights snapshotWeights = snapshotToCourseWeights(plan);
+    List<ReviewQuestion> pool = new ArrayList<>(questionMetaByIds(plan, parseIds(plan.getMustDoIds())).values());
     return WeightResolver.resolve(snapshotWeights, tree, pool);
   }
 
-  private PhpCourseWeights snapshotToCourseWeights(AiReviewPlanEntity plan) {
+  private ReviewCourseWeights snapshotToCourseWeights(AiReviewPlanEntity plan) {
     if (plan.getWeightSnapshot() == null || plan.getWeightSnapshot().isBlank()) {
-      return new PhpCourseWeights(plan.getWeightSource(), List.of());
+      return new ReviewCourseWeights(plan.getWeightSource(), List.of());
     }
-    List<PhpCourseWeights.WeightItem> items = new ArrayList<>();
+    List<ReviewCourseWeights.WeightItem> items = new ArrayList<>();
     for (Map<String, Object> item : parseSnapshot(plan.getWeightSnapshot())) {
       long knowledgeId = ((Number) item.get("knowledgeId")).longValue();
       int rate = (int) Math.round(((Number) item.get("rate")).doubleValue());
-      items.add(new PhpCourseWeights.WeightItem(knowledgeId, (String) item.get("title"), rate));
+      items.add(new ReviewCourseWeights.WeightItem(knowledgeId, (String) item.get("title"), rate));
     }
-    return new PhpCourseWeights(plan.getWeightSource(), items);
+    return new ReviewCourseWeights(plan.getWeightSource(), items);
   }
 
   private Map<Long, Long> l1ByL3OfPlan(AiReviewPlanEntity plan) {

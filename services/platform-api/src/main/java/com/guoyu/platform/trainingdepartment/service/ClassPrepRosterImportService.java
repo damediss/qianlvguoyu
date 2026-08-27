@@ -5,7 +5,6 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
-import com.guoyu.platform.integration.php.UserProvisioningProperties;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.OrgEntity;
 import com.guoyu.platform.system.entity.UserEntity;
@@ -58,7 +57,6 @@ public class ClassPrepRosterImportService {
   private final PlatformUserEnsureService platformUserEnsureService;
   private final ClassCollectionApplicationService classCollectionApplicationService;
   private final TrainingOperatorScopeService operatorScopeService;
-  private final UserProvisioningProperties userProvisioningProperties;
 
   public ClassPrepRosterImportService(
       ClassPrepRosterParseService parseService,
@@ -72,8 +70,7 @@ public class ClassPrepRosterImportService {
       PlatformUserDetailMapper platformUserDetailMapper,
       PlatformUserEnsureService platformUserEnsureService,
       ClassCollectionApplicationService classCollectionApplicationService,
-      TrainingOperatorScopeService operatorScopeService,
-      UserProvisioningProperties userProvisioningProperties) {
+      TrainingOperatorScopeService operatorScopeService) {
     this.parseService = parseService;
     this.signUpMapper = signUpMapper;
     this.peopleMapper = peopleMapper;
@@ -86,7 +83,6 @@ public class ClassPrepRosterImportService {
     this.platformUserEnsureService = platformUserEnsureService;
     this.classCollectionApplicationService = classCollectionApplicationService;
     this.operatorScopeService = operatorScopeService;
-    this.userProvisioningProperties = userProvisioningProperties;
   }
 
   @Transactional
@@ -127,9 +123,6 @@ public class ClassPrepRosterImportService {
     int failed = 0;
     List<String> errors = new ArrayList<>();
     PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
-    if (!userProvisioningProperties.isPhpWriteEnabled()) {
-      errors.add("警告: platform.user-provisioning.php-write-enabled=false，仅写 SaaS，PHP/App 不会开户");
-    }
 
     Set<String> seenCards = new HashSet<>();
     LocalDateTime now = LocalDateTime.now();

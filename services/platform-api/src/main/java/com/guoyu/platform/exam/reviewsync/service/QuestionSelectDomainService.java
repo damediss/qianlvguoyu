@@ -1,7 +1,7 @@
 package com.guoyu.platform.exam.reviewsync.service;
 
-import com.guoyu.platform.integration.php.dto.PhpKnowledgeNode;
-import com.guoyu.platform.integration.php.dto.PhpQuestion;
+import com.guoyu.platform.exam.reviewsync.dto.ReviewKnowledgeNode;
+import com.guoyu.platform.exam.reviewsync.dto.ReviewQuestion;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -62,34 +62,34 @@ public final class QuestionSelectDomainService {
    * @param target    必做题数（target >= questions.size() 时全选）
    * @return 必做题 id 有序列表
    */
-  public static List<Long> trimQuestionBank(List<PhpQuestion> questions, List<PhpKnowledgeNode> tree,
+  public static List<Long> trimQuestionBank(List<ReviewQuestion> questions, List<ReviewKnowledgeNode> tree,
       WeightResolver.ResolvedWeights weights, int target) {
     if (target >= questions.size()) {
-      return questions.stream().map(PhpQuestion::id).toList();
+      return questions.stream().map(ReviewQuestion::id).toList();
     }
-    Map<Long, PhpKnowledgeNode> nodeById = new HashMap<>();
-    for (PhpKnowledgeNode node : tree) {
+    Map<Long, ReviewKnowledgeNode> nodeById = new HashMap<>();
+    for (ReviewKnowledgeNode node : tree) {
       nodeById.put(node.id(), node);
     }
     // 按 L3 分组
-    Map<Long, List<PhpQuestion>> byL3 = new LinkedHashMap<>();
-    for (PhpQuestion q : questions) {
+    Map<Long, List<ReviewQuestion>> byL3 = new LinkedHashMap<>();
+    for (ReviewQuestion q : questions) {
       if (q.knowledgeId() != null) {
         byL3.computeIfAbsent(q.knowledgeId(), k -> new ArrayList<>()).add(q);
       }
     }
 
-    List<PhpQuestion> selected = new ArrayList<>();
+    List<ReviewQuestion> selected = new ArrayList<>();
     // ① 每个 L3 先取 1 题（L3 按重要度 X>Y>Z 优先保证；组内 多选>单选>判断>其他、难度中等优先）
     List<Long> l3Ordered = new ArrayList<>(byL3.keySet());
     l3Ordered.sort(Comparator.comparingInt((Long l3) -> {
-      PhpKnowledgeNode node = nodeById.get(l3);
+      ReviewKnowledgeNode node = nodeById.get(l3);
       return node != null ? importantRank(node.important()) : 0;
     }).reversed());
     for (Long l3 : l3Ordered) {
-      List<PhpQuestion> group = new ArrayList<>(byL3.get(l3));
+      List<ReviewQuestion> group = new ArrayList<>(byL3.get(l3));
       group.sort(Comparator
-          .comparingInt((PhpQuestion q) -> typeRank(q.type()))
+          .comparingInt((ReviewQuestion q) -> typeRank(q.type()))
           .thenComparingInt(q -> q.difficulty() != null && q.difficulty() == 2 ? 1 : 0)
           .reversed());
       selected.add(group.get(0));
@@ -98,12 +98,12 @@ public final class QuestionSelectDomainService {
     }
 
     // ② 剩余名额按"L3 归一化权重 × 题型权重"加权轮转填满
-    List<PhpQuestion> rest = new ArrayList<>();
-    for (List<PhpQuestion> group : byL3.values()) {
+    List<ReviewQuestion> rest = new ArrayList<>();
+    for (List<ReviewQuestion> group : byL3.values()) {
       rest.addAll(group);
     }
     rest.sort(Comparator
-        .comparingDouble((PhpQuestion q) -> weights.weightOfL3(q.knowledgeId()) * typeWeight(q.type()))
+        .comparingDouble((ReviewQuestion q) -> weights.weightOfL3(q.knowledgeId()) * typeWeight(q.type()))
         .reversed());
     int remaining = target - selected.size();
     for (int i = 0; i < Math.min(remaining, rest.size()); i++) {
@@ -111,7 +111,7 @@ public final class QuestionSelectDomainService {
     }
 
     List<Long> ids = new ArrayList<>();
-    for (PhpQuestion q : selected) {
+    for (ReviewQuestion q : selected) {
       ids.add(q.id());
     }
     return ids;
@@ -126,18 +126,18 @@ public final class QuestionSelectDomainService {
    * @param deleteCount 删除量
    * @return 被删除的题 id（调用方从必做池剔除）
    */
-  public static List<Long> pickTailQuestionsToDrop(List<Long> selectedIds, Map<Long, PhpQuestion> byId,
-      Map<Long, PhpKnowledgeNode> nodeById, int deleteCount) {
-    List<PhpQuestion> candidates = new ArrayList<>();
+  public static List<Long> pickTailQuestionsToDrop(List<Long> selectedIds, Map<Long, ReviewQuestion> byId,
+      Map<Long, ReviewKnowledgeNode> nodeById, int deleteCount) {
+    List<ReviewQuestion> candidates = new ArrayList<>();
     for (Long id : selectedIds) {
-      PhpQuestion q = byId.get(id);
+      ReviewQuestion q = byId.get(id);
       if (q != null) {
         candidates.add(q);
       }
     }
     candidates.sort(Comparator
-        .comparingInt((PhpQuestion q) -> {
-          PhpKnowledgeNode node = q.knowledgeId() != null ? nodeById.get(q.knowledgeId()) : null;
+        .comparingInt((ReviewQuestion q) -> {
+          ReviewKnowledgeNode node = q.knowledgeId() != null ? nodeById.get(q.knowledgeId()) : null;
           return node != null ? importantRank(node.important()) : 0;
         })
         .thenComparingInt(q -> isComplexType(q.type()) ? 0 : 1)
@@ -167,16 +167,16 @@ public final class QuestionSelectDomainService {
    * @param random         随机源（测试可注入固定种子）
    * @return 卷题 id 有序列表（已随机排序，脱离题库顺序）
    */
-  public static List<Long> composeMockPaper(List<PhpQuestion> pool, WeightResolver.ResolvedWeights weights,
+  public static List<Long> composeMockPaper(List<ReviewQuestion> pool, WeightResolver.ResolvedWeights weights,
       int mockSize, Map<Long, Double> wrongRateByL3, Random random) {
     if (pool.size() <= mockSize) {
-      List<Long> all = new ArrayList<>(pool.stream().map(PhpQuestion::id).toList());
+      List<Long> all = new ArrayList<>(pool.stream().map(ReviewQuestion::id).toList());
       Collections.shuffle(all, random);
       return all;
     }
     // 按 L1 分组
-    Map<Long, List<PhpQuestion>> byL1 = new LinkedHashMap<>();
-    for (PhpQuestion q : pool) {
+    Map<Long, List<ReviewQuestion>> byL1 = new LinkedHashMap<>();
+    for (ReviewQuestion q : pool) {
       Long l1 = weights.l1ByL3().get(q.knowledgeId());
       if (l1 != null) {
         byL1.computeIfAbsent(l1, k -> new ArrayList<>()).add(q);
@@ -185,11 +185,11 @@ public final class QuestionSelectDomainService {
     // L1 归一化权重 → 大配额（water-filling：题量不足的 L1 差额再分配）
     Map<Long, Integer> quota = allocateQuota(weights.l1Weights(), byL1, mockSize);
 
-    List<PhpQuestion> selected = new ArrayList<>();
+    List<ReviewQuestion> selected = new ArrayList<>();
     for (Map.Entry<Long, Integer> entry : quota.entrySet()) {
-      List<PhpQuestion> group = new ArrayList<>(byL1.get(entry.getKey()));
+      List<ReviewQuestion> group = new ArrayList<>(byL1.get(entry.getKey()));
       // 组内：错题率 ×1.5 加权 + 随机
-      group.sort(Comparator.comparingDouble((PhpQuestion q) -> {
+      group.sort(Comparator.comparingDouble((ReviewQuestion q) -> {
         double wrongRate = wrongRateByL3.getOrDefault(q.knowledgeId(), 0.0);
         return -(1.0 + 1.5 * wrongRate) * random.nextDouble();
       }));
@@ -201,7 +201,7 @@ public final class QuestionSelectDomainService {
     enforceMultiRatio(selected, pool, mockSize, random);
 
     List<Long> ids = new ArrayList<>();
-    for (PhpQuestion q : selected) {
+    for (ReviewQuestion q : selected) {
       ids.add(q.id());
     }
     Collections.shuffle(ids, random);
@@ -209,13 +209,13 @@ public final class QuestionSelectDomainService {
   }
 
   /** L1 权重 → 整数配额（water-filling：先按权重取整并封顶题量，剩余名额按权重序轮询补齐） */
-  static Map<Long, Integer> allocateQuota(Map<Long, Double> l1Weights, Map<Long, List<PhpQuestion>> byL1,
+  static Map<Long, Integer> allocateQuota(Map<Long, Double> l1Weights, Map<Long, List<ReviewQuestion>> byL1,
       int mockSize) {
     Map<Long, Integer> quota = new LinkedHashMap<>();
     int assigned = 0;
     // 第一轮：权重取整 + 封顶各自题量
     for (Map.Entry<Long, Double> entry : l1Weights.entrySet()) {
-      List<PhpQuestion> group = byL1.get(entry.getKey());
+      List<ReviewQuestion> group = byL1.get(entry.getKey());
       if (group == null || group.isEmpty()) {
         continue;
       }
@@ -250,15 +250,15 @@ public final class QuestionSelectDomainService {
   }
 
   /** 多选比例不足 20% 时，用池内未选中的多选题替换非多选末位题 */
-  private static void enforceMultiRatio(List<PhpQuestion> selected, List<PhpQuestion> pool, int mockSize,
+  private static void enforceMultiRatio(List<ReviewQuestion> selected, List<ReviewQuestion> pool, int mockSize,
       Random random) {
     long multiCount = selected.stream().filter(q -> "multi".equals(q.type())).count();
     int required = (int) Math.ceil(mockSize * 0.2);
     if (multiCount >= required) {
       return;
     }
-    List<PhpQuestion> poolMulti = new ArrayList<>();
-    for (PhpQuestion q : pool) {
+    List<ReviewQuestion> poolMulti = new ArrayList<>();
+    for (ReviewQuestion q : pool) {
       if ("multi".equals(q.type()) && selected.stream().noneMatch(s -> s.id() == q.id())) {
         poolMulti.add(q);
       }
@@ -274,19 +274,19 @@ public final class QuestionSelectDomainService {
   }
 
   /** 题型自然分布（组卷说明/快照用） */
-  public static Map<String, Integer> typeDistribution(List<PhpQuestion> questions) {
+  public static Map<String, Integer> typeDistribution(List<ReviewQuestion> questions) {
     Map<String, Integer> dist = new HashMap<>();
-    for (PhpQuestion q : questions) {
+    for (ReviewQuestion q : questions) {
       dist.merge(q.type() == null ? "" : q.type(), 1, Integer::sum);
     }
     return dist;
   }
 
   /** 分值合计 */
-  public static BigDecimal totalScore(List<PhpQuestion> questions, Map<Long, PhpQuestion> byId, List<Long> ids) {
+  public static BigDecimal totalScore(List<ReviewQuestion> questions, Map<Long, ReviewQuestion> byId, List<Long> ids) {
     BigDecimal total = BigDecimal.ZERO;
     for (Long id : ids) {
-      PhpQuestion q = byId.get(id);
+      ReviewQuestion q = byId.get(id);
       if (q != null && q.score() != null) {
         total = total.add(q.score());
       }

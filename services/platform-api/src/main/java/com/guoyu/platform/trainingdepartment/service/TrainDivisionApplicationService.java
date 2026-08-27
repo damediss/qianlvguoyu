@@ -735,10 +735,7 @@ public class TrainDivisionApplicationService {
         .eq(TrainPeopleListEntity::getTenantId, tenantId)
         .eq(TrainPeopleListEntity::getTrainId, trainInfo.getId())
         .eq(TrainPeopleListEntity::getType, "student")
-        .and(w -> w.isNull(TrainPeopleListEntity::getPlatformUserId)
-            .or()
-            .ge(TrainPeopleListEntity::getPlatformUserId,
-                com.guoyu.platform.integration.php.UserProvisioningProperties.LOCAL_ID_BOUNDARY)));
+        .isNull(TrainPeopleListEntity::getPlatformUserId));
 
     PlatformUserEnsureService.SyncStats syncStats = new PlatformUserEnsureService.SyncStats();
     int linked = 0;

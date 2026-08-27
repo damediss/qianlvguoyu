@@ -10,7 +10,6 @@ import static org.mockito.Mockito.when;
 
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
-import com.guoyu.platform.integration.php.UserProvisioningProperties;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
@@ -57,7 +56,6 @@ class ClassPrepRosterImportServiceTest {
   @Mock PlatformUserEnsureService platformUserEnsureService;
   @Mock ClassCollectionApplicationService classCollectionApplicationService;
   @Mock TrainingOperatorScopeService operatorScopeService;
-  @Mock UserProvisioningProperties userProvisioningProperties;
 
   ClassPrepRosterImportService service;
 
@@ -75,8 +73,7 @@ class ClassPrepRosterImportServiceTest {
         platformUserDetailMapper,
         platformUserEnsureService,
         classCollectionApplicationService,
-        operatorScopeService,
-        userProvisioningProperties);
+        operatorScopeService);
     PlatformUserPrincipal principal = new PlatformUserPrincipal(
         9L, 1L, "op", "op", "staff", List.of("ORG_ADMIN"), List.of("train:sign-up-people:create"), null);
     SecurityContextHolder.getContext().setAuthentication(
@@ -91,7 +88,6 @@ class ClassPrepRosterImportServiceTest {
   @Test
   void importInsertsNewAndSkipsExistingAndFailsBadPhone() {
     stubClassPrepPlan();
-    when(userProvisioningProperties.isPhpWriteEnabled()).thenReturn(true);
     when(parseService.parse(any())).thenReturn(new ParsedRoster(
         "新型学徒制培训学员花名册", "测企", "测校", "第3班", null,
         List.of(

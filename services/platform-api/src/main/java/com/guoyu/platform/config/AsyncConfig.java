@@ -78,11 +78,12 @@ public class AsyncConfig {
   }
 
   /**
-   * AI 同步学异步任务池（exam_result 回写、鼓励语生成）。
-   * AbortPolicy：队列满时拒绝，由调用方捕获转补偿 job（AGENTS.md 坑 #12/#14）。
+   * AI 同步学鼓励语异步生成池（ReviewLlmAssistService）。
+   * AbortPolicy：队列满时拒绝，由调用方捕获降级为预置文案（AGENTS.md 坑 #12/#14）。
+   * （单库化前名为 reviewSyncExecutor，兼作 exam_result 异步回写池；回写已改事务内同步直写）
    */
-  @Bean(name = "reviewSyncExecutor")
-  public ThreadPoolTaskExecutor reviewSyncExecutor() {
+  @Bean(name = "reviewLlmAssistExecutor")
+  public ThreadPoolTaskExecutor reviewLlmAssistExecutor() {
     ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
     executor.setCorePoolSize(2);
     executor.setMaxPoolSize(4);
