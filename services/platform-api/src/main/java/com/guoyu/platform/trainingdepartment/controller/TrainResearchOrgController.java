@@ -2,6 +2,8 @@ package com.guoyu.platform.trainingdepartment.controller;
 
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageResponse;
+import com.guoyu.platform.system.vo.OrgSimpleVO;
+import com.guoyu.platform.trainingdepartment.dto.EnsureSystemCompanyReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResearchOrgCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResearchOrgQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResearchOrgUpdateReq;
@@ -30,6 +32,13 @@ public class TrainResearchOrgController {
   @PreAuthorize("hasAuthority('train:research_org:view')")
   public ApiResponse<PageResponse<TrainResearchOrgVO>> page(@Valid TrainResearchOrgQueryReq req) {
     return ApiResponse.ok(trainResearchOrgApplicationService.page(req));
+  }
+
+  /** 手动输入企业名：查找或创建系统企业（company），供关联下拉使用 */
+  @PostMapping("/system-companies")
+  @PreAuthorize("hasAnyAuthority('train:research_org:create','train:research_org:update')")
+  public ApiResponse<OrgSimpleVO> ensureSystemCompany(@Valid @RequestBody EnsureSystemCompanyReq req) {
+    return ApiResponse.ok(trainResearchOrgApplicationService.ensureSystemCompany(req));
   }
 
   @GetMapping("/{id:\\d+}")

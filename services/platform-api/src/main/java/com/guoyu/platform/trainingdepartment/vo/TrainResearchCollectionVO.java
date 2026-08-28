@@ -15,5 +15,9 @@ public record TrainResearchCollectionVO(
     boolean qrcodeReady,
     String collectionPageUrl,
     LocalDateTime collectionStartTime,
-    ResearchCollectionFieldOptions fieldOptions
+    ResearchCollectionFieldOptions fieldOptions,
+    /** 禁用态：仅可查看，不可写入采集 */
+    boolean readOnly,
+    /** 调研企业 status=0 */
+    boolean disabled
 ) {}

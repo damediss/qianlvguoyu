@@ -40,6 +40,7 @@ import { TrainingInformationPage } from './pages/training/TrainingInformationPag
 import { TrainingStudentPage } from './pages/training/TrainingStudentPage';
 import { TrainingAcademicManagePage } from './pages/training/TrainingAcademicManagePage';
 import { EnterpriseResearchPage } from './pages/training/EnterpriseResearchPage';
+import { EnterpriseManagePage } from './pages/training/EnterpriseManagePage';
 import { SolutionPlanningPage } from './pages/training/SolutionPlanningPage';
 import { EnterprisePlanReviewPage } from './pages/training/EnterprisePlanReviewPage';
 import { DataPanelPage } from './pages/zhixunplatform/DataPanelPage';
@@ -177,6 +178,7 @@ const pageMap: Record<string, React.ReactNode> = {
   'train_sign-up-people': <TrainingInformationPage />,
   'train_user-info': <TrainingStudentPage />,
   'train_teacher-bank': <TrainingAcademicManagePage />,
+  train_company: <EnterpriseManagePage />,
   knowledge_spaces: <KnowledgePage />,
   knowledge_search: <KnowledgePage />,
   knowledge_rencaishibie: <RencaishibieEmbedPage />,

@@ -7,5 +7,10 @@ public record PublicResearchCollectionVO(
     String researchOrgTitle,
     String companyName,
     ResearchCollectionFieldOptions fieldOptions,
-    boolean active
+    /** 与 collectable 一致，兼容旧 H5 */
+    boolean active,
+    /** 是否允许提交/更新 */
+    boolean collectable,
+    /** collectable=false 时的说明 */
+    String disabledReason
 ) {}

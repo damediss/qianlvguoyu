@@ -64,8 +64,7 @@ apiClient.interceptors.response.use(
   },
   async (error) => {
     if (error?.response?.status === 401) {
-      useAuthStore.getState().setToken(undefined);
-      useAuthStore.getState().setCurrentUser(undefined);
+      useAuthStore.getState().clearAuth();
       return Promise.reject(error);
     }
 

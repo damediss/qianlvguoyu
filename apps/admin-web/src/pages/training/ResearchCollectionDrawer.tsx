@@ -218,52 +218,58 @@ export function ResearchCollectionDrawer({ open, researchOrg, onClose }: Researc
     setPersonModalOpen(true);
   };
 
-  const peopleColumns: ColumnsType<TrainResearchPerson> = [
-    { title: '姓名', dataIndex: 'name', width: 90 },
-    { title: '身份证号', dataIndex: 'idCardNumber', width: 170, ellipsis: true },
-    { title: '岗位', dataIndex: 'job', width: 120, ellipsis: true },
-    { title: '原工种', dataIndex: 'workTypeName', width: 120, ellipsis: true },
-    { title: '学历', dataIndex: 'education', width: 90 },
-    {
-      title: '查证状态',
-      dataIndex: 'certVerified',
-      width: 100,
-      align: 'center',
-      render: (v: number | undefined) => renderCertVerifyTag(v),
-    },
-    {
-      title: '操作',
-      key: 'act',
-      width: 180,
-      render: (_, row) => (
-        <Space>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEditPerson(row)}>
-            编辑
-          </Button>
-          <Tooltip title="单条查证">
-            <Button
-              type="link"
-              size="small"
-              icon={<SafetyCertificateOutlined />}
-              loading={verifyCertMu.isPending && Array.isArray(verifyCertMu.variables) && verifyCertMu.variables.length === 1 && verifyCertMu.variables[0] === row.id}
-              onClick={() => verifyCertMu.mutate([row.id])}
-            >
-              查证
-            </Button>
-          </Tooltip>
-          <Popconfirm title="确定删除该人员吗？" onConfirm={() => deletePersonMu.mutate(row.id)}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
-
   const collectionActive = collection?.collectionStatus === 'active';
+  const readOnly = !!(collection?.readOnly || collection?.disabled || researchOrg?.status === 0);
   const personnelCount = collection?.personnelCount ?? researchOrg?.personnelCount ?? 0;
   const fieldOptions = collection?.fieldOptions;
+
+  const peopleColumns: ColumnsType<TrainResearchPerson> = useMemo(() => {
+    const cols: ColumnsType<TrainResearchPerson> = [
+      { title: '姓名', dataIndex: 'name', width: 90 },
+      { title: '身份证号', dataIndex: 'idCardNumber', width: 170, ellipsis: true },
+      { title: '岗位', dataIndex: 'job', width: 120, ellipsis: true },
+      { title: '原工种', dataIndex: 'workTypeName', width: 120, ellipsis: true },
+      { title: '学历', dataIndex: 'education', width: 90 },
+      {
+        title: '查证状态',
+        dataIndex: 'certVerified',
+        width: 100,
+        align: 'center',
+        render: (v: number | undefined) => renderCertVerifyTag(v),
+      },
+    ];
+    if (!readOnly) {
+      cols.push({
+        title: '操作',
+        key: 'act',
+        width: 180,
+        render: (_, row) => (
+          <Space>
+            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEditPerson(row)}>
+              编辑
+            </Button>
+            <Tooltip title="单条查证">
+              <Button
+                type="link"
+                size="small"
+                icon={<SafetyCertificateOutlined />}
+                loading={verifyCertMu.isPending && Array.isArray(verifyCertMu.variables) && verifyCertMu.variables.length === 1 && verifyCertMu.variables[0] === row.id}
+                onClick={() => verifyCertMu.mutate([row.id])}
+              >
+                查证
+              </Button>
+            </Tooltip>
+            <Popconfirm title="确定删除该人员吗？" onConfirm={() => deletePersonMu.mutate(row.id)}>
+              <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
+        ),
+      });
+    }
+    return cols;
+  }, [readOnly, verifyCertMu.isPending, verifyCertMu.variables]);
 
   return (
     <>
@@ -274,7 +280,7 @@ export function ResearchCollectionDrawer({ open, researchOrg, onClose }: Researc
         onClose={onClose}
         destroyOnClose
       >
-        {!researchOrg?.targetOrgId && (
+        {!researchOrg?.targetOrgId && !readOnly && (
           <Alert
             type="warning"
             showIcon
@@ -283,11 +289,26 @@ export function ResearchCollectionDrawer({ open, researchOrg, onClose }: Researc
           />
         )}
 
+        {readOnly && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="该调研企业已禁用，采集已结束。当前为只读查看，可浏览人员与导出模板。"
+          />
+        )}
+
         <Descriptions column={2} size="small" bordered>
           <Descriptions.Item label="调研企业">{researchOrg?.title}</Descriptions.Item>
           <Descriptions.Item label="系统企业">{researchOrg?.targetOrgName || collection?.targetOrgName || '-'}</Descriptions.Item>
           <Descriptions.Item label="采集状态">
-            {collectionActive ? '采集中' : '未开启'}
+            {readOnly ? (
+              <Tag>采集已结束</Tag>
+            ) : collectionActive ? (
+              '采集中'
+            ) : (
+              '未开启'
+            )}
           </Descriptions.Item>
           <Descriptions.Item label="已采集人数">{personnelCount}</Descriptions.Item>
         </Descriptions>
@@ -305,12 +326,20 @@ export function ResearchCollectionDrawer({ open, researchOrg, onClose }: Researc
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              background: '#fafafa',
+              background: readOnly ? '#f5f5f5' : '#fafafa',
               flexShrink: 0,
               overflow: 'hidden',
+              opacity: readOnly ? 0.65 : 1,
             }}
           >
-            {collectionActive && qrDataUrl ? (
+            {readOnly && collectionActive ? (
+              <>
+                <QrcodeOutlined style={{ fontSize: 48, color: '#bfbfbf', marginBottom: 12 }} />
+                <Text type="secondary" style={{ textAlign: 'center', padding: '0 12px' }}>
+                  采集已结束
+                </Text>
+              </>
+            ) : collectionActive && qrDataUrl ? (
               <img src={qrDataUrl} alt="人员采集二维码" style={{ width: 180, height: 180 }} />
             ) : (
               <>
@@ -326,19 +355,39 @@ export function ResearchCollectionDrawer({ open, researchOrg, onClose }: Researc
             <Title level={5} style={{ marginTop: 0 }}>采集操作</Title>
             <Space direction="vertical" style={{ width: '100%' }}>
               {!collectionActive ? (
-                <Button
-                  type="primary"
-                  loading={startMu.isPending || collectionLoading}
-                  disabled={!researchOrg?.targetOrgId}
-                  onClick={() => startMu.mutate()}
-                >
-                  开启人员采集
-                </Button>
+                !readOnly && (
+                  <Button
+                    type="primary"
+                    loading={startMu.isPending || collectionLoading}
+                    disabled={!researchOrg?.targetOrgId}
+                    onClick={() => startMu.mutate()}
+                  >
+                    开启人员采集
+                  </Button>
+                )
               ) : (
                 <>
-                  <Button type="primary" icon={<PlusOutlined />} onClick={openCreatePerson}>
-                    手动添加人员
-                  </Button>
+                  {!readOnly && (
+                    <>
+                      <Button type="primary" icon={<PlusOutlined />} onClick={openCreatePerson}>
+                        手动添加人员
+                      </Button>
+                      <Button
+                        icon={<ProjectOutlined />}
+                        loading={createPlanMu.isPending}
+                        disabled={personnelCount === 0 || !researchOrg?.targetOrgId}
+                        onClick={() => {
+                          Modal.confirm({
+                            title: '创建三年规划',
+                            content: `将使用当前 ${personnelCount} 名人员数据自动创建三年规划并启动分析，是否继续？`,
+                            onOk: () => createPlanMu.mutateAsync(),
+                          });
+                        }}
+                      >
+                        创建三年规划
+                      </Button>
+                    </>
+                  )}
                   <Button
                     icon={<CloudDownloadOutlined />}
                     loading={exportMu.isPending}
@@ -347,23 +396,9 @@ export function ResearchCollectionDrawer({ open, researchOrg, onClose }: Researc
                   >
                     导出精简版采集模板
                   </Button>
-                  <Button
-                    icon={<ProjectOutlined />}
-                    loading={createPlanMu.isPending}
-                    disabled={personnelCount === 0 || !researchOrg?.targetOrgId}
-                    onClick={() => {
-                      Modal.confirm({
-                        title: '创建三年规划',
-                        content: `将使用当前 ${personnelCount} 名人员数据自动创建三年规划并启动分析，是否继续？`,
-                        onOk: () => createPlanMu.mutateAsync(),
-                      });
-                    }}
-                  >
-                    创建三年规划
-                  </Button>
                 </>
               )}
-              {collection?.qrcodeToken && collectionActive && (
+              {collection?.qrcodeToken && collectionActive && !readOnly && (
                 <Text
                   type="secondary"
                   copyable={{
@@ -391,21 +426,23 @@ export function ResearchCollectionDrawer({ open, researchOrg, onClose }: Researc
                 }}
               />
               <Space>
-                <Button
-                  type="primary"
-                  icon={<SafetyCertificateOutlined />}
-                  disabled={selectedPeopleIds.length === 0}
-                  loading={verifyCertMu.isPending && Array.isArray(verifyCertMu.variables) && verifyCertMu.variables.length > 1}
-                  onClick={() => verifyCertMu.mutate(selectedPeopleIds)}
-                >
-                  查证{selectedPeopleIds.length > 0 ? ` (${selectedPeopleIds.length})` : ''}
-                </Button>
+                {!readOnly && (
+                  <Button
+                    type="primary"
+                    icon={<SafetyCertificateOutlined />}
+                    disabled={selectedPeopleIds.length === 0}
+                    loading={verifyCertMu.isPending && Array.isArray(verifyCertMu.variables) && verifyCertMu.variables.length > 1}
+                    onClick={() => verifyCertMu.mutate(selectedPeopleIds)}
+                  >
+                    查证{selectedPeopleIds.length > 0 ? ` (${selectedPeopleIds.length})` : ''}
+                  </Button>
+                )}
               </Space>
             </div>
             <Table<TrainResearchPerson>
               rowKey="id"
               size="small"
-              rowSelection={{
+              rowSelection={readOnly ? undefined : {
                 selectedRowKeys: selectedPeopleIds,
                 onChange: (keys) => setSelectedPeopleIds(keys as number[]),
               }}

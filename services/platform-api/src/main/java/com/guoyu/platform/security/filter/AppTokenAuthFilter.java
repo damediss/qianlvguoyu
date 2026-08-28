@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Collections;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -30,6 +31,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class AppTokenAuthFilter extends OncePerRequestFilter {
 
   private static final String PLAYER_API_PREFIX = "/api/competition/player/";
+  private static final Pattern PHP_TOKEN_PATTERN = Pattern.compile("^[0-9a-f]{40}$");
 
   private final PlatformUserTokenMapper tokenMapper;
   private final PlatformUserMapper userMapper;
@@ -92,11 +94,12 @@ public class AppTokenAuthFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
         return;
       }
-      Long userId = tokenEntity.getUserId();
 
+      Long userId = tokenEntity.getUserId();
       PlatformUserEntity user = userMapper.selectById(userId);
-      if (user == null || user.getDeleted() != 0) {
-        log.debug("AppTokenAuthFilter: user not found or deleted");
+      if (user == null || (user.getDeleted() != null && user.getDeleted() != 0)) {
+        log.warn("AppTokenAuthFilter: user missing/deleted after token hit, userId={}, uri={}",
+            userId, request.getRequestURI());
         filterChain.doFilter(request, response);
         return;
       }

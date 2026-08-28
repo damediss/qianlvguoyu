@@ -50,6 +50,7 @@ import type {
   TrainSummary, TrainSummaryQuery, TrainSummaryCreateReq, TrainSummaryUpdateReq,
   TrainCertificate, TrainCertificateQuery, TrainCertificateCreateReq, TrainCertificateUpdateReq,
   TrainResearchOrg, TrainResearchOrgQuery, TrainResearchOrgCreateReq, TrainResearchOrgUpdateReq,
+  SystemCompany, SystemCompanySaveReq,
   TrainResearchCollection, TrainResearchPerson, TrainResearchPersonQuery,
   TrainResearchPersonCreateReq, TrainResearchPersonUpdateReq,
   CertVerifyBatchResultVO,
@@ -2872,6 +2873,33 @@ export function updateResearchOrg(id: number, payload: TrainResearchOrgUpdateReq
 
 export function deleteResearchOrg(id: number) {
   return unwrap<void>(apiClient.delete(`${BASE}/research-orgs/${id}`));
+}
+
+/** 手动输入企业名：查找或创建系统企业（company），返回后写入关联下拉 */
+export function ensureSystemCompany(name: string) {
+  return unwrap<{ id: number; name: string; orgType?: string; sortOrder?: number }>(
+    apiClient.post(`${BASE}/research-orgs/system-companies`, { name }),
+  );
+}
+
+// ==================== System Company (培训企业管理) ====================
+
+export function listSystemCompanies(keyword?: string) {
+  return unwrap<SystemCompany[]>(
+    apiClient.get(`${BASE}/system-companies`, { params: keyword ? { keyword } : undefined }),
+  );
+}
+
+export function createSystemCompany(payload: SystemCompanySaveReq) {
+  return unwrap<SystemCompany>(apiClient.post(`${BASE}/system-companies`, payload));
+}
+
+export function updateSystemCompany(id: number, payload: SystemCompanySaveReq) {
+  return unwrap<SystemCompany>(apiClient.put(`${BASE}/system-companies/${id}`, payload));
+}
+
+export function deleteSystemCompany(id: number) {
+  return unwrap<void>(apiClient.delete(`${BASE}/system-companies/${id}`));
 }
 
 // ==================== Research Collection (企业调研人员采集) ====================

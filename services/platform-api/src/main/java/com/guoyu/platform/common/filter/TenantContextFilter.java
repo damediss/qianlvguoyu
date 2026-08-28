@@ -86,7 +86,10 @@ public class TenantContextFilter extends OncePerRequestFilter {
         || WHITE_PATH_PREFIXES.stream().anyMatch(path::startsWith);
 
     if (isWhite) {
-      if (tenantIdHeader == null || tenantIdHeader.isBlank()) {
+      boolean authBootstrap = path.startsWith("/api/auth/");
+      // 登录/租户列表等不要用浏览器残留的 X-Tenant-Id（租户归一前可能是 1），
+      // 否则多租户拦截器会按旧 id 过滤 sys_user，表现为 401 Invalid username or password。
+      if (authBootstrap || tenantIdHeader == null || tenantIdHeader.isBlank()) {
         TenantContextHolder.setTenantId(TenantContextHolder.DEFAULT_TENANT_ID);
       } else {
         TenantContextHolder.setTenantId(Long.valueOf(tenantIdHeader.trim()));

@@ -29,6 +29,7 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainThreeYearPlanMapper;
 import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOptionsSupport;
 import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOptionsSupport.ResearchCollectionFieldOptions;
 import com.guoyu.platform.trainingdepartment.support.ResearchCollectionTemplateExportService;
+import com.guoyu.platform.trainingdepartment.support.ResearchOrgStatusSupport;
 import com.guoyu.platform.trainingdepartment.vo.PublicResearchCollectionSubmitResultVO;
 import com.guoyu.platform.trainingdepartment.vo.PublicResearchCollectionVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainResearchCollectionVO;
@@ -113,6 +114,7 @@ public class TrainResearchCollectionApplicationService {
   @Transactional
   public TrainResearchCollectionVO startCollection(Long researchOrgId) {
     TrainResearchOrgEntity research = requireResearchOrg(researchOrgId);
+    ResearchOrgStatusSupport.assertEnabled(research);
     if (research.getTargetOrgId() == null || research.getTargetOrgId() <= 0) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请先在调研企业中关联系统企业");
     }
@@ -169,6 +171,7 @@ public class TrainResearchCollectionApplicationService {
   @Transactional
   public TrainResearchPersonVO createPerson(Long researchOrgId, TrainResearchPersonCreateReq req) {
     TrainResearchOrgEntity research = requireResearchOrg(researchOrgId);
+    ResearchOrgStatusSupport.assertEnabled(research);
     TrainSignUpSelfEntity signUp = requireActiveSignUp(researchOrgId);
     ResearchCollectionFieldOptions fieldOptions = resolveEffectiveFieldOptions(signUp, research);
     fieldOptionsSupport.validateCreatePerson(fieldOptions, req);
@@ -194,6 +197,7 @@ public class TrainResearchCollectionApplicationService {
   @Transactional
   public TrainResearchPersonVO updatePerson(Long researchOrgId, Long peopleId, TrainResearchPersonUpdateReq req) {
     TrainResearchOrgEntity research = requireResearchOrg(researchOrgId);
+    ResearchOrgStatusSupport.assertEnabled(research);
     TrainSignUpSelfEntity signUp = requireActiveSignUp(researchOrgId);
     ResearchCollectionFieldOptions fieldOptions = resolveEffectiveFieldOptions(signUp, research);
     fieldOptionsSupport.validateUpdatePerson(fieldOptions, req);
@@ -209,7 +213,8 @@ public class TrainResearchCollectionApplicationService {
 
   @Transactional
   public void deletePerson(Long researchOrgId, Long peopleId) {
-    requireResearchOrg(researchOrgId);
+    TrainResearchOrgEntity research = requireResearchOrg(researchOrgId);
+    ResearchOrgStatusSupport.assertEnabled(research);
     TrainSignUpSelfEntity signUp = requireActiveSignUp(researchOrgId);
     TrainSignUpPeopleSelfEntity entity = requirePerson(signUp.getId(), peopleId);
     peopleMapper.deleteById(entity.getId());
@@ -223,6 +228,8 @@ public class TrainResearchCollectionApplicationService {
     if (peopleIds == null || peopleIds.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请至少选择一名人员");
     }
+    TrainResearchOrgEntity research = requireResearchOrg(researchOrgId);
+    ResearchOrgStatusSupport.assertEnabled(research);
     TrainSignUpSelfEntity signUp = requireActiveSignUp(researchOrgId);
     Long tenantId = SecurityContext.currentUser().getTenantId();
 
@@ -292,6 +299,7 @@ public class TrainResearchCollectionApplicationService {
   @Transactional
   public TrainThreeYearPlanVO createThreeYearPlan(Long researchOrgId, TrainResearchCollectionCreatePlanReq req) {
     TrainResearchOrgEntity research = requireResearchOrg(researchOrgId);
+    ResearchOrgStatusSupport.assertEnabled(research);
     if (research.getTargetOrgId() == null || research.getTargetOrgId() <= 0) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请先在调研企业中关联系统企业");
     }
@@ -330,17 +338,27 @@ public class TrainResearchCollectionApplicationService {
     OrgEntity targetOrg = resolveTargetOrg(research);
     ResearchCollectionFieldOptions fieldOptions = resolveEffectiveFieldOptions(signUp, research);
     String companyName = targetOrg != null ? targetOrg.getName() : research.getTitle();
+    boolean enabled = ResearchOrgStatusSupport.isEnabled(research);
+    boolean collectable = enabled;
+    String disabledReason = null;
+    if (!enabled) {
+      disabledReason = "该调研企业已禁用，采集已结束";
+    }
     return new PublicResearchCollectionVO(
         signUp.getTitle(),
         research.getTitle(),
         companyName,
         fieldOptions,
-        true);
+        collectable,
+        collectable,
+        disabledReason);
   }
 
   @Transactional(readOnly = true)
   public TrainResearchPersonVO findPublicPerson(String token, String idCardNumber) {
     TrainSignUpSelfEntity signUp = requireSignUpByToken(token);
+    TrainResearchOrgEntity research = requireResearchOrgById(signUp.getResearchOrgId());
+    ResearchOrgStatusSupport.assertEnabled(research);
     TrainSignUpPeopleSelfEntity entity = peopleMapper.selectOne(
         new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
             .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUp.getId())
@@ -354,6 +372,7 @@ public class TrainResearchCollectionApplicationService {
   public PublicResearchCollectionSubmitResultVO submitPublicPerson(String token, TrainResearchPersonCreateReq req) {
     TrainSignUpSelfEntity signUp = requireSignUpByToken(token);
     TrainResearchOrgEntity research = requireResearchOrgById(signUp.getResearchOrgId());
+    ResearchOrgStatusSupport.assertEnabled(research);
     ResearchCollectionFieldOptions fieldOptions = resolveEffectiveFieldOptions(signUp, research);
     fieldOptionsSupport.validateCreatePerson(fieldOptions, req);
     if (!StringUtils.hasText(req.name())) {
@@ -673,7 +692,9 @@ public class TrainResearchCollectionApplicationService {
         signUp != null && StringUtils.hasText(signUp.getQrcodeToken())
             ? buildCollectionPageUrl(signUp.getQrcodeToken()) : null,
         signUp != null ? signUp.getCreateTime() : null,
-        resolveEffectiveFieldOptions(signUp, research));
+        resolveEffectiveFieldOptions(signUp, research),
+        !ResearchOrgStatusSupport.isEnabled(research),
+        !ResearchOrgStatusSupport.isEnabled(research));
   }
 
   private ResearchCollectionFieldOptions resolveEffectiveFieldOptions(

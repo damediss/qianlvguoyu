@@ -2321,6 +2321,21 @@ export interface ResearchCollectionFieldOptions {
   fields?: Record<string, ResearchCollectionFieldConfig>;
 }
 
+// ==================== System Company (培训企业管理 / sys_org company) ====================
+export interface SystemCompany {
+  id: number;
+  code: string;
+  name: string;
+  sortOrder?: number;
+  status?: string;
+}
+
+export interface SystemCompanySaveReq {
+  name: string;
+  sortOrder?: number;
+  status?: string;
+}
+
 // ==================== Train Research Org (培训调研企业) ====================
 export interface TrainResearchOrg {
   id: number;
@@ -2382,6 +2397,9 @@ export interface TrainResearchCollection {
   collectionPageUrl?: string;
   collectionStartTime?: string;
   fieldOptions?: ResearchCollectionFieldOptions;
+  /** 调研企业已禁用：采集抽屉只读 */
+  readOnly?: boolean;
+  disabled?: boolean;
 }
 
 export interface TrainResearchPersonCertificate {

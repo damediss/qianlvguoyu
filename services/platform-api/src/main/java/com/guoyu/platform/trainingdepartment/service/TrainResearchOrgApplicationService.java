@@ -6,7 +6,9 @@ import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.system.entity.OrgEntity;
 import com.guoyu.platform.system.mapper.OrgMapper;
+import com.guoyu.platform.system.vo.OrgSimpleVO;
 import com.guoyu.platform.security.SecurityContext;
+import com.guoyu.platform.trainingdepartment.dto.EnsureSystemCompanyReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResearchOrgCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResearchOrgQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainResearchOrgUpdateReq;
@@ -18,6 +20,7 @@ import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOpti
 import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOptionsSupport.ResearchCollectionFieldOptions;
 import com.guoyu.platform.trainingdepartment.vo.TrainResearchOrgVO;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -47,8 +50,10 @@ public class TrainResearchOrgApplicationService {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     LambdaQueryWrapper<TrainResearchOrgEntity> wrapper = new LambdaQueryWrapper<TrainResearchOrgEntity>()
         .eq(TrainResearchOrgEntity::getTenantId, tenantId)
-        .eq(TrainResearchOrgEntity::getStatus, req.status() != null ? req.status() : 1)
         .orderByDesc(TrainResearchOrgEntity::getCreateTime);
+    if (req.status() != null) {
+      wrapper.eq(TrainResearchOrgEntity::getStatus, req.status());
+    }
     if (StringUtils.hasText(req.title())) {
       wrapper.like(TrainResearchOrgEntity::getTitle, req.title());
     }
@@ -60,7 +65,7 @@ public class TrainResearchOrgApplicationService {
     Page<TrainResearchOrgEntity> result = trainResearchOrgMapper.selectPage(page, wrapper);
     Map<Long, String> orgNames = resolveOrgNames(result.getRecords());
     List<TrainResearchOrgVO> list = result.getRecords().stream()
-        .map(e -> toVO(e, orgNames.get(e.getTargetOrgId())))
+        .map(e -> toVO(e, lookupOrgName(orgNames, e.getTargetOrgId())))
         .toList();
     return new PageResponse<>(list, result.getCurrent(), result.getSize(), result.getTotal());
   }
@@ -146,6 +151,50 @@ public class TrainResearchOrgApplicationService {
     trainResearchOrgMapper.deleteById(id);
   }
 
+  /**
+   * 按名称查找或创建系统企业（orgType=company），供调研企业关联下拉使用。
+   */
+  public OrgSimpleVO ensureSystemCompany(EnsureSystemCompanyReq req) {
+    String name = req.name() == null ? "" : req.name().trim();
+    if (!StringUtils.hasText(name)) {
+      throw new BusinessException("BAD_REQUEST", "企业名称不能为空");
+    }
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    OrgEntity existing = orgMapper.selectOne(
+        new LambdaQueryWrapper<OrgEntity>()
+            .eq(OrgEntity::getTenantId, tenantId)
+            .eq(OrgEntity::getDeleted, 0)
+            .eq(OrgEntity::getOrgType, "company")
+            .eq(OrgEntity::getName, name)
+            .orderByAsc(OrgEntity::getId)
+            .last("LIMIT 1"));
+    if (existing != null) {
+      return new OrgSimpleVO(existing.getId(), existing.getName(), existing.getOrgType(), existing.getSortOrder());
+    }
+
+    String code = "ENT" + System.currentTimeMillis();
+    boolean codeExists = orgMapper.exists(
+        new LambdaQueryWrapper<OrgEntity>()
+            .eq(OrgEntity::getTenantId, tenantId)
+            .eq(OrgEntity::getCode, code)
+            .eq(OrgEntity::getDeleted, 0));
+    if (codeExists) {
+      code = "ENT" + System.currentTimeMillis() + (int) (Math.random() * 1000);
+    }
+
+    OrgEntity entity = new OrgEntity();
+    entity.setTenantId(tenantId);
+    entity.setParentId(0L);
+    entity.setOrgType("company");
+    entity.setCode(code);
+    entity.setName(name);
+    entity.setSortOrder(0);
+    entity.setStatus("enabled");
+    entity.setDeleted(0);
+    orgMapper.insert(entity);
+    return new OrgSimpleVO(entity.getId(), entity.getName(), entity.getOrgType(), entity.getSortOrder());
+  }
+
   private TrainResearchOrgVO toVO(TrainResearchOrgEntity e, String targetOrgName) {
     return new TrainResearchOrgVO(
         e.getId(),
@@ -176,10 +225,18 @@ public class TrainResearchOrgApplicationService {
         .distinct()
         .toList();
     if (orgIds.isEmpty()) {
-      return Map.of();
+      return new HashMap<>();
     }
     return orgMapper.selectBatchIds(orgIds).stream()
-        .collect(Collectors.toMap(OrgEntity::getId, OrgEntity::getName, (a, b) -> a));
+        .collect(Collectors.toMap(OrgEntity::getId, OrgEntity::getName, (a, b) -> a, HashMap::new));
+  }
+
+  /** Immutable Map.get(null) NPE；调研企业允许未绑定 sys_org。 */
+  private static String lookupOrgName(Map<Long, String> orgNames, Long orgId) {
+    if (orgId == null || orgId <= 0) {
+      return null;
+    }
+    return orgNames.get(orgId);
   }
 
   private String resolveOrgName(Long orgId) {

@@ -689,7 +689,7 @@ export function TrainingGraduationPage({
               dataSource={filteredCertPreviewItems}
               columns={[
                 { title: '文件', dataIndex: 'fileName', ellipsis: true, width: 220 },
-                { title: '证号', dataIndex: 'certificateNo', width: 180, ellipsis: true },
+                { title: '证书编号', dataIndex: 'certificateNo', width: 180, ellipsis: true },
                 { title: '身份证', dataIndex: 'idCard', width: 160 },
                 {
                   title: '匹配学员',

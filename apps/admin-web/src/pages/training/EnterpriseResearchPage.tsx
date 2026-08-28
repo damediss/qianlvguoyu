@@ -1,13 +1,12 @@
 import { useMemo, useState } from 'react';
 import {
-  Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Typography, message,
+  Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Typography, message,
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined, TeamOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { listOrgs } from '../../api/system';
 import * as trainApi from '../../api/training';
 import { ResearchCollectionDrawer } from './ResearchCollectionDrawer';
 import { ResearchCollectionFieldOptionsEditor } from './ResearchCollectionFieldOptionsEditor';
@@ -27,23 +26,121 @@ import type {
 
 const { Title } = Typography;
 
-const STATUS_OPTIONS = [
+const NEW_ORG_PREFIX = '__new__:';
+const SYSTEM_COMPANIES_QUERY_KEY = ['system-companies'] as const;
+
+const STATUS_FILTER_OPTIONS = [
+  { value: '', label: '全部' },
   { value: 1, label: '启用' },
   { value: 0, label: '禁用' },
 ];
 
+/**
+ * 关联系统企业：可搜索选择；输入不存在的名称后回车或点「xxx（添加）」即落库并选中。
+ * 不用失焦自动创建，避免搜索筛选后点选已有企业时误建新企业。
+ */
+function SystemCompanySelect({
+  value,
+  onChange,
+}: {
+  value?: number | null;
+  onChange?: (v?: number | null) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [searchText, setSearchText] = useState('');
+
+  const { data: orgList = [] } = useQuery({
+    queryKey: SYSTEM_COMPANIES_QUERY_KEY,
+    queryFn: () => trainApi.listSystemCompanies(),
+  });
+
+  const ensureMu = useMutation({
+    mutationFn: (name: string) => trainApi.ensureSystemCompany(name),
+    onSuccess: (org) => {
+      message.success(`已添加系统企业：${org.name}`);
+      void queryClient.invalidateQueries({ queryKey: SYSTEM_COMPANIES_QUERY_KEY });
+      onChange?.(org.id);
+      setSearchText('');
+    },
+    onError: (e: Error) => message.error(e.message || '添加企业失败'),
+  });
+
+  const typed = searchText.trim();
+  const exact = typed ? orgList.find((o) => o.name === typed) : undefined;
+
+  const options = useMemo(() => {
+    const opts: { value: number | string; label: string }[] = orgList.map((o) => ({
+      value: o.id,
+      label: o.name,
+    }));
+    if (typed && !exact) {
+      opts.unshift({ value: `${NEW_ORG_PREFIX}${typed}`, label: `${typed}（添加）` });
+    }
+    return opts;
+  }, [orgList, typed, exact]);
+
+  const commitTypedName = (name: string) => {
+    const n = name.trim();
+    if (!n || ensureMu.isPending) return;
+    const hit = orgList.find((o) => o.name === n);
+    if (hit) {
+      onChange?.(hit.id);
+      setSearchText('');
+      return;
+    }
+    ensureMu.mutate(n);
+  };
+
+  return (
+    <Select<number | string>
+      showSearch
+      allowClear
+      placeholder="请选择或输入系统企业"
+      loading={ensureMu.isPending}
+      value={value ?? undefined}
+      searchValue={searchText}
+      options={options}
+      filterOption={(input, option) =>
+        String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+      }
+      notFoundContent={ensureMu.isPending ? '添加中…' : '无匹配，回车可添加新企业'}
+      onSearch={setSearchText}
+      onChange={(v) => {
+        if (v == null) {
+          setSearchText('');
+          onChange?.(undefined);
+          return;
+        }
+        if (typeof v === 'string' && v.startsWith(NEW_ORG_PREFIX)) {
+          commitTypedName(v.slice(NEW_ORG_PREFIX.length));
+          return;
+        }
+        setSearchText('');
+        onChange?.(Number(v));
+      }}
+      onInputKeyDown={(e) => {
+        if (e.key === 'Enter' && typed && !exact) {
+          e.preventDefault();
+          commitTypedName(typed);
+        }
+      }}
+    />
+  );
+}
+
 export function EnterpriseResearchPage() {
   const queryClient = useQueryClient();
   const [form] = Form.useForm<TrainResearchOrgCreateReq & { id?: number; collectionFieldOptions?: ResearchCollectionFieldOptions }>();
-  const [searchForm] = Form.useForm<{ title?: string; type?: string }>();
+  const [searchForm] = Form.useForm<{ title?: string; type?: string; status?: number | '' }>();
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [filters, setFilters] = useState<{ title?: string; type?: string }>({});
+  const [filters, setFilters] = useState<{ title?: string; type?: string; status?: number }>({});
   const [collectionDrawerOpen, setCollectionDrawerOpen] = useState(false);
   const [activeResearchOrg, setActiveResearchOrg] = useState<TrainResearchOrg | null>(null);
+  const [editingInitialStatus, setEditingInitialStatus] = useState<number | null>(null);
 
   const listQuery: TrainResearchOrgQuery = useMemo(
     () => ({
@@ -57,11 +154,6 @@ export function EnterpriseResearchPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['research-orgs', listQuery],
     queryFn: () => trainApi.pageResearchOrgs(listQuery),
-  });
-
-  const { data: orgList = [] } = useQuery({
-    queryKey: ['orgs-simple'],
-    queryFn: () => listOrgs(),
   });
 
   const createMu = useMutation({
@@ -102,6 +194,7 @@ export function EnterpriseResearchPage() {
 
   const openCreate = () => {
     setEditingId(null);
+    setEditingInitialStatus(null);
     form.setFieldsValue({
       status: 1,
       sortNumber: 100,
@@ -112,6 +205,7 @@ export function EnterpriseResearchPage() {
 
   const openEdit = async (r: TrainResearchOrg) => {
     setEditingId(r.id);
+    setEditingInitialStatus(r.status ?? 1);
     let fieldOptions = r.collectionFieldOptions;
     if (!fieldOptions) {
       try {
@@ -149,6 +243,18 @@ export function EnterpriseResearchPage() {
       ...values,
       collectionFieldOptions: normalizeCollectionFieldOptions(values.collectionFieldOptions),
     };
+    const disabling = editingId && editingInitialStatus === 1 && values.status === 0;
+    if (disabling) {
+      const ok = await new Promise<boolean>((resolve) => {
+        Modal.confirm({
+          title: '确认禁用',
+          content: '禁用后将停止后台与扫码采集，已采数据仍可查看。确定禁用吗？',
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false),
+        });
+      });
+      if (!ok) return;
+    }
     if (editingId) {
       updateMu.mutate({ id: editingId, p: payload });
     } else {
@@ -156,9 +262,16 @@ export function EnterpriseResearchPage() {
     }
   };
 
-  const handleSearch = (values: { title?: string; type?: string }) => {
+  const handleSearch = (values: { title?: string; type?: string; status?: number | '' }) => {
     setCurrentPage(1);
-    setFilters(values);
+    const next: { title?: string; type?: string; status?: number } = {
+      title: values.title,
+      type: values.type,
+    };
+    if (values.status === 0 || values.status === 1) {
+      next.status = values.status;
+    }
+    setFilters(next);
   };
 
   const handleReset = () => {
@@ -200,7 +313,8 @@ export function EnterpriseResearchPage() {
       title: '状态',
       dataIndex: 'status',
       width: 80,
-      render: (v: number) => (v === 1 ? '启用' : '禁用'),
+      render: (v: number) =>
+        v === 1 ? <Tag color="success">启用</Tag> : v === 0 ? <Tag>禁用</Tag> : '—',
     },
     { title: '创建时间', dataIndex: 'createTime', width: 160 },
     {
@@ -244,6 +358,9 @@ export function EnterpriseResearchPage() {
         <Form.Item name="type" label="类型">
           <Input placeholder="请输入" allowClear style={{ width: 160 }} />
         </Form.Item>
+        <Form.Item name="status" label="状态" initialValue="">
+          <Select allowClear placeholder="全部" style={{ width: 120 }} options={STATUS_FILTER_OPTIONS} />
+        </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>
             查询
@@ -285,16 +402,10 @@ export function EnterpriseResearchPage() {
           <Form.Item
             name="targetOrgId"
             label="关联系统企业"
-            rules={[{ required: true, message: '请选择系统企业' }]}
-            extra="用于人员采集、三年规划与企业审核权限"
+            rules={[{ required: true, message: '请选择或输入系统企业' }]}
+            extra="可搜索选择；输入新名称后回车，或点选「xxx（添加）」即可落库并选中。用于人员采集、三年规划与企业审核权限"
           >
-            <Select
-              showSearch
-              allowClear
-              placeholder="请选择系统企业"
-              optionFilterProp="label"
-              options={orgList.map((o) => ({ value: o.id, label: o.name }))}
-            />
+            <SystemCompanySelect />
           </Form.Item>
           <Form.Item name="type" label="类型">
             <Input placeholder="请输入" />

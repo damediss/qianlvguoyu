@@ -214,7 +214,7 @@ export const SolutionPlanningPage: React.FC = () => {
 
   const researchQuery = useQuery({
     queryKey: ['research-orgs-all'],
-    queryFn: () => trainApi.pageResearchOrgs({ page: 1, pageSize: 200 }),
+    queryFn: () => trainApi.pageResearchOrgs({ page: 1, pageSize: 200, status: 1 }),
   });
 
   const detailQuery = useQuery({
