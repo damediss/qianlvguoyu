@@ -180,7 +180,7 @@
 |---|---|---|
 | 4.1 | 旧三库 mysqldump 全量归档 | 【AI】可代跑，【你】确认归档完整并存入 COS/离线介质 |
 | 4.2 | **旧库 DROP 下线**——破坏性动作，必须你亲自执行，我不执行删库 | 【你】 |
-| 4.3 | SaaS 正式移除 sync 通道代码、PHP_MYSQL_* 配置、user-provisioning 双写残留（独立变更，走正常发版） | 【AI】写代码，【你】部署 |
+| 4.3 | SaaS 正式移除 sync 通道代码、PHP_MYSQL_* 配置、user-provisioning 双写残留（独立变更，走正常发版）——**已于 2026-08-27 随《AI同步学功能单库化改造方案_gjjddbpro》v1.2 实施完成**（`integration/php`/`integration/sync` 整包拆除、配置面清理，主仓 dev `aae97da`/`7778d35`）；归档 SQL 见 `infra/db/archive/`，§4-H 数据修复脚本见 `infra/db/merge-single-db-repair.sql`（部署窗口执行） | 【AI】写代码，【你】部署 |
 | 4.4 | 更新 AGENTS.md / README / deploy 文档中的库名与配置说明 | 【AI】 |
 
 ### 分工速查表
