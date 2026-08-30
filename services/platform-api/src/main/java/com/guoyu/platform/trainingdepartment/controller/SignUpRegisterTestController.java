@@ -24,10 +24,13 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * 扫码信息收集 - 测试用 controller（完整字段版）。
+ * 扫码信息收集 - 学员端 controller（完整字段版）。
  *
- * <p>无登录态、跨租户允许访问，仅用于本地联调与功能验证。
- * 生产环境务必配合 TenantContextFilter + 权限校验使用。
+ * <p>学员匿名链路（生产功能）：学员扫报名二维码后未登录填写，以身份证号(+部分场景手机号)
+ * 做弱身份校验。本 controller 全部端点在 SecurityConfig 中按精确路径放行（不受
+ * PERMIT_TEST_APIS 开关影响）；同前缀下的管理端端点（TrainSignUpSelfController /
+ * TrainSignUpCollectionController）不在白名单内，走 Sa-Token + @PreAuthorize 保护。
+ * 本地联调如需管理端也匿名访问，设 PERMIT_TEST_APIS=true。
  */
 @RestController
 @RequestMapping("/training/sign-ups")

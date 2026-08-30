@@ -176,6 +176,9 @@ platform:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:}
   security:
     jwt-secret: ${JWT_SECRET:dev-only-change-me-dev-only-change-me}
+    # 测试便利白名单开关：仅本机联调置 true（/training/sign-ups/** 全路径匿名放行），
+    # 生产必须为 false（默认）——管理端 sign-ups 端点走 Sa-Token + @PreAuthorize
+    permit-test-apis: ${PERMIT_TEST_APIS:false}
     access-token-ttl-seconds: ${ACCESS_TOKEN_TTL_SECONDS:7200}
     refresh-token-ttl-seconds: ${REFRESH_TOKEN_TTL_SECONDS:604800}
   file:
