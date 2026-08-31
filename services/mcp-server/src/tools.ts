@@ -10,11 +10,17 @@ import {
 } from "./context/botActorContext.js";
 import { parseGeneratedArtifactEnvelope } from "./artifacts/schema.js";
 import {
+  contractDraftPlanInputShape,
   contractDerivationInputShape,
+  contractTemplateSelectionInputShape,
   resolveContractSourceInputShape,
+  type ContractDraftPlanRequest,
   type ContractDerivationRequest,
+  type ContractTemplateSelectionRequest,
   type ResolveContractSourceRequest
 } from "./contracts/schema.js";
+import { assertDraftReadinessToken, planContractDraft } from "./contracts/draftPlanning.js";
+import { assertTemplateSelectionToken, selectContractTemplate } from "./contracts/templateSelection.js";
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional();
 const taskIdSchema = z.string().min(1).describe("Certification task ID from platform-api.");
@@ -102,15 +108,60 @@ export function createCertificationMcpServer(platformClient: PlatformClient): Mc
   );
 
   server.registerTool(
+    "contract.selectTemplate",
+    {
+      description:
+        "Mandatory deterministic template gate after WeKnora retrieval and before contract.resolveSourceDocument. Pass every relevant DOCX candidate with the exact retrieval UUIDs and truthful metadata. The tool excludes test/sample/void documents, requires filename compatibility with the requested contract type, ranks valid candidates, and returns needs_user_choice when the leading candidates are too close. Resolve only the selected result; never bypass a no_compatible_template or needs_user_choice status.",
+      inputSchema: contractTemplateSelectionInputShape
+    },
+    async (args, extra) => runTool(
+      "contract.selectTemplate",
+      async (actor) => selectContractTemplate(args as ContractTemplateSelectionRequest, actor!),
+      extra,
+      true
+    )
+  );
+
+  server.registerTool(
     "contract.resolveSourceDocument",
     {
       description:
-        "Resolve a user-confirmed historical DOCX from WeKnora into an immutable source snapshot and a reviewed structure manifest. Call this after RAG has found a similar agreement and the private-chat user has explicitly selected it. If derivationStatus is requires_review, do not call contract.generatePreview.",
+        "Resolve the unique historical DOCX selected by contract.selectTemplate into an immutable source snapshot and a reviewed structure manifest. Do not ask the user to confirm this template separately; name the selected DOCX in the final template-and-fields summary. Before calling, you MUST retrieve candidates, call contract.selectTemplate, and pass its contractType and templateSelectionToken with the exact selected knowledge_base_id and knowledge_id UUIDs. The token is session- and document-bound; never invent IDs or bypass an ambiguous/no-template result. If this tool fails or derivationStatus is requires_review, do not call contract.generatePreview and do not claim that a DOCX exists.",
       inputSchema: resolveContractSourceInputShape
     },
     async (args, extra) => runTool(
       "contract.resolveSourceDocument",
-      (actor) => platformClient.resolveContractSource(args as ResolveContractSourceRequest, actor!),
+      (actor) => {
+        const request = args as ResolveContractSourceRequest;
+        assertTemplateSelectionToken(
+          request.contractType,
+          request.knowledgeBaseId,
+          request.knowledgeId,
+          request.templateSelectionToken,
+          actor!
+        );
+        const {
+          contractType: _contractType,
+          templateSelectionToken: _selectionToken,
+          ...platformRequest
+        } = request;
+        return platformClient.resolveContractSource(platformRequest, actor!);
+      },
+      extra,
+      true
+    )
+  );
+
+  server.registerTool(
+    "contract.planDraft",
+    {
+      description:
+        "Mandatory intake gate for contract generation. After retrieving and resolving the selected historical DOCX, call this tool with every contract field currently supplied by the user. For vague requests it deterministically returns all missingFields together. When all twelve required fields are complete it returns one template-and-fields summary and asks once whether to generate. On the user's next direct confirmation, such as 确认, 生成吧, or 可以生成, set userConfirmedSummary=true and call this tool again in the same turn. No exact phrase or verification code is required. contract.generatePreview requires the returned internal readiness token; never expose, invent, or reuse it.",
+      inputSchema: contractDraftPlanInputShape
+    },
+    async (args, extra) => runTool(
+      "contract.planDraft",
+      async (actor) => planContractDraft(args as ContractDraftPlanRequest, actor!),
       extra,
       true
     )
@@ -120,12 +171,17 @@ export function createCertificationMcpServer(platformClient: PlatformClient): Mc
     "contract.generatePreview",
     {
       description:
-        "Derive a draft DOCX from a confirmed immutable historical source snapshot while preserving its structure and layout. Use source identifiers returned by contract.resolveSourceDocument and confirmed values collected from the current private-chat user. Supply contractNumber, partyA, partyB, amount, projectName, and serviceScope. Payment-row amounts are recalculated from the new currency amount while retaining the source payment percentages. Section edits and PDF are not enabled.",
+        "Derive a draft DOCX from a confirmed immutable historical source snapshot while preserving its structure and layout. This tool is forbidden until contract.planDraft returns readyForGeneration=true and an internal draftReadinessToken after one direct confirmation from the current trusted user message. No exact phrase or verification code is required. Supply every confirmed business and sensitive field, including signing date, both contacts and phones, and paymentPercentages. Payment-row amounts are recalculated from the new total and confirmed percentages. Section edits and PDF are not enabled.",
       inputSchema: contractDerivationInputShape
     },
     async (args, extra) => runTool(
       "contract.generatePreview",
-      (actor) => platformClient.generateContractPreview(args as ContractDerivationRequest, actor!),
+      (actor) => {
+        const request = args as ContractDerivationRequest;
+        assertDraftReadinessToken(request, actor!);
+        const { draftReadinessToken: _token, ...platformRequest } = request;
+        return platformClient.generateContractPreview(platformRequest, actor!);
+      },
       extra,
       true
     )

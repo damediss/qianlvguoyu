@@ -94,8 +94,12 @@ class DefenseScoringApplicationServiceTest {
     stubTaskAndGroup();
     CertificationCandidateEntity batman = candidate(11L, "蝙蝠侠", "452121199001011234");
     batman.setStatus("exam_in_progress");
+    batman.setLevelCode("technician");
+    batman.setLevelName("技师");
     CertificationCandidateEntity inactive = candidate(12L, "停用考生", "452121199001011235");
     inactive.setStatus("inactive");
+    inactive.setLevelCode("technician");
+    inactive.setLevelName("技师");
     when(candidateMapper.selectList(any())).thenReturn(List.of(batman, inactive));
     when(configMapper.selectOne(any())).thenReturn(null);
     when(reportMapper.selectList(any())).thenReturn(List.of());
@@ -105,6 +109,56 @@ class DefenseScoringApplicationServiceTest {
 
     assertThat(setup.candidates()).extracting(DefenseScoringModels.CandidateRowView::candidateName)
         .containsExactly("蝙蝠侠");
+  }
+
+  @Test
+  void setupOnlyListsTechnicianAndSeniorTechnician() {
+    stubTaskAndGroup();
+    CertificationCandidateEntity technician = candidate(11L, "技师考生", "452121199001011234");
+    technician.setLevelCode("technician");
+    technician.setLevelName("技师");
+    CertificationCandidateEntity senior = candidate(12L, "高级技师考生", "452121199001011236");
+    senior.setLevelCode("senior_technician");
+    senior.setLevelName("一级/高级技师");
+    CertificationCandidateEntity junior = candidate(13L, "初级考生", "452121199001011237");
+    junior.setLevelCode("junior");
+    junior.setLevelName("初级");
+    CertificationCandidateEntity seniorWorker = candidate(14L, "高级工考生", "452121199001011238");
+    seniorWorker.setLevelCode("senior");
+    seniorWorker.setLevelName("高级");
+    when(candidateMapper.selectList(any())).thenReturn(List.of(technician, senior, junior, seniorWorker));
+    when(configMapper.selectOne(any())).thenReturn(null);
+    when(reportMapper.selectList(any())).thenReturn(List.of());
+    when(groupMapper.selectList(any())).thenReturn(List.of());
+
+    DefenseScoringModels.SetupView setup = service.setup(5L);
+
+    assertThat(setup.candidates()).extracting(DefenseScoringModels.CandidateRowView::candidateName)
+        .containsExactly("技师考生", "高级技师考生");
+  }
+
+  @Test
+  void matchReportsRejectsLowerSkillLevelCandidate() {
+    stubTaskAndGroup();
+    CertificationCandidateEntity technician = candidate(11L, "张三", "110101199001011234");
+    technician.setLevelCode("technician");
+    technician.setLevelName("技师");
+    CertificationCandidateEntity junior = candidate(12L, "李四", "110101199001011235");
+    junior.setLevelCode("junior");
+    junior.setLevelName("初级");
+    when(candidateMapper.selectList(any())).thenReturn(List.of(technician, junior));
+    when(configMapper.selectOne(any())).thenReturn(config(5L, 80L));
+    when(reportMapper.selectOne(any())).thenReturn(null);
+    FileEntity pdf = new FileEntity();
+    pdf.setOriginalName("李四_110101199001011235.pdf");
+    pdf.setContentType("application/pdf");
+    when(fileApplicationService.getExistingFile(1L, 9003L)).thenReturn(pdf);
+
+    DefenseScoringModels.MatchResultView result = service.matchReports(5L, new DefenseScoringModels.MatchReportsReq(
+        List.of(new DefenseScoringModels.ReportFileReq(9003L, "李四_110101199001011235.pdf"))));
+
+    assertThat(result.matched()).isEqualTo(0);
+    assertThat(result.unmatchedFiles().get(0).reason()).contains("技师、高级技师");
   }
 
   @Test
@@ -221,6 +275,8 @@ class DefenseScoringApplicationServiceTest {
     entity.setIdCardNo(idCard);
     entity.setMaskedIdCardNo(idCard.substring(0, 4) + "**********" + idCard.substring(14));
     entity.setStatus("active");
+    entity.setLevelCode("technician");
+    entity.setLevelName("技师");
     return entity;
   }
 

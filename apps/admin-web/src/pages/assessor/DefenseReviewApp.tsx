@@ -1,14 +1,15 @@
 import { ExportOutlined, LeftOutlined, LogoutOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Empty, List, Spin, Tag, Typography, message } from 'antd';
+import { Button, List, Spin, Tag, Typography, message } from 'antd';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { logout } from '../../api/auth';
 import { getMyDefenseReport, listMyDefenseReports } from '../../api/defenseScoring';
 import { fetchPlatformFileBlob } from '../../api/files';
 import { useAuthStore } from '../../stores/authStore';
+import type { DefenseAssessorReportListItem } from '../../types/defenseScoring';
 import { DefensePdfViewer, openPdfExternally } from './DefensePdfViewer';
 import { DefenseScorePanel } from './DefenseScorePanel';
-import { formatScore, statusLabel } from './defenseScoreCatalog';
+import { DEFENSE_LEVEL_LANES, defenseLevelLane, formatScore, statusLabel } from './defenseScoreCatalog';
 import './DefenseReviewApp.css';
 
 type DefenseView = 'list' | 'pdf' | 'score';
@@ -69,6 +70,13 @@ export function DefenseReviewApp() {
   const selected = listQuery.data?.find((item) => item.reportId === selectedReportId);
   const pdfFileId = detailQuery.data?.fileId || selected?.fileId;
   const pdfFileName = detailQuery.data?.fileName || selected?.fileName;
+  const levelLanes = useMemo(() => {
+    const items = listQuery.data || [];
+    return DEFENSE_LEVEL_LANES.map((lane) => ({
+      ...lane,
+      items: items.filter((item) => defenseLevelLane(item.levelName) === lane.key),
+    }));
+  }, [listQuery.data]);
 
   async function handleOpenExternal() {
     if (!pdfFileId) {
@@ -119,56 +127,37 @@ export function DefenseReviewApp() {
         <section className="defense-phone-list">
           {listQuery.isLoading ? (
             <Spin className="defense-phone-spin" />
-          ) : (listQuery.data || []).length === 0 ? (
-            <Empty description="暂无待阅览的业绩评估报告" />
           ) : (
-            <List
-              dataSource={listQuery.data}
-              renderItem={(item) => (
-                <List.Item
-                  className="defense-phone-card"
-                  extra={(
-                    <div className="defense-phone-card-actions">
-                      <Button
-                        type="primary"
-                        onClick={() => {
-                          setSelectedReportId(item.reportId);
-                          setView('pdf');
-                        }}
-                      >
-                        考前阅卷
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          setSelectedReportId(item.reportId);
-                          setView('score');
-                        }}
-                      >
-                        答辩评分
-                      </Button>
-                    </div>
-                  )}
-                >
-                  <div className="defense-phone-card-main">
-                    <Typography.Title level={5}>{item.candidateName || '考生'}</Typography.Title>
-                    <Typography.Text type="secondary">{item.admissionTicketNo || item.maskedIdCardNo || '-'}</Typography.Text>
-                    <div className="defense-phone-meta">
-                      {item.workTypeName ? <Tag>{item.workTypeName}</Tag> : null}
-                      {item.levelName ? <Tag>{item.levelName}</Tag> : null}
-                      <Tag color={item.thesisStatus === 'submitted' ? 'green' : item.thesisStatus === 'draft' ? 'gold' : 'default'}>
-                        论文{statusLabel(item.thesisStatus)}
-                        {item.thesisStatus === 'submitted' ? ` ${formatScore(item.thesisFinalScore)}` : ''}
-                      </Tag>
-                      <Tag color={item.performanceStatus === 'submitted' ? 'green' : item.performanceStatus === 'draft' ? 'gold' : 'default'}>
-                        业绩{statusLabel(item.performanceStatus)}
-                        {item.performanceStatus === 'submitted' ? ` ${formatScore(item.performanceFinalScore)}` : ''}
-                      </Tag>
-                    </div>
-                    <Typography.Text type="secondary">{item.fileName || '业绩评估报告.pdf'}</Typography.Text>
+            <div className="defense-phone-lanes">
+              {levelLanes.map((lane) => (
+                <section key={lane.key} className={`defense-phone-lane defense-phone-lane-${lane.key}`}>
+                  <div className="defense-phone-lane-bar" role="separator">
+                    <span className="defense-phone-lane-label">{lane.label}</span>
+                    <span className="defense-phone-lane-count">{lane.items.length}人</span>
                   </div>
-                </List.Item>
-              )}
-            />
+                  {lane.items.length === 0 ? (
+                    <div className="defense-phone-lane-empty">本级别暂无考生</div>
+                  ) : (
+                    <List
+                      dataSource={lane.items}
+                      renderItem={(item) => (
+                        <ReportListCard
+                          item={item}
+                          onOpenPdf={() => {
+                            setSelectedReportId(item.reportId);
+                            setView('pdf');
+                          }}
+                          onOpenScore={() => {
+                            setSelectedReportId(item.reportId);
+                            setView('score');
+                          }}
+                        />
+                      )}
+                    />
+                  )}
+                </section>
+              ))}
+            </div>
           )}
         </section>
       )}
@@ -184,6 +173,50 @@ export function DefenseReviewApp() {
         </footer>
       ) : null}
     </div>
+  );
+}
+
+function ReportListCard({
+  item,
+  onOpenPdf,
+  onOpenScore,
+}: {
+  item: DefenseAssessorReportListItem;
+  onOpenPdf: () => void;
+  onOpenScore: () => void;
+}) {
+  return (
+    <List.Item
+      className="defense-phone-card"
+      extra={(
+        <div className="defense-phone-card-actions">
+          <Button type="primary" onClick={onOpenPdf}>
+            考前阅卷
+          </Button>
+          <Button onClick={onOpenScore}>
+            答辩评分
+          </Button>
+        </div>
+      )}
+    >
+      <div className="defense-phone-card-main">
+        <Typography.Title level={5}>{item.candidateName || '考生'}</Typography.Title>
+        <Typography.Text type="secondary">{item.admissionTicketNo || item.maskedIdCardNo || '-'}</Typography.Text>
+        <div className="defense-phone-meta">
+          {item.workTypeName ? <Tag>{item.workTypeName}</Tag> : null}
+          {item.levelName ? <Tag color={defenseLevelLane(item.levelName) === 'senior_technician' ? 'volcano' : 'blue'}>{item.levelName}</Tag> : null}
+          <Tag color={item.thesisStatus === 'submitted' ? 'green' : item.thesisStatus === 'draft' ? 'gold' : 'default'}>
+            论文{statusLabel(item.thesisStatus)}
+            {item.thesisStatus === 'submitted' ? ` ${formatScore(item.thesisFinalScore)}` : ''}
+          </Tag>
+          <Tag color={item.performanceStatus === 'submitted' ? 'green' : item.performanceStatus === 'draft' ? 'gold' : 'default'}>
+            业绩{statusLabel(item.performanceStatus)}
+            {item.performanceStatus === 'submitted' ? ` ${formatScore(item.performanceFinalScore)}` : ''}
+          </Tag>
+        </div>
+        <Typography.Text type="secondary">{item.fileName || '业绩评估报告.pdf'}</Typography.Text>
+      </div>
+    </List.Item>
   );
 }
 

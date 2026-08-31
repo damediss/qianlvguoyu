@@ -124,9 +124,10 @@ public class DefenseScoringApplicationService {
   @Transactional
   public DefenseScoringModels.MatchResultView matchReports(Long taskId, DefenseScoringModels.MatchReportsReq req) {
     requireTask(taskId);
-    List<CertificationCandidateEntity> candidates = activeCandidates(taskId);
+    List<CertificationCandidateEntity> allActive = loadActiveCandidates(taskId);
+    List<CertificationCandidateEntity> candidates = eligibleCandidates(allActive);
     if (candidates.isEmpty()) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前认定任务暂无考生，无法匹配业绩评估报告");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, DefenseCandidateEligibility.EMPTY_ROSTER_MESSAGE + "，无法匹配业绩评估报告");
     }
     List<DefenseScoringModels.UnmatchedFileView> unmatched = new ArrayList<>();
     int matched = 0;
@@ -139,7 +140,8 @@ public class DefenseScoringApplicationService {
       String fileName = resolveFileName(fileReq);
       MatchOutcome outcome = matchCandidate(fileName, candidates);
       if (outcome.candidate() == null) {
-        unmatched.add(new DefenseScoringModels.UnmatchedFileView(fileReq.fileId(), fileName, outcome.reason()));
+        unmatched.add(new DefenseScoringModels.UnmatchedFileView(
+            fileReq.fileId(), fileName, unmatchedReason(fileName, allActive, outcome.reason())));
         continue;
       }
       try {
@@ -227,6 +229,9 @@ public class DefenseScoringApplicationService {
       }
       CertificationTaskEntity certTask = taskMap.get(report.getTaskId());
       CertificationCandidateEntity candidate = candidateMap.get(report.getCandidateId());
+      if (candidate != null && !DefenseCandidateEligibility.isEligible(candidate)) {
+        continue;
+      }
       items.add(toListItem(
           report,
           certTask,
@@ -575,6 +580,9 @@ public class DefenseScoringApplicationService {
     if (candidate == null || !taskId.equals(candidate.getTaskId()) || "inactive".equalsIgnoreCase(candidate.getStatus())) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "考生不存在");
     }
+    if (!DefenseCandidateEligibility.isEligible(candidate)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, DefenseCandidateEligibility.RULE_HINT);
+    }
     return candidate;
   }
 
@@ -606,6 +614,10 @@ public class DefenseScoringApplicationService {
   }
 
   private List<CertificationCandidateEntity> activeCandidates(Long taskId) {
+    return eligibleCandidates(loadActiveCandidates(taskId));
+  }
+
+  private List<CertificationCandidateEntity> loadActiveCandidates(Long taskId) {
     // 考生导入后默认为 active；实操开考后会变成 exam_in_progress / absent。
     // 综合答辩配置需要看到本任务全部未停用考生，不能只查 active。
     return safeList(candidateMapper.selectList(
@@ -615,6 +627,22 @@ public class DefenseScoringApplicationService {
         .stream()
         .filter(candidate -> !isInactiveCandidate(candidate))
         .toList();
+  }
+
+  private static List<CertificationCandidateEntity> eligibleCandidates(List<CertificationCandidateEntity> candidates) {
+    return candidates.stream().filter(DefenseCandidateEligibility::isEligible).toList();
+  }
+
+  private String unmatchedReason(
+      String fileName,
+      List<CertificationCandidateEntity> allActive,
+      String fallbackReason
+  ) {
+    MatchOutcome blocked = matchCandidate(fileName, allActive);
+    if (blocked.candidate() != null && !DefenseCandidateEligibility.isEligible(blocked.candidate())) {
+      return DefenseCandidateEligibility.RULE_HINT;
+    }
+    return fallbackReason;
   }
 
   private boolean isInactiveCandidate(CertificationCandidateEntity candidate) {

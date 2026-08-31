@@ -32,11 +32,18 @@ import org.springframework.util.StringUtils;
 public class ContractDocxDerivationService {
 
   public static final String MANIFEST_SCHEMA = "guoyu.contract-source-manifest/v1";
-  public static final String RENDERER_VERSION = "contract-docx-poc-2";
+  public static final String RENDERER_VERSION = "contract-docx-poc-3";
   private static final Set<String> REQUIRED_FIELDS =
-      Set.of("contractNumber", "partyA", "partyB", "amount");
+      Set.of("contractNumber", "partyA", "partyB", "amount", "projectName", "serviceScope",
+          "signingDate", "partyAContact", "partyAPhone", "partyBContact", "partyBPhone");
   private static final Pattern PAYMENT_PERCENT_PATTERN =
       Pattern.compile("^\\s*(\\d+(?:\\.\\d+)?)%\\s*$");
+  private static final Pattern CONTACT_PATTERN =
+      Pattern.compile("^\\s*联系人\\s*[:：]\\s*(.+?)\\s*$");
+  private static final Pattern PHONE_PATTERN =
+      Pattern.compile("^\\s*联系电话\\s*[:：]\\s*(.+?)\\s*$");
+  private static final Pattern SIGNING_DATE_PATTERN =
+      Pattern.compile("^\\s*签署日期\\s*[:：]\\s*(.+?)\\s*$");
 
   private static final List<FieldPattern> FIELD_PATTERNS = List.of(
       new FieldPattern("contractNumber", Pattern.compile(
@@ -103,6 +110,7 @@ public class ContractDocxDerivationService {
         }
       }
       detectPaymentAmounts(document, detectedFields, warnings);
+      detectSignatureFields(document, detectedFields, warnings);
 
       List<Anchor> anchors = buildOccurrenceAnchors(scan.paragraphs(), detectedFields);
       for (String required : REQUIRED_FIELDS) {
@@ -110,8 +118,14 @@ public class ContractDocxDerivationService {
           warnings.add("missing_required_anchor:" + required);
         }
       }
+      boolean hasPaymentPercentages = detectedFields.keySet().stream()
+          .anyMatch(field -> field.startsWith("paymentPercent."));
+      if (!hasPaymentPercentages) {
+        warnings.add("missing_required_anchor:paymentPercentages");
+      }
 
       boolean derivable = detectedFields.keySet().containsAll(REQUIRED_FIELDS)
+          && hasPaymentPercentages
           && warnings.stream().noneMatch(value -> value.startsWith("conflicting_values:"));
       ContractSourceManifest manifest = new ContractSourceManifest(
           MANIFEST_SCHEMA,
@@ -326,8 +340,8 @@ public class ContractDocxDerivationService {
       List<XWPFTableRow> rows = table.getRows();
       for (int headerRow = 0; headerRow < rows.size(); headerRow++) {
         List<XWPFTableCell> headerCells = rows.get(headerRow).getTableCells();
-        int percentColumn = findColumn(headerCells, "付款比例");
-        int amountColumn = findColumn(headerCells, "金额");
+        int percentColumn = findColumn(headerCells, "付款比例", "比例");
+        int amountColumn = findColumn(headerCells, "金额", "含税金额");
         if (percentColumn < 0 || amountColumn < 0) {
           continue;
         }
@@ -345,6 +359,10 @@ public class ContractDocxDerivationService {
             continue;
           }
           itemIndex++;
+          String percentField = "paymentPercent." + scheduleIndex + "." + itemIndex;
+          if (detectedFields.putIfAbsent(percentField, percentText) != null) {
+            warnings.add("conflicting_values:" + percentField);
+          }
           String field = "paymentAmount." + scheduleIndex + "." + itemIndex + "."
               + percentMatcher.group(1);
           if (detectedFields.putIfAbsent(field, amountText) != null) {
@@ -356,10 +374,79 @@ public class ContractDocxDerivationService {
     }
   }
 
-  private int findColumn(List<XWPFTableCell> cells, String label) {
+  public void validateRenderedDraft(byte[] content) {
+    try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(content))) {
+      for (ParagraphRef ref : collectParagraphs(document).paragraphs()) {
+        String text = textOf(ref.paragraph());
+        if (text.contains("待补充") || text.contains("{{") || text.contains("}}")
+            || text.contains("[[") || text.contains("]]")) {
+          throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+              "Generated contract still contains an unresolved placeholder at " + ref.path());
+        }
+      }
+    } catch (BusinessException ex) {
+      throw ex;
+    } catch (Exception ex) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+          "Generated contract residual validation failed: " + ex.getMessage());
+    }
+  }
+
+  private void detectSignatureFields(
+      XWPFDocument document, Map<String, String> detectedFields, List<String> warnings) {
+    for (XWPFTable table : document.getTables()) {
+      for (XWPFTableRow row : table.getRows()) {
+        List<XWPFTableCell> cells = row.getTableCells();
+        if (cells.size() < 2) {
+          continue;
+        }
+        String left = cells.get(0).getText().trim();
+        String right = cells.get(1).getText().trim();
+        Matcher leftContact = CONTACT_PATTERN.matcher(left);
+        Matcher rightContact = CONTACT_PATTERN.matcher(right);
+        if (leftContact.matches() && rightContact.matches()) {
+          putDetectedField(detectedFields, warnings, "partyAContact", leftContact.group(1));
+          putDetectedField(detectedFields, warnings, "partyBContact", rightContact.group(1));
+          continue;
+        }
+        Matcher leftPhone = PHONE_PATTERN.matcher(left);
+        Matcher rightPhone = PHONE_PATTERN.matcher(right);
+        if (leftPhone.matches() && rightPhone.matches()) {
+          putDetectedField(detectedFields, warnings, "partyAPhone", leftPhone.group(1));
+          putDetectedField(detectedFields, warnings, "partyBPhone", rightPhone.group(1));
+          continue;
+        }
+        Matcher leftDate = SIGNING_DATE_PATTERN.matcher(left);
+        Matcher rightDate = SIGNING_DATE_PATTERN.matcher(right);
+        if (leftDate.matches() && rightDate.matches()) {
+          if (!leftDate.group(1).trim().equals(rightDate.group(1).trim())) {
+            warnings.add("conflicting_values:signingDate");
+          }
+          putDetectedField(detectedFields, warnings, "signingDate", leftDate.group(1));
+        }
+      }
+    }
+  }
+
+  private void putDetectedField(
+      Map<String, String> detectedFields, List<String> warnings, String field, String value) {
+    String normalized = value == null ? "" : value.trim();
+    if (!StringUtils.hasText(normalized)) {
+      return;
+    }
+    String existing = detectedFields.putIfAbsent(field, normalized);
+    if (existing != null && !existing.equals(normalized)) {
+      warnings.add("conflicting_values:" + field);
+    }
+  }
+
+  private int findColumn(List<XWPFTableCell> cells, String... labels) {
     for (int index = 0; index < cells.size(); index++) {
-      if (label.equals(cells.get(index).getText().trim())) {
-        return index;
+      String text = cells.get(index).getText().trim();
+      for (String label : labels) {
+        if (label.equals(text)) {
+          return index;
+        }
       }
     }
     return -1;

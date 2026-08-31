@@ -30,6 +30,10 @@ MCP 工具服务，供 AI 在授权范围内调用平台能力。本目录是仓
 - `certification.getTaskOverview`
 - `certification.getCollectionProgress`
 - `certification.getPracticalScoreProgress`
+- `contract.selectTemplate`
+- `contract.resolveSourceDocument`
+- `contract.planDraft`
+- `contract.generatePreview`
 - `file.getArtifactMetadata`
 
 artifact/合同工具通过 MCP `_meta.guoyu/bot-actor-context` 接收 WeKnora 服务端注入的企微发起人和当前会话，不接受模型参数中的 `receiver`、`chatId` 或 `userId` 作为发送目标。MCP Server 使用 `BOT_ACTOR_CONTEXT_SECRET` 对上下文签名后透传给 platform-api；文件二进制不经过 MCP 返回。
@@ -56,6 +60,18 @@ artifact/合同工具通过 MCP `_meta.guoyu/bot-actor-context` 接收 WeKnora �
 | `PLATFORM_API_TOKEN` | 启动时缓存的平台 token；可空，首次请求会自动登录 |
 | `PLATFORM_TENANT_ID` | 启动时缓存的租户 ID；登录成功后以响应为准覆盖 |
 | `PLATFORM_REQUEST_TIMEOUT_MS` | 上游超时，默认 10000 |
+| `CONTRACT_DRAFT_TOKEN_SECRET` | 合同起草就绪令牌 HMAC 密钥；未配置时复用 `BOT_ACTOR_CONTEXT_SECRET` |
+
+## 合同多轮起草门禁
+
+合同生成支持三类知识库源 DOCX：软件技术服务框架协议、软件系统开发实施合同、信息平台运维服务合同。智能体必须按以下顺序调用：
+
+1. 使用 WeKnora 检索所有相关 DOCX，并取得真实知识库 UUID。
+2. 将候选集交给 `contract.selectTemplate`；它排除测试/样例/作废文档，对低分差候选要求用户选择，并为唯一结果签发会话绑定的 `templateSelectionToken`。
+3. 唯一模板由智能体自动调用 `contract.resolveSourceDocument`，不单独要求用户确认；采用的历史 DOCX 会在最终汇总中明确展示。未持有选择令牌、更换文档或跨会话复用都会被拒绝。
+4. 每轮将已收集字段提交 `contract.planDraft`；该工具确定性返回缺失字段或最终确认摘要。
+5. 十二个字段齐全后汇总一次“历史模板 + 合同字段”，询问用户是否生成。用户在下一条企微消息直接回复“确认”“生成吧”“可以生成”等明确肯定意图即可；不再要求精确短语或摘要码。MCP 内部仍签发会话、消息和字段绑定的 `draftReadinessToken`，该令牌不展示给用户。
+6. `contract.generatePreview` 校验令牌与模板、字段、确认消息和企微会话完全一致；付款金额按新比例重算，输出仍有历史可变字段或占位符时拒绝生成。
 
 缺少必需账号配置时，服务会主动快速失败，避免以不完整配置启动。
 

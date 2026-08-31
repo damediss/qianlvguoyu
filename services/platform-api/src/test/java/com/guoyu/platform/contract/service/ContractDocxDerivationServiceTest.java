@@ -54,17 +54,22 @@ class ContractDocxDerivationServiceTest {
     assertTrue(analysis.manifest().anchors().stream()
         .anyMatch(anchor -> anchor.path().startsWith("footer[")));
 
-    byte[] rendered = service.derive(source, analysis.manifest(), Map.of(
-        "contractNumber", "NEW-SVC-2026-002",
-        "partyA", "新甲方集团有限公司",
-        "partyB", "新乙方数字科技有限公司",
-        "amount", "人民币贰佰陆拾捌万元整（¥2,680,000.00）",
-        "projectName", "企业知识服务平台",
-        "serviceScope", "平台建设、部署及运维服务",
-        "paymentAmount.1.1.30", "¥804,000.00",
-        "paymentAmount.1.2.40", "¥1,072,000.00",
-        "paymentAmount.1.3.25", "¥670,000.00",
-        "paymentAmount.1.4.5", "¥134,000.00"
+    byte[] rendered = service.derive(source, analysis.manifest(), Map.ofEntries(
+        Map.entry("contractNumber", "NEW-SVC-2026-002"),
+        Map.entry("partyA", "新甲方集团有限公司"),
+        Map.entry("partyB", "新乙方数字科技有限公司"),
+        Map.entry("amount", "人民币贰佰陆拾捌万元整（¥2,680,000.00）"),
+        Map.entry("projectName", "企业知识服务平台"),
+        Map.entry("serviceScope", "平台建设、部署及运维服务"),
+        Map.entry("signingDate", "2026年8月17日"),
+        Map.entry("partyAContact", "张明"),
+        Map.entry("partyAPhone", "13800000001"),
+        Map.entry("partyBContact", "李华"),
+        Map.entry("partyBPhone", "13800000002"),
+        Map.entry("paymentAmount.1.1.30", "¥804,000.00"),
+        Map.entry("paymentAmount.1.2.40", "¥1,072,000.00"),
+        Map.entry("paymentAmount.1.3.25", "¥670,000.00"),
+        Map.entry("paymentAmount.1.4.5", "¥134,000.00")
     ));
 
     try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(rendered))) {
@@ -79,6 +84,11 @@ class ContractDocxDerivationServiceTest {
       assertTrue(allText.contains("¥134,000.00"));
       assertTrue(allText.contains("企业知识服务平台"));
       assertTrue(allText.contains("平台建设、部署及运维服务"));
+      assertTrue(allText.contains("签署日期：2026年8月17日"));
+      assertTrue(allText.contains("联系人：张明"));
+      assertTrue(allText.contains("联系人：李华"));
+      assertTrue(allText.contains("联系电话：13800000001"));
+      assertTrue(allText.contains("联系电话：13800000002"));
       assertFalse(allText.contains(OLD_PARTY_A));
       assertFalse(allText.contains(OLD_PARTY_B));
       assertFalse(allText.contains(OLD_AMOUNT));
@@ -177,6 +187,7 @@ class ContractDocxDerivationServiceTest {
           paymentTable.getRow(row).getCell(column).setText(payments[row][column]);
         }
       }
+      appendSignatureTable(document);
 
       XWPFHeader header = document.createHeader(HeaderFooterType.DEFAULT);
       header.createParagraph().createRun().setText("内部资料 - " + OLD_PARTY_A);
@@ -218,6 +229,8 @@ class ContractDocxDerivationServiceTest {
       document.createParagraph().createRun().setText("第一条 合作原则");
       document.createParagraph().createRun().setText(
           "双方依据本协议约定开展软件平台建设、实施和持续服务。");
+      appendPaymentTable(document);
+      appendSignatureTable(document);
       XWPFHeader header = document.createHeader(HeaderFooterType.DEFAULT);
       header.createParagraph().createRun().setText("技术服务协议 - " + OLD_PARTY_A);
       XWPFFooter footer = document.createFooter(HeaderFooterType.DEFAULT);
@@ -257,6 +270,8 @@ class ContractDocxDerivationServiceTest {
           document.createParagraph().createRun().addBreak(BreakType.PAGE);
         }
       }
+      appendPaymentTable(document);
+      appendSignatureTable(document);
       XWPFHeader header = document.createHeader(HeaderFooterType.DEFAULT);
       header.createParagraph().createRun().setText("内部合同文件");
       XWPFFooter footer = document.createFooter(HeaderFooterType.DEFAULT);
@@ -295,6 +310,51 @@ class ContractDocxDerivationServiceTest {
     margins.setLeft(BigInteger.valueOf(1440));
     margins.setHeader(BigInteger.valueOf(720));
     margins.setFooter(BigInteger.valueOf(720));
+  }
+
+  @Test
+  void rejectsRenderedDraftWithUnresolvedPlaceholder() throws Exception {
+    byte[] content;
+    try (XWPFDocument document = new XWPFDocument();
+         ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      document.createParagraph().createRun().setText("联系人：待补充");
+      document.write(output);
+      content = output.toByteArray();
+    }
+
+    boolean rejected = false;
+    try {
+      service.validateRenderedDraft(content);
+    } catch (com.guoyu.platform.common.exception.BusinessException ex) {
+      rejected = true;
+    }
+    assertTrue(rejected);
+  }
+
+  private void appendPaymentTable(XWPFDocument document) {
+    XWPFTable paymentTable = document.createTable(5, 4);
+    String[][] payments = {
+        {"阶段", "付款比例", "付款条件", "金额"},
+        {"首付款", "30%", "合同生效", "¥300,000.00"},
+        {"里程碑款", "40%", "进入试运行", "¥400,000.00"},
+        {"验收款", "25%", "终验通过", "¥250,000.00"},
+        {"质保尾款", "5%", "质保条件满足", "¥50,000.00"}
+    };
+    for (int row = 0; row < payments.length; row++) {
+      for (int column = 0; column < payments[row].length; column++) {
+        paymentTable.getRow(row).getCell(column).setText(payments[row][column]);
+      }
+    }
+  }
+
+  private void appendSignatureTable(XWPFDocument document) {
+    XWPFTable signatureTable = document.createTable(3, 2);
+    signatureTable.getRow(0).getCell(0).setText("联系人：历史甲方联系人");
+    signatureTable.getRow(0).getCell(1).setText("联系人：历史乙方联系人");
+    signatureTable.getRow(1).getCell(0).setText("联系电话：13811110001");
+    signatureTable.getRow(1).getCell(1).setText("联系电话：13811110002");
+    signatureTable.getRow(2).getCell(0).setText("签署日期：2026年1月1日");
+    signatureTable.getRow(2).getCell(1).setText("签署日期：2026年1月1日");
   }
 
   private record DocumentTopology(

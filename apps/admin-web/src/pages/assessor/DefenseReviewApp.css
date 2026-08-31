@@ -87,6 +87,63 @@ body.defense-review-portrait #root {
   overflow: auto;
 }
 
+.defense-phone-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.defense-phone-lane .ant-list-items {
+  display: flex;
+  flex-direction: column;
+}
+
+.defense-phone-lane-bar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 0 14px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.16);
+}
+
+.defense-phone-lane-label {
+  font-size: 15px;
+}
+
+.defense-phone-lane-count {
+  font-size: 13px;
+  letter-spacing: 0;
+  font-weight: 600;
+  opacity: 0.92;
+}
+
+.defense-phone-lane-senior_technician .defense-phone-lane-bar {
+  background: linear-gradient(90deg, #9a3412 0%, #ea580c 100%);
+}
+
+.defense-phone-lane-technician .defense-phone-lane-bar {
+  background: linear-gradient(90deg, #1d4ed8 0%, #2563eb 100%);
+}
+
+.defense-phone-lane-empty {
+  padding: 18px 12px;
+  margin-bottom: 4px;
+  border: 1px dashed #c5d0dc;
+  border-radius: 12px;
+  color: #64748b;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.7);
+}
+
 .defense-phone-reader {
   display: flex;
   flex-direction: column;

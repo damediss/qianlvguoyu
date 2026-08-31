@@ -201,6 +201,12 @@ export function DefenseScoringConfig({ taskId }: Props) {
           <Typography.Text type="secondary">
             选择本任务综合答辩考评组后，按考生匹配上传业绩评估报告 PDF。考评员使用考评员信息中创建的账号，从综合答辩端竖屏阅览报告，并完成论文答辩评分与业绩评估报告评分。
           </Typography.Text>
+          <Alert
+            type="info"
+            showIcon
+            message="人员名单限制：仅技师、高级技师可参加综合答辩"
+            description="初级、中级、高级工不进入本名单。答辩管理将同步显示同一批考生。"
+          />
           <Space wrap>
             <Select
               showSearch
@@ -288,7 +294,7 @@ export function DefenseScoringConfig({ taskId }: Props) {
             loading={setupQuery.isFetching}
             pagination={{ pageSize: 10, showSizeChanger: false }}
             scroll={{ x: 1100 }}
-            locale={{ emptyText: '暂无考生，请先完成考生导入' }}
+            locale={{ emptyText: '暂无符合条件的考生（仅技师、高级技师可参加综合答辩）' }}
           />
         </Space>
       </ProCard>

@@ -119,6 +119,40 @@ class DefenseManagementApplicationServiceTest {
   }
 
   @Test
+  void progressOnlyListsTechnicianAndSeniorTechnician() {
+    stubTask();
+    CertificationCandidateEntity technician = new CertificationCandidateEntity();
+    technician.setId(11L);
+    technician.setTaskId(5L);
+    technician.setCandidateName("技师考生");
+    technician.setStatus("active");
+    technician.setLevelCode("technician");
+    technician.setLevelName("技师");
+    CertificationCandidateEntity junior = new CertificationCandidateEntity();
+    junior.setId(12L);
+    junior.setTaskId(5L);
+    junior.setCandidateName("初级考生");
+    junior.setStatus("active");
+    junior.setLevelCode("junior");
+    junior.setLevelName("初级");
+    CertificationCandidateEntity senior = new CertificationCandidateEntity();
+    senior.setId(13L);
+    senior.setTaskId(5L);
+    senior.setCandidateName("高级技师考生");
+    senior.setStatus("active");
+    senior.setLevelCode("senior_technician");
+    senior.setLevelName("高级技师");
+    when(candidateMapper.selectList(any())).thenReturn(List.of(technician, junior, senior));
+    when(scoreMapper.selectList(any())).thenReturn(List.of());
+
+    DefenseScoringModels.ProgressView progress = service.progress(5L);
+
+    assertThat(progress.candidates()).extracting(DefenseScoringModels.CandidateProgressView::candidateName)
+        .containsExactly("技师考生", "高级技师考生");
+    assertThat(progress.totalCandidateCount()).isEqualTo(2);
+  }
+
+  @Test
   void completeRequiresAllCandidatesSubmitted() {
     stubTask();
     when(scoreMapper.selectList(any())).thenReturn(List.of(
@@ -226,6 +260,8 @@ class DefenseManagementApplicationServiceTest {
     first.setCandidateName("蝙蝠侠");
     first.setAdmissionTicketNo("912");
     first.setStatus("active");
+    first.setLevelCode("technician");
+    first.setLevelName("技师");
     CertificationCandidateEntity second = new CertificationCandidateEntity();
     second.setId(12L);
     second.setTaskId(5L);
@@ -233,6 +269,8 @@ class DefenseManagementApplicationServiceTest {
     second.setCandidateName("唐家三少");
     second.setAdmissionTicketNo("917708356654121");
     second.setStatus("active");
+    second.setLevelCode("senior_technician");
+    second.setLevelName("高级技师");
     when(candidateMapper.selectList(any())).thenReturn(List.of(first, second));
 
     CertificationDefenseReportEntity firstReport = new CertificationDefenseReportEntity();
@@ -351,6 +389,8 @@ class DefenseManagementApplicationServiceTest {
     candidate.setIdCardNo("452630198809204378");
     candidate.setMaskedIdCardNo("452630********4378");
     candidate.setStatus("active");
+    candidate.setLevelCode("senior_technician");
+    candidate.setLevelName("一级/高级技师");
     when(candidateMapper.selectList(any())).thenReturn(List.of(candidate));
 
     CertificationDefenseReportEntity report = new CertificationDefenseReportEntity();

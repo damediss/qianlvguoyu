@@ -96,17 +96,19 @@ export class PlatformClient {
   }
 
   generateContractPreview(
-    args: ContractDerivationRequest,
+    args: Omit<ContractDerivationRequest, "draftReadinessToken">,
     actorContext: BotActorContext
   ): Promise<unknown> {
     return this.post("contract/mcp/preview", { ...args }, actorContext);
   }
 
   resolveContractSource(
-    args: ResolveContractSourceRequest,
+    args: Omit<ResolveContractSourceRequest, "contractType" | "templateSelectionToken">,
     actorContext: BotActorContext
   ): Promise<ContractSourceResolution> {
-    return this.post("contract/mcp/source/resolve", { ...args }, actorContext);
+    // A unique result from contract.selectTemplate is the trusted selection gate.
+    // Keep the legacy platform flag internal so it never creates a second user-confirmation turn.
+    return this.post("contract/mcp/source/resolve", { ...args, userConfirmed: true }, actorContext);
   }
 
   getFileArtifactMetadata(fileId: string, actorContext: BotActorContext): Promise<FileArtifactMetadata> {

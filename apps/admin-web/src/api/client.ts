@@ -65,6 +65,10 @@ apiClient.interceptors.response.use(
   async (error) => {
     if (error?.response?.status === 401) {
       useAuthStore.getState().clearAuth();
+      const url = String(error?.config?.url ?? '');
+      if (url.includes('/auth/login') && !error?.config?.silentError) {
+        message.error(error?.response?.data?.message || '用户名或密码错误');
+      }
       return Promise.reject(error);
     }
 

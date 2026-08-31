@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
@@ -22,7 +23,8 @@ class ContractRealisticSourceFixtureTest {
       "02_软件系统开发实施合同_源文档.docx",
       "03_信息平台运维服务合同_源文档.docx");
   private static final List<String> REQUIRED_FIELDS =
-      List.of("partyA", "partyB", "amount", "projectName", "serviceScope");
+      List.of("contractNumber", "partyA", "partyB", "amount", "projectName", "serviceScope",
+          "signingDate", "partyAContact", "partyAPhone", "partyBContact", "partyBPhone");
 
   private final ContractDocxDerivationService service =
       new ContractDocxDerivationService(new ObjectMapper());
@@ -46,12 +48,19 @@ class ContractRealisticSourceFixtureTest {
       }
       assertFalse(analysis.manifest().anchors().isEmpty());
 
-      byte[] derived = service.derive(source, analysis.manifest(), Map.of(
-          "partyA", "广西新甲方产业集团有限公司",
-          "partyB", "广西新乙方数字科技有限公司",
-          "amount", "人民币贰佰陆拾捌万元（¥2,680,000.00）",
-          "projectName", "企业智能知识与合同协同平台项目",
-          "serviceScope", "平台建设、系统集成、业务培训、数据治理及持续运维服务"));
+      Map<String, String> replacements = new LinkedHashMap<>();
+      replacements.put("contractNumber", "REAL-2026-0817");
+      replacements.put("partyA", "广西新甲方产业集团有限公司");
+      replacements.put("partyB", "广西新乙方数字科技有限公司");
+      replacements.put("amount", "人民币贰佰陆拾捌万元（¥2,680,000.00）");
+      replacements.put("projectName", "企业智能知识与合同协同平台项目");
+      replacements.put("serviceScope", "平台建设、系统集成、业务培训、数据治理及持续运维服务");
+      replacements.put("signingDate", "2026年8月17日");
+      replacements.put("partyAContact", "张明");
+      replacements.put("partyAPhone", "13800000001");
+      replacements.put("partyBContact", "李华");
+      replacements.put("partyBPhone", "13800000002");
+      byte[] derived = service.derive(source, analysis.manifest(), replacements);
 
       assertEquals(topologyOf(source), topologyOf(derived), filename);
       Path derivedPath = outputDir.resolve(filename.replace("_源文档", "_派生验证"));

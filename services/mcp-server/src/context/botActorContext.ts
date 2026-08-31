@@ -11,7 +11,9 @@ const botActorContextSchema = z.object({
   chat_type: z.string().trim().min(1).max(32),
   channel_session_id: z.string().trim().min(1).max(256),
   weknora_session_id: z.string().trim().min(1).max(256),
-  request_id: z.string().trim().min(1).max(128)
+  request_id: z.string().trim().min(1).max(128),
+  user_message_id: z.string().trim().min(1).max(256),
+  user_message_text: z.string().trim().min(1).max(4096)
 }).strict();
 
 export type BotActorContext = z.infer<typeof botActorContextSchema>;

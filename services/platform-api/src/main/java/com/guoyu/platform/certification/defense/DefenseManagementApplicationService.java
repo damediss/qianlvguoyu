@@ -105,7 +105,7 @@ public class DefenseManagementApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "尚未配置综合答辩考评组");
     }
     if (current.totalCandidateCount() == 0) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前认定任务暂无考生，不能完成答辩");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, DefenseCandidateEligibility.EMPTY_ROSTER_MESSAGE + "，不能完成答辩");
     }
     List<DefenseScoringModels.CandidateProgressView> unfinished = current.candidates().stream()
         .filter(row -> !"completed".equals(row.status()))
@@ -499,6 +499,7 @@ public class DefenseManagementApplicationService {
             .orderByAsc(CertificationCandidateEntity::getId)))
         .stream()
         .filter(candidate -> candidate != null && !"inactive".equalsIgnoreCase(candidate.getStatus()))
+        .filter(DefenseCandidateEligibility::isEligible)
         .toList();
   }
 

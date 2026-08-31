@@ -162,3 +162,22 @@ export function statusLabel(status?: string) {
   if (status === 'draft') return '草稿';
   return '未评';
 }
+
+export type DefenseLevelLane = 'senior_technician' | 'technician';
+
+export const DEFENSE_LEVEL_LANES: Array<{ key: DefenseLevelLane; label: string }> = [
+  { key: 'senior_technician', label: '高级技师' },
+  { key: 'technician', label: '技师' },
+];
+
+export function defenseLevelLane(levelName?: string, levelCode?: string): DefenseLevelLane | null {
+  const code = (levelCode || '').replace(/\s/g, '').toLowerCase();
+  const name = (levelName || '').replace(/\s/g, '');
+  if (code === 'senior_technician' || code === '4' || name.includes('高级技师') || name.includes('一级')) {
+    return 'senior_technician';
+  }
+  if (code === 'technician' || code === '3' || name.includes('技师') || name.includes('二级')) {
+    return 'technician';
+  }
+  return null;
+}

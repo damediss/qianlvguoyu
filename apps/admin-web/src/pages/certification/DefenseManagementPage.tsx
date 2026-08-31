@@ -248,6 +248,13 @@ export function DefenseManagementPage() {
                 description="请先到认定筹备「综合答辩配置」绑定考评组，并按考生上传业绩评估报告 PDF。考评员在综合答辩端完成论文答辩和业绩评估后，本页会汇总评分。"
               />
             ) : null}
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="人员名单与综合答辩配置同步"
+              description="仅技师、高级技师进入答辩名单，与认定筹备「综合答辩配置」中的人员名单一致。"
+            />
             {progress?.overallStatus === 'ready_to_complete' ? (
               <Alert
                 type="success"
@@ -290,7 +297,7 @@ export function DefenseManagementPage() {
                 expandedRowRender: (row) => <AssessorBreakdown assessors={row.assessors} />,
                 rowExpandable: (row) => (row.assessors || []).length > 0,
               }}
-              locale={{ emptyText: '当前认定任务暂无考生' }}
+              locale={{ emptyText: '暂无符合条件的考生（仅技师、高级技师可参加综合答辩）' }}
             />
           </ProCard>
         )}
