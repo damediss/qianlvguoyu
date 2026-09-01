@@ -327,7 +327,7 @@ public class SignUpPeopleDefaultTemplatePackService {
     vars.put("req_work_code", firstNonBlank(lookupWorkTypeCode(person.getReqWorkTypeId()), ctx.appointment.workTypeCode()));
     vars.put("req_work_age", reqAge + "年");
     vars.put("work_type", safe(person.getWorkTypeName()));
-    vars.put("work_type_level", levelLabel(person.getLevel()));
+    vars.put("work_type_level", SignUpLevelSupport.toLabel(person.getLevel()));
     vars.put("work_paper_no", safe(person.getPaperNo()));
     vars.put("condition", safe(person.getDeclarationCondition()));
     vars.put("paper_no", safe(person.getPaperNo()));
@@ -361,7 +361,7 @@ public class SignUpPeopleDefaultTemplatePackService {
       setCell(sheet, rowNum, 4, vars.get("company_name"));
       setCell(sheet, rowNum, 5, safe(person.getIndustrialPark()));
       setCell(sheet, rowNum, 6, safe(person.getWorkTypeName()));
-      setCell(sheet, rowNum, 7, levelLabel(person.getLevel()));
+      setCell(sheet, rowNum, 7, SignUpLevelSupport.toLabel(person.getLevel()));
       setCell(sheet, rowNum, 8, safe(person.getEducation()));
       setCell(sheet, rowNum, 9, safe(person.getTitleType()));
       setCell(sheet, rowNum, 11, safe(person.getSchool()));
@@ -387,7 +387,7 @@ public class SignUpPeopleDefaultTemplatePackService {
       setCell(sheet, rowNum, 8, formatBirthday(idCard));
       setCell(sheet, rowNum, 9, safe(person.getPhone()));
       setCell(sheet, rowNum, 10, person.getWorkTypeId() != null && person.getWorkTypeId() > 0 ? "是" : "否");
-      setCell(sheet, rowNum, 11, levelLabel(person.getLevel()));
+      setCell(sheet, rowNum, 11, SignUpLevelSupport.toLabel(person.getLevel()));
       setCell(sheet, rowNum, 12, safe(person.getPaperNo()));
       setCell(sheet, rowNum, 13, safe(person.getEducation()));
       setCell(sheet, rowNum, 16, vars.get("company_name"));

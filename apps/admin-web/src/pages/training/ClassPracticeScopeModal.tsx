@@ -169,9 +169,17 @@ export function ClassPracticeScopeModal({ open, onClose, classId, classTitle, ti
       courseIds,
       knowledgeIds,
     }),
-    onSuccess: () => {
-      message.success('试题配置已保存');
+    onSuccess: (res) => {
+      const auto = res?.reviewSyncAuto;
+      if (auto?.ok === false) {
+        message.warning(`试题配置已保存，但同步学未自动开通：${auto.message || '请到「同步学」Tab 手动配置'}`);
+      } else if (auto?.message) {
+        message.success(`试题配置已保存。${auto.message}`);
+      } else {
+        message.success('试题配置已保存');
+      }
       queryClient.invalidateQueries({ queryKey: ['class-practice-scope', classId] });
+      queryClient.invalidateQueries({ queryKey: ['class-review-sync-config', classId] });
       onClose();
     },
     onError: (e: Error) => message.error(e.message || '保存失败'),
@@ -244,7 +252,7 @@ export function ClassPracticeScopeModal({ open, onClose, classId, classTitle, ti
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="配置本班可刷科目、知识点与刷题日期。未设置日期则不过期；过了截止日学员无法从班级入口刷题。"
+        message="配置本班可刷科目、知识点与刷题日期。保存后将自动绑定同步学考试计划并开通名单/灰度；未设置日期则不过期；过了截止日学员无法从班级入口刷题。"
       />
       {scopeQuery.isLoading ? (
         <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>

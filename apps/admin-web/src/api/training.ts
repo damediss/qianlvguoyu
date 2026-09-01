@@ -953,6 +953,16 @@ export interface ClassPracticeScope {
   knowledges: { knowledgeId: number; courseId: number; title: string }[];
   appBound?: boolean;
   hint?: string;
+  /** 试题配置保存后自动开通同步学的结果 */
+  reviewSyncAuto?: {
+    ok?: boolean;
+    action?: string;
+    examSource?: string;
+    examId?: string;
+    message?: string;
+    enrollError?: string;
+    grayError?: string;
+  };
 }
 
 export function getClassPracticeScope(classId: number | string) {
@@ -994,6 +1004,135 @@ export function saveClassPracticeScope(
   return unwrap<ClassPracticeScope>(
     apiClient.put(`${BASE}/info-classes/${classId}/practice-scope`, payload),
   );
+}
+
+/** 班级同步学配置（通道 C） */
+export interface ClassReviewSyncRosterGap {
+  total: number;
+  withPlatformUser: number;
+  inExamPeople: number;
+  missingAccount: number;
+  missingEnroll: number;
+}
+
+export interface ClassReviewSyncConfig {
+  classId: string;
+  classTitle?: string;
+  workTypeId?: number;
+  workTypeLevel?: number;
+  configured: boolean;
+  examId?: string | null;
+  examTitle?: string | null;
+  examGone?: boolean;
+  enabled: boolean;
+  syncStartTime?: string | null;
+  syncEndTime?: string | null;
+  remark?: string | null;
+  grayEnabled: boolean;
+  examInGray: boolean;
+  roster: ClassReviewSyncRosterGap;
+  statsPath?: string | null;
+  autoSynced?: boolean;
+  enroll?: {
+    inserted?: number;
+    existed?: number;
+    skippedNoAccount?: number;
+    roster?: ClassReviewSyncRosterGap;
+  };
+  gray?: { message?: string; examInGray?: boolean };
+  enrollError?: string;
+  grayError?: string;
+  resolve?: {
+    configured: boolean;
+    examId?: string | null;
+    examTitle?: string | null;
+    enabled?: boolean;
+    reasonCode?: string | null;
+  };
+}
+
+export interface ClassReviewSyncExamOption {
+  examId: string;
+  title: string;
+  level?: string;
+  matched?: boolean;
+  workTypeMatched?: boolean;
+  matchScore?: number;
+}
+
+export function getClassReviewSyncConfig(classId: number | string) {
+  return unwrap<ClassReviewSyncConfig>(
+    apiClient.get(`${BASE}/info-classes/${classId}/review-sync-config`),
+  );
+}
+
+export function saveClassReviewSyncConfig(
+  classId: number | string,
+  payload: {
+    examId: number | string;
+    enabled?: number | boolean;
+    syncStartTime?: string | null;
+    syncEndTime?: string | null;
+    remark?: string | null;
+  },
+) {
+  return unwrap<ClassReviewSyncConfig>(
+    apiClient.put(`${BASE}/info-classes/${classId}/review-sync-config`, {
+      ...payload,
+      enabled: payload.enabled === false || payload.enabled === 0 ? 0 : 1,
+    }),
+  );
+}
+
+export function listClassReviewSyncExamOptions(classId: number | string) {
+  return unwrap<{
+    classId: string;
+    workTypeId?: number;
+    workTypeLevel?: number;
+    trainInfoId?: string | null;
+    items: ClassReviewSyncExamOption[];
+  }>(apiClient.get(`${BASE}/info-classes/${classId}/review-sync-config/exam-options`));
+}
+
+export function enrollClassReviewSyncRoster(classId: number | string) {
+  return unwrap<{
+    classId: string;
+    examId: string;
+    inserted: number;
+    existed: number;
+    skippedNoAccount: number;
+    roster: ClassReviewSyncRosterGap;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/review-sync-config/enroll-roster`));
+}
+
+export function ensureClassReviewSyncRoster(classId: number | string) {
+  return unwrap<{
+    ok?: boolean;
+    action?: string;
+    examSource?: string;
+    examId?: string;
+    message?: string;
+    enroll?: {
+      inserted?: number;
+      existed?: number;
+      skippedNoAccount?: number;
+      roster?: ClassReviewSyncRosterGap;
+    };
+    enrollError?: string;
+    grayError?: string;
+    config?: ClassReviewSyncConfig;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/review-sync-config/ensure-roster`));
+}
+
+export function ensureClassReviewSyncGray(classId: number | string) {
+  return unwrap<{
+    classId: string;
+    examId: string;
+    grayEnabled: boolean;
+    examInGray: boolean;
+    message?: string;
+    inserted: boolean;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/review-sync-config/ensure-gray`));
 }
 
 export interface PracticeAnalyticsQuery {
@@ -1456,6 +1595,10 @@ export function updateGraduationStudent(
     phone?: string;
     idCard?: string;
     ticketNo?: string;
+    idCardHeader?: string | null;
+    idCardFront?: string | null;
+    idCardBack?: string | null;
+    certificateFilePath?: string | null;
   },
 ) {
   return unwrap<{
@@ -1464,6 +1607,10 @@ export function updateGraduationStudent(
     phone?: string;
     idCard?: string;
     ticketNo?: string;
+    idCardHeader?: string | null;
+    idCardFront?: string | null;
+    idCardBack?: string | null;
+    certificateFilePath?: string | null;
   }>(apiClient.patch(`${BASE}/info-classes/${classId}/graduation-students/${peopleId}`, payload));
 }
 

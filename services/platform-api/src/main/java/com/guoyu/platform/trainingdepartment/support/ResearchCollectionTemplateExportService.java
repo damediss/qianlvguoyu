@@ -102,7 +102,7 @@ public class ResearchCollectionTemplateExportService {
           joinLines(items, "certNo"),
           joinLines(items, "issueDate"));
     }
-    String levelText = levelToText(person.getLevel());
+    String levelText = SignUpLevelSupport.toLabel(person.getLevel());
     if (StringUtils.hasText(levelText) || StringUtils.hasText(person.getPaperNo())
         || StringUtils.hasText(person.getCertIssueDates())) {
       return new CertColumns(

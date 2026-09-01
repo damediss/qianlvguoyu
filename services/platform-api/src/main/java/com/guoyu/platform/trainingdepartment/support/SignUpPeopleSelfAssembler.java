@@ -82,7 +82,7 @@ public class SignUpPeopleSelfAssembler {
     vo.setWorkTypePaper(entity.getWorkTypePaper());
     vo.setWorkTypeId(entity.getWorkTypeId());
     vo.setWorkTypeName(entity.getWorkTypeName());
-    vo.setLevel(entity.getLevel());
+    vo.setLevel(SignUpLevelSupport.toIndex(entity.getLevel()));
     vo.setPaperNo(entity.getPaperNo());
     vo.setReqWorkTypeId(entity.getReqWorkTypeId());
     vo.setReqWorkTypeName(entity.getReqWorkTypeName());
@@ -275,7 +275,7 @@ public class SignUpPeopleSelfAssembler {
       entity.setWorkTypeName(req.getWorkTypeName());
     }
     if (req.getLevel() != null) {
-      entity.setLevel(req.getLevel());
+      entity.setLevel(SignUpLevelSupport.fromIndex(req.getLevel()));
     }
     if (req.getPaperNo() != null) {
       entity.setPaperNo(req.getPaperNo());

@@ -26,6 +26,10 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -36,6 +40,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -63,6 +68,7 @@ public class TrainGraduationApplicationService {
   private final PlatformUserDetailMapper platformUserDetailMapper;
   private final TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper;
   private final TrainingIdCardHeaderResolver idCardHeaderResolver;
+  private final String cdnPath;
 
   public TrainGraduationApplicationService(
       TrainInfoClassMapper classMapper,
@@ -74,7 +80,8 @@ public class TrainGraduationApplicationService {
       TrainFileTempMapper fileTempMapper,
       PlatformUserDetailMapper platformUserDetailMapper,
       TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper,
-      TrainingIdCardHeaderResolver idCardHeaderResolver) {
+      TrainingIdCardHeaderResolver idCardHeaderResolver,
+      @Value("${platform.cdn.path:./data/cdn}") String cdnPath) {
     this.classMapper = classMapper;
     this.infoListMapper = infoListMapper;
     this.peopleListMapper = peopleListMapper;
@@ -85,6 +92,7 @@ public class TrainGraduationApplicationService {
     this.platformUserDetailMapper = platformUserDetailMapper;
     this.signUpPeopleSelfMapper = signUpPeopleSelfMapper;
     this.idCardHeaderResolver = idCardHeaderResolver;
+    this.cdnPath = cdnPath;
   }
 
   private static final String EMPTY_FILTER = "__EMPTY__";
@@ -495,7 +503,7 @@ public class TrainGraduationApplicationService {
 
   @Transactional
   public Map<String, Object> updateGraduationStudent(Long classId, Long peopleId, GraduationStudentUpdateReq req) {
-    requireClass(classId);
+    TrainInfoClassEntity clazz = requireClass(classId);
     TrainPeopleListEntity student = requireStudent(classId, peopleId);
     if (req != null) {
       if (StringUtils.hasText(req.getRealname())) {
@@ -512,13 +520,162 @@ public class TrainGraduationApplicationService {
       }
     }
     peopleListMapper.updateById(student);
+
+    boolean touchPhotos = req != null && (req.getIdCardHeader() != null
+        || req.getIdCardFront() != null
+        || req.getIdCardBack() != null);
+    if (touchPhotos) {
+      upsertStudentPhotos(student, req);
+    }
+    if (req != null && req.getCertificateFilePath() != null) {
+      upsertStudentCertificateFile(clazz, student, req.getCertificateFilePath().trim());
+    }
+
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("id", student.getId());
     result.put("realname", student.getRealname());
     result.put("phone", student.getPhone());
     result.put("idCard", student.getIdCard());
     result.put("ticketNo", student.getTicketNo());
+    result.put("idCardHeader", req != null ? blankToNull(req.getIdCardHeader()) : null);
+    result.put("idCardFront", req != null ? blankToNull(req.getIdCardFront()) : null);
+    result.put("idCardBack", req != null ? blankToNull(req.getIdCardBack()) : null);
+    result.put("certificateFilePath", req != null ? blankToNull(req.getCertificateFilePath()) : null);
     return result;
+  }
+
+  /** 写入 platform_user_detail + 报名档案；证件照更新时清本地 header 缓存文件，确保详情优先展示新图。 */
+  private void upsertStudentPhotos(TrainPeopleListEntity student, GraduationStudentUpdateReq req) {
+    String idCard = student.getIdCard() != null ? student.getIdCard().trim() : "";
+    if (!StringUtils.hasText(idCard)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请先填写身份证号后再上传证件照片");
+    }
+
+    if (req.getIdCardHeader() != null && StringUtils.hasText(req.getIdCardHeader())) {
+      clearLocalHeaderFiles(idCard);
+    }
+
+    PlatformUserDetailEntity detail = loadPlatformDetail(idCard);
+    if (detail == null) {
+      detail = new PlatformUserDetailEntity();
+      detail.setIdcard(idCard);
+      detail.setRealname(student.getRealname());
+      detail.setPhone(student.getPhone());
+      detail.setUserId(student.getPlatformUserId() != null ? student.getPlatformUserId() : student.getUserId());
+      detail.setDeleted(0);
+      if (req.getIdCardHeader() != null) {
+        detail.setIdcardHeader(blankToNull(req.getIdCardHeader()));
+      }
+      if (req.getIdCardFront() != null) {
+        detail.setIdcardFront(blankToNull(req.getIdCardFront()));
+      }
+      if (req.getIdCardBack() != null) {
+        detail.setIdcardBack(blankToNull(req.getIdCardBack()));
+      }
+      platformUserDetailMapper.insert(detail);
+    } else {
+      if (req.getIdCardHeader() != null) {
+        detail.setIdcardHeader(blankToNull(req.getIdCardHeader()));
+      }
+      if (req.getIdCardFront() != null) {
+        detail.setIdcardFront(blankToNull(req.getIdCardFront()));
+      }
+      if (req.getIdCardBack() != null) {
+        detail.setIdcardBack(blankToNull(req.getIdCardBack()));
+      }
+      if (!StringUtils.hasText(detail.getRealname()) && StringUtils.hasText(student.getRealname())) {
+        detail.setRealname(student.getRealname());
+      }
+      if (!StringUtils.hasText(detail.getPhone()) && StringUtils.hasText(student.getPhone())) {
+        detail.setPhone(student.getPhone());
+      }
+      platformUserDetailMapper.updateById(detail);
+    }
+
+    TrainSignUpPeopleSelfEntity signUp = loadSignUpProfile(idCard);
+    if (signUp != null) {
+      if (req.getIdCardHeader() != null) {
+        signUp.setIdCardHeader(blankToNull(req.getIdCardHeader()));
+      }
+      if (req.getIdCardFront() != null) {
+        signUp.setIdCardFront(blankToNull(req.getIdCardFront()));
+      }
+      if (req.getIdCardBack() != null) {
+        signUp.setIdCardBack(blankToNull(req.getIdCardBack()));
+      }
+      signUpPeopleSelfMapper.updateById(signUp);
+    }
+  }
+
+  private void upsertStudentCertificateFile(
+      TrainInfoClassEntity clazz, TrainPeopleListEntity student, String filePath) {
+    Long tenantId = SecurityContext.currentUser() != null
+        ? SecurityContext.currentUser().getTenantId()
+        : null;
+    Long userId = SecurityContext.currentUser() != null
+        ? SecurityContext.currentUser().getUserId()
+        : null;
+    TrainCertificateEntity existing = certificateMapper.selectOne(
+        new LambdaQueryWrapper<TrainCertificateEntity>()
+            .eq(TrainCertificateEntity::getClassId, clazz.getId())
+            .eq(TrainCertificateEntity::getPeopleId, student.getId())
+            .eq(TrainCertificateEntity::getDeleted, 0)
+            .orderByDesc(TrainCertificateEntity::getId)
+            .last("LIMIT 1"));
+    LocalDateTime now = LocalDateTime.now();
+    if (existing == null) {
+      if (!StringUtils.hasText(filePath)) {
+        return;
+      }
+      TrainCertificateEntity cert = new TrainCertificateEntity();
+      cert.setTenantId(tenantId);
+      cert.setProjectId(clazz.getTrainInfoId());
+      cert.setClassId(clazz.getId());
+      cert.setPeopleId(student.getId());
+      cert.setUserId(student.getPlatformUserId() != null ? student.getPlatformUserId() : student.getUserId());
+      cert.setUserName(student.getRealname());
+      cert.setCertificateType("skill_level_cert");
+      cert.setFilePath(filePath);
+      cert.setStatus(1);
+      cert.setCreatedBy(userId);
+      cert.setCreateTime(now);
+      cert.setUpdateTime(now);
+      cert.setDeleted(0);
+      certificateMapper.insert(cert);
+      return;
+    }
+    existing.setFilePath(StringUtils.hasText(filePath) ? filePath : null);
+    existing.setUpdateTime(now);
+    certificateMapper.updateById(existing);
+  }
+
+  /** 清除证件照本地缓存文件，避免盖住新上传的 platform_user_detail URL。 */
+  private void clearLocalHeaderFiles(String idCard) {
+    if (!StringUtils.hasText(idCard) || !StringUtils.hasText(cdnPath)) {
+      return;
+    }
+    String id = idCard.trim();
+    Path root = Paths.get(cdnPath).toAbsolutePath().normalize();
+    Path[] candidates = new Path[] {
+        root.resolve("idCard/old/headerOrigin").resolve(id + "_full.png"),
+        root.resolve("idCard/headerOrigin").resolve(id + "_header2.jpg"),
+        root.resolve("idCard/headerOrigin").resolve(id + "_header.jpg"),
+    };
+    for (Path path : candidates) {
+      try {
+        Files.deleteIfExists(path);
+      } catch (Exception ex) {
+        log.warn("[graduation] 清理本地证件照失败: {}", path, ex);
+      }
+    }
+  }
+
+  private static String blankToNull(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.trim();
+    return trimmed.isEmpty() ? null : trimmed;
   }
 
   /**

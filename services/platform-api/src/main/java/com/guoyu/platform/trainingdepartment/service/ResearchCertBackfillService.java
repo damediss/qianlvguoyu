@@ -69,7 +69,7 @@ public class ResearchCertBackfillService {
 
     person.setPaperNo(primary.certNo());
     person.setCertIssueDates(primary.certDate());
-    person.setLevel(CertMappingSupport.mapLevelText(levelText));
+    person.setLevel(StringUtils.hasText(levelText) ? levelText.trim() : null);
     person.setCertificatesJson(buildCertificatesJson(certs));
     person.setCertVerified(1);
     person.setUpdateTime(LocalDateTime.now());

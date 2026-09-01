@@ -7,10 +7,12 @@ import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassUpdateReq;
 import com.guoyu.platform.trainingdepartment.dto.ClassPracticeScopeSaveReq;
+import com.guoyu.platform.trainingdepartment.dto.ClassReviewSyncSaveReq;
 import com.guoyu.platform.trainingdepartment.security.TrainingAuthorityExpressions;
 import com.guoyu.platform.trainingdepartment.service.ClassCollectionApplicationService;
 import com.guoyu.platform.trainingdepartment.service.ClassPracticeAnalyticsApplicationService;
 import com.guoyu.platform.trainingdepartment.service.ClassPracticeScopeApplicationService;
+import com.guoyu.platform.trainingdepartment.service.ClassReviewSyncApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainInfoClassApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainMaterialGenerateApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.TrainInfoClassVO;
@@ -45,17 +47,20 @@ public class TrainInfoClassController {
   private final ClassCollectionApplicationService classCollectionApplicationService;
   private final ClassPracticeScopeApplicationService classPracticeScopeApplicationService;
   private final ClassPracticeAnalyticsApplicationService classPracticeAnalyticsApplicationService;
+  private final ClassReviewSyncApplicationService classReviewSyncApplicationService;
 
   public TrainInfoClassController(TrainInfoClassApplicationService trainInfoClassApplicationService,
       TrainMaterialGenerateApplicationService trainMaterialGenerateApplicationService,
       ClassCollectionApplicationService classCollectionApplicationService,
       ClassPracticeScopeApplicationService classPracticeScopeApplicationService,
-      ClassPracticeAnalyticsApplicationService classPracticeAnalyticsApplicationService) {
+      ClassPracticeAnalyticsApplicationService classPracticeAnalyticsApplicationService,
+      ClassReviewSyncApplicationService classReviewSyncApplicationService) {
     this.trainInfoClassApplicationService = trainInfoClassApplicationService;
     this.trainMaterialGenerateApplicationService = trainMaterialGenerateApplicationService;
     this.classCollectionApplicationService = classCollectionApplicationService;
     this.classPracticeScopeApplicationService = classPracticeScopeApplicationService;
     this.classPracticeAnalyticsApplicationService = classPracticeAnalyticsApplicationService;
+    this.classReviewSyncApplicationService = classReviewSyncApplicationService;
   }
 
   /** 分页查询培训班级列表（含企业名、工种名、培训标题等关联字段） */
@@ -262,5 +267,55 @@ public class TrainInfoClassController {
       @RequestParam(required = false, defaultValue = "true") boolean inScopeOnly,
       @RequestParam(required = false, defaultValue = "false") boolean allTime) {
     return classPracticeAnalyticsApplicationService.exportExcel(classId, from, to, inScopeOnly, allTime);
+  }
+
+  // ---------- 班级同步学配置（通道 C） ----------
+
+  /** 班级同步学配置 + 开通摘要 */
+  @GetMapping("/info-classes/{classId}/review-sync-config")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
+  public ApiResponse<Map<String, Object>> getReviewSyncConfig(@PathVariable Long classId) {
+    return ApiResponse.ok(classReviewSyncApplicationService.getConfig(classId));
+  }
+
+  /** 保存班级同步学绑定；启用时自动同步花名册并开通灰度 */
+  @PutMapping("/info-classes/{classId}/review-sync-config")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_SAVE)
+  @AuditLog(module = "training", action = "info-class:review-sync-save", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> saveReviewSyncConfig(
+      @PathVariable Long classId,
+      @Valid @RequestBody ClassReviewSyncSaveReq req) {
+    return ApiResponse.ok(classReviewSyncApplicationService.saveConfig(classId, req));
+  }
+
+  /** 同步学考试计划候选（同 train_info，工种匹配置顶） */
+  @GetMapping("/info-classes/{classId}/review-sync-config/exam-options")
+  @PreAuthorize(TrainingAuthorityExpressions.CLASS_PEOPLE_VIEW)
+  public ApiResponse<Map<String, Object>> listReviewSyncExamOptions(@PathVariable Long classId) {
+    return ApiResponse.ok(classReviewSyncApplicationService.listExamOptions(classId));
+  }
+
+  /** 花名册 → 考生名单 */
+  @PostMapping("/info-classes/{classId}/review-sync-config/enroll-roster")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_SAVE)
+  @AuditLog(module = "training", action = "info-class:review-sync-enroll", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> enrollReviewSyncRoster(@PathVariable Long classId) {
+    return ApiResponse.ok(classReviewSyncApplicationService.enrollRoster(classId));
+  }
+
+  /** 写入 exam 级灰度白名单 */
+  @PostMapping("/info-classes/{classId}/review-sync-config/ensure-gray")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_SAVE)
+  @AuditLog(module = "training", action = "info-class:review-sync-gray", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> ensureReviewSyncGray(@PathVariable Long classId) {
+    return ApiResponse.ok(classReviewSyncApplicationService.ensureGray(classId));
+  }
+
+  /** 跟班同步学 Tab：未绑定则自动开通，已绑定则把本班学员写入考生名单 */
+  @PostMapping("/info-classes/{classId}/review-sync-config/ensure-roster")
+  @PreAuthorize(TrainingAuthorityExpressions.INFO_CLASS_SAVE)
+  @AuditLog(module = "training", action = "info-class:review-sync-ensure-roster", targetType = "train_info_class")
+  public ApiResponse<Map<String, Object>> ensureReviewSyncRoster(@PathVariable Long classId) {
+    return ApiResponse.ok(classReviewSyncApplicationService.ensureBoundAndSyncRoster(classId));
   }
 }

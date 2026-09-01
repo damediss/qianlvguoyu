@@ -72,6 +72,7 @@ public class TrainInfoClassApplicationService {
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final ClassCollectionApplicationService classCollectionApplicationService;
   private final ClassPracticeScopeApplicationService classPracticeScopeApplicationService;
+  private final ClassReviewSyncApplicationService classReviewSyncApplicationService;
   private static final DateTimeFormatter ADD_TIME_FMT =
       DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Shanghai"));
 
@@ -88,7 +89,8 @@ public class TrainInfoClassApplicationService {
       ExamWorkTypeMapper examWorkTypeMapper,
       TrainingOperatorScopeService operatorScopeService,
       ClassCollectionApplicationService classCollectionApplicationService,
-      ClassPracticeScopeApplicationService classPracticeScopeApplicationService) {
+      ClassPracticeScopeApplicationService classPracticeScopeApplicationService,
+      ClassReviewSyncApplicationService classReviewSyncApplicationService) {
     this.mapper = mapper;
     this.trainInfoListMapper = trainInfoListMapper;
     this.trainFileTempMapper = trainFileTempMapper;
@@ -103,6 +105,7 @@ public class TrainInfoClassApplicationService {
     this.operatorScopeService = operatorScopeService;
     this.classCollectionApplicationService = classCollectionApplicationService;
     this.classPracticeScopeApplicationService = classPracticeScopeApplicationService;
+    this.classReviewSyncApplicationService = classReviewSyncApplicationService;
   }
 
   @Transactional(readOnly = true)
@@ -393,6 +396,8 @@ public class TrainInfoClassApplicationService {
 
     int practiceScopeRemoved = classPracticeScopeApplicationService.cleanupByClassId(classId);
     stats.put("practiceScopeRemoved", practiceScopeRemoved);
+    int reviewSyncRemoved = classReviewSyncApplicationService.cleanupByClassId(classId);
+    stats.put("reviewSyncRemoved", reviewSyncRemoved);
 
     log.info("class delete cascade classId={} stats={}", classId, stats);
     return stats;
@@ -407,6 +412,7 @@ public class TrainInfoClassApplicationService {
     stats.put("tasksRemoved", 0);
     stats.put("shiftRecordsUnbound", 0);
     stats.put("practiceScopeRemoved", 0);
+    stats.put("reviewSyncRemoved", 0);
     return stats;
   }
 

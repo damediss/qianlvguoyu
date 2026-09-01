@@ -30,6 +30,7 @@ import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOpti
 import com.guoyu.platform.trainingdepartment.support.ResearchCollectionFieldOptionsSupport.ResearchCollectionFieldOptions;
 import com.guoyu.platform.trainingdepartment.support.ResearchCollectionTemplateExportService;
 import com.guoyu.platform.trainingdepartment.support.ResearchOrgStatusSupport;
+import com.guoyu.platform.trainingdepartment.support.SignUpLevelSupport;
 import com.guoyu.platform.trainingdepartment.vo.PublicResearchCollectionSubmitResultVO;
 import com.guoyu.platform.trainingdepartment.vo.PublicResearchCollectionVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainResearchCollectionVO;
@@ -660,10 +661,13 @@ public class TrainResearchCollectionApplicationService {
       }
       entity.setCertIssueDates(String.join("\n", dates));
       entity.setPaperNo(nos.isEmpty() ? null : nos.get(0));
-      entity.setLevel(textToLevel(levels.isEmpty() ? null : levels.get(0)));
+      // level 列为 varchar：优先存证书文案，避免 Integer 映射失败
+      entity.setLevel(levels.isEmpty() ? null : levels.get(0));
       return;
     }
-    if (level != null) entity.setLevel(level);
+    if (level != null) {
+      entity.setLevel(SignUpLevelSupport.fromIndex(level));
+    }
     if (paperNo != null) entity.setPaperNo(trim(paperNo));
     if (certIssueDates != null) entity.setCertIssueDates(trim(certIssueDates));
   }
@@ -728,7 +732,7 @@ public class TrainResearchCollectionApplicationService {
         entity.getTitleType(),
         entity.getTitleMajor(),
         entity.getTitleCertDate(),
-        entity.getLevel(),
+        SignUpLevelSupport.toIndex(entity.getLevel()),
         entity.getCertVerified(),
         entity.getPaperNo(),
         entity.getCertIssueDates(),

@@ -12,6 +12,7 @@ import com.guoyu.platform.trainingdepartment.dto.FollowEvidenceReviewReq;
 import com.guoyu.platform.trainingdepartment.service.ClassAssistantApplicationService;
 import com.guoyu.platform.trainingdepartment.service.ClassPracticeCoverageApplicationService;
 import com.guoyu.platform.trainingdepartment.service.ClassPracticeScopeApplicationService;
+import com.guoyu.platform.trainingdepartment.service.ClassReviewSyncApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainClassRoleApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainFollowEvidenceApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainFollowTaskApplicationService;
@@ -62,6 +63,7 @@ public class TrainFollowAppController {
   private final ClassAssistantApplicationService assistantService;
   private final ClassPracticeScopeApplicationService practiceScopeService;
   private final ClassPracticeCoverageApplicationService practiceCoverageService;
+  private final ClassReviewSyncApplicationService reviewSyncService;
   private final TrainFollowEvidenceApplicationService evidenceService;
 
   public TrainFollowAppController(
@@ -72,6 +74,7 @@ public class TrainFollowAppController {
       ClassAssistantApplicationService assistantService,
       ClassPracticeScopeApplicationService practiceScopeService,
       ClassPracticeCoverageApplicationService practiceCoverageService,
+      ClassReviewSyncApplicationService reviewSyncService,
       TrainFollowEvidenceApplicationService evidenceService) {
     this.roleService = roleService;
     this.scheduleService = scheduleService;
@@ -80,6 +83,7 @@ public class TrainFollowAppController {
     this.assistantService = assistantService;
     this.practiceScopeService = practiceScopeService;
     this.practiceCoverageService = practiceCoverageService;
+    this.reviewSyncService = reviewSyncService;
     this.evidenceService = evidenceService;
   }
 
@@ -186,6 +190,14 @@ public class TrainFollowAppController {
     Long userId = requirePlatformUserId();
     roleService.assertClassMember(userId, classId);
     return ApiResponse.ok(practiceCoverageService.getCoverageForAppMember(classId, userId));
+  }
+
+  /** App：本班同步学入口（通道 C，对齐后台跟班「同步学」绑定） */
+  @GetMapping("/classes/{classId}/review-sync")
+  public ApiResponse<Map<String, Object>> reviewSync(@PathVariable Long classId) {
+    Long userId = requirePlatformUserId();
+    roleService.assertClassMember(userId, classId);
+    return ApiResponse.ok(reviewSyncService.resolveForAppMember(classId, userId));
   }
 
   /** App：本班已做题列表（分页，轻量题干预览） */

@@ -4,6 +4,7 @@
  */
 import { useMemo, useState } from 'react';
 import {
+  Alert,
   Button,
   Card,
   Col,
@@ -56,9 +57,26 @@ function navigateTo(path: string) {
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
-export function StatsOverviewPage({ examId }: { examId: number }) {
+type StatsOverviewPageProps = {
+  examId: number;
+  /** 嵌入跟班「同步学」Tab：隐藏返回/切计划，紧凑布局 */
+  embedded?: boolean;
+  /** false 时不发请求（如 Tab 未激活） */
+  enabled?: boolean;
+  /** 嵌入时展示的计划标题（可省） */
+  examTitle?: string;
+};
+
+export function StatsOverviewPage({
+  examId,
+  embedded = false,
+  enabled = true,
+  examTitle,
+}: StatsOverviewPageProps) {
   const hasPerm = useAuthStore((s) => s.hasPermission);
   const canExport = hasPerm('exam:review-sync:stats:export');
+  const canView = hasPerm('exam:review-sync:stats:view');
+  const active = enabled && examId > 0 && canView;
 
   const [rangeDays, setRangeDays] = useState(14);
   const [customRange, setCustomRange] = useState<[Dayjs, Dayjs] | null>(null);
@@ -80,37 +98,46 @@ export function StatsOverviewPage({ examId }: { examId: number }) {
     };
   }, [rangeDays, customRange]);
 
-  // 考试计划下拉（SaaS 本地 train_exam_list，复用考试管理接口）
+  // 考试计划下拉（独立页用；嵌入模式不拉全量计划）
   const examsQuery = useQuery({
     queryKey: ['review-sync-stats-exam-options'],
     queryFn: () => pageExams({ page: 1, pageSize: 200 }),
+    enabled: !embedded && active,
   });
   const examOptions = (examsQuery.data?.items ?? []).map((e) => ({
     value: e.id!,
     label: e.title ?? `计划#${e.id}`,
   }));
-  const currentExamTitle = examOptions.find((o) => o.value === examId)?.label ?? `计划#${examId}`;
+  const currentExamTitle =
+    examTitle
+    || examOptions.find((o) => o.value === examId)?.label
+    || `计划#${examId}`;
 
   const query = { from, to, examId };
   const overviewQuery = useQuery({
     queryKey: ['review-sync-stats', 'overview', query],
     queryFn: () => fetchStatsOverview(query),
+    enabled: active,
   });
   const trendQuery = useQuery({
     queryKey: ['review-sync-stats', 'daily-trend', query],
     queryFn: () => fetchDailyTrend(query),
+    enabled: active,
   });
   const wrongQuery = useQuery({
     queryKey: ['review-sync-stats', 'wrong-trend', query],
     queryFn: () => fetchWrongTrend(query),
+    enabled: active,
   });
   const knowledgeQuery = useQuery({
     queryKey: ['review-sync-stats', 'knowledge', examId],
     queryFn: () => fetchKnowledgeMastery(examId),
+    enabled: active,
   });
   const studentsQuery = useQuery({
     queryKey: ['review-sync-stats', 'students', examId, keyword, page, pageSize],
     queryFn: () => fetchStudents({ page, pageSize, examId, keyword: keyword || undefined }),
+    enabled: active,
   });
 
   const overview = overviewQuery.data;
@@ -258,23 +285,43 @@ export function StatsOverviewPage({ examId }: { examId: number }) {
   // 渲染
   // ------------------------------------------------------------------
 
+  if (!canView) {
+    return (
+      <Alert
+        type="warning"
+        showIcon
+        message="无同步学统计查看权限"
+        description="需要权限码 exam:review-sync:stats:view"
+      />
+    );
+  }
+
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ padding: embedded ? 0 : 16 }}>
       <Space style={{ marginBottom: 16 }} wrap>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigateTo('/training/exam-list')}>
-          返回考试管理
-        </Button>
-        <Typography.Text strong style={{ fontSize: 16 }}>AI 同步学统计</Typography.Text>
-        <span>当前计划：</span>
-        <Select
-          style={{ minWidth: 280 }}
-          value={examId}
-          options={examOptions}
-          loading={examsQuery.isLoading}
-          showSearch
-          optionFilterProp="label"
-          onChange={(v) => navigateTo(`/training/exam-lists/${v}/review-sync-stats`)}
-        />
+        {!embedded && (
+          <>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigateTo('/training/exam-list')}>
+              返回考试管理
+            </Button>
+            <Typography.Text strong style={{ fontSize: 16 }}>AI 同步学统计</Typography.Text>
+            <span>当前计划：</span>
+            <Select
+              style={{ minWidth: 280 }}
+              value={examId}
+              options={examOptions}
+              loading={examsQuery.isLoading}
+              showSearch
+              optionFilterProp="label"
+              onChange={(v) => navigateTo(`/training/exam-lists/${v}/review-sync-stats`)}
+            />
+          </>
+        )}
+        {embedded && (
+          <Typography.Text strong style={{ fontSize: 15 }}>
+            同步学学情 · {currentExamTitle}
+          </Typography.Text>
+        )}
         <Select
           style={{ width: 120 }}
           value={customRange ? undefined : rangeDays}

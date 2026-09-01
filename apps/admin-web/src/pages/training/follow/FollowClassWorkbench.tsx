@@ -46,6 +46,7 @@ import * as trainApi from '../../../api/training';
 import type { ClassStudent, TrainInfoClassListItem } from '../../../types/training';
 import { StudentAttendanceDetailDrawer } from './StudentAttendanceDetailDrawer';
 import { FollowPracticeTab } from './FollowPracticeTab';
+import { FollowReviewSyncTab } from './FollowReviewSyncTab';
 import { FollowScheduleChangeTab } from './FollowScheduleChangeTab';
 import { FollowHomeworkTab } from './FollowHomeworkTab';
 import { FollowMockExamTab } from './FollowMockExamTab';
@@ -2040,6 +2041,17 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                 classId={classId}
                 classTitle={classItem.title}
                 active={activeTab === 'practice'}
+              />
+            ),
+          },
+          {
+            key: 'review-sync',
+            label: '同步学',
+            children: (
+              <FollowReviewSyncTab
+                classId={classId}
+                classTitle={classItem.title}
+                active={activeTab === 'review-sync'}
               />
             ),
           },
