@@ -49,25 +49,36 @@ public class SkillMubiaoExcelExporter {
       Sheet sheet = workbook.createSheet("Sheet1");
       Styles styles = new Styles(workbook);
 
+      // 表头各行：先把所有格子创建并套样式，再做合并——
+      // Excel 合并区的边线由区域内所有底层格子的边框叠加，非锚点格无样式会缺线
       Row r0 = sheet.createRow(0);
-      setCell(r0, 0, titleLine, styles.title);
+      for (int c = 0; c < COLS; c++) {
+        r0.createCell(c).setCellStyle(styles.title);
+      }
+      r0.getCell(0).setCellValue(titleLine);
       sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, COLS - 1));
 
       Row r1 = sheet.createRow(1);
-      setCell(r1, 0, careerLine, styles.leftNoBorder);
+      for (int c = 0; c < COLS; c++) {
+        r1.createCell(c).setCellStyle(styles.leftNoBorder);
+      }
+      r1.getCell(0).setCellValue(careerLine);
       sheet.addMergedRegion(new CellRangeAddress(1, 1, 0, COLS - 1));
 
       Row r2 = sheet.createRow(2);
-      setCell(r2, 0, "考评范围一级", styles.header);
+      for (int c = 0; c < COLS; c++) {
+        r2.createCell(c).setCellStyle(styles.header);
+      }
+      r2.getCell(0).setCellValue("考评范围一级");
       sheet.addMergedRegion(new CellRangeAddress(2, 2, 0, 3));
-      setCell(r2, 4, "考评范围二级", styles.header);
+      r2.getCell(4).setCellValue("考评范围二级");
       sheet.addMergedRegion(new CellRangeAddress(2, 2, 4, 8));
-      setCell(r2, 9, "考评点", styles.header);
+      r2.getCell(9).setCellValue("考评点");
       sheet.addMergedRegion(new CellRangeAddress(2, 2, 9, 12));
 
       Row r3 = sheet.createRow(3);
-      String[] headers = {"代码重要程度比例", "名称", "考评比重", "选考方式",
-          "代码重要程度比例", "名称", "技能要求", "考评比重", "选考方式",
+      String[] headers = {"代码", "名称", "考评比重", "选考方式",
+          "代码", "名称", "技能要求", "考评比重", "选考方式",
           "代码", "名称", "重要程度", "试题量"};
       for (int c = 0; c < COLS; c++) {
         setCell(r3, c, headers[c], styles.header);
@@ -111,10 +122,8 @@ public class SkillMubiaoExcelExporter {
     }
     int endRow = startRow + totalRows - 1;
 
-    int[] xyz = StandardExportSupport.countXyz(tree, l1.getId(), "skill");
     Row first = sheet.getRow(startRow) != null ? sheet.getRow(startRow) : sheet.createRow(startRow);
-    setCell(first, 0, StandardExportSupport.lastSegment(l1.getNodeKey())
-        + "(" + xyz[0] + ":" + xyz[1] + ":" + xyz[2] + ")", styles.center);
+    setCell(first, 0, StandardExportSupport.lastSegment(l1.getNodeKey()), styles.center);
     setCell(first, 1, stripKeySuffix(l1.getTitle()), styles.center);
     setWeight(first, 2, skillWeight.weightOf(l1), styles);
     setCell(first, 3, "必考", styles.center);
@@ -141,10 +150,8 @@ public class SkillMubiaoExcelExporter {
     int rows = Math.max(leaves.size(), 1);
     int endRow = startRow + rows - 1;
 
-    int[] xyz = StandardExportSupport.countXyz(tree, l2.getId(), "skill");
     Row first = sheet.getRow(startRow) != null ? sheet.getRow(startRow) : sheet.createRow(startRow);
-    setCell(first, 4, StandardExportSupport.lastSegment(l2.getNodeKey())
-        + "(" + xyz[0] + ":" + xyz[1] + ":" + xyz[2] + ")", styles.center);
+    setCell(first, 4, StandardExportSupport.lastSegment(l2.getNodeKey()), styles.center);
     setCell(first, 5, stripKeySuffix(l2.getTitle()), styles.center);
     setCell(first, 6, l2.getSkillRequirement() != null ? l2.getSkillRequirement() : "", styles.left);
     // 选考方式=任选一项 → 仅每个一级的首个二级行标出比重数值，其余留空（§8.2.3）
@@ -249,6 +256,7 @@ public class SkillMubiaoExcelExporter {
       title.setFont(titleFont);
       title.setAlignment(HorizontalAlignment.CENTER);
       title.setVerticalAlignment(VerticalAlignment.CENTER);
+      border(title);
 
       Font headerFont = workbook.createFont();
       headerFont.setBold(true);
@@ -279,7 +287,8 @@ public class SkillMubiaoExcelExporter {
       weight = workbook.createCellStyle();
       weight.setAlignment(HorizontalAlignment.CENTER);
       weight.setVerticalAlignment(VerticalAlignment.CENTER);
-      weight.setDataFormat(workbook.createDataFormat().getFormat("0.00"));
+      // 考评比重按百分数显示（0.15 → 15%），对齐 OSTA 纸质样表
+      weight.setDataFormat(workbook.createDataFormat().getFormat("0%"));
       border(weight);
     }
 

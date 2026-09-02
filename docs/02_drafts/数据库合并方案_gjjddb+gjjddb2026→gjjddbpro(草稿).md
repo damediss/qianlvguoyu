@@ -178,10 +178,10 @@
 
 | # | 步骤 | 责任 |
 |---|---|---|
-| 4.1 | 旧三库 mysqldump 全量归档 | 【AI】可代跑，【你】确认归档完整并存入 COS/离线介质 |
+| 4.1 | 旧三库 mysqldump 全量归档——**脚本已备好并预检实测（2026-08-31）**：`scripts/dbmerge/07_archive_dump.py`（目标白名单写死：114 的 gjjddb + 旧 gxwebsoft_core、43 的 gjjddb2026；43 现役 gjjddbpro/gxwebsoft_core 列入黑名单拒绝触碰；只读，不含 DROP；服务端 dump 流式回传本机 + gzip 完整性 + 表数交叉核对 + MANIFEST）。执行前需提供 114 MySQL root 运行期环境变量 `DBMERGE_MYSQL_114_PASS`（同 03_migrate.sh 的 PHP_DB_ROOT_PASS 约定） | 【AI】可代跑，【你】确认归档完整并存入 COS/离线介质 |
 | 4.2 | **旧库 DROP 下线**——破坏性动作，必须你亲自执行，我不执行删库 | 【你】 |
-| 4.3 | SaaS 正式移除 sync 通道代码、PHP_MYSQL_* 配置、user-provisioning 双写残留（独立变更，走正常发版）——**已于 2026-08-27 随《AI同步学功能单库化改造方案_gjjddbpro》v1.2 实施完成**（`integration/php`/`integration/sync` 整包拆除、配置面清理，主仓 dev `aae97da`/`7778d35`）；归档 SQL 见 `infra/db/archive/`，§4-H 数据修复脚本见 `infra/db/merge-single-db-repair.sql`（部署窗口执行） | 【AI】写代码，【你】部署 |
-| 4.4 | 更新 AGENTS.md / README / deploy 文档中的库名与配置说明 | 【AI】 |
+| 4.3 | SaaS 正式移除 sync 通道代码、PHP_MYSQL_* 配置、user-provisioning 双写残留（独立变更，走正常发版）——**已于 2026-08-27 随《AI同步学功能单库化改造方案_gjjddbpro》v1.2 实施完成**（`integration/php`/`integration/sync` 整包拆除、配置面清理，主仓 dev `aae97da`/`7778d35`）；归档 SQL 见 `infra/db/archive/`，§4-H 数据修复脚本见 `infra/db/merge-single-db-repair.sql`。**生产部署与数据修复已于 2026-08-27 17:06 完成（需求方另一 agent 执行），2026-08-31 复核：tenant_id=1 遗留全 0、php_synced=0 待回写 0、env 无 PHP/sync 残留、部署起服务日志零 DB 错误、exam_result 无重复行（证据链见单库化方案 v1.3 §12.4）** | 【AI】写代码，【你】部署 |
+| 4.4 | 更新 AGENTS.md / README / deploy 文档中的库名与配置说明——**已于 2026-08-31 完成**：`AGENTS.md` 环境变量表 MYSQL_URL 改为 gjjddbpro（含合并时点注记）、`infra/deploy/platform-api.env.example`（未入 git）MYSQL_URL 同步改为 gjjddbpro；README.md、docs/01_delivery、env 模板其余处无旧库名残留 | 【AI】 |
 
 ### 分工速查表
 

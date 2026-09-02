@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Button,
   Card,
@@ -44,15 +44,35 @@ const SOURCE_OPTIONS = [
   { value: 1, label: '外部' },
 ];
 
+/** 列表查询状态持久化：进入 AI 同步学统计页后列表组件被卸载，返回时从 sessionStorage 恢复当前页/筛选 */
+const LIST_STATE_KEY = 'train_exam_list_state';
+
+interface ListState {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  type?: number;
+  source?: number;
+}
+
+function readListState(): ListState {
+  try {
+    const raw = sessionStorage.getItem(LIST_STATE_KEY);
+    return raw ? (JSON.parse(raw) as ListState) : {};
+  } catch {
+    return {};
+  }
+}
+
 export function TrainExamListPage() {
   const queryClient = useQueryClient();
   const hasPerm = useAuthStore((s) => s.hasPermission);
   const canViewStats = hasPerm('exam:review-sync:stats:view');
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(10);
-  const [keyword, setKeyword] = useState('');
-  const [type, setType] = useState<number | undefined>();
-  const [source, setSource] = useState<number | undefined>();
+  const [page, setPage] = useState(() => readListState().page ?? 1);
+  const [pageSize, setPageSize] = useState(() => readListState().pageSize ?? 10);
+  const [keyword, setKeyword] = useState(() => readListState().keyword ?? '');
+  const [type, setType] = useState<number | undefined>(() => readListState().type);
+  const [source, setSource] = useState<number | undefined>(() => readListState().source);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | undefined>();
   const [peopleExamId, setPeopleExamId] = useState<number | undefined>();
@@ -69,6 +89,17 @@ export function TrainExamListPage() {
     queryKey: ['train-exam-list', query],
     queryFn: () => pageExams(query),
   });
+
+  useEffect(() => {
+    sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify({ page, pageSize, keyword, type, source }));
+  }, [page, pageSize, keyword, type, source]);
+
+  // 恢复的页码可能超出数据总页数（记录被删/每页条数调大后），收敛到最后一页
+  useEffect(() => {
+    if (!data) return;
+    const maxPage = Math.max(1, Math.ceil((data.total ?? 0) / pageSize));
+    if (page > maxPage) setPage(maxPage);
+  }, [data, pageSize, page]);
 
   const deleteMu = useMutation({
     mutationFn: (id: number) => deleteExam(id),
@@ -177,10 +208,15 @@ export function TrainExamListPage() {
             current: page,
             pageSize,
             total: data?.total ?? 0,
-            showSizeChanger: false,
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 30, 40, 50],
             showTotal: t => `共 ${t} 条`,
             position: ['bottomRight'],
-            onChange: p => setPage(p),
+            onChange: (p, size) => {
+              // 切换每页条数后回到第一页，避免当前页超出总页数
+              setPage(size !== pageSize ? 1 : p);
+              setPageSize(size);
+            },
           }}
         />
       </Card>

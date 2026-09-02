@@ -41,44 +41,56 @@ public class MubiaoExcelExporter {
       Sheet sheet = workbook.createSheet(sheetName);
       Styles styles = new Styles(workbook);
 
+      // 表头 4 行：先把每行所有格子创建并套上样式，再做合并——
+      // Excel 合并区的边线由区域内所有底层格子的边框叠加，非锚点格无样式会缺线
       // 第1行：标题（合并整行）
       Row r0 = sheet.createRow(0);
-      Cell titleCell = r0.createCell(0);
-      titleCell.setCellValue(titleLine);
-      titleCell.setCellStyle(styles.title);
+      for (int c = 0; c < COLS; c++) {
+        r0.createCell(c).setCellStyle(styles.title);
+      }
+      r0.getCell(0).setCellValue(titleLine);
       sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, COLS - 1));
 
       // 第2行：考评范围 / 考评点
       Row r1 = sheet.createRow(1);
-      setCell(r1, 0, "考评范围", styles.header);
+      for (int c = 0; c < COLS; c++) {
+        r1.createCell(c).setCellStyle(styles.header);
+      }
+      r1.getCell(0).setCellValue("考评范围");
       sheet.addMergedRegion(new CellRangeAddress(1, 1, 0, 6));
-      setCell(r1, 7, "考评点", styles.header);
+      r1.getCell(7).setCellValue("考评点");
       sheet.addMergedRegion(new CellRangeAddress(1, 1, 7, 9));
 
       // 第3行：一级/二级/三级 + 代码/名称/重要程度
       Row r2 = sheet.createRow(2);
-      setCell(r2, 0, "一级", styles.header);
+      for (int c = 0; c < COLS; c++) {
+        r2.createCell(c).setCellStyle(styles.header);
+      }
+      r2.getCell(0).setCellValue("一级");
       sheet.addMergedRegion(new CellRangeAddress(2, 2, 0, 1));
-      setCell(r2, 2, "二级", styles.header);
+      r2.getCell(2).setCellValue("二级");
       sheet.addMergedRegion(new CellRangeAddress(2, 2, 2, 3));
-      setCell(r2, 4, "三级", styles.header);
+      r2.getCell(4).setCellValue("三级");
       sheet.addMergedRegion(new CellRangeAddress(2, 2, 4, 6));
-      setCell(r2, 7, "代码", styles.header);
+      r2.getCell(7).setCellValue("代码");
       sheet.addMergedRegion(new CellRangeAddress(2, 3, 7, 7));
-      setCell(r2, 8, "名称", styles.header);
+      r2.getCell(8).setCellValue("名称");
       sheet.addMergedRegion(new CellRangeAddress(2, 3, 8, 8));
-      setCell(r2, 9, "重要程度", styles.header);
+      r2.getCell(9).setCellValue("重要程度");
       sheet.addMergedRegion(new CellRangeAddress(2, 3, 9, 9));
 
       // 第4行
       Row r3 = sheet.createRow(3);
-      setCell(r3, 0, "代码名称重要程度比例", styles.header);
-      setCell(r3, 1, "权重", styles.header);
-      setCell(r3, 2, "代码名称重要程度比例", styles.header);
-      setCell(r3, 3, "权重", styles.header);
-      setCell(r3, 4, "代码名称重要程度比例", styles.header);
-      setCell(r3, 5, "考评权重", styles.header);
-      setCell(r3, 6, "相关知识", styles.header);
+      for (int c = 0; c < COLS; c++) {
+        r3.createCell(c).setCellStyle(styles.header);
+      }
+      r3.getCell(0).setCellValue("代码名称");
+      r3.getCell(1).setCellValue("权重");
+      r3.getCell(2).setCellValue("代码名称");
+      r3.getCell(3).setCellValue("权重");
+      r3.getCell(4).setCellValue("代码名称");
+      r3.getCell(5).setCellValue("考评权重");
+      r3.getCell(6).setCellValue("相关知识");
 
       int rowIdx = 4;
       if (tree.rootA != null) {
@@ -112,11 +124,9 @@ public class MubiaoExcelExporter {
     }
     int endRow = startRow + totalRows - 1;
 
-    // L0 合并单元格：名称+代码+（X:Y:Z）、权重
-    int[] xyz = StandardExportSupport.countXyz(tree, l0.getId(), "theory");
+    // L0 合并单元格：名称+代码、权重（重要程度比例不再显示）
     Row first = sheet.createRow(startRow);
-    String l0Text = stripKeySuffix(l0.getTitle()) + "\n" + StandardExportSupport.lastSegment(l0.getNodeKey())
-        + "\n" + StandardExportSupport.xyzText(xyz);
+    String l0Text = stripKeySuffix(l0.getTitle()) + "\n" + StandardExportSupport.lastSegment(l0.getNodeKey());
     setCell(first, 0, l0Text, styles.center);
     setWeight(first, 1, l0.getWeight(), styles);
     if (endRow > startRow) {
@@ -144,10 +154,8 @@ public class MubiaoExcelExporter {
     }
     int endRow = startRow + totalRows - 1;
 
-    int[] xyz = StandardExportSupport.countXyz(tree, l1.getId(), "theory");
     Row first = sheet.getRow(startRow) != null ? sheet.getRow(startRow) : sheet.createRow(startRow);
-    String l1Text = stripKeySuffix(l1.getTitle()) + "\n" + StandardExportSupport.lastSegment(l1.getNodeKey())
-        + "\n" + StandardExportSupport.xyzText(xyz);
+    String l1Text = stripKeySuffix(l1.getTitle()) + "\n" + StandardExportSupport.lastSegment(l1.getNodeKey());
     setCell(first, 2, l1Text, styles.center);
     setWeight(first, 3, l1.getWeight(), styles);
     if (endRow > startRow) {
@@ -170,10 +178,8 @@ public class MubiaoExcelExporter {
     int rows = Math.max(leaves.size(), 1);
     int endRow = startRow + rows - 1;
 
-    int[] xyz = StandardExportSupport.countXyz(tree, l2.getId(), "theory");
     Row first = sheet.getRow(startRow) != null ? sheet.getRow(startRow) : sheet.createRow(startRow);
-    String l2Text = stripKeySuffix(l2.getTitle()) + "\n" + StandardExportSupport.lastSegment(l2.getNodeKey())
-        + "\n" + StandardExportSupport.xyzText(xyz);
+    String l2Text = stripKeySuffix(l2.getTitle()) + "\n" + StandardExportSupport.lastSegment(l2.getNodeKey());
     setCell(first, 4, l2Text, styles.center);
     setWeight(first, 5, l2Weight, styles);
     setCell(first, 6, l2.getRelatedKnowledge() != null ? l2.getRelatedKnowledge() : "", styles.left);
@@ -274,6 +280,7 @@ public class MubiaoExcelExporter {
       title.setFont(titleFont);
       title.setAlignment(HorizontalAlignment.CENTER);
       title.setVerticalAlignment(VerticalAlignment.CENTER);
+      border(title);
 
       Font headerFont = workbook.createFont();
       headerFont.setBold(true);
@@ -300,7 +307,8 @@ public class MubiaoExcelExporter {
       weight = workbook.createCellStyle();
       weight.setAlignment(HorizontalAlignment.CENTER);
       weight.setVerticalAlignment(VerticalAlignment.CENTER);
-      weight.setDataFormat(workbook.createDataFormat().getFormat("0.00"));
+      // 权重按百分数显示（0.05 → 5%），对齐 OSTA 纸质样表
+      weight.setDataFormat(workbook.createDataFormat().getFormat("0%"));
       border(weight);
     }
 

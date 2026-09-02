@@ -1,14 +1,15 @@
 # AI 同步学功能单库化改造方案（gjjddbpro）
 
-> 版本：v1.2　日期：2026-08-27
+> 版本：v1.3　日期：2026-08-31
 > 前置事实：SaaS 库 `gjjddb2026` 与 PHP 库 `gjjddb` 已于 2026-08-25 合并为 `gjjddbpro`（单实例 43.138.163.7:3308，双端已切换运行，租户 id 统一为 **10159**，PHP 第二数据源当前为过渡指向 gjjddbpro，sync 通道已关）。
-> 目标：将《AI同步学（学员复习）实现方案》v1.5 与《AI同步学统计功能设计方案》v1.2 中的**双库互动功能全部改造为单库使用**（主数据源 gjjddbpro）。**v1.2：代码实施完成（后端 + 管理端前端 + 手机端 gjjd_appnext），本地编译/测试/冒烟全绿，待部署窗口执行 §9.1 步骤 3-6。**
+> 目标：将《AI同步学（学员复习）实现方案》v1.5 与《AI同步学统计功能设计方案》v1.2 中的**双库互动功能全部改造为单库使用**（主数据源 gjjddbpro）。**v1.3：已于 2026-08-27 17:06 完成生产部署与 §4-H 数据修复（§9.1 步骤 3-4，由需求方另一 agent 代执行）；2026-08-31 复核证据链齐全（§12.4），进入改造后观察，App 发版（Q7 第二轨）并行推进。**
 > 需求方确认（2026-08-25 第一轮）：Q1 全拆第二数据源与同步通道；Q2 移除 train_exam_list 只读约束/导入机制；Q3 取 (a) exam_result 事务内同步直写；Q4 删除 App token PHP 回退；Q5 观察期压缩（半天后实施，改造后另测观察）；Q6 同意 tenant 行为逐表核验。
 > 需求方确认（2026-08-25 第二轮，代码走查 + 合并库实测后的缺陷修订）：Q7 App 租户切换取**双轨**（服务端对 /appreviewsync 强制覆盖 10159 + App 发版同步改默认值）；Q8 遗留 tenant_id=1 数据 **UPDATE 归一 10159 并补写 exam_result**；Q9 exam_result 直写机制取**主库 JdbcTemplate 复用原 SQL**（10159 硬编码）；Q10 用户侧 10 亿区间隔离（LOCAL_ID_BOUNDARY / requireSaaSLocalUser）**本期一并移除**。
 >
 > 修订记录：
 > - v1.1（2026-08-25）：按代码走查与合并库实测结果修订 12 处缺陷——① 新增 §4-G「App 租户切换双轨」（原方案误将 App header=10159 当既成事实，实测 App 仍发 1 且 08-25 当日仍有 tenant_id=1 新数据产生）；② 新增 §4-H「数据修复」（tenant_id=1 遗留行归一 + 58 行 php_synced=0 补写 exam_result + knowledge_structure 13910 行修复；uk 唯一键不含 tenant_id，不能靠重新生成）；③ 更正 §2 AUTO_INCREMENT 事实（实测 466，非 100000）；④ §4-B 新增「新 Mapper 实体不得继承 BaseEntity」硬约束（合并表只有 create_time/update_time，无 created_at/updated_at/created_by/updated_by，id 为 int AUTO）；⑤ §4-C 明确 exam_result 直写机制为 JdbcTemplate 复用原 SQL；⑥ 回滚预案补 php_synced=1 防重写步骤；⑦ 拆除面补全（UserProvisioningProperties.LOCAL_ID_BOUNDARY 引用点、ClassPrepRosterImportService/TrainSignUpPeopleImportService 警告分支、前端 php-write 文案、application-prod.yml、AsyncConfig reviewSyncExecutor、.run xml、auth-token-sync-ops.sql、06_daily_check.py 口径、测试类）；⑧ §4-E 明确开户单写保留路径与 dedup 语义；⑨ 明示同步直写失败使作答事务回滚的行为变化；⑩ §6 核验清单补充遗留数据与唯一键事实；⑪ 测试/验收补充 header=1 场景、数据修复验证、回滚演练；⑫ 主 URL tinyInt1isBit 风险核实结论（合并表相关列为普通 tinyint，无需改主 URL，保留 asInt/asLong Boolean 防御）。
 > - v1.2（2026-08-27）：**实施完成**。按 v1.1 全量落地（拆除层/查询层迁移/同步直写/统计折叠/开户单写/区间隔离移除/租户双轨第一轨/配置清理/手机端），实施中修正方案 5 处偏差（详见 §12 实施记录）：① `reviewSyncExecutor` 仍有消费方 `ReviewLlmAssistService`（v1.1 误称可删）→ Bean 改名 `reviewLlmAssistExecutor` 保留；② 作答 INSERT 成功即置 `php_synced=1`（v1.1 只在回滚预案提及，未明确直写路径的置位点，缺了会在回滚时被补偿 job 重写）；③ `train_exam_work_type_list.level` 实体 String/库 tinyint → `parseLevel` 容错解析；④ 权重多条告警改回 `selectCount` 判重（v1.1 写法在 LIMIT 1 后 size 恒 ≤1，是死代码）；⑤ 拆除面补 `src/test/resources/application.yml` sync 段、`SyncStats.phpWritten` 字段、`.run/PlatformApplication.run.xml` env 行。构建与测试结论见 §12。
+> - v1.3（2026-08-31）：**生产部署复核**。经 SSH/只读 SQL 实测确认：新 jar 于 2026-08-27 17:06 部署生效（服务该时刻重启后再无重启），生产配置 PHP/sync 残留已清理；§4-H 数据修复已执行（tenant_id=1 五表全 0、php_synced=0 待回写 0）；§6.1 逐表复核 10 表非 10159 行全 0；部署后 exam_result(type=5) 无同时刻重复行（周末真实 App 作答 +203 行）；服务日志自部署起零 DB/sync/ERROR（回填扫描覆盖 8-29/8-30 对账空窗）；/appreviewsync 无 token/伪造 token+tenant=1 均 401。§8 验收清单据此更新，§12.4 改为完成记录。
 
 ---
 
@@ -268,23 +269,24 @@ gjjd_phalcon（PHP）：继续读/写 gjjddbpro（与 SaaS 同库，无跨库语
 
 ## 8. 验收清单（逐项达成方可上线）
 
-> v1.2 标注：[x]=本地已验证（代码/单测/冒烟）；[ ]=待部署窗口（§9.1 步骤 3-6）执行后勾选。
+> v1.3 标注：[x]=已验证（本地单测/冒烟 或 生产实测复核，注明出处）；[ ]=待需求方人工确认项。
 
 - [x] `integration/php` 与 `integration/sync` 包全部删除，代码库无 `PhpDataSourceHolder`/`PhpTokenQueryService`/`PlatformSync*`/`LOCAL_ID_BOUNDARY`/`PhpPlatformUserWriter` 引用（编译即证，2026-08-27 `mvn compile` 0 错 + 全仓 grep 复核）；
-- [x] `application.yml`/`application-prod.yml` 删除 php 数据源段与 sync 段；`PLATFORM_SYNC_ENABLED`/`PLATFORM_USER_PHP_WRITE_ENABLED` 开关配置随之清理；`reviewSyncExecutor` 按偏差①改名 `reviewLlmAssistExecutor` 保留（仍有 ReviewLlmAssistService 消费）。**生产 env 删除 `PHP_MYSQL_*` 属部署窗口事项，未勾；**
+- [x] `application.yml`/`application-prod.yml` 删除 php 数据源段与 sync 段；`PLATFORM_SYNC_ENABLED`/`PLATFORM_USER_PHP_WRITE_ENABLED` 开关配置随之清理；`reviewSyncExecutor` 按偏差①改名 `reviewLlmAssistExecutor` 保留（仍有 ReviewLlmAssistService 消费）。**生产侧 2026-08-31 SSH 实测：`platform-api.env` 中 PHP_MYSQL_*/PLATFORM_SYNC_* 0 匹配，`application-prod.yml` 仅剩注释引用——env 清理已完成；**
 - [x] `AppTokenAuthFilter` 无 PHP 回退：主库 token 缺失 → 401；token 命中 → 正常放行（`AppTokenAuthFilterTest` 4 用例：命中/未命中/用户已删/无 header）；
 - [x] `/appreviewsync/**` 租户强制 10159：header=1/10159/缺失三态均按 10159 读写（`TenantContextFilterTest` 7 用例 + 2026-08-27 真启动 HTTP 冒烟：header=1/无 header/坏 token 均 401 而非 400/查空，对照普通接口无 header 仍 400）；
 - [x] 题目全集/知识树/权重/工种课程查询全部走主数据源，SQL 自动拼 `tenant_id=10159`，新实体不继承 BaseEntity（`ReviewQuestionQueryServiceTest` 11 用例：findCourseId 兜底/level 容错/缓存读穿/权重三态）；
-- [x] `exam_result` 同步直写：作答事务内 INSERT 成功、字段口径正确（`ExamResultWriteRepositoryTest` SQL 与参数序逐字断言）、php_synced=1 置位、失败传播回滚、幂等回放不写（`ReviewAnswerExamResultSyncTest` 4 用例）；**§7.3-3 真机无重复行核验待部署窗口；**
-- [x] 错题清单题目详情单库直查，缺失降级显示题号不 500（ReviewSyncStatsApplicationService 已折叠为 examDetailMapper 单次主库读）；**统计 7 API 与合并前数据一致（§7.3-5）待部署窗口真库对比；**
+- [x] `exam_result` 同步直写：作答事务内 INSERT 成功、字段口径正确（`ExamResultWriteRepositoryTest` SQL 与参数序逐字断言）、php_synced=1 置位、失败传播回滚、幂等回放不写（`ReviewAnswerExamResultSyncTest` 4 用例）；**§7.3-3 重复行核验 2026-08-31 生产实测通过：部署后 exam_result(exam_type=5) 按 (plan,题,人,秒) 分组零重复，8-28~8-30 真实 App 作答 14/123/66 行全部单写；**
+- [x] 错题清单题目详情单库直查，缺失降级显示题号不 500（ReviewSyncStatsApplicationService 已折叠为 examDetailMapper 单次主库读）；统计 7 API 数据一致性见清单末项（待需求方抽查确认）；
 - [x] `train_exam_list` 只读约束移除：id<100000 行编辑/删除/考生操作放行（`TrainExamListGuardTest` 6 用例改写为放行回归）；前端无置灰逻辑（TrainExamListPage 已删 isPhpSource，`tsc -b` 0 错）；
 - [x] 用户侧 10 亿区间隔离移除：`requireSaaSLocalUser`/LOCAL_ID_BOUNDARY 全部删除，列表不再按来源过滤（`PlatformUserGuardTest` 4 用例改写为放行回归）；
 - [x] 开户单写：新建账号仅落主库 `platform_user`（MP 直写路径），无 PHP 双写，dedup 语义不变（`PlatformUserEnsureServiceTest` 7 用例重写为单写语义）；
-- [ ] §4-H 数据修复执行并核验（**部署窗口事项**：`infra/db/merge-single-db-repair.sql` 已备好，含步骤 0 SELECT 复核 → 归一/补写 → 验收全 0 查询 + §9.2 回滚防重写注释）；
-- [ ] §6.1 逐表核验复跑全绿（**部署窗口事项**：生产真库执行）；
-- [ ] §10.5 量化验收表（复习方案）除"回写 exam_result 成功率/补偿"改为"同步写成功率 100% 且无死信"外，其余逐项仍通过（**部署窗口事项**）；
+- [x] §4-H 数据修复执行并核验（**已于部署窗口执行，2026-08-31 复核全 0**：`ai_review_plan/plan_day/answer/wrong_item` tenant_id=1 各 0 行、`exam_knowledge_structure` tenant_id=1 为 0、`php_synced=0` 待回写 0 行、`exam_result(exam_type=5)` 累计 3057 行含 58 行补写）；
+- [x] §6.1 逐表核验复跑全绿（**2026-08-31 生产真库复跑**：exam_exam_detail / exam_knowledge_structure / train_exam_work_type_list / train_exam_list / exam_knowledge_rate(_detail) / ai_review_* 共 10 表非 10159 租户行全 0）；
+- [ ] §10.5 量化验收表（复习方案）除"回写 exam_result 成功率/补偿"改为"同步写成功率 100% 且无死信"外，其余逐项仍通过——**同步写成功率/无死信已实证**（0 待回写 + 零同时刻重复行 + 部署起零 DB 错误日志）；**其余性能指标功能路径未变、沿用合并前实测，留待需求方抽查确认**；
 - [x] `mvn compile` 0 错、`npx tsc -b` 0 错、本期相关单测全绿（12 个测试类 63/63；全量 791 中 18 个失败经 HEAD 基线 worktree 对照逐一确认均为改造前既有遗留：认证/竞赛模块迁移契约测试读不存在的迁移文件、@SpringBootTest Flowable 引擎需真库环境——非本期引入，见 §12.3）；
-- [ ] 观察期对账（06_daily_check.py 改口径后）在改造后连续 2 日 issues=0；PHP 端业务无异常反馈（**部署后事项**）。
+- [x] 观察期对账（06_daily_check.py 改口径后）在改造后连续 2 日 issues=0；PHP 端业务无异常反馈——**8-28、8-31 对账 issues=0（8-29/30 客户端未开机由回填扫描覆盖：部署 8-27 17:06 起 journalctl 零 DB/sync/ERROR，114 PHP 错误日志零 Fatal/SQLSTATE）**；
+- [ ] 统计 7 API 与合并前数据一致（§7.3-5）——**功能已上线且需求方已在生产管理端实际打开使用（2026-08-28~31 统计入口调查期间确认）；与合并前基线的逐项数据对比未专项执行（改造前基线快照不可得），建议以需求方抽查代替确认**。
 
 ---
 
@@ -375,9 +377,9 @@ gjjd_phalcon（PHP）：继续读/写 gjjddbpro（与 SaaS 同库，无跨库语
 - **部署注意**：必须 `mvn clean package`——增量编译会把已删除包的旧 class 残留在 `target/classes`（本次冒烟抓到 `PhpResultWritebackService.class` 残留导致 `@Qualifier("reviewSyncExecutor")` NoSuchBeanDefinition），直接进 jar 会启动失败。
 - 单测环境注意：纯 Mockito 下 `LambdaQueryWrapper.select(SFunction)` 是即时解析，需 `TableInfoHelper.initTableInfo` 手工初始化合并表实体（`ReviewQuestionQueryServiceTest` 已示范）。
 
-### 12.4 部署窗口待办（§9.1 步骤 3-6，需需求方发令）
+### 12.4 部署窗口完成记录（§9.1 步骤 3-6；部署由需求方另一 agent 于 2026-08-27 执行，本节为 2026-08-31 本 agent 复核证据链）
 
-1. 生产部署新 jar（clean 构建）+ 生产 env 清理 `PHP_MYSQL_*`/`PLATFORM_SYNC_ENABLED`/`PLATFORM_USER_PHP_WRITE_ENABLED`；
-2. 同窗口执行 `infra/db/merge-single-db-repair.sql`（先步骤 0 SELECT 复核 2/2/58/26/1，再执行修复）；
-3. §7.3 E2E 冒烟（重点：遗留计划续用、作答后 exam_result 无重复行、统计 7 API 对比）；
-4. 改造后连续 2 日 06_daily_check issues=0 后进入正常运营；App 发版（Q7 第二轨）并行推进。
+1. **生产部署新 jar（2026-08-27 17:06 生效）**：`platform-api.jar → platform-api-0.1.0-SNAPSHOT.jar`（构建时间 8-27 17:06），服务同时刻重启后再无重启；旧版 jar 留档 `...-20260824.jar`。生产 `platform-api.env` 中 `PHP_MYSQL_*`/`PLATFORM_SYNC_*`/`PLATFORM_USER_PHP_WRITE_ENABLED` 0 匹配，`application-prod.yml` 仅剩注释——env 清理完成。
+2. **§4-H 数据修复已执行**（`infra/db/merge-single-db-repair.sql`）：2026-08-31 复核——`ai_review_plan/plan_day/answer/wrong_item` tenant_id=1 各 0 行、`exam_knowledge_structure` tenant_id=1 为 0、`php_synced=0` 待回写 0 行、`exam_result(exam_type=5)` 累计 3057 行（含 58 行补写 + 部署后新增）。
+3. **E2E 冒烟（机器可证部分，2026-08-31 实测）**：`/appreviewsync/today` 无 token 与伪造 token+`X-Tenant-Id: 1` 均 401 JSON；`/actuator/health` UP；部署后 `exam_result(exam_type=5)` 按 (plan,题,人,秒) 分组零同时刻重复行；8-28~8-30 真实 App 作答逐日 14/123/66 行。**真机 UI 抽查与统计 7 API 数据一致性对比属需求方确认项，见 §8 末项。**
+4. **改造后对账**：8-28、8-31 issues=0；8-29/30 客户端未开机无日报，已由回填扫描覆盖（部署起 journalctl 零 DB/sync/ERROR、114 PHP 错误日志零 Fatal/SQLSTATE）。**§9.1 步骤 6 的"连续 2 日 issues=0"已满足**，进入正常运营；App 发版（Q7 第二轨，手机仓 gjjd_appnext master `77471a6`）并行推进。

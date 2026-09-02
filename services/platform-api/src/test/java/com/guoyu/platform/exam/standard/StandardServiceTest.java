@@ -151,7 +151,8 @@ class StandardServiceTest {
     when(nodeMapper.selectList(any())).thenReturn(List.of(rootA, leaf));
 
     StandardExportApplicationService service =
-        new StandardExportApplicationService(taskMapper, nodeMapper);
+        new StandardExportApplicationService(taskMapper, nodeMapper,
+            new com.fasterxml.jackson.databind.ObjectMapper());
     StandardExportApplicationService.ExportFile file =
         service.exportSql(1L, 1L, "tester", "create");
     assertNotNull(file);

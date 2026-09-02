@@ -44,6 +44,8 @@ AI 同步学（学员复习）已在 SaaS 后端 + 手机端 uni-app 完整落�
 - 路由：`POST /api/appreviewsync/{overview,today,question,answer,mock/start,mock/submit,finish,progress,advance-day,availability}`，请求体 JSON；
 - 响应：`{code:0, msg:"成功", data:{...}}`（`LegacyAppResponse`，code 为 int，字段名 `msg`）；业务异常 `{code:1, msg}`；未登录由 EntryPoint 返 HTTP 401；
 - 鉴权：`Authorization: Bearer <itoken>`（查主库 `platform_user_token`）；租户由 `TenantContextFilter` 对该前缀强制 10159，header 发 1/10159 均可；
+- **ID 精度红线（2026-08-31 修订补充，已核实后端源码）**：`planId`/`dayId`/`mockPaperId` 为雪花 id，**以字符串下发**（超 JS Number 安全整数）。客户端一律按字符串原样保存与回传，**禁止 `Number()`/`parseInt` 转换**（初始占位值 `0` 除外，拿到真实值后不再参与数值运算）；
+- **401 响应体形态（2026-08-31 修订补充）**：未认证由 `RestAuthenticationEntryPoint` 返 HTTP 401，body 为 `ApiResponse` 风格 `{"code":"401","message":"Authentication required"}`（code 为**字符串**、字段名 **message**），与业务体 `{code:int, msg}` 不同——**401 判定必须以 HTTP statusCode 为准，不能看 body.code**；另外 Controller 兜底 `requireUserId()` 会以 HTTP 200 + `{code:1, msg:"未登录或登录已过期"}` 返回，按业务失败处理即可；
 - 关键响应字段（客户端消费面，与手机端逐字段一致）：
   - `overview`：planId/stage/stageName/dayIndex/totalDays/examDate/encourageText、today{dayId,newTarget,reviewTarget,newDone,reviewDone,mock{mockPaperId,questionCount,status}}、progress{accuracy,...}、wrongStats{red,yellow,green,star}、interrupt{strategyText}；
   - `today`：dayId、newQuestions[]/wrongQuestions[]{questionId,type,knowledgeId,done,cardLevel,star,wrongCount}；
@@ -105,14 +107,16 @@ AI 同步学（学员复习）已在 SaaS 后端 + 手机端 uni-app 完整落�
 saasRequest({ url, data, method='POST', timeout=15000 }) → Promise
 ```
 
-- 基址：`{ dev: 'http://192.168.1.98:8080/api', pro: 'https://java.app.gjjd168.com/api' }[runMode]`（与 App 的 `g.saas` 配置对齐；小程序 util 无 saas 段，本文件内定义）；
+- 基址：文件内定义 `SAAS_BASE = { dev: 'http://192.168.1.110:8080/api', pro: 'https://java.app.gjjd168.com/api' }`（与 App 的 `g.saas` 配置对齐——**2026-08-31 修订：原方案误写 192.168.1.98，已核实 App `utils/util.js` 实为 192.168.1.110**）；选择键为文件内常量 `SAAS_MODE`（默认 `'pro'`，对齐小程序 `util.runMode`；联调时改 `'dev'`）。**注意 App 当前 `saasMode:'dev'` 指向局域网，小程序与其解耦、默认直连生产**；
 - header：`Content-Type: application/json` + `X-Tenant-Id: '10159'`（常量）+ 有 itoken 时 `Authorization: Bearer <itoken>`；每次调用实时读 storage（与 App 同策略，自愈后拿新 token）；
-- POST body `JSON.stringify`；
-- **契约对齐 App**：永远 resolve 不 reject；网络失败 `resolve(false)`（调用方按 falsy 处理并 toast 网络提示）；4xx/5xx 也进 success 分支按 statusCode 判定；
+- POST body：对象直接交给 `wx.request`（header 为 json 时自动序列化）；
+- **契约对齐 App**：永远 resolve 不 reject；网络失败 toast「网络请求失败，请检查网络」并 `resolve(false)`（调用方按 falsy 处理）；4xx/5xx 也进 success 分支按 **HTTP statusCode** 判定（body 可能是 ApiResponse 风格，见 §3）；
 - **401/403 处理链**（简化自 App，理由见 A5）：
   1. 无 itoken（匿名）→ 原样返回响应体（入口预检依赖此行为实现 fail-closed，不跳登录）；
-  2. 有 itoken → `util.wxLogin` Promise 包装静默刷新（`wx.login` → `wxmini/auth` → `openidauto` → 新 itoken 落 storage）→ 成功则用新 token 重试原请求 1 次；`openidauto` 未返回 token（openid 未绑定用户）则不重试；
-  3. 重试后仍 401/403 → 原样返回响应体（页面 showError 展示 msg）；被踢下线场景由 app.js 既有 WS logout 逻辑处理（itoken 已清，走分支 1）；
+  2. 有 itoken → 调**本文件内实现的 `silentRefreshToken()`** 静默刷新 → 成功且 storage 已拿到新 itoken 才用新 token 重试原请求 1 次；openid 未绑定用户（openidauto 无 token）则不重试；
+  3. 重试后仍 401/403 → 原样返回响应体（页面 showError 展示 msg/message）；被踢下线场景由 app.js 既有 WS logout 逻辑处理（itoken 已清，走分支 1）；
+  4. 并发守卫：多个并发请求同时 401 时共享同一个刷新 Promise，不重复触发登录流程；
+- **`silentRefreshToken()` 不在 util.wxLogin 上包装（2026-08-31 修订，原方案不可行）**：已核实 `util.wxLogin(succ)` 中 `succ(true)` 在 `wxmini/openidauto` 的异步回调**之前**执行，且 openidauto 未返回 token 时同样 `succ(true)`——Promise 包装后会在新 token 尚未落 storage 时就重试，必然仍 401。故在 saasRequest.js 内自行实现全程 await 的静默登录链：`wx.login` 取 code → `util.post('wxmini/auth', {pid:0, v_id:0, code})` 取 openid 落 storage → `util.post('wxmini/openidauto', {openid})` 取 token 落 storage，任一环失败/无 token 返回 false；
 - 安全红线对齐：console 仅打 method+url，绝不打 header/token。
 
 ### 6.2 响应工具与接口封装
@@ -134,7 +138,8 @@ saasRequest({ url, data, method='POST', timeout=15000 }) → Promise
 ```
 
 - **js**：data 增加 `syncAllowed: false`（默认隐藏）；onLoad 中 `exam_id` 存在时在 `getData()` 旁调用 `checkSyncAllowed()`；`checkSyncAllowed()`：`result_type` 为假直接 return，否则调 availability，成功且 `data.allowed` 为真才 `setData({syncAllowed:true})`——请求失败/401 保持隐藏（**fail-closed**，未登录学员入口不出现，与手机端一致）；
-- **js**：`toSyncHome()`：`util.isLogin()` 为假 → `wx.navigateTo` 登录页并 return；否则 `util.navTo("/pages/exam/syncHome", false, {exam_id})`；
+- **js**：`toSyncHome()`：`util.isLogin()` 为假 → `wx.navigateTo` 登录页（`/pages/auth/login?from=/pages/exam/syncHome&params=` + `JSON.stringify({exam_id})`，与 util.navTo 内部跳登录的 URL 格式一致）并 return；否则 `util.navTo("/pages/exam/syncHome", false, {exam_id})`。**不能用 `util.navTo(path, true, param)` 做守卫**（2026-08-31 修订补充）：已核实该函数未登录跳登录页后**不 return**，仍会继续 navigateTo 目标页（既有缺陷），必须手动守卫；
+- **checkSyncAllowed 调用时机**：onLoad 的 setData 回调中 `exam_id` 存在即调（不依赖 paper_id，与 getData 的 `paper_id && exam_id` 条件解耦）（2026-08-31 修订补充）；
 - **wxss**：`.bg-sync{background-color:#7c6cf0;}`。
 
 ### 6.4 syncHome 计划概览
@@ -149,8 +154,8 @@ saasRequest({ url, data, method='POST', timeout=15000 }) → Promise
 
 **结构**（wxml）：进度头（第 N/M 题 + 完成后显示「结束今日练习」链接）→ D9 鼓励横幅（fixed 顶部）→ 区块一「今日新题」（蓝色标题条）→ 区块二「错题清算」（红色标题条，点击=tapWrongSection）→ 上一题/下一题 → 空态。
 
-- **渲染模型（A3/A4 适配）**：两区块标题条按列表非空常显；题目卡片仅渲染**当前题**（`currentSection==='new'` 时新题区渲染 `newQ`，否则错题区渲染 `wrongQ`）——与手机端 `v-for + v-show` 的视觉效果等价、DOM 更轻；`newQ/wrongQ` 为按 `currentIndex` 取出的快照对象，切题/提交/刷新后随列表一并 setData；题干 HTML 用 wxParse 单绑定 `parsedContent`（仅 parse 当前题），纯文本题干走 `{{currentQText}}` 绑定（hasHtml 判定同手机端正则）；
-- **数据模型**：`dayId/newList/wrongList/currentSection/currentIndex/startTime/autoSubmitting/encourage{banner,text,type}/encourageTimer/finishPromptShowing`，与手机端逐字段对应；
+- **渲染模型（A3/A4 适配）**：两区块标题条按列表非空常显；题目卡片仅渲染**当前题**（`currentSection==='new'` 时新题区渲染 `newQ`，否则错题区渲染 `wrongQ`）——与手机端 `v-for + v-show` 的视觉效果等价、DOM 更轻；`newQ/wrongQ` 为按 `currentIndex` 取出的**视图模型快照**（2026-08-31 修订补充：小程序 wxml 不能调用函数，`optClass/typeText/typeTagClass/cardText/hasHtml` 的判定结果须预计算进快照——`optionsView[]{content,cls}`、`typeText`、`typeTagCls`、`cardChangeText`、`hasHtml`），切题/提交/刷新后经统一 `syncView()` 随列表一并 setData；题干 HTML 用 wxParse 单绑定 `parsedContent`（仅 parse 当前题，按 questionId 去重避免重复 parse），纯文本题干走 `{{currentQText}}` 绑定（hasHtml 判定同手机端正则）；
+- **数据模型**：`dayId/newList/wrongList/currentSection/currentIndex/encourage{banner,text,type}` 等与手机端逐字段对应；**定时器与内部标志不进 data（2026-08-31 修订）**：`encourageTimer` 挂页面实例 `this.`（定时器 id 进 data 会被 setData 序列化，无意义且易误用）；`startTime/autoSubmitting/finishPromptShowing` 为不渲染的内部状态，挂 `this.` 或留 data 但不 setData（直接 `this.data.xxx` 赋值，与项目既有风格一致）；`dayId` 为字符串（§3 红线），仅原样回传；
 - **作答交互**：单选/判断点选即提交；多选点选切换选中、「确认答案」提交；`userAnswer`：多选 `JSON.stringify(selected)`、其余取首个选项 content；`useTimeSec = max(1, round((now-startTime)/1000))`，提交后重置 startTime；错题区 roundType 传 `review`；
 - **选项高亮**：选中 opt-selected；判分后按 `correctOptions` 数组精确匹配正确项（无该字段回退 `correctAnswer.split('、')`）、错选标 opt-wrong——逻辑与手机端 optClass 一致；
 - **多选自动提交**：已选未确认点「下一题」→ 提交 → 停留 2s 展示判分 → 再跳（提交失败留原地；停留期间位置被改/全部完成则不跳）；「上一题」不触发；
@@ -186,30 +191,37 @@ saasRequest({ url, data, method='POST', timeout=15000 }) → Promise
 
 ### 8.1 功能用例（微信开发者工具 + 真机）
 
-- [ ] 入口显隐：白名单内复习任务显示入口；非白名单/未登录/availability 请求失败均隐藏（fail-closed）；考试任务（result_type=0）不显示；
-- [ ] 登录守卫：未登录点入口（强制可见场景）跳登录页；
-- [ ] 概览页：懒生成计划、阶段进度、鼓励语、中断提示条、今日任务计数、错题 chips、三按钮跳转；从答题页返回后计数刷新（onShow）；
-- [ ] 答题页-新题：单选/判断点选即判分、正确/错误样式与解析展示、多选提示与「确认答案」、多选未确认点下一题自动提交停留 2s；
-- [ ] 答题页-错题清算：新题未清完点清算提示、红/黄牌+★标签、已错次数、重做改答案、判分后错题卡迁移文案（含 starNew 加星提示）；
-- [ ] 实时入队：新题答错后「错题清算 (N/M)」实时 +1，正在清算的题不被推走（按 questionId 重定位）；
-- [ ] D9 鼓励条：连对 3/连错 2 触发横幅 4s 消失、不被后续引导顶掉、onUnload 无定时器泄漏；
-- [ ] D7 继续挑战：全部完成后 finish 弹窗出现「继续挑战」，确认后原地加载明日任务续答；额度用尽/计划完结时弹窗无该按钮；
-- [ ] 结束练习：summary 数据正确、返回概览页数据刷新；
-- [ ] 模考：组卷、限时展示、单/多/判作答、未答题交卷确认、成绩卡与及格判定、逐题解析、返回；
-- [ ] 学情页：预估得分（无权重配置时隐藏）、掌握度条、题型正确率、趋势、知识点覆盖、空态；
-- [ ] 401 自愈：token 失效时静默刷新并重试成功（可清 itoken 后带过期 token 模拟）；openid 未绑定时不死循环；
-- [ ] 两端互通：App 侧已有的计划在小程序端打开进度一致（同 platform_user）。
+> 2026-08-31 验收：标注 ✅ 的条目已由 `_tests/` 离线单测（187 条断言全绿）+ 代码走查覆盖；标注【联调项】的需在开发者工具/真机连后端复核。
+
+- [x] 入口显隐：白名单内复习任务显示入口 ✅；非白名单（allowed=false）/未登录（401）/availability 请求失败均隐藏（fail-closed）✅；考试任务（result_type=0）不显示 ✅（灰度白名单真实配置生效【联调项】）
+- [x] 登录守卫：未登录点入口跳登录页（from/params 带回跳参数）✅
+- [x] 概览页：阶段进度、鼓励语、中断提示条、今日任务计数、错题 chips、三按钮跳转 ✅；懒生成计划与中断补救策略为后端行为【联调项】；从答题页返回后计数刷新（onShow）✅
+- [x] 答题页-新题：单选/判断点选即判分 ✅、正确/错误样式与解析展示 ✅、多选提示与「确认答案」✅、多选未确认点下一题自动提交停留 2s ✅
+- [x] 答题页-错题清算：新题未清完点清算提示 ✅、判分后错题卡迁移文案（含 starNew 加星提示）✅；红/黄牌+★标签、已错次数、重做改答案（后端幂等重判）【联调项】
+- [x] 实时入队：新题答错后「错题清算 (N/M)」实时 +1 ✅，正在清算的题不被推走（按 questionId 重定位）✅
+- [x] D9 鼓励条：连对触发横幅 4s 消失 ✅、展示期间引导延后不被顶掉 ✅、onUnload 无定时器泄漏 ✅
+- [x] D7 继续挑战：finish 弹窗出现「继续挑战」，确认后原地加载明日任务续答 ✅；额度用尽/计划完结时弹窗无该按钮 ✅（canAdvance 由后端额度控制【联调项】）
+- [x] 结束练习：summary 数据正确 ✅、返回概览页数据刷新 ✅
+- [x] 模考：组卷 ✅、限时展示 ✅、单/多/判作答 ✅、未答题交卷确认 ✅、成绩卡与及格判定 ✅、逐题解析 ✅、返回 ✅
+- [x] 学情页：预估得分 ✅、掌握度条、题型正确率、趋势、知识点覆盖、空态 ✅（无权重配置时 estimatedScore=null 隐藏【联调项】）
+- [x] 401 自愈：token 失效时静默刷新并重试成功 ✅（mock 全链路）；openid 未绑定时不死循环 ✅；真实过期 token【联调项】
+- [ ] 两端互通：App 侧已有的计划在小程序端打开进度一致（同 platform_user）【联调项，需真机/开发者工具连后端验证】
 
 ### 8.2 回归
 
-- [ ] PHP 链路不受影响：顺序练习/随机练习/模拟考试/我的错题/去考试（promote/exam 仅增量改动）；
-- [ ] WS 被踢下线：清 itoken → 同步练习入口隐藏、请求不再报错弹窗循环。
+- [x] PHP 链路不受影响：顺序练习/随机练习/模拟考试/我的错题/去考试（promote/exam 仅增量改动：新增 data 字段 + 2 个方法 + onLoad 追加一次调用 + wxml 插入 1 个菜单块，既有逻辑零改动；开发者工具编译复核【联调项】）
+- [x] WS 被踢下线：app.js 既有 logout 逻辑未改动；itoken 已清后同步练习请求走匿名分支原样返回、不触发静默登录循环 ✅（单测覆盖匿名 401 分支）
 
 ### 8.3 工程
 
-- [ ] 开发者工具编译无报错、无告警级 CSS 兼容问题（flex gap 已规避）；
-- [ ] 主包体积增量 < 100KB（4 页面 + 3 utils，无新依赖）；
-- [ ] 题干含图片/表格的富文本题在真机渲染正常（wxParse 既有能力域）。
+- [x] 编译无报错：全部新增/改动 JS 通过 `node --check`，全部 JSON 通过解析校验，页面四件套齐全、wxParse import 路径有效；无 flex gap（已用 margin 替代）✅（开发者工具编译 + CSS 兼容告警复核【联调项】）
+- [x] 主包体积增量 < 100KB：实测 4 页面 + 3 utils 共 56.3KB（未压缩，minify 后更小）✅
+- [ ] 题干含图片/表格的富文本题在真机渲染正常（wxParse 既有能力域）【联调项】
+
+### 8.4 自动化自测（2026-08-31 修订新增）
+
+- [x] `_tests/` Node 离线单测（mock wx/Page/getApp/定时器）：saasResponse 判定、saasRequest 401 自愈链与并发守卫、10 接口 URL/参数/雪花 ID 字符串红线、入口 fail-closed 与登录守卫、syncExam 判分/翻页/多选自动提交/顺序规则/续答定位/实时入队/D9/D7/防重入、syncMock 交卷、syncProgress 空态——`node _tests/run.js` **187 条断言全绿** ✅
+- [x] `_tests/` 已加入 `project.config.json` 的 `packOptions.ignore`，不进主包 ✅
 
 ## 9. 实施顺序与风险
 
@@ -229,3 +241,17 @@ saasRequest({ url, data, method='POST', timeout=15000 }) → Promise
 | 高频 setData 卡顿（大题量日 120 新题 + 错题） | 中 | 仅渲染当前题、详情批量 50/批、精准路径 setData（§6.5） |
 | openid 未绑定用户时静默登录拿不到 token | 低 | 401 链路不循环重试；入口 fail-closed 隐藏，登录后正常 |
 | 两端交互细节漂移（后续手机端迭代） | 低 | 本方案锁定对齐基准为 2026-08-30 手机端 master；后续手机端变更另行同步 |
+
+## 10. 审核修订记录（2026-08-31）
+
+对照三方源码（`gjjd_appnext` / `wxmini-gjjd` / `qianlvguoyu_saas`）逐条核实，修订以下缺陷：
+
+| # | 缺陷 | 修订 |
+|---|---|---|
+| R1 | §6.1 dev 基址误写 `192.168.1.98`，且 App 实际用独立 `saasMode`（当前 dev）选基址而非 runMode | 更正为 `192.168.1.110`；小程序 saasRequest 内定义 `SAAS_MODE` 常量（默认 pro），与 App 解耦 |
+| R2 | §6.1「`util.wxLogin` Promise 包装」不可行：`wxLogin` 的 `succ(true)` 先于 `openidauto` 异步回调执行，且无 token 也回 true | 改为 saasRequest 内自实现全程 await 的 `silentRefreshToken()`（wx.login → wxmini/auth → wxmini/openidauto），并加并发刷新守卫 |
+| R3 | §3 未提雪花 ID（planId/dayId/mockPaperId）字符串下发，JS Number 转换会丢精度 | §3 增加 ID 精度红线：字符串原样保存回传，禁止数值转换 |
+| R4 | §3 未写 401 响应体形态（`{"code":"401","message":...}`，与业务体不同） | §3 补充，明确 401 判定以 HTTP statusCode 为准 |
+| R5 | §6.5 数据模型把 `encourageTimer` 列入 data（会被 setData 序列化） | 定时器/内部标志挂页面实例；wxml 不可调用函数，选项高亮等判定预计算进视图模型快照 |
+| R6 | §6.3 登录守卫未给登录页 URL，且未警示 `util.navTo(path,true)` 未登录不 return 的既有缺陷 | 补 URL 格式与手动守卫要求；checkSyncAllowed 调用时机与 getData 条件解耦 |
+| R7 | 验收清单无可执行的自动化验证手段，真机条目无法离线勾选 | §8.4 新增 `_tests/` Node 离线单测 + packOptions.ignore 忽略；真机/联调条目标注「联调项」 |

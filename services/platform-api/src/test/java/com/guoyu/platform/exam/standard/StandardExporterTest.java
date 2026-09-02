@@ -229,11 +229,12 @@ class StandardExporterTest {
       assertEquals("重要程度", sheet.getRow(2).getCell(9).getStringCellValue());
       assertEquals("相关知识", sheet.getRow(3).getCell(6).getStringCellValue());
 
-      // 数据行：L0 A 合并、权重 0.25（0.00 格式）、L2 相关知识、叶 001/002
+      // 数据行：L0 A 合并、权重 0.25（百分数格式）、L2 相关知识、叶 001/002
       String l0Text = sheet.getRow(4).getCell(0).getStringCellValue();
-      assertTrue(l0Text.contains("基本要求") && l0Text.contains("（1:1:0）"), l0Text);
+      assertTrue(l0Text.contains("基本要求") && l0Text.contains("A"), l0Text);
+      assertFalse(l0Text.contains("（"), "不再显示重要程度比例：" + l0Text);
       assertEquals(0.25, sheet.getRow(4).getCell(1).getNumericCellValue(), 0.0001);
-      assertEquals("0.00", sheet.getRow(4).getCell(1).getCellStyle().getDataFormatString());
+      assertEquals("0%", sheet.getRow(4).getCell(1).getCellStyle().getDataFormatString());
       assertEquals("001", sheet.getRow(4).getCell(7).getStringCellValue());
       assertEquals("工匠精神的基本内涵", sheet.getRow(4).getCell(8).getStringCellValue());
       assertEquals("X", sheet.getRow(4).getCell(9).getStringCellValue());
@@ -296,11 +297,11 @@ class StandardExporterTest {
 
       // 数据行（第 5 行起）：一级 必考 + 比重 0.15；二级 任选一项；技能要求原文；试题量空
       var dataRow = sheet.getRow(4);
-      assertEquals("A(2:0:0)", dataRow.getCell(0).getStringCellValue());
+      assertEquals("A", dataRow.getCell(0).getStringCellValue());
       assertEquals("事故预防", dataRow.getCell(1).getStringCellValue());
       assertEquals(0.15, dataRow.getCell(2).getNumericCellValue(), 0.0001);
       assertEquals("必考", dataRow.getCell(3).getStringCellValue());
-      assertEquals("A(2:0:0)", dataRow.getCell(4).getStringCellValue());
+      assertEquals("A", dataRow.getCell(4).getStringCellValue());
       assertEquals("安全检查", dataRow.getCell(5).getStringCellValue());
       assertTrue(dataRow.getCell(6).getStringCellValue().contains("1.1.1能查出风门损坏"));
       assertEquals(0.15, dataRow.getCell(7).getNumericCellValue(), 0.0001, "首个二级标出比重");

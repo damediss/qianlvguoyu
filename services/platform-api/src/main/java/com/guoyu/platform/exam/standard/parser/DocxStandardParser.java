@@ -39,6 +39,10 @@ public class DocxStandardParser {
   private static final Pattern DIRECTION_LEVEL_LINE =
       Pattern.compile("^(?<direction>.+?)工种分别为[:：]\\s*(?<levels>.+)$");
   private static final Pattern NUMERIC_CELL = Pattern.compile("^\\d{1,3}(\\.\\d+)?$");
+  /** 权重表头中的等级列标记（"五级/初级工"），用于定位数值列起点 */
+  private static final Pattern LEVEL_HEADER = Pattern.compile("[五四三二一]\\s*级");
+  /** "—"/"－"/"-" 等占位符：不是方向名，也不是有效数值 */
+  private static final Pattern DASH_PLACEHOLDER = Pattern.compile("^[—－\\-–\\s]+$");
   private static final String[] LEVEL_NAMES = {"五级/初级工", "四级/中级工", "三级/高级工", "二级/技师", "一级/高级技师"};
 
   public ParsedStandard parse(InputStream in) throws IOException {
@@ -100,8 +104,10 @@ public class DocxStandardParser {
     }
     // 普通段落：基本要求节内的（n）列举项
     if (ctx.mainSection == 2 && ctx.currentBasicL2 != null) {
-      List<String> items = DocxTextUtil.splitItems(text);
-      if (!items.isEmpty() && startsWithParenNumber(text)) {
+      // 跨页时页码会粘在条目段首（如 "105（7）……"），剥掉前导数字再判，否则整段被丢弃
+      String itemText = text.replaceFirst("^[\\d\\s　]+(?=[（(])", "");
+      List<String> items = DocxTextUtil.splitItems(itemText);
+      if (!items.isEmpty() && startsWithParenNumber(itemText)) {
         ctx.currentBasicL2.getTheoryMaterials().addAll(items);
       }
     }
@@ -409,15 +415,33 @@ public class DocxStandardParser {
         ? ctx.theoryBuilder : ctx.skillBuilder;
 
     int cols = grid.get(0).size();
-    // 1) 方向行：前 4 行内，第 2 列起全部为不含数字/百分号/“级”的中文标签
+    // 0) 数值列起点：表头前 4 行内首个含「X级」的列。标签列数随标准不固定
+    //    （2 列=类别/项目；3 列=大类/中类/小项），写死 c=2 会把小项列误当数值列、
+    //    且方向行检测会被标签列的"级"字干扰（如氧化铝制取工的 13 列权重表）
+    int valueColStart = -1;
+    for (int c = 1; c < cols; c++) {
+      StringBuilder headerText = new StringBuilder();
+      for (int r = 0; r < Math.min(4, grid.size()); r++) {
+        headerText.append(cellAt(grid.get(r), c));
+      }
+      if (LEVEL_HEADER.matcher(headerText.toString()).find()) {
+        valueColStart = c;
+        break;
+      }
+    }
+    if (valueColStart < 0) {
+      valueColStart = Math.min(2, cols);
+    }
+
+    // 1) 方向行：前 4 行内，数值列起全部为不含数字/百分号/“级”的中文标签（“—”占位不算标签）
     int directionRowIdx = -1;
     for (int r = 0; r < Math.min(4, grid.size()); r++) {
       List<String> row = grid.get(r);
       boolean directionRow = true;
       int labels = 0;
-      for (int c = 2; c < cols; c++) {
+      for (int c = valueColStart; c < cols; c++) {
         String cell = cellAt(row, c);
-        if (cell.isEmpty()) {
+        if (cell.isEmpty() || DASH_PLACEHOLDER.matcher(cell).matches()) {
           continue;
         }
         if (cell.matches(".*[\\d%（）()/级].*")) {
@@ -435,7 +459,7 @@ public class DocxStandardParser {
     // 2) 每逻辑列的等级与方向
     Map<Integer, Integer> colLevel = new LinkedHashMap<>();   // col -> levelCode
     Map<Integer, String> colDirection = new LinkedHashMap<>(); // col -> direction
-    for (int c = 2; c < cols; c++) {
+    for (int c = valueColStart; c < cols; c++) {
       StringBuilder headerText = new StringBuilder();
       int headerEnd = directionRowIdx >= 0 ? directionRowIdx : Math.min(4, grid.size());
       for (int r = 0; r < headerEnd; r++) {
@@ -454,8 +478,11 @@ public class DocxStandardParser {
       };
       colLevel.put(c, levelCode);
       String direction = directionRowIdx >= 0 ? cellAt(grid.get(directionRowIdx), c) : ParsedStandard.DEFAULT_DIRECTION;
-      colDirection.put(c, direction.isBlank() ? ParsedStandard.DEFAULT_DIRECTION : direction);
-      ctx.registerDirection(direction.isBlank() ? ParsedStandard.DEFAULT_DIRECTION : direction);
+      if (direction.isBlank() || DASH_PLACEHOLDER.matcher(direction).matches()) {
+        direction = ParsedStandard.DEFAULT_DIRECTION;
+      }
+      colDirection.put(c, direction);
+      ctx.registerDirection(direction);
     }
 
     // 3) 数据行：项目名非空且至少一个数值/— 单元格
@@ -463,7 +490,14 @@ public class DocxStandardParser {
     for (int r = dataStart; r < grid.size(); r++) {
       List<String> row = grid.get(r);
       String category = cellAt(row, 0);
-      String item = cellAt(row, 1);
+      // 项目名取标签列中最后一个非空格：3 列布局时取小项（如"配矿"），2 列布局时即项目列
+      String item = "";
+      for (int c = 1; c < valueColStart; c++) {
+        String label = cellAt(row, c);
+        if (!label.isBlank()) {
+          item = label;
+        }
+      }
       if (category.contains("合计") || item.contains("合计")) {
         continue;
       }
@@ -471,7 +505,7 @@ public class DocxStandardParser {
         continue;
       }
       boolean anyValue = false;
-      for (int c = 2; c < cols; c++) {
+      for (int c = valueColStart; c < cols; c++) {
         String v = cellAt(row, c);
         if (NUMERIC_CELL.matcher(v).matches() || v.contains("—") || v.contains("－")) {
           anyValue = true;
