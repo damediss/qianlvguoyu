@@ -1,5 +1,7 @@
 package com.guoyu.platform.app.exam.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.app.exam.entity.AppExamMockPaperEntity;
 import com.guoyu.platform.app.exam.entity.AppExamUserAnswerLogEntity;
@@ -64,6 +66,7 @@ public class AppExamSmartService {
   private static final int DEFAULT_TIME_LIMIT_MIN = 30;
   /** 错题重练默认题量 */
   private static final int WRONG_REPLAY_LIMIT = 20;
+  private static final ObjectMapper JSON = new ObjectMapper();
 
   private final ExamExamDetailMapper examDetailMapper;
   private final ExamKnowledgeStructureMapper knowledgeMapper;
@@ -384,6 +387,549 @@ public class AppExamSmartService {
   }
 
   /**
+   * 精准学推题：按弱项加权推送「同考点 + 同题型」相似题。
+   * <p>优先：错题本种子多、考点错误率高、弱题型、preferKnowledgeIds；池内优先未做过的新题。
+   * 试卷 mode=drill，答错即时解析。
+   */
+  public Map<String, Object> similarWrongPractice(Map<String, Object> body) {
+    PlatformUserPrincipal user = requireLogin();
+    Long tenantId = resolveExamTenantId(user);
+    Long userId = user.getUserId();
+    PracticeContext ctx = resolvePracticeContext(body, user);
+
+    Integer knowledgeId = intVal(body, "knowledgeId", null);
+    int total = intVal(body, "total", DEFAULT_QUESTION_COUNT);
+    if (total <= 0) {
+      total = DEFAULT_QUESTION_COUNT;
+    }
+    total = Math.min(Math.max(total, 10), 50);
+
+    Set<Integer> preferKids = parsePreferKnowledgeIds(body);
+    if (knowledgeId != null && knowledgeId > 0) {
+      preferKids.add(knowledgeId);
+    }
+
+    List<Integer> wrongIds = answerLogMapper.findWrongQuestionIds(tenantId, userId, knowledgeId, 120);
+    Map<Integer, ExamExamDetailEntity> wrongById = wrongIds.isEmpty()
+        ? Map.of()
+        : examDetailMapper.selectBatchIds(wrongIds).stream()
+            .filter(e -> e.getDeleted() == null || e.getDeleted() == 0)
+            .collect(Collectors.toMap(ExamExamDetailEntity::getId, e -> e, (a, b) -> a, LinkedHashMap::new));
+
+    List<ExamExamDetailEntity> seedWrongs = new ArrayList<>();
+    Map<String, Integer> bucketSeedCount = new HashMap<>();
+    Set<String> typeBuckets = new LinkedHashSet<>();
+    Set<Integer> knowledgeBuckets = new LinkedHashSet<>();
+    for (Integer id : wrongIds) {
+      ExamExamDetailEntity q = wrongById.get(id);
+      if (q == null) {
+        continue;
+      }
+      seedWrongs.add(q);
+      String type = normalizeQuestionType(q.getType());
+      if (q.getKnowledgeId() != null && StringUtils.hasText(type)) {
+        String bucket = q.getKnowledgeId() + "|" + type;
+        typeBuckets.add(bucket);
+        knowledgeBuckets.add(q.getKnowledgeId());
+        bucketSeedCount.merge(bucket, 1, Integer::sum);
+      }
+    }
+    seedWrongs = applyPracticeScopeFilter(seedWrongs, ctx);
+    knowledgeBuckets.addAll(preferKids);
+
+    Map<Integer, Double> knowledgeWrongRate = loadKnowledgeWrongRateMap(tenantId, userId);
+    Map<String, Double> typeWrongRate = loadTypeWrongRateMap(tenantId, userId);
+
+    // prefer 考点无其最弱题型补桶，保证「未掌握知识点」也能进主配额
+    for (Integer kid : preferKids) {
+      if (kid == null || kid <= 0) {
+        continue;
+      }
+      String weakType = weakestTypeForKnowledge(kid, typeWrongRate, typeBuckets);
+      String bucket = kid + "|" + weakType;
+      typeBuckets.add(bucket);
+      knowledgeBuckets.add(kid);
+      bucketSeedCount.putIfAbsent(bucket, 0);
+    }
+
+    Map<String, Double> bucketScore = new HashMap<>();
+    for (String bucket : typeBuckets) {
+      bucketScore.put(bucket, scoreBucket(bucket, bucketSeedCount, knowledgeWrongRate, typeWrongRate, preferKids));
+    }
+
+    Integer courseId = ctx.courseId();
+    List<ExamExamDetailEntity> pool = loadScopedQuestionPool(tenantId, ctx, courseId, null);
+    Set<Integer> seedIds = seedWrongs.stream()
+        .map(ExamExamDetailEntity::getId)
+        .filter(java.util.Objects::nonNull)
+        .collect(Collectors.toCollection(HashSet::new));
+    Set<Integer> answeredIds = new HashSet<>(
+        answerLogMapper.findAnsweredQuestionIds(tenantId, userId));
+
+    Map<String, List<ExamExamDetailEntity>> similarByBucket = new HashMap<>();
+    for (ExamExamDetailEntity q : pool) {
+      if (q.getId() == null || seedIds.contains(q.getId())) {
+        continue;
+      }
+      if (!matchSimilarBucket(q, knowledgeId, typeBuckets, knowledgeBuckets)) {
+        continue;
+      }
+      String type = normalizeQuestionType(q.getType());
+      if (q.getKnowledgeId() == null || !StringUtils.hasText(type)) {
+        continue;
+      }
+      String bucket = q.getKnowledgeId() + "|" + type;
+      similarByBucket.computeIfAbsent(bucket, k -> new ArrayList<>()).add(q);
+      bucketScore.putIfAbsent(bucket,
+          scoreBucket(bucket, bucketSeedCount, knowledgeWrongRate, typeWrongRate, preferKids));
+    }
+
+    List<String> orderedBuckets = new ArrayList<>(bucketScore.keySet());
+    orderedBuckets.sort((a, b) -> {
+      int c = Double.compare(bucketScore.getOrDefault(b, 0d), bucketScore.getOrDefault(a, 0d));
+      if (c != 0) {
+        return c;
+      }
+      return Integer.compare(bucketSeedCount.getOrDefault(b, 0), bucketSeedCount.getOrDefault(a, 0));
+    });
+
+    List<ExamExamDetailEntity> picked = new ArrayList<>();
+    Set<Integer> pickedIds = new HashSet<>();
+    int primaryQuota = Math.max(1, (int) Math.ceil(total * 0.6));
+    // 先掺入部分原错题，答对可直接出本，避免整包都是新题导致错题本不动
+    int seedQuota = Math.min(rankedSeedLimit(seedWrongs.size(), total), total);
+    List<ExamExamDetailEntity> earlySeeds = new ArrayList<>(seedWrongs);
+    earlySeeds.sort((a, b) -> {
+      double ar = a.getKnowledgeId() == null ? 0 : knowledgeWrongRate.getOrDefault(a.getKnowledgeId(), 0d);
+      double br = b.getKnowledgeId() == null ? 0 : knowledgeWrongRate.getOrDefault(b.getKnowledgeId(), 0d);
+      return Double.compare(br, ar);
+    });
+    for (ExamExamDetailEntity q : earlySeeds) {
+      if (picked.size() >= seedQuota) {
+        break;
+      }
+      if (q.getId() != null && pickedIds.add(q.getId())) {
+        picked.add(q);
+      }
+    }
+
+    // 主配额：高分桶优先，桶内未做过 > 做过
+    for (String bucket : orderedBuckets) {
+      if (picked.size() >= primaryQuota) {
+        break;
+      }
+      List<ExamExamDetailEntity> cands = similarByBucket.getOrDefault(bucket, List.of());
+      pickWeightedFromCandidates(cands, answeredIds, seedIds, picked, pickedIds,
+          Math.min(primaryQuota - picked.size(), Math.max(2, primaryQuota / Math.max(1, Math.min(5, orderedBuckets.size())))));
+    }
+    // 补满主配额
+    for (String bucket : orderedBuckets) {
+      if (picked.size() >= primaryQuota) {
+        break;
+      }
+      pickWeightedFromCandidates(similarByBucket.getOrDefault(bucket, List.of()),
+          answeredIds, seedIds, picked, pickedIds, primaryQuota - picked.size());
+    }
+    // 剩余题量：其余桶
+    for (String bucket : orderedBuckets) {
+      if (picked.size() >= total) {
+        break;
+      }
+      pickWeightedFromCandidates(similarByBucket.getOrDefault(bucket, List.of()),
+          answeredIds, seedIds, picked, pickedIds, total - picked.size());
+    }
+
+    // 同型新题不足：按考点错误率回填原错题
+    List<ExamExamDetailEntity> rankedSeeds = new ArrayList<>(seedWrongs);
+    rankedSeeds.sort((a, b) -> {
+      double ar = a.getKnowledgeId() == null ? 0 : knowledgeWrongRate.getOrDefault(a.getKnowledgeId(), 0d);
+      double br = b.getKnowledgeId() == null ? 0 : knowledgeWrongRate.getOrDefault(b.getKnowledgeId(), 0d);
+      int c = Double.compare(br, ar);
+      if (c != 0) {
+        return c;
+      }
+      boolean ap = a.getKnowledgeId() != null && preferKids.contains(a.getKnowledgeId());
+      boolean bp = b.getKnowledgeId() != null && preferKids.contains(b.getKnowledgeId());
+      return Boolean.compare(bp, ap);
+    });
+    for (ExamExamDetailEntity q : rankedSeeds) {
+      if (picked.size() >= total) {
+        break;
+      }
+      if (q.getId() != null && pickedIds.add(q.getId())) {
+        picked.add(q);
+      }
+    }
+
+    if (picked.size() < total && !knowledgeBuckets.isEmpty()) {
+      List<ExamExamDetailEntity> sameKnowledge = pool.stream()
+          .filter(q -> q.getId() != null && !pickedIds.contains(q.getId()))
+          .filter(q -> q.getKnowledgeId() != null && knowledgeBuckets.contains(q.getKnowledgeId()))
+          .sorted((a, b) -> {
+            boolean au = !answeredIds.contains(a.getId());
+            boolean bu = !answeredIds.contains(b.getId());
+            return Boolean.compare(bu, au);
+          })
+          .collect(Collectors.toCollection(ArrayList::new));
+      for (ExamExamDetailEntity q : sameKnowledge) {
+        if (picked.size() >= total) {
+          break;
+        }
+        if (pickedIds.add(q.getId())) {
+          picked.add(q);
+        }
+      }
+    }
+
+    if (picked.isEmpty()) {
+      throw new AppSmsException(-1, "暂无同类型可推练习题，请先刷题积累错题");
+    }
+
+    Map<String, Object> packFocus = buildPackFocus(picked, knowledgeWrongRate, typeWrongRate, preferKids);
+    Map<String, Object> view = persistPaper(user, "薄弱同型强化", "drill", picked, 0, ctx);
+    view.put("packFocus", packFocus);
+    return view;
+  }
+
+  private static int rankedSeedLimit(int seedSize, int total) {
+    if (seedSize <= 0 || total <= 0) {
+      return 0;
+    }
+    // 约 30% 原错题，至少 3 题（有则），至多一半
+    int n = Math.max(3, (int) Math.ceil(total * 0.3));
+    return Math.min(seedSize, Math.min(n, Math.max(1, total / 2)));
+  }
+
+  private static Set<Integer> parsePreferKnowledgeIds(Map<String, Object> body) {
+    Set<Integer> out = new LinkedHashSet<>();
+    if (body == null) {
+      return out;
+    }
+    Object raw = body.get("preferKnowledgeIds");
+    if (raw == null) {
+      raw = body.get("knowledgeIds");
+    }
+    if (raw instanceof Collection<?> col) {
+      for (Object o : col) {
+        Integer id = toInt(o);
+        if (id != null && id > 0) {
+          out.add(id);
+        }
+      }
+    } else if (raw != null) {
+      String s = String.valueOf(raw).trim();
+      if (!s.isEmpty()) {
+        for (String part : s.split("[,，\\s]+")) {
+          Integer id = toInt(part);
+          if (id != null && id > 0) {
+            out.add(id);
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  private Map<Integer, Double> loadKnowledgeWrongRateMap(Long tenantId, Long userId) {
+    Map<Integer, Double> out = new HashMap<>();
+    for (Map<String, Object> s : answerLogMapper.wrongStatsByKnowledge(tenantId, userId)) {
+      Integer kid = toInt(s.get("knowledgeId"));
+      if (kid == null) {
+        continue;
+      }
+      int wrong = toIntOrZero(s.get("wrongCount"));
+      int tot = toIntOrZero(s.get("totalCount"));
+      out.put(kid, tot == 0 ? 0d : wrong * 100.0 / tot);
+    }
+    return out;
+  }
+
+  private Map<String, Double> loadTypeWrongRateMap(Long tenantId, Long userId) {
+    Map<String, Double> out = new HashMap<>();
+    for (Map<String, Object> s : answerLogMapper.wrongStatsByQuestionType(tenantId, userId)) {
+      String type = normalizeQuestionType(s.get("questionType") == null ? null : String.valueOf(s.get("questionType")));
+      if (!StringUtils.hasText(type)) {
+        type = "unknown";
+      }
+      int wrong = toIntOrZero(s.get("wrongCount"));
+      int tot = toIntOrZero(s.get("totalCount"));
+      out.put(type, tot == 0 ? 0d : wrong * 100.0 / tot);
+    }
+    return out;
+  }
+
+  private static String weakestTypeForKnowledge(
+      Integer kid, Map<String, Double> typeWrongRate, Set<String> existingBuckets) {
+    String best = "single";
+    double bestRate = -1;
+    for (String t : List.of("single", "multi", "judge")) {
+      if (existingBuckets.contains(kid + "|" + t)) {
+        return t;
+      }
+      double r = typeWrongRate.getOrDefault(t, 0d);
+      if (r > bestRate) {
+        bestRate = r;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  private static double scoreBucket(
+      String bucket,
+      Map<String, Integer> bucketSeedCount,
+      Map<Integer, Double> knowledgeWrongRate,
+      Map<String, Double> typeWrongRate,
+      Set<Integer> preferKids) {
+    String[] parts = bucket.split("\\|", 2);
+    Integer kid = toInt(parts[0]);
+    String type = parts.length > 1 ? parts[1] : "unknown";
+    int seeds = bucketSeedCount.getOrDefault(bucket, 0);
+    double kr = kid == null ? 0 : knowledgeWrongRate.getOrDefault(kid, 0d);
+    double tr = typeWrongRate.getOrDefault(type, 0d);
+    double prefer = kid != null && preferKids.contains(kid) ? 40 : 0;
+    double weakBoost = kr >= 60 ? 30 : (kr >= 30 ? 15 : 0);
+    return seeds * 12.0 + kr * 0.5 + tr * 0.35 + prefer + weakBoost;
+  }
+
+  private static void pickWeightedFromCandidates(
+      List<ExamExamDetailEntity> cands,
+      Set<Integer> answeredIds,
+      Set<Integer> seedIds,
+      List<ExamExamDetailEntity> picked,
+      Set<Integer> pickedIds,
+      int need) {
+    if (need <= 0 || cands == null || cands.isEmpty()) {
+      return;
+    }
+    List<ExamExamDetailEntity> fresh = new ArrayList<>();
+    List<ExamExamDetailEntity> seen = new ArrayList<>();
+    for (ExamExamDetailEntity q : cands) {
+      if (q.getId() == null || pickedIds.contains(q.getId()) || seedIds.contains(q.getId())) {
+        continue;
+      }
+      if (answeredIds.contains(q.getId())) {
+        seen.add(q);
+      } else {
+        fresh.add(q);
+      }
+    }
+    Collections.shuffle(fresh);
+    Collections.shuffle(seen);
+    for (ExamExamDetailEntity q : fresh) {
+      if (need <= 0) {
+        return;
+      }
+      if (pickedIds.add(q.getId())) {
+        picked.add(q);
+        need--;
+      }
+    }
+    for (ExamExamDetailEntity q : seen) {
+      if (need <= 0) {
+        return;
+      }
+      if (pickedIds.add(q.getId())) {
+        picked.add(q);
+        need--;
+      }
+    }
+  }
+
+  private Map<String, Object> buildPackFocus(
+      List<ExamExamDetailEntity> picked,
+      Map<Integer, Double> knowledgeWrongRate,
+      Map<String, Double> typeWrongRate,
+      Set<Integer> preferKids) {
+    Map<Integer, Integer> kidCount = new HashMap<>();
+    Map<String, Integer> typeCount = new HashMap<>();
+    for (ExamExamDetailEntity q : picked) {
+      if (q.getKnowledgeId() != null) {
+        kidCount.merge(q.getKnowledgeId(), 1, Integer::sum);
+      }
+      String t = normalizeQuestionType(q.getType());
+      if (StringUtils.hasText(t)) {
+        typeCount.merge(t, 1, Integer::sum);
+      }
+    }
+    Integer topKid = kidCount.entrySet().stream()
+        .max(Comparator
+            .comparingDouble((Map.Entry<Integer, Integer> e) ->
+                knowledgeWrongRate.getOrDefault(e.getKey(), 0d)
+                    + (preferKids.contains(e.getKey()) ? 20 : 0)
+                    + e.getValue())
+            .thenComparingInt(Map.Entry::getValue))
+        .map(Map.Entry::getKey)
+        .orElse(null);
+    String topType = typeCount.entrySet().stream()
+        .max(Comparator
+            .comparingDouble((Map.Entry<String, Integer> e) ->
+                typeWrongRate.getOrDefault(e.getKey(), 0d) + e.getValue())
+            .thenComparingInt(Map.Entry::getValue))
+        .map(Map.Entry::getKey)
+        .orElse(null);
+
+    String knowledgeName = null;
+    if (topKid != null) {
+      knowledgeName = loadKnowledgeTitle(List.of(topKid)).getOrDefault(topKid, "薄弱考点");
+    }
+    String typeName = topType == null ? null : questionTypeLabel(topType);
+    String hint;
+    if (knowledgeName != null && typeName != null) {
+      hint = "本包侧重：" + knowledgeName + " · " + typeName;
+    } else if (knowledgeName != null) {
+      hint = "本包侧重：" + knowledgeName;
+    } else if (typeName != null) {
+      hint = "本包侧重：" + typeName;
+    } else {
+      hint = "按你的错题推送同类型题";
+    }
+    Map<String, Object> focus = new LinkedHashMap<>();
+    focus.put("knowledgeId", topKid);
+    focus.put("knowledgeName", knowledgeName);
+    focus.put("type", topType);
+    focus.put("typeName", typeName);
+    focus.put("hint", hint);
+    focus.put("questionCount", picked.size());
+    return focus;
+  }
+
+  /**
+   * 同型匹配：优先「考点+题型」与错题一致；无错题桶时按指定 knowledgeId；
+   * 仅有考点桶时退化为同考点。
+   */
+  private static boolean matchSimilarBucket(
+      ExamExamDetailEntity q,
+      Integer focusKnowledgeId,
+      Set<String> typeBuckets,
+      Set<Integer> knowledgeBuckets) {
+    if (q.getKnowledgeId() == null) {
+      return false;
+    }
+    if (focusKnowledgeId != null && focusKnowledgeId > 0 && !focusKnowledgeId.equals(q.getKnowledgeId())) {
+      return false;
+    }
+    String type = normalizeQuestionType(q.getType());
+    if (!typeBuckets.isEmpty()) {
+      return typeBuckets.contains(q.getKnowledgeId() + "|" + type);
+    }
+    return knowledgeBuckets.contains(q.getKnowledgeId());
+  }
+
+  /**
+   * 练习答对出本：清除本题错记；drill/precise 时同考点同题型错题一并出本
+   * （同型强化答对新题时，错题本数字才会随之下降）。
+   */
+  private int clearWrongBookOnPracticeCorrect(
+      Long tenantId, Long userId, ExamExamDetailEntity q, String modeRaw) {
+    if (q == null || q.getId() == null || tenantId == null || userId == null) {
+      return 0;
+    }
+    String mode = modeRaw == null ? "" : modeRaw.trim().toLowerCase(Locale.ROOT);
+    if (!isWrongBookClearMode(mode)) {
+      return 0;
+    }
+    int deleted = answerLogMapper.deleteWrongLogsByQuestion(tenantId, userId, q.getId());
+    if (!("drill".equals(mode) || "precise".equals(mode))) {
+      return deleted;
+    }
+    if (q.getKnowledgeId() == null) {
+      return deleted;
+    }
+    String type = normalizeQuestionType(q.getType());
+    if (!StringUtils.hasText(type)) {
+      return deleted;
+    }
+    List<Integer> wrongIds = answerLogMapper.findWrongQuestionIds(tenantId, userId, q.getKnowledgeId(), 60);
+    if (wrongIds.isEmpty()) {
+      return deleted;
+    }
+    Map<Integer, ExamExamDetailEntity> byId = examDetailMapper.selectBatchIds(wrongIds).stream()
+        .filter(e -> e.getDeleted() == null || e.getDeleted() == 0)
+        .collect(Collectors.toMap(ExamExamDetailEntity::getId, e -> e, (a, b) -> a));
+    for (Integer wid : wrongIds) {
+      if (wid == null || wid.equals(q.getId())) {
+        continue;
+      }
+      ExamExamDetailEntity other = byId.get(wid);
+      if (other == null) {
+        continue;
+      }
+      if (type.equals(normalizeQuestionType(other.getType()))) {
+        deleted += answerLogMapper.deleteWrongLogsByQuestion(tenantId, userId, wid);
+      }
+    }
+    return deleted;
+  }
+
+  private static boolean isWrongBookClearMode(String mode) {
+    if (!StringUtils.hasText(mode)) {
+      return false;
+    }
+    return "wrong".equals(mode)
+        || "drill".equals(mode)
+        || "precise".equals(mode)
+        || "random".equals(mode)
+        || mode.startsWith("seq")
+        || mode.contains("practice")
+        || mode.contains("drill");
+  }
+
+  /** 精准学练后效果：近 7 日错误率 + 最近一次 drill 正确率 */
+  public Map<String, Object> precisePracticeEffect() {
+    PlatformUserPrincipal user = requireLogin();
+    Long tenantId = resolveExamTenantId(user);
+    Long userId = user.getUserId();
+    LocalDateTime weekFrom = LocalDateTime.now().minusDays(7);
+    LocalDateTime prevFrom = LocalDateTime.now().minusDays(14);
+
+    Map<String, Object> week = answerLogMapper.answerStatsSince(tenantId, userId, weekFrom);
+    Map<String, Object> prev = answerLogMapper.answerStatsSince(tenantId, userId, prevFrom);
+    int weekWrong = toIntOrZero(week == null ? null : week.get("wrongCount"));
+    int weekTotal = toIntOrZero(week == null ? null : week.get("totalCount"));
+    int prevWrong = toIntOrZero(prev == null ? null : prev.get("wrongCount"));
+    int prevTotal = toIntOrZero(prev == null ? null : prev.get("totalCount"));
+    // prev 窗口含本周，差集近似上周
+    int lastWeekWrong = Math.max(0, prevWrong - weekWrong);
+    int lastWeekTotal = Math.max(0, prevTotal - weekTotal);
+    double weekRate = weekTotal == 0 ? 0 : Math.round(weekWrong * 1000.0 / weekTotal) / 10.0;
+    double lastWeekRate = lastWeekTotal == 0 ? 0 : Math.round(lastWeekWrong * 1000.0 / lastWeekTotal) / 10.0;
+    Double delta = lastWeekTotal == 0 ? null : Math.round((weekRate - lastWeekRate) * 10) / 10.0;
+
+    AppExamMockPaperEntity lastDrill = mockPaperMapper.selectOne(
+        new LambdaQueryWrapper<AppExamMockPaperEntity>()
+            .eq(AppExamMockPaperEntity::getTenantId, tenantId)
+            .eq(AppExamMockPaperEntity::getUserId, userId)
+            .eq(AppExamMockPaperEntity::getMode, "drill")
+            .eq(AppExamMockPaperEntity::getStatus, "done")
+            .orderByDesc(AppExamMockPaperEntity::getId)
+            .last("LIMIT 1"));
+
+    Map<String, Object> effect = new LinkedHashMap<>();
+    effect.put("weekWrongRate", weekRate);
+    effect.put("weekWrongRateDelta", delta);
+    effect.put("weekAnswered", weekTotal);
+    effect.put("weekWrong", weekWrong);
+    if (lastDrill != null) {
+      int right = lastDrill.getRightCount() == null ? 0 : lastDrill.getRightCount();
+      int cnt = lastDrill.getTotalCount() == null ? 0 : lastDrill.getTotalCount();
+      // 兼容旧卷未写 rightCount：用 score/totalPoint 粗算
+      if (cnt > 0 && lastDrill.getRightCount() == null && lastDrill.getScore() != null
+          && lastDrill.getTotalPoint() != null && lastDrill.getTotalPoint() > 0) {
+        right = (int) Math.round(cnt * (lastDrill.getScore() * 1.0 / lastDrill.getTotalPoint()));
+      }
+      double acc = cnt == 0 ? 0 : Math.round(right * 1000.0 / cnt) / 10.0;
+      effect.put("lastPackAccuracy", acc);
+      effect.put("lastPackRight", right);
+      effect.put("lastPackTotal", cnt);
+      effect.put("lastPackPaperId", lastDrill.getId());
+    } else {
+      effect.put("lastPackAccuracy", null);
+    }
+    return effect;
+  }
+
+  /**
    * 练习过程中单题进度：揭晓后立即写入 answer_log，便于覆盖进度实时更新。
    * 错题重练且答对时同步出本。
    */
@@ -419,8 +965,8 @@ public class AppExamSmartService {
     boolean right = isUserAnswerCorrect(pq.questionType(), pq.correctAnswer(), userAnswer);
     String mode = paper.getMode() == null ? "" : paper.getMode().trim().toLowerCase(Locale.ROOT);
     int deleted = 0;
-    if ("wrong".equals(mode) && right) {
-      deleted = answerLogMapper.deleteWrongLogsByQuestion(tenantId, user.getUserId(), questionId);
+    if (right) {
+      deleted = clearWrongBookOnPracticeCorrect(tenantId, user.getUserId(), q, mode);
     }
 
     Long nextLogId = answerLogMapper.selectMaxId();
@@ -446,8 +992,8 @@ public class AppExamSmartService {
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("recorded", true);
     out.put("isRight", right ? 1 : 0);
-    out.put("removed", "wrong".equals(mode) && right);
-    out.put("removedFromWrong", "wrong".equals(mode) && right);
+    out.put("removed", deleted > 0);
+    out.put("removedFromWrong", deleted > 0);
     out.put("deletedWrongLogs", deleted);
     out.put("questionId", questionId);
     out.put("knowledgeId", q.getKnowledgeId());
@@ -529,6 +1075,44 @@ public class AppExamSmartService {
     return data;
   }
 
+  /** 按题型统计答题/错题与错误率（精准学 Hub） */
+  public List<Map<String, Object>> wrongStatsByQuestionType() {
+    PlatformUserPrincipal user = requireLogin();
+    Long tenantId = resolveExamTenantId(user);
+    Long userId = user.getUserId();
+    List<Map<String, Object>> rows = answerLogMapper.wrongStatsByQuestionType(tenantId, userId);
+    List<Map<String, Object>> out = new ArrayList<>();
+    for (Map<String, Object> s : rows) {
+      String rawType = s.get("questionType") == null ? "unknown" : String.valueOf(s.get("questionType"));
+      String type = normalizeQuestionType(rawType);
+      if (type == null || type.isBlank()) {
+        type = "unknown";
+      }
+      int wrong = toIntOrZero(s.get("wrongCount"));
+      int tot = toIntOrZero(s.get("totalCount"));
+      double wrongRate = tot == 0 ? 0 : Math.round(wrong * 1000.0 / tot) / 10.0;
+      Map<String, Object> item = new LinkedHashMap<>();
+      item.put("type", type);
+      item.put("typeName", questionTypeLabel(type));
+      item.put("wrongCount", wrong);
+      item.put("totalCount", tot);
+      item.put("wrongRate", wrongRate);
+      out.add(item);
+    }
+    out.sort(Comparator.comparingInt(a -> typeSortKey(String.valueOf(a.get("type")))));
+    return out;
+  }
+
+  private static String questionTypeLabel(String type) {
+    return switch (type == null ? "" : type) {
+      case "single" -> "单选题";
+      case "multi" -> "多选题";
+      case "judge" -> "判断题";
+      case "subjective" -> "主观题";
+      default -> "其他题型";
+    };
+  }
+
   // ============================================================
   // 5. 错题本：列出错题（带题目内容）
   // ============================================================
@@ -542,11 +1126,15 @@ public class AppExamSmartService {
     int size = Math.min(limit, 100);
     int offset = (page - 1) * size;
 
-    List<Integer> wrongIds = answerLogMapper.findWrongQuestionIds(tenantId, userId, knowledgeId, offset + size);
-    if (wrongIds.isEmpty()) {
+    // total 必须全量统计，不能用带 LIMIT 的列表 size（否则 Hub 会卡在 limit=8）
+    long total = answerLogMapper.countWrongQuestionIds(tenantId, userId, knowledgeId);
+    if (total <= 0) {
       return Map.of("list", List.of(), "total", 0, "page", page, "size", size);
     }
-    List<Integer> pageIds = wrongIds.subList(Math.min(offset, wrongIds.size()), Math.min(offset + size, wrongIds.size()));
+    List<Integer> wrongIds = answerLogMapper.findWrongQuestionIds(tenantId, userId, knowledgeId, offset + size);
+    List<Integer> pageIds = wrongIds.isEmpty()
+        ? List.of()
+        : wrongIds.subList(Math.min(offset, wrongIds.size()), Math.min(offset + size, wrongIds.size()));
     List<ExamExamDetailEntity> questions = pageIds.isEmpty()
         ? List.of()
         : examDetailMapper.selectBatchIds(pageIds).stream()
@@ -557,7 +1145,12 @@ public class AppExamSmartService {
     for (ExamExamDetailEntity q : questions) {
       list.add(toQuestionView(q, true));
     }
-    return Map.of("list", list, "total", wrongIds.size(), "page", page, "size", size);
+    Map<String, Object> out = new LinkedHashMap<>();
+    out.put("list", list);
+    out.put("total", total);
+    out.put("page", page);
+    out.put("size", size);
+    return out;
   }
 
   /**
@@ -670,10 +1263,8 @@ public class AppExamSmartService {
         if (q.getScore() != null) {
           score = score.add(q.getScore());
         }
-        // 错题重练答对：清掉历史错记，确保出本
-        if ("wrong".equalsIgnoreCase(String.valueOf(paper.getMode()))) {
-          answerLogMapper.deleteWrongLogsByQuestion(resolveExamTenantId(user), user.getUserId(), q.getId());
-        }
+        clearWrongBookOnPracticeCorrect(
+            resolveExamTenantId(user), user.getUserId(), q, String.valueOf(paper.getMode()));
       }
       // 写答题明细（班级上下文从试卷带回，避免客户端交卷漏传 classId）
       AppExamUserAnswerLogEntity log = new AppExamUserAnswerLogEntity();
@@ -1077,7 +1668,9 @@ public class AppExamSmartService {
           .filter(q -> q.getId() != null)
           .collect(Collectors.toMap(ExamExamDetailEntity::getId, q -> q, (a, b) -> a));
       // 练习类即时反馈：未交卷也返回标准答案与解析；模拟卷交卷前不露答案
-      boolean showAnswer = "done".equals(paper.getStatus()) || isPracticeInstantMode(paper.getMode());
+      boolean showAnswer = "done".equals(paper.getStatus())
+          || isPracticeInstantMode(paper.getMode())
+          || (paper.getClassId() != null && paper.getClassId() > 0);
       List<Map<String, Object>> views = new ArrayList<>();
       for (Integer id : ids) {
         ExamExamDetailEntity q = byId.get(id);
@@ -1090,16 +1683,24 @@ public class AppExamSmartService {
     return data;
   }
 
-  /** 随机/顺序/错题重练：答题过程中即出答案与解析 */
+  /**
+   * 练习即时反馈：除模拟考 mock 外，random / wrong / drill / seq_* 等均下发答案与解析。
+   */
   private static boolean isPracticeInstantMode(String mode) {
     if (!StringUtils.hasText(mode)) {
       return false;
     }
     String m = mode.trim().toLowerCase(Locale.ROOT);
+    if ("mock".equals(m)) {
+      return false;
+    }
     return "random".equals(m)
         || "wrong".equals(m)
         || "drill".equals(m)
-        || m.startsWith("seq");
+        || "precise".equals(m)
+        || m.startsWith("seq")
+        || m.contains("practice")
+        || m.contains("drill");
   }
 
   private Map<String, Object> toQuestionView(ExamExamDetailEntity q, boolean showAnswer) {
@@ -1114,9 +1715,39 @@ public class AppExamSmartService {
     m.put("options", pq.options());
     if (showAnswer) {
       m.put("answer", pq.correctAnswer());
-      m.put("resolve", q.getResolve());
+      String resolve = q.getResolve();
+      if (!StringUtils.hasText(resolve)) {
+        // 兼容：部分题解析写在 answer JSON 根字段 analysis/resolve
+        resolve = extractResolveFromAnswerJson(q.getAnswer());
+      }
+      m.put("resolve", resolve);
+      m.put("analysis", resolve);
     }
     return m;
+  }
+
+  /** 从 answer JSON 根节点尝试读取解析文案（题库历史脏数据兼容）。 */
+  @SuppressWarnings("unchecked")
+  private String extractResolveFromAnswerJson(String answerRaw) {
+    if (!StringUtils.hasText(answerRaw)) {
+      return null;
+    }
+    String s = answerRaw.trim();
+    if (!s.startsWith("{")) {
+      return null;
+    }
+    try {
+      Map<String, Object> root = JSON.readValue(s, new TypeReference<Map<String, Object>>() {});
+      for (String key : List.of("resolve", "analysis", "jiexi", "explain", "解析")) {
+        Object v = root.get(key);
+        if (v != null && StringUtils.hasText(String.valueOf(v))) {
+          return String.valueOf(v).trim();
+        }
+      }
+    } catch (Exception ignored) {
+      // ignore
+    }
+    return null;
   }
 
   /**

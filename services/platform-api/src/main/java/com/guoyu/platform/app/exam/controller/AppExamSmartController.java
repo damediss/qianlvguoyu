@@ -2,6 +2,7 @@ package com.guoyu.platform.app.exam.controller;
 
 import com.guoyu.platform.app.api.LegacyAppResponse;
 import com.guoyu.platform.app.exam.service.AppExamSmartService;
+import com.guoyu.platform.app.exam.service.QuestionResolveAssistService;
 import com.guoyu.platform.app.sms.AppSmsException;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
@@ -25,9 +26,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class AppExamSmartController {
 
   private final AppExamSmartService smartService;
+  private final QuestionResolveAssistService resolveAssistService;
 
-  public AppExamSmartController(AppExamSmartService smartService) {
+  public AppExamSmartController(
+      AppExamSmartService smartService,
+      QuestionResolveAssistService resolveAssistService) {
     this.smartService = smartService;
+    this.resolveAssistService = resolveAssistService;
   }
 
   /** 1. AI 智能组卷（按考点×难度分层抽题，生成一张模拟卷） */
@@ -46,6 +51,14 @@ public class AppExamSmartController {
   @PostMapping("/paper/wrong-replay")
   public LegacyAppResponse wrongReplay(@RequestBody(required = false) Map<String, Object> body) {
     return LegacyAppResponse.ok("成功", smartService.wrongReplay(body == null ? Map.of() : body));
+  }
+
+  /**
+   * 3b. 精准学：按错题推送同考点+同题型相似题（mode=drill，答错即时看解析）
+   */
+  @PostMapping("/paper/similar-wrong")
+  public LegacyAppResponse similarWrong(@RequestBody(required = false) Map<String, Object> body) {
+    return LegacyAppResponse.ok("成功", smartService.similarWrongPractice(body == null ? Map.of() : body));
   }
 
   /** 4. 考点预测（基于答题历史分析薄弱考点） */
@@ -70,6 +83,26 @@ public class AppExamSmartController {
   @PostMapping("/paper/progress")
   public LegacyAppResponse paperProgress(@RequestBody(required = false) Map<String, Object> body) {
     return LegacyAppResponse.ok("成功", smartService.recordPaperProgress(body == null ? Map.of() : body));
+  }
+
+  /**
+   * 5d. 题目解析：先查库，无则 AI 生成并回写题库（精准学/班级练习答错补解析）
+   * body: { questionId }
+   */
+  @PostMapping("/question/resolve")
+  public LegacyAppResponse ensureQuestionResolve(@RequestBody(required = false) Map<String, Object> body) {
+    Object raw = body == null ? null : body.get("questionId");
+    Integer questionId = null;
+    if (raw instanceof Number n) {
+      questionId = n.intValue();
+    } else if (raw != null) {
+      try {
+        questionId = Integer.parseInt(String.valueOf(raw));
+      } catch (NumberFormatException ignored) {
+        // leave null
+      }
+    }
+    return LegacyAppResponse.ok("成功", resolveAssistService.ensureResolve(questionId));
   }
 
   /** AI 精准学 E-P0：首页四宫格摘要（聚合层，不改原错题/预测契约） */
