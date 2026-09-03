@@ -23,6 +23,7 @@ import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.vo.FileVO;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
@@ -131,6 +132,8 @@ public class StandardParseApplicationService {
   /** ParsedStandard 骨架 → staging 节点（每 等级×方向 一棵树，id 预分配） */
   private void persistTree(ExamStandardTaskEntity task, ParsedStandard parsed) {
     List<StandardTreeDraft> drafts = new StandardTreeBuilder().build(parsed);
+    // L2 考评权重预填：按相关知识小点条数把 L1 权重分摊到小节（最大余数法，合计=L1）
+    Map<String, BigDecimal> l2Prefill = StandardL2WeightInitializer.allocate(drafts);
     Map<String, Long> idByKey = new HashMap<>();
     for (StandardTreeDraft draft : drafts) {
       String mapKey = treeMapKey(draft.levelCode(), draft.direction(), draft.nodeKey());
@@ -150,7 +153,10 @@ public class StandardParseApplicationService {
       node.setTitle(draft.title());
       node.setTitleRaw(draft.titleRaw());
       node.setImportant(draft.important());
-      node.setWeight(draft.weight());
+      node.setWeight(draft.nodeLevel() == 2
+          ? l2Prefill.getOrDefault(treeMapKey(draft.levelCode(), draft.direction(), draft.nodeKey()),
+              draft.weight())
+          : draft.weight());
       node.setRelatedKnowledge(draft.relatedKnowledge());
       node.setSkillRequirement(draft.skillRequirement());
       node.setSource(draft.source());
