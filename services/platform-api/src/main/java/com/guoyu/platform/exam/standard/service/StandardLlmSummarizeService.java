@@ -34,6 +34,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.ToIntFunction;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -56,8 +57,10 @@ public class StandardLlmSummarizeService {
   private static final String DICT_MODEL_CODE = "ai_standard_mubiao_model_code";
   private static final String DEFAULT_MODEL_CODE = "deepseek-review";
   private static final String DRAFT_TYPE = "standard_knowledge";
-  /** 理论通道每张细目表（等级×工种）考评点总数目标：按小节权重分配，保底 1 点/小节，总量控制在 200~230 */
-  static final int THEORY_TOTAL_TARGET = 200;
+  /** 理论通道每张细目表（等级×工种）考评点总数目标下限：五/四/三级 200 个（国标：不少于 200 个） */
+  static final int THEORY_TOTAL_TARGET_JUNIOR = 200;
+  /** 理论通道总数目标下限：二/一级 120 个（国标：不少于 120 个） */
+  static final int THEORY_TOTAL_TARGET_SENIOR = 120;
   /** 技能通道上限 = 原文条数 × 2 */
   static final int SKILL_MAX_FACTOR = 2;
   /** 解析失败最大重试次数（含首次共 3 次尝试） */
@@ -290,6 +293,11 @@ public class StandardLlmSummarizeService {
     return created;
   }
 
+  /** 按等级取理论考评点总数目标下限：levelCode 0~2（五/四/三级）→ 200；3~4（二/一级）→ 120 */
+  public static int theoryTotalTarget(int levelCode) {
+    return levelCode >= 3 ? THEORY_TOTAL_TARGET_SENIOR : THEORY_TOTAL_TARGET_JUNIOR;
+  }
+
   /** 单小节理论目标点数：加载所属 scope 的 L1+L2，跑同一套按权重分配后取本小节的值 */
   private Integer computeSectionTarget(ExamStandardNodeEntity l2) {
     List<ExamStandardNodeEntity> scopeNodes = nodeMapper.selectList(
@@ -303,7 +311,8 @@ public class StandardLlmSummarizeService {
     List<ExamStandardNodeEntity> sections = scopeNodes.stream()
         .filter(n -> n.getNodeLevel() == 2).toList();
     return allocateTheoryTargets(l1Nodes, sections,
-        s -> splitMaterials(s.getRelatedKnowledge()).size()).getOrDefault(l2.getId(), 1);
+        s -> splitMaterials(s.getRelatedKnowledge()).size(),
+        theoryTotalTarget(l2.getLevelCode())).getOrDefault(l2.getId(), 1);
   }
 
   // ============================================================
@@ -341,7 +350,7 @@ public class StandardLlmSummarizeService {
       log.info("[细目表] LLM 概括范围：taskId={} 选中小节={}/{} 档位={}",
           taskId, sections.size(), allSections.size(), importants);
 
-      // 按「等级×工种」分配每个小节的理论考评点目标数（拍板：全表 ≈200 点，按权重分配）
+      // 按「等级×工种」分配每个小节的理论考评点目标数（国标下限：五至三级 200 点、二至一级 120 点，按权重分配）
       List<ExamStandardNodeEntity> l1Nodes = nodeMapper.selectList(
           new LambdaQueryWrapper<ExamStandardNodeEntity>()
               .eq(ExamStandardNodeEntity::getTaskId, taskId)
@@ -361,7 +370,7 @@ public class StandardLlmSummarizeService {
                 && direction.equals(n.getDirection()))
             .toList();
         Map<Long, Integer> targets = allocateTheoryTargets(scopeL1, e.getValue(),
-            s -> splitMaterials(s.getRelatedKnowledge()).size());
+            s -> splitMaterials(s.getRelatedKnowledge()).size(), theoryTotalTarget(levelCode));
         theoryTargets.putAll(targets);
         int sum = targets.values().stream().mapToInt(Integer::intValue).sum();
         log.info("[细目表] 理论点数分配：taskId={} scope={} 小节数={} 目标总数={}",
@@ -412,6 +421,12 @@ public class StandardLlmSummarizeService {
       }
       CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
+      // 数量兜底（国标下限优先：五至三级 200、二至一级 120）：实际不足由 LLM 补点
+      topUpTheoryLeaves(task, sections, theoryTargets, config, tenantId, userId, importants);
+
+      // 全表后处理：X/Y/Z 比例硬护栏（超比例自动归 X）+ 同级重复/跨级异名告警
+      postProcessTheoryLeaves(taskId);
+
       ExamStandardTaskEntity done = new ExamStandardTaskEntity();
       done.setId(taskId);
       done.setStatus(StandardParseApplicationService.STATUS_REVIEWING);
@@ -433,6 +448,352 @@ public class StandardLlmSummarizeService {
     ExamStandardTaskEntity update = new ExamStandardTaskEntity();
     update.setId(taskId);
     update.setStatus(status);
+    taskMapper.updateById(update);
+  }
+
+  // ============================================================
+  // 全表后处理（Worker 线程末段，TenantContextHolder 已 set）
+  // ============================================================
+
+  /**
+   * 数量兜底（国标下限优先，2026-09-03 拍板：与去重/比例等规则冲突时优先保证总数下限）：
+   * 每张「等级×工种」理论表实际考评点不足目标下限（五至三级 200、二至一级 120）时由 LLM 补点。
+   * 缺口先按小节缺口（目标−实际）降序分配；仍有富余再按小节目标降序每次 2 点追补两轮；
+   * 已有标题喂进 prompt 并在落库前过滤，防与既有点重复。
+   */
+  private void topUpTheoryLeaves(ExamStandardTaskEntity task, List<ExamStandardNodeEntity> sections,
+      Map<Long, Integer> theoryTargets, ExamFaqModelConfigEntity config,
+      Long tenantId, Long userId, List<String> importants) {
+    // 本任务全部理论叶按小节统计实际数量
+    List<ExamStandardNodeEntity> leaves = nodeMapper.selectList(
+        new LambdaQueryWrapper<ExamStandardNodeEntity>()
+            .eq(ExamStandardNodeEntity::getTaskId, task.getId())
+            .eq(ExamStandardNodeEntity::getNodeLevel, 3)
+            .eq(ExamStandardNodeEntity::getDimension, "theory"));
+    Map<Long, Integer> actualBySection = new HashMap<>();
+    for (ExamStandardNodeEntity leaf : leaves) {
+      actualBySection.merge(leaf.getParentId(), 1, Integer::sum);
+    }
+    Map<String, List<ExamStandardNodeEntity>> sectionsByScope = new LinkedHashMap<>();
+    for (ExamStandardNodeEntity l2 : sections) {
+      sectionsByScope.computeIfAbsent(l2.getLevelCode() + "|" + l2.getDirection(),
+          k -> new ArrayList<>()).add(l2);
+    }
+    for (Map.Entry<String, List<ExamStandardNodeEntity>> e : sectionsByScope.entrySet()) {
+      int levelCode = Integer.parseInt(e.getKey().split("\\|", 2)[0]);
+      int target = theoryTotalTarget(levelCode);
+      int actual = 0;
+      for (ExamStandardNodeEntity l2 : e.getValue()) {
+        actual += actualBySection.getOrDefault(l2.getId(), 0);
+      }
+      int deficit = target - actual;
+      if (deficit <= 0) {
+        continue;
+      }
+      log.info("[细目表] 数量兜底：taskId={} scope={} 目标={} 实际={} 需补={}",
+          task.getId(), e.getKey(), target, actual, deficit);
+      // 第一遍：小节缺口（目标−实际）降序，缺多少补多少
+      List<ExamStandardNodeEntity> ordered = new ArrayList<>(e.getValue());
+      ordered.sort(Comparator.comparingInt((ExamStandardNodeEntity l2) ->
+          theoryTargets.getOrDefault(l2.getId(), 1)
+              - actualBySection.getOrDefault(l2.getId(), 0)).reversed());
+      int remaining = deficit;
+      for (ExamStandardNodeEntity l2 : ordered) {
+        if (remaining <= 0) {
+          break;
+        }
+        int gap = theoryTargets.getOrDefault(l2.getId(), 1)
+            - actualBySection.getOrDefault(l2.getId(), 0);
+        if (gap <= 0) {
+          continue;
+        }
+        int added = topUpSection(task, l2, Math.min(gap, remaining), config, tenantId, userId,
+            importants);
+        remaining -= added;
+        actualBySection.merge(l2.getId(), added, Integer::sum);
+      }
+      // 第二遍：部分小节超额完成导致按缺口分不满，按小节目标降序每次补 2 点，最多两轮
+      if (remaining > 0) {
+        ordered.sort(Comparator.comparingInt((ExamStandardNodeEntity l2) ->
+            theoryTargets.getOrDefault(l2.getId(), 1)).reversed());
+        for (int round = 0; round < 2 && remaining > 0; round++) {
+          for (ExamStandardNodeEntity l2 : ordered) {
+            if (remaining <= 0) {
+              break;
+            }
+            int added = topUpSection(task, l2, Math.min(2, remaining), config, tenantId, userId,
+                importants);
+            remaining -= added;
+            actualBySection.merge(l2.getId(), added, Integer::sum);
+            if (added == 0) {
+              break; // LLM 补不出（去重全灭/调用失败）就放弃本轮，避免空转
+            }
+          }
+        }
+      }
+      if (remaining > 0) {
+        log.warn("[细目表] 数量兜底后仍不足：taskId={} scope={} 目标={} 仍缺={}",
+            task.getId(), e.getKey(), target, remaining);
+        appendTaskWarnings(task.getId(), List.of("LLM护栏：" + scopeLabel(e.getKey()) + " 表补足后仍不足 "
+            + target + " 点（缺 " + remaining + " 点），请人工补充或对缺口小节重新概括"));
+      }
+    }
+  }
+
+  /** 单小节补点：LLM 追加生成 topupCount 个不与既有点重复的考评点，返回实际落库数 */
+  private int topUpSection(ExamStandardTaskEntity task, ExamStandardNodeEntity l2, int topupCount,
+      ExamFaqModelConfigEntity config, Long tenantId, Long userId, List<String> importants) {
+    List<ExamStandardNodeEntity> existing = nodeMapper.selectList(
+        new LambdaQueryWrapper<ExamStandardNodeEntity>()
+            .eq(ExamStandardNodeEntity::getParentId, l2.getId())
+            .eq(ExamStandardNodeEntity::getDimension, "theory"));
+    List<String> existingTitles = new ArrayList<>();
+    for (ExamStandardNodeEntity leaf : existing) {
+      existingTitles.add(leaf.getTitle());
+    }
+    List<String> materials = splitMaterials(l2.getRelatedKnowledge());
+    String systemPrompt = buildSystemPrompt(task, l2);
+    String userPrompt = buildTopupUserPrompt(sectionPath(task, l2), materials, existingTitles,
+        importants, topupCount);
+    int maxTokens = computeTheoryTokens(topupCount);
+    StandardLlmPoint.ParseResult result = null;
+    String lastError = null;
+    String lastContent = null;
+    for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      String prompt = attempt == 1 ? userPrompt
+          : userPrompt + "\n\n上次输出解析失败：" + lastError + "。请严格以 JSON 输出 {\"points\":[...]}。";
+      try {
+        String content = llmClient.chatCompletion(config.getBaseUrl(), config.getApiKey(),
+            config.getModelId(), systemPrompt, prompt, maxTokens,
+            config.getThinking(), config.getReasoningEffort(), true, tenantId);
+        lastContent = content;
+        result = parsePointsResponse(content, topupCount, false);
+        if (!result.getPoints().isEmpty()) {
+          break;
+        }
+        lastError = "points 为空";
+        result = null;
+      } catch (Exception ex) {
+        lastError = ex.getMessage();
+        log.warn("[细目表] 补点第 {} 次尝试失败：taskId={} node={} error={}",
+            attempt, task.getId(), l2.getNodeKey(), lastError);
+      }
+    }
+    writeDraft(l2.getId(), systemPrompt + "\n" + userPrompt, lastContent != null ? lastContent : "",
+        config.getModelId(), tenantId, "theory");
+    if (result == null) {
+      return 0;
+    }
+    List<StandardLlmPoint> points = filterAgainstExisting(
+        dedupSectionPoints(clampImportants(result.getPoints(), importants)), existingTitles);
+    int added = 0;
+    for (StandardLlmPoint point : points) {
+      insertLeaf(l2, "theory", point.title(), point.important(), "llm", added, tenantId);
+      added++;
+    }
+    return added;
+  }
+
+  /** 补点过滤：与已有考评点相同/相近（规范化后相等或互为子串，≥2 字）的丢弃 */
+  public static List<StandardLlmPoint> filterAgainstExisting(List<StandardLlmPoint> points,
+      List<String> existingTitles) {
+    List<String> norms = new ArrayList<>();
+    for (String t : existingTitles) {
+      String n = normalizeLeafTitle(t);
+      if (n.length() >= 2) {
+        norms.add(n);
+      }
+    }
+    List<StandardLlmPoint> out = new ArrayList<>(points.size());
+    for (StandardLlmPoint p : points) {
+      String norm = normalizeLeafTitle(p.title());
+      boolean dup = norm.length() >= 2 && norms.stream()
+          .anyMatch(e -> e.equals(norm) || e.contains(norm) || norm.contains(e));
+      if (dup) {
+        log.warn("[细目表] 补点与已有考评点相同/相近，丢弃：{}", p.title());
+        continue;
+      }
+      out.add(p);
+    }
+    return out;
+  }
+
+  /**
+   * 理论叶全表后处理：
+   * 1) X/Y/Z 比例硬护栏（国标：X≥85%、Y≤10%、Z≤5%）——每张「等级×工种」表内超出档位的
+   *    LLM pending 草稿叶自动归入 X（从树序末尾往前调；人工/已审叶不动，仍超额则告警）；
+   * 2) 同级跨小节重复、跨级疑似同点异名 → 告警追加到任务 parseWarnings（前端任务详情可见）。
+   */
+  private void postProcessTheoryLeaves(Long taskId) {
+    List<ExamStandardNodeEntity> leaves = nodeMapper.selectList(
+        new LambdaQueryWrapper<ExamStandardNodeEntity>()
+            .eq(ExamStandardNodeEntity::getTaskId, taskId)
+            .eq(ExamStandardNodeEntity::getNodeLevel, 3)
+            .eq(ExamStandardNodeEntity::getDimension, "theory")
+            .orderByAsc(ExamStandardNodeEntity::getNodeKey));
+    if (leaves.isEmpty()) {
+      return;
+    }
+    // 按 等级×工种 分组（nodeKey 升序保证组内树序）
+    Map<String, List<ExamStandardNodeEntity>> byScope = new LinkedHashMap<>();
+    for (ExamStandardNodeEntity leaf : leaves) {
+      byScope.computeIfAbsent(leaf.getLevelCode() + "|" + leaf.getDirection(),
+          k -> new ArrayList<>()).add(leaf);
+    }
+    List<String> warnings = new ArrayList<>();
+    for (Map.Entry<String, List<ExamStandardNodeEntity>> e : byScope.entrySet()) {
+      String label = scopeLabel(e.getKey());
+      enforceImportantRatios(label, e.getValue(), warnings);
+      warnSameScopeDuplicates(label, e.getValue(), warnings);
+    }
+    warnCrossLevelNameDrift(byScope, warnings);
+    if (warnings.isEmpty()) {
+      return;
+    }
+    log.info("[细目表] 全表后处理告警 {} 条：taskId={}", warnings.size(), taskId);
+    appendTaskWarnings(taskId, warnings);
+  }
+
+  private String scopeLabel(String scopeKey) {
+    String[] parts = scopeKey.split("\\|", 2);
+    return levelName(Integer.parseInt(parts[0])) + "/" + parts[1];
+  }
+
+  /** 单张表 X/Y/Z 比例护栏：Y≤10%、Z≤5%（两者压降后 X 自然 ≥85%），超额的 LLM pending 叶自动归 X */
+  private void enforceImportantRatios(String scopeLabel, List<ExamStandardNodeEntity> scopeLeaves,
+      List<String> warnings) {
+    int n = scopeLeaves.size();
+    int allowedY = (int) Math.floor(n * 0.10);
+    int allowedZ = (int) Math.floor(n * 0.05);
+    int yCount = 0;
+    int zCount = 0;
+    for (ExamStandardNodeEntity leaf : scopeLeaves) {
+      if ("Y".equals(leaf.getImportant())) {
+        yCount++;
+      } else if ("Z".equals(leaf.getImportant())) {
+        zCount++;
+      }
+    }
+    int flippedY = flipExcessImportant(scopeLeaves, "Y", yCount - allowedY);
+    int flippedZ = flipExcessImportant(scopeLeaves, "Z", zCount - allowedZ);
+    if (flippedY + flippedZ > 0) {
+      log.info("[细目表] X/Y/Z 比例护栏：{} 总数={} Y:{}→{} Z:{}→{}（超额自动归 X）",
+          scopeLabel, n, yCount, yCount - flippedY, zCount, zCount - flippedZ);
+    }
+    int remainY = yCount - flippedY - allowedY;
+    int remainZ = zCount - flippedZ - allowedZ;
+    if (remainY > 0 || remainZ > 0) {
+      warnings.add("LLM护栏：" + scopeLabel + " 表 Y/Z 仍超比例（Y 超 " + Math.max(remainY, 0)
+          + " 个、Z 超 " + Math.max(remainZ, 0) + " 个，涉及人工或已审叶未自动调整），请人工处理");
+    }
+  }
+
+  /** 从树序末尾往前把超额档位的 LLM pending 草稿叶改为 X，返回实际调整数 */
+  private int flipExcessImportant(List<ExamStandardNodeEntity> sortedLeaves, String from, int excess) {
+    int flipped = 0;
+    for (int i = sortedLeaves.size() - 1; i >= 0 && flipped < excess; i--) {
+      ExamStandardNodeEntity leaf = sortedLeaves.get(i);
+      if (!from.equals(leaf.getImportant())) {
+        continue;
+      }
+      if (!"llm".equals(leaf.getSource()) || !"pending".equals(leaf.getReviewStatus())) {
+        continue;
+      }
+      ExamStandardNodeEntity update = new ExamStandardNodeEntity();
+      update.setId(leaf.getId());
+      update.setImportant("X");
+      nodeMapper.updateById(update);
+      leaf.setImportant("X");
+      flipped++;
+    }
+    return flipped;
+  }
+
+  /** 同级跨小节重复告警：规范化标题相等或互为子串（≥2 字）；同小节内重复已在生成时自动合并 */
+  private void warnSameScopeDuplicates(String scopeLabel, List<ExamStandardNodeEntity> scopeLeaves,
+      List<String> warnings) {
+    List<String[]> seen = new ArrayList<>();
+    for (ExamStandardNodeEntity leaf : scopeLeaves) {
+      String norm = normalizeLeafTitle(leaf.getTitle());
+      if (norm.length() < 2) {
+        continue;
+      }
+      for (String[] prev : seen) {
+        if (prev[0].equals(norm) || prev[0].contains(norm) || norm.contains(prev[0])) {
+          warnings.add("LLM告警：" + scopeLabel + " 疑似重复考评点「" + leaf.getTitle() + "」（"
+              + leaf.getNodeKey() + "）与「" + prev[1] + "」（" + prev[2] + "），同级内不应重复出现");
+          break;
+        }
+      }
+      seen.add(new String[]{norm, leaf.getTitle(), leaf.getNodeKey()});
+    }
+  }
+
+  /** 跨级疑似同点异名告警：同工种不同等级间规范化标题互为子串但不一致（≥4 字降噪） */
+  private void warnCrossLevelNameDrift(Map<String, List<ExamStandardNodeEntity>> byScope,
+      List<String> warnings) {
+    Map<String, Map<Integer, List<String>>> titlesByDirection = new LinkedHashMap<>();
+    for (Map.Entry<String, List<ExamStandardNodeEntity>> e : byScope.entrySet()) {
+      String[] parts = e.getKey().split("\\|", 2);
+      int levelCode = Integer.parseInt(parts[0]);
+      Map<Integer, List<String>> levelTitles = titlesByDirection
+          .computeIfAbsent(parts[1], k -> new LinkedHashMap<>());
+      List<String> titles = levelTitles.computeIfAbsent(levelCode, k -> new ArrayList<>());
+      for (ExamStandardNodeEntity leaf : e.getValue()) {
+        titles.add(leaf.getTitle());
+      }
+    }
+    for (Map.Entry<String, Map<Integer, List<String>>> dir : titlesByDirection.entrySet()) {
+      List<Integer> levels = new ArrayList<>(dir.getValue().keySet());
+      for (int i = 0; i < levels.size(); i++) {
+        for (int j = i + 1; j < levels.size(); j++) {
+          for (String t1 : dir.getValue().get(levels.get(i))) {
+            String n1 = normalizeLeafTitle(t1);
+            if (n1.length() < 4) {
+              continue;
+            }
+            for (String t2 : dir.getValue().get(levels.get(j))) {
+              String n2 = normalizeLeafTitle(t2);
+              if (n2.length() < 4 || n1.equals(n2)) {
+                continue;
+              }
+              if (n1.contains(n2) || n2.contains(n1)) {
+                warnings.add("LLM告警：疑似同一考评点跨级别名称不一致——" + levelName(levels.get(i))
+                    + "「" + t1 + "」与 " + levelName(levels.get(j)) + "「" + t2 + "」（"
+                    + dir.getKey() + "），跨级别出现时名称应一致");
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /** 告警追加到任务 parseWarnings（与解析告警同栏展示）；已存在的行不重复追加，总量封顶 100 行 */
+  private void appendTaskWarnings(Long taskId, List<String> warnings) {
+    ExamStandardTaskEntity task = taskMapper.selectById(taskId);
+    if (task == null) {
+      return;
+    }
+    String existing = task.getParseWarnings() != null ? task.getParseWarnings() : "";
+    StringBuilder sb = new StringBuilder(existing);
+    int added = 0;
+    for (String w : warnings) {
+      if (added >= 100) {
+        sb.append("LLM告警：……其余 ").append(warnings.size() - added).append(" 条详见后端日志\n");
+        break;
+      }
+      if (!existing.contains(w)) {
+        sb.append(w).append('\n');
+        added++;
+      }
+    }
+    if (added == 0) {
+      return;
+    }
+    ExamStandardTaskEntity update = new ExamStandardTaskEntity();
+    update.setId(taskId);
+    update.setParseWarnings(sb.toString().trim());
     taskMapper.updateById(update);
   }
 
@@ -505,9 +866,10 @@ public class StandardLlmSummarizeService {
           dimension);
       return created;
     }
-    // 理论通道：越档产出归入最低允许档（不丢弃考评点，防空结果）
+    // 理论通道：越档产出归入最低允许档（不丢弃考评点，防空结果）；
+    // 同小节内相同/相近考评点自动合并（国标：内容相同或相近的考评点不重复出现）
     List<StandardLlmPoint> points = skill ? result.getPoints()
-        : clampImportants(result.getPoints(), importants);
+        : dedupSectionPoints(clampImportants(result.getPoints(), importants));
     for (StandardLlmPoint point : points) {
       created.add(insertLeaf(l2, dimension, point.title(), point.important(), "llm",
           created.size(), tenantId));
@@ -530,6 +892,46 @@ public class StandardLlmSummarizeService {
         log.warn("[细目表] 考评点档位越界：{} → 归入 {}（{}）", p.important(), lowest, p.title());
         out.add(new StandardLlmPoint(p.title(), lowest));
       }
+    }
+    return out;
+  }
+
+  /** 考评点标题规范化：去全部空白与标点（含全角），用于相同/相近判定 */
+  static String normalizeLeafTitle(String title) {
+    if (title == null) {
+      return "";
+    }
+    return TITLE_NOISE.matcher(title).replaceAll("");
+  }
+
+  private static final Pattern TITLE_NOISE =
+      Pattern.compile("[\\s\\p{P}]+", Pattern.UNICODE_CHARACTER_CLASS);
+
+  /**
+   * 同小节内相同/相近考评点自动合并：标题规范化后相等或互为子串即视为相近，保留首个、丢弃后续。
+   * 仅当两侧规范化标题均 ≥2 字时才做子串判定，避免单字标题误并。
+   */
+  public static List<StandardLlmPoint> dedupSectionPoints(List<StandardLlmPoint> points) {
+    List<StandardLlmPoint> out = new ArrayList<>(points.size());
+    List<String> norms = new ArrayList<>(points.size());
+    for (StandardLlmPoint p : points) {
+      String norm = normalizeLeafTitle(p.title());
+      boolean dup = false;
+      if (norm.length() >= 2) {
+        for (String existing : norms) {
+          if (existing.length() >= 2
+              && (existing.equals(norm) || existing.contains(norm) || norm.contains(existing))) {
+            dup = true;
+            break;
+          }
+        }
+      }
+      if (dup) {
+        log.warn("[细目表] 同小节相同/相近考评点自动合并，丢弃：{}", p.title());
+        continue;
+      }
+      norms.add(norm);
+      out.add(p);
     }
     return out;
   }
@@ -695,27 +1097,34 @@ public class StandardLlmSummarizeService {
             .append("每个为 ≤20 字的名词性短语，不得照抄长句；\n");
       }
       sb.append("2. ").append(theoryImportantRule(importants)).append("；\n")
-          .append("3. 以 JSON 输出（必须含 \"points\" 数组），格式：")
+          .append("3. 考评点须符合国家职业标准，概念清晰、表达准确，各考评点之间相互独立、均可独立命题考核；\n")
+          .append("4. 考评点名称与所用术语须符合国家有关标准或规定；"
+              + "同一小节内不得出现内容相同或相近的考评点；\n")
+          .append("5. 全表重要程度比例要求 X 占 85% 以上、Y 不超过 10%、Z 不超过 5%，请从严控制 Y、Z 档；\n")
+          .append("6. 以 JSON 输出（必须含 \"points\" 数组），格式：")
           .append("{\"points\":[{\"title\":\"…\",\"important\":\"X\"}]}");
     }
     return sb.toString();
   }
 
   /**
-   * 理论通道每小节目标点数分配（拍板：总数 ≈ 200 点/张细目表，按权重分配，优先级高于材料条数规则）。
+   * 理论通道每小节目标点数分配（国标下限：五至三级每等级 ≥200 点、二至一级 ≥120 点，按权重分配，
+   * 优先级高于材料条数规则）。
    *
-   * <p>权重来源优先级：小节手工权重（绝对值，直接 ×200）&gt; L1 权重 × 小节材料条数占比
-   * &gt; L1 无权重时按材料条数在全表剩余预算内兜底。最大余数法取整使合计严格等于 200；
-   * 每小节保底 1 点（保底造成的总量略超 200 允许，仍 ≤230）。
+   * <p>权重来源优先级：小节手工权重（绝对值，直接 ×totalTarget）&gt; L1 权重 × 小节材料条数占比
+   * &gt; L1 无权重时按材料条数在全表剩余预算内兜底。最大余数法取整使合计严格等于 totalTarget；
+   * 每小节保底 1 点（保底造成的总量略超下限允许）。
    *
    * @param l1Nodes       该「等级×工种」范围内的 L1 节点（取 weight，可空元素忽略）
    * @param sections      该范围内的 L2 小节
    * @param materialCount 小节材料条数函数（空小节应按 1 条保底，由调用方保证 ≥0）
+   * @param totalTarget   本等级全表考评点总数目标（五至三级 200、二至一级 120，见 {@link #theoryTotalTarget}）
    * @return 小节 id → 目标点数（≥1）
    */
   public static Map<Long, Integer> allocateTheoryTargets(List<ExamStandardNodeEntity> l1Nodes,
-      List<ExamStandardNodeEntity> sections, ToIntFunction<ExamStandardNodeEntity> materialCount) {
-    BigDecimal total = BigDecimal.valueOf(THEORY_TOTAL_TARGET);
+      List<ExamStandardNodeEntity> sections, ToIntFunction<ExamStandardNodeEntity> materialCount,
+      int totalTarget) {
+    BigDecimal total = BigDecimal.valueOf(totalTarget);
     Map<Long, BigDecimal> l1Weight = new HashMap<>();
     for (ExamStandardNodeEntity l1 : l1Nodes) {
       if (l1.getId() != null && l1.getWeight() != null) {
@@ -729,7 +1138,7 @@ public class StandardLlmSummarizeService {
       byL1.computeIfAbsent(l2.getParentId(), k -> new ArrayList<>()).add(l2);
     }
 
-    // 小数目标：手工权重的小节直接 200×w；其余先在所属 L1 预算内按材料占比分，L1 无权重进兜底池
+    // 小数目标：手工权重的小节直接 totalTarget×w；其余先在所属 L1 预算内按材料占比分，L1 无权重进兜底池
     Map<Long, BigDecimal> decimal = new LinkedHashMap<>();
     BigDecimal consumed = BigDecimal.ZERO;
     List<ExamStandardNodeEntity> pool = new ArrayList<>();
@@ -774,9 +1183,9 @@ public class StandardLlmSummarizeService {
     }
     distributeByMaterials(pool, fallbackBudget, materialCount, decimal);
 
-    // 最大余数法取整：合计严格等于 200（有小数预算时）
-    Map<Long, Integer> targets = largestRemainder(decimal, THEORY_TOTAL_TARGET);
-    // 每小节保底 1 点（拍板：总量允许略超 200、不超 230）
+    // 最大余数法取整：合计严格等于 totalTarget（有小数预算时）
+    Map<Long, Integer> targets = largestRemainder(decimal, totalTarget);
+    // 每小节保底 1 点（保底造成的总量略超下限允许）
     for (ExamStandardNodeEntity l2 : sections) {
       targets.merge(l2.getId(), 1, Math::max);
     }
@@ -825,6 +1234,35 @@ public class StandardLlmSummarizeService {
       result.merge(s.id(), 1, Integer::sum);
     }
     return result;
+  }
+
+  /** 补点 user prompt：在已有考评点之外追加 N 个，已有标题列出防重复（C2：路径+素材在前，要求在后） */
+  private static String buildTopupUserPrompt(String sectionPath, List<String> materials,
+      List<String> existingTitles, List<String> importants, int topupCount) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("小节路径：").append(sectionPath).append('\n');
+    sb.append("原文素材：\n");
+    if (materials.isEmpty()) {
+      sb.append("（本小节无列举项，请依据小节主题与职业标准常识概括）\n");
+    } else {
+      for (int i = 0; i < materials.size(); i++) {
+        sb.append("（").append(i + 1).append("）").append(materials.get(i)).append('\n');
+      }
+    }
+    sb.append("已有考评点（不得与其中任何一条相同或相近）：\n");
+    for (String t : existingTitles) {
+      sb.append("· ").append(t).append('\n');
+    }
+    sb.append("要求（理论知识考评点补充）：\n");
+    sb.append("1. 在已有考评点之外再补充 ").append(topupCount)
+        .append(" 个考评点（数量必须严格遵守），优先覆盖原文素材中尚未命中的知识小点，"
+            + "每个为 ≤20 字的名词性短语，不得照抄长句；\n");
+    sb.append("2. ").append(theoryImportantRule(importants)).append("；\n")
+        .append("3. 考评点须符合国家职业标准，概念清晰、表达准确，各考评点之间相互独立、均可独立命题考核；\n")
+        .append("4. 考评点名称与所用术语须符合国家有关标准或规定；\n")
+        .append("5. 以 JSON 输出（必须含 \"points\" 数组），格式：")
+        .append("{\"points\":[{\"title\":\"…\",\"important\":\"X\"}]}");
+    return sb.toString();
   }
 
   /** 理论通道重要程度规则文案：全档=原三档说明；子集=仅允许所选档位 */

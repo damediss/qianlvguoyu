@@ -144,7 +144,7 @@ class StandardLlmGuardrailTest {
     ExamStandardNodeEntity s3 = l2(13L, 2L, null);
     Map<Long, Integer> targets = StandardLlmSummarizeService.allocateTheoryTargets(
         List.of(l1a, l1b), List.of(s1, s2, s3),
-        s -> s.getId() == 11L ? 3 : 1);
+        s -> s.getId() == 11L ? 3 : 1, 200);
     assertEquals(75, targets.get(11L), "L1a 材料 3/4 → 75 点");
     assertEquals(25, targets.get(12L), "L1a 材料 1/4 → 25 点");
     assertEquals(100, targets.get(13L), "L1b 独生子节 → 100 点");
@@ -158,7 +158,7 @@ class StandardLlmGuardrailTest {
     ExamStandardNodeEntity manual = l2(11L, 1L, new java.math.BigDecimal("0.05")); // 手工 5% → 10 点
     ExamStandardNodeEntity auto = l2(12L, 1L, null);                               // 剩余 10 点
     Map<Long, Integer> targets = StandardLlmSummarizeService.allocateTheoryTargets(
-        List.of(l1a), List.of(manual, auto), s -> 5);
+        List.of(l1a), List.of(manual, auto), s -> 5, 200);
     assertEquals(10, targets.get(11L), "手工权重 0.05 × 200 = 10 点");
     assertEquals(10, targets.get(12L), "L1 预算 20 点 − 手工 10 点 = 10 点");
   }
@@ -173,7 +173,7 @@ class StandardLlmGuardrailTest {
     ExamStandardNodeEntity s3 = l2(13L, 2L, null); // 材料 1
     Map<Long, Integer> targets = StandardLlmSummarizeService.allocateTheoryTargets(
         List.of(weighted, noWeight), List.of(s1, s2, s3),
-        s -> s.getId() == 12L ? 3 : 1);
+        s -> s.getId() == 12L ? 3 : 1, 200);
     assertEquals(160, targets.get(11L), "L1 权重 0.8 × 200 = 160 点");
     assertEquals(30, targets.get(12L), "兜底池 40 × 3/4 = 30 点");
     assertEquals(10, targets.get(13L), "兜底池 40 × 1/4 = 10 点");
@@ -183,8 +183,53 @@ class StandardLlmGuardrailTest {
     ExamStandardNodeEntity tiny = l1(3L, new java.math.BigDecimal("0.001"));
     ExamStandardNodeEntity tinyLeaf = l2(14L, 3L, null);
     Map<Long, Integer> floored = StandardLlmSummarizeService.allocateTheoryTargets(
-        List.of(tiny), List.of(tinyLeaf), s -> 1);
+        List.of(tiny), List.of(tinyLeaf), s -> 1, 200);
     assertEquals(1, floored.get(14L), "权重极小小节保底 1 点");
+  }
+
+  /** 国标数量下限：二/一级（levelCode 3/4）按 120 点分配 */
+  @Test
+  void summarize_allocateSeniorLevel120() {
+    ExamStandardNodeEntity l1a = l1(1L, new java.math.BigDecimal("0.50"));
+    ExamStandardNodeEntity l1b = l1(2L, new java.math.BigDecimal("0.50"));
+    ExamStandardNodeEntity s1 = l2(11L, 1L, null);
+    ExamStandardNodeEntity s2 = l2(12L, 2L, null);
+    Map<Long, Integer> targets = StandardLlmSummarizeService.allocateTheoryTargets(
+        List.of(l1a, l1b), List.of(s1, s2), s -> 1, 120);
+    assertEquals(60, targets.get(11L));
+    assertEquals(60, targets.get(12L));
+    assertEquals(120, targets.values().stream().mapToInt(Integer::intValue).sum());
+    // 等级映射：五/四/三级 200，二/一级 120
+    assertEquals(200, StandardLlmSummarizeService.theoryTotalTarget(0));
+    assertEquals(200, StandardLlmSummarizeService.theoryTotalTarget(2));
+    assertEquals(120, StandardLlmSummarizeService.theoryTotalTarget(3));
+    assertEquals(120, StandardLlmSummarizeService.theoryTotalTarget(4));
+  }
+
+  /** 同小节相同/相近考评点自动合并：规范化后相等或互为子串，保留首个 */
+  @Test
+  void summarize_dedupSectionPoints() {
+    List<StandardLlmPoint> points = List.of(
+        new StandardLlmPoint("磨矿浓度计算方法", "X"),
+        new StandardLlmPoint("磨矿浓度 计算方法", "Y"),  // 仅差空格 → 规范化相等合并
+        new StandardLlmPoint("矿浆pH值测定", "Z"),      // 独立保留
+        new StandardLlmPoint("矿浆pH值测定方法", "X")); // 包含第 3 条 → 相近合并
+    List<StandardLlmPoint> out = StandardLlmSummarizeService.dedupSectionPoints(points);
+    assertEquals(2, out.size());
+    assertEquals("磨矿浓度计算方法", out.get(0).title());
+    assertEquals("矿浆pH值测定", out.get(1).title());
+  }
+
+  /** 数量兜底补点过滤：与已有考评点相同/相近的丢弃，其余保留 */
+  @Test
+  void summarize_filterTopupAgainstExisting() {
+    List<StandardLlmPoint> points = List.of(
+        new StandardLlmPoint("磨矿浓度计算", "X"),      // 被已有「磨矿浓度计算方法」包含 → 丢弃
+        new StandardLlmPoint("磨机衬板更换周期", "Y"));  // 独立 → 保留
+    List<StandardLlmPoint> out = StandardLlmSummarizeService.filterAgainstExisting(points,
+        List.of("磨矿浓度计算方法", "矿浆pH值测定"));
+    assertEquals(1, out.size());
+    assertEquals("磨机衬板更换周期", out.get(0).title());
   }
 
   private static ExamStandardNodeEntity l1(Long id, java.math.BigDecimal weight) {

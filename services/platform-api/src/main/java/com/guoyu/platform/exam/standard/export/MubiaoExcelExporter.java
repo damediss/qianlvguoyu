@@ -2,6 +2,7 @@ package com.guoyu.platform.exam.standard.export;
 
 import com.guoyu.platform.exam.standard.entity.ExamStandardNodeEntity;
 import com.guoyu.platform.exam.standard.export.StandardExportSupport.ExportTree;
+import com.guoyu.platform.exam.standard.parser.model.DocxTextUtil;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -79,18 +80,20 @@ public class MubiaoExcelExporter {
       r2.getCell(9).setCellValue("重要程度");
       sheet.addMergedRegion(new CellRangeAddress(2, 3, 9, 9));
 
-      // 第4行
+      // 第4行：「代码名称」列带换行的「（重要程度比例）」副标题
       Row r3 = sheet.createRow(3);
       for (int c = 0; c < COLS; c++) {
         r3.createCell(c).setCellStyle(styles.header);
       }
-      r3.getCell(0).setCellValue("代码名称");
+      r3.getCell(0).setCellValue("代码名称\n（重要程度比例）");
       r3.getCell(1).setCellValue("权重");
-      r3.getCell(2).setCellValue("代码名称");
+      r3.getCell(2).setCellValue("代码名称\n（重要程度比例）");
       r3.getCell(3).setCellValue("权重");
-      r3.getCell(4).setCellValue("代码名称");
+      r3.getCell(4).setCellValue("代码名称\n（重要程度比例）");
       r3.getCell(5).setCellValue("考评权重");
       r3.getCell(6).setCellValue("相关知识");
+      // 两行表头需要显式行高（POI 写出的文件 Excel 打开时不会自动撑高）
+      r3.setHeightInPoints(2 * sheet.getDefaultRowHeightInPoints());
 
       int rowIdx = 4;
       if (tree.rootA != null) {
@@ -124,9 +127,11 @@ public class MubiaoExcelExporter {
     }
     int endRow = startRow + totalRows - 1;
 
-    // L0 合并单元格：名称+代码、权重（重要程度比例不再显示）
+    // L0 合并单元格：名称+代码+（X:Y:Z）、权重
+    int[] xyz = StandardExportSupport.countXyz(tree, l0.getId(), "theory");
     Row first = sheet.createRow(startRow);
-    String l0Text = stripKeySuffix(l0.getTitle()) + "\n" + StandardExportSupport.lastSegment(l0.getNodeKey());
+    String l0Text = stripKeySuffix(l0.getTitle()) + "\n" + StandardExportSupport.lastSegment(l0.getNodeKey())
+        + "\n" + StandardExportSupport.xyzText(xyz);
     setCell(first, 0, l0Text, styles.center);
     setWeight(first, 1, l0.getWeight(), styles);
     if (endRow > startRow) {
@@ -154,8 +159,10 @@ public class MubiaoExcelExporter {
     }
     int endRow = startRow + totalRows - 1;
 
+    int[] xyz = StandardExportSupport.countXyz(tree, l1.getId(), "theory");
     Row first = sheet.getRow(startRow) != null ? sheet.getRow(startRow) : sheet.createRow(startRow);
-    String l1Text = stripKeySuffix(l1.getTitle()) + "\n" + StandardExportSupport.lastSegment(l1.getNodeKey());
+    String l1Text = stripKeySuffix(l1.getTitle()) + "\n" + StandardExportSupport.lastSegment(l1.getNodeKey())
+        + "\n" + StandardExportSupport.xyzText(xyz);
     setCell(first, 2, l1Text, styles.center);
     setWeight(first, 3, l1.getWeight(), styles);
     if (endRow > startRow) {
@@ -178,11 +185,15 @@ public class MubiaoExcelExporter {
     int rows = Math.max(leaves.size(), 1);
     int endRow = startRow + rows - 1;
 
+    int[] xyz = StandardExportSupport.countXyz(tree, l2.getId(), "theory");
     Row first = sheet.getRow(startRow) != null ? sheet.getRow(startRow) : sheet.createRow(startRow);
-    String l2Text = stripKeySuffix(l2.getTitle()) + "\n" + StandardExportSupport.lastSegment(l2.getNodeKey());
+    String l2Text = stripKeySuffix(l2.getTitle()) + "\n" + StandardExportSupport.lastSegment(l2.getNodeKey())
+        + "\n" + StandardExportSupport.xyzText(xyz);
     setCell(first, 4, l2Text, styles.center);
     setWeight(first, 5, l2Weight, styles);
-    setCell(first, 6, l2.getRelatedKnowledge() != null ? l2.getRelatedKnowledge() : "", styles.left);
+    // 旧任务库存的是单行串联文本，导出时按编号重拆逐行显示（新数据已是逐行，relineItems 原样返回）
+    setCell(first, 6, l2.getRelatedKnowledge() != null
+        ? DocxTextUtil.relineItems(l2.getRelatedKnowledge()) : "", styles.left);
     if (endRow > startRow) {
       sheet.addMergedRegion(new CellRangeAddress(startRow, endRow, 4, 4));
       sheet.addMergedRegion(new CellRangeAddress(startRow, endRow, 5, 5));
@@ -288,6 +299,8 @@ public class MubiaoExcelExporter {
       header.setFont(headerFont);
       header.setAlignment(HorizontalAlignment.CENTER);
       header.setVerticalAlignment(VerticalAlignment.CENTER);
+      // 「代码名称\n（重要程度比例）」两行表头需要自动换行才能显示换行符
+      header.setWrapText(true);
       header.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
       header.setFillPattern(FillPatternType.SOLID_FOREGROUND);
       border(header);

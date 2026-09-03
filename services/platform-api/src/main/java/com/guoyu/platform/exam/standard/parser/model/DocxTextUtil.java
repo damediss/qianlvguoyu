@@ -169,6 +169,63 @@ public final class DocxTextUtil {
     return items;
   }
 
+  /**
+   * 表格单元格原文按编号条目重排为逐行文本（保留行首编号），供「相关知识/技能要求」存储与导出逐行显示。
+   *
+   * <p>拆分锚点优先级与 {@link #splitItems} 一致（点号编号 &gt; （1） &gt; 1） &gt; 1、）；
+   * 与 splitItems 的差别：保留编号原文、不剥 ★ 标记，只做换行重排。已含换行的文本原样返回；
+   * 无锚点的单行文本原样返回（单级「1.」编号不切，避免「0.5毫米」这类小数误判）。
+   */
+  public static String relineItems(String rawText) {
+    if (rawText == null || rawText.isBlank()) {
+      return "";
+    }
+    if (rawText.indexOf('\n') >= 0) {
+      return rawText;
+    }
+    String flat = rawText.replace('\r', ' ').trim();
+    List<int[]> anchors = new ArrayList<>();
+    Matcher dotted = DOTTED_ITEM.matcher(flat);
+    while (dotted.find()) {
+      anchors.add(new int[]{dotted.start(), dotted.end()});
+    }
+    if (anchors.isEmpty()) {
+      Matcher paren = PAREN_ITEM.matcher(flat);
+      while (paren.find()) {
+        anchors.add(new int[]{paren.start(), paren.end()});
+      }
+    }
+    if (anchors.isEmpty()) {
+      Matcher closeParen = CLOSE_PAREN_ITEM.matcher(flat);
+      while (closeParen.find()) {
+        anchors.add(new int[]{closeParen.start(), closeParen.end()});
+      }
+    }
+    if (anchors.isEmpty()) {
+      Matcher dunhao = DUNHAO_ITEM.matcher(flat);
+      while (dunhao.find()) {
+        anchors.add(new int[]{dunhao.start(), dunhao.end()});
+      }
+    }
+    if (anchors.isEmpty()) {
+      return flat;
+    }
+    List<String> lines = new ArrayList<>();
+    String lead = flat.substring(0, anchors.get(0)[0]).trim();
+    if (!lead.isEmpty()) {
+      lines.add(lead);
+    }
+    for (int i = 0; i < anchors.size(); i++) {
+      int start = anchors.get(i)[0];
+      int end = i + 1 < anchors.size() ? anchors.get(i + 1)[0] : flat.length();
+      String line = flat.substring(start, end).trim();
+      if (!line.isEmpty()) {
+        lines.add(line);
+      }
+    }
+    return String.join("\n", lines);
+  }
+
   /** 点号编号归一化："1. 1. 1" → "1.1.1"；编号后须有点/顿号/空格分隔，无匹配返回 null */
   public static String normalizeDottedNumber(String text) {
     if (text == null) {

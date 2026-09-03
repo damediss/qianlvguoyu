@@ -2,6 +2,7 @@ package com.guoyu.platform.exam.standard.export;
 
 import com.guoyu.platform.exam.standard.entity.ExamStandardNodeEntity;
 import com.guoyu.platform.exam.standard.export.StandardExportSupport.ExportTree;
+import com.guoyu.platform.exam.standard.parser.model.DocxTextUtil;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -77,12 +78,14 @@ public class SkillMubiaoExcelExporter {
       sheet.addMergedRegion(new CellRangeAddress(2, 2, 9, 12));
 
       Row r3 = sheet.createRow(3);
-      String[] headers = {"代码", "名称", "考评比重", "选考方式",
-          "代码", "名称", "技能要求", "考评比重", "选考方式",
+      String[] headers = {"代码\n（重要程度比例）", "名称", "考评比重", "选考方式",
+          "代码\n（重要程度比例）", "名称", "技能要求", "考评比重", "选考方式",
           "代码", "名称", "重要程度", "试题量"};
       for (int c = 0; c < COLS; c++) {
         setCell(r3, c, headers[c], styles.header);
       }
+      // 两行表头需要显式行高（POI 写出的文件 Excel 打开时不会自动撑高）
+      r3.setHeightInPoints(2 * sheet.getDefaultRowHeightInPoints());
 
       int rowIdx = 4;
       if (tree.rootB != null) {
@@ -122,8 +125,10 @@ public class SkillMubiaoExcelExporter {
     }
     int endRow = startRow + totalRows - 1;
 
+    int[] xyz = StandardExportSupport.countXyz(tree, l1.getId(), "skill");
     Row first = sheet.getRow(startRow) != null ? sheet.getRow(startRow) : sheet.createRow(startRow);
-    setCell(first, 0, StandardExportSupport.lastSegment(l1.getNodeKey()), styles.center);
+    setCell(first, 0, StandardExportSupport.lastSegment(l1.getNodeKey())
+        + "\n" + StandardExportSupport.xyzText(xyz), styles.center);
     setCell(first, 1, stripKeySuffix(l1.getTitle()), styles.center);
     setWeight(first, 2, skillWeight.weightOf(l1), styles);
     setCell(first, 3, "必考", styles.center);
@@ -150,10 +155,14 @@ public class SkillMubiaoExcelExporter {
     int rows = Math.max(leaves.size(), 1);
     int endRow = startRow + rows - 1;
 
+    int[] xyz = StandardExportSupport.countXyz(tree, l2.getId(), "skill");
     Row first = sheet.getRow(startRow) != null ? sheet.getRow(startRow) : sheet.createRow(startRow);
-    setCell(first, 4, StandardExportSupport.lastSegment(l2.getNodeKey()), styles.center);
+    setCell(first, 4, StandardExportSupport.lastSegment(l2.getNodeKey())
+        + "\n" + StandardExportSupport.xyzText(xyz), styles.center);
     setCell(first, 5, stripKeySuffix(l2.getTitle()), styles.center);
-    setCell(first, 6, l2.getSkillRequirement() != null ? l2.getSkillRequirement() : "", styles.left);
+    // 旧任务库存的是单行串联文本，导出时按编号重拆逐行显示（新数据已是逐行，relineItems 原样返回）
+    setCell(first, 6, l2.getSkillRequirement() != null
+        ? DocxTextUtil.relineItems(l2.getSkillRequirement()) : "", styles.left);
     // 选考方式=任选一项 → 仅每个一级的首个二级行标出比重数值，其余留空（§8.2.3）
     if (firstL2) {
       setWeight(first, 7, skillWeight.weightOf(l1), styles);
@@ -264,6 +273,8 @@ public class SkillMubiaoExcelExporter {
       header.setFont(headerFont);
       header.setAlignment(HorizontalAlignment.CENTER);
       header.setVerticalAlignment(VerticalAlignment.CENTER);
+      // 「代码\n（重要程度比例）」两行表头需要自动换行才能显示换行符
+      header.setWrapText(true);
       header.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
       header.setFillPattern(FillPatternType.SOLID_FOREGROUND);
       border(header);

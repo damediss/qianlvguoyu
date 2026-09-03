@@ -377,8 +377,8 @@ public class DocxStandardParser {
       l2.setLevel(2);
       l2.setNumber(DocxTextUtil.normalizeDottedNumber(content));
       l2.setTitle(DocxTextUtil.stripLeadingNumber(content));
-      l2.setSkillRaw(DocxTextUtil.normalizeNumbering(skill));
-      l2.setRelatedKnowledgeRaw(DocxTextUtil.normalizeNumbering(knowledge));
+      l2.setSkillRaw(DocxTextUtil.relineItems(DocxTextUtil.normalizeNumbering(skill)));
+      l2.setRelatedKnowledgeRaw(DocxTextUtil.relineItems(DocxTextUtil.normalizeNumbering(knowledge)));
       l2.getSkillMaterials().addAll(DocxTextUtil.splitItems(skill));
       l2.getTheoryMaterials().addAll(DocxTextUtil.splitItems(knowledge));
       if (l2.getTheoryMaterials().isEmpty()) {

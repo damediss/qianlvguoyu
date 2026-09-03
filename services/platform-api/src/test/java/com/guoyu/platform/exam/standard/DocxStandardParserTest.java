@@ -221,6 +221,16 @@ class DocxStandardParserTest {
     assertEquals(2, DocxTextUtil.splitItems("1.1.1 能甲 1.1.2 能乙").size());
     assertEquals(2, DocxTextUtil.splitItems("1) 甲 2) 乙").size());
 
+    // relineItems：单行串联按编号逐行重排（保留编号），已多行/无编号文本原样返回
+    assertEquals("2.2.1精矿指标判断\n2.2.2沉降槽泥层判断",
+        DocxTextUtil.relineItems("2.2.1精矿指标判断2.2.2沉降槽泥层判断"));
+    assertEquals("2.1精矿调配\n2.2磨矿操作",
+        DocxTextUtil.relineItems("2.1精矿调配2.2磨矿操作"), "两级点号编号也可重排");
+    assertEquals("（1）甲\n（2）乙", DocxTextUtil.relineItems("（1）甲（2）乙"));
+    assertEquals("1.1.1能查出风门损坏\n1.1.2能查出风险点",
+        DocxTextUtil.relineItems("1.1.1能查出风门损坏\n1.1.2能查出风险点"), "已多行文本原样返回");
+    assertEquals("矿浆浓度控制方法", DocxTextUtil.relineItems("矿浆浓度控制方法"), "无编号文本原样返回");
+
     // 带 ★ 的技能条目应去星
     StandardNodeDoc fanghu = chuJi.getWorkFunctions().get(2).getChildren().get(0);
     assertTrue(fanghu.getSkillMaterials().stream().noneMatch(s -> s.contains("★")),

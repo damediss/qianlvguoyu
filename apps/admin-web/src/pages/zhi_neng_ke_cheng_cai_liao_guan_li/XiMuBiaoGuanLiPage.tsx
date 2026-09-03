@@ -493,7 +493,7 @@ function SummarizeModal({ task, onClose, onStart }: {
   onStart: (req: SummarizeReq) => Promise<void>;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [importants, setImportants] = useState<string[]>(['X', 'Y']);
+  const [importants, setImportants] = useState<string[]>(['X', 'Y','Z']);
   const [loading, setLoading] = useState(false);
 
   // 有效组合集合：directionLevels 为空（旧任务）时全部等级×工种有效
