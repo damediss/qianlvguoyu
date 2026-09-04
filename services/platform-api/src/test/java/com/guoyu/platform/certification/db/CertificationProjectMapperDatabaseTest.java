@@ -77,6 +77,7 @@ class CertificationProjectMapperDatabaseTest {
           tenant_id BIGINT NOT NULL DEFAULT 1,
           task_id BIGINT NOT NULL,
           document_id BIGINT NULL,
+          user_id BIGINT NULL,
           member_name VARCHAR(80) NOT NULL,
           role_code VARCHAR(60) NULL,
           role_name VARCHAR(80) NULL,

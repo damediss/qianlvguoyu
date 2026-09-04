@@ -312,7 +312,8 @@ public class CertificationInfoApplicationService {
     Map<Long, String> taskNosByStaffId = loadAssignedTaskNosByStaffIds(
         page.getRecords().stream().map(CertificationInfoExamStaffEntity::getId).toList());
     return new PageResponse<>(page.getRecords().stream()
-        .map(entity -> toExamStaffVO(entity, taskNosByStaffId.get(entity.getId())))
+        .map(entity -> toExamStaffVO(entity,
+            syncExamStaffAssignmentState(entity, taskNosByStaffId.get(entity.getId()))))
         .toList(),
         page.getCurrent(), page.getSize(), page.getTotal());
   }
@@ -442,7 +443,8 @@ public class CertificationInfoApplicationService {
     Map<Long, String> taskNosByStaffId = loadAssignedTaskNosByStaffIds(
         staffList.stream().map(CertificationInfoExamStaffEntity::getId).toList());
     return staffList.stream()
-        .map(entity -> toExamStaffVO(entity, taskNosByStaffId.get(entity.getId())))
+        .map(entity -> toExamStaffVO(entity,
+            syncExamStaffAssignmentState(entity, taskNosByStaffId.get(entity.getId()))))
         .filter(item -> "idle".equalsIgnoreCase(item.workStatus()))
         .toList();
   }
@@ -1170,6 +1172,23 @@ public class CertificationInfoApplicationService {
       return entity.getWorkStatus();
     }
     return StringUtils.hasText(assignedTaskNos) ? "assigned" : "idle";
+  }
+
+  /** 过期待派释放：已审批考务若任务绑定已清空，则把 workStatus/referencedCount 重置为 idle/0（b693f25 既有逻辑，9ae1eff 丢失后恢复） */
+  private String syncExamStaffAssignmentState(CertificationInfoExamStaffEntity entity, String assignedTaskNos) {
+    if (entity == null || !APPROVED.equals(entity.getAuditStatus())) {
+      return assignedTaskNos;
+    }
+    boolean hasActiveBinding = StringUtils.hasText(assignedTaskNos);
+    String expectedWorkStatus = hasActiveBinding ? "assigned" : "idle";
+    int expectedReferencedCount = hasActiveBinding ? assignedTaskNos.split("、").length : 0;
+    if (!expectedWorkStatus.equals(entity.getWorkStatus())
+        || !Objects.equals(entity.getReferencedCount(), expectedReferencedCount)) {
+      entity.setWorkStatus(expectedWorkStatus);
+      entity.setReferencedCount(expectedReferencedCount);
+      examStaffMapper.updateById(entity);
+    }
+    return assignedTaskNos;
   }
 
   private Map<Long, String> loadAssignedTaskNosByStaffIds(List<Long> staffIds) {
