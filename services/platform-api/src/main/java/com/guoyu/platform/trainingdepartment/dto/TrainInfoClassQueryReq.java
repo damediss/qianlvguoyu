@@ -12,6 +12,10 @@ public class TrainInfoClassQueryReq extends PageQuery {
   private Integer companyConfirmStatus;
   /** 班级名称关键字 */
   private String keyword;
+  /**
+   * 获证筛选：certified=已获证班（有回填真实证书）、uncertified=未获证班、all/空=全部。
+   */
+  private String certFilter;
 
   public Long getTrainInfoId() {
     return trainInfoId;
@@ -51,5 +55,13 @@ public class TrainInfoClassQueryReq extends PageQuery {
 
   public void setKeyword(String keyword) {
     this.keyword = keyword;
+  }
+
+  public String getCertFilter() {
+    return certFilter;
+  }
+
+  public void setCertFilter(String certFilter) {
+    this.certFilter = certFilter;
   }
 }

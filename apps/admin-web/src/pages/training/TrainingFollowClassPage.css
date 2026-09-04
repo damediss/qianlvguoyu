@@ -64,6 +64,13 @@
   line-height: 1.4;
 }
 
+.training-follow-class-page .follow-class-card-worktype {
+  display: block;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #475569;
+}
+
 .training-follow-class-page .follow-class-card-meta {
   display: block;
   font-size: 12px;

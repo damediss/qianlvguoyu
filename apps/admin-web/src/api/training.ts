@@ -903,6 +903,8 @@ export function pageInfoClassList(params: {
   trainInfoId?: number;
   companyConfirmStatus?: number;
   keyword?: string;
+  /** certified=已获证班 / uncertified=未获证班 / all=全部 */
+  certFilter?: 'certified' | 'uncertified' | 'all';
 }) {
   return unwrap<TrainInfoClassPageResponse>(apiClient.get(`${BASE}/info-classes`, { params }));
 }
@@ -1574,6 +1576,13 @@ export type GraduationStudentDetail = {
   templateTitle?: string | null;
   certificateNo?: string | null;
   certificateFilePath?: string | null;
+  certificateOccupation?: string | null;
+  certificateWorkType?: string | null;
+  certificateLevel?: string | null;
+  certificateIssuingAuthority?: string | null;
+  certificateEvaluationOrg?: string | null;
+  certificateIssueDate?: string | null;
+  certificateIdDocType?: string | null;
   hasCertificate?: boolean;
   idCardHeader?: string;
   idCardFront?: string;
@@ -1623,6 +1632,17 @@ export type GraduationCertImportPreviewItem = {
   idCard?: string;
   certificateNo?: string;
   parsedName?: string;
+  idDocType?: string;
+  issuingAuthority?: string;
+  occupation?: string;
+  workType?: string;
+  level?: string;
+  levelNormalized?: string;
+  evaluationOrg?: string;
+  issueDate?: string;
+  queryUrls?: string | null;
+  queryUrlList?: string[];
+  ocrUsed?: boolean;
   peopleId?: number;
   classId?: number;
   classTitle?: string;
@@ -1631,13 +1651,19 @@ export type GraduationCertImportPreviewItem = {
 };
 
 export type GraduationCertImportPreview = {
-  previewId: string;
-  classIds: Array<number | string>;
+  async?: boolean;
+  jobId?: string;
+  status?: string;
+  previewId?: string;
+  classIds?: Array<number | string>;
   totalFiles: number;
-  matched: number;
-  blocked: number;
-  failed: number;
-  items: GraduationCertImportPreviewItem[];
+  matched?: number;
+  blocked?: number;
+  failed?: number;
+  items?: GraduationCertImportPreviewItem[];
+  message?: string;
+  ocrEnabled?: boolean;
+  error?: string;
 };
 
 /** 证书文件夹导入 · 预览匹配（按已选班身份证） */
@@ -1650,10 +1676,17 @@ export function previewGraduationCertImport(classIds: Array<number | string>, fi
   );
 }
 
+/** 异步预览任务状态 */
+export function getGraduationCertImportPreviewJob(jobId: string) {
+  return unwrap<GraduationCertImportPreview>(
+    apiClient.get(`${BASE}/graduation/certificates/import/preview-jobs/${encodeURIComponent(jobId)}`),
+  );
+}
+
 /** 证书文件夹导入 · 确认回填证号+文件 */
 export function commitGraduationCertImport(previewId: string) {
   return unwrap<{ written: number; updated: number; skipped: number; errors: string[] }>(
-    apiClient.post(`${BASE}/graduation/certificates/import/commit`, { previewId }),
+    apiClient.post(`${BASE}/graduation/certificates/import/commit`, { previewId }, { timeout: 300000 }),
   );
 }
 
@@ -2784,6 +2817,58 @@ export function getSubsidy(id: number | string) {
   return unwrap<TrainSubsidy>(apiClient.get(`${BASE}/subsidies/${id}`));
 }
 
+/** 本班进行中补贴单；无单时返回 null */
+export function getClassSubsidy(classId: number | string) {
+  return unwrap<TrainSubsidy | null>(apiClient.get(`${BASE}/info-classes/${classId}/subsidy`));
+}
+
+/** 按班幂等：有进行中单则返回，否则创建草稿 */
+export function ensureClassSubsidy(
+  classId: number | string,
+  payload?: {
+    trainMode?: string;
+    regionCode?: string;
+    regionName?: string;
+    policyYear?: number;
+    profileId?: number | string;
+    subsidyAmount?: number;
+    studentCount?: number;
+    remark?: string;
+  },
+) {
+  return unwrap<TrainSubsidy>(
+    apiClient.post(`${BASE}/info-classes/${classId}/subsidy/ensure`, payload ?? { trainMode: 'skill_upgrade' }),
+  );
+}
+
+/** 跳转申报补贴页时写入焦点（班级 / 单号）；页面挂载后消费并清除 */
+export const SUBSIDY_DECLARE_FOCUS_KEY = 'train_subsidy_declare_focus';
+
+export type SubsidyDeclareFocus = {
+  classId?: number | string;
+  subsidyId?: number | string;
+  openCreate?: boolean;
+};
+
+export function stashSubsidyDeclareFocus(focus: SubsidyDeclareFocus) {
+  try {
+    sessionStorage.setItem(SUBSIDY_DECLARE_FOCUS_KEY, JSON.stringify(focus));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+export function consumeSubsidyDeclareFocus(): SubsidyDeclareFocus | null {
+  try {
+    const raw = sessionStorage.getItem(SUBSIDY_DECLARE_FOCUS_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(SUBSIDY_DECLARE_FOCUS_KEY);
+    return JSON.parse(raw) as SubsidyDeclareFocus;
+  } catch {
+    return null;
+  }
+}
+
 export function createSubsidy(payload: {
   classId: number | string;
   trainMode: string;
@@ -2827,6 +2912,162 @@ export function listSubsidySlotFiles(id: number | string) {
   return unwrap<
     Array<{ id: number | string; slotCode: string; fileId?: number; filePath?: string; fileName?: string }>
   >(apiClient.get(`${BASE}/subsidies/${id}/slot-files`));
+}
+
+export function deleteSubsidySlotFile(id: number | string, slotFileId: number | string) {
+  return unwrap<void>(apiClient.delete(`${BASE}/subsidies/${id}/slot-files/${slotFileId}`));
+}
+
+export type SubsidyClassMaterials = {
+  subsidyId?: number | string;
+  classId?: number | string;
+  className?: string | null;
+  studentCount?: number;
+  certificateTotal?: number;
+  certificateWithFile?: number;
+  photoPackReady?: boolean;
+  photoPackId?: number | string | null;
+  photoPackTitle?: string | null;
+  photoPackPath?: string | null;
+  certificates?: Array<{
+    certificateId?: number | string;
+    peopleId?: number | string;
+    userName?: string | null;
+    certificateNo?: string | null;
+    hasFile?: boolean;
+    filePath?: string | null;
+  }>;
+  slots?: Array<{
+    slotCode: string;
+    title: string;
+    required?: boolean;
+    renderer?: string;
+    upstream?: string;
+  }>;
+  syncedCertificateFiles?: number;
+  syncedRosterSlots?: number;
+  claimFormsGenerated?: number;
+  claimFormsFailed?: number;
+  claimFormStudentCount?: number;
+  claimFormSlot?: string;
+  ok?: boolean;
+  fileId?: number | string;
+  filePath?: string;
+  url?: string;
+  downloadFileName?: string;
+  notes?: string[];
+  message?: string;
+};
+
+export function getSubsidyClassMaterials(id: number | string) {
+  return unwrap<SubsidyClassMaterials>(apiClient.get(`${BASE}/subsidies/${id}/class-materials`));
+}
+
+export function syncSubsidyClassMaterials(id: number | string) {
+  return unwrap<SubsidyClassMaterials>(apiClient.post(`${BASE}/subsidies/${id}/class-materials/sync`));
+}
+
+export function generateSubsidyClaimForms(id: number | string) {
+  return unwrap<SubsidyClassMaterials>(
+    apiClient.post(`${BASE}/subsidies/${id}/class-materials/generate-claim-forms`),
+  );
+}
+
+export type SubsidyMaterialSlotFile = {
+  id: number | string;
+  fileName?: string | null;
+  filePath?: string | null;
+  fileId?: number | string | null;
+};
+
+export type SubsidyMaterialInstance = {
+  id: number | string;
+  subsidyId: number | string;
+  slotCode?: string | null;
+  materialType: string;
+  materialTypeLabel?: string;
+  title: string;
+  status: string;
+  renderer?: string | null;
+  required: boolean;
+  currentVersionId?: number | string | null;
+  versionNo?: number | null;
+  fileId?: number | string | null;
+  filePath?: string | null;
+  fileName?: string | null;
+  hasFile: boolean;
+  photoPackReady?: boolean;
+  photoPackPath?: string | null;
+  photoPackTitle?: string | null;
+  slotFileCount?: number;
+  slotFiles?: SubsidyMaterialSlotFile[];
+};
+
+export type SubsidyMaterialGroup = {
+  materialType: string;
+  label: string;
+  count: number;
+  items: SubsidyMaterialInstance[];
+};
+
+export type SubsidyMaterialInstanceList = {
+  subsidyId: number | string;
+  total: number;
+  requiredTotal: number;
+  confirmedRequired: number;
+  hasFileCount: number;
+  groups: SubsidyMaterialGroup[];
+  items: SubsidyMaterialInstance[];
+};
+
+export function listSubsidyMaterialInstances(subsidyId: number | string) {
+  return unwrap<SubsidyMaterialInstanceList>(
+    apiClient.get(`${BASE}/subsidies/${subsidyId}/material-instances`),
+  );
+}
+
+export async function replaceSubsidyMaterialFile(instanceId: number | string, file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  return unwrap<SubsidyMaterialInstance>(
+    apiClient.post(`${BASE}/material-instances/${instanceId}/replace-file`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    }),
+  );
+}
+
+export function confirmSubsidyMaterialInstance(instanceId: number | string) {
+  return unwrap<SubsidyMaterialInstance>(
+    apiClient.post(`${BASE}/material-instances/${instanceId}/confirm`),
+  );
+}
+
+export type SubsidyMaterialOfficeConfig = {
+  enabled: boolean;
+  message?: string | null;
+  documentServerUrl?: string | null;
+  apiScriptUrl?: string | null;
+  config?: Record<string, unknown> | null;
+};
+
+/** OnlyOffice 编辑器配置（含 JWT token） */
+export function getSubsidyMaterialOfficeConfig(instanceId: number | string) {
+  return unwrap<SubsidyMaterialOfficeConfig>(
+    apiClient.get(`${BASE}/material-instances/${instanceId}/office-config`),
+  );
+}
+
+export function exportSubsidyMaterials(subsidyId: number | string, instanceIds: Array<number | string>) {
+  return unwrap<{
+    ok: boolean;
+    message?: string;
+    fileId?: number | string;
+    filePath?: string;
+    url?: string;
+    exported?: string[];
+    skipped?: string[];
+  }>(apiClient.post(`${BASE}/subsidies/${subsidyId}/materials/export`, { instanceIds }, { timeout: 180000 }));
 }
 
 export async function uploadSubsidySlotFile(id: number | string, slotCode: string, file: File) {

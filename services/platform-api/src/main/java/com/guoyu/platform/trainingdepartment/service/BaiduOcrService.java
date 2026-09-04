@@ -31,6 +31,10 @@ public class BaiduOcrService {
 
   private static final String TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token";
   private static final String IDCARD_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/idcard";
+  /** 通用文字识别（标准版，更快） */
+  private static final String GENERAL_BASIC_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic";
+  /** 通用文字识别（高精度，较慢，作兜底） */
+  private static final String ACCURATE_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic";
 
   private final String apiKey;
   private final String secretKey;
@@ -123,6 +127,76 @@ public class BaiduOcrService {
 
     } catch (Exception e) {
       log.error("百度 OCR 识别异常", e);
+      return null;
+    }
+  }
+
+  /**
+   * 通用文字识别（高精度版）：返回拼接后的全文，失败返回 null。
+   * 用于证书扫描件在基础版仍缺硬字段时的兜底。
+   */
+  public String recognizeGeneralText(byte[] imageBytes) {
+    return recognizeOcrText(ACCURATE_URL, imageBytes, 30);
+  }
+
+  /**
+   * 通用文字识别（标准版）：更快、配额更宽，优先用于证书预览匹配。
+   */
+  public String recognizeGeneralTextFast(byte[] imageBytes) {
+    return recognizeOcrText(GENERAL_BASIC_URL, imageBytes, 15);
+  }
+
+  private String recognizeOcrText(String apiUrl, byte[] imageBytes, int timeoutSeconds) {
+    if (!isEnabled() || imageBytes == null || imageBytes.length == 0) {
+      return null;
+    }
+    try {
+      String token = getAccessToken();
+      if (token == null) {
+        return null;
+      }
+      Map<String, String> params = new LinkedHashMap<>();
+      params.put("image", java.util.Base64.getEncoder().encodeToString(imageBytes));
+      params.put("detect_direction", "true");
+      String body = buildFormBody(params);
+      HttpRequest request = HttpRequest.newBuilder()
+          .uri(URI.create(apiUrl + "?access_token=" + token))
+          .timeout(Duration.ofSeconds(timeoutSeconds))
+          .header("Content-Type", "application/x-www-form-urlencoded")
+          .POST(HttpRequest.BodyPublishers.ofString(body))
+          .build();
+      HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+      if (response.statusCode() != 200) {
+        log.error("百度 OCR 请求失败: status={} url={}", response.statusCode(), apiUrl);
+        return null;
+      }
+      JsonNode root = objectMapper.readTree(response.body());
+      if (root.has("error_code") && root.get("error_code").asInt() != 0) {
+        log.error("百度 OCR 返回错误: {}", response.body());
+        if (root.get("error_code").asInt() == 110 || root.get("error_code").asInt() == 111) {
+          cachedToken = null;
+        }
+        return null;
+      }
+      JsonNode wordsResult = root.get("words_result");
+      if (wordsResult == null || !wordsResult.isArray()) {
+        return null;
+      }
+      StringBuilder sb = new StringBuilder();
+      for (JsonNode item : wordsResult) {
+        if (item != null && item.has("words")) {
+          String w = item.get("words").asText("");
+          if (StringUtils.hasText(w)) {
+            if (sb.length() > 0) {
+              sb.append('\n');
+            }
+            sb.append(w.trim());
+          }
+        }
+      }
+      return sb.length() > 0 ? sb.toString() : null;
+    } catch (Exception e) {
+      log.error("百度 OCR 识别异常 url={}", apiUrl, e);
       return null;
     }
   }

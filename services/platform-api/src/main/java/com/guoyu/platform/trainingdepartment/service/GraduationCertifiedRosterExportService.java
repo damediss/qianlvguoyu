@@ -148,6 +148,15 @@ public class GraduationCertifiedRosterExportService {
     return xlsxResponse(bytes, fileName);
   }
 
+  /** 供补贴材料同步等内部调用：返回 xlsx 字节，不包 ResponseEntity。 */
+  @Transactional(readOnly = true)
+  public byte[] exportWorkbookBytes(Long classId, String scopeParam) {
+    RosterScope scope = RosterScope.fromParam(scopeParam);
+    TrainInfoClassEntity clazz = requireClass(classId);
+    String displayName = resolveClassDisplayName(clazz, null);
+    return buildWorkbookBytes(clazz, displayName, scope);
+  }
+
   @Transactional(readOnly = true)
   public ResponseEntity<byte[]> exportZip(List<Long> classIds) {
     return exportZip(classIds, null);

@@ -12,6 +12,8 @@ public class TrainSubsidySlotFileEntity {
   private Long id;
   private Long subsidyId;
   private String slotCode;
+  private Long instanceId;
+  private Long versionId;
   private Long fileId;
   private String filePath;
   private String fileName;
@@ -28,6 +30,10 @@ public class TrainSubsidySlotFileEntity {
   public void setSubsidyId(Long subsidyId) { this.subsidyId = subsidyId; }
   public String getSlotCode() { return slotCode; }
   public void setSlotCode(String slotCode) { this.slotCode = slotCode; }
+  public Long getInstanceId() { return instanceId; }
+  public void setInstanceId(Long instanceId) { this.instanceId = instanceId; }
+  public Long getVersionId() { return versionId; }
+  public void setVersionId(Long versionId) { this.versionId = versionId; }
   public Long getFileId() { return fileId; }
   public void setFileId(Long fileId) { this.fileId = fileId; }
   public String getFilePath() { return filePath; }

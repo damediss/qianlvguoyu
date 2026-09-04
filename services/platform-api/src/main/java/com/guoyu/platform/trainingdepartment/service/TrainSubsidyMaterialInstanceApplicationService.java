@@ -1,0 +1,468 @@
+package com.guoyu.platform.trainingdepartment.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.guoyu.platform.common.exception.BusinessException;
+import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.file.service.FileApplicationService;
+import com.guoyu.platform.file.vo.FileVO;
+import com.guoyu.platform.security.SecurityContext;
+import com.guoyu.platform.trainingdepartment.entity.TrainFollowPhotoPackEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainSubsidyEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainSubsidyEventEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainSubsidyMaterialInstanceEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainSubsidyMaterialVersionEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainSubsidyPackSlotEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainSubsidySlotFileEntity;
+import com.guoyu.platform.trainingdepartment.mapper.TrainFollowPhotoPackMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidyEventMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidyMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidyMaterialInstanceMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidyMaterialVersionMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidySlotFileMapper;
+import com.guoyu.platform.trainingdepartment.support.SubsidyMaterialTypes;
+import com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialGroupVO;
+import com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialInstanceListVO;
+import com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialInstanceVO;
+import com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialSlotFileVO;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
+
+@Service
+@Slf4j
+public class TrainSubsidyMaterialInstanceApplicationService {
+
+  private final TrainSubsidyMapper subsidyMapper;
+  private final TrainSubsidyMaterialInstanceMapper instanceMapper;
+  private final TrainSubsidyMaterialVersionMapper versionMapper;
+  private final TrainSubsidySlotFileMapper slotFileMapper;
+  private final TrainSubsidyEventMapper eventMapper;
+  private final TrainSubsidyPackProfileApplicationService profileService;
+  private final TrainFollowPhotoPackMapper photoPackMapper;
+  private final FileApplicationService fileApplicationService;
+
+  public TrainSubsidyMaterialInstanceApplicationService(
+      TrainSubsidyMapper subsidyMapper,
+      TrainSubsidyMaterialInstanceMapper instanceMapper,
+      TrainSubsidyMaterialVersionMapper versionMapper,
+      TrainSubsidySlotFileMapper slotFileMapper,
+      TrainSubsidyEventMapper eventMapper,
+      TrainSubsidyPackProfileApplicationService profileService,
+      TrainFollowPhotoPackMapper photoPackMapper,
+      FileApplicationService fileApplicationService) {
+    this.subsidyMapper = subsidyMapper;
+    this.instanceMapper = instanceMapper;
+    this.versionMapper = versionMapper;
+    this.slotFileMapper = slotFileMapper;
+    this.eventMapper = eventMapper;
+    this.profileService = profileService;
+    this.photoPackMapper = photoPackMapper;
+    this.fileApplicationService = fileApplicationService;
+  }
+
+  @Transactional
+  public SubsidyMaterialInstanceListVO listInstances(Long subsidyId) {
+    TrainSubsidyEntity subsidy = requireSubsidy(subsidyId);
+    ensureInstancesFromProfile(subsidy);
+    refreshInstancesFromSlotFiles(subsidy);
+    return buildListVO(subsidy);
+  }
+
+  @Transactional
+  public SubsidyMaterialInstanceVO replaceFile(Long instanceId, MultipartFile file) {
+    if (file == null || file.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择文件");
+    }
+    TrainSubsidyMaterialInstanceEntity instance = requireInstance(instanceId);
+    TrainSubsidyEntity subsidy = requireSubsidy(instance.getSubsidyId());
+    assertEditable(subsidy);
+
+    FileVO stored = fileApplicationService.upload(file, "private");
+    String path = "/api/files/" + stored.id() + "/download";
+    String fileName = StringUtils.hasText(stored.originalName()) ? stored.originalName() : file.getOriginalFilename();
+
+    TrainSubsidyMaterialVersionEntity version = newVersion(instance, stored.id(), path, fileName, "upload", subsidy.getTenantId());
+    version.setConfirmed(1);
+    version.setConfirmedBy(SecurityContext.currentUser().getUserId());
+    version.setConfirmedAt(LocalDateTime.now());
+    versionMapper.insert(version);
+
+    instance.setCurrentVersionId(version.getId());
+    instance.setStatus("upload_only");
+    instanceMapper.updateById(instance);
+
+    if (StringUtils.hasText(instance.getSlotCode())) {
+      TrainSubsidySlotFileEntity slotFile = new TrainSubsidySlotFileEntity();
+      slotFile.setSubsidyId(subsidy.getId());
+      slotFile.setSlotCode(instance.getSlotCode());
+      slotFile.setInstanceId(instance.getId());
+      slotFile.setVersionId(version.getId());
+      slotFile.setFileId(stored.id());
+      slotFile.setFilePath(path);
+      slotFile.setFileName(fileName);
+      slotFile.setUploadedBy(SecurityContext.currentUser().getUserId());
+      slotFile.setTenantId(subsidy.getTenantId());
+      slotFile.setDeleted(0);
+      slotFileMapper.insert(slotFile);
+    }
+
+    addEvent(subsidy, "instance_replace", "替换材料 " + instance.getTitle(),
+        Map.of("instanceId", instance.getId(), "versionId", version.getId()));
+    return toVO(instance, subsidy, loadSlotFiles(subsidy.getId()), latestPhotoPack(subsidy));
+  }
+
+  @Transactional
+  public SubsidyMaterialInstanceVO confirmInstance(Long instanceId) {
+    TrainSubsidyMaterialInstanceEntity instance = requireInstance(instanceId);
+    TrainSubsidyEntity subsidy = requireSubsidy(instance.getSubsidyId());
+    if (instance.getCurrentVersionId() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前材料尚无文件，无法确认");
+    }
+    TrainSubsidyMaterialVersionEntity version = versionMapper.selectById(instance.getCurrentVersionId());
+    if (version == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前版本不存在");
+    }
+    version.setConfirmed(1);
+    version.setConfirmedBy(SecurityContext.currentUser().getUserId());
+    version.setConfirmedAt(LocalDateTime.now());
+    versionMapper.updateById(version);
+    instance.setStatus("confirmed");
+    instanceMapper.updateById(instance);
+    addEvent(subsidy, "instance_confirm", "确认材料 " + instance.getTitle(),
+        Map.of("instanceId", instance.getId(), "versionId", version.getId()));
+    return toVO(instance, subsidy, loadSlotFiles(subsidy.getId()), latestPhotoPack(subsidy));
+  }
+
+  /** 本班 sync 或槽位变更后，将 slot_file 同步到实例版本 */
+  @Transactional
+  public void refreshFromSlotFiles(Long subsidyId) {
+    TrainSubsidyEntity subsidy = requireSubsidy(subsidyId);
+    refreshInstancesFromSlotFiles(subsidy);
+  }
+
+  private void ensureInstancesFromProfile(TrainSubsidyEntity subsidy) {
+    if (subsidy.getProfileId() == null) {
+      return;
+    }
+    long existing = instanceMapper.selectCount(new LambdaQueryWrapper<TrainSubsidyMaterialInstanceEntity>()
+        .eq(TrainSubsidyMaterialInstanceEntity::getSubsidyId, subsidy.getId())
+        .eq(TrainSubsidyMaterialInstanceEntity::getDeleted, 0));
+    if (existing > 0) {
+      return;
+    }
+    List<TrainSubsidyPackSlotEntity> slots = profileService.listSlots(subsidy.getProfileId());
+    for (TrainSubsidyPackSlotEntity slot : slots) {
+      TrainSubsidyMaterialInstanceEntity row = new TrainSubsidyMaterialInstanceEntity();
+      row.setSubsidyId(subsidy.getId());
+      row.setSlotCode(slot.getSlotCode());
+      row.setMaterialType(SubsidyMaterialTypes.resolveMaterialType(slot.getSlotCode(), slot.getRenderer()));
+      row.setTitle(slot.getTitle());
+      row.setStatus("pending");
+      row.setRequiredFlag(slot.getRequiredFlag() != null ? slot.getRequiredFlag() : 0);
+      row.setSortOrder(slot.getSortOrder() != null ? slot.getSortOrder() : 0);
+      row.setRenderer(slot.getRenderer());
+      row.setTenantId(subsidy.getTenantId());
+      row.setDeleted(0);
+      instanceMapper.insert(row);
+    }
+  }
+
+  private void refreshInstancesFromSlotFiles(TrainSubsidyEntity subsidy) {
+    List<TrainSubsidyMaterialInstanceEntity> instances = instanceMapper.selectList(
+        new LambdaQueryWrapper<TrainSubsidyMaterialInstanceEntity>()
+            .eq(TrainSubsidyMaterialInstanceEntity::getSubsidyId, subsidy.getId())
+            .eq(TrainSubsidyMaterialInstanceEntity::getDeleted, 0));
+    if (instances.isEmpty()) {
+      return;
+    }
+    Map<String, List<TrainSubsidySlotFileEntity>> filesBySlot = loadSlotFiles(subsidy.getId()).stream()
+        .collect(Collectors.groupingBy(TrainSubsidySlotFileEntity::getSlotCode));
+
+    TrainFollowPhotoPackEntity photoPack = latestPhotoPack(subsidy);
+
+    for (TrainSubsidyMaterialInstanceEntity instance : instances) {
+      if ("follow_photo".equals(instance.getRenderer())) {
+        if (photoPack != null && photoPack.getFileId() != null) {
+          if (instance.getCurrentVersionId() == null) {
+            upsertVersionFromPhotoPack(instance, photoPack, subsidy);
+          }
+        }
+        continue;
+      }
+      String slotCode = instance.getSlotCode();
+      if (!StringUtils.hasText(slotCode)) {
+        continue;
+      }
+      List<TrainSubsidySlotFileEntity> files = filesBySlot.getOrDefault(slotCode, List.of());
+      if (files.isEmpty()) {
+        continue;
+      }
+      TrainSubsidySlotFileEntity latest = files.get(files.size() - 1);
+      if (instance.getCurrentVersionId() != null) {
+        TrainSubsidyMaterialVersionEntity cur = versionMapper.selectById(instance.getCurrentVersionId());
+        if (cur != null && latest.getFileId() != null && latest.getFileId().equals(cur.getFileId())) {
+          linkSlotFile(latest, instance, cur);
+          continue;
+        }
+      }
+      String source = isClassSyncFile(latest.getFileName()) ? "class_sync" : "upload";
+      TrainSubsidyMaterialVersionEntity version = newVersion(
+          instance, latest.getFileId(), latest.getFilePath(), latest.getFileName(), source, subsidy.getTenantId());
+      if ("class_sync".equals(source)) {
+        version.setConfirmed(0);
+      } else {
+        version.setConfirmed(1);
+        version.setConfirmedBy(latest.getUploadedBy());
+        version.setConfirmedAt(LocalDateTime.now());
+      }
+      versionMapper.insert(version);
+      instance.setCurrentVersionId(version.getId());
+      instance.setStatus("class_sync".equals(source) ? "from_class" : "upload_only");
+      if (version.getConfirmed() != null && version.getConfirmed() == 1) {
+        instance.setStatus("confirmed");
+      }
+      instanceMapper.updateById(instance);
+      linkSlotFile(latest, instance, version);
+      for (TrainSubsidySlotFileEntity f : files) {
+        linkSlotFile(f, instance, version);
+      }
+    }
+  }
+
+  private void upsertVersionFromPhotoPack(
+      TrainSubsidyMaterialInstanceEntity instance, TrainFollowPhotoPackEntity photoPack, TrainSubsidyEntity subsidy) {
+    TrainSubsidyMaterialVersionEntity version = newVersion(
+        instance,
+        photoPack.getFileId(),
+        photoPack.getFilePath(),
+        StringUtils.hasText(photoPack.getTitle()) ? photoPack.getTitle() + ".docx" : "培训照片.docx",
+        "class_sync",
+        subsidy.getTenantId());
+    versionMapper.insert(version);
+    instance.setCurrentVersionId(version.getId());
+    instance.setStatus("from_class");
+    instanceMapper.updateById(instance);
+  }
+
+  private TrainSubsidyMaterialVersionEntity newVersion(
+      TrainSubsidyMaterialInstanceEntity instance,
+      Long fileId,
+      String filePath,
+      String fileName,
+      String source,
+      Long tenantId) {
+    int nextNo = nextVersionNo(instance.getId());
+    TrainSubsidyMaterialVersionEntity version = new TrainSubsidyMaterialVersionEntity();
+    version.setInstanceId(instance.getId());
+    version.setVersionNo(nextNo);
+    version.setFileId(fileId);
+    version.setFilePath(filePath);
+    version.setFileName(fileName);
+    version.setSource(source);
+    version.setConfirmed(0);
+    version.setCreatedBy(SecurityContext.currentUser().getUserId());
+    version.setTenantId(tenantId);
+    version.setDeleted(0);
+    return version;
+  }
+
+  private int nextVersionNo(Long instanceId) {
+    TrainSubsidyMaterialVersionEntity last = versionMapper.selectOne(
+        new LambdaQueryWrapper<TrainSubsidyMaterialVersionEntity>()
+            .eq(TrainSubsidyMaterialVersionEntity::getInstanceId, instanceId)
+            .eq(TrainSubsidyMaterialVersionEntity::getDeleted, 0)
+            .orderByDesc(TrainSubsidyMaterialVersionEntity::getVersionNo)
+            .last("LIMIT 1"));
+    return last == null ? 1 : last.getVersionNo() + 1;
+  }
+
+  private void linkSlotFile(
+      TrainSubsidySlotFileEntity slotFile, TrainSubsidyMaterialInstanceEntity instance, TrainSubsidyMaterialVersionEntity version) {
+    if (slotFile.getInstanceId() != null && slotFile.getVersionId() != null) {
+      return;
+    }
+    slotFile.setInstanceId(instance.getId());
+    slotFile.setVersionId(version.getId());
+    slotFileMapper.updateById(slotFile);
+  }
+
+  private boolean isClassSyncFile(String fileName) {
+    return StringUtils.hasText(fileName) && fileName.startsWith(TrainSubsidyClassMaterialService.AUTO_PREFIX);
+  }
+
+  private SubsidyMaterialInstanceListVO buildListVO(TrainSubsidyEntity subsidy) {
+    List<TrainSubsidyMaterialInstanceEntity> instances = instanceMapper.selectList(
+        new LambdaQueryWrapper<TrainSubsidyMaterialInstanceEntity>()
+            .eq(TrainSubsidyMaterialInstanceEntity::getSubsidyId, subsidy.getId())
+            .eq(TrainSubsidyMaterialInstanceEntity::getDeleted, 0)
+            .orderByAsc(TrainSubsidyMaterialInstanceEntity::getSortOrder)
+            .orderByAsc(TrainSubsidyMaterialInstanceEntity::getId));
+    List<TrainSubsidySlotFileEntity> allSlotFiles = loadSlotFiles(subsidy.getId());
+    TrainFollowPhotoPackEntity photoPack = latestPhotoPack(subsidy);
+
+    List<SubsidyMaterialInstanceVO> items = instances.stream()
+        .map(i -> toVO(i, subsidy, allSlotFiles, photoPack))
+        .sorted(Comparator.comparingInt((SubsidyMaterialInstanceVO v) -> SubsidyMaterialTypes.materialTypeOrder(v.materialType()))
+            .thenComparing(SubsidyMaterialInstanceVO::title))
+        .toList();
+
+    Map<String, List<SubsidyMaterialInstanceVO>> grouped = items.stream()
+        .collect(Collectors.groupingBy(SubsidyMaterialInstanceVO::materialType, LinkedHashMap::new, Collectors.toList()));
+
+    List<SubsidyMaterialGroupVO> groups = grouped.entrySet().stream()
+        .sorted(Comparator.comparingInt(e -> SubsidyMaterialTypes.materialTypeOrder(e.getKey())))
+        .map(e -> new SubsidyMaterialGroupVO(
+            e.getKey(),
+            SubsidyMaterialTypes.materialTypeLabel(e.getKey()),
+            e.getValue().size(),
+            e.getValue()))
+        .toList();
+
+    int requiredTotal = (int) items.stream().filter(SubsidyMaterialInstanceVO::required).count();
+    int confirmedRequired = (int) items.stream()
+        .filter(SubsidyMaterialInstanceVO::required)
+        .filter(i -> "confirmed".equals(i.status()))
+        .count();
+    int hasFileCount = (int) items.stream().filter(SubsidyMaterialInstanceVO::hasFile).count();
+
+    return new SubsidyMaterialInstanceListVO(
+        subsidy.getId(), items.size(), requiredTotal, confirmedRequired, hasFileCount, groups, items);
+  }
+
+  private SubsidyMaterialInstanceVO toVO(
+      TrainSubsidyMaterialInstanceEntity instance,
+      TrainSubsidyEntity subsidy,
+      List<TrainSubsidySlotFileEntity> allSlotFiles,
+      TrainFollowPhotoPackEntity photoPack) {
+    TrainSubsidyMaterialVersionEntity version = instance.getCurrentVersionId() != null
+        ? versionMapper.selectById(instance.getCurrentVersionId())
+        : null;
+
+    List<TrainSubsidySlotFileEntity> slotFiles = StringUtils.hasText(instance.getSlotCode())
+        ? allSlotFiles.stream().filter(f -> instance.getSlotCode().equals(f.getSlotCode())).toList()
+        : List.of();
+
+    boolean photoPackReady = "follow_photo".equals(instance.getRenderer())
+        && photoPack != null && photoPack.getFileId() != null;
+    boolean hasFile = version != null && version.getFileId() != null;
+    if (!hasFile && photoPackReady) {
+      hasFile = true;
+    }
+    if (!hasFile && !slotFiles.isEmpty()) {
+      hasFile = true;
+    }
+
+    List<SubsidyMaterialSlotFileVO> slotFileVos = slotFiles.stream()
+        .map(f -> new SubsidyMaterialSlotFileVO(f.getId(), f.getFileName(), f.getFilePath(), f.getFileId()))
+        .toList();
+
+    return new SubsidyMaterialInstanceVO(
+        instance.getId(),
+        instance.getSubsidyId(),
+        instance.getSlotCode(),
+        instance.getMaterialType(),
+        SubsidyMaterialTypes.materialTypeLabel(instance.getMaterialType()),
+        instance.getTitle(),
+        instance.getStatus(),
+        instance.getRenderer(),
+        instance.getRequiredFlag() != null && instance.getRequiredFlag() == 1,
+        instance.getCurrentVersionId(),
+        version != null ? version.getVersionNo() : null,
+        version != null ? version.getFileId() : (photoPackReady ? photoPack.getFileId() : null),
+        version != null ? version.getFilePath() : (photoPackReady ? photoPack.getFilePath() : null),
+        version != null ? version.getFileName() : (photoPackReady ? photoPack.getTitle() : null),
+        hasFile,
+        photoPackReady,
+        photoPackReady ? photoPack.getFilePath() : null,
+        photoPackReady ? photoPack.getTitle() : null,
+        slotFiles.size(),
+        slotFileVos);
+  }
+
+  private List<TrainSubsidySlotFileEntity> loadSlotFiles(Long subsidyId) {
+    return slotFileMapper.selectList(new LambdaQueryWrapper<TrainSubsidySlotFileEntity>()
+        .eq(TrainSubsidySlotFileEntity::getSubsidyId, subsidyId)
+        .eq(TrainSubsidySlotFileEntity::getDeleted, 0)
+        .orderByAsc(TrainSubsidySlotFileEntity::getId));
+  }
+
+  private TrainFollowPhotoPackEntity latestPhotoPack(TrainSubsidyEntity subsidy) {
+    if (subsidy.getClassId() == null) {
+      return null;
+    }
+    return photoPackMapper.selectOne(new LambdaQueryWrapper<TrainFollowPhotoPackEntity>()
+        .eq(TrainFollowPhotoPackEntity::getClassId, subsidy.getClassId())
+        .eq(TrainFollowPhotoPackEntity::getTenantId, subsidy.getTenantId())
+        .eq(TrainFollowPhotoPackEntity::getDeleted, 0)
+        .orderByDesc(TrainFollowPhotoPackEntity::getGeneratedAt)
+        .last("LIMIT 1"));
+  }
+
+  private TrainSubsidyEntity requireSubsidy(Long subsidyId) {
+    TrainSubsidyEntity entity = subsidyMapper.selectById(subsidyId);
+    if (entity == null || entity.getDeleted() != null && entity.getDeleted() == 1) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "补贴单不存在");
+    }
+    return entity;
+  }
+
+  private TrainSubsidyMaterialInstanceEntity requireInstance(Long instanceId) {
+    TrainSubsidyMaterialInstanceEntity entity = instanceMapper.selectById(instanceId);
+    if (entity == null || entity.getDeleted() != null && entity.getDeleted() == 1) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "材料实例不存在");
+    }
+    return entity;
+  }
+
+  private void assertEditable(TrainSubsidyEntity subsidy) {
+    String phase = subsidy.getPhase();
+    if (!"draft".equals(phase) && !"checking".equals(phase) && !"ready".equals(phase) && !"rejected".equals(phase)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前阶段不可修改材料");
+    }
+  }
+
+  private void addEvent(TrainSubsidyEntity subsidy, String action, String remark, Map<String, Object> payload) {
+    TrainSubsidyEventEntity event = new TrainSubsidyEventEntity();
+    event.setSubsidyId(subsidy.getId());
+    event.setAction(action);
+    event.setFromPhase(subsidy.getPhase());
+    event.setToPhase(subsidy.getPhase());
+    event.setRemark(remark);
+    if (payload != null) {
+      try {
+        event.setPayloadJson(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(payload));
+      } catch (Exception ignored) {
+        event.setPayloadJson(null);
+      }
+    }
+    event.setOperatorId(SecurityContext.currentUser().getUserId());
+    event.setTenantId(subsidy.getTenantId());
+    event.setDeleted(0);
+    eventMapper.insert(event);
+  }
+
+  public List<TrainSubsidyMaterialInstanceEntity> listInstancesForExport(Long subsidyId, List<Long> instanceIds) {
+    if (instanceIds == null || instanceIds.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请选择要导出的材料");
+    }
+    requireSubsidy(subsidyId);
+    List<TrainSubsidyMaterialInstanceEntity> rows = instanceMapper.selectList(
+        new LambdaQueryWrapper<TrainSubsidyMaterialInstanceEntity>()
+            .eq(TrainSubsidyMaterialInstanceEntity::getSubsidyId, subsidyId)
+            .in(TrainSubsidyMaterialInstanceEntity::getId, instanceIds)
+            .eq(TrainSubsidyMaterialInstanceEntity::getDeleted, 0));
+    if (rows.size() != instanceIds.size()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "部分材料不存在或不属于本补贴单");
+    }
+    return rows;
+  }
+}

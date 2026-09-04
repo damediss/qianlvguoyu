@@ -113,6 +113,8 @@ public class SecurityConfig {
             auth.requestMatchers(HttpMethod.POST, "/auth/captcha/verify").permitAll();
             auth.requestMatchers(HttpMethod.GET, "/exam/files/**").permitAll();
             auth.requestMatchers("/files/**").permitAll();
+            // OnlyOffice Document Server：拉取文档 + 保存回调（无浏览器登录态）
+            auth.requestMatchers("/training/office/**").permitAll();
             auth.requestMatchers(HttpMethod.GET, "/ws/practical-scoring").permitAll();
             auth.requestMatchers(HttpMethod.POST, "/appregistration/**").permitAll();
             auth.requestMatchers(HttpMethod.POST, "/appsms/**", "/appauth/**", "/appuser/**", "/appuserv4/**", "/apphome/**", "/appsmart/**", "/appcoach/**").permitAll();

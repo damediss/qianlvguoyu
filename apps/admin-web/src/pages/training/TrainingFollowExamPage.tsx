@@ -4,9 +4,14 @@ import {
   Breadcrumb,
   Button,
   Card,
+  Col,
   Drawer,
+  Empty,
   Input,
+  Pagination,
+  Row,
   Space,
+  Spin,
   Table,
   Tabs,
   Tag,
@@ -34,6 +39,21 @@ import type {
 } from '../../types/training';
 import { TrainingProcessSteps } from './TrainingProcessSteps';
 import './TrainingFollowExamPage.css';
+
+/** 班级工种等级：5=五级 … 1=一级（与开班准备一致） */
+const CLASS_LEVEL_LABELS: Record<number, string> = {
+  5: '五级/初级工',
+  4: '四级/中级工',
+  3: '三级/高级工',
+  2: '二级/技师',
+  1: '一级/高级技师',
+};
+
+function formatClassLevel(level?: number | null) {
+  if (level == null || Number.isNaN(Number(level))) return '—';
+  const n = Number(level);
+  return CLASS_LEVEL_LABELS[n] ?? `Lv${n}`;
+}
 
 const WRITABLE = new Set([
   'MATCHED',
@@ -200,7 +220,7 @@ export function TrainingFollowExamPage() {
   const [classKeyword, setClassKeyword] = useState('');
   const [trainTitleFilters, setTrainTitleFilters] = useState<string[]>([]);
   const [companyPage, setCompanyPage] = useState(1);
-  const [companyPageSize, setCompanyPageSize] = useState(20);
+  const [companyPageSize, setCompanyPageSize] = useState(24);
   const [classPage, setClassPage] = useState(1);
   const [classPageSize, setClassPageSize] = useState(10);
   const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
@@ -349,6 +369,11 @@ export function TrainingFollowExamPage() {
       (c) => c.companyName.toLowerCase().includes(kw) || c.companyId.includes(kw),
     );
   }, [companies, companyKeyword]);
+
+  const pagedCompanies = useMemo(() => {
+    const start = (companyPage - 1) * companyPageSize;
+    return filteredCompanies.slice(start, start + companyPageSize);
+  }, [filteredCompanies, companyPage, companyPageSize]);
 
   /** 优先用企业筛选接口；若因精度问题为空则回退本地按字符串归类 */
   const companyClasses = useMemo(() => {
@@ -556,28 +581,6 @@ export function TrainingFollowExamPage() {
     }
   };
 
-  const companyColumns: ColumnsType<CompanyRow> = [
-    {
-      title: '企业名称',
-      dataIndex: 'companyName',
-      ellipsis: true,
-      render: (v, row) =>
-        row.unassigned ? <Typography.Text type="warning">{v}</Typography.Text> : v,
-    },
-    { title: '班级数', dataIndex: 'classCount', width: 100 },
-    { title: '培训项目数', dataIndex: 'trainCount', width: 120 },
-    {
-      title: '操作',
-      key: 'act',
-      width: 120,
-      render: (_, row) => (
-        <Button type="link" size="small" onClick={() => enterCompany(row.companyId)}>
-          进入 <RightOutlined />
-        </Button>
-      ),
-    },
-  ];
-
   const openClassRoster = (row: ExamScoreImportClassOption) => {
     setRosterKeyword('');
     setRosterPage(1);
@@ -597,11 +600,15 @@ export function TrainingFollowExamPage() {
     },
     {
       title: '工种',
-      width: 140,
-      render: (_, r) =>
-        [r.workTypeTitle, r.workTypeLevel != null ? `Lv${r.workTypeLevel}` : null]
-          .filter(Boolean)
-          .join(' ') || '—',
+      width: 120,
+      ellipsis: true,
+      render: (_, r) => r.workTypeTitle || '—',
+    },
+    {
+      title: '等级',
+      width: 120,
+      ellipsis: true,
+      render: (_, r) => formatClassLevel(r.workTypeLevel),
     },
     {
       title: '人数',
@@ -850,30 +857,62 @@ export function TrainingFollowExamPage() {
             />
           }
         >
-          <Table<CompanyRow>
-            size="small"
-            rowKey={(r) => String(r.companyId)}
-            loading={publicQuery.isLoading || allClassesQuery.isLoading}
-            columns={companyColumns}
-            dataSource={filteredCompanies}
-            pagination={{
-              current: companyPage,
-              pageSize: companyPageSize,
-              showSizeChanger: true,
-              pageSizeOptions: ['10', '20', '50', '100'],
-              showTotal: (n) => `共 ${n} 家企业`,
-              onChange: (page, size) => {
-                setCompanyPage(page);
-                if (typeof size === 'number' && size > 0) {
-                  setCompanyPageSize(size);
-                }
-              },
-            }}
-            onRow={(row) => ({
-              onClick: () => enterCompany(row.companyId),
-              style: { cursor: 'pointer' },
-            })}
-          />
+          <Spin spinning={publicQuery.isLoading || allClassesQuery.isLoading}>
+            {filteredCompanies.length === 0 ? (
+              <Empty description="暂无企业数据" />
+            ) : (
+              <Row gutter={[16, 16]} className="exam-company-card-grid">
+                {pagedCompanies.map((row) => (
+                  <Col key={row.companyId} xs={24} sm={12} md={8} lg={6}>
+                    <button
+                      type="button"
+                      className={`exam-company-card${row.unassigned ? ' is-unassigned' : ''}${row.classCount > 0 ? ' has-classes' : ''}`}
+                      onClick={() => enterCompany(row.companyId)}
+                    >
+                      <div className="exam-company-card-body">
+                        <Typography.Text
+                          className="exam-company-card-title"
+                          ellipsis={{ tooltip: row.companyName }}
+                          type={row.unassigned ? 'warning' : undefined}
+                        >
+                          {row.companyName}
+                        </Typography.Text>
+                        <div className="exam-company-card-stats">
+                          <span>
+                            <em>{row.classCount}</em> 个班
+                          </span>
+                          <span>
+                            <em>{row.trainCount}</em> 个项目
+                          </span>
+                        </div>
+                        <Typography.Text type="secondary" className="exam-company-card-action">
+                          进入成绩导入 <RightOutlined />
+                        </Typography.Text>
+                      </div>
+                    </button>
+                  </Col>
+                ))}
+              </Row>
+            )}
+          </Spin>
+          {filteredCompanies.length > 0 ? (
+            <div className="exam-company-card-pagination">
+              <Pagination
+                current={companyPage}
+                pageSize={companyPageSize}
+                total={filteredCompanies.length}
+                showSizeChanger
+                pageSizeOptions={['12', '24', '48', '96']}
+                showTotal={(n) => `共 ${n} 家企业`}
+                onChange={(page, size) => {
+                  setCompanyPage(page);
+                  if (typeof size === 'number' && size > 0) {
+                    setCompanyPageSize(size);
+                  }
+                }}
+              />
+            </div>
+          ) : null}
         </Card>
       ) : (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>

@@ -45,6 +45,21 @@ const { Dragger } = Upload;
 
 const FILE_TEMP_TITLES = ['开班申请表', '导入表', '开班花名册', '课时导入表'] as const;
 
+/** 班级工种等级：5=五级 … 1=一级（与开班准备一致） */
+const CLASS_LEVEL_LABELS: Record<number, string> = {
+  5: '五级/初级工',
+  4: '四级/中级工',
+  3: '三级/高级工',
+  2: '二级/技师',
+  1: '一级/高级技师',
+};
+
+function formatClassLevel(level?: number | null) {
+  if (level == null || Number.isNaN(Number(level))) return '—';
+  const n = Number(level);
+  return CLASS_LEVEL_LABELS[n] ?? `${n}级`;
+}
+
 function materialCoverage(rows: TrainFileTempItem[]) {
   const titles = new Set(rows.map((r) => r.title).filter(Boolean));
   const missing = FILE_TEMP_TITLES.filter((t) => !titles.has(t));
@@ -374,6 +389,13 @@ export function TrainingClassDeclarePage() {
     { title: '班级名称', dataIndex: 'title', align: 'center' },
     { title: '公司', dataIndex: 'company_name', align: 'center' },
     { title: '工种', dataIndex: 'work_type_title', align: 'center' },
+    {
+      title: '等级',
+      dataIndex: 'work_type_level',
+      width: 120,
+      align: 'center',
+      render: (v?: number | null) => formatClassLevel(v),
+    },
     { title: '人数', dataIndex: 'nums', width: 80, align: 'center' },
     { title: '地点', dataIndex: 'position', align: 'center' },
     { title: '课时', dataIndex: 'course_num', align: 'center' },

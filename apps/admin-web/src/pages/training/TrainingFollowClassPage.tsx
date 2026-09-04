@@ -7,6 +7,30 @@ import { TrainingProcessSteps } from './TrainingProcessSteps';
 import { FollowClassWorkbench } from './follow/FollowClassWorkbench';
 import './TrainingFollowClassPage.css';
 
+/** 班级工种等级：5=五级 … 1=一级（与开班准备一致） */
+const CLASS_LEVEL_LABELS: Record<number, string> = {
+  5: '五级/初级工',
+  4: '四级/中级工',
+  3: '三级/高级工',
+  2: '二级/技师',
+  1: '一级/高级技师',
+};
+
+function formatClassLevel(level?: number | null) {
+  if (level == null || Number.isNaN(Number(level))) return '';
+  const n = Number(level);
+  return CLASS_LEVEL_LABELS[n] ?? `${n}级`;
+}
+
+function formatWorkTypeWithLevel(row: TrainInfoClassListItem) {
+  const workType = row.work_type_title?.trim() || '';
+  const level = formatClassLevel(row.work_type_level);
+  if (workType && level) return `${workType}（${level}）`;
+  if (workType) return workType;
+  if (level) return level;
+  return '—';
+}
+
 export function TrainingFollowClassPage() {
   const [keyword, setKeyword] = useState('');
   const [page, setPage] = useState(1);
@@ -81,9 +105,19 @@ export function TrainingFollowClassPage() {
                       <Typography.Text className="follow-class-card-title" ellipsis={{ tooltip: row.title || '未命名班级' }}>
                         {row.title || '未命名班级'}
                       </Typography.Text>
+
+                      <Typography.Text
+                        type="secondary"
+                        className="follow-class-card-worktype"
+                        ellipsis={{ tooltip: formatWorkTypeWithLevel(row) }}
+                      >
+                        {formatWorkTypeWithLevel(row)}
+                      </Typography.Text>
+
                       <Typography.Text type="secondary" className="follow-class-card-company" ellipsis={{ tooltip: row.company_name || '—' }}>
                         {row.company_name || '—'}
                       </Typography.Text>
+                      
                       <Typography.Text type="secondary" className="follow-class-card-meta">
                         {row.nums ?? 0} 人
                       </Typography.Text>

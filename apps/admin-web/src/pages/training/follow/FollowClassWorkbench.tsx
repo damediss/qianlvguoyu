@@ -53,6 +53,7 @@ import { FollowMockExamTab } from './FollowMockExamTab';
 import { FollowEvidenceTab } from './FollowEvidenceTab';
 import { FollowLogsSupervisionTab } from './FollowLogsSupervisionTab';
 import { ClassRolesPanel } from '../ClassRolesPanel';
+import { useNavStore } from '../../../stores/navStore';
 
 type ScheduleDraftItem = Record<string, unknown> & {
   _key: string;
@@ -176,9 +177,35 @@ type Props = {
 
 export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const queryClient = useQueryClient();
+  const navigateTo = useNavStore((s) => s.setSelectedKey);
   const classId = classItem.id;
   const trainInfoId = classItem.train_info_id;
   const classIdNum = toNumId(classId);
+
+  const openClassSubsidy = async () => {
+    if (classIdNum == null) {
+      message.error('无效班级');
+      return;
+    }
+    try {
+      const existing = await trainApi.getClassSubsidy(classIdNum);
+      if (existing) {
+        trainApi.stashSubsidyDeclareFocus({ classId: classIdNum, subsidyId: existing.id });
+        navigateTo('train_subsidy_declare');
+        return;
+      }
+      const created = await trainApi.ensureClassSubsidy(classIdNum);
+      message.success(created.phase === 'draft' ? '已为本班创建补贴草稿' : '已打开本班补贴单');
+      trainApi.stashSubsidyDeclareFocus({ classId: classIdNum, subsidyId: created.id });
+      navigateTo('train_subsidy_declare');
+      void queryClient.invalidateQueries({ queryKey: ['follow-quality-metrics', classIdNum] });
+    } catch (e) {
+      const msg = (e as Error).message || '打开补贴失败';
+      message.error(msg);
+      trainApi.stashSubsidyDeclareFocus({ classId: classIdNum, openCreate: true });
+      navigateTo('train_subsidy_declare');
+    }
+  };
 
   const [activeTab, setActiveTab] = useState('overview');
   const [bizDate, setBizDate] = useState<Dayjs | null>(dayjs());
@@ -662,9 +689,9 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
     const rows = attendancePage?.items ?? [];
     if (isSessionAttendance) {
       for (const row of rows) {
-        if (row.userId != null) map.set(String(row.userId), row);
-      }
-      return map;
+      if (row.userId != null) map.set(String(row.userId), row);
+    }
+    return map;
     }
     // 按日：优先 schedule_id 空；否则同日多课次「任一有效出勤即出勤」
     const byUser = new Map<string, trainApi.TrainAttendanceItem[]>();
@@ -1254,7 +1281,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                           />
                         </Col>
                         <Col xs={12} sm={8} md={4}>
-                          <Statistic title="科目数" value={scheduleStats.subjectCount} suffix="门" />
+                          <Statistic title="知识点" value={scheduleStats.subjectCount} suffix="个" />
                         </Col>
                         <Col xs={12} sm={8} md={4}>
                           <Statistic title="上课天数" value={scheduleStats.dayCount} suffix="天" />
@@ -1263,7 +1290,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                           <Statistic title="授课老师" value={scheduleStats.teacherCount} suffix="人" />
                         </Col>
                         <Col xs={12} sm={8} md={4}>
-                          <Statistic title="业务日课次" value={scheduleStats.todayCount} suffix="节" />
+                          <Statistic title="今日课次" value={scheduleStats.todayCount} suffix="节" />
                         </Col>
                       </Row>
                       <Space wrap size={[8, 4]} style={{ width: '100%', justifyContent: 'space-between' }}>
@@ -1759,7 +1786,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                           loading={teacherDaysLoading}
                           pagination={false}
                           dataSource={teacherDaysData?.teachers ?? []}
-                          columns={[
+                columns={[
                             { title: '授课老师', dataIndex: 'teacherName', ellipsis: true, width: 120 },
                             {
                               title: '授课形式',
@@ -1862,9 +1889,9 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                   ) : (
                   <>
                   {scheduleManualEdited ? (
-                    <Alert
+                <Alert
                       type="warning"
-                      showIcon
+                  showIcon
                       style={{ marginBottom: 8 }}
                       message="当前课表已在跟班手工调整，以结构化课次为准；重导开班 Excel 需二次确认。"
                     />
@@ -1903,10 +1930,10 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                       </Space>
                     </Empty>
                   ) : (
-                    <Table
+                <Table
                       size="small"
                       rowKey={(r) => r._key}
-                      pagination={false}
+                  pagination={false}
                       sticky
                       dataSource={scheduleList}
                       tableLayout="fixed"
@@ -1915,7 +1942,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                           ? 'follow-schedule-row-today'
                           : ''
                       }
-                      columns={[
+                  columns={[
                         {
                           title: '日期',
                           dataIndex: 'scheduleDate',
@@ -1925,9 +1952,9 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                               <span>{v || '—'}</span>
                               {hasBizDate && v === dateStr ? <Tag color="processing">今日</Tag> : null}
                             </Space>
-                          ),
-                        },
-                        {
+            ),
+          },
+          {
                           title: '星期',
                           dataIndex: 'dayOfWeek',
                           width: 52,
@@ -1971,7 +1998,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                           width: 150,
                           render: (_, r) => (
                             <Space size={0} wrap={false}>
-                              <Button
+                  <Button
                                 type="link"
                                 size="small"
                                 icon={<EditOutlined />}
@@ -1991,7 +2018,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                                 type="link"
                                 size="small"
                                 disabled={!r.scheduleDate}
-                                onClick={() => {
+                    onClick={() => {
                                   if (r.scheduleDate) {
                                     setBizDate(dayjs(String(r.scheduleDate)));
                                     setSessionKey(String(r.id ?? 'day'));
@@ -2000,8 +2027,8 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                                 }}
                               >
                                 考勤
-                              </Button>
-                            </Space>
+                  </Button>
+                </Space>
                           ),
                         },
                       ]}
@@ -2096,35 +2123,35 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                 <FollowLogsSupervisionTab classId={classIdNum} defaultBizDate={bizDate} />
               ) : (
                 <Empty description="无效班级" />
-              ),
+            ),
           },
           {
             key: 'metrics',
             label: '指标',
             children: (
               <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                <Row gutter={[12, 12]}>
-                  <Col xs={12} md={6}>
-                    <Card size="small">
+              <Row gutter={[12, 12]}>
+                <Col xs={12} md={6}>
+                  <Card size="small">
                       <Statistic
                         title="出勤率（当日）"
                         value={attendanceRate}
                         suffix="%"
                         prefix={<CheckCircleOutlined />}
                       />
-                    </Card>
-                  </Col>
-                  <Col xs={12} md={6}>
-                    <Card size="small" loading={classStats.loading}>
+                  </Card>
+                </Col>
+                <Col xs={12} md={6}>
+                  <Card size="small" loading={classStats.loading}>
                       <Statistic
                         title="出勤率（累计）"
                         value={classStats.cumulativeRate}
                         suffix="%"
                         prefix={<LineChartOutlined />}
                       />
-                    </Card>
-                  </Col>
-                  <Col xs={12} md={6}>
+                  </Card>
+                </Col>
+                <Col xs={12} md={6}>
                     <Card size="small" loading={qualityMetricsLoading || homeworkMetricsLoading}>
                       <Statistic
                         title="作业完成率"
@@ -2137,8 +2164,8 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                         prefix={<EditOutlined />}
                       />
                     </Card>
-                  </Col>
-                  <Col xs={12} md={6}>
+                </Col>
+                <Col xs={12} md={6}>
                     <Card size="small" loading={qualityMetricsLoading}>
                       <Statistic
                         title="满意度"
@@ -2151,7 +2178,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                         prefix={<StarOutlined />}
                       />
                     </Card>
-                  </Col>
+                </Col>
                   <Col xs={12} md={6}>
                     <Card size="small" loading={qualityMetricsLoading}>
                       <Statistic
@@ -2237,6 +2264,9 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                                 : undefined,
                         }}
                       />
+                      <Button type="link" size="small" style={{ padding: 0, marginTop: 4 }} onClick={() => void openClassSubsidy()}>
+                        {qualityMetrics?.subsidyId == null ? '为本班申报补贴' : '办理本班补贴'}
+                      </Button>
                     </Card>
                   </Col>
                 </Row>
@@ -2258,9 +2288,9 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                   )}
                 </Card>
 
-                <Alert
-                  type="info"
-                  showIcon
+                  <Alert
+                    type="info"
+                    showIcon
                   message="口径说明"
                   description={
                     <>

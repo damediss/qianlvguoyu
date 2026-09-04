@@ -751,6 +751,16 @@ export function useGraduationStudentActions(classId: number, onChanged?: () => v
                   '—'
                 )}
               </Descriptions.Item>
+              <Descriptions.Item label="职业">{detail.certificateOccupation || '—'}</Descriptions.Item>
+              <Descriptions.Item label="工种">{detail.certificateWorkType || '—'}</Descriptions.Item>
+              <Descriptions.Item label="等级">{detail.certificateLevel || '—'}</Descriptions.Item>
+              <Descriptions.Item label="核发日期">{detail.certificateIssueDate || '—'}</Descriptions.Item>
+              <Descriptions.Item label="发证机构" span={2}>
+                {detail.certificateIssuingAuthority || '—'}
+              </Descriptions.Item>
+              <Descriptions.Item label="评价机构" span={2}>
+                {detail.certificateEvaluationOrg || '—'}
+              </Descriptions.Item>
             </Descriptions>
 
             <div>

@@ -2,6 +2,89 @@
   margin-bottom: 16px;
 }
 
+.training-follow-exam-page .exam-company-card-grid {
+  min-height: 120px;
+}
+
+.training-follow-exam-page .exam-company-card {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-height: 108px;
+  padding: 16px;
+  border: 1px solid #e8eef5;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.training-follow-exam-page .exam-company-card:hover {
+  border-color: #91caff;
+  box-shadow: 0 6px 18px rgba(22, 119, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.training-follow-exam-page .exam-company-card:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+}
+
+.training-follow-exam-page .exam-company-card.has-classes {
+  border-color: #c6e0ff;
+}
+
+.training-follow-exam-page .exam-company-card.is-unassigned {
+  background: linear-gradient(180deg, #fffbf0 0%, #fff7e6 100%);
+  border-color: #ffe58f;
+}
+
+.training-follow-exam-page .exam-company-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.training-follow-exam-page .exam-company-card-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.4;
+}
+
+.training-follow-exam-page .exam-company-card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.training-follow-exam-page .exam-company-card-stats em {
+  font-style: normal;
+  font-weight: 600;
+  font-size: 16px;
+  color: #1677ff;
+  margin-right: 2px;
+}
+
+.training-follow-exam-page .exam-company-card-action {
+  display: block;
+  margin-top: auto;
+  font-size: 12px;
+  color: #1677ff;
+}
+
+.training-follow-exam-page .exam-company-card-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
 .training-follow-exam-page .exam-score-import-warn-row > td {
   background: #fffbe6;
 }

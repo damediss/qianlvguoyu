@@ -160,9 +160,20 @@ public class TrainFollowMetricsApplicationService {
             .eq(TrainSubsidyEntity::getTenantId, tenantId)
             .eq(TrainSubsidyEntity::getClassId, classId)
             .eq(TrainSubsidyEntity::getDeleted, 0)
+            .ne(TrainSubsidyEntity::getPhase, "closed")
             .orderByDesc(TrainSubsidyEntity::getUpdateTime)
             .orderByDesc(TrainSubsidyEntity::getId)
             .last("LIMIT 1"));
+    if (subsidy == null) {
+      subsidy = subsidyMapper.selectOne(
+          new LambdaQueryWrapper<TrainSubsidyEntity>()
+              .eq(TrainSubsidyEntity::getTenantId, tenantId)
+              .eq(TrainSubsidyEntity::getClassId, classId)
+              .eq(TrainSubsidyEntity::getDeleted, 0)
+              .orderByDesc(TrainSubsidyEntity::getUpdateTime)
+              .orderByDesc(TrainSubsidyEntity::getId)
+              .last("LIMIT 1"));
+    }
     if (subsidy == null) {
       result.put("subsidyId", null);
       result.put("subsidyReadySlots", null);
