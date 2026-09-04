@@ -357,8 +357,13 @@ public class FaqLlmClient {
     return baseUrl != null && baseUrl.toLowerCase().contains("deepseek");
   }
 
+  /** 判断是否为智谱 GLM 模型（baseURL 含 bigmodel 关键词） */
+  private boolean isGlm(String baseUrl) {
+    return baseUrl != null && baseUrl.toLowerCase().contains("bigmodel");
+  }
+
   /**
-   * 写入 thinking 节点（2026-08-11 新增 reasoning_effort 支持）。
+   * 写入 thinking 节点（2026-08-11 新增 reasoning_effort 支持；2026-09-04 新增 GLM 分支）。
    *
    * <p>DeepSeek 官方文档（/api/create-chat-completion）：{@code reasoning_effort} 是
    * {@code thinking} 对象内字段（low/high/max，默认 high），仅 {@code type=enabled} 时生效；
@@ -369,6 +374,9 @@ public class FaqLlmClient {
    *   <li>DeepSeek：thinking=enabled 且 reasoningEffort 非空 → {type:enabled, reasoning_effort:值}；
    *       thinking=disabled → 仅 {type:disabled}；thinking 为空 → 不发 thinking 节点</li>
    *   <li>LongCat：维持现状仅发 {type:值}，不发 reasoning_effort（其文档不支持，AGENTS.md 坑 #13）</li>
+   *   <li>GLM（bigmodel.cn，2026-09-04 理论试题生成接入）：thinking=enabled →
+   *       {type:enabled} + 顶层 {@code reasoning_effort}（智谱 GLM-5.x 口径，实施时逐字段核对官方
+   *       文档，若文档字段结构不同以文档为准，坑 #13）；thinking=disabled → 仅 {type:disabled}</li>
    *   <li>其它模型：一律不发 thinking 节点</li>
    * </ul>
    */
@@ -390,6 +398,16 @@ public class FaqLlmClient {
         thinkingNode.put("reasoning_effort", reasoningEffort);
       }
       requestBody.set("thinking", thinkingNode);
+      return;
+    }
+    if (isGlm(baseUrl)) {
+      ObjectNode thinkingNode = objectMapper.createObjectNode();
+      thinkingNode.put("type", thinking);
+      requestBody.set("thinking", thinkingNode);
+      if ("enabled".equals(thinking) && reasoningEffort != null && !reasoningEffort.isBlank()) {
+        // 智谱 GLM-5.x：reasoning_effort 为顶层字段
+        requestBody.put("reasoning_effort", reasoningEffort);
+      }
     }
   }
 }

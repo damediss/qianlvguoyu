@@ -78,6 +78,24 @@ public class AsyncConfig {
   }
 
   /**
+   * 理论试题生成批次编排池（每批次占 1 线程串行推进考评点块，暂停只挡新块）。
+   * AbortPolicy：同时批次过多时直接拒绝 → 503 服务繁忙（AGENTS.md 坑 #12/#14）。
+   */
+  @Bean(name = "theoryGenExecutor")
+  public ThreadPoolTaskExecutor theoryGenExecutor() {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(1);
+    executor.setMaxPoolSize(2);
+    executor.setQueueCapacity(10);
+    executor.setThreadNamePrefix("theory-gen-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(60);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
+  /**
    * AI 同步学鼓励语异步生成池（ReviewLlmAssistService）。
    * AbortPolicy：队列满时拒绝，由调用方捕获降级为预置文案（AGENTS.md 坑 #12/#14）。
    * （单库化前名为 reviewSyncExecutor，兼作 exam_result 异步回写池；回写已改事务内同步直写）

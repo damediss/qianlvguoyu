@@ -33,11 +33,13 @@ public class ExamTaskExamDetailEntity {
   private String examH;
   private String examAnswer;
   private Integer isblod;
+  private Long knowledgeId;
+  private Long aiBatchId;
+  private Integer source;
   private Integer tenantId;
 
   @TableLogic(value = "0", delval = "1")
   private Integer deleted;
-
   private LocalDateTime createTime;
   private LocalDateTime updatedAt;
   private Integer createdBy;
@@ -87,6 +89,12 @@ public class ExamTaskExamDetailEntity {
   public void setExamAnswer(String examAnswer) { this.examAnswer = examAnswer; }
   public Integer getIsblod() { return isblod; }
   public void setIsblod(Integer isblod) { this.isblod = isblod; }
+  public Long getKnowledgeId() { return knowledgeId; }
+  public void setKnowledgeId(Long knowledgeId) { this.knowledgeId = knowledgeId; }
+  public Long getAiBatchId() { return aiBatchId; }
+  public void setAiBatchId(Long aiBatchId) { this.aiBatchId = aiBatchId; }
+  public Integer getSource() { return source; }
+  public void setSource(Integer source) { this.source = source; }
   public Integer getTenantId() { return tenantId; }
   public void setTenantId(Integer tenantId) { this.tenantId = tenantId; }
   public Integer getDeleted() { return deleted; }
