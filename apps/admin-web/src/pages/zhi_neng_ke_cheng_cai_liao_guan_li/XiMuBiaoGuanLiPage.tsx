@@ -493,7 +493,7 @@ function SummarizeModal({ task, onClose, onStart }: {
   onStart: (req: SummarizeReq) => Promise<void>;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [importants, setImportants] = useState<string[]>(['X', 'Y','Z']);
+  const [importants, setImportants] = useState<string[]>(['X', 'Y']);
   const [loading, setLoading] = useState(false);
 
   // 有效组合集合：directionLevels 为空（旧任务）时全部等级×工种有效
@@ -513,11 +513,11 @@ function SummarizeModal({ task, onClose, onStart }: {
     return set;
   }, [task]);
 
-  // 打开弹窗时重置默认：全部有效组合 + XY
+  // 打开弹窗时重置默认：全部有效组合 + XYZ
   useEffect(() => {
     if (task) {
       setSelected(new Set(validKeys));
-      setImportants(['X', 'Y']);
+      setImportants(['X', 'Y','Z']);
     }
   }, [task, validKeys]);
 

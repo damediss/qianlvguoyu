@@ -121,7 +121,8 @@ public class StandardLlmSummarizeService {
     }
     if (!List.of(StandardParseApplicationService.STATUS_PARSED,
         StandardParseApplicationService.STATUS_REVIEWING,
-        StandardParseApplicationService.STATUS_CONFIRMED).contains(task.getStatus())) {
+        StandardParseApplicationService.STATUS_CONFIRMED,
+        StandardParseApplicationService.STATUS_EXPORTED).contains(task.getStatus())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "任务状态不允许触发概括：" + task.getStatus());
     }
     ExamFaqModelConfigEntity config = resolveModelConfig(tenantId);
