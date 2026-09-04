@@ -307,7 +307,7 @@ src/
 | 变量 | 说明                                                 |
 |---|----------------------------------------------------|
 | `SERVER_PORT` | 后端端口，默认 8080                                       |
-| `MYSQL_URL` | 本地 MySQL jdbc:mysql://43.138.163.7:3308/gjjddb2026 |
+| `MYSQL_URL` | 本地开发/测试库 jdbc:mysql://43.138.163.7:3308/gjjddb2026（**测试库**，开发人员本机连测）；**生产库为同实例的 `gjjddbpro`**（仅部署用，严禁本地服务直连生产） |
 | `MYSQL_USERNAME` | 数据库用户 gjjd                                         |
 | `MYSQL_PASSWORD` | 数据库密码 w-#Y+=g7jdsJLjD8                             |
 | `JWT_SECRET` | 至少 32 位随机字符串                                       |
@@ -425,8 +425,8 @@ cd apps/admin-web && npm run dev
 4. **Flyway 批量重命名迁移要按 description 还原真实 version** — 不要靠 description 猜 version,先 `SELECT description, version FROM flyway_schema_history` 反查(2026-06-05)
 5. **前端 tsx 引用同目录 css 是约定** — 移植 Vue → React 时别漏 import 对应 css(2026-06-05)
 6. **producer 阶段 25min 硬上限装不下全链路 E2E** — 拆 sub-task,或 owner 自己跑 E2E,或明确不让 verify-as-task 进 plan(2026-06-09)
-7. **新建 Flyway 迁移前先查最大 version** — `SELECT MAX(version) FROM flyway_schema_history`,新迁移版本号 = 最大 version + 0.001;不要靠文件名猜,数据库里可能已有同 version 的迁移(2026-07-14)
-8. **权限系统三步链:菜单→权限码→角色授权** — 只建菜单+权限码不够,还必须 INSERT `sys_role_permission` 把权限码授予目标角色(role_id=2000 是平台管理员),否则接口 403(2026-07-14)
+7. **新建 Flyway 迁移前先查最大 version** — `SELECT MAX(version) FROM flyway_schema_history`,新迁移版本号 = 最大 version + 0.001;不要靠文件名猜,数据库里可能已有同 version 的迁移(2026-07-14)。**测试库(gjjddb2026)与生产库(gjjddbpro)历史已分叉,取号必须同时查两库取最大值并留间隔**(2026-09-04 事故:20260904.001/.002 在测试库已被 train_certificate 工作流占用,本地新建同名版本号迁移撞号)
+8. **权限系统三步链:菜单→权限码→角色授权** — 只建菜单+权限码不够,还必须 INSERT `sys_role_permission` 把权限码授予目标角色(role_id=2000 是平台管理员),否则接口 403(2026-07-14)。**菜单/权限/角色授权种子的 tenant_id 必须写 10159(千铝工投,运行租户;admin/sys_user.tenant_id=10159,sys_menu 全表 340 行均为 10159),不要照抄部分历史迁移文件里的 tenant_id=1**——运行时菜单/权限查询走多租户拦截器按当前租户过滤,tenant_id=1 的种子对 10159 用户不可见(2026-09-04)
 9. **Redis 缓存序列化:返回 mutable collection** — `@Cacheable` 方法的返回值必须用 `ArrayList::new` 或 `new ArrayList<>(list)`,禁止用 `.toList()` / `List.of()` / `Map.of()` 等 immutable collection,否则 Redis 反序列化报 `Unexpected token (START_ARRAY), expected VALUE_STRING`(2026-07-14)
 10. **前端 axios `responseType: 'blob'` 下载文件** — `apiClient.get(url, { responseType: 'blob' })` 返回 `AxiosResponse`,blob 数据在 `.data` 里;API 函数签名应 `return (await apiClient.get(...)).data` 并声明 `Promise<Blob>`(2026-07-14)
 11. **可能处理大数据量的导入接口必须拆分为"快速返回 + 异步执行"两步** —— 如果接口涉及文件上传/批量导入/批量处理等**数据量不确定**的场景,禁止在一个接口里同步完成"接收数据 + 后台处理"。需开发人员确认是否拆为:第一步只接收数据并入库/返回标识(秒回),第二步单独触发后台处理(秒回 batchId),第三步轮询进度。否则数据量大时前端会超时(axios 默认 20s),前端拿不到 batchId 就无法轮询(2026-07-15)
