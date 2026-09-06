@@ -4,9 +4,10 @@
  */
 import React, { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import {
   Button, Descriptions, Drawer, Form, Input, InputNumber, message, Modal, Popconfirm,
-  Select, Space, Statistic, Table, Tabs, Tag, Tree, Upload,
+  Progress, Select, Space, Statistic, Table, Tabs, Tag, Tree, Upload,
 } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import { treeWorkTypes } from '../../api/exam';
@@ -46,6 +47,24 @@ const TYPE_LABEL: Record<string, string> = {
   cal: '计算题', draw: '绘图题', discuss: '论述题', case_analysis: '案例分析题',
 };
 
+/** 指引难度档位（方案 §2.3）：1易 2较易 3中 4较难 5难 */
+const DIFFICULTY_LABEL: Record<number, string> = {
+  1: '易', 2: '较易', 3: '中', 4: '较难', 5: '难',
+};
+
+/** 草稿 options 为 JSON 字符串（[{"label":"A","content":"..."}]），零信任解析：失败返回空 */
+const parseDraftOptions = (raw?: string | null): Array<{ label: string; content: string }> => {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr)
+      ? arr.filter((o: { label?: string; content?: string }) => o && o.label && o.content)
+      : [];
+  } catch {
+    return [];
+  }
+};
+
 const STATUS_TAG: Record<string, { color: string; text: string }> = {
   pending: { color: 'default', text: '等待中' },
   running: { color: 'processing', text: '生成中' },
@@ -72,6 +91,12 @@ const TheoryQuestionGenPage: React.FC = () => {
   // ---------------- 页签1：细目表导入 ----------------
   const [workTypeId, setWorkTypeId] = useState<number | undefined>();
   const [level, setLevel] = useState<number | undefined>(5);
+  const [bpPage, setBpPage] = useState(1);
+  const [bpPageSize, setBpPageSize] = useState(20);
+  // 导入进度（同步接口无服务端进度回调，模拟进度渐近 95%、完成跳 100%，参照上传标准 docx 模式）
+  const [importing, setImporting] = useState(false);
+  const [importPercent, setImportPercent] = useState(0);
+  const importTimerRef = React.useRef<number | null>(null);
   const qc = useQueryClient();
 
   const wtTree = useQuery({
@@ -80,8 +105,8 @@ const TheoryQuestionGenPage: React.FC = () => {
   });
 
   const bpQuery = useQuery({
-    queryKey: ['theorygen-blueprints'],
-    queryFn: () => listBlueprints({ page: 1, pageSize: 50 }),
+    queryKey: ['theorygen-blueprints', bpPage, bpPageSize],
+    queryFn: () => listBlueprints({ page: bpPage, pageSize: bpPageSize }),
   });
 
   const workTypeOptions = useMemo(() => {
@@ -101,12 +126,30 @@ const TheoryQuestionGenPage: React.FC = () => {
       message.warning('请先选择工种与等级');
       return false;
     }
+    setImporting(true);
+    setImportPercent(0);
+    if (importTimerRef.current !== null) window.clearInterval(importTimerRef.current);
+    importTimerRef.current = window.setInterval(() => {
+      setImportPercent((p) =>
+        p >= 95 ? p : Math.min(95, p + Math.max(1, Math.round((95 - p) / 10))),
+      );
+    }, 300);
     try {
       const bp = await importBlueprint(file, workTypeId, level);
       message.success(`导入成功：考评点 ${bp.pointCount} 个，X:Y:Z=${bp.xyzRatio ?? '-'}`);
       qc.invalidateQueries({ queryKey: ['theorygen-blueprints'] });
     } catch {
       // 错误提示由拦截器统一处理
+    } finally {
+      if (importTimerRef.current !== null) {
+        window.clearInterval(importTimerRef.current);
+        importTimerRef.current = null;
+      }
+      setImportPercent(100);
+      window.setTimeout(() => {
+        setImporting(false);
+        setImportPercent(0);
+      }, 500);
     }
     return false;
   };
@@ -119,6 +162,8 @@ const TheoryQuestionGenPage: React.FC = () => {
     { title: 'X:Y:Z', dataIndex: 'xyzRatio', key: 'xyzRatio', width: 110 },
     { title: '权重校验', dataIndex: 'weightCheck', key: 'weightCheck', width: 90,
       render: (v: number) => (v === 1 ? <Tag color="success">通过</Tag> : <Tag color="warning">未通过</Tag>) },
+    { title: '导入时间', dataIndex: 'createdAt', key: 'createdAt', width: 150,
+      render: (v: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-') },
     { title: '状态', dataIndex: 'status', key: 'status', width: 100,
       render: (v: string) => (v === 'done' ? <Tag color="success">已完成</Tag>
         : v === 'generating' ? <Tag color="processing">生成中</Tag> : <Tag>已导入</Tag>) },
@@ -190,6 +235,31 @@ const TheoryQuestionGenPage: React.FC = () => {
     },
   });
 
+  // 批次终态联动：生成中 → 已完成时自动跳"试题草稿"页签并按批次加载题目列表；
+  // → 失败时提示失败原因（留在本页签，可"重试失败"）。仅对跃迁触发，手动查看历史批次不跳。
+  const prevBatchStatusRef = React.useRef<string | undefined>();
+  React.useEffect(() => {
+    const status = progressQuery.data?.status;
+    if (!status || !activeBatchId) {
+      return;
+    }
+    const prev = prevBatchStatusRef.current;
+    prevBatchStatusRef.current = status;
+    if ((prev === 'running' || prev === 'pending') && status === 'done') {
+      message.success('生成批次已完成，已为您加载试题草稿');
+      setDraftQuery({ batchId: activeBatchId });
+      setDraftPage(1);
+      setSelectedDraftKeys([]);
+      setTab('draft');
+      qc.invalidateQueries({ queryKey: ['theorygen-drafts'] });
+    } else if ((prev === 'running' || prev === 'pending') && status === 'failed') {
+      message.warning({
+        content: `生成批次失败：${progressQuery.data?.failReason ?? '未知原因'}`,
+        duration: 6,
+      });
+    }
+  }, [progressQuery.data?.status, progressQuery.data?.failReason, activeBatchId, qc]);
+
   const submitBatch = async () => {
     if (!selectedBlueprintId || !modelConfigId) {
       message.warning('请选择细目表批次与模型');
@@ -221,7 +291,7 @@ const TheoryQuestionGenPage: React.FC = () => {
         return <Tag color={t.color}>{t.text}</Tag>;
       } },
     { title: '失败原因', dataIndex: 'failReason', key: 'failReason', ellipsis: true },
-    { title: '操作', key: 'op', width: 220, render: (_: unknown, r: TheoryGenBatch) => (
+    { title: '操作', key: 'op', width: 250, render: (_: unknown, r: TheoryGenBatch) => (
       <Space>
         {r.status === 'running' && (
           <Button size="small" onClick={async () => { await pauseGenBatch(r.id); qc.invalidateQueries({ queryKey: ['theorygen-batches'] }); }}>暂停</Button>
@@ -231,6 +301,10 @@ const TheoryQuestionGenPage: React.FC = () => {
         )}
         {r.status === 'failed' && (
           <Button size="small" onClick={async () => { await retryGenBatch(r.id); qc.invalidateQueries({ queryKey: ['theorygen-batches'] }); }}>重试失败</Button>
+        )}
+        {/* 自动补跑轮次耗尽后仍缺口的完成批次：人工兜底补跑（后端仅跑缺口点，已完成点自动跳过） */}
+        {r.status === 'done' && r.donePoints < r.totalPoints && (
+          <Button size="small" onClick={async () => { await retryGenBatch(r.id); qc.invalidateQueries({ queryKey: ['theorygen-batches'] }); }}>补跑缺口</Button>
         )}
         <Button size="small" onClick={() => { setActiveBatchId(r.id); setTab('draft'); }}>草稿</Button>
       </Space>
@@ -243,10 +317,11 @@ const TheoryQuestionGenPage: React.FC = () => {
   const [editForm] = Form.useForm();
   const [selectedDraftKeys, setSelectedDraftKeys] = useState<React.Key[]>([]);
   const [draftPage, setDraftPage] = useState(1);
+  const [draftPageSize, setDraftPageSize] = useState(20);
 
   const draftsQuery = useQuery({
-    queryKey: ['theorygen-drafts', draftQuery, draftPage],
-    queryFn: () => listDrafts({ ...draftQuery, batchId: draftQuery.batchId!, page: draftPage, pageSize: 20 }),
+    queryKey: ['theorygen-drafts', draftQuery, draftPage, draftPageSize],
+    queryFn: () => listDrafts({ ...draftQuery, batchId: draftQuery.batchId!, page: draftPage, pageSize: draftPageSize }),
     enabled: !!draftQuery.batchId,
   });
 
@@ -255,7 +330,8 @@ const TheoryQuestionGenPage: React.FC = () => {
     { title: '题型', dataIndex: 'questionType', key: 'questionType', width: 90,
       render: (v: string) => TYPE_LABEL[v] ?? v },
     { title: '答案', dataIndex: 'answer', key: 'answer', width: 80 },
-    { title: '难度', dataIndex: 'difficulty', key: 'difficulty', width: 60 },
+    { title: '难度', dataIndex: 'difficulty', key: 'difficulty', width: 70,
+      render: (v: number) => DIFFICULTY_LABEL[v] ?? v },
     { title: '审核', dataIndex: 'reviewStatus', key: 'reviewStatus', width: 80,
       render: (v: string) => (v === 'approved' ? <Tag color="success">已通过</Tag>
         : v === 'rejected' ? <Tag color="error">已驳回</Tag> : <Tag>待审</Tag>) },
@@ -355,15 +431,36 @@ const TheoryQuestionGenPage: React.FC = () => {
                   onChange={(v) => setWorkTypeId(v)} />
                 <Select style={{ width: 160 }} placeholder="等级" options={LEVEL_OPTIONS}
                   value={level} onChange={(v) => setLevel(v)} />
-                <Upload accept=".xlsx,.xls" showUploadList={false} beforeUpload={doImport}>
-                  <Button type="primary" icon={<UploadOutlined />}>导入细目表 xlsx</Button>
+                <Upload accept=".xlsx,.xls" showUploadList={false} beforeUpload={doImport}
+                  disabled={importing}>
+                  <Button type="primary" icon={<UploadOutlined />} loading={importing}>
+                    {importing ? '导入中…' : '导入细目表 xlsx'}
+                  </Button>
                 </Upload>
+                {importing && (
+                  <>
+                    <Progress percent={importPercent} size="small" status="active"
+                      style={{ width: 160, margin: 0 }} />
+                    <span style={{ color: '#888', fontSize: 12 }}>正在解析细目表，请勿关闭页面…</span>
+                  </>
+                )}
               </Space>
               <Table rowKey="id" size="small"
                 loading={bpQuery.isLoading}
                 dataSource={bpQuery.data?.items ?? []}
                 columns={bpColumns}
-                pagination={{ pageSize: 10, total: bpQuery.data?.total }} />
+                pagination={{
+                  current: bpPage,
+                  pageSize: bpPageSize,
+                  total: bpQuery.data?.total,
+                  showSizeChanger: true,
+                  pageSizeOptions: [20, 30, 40, 50],
+                  showTotal: (t: number) => `共 ${t} 条`,
+                  onChange: (p, s) => {
+                    setBpPage(s !== bpPageSize ? 1 : p);
+                    setBpPageSize(s);
+                  },
+                }} />
             </>
           ),
         },
@@ -445,12 +542,41 @@ const TheoryQuestionGenPage: React.FC = () => {
               <Table rowKey="id" size="small"
                 rowSelection={{ selectedRowKeys: selectedDraftKeys,
                   onChange: (keys) => setSelectedDraftKeys(keys) }}
+                expandable={{
+                  // 选项是重要审核内容：行展开显示全部选项，正确答案高亮（客观题才有选项）
+                  expandedRowRender: (r: TheoryDraft) => {
+                    const opts = parseDraftOptions(r.options);
+                    return (
+                      <div style={{ display: 'grid', gap: 4, padding: '4px 0' }}>
+                        {opts.map((o) => (
+                          <div key={o.label}
+                            style={{ color: r.answer?.includes(o.label) ? '#389e0d' : undefined }}>
+                            <strong>{o.label}.</strong> {o.content}
+                            {r.answer?.includes(o.label) && (
+                              <Tag color="success" style={{ marginLeft: 8 }}>正确答案</Tag>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  },
+                  rowExpandable: (r: TheoryDraft) => parseDraftOptions(r.options).length > 0,
+                }}
                 loading={draftsQuery.isLoading}
                 dataSource={draftsQuery.data?.items ?? []}
                 columns={draftColumns}
-                pagination={{ current: draftPage, pageSize: 20,
+                pagination={{
+                  current: draftPage,
+                  pageSize: draftPageSize,
                   total: draftsQuery.data?.total ?? 0,
-                  onChange: (p) => setDraftPage(p) }} />
+                  showSizeChanger: true,
+                  pageSizeOptions: [20, 30, 40, 50],
+                  showTotal: (t: number) => `共 ${t} 条`,
+                  onChange: (p, s) => {
+                    setDraftPage(s !== draftPageSize ? 1 : p);
+                    setDraftPageSize(s);
+                  },
+                }} />
               <Drawer open={!!editingDraft} width={560}
                 title="编辑草稿"
                 onClose={() => setEditingDraft(null)}

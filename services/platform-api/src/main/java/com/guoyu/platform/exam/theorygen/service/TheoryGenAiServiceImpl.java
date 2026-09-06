@@ -2,6 +2,7 @@ package com.guoyu.platform.exam.theorygen.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guoyu.platform.ai.dto.LlmChatCompletionResult;
 import com.guoyu.platform.ai.infrastructure.FaqLlmClient;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
@@ -14,10 +15,14 @@ import org.springframework.stereotype.Service;
 /**
  * 理论试题生成 AI 服务实现。
  * 复用 FaqLlmClient（OpenAI 兼容、显式超时、平台分支传参）；输出零信任：解析失败按失败处理。
+ * 超时口径（优化方案 v0.3 决策 #2）：GLM thinking 长调用，响应超时 180s。
  */
 @Service
 @Slf4j
 public class TheoryGenAiServiceImpl implements TheoryGenAiService {
+
+  /** 理论生成单块响应超时（秒）：thinking=enabled + max_tokens=8192 下 90s 偏紧（R5） */
+  static final int RESPONSE_TIMEOUT_SECONDS = 180;
 
   private final FaqLlmClient llmClient;
   private final ObjectMapper objectMapper;
@@ -28,13 +33,14 @@ public class TheoryGenAiServiceImpl implements TheoryGenAiService {
   }
 
   @Override
-  public String generateForPoint(Long tenantId, String baseUrl, String apiKey, String modelId,
+  public LlmChatCompletionResult generateForPoint(Long tenantId, String baseUrl, String apiKey, String modelId,
       String thinking, String reasoningEffort, int maxTokens,
       String systemPrompt, String userPrompt) {
     // GLM 的 reasoning_effort 传参口径在 FaqLlmClient.putThinkingNode 的 GLM 分支中处理；
     // 此处透传 thinking/reasoningEffort 快照。不启用 jsonMode（GLM/LongCat 不支持 response_format，坑 #13）。
-    return llmClient.chatCompletion(baseUrl, apiKey, modelId,
-        systemPrompt, userPrompt, maxTokens, thinking, reasoningEffort, false, tenantId);
+    return llmClient.chatCompletionDetailed(baseUrl, apiKey, modelId,
+        systemPrompt, userPrompt, maxTokens, thinking, reasoningEffort, false, tenantId,
+        RESPONSE_TIMEOUT_SECONDS);
   }
 
   @Override
@@ -67,12 +73,6 @@ public class TheoryGenAiServiceImpl implements TheoryGenAiService {
       throw new BusinessException(ErrorCode.BAD_GATEWAY, "模型输出试题数组为空");
     }
     return items;
-  }
-
-  @Override
-  public long parseTokenUsage(String rawContent) {
-    // FaqLlmClient.chatCompletion 只回传 content，usage 无法携带；无则按 0 记（批次 token 为下限量）
-    return 0;
   }
 
   /** 从模型输出中提取 JSON 数组文本（剥 ```json 围栏/前后杂文字） */

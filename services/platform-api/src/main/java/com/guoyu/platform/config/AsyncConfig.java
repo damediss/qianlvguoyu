@@ -1,6 +1,7 @@
 package com.guoyu.platform.config;
 
 import java.util.concurrent.ThreadPoolExecutor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.AsyncTaskExecutor;
@@ -78,7 +79,7 @@ public class AsyncConfig {
   }
 
   /**
-   * 理论试题生成批次编排池（每批次占 1 线程串行推进考评点块，暂停只挡新块）。
+   * 理论试题生成批次编排池（每批次占 1 线程做编排，块任务派发到 theoryGenBlockExecutor，暂停只挡新块）。
    * AbortPolicy：同时批次过多时直接拒绝 → 503 服务繁忙（AGENTS.md 坑 #12/#14）。
    */
   @Bean(name = "theoryGenExecutor")
@@ -90,6 +91,28 @@ public class AsyncConfig {
     executor.setThreadNamePrefix("theory-gen-");
     executor.setWaitForTasksToCompleteOnShutdown(true);
     executor.setAwaitTerminationSeconds(60);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
+  /**
+   * 理论试题生成块任务池（优化方案 v0.3 P3）：并发度 platform.theory.gen.block-concurrency（默认 5，可配）。
+   * core=max=N；queueCapacity=N 吸收"信号量释放→线程就绪"交接抖动避免误拒绝，
+   * 在飞 LLM 调用数由派发侧同源信号量（permits=N）保证 ≤ N。
+   * 峰值 LLM 并发 = 批次间并发 × 此值，GLM 1302 限流频发时下调配置。
+   * AbortPolicy：拒绝由编排侧捕获计块失败（坑 #12/#14）。
+   */
+  @Bean(name = "theoryGenBlockExecutor")
+  public ThreadPoolTaskExecutor theoryGenBlockExecutor(
+      @Value("${platform.theory.gen.block-concurrency:5}") int blockConcurrency) {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(Math.max(1, blockConcurrency));
+    executor.setMaxPoolSize(Math.max(1, blockConcurrency));
+    executor.setQueueCapacity(Math.max(1, blockConcurrency));
+    executor.setThreadNamePrefix("theory-gen-block-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(120);
     executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
     executor.initialize();
     return executor;

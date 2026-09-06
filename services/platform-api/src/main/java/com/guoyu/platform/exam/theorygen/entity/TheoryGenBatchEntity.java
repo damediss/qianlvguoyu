@@ -33,8 +33,13 @@ public class TheoryGenBatchEntity {
   private Integer failedPoints;
   private Integer totalQuestions;
   private Long tokenUsage;
+  private Long promptTokens;
+  private Long completionTokens;
+  private Long cachedTokens;
   private String promptDigest;
   private String failReason;
+  /** 编排独占权：每次编排（submit/resume/retry）生成新值，逐块校验一致才继续派发（优化方案 v0.3 R8） */
+  private Long runId;
   private LocalDateTime startedAt;
   private LocalDateTime finishedAt;
   private LocalDateTime createdAt;
@@ -75,6 +80,14 @@ public class TheoryGenBatchEntity {
   public void setTotalQuestions(Integer totalQuestions) { this.totalQuestions = totalQuestions; }
   public Long getTokenUsage() { return tokenUsage; }
   public void setTokenUsage(Long tokenUsage) { this.tokenUsage = tokenUsage; }
+  public Long getPromptTokens() { return promptTokens; }
+  public void setPromptTokens(Long promptTokens) { this.promptTokens = promptTokens; }
+  public Long getCompletionTokens() { return completionTokens; }
+  public void setCompletionTokens(Long completionTokens) { this.completionTokens = completionTokens; }
+  public Long getCachedTokens() { return cachedTokens; }
+  public void setCachedTokens(Long cachedTokens) { this.cachedTokens = cachedTokens; }
+  public Long getRunId() { return runId; }
+  public void setRunId(Long runId) { this.runId = runId; }
   public String getPromptDigest() { return promptDigest; }
   public void setPromptDigest(String promptDigest) { this.promptDigest = promptDigest; }
   public String getFailReason() { return failReason; }

@@ -135,6 +135,13 @@ weknora:
   origin: ${WEKNORA_ORIGIN:http://localhost:5173}
 
 platform:
+  # 理论试题生成（优化方案 v0.3 P3）：块级并发度；峰值 LLM 并发 = 批次间并发(2) × 此值，
+  # GLM 1302 限流频发时下调（环境变量 PLATFORM_THEORY_GEN_BLOCK_CONCURRENCY 可覆盖）。
+  # 自动补跑：单次编排内缺口点最多补跑 3 轮，轮间退避基数如下（第 n 轮退避 n×基数）
+  theory:
+    gen:
+      block-concurrency: ${PLATFORM_THEORY_GEN_BLOCK_CONCURRENCY:5}
+      retry-backoff-base-millis: ${PLATFORM_THEORY_GEN_RETRY_BACKOFF:10000}
   bot:
     # MCP 与 platform-api 必须配置相同的随机值（至少 32 字符），禁止提交真实密钥。
     actor-context-secret: ${BOT_ACTOR_CONTEXT_SECRET:}

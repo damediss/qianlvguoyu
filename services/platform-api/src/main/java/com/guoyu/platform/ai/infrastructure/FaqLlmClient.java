@@ -4,8 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.guoyu.platform.ai.dto.LlmChatCompletionResult;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -48,6 +53,11 @@ public class FaqLlmClient {
   private final ObjectMapper objectMapper;
   private final RestClient client;
 
+  /** 连接池与底层 HttpClient 单例（各超时档位 RestClient 共享同一连接池） */
+  private final PoolingHttpClientConnectionManager connectionManager;
+  /** responseTimeout 分档缓存：秒数 → 独立 RequestConfig 的 RestClient（共享连接池） */
+  private final Map<Integer, RestClient> timeoutClients = new ConcurrentHashMap<>();
+
   public FaqLlmClient(ObjectMapper objectMapper) {
     this.objectMapper = objectMapper;
 
@@ -58,6 +68,7 @@ public class FaqLlmClient {
             .setMaxConnPerRoute(30)
             .setValidateAfterInactivity(TimeValue.ofSeconds(5))
             .build();
+    this.connectionManager = connectionManager;
 
     RequestConfig requestConfig = RequestConfig.custom()
         .setConnectTimeout(Timeout.ofSeconds(70))
@@ -71,20 +82,62 @@ public class FaqLlmClient {
         .build();
 
     // onStatus：将 4xx/5xx 转为 RestClientResponseException，保留 response body
-    this.client = RestClient.builder()
+    this.client = buildRestClient(httpClient);
+  }
+
+  /**
+   * 按响应超时秒数取 RestClient（并发与成本优化方案 v0.3 P2/R5）。
+   * 0 或负数返回默认实例（90s）；理论生成链路传 180。
+   * 各档位共享同一连接池（connectionManager），仅 RequestConfig 不同。
+   */
+  private RestClient clientForResponseTimeout(int responseTimeoutSeconds) {
+    if (responseTimeoutSeconds <= 0) {
+      return client;
+    }
+    return timeoutClients.computeIfAbsent(responseTimeoutSeconds, seconds -> {
+      RequestConfig requestConfig = RequestConfig.custom()
+          .setConnectTimeout(Timeout.ofSeconds(70))
+          .setResponseTimeout(Timeout.ofSeconds(seconds))
+          .build();
+      CloseableHttpClient httpClient = HttpClients.custom()
+          .setConnectionManager(connectionManager)
+          .setDefaultRequestConfig(requestConfig)
+          .setKeepAliveStrategy((response, context) -> TimeValue.ofSeconds(60))
+          .build();
+      return buildRestClient(httpClient);
+    });
+  }
+
+  /** 统一构建 RestClient（连接超时等由 HttpClient 默认 RequestConfig 决定，状态处理一致） */
+  private RestClient buildRestClient(CloseableHttpClient httpClient) {
+    return RestClient.builder()
         .requestFactory(new HttpComponentsClientHttpRequestFactory(httpClient))
         .defaultStatusHandler(
             org.springframework.http.HttpStatusCode::isError,
             (request, response) -> {
+              // 错误响应体必须带回：LLM 平台的错误类型（GLM 1302 限流/1305 过载等）只在
+              // body 的 error.code 里，丢弃 body 会导致日志只见 "HTTP 400" 无法归类
+              String body = null;
+              try {
+                body = new String(response.getBody().readAllBytes(), StandardCharsets.UTF_8);
+              } catch (IOException ignored) {
+                // 读不到 body 时退回仅状态码
+              }
+              String detail = body == null || body.isBlank() ? "" : " body=" + abbreviateBody(body);
               throw new RestClientResponseException(
-                  "HTTP " + response.getStatusCode(),
+                  "HTTP " + response.getStatusCode() + detail,
                   response.getStatusCode().value(),
                   response.getStatusText(),
                   response.getHeaders(),
-                  null,
+                  body == null ? null : body.getBytes(StandardCharsets.UTF_8),
                   null);
             })
         .build();
+  }
+
+  /** 错误体截断（日志可读性；完整 body 仍在异常的 responseBody 里） */
+  private String abbreviateBody(String s) {
+    return s.length() <= 500 ? s : s.substring(0, 500) + "...(truncated)";
   }
 
   /**
@@ -122,8 +175,30 @@ public class FaqLlmClient {
   public String chatCompletion(String baseUrl, String apiKey, String modelId,
                                String systemPrompt, String userPrompt, int maxTokens,
                                String thinking, String reasoningEffort, boolean jsonMode, Long tenantId) {
+    // 既有调用方（FAQ 等）走默认 90s 响应超时，行为与改造前完全一致
+    return chatCompletionDetailed(baseUrl, apiKey, modelId, systemPrompt, userPrompt, maxTokens,
+        thinking, reasoningEffort, jsonMode, tenantId, 0).content();
+  }
+
+  /**
+   * OpenAI 兼容 Chat Completion（详细版，并发与成本优化方案 v0.3 P2）。
+   * 与 {@link #chatCompletion} 逻辑一致，另：
+   * <ul>
+   *   <li>返回 usage 明细（prompt/completion/total/cached，双口径归一见
+   *       {@link LlmChatCompletionResult#from}）</li>
+   *   <li>responseTimeoutSeconds 参数化响应超时（理论生成链路传 180，GLM thinking 长调用；
+   *       0 或负数走默认 90s）</li>
+   * </ul>
+   *
+   * @param responseTimeoutSeconds 响应超时秒数；0/负数 = 默认 90s
+   */
+  public LlmChatCompletionResult chatCompletionDetailed(String baseUrl, String apiKey, String modelId,
+                               String systemPrompt, String userPrompt, int maxTokens,
+                               String thinking, String reasoningEffort, boolean jsonMode, Long tenantId,
+                               int responseTimeoutSeconds) {
     String url = trimTrailingSlash(baseUrl) + "/chat/completions";
     boolean deepSeekJsonMode = jsonMode && isDeepSeek(baseUrl);
+    RestClient targetClient = clientForResponseTimeout(responseTimeoutSeconds);
 
     // 构造 OpenAI 兼容请求体
     ObjectNode requestBody = buildRequestBody(
@@ -131,7 +206,7 @@ public class FaqLlmClient {
         systemPrompt, userPrompt);
 
     // 共享层：HTTP 调用 + HTTP 级异常分类
-    JsonNode response = executeChatCompletion(requestBody, url, apiKey, tenantId);
+    JsonNode response = executeChatCompletion(requestBody, url, apiKey, tenantId, targetClient);
 
     // 内容级分类
     String content = extractContent(response, url, tenantId);
@@ -142,22 +217,22 @@ public class FaqLlmClient {
       for (int attempt = 1; attempt <= maxRetries; attempt++) {
         log.warn("DeepSeek JSON mode 返回空 content，开始第 {}/{} 次重试：tenantId={}, url={}",
             attempt, maxRetries, tenantId, url);
-        JsonNode retryResponse = executeChatCompletion(requestBody, url, apiKey, tenantId);
-        content = extractContent(retryResponse, url, tenantId);
+        response = executeChatCompletion(requestBody, url, apiKey, tenantId, targetClient);
+        content = extractContent(response, url, tenantId);
         if (content != null && !content.isBlank()) {
-          return content;
+          return LlmChatCompletionResult.from(response, content);
         }
       }
-      log.warn("DeepSeek JSON mode 重试 {} 次后仍为空 content，返回空字符串：tenantId={}, url={}",
+      log.warn("DeepSeek JSON mode 重试 {} 次后仍为空 content，返回空 usage：tenantId={}, url={}",
           maxRetries, tenantId, url);
-      return "";
+      return LlmChatCompletionResult.empty("");
     }
 
     if (content == null || content.isBlank()) {
       log.warn("FAQ LLM 响应 content 为空：tenantId={}, url={}", tenantId, url);
       throw new FaqLlmServerException("LLM 响应 content 为空");
     }
-    return content;
+    return LlmChatCompletionResult.from(response, content);
   }
 
   /**
@@ -193,8 +268,8 @@ public class FaqLlmClient {
     // messages 原样透传（ArrayNode）
     requestBody.set("messages", messages);
 
-    // 共享层：HTTP 调用 + HTTP 级异常分类，返回原始响应
-    return executeChatCompletion(requestBody, url, apiKey, tenantId);
+    // 共享层：HTTP 调用 + HTTP 级异常分类，返回原始响应（messages 透传代理走默认超时）
+    return executeChatCompletion(requestBody, url, apiKey, tenantId, client);
   }
 
   // ──────────────────────── 请求体 / 响应提取辅助方法 ────────────────────────
@@ -267,7 +342,8 @@ public class FaqLlmClient {
    * @return 完整 LLM 响应 JsonNode（非 null）
    * @throws FaqLlmException HTTP 级异常（429/4xx/5xx/超时）
    */
-  private JsonNode executeChatCompletion(ObjectNode requestBody, String url, String apiKey, Long tenantId) {
+  private JsonNode executeChatCompletion(ObjectNode requestBody, String url, String apiKey, Long tenantId,
+                                         RestClient targetClient) {
     String requestBodyStr;
     try {
       requestBodyStr = objectMapper.writeValueAsString(requestBody);
@@ -277,7 +353,7 @@ public class FaqLlmClient {
     log.info("LLM 请求：tenantId={}, url={}, body={}", tenantId, url, requestBodyStr);
 
     try {
-      JsonNode response = client.post()
+      JsonNode response = targetClient.post()
           .uri(url)
           .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
           .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
@@ -325,7 +401,8 @@ public class FaqLlmClient {
 
   /**
    * 根据 HTTP 状态码分类异常。
-   * 429 → RateLimit（瞬时），4xx → Client（确定性），5xx → Server（瞬时）
+   * 429 或 GLM 限流错误码（1302 账户限流 / 1305 平台过载，可能在 4xx body 里）→ RateLimit（瞬时）；
+   * 4xx → Client（确定性）；5xx → Server（瞬时）。message 已含截断的错误响应体。
    */
   private FaqLlmException classifyHttpException(int statusCode, String message, Long tenantId, String url) {
     log.error("LLM HTTP 错误：tenantId={}, status={}, url={}, message={}",
@@ -333,10 +410,18 @@ public class FaqLlmClient {
     if (statusCode == 429) {
       return new FaqLlmRateLimitException("LLM 限流（HTTP 429）");
     }
+    if (containsGlmRateLimitCode(message)) {
+      return new FaqLlmRateLimitException("LLM 限流（GLM 错误码 1302/1305）：" + abbreviateBody(message));
+    }
     if (statusCode >= 400 && statusCode < 500) {
       return new FaqLlmClientException("LLM 客户端错误（HTTP " + statusCode + "）：" + message);
     }
     return new FaqLlmServerException("LLM 服务端错误（HTTP " + statusCode + "）：" + message);
+  }
+
+  /** GLM 限流/过载错误码识别（1302 账户速率限制、1305 平台过载，官方文档 /cn/api/rate-limit） */
+  private boolean containsGlmRateLimitCode(String message) {
+    return message != null && (message.contains("1302") || message.contains("1305"));
   }
 
   private String trimTrailingSlash(String value) {

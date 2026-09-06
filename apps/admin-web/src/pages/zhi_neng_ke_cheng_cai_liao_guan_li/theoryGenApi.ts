@@ -23,6 +23,7 @@ export interface TheoryBlueprint {
   weightCheck: number;
   checkReport?: string | null;
   status: string;
+  createdAt?: string;
 }
 
 export interface BlueprintNode {

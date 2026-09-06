@@ -4,13 +4,13 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guoyu.platform.ai.dto.LlmChatCompletionResult;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.exam.entity.ExamFaqModelConfigEntity;
 import com.guoyu.platform.exam.mapper.ExamFaqModelConfigMapper;
-import com.guoyu.platform.exam.theorygen.dto.BlueprintParseResult.NodeRow;
 import com.guoyu.platform.exam.theorygen.dto.TheoryGenBatchVO;
 import com.guoyu.platform.exam.theorygen.dto.TheoryQuestionItem;
 import com.guoyu.platform.exam.theorygen.entity.TheoryBlueprintEntity;
@@ -21,26 +21,49 @@ import com.guoyu.platform.exam.theorygen.mapper.TheoryBlueprintMapper;
 import com.guoyu.platform.exam.theorygen.mapper.TheoryBlueprintNodeMapper;
 import com.guoyu.platform.exam.theorygen.mapper.TheoryGenBatchMapper;
 import com.guoyu.platform.exam.theorygen.mapper.TheoryGenDraftMapper;
-import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 理论试题生成批次：提交（秒回）→ 异步分块（1 考评点 = 1 次 LLM 调用）→ 草稿落库。
- * 线程边界：submit/pause/resume 走 HTTP 线程；processBatch 全链路跑 theory-gen- Worker，
- * tenantId/userId 参数传递，禁止调 SecurityContext（陷阱 #2、踩坑 #15/#17）。
+ * 理论试题生成批次：提交（秒回）→ 异步并发分块（1 考评点 = 1 次 LLM 调用）→ 草稿落库。
+ *
+ * <p>线程边界（优化方案 v0.3）：submit/pause/resume 走 HTTP 线程；processBatch 跑 theory-gen- 编排线程，
+ * 块任务跑 theory-gen-block- Worker（并发度 theory.gen.block-concurrency，默认 5）。
+ * tenantId/userId 参数传递，禁止调 SecurityContext（陷阱 #2、踩坑 #15/#17）；
+ * 每 Worker 线程独立 set/clear TenantContextHolder。
+ *
+ * <p>编排独占权（R8）：run_id 每次 submit/resume/retryFailed 重新生成，编排线程逐块校验
+ * 状态 = RUNNING 且 run_id 一致才继续派发，旧编排器读到新 run_id 即自行退出，杜绝双编排器。
+ *
+ * <p>断点续跑（P1）：循环前一次性查本批次已有草稿的考评点并跳过，恢复/重试只补缺口；
+ * 块落库经 TransactionTemplate 原子化，"该点有草稿"="该块完整完成"。
  */
 @Service
 @Slf4j
 public class TheoryGenBatchService {
+
+  /** 熔断阈值：按块完成顺序连续失败 5 次停止派发（与串行版语义一致，R7） */
+  private static final int MAX_CONSECUTIVE_FAILURES = 5;
+
+  /** 派发轮次上限（首轮 + 自动补跑）：轮次耗尽仍有缺口 → FAILED，人工"重试失败块"兜底 */
+  private static final int MAX_DISPATCH_ROUNDS = 3;
 
   private final TheoryBlueprintMapper blueprintMapper;
   private final TheoryBlueprintNodeMapper nodeMapper;
@@ -51,13 +74,22 @@ public class TheoryGenBatchService {
   private final TheoryQuestionValidator validator;
   private final ObjectMapper objectMapper;
   private final ThreadPoolTaskExecutor theoryGenExecutor;
+  private final ThreadPoolTaskExecutor theoryGenBlockExecutor;
+  private final TransactionTemplate transactionTemplate;
+  private final int blockConcurrency;
+  /** 补跑轮间退避基数：第 n 轮补跑前退避 n×基数，等待限流/超时等瞬时故障恢复 */
+  private final long retryBackoffBaseMillis;
 
   public TheoryGenBatchService(TheoryBlueprintMapper blueprintMapper,
       TheoryBlueprintNodeMapper nodeMapper, TheoryGenBatchMapper batchMapper,
       TheoryGenDraftMapper draftMapper, ExamFaqModelConfigMapper modelConfigMapper,
       TheoryGenAiService aiService, TheoryQuestionValidator validator,
       ObjectMapper objectMapper,
-      @Qualifier("theoryGenExecutor") ThreadPoolTaskExecutor theoryGenExecutor) {
+      @Qualifier("theoryGenExecutor") ThreadPoolTaskExecutor theoryGenExecutor,
+      @Qualifier("theoryGenBlockExecutor") ThreadPoolTaskExecutor theoryGenBlockExecutor,
+      TransactionTemplate transactionTemplate,
+      @Value("${platform.theory.gen.block-concurrency:5}") int blockConcurrency,
+      @Value("${platform.theory.gen.retry-backoff-base-millis:10000}") long retryBackoffBaseMillis) {
     this.blueprintMapper = blueprintMapper;
     this.nodeMapper = nodeMapper;
     this.batchMapper = batchMapper;
@@ -67,6 +99,10 @@ public class TheoryGenBatchService {
     this.validator = validator;
     this.objectMapper = objectMapper;
     this.theoryGenExecutor = theoryGenExecutor;
+    this.theoryGenBlockExecutor = theoryGenBlockExecutor;
+    this.transactionTemplate = transactionTemplate;
+    this.blockConcurrency = blockConcurrency;
+    this.retryBackoffBaseMillis = retryBackoffBaseMillis;
   }
 
   /** 提交生成批次（秒回 batchId；实际生成在 Worker 线程） */
@@ -94,6 +130,7 @@ public class TheoryGenBatchService {
         || "PENDING_USER_INPUT".equals(cfg.getApiKey())) {
       throw new BusinessException(ErrorCode.CONFLICT, "模型 api_key 未配置，请先在模型配置中回填");
     }
+    validateGlmThinkingConfig(cfg);
     // 题量配额：不传用默认（指引下限）；低于下限拒绝
     Map<String, Integer> effectiveQuota = quota == null || quota.isEmpty()
         ? TheoryGenPromptBuilder.defaultQuota(bp.getLevel()) : quota;
@@ -122,6 +159,7 @@ public class TheoryGenBatchService {
     batch.setReasoningEffort(cfg.getReasoningEffort());
     batch.setQuotaConfig(writeJson(effectiveQuota));
     batch.setStatus(TheoryGenBatchEntity.STATUS_PENDING);
+    batch.setRunId(com.baomidou.mybatisplus.core.toolkit.IdWorker.getId());
     batch.setTotalPoints(points.size());
     batch.setDonePoints(0);
     batch.setFailedPoints(0);
@@ -153,8 +191,34 @@ public class TheoryGenBatchService {
   }
 
   /**
-   * Worker 线程：批次编排。每考评点一次 LLM 调用；暂停只挡新块（已提交块跑完，踩坑 #18）。
-   * 全链路不调 SecurityContext；Worker 自行 set/clear TenantContextHolder。
+   * GLM 模型配置校验（优化方案 v0.3 P0/R9）：仅 baseUrl 含 bigmodel 时生效。
+   * GLM-5.3 系列不可关闭思考（官方：thinking.type 仅支持 enabled，传 disabled 报错）；
+   * reasoning_effort 仅支持 max/high/low（非空才校验）。
+   */
+  private void validateGlmThinkingConfig(ExamFaqModelConfigEntity cfg) {
+    String baseUrl = cfg.getBaseUrl();
+    if (baseUrl == null || !baseUrl.toLowerCase().contains("bigmodel")) {
+      return;
+    }
+    if ("disabled".equals(cfg.getThinking())) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "GLM-5.3 系列不可关闭思考（thinking.type 仅支持 enabled），请调整模型配置");
+    }
+    String effort = cfg.getReasoningEffort();
+    if (effort != null && !effort.isBlank()
+        && !"max".equals(effort) && !"high".equals(effort) && !"low".equals(effort)) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "GLM reasoning_effort 仅支持 max/high/low，当前配置：" + effort);
+    }
+  }
+
+  /**
+   * 编排线程：批次编排（P3 并发分块 + 自动补跑）。每考评点一次 LLM 调用；暂停只挡新块（踩坑 #18）。
+   * 全链路不调 SecurityContext；编排/Worker 线程各自 set/clear TenantContextHolder。
+   *
+   * <p>自动补跑：一轮派发结束后若仍有考评点缺草稿（限流/超时等瞬时失败），退避后自动再跑，
+   * 最多 {@link #MAX_DISPATCH_ROUNDS} 轮；连续失败熔断每轮独立计数，触发即整体终止（系统性故障不再浪费调用）。
+   * 轮次耗尽仍有缺口 → FAILED，"重试失败块"可人工兜底。
    */
   public void processBatch(Long batchId, Long tenantId, Long userId, int level) {
     TenantContextHolder.setTenantId(tenantId);
@@ -164,6 +228,7 @@ public class TheoryGenBatchService {
         log.error("理论生成批次不存在：batchId={}", batchId);
         return;
       }
+      Long myRunId = batch.getRunId();
       batch.setStatus(TheoryGenBatchEntity.STATUS_RUNNING);
       batch.setStartedAt(LocalDateTime.now());
       batch.setUpdatedAt(LocalDateTime.now());
@@ -177,64 +242,121 @@ public class TheoryGenBatchService {
       Map<String, Integer> quota = readJson(batch.getQuotaConfig());
       String systemPrompt = TheoryGenPromptBuilder.buildSystemPrompt(level, quota);
       List<TheoryBlueprintNodeEntity> points = listPoints(tenantId, batch.getBlueprintId());
-      // 批次内不变数据一次性加载（踩坑 #18）：节点树已随 points 一次查出
 
-      int consecutiveFailures = 0;
-      for (TheoryBlueprintNodeEntity point : points) {
-        // 暂停检查：每块开始前重读状态
-        TheoryGenBatchEntity current = batchMapper.selectById(batchId);
-        if (current == null || !TheoryGenBatchEntity.STATUS_RUNNING.equals(current.getStatus())) {
-          log.info("批次已暂停/终止，停止提交新块：batchId={}", batchId);
-          return;
+      Semaphore slots = new Semaphore(Math.max(1, blockConcurrency));
+      AtomicInteger consecutiveFailures = new AtomicInteger(0);
+      // 熔断锁存：break 后 join 阶段在飞块可能成功并重置计数器，
+      // 收尾判定必须用锁存标志而非实时计数（E2E 2096462034129305601 发现的竞态）
+      boolean breakerTripped = false;
+      int roundsUsed = 0;
+      List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
+      while (roundsUsed < MAX_DISPATCH_ROUNDS) {
+        // 本轮待跑点 = 全部点 − 已有草稿点（断点续跑/自动补跑共用同一跳过机制）
+        Set<Long> doneNodeIds = doneNodeIdsOf(batchId);
+        List<TheoryBlueprintNodeEntity> pending = new ArrayList<>();
+        for (TheoryBlueprintNodeEntity point : points) {
+          if (!doneNodeIds.contains(point.getId())) {
+            pending.add(point);
+          }
         }
-        try {
-          long t0 = System.currentTimeMillis();
-          String raw = aiService.generateForPoint(tenantId, cfg.getBaseUrl(), cfg.getApiKey(),
-              cfg.getModelId(), batch.getThinking(), batch.getReasoningEffort(),
-              cfg.getMaxTokens() == null ? 4096 : cfg.getMaxTokens(),
-              systemPrompt, TheoryGenPromptBuilder.buildUserPrompt(point, quota));
-          List<TheoryQuestionItem> questions = aiService.parseQuestions(raw);
-          // 校验每题；任一题不合法 → 整块失败（零信任，不猜不兜底）
-          for (TheoryQuestionItem q : questions) {
-            List<String> errors = validator.validate(q);
-            if (!errors.isEmpty()) {
-              throw new BusinessException(ErrorCode.BAD_GATEWAY,
-                  "考评点 " + point.getFullCode() + " 产出不合法: " + String.join("；", errors));
-            }
-          }
-          List<String> dup = validator.checkDuplicates(questions);
-          if (!dup.isEmpty()) {
-            throw new BusinessException(ErrorCode.BAD_GATEWAY,
-                "考评点 " + point.getFullCode() + " 题干重复: " + String.join("；", dup));
-          }
-          saveDrafts(batch, point, questions, (int) (System.currentTimeMillis() - t0));
-          batchMapper.incrementDone(batchId, questions.size(), 0);
-          consecutiveFailures = 0;
-        } catch (Exception e) {
-          log.warn("考评点生成失败：batchId={}, point={}, err={}", batchId, point.getFullCode(), e.getMessage());
-          batchMapper.incrementFailed(batchId);
-          consecutiveFailures++;
-          if (consecutiveFailures >= 5) {
-            failBatch(batch, "连续 5 个考评点失败（" + abbreviate(e.getMessage(), 300) + "），批次终止，可重试失败块");
+        if (pending.isEmpty()) {
+          break; // 全部完成
+        }
+        if (roundsUsed > 0) {
+          // 补跑退避：等待限流/超时等瞬时故障恢复；期间响应暂停与编排接替
+          if (!backoffSleep(batchId, myRunId, roundsUsed)) {
             return;
           }
         }
-      }
-      // 收尾
-      TheoryGenBatchEntity finalState = batchMapper.selectById(batchId);
-      if (finalState != null && TheoryGenBatchEntity.STATUS_RUNNING.equals(finalState.getStatus())) {
-        finalState.setStatus(TheoryGenBatchEntity.STATUS_DONE);
-        finalState.setFinishedAt(LocalDateTime.now());
-        finalState.setUpdatedAt(LocalDateTime.now());
-        batchMapper.updateById(finalState);
-        TheoryBlueprintEntity bp = blueprintMapper.selectById(finalState.getBlueprintId());
-        if (bp != null) {
-          bp.setStatus("done");
-          bp.setUpdatedAt(LocalDateTime.now());
-          blueprintMapper.updateById(bp);
+        roundsUsed++;
+        consecutiveFailures.set(0); // 每轮独立计数：上一轮散点失败不代表本轮系统性故障
+        futures = new ArrayList<>();
+        for (TheoryBlueprintNodeEntity point : pending) {
+          // 派发前检查：状态 + run_id（R8，旧编排器读到新 run_id 自行退出）
+          if (!dispatchAllowed(batchId, myRunId)) {
+            log.info("批次已暂停/终止/被新编排接替，停止派发新块：batchId={}", batchId);
+            return;
+          }
+          if (consecutiveFailures.get() >= MAX_CONSECUTIVE_FAILURES) {
+            log.warn("连续失败 {} 块，停止派发：batchId={}", MAX_CONSECUTIVE_FAILURES, batchId);
+            breakerTripped = true;
+            break;
+          }
+          try {
+            slots.acquire();
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            failBatch(batch, "编排被中断");
+            return;
+          }
+          // acquire 等待期间状态/熔断计数可能已变化，二次检查
+          if (consecutiveFailures.get() >= MAX_CONSECUTIVE_FAILURES) {
+            slots.release();
+            log.warn("连续失败 {} 块，停止派发：batchId={}", MAX_CONSECUTIVE_FAILURES, batchId);
+            breakerTripped = true;
+            break;
+          }
+          if (!dispatchAllowed(batchId, myRunId)) {
+            slots.release();
+            log.info("批次已暂停/终止/被新编排接替，停止派发新块：batchId={}", batchId);
+            return;
+          }
+          try {
+            futures.add(theoryGenBlockExecutor.submit(
+                () -> {
+                  try {
+                    runBlock(batch, cfg, systemPrompt, point, quota, consecutiveFailures);
+                  } finally {
+                    slots.release();
+                  }
+                  return null;
+                }));
+          } catch (RejectedExecutionException e) {
+            // 池满极端情况：释放名额并计失败（R7：限流/异常计块失败，重试失败块兜底）
+            slots.release();
+            log.warn("块任务提交被拒绝：batchId={}, point={}", batchId, point.getFullCode());
+            batchMapper.incrementFailed(batchId, 0, 0, 0, 0);
+            consecutiveFailures.incrementAndGet();
+          }
+        }
+        // join 本轮全部在飞块（块任务自身不抛异常，get 仅兜底）
+        for (java.util.concurrent.Future<?> f : futures) {
+          try {
+            f.get();
+          } catch (Exception e) {
+            log.error("块任务异常返回：batchId={}", batchId, e);
+          }
+        }
+        if (breakerTripped) {
+          break; // 系统性故障，不进入下一轮补跑
         }
       }
-      log.info("理论生成批次完成：batchId={}", batchId);
+      // 收尾：仅当批次仍由本次编排持有且 RUNNING 时落终态
+      TheoryGenBatchEntity finalState = batchMapper.selectById(batchId);
+      if (finalState != null && TheoryGenBatchEntity.STATUS_RUNNING.equals(finalState.getStatus())
+          && Objects.equals(myRunId, finalState.getRunId())) {
+        Set<Long> finalDone = doneNodeIdsOf(batchId);
+        if (finalDone.size() >= points.size()) {
+          finalState.setStatus(TheoryGenBatchEntity.STATUS_DONE);
+          finalState.setFinishedAt(LocalDateTime.now());
+          finalState.setUpdatedAt(LocalDateTime.now());
+          batchMapper.updateById(finalState);
+          TheoryBlueprintEntity bp = blueprintMapper.selectById(finalState.getBlueprintId());
+          if (bp != null) {
+            bp.setStatus("done");
+            bp.setUpdatedAt(LocalDateTime.now());
+            blueprintMapper.updateById(bp);
+          }
+        } else if (breakerTripped) {
+          // 熔断终止：存在未完成考评点，必须置 FAILED 以便"重试失败块"补缺口
+          // （不能用实时计数判定——join 阶段在飞块的成功会把计数器清零，E2E 实测踩中）
+          failBatch(finalState, "连续 " + MAX_CONSECUTIVE_FAILURES + " 个考评点失败，批次终止，可重试失败块");
+        } else {
+          failBatch(finalState, "自动补跑 " + roundsUsed + " 轮后仍有 "
+              + (points.size() - finalDone.size()) + " 个考评点未完成，可重试失败块");
+        }
+      }
+      log.info("理论生成批次完成：batchId={}, rounds={}, futures={}", batchId, roundsUsed, futures.size());
     } catch (Exception e) {
       log.error("理论生成批次异常终止：batchId={}", batchId, e);
       TheoryGenBatchEntity batch = batchMapper.selectById(batchId);
@@ -246,41 +368,131 @@ public class TheoryGenBatchService {
     }
   }
 
-  /** 草稿落库（Worker 线程；tenantId 已在 ThreadLocal） */
+  /** 派发许可：批次 RUNNING 且 run_id 与本次编排一致（R8 编排独占权） */
+  private boolean dispatchAllowed(Long batchId, Long myRunId) {
+    TheoryGenBatchEntity current = batchMapper.selectById(batchId);
+    return current != null
+        && TheoryGenBatchEntity.STATUS_RUNNING.equals(current.getStatus())
+        && Objects.equals(myRunId, current.getRunId());
+  }
+
+  /** 本批次已有草稿的考评点集合（断点续跑/自动补跑/收尾判定共用） */
+  private Set<Long> doneNodeIdsOf(Long batchId) {
+    return draftMapper.selectList(new LambdaQueryWrapper<TheoryGenDraftEntity>()
+            .eq(TheoryGenDraftEntity::getBatchId, batchId)
+            .select(TheoryGenDraftEntity::getNodeId))
+        .stream().map(TheoryGenDraftEntity::getNodeId).collect(Collectors.toSet());
+  }
+
+  /** 补跑退避：分片睡眠并持续监视暂停/编排接替；返回 false 表示应立即退出编排 */
+  private boolean backoffSleep(Long batchId, Long myRunId, int round) {
+    long remaining = Math.max(0, retryBackoffBaseMillis) * round;
+    log.info("第 {} 轮补跑前退避 {}ms：batchId={}", round + 1, remaining, batchId);
+    while (remaining > 0) {
+      if (!dispatchAllowed(batchId, myRunId)) {
+        return false;
+      }
+      long step = Math.min(1000, remaining);
+      try {
+        Thread.sleep(step);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        return false;
+      }
+      remaining -= step;
+    }
+    return dispatchAllowed(batchId, myRunId);
+  }
+
+  /**
+   * 块任务（theory-gen-block- Worker）：单考评点 LLM 生成 + 校验 + 草稿落库 + 计数。
+   * 任何异常计失败不外抛（熔断计数按完成顺序，R7）；失败块的已产生 usage 同样累计（P2）。
+   */
+  private void runBlock(TheoryGenBatchEntity batch, ExamFaqModelConfigEntity cfg, String systemPrompt,
+      TheoryBlueprintNodeEntity point, Map<String, Integer> quota, AtomicInteger consecutiveFailures) {
+    Long tenantId = batch.getTenantId();
+    TenantContextHolder.setTenantId(tenantId);
+    // usage 提到 try 外：解析/校验失败时 LLM 花费已产生，同样计入批次（P2）
+    LlmChatCompletionResult result = null;
+    try {
+      long t0 = System.currentTimeMillis();
+      result = aiService.generateForPoint(tenantId, cfg.getBaseUrl(), cfg.getApiKey(),
+          cfg.getModelId(), batch.getThinking(), batch.getReasoningEffort(),
+          cfg.getMaxTokens() == null ? 4096 : cfg.getMaxTokens(),
+          systemPrompt, TheoryGenPromptBuilder.buildUserPrompt(point, quota));
+      List<TheoryQuestionItem> questions = aiService.parseQuestions(result.content());
+      // 校验每题；任一题不合法 → 整块失败（零信任，不猜不兜底）
+      for (TheoryQuestionItem q : questions) {
+        List<String> errors = validator.validate(q);
+        if (!errors.isEmpty()) {
+          throw new BusinessException(ErrorCode.BAD_GATEWAY,
+              "考评点 " + point.getFullCode() + " 产出不合法: " + String.join("；", errors));
+        }
+      }
+      List<String> dup = validator.checkDuplicates(questions);
+      if (!dup.isEmpty()) {
+        throw new BusinessException(ErrorCode.BAD_GATEWAY,
+            "考评点 " + point.getFullCode() + " 题干重复: " + String.join("；", dup));
+      }
+      // 答案字母分布均匀属确定性规则：校验通过后洗牌重排选项并同步改写答案字母
+      // （prompt 禁令对 LLM 位置偏差无效，E2E 实测 D 选项仅 3%，AGENTS.md LLM 规范 #6）
+      TheoryOptionShuffler.shuffle(questions, ThreadLocalRandom.current());
+      saveDrafts(batch, point, questions, (int) (System.currentTimeMillis() - t0));
+      batchMapper.incrementDone(batch.getId(), questions.size(), result.totalTokens(),
+          result.promptTokens(), result.completionTokens(), result.cachedTokens());
+      consecutiveFailures.set(0);
+    } catch (Exception e) {
+      log.warn("考评点生成失败：batchId={}, point={}, err={}",
+          batch.getId(), point.getFullCode(), e.getMessage());
+      if (result == null) {
+        batchMapper.incrementFailed(batch.getId(), 0, 0, 0, 0);
+      } else {
+        batchMapper.incrementFailed(batch.getId(), result.totalTokens(), result.promptTokens(),
+            result.completionTokens(), result.cachedTokens());
+      }
+      consecutiveFailures.incrementAndGet();
+    } finally {
+      TenantContextHolder.clear();
+    }
+  }
+
+  /** 草稿落库（Worker 线程；tenantId 已在 ThreadLocal）。块级事务：全落或全不落（P1/R4） */
   private void saveDrafts(TheoryGenBatchEntity batch, TheoryBlueprintNodeEntity point,
       List<TheoryQuestionItem> questions, int durationMs) {
     Long userId = batch.getCreatedBy();
-    for (TheoryQuestionItem q : questions) {
-      TheoryGenDraftEntity d = new TheoryGenDraftEntity();
-      d.setId(com.baomidou.mybatisplus.core.toolkit.IdWorker.getId());
-      d.setTenantId(batch.getTenantId());
-      d.setBatchId(batch.getId());
-      d.setBlueprintId(batch.getBlueprintId());
-      d.setNodeId(point.getId());
-      d.setQuestionType(q.getQuestionType());
-      d.setTypeCode(TheoryGenPromptBuilder.typeCodeOf(q.getQuestionType()));
-      d.setDifficulty(q.getDifficulty() == null ? 3 : q.getDifficulty());
-      d.setConsistency(5);
-      d.setContent(q.getContent());
-      d.setOptions(serializeOptions(q));
-      d.setAnswer(q.getAnswer() == null ? "" : normalizeAnswer(q));
-      d.setAnalysis(q.getAnalysis());
-      d.setReferenceAnswer(q.getReferenceAnswer());
-      d.setScorePoints(q.getScorePoints());
-      d.setScoringStandard(q.getScoringStandard());
-      d.setScore(q.getScore());
-      d.setAiModel(batch.getModelId());
-      d.setAiThinking(batch.getThinking());
-      d.setGenDurationMs(durationMs);
-      d.setReviewStatus(TheoryGenDraftEntity.REVIEW_DRAFT);
-      d.setPublishStatus(0);
-      d.setCreatedAt(LocalDateTime.now());
-      d.setUpdatedAt(LocalDateTime.now());
-      d.setCreatedBy(userId);
-      d.setUpdatedBy(userId);
-      d.setDeleted(0);
-      draftMapper.insert(d);
-    }
+    transactionTemplate.executeWithoutResult(status -> {
+      for (TheoryQuestionItem q : questions) {
+        TheoryGenDraftEntity d = new TheoryGenDraftEntity();
+        d.setId(com.baomidou.mybatisplus.core.toolkit.IdWorker.getId());
+        d.setTenantId(batch.getTenantId());
+        d.setBatchId(batch.getId());
+        d.setBlueprintId(batch.getBlueprintId());
+        d.setNodeId(point.getId());
+        d.setQuestionType(q.getQuestionType());
+        d.setTypeCode(TheoryGenPromptBuilder.typeCodeOf(q.getQuestionType()));
+        d.setDifficulty(q.getDifficulty() == null ? 3 : q.getDifficulty());
+        d.setConsistency(5);
+        d.setContent(q.getContent());
+        d.setOptions(serializeOptions(q));
+        d.setAnswer(q.getAnswer() == null ? "" : normalizeAnswer(q));
+        d.setAnalysis(q.getAnalysis());
+        d.setReferenceAnswer(q.getReferenceAnswer());
+        d.setScorePoints(q.getScorePoints());
+        d.setScoringStandard(q.getScoringStandard());
+        d.setScore(q.getScore());
+        d.setAiModel(batch.getModelId());
+        d.setAiThinking(batch.getThinking());
+        d.setGenDurationMs(durationMs);
+        d.setReviewStatus(TheoryGenDraftEntity.REVIEW_DRAFT);
+        d.setPublishStatus(0);
+        d.setCreatedAt(LocalDateTime.now());
+        d.setUpdatedAt(LocalDateTime.now());
+        d.setCreatedBy(userId);
+        d.setUpdatedBy(userId);
+        d.setDeleted(0);
+        draftMapper.insert(d);
+      }
+    });
   }
 
   /** 判断题答案归一：true/false → √/× */
@@ -330,7 +542,7 @@ public class TheoryGenBatchService {
     return TheoryGenBatchVO.from(batch);
   }
 
-  /** 继续（HTTP 线程 → 重新提交编排） */
+  /** 继续（HTTP 线程 → 新 run_id 重新提交编排，断点续跑） */
   @Transactional
   public TheoryGenBatchVO resume(Long tenantId, Long userId, Long batchId) {
     TheoryGenBatchEntity batch = getOwned(tenantId, batchId);
@@ -338,6 +550,7 @@ public class TheoryGenBatchService {
       throw new BusinessException(ErrorCode.CONFLICT, "批次不在暂停状态，无法继续");
     }
     batch.setStatus(TheoryGenBatchEntity.STATUS_PENDING);
+    batch.setRunId(com.baomidou.mybatisplus.core.toolkit.IdWorker.getId());
     batch.setUpdatedAt(LocalDateTime.now());
     batchMapper.updateById(batch);
     TheoryBlueprintEntity bp = blueprintMapper.selectById(batch.getBlueprintId());
@@ -352,14 +565,19 @@ public class TheoryGenBatchService {
     return TheoryGenBatchVO.from(batch);
   }
 
-  /** 重试失败块：failed_points 归零并将状态置回 pending（已完成草稿保留） */
+  /** 重试缺口：失败批次或已完成但有缺口的批次均可重试（自动补跑轮次耗尽后的人工兜底） */
   @Transactional
   public TheoryGenBatchVO retryFailed(Long tenantId, Long userId, Long batchId) {
     TheoryGenBatchEntity batch = getOwned(tenantId, batchId);
-    if (!TheoryGenBatchEntity.STATUS_FAILED.equals(batch.getStatus())) {
-      throw new BusinessException(ErrorCode.CONFLICT, "批次不在失败状态，无法重试");
+    boolean failed = TheoryGenBatchEntity.STATUS_FAILED.equals(batch.getStatus());
+    boolean doneWithGap = TheoryGenBatchEntity.STATUS_DONE.equals(batch.getStatus())
+        && batch.getTotalPoints() != null && batch.getDonePoints() != null
+        && batch.getDonePoints() < batch.getTotalPoints();
+    if (!failed && !doneWithGap) {
+      throw new BusinessException(ErrorCode.CONFLICT, "仅失败批次或已完成但有缺口的批次可重试");
     }
     batch.setStatus(TheoryGenBatchEntity.STATUS_PENDING);
+    batch.setRunId(com.baomidou.mybatisplus.core.toolkit.IdWorker.getId());
     batch.setFailReason(null);
     batch.setUpdatedAt(LocalDateTime.now());
     batchMapper.updateById(batch);

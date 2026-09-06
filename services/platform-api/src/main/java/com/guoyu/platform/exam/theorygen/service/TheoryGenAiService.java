@@ -1,5 +1,6 @@
 package com.guoyu.platform.exam.theorygen.service;
 
+import com.guoyu.platform.ai.dto.LlmChatCompletionResult;
 import com.guoyu.platform.exam.theorygen.dto.TheoryQuestionItem;
 import java.util.List;
 
@@ -9,7 +10,7 @@ import java.util.List;
 public interface TheoryGenAiService {
 
   /**
-   * 按考评点生成一批试题。
+   * 按考评点生成一批试题（并发与成本优化方案 v0.3 P2：返回 usage 明细；响应超时 180s）。
    *
    * @param tenantId         租户（Worker 线程参数传递，禁止调 SecurityContext）
    * @param baseUrl          模型 base_url
@@ -20,15 +21,12 @@ public interface TheoryGenAiService {
    * @param maxTokens        max_tokens
    * @param systemPrompt     system 提示词
    * @param userPrompt       user 提示词（含考评点与配额）
-   * @return 模型原始 content 文本（由调用方解析校验）
+   * @return content + usage 明细（由调用方解析校验并落库）
    */
-  String generateForPoint(Long tenantId, String baseUrl, String apiKey, String modelId,
+  LlmChatCompletionResult generateForPoint(Long tenantId, String baseUrl, String apiKey, String modelId,
       String thinking, String reasoningEffort, int maxTokens,
       String systemPrompt, String userPrompt);
 
   /** 解析模型输出 JSON → 试题列表（解析失败抛 BusinessException，由调用方记失败） */
   List<TheoryQuestionItem> parseQuestions(String rawContent);
-
-  /** 解析模型 usage.total_tokens（无 usage 时返回 0） */
-  long parseTokenUsage(String rawContent);
 }

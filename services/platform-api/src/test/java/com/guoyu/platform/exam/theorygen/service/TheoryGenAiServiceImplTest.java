@@ -12,6 +12,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guoyu.platform.ai.dto.LlmChatCompletionResult;
 import com.guoyu.platform.ai.infrastructure.FaqLlmClient;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.exam.theorygen.dto.TheoryQuestionItem;
@@ -72,11 +73,11 @@ class TheoryGenAiServiceImplTest {
 
   @Test
   void generateForPointPassesThinkingSnapshot() {
-    when(llmClient.chatCompletion(anyString(), anyString(), anyString(), anyString(),
-        anyString(), anyInt(), eq("enabled"), eq("low"), eq(false), anyLong()))
-        .thenReturn(VALID_JSON);
-    String raw = service.generateForPoint(1L, "https://open.bigmodel.cn/api/paas/v4", "k",
-        "GLM-5.3-Flash", "enabled", "low", 4096, "sys", "user");
-    assertTrue(raw.contains("questionType"));
+    when(llmClient.chatCompletionDetailed(anyString(), anyString(), anyString(), anyString(),
+        anyString(), anyInt(), eq("enabled"), eq("low"), eq(false), anyLong(), eq(180)))
+        .thenReturn(new LlmChatCompletionResult(VALID_JSON, 0, 0, 0, 0));
+    LlmChatCompletionResult result = service.generateForPoint(1L, "https://open.bigmodel.cn/api/paas/v4",
+        "k", "glm-5.3-flash", "enabled", "low", 4096, "sys", "user");
+    assertTrue(result.content().contains("questionType"));
   }
 }
