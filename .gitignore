@@ -5,6 +5,7 @@
 .idea/
 .vscode/
 .qoder/
+AGENTS.local.md
 *.swp
 *.tmp
 
