@@ -196,7 +196,7 @@ public class TheoryGenDraftService {
     int approvedCount = drafts.size();
     if (approvedCount < quotaTotal && !Boolean.TRUE.equals(req.confirmedBelowQuota())) {
       throw new BusinessException(ErrorCode.CONFLICT,
-          "审核通过 " + approvedCount + " 题低于批次配额 " + quotaTotal + " 题，请确认放行（confirmedBelowQuota=true）");
+          String.format("本批次计划生成 %d 题，目前审核通过的只有 %d 题【需二次确认】", quotaTotal, approvedCount));
     }
 
     // 知识点打通：先保证 course 存在

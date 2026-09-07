@@ -209,18 +209,13 @@ public class TheoryBlueprintApplicationService {
       node.setParentId(parentId == null ? 0L : parentId);
       node.setNodeLevel(n.getNodeLevel());
       node.setCode(n.getCode());
-      // full_code：父 full_code + 本级 code
+      // full_code：沿父链逐级拼本级代码（指引口径：考评点代码=A-A-A-001，各级代码用-连接）
       String parentFull = "";
       if (n.getParentIndex() >= 0 && n.getParentIndex() < fullCodes.size()
           && fullCodes.get(n.getParentIndex()) != null) {
         parentFull = fullCodes.get(n.getParentIndex());
       }
-      String full = n.getNodeLevel() == 4
-          ? (parentFull.isEmpty() ? n.getCode() : parentFull + "-" + n.getCode())
-          : (parentFull.isEmpty() ? n.getCode() : parentFull);
-      if (n.getNodeLevel() < 4) {
-        full = parentFull.isEmpty() ? n.getCode() : parentFull;
-      }
+      String full = parentFull.isEmpty() ? n.getCode() : parentFull + "-" + n.getCode();
       fullCodes.add(full);
       node.setFullCode(full);
       node.setName(n.getName());
@@ -269,6 +264,23 @@ public class TheoryBlueprintApplicationService {
   public TheoryBlueprintNodeEntity findNode(Long tenantId, Long nodeId) {
     TheoryBlueprintNodeEntity n = nodeMapper.selectById(nodeId);
     return n == null || !n.getTenantId().equals(tenantId) ? null : n;
+  }
+
+  /** 全量节点一次载入（导出按父链拼考评点代码等行级渲染用），避免逐行 selectById 的 N+1；
+   * 租户过滤由多租户插件自动拼接，此处再按 tenantId 防御性过滤越权行 */
+  @Transactional(readOnly = true)
+  public List<TheoryBlueprintNodeEntity> findBlueprintNodes(Long tenantId, Long blueprintId) {
+    List<TheoryBlueprintNodeEntity> nodes = nodeMapper.selectList(
+        new LambdaQueryWrapper<TheoryBlueprintNodeEntity>()
+            .eq(TheoryBlueprintNodeEntity::getBlueprintId, blueprintId)
+            .orderByAsc(TheoryBlueprintNodeEntity::getId));
+    List<TheoryBlueprintNodeEntity> out = new ArrayList<>();
+    for (TheoryBlueprintNodeEntity n : nodes) {
+      if (n.getTenantId() != null && n.getTenantId().equals(tenantId)) {
+        out.add(n);
+      }
+    }
+    return out;
   }
 
   /** 批次分页 */

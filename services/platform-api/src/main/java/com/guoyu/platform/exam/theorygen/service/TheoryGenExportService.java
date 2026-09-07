@@ -1,9 +1,11 @@
 package com.guoyu.platform.exam.theorygen.service;
 
+import com.guoyu.platform.exam.theorygen.entity.TheoryBlueprintNodeEntity;
 import com.guoyu.platform.exam.theorygen.entity.TheoryGenDraftEntity;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -15,11 +17,16 @@ import org.springframework.stereotype.Service;
 public class TheoryGenExportService {
 
   private static final String[] HEADERS = {
-      "序号", "考评点代码", "考评点名称", "重要程度", "题型代码", "题型", "题干",
-      "（A）", "（B）", "（C）", "（D）", "（E）", "答案", "难度(1-5)", "一致性",
+      "序号", "考评点代码", "考评点名称", "重要程度", "题型", "题干",
+      "（A）", "（B）", "（C）", "（D）", "（E）", "答案", "难度", "一致性",
       "解析", "参考答案（主观）", "评分要点（主观）", "评分标准（主观）", "建议分值",
       "来源", "审核状态"
   };
+
+  /** 难度等级中文（指引：易、较易、中、较难、难 ↔ 1~5） */
+  private static final String[] DIFFICULTY_TEXT = {"易", "较易", "中", "较难", "难"};
+  /** 题目-目标一致性中文（指引：差、较差、中、较好、好 ↔ 1~5） */
+  private static final String[] CONSISTENCY_TEXT = {"差", "较差", "中", "较好", "好"};
 
   private final TheoryGenDraftService draftService;
   private final TheoryBlueprintApplicationService blueprintService;
@@ -33,6 +40,15 @@ public class TheoryGenExportService {
   /** 导出批次全部草稿为 xlsx 字节流 */
   public byte[] exportBatch(Long tenantId, Long batchId) throws IOException {
     List<TheoryGenDraftEntity> drafts = draftService.listAll(tenantId, batchId);
+    // 全量节点一次载入（此前逐行 selectById 曾致公网导出超前端 25s 超时）：
+    // 行级渲染需沿父链拼考评点代码（指引口径 A-A-A-001），并取名称/重要程度
+    Map<Long, TheoryBlueprintNodeEntity> nodeMap = new java.util.HashMap<>();
+    if (!drafts.isEmpty()) {
+      for (TheoryBlueprintNodeEntity n : blueprintService.findBlueprintNodes(tenantId,
+          drafts.get(0).getBlueprintId())) {
+        nodeMap.put(n.getId(), n);
+      }
+    }
     try (Workbook wb = new XSSFWorkbook();
         ByteArrayOutputStream out = new ByteArrayOutputStream()) {
       Sheet sheet = wb.createSheet("试题表");
@@ -43,12 +59,13 @@ public class TheoryGenExportService {
       int r = 1;
       for (TheoryGenDraftEntity d : drafts) {
         Row row = sheet.createRow(r++);
+        var node = nodeMap.get(d.getNodeId());
         int c = 0;
         row.createCell(c++).setCellValue(r - 1);
-        row.createCell(c++).setCellValue(pointFullCode(tenantId, d));
-        row.createCell(c++).setCellValue(pointName(tenantId, d));
-        row.createCell(c++).setCellValue(pointImportance(tenantId, d));
-        row.createCell(c++).setCellValue(d.getTypeCode() == null ? "" : d.getTypeCode());
+        row.createCell(c++).setCellValue(pointCode(nodeMap, node));
+        row.createCell(c++).setCellValue(node == null ? "" : nvl(node.getName()));
+        row.createCell(c++).setCellValue(node == null || node.getImportance() == null
+            ? "" : node.getImportance());
         row.createCell(c++).setCellValue(typeName(d.getQuestionType()));
         row.createCell(c++).setCellValue(nvl(d.getContent()));
         // 选项 A~E
@@ -57,9 +74,9 @@ public class TheoryGenExportService {
           row.createCell(c++).setCellValue(i < options.size()
               ? nvl(options.get(i).get("content")) : "");
         }
-        row.createCell(c++).setCellValue(nvl(d.getAnswer()));
-        row.createCell(c++).setCellValue(d.getDifficulty() == null ? 3 : d.getDifficulty());
-        row.createCell(c++).setCellValue(d.getConsistency() == null ? 5 : d.getConsistency());
+        row.createCell(c++).setCellValue(displayAnswer(d));
+        row.createCell(c++).setCellValue(levelText(DIFFICULTY_TEXT, d.getDifficulty(), 3));
+        row.createCell(c++).setCellValue(levelText(CONSISTENCY_TEXT, d.getConsistency(), 5));
         row.createCell(c++).setCellValue(nvl(d.getAnalysis()));
         row.createCell(c++).setCellValue(nvl(d.getReferenceAnswer()));
         row.createCell(c++).setCellValue(nvl(d.getScorePoints()));
@@ -85,19 +102,40 @@ public class TheoryGenExportService {
     }
   }
 
-  private String pointFullCode(Long tenantId, TheoryGenDraftEntity d) {
-    var n = blueprintService.findNode(tenantId, d.getNodeId());
-    return n == null ? "" : nvl(n.getFullCode());
+  /** 数值等级 → 中文；空值用默认档，越界夹取 */
+  private String levelText(String[] texts, Integer level, int defaultLevel) {
+    int idx = level == null ? defaultLevel : level;
+    idx = Math.max(1, Math.min(texts.length, idx));
+    return texts[idx - 1];
   }
 
-  private String pointName(Long tenantId, TheoryGenDraftEntity d) {
-    var n = blueprintService.findNode(tenantId, d.getNodeId());
-    return n == null ? "" : nvl(n.getName());
+  /** 判断题答案用「对/错」不用符号（√/×、true/false 均转换），其余题型原样 */
+  private String displayAnswer(TheoryGenDraftEntity d) {
+    String a = nvl(d.getAnswer());
+    if (!"judge".equals(d.getQuestionType())) {
+      return a;
+    }
+    return switch (a) {
+      case "√", "true", "T", "t", "Y", "y" -> "对";
+      case "×", "false", "F", "f", "N", "n" -> "错";
+      default -> a;
+    };
   }
 
-  private String pointImportance(Long tenantId, TheoryGenDraftEntity d) {
-    var n = blueprintService.findNode(tenantId, d.getNodeId());
-    return n == null || n.getImportance() == null ? "" : n.getImportance();
+  /** 考评点代码沿父链逐级拼：一级-二级-三级-考评点序号 → A-A-A-001（指引 §理论知识试题的基本参数） */
+  private String pointCode(Map<Long, TheoryBlueprintNodeEntity> nodes, TheoryBlueprintNodeEntity leaf) {
+    if (leaf == null) {
+      return "";
+    }
+    java.util.Deque<String> segs = new java.util.ArrayDeque<>();
+    TheoryBlueprintNodeEntity cur = leaf;
+    int guard = 0;
+    while (cur != null && guard++ < 8) { // 树深 4；防御脏数据成环
+      segs.push(nvl(cur.getCode()));
+      Long pid = cur.getParentId();
+      cur = pid == null || pid == 0L ? null : nodes.get(pid);
+    }
+    return String.join("-", segs);
   }
 
   private String typeName(String t) {

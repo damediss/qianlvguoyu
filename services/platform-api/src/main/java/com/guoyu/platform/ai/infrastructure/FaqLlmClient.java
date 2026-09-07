@@ -373,8 +373,8 @@ public class FaqLlmClient {
       } catch (Exception e) {
         responseStr = response.toString();
       }
-      if (responseStr.length() > 300) {
-        responseStr = responseStr.substring(0, 300) + "...(truncated)";
+      if (responseStr.length() > 3000) {
+        responseStr = responseStr.substring(0, 3000) + "...(truncated)";
       }
       log.info("LLM 响应：tenantId={}, url={}, body={}", tenantId, url, responseStr);
 

@@ -16,8 +16,8 @@ public interface TheoryGenAiService {
    * @param baseUrl          模型 base_url
    * @param apiKey           模型 api_key
    * @param modelId          模型 ID
-   * @param thinking         thinking 快照（enabled/disabled/null）
-   * @param reasoningEffort  推理强度快照（low/high/max/null）
+   * @param thinking         thinking 档位（批次启动时从配置表读取固化；enabled/disabled/null）
+   * @param reasoningEffort  推理强度（批次启动时从配置表读取固化；low/high/max/null）
    * @param maxTokens        max_tokens
    * @param systemPrompt     system 提示词
    * @param userPrompt       user 提示词（含考评点与配额）

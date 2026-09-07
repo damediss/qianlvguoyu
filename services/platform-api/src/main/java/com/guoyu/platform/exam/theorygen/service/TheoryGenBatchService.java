@@ -234,6 +234,8 @@ public class TheoryGenBatchService {
       batch.setUpdatedAt(LocalDateTime.now());
       batchMapper.updateById(batch);
 
+      // 批次启动时读取一次并全程固化：base_url/api_key/model_id/thinking/reasoning_effort 均以此为准，
+      // 改配置对下一个批次生效（进行中的批次保持参数一致，不受中途改库影响）
       ExamFaqModelConfigEntity cfg = modelConfigMapper.selectById(batch.getModelConfigId());
       if (cfg == null) {
         failBatch(batch, "模型配置不存在");
@@ -417,7 +419,7 @@ public class TheoryGenBatchService {
     try {
       long t0 = System.currentTimeMillis();
       result = aiService.generateForPoint(tenantId, cfg.getBaseUrl(), cfg.getApiKey(),
-          cfg.getModelId(), batch.getThinking(), batch.getReasoningEffort(),
+          cfg.getModelId(), cfg.getThinking(), cfg.getReasoningEffort(),
           cfg.getMaxTokens() == null ? 4096 : cfg.getMaxTokens(),
           systemPrompt, TheoryGenPromptBuilder.buildUserPrompt(point, quota));
       List<TheoryQuestionItem> questions = aiService.parseQuestions(result.content());
@@ -437,7 +439,7 @@ public class TheoryGenBatchService {
       // 答案字母分布均匀属确定性规则：校验通过后洗牌重排选项并同步改写答案字母
       // （prompt 禁令对 LLM 位置偏差无效，E2E 实测 D 选项仅 3%，AGENTS.md LLM 规范 #6）
       TheoryOptionShuffler.shuffle(questions, ThreadLocalRandom.current());
-      saveDrafts(batch, point, questions, (int) (System.currentTimeMillis() - t0));
+      saveDrafts(batch, cfg, point, questions, (int) (System.currentTimeMillis() - t0));
       batchMapper.incrementDone(batch.getId(), questions.size(), result.totalTokens(),
           result.promptTokens(), result.completionTokens(), result.cachedTokens());
       consecutiveFailures.set(0);
@@ -457,8 +459,8 @@ public class TheoryGenBatchService {
   }
 
   /** 草稿落库（Worker 线程；tenantId 已在 ThreadLocal）。块级事务：全落或全不落（P1/R4） */
-  private void saveDrafts(TheoryGenBatchEntity batch, TheoryBlueprintNodeEntity point,
-      List<TheoryQuestionItem> questions, int durationMs) {
+  private void saveDrafts(TheoryGenBatchEntity batch, ExamFaqModelConfigEntity cfg,
+      TheoryBlueprintNodeEntity point, List<TheoryQuestionItem> questions, int durationMs) {
     Long userId = batch.getCreatedBy();
     transactionTemplate.executeWithoutResult(status -> {
       for (TheoryQuestionItem q : questions) {
@@ -480,8 +482,8 @@ public class TheoryGenBatchService {
         d.setScorePoints(q.getScorePoints());
         d.setScoringStandard(q.getScoringStandard());
         d.setScore(q.getScore());
-        d.setAiModel(batch.getModelId());
-        d.setAiThinking(batch.getThinking());
+        d.setAiModel(cfg.getModelId());
+        d.setAiThinking(cfg.getThinking());
         d.setGenDurationMs(durationMs);
         d.setReviewStatus(TheoryGenDraftEntity.REVIEW_DRAFT);
         d.setPublishStatus(0);

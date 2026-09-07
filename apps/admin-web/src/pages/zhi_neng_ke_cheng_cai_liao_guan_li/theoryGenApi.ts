@@ -181,9 +181,11 @@ export const publishDrafts = (batchId: string, taskMode: 'create' | 'append',
       batchId, taskMode, taskId, subTaskId, confirmedBelowQuota }));
 
 export const exportDrafts = async (batchId: string): Promise<Blob> => {
+  // 大批次（上千行）经公网导出可能超过全局 25s 超时，此处单独放宽
   const resp = await apiClient.get(`/exam/theory/draft/export`, {
     params: { batchId },
     responseType: 'blob',
+    timeout: 120000,
   });
   return resp.data as Blob;
 };

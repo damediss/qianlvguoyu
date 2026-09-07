@@ -608,4 +608,28 @@ class TheoryGenBatchServiceOptTest {
     when(batchMapper.selectById(eq(BATCH_ID))).thenReturn(complete);
     assertThrows(BusinessException.class, () -> service.retryFailed(TENANT, USER, BATCH_ID));
   }
+
+  /** OPT-21：运行时 thinking/reasoning_effort 跟随配置表当前值（批次启动时 selectById 固化），
+   * 不用提交时的旧快照——改配置后旧批次的重试/补跑即生效 */
+  @Test
+  void opt21_runtimeThinkingEffortFollowsConfig() {
+    TheoryGenBatchEntity b = batch(25L); // 旧批次快照：enabled/low
+    stubProcessBatch(b, List.of(point(1, "1.1")), List.of());
+    // 配置表已改为 enabled/high（运行时 selectById 实时读到）
+    when(modelConfigMapper.selectById(eq(CFG_ID))).thenReturn(config(GLM_URL, "enabled", "high"));
+
+    service.processBatch(BATCH_ID, TENANT, USER, 5);
+
+    // LLM 调用实际收到配置表当前值 high，而非批次快照 low
+    verify(aiService, times(1)).generateForPoint(any(), any(), any(), any(),
+        eq("enabled"), eq("high"), anyInt(), any(), any());
+    verify(aiService, never()).generateForPoint(any(), any(), any(), any(),
+        any(), eq("low"), anyInt(), any(), any());
+    // 草稿留痕记录实际生效值（ai_model/ai_thinking 取配置表）
+    org.mockito.ArgumentCaptor<TheoryGenDraftEntity> cap =
+        org.mockito.ArgumentCaptor.forClass(TheoryGenDraftEntity.class);
+    verify(draftMapper, times(1)).insert(cap.capture());
+    assertEquals("glm-5.3-flash", cap.getValue().getAiModel());
+    assertEquals("enabled", cap.getValue().getAiThinking());
+  }
 }

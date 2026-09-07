@@ -65,6 +65,22 @@ const parseDraftOptions = (raw?: string | null): Array<{ label: string; content:
   }
 };
 
+/** 批次下拉选项 label：导入时间前置——同工种同等级重复导入时批次标题完全相同，导入时间是最可靠的区分信息；
+ * 时间放首位保证标题超长被截断时时间仍可见 */
+const bpOptionLabel = (b: TheoryBlueprint): string => {
+  const time = b.createdAt ? dayjs(b.createdAt).format('MM-DD HH:mm') : '时间未知';
+  return `${time} · ${b.title}（${b.pointCount}点）`;
+};
+
+/** 生成批次下拉选项 label：开始时间 + 批次短号 + 中文状态（原「id（done）」纯英文状态令用户困惑）；
+ * 时间放首位保证超长截断时仍可区分 */
+const genBatchOptionLabel = (b: TheoryGenBatch): string => {
+  const time = b.startedAt ?? b.finishedAt;
+  const timeText = time ? dayjs(time).format('MM-DD HH:mm') : '时间未知';
+  const statusText = STATUS_TAG[b.status]?.text ?? b.status;
+  return `${timeText} · 批次${b.id.slice(-8)}（${statusText}）`;
+};
+
 const STATUS_TAG: Record<string, { color: string; text: string }> = {
   pending: { color: 'default', text: '等待中' },
   running: { color: 'processing', text: '生成中' },
@@ -189,6 +205,13 @@ const TheoryQuestionGenPage: React.FC = () => {
   const [quotaMulti, setQuotaMulti] = useState<number | null>(null);
   const [activeBatchId, setActiveBatchId] = useState<string | undefined>();
 
+  // 批次下拉用全量查询：页签1的 bpQuery 是分页数据（20/页），翻页后下拉会缺批次甚至丢失已选项。
+  // 键共用 'theorygen-blueprints' 前缀，导入/删除后的 invalidateQueries(['theorygen-blueprints']) 会同时刷新两处
+  const bpAllQuery = useQuery({
+    queryKey: ['theorygen-blueprints', 'all'],
+    queryFn: () => listBlueprints({ page: 1, pageSize: 200 }),
+  });
+
   const mcQuery = useQuery({
     queryKey: ['theorygen-model-configs'],
     queryFn: listTheoryModelConfigs,
@@ -204,24 +227,29 @@ const TheoryQuestionGenPage: React.FC = () => {
 
   /** 指引下限推荐题量（方案 §7 defaultQuota）：五/四级 单选4+判断2；三/二/一级 单选3+多选2+判断2 */
   const applyQuotaDefaults = React.useCallback((blueprintId?: string) => {
-    const bp = bpQuery.data?.items.find((b) => b.id === blueprintId);
+    const bp = bpAllQuery.data?.items.find((b) => b.id === blueprintId);
     const d = bp ? QUOTA_DEFAULTS[bp.level] : undefined;
     setQuotaSingle(d?.single ?? null);
     setQuotaJudge(d?.judge ?? null);
     setQuotaMulti(d?.multi ?? null);
-  }, [bpQuery.data]);
+  }, [bpAllQuery.data]);
 
   React.useEffect(() => {
     applyQuotaDefaults(selectedBlueprintId);
   }, [selectedBlueprintId, applyQuotaDefaults]);
 
-  const selectedBp = bpQuery.data?.items.find((b) => b.id === selectedBlueprintId);
+  const selectedBp = bpAllQuery.data?.items.find((b) => b.id === selectedBlueprintId);
   const multiDisabled = selectedBp ? selectedBp.level === 5 || selectedBp.level === 4 : false;
 
   const batchQuery = useQuery({
     queryKey: ['theorygen-batches', selectedBlueprintId],
     queryFn: () => listGenBatches({ blueprintId: selectedBlueprintId, page: 1, pageSize: 20 }),
     enabled: !!selectedBlueprintId,
+    // 存在进行中批次时每 3s 轮询：进度数字跳动、完成后状态自动翻转（列表接口实时返回计数）
+    refetchInterval: (q) => {
+      const items = q.state.data?.items ?? [];
+      return items.some((b) => b.status === 'running' || b.status === 'pending') ? 3000 : false;
+    },
   });
 
   // 进行中批次进度轮询（终态停止）
@@ -234,6 +262,20 @@ const TheoryQuestionGenPage: React.FC = () => {
       return s === 'running' || s === 'pending' ? 3000 : false;
     },
   });
+
+  // 页面刷新/重进后自动接管进行中批次：activeBatchId 原本只在提交批次时设置，刷新后丢失，
+  // 导致底部进度面板与完成/失败自动联动全部失效。已指向终态批次时切换到新的进行中批次。
+  React.useEffect(() => {
+    const items = batchQuery.data?.items ?? [];
+    const running = items.find((b) => b.status === 'running' || b.status === 'pending');
+    if (!running) {
+      return;
+    }
+    const current = activeBatchId ? items.find((b) => b.id === activeBatchId) : undefined;
+    if (!activeBatchId || (current && current.status !== 'running' && current.status !== 'pending')) {
+      setActiveBatchId(running.id);
+    }
+  }, [activeBatchId, batchQuery.data]);
 
   // 批次终态联动：生成中 → 已完成时自动跳"试题草稿"页签并按批次加载题目列表；
   // → 失败时提示失败原因（留在本页签，可"重试失败"）。仅对跃迁触发，手动查看历史批次不跳。
@@ -252,7 +294,9 @@ const TheoryQuestionGenPage: React.FC = () => {
       setSelectedDraftKeys([]);
       setTab('draft');
       qc.invalidateQueries({ queryKey: ['theorygen-drafts'] });
+      qc.invalidateQueries({ queryKey: ['theorygen-batches'] });
     } else if ((prev === 'running' || prev === 'pending') && status === 'failed') {
+      qc.invalidateQueries({ queryKey: ['theorygen-batches'] });
       message.warning({
         content: `生成批次失败：${progressQuery.data?.failReason ?? '未知原因'}`,
         duration: 6,
@@ -365,6 +409,7 @@ const TheoryQuestionGenPage: React.FC = () => {
   // ---------------- 页签4：入库与导出 ----------------
   const [taskMode, setTaskMode] = useState<'create' | 'append'>('create');
   const [publishBatchId, setPublishBatchId] = useState<string | undefined>();
+  const [exporting, setExporting] = useState(false);
 
   const allBatches = useQuery({
     queryKey: ['theorygen-batches-all'],
@@ -382,10 +427,10 @@ const TheoryQuestionGenPage: React.FC = () => {
       qc.invalidateQueries({ queryKey: ['theorygen-drafts'] });
     } catch (e) {
       const msg = e instanceof Error ? e.message : '';
-      if (msg.includes('confirmedBelowQuota')) {
+      if (msg.includes('需二次确认')) {
         Modal.confirm({
-          title: '低于指引题量下限',
-          content: '审核通过题量低于批次配额，确认仍要入库放行吗？（将留痕）',
+          title: '题目数量未达本批次计划',
+          content: `${msg.replace('【需二次确认】', '')}。确认要继续入库吗？继续后本次操作会被记录备查。`,
           onOk: () => doPublish(true),
         });
       }
@@ -397,13 +442,21 @@ const TheoryQuestionGenPage: React.FC = () => {
       message.warning('请选择批次');
       return;
     }
-    const blob = await exportDrafts(publishBatchId);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `theory-questions-${publishBatchId}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setExporting(true);
+    try {
+      const blob = await exportDrafts(publishBatchId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `theory-questions-${publishBatchId}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      message.success('试题表已导出');
+    } catch {
+      // 错误提示由拦截器统一处理
+    } finally {
+      setExporting(false);
+    }
   };
 
   // ---------------- 渲染 ----------------
@@ -469,11 +522,12 @@ const TheoryQuestionGenPage: React.FC = () => {
           children: (
             <>
               <Space style={{ marginBottom: 8 }} wrap>
-                <Select style={{ width: 320 }} placeholder="选择细目表批次"
+                <Select style={{ width: 320 }} placeholder="选择细目表批次" showSearch
+                  optionFilterProp="label"
                   value={selectedBlueprintId}
                   onChange={(v) => setSelectedBlueprintId(v)}
-                  options={(bpQuery.data?.items ?? []).map((b) => ({
-                    value: b.id, label: `${b.title}（${b.pointCount}点）` }))} />
+                  options={(bpAllQuery.data?.items ?? []).map((b) => ({
+                    value: b.id, label: bpOptionLabel(b) }))} />
                 <Select style={{ width: 300 }} placeholder="选择模型配置"
                   value={modelConfigId}
                   onChange={(v) => setModelConfigId(v)}
@@ -492,9 +546,11 @@ const TheoryQuestionGenPage: React.FC = () => {
                 <Button type="primary" onClick={submitBatch}>提交生成</Button>
               </Space>
               <div style={{ marginBottom: 12, color: '#888', fontSize: 12 }}>
-                「道/点」= 每个考评点生成的题数。已按《指引》下限自动填入推荐值：
-                五级/四级 单选4+判断2（无多选题型）；三级~一级 单选3+多选2+判断2，均可上调。
-                例：200 个考评点 ×（4+2）= 1200 题，达到五级总量 ≥1200 题要求。
+                「道/点」是指细目表中每个考评点要生成的题目数量。系统已按题库开发的通用规范自动填入推荐值：
+                五级、四级每个考评点生成 4 道单选题 + 2 道判断题（这两个等级不设多选题）；
+                三级~一级每个考评点生成 3 道单选题 + 2 道多选题 + 2 道判断题。
+                数值可手动调大，不建议调低——题量偏少会使该等级的题目总数达不到鉴定中心的最低要求
+                （如五级、四级全库不少于 1200 题：200 个考评点 × 6 题 = 1200 题，按推荐值正好达标）。
               </div>
               <Table rowKey="id" size="small"
                 loading={batchQuery.isLoading}
@@ -519,11 +575,11 @@ const TheoryQuestionGenPage: React.FC = () => {
           children: (
             <>
               <Space style={{ marginBottom: 16 }} wrap>
-                <Select style={{ width: 300 }} placeholder="选择生成批次"
+                <Select style={{ width: 360 }} placeholder="选择生成批次"
                   value={draftQuery.batchId}
                   onChange={(v) => { setDraftQuery({ ...draftQuery, batchId: v }); setDraftPage(1); }}
                   options={(allBatches.data?.items ?? []).map((b) => ({
-                    value: b.id, label: `${b.id.slice(-8)}（${b.status}）` }))} />
+                    value: b.id, label: genBatchOptionLabel(b) }))} />
                 <Select style={{ width: 120 }} allowClear placeholder="审核状态"
                   value={draftQuery.reviewStatus}
                   onChange={(v) => setDraftQuery({ ...draftQuery, reviewStatus: v })}
@@ -615,10 +671,10 @@ const TheoryQuestionGenPage: React.FC = () => {
           children: (
             <>
               <Space style={{ marginBottom: 16 }} wrap>
-                <Select style={{ width: 300 }} placeholder="选择生成批次"
+                <Select style={{ width: 360 }} placeholder="选择生成批次"
                   value={publishBatchId} onChange={setPublishBatchId}
                   options={(allBatches.data?.items ?? []).map((b) => ({
-                    value: b.id, label: `${b.id.slice(-8)}（${b.status}）` }))} />
+                    value: b.id, label: genBatchOptionLabel(b) }))} />
                 <Select style={{ width: 160 }} value={taskMode} onChange={setTaskMode}
                   options={[
                     { value: 'create', label: '新建命题任务' },
@@ -626,12 +682,14 @@ const TheoryQuestionGenPage: React.FC = () => {
                   ]} />
                 <Button type="primary"
                   onClick={() => doPublish(false)}>入库（写入题库开发任务）</Button>
-                <Button onClick={doExport}>导出试题表 xlsx</Button>
+                <Button loading={exporting} onClick={doExport}>导出试题表 xlsx</Button>
               </Space>
               <Space size={40}>
                 <Statistic title="说明" valueRender={() => (
                   <span style={{ color: '#888' }}>
-                    入库仅写入「审核通过」的草稿；低于批次配额时会二次确认并留痕。
+                    点击入库后，只有「已通过审核」的题目会写入命题任务（驳回和未审核的不会写入）。
+                    如果本批次计划生成的题目没有全部审核通过（例如部分题目被驳回），入库时会先弹出提示与你确认，
+                    你确认继续后系统会记录这次操作备查。想补足数量，可先到「试题草稿」处理未通过的题目。
                   </span>
                 )} />
               </Space>
