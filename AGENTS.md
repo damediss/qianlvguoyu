@@ -291,12 +291,16 @@ src/
 
 ### 环境路径
 
-| 工具        | 路径                                                      |
-|-----------|---------------------------------------------------------|
-| JDK 21    | `D:\Program Files\Java\oracleJdk-21`                    |
-| Maven     | `C:\Program Files\Java\apache-maven-3.9.11\bin\mvn.cmd` |
-| Node.js   | `D:\Program Files\nodejs`                               |
-| MySQL cli | `C:\Program Files\MySQL\MySQL Server 8.4\bin\mysql.exe` |
+工具安装路径因成员电脑而异，**不要假定固定绝对路径，也不要照抄任何历史文档/对话中的示例路径**。
+需要定位工具时按以下顺序解析：
+
+1. 本机覆盖文件 `AGENTS.local.md`（已 gitignore，若存在优先采用其中记录的路径）
+2. 环境变量：`JAVA_HOME`、`MAVEN_HOME`
+3. PATH 探测：`where javac`、`where mvn.cmd`、`where node`、`where mysql`
+4. 常见安装位置兜底（匹配最新版本）：`C:\Program Files\Java\*`、`D:\Program Files\Java\*`、`C:\Program Files\MySQL\MySQL Server *\bin\mysql.exe`
+5. 仍未找到 → 停下询问用户，不要自行下载安装
+
+版本要求：JDK 21、Maven 3.9+、Node 18+、MySQL 8.4（`java -version` / `mvn -v` / `node -v` 验证）
 
 ### 环境变量
 
@@ -317,8 +321,8 @@ Redis 不是当前代码路径的硬依赖，可跳过。
 ### 常用命令
 
 ```bash
-# 后端构建
-$env:JAVA_HOME = "D:\Program Files\Java\oracleJdk-21"
+# 后端构建（JAVA_HOME / mvn 按"环境路径"规则解析）
+$env:JAVA_HOME = "<JAVA_HOME>"
 mvn.cmd compile -f services/platform-api/pom.xml -s scripts/custom-maven-settings.xml
 
 # 后端直接启动（使用预构建 JAR）
