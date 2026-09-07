@@ -334,6 +334,13 @@ public class StandardLlmSummarizeService {
         markTaskStatus(taskId, StandardParseApplicationService.STATUS_PARSED);
         return;
       }
+      // 重概括清理（C 方案 B）：物理删除未审定的 LLM 生成叶子，腾空唯一键——
+      // 软删行仍占用 uk_standard_node_key，不清坑则同键重插必撞（踩坑 #22 同类）。
+      // 只删 source=llm 且 review_status=pending 的行；已 approved 与人工节点不动。
+      int purged = nodeMapper.purgePendingLlmLeaves(taskId);
+      if (purged > 0) {
+        log.info("[细目表] 重概括清理：taskId={} 物理删除未审定 LLM 叶子 {} 条", taskId, purged);
+      }
       // 一次性加载全部 L2 小节（坑#18：批处理内不变数据加载复用），再按弹窗范围过滤
       List<ExamStandardNodeEntity> allSections = nodeMapper.selectList(
           new LambdaQueryWrapper<ExamStandardNodeEntity>()
@@ -939,11 +946,30 @@ public class StandardLlmSummarizeService {
 
   private ExamStandardNodeEntity insertLeaf(ExamStandardNodeEntity l2, String dimension,
       String title, String important, String source, int index, Long tenantId) {
+    String nodeKey = NodeKeyGenerator.leafKey(l2.getNodeKey(), nextLeafIndex(l2.getId(), dimension, index));
+    // 幂等（C 方案 A）：同键已存在时复用/跳过——软删行仍占 uk_standard_node_key（踩坑 #22 同类），
+    // 重概括场景旧键必被命中，裸 INSERT 同键必撞。
+    ExamStandardNodeEntity existing = nodeMapper.selectAnyByKey(l2.getTaskId(), l2.getLevelCode(),
+        l2.getDirection(), dimension, nodeKey);
+    if (existing != null) {
+      if (existing.getDeleted() != null && existing.getDeleted() == 1) {
+        // 软删同键：物理恢复并覆盖为新内容（@TableLogic 使 updateById 够不到软删行，须原生 revive）
+        nodeMapper.reviveLeaf(existing.getId(), title, important, index + 1);
+        existing.setDeleted(0);
+        existing.setTitle(title);
+        existing.setImportant(important);
+        log.info("[细目表] 复用软删叶子：taskId={} key={}", l2.getTaskId(), nodeKey);
+        return existing;
+      }
+      // 存活同键：视为已生成，跳过（并行/重试场景兜底）
+      log.warn("[细目表] 同键叶子已存在，跳过插入：taskId={} key={}", l2.getTaskId(), nodeKey);
+      return existing;
+    }
     ExamStandardNodeEntity leaf = new ExamStandardNodeEntity();
     leaf.setTenantId(tenantId);
     leaf.setTaskId(l2.getTaskId());
     leaf.setParentId(l2.getId());
-    leaf.setNodeKey(NodeKeyGenerator.leafKey(l2.getNodeKey(), nextLeafIndex(l2.getId(), dimension, index)));
+    leaf.setNodeKey(nodeKey);
     leaf.setNodeLevel(3);
     leaf.setSortNumber(index + 1);
     leaf.setDimension(dimension);

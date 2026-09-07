@@ -421,7 +421,7 @@ cd apps/admin-web && npm run dev
 
 ## 项目级踩坑(摘自 Mavis memory)
 
-新进项目的 Agent **必须**先读这 18 条,能少走 3 天弯路:
+新进项目的 Agent **必须**先读这 25 条,能少走 3 天弯路:
 
 1. **MyBatis-Plus 默认 snake_case** — Flyway 迁移的列名必须 snake_case,跟 Java 命名策略对齐(2026-06-04)
 2. **`setDeleted(1) + updateById` 永远是假删** — 软删统一用 `mapper.deleteById(...)`,全项目禁止 `setDeleted(1)`(2026-06-09)
@@ -447,3 +447,4 @@ cd apps/admin-web && npm run dev
 22. **镜像表唯一约束必须与源库一致** — PHP `platform_user_token.token` 无唯一约束(现网 85 组重复),SaaS 镜像表加 UNIQUE 后,`ON DUPLICATE KEY UPDATE` 把同 token 多行折叠,镜像行数永远少于源库且每周期反复覆盖(thrashing,checkpoint 恒见 updated≠0 不收敛)。镜像表索引按源库实际约束建;鉴权查询按 id 升序取首行对齐 PHP findFirst 语义(2026-08-04)
 23. **mysql-connector-j 默认把 TINYINT(1) 映射为 Boolean(tinyInt1isBit=true)** — 会丢失 level=2/3 这类真实数值(`value instanceof Number` 为 false → 解析得 null),PHP 老库大量 tinyint(1) 存枚举/层级值。凡接 PHP 库的 JDBC URL 必须加 `tinyInt1isBit=false`;解析层对 Boolean 做 0/1 兜底。2026-08-04 权重解析因此全空、计划生成权重兜底失效(2026-08-04)
 24. **雪花 ID 超 JS Number 安全整数(2^53)** — App 端接口响应中的雪花 id(planId/dayId/mockPaperId)必须以字符串下发,前端 JSON.parse 会把 2e18 级整数四舍五入成别的值(2084569567062556674 → ...6700),回传即"记录不存在"。参照竞赛模块 `@JsonSerialize(using=ToStringSerializer.class)` 或视图层直接 String.valueOf(2026-08-04)
+25. **Flyway 迁移连接必须与业务 Druid 池分离** — Druid wall 会拦截迁移脚本中的 `PREPARE/EXECUTE` 动态 SQL(双库分叉场景的条件化 DDL 必用此写法,见踩坑 #7),空库重建/新环境首次部署必撞。`application.yml` 已通过 `spring.flyway.url/user/password = ${spring.datasource.*}` 让 Flyway 用独立直连(引用数据源属性防环境间配置漂移),勿删;也不要为此给 wall 开 none-base-statement-allow(等于给业务池放行动态 SQL)。**属性名是 `user` 不是 `username`**——写 username 会被静默忽略,JDBC 驱动回退 OS 用户名,启动报 Access denied for 'xxx'。新迁移继续沿用条件化 PREPARE 约定,不改已应用的历史脚本(2026-09-07 生产部署:V20260904_011 触发)

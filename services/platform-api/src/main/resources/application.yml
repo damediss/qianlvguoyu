@@ -86,6 +86,13 @@ spring:
     baseline-on-migrate: true
     out-of-order: true
     validate-on-migrate: false
+    # 迁移走独立直连（不进业务 Druid 池）：wall 会拦截历史迁移的 PREPARE 动态 SQL
+    # （双库分叉场景的条件化 DDL 必用此写法，踩坑 #7），空库重建/新环境首次部署必撞。
+    # 引用数据源属性而非写死连接串：各环境（含 prod 外置配置）自动跟随，防配置漂移。
+    # 注意属性名是 user 不是 username：username 会被静默忽略，JDBC 驱动回退 OS 用户名导致 Access denied
+    url: ${spring.datasource.url}
+    user: ${spring.datasource.username}
+    password: ${spring.datasource.password}
   rabbitmq:
     publisher-confirm-type: correlated
     publisher-returns: true

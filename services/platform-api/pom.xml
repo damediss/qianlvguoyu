@@ -298,6 +298,18 @@
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- Mockito 5 inline mock maker 需自附加 Java agent：JDK 21+ 下 Attach API 默认受限，
+               且部分 Windows 安全软件会拦截外部附加进程，导致间歇性
+               "Could not initialize inline Byte Buddy mock maker"。显式允许自附加 + 动态加载。
+               -Xmx1024m 限制 fork JVM 堆上限：全量回归在内存紧张的开发机上曾因原生内存不足
+               直接崩溃（hs_err native OOM），显式限堆可与其他进程共存。 -->
+          <argLine>-Djdk.attach.allowAttachSelf=true -XX:+EnableDynamicAgentLoading -Xmx1024m</argLine>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
           <!-- Spring 6.1 / Boot 3.3 需要保留参数名，否则 @Autowired 按名称匹配会失败（如 Sa-Token 多 StpLogic） -->
