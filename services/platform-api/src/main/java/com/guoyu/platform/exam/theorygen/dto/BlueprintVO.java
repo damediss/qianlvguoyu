@@ -14,6 +14,7 @@ public record BlueprintVO(
     Integer courseId,
     String title,
     String sourceFileName,
+    Long sourceFileId,
     Integer pointCount,
     String xyzRatio,
     Integer weightCheck,
@@ -25,7 +26,7 @@ public record BlueprintVO(
     String levelName = e.getLevel() != null && e.getLevel() >= 1 && e.getLevel() <= 5
         ? TheoryBlueprintApplicationService.LEVEL_NAMES[e.getLevel()] : "";
     return new BlueprintVO(e.getId(), e.getWorkTypeId(), workTypeName, e.getLevel(), levelName,
-        e.getCourseId(), e.getTitle(), e.getSourceFileName(), e.getPointCount(),
+        e.getCourseId(), e.getTitle(), e.getSourceFileName(), e.getSourceFileId(), e.getPointCount(),
         e.getXyzRatio(), e.getWeightCheck(), e.getCheckReport(), e.getStatus(), e.getCreatedAt());
   }
 }

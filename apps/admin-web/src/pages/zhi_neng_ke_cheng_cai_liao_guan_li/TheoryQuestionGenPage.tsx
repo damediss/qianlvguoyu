@@ -6,17 +6,18 @@ import React, { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import {
-  Button, Descriptions, Drawer, Form, Input, InputNumber, message, Modal, Popconfirm,
-  Progress, Select, Space, Statistic, Table, Tabs, Tag, Tree, Upload,
+  Button, Descriptions, Drawer, Form, Input, InputNumber, message, Modal, Popconfirm, Popover,
+  Progress, Select, Space, Statistic, Table, Tabs, Tag, Tooltip, Tree, Upload,
 } from 'antd';
 import { LoadingOutlined, UploadOutlined } from '@ant-design/icons';
 import { treeWorkTypes } from '../../api/exam';
 import type { ExamWorkType } from '../../types/exam';
 import type { PageResponse } from '../../types/api';
 import {
-  deleteBlueprint, editDraft, exportDrafts, getBlueprintTree, getGenProgress, importBlueprint,
-  listBlueprints, listDrafts, listGenBatches, listTheoryModelConfigs, pauseGenBatch,
-  publishDrafts, resumeGenBatch, reviewDrafts, retryGenBatch, submitGenBatch,
+  deleteBlueprint, downloadBlueprintSource, editDraft, exportDrafts, getBlueprintTree,
+  getGenProgress, importBlueprint, listBlueprints, listDrafts, listGenBatches,
+  listTheoryModelConfigs, pauseGenBatch, publishDrafts, resumeGenBatch, reviewDrafts,
+  retryGenBatch, submitGenBatch,
 } from './theoryGenApi';
 import type { BlueprintNode, TheoryBlueprint, TheoryDraft, TheoryGenBatch } from './theoryGenApi';
 import './XiMuBiaoGuanLiPage.css';
@@ -59,6 +60,19 @@ const parseDraftOptions = (raw?: string | null): Array<{ label: string; content:
     const arr = JSON.parse(raw);
     return Array.isArray(arr)
       ? arr.filter((o: { label?: string; content?: string }) => o && o.label && o.content)
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+/** 导入校验报告（check_report JSON）零信任解析：返回 errors 列表（权重合计≠100%、X/Y/Z 占比超标等） */
+const parseCheckReport = (raw?: string | null): string[] => {
+  if (!raw) return [];
+  try {
+    const obj = JSON.parse(raw);
+    return Array.isArray(obj?.errors)
+      ? obj.errors.filter((e: unknown) => typeof e === 'string' && e)
       : [];
   } catch {
     return [];
@@ -125,6 +139,30 @@ const TheoryQuestionGenPage: React.FC = () => {
     queryFn: () => listBlueprints({ page: bpPage, pageSize: bpPageSize }),
   });
 
+  // 源细目表下载（按批次 id 标记 loading）
+  const [downloadingBpId, setDownloadingBpId] = useState<string | undefined>();
+
+  /** 下载导入时的源细目表，供对照核对（文件名用导入时的原始文件名） */
+  const doDownloadBlueprint = async (r: TheoryBlueprint) => {
+    if (!r.sourceFileId) {
+      return;
+    }
+    setDownloadingBpId(r.id);
+    try {
+      const blob = await downloadBlueprintSource(r.sourceFileId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = r.sourceFileName || `细目表-${r.title}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // 错误提示由拦截器统一处理
+    } finally {
+      setDownloadingBpId(undefined);
+    }
+  };
+
   // 同名工种消歧（A 方案）：库里存在“顶级职业节点 + 同名子工种节点”的历史建模
   // （如矿山救护工 53/107、氧化铝制取工 22/117）。仅同名组显示父链路径，其余保持纯名称。
   const workTypeOptions = useMemo(() => {
@@ -162,7 +200,26 @@ const TheoryQuestionGenPage: React.FC = () => {
     }, 300);
     try {
       const bp = await importBlueprint(file, workTypeId, level);
-      message.success(`导入成功：考评点 ${bp.pointCount} 个，X:Y:Z=${bp.xyzRatio ?? '-'}`);
+      const errs = parseCheckReport(bp.checkReport);
+      if (errs.length) {
+        // 校验提示不阻塞使用，但必须让用户当场看到差在哪（如一级权重合计≠100%）
+        Modal.warning({
+          title: `导入完成，有 ${errs.length} 条校验提示`,
+          width: 520,
+          content: (
+            <div>
+              <div style={{ marginBottom: 8, color: '#888' }}>
+                以下内容请对照源文件核对，修正后可重新导入：
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {errs.map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            </div>
+          ),
+        });
+      } else {
+        message.success(`导入成功：考评点 ${bp.pointCount} 个，X:Y:Z=${bp.xyzRatio ?? '-'}`);
+      }
       qc.invalidateQueries({ queryKey: ['theorygen-blueprints'] });
     } catch {
       // 错误提示由拦截器统一处理
@@ -187,7 +244,33 @@ const TheoryQuestionGenPage: React.FC = () => {
     { title: '考评点', dataIndex: 'pointCount', key: 'pointCount', width: 80 },
     { title: 'X:Y:Z', dataIndex: 'xyzRatio', key: 'xyzRatio', width: 110 },
     { title: '权重校验', dataIndex: 'weightCheck', key: 'weightCheck', width: 90,
-      render: (v: number) => (v === 1 ? <Tag color="success">通过</Tag> : <Tag color="warning">未通过</Tag>) },
+      render: (v: number, r: TheoryBlueprint) => {
+        const tag = v === 1 ? <Tag color="success">通过</Tag> : <Tag color="warning">未通过</Tag>;
+        const errs = parseCheckReport(r.checkReport);
+        // 有校验记录时点击标签查看明细（如"一级权重合计 97.00% ≠ 100%"）
+        if (!errs.length) {
+          return tag;
+        }
+        return (
+          <Popover trigger="click" title="导入校验详情" overlayStyle={{ width: 460 }}
+            content={
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {errs.map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            }>
+            <span style={{ cursor: 'pointer' }}>{tag}</span>
+          </Popover>
+        );
+      } },
+    { title: '细目表下载', key: 'srcFile', width: 100,
+      render: (_: unknown, r: TheoryBlueprint) => r.sourceFileId ? (
+        <Button size="small" loading={downloadingBpId === r.id}
+          onClick={() => { void doDownloadBlueprint(r); }}>下载</Button>
+      ) : (
+        <Tooltip title="该批次导入时未保留源文件，重新导入后即可下载">
+          <Button size="small" disabled>下载</Button>
+        </Tooltip>
+      ) },
     { title: '导入时间', dataIndex: 'createdAt', key: 'createdAt', width: 150,
       render: (v: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-') },
     { title: '状态', dataIndex: 'status', key: 'status', width: 100,

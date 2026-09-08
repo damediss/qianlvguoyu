@@ -19,6 +19,7 @@ public class TheoryBlueprintEntity {
   private Integer courseId;
   private String title;
   private String sourceFileName;
+  private Long sourceFileId;
   private Integer pointCount;
   private String xyzRatio;
   private Integer weightCheck;
@@ -46,6 +47,8 @@ public class TheoryBlueprintEntity {
   public void setTitle(String title) { this.title = title; }
   public String getSourceFileName() { return sourceFileName; }
   public void setSourceFileName(String sourceFileName) { this.sourceFileName = sourceFileName; }
+  public Long getSourceFileId() { return sourceFileId; }
+  public void setSourceFileId(Long sourceFileId) { this.sourceFileId = sourceFileId; }
   public Integer getPointCount() { return pointCount; }
   public void setPointCount(Integer pointCount) { this.pointCount = pointCount; }
   public String getXyzRatio() { return xyzRatio; }

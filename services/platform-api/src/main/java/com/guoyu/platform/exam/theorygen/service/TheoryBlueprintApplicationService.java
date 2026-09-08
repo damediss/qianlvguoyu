@@ -20,6 +20,8 @@ import com.guoyu.platform.exam.theorygen.entity.TheoryBlueprintNodeEntity;
 import com.guoyu.platform.exam.theorygen.mapper.TheoryBlueprintMapper;
 import com.guoyu.platform.exam.theorygen.mapper.TheoryBlueprintNodeMapper;
 import com.guoyu.platform.exam.theorygen.parser.TheoryBlueprintXlsxParser;
+import com.guoyu.platform.file.service.FileApplicationService;
+import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.security.SecurityContext;
 import java.io.IOException;
 import java.io.InputStream;
@@ -50,17 +52,19 @@ public class TheoryBlueprintApplicationService {
   private final ExamWorkTypeMapper workTypeMapper;
   private final ExamCourseMapper courseMapper;
   private final ObjectMapper objectMapper;
+  private final FileApplicationService fileApplicationService;
 
   public TheoryBlueprintApplicationService(TheoryBlueprintMapper blueprintMapper,
       TheoryBlueprintNodeMapper nodeMapper, TheoryBlueprintXlsxParser parser,
       ExamWorkTypeMapper workTypeMapper, ExamCourseMapper courseMapper,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper, FileApplicationService fileApplicationService) {
     this.blueprintMapper = blueprintMapper;
     this.nodeMapper = nodeMapper;
     this.parser = parser;
     this.workTypeMapper = workTypeMapper;
     this.courseMapper = courseMapper;
     this.objectMapper = objectMapper;
+    this.fileApplicationService = fileApplicationService;
   }
 
   /** 导入细目表 xlsx */
@@ -85,8 +89,11 @@ public class TheoryBlueprintApplicationService {
     }
 
     BlueprintParseResult parsed;
+    byte[] sourceBytes;
     try (InputStream in = file.getInputStream()) {
-      parsed = parser.parse(in, fileName);
+      // 一次性读入内存：解析与源文件留存共用同一份字节，避免二次取流
+      sourceBytes = in.readAllBytes();
+      parsed = parser.parse(new java.io.ByteArrayInputStream(sourceBytes), fileName);
     } catch (IOException e) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "文件读取失败: " + e.getMessage());
     }
@@ -167,6 +174,9 @@ public class TheoryBlueprintApplicationService {
     }
 
     // —— 落库（校验错误不阻塞导入，随 check_report 返回由人工判断；但空结构阻塞）——
+    // 源文件留存：走到这里说明结构可解析，才存文件；同事务，落库失败时 sys_file 行回滚、物理文件由文件服务清理
+    FileVO storedSource = fileApplicationService.storeFromBytes(
+        sourceBytes, parsed.getFileName(), file.getContentType(), "private");
     TheoryBlueprintEntity bp = new TheoryBlueprintEntity();
     bp.setId(com.baomidou.mybatisplus.core.toolkit.IdWorker.getId());
     bp.setTenantId(tenantId);
@@ -174,6 +184,7 @@ public class TheoryBlueprintApplicationService {
     bp.setLevel(level);
     bp.setTitle(workType.getTitle() + "（" + level + "级/" + LEVEL_NAMES[level] + "）理论知识考评要素细目表");
     bp.setSourceFileName(parsed.getFileName());
+    bp.setSourceFileId(storedSource.id());
     bp.setPointCount(pointCount);
     bp.setXyzRatio(x + ":" + y + ":" + z);
     bp.setWeightCheck(weightOk ? 1 : 0);

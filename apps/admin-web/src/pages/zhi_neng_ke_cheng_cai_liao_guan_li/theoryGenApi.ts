@@ -18,6 +18,7 @@ export interface TheoryBlueprint {
   courseId?: number | null;
   title: string;
   sourceFileName?: string | null;
+  sourceFileId?: string | null;
   pointCount: number;
   xyzRatio?: string | null;
   weightCheck: number;
@@ -110,6 +111,15 @@ export const getBlueprintTree = (id: string) =>
 
 export const deleteBlueprint = (id: string) =>
   unwrap<void>(apiClient.delete(`/exam/theory/blueprint/${id}`));
+
+/** 下载导入时的源细目表文件（/files/{id}/download 流式返回，文件名取批次 sourceFileName） */
+export const downloadBlueprintSource = async (fileId: string): Promise<Blob> => {
+  const resp = await apiClient.get(`/files/${fileId}/download`, {
+    responseType: 'blob',
+    timeout: 120000,
+  });
+  return resp.data as Blob;
+};
 
 // ------------------------------------------------------------------
 // 生成批次
