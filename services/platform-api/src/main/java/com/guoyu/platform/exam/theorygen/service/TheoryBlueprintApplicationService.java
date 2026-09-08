@@ -259,6 +259,13 @@ public class TheoryBlueprintApplicationService {
     return c == null ? null : c.getId();
   }
 
+  /** 查蓝图（导出文件命名与“等级”列用） */
+  @Transactional(readOnly = true)
+  public TheoryBlueprintEntity findBlueprint(Long tenantId, Long blueprintId) {
+    TheoryBlueprintEntity b = blueprintMapper.selectById(blueprintId);
+    return b == null || !b.getTenantId().equals(tenantId) ? null : b;
+  }
+
   /** 查单节点（导出服务用） */
   @Transactional(readOnly = true)
   public TheoryBlueprintNodeEntity findNode(Long tenantId, Long nodeId) {

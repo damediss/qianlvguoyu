@@ -1,10 +1,12 @@
 package com.guoyu.platform.exam.theorygen.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.guoyu.platform.exam.theorygen.entity.TheoryBlueprintEntity;
 import com.guoyu.platform.exam.theorygen.entity.TheoryBlueprintNodeEntity;
 import com.guoyu.platform.exam.theorygen.entity.TheoryGenDraftEntity;
 import java.io.ByteArrayInputStream;
@@ -54,35 +56,47 @@ class TheoryGenExportServiceTest {
     when(draftService.listAll(any(), any())).thenReturn(List.of(
         draft("judge", "√", 2, 5),
         draft("single", "B", 4, 1)));
+    TheoryBlueprintEntity blueprint = new TheoryBlueprintEntity();
+    blueprint.setId(100L);
+    blueprint.setLevel(5);
+    blueprint.setTitle("轻冶料浆配料工（5级/初级工）理论知识考评要素细目表");
+    when(blueprintService.findBlueprint(any(), any())).thenReturn(blueprint);
 
     TheoryGenExportService service = new TheoryGenExportService(draftService, blueprintService);
-    byte[] bytes = service.exportBatch(1L, 300L);
+    var file = service.exportBatch(1L, 300L);
 
-    try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+    assertTrue(file.filename().startsWith("轻冶料浆配料工（5级/初级工）理论试题_"),
+        "文件名应为 工种+等级+理论试题_日期");
+    assertTrue(file.filename().endsWith(".xlsx"));
+
+    try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(file.content()))) {
       Sheet sheet = wb.getSheet("试题表");
       Row head = sheet.getRow(0);
-      assertEquals("一级代码名称", head.getCell(1).getStringCellValue());
-      assertEquals("三级代码名称", head.getCell(3).getStringCellValue());
-      assertEquals("考评点名称", head.getCell(4).getStringCellValue());
-      assertEquals("题型", head.getCell(6).getStringCellValue());
-      assertEquals("难度", head.getCell(14).getStringCellValue());
+      assertEquals("考评范围一级", head.getCell(0).getStringCellValue());
+      assertEquals("考评范围三级", head.getCell(2).getStringCellValue());
+      assertEquals("考评点名称", head.getCell(3).getStringCellValue());
+      assertEquals("等级", head.getCell(4).getStringCellValue());
+      assertEquals("题型", head.getCell(5).getStringCellValue());
+      assertEquals("难度", head.getCell(13).getStringCellValue());
+      // 无主观题 → 无主观 4 列，末列为审核状态
+      assertEquals("审核状态", head.getCell(14).getStringCellValue());
+      assertEquals(15, head.getLastCellNum());
 
       Row judge = sheet.getRow(1);
-      assertEquals("A 基本要求", judge.getCell(1).getStringCellValue());
-      assertEquals("A 职业道德", judge.getCell(2).getStringCellValue());
-      assertEquals("A 职业道德基本知识", judge.getCell(3).getStringCellValue());
-      assertEquals("职业道德基本内涵", judge.getCell(4).getStringCellValue());
-      assertEquals("判断题", judge.getCell(6).getStringCellValue());
-      assertEquals("对", judge.getCell(13).getStringCellValue());
-      assertEquals("较易", judge.getCell(14).getStringCellValue());
-      assertEquals("好", judge.getCell(15).getStringCellValue());
+      assertEquals("基本要求", judge.getCell(0).getStringCellValue());
+      assertEquals("职业道德", judge.getCell(1).getStringCellValue());
+      assertEquals("职业道德基本知识", judge.getCell(2).getStringCellValue());
+      assertEquals("职业道德基本内涵", judge.getCell(3).getStringCellValue());
+      assertEquals("5", judge.getCell(4).getStringCellValue());
+      assertEquals("判断题", judge.getCell(5).getStringCellValue());
+      assertEquals("对", judge.getCell(12).getStringCellValue());
+      assertEquals("较易", judge.getCell(13).getStringCellValue());
 
       Row single = sheet.getRow(2);
-      assertEquals("A 基本要求", single.getCell(1).getStringCellValue());
-      assertEquals("单选题", single.getCell(6).getStringCellValue());
-      assertEquals("B", single.getCell(13).getStringCellValue());
-      assertEquals("较难", single.getCell(14).getStringCellValue());
-      assertEquals("差", single.getCell(15).getStringCellValue());
+      assertEquals("基本要求", single.getCell(0).getStringCellValue());
+      assertEquals("单选题", single.getCell(5).getStringCellValue());
+      assertEquals("B", single.getCell(12).getStringCellValue());
+      assertEquals("较难", single.getCell(13).getStringCellValue());
     }
   }
 }

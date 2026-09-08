@@ -21,6 +21,8 @@ public class TheoryGenBatchEntity {
 
   private Long tenantId;
   private Long blueprintId;
+  private Integer workTypeId;
+  private Integer level;
   private Long modelConfigId;
   private String modelId;
   private String modelCode;
@@ -56,6 +58,10 @@ public class TheoryGenBatchEntity {
   public void setTenantId(Long tenantId) { this.tenantId = tenantId; }
   public Long getBlueprintId() { return blueprintId; }
   public void setBlueprintId(Long blueprintId) { this.blueprintId = blueprintId; }
+  public Integer getWorkTypeId() { return workTypeId; }
+  public void setWorkTypeId(Integer workTypeId) { this.workTypeId = workTypeId; }
+  public Integer getLevel() { return level; }
+  public void setLevel(Integer level) { this.level = level; }
   public Long getModelConfigId() { return modelConfigId; }
   public void setModelConfigId(Long modelConfigId) { this.modelConfigId = modelConfigId; }
   public String getModelId() { return modelId; }

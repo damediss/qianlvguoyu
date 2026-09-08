@@ -9,7 +9,7 @@ import {
   Button, Descriptions, Drawer, Form, Input, InputNumber, message, Modal, Popconfirm,
   Progress, Select, Space, Statistic, Table, Tabs, Tag, Tree, Upload,
 } from 'antd';
-import { UploadOutlined } from '@ant-design/icons';
+import { LoadingOutlined, UploadOutlined } from '@ant-design/icons';
 import { treeWorkTypes } from '../../api/exam';
 import type { ExamWorkType } from '../../types/exam';
 import type { PageResponse } from '../../types/api';
@@ -287,12 +287,21 @@ const TheoryQuestionGenPage: React.FC = () => {
     }
   }, [activeBatchId, batchQuery.data]);
 
-  // 批次终态联动：生成中 → 已完成时自动跳"试题草稿"页签并按批次加载题目列表；
-  // → 失败时提示失败原因（留在本页签，可"重试失败"）。仅对跃迁触发，手动查看历史批次不跳。
+  // 批次终态联动：等待中/生成中 → 已完成时自动跳"试题草稿"页签并按批次加载题目列表；
+  // → 失败时提示失败原因（留在本页签，可"重试失败"）。仅对跃迁触发，切换批次时重置基线，手动查看历史批次不跳。
   const prevBatchStatusRef = React.useRef<string | undefined>();
   React.useEffect(() => {
-    const status = progressQuery.data?.status;
-    if (!status || !activeBatchId) {
+    prevBatchStatusRef.current = undefined;
+  }, [activeBatchId]);
+  React.useEffect(() => {
+    if (!activeBatchId) {
+      return;
+    }
+    // 状态以批次列表轮询（3s）为准、进度接口兜底：任一来源先看到终态都能立即联动，
+    // 避免只盯进度接口时因其异常/滞后导致完成后页面无反应
+    const row = (batchQuery.data?.items ?? []).find((b) => b.id === activeBatchId);
+    const status = row?.status ?? progressQuery.data?.status;
+    if (!status) {
       return;
     }
     const prev = prevBatchStatusRef.current;
@@ -305,14 +314,16 @@ const TheoryQuestionGenPage: React.FC = () => {
       setTab('draft');
       qc.invalidateQueries({ queryKey: ['theorygen-drafts'] });
       qc.invalidateQueries({ queryKey: ['theorygen-batches'] });
+      qc.invalidateQueries({ queryKey: ['theorygen-batches-all'] });
     } else if ((prev === 'running' || prev === 'pending') && status === 'failed') {
       qc.invalidateQueries({ queryKey: ['theorygen-batches'] });
+      qc.invalidateQueries({ queryKey: ['theorygen-batches-all'] });
       message.warning({
-        content: `生成批次失败：${progressQuery.data?.failReason ?? '未知原因'}`,
+        content: `生成批次失败：${row?.failReason ?? progressQuery.data?.failReason ?? '未知原因'}`,
         duration: 6,
       });
     }
-  }, [progressQuery.data?.status, progressQuery.data?.failReason, activeBatchId, qc]);
+  }, [activeBatchId, batchQuery.data, progressQuery.data?.status, progressQuery.data?.failReason, qc]);
 
   const submitBatch = async () => {
     if (!selectedBlueprintId || !modelConfigId) {
@@ -342,7 +353,10 @@ const TheoryQuestionGenPage: React.FC = () => {
     { title: '状态', dataIndex: 'status', key: 'status', width: 90,
       render: (v: string) => {
         const t = STATUS_TAG[v] ?? { color: 'default', text: v };
-        return <Tag color={t.color}>{t.text}</Tag>;
+        // 进行态徽标动效：等待中持续变色、生成中呼吸光晕——静态标签看不出后端在干活
+        const animCls = v === 'pending' ? 'xmb-status-waiting'
+          : v === 'running' ? 'xmb-status-running' : undefined;
+        return <Tag color={t.color} className={animCls}>{t.text}</Tag>;
       } },
     { title: '失败原因', dataIndex: 'failReason', key: 'failReason', ellipsis: true },
     { title: '操作', key: 'op', width: 250, render: (_: unknown, r: TheoryGenBatch) => (
@@ -447,6 +461,19 @@ const TheoryQuestionGenPage: React.FC = () => {
     }
   };
 
+  /** 导出文件名：蓝图标题去掉“理论知识考评要素细目表”后缀 + 理论试题_日期.xlsx（与后端口径一致） */
+  const exportFilename = (batchId?: string) => {
+    const date = new Date();
+    const ymd = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+    const batch = allBatches.data?.items.find((b) => b.id === batchId);
+    const bp = bpQuery.data?.items.find((x) => x.id === batch?.blueprintId);
+    const suffix = '理论知识考评要素细目表';
+    const base = bp?.title && bp.title.endsWith(suffix)
+      ? bp.title.slice(0, bp.title.length - suffix.length) + '理论试题'
+      : `理论试题_${ymd}`;
+    return `${base}_${ymd}_批次${batchId ?? ''}.xlsx`;
+  };
+
   const doExport = async () => {
     if (!publishBatchId) {
       message.warning('请选择批次');
@@ -458,7 +485,7 @@ const TheoryQuestionGenPage: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `theory-questions-${publishBatchId}.xlsx`;
+      a.download = exportFilename(publishBatchId);
       a.click();
       URL.revokeObjectURL(url);
       message.success('试题表已导出');
@@ -572,7 +599,10 @@ const TheoryQuestionGenPage: React.FC = () => {
               {progressQuery.data && (progressQuery.data.status === 'running'
                 || progressQuery.data.status === 'pending') && (
                 <Descriptions size="small" style={{ marginTop: 12 }} column={4}
-                  title={`批次 ${progressQuery.data.id.slice(-8)} 进行中`}>
+                  title={<span>
+                    <LoadingOutlined style={{ color: '#1677ff', marginRight: 6 }} />
+                    {`批次 ${progressQuery.data.id.slice(-8)} 进行中`}
+                  </span>}>
                   <Descriptions.Item label="已完成点">{progressQuery.data.donePoints}</Descriptions.Item>
                   <Descriptions.Item label="失败点">{progressQuery.data.failedPoints}</Descriptions.Item>
                   <Descriptions.Item label="已产题">{progressQuery.data.totalQuestions}</Descriptions.Item>

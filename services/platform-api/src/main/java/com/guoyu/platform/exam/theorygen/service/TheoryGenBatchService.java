@@ -62,8 +62,10 @@ public class TheoryGenBatchService {
   /** 熔断阈值：按块完成顺序连续失败 5 次停止派发（与串行版语义一致，R7） */
   private static final int MAX_CONSECUTIVE_FAILURES = 5;
 
-  /** 派发轮次上限（首轮 + 自动补跑）：轮次耗尽仍有缺口 → FAILED，人工"重试失败块"兜底 */
-  private static final int MAX_DISPATCH_ROUNDS = 3;
+  /** 派发轮次上限（首轮 + 自动补跑共 N 轮），可配置；默认 4（2026-09-08 依需求方要求由 3 调至 4）。
+   * 轮次耗尽仍有缺口 → FAILED，人工"重试失败块"兜底 */
+  @Value("${platform.theory.gen.max-dispatch-rounds:4}")
+  private int maxDispatchRounds = 4; // 字段默认值：单测直接 new 构造（无 Spring 注入）时保持 4 轮
 
   private final TheoryBlueprintMapper blueprintMapper;
   private final TheoryBlueprintNodeMapper nodeMapper;
@@ -154,6 +156,8 @@ public class TheoryGenBatchService {
     batch.setId(com.baomidou.mybatisplus.core.toolkit.IdWorker.getId());
     batch.setTenantId(tenantId);
     batch.setBlueprintId(blueprintId);
+    batch.setWorkTypeId(bp.getWorkTypeId());
+    batch.setLevel(bp.getLevel());
     batch.setModelConfigId(cfg.getId());
     batch.setModelId(cfg.getModelId());
     batch.setModelCode(cfg.getModelCode());
@@ -222,7 +226,7 @@ public class TheoryGenBatchService {
    * 全链路不调 SecurityContext；编排/Worker 线程各自 set/clear TenantContextHolder。
    *
    * <p>自动补跑：一轮派发结束后若仍有考评点缺草稿（限流/超时等瞬时失败），退避后自动再跑，
-   * 最多 {@link #MAX_DISPATCH_ROUNDS} 轮；连续失败熔断每轮独立计数，触发即整体终止（系统性故障不再浪费调用）。
+   * 最多 {@link #maxDispatchRounds} 轮；连续失败熔断每轮独立计数，触发即整体终止（系统性故障不再浪费调用）。
    * 轮次耗尽仍有缺口 → FAILED，"重试失败块"可人工兜底。
    */
   public void processBatch(Long batchId, Long tenantId, Long userId, int level) {
@@ -257,7 +261,7 @@ public class TheoryGenBatchService {
       boolean breakerTripped = false;
       int roundsUsed = 0;
       List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
-      while (roundsUsed < MAX_DISPATCH_ROUNDS) {
+      while (roundsUsed < maxDispatchRounds) {
         // 本轮待跑点 = 全部点 − 已有草稿点（断点续跑/自动补跑共用同一跳过机制）
         Set<Long> doneNodeIds = doneNodeIdsOf(batchId);
         List<TheoryBlueprintNodeEntity> pending = new ArrayList<>();

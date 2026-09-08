@@ -90,12 +90,14 @@ public class TheoryGenDraftController {
   public org.springframework.http.ResponseEntity<byte[]> export(@RequestParam Long batchId)
       throws java.io.IOException {
     Long tenantId = TenantContextHolder.getTenantId();
-    byte[] bytes = exportService.exportBatch(tenantId, batchId);
-    String filename = "theory-questions-" + batchId + ".xlsx";
+    var file = exportService.exportBatch(tenantId, batchId);
+    // RFC 5987：中文文件名用 filename* 编码
+    String encoded = java.net.URLEncoder.encode(file.filename(), java.nio.charset.StandardCharsets.UTF_8)
+        .replace("+", "%20");
     return org.springframework.http.ResponseEntity.ok()
-        .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+        .header("Content-Disposition", "attachment; filename*=UTF-8''" + encoded)
         .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        .body(bytes);
+        .body(file.content());
   }
 
   public record ReviewReq(List<Long> draftIds, boolean approve) {
