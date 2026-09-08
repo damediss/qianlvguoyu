@@ -238,14 +238,18 @@ class DocxStandardParserTest {
     assertTrue(fanghu.getSkillMaterials().size() >= 4, "防护装备操作应有 ≥4 条技能素材");
   }
 
-  /** A9：空小节标记 */
+  /** A9：空小节标记；"职业道德基本知识"空小节按统一业务口径固定补齐相关知识 */
   @Test
   void a9_emptySectionNeedLlm() {
     StandardNodeDoc zhiyeDaode = kuangshan.getBasicSections().get(0);
     StandardNodeDoc jibenZhishi = zhiyeDaode.getChildren().get(0);
     assertEquals("职业道德基本知识", jibenZhishi.getTitle());
-    assertTrue(jibenZhishi.getTheoryMaterials().isEmpty(), "2.1.1 无列举项");
-    assertTrue(jibenZhishi.isNeedLlm(), "2.1.1 应标记 needLlm");
+    // 源标准无列举项，解析期固定补齐：素材 4 条、相关知识带编号逐行、不再标记 needLlm
+    assertEquals(List.of("工匠精神培养", "安全意识培养", "职业道德素养", "团队协作精神"),
+        jibenZhishi.getTheoryMaterials(), "2.1.1 应补齐固定素材");
+    assertEquals("1.工匠精神培养\n2.安全意识培养\n3.职业道德素养\n4.团队协作精神",
+        jibenZhishi.getRelatedKnowledgeRaw());
+    assertFalse(jibenZhishi.isNeedLlm(), "补齐后不再标记 needLlm");
     // 2.1.2 职业守则有 9 条
     StandardNodeDoc shouze = zhiyeDaode.getChildren().get(1);
     assertEquals(9, shouze.getTheoryMaterials().size());

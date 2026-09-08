@@ -78,8 +78,10 @@ class StandardTreeBuilderTest {
     // 编码序列与样例一致：A-A-A 职业道德基本知识、A-A-B 职业守则
     assertEquals("职业道德基本知识A-A-A", find(drafts, 0, "默认", "A-A-A").title());
     assertEquals("职业守则A-A-B", find(drafts, 0, "默认", "A-A-B").title());
-    // 2.1.1 空小节 needLlm
-    assertTrue(find(drafts, 0, "默认", "A-A-A").needLlm());
+    // 2.1.1 职业道德基本知识：源标准空小节，解析期已按固定口径补齐相关知识，不再标记 needLlm
+    assertFalse(find(drafts, 0, "默认", "A-A-A").needLlm());
+    assertEquals("1.工匠精神培养\n2.安全意识培养\n3.职业道德素养\n4.团队协作精神",
+        find(drafts, 0, "默认", "A-A-A").relatedKnowledge());
 
     // 技师（level 3）：培训指导 0.10 出现在 B 支
     StandardTreeDraft bd = find(drafts, 3, "默认", "B-D");

@@ -44,6 +44,10 @@ public class DocxStandardParser {
   /** "—"/"－"/"-" 等占位符：不是方向名，也不是有效数值 */
   private static final Pattern DASH_PLACEHOLDER = Pattern.compile("^[—－\\-–\\s]+$");
   private static final String[] LEVEL_NAMES = {"五级/初级工", "四级/中级工", "三级/高级工", "二级/技师", "一级/高级技师"};
+  /** 多数职业标准的"职业道德基本知识"小节无相关知识列举项，按统一业务口径固定补齐（1.xxx 换行分隔，与解析条目格式一致） */
+  private static final String ETHICS_SECTION_NAME = "职业道德基本知识";
+  private static final String ETHICS_DEFAULT_KNOWLEDGE =
+      "1.工匠精神培养\n2.安全意识培养\n3.职业道德素养\n4.团队协作精神";
 
   public ParsedStandard parse(InputStream in) throws IOException {
     ParsedStandard result = new ParsedStandard();
@@ -571,6 +575,15 @@ public class DocxStandardParser {
     // 基本要求 L2 无列举项 → needLlm
     for (StandardNodeDoc l1 : result.getBasicSections()) {
       for (StandardNodeDoc l2 : l1.getChildren()) {
+        // "职业道德基本知识"空小节固定兜底：补齐相关知识原文与素材条目，使其不再按空小节走 LLM 兜底
+        if ((l2.getRelatedKnowledgeRaw() == null || l2.getRelatedKnowledgeRaw().isBlank())
+            && ETHICS_SECTION_NAME.equals(DocxTextUtil.normalizeItemName(l2.getTitle()))) {
+          l2.setRelatedKnowledgeRaw(ETHICS_DEFAULT_KNOWLEDGE);
+          // splitItems 对单级「1.」编号不切条目，这里按行显式拆并剥编号，与其素材风格一致
+          for (String item : ETHICS_DEFAULT_KNOWLEDGE.split("\n")) {
+            l2.getTheoryMaterials().add(item.replaceFirst("^\\d+\\.", ""));
+          }
+        }
         if (l2.getTheoryMaterials().isEmpty()) {
           l2.setNeedLlm(true);
           result.getParseWarnings().add("WARN: 空小节（无列举项，需 LLM 概括）：基本要求 "
