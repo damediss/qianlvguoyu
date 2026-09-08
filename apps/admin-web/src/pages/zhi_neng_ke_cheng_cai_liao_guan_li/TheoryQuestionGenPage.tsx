@@ -125,16 +125,26 @@ const TheoryQuestionGenPage: React.FC = () => {
     queryFn: () => listBlueprints({ page: bpPage, pageSize: bpPageSize }),
   });
 
+  // 同名工种消歧（A 方案）：库里存在“顶级职业节点 + 同名子工种节点”的历史建模
+  // （如矿山救护工 53/107、氧化铝制取工 22/117）。仅同名组显示父链路径，其余保持纯名称。
   const workTypeOptions = useMemo(() => {
-    const flat: ExamWorkType[] = [];
-    const walk = (list: ExamWorkType[]) => {
+    const rows: Array<{ id: number; title: string; path: string }> = [];
+    const walk = (list: ExamWorkType[], prefix: string) => {
       for (const w of list ?? []) {
-        flat.push(w);
-        if (w.children?.length) walk(w.children);
+        const path = prefix ? `${prefix}/${w.title}` : w.title;
+        rows.push({ id: w.id, title: w.title, path });
+        if (w.children?.length) walk(w.children, path);
       }
     };
-    walk(wtTree.data ?? []);
-    return flat.map((w) => ({ value: w.id, label: w.title }));
+    walk(wtTree.data ?? [], '');
+    const titleCount = new Map<string, number>();
+    for (const r of rows) {
+      titleCount.set(r.title, (titleCount.get(r.title) ?? 0) + 1);
+    }
+    return rows.map((r) => ({
+      value: r.id,
+      label: (titleCount.get(r.title) ?? 0) > 1 ? r.path : r.title,
+    }));
   }, [wtTree.data]);
 
   const doImport = async (file: File) => {
@@ -478,7 +488,9 @@ const TheoryQuestionGenPage: React.FC = () => {
           children: (
             <>
               <Space style={{ marginBottom: 16 }} wrap>
-                <Select style={{ width: 220 }} placeholder="选择工种"
+                <Select style={{ width: 220 }} placeholder="选择工种（可输入搜索）"
+                  showSearch
+                  optionFilterProp="label"
                   options={workTypeOptions}
                   value={workTypeId}
                   onChange={(v) => setWorkTypeId(v)} />
