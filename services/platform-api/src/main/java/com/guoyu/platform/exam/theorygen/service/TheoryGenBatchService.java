@@ -105,8 +105,10 @@ public class TheoryGenBatchService {
     this.retryBackoffBaseMillis = retryBackoffBaseMillis;
   }
 
-  /** 提交生成批次（秒回 batchId；实际生成在 Worker 线程） */
-  @Transactional
+  /** 提交生成批次（秒回 batchId；实际生成在 Worker 线程）。
+   * 注意：本方法不带 @Transactional——写库经 TransactionTemplate 先提交，之后才投递编排线程。
+   * 此前写库与 submit 同处一个事务，Worker 在提交前抢跑 selectById 读不到新批次，
+   * 报"理论生成批次不存在"后静默返回，批次永远停在 pending（生产 09-08 事故）。 */
   public TheoryGenBatchVO submit(Long tenantId, Long userId, Long blueprintId, Long modelConfigId,
       Map<String, Integer> quota) {
     TheoryBlueprintEntity bp = blueprintMapper.selectById(blueprintId);
@@ -171,13 +173,16 @@ public class TheoryGenBatchService {
     batch.setCreatedAt(LocalDateTime.now());
     batch.setUpdatedAt(LocalDateTime.now());
     batch.setDeleted(0);
-    batchMapper.insert(batch);
+    // 写库经 TransactionTemplate 提交完毕后再投递编排线程，消除"Worker 抢跑读不到新批次"竞态
+    transactionTemplate.executeWithoutResult(status -> {
+      batchMapper.insert(batch);
+      bp.setStatus("generating");
+      bp.setUpdatedAt(LocalDateTime.now());
+      blueprintMapper.updateById(bp);
+    });
 
-    bp.setStatus("generating");
-    bp.setUpdatedAt(LocalDateTime.now());
-    blueprintMapper.updateById(bp);
-
-    // 提交异步编排（AbortPolicy：池满抛 RejectedExecutionException → 503 由全局异常兜底）
+    // 提交异步编排（AbortPolicy：池满抛 RejectedExecutionException → 503 由全局异常兜底）。
+    // 此时写库已提交、行对外可见；拒绝路径的失败标记为无事务自动提交，不受外层事务影响。
     try {
       theoryGenExecutor.submit(() -> processBatch(batch.getId(), tenantId, userId, bp.getLevel()));
     } catch (RejectedExecutionException e) {
@@ -544,8 +549,8 @@ public class TheoryGenBatchService {
     return TheoryGenBatchVO.from(batch);
   }
 
-  /** 继续（HTTP 线程 → 新 run_id 重新提交编排，断点续跑） */
-  @Transactional
+  /** 继续（HTTP 线程 → 新 run_id 重新提交编排，断点续跑）。
+   * 无 @Transactional：状态更新即时提交后才投递编排线程，避免 Worker 抢跑读到旧状态。 */
   public TheoryGenBatchVO resume(Long tenantId, Long userId, Long batchId) {
     TheoryGenBatchEntity batch = getOwned(tenantId, batchId);
     if (!TheoryGenBatchEntity.STATUS_PAUSED.equals(batch.getStatus())) {
@@ -567,8 +572,8 @@ public class TheoryGenBatchService {
     return TheoryGenBatchVO.from(batch);
   }
 
-  /** 重试缺口：失败批次或已完成但有缺口的批次均可重试（自动补跑轮次耗尽后的人工兜底） */
-  @Transactional
+  /** 重试缺口：失败批次或已完成但有缺口的批次均可重试（自动补跑轮次耗尽后的人工兜底）。
+   * 无 @Transactional：状态更新即时提交后才投递编排线程，避免 Worker 抢跑读到旧状态。 */
   public TheoryGenBatchVO retryFailed(Long tenantId, Long userId, Long batchId) {
     TheoryGenBatchEntity batch = getOwned(tenantId, batchId);
     boolean failed = TheoryGenBatchEntity.STATUS_FAILED.equals(batch.getStatus());

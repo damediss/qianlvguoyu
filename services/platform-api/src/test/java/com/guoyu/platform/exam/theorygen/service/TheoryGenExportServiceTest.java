@@ -61,23 +61,28 @@ class TheoryGenExportServiceTest {
     try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
       Sheet sheet = wb.getSheet("试题表");
       Row head = sheet.getRow(0);
-      assertEquals("考评点代码", head.getCell(1).getStringCellValue());
-      assertEquals("题型", head.getCell(4).getStringCellValue());
-      assertEquals("难度", head.getCell(12).getStringCellValue());
+      assertEquals("一级代码名称", head.getCell(1).getStringCellValue());
+      assertEquals("三级代码名称", head.getCell(3).getStringCellValue());
+      assertEquals("考评点名称", head.getCell(4).getStringCellValue());
+      assertEquals("题型", head.getCell(6).getStringCellValue());
+      assertEquals("难度", head.getCell(14).getStringCellValue());
 
       Row judge = sheet.getRow(1);
-      assertEquals("A-A-A-001", judge.getCell(1).getStringCellValue());
-      assertEquals("判断题", judge.getCell(4).getStringCellValue());
-      assertEquals("对", judge.getCell(11).getStringCellValue());
-      assertEquals("较易", judge.getCell(12).getStringCellValue());
-      assertEquals("好", judge.getCell(13).getStringCellValue());
+      assertEquals("A 基本要求", judge.getCell(1).getStringCellValue());
+      assertEquals("A 职业道德", judge.getCell(2).getStringCellValue());
+      assertEquals("A 职业道德基本知识", judge.getCell(3).getStringCellValue());
+      assertEquals("职业道德基本内涵", judge.getCell(4).getStringCellValue());
+      assertEquals("判断题", judge.getCell(6).getStringCellValue());
+      assertEquals("对", judge.getCell(13).getStringCellValue());
+      assertEquals("较易", judge.getCell(14).getStringCellValue());
+      assertEquals("好", judge.getCell(15).getStringCellValue());
 
       Row single = sheet.getRow(2);
-      assertEquals("A-A-A-001", single.getCell(1).getStringCellValue());
-      assertEquals("单选题", single.getCell(4).getStringCellValue());
-      assertEquals("B", single.getCell(11).getStringCellValue());
-      assertEquals("较难", single.getCell(12).getStringCellValue());
-      assertEquals("差", single.getCell(13).getStringCellValue());
+      assertEquals("A 基本要求", single.getCell(1).getStringCellValue());
+      assertEquals("单选题", single.getCell(6).getStringCellValue());
+      assertEquals("B", single.getCell(13).getStringCellValue());
+      assertEquals("较难", single.getCell(14).getStringCellValue());
+      assertEquals("差", single.getCell(15).getStringCellValue());
     }
   }
 }

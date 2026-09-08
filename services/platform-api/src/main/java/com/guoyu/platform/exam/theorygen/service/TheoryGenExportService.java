@@ -17,10 +17,10 @@ import org.springframework.stereotype.Service;
 public class TheoryGenExportService {
 
   private static final String[] HEADERS = {
-      "序号", "考评点代码", "考评点名称", "重要程度", "题型", "题干",
+      "序号", "一级代码名称", "二级代码名称", "三级代码名称", "考评点名称", "重要程度", "题型", "题干",
       "（A）", "（B）", "（C）", "（D）", "（E）", "答案", "难度", "一致性",
       "解析", "参考答案（主观）", "评分要点（主观）", "评分标准（主观）", "建议分值",
-      "来源", "审核状态"
+      "审核状态"
   };
 
   /** 难度等级中文（指引：易、较易、中、较难、难 ↔ 1~5） */
@@ -60,9 +60,12 @@ public class TheoryGenExportService {
       for (TheoryGenDraftEntity d : drafts) {
         Row row = sheet.createRow(r++);
         var node = nodeMap.get(d.getNodeId());
+        String[] levelCells = levelCells(nodeMap, node);
         int c = 0;
         row.createCell(c++).setCellValue(r - 1);
-        row.createCell(c++).setCellValue(pointCode(nodeMap, node));
+        row.createCell(c++).setCellValue(nvl(levelCells[0]));
+        row.createCell(c++).setCellValue(nvl(levelCells[1]));
+        row.createCell(c++).setCellValue(nvl(levelCells[2]));
         row.createCell(c++).setCellValue(node == null ? "" : nvl(node.getName()));
         row.createCell(c++).setCellValue(node == null || node.getImportance() == null
             ? "" : node.getImportance());
@@ -82,8 +85,7 @@ public class TheoryGenExportService {
         row.createCell(c++).setCellValue(nvl(d.getScorePoints()));
         row.createCell(c++).setCellValue(nvl(d.getScoringStandard()));
         row.createCell(c++).setCellValue(d.getScore() == null ? "" : d.getScore().toPlainString());
-        row.createCell(c++).setCellValue("AI:" + nvl(d.getAiModel()));
-        row.createCell(c).setCellValue(reviewName(d.getReviewStatus()));
+        row.createCell(c++).setCellValue(reviewName(d.getReviewStatus()));
       }
       wb.write(out);
       return out.toByteArray();
@@ -122,20 +124,21 @@ public class TheoryGenExportService {
     };
   }
 
-  /** 考评点代码沿父链逐级拼：一级-二级-三级-考评点序号 → A-A-A-001（指引 §理论知识试题的基本参数） */
-  private String pointCode(Map<Long, TheoryBlueprintNodeEntity> nodes, TheoryBlueprintNodeEntity leaf) {
-    if (leaf == null) {
-      return "";
-    }
-    java.util.Deque<String> segs = new java.util.ArrayDeque<>();
+  /** 沿父链取一/二/三级考评范围的「代码 名称」（index 0=一级，1=二级，2=三级） */
+  private String[] levelCells(Map<Long, TheoryBlueprintNodeEntity> nodes,
+      TheoryBlueprintNodeEntity leaf) {
+    String[] out = new String[3];
     TheoryBlueprintNodeEntity cur = leaf;
     int guard = 0;
     while (cur != null && guard++ < 8) { // 树深 4；防御脏数据成环
-      segs.push(nvl(cur.getCode()));
+      int lvl = cur.getNodeLevel() == null ? 0 : cur.getNodeLevel();
+      if (lvl >= 1 && lvl <= 3) {
+        out[lvl - 1] = nvl(cur.getCode()) + " " + nvl(cur.getName());
+      }
       Long pid = cur.getParentId();
       cur = pid == null || pid == 0L ? null : nodes.get(pid);
     }
-    return String.join("-", segs);
+    return out;
   }
 
   private String typeName(String t) {
