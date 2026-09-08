@@ -161,6 +161,23 @@ class StandardServiceTest {
         .contains("INSERT INTO"), "SQL 导出应包含 INSERT");
   }
 
+  /** 上传前置校验：OLE2（Word 97-2003 .doc）伪装 .docx 的文件应友好拒绝而非 500 */
+  @Test
+  void uploadRejectsOle2DisguisedAsDocx() {
+    StandardParseApplicationService service = newParseService(
+        mock(ExamStandardTaskMapper.class), mock(ExamStandardNodeMapper.class),
+        mock(FileApplicationService.class));
+    byte[] ole2 = new byte[16];
+    ole2[0] = (byte) 0xD0;
+    ole2[1] = (byte) 0xCF;
+    ole2[2] = 0x11;
+    ole2[3] = (byte) 0xE0;
+    BusinessException ex = assertThrows(BusinessException.class,
+        () -> service.uploadAndParse(ole2, "fake.docx", 1L, 1L));
+    assertTrue(ex.getMessage().contains("Word 97-2003"),
+        "应提示 Word 97-2003 旧格式并引导另存为 .docx");
+  }
+
   /** C6：LLM 配置缺失 → 触发报错且任务保持 parsed（降级：可人工补叶导出） */
   @Test
   void c6_llmConfigMissingDegrades() {
