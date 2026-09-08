@@ -80,13 +80,16 @@ public class AsyncConfig {
 
   /**
    * 理论试题生成批次编排池（每批次占 1 线程做编排，块任务派发到 theoryGenBlockExecutor，暂停只挡新块）。
+   * 并发批次上限 platform.theory.gen.batch-concurrency（默认 3，可配）：同蓝图仍串行（提交侧校验），
+   * 不同蓝图可并行；排队超出部分显示"等待中"。
    * AbortPolicy：同时批次过多时直接拒绝 → 503 服务繁忙（AGENTS.md 坑 #12/#14）。
    */
   @Bean(name = "theoryGenExecutor")
-  public ThreadPoolTaskExecutor theoryGenExecutor() {
+  public ThreadPoolTaskExecutor theoryGenExecutor(
+      @Value("${platform.theory.gen.batch-concurrency:3}") int batchConcurrency) {
     ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-    executor.setCorePoolSize(1);
-    executor.setMaxPoolSize(2);
+    executor.setCorePoolSize(batchConcurrency);
+    executor.setMaxPoolSize(batchConcurrency);
     executor.setQueueCapacity(10);
     executor.setThreadNamePrefix("theory-gen-");
     executor.setWaitForTasksToCompleteOnShutdown(true);
@@ -97,19 +100,20 @@ public class AsyncConfig {
   }
 
   /**
-   * 理论试题生成块任务池（优化方案 v0.3 P3）：并发度 platform.theory.gen.block-concurrency（默认 5，可配）。
-   * core=max=N；queueCapacity=N 吸收"信号量释放→线程就绪"交接抖动避免误拒绝，
-   * 在飞 LLM 调用数由派发侧同源信号量（permits=N）保证 ≤ N。
-   * 峰值 LLM 并发 = 批次间并发 × 此值，GLM 1302 限流频发时下调配置。
-   * AbortPolicy：拒绝由编排侧捕获计块失败（坑 #12/#14）。
+   * 理论试题生成块任务池（优化方案 v0.3 P3；2026-09-08 GLM 并发闸口方案 A 配套扩容）。
+   * core=max=platform.theory.gen.block-concurrency（默认 50，可配）；queueCapacity 固定 200：
+   * 3 批次并行 × 每批 50 派发名额 = 150 个已派发块全部可入队，不再 AbortPolicy 误拒计失败。
+   * glm-5.3-flash 在飞调用数由 FaqLlmClient 模型闸口（platform.ai.glm-max-concurrency，默认 50）
+   * 全局统一封顶、超出排队等待；本池只是搬运线程，线程数 ≥ 闸口上限才能跑满并发。
+   * AbortPolicy：队列耗尽的极端情况拒绝由编排侧捕获计块失败（坑 #12/#14）。
    */
   @Bean(name = "theoryGenBlockExecutor")
   public ThreadPoolTaskExecutor theoryGenBlockExecutor(
-      @Value("${platform.theory.gen.block-concurrency:5}") int blockConcurrency) {
+      @Value("${platform.theory.gen.block-concurrency:50}") int blockConcurrency) {
     ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
     executor.setCorePoolSize(Math.max(1, blockConcurrency));
     executor.setMaxPoolSize(Math.max(1, blockConcurrency));
-    executor.setQueueCapacity(Math.max(1, blockConcurrency));
+    executor.setQueueCapacity(200);
     executor.setThreadNamePrefix("theory-gen-block-");
     executor.setWaitForTasksToCompleteOnShutdown(true);
     executor.setAwaitTerminationSeconds(120);

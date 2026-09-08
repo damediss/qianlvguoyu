@@ -11,7 +11,9 @@ import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
@@ -44,6 +46,14 @@ import org.springframework.web.client.RestClientResponseException;
  *   <li>新增 {@link #chatCompletionMessages}：messages 透传代理模式，仅做 HTTP 级分类，内容级结果原样返回</li>
  * </ul>
  *
+ * <p>改造说明（2026-09-08）：
+ * <ul>
+ *   <li>glm-5.3-flash 单模型并发闸口：公平信号量封顶全局在飞调用（默认 50，可配
+ *       platform.ai.glm-max-concurrency），超出排队等待；仅该模型受限，同账户其它 GLM
+ *       模型与其它平台不受影响</li>
+ *   <li>连接池扩容：maxTotal 60→120、perRoute 30→60（≥ 闸口上限，否则连接池先成为瓶颈）</li>
+ * </ul>
+ *
  * <p>注意：tenantId 由调用方通过参数传入，整个调用链不调 SecurityContext。
  */
 @Slf4j
@@ -53,6 +63,14 @@ public class FaqLlmClient {
   private final ObjectMapper objectMapper;
   private final RestClient client;
 
+  /** glm-5.3-flash 单模型并发闸口上限（方案 A，2026-09-08）：超出排队等待，仅该模型受限。
+   * 字段内联默认值兜底单测直接 new（无 Spring 注入）的场景 */
+  @Value("${platform.ai.glm-max-concurrency:50}")
+  private int glmMaxConcurrency = 50;
+
+  /** 模型并发闸口（key = modelId 小写）：公平信号量保证先到先得排队 */
+  private final ConcurrentHashMap<String, Semaphore> modelGates = new ConcurrentHashMap<>();
+
   /** 连接池与底层 HttpClient 单例（各超时档位 RestClient 共享同一连接池） */
   private final PoolingHttpClientConnectionManager connectionManager;
   /** responseTimeout 分档缓存：秒数 → 独立 RequestConfig 的 RestClient（共享连接池） */
@@ -61,11 +79,12 @@ public class FaqLlmClient {
   public FaqLlmClient(ObjectMapper objectMapper) {
     this.objectMapper = objectMapper;
 
-    // 连接池配置：maxTotal=60, perRoute=30, keepAlive=60s, validateAfterInactivity=5s
+    // 连接池配置：maxTotal=120, perRoute=60, keepAlive=60s, validateAfterInactivity=5s
+    // perRoute 60 ≥ glm-5.3-flash 并发闸口上限 50，另给其它平台/模型留余量
     PoolingHttpClientConnectionManager connectionManager =
         PoolingHttpClientConnectionManagerBuilder.create()
-            .setMaxConnTotal(60)
-            .setMaxConnPerRoute(30)
+            .setMaxConnTotal(120)
+            .setMaxConnPerRoute(60)
             .setValidateAfterInactivity(TimeValue.ofSeconds(5))
             .build();
     this.connectionManager = connectionManager;
@@ -208,7 +227,8 @@ public class FaqLlmClient {
         systemPrompt, userPrompt);
 
     // 共享层：HTTP 调用 + HTTP 级异常分类
-    JsonNode response = executeChatCompletion(requestBody, url, apiKey, tenantId, targetClient);
+    JsonNode response = executeChatCompletion(requestBody, url, baseUrl, modelId, apiKey,
+        tenantId, targetClient);
 
     // 内容级分类
     String content = extractContent(response, url, tenantId);
@@ -219,7 +239,8 @@ public class FaqLlmClient {
       for (int attempt = 1; attempt <= maxRetries; attempt++) {
         log.warn("DeepSeek JSON mode 返回空 content，开始第 {}/{} 次重试：tenantId={}, url={}",
             attempt, maxRetries, tenantId, url);
-        response = executeChatCompletion(requestBody, url, apiKey, tenantId, targetClient);
+        response = executeChatCompletion(requestBody, url, baseUrl, modelId, apiKey,
+            tenantId, targetClient);
         content = extractContent(response, url, tenantId);
         if (content != null && !content.isBlank()) {
           return LlmChatCompletionResult.from(response, content);
@@ -272,7 +293,7 @@ public class FaqLlmClient {
     requestBody.set("messages", messages);
 
     // 共享层：HTTP 调用 + HTTP 级异常分类，返回原始响应（messages 透传代理走默认超时）
-    return executeChatCompletion(requestBody, url, apiKey, tenantId, client);
+    return executeChatCompletion(requestBody, url, baseUrl, modelId, apiKey, tenantId, client);
   }
 
   // ──────────────────────── 请求体 / 响应提取辅助方法 ────────────────────────
@@ -339,13 +360,28 @@ public class FaqLlmClient {
   // ──────────────────────── 共享层 ────────────────────────
 
   /**
-   * 共享 HTTP 调用层 — 处理请求发送 + HTTP 级异常分类。
+   * 取模型并发闸口（package-private 便于单测直测选择逻辑）。
+   * 当前仅智谱 bigmodel 域下的 glm-5.3-flash 限流（方案 A，2026-09-08 需求方确认口径：
+   * 按"这一个模型"限 50，同账户其它 GLM 模型不占额度）；其它模型/平台返回 null（不限）。
+   */
+  Semaphore gateFor(String baseUrl, String modelId) {
+    if (!isGlm(baseUrl) || modelId == null
+        || !"glm-5.3-flash".equalsIgnoreCase(modelId.trim())) {
+      return null;
+    }
+    return modelGates.computeIfAbsent("glm-5.3-flash",
+        k -> new Semaphore(Math.max(1, glmMaxConcurrency), true));
+  }
+
+  /**
+   * 共享 HTTP 调用层 — 处理模型并发闸口排队 + 请求发送 + HTTP 级异常分类。
    * 响应日志沿用 200 字符截断（仅影响日志可读性，响应体本身完整返回）。
    *
    * @return 完整 LLM 响应 JsonNode（非 null）
-   * @throws FaqLlmException HTTP 级异常（429/4xx/5xx/超时）
+   * @throws FaqLlmException HTTP 级异常（429/4xx/5xx/超时）；闸口排队被中断也按瞬时异常处理
    */
-  private JsonNode executeChatCompletion(ObjectNode requestBody, String url, String apiKey, Long tenantId,
+  private JsonNode executeChatCompletion(ObjectNode requestBody, String url, String baseUrl,
+                                         String modelId, String apiKey, Long tenantId,
                                          RestClient targetClient) {
     String requestBodyStr;
     try {
@@ -355,6 +391,23 @@ public class FaqLlmClient {
     }
     log.info("LLM 请求：tenantId={}, url={}, body={}", tenantId, url, requestBodyStr);
 
+    // 模型并发闸口：超过上限的调用在此阻塞排队（公平信号量，先到先得），不丢不拒
+    Semaphore gate = gateFor(baseUrl, modelId);
+    if (gate != null) {
+      long waitStart = System.currentTimeMillis();
+      try {
+        gate.acquire();
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.warn("LLM 并发闸口排队等待被中断：tenantId={}, modelId={}", tenantId, modelId);
+        throw new FaqLlmTimeoutException("LLM 并发闸口排队等待被中断（编排终止/应用关闭）");
+      }
+      long waitedMs = System.currentTimeMillis() - waitStart;
+      if (waitedMs > 1000) {
+        log.info("LLM 并发闸口排队后获得名额：tenantId={}, modelId={}, waitedMs={}",
+            tenantId, modelId, waitedMs);
+      }
+    }
     try {
       JsonNode response = targetClient.post()
           .uri(url)
@@ -397,6 +450,10 @@ public class FaqLlmClient {
       }
       log.error("LLM 请求异常：tenantId={}, url={}, error={}", tenantId, url, ex.getMessage());
       throw new FaqLlmTimeoutException("LLM 请求异常：" + ex.getMessage());
+    } finally {
+      if (gate != null) {
+        gate.release();
+      }
     }
   }
 

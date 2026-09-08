@@ -45,7 +45,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 理论试题生成批次：提交（秒回）→ 异步并发分块（1 考评点 = 1 次 LLM 调用）→ 草稿落库。
  *
  * <p>线程边界（优化方案 v0.3）：submit/pause/resume 走 HTTP 线程；processBatch 跑 theory-gen- 编排线程，
- * 块任务跑 theory-gen-block- Worker（并发度 theory.gen.block-concurrency，默认 5）。
+ * 块任务跑 theory-gen-block- Worker（并发度 theory.gen.block-concurrency，默认 50）。
  * tenantId/userId 参数传递，禁止调 SecurityContext（陷阱 #2、踩坑 #15/#17）；
  * 每 Worker 线程独立 set/clear TenantContextHolder。
  *
@@ -90,7 +90,7 @@ public class TheoryGenBatchService {
       @Qualifier("theoryGenExecutor") ThreadPoolTaskExecutor theoryGenExecutor,
       @Qualifier("theoryGenBlockExecutor") ThreadPoolTaskExecutor theoryGenBlockExecutor,
       TransactionTemplate transactionTemplate,
-      @Value("${platform.theory.gen.block-concurrency:5}") int blockConcurrency,
+      @Value("${platform.theory.gen.block-concurrency:50}") int blockConcurrency,
       @Value("${platform.theory.gen.retry-backoff-base-millis:10000}") long retryBackoffBaseMillis) {
     this.blueprintMapper = blueprintMapper;
     this.nodeMapper = nodeMapper;
