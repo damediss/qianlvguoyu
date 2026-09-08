@@ -91,6 +91,19 @@ class FaqLlmClientGlmThinkingTest {
   }
 
   @Test
+  void glmJsonModeSendsResponseFormat() throws Exception {
+    // 2026-09-08 方案 A：GLM 官方支持 response_format json_object（struct-output 文档核对），
+    // 理论生成链路启用 jsonMode 消除输出语法滑步
+    FaqLlmClient client = new FaqLlmClient(MAPPER);
+    client.chatCompletion(glmBase, "k", "GLM-5.3-Flash",
+        "sys", "只输出 json", 100, "enabled", "low", true, 1L);
+    JsonNode body = lastBody();
+    assertEquals("enabled", body.path("thinking").path("type").asText());
+    assertEquals("low", body.path("reasoning_effort").asText());
+    assertEquals("json_object", body.path("response_format").path("type").asText());
+  }
+
+  @Test
   void glmNeverSendsResponseFormat() throws Exception {
     // 坑 #13：OpenAI 兼容 ≠ 完全兼容；理论生成链路不启用 response_format
     FaqLlmClient client = new FaqLlmClient(MAPPER);

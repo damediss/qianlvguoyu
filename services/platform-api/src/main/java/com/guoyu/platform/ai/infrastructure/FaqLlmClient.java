@@ -169,7 +169,7 @@ public class FaqLlmClient {
    * @param userPrompt      user 消息（题目变量）
    * @param reasoningEffort DeepSeek 推理强度 low/high/max；仅 thinking=enabled 且为 DeepSeek 时随
    *                        thinking 节点发送（thinking 对象内字段），其它模型/场景一律不传
-   * @param jsonMode        是否请求 JSON Output（仅 DeepSeek 生效）
+   * @param jsonMode        是否请求 JSON Output（DeepSeek / 智谱 GLM 生效，其余平台忽略）
    * @return LLM 返回的 content 文本；DeepSeek JSON mode 重试后仍为空则返回 ""
    */
   public String chatCompletion(String baseUrl, String apiKey, String modelId,
@@ -197,12 +197,14 @@ public class FaqLlmClient {
                                String thinking, String reasoningEffort, boolean jsonMode, Long tenantId,
                                int responseTimeoutSeconds) {
     String url = trimTrailingSlash(baseUrl) + "/chat/completions";
-    boolean deepSeekJsonMode = jsonMode && isDeepSeek(baseUrl);
+    // JSON 模式平台分支：DeepSeek 与智谱 GLM（bigmodel.cn，官方 struct-output 文档）均支持
+    // response_format: {"type": "json_object"}；其余平台不传（坑 #13）
+    boolean jsonModeActive = jsonMode && (isDeepSeek(baseUrl) || isGlm(baseUrl));
     RestClient targetClient = clientForResponseTimeout(responseTimeoutSeconds);
 
     // 构造 OpenAI 兼容请求体
     ObjectNode requestBody = buildRequestBody(
-        modelId, maxTokens, 0.7, thinking, reasoningEffort, baseUrl, deepSeekJsonMode,
+        modelId, maxTokens, 0.7, thinking, reasoningEffort, baseUrl, jsonModeActive,
         systemPrompt, userPrompt);
 
     // 共享层：HTTP 调用 + HTTP 级异常分类
@@ -211,8 +213,8 @@ public class FaqLlmClient {
     // 内容级分类
     String content = extractContent(response, url, tenantId);
 
-    // DeepSeek JSON mode 空 content 重试（最多 3 次）
-    if ((content == null || content.isBlank()) && deepSeekJsonMode) {
+    // JSON mode 空 content 重试（最多 3 次；DeepSeek 已知问题，GLM 同路径防御）
+    if ((content == null || content.isBlank()) && jsonModeActive) {
       int maxRetries = 3;
       for (int attempt = 1; attempt <= maxRetries; attempt++) {
         log.warn("DeepSeek JSON mode 返回空 content，开始第 {}/{} 次重试：tenantId={}, url={}",
@@ -249,7 +251,8 @@ public class FaqLlmClient {
                                          BigDecimal temperature, String thinking,
                                          String reasoningEffort, boolean jsonMode, Long tenantId) {
     String url = trimTrailingSlash(baseUrl) + "/chat/completions";
-    boolean deepSeekJsonMode = jsonMode && isDeepSeek(baseUrl);
+    // JSON 模式平台分支：DeepSeek / GLM 支持 response_format，其余平台不传（坑 #13）
+    boolean deepSeekJsonMode = jsonMode && (isDeepSeek(baseUrl) || isGlm(baseUrl));
 
     ObjectNode requestBody = objectMapper.createObjectNode();
     requestBody.put("model", modelId);
@@ -258,7 +261,7 @@ public class FaqLlmClient {
 
     putThinkingNode(requestBody, baseUrl, thinking, reasoningEffort);
 
-    // DeepSeek JSON mode：官方支持 response_format: {"type": "json_object"}
+    // JSON mode（DeepSeek / GLM 官方支持）：response_format: {"type": "json_object"}
     if (deepSeekJsonMode) {
       ObjectNode responseFormat = objectMapper.createObjectNode();
       responseFormat.put("type", "json_object");
@@ -279,7 +282,7 @@ public class FaqLlmClient {
    */
   private ObjectNode buildRequestBody(String modelId, int maxTokens, double temperature,
                                       String thinking, String reasoningEffort, String baseUrl,
-                                      boolean deepSeekJsonMode,
+                                      boolean jsonModeActive,
                                       String systemPrompt, String userPrompt) {
     ObjectNode requestBody = objectMapper.createObjectNode();
     requestBody.put("model", modelId);
@@ -288,8 +291,8 @@ public class FaqLlmClient {
 
     putThinkingNode(requestBody, baseUrl, thinking, reasoningEffort);
 
-    // DeepSeek JSON mode：官方支持 response_format: {"type": "json_object"}
-    if (deepSeekJsonMode) {
+    // JSON mode（DeepSeek / GLM 官方支持）：response_format: {"type": "json_object"}
+    if (jsonModeActive) {
       ObjectNode responseFormat = objectMapper.createObjectNode();
       responseFormat.put("type", "json_object");
       requestBody.set("response_format", responseFormat);

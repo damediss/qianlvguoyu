@@ -74,7 +74,7 @@ class TheoryGenAiServiceImplTest {
   @Test
   void generateForPointPassesThinkingSnapshot() {
     when(llmClient.chatCompletionDetailed(anyString(), anyString(), anyString(), anyString(),
-        anyString(), anyInt(), eq("enabled"), eq("low"), eq(false), anyLong(), eq(180)))
+        anyString(), anyInt(), eq("enabled"), eq("low"), eq(true), anyLong(), eq(180)))
         .thenReturn(new LlmChatCompletionResult(VALID_JSON, 0, 0, 0, 0));
     LlmChatCompletionResult result = service.generateForPoint(1L, "https://open.bigmodel.cn/api/paas/v4",
         "k", "glm-5.3-flash", "enabled", "low", 4096, "sys", "user");

@@ -37,9 +37,12 @@ public class TheoryGenAiServiceImpl implements TheoryGenAiService {
       String thinking, String reasoningEffort, int maxTokens,
       String systemPrompt, String userPrompt) {
     // GLM 的 reasoning_effort 传参口径在 FaqLlmClient.putThinkingNode 的 GLM 分支中处理；
-    // 此处透传 thinking/reasoningEffort（批次启动时从配置表读取固化，非提交时快照）。不启用 jsonMode（GLM/LongCat 不支持 response_format，坑 #13）。
+    // 此处透传 thinking/reasoningEffort（批次启动时从配置表读取固化，非提交时快照）。
+    // jsonMode=true：智谱官方支持 response_format json_object（struct-output 文档 2026-09-08 核对），
+    // 从结构上保证合法 JSON，消除约 4% 的输出语法滑步；若 GLM 对 thinking+json_object 组合报错，
+    // 块会显式失败暴露于试产，回退只需改回 false。
     return llmClient.chatCompletionDetailed(baseUrl, apiKey, modelId,
-        systemPrompt, userPrompt, maxTokens, thinking, reasoningEffort, false, tenantId,
+        systemPrompt, userPrompt, maxTokens, thinking, reasoningEffort, true, tenantId,
         RESPONSE_TIMEOUT_SECONDS);
   }
 

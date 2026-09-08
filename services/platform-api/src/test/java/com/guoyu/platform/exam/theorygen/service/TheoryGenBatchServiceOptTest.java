@@ -124,7 +124,7 @@ class TheoryGenBatchServiceOptTest {
   }
 
   /** 模拟草稿持久化：insert 的 nodeId 累积到此集合，selectList 据此返回当前已落库草稿 */
-  private Set<Long> persistedDraftNodeIds = new HashSet<>();
+  private Set<Long> persistedDraftNodeIds = java.util.concurrent.ConcurrentHashMap.newKeySet(); // 并发块同时落库，HashSet 丢更新会致重派
 
   // ─────────────────────── 造数辅助 ───────────────────────
 
@@ -200,7 +200,7 @@ class TheoryGenBatchServiceOptTest {
 
   private void stubProcessBatch(TheoryGenBatchEntity b, List<TheoryBlueprintNodeEntity> points,
       List<TheoryGenDraftEntity> existingDrafts) {
-    persistedDraftNodeIds = new HashSet<>();
+    persistedDraftNodeIds = java.util.concurrent.ConcurrentHashMap.newKeySet(); // 并发块同时落库，HashSet 丢更新会致重派
     for (TheoryGenDraftEntity d : existingDrafts) {
       persistedDraftNodeIds.add(d.getNodeId());
     }
@@ -303,9 +303,9 @@ class TheoryGenBatchServiceOptTest {
 
     service.processBatch(BATCH_ID, TENANT, USER, 5);
 
-    // 每轮只重跑缺口点（2、4），3 轮共 6 次调用；轮次耗尽 → FAILED
-    verify(aiService, times(6)).generateForPoint(any(), any(), any(), any(), any(), any(), anyInt(), any(), any());
-    verify(batchMapper, times(6)).incrementFailed(eq(BATCH_ID), eq(0L), eq(0L), eq(0L), eq(0L));
+    // 每轮只重跑缺口点（2、4），4 轮共 8 次调用；轮次耗尽 → FAILED
+    verify(aiService, times(8)).generateForPoint(any(), any(), any(), any(), any(), any(), anyInt(), any(), any());
+    verify(batchMapper, times(8)).incrementFailed(eq(BATCH_ID), eq(0L), eq(0L), eq(0L), eq(0L));
     verify(draftMapper, never()).insert(any(TheoryGenDraftEntity.class));
     assertEquals(TheoryGenBatchEntity.STATUS_FAILED, b.getStatus());
     assertTrue(b.getFailReason().contains("自动补跑"));
@@ -324,11 +324,11 @@ class TheoryGenBatchServiceOptTest {
 
     service.processBatch(BATCH_ID, TENANT, USER, 5);
 
-    verify(transactionTemplate, times(3)).executeWithoutResult(any());
-    // 轮1：insert 1 成功 + 1 异常；轮2/轮3：首个 insert 即异常
-    verify(draftMapper, times(4)).insert(any(TheoryGenDraftEntity.class));
+    verify(transactionTemplate, times(4)).executeWithoutResult(any());
+    // 轮1：insert 1 成功 + 1 异常；轮2/轮3/轮4：首个 insert 即异常
+    verify(draftMapper, times(5)).insert(any(TheoryGenDraftEntity.class));
     // 响应已产生 usage：失败块的 token 花费同样入账（P2），每轮均计
-    verify(batchMapper, times(3)).incrementFailed(eq(BATCH_ID), eq(150L), eq(100L), eq(50L), eq(80L));
+    verify(batchMapper, times(4)).incrementFailed(eq(BATCH_ID), eq(150L), eq(100L), eq(50L), eq(80L));
     verify(batchMapper, never()).incrementDone(any(), anyInt(), anyLong(), anyLong(), anyLong(), anyLong());
   }
 
@@ -580,9 +580,9 @@ class TheoryGenBatchServiceOptTest {
 
     assertEquals(TheoryGenBatchEntity.STATUS_FAILED, b.getStatus());
     assertTrue(b.getFailReason().contains("自动补跑"));
-    // 1.2 轮1成功即跳过；1.1 三轮各失败一次
-    verify(aiService, times(4)).generateForPoint(any(), any(), any(), any(), any(), any(), anyInt(), any(), any());
-    verify(batchMapper, times(3)).incrementFailed(eq(BATCH_ID), eq(0L), eq(0L), eq(0L), eq(0L));
+    // 1.2 轮1成功即跳过；1.1 四轮各失败一次
+    verify(aiService, times(5)).generateForPoint(any(), any(), any(), any(), any(), any(), anyInt(), any(), any());
+    verify(batchMapper, times(4)).incrementFailed(eq(BATCH_ID), eq(0L), eq(0L), eq(0L), eq(0L));
   }
 
   /** OPT-20：人工兜底——"已完成但有缺口"的批次可 retryFailed（置回 pending + 换 runId）；无缺口完成批次拒绝 */
