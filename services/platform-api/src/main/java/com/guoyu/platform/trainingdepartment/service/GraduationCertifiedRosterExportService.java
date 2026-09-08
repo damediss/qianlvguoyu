@@ -237,7 +237,7 @@ public class GraduationCertifiedRosterExportService {
     }
   }
 
-  /** 已获证：证书编号非空；全部：不过滤。 */
+  /** 已获证：与申报补贴同一口径（有证书文件 / 技能等级证 / 非 GC- 假号）。 */
   static List<TrainPeopleListEntity> filterByScope(
       List<TrainPeopleListEntity> students,
       Map<Long, TrainCertificateEntity> certs,
@@ -245,14 +245,8 @@ public class GraduationCertifiedRosterExportService {
     if (scope == RosterScope.ALL || students == null || students.isEmpty()) {
       return students == null ? List.of() : students;
     }
-    List<TrainPeopleListEntity> out = new ArrayList<>();
-    for (TrainPeopleListEntity s : students) {
-      TrainCertificateEntity cert = certs.get(s.getId());
-      if (cert != null && StringUtils.hasText(cert.getCertificateNo())) {
-        out.add(s);
-      }
-    }
-    return out;
+    return com.guoyu.platform.trainingdepartment.support.SubsidyCertifiedPeopleSupport.filterCertified(
+        students, certs);
   }
 
   /**

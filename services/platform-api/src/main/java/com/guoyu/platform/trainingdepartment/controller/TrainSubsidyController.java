@@ -4,6 +4,8 @@ import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.SubsidyMaterialExportReq;
+import com.guoyu.platform.trainingdepartment.dto.SubsidyMaterialFillFromTemplateReq;
+import com.guoyu.platform.trainingdepartment.dto.SubsidyMaterialTemplateUpdateReq;
 import com.guoyu.platform.trainingdepartment.dto.SubsidyTransitionReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSubsidyCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSubsidyQueryReq;
@@ -13,14 +15,17 @@ import com.guoyu.platform.trainingdepartment.service.TrainSubsidyClassMaterialSe
 import com.guoyu.platform.trainingdepartment.service.TrainSubsidyMaterialExportApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainSubsidyMaterialInstanceApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainSubsidyMaterialOfficeApplicationService;
+import com.guoyu.platform.trainingdepartment.service.TrainSubsidyMaterialTemplateApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainSubsidyPackProfileApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.SubsidyEventVO;
 import com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialInstanceListVO;
 import com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialInstanceVO;
 import com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialOfficeConfigVO;
+import com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialTemplateVO;
 import com.guoyu.platform.trainingdepartment.vo.SubsidyPackProfileVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainSubsidyVO;
 import jakarta.validation.Valid;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.core.io.Resource;
@@ -42,6 +47,7 @@ public class TrainSubsidyController {
   private final TrainSubsidyMaterialInstanceApplicationService materialInstanceService;
   private final TrainSubsidyMaterialExportApplicationService materialExportService;
   private final TrainSubsidyMaterialOfficeApplicationService materialOfficeService;
+  private final TrainSubsidyMaterialTemplateApplicationService materialTemplateService;
 
   public TrainSubsidyController(
       TrainSubsidyApplicationService trainSubsidyApplicationService,
@@ -49,13 +55,15 @@ public class TrainSubsidyController {
       TrainSubsidyClassMaterialService classMaterialService,
       TrainSubsidyMaterialInstanceApplicationService materialInstanceService,
       TrainSubsidyMaterialExportApplicationService materialExportService,
-      TrainSubsidyMaterialOfficeApplicationService materialOfficeService) {
+      TrainSubsidyMaterialOfficeApplicationService materialOfficeService,
+      TrainSubsidyMaterialTemplateApplicationService materialTemplateService) {
     this.trainSubsidyApplicationService = trainSubsidyApplicationService;
     this.profileService = profileService;
     this.classMaterialService = classMaterialService;
     this.materialInstanceService = materialInstanceService;
     this.materialExportService = materialExportService;
     this.materialOfficeService = materialOfficeService;
+    this.materialTemplateService = materialTemplateService;
   }
 
   @GetMapping("/subsidies")
@@ -198,6 +206,135 @@ public class TrainSubsidyController {
   @AuditLog(module = "training", action = "subsidy:confirm-material", targetType = "train_subsidy_material")
   public ApiResponse<SubsidyMaterialInstanceVO> confirmMaterial(@PathVariable Long instanceId) {
     return ApiResponse.ok(materialInstanceService.confirmInstance(instanceId));
+  }
+
+  /** 删除材料清单项 */
+  @DeleteMapping("/material-instances/{instanceId}")
+  @PreAuthorize("hasAuthority('train:subsidy:update')")
+  @AuditLog(module = "training", action = "subsidy:delete-material", targetType = "train_subsidy_material")
+  public ApiResponse<Void> deleteMaterial(@PathVariable Long instanceId) {
+    materialInstanceService.deleteInstance(instanceId);
+    return ApiResponse.ok(null);
+  }
+
+  /** 删除材料清单项（POST，与 confirm/fill 风格一致，便于本地热更新遗漏 DELETE 时仍可用） */
+  @PostMapping("/material-instances/{instanceId}/delete")
+  @PreAuthorize("hasAuthority('train:subsidy:update')")
+  @AuditLog(module = "training", action = "subsidy:delete-material", targetType = "train_subsidy_material")
+  public ApiResponse<Void> deleteMaterialPost(@PathVariable Long instanceId) {
+    materialInstanceService.deleteInstance(instanceId);
+    return ApiResponse.ok(null);
+  }
+
+  /** 对已有材料实例：选模板 → 自动填数 → 生成新版本 */
+  @PostMapping("/material-instances/{instanceId}/fill")
+  @PreAuthorize("hasAuthority('train:subsidy:update')")
+  @AuditLog(module = "training", action = "subsidy:fill-material", targetType = "train_subsidy_material")
+  public ApiResponse<Map<String, Object>> fillMaterialInstance(
+      @PathVariable Long instanceId, @RequestBody SubsidyMaterialFillFromTemplateReq body) {
+    return ApiResponse.ok(materialTemplateService.fillInstance(instanceId, body));
+  }
+
+  /** 本班选模板新建/覆盖材料并自动填数 */
+  @PostMapping("/subsidies/{id}/materials/fill-from-template")
+  @PreAuthorize("hasAuthority('train:subsidy:update')")
+  @AuditLog(module = "training", action = "subsidy:fill-from-template", targetType = "train_subsidy")
+  public ApiResponse<Map<String, Object>> fillFromTemplate(
+      @PathVariable Long id, @Valid @RequestBody SubsidyMaterialFillFromTemplateReq body) {
+    return ApiResponse.ok(materialTemplateService.fillFromTemplate(id, body));
+  }
+
+  /** 按本班材料清单逐项一键填数（先同步证书/照片，再表格填数） */
+  @PostMapping("/subsidies/{id}/materials/fill-all")
+  @PreAuthorize("hasAuthority('train:subsidy:update')")
+  @AuditLog(module = "training", action = "subsidy:fill-all", targetType = "train_subsidy")
+  public ApiResponse<Map<String, Object>> fillAllMaterials(@PathVariable Long id) {
+    Map<String, Object> syncInfo = new LinkedHashMap<>();
+    try {
+      syncInfo = classMaterialService.syncFromClass(id);
+      materialInstanceService.refreshFromSlotFiles(id);
+      syncInfo.put("syncOk", true);
+    } catch (Exception ex) {
+      syncInfo.put("syncOk", false);
+      syncInfo.put("syncMessage", ex.getMessage());
+    }
+    Map<String, Object> fill = materialTemplateService.fillAllInstances(id);
+    fill.put("upstreamSync", syncInfo);
+    Object msg = fill.get("message");
+    if (Boolean.TRUE.equals(syncInfo.get("syncOk"))) {
+      fill.put("message", String.valueOf(msg) + "；证书/获证名册/培训照片已尽量从本班自动同步");
+    } else if (syncInfo.get("syncMessage") != null) {
+      fill.put(
+          "message",
+          String.valueOf(msg) + "；上游同步未完成：" + syncInfo.get("syncMessage") + "（可手工替换）");
+    }
+    return ApiResponse.ok(fill);
+  }
+
+  // —— 补贴材料模板库 ——
+
+  @GetMapping("/subsidy-material-templates")
+  @PreAuthorize("hasAuthority('train:subsidy:view')")
+  public ApiResponse<List<SubsidyMaterialTemplateVO>> listTemplates(
+      @RequestParam(required = false) String scope,
+      @RequestParam(required = false) String materialType,
+      @RequestParam(required = false) String regionCode,
+      @RequestParam(required = false) String trainMode,
+      @RequestParam(required = false) Integer policyYear,
+      @RequestParam(required = false) String status,
+      @RequestParam(required = false) Long classId,
+      @RequestParam(required = false) String keyword) {
+    return ApiResponse.ok(
+        materialTemplateService.list(
+            scope, materialType, regionCode, trainMode, policyYear, status, classId, keyword));
+  }
+
+  @GetMapping("/subsidy-material-templates/{id}")
+  @PreAuthorize("hasAuthority('train:subsidy:view')")
+  public ApiResponse<SubsidyMaterialTemplateVO> getTemplate(@PathVariable Long id) {
+    return ApiResponse.ok(materialTemplateService.get(id));
+  }
+
+  @PostMapping(value = "/subsidy-material-templates", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @PreAuthorize("hasAuthority('train:subsidy:update')")
+  @AuditLog(module = "training", action = "subsidy:upload-template", targetType = "train_subsidy_template")
+  public ApiResponse<SubsidyMaterialTemplateVO> uploadTemplate(
+      @RequestParam("file") MultipartFile file,
+      @RequestParam(required = false) String title,
+      @RequestParam(required = false) String materialType,
+      @RequestParam(required = false) String slotCode,
+      @RequestParam(required = false, defaultValue = "tenant") String scope,
+      @RequestParam(required = false) Long classId,
+      @RequestParam(required = false) String regionCode,
+      @RequestParam(required = false) String trainMode,
+      @RequestParam(required = false) Integer policyYear,
+      @RequestParam(required = false) String remark) {
+    return ApiResponse.ok(
+        materialTemplateService.upload(
+            file, title, materialType, slotCode, scope, classId, regionCode, trainMode, policyYear, remark));
+  }
+
+  @PutMapping("/subsidy-material-templates/{id}")
+  @PreAuthorize("hasAuthority('train:subsidy:update')")
+  @AuditLog(module = "training", action = "subsidy:update-template", targetType = "train_subsidy_template")
+  public ApiResponse<SubsidyMaterialTemplateVO> updateTemplate(
+      @PathVariable Long id, @RequestBody SubsidyMaterialTemplateUpdateReq body) {
+    return ApiResponse.ok(materialTemplateService.update(id, body));
+  }
+
+  @DeleteMapping("/subsidy-material-templates/{id}")
+  @PreAuthorize("hasAuthority('train:subsidy:update')")
+  @AuditLog(module = "training", action = "subsidy:delete-template", targetType = "train_subsidy_template")
+  public ApiResponse<Void> deleteTemplate(@PathVariable Long id) {
+    materialTemplateService.delete(id);
+    return ApiResponse.ok();
+  }
+
+  @PostMapping("/subsidy-material-templates/{id}/reparse")
+  @PreAuthorize("hasAuthority('train:subsidy:update')")
+  @AuditLog(module = "training", action = "subsidy:reparse-template", targetType = "train_subsidy_template")
+  public ApiResponse<SubsidyMaterialTemplateVO> reparseTemplate(@PathVariable Long id) {
+    return ApiResponse.ok(materialTemplateService.reparse(id));
   }
 
   /** OnlyOffice 编辑器配置（document key / url / callback / JWT） */

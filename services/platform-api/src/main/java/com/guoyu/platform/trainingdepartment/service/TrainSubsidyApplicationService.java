@@ -11,6 +11,7 @@ import com.guoyu.platform.trainingdepartment.dto.SubsidyTransitionReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSubsidyCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSubsidyQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSubsidyUpdateReq;
+import com.guoyu.platform.trainingdepartment.entity.TrainCertificateEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
@@ -18,15 +19,18 @@ import com.guoyu.platform.trainingdepartment.entity.TrainSubsidyEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSubsidyEventEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSubsidyPackProfileEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSubsidySlotFileEntity;
+import com.guoyu.platform.trainingdepartment.mapper.TrainCertificateMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidyEventMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidyMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidySlotFileMapper;
+import com.guoyu.platform.trainingdepartment.support.SubsidyCertifiedPeopleSupport;
 import com.guoyu.platform.trainingdepartment.vo.SubsidyEventVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainSubsidyVO;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +55,7 @@ public class TrainSubsidyApplicationService {
   private final TrainInfoClassMapper classMapper;
   private final TrainInfoListMapper infoListMapper;
   private final TrainPeopleListMapper peopleListMapper;
+  private final TrainCertificateMapper certificateMapper;
   private final TrainSubsidyPackProfileApplicationService profileService;
   private final TrainSubsidyMaterialPackService materialPackService;
   private final com.guoyu.platform.file.service.FileApplicationService fileApplicationService;
@@ -63,6 +68,7 @@ public class TrainSubsidyApplicationService {
       TrainInfoClassMapper classMapper,
       TrainInfoListMapper infoListMapper,
       TrainPeopleListMapper peopleListMapper,
+      TrainCertificateMapper certificateMapper,
       TrainSubsidyPackProfileApplicationService profileService,
       TrainSubsidyMaterialPackService materialPackService,
       com.guoyu.platform.file.service.FileApplicationService fileApplicationService) {
@@ -72,6 +78,7 @@ public class TrainSubsidyApplicationService {
     this.classMapper = classMapper;
     this.infoListMapper = infoListMapper;
     this.peopleListMapper = peopleListMapper;
+    this.certificateMapper = certificateMapper;
     this.profileService = profileService;
     this.materialPackService = materialPackService;
     this.fileApplicationService = fileApplicationService;
@@ -560,13 +567,31 @@ public class TrainSubsidyApplicationService {
     }
   }
 
+  /** 申报补贴人数口径：仅统计已获证学员 */
   private Integer countClassStudents(Long classId, Long tenantId) {
-    long count = peopleListMapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
-        .eq(TrainPeopleListEntity::getTenantId, tenantId)
-        .eq(TrainPeopleListEntity::getTrainClassId, classId)
-        .eq(TrainPeopleListEntity::getType, "student")
-        .eq(TrainPeopleListEntity::getDeleted, 0));
-    return (int) count;
+    List<TrainPeopleListEntity> students =
+        peopleListMapper.selectList(
+            new LambdaQueryWrapper<TrainPeopleListEntity>()
+                .eq(TrainPeopleListEntity::getTenantId, tenantId)
+                .eq(TrainPeopleListEntity::getTrainClassId, classId)
+                .eq(TrainPeopleListEntity::getType, "student")
+                .eq(TrainPeopleListEntity::getDeleted, 0));
+    if (students.isEmpty()) {
+      return 0;
+    }
+    Map<Long, TrainCertificateEntity> certs = new HashMap<>();
+    certificateMapper
+        .selectList(
+            new LambdaQueryWrapper<TrainCertificateEntity>()
+                .eq(TrainCertificateEntity::getClassId, classId)
+                .eq(TrainCertificateEntity::getDeleted, 0))
+        .forEach(
+            c -> {
+              if (c.getPeopleId() != null) {
+                certs.putIfAbsent(c.getPeopleId(), c);
+              }
+            });
+    return SubsidyCertifiedPeopleSupport.countCertified(students, certs);
   }
 
   private TrainSubsidyEntity getExisting(Long id) {

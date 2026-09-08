@@ -14,6 +14,8 @@ import {
 import {
   ArrowLeftOutlined,
   FileDoneOutlined,
+  FileAddOutlined,
+  FolderOpenOutlined,
   HistoryOutlined,
   SyncOutlined,
   ThunderboltOutlined,
@@ -24,8 +26,10 @@ import type { TrainSubsidy } from '../../../api/training';
 import { downloadUrlFile } from '../../../api/files';
 import { TrainingProcessSteps } from '../TrainingProcessSteps';
 import { ExportDockBar } from './components/ExportDockBar';
+import { FillFromTemplateModal } from './components/FillFromTemplateModal';
 import { MaterialTreePanel } from './components/MaterialTreePanel';
 import { MaterialWorkspacePanel } from './components/MaterialWorkspacePanel';
+import { SubsidyMaterialTemplateLibraryModal } from './components/SubsidyMaterialTemplateLibraryModal';
 import '../TrainingSubsidyDeclarePage.css';
 
 const PHASE_OPTS = [
@@ -80,6 +84,10 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
   const [exportSelectedIds, setExportSelectedIds] = useState<Set<string>>(new Set());
   const [eventsOpen, setEventsOpen] = useState(false);
   const [replacingId, setReplacingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [templateLibOpen, setTemplateLibOpen] = useState(false);
+  const [fillOpen, setFillOpen] = useState(false);
+  const [fillForInstance, setFillForInstance] = useState(false);
 
   const instancesQ = useQuery({
     queryKey: ['subsidy-material-instances', detail.id],
@@ -173,19 +181,16 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
   });
 
   const genMu = useMutation({
-    mutationFn: () => trainApi.generateSubsidyMaterials(detail.id),
-    onSuccess: async (res) => {
-      if (!res.ok) {
-        message.warning(res.message || '缺项未打包');
-        invalidate();
-        return;
+    mutationFn: () => trainApi.fillAllSubsidyMaterials(detail.id),
+    onSuccess: (res) => {
+      if (res.failed > 0) {
+        message.warning(res.message || `部分失败：成功 ${res.filled}，失败 ${res.failed}`);
+      } else {
+        message.success(res.message || `已按清单填数 ${res.filled} 项`);
       }
-      message.success(res.message || '已生成（全量）');
       invalidate();
-      const fresh = await trainApi.getSubsidy(detail.id);
-      onSubsidyChange(fresh);
     },
-    onError: (e: Error) => message.error(e.message || '生成失败'),
+    onError: (e: Error) => message.error(e.message || '一键填数失败'),
   });
 
   const confirmMu = useMutation({
@@ -215,6 +220,22 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
       message.error((e as Error).message || '上传失败');
     } finally {
       setReplacingId(null);
+    }
+  };
+
+  const handleDeleteInstance = async (instanceId: string) => {
+    setDeletingId(instanceId);
+    try {
+      await trainApi.deleteSubsidyMaterialInstance(instanceId);
+      if (selectedInstanceId === instanceId) setSelectedInstanceId(null);
+      setExportSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(instanceId);
+        return next;
+      });
+      invalidate();
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -267,10 +288,27 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
             type="primary"
             icon={<FileDoneOutlined />}
             loading={claimFormsMu.isPending}
-            title="仅生成毕业典礼已结业且已回填证书的学员"
+            title="仅生成已获证学员的个人申领表"
             onClick={() => claimFormsMu.mutate()}
           >
             一键生成个人申领表
+          </Button>
+          <Button
+            icon={<FolderOpenOutlined />}
+            onClick={() => setTemplateLibOpen(true)}
+          >
+            模板库
+          </Button>
+          <Button
+            type="primary"
+            ghost
+            icon={<FileAddOutlined />}
+            onClick={() => {
+              setFillForInstance(false);
+              setFillOpen(true);
+            }}
+          >
+            从模板生成
           </Button>
           <Button icon={<HistoryOutlined />} onClick={() => setEventsOpen(true)}>
             时间线
@@ -285,14 +323,17 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
               提交人社
             </Button>
           )}
-          <Button icon={<ThunderboltOutlined />} loading={genMu.isPending} onClick={() => genMu.mutate()}>
-            全量生成（旧）
+          <Button icon={<ThunderboltOutlined />} type="primary" ghost loading={genMu.isPending} onClick={() => genMu.mutate()}>
+            一键填数全部材料
           </Button>
         </Space>
         <div style={{ marginTop: 10 }}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            学员 {classMatsQ.data?.studentCount ?? '—'} 人 · 证书 {classMatsQ.data?.certificateWithFile ?? 0}/
-            {classMatsQ.data?.certificateTotal ?? 0} · 照片{' '}
+            已获证申报 {classMatsQ.data?.studentCount ?? '—'} 人
+            {classMatsQ.data?.classStudentTotal != null
+              ? `（班级共 ${classMatsQ.data.classStudentTotal} 人）`
+              : ''}{' '}
+            · 证书 {classMatsQ.data?.certificateWithFile ?? 0}/{classMatsQ.data?.certificateTotal ?? 0} · 照片{' '}
             {classMatsQ.data?.photoPackReady ? '已就绪' : '未生成'}
           </Typography.Text>
         </div>
@@ -308,7 +349,9 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
             onToggleExport={toggleExport}
             onToggleAllExport={toggleAllExport}
             onReplaceFile={handleReplaceFile}
+            onDeleteInstance={handleDeleteInstance}
             replaceLoading={replacingId != null}
+            deleteLoadingId={deletingId}
           />
         </Card>
         <Card size="small" className="subsidy-material-kit-right" title="预览与操作">
@@ -324,6 +367,14 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
             onConfirm={
               selectedInstanceId
                 ? () => confirmMu.mutate(selectedInstanceId)
+                : undefined
+            }
+            onFillFromTemplate={
+              selectedInstanceId
+                ? () => {
+                    setFillForInstance(true);
+                    setFillOpen(true);
+                  }
                 : undefined
             }
             onOfficeSaved={() => {
@@ -363,6 +414,33 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
               }
             : undefined
         }
+      />
+
+      <SubsidyMaterialTemplateLibraryModal
+        open={templateLibOpen}
+        onClose={() => setTemplateLibOpen(false)}
+        classId={detail.classId}
+        regionCode={detail.regionCode}
+        trainMode={detail.trainMode}
+        policyYear={detail.policyYear}
+      />
+
+      <FillFromTemplateModal
+        open={fillOpen}
+        onClose={() => setFillOpen(false)}
+        subsidyId={detail.id}
+        classId={detail.classId}
+        instanceId={fillForInstance ? selectedInstanceId : null}
+        instanceTitle={fillForInstance ? selectedItem?.title : null}
+        instanceHasFile={fillForInstance ? !!selectedItem?.hasFile : false}
+        instanceFileName={fillForInstance ? selectedItem?.fileName : null}
+        hasUploadTemplate={fillForInstance ? !!selectedItem?.hasUploadTemplate : false}
+        uploadTemplateFileName={fillForInstance ? selectedItem?.uploadTemplateFileName : null}
+        materialType={fillForInstance ? selectedItem?.materialType : null}
+        onFilled={(instanceId) => {
+          invalidate();
+          if (instanceId != null) setSelectedInstanceId(String(instanceId));
+        }}
       />
 
       <Drawer title="补贴单时间线" width={480} open={eventsOpen} onClose={() => setEventsOpen(false)}>

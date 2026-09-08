@@ -154,6 +154,20 @@
   margin-bottom: 2px;
 }
 
+.training-subsidy-declare-page .material-tree-item-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 0;
+  white-space: nowrap;
+}
+
+.training-subsidy-declare-page .material-tree-item-actions .ant-btn-link {
+  padding-inline: 4px;
+  height: auto;
+}
+
 .training-subsidy-declare-page .material-required-dot {
   color: #ff4d4f;
   margin-right: 2px;
@@ -190,6 +204,40 @@
   background: #fafafa;
   border-radius: 6px;
   border: 1px solid #f0f0f0;
+}
+
+.training-subsidy-declare-page .material-file-list {
+  max-height: 560px;
+  overflow: auto;
+}
+
+.training-subsidy-declare-page .material-file-list-item {
+  cursor: pointer;
+}
+
+.training-subsidy-declare-page .material-file-list-item:hover {
+  background: #f5f9ff;
+}
+
+.training-subsidy-declare-page .material-file-preview-body {
+  min-height: 360px;
+  max-height: 640px;
+  overflow: auto;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  background: #fff;
+  padding: 8px;
+}
+
+.training-subsidy-declare-page .material-spreadsheet-preview,
+.training-subsidy-declare-page .material-docx-preview {
+  width: 100%;
+  overflow: auto;
+}
+
+.training-subsidy-declare-page .material-docx-preview .docx-preview-container {
+  padding: 8px;
+  background: #fff;
 }
 
 .training-subsidy-declare-page .material-office-editor-wrap {

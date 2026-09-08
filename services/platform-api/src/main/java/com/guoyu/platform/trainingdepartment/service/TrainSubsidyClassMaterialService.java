@@ -27,6 +27,8 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidyEventMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidyMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidySlotFileMapper;
+import com.guoyu.platform.trainingdepartment.support.SubsidyCertifiedPeopleSupport;
+import com.guoyu.platform.trainingdepartment.support.SubsidyMaterialTypes;
 import com.guoyu.platform.trainingdepartment.support.TrainingDocxVariableReplacer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayOutputStream;
@@ -130,11 +132,15 @@ public class TrainSubsidyClassMaterialService {
     TrainInfoClassEntity clazz = requireClass(subsidy.getClassId());
     Long tenantId = subsidy.getTenantId();
 
-    long studentCount = peopleListMapper.selectCount(new LambdaQueryWrapper<TrainPeopleListEntity>()
-        .eq(TrainPeopleListEntity::getTenantId, tenantId)
-        .eq(TrainPeopleListEntity::getTrainClassId, clazz.getId())
-        .eq(TrainPeopleListEntity::getType, "student")
-        .eq(TrainPeopleListEntity::getDeleted, 0));
+    List<TrainPeopleListEntity> allStudents = peopleListMapper.selectList(
+        new LambdaQueryWrapper<TrainPeopleListEntity>()
+            .eq(TrainPeopleListEntity::getTenantId, tenantId)
+            .eq(TrainPeopleListEntity::getTrainClassId, clazz.getId())
+            .eq(TrainPeopleListEntity::getType, "student")
+            .eq(TrainPeopleListEntity::getDeleted, 0));
+    Map<Long, TrainCertificateEntity> certByPeoplePreview = loadCertsByPeople(clazz.getId(), tenantId);
+    long certifiedStudentCount =
+        SubsidyCertifiedPeopleSupport.countCertified(allStudents, certByPeoplePreview);
 
     List<TrainCertificateEntity> certs = listClassCerts(clazz.getId(), tenantId);
     long certWithFile = certs.stream().filter(c -> StringUtils.hasText(c.getFilePath())).count();
@@ -145,7 +151,10 @@ public class TrainSubsidyClassMaterialService {
     result.put("subsidyId", subsidy.getId());
     result.put("classId", clazz.getId());
     result.put("className", clazz.getTitle());
-    result.put("studentCount", studentCount);
+    /** 申报口径人数：仅已获证 */
+    result.put("studentCount", certifiedStudentCount);
+    result.put("certifiedStudentCount", certifiedStudentCount);
+    result.put("classStudentTotal", allStudents.size());
     result.put("certificateTotal", certs.size());
     result.put("certificateWithFile", certWithFile);
     result.put("photoPackReady", photo != null && photo.getFileId() != null);
@@ -211,24 +220,35 @@ public class TrainSubsidyClassMaterialService {
     List<String> notes = new ArrayList<>();
 
     for (TrainSubsidyPackSlotEntity slot : slots) {
-      String code = slot.getSlotCode();
+      String code = slot.getSlotCode() != null ? slot.getSlotCode() : "";
       String renderer = slot.getRenderer() != null ? slot.getRenderer() : "";
+      String title = slot.getTitle() != null ? slot.getTitle() : "";
       if ("cert_pdf_bundle".equals(code)
           || "file_copy".equals(renderer)
-          || "pdf_merge".equals(renderer)) {
+          || "pdf_merge".equals(renderer)
+          || title.contains("证书PDF")
+          || title.contains("证书 pdf")
+          || (title.contains("证书") && title.toUpperCase().contains("PDF"))) {
         int n = syncCertificates(subsidy, clazz, tenantId, userId, code);
         certSynced += n;
-        notes.add(slot.getTitle() + "：同步证书 " + n + " 份");
+        if (n > 0) {
+          notes.add(slot.getTitle() + "：同步证书 " + n + " 份");
+        } else {
+          notes.add(slot.getTitle() + "：本班暂无证书文件，可手工替换");
+        }
       } else if ("claim_roster".equals(code) || "cert_roster".equals(code)
-          || "cert_pass".equals(code) || "cert_retake".equals(code)) {
+          || "cert_pass".equals(code) || "cert_retake".equals(code)
+          || title.contains("获证名册") || title.contains("获证人员名册")) {
         boolean ok = syncRoster(subsidy, clazz, tenantId, userId, code);
         if (ok) {
           rosterSynced++;
           notes.add(slot.getTitle() + "：已写入获证名册");
         } else {
-          notes.add(slot.getTitle() + "：名册同步失败，可手工上传");
+          notes.add(slot.getTitle() + "：名册同步失败或无已获证人员，可手工上传");
         }
-      } else if ("follow_photo".equals(renderer) || "photo_album".equals(code)) {
+      } else if ("follow_photo".equals(renderer) || "photo_album".equals(code)
+          || title.contains("培训照片") || SubsidyMaterialTypes.PHOTO.equals(
+              SubsidyMaterialTypes.resolveMaterialType(code, renderer))) {
         TrainFollowPhotoPackEntity photo = latestPhotoPack(clazz.getId(), tenantId);
         if (photo != null && photo.getFileId() != null) {
           notes.add(slot.getTitle() + "：将引用跟班照片册 #" + photo.getId());
@@ -242,19 +262,27 @@ public class TrainSubsidyClassMaterialService {
     payload.put("certificateFiles", certSynced);
     payload.put("rosterSlots", rosterSynced);
     payload.put("notes", notes);
-    addEvent(subsidy, "sync_class", "从本班刷新材料引用", payload);
+    addEvent(subsidy, "sync_class", "从本班刷新材料引用（仅已获证）", payload);
 
-    Map<String, Object> result = preview(subsidyId);
+    // 同步申报人数口径为已获证人数
+    Map<String, Object> preview = preview(subsidyId);
+    Object certified = preview.get("certifiedStudentCount");
+    if (certified instanceof Number n) {
+      subsidy.setStudentCount(n.intValue());
+      subsidyMapper.updateById(subsidy);
+    }
+
+    Map<String, Object> result = preview;
     result.put("syncedCertificateFiles", certSynced);
     result.put("syncedRosterSlots", rosterSynced);
     result.put("notes", notes);
-    result.put("message", notes.isEmpty() ? "未同步到可自动材料，请检查本班证书/名册/照片" : "已从本班刷新材料");
+    result.put("message", notes.isEmpty() ? "未同步到可自动材料，请检查本班已获证证书/名册/照片" : "已从本班刷新材料（仅已获证人员）");
     return result;
   }
 
   /**
-   * 一键生成本班「已结业且有真实证书」学员的《个人技能提升补贴申领表（2025）》。
-   * 固定勾选：企业在职职工、国家技能等级证书、已参加培训并自行支付费用（已写入模板）。
+   * 一键生成本班「已获证」学员的《个人技能提升补贴申领表（2025）》。
+   * 未获证人员不进入申报补贴材料。
    */
   @Transactional
   public Map<String, Object> generatePersonalClaimForms(Long subsidyId) {
@@ -286,17 +314,10 @@ public class TrainSubsidyClassMaterialService {
     }
 
     Map<Long, TrainCertificateEntity> certByPeople = loadCertsByPeople(clazz.getId(), tenantId);
-    int skippedNotGraduated = 0;
     int skippedNoCert = 0;
     List<TrainPeopleListEntity> students = new ArrayList<>();
     for (TrainPeopleListEntity s : allStudents) {
-      boolean graduated = s.getGraduateStatus() != null && s.getGraduateStatus() == 1;
-      boolean hasCert = isBackfilledCertificate(certByPeople.get(s.getId()));
-      if (!graduated) {
-        skippedNotGraduated++;
-        continue;
-      }
-      if (!hasCert) {
+      if (!SubsidyCertifiedPeopleSupport.isCertified(certByPeople.get(s.getId()))) {
         skippedNoCert++;
         continue;
       }
@@ -305,11 +326,9 @@ public class TrainSubsidyClassMaterialService {
     if (students.isEmpty()) {
       throw new BusinessException(
           ErrorCode.BAD_REQUEST,
-          "本班没有「已结业且已回填证书」的学员（未结业 "
-              + skippedNotGraduated
-              + " 人，已结业无证书 "
+          "本班没有已获证学员（未获证 "
               + skippedNoCert
-              + " 人），请先在毕业典礼完成证书回填与自动结业");
+              + " 人），申报补贴仅生成已获证人员材料，请先在毕业典礼完成证书回填");
     }
 
     Map<String, TrainSignUpPeopleSelfEntity> signUpByIdCard = loadSignUpsByIdCard(students);
@@ -401,9 +420,8 @@ public class TrainSubsidyClassMaterialService {
     payload.put("failed", failed);
     payload.put("eligibleCount", students.size());
     payload.put("classStudentCount", allStudents.size());
-    payload.put("skippedNotGraduated", skippedNotGraduated);
     payload.put("skippedNoCert", skippedNoCert);
-    addEvent(subsidy, "generate_claim_forms", "一键生成个人技能提升补贴申领表（已结业且有证书）", payload);
+    addEvent(subsidy, "generate_claim_forms", "一键生成个人技能提升补贴申领表（仅已获证）", payload);
 
     Map<String, Object> result = preview(subsidyId);
     result.put("claimFormSlot", slotCode);
@@ -411,7 +429,6 @@ public class TrainSubsidyClassMaterialService {
     result.put("claimFormsFailed", failed);
     result.put("claimFormStudentCount", students.size());
     result.put("claimFormClassStudentCount", allStudents.size());
-    result.put("claimFormSkippedNotGraduated", skippedNotGraduated);
     result.put("claimFormSkippedNoCert", skippedNoCert);
     result.put("notes", notes);
     result.put(
@@ -419,13 +436,12 @@ public class TrainSubsidyClassMaterialService {
         generated > 0
             ? "已为 "
                 + generated
-                + " 名「已结业且有证书」学员生成申领表"
+                + " 名已获证学员生成申领表"
                 + (failed > 0 ? "（失败 " + failed + "）" : "")
-                + "；跳过未结业 "
-                + skippedNotGraduated
-                + "、无证书 "
+                + "；跳过未获证 "
                 + skippedNoCert
-            : "未生成任何申领表，请检查本班已结业且有证书学员数据");
+                + " 人"
+            : "未生成任何申领表，请检查本班已获证学员数据");
 
     if (!zipEntries.isEmpty()) {
       try {
@@ -522,7 +538,8 @@ public class TrainSubsidyClassMaterialService {
       Long userId,
       String slotCode) {
     try {
-      String scope = "cert_retake".equals(slotCode) ? "all" : "certified";
+      // 申报补贴一律只导出已获证人员
+      String scope = "certified";
       byte[] bytes = rosterExportService.exportWorkbookBytes(clazz.getId(), scope);
       if (bytes == null || bytes.length == 0) return false;
       clearAutoSlotFiles(subsidy.getId(), slotCode);
@@ -650,20 +667,9 @@ public class TrainSubsidyClassMaterialService {
     return map;
   }
 
-  /** 与毕业典礼一致：有文件 / 技能等级证 / 非 GC- 假号视为已回填真实证书 */
+  /** @deprecated 使用 {@link SubsidyCertifiedPeopleSupport#isCertified} */
   private static boolean isBackfilledCertificate(TrainCertificateEntity c) {
-    if (c == null) {
-      return false;
-    }
-    if (StringUtils.hasText(c.getFilePath())) {
-      return true;
-    }
-    String type = c.getCertificateType();
-    if ("skill_level_cert".equalsIgnoreCase(type) || "renshe".equalsIgnoreCase(type)) {
-      return true;
-    }
-    String no = c.getCertificateNo();
-    return StringUtils.hasText(no) && !no.startsWith("GC-");
+    return SubsidyCertifiedPeopleSupport.isCertified(c);
   }
 
   private Map<String, TrainSignUpPeopleSelfEntity> loadSignUpsByIdCard(List<TrainPeopleListEntity> students) {

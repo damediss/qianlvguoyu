@@ -24,4 +24,7 @@ public record SubsidyMaterialInstanceVO(
     String photoPackPath,
     String photoPackTitle,
     int slotFileCount,
-    List<SubsidyMaterialSlotFileVO> slotFiles) {}
+    List<SubsidyMaterialSlotFileVO> slotFiles,
+    /** 是否存在可作填数底稿的「替换上传」版本 */
+    boolean hasUploadTemplate,
+    String uploadTemplateFileName) {}

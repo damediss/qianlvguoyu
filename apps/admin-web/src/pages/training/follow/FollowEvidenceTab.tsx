@@ -24,6 +24,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import {
   DeleteOutlined,
+  DownloadOutlined,
   PlusOutlined,
   ReloadOutlined,
   ThunderboltOutlined,
@@ -82,6 +83,11 @@ export function FollowEvidenceTab({ classId }: Props) {
       trainApi.listFollowEvidences(classId, {
         mediaType: 'photo',
       }),
+  });
+
+  const latestPackQ = useQuery({
+    queryKey: ['follow-photo-pack-latest', classId],
+    queryFn: () => trainApi.getLatestFollowPhotoPack(classId),
   });
 
   const invalidate = () => {
@@ -214,21 +220,29 @@ export function FollowEvidenceTab({ classId }: Props) {
 
   const genMu = useMutation({
     mutationFn: (payload: FollowPhotoPackMeta) => trainApi.generateFollowPhotoPack(classId, payload),
-    onSuccess: async (res) => {
-      message.success('培训照片已生成，开始下载');
+    onSuccess: () => {
+      message.success('培训照片已生成，可点击「下载照片」获取文件');
       setGenOpen(false);
       invalidate();
-      const path = res.filePath || res.url;
-      const name = `${res.title || '培训照片'}.docx`;
-      if (path) {
-        try {
-          await downloadUrlFile(path, name);
-        } catch (e) {
-          message.error(e instanceof Error ? e.message : '下载失败，请稍后点「下载最近生成」');
-        }
-      }
     },
     onError: (e: Error) => message.error(e.message || '生成失败'),
+  });
+
+  const downloadMu = useMutation({
+    mutationFn: async () => {
+      const res = await trainApi.getLatestFollowPhotoPack(classId);
+      if (!res.exists) {
+        throw new Error('尚未生成培训照片，请先点击「生成培训照片」');
+      }
+      const path = res.filePath || res.url;
+      if (!path) {
+        throw new Error('培训照片文件路径缺失');
+      }
+      await downloadUrlFile(path, `${res.title || '培训照片'}.docx`);
+      return res;
+    },
+    onSuccess: () => message.success('开始下载培训照片'),
+    onError: (e: Error) => message.error(e.message || '下载失败'),
   });
 
   const openGenerateModal = async () => {
@@ -368,9 +382,18 @@ export function FollowEvidenceTab({ classId }: Props) {
               ghost
               icon={<ThunderboltOutlined />}
               disabled={!photos.length}
+              loading={genMu.isPending}
               onClick={() => void openGenerateModal()}
             >
               生成培训照片
+            </Button>
+            <Button
+              icon={<DownloadOutlined />}
+              disabled={!latestPackQ.data?.exists}
+              loading={downloadMu.isPending || latestPackQ.isFetching}
+              onClick={() => downloadMu.mutate()}
+            >
+              下载照片
             </Button>
           </Space>
         }
@@ -503,7 +526,7 @@ export function FollowEvidenceTab({ classId }: Props) {
         title="生成培训照片"
         open={genOpen}
         onCancel={() => setGenOpen(false)}
-        okText="生成并下载"
+        okText="生成"
         confirmLoading={genMu.isPending}
         onOk={() => void submitGenerate()}
         destroyOnHidden

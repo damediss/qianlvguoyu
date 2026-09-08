@@ -2923,6 +2923,10 @@ export type SubsidyClassMaterials = {
   classId?: number | string;
   className?: string | null;
   studentCount?: number;
+  /** 已获证申报人数 */
+  certifiedStudentCount?: number;
+  /** 班级学员总数（含未获证） */
+  classStudentTotal?: number;
   certificateTotal?: number;
   certificateWithFile?: number;
   photoPackReady?: boolean;
@@ -3001,6 +3005,9 @@ export type SubsidyMaterialInstance = {
   photoPackTitle?: string | null;
   slotFileCount?: number;
   slotFiles?: SubsidyMaterialSlotFile[];
+  /** 是否存在可作填数底稿的「替换上传」版本 */
+  hasUploadTemplate?: boolean;
+  uploadTemplateFileName?: string | null;
 };
 
 export type SubsidyMaterialGroup = {
@@ -3043,6 +3050,12 @@ export function confirmSubsidyMaterialInstance(instanceId: number | string) {
   );
 }
 
+export function deleteSubsidyMaterialInstance(instanceId: number | string) {
+  return unwrap<void>(
+    apiClient.post(`${BASE}/material-instances/${instanceId}/delete`),
+  );
+}
+
 export type SubsidyMaterialOfficeConfig = {
   enabled: boolean;
   message?: string | null;
@@ -3068,6 +3081,187 @@ export function exportSubsidyMaterials(subsidyId: number | string, instanceIds: 
     exported?: string[];
     skipped?: string[];
   }>(apiClient.post(`${BASE}/subsidies/${subsidyId}/materials/export`, { instanceIds }, { timeout: 180000 }));
+}
+
+/** 补贴材料填数模板 */
+export type SubsidyMaterialTemplate = {
+  id: number | string;
+  scope: string;
+  tenantId?: number | string | null;
+  classId?: number | string | null;
+  materialType: string;
+  materialTypeLabel?: string;
+  slotCode?: string | null;
+  regionCode?: string | null;
+  trainMode?: string | null;
+  policyYear?: number | null;
+  title: string;
+  fileFormat: string;
+  templateFileId: number | string;
+  templateFilePath?: string | null;
+  fieldKeys?: string[];
+  parseVersion?: number;
+  status: string;
+  remark?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export function listSubsidyMaterialTemplates(params?: {
+  scope?: string;
+  materialType?: string;
+  regionCode?: string;
+  trainMode?: string;
+  policyYear?: number;
+  status?: string;
+  classId?: number | string;
+  keyword?: string;
+}) {
+  return unwrap<SubsidyMaterialTemplate[]>(
+    apiClient.get(`${BASE}/subsidy-material-templates`, { params }),
+  );
+}
+
+export async function uploadSubsidyMaterialTemplate(params: {
+  file: File;
+  title?: string;
+  materialType?: string;
+  slotCode?: string;
+  scope?: string;
+  classId?: number | string;
+  regionCode?: string;
+  trainMode?: string;
+  policyYear?: number;
+  remark?: string;
+}) {
+  const form = new FormData();
+  form.append('file', params.file);
+  if (params.title) form.append('title', params.title);
+  if (params.materialType) form.append('materialType', params.materialType);
+  if (params.slotCode) form.append('slotCode', params.slotCode);
+  form.append('scope', params.scope || 'tenant');
+  if (params.classId != null) form.append('classId', String(params.classId));
+  if (params.regionCode) form.append('regionCode', params.regionCode);
+  if (params.trainMode) form.append('trainMode', params.trainMode);
+  if (params.policyYear != null) form.append('policyYear', String(params.policyYear));
+  if (params.remark) form.append('remark', params.remark);
+  return unwrap<SubsidyMaterialTemplate>(
+    apiClient.post(`${BASE}/subsidy-material-templates`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    }),
+  );
+}
+
+export function updateSubsidyMaterialTemplate(
+  id: number | string,
+  body: {
+    title?: string;
+    materialType?: string;
+    slotCode?: string | null;
+    regionCode?: string | null;
+    trainMode?: string | null;
+    policyYear?: number | null;
+    scope?: string;
+    classId?: number | string | null;
+    status?: string;
+    remark?: string | null;
+  },
+) {
+  return unwrap<SubsidyMaterialTemplate>(
+    apiClient.put(`${BASE}/subsidy-material-templates/${id}`, body),
+  );
+}
+
+export function deleteSubsidyMaterialTemplate(id: number | string) {
+  return unwrap<void>(apiClient.delete(`${BASE}/subsidy-material-templates/${id}`));
+}
+
+export function reparseSubsidyMaterialTemplate(id: number | string) {
+  return unwrap<SubsidyMaterialTemplate>(
+    apiClient.post(`${BASE}/subsidy-material-templates/${id}/reparse`),
+  );
+}
+
+export type SubsidyFillFromTemplateResult = {
+  ok: boolean;
+  message?: string;
+  instanceId?: number | string;
+  templateId?: number | string;
+  versionId?: number | string;
+  filePath?: string;
+  fileName?: string;
+  filledKeys?: string[];
+  missingKeys?: string[];
+  fillMode?: string;
+  studentCount?: number;
+};
+
+export type SubsidyFillFromTemplateBody = {
+  templateId?: number | string;
+  instanceId?: number | string;
+  slotCode?: string;
+  title?: string;
+  /** all | certified */
+  rosterScope?: string;
+  /** 以材料当前版本文件为模板填数（替换上传后） */
+  useCurrentFile?: boolean;
+};
+
+/** 选模板 → 自动填本班字段 → 生成材料 */
+export function fillSubsidyFromTemplate(
+  subsidyId: number | string,
+  body: SubsidyFillFromTemplateBody,
+) {
+  return unwrap<SubsidyFillFromTemplateResult>(
+    apiClient.post(`${BASE}/subsidies/${subsidyId}/materials/fill-from-template`, body, {
+      timeout: 120000,
+    }),
+  );
+}
+
+export type SubsidyFillAllResult = {
+  ok: boolean;
+  filled: number;
+  skipped: number;
+  failed: number;
+  total: number;
+  message?: string;
+  details?: Array<{
+    instanceId?: number | string;
+    title?: string;
+    materialType?: string;
+    status?: string;
+    reason?: string;
+    fillMode?: string;
+    studentCount?: number;
+    message?: string;
+  }>;
+};
+
+/** 按材料清单逐项一键填数 */
+export function fillAllSubsidyMaterials(subsidyId: number | string) {
+  return unwrap<SubsidyFillAllResult>(
+    apiClient.post(`${BASE}/subsidies/${subsidyId}/materials/fill-all`, undefined, {
+      timeout: 300000,
+    }),
+  );
+}
+
+/** 对已有材料实例选模板填数 */
+export function fillSubsidyMaterialInstance(
+  instanceId: number | string,
+  body: SubsidyFillFromTemplateBody | number | string,
+) {
+  const payload: SubsidyFillFromTemplateBody =
+    typeof body === 'object' && body != null
+      ? body
+      : { templateId: body as number | string };
+  return unwrap<SubsidyFillFromTemplateResult>(
+    apiClient.post(`${BASE}/material-instances/${instanceId}/fill`, payload, {
+      timeout: 120000,
+    }),
+  );
 }
 
 export async function uploadSubsidySlotFile(id: number | string, slotCode: string, file: File) {

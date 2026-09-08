@@ -1,4 +1,4 @@
-import { Button, Checkbox, Empty, Space, Typography, Upload } from 'antd';
+import { Button, Checkbox, Empty, Modal, Space, Typography, Upload, message } from 'antd';
 import type { SubsidyMaterialInstance } from '../../../../api/training';
 import { MaterialStatusTag } from './MaterialStatusTag';
 
@@ -10,7 +10,9 @@ type Props = {
   onToggleExport: (id: string, checked: boolean) => void;
   onToggleAllExport: (checked: boolean, ids: string[]) => void;
   onReplaceFile: (instanceId: string, file: File) => void;
+  onDeleteInstance?: (instanceId: string) => void | Promise<void>;
   replaceLoading?: boolean;
+  deleteLoadingId?: string | null;
 };
 
 export function MaterialTreePanel({
@@ -21,7 +23,9 @@ export function MaterialTreePanel({
   onToggleExport,
   onToggleAllExport,
   onReplaceFile,
+  onDeleteInstance,
   replaceLoading,
+  deleteLoadingId,
 }: Props) {
   const allIds = groups.flatMap((g) => g.items.map((i) => String(i.id)));
   const allChecked = allIds.length > 0 && allIds.every((id) => exportSelectedIds.has(id));
@@ -30,6 +34,29 @@ export function MaterialTreePanel({
   if (!groups.length) {
     return <Empty description="暂无材料项，请确认配方已匹配" />;
   }
+
+  const confirmDelete = (item: SubsidyMaterialInstance) => {
+    if (!onDeleteInstance) return;
+    const id = String(item.id);
+    Modal.confirm({
+      title: '删除该材料？',
+      content: item.required
+        ? `「${item.title}」为配方必填项，删除后将从本班清单中移除（可之后用模板填数等方式再补回）。`
+        : `确认删除「${item.title}」？删除后不可在清单中恢复该条（历史版本一并不再展示）。`,
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await onDeleteInstance(id);
+          message.success('已删除');
+        } catch (e) {
+          message.error((e as Error).message || '删除失败');
+          throw e;
+        }
+      },
+    });
+  };
 
   return (
     <div className="material-tree-panel">
@@ -73,22 +100,41 @@ export function MaterialTreePanel({
                   </div>
                   <Space size={4} wrap>
                     <MaterialStatusTag status={item.status} />
-                    {item.hasFile ? <Typography.Text type="secondary" style={{ fontSize: 11 }}>有文件</Typography.Text> : null}
+                    {item.hasFile ? (
+                      <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                        有文件
+                      </Typography.Text>
+                    ) : null}
                   </Space>
                 </button>
-                <Upload
-                  showUploadList={false}
-                  openFileDialogOnClick
-                  beforeUpload={(file) => {
-                    onReplaceFile(id, file as File);
-                    return false;
-                  }}
-                >
-                  {/* 勿在子按钮上 stopPropagation：Upload 的选文件 click 挂在外层 span，拦截后会无反应 */}
-                  <Button size="small" type="link" loading={replaceLoading && active}>
-                    替换
-                  </Button>
-                </Upload>
+                <div className="material-tree-item-actions">
+                  <Upload
+                    showUploadList={false}
+                    openFileDialogOnClick
+                    beforeUpload={(file) => {
+                      onReplaceFile(id, file as File);
+                      return false;
+                    }}
+                  >
+                    <Button size="small" type="link" loading={replaceLoading && active}>
+                      替换
+                    </Button>
+                  </Upload>
+                  {onDeleteInstance ? (
+                    <Button
+                      size="small"
+                      type="link"
+                      danger
+                      loading={deleteLoadingId === id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        confirmDelete(item);
+                      }}
+                    >
+                      删除
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             );
           })}

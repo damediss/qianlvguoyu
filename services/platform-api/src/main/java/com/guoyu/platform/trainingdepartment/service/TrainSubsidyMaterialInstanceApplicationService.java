@@ -49,6 +49,7 @@ public class TrainSubsidyMaterialInstanceApplicationService {
   private final TrainSubsidyPackProfileApplicationService profileService;
   private final TrainFollowPhotoPackMapper photoPackMapper;
   private final FileApplicationService fileApplicationService;
+  private final TrainSubsidyClassMaterialService classMaterialService;
 
   public TrainSubsidyMaterialInstanceApplicationService(
       TrainSubsidyMapper subsidyMapper,
@@ -58,7 +59,8 @@ public class TrainSubsidyMaterialInstanceApplicationService {
       TrainSubsidyEventMapper eventMapper,
       TrainSubsidyPackProfileApplicationService profileService,
       TrainFollowPhotoPackMapper photoPackMapper,
-      FileApplicationService fileApplicationService) {
+      FileApplicationService fileApplicationService,
+      @org.springframework.context.annotation.Lazy TrainSubsidyClassMaterialService classMaterialService) {
     this.subsidyMapper = subsidyMapper;
     this.instanceMapper = instanceMapper;
     this.versionMapper = versionMapper;
@@ -67,12 +69,14 @@ public class TrainSubsidyMaterialInstanceApplicationService {
     this.profileService = profileService;
     this.photoPackMapper = photoPackMapper;
     this.fileApplicationService = fileApplicationService;
+    this.classMaterialService = classMaterialService;
   }
 
   @Transactional
   public SubsidyMaterialInstanceListVO listInstances(Long subsidyId) {
     TrainSubsidyEntity subsidy = requireSubsidy(subsidyId);
     ensureInstancesFromProfile(subsidy);
+    tryAutoSyncUpstream(subsidy);
     refreshInstancesFromSlotFiles(subsidy);
     return buildListVO(subsidy);
   }
@@ -142,11 +146,53 @@ public class TrainSubsidyMaterialInstanceApplicationService {
     return toVO(instance, subsidy, loadSlotFiles(subsidy.getId()), latestPhotoPack(subsidy));
   }
 
+  /** 从本班材料清单中删除（逻辑删除） */
+  @Transactional
+  public void deleteInstance(Long instanceId) {
+    TrainSubsidyMaterialInstanceEntity instance = requireInstance(instanceId);
+    TrainSubsidyEntity subsidy = requireSubsidy(instance.getSubsidyId());
+    assertEditable(subsidy);
+
+    List<TrainSubsidySlotFileEntity> slotFiles = slotFileMapper.selectList(
+        new LambdaQueryWrapper<TrainSubsidySlotFileEntity>()
+            .eq(TrainSubsidySlotFileEntity::getInstanceId, instanceId)
+            .eq(TrainSubsidySlotFileEntity::getDeleted, 0));
+    for (TrainSubsidySlotFileEntity f : slotFiles) {
+      slotFileMapper.deleteById(f.getId());
+    }
+
+    addEvent(
+        subsidy,
+        "instance_delete",
+        "删除材料 " + instance.getTitle(),
+        Map.of("instanceId", instance.getId(), "required", instance.getRequiredFlag() != null && instance.getRequiredFlag() == 1));
+    instanceMapper.deleteById(instanceId);
+  }
+
   /** 本班 sync 或槽位变更后，将 slot_file 同步到实例版本 */
   @Transactional
   public void refreshFromSlotFiles(Long subsidyId) {
     TrainSubsidyEntity subsidy = requireSubsidy(subsidyId);
     refreshInstancesFromSlotFiles(subsidy);
+  }
+
+  /**
+   * 证书 PDF / 获证名册 / 培训照片：系统有上游数据则自动同步到清单；没有则保持未生成，可手工替换。
+   */
+  private void tryAutoSyncUpstream(TrainSubsidyEntity subsidy) {
+    if (subsidy.getClassId() == null || subsidy.getProfileId() == null) {
+      return;
+    }
+    try {
+      assertEditable(subsidy);
+    } catch (BusinessException ex) {
+      return;
+    }
+    try {
+      classMaterialService.syncFromClass(subsidy.getId());
+    } catch (Exception ex) {
+      log.warn("自动同步本班证书/照片失败 subsidyId={}: {}", subsidy.getId(), ex.getMessage());
+    }
   }
 
   private void ensureInstancesFromProfile(TrainSubsidyEntity subsidy) {
@@ -190,9 +236,14 @@ public class TrainSubsidyMaterialInstanceApplicationService {
     TrainFollowPhotoPackEntity photoPack = latestPhotoPack(subsidy);
 
     for (TrainSubsidyMaterialInstanceEntity instance : instances) {
-      if ("follow_photo".equals(instance.getRenderer())) {
+      if (isPhotoInstance(instance)) {
         if (photoPack != null && photoPack.getFileId() != null) {
-          if (instance.getCurrentVersionId() == null) {
+          boolean needLink = instance.getCurrentVersionId() == null;
+          if (!needLink) {
+            TrainSubsidyMaterialVersionEntity cur = versionMapper.selectById(instance.getCurrentVersionId());
+            needLink = cur == null || cur.getFileId() == null || !photoPack.getFileId().equals(cur.getFileId());
+          }
+          if (needLink) {
             upsertVersionFromPhotoPack(instance, photoPack, subsidy);
           }
         }
@@ -211,6 +262,10 @@ public class TrainSubsidyMaterialInstanceApplicationService {
         TrainSubsidyMaterialVersionEntity cur = versionMapper.selectById(instance.getCurrentVersionId());
         if (cur != null && latest.getFileId() != null && latest.getFileId().equals(cur.getFileId())) {
           linkSlotFile(latest, instance, cur);
+          // 多文件证书：确保全部 slot 都挂上 instance
+          for (TrainSubsidySlotFileEntity f : files) {
+            linkSlotFile(f, instance, cur);
+          }
           continue;
         }
       }
@@ -236,6 +291,12 @@ public class TrainSubsidyMaterialInstanceApplicationService {
         linkSlotFile(f, instance, version);
       }
     }
+  }
+
+  private static boolean isPhotoInstance(TrainSubsidyMaterialInstanceEntity instance) {
+    return "follow_photo".equals(instance.getRenderer())
+        || "photo_album".equals(instance.getSlotCode())
+        || SubsidyMaterialTypes.PHOTO.equals(instance.getMaterialType());
   }
 
   private void upsertVersionFromPhotoPack(
@@ -351,7 +412,7 @@ public class TrainSubsidyMaterialInstanceApplicationService {
         ? allSlotFiles.stream().filter(f -> instance.getSlotCode().equals(f.getSlotCode())).toList()
         : List.of();
 
-    boolean photoPackReady = "follow_photo".equals(instance.getRenderer())
+    boolean photoPackReady = isPhotoInstance(instance)
         && photoPack != null && photoPack.getFileId() != null;
     boolean hasFile = version != null && version.getFileId() != null;
     if (!hasFile && photoPackReady) {
@@ -364,6 +425,14 @@ public class TrainSubsidyMaterialInstanceApplicationService {
     List<SubsidyMaterialSlotFileVO> slotFileVos = slotFiles.stream()
         .map(f -> new SubsidyMaterialSlotFileVO(f.getId(), f.getFileName(), f.getFilePath(), f.getFileId()))
         .toList();
+
+    TrainSubsidyMaterialVersionEntity uploadTpl = versionMapper.selectOne(
+        new LambdaQueryWrapper<TrainSubsidyMaterialVersionEntity>()
+            .eq(TrainSubsidyMaterialVersionEntity::getInstanceId, instance.getId())
+            .eq(TrainSubsidyMaterialVersionEntity::getDeleted, 0)
+            .eq(TrainSubsidyMaterialVersionEntity::getSource, "upload")
+            .orderByDesc(TrainSubsidyMaterialVersionEntity::getVersionNo)
+            .last("LIMIT 1"));
 
     return new SubsidyMaterialInstanceVO(
         instance.getId(),
@@ -385,7 +454,9 @@ public class TrainSubsidyMaterialInstanceApplicationService {
         photoPackReady ? photoPack.getFilePath() : null,
         photoPackReady ? photoPack.getTitle() : null,
         slotFiles.size(),
-        slotFileVos);
+        slotFileVos,
+        uploadTpl != null && uploadTpl.getFileId() != null,
+        uploadTpl != null ? uploadTpl.getFileName() : null);
   }
 
   private List<TrainSubsidySlotFileEntity> loadSlotFiles(Long subsidyId) {
