@@ -46,6 +46,8 @@ export interface BlueprintNode {
 export interface TheoryGenBatch {
   id: string;
   blueprintId: string;
+  workTypeId?: number | null;
+  level?: number | null;
   modelId: string;
   thinking?: string | null;
   reasoningEffort?: string | null;
@@ -57,8 +59,15 @@ export interface TheoryGenBatch {
   totalQuestions: number;
   tokenUsage: number;
   failReason?: string | null;
+  createdAt?: string | null;
   startedAt?: string | null;
   finishedAt?: string | null;
+  /** 工作台总览统计（批次分页聚合） */
+  approvedCount?: number | null;
+  pendingReviewCount?: number | null;
+  rejectedCount?: number | null;
+  publishedCount?: number | null;
+  subjectiveCount?: number | null;
 }
 
 export interface TheoryDraft {
@@ -129,7 +138,8 @@ export const submitGenBatch = (blueprintId: string, modelConfigId: string, quota
   unwrap<TheoryGenBatch>(
     apiClient.post('/exam/theory/gen/submit', { blueprintId, modelConfigId, quota }));
 
-export const listGenBatches = (params: { blueprintId?: string; page?: number; pageSize?: number }) =>
+export const listGenBatches = (params: { blueprintId?: string; status?: string;
+  page?: number; pageSize?: number }) =>
   unwrap<PageResponse<TheoryGenBatch>>(
     apiClient.get('/exam/theory/gen/page', { params }));
 
@@ -164,7 +174,8 @@ export const listTheoryModelConfigs = () =>
 // ------------------------------------------------------------------
 
 export interface DraftQuery {
-  batchId: string;
+  /** 不传为"全部批次"模式（工作台跨批次审核，按创建时间倒序） */
+  batchId?: string;
   questionType?: string;
   reviewStatus?: string;
   publishStatus?: number;
