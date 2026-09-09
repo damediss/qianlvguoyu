@@ -97,6 +97,8 @@ public class TrainSubsidyMaterialTemplateApplicationService {
   private final FileApplicationService fileApplicationService;
   private final ObjectMapper objectMapper;
   private final TrainSubsidyMaterialTemplateApplicationService self;
+  private final com.guoyu.platform.trainingdepartment.support.SubsidyMaterialStyleBaseResolver
+      styleBaseResolver;
 
   public TrainSubsidyMaterialTemplateApplicationService(
       TrainSubsidyMaterialTemplateMapper templateMapper,
@@ -115,7 +117,9 @@ public class TrainSubsidyMaterialTemplateApplicationService {
       TrainCertificateMapper certificateMapper,
       FileApplicationService fileApplicationService,
       ObjectMapper objectMapper,
-      @Lazy TrainSubsidyMaterialTemplateApplicationService self) {
+      @Lazy TrainSubsidyMaterialTemplateApplicationService self,
+      com.guoyu.platform.trainingdepartment.support.SubsidyMaterialStyleBaseResolver
+          styleBaseResolver) {
     this.templateMapper = templateMapper;
     this.subsidyMapper = subsidyMapper;
     this.instanceMapper = instanceMapper;
@@ -133,6 +137,7 @@ public class TrainSubsidyMaterialTemplateApplicationService {
     this.fileApplicationService = fileApplicationService;
     this.objectMapper = objectMapper;
     this.self = self;
+    this.styleBaseResolver = styleBaseResolver;
   }
 
   @Transactional(readOnly = true)
@@ -440,24 +445,35 @@ public class TrainSubsidyMaterialTemplateApplicationService {
       instanceMapper.insert(instance);
     }
 
-    final String fmt;
+    String fmt;
     final byte[] templateBytes;
     final String sourceTitle;
     final Long sourceTemplateId;
     final String libraryMaterialType;
+    String styleBaseLabel = null;
+    int styleBaseBorders = -1;
 
     if (useCurrentFile) {
-      TrainSubsidyMaterialVersionEntity base = resolveUploadTemplateVersion(instance.getId());
-      if (base == null || base.getFileId() == null) {
+      // 按边框密度选底稿：原始 xls / 模板库优先，避免误用丢边框的上传 xlsx
+      var styleBase = styleBaseResolver.resolveForInstance(instance.getId());
+      if (styleBase == null || styleBase.bytes() == null || styleBase.bytes().length == 0) {
         throw new BusinessException(
             ErrorCode.BAD_REQUEST,
             "没有可用的上传模板。当前预览多半是上次填数结果（如误用花名册），请先「替换上传」正确的申请表/模板空白文件，再填数");
       }
-      fmt = detectOfficeFormat(base.getFileName(), null);
+      templateBytes = styleBase.bytes();
+      styleBaseLabel = styleBase.label();
+      styleBaseBorders = styleBase.borderCount();
+      String sniffed =
+          com.guoyu.platform.trainingdepartment.support.SubsidyExcelStyleSupport.sniffFormat(
+              templateBytes);
+      fmt =
+          StringUtils.hasText(sniffed)
+              ? sniffed
+              : detectOfficeFormat(styleBase.fileName(), null);
       if (!"docx".equals(fmt) && !"xlsx".equals(fmt) && !"xls".equals(fmt)) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "上传模板不是 docx/xlsx，无法自动填数");
       }
-      templateBytes = fileApplicationService.readFileBytesById(base.getFileId());
       // 申请表误用花名册文件时直接拦截，避免再次生成花名册
       if (SubsidyMaterialTypes.APPLICATION_FORM.equals(instance.getMaterialType())
           && looksLikeRosterWorkbook(templateBytes)) {
@@ -465,7 +481,8 @@ public class TrainSubsidyMaterialTemplateApplicationService {
             ErrorCode.BAD_REQUEST,
             "上传的文件内容是花名册（含姓名表头/学员行），与当前「申请表」材料不符。请重新「替换上传」申请表模板后再填数");
       }
-      sourceTitle = StringUtils.hasText(base.getFileName()) ? base.getFileName() : instance.getTitle();
+      sourceTitle =
+          StringUtils.hasText(styleBase.fileName()) ? styleBase.fileName() : instance.getTitle();
       sourceTemplateId = instance.getTemplateId();
       libraryMaterialType = instance.getMaterialType();
     } else {
@@ -477,6 +494,12 @@ public class TrainSubsidyMaterialTemplateApplicationService {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持 docx / xlsx 模板自动填数");
       }
       templateBytes = fileApplicationService.readFileBytesById(libraryTemplate.getTemplateFileId());
+      String sniffed =
+          com.guoyu.platform.trainingdepartment.support.SubsidyExcelStyleSupport.sniffFormat(
+              templateBytes);
+      if ("xls".equals(sniffed) || "xlsx".equals(sniffed)) {
+        fmt = sniffed;
+      }
       sourceTitle = libraryTemplate.getTitle();
       sourceTemplateId = libraryTemplate.getId();
       libraryMaterialType = libraryTemplate.getMaterialType();
@@ -534,9 +557,27 @@ public class TrainSubsidyMaterialTemplateApplicationService {
     } catch (BusinessException ex) {
       throw ex;
     } catch (Exception ex) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "填数失败: " + ex.getMessage());
+      log.warn(
+          "fillFromTemplate failed subsidyId={} instanceId={} useCurrentFile={}",
+          subsidyId,
+          instance.getId(),
+          useCurrentFile,
+          ex);
+      String detail = ex.getMessage();
+      if (!StringUtils.hasText(detail)) {
+        detail = ex.getClass().getSimpleName();
+      }
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "填数失败: " + detail);
     }
 
+    // 输出扩展名以填数结果魔数为准（库表可能标 xlsx，实际仍是 OLE .xls）
+    if (!"docx".equals(fmt)) {
+      String filledFmt =
+          com.guoyu.platform.trainingdepartment.support.SubsidyExcelStyleSupport.sniffFormat(filled);
+      if ("xls".equals(filledFmt) || "xlsx".equals(filledFmt)) {
+        fmt = filledFmt;
+      }
+    }
     String ext = "docx".equals(fmt) ? "docx" : ("xls".equals(fmt) ? "xls" : "xlsx");
     String contentType = "docx".equals(fmt) ? DOCX : ("xls".equals(fmt) ? XLS : XLSX);
     String fileNamePrefix = useCurrentFile ? "[填数]" : "[模板]";
@@ -558,6 +599,10 @@ public class TrainSubsidyMaterialTemplateApplicationService {
       }
       snap.put("useCurrentFile", useCurrentFile);
       snap.put("sourceTitle", sourceTitle);
+      if (styleBaseLabel != null) {
+        snap.put("styleBase", styleBaseLabel);
+        snap.put("styleBorders", styleBaseBorders);
+      }
       snap.put("vars", vars);
       snap.put("missing", missing);
       snap.put("fillMode", fillMode);
@@ -604,6 +649,10 @@ public class TrainSubsidyMaterialTemplateApplicationService {
     eventPayload.put("missingCount", missing.size());
     eventPayload.put("fillMode", fillMode);
     eventPayload.put("studentCount", studentFilled);
+    if (styleBaseLabel != null) {
+      eventPayload.put("styleBase", styleBaseLabel);
+      eventPayload.put("styleBorders", styleBaseBorders);
+    }
     addEvent(
         subsidy,
         "template_fill",
@@ -1348,9 +1397,22 @@ public class TrainSubsidyMaterialTemplateApplicationService {
 
   /**
    * 「基于当前文件填数」应使用最近一次用户上传或本班同步的空白模板，而不是已填数结果。
-   * 否则会把上次误填的花名册再次当作模板。
+   * 优先选用带边框的原始 .xls（后期被 SheetJS 另存的 .xlsx 往往丢边框）。
    */
   private TrainSubsidyMaterialVersionEntity resolveUploadTemplateVersion(Long instanceId) {
+    TrainSubsidyMaterialVersionEntity xlsUpload =
+        versionMapper.selectOne(
+            new LambdaQueryWrapper<TrainSubsidyMaterialVersionEntity>()
+                .eq(TrainSubsidyMaterialVersionEntity::getInstanceId, instanceId)
+                .eq(TrainSubsidyMaterialVersionEntity::getDeleted, 0)
+                .eq(TrainSubsidyMaterialVersionEntity::getSource, "upload")
+                .apply("LOWER(file_name) LIKE {0}", "%.xls")
+                .apply("LOWER(file_name) NOT LIKE {0}", "%.xlsx")
+                .orderByDesc(TrainSubsidyMaterialVersionEntity::getVersionNo)
+                .last("LIMIT 1"));
+    if (xlsUpload != null) {
+      return xlsUpload;
+    }
     TrainSubsidyMaterialVersionEntity upload = versionMapper.selectOne(
         new LambdaQueryWrapper<TrainSubsidyMaterialVersionEntity>()
             .eq(TrainSubsidyMaterialVersionEntity::getInstanceId, instanceId)
@@ -1381,7 +1443,7 @@ public class TrainSubsidyMaterialTemplateApplicationService {
       return null;
     }
     String src = cur.getSource() == null ? "" : cur.getSource();
-    if ("auto_fill".equals(src) || "auto_fill_current".equals(src)) {
+    if ("auto_fill".equals(src) || "auto_fill_current".equals(src) || "inline_edit".equals(src)) {
       return null;
     }
     return cur;

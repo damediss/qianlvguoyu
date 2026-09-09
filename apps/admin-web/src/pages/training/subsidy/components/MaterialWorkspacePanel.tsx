@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Empty, List, Space, Typography, Upload } from 'antd';
-import { ArrowLeftOutlined, FileOutlined } from '@ant-design/icons';
+import { Button, Empty, List, Space, Typography, Upload, message } from 'antd';
+import { ArrowLeftOutlined, EditOutlined, FileOutlined } from '@ant-design/icons';
 import type { SubsidyMaterialInstance, SubsidyMaterialSlotFile } from '../../../../api/training';
+import * as trainApi from '../../../../api/training';
 import { downloadUrlFile } from '../../../../api/files';
 import { MaterialStatusTag } from './MaterialStatusTag';
 import { MaterialFilePreview } from './MaterialFilePreview';
+import { MaterialSpreadsheetEditor } from './MaterialSpreadsheetEditor';
 import { DocxOfficeEditor } from './DocxOfficeEditor';
 
 type Props = {
   item: SubsidyMaterialInstance | null;
   onConfirm?: () => void;
   confirmLoading?: boolean;
-  onReplaceFile?: (file: File) => void;
+  onReplaceFile?: (file: File) => void | Promise<void>;
   replaceLoading?: boolean;
   onFillFromTemplate?: () => void;
   onOfficeSaved?: () => void;
@@ -24,14 +26,31 @@ type PreviewTarget = {
   fileName?: string | null;
 };
 
-function isOfficeDoc(name?: string | null, path?: string | null) {
+function isSpreadsheet(name?: string | null, path?: string | null) {
   const s = `${name || ''} ${path || ''}`.toLowerCase();
-  return /\.(docx?|xlsx?|pptx?|odt|ods|odp|rtf|csv)(\?|$)/i.test(s);
+  return /\.(xlsx?|csv)(\?|$)/i.test(s);
+}
+
+function isWordDoc(name?: string | null, path?: string | null) {
+  const s = `${name || ''} ${path || ''}`.toLowerCase();
+  return /\.docx?(\?|$)/i.test(s);
+}
+
+/** 证书 PDF 等多文件并列；申请表/花名册等即使 slotFiles 有历史记录也按当前版本单文件处理 */
+function isMultiFileMaterial(item: SubsidyMaterialInstance) {
+  if (item.materialType === 'certificate') return true;
+  const slots = item.slotFiles || [];
+  if (slots.length <= 1) return false;
+  // 多个 slot 文件且当前主文件不像 office 文档 → 按多文件列表
+  const mainName = item.fileName || '';
+  if (isSpreadsheet(mainName) || isWordDoc(mainName)) return false;
+  return slots.length > 1;
 }
 
 function buildSlotTargets(item: SubsidyMaterialInstance): PreviewTarget[] {
   const slots = item.slotFiles || [];
-  if (slots.length > 0) {
+
+  if (isMultiFileMaterial(item) && slots.length > 0) {
     return slots.map((f: SubsidyMaterialSlotFile, idx) => ({
       key: String(f.id ?? `slot-${idx}`),
       fileId: f.fileId,
@@ -39,6 +58,7 @@ function buildSlotTargets(item: SubsidyMaterialInstance): PreviewTarget[] {
       fileName: f.fileName || `文件${idx + 1}`,
     }));
   }
+
   if (item.fileId || item.filePath || item.photoPackPath) {
     return [
       {
@@ -49,6 +69,19 @@ function buildSlotTargets(item: SubsidyMaterialInstance): PreviewTarget[] {
       },
     ];
   }
+
+  if (slots.length === 1) {
+    const f = slots[0];
+    return [
+      {
+        key: String(f.id ?? 'slot-0'),
+        fileId: f.fileId,
+        filePath: f.filePath,
+        fileName: f.fileName || item.title,
+      },
+    ];
+  }
+
   return [];
 }
 
@@ -62,14 +95,14 @@ export function MaterialWorkspacePanel({
   onOfficeSaved,
 }: Props) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [officeEdit, setOfficeEdit] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [savingCells, setSavingCells] = useState(false);
 
   const targets = useMemo(() => (item ? buildSlotTargets(item) : []), [item]);
-  const multiFile = targets.length > 1;
 
   useEffect(() => {
     setSelectedKey(null);
-    setOfficeEdit(false);
+    setEditing(false);
   }, [item?.id]);
 
   if (!item) {
@@ -80,6 +113,8 @@ export function MaterialWorkspacePanel({
     );
   }
 
+  const multiFile = isMultiFileMaterial(item) && targets.length > 1;
+
   const active =
     selectedKey != null
       ? targets.find((t) => t.key === selectedKey) ?? null
@@ -87,13 +122,35 @@ export function MaterialWorkspacePanel({
         ? null
         : targets[0] ?? null;
 
-  const canOfficeEdit =
-    !!active
-    && !multiFile
-    && isOfficeDoc(active.fileName, active.filePath)
-    && item.hasFile;
+  const fileLabel = `${active?.fileName || ''} ${item.fileName || ''} ${active?.filePath || ''}`;
+  const spreadsheet =
+    isSpreadsheet(active?.fileName, active?.filePath)
+    || isSpreadsheet(item.fileName, item.filePath)
+    || /\.xlsx?/i.test(fileLabel);
+  const wordDoc =
+    isWordDoc(active?.fileName, active?.filePath)
+    || isWordDoc(item.fileName, item.filePath);
+
+  const canEditSpreadsheet = !!active && !multiFile && spreadsheet && item.hasFile && !!onReplaceFile;
+  const canEditWord = !!active && !multiFile && wordDoc && item.hasFile;
+  const canEdit = item.hasFile && !multiFile && (!!onReplaceFile || canEditWord) && (spreadsheet || wordDoc);
 
   const downloadTarget = active || (!multiFile ? targets[0] : null);
+
+  const handleSaveSpreadsheetCells = async (cells: Record<string, string>) => {
+    setSavingCells(true);
+    try {
+      await trainApi.patchSubsidyMaterialCells(item.id, cells);
+      message.success('已保存（保留原表边框格式）');
+      setEditing(false);
+      onOfficeSaved?.();
+    } catch (e) {
+      message.error((e as Error).message || '保存失败');
+      throw e;
+    } finally {
+      setSavingCells(false);
+    }
+  };
 
   return (
     <div className="material-workspace-panel">
@@ -115,42 +172,52 @@ export function MaterialWorkspacePanel({
             ) : null}
           </Space>
         </div>
-        <Space wrap>
+        <Space wrap size={[8, 8]}>
           {multiFile && active ? (
             <Button icon={<ArrowLeftOutlined />} onClick={() => setSelectedKey(null)}>
               返回列表
             </Button>
           ) : null}
           {onFillFromTemplate && !multiFile ? (
-            <Button onClick={onFillFromTemplate}>从模板填数</Button>
+            <Button onClick={onFillFromTemplate} disabled={editing}>
+              从模板填数
+            </Button>
           ) : null}
           {onReplaceFile && !multiFile ? (
             <Upload
               showUploadList={false}
+              disabled={editing}
               beforeUpload={(file) => {
-                onReplaceFile(file as File);
+                void onReplaceFile(file as File);
                 return false;
               }}
             >
-              <Button loading={replaceLoading}>替换上传</Button>
+              <Button loading={replaceLoading} disabled={editing}>
+                替换上传
+              </Button>
             </Upload>
           ) : null}
-          {canOfficeEdit ? (
-            <Button type={officeEdit ? 'primary' : 'default'} onClick={() => setOfficeEdit((v) => !v)}>
-              {officeEdit ? '退出在线编辑' : 'OnlyOffice 编辑'}
+          {canEdit ? (
+            <Button
+              type={editing ? 'primary' : 'default'}
+              icon={<EditOutlined />}
+              onClick={() => setEditing((v) => !v)}
+            >
+              {editing ? '退出编辑' : '编辑'}
             </Button>
           ) : null}
           {item.status !== 'confirmed' && item.hasFile && onConfirm && !multiFile ? (
-            <Button type="primary" loading={confirmLoading} onClick={onConfirm}>
+            <Button type="primary" loading={confirmLoading} onClick={onConfirm} disabled={editing}>
               确认本材料
             </Button>
           ) : null}
           {downloadTarget?.filePath ? (
             <Button
+              disabled={editing}
               onClick={() =>
                 void downloadUrlFile(
                   downloadTarget.filePath!,
-                  downloadTarget.fileName || 'material-file',
+                  downloadTarget.fileName || item.fileName || 'material-file',
                 ).catch(() => undefined)
               }
             >
@@ -190,17 +257,29 @@ export function MaterialWorkspacePanel({
             )}
           />
         </div>
-      ) : active && officeEdit && canOfficeEdit ? (
+      ) : active && editing && canEditSpreadsheet ? (
+        <MaterialSpreadsheetEditor
+          fileId={active.fileId}
+          filePath={active.filePath}
+          fileName={active.fileName || item.fileName}
+          onSaveCells={handleSaveSpreadsheetCells}
+          saveLoading={savingCells || !!replaceLoading}
+          editable
+        />
+      ) : active && editing && canEditWord ? (
         <DocxOfficeEditor
           instanceId={item.id}
           versionKey={item.currentVersionId ?? item.versionNo}
-          onSaved={onOfficeSaved}
+          onSaved={() => {
+            onOfficeSaved?.();
+            setEditing(false);
+          }}
         />
       ) : active ? (
         <MaterialFilePreview
           fileId={active.fileId}
           filePath={active.filePath}
-          fileName={active.fileName}
+          fileName={active.fileName || item.fileName}
         />
       ) : (
         <Empty description="暂无文件可预览" />

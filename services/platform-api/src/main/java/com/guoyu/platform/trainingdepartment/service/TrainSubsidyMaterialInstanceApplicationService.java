@@ -50,6 +50,7 @@ public class TrainSubsidyMaterialInstanceApplicationService {
   private final TrainFollowPhotoPackMapper photoPackMapper;
   private final FileApplicationService fileApplicationService;
   private final TrainSubsidyClassMaterialService classMaterialService;
+  private final com.guoyu.platform.trainingdepartment.support.SubsidyMaterialStyleBaseResolver styleBaseResolver;
 
   public TrainSubsidyMaterialInstanceApplicationService(
       TrainSubsidyMapper subsidyMapper,
@@ -60,7 +61,8 @@ public class TrainSubsidyMaterialInstanceApplicationService {
       TrainSubsidyPackProfileApplicationService profileService,
       TrainFollowPhotoPackMapper photoPackMapper,
       FileApplicationService fileApplicationService,
-      @org.springframework.context.annotation.Lazy TrainSubsidyClassMaterialService classMaterialService) {
+      @org.springframework.context.annotation.Lazy TrainSubsidyClassMaterialService classMaterialService,
+      com.guoyu.platform.trainingdepartment.support.SubsidyMaterialStyleBaseResolver styleBaseResolver) {
     this.subsidyMapper = subsidyMapper;
     this.instanceMapper = instanceMapper;
     this.versionMapper = versionMapper;
@@ -70,6 +72,7 @@ public class TrainSubsidyMaterialInstanceApplicationService {
     this.photoPackMapper = photoPackMapper;
     this.fileApplicationService = fileApplicationService;
     this.classMaterialService = classMaterialService;
+    this.styleBaseResolver = styleBaseResolver;
   }
 
   @Transactional
@@ -121,6 +124,88 @@ public class TrainSubsidyMaterialInstanceApplicationService {
 
     addEvent(subsidy, "instance_replace", "替换材料 " + instance.getTitle(),
         Map.of("instanceId", instance.getId(), "versionId", version.getId()));
+    return toVO(instance, subsidy, loadSlotFiles(subsidy.getId()), latestPhotoPack(subsidy));
+  }
+
+  /**
+   * 在线编辑保存：按边框密度挑选底稿（原始 xls / 模板库优先），POI 只改单元格值。
+   */
+  @Transactional
+  public SubsidyMaterialInstanceVO patchCells(
+      Long instanceId, com.guoyu.platform.trainingdepartment.dto.SubsidyMaterialPatchCellsReq req) {
+    if (req == null || req.getCells() == null || req.getCells().isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "没有可保存的单元格");
+    }
+    TrainSubsidyMaterialInstanceEntity instance = requireInstance(instanceId);
+    TrainSubsidyEntity subsidy = requireSubsidy(instance.getSubsidyId());
+    assertEditable(subsidy);
+
+    var styleBase = styleBaseResolver.resolveForInstance(instanceId);
+    if (styleBase == null || styleBase.bytes() == null || styleBase.bytes().length == 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前材料尚无文件，无法保存编辑");
+    }
+    if (styleBase.borderCount() < 20) {
+      log.warn(
+          "style base has few borders instanceId={} label={} borders={}",
+          instanceId,
+          styleBase.label(),
+          styleBase.borderCount());
+    }
+
+    byte[] patched;
+    try {
+      patched =
+          com.guoyu.platform.trainingdepartment.support.SubsidyXlsxCellPatcher.patch(
+              styleBase.bytes(), req.getCells());
+    } catch (Exception ex) {
+      log.warn("patch cells failed instanceId={}", instanceId, ex);
+      String detail = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "保存编辑失败: " + detail);
+    }
+
+    String sniffed =
+        com.guoyu.platform.trainingdepartment.support.SubsidyExcelStyleSupport.sniffFormat(patched);
+    boolean keepXls = "xls".equals(sniffed);
+    String baseName =
+        StringUtils.hasText(styleBase.fileName()) ? styleBase.fileName() : "material.xls";
+    String outName = baseName;
+    if (!outName.startsWith("[编辑]")) {
+      outName = "[编辑]" + outName.replaceFirst("^\\[(填数|模板|编辑)\\]", "");
+    }
+    outName = outName.replaceAll("(?i)\\.xlsx?$", "");
+    outName = outName + (keepXls ? ".xls" : ".xlsx");
+    String contentType =
+        keepXls
+            ? "application/vnd.ms-excel"
+            : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    FileVO stored =
+        fileApplicationService.storeFromBytes(patched, outName, contentType, "private");
+    String path = "/api/files/" + stored.id() + "/download";
+
+    TrainSubsidyMaterialVersionEntity version =
+        newVersion(instance, stored.id(), path, outName, "inline_edit", subsidy.getTenantId());
+    versionMapper.insert(version);
+    instance.setCurrentVersionId(version.getId());
+    if (!"confirmed".equals(instance.getStatus())) {
+      instance.setStatus("filled");
+    }
+    instanceMapper.updateById(instance);
+
+    addEvent(
+        subsidy,
+        "instance_edit",
+        "在线编辑材料 " + instance.getTitle(),
+        Map.of(
+            "instanceId",
+            instance.getId(),
+            "versionId",
+            version.getId(),
+            "cellCount",
+            req.getCells().size(),
+            "styleBase",
+            styleBase.label(),
+            "styleBorders",
+            styleBase.borderCount()));
     return toVO(instance, subsidy, loadSlotFiles(subsidy.getId()), latestPhotoPack(subsidy));
   }
 

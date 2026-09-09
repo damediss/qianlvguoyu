@@ -3044,6 +3044,20 @@ export async function replaceSubsidyMaterialFile(instanceId: number | string, fi
   );
 }
 
+/** 在线编辑：按单元格地址写回（后端 POI 保留边框格式） */
+export function patchSubsidyMaterialCells(
+  instanceId: number | string,
+  cells: Record<string, string>,
+) {
+  return unwrap<SubsidyMaterialInstance>(
+    apiClient.post(
+      `${BASE}/material-instances/${instanceId}/patch-cells`,
+      { cells },
+      { timeout: 120000 },
+    ),
+  );
+}
+
 export function confirmSubsidyMaterialInstance(instanceId: number | string) {
   return unwrap<SubsidyMaterialInstance>(
     apiClient.post(`${BASE}/material-instances/${instanceId}/confirm`),

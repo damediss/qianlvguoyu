@@ -6,6 +6,7 @@ import java.io.ByteArrayOutputStream;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -279,6 +280,97 @@ class SubsidyXlsxFillSupportTest {
       assertThat(sheet.getRow(2).getCell(1).getStringCellValue()).isEqualTo("0");
       assertThat(sheet.getRow(3).getCell(1).getStringCellValue()).isEqualTo("0");
       assertThat(sheet.getRow(4).getCell(1).getStringCellValue()).isEqualTo("25");
+    }
+  }
+
+  /** 同行右侧无预建空单元格时，填数会 createCell；不得因遍历 Row 触发 CME（表现为「填数失败: null」） */
+  @Test
+  void labelFillCreatesAdjacentCellWithoutConcurrentModification() throws Exception {
+    byte[] template;
+    try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+      Sheet sheet = wb.createSheet();
+      // 仅标签格，不预建右侧空格 → 填数会 createCell
+      sheet.createRow(0).createCell(0).setCellValue("培训机构名称");
+      sheet.createRow(1).createCell(0).setCellValue("企业名称");
+      wb.write(bos);
+      template = bos.toByteArray();
+    }
+
+    Map<String, String> vars = new LinkedHashMap<>();
+    vars.put("pxdw", "千铝工投");
+    vars.put("company", "测试企业");
+
+    SubsidyXlsxLabelFiller.FillResult result = SubsidyXlsxLabelFiller.fill(template, vars);
+    assertThat(result.matchedCount()).isGreaterThanOrEqualTo(2);
+
+    try (Workbook wb = WorkbookFactory.create(new java.io.ByteArrayInputStream(result.bytes()))) {
+      Sheet sheet = wb.getSheetAt(0);
+      assertThat(sheet.getRow(0).getCell(1).getStringCellValue()).isEqualTo("千铝工投");
+      assertThat(sheet.getRow(1).getCell(1).getStringCellValue()).isEqualTo("测试企业");
+    }
+  }
+
+  /** 同行内联日期只占一格，不得再写入右侧窄列 */
+  @Test
+  void inlineDateFillsOnlyOneCell() throws Exception {
+    byte[] template;
+    try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+      Sheet sheet = wb.createSheet();
+      sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, 12));
+      sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(1, 1, 9, 12)); // J2:M2
+      Row row = sheet.createRow(1);
+      row.createCell(9).setCellValue("申报日期：2025年 月 日");
+      row.createCell(13).setCellValue(""); // N 列表外脏格
+      wb.write(bos);
+      template = bos.toByteArray();
+    }
+
+    Map<String, String> vars = Map.of("today", "2026年09月08日");
+    SubsidyXlsxLabelFiller.FillResult result = SubsidyXlsxLabelFiller.fill(template, vars);
+    try (Workbook wb = WorkbookFactory.create(new java.io.ByteArrayInputStream(result.bytes()))) {
+      Sheet sheet = wb.getSheetAt(0);
+      assertThat(sheet.getRow(1).getCell(9).getStringCellValue()).isEqualTo("申报日期：2026年09月08日");
+      Cell outside = sheet.getRow(1).getCell(13);
+      String n = outside == null ? "" : TrainingXlsxVariableReplacer.cellText(outside);
+      assertThat(n).doesNotContain("2026");
+    }
+  }
+
+  /** 工种等应写入模板合并值区（宽 4 列），不得溢到表外窄列 */
+  @Test
+  void fillsIntoMergedValueAreaNotOutsideForm() throws Exception {
+    byte[] template;
+    try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+      Sheet sheet = wb.createSheet();
+      // 版心 A-M
+      sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, 12));
+      sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(1, 3, 7, 8)); // H:I 标签
+      sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(1, 3, 9, 12)); // J:M 值区
+      Row r = sheet.createRow(1);
+      r.createCell(7).setCellValue("培训专业类别");
+      r.createCell(9).setCellValue("");
+      r.createCell(13).setCellValue("旧溢出"); // 表外脏数据应被清掉
+      Row r2 = sheet.createRow(4);
+      r2.createCell(0).setCellValue("本次培训班次");
+      sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(4, 4, 0, 1));
+      sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(4, 4, 2, 3));
+      r2.createCell(2).setCellValue("旧班次");
+      r2.createCell(13).setCellValue("班次溢出");
+      wb.write(bos);
+      template = bos.toByteArray();
+    }
+
+    Map<String, String> vars = new LinkedHashMap<>();
+    vars.put("worktype", "炭极生产工");
+    vars.put("class_title", "班级创建测试");
+
+    SubsidyXlsxLabelFiller.FillResult result = SubsidyXlsxLabelFiller.fill(template, vars);
+    try (Workbook wb = WorkbookFactory.create(new java.io.ByteArrayInputStream(result.bytes()))) {
+      Sheet sheet = wb.getSheetAt(0);
+      assertThat(sheet.getRow(1).getCell(9).getStringCellValue()).isEqualTo("炭极生产工");
+      assertThat(sheet.getRow(4).getCell(2).getStringCellValue()).isEqualTo("班级创建测试");
+      assertThat(TrainingXlsxVariableReplacer.cellText(sheet.getRow(1).getCell(13))).isEmpty();
+      assertThat(TrainingXlsxVariableReplacer.cellText(sheet.getRow(4).getCell(13))).isEmpty();
     }
   }
 }

@@ -229,6 +229,39 @@
   padding: 8px;
 }
 
+.training-subsidy-declare-page .material-spreadsheet-editor-toolbar {
+  margin-bottom: 8px;
+}
+
+.training-subsidy-declare-page .material-spreadsheet-edit-body {
+  max-height: 560px;
+}
+
+.training-subsidy-declare-page .material-edit-spreadsheet-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+
+.training-subsidy-declare-page .material-edit-spreadsheet-table td {
+  border: 1px solid #d9d9d9;
+  padding: 4px 8px;
+  white-space: pre-wrap;
+  min-width: 48px;
+  outline: none;
+}
+
+.training-subsidy-declare-page .material-edit-spreadsheet-table td:focus {
+  box-shadow: inset 0 0 0 2px #1677ff;
+  background: #f0f7ff;
+}
+
+.training-subsidy-declare-page .material-edit-sheet-hint {
+  color: #888;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
 .training-subsidy-declare-page .material-spreadsheet-preview,
 .training-subsidy-declare-page .material-docx-preview {
   width: 100%;

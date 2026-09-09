@@ -152,30 +152,45 @@ public final class SubsidyXlsxLabelFiller {
         if (sheet == null) {
           continue;
         }
+        int formLastCol = formLastColumn(sheet);
+        // 清掉表单右缘外的脏数据（历史误写入 N 列等），保持与模板一致
+        clearOutsideForm(sheet, formLastCol);
         Set<String> usedLabels = new LinkedHashSet<>();
         for (Row row : sheet) {
           if (row == null) {
             continue;
           }
-          for (Cell cell : row) {
-            if (cell == null) {
-              continue;
-            }
+          // 先快照本行已有单元格：填数可能 createCell，直接 for-each row 会 CME
+          List<Cell> labelCells = snapshotCells(row);
+          for (Cell cell : labelCells) {
             String text = TrainingXlsxVariableReplacer.cellText(cell);
             if (!StringUtils.hasText(text)) {
               continue;
             }
 
-            // 同行内联日期：「申报日期：2025年 月 日」
+            // 同行内联日期：「申报日期：2025年 月 日」——只占这一格，不再写右侧
+            if (isFilledInlineDateLabel(text)) {
+              usedLabels.add("申报日期");
+              usedLabels.add("申请日期");
+              continue;
+            }
             String inline = tryFillInlineDate(text, safeVars);
             if (inline != null && !inline.equals(text)) {
               cell.setCellValue(inline);
               matched++;
               matchedLabels.add("申报日期(内联)");
+              usedLabels.add("申报日期");
+              usedLabels.add("申请日期");
+              continue;
             }
 
             LabelRule rule = matchRule(text, usedLabels);
             if (rule == null) {
+              continue;
+            }
+            // 内联日期已写过则跳过同义标签
+            if ("today".equals(rule.varKey())
+                && (usedLabels.contains("申报日期") || usedLabels.contains("申请日期"))) {
               continue;
             }
             String value = resolveValue(rule.varKey(), safeVars);
@@ -193,12 +208,8 @@ public final class SubsidyXlsxLabelFiller {
               continue;
             }
 
-            Cell target = findEmptyValueCell(sheet, cell.getRowIndex(), cell.getColumnIndex());
+            Cell target = findValueCell(sheet, cell.getRowIndex(), cell.getColumnIndex(), formLastCol);
             if (target == null) {
-              continue;
-            }
-            String existing = TrainingXlsxVariableReplacer.cellText(target);
-            if (StringUtils.hasText(existing) && !isBlankPlaceholder(existing)) {
               continue;
             }
             target.setCellValue(value);
@@ -314,6 +325,16 @@ public final class SubsidyXlsxLabelFiller {
     return "";
   }
 
+  private static boolean isFilledInlineDateLabel(String text) {
+    if (text == null) {
+      return false;
+    }
+    if (!text.contains("申报日期") && !text.contains("申请日期")) {
+      return false;
+    }
+    return text.matches(".*\\d{4}\\s*年\\s*\\d{1,2}\\s*月\\s*\\d{1,2}\\s*日.*");
+  }
+
   private static String tryFillInlineDate(String text, Map<String, String> vars) {
     if (!text.contains("年") || !text.contains("月") || !text.contains("日")) {
       return null;
@@ -379,69 +400,81 @@ public final class SubsidyXlsxLabelFiller {
         || t.matches("\\d{4}年\\s*月\\s*日");
   }
 
-  /** 优先右侧空格，其次下方；禁止写入超宽合并格（易把整行变成只剩一个数字） */
-  private static Cell findEmptyValueCell(Sheet sheet, int rowIdx, int colIdx) {
+  /**
+   * 找标签右侧（其次下方）的值格。优先写入模板已有合并区，不跨出表单列范围；
+   * 首个候选值格无论空否都返回（覆盖旧值），避免已填时再溢出到更右的窄列。
+   */
+  private static Cell findValueCell(Sheet sheet, int rowIdx, int colIdx, int formLastCol) {
     CellRangeAddress labelMerge = findMerge(sheet, rowIdx, colIdx);
     int startCol = labelMerge != null ? labelMerge.getLastColumn() + 1 : colIdx + 1;
-    int endCol = Math.min(startCol + 8, colIdx + 12);
+    int endCol = Math.min(Math.min(startCol + 8, colIdx + 12), formLastCol);
 
-    Cell right = findBlankInRow(sheet, rowIdx, startCol, endCol);
+    Cell right = findValueInRow(sheet, rowIdx, startCol, endCol, formLastCol);
     if (right != null) {
       return right;
     }
 
     int startRow = labelMerge != null ? labelMerge.getLastRow() + 1 : rowIdx + 1;
     for (int r = startRow; r <= startRow + 2; r++) {
-      // 下一行也从标签右侧列开始找，避免写进正下方的通栏合并空行
-      Cell below = findBlankInRow(sheet, r, startCol, endCol);
+      Cell below = findValueInRow(sheet, r, startCol, endCol, formLastCol);
       if (below != null) {
         return below;
       }
-      // 再尝试标签同列，但必须不是超宽合并
-      Cell sameCol = getOrCreateCell(sheet, r, colIdx);
-      if (isWritableValueCell(sheet, sameCol)) {
-        return sameCol;
+      if (colIdx <= formLastCol) {
+        Cell sameCol = getExistingOrCreateWithinForm(sheet, r, colIdx, formLastCol);
+        if (sameCol != null && isWritableValueCell(sheet, sameCol, formLastCol)) {
+          String t = TrainingXlsxVariableReplacer.cellText(sameCol);
+          if (!StringUtils.hasText(t) || isBlankPlaceholder(t) || matchRule(t, Set.of()) == null) {
+            return sameCol;
+          }
+        }
       }
     }
     return null;
   }
 
-  private static Cell findBlankInRow(Sheet sheet, int rowIdx, int startCol, int endCol) {
+  private static Cell findValueInRow(
+      Sheet sheet, int rowIdx, int startCol, int endCol, int formLastCol) {
+    if (startCol > endCol || startCol > formLastCol) {
+      return null;
+    }
     for (int c = startCol; c <= endCol; c++) {
       if (isInsideOtherMergeAsNonOrigin(sheet, rowIdx, c)) {
         continue;
       }
-      Cell cell = getOrCreateCell(sheet, rowIdx, c);
-      if (!isWritableValueCell(sheet, cell)) {
+      Cell cell = getExistingOrCreateWithinForm(sheet, rowIdx, c, formLastCol);
+      if (cell == null || !isWritableValueCell(sheet, cell, formLastCol)) {
         continue;
       }
       String t = TrainingXlsxVariableReplacer.cellText(cell);
-      if (!StringUtils.hasText(t) || isBlankPlaceholder(t)) {
-        return cell;
-      }
-      if (matchRule(t, Set.of()) != null) {
+      if (StringUtils.hasText(t) && matchRule(t, Set.of()) != null) {
+        // 碰到下一个标签，停止向右找
         break;
       }
+      // 空或已有内容：都作为本标签值格（覆盖），不再往更右溢
+      return cell;
     }
     return null;
   }
 
-  /** 可写入的值格：非超宽通栏合并、且本身不是标签 */
-  private static boolean isWritableValueCell(Sheet sheet, Cell cell) {
+  /** 可写入的值格：允许 2～8 列合并值区；拒绝通栏标题/表外列 */
+  private static boolean isWritableValueCell(Sheet sheet, Cell cell, int formLastCol) {
     if (cell == null) {
       return false;
     }
     int row = cell.getRowIndex();
     int col = cell.getColumnIndex();
+    if (col > formLastCol) {
+      return false;
+    }
     CellRangeAddress merge = findMerge(sheet, row, col);
     if (merge != null) {
       int width = merge.getLastColumn() - merge.getFirstColumn() + 1;
       int height = merge.getLastRow() - merge.getFirstRow() + 1;
-      // 横向跨度过大：多半是分区标题/空行通栏，不能当值格
-      if (width >= 4) {
+      // 通栏标题/分区空行（接近整表宽）
+      if (width >= 10 || (merge.getFirstColumn() == 0 && width >= 8)) {
         return false;
       }
-      // 仅合并起点可写
       if (merge.getFirstRow() != row || merge.getFirstColumn() != col) {
         return false;
       }
@@ -451,6 +484,59 @@ public final class SubsidyXlsxLabelFiller {
     }
     String t = TrainingXlsxVariableReplacer.cellText(cell);
     return matchRule(t, Set.of()) == null;
+  }
+
+  /** 表单右缘：有合并时以合并最大列为准；无合并的简单模板允许向右扩展写值 */
+  private static int formLastColumn(Sheet sheet) {
+    int mergeMax = -1;
+    for (int i = 0; i < sheet.getNumMergedRegions(); i++) {
+      CellRangeAddress region = sheet.getMergedRegion(i);
+      mergeMax = Math.max(mergeMax, region.getLastColumn());
+    }
+    if (mergeMax >= 0) {
+      return mergeMax;
+    }
+    int cellMax = 0;
+    for (Row row : sheet) {
+      if (row != null && row.getLastCellNum() > 0) {
+        cellMax = Math.max(cellMax, row.getLastCellNum() - 1);
+      }
+    }
+    return Math.max(cellMax + 8, 8);
+  }
+
+  private static void clearOutsideForm(Sheet sheet, int formLastCol) {
+    for (Row row : sheet) {
+      if (row == null) {
+        continue;
+      }
+      short last = row.getLastCellNum();
+      if (last < 0) {
+        continue;
+      }
+      for (int c = formLastCol + 1; c < last; c++) {
+        Cell cell = row.getCell(c);
+        if (cell != null) {
+          cell.setBlank();
+        }
+      }
+    }
+  }
+
+  private static Cell getExistingOrCreateWithinForm(
+      Sheet sheet, int rowIdx, int colIdx, int formLastCol) {
+    if (colIdx > formLastCol) {
+      return null;
+    }
+    Row row = sheet.getRow(rowIdx);
+    if (row == null) {
+      row = sheet.createRow(rowIdx);
+    }
+    Cell cell = row.getCell(colIdx);
+    if (cell == null) {
+      cell = row.createCell(colIdx);
+    }
+    return cell;
   }
 
   private static CellRangeAddress findMerge(Sheet sheet, int row, int col) {
@@ -468,16 +554,20 @@ public final class SubsidyXlsxLabelFiller {
     return m != null && (m.getFirstRow() != row || m.getFirstColumn() != col);
   }
 
-  private static Cell getOrCreateCell(Sheet sheet, int rowIdx, int colIdx) {
-    Row row = sheet.getRow(rowIdx);
-    if (row == null) {
-      row = sheet.createRow(rowIdx);
+  /** 避免遍历 Row 时 createCell 触发 ConcurrentModificationException */
+  private static List<Cell> snapshotCells(Row row) {
+    List<Cell> cells = new ArrayList<>();
+    short last = row.getLastCellNum();
+    if (last < 0) {
+      return cells;
     }
-    Cell cell = row.getCell(colIdx);
-    if (cell == null) {
-      cell = row.createCell(colIdx);
+    for (int c = 0; c < last; c++) {
+      Cell cell = row.getCell(c);
+      if (cell != null) {
+        cells.add(cell);
+      }
     }
-    return cell;
+    return cells;
   }
 
   /** 解析结果摘要（上传后展示） */

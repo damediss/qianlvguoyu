@@ -4,6 +4,7 @@ import {
   Card,
   Descriptions,
   Drawer,
+  Modal,
   Progress,
   Space,
   Tag,
@@ -17,6 +18,7 @@ import {
   FileAddOutlined,
   FolderOpenOutlined,
   HistoryOutlined,
+  RollbackOutlined,
   SyncOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
@@ -213,11 +215,12 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
     setReplacingId(instanceId);
     try {
       await trainApi.replaceSubsidyMaterialFile(instanceId, file);
-      message.success('已替换文件');
+      message.success('已保存');
       setSelectedInstanceId(instanceId);
       invalidate();
     } catch (e) {
       message.error((e as Error).message || '上传失败');
+      throw e;
     } finally {
       setReplacingId(null);
     }
@@ -318,9 +321,42 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
               进入核验
             </Button>
           )}
-          {(detail.phase === 'draft' || detail.phase === 'checking' || detail.phase === 'ready') && (
-            <Button loading={transitionMu.isPending} onClick={() => transitionMu.mutate({ toPhase: 'submitted', remark: '提交人社' })}>
+          {detail.phase === 'rejected' && (
+            <Button
+              loading={transitionMu.isPending}
+              onClick={() => transitionMu.mutate({ toPhase: 'draft', remark: '退回后回到草稿' })}
+            >
+              回到草稿
+            </Button>
+          )}
+          {(detail.phase === 'draft' ||
+            detail.phase === 'checking' ||
+            detail.phase === 'ready' ||
+            detail.phase === 'rejected') && (
+            <Button
+              loading={transitionMu.isPending}
+              onClick={() => transitionMu.mutate({ toPhase: 'submitted', remark: '提交人社' })}
+            >
               提交人社
+            </Button>
+          )}
+          {detail.phase === 'submitted' && (
+            <Button
+              danger
+              icon={<RollbackOutlined />}
+              loading={transitionMu.isPending}
+              onClick={() => {
+                Modal.confirm({
+                  title: '退回修改',
+                  content: '退回后申报进入「已退回」状态，可重新编辑、填数和替换材料。确认退回？',
+                  okText: '确认退回',
+                  cancelText: '取消',
+                  onOk: () =>
+                    transitionMu.mutateAsync({ toPhase: 'rejected', remark: '退回修改' }),
+                });
+              }}
+            >
+              退回修改
             </Button>
           )}
           <Button icon={<ThunderboltOutlined />} type="primary" ghost loading={genMu.isPending} onClick={() => genMu.mutate()}>
@@ -361,7 +397,7 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
             replaceLoading={replacingId != null && replacingId === selectedInstanceId}
             onReplaceFile={
               selectedInstanceId
-                ? (file) => void handleReplaceFile(selectedInstanceId, file)
+                ? (file) => handleReplaceFile(selectedInstanceId, file)
                 : undefined
             }
             onConfirm={

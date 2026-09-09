@@ -200,6 +200,16 @@ public class TrainSubsidyController {
     return ApiResponse.ok(materialInstanceService.replaceFile(instanceId, file));
   }
 
+  /** 在线编辑保存单元格（POI 改值，保留边框格式） */
+  @PostMapping("/material-instances/{instanceId}/patch-cells")
+  @PreAuthorize("hasAuthority('train:subsidy:update')")
+  @AuditLog(module = "training", action = "subsidy:patch-material-cells", targetType = "train_subsidy_material")
+  public ApiResponse<SubsidyMaterialInstanceVO> patchMaterialCells(
+      @PathVariable Long instanceId,
+      @RequestBody com.guoyu.platform.trainingdepartment.dto.SubsidyMaterialPatchCellsReq body) {
+    return ApiResponse.ok(materialInstanceService.patchCells(instanceId, body));
+  }
+
   /** 确认当前材料版本 */
   @PostMapping("/material-instances/{instanceId}/confirm")
   @PreAuthorize("hasAuthority('train:subsidy:update')")
