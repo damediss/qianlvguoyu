@@ -19,6 +19,7 @@ import com.guoyu.platform.system.entity.DictEntity;
 import com.guoyu.platform.system.mapper.DictMapper;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -61,6 +62,8 @@ public class StandardLlmSummarizeService {
   static final int THEORY_TOTAL_TARGET_JUNIOR = 200;
   /** 理论通道总数目标下限：二/一级 120 个（国标：不少于 120 个） */
   static final int THEORY_TOTAL_TARGET_SENIOR = 120;
+  /** 二/一级严格按权重分配时的总数上限（业务口径 2026-09-09：为精确相等可放大总数，但不超 200） */
+  static final int STRICT_TOTAL_CAP = 200;
   /** 技能通道上限 = 原文条数 × 2 */
   static final int SKILL_MAX_FACTOR = 2;
   /** 解析失败最大重试次数（含首次共 3 次尝试） */
@@ -311,6 +314,13 @@ public class StandardLlmSummarizeService {
         .filter(n -> n.getNodeLevel() == 1).toList();
     List<ExamStandardNodeEntity> sections = scopeNodes.stream()
         .filter(n -> n.getNodeLevel() == 2).toList();
+    if (l2.getLevelCode() != null && l2.getLevelCode() >= 3) {
+      // 二/一级：与全量概括同一套严格按权重分配（占比严格等于考评权重）
+      Map<Long, Integer> strict = allocateTheoryTargetsStrict(sections);
+      if (strict != null) {
+        return strict.getOrDefault(l2.getId(), 1);
+      }
+    }
     return allocateTheoryTargets(l1Nodes, sections,
         s -> splitMaterials(s.getRelatedKnowledge()).size(),
         theoryTotalTarget(l2.getLevelCode())).getOrDefault(l2.getId(), 1);
@@ -377,8 +387,19 @@ public class StandardLlmSummarizeService {
             .filter(n -> n.getLevelCode() != null && n.getLevelCode() == levelCode
                 && direction.equals(n.getDirection()))
             .toList();
-        Map<Long, Integer> targets = allocateTheoryTargets(scopeL1, e.getValue(),
-            s -> splitMaterials(s.getRelatedKnowledge()).size(), theoryTotalTarget(levelCode));
+        Map<Long, Integer> targets = null;
+        if (levelCode >= 3) {
+          // 二/一级：理论考评点占比严格等于考评权重（总数在 [120,200] 内自动取最小可行值）
+          targets = allocateTheoryTargetsStrict(e.getValue());
+          if (targets == null) {
+            log.warn("[细目表] 存在无权重/零权重小节，严格按权重分配不适用，回退权重-材料分配：scope={}",
+                e.getKey());
+          }
+        }
+        if (targets == null) {
+          targets = allocateTheoryTargets(scopeL1, e.getValue(),
+              s -> splitMaterials(s.getRelatedKnowledge()).size(), theoryTotalTarget(levelCode));
+        }
         theoryTargets.putAll(targets);
         int sum = targets.values().stream().mapToInt(Integer::intValue).sum();
         log.info("[细目表] 理论点数分配：taskId={} scope={} 小节数={} 目标总数={}",
@@ -1132,6 +1153,120 @@ public class StandardLlmSummarizeService {
           .append("{\"points\":[{\"title\":\"…\",\"important\":\"X\"}]}");
     }
     return sb.toString();
+  }
+
+  /** 严格分配方案：total=总数；exact=false 表示权重粒度太细、上限内只能近似 */
+  record StrictTheoryPlan(int total, boolean exact) {
+  }
+
+  /** 权重放大为整数后的中间态：a_i = weight × 10^scale */
+  private record ScaledWeights(int scale, List<BigInteger> a, BigInteger sum) {
+  }
+
+  /**
+   * 二/一级理论通道：小节考评点占比严格等于考评权重的总数选取（业务口径 2026-09-09）。
+   *
+   * <p>权重放大为整数 a_i，S=Σa_i（合计非 100% 时天然按归一化处理）。精确分配要求
+   * N×a_i/S 为 ≥1 的整数，即 N 为 L=lcm_i(S/gcd(S,a_i)) 的倍数且 N ≥ ceil(S/min a_i)；
+   * 在 [120, {@link #STRICT_TOTAL_CAP}] 内取最小可行值。无可行值时取上限并标记 exact=false，
+   * 由调用方按最大余数近似（总量仍为上限值）。
+   *
+   * @return null 表示不适用（无小节 / 存在无权重或零权重小节），调用方回退既有分配
+   */
+  static StrictTheoryPlan strictTheoryPlan(List<ExamStandardNodeEntity> sections) {
+    ScaledWeights sw = scaledWeights(sections);
+    if (sw == null) {
+      return null;
+    }
+    BigInteger sum = sw.sum();
+    BigInteger lcm = BigInteger.ONE;
+    BigInteger min = null;
+    for (BigInteger ai : sw.a()) {
+      BigInteger d = sum.divide(sum.gcd(ai)); // 需 S | N×a_i ⇔ S/gcd(S,a_i) | N
+      lcm = lcm.divide(lcm.gcd(d)).multiply(d);
+      min = min == null || ai.compareTo(min) < 0 ? ai : min;
+    }
+    // 每小节至少 1 点：N ≥ ceil(S/min a_i)；同时不低于国标下限 120
+    BigInteger need = sum.add(min).subtract(BigInteger.ONE).divide(min);
+    BigInteger floor = BigInteger.valueOf(THEORY_TOTAL_TARGET_SENIOR);
+    if (need.compareTo(floor) < 0) {
+      need = floor;
+    }
+    BigInteger n = need.add(lcm).subtract(BigInteger.ONE).divide(lcm).multiply(lcm);
+    BigInteger cap = BigInteger.valueOf(STRICT_TOTAL_CAP);
+    if (n.compareTo(cap) > 0) {
+      log.warn("[细目表] 权重粒度导致精确总数 {} 超过上限 {}，按上限近似分配：小节数={}",
+          n, cap, sections.size());
+      return new StrictTheoryPlan(cap.intValue(), false);
+    }
+    return new StrictTheoryPlan(n.intValue(), true);
+  }
+
+  /**
+   * 二/一级理论通道严格分配：小节目标点数 = 总数 × 权重 / 权重合计，占比严格等于权重。
+   *
+   * @return null 表示不适用（无权重小节等），调用方回退 {@link #allocateTheoryTargets}
+   */
+  public static Map<Long, Integer> allocateTheoryTargetsStrict(
+      List<ExamStandardNodeEntity> sections) {
+    StrictTheoryPlan plan = strictTheoryPlan(sections);
+    if (plan == null) {
+      return null;
+    }
+    ScaledWeights sw = scaledWeights(sections);
+    if (sw == null) {
+      return null;
+    }
+    Map<Long, Integer> out = new LinkedHashMap<>();
+    BigInteger n = BigInteger.valueOf(plan.total());
+    if (plan.exact()) {
+      for (int i = 0; i < sections.size(); i++) {
+        out.put(sections.get(i).getId(),
+            n.multiply(sw.a().get(i)).divide(sw.sum()).intValueExact());
+      }
+      return out;
+    }
+    // 上限内无法精确（权重粒度太细）：按归一化权重做最大余数近似，与既有分配规则一致
+    Map<Long, BigDecimal> decimal = new LinkedHashMap<>();
+    BigDecimal nDec = BigDecimal.valueOf(plan.total());
+    BigDecimal sumDec = new BigDecimal(sw.sum());
+    for (int i = 0; i < sections.size(); i++) {
+      decimal.put(sections.get(i).getId(), nDec.multiply(new BigDecimal(sw.a().get(i)))
+          .divide(sumDec, 6, RoundingMode.HALF_UP));
+    }
+    Map<Long, Integer> approx = largestRemainder(decimal, plan.total());
+    for (ExamStandardNodeEntity l2 : sections) {
+      approx.merge(l2.getId(), 1, Math::max); // 每小节保底 1 点
+    }
+    return approx;
+  }
+
+  /** 权重放大为整数（取最大小数位，上限 6 位）；无小节、含空/零权重返回 null */
+  private static ScaledWeights scaledWeights(List<ExamStandardNodeEntity> sections) {
+    if (sections == null || sections.isEmpty()) {
+      return null;
+    }
+    int maxScale = 0;
+    for (ExamStandardNodeEntity s : sections) {
+      BigDecimal w = s.getWeight();
+      if (w == null || w.signum() <= 0) {
+        return null;
+      }
+      maxScale = Math.max(maxScale, w.scale());
+    }
+    maxScale = Math.min(maxScale, 6);
+    List<BigInteger> a = new ArrayList<>(sections.size());
+    BigInteger sum = BigInteger.ZERO;
+    for (ExamStandardNodeEntity s : sections) {
+      BigInteger ai = s.getWeight().setScale(maxScale, RoundingMode.HALF_UP)
+          .movePointRight(maxScale).toBigIntegerExact();
+      if (ai.signum() <= 0) {
+        return null;
+      }
+      a.add(ai);
+      sum = sum.add(ai);
+    }
+    return sum.signum() <= 0 ? null : new ScaledWeights(maxScale, a, sum);
   }
 
   /**

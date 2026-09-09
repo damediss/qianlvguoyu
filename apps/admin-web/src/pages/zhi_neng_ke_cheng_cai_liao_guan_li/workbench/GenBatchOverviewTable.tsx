@@ -3,7 +3,7 @@
  * 状态动效沿用 xmb-status-*；完成行由父级传入 flashBatchId 触发一次高亮闪烁。
  */
 import React from 'react';
-import { Button, Dropdown, Progress, Space, Table, Tag, Tooltip } from 'antd';
+import { Button, Progress, Space, Table, Tag, Tooltip } from 'antd';
 import type { TheoryGenBatch } from '../theoryGenApi';
 import { STATUS_TAG } from './constants';
 
@@ -95,29 +95,29 @@ const columns = (p: Props) => [
       : <Tag>未入库</Tag>),
   },
   {
-    title: '操作', key: 'op', width: 150, fixed: 'right' as const,
-    render: (_: unknown, b: TheoryGenBatch) => {
-      const more: { key: string; label: string; danger?: boolean }[] = [];
-      if (b.status === 'running') more.push({ key: 'pause', label: '暂停' });
-      if (b.status === 'paused') more.push({ key: 'resume', label: '继续' });
-      if (b.status === 'failed') more.push({ key: 'retry', label: '重试失败' });
-      // 自动补跑轮次耗尽后仍缺口的完成批次：人工兜底补跑（后端仅跑缺口点）
-      if (b.status === 'done' && b.donePoints < b.totalPoints) {
-        more.push({ key: 'retry', label: '补跑缺口' });
-      }
-      more.push({ key: 'publish', label: '入库' });
-      more.push({ key: 'export', label: '导出试题表' });
-      return (
-        <Space size={4}>
-          <Button size="small" type="primary" onClick={() => p.onOpenDraft(b)}>草稿</Button>
-          <Dropdown
-            menu={{ items: more, onClick: ({ key }) => p.onAction(key as BatchAction, b) }}
-            trigger={['click']}>
-            <Button size="small">更多</Button>
-          </Dropdown>
-        </Space>
-      );
-    },
+    title: '操作', key: 'op', width: 250, fixed: 'right' as const,
+    render: (_: unknown, b: TheoryGenBatch) => (
+      <Space size={4} wrap>
+        <Button size="small" type="primary" onClick={() => p.onOpenDraft(b)}>草稿</Button>
+        {b.status === 'running' && (
+          <Button size="small" onClick={() => p.onAction('pause', b)}>暂停</Button>
+        )}
+        {b.status === 'paused' && (
+          <Button size="small" onClick={() => p.onAction('resume', b)}>继续</Button>
+        )}
+        {b.status === 'failed' && (
+          <Button size="small" onClick={() => p.onAction('retry', b)}>重试失败</Button>
+        )}
+        {/* 自动补跑轮次耗尽后仍缺口的完成批次：人工兜底补跑（后端仅跑缺口点） */}
+        {b.status === 'done' && b.donePoints < b.totalPoints && (
+          <Button size="small" onClick={() => p.onAction('retry', b)}>补跑缺口</Button>
+        )}
+        <Button size="small" loading={p.publishingBatchId === b.id}
+          onClick={() => p.onAction('publish', b)}>入库</Button>
+        <Button size="small" loading={p.exportingBatchId === b.id}
+          onClick={() => p.onAction('export', b)}>导出试题表</Button>
+      </Space>
+    ),
   },
 ];
 
@@ -139,13 +139,13 @@ const GenBatchOverviewTable: React.FC<Props> = (props) => {
         columns={columns(props)}
         pagination={false}
         locale={{ emptyText: '当前没有进行中的批次' }}
-        scroll={{ x: 1180 }} />
+        scroll={{ x: 1280 }} />
       <div className="gen-section-title" style={{ marginTop: 16 }}>历史批次</div>
       <Table rowKey="id" size="small" rowClassName={rowCls}
         loading={historyLoading}
         dataSource={historyItems}
         columns={columns(props)}
-        scroll={{ x: 1180 }}
+        scroll={{ x: 1280 }}
         pagination={{
           current: historyPage,
           pageSize: 10,

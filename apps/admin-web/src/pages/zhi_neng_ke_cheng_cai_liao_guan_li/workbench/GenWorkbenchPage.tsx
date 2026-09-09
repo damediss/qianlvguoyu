@@ -31,6 +31,16 @@ const GenWorkbenchPage: React.FC<Props> = ({ workTypeOptions, preset }) => {
   const [panelOpen, setPanelOpen] = useState(false);
   const [draftBatchId, setDraftBatchId] = useState<string | undefined>();
   const [flashBatchId, setFlashBatchId] = useState<string | undefined>();
+  const panelRef = React.useRef<HTMLDivElement | null>(null);
+
+  /** 打开草稿面板并滚动到可视位置（面板在长页面底部，不滚动看起来像"没反应"） */
+  const openDraftPanel = (batchId?: string) => {
+    setDraftBatchId(batchId);
+    setPanelOpen(true);
+    window.setTimeout(() => {
+      panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  };
 
   // 进行中区：状态过滤 + 仅在有进行中批次时 3s 轮询（历史分页不随轮询重拉）
   const activeQuery = useQuery({
@@ -176,7 +186,7 @@ const GenWorkbenchPage: React.FC<Props> = ({ workTypeOptions, preset }) => {
 
       <div>
         <Button size="small" style={{ marginBottom: 8 }}
-          onClick={() => { setDraftBatchId(undefined); setPanelOpen(true); }}>
+          onClick={() => openDraftPanel(undefined)}>
           草稿审核（全部批次）
         </Button>
       </div>
@@ -192,17 +202,19 @@ const GenWorkbenchPage: React.FC<Props> = ({ workTypeOptions, preset }) => {
         flashBatchId={flashBatchId}
         publishingBatchId={publishExport.publishingBatchId}
         exportingBatchId={publishExport.exportingBatchId}
-        onOpenDraft={(b) => { setDraftBatchId(b.id); setPanelOpen(true); }}
+        onOpenDraft={(b) => openDraftPanel(b.id)}
         onAction={onAction} />
 
-      {panelOpen && (
-        <DraftReviewPanel
-          lockedBatch={draftBatchId ? batchById.get(draftBatchId) : undefined}
-          defaultAllMode={!draftBatchId}
-          batchLabel={batchLabel}
-          onClose={() => setPanelOpen(false)}
-          onChanged={() => qc.invalidateQueries({ queryKey: ['theorygen-batches'] })} />
-      )}
+      <div ref={panelRef}>
+        {panelOpen && (
+          <DraftReviewPanel
+            lockedBatch={draftBatchId ? batchById.get(draftBatchId) : undefined}
+            defaultAllMode={!draftBatchId}
+            batchLabel={batchLabel}
+            onClose={() => setPanelOpen(false)}
+            onChanged={() => qc.invalidateQueries({ queryKey: ['theorygen-batches'] })} />
+        )}
+      </div>
       {publishExport.modal}
     </div>
   );
