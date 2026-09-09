@@ -42,7 +42,7 @@ const statusTag = (b: TheoryGenBatch) => {
 
 const columns = (p: Props) => [
   {
-    title: '批次', dataIndex: 'id', key: 'id', width: 150,
+    title: '批次', dataIndex: 'id', key: 'id', width: 140,
     render: (id: string, b: TheoryGenBatch) => {
       const time = b.startedAt ?? b.createdAt ?? b.finishedAt;
       return (
@@ -58,7 +58,7 @@ const columns = (p: Props) => [
     render: (_: unknown, b: TheoryGenBatch) =>
       `${p.workTypeName(b.workTypeId)} · ${b.level ? LEVEL_TEXT[b.level] ?? `${b.level}级` : '-'}`,
   },
-  { title: '模型', dataIndex: 'modelId', key: 'modelId', width: 130, ellipsis: true },
+  { title: '模型', dataIndex: 'modelId', key: 'modelId', width: 120, ellipsis: true },
   { title: '状态', key: 'status', width: 100, render: (_: unknown, b: TheoryGenBatch) => statusTag(b) },
   {
     title: '生成进度', key: 'progress', width: 220,
@@ -89,13 +89,13 @@ const columns = (p: Props) => [
     ),
   },
   {
-    title: '入库', key: 'publish', width: 100,
+    title: '入库', key: 'publish', width: 80,
     render: (_: unknown, b: TheoryGenBatch) => ((b.publishedCount ?? 0) > 0
       ? <Tag color="success">已入库 {b.publishedCount}</Tag>
       : <Tag>未入库</Tag>),
   },
   {
-    title: '操作', key: 'op', width: 250, fixed: 'right' as const,
+    title: '操作', key: 'op', width: 290, fixed: 'right' as const,
     render: (_: unknown, b: TheoryGenBatch) => (
       <Space size={4} wrap>
         <Button size="small" type="primary" onClick={() => p.onOpenDraft(b)}>草稿</Button>
