@@ -20,7 +20,8 @@ public class ExamTaskExamsubVO implements Serializable {
   private String filePath;
   private String fileUrl;
   private String fileType;
-  private LocalDateTime addtime;
+  /** 创建时间（Unix 秒，PHP 口径）；展示用 addtimeCn */
+  private Integer addtime;
   private String addtimeCn;
 
   public Integer getId() { return id; }
@@ -53,8 +54,8 @@ public class ExamTaskExamsubVO implements Serializable {
   public void setFileUrl(String fileUrl) { this.fileUrl = fileUrl; }
   public String getFileType() { return fileType; }
   public void setFileType(String fileType) { this.fileType = fileType; }
-  public LocalDateTime getAddtime() { return addtime; }
-  public void setAddtime(LocalDateTime addtime) { this.addtime = addtime; }
+  public Integer getAddtime() { return addtime; }
+  public void setAddtime(Integer addtime) { this.addtime = addtime; }
   public String getAddtimeCn() { return addtimeCn; }
   public void setAddtimeCn(String addtimeCn) { this.addtimeCn = addtimeCn; }
 }

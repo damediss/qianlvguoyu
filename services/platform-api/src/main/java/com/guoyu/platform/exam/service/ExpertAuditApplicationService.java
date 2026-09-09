@@ -385,7 +385,7 @@ public class ExpertAuditApplicationService {
     record.setExamAnswer(req.getExamAnswer());
     record.setAuditStatus(1);
     record.setYmd(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
-    record.setAddtime(LocalDateTime.now());
+    record.setAddtime((int) (System.currentTimeMillis() / 1000));
     examAuditMapper.insert(record);
 
     return checkAndComplete("exam", req.getTaskId(), userId.intValue(), req.getRole(), tenantId.intValue());
@@ -533,7 +533,7 @@ public class ExpertAuditApplicationService {
     record.setKaosheng(req.getKaosheng());
     record.setAuditStatus(1);
     record.setYmd(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
-    record.setAddtime(LocalDateTime.now());
+    record.setAddtime((int) (System.currentTimeMillis() / 1000));
     examshicaoAuditMapper.insert(record);
 
     return checkAndComplete("examshicao", req.getTaskId(), userId.intValue(), req.getRole(), tenantId.intValue());
@@ -600,7 +600,7 @@ public class ExpertAuditApplicationService {
     record.setPic(req.getPic());
     record.setAuditStatus(1);
     record.setYmd(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd")));
-    record.setAddtime(LocalDateTime.now());
+    record.setAddtime((int) (System.currentTimeMillis() / 1000));
     examsubAuditMapper.insert(record);
 
     return checkAndComplete("examsub", req.getTaskId(), userId.intValue(), req.getRole(), tenantId.intValue());

@@ -29,7 +29,8 @@ public class ExamTaskExamAuditRecordEntity {
   private String examAnswer;
   private Integer auditStatus;
   private String ymd;
-  private LocalDateTime addtime;
+  /** 提交时间（Unix 秒）。task_* 族与 PHP 老系统共用，addtime 列为 int 时间戳口径 */
+  private Integer addtime;
   private Integer tenantId;
 
   @TableLogic(value = "0", delval = "1")
@@ -76,8 +77,8 @@ public class ExamTaskExamAuditRecordEntity {
   public void setAuditStatus(Integer auditStatus) { this.auditStatus = auditStatus; }
   public String getYmd() { return ymd; }
   public void setYmd(String ymd) { this.ymd = ymd; }
-  public LocalDateTime getAddtime() { return addtime; }
-  public void setAddtime(LocalDateTime addtime) { this.addtime = addtime; }
+  public Integer getAddtime() { return addtime; }
+  public void setAddtime(Integer addtime) { this.addtime = addtime; }
   public Integer getTenantId() { return tenantId; }
   public void setTenantId(Integer tenantId) { this.tenantId = tenantId; }
   public Integer getDeleted() { return deleted; }

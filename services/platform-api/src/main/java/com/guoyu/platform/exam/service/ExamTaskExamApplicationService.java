@@ -38,7 +38,9 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -269,7 +271,7 @@ public class ExamTaskExamApplicationService {
     task.setNums(0);
     task.setStatus(0);
     task.setFilePath(filePath);
-    task.setAddtime(LocalDateTime.now());
+    task.setAddtime((int) (System.currentTimeMillis() / 1000));
     task.setDeleted(0);
     taskMapper.insert(task);
 
@@ -504,7 +506,7 @@ public class ExamTaskExamApplicationService {
       }
     }
     vo.setAddtime(e.getAddtime());
-    vo.setAddtimeCn(e.getAddtime() != null ? e.getAddtime().format(DATE_FMT) : "-");
+    vo.setAddtimeCn(e.getAddtime() != null ? toLocalDateTime(e.getAddtime()).format(DATE_FMT) : "-");
     return vo;
   }
 
@@ -606,9 +608,16 @@ public class ExamTaskExamApplicationService {
     return out;
   }
 
-  // 复用于 3 个 buildChildren:addtime → yyyy-MM-dd HH:mm:ss
-  static String formatAddtime(java.time.LocalDateTime t) {
+  // 复用于 3 个 buildChildren:addtime(Unix 秒,PHP 口径) → yyyy-MM-dd HH:mm:ss
+  static String formatAddtime(Integer epoch) {
+    LocalDateTime t = toLocalDateTime(epoch);
     if (t == null) return null;
     return t.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+  }
+
+  /** Unix 秒 → 本地时间（task_* 族 addtime 为 PHP 时间戳口径） */
+  static LocalDateTime toLocalDateTime(Integer epoch) {
+    return epoch == null ? null
+        : LocalDateTime.ofInstant(Instant.ofEpochSecond(epoch), ZoneId.systemDefault());
   }
 }

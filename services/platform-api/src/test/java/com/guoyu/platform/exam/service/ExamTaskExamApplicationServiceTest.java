@@ -26,6 +26,7 @@ import com.guoyu.platform.system.mapper.RoleMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import com.guoyu.platform.system.mapper.UserRoleRelationMapper;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -76,7 +77,8 @@ class ExamTaskExamApplicationServiceTest {
     t.setLevel(1);
     t.setNums(5);
     t.setStatus(0);
-    t.setAddtime(LocalDateTime.of(2026, 5, 15, 9, 0));
+    t.setAddtime((int) LocalDateTime.of(2026, 5, 15, 9, 0)
+        .atZone(ZoneId.systemDefault()).toEpochSecond());
 
     Page<ExamTaskExamEntity> pg = new Page<>(1, 20);
     pg.setRecords(List.of(t));

@@ -19,7 +19,8 @@ public class ExamTaskExamEntity {
   private Integer expertStart;
   private Integer expertEnd;
   private String filePath;
-  private LocalDateTime addtime;
+  /** 创建时间（Unix 秒）。task_* 族与 PHP 老系统共用，addtime 列为 int 时间戳口径 */
+  private Integer addtime;
   private Integer tenantId;
 
   @TableLogic(value = "0", delval = "1")
@@ -46,8 +47,8 @@ public class ExamTaskExamEntity {
   public void setExpertEnd(Integer expertEnd) { this.expertEnd = expertEnd; }
   public String getFilePath() { return filePath; }
   public void setFilePath(String filePath) { this.filePath = filePath; }
-  public LocalDateTime getAddtime() { return addtime; }
-  public void setAddtime(LocalDateTime addtime) { this.addtime = addtime; }
+  public Integer getAddtime() { return addtime; }
+  public void setAddtime(Integer addtime) { this.addtime = addtime; }
   public Integer getTenantId() { return tenantId; }
   public void setTenantId(Integer tenantId) { this.tenantId = tenantId; }
   public Integer getDeleted() { return deleted; }

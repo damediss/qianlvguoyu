@@ -96,9 +96,13 @@ public class TheoryGenDraftService {
         .eq(questionType != null && !questionType.isBlank(), TheoryGenDraftEntity::getQuestionType, questionType)
         .eq(reviewStatus != null && !reviewStatus.isBlank(), TheoryGenDraftEntity::getReviewStatus, reviewStatus)
         .eq(publishStatus != null, TheoryGenDraftEntity::getPublishStatus, publishStatus)
-        .eq(nodeId != null, TheoryGenDraftEntity::getNodeId, nodeId)
-        .orderByAsc(TheoryGenDraftEntity::getNodeId)
-        .orderByAsc(TheoryGenDraftEntity::getId);
+        .eq(nodeId != null, TheoryGenDraftEntity::getNodeId, nodeId);
+    if (batchId == null) {
+      // "全部批次"模式：按创建时间倒序（最新批次在前），命中 idx_etgd_tenant_time
+      w.orderByDesc(TheoryGenDraftEntity::getCreatedAt).orderByDesc(TheoryGenDraftEntity::getId);
+    } else {
+      w.orderByAsc(TheoryGenDraftEntity::getNodeId).orderByAsc(TheoryGenDraftEntity::getId);
+    }
     Page<TheoryGenDraftEntity> p = draftMapper.selectPage(new Page<>(page, pageSize), w);
     return new PageResponse<>(
         p.getRecords().stream().map(TheoryDraftVO::from).toList(),
@@ -386,7 +390,7 @@ public class TheoryGenDraftService {
     t.setLevel(bp.getLevel());
     t.setNums(0);
     t.setStatus(0);
-    t.setAddtime(LocalDateTime.now());
+    t.setAddtime((int) (System.currentTimeMillis() / 1000));
     t.setTenantId(tenantId.intValue());
     t.setDeleted(0);
     t.setCreateTime(LocalDateTime.now());
@@ -411,7 +415,7 @@ public class TheoryGenDraftService {
     t.setLevel(bp.getLevel());
     t.setNums(0);
     t.setStatus(0);
-    t.setAddtime(LocalDateTime.now());
+    t.setAddtime((int) (System.currentTimeMillis() / 1000));
     t.setTenantId(tenantId.intValue());
     t.setDeleted(0);
     t.setCreateTime(LocalDateTime.now());
