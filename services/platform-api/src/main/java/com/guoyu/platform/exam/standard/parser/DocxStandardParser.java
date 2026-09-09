@@ -39,8 +39,11 @@ public class DocxStandardParser {
   private static final Pattern DIRECTION_LEVEL_LINE =
       Pattern.compile("^(?<direction>.+?)工种分别为[:：]\\s*(?<levels>.+)$");
   private static final Pattern NUMERIC_CELL = Pattern.compile("^\\d{1,3}(\\.\\d+)?$");
-  /** 权重表头中的等级列标记（"五级/初级工"），用于定位数值列起点 */
-  private static final Pattern LEVEL_HEADER = Pattern.compile("[五四三二一]\\s*级");
+  /** 权重表头中的等级列标记（"五级/初级工"，或重冶备料工式"初级（%）/技师（%）"），用于定位数值列起点 */
+  private static final Pattern LEVEL_HEADER =
+      Pattern.compile("[五四三二一]\\s*级|高级技师|技师|初级|中级|高级");
+  /** 带捕获组的「五~一级」写法，headerLevelOf 优先匹配 */
+  private static final Pattern NUMBERED_LEVEL = Pattern.compile("([五四三二一])\\s*级");
   /** "—"/"－"/"-" 等占位符：不是方向名，也不是有效数值 */
   private static final Pattern DASH_PLACEHOLDER = Pattern.compile("^[—－\\-–\\s]+$");
   private static final String[] LEVEL_NAMES = {"五级/初级工", "四级/中级工", "三级/高级工", "二级/技师", "一级/高级技师"};
@@ -227,11 +230,33 @@ public class DocxStandardParser {
     if (firstCell.contains("职业功能")) {
       ctx.result.setWorkTableCount(ctx.result.getWorkTableCount() + 1);
       parseWorkTable(grid, ctx);
-    } else if (containsHeader(grid.get(0), "技能等级项目")) {
+    } else if (containsHeader(grid.get(0), "技能等级项目") || isWeightTableHeader(grid.get(0))) {
       ctx.result.setWeightTableCount(ctx.result.getWeightTableCount() + 1);
       parseWeightTable(grid, ctx);
     }
     // 其他表格（鉴定要求等）忽略
+  }
+
+  /**
+   * 权重表头的另一种写法（如重冶备料工"比重表"）：无"技能等级项目"字样，
+   * 首行含「项目」且有 ≥2 个等级列（初级/中级/高级/技师/高级技师 或 五~一级）。
+   * 权重节之外的误识别会在 parseWeightTable 被拦截，这里宁宽勿漏。
+   */
+  private boolean isWeightTableHeader(List<String> row) {
+    boolean hasItem = false;
+    int levelCols = 0;
+    for (String cell : row) {
+      if (cell == null) {
+        continue;
+      }
+      if (cell.contains("项目")) {
+        hasItem = true;
+      }
+      if (LEVEL_HEADER.matcher(cell).find()) {
+        levelCols++;
+      }
+    }
+    return hasItem && levelCols >= 2;
   }
 
   private boolean containsHeader(List<String> row, String keyword) {
@@ -469,17 +494,10 @@ public class DocxStandardParser {
       for (int r = 0; r < headerEnd; r++) {
         headerText.append(cellAt(grid.get(r), c));
       }
-      Matcher m = LEVEL_WORD.matcher(headerText.toString());
-      if (!m.find()) {
+      Integer levelCode = headerLevelOf(headerText.toString());
+      if (levelCode == null) {
         continue;
       }
-      int levelCode = switch (m.group()) {
-        case "五" -> 0;
-        case "四" -> 1;
-        case "三" -> 2;
-        case "二" -> 3;
-        default -> 4;
-      };
       colLevel.put(c, levelCode);
       String direction = directionRowIdx >= 0 ? cellAt(grid.get(directionRowIdx), c) : ParsedStandard.DEFAULT_DIRECTION;
       if (direction.isBlank() || DASH_PLACEHOLDER.matcher(direction).matches()) {
@@ -502,7 +520,8 @@ public class DocxStandardParser {
           item = label;
         }
       }
-      if (category.contains("合计") || item.contains("合计")) {
+      if (category.contains("合计") || item.contains("合计")
+          || category.contains("总计") || item.contains("总计")) {
         continue;
       }
       if (item.isBlank()) {
@@ -548,6 +567,50 @@ public class DocxStandardParser {
     row.setItem(rawItem);
     table.getRows().add(row);
     return row;
+  }
+
+  /**
+   * 权重表头 → levelCode。优先「五~一级」写法（老格式），其次「高级技师/技师/高级/中级/初级」
+   * 关键词（重冶备料工等"比重表"写法，顺序保证"高级技师"不被"高级"抢先）；两套写法语义一致
+   * （如"二级/技师"两种都得 3）。最后用单字等级词兜底（兼容"五"不带"级"的历史写法）。
+   */
+  private Integer headerLevelOf(String headerText) {
+    Matcher numbered = NUMBERED_LEVEL.matcher(headerText);
+    if (numbered.find()) {
+      return switch (numbered.group(1)) {
+        case "五" -> 0;
+        case "四" -> 1;
+        case "三" -> 2;
+        case "二" -> 3;
+        default -> 4;
+      };
+    }
+    if (headerText.contains("高级技师")) {
+      return 4;
+    }
+    if (headerText.contains("技师")) {
+      return 3;
+    }
+    if (headerText.contains("高级")) {
+      return 2;
+    }
+    if (headerText.contains("中级")) {
+      return 1;
+    }
+    if (headerText.contains("初级")) {
+      return 0;
+    }
+    Matcher word = LEVEL_WORD.matcher(headerText);
+    if (word.find()) {
+      return switch (word.group()) {
+        case "五" -> 0;
+        case "四" -> 1;
+        case "三" -> 2;
+        case "二" -> 3;
+        default -> 4;
+      };
+    }
+    return null;
   }
 
   /** "5" → 5；"—"/"" → null */

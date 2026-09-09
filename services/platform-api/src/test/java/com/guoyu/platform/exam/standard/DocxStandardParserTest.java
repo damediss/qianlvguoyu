@@ -27,6 +27,7 @@ class DocxStandardParserTest {
 
   private static ParsedStandard kuangshan;
   private static ParsedStandard hangong;
+  private static ParsedStandard beiliao;
 
   @BeforeAll
   static void parseAll() throws Exception {
@@ -40,6 +41,11 @@ class DocxStandardParserTest {
         .getResourceAsStream("/standard/焊工标准.docx")) {
       assertNotNull(in, "测试资源缺失：焊工标准.docx");
       hangong = parser.parse(in);
+    }
+    try (InputStream in = DocxStandardParserTest.class
+        .getResourceAsStream("/standard/重冶备料工.docx")) {
+      assertNotNull(in, "测试资源缺失：重冶备料工.docx");
+      beiliao = parser.parse(in);
     }
   }
 
@@ -254,6 +260,52 @@ class DocxStandardParserTest {
     StandardNodeDoc shouze = zhiyeDaode.getChildren().get(1);
     assertEquals(9, shouze.getTheoryMaterials().size());
     assertFalse(shouze.isNeedLlm());
+  }
+
+  /** B1：重冶备料工"比重表"写法——无"技能等级项目"表头、等级列为初级/中级/高级/技师/高级技师 */
+  @Test
+  void b1_beiliaoWeightTablesRecognized() {
+    assertEquals(12, beiliao.getTotalTableCount(), "重冶备料工应识别 12 张表格");
+    assertEquals(10, beiliao.getWorkTableCount(), "10 张工作要求表");
+    assertEquals(2, beiliao.getWeightTableCount(), "2 张比重表（无技能等级项目表头也应识别）");
+    assertNotNull(beiliao.getTheoryWeights(), "应解析到理论知识比重表");
+    assertNotNull(beiliao.getSkillWeights(), "应解析到技能操作比重表");
+    assertTrue(beiliao.getParseWarnings().stream()
+            .noneMatch(w -> w.contains("未解析到理论知识权重表")),
+        "不应再有理论权重表缺失警告");
+  }
+
+  /** B2：重冶备料工比重表取值——等级关键词列映射、"—"为 null、"总计"行不入表 */
+  @Test
+  void b2_beiliaoWeightValues() {
+    StandardWeightTable theory = beiliao.getTheoryWeights();
+    assertWeight(theory, "职业道德", 0, "默认", 5);
+    assertWeight(theory, "职业道德", 4, "默认", 5);
+    assertWeight(theory, "基础知识", 0, "默认", 40);
+    assertWeight(theory, "基础知识", 3, "默认", 15);
+    assertWeight(theory, "物料制备", 2, "默认", 30);
+    assertWeight(theory, "设备维护", 3, "默认", 20);
+    assertWeight(theory, "管理", 3, "默认", 15);
+    assertWeight(theory, "培训与指导", 4, "默认", 10);
+    // "—" 占位：技师/高级技师无安全操作
+    StandardWeightRow anquan = theory.findRow(DocxTextUtil.normalizeItemName("安全操作"));
+    assertNotNull(anquan);
+    assertWeight(theory, "安全操作", 0, "默认", 5);
+    assertNull(anquan.valueAt(3, "默认"), "技师安全操作应为 —（null）");
+    assertNull(anquan.valueAt(4, "默认"), "高级技师安全操作应为 —（null）");
+    StandardWeightRow guanli = theory.findRow(DocxTextUtil.normalizeItemName("管理"));
+    assertNotNull(guanli);
+    assertNull(guanli.valueAt(0, "默认"), "初级管理应为 —（null）");
+    // "总计" 行应跳过，不入权重表
+    assertNull(theory.findRow("总计"), "总计行不应进入权重表");
+
+    StandardWeightTable skill = beiliao.getSkillWeights();
+    assertWeight(skill, "工作准备", 0, "默认", 10);
+    assertWeight(skill, "物料制备", 0, "默认", 35);
+    assertWeight(skill, "物料制备", 4, "默认", 20);
+    assertWeight(skill, "安全操作", 1, "默认", 15);
+    assertWeight(skill, "管理", 4, "默认", 20);
+    assertNull(skill.findRow("总计"), "技能比重表总计行不应进入权重表");
   }
 
   private void assertWeight(StandardWeightTable table, String item, int levelCode,
