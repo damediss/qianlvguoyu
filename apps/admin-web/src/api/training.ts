@@ -3058,6 +3058,45 @@ export function patchSubsidyMaterialCells(
   );
 }
 
+export type SubsidyMaterialDocxMetaLine = {
+  index: number;
+  /** title=标题行 meta=培训信息标签行 caption=图注行 */
+  kind: string;
+  label: string;
+  /** meta/caption 行的值部分（不含标签前缀）；后端解析保证非空（可为空串） */
+  value: string;
+  /** 整段原文 */
+  text: string;
+};
+
+export type SubsidyMaterialDocxMeta = {
+  instanceId: number | string;
+  versionId?: number | string | null;
+  fileName?: string | null;
+  lines: SubsidyMaterialDocxMetaLine[];
+};
+
+/** Word 轻量编辑：可编辑段落摘要（标题 / 元信息 / 图注） */
+export function getSubsidyMaterialDocxMeta(instanceId: number | string) {
+  return unwrap<SubsidyMaterialDocxMeta>(
+    apiClient.get(`${BASE}/material-instances/${instanceId}/docx-meta`),
+  );
+}
+
+/** Word 轻量编辑保存：按段落索引写回整段文本（后端 POI 保留图片与样式） */
+export function patchSubsidyMaterialDocx(
+  instanceId: number | string,
+  paragraphs: Record<number, string>,
+) {
+  return unwrap<SubsidyMaterialInstance>(
+    apiClient.post(
+      `${BASE}/material-instances/${instanceId}/patch-docx`,
+      { paragraphs },
+      { timeout: 120000 },
+    ),
+  );
+}
+
 export function confirmSubsidyMaterialInstance(instanceId: number | string) {
   return unwrap<SubsidyMaterialInstance>(
     apiClient.post(`${BASE}/material-instances/${instanceId}/confirm`),

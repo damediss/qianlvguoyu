@@ -212,6 +212,93 @@ public class TrainSubsidyMaterialInstanceApplicationService {
     return toVO(instance, subsidy, loadSlotFiles(subsidy.getId()), latestPhotoPack(subsidy));
   }
 
+  /** Word 轻量编辑初始化：解析当前版本可编辑段落（标题 / 元信息 / 图注） */
+  @Transactional
+  public com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialDocxMetaVO getDocxMeta(
+      Long instanceId) {
+    TrainSubsidyMaterialInstanceEntity instance = requireInstance(instanceId);
+    TrainSubsidyMaterialVersionEntity version = currentVersionOf(instance);
+    byte[] base = fileApplicationService.readFileBytesById(version.getFileId());
+    com.guoyu.platform.trainingdepartment.support.SubsidyDocxTextPatcher.ParseResult parsed;
+    try {
+      parsed =
+          com.guoyu.platform.trainingdepartment.support.SubsidyDocxTextPatcher.parse(base);
+    } catch (Exception ex) {
+      log.warn("parse docx meta failed instanceId={}", instanceId, ex);
+      String detail = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "无法解析 Word 内容: " + detail);
+    }
+    List<com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialDocxMetaVO.Line> lines =
+        parsed.lines().stream()
+            .map(
+                l ->
+                    new com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialDocxMetaVO.Line(
+                        l.index(), l.kind(), l.label(), l.value(), l.text()))
+            .toList();
+    return new com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialDocxMetaVO(
+        instance.getId(), version.getId(), version.getFileName(), lines);
+  }
+
+  /** Word 轻量编辑保存：按段落索引写回整段文本（POI 保留图片与段落样式） */
+  @Transactional
+  public SubsidyMaterialInstanceVO patchDocx(
+      Long instanceId, com.guoyu.platform.trainingdepartment.dto.SubsidyMaterialPatchDocxReq req) {
+    if (req == null || req.getParagraphs() == null || req.getParagraphs().isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "没有可保存的字段");
+    }
+    TrainSubsidyMaterialInstanceEntity instance = requireInstance(instanceId);
+    TrainSubsidyEntity subsidy = requireSubsidy(instance.getSubsidyId());
+    assertEditable(subsidy);
+    TrainSubsidyMaterialVersionEntity version = currentVersionOf(instance);
+
+    byte[] base = fileApplicationService.readFileBytesById(version.getFileId());
+    byte[] patched;
+    try {
+      patched =
+          com.guoyu.platform.trainingdepartment.support.SubsidyDocxTextPatcher.patch(
+              base, req.getParagraphs());
+    } catch (Exception ex) {
+      log.warn("patch docx failed instanceId={}", instanceId, ex);
+      String detail = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "保存编辑失败: " + detail);
+    }
+
+    String baseName =
+        StringUtils.hasText(version.getFileName()) ? version.getFileName() : "material.docx";
+    String outName = baseName;
+    if (!outName.startsWith("[编辑]")) {
+      outName = "[编辑]" + outName.replaceFirst("^\\[(填数|模板|编辑)\\]", "");
+    }
+    outName = outName.replaceAll("(?i)\\.docx$", "");
+    outName = outName + ".docx";
+    FileVO stored =
+        fileApplicationService.storeFromBytes(
+            patched,
+            outName,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "private");
+    String path = "/api/files/" + stored.id() + "/download";
+
+    TrainSubsidyMaterialVersionEntity newVersion =
+        newVersion(instance, stored.id(), path, outName, "inline_edit", subsidy.getTenantId());
+    versionMapper.insert(newVersion);
+    instance.setCurrentVersionId(newVersion.getId());
+    if (!"confirmed".equals(instance.getStatus())) {
+      instance.setStatus("filled");
+    }
+    instanceMapper.updateById(instance);
+
+    addEvent(
+        subsidy,
+        "instance_edit",
+        "在线编辑材料 " + instance.getTitle(),
+        Map.of(
+            "instanceId", instance.getId(),
+            "versionId", newVersion.getId(),
+            "paragraphCount", req.getParagraphs().size()));
+    return toVO(instance, subsidy, loadSlotFiles(subsidy.getId()), latestPhotoPack(subsidy));
+  }
+
   @Transactional
   public SubsidyMaterialInstanceVO confirmInstance(Long instanceId) {
     TrainSubsidyMaterialInstanceEntity instance = requireInstance(instanceId);
@@ -673,6 +760,19 @@ public class TrainSubsidyMaterialInstanceApplicationService {
     if (!"draft".equals(phase) && !"checking".equals(phase) && !"ready".equals(phase) && !"rejected".equals(phase)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "当前阶段不可修改材料");
     }
+  }
+
+  /** 取实例当前版本；无文件版本时报业务错（docx 元数据/补丁共用） */
+  private TrainSubsidyMaterialVersionEntity currentVersionOf(
+      TrainSubsidyMaterialInstanceEntity instance) {
+    if (instance.getCurrentVersionId() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前材料尚无文件，无法编辑");
+    }
+    TrainSubsidyMaterialVersionEntity version = versionMapper.selectById(instance.getCurrentVersionId());
+    if (version == null || version.getFileId() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前材料尚无文件，无法编辑");
+    }
+    return version;
   }
 
   private void addEvent(TrainSubsidyEntity subsidy, String action, String remark, Map<String, Object> payload) {

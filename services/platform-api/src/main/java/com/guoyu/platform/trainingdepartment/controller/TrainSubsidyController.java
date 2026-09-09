@@ -210,6 +210,24 @@ public class TrainSubsidyController {
     return ApiResponse.ok(materialInstanceService.patchCells(instanceId, body));
   }
 
+  /** Word 可编辑段落摘要（标题 / 元信息 / 图注），供轻量编辑表单初始化 */
+  @GetMapping("/material-instances/{instanceId}/docx-meta")
+  @PreAuthorize("hasAuthority('train:subsidy:update')")
+  public ApiResponse<com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialDocxMetaVO>
+      getMaterialDocxMeta(@PathVariable Long instanceId) {
+    return ApiResponse.ok(materialInstanceService.getDocxMeta(instanceId));
+  }
+
+  /** Word 轻量编辑保存：按段落索引写回整段文本（POI 保留图片与段落样式） */
+  @PostMapping("/material-instances/{instanceId}/patch-docx")
+  @PreAuthorize("hasAuthority('train:subsidy:update')")
+  @AuditLog(module = "training", action = "subsidy:patch-material-docx", targetType = "train_subsidy_material")
+  public ApiResponse<SubsidyMaterialInstanceVO> patchMaterialDocx(
+      @PathVariable Long instanceId,
+      @RequestBody com.guoyu.platform.trainingdepartment.dto.SubsidyMaterialPatchDocxReq body) {
+    return ApiResponse.ok(materialInstanceService.patchDocx(instanceId, body));
+  }
+
   /** 确认当前材料版本 */
   @PostMapping("/material-instances/{instanceId}/confirm")
   @PreAuthorize("hasAuthority('train:subsidy:update')")
