@@ -46,10 +46,16 @@ public class TheoryGenBatchController {
   @PreAuthorize("hasAuthority('exam:theory:gen:view')")
   public ApiResponse<PageResponse<TheoryGenBatchVO>> page(
       @RequestParam(required = false) Long blueprintId,
+      @RequestParam(required = false) String status,
       @RequestParam(defaultValue = "1") long page,
       @RequestParam(defaultValue = "10") long pageSize) {
     Long tenantId = TenantContextHolder.getTenantId();
-    return ApiResponse.ok(batchService.page(tenantId, blueprintId, page, pageSize));
+    // status 逗号分隔（如 pending,running）：工作台进行中区置顶查询用
+    java.util.List<String> statusList = status == null || status.isBlank()
+        ? java.util.List.of()
+        : java.util.Arrays.stream(status.split(",")).map(String::trim)
+            .filter(s -> !s.isEmpty()).toList();
+    return ApiResponse.ok(batchService.page(tenantId, blueprintId, statusList, page, pageSize));
   }
 
   /** 启用中的模型配置（前端下拉推荐值，默认选中 theory-gen-glm） */

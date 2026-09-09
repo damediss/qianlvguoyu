@@ -47,6 +47,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -133,6 +134,12 @@ class TheoryGenBatchServiceOptTest {
     bp.setId(BP_ID);
     bp.setTenantId(TENANT);
     bp.setLevel(5);
+    return bp;
+  }
+
+  private TheoryBlueprintEntity blueprint(int level) {
+    TheoryBlueprintEntity bp = blueprint();
+    bp.setLevel(level);
     return bp;
   }
 
@@ -273,6 +280,63 @@ class TheoryGenBatchServiceOptTest {
     BusinessException passed = assertThrows(BusinessException.class,
         () -> service.submit(TENANT, USER, BP_ID, CFG_ID, null));
     assertTrue(passed.getMessage().contains("无考评点"));
+  }
+
+  // ─────────────────────── 主观题轮转配额（指引 §2.1 二级/一级） ───────────────────────
+
+  /** 主观配额键仅二级/一级允许：level 5 传 sub5 → 拒绝 */
+  @Test
+  void quota_subjectiveKeyRejectedForLevel5() {
+    when(blueprintMapper.selectById(eq(BP_ID))).thenReturn(blueprint(5));
+    when(batchMapper.selectCount(any())).thenReturn(0L);
+    when(modelConfigMapper.selectById(eq(CFG_ID)))
+        .thenReturn(config("https://api.deepseek.com", "disabled", "high"));
+    BusinessException ex = assertThrows(BusinessException.class,
+        () -> service.submit(TENANT, USER, BP_ID, CFG_ID, Map.of("single", 4, "judge", 2, "sub5", 3)));
+    assertTrue(ex.getMessage().contains("仅二级/一级"));
+  }
+
+  /** 轮转间隔大于默认 → 主观题总量低于指引下限 → 拒绝 */
+  @Test
+  void quota_subjectiveIntervalBeyondDefaultRejected() {
+    when(blueprintMapper.selectById(eq(BP_ID))).thenReturn(blueprint(2));
+    when(batchMapper.selectCount(any())).thenReturn(0L);
+    when(modelConfigMapper.selectById(eq(CFG_ID)))
+        .thenReturn(config("https://api.deepseek.com", "disabled", "high"));
+    BusinessException ex = assertThrows(BusinessException.class,
+        () -> service.submit(TENANT, USER, BP_ID, CFG_ID,
+            Map.of("single", 3, "multi", 2, "judge", 2, "sub5", 4)));
+    assertTrue(ex.getMessage().contains("低于指引下限"));
+  }
+
+  /** 未知配额键拒绝 */
+  @Test
+  void quota_unknownKeyRejected() {
+    when(blueprintMapper.selectById(eq(BP_ID))).thenReturn(blueprint(5));
+    when(batchMapper.selectCount(any())).thenReturn(0L);
+    when(modelConfigMapper.selectById(eq(CFG_ID)))
+        .thenReturn(config("https://api.deepseek.com", "disabled", "high"));
+    BusinessException ex = assertThrows(BusinessException.class,
+        () -> service.submit(TENANT, USER, BP_ID, CFG_ID, Map.of("single", 4, "judge", 2, "essay", 1)));
+    assertTrue(ex.getMessage().contains("未知题型配额键"));
+  }
+
+  /** 二级/一级只传客观三键 → 主观轮转配额按默认补齐并持久化到批次 */
+  @Test
+  void quota_level2_defaultFillsSubjectiveRotation() {
+    when(blueprintMapper.selectById(eq(BP_ID))).thenReturn(blueprint(2));
+    when(batchMapper.selectCount(any())).thenReturn(0L);
+    when(modelConfigMapper.selectById(eq(CFG_ID)))
+        .thenReturn(config("https://api.deepseek.com", "disabled", "high"));
+    when(nodeMapper.selectList(any())).thenReturn(List.of(point(1, "1.1")));
+
+    service.submit(TENANT, USER, BP_ID, CFG_ID, Map.of("single", 3, "multi", 2, "judge", 2));
+
+    ArgumentCaptor<TheoryGenBatchEntity> captor = ArgumentCaptor.forClass(TheoryGenBatchEntity.class);
+    verify(batchMapper).insert(captor.capture());
+    String quotaJson = captor.getValue().getQuotaConfig();
+    assertTrue(quotaJson.contains("\"sub5\":3"), quotaJson);
+    assertTrue(quotaJson.contains("\"sub10\":3"), quotaJson);
   }
 
   // ─────────────────────── P1：断点续跑 / run_id / 原子落库 ───────────────────────

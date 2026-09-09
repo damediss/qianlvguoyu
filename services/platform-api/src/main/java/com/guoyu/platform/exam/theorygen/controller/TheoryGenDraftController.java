@@ -38,11 +38,11 @@ public class TheoryGenDraftController {
     this.exportService = exportService;
   }
 
-  /** 草稿分页 */
+  /** 草稿分页（batchId 可选：不传为"全部批次"模式，按创建时间倒序） */
   @GetMapping("/page")
   @PreAuthorize("hasAuthority('exam:theory:draft:view')")
   public ApiResponse<PageResponse<TheoryDraftVO>> page(
-      @RequestParam Long batchId,
+      @RequestParam(required = false) Long batchId,
       @RequestParam(required = false) String questionType,
       @RequestParam(required = false) String reviewStatus,
       @RequestParam(required = false) Integer publishStatus,

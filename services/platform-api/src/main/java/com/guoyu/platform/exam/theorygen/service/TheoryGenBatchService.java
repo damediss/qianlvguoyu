@@ -1,6 +1,7 @@
 package com.guoyu.platform.exam.theorygen.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,6 +22,7 @@ import com.guoyu.platform.exam.theorygen.mapper.TheoryBlueprintMapper;
 import com.guoyu.platform.exam.theorygen.mapper.TheoryBlueprintNodeMapper;
 import com.guoyu.platform.exam.theorygen.mapper.TheoryGenBatchMapper;
 import com.guoyu.platform.exam.theorygen.mapper.TheoryGenDraftMapper;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -135,16 +137,42 @@ public class TheoryGenBatchService {
       throw new BusinessException(ErrorCode.CONFLICT, "模型 api_key 未配置，请先在模型配置中回填");
     }
     validateGlmThinkingConfig(cfg);
-    // 题量配额：不传用默认（指引下限）；低于下限拒绝
+    // 题量配额：不传用默认（指引下限）；键白名单 + 双口径校验后按默认补齐缺省键
     Map<String, Integer> effectiveQuota = quota == null || quota.isEmpty()
-        ? TheoryGenPromptBuilder.defaultQuota(bp.getLevel()) : quota;
+        ? TheoryGenPromptBuilder.defaultQuota(bp.getLevel()) : new java.util.LinkedHashMap<>(quota);
     Map<String, Integer> minQuota = TheoryGenPromptBuilder.defaultQuota(bp.getLevel());
-    for (Map.Entry<String, Integer> e : minQuota.entrySet()) {
-      int actual = effectiveQuota.getOrDefault(e.getKey(), 0);
-      if (actual < e.getValue()) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST,
-            "题型 " + e.getKey() + " 题量 " + actual + " 低于指引下限 " + e.getValue());
+    for (Map.Entry<String, Integer> e : effectiveQuota.entrySet()) {
+      String k = e.getKey();
+      int v = e.getValue() == null ? 0 : e.getValue();
+      switch (k) {
+        case "single", "multi", "judge" -> {
+          // 逐点数量键：不得低于指引下限
+          int min = minQuota.getOrDefault(k, 0);
+          if (v < min) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                TheoryGenPromptBuilder.typeNameOf(k) + "题量 " + v + " 低于指引下限 " + min);
+          }
+        }
+        case "sub5", "sub10" -> {
+          // 主观题轮转间隔键（每 N 点 1 道）：仅二级/一级；间隔大于默认则主观题总量低于指引下限
+          if (bp.getLevel() > 2) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "主观题配额仅二级/一级允许设置");
+          }
+          if (v < 1) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "主观题轮转间隔至少为 1");
+          }
+          int def = minQuota.getOrDefault(k, 0);
+          if (def > 0 && v > def) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                "主观题轮转间隔 " + v + " 大于默认 " + def + "，主观题总量将低于指引下限");
+          }
+        }
+        default -> throw new BusinessException(ErrorCode.BAD_REQUEST, "未知题型配额键：" + k);
       }
+    }
+    // 缺省键按默认补齐：仅传客观三键时二级/一级的主观轮转配额仍按指引下限生效
+    for (Map.Entry<String, Integer> e : minQuota.entrySet()) {
+      effectiveQuota.putIfAbsent(e.getKey(), e.getValue());
     }
 
     List<TheoryBlueprintNodeEntity> points = listPoints(tenantId, blueprintId);
@@ -253,6 +281,11 @@ public class TheoryGenBatchService {
       Map<String, Integer> quota = readJson(batch.getQuotaConfig());
       String systemPrompt = TheoryGenPromptBuilder.buildSystemPrompt(level, quota);
       List<TheoryBlueprintNodeEntity> points = listPoints(tenantId, batch.getBlueprintId());
+      // 主观题轮转锚点：考评点全局序号（0 基，sortOrder 定序），与断点续跑/补跑无关
+      Map<Long, Integer> pointIndexById = new HashMap<>();
+      for (int i = 0; i < points.size(); i++) {
+        pointIndexById.put(points.get(i).getId(), i);
+      }
 
       Semaphore slots = new Semaphore(Math.max(1, blockConcurrency));
       AtomicInteger consecutiveFailures = new AtomicInteger(0);
@@ -316,7 +349,8 @@ public class TheoryGenBatchService {
             futures.add(theoryGenBlockExecutor.submit(
                 () -> {
                   try {
-                    runBlock(batch, cfg, systemPrompt, point, quota, consecutiveFailures);
+                    runBlock(batch, cfg, systemPrompt, point, pointIndexById.get(point.getId()),
+                        quota, consecutiveFailures);
                   } finally {
                     slots.release();
                   }
@@ -358,6 +392,10 @@ public class TheoryGenBatchService {
             bp.setUpdatedAt(LocalDateTime.now());
             blueprintMapper.updateById(bp);
           }
+          // 指引二级/一级口径：完成时校验主观题分值占比 40%~60%（告警不阻塞，最终由审题把关）
+          if (level <= 2) {
+            checkSubjectiveScoreRatio(batchId);
+          }
         } else if (breakerTripped) {
           // 熔断终止：存在未完成考评点，必须置 FAILED 以便"重试失败块"补缺口
           // （不能用实时计数判定——join 阶段在飞块的成功会把计数器清零，E2E 实测踩中）
@@ -377,6 +415,41 @@ public class TheoryGenBatchService {
     } finally {
       TenantContextHolder.clear();
     }
+  }
+
+  /** 批次完成校验（指引二级/一级）：主观题分值占比 40%~60%；越界仅告警不阻塞（占比最终由审题把关） */
+  private void checkSubjectiveScoreRatio(Long batchId) {
+    List<TheoryGenDraftEntity> drafts = draftMapper.selectList(
+        new LambdaQueryWrapper<TheoryGenDraftEntity>()
+            .eq(TheoryGenDraftEntity::getBatchId, batchId)
+            .select(TheoryGenDraftEntity::getQuestionType, TheoryGenDraftEntity::getScore));
+    BigDecimal subScore = BigDecimal.ZERO;
+    int objCount = 0; // 客观题按每题 1 分计
+    for (TheoryGenDraftEntity d : drafts) {
+      if (TheoryGenPromptBuilder.isSubjectiveType(d.getQuestionType())) {
+        subScore = subScore.add(d.getScore() != null ? d.getScore()
+            : BigDecimal.valueOf(defaultSubjectiveScore(d.getQuestionType())));
+      } else {
+        objCount++;
+      }
+    }
+    double total = subScore.doubleValue() + objCount;
+    if (total == 0) {
+      return;
+    }
+    double ratio = subScore.doubleValue() / total;
+    String ratioText = String.format("%.1f%%", ratio * 100);
+    if (ratio < 0.40 || ratio > 0.60) {
+      log.warn("主观题分值占比越界：batchId={}, 主观分值={}, 客观题数={}, 占比={}（指引口径 40%~60%）",
+          batchId, subScore, objCount, ratioText);
+    } else {
+      log.info("主观题分值占比校验通过：batchId={}, 占比={}", batchId, ratioText);
+    }
+  }
+
+  /** 主观题 score 缺省兜底：简答/计算/绘图 5 分，论述/案例分析 10 分 */
+  private static int defaultSubjectiveScore(String type) {
+    return "discuss".equals(type) || "case_analysis".equals(type) ? 10 : 5;
   }
 
   /** 派发许可：批次 RUNNING 且 run_id 与本次编排一致（R8 编排独占权） */
@@ -420,7 +493,8 @@ public class TheoryGenBatchService {
    * 任何异常计失败不外抛（熔断计数按完成顺序，R7）；失败块的已产生 usage 同样累计（P2）。
    */
   private void runBlock(TheoryGenBatchEntity batch, ExamFaqModelConfigEntity cfg, String systemPrompt,
-      TheoryBlueprintNodeEntity point, Map<String, Integer> quota, AtomicInteger consecutiveFailures) {
+      TheoryBlueprintNodeEntity point, Integer pointIndex, Map<String, Integer> quota,
+      AtomicInteger consecutiveFailures) {
     Long tenantId = batch.getTenantId();
     TenantContextHolder.setTenantId(tenantId);
     // usage 提到 try 外：解析/校验失败时 LLM 花费已产生，同样计入批次（P2）
@@ -430,7 +504,8 @@ public class TheoryGenBatchService {
       result = aiService.generateForPoint(tenantId, cfg.getBaseUrl(), cfg.getApiKey(),
           cfg.getModelId(), cfg.getThinking(), cfg.getReasoningEffort(),
           cfg.getMaxTokens() == null ? 4096 : cfg.getMaxTokens(),
-          systemPrompt, TheoryGenPromptBuilder.buildUserPrompt(point, quota));
+          systemPrompt, TheoryGenPromptBuilder.buildUserPrompt(point, quota,
+              TheoryGenPromptBuilder.subjectiveTypesForPoint(pointIndex, quota)));
       List<TheoryQuestionItem> questions = aiService.parseQuestions(result.content());
       // 校验每题；任一题不合法 → 整块失败（零信任，不猜不兜底）
       for (TheoryQuestionItem q : questions) {
@@ -606,15 +681,59 @@ public class TheoryGenBatchService {
 
   /** 批次分页 */
   @Transactional(readOnly = true)
-  public PageResponse<TheoryGenBatchVO> page(Long tenantId, Long blueprintId, long page, long pageSize) {
+  public PageResponse<TheoryGenBatchVO> page(Long tenantId, Long blueprintId, List<String> status,
+      long page, long pageSize) {
     LambdaQueryWrapper<TheoryGenBatchEntity> w = new LambdaQueryWrapper<TheoryGenBatchEntity>()
         .eq(TheoryGenBatchEntity::getTenantId, tenantId)
         .eq(blueprintId != null, TheoryGenBatchEntity::getBlueprintId, blueprintId)
+        .in(status != null && !status.isEmpty(), TheoryGenBatchEntity::getStatus, status)
         .orderByDesc(TheoryGenBatchEntity::getId);
     Page<TheoryGenBatchEntity> p = batchMapper.selectPage(new Page<>(page, pageSize), w);
+    Map<Long, TheoryGenBatchVO.DraftStats> stats = draftStatsOf(
+        p.getRecords().stream().map(TheoryGenBatchEntity::getId).toList());
     return new PageResponse<>(
-        p.getRecords().stream().map(TheoryGenBatchVO::from).toList(),
+        p.getRecords().stream().map(b -> TheoryGenBatchVO.from(b, stats.get(b.getId()))).toList(),
         p.getCurrent(), p.getSize(), p.getTotal());
+  }
+
+  /**
+   * 工作台总览统计：按批次集合一次聚合草稿的审核/入库/主观题计数。
+   * 租户与逻辑删条件由 MyBatis-Plus 拦截器自动追加；命中 idx_etgd_batch(tenant_id, batch_id)。
+   */
+  private Map<Long, TheoryGenBatchVO.DraftStats> draftStatsOf(List<Long> batchIds) {
+    Map<Long, TheoryGenBatchVO.DraftStats> out = new HashMap<>();
+    if (batchIds.isEmpty()) {
+      return out;
+    }
+    List<Map<String, Object>> rows = draftMapper.selectMaps(new QueryWrapper<TheoryGenDraftEntity>()
+        .select("batch_id", "review_status", "publish_status", "question_type", "COUNT(*) AS cnt")
+        .in("batch_id", batchIds)
+        .groupBy("batch_id", "review_status", "publish_status", "question_type"));
+    // 聚合中间态：batchId → [通过, 待审, 驳回, 已入库, 主观题]
+    Map<Long, int[]> agg = new HashMap<>();
+    for (Map<String, Object> row : rows) {
+      Long batchId = row.get("batch_id") instanceof Number n ? n.longValue() : null;
+      if (batchId == null) {
+        continue;
+      }
+      int cnt = row.get("cnt") instanceof Number n ? n.intValue() : 0;
+      int[] c = agg.computeIfAbsent(batchId, k -> new int[5]);
+      String review = String.valueOf(row.get("review_status"));
+      switch (review) {
+        case "approved" -> c[0] += cnt;
+        case "rejected" -> c[2] += cnt;
+        default -> c[1] += cnt; // draft/其他 → 待审
+      }
+      if (row.get("publish_status") instanceof Number ps && ps.intValue() == 1) {
+        c[3] += cnt;
+      }
+      if (TheoryGenPromptBuilder.isSubjectiveType(String.valueOf(row.get("question_type")))) {
+        c[4] += cnt;
+      }
+    }
+    agg.forEach((id, c) ->
+        out.put(id, new TheoryGenBatchVO.DraftStats(c[0], c[1], c[2], c[3], c[4])));
+    return out;
   }
 
   /** 批次详情/进度（前端轮询） */

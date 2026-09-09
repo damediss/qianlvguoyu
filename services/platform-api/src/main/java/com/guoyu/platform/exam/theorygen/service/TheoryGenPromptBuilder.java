@@ -10,16 +10,58 @@ public final class TheoryGenPromptBuilder {
   private TheoryGenPromptBuilder() {
   }
 
-  /** 每等级默认题量配置（指引 §2.1 下限） */
+  /** 配额键展示顺序固定：prompt 前缀稳定（命中缓存）且 JSON 持久化可比对 */
+  private static final String[] QUOTA_KEY_ORDER = {"single", "multi", "judge", "sub5", "sub10"};
+
+  /** 主观题轮转类型序列：5 分制（简答/计算/绘图）、10/15 分制（论述/案例分析） */
+  private static final List<String> SUBJECTIVE_5_TYPES = List.of("essay", "cal", "draw");
+  private static final List<String> SUBJECTIVE_10_TYPES = List.of("discuss", "case_analysis");
+
+  /**
+   * 每等级默认题量配置（指引 §2.1 下限）。
+   * sub5/sub10 为主观题轮转间隔（每 N 个考评点 1 道），仅二级/一级：120 点 → 40+40 道踩指引下限。
+   */
   public static Map<String, Integer> defaultQuota(int level) {
-    return switch (level) {
-      // 五级/四级：单选≥4、判断≥2
-      case 5, 4 -> Map.of("single", 4, "judge", 2);
-      // 三级：单选≥3、多选≥2、判断≥2
-      case 3 -> Map.of("single", 3, "multi", 2, "judge", 2);
-      // 二级/一级：单选≥3、多选≥2、判断≥2 + 主观题（简答类每 5 考评点 1 题的简化配额由提交方调整）
-      default -> Map.of("single", 3, "multi", 2, "judge", 2);
-    };
+    Map<String, Integer> q = new java.util.LinkedHashMap<>();
+    switch (level) {
+      // 五级/四级：单选≥4、判断≥2（客观题为主）
+      case 5, 4 -> { q.put("single", 4); q.put("judge", 2); }
+      // 三级：单选≥3、多选≥2、判断≥2（客观题为主）
+      case 3 -> { q.put("single", 3); q.put("multi", 2); q.put("judge", 2); }
+      // 二级/一级：单选≥3、多选≥2、判断≥2 + 主观题轮转（提炼式对标考评点，非逐点固定）
+      default -> { q.put("single", 3); q.put("multi", 2); q.put("judge", 2); q.put("sub5", 3); q.put("sub10", 3); }
+    }
+    return q;
+  }
+
+  /**
+   * 该考评点（全局 0 基序号，listPoints 按 sortOrder 定序）本轮需生成的主观题型。
+   * sub5/sub10 为轮转间隔（每 N 点 1 道）；同档位内按序轮换具体题型。无间隔/null 序号 → 空列表。
+   */
+  public static List<String> subjectiveTypesForPoint(Integer pointIndex, Map<String, Integer> quota) {
+    List<String> out = new java.util.ArrayList<>();
+    if (pointIndex == null || quota == null) {
+      return out;
+    }
+    Integer sub5 = quota.get("sub5");
+    if (sub5 != null && sub5 > 0 && pointIndex % sub5 == 0) {
+      out.add(SUBJECTIVE_5_TYPES.get((pointIndex / sub5) % SUBJECTIVE_5_TYPES.size()));
+    }
+    Integer sub10 = quota.get("sub10");
+    if (sub10 != null && sub10 > 0 && pointIndex % sub10 == 0) {
+      out.add(SUBJECTIVE_10_TYPES.get((pointIndex / sub10) % SUBJECTIVE_10_TYPES.size()));
+    }
+    return out;
+  }
+
+  /** 是否主观题型 */
+  public static boolean isSubjectiveType(String questionType) {
+    return SUBJECTIVE_5_TYPES.contains(questionType) || SUBJECTIVE_10_TYPES.contains(questionType);
+  }
+
+  /** 配额键 → 中文名（校验提示用） */
+  public static String typeNameOf(String key) {
+    return typeName(key);
   }
 
   /** 题型代码映射（指引 §2.2） */
@@ -101,6 +143,11 @@ public final class TheoryGenPromptBuilder {
   }
 
   public static String buildUserPrompt(TheoryBlueprintNodeEntity point, Map<String, Integer> quota) {
+    return buildUserPrompt(point, quota, List.of());
+  }
+
+  public static String buildUserPrompt(TheoryBlueprintNodeEntity point, Map<String, Integer> quota,
+      List<String> subjectiveTypes) {
     StringBuilder sb = new StringBuilder();
     sb.append("考评点代码：").append(point.getFullCode()).append("\n")
         .append("考评点名称：").append(point.getName()).append("\n")
@@ -108,13 +155,30 @@ public final class TheoryGenPromptBuilder {
     if (point.getRelatedKnowledge() != null && !point.getRelatedKnowledge().isBlank()) {
       sb.append("相关知识要求：").append(point.getRelatedKnowledge()).append("\n");
     }
-    sb.append("请按系统提示中的题量配额（").append(quotaText(quota)).append("）为该考评点生成试题，只输出 JSON 数组。");
+    sb.append("请按系统提示中的题量配额（").append(quotaText(quota)).append("）为该考评点生成客观题");
+    if (subjectiveTypes != null && !subjectiveTypes.isEmpty()) {
+      // 主观题轮转落到本考评点：逐道点名题型，防止模型只产客观题
+      sb.append("，并额外生成 ").append(subjectiveTypes.stream()
+              .map(t -> typeName(t) + " 1 道").collect(java.util.stream.Collectors.joining("、")))
+          .append("（主观题须含参考答案、评分要点、评分标准；简答/计算/绘图建议分值 5 分，论述 10 分，案例分析 15 分）");
+    }
+    sb.append("，只输出 JSON 数组。");
     return sb.toString();
   }
 
   private static String quotaText(Map<String, Integer> quota) {
     List<String> parts = new java.util.ArrayList<>();
-    quota.forEach((k, v) -> parts.add(typeName(k) + v + "道"));
+    for (String k : QUOTA_KEY_ORDER) {
+      Integer v = quota == null ? null : quota.get(k);
+      if (v == null) {
+        continue;
+      }
+      parts.add(switch (k) {
+        case "sub5" -> "5 分制主观题（简答/计算/绘图轮换）每 " + v + " 个考评点 1 道";
+        case "sub10" -> "10/15 分制主观题（论述/案例分析轮换）每 " + v + " 个考评点 1 道";
+        default -> typeName(k) + v + "道";
+      });
+    }
     return String.join("、", parts);
   }
 
