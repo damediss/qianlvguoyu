@@ -74,4 +74,12 @@ public final class SubsidyMaterialTypes {
       default -> 90;
     };
   }
+
+  /**
+   * 工作台默认清单：仅「培训照片」「证书材料」由配方/本班自动建项；
+   * 申请表/花名册/汇总表等需「从模板生成」或替换上传后出现。
+   */
+  public static boolean isDefaultWorkbenchType(String materialType) {
+    return PHOTO.equals(materialType) || CERTIFICATE.equals(materialType);
+  }
 }

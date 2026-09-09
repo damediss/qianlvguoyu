@@ -72,6 +72,9 @@ export function MaterialTreePanel({
           已选 {exportSelectedIds.size}/{allIds.length}
         </Typography.Text>
       </div>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: '0 0 8px' }}>
+        默认仅同步培训照片与证书材料；申请表 / 花名册 / 汇总表请用上方「从模板生成」或「替换上传」。
+      </Typography.Paragraph>
       {groups.map((group) => (
         <div key={group.materialType} className="material-tree-group">
           <div className="material-tree-group-title">

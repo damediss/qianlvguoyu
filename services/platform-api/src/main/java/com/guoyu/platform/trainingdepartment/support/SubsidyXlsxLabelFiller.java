@@ -42,6 +42,8 @@ public final class SubsidyXlsxLabelFiller {
     rules.add(new LabelRule("企业组织培训企业联系电话", "company_phone"));
     rules.add(new LabelRule("培训机构名称", "pxdw"));
     rules.add(new LabelRule("培训单位名称", "pxdw"));
+    rules.add(new LabelRule("培训单位（盖章）", "pxdw"));
+    rules.add(new LabelRule("培训单位", "pxdw"));
     rules.add(new LabelRule("培训学校名称", "pxdw"));
     rules.add(new LabelRule("经办人姓名", "fzr"));
     rules.add(new LabelRule("经办人", "fzr"));
@@ -51,6 +53,8 @@ public final class SubsidyXlsxLabelFiller {
     rules.add(new LabelRule("培训班次", "class_title"));
     rules.add(new LabelRule("班期编号", "class_title"));
     rules.add(new LabelRule("班期名称", "class_title"));
+    rules.add(new LabelRule("培训起止时间", "pxtime"));
+    rules.add(new LabelRule("培训时间", "pxtime"));
     rules.add(new LabelRule("培训地址", "pxaddr"));
     rules.add(new LabelRule("培训地点", "pxaddr"));
     rules.add(new LabelRule("培训专业类别", "worktype"));
@@ -81,6 +85,14 @@ public final class SubsidyXlsxLabelFiller {
 
   private static final Pattern INLINE_DATE =
       Pattern.compile("(申报日期|申请日期)[^\\d年月日]*(\\d{4})?\\s*年\\s*月\\s*日");
+
+  /** 「培训单位（盖章）： ___ 培训时间：」——单位名写在冒号与「培训时间」之间 */
+  private static final Pattern INLINE_TRAIN_UNIT =
+      Pattern.compile("(培训单位(?:（盖章）|\\(盖章\\))?\\s*[:：]\\s*)(.*?)(?=\\s*培训时间)");
+
+  /** 「培训时间： ___ 至 ___」——起止日写在「至」两侧 */
+  private static final Pattern INLINE_TRAIN_TIME =
+      Pattern.compile("(培训时间\\s*[:：]\\s*)(.*?)(\\s*至\\s*)([^\\n]*)");
 
   private SubsidyXlsxLabelFiller() {}
 
@@ -184,6 +196,24 @@ public final class SubsidyXlsxLabelFiller {
               continue;
             }
 
+            // 同行内联：「培训单位（盖章）： 培训时间： 至」——通栏合并格，不能写右侧
+            if (isFilledInlineTrainMeta(text)) {
+              usedLabels.add("培训单位");
+              usedLabels.add("培训单位（盖章）");
+              usedLabels.add("培训时间");
+              continue;
+            }
+            String trainMeta = tryFillInlineTrainMeta(text, safeVars);
+            if (trainMeta != null && !trainMeta.equals(text)) {
+              cell.setCellValue(trainMeta);
+              matched++;
+              matchedLabels.add("培训时间(内联)");
+              usedLabels.add("培训单位");
+              usedLabels.add("培训单位（盖章）");
+              usedLabels.add("培训时间");
+              continue;
+            }
+
             LabelRule rule = matchRule(text, usedLabels);
             if (rule == null) {
               continue;
@@ -224,6 +254,50 @@ public final class SubsidyXlsxLabelFiller {
     }
   }
 
+  /**
+   * 仅处理同行内联元数据（申报日期 / 培训单位+培训时间），不写右侧值格。
+   * 供花名册等已走表头映射的模板二次补全表头区，避免误改学员列。
+   */
+  public static int applyInlineMetas(Workbook workbook, Map<String, String> vars) {
+    if (workbook == null) {
+      return 0;
+    }
+    Map<String, String> safeVars = vars != null ? vars : Map.of();
+    int matched = 0;
+    for (int s = 0; s < workbook.getNumberOfSheets(); s++) {
+      Sheet sheet = workbook.getSheetAt(s);
+      if (sheet == null) {
+        continue;
+      }
+      for (Row row : sheet) {
+        if (row == null) {
+          continue;
+        }
+        for (Cell cell : snapshotCells(row)) {
+          String text = TrainingXlsxVariableReplacer.cellText(cell);
+          if (!StringUtils.hasText(text)) {
+            continue;
+          }
+          if (isFilledInlineDateLabel(text) || isFilledInlineTrainMeta(text)) {
+            continue;
+          }
+          String inline = tryFillInlineDate(text, safeVars);
+          if (inline != null && !inline.equals(text)) {
+            cell.setCellValue(inline);
+            matched++;
+            continue;
+          }
+          String trainMeta = tryFillInlineTrainMeta(text, safeVars);
+          if (trainMeta != null && !trainMeta.equals(text)) {
+            cell.setCellValue(trainMeta);
+            matched++;
+          }
+        }
+      }
+    }
+    return matched;
+  }
+
   private static LabelRule matchRule(String cellText, Set<String> usedLabels) {
     String norm = normalize(cellText);
     if (!StringUtils.hasText(norm)) {
@@ -233,7 +307,11 @@ public final class SubsidyXlsxLabelFiller {
     if (norm.contains("各类人员享受培训补贴") || norm.equals("申请补贴情况")) {
       return null;
     }
-    if (norm.length() > 40 && !norm.contains("申报日期") && !norm.contains("申请日期")) {
+    if (norm.length() > 40
+        && !norm.contains("申报日期")
+        && !norm.contains("申请日期")
+        && !norm.contains("培训时间")
+        && !norm.contains("培训单位")) {
       return null;
     }
 
@@ -311,6 +389,18 @@ public final class SubsidyXlsxLabelFiller {
           first(vars, varKey + "_explicit", "zero");
       case "pxaddr" -> first(vars, "company", "pxdw");
       case "today" -> first(vars, "create_time");
+      case "pxtime" -> {
+        String period = first(vars, "train_period", "train_time");
+        if (StringUtils.hasText(period)) {
+          yield period;
+        }
+        String ds = first(vars, "date_start");
+        String de = first(vars, "date_end");
+        if (StringUtils.hasText(ds) || StringUtils.hasText(de)) {
+          yield (ds + " 至 " + de).trim();
+        }
+        yield "";
+      }
       default -> "";
     };
   }
@@ -333,6 +423,100 @@ public final class SubsidyXlsxLabelFiller {
       return false;
     }
     return text.matches(".*\\d{4}\\s*年\\s*\\d{1,2}\\s*月\\s*\\d{1,2}\\s*日.*");
+  }
+
+  /** 已填过的「培训单位…培训时间：xxx至yyy」 */
+  private static boolean isFilledInlineTrainMeta(String text) {
+    if (text == null || !text.contains("培训时间") || !text.contains("至")) {
+      return false;
+    }
+    Matcher m = INLINE_TRAIN_TIME.matcher(text);
+    if (!m.find()) {
+      return false;
+    }
+    String left = blankToEmpty(m.group(2)).replaceAll("[\\s　_＿\\-—]", "");
+    String right = blankToEmpty(m.group(4)).replaceAll("[\\s　_＿\\-—]", "");
+    return left.matches(".*\\d{4}.*") || right.matches(".*\\d{4}.*");
+  }
+
+  /**
+   * 同格内联填：培训单位 + 培训时间起止。典型模板文案：
+   * {@code 培训单位（盖章）： 培训时间： 至}
+   */
+  private static String tryFillInlineTrainMeta(String text, Map<String, String> vars) {
+    if (text == null) {
+      return null;
+    }
+    if (!text.contains("培训时间") && !text.contains("培训单位")) {
+      return null;
+    }
+    String out = text;
+    boolean changed = false;
+
+    String pxdw = resolveValue("pxdw", vars);
+    if (StringUtils.hasText(pxdw)) {
+      Matcher um = INLINE_TRAIN_UNIT.matcher(out);
+      if (um.find()) {
+        String existing = blankToEmpty(um.group(2)).trim();
+        if (!StringUtils.hasText(existing) || existing.matches("[_＿\\-—.\\s　]*")) {
+          out = um.replaceFirst(Matcher.quoteReplacement(um.group(1) + pxdw + " "));
+          changed = true;
+        }
+      }
+    }
+
+    String dateStart = first(vars, "date_start");
+    String dateEnd = first(vars, "date_end");
+    if (!StringUtils.hasText(dateStart) && !StringUtils.hasText(dateEnd)) {
+      String pxtime = resolveValue("pxtime", vars);
+      if (StringUtils.hasText(pxtime)) {
+        // 「2024-01-01 ~ 2024-01-31」或「2024-01-01 至 2024-01-31」
+        String[] parts = pxtime.split("\\s*[~～至]\\s*", 2);
+        if (parts.length == 2) {
+          dateStart = parts[0].trim();
+          dateEnd = parts[1].trim();
+        }
+      }
+    }
+    if (StringUtils.hasText(dateStart) || StringUtils.hasText(dateEnd)) {
+      Matcher tm = INLINE_TRAIN_TIME.matcher(out);
+      if (tm.find()) {
+        String left = blankToEmpty(tm.group(2)).trim();
+        String right = blankToEmpty(tm.group(4)).trim();
+        boolean leftBlank = !StringUtils.hasText(left) || left.matches("[_＿\\-—.\\s　]*");
+        boolean rightBlank = !StringUtils.hasText(right) || right.matches("[_＿\\-—.\\s　]*");
+        if (leftBlank || rightBlank) {
+          String newLeft = leftBlank ? blankToEmpty(dateStart) : left;
+          String newRight = rightBlank ? blankToEmpty(dateEnd) : right;
+          out =
+              tm.replaceFirst(
+                  Matcher.quoteReplacement(
+                      tm.group(1) + newLeft + tm.group(3) + newRight));
+          changed = true;
+        }
+      } else if (out.contains("培训时间") && (out.contains("：") || out.contains(":"))) {
+        // 「培训时间：」后为空、无「至」时整段写入 pxtime
+        String pxtime =
+            StringUtils.hasText(dateStart) || StringUtils.hasText(dateEnd)
+                ? (blankToEmpty(dateStart) + " 至 " + blankToEmpty(dateEnd)).trim()
+                : resolveValue("pxtime", vars);
+        if (StringUtils.hasText(pxtime)) {
+          Pattern bare =
+              Pattern.compile("(培训时间\\s*[:：]\\s*)([_＿\\-—.\\s　]*)$");
+          Matcher bm = bare.matcher(out);
+          if (bm.find()) {
+            out = bm.replaceFirst(Matcher.quoteReplacement(bm.group(1) + pxtime));
+            changed = true;
+          }
+        }
+      }
+    }
+
+    return changed ? out : null;
+  }
+
+  private static String blankToEmpty(String s) {
+    return s == null ? "" : s;
   }
 
   private static String tryFillInlineDate(String text, Map<String, String> vars) {

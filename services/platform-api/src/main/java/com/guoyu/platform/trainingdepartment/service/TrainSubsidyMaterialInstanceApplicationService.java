@@ -27,9 +27,11 @@ import com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialSlotFileVO;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -78,6 +80,7 @@ public class TrainSubsidyMaterialInstanceApplicationService {
   @Transactional
   public SubsidyMaterialInstanceListVO listInstances(Long subsidyId) {
     TrainSubsidyEntity subsidy = requireSubsidy(subsidyId);
+    pruneNonDefaultEmptyInstances(subsidy);
     ensureInstancesFromProfile(subsidy);
     tryAutoSyncUpstream(subsidy);
     refreshInstancesFromSlotFiles(subsidy);
@@ -262,7 +265,9 @@ public class TrainSubsidyMaterialInstanceApplicationService {
   }
 
   /**
-   * 证书 PDF / 获证名册 / 培训照片：系统有上游数据则自动同步到清单；没有则保持未生成，可手工替换。
+   * 证书 PDF / 获证名册：仅在「实例无文件且槽位也无文件」时补同步；
+   * 培训照片由 refreshInstancesFromSlotFiles 直接挂跟班册，不走整包 sync。
+   * 已齐套时跳过，避免每次进页重导名册并上传 COS。
    */
   private void tryAutoSyncUpstream(TrainSubsidyEntity subsidy) {
     if (subsidy.getClassId() == null || subsidy.getProfileId() == null) {
@@ -273,29 +278,85 @@ public class TrainSubsidyMaterialInstanceApplicationService {
     } catch (BusinessException ex) {
       return;
     }
+    Set<String> needSlots = certificateSlotsNeedingSync(subsidy.getId());
+    if (needSlots.isEmpty()) {
+      return;
+    }
     try {
-      classMaterialService.syncFromClass(subsidy.getId());
+      classMaterialService.syncSelectedSlotsQuiet(subsidy.getId(), needSlots);
     } catch (Exception ex) {
-      log.warn("自动同步本班证书/照片失败 subsidyId={}: {}", subsidy.getId(), ex.getMessage());
+      log.warn("自动同步本班证书/名册失败 subsidyId={}: {}", subsidy.getId(), ex.getMessage());
     }
   }
 
+  private Set<String> certificateSlotsNeedingSync(Long subsidyId) {
+    List<TrainSubsidyMaterialInstanceEntity> instances =
+        instanceMapper.selectList(
+            new LambdaQueryWrapper<TrainSubsidyMaterialInstanceEntity>()
+                .eq(TrainSubsidyMaterialInstanceEntity::getSubsidyId, subsidyId)
+                .eq(TrainSubsidyMaterialInstanceEntity::getDeleted, 0)
+                .eq(
+                    TrainSubsidyMaterialInstanceEntity::getMaterialType,
+                    SubsidyMaterialTypes.CERTIFICATE));
+    if (instances.isEmpty()) {
+      return Set.of();
+    }
+    Map<String, List<TrainSubsidySlotFileEntity>> filesBySlot =
+        loadSlotFiles(subsidyId).stream()
+            .filter(f -> StringUtils.hasText(f.getSlotCode()))
+            .collect(Collectors.groupingBy(TrainSubsidySlotFileEntity::getSlotCode));
+    Set<String> need = new HashSet<>();
+    for (TrainSubsidyMaterialInstanceEntity inst : instances) {
+      if (inst.getCurrentVersionId() != null) {
+        continue;
+      }
+      String code = inst.getSlotCode();
+      if (!StringUtils.hasText(code)) {
+        continue;
+      }
+      if (filesBySlot.getOrDefault(code, List.of()).isEmpty()) {
+        need.add(code);
+      }
+    }
+    return need;
+  }
+
+  /**
+   * 默认只保留培训照片 + 证书材料槽位；申请表/花名册/汇总等由「从模板生成」新建。
+   * 已有补贴会补齐缺失的默认槽，并清掉无文件的非默认占位项。
+   */
   private void ensureInstancesFromProfile(TrainSubsidyEntity subsidy) {
     if (subsidy.getProfileId() == null) {
       return;
     }
-    long existing = instanceMapper.selectCount(new LambdaQueryWrapper<TrainSubsidyMaterialInstanceEntity>()
-        .eq(TrainSubsidyMaterialInstanceEntity::getSubsidyId, subsidy.getId())
-        .eq(TrainSubsidyMaterialInstanceEntity::getDeleted, 0));
-    if (existing > 0) {
+    List<TrainSubsidyPackSlotEntity> slots = profileService.listSlots(subsidy.getProfileId());
+    if (slots == null || slots.isEmpty()) {
       return;
     }
-    List<TrainSubsidyPackSlotEntity> slots = profileService.listSlots(subsidy.getProfileId());
+    List<TrainSubsidyMaterialInstanceEntity> existing =
+        instanceMapper.selectList(
+            new LambdaQueryWrapper<TrainSubsidyMaterialInstanceEntity>()
+                .eq(TrainSubsidyMaterialInstanceEntity::getSubsidyId, subsidy.getId())
+                .eq(TrainSubsidyMaterialInstanceEntity::getDeleted, 0));
+    java.util.Set<String> existingSlots =
+        existing.stream()
+            .map(TrainSubsidyMaterialInstanceEntity::getSlotCode)
+            .filter(StringUtils::hasText)
+            .collect(Collectors.toSet());
+
     for (TrainSubsidyPackSlotEntity slot : slots) {
+      String mt = SubsidyMaterialTypes.resolveMaterialType(slot.getSlotCode(), slot.getRenderer());
+      if (!SubsidyMaterialTypes.isDefaultWorkbenchType(mt)) {
+        continue;
+      }
+      String code = slot.getSlotCode();
+      if (StringUtils.hasText(code) && existingSlots.contains(code)) {
+        continue;
+      }
       TrainSubsidyMaterialInstanceEntity row = new TrainSubsidyMaterialInstanceEntity();
       row.setSubsidyId(subsidy.getId());
-      row.setSlotCode(slot.getSlotCode());
-      row.setMaterialType(SubsidyMaterialTypes.resolveMaterialType(slot.getSlotCode(), slot.getRenderer()));
+      row.setSlotCode(code);
+      row.setMaterialType(mt);
       row.setTitle(slot.getTitle());
       row.setStatus("pending");
       row.setRequiredFlag(slot.getRequiredFlag() != null ? slot.getRequiredFlag() : 0);
@@ -304,6 +365,34 @@ public class TrainSubsidyMaterialInstanceApplicationService {
       row.setTenantId(subsidy.getTenantId());
       row.setDeleted(0);
       instanceMapper.insert(row);
+      if (StringUtils.hasText(code)) {
+        existingSlots.add(code);
+      }
+    }
+  }
+
+  /**
+   * 清掉配方里自动种下的、尚无文件的申请表/花名册/汇总占位；
+   * 申领花名册（claim_roster）即使曾从本班同步也不再默认展示（改走模板生成）。
+   * 用户已上传/填数的非默认材料予以保留。
+   */
+  private void pruneNonDefaultEmptyInstances(TrainSubsidyEntity subsidy) {
+    List<TrainSubsidyMaterialInstanceEntity> instances =
+        instanceMapper.selectList(
+            new LambdaQueryWrapper<TrainSubsidyMaterialInstanceEntity>()
+                .eq(TrainSubsidyMaterialInstanceEntity::getSubsidyId, subsidy.getId())
+                .eq(TrainSubsidyMaterialInstanceEntity::getDeleted, 0));
+    for (TrainSubsidyMaterialInstanceEntity instance : instances) {
+      if (SubsidyMaterialTypes.isDefaultWorkbenchType(instance.getMaterialType())) {
+        continue;
+      }
+      boolean claimRoster = "claim_roster".equals(instance.getSlotCode());
+      boolean empty = instance.getCurrentVersionId() == null;
+      if (!claimRoster && !empty) {
+        continue;
+      }
+      instance.setDeleted(1);
+      instanceMapper.updateById(instance);
     }
   }
 

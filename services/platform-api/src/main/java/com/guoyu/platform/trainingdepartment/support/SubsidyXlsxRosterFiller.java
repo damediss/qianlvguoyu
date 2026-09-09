@@ -109,6 +109,15 @@ public final class SubsidyXlsxRosterFiller {
           }
         }
       }
+      // 表头区「培训单位（盖章）：…培训时间： 至」等内联标签（非学员列）
+      int metaHits = SubsidyXlsxLabelFiller.applyInlineMetas(workbook, classVars);
+      if (metaHits > 0 && "header_map".equals(mode)) {
+        mode = "header_map+meta";
+      } else if (metaHits > 0 && "placeholder_row".equals(mode)) {
+        mode = "placeholder_row+meta";
+      } else if (metaHits > 0 && "scalar".equals(mode)) {
+        mode = "scalar+meta";
+      }
       workbook.write(out);
       return new FillResult(out.toByteArray(), rows.size(), mode);
     }

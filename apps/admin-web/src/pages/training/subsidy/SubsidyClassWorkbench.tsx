@@ -94,6 +94,7 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
   const instancesQ = useQuery({
     queryKey: ['subsidy-material-instances', detail.id],
     queryFn: () => trainApi.listSubsidyMaterialInstances(detail.id),
+    staleTime: 30_000,
   });
 
   const eventsQ = useQuery({
@@ -105,6 +106,7 @@ export function SubsidyClassWorkbench({ subsidy, onBack, onSubsidyChange }: Prop
   const classMatsQ = useQuery({
     queryKey: ['subsidy-class-materials', detail.id],
     queryFn: () => trainApi.getSubsidyClassMaterials(detail.id),
+    staleTime: 30_000,
   });
 
   const invalidate = () => {

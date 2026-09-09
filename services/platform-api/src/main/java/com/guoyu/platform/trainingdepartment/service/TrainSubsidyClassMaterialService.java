@@ -198,10 +198,26 @@ public class TrainSubsidyClassMaterialService {
   }
 
   /**
-   * 从本班刷新可自动材料：证书 PDF、获证/申领花名册；照片槽仍引用跟班册无需落槽文件。
+   * 从本班刷新可自动材料：证书 PDF、获证名册；照片槽仍引用跟班册无需落槽文件。
    */
   @Transactional
   public Map<String, Object> syncFromClass(Long subsidyId) {
+    return syncFromClass(subsidyId, null, true);
+  }
+
+  /**
+   * 进页清单用：只同步指定槽位，且不写时间线、不算 preview（避免每次打开重导名册上传 COS）。
+   */
+  @Transactional
+  public Map<String, Object> syncSelectedSlotsQuiet(Long subsidyId, java.util.Set<String> slotCodes) {
+    if (slotCodes == null || slotCodes.isEmpty()) {
+      return Map.of();
+    }
+    return syncFromClass(subsidyId, slotCodes, false);
+  }
+
+  private Map<String, Object> syncFromClass(
+      Long subsidyId, java.util.Set<String> onlySlotCodes, boolean fullResponse) {
     TrainSubsidyEntity subsidy = requireSubsidy(subsidyId);
     assertEditable(subsidy);
     if (subsidy.getClassId() == null) {
@@ -221,6 +237,9 @@ public class TrainSubsidyClassMaterialService {
 
     for (TrainSubsidyPackSlotEntity slot : slots) {
       String code = slot.getSlotCode() != null ? slot.getSlotCode() : "";
+      if (onlySlotCodes != null && !onlySlotCodes.contains(code)) {
+        continue;
+      }
       String renderer = slot.getRenderer() != null ? slot.getRenderer() : "";
       String title = slot.getTitle() != null ? slot.getTitle() : "";
       if ("cert_pdf_bundle".equals(code)
@@ -233,22 +252,28 @@ public class TrainSubsidyClassMaterialService {
         certSynced += n;
         if (n > 0) {
           notes.add(slot.getTitle() + "：同步证书 " + n + " 份");
-        } else {
+        } else if (fullResponse) {
           notes.add(slot.getTitle() + "：本班暂无证书文件，可手工替换");
         }
-      } else if ("claim_roster".equals(code) || "cert_roster".equals(code)
-          || "cert_pass".equals(code) || "cert_retake".equals(code)
-          || title.contains("获证名册") || title.contains("获证人员名册")) {
+      } else if ("cert_roster".equals(code)
+          || "cert_pass".equals(code)
+          || "cert_retake".equals(code)
+          || title.contains("获证名册")
+          || title.contains("获证人员名册")) {
+        // 申领花名册 claim_roster 不自动同步，改由「从模板生成」
         boolean ok = syncRoster(subsidy, clazz, tenantId, userId, code);
         if (ok) {
           rosterSynced++;
           notes.add(slot.getTitle() + "：已写入获证名册");
-        } else {
+        } else if (fullResponse) {
           notes.add(slot.getTitle() + "：名册同步失败或无已获证人员，可手工上传");
         }
-      } else if ("follow_photo".equals(renderer) || "photo_album".equals(code)
-          || title.contains("培训照片") || SubsidyMaterialTypes.PHOTO.equals(
-              SubsidyMaterialTypes.resolveMaterialType(code, renderer))) {
+      } else if (fullResponse
+          && ("follow_photo".equals(renderer)
+              || "photo_album".equals(code)
+              || title.contains("培训照片")
+              || SubsidyMaterialTypes.PHOTO.equals(
+                  SubsidyMaterialTypes.resolveMaterialType(code, renderer)))) {
         TrainFollowPhotoPackEntity photo = latestPhotoPack(clazz.getId(), tenantId);
         if (photo != null && photo.getFileId() != null) {
           notes.add(slot.getTitle() + "：将引用跟班照片册 #" + photo.getId());
@@ -256,6 +281,14 @@ public class TrainSubsidyClassMaterialService {
           notes.add(slot.getTitle() + "：本班尚无跟班照片册，请先在跟班留痕生成或手工补传");
         }
       }
+    }
+
+    if (!fullResponse) {
+      Map<String, Object> quiet = new LinkedHashMap<>();
+      quiet.put("certificateFiles", certSynced);
+      quiet.put("rosterSlots", rosterSynced);
+      quiet.put("notes", notes);
+      return quiet;
     }
 
     Map<String, Object> payload = new LinkedHashMap<>();
@@ -276,7 +309,11 @@ public class TrainSubsidyClassMaterialService {
     result.put("syncedCertificateFiles", certSynced);
     result.put("syncedRosterSlots", rosterSynced);
     result.put("notes", notes);
-    result.put("message", notes.isEmpty() ? "未同步到可自动材料，请检查本班已获证证书/名册/照片" : "已从本班刷新材料（仅已获证人员）");
+    result.put(
+        "message",
+        notes.isEmpty()
+            ? "未同步到可自动材料，请检查本班已获证证书/名册/照片"
+            : "已从本班刷新材料（仅已获证人员）");
     return result;
   }
 

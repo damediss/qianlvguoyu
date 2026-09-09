@@ -107,6 +107,47 @@ class SubsidyXlsxFillSupportTest {
   }
 
   @Test
+  void fillsRosterInlineTrainUnitAndTimeHeader() throws Exception {
+    byte[] template;
+    try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+      Sheet sheet = wb.createSheet();
+      sheet.createRow(0).createCell(0).setCellValue("企业职业培训补贴人员花名册");
+      // 真实模板：盖章与培训时间同格，中间大量空格
+      sheet
+          .createRow(1)
+          .createCell(0)
+          .setCellValue("培训单位（盖章）：                                                                    培训时间：   至");
+      Row header = sheet.createRow(2);
+      header.createCell(0).setCellValue("序号");
+      header.createCell(1).setCellValue("姓名");
+      header.createCell(2).setCellValue("身份证号码");
+      sheet.createRow(3);
+      wb.write(bos);
+      template = bos.toByteArray();
+    }
+
+    Map<String, String> classVars = new LinkedHashMap<>();
+    classVars.put("pxdw", "千铝工投");
+    classVars.put("date_start", "2026-08-18");
+    classVars.put("date_end", "2026-08-19");
+
+    SubsidyXlsxRosterFiller.FillResult result =
+        SubsidyXlsxRosterFiller.fill(
+            template,
+            List.of(Map.of("seq", "1", "name", "张三", "idCard", "110101199001011234")),
+            classVars);
+    assertThat(result.mode()).isEqualTo("header_map+meta");
+
+    try (Workbook wb = WorkbookFactory.create(new java.io.ByteArrayInputStream(result.bytes()))) {
+      String meta = wb.getSheetAt(0).getRow(1).getCell(0).getStringCellValue();
+      assertThat(meta).contains("千铝工投");
+      assertThat(meta).contains("2026-08-18");
+      assertThat(meta).contains("2026-08-19");
+      assertThat(wb.getSheetAt(0).getRow(3).getCell(1).getStringCellValue()).isEqualTo("张三");
+    }
+  }
+
+  @Test
   void fillsRosterByChineseHeaderWithSubsidyColumns() throws Exception {
     byte[] template;
     try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
@@ -371,6 +412,37 @@ class SubsidyXlsxFillSupportTest {
       assertThat(sheet.getRow(4).getCell(2).getStringCellValue()).isEqualTo("班级创建测试");
       assertThat(TrainingXlsxVariableReplacer.cellText(sheet.getRow(1).getCell(13))).isEmpty();
       assertThat(TrainingXlsxVariableReplacer.cellText(sheet.getRow(4).getCell(13))).isEmpty();
+    }
+  }
+
+  @Test
+  void fillsInlineTrainUnitAndTimeInMergedHeaderCell() throws Exception {
+    byte[] template;
+    try (XSSFWorkbook wb = new XSSFWorkbook(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+      Sheet sheet = wb.createSheet();
+      Row r0 = sheet.createRow(0);
+      r0.createCell(0).setCellValue("标题");
+      Row r1 = sheet.createRow(1);
+      r1.createCell(0).setCellValue("培训单位（盖章）： 培训时间： 至");
+      sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(1, 1, 0, 12));
+      wb.write(bos);
+      template = bos.toByteArray();
+    }
+
+    Map<String, String> vars = new LinkedHashMap<>();
+    vars.put("pxdw", "千铝工投职业培训学校");
+    vars.put("date_start", "2025-06-01");
+    vars.put("date_end", "2025-06-30");
+
+    SubsidyXlsxLabelFiller.FillResult result = SubsidyXlsxLabelFiller.fill(template, vars);
+    assertThat(result.matchedLabels()).contains("培训时间(内联)");
+
+    try (Workbook wb = WorkbookFactory.create(new java.io.ByteArrayInputStream(result.bytes()))) {
+      String text = wb.getSheetAt(0).getRow(1).getCell(0).getStringCellValue();
+      assertThat(text).contains("千铝工投职业培训学校");
+      assertThat(text).contains("2025-06-01");
+      assertThat(text).contains("2025-06-30");
+      assertThat(text).contains("至");
     }
   }
 }
