@@ -60,6 +60,17 @@ const REVIEW_TAG: Record<string, { color: string; text: string }> = {
   rejected: { color: 'error', text: '已驳回' },
 };
 
+/**
+ * "失败 N" 悬停说明（2026-09-10 用户确认）：
+ * 该计数是块级生成失败的累计次数（只增不减，重试成功也不回退），是否已自愈取决于是否仍有缺口。
+ */
+const failedHint = (b: SkillGenBatch) => {
+  const gap = Math.max(0, (b.totalPoints ?? 0) - (b.donePoints ?? 0));
+  return gap > 0
+    ? `生成失败累计 ${b.failedPoints} 次，仍有 ${gap} 个考评点未生成——可点行内「补跑缺口」补跑`
+    : `生成失败累计 ${b.failedPoints} 次（均已自动补跑成功，当前无缺口）`;
+};
+
 const SkillQuestionGenPage: React.FC = () => {
   const [tab, setTab] = useState('import');
   const qc = useQueryClient();
@@ -496,7 +507,11 @@ const SkillWorkbench: React.FC<WorkbenchProps> = ({ workTypeOptions, blueprints,
                     format={() => `${b.donePoints ?? 0}/${b.totalPoints ?? 0} 点`}
                   />
                   <span style={{ color: '#888' }}>已产题 {b.totalQuestions ?? 0} 题</span>
-                  {b.failedPoints ? <Tag color="error" style={{ marginLeft: 4 }}>失败 {b.failedPoints}</Tag> : null}
+                  {b.failedPoints ? (
+                    <Tooltip title={failedHint(b)}>
+                      <Tag color="error" style={{ marginLeft: 4 }}>失败 {b.failedPoints}</Tag>
+                    </Tooltip>
+                  ) : null}
                 </span>
               );
             },
