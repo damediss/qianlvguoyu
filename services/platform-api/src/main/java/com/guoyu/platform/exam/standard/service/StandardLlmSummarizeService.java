@@ -68,6 +68,9 @@ public class StandardLlmSummarizeService {
   static final int SKILL_MAX_FACTOR = 2;
   /** 解析失败最大重试次数（含首次共 3 次尝试） */
   static final int MAX_ATTEMPTS = 3;
+
+  /** 同级跨小节重复修复的重生轮数上限：达到上限仍重复的保留原点，由告警通道交人工 */
+  static final int DUP_REPAIR_MAX_ROUNDS = 2;
   /** 小节级并行线程数（控制 LLM 并发与 DB 连接占用） */
   static final int SECTION_PARALLELISM = 3;
   /** 理论通道 max_tokens 下限（目标点数为 0 时兜底） */
@@ -453,6 +456,10 @@ public class StandardLlmSummarizeService {
       // 数量兜底（国标下限优先：五至三级 200、二至一级 120）：实际不足由 LLM 补点
       topUpTheoryLeaves(task, sections, theoryTargets, config, tenantId, userId, importants);
 
+      // 同级跨小节重复修复（2026-09-10 拍板方案 A）：保留编码靠前者，靠后的重复点由 LLM
+      // 在整表排除清单下重生并原位更新；达上限仍重复的保留原点，告警在后处理中自然产生
+      repairSameScopeDuplicates(task, config, tenantId, importants);
+
       // 全表后处理：X/Y/Z 比例硬护栏（超比例自动归 X）+ 同级重复/跨级异名告警
       postProcessTheoryLeaves(taskId);
 
@@ -645,6 +652,184 @@ public class StandardLlmSummarizeService {
       out.add(p);
     }
     return out;
+  }
+
+  // ============================================================
+  // 同级跨小节重复修复（检测口径与 warnSameScopeDuplicates 一致：规范化后相等或互为子串，≥2 字）
+  // ============================================================
+
+  /**
+   * 同级跨小节重复修复：按 scope（等级×方向）走查，保留编码靠前者；靠后的重复点由 LLM 在
+   * 「本 scope 全部既有点」排除清单下重生并**原位更新标题**（不动 nodeKey/排序/审核状态）。
+   * 单 scope 失败不阻断其它 scope；修复成功的写一条说明到任务警告。
+   * （包私有以便单测）
+   */
+  void repairSameScopeDuplicates(ExamStandardTaskEntity task,
+      ExamFaqModelConfigEntity config, Long tenantId, List<String> importants) {
+    List<ExamStandardNodeEntity> leaves = nodeMapper.selectList(
+        new LambdaQueryWrapper<ExamStandardNodeEntity>()
+            .eq(ExamStandardNodeEntity::getTaskId, task.getId())
+            .eq(ExamStandardNodeEntity::getNodeLevel, 3)
+            .eq(ExamStandardNodeEntity::getDimension, "theory")
+            .orderByAsc(ExamStandardNodeEntity::getNodeKey));
+    if (leaves.isEmpty()) {
+      return;
+    }
+    Map<String, List<ExamStandardNodeEntity>> byScope = new LinkedHashMap<>();
+    for (ExamStandardNodeEntity leaf : leaves) {
+      byScope.computeIfAbsent(leaf.getLevelCode() + "|" + leaf.getDirection(),
+          k -> new ArrayList<>()).add(leaf);
+    }
+    int repaired = 0;
+    for (Map.Entry<String, List<ExamStandardNodeEntity>> e : byScope.entrySet()) {
+      try {
+        repaired += repairScopeDuplicates(task, e.getKey(), e.getValue(), config, tenantId,
+            importants);
+      } catch (Exception ex) {
+        log.warn("[细目表] 同级重复修复失败：taskId={} scope={} error={}", task.getId(),
+            e.getKey(), ex.getMessage());
+      }
+    }
+    if (repaired > 0) {
+      log.info("[细目表] 同级重复考评点原位重生 {} 个：taskId={}", repaired, task.getId());
+      appendTaskWarnings(task.getId(), List.of("LLM修复：同级重复考评点已自动重生 " + repaired
+          + " 个（保留编码靠前者，新点已排除本等级全部既有点）"));
+    }
+  }
+
+  /**
+   * 重复修复目标筛选（纯函数）：按入参树序走查，规范化标题与任一编码更靠前的既有点相同/相近
+   * （相等或互为子串）的列入修复目标；首现者与短标题（&lt;2 字）不列目标。
+   */
+  static List<ExamStandardNodeEntity> selectDuplicateTargets(
+      List<ExamStandardNodeEntity> scopeLeaves) {
+    List<String> keptNorms = new ArrayList<>();
+    List<ExamStandardNodeEntity> targets = new ArrayList<>();
+    for (ExamStandardNodeEntity leaf : scopeLeaves) {
+      String norm = normalizeLeafTitle(leaf.getTitle());
+      if (norm.length() < 2) {
+        continue;
+      }
+      boolean dup = false;
+      for (String kept : keptNorms) {
+        if (kept.equals(norm) || kept.contains(norm) || norm.contains(kept)) {
+          dup = true;
+          break;
+        }
+      }
+      if (dup) {
+        targets.add(leaf);
+      } else {
+        keptNorms.add(norm);
+      }
+    }
+    return targets;
+  }
+
+  /** 单 scope 内的重复修复：逐小节分组重生，返回原位更新的点数（包私有以便单测） */
+  int repairScopeDuplicates(ExamStandardTaskEntity task, String scopeKey,
+      List<ExamStandardNodeEntity> scopeLeaves, ExamFaqModelConfigEntity config, Long tenantId,
+      List<String> importants) {
+    List<ExamStandardNodeEntity> targets = selectDuplicateTargets(scopeLeaves);
+    if (targets.isEmpty()) {
+      return 0;
+    }
+    // 实时标题池（多重集语义：同名重复点各占一份，替换时只移除其中一个出现，
+    // 避免保留点的同名标题被一并移出排除清单）
+    List<String> liveTitles = new ArrayList<>();
+    for (ExamStandardNodeEntity leaf : scopeLeaves) {
+      liveTitles.add(leaf.getTitle());
+    }
+    Map<Long, List<ExamStandardNodeEntity>> bySection = new LinkedHashMap<>();
+    for (ExamStandardNodeEntity target : targets) {
+      bySection.computeIfAbsent(target.getParentId(), k -> new ArrayList<>()).add(target);
+    }
+    int repaired = 0;
+    for (Map.Entry<Long, List<ExamStandardNodeEntity>> section : bySection.entrySet()) {
+      ExamStandardNodeEntity l2 = nodeMapper.selectById(section.getKey());
+      if (l2 == null) {
+        log.warn("[细目表] 重复修复找不到小节：taskId={} parentId={}", task.getId(), section.getKey());
+        continue;
+      }
+      List<ExamStandardNodeEntity> sectionTargets = section.getValue();
+      int cursor = 0;
+      for (int round = 1; round <= DUP_REPAIR_MAX_ROUNDS && cursor < sectionTargets.size();
+          round++) {
+        int need = sectionTargets.size() - cursor;
+        List<StandardLlmPoint> fresh = regenerateDistinctPoints(task, l2, need,
+            new ArrayList<>(liveTitles), config, tenantId, importants);
+        if (fresh.isEmpty()) {
+          log.warn("[细目表] 重复修复第 {} 轮无有效产出：taskId={} node={}", round, task.getId(),
+              l2.getNodeKey());
+          continue;
+        }
+        for (StandardLlmPoint point : fresh) {
+          if (cursor >= sectionTargets.size()) {
+            break;
+          }
+          ExamStandardNodeEntity target = sectionTargets.get(cursor++);
+          ExamStandardNodeEntity update = new ExamStandardNodeEntity();
+          update.setId(target.getId());
+          update.setTitle(point.title());
+          update.setImportant(point.important());
+          nodeMapper.updateById(update);
+          liveTitles.remove(target.getTitle());
+          liveTitles.add(point.title());
+          log.info("[细目表] 重复考评点原位重生：taskId={} scope={} {} 「{}」→「{}」", task.getId(),
+              scopeKey, target.getNodeKey(), target.getTitle(), point.title());
+          repaired++;
+        }
+      }
+      if (cursor < sectionTargets.size()) {
+        log.warn("[细目表] 重复修复达轮数上限，{} 个重复点保留原点待人工：taskId={} node={}",
+            sectionTargets.size() - cursor, task.getId(), l2.getNodeKey());
+      }
+    }
+    return repaired;
+  }
+
+  /**
+   * 重复修复定向生成：复用补点 prompt/解析/过滤链路，在整表排除清单下为小节生成 need 个
+   * 不与既有点相同/相近的考评点；解析失败重试 MAX_ATTEMPTS 次，全程留痕 ai_generation_draft。
+   */
+  private List<StandardLlmPoint> regenerateDistinctPoints(ExamStandardTaskEntity task,
+      ExamStandardNodeEntity l2, int need, List<String> exclusionTitles,
+      ExamFaqModelConfigEntity config, Long tenantId, List<String> importants) {
+    List<String> materials = splitMaterials(l2.getRelatedKnowledge());
+    String systemPrompt = buildSystemPrompt(task, l2);
+    String userPrompt = buildTopupUserPrompt(sectionPath(task, l2), materials, exclusionTitles,
+        importants, need);
+    int maxTokens = computeTheoryTokens(need);
+    StandardLlmPoint.ParseResult result = null;
+    String lastError = null;
+    String lastContent = null;
+    for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      String prompt = attempt == 1 ? userPrompt
+          : userPrompt + "\n\n上次输出解析失败：" + lastError + "。请严格以 JSON 输出 {\"points\":[...]}。";
+      try {
+        String content = llmClient.chatCompletion(config.getBaseUrl(), config.getApiKey(),
+            config.getModelId(), systemPrompt, prompt, maxTokens,
+            config.getThinking(), config.getReasoningEffort(), true, tenantId);
+        lastContent = content;
+        result = parsePointsResponse(content, need, false);
+        if (!result.getPoints().isEmpty()) {
+          break;
+        }
+        lastError = "points 为空";
+        result = null;
+      } catch (Exception ex) {
+        lastError = ex.getMessage();
+        log.warn("[细目表] 重复修复生成第 {} 次尝试失败：taskId={} node={} error={}", attempt,
+            task.getId(), l2.getNodeKey(), lastError);
+      }
+    }
+    writeDraft(l2.getId(), systemPrompt + "\n" + userPrompt, lastContent != null ? lastContent : "",
+        config.getModelId(), tenantId, "theory");
+    if (result == null) {
+      return List.of();
+    }
+    return filterAgainstExisting(
+        dedupSectionPoints(clampImportants(result.getPoints(), importants)), exclusionTitles);
   }
 
   /**
