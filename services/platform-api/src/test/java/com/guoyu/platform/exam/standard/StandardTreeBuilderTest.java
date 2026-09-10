@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.guoyu.platform.exam.standard.parser.DocxStandardParser;
 import com.guoyu.platform.exam.standard.parser.model.ParsedStandard;
 import com.guoyu.platform.exam.standard.service.NodeKeyGenerator;
+import com.guoyu.platform.exam.standard.service.StandardL2WeightInitializer;
 import com.guoyu.platform.exam.standard.service.StandardTreeBuilder;
 import com.guoyu.platform.exam.standard.service.StandardTreeDraft;
 import java.io.InputStream;
@@ -108,6 +109,78 @@ class StandardTreeBuilderTest {
     // 技师培训指导 10 → 0.10
     assertEquals(0, StandardTreeBuilder.skillWeightOf(kuangshan, "培训指导", 3, "默认")
         .compareTo(new BigDecimal("0.1000")));
+  }
+
+  /** B5：矿井通风工——职业功能编号无分隔符直写（"1业前准备"），工作要求权重经宽松匹配落位 */
+  @Test
+  void b5_kuangjingTongfengWorkWeightsMatchedLoosely() throws Exception {
+    ParsedStandard std;
+    try (InputStream in = StandardTreeBuilderTest.class
+        .getResourceAsStream("/standard/矿井通风工.docx")) {
+      assertNotNull(in, "测试资源缺失：矿井通风工.docx");
+      std = new DocxStandardParser().parse(in);
+    }
+    List<StandardTreeDraft> drafts = new StandardTreeBuilder().build(std);
+
+    // 五级：业前准备 0.20 / 业中操作 0.30 / 业后整理 0.20，工作要求合计 0.70
+    assertEquals(0, find(drafts, 0, "默认", "B-A").weight().compareTo(new BigDecimal("0.2000")),
+        "五级业前准备 0.20（宽松匹配权重表「业前准备」行）");
+    assertEquals(0, find(drafts, 0, "默认", "B-B").weight().compareTo(new BigDecimal("0.3000")));
+    assertEquals(0, find(drafts, 0, "默认", "B-C").weight().compareTo(new BigDecimal("0.2000")));
+    assertEquals(0, find(drafts, 0, "默认", "B").weight().compareTo(new BigDecimal("0.7000")),
+        "五级工作要求合计 0.70");
+    // 五级工作表本无"技术管理和培训"职业功能，树中不应出现
+    assertTrue(drafts.stream().noneMatch(
+        d -> d.levelCode() == 0 && d.title().contains("技术管理和培训")));
+
+    // 二级/技师：技术管理和培训 0.10 落位；工作要求合计 0.80
+    assertEquals(0, find(drafts, 3, "默认", "B-A").weight().compareTo(new BigDecimal("0.2000")));
+    assertEquals(0, find(drafts, 3, "默认", "B-B").weight().compareTo(new BigDecimal("0.2500")));
+    assertEquals(0, find(drafts, 3, "默认", "B-C").weight().compareTo(new BigDecimal("0.2500")));
+    assertEquals(0, find(drafts, 3, "默认", "B-D").weight().compareTo(new BigDecimal("0.1000")),
+        "二级技术管理和培训 0.10");
+    assertEquals(0, find(drafts, 3, "默认", "B").weight().compareTo(new BigDecimal("0.8000")));
+  }
+
+  /** B6：矿井通风工——法律法规小节初始权重钳制 5%，同 L1 的 L2 合计仍等于 L1 权重 */
+  @Test
+  void b6_lawSectionCappedAtFivePercent() throws Exception {
+    ParsedStandard std;
+    try (InputStream in = StandardTreeBuilderTest.class
+        .getResourceAsStream("/standard/矿井通风工.docx")) {
+      assertNotNull(in, "测试资源缺失：矿井通风工.docx");
+      std = new DocxStandardParser().parse(in);
+    }
+    List<StandardTreeDraft> drafts = new StandardTreeBuilder().build(std);
+    Map<String, BigDecimal> prefill = StandardL2WeightInitializer.allocate(drafts);
+
+    // 五级：基础知识 L1=0.25，其下法律法规小节（10 部法规条目）预填 ≤0.05，L2 合计仍 0.25
+    StandardTreeDraft lawL2 = drafts.stream()
+        .filter(d -> d.levelCode() == 0 && "默认".equals(d.direction())
+            && "A-B".equals(d.parentNodeKey()) && d.titleRaw() != null
+            && d.titleRaw().contains("法律法规"))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("缺少法律法规小节"));
+    BigDecimal lawWeight = prefill.get("0|默认|" + lawL2.nodeKey());
+    assertNotNull(lawWeight, "法律法规小节应有预填权重");
+    assertTrue(lawWeight.compareTo(new BigDecimal("0.05")) <= 0,
+        "法律法规初始权重应 ≤0.05，实际=" + lawWeight);
+    BigDecimal sumL2 = prefill.entrySet().stream()
+        .filter(e -> e.getKey().startsWith("0|默认|A-B-"))
+        .map(Map.Entry::getValue)
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+    assertEquals(0, new BigDecimal("0.25").compareTo(sumL2), "基础知识 L2 合计应等于 L1 权重 0.25");
+
+    // 二级/技师：基础知识 L1=0.15，同样钳制且合计不变
+    BigDecimal lawWeight3 = prefill.get("3|默认|" + lawL2.nodeKey());
+    assertNotNull(lawWeight3);
+    assertTrue(lawWeight3.compareTo(new BigDecimal("0.05")) <= 0,
+        "二级法律法规初始权重应 ≤0.05，实际=" + lawWeight3);
+    BigDecimal sumL2Level3 = prefill.entrySet().stream()
+        .filter(e -> e.getKey().startsWith("3|默认|A-B-"))
+        .map(Map.Entry::getValue)
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+    assertEquals(0, new BigDecimal("0.15").compareTo(sumL2Level3), "二级基础知识 L2 合计应等于 0.15");
   }
 
   private StandardTreeDraft find(List<StandardTreeDraft> drafts, int levelCode, String direction,

@@ -259,6 +259,23 @@ public final class DocxTextUtil {
     return s;
   }
 
+  /**
+   * 权重表匹配的宽松归一化（仅作 findRow 兜底，不改变展示标题）：
+   * 在 normalizeItemName 基础上统一 丶→、，剥离前导枚举编号与尾部括注。
+   * 兼容职业功能编号无分隔符直写（"1业前准备"）与中文数字编号（"五、安全操作"）的标准，
+   * 以及树标题带尾注而权重表条目不带（"物料制备︵工作内容三至五为可选︶" vs "物料制备"）的场景。
+   */
+  public static String normalizeMatchKey(String name) {
+    String s = normalizeItemName(name).replace('丶', '、');
+    // 前导枚举编号：阿拉伯数字（可带点号层级）或中文数字，后接分隔符或直接跟汉字
+    s = s.replaceFirst(
+        "^(?:\\d{1,2}(?:\\.\\d{1,2}){0,2}|[一二三四五六七八九十]{1,3})(?:[.、．]|(?=[\\u4e00-\\u9fff]))",
+        "");
+    // 尾部括注（含全角 ︵︶ 变体）
+    s = s.replaceFirst("[（(︵][^（()）︵︶]*[)）︶]$", "");
+    return s;
+  }
+
   /** 表格单元格文本：多段落以 \n 拼接后整体清洗（保留段落间换行） */
   public static String cleanCell(String rawText) {
     if (rawText == null) {
