@@ -26,6 +26,7 @@ import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.security.SecurityContext;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -39,6 +40,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -187,12 +189,17 @@ public class ChazhengApplicationService {
 
     try (Workbook workbook = WorkbookFactory.create(file.getInputStream())) {
       Sheet sheet = workbook.getSheetAt(0);
+      // 按表头定位列：认定名单是宽表（身份证号常在很靠后的列，如 AO），固定读 A/B 会全员跳过
+      int[] cols = detectNameIdColumns(sheet.getRow(0));
+      int nameCol = cols[0];
+      int idCardCol = cols[1];
+      log.info("importExcel 列定位：姓名列={}, 身份证列={}", nameCol, idCardCol);
       for (int i = 1; i <= sheet.getLastRowNum(); i++) {
         Row row = sheet.getRow(i);
         if (row == null) continue;
 
-        String userName = getCellString(row, 0);
-        String idCard = getCellString(row, 1);
+        String userName = getCellString(row, nameCol);
+        String idCard = getCellString(row, idCardCol);
 
         if (!StringUtils.hasText(userName) || !StringUtils.hasText(idCard)) continue;
         if (idCard.length() != 18) {
@@ -358,9 +365,73 @@ public class ChazhengApplicationService {
     }
   }
 
-  private static String getCellString(Row row, int index) {
-    if (row.getCell(index) == null) return "";
-    return row.getCell(index).getStringCellValue().trim();
+  /**
+   * 按表头定位「姓名/身份证号」列：首行模糊匹配（身份证号/证件号码、姓名）。
+   * 找不到对应表头时回退固定模板 A=姓名 / B=身份证号（旧名单格式）。
+   */
+  static int[] detectNameIdColumns(Row headerRow) {
+    int nameCol = -1;
+    int idCardCol = -1;
+    if (headerRow != null) {
+      short last = headerRow.getLastCellNum();
+      for (int c = 0; c < last; c++) {
+        String h = getCellString(headerRow, c);
+        if (h.isEmpty()) {
+          continue;
+        }
+        if (idCardCol < 0 && (h.contains("身份证") || h.contains("证件号码"))) {
+          idCardCol = c;
+        } else if (nameCol < 0 && h.contains("姓名")) {
+          nameCol = c;
+        }
+      }
+    }
+    if (idCardCol < 0) {
+      idCardCol = 1;
+    }
+    if (nameCol < 0 || nameCol == idCardCol) {
+      nameCol = idCardCol == 0 ? 1 : 0;
+    }
+    return new int[]{nameCol, idCardCol};
+  }
+
+  /**
+   * 单元格按类型分派读取：身份证号等常被录成数值格式，硬读字符串会抛
+   * IllegalStateException 导致整个导入 500。数值按整数还原（不带 .0、不用科学计数法；
+   * 但 18 位数字已超 Excel 双精度范围，末几位在源文件里就已丢失，无法还原）。
+   */
+  static String getCellString(Row row, int index) {
+    Cell cell = row.getCell(index);
+    if (cell == null) return "";
+    return switch (cell.getCellType()) {
+      case STRING -> cell.getStringCellValue().trim();
+      case NUMERIC -> {
+        double d = cell.getNumericCellValue();
+        if (d == Math.floor(d) && !Double.isInfinite(d)) {
+          // BigDecimal.valueOf 走 Double.toString 再转 plain，避免科学计数法
+          yield BigDecimal.valueOf(d).toPlainString();
+        }
+        yield String.valueOf(d);
+      }
+      case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+      case FORMULA -> {
+        // 公式单元格按缓存的计算结果类型再分派一次
+        try {
+          yield switch (cell.getCachedFormulaResultType()) {
+            case NUMERIC -> {
+              double d = cell.getNumericCellValue();
+              yield d == Math.floor(d) && !Double.isInfinite(d)
+                  ? BigDecimal.valueOf(d).toPlainString() : String.valueOf(d);
+            }
+            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
+            default -> cell.getStringCellValue() == null ? "" : cell.getStringCellValue().trim();
+          };
+        } catch (RuntimeException e) {
+          yield "";
+        }
+      }
+      default -> "";
+    };
   }
 
   // ════════════════════════════════════════════════════════════════════════
