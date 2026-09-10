@@ -123,6 +123,47 @@ public class AsyncConfig {
   }
 
   /**
+   * 操作技能试题生成批次编排池（每批次占 1 线程做编排，块任务派发到 skillGenBlockExecutor，暂停只挡新块）。
+   * 并发批次上限 platform.skill.gen.batch-concurrency（默认 2）：同蓝图仍串行（提交侧校验），
+   * 不同蓝图可并行。AbortPolicy：批次过多直接拒绝 → 503 服务繁忙（AGENTS.md 坑 #12/#14）。
+   */
+  @Bean(name = "skillGenExecutor")
+  public ThreadPoolTaskExecutor skillGenExecutor(
+      @Value("${platform.skill.gen.batch-concurrency:2}") int batchConcurrency) {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(batchConcurrency);
+    executor.setMaxPoolSize(batchConcurrency);
+    executor.setQueueCapacity(10);
+    executor.setThreadNamePrefix("skill-gen-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(60);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
+  /**
+   * 操作技能试题生成块任务池（1 考评点 = 1 块，产出 5 题三件套，单块输出体量大）。
+   * core=max=platform.skill.gen.block-concurrency（默认 5，可配）；queueCapacity 固定 60
+   * （2 批次并行 × 每批 5 个派发名额 = 10 个已派发块全部可入队，极端情况由编排侧捕获计块失败）。
+   * glm-5.3-flash 在飞调用仍受 FaqLlmClient 模型闸口（默认 50）全局封顶；本池只是搬运线程。
+   */
+  @Bean(name = "skillGenBlockExecutor")
+  public ThreadPoolTaskExecutor skillGenBlockExecutor(
+      @Value("${platform.skill.gen.block-concurrency:5}") int blockConcurrency) {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(Math.max(1, blockConcurrency));
+    executor.setMaxPoolSize(Math.max(1, blockConcurrency));
+    executor.setQueueCapacity(60);
+    executor.setThreadNamePrefix("skill-gen-block-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(120);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
+  /**
    * AI 同步学鼓励语异步生成池（ReviewLlmAssistService）。
    * AbortPolicy：队列满时拒绝，由调用方捕获降级为预置文案（AGENTS.md 坑 #12/#14）。
    * （单库化前名为 reviewSyncExecutor，兼作 exam_result 异步回写池；回写已改事务内同步直写）

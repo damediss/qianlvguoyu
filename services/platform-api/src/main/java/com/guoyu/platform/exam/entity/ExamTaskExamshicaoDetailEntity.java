@@ -26,6 +26,10 @@ public class ExamTaskExamshicaoDetailEntity {
   private String kaosheng;
   private Integer isblod;
   private Integer tenantId;
+  /** AI 生成批次 exam_skill_gen_batch.id（操作技能试题生成 V20260910_011 迁移加列） */
+  private Long aiBatchId;
+  /** 来源 0手工 1导入 2AI生成（同上迁移加列） */
+  private Integer source;
 
   @TableLogic(value = "0", delval = "1")
   private Integer deleted;
@@ -65,6 +69,10 @@ public class ExamTaskExamshicaoDetailEntity {
   public void setIsblod(Integer isblod) { this.isblod = isblod; }
   public Integer getTenantId() { return tenantId; }
   public void setTenantId(Integer tenantId) { this.tenantId = tenantId; }
+  public Long getAiBatchId() { return aiBatchId; }
+  public void setAiBatchId(Long aiBatchId) { this.aiBatchId = aiBatchId; }
+  public Integer getSource() { return source; }
+  public void setSource(Integer source) { this.source = source; }
   public Integer getDeleted() { return deleted; }
   public void setDeleted(Integer deleted) { this.deleted = deleted; }
   public LocalDateTime getCreateTime() { return createTime; }
