@@ -65,6 +65,21 @@ const menuTree = [{
       status: 'enabled',
       children: [],
     },
+    {
+      id: 5,
+      parentId: 1,
+      menuType: 'page',
+      code: 'competition_formal_exam',
+      name: '理论比赛控制台',
+      path: '/competition/formal-exam',
+      component: 'competition/CompetitionEventManagementPage',
+      permissionCode: 'competition:exam-session:view',
+      icon: 'PlayCircleOutlined',
+      sortOrder: 5,
+      visible: 1,
+      status: 'enabled',
+      children: [],
+    },
   ],
 }];
 
@@ -72,6 +87,7 @@ test('competition paths are recognized without a hard-coded child-menu whitelist
   assert.equal(isCompetitionPath('/competition/practical-exams'), true);
   assert.equal(isCompetitionPath('/competitionx/events'), false);
   assert.equal(findCompetitionMenuCode(menuTree, '/competition/practical-exams'), 'competition_practical_exam');
+  assert.equal(findCompetitionMenuCode(menuTree, '/competition/formal-exam'), 'competition_formal_exam');
 });
 
 test('event detail URLs resolve to the event menu by longest path match', () => {

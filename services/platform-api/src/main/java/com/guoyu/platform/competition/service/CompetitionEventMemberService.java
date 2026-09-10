@@ -36,7 +36,14 @@ public class CompetitionEventMemberService {
             .eq(CompetitionEventMemberEntity::getRoleType, CompetitionEventMemberRole.CONTESTANT.getCode())
             .eq(CompetitionEventMemberEntity::getDeleted, 0));
     if (existing != null) {
-      throw new BusinessException(ErrorCode.CONFLICT, "该人员已是当前赛事选手");
+      if (!"active".equals(existing.getStatus())) {
+        existing.setStatus("active");
+        existing.setUpdatedBy(operatorUserId);
+        if (memberMapper.updateById(existing) != 1) {
+          throw new BusinessException(ErrorCode.CONFLICT, "赛事选手成员状态已发生变化，请刷新后重试");
+        }
+      }
+      return existing;
     }
 
     CompetitionEventMemberEntity member = new CompetitionEventMemberEntity();
@@ -55,6 +62,16 @@ public class CompetitionEventMemberService {
       }
       return member;
     } catch (DuplicateKeyException ex) {
+      CompetitionEventMemberEntity concurrent = memberMapper.selectOne(
+          new LambdaQueryWrapper<CompetitionEventMemberEntity>()
+              .eq(CompetitionEventMemberEntity::getTenantId, tenantId)
+              .eq(CompetitionEventMemberEntity::getEventId, eventId)
+              .eq(CompetitionEventMemberEntity::getPersonId, personId)
+              .eq(CompetitionEventMemberEntity::getRoleType, CompetitionEventMemberRole.CONTESTANT.getCode())
+              .eq(CompetitionEventMemberEntity::getDeleted, 0));
+      if (concurrent != null) {
+        return concurrent;
+      }
       throw new BusinessException(ErrorCode.CONFLICT, "该人员已是当前赛事选手");
     }
   }
@@ -69,19 +86,34 @@ public class CompetitionEventMemberService {
       Long registrationId,
       Long operatorUserId,
       Long eventWorkTypeId) {
+    createContestantProfile(tenantId, memberId, registrationId, operatorUserId, eventWorkTypeId, null);
+  }
+
+  public void createContestantProfile(
+      Long tenantId,
+      Long memberId,
+      Long registrationId,
+      Long operatorUserId,
+      Long eventWorkTypeId,
+      Long eventWorkTypeLevelId) {
     CompetitionContestantProfileEntity profile = new CompetitionContestantProfileEntity();
     profile.setTenantId(tenantId);
     profile.setMemberId(memberId);
     profile.setRegistrationId(registrationId);
     profile.setEventWorkTypeId(eventWorkTypeId);
+    profile.setEventWorkTypeLevelId(eventWorkTypeLevelId);
     profile.setWorkTypeMatchStatus(eventWorkTypeId == null ? null : "matched");
     profile.setPromotionStatus("pending");
     profile.setTotalScore(BigDecimal.ZERO);
     profile.setCreatedBy(operatorUserId);
     profile.setUpdatedBy(operatorUserId);
     profile.setDeleted(0);
-    if (contestantProfileMapper.insert(profile) != 1) {
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "创建选手角色扩展失败");
+    try {
+      if (contestantProfileMapper.insert(profile) != 1) {
+        throw new BusinessException(ErrorCode.INTERNAL_ERROR, "创建选手角色扩展失败");
+      }
+    } catch (DuplicateKeyException ex) {
+      throw new BusinessException(ErrorCode.CONFLICT, "该选手已报名当前赛项");
     }
   }
 }

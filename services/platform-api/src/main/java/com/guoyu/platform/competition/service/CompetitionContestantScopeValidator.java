@@ -61,6 +61,8 @@ public class CompetitionContestantScopeValidator {
         new LambdaQueryWrapper<CompetitionContestantProfileEntity>()
             .eq(CompetitionContestantProfileEntity::getTenantId, tenantId)
             .eq(CompetitionContestantProfileEntity::getMemberId, contestantMemberId)
+            .eq(eventWorkTypeId != null, CompetitionContestantProfileEntity::getEventWorkTypeId,
+                eventWorkTypeId)
             .eq(CompetitionContestantProfileEntity::getWorkTypeMatchStatus, "matched")
             .eq(CompetitionContestantProfileEntity::getDeleted, 0));
     validateCommon(tenantId, eventId, stageId, eventWorkTypeId, contestantMemberId,
@@ -91,8 +93,10 @@ public class CompetitionContestantScopeValidator {
       Long contestantMemberId,
       UpdateIntent intent) {
     requireTenantContext(tenantId);
-    CompetitionContestantProfileEntity profile = profileMapper.selectForUpdateByTenantAndMember(
-        tenantId, contestantMemberId);
+    CompetitionContestantProfileEntity profile = eventWorkTypeId == null
+        ? profileMapper.selectForUpdateByTenantAndMember(tenantId, contestantMemberId)
+        : profileMapper.selectForUpdateByTenantMemberAndWorkType(
+            tenantId, contestantMemberId, eventWorkTypeId);
     CompetitionEventMemberEntity member = findMember(tenantId, eventId, contestantMemberId);
     validateCommon(tenantId, eventId, stageId, eventWorkTypeId, contestantMemberId,
         member, profile, true, intent);
@@ -143,7 +147,7 @@ public class CompetitionContestantScopeValidator {
     }
     if (profile == null || !Objects.equals(profile.getMemberId(), contestantMemberId)
         || !"matched".equals(profile.getWorkTypeMatchStatus())) {
-      reject("matched profile is missing", "选手赛事工种尚未完成匹配",
+      reject("matched profile is missing", "选手尚未报名当前赛项或工种尚未完成匹配",
           tenantId, eventId, stageId, eventWorkTypeId, contestantMemberId);
     }
     if (eventWorkTypeId != null && !Objects.equals(profile.getEventWorkTypeId(), eventWorkTypeId)) {

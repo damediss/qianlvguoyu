@@ -173,12 +173,9 @@ public class CompetitionStageExecutionPlanService {
     plan.setResourceVersion(req.resourceVersion());
     plan.setScoreRuleId(req.scoreRuleId());
     CompetitionEventWorkTypeStageEntity configuredStageScope = workTypeStageMapper == null ? null
-        : workTypeStageMapper.selectOne(new LambdaQueryWrapper<CompetitionEventWorkTypeStageEntity>()
-            .eq(CompetitionEventWorkTypeStageEntity::getTenantId, tenantId)
-            .eq(CompetitionEventWorkTypeStageEntity::getEventId, stage.getEventId())
-            .eq(CompetitionEventWorkTypeStageEntity::getEventWorkTypeId, req.eventWorkTypeId())
-            .eq(CompetitionEventWorkTypeStageEntity::getStageId, stage.getId())
-            .eq(CompetitionEventWorkTypeStageEntity::getDeleted, 0));
+        : workTypeStageMapper.selectOne(workTypeStageScopeWrapper(
+            tenantId, stage.getEventId(), req.eventWorkTypeId(), stage.getId(),
+            stage.getEventWorkTypeLevelCode()));
     if (configuredStageScope != null && !Objects.equals(configuredStageScope.getEnabled(), 1)) {
       throw new BusinessException(ErrorCode.CONFLICT, "当前工种未启用该赛段");
     }
@@ -548,8 +545,8 @@ public class CompetitionStageExecutionPlanService {
     plan.setRosterSnapshotId(snapshotId); plan.setUpdatedBy(userId); planMapper.updateById(plan);
     for (CompetitionStageRosterItemEntity item : items) {
       if (!"included".equals(item.getInclusionStatus())) continue;
-      CompetitionContestantProfileEntity profile = profileMapper.selectForUpdateByTenantAndMember(
-          tenantId, item.getContestantMemberId());
+      CompetitionContestantProfileEntity profile = profileMapper.selectForUpdateByRegistrationId(
+          tenantId, item.getRegistrationId());
       if (profile != null && Objects.equals(profile.getRegistrationId(), item.getRegistrationId())) {
         profile.setCurrentStageId(plan.getStageId());
         profile.setPromotionStatus("pending");
@@ -656,10 +653,8 @@ public class CompetitionStageExecutionPlanService {
   }
 
   private CompetitionStageEntity previousStage(Long tenantId, CompetitionStageEntity target) {
-    List<CompetitionStageEntity> stages = stageMapper.selectList(new LambdaQueryWrapper<CompetitionStageEntity>()
-        .eq(CompetitionStageEntity::getTenantId, tenantId)
-        .eq(CompetitionStageEntity::getEventId, target.getEventId())
-        .eq(CompetitionStageEntity::getDeleted, 0)
+    List<CompetitionStageEntity> stages = stageMapper.selectList(stageScopeWrapper(
+        tenantId, target.getEventId(), target.getEventWorkTypeId(), target.getEventWorkTypeLevelCode())
         .orderByAsc(CompetitionStageEntity::getSortOrder));
     return stages == null ? null : stages.stream()
         .filter(stage -> stage.getSortOrder() != null && target.getSortOrder() != null
@@ -671,12 +666,9 @@ public class CompetitionStageExecutionPlanService {
       CompetitionStageEntity stage) {
     if (workTypeStageMapper != null) {
       CompetitionEventWorkTypeStageEntity configuredStageScope = workTypeStageMapper.selectOne(
-          new LambdaQueryWrapper<CompetitionEventWorkTypeStageEntity>()
-              .eq(CompetitionEventWorkTypeStageEntity::getTenantId, tenantId)
-              .eq(CompetitionEventWorkTypeStageEntity::getEventId, stage.getEventId())
-              .eq(CompetitionEventWorkTypeStageEntity::getEventWorkTypeId, plan.getEventWorkTypeId())
-              .eq(CompetitionEventWorkTypeStageEntity::getStageId, stage.getId())
-              .eq(CompetitionEventWorkTypeStageEntity::getDeleted, 0));
+          workTypeStageScopeWrapper(
+              tenantId, stage.getEventId(), plan.getEventWorkTypeId(), stage.getId(),
+              stage.getEventWorkTypeLevelCode()));
       if (configuredStageScope != null && !Objects.equals(configuredStageScope.getEnabled(), 1)) {
         throw new BusinessException(ErrorCode.CONFLICT, "当前工种未启用该赛段");
       }
@@ -714,10 +706,8 @@ public class CompetitionStageExecutionPlanService {
           .eq(CompetitionScoreRuleEntity::getDeleted, 0));
       if (rule == null) throw new BusinessException(ErrorCode.CONFLICT, "计分规则不属于当前执行方案范围");
     }
-    List<CompetitionStageEntity> stages = stageMapper.selectList(new LambdaQueryWrapper<CompetitionStageEntity>()
-        .eq(CompetitionStageEntity::getTenantId, tenantId)
-        .eq(CompetitionStageEntity::getEventId, stage.getEventId())
-        .eq(CompetitionStageEntity::getDeleted, 0));
+    List<CompetitionStageEntity> stages = stageMapper.selectList(stageScopeWrapper(
+        tenantId, stage.getEventId(), stage.getEventWorkTypeId(), stage.getEventWorkTypeLevelCode()));
     CompetitionStageEntity next = stages == null ? null : stages.stream()
         .filter(item -> item.getSortOrder() != null && stage.getSortOrder() != null
             && item.getSortOrder() > stage.getSortOrder())
@@ -775,6 +765,43 @@ public class CompetitionStageExecutionPlanService {
   private boolean withinStage(LocalDateTime start, LocalDateTime end, CompetitionStageEntity stage) {
     return stage.getStartAt() == null || stage.getEndAt() == null
         || (!start.isBefore(stage.getStartAt()) && !end.isAfter(stage.getEndAt()));
+  }
+
+  private LambdaQueryWrapper<CompetitionStageEntity> stageScopeWrapper(
+      Long tenantId, Long eventId, Long eventWorkTypeId, String eventWorkTypeLevelCode) {
+    LambdaQueryWrapper<CompetitionStageEntity> wrapper = new LambdaQueryWrapper<CompetitionStageEntity>()
+        .eq(CompetitionStageEntity::getTenantId, tenantId)
+        .eq(CompetitionStageEntity::getEventId, eventId)
+        .eq(CompetitionStageEntity::getDeleted, 0);
+    if (eventWorkTypeId == null) {
+      wrapper.isNull(CompetitionStageEntity::getEventWorkTypeId)
+          .isNull(CompetitionStageEntity::getEventWorkTypeLevelCode);
+    } else {
+      wrapper.eq(CompetitionStageEntity::getEventWorkTypeId, eventWorkTypeId)
+          .eq(CompetitionStageEntity::getEventWorkTypeLevelCode, eventWorkTypeLevelCode);
+    }
+    return wrapper;
+  }
+
+  private LambdaQueryWrapper<CompetitionEventWorkTypeStageEntity> workTypeStageScopeWrapper(
+      Long tenantId,
+      Long eventId,
+      Long eventWorkTypeId,
+      Long stageId,
+      String eventWorkTypeLevelCode) {
+    LambdaQueryWrapper<CompetitionEventWorkTypeStageEntity> wrapper =
+        new LambdaQueryWrapper<CompetitionEventWorkTypeStageEntity>()
+            .eq(CompetitionEventWorkTypeStageEntity::getTenantId, tenantId)
+            .eq(CompetitionEventWorkTypeStageEntity::getEventId, eventId)
+            .eq(CompetitionEventWorkTypeStageEntity::getEventWorkTypeId, eventWorkTypeId)
+            .eq(CompetitionEventWorkTypeStageEntity::getStageId, stageId)
+            .eq(CompetitionEventWorkTypeStageEntity::getDeleted, 0);
+    if (eventWorkTypeLevelCode == null) {
+      wrapper.isNull(CompetitionEventWorkTypeStageEntity::getEventWorkTypeLevelCode);
+    } else {
+      wrapper.eq(CompetitionEventWorkTypeStageEntity::getEventWorkTypeLevelCode, eventWorkTypeLevelCode);
+    }
+    return wrapper;
   }
 
   private CompetitionStagePlanPreflightCheckVO check(String code, boolean passed, String message) {

@@ -17,7 +17,7 @@
 | --- | --- | --- |
 | `competition_player_identity` | 竞赛账号主体 | 身份证、手机号仅保存密文和检索哈希；`password_hash`、`password_initialized_at`、状态与激活时间均归属该表。`active_mobile_lookup_hash` 是由手机号哈希和逻辑删除状态生成的列，并带全局唯一索引，确保全部租户内仅一个有效手机号账号。保留完整 BaseEntity 审计字段。 |
 | `competition_registration` | 选手与赛事资格关系 | `player_id`、`event_id`、`org_id`、`roster_item_id`、`source`、`status`。短信激活成功后从 `eligible_unactivated` 更新为 `eligible_activated`。 |
-| `competition_roster_import` / `competition_roster_item` | 企业导入来源与追溯 | 导入名单通过身份证和手机号创建或关联 `player_id`；创建身份时即写入身份证后六位的 BCrypt 初始密码。保留批次、姓名、工号、校验状态和审计字段。 |
+| `competition_roster_import` / `competition_roster_item` | 企业导入来源与追溯 | 导入名单通过身份证和手机号创建或关联 `player_id`；创建身份时即写入身份证后六位的 BCrypt 初始密码。保留批次、姓名、校验状态和审计字段；历史员工编号列仅作兼容保留。 |
 | `competition_player_sms_challenge` | 激活短信验证码审计 | `player_id`、`purpose=activation`、手机号哈希、验证码哈希、有效期、失败次数、投递状态、供应商消息 ID、来源哈希和审计字段。`challengeId` 绑定发送与校验。 |
 
 不新增独立账号表：账号、密码状态与手机号唯一性都属于 `competition_player_identity`，赛事资格仍属于 `competition_registration`。

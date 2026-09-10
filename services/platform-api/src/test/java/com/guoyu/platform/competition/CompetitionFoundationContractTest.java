@@ -1,6 +1,7 @@
 package com.guoyu.platform.competition;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -65,6 +66,9 @@ class CompetitionFoundationContractTest {
     assertEquals(List.of("valid", "invalid"), codes(CompetitionRosterValidationStatus.values()));
     assertEquals(List.of("imported_pending_confirm", "pending_audit", "supplement_required", "rejected", "eligible_unactivated", "eligible_activated", "withdrawn", "expired"), codes(CompetitionRegistrationStatus.values()));
     assertEquals(List.of("pending_activation", "active", "disabled"), codes(CompetitionPlayerStatus.values()));
+    assertTrue(CompetitionPlayerStatus.allowsExamAccess("pending_activation"));
+    assertTrue(CompetitionPlayerStatus.allowsExamAccess("active"));
+    assertFalse(CompetitionPlayerStatus.allowsExamAccess("disabled"));
     assertEquals(List.of("activation", "login", "change_mobile_old", "change_mobile_new"),
         codes(CompetitionPlayerSmsPurpose.values()));
     assertEquals(List.of("pending", "verified", "expired", "locked", "cancelled"),

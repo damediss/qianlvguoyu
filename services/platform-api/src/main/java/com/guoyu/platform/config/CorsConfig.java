@@ -51,6 +51,8 @@ public class CorsConfig {
     c.addAllowedHeader("*");
     c.addAllowedMethod("*");
     c.setAllowCredentials(true);
+    // Chrome / Android WebView 访问热点网关等私网地址时会发 Private Network Access 预检
+    c.setAllowPrivateNetwork(true);
     c.setMaxAge(3600L);
 
     UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();

@@ -9,6 +9,7 @@ import com.guoyu.platform.competition.dto.CompetitionPracticalRuleCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalScoreSaveReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalScoreUnlockReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalSessionCreateReq;
+import com.guoyu.platform.competition.dto.CompetitionPracticalPaperSnapshotBindReq;
 import com.guoyu.platform.competition.service.CompetitionPracticalApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionPracticalAssignmentVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalJudgeGroupVO;
@@ -60,6 +61,16 @@ public class CompetitionPracticalController {
   @PreAuthorize("hasAuthority('competition:practical-session:manage')")
   @AuditLog(module = "competition", action = "practical-session:create", targetType = "competition_practical_session")
   public ApiResponse<CompetitionPracticalSessionVO> createSession(@PathVariable Long planId, @Valid @RequestBody CompetitionPracticalSessionCreateReq req) { return ApiResponse.ok(service.createSession(planId, req)); }
+
+  @PostMapping("/practical-sessions/{sessionId}/paper-snapshot")
+  @PreAuthorize("hasAuthority('competition:practical-session:manage')")
+  @AuditLog(module = "competition", action = "practical-session:bind-paper-snapshot",
+      targetType = "competition_practical_session")
+  public ApiResponse<CompetitionPracticalSessionVO> bindPaperSnapshot(
+      @PathVariable Long sessionId,
+      @Valid @RequestBody CompetitionPracticalPaperSnapshotBindReq req) {
+    return ApiResponse.ok(service.bindPaperSnapshot(sessionId, req));
+  }
 
   @PostMapping("/practical-sessions/{sessionId}/publish")
   @PreAuthorize("hasAuthority('competition:practical-session:manage')")

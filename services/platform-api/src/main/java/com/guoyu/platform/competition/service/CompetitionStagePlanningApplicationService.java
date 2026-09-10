@@ -65,7 +65,7 @@ public class CompetitionStagePlanningApplicationService {
   @Transactional
   public List<CompetitionStageContentVO> replaceContents(
       Long stageId, CompetitionStageContentBatchReq req) {
-    CompetitionStageVO stage = stageApplicationService.assertCanManage(stageId);
+    CompetitionStageVO stage = stageApplicationService.assertCanManageStagePlan(stageId);
     return contentService.replace(currentTenantId(), stage.getId(), req).stream()
         .map(CompetitionStageContentConverter::toVO).toList();
   }

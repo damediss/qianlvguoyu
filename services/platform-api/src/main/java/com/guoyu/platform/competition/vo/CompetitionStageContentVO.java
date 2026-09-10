@@ -1,11 +1,16 @@
 package com.guoyu.platform.competition.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import java.math.BigDecimal;
 
 public class CompetitionStageContentVO {
 
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long id;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long eventId;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long stageId;
   private String contentType;
   private String status;

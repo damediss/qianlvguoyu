@@ -16,9 +16,14 @@ export function saveCompetitionStageDraftForWorkType(
   eventId: CompetitionId,
   eventWorkTypeId: CompetitionId,
   payload: StageDraftSavePayload,
+  eventWorkTypeLevelCode?: string,
 ) {
   return unwrap<CompetitionStage[]>(
-    apiClient.put(`/competition/events/${eventId}/work-types/${eventWorkTypeId}/stages/draft`, payload),
+    apiClient.put(
+      `/competition/events/${eventId}/work-types/${eventWorkTypeId}/stages/draft`,
+      payload,
+      { params: eventWorkTypeLevelCode == null ? undefined : { eventWorkTypeLevelCode } },
+    ),
   );
 }
 

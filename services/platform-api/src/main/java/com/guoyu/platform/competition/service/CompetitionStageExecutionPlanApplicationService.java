@@ -136,6 +136,8 @@ public class CompetitionStageExecutionPlanApplicationService {
     CompetitionStageEntity stage = new CompetitionStageEntity();
     stage.setId(stageVO.getId());
     stage.setEventId(stageVO.getEventId());
+    stage.setEventWorkTypeId(stageVO.getEventWorkTypeId());
+    stage.setEventWorkTypeLevelCode(stageVO.getEventWorkTypeLevelCode());
     stage.setStartAt(stageVO.getStartAt());
     stage.setEndAt(stageVO.getEndAt());
     stage.setStatus(stageVO.getStatus());

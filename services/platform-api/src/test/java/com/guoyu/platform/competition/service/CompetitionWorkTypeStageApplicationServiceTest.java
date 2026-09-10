@@ -11,8 +11,10 @@ import com.guoyu.platform.competition.dto.CompetitionWorkTypeStageConfigReq;
 import com.guoyu.platform.competition.dto.CompetitionWorkTypeStageReplaceReq;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
+import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeLevelEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeStageEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageEntity;
+import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeLevelMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeStageMapper;
 import java.util.List;
@@ -32,9 +34,11 @@ class CompetitionWorkTypeStageApplicationServiceTest {
       Mockito.mock(CompetitionEventWorkTypeStageMapper.class);
   private final CompetitionEventWorkTypeMapper workTypeMapper =
       Mockito.mock(CompetitionEventWorkTypeMapper.class);
+  private final CompetitionEventWorkTypeLevelMapper levelMapper =
+      Mockito.mock(CompetitionEventWorkTypeLevelMapper.class);
   private final CompetitionWorkTypeStageApplicationService service =
       new CompetitionWorkTypeStageApplicationService(
-          eventService, workTypeService, stageService, mapper, workTypeMapper);
+          eventService, workTypeService, stageService, mapper, workTypeMapper, levelMapper);
 
   @AfterEach
   void tearDown() {
@@ -75,6 +79,87 @@ class CompetitionWorkTypeStageApplicationServiceTest {
     verify(stageService, never()).list(any(), any());
   }
 
+  @Test
+  void replacementUsesTheSelectedWorkTypeLevelStageScope() {
+    authenticate();
+    CompetitionEventEntity event = event("draft", null);
+    CompetitionEventWorkTypeEntity currentWorkType = workType(20L, "draft");
+    CompetitionStageEntity scopedStage = stage(31L);
+    when(eventService.getById(1L, 10L)).thenReturn(event);
+    when(workTypeMapper.selectOne(any())).thenReturn(currentWorkType);
+    when(stageService.list(1L, 10L, 20L, "4")).thenReturn(List.of(scopedStage));
+    when(mapper.selectOne(any())).thenReturn(null);
+    when(mapper.selectList(any())).thenReturn(List.of());
+    Mockito.doReturn(1).when(mapper).insert(any(CompetitionEventWorkTypeStageEntity.class));
+
+    service.replace(10L, 20L, "4", new CompetitionWorkTypeStageReplaceReq(List.of(
+        new CompetitionWorkTypeStageConfigReq(31L, true, 1, "PERCENTAGE", 50, null))));
+
+    var inserted = org.mockito.ArgumentCaptor.forClass(CompetitionEventWorkTypeStageEntity.class);
+    verify(mapper).insert(inserted.capture());
+    assertThat(inserted.getValue().getEventWorkTypeLevelCode()).isEqualTo("4");
+    verify(stageService, org.mockito.Mockito.atLeastOnce()).list(1L, 10L, 20L, "4");
+  }
+
+  @Test
+  void confirmingOneLevelDoesNotConfirmTheWholeWorkType() {
+    authenticate();
+    CompetitionEventEntity event = event("draft", null);
+    CompetitionEventWorkTypeEntity currentWorkType = workType(20L, "draft");
+    CompetitionEventWorkTypeLevelEntity level = level("5", "draft");
+    when(eventService.getById(1L, 10L)).thenReturn(event);
+    when(workTypeMapper.selectOne(any())).thenReturn(currentWorkType);
+    when(levelMapper.selectOne(any())).thenReturn(level);
+    when(stageService.list(1L, 10L, 20L, "5")).thenReturn(List.of(stage(31L)));
+    when(mapper.selectList(any())).thenReturn(List.of());
+    Mockito.doReturn(1).when(levelMapper).updateById(level);
+
+    service.confirm(10L, 20L, "5");
+
+    assertThat(level.getStagePlanStatus()).isEqualTo("confirmed");
+    verify(levelMapper).updateById(level);
+    verify(workTypeMapper, never()).updateById(any(CompetitionEventWorkTypeEntity.class));
+  }
+
+  @Test
+  void publishedEventCanConfirmUnconfirmedLevelArrangement() {
+    authenticate();
+    CompetitionEventEntity event = event("published", "draft");
+    CompetitionEventWorkTypeEntity currentWorkType = workType(20L, "draft");
+    CompetitionEventWorkTypeLevelEntity level = level("5", "draft");
+    when(eventService.getById(1L, 10L)).thenReturn(event);
+    when(workTypeMapper.selectOne(any())).thenReturn(currentWorkType);
+    when(levelMapper.selectOne(any())).thenReturn(level);
+    when(stageService.list(1L, 10L, 20L, "5")).thenReturn(List.of(stage(31L)));
+    when(mapper.selectList(any())).thenReturn(List.of());
+    Mockito.doReturn(1).when(levelMapper).updateById(level);
+
+    service.confirm(10L, 20L, "5");
+
+    assertThat(level.getStagePlanStatus()).isEqualTo("confirmed");
+  }
+
+  @Test
+  void confirmedLegacyWorkTypeStillAllowsAnUnconfirmedSelectedLevel() {
+    authenticate();
+    CompetitionEventEntity event = event("draft", null);
+    CompetitionEventWorkTypeEntity currentWorkType = workType(20L, "confirmed");
+    CompetitionEventWorkTypeLevelEntity level = level("4", "draft");
+    CompetitionStageEntity scopedStage = stage(32L);
+    when(eventService.getById(1L, 10L)).thenReturn(event);
+    when(workTypeMapper.selectOne(any())).thenReturn(currentWorkType);
+    when(levelMapper.selectOne(any())).thenReturn(level);
+    when(stageService.list(1L, 10L, 20L, "4")).thenReturn(List.of(scopedStage));
+    when(mapper.selectOne(any())).thenReturn(null);
+    when(mapper.selectList(any())).thenReturn(List.of());
+    Mockito.doReturn(1).when(mapper).insert(any(CompetitionEventWorkTypeStageEntity.class));
+
+    service.replace(10L, 20L, "4", new CompetitionWorkTypeStageReplaceReq(List.of(
+        new CompetitionWorkTypeStageConfigReq(32L, true, 1, "PERCENTAGE", 50, null))));
+
+    verify(mapper).insert(any(CompetitionEventWorkTypeStageEntity.class));
+  }
+
   private void authenticate() {
     var principal = new com.guoyu.platform.security.PlatformUserPrincipal(
         1000L, 1L, "admin", "admin", "business", List.of("PLATFORM_ADMIN"),
@@ -101,6 +186,18 @@ class CompetitionWorkTypeStageApplicationServiceTest {
     workType.setWorkTypeId(100L);
     workType.setStagePlanStatus(stagePlanStatus);
     return workType;
+  }
+
+  private CompetitionEventWorkTypeLevelEntity level(String code, String stagePlanStatus) {
+    CompetitionEventWorkTypeLevelEntity level = new CompetitionEventWorkTypeLevelEntity();
+    level.setId(40L);
+    level.setTenantId(1L);
+    level.setEventId(10L);
+    level.setEventWorkTypeId(20L);
+    level.setLevelCode(code);
+    level.setLevelName("等级" + code);
+    level.setStagePlanStatus(stagePlanStatus);
+    return level;
   }
 
   private CompetitionStageEntity stage(Long id) {

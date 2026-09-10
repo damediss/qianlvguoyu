@@ -1,17 +1,23 @@
 package com.guoyu.platform.competition.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import java.time.LocalDateTime;
 
 public class CompetitionEventWorkTypeVO {
 
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long id;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long eventId;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long workTypeId;
   private String workTypeName;
   private String displayName;
   private String status;
   private Integer sortOrder;
   private String stagePlanStatus;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long stagePlanConfirmedBy;
   private LocalDateTime stagePlanConfirmedAt;
 

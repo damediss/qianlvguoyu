@@ -7,6 +7,7 @@ import com.guoyu.platform.common.domain.BaseEntity;
 public class CompetitionEventWorkTypeStageEntity extends BaseEntity {
   private Long eventId;
   private Long eventWorkTypeId;
+  private String eventWorkTypeLevelCode;
   private Long stageId;
   private Integer enabled;
   private Integer sortOrder;
@@ -19,6 +20,8 @@ public class CompetitionEventWorkTypeStageEntity extends BaseEntity {
   public void setEventId(Long value) { eventId = value; }
   public Long getEventWorkTypeId() { return eventWorkTypeId; }
   public void setEventWorkTypeId(Long value) { eventWorkTypeId = value; }
+  public String getEventWorkTypeLevelCode() { return eventWorkTypeLevelCode; }
+  public void setEventWorkTypeLevelCode(String value) { eventWorkTypeLevelCode = value; }
   public Long getStageId() { return stageId; }
   public void setStageId(Long value) { stageId = value; }
   public Integer getEnabled() { return enabled; }

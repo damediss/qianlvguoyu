@@ -14,6 +14,7 @@ import com.guoyu.platform.competition.entity.CompetitionEventOrgEntity;
 import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventOrgMapper;
 import com.guoyu.platform.competition.vo.CompetitionEventPublishResultVO;
+import com.guoyu.platform.competition.vo.CompetitionEventPublishReadinessVO;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.entity.OrgEntity;
 import com.guoyu.platform.system.entity.UserEntity;
@@ -70,6 +71,31 @@ class CompetitionEventServiceTest {
   }
 
   @Test
+  void publishKeepsStageArrangementDraftForLaterPlayerAndStageSetup() {
+    CompetitionEventPublishReadinessService readinessService =
+        Mockito.mock(CompetitionEventPublishReadinessService.class);
+    CompetitionEventService strictService = new CompetitionEventService(
+        eventMapper, eventOrgMapper, orgMapper, userMapper, readinessService);
+    CompetitionEventEntity event = event("platform", null);
+    event.setStagePlanStatus("draft");
+    when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(event);
+    when(readinessService.evaluate(any(), any(), any(), any())).thenReturn(
+        new CompetitionEventPublishReadinessVO(
+            1001L, "COMP-1001", "Competition", "draft", "platform",
+            event.getStartAt(), event.getEndAt(), true, 0, 0, 0, 0, List.of(), List.of()));
+    when(eventMapper.updateById(event)).thenReturn(1);
+
+    strictService.publish(1L, 1000L, 1001L,
+        principal(1000L, "admin", "PLATFORM_ADMIN"));
+
+    assertThat(event.getStagePlanStatus()).isEqualTo("draft");
+    assertThat(event.getStagePlanConfirmedBy()).isNull();
+    assertThat(event.getStagePlanConfirmedAt()).isNull();
+    assertThat(event.getStatus()).isEqualTo("published");
+    assertThat(event.getPlayerEntryCode()).isNotBlank();
+  }
+
+  @Test
   void rejectsInvalidEventTimeRangeWithoutChangingEvent() {
     CompetitionEventEntity event = event("platform", null);
     event.setEndAt(event.getStartAt().minusMinutes(1));
@@ -85,18 +111,33 @@ class CompetitionEventServiceTest {
   }
 
   @Test
-  void rejectsPlatformEventWithoutActiveTenantOrganization() {
+  void publishesPlatformEventWithoutParticipantOrganizations() {
     CompetitionEventEntity event = event("platform", null);
     when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(event);
-    CompetitionEventOrgEntity relation = relation(3001L, "invited");
-    when(eventOrgMapper.selectList(any())).thenReturn(List.of(relation));
+    when(eventOrgMapper.selectList(any())).thenReturn(List.of());
+    when(eventMapper.updateById(event)).thenReturn(1);
 
-    assertThatThrownBy(() -> service.publish(
-        1L, 1000L, 1001L, principal(1000L, "admin", "PLATFORM_ADMIN")))
-        .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)
-        .extracting("code")
-        .isEqualTo(ErrorCode.UNPROCESSABLE_ENTITY);
-    verify(eventMapper, never()).updateById(any(CompetitionEventEntity.class));
+    CompetitionEventPublishResultVO result = service.publish(
+        1L, 1000L, 1001L, principal(1000L, "admin", "PLATFORM_ADMIN"));
+
+    assertThat(result.getStatus()).isEqualTo("published");
+    assertThat(event.getPlayerEntryCode()).isNotBlank();
+    verify(eventMapper).updateById(event);
+  }
+
+  @Test
+  void publishesBasicInformationWithoutEventDates() {
+    CompetitionEventEntity event = event("platform", null);
+    event.setStartAt(null);
+    event.setEndAt(null);
+    when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(event);
+    when(eventMapper.updateById(event)).thenReturn(1);
+
+    CompetitionEventPublishResultVO result = service.publish(
+        1L, 1000L, 1001L, principal(1000L, "admin", "PLATFORM_ADMIN"));
+
+    assertThat(result.getStatus()).isEqualTo("published");
+    verify(eventMapper).updateById(event);
   }
 
   @Test
@@ -118,17 +159,14 @@ class CompetitionEventServiceTest {
   void rejectsEnterpriseEventWhenOwnerOrganizationIsInvalid() {
     CompetitionEventEntity event = event("enterprise_internal", 3001L);
     when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(event);
-    stubValidConfiguration();
     when(userMapper.selectOne(any())).thenReturn(user(1000L, 3001L));
-    when(eventOrgMapper.selectList(any())).thenReturn(List.of());
-    when(eventOrgMapper.selectOne(any())).thenReturn(
-        relation(3001L, "invited"));
+    when(orgMapper.selectOne(any())).thenReturn(null);
 
     assertThatThrownBy(() -> service.publish(
         1L, 1000L, 1001L, principal(1000L, "enterprise-admin", "ENTERPRISE_ADMIN")))
         .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)
         .extracting("code")
-        .isEqualTo(ErrorCode.UNPROCESSABLE_ENTITY);
+        .isEqualTo(ErrorCode.FORBIDDEN);
     verify(eventMapper, never()).updateById(any(CompetitionEventEntity.class));
   }
 
@@ -174,9 +212,25 @@ class CompetitionEventServiceTest {
   }
 
   @Test
-  void publishUpdateUsesLockedEventAndRejectsPublishedEvent() {
+  void allowsUpdatingPublishedEventUntilStagePlanIsConfirmed() {
     CompetitionEventEntity event = event("platform", null);
     event.setStatus("published");
+    event.setStagePlanStatus("draft");
+    when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(event);
+    when(eventMapper.updateById(event)).thenReturn(1);
+
+    CompetitionEventEntity updated = service.updateDraft(1L, 1001L,
+        new CompetitionEventUpdateReq("Updated", 0, event.getStartAt(), event.getEndAt(), "补充说明"));
+
+    assertThat(updated.getName()).isEqualTo("Updated");
+    verify(eventMapper).updateById(event);
+  }
+
+  @Test
+  void rejectsUpdatingEventAfterStagePlanIsConfirmed() {
+    CompetitionEventEntity event = event("platform", null);
+    event.setStatus("published");
+    event.setStagePlanStatus("confirmed");
     when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(event);
 
     assertThatThrownBy(() -> service.updateDraft(1L, 1001L,

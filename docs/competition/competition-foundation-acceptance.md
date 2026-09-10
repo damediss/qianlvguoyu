@@ -13,7 +13,7 @@
 - 赛事创建统一使用 `competition:event:create`，停用旧的 `competition:enterprise-event:create`。
 - 通知页面统一使用后端契约 `competition:notice:publish`。
 - 新增批次分页接口 `GET /api/competition/events/{eventId}/roster-imports`，支持 `orgId/status/batchNo/page/pageSize`。
-- 名单页面改为“Excel 上传 → `/api/files` 获取 `FileVO.id` → 选择组织 → precheck → 批次列表/详情 → pending_confirm 确认”。
+- 名单页面改为“Excel 上传 → `/api/files` 获取 `FileVO.id` → 按表内企业、选手、报名工种和报名等级 direct precheck → 批次列表/详情 → pending_confirm 确认”。
 - 名单预检在读取文件前校验 `.xlsx/.xls`；不接受 CSV、TXT 等扩展名。
 - 平台管理员按租户范围操作；企业用户只访问所属组织；企业内部赛事额外限制 `ownerOrgId`；参与企业列表和名单批次均执行组织范围过滤。
 - VO 补齐赛事、参与企业、通知、名单批次所需的审计字段和组织字段；批次详情 `batchId` 已补齐。
@@ -40,7 +40,7 @@
 
 临时验收实例：`platform-api`，本机端口 `18080`；干净产物复核实例端口 `18081`。
 
-测试租户为 `demo`，测试账号为平台管理员；测试赛事编码以 `FND06-20260716-*` 标识，名单使用无敏感信息的测试员工编号。
+测试租户为 `demo`，测试账号为平台管理员；测试赛事编码以 `FND06-20260716-*` 标识，名单使用不含员工编号的脱敏测试身份字段。
 
 | 场景 | 结果 | 关键结果 |
 |---|---|---|

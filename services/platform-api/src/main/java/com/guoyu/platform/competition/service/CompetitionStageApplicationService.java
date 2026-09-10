@@ -12,13 +12,14 @@ import com.guoyu.platform.competition.dto.CompetitionStageUpdateReq;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventOrgEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
+import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeLevelEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventOrgStatus;
 import com.guoyu.platform.competition.enums.CompetitionEventScope;
-import com.guoyu.platform.competition.enums.CompetitionEventStatus;
 import com.guoyu.platform.competition.enums.CompetitionStagePlanStatus;
 import com.guoyu.platform.competition.mapper.CompetitionEventOrgMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
+import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeLevelMapper;
 import com.guoyu.platform.competition.vo.CompetitionEventVO;
 import com.guoyu.platform.competition.vo.CompetitionStageVO;
 import com.guoyu.platform.security.PlatformAdminSupport;
@@ -42,6 +43,7 @@ public class CompetitionStageApplicationService {
   private final CompetitionStageService stageService;
   private final CompetitionEventOrgMapper eventOrgMapper;
   private final CompetitionEventWorkTypeMapper eventWorkTypeMapper;
+  private final CompetitionEventWorkTypeLevelMapper eventWorkTypeLevelMapper;
   private final UserMapper userMapper;
 
   public CompetitionStageApplicationService(
@@ -49,7 +51,16 @@ public class CompetitionStageApplicationService {
       CompetitionStageService stageService,
       CompetitionEventOrgMapper eventOrgMapper,
       UserMapper userMapper) {
-    this(eventService, stageService, eventOrgMapper, null, userMapper);
+    this(eventService, stageService, eventOrgMapper, null, null, userMapper);
+  }
+
+  public CompetitionStageApplicationService(
+      CompetitionEventService eventService,
+      CompetitionStageService stageService,
+      CompetitionEventOrgMapper eventOrgMapper,
+      CompetitionEventWorkTypeMapper eventWorkTypeMapper,
+      UserMapper userMapper) {
+    this(eventService, stageService, eventOrgMapper, eventWorkTypeMapper, null, userMapper);
   }
 
   @Autowired
@@ -58,11 +69,13 @@ public class CompetitionStageApplicationService {
       CompetitionStageService stageService,
       CompetitionEventOrgMapper eventOrgMapper,
       CompetitionEventWorkTypeMapper eventWorkTypeMapper,
+      CompetitionEventWorkTypeLevelMapper eventWorkTypeLevelMapper,
       UserMapper userMapper) {
     this.eventService = eventService;
     this.stageService = stageService;
     this.eventOrgMapper = eventOrgMapper;
     this.eventWorkTypeMapper = eventWorkTypeMapper;
+    this.eventWorkTypeLevelMapper = eventWorkTypeLevelMapper;
     this.userMapper = userMapper;
   }
 
@@ -70,7 +83,11 @@ public class CompetitionStageApplicationService {
   public PageResponse<CompetitionStageVO> page(Long eventId, CompetitionStageQueryReq req) {
     PlatformUserPrincipal principal = currentUser();
     CompetitionEventEntity event = accessibleEvent(principal, eventId, false);
-    var page = stageService.page(principal.getTenantId(), event.getId(), req);
+    var page = req.getEventWorkTypeId() == null
+        ? stageService.page(principal.getTenantId(), event.getId(), req)
+        : stageService.page(
+            principal.getTenantId(), event.getId(), req.getEventWorkTypeId(),
+            req.getEventWorkTypeLevelCode(), req);
     List<CompetitionStageVO> items = new ArrayList<>();
     if (page.getRecords() != null) {
       page.getRecords().forEach(stage -> items.add(CompetitionStageConverter.toVO(stage)));
@@ -91,6 +108,25 @@ public class CompetitionStageApplicationService {
     PlatformUserPrincipal principal = currentUser();
     CompetitionStageEntity stage = stageService.getById(principal.getTenantId(), stageId);
     accessibleEvent(principal, stage.getEventId(), true);
+    return CompetitionStageConverter.toVO(stage);
+  }
+
+  /**
+   * Checks write access to the stage arrangement itself. Downstream lifecycle and execution-plan
+   * operations intentionally continue to use {@link #assertCanManage(Long)} after arrangement
+   * confirmation, so the arrangement-specific lock must be explicit at this boundary.
+   */
+  @Transactional
+  public CompetitionStageVO assertCanManageStagePlan(Long stageId) {
+    PlatformUserPrincipal principal = currentUser();
+    CompetitionStageEntity stage = stageService.getById(principal.getTenantId(), stageId);
+    CompetitionEventEntity event = accessibleEvent(principal, stage.getEventId(), true);
+    CompetitionEventEntity locked = eventService.lockForUpdate(principal.getTenantId(), stage.getEventId());
+    if (locked != null) {
+      event = locked;
+    }
+    requireStagePlanDraft(event);
+    assertStagePlanScopeDraft(principal, stage);
     return CompetitionStageConverter.toVO(stage);
   }
 
@@ -119,9 +155,23 @@ public class CompetitionStageApplicationService {
   @Transactional
   public List<CompetitionStageVO> saveDraftForWorkType(
       Long eventId, Long eventWorkTypeId, CompetitionStageDraftSaveReq req) {
+    return saveDraftForWorkType(eventId, eventWorkTypeId, null, req);
+  }
+
+  @Transactional
+  public List<CompetitionStageVO> saveDraftForWorkType(
+      Long eventId,
+      Long eventWorkTypeId,
+      String eventWorkTypeLevelCode,
+      CompetitionStageDraftSaveReq req) {
     PlatformUserPrincipal principal = currentUser();
     CompetitionEventEntity event = accessibleEvent(principal, eventId, true);
-    requireDraftEvent(event);
+    requireStagePlanDraft(event);
+    CompetitionEventEntity locked = eventService.lockForUpdate(principal.getTenantId(), eventId);
+    if (locked != null) {
+      event = locked;
+      requireStagePlanDraft(event);
+    }
     if (eventWorkTypeMapper == null) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "工种赛段作用域未启用");
     }
@@ -134,12 +184,15 @@ public class CompetitionStageApplicationService {
     if (workType == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "赛事工种不存在");
     }
-    if (CompetitionStagePlanStatus.CONFIRMED.getCode().equals(event.getStagePlanStatus())
-        || CompetitionStagePlanStatus.CONFIRMED.getCode().equals(workType.getStagePlanStatus())) {
-      throw new BusinessException(ErrorCode.CONFLICT, "当前工种赛段编排已确认，不能继续修改");
+    if (eventWorkTypeLevelCode == null || eventWorkTypeLevelCode.isBlank()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "工种赛段编排必须指定工种等级");
     }
-    List<CompetitionStageEntity> saved = stageService.replaceDraft(
-        principal.getTenantId(), event.getId(), principal.getUserId(), req);
+    String normalizedLevelCode = normalizeLevelCode(eventWorkTypeLevelCode);
+    assertWorkTypeStagePlanDraft(event, workType, principal.getTenantId(), eventId,
+        eventWorkTypeId, normalizedLevelCode);
+    List<CompetitionStageEntity> saved = stageService.replaceDraftForScope(
+        principal.getTenantId(), event.getId(), principal.getUserId(), eventWorkTypeId,
+        normalizedLevelCode, req);
     List<CompetitionStageVO> result = new ArrayList<>();
     if (saved != null) {
       saved.forEach(stage -> result.add(CompetitionStageConverter.toVO(stage)));
@@ -151,7 +204,8 @@ public class CompetitionStageApplicationService {
   public CompetitionEventVO confirmStagePlan(Long eventId) {
     PlatformUserPrincipal principal = currentUser();
     CompetitionEventEntity event = accessibleEvent(principal, eventId, true);
-    requireDraftEvent(event);
+    com.guoyu.platform.competition.domain.CompetitionEventArrangementGuard.requireLive(
+        event, "已关闭或已归档赛事不能确认赛段编排");
     if (CompetitionStagePlanStatus.CONFIRMED.getCode().equals(event.getStagePlanStatus())) {
       return CompetitionEventConverter.toVO(event);
     }
@@ -168,7 +222,12 @@ public class CompetitionStageApplicationService {
     PlatformUserPrincipal principal = currentUser();
     CompetitionStageEntity stage = stageService.getById(principal.getTenantId(), stageId);
     CompetitionEventEntity event = accessibleEvent(principal, stage.getEventId(), true);
+    CompetitionEventEntity locked = eventService.lockForUpdate(principal.getTenantId(), stage.getEventId());
+    if (locked != null) {
+      event = locked;
+    }
     requireStagePlanDraft(event);
+    assertStagePlanScopeDraft(principal, stage);
     return CompetitionStageConverter.toVO(stageService.update(principal.getTenantId(), stageId, req));
   }
 
@@ -177,7 +236,12 @@ public class CompetitionStageApplicationService {
     PlatformUserPrincipal principal = currentUser();
     CompetitionStageEntity stage = stageService.getById(principal.getTenantId(), stageId);
     CompetitionEventEntity event = accessibleEvent(principal, stage.getEventId(), true);
+    CompetitionEventEntity locked = eventService.lockForUpdate(principal.getTenantId(), stage.getEventId());
+    if (locked != null) {
+      event = locked;
+    }
     requireStagePlanDraft(event);
+    assertStagePlanScopeDraft(principal, stage);
     stageService.delete(principal.getTenantId(), stageId);
   }
 
@@ -269,17 +333,90 @@ public class CompetitionStageApplicationService {
     throw new BusinessException(ErrorCode.FORBIDDEN, "当前企业不是有效赛事参与企业");
   }
 
-  private void requireDraftEvent(CompetitionEventEntity event) {
-    if (!CompetitionEventStatus.DRAFT.getCode().equals(event.getStatus())) {
-      throw new BusinessException(ErrorCode.CONFLICT, "只有草稿状态赛事允许修改赛段");
-    }
+  private void requireStagePlanDraft(CompetitionEventEntity event) {
+    com.guoyu.platform.competition.domain.CompetitionEventArrangementGuard.requireOpen(
+        event, "已关闭或已归档赛事不允许修改赛段");
   }
 
-  private void requireStagePlanDraft(CompetitionEventEntity event) {
-    requireDraftEvent(event);
+  private void assertWorkTypeStagePlanDraft(
+      CompetitionEventEntity event,
+      CompetitionEventWorkTypeEntity workType,
+      Long tenantId,
+      Long eventId,
+      Long eventWorkTypeId,
+      String levelCode) {
     if (CompetitionStagePlanStatus.CONFIRMED.getCode().equals(event.getStagePlanStatus())) {
       throw new BusinessException(ErrorCode.CONFLICT, "当前赛事的赛段编排已确认，不能继续修改");
     }
+    if (levelCode == null
+        && CompetitionStagePlanStatus.CONFIRMED.getCode().equals(workType.getStagePlanStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "当前工种赛段编排已确认，不能继续修改");
+    }
+    if (levelCode != null && eventWorkTypeLevelMapper != null) {
+      CompetitionEventWorkTypeLevelEntity level = findLevel(
+          tenantId, eventId, eventWorkTypeId, levelCode);
+      if (level != null
+          && CompetitionStagePlanStatus.CONFIRMED.getCode().equals(level.getStagePlanStatus())) {
+        throw new BusinessException(ErrorCode.CONFLICT, "当前工种当前等级赛段编排已确认，不能继续修改");
+      }
+    }
+  }
+
+  private void assertStagePlanScopeDraft(
+      PlatformUserPrincipal principal, CompetitionStageEntity stage) {
+    if (stage.getEventWorkTypeId() == null) {
+      return;
+    }
+    if (eventWorkTypeMapper == null) {
+      return;
+    }
+    CompetitionEventWorkTypeEntity workType = eventWorkTypeMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionEventWorkTypeEntity>()
+            .eq(CompetitionEventWorkTypeEntity::getTenantId, principal.getTenantId())
+            .eq(CompetitionEventWorkTypeEntity::getEventId, stage.getEventId())
+            .eq(CompetitionEventWorkTypeEntity::getId, stage.getEventWorkTypeId())
+            .eq(CompetitionEventWorkTypeEntity::getDeleted, 0));
+    if (workType == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "赛事工种不存在");
+    }
+    String levelCode = normalizeLevelCode(stage.getEventWorkTypeLevelCode());
+    if (levelCode == null) {
+      if (CompetitionStagePlanStatus.CONFIRMED.getCode().equals(workType.getStagePlanStatus())) {
+        throw new BusinessException(ErrorCode.CONFLICT, "当前工种赛段编排已确认，不能继续修改");
+      }
+      return;
+    }
+    if (eventWorkTypeLevelMapper == null) {
+      return;
+    }
+    CompetitionEventWorkTypeLevelEntity level = findLevel(
+        principal.getTenantId(), stage.getEventId(), stage.getEventWorkTypeId(), levelCode);
+    if (level != null
+        && CompetitionStagePlanStatus.CONFIRMED.getCode().equals(level.getStagePlanStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "当前工种当前等级赛段编排已确认，不能继续修改");
+    }
+  }
+
+  private CompetitionEventWorkTypeLevelEntity findLevel(
+      Long tenantId, Long eventId, Long eventWorkTypeId, String levelCode) {
+    return eventWorkTypeLevelMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionEventWorkTypeLevelEntity>()
+            .eq(CompetitionEventWorkTypeLevelEntity::getTenantId, tenantId)
+            .eq(CompetitionEventWorkTypeLevelEntity::getEventId, eventId)
+            .eq(CompetitionEventWorkTypeLevelEntity::getEventWorkTypeId, eventWorkTypeId)
+            .eq(CompetitionEventWorkTypeLevelEntity::getLevelCode, levelCode)
+            .eq(CompetitionEventWorkTypeLevelEntity::getDeleted, 0));
+  }
+
+  private String normalizeLevelCode(String levelCode) {
+    if (levelCode == null || levelCode.isBlank()) {
+      return null;
+    }
+    String normalized = levelCode.trim();
+    if (!java.util.Set.of("1", "2", "3", "4", "5").contains(normalized)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "赛事工种等级编码必须是1至5");
+    }
+    return normalized;
   }
 
   private Long currentUserOrgId(PlatformUserPrincipal principal) {

@@ -12,7 +12,7 @@ export function StageNodeLibrary({ usedTypes, editable }: StageNodeLibraryProps)
     <aside className="stage-planning-library" data-testid="stage-node-library">
       <Typography.Title level={5}>节点库</Typography.Title>
       <Typography.Paragraph type="secondary" className="stage-planning-library__hint">
-        每种预设赛段同一赛事最多配置一次。
+        每种预设赛段当前工种当前等级最多配置一次。
       </Typography.Paragraph>
       <div className="stage-planning-library__items">
         {STAGE_DEFINITIONS.map((definition) => {
@@ -44,7 +44,7 @@ export function StageNodeLibrary({ usedTypes, editable }: StageNodeLibraryProps)
           );
         })}
       </div>
-      {!editable && <Typography.Text type="warning">当前赛事只读，节点库不可编辑。</Typography.Text>}
+      {!editable && <Typography.Text type="warning">当前编排作用域只读，节点库不可编辑。</Typography.Text>}
     </aside>
   );
 }

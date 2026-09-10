@@ -1,23 +1,34 @@
 package com.guoyu.platform.competition.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import java.time.LocalDateTime;
 
 public class CompetitionRosterImportVO {
 
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long id;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long batchId;
   private String batchNo;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long eventId;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long orgId;
   private String orgName;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long eventWorkTypeId;
+  private String eventWorkTypeName;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long sourceFileId;
   private String status;
   private Integer totalCount;
   private Integer validCount;
   private Integer invalidCount;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long confirmedBy;
   private LocalDateTime confirmedAt;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long createdBy;
   private LocalDateTime createdAt;
 
@@ -35,6 +46,8 @@ public class CompetitionRosterImportVO {
   public void setOrgName(String orgName) { this.orgName = orgName; }
   public Long getEventWorkTypeId() { return eventWorkTypeId; }
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
+  public String getEventWorkTypeName() { return eventWorkTypeName; }
+  public void setEventWorkTypeName(String eventWorkTypeName) { this.eventWorkTypeName = eventWorkTypeName; }
   public Long getSourceFileId() { return sourceFileId; }
   public void setSourceFileId(Long sourceFileId) { this.sourceFileId = sourceFileId; }
   public String getStatus() { return status; }

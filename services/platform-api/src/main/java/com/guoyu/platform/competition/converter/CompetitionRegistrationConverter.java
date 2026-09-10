@@ -19,7 +19,6 @@ public final class CompetitionRegistrationConverter {
     target.setOrgId(source.getOrgId());
     target.setOrgName(source.getOrgName());
     target.setRosterItemId(source.getRosterItemId());
-    target.setEmployeeNo(source.getEmployeeNo());
     target.setName(source.getName());
     target.setWorkType(source.getWorkType());
     target.setLevel(source.getLevel());

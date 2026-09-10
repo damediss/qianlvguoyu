@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/** Fixed stage types shared by every work type and level in an event. */
+/** Fixed stage types available to each independent work-type-level canvas. */
 public enum CompetitionStageType {
   QUALIFICATION("qualification", "资格赛", 10),
   PRELIMINARY("preliminary", "初赛", 20),

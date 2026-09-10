@@ -68,7 +68,7 @@ class CompetitionContestantWorkTypeDomainServiceTest {
     CompetitionContestantProfileEntity profile = profile(31L, 21L);
     CompetitionEventWorkTypeEntity eventWorkType = workType(10L, 200L, "焊工");
     when(memberMapper.selectOne(any())).thenReturn(member);
-    when(profileMapper.selectOne(any())).thenReturn(profile);
+    when(profileMapper.selectList(any())).thenReturn(List.of(profile));
     when(eventWorkTypeService.getById(1L, 10L)).thenReturn(eventWorkType);
     when(profileMapper.updateById(any(CompetitionContestantProfileEntity.class))).thenReturn(1);
 
@@ -86,7 +86,7 @@ class CompetitionContestantWorkTypeDomainServiceTest {
   @Test
   void rejectsWorkTypeFromAnotherEvent() {
     when(memberMapper.selectOne(any())).thenReturn(member(21L, 200L));
-    when(profileMapper.selectOne(any())).thenReturn(profile(31L, 21L));
+    when(profileMapper.selectList(any())).thenReturn(List.of(profile(31L, 21L)));
     when(eventWorkTypeService.getById(1L, 10L))
         .thenReturn(workType(10L, 999L, "焊工"));
 
@@ -114,7 +114,7 @@ class CompetitionContestantWorkTypeDomainServiceTest {
     CompetitionContestantProfileEntity profile = profile(31L, 21L);
     profile.setRegistrationId(41L);
     when(memberMapper.selectOne(any())).thenReturn(member(21L, 200L));
-    when(profileMapper.selectOne(any())).thenReturn(profile);
+    when(profileMapper.selectList(any())).thenReturn(List.of(profile));
     when(registrationMapper.selectOne(any())).thenReturn(null);
 
     assertThatThrownBy(() -> service.confirm(
@@ -125,6 +125,27 @@ class CompetitionContestantWorkTypeDomainServiceTest {
 
     verify(eventWorkTypeService, never()).getById(any(), any());
     verify(profileMapper, never()).updateById(any(CompetitionContestantProfileEntity.class));
+  }
+
+  @Test
+  void confirmTargetsUnmatchedProfileWhenMemberAlreadyHasAnotherItem() {
+    CompetitionContestantProfileEntity matched = profile(31L, 21L);
+    matched.setEventWorkTypeId(10L);
+    matched.setWorkTypeMatchStatus("matched");
+    CompetitionContestantProfileEntity unmatched = profile(32L, 21L);
+    unmatched.setRegistrationId(42L);
+    when(memberMapper.selectOne(any())).thenReturn(member(21L, 200L));
+    when(profileMapper.selectList(any())).thenReturn(List.of(matched, unmatched));
+    when(eventWorkTypeService.getById(1L, 11L)).thenReturn(workType(11L, 200L, "电工"));
+    when(profileMapper.updateById(any(CompetitionContestantProfileEntity.class))).thenReturn(1);
+
+    var result = service.confirm(
+        1L, 200L, 21L, 99L,
+        new CompetitionContestantWorkTypeConfirmReq(11L, "第二赛项"), null);
+
+    assertThat(result.getProfileId()).isEqualTo(32L);
+    assertThat(unmatched.getEventWorkTypeId()).isEqualTo(11L);
+    assertThat(matched.getEventWorkTypeId()).isEqualTo(10L);
   }
 
   private CompetitionContestantWorkTypeRow row(Long id, Long memberId, String rosterText) {

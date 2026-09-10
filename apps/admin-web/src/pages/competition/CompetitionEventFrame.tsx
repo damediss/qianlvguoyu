@@ -20,7 +20,7 @@ interface CompetitionEventFrameProps {
 }
 
 const statusMeta: Record<CompetitionEventStatus, { label: string; color: string }> = {
-  draft: { label: '草稿', color: 'default' },
+  draft: { label: '创建中', color: 'default' },
   published: { label: '已发布', color: 'success' },
   closed: { label: '已关闭', color: 'warning' },
   archived: { label: '已归档', color: 'error' },

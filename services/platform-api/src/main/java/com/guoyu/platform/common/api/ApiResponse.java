@@ -15,6 +15,10 @@ public record ApiResponse<T>(String code, String message, T data, String traceId
   }
 
   public static <T> ApiResponse<T> fail(String code, String message) {
-    return new ApiResponse<>(code, message, null, TraceIdHolder.getTraceId());
+    return fail(code, message, null);
+  }
+
+  public static <T> ApiResponse<T> fail(String code, String message, T data) {
+    return new ApiResponse<>(code, message, data, TraceIdHolder.getTraceId());
   }
 }

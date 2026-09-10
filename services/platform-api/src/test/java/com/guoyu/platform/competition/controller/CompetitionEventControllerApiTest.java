@@ -16,6 +16,7 @@ import com.guoyu.platform.competition.dto.CompetitionEventUpdateReq;
 import com.guoyu.platform.competition.service.CompetitionEventApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionEventVO;
 import com.guoyu.platform.competition.vo.CompetitionEventPublishResultVO;
+import com.guoyu.platform.competition.vo.CompetitionEventPublishReadinessVO;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.GlobalExceptionHandler;
 import com.guoyu.platform.common.exception.BusinessException;
@@ -60,7 +61,7 @@ class CompetitionEventControllerApiTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.code").value("0"))
         .andExpect(jsonPath("$.data.total").value(1))
-        .andExpect(jsonPath("$.data.items[0].id").value(1001))
+        .andExpect(jsonPath("$.data.items[0].id").value("1001"))
         .andExpect(jsonPath("$.data.items[0].status").value("draft"));
 
     ArgumentCaptor<CompetitionEventQueryReq> captor = ArgumentCaptor.forClass(CompetitionEventQueryReq.class);
@@ -90,7 +91,7 @@ class CompetitionEventControllerApiTest {
                 """))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.code").value("0"))
-        .andExpect(jsonPath("$.data.id").value(1002))
+        .andExpect(jsonPath("$.data.id").value("1002"))
         .andExpect(jsonPath("$.data.status").value("draft"));
 
     verify(service).create(any(CompetitionEventCreateReq.class));
@@ -148,7 +149,7 @@ class CompetitionEventControllerApiTest {
             .content(""))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.code").value("0"))
-        .andExpect(jsonPath("$.data.eventId").value(1004))
+        .andExpect(jsonPath("$.data.eventId").value("1004"))
         .andExpect(jsonPath("$.data.status").value("published"));
 
     verify(service).publish(1004L);
@@ -179,6 +180,23 @@ class CompetitionEventControllerApiTest {
     mockMvc.perform(post("/competition/events/1004/publish"))
         .andExpect(status().isUnprocessableEntity())
         .andExpect(jsonPath("$.code").value("422"));
+  }
+
+  @Test
+  void publishReadinessEndpointReturnsStructuredScopeMatrix() throws Exception {
+    when(service.publishReadiness(1004L)).thenReturn(new CompetitionEventPublishReadinessVO(
+        1004L, "EVENT-1004", "赛事", "draft", "platform",
+        LocalDateTime.of(2026, 8, 1, 9, 0), LocalDateTime.of(2026, 8, 2, 18, 0),
+        false, 1, 1, 0, 0, List.of(), List.of()));
+
+    mockMvc.perform(get("/competition/events/1004/publish-readiness"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.code").value("0"))
+        .andExpect(jsonPath("$.data.eventId").value("1004"))
+        .andExpect(jsonPath("$.data.ready").value(false))
+        .andExpect(jsonPath("$.data.selectedLevelCount").value(1));
+
+    verify(service).publishReadiness(1004L);
   }
 
   private CompetitionEventVO event(Long id) {

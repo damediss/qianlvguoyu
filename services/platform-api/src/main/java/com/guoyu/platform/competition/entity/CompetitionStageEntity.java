@@ -8,6 +8,8 @@ import java.time.LocalDateTime;
 public class CompetitionStageEntity extends BaseEntity {
 
   private Long eventId;
+  private Long eventWorkTypeId;
+  private String eventWorkTypeLevelCode;
   private String name;
   private String stageType;
   private Integer sortOrder;
@@ -22,6 +24,12 @@ public class CompetitionStageEntity extends BaseEntity {
 
   public Long getEventId() { return eventId; }
   public void setEventId(Long eventId) { this.eventId = eventId; }
+  public Long getEventWorkTypeId() { return eventWorkTypeId; }
+  public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
+  public String getEventWorkTypeLevelCode() { return eventWorkTypeLevelCode; }
+  public void setEventWorkTypeLevelCode(String eventWorkTypeLevelCode) {
+    this.eventWorkTypeLevelCode = eventWorkTypeLevelCode;
+  }
   public String getName() { return name; }
   public void setName(String name) { this.name = name; }
   public String getStageType() { return stageType; }

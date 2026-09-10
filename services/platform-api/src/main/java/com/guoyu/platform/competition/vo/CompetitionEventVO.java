@@ -1,27 +1,34 @@
 package com.guoyu.platform.competition.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import java.time.LocalDateTime;
 
 /** Contract-only response skeleton for FND-02; entities are not exposed directly. */
 public class CompetitionEventVO {
 
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long id;
   private String name;
   private String code;
   /** Player-app entry credential, returned only from the authenticated management API. */
   private String playerEntryCode;
   private String scope;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long ownerOrgId;
   private String status;
   private String stagePlanStatus;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long stagePlanConfirmedBy;
   private LocalDateTime stagePlanConfirmedAt;
   private Integer registrationAuditRequired;
   private LocalDateTime startAt;
   private LocalDateTime endAt;
   private String description;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long createdBy;
   private java.time.LocalDateTime createdAt;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long updatedBy;
   private java.time.LocalDateTime updatedAt;
 

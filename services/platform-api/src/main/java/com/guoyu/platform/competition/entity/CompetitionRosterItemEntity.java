@@ -8,7 +8,11 @@ public class CompetitionRosterItemEntity extends BaseEntity {
 
   private Long batchId;
   private Long playerId;
-  private String employeeNo;
+  private Long orgId;
+  private String orgName;
+  private Long eventWorkTypeId;
+  private Long eventWorkTypeLevelId;
+  private Integer sourceRowNo;
   private String name;
   private String workType;
   private String level;
@@ -19,8 +23,16 @@ public class CompetitionRosterItemEntity extends BaseEntity {
   public void setBatchId(Long batchId) { this.batchId = batchId; }
   public Long getPlayerId() { return playerId; }
   public void setPlayerId(Long playerId) { this.playerId = playerId; }
-  public String getEmployeeNo() { return employeeNo; }
-  public void setEmployeeNo(String employeeNo) { this.employeeNo = employeeNo; }
+  public Long getOrgId() { return orgId; }
+  public void setOrgId(Long orgId) { this.orgId = orgId; }
+  public String getOrgName() { return orgName; }
+  public void setOrgName(String orgName) { this.orgName = orgName; }
+  public Long getEventWorkTypeId() { return eventWorkTypeId; }
+  public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
+  public Long getEventWorkTypeLevelId() { return eventWorkTypeLevelId; }
+  public void setEventWorkTypeLevelId(Long eventWorkTypeLevelId) { this.eventWorkTypeLevelId = eventWorkTypeLevelId; }
+  public Integer getSourceRowNo() { return sourceRowNo; }
+  public void setSourceRowNo(Integer sourceRowNo) { this.sourceRowNo = sourceRowNo; }
   public String getName() { return name; }
   public void setName(String name) { this.name = name; }
   public String getWorkType() { return workType; }

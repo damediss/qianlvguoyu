@@ -97,4 +97,12 @@ class TenantContextFilterTest {
     assertThat(r.chainCalled()).isTrue();
     assertThat(r.tenantInChain()).isEqualTo(10159L);
   }
+
+  @Test
+  void formalExamConsoleWsHandshakeWithoutTenantHeaderIsAllowed() throws Exception {
+    RunResult r = run("GET", "/api/ws/competition/formal-exam/console", null);
+    assertThat(r.chainCalled()).isTrue();
+    assertThat(r.tenantInChain()).isEqualTo(10159L);
+    assertThat(r.status()).isEqualTo(200);
+  }
 }

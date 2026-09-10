@@ -48,6 +48,8 @@ public final class CompetitionStageConverter {
     CompetitionStageVO target = new CompetitionStageVO();
     target.setId(source.getId());
     target.setEventId(source.getEventId());
+    target.setEventWorkTypeId(source.getEventWorkTypeId());
+    target.setEventWorkTypeLevelCode(source.getEventWorkTypeLevelCode());
     target.setName(source.getName());
     target.setStageType(source.getStageType());
     target.setSortOrder(source.getSortOrder());

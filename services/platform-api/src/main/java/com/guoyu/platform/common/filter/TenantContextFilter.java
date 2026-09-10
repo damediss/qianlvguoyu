@@ -21,7 +21,9 @@ public class TenantContextFilter extends OncePerRequestFilter {
       "/api/actuator/info",
       // OIDC: AS 链未认证时 LoginUrlAuthenticationEntryPoint 302 → /api/login，
       // 浏览器跳转不带 X-Tenant-Id，此处放行避免被拦截返回 400
-      "/api/login"
+      "/api/login",
+      "/api/ws/competition/formal-exam/player",
+      "/api/ws/competition/formal-exam/console"
   );
   private static final Set<String> WHITE_PATH_PREFIXES = Set.of(
       "/api/appregistration/",
@@ -47,7 +49,9 @@ public class TenantContextFilter extends OncePerRequestFilter {
       "GET:/api/auth/captcha/generate",
       "POST:/api/auth/captcha/verify",
       "GET:/api/competition/player/entry/resolve",
-      "POST:/api/competition/player/auth/login"
+      "POST:/api/competition/player/auth/login",
+      "POST:/api/competition/exam/auth/login",
+      "POST:/api/competition/formal-exam/player/auth/login"
   );
 
   /** AI 同步学 App 链路前缀：该前缀全部业务数据均属租户 10159（合并库 gjjddbpro 唯一租户） */
@@ -77,7 +81,9 @@ public class TenantContextFilter extends OncePerRequestFilter {
 
     String tenantIdHeader = request.getHeader(TENANT_HEADER);
     if ((tenantIdHeader == null || tenantIdHeader.isBlank())
-        && path.equals("/api/ws/practical-scoring")) {
+        && (path.equals("/api/ws/practical-scoring")
+            || path.equals("/api/ws/competition/formal-exam/player")
+            || path.equals("/api/ws/competition/formal-exam/console"))) {
       tenantIdHeader = request.getParameter("tenantId");
     }
 

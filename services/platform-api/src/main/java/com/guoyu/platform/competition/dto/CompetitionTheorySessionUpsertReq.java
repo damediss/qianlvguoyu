@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public record CompetitionTheorySessionUpsertReq(
-    @NotBlank @Pattern(regexp = "A|B") String sessionCode,
+    @NotBlank @Pattern(regexp = "[A-Za-z][A-Za-z0-9_-]{0,15}") String sessionCode,
     @NotBlank @Size(max = 128) String sessionName,
     @NotNull Long paperSnapshotId,
     @NotNull LocalDateTime startAt,

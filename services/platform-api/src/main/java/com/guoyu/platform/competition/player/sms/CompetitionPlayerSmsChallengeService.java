@@ -54,6 +54,11 @@ public class CompetitionPlayerSmsChallengeService {
     if (tenantId == null || playerId == null || purpose == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "验证码请求参数不完整");
     }
+    if (normalizedMobile == null || normalizedMobile.isBlank()) {
+      log.error("Competition player SMS request has no normalized mobile, tenantId={}, playerId={}, purpose={}",
+          tenantId, playerId, purpose.getCode());
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "选手手机号未配置，无法发送验证码");
+    }
     LocalDateTime now = LocalDateTime.now();
     CompetitionPlayerSmsChallengeEntity activeLock = challengeMapper.selectActiveLockForUpdate(
         playerId, purpose.getCode(), now);

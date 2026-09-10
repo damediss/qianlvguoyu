@@ -31,7 +31,7 @@ export function StagePlanningToolbar({ editable, dirty, saving, errorCount, warn
         <Button disabled={!editable} onClick={onAutoLayout} data-testid="stage-auto-layout">自动排列</Button>
         <Button onClick={onValidate} icon={<CheckOutlined />} data-testid="stage-validate">校验编排</Button>
         {editable && dirty && <Button icon={<RollbackOutlined />} onClick={onDiscard} data-testid="stage-discard">放弃修改</Button>}
-        <Button type="primary" icon={<SaveOutlined />} disabled={!editable || !dirty || errorCount > 0} loading={saving} onClick={onSave} data-testid="stage-save-draft">保存草稿</Button>
+        <Button type="primary" icon={<SaveOutlined />} disabled={!editable || !dirty || errorCount > 0} loading={saving} onClick={onSave} data-testid="stage-save-draft">保存编排</Button>
         {editable && onConfirm && <Button
           icon={<CheckCircleOutlined />}
           disabled={dirty || saving || errorCount > 0}

@@ -9,14 +9,20 @@ import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.competition.dto.CompetitionStageCreateReq;
+import com.guoyu.platform.competition.dto.CompetitionStageDraftSaveReq;
+import com.guoyu.platform.competition.dto.CompetitionStageDraftStageReq;
 import com.guoyu.platform.competition.dto.CompetitionStageQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionStageUpdateReq;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventOrgEntity;
+import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
+import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeLevelEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventScope;
 import com.guoyu.platform.competition.enums.CompetitionEventStatus;
 import com.guoyu.platform.competition.mapper.CompetitionEventOrgMapper;
+import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeLevelMapper;
+import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
 import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.UserMapper;
 import java.time.LocalDateTime;
@@ -32,9 +38,14 @@ class CompetitionStageApplicationServiceTest {
   private final CompetitionEventService eventService = Mockito.mock(CompetitionEventService.class);
   private final CompetitionStageService stageService = Mockito.mock(CompetitionStageService.class);
   private final CompetitionEventOrgMapper eventOrgMapper = Mockito.mock(CompetitionEventOrgMapper.class);
+  private final CompetitionEventWorkTypeMapper eventWorkTypeMapper =
+      Mockito.mock(CompetitionEventWorkTypeMapper.class);
+  private final CompetitionEventWorkTypeLevelMapper eventWorkTypeLevelMapper =
+      Mockito.mock(CompetitionEventWorkTypeLevelMapper.class);
   private final UserMapper userMapper = Mockito.mock(UserMapper.class);
   private final CompetitionStageApplicationService service = new CompetitionStageApplicationService(
-      eventService, stageService, eventOrgMapper, userMapper);
+      eventService, stageService, eventOrgMapper, eventWorkTypeMapper,
+      eventWorkTypeLevelMapper, userMapper);
 
   @AfterEach
   void tearDown() {
@@ -71,15 +82,31 @@ class CompetitionStageApplicationServiceTest {
   }
 
   @Test
-  void rejectsStageModificationWhenEventIsPublished() {
+  void allowsStageModificationAfterEventIsPublished() {
     authenticate(1000L, 1L, "admin", List.of("PLATFORM_ADMIN"));
     when(stageService.getById(1L, 5001L)).thenReturn(stage(5001L, 1001L));
     when(eventService.getById(1L, 1001L)).thenReturn(event(1001L, "platform", null, "published"));
+    when(eventService.lockForUpdate(1L, 1001L)).thenReturn(event(1001L, "platform", null, "published"));
+    CompetitionStageUpdateReq req = new CompetitionStageUpdateReq(
+        "Updated", "preparation", 2, null, null, null, null);
+    when(stageService.update(1L, 5001L, req)).thenReturn(stage(5001L, 1001L));
+
+    service.update(5001L, req);
+
+    verify(stageService).update(1L, 5001L, req);
+  }
+
+  @Test
+  void rejectsStageModificationWhenEventIsClosed() {
+    authenticate(1000L, 1L, "admin", List.of("PLATFORM_ADMIN"));
+    when(stageService.getById(1L, 5001L)).thenReturn(stage(5001L, 1001L));
+    when(eventService.getById(1L, 1001L)).thenReturn(event(1001L, "platform", null, "closed"));
+    when(eventService.lockForUpdate(1L, 1001L)).thenReturn(event(1001L, "platform", null, "closed"));
 
     assertThatThrownBy(() -> service.update(5001L,
         new CompetitionStageUpdateReq("Updated", "preparation", 2, null, null, null, null)))
         .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)
-        .hasMessage("只有草稿状态赛事允许修改赛段");
+        .hasMessage("已关闭或已归档赛事不允许修改赛段");
     verify(stageService, never()).update(any(), any(), any());
   }
 
@@ -96,6 +123,63 @@ class CompetitionStageApplicationServiceTest {
         .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)
         .hasMessage("当前赛事的赛段编排已确认，不能继续修改");
     verify(stageService, never()).update(any(), any(), any());
+  }
+
+  @Test
+  void locksOnlyTheConfirmedWorkTypeLevelStage() {
+    authenticate(1000L, 1L, "admin", List.of("PLATFORM_ADMIN"));
+    CompetitionEventEntity event = event(1001L, "platform", null, "draft");
+    CompetitionStageEntity stage = stage(5001L, 1001L);
+    stage.setEventWorkTypeId(2001L);
+    stage.setEventWorkTypeLevelCode("5");
+    CompetitionEventWorkTypeEntity workType = new CompetitionEventWorkTypeEntity();
+    workType.setId(2001L);
+    workType.setEventId(1001L);
+    workType.setStagePlanStatus("confirmed");
+    CompetitionEventWorkTypeLevelEntity level = new CompetitionEventWorkTypeLevelEntity();
+    level.setEventId(1001L);
+    level.setEventWorkTypeId(2001L);
+    level.setLevelCode("5");
+    level.setStagePlanStatus("confirmed");
+    when(stageService.getById(1L, 5001L)).thenReturn(stage);
+    when(eventService.getById(1L, 1001L)).thenReturn(event);
+    when(eventWorkTypeMapper.selectOne(any())).thenReturn(workType);
+    when(eventWorkTypeLevelMapper.selectOne(any())).thenReturn(level);
+
+    assertThatThrownBy(() -> service.update(5001L,
+        new CompetitionStageUpdateReq("Updated", "preparation", 2, null, null, null, null)))
+        .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)
+        .hasMessage("当前工种当前等级赛段编排已确认，不能继续修改");
+    verify(stageService, never()).update(any(), any(), any());
+  }
+
+  @Test
+  void savesAnUnconfirmedWorkTypeLevelEvenWhenLegacyWorkTypeIsConfirmed() {
+    authenticate(1000L, 1L, "admin", List.of("PLATFORM_ADMIN"));
+    CompetitionEventEntity event = event(1001L, "platform", null, "draft");
+    CompetitionEventWorkTypeEntity workType = new CompetitionEventWorkTypeEntity();
+    workType.setId(2001L);
+    workType.setEventId(1001L);
+    workType.setStagePlanStatus("confirmed");
+    CompetitionEventWorkTypeLevelEntity level = new CompetitionEventWorkTypeLevelEntity();
+    level.setEventId(1001L);
+    level.setEventWorkTypeId(2001L);
+    level.setLevelCode("4");
+    level.setStagePlanStatus("draft");
+    CompetitionStageDraftSaveReq req = new CompetitionStageDraftSaveReq(List.of(
+        new CompetitionStageDraftStageReq(5001L, "preparation", null, null, null)));
+    CompetitionStageEntity stage = stage(5001L, 1001L);
+    stage.setEventWorkTypeId(2001L);
+    stage.setEventWorkTypeLevelCode("4");
+    when(eventService.getById(1L, 1001L)).thenReturn(event);
+    when(eventWorkTypeMapper.selectOne(any())).thenReturn(workType);
+    when(eventWorkTypeLevelMapper.selectOne(any())).thenReturn(level);
+    when(stageService.replaceDraftForScope(1L, 1001L, 1000L, 2001L, "4", req))
+        .thenReturn(List.of(stage));
+
+    service.saveDraftForWorkType(1001L, 2001L, "4", req);
+
+    verify(stageService).replaceDraftForScope(1L, 1001L, 1000L, 2001L, "4", req);
   }
 
   @Test

@@ -40,9 +40,11 @@ class CompetitionRegistrationServiceTest {
   private final OrgMapper orgMapper = Mockito.mock(OrgMapper.class);
   private final UserMapper userMapper = Mockito.mock(UserMapper.class);
   private final CompetitionEventMemberService eventMemberService = Mockito.mock(CompetitionEventMemberService.class);
+  private final CompetitionContestantParticipationDomainService participationService =
+      new CompetitionContestantParticipationDomainService(registrationMapper);
   private final CompetitionRegistrationService service = new CompetitionRegistrationService(
       eventMapper, eventOrgMapper, importMapper, itemMapper, registrationMapper, orgMapper, userMapper,
-      null, eventMemberService);
+      null, eventMemberService, participationService);
 
   @BeforeEach
   void setUpRoleMembership() {
@@ -56,6 +58,13 @@ class CompetitionRegistrationServiceTest {
       ((CompetitionRegistrationEntity) invocation.getArgument(0)).setId(70001L);
       return 1;
     }).when(registrationMapper).insert(any(CompetitionRegistrationEntity.class));
+    when(registrationMapper.existsEffectiveByPlayerAndWorkType(any(), any(), any(), any()))
+        .thenReturn(false);
+    when(registrationMapper.selectOtherEffectiveEventsByPlayer(any(), any(), any()))
+        .thenReturn(List.of());
+    when(registrationMapper.countDistinctEffectivePlayersByEventOrg(any(), any(), any()))
+        .thenReturn(0L);
+    when(registrationMapper.existsEffectiveByPlayer(any(), any(), any(), any())).thenReturn(false);
   }
 
   @Test
@@ -63,10 +72,8 @@ class CompetitionRegistrationServiceTest {
     when(importMapper.selectForUpdate(1L, 7001L)).thenReturn(batch("pending_confirm"));
     when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(event(1));
     when(eventOrgMapper.selectForUpdate(1L, 1001L, 3001L)).thenReturn(participation(10, 1, null));
-    when(itemMapper.selectList(any())).thenReturn(List.of(item(9001L, "E001")));
+    when(itemMapper.selectList(any())).thenReturn(List.of(item(9001L)));
     when(registrationMapper.selectOne(any())).thenReturn(null);
-    when(registrationMapper.existsEffectiveByEmployeeNo(1L, 1001L, 3001L, "E001"))
-        .thenReturn(false);
     when(registrationMapper.countEffectiveByEventOrg(1L, 1001L, 3001L)).thenReturn(0L);
 
     CompetitionRosterImportEntity result = service.confirmAndGenerate(1L, 7001L, 1000L);
@@ -84,10 +91,8 @@ class CompetitionRegistrationServiceTest {
     when(importMapper.selectForUpdate(1L, 7001L)).thenReturn(batch("pending_confirm"));
     when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(event(0));
     when(eventOrgMapper.selectForUpdate(1L, 1001L, 3001L)).thenReturn(participation(10, 1, null));
-    when(itemMapper.selectList(any())).thenReturn(List.of(item(9001L, "E001")));
+    when(itemMapper.selectList(any())).thenReturn(List.of(item(9001L)));
     when(registrationMapper.selectOne(any())).thenReturn(null);
-    when(registrationMapper.existsEffectiveByEmployeeNo(1L, 1001L, 3001L, "E001"))
-        .thenReturn(false);
     when(registrationMapper.countEffectiveByEventOrg(1L, 1001L, 3001L)).thenReturn(0L);
 
     service.confirmAndGenerate(1L, 7001L, 1000L);
@@ -99,11 +104,29 @@ class CompetitionRegistrationServiceTest {
   }
 
   @Test
+  void allowsSameEmployeeToEnrollAnotherWorkType() {
+    CompetitionRosterImportEntity pending = batch("pending_confirm");
+    pending.setEventWorkTypeId(21L);
+    when(importMapper.selectForUpdate(1L, 7001L)).thenReturn(pending);
+    when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(event(0));
+    when(eventOrgMapper.selectForUpdate(1L, 1001L, 3001L)).thenReturn(participation(10, 1, null));
+    when(itemMapper.selectList(any())).thenReturn(List.of(item(9001L)));
+    when(registrationMapper.selectOne(any())).thenReturn(null);
+
+    service.confirmAndGenerate(1L, 7001L, 1000L);
+
+    var captor = org.mockito.ArgumentCaptor.forClass(CompetitionRegistrationEntity.class);
+    verify(registrationMapper).insert(captor.capture());
+    assertThat(captor.getValue().getEventWorkTypeId()).isEqualTo(21L);
+    assertThat(captor.getValue().getMemberId()).isEqualTo(6001L);
+  }
+
+  @Test
   void rejectsDuplicateRosterItemWithoutChangingBatch() {
     when(importMapper.selectForUpdate(1L, 7001L)).thenReturn(batch("pending_confirm"));
     when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(event(0));
     when(eventOrgMapper.selectForUpdate(1L, 1001L, 3001L)).thenReturn(participation(10, 1, null));
-    when(itemMapper.selectList(any())).thenReturn(List.of(item(9001L, "E001")));
+    when(itemMapper.selectList(any())).thenReturn(List.of(item(9001L)));
     CompetitionRegistrationEntity existing = new CompetitionRegistrationEntity();
     when(registrationMapper.selectOne(any())).thenReturn(existing);
 
@@ -119,9 +142,8 @@ class CompetitionRegistrationServiceTest {
     when(importMapper.selectForUpdate(1L, 7001L)).thenReturn(batch("pending_confirm"));
     when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(event(0));
     when(eventOrgMapper.selectForUpdate(1L, 1001L, 3001L)).thenReturn(participation(10, 1, 1));
-    when(itemMapper.selectList(any())).thenReturn(List.of(item(9001L, "E001"), item(9002L, "E002")));
+    when(itemMapper.selectList(any())).thenReturn(List.of(item(9001L), item(9002L)));
     when(registrationMapper.selectOne(any())).thenReturn(null);
-    when(registrationMapper.existsEffectiveByEmployeeNo(any(), any(), any(), any())).thenReturn(false);
     when(registrationMapper.countEffectiveByEventOrg(1L, 1001L, 3001L)).thenReturn(0L);
 
     assertThatThrownBy(() -> service.confirmAndGenerate(1L, 7001L, 1000L))
@@ -179,17 +201,27 @@ class CompetitionRegistrationServiceTest {
   }
 
   @Test
-  void rejectsEmployeeNoAlreadyRegisteredInSameEventAndOrganization() {
+  void rejectsPlayerWhenAnotherEventOverlapsBeforeInsert() {
     when(importMapper.selectForUpdate(1L, 7001L)).thenReturn(batch("pending_confirm"));
-    when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(event(0));
+    CompetitionEventEntity current = event(0);
+    current.setStartAt(java.time.LocalDateTime.of(2026, 9, 10, 8, 0));
+    current.setEndAt(java.time.LocalDateTime.of(2026, 9, 12, 18, 0));
+    when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(current);
     when(eventOrgMapper.selectForUpdate(1L, 1001L, 3001L)).thenReturn(participation(10, 1, null));
-    when(itemMapper.selectList(any())).thenReturn(List.of(item(9001L, "E001")));
+    when(itemMapper.selectList(any())).thenReturn(List.of(item(9001L)));
     when(registrationMapper.selectOne(any())).thenReturn(null);
-    when(registrationMapper.existsEffectiveByEmployeeNo(1L, 1001L, 3001L, "E001"))
-        .thenReturn(true);
+    CompetitionEventEntity other = event(0);
+    other.setId(2002L);
+    other.setName("夏季赛");
+    other.setStartAt(java.time.LocalDateTime.of(2026, 9, 11, 8, 0));
+    other.setEndAt(java.time.LocalDateTime.of(2026, 9, 13, 18, 0));
+    when(registrationMapper.selectOtherEffectiveEventsByPlayer(1L, 9001L, 1001L))
+        .thenReturn(List.of(other));
 
     assertThatThrownBy(() -> service.confirmAndGenerate(1L, 7001L, 1000L))
-        .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class);
+        .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)
+        .hasMessageContaining("夏季赛")
+        .hasMessageContaining("时间重叠");
     verify(registrationMapper, never()).insert(any(CompetitionRegistrationEntity.class));
     verify(importMapper, never()).updateById(any(CompetitionRosterImportEntity.class));
   }
@@ -384,7 +416,7 @@ class CompetitionRegistrationServiceTest {
   private void stubAuditDependencies(CompetitionRegistrationEntity registration) {
     when(registrationMapper.selectForUpdate(1L, registration.getId())).thenReturn(registration);
     when(eventMapper.selectForUpdate(1L, registration.getEventId())).thenReturn(event(1));
-    when(itemMapper.selectOne(any())).thenReturn(item(9001L, "E001"));
+    when(itemMapper.selectOne(any())).thenReturn(item(9001L));
     when(importMapper.selectOne(any())).thenReturn(batch("confirmed"));
     OrgEntity org = new OrgEntity();
     org.setId(3001L);
@@ -404,13 +436,12 @@ class CompetitionRegistrationServiceTest {
     return relation;
   }
 
-  private CompetitionRosterItemEntity item(Long id, String employeeNo) {
+  private CompetitionRosterItemEntity item(Long id) {
     CompetitionRosterItemEntity item = new CompetitionRosterItemEntity();
     item.setId(id);
     item.setTenantId(1L);
     item.setBatchId(7001L);
-    item.setPlayerId(8001L);
-    item.setEmployeeNo(employeeNo);
+    item.setPlayerId(id);
     item.setName("Name");
     item.setValidationStatus("valid");
     return item;

@@ -96,6 +96,45 @@ class CompetitionStageDraftSaveServiceTest {
     verify(mapper, never()).insert(any(CompetitionStageEntity.class));
   }
 
+  @Test
+  void createsDraftRowsInsideTheSelectedWorkTypeAndLevelScope() {
+    when(mapper.selectList(any())).thenReturn(List.of(), List.of(stage(5004L, "preliminary", 20)));
+    when(mapper.insert(any(CompetitionStageEntity.class))).thenAnswer(invocation -> {
+      CompetitionStageEntity inserted = invocation.getArgument(0);
+      inserted.setId(5004L);
+      return 1;
+    });
+
+    List<CompetitionStageEntity> result = service.replaceDraftForScope(1L, 1001L, 3000L,
+        2001L, "4", new CompetitionStageDraftSaveReq(List.of(
+            new CompetitionStageDraftStageReq(null, "preliminary", null, null, "中级工赛段"))));
+
+    assertThat(result).hasSize(1);
+    var inserted = org.mockito.ArgumentCaptor.forClass(CompetitionStageEntity.class);
+    verify(mapper).insert(inserted.capture());
+    assertThat(inserted.getValue().getEventWorkTypeId()).isEqualTo(2001L);
+    assertThat(inserted.getValue().getEventWorkTypeLevelCode()).isEqualTo("4");
+  }
+
+  @Test
+  void keepsDraftStagesIndependentAcrossLevels() {
+    when(mapper.selectList(any())).thenReturn(List.of(), List.of(), List.of(), List.of());
+    when(mapper.insert(any(CompetitionStageEntity.class))).thenReturn(1);
+
+    service.replaceDraftForScope(1L, 1001L, 3000L, 2001L, "4",
+        new CompetitionStageDraftSaveReq(List.of(
+            new CompetitionStageDraftStageReq(null, "preliminary", null, null, "中级工赛段"))));
+    service.replaceDraftForScope(1L, 1001L, 3000L, 2001L, "5",
+        new CompetitionStageDraftSaveReq(List.of(
+            new CompetitionStageDraftStageReq(null, "preliminary", null, null, "初级工赛段"))));
+
+    var inserted = org.mockito.ArgumentCaptor.forClass(CompetitionStageEntity.class);
+    verify(mapper, Mockito.times(2)).insert(inserted.capture());
+    assertThat(inserted.getAllValues())
+        .extracting(CompetitionStageEntity::getEventWorkTypeLevelCode)
+        .containsExactly("4", "5");
+  }
+
   private CompetitionStageEntity stage(Long id, String type, int sortOrder) {
     CompetitionStageEntity stage = new CompetitionStageEntity();
     stage.setId(id);

@@ -112,7 +112,7 @@ describe('stage context menu', () => {
     expect(onStageContextMenu).not.toHaveBeenCalled();
   });
 
-  it('shows the disabled empty placeholder when an enabled entry is hovered', async () => {
+  it('shows theory configuration entries when the enabled entry is hovered', async () => {
     render(
       <StageContextMenu
         position={{ x: 120, y: 160 }}
@@ -125,8 +125,8 @@ describe('stage context menu', () => {
     const theory = await screen.findByText('理论配置');
     await user.hover(theory.closest('.ant-dropdown-menu-submenu-title') || theory);
 
-    const placeholder = await screen.findByText('暂无配置项');
-    expect(placeholder.closest('li')).toHaveAttribute('aria-disabled', 'true');
+    expect(await screen.findByText('试卷配置')).toBeInTheDocument();
+    expect(await screen.findByText('选手配置')).toBeInTheDocument();
   });
 
   it('disables entries whose content is not selected for the stage', async () => {
@@ -144,7 +144,7 @@ describe('stage context menu', () => {
     expect(screen.getByText('仿真设置').closest('li')).toHaveClass('ant-dropdown-menu-submenu-disabled');
   });
 
-  it('notifies the selected content action from the enabled submenu title', async () => {
+  it('does not notify the selected content action from the theory submenu title', async () => {
     const onContentTypeClick = vi.fn();
     render(
       <StageContextMenu
@@ -159,6 +159,25 @@ describe('stage context menu', () => {
     const theory = screen.getByRole('menu').querySelector('[data-menu-id$="-theory"]');
     if (!theory) throw new Error('theory menu item is missing');
     fireEvent.click(theory);
+
+    expect(onContentTypeClick).not.toHaveBeenCalled();
+  });
+
+  it('notifies the selected content action from the paper configuration entry', async () => {
+    const onContentTypeClick = vi.fn();
+    render(
+      <StageContextMenu
+        position={{ x: 120, y: 160 }}
+        enabledContentTypes={['theory']}
+        onClose={vi.fn()}
+        onContentTypeClick={onContentTypeClick}
+      />,
+    );
+
+    const user = userEvent.setup();
+    const theory = await screen.findByText('理论配置');
+    await user.hover(theory.closest('.ant-dropdown-menu-submenu-title') || theory);
+    await user.click(await screen.findByText('试卷配置'));
 
     expect(onContentTypeClick).toHaveBeenCalledWith('theory');
   });

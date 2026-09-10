@@ -71,6 +71,18 @@ class CompetitionScoringBridgeSchemaContractTest {
   }
 
   @Test
+  void stagePlanConfirmationMigrationCoversLegacyWorkTypeStatusColumns() throws IOException {
+    assertThat(stagePlanMigration())
+        .contains(
+            "competition_event_work_type ADD COLUMN stage_plan_status VARCHAR(32) NOT NULL DEFAULT",
+            "competition_event_work_type ADD COLUMN stage_plan_confirmed_by BIGINT NULL",
+            "competition_event_work_type ADD COLUMN stage_plan_confirmed_at DATETIME NULL",
+            "chk_competition_event_work_type_stage_plan_status");
+    assertThat(getters(CompetitionEventWorkTypeEntity.class))
+        .contains("getStagePlanStatus", "getStagePlanConfirmedBy", "getStagePlanConfirmedAt");
+  }
+
+  @Test
   void scoreRuleEntityMatchesEveryBusinessAndBaseEntityDdlColumn() throws IOException {
     TableName tableName = CompetitionScoreRuleEntity.class.getAnnotation(TableName.class);
     assertThat(tableName).isNotNull();
@@ -136,6 +148,14 @@ class CompetitionScoringBridgeSchemaContractTest {
   private String migration() throws IOException {
     try (var input = getClass().getClassLoader().getResourceAsStream(
         "db/migration/V20260727_005__bridge_competition_scoring_readiness.sql")) {
+      assertThat(input).isNotNull();
+      return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+    }
+  }
+
+  private String stagePlanMigration() throws IOException {
+    try (var input = getClass().getClassLoader().getResourceAsStream(
+        "db/migration/V20260825_003__scope_competition_stage_plan_confirmation_by_level.sql")) {
       assertThat(input).isNotNull();
       return new String(input.readAllBytes(), StandardCharsets.UTF_8);
     }

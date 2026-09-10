@@ -33,7 +33,10 @@ public class CompetitionStageUnlockOutboxProcessor {
         List<CompetitionStageUnlockOutboxEntity> events = outboxMapper.selectPending(tenantId);
         if (events == null) continue;
         for (CompetitionStageUnlockOutboxEntity event : events) {
-          CompetitionContestantProfileEntity profile = profileMapper.selectForUpdateByTenantAndMember(tenantId, event.getContestantMemberId());
+          CompetitionContestantProfileEntity profile = event.getEventWorkTypeId() == null
+              ? profileMapper.selectForUpdateByTenantAndMember(tenantId, event.getContestantMemberId())
+              : profileMapper.selectForUpdateByTenantMemberAndWorkType(
+                  tenantId, event.getContestantMemberId(), event.getEventWorkTypeId());
           if (profile != null && event.getTargetStageId() != null) {
             profile.setCurrentStageId(event.getTargetStageId()); profile.setPromotionStatus("promoted"); profileMapper.updateById(profile);
           }

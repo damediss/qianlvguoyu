@@ -8,7 +8,6 @@ public class CompetitionPlayerQueryReq extends PageQuery {
   private Long orgId;
   private Long eventWorkTypeId;
   private String keyword;
-  private String employeeNo;
   private String name;
   private String status;
 
@@ -20,8 +19,6 @@ public class CompetitionPlayerQueryReq extends PageQuery {
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
   public String getKeyword() { return keyword; }
   public void setKeyword(String keyword) { this.keyword = keyword; }
-  public String getEmployeeNo() { return employeeNo; }
-  public void setEmployeeNo(String employeeNo) { this.employeeNo = employeeNo; }
   public String getName() { return name; }
   public void setName(String name) { this.name = name; }
   public String getStatus() { return status; }

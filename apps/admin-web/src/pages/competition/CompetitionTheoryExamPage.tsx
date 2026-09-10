@@ -1,6 +1,5 @@
 import {
   DownloadOutlined,
-  EyeOutlined,
   PlusOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
@@ -39,16 +38,15 @@ import {
   getCompetitionTheoryPaperPreview,
   getCompetitionTheorySchedule,
   getCompetitionTheorySchedulePreflight,
-  importCompetitionTheoryPaperPair,
+  importCompetitionTheoryPaperSnapshots,
   listCompetitionEventWorkTypes,
+  listCompetitionEventWorkTypeLevels,
   listCompetitionScoreRules,
-  listCompetitionTheoryCourses,
   listCompetitionTheoryMonitor,
   listCompetitionTheoryPaperSnapshots,
   listCompetitionTheoryResults,
   listCompetitionTheoryRooms,
   listCompetitionTheorySchedules,
-  listCompetitionTheorySourcePapers,
   pageCompetitionStages,
   performCompetitionTheoryMonitorAction,
   publishCompetitionTheorySchedule,
@@ -57,6 +55,9 @@ import {
   saveCompetitionTheorySession,
   withdrawCompetitionTheorySchedule,
 } from '../../api/competition';
+import {
+  listCompetitionMakeExamSnapshotsForScope,
+} from '../../api/competitionQuestion';
 import { useAuthStore } from '../../stores/authStore';
 import type {
   CompetitionId,
@@ -65,13 +66,17 @@ import type {
   CompetitionTheoryRoom,
   CompetitionTheorySession,
 } from '../../types/competition';
+import type {
+  CompetitionMakeExamSnapshot,
+} from '../../types/competitionQuestion';
 import { CompetitionEventFrame } from './CompetitionEventFrame';
+import { CompetitionPlayerPaperAssignmentPage } from './CompetitionPlayerPaperAssignmentPage';
 import './CompetitionEventManagementPage.css';
 
 type RoomFormValues = Omit<CompetitionTheoryRoom, 'id' | 'eventId'>;
 type ImportFormValues = { paperIds: CompetitionId[] };
 type SessionFormValues = {
-  sessionCode: 'A' | 'B';
+  sessionCode: string;
   sessionName: string;
   paperSnapshotId: CompetitionId;
   timeRange: [Dayjs, Dayjs];
@@ -142,6 +147,7 @@ export function CompetitionTheoryExamPage({
   onNavigate,
   initialStageId,
   initialEventWorkTypeId,
+  initialEventWorkTypeLevelCode,
   embedded = false,
   stagePlanningEditor = false,
 }: {
@@ -149,6 +155,7 @@ export function CompetitionTheoryExamPage({
   onNavigate: (path: string) => void;
   initialStageId?: string;
   initialEventWorkTypeId?: string;
+  initialEventWorkTypeLevelCode?: string;
   embedded?: boolean;
   stagePlanningEditor?: boolean;
 }) {
@@ -156,6 +163,7 @@ export function CompetitionTheoryExamPage({
   const canViewEvent = permissions.includes('competition:event:view');
   const canViewPaper = permissions.includes('competition:theory-paper:view');
   const canManagePaper = permissions.includes('competition:theory-paper:manage');
+  const canViewPlayerAssignment = permissions.includes('competition:stage-paper-assignment:view');
   const canViewSchedule = permissions.includes('competition:theory-schedule:view');
   const canManageSchedule = permissions.includes('competition:theory-schedule:manage');
   const canPublishSchedule = permissions.includes('competition:theory-schedule:publish');
@@ -173,18 +181,20 @@ export function CompetitionTheoryExamPage({
   const [activeTab, setActiveTab] = useState('paper');
   const [stageId, setStageId] = useState<string | undefined>(initialStageId);
   const [eventWorkTypeId, setEventWorkTypeId] = useState<string | undefined>(initialEventWorkTypeId);
+  const [eventWorkTypeLevelId, setEventWorkTypeLevelId] = useState<string>();
   const [scoreRuleId, setScoreRuleId] = useState<string>();
-  const [courseId, setCourseId] = useState<string>();
   const [selectedVersionId, setSelectedVersionId] = useState<string>();
   const [previewSnapshotId, setPreviewSnapshotId] = useState<string>();
-  const [importOpen, setImportOpen] = useState(false);
+  const [competitionImportOpen, setCompetitionImportOpen] = useState(false);
+  const [playerAssignmentOpen, setPlayerAssignmentOpen] = useState(false);
+  const [playerAssignmentDirty, setPlayerAssignmentDirty] = useState(false);
   const [roomOpen, setRoomOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<CompetitionTheoryRoom>();
   const [sessionOpen, setSessionOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<CompetitionTheorySession>();
   const [monitorAction, setMonitorAction] = useState<{ action: MonitorAction; record: CompetitionTheoryMonitor }>();
   const [withdrawOpen, setWithdrawOpen] = useState(false);
-  const [importForm] = Form.useForm<ImportFormValues>();
+  const [competitionImportForm] = Form.useForm<ImportFormValues>();
   const [roomForm] = Form.useForm<RoomFormValues>();
   const [sessionForm] = Form.useForm<SessionFormValues>();
   const [actionForm] = Form.useForm<{ reason: string; confirmation: string }>();
@@ -199,14 +209,26 @@ export function CompetitionTheoryExamPage({
     enabled: canViewEvent,
   });
   const stagesQuery = useQuery({
-    queryKey: ['competition-stages', eventId],
-    queryFn: () => pageCompetitionStages(eventId, { page: 1, pageSize: 500 }),
+    queryKey: ['competition-stages', eventId, eventWorkTypeId ?? 'event', initialEventWorkTypeLevelCode ?? 'event'],
+    queryFn: () => pageCompetitionStages(eventId, {
+      page: 1,
+      pageSize: 500,
+      // A theory page opened from a stage canvas must read that same scoped stage.
+      // The standalone theory page keeps its historical event-level behavior.
+      eventWorkTypeId: initialEventWorkTypeLevelCode ? eventWorkTypeId : undefined,
+      eventWorkTypeLevelCode: initialEventWorkTypeLevelCode,
+    }),
     enabled: canViewEvent && canReadDimensions,
   });
   const workTypesQuery = useQuery({
     queryKey: ['competition-event-work-types', eventId],
     queryFn: () => listCompetitionEventWorkTypes(eventId),
     enabled: canViewEvent && canReadDimensions,
+  });
+  const levelsQuery = useQuery({
+    queryKey: ['competition-event-work-type-levels', eventId, eventWorkTypeId],
+    queryFn: () => listCompetitionEventWorkTypeLevels(eventId, eventWorkTypeId!),
+    enabled: canViewEvent && canReadDimensions && Boolean(eventWorkTypeId),
   });
   const rulesQuery = useQuery({
     queryKey: ['competition-score-rules', eventId, stageId, eventWorkTypeId],
@@ -229,6 +251,19 @@ export function CompetitionTheoryExamPage({
     }
   }, [eventWorkTypeId, workTypesQuery.data]);
   useEffect(() => {
+    const levels = levelsQuery.data || [];
+    if (!levels.length) {
+      setEventWorkTypeLevelId(undefined);
+      return;
+    }
+    const preferred = initialEventWorkTypeLevelCode
+      ? levels.find((level) => level.levelCode === initialEventWorkTypeLevelCode)
+      : undefined;
+    if (!eventWorkTypeLevelId || !levels.some((level) => idValue(level.id) === eventWorkTypeLevelId)) {
+      setEventWorkTypeLevelId(idValue((preferred || levels[0]).id));
+    }
+  }, [eventWorkTypeLevelId, initialEventWorkTypeLevelCode, levelsQuery.data]);
+  useEffect(() => {
     const rules = rulesQuery.data || [];
     if (!rules.some((rule) => idValue(rule.id) === scoreRuleId)) {
       const preferred = rules.find((rule) => rule.status === 'published') || rules[0];
@@ -236,25 +271,22 @@ export function CompetitionTheoryExamPage({
     }
   }, [rulesQuery.data, scoreRuleId]);
 
-  const coursesQuery = useQuery({
-    queryKey: ['competition-theory-courses', eventId, eventWorkTypeId],
-    queryFn: () => listCompetitionTheoryCourses(eventId, eventWorkTypeId!),
-    enabled: canViewPaper && Boolean(eventWorkTypeId),
-  });
-  useEffect(() => {
-    const courses = coursesQuery.data || [];
-    if (!courses.some((course) => idValue(course.courseId) === courseId)) {
-      setCourseId(courses[0] ? idValue(courses[0].courseId) : undefined);
-    }
-  }, [courseId, coursesQuery.data]);
-  const sourcePapersQuery = useQuery({
-    queryKey: ['competition-theory-source-papers', eventId, eventWorkTypeId, courseId],
-    queryFn: () => listCompetitionTheorySourcePapers(eventId, eventWorkTypeId!, courseId!),
-    enabled: canViewPaper && Boolean(eventWorkTypeId && courseId),
+  const competitionSnapshotsQuery = useQuery({
+    queryKey: ['competition-make-snapshots-for-theory-scope', eventId, eventWorkTypeId, eventWorkTypeLevelId],
+    queryFn: () => listCompetitionMakeExamSnapshotsForScope(eventId, {
+      eventWorkTypeId: eventWorkTypeId!,
+      eventWorkTypeLevelId: eventWorkTypeLevelId!,
+      contentType: 'theory',
+    }),
+    enabled: canViewPaper && Boolean(eventWorkTypeId && eventWorkTypeLevelId),
   });
   const snapshotsQuery = useQuery({
-    queryKey: ['competition-theory-paper-snapshots', eventId, stageId, eventWorkTypeId],
-    queryFn: () => listCompetitionTheoryPaperSnapshots(eventId, { stageId, eventWorkTypeId }),
+    queryKey: ['competition-theory-paper-snapshots', eventId, stageId, eventWorkTypeId, eventWorkTypeLevelId],
+    queryFn: () => listCompetitionTheoryPaperSnapshots(eventId, {
+      stageId,
+      eventWorkTypeId,
+      eventWorkTypeLevelId,
+    }),
     enabled: canViewPaper && paperScopeReady,
   });
   const previewQuery = useQuery<CompetitionTheoryPaperPreview>({
@@ -308,18 +340,21 @@ export function CompetitionTheoryExamPage({
     ]);
   };
 
-  const importMutation = useMutation({
-    mutationFn: (values: ImportFormValues) => importCompetitionTheoryPaperPair(eventId, {
-      stageId: stageId!,
-      eventWorkTypeId: eventWorkTypeId!,
-      courseId: courseId!,
-      paperAId: values.paperIds[0],
-      paperBId: values.paperIds[1],
-    }),
+  const competitionImportMutation = useMutation({
+    mutationFn: (values: ImportFormValues) => {
+      const selectedIds = values.paperIds.filter((id, index, all) => all.indexOf(id) === index);
+      if (selectedIds.length < 1) throw new Error('至少选择一套已发布竞赛组卷快照');
+      return importCompetitionTheoryPaperSnapshots(eventId, {
+        stageId: stageId!,
+        eventWorkTypeId: eventWorkTypeId!,
+        eventWorkTypeLevelId: eventWorkTypeLevelId!,
+        paperSnapshotIds: selectedIds,
+      });
+    },
     onSuccess: () => {
-      message.success('试卷已导入并生成快照');
-      setImportOpen(false);
-      importForm.resetFields();
+      message.success('竞赛组卷快照已绑定并生成理论执行快照');
+      setCompetitionImportOpen(false);
+      competitionImportForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ['competition-theory-paper-snapshots'] });
     },
   });
@@ -391,16 +426,19 @@ export function CompetitionTheoryExamPage({
   });
 
   const selectedSchedule = scheduleQuery.data;
-  const completedSourcePapers = (sourcePapersQuery.data || []).filter((paper) => paper.questionCount > 0);
-  const paperOptions = completedSourcePapers.map((paper) => ({
-    label: `${paper.planTitle}（${paper.paperTitle} · ${paper.questionCount}题 / ${paper.totalScore}分）`,
-    value: idValue(paper.paperId),
-  }));
-  const sourcePlanTitleById = new Map(
-    (sourcePapersQuery.data || []).map((paper) => [idValue(paper.planId), paper.planTitle]),
-  );
-  const snapshotOptions = (snapshotsQuery.data || []).map((snapshot) => ({
+  const snapshotOptions = (snapshotsQuery.data || []).filter((snapshot) => snapshot.status === 'published').map((snapshot) => ({
     label: `${snapshot.paperCode}卷 v${snapshot.versionNo} · ${snapshot.sourceTitle}`,
+    value: idValue(snapshot.id),
+  }));
+  const competitionSnapshots = (competitionSnapshotsQuery.data || [])
+    .filter((snapshot: CompetitionMakeExamSnapshot) => snapshot.status === 'published' && snapshot.questionCount > 0);
+  const selectedCompetitionSnapshotIds = new Set(
+    (snapshotsQuery.data || [])
+      .filter((snapshot) => snapshot.status === 'published' && snapshot.sourceCompetitionPaperSnapshotId != null)
+      .map((snapshot) => idValue(snapshot.sourceCompetitionPaperSnapshotId)),
+  );
+  const competitionSnapshotOptions = competitionSnapshots.map((snapshot: CompetitionMakeExamSnapshot) => ({
+    label: `${snapshot.title} · v${snapshot.versionNo}（${snapshot.questionCount}题 / ${snapshot.totalScore}分）`,
     value: idValue(snapshot.id),
   }));
   const roomOptions = (roomsQuery.data || []).filter((room) => room.status === 'enabled').map((room) => ({
@@ -414,25 +452,40 @@ export function CompetitionTheoryExamPage({
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       {!canViewPaper ? <Result status="403" title="暂无试卷管理查看权限" /> : (
         <>
-          <Card size="small" title="试卷快照" extra={canManagePaper && <Button type="primary" icon={<PlusOutlined />} disabled={!courseId} onClick={() => { importForm.resetFields(); setImportOpen(true); }}>导入试卷</Button>}>
-            <Space wrap style={{ marginBottom: 12 }}>
-              <Select style={{ width: 360 }} placeholder="选择题库课程" value={courseId} onChange={(value) => { setCourseId(value); importForm.resetFields(); }} options={(coursesQuery.data || []).map((course) => ({ label: `${course.title}${course.version ? ` · ${course.version}` : ''}`, value: idValue(course.courseId) }))} />
-            </Space>
-            {!sourcePapersQuery.isLoading && completedSourcePapers.length === 0 && <Alert style={{ marginBottom: 12 }} type="info" showIcon message="当前课程暂无已完成且包含试题的组卷计划" />}
-            <Table rowKey={(row) => idValue(row.id)} size="small" pagination={false} dataSource={snapshotsQuery.data || []} columns={[
-              { title: '试卷', dataIndex: 'paperCode', width: 70, render: (value) => <Tag color={value === 'A' ? 'blue' : 'purple'}>{value} 卷</Tag> },
-              { title: '版本', dataIndex: 'versionNo', width: 80, render: (value) => `v${value}` },
-              { title: '组卷计划', dataIndex: 'sourcePlanId', render: (value, row) => sourcePlanTitleById.get(idValue(value)) || row.sourceTitle || '-' },
-              { title: '来源试卷', dataIndex: 'sourceTitle' },
-              { title: '题量', dataIndex: 'questionCount', width: 80 },
-              { title: '总分', dataIndex: 'totalScore', width: 80 },
-              { title: '时长', dataIndex: 'durationMinutes', width: 90, render: (value) => `${value} 分钟` },
-              { title: '状态', dataIndex: 'status', width: 100, render: statusTag },
-              { title: '固化时间', dataIndex: 'importedAt', width: 175, render: formatDate },
-              { title: '操作', width: 90, render: (_, row) => <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => setPreviewSnapshotId(idValue(row.id))}>预览</Button> },
-            ]} />
+          <Card
+            size="small"
+            title="竞赛组卷快照（新竞赛题库）"
+            extra={<Space>
+              {canViewPlayerAssignment && <Button disabled={!stageId || !eventWorkTypeId || !eventWorkTypeLevelId || snapshotsQuery.data?.filter((snapshot) => snapshot.status === 'published').length === 0} onClick={() => setPlayerAssignmentOpen(true)}>配置选手试卷</Button>}
+              {canManagePaper && <Button type="primary" icon={<PlusOutlined />} disabled={!eventWorkTypeLevelId || competitionSnapshots.length === 0} onClick={() => { competitionImportForm.resetFields(); competitionImportForm.setFieldsValue({ paperIds: competitionSnapshots.filter((snapshot) => selectedCompetitionSnapshotIds.has(idValue(snapshot.id))).map((snapshot) => idValue(snapshot.id)) }); setCompetitionImportOpen(true); }}>选择试卷</Button>}
+            </Space>}
+          >
+            <Alert
+              style={{ marginBottom: 12 }}
+              type="info"
+              showIcon
+              message="每个竞赛组卷计划只生成一套试卷；A/B 或更多套试卷请分别创建多个计划，再在当前赛段选择一套或多套，后续排考时可随机或指定分配。"
+            />
+            {!eventWorkTypeLevelId && <Alert style={{ marginBottom: 12 }} type="warning" showIcon message="当前工种暂无等级，无法绑定竞赛组卷快照。" />}
+            {eventWorkTypeLevelId && !competitionSnapshotsQuery.isLoading && competitionSnapshots.length === 0 && <Alert style={{ marginBottom: 12 }} type="warning" showIcon message="当前赛事、工种、等级暂无已发布的竞赛理论组卷试卷。" />}
+            <Table<CompetitionMakeExamSnapshot>
+              rowKey={(row) => idValue(row.id)}
+              size="small"
+              pagination={false}
+              loading={competitionSnapshotsQuery.isLoading}
+              dataSource={competitionSnapshots}
+              columns={[
+                { title: '试卷', dataIndex: 'paperCode', width: 70, render: (value: string) => <Tag color="purple">{value} 卷</Tag> },
+                { title: '版本', dataIndex: 'versionNo', width: 80, render: (value: number) => `v${value}` },
+                { title: '组卷计划', dataIndex: 'title', ellipsis: true },
+                { title: '题量', dataIndex: 'questionCount', width: 80 },
+                { title: '总分', dataIndex: 'totalScore', width: 80 },
+                { title: '时长', dataIndex: 'durationMinutes', width: 90, render: (value: number) => `${value} 分钟` },
+                { title: '状态', width: 100, render: (_, row) => selectedCompetitionSnapshotIds.has(idValue(row.id)) ? <Tag color="success">已选择</Tag> : <Tag>待选择</Tag> },
+              ]}
+            />
           </Card>
-        </>
+         </>
       )}
     </Space>
   );
@@ -530,12 +583,13 @@ export function CompetitionTheoryExamPage({
     <>
       <Card bordered={false} className="competition-filter-card competition-filter-card--workspace">
         <div className="competition-filter-card__head">
-          <div><Typography.Title level={4}>理论试卷与考试执行</Typography.Title><Typography.Text type="secondary">按阶段、工种与课程组卷计划管理竞赛专用理论试卷</Typography.Text></div>
+          <div><Typography.Title level={4}>理论试卷与考试执行</Typography.Title><Typography.Text type="secondary">按阶段、工种与等级管理竞赛独立题库组卷快照和考试执行</Typography.Text></div>
           <Tag color="blue"><SafetyCertificateOutlined /> 专用考试身份域</Tag>
         </div>
         <Space wrap className="competition-filter-card__body">
           <Select style={{ width: 220 }} placeholder="选择阶段" value={stageId} onChange={(value) => { setStageId(value); setScoreRuleId(undefined); }} options={(stagesQuery.data?.items || []).map((stage) => ({ label: stage.name, value: idValue(stage.id) }))} />
           <Select style={{ width: 220 }} placeholder="选择工种" value={eventWorkTypeId} onChange={(value) => { setEventWorkTypeId(value); setScoreRuleId(undefined); }} options={(workTypesQuery.data || []).map((workType) => ({ label: workType.displayName || workType.workTypeName || idValue(workType.id), value: idValue(workType.id) }))} />
+          <Select style={{ width: 190 }} placeholder="选择等级" value={eventWorkTypeLevelId} onChange={setEventWorkTypeLevelId} options={(levelsQuery.data || []).map((level) => ({ label: `${level.levelName}（${level.levelCode}）`, value: idValue(level.id) }))} />
           {activeTab === 'schedule' && canReadScoreRules && <Select style={{ width: 260 }} placeholder="选择评分规则" value={scoreRuleId} onChange={setScoreRuleId} options={(rulesQuery.data || []).map((rule) => ({ label: `v${rule.ruleVersion} · ${rule.status}`, value: idValue(rule.id) }))} />}
           {!stagePlanningEditor && <Select style={{ width: 190 }} placeholder="选择排考版本" allowClear value={selectedVersionId} onChange={setSelectedVersionId} options={versionOptions} />}
         </Space>
@@ -552,28 +606,51 @@ export function CompetitionTheoryExamPage({
         )}
       </Card>
 
-      <Modal title="导入试卷" open={importOpen} onCancel={() => setImportOpen(false)} onOk={() => importForm.submit()} confirmLoading={importMutation.isPending} destroyOnClose>
-        <Alert style={{ marginBottom: 16 }} type="info" showIcon message="导入后固化题目、选项、标准答案和来源版本；选手端与监考端不会获得标准答案。" />
-        <Form form={importForm} layout="vertical" onFinish={(values) => {
-          if (values.paperIds.length !== 2) return message.error('请选择两份已完成组卷的试卷');
-          const selectedPlans = values.paperIds
-            .map((paperId) => sourcePapersQuery.data?.find((paper) => idValue(paper.paperId) === idValue(paperId))?.planId)
-            .filter((planId): planId is CompetitionId => planId !== undefined);
-          if (new Set(selectedPlans.map(idValue)).size !== 2) return message.error('请选择来自两个不同组卷计划的试卷');
-          importMutation.mutate(values);
+      <Modal
+        title="选择竞赛理论试卷"
+        open={competitionImportOpen}
+        onCancel={() => setCompetitionImportOpen(false)}
+        onOk={() => competitionImportForm.submit()}
+        confirmLoading={competitionImportMutation.isPending}
+        destroyOnClose
+      >
+        <Alert style={{ marginBottom: 16 }} type="info" showIcon message="可选择一套或多套来自不同组卷计划的已发布试卷。保存后会在当前赛段生成 P1、P2 等执行快照，后续在排考场次中决定随机或指定分配。" />
+        <Form form={competitionImportForm} layout="vertical" onFinish={(values) => {
+          if (!values.paperIds?.length) {
+            message.error('至少选择一套已发布竞赛组卷试卷');
+            return;
+          }
+          competitionImportMutation.mutate(values);
         }}>
-          <Form.Item name="paperIds" label="选择已完成组卷计划" rules={[{ required: true, type: 'array', min: 2, max: 2, message: '请选择两份试卷' }]}>
+          <Form.Item name="paperIds" label="选择已发布竞赛试卷" rules={[{ required: true, type: 'array', min: 1, max: 26, message: '至少选择一套，最多选择 26 套试卷' }]}>
             <Select
               mode="multiple"
-              maxCount={2}
-              maxTagCount={2}
-              placeholder="请选择两份已完成组卷的试卷"
-              options={paperOptions}
+              maxCount={26}
+              maxTagCount={4}
+              placeholder="请选择一套或多套已发布试卷"
+              options={competitionSnapshotOptions}
               optionFilterProp="label"
               showSearch
             />
           </Form.Item>
         </Form>
+      </Modal>
+      <Modal
+        title="选手配置 · 试卷分配"
+        open={playerAssignmentOpen}
+        onCancel={() => {
+          const close = () => { setPlayerAssignmentOpen(false); setPlayerAssignmentDirty(false); };
+          if (playerAssignmentDirty) Modal.confirm({ title: '放弃未保存的选手分配调整？', onOk: close });
+          else close();
+        }}
+        footer={null}
+        centered
+        width="min(1500px, calc(100vw - 32px))"
+        className="stage-player-paper-assignment-modal"
+        styles={{ body: { maxHeight: 'calc(100vh - 112px)', overflowY: 'auto', padding: 0 } }}
+        destroyOnClose
+      >
+        {playerAssignmentOpen && stageId && <CompetitionPlayerPaperAssignmentPage stageId={stageId} onDirtyChange={setPlayerAssignmentDirty} />}
       </Modal>
       <Modal
         title="试卷预览（题干、题型和分值）"
@@ -636,7 +713,7 @@ export function CompetitionTheoryExamPage({
       </Modal>
       <Modal title={editingSession ? '编辑考试场次' : '新增考试场次'} open={sessionOpen} onCancel={() => setSessionOpen(false)} onOk={() => sessionForm.submit()} confirmLoading={sessionMutation.isPending} destroyOnClose>
         <Form form={sessionForm} layout="vertical" onFinish={(values) => sessionMutation.mutate(values)}>
-          <Space wrap><Form.Item name="sessionCode" label="卷别" rules={[{ required: true }]}><Select style={{ width: 120 }} options={[{ label: 'A 卷', value: 'A' }, { label: 'B 卷', value: 'B' }]} /></Form.Item><Form.Item name="sessionName" label="场次名称" rules={[{ required: true }]}><Input style={{ width: 280 }} /></Form.Item></Space>
+          <Space wrap><Form.Item name="sessionCode" label="试卷编号" rules={[{ required: true }]}><Input style={{ width: 140 }} placeholder="如 P1" /></Form.Item><Form.Item name="sessionName" label="场次名称" rules={[{ required: true }]}><Input style={{ width: 280 }} /></Form.Item></Space>
           <Form.Item name="paperSnapshotId" label="试卷快照" rules={[{ required: true }]}><Select options={snapshotOptions} /></Form.Item>
           <Form.Item name="timeRange" label="考试时间" rules={[{ required: true }]}><DatePicker.RangePicker showTime style={{ width: '100%' }} /></Form.Item>
           <Form.Item name="roomIds" label="考场" rules={[{ required: true }]}><Select mode="multiple" options={roomOptions} /></Form.Item>

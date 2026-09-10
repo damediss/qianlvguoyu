@@ -9,6 +9,7 @@ import com.guoyu.platform.competition.dto.CompetitionEventUpdateReq;
 import com.guoyu.platform.competition.service.CompetitionEventApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionEventVO;
 import com.guoyu.platform.competition.vo.CompetitionEventPublishResultVO;
+import com.guoyu.platform.competition.vo.CompetitionEventPublishReadinessVO;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -67,5 +68,12 @@ public class CompetitionEventController {
   @AuditLog(module = "competition", action = "event:publish", targetType = "competition_event", includeResult = true)
   public ApiResponse<CompetitionEventPublishResultVO> publish(@PathVariable Long eventId) {
     return ApiResponse.ok(service.publish(eventId));
+  }
+
+  @GetMapping("/events/{eventId}/publish-readiness")
+  @PreAuthorize("hasAuthority('competition:event:publish')")
+  public ApiResponse<CompetitionEventPublishReadinessVO> publishReadiness(
+      @PathVariable Long eventId) {
+    return ApiResponse.ok(service.publishReadiness(eventId));
   }
 }

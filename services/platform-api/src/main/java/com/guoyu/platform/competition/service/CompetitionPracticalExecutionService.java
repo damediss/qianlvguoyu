@@ -2,6 +2,9 @@ package com.guoyu.platform.competition.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.competition.domain.CompetitionPracticalAverageCalculator;
@@ -22,12 +25,15 @@ import com.guoyu.platform.competition.entity.CompetitionPracticalScoreEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalScoreEntryEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalScoreSheetEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalSessionEntity;
+import com.guoyu.platform.competition.entity.CompetitionEventMemberEntity;
+import com.guoyu.platform.competition.entity.CompetitionMakeExamPaperQuestionEntity;
 import com.guoyu.platform.competition.entity.CompetitionRefereeAvoidanceEntity;
 import com.guoyu.platform.competition.entity.CompetitionScoreRuleEntity;
 import com.guoyu.platform.competition.entity.CompetitionScoreSourceEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageExecutionPlanEntity;
 import com.guoyu.platform.competition.enums.CompetitionPracticalScoreStatus;
 import com.guoyu.platform.competition.enums.CompetitionScoreSourceType;
+import com.guoyu.platform.competition.mapper.CompetitionEventMemberMapper;
 import com.guoyu.platform.competition.mapper.CompetitionPracticalAssignmentMapper;
 import com.guoyu.platform.competition.mapper.CompetitionPracticalJudgeGroupMapper;
 import com.guoyu.platform.competition.mapper.CompetitionPracticalJudgeMemberMapper;
@@ -37,6 +43,7 @@ import com.guoyu.platform.competition.mapper.CompetitionPracticalScoreEntryMappe
 import com.guoyu.platform.competition.mapper.CompetitionPracticalScoreMapper;
 import com.guoyu.platform.competition.mapper.CompetitionPracticalScoreSheetMapper;
 import com.guoyu.platform.competition.mapper.CompetitionPracticalSessionMapper;
+import com.guoyu.platform.competition.mapper.CompetitionMakeExamPaperQuestionMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRefereeAvoidanceMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreRuleMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreSourceMapper;
@@ -48,6 +55,10 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -67,6 +78,10 @@ public class CompetitionPracticalExecutionService {
   private final CompetitionScoreSourceMapper scoreSourceMapper;
   private final CompetitionStageExecutionPlanMapper planMapper;
   private final CompetitionStageLifecycleGuard lifecycleGuard;
+  private final CompetitionMakeExamPaperQuestionMapper paperQuestionMapper;
+  private final ObjectMapper objectMapper;
+  private final CompetitionEventMemberMapper contestantMemberMapper;
+  private final CompetitionPlayerSessionConflictDomainService sessionConflictService;
   private final CompetitionPracticalRuleDomainService ruleDomain = new CompetitionPracticalRuleDomainService();
   private final CompetitionPracticalAverageCalculator averageCalculator = new CompetitionPracticalAverageCalculator();
 
@@ -85,6 +100,31 @@ public class CompetitionPracticalExecutionService {
       CompetitionScoreSourceMapper scoreSourceMapper,
       CompetitionStageExecutionPlanMapper planMapper,
       CompetitionStageLifecycleGuard lifecycleGuard) {
+    this(sessionMapper, groupMapper, memberMapper, assignmentMapper, ruleMapper, ruleItemMapper,
+        sheetMapper, entryMapper, practicalScoreMapper, avoidanceMapper, scoreRuleMapper,
+        scoreSourceMapper, planMapper, lifecycleGuard, null, null, null, null);
+  }
+
+  @Autowired
+  public CompetitionPracticalExecutionService(
+      CompetitionPracticalSessionMapper sessionMapper,
+      CompetitionPracticalJudgeGroupMapper groupMapper,
+      CompetitionPracticalJudgeMemberMapper memberMapper,
+      CompetitionPracticalAssignmentMapper assignmentMapper,
+      CompetitionPracticalRuleMapper ruleMapper,
+      CompetitionPracticalRuleItemMapper ruleItemMapper,
+      CompetitionPracticalScoreSheetMapper sheetMapper,
+      CompetitionPracticalScoreEntryMapper entryMapper,
+      CompetitionPracticalScoreMapper practicalScoreMapper,
+      CompetitionRefereeAvoidanceMapper avoidanceMapper,
+      CompetitionScoreRuleMapper scoreRuleMapper,
+      CompetitionScoreSourceMapper scoreSourceMapper,
+      CompetitionStageExecutionPlanMapper planMapper,
+      CompetitionStageLifecycleGuard lifecycleGuard,
+      CompetitionMakeExamPaperQuestionMapper paperQuestionMapper,
+      ObjectMapper objectMapper,
+      CompetitionEventMemberMapper contestantMemberMapper,
+      CompetitionPlayerSessionConflictDomainService sessionConflictService) {
     this.sessionMapper = sessionMapper;
     this.groupMapper = groupMapper;
     this.memberMapper = memberMapper;
@@ -99,6 +139,10 @@ public class CompetitionPracticalExecutionService {
     this.scoreSourceMapper = scoreSourceMapper;
     this.planMapper = planMapper;
     this.lifecycleGuard = lifecycleGuard;
+    this.paperQuestionMapper = paperQuestionMapper;
+    this.objectMapper = objectMapper;
+    this.contestantMemberMapper = contestantMemberMapper;
+    this.sessionConflictService = sessionConflictService;
   }
 
   @Transactional(readOnly = true)
@@ -129,6 +173,21 @@ public class CompetitionPracticalExecutionService {
     row.setEndAt(req.endAt()); row.setCapacity(req.capacity()); row.setResourceId(req.resourceId()); row.setStatus("draft");
     row.setCreatedBy(userId); row.setUpdatedBy(userId);
     if (sessionMapper.insert(row) != 1) throw new BusinessException(ErrorCode.CONFLICT, "实操场次保存失败");
+    return row;
+  }
+
+  @Transactional
+  public CompetitionPracticalSessionEntity bindPaperSnapshot(
+      Long tenantId, Long userId, Long sessionId, Long paperSnapshotId) {
+    CompetitionPracticalSessionEntity row = session(tenantId, sessionId);
+    if (!"draft".equals(row.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "只有草稿实操场次可以绑定组卷快照");
+    }
+    row.setPaperSnapshotId(paperSnapshotId);
+    row.setUpdatedBy(userId);
+    if (sessionMapper.updateById(row) != 1) {
+      throw new BusinessException(ErrorCode.CONFLICT, "实操场次绑定组卷快照失败");
+    }
     return row;
   }
 
@@ -245,6 +304,7 @@ public class CompetitionPracticalExecutionService {
     CompetitionStageExecutionPlanEntity plan = lifecycleGuard.requirePublishedPlan(tenantId, planId,
         session.getEventId(), session.getStageId(), session.getEventWorkTypeId(), session.getEventWorkTypeLevelId());
     lifecycleGuard.requireIncludedRosterItem(tenantId, plan, req.rosterItemId(), req.contestantMemberId());
+    assertContestantSessionFree(tenantId, req.contestantMemberId(), session);
     List<CompetitionPracticalJudgeMemberEntity> members = groupMembers(tenantId, group.getId());
     List<CompetitionPracticalAssignmentEntity> result = new ArrayList<>();
     for (Long refereeId : req.refereeMemberIds()) {
@@ -310,22 +370,60 @@ public class CompetitionPracticalExecutionService {
     if (!"draft".equals(sheet.getStatus()) && !"unlocked_for_rescore".equals(sheet.getStatus())) {
       throw new BusinessException(ErrorCode.CONFLICT, "已锁定评分单不可修改");
     }
+    CompetitionPracticalSessionEntity session = session(tenantId, assignment.getSessionId());
     List<CompetitionPracticalRuleItemEntity> items = ruleItems(tenantId, sheet.getRuleId());
-    Set<Long> expected = new HashSet<>();
-    for (CompetitionPracticalRuleItemEntity item : items) if ("enabled".equals(item.getStatus())) expected.add(item.getId());
-    Set<Long> actual = new HashSet<>();
+    List<SnapshotScoreItem> paperItems = snapshotScoringItems(tenantId, session);
+    Map<String, SnapshotScoreItem> paperItemsByKey = new LinkedHashMap<>();
+    for (SnapshotScoreItem item : paperItems) {
+      paperItemsByKey.put(item.key(), item);
+    }
+    boolean snapshotMode = session.getPaperSnapshotId() != null;
+    Set<Long> expectedRuleItems = new HashSet<>();
+    Set<String> expectedPaperItems = new java.util.HashSet<>();
+    for (CompetitionPracticalRuleItemEntity item : items) {
+      if ("enabled".equals(item.getStatus())) expectedRuleItems.add(item.getId());
+    }
+    if (snapshotMode && paperItemsByKey.isEmpty()) {
+      throw new BusinessException(ErrorCode.CONFLICT, "实操组卷快照没有可用评分项");
+    }
+    expectedPaperItems.addAll(paperItemsByKey.keySet());
+    Set<Long> actualRuleItems = new HashSet<>();
+    Set<String> actualPaperItems = new java.util.HashSet<>();
     BigDecimal total = BigDecimal.ZERO;
     for (CompetitionPracticalScoreEntryReq request : req.entries()) {
-      if (!actual.add(request.ruleItemId()) || !expected.contains(request.ruleItemId())) throw new BusinessException(ErrorCode.BAD_REQUEST, "评分明细与当前规则不匹配");
-      CompetitionPracticalRuleItemEntity item = items.stream().filter(i -> i.getId().equals(request.ruleItemId())).findFirst().orElseThrow();
-      total = total.add(ruleDomain.validateEntry(request.score(), request.deduction(), item.getMaxScore(), item.getDeductionAllowed() == 1));
+      if (snapshotMode) {
+        if (request.paperQuestionId() == null || request.paperItemNo() == null) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST, "竞赛实操评分必须填写快照题目和评分项");
+        }
+        String key = snapshotItemKey(request.paperQuestionId(), request.paperItemNo());
+        SnapshotScoreItem item = paperItemsByKey.get(key);
+        if (item == null || !actualPaperItems.add(key)) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST, "评分明细与实操题快照不匹配或重复");
+        }
+        total = total.add(validateSnapshotEntry(request, item));
+      } else {
+        if (request.ruleItemId() == null || !actualRuleItems.add(request.ruleItemId())
+            || !expectedRuleItems.contains(request.ruleItemId())) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST, "评分明细与当前规则不匹配");
+        }
+        CompetitionPracticalRuleItemEntity item = items.stream()
+            .filter(i -> i.getId().equals(request.ruleItemId())).findFirst().orElseThrow();
+        total = total.add(ruleDomain.validateEntry(request.score(), request.deduction(),
+            item.getMaxScore(), item.getDeductionAllowed() == 1));
+      }
     }
-    if (requireComplete && !expected.equals(actual)) throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "锁定前必须完成全部评分项");
+    if (requireComplete && (snapshotMode
+        ? !expectedPaperItems.equals(actualPaperItems)
+        : !expectedRuleItems.equals(actualRuleItems))) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "锁定前必须完成全部评分项");
+    }
     List<CompetitionPracticalScoreEntryEntity> old = entries(tenantId, sheetId);
     for (CompetitionPracticalScoreEntryEntity entry : old) entryMapper.deleteById(entry.getId());
     for (CompetitionPracticalScoreEntryReq request : req.entries()) {
       CompetitionPracticalScoreEntryEntity entry = new CompetitionPracticalScoreEntryEntity();
       entry.setId(IdWorker.getId()); entry.setTenantId(tenantId); entry.setScoreSheetId(sheetId); entry.setRuleItemId(request.ruleItemId());
+      entry.setPaperQuestionId(request.paperQuestionId());
+      entry.setPaperItemNo(request.paperItemNo());
       entry.setScore(request.score().setScale(2, RoundingMode.HALF_UP)); entry.setDeduction(request.deduction().setScale(2, RoundingMode.HALF_UP));
       entry.setRemark(request.remark()); entry.setCreatedBy(userId); entry.setUpdatedBy(userId);
       if (entryMapper.insert(entry) != 1) throw new BusinessException(ErrorCode.CONFLICT, "评分明细保存失败");
@@ -380,6 +478,91 @@ public class CompetitionPracticalExecutionService {
         .eq(CompetitionPracticalScoreEntryEntity::getTenantId, tenantId).eq(CompetitionPracticalScoreEntryEntity::getScoreSheetId, sheetId)
         .eq(CompetitionPracticalScoreEntryEntity::getDeleted, 0));
     return rows == null ? new ArrayList<>() : new ArrayList<>(rows);
+  }
+
+  private List<SnapshotScoreItem> snapshotScoringItems(
+      Long tenantId, CompetitionPracticalSessionEntity session) {
+    if (session.getPaperSnapshotId() == null) {
+      return List.of();
+    }
+    if (paperQuestionMapper == null || objectMapper == null) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "竞赛实操快照评分适配器未配置");
+    }
+    List<CompetitionMakeExamPaperQuestionEntity> questions = paperQuestionMapper.selectByPaper(
+        tenantId, session.getPaperSnapshotId());
+    if (questions == null) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "竞赛实操快照题目查询失败");
+    }
+    List<SnapshotScoreItem> result = new ArrayList<>();
+    for (CompetitionMakeExamPaperQuestionEntity question : questions) {
+      if (!"practical".equalsIgnoreCase(question.getQuestionType())) {
+        continue;
+      }
+      if (question.getScoringItemsJson() == null || question.getScoringItemsJson().isBlank()) {
+        continue;
+      }
+      try {
+        JsonNode root = objectMapper.readTree(question.getScoringItemsJson());
+        if (root == null || !root.isArray()) {
+          throw new IllegalArgumentException("评分项不是数组");
+        }
+        for (JsonNode item : root) {
+          int itemNo = item.path("itemNo").asInt(0);
+          if (itemNo <= 0) throw new IllegalArgumentException("评分项序号无效");
+          BigDecimal maxScore = decimal(item, "maxScore");
+          BigDecimal maxDeduction = decimal(item, "maxDeduction");
+          BigDecimal deductionStep = decimal(item, "deductionStep");
+          if (maxScore.signum() <= 0 || maxDeduction.signum() < 0
+              || maxDeduction.compareTo(maxScore) > 0 || deductionStep.signum() <= 0) {
+            throw new IllegalArgumentException("评分项分值或扣分规则无效");
+          }
+          result.add(new SnapshotScoreItem(
+              question.getId(), itemNo, maxScore, maxDeduction, deductionStep));
+        }
+      } catch (JsonProcessingException | IllegalArgumentException ex) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+            "竞赛实操题快照评分项格式异常");
+      }
+    }
+    return result;
+  }
+
+  private BigDecimal validateSnapshotEntry(
+      CompetitionPracticalScoreEntryReq request, SnapshotScoreItem item) {
+    if (request.score() == null || request.deduction() == null
+        || request.score().signum() < 0 || request.deduction().signum() < 0
+        || request.score().compareTo(item.maxScore()) > 0
+        || request.deduction().compareTo(item.maxDeduction()) > 0
+        || request.deduction().compareTo(request.score()) > 0) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+          "评分项超出竞赛实操快照上限");
+    }
+    if (request.deduction().remainder(item.deductionStep()).signum() != 0) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+          "扣分不符合竞赛实操快照扣分步长");
+    }
+    return request.score().subtract(request.deduction()).setScale(2, RoundingMode.HALF_UP);
+  }
+
+  private BigDecimal decimal(JsonNode node, String field) {
+    String value = node.path(field).asText("").trim();
+    if (value.isBlank()) throw new IllegalArgumentException(field + "不能为空");
+    return new BigDecimal(value);
+  }
+
+  private String snapshotItemKey(Long questionId, Integer itemNo) {
+    return questionId + ":" + itemNo;
+  }
+
+  private record SnapshotScoreItem(
+      Long questionId,
+      Integer itemNo,
+      BigDecimal maxScore,
+      BigDecimal maxDeduction,
+      BigDecimal deductionStep) {
+    private String key() {
+      return questionId + ":" + itemNo;
+    }
   }
 
   @Transactional(readOnly = true)
@@ -480,5 +663,20 @@ public class CompetitionPracticalExecutionService {
     if (!official) {
       throw new BusinessException(ErrorCode.CONFLICT, "备用裁判未完成正式启用，不能形成有效成绩");
     }
+  }
+
+  private void assertContestantSessionFree(
+      Long tenantId, Long contestantMemberId, CompetitionPracticalSessionEntity session) {
+    if (sessionConflictService == null || contestantMemberMapper == null
+        || session.getStartAt() == null || session.getEndAt() == null) {
+      return;
+    }
+    CompetitionEventMemberEntity contestant = contestantMemberMapper.selectById(contestantMemberId);
+    if (contestant == null || contestant.getPersonId() == null) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "选手身份缺失，无法校验场次冲突");
+    }
+    sessionConflictService.assertNoOverlap(
+        tenantId, contestant.getPersonId(), session.getStartAt(), session.getEndAt(),
+        null, session.getId(), null);
   }
 }

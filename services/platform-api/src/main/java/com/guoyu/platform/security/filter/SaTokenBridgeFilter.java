@@ -24,6 +24,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class SaTokenBridgeFilter extends OncePerRequestFilter {
 
   private static final String PLAYER_API_PREFIX = "/api/competition/player/";
+  private static final String EXAM_API_PREFIX = "/api/competition/exam/";
+  private static final String FORMAL_EXAM_PLAYER_API_PREFIX = "/api/competition/formal-exam/player/";
 
   private final UserMapper userMapper;
   private final UserRoleMapper userRoleMapper;
@@ -41,7 +43,10 @@ public class SaTokenBridgeFilter extends OncePerRequestFilter {
 
   @Override
   protected boolean shouldNotFilter(HttpServletRequest request) {
-    return request.getRequestURI().startsWith(PLAYER_API_PREFIX);
+    String uri = request.getRequestURI();
+    return uri.startsWith(PLAYER_API_PREFIX)
+        || uri.startsWith(EXAM_API_PREFIX)
+        || uri.startsWith(FORMAL_EXAM_PLAYER_API_PREFIX);
   }
 
   @Override

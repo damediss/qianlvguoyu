@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -66,8 +67,10 @@ public class CompetitionStageController {
   public ApiResponse<java.util.List<CompetitionStageVO>> saveDraftForWorkType(
       @PathVariable Long eventId,
       @PathVariable Long eventWorkTypeId,
+      @RequestParam(required = false) String eventWorkTypeLevelCode,
       @Valid @RequestBody CompetitionStageDraftSaveReq req) {
-    return ApiResponse.ok(service.saveDraftForWorkType(eventId, eventWorkTypeId, req));
+    return ApiResponse.ok(service.saveDraftForWorkType(
+        eventId, eventWorkTypeId, eventWorkTypeLevelCode, req));
   }
 
   @PostMapping("/events/{eventId}/stages/confirm")

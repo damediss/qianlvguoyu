@@ -10,7 +10,6 @@ import com.guoyu.platform.competition.entity.CompetitionEventOrgEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeLevelEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventOrgStatus;
 import com.guoyu.platform.competition.enums.CompetitionEventScope;
-import com.guoyu.platform.competition.enums.CompetitionEventStatus;
 import com.guoyu.platform.competition.mapper.CompetitionEventOrgMapper;
 import com.guoyu.platform.competition.vo.CompetitionEventWorkTypeLevelVO;
 import com.guoyu.platform.security.PlatformAdminSupport;
@@ -64,8 +63,13 @@ public class CompetitionEventWorkTypeLevelApplicationService {
       CompetitionEventWorkTypeLevelBatchReq req) {
     PlatformUserPrincipal principal = currentUser();
     CompetitionEventEntity event = accessibleEvent(principal, eventId, true);
-    if (!CompetitionEventStatus.DRAFT.getCode().equals(event.getStatus())) {
-      throw new BusinessException(ErrorCode.CONFLICT, "赛事发布后不能修改开放等级");
+    com.guoyu.platform.competition.domain.CompetitionEventArrangementGuard.requireOpen(
+        event, "已关闭或已归档赛事不能修改开放等级");
+    CompetitionEventEntity locked = eventService.lockForUpdate(principal.getTenantId(), eventId);
+    if (locked != null) {
+      event = locked;
+      com.guoyu.platform.competition.domain.CompetitionEventArrangementGuard.requireOpen(
+          event, "已关闭或已归档赛事不能修改开放等级");
     }
     List<CompetitionEventWorkTypeLevelVO> result = new ArrayList<>();
     for (CompetitionEventWorkTypeLevelEntity entity : levelService.replaceAll(

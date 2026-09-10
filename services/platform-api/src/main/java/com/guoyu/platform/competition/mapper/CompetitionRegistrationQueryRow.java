@@ -10,7 +10,6 @@ public class CompetitionRegistrationQueryRow {
   private Long orgId;
   private String orgName;
   private Long rosterItemId;
-  private String employeeNo;
   private String name;
   private String workType;
   private String level;
@@ -33,8 +32,6 @@ public class CompetitionRegistrationQueryRow {
   public void setOrgName(String orgName) { this.orgName = orgName; }
   public Long getRosterItemId() { return rosterItemId; }
   public void setRosterItemId(Long rosterItemId) { this.rosterItemId = rosterItemId; }
-  public String getEmployeeNo() { return employeeNo; }
-  public void setEmployeeNo(String employeeNo) { this.employeeNo = employeeNo; }
   public String getName() { return name; }
   public void setName(String name) { this.name = name; }
   public String getWorkType() { return workType; }

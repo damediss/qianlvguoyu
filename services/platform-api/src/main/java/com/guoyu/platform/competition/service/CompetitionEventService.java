@@ -17,6 +17,7 @@ import com.guoyu.platform.competition.enums.CompetitionStagePlanStatus;
 import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventOrgMapper;
 import com.guoyu.platform.competition.vo.CompetitionEventPublishResultVO;
+import com.guoyu.platform.competition.vo.CompetitionEventPublishReadinessVO;
 import com.guoyu.platform.security.PlatformAdminSupport;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.entity.OrgEntity;
@@ -43,16 +44,28 @@ public class CompetitionEventService {
   private final CompetitionEventOrgMapper eventOrgMapper;
   private final OrgMapper orgMapper;
   private final UserMapper userMapper;
+  private final CompetitionEventPublishReadinessService publishReadinessService;
 
   public CompetitionEventService(
       CompetitionEventMapper mapper,
       CompetitionEventOrgMapper eventOrgMapper,
       OrgMapper orgMapper,
       UserMapper userMapper) {
+    this(mapper, eventOrgMapper, orgMapper, userMapper, null);
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public CompetitionEventService(
+      CompetitionEventMapper mapper,
+      CompetitionEventOrgMapper eventOrgMapper,
+      OrgMapper orgMapper,
+      UserMapper userMapper,
+      CompetitionEventPublishReadinessService publishReadinessService) {
     this.mapper = mapper;
     this.eventOrgMapper = eventOrgMapper;
     this.orgMapper = orgMapper;
     this.userMapper = userMapper;
+    this.publishReadinessService = publishReadinessService;
   }
 
   @Transactional
@@ -129,19 +142,30 @@ public class CompetitionEventService {
     return findExisting(tenantId, eventId);
   }
 
+  /** Locks the event row for the duration of the caller's write transaction. */
+  @Transactional
+  public CompetitionEventEntity lockForUpdate(Long tenantId, Long eventId) {
+    CompetitionEventEntity entity = mapper.selectForUpdate(tenantId, eventId);
+    if (entity == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "赛事不存在");
+    }
+    return entity;
+  }
+
   @Transactional
   public CompetitionEventEntity updateDraft(Long tenantId, Long eventId, CompetitionEventUpdateReq req) {
     CompetitionEventEntity entity = mapper.selectForUpdate(tenantId, eventId);
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "赛事不存在");
     }
-    if (!CompetitionEventStatus.DRAFT.getCode().equals(entity.getStatus())) {
-      throw new BusinessException(ErrorCode.CONFLICT, "仅草稿赛事可修改");
-    }
+    com.guoyu.platform.competition.domain.CompetitionEventArrangementGuard.requireOpen(
+        entity, "已关闭或已归档赛事不能修改基础信息");
     validateDateRange(req.startAt(), req.endAt());
     validateRegistrationAuditRequired(req.registrationAuditRequired());
     CompetitionEventConverter.applyUpdate(entity, req);
-    mapper.updateById(entity);
+    if (mapper.updateById(entity) != 1) {
+      throw new BusinessException(ErrorCode.CONFLICT, "赛事已发生变化，请刷新后重试");
+    }
     return entity;
   }
 
@@ -151,8 +175,9 @@ public class CompetitionEventService {
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "赛事不存在");
     }
-    if (!CompetitionEventStatus.DRAFT.getCode().equals(entity.getStatus())) {
-      throw new BusinessException(ErrorCode.CONFLICT, "只有草稿状态赛事可以确认赛段编排");
+    if (!CompetitionEventStatus.DRAFT.getCode().equals(entity.getStatus())
+        && !CompetitionEventStatus.PUBLISHED.getCode().equals(entity.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "已关闭或已归档赛事不能确认赛段编排");
     }
     if (CompetitionStagePlanStatus.CONFIRMED.getCode().equals(entity.getStagePlanStatus())) {
       return entity;
@@ -176,18 +201,26 @@ public class CompetitionEventService {
   @Transactional
   public CompetitionEventPublishResultVO publish(
       Long tenantId, Long userId, Long eventId, PlatformUserPrincipal principal) {
-    CompetitionEventEntity event = mapper.selectForUpdate(tenantId, eventId);
-    if (event == null) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "赛事不存在");
-    }
+    CompetitionEventEntity event = lockForUpdate(tenantId, eventId);
     if (!CompetitionEventStatus.DRAFT.getCode().equals(event.getStatus())) {
       log.warn("Competition event publish status conflict, tenantId={}, eventId={}, status={}",
           tenantId, eventId, event.getStatus());
-      throw new BusinessException(ErrorCode.CONFLICT, "仅草稿赛事可发布");
+      throw new BusinessException(ErrorCode.CONFLICT, "仅创建中赛事可发布");
     }
 
     validatePublishEvent(event);
-    validateOrganizations(tenantId, userId, event, principal);
+    validatePublishAccess(tenantId, userId, event, principal);
+    CompetitionEventPublishReadinessVO readiness = null;
+    if (publishReadinessService == null) {
+      log.warn("Competition publish readiness validator is not wired; using legacy service constructor");
+    } else {
+      readiness = publishReadinessService.evaluate(
+          tenantId, userId, event, principal);
+      if (!readiness.ready()) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+            publishReadinessService.firstBlockingMessage(readiness));
+      }
+    }
 
     String previousStatus = event.getStatus();
     if (event.getPlayerEntryCode() == null || event.getPlayerEntryCode().isBlank()) {
@@ -209,6 +242,13 @@ public class CompetitionEventService {
     result.setOwnerOrgId(event.getOwnerOrgId());
     result.setPreviousStatus(previousStatus);
     result.setStatus(event.getStatus());
+    result.setStagePlanStatus(event.getStagePlanStatus());
+    if (readiness != null) {
+      result.setActiveWorkTypeCount(readiness.activeWorkTypeCount());
+      result.setSelectedLevelCount(readiness.selectedLevelCount());
+      result.setConfirmedScopeCount(readiness.confirmedScopeCount());
+      result.setStageCount(readiness.stageCount());
+    }
     return result;
   }
 
@@ -284,8 +324,10 @@ public class CompetitionEventService {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "赛事描述长度不合法");
     }
     validateScopeForPublish(event.getScope());
-    if (!isValidDateRange(event.getStartAt(), event.getEndAt())) {
-      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "赛事结束时间不能早于开始时间");
+    if ((event.getStartAt() != null || event.getEndAt() != null)
+        && !isCompleteValidDateRange(event.getStartAt(), event.getEndAt())) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+          "若填写赛事时间，必须同时填写开始、结束时间且结束时间晚于开始时间");
     }
     if (CompetitionEventScope.PLATFORM.getCode().equals(event.getScope())
         && event.getOwnerOrgId() != null) {
@@ -297,8 +339,11 @@ public class CompetitionEventService {
     }
   }
 
-  private void validateOrganizations(
+  private void validatePublishAccess(
       Long tenantId, Long userId, CompetitionEventEntity event, PlatformUserPrincipal principal) {
+    if (principal != null && PlatformAdminSupport.isSuperAdmin(principal)) {
+      return;
+    }
     if (CompetitionEventScope.PLATFORM.getCode().equals(event.getScope())) {
       List<CompetitionEventOrgEntity> relations = eventOrgMapper.selectList(
           new LambdaQueryWrapper<CompetitionEventOrgEntity>()
@@ -306,40 +351,31 @@ public class CompetitionEventService {
               .eq(CompetitionEventOrgEntity::getEventId, event.getId())
               .eq(CompetitionEventOrgEntity::getStatus, CompetitionEventOrgStatus.ACTIVE.getCode())
               .eq(CompetitionEventOrgEntity::getDeleted, 0));
-      if (relations == null) {
-        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "平台赛事至少需要一个有效参与企业");
-      }
-      if (principal != null && !PlatformAdminSupport.isSuperAdmin(principal)) {
-        UserEntity user = userMapper.selectOne(new LambdaQueryWrapper<UserEntity>()
-            .eq(UserEntity::getTenantId, tenantId)
-            .eq(UserEntity::getId, userId)
-            .eq(UserEntity::getDeleted, 0));
-        if (user == null || user.getOrgId() == null) {
-          log.warn("Platform event publish user has no data scope, userId={}, tenantId={}, eventId={}",
-              userId, tenantId, event.getId());
-          throw new BusinessException(ErrorCode.FORBIDDEN, "当前用户无赛事数据范围");
-        }
-        boolean inScope = relations.stream().anyMatch(relation ->
-            Objects.equals(relation.getOrgId(), user.getOrgId())
-                && isTenantOrganization(tenantId, relation.getOrgId()));
-        if (!inScope) {
-          log.warn("User attempted to publish platform event outside organization scope, userId={}, tenantId={}, eventId={}",
-              userId, tenantId, event.getId());
-          throw new BusinessException(ErrorCode.FORBIDDEN, "当前用户无赛事数据范围");
-        }
-      }
-      if (relations.stream().anyMatch(relation ->
-          relation != null
-              && Objects.equals(tenantId, relation.getTenantId())
-              && Objects.equals(event.getId(), relation.getEventId())
-              && Objects.equals(relation.getDeleted(), 0)
-              && CompetitionEventOrgStatus.ACTIVE.getCode().equals(relation.getStatus())
-              && isTenantOrganization(tenantId, relation.getOrgId()))) {
+      if (relations == null || relations.isEmpty()) {
         return;
       }
-      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "平台赛事至少需要一个有效参与企业");
+      UserEntity user = userMapper.selectOne(new LambdaQueryWrapper<UserEntity>()
+          .eq(UserEntity::getTenantId, tenantId)
+          .eq(UserEntity::getId, userId)
+          .eq(UserEntity::getDeleted, 0));
+      if (user == null || user.getOrgId() == null) {
+        log.warn("Platform event publish user has no data scope, userId={}, tenantId={}, eventId={}",
+            userId, tenantId, event.getId());
+        throw new BusinessException(ErrorCode.FORBIDDEN, "当前用户无赛事数据范围");
+      }
+      boolean inScope = relations.stream().anyMatch(relation -> relation != null
+          && Objects.equals(relation.getOrgId(), user.getOrgId())
+          && isTenantOrganization(tenantId, relation.getOrgId()));
+      if (!inScope) {
+        log.warn("User attempted to publish platform event outside organization scope, userId={}, tenantId={}, eventId={}",
+            userId, tenantId, event.getId());
+        throw new BusinessException(ErrorCode.FORBIDDEN, "当前用户无赛事数据范围");
+      }
+      return;
     }
-
+    if (!CompetitionEventScope.ENTERPRISE_INTERNAL.getCode().equals(event.getScope())) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "赛事范围不合法");
+    }
     UserEntity user = userMapper.selectOne(new LambdaQueryWrapper<UserEntity>()
         .eq(UserEntity::getTenantId, tenantId)
         .eq(UserEntity::getId, userId)
@@ -352,23 +388,6 @@ public class CompetitionEventService {
     }
     if (!isTenantOrganization(tenantId, event.getOwnerOrgId())) {
       throw new BusinessException(ErrorCode.FORBIDDEN, "赛事所属组织不存在或不属于当前租户");
-    }
-    CompetitionEventOrgEntity relation = eventOrgMapper.selectOne(
-        new LambdaQueryWrapper<CompetitionEventOrgEntity>()
-            .eq(CompetitionEventOrgEntity::getTenantId, tenantId)
-            .eq(CompetitionEventOrgEntity::getEventId, event.getId())
-            .eq(CompetitionEventOrgEntity::getOrgId, event.getOwnerOrgId())
-            .eq(CompetitionEventOrgEntity::getStatus, CompetitionEventOrgStatus.ACTIVE.getCode())
-            .eq(CompetitionEventOrgEntity::getDeleted, 0));
-    if (relation == null) {
-      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "企业内部赛事所属组织没有有效参与关系");
-    }
-    if (!Objects.equals(tenantId, relation.getTenantId())
-        || !Objects.equals(event.getId(), relation.getEventId())
-        || !Objects.equals(event.getOwnerOrgId(), relation.getOrgId())
-        || !Objects.equals(relation.getDeleted(), 0)
-        || !CompetitionEventOrgStatus.ACTIVE.getCode().equals(relation.getStatus())) {
-      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "企业内部赛事所属组织没有有效参与关系");
     }
   }
 
@@ -386,8 +405,9 @@ public class CompetitionEventService {
         && Objects.equals(organization.getDeleted(), 0);
   }
 
-  private boolean isValidDateRange(java.time.LocalDateTime startAt, java.time.LocalDateTime endAt) {
-    return startAt == null || endAt == null || !endAt.isBefore(startAt);
+  private boolean isCompleteValidDateRange(
+      java.time.LocalDateTime startAt, java.time.LocalDateTime endAt) {
+    return startAt != null && endAt != null && endAt.isAfter(startAt);
   }
 
   private void validateScopeForPublish(String scope) {

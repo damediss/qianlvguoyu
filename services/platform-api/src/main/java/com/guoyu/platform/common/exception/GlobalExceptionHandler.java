@@ -27,9 +27,9 @@ import java.util.concurrent.RejectedExecutionException;
 public class GlobalExceptionHandler {
 
   @ExceptionHandler(BusinessException.class)
-  public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException ex) {
+  public ResponseEntity<ApiResponse<Object>> handleBusinessException(BusinessException ex) {
     return ResponseEntity.status(resolveStatus(ex.getCode()))
-        .body(ApiResponse.fail(ex.getCode(), ex.getMessage()));
+        .body(ApiResponse.fail(ex.getCode(), ex.getMessage(), ex.getData()));
   }
 
   /**
@@ -154,6 +154,7 @@ public class GlobalExceptionHandler {
       case ErrorCode.TOO_MANY_REQUESTS -> HttpStatus.TOO_MANY_REQUESTS;
       case ErrorCode.SERVICE_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
       case ErrorCode.GATEWAY_TIMEOUT -> HttpStatus.GATEWAY_TIMEOUT;
+      case "ANSWERS_NOT_SYNCED", "UNANSWERED_CONFIRM_REQUIRED" -> HttpStatus.CONFLICT;
       default -> HttpStatus.INTERNAL_SERVER_ERROR;
     };
   }
