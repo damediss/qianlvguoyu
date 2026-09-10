@@ -72,6 +72,14 @@ class DocxStandardParserTest {
     }
   }
 
+  /** A1b：职业名称剥离尾部标点——重冶备料工 docx 1.1 原文为"重冶备料工 。"（PDF 转 docx 残留），且无职业编码节/年版 */
+  @Test
+  void a1b_beiliaoTitleStripsTrailingPunctuation() {
+    assertEquals("重冶备料工", beiliao.getWorkTypeTitle(), "尾部句号与空格应被剥离");
+    assertNull(beiliao.getSeriesNo(), "该 docx 无职业编码节，编码应为空");
+    assertNull(beiliao.getVersion(), "该 docx 全文无年版字样，版本应为空");
+  }
+
   /** A2：骨架层级对拍 exam_knowledge_structure_矿山救护工初级.md */
   @Test
   void a2_kuangshanSkeleton() {

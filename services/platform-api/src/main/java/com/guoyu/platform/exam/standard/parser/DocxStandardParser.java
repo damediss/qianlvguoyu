@@ -93,8 +93,9 @@ public class DocxStandardParser {
       ctx.expectSectionOneValue = false;
       if (ctx.sectionOneSub == 1
           && (ctx.result.getWorkTypeTitle() == null || ctx.result.getWorkTypeTitle().isBlank())) {
-        // 剥离页脚注引用标记（如 "焊工①"）
-        ctx.result.setWorkTypeTitle(text.replaceAll("[①②③④⑤⑥⑦⑧⑨⑩]", "").trim());
+        // 剥离页脚注引用标记（如 "焊工①"）与尾部标点（PDF 转 docx 常见"重冶备料工 。"式残留）
+        ctx.result.setWorkTypeTitle(text.replaceAll("[①②③④⑤⑥⑦⑧⑨⑩]", "")
+            .replaceAll("[\\s。．，,、；;：:.·]+$", "").trim());
       }
       if (ctx.sectionOneSub == 2 && ctx.result.getSeriesNo() == null) {
         String no = text.replaceAll("[\\s　—]+", "").replace("－", "-");

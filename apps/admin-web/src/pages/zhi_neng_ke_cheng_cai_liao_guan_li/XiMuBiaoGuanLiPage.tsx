@@ -927,6 +927,11 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
     return <Card loading />;
   }
 
+  // 职业编码/年版可能缺失（如重冶备料工 docx 无编码节），空值部分不显示
+  const titleMeta = [task.seriesNo, task.version ? `${task.version}年版` : '']
+    .filter(Boolean)
+    .join('，');
+
   return (
     <Card
       title={
@@ -935,7 +940,8 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
             返回列表
           </Button>
           <span>
-            {task.workTypeTitle}（{task.seriesNo}，{task.version}年版）
+            {task.workTypeTitle}
+            {titleMeta ? `（${titleMeta}）` : ''}
           </span>
           <Tag color={STATUS_TEXT[task.status]?.color}>{STATUS_TEXT[task.status]?.text}</Tag>
           <span className={task.status === 'llm_running' ? 'xmb-leaf-pulse' : undefined}>
