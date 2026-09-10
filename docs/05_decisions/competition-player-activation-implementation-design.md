@@ -104,12 +104,13 @@ competition_sms_challenge 核心字段：id、tenant_id、player_id（激活前�
 
 PII 仅存在于导入/单录入请求 DTO 和身份实体；管理端 VO 继续只返回脱敏值，日志、异常、审计、错误报告、Outbox Payload 均禁止明文。
 
-模板固定列：employee_no、name、id_card_no、mobile、work_type、level。
+当前模板固定列：org_name、name、id_card_no、mobile、work_type、level；员工编号和企业编码不再属于选手录入或导入契约。详见
+`docs/04_requirements/competition-player-registration-employee-no-and-time-conflict.md`。
 
 导入或单录入的领域算法：
 
     解析单行（仅内存，禁止日志 PII）
-    → 校验工号、姓名、身份证、手机号
+    → 校验姓名、身份证、手机号
     → 计算两个 SHA-256 摘要
     → 锁定身份证或手机号命中的 player_identity
     → 无命中：创建 pending_activation Player

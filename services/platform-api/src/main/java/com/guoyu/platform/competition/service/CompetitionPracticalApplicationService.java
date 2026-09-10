@@ -4,6 +4,7 @@ import com.guoyu.platform.competition.dto.CompetitionPracticalAssignmentReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalJudgeGroupReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalRuleCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalScoreSaveReq;
+import com.guoyu.platform.competition.dto.CompetitionPracticalPaperSnapshotBindReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalSessionCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalJudgeMemberActivateReq;
 import com.guoyu.platform.competition.entity.CompetitionPracticalAssignmentEntity;
@@ -34,16 +35,19 @@ public class CompetitionPracticalApplicationService {
   private final CompetitionStageExecutionPlanService planService;
   private final CompetitionPracticalRuleService ruleService;
   private final CompetitionPracticalExecutionService executionService;
+  private final CompetitionMakeExamPlanApplicationService makeExamPlanService;
 
   public CompetitionPracticalApplicationService(
       CompetitionStageApplicationService stageService,
       CompetitionStageExecutionPlanService planService,
       CompetitionPracticalRuleService ruleService,
-      CompetitionPracticalExecutionService executionService) {
+      CompetitionPracticalExecutionService executionService,
+      CompetitionMakeExamPlanApplicationService makeExamPlanService) {
     this.stageService = stageService;
     this.planService = planService;
     this.ruleService = ruleService;
     this.executionService = executionService;
+    this.makeExamPlanService = makeExamPlanService;
   }
 
   @Transactional(readOnly = true)
@@ -79,6 +83,42 @@ public class CompetitionPracticalApplicationService {
     var plan = planService.get(tenant(), pathPlanId); stageService.assertCanManage(plan.getStageId());
     return sessionVO(executionService.createSession(tenant(), userId(), plan.getEventId(), plan.getStageId(), req,
         plan.getEventWorkTypeId(), plan.getEventWorkTypeLevelId()));
+  }
+
+  @Transactional
+  public CompetitionPracticalSessionVO bindPaperSnapshot(
+      Long sessionId, CompetitionPracticalPaperSnapshotBindReq req) {
+    CompetitionPracticalSessionEntity session = sessionById(sessionId);
+    stageService.assertCanManage(session.getStageId());
+    var snapshot = makeExamPlanService.requirePublishedSnapshot(
+        session.getEventId(), req.paperSnapshotId(), "practical",
+        session.getEventWorkTypeId(), session.getEventWorkTypeLevelId());
+    if (snapshot.totalScore() == null) {
+      throw new com.guoyu.platform.common.exception.BusinessException(
+          com.guoyu.platform.common.exception.ErrorCode.UNPROCESSABLE_ENTITY,
+          "实操竞赛组卷快照缺少总分");
+    }
+    CompetitionPracticalRuleEntity rule = ruleService.list(
+            tenant(), session.getStageId(), session.getEventWorkTypeId(),
+            session.getEventWorkTypeLevelId()).stream()
+        .filter(candidate -> "published".equals(candidate.getStatus()))
+        .filter(candidate -> java.util.Objects.equals(
+            candidate.getEventWorkTypeLevelId(), session.getEventWorkTypeLevelId()))
+        .findFirst()
+        .orElseGet(() -> ruleService.list(
+                tenant(), session.getStageId(), session.getEventWorkTypeId(), null).stream()
+            .filter(candidate -> "published".equals(candidate.getStatus()))
+            .filter(candidate -> candidate.getEventWorkTypeLevelId() == null)
+            .findFirst()
+            .orElse(null));
+    if (rule == null || rule.getTotalScore() == null
+        || rule.getTotalScore().compareTo(snapshot.totalScore()) != 0) {
+      throw new com.guoyu.platform.common.exception.BusinessException(
+          com.guoyu.platform.common.exception.ErrorCode.UNPROCESSABLE_ENTITY,
+          "实操组卷快照总分必须与已发布赛事评分规则一致");
+    }
+    return sessionVO(executionService.bindPaperSnapshot(
+        tenant(), userId(), sessionId, req.paperSnapshotId()));
   }
 
   @Transactional
@@ -146,10 +186,10 @@ public class CompetitionPracticalApplicationService {
   private CompetitionPracticalRuleVO ruleVO(CompetitionPracticalRuleEntity r, List<CompetitionPracticalRuleItemEntity> items) {
     return new CompetitionPracticalRuleVO(r.getId(), r.getEventId(), r.getStageId(), r.getEventWorkTypeId(), r.getEventWorkTypeLevelId(), r.getRuleVersion(), r.getRuleName(), r.getTotalScore(), r.getStatus(), r.getPublishedAt(), items.stream().map(i -> new CompetitionPracticalRuleItemVO(i.getId(), i.getItemCode(), i.getItemName(), i.getSortOrder(), i.getMaxScore(), i.getDeductionAllowed(), i.getCriteriaPayload(), i.getStatus())).toList());
   }
-  private CompetitionPracticalSessionVO sessionVO(CompetitionPracticalSessionEntity s) { return new CompetitionPracticalSessionVO(s.getId(), s.getPlanId(), s.getEventId(), s.getStageId(), s.getEventWorkTypeId(), s.getEventWorkTypeLevelId(), s.getSessionCode(), s.getSessionName(), s.getStartAt(), s.getEndAt(), s.getCapacity(), s.getResourceId(), s.getStatus()); }
+  private CompetitionPracticalSessionVO sessionVO(CompetitionPracticalSessionEntity s) { return new CompetitionPracticalSessionVO(s.getId(), s.getPlanId(), s.getEventId(), s.getStageId(), s.getEventWorkTypeId(), s.getEventWorkTypeLevelId(), s.getSessionCode(), s.getSessionName(), s.getStartAt(), s.getEndAt(), s.getCapacity(), s.getResourceId(), s.getPaperSnapshotId(), s.getStatus()); }
   private CompetitionPracticalJudgeGroupVO groupVO(CompetitionPracticalJudgeGroupEntity g, List<CompetitionPracticalJudgeMemberEntity> members) { return new CompetitionPracticalJudgeGroupVO(g.getId(), g.getSessionId(), g.getPlanId(), g.getGroupNo(), g.getGroupName(), g.getOfficialCount(), g.getStatus(), members.stream().map(m -> new CompetitionPracticalJudgeMemberVO(m.getId(), m.getRefereeMemberId(), m.getMemberRole(), m.getStatus())).toList()); }
   private CompetitionPracticalAssignmentVO assignmentVO(CompetitionPracticalAssignmentEntity a) { return new CompetitionPracticalAssignmentVO(a.getId(), a.getPlanId(), a.getSessionId(), a.getJudgeGroupId(), a.getRosterItemId(), a.getContestantMemberId(), a.getRefereeMemberId(), a.getWorkstationCode(), a.getStatus(), a.getAssignedAt()); }
-  private CompetitionPracticalScoreSheetVO sheetVO(CompetitionPracticalScoreSheetEntity s) { return new CompetitionPracticalScoreSheetVO(s.getId(), s.getAssignmentId(), s.getRuleId(), s.getContestantMemberId(), s.getRefereeMemberId(), s.getRevisionNo(), s.getStatus(), s.getTotalScore(), s.getOpenedAt(), s.getSubmittedAt(), s.getLockedAt(), executionService.entries(tenant(), s.getId()).stream().map(e -> new CompetitionPracticalScoreEntryVO(e.getId(), e.getRuleItemId(), e.getScore(), e.getDeduction(), e.getRemark())).toList()); }
+  private CompetitionPracticalScoreSheetVO sheetVO(CompetitionPracticalScoreSheetEntity s) { return new CompetitionPracticalScoreSheetVO(s.getId(), s.getAssignmentId(), s.getRuleId(), s.getContestantMemberId(), s.getRefereeMemberId(), s.getRevisionNo(), s.getStatus(), s.getTotalScore(), s.getOpenedAt(), s.getSubmittedAt(), s.getLockedAt(), executionService.entries(tenant(), s.getId()).stream().map(e -> new CompetitionPracticalScoreEntryVO(e.getId(), e.getRuleItemId(), e.getPaperQuestionId(), e.getPaperItemNo(), e.getScore(), e.getDeduction(), e.getRemark())).toList()); }
   private Long tenant() { return current().getTenantId(); }
   private Long userId() { return current().getUserId(); }
   private PlatformUserPrincipal current() { return SecurityContext.currentUser(); }

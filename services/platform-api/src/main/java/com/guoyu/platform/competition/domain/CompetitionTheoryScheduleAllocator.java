@@ -23,7 +23,7 @@ public class CompetitionTheoryScheduleAllocator {
     if (shuffled.size() > totalCapacity) {
       throw new BusinessException(
           ErrorCode.UNPROCESSABLE_ENTITY,
-          "A/B场次总容量不足，缺少" + (shuffled.size() - totalCapacity) + "个座位");
+          "考试场次总容量不足，缺少" + (shuffled.size() - totalCapacity) + "个座位");
     }
 
     List<Allocation> result = new ArrayList<>(shuffled.size());

@@ -1,11 +1,19 @@
 package com.guoyu.platform.competition.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.competition.dto.CompetitionTheoryPaperImportReq;
+import com.guoyu.platform.competition.dto.CompetitionTheoryCompetitionPaperImportReq;
 import com.guoyu.platform.competition.dto.CompetitionTheoryRequirementUpsertReq;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
+import com.guoyu.platform.competition.entity.CompetitionMakeExamPaperQuestionEntity;
+import com.guoyu.platform.competition.entity.CompetitionMakeExamPaperSnapshotEntity;
 import com.guoyu.platform.competition.entity.CompetitionScoreRuleEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageEntity;
 import com.guoyu.platform.competition.entity.CompetitionTheoryPaperQuestionEntity;
@@ -34,10 +42,13 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,7 +69,9 @@ public class CompetitionTheoryPaperApplicationService {
   private final CompetitionTheoryPaperSnapshotMapper snapshotMapper;
   private final CompetitionTheoryPaperQuestionMapper questionMapper;
   private final CompetitionTheoryPaperSourceAdapter sourceAdapter;
+  private final CompetitionTheoryCompetitionPaperSourceAdapter competitionSourceAdapter;
   private final CompetitionTheoryAnswerSnapshotAdapter answerAdapter;
+  private final ObjectMapper objectMapper;
 
   public CompetitionTheoryPaperApplicationService(
       CompetitionScoreRuleDomainService scoreRuleDomainService,
@@ -70,6 +83,23 @@ public class CompetitionTheoryPaperApplicationService {
       CompetitionTheoryPaperQuestionMapper questionMapper,
       CompetitionTheoryPaperSourceAdapter sourceAdapter,
       CompetitionTheoryAnswerSnapshotAdapter answerAdapter) {
+    this(scoreRuleDomainService, scoreRuleApplicationService, stageService,
+        eventWorkTypeDomainService, requirementMapper, snapshotMapper, questionMapper,
+        sourceAdapter, answerAdapter, null);
+  }
+
+  @Autowired
+  public CompetitionTheoryPaperApplicationService(
+      CompetitionScoreRuleDomainService scoreRuleDomainService,
+      CompetitionScoreRuleApplicationService scoreRuleApplicationService,
+      CompetitionStageService stageService,
+      CompetitionEventWorkTypeDomainService eventWorkTypeDomainService,
+      CompetitionTheoryRequirementMapper requirementMapper,
+      CompetitionTheoryPaperSnapshotMapper snapshotMapper,
+      CompetitionTheoryPaperQuestionMapper questionMapper,
+      CompetitionTheoryPaperSourceAdapter sourceAdapter,
+      CompetitionTheoryAnswerSnapshotAdapter answerAdapter,
+      CompetitionTheoryCompetitionPaperSourceAdapter competitionSourceAdapter) {
     this.scoreRuleDomainService = scoreRuleDomainService;
     this.scoreRuleApplicationService = scoreRuleApplicationService;
     this.stageService = stageService;
@@ -78,7 +108,9 @@ public class CompetitionTheoryPaperApplicationService {
     this.snapshotMapper = snapshotMapper;
     this.questionMapper = questionMapper;
     this.sourceAdapter = sourceAdapter;
+    this.competitionSourceAdapter = competitionSourceAdapter;
     this.answerAdapter = answerAdapter;
+    this.objectMapper = new ObjectMapper();
   }
 
   @Transactional(readOnly = true)
@@ -151,7 +183,8 @@ public class CompetitionTheoryPaperApplicationService {
 
   @Transactional(readOnly = true)
   public List<CompetitionTheoryPaperSnapshotVO> listSnapshots(
-      Long eventId, Long stageId, Long eventWorkTypeId, Long scoreRuleId) {
+      Long eventId, Long stageId, Long eventWorkTypeId, Long eventWorkTypeLevelId,
+      Long scoreRuleId) {
     PlatformUserPrincipal principal = currentUser();
     scoreRuleApplicationService.accessibleEvent(principal, eventId);
     LambdaQueryWrapper<CompetitionTheoryPaperSnapshotEntity> wrapper =
@@ -165,6 +198,10 @@ public class CompetitionTheoryPaperApplicationService {
     }
     if (eventWorkTypeId != null) {
       wrapper.eq(CompetitionTheoryPaperSnapshotEntity::getEventWorkTypeId, eventWorkTypeId);
+    }
+    if (eventWorkTypeLevelId != null) {
+      wrapper.eq(CompetitionTheoryPaperSnapshotEntity::getEventWorkTypeLevelId,
+          eventWorkTypeLevelId);
     }
     if (scoreRuleId != null) {
       wrapper.eq(CompetitionTheoryPaperSnapshotEntity::getScoreRuleId, scoreRuleId);
@@ -240,6 +277,243 @@ public class CompetitionTheoryPaperApplicationService {
     result.add(CompetitionTheoryPaperSnapshotVO.from(
         persistSnapshot(principal, rule, "B", preparedB, now)));
     return result;
+  }
+
+  /**
+   * Binds one or more published competition make-exam snapshots to a stage.
+   *
+   * <p>Each source snapshot belongs to one independent make-exam plan. The stage assigns the
+   * execution codes (P1, P2, ...) so A/B and other variants are a stage concern rather than a
+   * concern of the make-exam plan.</p>
+   */
+  @Transactional
+  public List<CompetitionTheoryPaperSnapshotVO> importCompetitionPapers(
+      Long eventId, CompetitionTheoryCompetitionPaperImportReq req) {
+    PlatformUserPrincipal principal = currentUser();
+    scoreRuleApplicationService.manageableEvent(principal, eventId);
+    CompetitionStageEntity stage = stageService.getById(principal.getTenantId(), req.stageId());
+    if (!Objects.equals(eventId, stage.getEventId())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "赛段不属于当前赛事");
+    }
+    requireEventWorkType(principal.getTenantId(), eventId, req.eventWorkTypeId());
+    LinkedHashSet<Long> distinctSnapshotIds = new LinkedHashSet<>(req.paperSnapshotIds());
+    if (distinctSnapshotIds.size() != req.paperSnapshotIds().size()) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "不能重复选择同一竞赛组卷快照");
+    }
+    List<CompetitionTheoryCompetitionPaperSourceAdapter.SourcePaper> papers = new ArrayList<>();
+    for (Long snapshotId : distinctSnapshotIds) {
+      papers.add(competitionSourceAdapter.loadPublishedPaper(
+          principal.getTenantId(), eventId, req.eventWorkTypeId(),
+          req.eventWorkTypeLevelId(), snapshotId));
+    }
+    LocalDateTime now = LocalDateTime.now();
+    snapshotMapper.deprecatePublishedCompetitionSnapshots(
+        principal.getTenantId(), eventId, req.stageId(), req.eventWorkTypeId(),
+        req.eventWorkTypeLevelId(),
+        principal.getUserId());
+    List<CompetitionTheoryPaperSnapshotVO> result = new ArrayList<>();
+    int index = 1;
+    for (CompetitionTheoryCompetitionPaperSourceAdapter.SourcePaper paper : papers) {
+      result.add(CompetitionTheoryPaperSnapshotVO.from(
+          persistCompetitionSnapshot(principal, eventId, req.stageId(), req.eventWorkTypeId(),
+              req.eventWorkTypeLevelId(), "P" + index++, paper, now)));
+    }
+    return result;
+  }
+
+  private CompetitionTheoryPaperSnapshotEntity persistCompetitionSnapshot(
+      PlatformUserPrincipal principal,
+      Long eventId,
+      Long stageId,
+      Long eventWorkTypeId,
+      Long eventWorkTypeLevelId,
+      String paperCode,
+      CompetitionTheoryCompetitionPaperSourceAdapter.SourcePaper source,
+      LocalDateTime now) {
+    Integer maxVersion = snapshotMapper.selectMaxVersion(
+        principal.getTenantId(), eventId, stageId, eventWorkTypeId, null, paperCode);
+    CompetitionMakeExamPaperSnapshotEntity sourceSnapshot = source.snapshot();
+    CompetitionTheoryPaperSnapshotEntity snapshot = new CompetitionTheoryPaperSnapshotEntity();
+    snapshot.setTenantId(principal.getTenantId());
+    snapshot.setEventId(eventId);
+    snapshot.setStageId(stageId);
+    snapshot.setEventWorkTypeId(eventWorkTypeId);
+    snapshot.setEventWorkTypeLevelId(eventWorkTypeLevelId);
+    snapshot.setScoreRuleId(null);
+    snapshot.setRequirementId(null);
+    snapshot.setPaperCode(paperCode);
+    snapshot.setVersionNo(maxVersion == null ? 1 : maxVersion + 1);
+    snapshot.setSourceCourseId(null);
+    snapshot.setSourcePlanId(sourceSnapshot.getPlanId());
+    snapshot.setSourcePaperId(null);
+    snapshot.setSourceCompetitionPaperSnapshotId(sourceSnapshot.getId());
+    snapshot.setSourceTitle(resolveTitle(sourceSnapshot.getTitle(), paperCode));
+    snapshot.setSourceHash(sourceSnapshot.getSourceHash());
+    snapshot.setDurationMinutes(sourceSnapshot.getDurationMinutes());
+    snapshot.setQuestionCount(source.questions().size());
+    snapshot.setTotalScore(sourceSnapshot.getTotalScore());
+    snapshot.setPassScore(sourceSnapshot.getPassScore());
+    snapshot.setStatus(PUBLISHED);
+    snapshot.setImportedAt(now);
+    snapshot.setImportedBy(principal.getUserId());
+    snapshot.setPublishedAt(now);
+    snapshot.setPublishedBy(principal.getUserId());
+    snapshot.setCreatedBy(principal.getUserId());
+    snapshot.setUpdatedBy(principal.getUserId());
+    snapshot.setDeleted(0);
+    try {
+      if (snapshotMapper.insert(snapshot) != 1) {
+        throw new BusinessException(ErrorCode.INTERNAL_ERROR, "创建竞赛理论执行快照失败");
+      }
+      int sortOrder = 0;
+      for (CompetitionMakeExamPaperQuestionEntity sourceQuestion : source.questions()) {
+        CompetitionTheoryPaperQuestionEntity question = toCompetitionQuestionEntity(
+            principal, snapshot.getId(), ++sortOrder, sourceQuestion);
+        if (questionMapper.insert(question) != 1) {
+          throw new BusinessException(ErrorCode.INTERNAL_ERROR, "保存竞赛理论执行题目快照失败");
+        }
+      }
+      return snapshot;
+    } catch (DuplicateKeyException ex) {
+      throw new BusinessException(ErrorCode.CONFLICT, "竞赛理论执行快照版本已变化，请重试");
+    }
+  }
+
+  private CompetitionTheoryPaperQuestionEntity toCompetitionQuestionEntity(
+      PlatformUserPrincipal principal,
+      Long snapshotId,
+      int sortOrder,
+      CompetitionMakeExamPaperQuestionEntity source) {
+    String type = source.getQuestionType() == null
+        ? "" : source.getQuestionType().trim().toLowerCase(Locale.ROOT);
+    if (!List.of("single", "multi", "judge", "fill").contains(type)) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛理论快照包含不支持的题型");
+    }
+    CompetitionTheoryPaperQuestionEntity question = new CompetitionTheoryPaperQuestionEntity();
+    question.setTenantId(principal.getTenantId());
+    question.setPaperSnapshotId(snapshotId);
+    question.setSourceQuestionId(source.getSourceQuestionId());
+    question.setSortOrder(sortOrder);
+    question.setQuestionType(type);
+    question.setContent(source.getStem());
+    question.setOptionsJson(toExecutionOptionsJson(source.getOptionsJson()));
+    question.setCorrectAnswersJson(toExecutionAnswersJson(type, source));
+    question.setFillAnswer("fill".equals(type) ? firstNonBlank(
+        source.getFillAnswer(), source.getReferenceAnswer()) : null);
+    question.setScore(source.getScore());
+    question.setResolveContent(null);
+    question.setDifficulty(source.getDifficulty());
+    question.setScoringRuleCode(EXACT_MATCH);
+    question.setScoringRuleVersion(1);
+    question.setCreatedBy(principal.getUserId());
+    question.setUpdatedBy(principal.getUserId());
+    question.setDeleted(0);
+    return question;
+  }
+
+  private String toExecutionOptionsJson(String optionsJson) {
+    try {
+      if (!StringUtils.hasText(optionsJson)) {
+        return "[]";
+      }
+      JsonNode root = objectMapper.readTree(optionsJson);
+      ArrayNode options = objectMapper.createArrayNode();
+      if (root != null && root.isObject()) {
+        root.fields().forEachRemaining(entry -> {
+          ObjectNode option = objectMapper.createObjectNode();
+          option.put("key", entry.getKey());
+          option.put("content", entry.getValue().asText());
+          options.add(option);
+        });
+      } else if (root != null && root.isArray()) {
+        root.forEach(options::add);
+      }
+      return objectMapper.writeValueAsString(options);
+    } catch (JsonProcessingException | IllegalArgumentException ex) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛理论快照选项格式异常");
+    }
+  }
+
+  private String toExecutionAnswersJson(
+      String type, CompetitionMakeExamPaperQuestionEntity source) {
+    String answer = firstNonBlank(source.getFillAnswer(), source.getReferenceAnswer());
+    if (answer == null) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛理论快照缺少参考答案");
+    }
+    ArrayNode answers = objectMapper.createArrayNode();
+    if ("fill".equals(type)) {
+      answers.add(answer);
+    } else if ("judge".equals(type)) {
+      String normalized = answer.trim().toLowerCase(Locale.ROOT);
+      if (normalized.matches("[a-h]")) {
+        answers.add(normalized.toUpperCase(Locale.ROOT));
+      } else {
+        JsonNode options;
+        try {
+          options = objectMapper.readTree(toExecutionOptionsJson(source.getOptionsJson()));
+        } catch (JsonProcessingException ex) {
+          throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛判断题选项格式异常");
+        }
+        String key = judgeOptionKey(options, normalized);
+        if (key == null) {
+          throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛判断题答案无法匹配选项");
+        }
+        answers.add(key);
+      }
+    } else {
+      String letters = answer.toUpperCase(Locale.ROOT).replaceAll("[^A-H]", "");
+      if (letters.isBlank()) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛选择题参考答案格式异常");
+      }
+      for (int index = 0; index < letters.length(); index++) {
+        String key = String.valueOf(letters.charAt(index));
+        if (!containsJsonOption(source.getOptionsJson(), key)) {
+          throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛选择题答案选项不存在");
+        }
+        if (!answers.toString().contains("\"" + key + "\"")) {
+          answers.add(key);
+        }
+      }
+    }
+    try {
+      return objectMapper.writeValueAsString(answers);
+    } catch (JsonProcessingException ex) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "序列化竞赛理论答案快照失败");
+    }
+  }
+
+  private String judgeOptionKey(JsonNode options, String normalizedAnswer) {
+    boolean truthy = Set.of("正确", "对", "true", "t", "1", "是").contains(normalizedAnswer);
+    boolean falsy = Set.of("错误", "错", "false", "f", "0", "否").contains(normalizedAnswer);
+    if (!truthy && !falsy) {
+      return null;
+    }
+    for (JsonNode option : options) {
+      String text = option.path("content").asText("").trim().toLowerCase(Locale.ROOT);
+      boolean optionTruthy = Set.of("正确", "对", "true", "t", "1", "是").contains(text);
+      boolean optionFalsy = Set.of("错误", "错", "false", "f", "0", "否").contains(text);
+      if ((truthy && optionTruthy) || (falsy && optionFalsy)) {
+        return option.path("key").asText(null);
+      }
+    }
+    return null;
+  }
+
+  private boolean containsJsonOption(String optionsJson, String key) {
+    try {
+      JsonNode root = objectMapper.readTree(toExecutionOptionsJson(optionsJson));
+      for (JsonNode option : root) {
+        if (key.equalsIgnoreCase(option.path("key").asText())) return true;
+      }
+      return false;
+    } catch (JsonProcessingException ex) {
+      return false;
+    }
+  }
+
+  private String firstNonBlank(String first, String second) {
+    if (StringUtils.hasText(first)) return first.trim();
+    return StringUtils.hasText(second) ? second.trim() : null;
   }
 
   private CompetitionTheoryPaperSnapshotEntity persistSnapshot(

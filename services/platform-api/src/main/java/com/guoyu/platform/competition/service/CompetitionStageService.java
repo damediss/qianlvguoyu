@@ -62,9 +62,20 @@ public class CompetitionStageService {
 
   @Transactional(readOnly = true)
   public Page<CompetitionStageEntity> page(Long tenantId, Long eventId, CompetitionStageQueryReq req) {
-    LambdaQueryWrapper<CompetitionStageEntity> wrapper = new LambdaQueryWrapper<CompetitionStageEntity>()
-        .eq(CompetitionStageEntity::getTenantId, tenantId)
-        .eq(CompetitionStageEntity::getEventId, eventId)
+    return page(tenantId, eventId, req.getEventWorkTypeId(), req.getEventWorkTypeLevelCode(), req);
+  }
+
+  @Transactional(readOnly = true)
+  public Page<CompetitionStageEntity> page(
+      Long tenantId,
+      Long eventId,
+      Long eventWorkTypeId,
+      String eventWorkTypeLevelCode,
+      CompetitionStageQueryReq req) {
+    String normalizedLevelCode = normalizeScopeLevelCode(
+        eventWorkTypeId, eventWorkTypeLevelCode);
+    LambdaQueryWrapper<CompetitionStageEntity> wrapper = stageScopeWrapper(
+        tenantId, eventId, eventWorkTypeId, normalizedLevelCode)
         .orderByAsc(CompetitionStageEntity::getSortOrder)
         .orderByAsc(CompetitionStageEntity::getId);
     if (req.getStatus() != null && !req.getStatus().isBlank()) {
@@ -81,10 +92,16 @@ public class CompetitionStageService {
 
   @Transactional(readOnly = true)
   public List<CompetitionStageEntity> list(Long tenantId, Long eventId) {
-    List<CompetitionStageEntity> stages = mapper.selectList(new LambdaQueryWrapper<CompetitionStageEntity>()
-        .eq(CompetitionStageEntity::getTenantId, tenantId)
-        .eq(CompetitionStageEntity::getEventId, eventId)
-        .eq(CompetitionStageEntity::getDeleted, 0)
+    return list(tenantId, eventId, null, null);
+  }
+
+  @Transactional(readOnly = true)
+  public List<CompetitionStageEntity> list(
+      Long tenantId, Long eventId, Long eventWorkTypeId, String eventWorkTypeLevelCode) {
+    String normalizedLevelCode = normalizeScopeLevelCode(
+        eventWorkTypeId, eventWorkTypeLevelCode);
+    List<CompetitionStageEntity> stages = mapper.selectList(stageScopeWrapper(
+        tenantId, eventId, eventWorkTypeId, normalizedLevelCode)
         .orderByAsc(CompetitionStageEntity::getSortOrder)
         .orderByAsc(CompetitionStageEntity::getId));
     if (stages == null) {
@@ -97,7 +114,9 @@ public class CompetitionStageService {
   @Transactional
   public CompetitionStageEntity create(Long tenantId, Long eventId, CompetitionStageCreateReq req) {
     validateDateRange(req.startAt(), req.endAt());
-    validateEventWindow(loadEventForValidation(tenantId, eventId), req.startAt(), req.endAt());
+    CompetitionEventEntity event = loadEventForValidation(tenantId, eventId);
+    requireDraftArrangementEvent(event);
+    validateEventWindow(event, req.startAt(), req.endAt());
     CompetitionStageType stageType = validateRequest(tenantId, eventId, null,
         req.name(), req.stageType(), req.sortOrder(), req.startAt(), req.endAt());
     CompetitionStageEntity entity = CompetitionStageConverter.toEntity(req);
@@ -124,17 +143,49 @@ public class CompetitionStageService {
   @Transactional
   public List<CompetitionStageEntity> replaceDraft(
       Long tenantId, Long eventId, Long userId, CompetitionStageDraftSaveReq req) {
+    return replaceDraft(tenantId, eventId, userId, null, null, req);
+  }
+
+  /**
+   * Replaces the complete draft for one event-work-type-level canvas.
+   *
+   * <p>Each scope owns its own stage rows (and therefore its own stage content rows). The
+   * legacy overload above deliberately keeps the event-level {@code NULL/NULL} scope.</p>
+   */
+  @Transactional
+  public List<CompetitionStageEntity> replaceDraftForScope(
+      Long tenantId,
+      Long eventId,
+      Long userId,
+      Long eventWorkTypeId,
+      String eventWorkTypeLevelCode,
+      CompetitionStageDraftSaveReq req) {
+    String normalizedLevelCode = normalizeScopeLevelCode(
+        eventWorkTypeId, eventWorkTypeLevelCode);
+    if (normalizedLevelCode == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "赛事工种等级编码必须是1至5");
+    }
+    return replaceDraft(
+        tenantId, eventId, userId, eventWorkTypeId, normalizedLevelCode, req);
+  }
+
+  private List<CompetitionStageEntity> replaceDraft(
+      Long tenantId,
+      Long eventId,
+      Long userId,
+      Long eventWorkTypeId,
+      String eventWorkTypeLevelCode,
+      CompetitionStageDraftSaveReq req) {
     if (req == null || req.stages() == null || req.stages().isEmpty()
         || req.stages().size() > CompetitionStageType.values().length) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "赛事必须配置1至5个赛段");
     }
 
     CompetitionEventEntity event = loadEventForValidation(tenantId, eventId);
+    requireDraftArrangementEvent(event);
 
-    List<CompetitionStageEntity> existing = mapper.selectList(new LambdaQueryWrapper<CompetitionStageEntity>()
-        .eq(CompetitionStageEntity::getTenantId, tenantId)
-        .eq(CompetitionStageEntity::getEventId, eventId)
-        .eq(CompetitionStageEntity::getDeleted, 0)
+    List<CompetitionStageEntity> existing = mapper.selectList(stageScopeWrapper(
+        tenantId, eventId, eventWorkTypeId, eventWorkTypeLevelCode)
         .orderByAsc(CompetitionStageEntity::getSortOrder)
         .orderByAsc(CompetitionStageEntity::getId));
     if (existing == null) {
@@ -223,6 +274,8 @@ public class CompetitionStageService {
         CompetitionStageEntity entity = new CompetitionStageEntity();
         entity.setTenantId(tenantId);
         entity.setEventId(eventId);
+        entity.setEventWorkTypeId(eventWorkTypeId);
+        entity.setEventWorkTypeLevelCode(eventWorkTypeLevelCode);
         entity.setName(stageType.getDisplayName());
         entity.setStageType(stageType.getCode());
         entity.setSortOrder(stageType.getSortOrder());
@@ -246,10 +299,8 @@ public class CompetitionStageService {
       }
     }
 
-    List<CompetitionStageEntity> saved = mapper.selectList(new LambdaQueryWrapper<CompetitionStageEntity>()
-        .eq(CompetitionStageEntity::getTenantId, tenantId)
-        .eq(CompetitionStageEntity::getEventId, eventId)
-        .eq(CompetitionStageEntity::getDeleted, 0)
+    List<CompetitionStageEntity> saved = mapper.selectList(stageScopeWrapper(
+        tenantId, eventId, eventWorkTypeId, eventWorkTypeLevelCode)
         .orderByAsc(CompetitionStageEntity::getSortOrder)
         .orderByAsc(CompetitionStageEntity::getId));
     if (saved == null) {
@@ -265,11 +316,19 @@ public class CompetitionStageService {
     return findExisting(tenantId, stageId);
   }
 
+  /** Locks the parent event so content writes cannot race the event publish command. */
+  @Transactional
+  public CompetitionEventEntity lockEventForArrangementUpdate(Long tenantId, Long eventId) {
+    return loadEventForValidation(tenantId, eventId);
+  }
+
   @Transactional
   public CompetitionStageEntity update(Long tenantId, Long stageId, CompetitionStageUpdateReq req) {
     CompetitionStageEntity entity = findExisting(tenantId, stageId);
     validateDateRange(req.startAt(), req.endAt());
-    validateEventWindow(loadEventForValidation(tenantId, entity.getEventId()), req.startAt(), req.endAt());
+    CompetitionEventEntity event = loadEventForValidation(tenantId, entity.getEventId());
+    requireDraftArrangementEvent(event);
+    validateEventWindow(event, req.startAt(), req.endAt());
     lifecycleDomainService.requireWritable(entity.getStatus());
     CompetitionStageType stageType = validateRequest(tenantId, entity.getEventId(), stageId,
         req.name(), req.stageType(), req.sortOrder(), req.startAt(), req.endAt());
@@ -288,13 +347,22 @@ public class CompetitionStageService {
   @Transactional
   public void delete(Long tenantId, Long stageId) {
     CompetitionStageEntity entity = findExisting(tenantId, stageId);
+    requireDraftArrangementEvent(loadEventForValidation(tenantId, entity.getEventId()));
     if (!CompetitionStageStatus.DRAFT.getCode().equals(entity.getStatus())) {
       throw new BusinessException(ErrorCode.CONFLICT, "只有草稿赛段允许删除");
     }
     long stageCount = mapper.selectCount(new LambdaQueryWrapper<CompetitionStageEntity>()
         .eq(CompetitionStageEntity::getTenantId, tenantId)
         .eq(CompetitionStageEntity::getEventId, entity.getEventId())
-        .eq(CompetitionStageEntity::getDeleted, 0));
+        .eq(CompetitionStageEntity::getDeleted, 0)
+        .eq(entity.getEventWorkTypeId() != null,
+            CompetitionStageEntity::getEventWorkTypeId, entity.getEventWorkTypeId())
+        .isNull(entity.getEventWorkTypeId() == null,
+            CompetitionStageEntity::getEventWorkTypeId)
+        .eq(entity.getEventWorkTypeLevelCode() != null,
+            CompetitionStageEntity::getEventWorkTypeLevelCode, entity.getEventWorkTypeLevelCode())
+        .isNull(entity.getEventWorkTypeLevelCode() == null,
+            CompetitionStageEntity::getEventWorkTypeLevelCode));
     if (stageCount <= 1) {
       throw new BusinessException(ErrorCode.CONFLICT, "赛事至少需要保留一个赛段");
     }
@@ -424,6 +492,8 @@ public class CompetitionStageService {
     List<CompetitionStageEntity> existing = mapper.selectList(new LambdaQueryWrapper<CompetitionStageEntity>()
         .eq(CompetitionStageEntity::getTenantId, tenantId)
         .eq(CompetitionStageEntity::getEventId, eventId)
+        .isNull(CompetitionStageEntity::getEventWorkTypeId)
+        .isNull(CompetitionStageEntity::getEventWorkTypeLevelCode)
         .eq(CompetitionStageEntity::getDeleted, 0));
     if (existing == null) {
       existing = new ArrayList<>();
@@ -482,6 +552,39 @@ public class CompetitionStageService {
     return entity;
   }
 
+  private LambdaQueryWrapper<CompetitionStageEntity> stageScopeWrapper(
+      Long tenantId,
+      Long eventId,
+      Long eventWorkTypeId,
+      String eventWorkTypeLevelCode) {
+    LambdaQueryWrapper<CompetitionStageEntity> wrapper = new LambdaQueryWrapper<CompetitionStageEntity>()
+        .eq(CompetitionStageEntity::getTenantId, tenantId)
+        .eq(CompetitionStageEntity::getEventId, eventId)
+        .eq(CompetitionStageEntity::getDeleted, 0);
+    if (eventWorkTypeId == null) {
+      wrapper.isNull(CompetitionStageEntity::getEventWorkTypeId)
+          .isNull(CompetitionStageEntity::getEventWorkTypeLevelCode);
+    } else {
+      wrapper.eq(CompetitionStageEntity::getEventWorkTypeId, eventWorkTypeId)
+          .eq(CompetitionStageEntity::getEventWorkTypeLevelCode, eventWorkTypeLevelCode);
+    }
+    return wrapper;
+  }
+
+  private String normalizeScopeLevelCode(Long eventWorkTypeId, String eventWorkTypeLevelCode) {
+    if (eventWorkTypeId == null) {
+      if (eventWorkTypeLevelCode != null && !eventWorkTypeLevelCode.isBlank()) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "指定工种等级时必须同时指定赛事工种");
+      }
+      return null;
+    }
+    if (eventWorkTypeLevelCode == null
+        || !Set.of("1", "2", "3", "4", "5").contains(eventWorkTypeLevelCode.trim())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "赛事工种等级编码必须是1至5");
+    }
+    return eventWorkTypeLevelCode.trim();
+  }
+
   private void validateDateRange(LocalDateTime startAt, LocalDateTime endAt) {
     if ((startAt == null) != (endAt == null)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "赛段开始和结束时间必须同时填写");
@@ -504,6 +607,11 @@ public class CompetitionStageService {
       throw new BusinessException(ErrorCode.NOT_FOUND, "赛事不存在");
     }
     return event;
+  }
+
+  private void requireDraftArrangementEvent(CompetitionEventEntity event) {
+    com.guoyu.platform.competition.domain.CompetitionEventArrangementGuard.requireOpen(
+        event, "已关闭或已归档赛事不允许修改赛段");
   }
 
   private void validateEventWindow(

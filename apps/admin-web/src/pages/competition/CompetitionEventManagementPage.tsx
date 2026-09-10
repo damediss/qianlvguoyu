@@ -11,6 +11,7 @@ import {
   SearchOutlined,
   SaveOutlined,
   SafetyCertificateOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import {
   Button,
@@ -38,7 +39,10 @@ import {
   createCompetitionEventWorkType,
   getCompetitionEvent,
   listCompetitionEventWorkTypes,
+  listCompetitionEventWorkTypeLevels,
   pageCompetitionEvents,
+  publishCompetitionEvent,
+  replaceCompetitionEventWorkTypeLevels,
   updateCompetitionEventWorkType,
   updateCompetitionEvent,
 } from '../../api/competition';
@@ -52,6 +56,7 @@ import type {
   CompetitionEventWorkType,
   CompetitionEventUpdateRequest,
   CompetitionId,
+  CompetitionEventWorkTypeLevelReplaceItem,
 } from '../../types/competition';
 import type { ExamWorkType } from '../../types/exam';
 import { useAuthStore } from '../../stores/authStore';
@@ -93,15 +98,23 @@ const scopeOptions = [
   { label: '企业内部赛', value: 'enterprise_internal' },
 ];
 
+const competitionLevelOptions = [
+  { value: '5', label: '初级工' },
+  { value: '4', label: '中级工' },
+  { value: '3', label: '高级工' },
+  { value: '2', label: '技师' },
+  { value: '1', label: '高级技师' },
+];
+
 const statusOptions = [
-  { label: '草稿', value: 'draft' },
+  { label: '创建中', value: 'draft' },
   { label: '已发布', value: 'published' },
   { label: '已关闭', value: 'closed' },
   { label: '已归档', value: 'archived' },
 ];
 
 const statusMeta: Record<CompetitionEventStatus, { label: string; color: string }> = {
-  draft: { label: '草稿', color: 'default' },
+  draft: { label: '创建中', color: 'default' },
   published: { label: '已发布', color: 'success' },
   closed: { label: '已关闭', color: 'warning' },
   archived: { label: '已归档', color: 'error' },
@@ -112,6 +125,7 @@ function eventRoute(): EventRoute {
     '/competition/stages': 'stages',
     '/competition/notices': 'notices',
     '/competition/theory-exams': 'theory-exam',
+    '/competition/formal-exam': 'formal-exam-console',
     '/competition/scores': 'scores',
   };
   const module = modulePathMap[window.location.pathname.replace(/\/$/, '')];
@@ -242,7 +256,7 @@ export function CompetitionEventManagementPage() {
     return <CompetitionEventModulePage module={route.module} onNavigate={navigate} />;
   }
   if (route.mode === 'players') {
-    return <CompetitionPlayerManagementPage onNavigate={navigate} />;
+    return <CompetitionPlayerManagementPage />;
   }
   if (route.mode === 'notices' || route.mode === 'theory-exam' || route.mode === 'scores') {
     return <CompetitionEventModulePage module={route.mode} onNavigate={navigate} initialEventId={route.eventId} />;
@@ -466,7 +480,7 @@ function CompetitionEventWorkspaceModalContent({
   return <CompetitionNoticePage eventId={route.eventId} onNavigate={onNavigate} />;
 }
 
-function CompetitionEventFormPage({
+export function CompetitionEventFormPage({
   eventId,
   onNavigate,
   inModal = false,
@@ -483,7 +497,33 @@ function CompetitionEventFormPage({
   const canCreate = permissions.includes('competition:event:create');
   const canUpdate = permissions.includes('competition:event:update');
   const [form] = Form.useForm<EventFormValues>();
+  const publishAfterSave = useRef(false);
+  const canPublish = permissions.includes('competition:event:publish');
   const queryClient = useQueryClient();
+
+  const goToEvent = (id: CompetitionId) => {
+    queryClient.invalidateQueries({ queryKey: ['competition-events'] });
+    queryClient.invalidateQueries({ queryKey: ['competition-event', String(id)] });
+    onNavigate(`/competition/events/${id}`);
+  };
+
+  const persistAndMaybePublish = async (
+    save: () => Promise<CompetitionEvent>,
+    savedMessage: string,
+  ) => {
+    const event = await save();
+    if (publishAfterSave.current) {
+      try {
+        await publishCompetitionEvent(event.id);
+        message.success('赛事已发布，选手可激活；请继续配置工种和赛段');
+      } catch {
+        message.warning('基础信息已保存，赛事尚未发布，请在赛事详情中重试发布');
+      }
+    } else {
+      message.success(savedMessage);
+    }
+    return event;
+  };
 
   const eventQuery = useQuery({
     queryKey: ['competition-event', eventId],
@@ -505,21 +545,21 @@ function CompetitionEventFormPage({
   }, [eventQuery.data, form]);
 
   const createMutation = useMutation({
-    mutationFn: createCompetitionEvent,
-    onSuccess: (event) => {
-      message.success('赛事草稿已创建');
-      queryClient.invalidateQueries({ queryKey: ['competition-events'] });
-      onNavigate(`/competition/events/${event.id}`);
-    },
+    mutationFn: (payload: CompetitionEventCreateRequest) => persistAndMaybePublish(
+      () => createCompetitionEvent(payload),
+      '赛事已创建，当前状态为创建中',
+    ),
+    onSuccess: (event) => goToEvent(event.id),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, payload }: { id: CompetitionId; payload: CompetitionEventUpdateRequest }) => updateCompetitionEvent(id, payload),
+    mutationFn: ({ id, payload }: { id: CompetitionId; payload: CompetitionEventUpdateRequest }) => persistAndMaybePublish(
+      () => updateCompetitionEvent(id, payload),
+      '赛事基础信息已保存',
+    ),
     onSuccess: (event) => {
-      message.success('赛事草稿已保存');
       queryClient.setQueryData(['competition-event', event.id], event);
-      queryClient.invalidateQueries({ queryKey: ['competition-events'] });
-      onNavigate(`/competition/events/${event.id}`);
+      goToEvent(event.id);
     },
   });
 
@@ -529,12 +569,16 @@ function CompetitionEventFormPage({
   if (eventQuery.isError) {
     return <Result status="404" title="赛事不存在或无法访问" extra={<Button onClick={() => onNavigate('/competition/events')}>返回列表</Button>} />;
   }
-  if (isEdit && eventQuery.data?.status !== 'draft') {
+  const eventStatus = eventQuery.data?.status;
+  const canEditBasicInfo = !isEdit
+    || eventStatus === 'draft'
+    || (eventStatus === 'published' && eventQuery.data?.stagePlanStatus !== 'confirmed');
+  if (isEdit && eventQuery.data && !canEditBasicInfo) {
     return (
       <Result
         status="warning"
-        title="已发布赛事不可编辑"
-        subTitle="只有 draft 状态赛事允许修改。"
+        title="当前赛事不可编辑基础信息"
+        subTitle="已确认赛段编排、已关闭或已归档的赛事不能再修改基础信息。可返回详情继续查看。"
         extra={<Button onClick={() => onNavigate(`/competition/events/${eventId}`)}>查看详情</Button>}
       />
     );
@@ -581,6 +625,7 @@ function CompetitionEventFormPage({
           <div className="competition-section-icon"><FileTextOutlined /></div>
           <div>
             <Typography.Title level={4}>填写竞赛计划基础信息</Typography.Title>
+            <Typography.Text type="secondary">基础信息填写完成后即可发布，选手激活后继续完成赛段与选手配置。</Typography.Text>
           </div>
         </div>
         <Form<EventFormValues>
@@ -626,9 +671,14 @@ function CompetitionEventFormPage({
           </Form.Item>
           <Space>
             <Button onClick={() => (inModal ? onClose?.() : onNavigate('/competition/events'))}>取消</Button>
-            <Button type="primary" htmlType="submit" loading={createMutation.isPending || updateMutation.isPending}>
-              保存草稿
+            <Button htmlType="submit" loading={createMutation.isPending || updateMutation.isPending} onClick={() => { publishAfterSave.current = false; }}>
+              保存赛事信息
             </Button>
+            {canPublish && eventStatus !== 'published' && (
+              <Button type="primary" htmlType="submit" loading={createMutation.isPending || updateMutation.isPending} onClick={() => { publishAfterSave.current = true; }}>
+                保存并发布赛事
+              </Button>
+            )}
           </Space>
         </Form>
       </Card>
@@ -652,6 +702,26 @@ function CompetitionEventFormPage({
       {formContent}
     </div>
   );
+}
+
+export function CompetitionEventPublishButton({ eventId }: { eventId: string }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => publishCompetitionEvent(eventId),
+    onSuccess: () => {
+      message.success('赛事已发布，选手可通过赛事入口激活');
+      queryClient.invalidateQueries({ queryKey: ['competition-event', eventId] });
+      queryClient.invalidateQueries({ queryKey: ['competition-events'] });
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : '赛事发布失败，请重试'),
+  });
+  return <Button type="primary" loading={mutation.isPending} onClick={() => Modal.confirm({
+    title: '发布赛事？',
+    content: '发布后将生成选手激活入口，工种、赛段和选手配置可继续完善。',
+    okText: '发布赛事',
+    cancelText: '取消',
+    onOk: () => mutation.mutateAsync(),
+  })}>发布赛事</Button>;
 }
 
 function CompetitionEventDetailPage({
@@ -699,9 +769,11 @@ function CompetitionEventDetailPage({
 
   const event = eventQuery.data;
   const isDraft = event.status === 'draft';
+  const canEditPublished = event.status === 'published' && event.stagePlanStatus !== 'confirmed';
   const workspaceActions = (
     <Space wrap>
-      {isDraft && canUpdate && (
+      {isDraft && permissions.includes('competition:event:publish') && <CompetitionEventPublishButton eventId={eventId} />}
+      {(isDraft || canEditPublished) && canUpdate && (
         <Button icon={<EditOutlined />} onClick={() => onNavigate(`/competition/events/${event.id}/edit`)}>编辑计划</Button>
       )}
     </Space>
@@ -718,7 +790,7 @@ function CompetitionEventDetailPage({
         <Card bordered={false} className="competition-detail-card competition-detail-card--main">
           <div className="competition-card-heading">
             <div><Typography.Title level={4}>竞赛计划</Typography.Title><Typography.Text type="secondary">基础信息与当前版本</Typography.Text></div>
-            <Tag className="competition-status-tag" color={isDraft ? 'orange' : 'blue'}>{isDraft ? '待完善' : '运营中'}</Tag>
+            <Tag className="competition-status-tag" color={isDraft ? 'orange' : 'blue'}>{isDraft ? '创建中' : '运营中'}</Tag>
           </div>
           <Descriptions column={{ xs: 1, sm: 2 }}>
             <Descriptions.Item label="计划名称">{event.name}</Descriptions.Item>
@@ -776,7 +848,7 @@ function CompetitionEventDetailPage({
         <CompetitionEventWorkTypeCard
           eventId={idValue(event.id)}
           canView={permissions.includes('competition:event-work-type:view')}
-          canManage={permissions.includes('competition:event-work-type:manage')}
+          canManage={['draft', 'published'].includes(event.status) && event.stagePlanStatus !== 'confirmed' && permissions.includes('competition:event-work-type:manage')}
         />
 
       </section>
@@ -822,6 +894,9 @@ function CompetitionEventWorkTypeCard({
   canView: boolean;
   canManage: boolean;
 }) {
+  const permissions = useAuthStore((state) => state.permissionCodes);
+  const canManageLevels = canManage && permissions.includes('competition:stage:manage');
+  const canViewLevels = canView && permissions.includes('competition:stage:view');
   const eventWorkTypesQuery = useQuery({
     queryKey: ['competition-event-work-types', eventId],
     queryFn: () => listCompetitionEventWorkTypes(eventId),
@@ -986,6 +1061,132 @@ function CompetitionEventWorkTypeCard({
           {activeEventWorkTypes.length ? activeEventWorkTypes.map((item) => (
             <Tag key={item.id}>{item.displayName || item.workTypeName || idValue(item.workTypeId)}</Tag>
           )) : <Typography.Text type="secondary">暂未设置参赛工种</Typography.Text>}
+        </Space>
+      )}
+      {canViewLevels && activeEventWorkTypes.map((workType) => (
+        <CompetitionEventWorkTypeLevelEditor
+          key={`levels-${workType.id}`}
+          eventId={eventId}
+          workType={workType}
+          canManage={canManageLevels}
+        />
+      ))}
+    </Card>
+  );
+}
+
+function CompetitionEventWorkTypeLevelEditor({
+  eventId,
+  workType,
+  canManage,
+}: {
+  eventId: string;
+  workType: CompetitionEventWorkType;
+  canManage: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const levelsQuery = useQuery({
+    queryKey: ['competition-event-work-type-levels', eventId, workType.id],
+    queryFn: () => listCompetitionEventWorkTypeLevels(eventId, workType.id),
+    enabled: true,
+  });
+  const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (levelsQuery.data) {
+      setSelectedCodes(
+        levelsQuery.data
+          .map((level) => level.levelCode)
+          .filter((code): code is string => Boolean(code)),
+      );
+    }
+  }, [levelsQuery.data]);
+
+  const persistedCodes = useMemo(
+    () => (levelsQuery.data || []).map((level) => level.levelCode).sort(),
+    [levelsQuery.data],
+  );
+  const isDirty = useMemo(() => {
+    const selected = [...selectedCodes].sort();
+    return selected.length !== persistedCodes.length
+      || selected.some((code, index) => code !== persistedCodes[index]);
+  }, [persistedCodes, selectedCodes]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const existingByCode = new Map(
+        (levelsQuery.data || []).map((level) => [level.levelCode, level]),
+      );
+      const payload: CompetitionEventWorkTypeLevelReplaceItem[] = selectedCodes.map((code) => {
+        const existing = existingByCode.get(code);
+        const option = competitionLevelOptions.find((item) => item.value === code);
+        return {
+          id: existing?.id,
+          levelCode: code,
+          levelName: existing?.levelName || option?.label || code,
+          sourceLevelCode: existing?.sourceLevelCode,
+          sourceLevelText: existing?.sourceLevelText,
+          reconciliationStatus: existing?.reconciliationStatus || 'matched',
+        };
+      });
+      return replaceCompetitionEventWorkTypeLevels(eventId, workType.id, payload);
+    },
+    onSuccess: (levels) => {
+      message.success(`“${workType.displayName || workType.workTypeName || idValue(workType.workTypeId)}”参赛等级已保存`);
+      queryClient.setQueryData(
+        ['competition-event-work-type-levels', eventId, workType.id],
+        levels,
+      );
+      queryClient.invalidateQueries({ queryKey: ['competition-event-publish-readiness', eventId] });
+    },
+    onError: (error) => message.error(error instanceof Error ? error.message : '参赛等级保存失败，请刷新重试'),
+  });
+
+  if (levelsQuery.isLoading) {
+    return <Spin size="small" />;
+  }
+  if (levelsQuery.isError) {
+    return <Typography.Text type="danger">等级加载失败，请刷新重试</Typography.Text>;
+  }
+
+  const title = workType.displayName || workType.workTypeName || idValue(workType.workTypeId);
+  return (
+    <Card size="small" type="inner" title={`“${title}”参赛等级`} style={{ width: '100%' }}>
+      {canManage ? (
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Select
+            mode="multiple"
+            allowClear
+            style={{ width: '100%' }}
+            placeholder="请选择该工种的参赛等级（至少一项）"
+            options={competitionLevelOptions}
+            value={selectedCodes}
+            onChange={(values) => setSelectedCodes(values.map(String))}
+          />
+          <Space wrap>
+            <Button
+              type="primary"
+              size="small"
+              icon={<CheckCircleOutlined />}
+              loading={saveMutation.isPending}
+              disabled={!isDirty}
+              onClick={() => saveMutation.mutate()}
+            >
+              保存参赛等级
+            </Button>
+            <Typography.Text type="secondary">
+              新增工种不会默认选择等级；赛事发布后可继续配置，确认赛段编排前请选择参赛等级。
+            </Typography.Text>
+          </Space>
+        </Space>
+      ) : (
+        <Space wrap>
+          {(levelsQuery.data || []).length ? (levelsQuery.data || []).map((level) => (
+            <Tag key={level.id} color={level.stagePlanStatus === 'confirmed' ? 'success' : 'default'}>
+              {level.levelName || level.levelCode}
+              {level.stagePlanStatus === 'confirmed' ? ' · 已确认' : ' · 待确认'}
+            </Tag>
+          )) : <Typography.Text type="warning">未明确选择参赛等级</Typography.Text>}
         </Space>
       )}
     </Card>

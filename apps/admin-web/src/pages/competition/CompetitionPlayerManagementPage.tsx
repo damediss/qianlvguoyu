@@ -21,11 +21,13 @@ import {
   Typography,
   message,
 } from 'antd';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import {
   createCompetitionPlayer,
   deleteCompetitionPlayer,
+  getCompetitionPlayerForEdit,
+  listCompetitionEventWorkTypeLevels,
   listCompetitionEventWorkTypes,
   pageCompetitionEventOrganizations,
   pageCompetitionEvents,
@@ -37,6 +39,7 @@ import type {
   CompetitionId,
   CompetitionPlayer,
   CompetitionPlayerCreateRequest,
+  CompetitionPlayerWorkTypeRequest,
   CompetitionPlayerUpdateRequest,
 } from '../../types/competition';
 import { useAuthStore } from '../../stores/authStore';
@@ -44,12 +47,50 @@ import './CompetitionEventManagementPage.css';
 
 interface CompetitionPlayerFormValues {
   orgId: string;
-  eventWorkTypeId: string;
-  employeeNo: string;
   name: string;
   idCardNo?: string;
   mobile?: string;
-  level?: string;
+}
+
+interface WorkTypeSelection {
+  eventWorkTypeId: string;
+  eventWorkTypeLevelId?: string;
+}
+
+const idCardWeights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
+const idCardCheckCodes = '10X98765432';
+
+function normalizeIdCardNo(value?: string) {
+  const normalized = value?.trim().toUpperCase().replace(/\s/g, '');
+  return normalized || undefined;
+}
+
+function normalizeMobile(value?: string) {
+  const normalized = value?.trim().replace(/\s/g, '');
+  return normalized || undefined;
+}
+
+function isValidIdCardNo(value?: string) {
+  const normalized = normalizeIdCardNo(value);
+  if (!normalized || !/^\d{17}[0-9X]$/.test(normalized)) return false;
+  const checksum = idCardWeights.reduce(
+    (sum, weight, index) => sum + Number(normalized[index]) * weight,
+    0,
+  );
+  return idCardCheckCodes[checksum % 11] === normalized[17];
+}
+
+function isValidMobile(value?: string) {
+  const normalized = normalizeMobile(value);
+  return Boolean(normalized && /^1[3-9]\d{9}$/.test(normalized));
+}
+
+function errorText(error: unknown, fallback: string) {
+  const responseMessage = (error as {
+    response?: { data?: { message?: unknown } };
+  })?.response?.data?.message;
+  if (typeof responseMessage === 'string' && responseMessage.trim()) return responseMessage;
+  return error instanceof Error && error.message.trim() ? error.message : fallback;
 }
 
 function idValue(value?: CompetitionId | null) {
@@ -68,11 +109,7 @@ function statusTag(status?: string | null) {
   return <Tag color={value?.color}>{value?.label || status || '-'}</Tag>;
 }
 
-export function CompetitionPlayerManagementPage({
-  onNavigate,
-}: {
-  onNavigate: (path: string) => void;
-}) {
+export function CompetitionPlayerManagementPage() {
   const permissions = useAuthStore((state) => state.permissionCodes);
   const canView = permissions.includes('competition:player:view');
   const canCreate = permissions.includes('competition:player:create');
@@ -85,7 +122,9 @@ export function CompetitionPlayerManagementPage({
   const [keyword, setKeyword] = useState('');
   const [query, setQuery] = useState({ page: 1, pageSize: 10, keyword: undefined as string | undefined });
   const [editing, setEditing] = useState<CompetitionPlayer>();
+  const [editLoadingId, setEditLoadingId] = useState<CompetitionId>();
   const [formOpen, setFormOpen] = useState(false);
+  const [selectedWorkTypes, setSelectedWorkTypes] = useState<WorkTypeSelection[]>([]);
   const [form] = Form.useForm<CompetitionPlayerFormValues>();
   const queryClient = useQueryClient();
 
@@ -123,6 +162,30 @@ export function CompetitionPlayerManagementPage({
       .map((item) => ({ value: idValue(item.id), label: item.displayName || item.workTypeName || idValue(item.workTypeId) }))
   ), [workTypesQuery.data]);
 
+  const workTypeLevelQueries = useQueries({
+    queries: workTypeOptions.map((workType) => ({
+      queryKey: ['competition-event-work-type-levels', selectedEventId, workType.value],
+      queryFn: () => listCompetitionEventWorkTypeLevels(selectedEventId!, workType.value),
+      enabled: canView && Boolean(selectedEventId),
+    })),
+  });
+
+  const levelsByWorkType = useMemo(() => {
+    const result: Record<string, Array<{ value: string; label: string }>> = {};
+    workTypeOptions.forEach((workType, index) => {
+      const levels = (workTypeLevelQueries[index]?.data || []) as Array<{
+        id: CompetitionId;
+        levelCode: string;
+        levelName: string;
+      }>;
+      result[workType.value] = levels.map((level) => ({
+        value: idValue(level.id),
+        label: level.levelName ? `${level.levelName}（${level.levelCode}）` : level.levelCode,
+      }));
+    });
+    return result;
+  }, [workTypeLevelQueries, workTypeOptions]);
+
   useEffect(() => {
     if (selectedOrgId && !orgOptions.some((item) => item.value === selectedOrgId)) setSelectedOrgId(undefined);
   }, [orgOptions, selectedOrgId]);
@@ -146,27 +209,43 @@ export function CompetitionPlayerManagementPage({
   const saveMutation = useMutation({
     mutationFn: (values: CompetitionPlayerFormValues) => {
       if (!selectedEventId) throw new Error('请选择赛事任务');
+      if (!selectedWorkTypes.length) throw new Error('请至少选择一个赛事工种');
+      if (selectedWorkTypes.some((selection) => !selection.eventWorkTypeLevelId)) {
+        throw new Error('请为每个赛事工种选择对应等级');
+      }
+      const firstWorkType = selectedWorkTypes[0];
+      const firstLevel = levelsByWorkType[firstWorkType.eventWorkTypeId]?.find(
+        (level) => level.value === firstWorkType.eventWorkTypeLevelId,
+      );
+      const workTypes: CompetitionPlayerWorkTypeRequest[] = selectedWorkTypes.map((selection) => ({
+        eventWorkTypeId: selection.eventWorkTypeId,
+        eventWorkTypeLevelId: selection.eventWorkTypeLevelId,
+      }));
       if (editing) {
-        const payload: CompetitionPlayerUpdateRequest = {
+        const idCardNo = normalizeIdCardNo(values.idCardNo);
+        const mobile = normalizeMobile(values.mobile);
+          const payload: CompetitionPlayerUpdateRequest = {
           orgId: values.orgId,
-          eventWorkTypeId: values.eventWorkTypeId,
-          employeeNo: values.employeeNo,
+          eventWorkTypeId: firstWorkType.eventWorkTypeId,
           name: values.name,
-          idCardNo: values.idCardNo || undefined,
-          mobile: values.mobile || undefined,
-          level: values.level || undefined,
+          idCardNo,
+          mobile,
+          level: firstLevel?.label,
+          workTypes,
         };
         return updateCompetitionPlayer(editing.registrationId, payload);
       }
+      const idCardNo = normalizeIdCardNo(values.idCardNo);
+      const mobile = normalizeMobile(values.mobile);
       const payload: CompetitionPlayerCreateRequest = {
         eventId: selectedEventId,
         orgId: values.orgId,
-        eventWorkTypeId: values.eventWorkTypeId,
-        employeeNo: values.employeeNo,
+        eventWorkTypeId: firstWorkType.eventWorkTypeId,
         name: values.name,
-        idCardNo: values.idCardNo || '',
-        mobile: values.mobile || '',
-        level: values.level || undefined,
+        idCardNo: idCardNo || '',
+        mobile: mobile || '',
+        level: firstLevel?.label,
+        workTypes,
       };
       return createCompetitionPlayer(payload);
     },
@@ -174,10 +253,11 @@ export function CompetitionPlayerManagementPage({
       message.success(editing ? '选手信息已更新' : '选手已新增');
       setFormOpen(false);
       setEditing(undefined);
+      setSelectedWorkTypes([]);
       form.resetFields();
       queryClient.invalidateQueries({ queryKey: ['competition-players'] });
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '保存选手失败'),
+    onError: (error) => message.error(errorText(error, '保存选手失败')),
   });
 
   const deleteMutation = useMutation({
@@ -186,44 +266,84 @@ export function CompetitionPlayerManagementPage({
       message.success('选手已删除');
       queryClient.invalidateQueries({ queryKey: ['competition-players'] });
     },
-    onError: (error) => message.error(error instanceof Error ? error.message : '删除选手失败'),
+    onError: (error) => message.error(errorText(error, '删除选手失败')),
   });
 
   const openCreate = () => {
     setEditing(undefined);
     form.resetFields();
-    form.setFieldsValue({ orgId: selectedOrgId, eventWorkTypeId: selectedWorkTypeId });
+    setSelectedWorkTypes(selectedWorkTypeId
+      ? [{ eventWorkTypeId: selectedWorkTypeId }]
+      : []);
+    form.setFieldsValue({ orgId: selectedOrgId });
     setFormOpen(true);
   };
-  const openEdit = (record: CompetitionPlayer) => {
-    setEditing(record);
-    form.setFieldsValue({
-      orgId: idValue(record.orgId),
-      eventWorkTypeId: idValue(record.eventWorkTypeId),
-      employeeNo: record.employeeNo || '',
-      name: record.name || '',
-      level: record.level || undefined,
-      idCardNo: undefined,
-      mobile: undefined,
-    });
-    setFormOpen(true);
+  const openEdit = async (record: CompetitionPlayer) => {
+    setEditLoadingId(record.registrationId);
+    try {
+      const detail = await getCompetitionPlayerForEdit(record.registrationId);
+      setEditing(detail);
+      const detailWorkTypes = detail.workTypes && detail.workTypes.length
+        ? detail.workTypes.map((workType) => ({
+          eventWorkTypeId: idValue(workType.eventWorkTypeId),
+          eventWorkTypeLevelId: workType.eventWorkTypeLevelId == null
+            ? undefined : idValue(workType.eventWorkTypeLevelId),
+        }))
+        : detail.eventWorkTypeId
+          ? [{
+            eventWorkTypeId: idValue(detail.eventWorkTypeId),
+            eventWorkTypeLevelId: detail.eventWorkTypeLevelId == null
+              ? undefined : idValue(detail.eventWorkTypeLevelId),
+          }]
+          : [];
+      setSelectedWorkTypes(detailWorkTypes);
+      form.setFieldsValue({
+        orgId: idValue(detail.orgId),
+        name: detail.name || '',
+        idCardNo: detail.idCardNo && detail.idCardNo !== '-' ? detail.idCardNo : '',
+        mobile: detail.mobile && detail.mobile !== '-' ? detail.mobile : '',
+      });
+      setFormOpen(true);
+    } catch (error) {
+      message.error(errorText(error, '选手详情加载失败'));
+    } finally {
+      setEditLoadingId(undefined);
+    }
   };
 
   const columns = [
     { title: '赛事任务', dataIndex: 'eventName', width: 180, ellipsis: true },
     { title: '企业', dataIndex: 'orgName', width: 170, ellipsis: true },
-    { title: '工种', dataIndex: 'eventWorkTypeName', width: 140 },
-    { title: '工号', dataIndex: 'employeeNo', width: 130 },
+    {
+      title: '工种 / 等级', key: 'workTypes', width: 260,
+      render: (_: unknown, record: CompetitionPlayer) => {
+        const workTypes = record.workTypes?.length
+          ? record.workTypes
+          : record.eventWorkTypeId
+            ? [{
+              eventWorkTypeId: record.eventWorkTypeId,
+              eventWorkTypeName: record.eventWorkTypeName,
+              levelName: record.eventWorkTypeLevelName || record.level,
+              level: record.level,
+            }]
+            : [];
+        return <Space wrap size={[4, 4]}>{workTypes.map((workType) => (
+          <Tag key={idValue(workType.eventWorkTypeId)}>
+            {workType.eventWorkTypeName || idValue(workType.eventWorkTypeId)}
+            {workType.levelName || workType.level ? ` · ${workType.levelName || workType.level}` : ''}
+          </Tag>
+        ))}</Space>;
+      },
+    },
     { title: '姓名', dataIndex: 'name', width: 100 },
     { title: '身份证号', dataIndex: 'idCardNo', width: 150 },
     { title: '手机号', dataIndex: 'mobile', width: 130 },
-    { title: '等级', dataIndex: 'level', width: 90, render: (value: string | null) => value || '-' },
     { title: '参赛状态', dataIndex: 'status', width: 100, render: statusTag },
     {
       title: '操作', key: 'actions', fixed: 'right' as const, width: 140,
       render: (_: unknown, record: CompetitionPlayer) => (
         <Space size={0}>
-          {canUpdate && <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>编辑</Button>}
+          {canUpdate && <Button type="link" size="small" icon={<EditOutlined />} loading={editLoadingId === record.registrationId} disabled={editLoadingId != null} onClick={() => { void openEdit(record); }}>编辑</Button>}
           {canDelete && <Button type="link" danger size="small" icon={<DeleteOutlined />} loading={deleteMutation.isPending && deleteMutation.variables === record.registrationId} onClick={() => Modal.confirm({ title: '确认删除该选手？', content: '删除后将从本赛事选手名单中移除，选手身份不会被删除。', okText: '删除', okButtonProps: { danger: true }, onOk: () => deleteMutation.mutate(record.registrationId) })}>删除</Button>}
         </Space>
       ),
@@ -254,13 +374,13 @@ export function CompetitionPlayerManagementPage({
             optionFilterProp="label"
             value={selectedEventId}
             options={events.map((event: CompetitionEvent) => ({ value: idValue(event.id), label: `${event.code} · ${event.name}` }))}
-            onChange={(value) => { setSelectedEventId(value); setQuery((current) => ({ ...current, page: 1 })); setSelectedOrgId(undefined); setSelectedWorkTypeId(undefined); }}
+            onChange={(value) => { setSelectedEventId(value); setQuery((current) => ({ ...current, page: 1 })); setSelectedOrgId(undefined); setSelectedWorkTypeId(undefined); setSelectedWorkTypes([]); }}
             placeholder="选择赛事任务"
             style={{ width: 280 }}
           />
           <Select allowClear showSearch optionFilterProp="label" value={selectedOrgId} options={orgOptions} onChange={(value) => { setSelectedOrgId(value); setQuery((current) => ({ ...current, page: 1 })); }} placeholder="按企业筛选" style={{ width: 220 }} loading={organizationsQuery.isLoading} />
           <Select allowClear showSearch optionFilterProp="label" value={selectedWorkTypeId} options={workTypeOptions} onChange={(value) => { setSelectedWorkTypeId(value); setQuery((current) => ({ ...current, page: 1 })); }} placeholder="按工种筛选" style={{ width: 200 }} loading={workTypesQuery.isLoading} />
-          <Input allowClear prefix={<SearchOutlined />} placeholder="工号或姓名" value={keyword} onChange={(event) => setKeyword(event.target.value)} onPressEnter={() => setQuery((current) => ({ ...current, page: 1, keyword: keyword.trim() || undefined }))} style={{ width: 220 }} />
+          <Input allowClear prefix={<SearchOutlined />} placeholder="姓名" value={keyword} onChange={(event) => setKeyword(event.target.value)} onPressEnter={() => setQuery((current) => ({ ...current, page: 1, keyword: keyword.trim() || undefined }))} style={{ width: 220 }} />
           <Button type="primary" ghost icon={<SearchOutlined />} onClick={() => setQuery((current) => ({ ...current, page: 1, keyword: keyword.trim() || undefined }))}>查询</Button>
         </Space>
       </Card>
@@ -280,26 +400,106 @@ export function CompetitionPlayerManagementPage({
         title={editing ? '编辑选手' : '新增选手'}
         open={formOpen}
         destroyOnClose
-        width={620}
+        width={700}
         confirmLoading={saveMutation.isPending}
-        onCancel={() => { setFormOpen(false); setEditing(undefined); form.resetFields(); }}
+        onCancel={() => { setFormOpen(false); setEditing(undefined); setSelectedWorkTypes([]); form.resetFields(); }}
         onOk={() => form.submit()}
       >
         <Form<CompetitionPlayerFormValues> form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
           <Form.Item label="赛事任务"><Input value={events.find((event) => idValue(event.id) === selectedEventId)?.name || selectedEventId} disabled /></Form.Item>
+          <Form.Item name="orgId" label="企业" rules={[{ required: true, message: '请选择企业' }]}>
+            <Select options={orgOptions} showSearch optionFilterProp="label" placeholder="请选择企业" />
+          </Form.Item>
+          <Form.Item
+            label="报名工种"
+            required
+            help="可选择多个工种；每个工种必须单独选择其对应等级。"
+            validateStatus={selectedWorkTypes.length > 0 && selectedWorkTypes.every((item) => item.eventWorkTypeLevelId) ? undefined : 'warning'}
+          >
+            <Select
+              mode="multiple"
+              value={selectedWorkTypes.map((item) => item.eventWorkTypeId)}
+              options={workTypeOptions}
+              showSearch
+              optionFilterProp="label"
+              placeholder="请选择一个或多个赛事工种"
+              onChange={(values: string[]) => {
+                setSelectedWorkTypes((current) => values.map((value) => (
+                  current.find((item) => item.eventWorkTypeId === value)
+                    || { eventWorkTypeId: value }
+                )));
+              }}
+            />
+            <Space direction="vertical" size={8} style={{ width: '100%', marginTop: 12 }}>
+              {selectedWorkTypes.map((selection) => {
+                const workType = workTypeOptions.find((item) => item.value === selection.eventWorkTypeId);
+                const levels = levelsByWorkType[selection.eventWorkTypeId] || [];
+                const loading = workTypeLevelQueries[workTypeOptions.findIndex(
+                  (item) => item.value === selection.eventWorkTypeId,
+                )]?.isLoading;
+                return (
+                  <Space key={selection.eventWorkTypeId} style={{ display: 'flex' }} align="center">
+                    <Typography.Text style={{ minWidth: 150 }}>{workType?.label || selection.eventWorkTypeId}</Typography.Text>
+                    <Select
+                      value={selection.eventWorkTypeLevelId}
+                      options={levels}
+                      loading={loading}
+                      disabled={!levels.length}
+                      allowClear
+                      placeholder={levels.length ? '选择对应等级' : '该工种暂无已配置等级'}
+                      style={{ minWidth: 250 }}
+                      onChange={(value) => setSelectedWorkTypes((current) => current.map((item) => (
+                        item.eventWorkTypeId === selection.eventWorkTypeId
+                          ? { ...item, eventWorkTypeLevelId: value }
+                          : item
+                      )))}
+                    />
+                  </Space>
+                );
+              })}
+            </Space>
+          </Form.Item>
+          <Form.Item name="name" label="姓名" rules={[{ required: true, whitespace: true, message: '请输入姓名' }]}>
+            <Input maxLength={128} />
+          </Form.Item>
           <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="orgId" label="企业" rules={[{ required: true, message: '请选择企业' }]} style={{ flex: 1 }}><Select options={orgOptions} showSearch optionFilterProp="label" placeholder="请选择企业" /></Form.Item>
-            <Form.Item name="eventWorkTypeId" label="工种" rules={[{ required: true, message: '请选择赛事工种' }]} style={{ flex: 1 }}><Select options={workTypeOptions} showSearch optionFilterProp="label" placeholder="请选择工种" /></Form.Item>
+            <Form.Item
+              name="idCardNo"
+              label="身份证号"
+              rules={[
+                { required: !editing, whitespace: !editing, message: '请输入身份证号' },
+                {
+                  validator: (_, value?: string) => (
+                    !value?.trim() || isValidIdCardNo(value)
+                      ? Promise.resolve()
+                      : Promise.reject(new Error('请输入有效的18位身份证号'))
+                  ),
+                },
+              ]}
+              extra={editing ? '请核对完整信息；不修改请保持原值' : undefined}
+              style={{ flex: 1 }}
+            >
+              <Input maxLength={18} />
+            </Form.Item>
+            <Form.Item
+              name="mobile"
+              label="手机号"
+              rules={[
+                { required: !editing, whitespace: !editing, message: '请输入手机号' },
+                {
+                  validator: (_, value?: string) => (
+                    !value?.trim() || isValidMobile(value)
+                      ? Promise.resolve()
+                      : Promise.reject(new Error('请输入有效的11位手机号'))
+                  ),
+                },
+              ]}
+              extra={editing ? '请核对完整信息；不修改请保持原值' : undefined}
+              style={{ flex: 1 }}
+            >
+              <Input maxLength={11} inputMode="numeric" />
+            </Form.Item>
           </Space>
-          <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="employeeNo" label="工号" rules={[{ required: true, whitespace: true, message: '请输入工号' }]} style={{ flex: 1 }}><Input maxLength={64} /></Form.Item>
-            <Form.Item name="name" label="姓名" rules={[{ required: true, whitespace: true, message: '请输入姓名' }]} style={{ flex: 1 }}><Input maxLength={128} /></Form.Item>
-          </Space>
-          <Space style={{ display: 'flex' }} align="start">
-            <Form.Item name="idCardNo" label="身份证号" rules={[{ required: !editing, message: '请输入身份证号' }]} extra={editing ? '不修改请留空' : undefined} style={{ flex: 1 }}><Input maxLength={18} /></Form.Item>
-            <Form.Item name="mobile" label="手机号" rules={[{ required: !editing, message: '请输入手机号' }]} extra={editing ? '不修改请留空' : undefined} style={{ flex: 1 }}><Input maxLength={11} /></Form.Item>
-          </Space>
-          <Form.Item name="level" label="等级"><Input maxLength={32} /></Form.Item>
         </Form>
       </Modal>
     </div>

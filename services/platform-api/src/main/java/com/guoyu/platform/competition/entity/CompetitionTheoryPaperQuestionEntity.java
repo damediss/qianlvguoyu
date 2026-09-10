@@ -15,6 +15,7 @@ public class CompetitionTheoryPaperQuestionEntity extends BaseEntity {
   private String content;
   private String optionsJson;
   private String correctAnswersJson;
+  private String fillAnswer;
   private BigDecimal score;
   private String resolveContent;
   private Integer difficulty;
@@ -41,6 +42,8 @@ public class CompetitionTheoryPaperQuestionEntity extends BaseEntity {
   public void setCorrectAnswersJson(String correctAnswersJson) {
     this.correctAnswersJson = correctAnswersJson;
   }
+  public String getFillAnswer() { return fillAnswer; }
+  public void setFillAnswer(String fillAnswer) { this.fillAnswer = fillAnswer; }
   public BigDecimal getScore() { return score; }
   public void setScore(BigDecimal score) { this.score = score; }
   public String getResolveContent() { return resolveContent; }

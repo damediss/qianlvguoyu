@@ -19,6 +19,7 @@ public class CompetitionTheoryPaperSnapshotEntity extends BaseEntity {
   private Long sourceCourseId;
   private Long sourcePlanId;
   private Long sourcePaperId;
+  private Long sourceCompetitionPaperSnapshotId;
   private String sourceTitle;
   private String sourceHash;
   private Integer durationMinutes;
@@ -53,6 +54,10 @@ public class CompetitionTheoryPaperSnapshotEntity extends BaseEntity {
   public void setSourcePlanId(Long sourcePlanId) { this.sourcePlanId = sourcePlanId; }
   public Long getSourcePaperId() { return sourcePaperId; }
   public void setSourcePaperId(Long sourcePaperId) { this.sourcePaperId = sourcePaperId; }
+  public Long getSourceCompetitionPaperSnapshotId() { return sourceCompetitionPaperSnapshotId; }
+  public void setSourceCompetitionPaperSnapshotId(Long sourceCompetitionPaperSnapshotId) {
+    this.sourceCompetitionPaperSnapshotId = sourceCompetitionPaperSnapshotId;
+  }
   public String getSourceTitle() { return sourceTitle; }
   public void setSourceTitle(String sourceTitle) { this.sourceTitle = sourceTitle; }
   public String getSourceHash() { return sourceHash; }

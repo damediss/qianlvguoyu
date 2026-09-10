@@ -18,7 +18,11 @@ public final class CompetitionRosterImportConverter {
     CompetitionRosterItemVO target = new CompetitionRosterItemVO();
     target.setId(source.getId());
     target.setBatchId(source.getBatchId());
-    target.setEmployeeNo(source.getEmployeeNo());
+    target.setOrgId(source.getOrgId());
+    target.setOrgName(source.getOrgName());
+    target.setEventWorkTypeId(source.getEventWorkTypeId());
+    target.setEventWorkTypeLevelId(source.getEventWorkTypeLevelId());
+    target.setSourceRowNo(source.getSourceRowNo());
     target.setName(source.getName());
     target.setWorkType(source.getWorkType());
     target.setLevel(source.getLevel());

@@ -2,7 +2,10 @@ package com.guoyu.platform.competition.controller;
 
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.common.exception.BusinessException;
+import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.competition.dto.CompetitionTheoryPaperImportReq;
+import com.guoyu.platform.competition.dto.CompetitionTheoryCompetitionPaperImportReq;
 import com.guoyu.platform.competition.dto.CompetitionTheoryRequirementUpsertReq;
 import com.guoyu.platform.competition.service.CompetitionTheoryPaperApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionTheoryCourseSourceVO;
@@ -74,9 +77,10 @@ public class CompetitionTheoryPaperController {
       @PathVariable Long eventId,
       @RequestParam(required = false) Long stageId,
       @RequestParam(required = false) Long eventWorkTypeId,
+      @RequestParam(required = false) Long eventWorkTypeLevelId,
       @RequestParam(required = false) Long scoreRuleId) {
     return ApiResponse.ok(
-        service.listSnapshots(eventId, stageId, eventWorkTypeId, scoreRuleId));
+        service.listSnapshots(eventId, stageId, eventWorkTypeId, eventWorkTypeLevelId, scoreRuleId));
   }
 
   @GetMapping("/events/{eventId}/theory-exam/paper-snapshots/{snapshotId}/preview")
@@ -94,6 +98,17 @@ public class CompetitionTheoryPaperController {
   public ApiResponse<List<CompetitionTheoryPaperSnapshotVO>> importPair(
       @PathVariable Long eventId,
       @Valid @RequestBody CompetitionTheoryPaperImportReq req) {
-    return ApiResponse.ok(service.importPair(eventId, req));
+    throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+        "课程来源试卷仅保留历史只读兼容，新的竞赛试卷必须从已发布竞赛组卷快照导入");
+  }
+
+  @PostMapping("/events/{eventId}/theory-exam/paper-snapshots/import-competition")
+  @PreAuthorize("hasAuthority('competition:theory-paper:manage')")
+  @AuditLog(module = "competition", action = "theory-paper:import-competition-snapshot",
+      targetType = "competition_theory_paper_snapshot")
+  public ApiResponse<List<CompetitionTheoryPaperSnapshotVO>> importCompetitionPapers(
+      @PathVariable Long eventId,
+      @Valid @RequestBody CompetitionTheoryCompetitionPaperImportReq req) {
+    return ApiResponse.ok(service.importCompetitionPapers(eventId, req));
   }
 }

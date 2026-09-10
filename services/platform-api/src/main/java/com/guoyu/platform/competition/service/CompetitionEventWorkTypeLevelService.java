@@ -8,6 +8,7 @@ import com.guoyu.platform.competition.dto.CompetitionEventWorkTypeLevelBatchReq;
 import com.guoyu.platform.competition.dto.CompetitionEventWorkTypeLevelItemReq;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeLevelEntity;
+import com.guoyu.platform.competition.enums.CompetitionStagePlanStatus;
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeLevelMapper;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -58,8 +59,8 @@ public class CompetitionEventWorkTypeLevelService {
       CompetitionEventWorkTypeLevelBatchReq req,
       Long operatorId) {
     CompetitionEventWorkTypeEntity workType = requireWorkType(tenantId, eventId, eventWorkTypeId);
-    if (req == null || req.levels() == null || req.levels().isEmpty()) {
-      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "至少需要配置一个赛事工种等级");
+    if (req == null || req.levels() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "参赛等级列表不能为空");
     }
     if (req.levels().size() > 5
         || req.levels().stream().map(CompetitionEventWorkTypeLevelItemReq::levelCode).collect(Collectors.toSet()).size()
@@ -96,6 +97,7 @@ public class CompetitionEventWorkTypeLevelService {
         entity.setEventId(eventId);
         entity.setEventWorkTypeId(workType.getId());
         entity.setDeleted(0);
+        entity.setStagePlanStatus(CompetitionStagePlanStatus.DRAFT.getCode());
         CompetitionEventWorkTypeLevelConverter.apply(entity, item);
         entity.setConfirmedBy(operatorId);
         entity.setConfirmedAt("confirmed".equals(entity.getReconciliationStatus())
@@ -124,8 +126,13 @@ public class CompetitionEventWorkTypeLevelService {
       result.add(entity);
     }
     for (CompetitionEventWorkTypeLevelEntity entity : existing) {
-      if (entity != null && !retainedIds.contains(entity.getId()) && mapper.deleteById(entity.getId()) != 1) {
-        throw new BusinessException(ErrorCode.CONFLICT, "等级删除失败，请刷新后重试");
+      if (entity != null && !retainedIds.contains(entity.getId())) {
+        if (CompetitionStagePlanStatus.CONFIRMED.getCode().equals(entity.getStagePlanStatus())) {
+          throw new BusinessException(ErrorCode.CONFLICT, "已确认编排的等级不能移除");
+        }
+        if (mapper.deleteById(entity.getId()) != 1) {
+          throw new BusinessException(ErrorCode.CONFLICT, "等级删除失败，请刷新后重试");
+        }
       }
     }
     return result;

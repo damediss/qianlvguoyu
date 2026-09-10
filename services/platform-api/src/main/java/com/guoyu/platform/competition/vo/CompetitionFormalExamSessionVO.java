@@ -1,0 +1,45 @@
+package com.guoyu.platform.competition.vo;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+public record CompetitionFormalExamSessionVO(
+    String id,
+    String eventId,
+    String eventName,
+    String stageId,
+    String stageName,
+    String eventWorkTypeId,
+    String workTypeName,
+    String eventWorkTypeLevelId,
+    String levelCode,
+    String levelName,
+    String examType,
+    String status,
+    Integer durationSeconds,
+    LocalDateTime plannedStartTime,
+    LocalDateTime actualStartTime,
+    LocalDateTime actualEndTime,
+    Integer candidateTotal,
+    Integer submittedTotal,
+    Integer waitingEnterCount,
+    Integer readyCount,
+    Integer runningCount,
+    Integer submittedCount,
+    Integer autoSubmittedCount,
+    Integer forcedSubmittedCount,
+    Integer absentCount,
+    Integer paperCount,
+    List<CompetitionFormalExamPaperVO> papers,
+    LocalDateTime serverTime,
+    LocalDateTime deadlineTime,
+    Boolean finishEligible,
+    List<CompetitionFormalExamFinishBlockerVO> finishBlockers,
+    String scoringStatus,
+    LocalDateTime scoringStartedAt,
+    LocalDateTime scoredTime,
+    String scoringError,
+    Integer scoredCount,
+    Integer scoringAbsentCount,
+    Integer scoringFailedCount) {
+}

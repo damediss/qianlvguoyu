@@ -35,11 +35,13 @@ interface StagePlanningCanvasProps {
   onAddStage: (stageType: StageType, position: { x: number; y: number }) => void;
   onStageContextMenu: (nodeId: string) => void;
   onStageContentTypeClick: (nodeId: string, contentType: CompetitionStageContentType) => void;
+  onStageCandidateClick?: (nodeId: string) => void;
+  candidateEnabled?: boolean;
   stageContentTypesByNodeId?: Readonly<Record<string, readonly CompetitionStageContentType[]>>;
   onFitViewReady: (fitView: () => void) => void;
 }
 
-function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, onNodesChange, onEdgesChange, onConnect, onSelectionChange, onAddStage, onStageContextMenu, onStageContentTypeClick, stageContentTypesByNodeId, onFitViewReady }: StagePlanningCanvasProps) {
+function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, onNodesChange, onEdgesChange, onConnect, onSelectionChange, onAddStage, onStageContextMenu, onStageContentTypeClick, onStageCandidateClick, candidateEnabled, stageContentTypesByNodeId, onFitViewReady }: StagePlanningCanvasProps) {
   const { screenToFlowPosition, fitView } = useReactFlow<StageNode, StageEdge>();
   const [contextMenu, setContextMenu] = useState<{
     nodeId: string;
@@ -127,11 +129,17 @@ function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, 
         <StageContextMenu
           position={contextMenu.position}
           enabledContentTypes={enabledContentTypes}
+          candidateEnabled={candidateEnabled}
           onClose={closeContextMenu}
           onContentTypeClick={(contentType) => {
             const nodeId = contextMenu.nodeId;
             closeContextMenu();
             onStageContentTypeClick(nodeId, contentType);
+          }}
+          onCandidateClick={() => {
+            const nodeId = contextMenu.nodeId;
+            closeContextMenu();
+            onStageCandidateClick?.(nodeId);
           }}
         />
       )}

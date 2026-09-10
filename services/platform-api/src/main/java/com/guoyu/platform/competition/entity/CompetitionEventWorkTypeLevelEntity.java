@@ -14,6 +14,9 @@ public class CompetitionEventWorkTypeLevelEntity extends BaseEntity {
   private String sourceLevelCode;
   private String sourceLevelText;
   private String reconciliationStatus;
+  private String stagePlanStatus;
+  private Long stagePlanConfirmedBy;
+  private LocalDateTime stagePlanConfirmedAt;
   private LocalDateTime confirmedAt;
   private Long confirmedBy;
 
@@ -31,6 +34,12 @@ public class CompetitionEventWorkTypeLevelEntity extends BaseEntity {
   public void setSourceLevelText(String sourceLevelText) { this.sourceLevelText = sourceLevelText; }
   public String getReconciliationStatus() { return reconciliationStatus; }
   public void setReconciliationStatus(String reconciliationStatus) { this.reconciliationStatus = reconciliationStatus; }
+  public String getStagePlanStatus() { return stagePlanStatus; }
+  public void setStagePlanStatus(String stagePlanStatus) { this.stagePlanStatus = stagePlanStatus; }
+  public Long getStagePlanConfirmedBy() { return stagePlanConfirmedBy; }
+  public void setStagePlanConfirmedBy(Long stagePlanConfirmedBy) { this.stagePlanConfirmedBy = stagePlanConfirmedBy; }
+  public LocalDateTime getStagePlanConfirmedAt() { return stagePlanConfirmedAt; }
+  public void setStagePlanConfirmedAt(LocalDateTime stagePlanConfirmedAt) { this.stagePlanConfirmedAt = stagePlanConfirmedAt; }
   public LocalDateTime getConfirmedAt() { return confirmedAt; }
   public void setConfirmedAt(LocalDateTime confirmedAt) { this.confirmedAt = confirmedAt; }
   public Long getConfirmedBy() { return confirmedBy; }

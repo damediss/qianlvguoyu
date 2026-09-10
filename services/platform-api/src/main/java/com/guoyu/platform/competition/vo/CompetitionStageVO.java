@@ -1,11 +1,18 @@
 package com.guoyu.platform.competition.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import java.time.LocalDateTime;
 
 public class CompetitionStageVO {
 
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long id;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long eventId;
+  @JsonSerialize(using = ToStringSerializer.class)
+  private Long eventWorkTypeId;
+  private String eventWorkTypeLevelCode;
   private String name;
   private String stageType;
   private Integer sortOrder;
@@ -22,6 +29,12 @@ public class CompetitionStageVO {
   public void setId(Long id) { this.id = id; }
   public Long getEventId() { return eventId; }
   public void setEventId(Long eventId) { this.eventId = eventId; }
+  public Long getEventWorkTypeId() { return eventWorkTypeId; }
+  public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
+  public String getEventWorkTypeLevelCode() { return eventWorkTypeLevelCode; }
+  public void setEventWorkTypeLevelCode(String eventWorkTypeLevelCode) {
+    this.eventWorkTypeLevelCode = eventWorkTypeLevelCode;
+  }
   public String getName() { return name; }
   public void setName(String name) { this.name = name; }
   public String getStageType() { return stageType; }

@@ -135,6 +135,16 @@ describe('competition stage graph utilities', () => {
     expect(readStageCanvasNotes(1, 1001)).toEqual({});
   });
 
+  it('keeps local notes separate for each work type and level', () => {
+    writeStageCanvasNotes(1, 1001, { 'preliminary->final': '电工初级' }, '2001', '5');
+    writeStageCanvasNotes(1, 1001, { 'preliminary->final': '电工中级' }, '2001', '4');
+
+    expect(readStageCanvasNotes(1, 1001, '2001', '5')).toEqual({ 'preliminary->final': '电工初级' });
+    expect(readStageCanvasNotes(1, 1001, '2001', '4')).toEqual({ 'preliminary->final': '电工中级' });
+    expect(stageCanvasStorageKey(1, 1001, '2001', '5'))
+      .not.toBe(stageCanvasStorageKey(1, 1001, '2002', '5'));
+  });
+
   it('cleans notes for deleted edges', () => {
     const graph = toStageGraph([stage('preliminary', 20, 5001), stage('final', 50, 5002)]);
     const notes = cleanStageNotes(graph.nodes, graph.edges, { 'preliminary->final': '保留' });

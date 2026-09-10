@@ -52,6 +52,9 @@ public class CompetitionStageContentService {
   public List<CompetitionStageContentEntity> replace(
       Long tenantId, Long stageId, CompetitionStageContentBatchReq req) {
     var stage = stageService.getById(tenantId, stageId);
+    var event = stageService.lockEventForArrangementUpdate(tenantId, stage.getEventId());
+    com.guoyu.platform.competition.domain.CompetitionEventArrangementGuard.requireOpen(
+        event, "已关闭或已归档赛事不允许修改赛段内容");
     if (CompetitionStageStatus.fromCode(stage.getStatus()) == null
         || !CompetitionStageStatus.writableStatuses().contains(
             CompetitionStageStatus.fromCode(stage.getStatus()))) {

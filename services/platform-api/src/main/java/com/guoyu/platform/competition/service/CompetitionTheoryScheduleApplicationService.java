@@ -54,6 +54,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -82,6 +83,7 @@ public class CompetitionTheoryScheduleApplicationService {
   private final CompetitionTheoryScheduleAllocator allocator;
   private final CompetitionPlayerMessageMapper playerMessageMapper;
   private final CompetitionContestantScopeValidator contestantScopeValidator;
+  private final CompetitionPlayerSessionConflictDomainService sessionConflictService;
 
   public CompetitionTheoryScheduleApplicationService(
       CompetitionScoreRuleApplicationService scoreRuleApplicationService,
@@ -97,7 +99,25 @@ public class CompetitionTheoryScheduleApplicationService {
       CompetitionPlayerMessageMapper playerMessageMapper) {
     this(scoreRuleApplicationService, scoreRuleDomainService, versionMapper, roomMapper, sessionMapper,
         sessionRoomMapper, assignmentMapper, adjustmentMapper, paperSnapshotMapper, allocator,
-        playerMessageMapper, null);
+        playerMessageMapper, null, null);
+  }
+
+  public CompetitionTheoryScheduleApplicationService(
+      CompetitionScoreRuleApplicationService scoreRuleApplicationService,
+      CompetitionScoreRuleDomainService scoreRuleDomainService,
+      CompetitionTheoryScheduleVersionMapper versionMapper,
+      CompetitionTheoryExamRoomMapper roomMapper,
+      CompetitionTheoryExamSessionMapper sessionMapper,
+      CompetitionTheorySessionRoomMapper sessionRoomMapper,
+      CompetitionTheoryCandidateAssignmentMapper assignmentMapper,
+      CompetitionTheoryAssignmentAdjustmentMapper adjustmentMapper,
+      CompetitionTheoryPaperSnapshotMapper paperSnapshotMapper,
+      CompetitionTheoryScheduleAllocator allocator,
+      CompetitionPlayerMessageMapper playerMessageMapper,
+      CompetitionContestantScopeValidator contestantScopeValidator) {
+    this(scoreRuleApplicationService, scoreRuleDomainService, versionMapper, roomMapper, sessionMapper,
+        sessionRoomMapper, assignmentMapper, adjustmentMapper, paperSnapshotMapper, allocator,
+        playerMessageMapper, contestantScopeValidator, null);
   }
 
   @org.springframework.beans.factory.annotation.Autowired
@@ -113,7 +133,8 @@ public class CompetitionTheoryScheduleApplicationService {
       CompetitionTheoryPaperSnapshotMapper paperSnapshotMapper,
       CompetitionTheoryScheduleAllocator allocator,
       CompetitionPlayerMessageMapper playerMessageMapper,
-      CompetitionContestantScopeValidator contestantScopeValidator) {
+      CompetitionContestantScopeValidator contestantScopeValidator,
+      CompetitionPlayerSessionConflictDomainService sessionConflictService) {
     this.scoreRuleApplicationService = scoreRuleApplicationService;
     this.scoreRuleDomainService = scoreRuleDomainService;
     this.versionMapper = versionMapper;
@@ -126,6 +147,7 @@ public class CompetitionTheoryScheduleApplicationService {
     this.allocator = allocator;
     this.playerMessageMapper = playerMessageMapper;
     this.contestantScopeValidator = contestantScopeValidator;
+    this.sessionConflictService = sessionConflictService;
   }
 
   @Transactional
@@ -221,7 +243,7 @@ public class CompetitionTheoryScheduleApplicationService {
       issues.add(ex.getMessage());
     }
     if (candidates.size() > totalCapacity) {
-      issues.add("A/B场次总容量不足，缺少" + (candidates.size() - totalCapacity) + "个座位");
+      issues.add("考试场次总容量不足，缺少" + (candidates.size() - totalCapacity) + "个座位");
     }
     try {
       validatePublishAssignments(
@@ -372,6 +394,7 @@ public class CompetitionTheoryScheduleApplicationService {
             row.getContestantProfileId(), row.getContestantMemberId(),
             row.getRegistrationId(), row.getPlayerId())).toList(),
         slots, seed);
+    assertAllocationsSessionFree(principal.getTenantId(), version, sessions, allocations);
 
     clearAssignments(principal.getTenantId(), versionId);
     LocalDateTime now = LocalDateTime.now();
@@ -431,9 +454,15 @@ public class CompetitionTheoryScheduleApplicationService {
     if (occupied >= targetRoom.getCapacitySnapshot()) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "目标考场已满");
     }
-    if (sessionMapper.countCandidateTimeConflicts(
-        principal.getTenantId(), assignment.getContestantProfileId(), version.getId(),
-        targetSession.getStartAt(), targetSession.getEndAt()) > 0) {
+    if (sessionConflictService != null) {
+      sessionConflictService.assertNoOverlap(
+          principal.getTenantId(), assignment.getPlayerId(),
+          targetSession.getStartAt(), targetSession.getEndAt(),
+          version.getId(), null, null);
+    } else if (assignment.getPlayerId() != null
+        && sessionMapper.countCandidateTimeConflicts(
+            principal.getTenantId(), assignment.getPlayerId(), version.getId(),
+            targetSession.getStartAt(), targetSession.getEndAt()) > 0) {
       throw new BusinessException(ErrorCode.CONFLICT, "该选手在目标时段已有其他考试安排");
     }
     String newSeat = firstAvailableSeat(
@@ -643,7 +672,7 @@ public class CompetitionTheoryScheduleApplicationService {
       auditUpdate(session, principal.getUserId(), now);
     }
     session.setPaperSnapshotId(paper.getId());
-    session.setSessionCode(req.sessionCode().toUpperCase());
+    session.setSessionCode(req.sessionCode().toUpperCase(Locale.ROOT));
     session.setSessionName(req.sessionName().trim());
     session.setStartAt(req.startAt());
     session.setEndAt(req.endAt());
@@ -671,6 +700,32 @@ public class CompetitionTheoryScheduleApplicationService {
     return toSessionVO(principal.getTenantId(), session);
   }
 
+  private void assertAllocationsSessionFree(
+      Long tenantId,
+      CompetitionTheoryScheduleVersionEntity version,
+      List<CompetitionTheoryExamSessionEntity> sessions,
+      List<Allocation> allocations) {
+    if (sessionConflictService == null || allocations == null || allocations.isEmpty()) {
+      return;
+    }
+    Map<Long, CompetitionTheoryExamSessionEntity> sessionsById = new HashMap<>();
+    if (sessions != null) {
+      sessions.forEach(session -> sessionsById.put(session.getId(), session));
+    }
+    for (Allocation allocation : allocations) {
+      if (allocation == null || allocation.candidate() == null) {
+        continue;
+      }
+      CompetitionTheoryExamSessionEntity session = sessionsById.get(allocation.sessionId());
+      if (session == null) {
+        continue;
+      }
+      sessionConflictService.assertNoOverlap(
+          tenantId, allocation.candidate().playerId(), session.getStartAt(), session.getEndAt(),
+          version.getId(), null, null);
+    }
+  }
+
   private void validatePublishAssignments(
       Long tenantId,
       CompetitionTheoryScheduleVersionEntity version,
@@ -696,9 +751,14 @@ public class CompetitionTheoryScheduleApplicationService {
       if (session == null) {
         throw new BusinessException(ErrorCode.CONFLICT, "分配名单引用了无效场次");
       }
-      if (sessionMapper.countCandidateTimeConflicts(
-          tenantId, assignment.getContestantProfileId(), version.getId(),
-          session.getStartAt(), session.getEndAt()) > 0) {
+      if (sessionConflictService != null) {
+        sessionConflictService.assertNoOverlap(
+            tenantId, assignment.getPlayerId(), session.getStartAt(), session.getEndAt(),
+            version.getId(), null, null);
+      } else if (assignment.getPlayerId() != null
+          && sessionMapper.countCandidateTimeConflicts(
+              tenantId, assignment.getPlayerId(), version.getId(),
+              session.getStartAt(), session.getEndAt()) > 0) {
         throw new BusinessException(ErrorCode.CONFLICT, "存在选手考试时间冲突");
       }
     }
@@ -713,12 +773,15 @@ public class CompetitionTheoryScheduleApplicationService {
       Long tenantId,
       CompetitionTheoryScheduleVersionEntity version,
       List<CompetitionTheoryExamSessionEntity> sessions) {
-    if (sessions.isEmpty() || sessions.size() > 2) {
-      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "必须配置A场，可选配置B场");
+    if (sessions.isEmpty()) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "至少配置一个考试场次");
     }
-    Map<String, CompetitionTheoryExamSessionEntity> byCode = new HashMap<>();
+    if (sessions.size() > 26) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "考试场次最多配置26个试卷编号");
+    }
+    Set<String> sessionCodes = new HashSet<>();
     for (CompetitionTheoryExamSessionEntity session : sessions) {
-      if (byCode.put(session.getSessionCode(), session) != null) {
+      if (!sessionCodes.add(session.getSessionCode().toUpperCase(Locale.ROOT))) {
         throw new BusinessException(ErrorCode.CONFLICT, "同一安排存在重复场次卷别");
       }
       requirePaperSnapshot(tenantId, version, session.getPaperSnapshotId());
@@ -734,18 +797,6 @@ public class CompetitionTheoryScheduleApplicationService {
             session.getStartAt(), session.getEndAt()) > 0) {
           throw new BusinessException(ErrorCode.CONFLICT, "存在考场时间冲突");
         }
-      }
-    }
-    if (!byCode.containsKey("A")) {
-      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "必须配置A场");
-    }
-    if (byCode.containsKey("B")) {
-      CompetitionTheoryExamSessionEntity a = byCode.get("A");
-      CompetitionTheoryExamSessionEntity b = byCode.get("B");
-      boolean overlap = a.getStartAt().isBefore(b.getEndAt())
-          && a.getEndAt().isAfter(b.getStartAt());
-      if (overlap) {
-        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "A/B场次时间不得重叠");
       }
     }
   }

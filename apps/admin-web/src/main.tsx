@@ -78,7 +78,11 @@ import { TabletAssessorApp } from './pages/assessor/TabletAssessorApp';
 import { DefenseReviewApp } from './pages/assessor/DefenseReviewApp';
 import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
 import { CompetitionEventManagementPage } from './pages/competition/CompetitionEventManagementPage';
+import { CompetitionPlayerManagementPage } from './pages/competition/CompetitionPlayerManagementPage';
 import { CompetitionEventModulePage, type CompetitionEventModule } from './pages/competition/CompetitionEventModulePage';
+import { CompetitionQuestionBankPage } from './pages/competition/CompetitionQuestionBankPage';
+import { CompetitionMakeExamPlanPage } from './pages/competition/CompetitionMakeExamPlanPage';
+import { FormalExamPlayerApp } from './pages/formalExam/FormalExamPlayerApp';
 import { findCompetitionMenuCode, isCompetitionPath } from './routes/competitionRoute';
 import { useAuthStore } from './stores/authStore';
 import { NavigationBlockerProvider, useNavigationBlocker } from './hooks/useUnsavedChangesBlocker';
@@ -517,11 +521,15 @@ const pageMap: Record<string, React.ReactNode> = {
   risk_platform_coop: <ProductPlaceholder moduleCode="risk_platform_coop" />,
   'certification-practical-collection': <CollectionTaskListPage />,
   competition_event: <CompetitionEventManagementPage />,
-  competition_player: <CompetitionEventManagementPage />,
+  competition_player: <CompetitionPlayerManagementPage />,
   competition_stage: <CompetitionModuleShell module="stages" />,
   competition_notice: <CompetitionModuleShell module="notices" />,
   competition_theory_exam: <CompetitionModuleShell module="theory-exam" />,
+  competition_formal_exam: <CompetitionModuleShell module="formal-exam-console" />,
   competition_score_ranking: <CompetitionModuleShell module="scores" />,
+  competition_theory_question: <CompetitionQuestionBankPage contentType="theory" />,
+  competition_practical_question: <CompetitionQuestionBankPage contentType="practical" />,
+  competition_make_exam_plan: <CompetitionMakeExamPlanPage />,
 };
 
 function useBrowserPathname() {
@@ -666,6 +674,7 @@ function GraduationClassDetailShell({ pathname }: { pathname: string }) {
 
 function App() {
   const pathname = useBrowserPathname();
+  const formalExamMode = pathname === '/formal-exam' || pathname.startsWith('/formal-exam/');
   const assessorMode = pathname.startsWith('/assessor-scoring');
   const defenseMode = pathname.startsWith('/assessor-defense');
   const practicalCollectionMode = pathname.startsWith('/practical-collection');
@@ -677,6 +686,9 @@ function App() {
 
   return (
     <NavigationBlockerProvider>
+      {formalExamMode ? (
+        <FormalExamPlayerApp />
+      ) : (
       <AuthGate mode={assessorMode ? 'assessor' : defenseMode ? 'defense' : practicalCollectionMode ? 'collection' : 'admin'}>
         {assessorMode ? (
           <TabletAssessorApp />
@@ -696,6 +708,7 @@ function App() {
           <AppShell pageMap={pageMap} />
         )}
       </AuthGate>
+      )}
     </NavigationBlockerProvider>
   );
 }

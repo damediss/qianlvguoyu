@@ -11,7 +11,6 @@ import {
   Descriptions,
   Empty,
   Result,
-  Select,
   Space,
   Spin,
   Steps,
@@ -25,19 +24,16 @@ import type { UploadFile, UploadProps } from 'antd';
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   confirmCompetitionRosterImport,
   downloadCompetitionRosterTemplate,
   getCompetitionEvent,
   getCompetitionRosterImport,
-  listCompetitionEventWorkTypes,
-  pageCompetitionEventOrganizations,
   precheckCompetitionRoster,
 } from '../../api/competition';
 import { uploadPlatformFile } from '../../api/files';
 import type {
-  CompetitionEventWorkType,
   CompetitionRosterItem,
   CompetitionRosterImportPageQuery,
   CompetitionRosterValidationStatus,
@@ -74,13 +70,10 @@ export function CompetitionRosterImportPage({
   const canView = permissions.includes('competition:roster:view');
   const canImport = permissions.includes('competition:roster:import');
   const canConfirm = permissions.includes('competition:roster:confirm');
-  const canViewOrganizations = permissions.includes('competition:event-org:view');
   const initialBatchId = new URLSearchParams(window.location.search).get('batchId') || undefined;
   const [selectedBatchId, setSelectedBatchId] = useState<string | undefined>(initialBatchId);
   const [selectedFile, setSelectedFile] = useState<File>();
   const [uploadFileList, setUploadFileList] = useState<UploadFile[]>([]);
-  const [orgId, setOrgId] = useState<string>();
-  const [eventWorkTypeId, setEventWorkTypeId] = useState<string>();
   const [itemQuery, setItemQuery] = useState<CompetitionRosterImportPageQuery>({ page: 1, pageSize: 20 });
   const queryClient = useQueryClient();
 
@@ -90,40 +83,6 @@ export function CompetitionRosterImportPage({
     enabled: canView,
   });
 
-  const organizationsQuery = useQuery({
-    queryKey: ['competition-event-organizations', eventId, 'active'],
-    queryFn: () => pageCompetitionEventOrganizations(eventId, { page: 1, pageSize: 500, status: 'active' }),
-    enabled: canView && canViewOrganizations,
-  });
-
-  const workTypesQuery = useQuery({
-    queryKey: ['competition-event-work-types', eventId],
-    queryFn: () => listCompetitionEventWorkTypes(eventId),
-    enabled: canView,
-  });
-
-  const organizationOptions = useMemo(() => (
-    (organizationsQuery.data?.items || []).map((organization) => ({
-      value: idValue(organization.orgId),
-      label: organization.orgName
-        ? `${organization.orgName}（${organization.orgCode || organization.orgId}）`
-        : idValue(organization.orgId),
-    }))
-  ), [organizationsQuery.data?.items]);
-
-  const workTypeOptions = useMemo(() => (
-    (workTypesQuery.data || [])
-      .filter((item: CompetitionEventWorkType) => item.status === 'active')
-      .map((item) => ({
-        value: idValue(item.id),
-        label: item.displayName || item.workTypeName || idValue(item.workTypeId),
-      }))
-  ), [workTypesQuery.data]);
-
-  useEffect(() => {
-    if (!orgId && organizationOptions.length === 1) setOrgId(organizationOptions[0].value);
-  }, [orgId, organizationOptions]);
-
   const detailQuery = useQuery({
     queryKey: ['competition-roster-import', selectedBatchId, itemQuery],
     queryFn: () => getCompetitionRosterImport(selectedBatchId!, itemQuery),
@@ -132,15 +91,13 @@ export function CompetitionRosterImportPage({
 
   const precheckMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedFile || !orgId || !eventWorkTypeId) {
-        throw new Error('请选择企业、赛事工种和 Excel 文件');
+      if (!selectedFile) {
+        throw new Error('请选择 Excel 文件');
       }
       const uploaded = await uploadPlatformFile(selectedFile, 'private');
       if (!uploaded.id) throw new Error('文件上传未返回 fileId');
       return precheckCompetitionRoster(eventId, {
         fileId: uploaded.id,
-        orgId,
-        eventWorkTypeId,
       });
     },
     onSuccess: (detail) => {
@@ -181,8 +138,10 @@ export function CompetitionRosterImportPage({
         message.error('仅支持 .xlsx 或 .xls 文件');
         return Upload.LIST_IGNORE;
       }
+      setSelectedBatchId(undefined);
       setSelectedFile(file);
       setUploadFileList([file]);
+      setItemQuery({ page: 1, pageSize: 20 });
       return false;
     },
     onRemove: () => {
@@ -206,9 +165,9 @@ export function CompetitionRosterImportPage({
   };
 
   const itemColumns = [
-    { title: '工号', dataIndex: 'employeeNo', width: 160 },
+    { title: '企业', dataIndex: 'orgName', width: 220, render: (value: string | null | undefined) => value || '-' },
     { title: '姓名', dataIndex: 'name', width: 140 },
-    { title: '工种', dataIndex: 'workType', width: 180, render: (value: string | null | undefined) => value || '-' },
+    { title: '报名工种', dataIndex: 'workType', width: 180, render: (value: string | null | undefined) => value || '-' },
     { title: '等级', dataIndex: 'level', width: 120, render: (value: string | null | undefined) => value || '-' },
     {
       title: '校验状态', dataIndex: 'validationStatus', width: 120,
@@ -229,7 +188,7 @@ export function CompetitionRosterImportPage({
 
   const detail = detailQuery.data;
   const items = detail?.items?.items || [];
-  const step = !orgId ? 0 : !eventWorkTypeId ? 1 : 2;
+  const step = selectedBatchId ? 2 : selectedFile ? 1 : 0;
 
   return (
     <CompetitionEventFrame event={eventQuery.data} activeSection="rosters" onNavigate={onNavigate}>
@@ -237,69 +196,34 @@ export function CompetitionRosterImportPage({
         <Card bordered={false} className="competition-detail-card competition-roster-import-wizard">
           <Steps
             current={step}
-            items={[{ title: '选择企业' }, { title: '选择工种' }, { title: '选择文件导入' }]}
+            items={[{ title: '选择文件' }, { title: '校验企业、工种与等级' }, { title: '确认导入' }]}
           />
           <div className="competition-roster-import-wizard__body">
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
               <div>
                 <div className="competition-card-heading">
                   <div>
-                    <Typography.Title level={4}>选择参赛企业</Typography.Title>
-                    <Typography.Text type="secondary">先确定本次名单归属的赛事参与企业。</Typography.Text>
-                  </div>
-                </div>
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  value={orgId}
-                  onChange={(value) => { setOrgId(value); setSelectedBatchId(undefined); }}
-                  options={organizationOptions}
-                  placeholder="请选择企业"
-                  style={{ width: 360, maxWidth: '100%' }}
-                  loading={organizationsQuery.isLoading}
-                />
-              </div>
-              <div>
-                <div className="competition-card-heading">
-                  <div>
-                    <Typography.Title level={4}>选择参赛工种</Typography.Title>
-                    <Typography.Text type="secondary">导入后每名选手会直接归属到所选赛事工种。</Typography.Text>
-                  </div>
-                </div>
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  value={eventWorkTypeId}
-                  onChange={(value) => { setEventWorkTypeId(value); setSelectedBatchId(undefined); }}
-                  options={workTypeOptions}
-                  placeholder="请选择赛事工种"
-                  style={{ width: 360, maxWidth: '100%' }}
-                  loading={workTypesQuery.isLoading}
-                  disabled={!orgId}
-                />
-              </div>
-              <div>
-                <div className="competition-card-heading">
-                  <div>
-                    <Typography.Title level={4}>选择文件导入</Typography.Title>
-                    <Typography.Text type="secondary">支持 .xlsx / .xls；模板中已填写的工种必须与本步骤选择一致，留空时按本步骤选择导入。</Typography.Text>
+                    <Typography.Title level={4}>上传名单文件</Typography.Title>
+                    <Typography.Text type="secondary">
+                      系统会按每一行的企业名称、报名工种和报名等级自动匹配；同一选手可在文件中占多行报名不同工种。
+                    </Typography.Text>
                   </div>
                 </div>
                 <Space wrap>
-                  <Upload {...uploadProps} disabled={!orgId || !eventWorkTypeId}>
-                    <Button icon={<UploadOutlined />} disabled={!orgId || !eventWorkTypeId}>选择文件</Button>
+                  <Upload {...uploadProps} disabled={!canImport}>
+                    <Button icon={<UploadOutlined />} disabled={!canImport}>选择文件</Button>
                   </Upload>
                   <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>下载模板</Button>
                   <Button
                     type="primary"
                     icon={<UploadOutlined />}
                     loading={precheckMutation.isPending}
-                    disabled={!selectedFile || !orgId || !eventWorkTypeId}
+                    disabled={!selectedFile}
                     onClick={() => precheckMutation.mutate()}
                   >
-                    开始导入
+                    开始校验
                   </Button>
-                  <Button icon={<ReloadOutlined />} onClick={() => { void organizationsQuery.refetch(); void workTypesQuery.refetch(); }}>刷新选项</Button>
+                  <Button icon={<ReloadOutlined />} onClick={() => { void eventQuery.refetch(); }}>刷新赛事</Button>
                 </Space>
               </div>
             </Space>
@@ -322,8 +246,8 @@ export function CompetitionRosterImportPage({
         >
           {detailQuery.isLoading ? <Spin /> : detailQuery.isError ? <Result status="error" title="导入预览加载失败" /> : !detail ? <Empty description="暂无导入预览" /> : <>
             <Descriptions column={{ xs: 1, sm: 2, md: 4 }}>
-              <Descriptions.Item label="企业">{detail.orgName || idValue(detail.orgId)}</Descriptions.Item>
-              <Descriptions.Item label="赛事工种">{workTypeOptions.find((item) => item.value === idValue(detail.eventWorkTypeId || eventWorkTypeId || ''))?.label || idValue(detail.eventWorkTypeId || eventWorkTypeId || '-')}</Descriptions.Item>
+              <Descriptions.Item label="企业">{detail.orgName || '按明细行匹配'}</Descriptions.Item>
+              <Descriptions.Item label="赛事工种">{detail.eventWorkTypeName || (detail.eventWorkTypeId ? idValue(detail.eventWorkTypeId) : '按明细行匹配')}</Descriptions.Item>
               <Descriptions.Item label="状态"><Tag color={detail.status === 'pending_confirm' ? 'warning' : detail.status === 'confirmed' ? 'success' : 'error'}>{detail.status === 'pending_confirm' ? '待确认' : detail.status === 'confirmed' ? '已确认' : '校验失败'}</Tag></Descriptions.Item>
               <Descriptions.Item label="创建时间">{formatDate(detail.createdAt)}</Descriptions.Item>
               <Descriptions.Item label="总数">{detail.totalCount}</Descriptions.Item>
@@ -336,7 +260,7 @@ export function CompetitionRosterImportPage({
               loading={detailQuery.isFetching}
               dataSource={items}
               columns={itemColumns}
-              scroll={{ x: 900 }}
+              scroll={{ x: 1150 }}
               pagination={{
                 current: itemQuery.page,
                 pageSize: itemQuery.pageSize,

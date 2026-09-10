@@ -77,7 +77,9 @@ public class CompetitionEventWorkTypeApplicationService {
       Long eventId,
       CompetitionEventWorkTypeCreateReq req) {
     PlatformUserPrincipal principal = currentUser();
-    accessibleEvent(principal, eventId, true);
+    CompetitionEventEntity event = accessibleEvent(principal, eventId, true);
+    requireDraftEvent(event);
+    event = lockedDraftOrFallback(principal, eventId, event);
     return toVO(principal.getTenantId(),
         domainService.create(principal.getTenantId(), eventId, req));
   }
@@ -85,12 +87,29 @@ public class CompetitionEventWorkTypeApplicationService {
   @Transactional
   public CompetitionEventWorkTypeVO update(
       Long eventId,
-      Long eventWorkTypeId,
+    Long eventWorkTypeId,
       CompetitionEventWorkTypeUpdateReq req) {
     PlatformUserPrincipal principal = currentUser();
-    accessibleEvent(principal, eventId, true);
+    CompetitionEventEntity event = accessibleEvent(principal, eventId, true);
+    requireDraftEvent(event);
+    event = lockedDraftOrFallback(principal, eventId, event);
     return toVO(principal.getTenantId(), domainService.update(
         principal.getTenantId(), eventId, eventWorkTypeId, req));
+  }
+
+  private CompetitionEventEntity lockedDraftOrFallback(
+      PlatformUserPrincipal principal, Long eventId, CompetitionEventEntity fallback) {
+    CompetitionEventEntity locked = eventService.lockForUpdate(principal.getTenantId(), eventId);
+    if (locked == null) {
+      return fallback;
+    }
+    requireDraftEvent(locked);
+    return locked;
+  }
+
+  private void requireDraftEvent(CompetitionEventEntity event) {
+    com.guoyu.platform.competition.domain.CompetitionEventArrangementGuard.requireOpen(
+        event, "已关闭或已归档赛事不允许修改参赛工种");
   }
 
   private CompetitionEventWorkTypeVO toVO(Long tenantId, CompetitionEventWorkTypeEntity entity) {

@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest';
+import 'fake-indexeddb/auto';
 import { afterEach } from 'vitest';
 import { cleanup } from '@testing-library/react';
 
@@ -19,6 +20,9 @@ if (!window.matchMedia) {
     }),
   });
 }
+
+const nativeGetComputedStyle = window.getComputedStyle.bind(window);
+window.getComputedStyle = ((elt: Element, _pseudoElt?: string | null) => nativeGetComputedStyle(elt)) as typeof window.getComputedStyle;
 
 if (!globalThis.ResizeObserver) {
   globalThis.ResizeObserver = class ResizeObserver {

@@ -42,7 +42,7 @@ public interface CompetitionTheoryExamSessionMapper
         ON v.id = a.schedule_version_id AND v.tenant_id = a.tenant_id
         AND v.status IN ('draft', 'published') AND v.deleted = 0
       WHERE a.tenant_id = #{tenantId}
-        AND a.contestant_profile_id = #{contestantProfileId}
+        AND a.player_id = #{playerId}
         AND a.schedule_version_id <> #{scheduleVersionId}
         AND a.status IN ('draft', 'published') AND a.deleted = 0
         AND assigned_session.start_at < #{endAt}
@@ -50,7 +50,7 @@ public interface CompetitionTheoryExamSessionMapper
       """)
   long countCandidateTimeConflicts(
       @Param("tenantId") Long tenantId,
-      @Param("contestantProfileId") Long contestantProfileId,
+      @Param("playerId") Long playerId,
       @Param("scheduleVersionId") Long scheduleVersionId,
       @Param("startAt") LocalDateTime startAt,
       @Param("endAt") LocalDateTime endAt);

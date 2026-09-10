@@ -67,7 +67,7 @@
 
 ### 4.2 赛事报名资格扩展
 
-在 `competition_registration` 新增可空 `player_id`，导入时关联对应选手身份。既有名单行继续保存工号、姓名和赛事字段，不再重复保存完整身份证号或手机号。
+在 `competition_registration` 新增可空 `player_id`，导入时关联对应选手身份。历史名单行可以继续保留员工编号列以兼容旧数据，但当前代码不再读取或写入该列。
 
 参赛资格状态扩展为：
 
@@ -108,15 +108,18 @@ imported_pending_confirm
 
 ### 5.1 导入模板
 
-首期模板列固定为：
+当前模板列固定为：
 
 ```text
-employee_no, name, id_card_no, mobile, work_type, level
+org_name, name, id_card_no, mobile, work_type, level
 ```
 
-`employee_no`、`name`、`id_card_no`、`mobile` 为必填；企业、赛事和组织范围从当前后台登录上下文与 URL 路径确定，不能由 Excel 行指定。
+`org_name`、`name`、`id_card_no`、`mobile`、`work_type`、`level` 为必填；企业仅由 `org_name` 匹配，赛事由 URL 路径确定。
 
-导入预检必须校验身份证格式、手机号格式、文件内重复、与本租户既有身份的一对一冲突、赛事组织范围及名额。错误报告只显示行号、工号和脱敏原因，不导出完整手机号或身份证号。
+导入预检必须校验身份证格式、手机号格式、文件内重复、与本租户既有身份的一对一冲突、企业/赛事工种/等级匹配、赛事组织范围及名额。错误报告只显示行号和脱敏原因，不导出完整手机号或身份证号。
+
+选手确认报名时还必须校验其与其他有效赛事的时间范围；存在重叠时拒绝整批报名。具体规则以
+`docs/04_requirements/competition-player-registration-employee-no-and-time-conflict.md` 为准。
 
 ### 5.2 单个选手录入
 

@@ -7,7 +7,6 @@ public class CompetitionRegistrationQueryReq extends PageQuery {
   private Long eventId;
   private Long orgId;
   private String status;
-  private String employeeNo;
   private String name;
 
   public Long getEventId() { return eventId; }
@@ -16,8 +15,6 @@ public class CompetitionRegistrationQueryReq extends PageQuery {
   public void setOrgId(Long orgId) { this.orgId = orgId; }
   public String getStatus() { return status; }
   public void setStatus(String status) { this.status = status; }
-  public String getEmployeeNo() { return employeeNo; }
-  public void setEmployeeNo(String employeeNo) { this.employeeNo = employeeNo; }
   public String getName() { return name; }
   public void setName(String name) { this.name = name; }
 }

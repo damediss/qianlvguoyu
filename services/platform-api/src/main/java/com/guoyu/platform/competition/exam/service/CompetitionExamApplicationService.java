@@ -151,11 +151,11 @@ public class CompetitionExamApplicationService {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "竞赛账号数据异常");
     }
     CompetitionPlayerIdentityEntity player = players.getFirst();
-    if (!CompetitionPlayerStatus.ACTIVE.getCode().equals(player.getStatus())
+    if (!CompetitionPlayerStatus.allowsExamAccess(player.getStatus())
         || player.getPasswordHash() == null
         || !passwordEncoder.matches(request.password(), player.getPasswordHash())) {
-      log.warn("Competition exam login rejected: invalid credential or inactive player, playerId={}",
-          player.getId());
+      log.warn("Competition exam login rejected: invalid credential or blocked player, playerId={}, status={}",
+          player.getId(), player.getStatus());
       throw new BusinessException(ErrorCode.UNAUTHORIZED, "账号或密码错误");
     }
     if (examStpLogic.isLogin(player.getId())) {
@@ -291,7 +291,8 @@ public class CompetitionExamApplicationService {
           attempt.getPlayerId(), request.questionId());
       throw new BusinessException(ErrorCode.FORBIDDEN, "题目不属于当前试卷");
     }
-    List<String> keys = normalizeAndValidateKeys(request.answerKeys(), question.getOptionsJson());
+    List<String> keys = normalizeAndValidateKeys(
+        request.answerKeys(), question.getOptionsJson(), question.getQuestionType());
     String answerJson = writeKeys(keys);
     String answerHash = fingerprint(answerJson + "|" + request.markedForReview());
     CompetitionTheoryAnswerSaveRequestEntity replay =
@@ -520,7 +521,21 @@ public class CompetitionExamApplicationService {
         remaining(now, assignment.getEndAt()), assignment.getQuestionCount(), answered, answerViews);
   }
 
-  private List<String> normalizeAndValidateKeys(List<String> submitted, String optionsJson) {
+  private List<String> normalizeAndValidateKeys(
+      List<String> submitted, String optionsJson, String questionType) {
+    if ("fill".equalsIgnoreCase(questionType)) {
+      if (submitted == null || submitted.isEmpty()) {
+        return List.of();
+      }
+      if (submitted.size() > 1) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "填空题只能提交一个回答");
+      }
+      String value = submitted.get(0) == null ? "" : submitted.get(0).trim();
+      if (value.isBlank()) {
+        return List.of();
+      }
+      return List.of(value);
+    }
     Set<String> valid = new LinkedHashSet<>();
     JsonNode options = parseTree(optionsJson);
     if (!options.isArray()) {

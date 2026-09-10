@@ -74,7 +74,8 @@ class CompetitionRosterImportControllerApiTest {
             .param("pageSize", "20"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.code").value("0"))
-        .andExpect(jsonPath("$.data.items.items[0].employeeNo").value("E001"));
+        .andExpect(jsonPath("$.data.items.items[0].name").value("Alice"))
+        .andExpect(jsonPath("$.data.items.items[0].employeeNo").doesNotExist());
   }
 
   @Test
@@ -93,7 +94,7 @@ class CompetitionRosterImportControllerApiTest {
             .param("page", "1")
             .param("pageSize", "20"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.items[0].batchId").value(7001))
+        .andExpect(jsonPath("$.data.items[0].batchId").value("7001"))
         .andExpect(jsonPath("$.data.items[0].batchNo").value("ROSTER-1"));
     verify(service).page(Mockito.eq(1001L), any(CompetitionRosterImportListQueryReq.class));
   }
@@ -118,7 +119,6 @@ class CompetitionRosterImportControllerApiTest {
     CompetitionRosterItemVO item = new CompetitionRosterItemVO();
     item.setId(9001L);
     item.setBatchId(7001L);
-    item.setEmployeeNo("E001");
     item.setName("Alice");
     item.setValidationStatus("valid");
     CompetitionRosterImportDetailVO detail = new CompetitionRosterImportDetailVO();

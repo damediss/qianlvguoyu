@@ -103,7 +103,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics
   endpoint:
     health:
       probes:
@@ -190,6 +190,30 @@ platform:
       queue: ${COMPETITION_MESSAGING_QUEUE:competition.notice.delivery}
       dead-letter-queue: ${COMPETITION_MESSAGING_DEAD_LETTER_QUEUE:competition.notice.delivery.dlq}
       dead-letter-exchange: ${COMPETITION_MESSAGING_DEAD_LETTER_EXCHANGE:competition.dlx}
+    formal-exam:
+      node-id: ${COMPETITION_FORMAL_EXAM_NODE_ID:}
+      realtime:
+        enabled: ${COMPETITION_FORMAL_EXAM_REALTIME_ENABLED:true}
+        ticket-ttl-seconds: ${COMPETITION_FORMAL_EXAM_REALTIME_TICKET_TTL_SECONDS:45}
+        heartbeat-seconds: ${COMPETITION_FORMAL_EXAM_REALTIME_HEARTBEAT_SECONDS:20}
+        presence-ttl-seconds: ${COMPETITION_FORMAL_EXAM_REALTIME_PRESENCE_TTL_SECONDS:60}
+        send-queue-limit: ${COMPETITION_FORMAL_EXAM_REALTIME_SEND_QUEUE_LIMIT:32}
+        dispatch-delay-millis: ${COMPETITION_FORMAL_EXAM_REALTIME_DISPATCH_DELAY_MILLIS:1000}
+        dispatch-batch-size: ${COMPETITION_FORMAL_EXAM_REALTIME_DISPATCH_BATCH_SIZE:50}
+        dispatch-max-attempts: ${COMPETITION_FORMAL_EXAM_REALTIME_DISPATCH_MAX_ATTEMPTS:8}
+        node-id: ${COMPETITION_FORMAL_EXAM_NODE_ID:}
+        ws-path: ${COMPETITION_FORMAL_EXAM_REALTIME_WS_PATH:/api/ws/competition/formal-exam/player}
+        console-ws-path: ${COMPETITION_FORMAL_EXAM_REALTIME_CONSOLE_WS_PATH:/api/ws/competition/formal-exam/console}
+      auto-submit:
+        enabled: ${COMPETITION_FORMAL_EXAM_AUTO_SUBMIT_ENABLED:true}
+        fixed-delay-millis: ${COMPETITION_FORMAL_EXAM_AUTO_SUBMIT_DELAY_MILLIS:5000}
+        claim-seconds: ${COMPETITION_FORMAL_EXAM_AUTO_SUBMIT_CLAIM_SECONDS:25}
+        chunk-size: ${COMPETITION_FORMAL_EXAM_AUTO_SUBMIT_CHUNK_SIZE:100}
+        max-chunks-per-tick: ${COMPETITION_FORMAL_EXAM_AUTO_SUBMIT_MAX_CHUNKS:5}
+      scoring:
+        enabled: ${COMPETITION_FORMAL_EXAM_SCORING_ENABLED:true}
+        fixed-delay-millis: ${COMPETITION_FORMAL_EXAM_SCORING_DELAY_MILLIS:5000}
+        stuck-timeout-minutes: ${COMPETITION_FORMAL_EXAM_SCORING_STUCK_TIMEOUT_MINUTES:15}
   training:
     division:
       # 主路径门禁：排班表必填；名单默认也要求（可关，仅作人员补全建议）

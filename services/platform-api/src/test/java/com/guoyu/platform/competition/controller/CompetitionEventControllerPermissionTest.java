@@ -22,6 +22,13 @@ class CompetitionEventControllerPermissionTest {
     assertThat(auditLog.includeResult()).isTrue();
   }
 
+  @Test
+  void publishReadinessRequiresPublishPermission() {
+    Method readiness = method("publishReadiness");
+    assertThat(readiness.getAnnotation(PreAuthorize.class).value())
+        .isEqualTo("hasAuthority('competition:event:publish')");
+  }
+
   private Method method(String name) {
     for (Method method : CompetitionEventController.class.getDeclaredMethods()) {
       if (method.getName().equals(name)) {

@@ -17,6 +17,7 @@ public class CompetitionPracticalSessionEntity extends BaseEntity {
   private LocalDateTime endAt;
   private Integer capacity;
   private Long resourceId;
+  private Long paperSnapshotId;
   private String status;
   public Long getPlanId() { return planId; }
   public void setPlanId(Long value) { planId = value; }
@@ -40,6 +41,8 @@ public class CompetitionPracticalSessionEntity extends BaseEntity {
   public void setCapacity(Integer value) { capacity = value; }
   public Long getResourceId() { return resourceId; }
   public void setResourceId(Long value) { resourceId = value; }
+  public Long getPaperSnapshotId() { return paperSnapshotId; }
+  public void setPaperSnapshotId(Long value) { paperSnapshotId = value; }
   public String getStatus() { return status; }
   public void setStatus(String value) { status = value; }
 }

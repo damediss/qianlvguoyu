@@ -11,6 +11,8 @@ import com.guoyu.platform.competition.dto.CompetitionRosterPrecheckReq;
 import com.guoyu.platform.competition.dto.CompetitionRosterSingleImportReq;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventOrgEntity;
+import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
+import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeLevelEntity;
 import com.guoyu.platform.competition.entity.CompetitionRosterImportEntity;
 import com.guoyu.platform.competition.entity.CompetitionRosterItemEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventScope;
@@ -32,6 +34,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -49,6 +52,7 @@ public class CompetitionRosterImportApplicationService {
   private final OrgMapper orgMapper;
   private final UserMapper userMapper;
   private final CompetitionEventWorkTypeDomainService eventWorkTypeService;
+  private final CompetitionEventWorkTypeLevelService eventWorkTypeLevelService;
 
   @Autowired
   public CompetitionRosterImportApplicationService(
@@ -59,7 +63,8 @@ public class CompetitionRosterImportApplicationService {
       FileApplicationService fileApplicationService,
       OrgMapper orgMapper,
       UserMapper userMapper,
-      CompetitionEventWorkTypeDomainService eventWorkTypeService) {
+      CompetitionEventWorkTypeDomainService eventWorkTypeService,
+      CompetitionEventWorkTypeLevelService eventWorkTypeLevelService) {
     this.eventService = eventService;
     this.eventOrgMapper = eventOrgMapper;
     this.importService = importService;
@@ -68,6 +73,20 @@ public class CompetitionRosterImportApplicationService {
     this.orgMapper = orgMapper;
     this.userMapper = userMapper;
     this.eventWorkTypeService = eventWorkTypeService;
+    this.eventWorkTypeLevelService = eventWorkTypeLevelService;
+  }
+
+  public CompetitionRosterImportApplicationService(
+      CompetitionEventService eventService,
+      CompetitionEventOrgMapper eventOrgMapper,
+      CompetitionRosterImportService importService,
+      CompetitionRegistrationService registrationService,
+      FileApplicationService fileApplicationService,
+      OrgMapper orgMapper,
+      UserMapper userMapper,
+      CompetitionEventWorkTypeDomainService eventWorkTypeService) {
+    this(eventService, eventOrgMapper, importService, registrationService, fileApplicationService,
+        orgMapper, userMapper, eventWorkTypeService, null);
   }
 
   public CompetitionRosterImportApplicationService(
@@ -79,18 +98,30 @@ public class CompetitionRosterImportApplicationService {
       OrgMapper orgMapper,
       UserMapper userMapper) {
     this(eventService, eventOrgMapper, importService, registrationService, fileApplicationService,
-        orgMapper, userMapper, null);
+        orgMapper, userMapper, null, null);
   }
 
   @Transactional
   public CompetitionRosterImportDetailVO precheck(Long eventId, CompetitionRosterPrecheckReq req) {
     PlatformUserPrincipal principal = currentUser();
     CompetitionEventEntity event = assertCanImport(principal, eventId, req.orgId());
-    String workTypeName = req.eventWorkTypeId() == null ? null : requireActiveEventWorkType(
-        principal.getTenantId(), event.getId(), req.eventWorkTypeId());
     FileEntity file = fileApplicationService.getExistingFile(principal.getTenantId(), req.fileId());
     validateExcelFile(file);
     byte[] fileBytes = fileApplicationService.readFileBytesById(req.fileId());
+    if (req.orgId() == null && req.eventWorkTypeId() == null) {
+      if (eventWorkTypeService == null || eventWorkTypeLevelService == null) {
+        throw new BusinessException(ErrorCode.INTERNAL_ERROR, "赛事工种匹配服务不可用");
+      }
+      Long permittedOrgId = PlatformAdminSupport.isSuperAdmin(principal)
+          ? null : currentUserOrgId(principal);
+      CompetitionRosterImportService.DirectImportReferenceData references =
+          buildDirectImportReferences(principal.getTenantId(), event);
+      CompetitionRosterImportEntity batch = importService.precheckDirect(
+          principal.getTenantId(), event.getId(), req.fileId(), permittedOrgId, fileBytes, references);
+      return detail(principal.getTenantId(), batch, new CompetitionRosterImportQueryReq());
+    }
+    String workTypeName = req.eventWorkTypeId() == null ? null : requireActiveEventWorkType(
+        principal.getTenantId(), event.getId(), req.eventWorkTypeId());
     CompetitionRosterImportEntity batch = req.eventWorkTypeId() == null
         ? importService.precheck(principal.getTenantId(), event.getId(), req.orgId(), req.fileId(), fileBytes)
         : importService.precheck(principal.getTenantId(), event.getId(), req.orgId(), req.fileId(),
@@ -107,7 +138,7 @@ public class CompetitionRosterImportApplicationService {
         : requireActiveEventWorkType(principal.getTenantId(), event.getId(), req.eventWorkTypeId());
     CompetitionRosterImportEntity batch = importService.precheckSingle(
         principal.getTenantId(), event.getId(), req.orgId(), req.eventWorkTypeId(), workTypeName,
-        req.employeeNo(), req.name(), req.idCardNo(), req.mobile(), req.workType(), req.level());
+        req.name(), req.idCardNo(), req.mobile(), req.workType(), req.level());
     return detail(principal.getTenantId(), batch, new CompetitionRosterImportQueryReq());
   }
 
@@ -120,6 +151,7 @@ public class CompetitionRosterImportApplicationService {
     PlatformUserPrincipal principal = currentUser();
     CompetitionRosterImportEntity batch = importService.getById(principal.getTenantId(), batchId);
     assertCanImport(principal, batch.getEventId(), batch.getOrgId());
+    assertBatchOrganizationScope(principal, batch);
     return detail(principal.getTenantId(), batch, req);
   }
 
@@ -134,10 +166,12 @@ public class CompetitionRosterImportApplicationService {
     if (page.getRecords() != null && !page.getRecords().isEmpty()) {
       List<Long> orgIds = page.getRecords().stream().map(CompetitionRosterImportEntity::getOrgId).distinct().toList();
       Map<Long, OrgEntity> organizations = new HashMap<>();
-      List<OrgEntity> orgs = orgMapper.selectList(new LambdaQueryWrapper<OrgEntity>()
-          .eq(OrgEntity::getTenantId, principal.getTenantId())
-          .in(OrgEntity::getId, orgIds)
-          .eq(OrgEntity::getDeleted, 0));
+      List<Long> nonNullOrgIds = orgIds.stream().filter(java.util.Objects::nonNull).toList();
+      List<OrgEntity> orgs = nonNullOrgIds.isEmpty() ? List.of() : orgMapper.selectList(
+          new LambdaQueryWrapper<OrgEntity>()
+              .eq(OrgEntity::getTenantId, principal.getTenantId())
+              .in(OrgEntity::getId, nonNullOrgIds)
+              .eq(OrgEntity::getDeleted, 0));
       if (orgs != null) {
         orgs.forEach(org -> organizations.put(org.getId(), org));
       }
@@ -154,6 +188,7 @@ public class CompetitionRosterImportApplicationService {
     PlatformUserPrincipal principal = currentUser();
     CompetitionRosterImportEntity batch = importService.getById(principal.getTenantId(), batchId);
     assertCanImport(principal, batch.getEventId(), batch.getOrgId());
+    assertBatchOrganizationScope(principal, batch);
     CompetitionRosterImportEntity confirmed = registrationService.confirmAndGenerate(
         principal.getTenantId(), batchId, principal.getUserId());
     return detail(principal.getTenantId(), confirmed, new CompetitionRosterImportQueryReq());
@@ -169,47 +204,137 @@ public class CompetitionRosterImportApplicationService {
       }
     }
     CompetitionRosterImportDetailVO detail = CompetitionRosterImportConverter.toDetailVO(batch);
-    OrgEntity organization = orgMapper.selectOne(new LambdaQueryWrapper<OrgEntity>()
-        .eq(OrgEntity::getTenantId, tenantId)
-        .eq(OrgEntity::getId, batch.getOrgId())
-        .eq(OrgEntity::getDeleted, 0));
-    if (organization != null) {
-      detail.setOrgName(organization.getName());
+    if (batch.getOrgId() == null) {
+      detail.setOrgName("多企业（按明细行匹配）");
+    } else {
+      OrgEntity organization = orgMapper.selectOne(new LambdaQueryWrapper<OrgEntity>()
+          .eq(OrgEntity::getTenantId, tenantId)
+          .eq(OrgEntity::getId, batch.getOrgId())
+          .eq(OrgEntity::getDeleted, 0));
+      if (organization != null) {
+        detail.setOrgName(organization.getName());
+      }
     }
     detail.setItems(new PageResponse<>(items, page.getCurrent(), page.getSize(), page.getTotal()));
     return detail;
   }
 
+  private void assertBatchOrganizationScope(
+      PlatformUserPrincipal principal, CompetitionRosterImportEntity batch) {
+    if (PlatformAdminSupport.isSuperAdmin(principal) || batch.getOrgId() != null) {
+      return;
+    }
+    Long currentOrgId = currentUserOrgId(principal);
+    List<CompetitionRosterItemEntity> items = importService.listItems(
+        principal.getTenantId(), batch.getId());
+    if (items == null || items.isEmpty()) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "名单导入明细不存在");
+    }
+    for (CompetitionRosterItemEntity item : items) {
+      Long itemOrgId = item == null ? null : item.getOrgId();
+      if (!Objects.equals(currentOrgId, itemOrgId)) {
+        log.warn("User attempted to access a multi-organization roster batch, userId={}, tenantId={}, batchId={}",
+            principal.getUserId(), principal.getTenantId(), batch.getId());
+        throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问包含其他企业的名单批次");
+      }
+    }
+  }
+
   private CompetitionEventEntity assertCanImport(
       PlatformUserPrincipal principal, Long eventId, Long orgId) {
-    if (orgId == null) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少企业组织");
-    }
     boolean superAdmin = PlatformAdminSupport.isSuperAdmin(principal);
     Long currentOrgId = superAdmin ? null : currentUserOrgId(principal);
-    if (!superAdmin && !currentOrgId.equals(orgId)) {
+    Long effectiveOrgId = orgId == null ? currentOrgId : orgId;
+    if (!superAdmin && !Objects.equals(currentOrgId, effectiveOrgId)) {
       log.warn("User attempted roster import for another organization, userId={}, tenantId={}, orgId={}",
-          principal.getUserId(), principal.getTenantId(), orgId);
+          principal.getUserId(), principal.getTenantId(), effectiveOrgId);
       throw new BusinessException(ErrorCode.FORBIDDEN, "仅当前所属企业可以导入名单");
     }
-    ensureTenantOrganization(principal.getTenantId(), orgId);
-
+    if (effectiveOrgId == null) {
+      return eventService.getById(principal.getTenantId(), eventId);
+    }
+    // Validate the organization before loading the event so cross-tenant ids
+    // cannot disclose whether an event exists.
+    ensureTenantOrganization(principal.getTenantId(), effectiveOrgId);
     CompetitionEventEntity event = eventService.getById(principal.getTenantId(), eventId);
     if (CompetitionEventScope.ENTERPRISE_INTERNAL.getCode().equals(event.getScope())
         && !superAdmin
-        && !orgId.equals(event.getOwnerOrgId())) {
+        && !effectiveOrgId.equals(event.getOwnerOrgId())) {
       log.warn("User attempted roster import outside enterprise event scope, eventId={}, userId={}, tenantId={}",
           eventId, principal.getUserId(), principal.getTenantId());
       throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该赛事");
     }
     if (CompetitionEventScope.PLATFORM.getCode().equals(event.getScope())
         && !superAdmin
-        && !hasParticipatingOrganization(principal.getTenantId(), eventId, orgId)) {
+        && !hasParticipatingOrganization(principal.getTenantId(), eventId, effectiveOrgId)) {
       log.warn("Organization is not a participating organization for event, eventId={}, tenantId={}, orgId={}",
-          eventId, principal.getTenantId(), orgId);
+          eventId, principal.getTenantId(), effectiveOrgId);
       throw new BusinessException(ErrorCode.FORBIDDEN, "当前企业不是赛事参与企业");
     }
     return event;
+  }
+
+  private CompetitionRosterImportService.DirectImportReferenceData buildDirectImportReferences(
+      Long tenantId, CompetitionEventEntity event) {
+    List<OrgEntity> organizations = orgMapper.selectList(new LambdaQueryWrapper<OrgEntity>()
+        .eq(OrgEntity::getTenantId, tenantId)
+        .eq(OrgEntity::getDeleted, 0));
+    Map<Long, OrgEntity> organizationById = new HashMap<>();
+    if (organizations != null) {
+      organizations.stream().filter(java.util.Objects::nonNull).forEach(org -> organizationById.put(org.getId(), org));
+    }
+
+    List<CompetitionRosterImportService.OrganizationReference> organizationReferences = new ArrayList<>();
+    if (CompetitionEventScope.ENTERPRISE_INTERNAL.getCode().equals(event.getScope())) {
+      OrgEntity owner = organizationById.get(event.getOwnerOrgId());
+      if (owner != null) {
+        organizationReferences.add(new CompetitionRosterImportService.OrganizationReference(
+            owner.getId(), owner.getName(), true));
+      }
+    } else {
+      List<CompetitionEventOrgEntity> relations = eventOrgMapper.selectList(
+          new LambdaQueryWrapper<CompetitionEventOrgEntity>()
+              .eq(CompetitionEventOrgEntity::getTenantId, tenantId)
+              .eq(CompetitionEventOrgEntity::getEventId, event.getId())
+              .ne(CompetitionEventOrgEntity::getStatus, CompetitionEventOrgStatus.CLOSED.getCode())
+              .eq(CompetitionEventOrgEntity::getDeleted, 0));
+      if (relations != null) {
+        for (CompetitionEventOrgEntity relation : relations) {
+          if (relation == null) continue;
+          OrgEntity organization = organizationById.get(relation.getOrgId());
+          if (organization == null) continue;
+          boolean importAllowed = CompetitionEventOrgStatus.ACTIVE.getCode().equals(relation.getStatus())
+              && relation.getImportPermission() != null && relation.getImportPermission() == 1;
+          organizationReferences.add(new CompetitionRosterImportService.OrganizationReference(
+              organization.getId(), organization.getName(), importAllowed));
+        }
+      }
+    }
+
+    List<CompetitionRosterImportService.WorkTypeReference> workTypeReferences = new ArrayList<>();
+    List<CompetitionEventWorkTypeEntity> workTypes = eventWorkTypeService.list(tenantId, event.getId());
+    if (workTypes != null) {
+      for (CompetitionEventWorkTypeEntity workType : workTypes) {
+        if (workType == null || !"active".equals(workType.getStatus())) continue;
+        List<CompetitionEventWorkTypeLevelEntity> levels = eventWorkTypeLevelService.list(
+            tenantId, event.getId(), workType.getId());
+        List<CompetitionRosterImportService.LevelReference> levelReferences = new ArrayList<>();
+        if (levels != null) {
+          for (CompetitionEventWorkTypeLevelEntity level : levels) {
+            if (level == null) continue;
+            levelReferences.add(new CompetitionRosterImportService.LevelReference(
+                level.getId(), level.getLevelCode(), level.getLevelName(),
+                level.getSourceLevelCode(), level.getSourceLevelText()));
+          }
+        }
+        workTypeReferences.add(new CompetitionRosterImportService.WorkTypeReference(
+            workType.getId(), workType.getDisplayName(),
+            eventWorkTypeService.findActiveSourceName(tenantId, workType.getWorkTypeId()),
+            levelReferences));
+      }
+    }
+    return new CompetitionRosterImportService.DirectImportReferenceData(
+        organizationReferences, workTypeReferences);
   }
 
   private void applyListScope(

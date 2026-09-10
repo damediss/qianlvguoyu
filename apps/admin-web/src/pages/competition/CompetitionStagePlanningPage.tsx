@@ -1,10 +1,11 @@
-import { Button, Modal, Result, Spin, message } from 'antd';
+import { Alert, Button, Modal, Result, Spin, message } from 'antd';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   confirmCompetitionWorkTypeStagePlan,
   getCompetitionEvent,
   getCompetitionStageWorkspace,
+  listCompetitionEventWorkTypeLevels,
   listCompetitionEventWorkTypes,
   listCompetitionWorkTypeStages,
   pageCompetitionStages,
@@ -20,6 +21,7 @@ import {
 import { useUnsavedChangesBlocker } from '../../hooks/useUnsavedChangesBlocker';
 import './CompetitionEventManagementPage.css';
 import { CompetitionEventFrame } from './CompetitionEventFrame';
+import { CompetitionPlayerPaperAssignmentPage } from './CompetitionPlayerPaperAssignmentPage';
 import { CompetitionTheoryExamPage } from './CompetitionTheoryExamPage';
 import { selectedContentTypes, stageContentConfigsAreValid } from './stage-planning/StageContentPanel';
 import { StageInspector } from './stage-planning/StageInspector';
@@ -34,57 +36,43 @@ import type {
   CompetitionEvent,
   CompetitionEventWorkType,
   CompetitionId,
-  CompetitionStage,
   CompetitionStageContentType,
   CompetitionWorkTypeStageConfig,
 } from '../../types/competition';
-import type { StageDraftSavePayload } from '../../types/competitionStagePlanning';
 
 function errorText(error: unknown, fallback = '保存失败，请刷新后重试') {
   return error instanceof Error ? error.message : fallback;
 }
-
-function mergeWorkTypeStageDraft(
-  eventStages: CompetitionStage[],
-  draftPayload: StageDraftSavePayload,
-): StageDraftSavePayload {
-  const byId = new Map(draftPayload.stages.filter((stage) => stage.id).map((stage) => [String(stage.id), stage]));
-  const byType = new Map<string, StageDraftSavePayload['stages'][number]>(
-    draftPayload.stages.map((stage) => [stage.stageType, stage]),
-  );
-  const merged = eventStages.map((stage) => byId.get(String(stage.id)) ?? byType.get(stage.stageType) ?? {
-    id: String(stage.id),
-    stageType: stage.stageType as StageDraftSavePayload['stages'][number]['stageType'],
-    startAt: stage.startAt ?? undefined,
-    endAt: stage.endAt ?? undefined,
-    description: stage.description ?? undefined,
-  });
-  const newStages = draftPayload.stages.filter((stage) => !stage.id);
-  return { stages: [...merged, ...newStages] };
-}
-
 export function CompetitionStagePlanningPage({
   eventId,
   eventWorkTypeId,
+  eventWorkTypeLevelCode,
   onNavigate,
   embedded = false,
 }: {
   eventId: string;
   eventWorkTypeId?: CompetitionId;
+  eventWorkTypeLevelCode?: string;
   onNavigate: (path: string) => void;
+  onNavigateToScope?: (eventWorkTypeId: CompetitionId, levelCode: string) => void;
   embedded?: boolean;
 }) {
   const permissions = useAuthStore((state) => state.permissionCodes);
   const tenantId = useAuthStore((state) => state.tenantId) ?? 'unknown';
   const canView = permissions.includes('competition:event:view') && permissions.includes('competition:stage:view');
   const canManage = permissions.includes('competition:stage:manage');
+  const canManageWorkTypeStages = permissions.includes('competition:event-work-type:manage');
+  const canViewPlayerAssignment = permissions.includes('competition:stage-paper-assignment:view');
   const queryClient = useQueryClient();
   const [validationOpen, setValidationOpen] = useState(false);
   const [validationIssues, setValidationIssues] = useState<StageValidationIssue[]>([]);
   const [theoryWorkbench, setTheoryWorkbench] = useState<{
     stageId: string;
     eventWorkTypeId?: string;
+    eventWorkTypeLevelCode?: string;
   } | null>(null);
+  const [playerAssignmentStageId, setPlayerAssignmentStageId] = useState<string | null>(null);
+  const [playerAssignmentDirty, setPlayerAssignmentDirty] = useState(false);
   const [promotionDraft, setPromotionDraft] = useState<CompetitionWorkTypeStageConfig[]>([]);
   const [promotionDirty, setPromotionDirty] = useState(false);
   const fitViewRef = useRef<() => void>(() => undefined);
@@ -94,13 +82,24 @@ export function CompetitionStagePlanningPage({
     queryFn: () => getCompetitionEvent(eventId),
     enabled: canView,
   });
+  const event = eventQuery.data;
   const stagesQuery = useQuery({
-    queryKey: ['competition-stages', eventId, 'planning'],
-    queryFn: () => pageCompetitionStages(eventId, { page: 1, pageSize: 100 }),
+    queryKey: [
+      'competition-stages',
+      eventId,
+      'planning',
+      eventWorkTypeId ?? 'event',
+      eventWorkTypeLevelCode ?? 'event',
+    ],
+    queryFn: () => pageCompetitionStages(eventId, {
+      page: 1,
+      pageSize: 100,
+      eventWorkTypeId,
+      eventWorkTypeLevelCode,
+    }),
     enabled: canView,
   });
   const eventStages = useMemo(() => stagesQuery.data?.items || [], [stagesQuery.data?.items]);
-  const event = eventQuery.data;
   const canViewPromotionRules = permissions.includes('competition:event-work-type:view');
   const eventWorkTypesQuery = useQuery({
     queryKey: ['competition-event-work-types', eventId, 'stage-planning-status'],
@@ -110,38 +109,55 @@ export function CompetitionStagePlanningPage({
   const selectedEventWorkType = eventWorkTypesQuery.data?.find(
     (item) => String(item.id) === String(eventWorkTypeId),
   );
+  const hasLevelScope = Boolean(eventWorkTypeId && eventWorkTypeLevelCode?.trim());
+  const eventWorkTypeLevelsQuery = useQuery({
+    queryKey: [
+      'competition-event-work-type-levels',
+      eventId,
+      eventWorkTypeId,
+      'stage-planning-selector',
+    ],
+    queryFn: () => listCompetitionEventWorkTypeLevels(eventId, eventWorkTypeId!),
+    enabled: canView && canViewPromotionRules && hasLevelScope,
+  });
+  const selectedEventWorkTypeLevel = eventWorkTypeLevelsQuery.data?.find(
+    (item) => item.levelCode === eventWorkTypeLevelCode,
+  );
   const stagePlanConfirmed = eventWorkTypeId
-    ? selectedEventWorkType?.stagePlanStatus === 'confirmed' || event?.stagePlanStatus === 'confirmed'
+    ? event?.stagePlanStatus === 'confirmed'
+      || (hasLevelScope
+        ? selectedEventWorkTypeLevel?.stagePlanStatus === 'confirmed'
+        : selectedEventWorkType?.stagePlanStatus === 'confirmed')
     : event?.stagePlanStatus === 'confirmed';
   const workTypeStatusReady = !eventWorkTypeId || Boolean(eventWorkTypesQuery.data);
+  const levelStatusReady = !hasLevelScope || Boolean(eventWorkTypeLevelsQuery.data);
   const editable = Boolean(
     event
-    && event.status === 'draft'
+    && ['draft', 'published'].includes(event.status)
     && workTypeStatusReady
+    && levelStatusReady
     && !stagePlanConfirmed
     && canManage,
   );
   const promotionScopeQuery = useQuery({
-    queryKey: ['competition-work-type-stages', eventId, eventWorkTypeId],
-    queryFn: () => listCompetitionWorkTypeStages(eventId, eventWorkTypeId!),
+    queryKey: [
+      'competition-work-type-stages',
+      eventId,
+      eventWorkTypeId,
+      eventWorkTypeLevelCode ?? 'legacy',
+    ],
+    queryFn: () => listCompetitionWorkTypeStages(eventId, eventWorkTypeId!, eventWorkTypeLevelCode),
     enabled: canViewPromotionRules && Boolean(eventWorkTypeId),
   });
-  const serverStages = useMemo(() => {
-    if (!eventWorkTypeId || !canViewPromotionRules) return eventStages;
-    if (!promotionScopeQuery.data) return [];
-    const enabledStageIds = new Set(
-      promotionScopeQuery.data
-        .filter((item) => item.enabled === 1)
-        .map((item) => String(item.stageId)),
-    );
-    return eventStages.filter((stage) => enabledStageIds.has(String(stage.id)));
-  }, [canViewPromotionRules, eventStages, eventWorkTypeId, promotionScopeQuery.data]);
+  // The stage endpoint is already scoped to the selected work type and level. Do not
+  // fall back to event-level rows while the promotion configuration is loading.
+  const serverStages = eventStages;
   const initialNotes = useMemo(
-    () => readStageCanvasNotes(tenantId, eventId, eventWorkTypeId),
-    [eventId, eventWorkTypeId, tenantId],
+    () => readStageCanvasNotes(tenantId, eventId, eventWorkTypeId, eventWorkTypeLevelCode),
+    [eventId, eventWorkTypeId, eventWorkTypeLevelCode, tenantId],
   );
   const draft = useStagePlanningDraft({
-    eventId: `${eventId}:${eventWorkTypeId ?? 'event'}`,
+    eventId: `${eventId}:${eventWorkTypeId ?? 'event'}:${eventWorkTypeLevelCode ?? 'event'}`,
     serverStages,
     stageCatalog: eventStages,
     initialNotes,
@@ -154,7 +170,13 @@ export function CompetitionStagePlanningPage({
     : undefined;
   const selectedStage = serverStages.find((stage) => String(stage.id) === String(selectedStageId));
   const selectedStageWorkspaceQuery = useQuery({
-    queryKey: ['competition-stage-workspace', selectedStageId],
+    queryKey: [
+      'competition-stage-workspace',
+      eventId,
+      eventWorkTypeId ?? 'event',
+      eventWorkTypeLevelCode ?? 'event',
+      selectedStageId,
+    ],
     queryFn: () => getCompetitionStageWorkspace(selectedStageId!),
     enabled: Boolean(selectedStageId) && permissions.includes('competition:stage-plan:view'),
   });
@@ -169,7 +191,7 @@ export function CompetitionStagePlanningPage({
     if (contentType !== 'theory') return;
     const node = draft.nodes.find((item) => item.id === nodeId);
     if (!node || !isBusinessStageNode(node) || node.data.stageId === undefined || node.data.stageId === null) {
-      message.warning('请先保存当前赛段草稿，再进入理论工作台');
+      message.warning('请先保存当前赛段编排，再进入试卷工作台');
       return;
     }
     setTheoryWorkbench({
@@ -177,8 +199,18 @@ export function CompetitionStagePlanningPage({
       eventWorkTypeId: eventWorkTypeId === undefined || eventWorkTypeId === null
         ? undefined
         : String(eventWorkTypeId),
+      eventWorkTypeLevelCode,
     });
-  }, [draft.nodes, eventWorkTypeId]);
+  }, [draft.nodes, eventWorkTypeId, eventWorkTypeLevelCode]);
+  const onStageCandidateClick = useCallback((nodeId: string) => {
+    if (!canViewPlayerAssignment) return;
+    const node = draft.nodes.find((item) => item.id === nodeId);
+    if (!node || !isBusinessStageNode(node) || node.data.stageId === undefined || node.data.stageId === null) {
+      message.warning('请先保存当前赛段编排，再进入选手配置');
+      return;
+    }
+    setPlayerAssignmentStageId(String(node.data.stageId));
+  }, [canViewPlayerAssignment, draft.nodes]);
   useEffect(() => {
     if (!eventWorkTypeId) {
       setPromotionDraft([]);
@@ -189,7 +221,7 @@ export function CompetitionStagePlanningPage({
       setPromotionDraft(promotionScopeQuery.data);
       setPromotionDirty(false);
     }
-  }, [eventWorkTypeId, promotionScopeQuery.data]);
+  }, [eventWorkTypeId, eventWorkTypeLevelCode, promotionScopeQuery.data]);
   const hasUnsavedChanges = draft.dirty || promotionDirty;
   useUnsavedChangesBlocker(hasUnsavedChanges);
 
@@ -206,6 +238,7 @@ export function CompetitionStagePlanningPage({
         id: existing?.id,
         eventId,
         eventWorkTypeId,
+        eventWorkTypeLevelCode,
         stageId: existing?.stageId ?? stageId,
         stageType,
         stageName,
@@ -221,16 +254,15 @@ export function CompetitionStagePlanningPage({
         : [...current, next];
     });
     setPromotionDirty(true);
-  }, [eventId, eventWorkTypeId]);
+  }, [eventId, eventWorkTypeId, eventWorkTypeLevelCode]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
       const draftPayload = draft.payload;
-      const payload = eventWorkTypeId
-        ? mergeWorkTypeStageDraft(eventStages, draftPayload)
-        : draftPayload;
+      const payload = draftPayload;
       const savedStages = eventWorkTypeId
-        ? await saveCompetitionStageDraftForWorkType(eventId, eventWorkTypeId, payload)
+        ? await saveCompetitionStageDraftForWorkType(
+          eventId, eventWorkTypeId, payload, eventWorkTypeLevelCode)
         : await saveCompetitionStageDraft(eventId, payload);
       const stagesByType = new Map(savedStages.map((stage) => [stage.stageType, stage]));
       await Promise.all(draftPayload.stages
@@ -265,19 +297,23 @@ export function CompetitionStagePlanningPage({
               promotionQuota: newFinalStage ? null : configured?.promotionQuota ?? null,
             };
           }),
+          eventWorkTypeLevelCode,
         );
       }
-      return { savedStages, savedPromotionConfigs, visibleStageTypes: [...visibleStageTypes] };
+      return { savedStages, savedPromotionConfigs };
     },
     onMutate: () => draft.setSaving(true),
-    onSuccess: ({ savedStages, savedPromotionConfigs, visibleStageTypes }) => {
+    onSuccess: ({ savedStages, savedPromotionConfigs }) => {
       const notes = draft.currentNotes;
-      writeStageCanvasNotes(tenantId, eventId, notes, eventWorkTypeId);
-      const savedPlanningStages = eventWorkTypeId
-        ? savedStages.filter((stage) => visibleStageTypes.includes(stage.stageType))
-        : savedStages;
-      draft.acceptSavedStages(savedPlanningStages, notes);
-      queryClient.setQueryData(['competition-stages', eventId, 'planning'], {
+      writeStageCanvasNotes(tenantId, eventId, notes, eventWorkTypeId, eventWorkTypeLevelCode);
+      draft.acceptSavedStages(savedStages, notes);
+      queryClient.setQueryData([
+        'competition-stages',
+        eventId,
+        'planning',
+        eventWorkTypeId ?? 'event',
+        eventWorkTypeLevelCode ?? 'event',
+      ], {
         items: savedStages,
         page: 1,
         pageSize: 100,
@@ -287,12 +323,17 @@ export function CompetitionStagePlanningPage({
         setPromotionDraft(savedPromotionConfigs);
         setPromotionDirty(false);
         queryClient.setQueryData(
-          ['competition-work-type-stages', eventId, eventWorkTypeId],
+          [
+            'competition-work-type-stages',
+            eventId,
+            eventWorkTypeId,
+            eventWorkTypeLevelCode ?? 'legacy',
+          ],
           savedPromotionConfigs,
         );
       }
       queryClient.invalidateQueries({ queryKey: ['competition-stages', eventId] });
-      message.success('赛段草稿已保存');
+      message.success('赛段编排已保存');
     },
     onError: (error) => {
       draft.setSaving(false);
@@ -302,12 +343,18 @@ export function CompetitionStagePlanningPage({
 
   const confirmMutation = useMutation<CompetitionEvent | CompetitionEventWorkType, Error>({
     mutationFn: () => eventWorkTypeId
-      ? confirmCompetitionWorkTypeStagePlan(eventId, eventWorkTypeId)
+      ? confirmCompetitionWorkTypeStagePlan(eventId, eventWorkTypeId, eventWorkTypeLevelCode)
       : confirmCompetitionStagePlan(eventId),
     onSuccess: (confirmedScope) => {
       if (eventWorkTypeId) {
         queryClient.invalidateQueries({ queryKey: ['competition-event-work-types', eventId] });
-        message.success('当前工种赛段编排已确认并锁定');
+        queryClient.invalidateQueries({
+          queryKey: ['competition-event-work-type-levels', eventId, eventWorkTypeId],
+        });
+        queryClient.invalidateQueries({ queryKey: ['competition-stages', eventId] });
+        message.success(eventWorkTypeLevelCode
+          ? '当前工种当前等级赛段编排已确认并锁定'
+          : '当前工种赛段编排已确认并锁定');
         return;
       }
       const confirmedEvent = confirmedScope as Awaited<ReturnType<typeof confirmCompetitionStagePlan>>;
@@ -352,7 +399,7 @@ export function CompetitionStagePlanningPage({
   const onDiscard = () => {
     Modal.confirm({
       title: '放弃未保存修改？',
-      content: '当前画布草稿将恢复为最近一次保存的状态。',
+      content: '当前画布未保存的修改将恢复为最近一次保存的状态。',
       onOk: () => {
         draft.discard();
         setPromotionDraft(promotionScopeQuery.data ?? []);
@@ -363,7 +410,7 @@ export function CompetitionStagePlanningPage({
 
   const onConfirm = () => {
     if (hasUnsavedChanges) {
-      message.warning('请先保存赛段草稿，再确认编排');
+      message.warning('请先保存赛段编排，再确认当前范围');
       return;
     }
     const validation = draft.validate();
@@ -371,9 +418,12 @@ export function CompetitionStagePlanningPage({
       message.error('请先修复编排校验中的阻断问题');
       return;
     }
+    const confirmationScope = eventWorkTypeId
+      ? (eventWorkTypeLevelCode ? '当前工种当前等级' : '当前工种')
+      : '当前赛事';
     Modal.confirm({
       title: '确认并锁定赛段编排？',
-      content: '确认后当前赛事的赛段结构、时间和说明将不能再编辑，请确认草稿已检查无误。',
+      content: `确认后${confirmationScope}的赛段结构、时间和说明将不能再编辑，请确认当前编排已检查无误。`,
       okText: '确定锁定',
       cancelText: '取消',
       onOk: () => confirmMutation.mutate(),
@@ -406,7 +456,11 @@ export function CompetitionStagePlanningPage({
   if (
     eventQuery.isLoading
     || stagesQuery.isLoading
-    || (Boolean(eventWorkTypeId) && (promotionScopeQuery.isLoading || eventWorkTypesQuery.isLoading))
+    || (hasLevelScope && (
+      promotionScopeQuery.isLoading
+      || eventWorkTypesQuery.isLoading
+      || eventWorkTypeLevelsQuery.isLoading
+    ))
   ) {
     return <Spin className="competition-loading" />;
   }
@@ -422,9 +476,13 @@ export function CompetitionStagePlanningPage({
   if (eventWorkTypeId && canViewPromotionRules && eventWorkTypesQuery.isError) {
     return <Result status="error" title="工种编排状态加载失败" extra={<Button onClick={() => eventWorkTypesQuery.refetch()}>重新加载</Button>} />;
   }
+  if (hasLevelScope && canViewPromotionRules && eventWorkTypeLevelsQuery.isError) {
+    return <Result status="error" title="工种等级编排状态加载失败" extra={<Button onClick={() => eventWorkTypeLevelsQuery.refetch()}>重新加载</Button>} />;
+  }
 
   const content = (
     <>
+      {event.status === 'draft' && <Alert type="info" showIcon message="请先在竞赛计划中填写基础信息并发布赛事。发布后即可激活选手，再继续完成赛段编排与选手配置。" action={<Button onClick={() => onNavigate('/competition/events/' + eventId)}>去发布赛事</Button>} />}
       <StagePlanningToolbar
         editable={editable}
         dirty={hasUnsavedChanges}
@@ -436,7 +494,7 @@ export function CompetitionStagePlanningPage({
         onSave={onSave}
         onDiscard={onDiscard}
         onFitView={() => fitViewRef.current()}
-        onConfirm={onConfirm}
+        onConfirm={canManageWorkTypeStages ? onConfirm : undefined}
         confirming={confirmMutation.isPending}
       />
 
@@ -454,6 +512,8 @@ export function CompetitionStagePlanningPage({
           onAddStage={draft.addStage}
           onStageContextMenu={draft.selectNode}
           onStageContentTypeClick={onStageContentTypeClick}
+          onStageCandidateClick={onStageCandidateClick}
+          candidateEnabled={canViewPlayerAssignment}
           stageContentTypesByNodeId={stageContentTypesByNodeId}
           onFitViewReady={onFitViewReady}
         />
@@ -470,10 +530,11 @@ export function CompetitionStagePlanningPage({
           contentLoading={selectedStageWorkspaceQuery.isLoading || selectedStageWorkspaceQuery.isFetching}
           contents={selectedStageContents}
           promotionVisible={canViewPromotionRules}
+          promotionEditable={editable && canManageWorkTypeStages}
           eventWorkTypeId={eventWorkTypeId}
           promotionConfigs={promotionDraft}
           promotionLoading={promotionScopeQuery.isLoading || promotionScopeQuery.isFetching}
-          onPromotionPercentageChange={updatePromotionPercentage}
+          onPromotionPercentageChange={canManageWorkTypeStages ? updatePromotionPercentage : undefined}
           onNodeChange={draft.updateNode}
           onEdgeChange={draft.updateEdge}
           onContentChange={(nodeId, contents) => draft.updateNode(nodeId, { contents })}
@@ -494,7 +555,7 @@ export function CompetitionStagePlanningPage({
       </Modal>
 
       <Modal
-        title="理论配置"
+        title="试卷工作台"
         open={Boolean(theoryWorkbench)}
         onCancel={() => setTheoryWorkbench(null)}
         footer={null}
@@ -503,19 +564,40 @@ export function CompetitionStagePlanningPage({
         className="stage-theory-workbench-modal"
         styles={{ body: { maxHeight: 'calc(100vh - 132px)', overflowY: 'auto', padding: 0 } }}
         destroyOnClose
-        data-testid="stage-theory-workbench-modal"
+        data-testid="stage-paper-workbench-modal"
       >
         {theoryWorkbench && (
           <CompetitionTheoryExamPage
             eventId={eventId}
             initialStageId={theoryWorkbench.stageId}
             initialEventWorkTypeId={theoryWorkbench.eventWorkTypeId}
+            initialEventWorkTypeLevelCode={theoryWorkbench.eventWorkTypeLevelCode}
             onNavigate={onNavigate}
             embedded
             stagePlanningEditor
           />
         )}
       </Modal>
+
+      <Modal
+        title="选手配置 · 试卷分配"
+        open={Boolean(playerAssignmentStageId)}
+        onCancel={() => {
+          const close = () => { setPlayerAssignmentStageId(null); setPlayerAssignmentDirty(false); };
+          if (playerAssignmentDirty) Modal.confirm({ title: '放弃未保存的选手分配调整？', onOk: close });
+          else close();
+        }}
+        footer={null}
+        centered
+        width="min(1500px, calc(100vw - 32px))"
+        className="stage-player-paper-assignment-modal"
+        styles={{ body: { maxHeight: 'calc(100vh - 112px)', overflowY: 'auto', padding: 0 } }}
+        destroyOnClose
+        data-testid="stage-player-paper-assignment-modal"
+      >
+        {playerAssignmentStageId && <CompetitionPlayerPaperAssignmentPage stageId={playerAssignmentStageId} onDirtyChange={setPlayerAssignmentDirty} />}
+      </Modal>
+
     </>
   );
 

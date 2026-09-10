@@ -25,12 +25,15 @@ import type {
   CompetitionNoticeUpdateRequest,
   CompetitionEventPageQuery,
   CompetitionEventPublishResult,
+  CompetitionEventPublishReadiness,
   CompetitionEventUpdateRequest,
   CompetitionId,
   CompetitionStage,
   CompetitionStageCreateRequest,
   CompetitionStageUpdateRequest,
   CompetitionEventWorkType,
+  CompetitionEventWorkTypeLevel,
+  CompetitionEventWorkTypeLevelReplaceItem,
   CompetitionScoreRule,
   CompetitionScoreRuleCreateRequest,
   CompetitionScoreRuleUpdateRequest,
@@ -68,6 +71,15 @@ import type {
   CompetitionWorkTypeStageConfig,
   CompetitionStageReferenceSnapshot,
   CompetitionStageFinalPodium,
+  CompetitionStagePaperAssignmentSummary,
+  CompetitionStagePaperAssignmentPlayer,
+  CompetitionStagePaperAssignmentQuery,
+  CompetitionStagePaperAssignmentItem,
+  CompetitionFormalExamSession,
+  CompetitionFormalExamPreflight,
+  CompetitionFormalCandidateExam,
+  CompetitionFormalCandidateResult,
+  CompetitionFormalExamConsoleRealtimeTicket,
 } from '../types/competition';
 import { uploadPlatformFile } from './files';
 
@@ -95,6 +107,12 @@ export function updateCompetitionEvent(
 export function publishCompetitionEvent(eventId: CompetitionId) {
   return unwrap<CompetitionEventPublishResult>(
     apiClient.post(`/competition/events/${eventId}/publish`),
+  );
+}
+
+export function getCompetitionEventPublishReadiness(eventId: CompetitionId) {
+  return unwrap<CompetitionEventPublishReadiness>(
+    apiClient.get(`/competition/events/${eventId}/publish-readiness`),
   );
 }
 
@@ -156,7 +174,7 @@ export function pageCompetitionRosterImports(
 
 export function precheckCompetitionRoster(
   eventId: CompetitionId,
-  payload: { fileId: CompetitionId; orgId: CompetitionId; eventWorkTypeId: CompetitionId },
+  payload: { fileId: CompetitionId; orgId?: CompetitionId; eventWorkTypeId?: CompetitionId },
 ) {
   return unwrap<CompetitionRosterImportDetail>(
     apiClient.post(`/competition/events/${eventId}/roster-imports/precheck`, payload),
@@ -168,7 +186,6 @@ export function precheckSingleCompetitionRoster(
   payload: {
     orgId: CompetitionId;
     eventWorkTypeId: CompetitionId;
-    employeeNo: string;
     name: string;
     idCardNo: string;
     mobile: string;
@@ -184,6 +201,12 @@ export function precheckSingleCompetitionRoster(
 export function pageCompetitionPlayers(params: CompetitionPlayerQuery) {
   return unwrap<PageResponse<CompetitionPlayer>>(
     apiClient.get('/competition/players', { params }),
+  );
+}
+
+export function getCompetitionPlayerForEdit(registrationId: CompetitionId) {
+  return unwrap<CompetitionPlayer>(
+    apiClient.get(`/competition/players/${registrationId}`, { silentError: true }),
   );
 }
 
@@ -285,7 +308,13 @@ export function deleteCompetitionNoticeAsset(
 
 export function pageCompetitionStages(
   eventId: CompetitionId,
-  params: { page: number; pageSize: number; status?: string },
+  params: {
+    page: number;
+    pageSize: number;
+    status?: string;
+    eventWorkTypeId?: CompetitionId;
+    eventWorkTypeLevelCode?: string;
+  },
 ) {
   return unwrap<PageResponse<CompetitionStage>>(
     apiClient.get(`/competition/events/${eventId}/stages`, { params }),
@@ -336,6 +365,179 @@ export function publishCompetitionStageResult(stageId: CompetitionId) {
   return unwrap<CompetitionStage>(apiClient.post(`/competition/stages/${stageId}/actions/publish-result`));
 }
 
+export function getCompetitionStagePaperAssignmentSummary(stageId: CompetitionId) {
+  return unwrap<CompetitionStagePaperAssignmentSummary>(
+    apiClient.get(`/competition/stages/${stageId}/paper-assignments/summary`),
+  );
+}
+
+export function pageCompetitionStagePaperAssignmentPlayers(
+  stageId: CompetitionId,
+  params: CompetitionStagePaperAssignmentQuery,
+) {
+  return unwrap<PageResponse<CompetitionStagePaperAssignmentPlayer>>(
+    apiClient.get(`/competition/stages/${stageId}/paper-assignments/players`, { params }),
+  );
+}
+
+export function listCompetitionStagePaperAssignmentPlayers(stageId: CompetitionId) {
+  return unwrap<CompetitionStagePaperAssignmentPlayer[]>(
+    apiClient.get(`/competition/stages/${stageId}/paper-assignments/visualization`),
+  );
+}
+
+export function autoAllocateCompetitionStagePaperAssignments(stageId: CompetitionId) {
+  return unwrap<CompetitionStagePaperAssignmentSummary>(
+    apiClient.post(`/competition/stages/${stageId}/paper-assignments/auto-allocate`),
+  );
+}
+
+export function assignCompetitionStagePaper(
+  stageId: CompetitionId,
+  contestantProfileId: CompetitionId,
+  paperSnapshotId: CompetitionId | null,
+) {
+  return unwrap<CompetitionStagePaperAssignmentPlayer>(
+    apiClient.put(
+      `/competition/stages/${stageId}/paper-assignments/assignments/${contestantProfileId}`,
+      { paperSnapshotId },
+    ),
+  );
+}
+
+export function batchAssignCompetitionStagePapers(
+  stageId: CompetitionId,
+  assignments: CompetitionStagePaperAssignmentItem[],
+) {
+  return unwrap<CompetitionStagePaperAssignmentSummary>(
+    apiClient.put(`/competition/stages/${stageId}/paper-assignments/assignments/batch`, {
+      assignments,
+    }),
+  );
+}
+
+export function saveCompetitionStagePaperAssignments(
+  stageId: CompetitionId,
+  assignments: CompetitionStagePaperAssignmentItem[],
+) {
+  return unwrap<CompetitionStagePaperAssignmentSummary>(
+    apiClient.put(`/competition/stages/${stageId}/paper-assignments`, { assignments }),
+  );
+}
+
+export function confirmCompetitionStagePaperAssignments(
+  stageId: CompetitionId,
+  assignments: CompetitionStagePaperAssignmentItem[],
+) {
+  return unwrap<CompetitionStagePaperAssignmentSummary>(
+    apiClient.post(`/competition/stages/${stageId}/paper-assignments/confirm`, { assignments }),
+  );
+}
+
+export function getCompetitionFormalExamSessionByStage(
+  stageId: CompetitionId,
+  examType = 'theory',
+) {
+  return unwrap<CompetitionFormalExamSession | null>(
+    apiClient.get(`/competition/stages/${stageId}/formal-exam-sessions`, { params: { examType } }),
+  );
+}
+
+export function prepareCompetitionFormalExamSession(
+  stageId: CompetitionId,
+  examType = 'theory',
+) {
+  return unwrap<CompetitionFormalExamSession>(
+    apiClient.post(`/competition/stages/${stageId}/formal-exam-sessions/prepare`, null, {
+      params: { examType },
+    }),
+  );
+}
+
+export function getCompetitionFormalExamSession(sessionId: CompetitionId) {
+  return unwrap<CompetitionFormalExamSession>(
+    apiClient.get(`/competition/formal-exam-sessions/${sessionId}`),
+  );
+}
+
+export function pageCompetitionFormalCandidateExams(
+  sessionId: CompetitionId,
+  params: {
+    page: number;
+    pageSize: number;
+    keyword?: string;
+    paperSnapshotId?: CompetitionId;
+    status?: string;
+  },
+) {
+  return unwrap<PageResponse<CompetitionFormalCandidateExam>>(
+    apiClient.get(`/competition/formal-exam-sessions/${sessionId}/candidates`, { params }),
+  );
+}
+
+export function getCompetitionFormalExamSessionPreflight(sessionId: CompetitionId) {
+  return unwrap<CompetitionFormalExamPreflight>(
+    apiClient.get(`/competition/formal-exam-sessions/${sessionId}/preflight`),
+  );
+}
+
+export function startCompetitionFormalExamSession(
+  sessionId: CompetitionId,
+  body: { confirmWaitingCandidates?: boolean } = {},
+) {
+  return unwrap<CompetitionFormalExamSession>(
+    apiClient.post(`/competition/formal-exam-sessions/${sessionId}/start`, body),
+  );
+}
+
+export function getCompetitionFormalCandidateExam(candidateExamId: CompetitionId) {
+  return unwrap<CompetitionFormalCandidateExam>(
+    apiClient.get(`/competition/formal-exam-candidates/${candidateExamId}`),
+  );
+}
+
+export function forceSubmitCompetitionFormalCandidateExam(
+  sessionId: CompetitionId,
+  candidateExamId: CompetitionId,
+  body: { reason: string },
+) {
+  return unwrap<CompetitionFormalCandidateExam>(
+    apiClient.post(
+      `/competition/formal-exam-sessions/${sessionId}/candidates/${candidateExamId}/force-submit`,
+      body,
+    ),
+  );
+}
+
+export function forceOfflineCompetitionFormalCandidateExam(
+  sessionId: CompetitionId,
+  candidateExamId: CompetitionId,
+) {
+  return unwrap<void>(
+    apiClient.post(
+      `/competition/formal-exam-sessions/${sessionId}/candidates/${candidateExamId}/force-offline`,
+    ),
+  );
+}
+
+export function createFormalExamConsoleRealtimeTicket(sessionId: CompetitionId) {
+  return unwrap<CompetitionFormalExamConsoleRealtimeTicket>(
+    apiClient.post(`/competition/formal-exam-sessions/${sessionId}/realtime/ticket`),
+  );
+}
+
+export function scoreCompetitionFormalExamSession(sessionId: CompetitionId) {
+  return unwrap<CompetitionFormalExamSession>(
+    apiClient.post(`/competition/formal-exam-sessions/${sessionId}/score`),
+  );
+}
+
+export function getCompetitionFormalCandidateResult(candidateExamId: CompetitionId) {
+  return unwrap<CompetitionFormalCandidateResult>(
+    apiClient.get(`/competition/formal-exam-candidates/${candidateExamId}/result`),
+  );
+}
+
 export function getCompetitionStageWorkspace(stageId: CompetitionId) {
   return unwrap<CompetitionStageWorkspace>(apiClient.get(`/competition/stages/${stageId}/workspace`));
 }
@@ -361,6 +563,17 @@ export function getCompetitionExecutionPlanPreflight(planId: CompetitionId) {
 
 export function listCompetitionPracticalSessions(planId: CompetitionId) {
   return unwrap<CompetitionPracticalSession[]>(apiClient.get(`/competition/execution-plans/${planId}/practical-sessions`));
+}
+
+export function bindCompetitionPracticalPaperSnapshot(
+  sessionId: CompetitionId,
+  paperSnapshotId: CompetitionId,
+) {
+  return unwrap<CompetitionPracticalSession>(
+    apiClient.post(`/competition/practical-sessions/${sessionId}/paper-snapshot`, {
+      paperSnapshotId,
+    }),
+  );
 }
 
 export function listCompetitionStageRoster(planId: CompetitionId) {
@@ -421,9 +634,37 @@ export function listCompetitionEventWorkTypes(eventId: CompetitionId) {
   );
 }
 
-export function listCompetitionWorkTypeStages(eventId: CompetitionId, eventWorkTypeId: CompetitionId) {
+export function listCompetitionEventWorkTypeLevels(
+  eventId: CompetitionId,
+  eventWorkTypeId: CompetitionId,
+) {
+  return unwrap<CompetitionEventWorkTypeLevel[]>(
+    apiClient.get(`/competition/events/${eventId}/work-types/${eventWorkTypeId}/levels`),
+  );
+}
+
+export function replaceCompetitionEventWorkTypeLevels(
+  eventId: CompetitionId,
+  eventWorkTypeId: CompetitionId,
+  levels: CompetitionEventWorkTypeLevelReplaceItem[],
+) {
+  return unwrap<CompetitionEventWorkTypeLevel[]>(
+    apiClient.put(
+      `/competition/events/${eventId}/work-types/${eventWorkTypeId}/levels`,
+      { levels },
+    ),
+  );
+}
+
+export function listCompetitionWorkTypeStages(
+  eventId: CompetitionId,
+  eventWorkTypeId: CompetitionId,
+  eventWorkTypeLevelCode?: string,
+) {
   return unwrap<CompetitionWorkTypeStageConfig[]>(
-    apiClient.get(`/competition/events/${eventId}/work-types/${eventWorkTypeId}/stages`),
+    apiClient.get(`/competition/events/${eventId}/work-types/${eventWorkTypeId}/stages`, {
+      params: eventWorkTypeLevelCode == null ? undefined : { eventWorkTypeLevelCode },
+    }),
   );
 }
 
@@ -438,18 +679,28 @@ export function replaceCompetitionWorkTypeStages(
     promotionPercentage?: number | null;
     promotionQuota?: number | null;
   }>,
+  eventWorkTypeLevelCode?: string,
 ) {
   return unwrap<CompetitionWorkTypeStageConfig[]>(
-    apiClient.put(`/competition/events/${eventId}/work-types/${eventWorkTypeId}/stages`, { stages }),
+    apiClient.put(
+      `/competition/events/${eventId}/work-types/${eventWorkTypeId}/stages`,
+      { stages },
+      { params: eventWorkTypeLevelCode == null ? undefined : { eventWorkTypeLevelCode } },
+    ),
   );
 }
 
 export function confirmCompetitionWorkTypeStagePlan(
   eventId: CompetitionId,
   eventWorkTypeId: CompetitionId,
+  eventWorkTypeLevelCode?: string,
 ) {
   return unwrap<CompetitionEventWorkType>(
-    apiClient.post(`/competition/events/${eventId}/work-types/${eventWorkTypeId}/stages/confirm`),
+    apiClient.post(
+      `/competition/events/${eventId}/work-types/${eventWorkTypeId}/stages/confirm`,
+      undefined,
+      { params: eventWorkTypeLevelCode == null ? undefined : { eventWorkTypeLevelCode } },
+    ),
   );
 }
 
@@ -639,7 +890,12 @@ export function listCompetitionTheorySourcePapers(
 
 export function listCompetitionTheoryPaperSnapshots(
   eventId: CompetitionId,
-  params: { stageId?: CompetitionId; eventWorkTypeId?: CompetitionId; scoreRuleId?: CompetitionId },
+  params: {
+    stageId?: CompetitionId;
+    eventWorkTypeId?: CompetitionId;
+    eventWorkTypeLevelId?: CompetitionId;
+    scoreRuleId?: CompetitionId;
+  },
 ) {
   return unwrap<CompetitionTheoryPaperSnapshot[]>(
     apiClient.get(`/competition/events/${eventId}/theory-exam/paper-snapshots`, { params }),
@@ -667,6 +923,23 @@ export function importCompetitionTheoryPaperPair(
 ) {
   return unwrap<CompetitionTheoryPaperSnapshot[]>(
     apiClient.post(`/competition/events/${eventId}/theory-exam/paper-snapshots/import`, payload),
+  );
+}
+
+export function importCompetitionTheoryPaperSnapshots(
+  eventId: CompetitionId,
+  payload: {
+    stageId: CompetitionId;
+    eventWorkTypeId: CompetitionId;
+    eventWorkTypeLevelId: CompetitionId;
+    paperSnapshotIds: CompetitionId[];
+  },
+) {
+  return unwrap<CompetitionTheoryPaperSnapshot[]>(
+    apiClient.post(
+      `/competition/events/${eventId}/theory-exam/paper-snapshots/import-competition`,
+      payload,
+    ),
   );
 }
 
@@ -723,7 +996,7 @@ export function getCompetitionTheorySchedulePreflight(versionId: CompetitionId) 
 export function saveCompetitionTheorySession(
   versionId: CompetitionId,
   sessionId: CompetitionId | undefined,
-  payload: { sessionCode: 'A' | 'B'; sessionName: string; paperSnapshotId: CompetitionId; startAt: string; endAt: string; roomIds: CompetitionId[] },
+  payload: { sessionCode: string; sessionName: string; paperSnapshotId: CompetitionId; startAt: string; endAt: string; roomIds: CompetitionId[] },
 ) {
   return unwrap(sessionId
     ? apiClient.put(`/competition/theory-schedules/${versionId}/sessions/${sessionId}`, payload)

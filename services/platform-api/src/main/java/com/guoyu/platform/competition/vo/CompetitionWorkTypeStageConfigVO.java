@@ -1,10 +1,14 @@
 package com.guoyu.platform.competition.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+
 public record CompetitionWorkTypeStageConfigVO(
-    Long id,
-    Long eventId,
-    Long eventWorkTypeId,
-    Long stageId,
+    @JsonSerialize(using = ToStringSerializer.class) Long id,
+    @JsonSerialize(using = ToStringSerializer.class) Long eventId,
+    @JsonSerialize(using = ToStringSerializer.class) Long eventWorkTypeId,
+    String eventWorkTypeLevelCode,
+    @JsonSerialize(using = ToStringSerializer.class) Long stageId,
     String stageType,
     String stageName,
     Integer enabled,

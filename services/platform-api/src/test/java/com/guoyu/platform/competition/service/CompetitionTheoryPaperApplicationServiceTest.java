@@ -9,8 +9,11 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.competition.dto.CompetitionTheoryPaperImportReq;
+import com.guoyu.platform.competition.dto.CompetitionTheoryCompetitionPaperImportReq;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
+import com.guoyu.platform.competition.entity.CompetitionMakeExamPaperQuestionEntity;
+import com.guoyu.platform.competition.entity.CompetitionMakeExamPaperSnapshotEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageEntity;
 import com.guoyu.platform.competition.entity.CompetitionTheoryPaperQuestionEntity;
 import com.guoyu.platform.competition.entity.CompetitionTheoryPaperSnapshotEntity;
@@ -53,6 +56,8 @@ class CompetitionTheoryPaperApplicationServiceTest {
       Mockito.mock(CompetitionTheoryPaperSourceAdapter.class);
   private final CompetitionTheoryAnswerSnapshotAdapter answerAdapter =
       new CompetitionTheoryAnswerSnapshotAdapter(new ObjectMapper());
+  private final CompetitionTheoryCompetitionPaperSourceAdapter competitionSourceAdapter =
+      Mockito.mock(CompetitionTheoryCompetitionPaperSourceAdapter.class);
   private final CompetitionTheoryPaperApplicationService service =
       new CompetitionTheoryPaperApplicationService(
           scoreRuleDomainService,
@@ -64,6 +69,18 @@ class CompetitionTheoryPaperApplicationServiceTest {
           questionMapper,
           sourceAdapter,
           answerAdapter);
+  private final CompetitionTheoryPaperApplicationService competitionSnapshotService =
+      new CompetitionTheoryPaperApplicationService(
+          scoreRuleDomainService,
+          scoreRuleApplicationService,
+          stageService,
+          eventWorkTypeDomainService,
+          requirementMapper,
+          snapshotMapper,
+          questionMapper,
+          sourceAdapter,
+          answerAdapter,
+          competitionSourceAdapter);
 
   @BeforeEach
   void setUp() {
@@ -159,6 +176,51 @@ class CompetitionTheoryPaperApplicationServiceTest {
 
     assertThat(result).hasSize(2);
     verify(requirementMapper, Mockito.never()).selectOne(any());
+  }
+
+  @Test
+  void importsSelectedPublishedCompetitionPlanSnapshotsFromIndependentPlans() {
+    CompetitionMakeExamPaperSnapshotEntity sourceA = competitionSnapshot(5101L, "P");
+    CompetitionMakeExamPaperSnapshotEntity sourceB = competitionSnapshot(5102L, "P");
+    sourceB.setPlanId(5002L);
+    sourceB.setDurationMinutes(120);
+    sourceB.setTotalScore(new BigDecimal("80"));
+    sourceB.setPassScore(new BigDecimal("48"));
+    when(competitionSourceAdapter.loadPublishedPaper(1L, 1001L, 3001L, 3101L, 5101L))
+        .thenReturn(new CompetitionTheoryCompetitionPaperSourceAdapter.SourcePaper(
+            sourceA, List.of(competitionQuestion(6101L), competitionQuestion(6102L))));
+    when(competitionSourceAdapter.loadPublishedPaper(1L, 1001L, 3001L, 3101L, 5102L))
+        .thenReturn(new CompetitionTheoryCompetitionPaperSourceAdapter.SourcePaper(
+            sourceB, List.of(competitionQuestion(6201L))));
+    when(snapshotMapper.insert(any(CompetitionTheoryPaperSnapshotEntity.class)))
+        .thenAnswer(invocation -> {
+          CompetitionTheoryPaperSnapshotEntity entity = invocation.getArgument(0);
+          entity.setId(entity.getPaperCode().equals("P1") ? 7101L : 7102L);
+          return 1;
+        });
+    when(questionMapper.insert(any(CompetitionTheoryPaperQuestionEntity.class))).thenReturn(1);
+
+    List<CompetitionTheoryPaperSnapshotVO> result = competitionSnapshotService.importCompetitionPapers(
+        1001L, new CompetitionTheoryCompetitionPaperImportReq(
+            2001L, 3001L, 3101L, List.of(5101L, 5102L)));
+
+    assertThat(result).extracting(CompetitionTheoryPaperSnapshotVO::paperCode)
+        .containsExactly("P1", "P2");
+    assertThat(result).extracting(CompetitionTheoryPaperSnapshotVO::sourceCompetitionPaperSnapshotId)
+        .containsExactly(5101L, 5102L);
+    assertThat(result).extracting(CompetitionTheoryPaperSnapshotVO::sourcePlanId)
+        .containsExactly(5001L, 5002L);
+    verify(scoreRuleDomainService, Mockito.never()).list(anyLong(), anyLong(), anyLong(), anyLong());
+    verify(snapshotMapper).deprecatePublishedCompetitionSnapshots(
+        1L, 1001L, 2001L, 3001L, 3101L, 9L);
+    verify(sourceAdapter, Mockito.never()).loadCompletedPaper(anyLong(), anyLong(), anyLong(), anyLong());
+    ArgumentCaptor<CompetitionTheoryPaperQuestionEntity> questionCaptor =
+        ArgumentCaptor.forClass(CompetitionTheoryPaperQuestionEntity.class);
+    verify(questionMapper, Mockito.times(3)).insert(questionCaptor.capture());
+    assertThat(questionCaptor.getAllValues()).allSatisfy(question -> {
+      assertThat(question.getOptionsJson()).contains("\"key\":\"A\"");
+      assertThat(question.getCorrectAnswersJson()).isEqualTo("[\"A\"]");
+    });
   }
 
   @Test
@@ -283,5 +345,39 @@ class CompetitionTheoryPaperApplicationServiceTest {
     entity.setTenantId(1L);
     entity.setStatus("published");
     return entity;
+  }
+
+  private CompetitionMakeExamPaperSnapshotEntity competitionSnapshot(Long id, String code) {
+    CompetitionMakeExamPaperSnapshotEntity snapshot = new CompetitionMakeExamPaperSnapshotEntity();
+    snapshot.setId(id);
+    snapshot.setPlanId(5001L);
+    snapshot.setEventId(1001L);
+    snapshot.setEventWorkTypeId(3001L);
+    snapshot.setEventWorkTypeLevelId(3101L);
+    snapshot.setContentType("theory");
+    snapshot.setPaperCode(code);
+    snapshot.setVersionNo(1);
+    snapshot.setTitle("竞赛理论" + code);
+    snapshot.setDurationMinutes(90);
+    snapshot.setQuestionCount(2);
+    snapshot.setTotalScore(new BigDecimal("2"));
+    snapshot.setPassScore(new BigDecimal("1"));
+    snapshot.setStatus("published");
+    snapshot.setSourceHash("0123456789012345678901234567890123456789012345678901234567890123");
+    snapshot.setDeleted(0);
+    return snapshot;
+  }
+
+  private CompetitionMakeExamPaperQuestionEntity competitionQuestion(Long id) {
+    CompetitionMakeExamPaperQuestionEntity question = new CompetitionMakeExamPaperQuestionEntity();
+    question.setId(id);
+    question.setSourceQuestionId(id + 1000);
+    question.setSortOrder(id % 10 == 1 ? 1 : 2);
+    question.setQuestionType("single");
+    question.setStem("竞赛题干" + id);
+    question.setOptionsJson("{\"A\":\"选项A\",\"B\":\"选项B\"}");
+    question.setReferenceAnswer("A");
+    question.setScore(BigDecimal.ONE);
+    return question;
   }
 }

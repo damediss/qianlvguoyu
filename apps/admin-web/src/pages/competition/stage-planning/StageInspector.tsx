@@ -95,6 +95,7 @@ interface StageInspectorProps {
   contentLoading?: boolean;
   contents?: StageInspectorContent[];
   promotionVisible?: boolean;
+  promotionEditable?: boolean;
   eventWorkTypeId?: CompetitionId;
   promotionConfigs?: CompetitionWorkTypeStageConfig[];
   promotionLoading?: boolean;
@@ -123,6 +124,7 @@ export function StageInspector({
   contentLoading = false,
   contents = [],
   promotionVisible = false,
+  promotionEditable = editable,
   eventWorkTypeId,
   promotionConfigs = [],
   promotionLoading = false,
@@ -189,7 +191,7 @@ export function StageInspector({
           <StagePromotionRulePanel
             stage={{ id: stageId, name: node.data.name, stageType: node.data.stageType }}
             config={promotionConfigs.find((item) => item.stageType === node.data.stageType)}
-            editable={editable}
+            editable={promotionEditable}
             workTypeSelected={Boolean(eventWorkTypeId)}
             loading={promotionLoading}
             onPercentageChange={(percentage) => onPromotionPercentageChange?.(

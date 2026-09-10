@@ -11,6 +11,7 @@ import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventScope;
 import com.guoyu.platform.competition.vo.CompetitionEventVO;
 import com.guoyu.platform.competition.vo.CompetitionEventPublishResultVO;
+import com.guoyu.platform.competition.vo.CompetitionEventPublishReadinessVO;
 import com.guoyu.platform.security.PlatformAdminSupport;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
@@ -27,10 +28,20 @@ public class CompetitionEventApplicationService {
 
   private final CompetitionEventService eventService;
   private final UserMapper userMapper;
+  private final CompetitionEventPublishReadinessService publishReadinessService;
 
   public CompetitionEventApplicationService(CompetitionEventService eventService, UserMapper userMapper) {
+    this(eventService, userMapper, null);
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public CompetitionEventApplicationService(
+      CompetitionEventService eventService,
+      UserMapper userMapper,
+      CompetitionEventPublishReadinessService publishReadinessService) {
     this.eventService = eventService;
     this.userMapper = userMapper;
+    this.publishReadinessService = publishReadinessService;
   }
 
   @Transactional
@@ -88,6 +99,18 @@ public class CompetitionEventApplicationService {
     PlatformUserPrincipal principal = currentUser();
     assertEventScope(principal, eventService.getById(principal.getTenantId(), eventId));
     return eventService.publish(principal.getTenantId(), principal.getUserId(), eventId, principal);
+  }
+
+  @Transactional(readOnly = true)
+  public CompetitionEventPublishReadinessVO publishReadiness(Long eventId) {
+    PlatformUserPrincipal principal = currentUser();
+    CompetitionEventEntity event = eventService.getById(principal.getTenantId(), eventId);
+    assertEventScope(principal, event);
+    if (publishReadinessService == null) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "赛事发布校验器未启用");
+    }
+    return publishReadinessService.evaluate(
+        principal.getTenantId(), principal.getUserId(), event, principal);
   }
 
   private void assertEventScope(PlatformUserPrincipal principal, CompetitionEventEntity event) {

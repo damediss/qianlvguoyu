@@ -50,7 +50,11 @@ competition:task-template:view
 
 ## 4. 导入模板合同
 
-名单导入行只允许以下列：`employee_no`、`name`、`work_type`、`level`。禁止身份证、手机号、邮箱、短信、验证码及任何选手 token；错误信息不得回显敏感身份数据。`source_file_id` 只保存已有文件模块的 fileId，不在本阶段读取或解析文件。
+本节属于 FND-00 的历史基础合同。当前选手名单导入已由
+[`competition-player-registration-employee-no-and-time-conflict.md`](../04_requirements/competition-player-registration-employee-no-and-time-conflict.md)
+取代：不再使用 `employee_no`，并按企业、选手身份、报名工种和报名等级逐行匹配。
+
+FND-00 的基础链路仍只保存已有文件模块的 `source_file_id`，不在本阶段定义选手身份或激活能力。
 
 ## 5. API 草案（仅记录合同）
 

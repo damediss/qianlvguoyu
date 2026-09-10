@@ -37,8 +37,11 @@ import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import lombok.extern.slf4j.Slf4j;
@@ -58,6 +61,7 @@ public class CompetitionRegistrationService {
   private final UserMapper userMapper;
   private final CompetitionPlayerIdentityMapper playerMapper;
   private final CompetitionEventMemberService eventMemberService;
+  private final CompetitionContestantParticipationDomainService participationService;
 
   public CompetitionRegistrationService(
       CompetitionEventMapper eventMapper,
@@ -66,7 +70,7 @@ public class CompetitionRegistrationService {
       CompetitionRosterItemMapper itemMapper,
       CompetitionRegistrationMapper registrationMapper) {
     this(eventMapper, eventOrgMapper, importMapper, itemMapper, registrationMapper,
-        null, null, null, null);
+        null, null, null, null, null);
   }
 
   public CompetitionRegistrationService(
@@ -78,7 +82,21 @@ public class CompetitionRegistrationService {
       OrgMapper orgMapper,
       UserMapper userMapper) {
     this(eventMapper, eventOrgMapper, importMapper, itemMapper, registrationMapper,
-        orgMapper, userMapper, null, null);
+        orgMapper, userMapper, null, null, null);
+  }
+
+  public CompetitionRegistrationService(
+      CompetitionEventMapper eventMapper,
+      CompetitionEventOrgMapper eventOrgMapper,
+      CompetitionRosterImportMapper importMapper,
+      CompetitionRosterItemMapper itemMapper,
+      CompetitionRegistrationMapper registrationMapper,
+      OrgMapper orgMapper,
+      UserMapper userMapper,
+      CompetitionPlayerIdentityMapper playerMapper,
+      CompetitionEventMemberService eventMemberService) {
+    this(eventMapper, eventOrgMapper, importMapper, itemMapper, registrationMapper,
+        orgMapper, userMapper, playerMapper, eventMemberService, null);
   }
 
   @Autowired
@@ -91,7 +109,8 @@ public class CompetitionRegistrationService {
       OrgMapper orgMapper,
       UserMapper userMapper,
       CompetitionPlayerIdentityMapper playerMapper,
-      CompetitionEventMemberService eventMemberService) {
+      CompetitionEventMemberService eventMemberService,
+      CompetitionContestantParticipationDomainService participationService) {
     this.eventMapper = eventMapper;
     this.eventOrgMapper = eventOrgMapper;
     this.importMapper = importMapper;
@@ -101,6 +120,7 @@ public class CompetitionRegistrationService {
     this.userMapper = userMapper;
     this.playerMapper = playerMapper;
     this.eventMemberService = eventMemberService;
+    this.participationService = participationService;
   }
 
   @Transactional
@@ -118,8 +138,14 @@ public class CompetitionRegistrationService {
     }
 
     CompetitionEventEntity event = findEvent(tenantId, batch.getEventId());
-    CompetitionEventOrgEntity participation = validateParticipation(
-        tenantId, event, batch.getOrgId());
+    Set<Long> validatedOrganizationIds = new HashSet<>();
+    Map<Long, CompetitionEventOrgEntity> participationByOrganization = new HashMap<>();
+    if (batch.getOrgId() != null) {
+      CompetitionEventOrgEntity participation = validateParticipation(
+          tenantId, event, batch.getOrgId());
+      validatedOrganizationIds.add(batch.getOrgId());
+      participationByOrganization.put(batch.getOrgId(), participation);
+    }
     List<CompetitionRosterItemEntity> validItems = itemMapper.selectList(
         new LambdaQueryWrapper<CompetitionRosterItemEntity>()
             .eq(CompetitionRosterItemEntity::getTenantId, tenantId)
@@ -131,8 +157,18 @@ public class CompetitionRegistrationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "当前批次没有有效名单行，不能确认");
     }
 
+    for (CompetitionRosterItemEntity item : validItems) {
+      Long orgId = resolveItemOrganization(batch, item);
+      if (orgId == null) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "名单行未匹配参赛企业");
+      }
+      if (validatedOrganizationIds.add(orgId)) {
+        participationByOrganization.put(orgId, validateParticipation(tenantId, event, orgId));
+      }
+    }
+
     validateNoDuplicateRegistrations(tenantId, event, batch, validItems);
-    validateQuota(tenantId, event, batch, participation, validItems.size());
+    validateQuota(tenantId, event, batch, participationByOrganization, validItems);
 
     String registrationStatus = event.getRegistrationAuditRequired() != null
         && event.getRegistrationAuditRequired() == 1
@@ -148,10 +184,11 @@ public class CompetitionRegistrationService {
       CompetitionRegistrationEntity registration = new CompetitionRegistrationEntity();
       registration.setTenantId(tenantId);
       registration.setEventId(event.getId());
-      registration.setOrgId(batch.getOrgId());
+      registration.setOrgId(resolveItemOrganization(batch, item));
       registration.setRosterItemId(item.getId());
       registration.setPlayerId(item.getPlayerId());
       registration.setMemberId(member.getId());
+      registration.setEventWorkTypeId(resolveItemWorkType(batch, item));
       registration.setSource(CompetitionRegistrationSource.ENTERPRISE_IMPORT.getCode());
       registration.setStatus(resolveRegistrationStatus(registrationStatus, item.getPlayerId()));
       registration.setDeleted(0);
@@ -160,7 +197,8 @@ public class CompetitionRegistrationService {
         throw new BusinessException(ErrorCode.INTERNAL_ERROR, "创建参赛资格失败");
       }
       requireEventMemberService().createContestantProfile(
-          tenantId, member.getId(), registration.getId(), confirmedBy, batch.getEventWorkTypeId());
+          tenantId, member.getId(), registration.getId(), confirmedBy,
+          registration.getEventWorkTypeId(), item.getEventWorkTypeLevelId());
     }
 
     batch.setStatus(CompetitionRosterImportStatus.CONFIRMED.getCode());
@@ -199,7 +237,7 @@ public class CompetitionRegistrationService {
       Long tenantId, CompetitionRegistrationQueryReq req) {
     Page<CompetitionRegistrationQueryRow> page = registrationMapper.selectPageWithDetails(
         new Page<>(req.getPage(), req.getPageSize()), tenantId, req.getEventId(), req.getOrgId(),
-        req.getStatus(), req.getEmployeeNo(), req.getName());
+        req.getStatus(), req.getName());
     if (page == null) {
       log.warn("Competition registration mapper returned null page, tenantId={}", tenantId);
       return new Page<>(req.getPage(), req.getPageSize());
@@ -226,7 +264,7 @@ public class CompetitionRegistrationService {
     }
     CompetitionRosterItemEntity rosterItem = findRosterItem(tenantId, registration.getRosterItemId());
     CompetitionRosterImportEntity batch = findRosterBatch(tenantId, rosterItem.getBatchId());
-    validateRosterOwnership(registration, event, batch);
+    validateRosterOwnership(registration, event, batch, rosterItem);
     validateAuditScope(tenantId, registration, event, principal);
 
     String beforeStatus = registration.getStatus();
@@ -313,9 +351,13 @@ public class CompetitionRegistrationService {
   private void validateRosterOwnership(
       CompetitionRegistrationEntity registration,
       CompetitionEventEntity event,
-      CompetitionRosterImportEntity batch) {
+      CompetitionRosterImportEntity batch,
+      CompetitionRosterItemEntity item) {
+    Long itemOrgId = resolveItemOrganization(batch, item);
+    Long itemWorkTypeId = resolveItemWorkType(batch, item);
     if (!java.util.Objects.equals(registration.getEventId(), batch.getEventId())
-        || !java.util.Objects.equals(registration.getOrgId(), batch.getOrgId())
+        || !java.util.Objects.equals(registration.getOrgId(), itemOrgId)
+        || !java.util.Objects.equals(registration.getEventWorkTypeId(), itemWorkTypeId)
         || !java.util.Objects.equals(registration.getEventId(), event.getId())) {
       log.error("Competition registration association is invalid, registrationId={}, eventId={}, orgId={}, batchId={}",
           registration.getId(), registration.getEventId(), registration.getOrgId(), batch.getId());
@@ -433,7 +475,8 @@ public class CompetitionRegistrationService {
       CompetitionEventEntity event,
       CompetitionRosterImportEntity batch,
       List<CompetitionRosterItemEntity> validItems) {
-    Set<String> employeeNos = new HashSet<>();
+    Set<String> itemKeys = new HashSet<>();
+    Set<String> playerWorkTypeKeys = new HashSet<>();
     for (CompetitionRosterItemEntity item : validItems) {
       CompetitionRegistrationEntity existing = registrationMapper.selectOne(
           new LambdaQueryWrapper<CompetitionRegistrationEntity>()
@@ -443,13 +486,29 @@ public class CompetitionRegistrationService {
       if (existing != null) {
         throw new BusinessException(ErrorCode.CONFLICT, "rosterItem 已存在参赛资格");
       }
-      if (!employeeNos.add(item.getEmployeeNo())) {
-        throw new BusinessException(ErrorCode.CONFLICT, "工号 " + item.getEmployeeNo() + " 在当前批次中重复");
+      Long orgId = resolveItemOrganization(batch, item);
+      Long eventWorkTypeId = resolveItemWorkType(batch, item);
+      if (item.getPlayerId() == null) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+            "名单缺少选手身份，请按最新模板重新导入");
       }
-      if (registrationMapper.existsEffectiveByEmployeeNo(
-          tenantId, event.getId(), batch.getOrgId(), item.getEmployeeNo())) {
+      String itemKey = orgId + "::" + item.getPlayerId() + "::"
+          + (eventWorkTypeId == null ? "legacy" : eventWorkTypeId);
+      if (!itemKeys.add(itemKey)) {
         throw new BusinessException(ErrorCode.CONFLICT,
-            "工号 " + item.getEmployeeNo() + " 已存在当前赛事的有效参赛资格");
+            "同一企业的同一选手在当前批次中重复报名同一赛事工种");
+      }
+      if (!playerWorkTypeKeys.add(item.getPlayerId() + "::"
+          + (eventWorkTypeId == null ? "legacy" : eventWorkTypeId))) {
+        throw new BusinessException(ErrorCode.CONFLICT,
+            "该选手在当前批次中重复报名同一赛事工种");
+      }
+      if (participationService != null) {
+        participationService.assertCanEnroll(
+            tenantId, event, item.getPlayerId(), eventWorkTypeId);
+      } else if (registrationMapper.existsEffectiveByPlayerAndWorkType(
+          tenantId, event.getId(), item.getPlayerId(), eventWorkTypeId)) {
+        throw new BusinessException(ErrorCode.CONFLICT, "该选手已报名当前赛项");
       }
     }
   }
@@ -458,16 +517,45 @@ public class CompetitionRegistrationService {
       Long tenantId,
       CompetitionEventEntity event,
       CompetitionRosterImportEntity batch,
-      CompetitionEventOrgEntity participation,
-      int currentValidCount) {
-    if (participation == null || participation.getQuota() == null) {
+      Map<Long, CompetitionEventOrgEntity> participationByOrganization,
+      List<CompetitionRosterItemEntity> validItems) {
+    if (participationByOrganization == null || participationByOrganization.isEmpty()) {
       return;
     }
-    long existingCount = registrationMapper.countEffectiveByEventOrg(
-        tenantId, event.getId(), batch.getOrgId());
-    if (existingCount + currentValidCount > participation.getQuota()) {
-      throw new BusinessException(ErrorCode.CONFLICT,
-          "赛事参与企业名额不足，当前名额=" + participation.getQuota());
+    for (Map.Entry<Long, CompetitionEventOrgEntity> entry : participationByOrganization.entrySet()) {
+      CompetitionEventOrgEntity participation = entry.getValue();
+      if (participation == null || participation.getQuota() == null) {
+        continue;
+      }
+      Long orgId = entry.getKey();
+      long existingCount = registrationMapper.countDistinctEffectivePlayersByEventOrg(
+          tenantId, event.getId(), orgId);
+      Set<Long> newPlayerIds = new HashSet<>();
+      for (CompetitionRosterItemEntity item : validItems) {
+        if (!Objects.equals(orgId, resolveItemOrganization(batch, item)) || item.getPlayerId() == null) {
+          continue;
+        }
+        if (registrationMapper.existsEffectiveByPlayer(
+            tenantId, event.getId(), orgId, item.getPlayerId())) {
+          continue;
+        }
+        newPlayerIds.add(item.getPlayerId());
+      }
+      if (existingCount + newPlayerIds.size() > participation.getQuota()) {
+        throw new BusinessException(ErrorCode.CONFLICT,
+            "赛事参与企业名额不足，当前名额=" + participation.getQuota());
+      }
     }
+  }
+
+  private Long resolveItemOrganization(
+      CompetitionRosterImportEntity batch, CompetitionRosterItemEntity item) {
+    return item != null && item.getOrgId() != null ? item.getOrgId() : batch.getOrgId();
+  }
+
+  private Long resolveItemWorkType(
+      CompetitionRosterImportEntity batch, CompetitionRosterItemEntity item) {
+    return item != null && item.getEventWorkTypeId() != null
+        ? item.getEventWorkTypeId() : batch.getEventWorkTypeId();
   }
 }

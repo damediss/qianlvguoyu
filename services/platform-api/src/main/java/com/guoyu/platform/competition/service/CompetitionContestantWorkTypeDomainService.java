@@ -115,17 +115,10 @@ public class CompetitionContestantWorkTypeDomainService {
       throw new BusinessException(ErrorCode.CONFLICT, "仅有效赛事选手可确认工种");
     }
 
-    CompetitionContestantProfileEntity profile = scopeChangeGuard == null
-        ? profileMapper.selectOne(
-            new LambdaQueryWrapper<CompetitionContestantProfileEntity>()
-                .eq(CompetitionContestantProfileEntity::getTenantId, tenantId)
-                .eq(CompetitionContestantProfileEntity::getMemberId, contestantMemberId)
-                .eq(CompetitionContestantProfileEntity::getDeleted, 0))
-        : profileMapper.selectForUpdateByTenantAndMember(tenantId, contestantMemberId);
-    if (profile == null) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "赛事选手扩展不存在");
-    }
+    CompetitionContestantProfileEntity profile = resolveConfirmProfile(
+        tenantId, contestantMemberId, req);
     if (scopeChangeGuard != null) {
+      profile = lockConfirmProfile(tenantId, profile);
       scopeChangeGuard.assertChangeAllowed(tenantId, eventId, profile);
     }
     if (orgId != null) {
@@ -152,6 +145,17 @@ public class CompetitionContestantWorkTypeDomainService {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "赛事工种无效或不属于当前赛事");
     }
 
+    Long duplicate = profileMapper.selectCount(
+        new LambdaQueryWrapper<CompetitionContestantProfileEntity>()
+            .eq(CompetitionContestantProfileEntity::getTenantId, tenantId)
+            .eq(CompetitionContestantProfileEntity::getMemberId, contestantMemberId)
+            .eq(CompetitionContestantProfileEntity::getEventWorkTypeId, eventWorkType.getId())
+            .ne(CompetitionContestantProfileEntity::getId, profile.getId())
+            .eq(CompetitionContestantProfileEntity::getDeleted, 0));
+    if (duplicate != null && duplicate > 0) {
+      throw new BusinessException(ErrorCode.CONFLICT, "该选手已报名当前赛项");
+    }
+
     profile.setEventWorkTypeId(eventWorkType.getId());
     profile.setWorkTypeMatchStatus(MATCHED);
     profile.setWorkTypeMatchNote(
@@ -159,6 +163,14 @@ public class CompetitionContestantWorkTypeDomainService {
     profile.setUpdatedBy(operatorUserId);
     if (profileMapper.updateById(profile) != 1) {
       throw new BusinessException(ErrorCode.CONFLICT, "选手工种归属已发生变化，请刷新后重试");
+    }
+    if (profile.getRegistrationId() != null) {
+      CompetitionRegistrationEntity registration = registrationMapper.selectById(profile.getRegistrationId());
+      if (registration != null) {
+        registration.setEventWorkTypeId(eventWorkType.getId());
+        registration.setUpdatedBy(operatorUserId);
+        registrationMapper.updateById(registration);
+      }
     }
 
     CompetitionContestantWorkTypeReconciliationVO result =
@@ -219,6 +231,48 @@ public class CompetitionContestantWorkTypeDomainService {
       result.setNote("名单工种文本命中多个赛事工种，禁止自动猜测");
     }
     return result;
+  }
+
+  private CompetitionContestantProfileEntity resolveConfirmProfile(
+      Long tenantId, Long contestantMemberId, CompetitionContestantWorkTypeConfirmReq req) {
+    List<CompetitionContestantProfileEntity> profiles = profileMapper.selectList(
+        new LambdaQueryWrapper<CompetitionContestantProfileEntity>()
+            .eq(CompetitionContestantProfileEntity::getTenantId, tenantId)
+            .eq(CompetitionContestantProfileEntity::getMemberId, contestantMemberId)
+            .eq(CompetitionContestantProfileEntity::getDeleted, 0)
+            .orderByAsc(CompetitionContestantProfileEntity::getId));
+    if (profiles == null || profiles.isEmpty()) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "赛事选手扩展不存在");
+    }
+    if (req != null && req.profileId() != null) {
+      return profiles.stream()
+          .filter(item -> Objects.equals(item.getId(), req.profileId()))
+          .findFirst()
+          .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "选手档案不存在"));
+    }
+    if (profiles.size() == 1) {
+      return profiles.get(0);
+    }
+    List<CompetitionContestantProfileEntity> unmatched = profiles.stream()
+        .filter(item -> item.getEventWorkTypeId() == null
+            || !MATCHED.equals(item.getWorkTypeMatchStatus()))
+        .toList();
+    if (unmatched.size() == 1) {
+      return unmatched.get(0);
+    }
+    throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+        "该选手已报名多个赛项，请指定要确认工种的选手档案");
+  }
+
+  private CompetitionContestantProfileEntity lockConfirmProfile(
+      Long tenantId, CompetitionContestantProfileEntity profile) {
+    CompetitionContestantProfileEntity locked = profile.getRegistrationId() != null
+        ? profileMapper.selectForUpdateByRegistrationId(tenantId, profile.getRegistrationId())
+        : profileMapper.selectForUpdateByTenantAndMember(tenantId, profile.getMemberId());
+    if (locked == null || !Objects.equals(locked.getId(), profile.getId())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "选手工种归属已发生变化，请刷新后重试");
+    }
+    return locked;
   }
 
   private CompetitionWorkTypeCandidateVO toCandidate(

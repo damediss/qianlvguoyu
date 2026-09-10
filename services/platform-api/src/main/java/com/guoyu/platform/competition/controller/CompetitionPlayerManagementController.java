@@ -39,6 +39,12 @@ public class CompetitionPlayerManagementController {
     return ApiResponse.ok(service.page(req));
   }
 
+  @GetMapping("/{registrationId}")
+  @PreAuthorize("hasAuthority('competition:player:update')")
+  public ApiResponse<CompetitionPlayerVO> getForEdit(@PathVariable Long registrationId) {
+    return ApiResponse.ok(service.getForEdit(registrationId));
+  }
+
   @PostMapping
   @PreAuthorize("hasAuthority('competition:player:create')")
   @AuditLog(module = "competition", action = "player:create", targetType = "competition_registration")

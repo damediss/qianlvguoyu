@@ -7,6 +7,7 @@ import com.guoyu.platform.security.RestAccessDeniedHandler;
 import com.guoyu.platform.security.RestAuthenticationEntryPoint;
 import com.guoyu.platform.security.filter.AppTokenAuthFilter;
 import com.guoyu.platform.security.filter.SaTokenBridgeFilter;
+import com.guoyu.platform.competition.exam.security.CompetitionExamTokenBridgeFilter;
 import com.guoyu.platform.competition.player.security.CompetitionPlayerTokenBridgeFilter;
 import com.guoyu.platform.file.config.FileStorageProperties;
 import org.springframework.beans.factory.annotation.Value;
@@ -63,6 +64,15 @@ public class SecurityConfig {
   }
 
   @Bean
+  public org.springframework.boot.web.servlet.FilterRegistrationBean<CompetitionExamTokenBridgeFilter>
+      competitionExamTokenBridgeFilterRegistration(CompetitionExamTokenBridgeFilter filter) {
+    org.springframework.boot.web.servlet.FilterRegistrationBean<CompetitionExamTokenBridgeFilter> registration =
+        new org.springframework.boot.web.servlet.FilterRegistrationBean<>(filter);
+    registration.setEnabled(false);
+    return registration;
+  }
+
+  @Bean
   @Order(0)
   public SecurityFilterChain ssoBridgeChain(
       HttpSecurity http,
@@ -86,6 +96,7 @@ public class SecurityConfig {
       RestAccessDeniedHandler accessDeniedHandler,
       AppTokenAuthFilter appTokenAuthFilter,
       CompetitionPlayerTokenBridgeFilter competitionPlayerTokenBridgeFilter,
+      CompetitionExamTokenBridgeFilter competitionExamTokenBridgeFilter,
       SaTokenBridgeFilter saTokenBridgeFilter,
       TenantContextFilter tenantContextFilter,
       CorsConfigurationSource corsConfigurationSource
@@ -108,6 +119,9 @@ public class SecurityConfig {
                 "/competition/player/activation/send-code",
                 "/competition/player/activation/verify",
                 "/competition/player/auth/login").permitAll();
+            auth.requestMatchers(HttpMethod.POST,
+                "/competition/exam/auth/login",
+                "/competition/formal-exam/player/auth/login").permitAll();
             auth.requestMatchers(HttpMethod.GET, "/auth/tenants").permitAll();
             auth.requestMatchers(HttpMethod.GET, "/auth/captcha/generate").permitAll();
             auth.requestMatchers(HttpMethod.POST, "/auth/captcha/verify").permitAll();
@@ -116,6 +130,8 @@ public class SecurityConfig {
             // OnlyOffice Document Server：拉取文档 + 保存回调（无浏览器登录态）
             auth.requestMatchers("/training/office/**").permitAll();
             auth.requestMatchers(HttpMethod.GET, "/ws/practical-scoring").permitAll();
+            auth.requestMatchers(HttpMethod.GET, "/ws/competition/formal-exam/player").permitAll();
+            auth.requestMatchers(HttpMethod.GET, "/ws/competition/formal-exam/console").permitAll();
             auth.requestMatchers(HttpMethod.POST, "/appregistration/**").permitAll();
             auth.requestMatchers(HttpMethod.POST, "/appsms/**", "/appauth/**", "/appuser/**", "/appuserv4/**", "/apphome/**", "/appsmart/**", "/appcoach/**").permitAll();
             // App 端接口（身份证 OCR 等），由 AppTokenAuthFilter 验证登录态即可
@@ -146,7 +162,8 @@ public class SecurityConfig {
         .addFilterBefore(saTokenBridgeFilter, UsernamePasswordAuthenticationFilter.class)
         .addFilterBefore(appTokenAuthFilter, SaTokenBridgeFilter.class)
         .addFilterBefore(competitionPlayerTokenBridgeFilter, AppTokenAuthFilter.class)
-        .addFilterBefore(tenantContextFilter, CompetitionPlayerTokenBridgeFilter.class);
+        .addFilterBefore(competitionExamTokenBridgeFilter, CompetitionPlayerTokenBridgeFilter.class)
+        .addFilterBefore(tenantContextFilter, CompetitionExamTokenBridgeFilter.class);
     return http.build();
   }
 

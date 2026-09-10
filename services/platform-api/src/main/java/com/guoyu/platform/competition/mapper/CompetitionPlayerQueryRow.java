@@ -15,7 +15,9 @@ public class CompetitionPlayerQueryRow {
   private Long profileId;
   private Long eventWorkTypeId;
   private String eventWorkTypeName;
-  private String employeeNo;
+  private Long eventWorkTypeLevelId;
+  private String eventWorkTypeLevelCode;
+  private String eventWorkTypeLevelName;
   private String name;
   private String workType;
   private String level;
@@ -47,8 +49,12 @@ public class CompetitionPlayerQueryRow {
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
   public String getEventWorkTypeName() { return eventWorkTypeName; }
   public void setEventWorkTypeName(String eventWorkTypeName) { this.eventWorkTypeName = eventWorkTypeName; }
-  public String getEmployeeNo() { return employeeNo; }
-  public void setEmployeeNo(String employeeNo) { this.employeeNo = employeeNo; }
+  public Long getEventWorkTypeLevelId() { return eventWorkTypeLevelId; }
+  public void setEventWorkTypeLevelId(Long eventWorkTypeLevelId) { this.eventWorkTypeLevelId = eventWorkTypeLevelId; }
+  public String getEventWorkTypeLevelCode() { return eventWorkTypeLevelCode; }
+  public void setEventWorkTypeLevelCode(String eventWorkTypeLevelCode) { this.eventWorkTypeLevelCode = eventWorkTypeLevelCode; }
+  public String getEventWorkTypeLevelName() { return eventWorkTypeLevelName; }
+  public void setEventWorkTypeLevelName(String eventWorkTypeLevelName) { this.eventWorkTypeLevelName = eventWorkTypeLevelName; }
   public String getName() { return name; }
   public void setName(String name) { this.name = name; }
   public String getWorkType() { return workType; }

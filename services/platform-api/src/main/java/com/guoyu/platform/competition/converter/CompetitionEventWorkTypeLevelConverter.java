@@ -34,6 +34,9 @@ public final class CompetitionEventWorkTypeLevelConverter {
     target.setSourceLevelCode(source.getSourceLevelCode());
     target.setSourceLevelText(source.getSourceLevelText());
     target.setReconciliationStatus(source.getReconciliationStatus());
+    target.setStagePlanStatus(source.getStagePlanStatus());
+    target.setStagePlanConfirmedBy(source.getStagePlanConfirmedBy());
+    target.setStagePlanConfirmedAt(source.getStagePlanConfirmedAt());
     target.setConfirmedAt(source.getConfirmedAt());
     target.setConfirmedBy(source.getConfirmedBy());
     return target;

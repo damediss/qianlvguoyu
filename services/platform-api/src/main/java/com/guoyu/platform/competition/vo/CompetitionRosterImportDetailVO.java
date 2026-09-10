@@ -1,25 +1,36 @@
 package com.guoyu.platform.competition.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.guoyu.platform.common.api.PageResponse;
 import java.time.LocalDateTime;
 
 public class CompetitionRosterImportDetailVO {
 
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long id;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long batchId;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long eventId;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long orgId;
   private String orgName;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long eventWorkTypeId;
+  private String eventWorkTypeName;
   private String batchNo;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long sourceFileId;
   private String status;
   private Integer totalCount;
   private Integer validCount;
   private Integer invalidCount;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long confirmedBy;
   private LocalDateTime confirmedAt;
   private String summary;
+  @JsonSerialize(using = ToStringSerializer.class)
   private Long createdBy;
   private LocalDateTime createdAt;
   private PageResponse<CompetitionRosterItemVO> items;
@@ -36,6 +47,8 @@ public class CompetitionRosterImportDetailVO {
   public void setOrgName(String orgName) { this.orgName = orgName; }
   public Long getEventWorkTypeId() { return eventWorkTypeId; }
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
+  public String getEventWorkTypeName() { return eventWorkTypeName; }
+  public void setEventWorkTypeName(String eventWorkTypeName) { this.eventWorkTypeName = eventWorkTypeName; }
   public String getBatchNo() { return batchNo; }
   public void setBatchNo(String batchNo) { this.batchNo = batchNo; }
   public Long getSourceFileId() { return sourceFileId; }
