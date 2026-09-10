@@ -189,6 +189,14 @@ python -c "import pymupdf; d = pymupdf.open('outputs/osta-standards/{职业名�
 
 确认两点：页数合理（职业标准一般 10~40 页）；首页标题包含目标职业名称与"国家职业技能标准"字样。验证通过后把记录追加到本文档末尾"已验证可下载的职业标准"清单。
 
+⚠️ **注意"无文本层"PDF**（2026-09-09 矿井通风工案例）：部分标准（尤其是"试行"版）的文字是矢量轮廓而非文本，`get_text()` 返回空、看起来"像坏文件"，但渲染出来完全正常。验证时加一步渲染目检：
+
+```bash
+python -c "import pymupdf; d = pymupdf.open('outputs/osta-standards/{职业名称}.pdf'); d[0].get_pixmap(dpi=80).save('tmp_p1.png')"
+```
+
+`text_len=0` 但 drawings 较多（每页数十到数百个矢量图元）即属此类，渲染首页确认标题后照常交付。
+
 ---
 
 ## 关键要点
@@ -217,6 +225,23 @@ PDF 查看器使用 PDF.js 加载文件，加载后会在 performance 资源列�
 ---
 
 ## 常见问题
+
+### Q: Playwright `click()` 反复超时（"Timeout waiting for locator ... button"）怎么办？
+2026-09-09 矿井通风工案例中，`fill` 正常但 `click` 连续超时。按以下顺序处理：
+
+1. **超时的点击可能滞后执行**：报超时后先查页面实际状态（`tabs.list()` + `domSnapshot()`），不要立即重试同一 locator——滞后的点击可能已经把流程推进了几步（本次案例里弹窗都已打开）。
+2. **换成组合操作**：输入用 Playwright `fill`（真实事件，框架状态同步），点击改用 evaluate DOM click：
+   ```javascript
+   await tab.evaluate(function() {
+     var btns = document.querySelectorAll('button');
+     for (var b of btns) {
+       if (b.textContent.trim() === '搜索') { b.click(); return true; }
+     }
+     return false;
+   });
+   ```
+   点击走 DOM 事件没有框架同步问题，此组合稳定可用。
+3. **别被隐藏弹窗误导**：DOM 里残留的 `.arco-modal-mask` 若 `getComputedStyle(mask).display === 'none'`，是 PDF 查看器的隐藏残骸，不拦截指针事件，不是点击失败的原因。可无视或 `tab.reload()` 清掉。
 
 ### Q: 搜索返回"暂无数据"或 0 条怎么办？
 先改用方式一（Playwright `fill` + `click`）重试——evaluate 方式因框架状态同步问题会假 0 条。仍无结果时：
@@ -379,6 +404,7 @@ if (!pdfUrl) {
 | 8 | 金属挤压工 | - | 808 KB | 2026-08-02 |
 | 9 | 矿山生产集控员 | 6-16-01-13 | 362 KB | 2026-09-09 |
 | 10 | 重冶备料工 | - | 1.48 MB（11 页，页码含汇编页眉 85，属正常） | 2026-09-09 |
+| 11 | 矿井通风工 | 6-16-01-09 | 3.16 MB（22 页，**无文本层**：文字为矢量轮廓，PyMuPDF 提取不到文字，需渲染成图片目检） | 2026-09-09 |
 
 ---
 
