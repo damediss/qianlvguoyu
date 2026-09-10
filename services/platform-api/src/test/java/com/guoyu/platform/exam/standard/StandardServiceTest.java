@@ -151,13 +151,31 @@ class StandardServiceTest {
     when(nodeMapper.selectList(any())).thenReturn(List.of(rootA, leaf));
 
     StandardExportApplicationService service =
-        new StandardExportApplicationService(taskMapper, nodeMapper);
+        new StandardExportApplicationService(taskMapper, nodeMapper,
+            new com.fasterxml.jackson.databind.ObjectMapper());
     StandardExportApplicationService.ExportFile file =
         service.exportSql(1L, 1L, "tester", "create");
     assertNotNull(file);
     assertTrue(file.fileName().startsWith("测试职业"));
     assertTrue(new String(file.content(), java.nio.charset.StandardCharsets.UTF_8)
         .contains("INSERT INTO"), "SQL 导出应包含 INSERT");
+  }
+
+  /** 上传前置校验：OLE2（Word 97-2003 .doc）伪装 .docx 的文件应友好拒绝而非 500 */
+  @Test
+  void uploadRejectsOle2DisguisedAsDocx() {
+    StandardParseApplicationService service = newParseService(
+        mock(ExamStandardTaskMapper.class), mock(ExamStandardNodeMapper.class),
+        mock(FileApplicationService.class));
+    byte[] ole2 = new byte[16];
+    ole2[0] = (byte) 0xD0;
+    ole2[1] = (byte) 0xCF;
+    ole2[2] = 0x11;
+    ole2[3] = (byte) 0xE0;
+    BusinessException ex = assertThrows(BusinessException.class,
+        () -> service.uploadAndParse(ole2, "fake.docx", 1L, 1L));
+    assertTrue(ex.getMessage().contains("Word 97-2003"),
+        "应提示 Word 97-2003 旧格式并引导另存为 .docx");
   }
 
   /** C6：LLM 配置缺失 → 触发报错且任务保持 parsed（降级：可人工补叶导出） */
@@ -183,5 +201,31 @@ class StandardServiceTest {
         () -> service.triggerSummarize(1L, 1L, 1L));
     assertTrue(ex.getMessage().contains("模型配置缺失"));
     assertEquals("parsed", task.getStatus(), "任务状态保持 parsed（人工补叶降级链不断）");
+  }
+
+  /** C7：已导出（exported）任务允许重新触发概括（状态门通过，走配置校验） */
+  @Test
+  void c7_exportedTaskCanRetriggerSummarize() {
+    ExamStandardTaskMapper taskMapper = mock(ExamStandardTaskMapper.class);
+    ExamStandardTaskEntity task = new ExamStandardTaskEntity();
+    task.setId(1L);
+    task.setStatus("exported");
+    when(taskMapper.selectOne(any())).thenReturn(task);
+    DictMapper dictMapper = mock(DictMapper.class);
+    when(dictMapper.selectList(any())).thenReturn(List.of());
+    FaqModelConfigApplicationService modelConfigService =
+        mock(FaqModelConfigApplicationService.class);
+    when(modelConfigService.findByModelCode(any(), any())).thenReturn(null);
+
+    StandardLlmSummarizeService service = new StandardLlmSummarizeService(
+        taskMapper, mock(ExamStandardNodeMapper.class), mock(FaqLlmClient.class),
+        modelConfigService, dictMapper, mock(AiGenerationDraftMapper.class),
+        mock(ThreadPoolTaskExecutor.class));
+
+    // 状态门应放行 exported：错误应来自后续的模型配置校验，而非状态白名单
+    BusinessException ex = assertThrows(BusinessException.class,
+        () -> service.triggerSummarize(1L, 1L, 1L));
+    assertTrue(ex.getMessage().contains("模型配置缺失"),
+        "exported 应通过状态门，报错应是模型配置缺失而非「任务状态不允许触发概括」");
   }
 }

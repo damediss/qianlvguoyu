@@ -27,18 +27,30 @@ public class TrainCertificateEntity {
   /** 用户ID */
   private Long userId;
   private String userName;
+  /** 证件类型（证面原文，如居民身份证） */
+  private String idDocType;
   /** 证书编号 */
   private String certificateNo;
   private String certificateType;
   /** 工种 */
   private String workType;
+  /** 职业名称（证面） */
+  private String occupation;
   /** 等级 */
   private String level;
+  /** 等级五档归一（报表用；证面原文在 level） */
+  private String levelNormalized;
   /** 颁发日期 */
   private String issueDate;
   private String expireDate;
   private String issuingAuthority;
+  /** 评价机构/落款机构（证面） */
+  private String evaluationOrg;
+  /** 证面查询地址原文 JSON 数组 */
+  private String queryUrls;
   private String filePath;
+  /** 证书文件 ID */
+  private Long fileId;
   /** 状态 */
   private Integer status;
   /** 排序号 */
@@ -69,22 +81,34 @@ public class TrainCertificateEntity {
   public void setUserId(Long userId) { this.userId = userId; }
   public String getUserName() { return userName; }
   public void setUserName(String userName) { this.userName = userName; }
+  public String getIdDocType() { return idDocType; }
+  public void setIdDocType(String idDocType) { this.idDocType = idDocType; }
   public String getCertificateNo() { return certificateNo; }
   public void setCertificateNo(String certificateNo) { this.certificateNo = certificateNo; }
   public String getCertificateType() { return certificateType; }
   public void setCertificateType(String certificateType) { this.certificateType = certificateType; }
   public String getWorkType() { return workType; }
   public void setWorkType(String workType) { this.workType = workType; }
+  public String getOccupation() { return occupation; }
+  public void setOccupation(String occupation) { this.occupation = occupation; }
   public String getLevel() { return level; }
   public void setLevel(String level) { this.level = level; }
+  public String getLevelNormalized() { return levelNormalized; }
+  public void setLevelNormalized(String levelNormalized) { this.levelNormalized = levelNormalized; }
   public String getIssueDate() { return issueDate; }
   public void setIssueDate(String issueDate) { this.issueDate = issueDate; }
   public String getExpireDate() { return expireDate; }
   public void setExpireDate(String expireDate) { this.expireDate = expireDate; }
   public String getIssuingAuthority() { return issuingAuthority; }
   public void setIssuingAuthority(String issuingAuthority) { this.issuingAuthority = issuingAuthority; }
+  public String getEvaluationOrg() { return evaluationOrg; }
+  public void setEvaluationOrg(String evaluationOrg) { this.evaluationOrg = evaluationOrg; }
+  public String getQueryUrls() { return queryUrls; }
+  public void setQueryUrls(String queryUrls) { this.queryUrls = queryUrls; }
   public String getFilePath() { return filePath; }
   public void setFilePath(String filePath) { this.filePath = filePath; }
+  public Long getFileId() { return fileId; }
+  public void setFileId(Long fileId) { this.fileId = fileId; }
   public Integer getStatus() { return status; }
   public void setStatus(Integer status) { this.status = status; }
   public Integer getSortNumber() { return sortNumber; }

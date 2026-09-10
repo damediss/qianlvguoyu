@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.exam.mapper.ExamCourseMapper;
+import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
+import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.trainingdepartment.dto.TrainExamListUpdateReq;
@@ -51,6 +53,10 @@ class TrainExamListGuardTest {
   @Mock
   private ExamCourseMapper examCourseMapper;
   @Mock
+  private ExamKnowledgeStructureMapper knowledgeStructureMapper;
+  @Mock
+  private ExamExamDetailMapper examDetailMapper;
+  @Mock
   private TrainInfoListMapper trainInfoListMapper;
   @Mock
   private TrainPeopleListMapper trainPeopleListMapper;
@@ -60,7 +66,8 @@ class TrainExamListGuardTest {
   @BeforeEach
   void setUp() {
     service = new TrainExamListApplicationService(mapper, workTypeListMapper, peopleListMapper,
-        examCourseMapper, trainInfoListMapper, trainPeopleListMapper);
+        examCourseMapper, knowledgeStructureMapper, examDetailMapper,
+        trainInfoListMapper, trainPeopleListMapper);
   }
 
   private MockedStatic<SecurityContext> mockCurrentAdmin() {

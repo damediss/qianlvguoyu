@@ -10,6 +10,7 @@ import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
+import com.guoyu.platform.trainingdepartment.support.SignUpLevelSupport;
 import com.guoyu.platform.trainingdepartment.vo.TrainingStudentCertificationSourceVO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -114,7 +115,7 @@ public class TrainingStudentSourceApplicationService {
         .reqLevel(source.getReqLevel())
         .workTypeId(source.getWorkTypeId())
         .workTypeName(source.getWorkTypeName())
-        .level(source.getLevel())
+        .level(SignUpLevelSupport.toIndex(source.getLevel()))
         .job(source.getJob())
         .jog(source.getJog())
         .declarationCondition(source.getDeclarationCondition())

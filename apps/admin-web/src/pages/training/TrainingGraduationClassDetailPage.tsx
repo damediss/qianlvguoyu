@@ -27,6 +27,7 @@ import * as trainApi from '../../api/training';
 import type { CertifiedRosterScope } from '../../api/training';
 import { FilePreviewModal, type FilePreviewTarget } from '../../components/FilePreviewModal';
 import { useGraduationStudentActions } from './GraduationStudentActions';
+import { useNavStore } from '../../stores/navStore';
 
 function navigateTo(path: string) {
   window.history.pushState({}, '', path);
@@ -64,8 +65,28 @@ async function downloadCertifiedRoster(
 
 export function TrainingGraduationClassDetailPage({ classId }: { classId: number }) {
   const queryClient = useQueryClient();
+  const navigateMenu = useNavStore((s) => s.setSelectedKey);
   const [keyword, setKeyword] = useState('');
   const [certPreview, setCertPreview] = useState<FilePreviewTarget | null>(null);
+
+  const openClassSubsidy = async () => {
+    try {
+      const existing = await trainApi.getClassSubsidy(classId);
+      if (existing) {
+        trainApi.stashSubsidyDeclareFocus({ classId, subsidyId: existing.id });
+        navigateMenu('train_subsidy_declare');
+        return;
+      }
+      const created = await trainApi.ensureClassSubsidy(classId);
+      message.success('已为本班创建补贴草稿');
+      trainApi.stashSubsidyDeclareFocus({ classId, subsidyId: created.id });
+      navigateMenu('train_subsidy_declare');
+    } catch (e) {
+      message.error((e as Error).message || '打开补贴失败');
+      trainApi.stashSubsidyDeclareFocus({ classId, openCreate: true });
+      navigateMenu('train_subsidy_declare');
+    }
+  };
 
   const { data: studentData, isLoading: studentLoading } = useQuery({
     queryKey: ['graduation-students', classId],
@@ -136,7 +157,7 @@ export function TrainingGraduationClassDetailPage({ classId }: { classId: number
       },
       {
         title: '证书编号',
-        width: 160,
+        width: 200,
         render: (_, r) => {
           if (!r.hasCertificate) {
             return <Typography.Text type="secondary">未建证</Typography.Text>;
@@ -163,12 +184,26 @@ export function TrainingGraduationClassDetailPage({ classId }: { classId: number
         },
       },
       {
-        title: '模板',
-        dataIndex: 'templateTitle',
+        title: '证面等级',
+        dataIndex: 'certificateLevel',
         width: 120,
         ellipsis: true,
         render: (v?: string) => v || '—',
       },
+      {
+        title: '证面工种',
+        dataIndex: 'certificateWorkType',
+        width: 110,
+        ellipsis: true,
+        render: (v?: string) => v || '—',
+      },
+      // {
+      //   title: '模板',
+      //   dataIndex: 'templateTitle',
+      //   width: 120,
+      //   ellipsis: true,
+      //   render: (v?: string) => v || '—',
+      // },
       actionColumn,
     ],
     [actionColumn],
@@ -197,21 +232,24 @@ export function TrainingGraduationClassDetailPage({ classId }: { classId: number
               班级状态 {classStatusTag(studentData?.graduateStatus)} · 成绩与考试模块一致（理论/技能/综合/工作业绩）；达标=理论与技能均≥60
             </Typography.Text>
           </div>
-          <Dropdown
-            menu={{
-              items: ROSTER_SCOPE_MENU_ITEMS,
-              onClick: ({ key }) =>
-                void downloadCertifiedRoster(
-                  classId,
-                  studentData?.classTitle || undefined,
-                  key as CertifiedRosterScope,
-                ),
-            }}
-          >
-            <Button icon={<DownloadOutlined />}>
-              导出人员名册 <DownOutlined />
-            </Button>
-          </Dropdown>
+          <Space>
+            <Button onClick={() => void openClassSubsidy()}>申报补贴</Button>
+            <Dropdown
+              menu={{
+                items: ROSTER_SCOPE_MENU_ITEMS,
+                onClick: ({ key }) =>
+                  void downloadCertifiedRoster(
+                    classId,
+                    studentData?.classTitle || undefined,
+                    key as CertifiedRosterScope,
+                  ),
+              }}
+            >
+              <Button icon={<DownloadOutlined />}>
+                导出人员名册 <DownOutlined />
+              </Button>
+            </Dropdown>
+          </Space>
         </Space>
       </section>
 

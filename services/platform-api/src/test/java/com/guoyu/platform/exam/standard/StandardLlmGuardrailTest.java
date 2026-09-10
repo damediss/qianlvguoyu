@@ -5,9 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.guoyu.platform.common.exception.BusinessException;
+import com.guoyu.platform.exam.standard.entity.ExamStandardNodeEntity;
 import com.guoyu.platform.exam.standard.service.StandardLlmPoint;
 import com.guoyu.platform.exam.standard.service.StandardLlmSummarizeService;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -100,12 +102,14 @@ class StandardLlmGuardrailTest {
     assertTrue(theory.getWarnings().isEmpty());
   }
 
-  /** B2：max_tokens 按通道和素材条数自适应 */
+  /** B2：max_tokens 按通道自适应（理论按目标点数，技能按素材条数） */
   @Test
   void b2_adaptiveMaxTokens() {
-    // 理论：固定 1024
-    assertEquals(1024, StandardLlmSummarizeService.computeMaxTokens(List.of(), false));
-    assertEquals(1024, StandardLlmSummarizeService.computeMaxTokens(List.of("a", "b"), false));
+    // 理论：目标点数 × 60 + 256，下限 1024、封顶 4096
+    assertEquals(1024, StandardLlmSummarizeService.computeTheoryTokens(1));
+    assertEquals(1024, StandardLlmSummarizeService.computeTheoryTokens(6));
+    assertEquals(1216, StandardLlmSummarizeService.computeTheoryTokens(16), "16 点 → 1216");
+    assertEquals(2656, StandardLlmSummarizeService.computeTheoryTokens(40), "40 点 → 2656");
     // 技能：素材条数 × 40 + 256，封顶 2048
     assertEquals(296, StandardLlmSummarizeService.computeMaxTokens(List.of("a"), true));
     assertEquals(416, StandardLlmSummarizeService.computeMaxTokens(List.of("a", "b", "c", "d"), true));
@@ -129,13 +133,120 @@ class StandardLlmGuardrailTest {
         () -> StandardLlmSummarizeService.normalizeImportants(List.of("W")));
   }
 
-  /** 弹窗参数：理论通道数量规则——不含 Z → 3~6；含 Z → 4~8 */
+  /** 理论通道数量分配：全表 200 点按小节权重分配（拍板 2026-09，优先级高于材料条数规则） */
   @Test
-  void summarize_theoryCountRange() {
-    assertEquals("3~6", StandardLlmSummarizeService.theoryCountRange(List.of("X", "Y")));
-    assertEquals("3~6", StandardLlmSummarizeService.theoryCountRange(List.of("X")));
-    assertEquals("4~8", StandardLlmSummarizeService.theoryCountRange(List.of("X", "Y", "Z")));
-    assertEquals("4~8", StandardLlmSummarizeService.theoryCountRange(List.of("X", "Z")));
+  void summarize_allocateTheoryTargets() {
+    // L1a 权重 0.5：两个小节材料 3:1 → 100 点按 75/25 分；L1b 权重 0.5：一个小节 → 100
+    ExamStandardNodeEntity l1a = l1(1L, new java.math.BigDecimal("0.50"));
+    ExamStandardNodeEntity l1b = l1(2L, new java.math.BigDecimal("0.50"));
+    ExamStandardNodeEntity s1 = l2(11L, 1L, null);
+    ExamStandardNodeEntity s2 = l2(12L, 1L, null);
+    ExamStandardNodeEntity s3 = l2(13L, 2L, null);
+    Map<Long, Integer> targets = StandardLlmSummarizeService.allocateTheoryTargets(
+        List.of(l1a, l1b), List.of(s1, s2, s3),
+        s -> s.getId() == 11L ? 3 : 1, 200);
+    assertEquals(75, targets.get(11L), "L1a 材料 3/4 → 75 点");
+    assertEquals(25, targets.get(12L), "L1a 材料 1/4 → 25 点");
+    assertEquals(100, targets.get(13L), "L1b 独生子节 → 100 点");
+    assertEquals(200, targets.values().stream().mapToInt(Integer::intValue).sum(), "合计严格 200");
+  }
+
+  /** 手工小节权重优先于材料占比；超出 L1 预算时挤占其他小节 */
+  @Test
+  void summarize_allocateManualWeightFirst() {
+    ExamStandardNodeEntity l1a = l1(1L, new java.math.BigDecimal("0.10"));
+    ExamStandardNodeEntity manual = l2(11L, 1L, new java.math.BigDecimal("0.05")); // 手工 5% → 10 点
+    ExamStandardNodeEntity auto = l2(12L, 1L, null);                               // 剩余 10 点
+    Map<Long, Integer> targets = StandardLlmSummarizeService.allocateTheoryTargets(
+        List.of(l1a), List.of(manual, auto), s -> 5, 200);
+    assertEquals(10, targets.get(11L), "手工权重 0.05 × 200 = 10 点");
+    assertEquals(10, targets.get(12L), "L1 预算 20 点 − 手工 10 点 = 10 点");
+  }
+
+  /** L1 无权重时按材料条数在全表剩余预算内兜底；权重极小小节保底 1 点 */
+  @Test
+  void summarize_allocateFallbackAndFloor() {
+    ExamStandardNodeEntity weighted = l1(1L, new java.math.BigDecimal("0.80")); // 消费 160 点
+    ExamStandardNodeEntity noWeight = l1(2L, null);                              // 兜底池 40 点
+    ExamStandardNodeEntity s1 = l2(11L, 1L, null);
+    ExamStandardNodeEntity s2 = l2(12L, 2L, null); // 材料 3
+    ExamStandardNodeEntity s3 = l2(13L, 2L, null); // 材料 1
+    Map<Long, Integer> targets = StandardLlmSummarizeService.allocateTheoryTargets(
+        List.of(weighted, noWeight), List.of(s1, s2, s3),
+        s -> s.getId() == 12L ? 3 : 1, 200);
+    assertEquals(160, targets.get(11L), "L1 权重 0.8 × 200 = 160 点");
+    assertEquals(30, targets.get(12L), "兜底池 40 × 3/4 = 30 点");
+    assertEquals(10, targets.get(13L), "兜底池 40 × 1/4 = 10 点");
+    assertEquals(200, targets.values().stream().mapToInt(Integer::intValue).sum(), "合计严格 200");
+
+    // 保底：L1 权重 0.001 → 0.2 点 → 取整 0 → 保底 1
+    ExamStandardNodeEntity tiny = l1(3L, new java.math.BigDecimal("0.001"));
+    ExamStandardNodeEntity tinyLeaf = l2(14L, 3L, null);
+    Map<Long, Integer> floored = StandardLlmSummarizeService.allocateTheoryTargets(
+        List.of(tiny), List.of(tinyLeaf), s -> 1, 200);
+    assertEquals(1, floored.get(14L), "权重极小小节保底 1 点");
+  }
+
+  /** 国标数量下限：二/一级（levelCode 3/4）按 120 点分配 */
+  @Test
+  void summarize_allocateSeniorLevel120() {
+    ExamStandardNodeEntity l1a = l1(1L, new java.math.BigDecimal("0.50"));
+    ExamStandardNodeEntity l1b = l1(2L, new java.math.BigDecimal("0.50"));
+    ExamStandardNodeEntity s1 = l2(11L, 1L, null);
+    ExamStandardNodeEntity s2 = l2(12L, 2L, null);
+    Map<Long, Integer> targets = StandardLlmSummarizeService.allocateTheoryTargets(
+        List.of(l1a, l1b), List.of(s1, s2), s -> 1, 120);
+    assertEquals(60, targets.get(11L));
+    assertEquals(60, targets.get(12L));
+    assertEquals(120, targets.values().stream().mapToInt(Integer::intValue).sum());
+    // 等级映射：五/四/三级 200，二/一级 120
+    assertEquals(200, StandardLlmSummarizeService.theoryTotalTarget(0));
+    assertEquals(200, StandardLlmSummarizeService.theoryTotalTarget(2));
+    assertEquals(120, StandardLlmSummarizeService.theoryTotalTarget(3));
+    assertEquals(120, StandardLlmSummarizeService.theoryTotalTarget(4));
+  }
+
+  /** 同小节相同/相近考评点自动合并：规范化后相等或互为子串，保留首个 */
+  @Test
+  void summarize_dedupSectionPoints() {
+    List<StandardLlmPoint> points = List.of(
+        new StandardLlmPoint("磨矿浓度计算方法", "X"),
+        new StandardLlmPoint("磨矿浓度 计算方法", "Y"),  // 仅差空格 → 规范化相等合并
+        new StandardLlmPoint("矿浆pH值测定", "Z"),      // 独立保留
+        new StandardLlmPoint("矿浆pH值测定方法", "X")); // 包含第 3 条 → 相近合并
+    List<StandardLlmPoint> out = StandardLlmSummarizeService.dedupSectionPoints(points);
+    assertEquals(2, out.size());
+    assertEquals("磨矿浓度计算方法", out.get(0).title());
+    assertEquals("矿浆pH值测定", out.get(1).title());
+  }
+
+  /** 数量兜底补点过滤：与已有考评点相同/相近的丢弃，其余保留 */
+  @Test
+  void summarize_filterTopupAgainstExisting() {
+    List<StandardLlmPoint> points = List.of(
+        new StandardLlmPoint("磨矿浓度计算", "X"),      // 被已有「磨矿浓度计算方法」包含 → 丢弃
+        new StandardLlmPoint("磨机衬板更换周期", "Y"));  // 独立 → 保留
+    List<StandardLlmPoint> out = StandardLlmSummarizeService.filterAgainstExisting(points,
+        List.of("磨矿浓度计算方法", "矿浆pH值测定"));
+    assertEquals(1, out.size());
+    assertEquals("磨机衬板更换周期", out.get(0).title());
+  }
+
+  private static ExamStandardNodeEntity l1(Long id, java.math.BigDecimal weight) {
+    ExamStandardNodeEntity n = new ExamStandardNodeEntity();
+    n.setId(id);
+    n.setNodeLevel(1);
+    n.setWeight(weight);
+    return n;
+  }
+
+  private static ExamStandardNodeEntity l2(Long id, Long parentId, java.math.BigDecimal weight) {
+    ExamStandardNodeEntity n = new ExamStandardNodeEntity();
+    n.setId(id);
+    n.setParentId(parentId);
+    n.setNodeLevel(2);
+    n.setWeight(weight);
+    return n;
   }
 
   /** 弹窗参数：重要程度规则文案——子集限定取值，全档保留三档说明 */

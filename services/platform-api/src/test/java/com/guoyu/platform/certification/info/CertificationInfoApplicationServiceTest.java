@@ -263,7 +263,8 @@ class CertificationInfoApplicationServiceTest {
 
   @Test
   void createExamStaffStartsPendingAndPassReviewMakesItApprovedIdle() {
-    ExamStaffInfoVO created = service.createExamStaff(new ExamStaffInfoSaveReq("测试考务", "13800000009"));
+    ExamStaffInfoVO created = service.createExamStaff(new ExamStaffInfoSaveReq(
+        "测试考务", "13800000009", "examstaff.test", "ExamStaff@123"));
 
     assertThat(created.auditStatus()).isEqualTo("pending");
     assertThat(created.workStatus()).isEqualTo("idle");

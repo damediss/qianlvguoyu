@@ -903,6 +903,8 @@ export function pageInfoClassList(params: {
   trainInfoId?: number;
   companyConfirmStatus?: number;
   keyword?: string;
+  /** certified=已获证班 / uncertified=未获证班 / all=全部 */
+  certFilter?: 'certified' | 'uncertified' | 'all';
 }) {
   return unwrap<TrainInfoClassPageResponse>(apiClient.get(`${BASE}/info-classes`, { params }));
 }
@@ -953,6 +955,16 @@ export interface ClassPracticeScope {
   knowledges: { knowledgeId: number; courseId: number; title: string }[];
   appBound?: boolean;
   hint?: string;
+  /** 试题配置保存后自动开通同步学的结果 */
+  reviewSyncAuto?: {
+    ok?: boolean;
+    action?: string;
+    examSource?: string;
+    examId?: string;
+    message?: string;
+    enrollError?: string;
+    grayError?: string;
+  };
 }
 
 export function getClassPracticeScope(classId: number | string) {
@@ -994,6 +1006,135 @@ export function saveClassPracticeScope(
   return unwrap<ClassPracticeScope>(
     apiClient.put(`${BASE}/info-classes/${classId}/practice-scope`, payload),
   );
+}
+
+/** 班级同步学配置（通道 C） */
+export interface ClassReviewSyncRosterGap {
+  total: number;
+  withPlatformUser: number;
+  inExamPeople: number;
+  missingAccount: number;
+  missingEnroll: number;
+}
+
+export interface ClassReviewSyncConfig {
+  classId: string;
+  classTitle?: string;
+  workTypeId?: number;
+  workTypeLevel?: number;
+  configured: boolean;
+  examId?: string | null;
+  examTitle?: string | null;
+  examGone?: boolean;
+  enabled: boolean;
+  syncStartTime?: string | null;
+  syncEndTime?: string | null;
+  remark?: string | null;
+  grayEnabled: boolean;
+  examInGray: boolean;
+  roster: ClassReviewSyncRosterGap;
+  statsPath?: string | null;
+  autoSynced?: boolean;
+  enroll?: {
+    inserted?: number;
+    existed?: number;
+    skippedNoAccount?: number;
+    roster?: ClassReviewSyncRosterGap;
+  };
+  gray?: { message?: string; examInGray?: boolean };
+  enrollError?: string;
+  grayError?: string;
+  resolve?: {
+    configured: boolean;
+    examId?: string | null;
+    examTitle?: string | null;
+    enabled?: boolean;
+    reasonCode?: string | null;
+  };
+}
+
+export interface ClassReviewSyncExamOption {
+  examId: string;
+  title: string;
+  level?: string;
+  matched?: boolean;
+  workTypeMatched?: boolean;
+  matchScore?: number;
+}
+
+export function getClassReviewSyncConfig(classId: number | string) {
+  return unwrap<ClassReviewSyncConfig>(
+    apiClient.get(`${BASE}/info-classes/${classId}/review-sync-config`),
+  );
+}
+
+export function saveClassReviewSyncConfig(
+  classId: number | string,
+  payload: {
+    examId: number | string;
+    enabled?: number | boolean;
+    syncStartTime?: string | null;
+    syncEndTime?: string | null;
+    remark?: string | null;
+  },
+) {
+  return unwrap<ClassReviewSyncConfig>(
+    apiClient.put(`${BASE}/info-classes/${classId}/review-sync-config`, {
+      ...payload,
+      enabled: payload.enabled === false || payload.enabled === 0 ? 0 : 1,
+    }),
+  );
+}
+
+export function listClassReviewSyncExamOptions(classId: number | string) {
+  return unwrap<{
+    classId: string;
+    workTypeId?: number;
+    workTypeLevel?: number;
+    trainInfoId?: string | null;
+    items: ClassReviewSyncExamOption[];
+  }>(apiClient.get(`${BASE}/info-classes/${classId}/review-sync-config/exam-options`));
+}
+
+export function enrollClassReviewSyncRoster(classId: number | string) {
+  return unwrap<{
+    classId: string;
+    examId: string;
+    inserted: number;
+    existed: number;
+    skippedNoAccount: number;
+    roster: ClassReviewSyncRosterGap;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/review-sync-config/enroll-roster`));
+}
+
+export function ensureClassReviewSyncRoster(classId: number | string) {
+  return unwrap<{
+    ok?: boolean;
+    action?: string;
+    examSource?: string;
+    examId?: string;
+    message?: string;
+    enroll?: {
+      inserted?: number;
+      existed?: number;
+      skippedNoAccount?: number;
+      roster?: ClassReviewSyncRosterGap;
+    };
+    enrollError?: string;
+    grayError?: string;
+    config?: ClassReviewSyncConfig;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/review-sync-config/ensure-roster`));
+}
+
+export function ensureClassReviewSyncGray(classId: number | string) {
+  return unwrap<{
+    classId: string;
+    examId: string;
+    grayEnabled: boolean;
+    examInGray: boolean;
+    message?: string;
+    inserted: boolean;
+  }>(apiClient.post(`${BASE}/info-classes/${classId}/review-sync-config/ensure-gray`));
 }
 
 export interface PracticeAnalyticsQuery {
@@ -1435,6 +1576,13 @@ export type GraduationStudentDetail = {
   templateTitle?: string | null;
   certificateNo?: string | null;
   certificateFilePath?: string | null;
+  certificateOccupation?: string | null;
+  certificateWorkType?: string | null;
+  certificateLevel?: string | null;
+  certificateIssuingAuthority?: string | null;
+  certificateEvaluationOrg?: string | null;
+  certificateIssueDate?: string | null;
+  certificateIdDocType?: string | null;
   hasCertificate?: boolean;
   idCardHeader?: string;
   idCardFront?: string;
@@ -1456,6 +1604,10 @@ export function updateGraduationStudent(
     phone?: string;
     idCard?: string;
     ticketNo?: string;
+    idCardHeader?: string | null;
+    idCardFront?: string | null;
+    idCardBack?: string | null;
+    certificateFilePath?: string | null;
   },
 ) {
   return unwrap<{
@@ -1464,6 +1616,10 @@ export function updateGraduationStudent(
     phone?: string;
     idCard?: string;
     ticketNo?: string;
+    idCardHeader?: string | null;
+    idCardFront?: string | null;
+    idCardBack?: string | null;
+    certificateFilePath?: string | null;
   }>(apiClient.patch(`${BASE}/info-classes/${classId}/graduation-students/${peopleId}`, payload));
 }
 
@@ -1476,6 +1632,17 @@ export type GraduationCertImportPreviewItem = {
   idCard?: string;
   certificateNo?: string;
   parsedName?: string;
+  idDocType?: string;
+  issuingAuthority?: string;
+  occupation?: string;
+  workType?: string;
+  level?: string;
+  levelNormalized?: string;
+  evaluationOrg?: string;
+  issueDate?: string;
+  queryUrls?: string | null;
+  queryUrlList?: string[];
+  ocrUsed?: boolean;
   peopleId?: number;
   classId?: number;
   classTitle?: string;
@@ -1484,13 +1651,19 @@ export type GraduationCertImportPreviewItem = {
 };
 
 export type GraduationCertImportPreview = {
-  previewId: string;
-  classIds: Array<number | string>;
+  async?: boolean;
+  jobId?: string;
+  status?: string;
+  previewId?: string;
+  classIds?: Array<number | string>;
   totalFiles: number;
-  matched: number;
-  blocked: number;
-  failed: number;
-  items: GraduationCertImportPreviewItem[];
+  matched?: number;
+  blocked?: number;
+  failed?: number;
+  items?: GraduationCertImportPreviewItem[];
+  message?: string;
+  ocrEnabled?: boolean;
+  error?: string;
 };
 
 /** 证书文件夹导入 · 预览匹配（按已选班身份证） */
@@ -1503,10 +1676,17 @@ export function previewGraduationCertImport(classIds: Array<number | string>, fi
   );
 }
 
+/** 异步预览任务状态 */
+export function getGraduationCertImportPreviewJob(jobId: string) {
+  return unwrap<GraduationCertImportPreview>(
+    apiClient.get(`${BASE}/graduation/certificates/import/preview-jobs/${encodeURIComponent(jobId)}`),
+  );
+}
+
 /** 证书文件夹导入 · 确认回填证号+文件 */
 export function commitGraduationCertImport(previewId: string) {
   return unwrap<{ written: number; updated: number; skipped: number; errors: string[] }>(
-    apiClient.post(`${BASE}/graduation/certificates/import/commit`, { previewId }),
+    apiClient.post(`${BASE}/graduation/certificates/import/commit`, { previewId }, { timeout: 300000 }),
   );
 }
 
@@ -2637,6 +2817,58 @@ export function getSubsidy(id: number | string) {
   return unwrap<TrainSubsidy>(apiClient.get(`${BASE}/subsidies/${id}`));
 }
 
+/** 本班进行中补贴单；无单时返回 null */
+export function getClassSubsidy(classId: number | string) {
+  return unwrap<TrainSubsidy | null>(apiClient.get(`${BASE}/info-classes/${classId}/subsidy`));
+}
+
+/** 按班幂等：有进行中单则返回，否则创建草稿 */
+export function ensureClassSubsidy(
+  classId: number | string,
+  payload?: {
+    trainMode?: string;
+    regionCode?: string;
+    regionName?: string;
+    policyYear?: number;
+    profileId?: number | string;
+    subsidyAmount?: number;
+    studentCount?: number;
+    remark?: string;
+  },
+) {
+  return unwrap<TrainSubsidy>(
+    apiClient.post(`${BASE}/info-classes/${classId}/subsidy/ensure`, payload ?? { trainMode: 'skill_upgrade' }),
+  );
+}
+
+/** 跳转申报补贴页时写入焦点（班级 / 单号）；页面挂载后消费并清除 */
+export const SUBSIDY_DECLARE_FOCUS_KEY = 'train_subsidy_declare_focus';
+
+export type SubsidyDeclareFocus = {
+  classId?: number | string;
+  subsidyId?: number | string;
+  openCreate?: boolean;
+};
+
+export function stashSubsidyDeclareFocus(focus: SubsidyDeclareFocus) {
+  try {
+    sessionStorage.setItem(SUBSIDY_DECLARE_FOCUS_KEY, JSON.stringify(focus));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+export function consumeSubsidyDeclareFocus(): SubsidyDeclareFocus | null {
+  try {
+    const raw = sessionStorage.getItem(SUBSIDY_DECLARE_FOCUS_KEY);
+    if (!raw) return null;
+    sessionStorage.removeItem(SUBSIDY_DECLARE_FOCUS_KEY);
+    return JSON.parse(raw) as SubsidyDeclareFocus;
+  } catch {
+    return null;
+  }
+}
+
 export function createSubsidy(payload: {
   classId: number | string;
   trainMode: string;
@@ -2680,6 +2912,409 @@ export function listSubsidySlotFiles(id: number | string) {
   return unwrap<
     Array<{ id: number | string; slotCode: string; fileId?: number; filePath?: string; fileName?: string }>
   >(apiClient.get(`${BASE}/subsidies/${id}/slot-files`));
+}
+
+export function deleteSubsidySlotFile(id: number | string, slotFileId: number | string) {
+  return unwrap<void>(apiClient.delete(`${BASE}/subsidies/${id}/slot-files/${slotFileId}`));
+}
+
+export type SubsidyClassMaterials = {
+  subsidyId?: number | string;
+  classId?: number | string;
+  className?: string | null;
+  studentCount?: number;
+  /** 已获证申报人数 */
+  certifiedStudentCount?: number;
+  /** 班级学员总数（含未获证） */
+  classStudentTotal?: number;
+  certificateTotal?: number;
+  certificateWithFile?: number;
+  photoPackReady?: boolean;
+  photoPackId?: number | string | null;
+  photoPackTitle?: string | null;
+  photoPackPath?: string | null;
+  certificates?: Array<{
+    certificateId?: number | string;
+    peopleId?: number | string;
+    userName?: string | null;
+    certificateNo?: string | null;
+    hasFile?: boolean;
+    filePath?: string | null;
+  }>;
+  slots?: Array<{
+    slotCode: string;
+    title: string;
+    required?: boolean;
+    renderer?: string;
+    upstream?: string;
+  }>;
+  syncedCertificateFiles?: number;
+  syncedRosterSlots?: number;
+  claimFormsGenerated?: number;
+  claimFormsFailed?: number;
+  claimFormStudentCount?: number;
+  claimFormSlot?: string;
+  ok?: boolean;
+  fileId?: number | string;
+  filePath?: string;
+  url?: string;
+  downloadFileName?: string;
+  notes?: string[];
+  message?: string;
+};
+
+export function getSubsidyClassMaterials(id: number | string) {
+  return unwrap<SubsidyClassMaterials>(apiClient.get(`${BASE}/subsidies/${id}/class-materials`));
+}
+
+export function syncSubsidyClassMaterials(id: number | string) {
+  return unwrap<SubsidyClassMaterials>(apiClient.post(`${BASE}/subsidies/${id}/class-materials/sync`));
+}
+
+export function generateSubsidyClaimForms(id: number | string) {
+  return unwrap<SubsidyClassMaterials>(
+    apiClient.post(`${BASE}/subsidies/${id}/class-materials/generate-claim-forms`),
+  );
+}
+
+export type SubsidyMaterialSlotFile = {
+  id: number | string;
+  fileName?: string | null;
+  filePath?: string | null;
+  fileId?: number | string | null;
+};
+
+export type SubsidyMaterialInstance = {
+  id: number | string;
+  subsidyId: number | string;
+  slotCode?: string | null;
+  materialType: string;
+  materialTypeLabel?: string;
+  title: string;
+  status: string;
+  renderer?: string | null;
+  required: boolean;
+  currentVersionId?: number | string | null;
+  versionNo?: number | null;
+  fileId?: number | string | null;
+  filePath?: string | null;
+  fileName?: string | null;
+  hasFile: boolean;
+  photoPackReady?: boolean;
+  photoPackPath?: string | null;
+  photoPackTitle?: string | null;
+  slotFileCount?: number;
+  slotFiles?: SubsidyMaterialSlotFile[];
+  /** 是否存在可作填数底稿的「替换上传」版本 */
+  hasUploadTemplate?: boolean;
+  uploadTemplateFileName?: string | null;
+};
+
+export type SubsidyMaterialGroup = {
+  materialType: string;
+  label: string;
+  count: number;
+  items: SubsidyMaterialInstance[];
+};
+
+export type SubsidyMaterialInstanceList = {
+  subsidyId: number | string;
+  total: number;
+  requiredTotal: number;
+  confirmedRequired: number;
+  hasFileCount: number;
+  groups: SubsidyMaterialGroup[];
+  items: SubsidyMaterialInstance[];
+};
+
+export function listSubsidyMaterialInstances(subsidyId: number | string) {
+  return unwrap<SubsidyMaterialInstanceList>(
+    apiClient.get(`${BASE}/subsidies/${subsidyId}/material-instances`),
+  );
+}
+
+export async function replaceSubsidyMaterialFile(instanceId: number | string, file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  return unwrap<SubsidyMaterialInstance>(
+    apiClient.post(`${BASE}/material-instances/${instanceId}/replace-file`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    }),
+  );
+}
+
+/** 在线编辑：按单元格地址写回（后端 POI 保留边框格式） */
+export function patchSubsidyMaterialCells(
+  instanceId: number | string,
+  cells: Record<string, string>,
+) {
+  return unwrap<SubsidyMaterialInstance>(
+    apiClient.post(
+      `${BASE}/material-instances/${instanceId}/patch-cells`,
+      { cells },
+      { timeout: 120000 },
+    ),
+  );
+}
+
+export type SubsidyMaterialDocxMetaLine = {
+  index: number;
+  /** title=标题行 meta=培训信息标签行 caption=图注行 */
+  kind: string;
+  label: string;
+  /** meta/caption 行的值部分（不含标签前缀）；后端解析保证非空（可为空串） */
+  value: string;
+  /** 整段原文 */
+  text: string;
+};
+
+export type SubsidyMaterialDocxMeta = {
+  instanceId: number | string;
+  versionId?: number | string | null;
+  fileName?: string | null;
+  lines: SubsidyMaterialDocxMetaLine[];
+};
+
+/** Word 轻量编辑：可编辑段落摘要（标题 / 元信息 / 图注） */
+export function getSubsidyMaterialDocxMeta(instanceId: number | string) {
+  return unwrap<SubsidyMaterialDocxMeta>(
+    apiClient.get(`${BASE}/material-instances/${instanceId}/docx-meta`),
+  );
+}
+
+/** Word 轻量编辑保存：按段落索引写回整段文本（后端 POI 保留图片与样式） */
+export function patchSubsidyMaterialDocx(
+  instanceId: number | string,
+  paragraphs: Record<number, string>,
+) {
+  return unwrap<SubsidyMaterialInstance>(
+    apiClient.post(
+      `${BASE}/material-instances/${instanceId}/patch-docx`,
+      { paragraphs },
+      { timeout: 120000 },
+    ),
+  );
+}
+
+export function confirmSubsidyMaterialInstance(instanceId: number | string) {
+  return unwrap<SubsidyMaterialInstance>(
+    apiClient.post(`${BASE}/material-instances/${instanceId}/confirm`),
+  );
+}
+
+export function deleteSubsidyMaterialInstance(instanceId: number | string) {
+  return unwrap<void>(
+    apiClient.post(`${BASE}/material-instances/${instanceId}/delete`),
+  );
+}
+
+export type SubsidyMaterialOfficeConfig = {
+  enabled: boolean;
+  message?: string | null;
+  documentServerUrl?: string | null;
+  apiScriptUrl?: string | null;
+  config?: Record<string, unknown> | null;
+};
+
+/** OnlyOffice 编辑器配置（含 JWT token） */
+export function getSubsidyMaterialOfficeConfig(instanceId: number | string) {
+  return unwrap<SubsidyMaterialOfficeConfig>(
+    apiClient.get(`${BASE}/material-instances/${instanceId}/office-config`),
+  );
+}
+
+export function exportSubsidyMaterials(subsidyId: number | string, instanceIds: Array<number | string>) {
+  return unwrap<{
+    ok: boolean;
+    message?: string;
+    fileId?: number | string;
+    filePath?: string;
+    url?: string;
+    exported?: string[];
+    skipped?: string[];
+  }>(apiClient.post(`${BASE}/subsidies/${subsidyId}/materials/export`, { instanceIds }, { timeout: 180000 }));
+}
+
+/** 补贴材料填数模板 */
+export type SubsidyMaterialTemplate = {
+  id: number | string;
+  scope: string;
+  tenantId?: number | string | null;
+  classId?: number | string | null;
+  materialType: string;
+  materialTypeLabel?: string;
+  slotCode?: string | null;
+  regionCode?: string | null;
+  trainMode?: string | null;
+  policyYear?: number | null;
+  title: string;
+  fileFormat: string;
+  templateFileId: number | string;
+  templateFilePath?: string | null;
+  fieldKeys?: string[];
+  parseVersion?: number;
+  status: string;
+  remark?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export function listSubsidyMaterialTemplates(params?: {
+  scope?: string;
+  materialType?: string;
+  regionCode?: string;
+  trainMode?: string;
+  policyYear?: number;
+  status?: string;
+  classId?: number | string;
+  keyword?: string;
+}) {
+  return unwrap<SubsidyMaterialTemplate[]>(
+    apiClient.get(`${BASE}/subsidy-material-templates`, { params }),
+  );
+}
+
+export async function uploadSubsidyMaterialTemplate(params: {
+  file: File;
+  title?: string;
+  materialType?: string;
+  slotCode?: string;
+  scope?: string;
+  classId?: number | string;
+  regionCode?: string;
+  trainMode?: string;
+  policyYear?: number;
+  remark?: string;
+}) {
+  const form = new FormData();
+  form.append('file', params.file);
+  if (params.title) form.append('title', params.title);
+  if (params.materialType) form.append('materialType', params.materialType);
+  if (params.slotCode) form.append('slotCode', params.slotCode);
+  form.append('scope', params.scope || 'tenant');
+  if (params.classId != null) form.append('classId', String(params.classId));
+  if (params.regionCode) form.append('regionCode', params.regionCode);
+  if (params.trainMode) form.append('trainMode', params.trainMode);
+  if (params.policyYear != null) form.append('policyYear', String(params.policyYear));
+  if (params.remark) form.append('remark', params.remark);
+  return unwrap<SubsidyMaterialTemplate>(
+    apiClient.post(`${BASE}/subsidy-material-templates`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    }),
+  );
+}
+
+export function updateSubsidyMaterialTemplate(
+  id: number | string,
+  body: {
+    title?: string;
+    materialType?: string;
+    slotCode?: string | null;
+    regionCode?: string | null;
+    trainMode?: string | null;
+    policyYear?: number | null;
+    scope?: string;
+    classId?: number | string | null;
+    status?: string;
+    remark?: string | null;
+  },
+) {
+  return unwrap<SubsidyMaterialTemplate>(
+    apiClient.put(`${BASE}/subsidy-material-templates/${id}`, body),
+  );
+}
+
+export function deleteSubsidyMaterialTemplate(id: number | string) {
+  return unwrap<void>(apiClient.delete(`${BASE}/subsidy-material-templates/${id}`));
+}
+
+export function reparseSubsidyMaterialTemplate(id: number | string) {
+  return unwrap<SubsidyMaterialTemplate>(
+    apiClient.post(`${BASE}/subsidy-material-templates/${id}/reparse`),
+  );
+}
+
+export type SubsidyFillFromTemplateResult = {
+  ok: boolean;
+  message?: string;
+  instanceId?: number | string;
+  templateId?: number | string;
+  versionId?: number | string;
+  filePath?: string;
+  fileName?: string;
+  filledKeys?: string[];
+  missingKeys?: string[];
+  fillMode?: string;
+  studentCount?: number;
+};
+
+export type SubsidyFillFromTemplateBody = {
+  templateId?: number | string;
+  instanceId?: number | string;
+  slotCode?: string;
+  title?: string;
+  /** all | certified */
+  rosterScope?: string;
+  /** 以材料当前版本文件为模板填数（替换上传后） */
+  useCurrentFile?: boolean;
+};
+
+/** 选模板 → 自动填本班字段 → 生成材料 */
+export function fillSubsidyFromTemplate(
+  subsidyId: number | string,
+  body: SubsidyFillFromTemplateBody,
+) {
+  return unwrap<SubsidyFillFromTemplateResult>(
+    apiClient.post(`${BASE}/subsidies/${subsidyId}/materials/fill-from-template`, body, {
+      timeout: 120000,
+    }),
+  );
+}
+
+export type SubsidyFillAllResult = {
+  ok: boolean;
+  filled: number;
+  skipped: number;
+  failed: number;
+  total: number;
+  message?: string;
+  details?: Array<{
+    instanceId?: number | string;
+    title?: string;
+    materialType?: string;
+    status?: string;
+    reason?: string;
+    fillMode?: string;
+    studentCount?: number;
+    message?: string;
+  }>;
+};
+
+/** 按材料清单逐项一键填数 */
+export function fillAllSubsidyMaterials(subsidyId: number | string) {
+  return unwrap<SubsidyFillAllResult>(
+    apiClient.post(`${BASE}/subsidies/${subsidyId}/materials/fill-all`, undefined, {
+      timeout: 300000,
+    }),
+  );
+}
+
+/** 对已有材料实例选模板填数 */
+export function fillSubsidyMaterialInstance(
+  instanceId: number | string,
+  body: SubsidyFillFromTemplateBody | number | string,
+) {
+  const payload: SubsidyFillFromTemplateBody =
+    typeof body === 'object' && body != null
+      ? body
+      : { templateId: body as number | string };
+  return unwrap<SubsidyFillFromTemplateResult>(
+    apiClient.post(`${BASE}/material-instances/${instanceId}/fill`, payload, {
+      timeout: 120000,
+    }),
+  );
 }
 
 export async function uploadSubsidySlotFile(id: number | string, slotCode: string, file: File) {

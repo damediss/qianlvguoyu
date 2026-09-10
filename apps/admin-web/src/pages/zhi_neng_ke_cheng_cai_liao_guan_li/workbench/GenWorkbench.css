@@ -1,0 +1,90 @@
+/* 生成工作台样式：动效类从 XiMuBiaoGuanLiPage.css 迁入（页面耦合解除），并新增完成行闪烁 */
+
+/* 「等待中」徽标：文字/边框/底色持续变色循环，让"后端排队处理中"可被看见 */
+@keyframes xmb-status-color-cycle {
+  0%,
+  100% {
+    color: #1677ff;
+    background: #e6f4ff;
+    border-color: #91caff;
+  }
+  25% {
+    color: #722ed1;
+    background: #f9f0ff;
+    border-color: #d3adf7;
+  }
+  50% {
+    color: #d46b08;
+    background: #fff7e6;
+    border-color: #ffd591;
+  }
+  75% {
+    color: #c41d7f;
+    background: #fff0f6;
+    border-color: #ffadd2;
+  }
+}
+
+.xmb-status-waiting {
+  animation: xmb-status-color-cycle 3s ease-in-out infinite;
+}
+
+/* 「生成中」徽标：蓝色呼吸光晕 */
+@keyframes xmb-status-breath {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(22, 119, 255, 0);
+  }
+  50% {
+    box-shadow: 0 0 6px 2px rgba(22, 119, 255, 0.35);
+  }
+}
+
+.xmb-status-running {
+  animation: xmb-status-breath 1.6s ease-in-out infinite;
+}
+
+/* 批次完成：该行高亮闪烁一次（约 2.4s），提示"刚完成" */
+@keyframes xmb-row-flash {
+  0% {
+    background: rgba(82, 196, 26, 0.22);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.gen-row-flash > td {
+  animation: xmb-row-flash 2.4s ease-out 1;
+}
+
+/* 工作台布局 */
+.gen-workbench {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gen-workbench .gen-start-bar {
+  padding: 12px 12px 4px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+}
+
+.gen-workbench .gen-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.gen-workbench .gen-active-wrap {
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  padding: 8px 12px 12px;
+  background: #fff;
+}

@@ -142,6 +142,8 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['standard-tasks', page, keyword],
     queryFn: () => fetchTaskPage({ page, pageSize: 20, keyword: keyword || undefined }),
+    // 每次回到列表页强制拉最新（上传后跳预览树再返回、或他处触发概括后返回，均需看到新状态）
+    refetchOnMount: 'always',
   });
 
   // LLM 概括中的任务轮询状态
@@ -190,7 +192,8 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
     try {
       const task = await uploadStandardDocx(file);
       message.success(`解析完成：${task.workTypeTitle}（${task.levels.length} 个等级）`);
-      queryClient.invalidateQueries({ queryKey: ['standard-tasks'] });
+      // 等列表缓存刷新完成再进预览树，保证返回列表时能看到新任务
+      await queryClient.invalidateQueries({ queryKey: ['standard-tasks'] });
       onEnter(task.id);
     } catch (e: any) {
       message.error(e?.response?.data?.message || e?.message || '上传解析失败');
@@ -510,11 +513,11 @@ function SummarizeModal({ task, onClose, onStart }: {
     return set;
   }, [task]);
 
-  // 打开弹窗时重置默认：全部有效组合 + XY
+  // 打开弹窗时重置默认：全部有效组合 + XYZ
   useEffect(() => {
     if (task) {
       setSelected(new Set(validKeys));
-      setImportants(['X', 'Y']);
+      setImportants(['X', 'Y','Z']);
     }
   }, [task, validKeys]);
 
@@ -626,11 +629,7 @@ function SummarizeModal({ task, onClose, onStart }: {
         <Alert
           type="info"
           showIcon
-          message={
-            importants.includes('Z')
-              ? '含 Z 档：每个 L2 小节生成 4~8 个理论考评点；技能考评点按原文逐条生成。'
-              : '未选 Z 档：每个 L2 小节生成 3~6 个理论考评点；技能考评点按原文逐条生成。'
-          }
+          message="理论考评点按小节考评权重分配（每张细目表约 200 个，权重越大的小节生成越多）；技能考评点按原文逐条生成。"
         />
       </Space>
     </Modal>
@@ -650,6 +649,8 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
   const [addingUnder, setAddingUnder] = useState<StandardNode | null>(null);
   const [resummarizing, setResummarizing] = useState<string | null>(null);
   const [sqlOpen, setSqlOpen] = useState(false);
+  const [summarizeOpen, setSummarizeOpen] = useState(false);
+  const [summarizing, setSummarizing] = useState(false);
   const warningsRef = useRef<HTMLDivElement>(null);
 
   const { data: task, refetch: refetchTask } = useQuery({
@@ -707,7 +708,24 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
     }
   }, [task?.status, refetch]);
 
-  const treeData = useMemo(() => buildTreeRows(flatNodes || []), [flatNodes]);
+  // 技能视图对齐「技能要求权重表」：技能细目表从职业功能（L1）起，
+  // 不出现「基本要求 A 支」和「工作要求 B 根」结构行（技能导出同样从 L1 起）
+  const treeData = useMemo(() => {
+    const flat = flatNodes || [];
+    if (dimension !== 'skill') {
+      return buildTreeRows(flat);
+    }
+    const hidden = new Set(
+      flat
+        .filter((n) => n.nodeKey === 'A' || n.nodeKey.startsWith('A-') || n.nodeKey === 'B')
+        .map((n) => n.id),
+    );
+    const rerooted = flat
+      .filter((n) => !hidden.has(n.id))
+      // 父节点被隐藏的 L1 职业功能提升为根节点
+      .map((n) => (n.parentId && hidden.has(n.parentId) ? { ...n, parentId: '' } : n));
+    return buildTreeRows(rerooted);
+  }, [flatNodes, dimension]);
   const warnings = useMemo(
     () => (task?.parseWarnings || '').split('\n').filter(Boolean),
     [task],
@@ -718,6 +736,25 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
     refetchTask();
     queryClient.invalidateQueries({ queryKey: ['standard-tasks'] });
   }, [refetch, refetchTask, queryClient]);
+
+  // 触发概括后：按钮 loading 保持到任务状态变为 llm_running（任务查询 5s 轮询会自动翻转状态）
+  useEffect(() => {
+    if (summarizing && task?.status === 'llm_running') setSummarizing(false);
+  }, [summarizing, task?.status]);
+
+  const handleSummarize = async (req: SummarizeReq) => {
+    if (!task) return;
+    setSummarizing(true);
+    try {
+      await triggerSummarize(task.id, req);
+      message.success('LLM 概括已触发（异步执行，状态自动刷新）');
+      refetchTask();
+    } catch (e: any) {
+      message.error(e?.response?.data?.message || e?.message || '触发失败');
+      setSummarizing(false);
+      throw e;
+    }
+  };
 
   const handleExport = async (kind: ExportKind) => {
     if (!task) return;
@@ -890,6 +927,11 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
     return <Card loading />;
   }
 
+  // 职业编码/年版可能缺失（如重冶备料工 docx 无编码节），空值部分不显示
+  const titleMeta = [task.seriesNo, task.version ? `${task.version}年版` : '']
+    .filter(Boolean)
+    .join('，');
+
   return (
     <Card
       title={
@@ -898,7 +940,8 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
             返回列表
           </Button>
           <span>
-            {task.workTypeTitle}（{task.seriesNo}，{task.version}年版）
+            {task.workTypeTitle}
+            {titleMeta ? `（${titleMeta}）` : ''}
           </span>
           <Tag color={STATUS_TEXT[task.status]?.color}>{STATUS_TEXT[task.status]?.text}</Tag>
           <span className={task.status === 'llm_running' ? 'xmb-leaf-pulse' : undefined}>
@@ -908,6 +951,17 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
       }
       extra={
         <Space>
+          {canGenerate && (
+            <Button
+              type="primary"
+              icon={<RobotOutlined />}
+              disabled={task.status === 'llm_running'}
+              loading={summarizing}
+              onClick={() => setSummarizeOpen(true)}
+            >
+              AI概括
+            </Button>
+          )}
           {canGenerate && (
             <Popconfirm
               title="将全部待审叶节点标为已审核？"
@@ -1018,6 +1072,11 @@ function TreeEditView({ taskId, onBack }: { taskId: string; onBack: () => void }
           ? { levelCode: activeScope.levelCode, direction: activeScope.direction }
           : undefined}
         onClose={() => setSqlOpen(false)}
+      />
+      <SummarizeModal
+        task={summarizeOpen ? task : null}
+        onClose={() => setSummarizeOpen(false)}
+        onStart={handleSummarize}
       />
     </Card>
   );

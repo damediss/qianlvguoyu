@@ -11,6 +11,9 @@ import org.junit.jupiter.api.Test;
 class CertificationInfoMigrationTest {
 
   private static final Path MIGRATION = Path.of(
+      "src/main/resources/db/migration/V20260605_010__create_certification_info_management.sql");
+
+  private static final Path MENU_MIGRATION = Path.of(
       "src/main/resources/db/migration/V20260602_006__create_certification_info_management.sql");
 
   private static final Path MENU_REPAIR_MIGRATION = Path.of(
@@ -43,7 +46,7 @@ class CertificationInfoMigrationTest {
 
   @Test
   void migrationSeedsDynamicMenusAndPermissions() throws IOException {
-    String sql = Files.readString(MIGRATION, StandardCharsets.UTF_8);
+    String sql = Files.readString(MENU_MIGRATION, StandardCharsets.UTF_8);
 
     assertThat(sql).contains(
         "信息管理",

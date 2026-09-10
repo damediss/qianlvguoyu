@@ -86,7 +86,7 @@ class CompetitionTheoryPaperSchemaContractTest {
          var additiveInput = getClass().getClassLoader().getResourceAsStream(
              "db/migration/V20260802_003__extend_competition_scoring_to_levels.sql");
          var decouplingInput = getClass().getClassLoader().getResourceAsStream(
-             "db/migration/V20260810_003__allow_competition_theory_paper_import_without_score_rule.sql")) {
+             "db/migration/V20260810_005__allow_competition_theory_paper_import_without_score_rule.sql")) {
       assertThat(input).isNotNull();
       assertThat(additiveInput).isNotNull();
       assertThat(decouplingInput).isNotNull();

@@ -75,7 +75,8 @@ export async function uploadStandardDocx(file: File): Promise<StandardTask> {
   form.append('file', file);
   return unwrap(apiClient.post(`${BASE}/tasks`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 60000,
+    // 大文件 docx 解析耗时较长，放宽到 180s（超时后后端仍会完成导入，前端需能等到结果）
+    timeout: 180000,
   }));
 }
 

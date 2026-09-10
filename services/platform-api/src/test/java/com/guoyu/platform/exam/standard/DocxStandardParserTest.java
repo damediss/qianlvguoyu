@@ -27,6 +27,7 @@ class DocxStandardParserTest {
 
   private static ParsedStandard kuangshan;
   private static ParsedStandard hangong;
+  private static ParsedStandard beiliao;
 
   @BeforeAll
   static void parseAll() throws Exception {
@@ -40,6 +41,11 @@ class DocxStandardParserTest {
         .getResourceAsStream("/standard/焊工标准.docx")) {
       assertNotNull(in, "测试资源缺失：焊工标准.docx");
       hangong = parser.parse(in);
+    }
+    try (InputStream in = DocxStandardParserTest.class
+        .getResourceAsStream("/standard/重冶备料工.docx")) {
+      assertNotNull(in, "测试资源缺失：重冶备料工.docx");
+      beiliao = parser.parse(in);
     }
   }
 
@@ -64,6 +70,14 @@ class DocxStandardParserTest {
     for (String warning : kuangshan.getParseWarnings()) {
       assertFalse(warning.startsWith("ERROR"), "不应有 ERROR 级警告：" + warning);
     }
+  }
+
+  /** A1b：职业名称剥离尾部标点——重冶备料工 docx 1.1 原文为"重冶备料工 。"（PDF 转 docx 残留），且无职业编码节/年版 */
+  @Test
+  void a1b_beiliaoTitleStripsTrailingPunctuation() {
+    assertEquals("重冶备料工", beiliao.getWorkTypeTitle(), "尾部句号与空格应被剥离");
+    assertNull(beiliao.getSeriesNo(), "该 docx 无职业编码节，编码应为空");
+    assertNull(beiliao.getVersion(), "该 docx 全文无年版字样，版本应为空");
   }
 
   /** A2：骨架层级对拍 exam_knowledge_structure_矿山救护工初级.md */
@@ -221,6 +235,16 @@ class DocxStandardParserTest {
     assertEquals(2, DocxTextUtil.splitItems("1.1.1 能甲 1.1.2 能乙").size());
     assertEquals(2, DocxTextUtil.splitItems("1) 甲 2) 乙").size());
 
+    // relineItems：单行串联按编号逐行重排（保留编号），已多行/无编号文本原样返回
+    assertEquals("2.2.1精矿指标判断\n2.2.2沉降槽泥层判断",
+        DocxTextUtil.relineItems("2.2.1精矿指标判断2.2.2沉降槽泥层判断"));
+    assertEquals("2.1精矿调配\n2.2磨矿操作",
+        DocxTextUtil.relineItems("2.1精矿调配2.2磨矿操作"), "两级点号编号也可重排");
+    assertEquals("（1）甲\n（2）乙", DocxTextUtil.relineItems("（1）甲（2）乙"));
+    assertEquals("1.1.1能查出风门损坏\n1.1.2能查出风险点",
+        DocxTextUtil.relineItems("1.1.1能查出风门损坏\n1.1.2能查出风险点"), "已多行文本原样返回");
+    assertEquals("矿浆浓度控制方法", DocxTextUtil.relineItems("矿浆浓度控制方法"), "无编号文本原样返回");
+
     // 带 ★ 的技能条目应去星
     StandardNodeDoc fanghu = chuJi.getWorkFunctions().get(2).getChildren().get(0);
     assertTrue(fanghu.getSkillMaterials().stream().noneMatch(s -> s.contains("★")),
@@ -228,18 +252,68 @@ class DocxStandardParserTest {
     assertTrue(fanghu.getSkillMaterials().size() >= 4, "防护装备操作应有 ≥4 条技能素材");
   }
 
-  /** A9：空小节标记 */
+  /** A9：空小节标记；"职业道德基本知识"空小节按统一业务口径固定补齐相关知识 */
   @Test
   void a9_emptySectionNeedLlm() {
     StandardNodeDoc zhiyeDaode = kuangshan.getBasicSections().get(0);
     StandardNodeDoc jibenZhishi = zhiyeDaode.getChildren().get(0);
     assertEquals("职业道德基本知识", jibenZhishi.getTitle());
-    assertTrue(jibenZhishi.getTheoryMaterials().isEmpty(), "2.1.1 无列举项");
-    assertTrue(jibenZhishi.isNeedLlm(), "2.1.1 应标记 needLlm");
+    // 源标准无列举项，解析期固定补齐：素材 4 条、相关知识带编号逐行、不再标记 needLlm
+    assertEquals(List.of("工匠精神培养", "安全意识培养", "职业道德素养", "团队协作精神"),
+        jibenZhishi.getTheoryMaterials(), "2.1.1 应补齐固定素材");
+    assertEquals("1.工匠精神培养\n2.安全意识培养\n3.职业道德素养\n4.团队协作精神",
+        jibenZhishi.getRelatedKnowledgeRaw());
+    assertFalse(jibenZhishi.isNeedLlm(), "补齐后不再标记 needLlm");
     // 2.1.2 职业守则有 9 条
     StandardNodeDoc shouze = zhiyeDaode.getChildren().get(1);
     assertEquals(9, shouze.getTheoryMaterials().size());
     assertFalse(shouze.isNeedLlm());
+  }
+
+  /** B1：重冶备料工"比重表"写法——无"技能等级项目"表头、等级列为初级/中级/高级/技师/高级技师 */
+  @Test
+  void b1_beiliaoWeightTablesRecognized() {
+    assertEquals(12, beiliao.getTotalTableCount(), "重冶备料工应识别 12 张表格");
+    assertEquals(10, beiliao.getWorkTableCount(), "10 张工作要求表");
+    assertEquals(2, beiliao.getWeightTableCount(), "2 张比重表（无技能等级项目表头也应识别）");
+    assertNotNull(beiliao.getTheoryWeights(), "应解析到理论知识比重表");
+    assertNotNull(beiliao.getSkillWeights(), "应解析到技能操作比重表");
+    assertTrue(beiliao.getParseWarnings().stream()
+            .noneMatch(w -> w.contains("未解析到理论知识权重表")),
+        "不应再有理论权重表缺失警告");
+  }
+
+  /** B2：重冶备料工比重表取值——等级关键词列映射、"—"为 null、"总计"行不入表 */
+  @Test
+  void b2_beiliaoWeightValues() {
+    StandardWeightTable theory = beiliao.getTheoryWeights();
+    assertWeight(theory, "职业道德", 0, "默认", 5);
+    assertWeight(theory, "职业道德", 4, "默认", 5);
+    assertWeight(theory, "基础知识", 0, "默认", 40);
+    assertWeight(theory, "基础知识", 3, "默认", 15);
+    assertWeight(theory, "物料制备", 2, "默认", 30);
+    assertWeight(theory, "设备维护", 3, "默认", 20);
+    assertWeight(theory, "管理", 3, "默认", 15);
+    assertWeight(theory, "培训与指导", 4, "默认", 10);
+    // "—" 占位：技师/高级技师无安全操作
+    StandardWeightRow anquan = theory.findRow(DocxTextUtil.normalizeItemName("安全操作"));
+    assertNotNull(anquan);
+    assertWeight(theory, "安全操作", 0, "默认", 5);
+    assertNull(anquan.valueAt(3, "默认"), "技师安全操作应为 —（null）");
+    assertNull(anquan.valueAt(4, "默认"), "高级技师安全操作应为 —（null）");
+    StandardWeightRow guanli = theory.findRow(DocxTextUtil.normalizeItemName("管理"));
+    assertNotNull(guanli);
+    assertNull(guanli.valueAt(0, "默认"), "初级管理应为 —（null）");
+    // "总计" 行应跳过，不入权重表
+    assertNull(theory.findRow("总计"), "总计行不应进入权重表");
+
+    StandardWeightTable skill = beiliao.getSkillWeights();
+    assertWeight(skill, "工作准备", 0, "默认", 10);
+    assertWeight(skill, "物料制备", 0, "默认", 35);
+    assertWeight(skill, "物料制备", 4, "默认", 20);
+    assertWeight(skill, "安全操作", 1, "默认", 15);
+    assertWeight(skill, "管理", 4, "默认", 20);
+    assertNull(skill.findRow("总计"), "技能比重表总计行不应进入权重表");
   }
 
   private void assertWeight(StandardWeightTable table, String item, int levelCode,

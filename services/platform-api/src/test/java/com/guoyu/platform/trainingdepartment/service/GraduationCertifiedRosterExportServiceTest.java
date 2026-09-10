@@ -25,23 +25,26 @@ class GraduationCertifiedRosterExportServiceTest {
   }
 
   @Test
-  void filterByScope_certifiedRequiresNonBlankCertNo() {
+  void filterByScope_certifiedUsesSubsidyCertifiedRule() {
     TrainPeopleListEntity a = people(1L);
     TrainPeopleListEntity b = people(2L);
     TrainPeopleListEntity c = people(3L);
+    TrainPeopleListEntity d = people(4L);
     Map<Long, TrainCertificateEntity> certs = new HashMap<>();
     certs.put(1L, cert("S001"));
     certs.put(2L, cert("  "));
     certs.put(3L, cert(null));
+    TrainCertificateEntity fake = cert("GC-123");
+    certs.put(4L, fake);
 
     List<TrainPeopleListEntity> certified = GraduationCertifiedRosterExportService.filterByScope(
-        List.of(a, b, c), certs, RosterScope.CERTIFIED);
+        List.of(a, b, c, d), certs, RosterScope.CERTIFIED);
     assertEquals(1, certified.size());
     assertEquals(1L, certified.get(0).getId());
 
     List<TrainPeopleListEntity> all = GraduationCertifiedRosterExportService.filterByScope(
-        List.of(a, b, c), certs, RosterScope.ALL);
-    assertEquals(3, all.size());
+        List.of(a, b, c, d), certs, RosterScope.ALL);
+    assertEquals(4, all.size());
   }
 
   @Test

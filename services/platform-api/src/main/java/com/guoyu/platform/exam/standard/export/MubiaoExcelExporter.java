@@ -2,6 +2,7 @@ package com.guoyu.platform.exam.standard.export;
 
 import com.guoyu.platform.exam.standard.entity.ExamStandardNodeEntity;
 import com.guoyu.platform.exam.standard.export.StandardExportSupport.ExportTree;
+import com.guoyu.platform.exam.standard.parser.model.DocxTextUtil;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -41,44 +42,58 @@ public class MubiaoExcelExporter {
       Sheet sheet = workbook.createSheet(sheetName);
       Styles styles = new Styles(workbook);
 
+      // 表头 4 行：先把每行所有格子创建并套上样式，再做合并——
+      // Excel 合并区的边线由区域内所有底层格子的边框叠加，非锚点格无样式会缺线
       // 第1行：标题（合并整行）
       Row r0 = sheet.createRow(0);
-      Cell titleCell = r0.createCell(0);
-      titleCell.setCellValue(titleLine);
-      titleCell.setCellStyle(styles.title);
+      for (int c = 0; c < COLS; c++) {
+        r0.createCell(c).setCellStyle(styles.title);
+      }
+      r0.getCell(0).setCellValue(titleLine);
       sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, COLS - 1));
 
       // 第2行：考评范围 / 考评点
       Row r1 = sheet.createRow(1);
-      setCell(r1, 0, "考评范围", styles.header);
+      for (int c = 0; c < COLS; c++) {
+        r1.createCell(c).setCellStyle(styles.header);
+      }
+      r1.getCell(0).setCellValue("考评范围");
       sheet.addMergedRegion(new CellRangeAddress(1, 1, 0, 6));
-      setCell(r1, 7, "考评点", styles.header);
+      r1.getCell(7).setCellValue("考评点");
       sheet.addMergedRegion(new CellRangeAddress(1, 1, 7, 9));
 
       // 第3行：一级/二级/三级 + 代码/名称/重要程度
       Row r2 = sheet.createRow(2);
-      setCell(r2, 0, "一级", styles.header);
+      for (int c = 0; c < COLS; c++) {
+        r2.createCell(c).setCellStyle(styles.header);
+      }
+      r2.getCell(0).setCellValue("一级");
       sheet.addMergedRegion(new CellRangeAddress(2, 2, 0, 1));
-      setCell(r2, 2, "二级", styles.header);
+      r2.getCell(2).setCellValue("二级");
       sheet.addMergedRegion(new CellRangeAddress(2, 2, 2, 3));
-      setCell(r2, 4, "三级", styles.header);
+      r2.getCell(4).setCellValue("三级");
       sheet.addMergedRegion(new CellRangeAddress(2, 2, 4, 6));
-      setCell(r2, 7, "代码", styles.header);
+      r2.getCell(7).setCellValue("代码");
       sheet.addMergedRegion(new CellRangeAddress(2, 3, 7, 7));
-      setCell(r2, 8, "名称", styles.header);
+      r2.getCell(8).setCellValue("名称");
       sheet.addMergedRegion(new CellRangeAddress(2, 3, 8, 8));
-      setCell(r2, 9, "重要程度", styles.header);
+      r2.getCell(9).setCellValue("重要程度");
       sheet.addMergedRegion(new CellRangeAddress(2, 3, 9, 9));
 
-      // 第4行
+      // 第4行：「代码名称」列带换行的「（重要程度比例）」副标题
       Row r3 = sheet.createRow(3);
-      setCell(r3, 0, "代码名称重要程度比例", styles.header);
-      setCell(r3, 1, "权重", styles.header);
-      setCell(r3, 2, "代码名称重要程度比例", styles.header);
-      setCell(r3, 3, "权重", styles.header);
-      setCell(r3, 4, "代码名称重要程度比例", styles.header);
-      setCell(r3, 5, "考评权重", styles.header);
-      setCell(r3, 6, "相关知识", styles.header);
+      for (int c = 0; c < COLS; c++) {
+        r3.createCell(c).setCellStyle(styles.header);
+      }
+      r3.getCell(0).setCellValue("代码名称\n（重要程度比例）");
+      r3.getCell(1).setCellValue("权重");
+      r3.getCell(2).setCellValue("代码名称\n（重要程度比例）");
+      r3.getCell(3).setCellValue("权重");
+      r3.getCell(4).setCellValue("代码名称\n（重要程度比例）");
+      r3.getCell(5).setCellValue("考评权重");
+      r3.getCell(6).setCellValue("相关知识");
+      // 两行表头需要显式行高（POI 写出的文件 Excel 打开时不会自动撑高）
+      r3.setHeightInPoints(2 * sheet.getDefaultRowHeightInPoints());
 
       int rowIdx = 4;
       if (tree.rootA != null) {
@@ -176,7 +191,9 @@ public class MubiaoExcelExporter {
         + "\n" + StandardExportSupport.xyzText(xyz);
     setCell(first, 4, l2Text, styles.center);
     setWeight(first, 5, l2Weight, styles);
-    setCell(first, 6, l2.getRelatedKnowledge() != null ? l2.getRelatedKnowledge() : "", styles.left);
+    // 旧任务库存的是单行串联文本，导出时按编号重拆逐行显示（新数据已是逐行，relineItems 原样返回）
+    setCell(first, 6, l2.getRelatedKnowledge() != null
+        ? DocxTextUtil.relineItems(l2.getRelatedKnowledge()) : "", styles.left);
     if (endRow > startRow) {
       sheet.addMergedRegion(new CellRangeAddress(startRow, endRow, 4, 4));
       sheet.addMergedRegion(new CellRangeAddress(startRow, endRow, 5, 5));
@@ -274,6 +291,7 @@ public class MubiaoExcelExporter {
       title.setFont(titleFont);
       title.setAlignment(HorizontalAlignment.CENTER);
       title.setVerticalAlignment(VerticalAlignment.CENTER);
+      border(title);
 
       Font headerFont = workbook.createFont();
       headerFont.setBold(true);
@@ -281,6 +299,8 @@ public class MubiaoExcelExporter {
       header.setFont(headerFont);
       header.setAlignment(HorizontalAlignment.CENTER);
       header.setVerticalAlignment(VerticalAlignment.CENTER);
+      // 「代码名称\n（重要程度比例）」两行表头需要自动换行才能显示换行符
+      header.setWrapText(true);
       header.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
       header.setFillPattern(FillPatternType.SOLID_FOREGROUND);
       border(header);
@@ -300,7 +320,8 @@ public class MubiaoExcelExporter {
       weight = workbook.createCellStyle();
       weight.setAlignment(HorizontalAlignment.CENTER);
       weight.setVerticalAlignment(VerticalAlignment.CENTER);
-      weight.setDataFormat(workbook.createDataFormat().getFormat("0.00"));
+      // 权重按百分数显示（0.05 → 5%），对齐 OSTA 纸质样表
+      weight.setDataFormat(workbook.createDataFormat().getFormat("0%"));
       border(weight);
     }
 

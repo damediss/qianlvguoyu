@@ -66,7 +66,8 @@ public class TrainSignUpPeopleSelfEntity {
   private String workTypePaper;
   private Long workTypeId;
   private String workTypeName;
-  private Integer level;
+  /** varchar：数字串 0–4 或中文如「初级工/五级」（合并库混存） */
+  private String level;
   /** 证书查证状态：null未查证 0查证中 1已查证 2查证无结果 3查证失败 */
   private Integer certVerified;
   private String paperNo;

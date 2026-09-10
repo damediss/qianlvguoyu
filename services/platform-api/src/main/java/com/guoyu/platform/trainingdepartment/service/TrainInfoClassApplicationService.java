@@ -11,6 +11,7 @@ import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainInfoClassUpdateReq;
+import com.guoyu.platform.trainingdepartment.entity.TrainCertificateEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainFileTempEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
@@ -22,6 +23,7 @@ import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainTaskLogEntity;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.system.entity.OrgEntity;
+import com.guoyu.platform.trainingdepartment.mapper.TrainCertificateMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainFileTempMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
@@ -42,9 +44,11 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,6 +65,7 @@ public class TrainInfoClassApplicationService {
   private final TrainInfoListMapper trainInfoListMapper;
   private final TrainFileTempMapper trainFileTempMapper;
   private final TrainPeopleListMapper peopleListMapper;
+  private final TrainCertificateMapper certificateMapper;
   private final TrainPlanRosterMapper planRosterMapper;
   private final TrainSignUpSelfMapper signUpSelfMapper;
   private final TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper;
@@ -72,6 +77,7 @@ public class TrainInfoClassApplicationService {
   private final ObjectMapper objectMapper = new ObjectMapper();
   private final ClassCollectionApplicationService classCollectionApplicationService;
   private final ClassPracticeScopeApplicationService classPracticeScopeApplicationService;
+  private final ClassReviewSyncApplicationService classReviewSyncApplicationService;
   private static final DateTimeFormatter ADD_TIME_FMT =
       DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.of("Asia/Shanghai"));
 
@@ -79,6 +85,7 @@ public class TrainInfoClassApplicationService {
       TrainInfoListMapper trainInfoListMapper,
       TrainFileTempMapper trainFileTempMapper,
       TrainPeopleListMapper peopleListMapper,
+      TrainCertificateMapper certificateMapper,
       TrainPlanRosterMapper planRosterMapper,
       TrainSignUpSelfMapper signUpSelfMapper,
       TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper,
@@ -88,11 +95,13 @@ public class TrainInfoClassApplicationService {
       ExamWorkTypeMapper examWorkTypeMapper,
       TrainingOperatorScopeService operatorScopeService,
       ClassCollectionApplicationService classCollectionApplicationService,
-      ClassPracticeScopeApplicationService classPracticeScopeApplicationService) {
+      ClassPracticeScopeApplicationService classPracticeScopeApplicationService,
+      ClassReviewSyncApplicationService classReviewSyncApplicationService) {
     this.mapper = mapper;
     this.trainInfoListMapper = trainInfoListMapper;
     this.trainFileTempMapper = trainFileTempMapper;
     this.peopleListMapper = peopleListMapper;
+    this.certificateMapper = certificateMapper;
     this.planRosterMapper = planRosterMapper;
     this.signUpSelfMapper = signUpSelfMapper;
     this.signUpPeopleSelfMapper = signUpPeopleSelfMapper;
@@ -103,6 +112,7 @@ public class TrainInfoClassApplicationService {
     this.operatorScopeService = operatorScopeService;
     this.classCollectionApplicationService = classCollectionApplicationService;
     this.classPracticeScopeApplicationService = classPracticeScopeApplicationService;
+    this.classReviewSyncApplicationService = classReviewSyncApplicationService;
   }
 
   @Transactional(readOnly = true)
@@ -126,6 +136,24 @@ public class TrainInfoClassApplicationService {
     if (req.getKeyword() != null && !req.getKeyword().isBlank()) {
       wrapper.like(TrainInfoClassEntity::getTitle, req.getKeyword().trim());
     }
+
+    String certFilter = req.getCertFilter() != null ? req.getCertFilter().trim().toLowerCase() : "";
+    if ("certified".equals(certFilter) || "uncertified".equals(certFilter)) {
+      Set<Long> certifiedClassIds = loadCertifiedClassIds();
+      if ("certified".equals(certFilter)) {
+        if (certifiedClassIds.isEmpty()) {
+          Map<String, Object> empty = new LinkedHashMap<>();
+          empty.put("list", List.of());
+          empty.put("total", 0);
+          empty.put("limit", req.getPageSize());
+          return empty;
+        }
+        wrapper.in(TrainInfoClassEntity::getId, certifiedClassIds);
+      } else if (!certifiedClassIds.isEmpty()) {
+        wrapper.notIn(TrainInfoClassEntity::getId, certifiedClassIds);
+      }
+    }
+
     Page<TrainInfoClassEntity> mpPage = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
 
     // Batch resolve names
@@ -155,13 +183,16 @@ public class TrainInfoClassApplicationService {
     List<Long> classIds = mpPage.getRecords().stream().map(TrainInfoClassEntity::getId).toList();
     Map<Long, Map<String, Object>> profileMap = classCollectionApplicationService.batchProfileProgress(classIds);
     Map<Long, Integer> studentNumsMap = countStudentsByClassIds(classIds);
+    Map<Long, Integer> certifiedNumsMap = countCertifiedByClassIds(classIds);
 
     List<Map<String, Object>> list = mpPage.getRecords().stream().map(e -> {
       Map<String, Object> item = new LinkedHashMap<>();
       item.put("id", e.getId());
       item.put("title", e.getTitle());
       // 列表人数以花名册实时统计为准，避免开班准备导入后 nums 冗余字段滞后
-      item.put("nums", studentNumsMap.getOrDefault(e.getId(), 0));
+      int totalNums = studentNumsMap.getOrDefault(e.getId(), 0);
+      item.put("nums", totalNums);
+      item.put("certified_nums", certifiedNumsMap.getOrDefault(e.getId(), 0));
       item.put("addtime", e.getAddtime());
       item.put("addtime_cn", formatAddtime(e.getAddtime()));
       item.put("train_info_id", e.getTrainInfoId());
@@ -393,6 +424,8 @@ public class TrainInfoClassApplicationService {
 
     int practiceScopeRemoved = classPracticeScopeApplicationService.cleanupByClassId(classId);
     stats.put("practiceScopeRemoved", practiceScopeRemoved);
+    int reviewSyncRemoved = classReviewSyncApplicationService.cleanupByClassId(classId);
+    stats.put("reviewSyncRemoved", reviewSyncRemoved);
 
     log.info("class delete cascade classId={} stats={}", classId, stats);
     return stats;
@@ -407,6 +440,7 @@ public class TrainInfoClassApplicationService {
     stats.put("tasksRemoved", 0);
     stats.put("shiftRecordsUnbound", 0);
     stats.put("practiceScopeRemoved", 0);
+    stats.put("reviewSyncRemoved", 0);
     return stats;
   }
 
@@ -575,6 +609,72 @@ public class TrainInfoClassApplicationService {
       map.merge(row.getTrainClassId(), 1, Integer::sum);
     }
     return map;
+  }
+
+  /** 有回填真实证书的班级 ID 集合（与 certified_nums 口径一致） */
+  private Set<Long> loadCertifiedClassIds() {
+    List<TrainCertificateEntity> rows = certificateMapper.selectList(
+        new LambdaQueryWrapper<TrainCertificateEntity>()
+            .select(
+                TrainCertificateEntity::getClassId,
+                TrainCertificateEntity::getPeopleId,
+                TrainCertificateEntity::getFilePath,
+                TrainCertificateEntity::getCertificateType,
+                TrainCertificateEntity::getCertificateNo)
+            .eq(TrainCertificateEntity::getDeleted, 0)
+            .isNotNull(TrainCertificateEntity::getClassId)
+            .isNotNull(TrainCertificateEntity::getPeopleId));
+    Set<Long> ids = new HashSet<>();
+    for (TrainCertificateEntity c : rows) {
+      if (c.getClassId() != null && isBackfilledCertificate(c)) {
+        ids.add(c.getClassId());
+      }
+    }
+    return ids;
+  }
+
+  /** 按班级统计已回填真实证书人数（与毕业典礼证书回填口径一致） */
+  private Map<Long, Integer> countCertifiedByClassIds(List<Long> classIds) {
+    if (classIds == null || classIds.isEmpty()) {
+      return Map.of();
+    }
+    List<TrainCertificateEntity> rows = certificateMapper.selectList(
+        new LambdaQueryWrapper<TrainCertificateEntity>()
+            .in(TrainCertificateEntity::getClassId, classIds)
+            .eq(TrainCertificateEntity::getDeleted, 0)
+            .isNotNull(TrainCertificateEntity::getPeopleId));
+    Map<Long, Set<Long>> peopleByClass = new HashMap<>();
+    for (TrainCertificateEntity c : rows) {
+      if (!isBackfilledCertificate(c)) {
+        continue;
+      }
+      Long classId = c.getClassId();
+      Long peopleId = c.getPeopleId();
+      if (classId == null || peopleId == null) {
+        continue;
+      }
+      peopleByClass.computeIfAbsent(classId, k -> new HashSet<>()).add(peopleId);
+    }
+    Map<Long, Integer> map = new HashMap<>();
+    for (Map.Entry<Long, Set<Long>> e : peopleByClass.entrySet()) {
+      map.put(e.getKey(), e.getValue().size());
+    }
+    return map;
+  }
+
+  private static boolean isBackfilledCertificate(TrainCertificateEntity c) {
+    if (c == null) {
+      return false;
+    }
+    if (StringUtils.hasText(c.getFilePath())) {
+      return true;
+    }
+    String type = c.getCertificateType();
+    if ("skill_level_cert".equalsIgnoreCase(type) || "renshe".equalsIgnoreCase(type)) {
+      return true;
+    }
+    String no = c.getCertificateNo();
+    return StringUtils.hasText(no) && !no.startsWith("GC-");
   }
 
   private TrainInfoClassEntity getExisting(Long id) {

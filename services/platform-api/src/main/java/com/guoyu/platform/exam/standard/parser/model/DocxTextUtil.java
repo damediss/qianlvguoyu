@@ -169,6 +169,63 @@ public final class DocxTextUtil {
     return items;
   }
 
+  /**
+   * 表格单元格原文按编号条目重排为逐行文本（保留行首编号），供「相关知识/技能要求」存储与导出逐行显示。
+   *
+   * <p>拆分锚点优先级与 {@link #splitItems} 一致（点号编号 &gt; （1） &gt; 1） &gt; 1、）；
+   * 与 splitItems 的差别：保留编号原文、不剥 ★ 标记，只做换行重排。已含换行的文本原样返回；
+   * 无锚点的单行文本原样返回（单级「1.」编号不切，避免「0.5毫米」这类小数误判）。
+   */
+  public static String relineItems(String rawText) {
+    if (rawText == null || rawText.isBlank()) {
+      return "";
+    }
+    if (rawText.indexOf('\n') >= 0) {
+      return rawText;
+    }
+    String flat = rawText.replace('\r', ' ').trim();
+    List<int[]> anchors = new ArrayList<>();
+    Matcher dotted = DOTTED_ITEM.matcher(flat);
+    while (dotted.find()) {
+      anchors.add(new int[]{dotted.start(), dotted.end()});
+    }
+    if (anchors.isEmpty()) {
+      Matcher paren = PAREN_ITEM.matcher(flat);
+      while (paren.find()) {
+        anchors.add(new int[]{paren.start(), paren.end()});
+      }
+    }
+    if (anchors.isEmpty()) {
+      Matcher closeParen = CLOSE_PAREN_ITEM.matcher(flat);
+      while (closeParen.find()) {
+        anchors.add(new int[]{closeParen.start(), closeParen.end()});
+      }
+    }
+    if (anchors.isEmpty()) {
+      Matcher dunhao = DUNHAO_ITEM.matcher(flat);
+      while (dunhao.find()) {
+        anchors.add(new int[]{dunhao.start(), dunhao.end()});
+      }
+    }
+    if (anchors.isEmpty()) {
+      return flat;
+    }
+    List<String> lines = new ArrayList<>();
+    String lead = flat.substring(0, anchors.get(0)[0]).trim();
+    if (!lead.isEmpty()) {
+      lines.add(lead);
+    }
+    for (int i = 0; i < anchors.size(); i++) {
+      int start = anchors.get(i)[0];
+      int end = i + 1 < anchors.size() ? anchors.get(i + 1)[0] : flat.length();
+      String line = flat.substring(start, end).trim();
+      if (!line.isEmpty()) {
+        lines.add(line);
+      }
+    }
+    return String.join("\n", lines);
+  }
+
   /** 点号编号归一化："1. 1. 1" → "1.1.1"；编号后须有点/顿号/空格分隔，无匹配返回 null */
   public static String normalizeDottedNumber(String text) {
     if (text == null) {
@@ -199,6 +256,23 @@ public final class DocxTextUtil {
     }
     String s = name.replaceAll("[\\s　]+", "");
     s = s.replaceAll("[（(](必选|任选)[)）]$", "");
+    return s;
+  }
+
+  /**
+   * 权重表匹配的宽松归一化（仅作 findRow 兜底，不改变展示标题）：
+   * 在 normalizeItemName 基础上统一 丶→、，剥离前导枚举编号与尾部括注。
+   * 兼容职业功能编号无分隔符直写（"1业前准备"）与中文数字编号（"五、安全操作"）的标准，
+   * 以及树标题带尾注而权重表条目不带（"物料制备︵工作内容三至五为可选︶" vs "物料制备"）的场景。
+   */
+  public static String normalizeMatchKey(String name) {
+    String s = normalizeItemName(name).replace('丶', '、');
+    // 前导枚举编号：阿拉伯数字（可带点号层级）或中文数字，后接分隔符或直接跟汉字
+    s = s.replaceFirst(
+        "^(?:\\d{1,2}(?:\\.\\d{1,2}){0,2}|[一二三四五六七八九十]{1,3})(?:[.、．]|(?=[\\u4e00-\\u9fff]))",
+        "");
+    // 尾部括注（含全角 ︵︶ 变体）
+    s = s.replaceFirst("[（(︵][^（()）︵︶]*[)）︶]$", "");
     return s;
   }
 

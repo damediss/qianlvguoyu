@@ -86,6 +86,13 @@ spring:
     baseline-on-migrate: true
     out-of-order: true
     validate-on-migrate: false
+    # 迁移走独立直连（不进业务 Druid 池）：wall 会拦截历史迁移的 PREPARE 动态 SQL
+    # （双库分叉场景的条件化 DDL 必用此写法，踩坑 #7），空库重建/新环境首次部署必撞。
+    # 引用数据源属性而非写死连接串：各环境（含 prod 外置配置）自动跟随，防配置漂移。
+    # 注意属性名是 user 不是 username：username 会被静默忽略，JDBC 驱动回退 OS 用户名导致 Access denied
+    url: ${spring.datasource.url}
+    user: ${spring.datasource.username}
+    password: ${spring.datasource.password}
   rabbitmq:
     publisher-confirm-type: correlated
     publisher-returns: true
@@ -135,6 +142,26 @@ weknora:
   origin: ${WEKNORA_ORIGIN:http://localhost:5173}
 
 platform:
+  # 理论试题生成（优化方案 v0.3 P3）：块级并发度（2026-09-08 由 5 扩至 50，跑满 glm-5.3-flash
+  # 并发闸口上限；环境变量 PLATFORM_THEORY_GEN_BLOCK_CONCURRENCY 可覆盖）。
+  # 多批次并行共享闸口 50 并发，先到先得。
+  # 自动补跑：单次编排内缺口点最多补跑 4 轮，轮间退避基数如下（第 n 轮退避 n×基数）
+  theory:
+    gen:
+      block-concurrency: ${PLATFORM_THEORY_GEN_BLOCK_CONCURRENCY:50}
+      retry-backoff-base-millis: ${PLATFORM_THEORY_GEN_RETRY_BACKOFF:10000}
+  # 操作技能试题生成（方案 v1.1 T3）：1 考评点 = 1 块（产出 5 题三件套，单块输出体量大），
+  # 块级并发默认 5（可配，受 glm-5.3-flash 全局闸口 50 约束）；自动补跑默认 4 轮，轮间退避同理论口径。
+  skill:
+    gen:
+      batch-concurrency: ${PLATFORM_SKILL_GEN_BATCH_CONCURRENCY:2}
+      block-concurrency: ${PLATFORM_SKILL_GEN_BLOCK_CONCURRENCY:5}
+      retry-backoff-base-millis: ${PLATFORM_SKILL_GEN_RETRY_BACKOFF:10000}
+  # LLM 并发闸口（方案 A，2026-09-08）：glm-5.3-flash 单模型全局在飞调用上限，
+  # 超出排队等待（FaqLlmClient 公平信号量统一执行）；仅此模型受限，
+  # 同账户其它 GLM 模型与其它平台不受影响
+  ai:
+    glm-max-concurrency: ${PLATFORM_AI_GLM_MAX_CONCURRENCY:50}
   bot:
     # MCP 与 platform-api 必须配置相同的随机值（至少 32 字符），禁止提交真实密钥。
     actor-context-secret: ${BOT_ACTOR_CONTEXT_SECRET:}

@@ -2111,6 +2111,8 @@ export interface TrainInfoClassListItem {
   id: number | string;
   title: string;
   nums?: number;
+  /** 已回填真实证书人数 */
+  certified_nums?: number;
   addtime?: number;
   addtime_cn?: string;
   train_info_id?: number | string;

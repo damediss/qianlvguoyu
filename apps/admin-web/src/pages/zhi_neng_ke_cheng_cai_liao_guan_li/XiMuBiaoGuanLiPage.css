@@ -91,3 +91,47 @@
 .xmb-scope-na {
   color: #bfbfbf;
 }
+
+/* 生成批次「等待中」徽标：文字/边框/底色持续变色循环，让"后端排队处理中"可被看见 */
+@keyframes xmb-status-color-cycle {
+  0%,
+  100% {
+    color: #1677ff;
+    background: #e6f4ff;
+    border-color: #91caff;
+  }
+  25% {
+    color: #722ed1;
+    background: #f9f0ff;
+    border-color: #d3adf7;
+  }
+  50% {
+    color: #d46b08;
+    background: #fff7e6;
+    border-color: #ffd591;
+  }
+  75% {
+    color: #c41d7f;
+    background: #fff0f6;
+    border-color: #ffadd2;
+  }
+}
+
+.xmb-status-waiting {
+  animation: xmb-status-color-cycle 3s ease-in-out infinite;
+}
+
+/* 生成批次「生成中」徽标：蓝色呼吸光晕 */
+@keyframes xmb-status-breath {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(22, 119, 255, 0);
+  }
+  50% {
+    box-shadow: 0 0 6px 2px rgba(22, 119, 255, 0.35);
+  }
+}
+
+.xmb-status-running {
+  animation: xmb-status-breath 1.6s ease-in-out infinite;
+}

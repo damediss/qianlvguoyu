@@ -1,42 +1,46 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
   Card,
-  Descriptions,
-  Drawer,
   Empty,
   Form,
   Input,
   InputNumber,
   Modal,
-  Progress,
+  Segmented,
   Select,
   Space,
   Table,
   Tabs,
   Tag,
-  Timeline,
-  Tooltip,
   Typography,
-  Upload,
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import {
-  CloudDownloadOutlined,
-  PlusOutlined,
-  ReloadOutlined,
-  SearchOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
-import type { SubsidyPackProfile, TrainSubsidy } from '../../api/training';
+import type { TrainSubsidy } from '../../api/training';
 import type { TrainInfoClassListItem } from '../../types/training';
-import { downloadUrlFile } from '../../api/files';
 import { TrainingProcessSteps } from './TrainingProcessSteps';
+import { SubsidyClassWorkbench } from './subsidy/SubsidyClassWorkbench';
 import './TrainingSubsidyDeclarePage.css';
+
+/** 班级工种等级：5=五级 … 1=一级（与开班准备一致） */
+const CLASS_LEVEL_LABELS: Record<number, string> = {
+  5: '五级/初级工',
+  4: '四级/中级工',
+  3: '三级/高级工',
+  2: '二级/技师',
+  1: '一级/高级技师',
+};
+
+function formatClassLevel(level?: number | null) {
+  if (level == null || Number.isNaN(Number(level))) return '—';
+  const n = Number(level);
+  return CLASS_LEVEL_LABELS[n] ?? `${n}级`;
+}
 
 const PHASE_OPTS = [
   { value: 'draft', label: '草稿' },
@@ -68,37 +72,10 @@ const REGION_OPTS = [
   { value: '河池市南丹县', label: '河池市南丹县', code: '河池南丹' },
 ];
 
-const RENDERER_LABEL: Record<string, string> = {
-  manual_upload: '人工上传',
-  follow_photo: '跟班照片册',
-  docx_var: 'Word 填空',
-  xlsx_row: 'Excel 填表',
-  file_copy: '文件归档',
-  pdf_merge: 'PDF 合并',
-};
-
-type ChecklistItem = {
-  slotCode: string;
-  title: string;
-  required: boolean;
-  ok: boolean;
-  source?: string;
-};
-
-type GenResult = {
-  ok: boolean;
-  message?: string;
-  missing?: string[];
-};
+const CLOSED_PHASES = new Set(['approved', 'granting', 'granted', 'closed']);
 
 function phaseLabel(v?: string | null) {
   return PHASE_OPTS.find((p) => p.value === v)?.label || v || '—';
-}
-
-function trainModeLabel(v?: string | null) {
-  if (v === 'skill_upgrade') return '岗位技能提升';
-  if (v === 'apprentice') return '新型学徒';
-  return v || '—';
 }
 
 function money(v?: number | null) {
@@ -106,19 +83,36 @@ function money(v?: number | null) {
   return `¥${Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`;
 }
 
-/** 运营流程 · 申报补贴（S1 台账 + P1/P2 配方与生成） */
+function classSubsidyStatus(s?: TrainSubsidy | null): 'none' | 'open' | 'done' {
+  if (!s) return 'none';
+  if (CLOSED_PHASES.has(s.phase || '')) return 'done';
+  return 'open';
+}
+
+/** 运营流程 · 申报补贴：班级列表 → 本班材料工作台 */
 export function TrainingSubsidyDeclarePage() {
   const qc = useQueryClient();
+  const [mainTab, setMainTab] = useState<'classes' | 'ledger'>('classes');
   const [phase, setPhase] = useState<string | undefined>();
   const [regionFilter, setRegionFilter] = useState<string | undefined>();
   const [yearFilter, setYearFilter] = useState<number | undefined>();
+  const [classFilter, setClassFilter] = useState<number | string | undefined>();
   const [keyword, setKeyword] = useState('');
   const [keywordInput, setKeywordInput] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [classPage, setClassPage] = useState(1);
+  const [classPageSize, setClassPageSize] = useState(20);
+  const [classKeyword, setClassKeyword] = useState('');
+  const [classKwInput, setClassKwInput] = useState('');
+  /** 默认只看已获证班（有证书回填） */
+  const [certFilter, setCertFilter] = useState<'certified' | 'uncertified' | 'all'>('certified');
+  const [subsidyStatusFilter, setSubsidyStatusFilter] = useState<'all' | 'none' | 'open' | 'done'>('all');
   const [createOpen, setCreateOpen] = useState(false);
   const [detail, setDetail] = useState<TrainSubsidy | null>(null);
-  const [lastGen, setLastGen] = useState<GenResult | null>(null);
+  const [inWorkbench, setInWorkbench] = useState(false);
+  const [workBusy, setWorkBusy] = useState(false);
+  const [enteringClassId, setEnteringClassId] = useState<number | string | null>(null);
   const [form] = Form.useForm();
   const watchedRegion = Form.useWatch('regionName', form);
   const watchedYear = Form.useWatch('policyYear', form);
@@ -126,7 +120,7 @@ export function TrainingSubsidyDeclarePage() {
   const watchedClassId = Form.useWatch('classId', form);
 
   const listQ = useQuery({
-    queryKey: ['subsidies', phase, regionFilter, yearFilter, keyword, page, pageSize],
+    queryKey: ['subsidies', phase, regionFilter, yearFilter, classFilter, keyword, page, pageSize],
     queryFn: () =>
       trainApi.pageSubsidies({
         page,
@@ -134,16 +128,31 @@ export function TrainingSubsidyDeclarePage() {
         phase,
         regionCode: regionFilter,
         policyYear: yearFilter,
+        classId: classFilter,
         keyword: keyword || undefined,
       }),
+    enabled: !inWorkbench && mainTab === 'ledger',
   });
 
   const statsQ = useQuery({
     queryKey: ['subsidies-stats'],
-    queryFn: () => trainApi.pageSubsidies({ page: 1, pageSize: 200 }),
+    queryFn: () => trainApi.pageSubsidies({ page: 1, pageSize: 500 }),
+    enabled: !inWorkbench,
   });
 
-  const classesQ = useQuery({
+  const classListQ = useQuery({
+    queryKey: ['subsidy-class-list', classPage, classPageSize, classKeyword, certFilter],
+    queryFn: () =>
+      trainApi.pageInfoClassList({
+        page: classPage,
+        pageSize: classPageSize,
+        keyword: classKeyword || undefined,
+        certFilter,
+      }),
+    enabled: !inWorkbench,
+  });
+
+  const classesPickQ = useQuery({
     queryKey: ['info-classes-brief'],
     queryFn: () => trainApi.pageInfoClassList({ page: 1, pageSize: 200 }),
     enabled: createOpen,
@@ -154,44 +163,86 @@ export function TrainingSubsidyDeclarePage() {
     queryFn: () => trainApi.listSubsidyPackProfiles({ status: 'active', trainMode: 'skill_upgrade' }),
   });
 
-  const detailProfileQ = useQuery({
-    queryKey: ['subsidy-profile', detail?.profileId],
-    queryFn: () => trainApi.getSubsidyPackProfile(detail!.profileId!),
-    enabled: !!detail?.profileId,
-  });
-
-  const eventsQ = useQuery({
-    queryKey: ['subsidy-events', detail?.id],
-    queryFn: () => trainApi.listSubsidyEvents(detail!.id),
-    enabled: !!detail?.id,
-  });
-
-  const slotFilesQ = useQuery({
-    queryKey: ['subsidy-slot-files', detail?.id],
-    queryFn: () => trainApi.listSubsidySlotFiles(detail!.id),
-    enabled: !!detail?.id,
-  });
-
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['subsidies'] });
     void qc.invalidateQueries({ queryKey: ['subsidies-stats'] });
-    if (detail?.id) {
-      void qc.invalidateQueries({ queryKey: ['subsidy-events', detail.id] });
-      void qc.invalidateQueries({ queryKey: ['subsidy-slot-files', detail.id] });
-      void qc.invalidateQueries({ queryKey: ['subsidy-profile', detail.profileId] });
-    }
+    void qc.invalidateQueries({ queryKey: ['subsidy-class-list'] });
   };
 
   const openDetail = async (row: TrainSubsidy) => {
-    setLastGen(null);
-    setDetail(row);
     try {
       const fresh = await trainApi.getSubsidy(row.id);
       setDetail(fresh);
+      return fresh;
     } catch {
-      /* keep list row */
+      setDetail(row);
+      return row;
     }
   };
+
+  const enterWorkbench = async (row: TrainSubsidy) => {
+    await openDetail(row);
+    setInWorkbench(true);
+  };
+
+  const exitWorkbench = () => {
+    setInWorkbench(false);
+    setDetail(null);
+    invalidate();
+  };
+
+  const openClassWorkbench = async (classId: number | string) => {
+    setWorkBusy(true);
+    setEnteringClassId(classId);
+    try {
+      const row = await trainApi.ensureClassSubsidy(classId);
+      setClassFilter(classId);
+      invalidate();
+      await enterWorkbench(row);
+      message.success(`已进入材料工作台：${row.className || `班级 #${classId}`}`);
+    } catch (e) {
+      const msg = (e as Error).message || '打开本班补贴失败';
+      message.error(msg);
+      setCreateOpen(true);
+      form.setFieldsValue({ classId, trainMode: 'skill_upgrade' });
+      message.info('请手工选择申报地市与政策年后创建');
+    } finally {
+      setWorkBusy(false);
+      setEnteringClassId(null);
+    }
+  };
+
+  const openDetailById = async (id: number | string) => {
+    try {
+      const fresh = await trainApi.getSubsidy(id);
+      if (fresh.classId != null) setClassFilter(fresh.classId);
+      await enterWorkbench(fresh);
+    } catch (e) {
+      message.error((e as Error).message || '打开补贴单失败');
+    }
+  };
+
+  useEffect(() => {
+    const focus = trainApi.consumeSubsidyDeclareFocus();
+    if (!focus) return;
+    if (focus.classId != null) {
+      setClassFilter(focus.classId);
+      setClassKwInput(String(focus.classId));
+    }
+    if (focus.subsidyId != null) {
+      void openDetailById(focus.subsidyId);
+      return;
+    }
+    if (focus.openCreate && focus.classId != null) {
+      setCreateOpen(true);
+      form.setFieldsValue({ classId: focus.classId, trainMode: 'skill_upgrade' });
+      return;
+    }
+    if (focus.classId != null) {
+      void openClassWorkbench(focus.classId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const createMu = useMutation({
     mutationFn: trainApi.createSubsidy,
@@ -199,58 +250,22 @@ export function TrainingSubsidyDeclarePage() {
       message.success('已创建补贴单');
       setCreateOpen(false);
       form.resetFields();
+      if (row.classId != null) setClassFilter(row.classId);
       invalidate();
-      void openDetail(row);
+      void enterWorkbench(row);
     },
     onError: (e: Error) => message.error(e.message || '创建失败'),
   });
 
-  const transitionMu = useMutation({
-    mutationFn: (p: { id: number | string; toPhase: string; remark?: string }) =>
-      trainApi.transitionSubsidy(p.id, p.toPhase, p.remark),
-    onSuccess: (row) => {
-      message.success('状态已更新');
-      setDetail(row);
-      invalidate();
-    },
-    onError: (e: Error) => message.error(e.message || '流转失败'),
-  });
-
-  const genMu = useMutation({
-    mutationFn: (id: number | string) => trainApi.generateSubsidyMaterials(id),
-    onSuccess: async (res, id) => {
-      setLastGen({ ok: res.ok, message: res.message, missing: res.missing });
-      if (!res.ok) {
-        message.warning(res.message || '缺项未打包');
-        invalidate();
-        const fresh = await trainApi.getSubsidy(id);
-        setDetail(fresh);
-        return;
-      }
-      message.success(res.message || '已生成');
-      invalidate();
-      const fresh = await trainApi.getSubsidy(id);
-      setDetail(fresh);
-      if (res.filePath || res.url) {
-        try {
-          await downloadUrlFile(res.url || res.filePath!, `补贴材料_${id}.zip`);
-        } catch {
-          message.info('材料已生成，可稍后从材料包路径下载');
-        }
-      }
-    },
-    onError: (e: Error) => message.error(e.message || '生成失败'),
-  });
-
-  const classRows = useMemo(() => classesQ.data?.list ?? [], [classesQ.data]);
+  const classRows = useMemo(() => classesPickQ.data?.list ?? [], [classesPickQ.data]);
+  const listClassRows = useMemo(() => classListQ.data?.list ?? [], [classListQ.data]);
 
   const classMap = useMemo(() => {
     const map = new Map<string, TrainInfoClassListItem>();
-    for (const c of classRows) {
-      map.set(String(c.id), c);
-    }
+    for (const c of classRows) map.set(String(c.id), c);
+    for (const c of listClassRows) map.set(String(c.id), c);
     return map;
-  }, [classRows]);
+  }, [classRows, listClassRows]);
 
   const classOptions = useMemo(() => {
     return classRows.map((c) => {
@@ -263,6 +278,32 @@ export function TrainingSubsidyDeclarePage() {
       return { value: c.id, label: `${bits.join(' · ')} (#${c.id})` };
     });
   }, [classRows]);
+
+  const subsidyByClass = useMemo(() => {
+    const map = new Map<string, TrainSubsidy>();
+    for (const s of statsQ.data?.items ?? []) {
+      if (s.classId == null) continue;
+      const key = String(s.classId);
+      const prev = map.get(key);
+      if (!prev) {
+        map.set(key, s);
+        continue;
+      }
+      if (CLOSED_PHASES.has(prev.phase || '') && !CLOSED_PHASES.has(s.phase || '')) {
+        map.set(key, s);
+      }
+    }
+    return map;
+  }, [statsQ.data]);
+
+  const displayClassRows = useMemo(() => {
+    const rows = listClassRows;
+    if (subsidyStatusFilter === 'all') return rows;
+    return rows.filter((c) => {
+      const st = classSubsidyStatus(subsidyByClass.get(String(c.id)));
+      return st === subsidyStatusFilter;
+    });
+  }, [listClassRows, subsidyByClass, subsidyStatusFilter]);
 
   const profiles = profilesQ.data || [];
 
@@ -293,48 +334,6 @@ export function TrainingSubsidyDeclarePage() {
     return map;
   }, [statsQ.data]);
 
-  const checklist = useMemo((): ChecklistItem[] => {
-    if (!detail?.checklistJson) return [];
-    try {
-      return JSON.parse(detail.checklistJson) as ChecklistItem[];
-    } catch {
-      return [];
-    }
-  }, [detail?.checklistJson]);
-
-  const profile: SubsidyPackProfile | undefined = detailProfileQ.data;
-
-  const slotRows = useMemo(() => {
-    if (profile?.slots?.length) {
-      return profile.slots.map((s) => {
-        const c = checklist.find((x) => x.slotCode === s.slotCode);
-        const file = (slotFilesQ.data || []).find((f) => f.slotCode === s.slotCode);
-        return {
-          ...s,
-          ok: c?.ok,
-          source: c?.source,
-          fileName: file?.fileName || file?.filePath,
-          hasFile: !!file,
-        };
-      });
-    }
-    return checklist.map((c) => ({
-      id: c.slotCode,
-      slotCode: c.slotCode,
-      title: c.title,
-      required: c.required,
-      renderer: 'manual_upload',
-      ok: c.ok,
-      source: c.source,
-      fileName: (slotFilesQ.data || []).find((f) => f.slotCode === c.slotCode)?.fileName,
-      hasFile: (slotFilesQ.data || []).some((f) => f.slotCode === c.slotCode),
-    }));
-  }, [profile, checklist, slotFilesQ.data]);
-
-  const requiredTotal = slotRows.filter((s) => s.required).length;
-  const requiredOk = slotRows.filter((s) => s.required && (s.ok || s.hasFile)).length;
-  const packProgress = requiredTotal ? Math.round((requiredOk / requiredTotal) * 100) : 0;
-
   const stats = useMemo(() => {
     const rows = statsQ.data?.items ?? [];
     return {
@@ -352,7 +351,7 @@ export function TrainingSubsidyDeclarePage() {
       width: 260,
       ellipsis: true,
       render: (v, r) => (
-        <Button type="link" style={{ padding: 0, height: 'auto' }} onClick={() => void openDetail(r)}>
+        <Button type="link" style={{ padding: 0, height: 'auto' }} onClick={() => void enterWorkbench(r)}>
           {v || `班级 #${r.classId}` || '—'}
         </Button>
       ),
@@ -363,12 +362,7 @@ export function TrainingSubsidyDeclarePage() {
       width: 80,
       render: (v, r) => v || r.regionCode || '—',
     },
-    {
-      title: '政策年',
-      dataIndex: 'policyYear',
-      width: 80,
-      align: 'center',
-    },
+    { title: '政策年', dataIndex: 'policyYear', width: 80, align: 'center' },
     {
       title: '人数 / 金额',
       width: 140,
@@ -410,8 +404,86 @@ export function TrainingSubsidyDeclarePage() {
       width: 88,
       fixed: 'right',
       render: (_, r) => (
-        <Button type="link" size="small" onClick={() => void openDetail(r)}>
+        <Button type="link" size="small" onClick={() => void enterWorkbench(r)}>
           办理
+        </Button>
+      ),
+    },
+  ];
+
+  const classColumns: ColumnsType<TrainInfoClassListItem> = [
+    {
+      title: '班级',
+      dataIndex: 'title',
+      ellipsis: true,
+      render: (v, r) => (
+        <Button
+          type="link"
+          style={{ padding: 0, height: 'auto', whiteSpace: 'normal', textAlign: 'left' }}
+          loading={enteringClassId != null && String(enteringClassId) === String(r.id)}
+          onClick={() => void openClassWorkbench(r.id)}
+        >
+          {v || `班级 #${r.id}`}
+        </Button>
+      ),
+    },
+    { title: '企业', dataIndex: 'company_name', ellipsis: true, width: 160, render: (v) => v || '—' },
+    { title: '工种', dataIndex: 'work_type_title', ellipsis: true, width: 140, render: (v) => v || '—' },
+    {
+      title: '等级',
+      dataIndex: 'work_type_level',
+      width: 120,
+      ellipsis: true,
+      render: (v?: number | null) => formatClassLevel(v),
+    },
+    {
+      title: '获证/人数',
+      key: 'certified_nums',
+      width: 96,
+      align: 'center',
+      render: (_, r) => {
+        const total = r.nums ?? 0;
+        const certified = r.certified_nums ?? 0;
+        return `${certified}/${total}`;
+      },
+    },
+    {
+      title: '培训期',
+      width: 180,
+      render: (_, r) =>
+        r.date_start || r.date_end ? `${r.date_start || '—'} ~ ${r.date_end || '—'}` : '—',
+    },
+    {
+      title: '补贴进度',
+      width: 120,
+      render: (_, r) => {
+        const s = subsidyByClass.get(String(r.id));
+        const st = classSubsidyStatus(s);
+        if (st === 'none') return <Tag>未建单</Tag>;
+        if (st === 'done') return <Tag color="success">{phaseLabel(s?.phase)}</Tag>;
+        return <Tag color="processing">{phaseLabel(s?.phase)}</Tag>;
+      },
+    },
+    {
+      title: '材料包',
+      width: 88,
+      render: (_, r) => {
+        const s = subsidyByClass.get(String(r.id));
+        return s?.materialPackagePath ? <Tag color="success">已生成</Tag> : <Tag>未生成</Tag>;
+      },
+    },
+    {
+      title: '操作',
+      width: 120,
+      fixed: 'right',
+      render: (_, r) => (
+        <Button
+          type="link"
+          size="small"
+          loading={enteringClassId != null && String(enteringClassId) === String(r.id)}
+          onClick={() => void openClassWorkbench(r.id)}
+        >
+          进入材料工作台
         </Button>
       ),
     },
@@ -425,12 +497,39 @@ export function TrainingSubsidyDeclarePage() {
       const y = Number(String(c.date_end).slice(0, 4));
       if (y >= 2020 && y <= 2035) form.setFieldValue('policyYear', y);
     }
+    void trainApi
+      .getClassSubsidy(classId)
+      .then((existing) => {
+        if (existing) {
+          message.warning(`该班已有进行中补贴单 #${existing.id}，将打开已有单据`);
+          setCreateOpen(false);
+          form.resetFields();
+          setClassFilter(classId);
+          void enterWorkbench(existing);
+        }
+      })
+      .catch(() => undefined);
   };
 
   const applySearch = () => {
     setPage(1);
     setKeyword(keywordInput.trim());
   };
+
+  const applyClassSearch = () => {
+    setClassPage(1);
+    setClassKeyword(classKwInput.trim());
+  };
+
+  if (inWorkbench && detail) {
+    return (
+      <SubsidyClassWorkbench
+        subsidy={detail}
+        onBack={exitWorkbench}
+        onSubsidyChange={setDetail}
+      />
+    );
+  }
 
   return (
     <div className="training-page training-subsidy-declare-page">
@@ -440,11 +539,17 @@ export function TrainingSubsidyDeclarePage() {
             申报补贴
           </Typography.Title>
           <Typography.Text type="secondary">
-            一班一单 · 配方锁定 · 齐套上传 · 一键生成材料包（试点：来宾 / 玉林 / 南丹 × 岗位技能提升）
+            先选班级进入材料工作台：汇集本班跟班/结业材料 → 补齐盖章件 → 导出申报包
           </Typography.Text>
         </div>
         <Space>
-          <Button icon={<ReloadOutlined />} onClick={() => invalidate()}>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => {
+              invalidate();
+              void classListQ.refetch();
+            }}
+          >
             刷新
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
@@ -459,12 +564,16 @@ export function TrainingSubsidyDeclarePage() {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="办理路径：选班建单 → 按配方上传必填槽位（照片优先用跟班照片册）→ 一键生成 ZIP → 提交人社登记"
+        message="每个班材料不同，请逐班办理。点「进入材料工作台」自动打开/创建本班补贴单。"
       />
 
       <div className="subsidy-stat-row">
         <div className="subsidy-stat-card">
-          <div className="label">台账总数</div>
+          <div className="label">班级总数</div>
+          <div className="value">{classListQ.data?.total ?? '—'}</div>
+        </div>
+        <div className="subsidy-stat-card">
+          <div className="label">已建补贴单</div>
           <div className="value">{stats.total}</div>
         </div>
         <div className="subsidy-stat-card">
@@ -475,99 +584,199 @@ export function TrainingSubsidyDeclarePage() {
           <div className="label">就绪 / 已提交</div>
           <div className="value">{stats.ready}</div>
         </div>
-        <div className="subsidy-stat-card">
-          <div className="label">通过 / 拨付</div>
-          <div className="value">{stats.done}</div>
-        </div>
       </div>
 
-      <Card size="small" title="补贴台账">
-        <div className="subsidy-phase-chips">
-          <Tag
-            className="subsidy-phase-chip"
-            color={!phase ? 'blue' : 'default'}
-            onClick={() => {
-              setPhase(undefined);
-              setPage(1);
-            }}
-          >
-            全部 {phaseCounts.__all ?? 0}
-          </Tag>
-          {PHASE_OPTS.map((p) => (
-            <Tag
-              key={p.value}
-              className="subsidy-phase-chip"
-              color={phase === p.value ? PHASE_COLOR[p.value] || 'blue' : 'default'}
-              onClick={() => {
-                setPhase(p.value);
-                setPage(1);
-              }}
-            >
-              {p.label} {phaseCounts[p.value] ?? 0}
-            </Tag>
-          ))}
-        </div>
-
-        <div className="subsidy-filter-bar">
-          <Select
-            allowClear
-            placeholder="申报地市"
-            style={{ width: 160 }}
-            options={REGION_OPTS.map((r) => ({ value: r.code, label: r.label }))}
-            value={regionFilter}
-            onChange={(v) => {
-              setRegionFilter(v);
-              setPage(1);
-            }}
-          />
-          <Select
-            allowClear
-            placeholder="政策年"
-            style={{ width: 120 }}
-            options={[2024, 2025, 2026].map((y) => ({ value: y, label: String(y) }))}
-            value={yearFilter}
-            onChange={(v) => {
-              setYearFilter(v);
-              setPage(1);
-            }}
-          />
-          <Input
-            allowClear
-            prefix={<SearchOutlined />}
-            placeholder="搜索地市 / 备注"
-            style={{ width: 220 }}
-            value={keywordInput}
-            onChange={(e) => setKeywordInput(e.target.value)}
-            onPressEnter={applySearch}
-          />
-          <Button onClick={applySearch}>查询</Button>
-        </div>
-
-        <Table
-          rowKey="id"
-          size="small"
-          loading={listQ.isLoading}
-          columns={columns}
-          dataSource={listQ.data?.items ?? []}
-          scroll={{ x: 960 }}
-          locale={{ emptyText: <Empty description="暂无补贴单，点击右上角新建" /> }}
-          pagination={{
-            current: page,
-            pageSize,
-            total: listQ.data?.total ?? 0,
-            showSizeChanger: true,
-            showTotal: (t) => `共 ${t} 条`,
-            onChange: (p, ps) => {
-              if (typeof ps === 'number' && ps > 0 && ps !== pageSize) {
-                setPageSize(ps);
-                setPage(1);
-              } else {
-                setPage(p);
-              }
-            },
-          }}
-        />
-      </Card>
+      <Tabs
+        activeKey={mainTab}
+        onChange={(k) => setMainTab(k as 'classes' | 'ledger')}
+        items={[
+          {
+            key: 'classes',
+            label: '班级办理',
+            children: (
+              <Card
+                size="small"
+                title={
+                  certFilter === 'certified'
+                    ? '已获证班级'
+                    : certFilter === 'uncertified'
+                      ? '未获证班级'
+                      : '全部班级'
+                }
+              >
+                <div className="subsidy-filter-bar">
+                  <Segmented
+                    value={certFilter}
+                    onChange={(v) => {
+                      setCertFilter(v as 'certified' | 'uncertified' | 'all');
+                      setClassPage(1);
+                    }}
+                    options={[
+                      { value: 'certified', label: '已获证班' },
+                      { value: 'uncertified', label: '未获证班' },
+                      { value: 'all', label: '全部' },
+                    ]}
+                  />
+                  <Input
+                    allowClear
+                    prefix={<SearchOutlined />}
+                    placeholder="搜索班级 / 企业 / 工种"
+                    style={{ width: 280 }}
+                    value={classKwInput}
+                    onChange={(e) => setClassKwInput(e.target.value)}
+                    onPressEnter={applyClassSearch}
+                  />
+                  <Button type="primary" onClick={applyClassSearch}>
+                    查询
+                  </Button>
+                  <Select
+                    style={{ width: 160 }}
+                    value={subsidyStatusFilter}
+                    onChange={setSubsidyStatusFilter}
+                    options={[
+                      { value: 'all', label: '全部状态' },
+                      { value: 'none', label: '未建单' },
+                      { value: 'open', label: '办理中' },
+                      { value: 'done', label: '已就绪/提交' },
+                    ]}
+                  />
+                </div>
+                <Table
+                  rowKey="id"
+                  size="middle"
+                  loading={classListQ.isLoading || workBusy}
+                  columns={classColumns}
+                  dataSource={displayClassRows}
+                  scroll={{ x: 1100 }}
+                  locale={{
+                    emptyText: (
+                      <Empty
+                        description={
+                          certFilter === 'certified'
+                            ? '暂无已获证班级，请先在毕业典礼完成证书回填'
+                            : certFilter === 'uncertified'
+                              ? '暂无未获证班级'
+                              : '暂无班级，请先在开班申报中建班'
+                        }
+                      />
+                    ),
+                  }}
+                  onRow={(r) => ({
+                    onDoubleClick: () => void openClassWorkbench(r.id),
+                    style: { cursor: 'pointer' },
+                  })}
+                  pagination={{
+                    current: classPage,
+                    pageSize: classPageSize,
+                    total: classListQ.data?.total ?? 0,
+                    showSizeChanger: true,
+                    showTotal: (t) => `共 ${t} 个班级`,
+                    onChange: (p, ps) => {
+                      if (typeof ps === 'number' && ps > 0 && ps !== classPageSize) {
+                        setClassPageSize(ps);
+                        setClassPage(1);
+                      } else {
+                        setClassPage(p);
+                      }
+                    },
+                  }}
+                />
+              </Card>
+            ),
+          },
+          {
+            key: 'ledger',
+            label: '补贴台账',
+            children: (
+              <Card size="small" title="跨班补贴台账">
+                <div className="subsidy-phase-chips">
+                  <Tag
+                    className="subsidy-phase-chip"
+                    color={!phase ? 'blue' : 'default'}
+                    onClick={() => {
+                      setPhase(undefined);
+                      setPage(1);
+                    }}
+                  >
+                    全部 {phaseCounts.__all ?? 0}
+                  </Tag>
+                  {PHASE_OPTS.map((p) => (
+                    <Tag
+                      key={p.value}
+                      className="subsidy-phase-chip"
+                      color={phase === p.value ? PHASE_COLOR[p.value] || 'blue' : 'default'}
+                      onClick={() => {
+                        setPhase(p.value);
+                        setPage(1);
+                      }}
+                    >
+                      {p.label} {phaseCounts[p.value] ?? 0}
+                    </Tag>
+                  ))}
+                </div>
+                <div className="subsidy-filter-bar">
+                  <Select
+                    allowClear
+                    placeholder="申报地市"
+                    style={{ width: 160 }}
+                    options={REGION_OPTS.map((r) => ({ value: r.code, label: r.label }))}
+                    value={regionFilter}
+                    onChange={(v) => {
+                      setRegionFilter(v);
+                      setPage(1);
+                    }}
+                  />
+                  <Select
+                    allowClear
+                    placeholder="政策年"
+                    style={{ width: 120 }}
+                    options={[2024, 2025, 2026].map((y) => ({ value: y, label: String(y) }))}
+                    value={yearFilter}
+                    onChange={(v) => {
+                      setYearFilter(v);
+                      setPage(1);
+                    }}
+                  />
+                  <Input
+                    allowClear
+                    prefix={<SearchOutlined />}
+                    placeholder="搜索班名 / 地市 / 备注"
+                    style={{ width: 220 }}
+                    value={keywordInput}
+                    onChange={(e) => setKeywordInput(e.target.value)}
+                    onPressEnter={applySearch}
+                  />
+                  <Button onClick={applySearch}>查询</Button>
+                </div>
+                <Table
+                  rowKey="id"
+                  size="small"
+                  loading={listQ.isLoading}
+                  columns={columns}
+                  dataSource={listQ.data?.items ?? []}
+                  scroll={{ x: 960 }}
+                  locale={{ emptyText: <Empty description="暂无补贴单，请从「班级办理」进入" /> }}
+                  pagination={{
+                    current: page,
+                    pageSize,
+                    total: listQ.data?.total ?? 0,
+                    showSizeChanger: true,
+                    showTotal: (t) => `共 ${t} 条`,
+                    onChange: (p, ps) => {
+                      if (typeof ps === 'number' && ps > 0 && ps !== pageSize) {
+                        setPageSize(ps);
+                        setPage(1);
+                      } else {
+                        setPage(p);
+                      }
+                    },
+                  }}
+                />
+              </Card>
+            ),
+          },
+        ]}
+      />
 
       <Modal
         title="新建补贴单"
@@ -594,13 +803,13 @@ export function TrainingSubsidyDeclarePage() {
             <Select
               showSearch
               optionFilterProp="label"
-              loading={classesQ.isLoading}
+              loading={classesPickQ.isLoading}
               options={classOptions}
               placeholder="选择班级（一班一单）"
               notFoundContent={
-                classesQ.isError
+                classesPickQ.isError
                   ? '班级列表加载失败'
-                  : classesQ.isLoading
+                  : classesPickQ.isLoading
                     ? '加载中…'
                     : '暂无班级，请先在开班申报中建班'
               }
@@ -641,7 +850,12 @@ export function TrainingSubsidyDeclarePage() {
             />
           )}
           <div style={{ display: 'flex', gap: 12 }}>
-            <Form.Item name="studentCount" label="人数" style={{ flex: 1 }}>
+            <Form.Item
+              name="studentCount"
+              label="人数"
+              style={{ flex: 1 }}
+              extra="可空：优先用班级计划人数；提交时若仍空则按花名册在册学员数"
+            >
               <InputNumber style={{ width: '100%' }} min={0} />
             </Form.Item>
             <Form.Item name="subsidyAmount" label="补贴金额" style={{ flex: 1 }}>
@@ -653,289 +867,6 @@ export function TrainingSubsidyDeclarePage() {
           </Form.Item>
         </Form>
       </Modal>
-
-      <Drawer
-        width={880}
-        title={
-          detail ? (
-            <Space>
-              <span>{detail.className || `补贴单 #${detail.id}`}</span>
-              <Tag color={PHASE_COLOR[detail.phase || ''] || 'default'}>{phaseLabel(detail.phase)}</Tag>
-              {detail.profileLocked ? <Tag color="orange">配方已锁定</Tag> : <Tag>配方未锁定</Tag>}
-            </Space>
-          ) : (
-            '详情'
-          )
-        }
-        open={!!detail}
-        onClose={() => {
-          setDetail(null);
-          setLastGen(null);
-        }}
-        destroyOnClose
-      >
-        {detail && (
-          <Space direction="vertical" style={{ width: '100%' }} size={12}>
-            <Descriptions size="small" column={3} bordered>
-              <Descriptions.Item label="班级">{detail.className || detail.classId}</Descriptions.Item>
-              <Descriptions.Item label="地市">{detail.regionName || detail.regionCode}</Descriptions.Item>
-              <Descriptions.Item label="模式">{trainModeLabel(detail.trainMode)}</Descriptions.Item>
-              <Descriptions.Item label="政策年">{detail.policyYear ?? '—'}</Descriptions.Item>
-              <Descriptions.Item label="人数">{detail.studentCount ?? '—'}</Descriptions.Item>
-              <Descriptions.Item label="金额">{money(detail.subsidyAmount)}</Descriptions.Item>
-              <Descriptions.Item label="配方" span={2}>
-                {profile?.title || detail.profileId || '—'}
-                {detail.profileVersion ? ` · ${detail.profileVersion}` : ''}
-              </Descriptions.Item>
-              <Descriptions.Item label="材料包">
-                {detail.materialPackagePath ? (
-                  <Tooltip title={detail.materialPackagePath}>
-                    <Tag color="success">已生成</Tag>
-                  </Tooltip>
-                ) : (
-                  <Tag>尚未生成</Tag>
-                )}
-              </Descriptions.Item>
-            </Descriptions>
-
-            <div className="subsidy-detail-actions">
-              {detail.phase === 'draft' && (
-                <Button
-                  loading={transitionMu.isPending}
-                  onClick={() => transitionMu.mutate({ id: detail.id, toPhase: 'checking' })}
-                >
-                  进入核验
-                </Button>
-              )}
-              {detail.phase === 'checking' && (
-                <Button
-                  loading={transitionMu.isPending}
-                  onClick={() => transitionMu.mutate({ id: detail.id, toPhase: 'draft', remark: '退回草稿' })}
-                >
-                  退回草稿
-                </Button>
-              )}
-              {detail.phase === 'ready' && (
-                <Button
-                  loading={transitionMu.isPending}
-                  onClick={() => transitionMu.mutate({ id: detail.id, toPhase: 'checking', remark: '退回核验' })}
-                >
-                  退回核验
-                </Button>
-              )}
-              {(detail.phase === 'draft' || detail.phase === 'checking' || detail.phase === 'ready') && (
-                <Button
-                  loading={transitionMu.isPending}
-                  onClick={() =>
-                    transitionMu.mutate({ id: detail.id, toPhase: 'submitted', remark: '提交人社' })
-                  }
-                >
-                  提交人社
-                </Button>
-              )}
-              {detail.phase === 'submitted' && (
-                <>
-                  <Button
-                    type="primary"
-                    loading={transitionMu.isPending}
-                    onClick={() => transitionMu.mutate({ id: detail.id, toPhase: 'approved' })}
-                  >
-                    审批通过
-                  </Button>
-                  <Button
-                    danger
-                    loading={transitionMu.isPending}
-                    onClick={() =>
-                      transitionMu.mutate({ id: detail.id, toPhase: 'rejected', remark: '退回' })
-                    }
-                  >
-                    退回
-                  </Button>
-                </>
-              )}
-              {detail.phase === 'rejected' && (
-                <Button
-                  loading={transitionMu.isPending}
-                  onClick={() => transitionMu.mutate({ id: detail.id, toPhase: 'checking', remark: '重新核验' })}
-                >
-                  重新核验
-                </Button>
-              )}
-              <Button
-                type="primary"
-                icon={<ThunderboltOutlined />}
-                loading={genMu.isPending}
-                onClick={() => genMu.mutate(detail.id)}
-              >
-                一键生成材料包
-              </Button>
-              {detail.materialPackagePath && (
-                <Button
-                  icon={<CloudDownloadOutlined />}
-                  onClick={() => {
-                    void downloadUrlFile(detail.materialPackagePath!, `补贴材料_${detail.id}.zip`).catch(() =>
-                      message.error('下载失败，请检查文件路径'),
-                    );
-                  }}
-                >
-                  下载材料包
-                </Button>
-              )}
-            </div>
-
-            {lastGen && !lastGen.ok && (
-              <Alert
-                type="warning"
-                showIcon
-                message={lastGen.message || '缺项未打包'}
-                description={
-                  lastGen.missing?.length
-                    ? `缺项：${lastGen.missing.join('、')}`
-                    : '请补齐必填槽位后重试'
-                }
-              />
-            )}
-
-            <Card size="small" title="齐套进度">
-              <Space direction="vertical" style={{ width: '100%' }} size={8}>
-                <div>
-                  必填槽位 {requiredOk}/{requiredTotal || '—'}
-                  {profile ? ` · 配方「${profile.title}」` : ''}
-                </div>
-                <Progress
-                  percent={requiredTotal ? packProgress : 0}
-                  status={requiredTotal && requiredOk >= requiredTotal ? 'success' : 'active'}
-                  size="small"
-                />
-              </Space>
-            </Card>
-
-            <Tabs
-              items={[
-                {
-                  key: 'slots',
-                  label: `材料槽位 (${slotRows.length})`,
-                  children: (
-                    <>
-                      <Table
-                        size="small"
-                        pagination={false}
-                        rowKey="slotCode"
-                        loading={detailProfileQ.isLoading && !!detail.profileId}
-                        dataSource={slotRows}
-                        locale={{ emptyText: '暂无槽位：请确认配方已匹配，或先执行一次生成以写入齐套快照' }}
-                        columns={[
-                          {
-                            title: '材料',
-                            dataIndex: 'title',
-                            render: (v, r) => (
-                              <div>
-                                <div>{v || r.slotCode}</div>
-                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                  {r.slotCode}
-                                  {r.renderer ? ` · ${RENDERER_LABEL[r.renderer] || r.renderer}` : ''}
-                                </Typography.Text>
-                              </div>
-                            ),
-                          },
-                          {
-                            title: '必填',
-                            width: 64,
-                            align: 'center',
-                            render: (_, r) => (r.required ? <Tag color="red">必填</Tag> : <Tag>可选</Tag>),
-                          },
-                          {
-                            title: '状态',
-                            width: 100,
-                            render: (_, r) => {
-                              if (r.ok) return <Tag color="success">齐套</Tag>;
-                              if (r.hasFile) return <Tag color="processing">已传</Tag>;
-                              if (r.required) return <Tag color="warning">缺项</Tag>;
-                              return <Tag>未传</Tag>;
-                            },
-                          },
-                          {
-                            title: '文件',
-                            width: 160,
-                            render: (_, r) =>
-                              r.fileName ? (
-                                <Tooltip title={r.fileName}>
-                                  <div className="slot-file-name">{r.fileName}</div>
-                                </Tooltip>
-                              ) : r.source === 'follow_photo' ? (
-                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                                  跟班照片册
-                                </Typography.Text>
-                              ) : (
-                                '—'
-                              ),
-                          },
-                          {
-                            title: '操作',
-                            width: 110,
-                            render: (_, r) =>
-                              r.slotCode ? (
-                                <Upload
-                                  showUploadList={false}
-                                  beforeUpload={(file) => {
-                                    void trainApi
-                                      .uploadSubsidySlotFile(detail.id, r.slotCode, file)
-                                      .then(() => {
-                                        message.success(`已上传：${r.title || r.slotCode}`);
-                                        invalidate();
-                                      })
-                                      .catch((e: Error) => message.error(e.message || '上传失败'));
-                                    return false;
-                                  }}
-                                >
-                                  <Button size="small">
-                                    {r.renderer === 'follow_photo' ? '补传册' : r.hasFile ? '重传' : '上传'}
-                                  </Button>
-                                </Upload>
-                              ) : null,
-                          },
-                        ]}
-                      />
-                      <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-                        培训照片优先引用跟班「培训照片」生成结果；证书等槽位首期以人工上传为主。首次成功生成后锁定配方版本。
-                      </Typography.Paragraph>
-                    </>
-                  ),
-                },
-                {
-                  key: 'events',
-                  label: `时间线 (${eventsQ.data?.length ?? 0})`,
-                  children:
-                    (eventsQ.data?.length ?? 0) === 0 ? (
-                      <Empty description="暂无事件" />
-                    ) : (
-                      <Timeline
-                        items={(eventsQ.data || []).map((e) => ({
-                          children: (
-                            <div>
-                              <Space size={8} wrap>
-                                <Tag>{e.action}</Tag>
-                                {e.fromPhase || e.toPhase ? (
-                                  <span>
-                                    {phaseLabel(e.fromPhase)} → {phaseLabel(e.toPhase)}
-                                  </span>
-                                ) : null}
-                              </Space>
-                              {e.remark ? (
-                                <div style={{ color: '#595959', fontSize: 13, marginTop: 4 }}>{e.remark}</div>
-                              ) : null}
-                              <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 2 }}>{e.createdAt}</div>
-                            </div>
-                          ),
-                        }))}
-                      />
-                    ),
-                },
-              ]}
-            />
-          </Space>
-        )}
-      </Drawer>
     </div>
   );
 }

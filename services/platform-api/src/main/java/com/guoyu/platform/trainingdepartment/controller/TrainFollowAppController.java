@@ -12,6 +12,8 @@ import com.guoyu.platform.trainingdepartment.dto.FollowEvidenceReviewReq;
 import com.guoyu.platform.trainingdepartment.service.ClassAssistantApplicationService;
 import com.guoyu.platform.trainingdepartment.service.ClassPracticeCoverageApplicationService;
 import com.guoyu.platform.trainingdepartment.service.ClassPracticeScopeApplicationService;
+import com.guoyu.platform.trainingdepartment.service.ClassReviewSyncApplicationService;
+import com.guoyu.platform.trainingdepartment.service.PreciseLearnDashboardApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainClassRoleApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainFollowEvidenceApplicationService;
 import com.guoyu.platform.trainingdepartment.service.TrainFollowTaskApplicationService;
@@ -62,6 +64,8 @@ public class TrainFollowAppController {
   private final ClassAssistantApplicationService assistantService;
   private final ClassPracticeScopeApplicationService practiceScopeService;
   private final ClassPracticeCoverageApplicationService practiceCoverageService;
+  private final ClassReviewSyncApplicationService reviewSyncService;
+  private final PreciseLearnDashboardApplicationService preciseLearnDashboardService;
   private final TrainFollowEvidenceApplicationService evidenceService;
 
   public TrainFollowAppController(
@@ -72,6 +76,8 @@ public class TrainFollowAppController {
       ClassAssistantApplicationService assistantService,
       ClassPracticeScopeApplicationService practiceScopeService,
       ClassPracticeCoverageApplicationService practiceCoverageService,
+      ClassReviewSyncApplicationService reviewSyncService,
+      PreciseLearnDashboardApplicationService preciseLearnDashboardService,
       TrainFollowEvidenceApplicationService evidenceService) {
     this.roleService = roleService;
     this.scheduleService = scheduleService;
@@ -80,6 +86,8 @@ public class TrainFollowAppController {
     this.assistantService = assistantService;
     this.practiceScopeService = practiceScopeService;
     this.practiceCoverageService = practiceCoverageService;
+    this.reviewSyncService = reviewSyncService;
+    this.preciseLearnDashboardService = preciseLearnDashboardService;
     this.evidenceService = evidenceService;
   }
 
@@ -186,6 +194,20 @@ public class TrainFollowAppController {
     Long userId = requirePlatformUserId();
     roleService.assertClassMember(userId, classId);
     return ApiResponse.ok(practiceCoverageService.getCoverageForAppMember(classId, userId));
+  }
+
+  /** App：本班同步学入口（通道 C，对齐后台跟班「同步学」绑定） */
+  @GetMapping("/classes/{classId}/review-sync")
+  public ApiResponse<Map<String, Object>> reviewSync(@PathVariable Long classId) {
+    Long userId = requirePlatformUserId();
+    roleService.assertClassMember(userId, classId);
+    return ApiResponse.ok(reviewSyncService.resolveForAppMember(classId, userId));
+  }
+
+  /** App：AI 精准学 Hub 聚合（薄弱列表 + 双卡诊断 + 入口；编排层不写答卷） */
+  @GetMapping("/classes/{classId}/precise/dashboard")
+  public ApiResponse<Map<String, Object>> preciseDashboard(@PathVariable Long classId) {
+    return ApiResponse.ok(preciseLearnDashboardService.dashboard(requirePlatformUserId(), classId));
   }
 
   /** App：本班已做题列表（分页，轻量题干预览） */

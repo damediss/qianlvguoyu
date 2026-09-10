@@ -507,6 +507,8 @@ class CertificationPreparationApplicationServiceTest {
     member.setAssessorId(9L);
     when(taskAssessorMapper.selectList(any())).thenReturn(List.of(member));
     when(infoAssessorMapper.selectById(9L)).thenReturn(assessor("鐢靛伐", LocalDate.of(2026, 12, 31)));
+    when(infoAssessorMapper.selectList(any())).thenReturn(List.of(
+        assessor("鐢靛伐", LocalDate.of(2026, 12, 31))));
     CertificationInfoAssessorEntity leader = assessor("鐢靛伐", LocalDate.of(2026, 12, 31));
     leader.setId(8L);
     when(infoAssessorMapper.selectById(8L)).thenReturn(leader);
@@ -596,7 +598,7 @@ class CertificationPreparationApplicationServiceTest {
 
     verify(candidateMapper).insert(any(CertificationCandidateEntity.class));
     verify(candidateMapper, never()).restoreSoftDeleted(any());
-    verify(documentMapper, atLeast(1)).insert(any(CertificationCandidateDocumentEntity.class));
+    verify(documentMapper, atLeast(1)).batchInsertMissing(any());
   }
 
   @Test
@@ -632,7 +634,7 @@ class CertificationPreparationApplicationServiceTest {
     assertThat(existing.getImportSource()).isEqualTo("training");
     verify(candidateMapper).restoreSoftDeleted(existing);
     verify(candidateMapper, never()).insert(any(CertificationCandidateEntity.class));
-    verify(documentMapper, atLeast(1)).insert(any(CertificationCandidateDocumentEntity.class));
+    verify(documentMapper, atLeast(1)).batchInsertMissing(any());
   }
 
   @Test

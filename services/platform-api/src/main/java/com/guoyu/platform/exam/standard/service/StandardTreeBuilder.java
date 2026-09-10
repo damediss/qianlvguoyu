@@ -138,7 +138,7 @@ public class StandardTreeBuilder {
     if (row == null) {
       return true;
     }
-    return row.valueAt(levelCode, direction) != null;
+    return valueAtWithDefaultFallback(row, levelCode, direction) != null;
   }
 
   /** 权重表取值：百分比 → 小数（25 → 0.2500）；无表/无行/— 返回 null */
@@ -151,11 +151,27 @@ public class StandardTreeBuilder {
     if (row == null) {
       return null;
     }
-    BigDecimal percent = row.valueAt(levelCode, direction);
+    BigDecimal percent = valueAtWithDefaultFallback(row, levelCode, direction);
     if (percent == null) {
       return null;
     }
     return percent.movePointLeft(2).setScale(4, RoundingMode.HALF_UP);
+  }
+
+  /**
+   * 按 等级×方向 取值，方向键不存在（非 "—" 显式空值）时回退「默认」方向：
+   * 兼容方向行未识别/方向被污染的历史数据；方向键存在但值为 null（docx "—"）时不回退。
+   */
+  private static BigDecimal valueAtWithDefaultFallback(StandardWeightRow row, int levelCode,
+      String direction) {
+    String key = StandardWeightRow.keyOf(levelCode, direction);
+    if (row.getValues().containsKey(key)) {
+      return row.getValues().get(key);
+    }
+    if (!ParsedStandard.DEFAULT_DIRECTION.equals(direction)) {
+      return row.getValues().get(StandardWeightRow.keyOf(levelCode, ParsedStandard.DEFAULT_DIRECTION));
+    }
+    return null;
   }
 
   /** 技能权重表取值（技能细目表一级比重） */

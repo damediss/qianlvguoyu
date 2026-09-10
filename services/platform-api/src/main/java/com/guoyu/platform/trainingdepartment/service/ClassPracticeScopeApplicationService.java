@@ -32,6 +32,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -42,6 +44,8 @@ import org.springframework.util.StringUtils;
 @Service
 public class ClassPracticeScopeApplicationService {
 
+  private static final Logger log = LoggerFactory.getLogger(ClassPracticeScopeApplicationService.class);
+
   private final TrainInfoClassMapper classMapper;
   private final TrainClassPracticeScopeMapper scopeMapper;
   private final TrainClassPracticeCourseMapper courseMapper;
@@ -50,6 +54,7 @@ public class ClassPracticeScopeApplicationService {
   private final ExamKnowledgeStructureMapper knowledgeStructureMapper;
   private final ExamExamDetailMapper examDetailMapper;
   private final TrainingOperatorScopeService operatorScopeService;
+  private final ClassReviewSyncApplicationService classReviewSyncApplicationService;
 
   public ClassPracticeScopeApplicationService(
       TrainInfoClassMapper classMapper,
@@ -59,7 +64,8 @@ public class ClassPracticeScopeApplicationService {
       ExamCourseMapper examCourseMapper,
       ExamKnowledgeStructureMapper knowledgeStructureMapper,
       ExamExamDetailMapper examDetailMapper,
-      TrainingOperatorScopeService operatorScopeService) {
+      TrainingOperatorScopeService operatorScopeService,
+      ClassReviewSyncApplicationService classReviewSyncApplicationService) {
     this.classMapper = classMapper;
     this.scopeMapper = scopeMapper;
     this.courseMapper = courseMapper;
@@ -68,6 +74,7 @@ public class ClassPracticeScopeApplicationService {
     this.knowledgeStructureMapper = knowledgeStructureMapper;
     this.examDetailMapper = examDetailMapper;
     this.operatorScopeService = operatorScopeService;
+    this.classReviewSyncApplicationService = classReviewSyncApplicationService;
   }
 
   @Transactional(readOnly = true)
@@ -373,7 +380,19 @@ public class ClassPracticeScopeApplicationService {
       scopeMapper.updateById(scope);
     }
 
-    return getScope(clazz.getId());
+    Map<String, Object> view = getScope(clazz.getId());
+    try {
+      Map<String, Object> auto = classReviewSyncApplicationService.autoProvisionFromPracticeScope(classId, req);
+      view.put("reviewSyncAuto", auto);
+    } catch (Exception e) {
+      log.warn("[试题配置] 自动开通同步学失败 classId={}: {}", classId, e.getMessage());
+      Map<String, Object> failed = new LinkedHashMap<>();
+      failed.put("ok", false);
+      failed.put("action", "failed");
+      failed.put("message", e.getMessage() == null ? "自动开通同步学失败" : e.getMessage());
+      view.put("reviewSyncAuto", failed);
+    }
+    return view;
   }
 
   /** 删班时清理练习范围（物理删，避免唯一键被软删行占住） */

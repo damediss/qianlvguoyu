@@ -1,6 +1,7 @@
 package com.guoyu.platform.trainingdepartment.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -31,6 +32,11 @@ public class TrainExamPeopleListEntity {
   private Integer sortNumber;
   private Long tenantId;
   private LocalDateTime createTime;
+  /**
+   * 合并库 gjjddbpro 的 train_exam_people_list 无 update_time（仅 create_time）。
+   * 早期 SaaS 建表脚本曾含该列，实体保留 setter 兼容调用方，不参与 SQL。
+   */
+  @TableField(exist = false)
   private LocalDateTime updateTime;
   @TableLogic
   private Integer deleted;

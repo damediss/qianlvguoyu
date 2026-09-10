@@ -8,6 +8,8 @@ import { AppShell } from './layouts/AppShell';
 import { AuthGate } from './components/AuthGate';
 import { KnowledgePage } from './pages/knowledge/KnowledgePage';
 import XiMuBiaoGuanLiPage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/XiMuBiaoGuanLiPage';
+import TheoryQuestionGenPage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/TheoryQuestionGenPage';
+import SkillQuestionGenPage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/SkillQuestionGenPage';
 import { RencaishibieEmbedPage } from './pages/knowledge/RencaishibieEmbedPage';
 import { WorkTypePage } from './pages/exam/WorkTypePage';
 import { CoursePage } from './pages/exam/CoursePage';
@@ -144,6 +146,10 @@ const pageMap: Record<string, React.ReactNode> = {
   knowledge: <KnowledgePage />,
   // 智能课程材料管理 > 细目表管理
   xi_mu_biao_guan_li: <XiMuBiaoGuanLiPage />,
+  // 智能课程材料管理 > 理论知识试题生成管理
+  theory_question_gen: <TheoryQuestionGenPage />,
+  // 智能课程材料管理 > 操作技能试题生成管理
+  skill_question_gen: <SkillQuestionGenPage />,
   exam_work_type: <WorkTypePage />,
   dev_task_detail: <DevTaskDetailPage />,
   // 题库审核指派(管理端 3 子菜单,挂在开发任务下)

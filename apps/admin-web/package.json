@@ -29,6 +29,7 @@
     "docx-preview": "^0.3.7",
     "echarts": "^6.1.0",
     "echarts-for-react": "^3.0.6",
+    "exceljs": "^4.4.0",
     "heic2any": "^0.0.4",
     "json-bigint": "^1.0.0",
     "markdown-it": "^14.3.0",

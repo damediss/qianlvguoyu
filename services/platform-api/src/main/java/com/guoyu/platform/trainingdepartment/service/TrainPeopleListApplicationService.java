@@ -67,6 +67,7 @@ public class TrainPeopleListApplicationService {
   private final UserMapper userMapper;
   private final TrainClassRoleApplicationService classRoleApplicationService;
   private final TrainFollowTaskApplicationService followTaskApplicationService;
+  private final ClassReviewSyncApplicationService classReviewSyncApplicationService;
 
   public TrainPeopleListApplicationService(TrainPeopleListMapper mapper,
       TrainSignUpSelfMapper signUpSelfMapper,
@@ -81,7 +82,8 @@ public class TrainPeopleListApplicationService {
       PlatformUserEnsureService platformUserEnsureService,
       UserMapper userMapper,
       @Lazy TrainClassRoleApplicationService classRoleApplicationService,
-      @Lazy TrainFollowTaskApplicationService followTaskApplicationService) {
+      @Lazy TrainFollowTaskApplicationService followTaskApplicationService,
+      @Lazy ClassReviewSyncApplicationService classReviewSyncApplicationService) {
     this.mapper = mapper;
     this.signUpSelfMapper = signUpSelfMapper;
     this.signUpPeopleSelfMapper = signUpPeopleSelfMapper;
@@ -96,6 +98,7 @@ public class TrainPeopleListApplicationService {
     this.userMapper = userMapper;
     this.classRoleApplicationService = classRoleApplicationService;
     this.followTaskApplicationService = followTaskApplicationService;
+    this.classReviewSyncApplicationService = classReviewSyncApplicationService;
   }
 
   // ==================== 基础CRUD ====================
@@ -165,6 +168,9 @@ public class TrainPeopleListApplicationService {
     entity.setIdCard(req.getIdCard());
     entity.setDeleted(0);
     insertPeople(entity);
+    if ("student".equals(entity.getType()) && entity.getTrainClassId() != null) {
+      classReviewSyncApplicationService.syncRosterIfBound(entity.getTrainClassId());
+    }
     return toVO(entity);
   }
 
@@ -228,8 +234,12 @@ public class TrainPeopleListApplicationService {
               headerFromDetail.put(p.getIdcard(), p.getIdcardHeader());
             }
           });
+      // 仅取头像字段；勿 SELECT *（level 为 varchar 混中文，整行映射曾导致 Integer 反序列化 500）
       signUpPeopleSelfMapper.selectList(
           new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
+              .select(
+                  TrainSignUpPeopleSelfEntity::getIdCardNumber,
+                  TrainSignUpPeopleSelfEntity::getIdCardHeader)
               .in(TrainSignUpPeopleSelfEntity::getIdCardNumber, idCards)
               .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0)
               .orderByDesc(TrainSignUpPeopleSelfEntity::getId))
@@ -532,6 +542,7 @@ public class TrainPeopleListApplicationService {
     result.put("candidates", people.size());
     result.put("linked", linked);
     result.put("platformUserSync", syncStats.toMap());
+    classReviewSyncApplicationService.syncRosterIfBound(classId);
     return result;
   }
 
@@ -843,11 +854,11 @@ public class TrainPeopleListApplicationService {
       return;
     }
     int nums = count == null ? 0 : count.intValue();
-    if (clazz.getNums() != null && clazz.getNums() == nums) {
-      return;
+    if (clazz.getNums() == null || clazz.getNums() != nums) {
+      clazz.setNums(nums);
+      trainInfoClassMapper.updateById(clazz);
     }
-    clazz.setNums(nums);
-    trainInfoClassMapper.updateById(clazz);
+    classReviewSyncApplicationService.syncRosterIfBound(classId);
   }
 
   private void assertClassViewable(Long classId) {

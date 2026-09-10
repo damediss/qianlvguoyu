@@ -20,6 +20,12 @@ public class ExamTaskExamsubDetailEntity {
   private String nanyicd;
   private Integer isblod;
   private String pic;
+  private String examType;
+  private Long knowledgeId;
+  private String scorePoints;
+  private String scoringStandard;
+  private Long aiBatchId;
+  private Integer source;
   private Integer tenantId;
 
   @TableLogic(value = "0", delval = "1")
@@ -46,6 +52,18 @@ public class ExamTaskExamsubDetailEntity {
   public void setNanyicd(String nanyicd) { this.nanyicd = nanyicd; }
   public Integer getIsblod() { return isblod; }
   public void setIsblod(Integer isblod) { this.isblod = isblod; }
+  public String getExamType() { return examType; }
+  public void setExamType(String examType) { this.examType = examType; }
+  public Long getKnowledgeId() { return knowledgeId; }
+  public void setKnowledgeId(Long knowledgeId) { this.knowledgeId = knowledgeId; }
+  public String getScorePoints() { return scorePoints; }
+  public void setScorePoints(String scorePoints) { this.scorePoints = scorePoints; }
+  public String getScoringStandard() { return scoringStandard; }
+  public void setScoringStandard(String scoringStandard) { this.scoringStandard = scoringStandard; }
+  public Long getAiBatchId() { return aiBatchId; }
+  public void setAiBatchId(Long aiBatchId) { this.aiBatchId = aiBatchId; }
+  public Integer getSource() { return source; }
+  public void setSource(Integer source) { this.source = source; }
   public String getPic() { return pic; }
   public void setPic(String pic) { this.pic = pic; }
   public Integer getTenantId() { return tenantId; }

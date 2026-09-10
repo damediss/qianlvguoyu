@@ -92,6 +92,13 @@ public class TrainGraduationController {
     return ApiResponse.ok(graduationCertificateImportApplicationService.preview(classIds, files));
   }
 
+  /** 异步预览任务状态（大包上传时 preview 返回 jobId） */
+  @GetMapping("/graduation/certificates/import/preview-jobs/{jobId}")
+  @PreAuthorize("hasAnyAuthority('train:info-class:update','train:graduation:update','train:graduation-ceremony:view')")
+  public ApiResponse<Map<String, Object>> previewCertificateImportJob(@PathVariable String jobId) {
+    return ApiResponse.ok(graduationCertificateImportApplicationService.previewJobStatus(jobId));
+  }
+
   @PostMapping("/graduation/certificates/import/commit")
   @PreAuthorize("hasAnyAuthority('train:info-class:update','train:graduation:update')")
   @AuditLog(module = "training", action = "graduation:cert-import-commit", targetType = "train_certificate")

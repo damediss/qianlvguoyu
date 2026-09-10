@@ -278,7 +278,7 @@ public class ExamTaskExamsubApplicationService {
     task.setNums(details.size());
     task.setStatus(0);
     task.setFilePath(filePath);
-    task.setAddtime(LocalDateTime.now());
+    task.setAddtime((int) (System.currentTimeMillis() / 1000));
     task.setCreatedBy(userId.intValue());
     task.setUpdatedBy(userId.intValue());
     taskMapper.insert(task);
@@ -440,7 +440,8 @@ public class ExamTaskExamsubApplicationService {
       }
     }
     vo.setAddtime(e.getAddtime());
-    vo.setAddtimeCn(e.getAddtime() != null ? e.getAddtime().format(DATE_FMT) : "-");
+    vo.setAddtimeCn(e.getAddtime() != null
+        ? ExamTaskExamApplicationService.toLocalDateTime(e.getAddtime()).format(DATE_FMT) : "-");
     return vo;
   }
 
@@ -492,8 +493,9 @@ public class ExamTaskExamsubApplicationService {
     return out;
   }
 
-  // 复用于 3 个 buildChildren:addtime → yyyy-MM-dd HH:mm:ss
-  static String formatAddtime(java.time.LocalDateTime t) {
+  // 复用于 3 个 buildChildren:addtime(Unix 秒,PHP 口径) → yyyy-MM-dd HH:mm:ss
+  static String formatAddtime(Integer epoch) {
+    java.time.LocalDateTime t = ExamTaskExamApplicationService.toLocalDateTime(epoch);
     if (t == null) return null;
     return t.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
   }

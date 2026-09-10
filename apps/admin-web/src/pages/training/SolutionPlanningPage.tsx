@@ -158,6 +158,19 @@ export const SolutionPlanningPage: React.FC = () => {
   const loginRole = useAuthStore((s) => s.currentUser?.loginRole);
   const roles = useAuthStore((s) => s.currentUser?.roles ?? []);
   const username = useAuthStore((s) => s.currentUser?.username);
+  const authToken = useAuthStore((s) => s.token);
+  const authTenantId = useAuthStore((s) => s.tenantId);
+  const reviewIframeRef = useRef<HTMLIFrameElement>(null);
+  const reviewTargetOrigin = `${window.location.protocol}//${window.location.host}`;
+
+  /** 与知识库嵌入页一致：向 rencaishibie iframe 下发 SaaS Bearer token */
+  const sendReviewAuth = useCallback(() => {
+    if (!reviewIframeRef.current?.contentWindow || !authToken) return;
+    reviewIframeRef.current.contentWindow.postMessage(
+      { type: 'saas-auth', token: authToken, tenantId: authTenantId },
+      reviewTargetOrigin,
+    );
+  }, [authToken, authTenantId, reviewTargetOrigin]);
   const isPlatformAdmin = isPlatformAdminUser(roles, username);
   /** 企业账号仅查看/确认；平台超级管理员始终视为机构操作员 */
   const isEnterpriseViewer = loginRole === 'company' && !isPlatformAdmin;
@@ -1306,9 +1319,11 @@ export const SolutionPlanningPage: React.FC = () => {
       >
         {plan?.rencaiTaskId && (
           <iframe
+            ref={reviewIframeRef}
             title="rencaishibie-review"
             src={`/rencai/tasks/${plan.rencaiTaskId}/review?embed=1`}
             style={{ width: '100%', height: '75vh', border: 0 }}
+            onLoad={sendReviewAuth}
           />
         )}
       </Modal>

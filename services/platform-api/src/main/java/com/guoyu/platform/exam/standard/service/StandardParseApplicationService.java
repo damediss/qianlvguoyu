@@ -23,6 +23,7 @@ import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.vo.FileVO;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
@@ -89,12 +90,26 @@ public class StandardParseApplicationService {
               + "请直接查看或先删除原任务");
     }
 
+    // 格式前置校验：文件头为 OLE2 复合文档（D0 CF 11 E0）说明实为 Word 97-2003 旧版 .doc，
+    // 仅改了后缀名；XWPF 只认 OOXML（zip）格式，直接解析会抛 OLE2NotOfficeXmlFileException。
+    if (content.length >= 4 && (content[0] & 0xFF) == 0xD0 && (content[1] & 0xFF) == 0xCF
+        && (content[2] & 0xFF) == 0x11 && (content[3] & 0xFF) == 0xE0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "该文件实为 Word 97-2003（.doc）旧格式，只是后缀为 .docx。"
+              + "请用 Word/WPS 打开后「另存为 .docx」再重新上传");
+    }
+
     ParsedStandard parsed;
     try {
       parsed = new DocxStandardParser().parse(new ByteArrayInputStream(content));
     } catch (IOException e) {
       log.warn("[细目表] docx 解析失败: {}", e.getMessage());
       throw new BusinessException(ErrorCode.BAD_REQUEST, "docx 解析失败：" + e.getMessage());
+    } catch (org.apache.poi.ooxml.POIXMLException e) {
+      // 其他损坏/不支持的 OOXML 变体（NotOfficeXmlFileException 等均属 POIXMLException 族）
+      log.warn("[细目表] docx 文件损坏或格式不受支持: {}", e.getMessage());
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "docx 文件损坏或格式不受支持，请用 Word/WPS 另存为标准 .docx 后重试");
     }
     boolean hasError = parsed.getParseWarnings().stream().anyMatch(w -> w.startsWith("ERROR"));
     if (hasError || parsed.getLevels().isEmpty()) {
@@ -131,6 +146,8 @@ public class StandardParseApplicationService {
   /** ParsedStandard 骨架 → staging 节点（每 等级×方向 一棵树，id 预分配） */
   private void persistTree(ExamStandardTaskEntity task, ParsedStandard parsed) {
     List<StandardTreeDraft> drafts = new StandardTreeBuilder().build(parsed);
+    // L2 考评权重预填：按相关知识小点条数把 L1 权重分摊到小节（最大余数法，合计=L1）
+    Map<String, BigDecimal> l2Prefill = StandardL2WeightInitializer.allocate(drafts);
     Map<String, Long> idByKey = new HashMap<>();
     for (StandardTreeDraft draft : drafts) {
       String mapKey = treeMapKey(draft.levelCode(), draft.direction(), draft.nodeKey());
@@ -150,7 +167,10 @@ public class StandardParseApplicationService {
       node.setTitle(draft.title());
       node.setTitleRaw(draft.titleRaw());
       node.setImportant(draft.important());
-      node.setWeight(draft.weight());
+      node.setWeight(draft.nodeLevel() == 2
+          ? l2Prefill.getOrDefault(treeMapKey(draft.levelCode(), draft.direction(), draft.nodeKey()),
+              draft.weight())
+          : draft.weight());
       node.setRelatedKnowledge(draft.relatedKnowledge());
       node.setSkillRequirement(draft.skillRequirement());
       node.setSource(draft.source());

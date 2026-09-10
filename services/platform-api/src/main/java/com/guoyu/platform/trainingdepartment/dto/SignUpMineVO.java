@@ -1,6 +1,7 @@
 package com.guoyu.platform.trainingdepartment.dto;
 
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
+import com.guoyu.platform.trainingdepartment.support.SignUpLevelSupport;
 
 /**
  * 扫码端 - "我已报名"返回的个人详情（不返回敏感字段如租户ID、状态码）。
@@ -82,7 +83,7 @@ public record SignUpMineVO(
         e.getCompanyId(), e.getWorkDateStart(), e.getWorkDateEnd(),
         e.getWorkTypePaperHas(), e.getWorkTypePaper(),
         e.getWorkTypeId(), e.getWorkTypeName(),
-        e.getLevel(), e.getPaperNo(),
+        SignUpLevelSupport.toIndex(e.getLevel()), e.getPaperNo(),
         e.getReqWorkTypeId(), e.getReqWorkTypeName(), e.getReqLevel(),
         e.getDeclarationCondition(), e.getJog(),
         e.getCompanyName(), e.getCompanyCode(),

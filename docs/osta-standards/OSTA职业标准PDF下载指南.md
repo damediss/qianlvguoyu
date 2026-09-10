@@ -1,7 +1,7 @@
 # OSTA 职业标准 PDF 下载指南
 
 > **用途**：从 [OSTA 国家职业标准查询系统](https://www.osta.org.cn/skillStandard) 下载指定职业标准的 PDF 文件
-> **最后更新**：2026-08-02
+> **最后更新**：2026-09-09（补充执行环境要点、验证步骤与故障排查）
 > **状态**：✅ 已验证可用
 
 ---
@@ -39,14 +39,18 @@ await tab.playwright.waitForTimeout(3000);
 ### 第 2 步：搜索职业标准
 
 ```javascript
-// 方式一：通过 UI 搜索
+// 方式一（推荐，2026-09-09 验证）：Playwright fill + click
 var searchInput = tab.playwright.getByRole('textbox', { name: '输入标准名称或职业编码进行查询' });
 await searchInput.fill('{职业名称}');
 var searchBtn = tab.playwright.getByRole('button', { name: '搜索' });
 await searchBtn.click();
 await tab.playwright.waitForTimeout(3000);
+```
 
-// 方式二：通过 evaluate 直接操作 DOM（更稳定）
+```javascript
+// 方式二（兜底）：通过 evaluate 直接操作 DOM
+// ⚠️ 2026-09-09 验证发现此方式可能失效：设置 input.value 并派发 input 事件后，
+// 前端框架（Arco/Vue）状态未同步，搜索返回 0 条。优先使用方式一。
 await tab.evaluate(function(occupationName) {
   var input = document.querySelector('input[placeholder*="标准名称"]');
   if (input) {
@@ -169,15 +173,39 @@ var downloadPromise = new Promise(function(resolve, reject) {
 var result = await downloadPromise;
 
 if (result.ok && result.header === '%PDF') {
-  var outputPath = 'D:/JetBrains/IdeaProjects/qianlvguoyu_saas/outputs/osta-standards/{职业名称}.pdf';
+  var outputPath = 'D:/workspace/qianlvguoyu_saas/outputs/osta-standards/{职业名称}.pdf';
   fs.writeFileSync(outputPath, result.buffer);
   console.log('下载成功: ' + outputPath + ' (' + result.size + ' bytes)');
 }
 ```
 
+### 第 7 步：验证下载结果（推荐，约 10 秒）
+
+下载成功后不要直接交付，验证 PDF 有效且内容正确：
+
+```bash
+python -c "import pymupdf; d = pymupdf.open('outputs/osta-standards/{职业名称}.pdf'); print('pages:', d.page_count); print(d[0].get_text()[:200])"
+```
+
+确认两点：页数合理（职业标准一般 10~40 页）；首页标题包含目标职业名称与"国家职业技能标准"字样。验证通过后把记录追加到本文档末尾"已验证可下载的职业标准"清单。
+
+⚠️ **注意"无文本层"PDF**（2026-09-09 矿井通风工案例）：部分标准（尤其是"试行"版）的文字是矢量轮廓而非文本，`get_text()` 返回空、看起来"像坏文件"，但渲染出来完全正常。验证时加一步渲染目检：
+
+```bash
+python -c "import pymupdf; d = pymupdf.open('outputs/osta-standards/{职业名称}.pdf'); d[0].get_pixmap(dpi=80).save('tmp_p1.png')"
+```
+
+`text_len=0` 但 drawings 较多（每页数十到数百个矢量图元）即属此类，渲染首页确认标题后照常交付。
+
 ---
 
 ## 关键要点
+
+### 执行环境要点（2026-09-09 补充，ZCode browser-use skill）
+
+1. **每个 `js` 调用都是全新内核**：`globalThis.browser` 等变量不跨调用保留。推荐把"搜索→打开查看器→捕获 URL→下载"整个流程放进**一个** `js` 调用执行；若必须拆成多次调用，每次都要重新 bootstrap + `agent.browsers.getForUrl(...)`。
+2. **先复用已有标签页，避免堆积**：多次执行会在内置浏览器堆积同站点标签页。执行前先 `await browser.tabs.list()`，有 `osta.org.cn` 旧标签页就 `tabs.get(id)` 复用并 `goto()` 刷新，没有再 `tabs.new()`。
+3. **Cookies 可能为空，属于正常情况**：2026-09-09 验证 `document.cookie` 返回空字符串，带空 `Cookie` 头发请求照样下载成功。不要因为 cookies 为空就重试。
 
 ### 为什么不能直接下载？
 
@@ -197,6 +225,29 @@ PDF 查看器使用 PDF.js 加载文件，加载后会在 performance 资源列�
 ---
 
 ## 常见问题
+
+### Q: Playwright `click()` 反复超时（"Timeout waiting for locator ... button"）怎么办？
+2026-09-09 矿井通风工案例中，`fill` 正常但 `click` 连续超时。按以下顺序处理：
+
+1. **超时的点击可能滞后执行**：报超时后先查页面实际状态（`tabs.list()` + `domSnapshot()`），不要立即重试同一 locator——滞后的点击可能已经把流程推进了几步（本次案例里弹窗都已打开）。
+2. **换成组合操作**：输入用 Playwright `fill`（真实事件，框架状态同步），点击改用 evaluate DOM click：
+   ```javascript
+   await tab.evaluate(function() {
+     var btns = document.querySelectorAll('button');
+     for (var b of btns) {
+       if (b.textContent.trim() === '搜索') { b.click(); return true; }
+     }
+     return false;
+   });
+   ```
+   点击走 DOM 事件没有框架同步问题，此组合稳定可用。
+3. **别被隐藏弹窗误导**：DOM 里残留的 `.arco-modal-mask` 若 `getComputedStyle(mask).display === 'none'`，是 PDF 查看器的隐藏残骸，不拦截指针事件，不是点击失败的原因。可无视或 `tab.reload()` 清掉。
+
+### Q: 搜索返回"暂无数据"或 0 条怎么办？
+先改用方式一（Playwright `fill` + `click`）重试——evaluate 方式因框架状态同步问题会假 0 条。仍无结果时：
+1. 改用**职业编码精确搜索**（如 `6-16-01-13`），编码见结果表或人社部发文；
+2. 缩短关键词重试（如"矿山生产集控员"→"集控员"）排除名称细微差异；
+3. 确认该职业标准确已颁布（2022 版标准陆续上线，最新清单共 700+ 条）。
 
 ### Q: 搜索后有多行结果怎么办？
 ```javascript
@@ -228,7 +279,7 @@ PDF URL 中的 `fileName` 参数是加密的，可能包含时间戳。如果下
 // 用法：替换 OCCUPATION_NAME 后执行
 
 var OCCUPATION_NAME = '{职业名称}';  // ← 替换这里
-var OUTPUT_DIR = 'D:/JetBrains/IdeaProjects/qianlvguoyu_saas/outputs/osta-standards';
+var OUTPUT_DIR = 'D:/workspace/qianlvguoyu_saas/outputs/osta-standards';
 
 // 1. 初始化浏览器
 if (globalThis.browser == null) {
@@ -351,6 +402,9 @@ if (!pdfUrl) {
 | 6 | 矿山救护工 | - | 659 KB | 2026-08-02 |
 | 7 | 重冶火法冶炼工 | - | 381 KB | 2026-08-02 |
 | 8 | 金属挤压工 | - | 808 KB | 2026-08-02 |
+| 9 | 矿山生产集控员 | 6-16-01-13 | 362 KB | 2026-09-09 |
+| 10 | 重冶备料工 | - | 1.48 MB（11 页，页码含汇编页眉 85，属正常） | 2026-09-09 |
+| 11 | 矿井通风工 | 6-16-01-09 | 3.16 MB（22 页，**无文本层**：文字为矢量轮廓，PyMuPDF 提取不到文字，需渲染成图片目检） | 2026-09-09 |
 
 ---
 

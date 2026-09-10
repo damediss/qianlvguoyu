@@ -40,6 +40,21 @@ const ROSTER_SCOPE_MENU_ITEMS: MenuProps['items'] = [
   { key: 'all', label: '班级全部人员名册' },
 ];
 
+/** 班级工种等级：5=五级 … 1=一级（与开班准备一致） */
+const CLASS_LEVEL_LABELS: Record<number, string> = {
+  5: '五级/初级工',
+  4: '四级/中级工',
+  3: '三级/高级工',
+  2: '二级/技师',
+  1: '一级/高级技师',
+};
+
+function formatClassLevel(level?: number | null) {
+  if (level == null || Number.isNaN(Number(level))) return '—';
+  const n = Number(level);
+  return CLASS_LEVEL_LABELS[n] ?? `${n}级`;
+}
+
 function classStatusTag(status?: string) {
   if (status === 'done') return <Tag color="success">已结业</Tag>;
   if (status === 'partial') return <Tag color="warning">部分结业</Tag>;
@@ -198,16 +213,46 @@ export function TrainingGraduationPage({
     }
     setCertPreviewing(true);
     try {
-      const res = await trainApi.previewGraduationCertImport(
+      let res = await trainApi.previewGraduationCertImport(
         selectedClassKeys.map(String),
         certFiles,
       );
+      if (res.async && res.jobId) {
+        message.info(res.message || '文件较多，后台解析中…');
+        const jobId = res.jobId;
+        const started = Date.now();
+        while (Date.now() - started < 280000) {
+          await new Promise((r) => setTimeout(r, 800));
+          const job = await trainApi.getGraduationCertImportPreviewJob(jobId);
+          if (job.message) {
+            message.open({
+              key: 'cert-preview-job',
+              type: 'loading',
+              content: job.message,
+              duration: 0,
+            });
+          }
+          if (job.status === 'done') {
+            message.destroy('cert-preview-job');
+            res = job;
+            break;
+          }
+          if (job.status === 'failed') {
+            message.destroy('cert-preview-job');
+            throw new Error(job.error || job.message || '预览失败');
+          }
+        }
+        if (res.async && !res.previewId) {
+          throw new Error('预览超时，请减少单次上传数量后重试');
+        }
+      }
       setCertPreview(res);
       setCertPreviewFilter('all');
       message.success(
-        `预览完成：可回填 ${res.matched}，需处理 ${res.blocked}，失败 ${res.failed}`,
+        `预览完成：可回填 ${res.matched ?? 0}，需处理 ${res.blocked ?? 0}，失败 ${res.failed ?? 0}`,
       );
     } catch (e) {
+      message.destroy('cert-preview-job');
       message.error((e as Error).message || '预览失败');
     } finally {
       setCertPreviewing(false);
@@ -279,6 +324,24 @@ export function TrainingGraduationPage({
       { title: 'ID', dataIndex: 'id', width: 80 },
       { title: '班级名称', dataIndex: 'title', width: 180, ellipsis: true },
       {
+        title: '工种',
+        dataIndex: 'workTypeName',
+        width: 120,
+        ellipsis: true,
+        filters: workTypeFilters,
+        filteredValue: query.workTypeName ?? null,
+        filterSearch: true,
+        onFilter: () => true,
+        render: (v) => v || '—',
+      },
+      {
+        title: '等级',
+        dataIndex: 'workTypeLevel',
+        width: 120,
+        ellipsis: true,
+        render: (v?: number | null) => formatClassLevel(v),
+      },
+      {
         title: '培训项目',
         dataIndex: 'trainTitle',
         width: 180,
@@ -296,17 +359,6 @@ export function TrainingGraduationPage({
         ellipsis: true,
         filters: companyFilters,
         filteredValue: query.companyName ?? null,
-        filterSearch: true,
-        onFilter: () => true,
-        render: (v) => v || '—',
-      },
-      {
-        title: '工种',
-        dataIndex: 'workTypeName',
-        width: 120,
-        ellipsis: true,
-        filters: workTypeFilters,
-        filteredValue: query.workTypeName ?? null,
         filterSearch: true,
         onFilter: () => true,
         render: (v) => v || '—',
@@ -458,7 +510,12 @@ export function TrainingGraduationPage({
               已选 {selectedClassKeys.length} 个班
             </Typography.Text>
           </Space>
-          <Button icon={<FolderOpenOutlined />} onClick={openCertImport}>
+          <Button
+            icon={<FolderOpenOutlined />}
+            disabled={selectedClassKeys.length === 0}
+            title={selectedClassKeys.length === 0 ? '请先勾选要回填的班级' : undefined}
+            onClick={openCertImport}
+          >
             上传证书文件夹
           </Button>
         </div>
@@ -640,7 +697,7 @@ export function TrainingGraduationPage({
                 }}
                 onClick={() => toggleCertPreviewFilter('matched')}
               >
-                可回填 {certPreview.matched}
+                可回填 {certPreview.matched ?? 0}
               </Tag>
               <Tag
                 color="warning"
@@ -651,7 +708,7 @@ export function TrainingGraduationPage({
                 }}
                 onClick={() => toggleCertPreviewFilter('blocked')}
               >
-                需处理 {certPreview.blocked}
+                需处理 {certPreview.blocked ?? 0}
               </Tag>
               <Tag
                 color="error"
@@ -662,10 +719,11 @@ export function TrainingGraduationPage({
                 }}
                 onClick={() => toggleCertPreviewFilter('failed')}
               >
-                失败 {certPreview.failed}
+                失败 {certPreview.failed ?? 0}
               </Tag>
               <Typography.Text type="secondary">
                 共 {certPreview.totalFiles} 个文件
+                {certPreview.ocrEnabled ? ' · OCR已启用' : ' · OCR未配置'}
                 {certPreviewFilter !== 'all'
                   ? ` · 当前筛选 ${filteredCertPreviewItems.length} 条（再点标签可取消）`
                   : ''}
@@ -685,15 +743,30 @@ export function TrainingGraduationPage({
                   }
                 },
               }}
-              scroll={{ y: 320 }}
+              scroll={{ x: 1400, y: 320 }}
               dataSource={filteredCertPreviewItems}
               columns={[
-                { title: '文件', dataIndex: 'fileName', ellipsis: true, width: 220 },
+                { title: '文件', dataIndex: 'fileName', ellipsis: true, width: 200 },
+                { title: '证面姓名', dataIndex: 'parsedName', width: 88 },
                 { title: '证书编号', dataIndex: 'certificateNo', width: 180, ellipsis: true },
-                { title: '身份证', dataIndex: 'idCard', width: 160 },
+                { title: '身份证', dataIndex: 'idCard', width: 150 },
+                { title: '职业', dataIndex: 'occupation', width: 100, ellipsis: true },
+                { title: '工种', dataIndex: 'workType', width: 100, ellipsis: true },
+                { title: '等级', dataIndex: 'level', width: 110 },
+                { title: '等级(归一)', dataIndex: 'levelNormalized', width: 110 },
+                { title: '发证机构', dataIndex: 'issuingAuthority', width: 140, ellipsis: true },
+                { title: '评价机构', dataIndex: 'evaluationOrg', width: 140, ellipsis: true },
+                { title: '核发日期', dataIndex: 'issueDate', width: 110 },
+                {
+                  title: '查询地址',
+                  dataIndex: 'queryUrlList',
+                  width: 160,
+                  ellipsis: true,
+                  render: (v?: string[]) => (v?.length ? v.join('；') : '—'),
+                },
                 {
                   title: '匹配学员',
-                  width: 160,
+                  width: 150,
                   render: (_, r) =>
                     r.realname
                       ? `${r.realname}${r.classTitle ? ` · ${r.classTitle}` : ''}`
@@ -701,11 +774,12 @@ export function TrainingGraduationPage({
                 },
                 {
                   title: '状态',
-                  width: 110,
+                  width: 100,
                   render: (_, r) => certStatusTag(r.status),
                 },
                 {
                   title: '说明',
+                  width: 180,
                   ellipsis: true,
                   render: (_, r) => r.warning || r.message || '—',
                 },

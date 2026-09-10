@@ -8,7 +8,11 @@ import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.entity.ExamCourseEntity;
+import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
+import com.guoyu.platform.exam.entity.ExamKnowledgeStructureEntity;
 import com.guoyu.platform.exam.mapper.ExamCourseMapper;
+import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
+import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.trainingdepartment.dto.TrainExamListCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainExamListQueryReq;
@@ -16,6 +20,7 @@ import com.guoyu.platform.trainingdepartment.dto.TrainExamListUpdateReq;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainExamWorkTypeListEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainExamListMapper;
@@ -31,6 +36,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -47,6 +53,8 @@ public class TrainExamListApplicationService {
   private final TrainExamWorkTypeListMapper workTypeListMapper;
   private final TrainExamPeopleListMapper peopleListMapper;
   private final ExamCourseMapper examCourseMapper;
+  private final ExamKnowledgeStructureMapper knowledgeStructureMapper;
+  private final ExamExamDetailMapper examDetailMapper;
   private final TrainInfoListMapper trainInfoListMapper;
   private final TrainPeopleListMapper trainPeopleListMapper;
 
@@ -54,12 +62,16 @@ public class TrainExamListApplicationService {
       TrainExamWorkTypeListMapper workTypeListMapper,
       TrainExamPeopleListMapper peopleListMapper,
       ExamCourseMapper examCourseMapper,
+      ExamKnowledgeStructureMapper knowledgeStructureMapper,
+      ExamExamDetailMapper examDetailMapper,
       TrainInfoListMapper trainInfoListMapper,
       TrainPeopleListMapper trainPeopleListMapper) {
     this.mapper = mapper;
     this.workTypeListMapper = workTypeListMapper;
     this.peopleListMapper = peopleListMapper;
     this.examCourseMapper = examCourseMapper;
+    this.knowledgeStructureMapper = knowledgeStructureMapper;
+    this.examDetailMapper = examDetailMapper;
     this.trainInfoListMapper = trainInfoListMapper;
     this.trainPeopleListMapper = trainPeopleListMapper;
   }
@@ -153,6 +165,139 @@ public class TrainExamListApplicationService {
 
     Map<Long, List<TrainExamWorkTypeListEntity>> wtMap = batchLoadWorkTypeList(List.of(entity.getId()));
     return toVO(entity, wtMap.get(entity.getId()));
+  }
+
+  /**
+   * 试题配置自动开通同步学：创建本班考试计划。
+   * 不导入全培训考生（由班级 enroll-roster 按花名册写入）。
+   */
+  @Transactional
+  public Long createForClassReviewSync(TrainInfoClassEntity clazz, List<Integer> courseIds) {
+    if (clazz == null || clazz.getId() == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "班级无效，无法创建同步学考试计划");
+    }
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    Long userId = SecurityContext.currentUser().getUserId();
+    String classTitle = StringUtils.hasText(clazz.getTitle()) ? clazz.getTitle().trim() : ("班级" + clazz.getId());
+    String title = classTitle + "-同步学";
+    if (title.length() > 255) {
+      title = title.substring(0, 255);
+    }
+
+    TrainExamListEntity entity = new TrainExamListEntity();
+    entity.setTenantId(tenantId);
+    entity.setUserId(userId);
+    entity.setTitle(title);
+    if (clazz.getWorkTypeLevel() != null && clazz.getWorkTypeLevel() > 0) {
+      entity.setLevel(String.valueOf(clazz.getWorkTypeLevel()));
+    }
+    entity.setTrainId(clazz.getTrainInfoId());
+    entity.setType(0);
+    List<Long> courseIdList = courseIds == null ? List.of() : courseIds.stream()
+        .filter(id -> id != null && id > 0)
+        .map(Integer::longValue)
+        .distinct()
+        .toList();
+    Integer detectedSource = detectDominantQuestionSource(courseIdList);
+    entity.setSource(detectedSource != null ? detectedSource : 0);
+    entity.setSortNumber(1);
+    entity.setCreateTime(LocalDateTime.now());
+    mapper.insert(entity);
+
+    if (!courseIdList.isEmpty()) {
+      saveWorkTypeList(entity.getId(), courseIdList, tenantId);
+    } else if (clazz.getWorkTypeId() != null && clazz.getWorkTypeId() > 0) {
+      TrainExamWorkTypeListEntity wte = new TrainExamWorkTypeListEntity();
+      wte.setExamId(entity.getId());
+      wte.setWorkTypeId(clazz.getWorkTypeId());
+      wte.setTenantId(tenantId);
+      if (clazz.getWorkTypeLevel() != null) {
+        wte.setLevel(String.valueOf(clazz.getWorkTypeLevel()));
+      }
+      wte.setCreateTime(LocalDateTime.now());
+      wte.setDeleted(0);
+      workTypeListMapper.insert(wte);
+    }
+    log.info("[班级同步学] 已为 classId={} 创建考试计划 examId={} source={}",
+        clazz.getId(), entity.getId(), entity.getSource());
+    return entity.getId();
+  }
+
+  /**
+   * 把刷题试题配置的科目写回考试计划工种绑定，并校正 source 与题库一致。
+   * 解决：已绑定/匹配到的考试计划无 courseId 或 source 与题不符 → App「该计划未绑定有效题库」。
+   */
+  @Transactional
+  public void syncCoursesForReviewSync(Long examId, List<Integer> courseIds) {
+    if (examId == null || examId <= 0 || courseIds == null || courseIds.isEmpty()) {
+      return;
+    }
+    TrainExamListEntity exam = getExisting(examId);
+    Long tenantId = exam.getTenantId() != null ? exam.getTenantId() : SecurityContext.currentUser().getTenantId();
+    List<Long> courseIdList = courseIds.stream()
+        .filter(id -> id != null && id > 0)
+        .map(Integer::longValue)
+        .distinct()
+        .toList();
+    if (courseIdList.isEmpty()) {
+      return;
+    }
+    saveWorkTypeList(examId, courseIdList, tenantId);
+    Integer detectedSource = detectDominantQuestionSource(courseIdList);
+    if (detectedSource != null && !Objects.equals(exam.getSource(), detectedSource)) {
+      exam.setSource(detectedSource);
+      mapper.updateById(exam);
+      log.info("[班级同步学] examId={} source 校正为 {}（与科目题库一致）", examId, detectedSource);
+    }
+  }
+
+  /**
+   * 在科目下 L3 知识点中，取 final_check_status=1 题目数量最多的 source。
+   * 与同步学建计划口径一致；无题返回 null。
+   */
+  Integer detectDominantQuestionSource(List<Long> courseIds) {
+    if (courseIds == null || courseIds.isEmpty()) {
+      return null;
+    }
+    List<Integer> courseInts = courseIds.stream().map(Long::intValue).toList();
+    List<ExamKnowledgeStructureEntity> l3Nodes = knowledgeStructureMapper.selectList(
+        new LambdaQueryWrapper<ExamKnowledgeStructureEntity>()
+            .select(ExamKnowledgeStructureEntity::getId)
+            .eq(ExamKnowledgeStructureEntity::getLevel, 3)
+            .eq(ExamKnowledgeStructureEntity::getType, 0)
+            .in(ExamKnowledgeStructureEntity::getCourseId, courseInts));
+    if (l3Nodes.isEmpty()) {
+      return null;
+    }
+    List<Integer> knowledgeIds = l3Nodes.stream()
+        .map(ExamKnowledgeStructureEntity::getId)
+        .filter(Objects::nonNull)
+        .distinct()
+        .toList();
+    if (knowledgeIds.isEmpty()) {
+      return null;
+    }
+    Map<Integer, Long> sourceCounts = new LinkedHashMap<>();
+    final int chunk = 500;
+    for (int i = 0; i < knowledgeIds.size(); i += chunk) {
+      List<Integer> part = knowledgeIds.subList(i, Math.min(i + chunk, knowledgeIds.size()));
+      List<ExamExamDetailEntity> rows = examDetailMapper.selectList(
+          new LambdaQueryWrapper<ExamExamDetailEntity>()
+              .select(ExamExamDetailEntity::getSource)
+              .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
+              .eq(ExamExamDetailEntity::getDeleted, 0)
+              .in(ExamExamDetailEntity::getKnowledgeId, part));
+      for (ExamExamDetailEntity row : rows) {
+        if (row == null || row.getSource() == null) {
+          continue;
+        }
+        sourceCounts.merge(row.getSource(), 1L, Long::sum);
+      }
+    }
+    return sourceCounts.entrySet().stream()
+        .max(Map.Entry.comparingByValue())
+        .map(Map.Entry::getKey)
+        .orElse(null);
   }
 
   @Transactional

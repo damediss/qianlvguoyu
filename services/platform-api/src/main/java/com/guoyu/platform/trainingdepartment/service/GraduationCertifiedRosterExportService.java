@@ -148,6 +148,15 @@ public class GraduationCertifiedRosterExportService {
     return xlsxResponse(bytes, fileName);
   }
 
+  /** 供补贴材料同步等内部调用：返回 xlsx 字节，不包 ResponseEntity。 */
+  @Transactional(readOnly = true)
+  public byte[] exportWorkbookBytes(Long classId, String scopeParam) {
+    RosterScope scope = RosterScope.fromParam(scopeParam);
+    TrainInfoClassEntity clazz = requireClass(classId);
+    String displayName = resolveClassDisplayName(clazz, null);
+    return buildWorkbookBytes(clazz, displayName, scope);
+  }
+
   @Transactional(readOnly = true)
   public ResponseEntity<byte[]> exportZip(List<Long> classIds) {
     return exportZip(classIds, null);
@@ -228,7 +237,7 @@ public class GraduationCertifiedRosterExportService {
     }
   }
 
-  /** 已获证：证书编号非空；全部：不过滤。 */
+  /** 已获证：与申报补贴同一口径（有证书文件 / 技能等级证 / 非 GC- 假号）。 */
   static List<TrainPeopleListEntity> filterByScope(
       List<TrainPeopleListEntity> students,
       Map<Long, TrainCertificateEntity> certs,
@@ -236,14 +245,8 @@ public class GraduationCertifiedRosterExportService {
     if (scope == RosterScope.ALL || students == null || students.isEmpty()) {
       return students == null ? List.of() : students;
     }
-    List<TrainPeopleListEntity> out = new ArrayList<>();
-    for (TrainPeopleListEntity s : students) {
-      TrainCertificateEntity cert = certs.get(s.getId());
-      if (cert != null && StringUtils.hasText(cert.getCertificateNo())) {
-        out.add(s);
-      }
-    }
-    return out;
+    return com.guoyu.platform.trainingdepartment.support.SubsidyCertifiedPeopleSupport.filterCertified(
+        students, certs);
   }
 
   /**

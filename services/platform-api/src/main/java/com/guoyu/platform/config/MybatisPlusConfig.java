@@ -57,7 +57,9 @@ public class MybatisPlusConfig {
             || "sys_index_swiper".equalsIgnoreCase(tableName)
             // platform-shared subsidy pack recipes (tenant_id=0 seeds + tenant overlays)
             || "train_subsidy_pack_profile".equalsIgnoreCase(tableName)
-            || "train_subsidy_pack_slot".equalsIgnoreCase(tableName);
+            || "train_subsidy_pack_slot".equalsIgnoreCase(tableName)
+            // 多级模板库：platform tenant_id 可空，由业务 SQL 自行过滤可见范围
+            || "train_subsidy_material_template".equalsIgnoreCase(tableName);
       }
     }));
     return interceptor;

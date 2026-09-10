@@ -39,7 +39,18 @@ public class DocxStandardParser {
   private static final Pattern DIRECTION_LEVEL_LINE =
       Pattern.compile("^(?<direction>.+?)工种分别为[:：]\\s*(?<levels>.+)$");
   private static final Pattern NUMERIC_CELL = Pattern.compile("^\\d{1,3}(\\.\\d+)?$");
+  /** 权重表头中的等级列标记（"五级/初级工"，或重冶备料工式"初级（%）/技师（%）"），用于定位数值列起点 */
+  private static final Pattern LEVEL_HEADER =
+      Pattern.compile("[五四三二一]\\s*级|高级技师|技师|初级|中级|高级");
+  /** 带捕获组的「五~一级」写法，headerLevelOf 优先匹配 */
+  private static final Pattern NUMBERED_LEVEL = Pattern.compile("([五四三二一])\\s*级");
+  /** "—"/"－"/"-" 等占位符：不是方向名，也不是有效数值 */
+  private static final Pattern DASH_PLACEHOLDER = Pattern.compile("^[—－\\-–\\s]+$");
   private static final String[] LEVEL_NAMES = {"五级/初级工", "四级/中级工", "三级/高级工", "二级/技师", "一级/高级技师"};
+  /** 多数职业标准的"职业道德基本知识"小节无相关知识列举项，按统一业务口径固定补齐（1.xxx 换行分隔，与解析条目格式一致） */
+  private static final String ETHICS_SECTION_NAME = "职业道德基本知识";
+  private static final String ETHICS_DEFAULT_KNOWLEDGE =
+      "1.工匠精神培养\n2.安全意识培养\n3.职业道德素养\n4.团队协作精神";
 
   public ParsedStandard parse(InputStream in) throws IOException {
     ParsedStandard result = new ParsedStandard();
@@ -82,8 +93,9 @@ public class DocxStandardParser {
       ctx.expectSectionOneValue = false;
       if (ctx.sectionOneSub == 1
           && (ctx.result.getWorkTypeTitle() == null || ctx.result.getWorkTypeTitle().isBlank())) {
-        // 剥离页脚注引用标记（如 "焊工①"）
-        ctx.result.setWorkTypeTitle(text.replaceAll("[①②③④⑤⑥⑦⑧⑨⑩]", "").trim());
+        // 剥离页脚注引用标记（如 "焊工①"）与尾部标点（PDF 转 docx 常见"重冶备料工 。"式残留）
+        ctx.result.setWorkTypeTitle(text.replaceAll("[①②③④⑤⑥⑦⑧⑨⑩]", "")
+            .replaceAll("[\\s。．，,、；;：:.·]+$", "").trim());
       }
       if (ctx.sectionOneSub == 2 && ctx.result.getSeriesNo() == null) {
         String no = text.replaceAll("[\\s　—]+", "").replace("－", "-");
@@ -100,8 +112,10 @@ public class DocxStandardParser {
     }
     // 普通段落：基本要求节内的（n）列举项
     if (ctx.mainSection == 2 && ctx.currentBasicL2 != null) {
-      List<String> items = DocxTextUtil.splitItems(text);
-      if (!items.isEmpty() && startsWithParenNumber(text)) {
+      // 跨页时页码会粘在条目段首（如 "105（7）……"），剥掉前导数字再判，否则整段被丢弃
+      String itemText = text.replaceFirst("^[\\d\\s　]+(?=[（(])", "");
+      List<String> items = DocxTextUtil.splitItems(itemText);
+      if (!items.isEmpty() && startsWithParenNumber(itemText)) {
         ctx.currentBasicL2.getTheoryMaterials().addAll(items);
       }
     }
@@ -217,11 +231,33 @@ public class DocxStandardParser {
     if (firstCell.contains("职业功能")) {
       ctx.result.setWorkTableCount(ctx.result.getWorkTableCount() + 1);
       parseWorkTable(grid, ctx);
-    } else if (containsHeader(grid.get(0), "技能等级项目")) {
+    } else if (containsHeader(grid.get(0), "技能等级项目") || isWeightTableHeader(grid.get(0))) {
       ctx.result.setWeightTableCount(ctx.result.getWeightTableCount() + 1);
       parseWeightTable(grid, ctx);
     }
     // 其他表格（鉴定要求等）忽略
+  }
+
+  /**
+   * 权重表头的另一种写法（如重冶备料工"比重表"）：无"技能等级项目"字样，
+   * 首行含「项目」且有 ≥2 个等级列（初级/中级/高级/技师/高级技师 或 五~一级）。
+   * 权重节之外的误识别会在 parseWeightTable 被拦截，这里宁宽勿漏。
+   */
+  private boolean isWeightTableHeader(List<String> row) {
+    boolean hasItem = false;
+    int levelCols = 0;
+    for (String cell : row) {
+      if (cell == null) {
+        continue;
+      }
+      if (cell.contains("项目")) {
+        hasItem = true;
+      }
+      if (LEVEL_HEADER.matcher(cell).find()) {
+        levelCols++;
+      }
+    }
+    return hasItem && levelCols >= 2;
   }
 
   private boolean containsHeader(List<String> row, String keyword) {
@@ -371,8 +407,8 @@ public class DocxStandardParser {
       l2.setLevel(2);
       l2.setNumber(DocxTextUtil.normalizeDottedNumber(content));
       l2.setTitle(DocxTextUtil.stripLeadingNumber(content));
-      l2.setSkillRaw(DocxTextUtil.normalizeNumbering(skill));
-      l2.setRelatedKnowledgeRaw(DocxTextUtil.normalizeNumbering(knowledge));
+      l2.setSkillRaw(DocxTextUtil.relineItems(DocxTextUtil.normalizeNumbering(skill)));
+      l2.setRelatedKnowledgeRaw(DocxTextUtil.relineItems(DocxTextUtil.normalizeNumbering(knowledge)));
       l2.getSkillMaterials().addAll(DocxTextUtil.splitItems(skill));
       l2.getTheoryMaterials().addAll(DocxTextUtil.splitItems(knowledge));
       if (l2.getTheoryMaterials().isEmpty()) {
@@ -409,15 +445,33 @@ public class DocxStandardParser {
         ? ctx.theoryBuilder : ctx.skillBuilder;
 
     int cols = grid.get(0).size();
-    // 1) 方向行：前 4 行内，第 2 列起全部为不含数字/百分号/“级”的中文标签
+    // 0) 数值列起点：表头前 4 行内首个含「X级」的列。标签列数随标准不固定
+    //    （2 列=类别/项目；3 列=大类/中类/小项），写死 c=2 会把小项列误当数值列、
+    //    且方向行检测会被标签列的"级"字干扰（如氧化铝制取工的 13 列权重表）
+    int valueColStart = -1;
+    for (int c = 1; c < cols; c++) {
+      StringBuilder headerText = new StringBuilder();
+      for (int r = 0; r < Math.min(4, grid.size()); r++) {
+        headerText.append(cellAt(grid.get(r), c));
+      }
+      if (LEVEL_HEADER.matcher(headerText.toString()).find()) {
+        valueColStart = c;
+        break;
+      }
+    }
+    if (valueColStart < 0) {
+      valueColStart = Math.min(2, cols);
+    }
+
+    // 1) 方向行：前 4 行内，数值列起全部为不含数字/百分号/“级”的中文标签（“—”占位不算标签）
     int directionRowIdx = -1;
     for (int r = 0; r < Math.min(4, grid.size()); r++) {
       List<String> row = grid.get(r);
       boolean directionRow = true;
       int labels = 0;
-      for (int c = 2; c < cols; c++) {
+      for (int c = valueColStart; c < cols; c++) {
         String cell = cellAt(row, c);
-        if (cell.isEmpty()) {
+        if (cell.isEmpty() || DASH_PLACEHOLDER.matcher(cell).matches()) {
           continue;
         }
         if (cell.matches(".*[\\d%（）()/级].*")) {
@@ -435,27 +489,23 @@ public class DocxStandardParser {
     // 2) 每逻辑列的等级与方向
     Map<Integer, Integer> colLevel = new LinkedHashMap<>();   // col -> levelCode
     Map<Integer, String> colDirection = new LinkedHashMap<>(); // col -> direction
-    for (int c = 2; c < cols; c++) {
+    for (int c = valueColStart; c < cols; c++) {
       StringBuilder headerText = new StringBuilder();
       int headerEnd = directionRowIdx >= 0 ? directionRowIdx : Math.min(4, grid.size());
       for (int r = 0; r < headerEnd; r++) {
         headerText.append(cellAt(grid.get(r), c));
       }
-      Matcher m = LEVEL_WORD.matcher(headerText.toString());
-      if (!m.find()) {
+      Integer levelCode = headerLevelOf(headerText.toString());
+      if (levelCode == null) {
         continue;
       }
-      int levelCode = switch (m.group()) {
-        case "五" -> 0;
-        case "四" -> 1;
-        case "三" -> 2;
-        case "二" -> 3;
-        default -> 4;
-      };
       colLevel.put(c, levelCode);
       String direction = directionRowIdx >= 0 ? cellAt(grid.get(directionRowIdx), c) : ParsedStandard.DEFAULT_DIRECTION;
-      colDirection.put(c, direction.isBlank() ? ParsedStandard.DEFAULT_DIRECTION : direction);
-      ctx.registerDirection(direction.isBlank() ? ParsedStandard.DEFAULT_DIRECTION : direction);
+      if (direction.isBlank() || DASH_PLACEHOLDER.matcher(direction).matches()) {
+        direction = ParsedStandard.DEFAULT_DIRECTION;
+      }
+      colDirection.put(c, direction);
+      ctx.registerDirection(direction);
     }
 
     // 3) 数据行：项目名非空且至少一个数值/— 单元格
@@ -463,15 +513,23 @@ public class DocxStandardParser {
     for (int r = dataStart; r < grid.size(); r++) {
       List<String> row = grid.get(r);
       String category = cellAt(row, 0);
-      String item = cellAt(row, 1);
-      if (category.contains("合计") || item.contains("合计")) {
+      // 项目名取标签列中最后一个非空格：3 列布局时取小项（如"配矿"），2 列布局时即项目列
+      String item = "";
+      for (int c = 1; c < valueColStart; c++) {
+        String label = cellAt(row, c);
+        if (!label.isBlank()) {
+          item = label;
+        }
+      }
+      if (category.contains("合计") || item.contains("合计")
+          || category.contains("总计") || item.contains("总计")) {
         continue;
       }
       if (item.isBlank()) {
         continue;
       }
       boolean anyValue = false;
-      for (int c = 2; c < cols; c++) {
+      for (int c = valueColStart; c < cols; c++) {
         String v = cellAt(row, c);
         if (NUMERIC_CELL.matcher(v).matches() || v.contains("—") || v.contains("－")) {
           anyValue = true;
@@ -512,6 +570,50 @@ public class DocxStandardParser {
     return row;
   }
 
+  /**
+   * 权重表头 → levelCode。优先「五~一级」写法（老格式），其次「高级技师/技师/高级/中级/初级」
+   * 关键词（重冶备料工等"比重表"写法，顺序保证"高级技师"不被"高级"抢先）；两套写法语义一致
+   * （如"二级/技师"两种都得 3）。最后用单字等级词兜底（兼容"五"不带"级"的历史写法）。
+   */
+  private Integer headerLevelOf(String headerText) {
+    Matcher numbered = NUMBERED_LEVEL.matcher(headerText);
+    if (numbered.find()) {
+      return switch (numbered.group(1)) {
+        case "五" -> 0;
+        case "四" -> 1;
+        case "三" -> 2;
+        case "二" -> 3;
+        default -> 4;
+      };
+    }
+    if (headerText.contains("高级技师")) {
+      return 4;
+    }
+    if (headerText.contains("技师")) {
+      return 3;
+    }
+    if (headerText.contains("高级")) {
+      return 2;
+    }
+    if (headerText.contains("中级")) {
+      return 1;
+    }
+    if (headerText.contains("初级")) {
+      return 0;
+    }
+    Matcher word = LEVEL_WORD.matcher(headerText);
+    if (word.find()) {
+      return switch (word.group()) {
+        case "五" -> 0;
+        case "四" -> 1;
+        case "三" -> 2;
+        case "二" -> 3;
+        default -> 4;
+      };
+    }
+    return null;
+  }
+
   /** "5" → 5；"—"/"" → null */
   private BigDecimal parsePercent(String text) {
     if (text == null) {
@@ -537,6 +639,15 @@ public class DocxStandardParser {
     // 基本要求 L2 无列举项 → needLlm
     for (StandardNodeDoc l1 : result.getBasicSections()) {
       for (StandardNodeDoc l2 : l1.getChildren()) {
+        // "职业道德基本知识"空小节固定兜底：补齐相关知识原文与素材条目，使其不再按空小节走 LLM 兜底
+        if ((l2.getRelatedKnowledgeRaw() == null || l2.getRelatedKnowledgeRaw().isBlank())
+            && ETHICS_SECTION_NAME.equals(DocxTextUtil.normalizeItemName(l2.getTitle()))) {
+          l2.setRelatedKnowledgeRaw(ETHICS_DEFAULT_KNOWLEDGE);
+          // splitItems 对单级「1.」编号不切条目，这里按行显式拆并剥编号，与其素材风格一致
+          for (String item : ETHICS_DEFAULT_KNOWLEDGE.split("\n")) {
+            l2.getTheoryMaterials().add(item.replaceFirst("^\\d+\\.", ""));
+          }
+        }
         if (l2.getTheoryMaterials().isEmpty()) {
           l2.setNeedLlm(true);
           result.getParseWarnings().add("WARN: 空小节（无列举项，需 LLM 概括）：基本要求 "

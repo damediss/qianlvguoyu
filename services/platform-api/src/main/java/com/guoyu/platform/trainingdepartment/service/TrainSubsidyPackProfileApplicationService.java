@@ -63,9 +63,47 @@ public class TrainSubsidyPackProfileApplicationService {
   /** 解析默认 active 配方 */
   @Transactional(readOnly = true)
   public TrainSubsidyPackProfileEntity resolveActive(String regionCode, String regionName, String trainMode, Integer policyYear) {
+    return resolveActive(regionCode, regionName, trainMode, policyYear, false);
+  }
+
+  /**
+   * @param softFallback ensure 场景：同年无匹配时回退邻近年 / 任意 active 配方
+   */
+  @Transactional(readOnly = true)
+  public TrainSubsidyPackProfileEntity resolveActive(
+      String regionCode, String regionName, String trainMode, Integer policyYear, boolean softFallback) {
     if (!StringUtils.hasText(trainMode) || policyYear == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "培训模式与政策年不能为空");
     }
+    TrainSubsidyPackProfileEntity hit = findActive(regionCode, regionName, trainMode, policyYear);
+    if (hit != null) return hit;
+    if (softFallback) {
+      // 同年任意地市 active → 邻近年同地市 → 任意 active
+      hit = findActive(null, null, trainMode, policyYear);
+      if (hit != null) return hit;
+      for (int delta : new int[] { -1, 1, -2, 2 }) {
+        hit = findActive(regionCode, regionName, trainMode, policyYear + delta);
+        if (hit != null) return hit;
+      }
+      List<TrainSubsidyPackProfileEntity> any = profileMapper.selectList(
+          new LambdaQueryWrapper<TrainSubsidyPackProfileEntity>()
+              .eq(TrainSubsidyPackProfileEntity::getDeleted, 0)
+              .eq(TrainSubsidyPackProfileEntity::getTrainMode, trainMode.trim())
+              .eq(TrainSubsidyPackProfileEntity::getStatus, "active")
+              .orderByDesc(TrainSubsidyPackProfileEntity::getIsDefault)
+              .orderByDesc(TrainSubsidyPackProfileEntity::getPolicyYear)
+              .orderByDesc(TrainSubsidyPackProfileEntity::getId)
+              .last("LIMIT 1"));
+      if (!any.isEmpty()) return any.get(0);
+    }
+    throw new BusinessException(ErrorCode.BAD_REQUEST,
+        "未找到配方：地市=" + (StringUtils.hasText(regionName) ? regionName : regionCode)
+            + " 模式=" + trainMode + " 年=" + policyYear
+            + "。请确认已发布对应地市配方，或在新建时指定配方");
+  }
+
+  private TrainSubsidyPackProfileEntity findActive(
+      String regionCode, String regionName, String trainMode, Integer policyYear) {
     LambdaQueryWrapper<TrainSubsidyPackProfileEntity> q = new LambdaQueryWrapper<TrainSubsidyPackProfileEntity>()
         .eq(TrainSubsidyPackProfileEntity::getDeleted, 0)
         .eq(TrainSubsidyPackProfileEntity::getTrainMode, trainMode.trim())
@@ -74,14 +112,13 @@ public class TrainSubsidyPackProfileApplicationService {
         .orderByDesc(TrainSubsidyPackProfileEntity::getIsDefault)
         .orderByDesc(TrainSubsidyPackProfileEntity::getId);
     List<TrainSubsidyPackProfileEntity> all = profileMapper.selectList(q);
+    if (all.isEmpty()) return null;
     String code = regionCode != null ? regionCode.trim() : "";
     String name = regionName != null ? regionName.trim() : "";
-    return all.stream()
-        .filter(p -> matchRegion(p, code, name))
-        .findFirst()
-        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
-            "未找到配方：地市=" + (StringUtils.hasText(name) ? name : code)
-                + " 模式=" + trainMode + " 年=" + policyYear));
+    if (!StringUtils.hasText(code) && !StringUtils.hasText(name)) {
+      return all.get(0);
+    }
+    return all.stream().filter(p -> matchRegion(p, code, name)).findFirst().orElse(null);
   }
 
   public List<TrainSubsidyPackSlotEntity> listSlots(Long profileId) {

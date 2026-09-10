@@ -26,7 +26,12 @@ import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -36,6 +41,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -63,6 +69,7 @@ public class TrainGraduationApplicationService {
   private final PlatformUserDetailMapper platformUserDetailMapper;
   private final TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper;
   private final TrainingIdCardHeaderResolver idCardHeaderResolver;
+  private final String cdnPath;
 
   public TrainGraduationApplicationService(
       TrainInfoClassMapper classMapper,
@@ -74,7 +81,8 @@ public class TrainGraduationApplicationService {
       TrainFileTempMapper fileTempMapper,
       PlatformUserDetailMapper platformUserDetailMapper,
       TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper,
-      TrainingIdCardHeaderResolver idCardHeaderResolver) {
+      TrainingIdCardHeaderResolver idCardHeaderResolver,
+      @Value("${platform.cdn.path:./data/cdn}") String cdnPath) {
     this.classMapper = classMapper;
     this.infoListMapper = infoListMapper;
     this.peopleListMapper = peopleListMapper;
@@ -85,11 +93,12 @@ public class TrainGraduationApplicationService {
     this.platformUserDetailMapper = platformUserDetailMapper;
     this.signUpPeopleSelfMapper = signUpPeopleSelfMapper;
     this.idCardHeaderResolver = idCardHeaderResolver;
+    this.cdnPath = cdnPath;
   }
 
   private static final String EMPTY_FILTER = "__EMPTY__";
 
-  @Transactional(readOnly = true)
+  @Transactional
   public Map<String, Object> graduationCandidates(
       Integer page,
       Integer pageSize,
@@ -119,6 +128,16 @@ public class TrainGraduationApplicationService {
     Page<TrainInfoClassEntity> mpPage = classMapper.selectPage(
         new Page<>(page != null ? page : 1, pageSize != null ? pageSize : 20), q);
 
+    List<Long> pageClassIds = mpPage.getRecords().stream().map(TrainInfoClassEntity::getId).toList();
+    // 已获证（证书回填）学员自动结业，并刷新班级结业进度/状态
+    syncGraduationFromCertificates(pageClassIds);
+    Map<Long, TrainInfoClassEntity> classAfterSync = new HashMap<>();
+    if (!pageClassIds.isEmpty()) {
+      for (TrainInfoClassEntity refreshed : classMapper.selectBatchIds(pageClassIds)) {
+        classAfterSync.put(refreshed.getId(), refreshed);
+      }
+    }
+
     List<Long> companyIds = new ArrayList<>();
     List<Long> workTypeIds = new ArrayList<>();
     List<Long> trainInfoIds = new ArrayList<>();
@@ -132,11 +151,11 @@ public class TrainGraduationApplicationService {
     Map<Long, String> workTypeNameMap = loadWorkTypeNames(workTypeIds);
     Map<Long, TrainInfoListEntity> infoMap = loadInfoMap(trainInfoIds);
 
-    List<Long> pageClassIds = mpPage.getRecords().stream().map(TrainInfoClassEntity::getId).toList();
     Map<Long, int[]> certStatsByClass = loadCertBackfillStats(pageClassIds);
 
     List<Map<String, Object>> list = new ArrayList<>();
-    for (TrainInfoClassEntity c : mpPage.getRecords()) {
+    for (TrainInfoClassEntity raw : mpPage.getRecords()) {
+      TrainInfoClassEntity c = classAfterSync.getOrDefault(raw.getId(), raw);
       List<TrainPeopleListEntity> students = listStudents(c.getId());
       int total = students.size();
       int graduated = (int) students.stream()
@@ -155,6 +174,7 @@ public class TrainGraduationApplicationService {
       item.put("companyName", companyNameMap.getOrDefault(c.getCompanyId(), ""));
       item.put("workTypeId", c.getWorkTypeId());
       item.put("workTypeName", workTypeNameMap.getOrDefault(c.getWorkTypeId(), ""));
+      item.put("workTypeLevel", c.getWorkTypeLevel());
       item.put("studentCount", total);
       item.put("graduatedCount", graduated);
       item.put("certBackfillCount", certBackfillCount);
@@ -371,8 +391,9 @@ public class TrainGraduationApplicationService {
     });
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   public Map<String, Object> graduationStudents(Long classId) {
+    syncGraduationFromCertificates(List.of(classId));
     TrainInfoClassEntity clazz = requireClass(classId);
     List<TrainPeopleListEntity> students = listStudents(classId);
 
@@ -416,6 +437,12 @@ public class TrainGraduationApplicationService {
       item.put("certificateTempId", clazz.getCertificateTempId());
       item.put("certificateNo", cert != null ? cert.getCertificateNo() : null);
       item.put("certificateFilePath", cert != null ? cert.getFilePath() : null);
+      item.put("certificateOccupation", cert != null ? cert.getOccupation() : null);
+      item.put("certificateWorkType", cert != null ? cert.getWorkType() : null);
+      item.put("certificateLevel", cert != null ? cert.getLevel() : null);
+      item.put("certificateIssuingAuthority", cert != null ? cert.getIssuingAuthority() : null);
+      item.put("certificateEvaluationOrg", cert != null ? cert.getEvaluationOrg() : null);
+      item.put("certificateIssueDate", cert != null ? cert.getIssueDate() : null);
       item.put("certStatus", cert != null ? cert.getStatus() : null);
       item.put("hasCertificate", cert != null);
       list.add(item);
@@ -431,8 +458,9 @@ public class TrainGraduationApplicationService {
     return result;
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   public Map<String, Object> graduationStudentDetail(Long classId, Long peopleId) {
+    syncGraduationFromCertificates(List.of(classId));
     requireClass(classId);
     TrainPeopleListEntity student = requireStudent(classId, peopleId);
     PlatformUserDetailEntity platformDetail = loadPlatformDetail(student.getIdCard());
@@ -481,6 +509,13 @@ public class TrainGraduationApplicationService {
     result.put("templateTitle", templateTitle);
     result.put("certificateNo", cert != null ? cert.getCertificateNo() : null);
     result.put("certificateFilePath", cert != null ? cert.getFilePath() : null);
+    result.put("certificateOccupation", cert != null ? cert.getOccupation() : null);
+    result.put("certificateWorkType", cert != null ? cert.getWorkType() : null);
+    result.put("certificateLevel", cert != null ? cert.getLevel() : null);
+    result.put("certificateIssuingAuthority", cert != null ? cert.getIssuingAuthority() : null);
+    result.put("certificateEvaluationOrg", cert != null ? cert.getEvaluationOrg() : null);
+    result.put("certificateIssueDate", cert != null ? cert.getIssueDate() : null);
+    result.put("certificateIdDocType", cert != null ? cert.getIdDocType() : null);
     result.put("hasCertificate", cert != null);
     result.put("idCardHeader", header);
     result.put("idCardFront", resolvePhoto(
@@ -495,7 +530,7 @@ public class TrainGraduationApplicationService {
 
   @Transactional
   public Map<String, Object> updateGraduationStudent(Long classId, Long peopleId, GraduationStudentUpdateReq req) {
-    requireClass(classId);
+    TrainInfoClassEntity clazz = requireClass(classId);
     TrainPeopleListEntity student = requireStudent(classId, peopleId);
     if (req != null) {
       if (StringUtils.hasText(req.getRealname())) {
@@ -512,13 +547,260 @@ public class TrainGraduationApplicationService {
       }
     }
     peopleListMapper.updateById(student);
+
+    boolean touchPhotos = req != null && (req.getIdCardHeader() != null
+        || req.getIdCardFront() != null
+        || req.getIdCardBack() != null);
+    if (touchPhotos) {
+      upsertStudentPhotos(student, req);
+    }
+    if (req != null && req.getCertificateFilePath() != null) {
+      upsertStudentCertificateFile(clazz, student, req.getCertificateFilePath().trim());
+    }
+
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("id", student.getId());
     result.put("realname", student.getRealname());
     result.put("phone", student.getPhone());
     result.put("idCard", student.getIdCard());
     result.put("ticketNo", student.getTicketNo());
+    result.put("idCardHeader", req != null ? blankToNull(req.getIdCardHeader()) : null);
+    result.put("idCardFront", req != null ? blankToNull(req.getIdCardFront()) : null);
+    result.put("idCardBack", req != null ? blankToNull(req.getIdCardBack()) : null);
+    result.put("certificateFilePath", req != null ? blankToNull(req.getCertificateFilePath()) : null);
     return result;
+  }
+
+  /** 写入 platform_user_detail + 报名档案；证件照更新时清本地 header 缓存文件，确保详情优先展示新图。 */
+  private void upsertStudentPhotos(TrainPeopleListEntity student, GraduationStudentUpdateReq req) {
+    String idCard = student.getIdCard() != null ? student.getIdCard().trim() : "";
+    if (!StringUtils.hasText(idCard)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请先填写身份证号后再上传证件照片");
+    }
+
+    if (req.getIdCardHeader() != null && StringUtils.hasText(req.getIdCardHeader())) {
+      clearLocalHeaderFiles(idCard);
+    }
+
+    PlatformUserDetailEntity detail = loadPlatformDetail(idCard);
+    if (detail == null) {
+      detail = new PlatformUserDetailEntity();
+      detail.setIdcard(idCard);
+      detail.setRealname(student.getRealname());
+      detail.setPhone(student.getPhone());
+      detail.setUserId(student.getPlatformUserId() != null ? student.getPlatformUserId() : student.getUserId());
+      detail.setDeleted(0);
+      if (req.getIdCardHeader() != null) {
+        detail.setIdcardHeader(blankToNull(req.getIdCardHeader()));
+      }
+      if (req.getIdCardFront() != null) {
+        detail.setIdcardFront(blankToNull(req.getIdCardFront()));
+      }
+      if (req.getIdCardBack() != null) {
+        detail.setIdcardBack(blankToNull(req.getIdCardBack()));
+      }
+      platformUserDetailMapper.insert(detail);
+    } else {
+      if (req.getIdCardHeader() != null) {
+        detail.setIdcardHeader(blankToNull(req.getIdCardHeader()));
+      }
+      if (req.getIdCardFront() != null) {
+        detail.setIdcardFront(blankToNull(req.getIdCardFront()));
+      }
+      if (req.getIdCardBack() != null) {
+        detail.setIdcardBack(blankToNull(req.getIdCardBack()));
+      }
+      if (!StringUtils.hasText(detail.getRealname()) && StringUtils.hasText(student.getRealname())) {
+        detail.setRealname(student.getRealname());
+      }
+      if (!StringUtils.hasText(detail.getPhone()) && StringUtils.hasText(student.getPhone())) {
+        detail.setPhone(student.getPhone());
+      }
+      platformUserDetailMapper.updateById(detail);
+    }
+
+    TrainSignUpPeopleSelfEntity signUp = loadSignUpProfile(idCard);
+    if (signUp != null) {
+      if (req.getIdCardHeader() != null) {
+        signUp.setIdCardHeader(blankToNull(req.getIdCardHeader()));
+      }
+      if (req.getIdCardFront() != null) {
+        signUp.setIdCardFront(blankToNull(req.getIdCardFront()));
+      }
+      if (req.getIdCardBack() != null) {
+        signUp.setIdCardBack(blankToNull(req.getIdCardBack()));
+      }
+      signUpPeopleSelfMapper.updateById(signUp);
+    }
+  }
+
+  private void upsertStudentCertificateFile(
+      TrainInfoClassEntity clazz, TrainPeopleListEntity student, String filePath) {
+    Long tenantId = SecurityContext.currentUser() != null
+        ? SecurityContext.currentUser().getTenantId()
+        : null;
+    Long userId = SecurityContext.currentUser() != null
+        ? SecurityContext.currentUser().getUserId()
+        : null;
+    TrainCertificateEntity existing = certificateMapper.selectOne(
+        new LambdaQueryWrapper<TrainCertificateEntity>()
+            .eq(TrainCertificateEntity::getClassId, clazz.getId())
+            .eq(TrainCertificateEntity::getPeopleId, student.getId())
+            .eq(TrainCertificateEntity::getDeleted, 0)
+            .orderByDesc(TrainCertificateEntity::getId)
+            .last("LIMIT 1"));
+    LocalDateTime now = LocalDateTime.now();
+    if (existing == null) {
+      if (!StringUtils.hasText(filePath)) {
+        return;
+      }
+      TrainCertificateEntity cert = new TrainCertificateEntity();
+      cert.setTenantId(tenantId);
+      cert.setProjectId(clazz.getTrainInfoId());
+      cert.setClassId(clazz.getId());
+      cert.setPeopleId(student.getId());
+      cert.setUserId(student.getPlatformUserId() != null ? student.getPlatformUserId() : student.getUserId());
+      cert.setUserName(student.getRealname());
+      cert.setCertificateType("skill_level_cert");
+      cert.setFilePath(filePath);
+      cert.setStatus(1);
+      cert.setCreatedBy(userId);
+      cert.setCreateTime(now);
+      cert.setUpdateTime(now);
+      cert.setDeleted(0);
+      certificateMapper.insert(cert);
+      syncGraduationFromCertificates(List.of(clazz.getId()));
+      return;
+    }
+    existing.setFilePath(StringUtils.hasText(filePath) ? filePath : null);
+    existing.setUpdateTime(now);
+    certificateMapper.updateById(existing);
+    if (StringUtils.hasText(filePath)) {
+      syncGraduationFromCertificates(List.of(clazz.getId()));
+    }
+  }
+
+  /**
+   * 根据证书回填情况自动结业：已回填真实证书的未结业学员标为已结业，并刷新班级结业状态。
+   * 不覆盖「不合格结业」(2)。
+   */
+  @Transactional
+  public void syncGraduationFromCertificates(Collection<Long> classIds) {
+    if (classIds == null || classIds.isEmpty()) {
+      return;
+    }
+    List<Long> ids = classIds.stream().filter(id -> id != null && id > 0).distinct().toList();
+    if (ids.isEmpty()) {
+      return;
+    }
+    Map<Long, Set<Long>> backfillPeopleByClass = loadBackfillPeopleByClass(ids);
+    Long userId = SecurityContext.currentUser() != null
+        ? SecurityContext.currentUser().getUserId()
+        : null;
+    LocalDateTime now = LocalDateTime.now();
+    for (Long classId : ids) {
+      Set<Long> peopleIds = backfillPeopleByClass.getOrDefault(classId, Set.of());
+      if (!peopleIds.isEmpty()) {
+        for (TrainPeopleListEntity person : peopleListMapper.selectBatchIds(peopleIds)) {
+          if (person == null || (person.getDeleted() != null && person.getDeleted() != 0)) {
+            continue;
+          }
+          if (!classId.equals(person.getTrainClassId())) {
+            continue;
+          }
+          if (nzStatus(person.getGraduateStatus()) != STATUS_PENDING) {
+            continue;
+          }
+          person.setGraduateStatus(STATUS_PASSED);
+          person.setGraduateAt(now);
+          person.setGraduateBy(userId);
+          if (!StringUtils.hasText(person.getGraduateRemark())) {
+            person.setGraduateRemark("证书回填自动结业");
+          }
+          peopleListMapper.updateById(person);
+        }
+      }
+      refreshClassGraduateStatus(classId, now);
+    }
+  }
+
+  private Map<Long, Set<Long>> loadBackfillPeopleByClass(List<Long> classIds) {
+    Map<Long, Set<Long>> result = new HashMap<>();
+    List<TrainCertificateEntity> rows = certificateMapper.selectList(
+        new LambdaQueryWrapper<TrainCertificateEntity>()
+            .in(TrainCertificateEntity::getClassId, classIds)
+            .eq(TrainCertificateEntity::getDeleted, 0)
+            .isNotNull(TrainCertificateEntity::getPeopleId));
+    for (TrainCertificateEntity c : rows) {
+      if (!isBackfilledCertificate(c)) {
+        continue;
+      }
+      Long classId = c.getClassId();
+      Long peopleId = c.getPeopleId();
+      if (classId == null || peopleId == null) {
+        continue;
+      }
+      result.computeIfAbsent(classId, k -> new HashSet<>()).add(peopleId);
+    }
+    return result;
+  }
+
+  private void refreshClassGraduateStatus(Long classId, LocalDateTime now) {
+    TrainInfoClassEntity clazz = classMapper.selectById(classId);
+    if (clazz == null || (clazz.getDeleted() != null && clazz.getDeleted() != 0)) {
+      return;
+    }
+    List<TrainPeopleListEntity> students = listStudents(classId);
+    int total = students.size();
+    int graduated = (int) students.stream()
+        .filter(s -> PROCESSED.contains(nzStatus(s.getGraduateStatus())))
+        .count();
+    String status;
+    if (total == 0 || graduated == 0) {
+      status = "pending";
+    } else if (graduated >= total) {
+      status = "done";
+    } else {
+      status = "partial";
+    }
+    String old = normalizeClassStatus(clazz.getGraduateStatus());
+    boolean needAt = "done".equals(status) && clazz.getGraduateAt() == null;
+    if (!status.equals(old) || needAt) {
+      clazz.setGraduateStatus(status);
+      if (needAt) {
+        clazz.setGraduateAt(now);
+      }
+      classMapper.updateById(clazz);
+    }
+  }
+
+  /** 清除证件照本地缓存文件，避免盖住新上传的 platform_user_detail URL。 */
+  private void clearLocalHeaderFiles(String idCard) {
+    if (!StringUtils.hasText(idCard) || !StringUtils.hasText(cdnPath)) {
+      return;
+    }
+    String id = idCard.trim();
+    Path root = Paths.get(cdnPath).toAbsolutePath().normalize();
+    Path[] candidates = new Path[] {
+        root.resolve("idCard/old/headerOrigin").resolve(id + "_full.png"),
+        root.resolve("idCard/headerOrigin").resolve(id + "_header2.jpg"),
+        root.resolve("idCard/headerOrigin").resolve(id + "_header.jpg"),
+    };
+    for (Path path : candidates) {
+      try {
+        Files.deleteIfExists(path);
+      } catch (Exception ex) {
+        log.warn("[graduation] 清理本地证件照失败: {}", path, ex);
+      }
+    }
+  }
+
+  private static String blankToNull(String value) {
+    if (value == null) {
+      return null;
+    }
+    String trimmed = value.trim();
+    return trimmed.isEmpty() ? null : trimmed;
   }
 
   /**

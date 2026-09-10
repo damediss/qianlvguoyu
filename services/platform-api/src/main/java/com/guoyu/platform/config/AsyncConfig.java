@@ -1,6 +1,7 @@
 package com.guoyu.platform.config;
 
 import java.util.concurrent.ThreadPoolExecutor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.AsyncTaskExecutor;
@@ -78,6 +79,91 @@ public class AsyncConfig {
   }
 
   /**
+   * 理论试题生成批次编排池（每批次占 1 线程做编排，块任务派发到 theoryGenBlockExecutor，暂停只挡新块）。
+   * 并发批次上限 platform.theory.gen.batch-concurrency（默认 3，可配）：同蓝图仍串行（提交侧校验），
+   * 不同蓝图可并行；排队超出部分显示"等待中"。
+   * AbortPolicy：同时批次过多时直接拒绝 → 503 服务繁忙（AGENTS.md 坑 #12/#14）。
+   */
+  @Bean(name = "theoryGenExecutor")
+  public ThreadPoolTaskExecutor theoryGenExecutor(
+      @Value("${platform.theory.gen.batch-concurrency:3}") int batchConcurrency) {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(batchConcurrency);
+    executor.setMaxPoolSize(batchConcurrency);
+    executor.setQueueCapacity(10);
+    executor.setThreadNamePrefix("theory-gen-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(60);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
+  /**
+   * 理论试题生成块任务池（优化方案 v0.3 P3；2026-09-08 GLM 并发闸口方案 A 配套扩容）。
+   * core=max=platform.theory.gen.block-concurrency（默认 50，可配）；queueCapacity 固定 200：
+   * 3 批次并行 × 每批 50 派发名额 = 150 个已派发块全部可入队，不再 AbortPolicy 误拒计失败。
+   * glm-5.3-flash 在飞调用数由 FaqLlmClient 模型闸口（platform.ai.glm-max-concurrency，默认 50）
+   * 全局统一封顶、超出排队等待；本池只是搬运线程，线程数 ≥ 闸口上限才能跑满并发。
+   * AbortPolicy：队列耗尽的极端情况拒绝由编排侧捕获计块失败（坑 #12/#14）。
+   */
+  @Bean(name = "theoryGenBlockExecutor")
+  public ThreadPoolTaskExecutor theoryGenBlockExecutor(
+      @Value("${platform.theory.gen.block-concurrency:50}") int blockConcurrency) {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(Math.max(1, blockConcurrency));
+    executor.setMaxPoolSize(Math.max(1, blockConcurrency));
+    executor.setQueueCapacity(200);
+    executor.setThreadNamePrefix("theory-gen-block-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(120);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
+  /**
+   * 操作技能试题生成批次编排池（每批次占 1 线程做编排，块任务派发到 skillGenBlockExecutor，暂停只挡新块）。
+   * 并发批次上限 platform.skill.gen.batch-concurrency（默认 2）：同蓝图仍串行（提交侧校验），
+   * 不同蓝图可并行。AbortPolicy：批次过多直接拒绝 → 503 服务繁忙（AGENTS.md 坑 #12/#14）。
+   */
+  @Bean(name = "skillGenExecutor")
+  public ThreadPoolTaskExecutor skillGenExecutor(
+      @Value("${platform.skill.gen.batch-concurrency:2}") int batchConcurrency) {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(batchConcurrency);
+    executor.setMaxPoolSize(batchConcurrency);
+    executor.setQueueCapacity(10);
+    executor.setThreadNamePrefix("skill-gen-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(60);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
+  /**
+   * 操作技能试题生成块任务池（1 考评点 = 1 块，产出 5 题三件套，单块输出体量大）。
+   * core=max=platform.skill.gen.block-concurrency（默认 5，可配）；queueCapacity 固定 60
+   * （2 批次并行 × 每批 5 个派发名额 = 10 个已派发块全部可入队，极端情况由编排侧捕获计块失败）。
+   * glm-5.3-flash 在飞调用仍受 FaqLlmClient 模型闸口（默认 50）全局封顶；本池只是搬运线程。
+   */
+  @Bean(name = "skillGenBlockExecutor")
+  public ThreadPoolTaskExecutor skillGenBlockExecutor(
+      @Value("${platform.skill.gen.block-concurrency:5}") int blockConcurrency) {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(Math.max(1, blockConcurrency));
+    executor.setMaxPoolSize(Math.max(1, blockConcurrency));
+    executor.setQueueCapacity(60);
+    executor.setThreadNamePrefix("skill-gen-block-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(120);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
+  /**
    * AI 同步学鼓励语异步生成池（ReviewLlmAssistService）。
    * AbortPolicy：队列满时拒绝，由调用方捕获降级为预置文案（AGENTS.md 坑 #12/#14）。
    * （单库化前名为 reviewSyncExecutor，兼作 exam_result 异步回写池；回写已改事务内同步直写）
@@ -106,6 +192,21 @@ public class AsyncConfig {
     executor.setWaitForTasksToCompleteOnShutdown(true);
     executor.setAwaitTerminationSeconds(120);
     executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
+  @Bean(name = "certImportExecutor")
+  public ThreadPoolTaskExecutor certImportExecutor() {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    // 预览匹配：PDF 解析 / OCR 可并行，提速批量证书导入
+    executor.setCorePoolSize(4);
+    executor.setMaxPoolSize(8);
+    executor.setQueueCapacity(200);
+    executor.setThreadNamePrefix("cert-import-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(120);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
     executor.initialize();
     return executor;
   }

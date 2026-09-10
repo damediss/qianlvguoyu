@@ -85,9 +85,8 @@ class CompetitionStageExecutionContractSchemaTest {
         "V20260803_004__create_competition_settlement_promotion_contract.sql",
         "V20260803_006__freeze_competition_stage_execution_scope.sql",
         "V20260803_007__add_competition_promotion_source_plan.sql",
-        "V20260805_005__add_competition_promotion_rules_work_type_stages_and_confirmations.sql",
-        "V20260805_006__preserve_work_type_stage_fixed_quota.sql",
-        "V20260805_007__add_work_type_stage_plan_lifecycle.sql")) {
+        "V20260804_005__add_competition_stage_plan_status.sql",
+        "V20260805_005__add_competition_promotion_rules_work_type_stages_and_confirmations.sql")) {
       try (var input = getClass().getClassLoader().getResourceAsStream("db/migration/" + name)) {
         assertThat(input).as(name).isNotNull();
         value.append(new String(input.readAllBytes(), StandardCharsets.UTF_8)).append('\n');

@@ -43,11 +43,14 @@ public class StandardExportApplicationService {
 
   private final ExamStandardTaskMapper taskMapper;
   private final ExamStandardNodeMapper nodeMapper;
+  private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
   public StandardExportApplicationService(ExamStandardTaskMapper taskMapper,
-      ExamStandardNodeMapper nodeMapper) {
+      ExamStandardNodeMapper nodeMapper,
+      com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
     this.taskMapper = taskMapper;
     this.nodeMapper = nodeMapper;
+    this.objectMapper = objectMapper;
   }
 
   /** 导出文件载体 */
@@ -205,25 +208,48 @@ public class StandardExportApplicationService {
   }
 
   private String theoryTitle(ExamStandardTaskEntity task, TreeScope scope) {
-    return task.getWorkTypeTitle() + "(" + LEVEL_SHORT[Math.min(scope.levelCode(), 4)]
-        + "级)" + ("默认".equals(scope.direction()) ? "" : scope.direction())
+    return task.getWorkTypeTitle() + "(" + levelName(task, scope.levelCode()) + ")"
+        + ("默认".equals(scope.direction()) ? "" : scope.direction())
         + "理论知识考评要素细目表";
   }
 
   private String skillTitle(ExamStandardTaskEntity task, TreeScope scope) {
-    return task.getWorkTypeTitle() + "（" + LEVEL_SHORT[Math.min(scope.levelCode(), 4)] + "级）"
+    return task.getWorkTypeTitle() + "（" + levelName(task, scope.levelCode()) + "）"
         + "操作技能考评要素细目表";
   }
 
   private String careerLine(ExamStandardTaskEntity task, TreeScope scope) {
     return "职业： " + task.getWorkTypeTitle() + "                级别： "
-        + LEVEL_SHORT[Math.min(scope.levelCode(), 4)];
+        + levelName(task, scope.levelCode());
   }
 
   private String excelFileName(ExamStandardTaskEntity task, TreeScope scope, String kind) {
     String directionPart = "默认".equals(scope.direction()) ? "" : scope.direction();
-    return task.getWorkTypeTitle() + "(" + LEVEL_SHORT[Math.min(scope.levelCode(), 4)] + "级)"
+    // 文件名不能含 "/"，完整等级名（二级/技师）中的斜杠替换为短横
+    String levelPart = levelName(task, scope.levelCode()).replace('/', '-');
+    return task.getWorkTypeTitle() + "(" + levelPart + ")"
         + directionPart + "_" + kind + "_" + FILE_TS.format(LocalDateTime.now()) + ".xlsx";
+  }
+
+  /** 完整等级名（"二级/技师"）：取自任务 levelsJson，缺失时回退简写（"二级"） */
+  private String levelName(ExamStandardTaskEntity task, int levelCode) {
+    String json = task.getLevelsJson();
+    if (json != null && !json.isBlank()) {
+      try {
+        List<Map<String, Object>> levels = objectMapper.readValue(json, List.class);
+        for (Map<String, Object> level : levels) {
+          Object code = level.get("levelCode");
+          Object name = level.get("levelName");
+          if (code instanceof Number && ((Number) code).intValue() == levelCode
+              && name != null && !name.toString().isBlank()) {
+            return name.toString();
+          }
+        }
+      } catch (Exception e) {
+        log.warn("[细目表导出] levelsJson 解析失败，回退简写等级名: {}", e.getMessage());
+      }
+    }
+    return LEVEL_SHORT[Math.min(levelCode, 4)] + "级";
   }
 
   /** 导出成功后状态流转（reviewing/confirmed → exported） */

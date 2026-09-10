@@ -11,20 +11,26 @@ import com.guoyu.platform.trainingdepartment.dto.SubsidyTransitionReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSubsidyCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSubsidyQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSubsidyUpdateReq;
+import com.guoyu.platform.trainingdepartment.entity.TrainCertificateEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSubsidyEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSubsidyEventEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSubsidyPackProfileEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSubsidySlotFileEntity;
+import com.guoyu.platform.trainingdepartment.mapper.TrainCertificateMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidyEventMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidyMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSubsidySlotFileMapper;
+import com.guoyu.platform.trainingdepartment.support.SubsidyCertifiedPeopleSupport;
 import com.guoyu.platform.trainingdepartment.vo.SubsidyEventVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainSubsidyVO;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +54,8 @@ public class TrainSubsidyApplicationService {
   private final TrainSubsidySlotFileMapper slotFileMapper;
   private final TrainInfoClassMapper classMapper;
   private final TrainInfoListMapper infoListMapper;
+  private final TrainPeopleListMapper peopleListMapper;
+  private final TrainCertificateMapper certificateMapper;
   private final TrainSubsidyPackProfileApplicationService profileService;
   private final TrainSubsidyMaterialPackService materialPackService;
   private final com.guoyu.platform.file.service.FileApplicationService fileApplicationService;
@@ -59,6 +67,8 @@ public class TrainSubsidyApplicationService {
       TrainSubsidySlotFileMapper slotFileMapper,
       TrainInfoClassMapper classMapper,
       TrainInfoListMapper infoListMapper,
+      TrainPeopleListMapper peopleListMapper,
+      TrainCertificateMapper certificateMapper,
       TrainSubsidyPackProfileApplicationService profileService,
       TrainSubsidyMaterialPackService materialPackService,
       com.guoyu.platform.file.service.FileApplicationService fileApplicationService) {
@@ -67,6 +77,8 @@ public class TrainSubsidyApplicationService {
     this.slotFileMapper = slotFileMapper;
     this.classMapper = classMapper;
     this.infoListMapper = infoListMapper;
+    this.peopleListMapper = peopleListMapper;
+    this.certificateMapper = certificateMapper;
     this.profileService = profileService;
     this.materialPackService = materialPackService;
     this.fileApplicationService = fileApplicationService;
@@ -87,9 +99,23 @@ public class TrainSubsidyApplicationService {
     if (req.getPolicyYear() != null) wrapper.eq(TrainSubsidyEntity::getPolicyYear, req.getPolicyYear());
     if (req.getStatus() != null) wrapper.eq(TrainSubsidyEntity::getStatus, req.getStatus());
     if (StringUtils.hasText(req.getKeyword())) {
-      wrapper.and(w -> w.like(TrainSubsidyEntity::getPolicyTemplate, req.getKeyword())
-          .or().like(TrainSubsidyEntity::getRegionName, req.getKeyword())
-          .or().like(TrainSubsidyEntity::getRemark, req.getKeyword()));
+      String kw = req.getKeyword().trim();
+      List<Long> matchedClassIds = classMapper.selectList(new LambdaQueryWrapper<TrainInfoClassEntity>()
+              .select(TrainInfoClassEntity::getId)
+              .eq(TrainInfoClassEntity::getDeleted, 0)
+              .like(TrainInfoClassEntity::getTitle, kw)
+              .last("LIMIT 80"))
+          .stream()
+          .map(TrainInfoClassEntity::getId)
+          .toList();
+      wrapper.and(w -> {
+        w.like(TrainSubsidyEntity::getPolicyTemplate, kw)
+            .or().like(TrainSubsidyEntity::getRegionName, kw)
+            .or().like(TrainSubsidyEntity::getRemark, kw);
+        if (!matchedClassIds.isEmpty()) {
+          w.or().in(TrainSubsidyEntity::getClassId, matchedClassIds);
+        }
+      });
     }
     Page<TrainSubsidyEntity> page = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
     return new PageResponse<>(page.getRecords().stream().map(this::toVO).toList(),
@@ -101,11 +127,43 @@ public class TrainSubsidyApplicationService {
     return toVO(getExisting(id));
   }
 
+  /** 本班当前进行中补贴单（排除已关闭）；无则返回 null。 */
+  @Transactional(readOnly = true)
+  public TrainSubsidyVO getActiveByClassId(Long classId) {
+    requireClass(classId);
+    TrainSubsidyEntity entity = findOpenByClassId(classId);
+    return entity == null ? null : toVO(entity);
+  }
+
+  /**
+   * 按班幂等取单：已有进行中补贴单则直接返回，否则按默认/入参创建草稿。
+   * 地市/政策年尽量从培训单与班级推导；推导失败时用试点默认（来宾×当年）保证一键可开台。
+   */
+  @Transactional
+  public TrainSubsidyVO ensureForClass(Long classId, TrainSubsidyCreateReq req) {
+    requireClass(classId);
+    TrainSubsidyEntity existing = findOpenByClassId(classId);
+    if (existing != null) {
+      return toVO(existing);
+    }
+    TrainSubsidyCreateReq createReq = req != null ? req : new TrainSubsidyCreateReq();
+    createReq.setClassId(classId);
+    if (!StringUtils.hasText(createReq.getTrainMode())) {
+      createReq.setTrainMode(MODE_SKILL);
+    }
+    return create(createReq, true);
+  }
+
   @Transactional
   public TrainSubsidyVO create(TrainSubsidyCreateReq req) {
+    return create(req, false);
+  }
+
+  private TrainSubsidyVO create(TrainSubsidyCreateReq req, boolean softDefaults) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
     TrainInfoClassEntity clazz = requireClass(req.getClassId());
+    assertNoOpenSubsidy(clazz.getId());
     TrainInfoListEntity info = clazz.getTrainInfoId() != null
         ? infoListMapper.selectById(clazz.getTrainInfoId()) : null;
 
@@ -117,25 +175,13 @@ public class TrainSubsidyApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "本期不做新型学徒（D16）");
     }
 
-    String regionCode = StringUtils.hasText(req.getRegionCode())
-        ? req.getRegionCode().trim()
-        : (info != null && info.getCityId() != null ? String.valueOf(info.getCityId()) : null);
-    String regionName = StringUtils.hasText(req.getRegionName())
-        ? req.getRegionName().trim()
-        : (info != null ? info.getCityName() : null);
-    if (!StringUtils.hasText(regionName) && !StringUtils.hasText(regionCode)) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "无法解析申报地市，请手工选择");
-    }
-    if (!StringUtils.hasText(regionCode)) {
-      regionCode = regionName;
-    }
-    if (!StringUtils.hasText(regionName)) {
-      regionName = regionCode;
-    }
+    String[] region = resolveRegionPair(req, info, softDefaults);
+    String regionCode = region[0];
+    String regionName = region[1];
 
     Integer policyYear = req.getPolicyYear();
     if (policyYear == null) {
-      policyYear = resolvePolicyYear(clazz, info);
+      policyYear = resolvePolicyYear(clazz, info, softDefaults);
     }
 
     TrainSubsidyPackProfileEntity profile;
@@ -150,7 +196,20 @@ public class TrainSubsidyApplicationService {
       profile.setPolicyYear(vo.policyYear());
       profile.setTitle(vo.title());
     } else {
-      profile = profileService.resolveActive(regionCode, regionName, trainMode, policyYear);
+      profile = profileService.resolveActive(regionCode, regionName, trainMode, policyYear, softDefaults);
+      // 软回退时以实际命中的配方对齐地市/政策年，避免单上字段与配方不一致
+      if (softDefaults && profile.getRegionCode() != null) {
+        regionCode = profile.getRegionCode();
+        regionName = profile.getRegionName() != null ? profile.getRegionName() : regionCode;
+      }
+      if (softDefaults && profile.getPolicyYear() != null) {
+        policyYear = profile.getPolicyYear();
+      }
+    }
+
+    Integer studentCount = req.getStudentCount();
+    if (studentCount == null) {
+      studentCount = countClassStudents(clazz.getId(), tenantId);
     }
 
     TrainSubsidyEntity entity = new TrainSubsidyEntity();
@@ -163,7 +222,7 @@ public class TrainSubsidyApplicationService {
         ? req.getPolicyTemplate()
         : profile.getTitle());
     entity.setSubsidyAmount(req.getSubsidyAmount());
-    entity.setStudentCount(req.getStudentCount());
+    entity.setStudentCount(studentCount);
     entity.setRemark(req.getRemark());
     entity.setStatus(0);
     entity.setPhase("draft");
@@ -178,7 +237,8 @@ public class TrainSubsidyApplicationService {
     entity.setRssbStatus(0);
     entity.setDeleted(0);
     mapper.insert(entity);
-    addEvent(entity, "create", null, "draft", "创建补贴单", null);
+    addEvent(entity, "create", null, "draft",
+        softDefaults ? "创建补贴单（按班自动推导）" : "创建补贴单", null);
     return toVO(entity);
   }
 
@@ -324,6 +384,25 @@ public class TrainSubsidyApplicationService {
   }
 
   @Transactional
+  public void deleteSlotFile(Long subsidyId, Long slotFileId) {
+    TrainSubsidyEntity entity = getExisting(subsidyId);
+    String phase = entity.getPhase();
+    if (!"draft".equals(phase) && !"checking".equals(phase) && !"ready".equals(phase) && !"rejected".equals(phase)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前阶段不可删除槽位附件");
+    }
+    TrainSubsidySlotFileEntity row = slotFileMapper.selectOne(new LambdaQueryWrapper<TrainSubsidySlotFileEntity>()
+        .eq(TrainSubsidySlotFileEntity::getId, slotFileId)
+        .eq(TrainSubsidySlotFileEntity::getSubsidyId, subsidyId)
+        .eq(TrainSubsidySlotFileEntity::getDeleted, 0));
+    if (row == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "槽位附件不存在");
+    }
+    slotFileMapper.deleteById(row.getId());
+    addEvent(entity, "delete_slot", entity.getPhase(), entity.getPhase(),
+        "删除槽位附件 " + row.getSlotCode(), Map.of("slotCode", row.getSlotCode(), "fileId", row.getFileId()));
+  }
+
+  @Transactional
   public Map<String, Object> generatePack(Long id) {
     TrainSubsidyEntity entity = getExisting(id);
     Map<String, Object> result = materialPackService.generate(entity);
@@ -391,6 +470,10 @@ public class TrainSubsidyApplicationService {
   }
 
   private Integer resolvePolicyYear(TrainInfoClassEntity clazz, TrainInfoListEntity info) {
+    return resolvePolicyYear(clazz, info, false);
+  }
+
+  private Integer resolvePolicyYear(TrainInfoClassEntity clazz, TrainInfoListEntity info, boolean softDefaults) {
     String date = clazz.getDateEnd();
     if (!StringUtils.hasText(date) && info != null) {
       date = info.getEndDate();
@@ -401,7 +484,56 @@ public class TrainSubsidyApplicationService {
       } catch (NumberFormatException ignored) {
       }
     }
+    if (softDefaults) {
+      return java.time.Year.now().getValue();
+    }
     throw new BusinessException(ErrorCode.BAD_REQUEST, "无法从结业日推导政策年，请手工填写 policyYear");
+  }
+
+  /**
+   * @return [regionCode, regionName]
+   */
+  private String[] resolveRegionPair(TrainSubsidyCreateReq req, TrainInfoListEntity info, boolean softDefaults) {
+    String regionCode = StringUtils.hasText(req.getRegionCode()) ? req.getRegionCode().trim() : null;
+    String regionName = StringUtils.hasText(req.getRegionName()) ? req.getRegionName().trim() : null;
+    if (!StringUtils.hasText(regionName) && info != null && StringUtils.hasText(info.getCityName())) {
+      regionName = info.getCityName().trim();
+    }
+    if (!StringUtils.hasText(regionCode) && info != null && info.getCityId() != null) {
+      // 纯数字 cityId 不能当配方 regionCode，优先用地名归一
+      regionCode = String.valueOf(info.getCityId());
+    }
+    String[] normalized = normalizePilotRegion(regionCode, regionName);
+    if (normalized != null) {
+      return normalized;
+    }
+    if (StringUtils.hasText(regionName) || StringUtils.hasText(regionCode)) {
+      if (!StringUtils.hasText(regionCode)) regionCode = regionName;
+      if (!StringUtils.hasText(regionName)) regionName = regionCode;
+      // 若 code 仍是纯数字，用 name 作 code 以免配方匹配失败
+      if (regionCode.chars().allMatch(Character::isDigit) && StringUtils.hasText(regionName)) {
+        regionCode = regionName;
+      }
+      return new String[] { regionCode, regionName };
+    }
+    if (softDefaults) {
+      return new String[] { "来宾", "来宾市" };
+    }
+    throw new BusinessException(ErrorCode.BAD_REQUEST,
+        "无法解析申报地市：请在培训单维护城市，或在新建补贴单时手工选择来宾/玉林/南丹");
+  }
+
+  /** 试点三市归一：来宾 / 玉林 / 河池南丹 */
+  private String[] normalizePilotRegion(String code, String name) {
+    String blob = ((name != null ? name : "") + " " + (code != null ? code : "")).trim();
+    if (!StringUtils.hasText(blob)) return null;
+    if (blob.contains("来宾")) return new String[] { "来宾", "来宾市" };
+    if (blob.contains("玉林")) return new String[] { "玉林", "玉林市" };
+    if (blob.contains("南丹") || (blob.contains("河池") && blob.contains("南丹"))) {
+      return new String[] { "河池南丹", "河池市南丹县" };
+    }
+    if (blob.contains("河池")) return new String[] { "河池南丹", "河池市南丹县" };
+    return null;
   }
 
   private TrainInfoClassEntity requireClass(Long classId) {
@@ -412,6 +544,54 @@ public class TrainSubsidyApplicationService {
       throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
     }
     return clazz;
+  }
+
+  /** 进行中：未删除且 phase ≠ closed（一班一单口径）。 */
+  private TrainSubsidyEntity findOpenByClassId(Long classId) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    return mapper.selectOne(new LambdaQueryWrapper<TrainSubsidyEntity>()
+        .eq(TrainSubsidyEntity::getTenantId, tenantId)
+        .eq(TrainSubsidyEntity::getClassId, classId)
+        .eq(TrainSubsidyEntity::getDeleted, 0)
+        .ne(TrainSubsidyEntity::getPhase, "closed")
+        .orderByDesc(TrainSubsidyEntity::getUpdateTime)
+        .orderByDesc(TrainSubsidyEntity::getId)
+        .last("LIMIT 1"));
+  }
+
+  private void assertNoOpenSubsidy(Long classId) {
+    TrainSubsidyEntity open = findOpenByClassId(classId);
+    if (open != null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "该班级已有进行中的补贴单（#" + open.getId() + "），请勿重复创建；可关闭后再建新单");
+    }
+  }
+
+  /** 申报补贴人数口径：仅统计已获证学员 */
+  private Integer countClassStudents(Long classId, Long tenantId) {
+    List<TrainPeopleListEntity> students =
+        peopleListMapper.selectList(
+            new LambdaQueryWrapper<TrainPeopleListEntity>()
+                .eq(TrainPeopleListEntity::getTenantId, tenantId)
+                .eq(TrainPeopleListEntity::getTrainClassId, classId)
+                .eq(TrainPeopleListEntity::getType, "student")
+                .eq(TrainPeopleListEntity::getDeleted, 0));
+    if (students.isEmpty()) {
+      return 0;
+    }
+    Map<Long, TrainCertificateEntity> certs = new HashMap<>();
+    certificateMapper
+        .selectList(
+            new LambdaQueryWrapper<TrainCertificateEntity>()
+                .eq(TrainCertificateEntity::getClassId, classId)
+                .eq(TrainCertificateEntity::getDeleted, 0))
+        .forEach(
+            c -> {
+              if (c.getPeopleId() != null) {
+                certs.putIfAbsent(c.getPeopleId(), c);
+              }
+            });
+    return SubsidyCertifiedPeopleSupport.countCertified(students, certs);
   }
 
   private TrainSubsidyEntity getExisting(Long id) {

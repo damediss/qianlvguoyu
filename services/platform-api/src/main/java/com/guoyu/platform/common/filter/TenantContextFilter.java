@@ -35,6 +35,8 @@ public class TenantContextFilter extends OncePerRequestFilter {
       "/api/appcoach/",
       "/api/apphome/",
       "/api/exam/files/",
+      // OnlyOffice Document Server 拉取/回调（无管理端登录态）
+      "/api/training/office/",
       // 培训管理·扫码信息收集 - 测试专用
       "/api/training/sign-ups/",
       // App 身份证 OCR / 证件照上传（扫码采集页调用，无管理端登录态）

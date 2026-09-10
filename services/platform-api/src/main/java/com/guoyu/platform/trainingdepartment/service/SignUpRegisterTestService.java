@@ -11,6 +11,7 @@ import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
+import com.guoyu.platform.trainingdepartment.support.SignUpLevelSupport;
 import com.guoyu.platform.trainingdepartment.vo.SignUpDetailVO;
 import com.guoyu.platform.trainingdepartment.vo.SignUpRegisterResultVO;
 import jakarta.servlet.http.HttpServletRequest;
@@ -244,7 +245,7 @@ public class SignUpRegisterTestService {
     // === 现工种 ===
     e.setWorkTypeId(req.getWorkTypeId());
     e.setWorkTypeName(req.getWorkTypeName());
-    e.setLevel(req.getLevel());
+    e.setLevel(SignUpLevelSupport.fromIndex(req.getLevel()));
     e.setPaperNo(req.getPaperNo());
 
     // === 申报工种 ===
@@ -417,7 +418,7 @@ public class SignUpRegisterTestService {
     // === 现工种 ===
     e.setWorkTypeId(req.getWorkTypeId());
     e.setWorkTypeName(req.getWorkTypeName());
-    e.setLevel(req.getLevel());
+    e.setLevel(SignUpLevelSupport.fromIndex(req.getLevel()));
     e.setPaperNo(req.getPaperNo());
 
     // === 申报工种 ===

@@ -3,6 +3,7 @@ package com.guoyu.platform.app.registration;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
+import com.guoyu.platform.trainingdepartment.support.SignUpLevelSupport;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -139,7 +140,7 @@ public class AppRegistrationFormSupport {
     put(map, "req_level", entity.getReqLevel());
     put(map, "work_type_paper_has", entity.getWorkTypePaperHas());
     put(map, "work_type_paper", entity.getWorkTypePaper());
-    put(map, "level", entity.getLevel());
+    put(map, "level", SignUpLevelSupport.toIndex(entity.getLevel()));
     put(map, "work_type_id", entity.getWorkTypeId());
     put(map, "paper_no", entity.getPaperNo());
     put(map, "title_type", entity.getTitleType());
@@ -241,7 +242,7 @@ public class AppRegistrationFormSupport {
     entity.setReqLevel(intVal(formData.get("req_level")));
     entity.setWorkTypePaperHas(intVal(formData.get("work_type_paper_has")));
     entity.setWorkTypePaper(stringVal(formData.get("work_type_paper")));
-    entity.setLevel(intVal(formData.get("level")));
+    entity.setLevel(SignUpLevelSupport.fromIndex(intVal(formData.get("level"))));
     entity.setWorkTypeId(longVal(formData.get("work_type_id")));
     entity.setPaperNo(stringVal(formData.get("paper_no")));
     entity.setTitleType(stringVal(formData.get("title_type")));
