@@ -32,6 +32,26 @@ public final class DocxTextUtil {
   private static final Pattern CLOSE_PAREN_ITEM = Pattern.compile("(?<![\\d.])\\s*(\\d{1,2})[)）]\\s*");
   /** 阿拉伯数字顿号编号 1、xxx */
   private static final Pattern DUNHAO_ITEM = Pattern.compile("(?<!\\d)(\\d{1,2})、");
+  /**
+   * 单级编号项：1. / 1、/ 1 . 后接正文。PDF 转 docx 的标准里编号常被拆成「数字 + 空格 + 点号 + 空格」，
+   * DOTTED_ITEM（要求两级以上）匹配不到，需单独兜底。前后都加数字/点号排除，避开 0.5 这类小数。
+   */
+  private static final Pattern SINGLE_ITEM = Pattern.compile(
+      "(?<![\\d.．])(\\d{1,2})\\s*[.．、]\\s*(?=[\\u4e00-\\u9fffA-Za-z（(])");
+  /** 中文/中文标点之间的空白（用先行断言，避免非重叠匹配漏掉相邻段；含全角括号，名称常写成「物料制备  （备注）」） */
+  private static final Pattern CJK_SPACE = Pattern.compile(
+      "([\\u4e00-\\u9fff，。、；：！？,.;:!?（）()])[ \\t]+(?=[\\u4e00-\\u9fff，。、；：！？,.;:!?（）()])");
+  /**
+   * 前导枚举编号：一、/（一）/1./1、/（1）/(1)/1（空格分隔）/1. 1/1业前准备（编号与标题无分隔符），
+   * 用于考评点名称去序号。分隔符后禁止再跟数字，避免把「0.5毫米」这类小数当成编号剥掉；
+   * 数字后必须跟分隔符、空白或直接跟汉字（与 normalizeMatchKey 的口径一致），避免剥掉「5S管理」。
+   */
+  private static final Pattern ENUM_PREFIX = Pattern.compile(
+      "^(?:[（(]\\s*(?:[一二三四五六七八九十]{1,3}|\\d{1,2})\\s*[)）]"
+          + "|[一二三四五六七八九十]{1,3}\\s*[、.．]"
+          + "|\\d{1,2}(?:\\s*[.．]\\s*\\d{1,2}){0,2}\\s*(?:[.．、](?![\\d.．])|\\s+)"
+          + "|\\d{1,2}(?=[\\u4e00-\\u9fff])"
+          + ")\\s*");
   /** 技能条目安全标记 ★ */
   private static final Pattern STAR = Pattern.compile("[★☆]");
 
@@ -40,12 +60,17 @@ public final class DocxTextUtil {
     if (raw == null) {
       return "";
     }
-    String s = raw.replace(' ', ' ').replace('　', ' ');
+    String s = raw.replace('\u00a0', ' ').replace('\u3000', ' ')
+        .replace('︵', '（').replace('︶', '）');
     s = SERIES_NO_JUNK.matcher(s).replaceAll(" ");
-    // 中文之间/中文与标点之间的空格（坑2：只清空格与Tab，不动换行）
-    s = s.replaceAll("([\\u4e00-\\u9fff])[ \\t]+([\\u4e00-\\u9fff])", "$1$2");
-    s = s.replaceAll("([\\u4e00-\\u9fff])[ \\t]+([，。、；：！？,.;:!?])", "$1$2");
-    s = s.replaceAll("([，。、；：！？,.;:!?])[ \\t]+([\\u4e00-\\u9fff])", "$1$2");
+    // 中文/中文标点之间的空格（坑2：只清空格与Tab，不动换行）。
+    // 循环收敛：replaceAll 为非重叠匹配，共享字符的相邻段（"工  作  准"）一轮只吃得掉一段，
+    // 否则会残留 "工作  准备" 这类半个空格。先行断言保证只消费左侧字符。
+    String prev;
+    do {
+      prev = s;
+      s = CJK_SPACE.matcher(s).replaceAll("$1");
+    } while (!s.equals(prev));
     s = s.replaceAll("([（(])[ \\t]+", "$1");
     s = s.replaceAll("[ \\t]+([）)])", "$1");
     return s.trim();
@@ -151,6 +176,12 @@ public final class DocxTextUtil {
       }
     }
     if (anchors.isEmpty()) {
+      Matcher single = SINGLE_ITEM.matcher(flat);
+      while (single.find()) {
+        anchors.add(new int[]{single.start(), single.end()});
+      }
+    }
+    if (anchors.isEmpty()) {
       String single = STAR.matcher(flat).replaceAll("").trim();
       if (!single.isEmpty()) {
         items.add(single);
@@ -170,11 +201,11 @@ public final class DocxTextUtil {
   }
 
   /**
-   * 表格单元格原文按编号条目重排为逐行文本（保留行首编号），供「相关知识/技能要求」存储与导出逐行显示。
+   * 表格单元格原文按编号条目重排为逐行文本，供「相关知识/技能要求」存储与导出逐行显示。
    *
-   * <p>拆分锚点优先级与 {@link #splitItems} 一致（点号编号 &gt; （1） &gt; 1） &gt; 1、）；
-   * 与 splitItems 的差别：保留编号原文、不剥 ★ 标记，只做换行重排。已含换行的文本原样返回；
-   * 无锚点的单行文本原样返回（单级「1.」编号不切，避免「0.5毫米」这类小数误判）。
+   * <p>拆分锚点优先级与 {@link #splitItems} 一致（点号编号 &gt; （1） &gt; 1） &gt; 1、 &gt; 单级 1.）；
+   * 分层编号（1.1.1）保留原编号原文，平铺编号（1. / （1） / 1） / 1、）统一改写为「n.正文」并从 1 重新编号；
+   * 已含换行的文本原样返回；无锚点的单行文本原样返回。
    */
   public static String relineItems(String rawText) {
     if (rawText == null || rawText.isBlank()) {
@@ -185,42 +216,47 @@ public final class DocxTextUtil {
     }
     String flat = rawText.replace('\r', ' ').trim();
     List<int[]> anchors = new ArrayList<>();
+    boolean hierarchical = false;
     Matcher dotted = DOTTED_ITEM.matcher(flat);
     while (dotted.find()) {
+      hierarchical = true;
       anchors.add(new int[]{dotted.start(), dotted.end()});
     }
     if (anchors.isEmpty()) {
-      Matcher paren = PAREN_ITEM.matcher(flat);
-      while (paren.find()) {
-        anchors.add(new int[]{paren.start(), paren.end()});
+      for (Pattern pattern : new Pattern[]{PAREN_ITEM, CLOSE_PAREN_ITEM, DUNHAO_ITEM, SINGLE_ITEM}) {
+        Matcher m = pattern.matcher(flat);
+        while (m.find()) {
+          anchors.add(new int[]{m.start(), m.end()});
+        }
+        if (!anchors.isEmpty()) {
+          break;
+        }
       }
     }
     if (anchors.isEmpty()) {
-      Matcher closeParen = CLOSE_PAREN_ITEM.matcher(flat);
-      while (closeParen.find()) {
-        anchors.add(new int[]{closeParen.start(), closeParen.end()});
-      }
-    }
-    if (anchors.isEmpty()) {
-      Matcher dunhao = DUNHAO_ITEM.matcher(flat);
-      while (dunhao.find()) {
-        anchors.add(new int[]{dunhao.start(), dunhao.end()});
-      }
-    }
-    if (anchors.isEmpty()) {
-      return flat;
+      // 单个无编号条目：按细目表版式统一补「1.」（"—" 占位符/空文本保持原样）
+      return flat.matches("[—－\\-–\\s]*") ? flat : "1." + flat;
     }
     List<String> lines = new ArrayList<>();
     String lead = flat.substring(0, anchors.get(0)[0]).trim();
     if (!lead.isEmpty()) {
       lines.add(lead);
     }
+    int seq = 0;
     for (int i = 0; i < anchors.size(); i++) {
       int start = anchors.get(i)[0];
       int end = i + 1 < anchors.size() ? anchors.get(i + 1)[0] : flat.length();
-      String line = flat.substring(start, end).trim();
-      if (!line.isEmpty()) {
-        lines.add(line);
+      if (hierarchical) {
+        String line = flat.substring(start, end).trim();
+        if (!line.isEmpty()) {
+          lines.add(line);
+        }
+      } else {
+        String text = flat.substring(anchors.get(i)[1], end).trim();
+        if (!text.isEmpty()) {
+          seq++;
+          lines.add(seq + "." + text);
+        }
       }
     }
     return String.join("\n", lines);
@@ -247,6 +283,20 @@ public final class DocxTextUtil {
     return text.trim()
         .replaceAll("^\\d{1,2}(?:\\s*\\.\\s*\\d{1,2}){0,2}(?:\\s*[.、]|\\s+)\\s*", "")
         .trim();
+  }
+
+  /**
+   * 考评点名称去枚举序号（一、/（一）/1./1、/（1）），用于树展示与细目表导出名称列。
+   *
+   * <p>只剥前导序号，不动名称本身；剥空（整个名字就是序号）时回退原文，避免名字变空。
+   */
+  public static String stripEnumerationPrefix(String text) {
+    if (text == null) {
+      return "";
+    }
+    String trimmed = text.trim();
+    String stripped = ENUM_PREFIX.matcher(trimmed).replaceFirst("").trim();
+    return stripped.isEmpty() ? trimmed : stripped;
   }
 
   /** 权重表项目名归一化：去空格、去（必选）/（必选）后缀 */

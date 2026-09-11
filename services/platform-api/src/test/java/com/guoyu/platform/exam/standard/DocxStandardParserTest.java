@@ -234,16 +234,40 @@ class DocxStandardParserTest {
     assertEquals(3, DocxTextUtil.splitItems("（1）甲。（2）乙。（3）丙。").size());
     assertEquals(2, DocxTextUtil.splitItems("1.1.1 能甲 1.1.2 能乙").size());
     assertEquals(2, DocxTextUtil.splitItems("1) 甲 2) 乙").size());
+    // PDF 转 docx 的单级编号（"1 . 正文"），重冶备料工/矿井通风工等标准写法
+    assertEquals(2, DocxTextUtil.splitItems("1 .交接班的要求2 .物料交接的有关规定").size());
+    assertEquals(2, DocxTextUtil.splitItems("1.重金属性质。2.冶金要求。").size());
 
-    // relineItems：单行串联按编号逐行重排（保留编号），已多行/无编号文本原样返回
+    // relineItems：单行串联按编号逐行重排，已多行/无编号文本原样返回
     assertEquals("2.2.1精矿指标判断\n2.2.2沉降槽泥层判断",
-        DocxTextUtil.relineItems("2.2.1精矿指标判断2.2.2沉降槽泥层判断"));
+        DocxTextUtil.relineItems("2.2.1精矿指标判断2.2.2沉降槽泥层判断"), "分层编号保留原编号");
     assertEquals("2.1精矿调配\n2.2磨矿操作",
         DocxTextUtil.relineItems("2.1精矿调配2.2磨矿操作"), "两级点号编号也可重排");
-    assertEquals("（1）甲\n（2）乙", DocxTextUtil.relineItems("（1）甲（2）乙"));
+    // 平铺编号统一改写为「n.正文」并从 1 重新编号
+    assertEquals("1.甲\n2.乙", DocxTextUtil.relineItems("（1）甲（2）乙"));
+    assertEquals("1.交接班的要求\n2.物料交接的有关规定",
+        DocxTextUtil.relineItems("1 .交接班的要求2 .物料交接的有关规定"), "单级编号（1 .）分批逐行");
     assertEquals("1.1.1能查出风门损坏\n1.1.2能查出风险点",
         DocxTextUtil.relineItems("1.1.1能查出风门损坏\n1.1.2能查出风险点"), "已多行文本原样返回");
-    assertEquals("矿浆浓度控制方法", DocxTextUtil.relineItems("矿浆浓度控制方法"), "无编号文本原样返回");
+    assertEquals("1.矿浆浓度控制方法", DocxTextUtil.relineItems("矿浆浓度控制方法"),
+        "单个无编号条目补编号 1.");
+    assertEquals("—", DocxTextUtil.relineItems("—"), "占位符不补编号");
+
+    // 名称去枚举序号（一、/（一）/1.），并保持 5S 这类名称不被误剥
+    assertEquals("设备维护", DocxTextUtil.stripEnumerationPrefix("四、设备维护"));
+    assertEquals("物料制备（工作内容三至五为可选）",
+        DocxTextUtil.stripEnumerationPrefix("二、物料制备（工作内容三至五为可选）"));
+    assertEquals("交接班", DocxTextUtil.stripEnumerationPrefix("（一） 交接班"));
+    assertEquals("安全检查", DocxTextUtil.stripEnumerationPrefix("1.安全检查"));
+    assertEquals("安全检查", DocxTextUtil.stripEnumerationPrefix("1 安全检查"));
+    assertEquals("业前准备", DocxTextUtil.stripEnumerationPrefix("1业前准备"));
+    assertEquals("5S管理", DocxTextUtil.stripEnumerationPrefix("5S管理"));
+    assertEquals("基本要求", DocxTextUtil.stripEnumerationPrefix("基本要求"));
+
+    // 中文之间连续多段空格必须一轮清干净（replaceAll 非重叠匹配易漏）
+    assertEquals("一、工作准备", DocxTextUtil.cleanParagraph("一、   工  作  准  备"));
+    assertEquals("二、物料制备（工作内容三至五为可选）",
+        DocxTextUtil.cleanParagraph("二、  物料制备  ︵工作内容三至五为可选︶"));
 
     // 带 ★ 的技能条目应去星
     StandardNodeDoc fanghu = chuJi.getWorkFunctions().get(2).getChildren().get(0);
@@ -324,5 +348,26 @@ class DocxStandardParserTest {
     assertNotNull(value, item + " 在 " + levelCode + "/" + direction + " 应有权重值");
     assertEquals(0, value.compareTo(new BigDecimal(expected)),
         item + " 在 " + levelCode + "/" + direction + " 权重应为 " + expected);
+  }
+
+  /** B3：跨页续表归并 + 名称去枚举序号 + 单级编号逐行拆分（重冶备料工五级真实数据） */
+  @Test
+  void b3_beiliaoContinuedTableMergedAndTextNormalized() {
+    StandardLevelDoc chuJi = beiliao.levelOf(0);
+    assertNotNull(chuJi);
+    assertEquals(
+        List.of("工作准备", "物料制备（工作内容三至五为可选）", "制备后工作", "设备维护", "安全操作"),
+        chuJi.getWorkFunctions().stream().map(StandardNodeDoc::getTitle).toList(),
+        "续表重复表头应归并为一节，名称不带枚举序号且中文间无空格");
+
+    StandardNodeDoc wuliao = chuJi.getWorkFunctions().get(1);
+    assertEquals(List.of("配料", "输送", "破碎", "制粒、制团", "干燥"),
+        wuliao.getChildren().stream().map(StandardNodeDoc::getTitle).toList(),
+        "续表之后的（五）干燥应挂在同一职业功能下");
+
+    StandardNodeDoc peiliao = wuliao.getChildren().get(0);
+    assertEquals("1.物料的名称、性质、外观特点及化学成分\n2.岗位技术操作规程",
+        peiliao.getRelatedKnowledgeRaw(), "单级编号（1 .）相关知识应逐行拆分");
+    assertEquals(2, peiliao.getTheoryMaterials().size(), "单级编号素材应按条目数计数");
   }
 }
