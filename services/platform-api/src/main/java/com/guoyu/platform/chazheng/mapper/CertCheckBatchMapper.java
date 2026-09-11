@@ -24,4 +24,14 @@ public interface CertCheckBatchMapper extends BaseMapper<CertCheckBatchEntity> {
   @Update("UPDATE chazheng_cert_batch SET status = 'completed', completed_at = NOW() "
       + "WHERE id = #{batchId} AND completed_count >= total_count AND status = 'processing'")
   int markCompletedIfDone(Long batchId);
+
+  /** 熔断中止批次（仅 processing 状态可中止，幂等） */
+  @Update("UPDATE chazheng_cert_batch SET status = 'aborted', completed_at = NOW() "
+      + "WHERE id = #{batchId} AND status = 'processing'")
+  int markAborted(Long batchId);
+
+  /** 人工重试失败用户时把中止批次重新打开（incrementCompleted 只认 processing） */
+  @Update("UPDATE chazheng_cert_batch SET status = 'processing', completed_at = NULL "
+      + "WHERE id = #{batchId} AND status = 'aborted'")
+  int reopenAborted(Long batchId);
 }

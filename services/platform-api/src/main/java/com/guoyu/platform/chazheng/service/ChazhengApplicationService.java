@@ -13,10 +13,12 @@ import com.guoyu.platform.chazheng.entity.CertCheckBatchEntity;
 import com.guoyu.platform.chazheng.entity.CertCheckBatchItemEntity;
 import com.guoyu.platform.chazheng.entity.ChazhengCertEntity;
 import com.guoyu.platform.chazheng.entity.ChazhengUserEntity;
+import com.guoyu.platform.chazheng.exception.CertQueryInterfaceDownException;
 import com.guoyu.platform.chazheng.mapper.CertCheckBatchItemMapper;
 import com.guoyu.platform.chazheng.mapper.CertCheckBatchMapper;
 import com.guoyu.platform.chazheng.mapper.ChazhengCertMapper;
 import com.guoyu.platform.chazheng.mapper.ChazhengUserMapper;
+import com.guoyu.platform.chazheng.support.CertCheckCircuitBreaker;
 import com.guoyu.platform.chazheng.support.FixedRateLimiter;
 import com.guoyu.platform.chazheng.vo.ChazhengCertVO;
 import com.guoyu.platform.chazheng.vo.ChazhengUserVO;
@@ -90,6 +92,13 @@ public class ChazhengApplicationService {
   @Value("${chazheng.batch.max-retry:2}")
   private int maxRetry;
 
+  /** 批次熔断阈值：连续接口级失败次数达到即中止整批（接口挂了逐用户重试无意义） */
+  @Value("${chazheng.batch.circuit-threshold:5}")
+  private int circuitThreshold;
+
+  /** 批次熔断器（构造后由 @PostConstruct 初始化，见 init()） */
+  private CertCheckCircuitBreaker circuitBreaker;
+
   /** 线程池引用(由 Controller 创建后注入) */
   private ThreadPoolTaskExecutor executor;
 
@@ -105,6 +114,11 @@ public class ChazhengApplicationService {
     this.batchMapper = batchMapper;
     this.batchItemMapper = batchItemMapper;
     this.chazhengCertQueryService = chazhengCertQueryService;
+  }
+
+  @jakarta.annotation.PostConstruct
+  void init() {
+    this.circuitBreaker = new CertCheckCircuitBreaker(circuitThreshold);
   }
 
   /** 由 Controller 在 @PostConstruct 中设置线程池时调用 */
@@ -538,6 +552,10 @@ public class ChazhengApplicationService {
   }
 
   private void processBatchUser(long batchId, Long userId, Long tenantId) {
+    // 批次已熔断：直接跳过，不再发起任何第三方调用（中止时剩余明细已被批量标记失败）
+    if (circuitBreaker.isTripped(batchId)) {
+      return;
+    }
     // tenantId 从 HTTP 请求线程传递下来,工作线程不可调 SecurityContext
     batchItemMapper.updateStatus(batchId, userId, "processing", null);
     try {
@@ -546,10 +564,33 @@ public class ChazhengApplicationService {
       boolean hasCert = vo.getIsCert() != null && vo.getIsCert() == 1;
       batchItemMapper.updateSuccess(batchId, userId, hasCert ? "success" : "success_no_cert");
       batchMapper.incrementCompleted(batchId);
+      // 有成功即说明接口已恢复，清零连续失败计数
+      circuitBreaker.resetStreak(batchId);
+    } catch (CertQueryInterfaceDownException e) {
+      // 接口级故障：不走用户级重试（接口挂了重试也是白打），计入熔断
+      handleInterfaceDown(batchId, userId, e);
     } catch (Exception e) {
       log.warn("[chazheng-batch] 查证异常 batch={}, user={}, err={}", batchId, userId, e.toString());
       log.warn("[chazheng-batch] 查证异常堆栈 batch={}, user={}", batchId, userId, e);
       handleBatchFailure(batchId, userId, e, tenantId);
+    }
+  }
+
+  /** 接口级故障处理：标记该用户失败、计数熔断；连续失败达阈值则中止整批 */
+  private void handleInterfaceDown(long batchId, Long userId, CertQueryInterfaceDownException e) {
+    String errorMsg = e.getMessage() != null ? e.getMessage() : "查证接口故障";
+    if (errorMsg.length() > 200) errorMsg = errorMsg.substring(0, 200);
+    batchItemMapper.updateFailed(batchId, userId, errorMsg);
+    batchMapper.incrementCompleted(batchId);
+
+    int streak = circuitBreaker.recordInterfaceFailure(batchId);
+    log.warn("[chazheng-batch] 接口级失败 batch={}, user={}, 连续失败={}/{}", batchId, userId, streak, circuitThreshold);
+    if (circuitBreaker.tryTrip(batchId)) {
+      String abortMsg = "查证接口故障，批次已自动中止；待接口恢复后可重试失败用户";
+      int affected = batchItemMapper.failOpenItems(batchId, abortMsg);
+      batchMapper.markAborted(batchId);
+      log.error("[chazheng-batch] 接口连续失败达熔断阈值({}次)，批次已自动中止 batch={}, 中止剩余 {} 人。"
+          + "待接口恢复后请使用「重试失败用户」重跑", circuitThreshold, batchId, affected);
     }
   }
 
@@ -668,6 +709,10 @@ public class ChazhengApplicationService {
     if (batch == null || !batch.getTenantId().equals(tenantId)) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "批次不存在或无权访问");
     }
+
+    // 复位熔断器并重开被中止的批次（否则新任务会被熔断标志拦截，且 incrementCompleted 只认 processing）
+    circuitBreaker.reset(batchId);
+    batchMapper.reopenAborted(batchId);
 
     int resetCount = batchItemMapper.resetFailedToPending(batchId);
 

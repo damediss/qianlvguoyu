@@ -16,4 +16,8 @@ public class CertCheckResult {
   public boolean anyCertFound = false;
   /** 累积待写入的证书 */
   public final List<CollectedCert> certs = new ArrayList<>();
+  /** 模板尝试次数（用于区分接口级/用户级失败） */
+  public int attempts = 0;
+  /** 接口级失败次数（网络异常、对方 5xx）：全部尝试都是接口级失败时按接口故障熔断 */
+  public int interfaceFailures = 0;
 }
