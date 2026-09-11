@@ -20,12 +20,25 @@ public record WeKnoraProperties(
     boolean visionPreprocessEnabled,
     String visionApiUrl,
     String visionApiKey,
-    String visionModel
+    String visionModel,
+    /**
+     * 小培专用知识库 ID（逗号分隔）。空则回退 {@link #defaultKnowledgeBaseIds}，
+     * 再空则按 {@link #xiaopeiKnowledgeBaseName} 在 WeKnora 列表中解析。
+     */
+    String xiaopeiKnowledgeBaseIds,
+    /** 小培默认知识库名称（控制台展示名），如「AI助教_智能问答」 */
+    String xiaopeiKnowledgeBaseName,
+    /** 小培专用智能体；空则用 {@link #defaultAgentId} */
+    String xiaopeiAgentId
 ) {
 
   public WeKnoraProperties {
     if (baseUrl != null && baseUrl.endsWith("/")) {
       baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+    }
+    // 与嵌入页共用 WEKNORA_BASE_URL（主机根，无 /api/v1）时，陪练/小培客户端自动补全 API 前缀
+    if (StringUtils.hasText(baseUrl) && !baseUrl.endsWith("/api/v1")) {
+      baseUrl = baseUrl + "/api/v1";
     }
     if (!StringUtils.hasText(defaultAgentId)) {
       defaultAgentId = "builtin-quick-answer";
@@ -39,13 +52,36 @@ public record WeKnoraProperties(
     if (!StringUtils.hasText(visionModel)) {
       visionModel = "MiniMax-M3";
     }
+    if (!StringUtils.hasText(xiaopeiKnowledgeBaseName)) {
+      xiaopeiKnowledgeBaseName = "AI助教_智能问答";
+    }
   }
 
   public List<String> defaultKnowledgeBaseIdList() {
-    if (!StringUtils.hasText(defaultKnowledgeBaseIds)) {
+    return splitIds(defaultKnowledgeBaseIds);
+  }
+
+  public List<String> xiaopeiKnowledgeBaseIdList() {
+    List<String> ids = splitIds(xiaopeiKnowledgeBaseIds);
+    if (!ids.isEmpty()) {
+      return ids;
+    }
+    return defaultKnowledgeBaseIdList();
+  }
+
+  public String resolveXiaopeiAgentId() {
+    return StringUtils.hasText(xiaopeiAgentId) ? xiaopeiAgentId.trim() : defaultAgentId;
+  }
+
+  public boolean isApiReady() {
+    return enabled && StringUtils.hasText(apiKey);
+  }
+
+  private static List<String> splitIds(String csv) {
+    if (!StringUtils.hasText(csv)) {
       return List.of();
     }
-    return Arrays.stream(defaultKnowledgeBaseIds.split(","))
+    return Arrays.stream(csv.split(","))
         .map(String::trim)
         .filter(StringUtils::hasText)
         .toList();

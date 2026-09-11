@@ -166,16 +166,19 @@ export interface PostQuery {
 }
 
 // ---- Role ----
+/** ID type that handles both safe integers and large snowflake IDs (stored as strings by json-bigint) */
+export type Id = number | string;
+
 export interface RoleVO {
-  id: number;
+  id: Id;
   tenantId: number;
   code: string;
   name: string;
   roleType: string;
   status: string;
   remark: string;
-  menuIds: number[];
-  permissionIds: number[];
+  menuIds: Id[];
+  permissionIds: Id[];
   createdAt: string;
   updatedAt: string;
 }
@@ -204,14 +207,11 @@ export interface RoleQuery {
 }
 
 export interface RolePermissionBindReq {
-  menuIds: number[];
-  permissionIds: number[];
+  menuIds: Id[];
+  permissionIds: Id[];
 }
 
 // ---- Menu ----
-/** ID type that handles both safe integers and large snowflake IDs (stored as strings by json-bigint) */
-type Id = number | string;
-
 export interface MenuTreeVO {
   id: Id;
   parentId: Id;
@@ -353,7 +353,7 @@ export interface RoleBriefVO {
 }
 
 export interface PermissionItemVO {
-  id: number;
+  id: Id;
   code: string;
   name: string;
   action: string;
@@ -363,7 +363,7 @@ export interface PermissionItemVO {
 }
 
 export interface PermissionMatrixVO {
-  menuId: number;
+  menuId: Id;
   menuName: string;
   menuCode: string;
   menuSortOrder: number;

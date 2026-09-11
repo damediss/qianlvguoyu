@@ -193,6 +193,8 @@ public class AuthApplicationService {
 
   private CurrentUserVO toCurrentUser(PlatformUserPrincipal principal) {
     TrainingOperatorScopeService.Scope scope = trainingOperatorScopeService.scopeForUser(principal.getUserId());
+    // 平台管理员所属组织即使是 company/master，对外仍按机构视角，避免前端误收窄数据
+    String loginRole = trainingOperatorScopeService.isPlatformAdmin(principal) ? "org" : scope.loginRole();
     return new CurrentUserVO(
         principal.getUserId(),
         principal.getTenantId(),
@@ -201,7 +203,7 @@ public class AuthApplicationService {
         principal.getUserType(),
         scope.orgId(),
         scope.orgType(),
-        scope.loginRole(),
+        loginRole,
         principal.getRoleCodes(),
         principal.getPermissionCodes()
     );

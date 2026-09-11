@@ -44,14 +44,17 @@ public class TrainInfoListApplicationService {
   private final ExamWorkTypeMapper examWorkTypeMapper;
   private final OrgMapper orgMapper;
   private final TrainInfoClassMapper classMapper;
+  private final TrainingOperatorScopeService operatorScopeService;
 
   public TrainInfoListApplicationService(TrainInfoListMapper mapper, TrainSolutionMapper solutionMapper,
-      ExamWorkTypeMapper examWorkTypeMapper, OrgMapper orgMapper, TrainInfoClassMapper classMapper) {
+      ExamWorkTypeMapper examWorkTypeMapper, OrgMapper orgMapper, TrainInfoClassMapper classMapper,
+      TrainingOperatorScopeService operatorScopeService) {
     this.mapper = mapper;
     this.solutionMapper = solutionMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
     this.orgMapper = orgMapper;
     this.classMapper = classMapper;
+    this.operatorScopeService = operatorScopeService;
   }
 
   @Transactional(readOnly = true)
@@ -65,8 +68,9 @@ public class TrainInfoListApplicationService {
     if (StringUtils.hasText(req.getKeyword())) {
       wrapper.like(TrainInfoListEntity::getTitle, req.getKeyword());
     }
-    if (req.getCompanyId() != null && req.getCompanyId() != 0) {
-      wrapper.eq(TrainInfoListEntity::getCompanyId, req.getCompanyId());
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getCompanyId());
+    if (companyFilter != null) {
+      wrapper.eq(TrainInfoListEntity::getCompanyId, companyFilter);
     }
     if (req.getGroupType() != null) {
       wrapper.eq(TrainInfoListEntity::getGroupType, req.getGroupType());
@@ -128,9 +132,9 @@ public class TrainInfoListApplicationService {
       item.put("cate", e.getCate());
       item.put("group_type", e.getGroupType());
       item.put("company_id", e.getCompanyId());
-      item.put("company_name", orgNameMap.getOrDefault(e.getCompanyId(), "-"));
+      item.put("company_name", e.getCompanyId() == null ? "-" : orgNameMap.getOrDefault(e.getCompanyId(), "-"));
       item.put("train_company_name", e.getTrainCompanyName());
-      item.put("work_type_title", workTypeNameMap.getOrDefault(e.getWorkTypeId(), null));
+      item.put("work_type_title", e.getWorkTypeId() == null ? null : workTypeNameMap.getOrDefault(e.getWorkTypeId(), null));
       item.put("num", e.getNum());
       item.put("position", e.getPosition());
       item.put("course_num", e.getCourseNum());
@@ -481,6 +485,7 @@ public class TrainInfoListApplicationService {
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "Record not found");
     }
+    operatorScopeService.assertCompanyAccessible(entity.getCompanyId());
     return entity;
   }
 
@@ -540,7 +545,9 @@ public class TrainInfoListApplicationService {
         entity.getInChargeUsername(),
         entity.getFiles(),
         entity.getTraindemandId(),
-        workTypeNameMap.getOrDefault(entity.getWorkTypeId(), null)
+        entity.getWorkTypeId() == null
+            ? null
+            : workTypeNameMap.getOrDefault(entity.getWorkTypeId(), null)
     );
   }
 }

@@ -57,6 +57,7 @@ public class TrainExamListApplicationService {
   private final ExamExamDetailMapper examDetailMapper;
   private final TrainInfoListMapper trainInfoListMapper;
   private final TrainPeopleListMapper trainPeopleListMapper;
+  private final TrainingOperatorScopeService operatorScopeService;
 
   public TrainExamListApplicationService(TrainExamListMapper mapper,
       TrainExamWorkTypeListMapper workTypeListMapper,
@@ -65,7 +66,8 @@ public class TrainExamListApplicationService {
       ExamKnowledgeStructureMapper knowledgeStructureMapper,
       ExamExamDetailMapper examDetailMapper,
       TrainInfoListMapper trainInfoListMapper,
-      TrainPeopleListMapper trainPeopleListMapper) {
+      TrainPeopleListMapper trainPeopleListMapper,
+      TrainingOperatorScopeService operatorScopeService) {
     this.mapper = mapper;
     this.workTypeListMapper = workTypeListMapper;
     this.peopleListMapper = peopleListMapper;
@@ -74,6 +76,7 @@ public class TrainExamListApplicationService {
     this.examDetailMapper = examDetailMapper;
     this.trainInfoListMapper = trainInfoListMapper;
     this.trainPeopleListMapper = trainPeopleListMapper;
+    this.operatorScopeService = operatorScopeService;
   }
 
   @Transactional(readOnly = true)
@@ -86,8 +89,9 @@ public class TrainExamListApplicationService {
     if (req.getTrainId() != null) {
       wrapper.eq(TrainExamListEntity::getTrainId, req.getTrainId());
     }
-    if (req.getOrgId() != null) {
-      wrapper.eq(TrainExamListEntity::getOrgId, req.getOrgId());
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(req.getOrgId());
+    if (companyFilter != null) {
+      wrapper.eq(TrainExamListEntity::getOrgId, companyFilter);
     }
     if (req.getType() != null) {
       wrapper.eq(TrainExamListEntity::getType, req.getType());
@@ -582,6 +586,7 @@ public class TrainExamListApplicationService {
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "Record not found");
     }
+    operatorScopeService.assertCompanyAccessible(entity.getOrgId());
     return entity;
   }
 

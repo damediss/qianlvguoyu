@@ -40,6 +40,17 @@ public interface TrainPeopleListMapper extends BaseMapper<TrainPeopleListEntity>
           OR p.phone LIKE CONCAT('%', #{keyword}, '%')
           OR p.id_card LIKE CONCAT('%', #{keyword}, '%'))
       </if>
+      <if test="companyId != null">
+        AND (
+          p.train_class_id IN (
+            SELECT id FROM train_info_class WHERE company_id = #{companyId} AND deleted = 0)
+          OR (
+            p.train_class_id IS NULL
+            AND p.train_id IN (
+              SELECT id FROM train_info_list WHERE company_id = #{companyId} AND deleted = 0)
+          )
+        )
+      </if>
       ORDER BY p.create_time DESC
       </script>
       """)
@@ -48,5 +59,6 @@ public interface TrainPeopleListMapper extends BaseMapper<TrainPeopleListEntity>
       @Param("tenantId") Long tenantId,
       @Param("applyWorkTypeName") String applyWorkTypeName,
       @Param("applyLevel") Integer applyLevel,
-      @Param("keyword") String keyword);
+      @Param("keyword") String keyword,
+      @Param("companyId") Long companyId);
 }

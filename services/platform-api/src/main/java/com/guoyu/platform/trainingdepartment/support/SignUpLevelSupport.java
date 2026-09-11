@@ -4,13 +4,13 @@ import org.springframework.util.StringUtils;
 
 /**
  * {@code train_sign_up_people_self.level} 为 varchar：合并库同时存在数字串（{@code "0"…"4"}）
- * 与中文标签（{@code "初级工/五级"}）。实体按 String 读写，对外 Integer 口径用本工具互转。
+ * 与中文标签（{@code "五级/初级工"}）。实体按 String 读写，对外 Integer 口径用本工具互转。
  */
 public final class SignUpLevelSupport {
 
-  /** 与报名模板 / 扫码端一致：0=初级工 … 4=高级技师 */
+  /** 与报名模板 / 扫码端一致：0=五级/初级工 … 4=一级/高级技师 */
   private static final String[] INDEX_LABELS = {
-      "初级工/五级", "中级工/四级", "高级工/三级", "技师/二级", "高级技师/一级"
+      "五级/初级工", "四级/中级工", "三级/高级工", "二级/技师", "一级/高级技师"
   };
 
   private SignUpLevelSupport() {}

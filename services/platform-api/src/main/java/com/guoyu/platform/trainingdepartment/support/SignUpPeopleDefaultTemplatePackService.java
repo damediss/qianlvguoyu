@@ -56,7 +56,7 @@ public class SignUpPeopleDefaultTemplatePackService {
   private static final double ID_CARD_MERGE_HEIGHT_CM = 5.4;
 
   private static final String[] LEVEL_LABELS = {
-      "初级工/五级", "中级工/四级", "高级工/三级", "技师/二级", "高级技师/一级"
+      "五级/初级工", "四级/中级工", "三级/高级工", "二级/技师", "一级/高级技师"
   };
   private static final String[] CHINESE_DIGITS = {
       "零", "一", "二", "三", "四", "五", "六", "七", "八", "九"
@@ -723,7 +723,7 @@ public class SignUpPeopleDefaultTemplatePackService {
   }
 
   /**
-   * 申请表申报工种/等级：人员未填预约报考时回退到班级设置，避免库默认 req_level=0 写成「初级工/五级」。
+   * 申请表申报工种/等级：人员未填预约报考时回退到班级设置，避免库默认 req_level=0 写成「五级/初级工」。
    */
   static Integer resolveReqLevelIndex(
       Integer personReqLevel,

@@ -48,7 +48,7 @@ class SignUpPeopleDefaultTemplatePackServiceTest {
   void applyFormsReplaceClassAppointmentPlaceholders() throws Exception {
     Map<String, String> vars = new LinkedHashMap<>();
     vars.put("req_work_type", "电解槽操作工");
-    vars.put("req_work_level", "高级技师/一级");
+    vars.put("req_work_level", "一级/高级技师");
     String[] templates = {
         "template/职业技能等级认定申请表.docx",
         "template/职业技能评价登记表（2025新）.docx",
@@ -61,7 +61,7 @@ class SignUpPeopleDefaultTemplatePackServiceTest {
         byte[] out = TrainingDocxVariableReplacer.replaceAll(in.readAllBytes(), vars);
         String xml = TrainingDocxTemplateValidator.extractWordXml(out);
         assertThat(xml).as(rel).contains("电解槽操作工");
-        assertThat(xml).as(rel).contains("高级技师/一级");
+        assertThat(xml).as(rel).contains("一级/高级技师");
         assertThat(xml).as(rel).doesNotContain("${req_work_type}");
         assertThat(xml).as(rel).doesNotContain("${req_work_level}");
       }

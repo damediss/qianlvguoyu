@@ -33,7 +33,7 @@ import {
   getMenuTree,
   getPermissionMatrix,
 } from '../../api/system';
-import type { RoleVO, MenuTreeVO, PermissionMatrixVO, PermissionItemVO } from '../../types/system';
+import type { RoleVO, MenuTreeVO, PermissionMatrixVO, PermissionItemVO, Id } from '../../types/system';
 
 // 操作类型分组顺序（业务侧常见顺序：先看再写后改删导）
 const ACTION_ORDER: Array<{ key: string; label: string; color: string }> = [
@@ -51,6 +51,25 @@ const ACTION_ORDER: Array<{ key: string; label: string; color: string }> = [
   { key: 'other', label: '其他', color: 'default' },
 ];
 
+/** 雪花 ID 经 json-bigint 可能是 string，禁止 Number() 以免丢精度 */
+function toIdKey(value: unknown): string {
+  if (value == null || value === '') return '';
+  return String(value);
+}
+
+function normalizeIdList(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return values.map(toIdKey).filter((id) => id !== '');
+}
+
+function extractTreeCheckedKeys(keys: unknown): string[] {
+  if (Array.isArray(keys)) return normalizeIdList(keys);
+  if (keys && typeof keys === 'object' && Array.isArray((keys as { checked?: unknown }).checked)) {
+    return normalizeIdList((keys as { checked: unknown[] }).checked);
+  }
+  return [];
+}
+
 function resolveActionGroup(action: string | undefined | null) {
   const key = (action || '').toLowerCase().trim();
   if (!key) return ACTION_ORDER[ACTION_ORDER.length - 1];
@@ -59,17 +78,18 @@ function resolveActionGroup(action: string | undefined | null) {
 
 function buildMenuCheckTree(
   menus: MenuTreeVO[],
-  checkedIds: Set<number | string>,
-): { data: any[]; checkedKeys: (number | string)[] } {
-  const checkedKeys: (number | string)[] = [];
+  checkedIds: Set<string>,
+): { data: any[]; checkedKeys: string[] } {
+  const checkedKeys: string[] = [];
 
   function walk(nodes: MenuTreeVO[]): any[] {
     return nodes.map((node) => {
-      if (checkedIds.has(node.id)) {
-        checkedKeys.push(node.id);
+      const key = toIdKey(node.id);
+      if (checkedIds.has(key)) {
+        checkedKeys.push(key);
       }
       return {
-        key: node.id,
+        key,
         title: node.name,
         children: node.children?.length ? walk(node.children) : undefined,
       };
@@ -84,12 +104,12 @@ export function RolePage() {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState({ page: 1, pageSize: 20, keyword: '', roleType: '', status: '' });
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<Id | null>(null);
   const [permDrawerOpen, setPermDrawerOpen] = useState(false);
-  const [permRoleId, setPermRoleId] = useState<number | null>(null);
+  const [permRoleId, setPermRoleId] = useState<Id | null>(null);
   const [permRoleDetail, setPermRoleDetail] = useState<RoleVO | null>(null);
-  const [checkedMenuIds, setCheckedMenuIds] = useState<number[]>([]);
-  const [checkedPermIds, setCheckedPermIds] = useState<Set<number>>(new Set());
+  const [checkedMenuIds, setCheckedMenuIds] = useState<string[]>([]);
+  const [checkedPermIds, setCheckedPermIds] = useState<Set<string>>(new Set());
   const [form] = Form.useForm();
 
   const listQuery = useQuery({
@@ -118,7 +138,7 @@ export function RolePage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: Parameters<typeof updateRole>[1] }) =>
+    mutationFn: ({ id, payload }: { id: Id; payload: Parameters<typeof updateRole>[1] }) =>
       updateRole(id, payload),
     onSuccess: () => {
       message.success('角色已更新');
@@ -204,8 +224,8 @@ export function RolePage() {
       try {
         const detail = await getRole(record.id);
         setPermRoleDetail(detail);
-        setCheckedMenuIds(detail.menuIds || []);
-        setCheckedPermIds(new Set(detail.permissionIds || []));
+        setCheckedMenuIds(normalizeIdList(detail.menuIds));
+        setCheckedPermIds(new Set(normalizeIdList(detail.permissionIds)));
       } catch {
         setCheckedMenuIds([]);
         setCheckedPermIds(new Set());
@@ -216,18 +236,18 @@ export function RolePage() {
   );
 
   const handleMenuCheck = useCallback(
-    (keys: any, info: any) => {
-      const nextMenuIds = (keys as number[]).map((k) => Number(k));
+    (keys: unknown) => {
+      const nextMenuIds = extractTreeCheckedKeys(keys);
       setCheckedMenuIds(nextMenuIds);
 
       // 联动：把"当前所有已勾菜单"下的 perm id 全部加进 checkedPermIds
       // 反向不联动（取消菜单时不取消对应权限），由用户手动细调
       const allMatrix = (permMatrixQuery.data || []) as PermissionMatrixVO[];
-      const permIdByMenuId = new Map<number, number[]>();
+      const permIdByMenuId = new Map<string, string[]>();
       for (const group of allMatrix) {
         permIdByMenuId.set(
-          group.menuId,
-          group.permissions.map((p) => Number(p.id)),
+          toIdKey(group.menuId),
+          group.permissions.map((p) => toIdKey(p.id)).filter(Boolean),
         );
       }
 
@@ -245,13 +265,15 @@ export function RolePage() {
     [permMatrixQuery.data],
   );
 
-  const handlePermToggle = useCallback((permId: number, checked: boolean) => {
+  const handlePermToggle = useCallback((permId: Id, checked: boolean) => {
+    const key = toIdKey(permId);
+    if (!key) return;
     setCheckedPermIds((prev) => {
       const next = new Set(prev);
       if (checked) {
-        next.add(permId);
+        next.add(key);
       } else {
-        next.delete(permId);
+        next.delete(key);
       }
       return next;
     });
@@ -559,7 +581,7 @@ export function RolePage() {
           </div>
           {permMatrix.length > 0 ? (
             permMatrix.map((group: PermissionMatrixVO) => {
-              const menuIsChecked = checkedMenuIds.some((id) => Number(id) === Number(group.menuId));
+              const menuIsChecked = checkedMenuIds.includes(toIdKey(group.menuId));
               const grouped = group.permissions.reduce<Record<string, PermissionItemVO[]>>((acc, p) => {
                 const g = resolveActionGroup(p.action);
                 if (!acc[g.key]) acc[g.key] = [];
@@ -569,7 +591,7 @@ export function RolePage() {
 
               return (
                 <div
-                  key={group.menuId}
+                  key={toIdKey(group.menuId)}
                   style={{
                     marginBottom: 16,
                     border: menuIsChecked ? '1px solid #1677ff' : '1px solid #e2e8f0',
@@ -608,7 +630,10 @@ export function RolePage() {
                           // 一键全选该菜单下所有权限
                           setCheckedPermIds((prev) => {
                             const next = new Set(prev);
-                            for (const p of group.permissions) next.add(Number(p.id));
+                            for (const p of group.permissions) {
+                              const pid = toIdKey(p.id);
+                              if (pid) next.add(pid);
+                            }
                             return next;
                           });
                         }}
@@ -622,7 +647,10 @@ export function RolePage() {
                           // 一键清空该菜单下所有权限
                           setCheckedPermIds((prev) => {
                             const next = new Set(prev);
-                            for (const p of group.permissions) next.delete(Number(p.id));
+                            for (const p of group.permissions) {
+                              const pid = toIdKey(p.id);
+                              if (pid) next.delete(pid);
+                            }
                             return next;
                           });
                         }}
@@ -646,20 +674,23 @@ export function RolePage() {
                           {g.label}
                         </Tag>
                         <Space wrap size={[12, 8]} style={{ flex: 1 }}>
-                          {grouped[g.key].map((perm) => (
-                            <Checkbox
-                              key={perm.id}
-                              checked={checkedPermIds.has(Number(perm.id))}
-                              onChange={(e) => handlePermToggle(Number(perm.id), e.target.checked)}
-                            >
-                              <Space size={4}>
-                                <span>{perm.name}</span>
-                                <Typography.Text type="secondary" style={{ fontSize: 11 }} code>
-                                  {perm.code}
-                                </Typography.Text>
-                              </Space>
-                            </Checkbox>
-                          ))}
+                          {grouped[g.key].map((perm) => {
+                            const permKey = toIdKey(perm.id);
+                            return (
+                              <Checkbox
+                                key={permKey}
+                                checked={checkedPermIds.has(permKey)}
+                                onChange={(e) => handlePermToggle(perm.id, e.target.checked)}
+                              >
+                                <Space size={4}>
+                                  <span>{perm.name}</span>
+                                  <Typography.Text type="secondary" style={{ fontSize: 11 }} code>
+                                    {perm.code}
+                                  </Typography.Text>
+                                </Space>
+                              </Checkbox>
+                            );
+                          })}
                         </Space>
                       </div>
                     ))}

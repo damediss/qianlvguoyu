@@ -15,8 +15,10 @@
       <env name="MANAGEMENT_HEALTH_RABBIT_ENABLED" value="false" />
       <env name="FLOWABLE_ASYNC_EXECUTOR_ACTIVATE" value="false" />
       <env name="SPRING_TASK_SCHEDULING_ENABLED" value="false" />
-      <env name="WEKNORA_BASE_URL" value="http://127.0.0.1:18080" />
-      <env name="WEKNORA_PUBLIC_BASE_URL" value="http://127.0.0.1:8088" />
+      <env name="WEKNORA_BASE_URL" value="http://43.138.163.7:8088" />
+      <env name="WEKNORA_PUBLIC_BASE_URL" value="http://43.138.163.7:8088" />
+      <env name="XIAOPEI_KB_IDS" value="bf5db5a5-7cc1-4f3d-a1f7-87e8b2707ead" />
+      <env name="WEKNORA_KB_IDS" value="bf5db5a5-7cc1-4f3d-a1f7-87e8b2707ead" />
       <env name="RENCAI_ENABLED" value="true" />
       <env name="RENCAI_BASE_URL" value="http://127.0.0.1:8001" />
     </envs>

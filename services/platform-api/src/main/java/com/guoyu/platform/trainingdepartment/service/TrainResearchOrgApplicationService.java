@@ -34,16 +34,19 @@ public class TrainResearchOrgApplicationService {
   private final OrgMapper orgMapper;
   private final TrainSignUpSelfMapper signUpSelfMapper;
   private final ResearchCollectionFieldOptionsSupport fieldOptionsSupport;
+  private final TrainingOperatorScopeService operatorScopeService;
 
   public TrainResearchOrgApplicationService(
       TrainResearchOrgMapper trainResearchOrgMapper,
       OrgMapper orgMapper,
       TrainSignUpSelfMapper signUpSelfMapper,
-      ResearchCollectionFieldOptionsSupport fieldOptionsSupport) {
+      ResearchCollectionFieldOptionsSupport fieldOptionsSupport,
+      TrainingOperatorScopeService operatorScopeService) {
     this.trainResearchOrgMapper = trainResearchOrgMapper;
     this.orgMapper = orgMapper;
     this.signUpSelfMapper = signUpSelfMapper;
     this.fieldOptionsSupport = fieldOptionsSupport;
+    this.operatorScopeService = operatorScopeService;
   }
 
   public PageResponse<TrainResearchOrgVO> page(TrainResearchOrgQueryReq req) {
@@ -51,6 +54,10 @@ public class TrainResearchOrgApplicationService {
     LambdaQueryWrapper<TrainResearchOrgEntity> wrapper = new LambdaQueryWrapper<TrainResearchOrgEntity>()
         .eq(TrainResearchOrgEntity::getTenantId, tenantId)
         .orderByDesc(TrainResearchOrgEntity::getCreateTime);
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
+    if (companyFilter != null) {
+      wrapper.eq(TrainResearchOrgEntity::getTargetOrgId, companyFilter);
+    }
     if (req.status() != null) {
       wrapper.eq(TrainResearchOrgEntity::getStatus, req.status());
     }
@@ -79,11 +86,13 @@ public class TrainResearchOrgApplicationService {
     if (entity == null) {
       throw new BusinessException("NOT_FOUND", "记录不存在");
     }
+    operatorScopeService.assertCompanyAccessible(entity.getTargetOrgId());
     String orgName = resolveOrgName(entity.getTargetOrgId());
     return toVO(entity, orgName);
   }
 
   public TrainResearchOrgVO create(TrainResearchOrgCreateReq req) {
+    operatorScopeService.requireOrgOperator();
     TrainResearchOrgEntity entity = new TrainResearchOrgEntity();
     entity.setTitle(req.title());
     entity.setTargetOrgId(req.targetOrgId());
@@ -106,6 +115,7 @@ public class TrainResearchOrgApplicationService {
   }
 
   public TrainResearchOrgVO update(Long id, TrainResearchOrgUpdateReq req) {
+    operatorScopeService.requireOrgOperator();
     Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainResearchOrgEntity entity = trainResearchOrgMapper.selectOne(
         new LambdaQueryWrapper<TrainResearchOrgEntity>()
@@ -114,6 +124,7 @@ public class TrainResearchOrgApplicationService {
     if (entity == null) {
       throw new BusinessException("NOT_FOUND", "记录不存在");
     }
+    operatorScopeService.assertCompanyAccessible(entity.getTargetOrgId());
     if (req.title() != null) entity.setTitle(req.title());
     if (req.targetOrgId() != null) entity.setTargetOrgId(req.targetOrgId());
     if (req.type() != null) entity.setType(req.type());
@@ -140,6 +151,7 @@ public class TrainResearchOrgApplicationService {
   }
 
   public void delete(Long id) {
+    operatorScopeService.requireOrgOperator();
     Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainResearchOrgEntity entity = trainResearchOrgMapper.selectOne(
         new LambdaQueryWrapper<TrainResearchOrgEntity>()
@@ -155,6 +167,7 @@ public class TrainResearchOrgApplicationService {
    * 按名称查找或创建系统企业（orgType=company），供调研企业关联下拉使用。
    */
   public OrgSimpleVO ensureSystemCompany(EnsureSystemCompanyReq req) {
+    operatorScopeService.requireOrgOperator();
     String name = req.name() == null ? "" : req.name().trim();
     if (!StringUtils.hasText(name)) {
       throw new BusinessException("BAD_REQUEST", "企业名称不能为空");

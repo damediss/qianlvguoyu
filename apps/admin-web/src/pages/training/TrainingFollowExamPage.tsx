@@ -29,6 +29,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as trainApi from '../../api/training';
+import { useAuthStore } from '../../stores/authStore';
 import type {
   DemandPublicData,
   ExamScoreImportClassOption,
@@ -215,6 +216,27 @@ function buildExamRosterRateSummary(stats: {
 
 export function TrainingFollowExamPage() {
   const queryClient = useQueryClient();
+  const hasPerm = useAuthStore((s) => s.hasPermission);
+  const loginRole = useAuthStore((s) => s.currentUser?.loginRole);
+  const roles = useAuthStore((s) => s.currentUser?.roles ?? []);
+  const username = useAuthStore((s) => s.currentUser?.username);
+  const userType = useAuthStore((s) => s.currentUser?.userType);
+  const currentOrgId = useAuthStore((s) => s.currentUser?.orgId);
+  const canImportWrite =
+    hasPerm('train:follow-exam:update')
+    || hasPerm('train:exam-list:update')
+    || hasPerm('train:people-list:update');
+  const roleSet = useMemo(
+    () => new Set((roles ?? []).map((r) => String(r).toUpperCase())),
+    [roles],
+  );
+  const isPlatformAdmin =
+    roleSet.has('PLATFORM_ADMIN')
+    || roleSet.has('SUPER_ADMIN')
+    || userType === 'admin'
+    || username === 'admin';
+  /** 与方案规划页一致：平台管理员即使挂在企业组织也不按企业视角收窄 */
+  const isEnterpriseViewer = loginRole === 'company' && !isPlatformAdmin;
   const [companyKeyword, setCompanyKeyword] = useState('');
   const [activeCompanyId, setActiveCompanyId] = useState<string | null>(null);
   const [classKeyword, setClassKeyword] = useState('');
@@ -351,24 +373,35 @@ export function TrainingFollowExamPage() {
       a.companyName.localeCompare(b.companyName, 'zh-CN'),
     );
     if (unassignedClassCount > 0 || unassignedTrainCount > 0) {
-      rows.unshift({
-        companyId: UNASSIGNED_COMPANY_ID,
-        companyName: '未归属企业（请补全企业后重试）',
-        classCount: unassignedClassCount,
-        trainCount: unassignedTrainCount,
-        unassigned: true,
-      });
+      // 企业账号不展示「未归属」入口，避免误导与越权尝试
+      if (!isEnterpriseViewer) {
+        rows.unshift({
+          companyId: UNASSIGNED_COMPANY_ID,
+          companyName: '未归属企业（请补全企业后重试）',
+          classCount: unassignedClassCount,
+          trainCount: unassignedTrainCount,
+          unassigned: true,
+        });
+      }
     }
     return rows;
-  }, [publicData, allClassesQuery.data]);
+  }, [publicData, allClassesQuery.data, isEnterpriseViewer]);
 
   const filteredCompanies = useMemo(() => {
     const kw = companyKeyword.trim().toLowerCase();
-    if (!kw) return companies;
-    return companies.filter(
-      (c) => c.companyName.toLowerCase().includes(kw) || c.companyId.includes(kw),
-    );
-  }, [companies, companyKeyword]);
+    let list = companies;
+    if (isEnterpriseViewer) {
+      const selfId = toIdKey(currentOrgId);
+      list = list.filter((c) => (selfId ? c.companyId === selfId : false));
+    }
+    if (kw) {
+      list = list.filter(
+        (c) => c.companyName.toLowerCase().includes(kw) || c.companyId.includes(kw),
+      );
+    }
+    // 机构/平台管理员保留完整企业目录；仅企业视角可再收窄（本企业通常就一家）
+    return list;
+  }, [companies, companyKeyword, isEnterpriseViewer, currentOrgId]);
 
   const pagedCompanies = useMemo(() => {
     const start = (companyPage - 1) * companyPageSize;
@@ -496,9 +529,18 @@ export function TrainingFollowExamPage() {
 
   const targetClassIds = selectedClassIds;
   const canConfirmWrite =
-    targetClassIds.length > 0 && writableRows.length > 0 && preview != null && !committing && !importing;
+    canImportWrite
+    && targetClassIds.length > 0
+    && writableRows.length > 0
+    && preview != null
+    && !committing
+    && !importing;
 
   const runPreviewImport = async (files: File[]) => {
+    if (!canImportWrite) {
+      message.warning('当前角色无成绩导入权限');
+      return;
+    }
     if (targetClassIds.length === 0) {
       message.warning('请先勾选班级后再上传成绩表');
       return;
@@ -955,42 +997,50 @@ export function TrainingFollowExamPage() {
                 <Button size="small" icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>
                   标准模板
                 </Button>
-                <Upload
-                  accept=".xlsx,.xls"
-                  multiple
-                  maxCount={20}
-                  showUploadList={false}
-                  disabled={targetClassIds.length === 0 || importing || committing}
-                  beforeUpload={(file, fileList) => {
-                    pendingUploadFilesRef.current.push(file);
-                    if (pendingUploadFilesRef.current.length >= fileList.length) {
-                      const batch = [...pendingUploadFilesRef.current];
-                      pendingUploadFilesRef.current = [];
-                      void runPreviewImport(batch);
-                    }
-                    return false;
-                  }}
-                >
-                  <Button
-                    size="small"
-                    type="primary"
-                    icon={<UploadOutlined />}
-                    loading={importing}
-                    disabled={targetClassIds.length === 0 || committing}
-                  >
-                    导入成绩
-                  </Button>
-                </Upload>
-                <Button
-                  size="small"
-                  type="primary"
-                  ghost
-                  loading={committing}
-                  disabled={!canConfirmWrite}
-                  onClick={() => void runConfirmWrite()}
-                >
-                  确认写入
-                </Button>
+                {canImportWrite ? (
+                  <>
+                    <Upload
+                      accept=".xlsx,.xls"
+                      multiple
+                      maxCount={20}
+                      showUploadList={false}
+                      disabled={targetClassIds.length === 0 || importing || committing}
+                      beforeUpload={(file, fileList) => {
+                        pendingUploadFilesRef.current.push(file);
+                        if (pendingUploadFilesRef.current.length >= fileList.length) {
+                          const batch = [...pendingUploadFilesRef.current];
+                          pendingUploadFilesRef.current = [];
+                          void runPreviewImport(batch);
+                        }
+                        return false;
+                      }}
+                    >
+                      <Button
+                        size="small"
+                        type="primary"
+                        icon={<UploadOutlined />}
+                        loading={importing}
+                        disabled={targetClassIds.length === 0 || committing}
+                      >
+                        导入成绩
+                      </Button>
+                    </Upload>
+                    <Button
+                      size="small"
+                      type="primary"
+                      ghost
+                      loading={committing}
+                      disabled={!canConfirmWrite}
+                      onClick={() => void runConfirmWrite()}
+                    >
+                      确认写入
+                    </Button>
+                  </>
+                ) : (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    当前角色仅可查看，无成绩导入权限
+                  </Typography.Text>
+                )}
               </Space>
             }
           >
@@ -1069,8 +1119,8 @@ export function TrainingFollowExamPage() {
             ) : null}
           </Card>
 
-          {preview ? (
-            <Card
+            {preview && canImportWrite ? (
+              <Card
               size="small"
               title="匹配明细（确认后写入）"
               extra={

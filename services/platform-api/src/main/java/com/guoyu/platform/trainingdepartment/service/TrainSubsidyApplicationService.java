@@ -59,6 +59,8 @@ public class TrainSubsidyApplicationService {
   private final TrainSubsidyPackProfileApplicationService profileService;
   private final TrainSubsidyMaterialPackService materialPackService;
   private final com.guoyu.platform.file.service.FileApplicationService fileApplicationService;
+  private final TrainingClassAccessGuard classAccessGuard;
+  private final TrainingOperatorScopeService operatorScopeService;
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   public TrainSubsidyApplicationService(
@@ -71,7 +73,9 @@ public class TrainSubsidyApplicationService {
       TrainCertificateMapper certificateMapper,
       TrainSubsidyPackProfileApplicationService profileService,
       TrainSubsidyMaterialPackService materialPackService,
-      com.guoyu.platform.file.service.FileApplicationService fileApplicationService) {
+      com.guoyu.platform.file.service.FileApplicationService fileApplicationService,
+      TrainingClassAccessGuard classAccessGuard,
+      TrainingOperatorScopeService operatorScopeService) {
     this.mapper = mapper;
     this.eventMapper = eventMapper;
     this.slotFileMapper = slotFileMapper;
@@ -82,17 +86,28 @@ public class TrainSubsidyApplicationService {
     this.profileService = profileService;
     this.materialPackService = materialPackService;
     this.fileApplicationService = fileApplicationService;
+    this.classAccessGuard = classAccessGuard;
+    this.operatorScopeService = operatorScopeService;
   }
 
   @Transactional(readOnly = true)
   public PageResponse<TrainSubsidyVO> page(TrainSubsidyQueryReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    if (req.getClassId() != null) {
+      classAccessGuard.assertClassIdAccessible(req.getClassId());
+    }
     LambdaQueryWrapper<TrainSubsidyEntity> wrapper = new LambdaQueryWrapper<TrainSubsidyEntity>()
         .eq(TrainSubsidyEntity::getTenantId, tenantId)
         .eq(TrainSubsidyEntity::getDeleted, 0)
         .orderByDesc(TrainSubsidyEntity::getCreateTime);
     if (req.getProjectId() != null) wrapper.eq(TrainSubsidyEntity::getProjectId, req.getProjectId());
     if (req.getClassId() != null) wrapper.eq(TrainSubsidyEntity::getClassId, req.getClassId());
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
+    if (companyFilter != null && req.getClassId() == null) {
+      wrapper.apply(
+          "class_id IN (SELECT id FROM train_info_class WHERE company_id = {0} AND deleted = 0)",
+          companyFilter);
+    }
     if (StringUtils.hasText(req.getPhase())) wrapper.eq(TrainSubsidyEntity::getPhase, req.getPhase().trim());
     if (StringUtils.hasText(req.getRegionCode())) wrapper.eq(TrainSubsidyEntity::getRegionCode, req.getRegionCode().trim());
     if (StringUtils.hasText(req.getTrainMode())) wrapper.eq(TrainSubsidyEntity::getTrainMode, req.getTrainMode().trim());
@@ -100,11 +115,15 @@ public class TrainSubsidyApplicationService {
     if (req.getStatus() != null) wrapper.eq(TrainSubsidyEntity::getStatus, req.getStatus());
     if (StringUtils.hasText(req.getKeyword())) {
       String kw = req.getKeyword().trim();
-      List<Long> matchedClassIds = classMapper.selectList(new LambdaQueryWrapper<TrainInfoClassEntity>()
-              .select(TrainInfoClassEntity::getId)
-              .eq(TrainInfoClassEntity::getDeleted, 0)
-              .like(TrainInfoClassEntity::getTitle, kw)
-              .last("LIMIT 80"))
+      LambdaQueryWrapper<TrainInfoClassEntity> classKw = new LambdaQueryWrapper<TrainInfoClassEntity>()
+          .select(TrainInfoClassEntity::getId)
+          .eq(TrainInfoClassEntity::getDeleted, 0)
+          .like(TrainInfoClassEntity::getTitle, kw)
+          .last("LIMIT 80");
+      if (companyFilter != null) {
+        classKw.eq(TrainInfoClassEntity::getCompanyId, companyFilter);
+      }
+      List<Long> matchedClassIds = classMapper.selectList(classKw)
           .stream()
           .map(TrainInfoClassEntity::getId)
           .toList();
@@ -537,13 +556,7 @@ public class TrainSubsidyApplicationService {
   }
 
   private TrainInfoClassEntity requireClass(Long classId) {
-    TrainInfoClassEntity clazz = classMapper.selectOne(new LambdaQueryWrapper<TrainInfoClassEntity>()
-        .eq(TrainInfoClassEntity::getId, classId)
-        .eq(TrainInfoClassEntity::getDeleted, 0));
-    if (clazz == null) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
-    }
-    return clazz;
+    return classAccessGuard.requireAccessibleClass(classId);
   }
 
   /** 进行中：未删除且 phase ≠ closed（一班一单口径）。 */
@@ -601,6 +614,7 @@ public class TrainSubsidyApplicationService {
         .eq(TrainSubsidyEntity::getId, id)
         .eq(TrainSubsidyEntity::getDeleted, 0));
     if (entity == null) throw new BusinessException(ErrorCode.NOT_FOUND, "补贴单不存在");
+    classAccessGuard.assertClassIdAccessible(entity.getClassId());
     return entity;
   }
 

@@ -30,7 +30,7 @@ export const TRAINING_PROCESS_STEPS = [
   { title: '企业调研', icon: <BulbOutlined /> },
   { title: '方案规划', icon: <SolutionOutlined /> },
   { title: '分班', icon: <ApartmentOutlined /> },
-  { title: '开班准备', icon: <PictureOutlined /> },
+  { title: '开班配置', icon: <PictureOutlined /> },
   { title: '开班申报', icon: <EditOutlined /> },
   { title: '跟班', icon: <PlayCircleOutlined /> },
   { title: '考试', icon: <FormOutlined /> },

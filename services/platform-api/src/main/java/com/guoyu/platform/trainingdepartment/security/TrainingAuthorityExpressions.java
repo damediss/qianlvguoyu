@@ -113,10 +113,21 @@ public final class TrainingAuthorityExpressions {
           + "'train:info-class:create', 'train:info-class:update', "
           + "'train:people-list:create', 'train:people-list:update', 'pxanfangguihua:manage')";
 
-  /** 人社成绩单导入（考试页 + 考试计划/花名册写权限） */
+  /** 人社成绩单导入：读 / 写分离（写不得仅凭 view） */
   public static final String EXAM_SCORE_IMPORT_VIEW =
       "hasAnyAuthority('train:follow-exam:view', 'train:exam-list:view', 'train:people-list:view')";
   public static final String EXAM_SCORE_IMPORT_UPDATE =
-      "hasAnyAuthority('train:follow-exam:update', 'train:follow-exam:view', "
-          + "'train:exam-list:update', 'train:people-list:update')";
+      "hasAnyAuthority('train:follow-exam:update', 'train:exam-list:update', 'train:people-list:update')";
+
+  /** 企业调研：查看兼容菜单码 pxyanjiu:view；写操作仅 train:research_org:*（由种子授予） */
+  public static final String RESEARCH_ORG_VIEW =
+      "hasAnyAuthority('train:research_org:view', 'pxyanjiu:view')";
+  public static final String RESEARCH_ORG_CREATE =
+      "hasAuthority('train:research_org:create')";
+  public static final String RESEARCH_ORG_UPDATE =
+      "hasAuthority('train:research_org:update')";
+  public static final String RESEARCH_ORG_DELETE =
+      "hasAuthority('train:research_org:delete')";
+  public static final String RESEARCH_ORG_MUTATE =
+      "hasAnyAuthority('train:research_org:create', 'train:research_org:update')";
 }
