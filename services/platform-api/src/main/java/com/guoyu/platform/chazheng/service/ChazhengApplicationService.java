@@ -150,6 +150,9 @@ public class ChazhengApplicationService {
     if (StringUtils.hasText(req.getYmd())) {
       wrapper.eq(ChazhengUserEntity::getYmd, req.getYmd());
     }
+    if (req.getIsChecked() != null) {
+      wrapper.eq(ChazhengUserEntity::getIsChecked, req.getIsChecked());
+    }
 
     var page = userMapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
     List<ChazhengUserVO> vos = page.getRecords().stream().map(entity -> {

@@ -6,6 +6,7 @@ import {
   IdcardOutlined,
   DashboardOutlined,
   CheckCircleOutlined,
+  RedoOutlined,
 } from "@ant-design/icons";
 import {
   Button,
@@ -14,6 +15,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
   Descriptions,
   Upload,
@@ -33,8 +35,9 @@ import {
   getEnterprises,
   downloadTemplate,
   getCertProgress,
+  getCertBatchProgress,
 } from "../../api/chazheng";
-import type { ChazhengUser, ChazhengCert } from "../../types/chazheng";
+import type { ChazhengUser, ChazhengCert, CertCheckBatchProgress } from "../../types/chazheng";
 
 export function CertQueryPage() {
   const queryClient = useQueryClient();
@@ -45,6 +48,12 @@ export function CertQueryPage() {
   const [progressOpen, setProgressOpen] = useState(false);
   const [progressData, setProgressData] = useState({ total: 0, checked: 0 });
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // 「重新查证」：本批次进度弹窗（按返回的查证 batchId 轮询）
+  const [retryStarting, setRetryStarting] = useState(false);
+  const [batchProgressOpen, setBatchProgressOpen] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<CertCheckBatchProgress | null>(null);
+  const [batchProgressYmd, setBatchProgressYmd] = useState<string>("");
+  const batchPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const listQuery = useQuery({
     queryKey: ["chazheng-certs", query],
@@ -149,6 +158,7 @@ export function CertQueryPage() {
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (batchPollRef.current) clearInterval(batchPollRef.current);
     };
   }, []);
 
@@ -189,6 +199,86 @@ export function CertQueryPage() {
     },
     [certMutation],
   );
+
+  /** 本批次查证进度轮询：终态（completed/aborted）停止并刷新列表 */
+  const startBatchPoll = useCallback(
+    (batchId: number, ymd: string) => {
+      if (batchPollRef.current) clearInterval(batchPollRef.current);
+      setBatchProgressYmd(ymd);
+      setBatchProgress(null);
+      setBatchProgressOpen(true);
+      const poll = async () => {
+        try {
+          const data = await getCertBatchProgress(batchId);
+          setBatchProgress(data);
+          if (data.status !== "processing") {
+            if (batchPollRef.current) clearInterval(batchPollRef.current);
+            batchPollRef.current = null;
+            queryClient.invalidateQueries({ queryKey: ["chazheng-certs"] });
+            queryClient.invalidateQueries({ queryKey: ["chazheng-ymd-list"] });
+            if (data.failed > 0) {
+              message.warning(
+                `重新查证结束：成功 ${data.success + data.successNoCert} 人，失败 ${data.failed} 人`,
+              );
+            } else {
+              message.success(`重新查证完成：成功 ${data.success + data.successNoCert} 人`);
+            }
+          }
+        } catch {
+          // 轮询失败不打断，下一轮继续
+        }
+      };
+      poll();
+      batchPollRef.current = setInterval(poll, 2000);
+    },
+    [queryClient],
+  );
+
+  const closeBatchProgress = useCallback(() => {
+    setBatchProgressOpen(false);
+    if (batchPollRef.current) {
+      clearInterval(batchPollRef.current);
+      batchPollRef.current = null;
+    }
+  }, []);
+
+  /** 重新查证：仅重查所选批次中未成功（未查证/查证失败）的人员，确认后按本批进度轮询 */
+  const handleRetryBatch = useCallback(async () => {
+    const ymd = query.ymd;
+    if (!ymd) {
+      message.warning("请先选择批次");
+      return;
+    }
+    setRetryStarting(true);
+    try {
+      const pending = await pageUsers({ ymd, isChecked: 0, page: 1, pageSize: 1 });
+      const count = pending.total;
+      if (!count) {
+        message.info("该批次没有未成功的人员，无需重新查证");
+        return;
+      }
+      Modal.confirm({
+        title: "确认重新查证？",
+        content: `批次 ${ymd}，共 ${count} 人未查证成功，将重新调用外部接口查证并覆盖其原有查证结果。`,
+        okText: "开始重查",
+        cancelText: "取消",
+        onOk: async () => {
+          try {
+            const batch = await triggerCertCheckByYmd(ymd, undefined, true);
+            message.success("重新查证已启动：" + batch.total + " 条");
+            startBatchPoll(batch.batchId, ymd);
+          } catch (err: any) {
+            message.error(err?.message || "重新查证启动失败");
+            throw err; // 保持弹窗，便于直接重试
+          }
+        },
+      });
+    } catch (err: any) {
+      message.error(err?.message || "重查人数统计失败");
+    } finally {
+      setRetryStarting(false);
+    }
+  }, [query.ymd, startBatchPoll]);
 
   const renderCertContent = (certs: ChazhengCert[]) => {
     if (!certs || certs.length === 0)
@@ -382,6 +472,16 @@ export function CertQueryPage() {
               value: ymd,
             }))}
           />
+          <Tooltip title={query.ymd ? undefined : "请先选择批次"}>
+            <Button
+              icon={<RedoOutlined />}
+              loading={retryStarting}
+              disabled={!query.ymd}
+              onClick={handleRetryBatch}
+            >
+              重新查证
+            </Button>
+          </Tooltip>
           <Button
             icon={<SearchOutlined />}
             onClick={() =>
@@ -443,6 +543,42 @@ export function CertQueryPage() {
       >
         <Progress percent={pct} format={() => progressData.checked + " / " + progressData.total} />
         {pct === 100 && <Typography.Text type="success">查证全部完成</Typography.Text>}
+      </Modal>
+
+      <Modal
+        title={"重新查证进度" + (batchProgressYmd ? "（批次 " + batchProgressYmd + "）" : "")}
+        open={batchProgressOpen}
+        onCancel={closeBatchProgress}
+        footer={null}
+      >
+        <Progress
+          percent={batchProgress?.percent ?? 0}
+          status={batchProgress && batchProgress.failed > 0 ? "exception" : undefined}
+          format={() =>
+            (batchProgress?.completed ?? 0) + " / " + (batchProgress?.total ?? 0)
+          }
+        />
+        {batchProgress ? (
+          <Space direction="vertical" size={2}>
+            <Typography.Text>
+              查证成功（有证）{batchProgress.success} 人 · 无证书{" "}
+              {batchProgress.successNoCert} 人 · 失败 {batchProgress.failed} 人
+            </Typography.Text>
+            <Typography.Text type="secondary">
+              已用时 {batchProgress.elapsed}
+              {batchProgress.status === "processing"
+                ? ` · 预计剩余 ${batchProgress.estimateRemaining}`
+                : ""}
+            </Typography.Text>
+            {batchProgress.status === "aborted" && (
+              <Typography.Text type="danger">
+                批次因接口连续故障已中止，未完成的人员可再次点击「重新查证」续查。
+              </Typography.Text>
+            )}
+          </Space>
+        ) : (
+          <Typography.Text type="secondary">正在获取进度…</Typography.Text>
+        )}
       </Modal>
     </div>
   );

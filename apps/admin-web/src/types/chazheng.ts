@@ -26,9 +26,26 @@ export interface ChazhengUserQuery {
   keyword?: string;
   enterpriseId?: number;
   ymd?: string;
+  /** 0=未成功（未查证/查证失败），1=已查证成功 */
+  isChecked?: number;
 }
 
 export interface CertProgress {
   total: number;
   checked: number;
+}
+
+/** 查证批次进度（GET /chazheng/cert/batch/{batchId}/progress） */
+export interface CertCheckBatchProgress {
+  batchId: number;
+  total: number;
+  completed: number;
+  success: number;
+  successNoCert: number;
+  failed: number;
+  pending: number;
+  percent: number;
+  status: string;
+  elapsed: string;
+  estimateRemaining: string;
 }
