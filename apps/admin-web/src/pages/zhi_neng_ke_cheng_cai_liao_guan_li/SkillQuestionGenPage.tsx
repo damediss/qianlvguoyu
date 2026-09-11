@@ -15,9 +15,10 @@ import { treeWorkTypes } from '../../api/exam';
 import type { ExamWorkType } from '../../types/exam';
 import {
   deleteSkillBlueprint, downloadSkillBlueprintSource, editSkillDraft, exportSkillDrafts,
-  getSkillPublishPreview, importSkillBlueprint, listSkillBlueprints, listSkillDrafts,
-  listSkillGenBatches, listSkillModelConfigs, pauseSkillGenBatch, publishSkillDrafts,
-  resumeSkillGenBatch, retrySkillGenBatch, reviewSkillDrafts, submitSkillGenBatch,
+  getSkillGenProgress, getSkillPublishPreview, importSkillBlueprint, listSkillBlueprints,
+  listSkillDrafts, listSkillGenBatches, listSkillModelConfigs, pauseSkillGenBatch,
+  publishSkillDrafts, resumeSkillGenBatch, retrySkillGenBatch, reviewSkillDrafts,
+  submitSkillGenBatch,
 } from './skillGenApi';
 import type { SkillBlueprint, SkillDraft, SkillGenBatch, SkillScoringItem } from './skillGenApi';
 import { LEVEL_NAME, STATUS_TAG, parseCheckReport } from './workbench/constants';
@@ -368,7 +369,9 @@ const SkillWorkbench: React.FC<WorkbenchProps> = ({ workTypeOptions, blueprints,
   });
   const historyQuery = useQuery({
     queryKey: ['skillgen-batches-history'],
-    queryFn: () => listSkillGenBatches({ page: 1, pageSize: 20 }),
+    // 终态批次服务端过滤（对齐 theorygen 工作台）：与进行中区互斥，
+    // 避免提交时把"生成中"快照写进历史缓存、批次完成后永远显示旧状态
+    queryFn: () => listSkillGenBatches({ status: 'done,failed,paused', page: 1, pageSize: 20 }),
   });
   const batchRows = useMemo(() => {
     const active = activeQuery.data?.items ?? [];
@@ -376,6 +379,36 @@ const SkillWorkbench: React.FC<WorkbenchProps> = ({ workTypeOptions, blueprints,
     const history = (historyQuery.data?.items ?? []).filter((b) => !activeIds.has(b.id));
     return [...active, ...history];
   }, [activeQuery.data, historyQuery.data]);
+
+  // 终态联动：批次从进行中区消失（完成/失败/暂停）时刷新历史区与草稿计数，
+  // 否则全局 refetchOnWindowFocus=false + 历史区无轮询会让旧行永远停在"生成中"
+  const prevActiveIdsRef = React.useRef<Set<string>>(new Set());
+  React.useEffect(() => {
+    const current = new Set((activeQuery.data?.items ?? []).map((b) => b.id));
+    const prev = prevActiveIdsRef.current;
+    prevActiveIdsRef.current = current;
+    if (prev.size === 0) {
+      return; // 首次载入不触发
+    }
+    const left = [...prev].filter((id) => !current.has(id));
+    if (left.length === 0) {
+      return;
+    }
+    qc.invalidateQueries({ queryKey: ['skillgen-batches-history'] });
+    qc.invalidateQueries({ queryKey: ['skillgen-drafts'] });
+    left.forEach(async (id) => {
+      try {
+        const b = await getSkillGenProgress(id);
+        if (b.status === 'failed') {
+          message.warning({ content: `生成批次已结束（失败）：${b.failReason ?? '未知原因'}`, duration: 6 });
+        } else if (b.status === 'done') {
+          message.success(`生成批次已完成：已产出 ${b.totalQuestions ?? 0} 题`);
+        }
+      } catch {
+        // 进度查询失败不打扰用户，列表刷新已足够
+      }
+    });
+  }, [activeQuery.data, qc]);
 
   const draftsQuery = useQuery({
     queryKey: ['skillgen-drafts', allBatches ? 'all' : activeBatchId, reviewFilter],
