@@ -100,6 +100,89 @@ class StandardNameShapeRepairTest {
     assertTrue(warnings.contains("设备日常保养周期与要求"), warnings);
   }
 
+  // ---------- A：排除池按「等级×方向」收窄（跨级别同名允许，2026-09-11 生产实测根因修复） ----------
+
+  /** 跨级别同名放行：等级的违规点替换名与另一等级既有点相同，应照常落库（《指引》允许跨级别同名） */
+  @Test
+  void crossLevelSameNameReplacementIsAllowed() {
+    Fixture f = newCrossLevelFixture(
+        "{\"points\":[{\"title\":\"设备日常保养要求\",\"important\":\"X\"}]}");
+    f.service.repairMultiContentNames(f.task, f.config, 1L, List.of("X", "Y"));
+
+    ArgumentCaptor<ExamStandardNodeEntity> cap =
+        ArgumentCaptor.forClass(ExamStandardNodeEntity.class);
+    verify(f.nodeMapper).updateById(cap.capture());
+    assertEquals(11L, cap.getValue().getId());
+    assertEquals("设备日常保养要求", cap.getValue().getTitle());
+  }
+
+  // ---------- B：同等级撞名被拒 → 回喂原因再试一轮 ----------
+
+  @Test
+  void sameScopeCollisionTriggersFeedbackRetry() {
+    Fixture f = newFixture(null);
+    // 第 1 轮给出与本等级既有点（12L「设备日常维护保养内容」）撞名的替换 → 拒绝并回喂；
+    // 第 2 轮给出合规名 → 落库
+    when(f.llm.chatCompletion(any(), any(), any(), any(), any(),
+        org.mockito.ArgumentMatchers.anyInt(), any(), any(),
+        org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyLong()))
+        .thenAnswer(new org.mockito.stubbing.Answer<String>() {
+          private int call;
+          @Override
+          public String answer(org.mockito.invocation.InvocationOnMock inv) {
+            call++;
+            f.lastUserPrompt = inv.getArgument(4);
+            return call == 1
+                ? "{\"points\":[{\"title\":\"设备日常维护保养内容\",\"important\":\"X\"}]}"
+                : "{\"points\":[{\"title\":\"设备日常保养要求\",\"important\":\"X\"}]}";
+          }
+        });
+    f.service.repairMultiContentNames(f.task, f.config, 1L, List.of("X", "Y"));
+
+    // 仅第 2 轮的合规名落库
+    ArgumentCaptor<ExamStandardNodeEntity> cap =
+        ArgumentCaptor.forClass(ExamStandardNodeEntity.class);
+    verify(f.nodeMapper).updateById(cap.capture());
+    assertEquals("设备日常保养要求", cap.getValue().getTitle());
+    // 第 2 轮 prompt 回喂了撞名原因（包含撞名的既有标题）
+    assertTrue(f.lastUserPrompt.contains("未通过校验"), f.lastUserPrompt);
+    assertTrue(f.lastUserPrompt.contains("设备日常维护保养内容"), f.lastUserPrompt);
+    assertTrue(f.lastUserPrompt.contains("相同或相近"), f.lastUserPrompt);
+  }
+
+  // ---------- C：LLM 原样返回 = 判定固定搭配/复合术语保留 ----------
+
+  @Test
+  void modelKeepVerbatimTreatedAsFixedTerm() {
+    // LLM 原样返回原名（唯一问题是连接词并列）→ 视为固定搭配保留：不写库、不进违规告警、单独说明
+    Fixture f = newFixture(
+        "{\"points\":[{\"title\":\"设备日常保养周期与要求\",\"important\":\"X\"}]}");
+    f.service.repairMultiContentNames(f.task, f.config, 1L, List.of("X", "Y"));
+
+    verify(f.nodeMapper, never()).updateById(any(ExamStandardNodeEntity.class));
+    String warnings = f.capturedWarnings();
+    assertTrue(warnings.contains("固定搭配"), warnings);
+    assertTrue(warnings.contains("设备日常保养周期与要求"), warnings);
+    assertTrue(!warnings.contains("疑似并列了两个内容"), warnings);
+  }
+
+  /** 超长/疑问句不得借「固定搭配保留」放行：LLM 原样返回超长名仍进入违规告警 */
+  @Test
+  void overLengthKeepVerbatimStillWarns() {
+    String longName = "一二三四五六七八九十一二三四五六七八九十一";
+    Fixture f = newFixtureWithLeaves(llmJsonKeep(longName),
+        leaf(11L, longName, "llm", "pending"),
+        leaf(12L, "设备日常维护保养内容", "llm", "pending"));
+    f.service.repairMultiContentNames(f.task, f.config, 1L, List.of("X", "Y"));
+
+    verify(f.nodeMapper, never()).updateById(any(ExamStandardNodeEntity.class));
+    assertTrue(f.capturedWarnings().contains("疑似并列了两个内容"), f.capturedWarnings());
+  }
+
+  private static String llmJsonKeep(String title) {
+    return "{\"points\":[{\"title\":\"" + title + "\",\"important\":\"X\"}]}";
+  }
+
   // ---------- prompt 接线（护栏文案已进入生成与补点 prompt） ----------
 
   @Test
@@ -133,14 +216,19 @@ class StandardNameShapeRepairTest {
 
   private static ExamStandardNodeEntity leaf(Long id, String title, String source,
       String reviewStatus) {
+    return leafAt(id, 101L, 0, title, source, reviewStatus);
+  }
+
+  private static ExamStandardNodeEntity leafAt(Long id, Long parentId, int levelCode,
+      String title, String source, String reviewStatus) {
     ExamStandardNodeEntity n = new ExamStandardNodeEntity();
     n.setId(id);
-    n.setParentId(101L);
+    n.setParentId(parentId);
     n.setTaskId(1L);
     n.setNodeLevel(3);
     n.setDimension("theory");
     n.setNodeKey("A-A-00" + id);
-    n.setLevelCode(0);
+    n.setLevelCode(levelCode);
     n.setTitle(title);
     n.setSource(source);
     n.setReviewStatus(reviewStatus);
@@ -151,6 +239,7 @@ class StandardNameShapeRepairTest {
     StandardLlmSummarizeService service;
     ExamStandardTaskMapper taskMapper;
     ExamStandardNodeMapper nodeMapper;
+    FaqLlmClient llm;
     ExamStandardTaskEntity task;
     ExamFaqModelConfigEntity config;
     String warningsJson;
@@ -162,16 +251,29 @@ class StandardNameShapeRepairTest {
   }
 
   private Fixture newFixture(String llmJson) {
+    return newFixtureWithLeaves(llmJson,
+        leaf(11L, "设备日常保养周期与要求", "llm", "pending"),
+        leaf(12L, "设备日常维护保养内容", "llm", "pending"));
+  }
+
+  /** 跨等级场景：101L 小节（等级 0）含违规点 11L；201L 小节（等级 1）含既有点 13L */
+  private Fixture newCrossLevelFixture(String llmJson) {
+    return newFixtureWithLeaves(llmJson,
+        leafAt(11L, 101L, 0, "设备日常保养周期与要求", "llm", "pending"),
+        leafAt(12L, 101L, 0, "设备日常维护保养内容", "llm", "pending"),
+        leafAt(13L, 201L, 1, "设备日常保养要求", "llm", "pending"));
+  }
+
+  private Fixture newFixtureWithLeaves(String llmJson, ExamStandardNodeEntity... leaves) {
     Fixture f = new Fixture();
     f.taskMapper = mock(ExamStandardTaskMapper.class);
     f.nodeMapper = mock(ExamStandardNodeMapper.class);
-    FaqLlmClient llm = mock(FaqLlmClient.class);
+    f.llm = mock(FaqLlmClient.class);
 
     f.task = new ExamStandardTaskEntity();
     f.task.setId(1L);
     f.task.setWorkTypeTitle("重冶备料工");
     f.task.setParseWarnings("");
-    when(f.taskMapper.selectById(1L)).thenReturn(f.task);
     when(f.taskMapper.selectById(1L)).thenReturn(f.task);
     // appendTaskWarnings 会再查一次任务并 updateById 写回 parseWarnings
     when(f.taskMapper.updateById(any(ExamStandardTaskEntity.class))).thenAnswer(inv -> {
@@ -186,13 +288,18 @@ class StandardNameShapeRepairTest {
     l2.setTitle("设备保养");
     l2.setLevelCode(0);
     when(f.nodeMapper.selectById(101L)).thenReturn(l2);
-    when(f.nodeMapper.selectList(any())).thenReturn(List.of(
-        leaf(11L, "设备日常保养周期与要求", "llm", "pending"),
-        leaf(12L, "设备日常维护保养内容", "llm", "pending")));
+    ExamStandardNodeEntity l2b = new ExamStandardNodeEntity();
+    l2b.setId(201L);
+    l2b.setNodeKey("A-B");
+    l2b.setTitle("设备维护");
+    l2b.setLevelCode(1);
+    when(f.nodeMapper.selectById(201L)).thenReturn(l2b);
+    when(f.nodeMapper.selectList(any())).thenReturn(List.of(leaves));
 
-    when(llm.chatCompletion(any(), any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyInt(),
-        any(), any(), org.mockito.ArgumentMatchers.anyBoolean(),
-        org.mockito.ArgumentMatchers.anyLong())).thenAnswer(inv -> {
+    when(f.llm.chatCompletion(any(), any(), any(), any(), any(),
+        org.mockito.ArgumentMatchers.anyInt(), any(), any(),
+        org.mockito.ArgumentMatchers.anyBoolean(), org.mockito.ArgumentMatchers.anyLong()))
+        .thenAnswer(inv -> {
           f.lastUserPrompt = inv.getArgument(4);
           return llmJson;
         });
@@ -202,7 +309,7 @@ class StandardNameShapeRepairTest {
     f.config.setApiKey("k");
     f.config.setModelId("m");
     f.config.setMaxTokens(1024);
-    f.service = new StandardLlmSummarizeService(f.taskMapper, f.nodeMapper, llm,
+    f.service = new StandardLlmSummarizeService(f.taskMapper, f.nodeMapper, f.llm,
         mock(FaqModelConfigApplicationService.class), mock(DictMapper.class),
         mock(AiGenerationDraftMapper.class), mock(ThreadPoolTaskExecutor.class));
     return f;
