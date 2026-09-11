@@ -9,14 +9,14 @@ import com.guoyu.platform.exam.skillgen.entity.SkillBlueprintNodeEntity;
 import com.guoyu.platform.exam.skillgen.entity.SkillGenBatchEntity;
 import com.guoyu.platform.exam.skillgen.entity.SkillGenDraftEntity;
 import com.guoyu.platform.exam.skillgen.mapper.SkillGenBatchMapper;
-import com.guoyu.platform.security.SecurityContext;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -24,20 +24,29 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 
 /**
- * 操作技能试题表导出（方案 §8，决策 C8）：三 Sheet——
- * 《试题表》/《评分记录表》（一行一个评分要素）/《批次报告》（含 X:Y:Z 题量占比与总量下限达成）。
+ * 操作技能试题导出（方案 §8，决策 C8；2026-09-11 需求方调整为**单 Sheet**）：
+ * 仅《评分记录表》一个 Sheet——一行一个评分要素，列：考评点 / 实操题目 / 考场准备 / 考生准备 /
+ * 评分要素 / 配分 / 评分标准 / 最大扣分 / 步长（已去掉试题名称列；不再输出试题表与批次报告）。
  */
 @Service
 public class SkillGenExportService {
 
-  private static final String[] SHEET1_HEADERS = {
-      "序号", "考评点代码", "考评点名称", "重要程度", "所属一级", "所属二级", "二级选考方式",
-      "试题名称", "本题分值", "权重（%）", "考核时间（min）", "考核形式",
-      "考场准备", "考生准备", "具体考核要求", "否定项", "审核状态"
-  };
   private static final String[] SHEET2_HEADERS = {
-      "试题名称", "考评点", "实操题目", "考场准备", "考生准备",
+      "考评点", "实操题目", "考场准备", "考生准备",
       "评分要素", "配分", "评分标准", "最大扣分", "步长"
+  };
+
+  /**
+   * 列宽（单位：1/256 字符；中文按 2 倍宽估算，2026-09-11 需求方反馈"太窄"）。
+   * 顺序与 SHEET2_HEADERS 一致：考评点/实操题目/考场准备/考生准备/评分要素/配分/评分标准/最大扣分/步长。
+   */
+  static final int[] SHEET2_WIDTHS = {
+      26 * 256, 42 * 256, 62 * 256, 30 * 256, 24 * 256, 8 * 256, 48 * 256, 10 * 256, 8 * 256
+  };
+
+  /** 需要自动换行的列（长文本列；考场准备/考生准备含显式换行，必须开启才能显示多行） */
+  private static final boolean[] SHEET2_WRAP = {
+      false, true, true, true, false, false, true, false, false
   };
 
   private final SkillGenDraftService draftService;
@@ -76,9 +85,7 @@ public class SkillGenExportService {
 
     try (Workbook wb = new XSSFWorkbook();
         ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-      writeSheet1(wb, drafts, nodeMap);
       writeSheet2(wb, drafts, nodeMap);
-      writeSheet3(wb, tenantId, batch, bp, drafts, nodeMap);
       wb.write(out);
       return new ExportFile(out.toByteArray(), buildFilename(workTypeTitle(bp), bp == null ? null : bp.getLevel(), batchId));
     }
@@ -118,50 +125,30 @@ public class SkillGenExportService {
     return digits[level - 1] + "级-" + name;
   }
 
-  /** Sheet1 试题表：一行一题，三件套完整展开 */
-  private void writeSheet1(Workbook wb, List<SkillGenDraftEntity> drafts,
+  /** 评分记录表：一行一个评分要素（试题级字段按题重复填充；已去掉试题名称列） */
+  private void writeSheet2(Workbook workbook, List<SkillGenDraftEntity> drafts,
       Map<Long, SkillBlueprintNodeEntity> nodeMap) {
-    Sheet sheet = wb.createSheet("试题表");
-    Row head = sheet.createRow(0);
-    for (int i = 0; i < SHEET1_HEADERS.length; i++) {
-      head.createCell(i).setCellValue(SHEET1_HEADERS[i]);
+    Sheet sheet = workbook.createSheet("评分记录表");
+    // 列宽（2026-09-11 调整：原默认宽度太窄，长文本列几乎不可读）
+    for (int i = 0; i < SHEET2_WIDTHS.length && i < SHEET2_HEADERS.length; i++) {
+      sheet.setColumnWidth(i, SHEET2_WIDTHS[i]);
     }
-    int r = 1;
-    int idx = 1;
-    for (SkillGenDraftEntity d : drafts) {
-      SkillBlueprintNodeEntity point = nodeMap.get(d.getNodeId());
-      SkillBlueprintNodeEntity l2 = parentOf(point, nodeMap);
-      SkillBlueprintNodeEntity l1 = parentOf(l2, nodeMap);
-      Row row = sheet.createRow(r++);
-      int c = 0;
-      row.createCell(c++).setCellValue(idx++);
-      row.createCell(c++).setCellValue(nvl(point == null ? "" : point.getFullCode()));
-      row.createCell(c++).setCellValue(nvl(point == null ? "" : point.getName()));
-      row.createCell(c++).setCellValue(nvl(point == null ? "" : point.getImportance()));
-      row.createCell(c++).setCellValue(nvl(l1 == null ? "" : l1.getName()));
-      row.createCell(c++).setCellValue(nvl(l2 == null ? "" : l2.getName()));
-      row.createCell(c++).setCellValue(nvl(l2 == null ? "" : l2.getSelectMode()));
-      row.createCell(c++).setCellValue(nvl(d.getQuestionName()));
-      row.createCell(c++).setCellValue(d.getScore() == null ? "100" : d.getScore().toPlainString());
-      row.createCell(c++).setCellValue(d.getWeight() == null ? "" : d.getWeight().toPlainString());
-      row.createCell(c++).setCellValue(d.getDurationMinutes() == null ? ""
-          : String.valueOf(d.getDurationMinutes()));
-      row.createCell(c++).setCellValue(nvl(d.getExamForm()));
-      row.createCell(c++).setCellValue(draftService.renderKaochangForExport(d));
-      row.createCell(c++).setCellValue(draftService.renderKaoshengForExport(d));
-      row.createCell(c++).setCellValue(nvl(d.getRequirements()));
-      row.createCell(c++).setCellValue(nvl(d.getNegatives()));
-      row.createCell(c).setCellValue(reviewName(d.getReviewStatus()));
-    }
-  }
+    // 表头加粗 + 长文本列自动换行（考场准备/考生准备含显式换行，未开启 wrap 时 Excel 只显示一行）
+    CellStyle headerStyle = workbook.createCellStyle();
+    Font bold = workbook.createFont();
+    bold.setBold(true);
+    headerStyle.setFont(bold);
+    headerStyle.setWrapText(false);
+    CellStyle wrapStyle = workbook.createCellStyle();
+    wrapStyle.setWrapText(true);
+    CellStyle plainStyle = workbook.createCellStyle();
+    plainStyle.setWrapText(false);
 
-  /** Sheet2 评分记录表：一行一个评分要素（试题级字段按题重复填充） */
-  private void writeSheet2(Workbook wb, List<SkillGenDraftEntity> drafts,
-      Map<Long, SkillBlueprintNodeEntity> nodeMap) {
-    Sheet sheet = wb.createSheet("评分记录表");
     Row head = sheet.createRow(0);
     for (int i = 0; i < SHEET2_HEADERS.length; i++) {
-      head.createCell(i).setCellValue(SHEET2_HEADERS[i]);
+      Cell cell = head.createCell(i);
+      cell.setCellValue(SHEET2_HEADERS[i]);
+      cell.setCellStyle(headerStyle);
     }
     int r = 1;
     for (SkillGenDraftEntity d : drafts) {
@@ -171,97 +158,26 @@ public class SkillGenExportService {
       for (Map<String, String> item : rows) {
         Row row = sheet.createRow(r++);
         int c = 0;
-        row.createCell(c++).setCellValue(nvl(d.getQuestionName()));
-        row.createCell(c++).setCellValue(nvl(point == null ? "" : point.getFullCode()));
-        row.createCell(c++).setCellValue(nvl(d.getRequirements()));
-        row.createCell(c++).setCellValue(draftService.renderKaochangForExport(d));
-        row.createCell(c++).setCellValue(draftService.renderKaoshengForExport(d));
-        row.createCell(c++).setCellValue(no++ + ". " + nvl(item.get("item")));
-        row.createCell(c++).setCellValue(nvl(item.get("score")));
-        row.createCell(c++).setCellValue(nvl(item.get("scoreDesc")));
-        row.createCell(c++).setCellValue(nvl(item.get("maxDeduct")));
-        row.createCell(c).setCellValue(nvl(item.get("step")));
+        // 考评点列＝名称+代码（去掉试题表后，此行是识别考评点的唯一依据）
+        cell(row, c++, point == null ? ""
+            : nvl(point.getName()) + nvl(point.getFullCode()), wrapStyle, plainStyle);
+        cell(row, c++, nvl(d.getRequirements()), wrapStyle, plainStyle);
+        cell(row, c++, draftService.renderKaochangForExport(d), wrapStyle, plainStyle);
+        cell(row, c++, draftService.renderKaoshengForExport(d), wrapStyle, plainStyle);
+        cell(row, c++, no++ + ". " + nvl(item.get("item")), wrapStyle, plainStyle);
+        cell(row, c++, nvl(item.get("score")), wrapStyle, plainStyle);
+        cell(row, c++, nvl(item.get("scoreDesc")), wrapStyle, plainStyle);
+        cell(row, c++, nvl(item.get("maxDeduct")), wrapStyle, plainStyle);
+        cell(row, c, nvl(item.get("step")), wrapStyle, plainStyle);
       }
     }
   }
 
-  /** Sheet3 批次报告：模型快照/各二级块分布/XYZ 题量占比/总量下限达成 */
-  private void writeSheet3(Workbook wb, Long tenantId, SkillGenBatchEntity batch,
-      SkillBlueprintEntity bp, List<SkillGenDraftEntity> drafts,
-      Map<Long, SkillBlueprintNodeEntity> nodeMap) {
-    Sheet sheet = wb.createSheet("批次报告");
-    int r = 0;
-    r = kv(sheet, r, "工种", bp == null ? "" : String.valueOf(bp.getWorkTypeId()));
-    r = kv(sheet, r, "等级", bp == null ? "" :
-        (bp.getLevel() + "级/" + SkillBlueprintApplicationService.LEVEL_NAMES[bp.getLevel()]));
-    r = kv(sheet, r, "细目表批次", batch.getBlueprintId() == null ? ""
-        : String.valueOf(batch.getBlueprintId()));
-    r = kv(sheet, r, "生成批次", String.valueOf(batch.getId()));
-    r = kv(sheet, r, "模型与思考模式", nvl(batch.getModelId())
-        + "（thinking=" + nvl(batch.getThinking()) + "，effort=" + nvl(batch.getReasoningEffort()) + "）");
-    r = kv(sheet, r, "每考评点题量", String.valueOf(SkillBlueprintApplicationService.PER_POINT_QUOTA));
-    r = kv(sheet, r, "已生成试题数", drafts.size() + "（完成 " + nvl(batch.getDonePoints()) + "/"
-        + nvl(batch.getTotalPoints()) + " 个考评点）");
-
-    // 各二级块题量分布与选考方式
-    r = kv(sheet, r, "", "");
-    r = kv(sheet, r, "各二级块题量分布", "题量 | 一级 | 二级 | 二级选考方式");
-    Map<String, Integer> byL2 = new LinkedHashMap<>();
-    Map<String, String> l2Meta = new LinkedHashMap<>();
-    Map<String, Integer> byImportance = new LinkedHashMap<>();
-    for (SkillGenDraftEntity d : drafts) {
-      SkillBlueprintNodeEntity point = nodeMap.get(d.getNodeId());
-      SkillBlueprintNodeEntity l2 = parentOf(point, nodeMap);
-      SkillBlueprintNodeEntity l1 = parentOf(l2, nodeMap);
-      String key = nvl(l1 == null ? "" : l1.getName()) + " | " + nvl(l2 == null ? "" : l2.getName());
-      byL2.merge(key, 1, Integer::sum);
-      if (l2 != null) {
-        l2Meta.putIfAbsent(key, nvl(l2.getSelectMode()));
-      }
-      String imp = point == null || point.getImportance() == null ? "X" : point.getImportance();
-      byImportance.merge(imp, 1, Integer::sum);
-    }
-    for (Map.Entry<String, Integer> e : byL2.entrySet()) {
-      r = kv(sheet, r, e.getValue() + " 题", e.getKey() + " | " + l2Meta.getOrDefault(e.getKey(), ""));
-    }
-
-    // X/Y/Z 题量占比（附件 3 第 22 条核对信息，仅展示不拦截）
-    r = kv(sheet, r, "", "");
-    int total = Math.max(1, drafts.size());
-    r = kv(sheet, r, "X/Y/Z 题量占比", String.format("X %d（%.1f%%）| Y %d（%.1f%%）| Z %d（%.1f%%）",
-        byImportance.getOrDefault("X", 0), byImportance.getOrDefault("X", 0) * 100.0 / total,
-        byImportance.getOrDefault("Y", 0), byImportance.getOrDefault("Y", 0) * 100.0 / total,
-        byImportance.getOrDefault("Z", 0), byImportance.getOrDefault("Z", 0) * 100.0 / total));
-
-    // 总量下限达成（累计口径，S10）
-    if (bp != null) {
-      int floor = SkillBlueprintApplicationService.MIN_QUESTIONS.getOrDefault(bp.getLevel(), 50);
-      SkillBlueprintApplicationService.CumulativeStat stat =
-          blueprintService.cumulativeStat(tenantId, bp.getWorkTypeId(), bp.getLevel());
-      r = kv(sheet, r, "题库总量下限", String.valueOf(floor));
-      r = kv(sheet, r, "累计已入库（全部来源）", stat.total() + "（其中 AI 生成 " + stat.aiTotal() + "）");
-      r = kv(sheet, r, "下限达成", stat.total() >= floor ? "已达成" : "未达成（还差 " + (floor - stat.total()) + " 道）");
-    }
-    r = kv(sheet, r, "", "");
-    r = kv(sheet, r, "导出人", SecurityContext.currentUser().getUserId() == null ? ""
-        : String.valueOf(SecurityContext.currentUser().getUserId()));
-    kv(sheet, r, "导出时间", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-  }
-
-  private int kv(Sheet sheet, int r, String key, String value) {
-    Row row = sheet.createRow(r);
-    row.createCell(0).setCellValue(key);
-    row.createCell(1).setCellValue(value);
-    return r + 1;
-  }
-
-  private SkillBlueprintNodeEntity parentOf(SkillBlueprintNodeEntity node,
-      Map<Long, SkillBlueprintNodeEntity> nodeMap) {
-    if (node == null) {
-      return null;
-    }
-    Long pid = node.getParentId();
-    return pid == null || pid == 0L ? null : nodeMap.get(pid);
+  /** 写入单元格并按列应用换行样式 */
+  private void cell(Row row, int col, String value, CellStyle wrapStyle, CellStyle plainStyle) {
+    Cell cell = row.createCell(col);
+    cell.setCellValue(value);
+    cell.setCellStyle(col < SHEET2_WRAP.length && SHEET2_WRAP[col] ? wrapStyle : plainStyle);
   }
 
   private List<Map<String, String>> parseScoring(String json) {
@@ -273,14 +189,6 @@ public class SkillGenExportService {
     } catch (Exception e) {
       return List.of();
     }
-  }
-
-  private String reviewName(String s) {
-    return switch (s == null ? "" : s) {
-      case "approved" -> "已通过";
-      case "rejected" -> "已驳回";
-      default -> "待审";
-    };
   }
 
   private String nvl(Object o) {
