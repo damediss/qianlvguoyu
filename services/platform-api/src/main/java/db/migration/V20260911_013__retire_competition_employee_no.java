@@ -14,7 +14,7 @@ import org.flywaydb.core.api.migration.Context;
  * compatibility. New competition flows no longer read or write it, and the
  * former employee-number uniqueness constraint is removed.
  */
-public class V20260909_002__retire_competition_employee_no extends BaseJavaMigration {
+public class V20260911_013__retire_competition_employee_no extends BaseJavaMigration {
 
   @Override
   public void migrate(Context context) throws Exception {
