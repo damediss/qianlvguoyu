@@ -44,7 +44,7 @@ public class SkillGenExportService {
       26 * 256, 42 * 256, 62 * 256, 30 * 256, 24 * 256, 8 * 256, 48 * 256, 10 * 256, 8 * 256
   };
 
-  /** 需要自动换行的列（长文本列；考场准备/考生准备含显式换行，必须开启才能显示多行） */
+  /** 需要自动换行的列（长文本列；考场准备/考生准备为清单文字通常单行，保留 wrap 以防长列表折行） */
   private static final boolean[] SHEET2_WRAP = {
       false, true, true, true, false, false, true, false, false
   };
@@ -133,7 +133,7 @@ public class SkillGenExportService {
     for (int i = 0; i < SHEET2_WIDTHS.length && i < SHEET2_HEADERS.length; i++) {
       sheet.setColumnWidth(i, SHEET2_WIDTHS[i]);
     }
-    // 表头加粗 + 长文本列自动换行（考场准备/考生准备含显式换行，未开启 wrap 时 Excel 只显示一行）
+    // 表头加粗 + 长文本列自动换行（未开启 wrap 时 Excel 只显示一行）
     CellStyle headerStyle = workbook.createCellStyle();
     Font bold = workbook.createFont();
     bold.setBold(true);
@@ -154,17 +154,18 @@ public class SkillGenExportService {
     for (SkillGenDraftEntity d : drafts) {
       SkillBlueprintNodeEntity point = nodeMap.get(d.getNodeId());
       List<Map<String, String>> rows = parseScoring(d.getScoringItems());
-      int no = 1;
       for (Map<String, String> item : rows) {
         Row row = sheet.createRow(r++);
         int c = 0;
-        // 考评点列＝名称+代码（去掉试题表后，此行是识别考评点的唯一依据）
+        // 考评点列＝名称+代码（此行是识别考评点的唯一依据）
         cell(row, c++, point == null ? ""
             : nvl(point.getName()) + nvl(point.getFullCode()), wrapStyle, plainStyle);
-        cell(row, c++, nvl(d.getRequirements()), wrapStyle, plainStyle);
+        // 实操题目列＝简短题名（2026-09-11 需求方确认，对齐样本）
+        cell(row, c++, nvl(d.getQuestionName()), wrapStyle, plainStyle);
+        // 考场准备/考生准备＝纯文字清单（2026-09-11 需求方确认，与入库同版式）
         cell(row, c++, draftService.renderKaochangForExport(d), wrapStyle, plainStyle);
         cell(row, c++, draftService.renderKaoshengForExport(d), wrapStyle, plainStyle);
-        cell(row, c++, no++ + ". " + nvl(item.get("item")), wrapStyle, plainStyle);
+        cell(row, c++, nvl(item.get("item")), wrapStyle, plainStyle);
         cell(row, c++, nvl(item.get("score")), wrapStyle, plainStyle);
         cell(row, c++, nvl(item.get("scoreDesc")), wrapStyle, plainStyle);
         cell(row, c++, nvl(item.get("maxDeduct")), wrapStyle, plainStyle);

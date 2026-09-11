@@ -44,9 +44,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class SkillGenDraftService {
 
-  /** 换行常量：避免源码内嵌裸换行（编辑器/脚本处理时易被折行破坏） */
-  private static final String NL = "\n";
-
   private static final int SOURCE_AI = 2;
   private static final String[] PINGFEN_KEYS = {"item", "score", "scoreDesc", "maxDeduct", "step"};
 
@@ -318,7 +315,7 @@ public class SkillGenDraftService {
         .orderByAsc(SkillGenDraftEntity::getId));
   }
 
-  // ─────────── 渲染模板（S11，对齐指引第三章样例：考生准备节同样带四项头部） ───────────
+  // ─────────── 渲染模板（2026-09-11 需求方确认：考场/考生准备均为纯文字清单，不带表格与标签） ───────────
 
   /** content（考核试题）：名称/分值/时间/形式/具体要求/否定项 */
   String renderContent(SkillGenDraftEntity d) {
@@ -333,73 +330,46 @@ public class SkillGenDraftService {
     return sb.toString();
   }
 
-  /** kaochang（考场准备）：四项头部 + 考核有关说明 + 设备设施准备表 + 故障/工况设置 */
+  /**
+   * kaochang（考场准备）：仅设备设施清单一句文字（样本版式）：「名称×数量+单位」，顿号分隔。
+   * 考核有关说明/故障·工况设置不再输出（用户 2026-09-11 确认"只保留清单"）；
+   * sitePreparation JSON 中仍保留 equipment 的 name/unit/qty 供清单拼装。
+   */
   String renderKaochang(SkillGenDraftEntity d) {
-    StringBuilder sb = new StringBuilder();
-    sb.append("【试题名称】").append(nvl(d.getQuestionName())).append("\n")
-        .append("【本题分值】100分，权重").append(weightText(d)).append("%\n")
-        .append("【考核时间】").append(d.getDurationMinutes() == null ? "" : d.getDurationMinutes())
-        .append("分钟\n")
-        .append("【考核形式】").append(nvl(d.getExamForm())).append("\n");
-    SkillQuestionItem.SitePrepare site = parseSite(d.getSitePreparation());
-    sb.append("【考核有关说明】").append(site == null ? "" : nvl(site.getNote())).append("\n");
-    sb.append("【设备设施准备】\n");
-    sb.append("序号 | 名称 | 规格 | 单位 | 数量 | 备注\n");
-    if (site != null && site.getEquipment() != null) {
-      int i = 1;
-      for (SkillQuestionItem.Equipment e : site.getEquipment()) {
-        if (e == null) {
-          continue;
-        }
-        sb.append(i++).append(" | ").append(nvl(e.getName())).append(" | ").append(nvl(e.getSpec()))
-            .append(" | ").append(nvl(e.getUnit())).append(" | ").append(nvl(e.getQty()))
-            .append(" | ").append(nvl(e.getRemark())).append("\n");
-      }
-    }
-    sb.append("【故障/工况设置】").append(site == null ? "" : nvl(site.getFaultSetup()));
-    return sb.toString();
+    return equipmentListText(d);
   }
 
-  /** kaosheng（考生准备）：四项头部 + 其他准备 */
+  /** kaosheng（考生准备）：纯清单文本，不带四项头部、不带"（工、量具及）其他准备"标签（用户 2026-09-11 确认） */
   String renderKaosheng(SkillGenDraftEntity d) {
-    return "【试题名称】" + nvl(d.getQuestionName()) + "\n"
-        + "【本题分值】100分，权重" + weightText(d) + "%\n"
-        + "【考核时间】" + (d.getDurationMinutes() == null ? "" : d.getDurationMinutes()) + "分钟\n"
-        + "【考核形式】" + nvl(d.getExamForm()) + "\n"
-        + "【其他准备】" + nvl(d.getExamineePrepare());
+    return nvl(d.getExamineePrepare()).trim();
   }
 
-  /**
-   * 导出专用"考场准备"（用户 2026-09-10 确认）：仅保留 考核有关说明 / 设备设施准备 / 故障·工况设置 三项，
-   * 不列试题名称/本题分值/考核时间/考核形式四项头部；**入库 kaochang 字段仍按指引样例格式（renderKaochang）**。
-   */
+  /** 导出与入库同版式（2026-09-11 起两者一致，均为清单文字） */
   String renderKaochangForExport(SkillGenDraftEntity d) {
-    SkillQuestionItem.SitePrepare site = parseSite(d.getSitePreparation());
-    StringBuilder sb = new StringBuilder();
-    sb.append("【考核有关说明】").append(site == null ? "" : nvl(site.getNote())).append(NL);
-    sb.append("【设备设施准备】").append(NL);
-    sb.append("序号 | 名称 | 规格 | 单位 | 数量 | 备注").append(NL);
-    if (site != null && site.getEquipment() != null) {
-      int i = 1;
-      for (SkillQuestionItem.Equipment e : site.getEquipment()) {
-        if (e == null) {
-          continue;
-        }
-        sb.append(i++).append(" | ").append(nvl(e.getName())).append(" | ").append(nvl(e.getSpec()))
-            .append(" | ").append(nvl(e.getUnit())).append(" | ").append(nvl(e.getQty()))
-            .append(" | ").append(nvl(e.getRemark())).append(NL);
-      }
-    }
-    sb.append("【故障/工况设置】").append(site == null ? "" : nvl(site.getFaultSetup()));
-    return sb.toString();
+    return renderKaochang(d);
   }
 
-  /**
-   * 导出专用"考生准备"（用户 2026-09-10 确认）：仅输出考生准备正文，不带四项头部、也不带"【其他准备】"标签；
-   * **入库 kaosheng 字段仍按指引样例格式（renderKaosheng）**。
-   */
+  /** 导出与入库同版式（2026-09-11 起两者一致，均为清单文本） */
   String renderKaoshengForExport(SkillGenDraftEntity d) {
-    return nvl(d.getExamineePrepare());
+    return renderKaosheng(d);
+  }
+
+  /** 设备设施清单 → 「名称×数量+单位、名称×数量+单位」一句文字；数量为空的条目只写名称 */
+  private String equipmentListText(SkillGenDraftEntity d) {
+    SkillQuestionItem.SitePrepare site = parseSite(d.getSitePreparation());
+    if (site == null || site.getEquipment() == null || site.getEquipment().isEmpty()) {
+      return "";
+    }
+    List<String> items = new ArrayList<>();
+    for (SkillQuestionItem.Equipment e : site.getEquipment()) {
+      if (e == null || nvl(e.getName()).isBlank()) {
+        continue;
+      }
+      String qty = nvl(e.getQty()).trim();
+      String unit = nvl(e.getUnit()).trim();
+      items.add(qty.isEmpty() ? nvl(e.getName()).trim() : nvl(e.getName()).trim() + "×" + qty + unit);
+    }
+    return String.join("、", items);
   }
 
   /** pingfen 归一：五键（item/score/scoreDesc/maxDeduct/step）字符串值，与 buildPingfenItem 口径一致 */

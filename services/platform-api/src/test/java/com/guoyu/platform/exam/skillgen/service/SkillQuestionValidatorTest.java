@@ -30,7 +30,7 @@ class SkillQuestionValidatorTest {
     site.setEquipment(new ArrayList<>(List.of(e)));
     site.setFaultSetup("设置一处通信异常");
     q.setSitePrepare(site);
-    q.setExamineePrepare("黑色签字笔");
+    q.setExamineePrepare("本人身份证×1、准考证×1、黑色签字笔×1");
     q.setRequirements("完成联机启动并确认通信正常");
     q.setNegatives("若考生发生下列情况之一，则应及时终止其考试，考生该试题成绩记为零分：违反安全规定");
     q.setScoring(new ArrayList<>(List.of(
@@ -80,6 +80,24 @@ class SkillQuestionValidatorTest {
     noNeg.setNegatives("安全违规记零分");
     assertTrue(validator.validate(noNeg).stream()
         .anyMatch(e -> e.contains("否定项说明未按标准表述")));
+  }
+
+  /** 考生准备固定保底（用户 2026-09-11 确认）：身份证/准考证/黑色签字笔缺一不可 */
+  @Test
+  void v2b_考生准备缺少固定保底项() {
+    SkillQuestionItem noId = validQuestion("试题L");
+    noId.setExamineePrepare("准考证×1、黑色签字笔×1");
+    assertTrue(validator.validate(noId).stream()
+        .anyMatch(e -> e.contains("考生准备缺少固定保底项") && e.contains("身份证")));
+
+    SkillQuestionItem noPen = validQuestion("试题M");
+    noPen.setExamineePrepare("本人身份证×1、准考证×1");
+    assertTrue(validator.validate(noPen).stream()
+        .anyMatch(e -> e.contains("黑色签字笔")));
+
+    SkillQuestionItem allSet = validQuestion("试题N");
+    allSet.setExamineePrepare("本人身份证×1、准考证×1、黑色签字笔×1、安全帽×1顶");
+    assertTrue(validator.validate(allSet).stream().noneMatch(e -> e.contains("考生准备")));
   }
 
   @Test

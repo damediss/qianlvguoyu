@@ -214,9 +214,9 @@ class SkillGenDraftServiceTest {
     assertEquals("联机启动集控室监控设备", detail.getJianding());
     assertTrue(detail.getContent().contains("【试题名称】"));
     assertTrue(detail.getContent().contains("【否定项】"));
-    assertTrue(detail.getKaochang().contains("【设备设施准备】"));
-    assertTrue(detail.getKaochang().contains("序号 | 名称 | 规格 | 单位 | 数量 | 备注"));
-    assertTrue(detail.getKaosheng().contains("【其他准备】"));
+    // 考场/考生准备均为纯清单（2026-09-11 需求方确认，入库与导出同版式）
+    assertEquals("主机×1套", detail.getKaochang());
+    assertEquals("黑色签字笔", detail.getKaosheng());
     assertEquals("3", detail.getNanyicd());
     assertEquals(Integer.valueOf(2), detail.getSource());
     assertEquals(BATCH_ID, detail.getAiBatchId());

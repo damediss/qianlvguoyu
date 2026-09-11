@@ -51,6 +51,22 @@ public class SkillQuestionValidator {
     }
     if (blank(q.getExamineePrepare())) {
       errors.add("考生准备为空");
+    } else {
+      // 考生准备固定保底（用户 2026-09-11 确认）：身份证/准考证/黑色签字笔三项必须具备
+      String prep = q.getExamineePrepare();
+      List<String> missing = new ArrayList<>();
+      if (!prep.contains("身份证")) {
+        missing.add("身份证");
+      }
+      if (!prep.contains("准考证")) {
+        missing.add("准考证");
+      }
+      if (!prep.contains("签字笔")) {
+        missing.add("黑色签字笔");
+      }
+      if (!missing.isEmpty()) {
+        errors.add("考生准备缺少固定保底项：" + String.join("、", missing));
+      }
     }
     if (blank(q.getRequirements())) {
       errors.add("具体考核要求为空");

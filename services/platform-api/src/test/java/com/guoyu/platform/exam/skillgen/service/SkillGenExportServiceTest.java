@@ -127,16 +127,17 @@ class SkillGenExportServiceTest {
       for (int i = 0; i < head.getLastCellNum(); i++) {
         assertFalse("试题名称".equals(head.getCell(i).getStringCellValue()), "不应含试题名称列");
       }
-      // ③ 数据行：考评点＝名称+代码；一行一个评分要素（2 条评分 → 2 行）
+      // ③ 数据行：考评点＝名称+代码；实操题目＝简短题名；考场/考生准备＝纯文字清单；
+      //    评分要素不带序号前缀（2026-09-11 需求方确认，对齐两份样本）
       assertEquals(3, sheet.getLastRowNum() + 1);
       Row first = sheet.getRow(1);
       assertEquals("联机启动集控室监控设备A-A-001", first.getCell(0).getStringCellValue());
-      assertTrue(first.getCell(2).getStringCellValue().contains("【考核有关说明】"));
-      assertTrue(first.getCell(2).getStringCellValue().contains("| 监控主机 |"));
+      assertEquals("冷态条件下集控室监控系统联机启动", first.getCell(1).getStringCellValue());
+      assertEquals("监控主机×1套", first.getCell(2).getStringCellValue());
       assertEquals("黑色签字笔、绝缘手套", first.getCell(3).getStringCellValue());
-      assertEquals("1. 开机前环境与电源检查", first.getCell(4).getStringCellValue());
+      assertEquals("开机前环境与电源检查", first.getCell(4).getStringCellValue());
       assertEquals("20", first.getCell(5).getStringCellValue());
-      assertEquals("2. 联机启动", sheet.getRow(2).getCell(4).getStringCellValue());
+      assertEquals("联机启动", sheet.getRow(2).getCell(4).getStringCellValue());
       // ④ 列宽已按内容设置（2026-09-11 反馈"太窄"）且长文本列开启换行
       assertEquals(SkillGenExportService.SHEET2_WIDTHS[2], sheet.getColumnWidth(2),
           "考场准备列宽应显式设置");
