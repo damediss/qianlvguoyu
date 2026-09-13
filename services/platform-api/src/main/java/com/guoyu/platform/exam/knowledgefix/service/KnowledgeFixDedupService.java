@@ -1,0 +1,85 @@
+package com.guoyu.platform.exam.knowledgefix.service;
+
+import com.guoyu.platform.exam.knowledgefix.dto.ApplyResultVO;
+import com.guoyu.platform.exam.knowledgefix.dto.DedupStatsVO;
+import com.guoyu.platform.exam.knowledgefix.mapper.ExamDetailDedupListMapper;
+import com.guoyu.platform.exam.knowledgefix.mapper.ExamExamDetailFixMapper;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+/**
+ * 去重清单生成与软删除执行（方案 §6.3 / Phase 1）。
+ * 清单生成 = 单条 INSERT...SELECT（服务端集合运算）；软删除 = 备份表 + 分批 deleted=1，可整体回滚。
+ */
+@Service
+@Slf4j
+public class KnowledgeFixDedupService {
+
+  private static final int BATCH_SIZE = 1000;
+
+  private final ExamExamDetailFixMapper queryMapper;
+  private final ExamDetailDedupListMapper dedupListMapper;
+
+  public KnowledgeFixDedupService(ExamExamDetailFixMapper queryMapper,
+      ExamDetailDedupListMapper dedupListMapper) {
+    this.queryMapper = queryMapper;
+    this.dedupListMapper = dedupListMapper;
+  }
+
+  /** 生成/刷新去重清单（幂等：仅重置 pending；已执行清单不动） */
+  public DedupStatsVO generate(Long userId) {
+    dedupListMapper.clearPending();
+    int inserted = dedupListMapper.generateDedupList();
+    int manual = dedupListMapper.markManualReviewRows();
+    DedupStatsVO stats = stats();
+    log.info("去重清单生成完成：inserted={}, manual_review={}, 统计={}", inserted, manual, stats);
+    return stats;
+  }
+
+  public DedupStatsVO stats() {
+    long mayTotal = queryMapper.selectMayRowCount();
+    var raw = dedupListMapper.selectDedupStatsRaw();
+    long uniqGroups = ((Number) raw.getOrDefault("uniq_groups", 0)).longValue();
+    long deleteRows = ((Number) raw.getOrDefault("delete_rows", 0)).longValue();
+    long manualRows = dedupListMapper.selectManualReviewCount();
+    return new DedupStatsVO(mayTotal, uniqGroups, deleteRows, manualRows);
+  }
+
+  /** 软删除执行：清单 pending → approved → 备份 → 分批 deleted=1 → done（方案 §6.3） */
+  public ApplyResultVO applySoftDelete(Long tenantId, Long userId) {
+    int approved = dedupListMapper.approvePending();
+    if (approved == 0) {
+      log.warn("去重软删除：无待执行清单行（可能已执行或清单未生成）");
+      return new ApplyResultVO(null, 0, 0);
+    }
+    String backupTable = "exam_exam_detail_bak_dedup_"
+        + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+    queryMapper.createBackupTable(backupTable);
+    queryMapper.backupRows(backupTable, "exam_detail_dedup_list");
+
+    int totalUpdated = 0;
+    int lastId = 0;
+    while (true) {
+      List<Integer> ids = dedupListMapper.selectApprovedDeleteIds(lastId, BATCH_SIZE);
+      if (ids.isEmpty()) {
+        break;
+      }
+      totalUpdated += dedupListMapper.softDeleteByIds(ids);
+      lastId = ids.get(ids.size() - 1);
+    }
+    dedupListMapper.markDedupDone();
+    log.info("去重软删除完成：approved={}, deleted={}", approved, totalUpdated);
+    return new ApplyResultVO(backupTable, approved, totalUpdated);
+  }
+
+  /** 去重回滚（方案 §6.3，回滚后清单标记 rolled_back） */
+  public int rollbackSoftDelete(String backupTable) {
+    int restored = queryMapper.rollbackSoftDelete(backupTable);
+    dedupListMapper.markDedupRolledBack();
+    log.info("去重回滚完成：restored={}", restored);
+    return restored;
+  }
+}

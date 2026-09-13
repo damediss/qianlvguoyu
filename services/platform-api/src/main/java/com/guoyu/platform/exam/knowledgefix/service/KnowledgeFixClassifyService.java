@@ -1,0 +1,541 @@
+package com.guoyu.platform.exam.knowledgefix.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guoyu.platform.common.exception.BusinessException;
+import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.common.tenant.TenantContextHolder;
+import com.guoyu.platform.ai.infrastructure.FaqLlmClient;
+import com.guoyu.platform.exam.entity.ExamFaqModelConfigEntity;
+import com.guoyu.platform.exam.knowledgefix.dto.FixBatchVO;
+import com.guoyu.platform.exam.knowledgefix.dto.KnowledgeNodeRow;
+import com.guoyu.platform.exam.knowledgefix.dto.PendingFixRow;
+import com.guoyu.platform.exam.knowledgefix.entity.ExamDetailKnowledgeFixEntity;
+import com.guoyu.platform.exam.knowledgefix.entity.ExamKnowledgeFixBatchEntity;
+import com.guoyu.platform.exam.knowledgefix.entity.ExamKnowledgeFixLlmLogEntity;
+import com.guoyu.platform.exam.knowledgefix.mapper.ExamDetailKnowledgeFixMapper;
+import com.guoyu.platform.exam.knowledgefix.mapper.ExamExamDetailFixMapper;
+import com.guoyu.platform.exam.knowledgefix.mapper.ExamKnowledgeFixBatchMapper;
+import com.guoyu.platform.exam.knowledgefix.mapper.ExamKnowledgeFixLlmLogMapper;
+import com.guoyu.platform.exam.mapper.ExamFaqModelConfigMapper;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.stereotype.Service;
+
+/**
+ * 知识归属修正 LLM 分类批次（方案 §4.4 / Phase 3）。
+ *
+ * <p>线程边界：submit 走 HTTP 线程；processBatch 跑 knowledge-fix- 编排线程；单行 LLM 分类任务跑
+ * knowledge-fix-llm- Worker（并发 platform.knowledgefix.llm-concurrency，默认 5）。
+ * 全链路不调 SecurityContext；Worker 线程自行 set/clear TenantContextHolder。
+ *
+ * <p>准确率设计（无人工验收，方案 §4.4）：两阶段分类（L2 粗分 1 次 → L3 细分 3 采样自一致），
+ * 2/3 多数 → apply/flag 分层；三方各不同 → 升级旗舰模型复判；确定性卫兵拦截零相关选择；
+ * 模型选中当前节点 → keep（防过度修正）。
+ */
+@Service
+@Slf4j
+public class KnowledgeFixClassifyService {
+
+  private static final String SYSTEM_PROMPT =
+      "你是题库数据治理专家，负责判断试题归属的知识点。只输出 JSON：第一阶段输出 {\"l2_id\":<整数>}，"
+          + "第二阶段输出 {\"node_id\":<整数>,\"confidence\":<0~1 小数>,\"reason\":\"不超过50字\"}。"
+          + "必须从候选列表中选择，禁止输出候选之外的 id，禁止输出任何其它文字。";
+
+  private static final String MAIN_MODEL_CODE = "theory-gen-glm";
+  private static final String PRO_MODEL_CODE = "knowledge-fix-pro";
+  private static final int MAX_DISPATCH_ROUNDS = 3;
+  private static final int MAX_CONSECUTIVE_FAILURES = 5;
+  private static final int SAMPLES = 3;
+  private static final double APPLY_CONFIDENCE = 0.7;
+  private static final int RESPONSE_TIMEOUT_SECONDS = 120;
+
+  private final ExamKnowledgeFixBatchMapper batchMapper;
+  private final ExamDetailKnowledgeFixMapper fixMapper;
+  private final ExamExamDetailFixMapper queryMapper;
+  private final ExamFaqModelConfigMapper modelConfigMapper;
+  private final FaqLlmClient llmClient;
+  private final ObjectMapper objectMapper;
+  private final ThreadPoolTaskExecutor knowledgeFixExecutor;
+  private final ThreadPoolTaskExecutor llmExecutor;
+  private final int llmConcurrency;
+  private final long retryBackoffBaseMillis;
+  private final ExamKnowledgeFixLlmLogMapper llmLogMapper;
+
+  public KnowledgeFixClassifyService(ExamKnowledgeFixBatchMapper batchMapper,
+      ExamDetailKnowledgeFixMapper fixMapper, ExamExamDetailFixMapper queryMapper,
+      ExamFaqModelConfigMapper modelConfigMapper, FaqLlmClient llmClient,
+      ObjectMapper objectMapper,
+      @Qualifier("knowledgeFixExecutor") ThreadPoolTaskExecutor knowledgeFixExecutor,
+      @Qualifier("knowledgeFixLlmExecutor") ThreadPoolTaskExecutor llmExecutor,
+      ExamKnowledgeFixLlmLogMapper llmLogMapper,
+      @Value("${platform.knowledgefix.llm-concurrency:5}") int llmConcurrency,
+      @Value("${platform.knowledgefix.retry-backoff-base-millis:5000}") long retryBackoffBaseMillis) {
+    this.batchMapper = batchMapper;
+    this.fixMapper = fixMapper;
+    this.queryMapper = queryMapper;
+    this.modelConfigMapper = modelConfigMapper;
+    this.llmClient = llmClient;
+    this.objectMapper = objectMapper;
+    this.knowledgeFixExecutor = knowledgeFixExecutor;
+    this.llmExecutor = llmExecutor;
+    this.llmLogMapper = llmLogMapper;
+    this.llmConcurrency = llmConcurrency;
+    this.retryBackoffBaseMillis = retryBackoffBaseMillis;
+  }
+
+  /** 提交分类批次（秒回 batchNo；装配修正清单 + 异步编排） */
+  public FixBatchVO submit(Long tenantId, Long userId) {
+    Long running = batchMapper.selectCount(new LambdaQueryWrapper<ExamKnowledgeFixBatchEntity>()
+        .in(ExamKnowledgeFixBatchEntity::getStatus,
+            ExamKnowledgeFixBatchEntity.STATUS_PENDING, ExamKnowledgeFixBatchEntity.STATUS_RUNNING));
+    if (running != null && running > 0) {
+      throw new BusinessException(ErrorCode.CONFLICT, "已有进行中的分类批次");
+    }
+    ExamFaqModelConfigEntity cfgFlash = requireConfig(MAIN_MODEL_CODE);
+    ExamFaqModelConfigEntity cfgPro = requireConfig(PRO_MODEL_CODE);
+    requireApiKey(cfgFlash);
+    requireApiKey(cfgPro);
+
+    int populated = queryMapper.populateFixList();
+    List<PendingFixRow> pending = fixMapper.selectPendingWithContent();
+    if (pending.isEmpty()) {
+      throw new BusinessException(ErrorCode.CONFLICT, "无待分类的修正行（可能已全部处理）");
+    }
+
+    ExamKnowledgeFixBatchEntity batch = new ExamKnowledgeFixBatchEntity();
+    batch.setId(com.baomidou.mybatisplus.core.toolkit.IdWorker.getId());
+    batch.setTenantId(tenantId);
+    batch.setBatchNo(com.baomidou.mybatisplus.core.toolkit.IdWorker.getId());
+    batch.setTotal(pending.size());
+    batch.setStatus(ExamKnowledgeFixBatchEntity.STATUS_PENDING);
+    batch.setCreatedBy(userId);
+    batch.setUpdatedBy(userId);
+    batch.setCreatedAt(LocalDateTime.now());
+    batch.setUpdatedAt(LocalDateTime.now());
+    batch.setDeleted(0);
+    batchMapper.insert(batch);
+
+    long batchNo = batch.getBatchNo();
+    knowledgeFixExecutor.submit(() -> processBatch(batch.getId(), batchNo, tenantId, userId,
+        cfgFlash, cfgPro));
+    log.info("知识修正批次已提交：batchNo={}, total={}, 新装入={}", batchNo, pending.size(), populated);
+    return FixBatchVO.from(batch);
+  }
+
+  /** 编排线程：两阶段分类 + 三采样自一致 + 旗舰升级 + 自动补跑（方案 §4.4/§6.4） */
+  public void processBatch(Long batchId, Long batchNo, Long tenantId, Long userId,
+      ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro) {
+    TenantContextHolder.setTenantId(tenantId);
+    try {
+      ExamKnowledgeFixBatchEntity batch = batchMapper.selectById(batchId);
+      if (batch == null) {
+        log.error("知识修正批次不存在：batchId={}", batchId);
+        return;
+      }
+      batch.setStatus(ExamKnowledgeFixBatchEntity.STATUS_RUNNING);
+      batch.setUpdatedAt(LocalDateTime.now());
+      batchMapper.updateById(batch);
+
+      // 课程树快照（批次内不变数据一次性加载，踩坑 #18）
+      Map<Integer, List<KnowledgeNodeRow>> courseL2 = new HashMap<>();
+      Map<Integer, Map<Integer, List<KnowledgeNodeRow>>> courseL3ByParent = new HashMap<>();
+      Map<Integer, KnowledgeNodeRow> nodeById = new HashMap<>();
+      for (KnowledgeNodeRow n : queryMapper.selectAllNodes()) {
+        nodeById.put(n.getId(), n);
+        if (n.getLevel() != null && n.getLevel() == 2) {
+          courseL2.computeIfAbsent(n.getCourseId(), x -> new ArrayList<>()).add(n);
+        }
+        if (n.getLevel() != null && n.getLevel() == 3) {
+          courseL3ByParent.computeIfAbsent(n.getCourseId(), x -> new HashMap<>())
+              .computeIfAbsent(n.getParentId(), x -> new ArrayList<>()).add(n);
+        }
+      }
+
+      Semaphore slots = new Semaphore(Math.max(1, llmConcurrency));
+      AtomicInteger consecutiveFailures = new AtomicInteger(0);
+      boolean breakerTripped = false;
+      int roundsUsed = 0;
+      AtomicInteger classified = new AtomicInteger(0);
+      AtomicInteger unanimous = new AtomicInteger(0);
+      int totalDispatched = 0;
+      while (roundsUsed < MAX_DISPATCH_ROUNDS) {
+        List<PendingFixRow> pending = fixMapper.selectPendingWithContent();
+        if (pending.isEmpty()) {
+          break;
+        }
+        if (roundsUsed > 0) {
+          Thread.sleep(Math.max(0, retryBackoffBaseMillis) * roundsUsed);
+        }
+        roundsUsed++;
+        consecutiveFailures.set(0);
+        List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
+        for (PendingFixRow row : pending) {
+          if (consecutiveFailures.get() >= MAX_CONSECUTIVE_FAILURES) {
+            breakerTripped = true;
+            break;
+          }
+          try {
+            slots.acquire();
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            failBatch(batch, "编排被中断");
+            return;
+          }
+          try {
+            futures.add(llmExecutor.submit(() -> {
+              try {
+                classifyRow(row, batchNo, tenantId, cfgFlash, cfgPro, courseL2, courseL3ByParent,
+                    nodeById, consecutiveFailures, classified, unanimous);
+              } finally {
+                slots.release();
+              }
+              return null;
+            }));
+          } catch (RejectedExecutionException e) {
+            slots.release();
+            log.warn("分类任务提交被拒绝：batchNo={}, detailId={}", batchNo, row.getDetailId());
+            batchMapper.incrementFailed(batchNo);
+            consecutiveFailures.incrementAndGet();
+          }
+        }
+        for (java.util.concurrent.Future<?> f : futures) {
+          try {
+            f.get();
+          } catch (Exception e) {
+            log.error("分类任务异常返回：batchNo={}", batchNo, e);
+          }
+        }
+        totalDispatched += futures.size();
+        if (breakerTripped) {
+          break;
+        }
+      }
+      // 轮次耗尽仍未分类的行 → flag（宁可不改）
+      List<PendingFixRow> remain = fixMapper.selectPendingWithContent();
+      for (PendingFixRow row : remain) {
+        fixMapper.updateClassifyResult(row.getRowId(), row.getOldKnowledgeId(), BigDecimal.ZERO,
+            "guard", "自动补跑后仍失败", ExamDetailKnowledgeFixEntity.STATUS_FLAG);
+        batchMapper.incrementClassified(batchNo, "flag");
+      }
+      // 收尾
+      ExamKnowledgeFixBatchEntity finalState = batchMapper.selectById(batchId);
+      if (finalState != null
+          && !ExamKnowledgeFixBatchEntity.STATUS_FAILED.equals(finalState.getStatus())) {
+        BigDecimal rate = classified.get() > 0
+            ? BigDecimal.valueOf(unanimous.get()).divide(BigDecimal.valueOf(classified.get()),
+                4, RoundingMode.HALF_UP)
+            : BigDecimal.ZERO;
+        finalState.setSelfConsistencyRate(rate);
+        finalState.setStatus(ExamKnowledgeFixBatchEntity.STATUS_DONE);
+        finalState.setUpdatedAt(LocalDateTime.now());
+        batchMapper.updateById(finalState);
+      }
+      log.info("知识修正批次完成：batchNo={}, rounds={}, dispatched={}, classified={}, unanimous={}",
+          batchNo, roundsUsed, totalDispatched, classified.get(), unanimous.get());
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      log.error("知识修正批次被中断：batchNo={}", batchNo);
+      ExamKnowledgeFixBatchEntity batch = batchMapper.selectById(batchId);
+      if (batch != null) {
+        failBatch(batch, "编排被中断");
+      }
+    } catch (Exception e) {
+      log.error("知识修正批次异常终止：batchNo={}", batchNo, e);
+      ExamKnowledgeFixBatchEntity batch = batchMapper.selectById(batchId);
+      if (batch != null) {
+        failBatch(batch, e.getMessage() == null ? "未知异常" : e.getMessage());
+      }
+    } finally {
+      TenantContextHolder.clear();
+    }
+  }
+
+  /** 单行分类：两阶段（L2 粗分 → L3 细分×3 自一致）+ 旗舰升级 + 卫兵（KF-09~15） */
+  private void classifyRow(PendingFixRow row, Long batchNo, Long tenantId,
+      ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro,
+      Map<Integer, List<KnowledgeNodeRow>> courseL2,
+      Map<Integer, Map<Integer, List<KnowledgeNodeRow>>> courseL3ByParent,
+      Map<Integer, KnowledgeNodeRow> nodeById, AtomicInteger consecutiveFailures,
+      AtomicInteger classified, AtomicInteger unanimous) throws InterruptedException {
+    TenantContextHolder.setTenantId(tenantId);
+    try {
+      Integer courseId = row.getCourseId();
+      List<KnowledgeNodeRow> l2List = courseL2.getOrDefault(courseId, List.of());
+      Map<Integer, List<KnowledgeNodeRow>> l3Map = courseL3ByParent.getOrDefault(courseId, Map.of());
+      String questionText = buildQuestionText(row.getContent(), row.getAnswer(), row.getResolve());
+      KnowledgeNodeRow oldNode = nodeById.get(row.getOldKnowledgeId());
+
+      // 阶段 1：L2 粗分（1 次）
+      String s1 = callLlm(cfgFlash, tenantId, batchNo, row.getDetailId(), "stage1",
+          buildStage1Prompt(questionText, l2List), 1024).content();
+      int l2Id = extractIntField(s1, "l2_id");
+      boolean l2Valid = l2List.stream().anyMatch(n -> n.getId() != null && n.getId() == l2Id);
+      if (!l2Valid) {
+        throw new BusinessException(ErrorCode.BAD_GATEWAY, "L2 越界: " + l2Id);
+      }
+      List<KnowledgeNodeRow> l3List = l3Map.getOrDefault(l2Id, List.of());
+      if (l3List.isEmpty()) {
+        throw new BusinessException(ErrorCode.BAD_GATEWAY, "L2 下无 L3 鉴定点: " + l2Id);
+      }
+
+      // 阶段 2：三采样自一致（候选顺序随机化）
+      List<Integer> nodeVotes = new ArrayList<>();
+      List<Double> confVotes = new ArrayList<>();
+      List<String> reasons = new ArrayList<>();
+      for (int i = 0; i < SAMPLES; i++) {
+        List<KnowledgeNodeRow> ordered = new ArrayList<>(l3List);
+        Collections.shuffle(ordered);
+        String s2 = callLlm(cfgFlash, tenantId, batchNo, row.getDetailId(), "stage2",
+            buildStage2Prompt(questionText, ordered, oldNode), 1024).content();
+        JsonNode json = parseObject(s2);
+        int nodeId = json.path("node_id").asInt(-1);
+        double conf = json.path("confidence").asDouble(0);
+        String reason = json.path("reason").asText("");
+        KnowledgeNodeRow picked = nodeById.get(nodeId);
+        if (picked == null || !Objects.equals(picked.getCourseId(), courseId)) {
+          throw new BusinessException(ErrorCode.BAD_GATEWAY, "node_id 越界: " + nodeId);
+        }
+        nodeVotes.add(nodeId);
+        confVotes.add(conf);
+        reasons.add(reason);
+      }
+      classified.incrementAndGet();
+      // 多数投票
+      Map<Integer, Integer> counts = new HashMap<>();
+      for (int v : nodeVotes) {
+        counts.merge(v, 1, Integer::sum);
+      }
+      int majorityNode = -1;
+      int majorityCount = 0;
+      for (Map.Entry<Integer, Integer> e : counts.entrySet()) {
+        if (e.getValue() > majorityCount) {
+          majorityCount = e.getValue();
+          majorityNode = e.getKey();
+        }
+      }
+      String outcome;
+      int finalNodeId;
+      double finalConf;
+      String basis = "llm";
+      String reason;
+      if (majorityCount >= 2) {
+        finalNodeId = majorityNode;
+        double avg = 0;
+        for (int i = 0; i < SAMPLES; i++) {
+          if (nodeVotes.get(i) == majorityNode) {
+            avg += confVotes.get(i);
+          }
+        }
+        finalConf = avg / majorityCount;
+        if (majorityCount == SAMPLES) {
+          unanimous.incrementAndGet();
+        }
+        reason = reasons.get(nodeVotes.indexOf(majorityNode) >= 0
+            ? nodeVotes.indexOf(majorityNode) : 0);
+      } else {
+        // 三方各不同 → 旗舰复判（basis=llm-pro）
+        String s3 = callLlm(cfgPro, tenantId, batchNo, row.getDetailId(), "escalate",
+            buildStage2Prompt(questionText, l3List, oldNode), 2048).content();
+        JsonNode json = parseObject(s3);
+        finalNodeId = json.path("node_id").asInt(-1);
+        finalConf = json.path("confidence").asDouble(0);
+        reason = "旗舰复判:" + json.path("reason").asText("");
+        basis = "llm-pro";
+        if (nodeById.get(finalNodeId) == null) {
+          throw new BusinessException(ErrorCode.BAD_GATEWAY, "旗舰复判 node_id 越界");
+        }
+      }
+
+      KnowledgeNodeRow chosen = nodeById.get(finalNodeId);
+      // keep：模型选中当前节点（防过度修正）
+      if (Objects.equals(finalNodeId, row.getOldKnowledgeId())) {
+        fixMapper.updateClassifyResult(row.getRowId(), row.getOldKnowledgeId(),
+            BigDecimal.valueOf(finalConf).setScale(3, RoundingMode.HALF_UP), basis, reason,
+            ExamDetailKnowledgeFixEntity.STATUS_KEEP);
+        batchMapper.incrementClassified(batchNo, "keep");
+        consecutiveFailures.set(0);
+        return;
+      }
+      // 确定性卫兵：零关键词重合且非素养节点 → flag
+      if (!KnowledgeNormUtil.hasBigramOverlap(chosen.getTitle(), questionText)
+          && !KnowledgeNormUtil.isQualityNode(chosen.getTitle())) {
+        fixMapper.updateClassifyResult(row.getRowId(), finalNodeId,
+            BigDecimal.valueOf(finalConf).setScale(3, RoundingMode.HALF_UP), basis,
+            "卫兵拦截:" + reason, ExamDetailKnowledgeFixEntity.STATUS_FLAG);
+        batchMapper.incrementClassified(batchNo, "flag");
+        consecutiveFailures.incrementAndGet();
+        return;
+      }
+      // 置信分层
+      if (finalConf >= APPLY_CONFIDENCE) {
+        outcome = ExamDetailKnowledgeFixEntity.STATUS_APPLY;
+      } else {
+        outcome = ExamDetailKnowledgeFixEntity.STATUS_FLAG;
+      }
+      fixMapper.updateClassifyResult(row.getRowId(), finalNodeId,
+          BigDecimal.valueOf(finalConf).setScale(3, RoundingMode.HALF_UP), basis, reason, outcome);
+      batchMapper.incrementClassified(batchNo, outcome);
+      consecutiveFailures.set(0);
+    } catch (Exception e) {
+      log.warn("知识修正分类失败：detailId={}, err={}", row.getDetailId(), e.getMessage());
+      batchMapper.incrementFailed(batchNo);
+      consecutiveFailures.incrementAndGet();
+    } finally {
+      TenantContextHolder.clear();
+    }
+  }
+
+  private void failBatch(ExamKnowledgeFixBatchEntity batch, String reason) {
+    batch.setStatus(ExamKnowledgeFixBatchEntity.STATUS_FAILED);
+    batch.setFailReason(reason);
+    batch.setUpdatedAt(LocalDateTime.now());
+    batchMapper.updateById(batch);
+  }
+
+  /** LLM 调用 + 审计落库（LLM 规范 #10，KF-19）：usage/耗时/摘要写入审计表，落库失败不影响主流程 */
+  private com.guoyu.platform.ai.dto.LlmChatCompletionResult callLlm(
+      ExamFaqModelConfigEntity cfg, Long tenantId, Long batchNo, Integer detailId,
+      String stage, String prompt, int maxTokens) {
+    long t0 = System.currentTimeMillis();
+    var result = llmClient.chatCompletionDetailed(cfg.getBaseUrl(), cfg.getApiKey(),
+        cfg.getModelId(), SYSTEM_PROMPT, prompt, maxTokens, cfg.getThinking(),
+        cfg.getReasoningEffort(), false, tenantId, RESPONSE_TIMEOUT_SECONDS);
+    int duration = (int) (System.currentTimeMillis() - t0);
+    try {
+      ExamKnowledgeFixLlmLogEntity logRow = new ExamKnowledgeFixLlmLogEntity();
+      logRow.setId(com.baomidou.mybatisplus.core.toolkit.IdWorker.getId());
+      logRow.setTenantId(tenantId);
+      logRow.setBatchNo(batchNo);
+      logRow.setDetailId(detailId);
+      logRow.setStage(stage);
+      logRow.setModelId(cfg.getModelId());
+      logRow.setPromptDigest(prompt.length() > 200 ? prompt.substring(0, 200) : prompt);
+      logRow.setPromptTokens((int) result.promptTokens());
+      logRow.setCompletionTokens((int) result.completionTokens());
+      logRow.setTotalTokens((int) result.totalTokens());
+      logRow.setCachedTokens((int) result.cachedTokens());
+      logRow.setDurationMs(duration);
+      logRow.setCreatedAt(LocalDateTime.now());
+      logRow.setCreatedBy(0L);
+      logRow.setUpdatedBy(0L);
+      logRow.setDeleted(0);
+      llmLogMapper.insert(logRow);
+    } catch (Exception logEx) {
+      log.warn("LLM 审计落库失败（不影响主流程）：{}", logEx.getMessage());
+    }
+    return result;
+  }
+
+  private String buildQuestionText(String content, String answer, String resolve) {
+    StringBuilder sb = new StringBuilder();
+    sb.append(stripTags(content));
+    if (answer != null && !answer.isBlank()) {
+      sb.append("\n选项与答案：").append(stripTags(answer));
+    }
+    if (resolve != null && !resolve.isBlank()) {
+      sb.append("\n解析：").append(stripTags(resolve));
+    }
+    return sb.toString();
+  }
+
+  private String stripTags(String s) {
+    if (s == null) {
+      return "";
+    }
+    return s.replaceAll("<[^>]+>", "").replace("&nbsp;", " ").trim();
+  }
+
+  private String buildStage1Prompt(String questionText, List<KnowledgeNodeRow> l2List) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("【试题】\n").append(questionText).append("\n\n【候选分类（L2）】\n");
+    for (KnowledgeNodeRow n : l2List) {
+      sb.append(n.getId()).append("|").append(n.getTitle()).append("\n");
+    }
+    sb.append("请从候选中选出该试题所属的 L2 分类，只输出 JSON：{\"l2_id\":<整数>}。禁止输出候选之外的 id，禁止输出任何其它文字。");
+    return sb.toString();
+  }
+
+  private String buildStage2Prompt(String questionText, List<KnowledgeNodeRow> l3List,
+      KnowledgeNodeRow oldNode) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("【试题】\n").append(questionText).append("\n\n【候选鉴定点（L3）】\n");
+    for (KnowledgeNodeRow n : l3List) {
+      sb.append(n.getId()).append("|").append(n.getTitle());
+      if (n.getImportant() != null && !n.getImportant().isBlank()) {
+        sb.append("（重要程度 ").append(n.getImportant()).append("）");
+      }
+      sb.append("\n");
+    }
+    if (oldNode != null) {
+      sb.append("【当前标记】该试题当前挂在「").append(oldNode.getTitle())
+          .append("」，若试题确实属于它，请选择它（node_id=").append(oldNode.getId()).append("）。\n");
+    }
+    sb.append("请从候选中选出该试题真正归属的鉴定点，只输出 JSON：")
+        .append("{\"node_id\":<整数>,\"confidence\":<0~1 小数>,\"reason\":\"不超过50字\"}。")
+        .append("禁止输出候选之外的 id，禁止输出任何其它文字。");
+    return sb.toString();
+  }
+
+  private JsonNode parseObject(String content) {
+    try {
+      String t = content == null ? "" : content.trim();
+      int start = t.indexOf('{');
+      int end = t.lastIndexOf('}');
+      if (start < 0 || end <= start) {
+        throw new BusinessException(ErrorCode.BAD_GATEWAY, "模型输出中未找到 JSON 对象");
+      }
+      return objectMapper.readTree(t.substring(start, end + 1));
+    } catch (BusinessException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new BusinessException(ErrorCode.BAD_GATEWAY, "模型输出 JSON 解析失败: " + e.getMessage());
+    }
+  }
+
+  private int extractIntField(String content, String field) {
+    JsonNode json = parseObject(content);
+    return json.path(field).asInt(-1);
+  }
+
+
+  private List<PendingFixRow> selectPending() {
+    return fixMapper.selectPendingWithContent();
+  }
+
+  private ExamFaqModelConfigEntity requireConfig(String code) {
+    List<ExamFaqModelConfigEntity> list = modelConfigMapper.selectList(
+        new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ExamFaqModelConfigEntity>()
+            .eq(ExamFaqModelConfigEntity::getModelCode, code)
+            .eq(ExamFaqModelConfigEntity::getStatus, "enabled"));
+    if (list == null || list.isEmpty()) {
+      throw new com.guoyu.platform.common.exception.BusinessException(
+          com.guoyu.platform.common.exception.ErrorCode.NOT_FOUND, "模型配置不存在或未启用: " + code);
+    }
+    return list.get(0);
+  }
+
+  private void requireApiKey(ExamFaqModelConfigEntity cfg) {
+    if (cfg.getApiKey() == null || cfg.getApiKey().isBlank()
+        || "PENDING_USER_INPUT".equals(cfg.getApiKey())) {
+      throw new com.guoyu.platform.common.exception.BusinessException(
+          com.guoyu.platform.common.exception.ErrorCode.CONFLICT,
+          "模型 api_key 未配置，请先在模型配置中回填: " + cfg.getModelCode());
+    }
+  }
+}

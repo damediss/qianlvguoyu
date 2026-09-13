@@ -164,6 +164,43 @@ public class AsyncConfig {
   }
 
   /**
+   * 知识归属修正批次编排池（方案 v1.2 §7.3）：每批次占 1 线程做编排，单行分类任务派发到
+   * knowledgeFixLlmExecutor；AbortPolicy 拒绝 → 503（坑 #12/#14）。
+   */
+  @Bean(name = "knowledgeFixExecutor")
+  public ThreadPoolTaskExecutor knowledgeFixExecutor() {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(1);
+    executor.setMaxPoolSize(2);
+    executor.setQueueCapacity(10);
+    executor.setThreadNamePrefix("knowledge-fix-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(60);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
+  /**
+   * 知识归属修正单行分类池（方案 v1.2 §7.3）：并发度 platform.knowledgefix.llm-concurrency（默认 5）。
+   * 派发侧信号量同源限流；AbortPolicy 拒绝由编排侧捕获计失败（坑 #12/#14）。
+   */
+  @Bean(name = "knowledgeFixLlmExecutor")
+  public ThreadPoolTaskExecutor knowledgeFixLlmExecutor(
+      @Value("${platform.knowledgefix.llm-concurrency:5}") int llmConcurrency) {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(Math.max(1, llmConcurrency));
+    executor.setMaxPoolSize(Math.max(1, llmConcurrency));
+    executor.setQueueCapacity(Math.max(5, llmConcurrency));
+    executor.setThreadNamePrefix("knowledge-fix-llm-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(120);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
+  /**
    * AI 同步学鼓励语异步生成池（ReviewLlmAssistService）。
    * AbortPolicy：队列满时拒绝，由调用方捕获降级为预置文案（AGENTS.md 坑 #12/#14）。
    * （单库化前名为 reviewSyncExecutor，兼作 exam_result 异步回写池；回写已改事务内同步直写）

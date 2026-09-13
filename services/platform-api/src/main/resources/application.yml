@@ -157,6 +157,11 @@ platform:
       batch-concurrency: ${PLATFORM_SKILL_GEN_BATCH_CONCURRENCY:2}
       block-concurrency: ${PLATFORM_SKILL_GEN_BLOCK_CONCURRENCY:5}
       retry-backoff-base-millis: ${PLATFORM_SKILL_GEN_RETRY_BACKOFF:10000}
+  # 知识归属修正（方案 v1.2 §7.3）：单行分类并发默认 5（受全局闸口约束）；失败补跑 3 轮，
+  # 轮间退避第 n 轮 n×基数；环境变量 PLATFORM_KNOWLEDGEFIX_LLM_CONCURRENCY 可覆盖。
+  knowledgefix:
+    llm-concurrency: ${PLATFORM_KNOWLEDGEFIX_LLM_CONCURRENCY:5}
+    retry-backoff-base-millis: ${PLATFORM_KNOWLEDGEFIX_RETRY_BACKOFF:5000}
   # LLM 并发闸口（方案 A，2026-09-08）：glm-5.3-flash 单模型全局在飞调用上限，
   # 超出排队等待（FaqLlmClient 公平信号量统一执行）；仅此模型受限，
   # 同账户其它 GLM 模型与其它平台不受影响

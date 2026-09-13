@@ -7,6 +7,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppShell } from './layouts/AppShell';
 import { AuthGate } from './components/AuthGate';
 import { KnowledgePage } from './pages/knowledge/KnowledgePage';
+import ResourceCenterPage from './pages/question_bank/ResourceCenterPage';
+import KnowledgeFixPage from './pages/question_bank/KnowledgeFixPage';
 import XiMuBiaoGuanLiPage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/XiMuBiaoGuanLiPage';
 import TheoryQuestionGenPage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/TheoryQuestionGenPage';
 import SkillQuestionGenPage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/SkillQuestionGenPage';
@@ -145,6 +147,9 @@ const queryClient = new QueryClient({
 const pageMap: Record<string, React.ReactNode> = {
   knowledge: <KnowledgePage />,
   // 智能课程材料管理 > 细目表管理
+  // 课程管理 > 资源管理（知识归属修正）
+  question_resource: <ResourceCenterPage />,
+  knowledge_fix: <KnowledgeFixPage />,
   xi_mu_biao_guan_li: <XiMuBiaoGuanLiPage />,
   // 智能课程材料管理 > 理论知识试题生成管理
   theory_question_gen: <TheoryQuestionGenPage />,
