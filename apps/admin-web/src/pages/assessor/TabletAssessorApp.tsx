@@ -55,6 +55,7 @@ import {
   saveAssessorDraft,
 } from '../../utils/assessorDraftDb';
 import { AssessorCompleteSignModal } from './AssessorCompleteSignModal';
+import { practicalWsBackoffMs } from './practicalWsReconnect';
 import './TabletAssessorApp.css';
 
 const FULL_SCORE = 100;
@@ -73,6 +74,23 @@ export function TabletAssessorApp() {
   const [serverVersion, setServerVersion] = useState(0);
   const [online, setOnline] = useState(navigator.onLine);
   const [syncState, setSyncState] = useState<'saved' | 'syncing' | 'offline' | 'conflict'>('saved');
+  // 实操采集 WS 断线重连（蓝绿方案 §5.6）：服务端重启/停旧色掐断连接后按退避自动重建。
+  // tick 变化驱动两个 WS effect 重跑建连；attempt 在 onopen 成功后归零。
+  const [wsReconnectTick, setWsReconnectTick] = useState(0);
+  const wsRetryTimerRef = useRef<number>();
+  const wsAttemptRef = useRef(0);
+
+  const scheduleWsReconnect = () => {
+    if (wsRetryTimerRef.current != null) {
+      return; // 已有待触发的重连
+    }
+    const delay = practicalWsBackoffMs(wsAttemptRef.current);
+    wsAttemptRef.current += 1;
+    wsRetryTimerRef.current = window.setTimeout(() => {
+      wsRetryTimerRef.current = undefined;
+      setWsReconnectTick((t) => t + 1);
+    }, delay);
+  };
   const hydratedTaskRef = useRef<string>();
   const previousWorkbenchTaskRef = useRef<string>();
   const syncTimerRef = useRef<number>();
@@ -291,6 +309,15 @@ export function TabletAssessorApp() {
         candidateId: exam.candidateId,
       });
       socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/practical-scoring?${params}`);
+      socket.onopen = () => {
+        wsAttemptRef.current = 0;
+      };
+      socket.onclose = () => {
+        // 非主动关闭（服务端重启/蓝绿停旧色/网络抖动）→ 退避重连；主动 cleanup 已置 disposed
+        if (!disposed) {
+          scheduleWsReconnect();
+        }
+      };
       socket.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data?.type === 'complete-sign') {
@@ -306,9 +333,13 @@ export function TabletAssessorApp() {
     });
     return () => {
       disposed = true;
+      if (wsRetryTimerRef.current != null) {
+        window.clearTimeout(wsRetryTimerRef.current);
+        wsRetryTimerRef.current = undefined;
+      }
       socket?.close();
     };
-  }, [examQuery.data, online, queryClient, tenantId, token]);
+  }, [examQuery.data, online, queryClient, tenantId, token, wsReconnectTick]);
 
   useEffect(() => {
     const taskId = workbenchContextQuery.data?.activeTaskId;
@@ -326,6 +357,14 @@ export function TabletAssessorApp() {
         taskId: String(taskId),
       });
       socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/practical-scoring?${params}`);
+      socket.onopen = () => {
+        wsAttemptRef.current = 0;
+      };
+      socket.onclose = () => {
+        if (!disposed) {
+          scheduleWsReconnect();
+        }
+      };
       socket.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data?.type === 'complete-sign') {
@@ -335,9 +374,13 @@ export function TabletAssessorApp() {
     });
     return () => {
       disposed = true;
+      if (wsRetryTimerRef.current != null) {
+        window.clearTimeout(wsRetryTimerRef.current);
+        wsRetryTimerRef.current = undefined;
+      }
       socket?.close();
     };
-  }, [online, queryClient, tenantId, token, workbenchContextQuery.data?.activeTaskId]);
+  }, [online, queryClient, tenantId, token, workbenchContextQuery.data?.activeTaskId, wsReconnectTick]);
 
   useEffect(() => {
     if (!payload || !activeDetail || !currentUser) return;
