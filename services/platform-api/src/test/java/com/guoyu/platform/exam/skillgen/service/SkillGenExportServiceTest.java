@@ -24,6 +24,7 @@ import java.util.List;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 
@@ -151,6 +152,83 @@ class SkillGenExportServiceTest {
     }
     // ⑤ 文件名规则不变
     assertEquals("矿山生产集控员(二级-技师)_操作技能试题_批次78417666.xlsx", file.filename());
+  }
+
+  /**
+   * 前四列（考评点/实操题目/考场准备/考生准备）同值纵向合并（2026-09-12 需求，对齐样本）：
+   * 同题多评分要素行合并；不同题不合并；共 4 个合并区。
+   */
+  @Test
+  void mergesFirstFourColumnsPerQuestion() throws Exception {
+    SkillGenBatchMapper batchMapper = mock(SkillGenBatchMapper.class);
+    SkillBlueprintApplicationService blueprintService = mock(SkillBlueprintApplicationService.class);
+    ExamWorkTypeMapper workTypeMapper = mock(ExamWorkTypeMapper.class);
+
+    SkillGenBatchEntity batch = new SkillGenBatchEntity();
+    batch.setId(BATCH_ID);
+    batch.setTenantId(TENANT);
+    batch.setBlueprintId(BP_ID);
+    when(batchMapper.selectById(BATCH_ID)).thenReturn(batch);
+
+    SkillBlueprintEntity bp = new SkillBlueprintEntity();
+    bp.setId(BP_ID);
+    bp.setTenantId(TENANT);
+    bp.setWorkTypeId(144);
+    bp.setLevel(2);
+    when(blueprintService.findBlueprint(TENANT, BP_ID)).thenReturn(bp);
+
+    SkillBlueprintNodeEntity p1 = new SkillBlueprintNodeEntity();
+    p1.setId(POINT_ID);
+    p1.setParentId(0L);
+    p1.setNodeLevel(3);
+    p1.setName("联机启动集控室监控设备");
+    p1.setFullCode("A-A-001");
+    SkillBlueprintNodeEntity p2 = new SkillBlueprintNodeEntity();
+    p2.setId(POINT_ID + 1);
+    p2.setParentId(0L);
+    p2.setNodeLevel(3);
+    p2.setName("网络故障排查");
+    p2.setFullCode("A-A-002");
+    when(blueprintService.findBlueprintNodes(TENANT, BP_ID)).thenReturn(List.of(p1, p2));
+
+    ExamWorkTypeEntity wt = new ExamWorkTypeEntity();
+    wt.setId(144);
+    wt.setTitle("矿山生产集控员");
+    when(workTypeMapper.selectById(any())).thenReturn(wt);
+
+    SkillGenDraftEntity d2 = draft();
+    d2.setId(2L);
+    d2.setNodeId(POINT_ID + 1);
+    d2.setQuestionName("工业视频监控系统网络故障排查");
+    d2.setSitePreparation("{\"note\":\"考核前确认供电\",\"equipment\":[{\"name\":\"网线钳\","
+        + "\"spec\":\"标准\",\"unit\":\"把\",\"qty\":\"1\",\"remark\":\"\"}],\"faultSetup\":\"无故障设置\"}");
+    d2.setExamineePrepare("黑色签字笔、安全帽");
+    d2.setScoringItems("[{\"item\":\"网线制作与测试\",\"score\":\"100\",\"scoreDesc\":\"不通扣50分\","
+        + "\"maxDeduct\":\"100\",\"step\":\"10\"}]");
+
+    SkillGenDraftService spy = draftService();
+    doReturn(List.of(draft(), d2)).when(spy).listAll(TENANT, BATCH_ID);
+
+    var file = service(spy, batchMapper, blueprintService, workTypeMapper)
+        .exportBatch(TENANT, BATCH_ID);
+
+    try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(file.content()))) {
+      Sheet sheet = wb.getSheetAt(0);
+      // 表头 + 3 行数据：题1 两个评分要素（2 行）+ 题2 一个评分要素（1 行）
+      assertEquals(4, sheet.getLastRowNum() + 1);
+      // 前 4 列各一个合并区（0 基行 1..2，即 Excel 行 2~3）；题 2 只占 1 行不合并
+      assertEquals(4, sheet.getNumMergedRegions());
+      for (int col = 0; col < 4; col++) {
+        CellRangeAddress region = sheet.getMergedRegion(col);
+        assertEquals(1, region.getFirstRow(), "col=" + col);
+        assertEquals(2, region.getLastRow(), "col=" + col);
+        assertEquals(col, region.getFirstColumn());
+        assertEquals(col, region.getLastColumn());
+      }
+      // 不同题的值不串行
+      assertEquals("网络故障排查A-A-002", sheet.getRow(3).getCell(0).getStringCellValue());
+      assertEquals("工业视频监控系统网络故障排查", sheet.getRow(3).getCell(1).getStringCellValue());
+    }
   }
 
   private String[] rowTexts(Row row) {

@@ -20,6 +20,7 @@ import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 
@@ -172,6 +173,41 @@ public class SkillGenExportService {
         cell(row, c, nvl(item.get("step")), wrapStyle, plainStyle);
       }
     }
+    // 前 4 列（考评点/实操题目/考场准备/考生准备）相邻同值纵向合并（2026-09-12 需求，
+    // 对齐《矿山监控岗位实操考评评分表》样本版式：同题多评分要素行合并展示）
+    mergeEqualColumns(sheet, 4);
+  }
+
+  /**
+   * 前 mergeCols 列：相邻行值相同（非空白）则纵向合并单元格，0 行为表头不参与。
+   * 空白值不合并——避免空准备清单跨题连成一块造成误导；单行 run 无需合并。
+   */
+  private void mergeEqualColumns(Sheet sheet, int mergeCols) {
+    int lastRow = sheet.getLastRowNum();
+    for (int col = 0; col < mergeCols; col++) {
+      int runStart = 1;
+      String runValue = valueAt(sheet, runStart, col);
+      for (int r = 2; r <= lastRow + 1; r++) {
+        // r = lastRow+1 作哨兵收敛最后一个 run
+        String v = r <= lastRow ? valueAt(sheet, r, col) : null;
+        boolean same = v != null && v.equals(runValue) && !v.isBlank();
+        if (!same) {
+          if (runValue != null && !runValue.isBlank() && r - 1 > runStart) {
+            sheet.addMergedRegion(new CellRangeAddress(runStart, r - 1, col, col));
+          }
+          runStart = r;
+        }
+        runValue = v;
+      }
+    }
+  }
+
+  private String valueAt(Sheet sheet, int r, int col) {
+    Row row = sheet.getRow(r);
+    if (row == null || row.getCell(col) == null) {
+      return "";
+    }
+    return row.getCell(col).getStringCellValue();
   }
 
   /** 写入单元格并按列应用换行样式 */
