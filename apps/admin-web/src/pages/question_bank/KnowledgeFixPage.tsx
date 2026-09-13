@@ -14,7 +14,6 @@ import {
   submitClassify, classifyProgress, fixList, exportFixList, applyFix, rollbackFix, qualityReport,
 } from './knowledgeFixApi';
 import type { DedupStats, FixBatch, FixItem } from './knowledgeFixApi';
-import './XiMuBiaoGuanLiPage.css';
 
 const STATUS_TAG: Record<string, { color: string; text: string }> = {
   apply: { color: 'success', text: '应用' },
