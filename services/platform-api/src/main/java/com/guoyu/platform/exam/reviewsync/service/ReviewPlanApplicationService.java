@@ -49,7 +49,10 @@ import org.springframework.transaction.annotation.Transactional;
  * AI 同步学用例编排（§5 / §7）。
  *
  * <p>线程边界：所有公开方法以 platformUserId/tenantId 参数驱动，不调 SecurityContext；
- * 定时任务线程入口由 ReviewSyncScheduler 负责 TenantContextHolder.setTenantId(DEFAULT_TENANT_ID) + clear。
+ * 懒生成发生在学员请求线程（overview/today），不经后台线程池。
+ *
+ * <p>原每日/每周定时物化（ReviewSyncScheduler）已随蓝绿方案 §5.2 移除：计划与当日任务的
+ * 物化由 overview/today 的 {@link #getOrMaterializeDay} 懒生成路径覆盖，中断检测同在请求链路。
  */
 @Slf4j
 @Service
@@ -1275,42 +1278,6 @@ public class ReviewPlanApplicationService {
         item.getConsecutiveCorrect() != null ? item.getConsecutiveCorrect() : 0,
         item.getLastCorrectDate(),
         item.getRemoved() != null && item.getRemoved() == 1);
-  }
-
-  // ==================================================================
-  // 定时任务入口（每日物化 / 周日清理）
-  // ==================================================================
-
-  /** 每日 04:00：遍历 active 计划，中断检测 + 物化当日任务 */
-  public int materializeAllActivePlans(LocalDate today) {
-    List<AiReviewPlanEntity> plans = planMapper.selectList(new LambdaQueryWrapper<AiReviewPlanEntity>()
-        .eq(AiReviewPlanEntity::getStatus, "active"));
-    int done = 0;
-    for (AiReviewPlanEntity plan : plans) {
-      try {
-        InterruptInfo interrupt = applyInterruptIfNeeded(plan, today);
-        if (findDay(plan.getId(), plan.getCurrentDayIndex()) == null
-            && plan.getCurrentDayIndex() <= plan.getTotalDays()) {
-          materializeDay(plan, plan.getCurrentDayIndex(), today, interrupt);
-        }
-        done++;
-      } catch (Exception e) {
-        log.error("[AI复习] 每日物化失败：planId={} error={}", plan.getId(), e.getMessage(), e);
-      }
-    }
-    return done;
-  }
-
-  /** 周日清理日：错题一致性兜底扫描（状态机实时已执行，此处仅复核统计） */
-  public Map<String, Integer> weeklyCleanup() {
-    Integer red = wrongMapper.selectCount(new LambdaQueryWrapper<AiReviewWrongItemEntity>()
-        .eq(AiReviewWrongItemEntity::getCardLevel, "red")
-        .eq(AiReviewWrongItemEntity::getRemoved, 0)).intValue();
-    Integer yellow = wrongMapper.selectCount(new LambdaQueryWrapper<AiReviewWrongItemEntity>()
-        .eq(AiReviewWrongItemEntity::getCardLevel, "yellow")
-        .eq(AiReviewWrongItemEntity::getRemoved, 0)).intValue();
-    log.info("[AI复习] 周日清理日复核：在册红牌={} 黄牌={}", red, yellow);
-    return Map.of("red", red, "yellow", yellow);
   }
 
   // ==================================================================

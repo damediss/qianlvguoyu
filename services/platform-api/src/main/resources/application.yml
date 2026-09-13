@@ -1,5 +1,7 @@
 server:
   port: ${SERVER_PORT:8080}
+  # 蓝绿发布（docs/05_decisions/生产服务器蓝绿部署方案.md §5.1）：停机时先排空在途请求再退出
+  shutdown: graceful
   servlet:
     context-path: /api
   forward-headers-strategy: native
@@ -11,6 +13,9 @@ server:
 spring:
   application:
     name: platform-api
+  lifecycle:
+    # 配合 server.shutdown=graceful：排空在途请求的最长等待（蓝绿方案 §5.1；服务器 systemd TimeoutStopSec=45 兜底）
+    timeout-per-shutdown-phase: 30s
   servlet:
     multipart:
       enabled: true
@@ -325,13 +330,6 @@ platform:
     read-timeout-seconds: ${RENCAI_READ_TIMEOUT:300}
   # 单库化（2026-08-27）：platform.sync 三表镜像同步、platform.sync.php 第二数据源、
   # platform.user-provisioning.php-write-enabled 开户双写均已随 integration/php、integration/sync 包拆除
-  # AI 同步学定时任务（每日物化 / 周日清理；全部读写主库 gjjddbpro）
-  review-sync:
-    # 本机调试默认关闭，生产显式 REVIEW_SYNC_JOBS_ENABLED=true
-    jobs-enabled: ${REVIEW_SYNC_JOBS_ENABLED:false}
-    daily-cron: "${REVIEW_SYNC_DAILY_CRON:0 0 4 * * *}"
-    weekly-cron: "${REVIEW_SYNC_WEEKLY_CRON:0 0 5 * * SUN}"
-
 # Sa-Token
 sa-token:
   token-name: Authorization
