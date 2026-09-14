@@ -189,6 +189,7 @@ export function AppShell({
   const visibleMenuTree = useMemo(() => filterHiddenMenuNodes(menuTree), [menuTree]);
   const prevActiveMenuKeyRef = useRef<string | null>(null);
   const appliedDefaultExpandedRef = useRef(false);
+  const contentRef = useRef<HTMLElement>(null);
 
   const menusQuery = useQuery({
     queryKey: ['menus', token],
@@ -202,6 +203,11 @@ export function AppShell({
       setMenuTree(menusQuery.data);
     }
   }, [menusQuery.data, setMenuTree]);
+
+  // 切换菜单时内容区回到顶部：内容区是独立滚动容器，浏览器不会自动复位
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0 });
+  }, [activeMenuKey]);
 
   // 进入系统时不按当前选中页强制展开祖先（认定管理等保持折叠）；
   // 仅在用户切换菜单后，才自动展开选中页的祖先路径。
@@ -368,7 +374,7 @@ export function AppShell({
           items={menuItems as MenuProps['items']}
         />
       </Sider>
-      <Layout>
+      <Layout className="app-main">
         <Header className="app-header">
           <Input
             className="top-search"
@@ -388,7 +394,7 @@ export function AppShell({
             </Dropdown>
           </Space>
         </Header>
-        <Content className="app-content">
+        <Content className="app-content" ref={contentRef}>
           {!hideBreadcrumb && breadcrumbItems.length > 0 && (
             <Breadcrumb className="app-breadcrumb" items={breadcrumbItems} />
           )}

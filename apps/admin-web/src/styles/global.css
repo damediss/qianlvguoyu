@@ -9,8 +9,10 @@ body {
   color: #1e293b;
 }
 
+/* 外壳锁死视口高度：页面不与菜单比高度，滚动分别落在侧栏/内容区内部 */
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* ---- Sider / Sidebar ---- */
@@ -19,12 +21,23 @@ body {
   border-right: 1px solid #e2e8f0;
 }
 
+/* 菜单再长也不撑高页面：侧栏内部滚动（品牌区吸顶） */
+.app-sider .ant-layout-sider-children {
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 .brand-block {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 10px;
   height: 68px;
   padding: 0 18px;
+  background: #ffffff;
   border-bottom: 1px solid #f1f5f9;
 }
 
@@ -116,10 +129,17 @@ body {
 }
 
 /* ---- Header ---- */
+/* 右侧主列：视口高度，header 固定、内容区独立滚动 */
+.app-main {
+  height: 100vh;
+  overflow: hidden;
+}
+
 .app-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex: 0 0 58px;
   height: 58px;
   padding: 0 24px;
   background: rgba(255, 255, 255, 0.94);
@@ -146,6 +166,9 @@ body {
 
 /* ---- Content ---- */
 .app-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   padding: 24px;
 }
 
@@ -351,9 +374,10 @@ body {
 }
 
 /* ---- Inspector sidebar ---- */
+/* 内容区改为独立滚动后，sticky 相对内容区顶部（不再是窗口+header 偏移） */
 .knowledge-inspector {
   position: sticky;
-  top: 78px;
+  top: 12px;
   padding: 18px;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
