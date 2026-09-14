@@ -4,6 +4,7 @@ public final class FormalExamErrorCodes {
 
   public static final String ANSWERS_NOT_SYNCED = "ANSWERS_NOT_SYNCED";
   public static final String UNANSWERED_CONFIRM_REQUIRED = "UNANSWERED_CONFIRM_REQUIRED";
+  public static final String ANSWER_SYNC_RETRYABLE = "ANSWER_SYNC_RETRYABLE";
 
   /**
    * CandidateExam.submit_type 与表约束 chk_comp_formal_candidate_exam_submit 对齐：

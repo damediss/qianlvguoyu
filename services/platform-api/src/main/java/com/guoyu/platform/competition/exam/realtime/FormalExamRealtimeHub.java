@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -32,6 +33,7 @@ public class FormalExamRealtimeHub {
 
   private final Map<String, WebSocketSession> byConnection = new ConcurrentHashMap<>();
   private final Map<String, ConcurrentLinkedQueue<String>> queues = new ConcurrentHashMap<>();
+  private final AtomicLong droppedSends = new AtomicLong();
   private final FormalExamRealtimeProperties properties;
   private final FormalExamPresenceStore presenceStore;
 
@@ -68,6 +70,7 @@ public class FormalExamRealtimeHub {
     ConcurrentLinkedQueue<String> queue = queues.computeIfAbsent(
         session.getId(), key -> new ConcurrentLinkedQueue<>());
     if (queue.size() >= Math.max(8, properties.getSendQueueLimit())) {
+      droppedSends.incrementAndGet();
       log.warn("Formal exam WS slow consumer closed, connectionId={}",
           stringAttr(session, ATTR_CONNECTION_ID));
       closeQuietly(session, CloseStatus.SESSION_NOT_RELIABLE.withReason("slow consumer"));
@@ -187,6 +190,20 @@ public class FormalExamRealtimeHub {
 
   public WebSocketSession sessionByConnection(String connectionId) {
     return connectionId == null ? null : byConnection.get(connectionId);
+  }
+
+  public int openConnectionCount() {
+    int open = 0;
+    for (WebSocketSession session : byConnection.values()) {
+      if (session != null && session.isOpen()) {
+        open++;
+      }
+    }
+    return open;
+  }
+
+  public long droppedSendCount() {
+    return droppedSends.get();
   }
 
   private void flush(WebSocketSession session) {

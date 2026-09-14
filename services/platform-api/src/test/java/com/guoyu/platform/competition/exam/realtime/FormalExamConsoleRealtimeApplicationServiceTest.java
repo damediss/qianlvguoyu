@@ -31,7 +31,8 @@ class FormalExamConsoleRealtimeApplicationServiceTest {
   private final CompetitionFormalExamSessionMapper sessions =
       Mockito.mock(CompetitionFormalExamSessionMapper.class);
   private final FormalExamConsoleRealtimeApplicationService service =
-      new FormalExamConsoleRealtimeApplicationService(tickets, properties, sessions, CLOCK);
+      new FormalExamConsoleRealtimeApplicationService(
+          tickets, properties, sessions, Mockito.mock(FormalExamRealtimeCatchUpService.class), CLOCK);
 
   @AfterEach
   void clearSecurity() {

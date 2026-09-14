@@ -10,9 +10,12 @@ public class FormalExamRealtimeProperties {
   private int heartbeatSeconds = 20;
   private int presenceTtlSeconds = 60;
   private int sendQueueLimit = 32;
-  private int dispatchDelayMillis = 1000;
+  private int dispatchDelayMillis = 100;
   private int dispatchBatchSize = 50;
   private int dispatchMaxAttempts = 8;
+  private int publishingLeaseSeconds = 30;
+  private int catchUpDefaultLimit = 100;
+  private int catchUpMaxLimit = 500;
   private String nodeId = "";
   private String wsPath = "/api/ws/competition/formal-exam/player";
   private String consoleWsPath = "/api/ws/competition/formal-exam/console";
@@ -33,6 +36,12 @@ public class FormalExamRealtimeProperties {
   public void setDispatchBatchSize(int dispatchBatchSize) { this.dispatchBatchSize = dispatchBatchSize; }
   public int getDispatchMaxAttempts() { return dispatchMaxAttempts; }
   public void setDispatchMaxAttempts(int dispatchMaxAttempts) { this.dispatchMaxAttempts = dispatchMaxAttempts; }
+  public int getPublishingLeaseSeconds() { return publishingLeaseSeconds; }
+  public void setPublishingLeaseSeconds(int publishingLeaseSeconds) { this.publishingLeaseSeconds = publishingLeaseSeconds; }
+  public int getCatchUpDefaultLimit() { return catchUpDefaultLimit; }
+  public void setCatchUpDefaultLimit(int catchUpDefaultLimit) { this.catchUpDefaultLimit = catchUpDefaultLimit; }
+  public int getCatchUpMaxLimit() { return catchUpMaxLimit; }
+  public void setCatchUpMaxLimit(int catchUpMaxLimit) { this.catchUpMaxLimit = catchUpMaxLimit; }
   public String getNodeId() { return nodeId; }
   public void setNodeId(String nodeId) { this.nodeId = nodeId; }
   public String getWsPath() { return wsPath; }

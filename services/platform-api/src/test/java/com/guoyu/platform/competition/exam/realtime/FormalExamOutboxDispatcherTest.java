@@ -1,7 +1,10 @@
 package com.guoyu.platform.competition.exam.realtime;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +16,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
@@ -24,49 +28,77 @@ class FormalExamOutboxDispatcherTest {
   private final CompetitionFormalExamOutboxMapper outboxMapper =
       Mockito.mock(CompetitionFormalExamOutboxMapper.class);
   private final FormalExamRealtimeHub hub = Mockito.mock(FormalExamRealtimeHub.class);
-  private final ObjectMapper objectMapper = Mockito.mock(ObjectMapper.class);
+  private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
   private final FormalExamRealtimeProperties properties = new FormalExamRealtimeProperties();
 
   @Test
-  void redisPublishAlsoDeliversLocally() throws Exception {
+  void redisPublishAlsoDeliversLocallyAndMarksPublishedAfterRedis() throws Exception {
+    properties.setNodeId("api-1");
     StringRedisTemplate redis = Mockito.mock(StringRedisTemplate.class);
     FormalExamOutboxDispatcher dispatcher = new FormalExamOutboxDispatcher(
         outboxMapper, redis, hub, objectMapper, properties, CLOCK);
     CompetitionFormalExamOutboxEntity row = pendingRow();
     FormalExamRealtimeEnvelope envelope = new FormalExamRealtimeEnvelope(
         "e1", null, FormalExamRealtimeTypes.SESSION_STATUS_CHANGED,
-        "9001", "9001", null, null, null, 1, null, null,
+        "9001", "9001", null, null, null, 1L, null, null,
         FormalExamRealtimeTypes.TARGET_SESSION, java.util.Map.of("status", "running"));
-    when(outboxMapper.selectByIdIgnoreTenant(9L)).thenReturn(row);
+    when(outboxMapper.selectPendingHeadByIdForUpdate(9L)).thenReturn(row);
     when(outboxMapper.markPublishing(eq(9L), any(LocalDateTime.class))).thenReturn(1);
-    when(objectMapper.readValue(eq(row.getPayloadJson()), eq(FormalExamRealtimeEnvelope.class)))
-        .thenReturn(envelope);
 
     dispatcher.publishOne(9L);
 
-    verify(hub).deliver(envelope, row.getPayloadJson());
-    verify(redis).convertAndSend(FormalExamRealtimeTypes.CHANNEL, row.getPayloadJson());
+    verify(hub).deliver(any(FormalExamRealtimeEnvelope.class), eq(row.getPayloadJson()));
+    ArgumentCaptor<String> bus = ArgumentCaptor.forClass(String.class);
+    verify(redis).convertAndSend(eq(FormalExamRealtimeTypes.CHANNEL), bus.capture());
+    FormalExamRealtimeBusMessages.Parsed parsed =
+        FormalExamRealtimeBusMessages.parse(objectMapper, bus.getValue());
+    org.assertj.core.api.Assertions.assertThat(parsed.publisherNodeId()).isEqualTo("api-1");
     verify(outboxMapper).markFinished(eq(9L), eq("published"), any(LocalDateTime.class), eq(null));
+    org.assertj.core.api.Assertions.assertThat(envelope.eventId()).isEqualTo("e1");
   }
 
   @Test
-  void missingRedisFallsBackToLocalHub() throws Exception {
+  void missingRedisFallsBackToLocalHub() {
     FormalExamOutboxDispatcher dispatcher = new FormalExamOutboxDispatcher(
         outboxMapper, null, hub, objectMapper, properties, CLOCK);
     CompetitionFormalExamOutboxEntity row = pendingRow();
-    FormalExamRealtimeEnvelope envelope = new FormalExamRealtimeEnvelope(
-        "e1", null, FormalExamRealtimeTypes.SESSION_STATUS_CHANGED,
-        "9001", "9001", null, null, null, 1, null, null,
-        FormalExamRealtimeTypes.TARGET_SESSION, java.util.Map.of("status", "running"));
-    when(outboxMapper.selectByIdIgnoreTenant(9L)).thenReturn(row);
+    when(outboxMapper.selectPendingHeadByIdForUpdate(9L)).thenReturn(row);
     when(outboxMapper.markPublishing(eq(9L), any(LocalDateTime.class))).thenReturn(1);
-    when(objectMapper.readValue(eq(row.getPayloadJson()), eq(FormalExamRealtimeEnvelope.class)))
-        .thenReturn(envelope);
 
     dispatcher.publishOne(9L);
 
     verify(hub).deliver(any(FormalExamRealtimeEnvelope.class), eq(row.getPayloadJson()));
     verify(outboxMapper).markFinished(eq(9L), eq("published"), any(LocalDateTime.class), eq(null));
+  }
+
+  @Test
+  void publishingRowIsNotDeliveredAgain() {
+    FormalExamOutboxDispatcher dispatcher = new FormalExamOutboxDispatcher(
+        outboxMapper, null, hub, objectMapper, properties, CLOCK);
+    CompetitionFormalExamOutboxEntity row = pendingRow();
+    row.setStatus("publishing");
+    when(outboxMapper.selectPendingHeadByIdForUpdate(9L)).thenReturn(row);
+
+    dispatcher.publishOne(9L);
+
+    verify(outboxMapper, never()).markPublishing(any(), any());
+    verify(hub, never()).deliver(any(), anyString());
+  }
+
+  @Test
+  void recoverExpiredPublishingBeforeSelectingPending() {
+    FormalExamOutboxDispatcher dispatcher = new FormalExamOutboxDispatcher(
+        outboxMapper, null, hub, objectMapper, properties, CLOCK);
+    when(outboxMapper.selectExpiredPublishingForUpdate(any(), eq(50)))
+        .thenReturn(java.util.List.of(1L, 2L));
+    when(outboxMapper.resetExpiredPublishingBatch(any(), any())).thenReturn(2);
+    when(outboxMapper.selectPendingHeadsForUpdate(1)).thenReturn(java.util.List.of());
+
+    dispatcher.dispatchPending();
+
+    verify(outboxMapper).selectExpiredPublishingForUpdate(any(LocalDateTime.class), eq(50));
+    verify(outboxMapper).resetExpiredPublishingBatch(any(), any(LocalDateTime.class));
+    org.assertj.core.api.Assertions.assertThat(dispatcher.publishingLeaseRecoveries()).isEqualTo(2);
   }
 
   private static CompetitionFormalExamOutboxEntity pendingRow() {
@@ -77,7 +109,7 @@ class FormalExamOutboxDispatcherTest {
     row.setAttempts(0);
     row.setEventType(FormalExamRealtimeTypes.SESSION_STATUS_CHANGED);
     row.setPayloadJson("""
-        {"eventId":"e1","type":"session.status.changed","examSessionId":"9001","target":"examSession","payload":{"status":"running"}}
+        {"eventId":"e1","type":"session.status.changed","examSessionId":"9001","seq":"1","target":"examSession","payload":{"status":"running"}}
         """);
     return row;
   }

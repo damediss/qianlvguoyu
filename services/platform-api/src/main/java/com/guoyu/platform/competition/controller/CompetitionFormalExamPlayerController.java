@@ -18,6 +18,7 @@ import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerPaperVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerRealtimeTicketVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerStatusVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerSubmitVO;
+import com.guoyu.platform.competition.vo.FormalExamRealtimeCatchUpVO;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,6 +28,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -74,6 +76,14 @@ public class CompetitionFormalExamPlayerController {
       @Valid @RequestBody CompetitionFormalExamPlayerRealtimeAckReq request) {
     requireRealtime().ackFromPlayer(request.commandId());
     return ApiResponse.ok();
+  }
+
+  @GetMapping("/realtime/events")
+  @PreAuthorize("hasRole('COMPETITION_EXAM')")
+  public ApiResponse<FormalExamRealtimeCatchUpVO> realtimeEvents(
+      @RequestParam(required = false) String afterSeq,
+      @RequestParam(required = false) Integer limit) {
+    return ApiResponse.ok(requireRealtime().catchUp(afterSeq, limit));
   }
 
   @GetMapping("/sessions/{sessionId}/context")

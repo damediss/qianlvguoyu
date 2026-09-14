@@ -9,14 +9,18 @@ import org.apache.ibatis.annotations.Select;
 public interface CompetitionFormalCandidateAnswerMapper
     extends BaseMapper<CompetitionFormalCandidateAnswerEntity> {
 
+  /**
+   * Read the live answer row. Do not add FOR UPDATE here: the candidate_exam row lock
+   * already serializes writes for this candidate, and locking a missing answer row
+   * creates a MySQL REPEATABLE READ gap lock.
+   */
   @Select("""
       SELECT * FROM competition_formal_candidate_answer
       WHERE candidate_exam_id = #{candidateExamId}
         AND question_snapshot_id = #{questionSnapshotId}
         AND deleted = 0
-      FOR UPDATE
       """)
-  CompetitionFormalCandidateAnswerEntity selectByCandidateQuestionForUpdate(
+  CompetitionFormalCandidateAnswerEntity selectByCandidateQuestion(
       @Param("candidateExamId") Long candidateExamId,
       @Param("questionSnapshotId") Long questionSnapshotId);
 
@@ -46,10 +50,9 @@ public interface CompetitionFormalCandidateAnswerMapper
       "#{questionSnapshotId}",
       "</foreach>",
       "ORDER BY question_snapshot_id ASC",
-      "FOR UPDATE",
       "</script>"
   })
-  List<CompetitionFormalCandidateAnswerEntity> selectByCandidateQuestionIdsForUpdate(
+  List<CompetitionFormalCandidateAnswerEntity> selectByCandidateQuestionIds(
       @Param("candidateExamId") Long candidateExamId,
       @Param("questionSnapshotIds") List<Long> questionSnapshotIds);
 

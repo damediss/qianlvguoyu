@@ -14,7 +14,7 @@ public class CompetitionFormalExamOutboxEntity extends BaseEntity {
   private Long candidateExamId;
   private Long accessSessionId;
   private Integer generation;
-  private Integer seq;
+  private Long seq;
   private String payloadJson;
   private String status;
   private Integer attempts;
@@ -35,8 +35,8 @@ public class CompetitionFormalExamOutboxEntity extends BaseEntity {
   public void setAccessSessionId(Long accessSessionId) { this.accessSessionId = accessSessionId; }
   public Integer getGeneration() { return generation; }
   public void setGeneration(Integer generation) { this.generation = generation; }
-  public Integer getSeq() { return seq; }
-  public void setSeq(Integer seq) { this.seq = seq; }
+  public Long getSeq() { return seq; }
+  public void setSeq(Long seq) { this.seq = seq; }
   public String getPayloadJson() { return payloadJson; }
   public void setPayloadJson(String payloadJson) { this.payloadJson = payloadJson; }
   public String getStatus() { return status; }

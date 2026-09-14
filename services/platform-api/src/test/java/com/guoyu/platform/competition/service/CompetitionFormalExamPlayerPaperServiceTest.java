@@ -28,7 +28,9 @@ import com.guoyu.platform.competition.entity.CompetitionFormalExamPaperSnapshotE
 import com.guoyu.platform.competition.entity.CompetitionFormalExamQuestionSnapshotEntity;
 import com.guoyu.platform.competition.entity.CompetitionFormalExamSessionEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageEntity;
+import com.guoyu.platform.competition.exam.formal.FormalExamAnswerWriteRetry;
 import com.guoyu.platform.competition.exam.formal.FormalExamCandidateQuestionProjection;
+import com.guoyu.platform.competition.exam.formal.FormalExamErrorCodes;
 import com.guoyu.platform.competition.exam.security.CompetitionExamPrincipal;
 import com.guoyu.platform.competition.mapper.CompetitionContestantProfileMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeLevelMapper;
@@ -45,6 +47,7 @@ import com.guoyu.platform.competition.player.domain.CompetitionPlayerIdentityDom
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerAnswerSaveVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerPaperVO;
 import java.math.BigDecimal;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -56,6 +59,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.dao.DeadlockLoserDataAccessException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -110,6 +114,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
   @AfterEach
   void cleanup() {
     SecurityContextHolder.clearContext();
+    FormalExamAnswerWriteRetry.sleeper = Thread::sleep;
   }
 
   @Test
@@ -197,7 +202,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
     when(candidateExams.selectByIdForUpdate(9101L)).thenReturn(candidate("running"));
     when(questions.selectById(9301L)).thenReturn(
         question(9301L, 1, "single", "[{\"key\":\"A\",\"content\":\"甲\"}]", "[\"A\"]", null));
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(null);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(null);
     when(answers.insert(any(CompetitionFormalCandidateAnswerEntity.class))).thenReturn(1);
     when(answers.countAnswered(9101L)).thenReturn(1);
     when(candidateExams.updateAnsweredCount(eq(9101L), eq(1), eq(SERVER_NOW), eq(77L))).thenReturn(1);
@@ -219,6 +224,48 @@ class CompetitionFormalExamPlayerPaperServiceTest {
   }
 
   @Test
+  void saveRetriesDeadlockOnANewAttemptThenSucceeds() {
+    stubRunning();
+    FormalExamAnswerWriteRetry.sleeper = millis -> {
+    };
+    when(candidateExams.selectByIdForUpdate(9101L)).thenReturn(candidate("running"));
+    when(questions.selectById(9301L)).thenReturn(
+        question(9301L, 1, "single", "[{\"key\":\"A\",\"content\":\"甲\"}]", "[\"A\"]", null));
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(null);
+    when(answers.insert(any(CompetitionFormalCandidateAnswerEntity.class)))
+        .thenThrow(deadlock())
+        .thenReturn(1);
+    when(answers.countAnswered(9101L)).thenReturn(1);
+    when(candidateExams.updateAnsweredCount(eq(9101L), eq(1), eq(SERVER_NOW), eq(77L))).thenReturn(1);
+
+    CompetitionFormalExamPlayerAnswerSaveVO vo = service.saveAnswer(
+        "9001", "9301", req(choice("9301:A"), false, 1));
+
+    assertThat(vo.accepted()).isTrue();
+    verify(answers, times(2)).insert(any(CompetitionFormalCandidateAnswerEntity.class));
+    verify(candidateExams, times(2)).selectByIdForUpdate(9101L);
+  }
+
+  @Test
+  void saveMapsRepeatedDeadlockToRetryableBusinessCode() {
+    stubRunning();
+    FormalExamAnswerWriteRetry.sleeper = millis -> {
+    };
+    when(candidateExams.selectByIdForUpdate(9101L)).thenReturn(candidate("running"));
+    when(questions.selectById(9301L)).thenReturn(
+        question(9301L, 1, "single", "[{\"key\":\"A\",\"content\":\"甲\"}]", "[\"A\"]", null));
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(null);
+    when(answers.insert(any(CompetitionFormalCandidateAnswerEntity.class))).thenThrow(deadlock());
+
+    assertThatThrownBy(() -> service.saveAnswer("9001", "9301", req(choice("9301:A"), false, 1)))
+        .isInstanceOf(BusinessException.class)
+        .hasMessage("答案同步繁忙，请稍后重试")
+        .extracting("code")
+        .isEqualTo(FormalExamErrorCodes.ANSWER_SYNC_RETRYABLE);
+    verify(answers, times(2)).insert(any(CompetitionFormalCandidateAnswerEntity.class));
+  }
+
+  @Test
   void saveAcceptsNextVersion() {
     stubRunning();
     when(candidateExams.selectByIdForUpdate(9101L)).thenReturn(candidate("running"));
@@ -227,7 +274,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
             "[\"A\"]", null));
     CompetitionFormalCandidateAnswerEntity current =
         storedAnswer(9301L, 1, "{\"selectedOptionIds\":[\"9301:A\"]}", 1);
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(current);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(current);
     when(answers.updateById(current)).thenReturn(1);
     when(answers.countAnswered(9101L)).thenReturn(1);
     when(candidateExams.updateAnsweredCount(eq(9101L), eq(1), eq(SERVER_NOW), eq(77L))).thenReturn(1);
@@ -251,7 +298,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
     CompetitionFormalCandidateAnswerEntity current =
         storedAnswer(9301L, 2, "{\"selectedOptionIds\":[\"9301:A\"]}", 1);
     LocalDateTime first = current.getFirstAnswerTime();
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(current);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(current);
 
     CompetitionFormalExamPlayerAnswerSaveVO vo = service.saveAnswer(
         "9001", "9301", req(choice("9301:A"), false, 2));
@@ -272,7 +319,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
             "[\"A\"]", null));
     CompetitionFormalCandidateAnswerEntity current =
         storedAnswer(9301L, 2, "{\"selectedOptionIds\":[\"9301:A\"]}", 1);
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(current);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(current);
 
     CompetitionFormalExamPlayerAnswerSaveVO vo = service.saveAnswer(
         "9001", "9301", req(choice("9301:B"), false, 2));
@@ -292,7 +339,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
             "[\"A\"]", null));
     CompetitionFormalCandidateAnswerEntity current =
         storedAnswer(9301L, 2, "{\"selectedOptionIds\":[\"9301:B\"]}", 1);
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(current);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(current);
 
     CompetitionFormalExamPlayerAnswerSaveVO vo = service.saveAnswer(
         "9001", "9301", req(choice("9301:A"), false, 1));
@@ -311,7 +358,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
         question(9301L, 1, "single", "[{\"key\":\"A\",\"content\":\"甲\"}]", "[\"A\"]", null));
     CompetitionFormalCandidateAnswerEntity current =
         storedAnswer(9301L, 1, "{\"selectedOptionIds\":[\"9301:A\"]}", 1);
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(current);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(current);
     when(answers.updateById(current)).thenReturn(1);
     when(answers.countAnswered(9101L)).thenReturn(0);
     when(candidateExams.updateAnsweredCount(eq(9101L), eq(0), eq(SERVER_NOW), eq(77L))).thenReturn(1);
@@ -332,7 +379,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
     when(candidateExams.selectByIdForUpdate(9101L)).thenReturn(candidate("running"));
     when(questions.selectById(9301L)).thenReturn(
         question(9301L, 1, "single", "[{\"key\":\"A\",\"content\":\"甲\"}]", "[\"A\"]", null));
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(null);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(null);
     when(answers.insert(any(CompetitionFormalCandidateAnswerEntity.class))).thenReturn(1);
     when(answers.countAnswered(9101L)).thenReturn(0);
     when(candidateExams.updateAnsweredCount(eq(9101L), eq(0), eq(SERVER_NOW), eq(77L))).thenReturn(1);
@@ -553,8 +600,8 @@ class CompetitionFormalExamPlayerPaperServiceTest {
         question(9401L, 1, "single", "[{\"key\":\"A\",\"content\":\"甲\"}]", "[\"A\"]", null);
     other.setPaperSnapshotId(9999L);
     when(questions.selectById(9401L)).thenReturn(other);
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(null);
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9302L)).thenReturn(null);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(null);
+    when(answers.selectByCandidateQuestion(9101L, 9302L)).thenReturn(null);
     when(answers.insert(any(CompetitionFormalCandidateAnswerEntity.class))).thenReturn(1);
     when(answers.countAnswered(9101L)).thenReturn(1, 2);
     when(candidateExams.updateAnsweredCount(eq(9101L), any(Integer.class), eq(SERVER_NOW), eq(77L)))
@@ -583,7 +630,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
             "[\"A\"]", null));
     CompetitionFormalCandidateAnswerEntity current =
         storedAnswer(9301L, 5, "{\"selectedOptionIds\":[\"9301:A\"]}", 1);
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(current);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(current);
 
     var stale = service.syncAnswers("9001", new CompetitionFormalExamPlayerAnswerSyncReq(List.of(
         new CompetitionFormalExamPlayerAnswerSyncItemReq("9301", choice("9301:B"), false, 3))));
@@ -641,8 +688,8 @@ class CompetitionFormalExamPlayerPaperServiceTest {
         question(9301L, 1, "single", "[{\"key\":\"A\",\"content\":\"甲\"}]", "[\"A\"]", null));
     when(questions.selectById(9302L)).thenReturn(
         question(9302L, 2, "single", "[{\"key\":\"A\",\"content\":\"丙\"}]", "[\"A\"]", null));
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(null);
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9302L)).thenReturn(null);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(null);
+    when(answers.selectByCandidateQuestion(9101L, 9302L)).thenReturn(null);
     when(answers.insert(any(CompetitionFormalCandidateAnswerEntity.class))).thenReturn(1);
     when(answers.countAnswered(9101L)).thenReturn(1, 2);
     when(candidateExams.updateAnsweredCount(eq(9101L), any(Integer.class), eq(SERVER_NOW), eq(77L)))
@@ -659,6 +706,32 @@ class CompetitionFormalExamPlayerPaperServiceTest {
   }
 
   @Test
+  void syncInsertsAnswersInQuestionSnapshotIdOrder() {
+    stubRunning();
+    when(candidateExams.selectByIdForUpdate(9101L)).thenReturn(candidate("running"));
+    when(questions.selectById(9301L)).thenReturn(
+        question(9301L, 1, "single", "[{\"key\":\"A\",\"content\":\"甲\"}]", "[\"A\"]", null));
+    when(questions.selectById(9302L)).thenReturn(
+        question(9302L, 2, "single", "[{\"key\":\"A\",\"content\":\"丙\"}]", "[\"A\"]", null));
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(null);
+    when(answers.selectByCandidateQuestion(9101L, 9302L)).thenReturn(null);
+    when(answers.insert(any(CompetitionFormalCandidateAnswerEntity.class))).thenReturn(1);
+    when(answers.countAnswered(9101L)).thenReturn(2);
+    when(candidateExams.updateAnsweredCount(eq(9101L), eq(2), eq(SERVER_NOW), eq(77L))).thenReturn(1);
+
+    service.syncAnswers("9001", new CompetitionFormalExamPlayerAnswerSyncReq(List.of(
+        new CompetitionFormalExamPlayerAnswerSyncItemReq("9302", choice("9302:A"), false, 1),
+        new CompetitionFormalExamPlayerAnswerSyncItemReq("9301", choice("9301:A"), false, 1))));
+
+    ArgumentCaptor<CompetitionFormalCandidateAnswerEntity> captor =
+        ArgumentCaptor.forClass(CompetitionFormalCandidateAnswerEntity.class);
+    verify(answers, times(2)).insert(captor.capture());
+    assertThat(captor.getAllValues())
+        .extracting(CompetitionFormalCandidateAnswerEntity::getQuestionSnapshotId)
+        .containsExactly(9301L, 9302L);
+  }
+
+  @Test
   void syncTwentyNewAnswersResolvesScopeOnceAndRecountsOnce() {
     stubRunning();
     when(candidateExams.selectByIdForUpdate(9101L)).thenReturn(candidate("running"));
@@ -667,7 +740,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
       long questionId = 9301L + i;
       when(questions.selectById(questionId)).thenReturn(
           question(questionId, i + 1, "single", "[{\"key\":\"A\",\"content\":\"甲\"}]", "[\"A\"]", null));
-      when(answers.selectByCandidateQuestionForUpdate(9101L, questionId)).thenReturn(null);
+      when(answers.selectByCandidateQuestion(9101L, questionId)).thenReturn(null);
       items.add(new CompetitionFormalExamPlayerAnswerSyncItemReq(
           String.valueOf(questionId), choice(questionId + ":A"), false, 1));
     }
@@ -684,7 +757,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
     verify(sessions, times(1)).selectById(9001L);
     verify(candidateExams, times(1)).selectByIdForUpdate(9101L);
     verify(questions, times(1)).selectByPaperSnapshotIdAndIds(eq(9201L), any());
-    verify(answers, times(1)).selectByCandidateQuestionIdsForUpdate(eq(9101L), any());
+    verify(answers, times(1)).selectByCandidateQuestionIds(eq(9101L), any());
     verify(answers, times(1)).countAnswered(9101L);
     verify(candidateExams, times(1)).updateAnsweredCount(eq(9101L), eq(20), eq(SERVER_NOW), eq(77L));
     verify(answers, times(20)).insert(any(CompetitionFormalCandidateAnswerEntity.class));
@@ -696,7 +769,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
     when(candidateExams.selectByIdForUpdate(9101L)).thenReturn(candidate("running"));
     when(questions.selectById(9301L)).thenReturn(
         question(9301L, 1, "single", "[{\"key\":\"A\",\"content\":\"甲\"}]", "[\"A\"]", null));
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(null);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(null);
     when(answers.insert(any(CompetitionFormalCandidateAnswerEntity.class))).thenReturn(1);
     when(answers.countAnswered(9101L)).thenReturn(1);
     when(candidateExams.updateAnsweredCount(eq(9101L), any(Integer.class), eq(SERVER_NOW), eq(77L)))
@@ -720,7 +793,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
     when(questions.selectById(9301L)).thenReturn(
         question(9301L, 1, "single", "[{\"key\":\"A\",\"content\":\"甲\"},{\"key\":\"B\",\"content\":\"乙\"}]",
             "[\"A\"]", null));
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(null);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(null);
     when(answers.insert(any(CompetitionFormalCandidateAnswerEntity.class))).thenReturn(1);
     when(answers.countAnswered(9101L)).thenReturn(1);
     when(candidateExams.updateAnsweredCount(eq(9101L), any(Integer.class), eq(SERVER_NOW), eq(77L)))
@@ -732,7 +805,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
 
     CompetitionFormalCandidateAnswerEntity stored =
         storedAnswer(9301L, 1, "{\"selectedOptionIds\":[\"9301:A\"]}", 1);
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(stored);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(stored);
     when(answers.updateById(any(CompetitionFormalCandidateAnswerEntity.class))).thenReturn(1);
 
     var second = service.syncAnswers("9001", new CompetitionFormalExamPlayerAnswerSyncReq(List.of(
@@ -766,7 +839,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
         question(9301L, 1, "single", "[{\"key\":\"A\",\"content\":\"甲\"}]", "[\"A\"]", null));
     CompetitionFormalCandidateAnswerEntity current =
         storedAnswer(9301L, 2, "{\"selectedOptionIds\":[\"9301:A\"]}", 1);
-    when(answers.selectByCandidateQuestionForUpdate(9101L, 9301L)).thenReturn(current);
+    when(answers.selectByCandidateQuestion(9101L, 9301L)).thenReturn(current);
 
     var vo = service.syncAnswers("9001", new CompetitionFormalExamPlayerAnswerSyncReq(List.of(
         new CompetitionFormalExamPlayerAnswerSyncItemReq("9301", choice("9301:A"), false, 2))));
@@ -809,7 +882,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
       }
       return found;
     });
-    when(answers.selectByCandidateQuestionIdsForUpdate(eq(9101L), any())).thenAnswer(invocation -> {
+    when(answers.selectByCandidateQuestionIds(eq(9101L), any())).thenAnswer(invocation -> {
       @SuppressWarnings("unchecked")
       List<Long> ids = invocation.getArgument(1);
       List<CompetitionFormalCandidateAnswerEntity> found = new ArrayList<>();
@@ -818,7 +891,7 @@ class CompetitionFormalExamPlayerPaperServiceTest {
       }
       for (Long id : ids) {
         CompetitionFormalCandidateAnswerEntity answer =
-            answers.selectByCandidateQuestionForUpdate(9101L, id);
+            answers.selectByCandidateQuestion(9101L, id);
         if (answer != null) {
           found.add(answer);
         }
@@ -835,6 +908,12 @@ class CompetitionFormalExamPlayerPaperServiceTest {
     ObjectNode node = objectMapper.createObjectNode();
     node.putArray("selectedOptionIds").add(optionId);
     return node;
+  }
+
+  private static DeadlockLoserDataAccessException deadlock() {
+    return new DeadlockLoserDataAccessException(
+        "Deadlock found when trying to get lock",
+        new SQLException("Deadlock found when trying to get lock", "40001", 1213));
   }
 
   private static CompetitionFormalCandidateAnswerEntity storedAnswer(

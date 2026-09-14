@@ -16,6 +16,7 @@ import com.guoyu.platform.competition.vo.CompetitionFormalCandidateResultVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamConsoleRealtimeTicketVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPreflightVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamSessionVO;
+import com.guoyu.platform.competition.vo.FormalExamRealtimeCatchUpVO;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -89,6 +90,15 @@ public class CompetitionFormalExamSessionController {
   public ApiResponse<CompetitionFormalExamConsoleRealtimeTicketVO> realtimeTicket(
       @PathVariable Long id) {
     return ApiResponse.ok(requireConsoleRealtime().issueTicket(id));
+  }
+
+  @GetMapping("/competition/formal-exam-sessions/{sessionId}/realtime/events")
+  @PreAuthorize("hasAuthority('competition:exam-session:view')")
+  public ApiResponse<FormalExamRealtimeCatchUpVO> realtimeEvents(
+      @PathVariable Long sessionId,
+      @RequestParam(required = false) String afterSeq,
+      @RequestParam(required = false) Integer limit) {
+    return ApiResponse.ok(requireConsoleRealtime().catchUp(sessionId, afterSeq, limit));
   }
 
   @GetMapping("/competition/formal-exam-sessions/{id}/preflight")

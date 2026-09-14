@@ -31,7 +31,7 @@ class FormalExamRealtimeHubTest {
 
     FormalExamRealtimeEnvelope envelope = new FormalExamRealtimeEnvelope(
         "e1", "c1", FormalExamRealtimeTypes.ACCESS_SESSION_KICKED,
-        "100", "9001", "9101", "100", 2, 1, null, null,
+        "100", "9001", "9101", "100", 2, 1L, null, null,
         FormalExamRealtimeTypes.TARGET_ACCESS, Map.of("reason", "kicked"));
 
     assertThat(hub.deliver(envelope, "{\"type\":\"access-session.kicked\"}")).isEqualTo(1);
@@ -52,7 +52,7 @@ class FormalExamRealtimeHubTest {
 
     FormalExamRealtimeEnvelope envelope = new FormalExamRealtimeEnvelope(
         "e2", null, FormalExamRealtimeTypes.SESSION_STATUS_CHANGED,
-        "9001", "9001", null, null, null, 2, null, null,
+        "9001", "9001", null, null, null, 2L, null, null,
         FormalExamRealtimeTypes.TARGET_SESSION, Map.of("status", "running"));
 
     assertThat(hub.deliver(envelope, "{\"type\":\"session.status.changed\"}")).isEqualTo(2);
@@ -67,7 +67,7 @@ class FormalExamRealtimeHubTest {
     hub.register(stale);
     FormalExamRealtimeEnvelope envelope = new FormalExamRealtimeEnvelope(
         "e3", "c1", FormalExamRealtimeTypes.ACCESS_SESSION_KICKED,
-        "100", "9001", "9101", "100", 2, 3, null, null,
+        "100", "9001", "9101", "100", 2, 3L, null, null,
         FormalExamRealtimeTypes.TARGET_ACCESS, Map.of());
 
     assertThat(hub.deliver(envelope, "{}")).isEqualTo(0);
@@ -87,7 +87,7 @@ class FormalExamRealtimeHubTest {
 
     FormalExamRealtimeEnvelope envelope = new FormalExamRealtimeEnvelope(
         "e4", "c1", FormalExamRealtimeTypes.ACCESS_SESSION_KICKED,
-        "100", "9001", "9101", "100", 2, 4, null, null,
+        "100", "9001", "9101", "100", 2, 4L, null, null,
         FormalExamRealtimeTypes.TARGET_ACCESS, Map.of("reason", "kicked"));
 
     assertThat(hub.deliver(envelope, "{\"type\":\"access-session.kicked\"}")).isEqualTo(2);
@@ -110,13 +110,21 @@ class FormalExamRealtimeHubTest {
         FormalExamRealtimeTypes.TARGET_CONSOLE, Map.of("connectionState", "online"));
     FormalExamRealtimeEnvelope status = new FormalExamRealtimeEnvelope(
         "e6", null, FormalExamRealtimeTypes.CANDIDATE_STATUS_CHANGED,
-        "9102", "9001", "9102", "102", 1, 5, null, null,
+        "9102", "9001", "9102", "102", 1, 5L, null, null,
         FormalExamRealtimeTypes.TARGET_ACCESS, Map.of("status", "submitted", "previousStatus", "running"));
 
     assertThat(hub.deliver(presence, "{\"type\":\"candidate.presence.changed\"}")).isEqualTo(0);
     verify(console, never()).sendMessage(any(TextMessage.class));
     assertThat(hub.deliver(status, "{\"type\":\"candidate.status.changed\"}")).isEqualTo(1);
     verify(console).sendMessage(any(TextMessage.class));
+  }
+
+  @Test
+  void openConnectionsCountRegisteredSessions() {
+    hub.register(session("a", 100L, 9001L, 1));
+    hub.register(session("b", 101L, 9001L, 1));
+    assertThat(hub.openConnectionCount()).isEqualTo(2);
+    assertThat(hub.droppedSendCount()).isEqualTo(0);
   }
 
   private static WebSocketSession session(

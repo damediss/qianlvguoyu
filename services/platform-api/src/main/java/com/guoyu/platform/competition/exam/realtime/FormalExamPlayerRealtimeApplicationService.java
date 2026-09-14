@@ -9,6 +9,7 @@ import com.guoyu.platform.competition.exam.security.CompetitionExamSecurityConte
 import com.guoyu.platform.competition.mapper.CompetitionFormalExamAccessCommandMapper;
 import com.guoyu.platform.competition.mapper.CompetitionFormalExamAccessSessionMapper;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerRealtimeTicketVO;
+import com.guoyu.platform.competition.vo.FormalExamRealtimeCatchUpVO;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -25,6 +26,7 @@ public class FormalExamPlayerRealtimeApplicationService {
   private final FormalExamRealtimeProperties properties;
   private final CompetitionFormalExamAccessSessionMapper accessSessionMapper;
   private final CompetitionFormalExamAccessCommandMapper commandMapper;
+  private final FormalExamRealtimeCatchUpService catchUpService;
   private final Clock clock;
 
   public FormalExamPlayerRealtimeApplicationService(
@@ -32,11 +34,13 @@ public class FormalExamPlayerRealtimeApplicationService {
       FormalExamRealtimeProperties properties,
       CompetitionFormalExamAccessSessionMapper accessSessionMapper,
       CompetitionFormalExamAccessCommandMapper commandMapper,
+      FormalExamRealtimeCatchUpService catchUpService,
       Clock clock) {
     this.ticketService = ticketService;
     this.properties = properties;
     this.accessSessionMapper = accessSessionMapper;
     this.commandMapper = commandMapper;
+    this.catchUpService = catchUpService;
     this.clock = clock;
   }
 
@@ -73,6 +77,34 @@ public class FormalExamPlayerRealtimeApplicationService {
         ticketService.ttlSeconds(),
         properties.getWsPath(),
         properties.getHeartbeatSeconds());
+  }
+
+  public FormalExamRealtimeCatchUpVO catchUp(String afterSeq, Integer limit) {
+    CompetitionExamPrincipal principal = currentPlayer();
+    if (principal.getAccessSessionId() == null || principal.getGeneration() == null
+        || principal.getExamSessionId() == null) {
+      throw new BusinessException(ErrorCode.UNAUTHORIZED, "考试会话无效或已下线");
+    }
+    CompetitionFormalExamAccessSessionEntity access =
+        accessSessionMapper.selectById(principal.getAccessSessionId());
+    if (access == null
+        || !CompetitionFormalExamAccessSessionStatus.ACTIVE.getCode().equals(access.getStatus())
+        || !principal.getGeneration().equals(access.getGeneration())
+        || !principal.getPlayerId().equals(access.getPlayerId())
+        || !principal.getTenantId().equals(access.getTenantId())
+        || !principal.getExamSessionId().equals(access.getExamSessionId())) {
+      log.warn("Formal exam realtime catch-up rejected: access session mismatch, playerId={}",
+          principal.getPlayerId());
+      throw new BusinessException(ErrorCode.UNAUTHORIZED, "考试会话无效或已下线");
+    }
+    return catchUpService.catchUp(
+        principal.getTenantId(),
+        access.getExamSessionId(),
+        afterSeq,
+        limit,
+        FormalExamRealtimeCatchUpService.Viewer.PLAYER,
+        access.getId(),
+        access.getGeneration());
   }
 
   @Transactional

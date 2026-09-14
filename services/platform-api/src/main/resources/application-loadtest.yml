@@ -1,0 +1,68 @@
+# Isolated formal-exam load-test profile. No production JDBC defaults.
+spring:
+  datasource:
+    url: ${MYSQL_URL}
+    username: ${MYSQL_USERNAME}
+    password: "${MYSQL_PASSWORD}"
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:${RABBITMQ_HOST}}
+    port: ${SPRING_RABBITMQ_PORT:${RABBITMQ_PORT:5672}}
+    username: ${SPRING_RABBITMQ_USERNAME:${RABBITMQ_USERNAME:guest}}
+    password: "${SPRING_RABBITMQ_PASSWORD:${RABBITMQ_PASSWORD:guest}}"
+  flyway:
+    url: ${spring.datasource.url}
+    user: ${spring.datasource.username}
+    password: ${spring.datasource.password}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env,threaddump
+  endpoint:
+    env:
+      show-values: never
+    health:
+      show-details: always
+  info:
+    env:
+      enabled: true
+  health:
+    rabbit:
+      enabled: ${RABBIT_HEALTH_ENABLED:true}
+
+platform:
+  weknora:
+    enabled: false
+  rencaishibie:
+    enabled: false
+  sms:
+    enabled: false
+  review-sync:
+    jobs-enabled: false
+  file:
+    storage-provider: local
+    local-root: ${FILE_LOCAL_ROOT:./storage/files-loadtest}
+  competition:
+    messaging:
+      enabled: ${COMPETITION_MESSAGING_ENABLED:true}
+    formal-exam:
+      realtime:
+        enabled: true
+      auto-submit:
+        enabled: true
+      scoring:
+        enabled: true
+  security:
+    jwt-secret: ${JWT_SECRET}
+    permit-test-apis: false
+
+logging:
+  level:
+    com.guoyu.platform.competition.exam: INFO

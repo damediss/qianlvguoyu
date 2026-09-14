@@ -8,6 +8,7 @@ import com.guoyu.platform.ai.infrastructure.FaqLlmException;
 import com.guoyu.platform.ai.infrastructure.FaqLlmRateLimitException;
 import com.guoyu.platform.ai.infrastructure.FaqLlmTimeoutException;
 import jakarta.validation.ConstraintViolationException;
+import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -97,7 +98,15 @@ public class GlobalExceptionHandler {
   }
 
   @ExceptionHandler(Exception.class)
-  public ResponseEntity<ApiResponse<Void>> handleException(Exception ex) {
+  public ResponseEntity<ApiResponse<Object>> handleException(Exception ex) {
+    if (SqlLockContention.isRetryable(ex)) {
+      log.warn("Retryable database lock contention: {}", ex.toString());
+      return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+          .body(ApiResponse.fail(
+              ErrorCode.SERVICE_UNAVAILABLE,
+              "服务繁忙，请稍后重试",
+              Map.of("retryAfterMs", 200)));
+    }
     // 高亮识别 Redis cache 反序列化失败（区别于业务异常，方便排查）
     Throwable rootCause = ex;
     while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
@@ -155,6 +164,7 @@ public class GlobalExceptionHandler {
       case ErrorCode.SERVICE_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
       case ErrorCode.GATEWAY_TIMEOUT -> HttpStatus.GATEWAY_TIMEOUT;
       case "ANSWERS_NOT_SYNCED", "UNANSWERED_CONFIRM_REQUIRED" -> HttpStatus.CONFLICT;
+      case "ANSWER_SYNC_RETRYABLE" -> HttpStatus.SERVICE_UNAVAILABLE;
       default -> HttpStatus.INTERNAL_SERVER_ERROR;
     };
   }

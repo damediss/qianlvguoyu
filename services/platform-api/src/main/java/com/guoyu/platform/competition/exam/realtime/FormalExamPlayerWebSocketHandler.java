@@ -160,8 +160,13 @@ public class FormalExamPlayerWebSocketHandler extends TextWebSocketHandler imple
       return;
     }
     try {
-      FormalExamRealtimeEnvelope envelope = objectMapper.readValue(json, FormalExamRealtimeEnvelope.class);
-      hub.deliver(envelope, json);
+      FormalExamRealtimeBusMessages.Parsed parsed =
+          FormalExamRealtimeBusMessages.parse(objectMapper, json);
+      if (FormalExamRealtimeBusMessages.shouldSkipLocalEcho(
+          parsed.publisherNodeId(), FormalExamNodeIds.current(properties.getNodeId()))) {
+        return;
+      }
+      hub.deliver(parsed.envelope(), parsed.eventJson());
     } catch (Exception ex) {
       log.warn("Formal exam realtime bus payload ignored: {}", ex.toString());
     }

@@ -31,6 +31,7 @@ import com.guoyu.platform.competition.exam.formal.FormalExamCandidateQuestionPro
 import com.guoyu.platform.competition.exam.realtime.FormalExamRealtimePublisher;
 import com.guoyu.platform.competition.exam.formal.FormalExamCandidateQuestionProjection.NormalizedAnswer;
 import com.guoyu.platform.competition.exam.formal.FormalExamCandidateQuestionProjection.ProjectedOption;
+import com.guoyu.platform.competition.exam.formal.FormalExamAnswerWriteRetry;
 import com.guoyu.platform.competition.exam.formal.FormalExamErrorCodes;
 import com.guoyu.platform.competition.exam.security.CompetitionExamPrincipal;
 import com.guoyu.platform.competition.exam.security.CompetitionExamSecurityContext;
@@ -67,6 +68,7 @@ import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerStatusVO;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -76,6 +78,7 @@ import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -104,6 +107,7 @@ public class CompetitionFormalExamPlayerApplicationService {
   private final Clock clock;
   private final CompetitionFormalExamAccessSessionService accessSessionService;
   private FormalExamRealtimePublisher realtimePublisher;
+  private CompetitionFormalExamPlayerApplicationService self = this;
 
   public static final int ANSWER_SYNC_BATCH_LIMIT = 100;
 
@@ -149,6 +153,12 @@ public class CompetitionFormalExamPlayerApplicationService {
   @Autowired(required = false)
   public void setRealtimePublisher(FormalExamRealtimePublisher realtimePublisher) {
     this.realtimePublisher = realtimePublisher;
+  }
+
+  @Autowired
+  @Lazy
+  public void setSelf(CompetitionFormalExamPlayerApplicationService self) {
+    this.self = self;
   }
 
   @Transactional
@@ -288,14 +298,35 @@ public class CompetitionFormalExamPlayerApplicationService {
     return toPaper(resolved, LocalDateTime.now(clock));
   }
 
-  @Transactional
   public CompetitionFormalExamPlayerAnswerSaveVO saveAnswer(
+      String sessionIdValue, String questionSnapshotIdValue, CompetitionFormalExamPlayerAnswerSaveReq request) {
+    return FormalExamAnswerWriteRetry.execute(
+        () -> self.saveAnswerOnce(sessionIdValue, questionSnapshotIdValue, request));
+  }
+
+  public CompetitionFormalExamPlayerAnswerSyncVO syncAnswers(
+      String sessionIdValue, CompetitionFormalExamPlayerAnswerSyncReq request) {
+    List<CompetitionFormalExamPlayerAnswerSyncItemReq> items =
+        request == null || request.answers() == null ? List.of() : request.answers();
+    if (items.size() > ANSWER_SYNC_BATCH_LIMIT) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "单次同步题目数量不能超过" + ANSWER_SYNC_BATCH_LIMIT);
+    }
+    if (items.isEmpty()) {
+      return new CompetitionFormalExamPlayerAnswerSyncVO(List.of(), LocalDateTime.now(clock));
+    }
+    return FormalExamAnswerWriteRetry.execute(
+        () -> self.syncAnswersOnce(sessionIdValue, request));
+  }
+
+  @Transactional
+  public CompetitionFormalExamPlayerAnswerSaveVO saveAnswerOnce(
       String sessionIdValue, String questionSnapshotIdValue, CompetitionFormalExamPlayerAnswerSaveReq request) {
     return saveAnswerInCurrentTransaction(sessionIdValue, questionSnapshotIdValue, request);
   }
 
   @Transactional
-  public CompetitionFormalExamPlayerAnswerSyncVO syncAnswers(
+  public CompetitionFormalExamPlayerAnswerSyncVO syncAnswersOnce(
       String sessionIdValue, CompetitionFormalExamPlayerAnswerSyncReq request) {
     List<CompetitionFormalExamPlayerAnswerSyncItemReq> items =
         request == null || request.answers() == null ? List.of() : request.answers();
@@ -342,17 +373,19 @@ public class CompetitionFormalExamPlayerApplicationService {
       }
     }
 
+    List<Long> orderedQuestionIds = new ArrayList<>(questionIds);
+    orderedQuestionIds.sort(Long::compareTo);
     Map<Long, CompetitionFormalExamQuestionSnapshotEntity> questionsById = new LinkedHashMap<>();
     Map<Long, CompetitionFormalCandidateAnswerEntity> answersByQuestion = new LinkedHashMap<>();
-    if (!questionIds.isEmpty() && resolved.candidateExam().getPaperSnapshotId() != null) {
+    if (!orderedQuestionIds.isEmpty() && resolved.candidateExam().getPaperSnapshotId() != null) {
       for (CompetitionFormalExamQuestionSnapshotEntity question : safe(
           questionSnapshotMapper.selectByPaperSnapshotIdAndIds(
-              resolved.candidateExam().getPaperSnapshotId(), new ArrayList<>(questionIds)))) {
+              resolved.candidateExam().getPaperSnapshotId(), orderedQuestionIds))) {
         questionsById.put(question.getId(), question);
       }
       List<CompetitionFormalCandidateAnswerEntity> existing = safe(
-          answerMapper.selectByCandidateQuestionIdsForUpdate(
-              resolved.candidateExam().getId(), new ArrayList<>(questionIds)));
+          answerMapper.selectByCandidateQuestionIds(
+              resolved.candidateExam().getId(), orderedQuestionIds));
       for (CompetitionFormalCandidateAnswerEntity answer : existing) {
         answersByQuestion.put(answer.getQuestionSnapshotId(), answer);
       }
@@ -407,6 +440,12 @@ public class CompetitionFormalExamPlayerApplicationService {
       }
     }
 
+    toInsert.sort(Comparator.comparing(
+        CompetitionFormalCandidateAnswerEntity::getQuestionSnapshotId,
+        Comparator.nullsLast(Long::compareTo)));
+    toUpdate.sort(Comparator.comparing(
+        CompetitionFormalCandidateAnswerEntity::getQuestionSnapshotId,
+        Comparator.nullsLast(Long::compareTo)));
     for (CompetitionFormalCandidateAnswerEntity created : toInsert) {
       requireChanged(answerMapper.insert(created), "保存答案失败");
     }
@@ -562,7 +601,7 @@ public class CompetitionFormalExamPlayerApplicationService {
       throw new BusinessException(ErrorCode.FORBIDDEN, "题目不属于当前试卷");
     }
     CompetitionFormalCandidateAnswerEntity current =
-        answerMapper.selectByCandidateQuestionForUpdate(candidate.getId(), question.getId());
+        answerMapper.selectByCandidateQuestion(candidate.getId(), question.getId());
     AnswerMutation mutation = evaluateAnswer(resolved, question, current, request, now, principal.getPlayerId());
     if (mutation.insert() != null) {
       requireChanged(answerMapper.insert(mutation.insert()), "保存答案失败");
@@ -761,7 +800,14 @@ public class CompetitionFormalExamPlayerApplicationService {
           principal.getPlayerId(), sessionId);
       throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未参加本场理论考试");
     }
+    CompetitionEventEntity event = eventService.getById(principal.getTenantId(), session.getEventId());
+    CompetitionStageEntity stage = stageMapper.selectById(session.getStageId());
+    CompetitionEventWorkTypeEntity workType = workTypeMapper.selectById(session.getEventWorkTypeId());
+    CompetitionEventWorkTypeLevelEntity level = levelMapper.selectById(session.getEventWorkTypeLevelId());
     if (lockCandidate) {
+      // candidate_exam 行锁是该考生答案写入的唯一串行化锁。
+      // 不要再对不存在的 candidate_answer 行使用 FOR UPDATE，
+      // 否则 MySQL REPEATABLE READ 会产生 gap lock。
       CompetitionFormalCandidateExamEntity locked =
           candidateExamMapper.selectByIdForUpdate(candidateExam.getId());
       if (locked == null) {
@@ -774,10 +820,6 @@ public class CompetitionFormalExamPlayerApplicationService {
       }
       candidateExam = locked;
     }
-    CompetitionEventEntity event = eventService.getById(principal.getTenantId(), session.getEventId());
-    CompetitionStageEntity stage = stageMapper.selectById(session.getStageId());
-    CompetitionEventWorkTypeEntity workType = workTypeMapper.selectById(session.getEventWorkTypeId());
-    CompetitionEventWorkTypeLevelEntity level = levelMapper.selectById(session.getEventWorkTypeLevelId());
     return new ResolvedPlayerExam(session, profile, candidateExam, event, stage, workType, level);
   }
 

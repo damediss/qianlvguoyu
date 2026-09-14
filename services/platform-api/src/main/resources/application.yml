@@ -198,9 +198,12 @@ platform:
         heartbeat-seconds: ${COMPETITION_FORMAL_EXAM_REALTIME_HEARTBEAT_SECONDS:20}
         presence-ttl-seconds: ${COMPETITION_FORMAL_EXAM_REALTIME_PRESENCE_TTL_SECONDS:60}
         send-queue-limit: ${COMPETITION_FORMAL_EXAM_REALTIME_SEND_QUEUE_LIMIT:32}
-        dispatch-delay-millis: ${COMPETITION_FORMAL_EXAM_REALTIME_DISPATCH_DELAY_MILLIS:1000}
+        dispatch-delay-millis: ${COMPETITION_FORMAL_EXAM_REALTIME_DISPATCH_DELAY_MILLIS:100}
         dispatch-batch-size: ${COMPETITION_FORMAL_EXAM_REALTIME_DISPATCH_BATCH_SIZE:50}
         dispatch-max-attempts: ${COMPETITION_FORMAL_EXAM_REALTIME_DISPATCH_MAX_ATTEMPTS:8}
+        publishing-lease-seconds: ${COMPETITION_FORMAL_EXAM_REALTIME_PUBLISHING_LEASE_SECONDS:30}
+        catch-up-default-limit: ${COMPETITION_FORMAL_EXAM_REALTIME_CATCH_UP_DEFAULT_LIMIT:100}
+        catch-up-max-limit: ${COMPETITION_FORMAL_EXAM_REALTIME_CATCH_UP_MAX_LIMIT:500}
         node-id: ${COMPETITION_FORMAL_EXAM_NODE_ID:}
         ws-path: ${COMPETITION_FORMAL_EXAM_REALTIME_WS_PATH:/api/ws/competition/formal-exam/player}
         console-ws-path: ${COMPETITION_FORMAL_EXAM_REALTIME_CONSOLE_WS_PATH:/api/ws/competition/formal-exam/console}

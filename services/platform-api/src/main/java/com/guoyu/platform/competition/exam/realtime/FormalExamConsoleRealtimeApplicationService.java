@@ -6,6 +6,7 @@ import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.competition.entity.CompetitionFormalExamSessionEntity;
 import com.guoyu.platform.competition.mapper.CompetitionFormalExamSessionMapper;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamConsoleRealtimeTicketVO;
+import com.guoyu.platform.competition.vo.FormalExamRealtimeCatchUpVO;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
 import java.time.Clock;
@@ -27,16 +28,19 @@ public class FormalExamConsoleRealtimeApplicationService {
   private final FormalExamWsTicketService ticketService;
   private final FormalExamRealtimeProperties properties;
   private final CompetitionFormalExamSessionMapper sessionMapper;
+  private final FormalExamRealtimeCatchUpService catchUpService;
   private final Clock clock;
 
   public FormalExamConsoleRealtimeApplicationService(
       FormalExamWsTicketService ticketService,
       FormalExamRealtimeProperties properties,
       CompetitionFormalExamSessionMapper sessionMapper,
+      FormalExamRealtimeCatchUpService catchUpService,
       Clock clock) {
     this.ticketService = ticketService;
     this.properties = properties;
     this.sessionMapper = sessionMapper;
+    this.catchUpService = catchUpService;
     this.clock = clock;
   }
 
@@ -57,6 +61,19 @@ public class FormalExamConsoleRealtimeApplicationService {
         ticketService.ttlSeconds(),
         properties.getConsoleWsPath(),
         properties.getHeartbeatSeconds());
+  }
+
+  public FormalExamRealtimeCatchUpVO catchUp(Long examSessionId, String afterSeq, Integer limit) {
+    PlatformUserPrincipal user = SecurityContext.currentUser();
+    CompetitionFormalExamSessionEntity session = requireSession(user.getTenantId(), examSessionId);
+    return catchUpService.catchUp(
+        session.getTenantId(),
+        session.getId(),
+        afterSeq,
+        limit,
+        FormalExamRealtimeCatchUpService.Viewer.CONSOLE,
+        null,
+        null);
   }
 
   public BoundConsole bind(String ticketValue) {
