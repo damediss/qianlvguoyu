@@ -71,6 +71,28 @@ public class StandardLlmSummarizeService {
 
   /** 同级跨小节重复修复的重生轮数上限：达到上限仍重复的保留原点，由告警通道交人工 */
   static final int DUP_REPAIR_MAX_ROUNDS = 2;
+
+  /**
+   * 考评点名称"并列两个内容"的连接词（《指引》第二章：考评点一般只考核一个主要内容）。
+   * 注意：这是**检出**口径而非硬拦截口径——「公差与配合」「物料平衡与热量平衡」等本身是行业标准
+   * 复合术语也会命中，故由重命名链路交模型判断，仍不合规只告警（2026-09-11 需求方确认）。
+   */
+  private static final java.util.regex.Pattern NAME_JOIN_PATTERN =
+      java.util.regex.Pattern.compile("[与和及、]");
+
+  /** 考评点名称字数上限（《指引》：≤20 字名词性短语） */
+  static final int NAME_MAX_LENGTH = 20;
+
+  /**
+   * 考评点名称硬性要求（《指引》第二章原文口径，2026-09-11 需求方确认）：只考核一个主要内容 /
+   * 概念性质特点分类方法规则原理式 / 无疑问句。三处理论 prompt（主链路两变体 + 补点）共用同一文案。
+   */
+  static final String THEORY_NAME_RULES =
+      "【名称硬性要求】① 每条只考核一个主要内容，不得用「与/和/及/以及」把两个可独立命题的内容并列"
+          + "（反例：「设备日常保养周期与要求」「润滑油种类与选用」；应取其中更重要/更上位的一个，"
+          + "如「设备日常保养要求」「润滑油选用方法」）；"
+          + "② 名称须准确表达内涵、清楚明确完整简练，通常用「某某的概念、性质、特点、分类、方法、规则、原理」等语句；"
+          + "③ 不得使用疑问句；若名称本身是行业标准复合术语（如「公差与配合」），可保留原名。\n";
   /** 小节级并行线程数（控制 LLM 并发与 DB 连接占用） */
   static final int SECTION_PARALLELISM = 3;
   /** 理论通道 max_tokens 下限（目标点数为 0 时兜底） */
@@ -296,6 +318,14 @@ public class StandardLlmSummarizeService {
     }
     List<ExamStandardNodeEntity> created = summarizeOneSection(task, l2, dim, materials,
         config, tenantId, userId, List.of("X", "Y", "Z"), theoryTarget);
+    // 理论通道：本小节新生成的考评点名称走「只考核一个主要内容」形态修复（与全量概括同规则）
+    if ("theory".equals(dim)) {
+      try {
+        repairMultiContentNamesInSection(task, l2, config, tenantId, List.of("X", "Y", "Z"));
+      } catch (Exception ex) {
+        log.warn("[细目表] 单小节名称形态修复失败：nodeId={} error={}", l2NodeId, ex.getMessage());
+      }
+    }
     log.info("[细目表] 单小节重新生成：nodeId={} dim={} 新叶={}", l2NodeId, dim, created.size());
     return created;
   }
@@ -459,6 +489,10 @@ public class StandardLlmSummarizeService {
       // 同级跨小节重复修复（2026-09-10 拍板方案 A）：保留编码靠前者，靠后的重复点由 LLM
       // 在整表排除清单下重生并原位更新；达上限仍重复的保留原点，告警在后处理中自然产生
       repairSameScopeDuplicates(task, config, tenantId, importants);
+
+      // 名称形态修复（《指引》：只考核一个主要内容 / 概念性质特点分类方法规则原理式 / 无疑问句）：
+      // 检出并列两个内容/疑问句/超长的 LLM 草稿点评，按小节重命名一次；仍不合规保留原名并告警
+      repairMultiContentNames(task, config, tenantId, importants);
 
       // 全表后处理：X/Y/Z 比例硬护栏（超比例自动归 X）+ 同级重复/跨级异名告警
       postProcessTheoryLeaves(taskId);
@@ -652,6 +686,322 @@ public class StandardLlmSummarizeService {
       out.add(p);
     }
     return out;
+  }
+
+  // ============================================================
+  // 考评点名称形态修复（《指引》第二章：一般只考核一个主要内容 / 概念性质特点分类方法规则原理式 / 无疑问句）
+  // ============================================================
+
+  /**
+   * 名称形态问题检出（纯函数）：返回 null=合格，否则返回原因。
+   * 覆盖三条可编码项：① 用「与/和/及/、」并列两个内容；② 含疑问句；③ 超过 20 字。
+   */
+  public static String nameShapeIssue(String title) {
+    if (title == null) {
+      return null;
+    }
+    String t = title.trim();
+    if (t.isEmpty()) {
+      return null;
+    }
+    if (t.length() > NAME_MAX_LENGTH) {
+      return "超过 " + NAME_MAX_LENGTH + " 字";
+    }
+    if (t.indexOf('?') >= 0 || t.indexOf('？') >= 0) {
+      return "含疑问句";
+    }
+    if (NAME_JOIN_PATTERN.matcher(t).find()) {
+      return "疑似并列了两个内容（与/和/及）";
+    }
+    return null;
+  }
+
+  /**
+   * 名称形态修复目标筛选（纯函数）：仅 **LLM 产出且未审核通过** 的理论叶参与重命名
+   * （人工新增/已审核节点不动——本链路只改生成质量，不改人的决定）。
+   */
+  static List<ExamStandardNodeEntity> selectNameShapeTargets(
+      List<ExamStandardNodeEntity> theoryLeaves) {
+    List<ExamStandardNodeEntity> out = new ArrayList<>();
+    for (ExamStandardNodeEntity leaf : theoryLeaves) {
+      if (!"llm".equals(leaf.getSource()) || "approved".equals(leaf.getReviewStatus())) {
+        continue;
+      }
+      if (nameShapeIssue(leaf.getTitle()) != null) {
+        out.add(leaf);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 名称形态修复（按小节重命名，被拒条目回喂原因再试一轮，上限 2 轮）：
+   * 检出「并列两个内容/疑问句/超长」的 LLM 草稿考评点 → 按小节调 LLM 逐条给替换名（条数不变、
+   * 原位更新标题与重要程度，不动 nodeKey/排序/审核状态）；排除池按「等级×方向」收窄——
+   * 跨级别同名是《指引》允许的（跨级别出现时名称应一致），用全任务标题排除会误杀合规替换名；
+   * LLM 原样返回视为判定固定搭配/复合术语而保留原名（单独说明，不计入违规告警）；
+   * 仍不合规的保留原名并追加告警交人工。单小节失败不阻断其它小节；修复情况写入任务告警栏。
+   */
+  void repairMultiContentNames(ExamStandardTaskEntity task, ExamFaqModelConfigEntity config,
+      Long tenantId, List<String> importants) {
+    List<ExamStandardNodeEntity> leaves = listTheoryLeaves(task.getId());
+    if (leaves.isEmpty()) {
+      return;
+    }
+    List<ExamStandardNodeEntity> targets = selectNameShapeTargets(leaves);
+    if (targets.isEmpty()) {
+      return;
+    }
+    // 实时标题池按 scope 分组（排除清单用；替换后同步换新名，避免替换结果之间互相撞名）
+    Map<String, List<String>> poolByScope = scopeTitlePools(leaves);
+    Map<Long, List<ExamStandardNodeEntity>> bySection = new LinkedHashMap<>();
+    for (ExamStandardNodeEntity target : targets) {
+      bySection.computeIfAbsent(target.getParentId(), k -> new ArrayList<>()).add(target);
+    }
+    applySectionRenames(task, bySection, poolByScope, config, tenantId, importants);
+  }
+
+  /**
+   * 单小节名称形态修复：供「重新生成」（resummarizeSection）路径调用——
+   * 只处理该小节的 LLM 草稿理论叶，排除池取该小节所属 scope（等级×方向）的既有标题
+   * （口径与全量链路一致）。
+   */
+  void repairMultiContentNamesInSection(ExamStandardTaskEntity task, ExamStandardNodeEntity l2,
+      ExamFaqModelConfigEntity config, Long tenantId, List<String> importants) {
+    List<ExamStandardNodeEntity> sectionLeaves = nodeMapper.selectList(
+        new LambdaQueryWrapper<ExamStandardNodeEntity>()
+            .eq(ExamStandardNodeEntity::getParentId, l2.getId())
+            .eq(ExamStandardNodeEntity::getNodeLevel, 3)
+            .eq(ExamStandardNodeEntity::getDimension, "theory"));
+    List<ExamStandardNodeEntity> targets = selectNameShapeTargets(sectionLeaves);
+    if (targets.isEmpty()) {
+      return;
+    }
+    Map<String, List<String>> poolByScope = scopeTitlePools(listTheoryLeaves(task.getId()));
+    Map<Long, List<ExamStandardNodeEntity>> bySection = new LinkedHashMap<>();
+    bySection.put(l2.getId(), targets);
+    applySectionRenames(task, bySection, poolByScope, config, tenantId, importants);
+  }
+
+  /** 任务内全部理论叶（名称修复与排除清单用） */
+  private List<ExamStandardNodeEntity> listTheoryLeaves(Long taskId) {
+    return nodeMapper.selectList(new LambdaQueryWrapper<ExamStandardNodeEntity>()
+        .eq(ExamStandardNodeEntity::getTaskId, taskId)
+        .eq(ExamStandardNodeEntity::getNodeLevel, 3)
+        .eq(ExamStandardNodeEntity::getDimension, "theory")
+        .orderByAsc(ExamStandardNodeEntity::getNodeKey));
+  }
+
+  /** 排除池按 scope（等级×方向）分组：跨级别同名是《指引》允许的（跨级别出现时名称应一致），仅同等级内撞名才拦截 */
+  private Map<String, List<String>> scopeTitlePools(List<ExamStandardNodeEntity> leaves) {
+    Map<String, List<String>> pools = new LinkedHashMap<>();
+    for (ExamStandardNodeEntity leaf : leaves) {
+      pools.computeIfAbsent(scopeKeyOf(leaf), k -> new ArrayList<>()).add(leaf.getTitle());
+    }
+    return pools;
+  }
+
+  private static String scopeKeyOf(ExamStandardNodeEntity leaf) {
+    return leaf.getLevelCode() + "|" + leaf.getDirection();
+  }
+
+  /**
+   * 逐小节重命名（全量/单小节两个入口共用）：命中即按小节重命名；被拒条目（替换名仍不合规/
+   * 与本等级既有点撞名/输出缺条）回喂具体原因再试一轮，上限 2 轮；LLM 原样返回视为判定
+   * 固定搭配而保留原名；最终仍不合规的保留原名并告警交人工。
+   */
+  private void applySectionRenames(ExamStandardTaskEntity task,
+      Map<Long, List<ExamStandardNodeEntity>> bySection,
+      Map<String, List<String>> poolByScope,
+      ExamFaqModelConfigEntity config, Long tenantId, List<String> importants) {
+    int renamed = 0;
+    List<String> stillBad = new ArrayList<>();
+    List<String> keptTerms = new ArrayList<>();
+    for (Map.Entry<Long, List<ExamStandardNodeEntity>> section : bySection.entrySet()) {
+      ExamStandardNodeEntity l2 = nodeMapper.selectById(section.getKey());
+      if (l2 == null) {
+        log.warn("[细目表] 名称形态修复找不到小节：taskId={} parentId={}", task.getId(),
+            section.getKey());
+        continue;
+      }
+      List<ExamStandardNodeEntity> pending = new ArrayList<>(section.getValue());
+      // 排除池取本小节所属 scope（等级×方向）：跨级别同名是《指引》允许的，不能拿全任务标题排除
+      List<String> pool = poolByScope.getOrDefault(scopeKeyOf(pending.get(0)), new ArrayList<>());
+      String feedback = null;
+      for (int round = 1; round <= 2 && !pending.isEmpty(); round++) {
+        List<StandardLlmPoint> fresh;
+        try {
+          fresh = renamePointsForSection(task, l2, pending, pool, config, tenantId, importants,
+              feedback);
+        } catch (Exception ex) {
+          log.warn("[细目表] 名称形态修复调用失败：taskId={} node={} error={}", task.getId(),
+              l2.getNodeKey(), ex.getMessage());
+          break;
+        }
+        if (fresh.isEmpty()) {
+          break;
+        }
+        List<ExamStandardNodeEntity> nextPending = new ArrayList<>();
+        StringBuilder fb = new StringBuilder();
+        for (int i = 0; i < pending.size(); i++) {
+          ExamStandardNodeEntity target = pending.get(i);
+          String replacement = i < fresh.size() ? fresh.get(i).title() : null;
+          // LLM 原样返回 = 判定为行业标准复合术语/固定搭配而保留原名（prompt 明确允许）；
+          // 仅当唯一问题是连接词并列时采信，超长/疑问句不得借此放行
+          if (replacement != null && replacement.trim().equals(target.getTitle().trim())) {
+            String selfIssue = nameShapeIssue(target.getTitle());
+            if (selfIssue != null && selfIssue.startsWith("疑似并列")) {
+              keptTerms.add(target.getTitle());
+              continue;
+            }
+          }
+          if (replacement == null) {
+            nextPending.add(target);
+            fb.append("上次输出缺少第 ").append(i + 1).append(" 条「").append(target.getTitle())
+                .append("」的替换名；");
+            continue;
+          }
+          String shapeIssue = nameShapeIssue(replacement);
+          if (shapeIssue != null) {
+            nextPending.add(target);
+            fb.append("「").append(replacement).append("」仍").append(shapeIssue).append("；");
+            continue;
+          }
+          String collideWith = duplicateOf(replacement, pool, target.getTitle());
+          if (collideWith != null) {
+            nextPending.add(target);
+            fb.append("「").append(replacement).append("」与本等级既有点「").append(collideWith)
+                .append("」相同或相近；");
+            continue;
+          }
+          ExamStandardNodeEntity update = new ExamStandardNodeEntity();
+          update.setId(target.getId());
+          update.setTitle(replacement);
+          if (i < fresh.size() && fresh.get(i).important() != null) {
+            update.setImportant(fresh.get(i).important());
+          }
+          nodeMapper.updateById(update);
+          pool.remove(target.getTitle());
+          pool.add(replacement);
+          log.info("[细目表] 考评点名称原位重命名（单一内容）：taskId={} {} 「{}」→「{}」",
+              task.getId(), target.getNodeKey(), target.getTitle(), replacement);
+          renamed++;
+        }
+        pending = nextPending;
+        if (pending.isEmpty() || fb.length() == 0) {
+          break; // fb 为空说明没有可回喂的拒绝原因（防御性退出，正常不会走到）
+        }
+        feedback = "上次部分替换名未通过校验：" + fb
+            + "请换一个角度重新命名（取另一项更上位或更具体的单一内容表述）。";
+      }
+      for (ExamStandardNodeEntity target : pending) {
+        stillBad.add(target.getTitle());
+      }
+    }
+    List<String> warnings = new ArrayList<>();
+    if (renamed > 0) {
+      warnings.add("LLM修复：" + renamed + " 个考评点名称已按「只考核一个主要内容」重命名（保持条数与编码不变）");
+    }
+    if (!keptTerms.isEmpty()) {
+      warnings.add("LLM判断为固定搭配/复合术语，保留原名 " + keptTerms.size() + " 个："
+          + String.join("、", keptTerms.stream().limit(10).toList())
+          + (keptTerms.size() > 10 ? " 等" : "") + "；如确认应拆分请人工编辑");
+    }
+    if (!stillBad.isEmpty()) {
+      warnings.add("LLM护栏：" + stillBad.size() + " 个考评点名称疑似并列了两个内容/含疑问句，"
+          + "已保留原名待人工确认：" + String.join("、", stillBad.stream().limit(10).toList())
+          + (stillBad.size() > 10 ? " 等" : ""));
+    }
+    if (!warnings.isEmpty()) {
+      appendTaskWarnings(task.getId(), warnings);
+    }
+  }
+
+  /** 替换名去重判定：规范化后与本等级既有点相等或互为子串即判冲突，返回撞名的既有标题；无冲突返回 null */
+  private String duplicateOf(String title, List<String> poolTitles, String selfTitle) {
+    String norm = normalizeLeafTitle(title);
+    if (norm.length() < 2) {
+      return selfTitle; // 替换名过短不可用，按与自身冲突拒绝
+    }
+    for (String live : poolTitles) {
+      if (live.equals(selfTitle)) {
+        continue; // 被替换的原名不算冲突
+      }
+      String n = normalizeLeafTitle(live);
+      if (n.length() >= 2 && (n.equals(norm) || n.contains(norm) || norm.contains(n))) {
+        return live;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 小节级定向重命名：把违规名称作为反例回喂，要求逐条给出 1 个合规替换名（条数与顺序严格一致）。
+   * 排除清单取本小节所属 scope（等级×方向）的既有标题；feedback 非空时把上一轮的拒绝原因一并回喂。
+   * 解析失败沿用 MAX_ATTEMPTS 重试；全程留痕 ai_generation_draft。
+   */
+  private List<StandardLlmPoint> renamePointsForSection(ExamStandardTaskEntity task,
+      ExamStandardNodeEntity l2, List<ExamStandardNodeEntity> violators, List<String> scopeTitles,
+      ExamFaqModelConfigEntity config, Long tenantId, List<String> importants, String feedback) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("小节路径：").append(sectionPath(task, l2)).append('\n');
+    sb.append("本等级既有考评点（替换结果不得与其中任何一条相同或相近；"
+        + "同一考评点在其他级别出现同名是允许的）：\n");
+    for (String t : scopeTitles) {
+      sb.append("· ").append(t).append('\n');
+    }
+    sb.append("以下考评点名称不符合《广西技能人才评价题库开发工作指引（试行）》要求"
+        + "（一条只考核一个主要内容，不得用「与/和/及/以及」把两个可独立命题的内容并列；"
+        + "通常用「某某的概念、性质、特点、分类、方法、规则、原理」等语句；不得使用疑问句）：\n");
+    for (int i = 0; i < violators.size(); i++) {
+      sb.append(i + 1).append(". ").append(violators.get(i).getTitle()).append('\n');
+    }
+    sb.append("要求：为上述每一条给出 1 个符合要求的替换名称，")
+        .append("条数与顺序必须与上面严格一致（不得增加或删除条目）：\n")
+        .append("1. 若原名称确实并列了两个可独立命题的内容，取其中更重要或更上位的一个表述为单一知识点；")
+        .append("若该名称本身是行业标准复合术语（如「公差与配合」「物料平衡与热量平衡」），可保留原名；\n")
+        .append("2. 每个名称 ≤").append(NAME_MAX_LENGTH)
+        .append(" 字、为名词性短语、清楚明确完整简练、不照抄长句、不使用疑问句；\n")
+        .append("3. 不得与本等级既有考评点相同或相近，替换结果之间也不得相同或相近；\n")
+        .append("4. ").append(theoryImportantRule(importants)).append("；\n")
+        .append("5. 以 JSON 输出（必须含 \"points\" 数组），格式：")
+        .append("{\"points\":[{\"title\":\"…\",\"important\":\"X\"}]}");
+    if (feedback != null && !feedback.isBlank()) {
+      sb.append('\n').append(feedback);
+    }
+    String systemPrompt = buildSystemPrompt(task, l2);
+    String userPrompt = sb.toString();
+    int need = violators.size();
+    int maxTokens = computeTheoryTokens(need);
+    StandardLlmPoint.ParseResult result = null;
+    String lastError = null;
+    String lastContent = null;
+    for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      String prompt = attempt == 1 ? userPrompt
+          : userPrompt + "\n\n上次输出解析失败：" + lastError + "。请严格以 JSON 输出 {\"points\":[...]}。";
+      try {
+        String content = llmClient.chatCompletion(config.getBaseUrl(), config.getApiKey(),
+            config.getModelId(), systemPrompt, prompt, maxTokens,
+            config.getThinking(), config.getReasoningEffort(), true, tenantId);
+        lastContent = content;
+        result = parsePointsResponse(content, need, false);
+        if (!result.getPoints().isEmpty()) {
+          break;
+        }
+        lastError = "points 为空";
+        result = null;
+      } catch (Exception ex) {
+        lastError = ex.getMessage();
+        log.warn("[细目表] 名称形态修复第 {} 次尝试失败：taskId={} node={} error={}", attempt,
+            task.getId(), l2.getNodeKey(), lastError);
+      }
+    }
+    writeDraft(l2.getId(), systemPrompt + "\n" + userPrompt, lastContent != null ? lastContent : "",
+        config.getModelId(), tenantId, "theory");
+    if (result == null) {
+      return List.of();
+    }
+    return clampImportants(result.getPoints(), importants);
   }
 
   // ============================================================
@@ -1295,7 +1645,8 @@ public class StandardLlmSummarizeService {
     return Math.min(THEORY_MAX_TOKENS, Math.max(THEORY_MIN_TOKENS, tokens));
   }
 
-  private static String buildUserPrompt(String sectionPath, List<String> materials, boolean skill,
+  /** 理论/技能 user prompt（包私有以便单测断言名称硬性要求已接入） */
+  static String buildUserPrompt(String sectionPath, List<String> materials, boolean skill,
       List<String> importants, Integer theoryTarget) {
     StringBuilder sb = new StringBuilder();
     // C2：小节路径+素材放最前（变量部分），要求/格式放最后（稳定部分）
@@ -1321,13 +1672,15 @@ public class StandardLlmSummarizeService {
       sb.append("要求（理论知识考评点）：\n");
       if (materials.isEmpty()) {
         sb.append("1. 依据小节主题概括 ").append(target)
-            .append(" 个考评点，每个为 ≤20 字的名词性短语，不得照抄长句；\n");
+            .append(" 个考评点，每个为 ≤20 字的名词性短语，不得照抄长句；\n")
+            .append(THEORY_NAME_RULES);
       } else {
         // 数量按小节考评权重分配（优先级高于逐条 1~2 个的经验规则）
         sb.append("1. 概括 ").append(target)
             .append(" 个考评点（该数量按本小节考评权重占全表比例分配，必须严格遵守）；")
             .append("逐条对应上述知识小点，内容多的小点可拆为 2 个、内容少的小点可合并，")
-            .append("每个为 ≤20 字的名词性短语，不得照抄长句；\n");
+            .append("每个为 ≤20 字的名词性短语，不得照抄长句；\n")
+            .append(THEORY_NAME_RULES);
       }
       sb.append("2. ").append(theoryImportantRule(importants)).append("；\n")
           .append("3. 考评点须符合国家职业标准，概念清晰、表达准确，各考评点之间相互独立、均可独立命题考核；\n")
@@ -1584,7 +1937,8 @@ public class StandardLlmSummarizeService {
   }
 
   /** 补点 user prompt：在已有考评点之外追加 N 个，已有标题列出防重复（C2：路径+素材在前，要求在后） */
-  private static String buildTopupUserPrompt(String sectionPath, List<String> materials,
+  /** 补点 user prompt（包私有以便单测） */
+  static String buildTopupUserPrompt(String sectionPath, List<String> materials,
       List<String> existingTitles, List<String> importants, int topupCount) {
     StringBuilder sb = new StringBuilder();
     sb.append("小节路径：").append(sectionPath).append('\n');
@@ -1603,7 +1957,8 @@ public class StandardLlmSummarizeService {
     sb.append("要求（理论知识考评点补充）：\n");
     sb.append("1. 在已有考评点之外再补充 ").append(topupCount)
         .append(" 个考评点（数量必须严格遵守），优先覆盖原文素材中尚未命中的知识小点，"
-            + "每个为 ≤20 字的名词性短语，不得照抄长句；\n");
+            + "每个为 ≤20 字的名词性短语，不得照抄长句；\n")
+        .append(THEORY_NAME_RULES);
     sb.append("2. ").append(theoryImportantRule(importants)).append("；\n")
         .append("3. 考评点须符合国家职业标准，概念清晰、表达准确，各考评点之间相互独立、均可独立命题考核；\n")
         .append("4. 考评点名称与所用术语须符合国家有关标准或规定；\n")

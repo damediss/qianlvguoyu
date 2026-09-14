@@ -444,9 +444,14 @@ export function DictPage() {
           <Form.Item
             name="itemLabel"
             label="标签"
-            rules={[{ required: true, message: '请输入显示标签' }]}
+            rules={[{ required: true, message: '请输入显示标签' }, { max: 512, message: '最多 512 字' }]}
           >
-            <Input placeholder="显示文本（如 男, 女）" maxLength={128} />
+            <Input.TextArea
+              placeholder="显示文本（如 男, 女；申报条件请填全文）"
+              maxLength={512}
+              showCount
+              rows={4}
+            />
           </Form.Item>
           <Form.Item name="sortOrder" label="排序">
             <InputNumber min={0} max={9999} style={{ width: '100%' }} />

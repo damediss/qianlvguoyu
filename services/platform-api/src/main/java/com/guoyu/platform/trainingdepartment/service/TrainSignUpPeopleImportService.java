@@ -18,6 +18,7 @@ import com.guoyu.platform.trainingdepartment.mapper.PlatformUserDetailMapper;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
+import com.guoyu.platform.trainingdepartment.vo.SignUpPeopleHistorySyncResultVO;
 import com.guoyu.platform.trainingdepartment.vo.SignUpPeopleImportResultVO;
 import java.io.IOException;
 import java.io.InputStream;
@@ -33,7 +34,10 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.UUID;
@@ -403,6 +407,317 @@ public class TrainSignUpPeopleImportService {
     }
 
     return new SignUpPeopleImportResultVO(inserted, skipped, users.size(), null, errors, syncStats.toMap());
+  }
+
+  /**
+   * 同步历史信息收集：按身份证从其它计划（含 PHP 扫码填报）补全当前计划空字段。
+   * 只补空、不覆盖；不改审核/支付；不改历史计划原数据。
+   */
+  @Transactional
+  public SignUpPeopleHistorySyncResultVO syncHistory(Long signUpId, List<Long> peopleIds) {
+    if (signUpId == null || signUpId <= 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "参数错误");
+    }
+    TrainSignUpSelfEntity signUp = getSignUp(signUpId);
+    Long tenantId = signUp.getTenantId() != null
+        ? signUp.getTenantId()
+        : SecurityContext.currentUser().getTenantId();
+
+    LambdaQueryWrapper<TrainSignUpPeopleSelfEntity> targetQ =
+        new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
+            .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUpId)
+            .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0);
+    if (tenantId != null) {
+      targetQ.eq(TrainSignUpPeopleSelfEntity::getTenantId, tenantId);
+    }
+    if (peopleIds != null && !peopleIds.isEmpty()) {
+      targetQ.in(TrainSignUpPeopleSelfEntity::getId, peopleIds);
+    }
+    List<TrainSignUpPeopleSelfEntity> targets = peopleMapper.selectList(targetQ);
+    if (targets.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "当前计划没有可同步的学员");
+    }
+
+    Map<String, TrainSignUpPeopleSelfEntity> targetsByIdCard = new LinkedHashMap<>();
+    int skippedNoIdCard = 0;
+    for (TrainSignUpPeopleSelfEntity t : targets) {
+      String key = normalizeIdCardKey(t.getIdCardNumber());
+      if (!StringUtils.hasText(key)) {
+        skippedNoIdCard++;
+        continue;
+      }
+      targetsByIdCard.putIfAbsent(key, t);
+    }
+    if (targetsByIdCard.isEmpty()) {
+      return new SignUpPeopleHistorySyncResultVO(
+          targets.size(), 0, 0, skippedNoIdCard, 0,
+          List.of("所选学员均无身份证号，无法匹配历史填报"));
+    }
+
+    List<String> rawCards = targets.stream()
+        .map(TrainSignUpPeopleSelfEntity::getIdCardNumber)
+        .filter(StringUtils::hasText)
+        .map(String::trim)
+        .distinct()
+        .collect(Collectors.toList());
+
+    List<TrainSignUpPeopleSelfEntity> historyRows = peopleMapper.selectList(
+        new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
+            .ne(TrainSignUpPeopleSelfEntity::getSignUpId, signUpId)
+            .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0)
+            .eq(tenantId != null, TrainSignUpPeopleSelfEntity::getTenantId, tenantId)
+            .in(TrainSignUpPeopleSelfEntity::getIdCardNumber, rawCards));
+
+    Map<String, TrainSignUpPeopleSelfEntity> bestHistory = new LinkedHashMap<>();
+    for (TrainSignUpPeopleSelfEntity row : historyRows) {
+      String key = normalizeIdCardKey(row.getIdCardNumber());
+      if (!StringUtils.hasText(key) || !targetsByIdCard.containsKey(key)) {
+        continue;
+      }
+      TrainSignUpPeopleSelfEntity prev = bestHistory.get(key);
+      if (prev == null || isBetterHistorySource(row, prev)) {
+        bestHistory.put(key, row);
+      }
+    }
+
+    int merged = 0;
+    int skippedNoHistory = 0;
+    int unchanged = 0;
+    List<String> messages = new ArrayList<>();
+    LocalDateTime now = LocalDateTime.now();
+
+    for (Map.Entry<String, TrainSignUpPeopleSelfEntity> entry : targetsByIdCard.entrySet()) {
+      TrainSignUpPeopleSelfEntity target = entry.getValue();
+      TrainSignUpPeopleSelfEntity source = bestHistory.get(entry.getKey());
+      if (source == null) {
+        skippedNoHistory++;
+        continue;
+      }
+      AtomicBoolean changed = new AtomicBoolean(false);
+      mergeHistoryFillEmpty(target, source, changed);
+      if (changed.get()) {
+        target.setUpdateTime(now);
+        peopleMapper.updateById(target);
+        merged++;
+        messages.add(safeName(target.getName()) + "(" + entry.getKey() + "): 已从历史计划 "
+            + source.getSignUpId() + " 补全");
+      } else {
+        unchanged++;
+      }
+    }
+
+    log.info("同步历史信息收集 signUpId={} total={} merged={} noHistory={} noIdCard={} unchanged={}",
+        signUpId, targets.size(), merged, skippedNoHistory, skippedNoIdCard, unchanged);
+
+    if (messages.size() > 20) {
+      messages = new ArrayList<>(messages.subList(0, 20));
+      messages.add("…其余省略");
+    }
+    return new SignUpPeopleHistorySyncResultVO(
+        targets.size(), merged, skippedNoHistory, skippedNoIdCard, unchanged, messages);
+  }
+
+  private static boolean isBetterHistorySource(
+      TrainSignUpPeopleSelfEntity candidate, TrainSignUpPeopleSelfEntity current) {
+    int cStatus = historyStatusRank(candidate.getStatus());
+    int pStatus = historyStatusRank(current.getStatus());
+    if (cStatus != pStatus) {
+      return cStatus > pStatus;
+    }
+    int cFill = historyRichness(candidate);
+    int pFill = historyRichness(current);
+    if (cFill != pFill) {
+      return cFill > pFill;
+    }
+    LocalDateTime cTime = historyPreferTime(candidate);
+    LocalDateTime pTime = historyPreferTime(current);
+    if (cTime != null && pTime != null) {
+      return cTime.isAfter(pTime);
+    }
+    return cTime != null;
+  }
+
+  private static int historyStatusRank(Integer status) {
+    if (status != null && status == 1) {
+      return 2;
+    }
+    if (status == null || status == 0) {
+      return 1;
+    }
+    return 0;
+  }
+
+  private static LocalDateTime historyPreferTime(TrainSignUpPeopleSelfEntity e) {
+    if (e.getUpdateTime() != null) {
+      return e.getUpdateTime();
+    }
+    return e.getCreateTime();
+  }
+
+  private static int historyRichness(TrainSignUpPeopleSelfEntity e) {
+    int n = 0;
+    if (StringUtils.hasText(e.getNation())) n++;
+    if (StringUtils.hasText(e.getPolitical())) n++;
+    if (StringUtils.hasText(e.getHouseType())) n++;
+    if (StringUtils.hasText(e.getAddress())) n++;
+    if (StringUtils.hasText(e.getEducation())) n++;
+    if (StringUtils.hasText(e.getSchool())) n++;
+    if (StringUtils.hasText(e.getMajor())) n++;
+    if (StringUtils.hasText(e.getSchoolPaper())) n++;
+    if (StringUtils.hasText(e.getIdCardFront())) n++;
+    if (StringUtils.hasText(e.getIdCardBack())) n++;
+    if (StringUtils.hasText(e.getIdCardHeader())) n++;
+    if (StringUtils.hasText(e.getWorkTime())) n++;
+    if (StringUtils.hasText(e.getCompanyName()) || e.getCompanyId() != null) n++;
+    if (e.getWorkTypeId() != null || StringUtils.hasText(e.getWorkTypeName())) n++;
+    if (StringUtils.hasText(e.getLevel()) && !"0".equals(e.getLevel().trim())) n++;
+    if (e.getReqWorkTypeId() != null || StringUtils.hasText(e.getReqWorkTypeName())) n++;
+    if (e.getReqLevel() != null && e.getReqLevel() > 0) n++;
+    if (StringUtils.hasText(e.getDeclarationCondition())) n++;
+    if (StringUtils.hasText(e.getWorkExp())) n++;
+    if (StringUtils.hasText(e.getContactFirstPage())) n++;
+    if (StringUtils.hasText(e.getWorkTypePaper())) n++;
+    if (StringUtils.hasText(e.getTitlePaper())) n++;
+    if (StringUtils.hasText(e.getPaperNo())) n++;
+    return n;
+  }
+
+  private static void mergeHistoryFillEmpty(
+      TrainSignUpPeopleSelfEntity target,
+      TrainSignUpPeopleSelfEntity source,
+      AtomicBoolean changed) {
+    fillHistoryPositiveLong(target.getPlatformUserId(), source.getPlatformUserId(), target::setPlatformUserId, changed);
+    fillHistoryPositiveLong(target.getUserId(), source.getUserId(), target::setUserId, changed);
+
+    fillHistoryText(target.getName(), source.getName(), target::setName, changed);
+    fillHistoryText(target.getPhone(), source.getPhone(), target::setPhone, changed);
+    fillHistoryText(target.getGender(), source.getGender(), target::setGender, changed);
+    fillHistoryText(target.getNation(), source.getNation(), target::setNation, changed);
+    fillHistoryText(target.getPolitical(), source.getPolitical(), target::setPolitical, changed);
+    fillHistoryText(target.getHouseType(), source.getHouseType(), target::setHouseType, changed);
+    fillHistoryText(target.getAddress(), source.getAddress(), target::setAddress, changed);
+    fillHistoryText(target.getEducation(), source.getEducation(), target::setEducation, changed);
+    fillHistoryPositiveInt(target.getAge(), source.getAge(), target::setAge, changed);
+
+    fillHistoryText(target.getIdCardFront(), source.getIdCardFront(), target::setIdCardFront, changed);
+    fillHistoryText(target.getIdCardBack(), source.getIdCardBack(), target::setIdCardBack, changed);
+    fillHistoryText(target.getIdCardHeader(), source.getIdCardHeader(), target::setIdCardHeader, changed);
+    fillHistoryText(target.getIdCardHeader2(), source.getIdCardHeader2(), target::setIdCardHeader2, changed);
+    fillHistoryText(target.getPhoto(), source.getPhoto(), target::setPhoto, changed);
+
+    fillHistoryText(target.getSchool(), source.getSchool(), target::setSchool, changed);
+    fillHistoryText(target.getMajor(), source.getMajor(), target::setMajor, changed);
+    fillHistoryText(target.getInSchoolDate(), source.getInSchoolDate(), target::setInSchoolDate, changed);
+    fillHistoryText(target.getGraduateDate(), source.getGraduateDate(), target::setGraduateDate, changed);
+    fillHistoryText(target.getSchoolNo(), source.getSchoolNo(), target::setSchoolNo, changed);
+    fillHistoryText(target.getSchoolPaper(), source.getSchoolPaper(), target::setSchoolPaper, changed);
+    fillHistoryPositiveInt(target.getSchoolPaperHas(), source.getSchoolPaperHas(), target::setSchoolPaperHas, changed);
+
+    fillHistoryText(target.getWorkTime(), source.getWorkTime(), target::setWorkTime, changed);
+    fillHistoryText(target.getTitleType(), source.getTitleType(), target::setTitleType, changed);
+    fillHistoryText(target.getTitleMajor(), source.getTitleMajor(), target::setTitleMajor, changed);
+    fillHistoryText(target.getTitleCertDate(), source.getTitleCertDate(), target::setTitleCertDate, changed);
+    fillHistoryText(target.getTitleLevel(), source.getTitleLevel(), target::setTitleLevel, changed);
+    fillHistoryText(target.getTitlePaper(), source.getTitlePaper(), target::setTitlePaper, changed);
+
+    fillHistoryPositiveLong(target.getCompanyId(), source.getCompanyId(), target::setCompanyId, changed);
+    fillHistoryText(target.getCompanyName(), source.getCompanyName(), target::setCompanyName, changed);
+    fillHistoryText(target.getDepartment(), source.getDepartment(), target::setDepartment, changed);
+    fillHistoryText(target.getCompanyCode(), source.getCompanyCode(), target::setCompanyCode, changed);
+    fillHistoryText(target.getZipCode(), source.getZipCode(), target::setZipCode, changed);
+    fillHistoryText(target.getCompanyAddress(), source.getCompanyAddress(), target::setCompanyAddress, changed);
+    fillHistoryText(target.getIndustrialPark(), source.getIndustrialPark(), target::setIndustrialPark, changed);
+    fillHistoryText(target.getComments(), source.getComments(), target::setComments, changed);
+    fillHistoryText(target.getWorkDateStart(), source.getWorkDateStart(), target::setWorkDateStart, changed);
+    fillHistoryText(target.getWorkDateEnd(), source.getWorkDateEnd(), target::setWorkDateEnd, changed);
+
+    fillHistoryPositiveInt(target.getWorkTypePaperHas(), source.getWorkTypePaperHas(), target::setWorkTypePaperHas, changed);
+    fillHistoryText(target.getWorkTypePaper(), source.getWorkTypePaper(), target::setWorkTypePaper, changed);
+    fillHistoryText(target.getWorkTypePaperName(), source.getWorkTypePaperName(), target::setWorkTypePaperName, changed);
+    fillHistoryPositiveInt(target.getWorkTypePaperLevel(), source.getWorkTypePaperLevel(), target::setWorkTypePaperLevel, changed);
+    fillHistoryText(target.getWorkTypePaperNo(), source.getWorkTypePaperNo(), target::setWorkTypePaperNo, changed);
+
+    fillHistoryPositiveLong(target.getWorkTypeId(), source.getWorkTypeId(), target::setWorkTypeId, changed);
+    fillHistoryText(target.getWorkTypeName(), source.getWorkTypeName(), target::setWorkTypeName, changed);
+    fillHistoryLevel(target.getLevel(), source.getLevel(), target::setLevel, changed);
+    fillHistoryText(target.getPaperNo(), source.getPaperNo(), target::setPaperNo, changed);
+    fillHistoryText(target.getCertIssueDates(), source.getCertIssueDates(), target::setCertIssueDates, changed);
+    fillHistoryText(target.getCertificatesJson(), source.getCertificatesJson(), target::setCertificatesJson, changed);
+
+    fillHistoryPositiveLong(target.getReqWorkTypeId(), source.getReqWorkTypeId(), target::setReqWorkTypeId, changed);
+    fillHistoryText(target.getReqWorkTypeName(), source.getReqWorkTypeName(), target::setReqWorkTypeName, changed);
+    if (target.getReqLevel() == null && source.getReqLevel() != null) {
+      target.setReqLevel(source.getReqLevel());
+      changed.set(true);
+    }
+    fillHistoryText(target.getDeclarationCondition(), source.getDeclarationCondition(),
+        target::setDeclarationCondition, changed);
+
+    fillHistoryText(target.getWorkExp(), source.getWorkExp(), target::setWorkExp, changed);
+    fillHistoryText(target.getJob(), source.getJob(), target::setJob, changed);
+    fillHistoryText(target.getJog(), source.getJog(), target::setJog, changed);
+
+    fillHistoryText(target.getContactFirstPage(), source.getContactFirstPage(), target::setContactFirstPage, changed);
+    fillHistoryText(target.getContactExpirePage(), source.getContactExpirePage(), target::setContactExpirePage, changed);
+    fillHistoryText(target.getContactSignPage(), source.getContactSignPage(), target::setContactSignPage, changed);
+    fillHistoryText(target.getSocialSecurity(), source.getSocialSecurity(), target::setSocialSecurity, changed);
+    fillHistoryText(target.getContract(), source.getContract(), target::setContract, changed);
+    fillHistoryText(target.getCertificate(), source.getCertificate(), target::setCertificate, changed);
+  }
+
+  private static void fillHistoryText(String current, String incoming, Consumer<String> setter, AtomicBoolean changed) {
+    if (StringUtils.hasText(current) || !StringUtils.hasText(incoming)) {
+      return;
+    }
+    setter.accept(incoming.trim());
+    changed.set(true);
+  }
+
+  private static void fillHistoryLevel(String current, String incoming, Consumer<String> setter, AtomicBoolean changed) {
+    if (!StringUtils.hasText(incoming)) {
+      return;
+    }
+    String cur = current == null ? "" : current.trim();
+    if (StringUtils.hasText(cur) && !"0".equals(cur)) {
+      return;
+    }
+    String next = incoming.trim();
+    if ("0".equals(next) || next.equals(cur)) {
+      return;
+    }
+    setter.accept(next);
+    changed.set(true);
+  }
+
+  private static void fillHistoryPositiveLong(
+      Long current, Long incoming, Consumer<Long> setter, AtomicBoolean changed) {
+    if (current != null && current > 0) {
+      return;
+    }
+    if (incoming == null || incoming <= 0) {
+      return;
+    }
+    setter.accept(incoming);
+    changed.set(true);
+  }
+
+  private static void fillHistoryPositiveInt(
+      Integer current, Integer incoming, Consumer<Integer> setter, AtomicBoolean changed) {
+    if (current != null && current > 0) {
+      return;
+    }
+    if (incoming == null || incoming <= 0) {
+      return;
+    }
+    setter.accept(incoming);
+    changed.set(true);
+  }
+
+  private static String normalizeIdCardKey(String idCard) {
+    if (!StringUtils.hasText(idCard)) {
+      return "";
+    }
+    return idCard.trim().toUpperCase(Locale.ROOT);
   }
 
   private void applyDetailFields(TrainSignUpPeopleSelfEntity entity, PlatformUserDetailEntity detail) {

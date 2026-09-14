@@ -123,6 +123,10 @@ public class ExamScoreImportApplicationService {
 
   public List<ExamScoreImportClassVO> listClasses(Long companyId, Long trainInfoId, String keyword) {
     boolean unassignedOnly = companyId != null && companyId.longValue() == 0L;
+    // 企业账号不得借「未归属企业」绕过本企业过滤
+    if (unassignedOnly && operatorScopeService.isEnterpriseScoped()) {
+      return List.of();
+    }
     // 注意：三元两侧勿混用 long / Long，否则会拆箱 NPE（resolveCompanyFilter 可为 null）
     Long companyFilter;
     if (unassignedOnly) {
@@ -476,6 +480,7 @@ public class ExamScoreImportApplicationService {
   }
 
   public ExamScoreImportPreviewVO preview(List<Long> classIds, List<MultipartFile> files) {
+    operatorScopeService.requireOrgOperator();
     List<Long> selected = normalizeClassIds(classIds);
     if (selected.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "请先选择班级后再上传成绩单");
@@ -723,6 +728,7 @@ public class ExamScoreImportApplicationService {
 
   @Transactional
   public ExamScoreImportCommitResultVO commit(ExamScoreImportCommitReq req) {
+    operatorScopeService.requireOrgOperator();
     if (req == null || !StringUtils.hasText(req.getPreviewId())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "预览已失效，请重新上传");
     }

@@ -69,6 +69,8 @@ public class TrainGraduationApplicationService {
   private final PlatformUserDetailMapper platformUserDetailMapper;
   private final TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper;
   private final TrainingIdCardHeaderResolver idCardHeaderResolver;
+  private final TrainingClassAccessGuard classAccessGuard;
+  private final TrainingOperatorScopeService operatorScopeService;
   private final String cdnPath;
 
   public TrainGraduationApplicationService(
@@ -82,6 +84,8 @@ public class TrainGraduationApplicationService {
       PlatformUserDetailMapper platformUserDetailMapper,
       TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper,
       TrainingIdCardHeaderResolver idCardHeaderResolver,
+      TrainingClassAccessGuard classAccessGuard,
+      TrainingOperatorScopeService operatorScopeService,
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath) {
     this.classMapper = classMapper;
     this.infoListMapper = infoListMapper;
@@ -93,6 +97,8 @@ public class TrainGraduationApplicationService {
     this.platformUserDetailMapper = platformUserDetailMapper;
     this.signUpPeopleSelfMapper = signUpPeopleSelfMapper;
     this.idCardHeaderResolver = idCardHeaderResolver;
+    this.classAccessGuard = classAccessGuard;
+    this.operatorScopeService = operatorScopeService;
     this.cdnPath = cdnPath;
   }
 
@@ -112,6 +118,10 @@ public class TrainGraduationApplicationService {
     LambdaQueryWrapper<TrainInfoClassEntity> base = new LambdaQueryWrapper<TrainInfoClassEntity>()
         .eq(TrainInfoClassEntity::getDeleted, 0)
         .orderByDesc(TrainInfoClassEntity::getId);
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
+    if (companyFilter != null) {
+      base.eq(TrainInfoClassEntity::getCompanyId, companyFilter);
+    }
     if (StringUtils.hasText(keyword)) {
       base.like(TrainInfoClassEntity::getTitle, keyword.trim());
     }
@@ -919,14 +929,7 @@ public class TrainGraduationApplicationService {
   }
 
   private TrainInfoClassEntity requireClass(Long classId) {
-    TrainInfoClassEntity clazz = classMapper.selectOne(
-        new LambdaQueryWrapper<TrainInfoClassEntity>()
-            .eq(TrainInfoClassEntity::getId, classId)
-            .eq(TrainInfoClassEntity::getDeleted, 0));
-    if (clazz == null) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
-    }
-    return clazz;
+    return classAccessGuard.requireAccessibleClass(classId);
   }
 
   private TrainPeopleListEntity requireStudent(Long classId, Long peopleId) {

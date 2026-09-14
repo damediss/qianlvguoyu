@@ -67,7 +67,7 @@ class TrainExamListGuardTest {
   void setUp() {
     service = new TrainExamListApplicationService(mapper, workTypeListMapper, peopleListMapper,
         examCourseMapper, knowledgeStructureMapper, examDetailMapper,
-        trainInfoListMapper, trainPeopleListMapper);
+        trainInfoListMapper, trainPeopleListMapper, mock(TrainingOperatorScopeService.class));
   }
 
   private MockedStatic<SecurityContext> mockCurrentAdmin() {

@@ -121,18 +121,23 @@ public class ChazhengController {
   /**
    * 第二步：按 ymd 触发异步查证 → 返回 batchId（秒回）。
    * 前端/Python 拿到 batchId 后，轮询 /chazheng/cert/batch/{batchId}/progress 获取进度。
+   *
+   * @param onlyUnsuccessful 工作台「重新查证」用：仅重查该批次中未成功的人
+   *                         （is_checked=0，即未查证或查证失败/接口故障中止）
    */
   @PostMapping("/users/import/{ymd}/cert")
   @PreAuthorize("hasAuthority('chazheng:user:cert')")
   @AuditLog(module = "chazheng", action = "user:import:cert", targetType = "chazheng_cert_batch")
   public ApiResponse<Map<String, Object>> triggerCertByYmd(
       @PathVariable String ymd,
-      @RequestParam(required = false) String sourceFilename) {
+      @RequestParam(required = false) String sourceFilename,
+      @RequestParam(required = false, defaultValue = "false") boolean onlyUnsuccessful) {
     Long tenantId = com.guoyu.platform.security.SecurityContext.currentUser().getTenantId();
     List<ChazhengUserEntity> importedUsers = userMapper.selectList(
         new LambdaQueryWrapper<ChazhengUserEntity>()
             .eq(ChazhengUserEntity::getTenantId, tenantId)
-            .eq(ChazhengUserEntity::getYmd, ymd));
+            .eq(ChazhengUserEntity::getYmd, ymd)
+            .eq(onlyUnsuccessful, ChazhengUserEntity::getIsChecked, 0));
 
     List<Long> userIds = importedUsers.stream()
         .map(ChazhengUserEntity::getId)
@@ -142,7 +147,7 @@ public class ChazhengController {
     if (userIds.isEmpty()) {
       throw new com.guoyu.platform.common.exception.BusinessException(
           com.guoyu.platform.common.exception.ErrorCode.BAD_REQUEST,
-          "该 ymd 下无用户可查证");
+          onlyUnsuccessful ? "该批次没有未成功的人员，无需重新查证" : "该 ymd 下无用户可查证");
     }
 
     String filename = (sourceFilename != null && !sourceFilename.isBlank())
@@ -151,6 +156,8 @@ public class ChazhengController {
 
     Map<String, Object> data = new HashMap<>();
     data.put("batchId", batchResp.getBatchId());
+    // total 与 totalCount 同值：前端沿用 total，历史脚本/接口文档用 totalCount
+    data.put("total", batchResp.getTotalCount());
     data.put("totalCount", batchResp.getTotalCount());
     data.put("status", "processing");
     data.put("message", batchResp.getMessage());

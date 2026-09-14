@@ -169,8 +169,8 @@ public class QuestionResolveAssistService {
           config.getModelId(),
           systemPrompt,
           userPrompt,
-          400,
-          null,
+          800,
+          config.getThinking(),
           config.getReasoningEffort(),
           false,
           tenantId);

@@ -45,4 +45,10 @@ public interface CertCheckBatchItemMapper extends BaseMapper<CertCheckBatchItemE
       + "error_message=NULL, updated_at=NOW() "
       + "WHERE batch_id=#{batchId} AND status='failed'")
   int resetFailedToPending(@Param("batchId") Long batchId);
+
+  /** 熔断中止：把批次内所有未完成的明细一次性标记为失败（不逐条 incrementCompleted，批次状态由 markAborted 收口） */
+  @Update("UPDATE chazheng_cert_batch_item SET status='failed', error_message=#{error}, "
+      + "completed_at=NOW(), updated_at=NOW() "
+      + "WHERE batch_id=#{batchId} AND status IN ('pending','processing')")
+  int failOpenItems(@Param("batchId") Long batchId, @Param("error") String error);
 }

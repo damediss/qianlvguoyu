@@ -1,6 +1,11 @@
 import { apiClient, unwrap } from './client';
 import type { PageResponse } from '../types/api';
-import type { ChazhengUser, ChazhengUserQuery, CertProgress } from '../types/chazheng';
+import type {
+  ChazhengUser,
+  ChazhengUserQuery,
+  CertCheckBatchProgress,
+  CertProgress,
+} from '../types/chazheng';
 
 export function pageUsers(params: ChazhengUserQuery) {
   return unwrap<PageResponse<ChazhengUser>>(apiClient.get('/chazheng/users', { params }));
@@ -18,10 +23,17 @@ export function importUsers(file: File) {
   );
 }
 
-export function triggerCertCheckByYmd(ymd: string, sourceFilename?: string) {
+export function triggerCertCheckByYmd(
+  ymd: string,
+  sourceFilename?: string,
+  onlyUnsuccessful?: boolean,
+) {
   return unwrap<{ batchId: number; total: number; message: string }>(
     apiClient.post(`/chazheng/users/import/${encodeURIComponent(ymd)}/cert`, null, {
-      params: { sourceFilename: sourceFilename || undefined },
+      params: {
+        sourceFilename: sourceFilename || undefined,
+        onlyUnsuccessful: onlyUnsuccessful || undefined,
+      },
     }),
   );
 }
@@ -32,6 +44,13 @@ export function certCheck(id: number) {
 
 export function getCertProgress() {
   return unwrap<CertProgress>(apiClient.get('/chazheng/users/cert/progress'));
+}
+
+/** 本查证批次进度（按批查，用于「重新查证」后的进度弹窗） */
+export function getCertBatchProgress(batchId: number) {
+  return unwrap<CertCheckBatchProgress>(
+    apiClient.get(`/chazheng/cert/batch/${batchId}/progress`),
+  );
 }
 
 

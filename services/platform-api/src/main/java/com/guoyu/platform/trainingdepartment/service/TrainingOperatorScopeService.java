@@ -84,16 +84,46 @@ public class TrainingOperatorScopeService {
       return;
     }
     Scope scope = currentScope();
-    if (scope.isEnterpriseViewer() && scope.orgId() != null
-        && entity.getCompanyId() != null
-        && !scope.orgId().equals(entity.getCompanyId())) {
+    if (!scope.isEnterpriseViewer() || scope.orgId() == null) {
+      return;
+    }
+    // 企业账号：班级必须归属本企业（companyId 为空亦拒绝，避免漏标串数）
+    if (entity.getCompanyId() == null || !scope.orgId().equals(entity.getCompanyId())) {
       throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该班级");
     }
   }
 
+  /**
+   * 企业资源（调研目标企业 / 培训信息 companyId / 考试 orgId 等）可达性校验。
+   * 机构与平台管理员不限制。
+   */
+  public void assertCompanyAccessible(Long companyId) {
+    if (isPlatformAdmin()) {
+      return;
+    }
+    Scope scope = currentScope();
+    if (!scope.isEnterpriseViewer() || scope.orgId() == null) {
+      return;
+    }
+    if (companyId == null || !scope.orgId().equals(companyId)) {
+      throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该企业数据");
+    }
+  }
+
+  /** 当前是否为企业视角且需强制本企业过滤（非平台管理员） */
+  public boolean isEnterpriseScoped() {
+    return !isPlatformAdmin() && currentScope().isEnterpriseViewer() && currentScope().orgId() != null;
+  }
+
   /** 平台管理员 / 超级管理员：可跨机构查看培训相关数据 */
   public boolean isPlatformAdmin() {
-    PlatformUserPrincipal principal = SecurityContext.currentUser();
+    return isPlatformAdmin(SecurityContext.currentUser());
+  }
+
+  public boolean isPlatformAdmin(PlatformUserPrincipal principal) {
+    if (principal == null) {
+      return false;
+    }
     List<String> roleCodes = principal.getRoleCodes() == null ? List.of() : principal.getRoleCodes();
     return "admin".equals(principal.getUserType())
         || PlatformAdminSupport.isSuperAdmin(principal)

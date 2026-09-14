@@ -106,6 +106,10 @@ public class TrainPeopleListApplicationService {
   @Transactional(readOnly = true)
   public PageResponse<TrainPeopleListVO> page(TrainPeopleListQueryReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
+    if (req.getTrainClassId() != null) {
+      assertClassViewable(req.getTrainClassId());
+    }
     LambdaQueryWrapper<TrainPeopleListEntity> wrapper = new LambdaQueryWrapper<TrainPeopleListEntity>()
         .eq(TrainPeopleListEntity::getTenantId, tenantId)
         .eq(TrainPeopleListEntity::getDeleted, 0)
@@ -125,6 +129,7 @@ public class TrainPeopleListApplicationService {
           .or()
           .like(TrainPeopleListEntity::getPhone, req.getKeyword()));
     }
+    applyEnterprisePeopleScope(wrapper, companyFilter);
     IPage<TrainPeopleListEntity> page;
     if (StringUtils.hasText(req.getApplyWorkTypeName()) && req.getApplyLevel() != null) {
       page = mapper.selectCertificationImportPage(
@@ -132,7 +137,8 @@ public class TrainPeopleListApplicationService {
           tenantId,
           req.getApplyWorkTypeName(),
           req.getApplyLevel(),
-          StringUtils.hasText(req.getKeyword()) ? req.getKeyword() : null);
+          StringUtils.hasText(req.getKeyword()) ? req.getKeyword() : null,
+          companyFilter);
     } else {
       page = mapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
     }
@@ -147,6 +153,10 @@ public class TrainPeopleListApplicationService {
 
   @Transactional
   public TrainPeopleListVO create(TrainPeopleListCreateReq req) {
+    assertClassViewable(req.getTrainClassId());
+    if (req.getTrainClassId() == null) {
+      assertTrainInfoCompanyAccessible(req.getTrainId());
+    }
     Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainPeopleListEntity entity = new TrainPeopleListEntity();
     entity.setTenantId(tenantId);
@@ -875,6 +885,36 @@ public class TrainPeopleListApplicationService {
     operatorScopeService.assertClassAccessible(clazz);
   }
 
+  /** 企业账号：花名册仅可见本企业班级（或无班级时本企业培训信息下）人员 */
+  private void applyEnterprisePeopleScope(
+      LambdaQueryWrapper<TrainPeopleListEntity> wrapper, Long companyFilter) {
+    if (companyFilter == null) {
+      return;
+    }
+    wrapper.and(w -> w
+        .apply(
+            "train_class_id IN (SELECT id FROM train_info_class WHERE company_id = {0} AND deleted = 0)",
+            companyFilter)
+        .or(w2 -> w2.isNull(TrainPeopleListEntity::getTrainClassId)
+            .apply(
+                "(train_id IN (SELECT id FROM train_info_list WHERE company_id = {0} AND deleted = 0))",
+                companyFilter)));
+  }
+
+  private void assertTrainInfoCompanyAccessible(Long trainInfoId) {
+    if (trainInfoId == null || !operatorScopeService.isEnterpriseScoped()) {
+      return;
+    }
+    TrainInfoListEntity info = trainInfoListMapper.selectOne(
+        new LambdaQueryWrapper<TrainInfoListEntity>()
+            .eq(TrainInfoListEntity::getId, trainInfoId)
+            .eq(TrainInfoListEntity::getDeleted, 0));
+    if (info == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "培训信息不存在");
+    }
+    operatorScopeService.assertCompanyAccessible(info.getCompanyId());
+  }
+
   private TrainPeopleListEntity getExisting(Long id) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainPeopleListEntity entity = mapper.selectOne(new LambdaQueryWrapper<TrainPeopleListEntity>()
@@ -883,6 +923,10 @@ public class TrainPeopleListApplicationService {
         .eq(TrainPeopleListEntity::getDeleted, 0));
     if (entity == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "Record not found");
+    }
+    assertClassViewable(entity.getTrainClassId());
+    if (entity.getTrainClassId() == null) {
+      assertTrainInfoCompanyAccessible(entity.getTrainId());
     }
     return entity;
   }

@@ -201,6 +201,10 @@ public class DemandTrainApplicationService {
         .eq(DemandTrainEntity::getStatus, 0)
         .eq(DemandTrainEntity::getDeleted, deleted)
         .orderByDesc(DemandTrainEntity::getAddtime);
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
+    if (companyFilter != null) {
+      wrapper.eq(DemandTrainEntity::getOrgId, companyFilter);
+    }
     if (StringUtils.hasText(keyword)) {
       wrapper.like(DemandTrainEntity::getContent, keyword);
     }
@@ -275,14 +279,19 @@ public class DemandTrainApplicationService {
     Long tenantId = SecurityContext.currentUser().getTenantId();
     boolean all = (tags == null || tags.isEmpty());
     Map<String, Object> data = new LinkedHashMap<>();
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
 
-    // 企业/工作室列表（排除 id=1 的系统组织）
+    // 企业/工作室列表（排除 id=1 的系统组织）；企业账号仅本企业
     if (all || tags.contains("company")) {
-      List<OrgEntity> orgs = orgMapper.selectList(new LambdaQueryWrapper<OrgEntity>()
+      LambdaQueryWrapper<OrgEntity> orgWrapper = new LambdaQueryWrapper<OrgEntity>()
           .eq(OrgEntity::getTenantId, tenantId)
           .ne(OrgEntity::getId, 1L)
           .in(OrgEntity::getOrgType, "company", "master")
-          .eq(OrgEntity::getDeleted, 0));
+          .eq(OrgEntity::getDeleted, 0);
+      if (companyFilter != null) {
+        orgWrapper.eq(OrgEntity::getId, companyFilter);
+      }
+      List<OrgEntity> orgs = orgMapper.selectList(orgWrapper);
       List<Map<String, Object>> companyList = orgs.stream().map(o -> {
         Map<String, Object> m = new LinkedHashMap<>();
         // 雪花 ID 必须以字符串下发，否则前端 Number 丢精度导致按企业筛班级为空
@@ -323,12 +332,15 @@ public class DemandTrainApplicationService {
       data.put("worktype_list", workTypeList);
     }
 
-    // 培训信息列表（仅 tags 明确指定时返回）
+    // 培训信息列表（仅 tags 明确指定时返回）；企业账号仅本企业
     if (tags != null && tags.contains("traininfo")) {
-      List<TrainInfoListEntity> trainInfoList = trainInfoListMapper.selectList(
-          new LambdaQueryWrapper<TrainInfoListEntity>()
-              .eq(TrainInfoListEntity::getTenantId, tenantId)
-              .eq(TrainInfoListEntity::getDeleted, 0));
+      LambdaQueryWrapper<TrainInfoListEntity> trainWrapper = new LambdaQueryWrapper<TrainInfoListEntity>()
+          .eq(TrainInfoListEntity::getTenantId, tenantId)
+          .eq(TrainInfoListEntity::getDeleted, 0);
+      if (companyFilter != null) {
+        trainWrapper.eq(TrainInfoListEntity::getCompanyId, companyFilter);
+      }
+      List<TrainInfoListEntity> trainInfoList = trainInfoListMapper.selectList(trainWrapper);
       List<Map<String, Object>> traininfoList = trainInfoList.stream().map(t -> {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", t.getId() == null ? null : String.valueOf(t.getId()));
@@ -398,12 +410,7 @@ public class DemandTrainApplicationService {
             .orderByAsc(DictItemEntity::getSortOrder)
             .orderByAsc(DictItemEntity::getId))
         .stream()
-        .map(item -> {
-          Map<String, Object> m = new LinkedHashMap<>();
-          m.put("id", item.getId());
-          m.put("title", item.getItemLabel());
-          return m;
-        })
+        .map(item -> toConditionMap(item.getId(), item.getItemLabel(), item.getItemValue()))
         .toList();
   }
 
@@ -412,16 +419,39 @@ public class DemandTrainApplicationService {
     try {
       return trainBaseDataMapper.selectDeclarationConditionsLegacy().stream()
           .filter(row -> StringUtils.hasText(row.title()))
-          .map(row -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("id", row.id());
-            m.put("title", row.title());
-            return m;
-          })
+          .map(row -> toConditionMap(row.id(), row.title(), null))
           .toList();
     } catch (Exception ex) {
       log.debug("train_base_data legacy condition query skipped: {}", ex.getMessage());
       return List.of();
+    }
+  }
+
+  /** condition_list 项：title=全文；value/reqLevel 供前端按预约等级筛选 */
+  private static Map<String, Object> toConditionMap(Object id, String title, String itemValue) {
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("id", id);
+    m.put("title", title);
+    if (StringUtils.hasText(itemValue)) {
+      m.put("value", itemValue);
+      Integer reqLevel = parseConditionReqLevel(itemValue);
+      if (reqLevel != null) {
+        m.put("reqLevel", reqLevel);
+      }
+    }
+    return m;
+  }
+
+  /** item_value 约定：{reqLevel}-{序号}，如 0-01 */
+  private static Integer parseConditionReqLevel(String itemValue) {
+    int dash = itemValue.indexOf('-');
+    if (dash <= 0) {
+      return null;
+    }
+    try {
+      return Integer.parseInt(itemValue.substring(0, dash).trim());
+    } catch (NumberFormatException ex) {
+      return null;
     }
   }
 

@@ -130,7 +130,7 @@ public class MubiaoExcelExporter {
     // L0 合并单元格：名称+代码+（X:Y:Z）、权重
     int[] xyz = StandardExportSupport.countXyz(tree, l0.getId(), "theory");
     Row first = sheet.createRow(startRow);
-    String l0Text = stripKeySuffix(l0.getTitle()) + "\n" + StandardExportSupport.lastSegment(l0.getNodeKey())
+    String l0Text = displayName(l0.getTitle()) + "\n" + StandardExportSupport.lastSegment(l0.getNodeKey())
         + "\n" + StandardExportSupport.xyzText(xyz);
     setCell(first, 0, l0Text, styles.center);
     setWeight(first, 1, l0.getWeight(), styles);
@@ -161,7 +161,7 @@ public class MubiaoExcelExporter {
 
     int[] xyz = StandardExportSupport.countXyz(tree, l1.getId(), "theory");
     Row first = sheet.getRow(startRow) != null ? sheet.getRow(startRow) : sheet.createRow(startRow);
-    String l1Text = stripKeySuffix(l1.getTitle()) + "\n" + StandardExportSupport.lastSegment(l1.getNodeKey())
+    String l1Text = displayName(l1.getTitle()) + "\n" + StandardExportSupport.lastSegment(l1.getNodeKey())
         + "\n" + StandardExportSupport.xyzText(xyz);
     setCell(first, 2, l1Text, styles.center);
     setWeight(first, 3, l1.getWeight(), styles);
@@ -187,7 +187,7 @@ public class MubiaoExcelExporter {
 
     int[] xyz = StandardExportSupport.countXyz(tree, l2.getId(), "theory");
     Row first = sheet.getRow(startRow) != null ? sheet.getRow(startRow) : sheet.createRow(startRow);
-    String l2Text = stripKeySuffix(l2.getTitle()) + "\n" + StandardExportSupport.lastSegment(l2.getNodeKey())
+    String l2Text = displayName(l2.getTitle()) + "\n" + StandardExportSupport.lastSegment(l2.getNodeKey())
         + "\n" + StandardExportSupport.xyzText(xyz);
     setCell(first, 4, l2Text, styles.center);
     setWeight(first, 5, l2Weight, styles);
@@ -239,6 +239,14 @@ public class MubiaoExcelExporter {
   /** 标题去掉内嵌编码后缀（标题=名称+编码，样例单元格内名称与代码分行显示） */
   private String stripKeySuffix(String title) {
     return title == null ? "" : title.replaceAll("[A-Z](-[A-Z]){0,2}(-\\d{3})?$", "");
+  }
+
+  /**
+   * 细目表名称列文本：去编码后缀 + 去枚举序号（"四、设备维护" → "设备维护"）。
+   * 存量任务标题入库时带序号，导出侧再剥一次；新数据解析期已剥，重复调用无副作用。
+   */
+  private String displayName(String title) {
+    return DocxTextUtil.stripEnumerationPrefix(stripKeySuffix(title));
   }
 
   private void setCell(Row row, int col, String text, CellStyle style) {

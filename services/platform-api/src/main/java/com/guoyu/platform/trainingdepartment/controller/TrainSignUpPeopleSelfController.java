@@ -5,6 +5,7 @@ import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.PlatformUserQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.SignUpPeopleBatchReq;
+import com.guoyu.platform.trainingdepartment.dto.SignUpPeopleHistorySyncReq;
 import com.guoyu.platform.trainingdepartment.dto.SignUpStudentImportReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSignUpPeopleSelfCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSignUpPeopleSelfQueryReq;
@@ -15,6 +16,7 @@ import com.guoyu.platform.trainingdepartment.service.TrainSignUpCollectionApplic
 import com.guoyu.platform.trainingdepartment.service.TrainSignUpPeopleImportService;
 import com.guoyu.platform.trainingdepartment.service.TrainSignUpPeopleSelfApplicationService;
 import com.guoyu.platform.trainingdepartment.vo.PlatformUserVO;
+import com.guoyu.platform.trainingdepartment.vo.SignUpPeopleHistorySyncResultVO;
 import com.guoyu.platform.trainingdepartment.vo.SignUpPeopleImportResultVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainSignUpPeopleSelfVO;
 import jakarta.validation.Valid;
@@ -86,7 +88,7 @@ public class TrainSignUpPeopleSelfController {
 
   /** 批量审核/删除（对齐 peopleselfoptmoreAction） */
   @PutMapping("/sign-up-people/batch")
-  @PreAuthorize("hasAuthority('train:sign-up-people:update')")
+  @PreAuthorize("hasAuthority('train:sign-up-people:update') or hasAuthority('train:sign-up-people:delete')")
   @AuditLog(module = "training", action = "sign-up-people:batch", targetType = "sign-up-people")
   public ApiResponse<Integer> batchUpdate(@Valid @RequestBody SignUpPeopleBatchReq req) {
     return ApiResponse.ok(collectionService.batchUpdatePeople(req.getIds(), req.getField(), req.getValue()));
@@ -133,5 +135,17 @@ public class TrainSignUpPeopleSelfController {
   public ApiResponse<PageResponse<PlatformUserVO>> listImportCandidates(
       @Valid @ModelAttribute PlatformUserQueryReq req) {
     return ApiResponse.ok(platformUserApplicationService.page(req));
+  }
+
+  /**
+   * 同步历史信息收集：按身份证从其它计划（含 PHP 扫码填报）补全当前计划空字段，不覆盖已有内容。
+   * ids 可选，空则处理本计划全部人员。
+   */
+  @PostMapping("/sign-up-people/sync-history")
+  @PreAuthorize("hasAuthority('train:sign-up-people:update')")
+  @AuditLog(module = "training", action = "sign-up-people:sync-history", targetType = "sign-up-people")
+  public ApiResponse<SignUpPeopleHistorySyncResultVO> syncHistory(
+      @Valid @RequestBody SignUpPeopleHistorySyncReq req) {
+    return ApiResponse.ok(importService.syncHistory(req.getSignUpId(), req.getIds()));
   }
 }

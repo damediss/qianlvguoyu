@@ -15,7 +15,7 @@ import org.flywaydb.core.api.migration.Context;
  * contestant-profile uniqueness is already item/work-type scoped by the
  * preceding 20260908.006 migration.
  */
-public class V20260909_001__support_multi_work_type_roster_import extends BaseJavaMigration {
+public class V20260911_012__support_multi_work_type_roster_import extends BaseJavaMigration {
 
   @Override
   public void migrate(Context context) throws Exception {

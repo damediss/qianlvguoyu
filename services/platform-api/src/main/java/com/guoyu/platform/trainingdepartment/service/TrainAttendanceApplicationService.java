@@ -51,6 +51,8 @@ public class TrainAttendanceApplicationService {
   private final TrainScheduleMapper scheduleMapper;
   private final TrainAttendanceImportSupport importSupport;
   private final FollowOpLogWriter opLogWriter;
+  private final TrainingClassAccessGuard classAccessGuard;
+  private final TrainingOperatorScopeService operatorScopeService;
 
   public TrainAttendanceApplicationService(
       TrainAttendanceMapper mapper,
@@ -58,24 +60,37 @@ public class TrainAttendanceApplicationService {
       TrainInfoClassMapper infoClassMapper,
       TrainScheduleMapper scheduleMapper,
       TrainAttendanceImportSupport importSupport,
-      FollowOpLogWriter opLogWriter) {
+      FollowOpLogWriter opLogWriter,
+      TrainingClassAccessGuard classAccessGuard,
+      TrainingOperatorScopeService operatorScopeService) {
     this.mapper = mapper;
     this.peopleListMapper = peopleListMapper;
     this.infoClassMapper = infoClassMapper;
     this.scheduleMapper = scheduleMapper;
     this.importSupport = importSupport;
     this.opLogWriter = opLogWriter;
+    this.classAccessGuard = classAccessGuard;
+    this.operatorScopeService = operatorScopeService;
   }
 
   @Transactional(readOnly = true)
   public PageResponse<TrainAttendanceVO> page(TrainAttendanceQueryReq req) {
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    if (req.getClassId() != null) {
+      classAccessGuard.assertClassIdAccessible(req.getClassId());
+    }
     LambdaQueryWrapper<TrainAttendanceEntity> wrapper = new LambdaQueryWrapper<TrainAttendanceEntity>()
         .eq(TrainAttendanceEntity::getTenantId, tenantId)
         .eq(TrainAttendanceEntity::getDeleted, 0)
         .orderByDesc(TrainAttendanceEntity::getCreateTime);
     if (req.getProjectId() != null) wrapper.eq(TrainAttendanceEntity::getProjectId, req.getProjectId());
     if (req.getClassId() != null) wrapper.eq(TrainAttendanceEntity::getClassId, req.getClassId());
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
+    if (companyFilter != null && req.getClassId() == null) {
+      wrapper.apply(
+          "class_id IN (SELECT id FROM train_info_class WHERE company_id = {0} AND deleted = 0)",
+          companyFilter);
+    }
     if (req.getUserId() != null) wrapper.eq(TrainAttendanceEntity::getUserId, req.getUserId());
     if (req.getStatus() != null) wrapper.eq(TrainAttendanceEntity::getStatus, req.getStatus());
     if (StringUtils.hasText(req.getAttendanceDate())) {
@@ -99,6 +114,7 @@ public class TrainAttendanceApplicationService {
 
   @Transactional
   public TrainAttendanceVO create(TrainAttendanceCreateReq req) {
+    classAccessGuard.assertClassIdAccessible(req.getClassId());
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
     Long scheduleId = normalizeScheduleId(req.getClassId(), req.getAttendanceDate(), req.getScheduleId());
@@ -137,6 +153,8 @@ public class TrainAttendanceApplicationService {
   @Transactional
   public TrainAttendanceVO update(Long id, TrainAttendanceUpdateReq req) {
     TrainAttendanceEntity entity = getExisting(id);
+    classAccessGuard.assertClassIdAccessible(
+        req.getClassId() != null ? req.getClassId() : entity.getClassId());
     if (req.getProjectId() != null) entity.setProjectId(req.getProjectId());
     if (req.getClassId() != null) entity.setClassId(req.getClassId());
     if (req.getUserId() != null) entity.setUserId(req.getUserId());
@@ -204,10 +222,7 @@ public class TrainAttendanceApplicationService {
 
     Long tenantId = SecurityContext.currentUser().getTenantId();
     Long operatorId = SecurityContext.currentUser().getUserId();
-    TrainInfoClassEntity clazz = infoClassMapper.selectById(classId);
-    if (clazz == null || (clazz.getDeleted() != null && clazz.getDeleted() == 1)) {
-      throw new BusinessException(ErrorCode.NOT_FOUND, "班级不存在");
-    }
+    TrainInfoClassEntity clazz = classAccessGuard.requireAccessibleClass(classId);
 
     byte[] bytes;
     try {
@@ -558,6 +573,7 @@ public class TrainAttendanceApplicationService {
         .eq(TrainAttendanceEntity::getId, id)
         .eq(TrainAttendanceEntity::getDeleted, 0));
     if (entity == null) throw new BusinessException(ErrorCode.NOT_FOUND, "Record not found");
+    classAccessGuard.assertClassIdAccessible(entity.getClassId());
     return entity;
   }
 

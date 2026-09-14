@@ -221,7 +221,7 @@ public class ReviewLlmAssistService {
       String systemPrompt = "你是一位职业技能等级认定考试的教练老师，负责给学员写每日鼓励语。"
           + "要求：中文、不超过 60 字、口语化、有力量感、结合学员当前阶段，不要 emoji。";
       String content = llmClient.chatCompletion(config.getBaseUrl(), config.getApiKey(), config.getModelId(),
-          systemPrompt, prompt, 200, null, config.getReasoningEffort(), false, tenantId);
+          systemPrompt, prompt, 500, config.getThinking(), config.getReasoningEffort(), false, tenantId);
       if (content == null || content.isBlank()) {
         return null;
       }

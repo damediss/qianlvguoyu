@@ -383,7 +383,7 @@ public class DocxStandardParser {
         continue;
       }
       if (!func.isBlank()) {
-        String funcTitle = DocxTextUtil.stripLeadingNumber(func);
+        String funcTitle = DocxTextUtil.stripEnumerationPrefix(func);
         StandardNodeDoc existing = findFunction(ctx.currentLevel, funcTitle);
         if (existing != null) {
           currentFunc = existing; // 跨页续表：同一职业功能重复出现
@@ -406,7 +406,7 @@ public class DocxStandardParser {
       StandardNodeDoc l2 = new StandardNodeDoc();
       l2.setLevel(2);
       l2.setNumber(DocxTextUtil.normalizeDottedNumber(content));
-      l2.setTitle(DocxTextUtil.stripLeadingNumber(content));
+      l2.setTitle(DocxTextUtil.stripEnumerationPrefix(content));
       l2.setSkillRaw(DocxTextUtil.relineItems(DocxTextUtil.normalizeNumbering(skill)));
       l2.setRelatedKnowledgeRaw(DocxTextUtil.relineItems(DocxTextUtil.normalizeNumbering(knowledge)));
       l2.getSkillMaterials().addAll(DocxTextUtil.splitItems(skill));
@@ -418,6 +418,12 @@ public class DocxStandardParser {
     }
   }
 
+  /**
+   * 按职业功能名找已有 L1。先按名称精确匹配（原有续表归并行为）；未命中时只与"最后一个" L1 做宽松
+   * 匹配（剥枚举序号 + 尾部括注 + 统一 丶/︵︶）——跨页续表重复表头紧跟在被续写的职业功能之后，
+   * 但写法可能略有出入（"物料制备︵工作内容三至五为可选︶" vs "物料制备（工作内容三至五为可选）"），
+   * 限定相邻可避免把同层里仅括注不同的两个真实职业功能误并成一个。
+   */
   private StandardNodeDoc findFunction(StandardLevelDoc level, String funcTitle) {
     String target = DocxTextUtil.normalizeItemName(funcTitle);
     for (StandardNodeDoc f : level.getWorkFunctions()) {
@@ -425,7 +431,14 @@ public class DocxStandardParser {
         return f;
       }
     }
-    return null;
+    List<StandardNodeDoc> funcs = level.getWorkFunctions();
+    if (funcs.isEmpty()) {
+      return null;
+    }
+    StandardNodeDoc last = funcs.get(funcs.size() - 1);
+    String loose = DocxTextUtil.normalizeMatchKey(target);
+    return !loose.isEmpty() && loose.equals(DocxTextUtil.normalizeMatchKey(last.getTitle()))
+        ? last : null;
   }
 
   private String cellAt(List<String> row, int idx) {

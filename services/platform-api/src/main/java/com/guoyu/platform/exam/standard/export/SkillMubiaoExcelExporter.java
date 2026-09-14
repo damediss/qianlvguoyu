@@ -129,7 +129,7 @@ public class SkillMubiaoExcelExporter {
     Row first = sheet.getRow(startRow) != null ? sheet.getRow(startRow) : sheet.createRow(startRow);
     setCell(first, 0, StandardExportSupport.lastSegment(l1.getNodeKey())
         + "\n" + StandardExportSupport.xyzText(xyz), styles.center);
-    setCell(first, 1, stripKeySuffix(l1.getTitle()), styles.center);
+    setCell(first, 1, displayName(l1.getTitle()), styles.center);
     setWeight(first, 2, skillWeight.weightOf(l1), styles);
     setCell(first, 3, "必考", styles.center);
     if (endRow > startRow) {
@@ -159,7 +159,7 @@ public class SkillMubiaoExcelExporter {
     Row first = sheet.getRow(startRow) != null ? sheet.getRow(startRow) : sheet.createRow(startRow);
     setCell(first, 4, StandardExportSupport.lastSegment(l2.getNodeKey())
         + "\n" + StandardExportSupport.xyzText(xyz), styles.center);
-    setCell(first, 5, stripKeySuffix(l2.getTitle()), styles.center);
+    setCell(first, 5, displayName(l2.getTitle()), styles.center);
     // 旧任务库存的是单行串联文本，导出时按编号重拆逐行显示（新数据已是逐行，relineItems 原样返回）
     setCell(first, 6, l2.getSkillRequirement() != null
         ? DocxTextUtil.relineItems(l2.getSkillRequirement()) : "", styles.left);
@@ -211,6 +211,11 @@ public class SkillMubiaoExcelExporter {
 
   private String stripKeySuffix(String title) {
     return title == null ? "" : title.replaceAll("[A-Z](-[A-Z]){0,2}(-\\d{3})?$", "");
+  }
+
+  /** 名称列文本：去编码后缀 + 去枚举序号（存量任务标题入库时带序号，导出侧再剥一次） */
+  private String displayName(String title) {
+    return DocxTextUtil.stripEnumerationPrefix(stripKeySuffix(title));
   }
 
   private void setCell(Row row, int col, String text, CellStyle style) {

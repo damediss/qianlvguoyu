@@ -1,5 +1,7 @@
 server:
   port: ${SERVER_PORT:8080}
+  # 蓝绿发布（docs/05_decisions/生产服务器蓝绿部署方案.md §5.1）：停机时先排空在途请求再退出
+  shutdown: graceful
   servlet:
     context-path: /api
   forward-headers-strategy: native
@@ -11,6 +13,9 @@ server:
 spring:
   application:
     name: platform-api
+  lifecycle:
+    # 配合 server.shutdown=graceful：排空在途请求的最长等待（蓝绿方案 §5.1；服务器 systemd TimeoutStopSec=45 兜底）
+    timeout-per-shutdown-phase: 30s
   servlet:
     multipart:
       enabled: true
@@ -157,6 +162,11 @@ platform:
       batch-concurrency: ${PLATFORM_SKILL_GEN_BATCH_CONCURRENCY:2}
       block-concurrency: ${PLATFORM_SKILL_GEN_BLOCK_CONCURRENCY:5}
       retry-backoff-base-millis: ${PLATFORM_SKILL_GEN_RETRY_BACKOFF:10000}
+  # 知识归属修正（方案 v1.2 §7.3）：单行分类并发默认 5（受全局闸口约束）；失败补跑 3 轮，
+  # 轮间退避第 n 轮 n×基数；环境变量 PLATFORM_KNOWLEDGEFIX_LLM_CONCURRENCY 可覆盖。
+  knowledgefix:
+    llm-concurrency: ${PLATFORM_KNOWLEDGEFIX_LLM_CONCURRENCY:5}
+    retry-backoff-base-millis: ${PLATFORM_KNOWLEDGEFIX_RETRY_BACKOFF:5000}
   # LLM 并发闸口（方案 A，2026-09-08）：glm-5.3-flash 单模型全局在飞调用上限，
   # 超出排队等待（FaqLlmClient 公平信号量统一执行）；仅此模型受限，
   # 同账户其它 GLM 模型与其它平台不受影响
@@ -296,7 +306,7 @@ platform:
     base-url: ${WEKNORA_BASE_URL:http://43.138.163.7:8088/api/v1}
     api-key: ${WEKNORA_API_KEY:sk-9u9kws6uBLRVmSHThzGjNeCrCEjWx61sOEEgg52VqowzWsDi}
     # 逗号分隔的知识库 ID，在 WeKnora 控制台获取
-    default-knowledge-base-ids: ${WEKNORA_KB_IDS:}
+    default-knowledge-base-ids: ${WEKNORA_KB_IDS:bf5db5a5-7cc1-4f3d-a1f7-87e8b2707ead}
     default-agent-id: ${WEKNORA_AGENT_ID:a6223b7c-96ed-494a-b0ef-2c39dac77064}
     # 自定义智能体走 agent-chat；内置 builtin-* 可走 knowledge-chat
     use-agent-chat: ${WEKNORA_USE_AGENT_CHAT:true}
@@ -308,6 +318,10 @@ platform:
     vision-api-url: ${COACH_VISION_API_URL:https://api.scnet.cn/api/llm/v1/chat/completions}
     vision-api-key: ${COACH_VISION_API_KEY:}
     vision-model: ${COACH_VISION_MODEL:MiniMax-M3}
+    # 小培知识库：控制台「AI助教_智能问答」UUID
+    xiaopei-knowledge-base-ids: ${XIAOPEI_KB_IDS:bf5db5a5-7cc1-4f3d-a1f7-87e8b2707ead}
+    xiaopei-knowledge-base-name: ${XIAOPEI_KB_NAME:AI助教_智能问答}
+    xiaopei-agent-id: ${XIAOPEI_AGENT_ID:}
   rencaishibie:
     # 本地开发请启动本机 rencaishibie（AUTH_ENABLED=false），勿直连线上 8001：
     # 线上引擎会用线上 SaaS 校验本地 Sa-Token，必然 HTTP 401。
@@ -319,13 +333,6 @@ platform:
     read-timeout-seconds: ${RENCAI_READ_TIMEOUT:300}
   # 单库化（2026-08-27）：platform.sync 三表镜像同步、platform.sync.php 第二数据源、
   # platform.user-provisioning.php-write-enabled 开户双写均已随 integration/php、integration/sync 包拆除
-  # AI 同步学定时任务（每日物化 / 周日清理；全部读写主库 gjjddbpro）
-  review-sync:
-    # 本机调试默认关闭，生产显式 REVIEW_SYNC_JOBS_ENABLED=true
-    jobs-enabled: ${REVIEW_SYNC_JOBS_ENABLED:false}
-    daily-cron: "${REVIEW_SYNC_DAILY_CRON:0 0 4 * * *}"
-    weekly-cron: "${REVIEW_SYNC_WEEKLY_CRON:0 0 5 * * SUN}"
-
 # Sa-Token
 sa-token:
   token-name: Authorization

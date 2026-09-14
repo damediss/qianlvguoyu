@@ -3,6 +3,7 @@ package com.guoyu.platform.chazheng.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.chazheng.support.FixedRateLimiter;
+import com.guoyu.platform.chazheng.exception.CertQueryInterfaceDownException;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import java.io.IOException;
@@ -79,6 +80,11 @@ public class ChazhengCertQueryService {
     // 所有模板都没拿到正常业务响应（HTTP 错误 / 网络异常 / JSON 解析失败 / 业务层错误）
     // 说明上游查证接口故障，不能当作"成功无证"处理，必须抛异常让批次重试机制感知并记录错误
     if (!result.anyNormal) {
+      // 全部尝试都倒在网络层/对方 5xx → 接口级故障，抛专用异常让批次熔断（逐用户重试无意义）
+      if (result.attempts > 0 && result.interfaceFailures == result.attempts) {
+        throw new CertQueryInterfaceDownException(
+            "查证接口不可达（网络故障或对方服务不可用），共尝试 " + result.attempts + " 次");
+      }
       throw new BusinessException(ErrorCode.INTERNAL_ERROR,
           "广西技能人才评价工作网接口报错");
     }
@@ -94,6 +100,7 @@ public class ChazhengCertQueryService {
       int templateIdx,
       CertCheckResult result) {
     Map<String, Object> response;
+    result.attempts++;
     try {
       response = chazhengRestTemplate.postForObject(
           apiUrl, new HttpEntity<>(reqData, jsonHeaders()), Map.class);
@@ -105,12 +112,17 @@ public class ChazhengCertQueryService {
     } catch (HttpStatusCodeException e) {
       log.warn("[certQuery] HTTP 错误 name={}, templateIdx={}, status={}, body={}",
           name, templateIdx, e.getStatusCode(), abbreviate(e.getResponseBodyAsString(), 300));
+      // 对方 5xx 视为接口级故障；4xx 多为请求/WAF 问题，按普通失败处理
+      if (e.getStatusCode().is5xxServerError()) {
+        result.interfaceFailures++;
+      }
       logRequestResponse(name, idCard, reqData, "http_error_" + e.getStatusCode().value(),
           abbreviate(e.getResponseBodyAsString(), 500));
       return;
     } catch (ResourceAccessException e) {
       log.warn("[certQuery] 网络异常 name={}, templateIdx={}, err={}",
           name, templateIdx, e.getMessage());
+      result.interfaceFailures++;
       logRequestResponse(name, idCard, reqData, "network_error", e.getMessage());
       return;
     }

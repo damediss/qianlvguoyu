@@ -211,6 +211,8 @@ public class TrainInfoClassApplicationService {
       item.put("file_temps", e.getFileTemps());
       item.put("kcbiao_file", e.getKcbiaoFile());
       item.put("kcbiao_src", resolveKcbiaoSrc(e.getKcbiaoFile()));
+      item.put("company_contact_name", e.getCompanyContactName());
+      item.put("company_contact_phone", e.getCompanyContactPhone());
       item.put("schedule_manual_edited", e.getScheduleManualEdited() != null ? e.getScheduleManualEdited() : 0);
       item.put("schedule_imported_at", e.getScheduleImportedAt());
       item.put("train_title", ti != null ? ti.getTitle() : null);
@@ -253,6 +255,8 @@ public class TrainInfoClassApplicationService {
       entity.setDateStart(req.getDateStart());
       entity.setDateEnd(req.getDateEnd());
       entity.setKcbiaoFile(req.getKcbiaoFile());
+      entity.setCompanyContactName(req.getCompanyContactName());
+      entity.setCompanyContactPhone(req.getCompanyContactPhone());
       if (req.getTrainInfoId() != null) {
         entity.setTrainInfoId(req.getTrainInfoId());
         applyCompanyAndWorkTypeFromTrainInfo(entity, req.getTrainInfoId(), req.getWorkTypeId());
@@ -276,6 +280,8 @@ public class TrainInfoClassApplicationService {
       entity.setDateStart(req.getDateStart());
       entity.setDateEnd(req.getDateEnd());
       entity.setKcbiaoFile(req.getKcbiaoFile());
+      entity.setCompanyContactName(req.getCompanyContactName());
+      entity.setCompanyContactPhone(req.getCompanyContactPhone());
 
       TrainInfoListEntity ti = applyCompanyAndWorkTypeFromTrainInfo(
           entity, req.getTrainInfoId(), req.getWorkTypeId());
@@ -339,6 +345,8 @@ public class TrainInfoClassApplicationService {
     entity.setAddtime(req.getAddtime());
     entity.setFileTemps(req.getFileTemps());
     entity.setKcbiaoFile(req.getKcbiaoFile());
+    entity.setCompanyContactName(req.getCompanyContactName());
+    entity.setCompanyContactPhone(req.getCompanyContactPhone());
     entity.setDeleted(0);
     mapper.insert(entity);
     return toVO(entity);
@@ -353,6 +361,8 @@ public class TrainInfoClassApplicationService {
     entity.setDateEnd(req.getDateEnd());
     entity.setFileTemps(req.getFileTemps());
     entity.setKcbiaoFile(req.getKcbiaoFile());
+    entity.setCompanyContactName(req.getCompanyContactName());
+    entity.setCompanyContactPhone(req.getCompanyContactPhone());
     mapper.updateById(entity);
     return toVO(entity);
   }
@@ -742,7 +752,9 @@ public class TrainInfoClassApplicationService {
         entity.getDateEnd(),
         entity.getAddtime(),
         entity.getFileTemps(),
-        entity.getKcbiaoFile()
+        entity.getKcbiaoFile(),
+        entity.getCompanyContactName(),
+        entity.getCompanyContactPhone()
     );
   }
 }

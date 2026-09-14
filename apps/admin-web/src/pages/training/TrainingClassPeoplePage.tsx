@@ -985,6 +985,8 @@ export function TrainingClassPeoplePage() {
     dateEnd?: Dayjs;
     kcbiaoFile?: string;
     kcbiaoFileDisplay?: string;
+    companyContactName?: string;
+    companyContactPhone?: string;
   }>();
   const [trainInfoForm] = Form.useForm<{
     title?: string;
@@ -1073,9 +1075,14 @@ export function TrainingClassPeoplePage() {
       ),
     onSuccess: async (created) => {
       message.success('培训信息已创建');
+      const createdId = String(created.id);
+      const createdTitle =
+        String(created.title ?? '').trim()
+        || String(trainInfoForm.getFieldValue('title') ?? '').trim()
+        || `培训#${createdId}`;
       setExtraTrainInfoOptions((prev) => [
-        { value: created.id, label: created.title || `培训#${created.id}` },
-        ...prev.filter((o) => String(o.value) !== String(created.id)),
+        { value: createdId, label: createdTitle },
+        ...prev.filter((o) => String(o.value) !== createdId),
       ]);
       await queryClient.invalidateQueries({ queryKey: ['class-people-public-data'] });
       await queryClient.invalidateQueries({ queryKey: ['exam-score-import-public'] });
@@ -1084,7 +1091,7 @@ export function TrainingClassPeoplePage() {
         nums?: number;
         dateStart?: Dayjs;
         dateEnd?: Dayjs;
-      } = { trainInfoId: created.id };
+      } = { trainInfoId: createdId };
       const classVals = form.getFieldsValue();
       if (classVals.nums == null && created.num != null) {
         patch.nums = created.num;
@@ -1117,11 +1124,20 @@ export function TrainingClassPeoplePage() {
       trainApi.updateInfoList(id, payload),
     onSuccess: async (updated, vars) => {
       message.success('培训信息已保存');
+      const updatedId = String(updated.id ?? vars.id);
+      const label =
+        String(updated.title ?? '').trim()
+        || String(trainInfoForm.getFieldValue('title') ?? '').trim()
+        || `培训#${updatedId}`;
       setExtraTrainInfoOptions((prev) => {
-        const label = updated.title || `培训#${updated.id}`;
-        const next = prev.filter((o) => String(o.value) !== String(vars.id) && String(o.value) !== String(updated.id));
-        return [{ value: updated.id, label }, ...next];
+        const next = prev.filter(
+          (o) => String(o.value) !== String(vars.id) && String(o.value) !== updatedId,
+        );
+        return [{ value: updatedId, label }, ...next];
       });
+      if (String(form.getFieldValue('trainInfoId') ?? '') === String(vars.id)) {
+        form.setFieldValue('trainInfoId', updatedId);
+      }
       await queryClient.invalidateQueries({ queryKey: ['class-people-public-data'] });
       await queryClient.invalidateQueries({ queryKey: ['exam-score-import-public'] });
       await queryClient.invalidateQueries({ queryKey: ['info-classes'] });
@@ -1176,13 +1192,24 @@ export function TrainingClassPeoplePage() {
   }, [companyOptions, publicData, extraCompanyNames, companySearch]);
 
   const trainInfoOptions = useMemo(() => {
-    const fromPublic = (publicData as DemandPublicData | undefined)?.traininfo_list?.map((t) => ({
-      value: t.id as ApiId,
-      label: t.title,
-    })) ?? [];
-    const known = new Set(fromPublic.map((o) => String(o.value)));
-    const extras = extraTrainInfoOptions.filter((o) => !known.has(String(o.value)));
-    return [...extras, ...fromPublic];
+    const map = new Map<string, { value: string; label: string }>();
+    for (const t of (publicData as DemandPublicData | undefined)?.traininfo_list ?? []) {
+      const id = String(t.id);
+      const title = String(t.title ?? '').trim();
+      map.set(id, { value: id, label: title || `培训#${id}` });
+    }
+    for (const o of extraTrainInfoOptions) {
+      const id = String(o.value);
+      const label = String(o.label ?? '').trim();
+      const existing = map.get(id);
+      // 本页刚建的标题优先，避免 publicData 刷新前/空标题时 Select 只显示 id
+      if (!existing || !existing.label || existing.label.startsWith('培训#')) {
+        map.set(id, { value: id, label: label || existing?.label || `培训#${id}` });
+      } else if (label && !label.startsWith('培训#')) {
+        map.set(id, { value: id, label });
+      }
+    }
+    return Array.from(map.values());
   }, [publicData, extraTrainInfoOptions]);
 
   const kejianOptions = useMemo(() => {
@@ -1213,7 +1240,7 @@ export function TrainingClassPeoplePage() {
     form.setFieldsValue({
       id: row.id,
       title: row.title,
-      trainInfoId: row.train_info_id,
+      trainInfoId: row.train_info_id != null ? String(row.train_info_id) : undefined,
       workTypeId: toPositiveInt(row.work_type_id),
       workTypeLevel: toPositiveInt(row.work_type_level),
       nums: row.nums,
@@ -1221,6 +1248,8 @@ export function TrainingClassPeoplePage() {
       dateEnd: row.date_end ? dayjs(row.date_end) : undefined,
       kcbiaoFile: row.kcbiao_file,
       kcbiaoFileDisplay: row.kcbiao_file,
+      companyContactName: row.company_contact_name,
+      companyContactPhone: row.company_contact_phone,
     });
     setKcbiaoSrc(row.kcbiao_src ?? resolveFileUrl(row.kcbiao_file));
     setModalOpen(true);
@@ -1342,6 +1371,8 @@ export function TrainingClassPeoplePage() {
         dateStart: dayjs.isDayjs(v.dateStart) ? v.dateStart.format('YYYY-MM-DD') : String(v.dateStart),
         dateEnd: dayjs.isDayjs(v.dateEnd) ? v.dateEnd.format('YYYY-MM-DD') : String(v.dateEnd),
         kcbiaoFile: v.kcbiaoFile,
+        companyContactName: String(v.companyContactName ?? '').trim(),
+        companyContactPhone: String(v.companyContactPhone ?? '').trim(),
       };
       saveMu.mutate(payload);
     } catch {
@@ -1554,7 +1585,7 @@ export function TrainingClassPeoplePage() {
   return (
     <div className="training-class-people-page training-page">
       <section className="page-heading">
-        <Typography.Title level={4}>开班准备</Typography.Title>
+        <Typography.Title level={4}>开班配置</Typography.Title>
         <Typography.Text type="secondary">
           维护已分班班级的学员花名册、教务负责人、培训任务与资料收集；试题配置与刷题学情请到「跟班」工作台
         </Typography.Text>
@@ -1659,6 +1690,7 @@ export function TrainingClassPeoplePage() {
                   options={trainInfoOptions}
                   showSearch
                   optionFilterProp="label"
+                  optionLabelProp="label"
                   style={{
                     width: trainInfoSelectExtraPx > 0 ? `calc(100% - ${trainInfoSelectExtraPx}px)` : '100%',
                   }}
@@ -1697,6 +1729,12 @@ export function TrainingClassPeoplePage() {
           </Form.Item>
           <Form.Item name="nums" label="班级人数" rules={[{ required: true, message: '请填写班级人数' }]}>
             <Input type="number" placeholder="请输入班级人数" min={1} />
+          </Form.Item>
+          <Form.Item name="companyContactName" label="单位联系人">
+            <Input placeholder="请输入单位联系人（用于工作年限证明）" maxLength={64} />
+          </Form.Item>
+          <Form.Item name="companyContactPhone" label="联系方式">
+            <Input placeholder="请输入联系方式（用于工作年限证明）" maxLength={32} />
           </Form.Item>
           <Form.Item name="dateStart" label="开始日期" rules={[{ required: true, message: '请选择开始日期' }]}>
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" placeholder="选择开始日期" />

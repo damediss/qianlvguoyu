@@ -30,6 +30,14 @@ public class TrainInfoClassUpdateReq {
   @Size(max = 255)
   private String kcbiaoFile;
 
+  /** 单位联系人 */
+  @Size(max = 64)
+  private String companyContactName;
+
+  /** 单位联系方式 */
+  @Size(max = 32)
+  private String companyContactPhone;
+
   public String getTitle() {
     return title;
   }
@@ -76,6 +84,22 @@ public class TrainInfoClassUpdateReq {
 
   public void setKcbiaoFile(String kcbiaoFile) {
     this.kcbiaoFile = kcbiaoFile;
+  }
+
+  public String getCompanyContactName() {
+    return companyContactName;
+  }
+
+  public void setCompanyContactName(String companyContactName) {
+    this.companyContactName = companyContactName;
+  }
+
+  public String getCompanyContactPhone() {
+    return companyContactPhone;
+  }
+
+  public void setCompanyContactPhone(String companyContactPhone) {
+    this.companyContactPhone = companyContactPhone;
   }
 
 }

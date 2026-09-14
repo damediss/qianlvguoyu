@@ -30,13 +30,19 @@ class SkillQuestionValidatorTest {
     site.setEquipment(new ArrayList<>(List.of(e)));
     site.setFaultSetup("设置一处通信异常");
     q.setSitePrepare(site);
-    q.setExamineePrepare("黑色签字笔");
+    q.setExamineePrepare("本人身份证×1、准考证×1、黑色签字笔×1");
     q.setRequirements("完成联机启动并确认通信正常");
     q.setNegatives("若考生发生下列情况之一，则应及时终止其考试，考生该试题成绩记为零分：违反安全规定");
+    // V10 口径：配分=最大扣分=5 的倍数、步长=5，评分标准按步长列「…扣5分」项（项数=配分÷5）
     q.setScoring(new ArrayList<>(List.of(
-        scoring("开机检查", "20", "未确认断电扣10分", "20", "10"),
-        scoring("联机操作", "50", "漏一项扣10分", "50", "10"),
-        scoring("通信确认", "30", "未逐项确认扣10分", "30", "10"))));
+        scoring("开机检查", "20",
+            "未确认断电扣5分；未检查接地扣5分；未佩戴防护用品扣5分；未确认警示标识扣5分", "20", "5"),
+        scoring("联机操作", "50",
+            "漏一步扣5分；顺序错误扣5分；参数错误扣5分；未观察状态扣5分；链路未建立扣5分；"
+                + "未自检扣5分；未按规程停机扣5分；记录缺失扣5分；超时扣5分；违规操作扣5分", "50", "5"),
+        scoring("通信确认", "30",
+            "未逐项确认扣5分；报警未验证扣5分；数据缺失扣5分；异常未上报扣5分；交接未确认扣5分；"
+                + "记录不全扣5分", "30", "5"))));
     return q;
   }
 
@@ -82,11 +88,30 @@ class SkillQuestionValidatorTest {
         .anyMatch(e -> e.contains("否定项说明未按标准表述")));
   }
 
+  /** 考生准备固定保底（用户 2026-09-11 确认）：身份证/准考证/黑色签字笔缺一不可 */
+  @Test
+  void v2b_考生准备缺少固定保底项() {
+    SkillQuestionItem noId = validQuestion("试题L");
+    noId.setExamineePrepare("准考证×1、黑色签字笔×1");
+    assertTrue(validator.validate(noId).stream()
+        .anyMatch(e -> e.contains("考生准备缺少固定保底项") && e.contains("身份证")));
+
+    SkillQuestionItem noPen = validQuestion("试题M");
+    noPen.setExamineePrepare("本人身份证×1、准考证×1");
+    assertTrue(validator.validate(noPen).stream()
+        .anyMatch(e -> e.contains("黑色签字笔")));
+
+    SkillQuestionItem allSet = validQuestion("试题N");
+    allSet.setExamineePrepare("本人身份证×1、准考证×1、黑色签字笔×1、安全帽×1顶");
+    assertTrue(validator.validate(allSet).stream().noneMatch(e -> e.contains("考生准备")));
+  }
+
   @Test
   void v4_评分行数越界() {
     SkillQuestionItem two = validQuestion("试题E");
     two.setScoring(new ArrayList<>(List.of(
-        scoring("a", "50", "x", "50", "10"), scoring("b", "50", "y", "50", "10"))));
+        scoring("a", "50", "缺一项扣5分", "50", "5"),
+        scoring("b", "50", "错一处扣5分", "50", "5"))));
     assertTrue(validator.validate(two).stream().anyMatch(e -> e.contains("3~10 行")));
   }
 
@@ -121,6 +146,43 @@ class SkillQuestionValidatorTest {
     SkillQuestionItem slow = validQuestion("试题K");
     slow.setDurationMinutes(300);
     assertTrue(validator.validate(slow).stream().anyMatch(e -> e.contains("5~240")));
+  }
+
+  /** V10（用户 2026-09-12 确认）：配分=最大扣分=5 的倍数、步长=5、评分标准按步长列「…扣5分」项 */
+  @Test
+  void v10_步长统一5分且按步长列扣分项() {
+    SkillQuestionItem badStep = validQuestion("试题O");
+    badStep.getScoring().get(0).setStep("3");
+    assertTrue(validator.validate(badStep).stream().anyMatch(e -> e.contains("步长必须为 5")));
+
+    SkillQuestionItem badMultiple = validQuestion("试题P");
+    badMultiple.getScoring().get(0).setScore("12");
+    badMultiple.getScoring().get(0).setMaxDeduct("12");
+    assertTrue(validator.validate(badMultiple).stream()
+        .anyMatch(e -> e.contains("配分必须为 5 的倍数")));
+
+    SkillQuestionItem notEqual = validQuestion("试题Q");
+    notEqual.getScoring().get(0).setMaxDeduct("15");
+    assertTrue(validator.validate(notEqual).stream()
+        .anyMatch(e -> e.contains("配分与最大扣分必须相等")));
+
+    // 扣分项数 ≠ 最大扣分÷5（desc 只有 2 项「扣5分」，应为 4 项）
+    SkillQuestionItem badCount = validQuestion("试题S");
+    badCount.getScoring().get(0).setScoreDesc("未确认断电扣5分；未检查接地扣5分");
+    assertTrue(validator.validate(badCount).stream()
+        .anyMatch(e -> e.contains("评分标准须按步长列出 4 项")));
+
+    // 「扣 5 分」带空格的合法写法可通过项数校验
+    SkillQuestionItem spaced = validQuestion("试题T");
+    spaced.getScoring().get(0).setScoreDesc(
+        "未确认断电扣 5 分；未检查接地扣5分；未佩戴防护用品扣5分；未确认警示标识扣5分");
+    assertTrue(validator.validate(spaced).stream()
+        .noneMatch(e -> e.contains("评分标准须按步长列出")));
+
+    assertTrue(validator.validate(validQuestion("试题U")).stream()
+        .noneMatch(e -> e.contains("步长必须为") || e.contains("5 的倍数")
+            || e.contains("必须相等") || e.contains("评分标准须按步长列出")),
+        "正例应通过全部 V10 校验");
   }
 
   @Test

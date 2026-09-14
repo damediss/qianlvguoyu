@@ -22,5 +22,9 @@ public record TrainInfoClassVO(
     /** 文件模板 */
     String fileTemps,
     /** 课表文件 */
-    String kcbiaoFile
+    String kcbiaoFile,
+    /** 单位联系人 */
+    String companyContactName,
+    /** 单位联系方式 */
+    String companyContactPhone
 ) {}

@@ -61,6 +61,7 @@ import type {
   TrainSignUpSelf, TrainSignUpSelfQuery, TrainSignUpSelfCreateReq, TrainSignUpSelfUpdateReq,
   TrainSignUpPerson, TrainSignUpPeopleQuery, TrainSignUpOrcSelf, PlatformUserSaveReq,
   SignUpPeopleImportResult,
+  SignUpPeopleHistorySyncResult,
   SignUpDefaultTemplateExportStart, SignUpDefaultTemplateExportCheck,
   DivisionPlanItem, DivisionReadyVO, DivisionEnsureTrainInfoReq, DivisionEnsureTrainInfoResult,
   DivisionRosterParseReq, DivisionRosterParseResult, DivisionRosterItem,
@@ -3452,6 +3453,16 @@ export function downloadSignUpPeopleImportTemplate() {
 export function importSignUpStudents(signUpId: number | string, ids: number[]) {
   return unwrap<SignUpPeopleImportResult>(
     apiClient.post(`${BASE}/sign-up-people/import/students`, { signUpId, ids }),
+  );
+}
+
+/** 按身份证从历史信息收集/扫码填报补全当前计划空字段 */
+export function syncSignUpPeopleHistory(signUpId: number | string, ids?: number[]) {
+  return unwrap<SignUpPeopleHistorySyncResult>(
+    apiClient.post(`${BASE}/sign-up-people/sync-history`, {
+      signUpId,
+      ids: ids?.length ? ids : undefined,
+    }, { timeout: 120000 }),
   );
 }
 

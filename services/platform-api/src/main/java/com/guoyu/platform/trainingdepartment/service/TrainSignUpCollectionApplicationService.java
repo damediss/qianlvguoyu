@@ -174,6 +174,16 @@ public class TrainSignUpCollectionApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "不支持的批量字段");
     }
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    // 逻辑删除必须走 delete：UpdateWrapper.set(deleted) 在 @TableLogic 下常被忽略，表现为「删除成功但仍可见」
+    if ("deleted".equals(field)) {
+      int deleted = peopleMapper.delete(new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
+          .in(TrainSignUpPeopleSelfEntity::getId, ids)
+          .eq(TrainSignUpPeopleSelfEntity::getTenantId, tenantId));
+      if (deleted <= 0) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "未删除任何人员，请刷新后重试");
+      }
+      return deleted;
+    }
     LambdaUpdateWrapper<TrainSignUpPeopleSelfEntity> wrapper = new LambdaUpdateWrapper<TrainSignUpPeopleSelfEntity>()
         .in(TrainSignUpPeopleSelfEntity::getId, ids)
         .eq(TrainSignUpPeopleSelfEntity::getTenantId, tenantId);
@@ -183,8 +193,6 @@ public class TrainSignUpCollectionApplicationService {
       wrapper.set(TrainSignUpPeopleSelfEntity::getHasPay, value != null ? value : 0);
     } else if ("company_status".equals(field)) {
       wrapper.set(TrainSignUpPeopleSelfEntity::getCompanyStatus, value != null ? value : 0);
-    } else {
-      wrapper.set(TrainSignUpPeopleSelfEntity::getDeleted, 1);
     }
     wrapper.set(TrainSignUpPeopleSelfEntity::getUpdateTime, LocalDateTime.now());
     int updated = peopleMapper.update(null, wrapper);

@@ -110,7 +110,7 @@ export function pageRoles(params: RoleQuery) {
   return unwrap<PageResponse<RoleVO>>(apiClient.get('/system/roles', { params }));
 }
 
-export function getRole(id: number) {
+export function getRole(id: number | string) {
   return unwrap<RoleVO>(apiClient.get(`/system/roles/${id}`));
 }
 
@@ -118,15 +118,15 @@ export function createRole(payload: RoleCreateReq) {
   return unwrap<RoleVO>(apiClient.post('/system/roles', payload));
 }
 
-export function updateRole(id: number, payload: RoleUpdateReq) {
+export function updateRole(id: number | string, payload: RoleUpdateReq) {
   return unwrap<RoleVO>(apiClient.put(`/system/roles/${id}`, payload));
 }
 
-export function bindRolePermissions(id: number, payload: RolePermissionBindReq) {
+export function bindRolePermissions(id: number | string, payload: RolePermissionBindReq) {
   return unwrap<RoleVO>(apiClient.put(`/system/roles/${id}/permissions`, payload));
 }
 
-export function deleteRole(id: number) {
+export function deleteRole(id: number | string) {
   return unwrap<void>(apiClient.delete(`/system/roles/${id}`));
 }
 

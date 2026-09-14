@@ -8,7 +8,7 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * LLM 产出的操作技能试题确定性校验器（方案 §7.3 V1~V9）。
+ * LLM 产出的操作技能试题确定性校验器（方案 §7.3 V1~V9 + 2026-09-12 V10 步长口径）。
  * 校验失败 = 该考评点块失败，不猜不硬兜底。
  */
 @Component
@@ -51,6 +51,22 @@ public class SkillQuestionValidator {
     }
     if (blank(q.getExamineePrepare())) {
       errors.add("考生准备为空");
+    } else {
+      // 考生准备固定保底（用户 2026-09-11 确认）：身份证/准考证/黑色签字笔三项必须具备
+      String prep = q.getExamineePrepare();
+      List<String> missing = new ArrayList<>();
+      if (!prep.contains("身份证")) {
+        missing.add("身份证");
+      }
+      if (!prep.contains("准考证")) {
+        missing.add("准考证");
+      }
+      if (!prep.contains("签字笔")) {
+        missing.add("黑色签字笔");
+      }
+      if (!missing.isEmpty()) {
+        errors.add("考生准备缺少固定保底项：" + String.join("、", missing));
+      }
     }
     if (blank(q.getRequirements())) {
       errors.add("具体考核要求为空");
@@ -100,6 +116,28 @@ public class SkillQuestionValidator {
       } else if (maxDeduct != null && step > maxDeduct) {
         errors.add(tag + "步长 " + trim(step) + " 超过最大扣分 " + trim(maxDeduct));
       }
+      // V10 2026-09-12 口径（用户确认）：配分=最大扣分=5 的倍数，步长统一 5；
+      // 评分标准按步长列扣分项——「扣5分」出现次数必须等于 最大扣分÷5
+      if (score != null && score > 0 && score % 5 != 0) {
+        errors.add(tag + "配分必须为 5 的倍数：" + trim(score));
+      }
+      if (maxDeduct != null && maxDeduct > 0 && maxDeduct % 5 != 0) {
+        errors.add(tag + "最大扣分必须为 5 的倍数：" + trim(maxDeduct));
+      }
+      if (score != null && maxDeduct != null && score > 0 && maxDeduct > 0
+          && Math.abs(score - maxDeduct) > 0.01) {
+        errors.add(tag + "配分与最大扣分必须相等：" + trim(score) + " / " + trim(maxDeduct));
+      }
+      if (step != null && step > 0 && Math.abs(step - 5) > 0.01) {
+        errors.add(tag + "步长必须为 5：" + trim(step));
+      }
+      if (maxDeduct != null && maxDeduct > 0 && !blank(s.getScoreDesc())) {
+        int expected = (int) Math.round(maxDeduct / 5);
+        int actual = countDeduct5Clauses(s.getScoreDesc());
+        if (actual != expected) {
+          errors.add(tag + "评分标准须按步长列出 " + expected + " 项「…扣5分」（当前 " + actual + " 项）");
+        }
+      }
     }
     // V5 配分合计 = 100
     if (Math.abs(sum - 100.0) > 0.01) {
@@ -128,6 +166,19 @@ public class SkillQuestionValidator {
 
   private boolean blank(String s) {
     return s == null || s.isBlank();
+  }
+
+  /** 「扣5分」扣分项计数（容忍「扣 5 分」写法），用于评分标准项数硬校验 */
+  private static final java.util.regex.Pattern DEDUCT_5_PATTERN =
+      java.util.regex.Pattern.compile("扣\\s*5\\s*分");
+
+  private int countDeduct5Clauses(String desc) {
+    java.util.regex.Matcher m = DEDUCT_5_PATTERN.matcher(desc);
+    int n = 0;
+    while (m.find()) {
+      n++;
+    }
+    return n;
   }
 
   /** 数字字符串解析：容忍 "40"、"40分"、"40.0"；非法返回 null */
