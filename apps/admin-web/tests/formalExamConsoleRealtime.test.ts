@@ -128,6 +128,7 @@ describe('formal exam console realtime helpers', () => {
       envelope: envelope({
         eventId: 'progress-before-subscribe',
         type: 'candidate.progress.changed',
+        seq: 2,
         payload: { answeredCount: 2, totalQuestionCount: 2 },
       }),
       seen: new Set<string>(),
@@ -145,6 +146,7 @@ describe('formal exam console realtime helpers', () => {
       envelope: envelope({
         eventId: 'off-page',
         candidateExamId: '999',
+        seq: 2,
         payload: { status: 'absent', previousStatus: 'waiting_enter' },
       }),
       seen: new Set<string>(),
@@ -159,7 +161,7 @@ describe('formal exam console realtime helpers', () => {
     expect(result.session?.absentCount).toBe(1);
   });
 
-  it('ignores duplicate events and invalidates on seq gap or missing previousStatus', () => {
+  it('ignores duplicate events and does not treat filtered jumps as loss', () => {
     const seen = new Set<string>();
     const first = applyFormalExamConsoleEnvelope({
       envelope: envelope({ eventId: 'dup', seq: 2, payload: { status: 'submitted', previousStatus: 'running' } }),
@@ -180,16 +182,32 @@ describe('formal exam console realtime helpers', () => {
     expect(duplicate.duplicate).toBe(true);
     expect(duplicate.session).toEqual(first.session);
 
-    const gap = applyFormalExamConsoleEnvelope({
-      envelope: envelope({ eventId: 'gap', seq: 9, payload: { status: 'submitted', previousStatus: 'running' } }),
+    const jump = applyFormalExamConsoleEnvelope({
+      envelope: envelope({ eventId: 'jump', seq: 9, payload: { status: 'submitted', previousStatus: 'running' } }),
       seen: new Set<string>(),
       lastSeq: 2,
       pageCandidateIds: ['101'],
       session,
       page,
     });
-    expect(gap.gap).toBe(true);
-    expect(gap.invalidate).toBe(true);
+    expect(jump.jump).toBe(true);
+    expect(jump.invalidate).toBe(false);
+
+    const offPageJump = applyFormalExamConsoleEnvelope({
+      envelope: envelope({
+        eventId: 'page-filter',
+        seq: 12,
+        candidateExamId: '999',
+        payload: { status: 'absent', previousStatus: 'waiting_enter' },
+      }),
+      seen: new Set<string>(),
+      lastSeq: 1,
+      pageCandidateIds: ['101'],
+      session,
+      page,
+    });
+    expect(offPageJump.jump).toBe(true);
+    expect(offPageJump.invalidate).toBe(false);
 
     const missingPrevious = applyFormalExamConsoleEnvelope({
       envelope: envelope({ eventId: 'no-prev', seq: 3, payload: { status: 'submitted' } }),
@@ -200,6 +218,30 @@ describe('formal exam console realtime helpers', () => {
       page,
     });
     expect(missingPrevious.invalidate).toBe(true);
+  });
+
+  it('reports collision and out-of-order without applying a second seq occupant', () => {
+    const collision = applyFormalExamConsoleEnvelope({
+      envelope: envelope({ eventId: 'c2', seq: 4, payload: { status: 'submitted', previousStatus: 'running' } }),
+      seen: new Set<string>(),
+      lastSeq: 4,
+      pageCandidateIds: ['101'],
+      session,
+      page,
+    });
+    expect(collision.collision).toBe(true);
+    expect(collision.invalidate).toBe(true);
+
+    const outOfOrder = applyFormalExamConsoleEnvelope({
+      envelope: envelope({ eventId: 'late', seq: 3, payload: { status: 'submitted', previousStatus: 'running' } }),
+      seen: new Set<string>(),
+      lastSeq: 4,
+      pageCandidateIds: ['101'],
+      session,
+      page,
+    });
+    expect(outOfOrder.outOfOrder).toBe(true);
+    expect(outOfOrder.invalidate).toBe(true);
   });
 
   it('does not treat lastActiveTime as online and keeps presence seq-less', () => {
@@ -223,7 +265,7 @@ describe('formal exam console realtime helpers', () => {
       page,
       nowMs: Date.parse('2026-09-10T01:00:10.000Z'),
     });
-    expect(presence.gap).toBe(false);
+    expect(presence.jump).toBe(false);
     expect(presence.lastSeq).toBe(4);
     expect(presence.page?.items[0]?.connectionState).toBe('online');
   });
@@ -233,6 +275,7 @@ describe('formal exam console realtime helpers', () => {
       envelope: envelope({
         eventId: 'kick',
         type: 'access-session.kicked',
+        seq: 2,
         payload: { reason: 'kicked' },
       }),
       seen: new Set<string>(),

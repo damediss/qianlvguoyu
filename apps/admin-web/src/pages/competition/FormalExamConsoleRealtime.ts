@@ -7,10 +7,12 @@ import type {
 } from '../../types/competition';
 import {
   buildFormalExamWsUrl,
-  detectFormalExamSeqGap,
+  classifyFormalExamRealtimeEvent,
   formalExamRealtimeBackoffMs,
-  rememberFormalExamEventId,
+  mergeFormalExamRealtimeEvents,
+  parseFormalExamSeq,
   shouldOpenFormalExamRealtimeSocket,
+  type FormalExamRealtimeCatchUpPage,
   type FormalExamRealtimeEnvelope,
 } from '../formalExam/FormalExamRealtimeClient';
 
@@ -170,7 +172,9 @@ export function isFormalExamConsoleCurrentPageCandidate(
 export type FormalExamConsoleApplyResult = {
   lastSeq: number | null;
   duplicate: boolean;
-  gap: boolean;
+  jump: boolean;
+  outOfOrder: boolean;
+  collision: boolean;
   invalidate: boolean;
   session?: CompetitionFormalExamSession;
   page?: PageResponse<CompetitionFormalCandidateExam>;
@@ -185,21 +189,45 @@ export function applyFormalExamConsoleEnvelope(input: {
   page?: PageResponse<CompetitionFormalCandidateExam>;
   nowMs?: number;
 }): FormalExamConsoleApplyResult {
-  const duplicate = rememberFormalExamEventId(input.seen, input.envelope.eventId);
-  if (duplicate) {
+  const verdict = classifyFormalExamRealtimeEvent({
+    seen: input.seen,
+    lastSeq: input.lastSeq,
+    eventId: input.envelope.eventId,
+    seq: input.envelope.seq,
+  });
+  if (verdict.action === 'duplicate') {
     return {
       lastSeq: input.lastSeq,
       duplicate: true,
-      gap: false,
+      jump: false,
+      outOfOrder: false,
+      collision: false,
       invalidate: false,
       session: input.session,
       page: input.page,
     };
   }
-  const seqState = detectFormalExamSeqGap(input.lastSeq, input.envelope.seq);
+  if (verdict.action === 'collision' || verdict.action === 'out-of-order') {
+    return {
+      lastSeq: input.lastSeq,
+      duplicate: false,
+      jump: false,
+      outOfOrder: verdict.action === 'out-of-order',
+      collision: verdict.action === 'collision',
+      invalidate: true,
+      session: input.session,
+      page: input.page,
+    };
+  }
+  let lastSeq = verdict.action === 'accept' ? verdict.lastSeq : input.lastSeq;
+  const jump = verdict.action === 'accept' && verdict.jump;
+  const outOfOrder = false;
+  const collision = false;
   let session = input.session;
   let page = input.page;
-  let invalidate = seqState.gap || input.envelope.type === FORMAL_EXAM_CONSOLE_REALTIME.SNAPSHOT_RELOAD_REQUIRED;
+  let invalidate = outOfOrder
+    || collision
+    || input.envelope.type === FORMAL_EXAM_CONSOLE_REALTIME.SNAPSHOT_RELOAD_REQUIRED;
   const candidateExamId = input.envelope.candidateExamId == null
     ? undefined
     : String(input.envelope.candidateExamId);
@@ -278,9 +306,11 @@ export function applyFormalExamConsoleEnvelope(input: {
   }
 
   return {
-    lastSeq: seqState.nextSeq,
+    lastSeq,
     duplicate: false,
-    gap: seqState.gap,
+    jump,
+    outOfOrder,
+    collision,
     invalidate,
     session,
     page,
@@ -291,9 +321,12 @@ export function startFormalExamConsoleRealtime(options: {
   examSessionId: string;
   isActive: () => boolean;
   getPageCandidateIds: () => string[];
+  fetchCatchUp?: (afterSeq: string) => Promise<FormalExamRealtimeCatchUpPage>;
   onConnected?: () => void;
   onDisconnected?: () => void;
-  onSeqGap?: () => void;
+  onPageRefresh?: () => void;
+  onOutOfOrder?: () => void;
+  onSequenceCollision?: () => void;
   onEnvelope?: (envelope: FormalExamRealtimeEnvelope) => void;
 }): FormalExamConsoleRealtimeHandle {
   if (!shouldOpenFormalExamConsoleRealtimeSocket()) {
@@ -313,6 +346,8 @@ export function startFormalExamConsoleRealtime(options: {
   const seen = new Set<string>();
   let heartbeatSeconds = 20;
   let connecting = false;
+  let catchingUp = false;
+  let buffer: FormalExamRealtimeEnvelope[] = [];
   let pageCandidateIds = options.getPageCandidateIds();
 
   const clearTimers = () => {
@@ -337,6 +372,7 @@ export function startFormalExamConsoleRealtime(options: {
     }
     socket = null;
     connecting = false;
+    catchingUp = false;
     if (notify) options.onDisconnected?.();
   };
 
@@ -358,12 +394,58 @@ export function startFormalExamConsoleRealtime(options: {
     }, delay);
   };
 
-  const handleEnvelope = (envelope: FormalExamRealtimeEnvelope) => {
-    if (rememberFormalExamEventId(seen, envelope.eventId)) return;
-    const seqState = detectFormalExamSeqGap(lastSeq, envelope.seq);
-    lastSeq = seqState.nextSeq;
-    if (seqState.gap) options.onSeqGap?.();
+  const applyLive = (envelope: FormalExamRealtimeEnvelope) => {
+    const verdict = classifyFormalExamRealtimeEvent({
+      seen,
+      lastSeq,
+      eventId: envelope.eventId,
+      seq: envelope.seq,
+    });
+    if (verdict.action === 'duplicate') return;
+    if (verdict.action === 'collision') {
+      options.onSequenceCollision?.();
+      options.onPageRefresh?.();
+      return;
+    }
+    if (verdict.action === 'out-of-order') {
+      options.onOutOfOrder?.();
+      options.onPageRefresh?.();
+      return;
+    }
+    if (verdict.action === 'accept') {
+      lastSeq = verdict.lastSeq;
+    }
     options.onEnvelope?.(envelope);
+  };
+
+  const runCatchUp = async () => {
+    if (!options.fetchCatchUp) {
+      options.onPageRefresh?.();
+      return;
+    }
+    try {
+      const collected: FormalExamRealtimeEnvelope[] = [];
+      let after = lastSeq == null ? '0' : String(lastSeq);
+      let snapshotRequired = false;
+      for (let page = 0; page < 32; page += 1) {
+        const result = await options.fetchCatchUp(after);
+        if (result.snapshotRequired) snapshotRequired = true;
+        collected.push(...(result.events || []));
+        after = result.nextSeq == null ? after : String(result.nextSeq);
+        if (!result.hasMore) break;
+      }
+      if (snapshotRequired) options.onPageRefresh?.();
+      const queued = buffer.splice(0);
+      for (const envelope of mergeFormalExamRealtimeEvents(collected, queued)) {
+        applyLive(envelope);
+      }
+      const watermark = parseFormalExamSeq(after);
+      if (watermark != null && (lastSeq == null || watermark > lastSeq)) {
+        lastSeq = watermark;
+      }
+    } catch {
+      options.onPageRefresh?.();
+    }
   };
 
   const connect = async () => {
@@ -379,6 +461,8 @@ export function startFormalExamConsoleRealtime(options: {
       heartbeatSeconds = Math.max(5, ticket.heartbeatSeconds || 20);
       const ws = new WebSocket(buildFormalExamWsUrl(ticket.wsPath, ticket.ticket));
       socket = ws;
+      catchingUp = true;
+      buffer = [];
       ws.onopen = () => {
         connecting = false;
         attempt = 0;
@@ -392,11 +476,21 @@ export function startFormalExamConsoleRealtime(options: {
             }));
           }
         }, heartbeatSeconds * 1000);
+        void runCatchUp().finally(() => {
+          catchingUp = false;
+          const rest = buffer.splice(0);
+          for (const envelope of rest) applyLive(envelope);
+        });
       };
       ws.onmessage = (event) => {
         if (typeof event.data !== 'string') return;
         try {
-          handleEnvelope(JSON.parse(event.data) as FormalExamRealtimeEnvelope);
+          const envelope = JSON.parse(event.data) as FormalExamRealtimeEnvelope;
+          if (catchingUp) {
+            buffer.push(envelope);
+            return;
+          }
+          applyLive(envelope);
         } catch {
           /* ignore malformed frames */
         }
@@ -404,6 +498,7 @@ export function startFormalExamConsoleRealtime(options: {
       ws.onclose = () => {
         connecting = false;
         socket = null;
+        catchingUp = false;
         clearTimers();
         options.onDisconnected?.();
         if (!stopped && options.isActive()) scheduleReconnect();
@@ -417,6 +512,7 @@ export function startFormalExamConsoleRealtime(options: {
       };
     } catch {
       connecting = false;
+      catchingUp = false;
       options.onDisconnected?.();
       scheduleReconnect();
     }
@@ -434,8 +530,14 @@ export function startFormalExamConsoleRealtime(options: {
       void connect();
     },
     subscribePage(candidateExamIds: string[]) {
-      pageCandidateIds = candidateExamIds.map(String);
+      const next = candidateExamIds.map(String);
+      const changed = next.join(',') !== pageCandidateIds.map(String).join(',');
+      pageCandidateIds = next;
       sendSubscribePage();
+      if (changed) {
+        lastSeq = null;
+        options.onPageRefresh?.();
+      }
     },
   };
 }

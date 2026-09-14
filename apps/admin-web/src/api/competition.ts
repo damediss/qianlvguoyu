@@ -1,4 +1,5 @@
 import { apiClient, unwrap } from './client';
+import type { FormalExamRealtimeCatchUpPage } from './formalExamPlayer';
 import type { PageResponse } from '../types/api';
 import type {
   CompetitionEvent,
@@ -523,6 +524,23 @@ export function forceOfflineCompetitionFormalCandidateExam(
 export function createFormalExamConsoleRealtimeTicket(sessionId: CompetitionId) {
   return unwrap<CompetitionFormalExamConsoleRealtimeTicket>(
     apiClient.post(`/competition/formal-exam-sessions/${sessionId}/realtime/ticket`),
+  );
+}
+
+export function fetchFormalExamConsoleRealtimeEvents(
+  sessionId: CompetitionId,
+  query: { afterSeq?: string | number | null; limit?: number } = {},
+) {
+  const params = new URLSearchParams();
+  if (query.afterSeq != null && query.afterSeq !== '') {
+    params.set('afterSeq', String(query.afterSeq));
+  }
+  if (query.limit != null) {
+    params.set('limit', String(query.limit));
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return unwrap<FormalExamRealtimeCatchUpPage>(
+    apiClient.get(`/competition/formal-exam-sessions/${sessionId}/realtime/events${suffix}`),
   );
 }
 

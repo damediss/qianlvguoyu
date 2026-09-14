@@ -31,6 +31,7 @@ import {
   forceSubmitCompetitionFormalCandidateExam,
   forceOfflineCompetitionFormalCandidateExam,
   scoreCompetitionFormalExamSession,
+  fetchFormalExamConsoleRealtimeEvents,
 } from '../../api/competition';
 import type { PageResponse } from '../../types/api';
 import type {
@@ -347,9 +348,23 @@ export function CompetitionFormalExamSessionPanel({
       examSessionId: String(sessionId),
       isActive: () => true,
       getPageCandidateIds: () => pageIdsRef.current,
+      fetchCatchUp: (afterSeq) => fetchFormalExamConsoleRealtimeEvents(sessionId, { afterSeq, limit: 200 }),
       onConnected: () => setRealtimeState('connected'),
       onDisconnected: () => setRealtimeState('disconnected'),
-      onSeqGap: () => {
+      onPageRefresh: () => {
+        applyStateRef.current.lastSeq = null;
+        void queryClient.invalidateQueries({ queryKey: ['competition-formal-exam-session', sessionId] });
+        void queryClient.invalidateQueries({
+          queryKey: ['competition-formal-exam-session-candidates', sessionId],
+        });
+      },
+      onOutOfOrder: () => {
+        void queryClient.invalidateQueries({ queryKey: ['competition-formal-exam-session', sessionId] });
+        void queryClient.invalidateQueries({
+          queryKey: ['competition-formal-exam-session-candidates', sessionId],
+        });
+      },
+      onSequenceCollision: () => {
         void queryClient.invalidateQueries({ queryKey: ['competition-formal-exam-session', sessionId] });
         void queryClient.invalidateQueries({
           queryKey: ['competition-formal-exam-session-candidates', sessionId],

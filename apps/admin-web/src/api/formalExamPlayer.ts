@@ -365,6 +365,48 @@ export function ackFormalExamRealtimeCommand(commandId: string) {
   );
 }
 
+export interface FormalExamRealtimeCatchUpPage {
+  events: Array<{
+    eventId?: string;
+    commandId?: string | null;
+    type?: string;
+    aggregateId?: string;
+    examSessionId?: string;
+    candidateExamId?: string | null;
+    accessSessionId?: string | null;
+    generation?: number | null;
+    seq?: number | string | null;
+    occurredAt?: string;
+    expiresAt?: string;
+    target?: string;
+    payload?: Record<string, unknown> | null;
+  }>;
+  nextSeq: string;
+  highWatermark: string;
+  hasMore: boolean;
+  snapshotRequired: boolean;
+}
+
+export function fetchFormalExamPlayerRealtimeEvents(query: {
+  afterSeq?: string | number | null;
+  limit?: number;
+}) {
+  const params = new URLSearchParams();
+  if (query.afterSeq != null && query.afterSeq !== '') {
+    params.set('afterSeq', String(query.afterSeq));
+  }
+  if (query.limit != null) {
+    params.set('limit', String(query.limit));
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return unwrap<FormalExamRealtimeCatchUpPage>(
+    formalExamPlayerClient.get(
+      `/competition/formal-exam/player/realtime/events${suffix}`,
+      { signal: examRequestSignal() },
+    ),
+  );
+}
+
 export function submitFormalExamPlayer(sessionId: string, body: FormalExamPlayerSubmitRequest) {
   return unwrap<FormalExamPlayerSubmitResult>(
     formalExamPlayerClient.post(

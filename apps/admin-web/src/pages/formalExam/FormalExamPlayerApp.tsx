@@ -7,6 +7,7 @@ import {
   getFormalExamPlayerContext,
   getFormalExamPlayerStatus,
   loginFormalExamPlayer,
+  fetchFormalExamPlayerRealtimeEvents,
   type FormalExamPlayerContext,
   type FormalExamPlayerStatus,
 } from '../../api/formalExamPlayer';
@@ -186,6 +187,8 @@ export function FormalExamPlayerApp() {
       // later staff force-offline command can return the Pad to login.
       isActive: () => Boolean(useFormalExamPlayerStore.getState().token),
       getGeneration: () => useFormalExamPlayerStore.getState().generation,
+      cursorKey: `formal-exam:player:lastSeq:${sessionId}`,
+      fetchCatchUp: (afterSeq) => fetchFormalExamPlayerRealtimeEvents({ afterSeq, limit: 200 }),
       onConnected: () => setRealtimeConnected(true),
       onDisconnected: () => setRealtimeConnected(false),
       onKick: () => {
@@ -204,7 +207,15 @@ export function FormalExamPlayerApp() {
           queryKey: ['formal-exam-player-paper', sessionId],
         });
       },
-      onSeqGap: () => {
+      onOutOfOrder: () => {
+        void queryClient.invalidateQueries({
+          queryKey: ['formal-exam-player-status', sessionId, token],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ['formal-exam-player-context', sessionId, token],
+        });
+      },
+      onSequenceCollision: () => {
         void queryClient.invalidateQueries({
           queryKey: ['formal-exam-player-status', sessionId, token],
         });
