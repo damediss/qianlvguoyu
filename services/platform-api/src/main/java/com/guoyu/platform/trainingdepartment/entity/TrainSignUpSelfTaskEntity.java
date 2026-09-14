@@ -1,6 +1,7 @@
 package com.guoyu.platform.trainingdepartment.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
@@ -17,6 +18,9 @@ public class TrainSignUpSelfTaskEntity {
   private Long addtime;
   private Long endtime;
   private String errorMsg;
+  /** 成功时的 zip 相对路径，如 down/标题_t123.zip */
+  @TableField("result_file")
+  private String resultFile;
   private Long tenantId;
 
   public Long getId() { return id; }
@@ -33,6 +37,8 @@ public class TrainSignUpSelfTaskEntity {
   public void setEndtime(Long endtime) { this.endtime = endtime; }
   public String getErrorMsg() { return errorMsg; }
   public void setErrorMsg(String errorMsg) { this.errorMsg = errorMsg; }
+  public String getResultFile() { return resultFile; }
+  public void setResultFile(String resultFile) { this.resultFile = resultFile; }
   public Long getTenantId() { return tenantId; }
   public void setTenantId(Long tenantId) { this.tenantId = tenantId; }
 }

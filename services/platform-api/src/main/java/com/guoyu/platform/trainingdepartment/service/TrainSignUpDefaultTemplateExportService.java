@@ -1,6 +1,7 @@
 package com.guoyu.platform.trainingdepartment.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.exception.BusinessException;
@@ -17,18 +18,19 @@ import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfTaskEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfTaskMapper;
+import com.guoyu.platform.trainingdepartment.support.SignUpDefaultTemplateExportPaths;
 import com.guoyu.platform.trainingdepartment.support.SignUpPeopleDefaultTemplatePackService;
 import com.guoyu.platform.trainingdepartment.support.SignUpSelfFilesResolver;
 import com.guoyu.platform.trainingdepartment.vo.SignUpDefaultTemplateExportCheckVO;
 import com.guoyu.platform.trainingdepartment.vo.SignUpDefaultTemplateExportStartVO;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -81,6 +83,9 @@ public class TrainSignUpDefaultTemplateExportService {
   /** 卡住超过该秒数的 endtime=0 任务视为失败，避免永久阻塞新导出 */
   private static final long STUCK_TASK_TIMEOUT_SECONDS = 30 * 60;
 
+  /** 同一 taskId 禁止并行跑两份打包（连点/复用补提会导致后一份删掉成功包） */
+  private final Set<Long> runningExportTaskIds = ConcurrentHashMap.newKeySet();
+
   @Transactional
   public SignUpDefaultTemplateExportStartVO startExport(SignUpDefaultTemplateExportReq req) {
     TrainSignUpSelfEntity signUp = getSignUp(req.getSignUpId());
@@ -102,10 +107,7 @@ public class TrainSignUpDefaultTemplateExportService {
       } else if (running.getSignUpId().equals(signUp.getId())) {
         List<Long> runningIds = readIdList(running.getIdsIn());
         if (sameIdSet(runningIds, peopleIds)) {
-          // 同计划、同人员集合：复用进行中任务；若从未推进进度，补提一次异步
-          if (readIdList(running.getIdsOut()).isEmpty()) {
-            submitExportAfterCommit(running.getId(), tenantId);
-          }
+          // 同计划、同人员：只复用，禁止再 submit（否则双异步会删掉成功 zip）
           return new SignUpDefaultTemplateExportStartVO(running.getId(), progressOf(running));
         }
         // 勾选人员已变：取消旧任务，按新勾选重新导出（否则会继续打旧包）
@@ -173,49 +175,64 @@ public class TrainSignUpDefaultTemplateExportService {
       return new SignUpDefaultTemplateExportCheckVO(null, jindu, 1, task.getErrorMsg());
     }
 
-    String folderName = sanitizeFolderName(
+    String folderName = SignUpDefaultTemplateExportPaths.sanitizeTitle(
         StringUtils.hasText(req.getSignUpTitle()) ? req.getSignUpTitle() : signUp.getTitle());
-    ResolvedZip resolved = resolveExportZip(signUp, folderName, task.getId());
+    ResolvedZip resolved = resolveExportZip(signUp, folderName, task);
     if (resolved != null && task.getEndtime() != null && task.getEndtime() > 0) {
       // 带任务号防缓存：同标题多次导出 URL 必须不同，否则浏览器/CDN 会下到旧包
       String url = filesResolver.publicUrl(resolved.relativePath()) + "?v=" + task.getId();
       return new SignUpDefaultTemplateExportCheckVO(url, jindu, null, "成功");
     }
     if (task.getEndtime() != null && task.getEndtime() > 0) {
-      // 任务已结束且无 errorMsg：多为打包成功但 check 侧找不到 zip（CDN 路径/标题不一致）
-      String expected = "down/" + folderName + "_t" + task.getId() + ".zip";
-      String hint = "导出完成但未找到压缩包。cdn=" + cdnPath + "，期望=" + expected;
-      log.warn("默认模板导出 check 未找到 zip taskId={} signUpId={} {}",
-          task.getId(), signUp.getId(), hint);
+      String expectedRel = StringUtils.hasText(task.getResultFile())
+          ? task.getResultFile()
+          : SignUpDefaultTemplateExportPaths.taskZipRelative(folderName, task.getId());
+      Path expectedAbs = SignUpDefaultTemplateExportPaths.zipAbsolute(cdnPath, expectedRel);
+      Path downDir = SignUpDefaultTemplateExportPaths.downDir(cdnPath);
+      String hint = "导出完成但未找到压缩包。已查找=" + expectedAbs
+          + "（down目录" + (Files.isDirectory(downDir) ? "存在" : "不存在") + "）";
+      log.warn("默认模板导出 check 未找到 zip taskId={} signUpId={} resultFile={} {}",
+          task.getId(), signUp.getId(), task.getResultFile(), hint);
       return new SignUpDefaultTemplateExportCheckVO(null, jindu, 1, hint);
     }
     return new SignUpDefaultTemplateExportCheckVO(null, jindu, null, "当前进度");
   }
 
   /**
-   * 只认本任务 zip（down/{title}_t{taskId}.zip），禁止回退到历史同名包。
+   * 先扫 {cdn}/down/*_t{taskId}.zip，再按 result_file / 标题拼路径。
+   * 禁止回退到无 taskId 的历史同名包。
    */
-  private ResolvedZip resolveExportZip(TrainSignUpSelfEntity signUp, String folderName, Long taskId) {
+  private ResolvedZip resolveExportZip(
+      TrainSignUpSelfEntity signUp, String folderName, TrainSignUpSelfTaskEntity task) {
+    Long taskId = task != null ? task.getId() : null;
     if (taskId == null || taskId <= 0) {
       return null;
     }
+    Path scanned = SignUpDefaultTemplateExportPaths.findZipByTaskId(cdnPath, taskId);
+    if (scanned != null && Files.isRegularFile(scanned)) {
+      return new ResolvedZip("down/" + scanned.getFileName(), scanned);
+    }
     List<String> relativeCandidates = new ArrayList<>();
-    String taskZip = "down/" + folderName + "_t" + taskId + ".zip";
-    relativeCandidates.add(taskZip);
-    String taskSuffix = "_t" + taskId + ".zip";
+    if (StringUtils.hasText(task.getResultFile())) {
+      relativeCandidates.add(task.getResultFile().replace('\\', '/'));
+    }
+    String taskZip = SignUpDefaultTemplateExportPaths.taskZipRelative(folderName, taskId);
+    if (!relativeCandidates.contains(taskZip)) {
+      relativeCandidates.add(taskZip);
+    }
     for (String stored : readFilePaths(signUp.getFiles())) {
-      if (!StringUtils.hasText(stored)) {
+      if (!SignUpDefaultTemplateExportPaths.endsWithTaskZip(stored, taskId)) {
         continue;
       }
-      String normalized = stored.startsWith("/") ? stored.substring(1) : stored;
-      if (normalized.endsWith(taskSuffix) && !relativeCandidates.contains(normalized)) {
+      String normalized = stored.startsWith("/") ? stored.substring(1) : stored.replace('\\', '/');
+      if (!relativeCandidates.contains(normalized)) {
         relativeCandidates.add(normalized);
       }
     }
     for (String relative : relativeCandidates) {
-      Path absolute = Paths.get(cdnPath).resolve(relative).toAbsolutePath().normalize();
-      if (Files.exists(absolute) && Files.isRegularFile(absolute)) {
-        return new ResolvedZip(relative.replace('\\', '/'), absolute);
+      Path absolute = SignUpDefaultTemplateExportPaths.zipAbsolute(cdnPath, relative);
+      if (Files.isRegularFile(absolute)) {
+        return new ResolvedZip("down/" + absolute.getFileName(), absolute);
       }
     }
     return null;
@@ -235,6 +252,18 @@ public class TrainSignUpDefaultTemplateExportService {
   private record ResolvedZip(String relativePath, Path absolutePath) {}
 
   public void runExport(Long taskId) {
+    if (!runningExportTaskIds.add(taskId)) {
+      log.info("默认模板导出跳过重复执行 taskId={}", taskId);
+      return;
+    }
+    try {
+      doRunExport(taskId);
+    } finally {
+      runningExportTaskIds.remove(taskId);
+    }
+  }
+
+  private void doRunExport(Long taskId) {
     TrainSignUpSelfTaskEntity task = taskMapper.selectById(taskId);
     if (task == null || task.getEndtime() != null && task.getEndtime() > 0) {
       return;
@@ -261,41 +290,55 @@ public class TrainSignUpDefaultTemplateExportService {
           doneIds.addAll(ids.subList(0, Math.min(done, ids.size())));
           updateTaskProgress(task.getId(), doneIds);
         }
-      });
+      }).replace('\\', '/');
 
-      // 导出中途被「新勾选」取消时，丢弃本轮 zip，避免旧任务晚一步写成成功态
+      // 导出中途被「新勾选」取消时，仅在失败取消时丢弃 zip；已成功则绝不能删
       TrainSignUpSelfTaskEntity latest = taskMapper.selectById(taskId);
       if (latest == null) {
         return;
       }
       if (latest.getEndtime() != null && latest.getEndtime() > 0) {
-        deleteQuietly(Paths.get(cdnPath).resolve(zipRelative).toAbsolutePath().normalize());
-        log.info("默认模板导出已取消，丢弃产物 taskId={} zip={}", taskId, zipRelative);
+        if (StringUtils.hasText(latest.getErrorMsg())) {
+          deleteQuietly(SignUpDefaultTemplateExportPaths.zipAbsolute(cdnPath, zipRelative));
+          log.info("默认模板导出已取消，丢弃产物 taskId={} zip={}", taskId, zipRelative);
+        } else {
+          log.info("默认模板导出结束时任务已成功，保留 zip taskId={} zip={}", taskId, zipRelative);
+        }
         return;
       }
 
-      Path zipAbsolute = Paths.get(cdnPath).resolve(zipRelative).toAbsolutePath().normalize();
+      Path zipAbsolute = SignUpDefaultTemplateExportPaths.zipAbsolute(cdnPath, zipRelative);
       if (!Files.exists(zipAbsolute) || !Files.isRegularFile(zipAbsolute)) {
         failTask(latest, "打包完成但压缩包未生成: " + zipAbsolute);
         return;
       }
 
-      latest.setIdsOut(objectMapper.writeValueAsString(ids));
-      latest.setEndtime(System.currentTimeMillis() / 1000);
-      latest.setErrorMsg(null);
-      int updated = taskMapper.update(latest, new LambdaQueryWrapper<TrainSignUpSelfTaskEntity>()
+      long endSec = System.currentTimeMillis() / 1000;
+      // 显式 set result_file，避免实体 update 漏字段
+      int updated = taskMapper.update(null, new LambdaUpdateWrapper<TrainSignUpSelfTaskEntity>()
           .eq(TrainSignUpSelfTaskEntity::getId, taskId)
-          .eq(TrainSignUpSelfTaskEntity::getEndtime, 0L));
+          .eq(TrainSignUpSelfTaskEntity::getEndtime, 0L)
+          .set(TrainSignUpSelfTaskEntity::getIdsOut, objectMapper.writeValueAsString(ids))
+          .set(TrainSignUpSelfTaskEntity::getEndtime, endSec)
+          .set(TrainSignUpSelfTaskEntity::getErrorMsg, null)
+          .set(TrainSignUpSelfTaskEntity::getResultFile, zipRelative));
       if (updated == 0) {
-        deleteQuietly(zipAbsolute);
-        log.info("默认模板导出提交成功时已被取消 taskId={} zip={}", taskId, zipRelative);
+        TrainSignUpSelfTaskEntity after = taskMapper.selectById(taskId);
+        if (after != null && StringUtils.hasText(after.getErrorMsg())) {
+          deleteQuietly(zipAbsolute);
+          log.info("默认模板导出提交成功时已被取消 taskId={} zip={}", taskId, zipRelative);
+        } else {
+          log.info("默认模板导出提交成功时任务已结束且无错误，保留 zip taskId={} zip={}",
+              taskId, zipRelative);
+        }
         return;
       }
+      log.info("默认模板导出成功 taskId={} zip={} abs={}", taskId, zipRelative, zipAbsolute);
 
       // 重新加载后再写 files，避免覆盖其它并发字段
       TrainSignUpSelfEntity signUpLatest = signUpMapper.selectById(signUp.getId());
       if (signUpLatest != null) {
-        signUpLatest.setFiles(filesResolver.appendFilePath(signUpLatest, zipRelative.replace('\\', '/')));
+        signUpLatest.setFiles(filesResolver.appendFilePath(signUpLatest, zipRelative));
         signUpLatest.setUpdateTime(LocalDateTime.now());
         signUpMapper.updateById(signUpLatest);
       }
@@ -389,12 +432,5 @@ public class TrainSignUpDefaultTemplateExportService {
       throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该报名计划");
     }
     return entity;
-  }
-
-  private static String sanitizeFolderName(String title) {
-    if (!StringUtils.hasText(title)) {
-      return "sign-up-export";
-    }
-    return title.trim().replaceAll("[\\\\/:*?\"<>|]", "_");
   }
 }
