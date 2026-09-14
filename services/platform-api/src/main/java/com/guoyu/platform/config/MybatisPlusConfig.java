@@ -47,6 +47,8 @@ public class MybatisPlusConfig {
             || "train_sign_up_self".equalsIgnoreCase(tableName)
             || "train_sign_up_people_self".equalsIgnoreCase(tableName)
             || "train_people_list".equalsIgnoreCase(tableName)
+            // 工种目录按 id 反查导出；勿按当前租户过滤导致 title 查空
+            || "exam_work_type".equalsIgnoreCase(tableName)
             || "platform_user_detail".equalsIgnoreCase(tableName)
             || "platform_user".equalsIgnoreCase(tableName)
             || "platform_user_token".equalsIgnoreCase(tableName)

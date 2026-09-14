@@ -161,22 +161,65 @@ public class TrainSignUpDefaultTemplateExportService {
       return new SignUpDefaultTemplateExportCheckVO(null, null, 2, "未知的任务");
     }
 
-    String folderName = sanitizeFolderName(
-        StringUtils.hasText(req.getSignUpTitle()) ? req.getSignUpTitle() : signUp.getTitle());
-    Path zipPath = Paths.get(cdnPath, "down", folderName + ".zip");
     String jindu = progressOf(task);
-    if (Files.exists(zipPath) && task.getEndtime() != null && task.getEndtime() > 0) {
-      return new SignUpDefaultTemplateExportCheckVO(
-          filesResolver.publicUrl("down/" + folderName + ".zip"), jindu, null, "成功");
-    }
     if (task.getEndtime() != null && task.getEndtime() > 0 && StringUtils.hasText(task.getErrorMsg())) {
       return new SignUpDefaultTemplateExportCheckVO(null, jindu, 1, task.getErrorMsg());
     }
+
+    String folderName = sanitizeFolderName(
+        StringUtils.hasText(req.getSignUpTitle()) ? req.getSignUpTitle() : signUp.getTitle());
+    ResolvedZip resolved = resolveExportZip(signUp, folderName);
+    if (resolved != null && task.getEndtime() != null && task.getEndtime() > 0) {
+      return new SignUpDefaultTemplateExportCheckVO(
+          filesResolver.publicUrl(resolved.relativePath()), jindu, null, "成功");
+    }
     if (task.getEndtime() != null && task.getEndtime() > 0) {
-      return new SignUpDefaultTemplateExportCheckVO(null, jindu, 1, "导出失败");
+      // 任务已结束且无 errorMsg：多为打包成功但 check 侧找不到 zip（CDN 路径/标题不一致）
+      String hint = "导出完成但未找到压缩包。cdn=" + cdnPath
+          + "，期望=down/" + folderName + ".zip";
+      log.warn("默认模板导出 check 未找到 zip taskId={} signUpId={} {}",
+          task.getId(), signUp.getId(), hint);
+      return new SignUpDefaultTemplateExportCheckVO(null, jindu, 1, hint);
     }
     return new SignUpDefaultTemplateExportCheckVO(null, jindu, null, "当前进度");
   }
+
+  /**
+   * 按标题 + signUp.files 回退定位 zip，避免仅因标题瞬时不一致导致「导出失败」。
+   */
+  private ResolvedZip resolveExportZip(TrainSignUpSelfEntity signUp, String folderName) {
+    List<String> relativeCandidates = new ArrayList<>();
+    relativeCandidates.add("down/" + folderName + ".zip");
+    for (String stored : readFilePaths(signUp.getFiles())) {
+      if (!StringUtils.hasText(stored)) {
+        continue;
+      }
+      String normalized = stored.startsWith("/") ? stored.substring(1) : stored;
+      if (normalized.toLowerCase().endsWith(".zip") && !relativeCandidates.contains(normalized)) {
+        relativeCandidates.add(normalized);
+      }
+    }
+    for (String relative : relativeCandidates) {
+      Path absolute = Paths.get(cdnPath).resolve(relative).toAbsolutePath().normalize();
+      if (Files.exists(absolute) && Files.isRegularFile(absolute)) {
+        return new ResolvedZip(relative.replace('\\', '/'), absolute);
+      }
+    }
+    return null;
+  }
+
+  private List<String> readFilePaths(String filesJson) {
+    if (!StringUtils.hasText(filesJson)) {
+      return List.of();
+    }
+    try {
+      return objectMapper.readValue(filesJson, new TypeReference<List<String>>() {});
+    } catch (Exception e) {
+      return List.of();
+    }
+  }
+
+  private record ResolvedZip(String relativePath, Path absolutePath) {}
 
   public void runExport(Long taskId) {
     TrainSignUpSelfTaskEntity task = taskMapper.selectById(taskId);
@@ -207,7 +250,13 @@ public class TrainSignUpDefaultTemplateExportService {
         }
       });
 
-      signUp.setFiles(filesResolver.appendFilePath(signUp, zipRelative));
+      Path zipAbsolute = Paths.get(cdnPath).resolve(zipRelative).toAbsolutePath().normalize();
+      if (!Files.exists(zipAbsolute) || !Files.isRegularFile(zipAbsolute)) {
+        failTask(task, "打包完成但压缩包未生成: " + zipAbsolute);
+        return;
+      }
+
+      signUp.setFiles(filesResolver.appendFilePath(signUp, zipRelative.replace('\\', '/')));
       signUp.setUpdateTime(LocalDateTime.now());
       signUpMapper.updateById(signUp);
 
@@ -292,6 +341,6 @@ public class TrainSignUpDefaultTemplateExportService {
     if (!StringUtils.hasText(title)) {
       return "sign-up-export";
     }
-    return title.replaceAll("[\\\\/:*?\"<>|]", "_");
+    return title.trim().replaceAll("[\\\\/:*?\"<>|]", "_");
   }
 }

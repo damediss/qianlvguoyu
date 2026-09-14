@@ -410,12 +410,7 @@ public class DemandTrainApplicationService {
             .orderByAsc(DictItemEntity::getSortOrder)
             .orderByAsc(DictItemEntity::getId))
         .stream()
-        .map(item -> {
-          Map<String, Object> m = new LinkedHashMap<>();
-          m.put("id", item.getId());
-          m.put("title", item.getItemLabel());
-          return m;
-        })
+        .map(item -> toConditionMap(item.getId(), item.getItemLabel(), item.getItemValue()))
         .toList();
   }
 
@@ -424,16 +419,39 @@ public class DemandTrainApplicationService {
     try {
       return trainBaseDataMapper.selectDeclarationConditionsLegacy().stream()
           .filter(row -> StringUtils.hasText(row.title()))
-          .map(row -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("id", row.id());
-            m.put("title", row.title());
-            return m;
-          })
+          .map(row -> toConditionMap(row.id(), row.title(), null))
           .toList();
     } catch (Exception ex) {
       log.debug("train_base_data legacy condition query skipped: {}", ex.getMessage());
       return List.of();
+    }
+  }
+
+  /** condition_list 项：title=全文；value/reqLevel 供前端按预约等级筛选 */
+  private static Map<String, Object> toConditionMap(Object id, String title, String itemValue) {
+    Map<String, Object> m = new LinkedHashMap<>();
+    m.put("id", id);
+    m.put("title", title);
+    if (StringUtils.hasText(itemValue)) {
+      m.put("value", itemValue);
+      Integer reqLevel = parseConditionReqLevel(itemValue);
+      if (reqLevel != null) {
+        m.put("reqLevel", reqLevel);
+      }
+    }
+    return m;
+  }
+
+  /** item_value 约定：{reqLevel}-{序号}，如 0-01 */
+  private static Integer parseConditionReqLevel(String itemValue) {
+    int dash = itemValue.indexOf('-');
+    if (dash <= 0) {
+      return null;
+    }
+    try {
+      return Integer.parseInt(itemValue.substring(0, dash).trim());
+    } catch (NumberFormatException ex) {
+      return null;
     }
   }
 

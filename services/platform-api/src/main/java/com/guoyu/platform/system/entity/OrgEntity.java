@@ -10,6 +10,8 @@ public class OrgEntity extends BaseEntity {
   private String orgType;
   private String code;
   private String name;
+  /** 企业联系电话（sys_org.phone），认定申请表 com_phone 优先取此值 */
+  private String phone;
   private Integer sortOrder;
   private String status;
 
@@ -43,6 +45,14 @@ public class OrgEntity extends BaseEntity {
 
   public void setName(String name) {
     this.name = name;
+  }
+
+  public String getPhone() {
+    return phone;
+  }
+
+  public void setPhone(String phone) {
+    this.phone = phone;
   }
 
   public Integer getSortOrder() {

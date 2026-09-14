@@ -1005,6 +1005,16 @@ export interface SignUpPeopleImportResult {
   platformUserSync?: PlatformUserSyncResult;
 }
 
+/** 同步历史信息收集结果 */
+export interface SignUpPeopleHistorySyncResult {
+  total: number;
+  merged: number;
+  skippedNoHistory: number;
+  skippedNoIdCard: number;
+  unchanged: number;
+  messages?: string[];
+}
+
 export interface SignUpDefaultTemplateExportStart {
   taskId: number;
   jindu: string;
@@ -1610,6 +1620,10 @@ export interface TrainInfoClassCreateReq {
   dateEnd?: string;
   fileTemps?: string;
   kcbiaoFile?: string;
+  /** 单位联系人（工作年限证明） */
+  companyContactName?: string;
+  /** 单位联系方式 */
+  companyContactPhone?: string;
 }
 
 export type TrainInfoClassUpdateReq = Partial<TrainInfoClassCreateReq>;
@@ -2014,6 +2028,10 @@ export interface DemandPublicData {
 export interface SimpleItem {
   id: number | string;
   title: string;
+  /** 字典 item_value，如 0-01 */
+  value?: string;
+  /** 适用预约等级 0–4 */
+  reqLevel?: number;
 }
 
 export interface CompanyOption {
@@ -2129,6 +2147,8 @@ export interface TrainInfoClassListItem {
   file_temps?: string;
   kcbiao_file?: string;
   kcbiao_src?: string;
+  company_contact_name?: string;
+  company_contact_phone?: string;
   schedule_manual_edited?: number;
   schedule_imported_at?: string | null;
   company_confirm_status?: number;

@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Size;
 
 public record DictItemCreateReq(
     @NotBlank String itemValue,
-    @NotBlank @Size(max = 128) String itemLabel,
+    @NotBlank @Size(max = 512) String itemLabel,
     Integer sortOrder,
     @Size(max = 32) String status
 ) {

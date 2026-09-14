@@ -136,6 +136,7 @@ export function ClassSignUpPeoplePanel({
   const [templateDownloading, setTemplateDownloading] = useState(false);
   const [importStudentOpen, setImportStudentOpen] = useState(false);
   const [importStudentLoading, setImportStudentLoading] = useState(false);
+  const [historySyncLoading, setHistorySyncLoading] = useState(false);
   const [studentKeyword, setStudentKeyword] = useState('');
   const [studentPage, setStudentPage] = useState(1);
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
@@ -189,7 +190,7 @@ export function ClassSignUpPeoplePanel({
   });
 
   const notifyChanged = () => {
-    refetchPeople();
+    void refetchPeople();
     onChanged?.();
   };
 
@@ -205,12 +206,37 @@ export function ClassSignUpPeoplePanel({
 
   const deletePeopleMu = useMutation({
     mutationFn: (ids: number[]) => trainApi.batchUpdateSignUpPeople({ ids, field: 'deleted', value: 1 }),
-    onSuccess: () => {
-      message.success('批量删除成功');
+    onSuccess: (updated) => {
+      if (!updated) {
+        message.warning('未删除任何人员，请刷新后重试');
+        return;
+      }
+      message.success(`已删除 ${updated} 人`);
       setSelectedPeopleIds([]);
+      setPeopleEditOpen(false);
+      setEditingPersonId(null);
       notifyChanged();
     },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error && err.message ? err.message : '批量删除失败';
+      message.error(msg);
+    },
   });
+
+  const handleBatchDelete = () => {
+    if (!selectedPeopleIds.length) {
+      message.warning('请先勾选人员');
+      return;
+    }
+    Modal.confirm({
+      title: '确认批量删除',
+      content: `将删除已勾选的 ${selectedPeopleIds.length} 人，删除后列表不再显示。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => deletePeopleMu.mutateAsync(selectedPeopleIds),
+    });
+  };
 
   const updatePayMu = useMutation({
     mutationFn: ({ id, value }: { id: number; value: number }) =>
@@ -432,6 +458,46 @@ export function ClassSignUpPeoplePanel({
     }
   };
 
+  const handleSyncHistory = () => {
+    const ids = selectedPeopleIds.length ? selectedPeopleIds : undefined;
+    const scopeText = ids?.length
+      ? `已勾选的 ${ids.length} 人`
+      : '当前计划全部学员';
+    Modal.confirm({
+      title: '同步历史信息收集',
+      content: (
+        <div>
+          <p>将按身份证从历史信息收集/扫码填报中，为{scopeText}补全当前名单的空字段。</p>
+          <p style={{ marginBottom: 0 }}>仅补空、不覆盖已有内容；不修改审核与支付状态。历史计划数据本身不会被改动。</p>
+        </div>
+      ),
+      okText: '开始同步',
+      cancelText: '取消',
+      onOk: async () => {
+        setHistorySyncLoading(true);
+        try {
+          const result = await trainApi.syncSignUpPeopleHistory(signUpId, ids);
+          const parts = [
+            `处理 ${result.total} 人`,
+            `补全 ${result.merged} 人`,
+          ];
+          if (result.unchanged > 0) parts.push(`无需变更 ${result.unchanged}`);
+          if (result.skippedNoHistory > 0) parts.push(`无历史 ${result.skippedNoHistory}`);
+          if (result.skippedNoIdCard > 0) parts.push(`无身份证 ${result.skippedNoIdCard}`);
+          const detail = result.messages?.length
+            ? `；${result.messages.slice(0, 3).join('；')}`
+            : '';
+          message.success(`${parts.join('，')}${detail}`);
+          notifyChanged();
+        } catch {
+          // interceptor
+        } finally {
+          setHistorySyncLoading(false);
+        }
+      },
+    });
+  };
+
   const peopleColumns: ColumnsType<TrainSignUpPerson> = [
     { title: 'ID', dataIndex: 'id', width: 72 },
     { title: '姓名', dataIndex: 'name', width: 90 },
@@ -532,7 +598,8 @@ export function ClassSignUpPeoplePanel({
           <Button
             danger
             disabled={isPeopleChecked}
-            onClick={() => deletePeopleMu.mutate(selectedPeopleIds)}
+            loading={deletePeopleMu.isPending}
+            onClick={handleBatchDelete}
           >
             批量删除
           </Button>
@@ -552,6 +619,9 @@ export function ClassSignUpPeoplePanel({
           </Button>
           <Button type="primary" onClick={() => setRosterImportOpen(true)}>
             花名册导入
+          </Button>
+          <Button type="primary" loading={historySyncLoading} onClick={handleSyncHistory}>
+            同步历史信息收集
           </Button>
         </Space>
       </div>

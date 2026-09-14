@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -44,18 +45,21 @@ public class ClassCollectionApplicationService {
   private final TrainSignUpPeopleSelfMapper signUpPeopleMapper;
   private final TrainPeopleListMapper peopleListMapper;
   private final TrainingOperatorScopeService operatorScopeService;
+  private final JdbcTemplate jdbcTemplate;
 
   public ClassCollectionApplicationService(
       TrainInfoClassMapper classMapper,
       TrainSignUpSelfMapper signUpSelfMapper,
       TrainSignUpPeopleSelfMapper signUpPeopleMapper,
       TrainPeopleListMapper peopleListMapper,
-      TrainingOperatorScopeService operatorScopeService) {
+      TrainingOperatorScopeService operatorScopeService,
+      JdbcTemplate jdbcTemplate) {
     this.classMapper = classMapper;
     this.signUpSelfMapper = signUpSelfMapper;
     this.signUpPeopleMapper = signUpPeopleMapper;
     this.peopleListMapper = peopleListMapper;
     this.operatorScopeService = operatorScopeService;
+    this.jdbcTemplate = jdbcTemplate;
   }
 
   @Transactional
@@ -278,35 +282,49 @@ public class ClassCollectionApplicationService {
     if (roster.isEmpty()) {
       return 0;
     }
-    List<TrainSignUpPeopleSelfEntity> existing = signUpPeopleMapper.selectList(
-        new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
-            .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUpId)
-            .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0)
-            .select(
-                TrainSignUpPeopleSelfEntity::getId,
-                TrainSignUpPeopleSelfEntity::getIdCardNumber,
-                TrainSignUpPeopleSelfEntity::getName,
-                TrainSignUpPeopleSelfEntity::getPhone));
+    // 含已删除记录：用户删过的人当作墓碑，再次打开资料收集时不得从花名册种回
     Set<String> existingCards = new HashSet<>();
-    for (TrainSignUpPeopleSelfEntity p : existing) {
-      if (StringUtils.hasText(p.getIdCardNumber())) {
-        existingCards.add(p.getIdCardNumber().trim().toUpperCase());
+    List<String> cards = jdbcTemplate.query(
+        """
+            SELECT UPPER(TRIM(id_card_number))
+            FROM train_sign_up_people_self
+            WHERE sign_up_id = ?
+              AND id_card_number IS NOT NULL
+              AND TRIM(id_card_number) <> ''
+            """,
+        (rs, rowNum) -> rs.getString(1),
+        signUpId);
+    for (String c : cards) {
+      if (StringUtils.hasText(c)) {
+        existingCards.add(c.trim().toUpperCase());
+      }
+    }
+    Set<String> existingNames = new HashSet<>();
+    List<String> names = jdbcTemplate.query(
+        """
+            SELECT TRIM(name)
+            FROM train_sign_up_people_self
+            WHERE sign_up_id = ?
+              AND name IS NOT NULL
+              AND TRIM(name) <> ''
+            """,
+        (rs, rowNum) -> rs.getString(1),
+        signUpId);
+    for (String n : names) {
+      if (StringUtils.hasText(n)) {
+        existingNames.add(n.trim());
       }
     }
     int seeded = 0;
     for (TrainPeopleListEntity student : roster) {
       String idCard = student.getIdCard() != null ? student.getIdCard().trim() : "";
+      String realname = student.getRealname() != null ? student.getRealname().trim() : "";
       if (StringUtils.hasText(idCard) && existingCards.contains(idCard.toUpperCase())) {
         continue;
       }
-      // 无身份证时按姓名+手机去重较弱，仍允许种子
-      if (!StringUtils.hasText(idCard)) {
-        boolean nameExists = existing.stream().anyMatch(p ->
-            eqIgnoreCase(p.getName(), student.getRealname())
-                && eqIgnoreCase(p.getPhone(), student.getPhone()));
-        if (nameExists) {
-          continue;
-        }
+      // 花名册占位身份证与扫码真实身份证不一致时，按姓名避免重复种入；已删除同名也视为墓碑
+      if (StringUtils.hasText(realname) && existingNames.contains(realname)) {
+        continue;
       }
       TrainSignUpPeopleSelfEntity row = new TrainSignUpPeopleSelfEntity();
       row.setTenantId(tenantId);
@@ -327,6 +345,9 @@ public class ClassCollectionApplicationService {
       signUpPeopleMapper.insert(row);
       if (StringUtils.hasText(idCard)) {
         existingCards.add(idCard.toUpperCase());
+      }
+      if (StringUtils.hasText(realname)) {
+        existingNames.add(realname);
       }
       seeded++;
     }

@@ -5,19 +5,24 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.system.entity.OrgEntity;
+import com.guoyu.platform.system.mapper.PlatformOrganizationLookupMapper;
+import com.guoyu.platform.system.mapper.PlatformOrganizationLookupMapper.PlatformOrganizationBrief;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +43,9 @@ import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTFonts;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTHpsMeasure;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
@@ -55,6 +63,15 @@ public class SignUpPeopleDefaultTemplatePackService {
   private static final double ID_CARD_MERGE_WIDTH_CM = 8.6;
   private static final double ID_CARD_MERGE_HEIGHT_CM = 5.4;
 
+  private static final String FONT_SONG_TI = "宋体";
+  /** 中文小四 = 12pt */
+  private static final int FONT_SIZE_XIAO_SI_PT = 12;
+
+  private static final String LEVEL_APPLY_TEMPLATE = "template/职业技能等级认定申请表.docx";
+  private static final String COMMENT_REGISTER_TEMPLATE = "template/职业技能评价登记表（2025新）.docx";
+  /** 勾选 □ / ☑ */
+  private static final String CHECKBOX_OFF = "\u25A1";
+  private static final String CHECKBOX_ON = "\u2611";
   private static final String[] LEVEL_LABELS = {
       "五级/初级工", "四级/中级工", "三级/高级工", "二级/技师", "一级/高级技师"
   };
@@ -68,6 +85,8 @@ public class SignUpPeopleDefaultTemplatePackService {
   private final IdCardImageInsetCropper idCardCropper;
   private final TrainInfoClassMapper classMapper;
   private final ExamWorkTypeMapper examWorkTypeMapper;
+  private final PlatformOrganizationLookupMapper platformOrganizationLookupMapper;
+  private final TrainSignUpPeopleSelfMapper peopleSelfMapper;
 
   public SignUpPeopleDefaultTemplatePackService(
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
@@ -75,13 +94,17 @@ public class SignUpPeopleDefaultTemplatePackService {
       SignUpExportAssetService assetService,
       IdCardImageInsetCropper idCardCropper,
       TrainInfoClassMapper classMapper,
-      ExamWorkTypeMapper examWorkTypeMapper) {
+      ExamWorkTypeMapper examWorkTypeMapper,
+      PlatformOrganizationLookupMapper platformOrganizationLookupMapper,
+      TrainSignUpPeopleSelfMapper peopleSelfMapper) {
     this.cdnPath = cdnPath;
     this.objectMapper = objectMapper;
     this.assetService = assetService;
     this.idCardCropper = idCardCropper;
     this.classMapper = classMapper;
     this.examWorkTypeMapper = examWorkTypeMapper;
+    this.platformOrganizationLookupMapper = platformOrganizationLookupMapper;
+    this.peopleSelfMapper = peopleSelfMapper;
   }
 
   public String run(
@@ -90,7 +113,7 @@ public class SignUpPeopleDefaultTemplatePackService {
       List<TrainSignUpPeopleSelfEntity> people,
       ProgressCallback callback) throws Exception {
     ExportContext ctx = new ExportContext(cdnPath, signUp, company);
-    ctx.appointment = resolveClassAppointment(signUp);
+    loadClassContext(ctx, signUp);
     initDirectories(ctx);
     initSummaryExcels(ctx);
 
@@ -164,14 +187,18 @@ public class SignUpPeopleDefaultTemplatePackService {
     Map<String, String> vars = buildVars(ctx, person, idCard, realname);
     Map<String, ImageSlot> images = buildImageSlots(assets);
 
-    fillDocxTemplate("template/职业技能等级认定申请表.docx",
+    fillDocxTemplate(LEVEL_APPLY_TEMPLATE,
         ctx.levelApplyDir.resolve(realname + "_" + idCard + ".docx"), vars, images);
-    fillDocxTemplate("template/职业技能评价登记表（2025新）.docx",
+    fillDocxTemplate(COMMENT_REGISTER_TEMPLATE,
         ctx.commentRegisterDir.resolve(realname + "_" + idCard + ".docx"), vars, images);
     fillDocxTemplate("template/广西壮族自治区职业技能鉴定登记表.docx",
         ctx.gxRegisterDir.resolve(realname + "_" + idCard + ".docx"), vars, images);
+    // 工作年限证明：优先班级单位联系人/电话，缺省再回落人员工作经历证明人
+    Map<String, String> workYearVars = new LinkedHashMap<>(vars);
+    workYearVars.put("com_user", firstNonBlank(ctx.companyContactName, vars.get("exp_user"), ""));
+    workYearVars.put("com_phone", firstNonBlank(ctx.companyContactPhone, vars.get("exp_phone"), ""));
     fillDocxTemplate("template/工作年限证明.docx",
-        ctx.workYearDir.resolve(realname + "_" + idCard + ".docx"), vars, Map.of());
+        ctx.workYearDir.resolve(realname + "_" + idCard + ".docx"), workYearVars, Map.of());
 
     if (assets.front != null && assets.back != null) {
       writeIdCardMergeDocx(
@@ -282,11 +309,32 @@ public class SignUpPeopleDefaultTemplatePackService {
     String birthday = formatBirthday(idCard);
     int age = person.getAge() != null && person.getAge() > 0 ? person.getAge() : calcAge(idCard);
     WorkExp exp = parseWorkExp(person.getWorkExp(), person.getWorkDateStart(), person.getWorkDateEnd());
-    String companyName = firstNonBlank(person.getCompanyName(), ctx.companyName);
-    String companyAddress = firstNonBlank(person.getCompanyAddress(), "");
-    String companyZip = firstNonBlank(person.getZipCode(), "");
-    String companyCode = firstNonBlank(person.getCompanyCode(), "");
-    String companyPhone = firstNonBlank(exp.provePhone(), "");
+    String companyName = resolveCompanyName(
+        person.getCompanyName(),
+        ctx.companyName,
+        exp.company(),
+        ctx.signUpTitle);
+    PlatformOrganizationBrief legacyOrg = lookupLegacyOrganization(ctx, companyName);
+    String legacyAddress = legacyOrg != null ? safe(legacyOrg.address()) : "";
+    String legacyPhone = legacyOrg != null ? safe(legacyOrg.phone()) : "";
+    String legacyZip = legacyOrg != null ? RegionZipCodeSupport.normalizeZip(legacyOrg.zipcode()) : "";
+    String legacyCode = legacyOrg != null ? safe(legacyOrg.titleCode()) : "";
+    // 认定/评价表企业电话：企业主数据 → 证明人 → 学员手机
+    String companyPhone = firstNonBlank(ctx.companyPhone, legacyPhone, exp.provePhone(), person.getPhone());
+    String companyAddress = firstNonBlank(
+        person.getCompanyAddress(),
+        legacyAddress,
+        ctx.companyAddress,
+        person.getAddress());
+    String companyZip = resolveCompanyZipcode(
+        ctx,
+        companyName,
+        person.getZipCode(),
+        legacyZip,
+        companyAddress,
+        person.getAddress(),
+        legacyAddress);
+    String companyCode = firstNonBlank(person.getCompanyCode(), legacyCode, ctx.companyCode);
     int reqAge = workAge(firstNonBlank(exp.startDate(), person.getWorkDateStart()));
     String workStart = firstNonBlank(exp.startDate(), person.getWorkDateStart(), person.getWorkTime());
 
@@ -304,18 +352,26 @@ public class SignUpPeopleDefaultTemplatePackService {
     vars.put("school", safe(person.getSchool()));
     vars.put("major", safe(person.getMajor()));
     vars.put("school_no", safe(person.getSchoolNo()));
-    vars.put("graduate_date", safe(person.getGraduateDate()));
+    vars.put("graduate_date", formatGraduateDate(person.getGraduateDate()));
     vars.put("com_name", companyName);
     vars.put("company_name", companyName);
     vars.put("com_phone", companyPhone);
     vars.put("com_address", companyAddress);
     vars.put("com_zipcode", companyZip);
     vars.put("com_code", companyCode);
-    vars.put("com_user", safe(exp.proveName()));
+    vars.put("com_user", firstNonBlank(exp.proveName(), ""));
+    Long reqWorkTypeId = person.getReqWorkTypeId() != null && person.getReqWorkTypeId() > 0
+        ? person.getReqWorkTypeId()
+        : ctx.appointment.workTypeId();
     String reqWorkType = firstNonBlank(
         person.getReqWorkTypeName(),
         lookupWorkTypeTitle(person.getReqWorkTypeId()),
-        ctx.appointment.workTypeName());
+        ctx.appointment.workTypeName(),
+        lookupWorkTypeTitle(ctx.appointment.workTypeId()),
+        exp.position(),
+        person.getJog(),
+        person.getJob(),
+        person.getWorkTypeName());
     Integer reqLevelIndex = resolveReqLevelIndex(
         person.getReqLevel(),
         person.getReqWorkTypeId(),
@@ -324,20 +380,29 @@ public class SignUpPeopleDefaultTemplatePackService {
         ctx.appointment.classLevel());
     vars.put("req_work_type", reqWorkType);
     vars.put("req_work_level", levelLabel(reqLevelIndex));
-    vars.put("req_work_code", firstNonBlank(lookupWorkTypeCode(person.getReqWorkTypeId()), ctx.appointment.workTypeCode()));
+    vars.put("req_work_code", firstNonBlank(
+        lookupWorkTypeCode(reqWorkTypeId),
+        ctx.appointment.workTypeCode()));
     vars.put("req_work_age", reqAge + "年");
-    vars.put("work_type", safe(person.getWorkTypeName()));
-    vars.put("work_type_level", SignUpLevelSupport.toLabel(person.getLevel()));
-    vars.put("work_paper_no", safe(person.getPaperNo()));
+    String currentWorkType = firstNonBlank(
+        person.getWorkTypeName(),
+        lookupWorkTypeTitle(person.getWorkTypeId()));
+    vars.put("work_type", currentWorkType);
+    vars.put("work_type_level", optionalCurrentLevelLabel(person));
+    vars.put("work_paper_no", firstNonBlank(person.getPaperNo(), person.getWorkTypePaperNo()));
     vars.put("condition", safe(person.getDeclarationCondition()));
-    vars.put("paper_no", safe(person.getPaperNo()));
+    boolean promoteEval = hasPreviousLevelCertificate(person);
+    vars.put("eval_promote", promoteEval ? "1" : "0");
+    vars.put("paper_no", promoteEval
+        ? firstNonBlank(person.getPaperNo(), person.getWorkTypePaperNo())
+        : "");
     vars.put("exp_date", firstNonBlank(exp.rangeShort(), exp.rangeText()));
     vars.put("exp_company", exp.company());
     vars.put("exp_position", exp.position());
     vars.put("exp_user", exp.proveName());
     vars.put("exp_phone", exp.provePhone());
-    vars.put("workExp", exp.rangeOngoing());
-    vars.put("work_time", safe(person.getWorkTime()));
+    vars.put("workExp", firstNonBlank(exp.rangeOngoing(), exp.rangeText()));
+    vars.put("work_time", firstNonBlank(person.getWorkTime(), workStart));
     vars.put("work_start_date", formatYearMonth(workStart));
     vars.put("work_age", intToChinese(reqAge));
     vars.put("create_time", LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy年MM月dd日")));
@@ -360,8 +425,8 @@ public class SignUpPeopleDefaultTemplatePackService {
       setCell(sheet, rowNum, 3, vars.get("age"));
       setCell(sheet, rowNum, 4, vars.get("company_name"));
       setCell(sheet, rowNum, 5, safe(person.getIndustrialPark()));
-      setCell(sheet, rowNum, 6, safe(person.getWorkTypeName()));
-      setCell(sheet, rowNum, 7, SignUpLevelSupport.toLabel(person.getLevel()));
+      setCell(sheet, rowNum, 6, firstNonBlank(person.getWorkTypeName(), vars.get("work_type")));
+      setCell(sheet, rowNum, 7, firstNonBlank(vars.get("work_type_level"), ""));
       setCell(sheet, rowNum, 8, safe(person.getEducation()));
       setCell(sheet, rowNum, 9, safe(person.getTitleType()));
       setCell(sheet, rowNum, 11, safe(person.getSchool()));
@@ -387,7 +452,7 @@ public class SignUpPeopleDefaultTemplatePackService {
       setCell(sheet, rowNum, 8, formatBirthday(idCard));
       setCell(sheet, rowNum, 9, safe(person.getPhone()));
       setCell(sheet, rowNum, 10, person.getWorkTypeId() != null && person.getWorkTypeId() > 0 ? "是" : "否");
-      setCell(sheet, rowNum, 11, SignUpLevelSupport.toLabel(person.getLevel()));
+      setCell(sheet, rowNum, 11, vars.get("work_type_level"));
       setCell(sheet, rowNum, 12, safe(person.getPaperNo()));
       setCell(sheet, rowNum, 13, safe(person.getEducation()));
       setCell(sheet, rowNum, 16, vars.get("company_name"));
@@ -474,9 +539,15 @@ public class SignUpPeopleDefaultTemplatePackService {
       Files.createDirectories(target.getParent());
       // 先修复被 Word 拆开的 ${var}，再替换文本（图片占位留给后续 POI 插入）
       byte[] replaced = TrainingDocxVariableReplacer.replaceAll(raw, vars);
+      if (COMMENT_REGISTER_TEMPLATE.equals(templateRel)) {
+        replaced = applyCommentRegisterEvalChecks(replaced, "1".equals(vars.get("eval_promote")));
+      }
       try (InputStream in = new ByteArrayInputStream(replaced);
           XWPFDocument doc = new XWPFDocument(in)) {
         replaceDocxImages(doc, images);
+        if (LEVEL_APPLY_TEMPLATE.equals(templateRel)) {
+          applySongTiXiaoSiToLevelApplyForm(doc);
+        }
         try (OutputStream out = Files.newOutputStream(target)) {
           doc.write(out);
         }
@@ -484,6 +555,133 @@ public class SignUpPeopleDefaultTemplatePackService {
     } catch (Exception e) {
       log.warn("生成 docx 失败: {} -> {}", templateRel, target, e);
     }
+  }
+
+  /**
+   * 评价登记表「评价情况」：有上一等级证书勾选晋级，否则勾选初次。
+   */
+  static boolean hasPreviousLevelCertificate(TrainSignUpPeopleSelfEntity person) {
+    if (person == null) {
+      return false;
+    }
+    if (StringUtils.hasText(person.getPaperNo()) || StringUtils.hasText(person.getWorkTypePaperNo())) {
+      return true;
+    }
+    if (StringUtils.hasText(person.getWorkTypePaper())) {
+      return true;
+    }
+    return person.getWorkTypePaperHas() != null && person.getWorkTypePaperHas() > 0;
+  }
+
+  /**
+   * 将模板中的「□初次评价 / □晋级评价」按是否晋级改为 ☑。
+   */
+  static byte[] applyCommentRegisterEvalChecks(byte[] docxBytes, boolean promote) throws Exception {
+    if (docxBytes == null || docxBytes.length == 0) {
+      return docxBytes;
+    }
+    String firstChecked = CHECKBOX_ON + "初次评价";
+    String firstUnchecked = CHECKBOX_OFF + "初次评价";
+    String promoteChecked = CHECKBOX_ON + "晋级评价";
+    String promoteUnchecked = CHECKBOX_OFF + "晋级评价";
+    java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+    try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new ByteArrayInputStream(docxBytes));
+        java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(out)) {
+      java.util.zip.ZipEntry entry;
+      while ((entry = zis.getNextEntry()) != null) {
+        byte[] content = zis.readAllBytes();
+        if (TrainingDocxTemplateValidator.isWordPart(entry.getName())) {
+          String xml = new String(content, java.nio.charset.StandardCharsets.UTF_8);
+          if (promote) {
+            xml = xml.replace(promoteUnchecked, promoteChecked);
+            xml = xml.replace(firstChecked, firstUnchecked);
+          } else {
+            xml = xml.replace(firstUnchecked, firstChecked);
+            xml = xml.replace(promoteChecked, promoteUnchecked);
+          }
+          content = xml.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }
+        java.util.zip.ZipEntry outEntry = new java.util.zip.ZipEntry(entry.getName());
+        zos.putNextEntry(outEntry);
+        zos.write(content);
+        zos.closeEntry();
+      }
+    }
+    return out.toByteArray();
+  }
+
+  /**
+   * 认定申请表填入区（表格内）统一为「宋体 / 小四」。
+   * 表外大标题等段落不动，避免把文头字号压成小四。
+   */
+  static void applySongTiXiaoSiToLevelApplyForm(XWPFDocument doc) {
+    if (doc == null) {
+      return;
+    }
+    for (XWPFTable table : doc.getTables()) {
+      applySongTiXiaoSiOnTable(table);
+    }
+  }
+
+  private static void applySongTiXiaoSiOnTable(XWPFTable table) {
+    for (XWPFTableRow row : table.getRows()) {
+      for (XWPFTableCell cell : row.getTableCells()) {
+        for (XWPFParagraph p : cell.getParagraphs()) {
+          applySongTiXiaoSiOnParagraph(p);
+        }
+        for (XWPFTable nested : cell.getTables()) {
+          applySongTiXiaoSiOnTable(nested);
+        }
+      }
+    }
+  }
+
+  private static void applySongTiXiaoSiOnParagraph(XWPFParagraph paragraph) {
+    if (paragraph == null) {
+      return;
+    }
+    for (XWPFRun run : paragraph.getRuns()) {
+      if (run == null) {
+        continue;
+      }
+      // 跳过纯图片 run（无文本）
+      if (!StringUtils.hasText(run.text())) {
+        continue;
+      }
+      applySongTiXiaoSi(run);
+    }
+  }
+
+  static void applySongTiXiaoSi(XWPFRun run) {
+    if (run == null) {
+      return;
+    }
+    // 去掉主题字体（Word 里常显示为「宋体 (标题)」），改为显式宋体 + 小四
+    CTRPr rPr = run.getCTR().isSetRPr() ? run.getCTR().getRPr() : run.getCTR().addNewRPr();
+    CTFonts fonts = rPr.sizeOfRFontsArray() > 0 ? rPr.getRFontsArray(0) : rPr.addNewRFonts();
+    if (fonts.isSetAsciiTheme()) {
+      fonts.unsetAsciiTheme();
+    }
+    if (fonts.isSetEastAsiaTheme()) {
+      fonts.unsetEastAsiaTheme();
+    }
+    if (fonts.isSetHAnsiTheme()) {
+      fonts.unsetHAnsiTheme();
+    }
+    if (fonts.isSetCstheme()) {
+      fonts.unsetCstheme();
+    }
+    fonts.setAscii(FONT_SONG_TI);
+    fonts.setEastAsia(FONT_SONG_TI);
+    fonts.setHAnsi(FONT_SONG_TI);
+    fonts.setCs(FONT_SONG_TI);
+    fonts.setHint(org.openxmlformats.schemas.wordprocessingml.x2006.main.STHint.EAST_ASIA);
+
+    BigInteger halfPoints = BigInteger.valueOf(FONT_SIZE_XIAO_SI_PT * 2L);
+    CTHpsMeasure sz = rPr.sizeOfSzArray() > 0 ? rPr.getSzArray(0) : rPr.addNewSz();
+    sz.setVal(halfPoints);
+    CTHpsMeasure szCs = rPr.sizeOfSzCsArray() > 0 ? rPr.getSzCsArray(0) : rPr.addNewSzCs();
+    szCs.setVal(halfPoints);
   }
 
   /** 无模板时仍生成正反面合并 docx（对齐参考包命名）。 */
@@ -687,22 +885,68 @@ public class SignUpPeopleDefaultTemplatePackService {
   private WorkExp parseWorkExp(String json, String startFallback, String endFallback) {
     try {
       if (StringUtils.hasText(json)) {
-        List<Map<String, String>> list = objectMapper.readValue(json, new TypeReference<>() {});
+        List<Map<String, Object>> list = objectMapper.readValue(json, new TypeReference<>() {});
         if (!list.isEmpty()) {
-          Map<String, String> item = list.get(0);
+          Map<String, Object> item = list.get(0);
           return new WorkExp(
-              item.getOrDefault("startDate", startFallback),
-              item.getOrDefault("endDate", endFallback),
-              item.getOrDefault("company", ""),
-              item.getOrDefault("position", ""),
-              item.getOrDefault("proveName", ""),
-              item.getOrDefault("provePhone", ""));
+              textOf(item.get("startDate"), startFallback),
+              textOf(item.get("endDate"), endFallback),
+              textOf(item.get("company"), ""),
+              textOf(item.get("position"), ""),
+              textOf(item.get("proveName"), textOf(item.get("proveUser"), "")),
+              textOf(item.get("provePhone"), ""));
         }
       }
     } catch (Exception ignored) {
       // fall through
     }
     return new WorkExp(startFallback, endFallback, "", "", "", "");
+  }
+
+  private static String textOf(Object value, String fallback) {
+    if (value == null) {
+      return fallback != null ? fallback : "";
+    }
+    String text = String.valueOf(value).trim();
+    return StringUtils.hasText(text) ? text : (fallback != null ? fallback : "");
+  }
+
+  /**
+   * 现工种等级：库默认 {@code "0"} 与「五级」同码；无工种/证书痕迹时留空，避免认定表误填五级。
+   */
+  static String optionalCurrentLevelLabel(TrainSignUpPeopleSelfEntity person) {
+    if (person == null) {
+      return "";
+    }
+    String raw = person.getLevel();
+    if (!StringUtils.hasText(raw)) {
+      return "";
+    }
+    String t = raw.trim();
+    boolean numericZero = "0".equals(t);
+    boolean hasEvidence = (person.getWorkTypeId() != null && person.getWorkTypeId() > 0)
+        || StringUtils.hasText(person.getWorkTypeName())
+        || StringUtils.hasText(person.getPaperNo())
+        || (person.getWorkTypePaperHas() != null && person.getWorkTypePaperHas() > 0)
+        || StringUtils.hasText(person.getWorkTypePaper());
+    if (numericZero && !hasEvidence) {
+      return "";
+    }
+    return SignUpLevelSupport.toLabel(t);
+  }
+
+  private static String formatGraduateDate(String raw) {
+    if (!StringUtils.hasText(raw)) {
+      return "";
+    }
+    String normalized = raw.trim().replace('.', '-').replace('/', '-');
+    if (normalized.length() >= 10 && normalized.charAt(4) == '-' && normalized.charAt(7) == '-') {
+      return normalized.substring(0, 10);
+    }
+    if (normalized.length() >= 7 && normalized.charAt(4) == '-') {
+      return normalized.substring(0, 7);
+    }
+    return raw.trim();
   }
 
   private static String levelLabel(Integer level) {
@@ -735,17 +979,21 @@ public class SignUpPeopleDefaultTemplatePackService {
     boolean hasOwnId = personReqWorkTypeId != null && personReqWorkTypeId > 0;
     boolean hasOwnName = StringUtils.hasText(personReqWorkTypeName);
     boolean sameAsClass = hasOwnId && classWorkTypeId != null && personReqWorkTypeId.equals(classWorkTypeId);
+    // 人员误把班级编码 1–5 写进 req_level 时，按班级口径换算
     if (personReqLevel != null && classLevel != null
         && personReqLevel.equals(classLevel)
         && classLevel >= 1 && classLevel <= 5) {
       return classReq;
     }
+    // 明确填了 1–4（四级…一级）时以人员为准
     if (personReqLevel != null && personReqLevel > 0 && personReqLevel <= 4) {
       return personReqLevel;
     }
+    // 人员写了 0，且预约工种与班级不同 → 视为明确报五级
     if (personReqLevel != null && personReqLevel == 0 && (hasOwnId || hasOwnName) && !sameAsClass) {
       return 0;
     }
+    // 默认 0 / 空：优先班级预约等级，避免一律「五级」
     if (classReq != null) {
       return classReq;
     }
@@ -759,14 +1007,18 @@ public class SignUpPeopleDefaultTemplatePackService {
     return className != null ? className : "";
   }
 
-  private ClassAppointment resolveClassAppointment(TrainSignUpSelfEntity signUp) {
+  private void loadClassContext(ExportContext ctx, TrainSignUpSelfEntity signUp) {
     if (signUp == null || signUp.getTrainClassId() == null || signUp.getTrainClassId() <= 0) {
-      return ClassAppointment.EMPTY;
+      ctx.appointment = ClassAppointment.EMPTY;
+      return;
     }
     TrainInfoClassEntity clazz = classMapper.selectById(signUp.getTrainClassId());
     if (clazz == null) {
-      return ClassAppointment.EMPTY;
+      ctx.appointment = ClassAppointment.EMPTY;
+      return;
     }
+    ctx.companyContactName = safe(clazz.getCompanyContactName());
+    ctx.companyContactPhone = safe(clazz.getCompanyContactPhone());
     Long workTypeId = clazz.getWorkTypeId();
     String workTypeName = "";
     String workTypeCode = "";
@@ -779,7 +1031,7 @@ public class SignUpPeopleDefaultTemplatePackService {
         workTypeCode = lookupWorkTypeCode(workTypeId);
       }
     }
-    return new ClassAppointment(workTypeId, workTypeName, clazz.getWorkTypeLevel(), workTypeCode);
+    ctx.appointment = new ClassAppointment(workTypeId, workTypeName, clazz.getWorkTypeLevel(), workTypeCode);
   }
 
   private String lookupWorkTypeTitle(Long workTypeId) {
@@ -887,6 +1139,101 @@ public class SignUpPeopleDefaultTemplatePackService {
     return value != null ? value : "";
   }
 
+  /**
+   * 导出「工作单位」：用企业名，不用资料收集计划标题。
+   * 人员 company_name 常被误写成计划标题（如「…材料收集」），优先报名计划所属企业 / 工作经历单位。
+   */
+  static String resolveCompanyName(
+      String personCompanyName,
+      String orgCompanyName,
+      String workExpCompany,
+      String signUpTitle) {
+    if (StringUtils.hasText(orgCompanyName)) {
+      return orgCompanyName.trim();
+    }
+    if (StringUtils.hasText(workExpCompany) && !looksLikeCollectionPlanTitle(workExpCompany, signUpTitle)) {
+      return workExpCompany.trim();
+    }
+    if (StringUtils.hasText(personCompanyName) && !looksLikeCollectionPlanTitle(personCompanyName, signUpTitle)) {
+      return personCompanyName.trim();
+    }
+    return "";
+  }
+
+  /**
+   * 企业邮编：人员填写 → PHP 企业库 → 同企业历史众数 → 地址地名推断。
+   */
+  String resolveCompanyZipcode(
+      ExportContext ctx,
+      String companyName,
+      String personZip,
+      String legacyOrgZip,
+      String... addressHints) {
+    String fromPerson = RegionZipCodeSupport.normalizeZip(personZip);
+    if (StringUtils.hasText(fromPerson)) {
+      return fromPerson;
+    }
+    String fromLegacy = RegionZipCodeSupport.normalizeZip(legacyOrgZip);
+    if (StringUtils.hasText(fromLegacy)) {
+      return fromLegacy;
+    }
+    String fromCtx = RegionZipCodeSupport.normalizeZip(ctx.companyZipcode);
+    if (StringUtils.hasText(fromCtx)) {
+      return fromCtx;
+    }
+    String fromPeers = lookupPeerZipByCompany(ctx, companyName);
+    if (StringUtils.hasText(fromPeers)) {
+      return fromPeers;
+    }
+    return RegionZipCodeSupport.inferFromAddresses(addressHints);
+  }
+
+  private PlatformOrganizationBrief lookupLegacyOrganization(ExportContext ctx, String companyName) {
+    if (!StringUtils.hasText(companyName)) {
+      return null;
+    }
+    if (ctx.legacyOrgByName.containsKey(companyName)) {
+      return ctx.legacyOrgByName.get(companyName);
+    }
+    PlatformOrganizationBrief brief = null;
+    try {
+      brief = platformOrganizationLookupMapper.findByTitle(companyName);
+    } catch (Exception e) {
+      log.debug("查询 platform_organization 失败 name={}", companyName, e);
+    }
+    ctx.legacyOrgByName.put(companyName, brief);
+    return brief;
+  }
+
+  private String lookupPeerZipByCompany(ExportContext ctx, String companyName) {
+    if (!StringUtils.hasText(companyName)) {
+      return "";
+    }
+    return ctx.peerZipByCompany.computeIfAbsent(companyName, name -> {
+      try {
+        return RegionZipCodeSupport.normalizeZip(peopleSelfMapper.findMostCommonZipByCompanyName(name));
+      } catch (Exception e) {
+        log.debug("查询同企业历史邮编失败 name={}", name, e);
+        return "";
+      }
+    });
+  }
+
+  /** 资料收集计划标题误入企业字段时的识别 */
+  static boolean looksLikeCollectionPlanTitle(String name, String signUpTitle) {
+    if (!StringUtils.hasText(name)) {
+      return false;
+    }
+    String n = name.trim();
+    if (StringUtils.hasText(signUpTitle) && n.equals(signUpTitle.trim())) {
+      return true;
+    }
+    return n.contains("材料收集")
+        || n.contains("资料收集")
+        || n.contains("信息收集")
+        || n.endsWith("收集");
+  }
+
   private static String firstNonBlank(String... values) {
     if (values == null) {
       return "";
@@ -961,7 +1308,14 @@ public class SignUpPeopleDefaultTemplatePackService {
 
   private static final class ExportContext {
     private final String folderName;
+    private final String signUpTitle;
     private final String companyName;
+    private final String companyPhone;
+    private final String companyAddress;
+    private final String companyZipcode;
+    private final String companyCode;
+    private String companyContactName = "";
+    private String companyContactPhone = "";
     private final Path rootDir;
     private Path idCardFrontDir;
     private Path idCardBackDir;
@@ -983,10 +1337,19 @@ public class SignUpPeopleDefaultTemplatePackService {
     private Workbook examGxWb;
     private Workbook examAllWb;
     private ClassAppointment appointment = ClassAppointment.EMPTY;
+    private final Map<String, PlatformOrganizationBrief> legacyOrgByName = new HashMap<>();
+    private final Map<String, String> peerZipByCompany = new HashMap<>();
 
     private ExportContext(String cdnRoot, TrainSignUpSelfEntity signUp, OrgEntity company) {
-      this.folderName = sanitize(signUp.getTitle());
-      this.companyName = company != null && StringUtils.hasText(company.getName()) ? company.getName() : "";
+      this.signUpTitle = signUp != null && StringUtils.hasText(signUp.getTitle()) ? signUp.getTitle().trim() : "";
+      this.folderName = sanitize(signUpTitle);
+      // 对齐 PHP：工作单位取报名计划所属企业（sys_org.name），不是人员表误写的计划标题
+      this.companyName = company != null && StringUtils.hasText(company.getName()) ? company.getName().trim() : "";
+      this.companyPhone = company != null && StringUtils.hasText(company.getPhone()) ? company.getPhone() : "";
+      this.companyAddress = "";
+      this.companyZipcode = "";
+      // 营业执照号走人员 company_code；sys_org.code 是内部编码，不能当 com_code
+      this.companyCode = "";
       this.rootDir = Paths.get(cdnRoot, "down", folderName);
     }
   }
@@ -995,7 +1358,7 @@ public class SignUpPeopleDefaultTemplatePackService {
     if (!StringUtils.hasText(title)) {
       return "sign-up-export";
     }
-    return title.replaceAll("[\\\\/:*?\"<>|]", "_");
+    return title.trim().replaceAll("[\\\\/:*?\"<>|]", "_");
   }
 
   private record WorkExp(
@@ -1021,10 +1384,16 @@ public class SignUpPeopleDefaultTemplatePackService {
     }
 
     String rangeOngoing() {
-      if (!StringUtils.hasText(startDate)) {
+      if (!StringUtils.hasText(startDate) && !StringUtils.hasText(company) && !StringUtils.hasText(position)) {
         return "";
       }
-      return safe(startDate) + "至今，在" + safe(company) + "从事" + safe(position) + "工作";
+      String start = safe(startDate);
+      String end = safe(endDate);
+      boolean ongoing = !StringUtils.hasText(end) || "至今".equals(end) || "今".equals(end);
+      String period = ongoing
+          ? (StringUtils.hasText(start) ? start + "至今" : "至今")
+          : (StringUtils.hasText(start) ? start + "至" + end : end);
+      return period + "，在" + safe(company) + "从事" + safe(position) + "工作";
     }
 
     private static String safe(String value) {

@@ -322,12 +322,35 @@ export function TrainingInformationPage() {
 
   const deletePeopleMu = useMutation({
     mutationFn: (ids: number[]) => trainApi.batchUpdateSignUpPeople({ ids, field: 'deleted', value: 1 }),
-    onSuccess: () => {
-      message.success('批量删除成功');
+    onSuccess: (updated) => {
+      if (!updated) {
+        message.warning('未删除任何人员，请刷新后重试');
+        return;
+      }
+      message.success(`已删除 ${updated} 人`);
       setSelectedPeopleIds([]);
       refetchPeople();
     },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error && err.message ? err.message : '批量删除失败';
+      message.error(msg);
+    },
   });
+
+  const handleBatchDeletePeople = () => {
+    if (!selectedPeopleIds.length) {
+      message.warning('请先勾选人员');
+      return;
+    }
+    Modal.confirm({
+      title: '确认批量删除',
+      content: `将删除已勾选的 ${selectedPeopleIds.length} 人，删除后列表不再显示。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => deletePeopleMu.mutateAsync(selectedPeopleIds),
+    });
+  };
 
   const updatePayMu = useMutation({
     mutationFn: ({ id, value }: { id: number; value: number }) =>
@@ -1071,7 +1094,7 @@ export function TrainingInformationPage() {
                 type={isPeopleChecked ? 'default' : 'primary'}
                 danger={!isPeopleChecked}
                 disabled={isPeopleChecked}
-                onClick={() => deletePeopleMu.mutate(selectedPeopleIds)}
+                onClick={handleBatchDeletePeople}
               >
                 批量删除
               </Button>

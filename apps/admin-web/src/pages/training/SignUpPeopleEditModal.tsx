@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
-  Button, DatePicker, Form, Input, InputNumber, Modal, Select, Spin, Switch, message,
+  AutoComplete, Button, DatePicker, Form, Input, InputNumber, Modal, Select, Spin, Switch, message,
 } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -113,6 +113,8 @@ interface PeopleEditFormValues {
 interface ConditionOption {
   id: number | string;
   title: string;
+  value?: string;
+  reqLevel?: number;
 }
 
 function normalizePersonDetail(raw: Record<string, unknown>): TrainSignUpPerson {
@@ -303,7 +305,7 @@ function formValuesToPayload(
     paperNo: values.paperNo,
     reqWorkTypeId: values.reqWorkTypeId,
     reqLevel: values.reqLevel,
-    declarationCondition: values.declarationCondition,
+    declarationCondition: values.declarationCondition ?? '',
     status: values.status,
     companyStatus: values.companyStatus,
     hasPay: values.hasPay,
@@ -457,29 +459,37 @@ export function SignUpPeopleEditModal({
   const { isLoading: detailLoading } = useQuery({
     queryKey: ['sign-up-person-detail', personId, classWorkTypeId, classWorkTypeLevel],
     queryFn: async () => {
-      const raw = await trainApi.getSignUpPerson(personId!);
-      const person = normalizePersonDetail(raw as unknown as Record<string, unknown>);
-      setDetail(person);
-      setImageDrafts({
-        idCardFront: pickImageUrl(person.idcardFront, person.idCardFront) || undefined,
-        idCardBack: pickImageUrl(person.idcardBack, person.idCardBack) || undefined,
-        idCardHeader: pickImageUrl(person.idcardHeader, person.idCardHeader) || undefined,
-        idCardHeader2: pickImageUrl(person.idCardHeader2) || undefined,
-        schoolPaper: pickImageUrl(person.schoolPaper) || undefined,
-        contactFirstPage: pickImageUrl(person.contractFirst, person.contactFirstPage) || undefined,
-        contactExpirePage: pickImageUrl(person.contractExpire, person.contactExpirePage) || undefined,
-        contactSignPage: pickImageUrl(person.contractSign, person.contactSignPage) || undefined,
-        workTypePaper: pickImageUrl(person.workTypePaper) || undefined,
-        titlePaper: pickImageUrl(person.titlePaper) || undefined,
-      });
-      form.setFieldsValue(personToFormValues(person, {
-        workTypeId: classWorkTypeId,
-        workTypeTitle: classWorkTypeTitle,
-        workTypeLevel: classWorkTypeLevel,
-      }));
-      return person;
+      try {
+        const raw = await trainApi.getSignUpPerson(personId!);
+        const person = normalizePersonDetail(raw as unknown as Record<string, unknown>);
+        setDetail(person);
+        setImageDrafts({
+          idCardFront: pickImageUrl(person.idcardFront, person.idCardFront) || undefined,
+          idCardBack: pickImageUrl(person.idcardBack, person.idCardBack) || undefined,
+          idCardHeader: pickImageUrl(person.idcardHeader, person.idCardHeader) || undefined,
+          idCardHeader2: pickImageUrl(person.idCardHeader2) || undefined,
+          schoolPaper: pickImageUrl(person.schoolPaper) || undefined,
+          contactFirstPage: pickImageUrl(person.contractFirst, person.contactFirstPage) || undefined,
+          contactExpirePage: pickImageUrl(person.contractExpire, person.contactExpirePage) || undefined,
+          contactSignPage: pickImageUrl(person.contractSign, person.contactSignPage) || undefined,
+          workTypePaper: pickImageUrl(person.workTypePaper) || undefined,
+          titlePaper: pickImageUrl(person.titlePaper) || undefined,
+        });
+        form.setFieldsValue(personToFormValues(person, {
+          workTypeId: classWorkTypeId,
+          workTypeTitle: classWorkTypeTitle,
+          workTypeLevel: classWorkTypeLevel,
+        }));
+        return person;
+      } catch (err) {
+        // 列表可能仍缓存已删除行：关掉弹窗并刷新列表
+        onClose();
+        onSaved();
+        throw err;
+      }
     },
     enabled: open && !!personId,
+    retry: false,
   });
 
   const saveMu = useMutation({
@@ -762,10 +772,18 @@ export function SignUpPeopleEditModal({
                   />
                 </Form.Item>
                 <Form.Item name="declarationCondition" label="申报条件">
-                  {conditionOptions.length > 0 ? (
-                    <Select className="people-input" allowClear showSearch placeholder="请选择" options={conditionOptions} />
+                  {allConditions.length > 0 ? (
+                    <AutoComplete
+                      className="people-input"
+                      allowClear
+                      options={conditionOptions}
+                      filterOption={(input, option) =>
+                        String(option?.value ?? '').toLowerCase().includes(input.trim().toLowerCase())
+                      }
+                      placeholder={reqLevel == null ? '请选择或输入申报条件（建议先选预约等级）' : '请选择或输入申报条件'}
+                    />
                   ) : (
-                    <Input className="people-input" placeholder="请输入申报条件" />
+                    <Input className="people-input" placeholder="请输入申报条件" maxLength={500} showCount />
                   )}
                 </Form.Item>
                 {workExpList.length > 0 ? (

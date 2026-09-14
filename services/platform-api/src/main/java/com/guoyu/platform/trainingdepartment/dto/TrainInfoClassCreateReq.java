@@ -52,6 +52,18 @@ public class TrainInfoClassCreateReq {
   @Size(max = 255)
   private String kcbiaoFile;
 
+  /** 单位联系人 */
+  @JsonProperty("companyContactName")
+  @JsonAlias({"company_contact_name"})
+  @Size(max = 64)
+  private String companyContactName;
+
+  /** 单位联系方式 */
+  @JsonProperty("companyContactPhone")
+  @JsonAlias({"company_contact_phone"})
+  @Size(max = 32)
+  private String companyContactPhone;
+
   public Long getId() { return id; }
   public void setId(Long id) { this.id = id; }
   public Long getTrainInfoId() {
@@ -140,6 +152,22 @@ public class TrainInfoClassCreateReq {
 
   public void setKcbiaoFile(String kcbiaoFile) {
     this.kcbiaoFile = kcbiaoFile;
+  }
+
+  public String getCompanyContactName() {
+    return companyContactName;
+  }
+
+  public void setCompanyContactName(String companyContactName) {
+    this.companyContactName = companyContactName;
+  }
+
+  public String getCompanyContactPhone() {
+    return companyContactPhone;
+  }
+
+  public void setCompanyContactPhone(String companyContactPhone) {
+    this.companyContactPhone = companyContactPhone;
   }
 
 }

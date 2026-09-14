@@ -26,25 +26,17 @@ export const PAY_OPTIONS = [
   { value: 1, label: '已支付' },
 ];
 
-/** 对齐 PHP SysDictData dict_id=867 按预约等级筛选申报条件 */
-export function filterDeclarationConditions<T extends { id: number | string; title: string }>(
-  all: T[],
-  reqLevel?: number,
-): T[] {
+/** 按预约等级筛选申报条件（item_value / reqLevel，不再使用 PHP 遗留 id 区间） */
+export function filterDeclarationConditions<
+  T extends { id?: number | string; title: string; value?: string; reqLevel?: number },
+>(all: T[], reqLevel?: number): T[] {
   if (reqLevel == null || all.length === 0) return all;
-  const ranges: Array<[number, number]> = [
-    [2522, 2524],
-    [2524, 2527],
-    [2527, 2533],
-    [2533, 2538],
-    [2538, 2541],
-  ];
-  const range = ranges[reqLevel];
-  if (!range) return all;
-  const [min, max] = range;
   const filtered = all.filter((item) => {
-    const n = Number(item.id);
-    return !Number.isNaN(n) && n >= min && n < max;
+    if (item.reqLevel != null) return Number(item.reqLevel) === Number(reqLevel);
+    if (item.value != null && String(item.value).length > 0) {
+      return String(item.value).startsWith(`${reqLevel}-`);
+    }
+    return true;
   });
   return filtered.length > 0 ? filtered : all;
 }

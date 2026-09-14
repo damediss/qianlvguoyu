@@ -985,6 +985,8 @@ export function TrainingClassPeoplePage() {
     dateEnd?: Dayjs;
     kcbiaoFile?: string;
     kcbiaoFileDisplay?: string;
+    companyContactName?: string;
+    companyContactPhone?: string;
   }>();
   const [trainInfoForm] = Form.useForm<{
     title?: string;
@@ -1246,6 +1248,8 @@ export function TrainingClassPeoplePage() {
       dateEnd: row.date_end ? dayjs(row.date_end) : undefined,
       kcbiaoFile: row.kcbiao_file,
       kcbiaoFileDisplay: row.kcbiao_file,
+      companyContactName: row.company_contact_name,
+      companyContactPhone: row.company_contact_phone,
     });
     setKcbiaoSrc(row.kcbiao_src ?? resolveFileUrl(row.kcbiao_file));
     setModalOpen(true);
@@ -1367,6 +1371,8 @@ export function TrainingClassPeoplePage() {
         dateStart: dayjs.isDayjs(v.dateStart) ? v.dateStart.format('YYYY-MM-DD') : String(v.dateStart),
         dateEnd: dayjs.isDayjs(v.dateEnd) ? v.dateEnd.format('YYYY-MM-DD') : String(v.dateEnd),
         kcbiaoFile: v.kcbiaoFile,
+        companyContactName: String(v.companyContactName ?? '').trim(),
+        companyContactPhone: String(v.companyContactPhone ?? '').trim(),
       };
       saveMu.mutate(payload);
     } catch {
@@ -1723,6 +1729,12 @@ export function TrainingClassPeoplePage() {
           </Form.Item>
           <Form.Item name="nums" label="班级人数" rules={[{ required: true, message: '请填写班级人数' }]}>
             <Input type="number" placeholder="请输入班级人数" min={1} />
+          </Form.Item>
+          <Form.Item name="companyContactName" label="单位联系人">
+            <Input placeholder="请输入单位联系人（用于工作年限证明）" maxLength={64} />
+          </Form.Item>
+          <Form.Item name="companyContactPhone" label="联系方式">
+            <Input placeholder="请输入联系方式（用于工作年限证明）" maxLength={32} />
           </Form.Item>
           <Form.Item name="dateStart" label="开始日期" rules={[{ required: true, message: '请选择开始日期' }]}>
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" placeholder="选择开始日期" />

@@ -38,6 +38,10 @@ public class TrainInfoClassEntity {
   private String fileTemps;
   /** 课表文件 */
   private String kcbiaoFile;
+  /** 单位联系人（工作年限证明等） */
+  private String companyContactName;
+  /** 单位联系方式 */
+  private String companyContactPhone;
   /** 1=跟班已手工保存课表，重导开班 Excel 需确认 */
   private Integer scheduleManualEdited;
   /** 最近一次从 kcbiao_file 导入时间 */
@@ -82,6 +86,10 @@ public class TrainInfoClassEntity {
   public void setFileTemps(String fileTemps) { this.fileTemps = fileTemps; }
   public String getKcbiaoFile() { return kcbiaoFile; }
   public void setKcbiaoFile(String kcbiaoFile) { this.kcbiaoFile = kcbiaoFile; }
+  public String getCompanyContactName() { return companyContactName; }
+  public void setCompanyContactName(String companyContactName) { this.companyContactName = companyContactName; }
+  public String getCompanyContactPhone() { return companyContactPhone; }
+  public void setCompanyContactPhone(String companyContactPhone) { this.companyContactPhone = companyContactPhone; }
   public Integer getScheduleManualEdited() { return scheduleManualEdited; }
   public void setScheduleManualEdited(Integer scheduleManualEdited) {
     this.scheduleManualEdited = scheduleManualEdited;
