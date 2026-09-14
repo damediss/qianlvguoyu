@@ -456,37 +456,15 @@ export function SignUpPeopleEditModal({
     staleTime: 5 * 60 * 1000,
   });
 
-  const { isLoading: detailLoading } = useQuery({
+  const {
+    data: personData,
+    isLoading: detailLoading,
+    isError: detailError,
+  } = useQuery({
     queryKey: ['sign-up-person-detail', personId, classWorkTypeId, classWorkTypeLevel],
     queryFn: async () => {
-      try {
-        const raw = await trainApi.getSignUpPerson(personId!);
-        const person = normalizePersonDetail(raw as unknown as Record<string, unknown>);
-        setDetail(person);
-        setImageDrafts({
-          idCardFront: pickImageUrl(person.idcardFront, person.idCardFront) || undefined,
-          idCardBack: pickImageUrl(person.idcardBack, person.idCardBack) || undefined,
-          idCardHeader: pickImageUrl(person.idcardHeader, person.idCardHeader) || undefined,
-          idCardHeader2: pickImageUrl(person.idCardHeader2) || undefined,
-          schoolPaper: pickImageUrl(person.schoolPaper) || undefined,
-          contactFirstPage: pickImageUrl(person.contractFirst, person.contactFirstPage) || undefined,
-          contactExpirePage: pickImageUrl(person.contractExpire, person.contactExpirePage) || undefined,
-          contactSignPage: pickImageUrl(person.contractSign, person.contactSignPage) || undefined,
-          workTypePaper: pickImageUrl(person.workTypePaper) || undefined,
-          titlePaper: pickImageUrl(person.titlePaper) || undefined,
-        });
-        form.setFieldsValue(personToFormValues(person, {
-          workTypeId: classWorkTypeId,
-          workTypeTitle: classWorkTypeTitle,
-          workTypeLevel: classWorkTypeLevel,
-        }));
-        return person;
-      } catch (err) {
-        // 列表可能仍缓存已删除行：关掉弹窗并刷新列表
-        onClose();
-        onSaved();
-        throw err;
-      }
+      const raw = await trainApi.getSignUpPerson(personId!);
+      return normalizePersonDetail(raw as unknown as Record<string, unknown>);
     },
     enabled: open && !!personId,
     retry: false,
@@ -499,7 +477,10 @@ export function SignUpPeopleEditModal({
       message.success('保存成功');
       onSaved();
     },
-    onError: () => message.error('保存失败'),
+    onError: (err: unknown) => {
+      const msg = err instanceof Error && err.message ? err.message : '保存失败';
+      message.error(msg);
+    },
   });
 
   useEffect(() => {
@@ -510,6 +491,14 @@ export function SignUpPeopleEditModal({
       setUploadingField(null);
     }
   }, [open, form]);
+
+  // 列表可能仍缓存已删除行：关掉弹窗并刷新列表
+  useEffect(() => {
+    if (!open || !detailError) return;
+    message.error('人员不存在或已删除');
+    onClose();
+    onSaved();
+  }, [open, detailError, onClose, onSaved]);
 
   const companyOptions = useMemo(() => (
     (publicData as DemandPublicData | undefined)?.company_list?.map((c) => ({
@@ -523,24 +512,34 @@ export function SignUpPeopleEditModal({
     return groups.flatMap((g) => (g.options ?? []).map((o) => ({ value: o.id, label: o.title })));
   }, [publicData]);
 
+  // destroyOnHidden 下 Form 晚于 queryFn 挂载；在 open+data 就绪后再回填，避免 setFieldsValue 丢失
   useEffect(() => {
-    if (!open || !detail || workTypeOptions.length === 0) return;
-    const values = personToFormValues(detail, {
+    if (!open || !personData) return;
+    setDetail(personData);
+    setImageDrafts({
+      idCardFront: pickImageUrl(personData.idcardFront, personData.idCardFront) || undefined,
+      idCardBack: pickImageUrl(personData.idcardBack, personData.idCardBack) || undefined,
+      idCardHeader: pickImageUrl(personData.idcardHeader, personData.idCardHeader) || undefined,
+      idCardHeader2: pickImageUrl(personData.idCardHeader2) || undefined,
+      schoolPaper: pickImageUrl(personData.schoolPaper) || undefined,
+      contactFirstPage: pickImageUrl(personData.contractFirst, personData.contactFirstPage) || undefined,
+      contactExpirePage: pickImageUrl(personData.contractExpire, personData.contactExpirePage) || undefined,
+      contactSignPage: pickImageUrl(personData.contractSign, personData.contactSignPage) || undefined,
+      workTypePaper: pickImageUrl(personData.workTypePaper) || undefined,
+      titlePaper: pickImageUrl(personData.titlePaper) || undefined,
+    });
+    form.setFieldsValue(personToFormValues(personData, {
       workTypeId: classWorkTypeId,
       workTypeTitle: classWorkTypeTitle,
       workTypeLevel: classWorkTypeLevel,
-    }, workTypeOptions);
-    const current = form.getFieldValue('reqWorkTypeId');
-    if ((current == null || current === '') && values.reqWorkTypeId != null) {
-      form.setFieldValue('reqWorkTypeId', values.reqWorkTypeId);
-    }
+    }, workTypeOptions));
   }, [
     open,
-    detail,
-    workTypeOptions,
+    personData,
     classWorkTypeId,
     classWorkTypeTitle,
     classWorkTypeLevel,
+    workTypeOptions,
     form,
   ]);
 

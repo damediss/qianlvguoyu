@@ -112,7 +112,19 @@ public class SignUpPeopleDefaultTemplatePackService {
       OrgEntity company,
       List<TrainSignUpPeopleSelfEntity> people,
       ProgressCallback callback) throws Exception {
-    ExportContext ctx = new ExportContext(cdnPath, signUp, company);
+    return run(signUp, company, people, null, callback);
+  }
+
+  /**
+   * @param taskId 非空时工作目录与 zip 带任务后缀，避免覆盖/命中上一次导出包
+   */
+  public String run(
+      TrainSignUpSelfEntity signUp,
+      OrgEntity company,
+      List<TrainSignUpPeopleSelfEntity> people,
+      Long taskId,
+      ProgressCallback callback) throws Exception {
+    ExportContext ctx = new ExportContext(cdnPath, signUp, company, taskId);
     loadClassContext(ctx, signUp);
     initDirectories(ctx);
     initSummaryExcels(ctx);
@@ -1341,8 +1353,14 @@ public class SignUpPeopleDefaultTemplatePackService {
     private final Map<String, String> peerZipByCompany = new HashMap<>();
 
     private ExportContext(String cdnRoot, TrainSignUpSelfEntity signUp, OrgEntity company) {
+      this(cdnRoot, signUp, company, null);
+    }
+
+    private ExportContext(String cdnRoot, TrainSignUpSelfEntity signUp, OrgEntity company, Long taskId) {
       this.signUpTitle = signUp != null && StringUtils.hasText(signUp.getTitle()) ? signUp.getTitle().trim() : "";
-      this.folderName = sanitize(signUpTitle);
+      String base = sanitize(signUpTitle);
+      // 每次导出独立目录/zip，避免同标题覆盖后仍被缓存或 check 命中旧包
+      this.folderName = taskId != null && taskId > 0 ? base + "_t" + taskId : base;
       // 对齐 PHP：工作单位取报名计划所属企业（sys_org.name），不是人员表误写的计划标题
       this.companyName = company != null && StringUtils.hasText(company.getName()) ? company.getName().trim() : "";
       this.companyPhone = company != null && StringUtils.hasText(company.getPhone()) ? company.getPhone() : "";
