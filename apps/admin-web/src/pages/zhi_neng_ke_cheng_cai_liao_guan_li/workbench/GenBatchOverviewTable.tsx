@@ -14,6 +14,7 @@ interface Props {
   historyItems: TheoryGenBatch[];
   historyLoading: boolean;
   historyPage: number;
+  historyPageSize: number;
   historyTotal: number;
   onHistoryPageChange: (page: number, pageSize: number) => void;
   /** workTypeId → 工种名 */
@@ -148,9 +149,10 @@ const GenBatchOverviewTable: React.FC<Props> = (props) => {
         scroll={{ x: 1280 }}
         pagination={{
           current: historyPage,
-          pageSize: 10,
+          pageSize: historyPageSize,
           total: historyTotal,
-          showSizeChanger: false,
+          showSizeChanger: true,
+          pageSizeOptions: [10, 20, 50],
           showTotal: (t: number) => `共 ${t} 条`,
           onChange: (p, s) => onHistoryPageChange(p, s),
         }} />

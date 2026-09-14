@@ -28,6 +28,7 @@ const GenWorkbenchPage: React.FC<Props> = ({ workTypeOptions, preset }) => {
   const qc = useQueryClient();
   const [activeBatchId, setActiveBatchId] = useState<string | undefined>();
   const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(10);
   const [panelOpen, setPanelOpen] = useState(false);
   const [draftBatchId, setDraftBatchId] = useState<string | undefined>();
   const [flashBatchId, setFlashBatchId] = useState<string | undefined>();
@@ -49,9 +50,9 @@ const GenWorkbenchPage: React.FC<Props> = ({ workTypeOptions, preset }) => {
     refetchInterval: (q) => ((q.state.data?.items.length ?? 0) > 0 ? 3000 : false),
   });
   const historyQuery = useQuery({
-    queryKey: ['theorygen-batches', 'history', historyPage],
+    queryKey: ['theorygen-batches', 'history', historyPage, historyPageSize],
     // 终态批次服务端过滤：与进行中区互斥，分页总数/页码一致（客户端剔除会破坏分页）
-    queryFn: () => listGenBatches({ status: 'done,failed,paused', page: historyPage, pageSize: 10 }),
+    queryFn: () => listGenBatches({ status: 'done,failed,paused', page: historyPage, pageSize: historyPageSize }),
   });
 
   const activeItems = activeQuery.data?.items ?? [];
@@ -196,8 +197,12 @@ const GenWorkbenchPage: React.FC<Props> = ({ workTypeOptions, preset }) => {
         historyItems={historyItems}
         historyLoading={historyQuery.isLoading}
         historyPage={historyPage}
+        historyPageSize={historyPageSize}
         historyTotal={historyQuery.data?.total ?? 0}
-        onHistoryPageChange={(p) => setHistoryPage(p)}
+        onHistoryPageChange={(p, s) => {
+          setHistoryPage(s !== historyPageSize ? 1 : p);
+          setHistoryPageSize(s);
+        }}
         workTypeName={workTypeName}
         flashBatchId={flashBatchId}
         publishingBatchId={publishExport.publishingBatchId}

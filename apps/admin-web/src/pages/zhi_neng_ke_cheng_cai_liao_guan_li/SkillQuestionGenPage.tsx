@@ -86,9 +86,17 @@ const SkillQuestionGenPage: React.FC = () => {
   const [presetBpId, setPresetBpId] = useState<string | undefined>();
 
   const wtTree = useQuery({ queryKey: ['skillgen-worktypes'], queryFn: treeWorkTypes });
+  // 全量清单：仅供发起区/筛选下拉使用（不受导入页分页影响）
   const bpQuery = useQuery({
     queryKey: ['skillgen-blueprints'],
     queryFn: () => listSkillBlueprints({ page: 1, pageSize: 100 }),
+  });
+  // 细目表导入列表：服务端分页
+  const [bpListPage, setBpListPage] = useState(1);
+  const [bpListPageSize, setBpListPageSize] = useState(20);
+  const bpListQuery = useQuery({
+    queryKey: ['skillgen-blueprints', 'list', bpListPage, bpListPageSize],
+    queryFn: () => listSkillBlueprints({ page: bpListPage, pageSize: bpListPageSize }),
   });
 
   const workTypeOptions = useMemo(() => {
@@ -207,9 +215,20 @@ const SkillQuestionGenPage: React.FC = () => {
                 <Table<SkillBlueprint>
                   rowKey="id"
                   size="small"
-                  loading={bpQuery.isLoading}
-                  dataSource={bpQuery.data?.items ?? []}
-                  pagination={false}
+                  loading={bpListQuery.isLoading}
+                  dataSource={bpListQuery.data?.items ?? []}
+                  pagination={{
+                    current: bpListPage,
+                    pageSize: bpListPageSize,
+                    total: bpListQuery.data?.total,
+                    showSizeChanger: true,
+                    pageSizeOptions: [20, 30, 40, 50],
+                    showTotal: (t: number) => `共 ${t} 条`,
+                    onChange: (p, s) => {
+                      setBpListPage(s !== bpListPageSize ? 1 : p);
+                      setBpListPageSize(s);
+                    },
+                  }}
                   columns={[
                     { title: '细目表批次', dataIndex: 'title', ellipsis: true },
                     {
@@ -327,6 +346,10 @@ const SkillWorkbench: React.FC<WorkbenchProps> = ({ workTypeOptions, blueprints,
   const [modelConfigId, setModelConfigId] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
   const [activeBatchId, setActiveBatchId] = useState<string | undefined>();
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(10);
+  const [draftPage, setDraftPage] = useState(1);
+  const [draftPageSize, setDraftPageSize] = useState(20);
   const [allBatches, setAllBatches] = useState(false);
   const [reviewFilter, setReviewFilter] = useState<string | undefined>('draft');
   const [selectedDraftIds, setSelectedDraftIds] = useState<string[]>([]);
@@ -368,17 +391,15 @@ const SkillWorkbench: React.FC<WorkbenchProps> = ({ workTypeOptions, blueprints,
     },
   });
   const historyQuery = useQuery({
-    queryKey: ['skillgen-batches-history'],
+    queryKey: ['skillgen-batches-history', historyPage, historyPageSize],
     // 终态批次服务端过滤（对齐 theorygen 工作台）：与进行中区互斥，
     // 避免提交时把"生成中"快照写进历史缓存、批次完成后永远显示旧状态
-    queryFn: () => listSkillGenBatches({ status: 'done,failed,paused', page: 1, pageSize: 20 }),
+    queryFn: () => listSkillGenBatches({
+      status: 'done,failed,paused', page: historyPage, pageSize: historyPageSize,
+    }),
   });
-  const batchRows = useMemo(() => {
-    const active = activeQuery.data?.items ?? [];
-    const activeIds = new Set(active.map((b) => b.id));
-    const history = (historyQuery.data?.items ?? []).filter((b) => !activeIds.has(b.id));
-    return [...active, ...history];
-  }, [activeQuery.data, historyQuery.data]);
+  const activeItems = activeQuery.data?.items ?? [];
+  const historyItems = historyQuery.data?.items ?? [];
 
   // 终态联动：批次从进行中区消失（完成/失败/暂停）时刷新历史区与草稿计数，
   // 否则全局 refetchOnWindowFocus=false + 历史区无轮询会让旧行永远停在"生成中"
@@ -411,15 +432,19 @@ const SkillWorkbench: React.FC<WorkbenchProps> = ({ workTypeOptions, blueprints,
   }, [activeQuery.data, qc]);
 
   const draftsQuery = useQuery({
-    queryKey: ['skillgen-drafts', allBatches ? 'all' : activeBatchId, reviewFilter],
+    queryKey: ['skillgen-drafts', allBatches ? 'all' : activeBatchId, reviewFilter, draftPage, draftPageSize],
     queryFn: () => listSkillDrafts({
       batchId: allBatches ? undefined : activeBatchId,
       reviewStatus: reviewFilter,
-      page: 1,
-      pageSize: 50,
+      page: draftPage,
+      pageSize: draftPageSize,
     }),
     enabled: allBatches || !!activeBatchId,
   });
+  // 切换批次/全部范围/审核状态时回到第 1 页
+  React.useEffect(() => {
+    setDraftPage(1);
+  }, [allBatches, activeBatchId, reviewFilter]);
 
   const refreshAll = () => {
     qc.invalidateQueries({ queryKey: ['skillgen-batches-active'] });
@@ -450,6 +475,113 @@ const SkillWorkbench: React.FC<WorkbenchProps> = ({ workTypeOptions, blueprints,
     setAllBatches(false);
     setSelectedDraftIds([]);
   };
+
+  // 批次列（进行中区与历史区共用）
+  const batchColumns = [
+    {
+      title: '批次', key: 'batch', width: 150,
+      render: (_: unknown, b: SkillGenBatch) => {
+        const time = b.startedAt ?? b.createdAt ?? b.finishedAt;
+        return (
+          <span>
+            {time ? dayjs(time).format('MM-DD HH:mm') : '-'}
+            <br />
+            <span style={{ color: '#999' }}>批次…{b.id.slice(-8)}</span>
+          </span>
+        );
+      },
+    },
+    {
+      title: '工种/等级', key: 'wl', width: 190,
+      render: (_: unknown, b: SkillGenBatch) => {
+        const bpRow = blueprints.find((x) => x.id === b.blueprintId);
+        return `${workTypeOptions.find((w) => w.value === (b.workTypeId ?? bpRow?.workTypeId))?.label ?? '-'} · ${LEVEL_NAME[b.level ?? bpRow?.level ?? 0] ?? '-'}`;
+      },
+    },
+    {
+      title: '模型', key: 'model', width: 150, ellipsis: true,
+      render: (_: unknown, b: SkillGenBatch) =>
+        `${b.modelId}${b.thinking ? `（思考 ${b.thinking === 'enabled' ? '开' : '关'}）` : ''}`,
+    },
+    {
+      title: '状态', key: 'status', width: 110,
+      render: (_: unknown, b: SkillGenBatch) => {
+        const tag = STATUS_TAG[b.status] ?? { color: 'default', text: b.status };
+        const cls = b.status === 'pending' ? 'xmb-status-waiting'
+          : b.status === 'running' ? 'xmb-status-running' : '';
+        const node = <Tag color={tag.color} className={cls}>{tag.text}</Tag>;
+        return b.status === 'failed' && b.failReason
+          ? <Tooltip title={b.failReason}>{node}</Tooltip> : node;
+      },
+    },
+    {
+      title: '生成进度', key: 'progress', width: 230,
+      render: (_: unknown, b: SkillGenBatch) => {
+        const pct = b.totalPoints ? Math.round(((b.donePoints ?? 0) * 100) / b.totalPoints) : 0;
+        return (
+          <span>
+            <Progress
+              percent={pct}
+              size="small"
+              status={b.status === 'running' ? 'active' : undefined}
+              format={() => `${b.donePoints ?? 0}/${b.totalPoints ?? 0} 点`}
+            />
+            <span style={{ color: '#888' }}>已产题 {b.totalQuestions ?? 0} 题</span>
+            {b.failedPoints ? (
+              <Tooltip title={failedHint(b)}>
+                <Tag color="error" style={{ marginLeft: 4 }}>失败 {b.failedPoints}</Tag>
+              </Tooltip>
+            ) : null}
+          </span>
+        );
+      },
+    },
+    {
+      title: '审核进度', key: 'review', width: 170,
+      render: (_: unknown, b: SkillGenBatch) =>
+        `通过 ${b.approvedCount ?? 0} · 待审 ${b.pendingReviewCount ?? 0} · 驳回 ${b.rejectedCount ?? 0}`,
+    },
+    {
+      title: '入库', key: 'publish', width: 100,
+      render: (_: unknown, b: SkillGenBatch) => ((b.publishedCount ?? 0) > 0
+        ? <Tag color="success">已入库 {b.publishedCount}</Tag>
+        : <Tag>未入库</Tag>),
+    },
+    {
+      title: '操作', key: 'op', width: 300, fixed: 'right' as const,
+      render: (_: unknown, b: SkillGenBatch) => (
+        <Space size={4} wrap>
+          <Button size="small" type="primary" onClick={() => openDrafts(b)}>草稿</Button>
+          {(b.status === 'running' || b.status === 'pending') && (
+            <Button size="small" onClick={async () => {
+              await pauseSkillGenBatch(b.id); message.success('已暂停'); refreshAll();
+            }}>暂停</Button>
+          )}
+          {b.status === 'paused' && (
+            <Button size="small" onClick={async () => {
+              await resumeSkillGenBatch(b.id); message.success('已继续'); refreshAll();
+            }}>继续</Button>
+          )}
+          {(b.status === 'failed' || (b.status === 'done' && (b.donePoints ?? 0) < (b.totalPoints ?? 0))) && (
+            <Button size="small" onClick={async () => {
+              await retrySkillGenBatch(b.id); message.success('已提交补跑'); refreshAll();
+            }}>补跑缺口</Button>
+          )}
+          <Button size="small" onClick={() => setPublishTarget(b)}>入库</Button>
+          <Button size="small" loading={false} onClick={async () => {
+            // 文件名由服务端统一下发（工种(等级)_操作技能试题_批次{短号}.xlsx），前端不再自行拼装
+            const { blob, filename } = await exportSkillDrafts(b.id);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename || `操作技能试题_批次${b.id.slice(-8)}.xlsx`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}>导出</Button>
+        </Space>
+      ),
+    },
+  ];
 
   return (
     <div>
@@ -483,118 +615,39 @@ const SkillWorkbench: React.FC<WorkbenchProps> = ({ workTypeOptions, blueprints,
         </Space>
       </div>
 
-      {/* 批次总览 */}
+      {/* 批次总览：进行中置顶 + 历史分页（对齐理论工作台两段式） */}
+      <div style={{ fontWeight: 600, margin: '4px 0 8px' }}>
+        进行中批次
+        <span style={{ color: '#888', fontWeight: 400, fontSize: 12 }}>（等待/生成中的批次置顶显示，进度实时刷新）</span>
+      </div>
       <Table<SkillGenBatch>
         rowKey="id"
         size="small"
-        dataSource={batchRows}
+        loading={activeQuery.isLoading}
+        dataSource={activeItems}
+        columns={batchColumns}
         pagination={false}
-        style={{ marginBottom: 12 }}
-        columns={[
-          {
-            title: '批次', key: 'batch', width: 150,
-            render: (_: unknown, b: SkillGenBatch) => {
-              const time = b.startedAt ?? b.createdAt ?? b.finishedAt;
-              return (
-                <span>
-                  {time ? dayjs(time).format('MM-DD HH:mm') : '-'}
-                  <br />
-                  <span style={{ color: '#999' }}>批次…{b.id.slice(-8)}</span>
-                </span>
-              );
-            },
+        locale={{ emptyText: '当前没有进行中的批次' }}
+      />
+      <div style={{ fontWeight: 600, margin: '16px 0 8px' }}>历史批次</div>
+      <Table<SkillGenBatch>
+        rowKey="id"
+        size="small"
+        loading={historyQuery.isLoading}
+        dataSource={historyItems}
+        columns={batchColumns}
+        pagination={{
+          current: historyPage,
+          pageSize: historyPageSize,
+          total: historyQuery.data?.total,
+          showSizeChanger: true,
+          pageSizeOptions: [10, 20, 50],
+          showTotal: (t: number) => `共 ${t} 条`,
+          onChange: (p, s) => {
+            setHistoryPage(s !== historyPageSize ? 1 : p);
+            setHistoryPageSize(s);
           },
-          {
-            title: '工种/等级', key: 'wl', width: 190,
-            render: (_: unknown, b: SkillGenBatch) => {
-              const bpRow = blueprints.find((x) => x.id === b.blueprintId);
-              return `${workTypeOptions.find((w) => w.value === (b.workTypeId ?? bpRow?.workTypeId))?.label ?? '-'} · ${LEVEL_NAME[b.level ?? bpRow?.level ?? 0] ?? '-'}`;
-            },
-          },
-          {
-            title: '模型', key: 'model', width: 150, ellipsis: true,
-            render: (_: unknown, b: SkillGenBatch) =>
-              `${b.modelId}${b.thinking ? `（思考 ${b.thinking === 'enabled' ? '开' : '关'}）` : ''}`,
-          },
-          {
-            title: '状态', key: 'status', width: 110,
-            render: (_: unknown, b: SkillGenBatch) => {
-              const tag = STATUS_TAG[b.status] ?? { color: 'default', text: b.status };
-              const cls = b.status === 'pending' ? 'xmb-status-waiting'
-                : b.status === 'running' ? 'xmb-status-running' : '';
-              const node = <Tag color={tag.color} className={cls}>{tag.text}</Tag>;
-              return b.status === 'failed' && b.failReason
-                ? <Tooltip title={b.failReason}>{node}</Tooltip> : node;
-            },
-          },
-          {
-            title: '生成进度', key: 'progress', width: 230,
-            render: (_: unknown, b: SkillGenBatch) => {
-              const pct = b.totalPoints ? Math.round(((b.donePoints ?? 0) * 100) / b.totalPoints) : 0;
-              return (
-                <span>
-                  <Progress
-                    percent={pct}
-                    size="small"
-                    status={b.status === 'running' ? 'active' : undefined}
-                    format={() => `${b.donePoints ?? 0}/${b.totalPoints ?? 0} 点`}
-                  />
-                  <span style={{ color: '#888' }}>已产题 {b.totalQuestions ?? 0} 题</span>
-                  {b.failedPoints ? (
-                    <Tooltip title={failedHint(b)}>
-                      <Tag color="error" style={{ marginLeft: 4 }}>失败 {b.failedPoints}</Tag>
-                    </Tooltip>
-                  ) : null}
-                </span>
-              );
-            },
-          },
-          {
-            title: '审核进度', key: 'review', width: 170,
-            render: (_: unknown, b: SkillGenBatch) =>
-              `通过 ${b.approvedCount ?? 0} · 待审 ${b.pendingReviewCount ?? 0} · 驳回 ${b.rejectedCount ?? 0}`,
-          },
-          {
-            title: '入库', key: 'publish', width: 100,
-            render: (_: unknown, b: SkillGenBatch) => ((b.publishedCount ?? 0) > 0
-              ? <Tag color="success">已入库 {b.publishedCount}</Tag>
-              : <Tag>未入库</Tag>),
-          },
-          {
-            title: '操作', key: 'op', width: 300, fixed: 'right' as const,
-            render: (_: unknown, b: SkillGenBatch) => (
-              <Space size={4} wrap>
-                <Button size="small" type="primary" onClick={() => openDrafts(b)}>草稿</Button>
-                {(b.status === 'running' || b.status === 'pending') && (
-                  <Button size="small" onClick={async () => {
-                    await pauseSkillGenBatch(b.id); message.success('已暂停'); refreshAll();
-                  }}>暂停</Button>
-                )}
-                {b.status === 'paused' && (
-                  <Button size="small" onClick={async () => {
-                    await resumeSkillGenBatch(b.id); message.success('已继续'); refreshAll();
-                  }}>继续</Button>
-                )}
-                {(b.status === 'failed' || (b.status === 'done' && (b.donePoints ?? 0) < (b.totalPoints ?? 0))) && (
-                  <Button size="small" onClick={async () => {
-                    await retrySkillGenBatch(b.id); message.success('已提交补跑'); refreshAll();
-                  }}>补跑缺口</Button>
-                )}
-                <Button size="small" onClick={() => setPublishTarget(b)}>入库</Button>
-                <Button size="small" loading={false} onClick={async () => {
-                  // 文件名由服务端统一下发（工种(等级)_操作技能试题_批次{短号}.xlsx），前端不再自行拼装
-                  const { blob, filename } = await exportSkillDrafts(b.id);
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = filename || `操作技能试题_批次${b.id.slice(-8)}.xlsx`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}>导出</Button>
-              </Space>
-            ),
-          },
-        ]}
+        }}
       />
 
       {/* 草稿审核面板 */}
@@ -633,7 +686,18 @@ const SkillWorkbench: React.FC<WorkbenchProps> = ({ workTypeOptions, blueprints,
             size="small"
             loading={draftsQuery.isLoading}
             dataSource={draftsQuery.data?.items ?? []}
-            pagination={{ pageSize: 20, showSizeChanger: true }}
+            pagination={{
+              current: draftPage,
+              pageSize: draftPageSize,
+              total: draftsQuery.data?.total,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50],
+              showTotal: (t: number) => `共 ${t} 条`,
+              onChange: (p, s) => {
+                setDraftPage(s !== draftPageSize ? 1 : p);
+                setDraftPageSize(s);
+              },
+            }}
             rowSelection={{
               selectedRowKeys: selectedDraftIds,
               onChange: (keys) => setSelectedDraftIds(keys as string[]),
