@@ -123,8 +123,8 @@ const columns = (p: Props) => [
 ];
 
 const GenBatchOverviewTable: React.FC<Props> = (props) => {
-  const { activeItems, historyItems, historyLoading, historyPage, historyTotal,
-    onHistoryPageChange, flashBatchId } = props;
+  const { activeItems, historyItems, historyLoading, historyPage, historyPageSize,
+    historyTotal, onHistoryPageChange, flashBatchId } = props;
   const rowCls = (b: TheoryGenBatch): string => (flashBatchId === b.id ? 'gen-row-flash' : '');
 
   return (
