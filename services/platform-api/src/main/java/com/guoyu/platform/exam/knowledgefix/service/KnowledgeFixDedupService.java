@@ -1,5 +1,7 @@
 package com.guoyu.platform.exam.knowledgefix.service;
 
+import com.guoyu.platform.common.exception.BusinessException;
+import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.knowledgefix.dto.ApplyResultVO;
 import com.guoyu.platform.exam.knowledgefix.dto.DedupStatsVO;
 import com.guoyu.platform.exam.knowledgefix.mapper.ExamDetailDedupListMapper;
@@ -7,6 +9,7 @@ import com.guoyu.platform.exam.knowledgefix.mapper.ExamExamDetailFixMapper;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +22,9 @@ import org.springframework.stereotype.Service;
 public class KnowledgeFixDedupService {
 
   private static final int BATCH_SIZE = 1000;
+  /** 备份表名守卫：表名会拼进 SQL（${backupTable}），禁止任意标识符直通 */
+  private static final Pattern DEDUP_BACKUP_TABLE_PATTERN =
+      Pattern.compile("exam_exam_detail_bak_dedup_\\d{8}");
 
   private final ExamExamDetailFixMapper queryMapper;
   private final ExamDetailDedupListMapper dedupListMapper;
@@ -76,11 +82,18 @@ public class KnowledgeFixDedupService {
     return new ApplyResultVO(backupTable, approved, totalUpdated);
   }
 
-  /** 去重回滚（方案 §6.3，回滚后清单标记 rolled_back） */
+  /**
+   * 去重回滚（方案 §6.3，回滚后清单标记 rolled_back）。
+   * 备份表名做前缀+日期格式守卫（与写回侧同规）：表名会拼进 SQL，禁止任意标识符直通。
+   */
   public int rollbackSoftDelete(String backupTable) {
+    if (backupTable == null || !DEDUP_BACKUP_TABLE_PATTERN.matcher(backupTable).matches()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "非法备份表名：" + backupTable + "（应形如 exam_exam_detail_bak_dedup_YYYYMMDD）");
+    }
     int restored = queryMapper.rollbackSoftDelete(backupTable);
     dedupListMapper.markDedupRolledBack();
-    log.info("去重回滚完成：restored={}", restored);
+    log.info("去重回滚完成：backupTable={}, restored={}", backupTable, restored);
     return restored;
   }
 }

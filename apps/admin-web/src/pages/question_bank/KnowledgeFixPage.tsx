@@ -7,7 +7,8 @@
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, Button, Card, Descriptions, message, Popconfirm, Progress, Space, Statistic, Table, Tabs, Tag,
+  Alert, Button, Card, Descriptions, Input, message, Modal, Popconfirm, Progress, Space, Statistic,
+  Table, Tabs, Tag,
 } from 'antd';
 import {
   dedupStats, generateDedupList, applyDedup, rollbackDedup,
@@ -24,6 +25,10 @@ const STATUS_TAG: Record<string, { color: string; text: string }> = {
   applied: { color: 'success', text: '已写回' },
 };
 
+/** 去重备份表名规则（后端同样的前缀+日期守卫；前端先校验，避免手误打错表名） */
+const DEDUP_BACKUP_PATTERN = /^exam_exam_detail_bak_dedup_\d{8}$/;
+const LAST_DEDUP_BACKUP_KEY = 'guoyu_kfix_last_dedup_backup';
+
 /** 判断批次是否仍在跑（进度轮询持续条件） */
 const batchRunning = (b: FixBatch | null | undefined) =>
   !!b && (b.status === 'running' || b.status === 'pending');
@@ -34,7 +39,12 @@ const KnowledgeFixPage: React.FC = () => {
   // ---------------- 去重清理 ----------------
   const [dedupGenerating, setDedupGenerating] = useState(false);
   const [dedupApplying, setDedupApplying] = useState(false);
-  const [lastDedupBackup, setLastDedupBackup] = useState<string | null>(null);
+  const [dedupRollingBack, setDedupRollingBack] = useState(false);
+  const [lastDedupBackup, setLastDedupBackup] = useState<string | null>(
+    () => localStorage.getItem(LAST_DEDUP_BACKUP_KEY),
+  );
+  const [rollbackOpen, setRollbackOpen] = useState(false);
+  const [rollbackTable, setRollbackTable] = useState('');
 
   const dedupStatsQuery = useQuery({
     queryKey: ['knowledgefix-dedup-stats'],
@@ -60,6 +70,9 @@ const KnowledgeFixPage: React.FC = () => {
     try {
       const r = await applyDedup();
       setLastDedupBackup(r.backupTable);
+      if (r.backupTable) {
+        localStorage.setItem(LAST_DEDUP_BACKUP_KEY, r.backupTable);
+      }
       message.success(`软删除完成：${r.affectedRows} 行（备份表 ${r.backupTable ?? '-'}，可回滚）`);
       qc.invalidateQueries({ queryKey: ['knowledgefix-dedup-stats'] });
     } catch {
@@ -69,17 +82,30 @@ const KnowledgeFixPage: React.FC = () => {
     }
   };
 
+  /** 打开回滚弹窗：默认填入上次使用的备份表（跨会话保留），否则留空待填 */
+  const openRollbackDedup = () => {
+    setRollbackTable(lastDedupBackup ?? localStorage.getItem(LAST_DEDUP_BACKUP_KEY) ?? '');
+    setRollbackOpen(true);
+  };
+
   const doRollbackDedup = async () => {
-    if (!lastDedupBackup) {
-      message.warning('本次会话无备份表记录，请使用库内备份表名回滚');
+    const table = rollbackTable.trim();
+    if (!DEDUP_BACKUP_PATTERN.test(table)) {
+      message.warning('备份表名格式应为 exam_exam_detail_bak_dedup_YYYYMMDD');
       return;
     }
+    setDedupRollingBack(true);
     try {
-      const n = await rollbackDedup(lastDedupBackup);
-      message.success(`已回滚 ${n} 行`);
+      const n = await rollbackDedup(table);
+      localStorage.setItem(LAST_DEDUP_BACKUP_KEY, table);
+      setLastDedupBackup(table);
+      setRollbackOpen(false);
+      message.success(`已按 ${table} 回滚 ${n} 行（清单已标记 rolled_back）`);
       qc.invalidateQueries({ queryKey: ['knowledgefix-dedup-stats'] });
     } catch {
       /* 拦截器统一提示 */
+    } finally {
+      setDedupRollingBack(false);
     }
   };
 
@@ -207,12 +233,37 @@ const KnowledgeFixPage: React.FC = () => {
                     执行软删除（deleted=1）
                   </Button>
                 </Popconfirm>
-                {lastDedupBackup && (
-                  <Popconfirm title="确认回滚本次软删除？" onConfirm={doRollbackDedup}>
-                    <Button size="small">回滚本次去重</Button>
-                  </Popconfirm>
-                )}
+                <Button danger onClick={openRollbackDedup} disabled={dedupRollingBack}>
+                  回滚去重（按备份表）
+                </Button>
               </Space>
+              <Modal
+                title="回滚去重软删除"
+                open={rollbackOpen}
+                onCancel={() => setRollbackOpen(false)}
+                onOk={doRollbackDedup}
+                okText="确认回滚"
+                okButtonProps={{ danger: true, loading: dedupRollingBack }}
+                destroyOnHidden
+              >
+                <Alert
+                  type="error"
+                  showIcon
+                  style={{ marginBottom: 12 }}
+                  message="回滚会把该备份表覆盖到的行恢复为 deleted=0，并把本次去重清单标记为 rolled_back。"
+                />
+                <div style={{ marginBottom: 8 }}>备份表名（每次执行软删除自动生成，可回滚）</div>
+                <Input
+                  value={rollbackTable}
+                  onChange={(e) => setRollbackTable(e.target.value)}
+                  placeholder="exam_exam_detail_bak_dedup_YYYYMMDD"
+                  allowClear
+                />
+                <div style={{ marginTop: 8, color: '#8c8c8c', fontSize: 12 }}>
+                  查最近备份表：SELECT table_name FROM information_schema.tables WHERE
+                  table_name LIKE &apos;exam_exam_detail_bak_dedup_%&apos; ORDER BY create_time DESC
+                </div>
+              </Modal>
               {dedupApplying && <Progress percent={70} status="active" style={{ marginBottom: 12 }} />}
               <Descriptions column={2} size="small" style={{ marginBottom: 12 }} title="统计">
                 <Descriptions.Item label="5 月以来导入">{s?.mayTotalRows ?? '-'}</Descriptions.Item>

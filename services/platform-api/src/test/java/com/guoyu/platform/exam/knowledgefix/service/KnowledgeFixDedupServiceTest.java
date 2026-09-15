@@ -124,4 +124,16 @@ class KnowledgeFixDedupServiceTest {
     assertEquals(93689, restored);
     verify(dedupListMapper).markDedupRolledBack();
   }
+
+  /** KF-31：非法备份表名拒绝（表名会拼进 SQL，防注入/误操作；与写回侧同规） */
+  @Test
+  void kf31_illegalBackupTableNameRejected() {
+    assertThrows(BusinessException.class,
+        () -> service.rollbackSoftDelete("some_table; drop database x"));
+    assertThrows(BusinessException.class,
+        () -> service.rollbackSoftDelete("exam_exam_detail_bak_dedup_2026091")); // 日期位数不足
+    assertThrows(BusinessException.class, () -> service.rollbackSoftDelete(null));
+    verify(queryMapper, never()).rollbackSoftDelete(anyString());
+    verify(dedupListMapper, never()).markDedupRolledBack();
+  }
 }
