@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
@@ -128,10 +129,12 @@ public class SignUpPeopleDefaultTemplatePackService {
     loadClassContext(ctx, signUp);
     initDirectories(ctx);
     initSummaryExcels(ctx);
+    // 同一次导出共用一个素材解析器：同一候选路径只探测/下载一次
+    SignUpExportAssetService.AssetResolver assetResolver = assetService.newResolver();
 
     int index = 0;
     for (TrainSignUpPeopleSelfEntity person : people) {
-      processPerson(ctx, person, index + 2, index + 1);
+      processPerson(ctx, person, index + 2, index + 1, assetResolver);
       index++;
       if (callback != null) {
         callback.onProgress(index, people.size());
@@ -189,13 +192,14 @@ public class SignUpPeopleDefaultTemplatePackService {
       ExportContext ctx,
       TrainSignUpPeopleSelfEntity person,
       int excelRowNum,
-      int sequence) throws Exception {
+      int sequence,
+      SignUpExportAssetService.AssetResolver assetResolver) throws Exception {
     String idCard = normalize(person.getIdCardNumber());
     if (!StringUtils.hasText(idCard) || idCard.length() != 18) {
       return;
     }
     String realname = safe(person.getName());
-    PersonAssets assets = copyPersonAssets(ctx, person, idCard, realname);
+    PersonAssets assets = copyPersonAssets(ctx, person, idCard, realname, assetResolver);
     Map<String, String> vars = buildVars(ctx, person, idCard, realname);
     Map<String, ImageSlot> images = buildImageSlots(assets);
 
@@ -226,48 +230,55 @@ public class SignUpPeopleDefaultTemplatePackService {
       ExportContext ctx,
       TrainSignUpPeopleSelfEntity person,
       String idCard,
-      String realname) throws Exception {
+      String realname,
+      SignUpExportAssetService.AssetResolver assetResolver) throws Exception {
     PersonAssets assets = new PersonAssets();
     Long signUpId = person.getSignUpId();
 
     Path header = ctx.idCardHeaderDir.resolve(idCard + ".jpg");
-    if (assetService.copyFirstExisting(header,
+    if (assetResolver.copyFirstExisting(header, withRecordCandidates(
+        StringUtils.hasText(person.getIdCardHeader()) || StringUtils.hasText(person.getPhoto()),
+        assetResolver::existsLocally,
         "idCard/headerOrigin/" + idCard + "_header.jpg",
         "idCard/old/headerOrigin/" + idCard + "_header.jpg",
         "idCard/old/headerOrigin/" + idCard + "_full.png",
         person.getIdCardHeader(),
-        person.getPhoto())) {
+        person.getPhoto()))) {
       assets.header = header;
     }
 
     Path front = ctx.idCardFrontDir.resolve(idCard + ".jpg");
-    if (assetService.copyFirstExisting(front,
+    if (assetResolver.copyFirstExisting(front, withRecordCandidates(
+        StringUtils.hasText(person.getIdCardFront()),
+        assetResolver::existsLocally,
         "idCard/headerOrigin/" + idCard + "_front.jpg",
         "idCard/old/headerOrigin/" + idCard + "_front.png",
-        person.getIdCardFront())) {
+        person.getIdCardFront()))) {
       idCardCropper.tightenInPlace(front);
       assets.front = front;
     }
 
     Path back = ctx.idCardBackDir.resolve(idCard + ".jpg");
-    if (assetService.copyFirstExisting(back,
+    if (assetResolver.copyFirstExisting(back, withRecordCandidates(
+        StringUtils.hasText(person.getIdCardBack()),
+        assetResolver::existsLocally,
         "idCard/headerOrigin/" + idCard + "_back.jpg",
         "idCard/old/headerOrigin/" + idCard + "_back.png",
-        person.getIdCardBack())) {
+        person.getIdCardBack()))) {
       idCardCropper.tightenInPlace(back);
       assets.back = back;
     }
 
     if (StringUtils.hasText(person.getSchoolPaper())) {
-      assetService.copyTo(person.getSchoolPaper(),
+      assetResolver.copyTo(person.getSchoolPaper(),
           ctx.schoolDir.resolve(realname + "_" + idCard + ".jpg"));
     }
     if (StringUtils.hasText(person.getWorkTypePaper())) {
-      assetService.copyTo(person.getWorkTypePaper(),
+      assetResolver.copyTo(person.getWorkTypePaper(),
           ctx.lastLevelDir.resolve(realname + "_" + idCard + ".jpg"));
     }
     if (StringUtils.hasText(person.getTitlePaper())) {
-      assetService.copyTo(person.getTitlePaper(),
+      assetResolver.copyTo(person.getTitlePaper(),
           ctx.titlePaperDir.resolve(realname + "_" + idCard + ".jpg"));
     }
 
@@ -275,15 +286,21 @@ public class SignUpPeopleDefaultTemplatePackService {
     Path contractExpire = ctx.contractDir.resolve(realname + "_" + idCard + "_劳动合同到期页.jpg");
     Path contractSign = ctx.contractDir.resolve(realname + "_" + idCard + "_劳动合同盖章页.jpg");
 
-    boolean hasFirst = assetService.copyFirstExisting(contractFirst,
+    boolean hasFirst = assetResolver.copyFirstExisting(contractFirst, withRecordCandidates(
+        StringUtils.hasText(person.getContactFirstPage()),
+        assetResolver::existsLocally,
         "idCard/headerOrigin/" + idCard + "_" + signUpId + "_contact_first_page.jpg",
-        person.getContactFirstPage());
-    boolean hasExpire = assetService.copyFirstExisting(contractExpire,
+        person.getContactFirstPage()));
+    boolean hasExpire = assetResolver.copyFirstExisting(contractExpire, withRecordCandidates(
+        StringUtils.hasText(person.getContactExpirePage()),
+        assetResolver::existsLocally,
         "idCard/headerOrigin/" + idCard + "_" + signUpId + "_contact_expire_page.jpg",
-        person.getContactExpirePage());
-    boolean hasSign = assetService.copyFirstExisting(contractSign,
+        person.getContactExpirePage()));
+    boolean hasSign = assetResolver.copyFirstExisting(contractSign, withRecordCandidates(
+        StringUtils.hasText(person.getContactSignPage()),
+        assetResolver::existsLocally,
         "idCard/headerOrigin/" + idCard + "_" + signUpId + "_contact_sign_page.jpg",
-        person.getContactSignPage());
+        person.getContactSignPage()));
 
     if (hasFirst && hasExpire && hasSign) {
       try {
@@ -295,6 +312,21 @@ public class SignUpPeopleDefaultTemplatePackService {
       }
     }
     return assets;
+  }
+
+  /**
+   * 槽位候选路径：有材料记录时按原顺序全试；整槽在库中无记录时，约定路径只保留本机磁盘能直接命中的。
+   * 无记录的人盲试 idCard/** 约定路径只能靠远端 CDN 碰运气，白白多打若干次网络请求。
+   */
+  static List<String> withRecordCandidates(
+      boolean hasRecord, Predicate<String> existsLocally, String... candidates) {
+    List<String> resolved = new ArrayList<>(candidates.length);
+    for (String candidate : candidates) {
+      if (hasRecord || (StringUtils.hasText(candidate) && existsLocally.test(candidate))) {
+        resolved.add(candidate);
+      }
+    }
+    return resolved;
   }
 
   private Map<String, ImageSlot> buildImageSlots(PersonAssets assets) {

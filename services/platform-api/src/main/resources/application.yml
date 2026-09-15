@@ -271,6 +271,9 @@ platform:
     public-url: ${CDN_PUBLIC_URL:http://43.138.163.7/api/exam/files}
     # 本地磁盘无文件时回退到历史 PHP CDN（idCard/upload 等；勿用于 sign-up/**）
     remote-fallback-url: ${CDN_REMOTE_FALLBACK_URL:https://cdn.app.gjjd168.com}
+    # 素材拉取超时（秒）：连接超时按秒级收敛，避免导出线程在不可达地址上空等
+    fetch-connect-timeout-seconds: ${CDN_FETCH_CONNECT_TIMEOUT:3}
+    fetch-read-timeout-seconds: ${CDN_FETCH_READ_TIMEOUT:30}
   wechat:
     mini:
       # 与 gjjd_phalcon WxminiController 保持一致，生产环境请用环境变量覆盖

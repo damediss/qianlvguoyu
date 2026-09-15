@@ -21,16 +21,22 @@ public class TrainingRemoteImageUtil {
 
   private final String cdnPath;
   private final String cdnUrl;
-  private final HttpClient httpClient = HttpClient.newBuilder()
-      .connectTimeout(Duration.ofSeconds(10))
-      .followRedirects(HttpClient.Redirect.NORMAL)
-      .build();
+  private final HttpClient httpClient;
+  private final Duration readTimeout;
 
   public TrainingRemoteImageUtil(
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
-      @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl) {
+      @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl,
+      @Value("${platform.cdn.fetch-connect-timeout-seconds:3}") long connectTimeoutSeconds,
+      @Value("${platform.cdn.fetch-read-timeout-seconds:30}") long readTimeoutSeconds) {
     this.cdnPath = cdnPath;
     this.cdnUrl = cdnUrl.endsWith("/") ? cdnUrl.substring(0, cdnUrl.length() - 1) : cdnUrl;
+    this.readTimeout = Duration.ofSeconds(readTimeoutSeconds);
+    // 连接超时按秒级收敛：拉图属于可失败的旁路素材，不该让导出线程长时间空等
+    this.httpClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
+        .followRedirects(HttpClient.Redirect.NORMAL)
+        .build();
   }
 
   public record ImageBytes(byte[] data, String extension) {}
@@ -62,7 +68,7 @@ public class TrainingRemoteImageUtil {
   private Optional<ImageBytes> fetchHttp(String url) throws Exception {
     HttpRequest request = HttpRequest.newBuilder()
         .uri(URI.create(url))
-        .timeout(Duration.ofSeconds(30))
+        .timeout(readTimeout)
         .GET()
         .build();
     HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
