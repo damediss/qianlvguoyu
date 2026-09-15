@@ -631,7 +631,7 @@ SELECT COUNT(*) AS keywords, SUM(courses >= 2) AS cross_course_keys FROM (
 | FIX-2 | `ExamExamDetailFixMapper.populateFixList` | 增 `AND e.create_time >= '2026-05-01'`（DEF-4/5，不再动 5 月前历史行） |
 | FIX-3 | `KnowledgeFixController` + `KnowledgeFixClassifyService.resetClassify` + `ExamDetailKnowledgeFixMapper.resetFlagRows` | 新增 `POST /classify/reset`（flag → pending，清空上一轮结论；权限沿用 `classify:submit`）；`FixBatchVO`/`QualityReportVO` 增 `unclassified` 字段（口径 = total − done） |
 | FIX-4 | `ExamDetailDedupListMapper.generateDedupList` | 判重键前置 `COALESCE(ks.course_id, 0)`（课程维度 + 无课程桶），LEFT JOIN 知识点表；去掉"跨课程同名节点"候选限定（DEF-7）；候选仍限 5 月以来 + `exam_id=0` |
-| FIX-5 | `KnowledgeFixPage.tsx` + `knowledgeFixApi.ts` + `DedupStatsVO` | 去重卡口径重写（重复题组数/待删/已软删/人工复核 + 口径说明 Alert）；`uniqGroups`→`dupGroups` 并补 `alreadyDeletedRows`（DEF-8）；批次卡"已分类"改为 done 单值 + 独立"未分类"；新增「复位并重跑」按钮；批次 failed 时红色门禁提示 |
+| FIX-5 | `KnowledgeFixPage.tsx` + `knowledgeFixApi.ts` + `DedupStatsVO` | 去重卡口径重写（重复题组数/待删/已软删/人工复核 + 口径说明 Alert）；`uniqGroups`→`dupGroups` 并补 `alreadyDeletedRows`（DEF-8）；批次卡"已分类"改为 done 单值 + 独立"未分类"；新增「复位并重跑」按钮；批次 failed 时红色门禁提示；**回滚入口改为常驻**（原实现只在"本次会话执行过软删除"后显示，刷新/换会话即消失 → 生产部署后无法回滚，见 DEF-10） |
 | FIX-6 | 测试 | KF-25 熔断后补跑 / KF-26 门禁拦截 / KF-27 范围过滤（SQL 契约）/ KF-28 卫兵不计失败 / KF-29 跨课程同题不判重（SQL 契约）/ KF-30 同课程同题判重（SQL 契约） |
 
 **测试证据**
@@ -646,3 +646,10 @@ SELECT COUNT(*) AS keywords, SUM(courses >= 2) AS cross_course_keys FROM (
 1. `gjjddbpro_rehearsal` 彩排（含"熔断后补跑""跨课程同题各自保留"两个新场景）
 2. 生产顺序：① 备份表整体回滚 43,192 行 → ② 旧清单置 `rolled_back` → ③ 重新生成清单（预期 51,712 + 无课程桶 41,237）→ ④ 新备份 → ⑤ 分批软删 → ⑥ §11.8 D 复核
 3. 分类批次重跑（先 100 行试跑看自一致率/未分类率，门禁由代码硬拦）→ 写回（仅 apply 行）→ 归档
+
+**v1.6 补充（DEF-10/11，2026-09-15 生产部署后反馈）**
+
+| 编号 | 缺陷 | 证据 | 处置 |
+|---|---|---|---|
+| DEF-10 | 回滚入口只在"本次会话执行过软删除"后渲染（`lastDedupBackup` 为组件内存态）→ 部署/刷新后页面上无回滚入口，上一轮已执行的软删除无法从页面回滚 | 生产部署后反馈"页面上没有回滚去重按钮" | 已修：回滚入口常驻（与 §7.4 交互红线一致），点击弹窗确认备份表名（默认取上次使用值，localStorage 跨会话保留；格式 `exam_exam_detail_bak_dedup_YYYYMMDD` 前端校验），弹窗内提示查询最近备份表的 SQL |
+| DEF-11 | 去重回滚接口的备份表名无守卫（`${backupTable}` 直接拼 SQL），与写回侧（有前缀校验）不一致 | 代码审查 | 已修：服务端加前缀+日期格式校验（`exam_exam_detail_bak_dedup_\d{8}`），非法名直接 400；补测 KF-31（含 `; drop database` 等注入样例） |
