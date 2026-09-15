@@ -36,9 +36,12 @@ public class CompetitionOutboxApplicationService {
     LocalDateTime now = LocalDateTime.now();
     CompetitionOutboxEventEntity outboxEvent = new CompetitionOutboxEventEntity();
     outboxEvent.setTenantId(notice.getTenantId());
+    outboxEvent.setEventChannel("notice");
     outboxEvent.setAggregateType(NOTICE_AGGREGATE_TYPE);
     outboxEvent.setAggregateId(notice.getId());
     outboxEvent.setEventType(NOTICE_PUBLISHED_EVENT_TYPE);
+    outboxEvent.setRoutingKey(NOTICE_PUBLISHED_EVENT_TYPE);
+    outboxEvent.setEventKey("notice-published:" + notice.getId());
     outboxEvent.setPayloadJson(serialize(new CompetitionNoticePublishedEvent(
         notice.getTenantId(), notice.getEventId(), notice.getId(), notice.getPublishedAt())));
     outboxEvent.setStatus("pending");

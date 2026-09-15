@@ -18,6 +18,7 @@ import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerPaperVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerRealtimeTicketVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerStatusVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerSubmitVO;
+import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerResultVO;
 import com.guoyu.platform.competition.vo.FormalExamRealtimeCatchUpVO;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -98,6 +99,12 @@ public class CompetitionFormalExamPlayerController {
   public ApiResponse<CompetitionFormalExamPlayerStatusVO> status(
       @PathVariable String sessionId) {
     return ApiResponse.ok(service.status(sessionId));
+  }
+
+  @GetMapping("/sessions/{sessionId}/result")
+  @PreAuthorize("hasRole('COMPETITION_EXAM')")
+  public ApiResponse<CompetitionFormalExamPlayerResultVO> result(@PathVariable String sessionId) {
+    return ApiResponse.ok(service.result(sessionId));
   }
 
   @PostMapping("/sessions/{sessionId}/enter")

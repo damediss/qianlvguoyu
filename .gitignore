@@ -35,6 +35,10 @@ out/
 BOOT-INF/
 META-INF/
 org/
+# Spring Boot extension registrations under source resources are real source files.
+!services/platform-api/src/main/resources/META-INF/
+services/platform-api/src/main/resources/META-INF/*
+!services/platform-api/src/main/resources/META-INF/spring.factories
 
 # Logs and runtime
 *.log

@@ -26,6 +26,7 @@ public class CompetitionFormalExamCandidateFinalizationService {
   private final CompetitionFormalCandidateExamMapper candidateExamMapper;
   private final CompetitionFormalCandidateAnswerMapper answerMapper;
   private FormalExamRealtimePublisher realtimePublisher;
+  private CompetitionFormalScoringTaskService scoringTaskService;
 
   public CompetitionFormalExamCandidateFinalizationService(
       CompetitionFormalCandidateExamMapper candidateExamMapper,
@@ -37,6 +38,11 @@ public class CompetitionFormalExamCandidateFinalizationService {
   @Autowired(required = false)
   public void setRealtimePublisher(FormalExamRealtimePublisher realtimePublisher) {
     this.realtimePublisher = realtimePublisher;
+  }
+
+  @Autowired(required = false)
+  public void setScoringTaskService(CompetitionFormalScoringTaskService scoringTaskService) {
+    this.scoringTaskService = scoringTaskService;
   }
 
   @Transactional
@@ -93,6 +99,7 @@ public class CompetitionFormalExamCandidateFinalizationService {
       if (updated == 1) {
         converted++;
         CompetitionFormalCandidateExamEntity latest = candidateExamMapper.selectById(candidateExamId);
+        enqueueScoring(latest, "auto-submit", null);
         publishCandidateStatus(latest, CompetitionFormalCandidateExamStatus.RUNNING.getCode());
       }
     }
@@ -159,6 +166,7 @@ public class CompetitionFormalExamCandidateFinalizationService {
       log.warn("Formal exam candidate marked absent, candidateExamId={}, absentTime={}",
           candidateExamId, absentTime);
       publishCandidateStatus(latest, CompetitionFormalCandidateExamStatus.WAITING_ENTER.getCode());
+      enqueueScoring(latest, "absent", null);
       return latest;
     }
     CompetitionFormalCandidateExamEntity latest = candidateExamMapper.selectByIdForUpdate(candidateExamId);
@@ -224,6 +232,7 @@ public class CompetitionFormalExamCandidateFinalizationService {
       }
       log.warn("Formal exam candidate finalized, candidateExamId={}, status={}, submitType={}, answered={}",
           candidateExamId, toStatus.getCode(), submitType, answeredCount);
+      enqueueScoring(latest, submitType, updatedBy);
       publishCandidateStatus(latest, CompetitionFormalCandidateExamStatus.RUNNING.getCode());
       return latest;
     }
@@ -232,6 +241,13 @@ public class CompetitionFormalExamCandidateFinalizationService {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "交卷后未能读取考试实例");
     }
     return latest;
+  }
+
+  private void enqueueScoring(
+      CompetitionFormalCandidateExamEntity candidate, String reason, Long operatorId) {
+    if (scoringTaskService != null && candidate != null) {
+      scoringTaskService.enqueueInitial(candidate, reason, operatorId);
+    }
   }
 
   private void publishCandidateStatus(CompetitionFormalCandidateExamEntity entity, String previousStatus) {

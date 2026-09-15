@@ -4,12 +4,45 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.guoyu.platform.competition.entity.CompetitionFormalCandidateExamEntity;
 import java.time.LocalDateTime;
 import java.util.List;
+import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 public interface CompetitionFormalCandidateExamMapper
     extends BaseMapper<CompetitionFormalCandidateExamEntity> {
+
+  @InterceptorIgnore(tenantLine = "true")
+  @Select("""
+      SELECT DISTINCT c.tenant_id
+      FROM competition_formal_candidate_exam c
+      LEFT JOIN competition_formal_scoring_task t
+        ON t.tenant_id = c.tenant_id
+       AND t.candidate_exam_id = c.id
+       AND t.result_revision_no = 1
+       AND t.deleted = 0
+      WHERE c.deleted = 0
+        AND c.status IN ('submitted', 'auto_submitted', 'forced_submitted', 'absent')
+        AND t.id IS NULL
+      """)
+  List<Long> selectMissingInitialScoringTenantIds();
+
+  @Select("""
+      SELECT c.*
+      FROM competition_formal_candidate_exam c
+      LEFT JOIN competition_formal_scoring_task t
+        ON t.tenant_id = c.tenant_id
+       AND t.candidate_exam_id = c.id
+       AND t.result_revision_no = 1
+       AND t.deleted = 0
+      WHERE c.deleted = 0
+        AND c.status IN ('submitted', 'auto_submitted', 'forced_submitted', 'absent')
+        AND t.id IS NULL
+      ORDER BY c.id
+      LIMIT #{limit}
+      """)
+  List<CompetitionFormalCandidateExamEntity> selectMissingInitialScoringCandidates(
+      @Param("limit") int limit);
 
   @Select("""
       SELECT * FROM competition_formal_candidate_exam

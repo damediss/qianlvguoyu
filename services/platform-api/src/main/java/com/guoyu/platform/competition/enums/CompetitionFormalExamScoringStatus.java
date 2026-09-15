@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 
 public enum CompetitionFormalExamScoringStatus {
   NOT_STARTED("not_started"),
+  QUEUED("queued"),
   SCORING("scoring"),
   COMPLETED("completed"),
   FAILED("failed");

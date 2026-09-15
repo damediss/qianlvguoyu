@@ -1,19 +1,21 @@
 package com.guoyu.platform.competition.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public record CompetitionTotalScoreSnapshotVO(
-    Long id,
-    Long eventId,
-    Long stageId,
-    Long eventWorkTypeId,
-    Long eventWorkTypeLevelId,
-    Long contestantMemberId,
-    Long scoreRuleId,
-    Long theorySourceId,
-    Long simulationSourceId,
-    Long practicalSourceId,
+    @JsonSerialize(using = ToStringSerializer.class) Long id,
+    @JsonSerialize(using = ToStringSerializer.class) Long eventId,
+    @JsonSerialize(using = ToStringSerializer.class) Long stageId,
+    @JsonSerialize(using = ToStringSerializer.class) Long eventWorkTypeId,
+    @JsonSerialize(using = ToStringSerializer.class) Long eventWorkTypeLevelId,
+    @JsonSerialize(using = ToStringSerializer.class) Long contestantMemberId,
+    @JsonSerialize(using = ToStringSerializer.class) Long scoreRuleId,
+    @JsonSerialize(using = ToStringSerializer.class) Long theorySourceId,
+    @JsonSerialize(using = ToStringSerializer.class) Long simulationSourceId,
+    @JsonSerialize(using = ToStringSerializer.class) Long practicalSourceId,
     BigDecimal theoryScore,
     BigDecimal simulationScore,
     BigDecimal practicalScore,

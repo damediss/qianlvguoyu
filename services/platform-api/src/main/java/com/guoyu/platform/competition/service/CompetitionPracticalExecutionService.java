@@ -48,6 +48,7 @@ import com.guoyu.platform.competition.mapper.CompetitionRefereeAvoidanceMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreRuleMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreSourceMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStageExecutionPlanMapper;
+import com.guoyu.platform.competition.messaging.service.CompetitionScorePipelineOutboxService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -84,6 +85,13 @@ public class CompetitionPracticalExecutionService {
   private final CompetitionPlayerSessionConflictDomainService sessionConflictService;
   private final CompetitionPracticalRuleDomainService ruleDomain = new CompetitionPracticalRuleDomainService();
   private final CompetitionPracticalAverageCalculator averageCalculator = new CompetitionPracticalAverageCalculator();
+  private CompetitionScorePipelineOutboxService scorePipelineOutboxService;
+
+  @Autowired(required = false)
+  public void setScorePipelineOutboxService(
+      CompetitionScorePipelineOutboxService scorePipelineOutboxService) {
+    this.scorePipelineOutboxService = scorePipelineOutboxService;
+  }
 
   public CompetitionPracticalExecutionService(
       CompetitionPracticalSessionMapper sessionMapper,
@@ -641,6 +649,7 @@ public class CompetitionPracticalExecutionService {
     source.setSourceSystem("competition"); source.setSourceReference("practical-average:score-sheet:" + sheet.getId()); source.setScoreRuleId(scoreRule.getId());
     source.setRevisionNo(revision); source.setCurrentFlag(1); source.setAchievedAt(LocalDateTime.now()); source.setConfirmedAt(LocalDateTime.now()); source.setConfirmedBy(userId);
     source.setCreatedBy(userId); source.setUpdatedBy(userId); if (scoreSourceMapper.insert(source) != 1) throw new BusinessException(ErrorCode.CONFLICT, "实操成绩来源保存失败");
+    if (scorePipelineOutboxService != null) scorePipelineOutboxService.enqueue(source, userId);
   }
 
   private CompetitionPracticalSessionEntity session(Long tenantId, Long id) { CompetitionPracticalSessionEntity row = sessionMapper.selectOne(new LambdaQueryWrapper<CompetitionPracticalSessionEntity>().eq(CompetitionPracticalSessionEntity::getTenantId, tenantId).eq(CompetitionPracticalSessionEntity::getId, id).eq(CompetitionPracticalSessionEntity::getDeleted, 0)); if (row == null) throw new BusinessException(ErrorCode.NOT_FOUND, "实操场次不存在"); return row; }

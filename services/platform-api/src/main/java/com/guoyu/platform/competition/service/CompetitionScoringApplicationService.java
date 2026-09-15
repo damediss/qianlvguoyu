@@ -27,6 +27,7 @@ import com.guoyu.platform.competition.mapper.CompetitionRankingEntryMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRankingSnapshotMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreSourceMapper;
 import com.guoyu.platform.competition.mapper.CompetitionTotalScoreSnapshotMapper;
+import com.guoyu.platform.competition.messaging.service.CompetitionScorePipelineOutboxService;
 import com.guoyu.platform.competition.vo.CompetitionRankingEntryVO;
 import com.guoyu.platform.competition.vo.CompetitionRankingSnapshotDetailVO;
 import com.guoyu.platform.competition.vo.CompetitionRankingSnapshotVO;
@@ -44,6 +45,7 @@ import java.util.Objects;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -66,6 +68,8 @@ public class CompetitionScoringApplicationService {
       new CompetitionScoringSystemBCalculator();
   private final CompetitionRankingAllocator rankingAllocator =
       new CompetitionRankingAllocator();
+  private CompetitionScorePipelineOutboxService scorePipelineOutboxService;
+  private CompetitionAutomaticScorePipelineService automaticScorePipelineService;
 
   public CompetitionScoringApplicationService(
       CompetitionScoreSourceMapper scoreSourceMapper,
@@ -84,6 +88,18 @@ public class CompetitionScoringApplicationService {
     this.scoreRuleDomainService = scoreRuleDomainService;
     this.scoreRuleReferenceValidator = scoreRuleReferenceValidator;
     this.scoreRuleApplicationService = scoreRuleApplicationService;
+  }
+
+  @Autowired(required = false)
+  public void setScorePipelineOutboxService(
+      CompetitionScorePipelineOutboxService scorePipelineOutboxService) {
+    this.scorePipelineOutboxService = scorePipelineOutboxService;
+  }
+
+  @Autowired(required = false)
+  public void setAutomaticScorePipelineService(
+      CompetitionAutomaticScorePipelineService automaticScorePipelineService) {
+    this.automaticScorePipelineService = automaticScorePipelineService;
   }
 
   @Transactional(readOnly = true)
@@ -156,6 +172,12 @@ public class CompetitionScoringApplicationService {
         .filter(item -> Integer.valueOf(1).equals(item.getCurrentFlag()))
         .findFirst()
         .orElse(null);
+    if (current != null && ("competition-formal-exam".equals(current.getSourceSystem())
+        || ("practical".equals(current.getSourceType())
+            && "competition".equals(current.getSourceSystem())))) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "系统生成的理论或实操成绩不能通过人工通用接口覆盖");
+    }
     int revisionNo = revisions.stream()
         .map(CompetitionScoreSourceEntity::getRevisionNo)
         .filter(Objects::nonNull)
@@ -192,6 +214,10 @@ public class CompetitionScoringApplicationService {
     entity.setCreatedBy(principal.getUserId());
     entity.setUpdatedBy(principal.getUserId());
     ensureSingleRow(scoreSourceMapper.insert(entity), "成绩来源修订保存失败");
+    if (CURRENT_CONFIRMED.equals(entity.getConfirmationStatus())
+        && scorePipelineOutboxService != null) {
+      scorePipelineOutboxService.enqueue(entity, principal.getUserId());
+    }
     return CompetitionScoringConverter.toVO(entity);
   }
 
@@ -492,6 +518,110 @@ public class CompetitionScoringApplicationService {
     }
     return new CompetitionRankingSnapshotDetailVO(
         CompetitionScoringConverter.toVO(snapshot), List.copyOf(entries));
+  }
+
+  @Transactional
+  public CompetitionRankingSnapshotVO confirmRankingSnapshot(Long snapshotId) {
+    PlatformUserPrincipal principal = currentUser();
+    CompetitionRankingSnapshotEntity snapshot = requireRankingSnapshot(snapshotId, principal);
+    if ("confirmed".equals(snapshot.getStatus()) || "published".equals(snapshot.getStatus())) {
+      return CompetitionScoringConverter.toVO(snapshot);
+    }
+    if (!"draft".equals(snapshot.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "只有排名草稿可以复核确认");
+    }
+    if (snapshot.getInputFingerprint() == null || snapshot.getInputFingerprint().isBlank()) {
+      throw new BusinessException(ErrorCode.CONFLICT, "仅自动生成的排名草稿可以复核确认");
+    }
+    assertRankingInputsCurrent(snapshot);
+    snapshot.setStatus("confirmed");
+    snapshot.setConfirmedAt(LocalDateTime.now());
+    snapshot.setConfirmedBy(principal.getUserId());
+    snapshot.setUpdatedBy(principal.getUserId());
+    ensureSingleRow(rankingSnapshotMapper.updateById(snapshot), "排名快照确认失败");
+    return CompetitionScoringConverter.toVO(snapshot);
+  }
+
+  @Transactional
+  public CompetitionRankingSnapshotVO publishRankingSnapshot(Long snapshotId, String correctionReason) {
+    PlatformUserPrincipal principal = currentUser();
+    CompetitionRankingSnapshotEntity snapshot = requireRankingSnapshot(snapshotId, principal);
+    if ("published".equals(snapshot.getStatus())) return CompetitionScoringConverter.toVO(snapshot);
+    if (!"confirmed".equals(snapshot.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "排名必须先复核确认后才能发布");
+    }
+    assertRankingInputsCurrent(snapshot);
+    CompetitionRankingSnapshotEntity previous = rankingSnapshotMapper.selectOne(
+        rankingSnapshotScope(snapshot).eq(CompetitionRankingSnapshotEntity::getStatus, "published")
+            .last("FOR UPDATE"));
+    if (previous != null && (correctionReason == null || correctionReason.isBlank())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "更正发布必须填写原因");
+    }
+    LocalDateTime now = LocalDateTime.now();
+    if (previous != null) {
+      previous.setStatus("superseded");
+      previous.setSupersededAt(now);
+      previous.setSupersededBy(principal.getUserId());
+      previous.setUpdatedBy(principal.getUserId());
+      ensureSingleRow(rankingSnapshotMapper.updateById(previous), "旧排名版本替代失败");
+      snapshot.setSupersedesSnapshotId(previous.getId());
+      snapshot.setCorrectionReason(correctionReason.trim());
+    }
+    snapshot.setStatus("published");
+    snapshot.setPublishedAt(now);
+    snapshot.setPublishedBy(principal.getUserId());
+    snapshot.setUpdatedBy(principal.getUserId());
+    ensureSingleRow(rankingSnapshotMapper.updateById(snapshot), "排名快照发布失败");
+    return CompetitionScoringConverter.toVO(snapshot);
+  }
+
+  private CompetitionRankingSnapshotEntity requireRankingSnapshot(
+      Long snapshotId, PlatformUserPrincipal principal) {
+    CompetitionRankingSnapshotEntity snapshot = rankingSnapshotMapper.selectById(snapshotId);
+    if (snapshot == null || !Objects.equals(snapshot.getTenantId(), principal.getTenantId())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "排名快照不存在");
+    }
+    scoreRuleApplicationService.accessibleEvent(principal, snapshot.getEventId());
+    return snapshot;
+  }
+
+  private void assertRankingInputsCurrent(CompetitionRankingSnapshotEntity snapshot) {
+    if (automaticScorePipelineService != null
+        && !automaticScorePipelineService.isRankingFingerprintCurrent(snapshot)) {
+      throw new BusinessException(ErrorCode.CONFLICT, "名单或成绩输入已变化，请使用最新排名草稿");
+    }
+    List<CompetitionRankingEntryEntity> entries = rankingEntryMapper.selectList(
+        new LambdaQueryWrapper<CompetitionRankingEntryEntity>()
+            .eq(CompetitionRankingEntryEntity::getRankingSnapshotId, snapshot.getId())
+            .eq(CompetitionRankingEntryEntity::getDeleted, 0));
+    for (CompetitionRankingEntryEntity entry : safeList(entries, "ranking entries",
+        currentUser(), snapshot.getEventId())) {
+      if (entry.getTotalScoreSnapshotId() == null) continue;
+      CompetitionTotalScoreSnapshotEntity total =
+          totalScoreSnapshotMapper.selectById(entry.getTotalScoreSnapshotId());
+      if (total == null || !Integer.valueOf(1).equals(total.getCurrentFlag())
+          || !CURRENT_CONFIRMED.equals(total.getConfirmationStatus())) {
+        throw new BusinessException(ErrorCode.CONFLICT, "成绩输入已变化，请使用最新排名草稿");
+      }
+    }
+  }
+
+  private LambdaQueryWrapper<CompetitionRankingSnapshotEntity> rankingSnapshotScope(
+      CompetitionRankingSnapshotEntity snapshot) {
+    return new LambdaQueryWrapper<CompetitionRankingSnapshotEntity>()
+        .eq(CompetitionRankingSnapshotEntity::getEventId, snapshot.getEventId())
+        .eq(CompetitionRankingSnapshotEntity::getStageId, snapshot.getStageId())
+        .eq(CompetitionRankingSnapshotEntity::getEventWorkTypeId, snapshot.getEventWorkTypeId())
+        .eq(snapshot.getEventWorkTypeLevelId() != null,
+            CompetitionRankingSnapshotEntity::getEventWorkTypeLevelId,
+            snapshot.getEventWorkTypeLevelId())
+        .isNull(snapshot.getEventWorkTypeLevelId() == null,
+            CompetitionRankingSnapshotEntity::getEventWorkTypeLevelId)
+        .eq(snapshot.getScoreRuleId() != null,
+            CompetitionRankingSnapshotEntity::getScoreRuleId, snapshot.getScoreRuleId())
+        .isNull(snapshot.getScoreRuleId() == null,
+            CompetitionRankingSnapshotEntity::getScoreRuleId)
+        .eq(CompetitionRankingSnapshotEntity::getDeleted, 0);
   }
 
   private LambdaQueryWrapper<CompetitionScoreSourceEntity> sourceRevisionScope(

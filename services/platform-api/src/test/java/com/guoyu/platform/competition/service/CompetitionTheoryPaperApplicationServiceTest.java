@@ -224,6 +224,57 @@ class CompetitionTheoryPaperApplicationServiceTest {
   }
 
   @Test
+  void importsIndependentCompetitionPaperWithJudgeTOrFWithoutStoredOptions() {
+    CompetitionMakeExamPaperSnapshotEntity sourceSnapshot = competitionSnapshot(5103L, "P");
+    sourceSnapshot.setQuestionCount(4);
+    sourceSnapshot.setTotalScore(new BigDecimal("100"));
+    sourceSnapshot.setPassScore(new BigDecimal("60"));
+    CompetitionMakeExamPaperQuestionEntity single = competitionQuestion(6301L);
+    single.setScore(new BigDecimal("25"));
+    CompetitionMakeExamPaperQuestionEntity multi = competitionQuestion(6302L);
+    multi.setQuestionType("multi");
+    multi.setOptionsJson("{\"A\":\"选项A\",\"B\":\"选项B\",\"C\":\"选项C\"}");
+    multi.setReferenceAnswer("AC");
+    multi.setScore(new BigDecimal("25"));
+    CompetitionMakeExamPaperQuestionEntity judge = competitionQuestion(6303L);
+    judge.setQuestionType("judge");
+    judge.setOptionsJson(null);
+    judge.setReferenceAnswer("T");
+    judge.setScore(new BigDecimal("25"));
+    CompetitionMakeExamPaperQuestionEntity fill = competitionQuestion(6304L);
+    fill.setQuestionType("fill");
+    fill.setOptionsJson(null);
+    fill.setReferenceAnswer(null);
+    fill.setFillAnswer("填空答案");
+    fill.setScore(new BigDecimal("25"));
+    when(competitionSourceAdapter.loadPublishedPaper(1L, 1001L, 3001L, 3101L, 5103L))
+        .thenReturn(new CompetitionTheoryCompetitionPaperSourceAdapter.SourcePaper(
+            sourceSnapshot, List.of(single, multi, judge, fill)));
+    when(snapshotMapper.insert(any(CompetitionTheoryPaperSnapshotEntity.class)))
+        .thenAnswer(invocation -> {
+          CompetitionTheoryPaperSnapshotEntity entity = invocation.getArgument(0);
+          entity.setId(7103L);
+          return 1;
+        });
+    when(questionMapper.insert(any(CompetitionTheoryPaperQuestionEntity.class))).thenReturn(1);
+
+    competitionSnapshotService.importCompetitionPapers(
+        1001L, new CompetitionTheoryCompetitionPaperImportReq(
+            2001L, 3001L, 3101L, List.of(5103L)));
+
+    ArgumentCaptor<CompetitionTheoryPaperQuestionEntity> questionCaptor =
+        ArgumentCaptor.forClass(CompetitionTheoryPaperQuestionEntity.class);
+    verify(questionMapper, Mockito.times(4)).insert(questionCaptor.capture());
+    assertThat(questionCaptor.getAllValues())
+        .extracting(CompetitionTheoryPaperQuestionEntity::getSortOrder)
+        .containsExactly(1, 2, 3, 4);
+    CompetitionTheoryPaperQuestionEntity importedJudge = questionCaptor.getAllValues().get(2);
+    assertThat(importedJudge.getOptionsJson())
+        .isEqualTo("[{\"key\":\"T\",\"content\":\"正确\"},{\"key\":\"F\",\"content\":\"错误\"}]");
+    assertThat(importedJudge.getCorrectAnswersJson()).isEqualTo("[\"T\"]");
+  }
+
+  @Test
   void previewOnlyExposesQuestionTypeAndScore() throws Exception {
     CompetitionTheoryPaperSnapshotEntity snapshot = new CompetitionTheoryPaperSnapshotEntity();
     snapshot.setId(4001L);

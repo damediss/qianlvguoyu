@@ -6,6 +6,7 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.competition.dto.CompetitionFormalExamPlayerAnswerSaveReq;
 import com.guoyu.platform.competition.dto.CompetitionFormalExamPlayerAnswerSyncItemReq;
 import com.guoyu.platform.competition.dto.CompetitionFormalExamPlayerAnswerSyncReq;
@@ -18,6 +19,10 @@ import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeLevelEntity;
 import com.guoyu.platform.competition.entity.CompetitionFormalCandidateAnswerEntity;
 import com.guoyu.platform.competition.entity.CompetitionFormalCandidateExamEntity;
+import com.guoyu.platform.competition.entity.CompetitionFormalCandidateResultEntity;
+import com.guoyu.platform.competition.entity.CompetitionTotalScoreSnapshotEntity;
+import com.guoyu.platform.competition.entity.CompetitionRankingSnapshotEntity;
+import com.guoyu.platform.competition.entity.CompetitionRankingEntryEntity;
 import com.guoyu.platform.competition.entity.CompetitionFormalExamPaperSnapshotEntity;
 import com.guoyu.platform.competition.entity.CompetitionFormalExamQuestionSnapshotEntity;
 import com.guoyu.platform.competition.entity.CompetitionFormalExamSessionEntity;
@@ -40,6 +45,10 @@ import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeLevelMapper
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
 import com.guoyu.platform.competition.mapper.CompetitionFormalCandidateAnswerMapper;
 import com.guoyu.platform.competition.mapper.CompetitionFormalCandidateExamMapper;
+import com.guoyu.platform.competition.mapper.CompetitionFormalCandidateResultMapper;
+import com.guoyu.platform.competition.mapper.CompetitionTotalScoreSnapshotMapper;
+import com.guoyu.platform.competition.mapper.CompetitionRankingSnapshotMapper;
+import com.guoyu.platform.competition.mapper.CompetitionRankingEntryMapper;
 import com.guoyu.platform.competition.mapper.CompetitionFormalExamPaperSnapshotMapper;
 import com.guoyu.platform.competition.mapper.CompetitionFormalExamQuestionSnapshotMapper;
 import com.guoyu.platform.competition.mapper.CompetitionFormalExamSessionMapper;
@@ -65,6 +74,8 @@ import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerSavedAnswerV
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerSessionVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerStatusCandidateVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerStatusVO;
+import com.guoyu.platform.competition.vo.CompetitionFormalExamPlayerResultVO;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -108,6 +119,11 @@ public class CompetitionFormalExamPlayerApplicationService {
   private final CompetitionFormalExamAccessSessionService accessSessionService;
   private FormalExamRealtimePublisher realtimePublisher;
   private CompetitionFormalExamPlayerApplicationService self = this;
+  private CompetitionFormalCandidateResultMapper resultMapper;
+  private CompetitionTotalScoreSnapshotMapper totalScoreSnapshotMapper;
+  private CompetitionRankingSnapshotMapper rankingSnapshotMapper;
+  private CompetitionRankingEntryMapper rankingEntryMapper;
+  private CompetitionFormalScoringTaskService scoringTaskService;
 
   public static final int ANSWER_SYNC_BATCH_LIMIT = 100;
 
@@ -159,6 +175,108 @@ public class CompetitionFormalExamPlayerApplicationService {
   @Lazy
   public void setSelf(CompetitionFormalExamPlayerApplicationService self) {
     this.self = self;
+  }
+
+  @Autowired(required = false)
+  public void setPlayerResultDependencies(
+      CompetitionFormalCandidateResultMapper resultMapper,
+      CompetitionTotalScoreSnapshotMapper totalScoreSnapshotMapper,
+      CompetitionRankingSnapshotMapper rankingSnapshotMapper,
+      CompetitionRankingEntryMapper rankingEntryMapper) {
+    this.resultMapper = resultMapper;
+    this.totalScoreSnapshotMapper = totalScoreSnapshotMapper;
+    this.rankingSnapshotMapper = rankingSnapshotMapper;
+    this.rankingEntryMapper = rankingEntryMapper;
+  }
+
+  @Autowired(required = false)
+  public void setScoringTaskService(CompetitionFormalScoringTaskService scoringTaskService) {
+    this.scoringTaskService = scoringTaskService;
+  }
+
+  @Transactional(readOnly = true)
+  public CompetitionFormalExamPlayerResultVO result(String sessionIdValue) {
+    ResolvedPlayerExam resolved = resolve(currentPlayer(), parseSessionId(sessionIdValue), false);
+    CompetitionFormalCandidateExamEntity candidate = resolved.candidateExam();
+    CompetitionFormalCandidateResultEntity formalResult =
+        resultMapper == null ? null : resultMapper.selectByCandidateExamId(candidate.getId());
+    if (formalResult == null) return CompetitionFormalExamPlayerResultVO.pending("scoring");
+    CompetitionFormalExamSessionEntity session = resolved.session();
+    CompetitionTotalScoreSnapshotEntity total = totalScoreSnapshotMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionTotalScoreSnapshotEntity>()
+            .eq(CompetitionTotalScoreSnapshotEntity::getEventId, session.getEventId())
+            .eq(CompetitionTotalScoreSnapshotEntity::getStageId, session.getStageId())
+            .eq(CompetitionTotalScoreSnapshotEntity::getEventWorkTypeId, session.getEventWorkTypeId())
+            .eq(session.getEventWorkTypeLevelId() != null,
+                CompetitionTotalScoreSnapshotEntity::getEventWorkTypeLevelId,
+                session.getEventWorkTypeLevelId())
+            .isNull(session.getEventWorkTypeLevelId() == null,
+                CompetitionTotalScoreSnapshotEntity::getEventWorkTypeLevelId)
+            .eq(CompetitionTotalScoreSnapshotEntity::getContestantMemberId,
+                candidate.getContestantMemberId())
+            .eq(CompetitionTotalScoreSnapshotEntity::getCurrentFlag, 1)
+            .eq(CompetitionTotalScoreSnapshotEntity::getConfirmationStatus, "confirmed")
+            .eq(CompetitionTotalScoreSnapshotEntity::getDeleted, 0)
+            .orderByDesc(CompetitionTotalScoreSnapshotEntity::getCalculatedAt)
+            .last("LIMIT 1"));
+    CompetitionRankingSnapshotEntity ranking = rankingSnapshotMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionRankingSnapshotEntity>()
+            .eq(CompetitionRankingSnapshotEntity::getEventId, session.getEventId())
+            .eq(CompetitionRankingSnapshotEntity::getStageId, session.getStageId())
+            .eq(CompetitionRankingSnapshotEntity::getEventWorkTypeId, session.getEventWorkTypeId())
+            .eq(session.getEventWorkTypeLevelId() != null,
+                CompetitionRankingSnapshotEntity::getEventWorkTypeLevelId,
+                session.getEventWorkTypeLevelId())
+            .isNull(session.getEventWorkTypeLevelId() == null,
+                CompetitionRankingSnapshotEntity::getEventWorkTypeLevelId)
+            .eq(CompetitionRankingSnapshotEntity::getStatus, "published")
+            .eq(CompetitionRankingSnapshotEntity::getDeleted, 0)
+            .orderByDesc(CompetitionRankingSnapshotEntity::getPublishedAt)
+            .orderByDesc(CompetitionRankingSnapshotEntity::getSnapshotVersion)
+            .last("LIMIT 1"));
+    if (ranking == null) {
+      if (total == null && !"absent".equals(formalResult.getResultStatus())) {
+        return CompetitionFormalExamPlayerResultVO.pending("awaiting_sources");
+      }
+      CompetitionRankingSnapshotEntity pending = rankingSnapshotMapper.selectOne(
+          new LambdaQueryWrapper<CompetitionRankingSnapshotEntity>()
+              .eq(CompetitionRankingSnapshotEntity::getEventId, session.getEventId())
+              .eq(CompetitionRankingSnapshotEntity::getStageId, session.getStageId())
+              .eq(CompetitionRankingSnapshotEntity::getEventWorkTypeId, session.getEventWorkTypeId())
+              .eq(session.getEventWorkTypeLevelId() != null,
+                  CompetitionRankingSnapshotEntity::getEventWorkTypeLevelId,
+                  session.getEventWorkTypeLevelId())
+              .isNull(session.getEventWorkTypeLevelId() == null,
+                  CompetitionRankingSnapshotEntity::getEventWorkTypeLevelId)
+              .in(CompetitionRankingSnapshotEntity::getStatus, "draft", "confirmed")
+              .eq(CompetitionRankingSnapshotEntity::getDeleted, 0)
+              .orderByDesc(CompetitionRankingSnapshotEntity::getSnapshotVersion).last("LIMIT 1"));
+      return CompetitionFormalExamPlayerResultVO.pending(
+          pending == null ? "awaiting_review" :
+              ("confirmed".equals(pending.getStatus()) ? "unpublished" : "awaiting_review"));
+    }
+    CompetitionRankingEntryEntity entry = rankingEntryMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionRankingEntryEntity>()
+            .eq(CompetitionRankingEntryEntity::getRankingSnapshotId, ranking.getId())
+            .eq(CompetitionRankingEntryEntity::getContestantMemberId,
+                candidate.getContestantMemberId())
+            .eq(CompetitionRankingEntryEntity::getDeleted, 0).last("LIMIT 1"));
+    if (entry == null) return CompetitionFormalExamPlayerResultVO.pending("unpublished");
+    if (entry.getTotalScoreSnapshotId() != null) {
+      CompetitionTotalScoreSnapshotEntity publishedTotal =
+          totalScoreSnapshotMapper.selectById(entry.getTotalScoreSnapshotId());
+      if (publishedTotal == null
+          || !candidate.getContestantMemberId().equals(publishedTotal.getContestantMemberId())) {
+        return CompetitionFormalExamPlayerResultVO.pending("unpublished");
+      }
+      total = publishedTotal;
+    }
+    return new CompetitionFormalExamPlayerResultVO("published",
+        total == null ? BigDecimal.ZERO : total.getTheoryScore(),
+        total == null ? BigDecimal.ZERO : total.getSimulationScore(),
+        total == null ? BigDecimal.ZERO : total.getPracticalScore(),
+        total == null ? BigDecimal.ZERO : total.getTotalScore(), entry.getDisplayRank(),
+        Integer.valueOf(1).equals(entry.getTiedFlag()), ranking.getPublishedAt());
   }
 
   @Transactional
@@ -557,6 +675,9 @@ public class CompetitionFormalExamPlayerApplicationService {
       }
       log.warn("Formal exam manual submit, playerId={}, sessionId={}, candidateExamId={}, answered={}/{}",
           principal.getPlayerId(), sessionId, candidate.getId(), answeredCount, totalQuestionCount);
+      if (scoringTaskService != null) {
+        scoringTaskService.enqueueInitial(submitted, "manual-submit", principal.getPlayerId());
+      }
       publishCandidateStatus(principal, sessionId, submitted.getId(), "running", submitted.getStatus());
       return toSubmitVo(submitted, now, answeredCount, totalQuestionCount, unansweredCount);
     }

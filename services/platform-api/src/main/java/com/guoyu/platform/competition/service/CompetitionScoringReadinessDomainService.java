@@ -8,6 +8,7 @@ import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
 import com.guoyu.platform.competition.entity.CompetitionRegistrationEntity;
 import com.guoyu.platform.competition.entity.CompetitionScoreRuleEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageEntity;
+import com.guoyu.platform.competition.entity.CompetitionStageContentEntity;
 import com.guoyu.platform.competition.enums.CompetitionEventMemberRole;
 import com.guoyu.platform.competition.enums.CompetitionEventStatus;
 import com.guoyu.platform.competition.enums.CompetitionScoreRuleStatus;
@@ -19,6 +20,7 @@ import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRegistrationMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreRuleMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStageMapper;
+import com.guoyu.platform.competition.mapper.CompetitionStageContentMapper;
 import com.guoyu.platform.competition.vo.CompetitionScoringReadinessCheckVO;
 import com.guoyu.platform.competition.vo.CompetitionScoringReadinessVO;
 import java.util.ArrayList;
@@ -50,6 +52,7 @@ public class CompetitionScoringReadinessDomainService {
   private final CompetitionEventMemberMapper memberMapper;
   private final CompetitionRegistrationMapper registrationMapper;
   private final CompetitionScoreRuleDomainService scoreRuleDomainService;
+  private CompetitionStageContentMapper stageContentMapper;
 
   public CompetitionScoringReadinessDomainService(
       CompetitionEventMapper eventMapper,
@@ -68,6 +71,11 @@ public class CompetitionScoringReadinessDomainService {
     this.memberMapper = memberMapper;
     this.registrationMapper = registrationMapper;
     this.scoreRuleDomainService = scoreRuleDomainService;
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  public void setStageContentMapper(CompetitionStageContentMapper stageContentMapper) {
+    this.stageContentMapper = stageContentMapper;
   }
 
   @Transactional(readOnly = true)
@@ -110,18 +118,20 @@ public class CompetitionScoringReadinessDomainService {
         stageReady && eventWorkTypeReady
             ? findPublishedRules(tenantId, eventId, stageId, eventWorkTypeId, eventWorkTypeLevelId)
             : Collections.emptyList();
-    boolean uniquePublishedRule = publishedRules.size() == 1;
+    boolean theoryOnly = stageReady && eventWorkTypeReady && isTheoryOnlyStage(stageId);
+    boolean uniquePublishedRule = theoryOnly || publishedRules.size() == 1;
     checks.add(check(
         "SCORE_RULE_UNPUBLISHED", uniquePublishedRule,
-        uniquePublishedRule ? "存在唯一已发布评分规则" : publishedRuleMessage(publishedRules.size())));
+        theoryOnly ? "理论赛段直接按题目快照分值计分，无需评分规则"
+            : uniquePublishedRule ? "存在唯一已发布评分规则" : publishedRuleMessage(publishedRules.size())));
 
     CompetitionScoreRuleEntity publishedRule =
-        uniquePublishedRule ? publishedRules.get(0) : null;
-    boolean validRule = publishedRule == null || scoreRuleDomainService.isValidRule(publishedRule);
+        !theoryOnly && uniquePublishedRule ? publishedRules.get(0) : null;
+    boolean validRule = theoryOnly || publishedRule == null || scoreRuleDomainService.isValidRule(publishedRule);
     checks.add(check(
         "SCORE_RULE_INVALID", validRule,
         publishedRule == null
-            ? "评分规则发布后校验配置"
+            ? theoryOnly ? "理论赛段不使用评分规则" : "评分规则发布后校验配置"
             : validRule ? "已发布评分规则配置有效" : "已发布评分规则模板或权重不合法"));
 
     CandidateChecks candidateChecks = eventWorkTypeReady
@@ -143,10 +153,22 @@ public class CompetitionScoringReadinessDomainService {
     result.setEventWorkTypeLevelId(eventWorkTypeLevelId);
     result.setChecks(checks);
     result.setReady(checks.stream().allMatch(CompetitionScoringReadinessCheckVO::passed));
-    if (uniquePublishedRule && validRule) {
+    if (!theoryOnly && uniquePublishedRule && validRule && publishedRule != null) {
       result.setPublishedScoreRuleVersionId(publishedRule.getId());
     }
     return result;
+  }
+
+  private boolean isTheoryOnlyStage(Long stageId) {
+    if (stageContentMapper == null || stageId == null) return false;
+    List<CompetitionStageContentEntity> contents = stageContentMapper.selectList(
+        new LambdaQueryWrapper<CompetitionStageContentEntity>()
+            .eq(CompetitionStageContentEntity::getStageId, stageId)
+            .eq(CompetitionStageContentEntity::getStatus, "enabled")
+            .eq(CompetitionStageContentEntity::getDeleted, 0));
+    if (contents == null || contents.isEmpty()) return false;
+    return contents.stream().allMatch(content -> content != null
+        && "theory".equalsIgnoreCase(content.getContentType()));
   }
 
   private CandidateChecks checkCandidates(
@@ -381,7 +403,9 @@ public class CompetitionScoringReadinessDomainService {
   }
 
   private boolean isScoringStageReady(String status) {
-    return "active".equals(status)
+    return CompetitionStageStatus.DRAFT.getCode().equals(status)
+        || CompetitionStageStatus.CONFIGURING.getCode().equals(status)
+        || "active".equals(status)
         || CompetitionStageStatus.READY_LOCKED.getCode().equals(status)
         || CompetitionStageStatus.IN_PROGRESS.getCode().equals(status)
         || CompetitionStageStatus.CLOSED.getCode().equals(status)

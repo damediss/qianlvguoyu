@@ -21,7 +21,7 @@ public final class CompetitionScoringConverter {
         entity.getSourceType(), entity.getRawScore(), entity.getConfirmationStatus(),
         entity.getSourceSystem(), entity.getSourceReference(), entity.getScoreRuleId(),
         entity.getRevisionNo(), entity.getCurrentFlag(), entity.getAchievedAt(),
-        entity.getConfirmedAt(), entity.getConfirmedBy(), entity.getCreatedAt());
+        entity.getConfirmedAt(), entity.getConfirmedBy(), entity.getCreatedAt(), entity.getCreatedBy());
   }
 
   public static CompetitionTotalScoreSnapshotVO toVO(
@@ -43,7 +43,14 @@ public final class CompetitionScoringConverter {
         entity.getId(), entity.getEventId(), entity.getStageId(),
         entity.getEventWorkTypeId(), entity.getEventWorkTypeLevelId(), entity.getScoreRuleId(),
         entity.getSnapshotVersion(), entity.getStatus(), entity.getGenerationReason(),
-        entity.getGeneratedAt(), entity.getCreatedAt());
+        entity.getGeneratedAt(), entity.getCreatedAt(), entity.getInputFingerprint(),
+        entity.getConfirmedAt(), string(entity.getConfirmedBy()), entity.getPublishedAt(),
+        string(entity.getPublishedBy()), entity.getSupersededAt(), string(entity.getSupersededBy()),
+        string(entity.getSupersedesSnapshotId()), entity.getCorrectionReason());
+  }
+
+  private static String string(Long value) {
+    return value == null ? null : String.valueOf(value);
   }
 
   public static CompetitionRankingEntryVO toVO(CompetitionRankingEntryEntity entity) {

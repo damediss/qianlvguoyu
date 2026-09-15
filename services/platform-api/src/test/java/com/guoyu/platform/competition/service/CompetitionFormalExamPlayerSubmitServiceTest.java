@@ -89,6 +89,8 @@ class CompetitionFormalExamPlayerSubmitServiceTest {
       .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
   private final FormalExamCandidateQuestionProjection projection =
       new FormalExamCandidateQuestionProjection(objectMapper);
+  private final CompetitionFormalScoringTaskService scoringTasks =
+      Mockito.mock(CompetitionFormalScoringTaskService.class);
 
   private final CompetitionFormalExamPlayerApplicationService service =
       new CompetitionFormalExamPlayerApplicationService(
@@ -102,6 +104,7 @@ class CompetitionFormalExamPlayerSubmitServiceTest {
 
   @BeforeEach
   void authenticatePlayer() {
+    service.setScoringTaskService(scoringTasks);
     CompetitionExamPrincipal principal = new CompetitionExamPrincipal(77L, 1L);
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
@@ -142,6 +145,7 @@ class CompetitionFormalExamPlayerSubmitServiceTest {
         eq(9101L), eq("running"), eq("submitted"), eq(SERVER_NOW), eq(FormalExamErrorCodes.SUBMIT_TYPE_MANUAL),
         eq(2), eq(SERVER_NOW), eq(77L));
     verify(sessions, never()).selectByIdForUpdate(any());
+    verify(scoringTasks).enqueueInitial(submitted, "manual-submit", 77L);
   }
 
   @Test

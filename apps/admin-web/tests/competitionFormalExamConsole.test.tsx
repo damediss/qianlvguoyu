@@ -666,12 +666,41 @@ describe('正式比赛控制台', () => {
     );
     expect(await screen.findByText('当前控制范围：初赛 · 等级3')).toBeInTheDocument();
     expect(await screen.findByText('理论考试 · 正式比赛')).toBeInTheDocument();
+    expect(screen.getByTestId('formal-exam-console-initialized')).toBeInTheDocument();
+    expect(screen.queryByTestId('formal-exam-console-uninitialized')).not.toBeInTheDocument();
     expect(document.querySelector('.competition-formal-exam-session-panel--embedded')).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(pageCompetitionStages).toHaveBeenCalledWith('20', expect.objectContaining({
       eventWorkTypeId: '30',
       eventWorkTypeLevelCode: '3',
     }));
+    client.clear();
+  });
+
+  it('marks a selected stage without a formal session as uninitialized', async () => {
+    auth.permissionCodes = ['competition:exam-session:view', 'competition:exam-session:prepare'];
+    vi.mocked(pageCompetitionStages).mockResolvedValue({
+      items: [{
+        id: '10', eventId: '20', name: '初赛', stageType: 'preliminary', sortOrder: 1,
+        eventWorkTypeId: '30', eventWorkTypeLevelCode: '3',
+      }],
+      page: 1, pageSize: 500, total: 1,
+    } as never);
+    vi.mocked(getCompetitionFormalExamSessionByStage).mockResolvedValue(null);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <CompetitionFormalExamConsolePage
+          eventId="20"
+          eventWorkTypeId="30"
+          eventWorkTypeLevelCode="3"
+        />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByTestId('formal-exam-console-uninitialized')).toBeInTheDocument();
+    expect(screen.getAllByText('未初始化').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: '初始化正式比赛' })).toBeInTheDocument();
+    expect(screen.queryByTestId('formal-exam-console-initialized')).not.toBeInTheDocument();
     client.clear();
   });
 

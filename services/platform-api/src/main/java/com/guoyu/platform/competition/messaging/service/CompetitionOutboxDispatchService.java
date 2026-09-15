@@ -22,10 +22,10 @@ public class CompetitionOutboxDispatchService {
   }
 
   @Transactional
-  public List<CompetitionOutboxEventEntity> claimDispatchableEvents() {
+  public List<CompetitionOutboxEventEntity> claimDispatchableEvents(String eventChannel, int batchSize) {
     LocalDateTime now = LocalDateTime.now();
     List<CompetitionOutboxEventEntity> events = outboxEventMapper.selectDispatchableForUpdate(
-        now, now.minusMinutes(10), properties.getBatchSize());
+        eventChannel, now, now.minusMinutes(10), batchSize);
     if (events == null || events.isEmpty()) {
       return List.of();
     }
@@ -44,8 +44,13 @@ public class CompetitionOutboxDispatchService {
 
   @Transactional
   public void markFailed(Long outboxEventId, int attemptCount, String error) {
+    markFailed(outboxEventId, attemptCount, error, properties.getMaxAttempts());
+  }
+
+  @Transactional
+  public void markFailed(Long outboxEventId, int attemptCount, String error, int maxAttempts) {
     LocalDateTime now = LocalDateTime.now();
-    boolean terminal = attemptCount >= properties.getMaxAttempts();
+    boolean terminal = attemptCount >= maxAttempts;
     outboxEventMapper.markRetryOrFailed(
         outboxEventId,
         terminal ? "failed" : "retry",

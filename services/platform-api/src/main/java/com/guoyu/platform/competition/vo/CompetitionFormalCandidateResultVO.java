@@ -18,5 +18,8 @@ public record CompetitionFormalCandidateResultVO(
     Integer unansweredCount,
     Integer scoreVersion,
     LocalDateTime scoredTime,
-    List<CompetitionFormalCandidateQuestionScoreVO> questionScores) {
+    List<CompetitionFormalCandidateQuestionScoreVO> questionScores,
+    Integer revisionNo,
+    Boolean current,
+    String correctionReason) {
 }

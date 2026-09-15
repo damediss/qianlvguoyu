@@ -224,7 +224,7 @@ export function CompetitionEventOrganizationsPage({
     addMutation.mutate({
       orgName: values.orgName.trim(),
       quota: values.quota,
-      importPermission: values.importPermission,
+      importPermission: values.importPermission ?? 1,
     });
   };
 
@@ -287,7 +287,7 @@ export function CompetitionEventOrganizationsPage({
         <Form<OrganizationFormValues>
           form={addForm}
           layout="vertical"
-          initialValues={{ importPermission: 0 }}
+          initialValues={{ importPermission: 1 }}
           onFinish={handleAdd}
           requiredMark="optional"
         >

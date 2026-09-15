@@ -23,8 +23,9 @@ import com.guoyu.platform.system.mapper.UserMapper;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.UUID;
+import java.security.SecureRandom;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +34,9 @@ import org.springframework.util.StringUtils;
 @Service
 @Slf4j
 public class CompetitionEventOrgApplicationService {
+
+  private static final SecureRandom ORGANIZATION_CODE_RANDOM = new SecureRandom();
+  private static final int ORGANIZATION_CODE_MAX_ATTEMPTS = 20;
 
   private final CompetitionEventService eventService;
   private final CompetitionEventOrgService eventOrgService;
@@ -157,7 +161,7 @@ public class CompetitionEventOrgApplicationService {
     organization.setTenantId(tenantId);
     organization.setParentId(0L);
     organization.setOrgType("company");
-    organization.setCode("company-" + UUID.randomUUID().toString().replace("-", ""));
+    organization.setCode(nextCompetitionOrganizationCode(tenantId));
     organization.setName(orgName);
     organization.setSortOrder(0);
     organization.setStatus("enabled");
@@ -168,6 +172,26 @@ public class CompetitionEventOrgApplicationService {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "企业创建失败");
     }
     return organization.getId();
+  }
+
+  /**
+   * Generates a short, human-readable code for an enterprise created from the competition flow.
+   * Existing manually maintained organization codes are left untouched.
+   */
+  private String nextCompetitionOrganizationCode(Long tenantId) {
+    for (int attempt = 0; attempt < ORGANIZATION_CODE_MAX_ATTEMPTS; attempt++) {
+      String code = String.format(
+          Locale.ROOT, "QY%08d", ORGANIZATION_CODE_RANDOM.nextInt(100_000_000));
+      boolean exists = orgMapper.exists(new LambdaQueryWrapper<OrgEntity>()
+          .eq(OrgEntity::getTenantId, tenantId)
+          .eq(OrgEntity::getCode, code)
+          .eq(OrgEntity::getDeleted, 0));
+      if (!exists) {
+        return code;
+      }
+    }
+    log.error("Unable to generate a unique competition organization code, tenantId={}", tenantId);
+    throw new BusinessException(ErrorCode.CONFLICT, "企业编码生成失败，请重试");
   }
 
   private String findOrgName(Long tenantId, Long orgId) {

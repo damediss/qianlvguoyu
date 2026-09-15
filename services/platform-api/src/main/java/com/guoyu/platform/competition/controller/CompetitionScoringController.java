@@ -5,6 +5,7 @@ import com.guoyu.platform.common.api.PageQuery;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.competition.dto.CompetitionRankingSnapshotGenerateReq;
+import com.guoyu.platform.competition.dto.CompetitionRankingPublishReq;
 import com.guoyu.platform.competition.dto.CompetitionScoreSourceRevisionReq;
 import com.guoyu.platform.competition.dto.CompetitionTotalScoreCalculateReq;
 import com.guoyu.platform.competition.service.CompetitionScoringApplicationService;
@@ -127,5 +128,25 @@ public class CompetitionScoringController {
       @PathVariable Long eventId,
       @Valid @RequestBody CompetitionRankingSnapshotGenerateReq request) {
     return ApiResponse.ok(service.generateRankingSnapshot(eventId, request));
+  }
+
+  @PostMapping("/ranking-snapshots/{snapshotId}/confirm")
+  @PreAuthorize("hasAuthority('competition:score:review')")
+  @AuditLog(module = "competition", action = "ranking-snapshot:confirm",
+      targetType = "competition_ranking_snapshot", includeResult = true)
+  public ApiResponse<CompetitionRankingSnapshotVO> confirmRankingSnapshot(
+      @PathVariable Long snapshotId) {
+    return ApiResponse.ok(service.confirmRankingSnapshot(snapshotId));
+  }
+
+  @PostMapping("/ranking-snapshots/{snapshotId}/publish")
+  @PreAuthorize("hasAuthority('competition:ranking:publish')")
+  @AuditLog(module = "competition", action = "ranking-snapshot:publish",
+      targetType = "competition_ranking_snapshot", includeResult = true)
+  public ApiResponse<CompetitionRankingSnapshotVO> publishRankingSnapshot(
+      @PathVariable Long snapshotId,
+      @Valid @RequestBody(required = false) CompetitionRankingPublishReq request) {
+    return ApiResponse.ok(service.publishRankingSnapshot(snapshotId,
+        request == null ? null : request.correctionReason()));
   }
 }

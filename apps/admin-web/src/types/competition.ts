@@ -1,7 +1,8 @@
 export type CompetitionId = number | string;
 
 export type CompetitionEventScope = 'platform' | 'enterprise_internal';
-export type CompetitionEventStatus = 'draft' | 'published' | 'closed' | 'archived';
+export type CompetitionEventStatus =
+  'draft' | 'published' | 'closed' | 'archived';
 export type CompetitionStagePlanStatus = 'draft' | 'confirmed';
 
 export interface CompetitionEvent {
@@ -103,7 +104,8 @@ export interface CompetitionEventPublishReadiness {
   scopes: CompetitionEventPublishScopeReadiness[];
 }
 
-export type CompetitionEventOrgStatus = 'invited' | 'active' | 'suspended' | 'closed';
+export type CompetitionEventOrgStatus =
+  'invited' | 'active' | 'suspended' | 'closed';
 
 export interface CompetitionEventOrg {
   id: CompetitionId;
@@ -138,7 +140,8 @@ export interface CompetitionEventOrgImportPermissionUpdateRequest {
   importPermission: 0 | 1;
 }
 
-export type CompetitionRosterImportStatus = 'validating' | 'validation_failed' | 'pending_confirm' | 'confirmed';
+export type CompetitionRosterImportStatus =
+  'validating' | 'validation_failed' | 'pending_confirm' | 'confirmed';
 export type CompetitionRosterValidationStatus = 'valid' | 'invalid';
 
 export interface CompetitionRosterItem {
@@ -424,7 +427,8 @@ export interface CompetitionStageExecutionPlan {
   preflightStatus: string;
   scoreRuleId?: CompetitionId | null;
   promotionQuota?: number | null;
-  promotionRuleType?: 'FIXED_COUNT' | 'PERCENTAGE' | 'FINAL_PODIUM' | 'LEGACY' | string | null;
+  promotionRuleType?:
+    'FIXED_COUNT' | 'PERCENTAGE' | 'FINAL_PODIUM' | 'LEGACY' | string | null;
   promotionPercentage?: number | null;
   legacyRule?: number | null;
   targetStageId?: CompetitionId | null;
@@ -661,6 +665,7 @@ export interface CompetitionScoreRule {
   eventId: CompetitionId;
   stageId: CompetitionId;
   eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
   scoringSystem: string;
   theoryTemplate: string;
   theoryWeight?: CompetitionDecimal | null;
@@ -706,6 +711,7 @@ export interface CompetitionScoringReadiness {
   eventId: CompetitionId;
   stageId?: CompetitionId | null;
   eventWorkTypeId?: CompetitionId | null;
+  eventWorkTypeLevelId?: CompetitionId | null;
   ready: boolean;
   publishedScoreRuleVersionId?: CompetitionId | null;
   checks: CompetitionScoringReadinessCheck[];
@@ -713,13 +719,15 @@ export interface CompetitionScoringReadiness {
 
 export type CompetitionDecimal = number | string;
 export type CompetitionScoreSourceType = 'theory' | 'simulation' | 'practical';
-export type CompetitionScoreConfirmationStatus = 'pending' | 'confirmed' | 'voided';
+export type CompetitionScoreConfirmationStatus =
+  'pending' | 'confirmed' | 'voided';
 
 export interface CompetitionScoreScopeQuery {
   page: number;
   pageSize: number;
   stageId: CompetitionId;
   eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId;
   contestantMemberId?: CompetitionId;
   sourceType?: CompetitionScoreSourceType;
   scoreRuleId?: CompetitionId;
@@ -730,24 +738,27 @@ export interface CompetitionScoreSource {
   eventId: CompetitionId;
   stageId: CompetitionId;
   eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
   contestantMemberId: CompetitionId;
   sourceType: CompetitionScoreSourceType;
   rawScore: CompetitionDecimal;
   confirmationStatus: CompetitionScoreConfirmationStatus;
   sourceSystem: string;
   sourceReference?: string | null;
-  scoreRuleId: CompetitionId;
+  scoreRuleId?: CompetitionId | null;
   revisionNo: number;
   currentFlag: number;
   achievedAt?: string | null;
   confirmedAt?: string | null;
   confirmedBy?: CompetitionId | null;
   createdAt?: string | null;
+  createdBy?: CompetitionId | null;
 }
 
 export interface CompetitionScoreSourceRevisionRequest {
   stageId: CompetitionId;
   eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
   contestantMemberId: CompetitionId;
   sourceType: CompetitionScoreSourceType;
   rawScore: CompetitionDecimal;
@@ -763,16 +774,19 @@ export interface CompetitionTotalScoreSnapshot {
   eventId: CompetitionId;
   stageId: CompetitionId;
   eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
   contestantMemberId: CompetitionId;
-  scoreRuleId: CompetitionId;
-  theorySourceId: CompetitionId;
-  simulationSourceId: CompetitionId;
-  practicalSourceId: CompetitionId;
+  scoreRuleId?: CompetitionId | null;
+  theorySourceId?: CompetitionId | null;
+  simulationSourceId?: CompetitionId | null;
+  practicalSourceId?: CompetitionId | null;
   theoryScore: CompetitionDecimal;
   simulationScore: CompetitionDecimal;
   practicalScore: CompetitionDecimal;
   simulationPracticalScore: CompetitionDecimal;
   theoryWeight: CompetitionDecimal;
+  simulationWeight?: CompetitionDecimal | null;
+  practicalWeight?: CompetitionDecimal | null;
   simulationPracticalWeight: CompetitionDecimal;
   totalScore: CompetitionDecimal;
   calculationVersion: number;
@@ -785,11 +799,13 @@ export interface CompetitionTotalScoreSnapshot {
 export interface CompetitionTotalScoreCalculateRequest {
   stageId: CompetitionId;
   eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
   contestantMemberId: CompetitionId;
   scoreRuleId: CompetitionId;
 }
 
-export type CompetitionRankingSnapshotStatus = 'draft' | 'confirmed' | 'published';
+export type CompetitionRankingSnapshotStatus =
+  'draft' | 'confirmed' | 'published' | 'superseded';
 export type CompetitionContestantResultStatus = 'completed' | 'absent';
 
 export interface CompetitionRankingSnapshot {
@@ -797,12 +813,22 @@ export interface CompetitionRankingSnapshot {
   eventId: CompetitionId;
   stageId: CompetitionId;
   eventWorkTypeId: CompetitionId;
-  scoreRuleId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
+  scoreRuleId?: CompetitionId | null;
   snapshotVersion: number;
   status: CompetitionRankingSnapshotStatus;
   generationReason?: string | null;
   generatedAt?: string | null;
   createdAt?: string | null;
+  inputFingerprint?: string | null;
+  confirmedAt?: string | null;
+  confirmedBy?: CompetitionId | null;
+  publishedAt?: string | null;
+  publishedBy?: CompetitionId | null;
+  supersededAt?: string | null;
+  supersededBy?: CompetitionId | null;
+  supersedesSnapshotId?: CompetitionId | null;
+  correctionReason?: string | null;
 }
 
 export interface CompetitionRankingEntry {
@@ -829,6 +855,7 @@ export interface CompetitionRankingCandidate {
 export interface CompetitionRankingGenerateRequest {
   stageId: CompetitionId;
   eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
   scoreRuleId: CompetitionId;
   generationReason?: string;
   candidates: CompetitionRankingCandidate[];
@@ -837,6 +864,46 @@ export interface CompetitionRankingGenerateRequest {
 export interface CompetitionRankingGenerateResult {
   snapshot: CompetitionRankingSnapshot;
   entries: CompetitionRankingEntry[];
+}
+
+export interface CompetitionFormalScoringTask {
+  id: CompetitionId;
+  examSessionId: CompetitionId;
+  candidateExamId: CompetitionId;
+  contestantMemberId?: CompetitionId | null;
+  resultRevisionNo: number;
+  candidateNo?: string | null;
+  candidateName?: string | null;
+  taskStatus: 'pending' | 'processing' | 'retry' | 'completed' | 'failed';
+  attemptCount: number;
+  nextAttemptAt?: string | null;
+  leaseUntil?: string | null;
+  lastError?: string | null;
+  requestedReason?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  candidateStatus?: string | null;
+}
+
+export interface CompetitionSimulationImportBatch {
+  id: CompetitionId;
+  eventId: CompetitionId;
+  stageId: CompetitionId;
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
+  scoreRuleId: CompetitionId;
+  sourceFileId: CompetitionId;
+  fileName: string;
+  batchStatus:
+    'parsing' | 'ready' | 'invalid' | 'confirming' | 'completed' | 'failed';
+  totalRows: number;
+  validRows: number;
+  errorRows: number;
+  confirmedRows: number;
+  errorMessage?: string | null;
+  correctionReason?: string | null;
+  confirmedAt?: string | null;
+  confirmedBy?: CompetitionId | null;
 }
 
 export interface CompetitionTheoryRequirement {
@@ -861,7 +928,13 @@ export interface CompetitionTheoryRequirement {
 
 export type CompetitionTheoryRequirementRequest = Omit<
   CompetitionTheoryRequirement,
-  'id' | 'eventId' | 'stageId' | 'eventWorkTypeId' | 'scoreRuleId' | 'createdAt' | 'updatedAt'
+  | 'id'
+  | 'eventId'
+  | 'stageId'
+  | 'eventWorkTypeId'
+  | 'scoreRuleId'
+  | 'createdAt'
+  | 'updatedAt'
 >;
 
 export interface CompetitionTheoryCourseSource {

@@ -43,8 +43,9 @@ public final class CompetitionRankingAllocator {
       } else {
         for (Integer index : currentTieGroupIndexes) {
           RankedCandidate previous = ranked.get(index);
-          ranked.set(index, previous.withTied(true));
+          ranked.set(index, previous.withRankAndTied(rankedPosition, true));
         }
+        currentRank = rankedPosition;
       }
       RankedCandidate result = new RankedCandidate(
           candidate.contestantMemberId(),
@@ -111,7 +112,7 @@ public final class CompetitionRankingAllocator {
       CompetitionRankingContestantStatus status,
       String tieKey) {
 
-    private RankedCandidate withTied(boolean tied) {
+    private RankedCandidate withRankAndTied(Integer rank, boolean tied) {
       return new RankedCandidate(
           contestantMemberId, totalScore, rank, tied, status, tieKey);
     }

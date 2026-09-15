@@ -23,19 +23,19 @@ class CompetitionRankingAllocatorTest {
         completed(3L, "90", "90"),
         completed(4L, "80", "80")));
 
-    assertThat(result).extracting(item -> item.rank()).containsExactly(1, 1, 3, 4);
+    assertThat(result).extracting(item -> item.rank()).containsExactly(2, 2, 3, 4);
     assertThat(result).extracting(item -> item.tied()).containsExactly(true, true, false, false);
   }
 
   @Test
-  void allocatesOneTwoTwoFour() {
+  void allocatesOneThreeThreeFour() {
     var result = allocator.allocate(scope, List.of(
         completed(1L, "100", "100"),
         completed(2L, "90", "90"),
         completed(3L, "90", "90"),
         completed(4L, "80", "80")));
 
-    assertThat(result).extracting(item -> item.rank()).containsExactly(1, 2, 2, 4);
+    assertThat(result).extracting(item -> item.rank()).containsExactly(1, 3, 3, 4);
   }
 
   @Test

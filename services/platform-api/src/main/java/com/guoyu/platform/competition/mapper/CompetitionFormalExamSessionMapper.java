@@ -154,7 +154,7 @@ public interface CompetitionFormalExamSessionMapper
       WHERE status = 'finished'
         AND deleted = 0
         AND (
-          scoring_status IN ('not_started', 'failed')
+          scoring_status IN ('not_started', 'queued', 'failed')
           OR (
             scoring_status = 'scoring'
             AND scoring_started_at IS NOT NULL
@@ -169,7 +169,7 @@ public interface CompetitionFormalExamSessionMapper
       WHERE status = 'finished'
         AND deleted = 0
         AND (
-          scoring_status IN ('not_started', 'failed')
+          scoring_status IN ('not_started', 'queued', 'failed')
           OR (
             scoring_status = 'scoring'
             AND scoring_started_at IS NOT NULL

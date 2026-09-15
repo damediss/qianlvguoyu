@@ -8,6 +8,7 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.competition.dto.CompetitionFormalCandidateExamQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionFormalExamSessionStartReq;
+import com.guoyu.platform.competition.domain.CompetitionEventArrangementGuard;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeLevelEntity;
@@ -497,8 +498,8 @@ public class CompetitionFormalExamSessionApplicationService {
   @Transactional(readOnly = true)
   public CompetitionFormalExamPreflightVO getPreflight(Long sessionId) {
     CompetitionFormalExamSessionEntity session = requireSession(sessionId);
-    loadScope(session.getStageId(), false);
-    return buildPreflight(session);
+    RuntimeScope scope = loadScope(session.getStageId(), false);
+    return buildPreflight(scope, session);
   }
 
   @Transactional
@@ -530,7 +531,10 @@ public class CompetitionFormalExamSessionApplicationService {
       throw new BusinessException(ErrorCode.CONFLICT, "当前比赛状态不允许开始");
     }
 
-    CompetitionFormalExamPreflightVO preflight = buildPreflight(session);
+    CompetitionEventArrangementGuard.requireConfirmed(
+        scope.event(), scope.workType(), scope.level());
+
+    CompetitionFormalExamPreflightVO preflight = buildPreflight(scope, session);
     if (!preflight.ready()) {
       if (CompetitionFormalExamSessionStatus.RUNNING.getCode().equals(session.getStatus())) {
         log.warn("Formal exam start ignored because session already running during preflight, sessionId={}",
@@ -662,7 +666,8 @@ public class CompetitionFormalExamSessionApplicationService {
         .orderByAsc(CompetitionFormalCandidateExamEntity::getId);
   }
 
-  private CompetitionFormalExamPreflightVO buildPreflight(CompetitionFormalExamSessionEntity session) {
+  private CompetitionFormalExamPreflightVO buildPreflight(
+      RuntimeScope scope, CompetitionFormalExamSessionEntity session) {
     List<CompetitionFormalExamPaperSnapshotEntity> papers = paperSnapshots(session.getId());
     List<CompetitionFormalExamQuestionSnapshotEntity> questions = questionSnapshots(session.getId());
     List<CompetitionFormalCandidateExamEntity> candidates = candidateExams(session.getId());
@@ -673,6 +678,7 @@ public class CompetitionFormalExamSessionApplicationService {
         .collect(Collectors.groupingBy(
             CompetitionFormalExamQuestionSnapshotEntity::getPaperSnapshotId, Collectors.counting()));
     List<CompetitionFormalExamPreflightCheckVO> checks = new ArrayList<>();
+    checks.add(stagePlanConfirmationCheck(scope));
     checks.add(sessionStatusCheck(session));
     checks.add(candidateCountCheck(session, candidates));
     checks.add(candidatePaperMappingCheck(session, candidates, paperById));
@@ -681,6 +687,14 @@ public class CompetitionFormalExamSessionApplicationService {
     checks.add(candidateProfileCheck(candidates));
     boolean ready = checks.stream().allMatch(CompetitionFormalExamPreflightCheckVO::passed);
     return new CompetitionFormalExamPreflightVO(ready, checks);
+  }
+
+  private CompetitionFormalExamPreflightCheckVO stagePlanConfirmationCheck(RuntimeScope scope) {
+    boolean confirmed = CompetitionEventArrangementGuard
+        .isConfirmed(scope.event(), scope.workType(), scope.level());
+    return new CompetitionFormalExamPreflightCheckVO(
+        "STAGE_PLAN_CONFIRMATION", confirmed,
+        confirmed ? "当前赛段编排已确认" : "当前赛段编排尚未确认，不能开始考试");
   }
 
   private CompetitionFormalExamPreflightCheckVO sessionStatusCheck(
@@ -904,6 +918,7 @@ public class CompetitionFormalExamSessionApplicationService {
       snapshot.setExamSessionId(session.getId());
       snapshot.setSourcePaperId(source.getId());
       snapshot.setSourceOriginPaperId(source.getSourcePaperId());
+      snapshot.setScoreRuleId(source.getScoreRuleId());
       snapshot.setPaperName(source.getSourceTitle());
       snapshot.setPaperCode(source.getPaperCode());
       snapshot.setTotalScore(source.getTotalScore());
@@ -1380,7 +1395,8 @@ public class CompetitionFormalExamSessionApplicationService {
         result.getResultStatus(), result.getFullScore(), result.getTotalScore(),
         result.getQuestionCount(), result.getAnsweredCount(), result.getCorrectCount(),
         result.getWrongCount(), result.getUnansweredCount(), result.getScoreVersion(),
-        result.getScoredTime(), scores);
+        result.getScoredTime(), scores, result.getRevisionNo(),
+        Integer.valueOf(1).equals(result.getCurrentFlag()), result.getCorrectionReason());
   }
 
   private CompetitionFormalCandidateQuestionScoreVO toQuestionScoreVO(

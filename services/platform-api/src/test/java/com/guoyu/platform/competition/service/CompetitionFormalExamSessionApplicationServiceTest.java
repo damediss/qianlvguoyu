@@ -127,16 +127,19 @@ class CompetitionFormalExamSessionApplicationServiceTest {
     var event = new CompetitionEventEntity();
     event.setId(20L);
     event.setName("技能大赛");
+    event.setStagePlanStatus("draft");
     when(events.getById(1L, 20L)).thenReturn(event);
     when(events.lockForUpdate(1L, 20L)).thenReturn(event);
     var workType = new CompetitionEventWorkTypeEntity();
     workType.setId(30L);
     workType.setDisplayName("电工");
+    workType.setStagePlanStatus("draft");
     when(workTypes.selectOne(any())).thenReturn(workType);
     var level = new CompetitionEventWorkTypeLevelEntity();
     level.setId(40L);
     level.setLevelCode("3");
     level.setLevelName("高级工");
+    level.setStagePlanStatus("confirmed");
     when(levels.selectOne(any())).thenReturn(level);
     var theory = new CompetitionStageContentEntity();
     theory.setContentType("theory");
@@ -430,7 +433,8 @@ class CompetitionFormalExamSessionApplicationServiceTest {
     assertThat(preflight.ready()).isTrue();
     assertThat(preflight.checks()).extracting(item -> item.code())
         .containsExactly(
-            "SESSION_STATUS", "CANDIDATE_COUNT", "CANDIDATE_PAPER_MAPPING",
+            "STAGE_PLAN_CONFIRMATION", "SESSION_STATUS", "CANDIDATE_COUNT",
+            "CANDIDATE_PAPER_MAPPING",
             "PAPER_SNAPSHOT", "QUESTION_SNAPSHOT", "CANDIDATE_PROFILE");
     assertThat(preflight.checks()).allMatch(item -> item.passed());
   }
@@ -687,6 +691,60 @@ class CompetitionFormalExamSessionApplicationServiceTest {
     assertThatThrownBy(() -> service.startExamSession(
         Long.valueOf(prepared.id()), new CompetitionFormalExamSessionStartReq(false)))
         .hasMessageContaining("开考前检查未通过");
+    assertThat(sessionStore.get(0).getStatus()).isEqualTo("ready");
+    verify(sessions, Mockito.never()).markRunningIfReady(any(), any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void preflightShowsStageArrangementConfirmationBlocker() {
+    CompetitionFormalExamSessionVO prepared = readySessionWithPlayers(1);
+    var draftEvent = new CompetitionEventEntity();
+    draftEvent.setId(20L);
+    draftEvent.setStagePlanStatus("draft");
+    when(events.getById(1L, 20L)).thenReturn(draftEvent);
+    var draftWorkType = new CompetitionEventWorkTypeEntity();
+    draftWorkType.setId(30L);
+    draftWorkType.setStagePlanStatus("draft");
+    when(workTypes.selectOne(any())).thenReturn(draftWorkType);
+    var draftLevel = new CompetitionEventWorkTypeLevelEntity();
+    draftLevel.setId(40L);
+    draftLevel.setLevelCode("3");
+    draftLevel.setStagePlanStatus("draft");
+    when(levels.selectOne(any())).thenReturn(draftLevel);
+
+    var preflight = service.getPreflight(Long.valueOf(prepared.id()));
+    assertThat(preflight.ready()).isFalse();
+    assertThat(failed(preflight, "STAGE_PLAN_CONFIRMATION")).contains("尚未确认");
+  }
+
+  @Test
+  void startRejectsWhenStageArrangementIsNotConfirmed() {
+    CompetitionFormalExamSessionVO prepared = readySessionWithPlayers(1);
+    markReady(1);
+    when(events.lockForUpdate(1L, 20L)).thenAnswer(invocation -> {
+      CompetitionEventEntity event = new CompetitionEventEntity();
+      event.setId(20L);
+      event.setStagePlanStatus("draft");
+      return event;
+    });
+    when(workTypes.selectOne(any())).thenAnswer(invocation -> {
+      var workType = new CompetitionEventWorkTypeEntity();
+      workType.setId(30L);
+      // A legacy work-type confirmation must not bypass the selected level's draft arrangement.
+      workType.setStagePlanStatus("confirmed");
+      return workType;
+    });
+    when(levels.selectOne(any())).thenAnswer(invocation -> {
+      var level = new CompetitionEventWorkTypeLevelEntity();
+      level.setId(40L);
+      level.setLevelCode("3");
+      level.setStagePlanStatus("draft");
+      return level;
+    });
+
+    assertThatThrownBy(() -> service.startExamSession(
+        Long.valueOf(prepared.id()), new CompetitionFormalExamSessionStartReq(false)))
+        .hasMessage("当前赛段编排尚未确认，不能开始考试");
     assertThat(sessionStore.get(0).getStatus()).isEqualTo("ready");
     verify(sessions, Mockito.never()).markRunningIfReady(any(), any(), any(), any(), any(), any());
   }

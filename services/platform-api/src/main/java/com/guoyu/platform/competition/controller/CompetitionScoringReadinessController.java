@@ -26,7 +26,9 @@ public class CompetitionScoringReadinessController {
   public ApiResponse<CompetitionScoringReadinessVO> check(
       @PathVariable Long eventId,
       @RequestParam(required = false) Long stageId,
-      @RequestParam(required = false) Long eventWorkTypeId) {
-    return ApiResponse.ok(service.check(eventId, stageId, eventWorkTypeId));
+      @RequestParam(required = false) Long eventWorkTypeId,
+      @RequestParam(required = false) Long eventWorkTypeLevelId) {
+    return ApiResponse.ok(service.check(
+        eventId, stageId, eventWorkTypeId, eventWorkTypeLevelId));
   }
 }

@@ -48,6 +48,8 @@ import type {
   CompetitionRankingEntry,
   CompetitionRankingGenerateRequest,
   CompetitionRankingGenerateResult,
+  CompetitionFormalScoringTask,
+  CompetitionSimulationImportBatch,
   CompetitionTheoryRequirement,
   CompetitionTheoryRequirementRequest,
   CompetitionTheoryCourseSource,
@@ -635,9 +637,9 @@ export function getCompetitionStageSettlement(settlementId: CompetitionId) {
 export function createCompetitionStageSettlement(planId: CompetitionId, payload: {
   planId: CompetitionId;
   scoreRuleId: CompetitionId;
+  rankingSnapshotId: CompetitionId;
   promotionQuota?: number | null;
   targetStageId?: CompetitionId | null;
-  absentContestantMemberIds?: CompetitionId[];
 }) {
   return unwrap<CompetitionStageSettlement>(apiClient.post(`/competition/execution-plans/${planId}/settlements`, payload));
 }
@@ -803,7 +805,11 @@ export function updateCompetitionScoreRule(
 
 export function getCompetitionScoringReadiness(
   eventId: CompetitionId,
-  params: { stageId?: CompetitionId; eventWorkTypeId?: CompetitionId },
+  params: {
+    stageId?: CompetitionId;
+    eventWorkTypeId?: CompetitionId;
+    eventWorkTypeLevelId?: CompetitionId;
+  },
 ) {
   return unwrap<CompetitionScoringReadiness>(
     apiClient.get(`/competition/events/${eventId}/scoring-readiness`, { params }),
@@ -848,7 +854,7 @@ export function calculateCompetitionTotalScore(
 
 export function pageCompetitionRankingSnapshots(
   eventId: CompetitionId,
-  params: Pick<CompetitionScoreScopeQuery, 'page' | 'pageSize' | 'stageId' | 'eventWorkTypeId' | 'scoreRuleId'>,
+  params: Pick<CompetitionScoreScopeQuery, 'page' | 'pageSize' | 'stageId' | 'eventWorkTypeId' | 'eventWorkTypeLevelId' | 'scoreRuleId'>,
 ) {
   return unwrap<PageResponse<CompetitionRankingSnapshot>>(
     apiClient.get(`/competition/events/${eventId}/ranking-snapshots`, { params }),
@@ -871,6 +877,70 @@ export function generateCompetitionRankingSnapshot(
   return unwrap<CompetitionRankingGenerateResult>(
     apiClient.post(`/competition/events/${eventId}/ranking-snapshots/generate`, payload),
   );
+}
+
+export function confirmCompetitionRankingSnapshot(snapshotId: CompetitionId) {
+  return unwrap<CompetitionRankingSnapshot>(
+    apiClient.post(`/competition/ranking-snapshots/${snapshotId}/confirm`),
+  );
+}
+
+export function publishCompetitionRankingSnapshot(snapshotId: CompetitionId, correctionReason?: string) {
+  return unwrap<CompetitionRankingSnapshot>(
+    apiClient.post(`/competition/ranking-snapshots/${snapshotId}/publish`, { correctionReason }),
+  );
+}
+
+export function pageCompetitionFormalScoringTasks(params: {
+  page: number; pageSize: number; sessionId?: CompetitionId; eventId?: CompetitionId;
+  stageId?: CompetitionId; eventWorkTypeId?: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId; status?: string;
+}) {
+  return unwrap<PageResponse<CompetitionFormalScoringTask>>(
+    apiClient.get('/competition/formal-scoring/tasks', { params }),
+  );
+}
+
+export function retryCompetitionFormalScoringTask(taskId: CompetitionId, reason: string) {
+  return unwrap<CompetitionFormalScoringTask>(
+    apiClient.post(`/competition/formal-scoring/tasks/${taskId}/retry`, { reason }),
+  );
+}
+
+export function uploadCompetitionSimulationScores(params: {
+  eventId: CompetitionId;
+  stageId: CompetitionId;
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId;
+  scoreRuleId: CompetitionId;
+}, file: File) {
+  const body = new FormData();
+  body.append('file', file);
+  return unwrap<CompetitionSimulationImportBatch>(apiClient.post(
+    '/competition/simulation-score-imports', body, { params },
+  ));
+}
+
+export function getCompetitionSimulationImport(batchId: CompetitionId) {
+  return unwrap<CompetitionSimulationImportBatch>(
+    apiClient.get(`/competition/simulation-score-imports/${batchId}`),
+  );
+}
+
+export function confirmCompetitionSimulationImport(batchId: CompetitionId, correctionReason?: string) {
+  return unwrap<CompetitionSimulationImportBatch>(
+    apiClient.post(`/competition/simulation-score-imports/${batchId}/confirm`, { correctionReason }),
+  );
+}
+
+export async function downloadCompetitionSimulationImportErrors(
+  batchId: CompetitionId,
+): Promise<Blob> {
+  const response = await apiClient.get(
+    `/competition/simulation-score-imports/${batchId}/errors`,
+    { responseType: 'blob' },
+  );
+  return response.data;
 }
 
 export function getCompetitionTheoryRequirement(ruleId: CompetitionId) {

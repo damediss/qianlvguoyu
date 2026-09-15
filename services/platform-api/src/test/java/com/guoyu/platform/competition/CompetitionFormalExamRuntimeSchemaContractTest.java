@@ -25,7 +25,8 @@ class CompetitionFormalExamRuntimeSchemaContractTest {
             + "\n" + readClasspath("db/migration/V20260908_005__add_formal_exam_scoring.sql")
             + "\n" + readClasspath("db/migration/V20260909_005__formal_exam_deadline_claim_indexes.sql"),
         CompetitionFormalExamSessionEntity.class);
-    assertEntity(migration, CompetitionFormalExamPaperSnapshotEntity.class);
+    assertEntity(migration + "\n" + scorePipelineMigration(),
+        CompetitionFormalExamPaperSnapshotEntity.class);
     assertEntity(migration, CompetitionFormalExamQuestionSnapshotEntity.class);
     assertEntity(
         migration + "\n" + readClasspath("db/migration/V20260908_003__add_formal_exam_force_submit.sql")
@@ -120,7 +121,7 @@ class CompetitionFormalExamRuntimeSchemaContractTest {
         combined,
         com.guoyu.platform.competition.entity.CompetitionFormalExamSessionEntity.class);
     assertEntity(
-        migration,
+        migration + "\n" + scorePipelineMigration(),
         com.guoyu.platform.competition.entity.CompetitionFormalCandidateResultEntity.class);
     assertEntity(
         migration,
@@ -205,6 +206,10 @@ class CompetitionFormalExamRuntimeSchemaContractTest {
 
   private String migration() throws IOException {
     return readClasspath("db/migration/V20260907_005__create_competition_formal_exam_runtime.sql");
+  }
+
+  private String scorePipelineMigration() throws IOException {
+    return readClasspath("db/migration/V20260914_010__competition_score_async_pipeline.sql");
   }
 
   private String readClasspath(String path) throws IOException {

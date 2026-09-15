@@ -7,9 +7,12 @@ import java.time.LocalDateTime;
 @TableName("competition_outbox_event")
 public class CompetitionOutboxEventEntity extends BaseEntity {
 
+  private String eventChannel;
   private String aggregateType;
   private Long aggregateId;
   private String eventType;
+  private String routingKey;
+  private String eventKey;
   private String payloadJson;
   private String status;
   private Integer attemptCount;
@@ -17,12 +20,18 @@ public class CompetitionOutboxEventEntity extends BaseEntity {
   private LocalDateTime publishedAt;
   private String lastError;
 
+  public String getEventChannel() { return eventChannel; }
+  public void setEventChannel(String eventChannel) { this.eventChannel = eventChannel; }
   public String getAggregateType() { return aggregateType; }
   public void setAggregateType(String aggregateType) { this.aggregateType = aggregateType; }
   public Long getAggregateId() { return aggregateId; }
   public void setAggregateId(Long aggregateId) { this.aggregateId = aggregateId; }
   public String getEventType() { return eventType; }
   public void setEventType(String eventType) { this.eventType = eventType; }
+  public String getRoutingKey() { return routingKey; }
+  public void setRoutingKey(String routingKey) { this.routingKey = routingKey; }
+  public String getEventKey() { return eventKey; }
+  public void setEventKey(String eventKey) { this.eventKey = eventKey; }
   public String getPayloadJson() { return payloadJson; }
   public void setPayloadJson(String payloadJson) { this.payloadJson = payloadJson; }
   public String getStatus() { return status; }

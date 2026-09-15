@@ -525,6 +525,9 @@ public class CompetitionQuestionApplicationService {
   private Integer nextSortOrder(Long tenantId, Long eventId, Long workTypeId, Long levelId,
       String contentType, String questionType) {
     if (!StringUtils.hasText(contentType) || !StringUtils.hasText(questionType)) return 1;
+    // A question number identifies its position in the complete scope, not a position within
+    // each individual question type.  This keeps single, multi, judge and fill creation order
+    // contiguous (1, 2, 3, ...).
     Integer currentMax = questionMapper.selectMaxSortOrder(
         tenantId, eventId, workTypeId, levelId, contentType, questionType);
     if (currentMax == null) return 1;

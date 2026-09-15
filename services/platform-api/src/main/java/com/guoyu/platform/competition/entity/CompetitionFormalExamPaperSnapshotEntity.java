@@ -10,6 +10,7 @@ public class CompetitionFormalExamPaperSnapshotEntity extends BaseEntity {
   private Long examSessionId;
   private Long sourcePaperId;
   private Long sourceOriginPaperId;
+  private Long scoreRuleId;
   private String paperName;
   private String paperCode;
   private BigDecimal totalScore;
@@ -25,6 +26,8 @@ public class CompetitionFormalExamPaperSnapshotEntity extends BaseEntity {
   public void setSourceOriginPaperId(Long sourceOriginPaperId) {
     this.sourceOriginPaperId = sourceOriginPaperId;
   }
+  public Long getScoreRuleId() { return scoreRuleId; }
+  public void setScoreRuleId(Long scoreRuleId) { this.scoreRuleId = scoreRuleId; }
   public String getPaperName() { return paperName; }
   public void setPaperName(String paperName) { this.paperName = paperName; }
   public String getPaperCode() { return paperCode; }

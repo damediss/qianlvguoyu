@@ -31,12 +31,13 @@ public class CompetitionOutboxDispatcher {
 
   @Scheduled(fixedDelayString = "${platform.competition.messaging.dispatch-delay-millis:5000}")
   public void dispatch() {
-    List<CompetitionOutboxEventEntity> events = dispatchService.claimDispatchableEvents();
+    List<CompetitionOutboxEventEntity> events =
+        dispatchService.claimDispatchableEvents("notice", properties.getBatchSize());
     for (CompetitionOutboxEventEntity event : events) {
       try {
         CorrelationData correlationData = new CorrelationData(String.valueOf(event.getId()));
         rabbitTemplate.convertAndSend(
-            properties.getExchange(), properties.getRoutingKey(), event.getPayloadJson(),
+            properties.getExchange(), event.getRoutingKey(), event.getPayloadJson(),
             message -> {
               message.getMessageProperties().setMessageId(String.valueOf(event.getId()));
               message.getMessageProperties().setType(event.getEventType());

@@ -74,7 +74,6 @@ import { CompetitionPlayerPaperAssignmentPage } from './CompetitionPlayerPaperAs
 import './CompetitionEventManagementPage.css';
 
 type RoomFormValues = Omit<CompetitionTheoryRoom, 'id' | 'eventId'>;
-type ImportFormValues = { paperIds: CompetitionId[] };
 type SessionFormValues = {
   sessionCode: string;
   sessionName: string;
@@ -185,7 +184,6 @@ export function CompetitionTheoryExamPage({
   const [scoreRuleId, setScoreRuleId] = useState<string>();
   const [selectedVersionId, setSelectedVersionId] = useState<string>();
   const [previewSnapshotId, setPreviewSnapshotId] = useState<string>();
-  const [competitionImportOpen, setCompetitionImportOpen] = useState(false);
   const [playerAssignmentOpen, setPlayerAssignmentOpen] = useState(false);
   const [playerAssignmentDirty, setPlayerAssignmentDirty] = useState(false);
   const [roomOpen, setRoomOpen] = useState(false);
@@ -194,7 +192,6 @@ export function CompetitionTheoryExamPage({
   const [editingSession, setEditingSession] = useState<CompetitionTheorySession>();
   const [monitorAction, setMonitorAction] = useState<{ action: MonitorAction; record: CompetitionTheoryMonitor }>();
   const [withdrawOpen, setWithdrawOpen] = useState(false);
-  const [competitionImportForm] = Form.useForm<ImportFormValues>();
   const [roomForm] = Form.useForm<RoomFormValues>();
   const [sessionForm] = Form.useForm<SessionFormValues>();
   const [actionForm] = Form.useForm<{ reason: string; confirmation: string }>();
@@ -341,8 +338,8 @@ export function CompetitionTheoryExamPage({
   };
 
   const competitionImportMutation = useMutation({
-    mutationFn: (values: ImportFormValues) => {
-      const selectedIds = values.paperIds.filter((id, index, all) => all.indexOf(id) === index);
+    mutationFn: (paperSnapshotIds: CompetitionId[]) => {
+      const selectedIds = paperSnapshotIds.filter((id, index, all) => all.indexOf(id) === index);
       if (selectedIds.length < 1) throw new Error('至少选择一套已发布竞赛组卷快照');
       return importCompetitionTheoryPaperSnapshots(eventId, {
         stageId: stageId!,
@@ -353,8 +350,6 @@ export function CompetitionTheoryExamPage({
     },
     onSuccess: () => {
       message.success('竞赛组卷快照已绑定并生成理论执行快照');
-      setCompetitionImportOpen(false);
-      competitionImportForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ['competition-theory-paper-snapshots'] });
     },
   });
@@ -437,10 +432,24 @@ export function CompetitionTheoryExamPage({
       .filter((snapshot) => snapshot.status === 'published' && snapshot.sourceCompetitionPaperSnapshotId != null)
       .map((snapshot) => idValue(snapshot.sourceCompetitionPaperSnapshotId)),
   );
-  const competitionSnapshotOptions = competitionSnapshots.map((snapshot: CompetitionMakeExamSnapshot) => ({
-    label: `${snapshot.title} · v${snapshot.versionNo}（${snapshot.questionCount}题 / ${snapshot.totalScore}分）`,
-    value: idValue(snapshot.id),
-  }));
+  const bindCompetitionSnapshot = (snapshotId: CompetitionId) => {
+    if (!canManagePaper || competitionImportMutation.isPending) return;
+    if (!stageId || !eventWorkTypeId || !eventWorkTypeLevelId) {
+      message.warning('请先选择赛段、工种和等级，再绑定竞赛组卷快照');
+      return;
+    }
+    const clickedId = idValue(snapshotId);
+    if (!clickedId || selectedCompetitionSnapshotIds.has(clickedId)) {
+      if (clickedId && selectedCompetitionSnapshotIds.has(clickedId)) {
+        message.info('该试卷已绑定到当前赛段');
+      }
+      return;
+    }
+    const existingIds = competitionSnapshots
+      .filter((snapshot) => selectedCompetitionSnapshotIds.has(idValue(snapshot.id)))
+      .map((snapshot) => idValue(snapshot.id));
+    competitionImportMutation.mutate([...existingIds, clickedId]);
+  };
   const roomOptions = (roomsQuery.data || []).filter((room) => room.status === 'enabled').map((room) => ({
     label: `${room.name}（${room.capacity}人）`, value: idValue(room.id),
   }));
@@ -457,14 +466,13 @@ export function CompetitionTheoryExamPage({
             title="竞赛组卷快照（新竞赛题库）"
             extra={<Space>
               {canViewPlayerAssignment && <Button disabled={!stageId || !eventWorkTypeId || !eventWorkTypeLevelId || snapshotsQuery.data?.filter((snapshot) => snapshot.status === 'published').length === 0} onClick={() => setPlayerAssignmentOpen(true)}>配置选手试卷</Button>}
-              {canManagePaper && <Button type="primary" icon={<PlusOutlined />} disabled={!eventWorkTypeLevelId || competitionSnapshots.length === 0} onClick={() => { competitionImportForm.resetFields(); competitionImportForm.setFieldsValue({ paperIds: competitionSnapshots.filter((snapshot) => selectedCompetitionSnapshotIds.has(idValue(snapshot.id))).map((snapshot) => idValue(snapshot.id)) }); setCompetitionImportOpen(true); }}>选择试卷</Button>}
             </Space>}
           >
             <Alert
               style={{ marginBottom: 12 }}
               type="info"
               showIcon
-              message="每个竞赛组卷计划只生成一套试卷；A/B 或更多套试卷请分别创建多个计划，再在当前赛段选择一套或多套，后续排考时可随机或指定分配。"
+              message="每个竞赛组卷计划只生成一套试卷；点击下方试卷行即可直接绑定，已绑定试卷会保留。A/B 或更多套试卷请分别创建多个计划后依次点击绑定。"
             />
             {!eventWorkTypeLevelId && <Alert style={{ marginBottom: 12 }} type="warning" showIcon message="当前工种暂无等级，无法绑定竞赛组卷快照。" />}
             {eventWorkTypeLevelId && !competitionSnapshotsQuery.isLoading && competitionSnapshots.length === 0 && <Alert style={{ marginBottom: 12 }} type="warning" showIcon message="当前赛事、工种、等级暂无已发布的竞赛理论组卷试卷。" />}
@@ -472,8 +480,12 @@ export function CompetitionTheoryExamPage({
               rowKey={(row) => idValue(row.id)}
               size="small"
               pagination={false}
-              loading={competitionSnapshotsQuery.isLoading}
+              loading={competitionSnapshotsQuery.isLoading || competitionImportMutation.isPending}
               dataSource={competitionSnapshots}
+              onRow={(record) => ({
+                onClick: () => bindCompetitionSnapshot(record.id),
+                style: canManagePaper && !competitionImportMutation.isPending ? { cursor: 'pointer' } : undefined,
+              })}
               columns={[
                 { title: '试卷', dataIndex: 'paperCode', width: 70, render: (value: string) => <Tag color="purple">{value} 卷</Tag> },
                 { title: '版本', dataIndex: 'versionNo', width: 80, render: (value: number) => `v${value}` },
@@ -481,7 +493,7 @@ export function CompetitionTheoryExamPage({
                 { title: '题量', dataIndex: 'questionCount', width: 80 },
                 { title: '总分', dataIndex: 'totalScore', width: 80 },
                 { title: '时长', dataIndex: 'durationMinutes', width: 90, render: (value: number) => `${value} 分钟` },
-                { title: '状态', width: 100, render: (_, row) => selectedCompetitionSnapshotIds.has(idValue(row.id)) ? <Tag color="success">已选择</Tag> : <Tag>待选择</Tag> },
+                { title: '状态', width: 100, render: (_, row) => selectedCompetitionSnapshotIds.has(idValue(row.id)) ? <Tag color="success">已绑定</Tag> : <Tag>点击绑定</Tag> },
               ]}
             />
           </Card>
@@ -606,35 +618,6 @@ export function CompetitionTheoryExamPage({
         )}
       </Card>
 
-      <Modal
-        title="选择竞赛理论试卷"
-        open={competitionImportOpen}
-        onCancel={() => setCompetitionImportOpen(false)}
-        onOk={() => competitionImportForm.submit()}
-        confirmLoading={competitionImportMutation.isPending}
-        destroyOnClose
-      >
-        <Alert style={{ marginBottom: 16 }} type="info" showIcon message="可选择一套或多套来自不同组卷计划的已发布试卷。保存后会在当前赛段生成 P1、P2 等执行快照，后续在排考场次中决定随机或指定分配。" />
-        <Form form={competitionImportForm} layout="vertical" onFinish={(values) => {
-          if (!values.paperIds?.length) {
-            message.error('至少选择一套已发布竞赛组卷试卷');
-            return;
-          }
-          competitionImportMutation.mutate(values);
-        }}>
-          <Form.Item name="paperIds" label="选择已发布竞赛试卷" rules={[{ required: true, type: 'array', min: 1, max: 26, message: '至少选择一套，最多选择 26 套试卷' }]}>
-            <Select
-              mode="multiple"
-              maxCount={26}
-              maxTagCount={4}
-              placeholder="请选择一套或多套已发布试卷"
-              options={competitionSnapshotOptions}
-              optionFilterProp="label"
-              showSearch
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
       <Modal
         title="选手配置 · 试卷分配"
         open={playerAssignmentOpen}

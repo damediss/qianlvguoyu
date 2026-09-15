@@ -63,7 +63,10 @@ public class CompetitionEventOrgService {
     entity.setOrgId(req.orgId());
     entity.setQuota(req.quota());
     entity.setStatus(CompetitionEventOrgStatus.ACTIVE.getCode());
-    entity.setImportPermission(req.importPermission() == null ? 0 : req.importPermission());
+    // New participation relations allow roster imports by default.  Keep an
+    // explicitly supplied value unchanged so an administrator can still opt
+    // out while creating the relation.
+    entity.setImportPermission(req.importPermission() == null ? 1 : req.importPermission());
     entity.setDeleted(0);
     mapper.insert(entity);
     return entity;

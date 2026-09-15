@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -38,6 +39,7 @@ public class CompetitionFormalExamScoringService {
   private final CompetitionFormalExamCandidateScoringService candidateScoringService;
   private final Clock clock;
   private final Duration stuckTimeout;
+  private CompetitionFormalScoringTaskService scoringTaskService;
 
   public CompetitionFormalExamScoringService(
       CompetitionFormalExamSessionMapper sessionMapper,
@@ -55,6 +57,11 @@ public class CompetitionFormalExamScoringService {
     this.candidateScoringService = candidateScoringService;
     this.clock = clock;
     this.stuckTimeout = Duration.ofMinutes(Math.max(stuckTimeoutMinutes, 1));
+  }
+
+  @Autowired(required = false)
+  public void setScoringTaskService(CompetitionFormalScoringTaskService scoringTaskService) {
+    this.scoringTaskService = scoringTaskService;
   }
 
   public LocalDateTime stuckBefore(LocalDateTime now) {
@@ -99,6 +106,19 @@ public class CompetitionFormalExamScoringService {
           sessionId, session.getStatus());
       return;
     }
+    if (scoringTaskService != null) {
+      List<CompetitionFormalCandidateExamEntity> candidates =
+          safe(candidateExamMapper.selectByExamSessionId(sessionId));
+      String integrity = integrityError(session, candidates);
+      if (integrity != null) {
+        failQueuedSession(session, integrity, LocalDateTime.now(clock));
+        return;
+      }
+      for (CompetitionFormalCandidateExamEntity candidate : candidates) {
+        scoringTaskService.enqueueInitial(candidate, "session-reconcile", null);
+      }
+      return;
+    }
     CompetitionFormalExamScoringStatus scoringStatus =
         CompetitionFormalExamScoringStatus.fromCode(session.getScoringStatus());
     if (scoringStatus == CompetitionFormalExamScoringStatus.COMPLETED) {
@@ -125,6 +145,14 @@ public class CompetitionFormalExamScoringService {
     } catch (RuntimeException ex) {
       failScoring(sessionId, messageOf(ex), now, ex);
     }
+  }
+
+  private void failQueuedSession(
+      CompetitionFormalExamSessionEntity session, String error, LocalDateTime now) {
+    session.setScoringStatus("failed");
+    session.setScoringError(truncate(error));
+    session.setUpdatedAt(now);
+    sessionMapper.updateById(session);
   }
 
   private void scoreAcquiredSession(Long sessionId, LocalDateTime now) {

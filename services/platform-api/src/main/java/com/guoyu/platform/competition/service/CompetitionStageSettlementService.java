@@ -168,7 +168,19 @@ public class CompetitionStageSettlementService {
     if (req.planId() != null && !Objects.equals(req.planId(), planId)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "路径方案与请求方案不一致");
     }
-    CompetitionStageSettlementPreflightVO preflight = preflight(tenantId, plan, req.scoreRuleId(), req.absentContestantMemberIds());
+    CompetitionRankingSnapshotEntity sourceRanking = requirePublishedRanking(
+        tenantId, plan, req.rankingSnapshotId(), req.scoreRuleId());
+    List<CompetitionRankingEntryEntity> sourceEntries = rankingEntryMapper.selectList(
+        new LambdaQueryWrapper<CompetitionRankingEntryEntity>()
+            .eq(CompetitionRankingEntryEntity::getTenantId, tenantId)
+            .eq(CompetitionRankingEntryEntity::getRankingSnapshotId, sourceRanking.getId())
+            .eq(CompetitionRankingEntryEntity::getDeleted, 0)
+            .orderByAsc(CompetitionRankingEntryEntity::getSortOrder));
+    Set<Long> rankedAbsent = (sourceEntries == null ? List.<CompetitionRankingEntryEntity>of() : sourceEntries)
+        .stream().filter(e -> "absent".equals(e.getContestantStatus()))
+        .map(CompetitionRankingEntryEntity::getContestantMemberId).collect(java.util.stream.Collectors.toSet());
+    CompetitionStageSettlementPreflightVO preflight = preflight(
+        tenantId, plan, req.scoreRuleId(), new ArrayList<>(rankedAbsent));
     if (!preflight.ready()) throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "结算预检未通过");
     validateFrozenPromotion(plan, req.promotionQuota(), req.targetStageId());
     CompetitionScoreRuleEntity scoreRule = scoreRule(tenantId, plan, req.scoreRuleId());
@@ -184,36 +196,18 @@ public class CompetitionStageSettlementService {
     settlement.setEventId(plan.getEventId()); settlement.setStageId(plan.getStageId());
     settlement.setEventWorkTypeId(plan.getEventWorkTypeId()); settlement.setEventWorkTypeLevelId(plan.getEventWorkTypeLevelId());
     settlement.setScoreRuleId(scoreRule.getId()); settlement.setSettlementVersion(version); settlement.setStatus("draft");
+    settlement.setRankingSnapshotId(sourceRanking.getId());
     settlement.setReadinessStatus("passed"); settlement.setCreatedBy(userId); settlement.setUpdatedBy(userId);
     if (settlementMapper.insert(settlement) != 1) throw new BusinessException(ErrorCode.CONFLICT, "结算快照保存失败");
-    Set<Long> absent = req.absentContestantMemberIds() == null ? Set.of() : new HashSet<>(req.absentContestantMemberIds());
-    List<CompetitionStageSettlementCandidate> candidates = new ArrayList<>();
-    for (CompetitionStageRosterItemEntity rosterItem : publishedRoster(tenantId, plan)) {
-      if (!"included".equals(rosterItem.getInclusionStatus())) continue;
-      if (absent.contains(rosterItem.getContestantMemberId())) {
-        candidates.add(new CompetitionStageSettlementCandidate(rosterItem.getContestantMemberId(), null, BigDecimal.ZERO, "absent"));
-      } else {
-        CompetitionTotalScoreSnapshotEntity total = confirmedTotal(tenantId, plan, scoreRule.getId(), rosterItem.getContestantMemberId());
-        if (total == null) throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "选手成绩事实尚未确认");
-        candidates.add(new CompetitionStageSettlementCandidate(rosterItem.getContestantMemberId(), total.getId(),
-            total.getTotalScore().setScale(2, RoundingMode.HALF_UP), "completed"));
-      }
-    }
-    candidates.sort(Comparator.comparing(CompetitionStageSettlementCandidate::score).reversed()
-        .thenComparing(CompetitionStageSettlementCandidate::memberId));
-    int rankPosition = 0; BigDecimal previous = null; int rank = 0;
-    CompetitionStageSettlementItemEntity previousItem = null;
-    for (CompetitionStageSettlementCandidate candidate : candidates) {
-      boolean tied = "completed".equals(candidate.status()) && previous != null && previous.compareTo(candidate.score()) == 0;
-      if (tied && previousItem != null) { previousItem.setTiedFlag(1); settlementItemMapper.updateById(previousItem); }
-      if ("completed".equals(candidate.status())) { rankPosition++; if (!tied) rank = rankPosition; previous = candidate.score(); }
+    for (CompetitionRankingEntryEntity ranked :
+        sourceEntries == null ? List.<CompetitionRankingEntryEntity>of() : sourceEntries) {
       CompetitionStageSettlementItemEntity item = new CompetitionStageSettlementItemEntity();
       item.setId(IdWorker.getId()); item.setTenantId(tenantId); item.setSettlementId(settlement.getId());
-      item.setContestantMemberId(candidate.memberId()); item.setTotalScore(candidate.score()); item.setTotalScoreSnapshotId(candidate.snapshotId());
-      item.setContestantStatus(candidate.status()); item.setDisplayRank("absent".equals(candidate.status()) ? null : rank);
-      item.setTiedFlag(tied ? 1 : 0); item.setPromotionStatus("not_selected"); item.setCreatedBy(userId); item.setUpdatedBy(userId);
+      item.setContestantMemberId(ranked.getContestantMemberId()); item.setTotalScore(ranked.getTotalScore());
+      item.setTotalScoreSnapshotId(ranked.getTotalScoreSnapshotId());
+      item.setContestantStatus(ranked.getContestantStatus()); item.setDisplayRank(ranked.getDisplayRank());
+      item.setTiedFlag(ranked.getTiedFlag()); item.setPromotionStatus("not_selected"); item.setCreatedBy(userId); item.setUpdatedBy(userId);
       if (settlementItemMapper.insert(item) != 1) throw new BusinessException(ErrorCode.CONFLICT, "结算条目保存失败");
-      if (!"absent".equals(candidate.status())) previousItem = item;
     }
     return settlement;
   }
@@ -236,16 +230,8 @@ public class CompetitionStageSettlementService {
     if (!"settled".equals(stage.getStatus())) throw new BusinessException(ErrorCode.CONFLICT, "赛段尚未标记为已结算");
     List<CompetitionStageSettlementItemEntity> items = items(tenantId, settlementId);
     if (items.isEmpty()) throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "结算没有排名事实");
-    CompetitionRankingSnapshotEntity ranking = new CompetitionRankingSnapshotEntity();
-    ranking.setId(IdWorker.getId()); ranking.setTenantId(tenantId); ranking.setEventId(settlement.getEventId()); ranking.setStageId(settlement.getStageId());
-    ranking.setEventWorkTypeId(settlement.getEventWorkTypeId()); ranking.setEventWorkTypeLevelId(settlement.getEventWorkTypeLevelId()); ranking.setScoreRuleId(settlement.getScoreRuleId());
-    ranking.setSnapshotVersion(nextRankingVersion(tenantId, settlement)); ranking.setStatus("published"); ranking.setGenerationReason("stage-settlement:" + settlementId); ranking.setGeneratedAt(LocalDateTime.now()); ranking.setCreatedBy(userId); ranking.setUpdatedBy(userId);
-    if (rankingMapper.insert(ranking) != 1) throw new BusinessException(ErrorCode.CONFLICT, "排名快照保存失败");
-    int sortOrder = 0;
-    for (CompetitionStageSettlementItemEntity item : items) {
-      CompetitionRankingEntryEntity entry = new CompetitionRankingEntryEntity(); entry.setId(IdWorker.getId()); entry.setTenantId(tenantId); entry.setRankingSnapshotId(ranking.getId()); entry.setContestantMemberId(item.getContestantMemberId()); entry.setTotalScoreSnapshotId(item.getTotalScoreSnapshotId()); entry.setTotalScore(item.getTotalScore()); entry.setDisplayRank(item.getDisplayRank()); entry.setTieKey("completed".equals(item.getContestantStatus()) ? item.getTotalScore().toPlainString() : null); entry.setTiedFlag(item.getTiedFlag()); entry.setContestantStatus(item.getContestantStatus()); entry.setSortOrder(++sortOrder); entry.setCreatedBy(userId); entry.setUpdatedBy(userId);
-      if (rankingEntryMapper.insert(entry) != 1) throw new BusinessException(ErrorCode.CONFLICT, "排名条目保存失败");
-    }
+    CompetitionRankingSnapshotEntity ranking = requirePublishedRanking(
+        tenantId, plan, settlement.getRankingSnapshotId(), settlement.getScoreRuleId());
     promotionRule = effectiveRule(plan);
     reference = reference(tenantId, settlementId);
     if (plan.getTargetStageId() != null && !promotionRule.legacy()
@@ -451,7 +437,29 @@ public class CompetitionStageSettlementService {
   private CompetitionTotalScoreSnapshotEntity confirmedTotal(Long tenantId, CompetitionStageExecutionPlanEntity plan, Long scoreRuleId, Long memberId) { return totalMapper.selectOne(new LambdaQueryWrapper<CompetitionTotalScoreSnapshotEntity>().eq(CompetitionTotalScoreSnapshotEntity::getTenantId, tenantId).eq(CompetitionTotalScoreSnapshotEntity::getEventId, plan.getEventId()).eq(CompetitionTotalScoreSnapshotEntity::getStageId, plan.getStageId()).eq(CompetitionTotalScoreSnapshotEntity::getEventWorkTypeId, plan.getEventWorkTypeId()).eq(plan.getEventWorkTypeLevelId() != null, CompetitionTotalScoreSnapshotEntity::getEventWorkTypeLevelId, plan.getEventWorkTypeLevelId()).isNull(plan.getEventWorkTypeLevelId() == null, CompetitionTotalScoreSnapshotEntity::getEventWorkTypeLevelId).eq(CompetitionTotalScoreSnapshotEntity::getContestantMemberId, memberId).eq(CompetitionTotalScoreSnapshotEntity::getScoreRuleId, scoreRuleId).eq(CompetitionTotalScoreSnapshotEntity::getCurrentFlag, 1).eq(CompetitionTotalScoreSnapshotEntity::getConfirmationStatus, "confirmed").eq(CompetitionTotalScoreSnapshotEntity::getDeleted, 0)); }
   private CompetitionScoreRuleEntity scoreRule(Long tenantId, CompetitionStageExecutionPlanEntity plan, Long scoreRuleId) { if (scoreRuleId == null || plan.getScoreRuleId() == null || !Objects.equals(plan.getScoreRuleId(), scoreRuleId)) return null; return scoreRuleMapper.selectOne(new LambdaQueryWrapper<CompetitionScoreRuleEntity>().eq(CompetitionScoreRuleEntity::getTenantId, tenantId).eq(CompetitionScoreRuleEntity::getId, scoreRuleId).eq(CompetitionScoreRuleEntity::getEventId, plan.getEventId()).eq(CompetitionScoreRuleEntity::getStageId, plan.getStageId()).eq(CompetitionScoreRuleEntity::getEventWorkTypeId, plan.getEventWorkTypeId()).eq(plan.getEventWorkTypeLevelId() != null, CompetitionScoreRuleEntity::getEventWorkTypeLevelId, plan.getEventWorkTypeLevelId()).isNull(plan.getEventWorkTypeLevelId() == null, CompetitionScoreRuleEntity::getEventWorkTypeLevelId).eq(CompetitionScoreRuleEntity::getStatus, "published").eq(CompetitionScoreRuleEntity::getDeleted, 0)); }
   private void validateFrozenPromotion(CompetitionStageExecutionPlanEntity plan, Integer quota, Long targetStageId) { if (quota != null && !Objects.equals(quota, plan.getPromotionQuota())) throw new BusinessException(ErrorCode.CONFLICT, "请求晋级人数与冻结执行配置不一致"); if (targetStageId != null && !Objects.equals(targetStageId, plan.getTargetStageId())) throw new BusinessException(ErrorCode.CONFLICT, "请求晋级目标与冻结赛段拓扑不一致"); }
-  private int nextRankingVersion(Long tenantId, CompetitionStageSettlementEntity settlement) { List<CompetitionRankingSnapshotEntity> rows = rankingMapper.selectList(new LambdaQueryWrapper<CompetitionRankingSnapshotEntity>().eq(CompetitionRankingSnapshotEntity::getTenantId, tenantId).eq(CompetitionRankingSnapshotEntity::getEventId, settlement.getEventId()).eq(CompetitionRankingSnapshotEntity::getStageId, settlement.getStageId()).eq(CompetitionRankingSnapshotEntity::getEventWorkTypeId, settlement.getEventWorkTypeId()).eq(settlement.getEventWorkTypeLevelId() != null, CompetitionRankingSnapshotEntity::getEventWorkTypeLevelId, settlement.getEventWorkTypeLevelId()).isNull(settlement.getEventWorkTypeLevelId() == null, CompetitionRankingSnapshotEntity::getEventWorkTypeLevelId).eq(CompetitionRankingSnapshotEntity::getScoreRuleId, settlement.getScoreRuleId()).eq(CompetitionRankingSnapshotEntity::getDeleted, 0)); return (rows == null ? 0 : rows.stream().map(CompetitionRankingSnapshotEntity::getSnapshotVersion).filter(Objects::nonNull).max(Integer::compareTo).orElse(0)) + 1; }
+  private CompetitionRankingSnapshotEntity requirePublishedRanking(Long tenantId,
+      CompetitionStageExecutionPlanEntity plan, Long rankingSnapshotId, Long scoreRuleId) {
+    CompetitionRankingSnapshotEntity ranking = rankingMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionRankingSnapshotEntity>()
+            .eq(CompetitionRankingSnapshotEntity::getTenantId, tenantId)
+            .eq(CompetitionRankingSnapshotEntity::getId, rankingSnapshotId)
+            .eq(CompetitionRankingSnapshotEntity::getEventId, plan.getEventId())
+            .eq(CompetitionRankingSnapshotEntity::getStageId, plan.getStageId())
+            .eq(CompetitionRankingSnapshotEntity::getEventWorkTypeId, plan.getEventWorkTypeId())
+            .eq(plan.getEventWorkTypeLevelId() != null,
+                CompetitionRankingSnapshotEntity::getEventWorkTypeLevelId,
+                plan.getEventWorkTypeLevelId())
+            .isNull(plan.getEventWorkTypeLevelId() == null,
+                CompetitionRankingSnapshotEntity::getEventWorkTypeLevelId)
+            .eq(CompetitionRankingSnapshotEntity::getScoreRuleId, scoreRuleId)
+            .eq(CompetitionRankingSnapshotEntity::getStatus, "published")
+            .eq(CompetitionRankingSnapshotEntity::getDeleted, 0));
+    if (ranking == null) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+          "赛段结算必须引用当前范围内已发布的排名快照");
+    }
+    return ranking;
+  }
   private CompetitionStageSettlementPreflightCheckVO check(String code, boolean passed, String message) { return new CompetitionStageSettlementPreflightCheckVO(code, passed, message); }
   private record CompetitionStageSettlementCandidate(Long memberId, Long snapshotId, BigDecimal score, String status) { }
 }

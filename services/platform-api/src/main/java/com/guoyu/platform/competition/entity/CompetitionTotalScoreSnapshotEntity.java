@@ -17,6 +17,7 @@ public class CompetitionTotalScoreSnapshotEntity extends BaseEntity {
   private Long theorySourceId;
   private Long simulationSourceId;
   private Long practicalSourceId;
+  private String inputFingerprint;
   private BigDecimal theoryScore;
   private BigDecimal simulationScore;
   private BigDecimal practicalScore;
@@ -55,6 +56,8 @@ public class CompetitionTotalScoreSnapshotEntity extends BaseEntity {
   public void setPracticalSourceId(Long practicalSourceId) {
     this.practicalSourceId = practicalSourceId;
   }
+  public String getInputFingerprint() { return inputFingerprint; }
+  public void setInputFingerprint(String inputFingerprint) { this.inputFingerprint = inputFingerprint; }
   public BigDecimal getTheoryScore() { return theoryScore; }
   public void setTheoryScore(BigDecimal theoryScore) { this.theoryScore = theoryScore; }
   public BigDecimal getSimulationScore() { return simulationScore; }

@@ -40,6 +40,17 @@ class CompetitionEventOrgServiceTest {
   }
 
   @Test
+  void defaultsRosterImportPermissionToAllowed() {
+    when(mapper.selectOne(any())).thenReturn(null);
+    when(mapper.insert(any(CompetitionEventOrgEntity.class))).thenReturn(1);
+
+    CompetitionEventOrgEntity result = service.create(
+        1L, 1001L, new CompetitionEventOrgCreateReq(3001L, null, null, null));
+
+    assertThat(result.getImportPermission()).isEqualTo(1);
+  }
+
+  @Test
   void rejectsDuplicateActiveRelation() {
     CompetitionEventOrgEntity existing = new CompetitionEventOrgEntity();
     existing.setStatus("active");

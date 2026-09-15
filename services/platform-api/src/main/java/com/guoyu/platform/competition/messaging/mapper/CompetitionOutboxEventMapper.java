@@ -18,6 +18,7 @@ public interface CompetitionOutboxEventMapper extends BaseMapper<CompetitionOutb
       SELECT *
       FROM competition_outbox_event
       WHERE deleted = 0
+        AND event_channel = #{eventChannel}
         AND (
           (status IN ('pending', 'retry') AND next_attempt_at <= #{now})
           OR (status = 'publishing' AND updated_at <= #{staleBefore})
@@ -27,6 +28,7 @@ public interface CompetitionOutboxEventMapper extends BaseMapper<CompetitionOutb
       FOR UPDATE SKIP LOCKED
       """)
   List<CompetitionOutboxEventEntity> selectDispatchableForUpdate(
+      @Param("eventChannel") String eventChannel,
       @Param("now") LocalDateTime now,
       @Param("staleBefore") LocalDateTime staleBefore,
       @Param("limit") int limit);

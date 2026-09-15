@@ -459,10 +459,10 @@ export function CompetitionPlayerManagementPage() {
               })}
             </Space>
           </Form.Item>
-          <Form.Item name="name" label="姓名" rules={[{ required: true, whitespace: true, message: '请输入姓名' }]}>
-            <Input maxLength={128} />
-          </Form.Item>
-          <Space style={{ display: 'flex' }} align="start">
+          <div className="competition-player-identity-fields">
+            <Form.Item name="name" label="姓名" rules={[{ required: true, whitespace: true, message: '请输入姓名' }]}>
+              <Input maxLength={128} />
+            </Form.Item>
             <Form.Item
               name="idCardNo"
               label="身份证号"
@@ -477,7 +477,6 @@ export function CompetitionPlayerManagementPage() {
                 },
               ]}
               extra={editing ? '请核对完整信息；不修改请保持原值' : undefined}
-              style={{ flex: 1 }}
             >
               <Input maxLength={18} />
             </Form.Item>
@@ -495,11 +494,10 @@ export function CompetitionPlayerManagementPage() {
                 },
               ]}
               extra={editing ? '请核对完整信息；不修改请保持原值' : undefined}
-              style={{ flex: 1 }}
             >
               <Input maxLength={11} inputMode="numeric" />
             </Form.Item>
-          </Space>
+          </div>
         </Form>
       </Modal>
     </div>

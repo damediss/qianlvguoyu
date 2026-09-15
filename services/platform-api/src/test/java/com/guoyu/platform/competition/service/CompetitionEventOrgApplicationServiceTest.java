@@ -1,5 +1,6 @@
 package com.guoyu.platform.competition.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -15,6 +16,7 @@ import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.system.mapper.UserMapper;
 import java.util.List;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -65,7 +67,9 @@ class CompetitionEventOrgApplicationServiceTest {
 
     service.create(1001L, new CompetitionEventOrgCreateReq(null, " 新参与企业 ", 20, 1));
 
-    verify(orgMapper).insert(any(OrgEntity.class));
+    ArgumentCaptor<OrgEntity> captor = ArgumentCaptor.forClass(OrgEntity.class);
+    verify(orgMapper).insert(captor.capture());
+    assertThat(captor.getValue().getCode()).matches("QY\\d{8}");
     verify(eventOrgService).create(1L, 1001L, new CompetitionEventOrgCreateReq(3002L, null, 20, 1));
   }
 

@@ -1,6 +1,6 @@
 import { ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Card, Empty, Result, Select, Space, Spin, Typography, message } from 'antd';
+import { Alert, Button, Card, Empty, Result, Select, Space, Spin, Tag, Typography, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import {
   getCompetitionFormalExamSessionByStage,
@@ -82,6 +82,10 @@ export function CompetitionFormalExamConsolePage({
     queryFn: () => getCompetitionFormalExamSessionByStage(selectedStageId!),
     enabled: canView && scopeReady && Boolean(selectedStageId),
   });
+  const selectedSession = sessionQuery.data
+    && idValue(sessionQuery.data.stageId) === selectedStageId
+    ? sessionQuery.data
+    : undefined;
   const prepareMutation = useMutation({
     mutationFn: () => prepareCompetitionFormalExamSession(selectedStageId!),
     onSuccess: (session: CompetitionFormalExamSession) => {
@@ -121,7 +125,14 @@ export function CompetitionFormalExamConsolePage({
           <Button icon={<ReloadOutlined />} loading={stagesQuery.isFetching} onClick={() => stagesQuery.refetch()}>
             刷新赛段
           </Button>
-          {selectedStage ? <Typography.Text type="secondary">当前控制范围：{stageLabel(selectedStage)}</Typography.Text> : null}
+          {selectedStage ? (
+            <Space size={8}>
+              <Typography.Text type="secondary">当前控制范围：{stageLabel(selectedStage)}</Typography.Text>
+              {sessionQuery.isFetching && !selectedSession ? <Tag>正在读取比赛状态</Tag> : null}
+              {!sessionQuery.isFetching && selectedSession ? <Tag color="success">已初始化</Tag> : null}
+              {!sessionQuery.isFetching && !selectedSession && !sessionQuery.isError ? <Tag color="warning">未初始化</Tag> : null}
+            </Space>
+          ) : null}
         </Space>
       </Card>
 
@@ -137,7 +148,7 @@ export function CompetitionFormalExamConsolePage({
         </Card>
       ) : null}
 
-      {selectedStageId && sessionQuery.isLoading ? (
+      {selectedStageId && (sessionQuery.isLoading || (sessionQuery.isFetching && !selectedSession)) ? (
         <Card bordered={false}><Spin /></Card>
       ) : null}
 
@@ -145,8 +156,12 @@ export function CompetitionFormalExamConsolePage({
         <Alert type="error" showIcon message={errorText(sessionQuery.error, '正式比赛运行实例加载失败')} />
       ) : null}
 
-      {selectedStage && !sessionQuery.isLoading && !sessionQuery.isError && !sessionQuery.data ? (
-        <Card bordered={false} title="正式比赛运行实例">
+      {selectedStage && !sessionQuery.isLoading && !sessionQuery.isFetching && !sessionQuery.isError && !selectedSession ? (
+        <Card
+          bordered={false}
+          data-testid="formal-exam-console-uninitialized"
+          title={<Space><span>正式比赛运行实例</span><Tag color="warning">未初始化</Tag></Space>}
+        >
           <Space direction="vertical" size={12}>
             <Typography.Text type="secondary">
               当前赛段尚未生成理论考试正式比赛运行实例。请确认选手试卷配置已完成，再从本控制台初始化。
@@ -166,15 +181,23 @@ export function CompetitionFormalExamConsolePage({
         </Card>
       ) : null}
 
-      {sessionQuery.data ? (
-        <CompetitionFormalExamSessionPanel
-          key={idValue(sessionQuery.data.id)}
-          open
-          embedded
-          loading={false}
-          session={sessionQuery.data}
-          onClose={() => undefined}
-        />
+      {selectedSession ? (
+        <Space direction="vertical" size={12} style={{ width: '100%' }} data-testid="formal-exam-console-initialized">
+          <Alert
+            type="success"
+            showIcon
+            message="正式比赛已初始化"
+            description="当前页面保留并展示该比赛的控制台数据面板，可继续查看实时状态和执行控制。"
+          />
+          <CompetitionFormalExamSessionPanel
+            key={idValue(selectedSession.id)}
+            open
+            embedded
+            loading={false}
+            session={selectedSession}
+            onClose={() => undefined}
+          />
+        </Space>
       ) : null}
     </Space>
   );

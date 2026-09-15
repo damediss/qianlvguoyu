@@ -227,6 +227,24 @@ platform:
         enabled: ${COMPETITION_FORMAL_EXAM_SCORING_ENABLED:true}
         fixed-delay-millis: ${COMPETITION_FORMAL_EXAM_SCORING_DELAY_MILLIS:5000}
         stuck-timeout-minutes: ${COMPETITION_FORMAL_EXAM_SCORING_STUCK_TIMEOUT_MINUTES:15}
+      scoring-messaging:
+        enabled: ${COMPETITION_FORMAL_EXAM_SCORING_MESSAGING_ENABLED:true}
+        dispatch-delay-millis: ${COMPETITION_FORMAL_EXAM_SCORING_DISPATCH_DELAY_MILLIS:100}
+        recovery-delay-millis: ${COMPETITION_FORMAL_EXAM_SCORING_RECOVERY_DELAY_MILLIS:5000}
+        batch-size: ${COMPETITION_FORMAL_EXAM_SCORING_BATCH_SIZE:100}
+        max-attempts: ${COMPETITION_FORMAL_EXAM_SCORING_MAX_ATTEMPTS:3}
+        lease-seconds: ${COMPETITION_FORMAL_EXAM_SCORING_LEASE_SECONDS:60}
+        consumer-concurrency: ${COMPETITION_FORMAL_EXAM_SCORING_CONCURRENCY:2}
+        consumer-max-concurrency: ${COMPETITION_FORMAL_EXAM_SCORING_MAX_CONCURRENCY:4}
+        prefetch: ${COMPETITION_FORMAL_EXAM_SCORING_PREFETCH:1}
+        exchange: ${COMPETITION_FORMAL_EXAM_SCORING_EXCHANGE:competition.events}
+        routing-key: ${COMPETITION_FORMAL_EXAM_SCORING_ROUTING_KEY:competition.formal-score.requested.v1}
+        queue: ${COMPETITION_FORMAL_EXAM_SCORING_QUEUE:competition.formal-score}
+        dead-letter-exchange: ${COMPETITION_FORMAL_EXAM_SCORING_DLX:competition.dlx}
+        dead-letter-queue: ${COMPETITION_FORMAL_EXAM_SCORING_DLQ:competition.formal-score.dlq}
+        pipeline-routing-key: ${COMPETITION_SCORE_PIPELINE_ROUTING_KEY:competition.score-source.confirmed.v1}
+        pipeline-queue: ${COMPETITION_SCORE_PIPELINE_QUEUE:competition.score-pipeline}
+        pipeline-dead-letter-queue: ${COMPETITION_SCORE_PIPELINE_DLQ:competition.score-pipeline.dlq}
   training:
     division:
       # 主路径门禁：排班表必填；名单默认也要求（可关，仅作人员补全建议）

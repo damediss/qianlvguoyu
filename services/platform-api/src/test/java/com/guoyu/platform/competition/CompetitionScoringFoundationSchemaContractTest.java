@@ -89,11 +89,15 @@ class CompetitionScoringFoundationSchemaContractTest {
     try (var input = getClass().getClassLoader().getResourceAsStream(
         "db/migration/V20260727_006__create_competition_scoring_foundation.sql");
          var additiveInput = getClass().getClassLoader().getResourceAsStream(
-             "db/migration/V20260802_003__extend_competition_scoring_to_levels.sql")) {
+             "db/migration/V20260802_003__extend_competition_scoring_to_levels.sql");
+         var pipelineInput = getClass().getClassLoader().getResourceAsStream(
+             "db/migration/V20260914_010__competition_score_async_pipeline.sql")) {
       assertThat(input).isNotNull();
       assertThat(additiveInput).isNotNull();
+      assertThat(pipelineInput).isNotNull();
       return new String(input.readAllBytes(), StandardCharsets.UTF_8)
-          + "\n" + new String(additiveInput.readAllBytes(), StandardCharsets.UTF_8);
+          + "\n" + new String(additiveInput.readAllBytes(), StandardCharsets.UTF_8)
+          + "\n" + new String(pipelineInput.readAllBytes(), StandardCharsets.UTF_8);
     }
   }
 

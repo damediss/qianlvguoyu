@@ -47,6 +47,7 @@
 .competition-roster-import-form > .ant-form-item .ant-form-item-label { padding-inline-end: 6px; }
 .competition-roster-upload-actions .ant-space { display: flex; }
 .competition-roster-upload-submit.ant-btn-primary:disabled { color: #6c9ff0; border-color: #b8d2ff; background: #e8f1ff; }
+.competition-player-identity-fields { width: 360px; max-width: 100%; }
 .competition-roster-import-wizard__body { margin-top: 28px; }
 .competition-roster-import-wizard__body .competition-card-heading { margin-bottom: 12px; }
 

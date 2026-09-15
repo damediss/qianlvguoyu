@@ -24,10 +24,16 @@ public class CompetitionScoringReadinessApplicationService {
   @Transactional(readOnly = true)
   public CompetitionScoringReadinessVO check(
       Long eventId, Long stageId, Long eventWorkTypeId) {
+    return check(eventId, stageId, eventWorkTypeId, null);
+  }
+
+  @Transactional(readOnly = true)
+  public CompetitionScoringReadinessVO check(
+      Long eventId, Long stageId, Long eventWorkTypeId, Long eventWorkTypeLevelId) {
     PlatformUserPrincipal principal = currentUser();
     scoreRuleApplicationService.accessibleEvent(principal, eventId);
     return readinessDomainService.check(
-        principal.getTenantId(), eventId, stageId, eventWorkTypeId);
+        principal.getTenantId(), eventId, stageId, eventWorkTypeId, eventWorkTypeLevelId);
   }
 
   private PlatformUserPrincipal currentUser() {

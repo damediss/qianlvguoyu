@@ -10,6 +10,7 @@ public class CompetitionFormalCandidateResultEntity extends BaseEntity {
 
   private Long examSessionId;
   private Long candidateExamId;
+  private Integer revisionNo;
   private String resultStatus;
   private BigDecimal fullScore;
   private BigDecimal totalScore;
@@ -19,12 +20,16 @@ public class CompetitionFormalCandidateResultEntity extends BaseEntity {
   private Integer wrongCount;
   private Integer unansweredCount;
   private Integer scoreVersion;
+  private Integer currentFlag;
+  private String correctionReason;
   private LocalDateTime scoredTime;
 
   public Long getExamSessionId() { return examSessionId; }
   public void setExamSessionId(Long examSessionId) { this.examSessionId = examSessionId; }
   public Long getCandidateExamId() { return candidateExamId; }
   public void setCandidateExamId(Long candidateExamId) { this.candidateExamId = candidateExamId; }
+  public Integer getRevisionNo() { return revisionNo; }
+  public void setRevisionNo(Integer revisionNo) { this.revisionNo = revisionNo; }
   public String getResultStatus() { return resultStatus; }
   public void setResultStatus(String resultStatus) { this.resultStatus = resultStatus; }
   public BigDecimal getFullScore() { return fullScore; }
@@ -43,6 +48,10 @@ public class CompetitionFormalCandidateResultEntity extends BaseEntity {
   public void setUnansweredCount(Integer unansweredCount) { this.unansweredCount = unansweredCount; }
   public Integer getScoreVersion() { return scoreVersion; }
   public void setScoreVersion(Integer scoreVersion) { this.scoreVersion = scoreVersion; }
+  public Integer getCurrentFlag() { return currentFlag; }
+  public void setCurrentFlag(Integer currentFlag) { this.currentFlag = currentFlag; }
+  public String getCorrectionReason() { return correctionReason; }
+  public void setCorrectionReason(String correctionReason) { this.correctionReason = correctionReason; }
   public LocalDateTime getScoredTime() { return scoredTime; }
   public void setScoredTime(LocalDateTime scoredTime) { this.scoredTime = scoredTime; }
 }

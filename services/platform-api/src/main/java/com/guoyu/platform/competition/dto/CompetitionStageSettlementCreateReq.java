@@ -5,6 +5,6 @@ import java.util.List;
 public record CompetitionStageSettlementCreateReq(
     @NotNull Long planId,
     @NotNull Long scoreRuleId,
+    @NotNull Long rankingSnapshotId,
     @PositiveOrZero Integer promotionQuota,
-    Long targetStageId,
-    List<Long> absentContestantMemberIds) { }
+    Long targetStageId) { }

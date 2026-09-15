@@ -85,6 +85,24 @@ const typeLabels: Record<string, string> = {
   practical: '实操题',
 };
 
+const typeColors: Record<string, string> = {
+  single: 'blue',
+  multi: 'purple',
+  judge: 'orange',
+  fill: 'cyan',
+  practical: 'green',
+};
+
+const judgeAnswerOptions = [
+  { value: 'T', label: 'T（正确）' },
+  { value: 'F', label: 'F（错误）' },
+];
+
+function questionTypeTag(value?: string | null) {
+  const type = value?.trim().toLowerCase() || '';
+  return <Tag color={typeColors[type] || 'default'}>{typeLabels[type] || value || '-'}</Tag>;
+}
+
 function parseOptionsJson(optionsJson?: string | null): QuestionOptions {
   if (!optionsJson) return {};
   try {
@@ -261,7 +279,9 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
       eventWorkTypeLevelId: record.eventWorkTypeLevelId,
       questionType: record.questionType,
       stem: record.stem,
-      referenceAnswer: record.referenceAnswer || undefined,
+      referenceAnswer: record.questionType === 'judge'
+        ? record.referenceAnswer?.trim().toUpperCase() || undefined
+        : record.referenceAnswer || undefined,
       fillAnswer: record.fillAnswer || undefined,
       options: parseOptionsJson(record.optionsJson),
       difficulty: record.difficulty || undefined,
@@ -377,11 +397,11 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
       return (
         <Form.Item
           name="referenceAnswer"
-          label="参考答案"
+          label="答案选项"
           rules={answerRules(effectiveQuestionType)}
-          extra="仅支持 T 或 F"
+          extra="请选择 T（正确）或 F（错误）"
         >
-          <Input maxLength={1} placeholder="请输入 T 或 F" />
+          <Select placeholder="请选择 T 或 F" options={judgeAnswerOptions} />
         </Form.Item>
       );
     }
@@ -437,7 +457,7 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
         pagination={{ current: data?.page ?? page, pageSize: data?.pageSize ?? 20, total: data?.total ?? 0, onChange: setPage, showSizeChanger: false }}
         columns={[
           { title: '序号', dataIndex: 'sortOrder', width: 80 },
-          { title: '题型', dataIndex: 'questionType', width: 100, render: (value: string) => <Tag color="blue">{typeLabels[value] || value}</Tag> },
+          { title: '题型', dataIndex: 'questionType', width: 100, render: questionTypeTag },
           { title: '题干', dataIndex: 'stem', ellipsis: true, render: (value: string) => <Typography.Text ellipsis={{ tooltip: true }}>{value}</Typography.Text> },
           { title: '难度', dataIndex: 'difficulty', width: 90, render: (value: number | null) => value ? ['-', '简单', '中等', '困难', '较难', '极难'][value] || value : '-' },
           { title: '状态', dataIndex: 'status', width: 90, render: (value: string) => value === 'enabled' ? <Tag color="green">启用</Tag> : <Tag>停用</Tag> },
@@ -482,7 +502,7 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
         {previewQuery.isLoading ? <Spin /> : previewQuery.data ? <>
           <Descriptions column={3} size="small" style={{ marginBottom: 16 }}>
             <Descriptions.Item label="题号">{previewQuery.data.sortOrder}</Descriptions.Item>
-            <Descriptions.Item label="题型">{typeLabels[previewQuery.data.questionType]}</Descriptions.Item>
+            <Descriptions.Item label="题型">{questionTypeTag(previewQuery.data.questionType)}</Descriptions.Item>
           </Descriptions>
           <Typography.Paragraph>{previewQuery.data.stem}</Typography.Paragraph>
           {previewQuery.data.optionsJson && <Typography.Paragraph type="secondary">选项：{previewQuery.data.optionsJson}</Typography.Paragraph>}

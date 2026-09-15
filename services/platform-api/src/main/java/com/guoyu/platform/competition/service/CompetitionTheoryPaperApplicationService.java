@@ -60,6 +60,10 @@ public class CompetitionTheoryPaperApplicationService {
 
   private static final String PUBLISHED = "published";
   private static final String EXACT_MATCH = "exact_match";
+  private static final Set<String> JUDGE_TRUE_TOKENS =
+      Set.of("正确", "对", "true", "t", "1", "是", "√", "yes", "y");
+  private static final Set<String> JUDGE_FALSE_TOKENS =
+      Set.of("错误", "错", "false", "f", "0", "否", "×", "x", "no", "n");
 
   private final CompetitionScoreRuleDomainService scoreRuleDomainService;
   private final CompetitionScoreRuleApplicationService scoreRuleApplicationService;
@@ -396,8 +400,9 @@ public class CompetitionTheoryPaperApplicationService {
     question.setSortOrder(sortOrder);
     question.setQuestionType(type);
     question.setContent(source.getStem());
-    question.setOptionsJson(toExecutionOptionsJson(source.getOptionsJson()));
-    question.setCorrectAnswersJson(toExecutionAnswersJson(type, source));
+    String executionOptionsJson = toExecutionOptionsJson(type, source.getOptionsJson());
+    question.setOptionsJson(executionOptionsJson);
+    question.setCorrectAnswersJson(toExecutionAnswersJson(type, source, executionOptionsJson));
     question.setFillAnswer("fill".equals(type) ? firstNonBlank(
         source.getFillAnswer(), source.getReferenceAnswer()) : null);
     question.setScore(source.getScore());
@@ -412,21 +417,55 @@ public class CompetitionTheoryPaperApplicationService {
   }
 
   private String toExecutionOptionsJson(String optionsJson) {
+    return toExecutionOptionsJson(null, optionsJson);
+  }
+
+  /**
+   * Converts the make-exam option payload to the execution snapshot shape.
+   *
+   * <p>Questions created in the independent competition question bank store choice options as an
+   * object and judge answers as T/F without storing an option object.  The execution tables,
+   * however, require an array of keyed options.  Canonicalising both object and legacy array
+   * payloads here keeps the answer keys and the candidate-facing option IDs in sync.</p>
+   */
+  private String toExecutionOptionsJson(String questionType, String optionsJson) {
     try {
-      if (!StringUtils.hasText(optionsJson)) {
-        return "[]";
-      }
-      JsonNode root = objectMapper.readTree(optionsJson);
       ArrayNode options = objectMapper.createArrayNode();
-      if (root != null && root.isObject()) {
-        root.fields().forEachRemaining(entry -> {
-          ObjectNode option = objectMapper.createObjectNode();
-          option.put("key", entry.getKey());
-          option.put("content", entry.getValue().asText());
-          options.add(option);
-        });
-      } else if (root != null && root.isArray()) {
-        root.forEach(options::add);
+      if (StringUtils.hasText(optionsJson)) {
+        JsonNode root = objectMapper.readTree(optionsJson);
+        if (root != null && root.isObject()) {
+          root.fields().forEachRemaining(entry -> {
+            String key = normalizeExecutionOptionKey(entry.getKey());
+            if (!StringUtils.hasText(key)) {
+              return;
+            }
+            ObjectNode option = objectMapper.createObjectNode();
+            option.put("key", key);
+            option.put("content", optionContent(entry.getValue()));
+            options.add(option);
+          });
+        } else if (root != null && root.isArray()) {
+          int index = 0;
+          Set<String> usedKeys = new java.util.HashSet<>();
+          for (JsonNode node : root) {
+            if (node == null || node.isNull()) {
+              continue;
+            }
+            String key = normalizeExecutionOptionKey(existingOptionKey(node));
+            if (!StringUtils.hasText(key) || !usedKeys.add(key)) {
+              key = generatedOptionKey(index, usedKeys);
+            }
+            usedKeys.add(key);
+            ObjectNode option = objectMapper.createObjectNode();
+            option.put("key", key);
+            option.put("content", optionContent(node));
+            options.add(option);
+            index++;
+          }
+        }
+      }
+      if (options.isEmpty() && "judge".equalsIgnoreCase(questionType)) {
+        addDefaultJudgeOptions(options);
       }
       return objectMapper.writeValueAsString(options);
     } catch (JsonProcessingException | IllegalArgumentException ex) {
@@ -434,9 +473,68 @@ public class CompetitionTheoryPaperApplicationService {
     }
   }
 
+  private void addDefaultJudgeOptions(ArrayNode options) {
+    ObjectNode truth = objectMapper.createObjectNode();
+    truth.put("key", "T");
+    truth.put("content", "正确");
+    options.add(truth);
+    ObjectNode falsity = objectMapper.createObjectNode();
+    falsity.put("key", "F");
+    falsity.put("content", "错误");
+    options.add(falsity);
+  }
+
+  private String existingOptionKey(JsonNode node) {
+    if (node == null || !node.isObject()) {
+      return null;
+    }
+    for (String field : List.of("key", "optionKey", "optionId", "id")) {
+      String value = node.path(field).asText(null);
+      if (StringUtils.hasText(value)) {
+        return value.trim();
+      }
+    }
+    return null;
+  }
+
+  private String normalizeExecutionOptionKey(String key) {
+    if (!StringUtils.hasText(key)) {
+      return null;
+    }
+    String trimmed = key.trim();
+    return trimmed.matches("[a-hA-H]") ? trimmed.toUpperCase(Locale.ROOT) : trimmed;
+  }
+
+  private String generatedOptionKey(int index, Set<String> usedKeys) {
+    String candidate = index < 26 ? String.valueOf((char) ('A' + index)) : "i" + index;
+    while (usedKeys.contains(candidate)) {
+      index++;
+      candidate = index < 26 ? String.valueOf((char) ('A' + index)) : "i" + index;
+    }
+    return candidate;
+  }
+
+  private String optionContent(JsonNode node) {
+    if (node == null || node.isNull()) {
+      return "";
+    }
+    if (!node.isObject()) {
+      return node.asText("");
+    }
+    for (String field : List.of("content", "text", "label", "value")) {
+      JsonNode value = node.get(field);
+      if (value != null && !value.isNull()) {
+        return value.asText("");
+      }
+    }
+    return "";
+  }
+
   private String toExecutionAnswersJson(
-      String type, CompetitionMakeExamPaperQuestionEntity source) {
-    String answer = firstNonBlank(source.getFillAnswer(), source.getReferenceAnswer());
+      String type, CompetitionMakeExamPaperQuestionEntity source, String executionOptionsJson) {
+    String answer = "fill".equals(type)
+        ? firstNonBlank(source.getFillAnswer(), source.getReferenceAnswer())
+        : firstNonBlank(source.getReferenceAnswer(), source.getFillAnswer());
     if (answer == null) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛理论快照缺少参考答案");
     }
@@ -445,32 +543,36 @@ public class CompetitionTheoryPaperApplicationService {
       answers.add(answer);
     } else if ("judge".equals(type)) {
       String normalized = answer.trim().toLowerCase(Locale.ROOT);
+      JsonNode options = readExecutionOptions(executionOptionsJson);
+      String key = null;
       if (normalized.matches("[a-h]")) {
-        answers.add(normalized.toUpperCase(Locale.ROOT));
+        key = normalized.toUpperCase(Locale.ROOT);
+        if (!containsOptionKey(options, key)) {
+          throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛判断题答案选项不存在");
+        }
+      } else if (normalized.matches("[tf]")
+          && containsOptionKey(options, normalized.toUpperCase(Locale.ROOT))) {
+        // Preserve an explicitly keyed T/F option set when one was supplied by an importer.
+        key = normalized.toUpperCase(Locale.ROOT);
       } else {
-        JsonNode options;
-        try {
-          options = objectMapper.readTree(toExecutionOptionsJson(source.getOptionsJson()));
-        } catch (JsonProcessingException ex) {
-          throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛判断题选项格式异常");
-        }
-        String key = judgeOptionKey(options, normalized);
-        if (key == null) {
-          throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛判断题答案无法匹配选项");
-        }
-        answers.add(key);
+        key = judgeOptionKey(options, normalized);
       }
+      if (key == null) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛判断题答案无法匹配选项");
+      }
+      answers.add(key);
     } else {
       String letters = answer.toUpperCase(Locale.ROOT).replaceAll("[^A-H]", "");
       if (letters.isBlank()) {
         throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛选择题参考答案格式异常");
       }
+      Set<String> selected = new LinkedHashSet<>();
       for (int index = 0; index < letters.length(); index++) {
         String key = String.valueOf(letters.charAt(index));
-        if (!containsJsonOption(source.getOptionsJson(), key)) {
+        if (!containsJsonOption(executionOptionsJson, key)) {
           throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛选择题答案选项不存在");
         }
-        if (!answers.toString().contains("\"" + key + "\"")) {
+        if (selected.add(key)) {
           answers.add(key);
         }
       }
@@ -482,19 +584,60 @@ public class CompetitionTheoryPaperApplicationService {
     }
   }
 
+  private JsonNode readExecutionOptions(String optionsJson) {
+    try {
+      return objectMapper.readTree(optionsJson);
+    } catch (JsonProcessingException | IllegalArgumentException ex) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛判断题选项格式异常");
+    }
+  }
+
+  private boolean containsOptionKey(JsonNode options, String key) {
+    if (options == null || !options.isArray() || !StringUtils.hasText(key)) {
+      return false;
+    }
+    for (JsonNode option : options) {
+      if (key.equalsIgnoreCase(option.path("key").asText(""))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private String judgeOptionKey(JsonNode options, String normalizedAnswer) {
-    boolean truthy = Set.of("正确", "对", "true", "t", "1", "是").contains(normalizedAnswer);
-    boolean falsy = Set.of("错误", "错", "false", "f", "0", "否").contains(normalizedAnswer);
-    if (!truthy && !falsy) {
+    Boolean expected = judgeValue(normalizedAnswer);
+    if (expected == null || options == null || !options.isArray()) {
       return null;
     }
     for (JsonNode option : options) {
-      String text = option.path("content").asText("").trim().toLowerCase(Locale.ROOT);
-      boolean optionTruthy = Set.of("正确", "对", "true", "t", "1", "是").contains(text);
-      boolean optionFalsy = Set.of("错误", "错", "false", "f", "0", "否").contains(text);
-      if ((truthy && optionTruthy) || (falsy && optionFalsy)) {
-        return option.path("key").asText(null);
+      Boolean actual = judgeValue(option.path("content").asText(""));
+      if (expected.equals(actual)) {
+        String key = option.path("key").asText(null);
+        if (StringUtils.hasText(key)) {
+          return key.trim();
+        }
       }
+    }
+    return null;
+  }
+
+  private Boolean judgeValue(String value) {
+    String normalized = value == null
+        ? "" : value.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+    if (!StringUtils.hasText(normalized)) {
+      return null;
+    }
+    if (JUDGE_FALSE_TOKENS.contains(normalized)
+        || normalized.contains("错误")
+        || normalized.contains("不正确")
+        || normalized.contains("不对")) {
+      return Boolean.FALSE;
+    }
+    if (JUDGE_TRUE_TOKENS.contains(normalized)
+        || normalized.contains("正确")
+        || "对".equals(normalized)
+        || "是".equals(normalized)) {
+      return Boolean.TRUE;
     }
     return null;
   }
@@ -502,11 +645,8 @@ public class CompetitionTheoryPaperApplicationService {
   private boolean containsJsonOption(String optionsJson, String key) {
     try {
       JsonNode root = objectMapper.readTree(toExecutionOptionsJson(optionsJson));
-      for (JsonNode option : root) {
-        if (key.equalsIgnoreCase(option.path("key").asText())) return true;
-      }
-      return false;
-    } catch (JsonProcessingException ex) {
+      return containsOptionKey(root, key);
+    } catch (JsonProcessingException | IllegalArgumentException ex) {
       return false;
     }
   }
