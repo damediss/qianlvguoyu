@@ -603,7 +603,7 @@ export function TrainingInformationPage() {
             setDefaultExportUrl(downloadUrl);
             window.open(downloadUrl, '_blank');
             queryClient.invalidateQueries({ queryKey: ['sign-up-collection'] });
-          } else if (check.error) {
+          } else if (check.error && !String(check.msg ?? '').includes('未找到压缩包')) {
             if (defaultExportTimerRef.current != null) {
               window.clearInterval(defaultExportTimerRef.current);
               defaultExportTimerRef.current = null;

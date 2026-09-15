@@ -53,4 +53,11 @@ class SignUpDefaultTemplateExportPathsTest {
     assertThat(found.getFileName().toString()).endsWith("_t269.zip");
     assertThat(SignUpDefaultTemplateExportPaths.findZipByTaskId(cdn.toString(), 270L)).isNull();
   }
+
+  @Test
+  void storedDownloadUrl_detectsFileModulePath() {
+    assertThat(SignUpDefaultTemplateExportPaths.isStoredDownloadUrl("/api/files/88/download")).isTrue();
+    assertThat(SignUpDefaultTemplateExportPaths.fileDownloadPath(88L)).isEqualTo("/api/files/88/download");
+    assertThat(SignUpDefaultTemplateExportPaths.isStoredDownloadUrl("down/a_t1.zip")).isFalse();
+  }
 }

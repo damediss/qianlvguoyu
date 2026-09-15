@@ -18,6 +18,8 @@ import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfTaskEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfTaskMapper;
+import com.guoyu.platform.file.service.FileApplicationService;
+import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.trainingdepartment.support.SignUpDefaultTemplateExportPaths;
 import com.guoyu.platform.trainingdepartment.support.SignUpPeopleDefaultTemplatePackService;
 import com.guoyu.platform.trainingdepartment.support.SignUpSelfFilesResolver;
@@ -53,6 +55,7 @@ public class TrainSignUpDefaultTemplateExportService {
   private final TrainingOperatorScopeService operatorScopeService;
   private final SignUpPeopleDefaultTemplatePackService packService;
   private final SignUpSelfFilesResolver filesResolver;
+  private final FileApplicationService fileApplicationService;
   private final ObjectMapper objectMapper;
   private final Executor signUpExportExecutor;
   private final String cdnPath;
@@ -65,6 +68,7 @@ public class TrainSignUpDefaultTemplateExportService {
       TrainingOperatorScopeService operatorScopeService,
       SignUpPeopleDefaultTemplatePackService packService,
       SignUpSelfFilesResolver filesResolver,
+      FileApplicationService fileApplicationService,
       ObjectMapper objectMapper,
       @Qualifier("signUpExportExecutor") Executor signUpExportExecutor,
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath) {
@@ -75,6 +79,7 @@ public class TrainSignUpDefaultTemplateExportService {
     this.operatorScopeService = operatorScopeService;
     this.packService = packService;
     this.filesResolver = filesResolver;
+    this.fileApplicationService = fileApplicationService;
     this.objectMapper = objectMapper;
     this.signUpExportExecutor = signUpExportExecutor;
     this.cdnPath = cdnPath;
@@ -82,6 +87,9 @@ public class TrainSignUpDefaultTemplateExportService {
 
   /** 卡住超过该秒数的 endtime=0 任务视为失败，避免永久阻塞新导出 */
   private static final long STUCK_TASK_TIMEOUT_SECONDS = 30 * 60;
+
+  /** 任务已完成后 zip 尚未可见时继续当进行中，避免前端立刻停轮询（落盘/COS 可见性延迟） */
+  private static final long ZIP_VISIBLE_GRACE_SECONDS = 90;
 
   /** 同一 taskId 禁止并行跑两份打包（连点/复用补提会导致后一份删掉成功包） */
   private final Set<Long> runningExportTaskIds = ConcurrentHashMap.newKeySet();
@@ -175,6 +183,15 @@ public class TrainSignUpDefaultTemplateExportService {
       return new SignUpDefaultTemplateExportCheckVO(null, jindu, 1, task.getErrorMsg());
     }
 
+    if (task.getEndtime() != null && task.getEndtime() > 0
+        && SignUpDefaultTemplateExportPaths.isStoredDownloadUrl(task.getResultFile())) {
+      String url = task.getResultFile().trim();
+      if (!url.contains("?")) {
+        url = url + "?v=" + task.getId();
+      }
+      return new SignUpDefaultTemplateExportCheckVO(url, jindu, null, "成功");
+    }
+
     String folderName = SignUpDefaultTemplateExportPaths.sanitizeTitle(
         StringUtils.hasText(req.getSignUpTitle()) ? req.getSignUpTitle() : signUp.getTitle());
     ResolvedZip resolved = resolveExportZip(signUp, folderName, task);
@@ -184,12 +201,21 @@ public class TrainSignUpDefaultTemplateExportService {
       return new SignUpDefaultTemplateExportCheckVO(url, jindu, null, "成功");
     }
     if (task.getEndtime() != null && task.getEndtime() > 0) {
+      long ageSeconds = System.currentTimeMillis() / 1000 - task.getEndtime();
+      if (ageSeconds < ZIP_VISIBLE_GRACE_SECONDS) {
+        log.info("默认模板导出 check 等待产物可见 taskId={} age={}s resultFile={}",
+            task.getId(), ageSeconds, task.getResultFile());
+        return new SignUpDefaultTemplateExportCheckVO(null, jindu, null, "当前进度");
+      }
       String expectedRel = StringUtils.hasText(task.getResultFile())
           ? task.getResultFile()
           : SignUpDefaultTemplateExportPaths.taskZipRelative(folderName, task.getId());
-      Path expectedAbs = SignUpDefaultTemplateExportPaths.zipAbsolute(cdnPath, expectedRel);
+      Path expectedAbs = SignUpDefaultTemplateExportPaths.isStoredDownloadUrl(expectedRel)
+          ? null
+          : SignUpDefaultTemplateExportPaths.zipAbsolute(cdnPath, expectedRel);
       Path downDir = SignUpDefaultTemplateExportPaths.downDir(cdnPath);
-      String hint = "导出完成但未找到压缩包。已查找=" + expectedAbs
+      String hint = "导出完成但未找到压缩包。已查找="
+          + (expectedAbs != null ? expectedAbs.toString() : expectedRel)
           + "（down目录" + (Files.isDirectory(downDir) ? "存在" : "不存在") + "）";
       log.warn("默认模板导出 check 未找到 zip taskId={} signUpId={} resultFile={} {}",
           task.getId(), signUp.getId(), task.getResultFile(), hint);
@@ -313,15 +339,25 @@ public class TrainSignUpDefaultTemplateExportService {
         return;
       }
 
+      Long tenantId = latest.getTenantId() != null ? latest.getTenantId() : TenantContextHolder.getTenantId();
+      if (tenantId == null) {
+        failTask(latest, "上传压缩包失败: 缺少租户");
+        return;
+      }
+      String zipFileName = zipAbsolute.getFileName().toString();
+      byte[] zipBytes = Files.readAllBytes(zipAbsolute);
+      FileVO stored = fileApplicationService.storeFromBytesForTenant(
+          tenantId, zipBytes, zipFileName, "application/zip", "private");
+      String downloadPath = SignUpDefaultTemplateExportPaths.fileDownloadPath(stored.id());
+
       long endSec = System.currentTimeMillis() / 1000;
-      // 显式 set result_file，避免实体 update 漏字段
       int updated = taskMapper.update(null, new LambdaUpdateWrapper<TrainSignUpSelfTaskEntity>()
           .eq(TrainSignUpSelfTaskEntity::getId, taskId)
           .eq(TrainSignUpSelfTaskEntity::getEndtime, 0L)
           .set(TrainSignUpSelfTaskEntity::getIdsOut, objectMapper.writeValueAsString(ids))
           .set(TrainSignUpSelfTaskEntity::getEndtime, endSec)
           .set(TrainSignUpSelfTaskEntity::getErrorMsg, null)
-          .set(TrainSignUpSelfTaskEntity::getResultFile, zipRelative));
+          .set(TrainSignUpSelfTaskEntity::getResultFile, downloadPath));
       if (updated == 0) {
         TrainSignUpSelfTaskEntity after = taskMapper.selectById(taskId);
         if (after != null && StringUtils.hasText(after.getErrorMsg())) {
@@ -333,7 +369,8 @@ public class TrainSignUpDefaultTemplateExportService {
         }
         return;
       }
-      log.info("默认模板导出成功 taskId={} zip={} abs={}", taskId, zipRelative, zipAbsolute);
+      log.info("默认模板导出成功 taskId={} zip={} fileId={} download={}",
+          taskId, zipRelative, stored.id(), downloadPath);
 
       // 重新加载后再写 files，避免覆盖其它并发字段
       TrainSignUpSelfEntity signUpLatest = signUpMapper.selectById(signUp.getId());

@@ -332,7 +332,7 @@ export function ClassSignUpPeoplePanel({
           finished = true;
           break;
         }
-        if (check.error) {
+        if (check.error && !String(check.msg ?? '').includes('未找到压缩包')) {
           setDefaultExportTitle(`导出失败，${check.msg ?? ''}`);
           finished = true;
           break;

@@ -1,7 +1,6 @@
 package com.guoyu.platform.trainingdepartment.support;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,8 +17,8 @@ public final class TrainingZipUtil {
 
   public static void zipEntries(Path zipFile, List<Path> entries) throws IOException {
     Files.createDirectories(zipFile.getParent());
-    try (OutputStream out = Files.newOutputStream(zipFile);
-        ZipOutputStream zos = new ZipOutputStream(out)) {
+    try (java.io.FileOutputStream fos = new java.io.FileOutputStream(zipFile.toFile());
+        ZipOutputStream zos = new ZipOutputStream(fos)) {
       for (Path entry : entries) {
         if (Files.isDirectory(entry)) {
           zipDirectory(zos, entry, entry.getFileName().toString());
@@ -27,6 +26,9 @@ public final class TrainingZipUtil {
           addFile(zos, entry, entry.getFileName().toString());
         }
       }
+      zos.finish();
+      zos.flush();
+      fos.getFD().sync();
     }
   }
 

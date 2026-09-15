@@ -50,6 +50,21 @@ public final class SignUpDefaultTemplateExportPaths {
     return downDir(cdnPath).resolve(leafName(relativeOrFileName));
   }
 
+  /** 已上传到文件模块 / COS，check 不再依赖本机 down 目录。 */
+  public static boolean isStoredDownloadUrl(String resultFile) {
+    if (!StringUtils.hasText(resultFile)) {
+      return false;
+    }
+    String value = resultFile.trim();
+    return value.startsWith("/api/files/")
+        || value.startsWith("http://")
+        || value.startsWith("https://");
+  }
+
+  public static String fileDownloadPath(long fileId) {
+    return "/api/files/" + fileId + "/download";
+  }
+
   /**
    * 按任务号在 down 目录找 {@code *_t{taskId}.zip}，以磁盘实名为准。
    */
