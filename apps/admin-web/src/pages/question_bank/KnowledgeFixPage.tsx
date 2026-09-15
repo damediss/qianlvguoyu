@@ -11,7 +11,8 @@ import {
 } from 'antd';
 import {
   dedupStats, generateDedupList, applyDedup, rollbackDedup,
-  submitClassify, classifyProgress, fixList, exportFixList, applyFix, rollbackFix, qualityReport,
+  submitClassify, resetClassify, classifyProgress, fixList, exportFixList, applyFix, rollbackFix,
+  qualityReport,
 } from './knowledgeFixApi';
 import type { DedupStats, FixBatch, FixItem } from './knowledgeFixApi';
 
@@ -44,7 +45,7 @@ const KnowledgeFixPage: React.FC = () => {
     setDedupGenerating(true);
     try {
       const stats = await generateDedupList();
-      message.success(`去重清单已生成：唯一题 ${stats.uniqGroups}，待软删 ${stats.deleteRows} 行` +
+      message.success(`去重清单已生成：重复题组 ${stats.dupGroups}，待软删 ${stats.deleteRows} 行` +
         (stats.manualReviewRows > 0 ? `，人工复核 ${stats.manualReviewRows} 行` : ''));
       qc.invalidateQueries({ queryKey: ['knowledgefix-dedup-stats'] });
     } catch {
@@ -88,9 +89,10 @@ const KnowledgeFixPage: React.FC = () => {
   ];
   const s = dedupStatsQuery.data;
   const dedupRows = [
-    { k: '5 月以来导入总行数', v: s?.mayTotalRows ?? '-' },
-    { k: '唯一题数（规范化后）', v: s?.uniqGroups ?? '-' },
-    { k: '待软删除冗余行', v: s?.deleteRows ?? '-' },
+    { k: '5 月以来导入行数（存活）', v: s?.mayTotalRows ?? '-' },
+    { k: '重复题组数（同课程口径）', v: s?.dupGroups ?? '-' },
+    { k: '待执行删除行', v: s?.deleteRows ?? '-' },
+    { k: '已软删行（可回滚）', v: s?.alreadyDeletedRows ?? '-' },
     { k: '人工复核行（有引用）', v: s?.manualReviewRows ?? '-' },
   ];
 
@@ -122,6 +124,17 @@ const KnowledgeFixPage: React.FC = () => {
       const b = await submitClassify();
       message.success(`分类批次已提交：${b.total} 行（三采样自一致 + 低置信升级旗舰）`);
       qc.invalidateQueries({ queryKey: ['knowledgefix-progress'] });
+    } catch {
+      /* 拦截器统一提示 */
+    }
+  };
+
+  const doResetClassify = async () => {
+    try {
+      const n = await resetClassify();
+      message.success(`已复位 ${n} 行（待关注/未分类 → 待分类），可重新提交批次`);
+      qc.invalidateQueries({ queryKey: ['knowledgefix-progress'] });
+      qc.invalidateQueries({ queryKey: ['knowledgefix-fix-list'] });
     } catch {
       /* 拦截器统一提示 */
     }
@@ -203,10 +216,17 @@ const KnowledgeFixPage: React.FC = () => {
               {dedupApplying && <Progress percent={70} status="active" style={{ marginBottom: 12 }} />}
               <Descriptions column={2} size="small" style={{ marginBottom: 12 }} title="统计">
                 <Descriptions.Item label="5 月以来导入">{s?.mayTotalRows ?? '-'}</Descriptions.Item>
-                <Descriptions.Item label="唯一题">{s?.uniqGroups ?? '-'}</Descriptions.Item>
-                <Descriptions.Item label="待软删冗余">{s?.deleteRows ?? '-'}</Descriptions.Item>
+                <Descriptions.Item label="重复题组">{s?.dupGroups ?? '-'}</Descriptions.Item>
+                <Descriptions.Item label="待删冗余">{s?.deleteRows ?? '-'}</Descriptions.Item>
+                <Descriptions.Item label="已软删">{s?.alreadyDeletedRows ?? '-'}</Descriptions.Item>
                 <Descriptions.Item label="人工复核">{s?.manualReviewRows ?? '-'}</Descriptions.Item>
               </Descriptions>
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 12 }}
+                message="判重口径：同一课程内同题多份才算重复；跨课程同题各自保留（课程是题库使用单位）。无知识归属的行按独立桶处理。"
+              />
               <Table rowKey="k" size="small" dataSource={dedupRows} columns={dedupColumns} pagination={false} />
             </>
           ),
@@ -219,6 +239,14 @@ const KnowledgeFixPage: React.FC = () => {
                 <Button type="primary" onClick={doSubmitClassify} disabled={batchRunning(batch)}>
                   提交 LLM 分类批次
                 </Button>
+                <Popconfirm
+                  title="确认复位未达标行以重跑？"
+                  description="将「待关注/未分类」行复位为待分类并清空上一轮结论（已写回与待写回行不受影响）"
+                  onConfirm={doResetClassify}
+                  disabled={batchRunning(batch)}
+                >
+                  <Button disabled={batchRunning(batch)}>复位并重跑（未达标行）</Button>
+                </Popconfirm>
                 <Button onClick={doExportFix}>导出修正清单 xlsx</Button>
                 <Popconfirm
                   title="确认执行知识修正写回？"
@@ -242,13 +270,27 @@ const KnowledgeFixPage: React.FC = () => {
                 />
               )}
               {batch && (
-                <Descriptions column={5} size="small" style={{ marginBottom: 12 }} title={`批次 ${batch.batchNo.slice(-8)}`}>
-                  <Descriptions.Item label="总数">{batch.total}</Descriptions.Item>
-                  <Descriptions.Item label="已分类">{(batch.done ?? 0) + (batch.failed ?? 0)}</Descriptions.Item>
-                  <Descriptions.Item label="apply">{batch.applyCnt ?? 0}</Descriptions.Item>
-                  <Descriptions.Item label="keep">{batch.keepCnt ?? 0}</Descriptions.Item>
-                  <Descriptions.Item label="flag">{batch.flagCnt ?? 0}</Descriptions.Item>
-                </Descriptions>
+                <>
+                  <Descriptions column={5} size="small" style={{ marginBottom: 8 }} title={`批次 ${batch.batchNo.slice(-8)}`}>
+                    <Descriptions.Item label="总数">{batch.total}</Descriptions.Item>
+                    <Descriptions.Item label="已分类（进过模型）">{batch.done ?? 0}</Descriptions.Item>
+                    <Descriptions.Item label="未分类">{batch.unclassified ?? 0}</Descriptions.Item>
+                    <Descriptions.Item label="apply">{batch.applyCnt ?? 0}</Descriptions.Item>
+                    <Descriptions.Item label="keep">{batch.keepCnt ?? 0}</Descriptions.Item>
+                    <Descriptions.Item label="flag">{batch.flagCnt ?? 0}</Descriptions.Item>
+                    <Descriptions.Item label="失败重试次数">{batch.failed ?? 0}</Descriptions.Item>
+                  </Descriptions>
+                  {batch.status === 'failed' && (
+                    <Alert
+                      type="error"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                      message="未达质量门禁，禁止写回"
+                      description={batch.failReason ?? '未分类占比 >5% 或自一致率 <80%；可点「复位并重跑」后重新提交'}
+                    />
+                  )}
+                  {batch.status === 'failed' && <div style={{ marginBottom: 12 }} />}
+                </>
               )}
               <Space style={{ marginBottom: 12 }} wrap>
                 {['apply', 'keep', 'flag', 'pending'].map((st) => (
@@ -279,7 +321,8 @@ const KnowledgeFixPage: React.FC = () => {
               <Descriptions.Item label="apply（已按新知识点修正）">{report.applyCnt ?? 0}</Descriptions.Item>
               <Descriptions.Item label="keep（判定归属正确保留）">{report.keepCnt ?? 0}</Descriptions.Item>
               <Descriptions.Item label="flag（置信不足保持原节点）">{report.flagCnt ?? 0}</Descriptions.Item>
-              <Descriptions.Item label="失败（待补跑）">{report.failed ?? 0}</Descriptions.Item>
+              <Descriptions.Item label="失败重试次数">{report.failed ?? 0}</Descriptions.Item>
+              <Descriptions.Item label="未分类（未进模型）">{report.unclassified ?? 0}</Descriptions.Item>
               <Descriptions.Item label="自一致率（三采样全一致占比）">
                 {report.selfConsistencyRate == null ? '-' : `${(report.selfConsistencyRate * 100).toFixed(1)}%`}
               </Descriptions.Item>

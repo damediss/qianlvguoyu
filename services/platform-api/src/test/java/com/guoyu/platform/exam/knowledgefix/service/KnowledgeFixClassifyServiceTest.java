@@ -128,7 +128,7 @@ class KnowledgeFixClassifyServiceTest {
     b.setId(BATCH_ID);
     b.setTenantId(TENANT);
     b.setBatchNo(BATCH_NO);
-    b.setTotal(3);
+    b.setTotal(1); // 与用例行数一致；多行用例自行 setTotal（门禁按 total 计算未分类率）
     b.setStatus(ExamKnowledgeFixBatchEntity.STATUS_PENDING);
     b.setCreatedBy(USER);
     return b;
@@ -205,8 +205,34 @@ class KnowledgeFixClassifyServiceTest {
       statusByRowId.put(inv.getArgument(0), inv.getArgument(5));
       return 1;
     });
-    when(batchMapper.incrementClassified(anyLong(), anyString())).thenReturn(1);
-    when(batchMapper.incrementFailed(anyLong())).thenReturn(1);
+    // 注：Worker 多线程并发调用，计数推进需互斥（生产侧由 SQL 的 x = x + 1 原子完成）
+    when(batchMapper.incrementClassified(anyLong(), anyString())).thenAnswer(inv -> {
+      synchronized (batch) {
+        batch.setDone(nz(batch.getDone()) + 1);
+        String outcome = inv.getArgument(1);
+        if ("apply".equals(outcome)) {
+          batch.setApplyCnt(nz(batch.getApplyCnt()) + 1);
+        } else if ("keep".equals(outcome)) {
+          batch.setKeepCnt(nz(batch.getKeepCnt()) + 1);
+        } else {
+          batch.setFlagCnt(nz(batch.getFlagCnt()) + 1);
+        }
+      }
+      return 1;
+    });
+    when(batchMapper.incrementFailed(anyLong())).thenAnswer(inv -> {
+      synchronized (batch) {
+        batch.setFailed(nz(batch.getFailed()) + 1);
+      }
+      return 1;
+    });
+    // FIX-1.3：未分类行只累加 flag_cnt、不计 done
+    when(batchMapper.incrementUnclassified(anyLong(), anyInt())).thenAnswer(inv -> {
+      synchronized (batch) {
+        batch.setFlagCnt(nz(batch.getFlagCnt()) + inv.<Integer>getArgument(1));
+      }
+      return 1;
+    });
   }
 
   // ───────── KF-09~19 ─────────
@@ -281,6 +307,9 @@ class KnowledgeFixClassifyServiceTest {
     assertEquals(ExamDetailKnowledgeFixEntity.STATUS_APPLY, statusByRowId.get(1L));
     verify(fixMapper).updateClassifyResult(anyLong(), ArgumentMatchers.eq(301), any(), any(), any(),
         ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_APPLY));
+    // FIX-1.4：本批仅 1 行且非 3/3 一致 → 自一致率 0 < 0.80，批次被质量门禁拦下（禁止写回）
+    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_FAILED, batch.getStatus());
+    assertTrue(batch.getFailReason().contains("自一致率"), batch.getFailReason());
   }
 
   /** KF-13：三方各不同 → 升级旗舰（glm-5.3）复判，结果生效且 basis=llm-pro */
@@ -307,7 +336,8 @@ class KnowledgeFixClassifyServiceTest {
     verify(llmClient, atLeast(1)).chatCompletionDetailed(anyString(), anyString(),
         ArgumentMatchers.eq("glm-5.3"), anyString(), ArgumentMatchers.contains("候选鉴定点（L3）"),
         anyInt(), any(), any(), anyBoolean(), anyLong(), anyInt());
-    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_DONE, batch.getStatus());
+    // FIX-1.4：升级复判行不计入自一致（非 3/3）→ 批次被门禁拦下
+    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_FAILED, batch.getStatus());
   }
 
   /** KF-14：确定性卫兵——选中节点与题干零重合且非素养节点 → 强制 flag */
@@ -327,9 +357,10 @@ class KnowledgeFixClassifyServiceTest {
         ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_FLAG));
   }
 
-  /** KF-15：模型输出零信任——非法 JSON → 行失败计数，批次不中断 */
+  /** KF-15：模型输出零信任——非法 JSON → 行失败计数、编排不中断、行不写结论；
+   *  FIX-1.4：整批自一致率 0 → 批次判 failed（未达标禁止写回） */
   @Test
-  void kf15_invalidJsonFailsRowNotBatch() {
+  void kf15_invalidJsonFailsRowAndGateBlocksBatch() {
     stubCommonHappyPath();
     stubLlm((idx, prompt) -> result("这不是 JSON"));
     List<PendingFixRow> rows = List.of(row(1, 1, 4192, 190, "蒸发器跑碱的原因"));
@@ -339,7 +370,8 @@ class KnowledgeFixClassifyServiceTest {
     service.processBatch(BATCH_ID, BATCH_NO, TENANT, USER, cfgFlash, cfgPro);
 
     verify(batchMapper, atLeast(1)).incrementFailed(BATCH_NO);
-    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_DONE, batch.getStatus());
+    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_FAILED, batch.getStatus());
+    assertTrue(batch.getFailReason().startsWith("未达质量门禁"), batch.getFailReason());
   }
 
   /** KF-16：失败自动补跑——首轮失败的行第二轮重试成功 */
@@ -363,7 +395,8 @@ class KnowledgeFixClassifyServiceTest {
     assertEquals(ExamKnowledgeFixBatchEntity.STATUS_DONE, batch.getStatus());
   }
 
-  /** KF-17：熔断——连续失败达阈值停止派发（不浪费后续调用），未派发行入 flag */
+  /** KF-17：熔断——连续失败达阈值只停"本轮继续派发"（FIX-1/DEF-2），
+   *  剩余行进入下一轮补跑；最终仍未分类的行写 basis=unclassified；批次被门禁拦下 */
   @Test
   void kf17_breakerStopsDispatchOnConsecutiveFailures() {
     stubCommonHappyPath();
@@ -371,6 +404,7 @@ class KnowledgeFixClassifyServiceTest {
     for (int i = 1; i <= 7; i++) {
       rows.add(row(i, i, 4192, 190, "蒸发器跑碱的原因" + i));
     }
+    batch.setTotal(7);
     when(fixMapper.selectPendingWithContent()).thenAnswer(inv -> rows.stream()
         .filter(r -> "pending".equals(statusByRowId.get(r.getRowId()))).toList());
     AtomicInteger llmCalls = new AtomicInteger();
@@ -389,10 +423,16 @@ class KnowledgeFixClassifyServiceTest {
 
     service.processBatch(BATCH_ID, BATCH_NO, TENANT, USER, cfgFlash, cfgPro);
 
-    // 连续失败 5 触发熔断：派发停止，行全部落 flag（宁可不改）
+    // 熔断后每轮派发受限（不浪费调用），但整批不被放弃：全部行最终都有结论（unclassified）
     assertTrue(llmCalls.get() <= 10, "熔断后调用数应受限，实际 " + llmCalls.get());
     verify(fixMapper, atLeast(1)).updateClassifyResult(anyLong(), any(), any(), any(),
-        ArgumentMatchers.contains("自动补跑"), ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_FLAG));
+        ArgumentMatchers.contains("批次中断未分类"), ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_FLAG));
+    for (int i = 1; i <= 7; i++) {
+      assertEquals(ExamDetailKnowledgeFixEntity.STATUS_FLAG, statusByRowId.get((long) i),
+          "第 " + i + " 行应有结论（不再被整批放弃）");
+    }
+    verify(batchMapper).incrementUnclassified(anyLong(), ArgumentMatchers.anyInt());
+    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_FAILED, batch.getStatus());
   }
 
   /** KF-18：多租户——分类线程内租户上下文正确 */
@@ -454,6 +494,111 @@ class KnowledgeFixClassifyServiceTest {
     }
   }
 
+
+  // ───────── FIX-1/6 回归（KF-25/26/28） ─────────
+
+  /** KF-25：熔断后仍要补跑——首轮连续失败触发熔断，后续轮次把剩余行全部跑完（DEF-2 回归） */
+  @Test
+  void kf25_rowsStillRunAfterBreakerTrips() {
+    stubCommonHappyPath();
+    List<PendingFixRow> rows = new ArrayList<>();
+    for (int i = 1; i <= 7; i++) {
+      rows.add(row(i, i, 4192, 190, "蒸发器跑碱的原因" + i));
+    }
+    batch.setTotal(7);
+    when(fixMapper.selectPendingWithContent()).thenAnswer(inv -> rows.stream()
+        .filter(r -> "pending".equals(statusByRowId.get(r.getRowId()))).toList());
+    AtomicInteger stage1Calls = new AtomicInteger();
+    when(llmClient.chatCompletionDetailed(anyString(), anyString(), anyString(), anyString(),
+        ArgumentMatchers.contains("候选分类（L2）"), anyInt(), any(), any(), anyBoolean(),
+        anyLong(), anyInt()))
+        .thenAnswer(inv -> {
+          // 前 5 次失败触发熔断；其后恢复（模拟瞬时故障）
+          if (stage1Calls.incrementAndGet() <= 5) {
+            throw new RuntimeException("transient boom");
+          }
+          return result("{\"l2_id\":201}");
+        });
+    when(llmClient.chatCompletionDetailed(anyString(), anyString(), anyString(), anyString(),
+        ArgumentMatchers.contains("候选鉴定点（L3）"), anyInt(), any(), any(), anyBoolean(),
+        anyLong(), anyInt()))
+        .thenAnswer(inv -> result("{\"node_id\":301,\"confidence\":0.9,\"reason\":\"x\"}"));
+
+    service.processBatch(BATCH_ID, BATCH_NO, TENANT, USER, cfgFlash, cfgPro);
+
+    // 熔断只停本轮派发：7 行最终全部拿到结论（apply），批次不再被整批放弃
+    for (int i = 1; i <= 7; i++) {
+      assertEquals(ExamDetailKnowledgeFixEntity.STATUS_APPLY, statusByRowId.get((long) i),
+          "第 " + i + " 行应在补跑轮完成分类");
+    }
+    assertEquals(7, nz(batch.getDone()));
+    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_DONE, batch.getStatus());
+  }
+
+  /** KF-26：批次质量门禁——未分类占比 >5% 或自一致率 <0.8 → failed（禁止 done/写回） */
+  @Test
+  void kf26_gateBlocksBatchWhenUnclassifiedRatioTooHigh() {
+    stubCommonHappyPath();
+    // 3 行中仅 1 行能进模型（其余两行 stage1 直接失败且重试仍是失败）：未分类 2/3 = 67% > 5%
+    List<PendingFixRow> rows = new ArrayList<>();
+    for (int i = 1; i <= 3; i++) {
+      rows.add(row(i, i, 4192, 190, "蒸发器跑碱的原因" + i));
+    }
+    batch.setTotal(3);
+    when(fixMapper.selectPendingWithContent()).thenAnswer(inv -> rows.stream()
+        .filter(r -> "pending".equals(statusByRowId.get(r.getRowId()))).toList());
+    AtomicInteger stage1Calls = new AtomicInteger();
+    when(llmClient.chatCompletionDetailed(anyString(), anyString(), anyString(), anyString(),
+        ArgumentMatchers.contains("候选分类（L2）"), anyInt(), any(), any(), anyBoolean(),
+        anyLong(), anyInt()))
+        .thenAnswer(inv -> {
+          // 仅第一次 stage1 成功（第 1 行）；其余行三轮全部失败 → 未分类 2/3
+          if (stage1Calls.incrementAndGet() == 1) {
+            return result("{\"l2_id\":201}");
+          }
+          throw new RuntimeException("boom");
+        });
+    when(llmClient.chatCompletionDetailed(anyString(), anyString(), anyString(), anyString(),
+        ArgumentMatchers.contains("候选鉴定点（L3）"), anyInt(), any(), any(), anyBoolean(),
+        anyLong(), anyInt()))
+        .thenAnswer(inv -> result("{\"node_id\":301,\"confidence\":0.9,\"reason\":\"x\"}"));
+
+    service.processBatch(BATCH_ID, BATCH_NO, TENANT, USER, cfgFlash, cfgPro);
+
+    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_FAILED, batch.getStatus());
+    assertTrue(batch.getFailReason().contains("未分类"), batch.getFailReason());
+    assertEquals(1, nz(batch.getDone()));
+  }
+
+  /** KF-28：卫兵拦截不计入连续失败——大量卫兵拦截不会误触发熔断（DEF-1 回归） */
+  @Test
+  void kf28_guardInterceptionsDoNotTripBreaker() {
+    stubCommonHappyPath();
+    int n = 60; // 阈值 5 的 12 倍：若卫兵计入失败，第 6 行起就会被熔断
+    List<PendingFixRow> rows = new ArrayList<>();
+    for (int i = 1; i <= n; i++) {
+      rows.add(row(i, i, 4192, 190, "蒸发器跑碱的原因" + i));
+    }
+    batch.setTotal(n);
+    when(fixMapper.selectPendingWithContent()).thenAnswer(inv -> rows.stream()
+        .filter(r -> "pending".equals(statusByRowId.get(r.getRowId()))).toList());
+    // 选中与题干零重合且非素养节点（303 焙烧温度控制）→ 全部被卫兵拦截
+    stubLlm((idx, prompt) -> result("{\"node_id\":303,\"confidence\":0.95,\"reason\":\"x\"}"));
+
+    service.processBatch(BATCH_ID, BATCH_NO, TENANT, USER, cfgFlash, cfgPro);
+
+    for (int i = 1; i <= n; i++) {
+      assertEquals(ExamDetailKnowledgeFixEntity.STATUS_FLAG, statusByRowId.get((long) i),
+          "第 " + i + " 行应经卫兵判定为 flag，而不是被熔断跳过");
+    }
+    verify(batchMapper, org.mockito.Mockito.never()).incrementUnclassified(anyLong(),
+        ArgumentMatchers.anyInt());
+    assertTrue(nz(batch.getDone()) >= n, "全部行都应得到结论，done=" + nz(batch.getDone()));
+  }
+
+  private static int nz(Integer v) {
+    return v == null ? 0 : v;
+  }
 
   private static int BigDecimalCompare(java.math.BigDecimal actual, double expected) {
     return actual == null ? -1 : actual.compareTo(java.math.BigDecimal.valueOf(expected));

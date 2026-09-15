@@ -64,6 +64,10 @@ public class KnowledgeFixClassifyService {
   private static final int SAMPLES = 3;
   private static final double APPLY_CONFIDENCE = 0.7;
   private static final int RESPONSE_TIMEOUT_SECONDS = 120;
+  /** 自一致率门槛（FIX-1.4）：低于则批次判 failed，禁止 done */
+  private static final BigDecimal SELF_CONSISTENCY_GATE = new BigDecimal("0.80");
+  /** 未分类占比门槛（FIX-1.4）：高于则批次判 failed */
+  private static final BigDecimal UNCLASSIFIED_RATIO_GATE = new BigDecimal("0.05");
 
   private final ExamKnowledgeFixBatchMapper batchMapper;
   private final ExamDetailKnowledgeFixMapper fixMapper;
@@ -138,6 +142,27 @@ public class KnowledgeFixClassifyService {
     return FixBatchVO.from(batch);
   }
 
+  /**
+   * 重跑通道（FIX-3/DEF-6）：把上一批 flag 行复位为 pending，使「提交分类批次」可再次完整执行。
+   * 已写回（applied）与待写回（apply）行不动；有进行中的批次时拒绝。
+   */
+  public int resetClassify() {
+    Long running = batchMapper.selectCount(new LambdaQueryWrapper<ExamKnowledgeFixBatchEntity>()
+        .in(ExamKnowledgeFixBatchEntity::getStatus,
+            ExamKnowledgeFixBatchEntity.STATUS_PENDING, ExamKnowledgeFixBatchEntity.STATUS_RUNNING));
+    if (running != null && running > 0) {
+      throw new BusinessException(ErrorCode.CONFLICT, "已有进行中的分类批次，不能重置");
+    }
+    int reset = fixMapper.resetFlagRows();
+    log.info("知识修正重跑通道：flag 行复位 pending = {}", reset);
+    return reset;
+  }
+
+  /** 待分类行数（重跑前预估，展示在页面） */
+  public long pendingCount() {
+    return fixMapper.countByStatus("pending");
+  }
+
   /** 编排线程：两阶段分类 + 三采样自一致 + 旗舰升级 + 自动补跑（方案 §4.4/§6.4） */
   public void processBatch(Long batchId, Long batchNo, Long tenantId, Long userId,
       ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro) {
@@ -169,11 +194,12 @@ public class KnowledgeFixClassifyService {
 
       Semaphore slots = new Semaphore(Math.max(1, llmConcurrency));
       AtomicInteger consecutiveFailures = new AtomicInteger(0);
-      boolean breakerTripped = false;
+      AtomicInteger guardCnt = new AtomicInteger(0);
       int roundsUsed = 0;
       AtomicInteger classified = new AtomicInteger(0);
       AtomicInteger unanimous = new AtomicInteger(0);
       int totalDispatched = 0;
+      boolean batchFailed = false;
       while (roundsUsed < MAX_DISPATCH_ROUNDS) {
         List<PendingFixRow> pending = fixMapper.selectPendingWithContent();
         if (pending.isEmpty()) {
@@ -184,10 +210,12 @@ public class KnowledgeFixClassifyService {
         }
         roundsUsed++;
         consecutiveFailures.set(0);
+        // FIX-1/DEF-2：熔断只终止"本轮继续派发"，不放弃整批——本轮结束后进入下一轮补跑
+        boolean breakerTrippedThisRound = false;
         List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
         for (PendingFixRow row : pending) {
           if (consecutiveFailures.get() >= MAX_CONSECUTIVE_FAILURES) {
-            breakerTripped = true;
+            breakerTrippedThisRound = true;
             break;
           }
           try {
@@ -201,7 +229,7 @@ public class KnowledgeFixClassifyService {
             futures.add(llmExecutor.submit(() -> {
               try {
                 classifyRow(row, batchNo, tenantId, cfgFlash, cfgPro, courseL2, courseL3ByParent,
-                    nodeById, consecutiveFailures, classified, unanimous);
+                    nodeById, consecutiveFailures, guardCnt, classified, unanimous);
               } finally {
                 slots.release();
               }
@@ -222,32 +250,56 @@ public class KnowledgeFixClassifyService {
           }
         }
         totalDispatched += futures.size();
-        if (breakerTripped) {
+        if (futures.isEmpty()) {
+          // 一条都派不出去（如首行即触发熔断）→ 无法继续，按失败收尾
+          batchFailed = true;
           break;
         }
+        if (breakerTrippedThisRound) {
+          log.warn("批次本轮熔断：batchNo={}, round={}, 已派发={}，进入下一轮补跑",
+              batchNo, roundsUsed, futures.size());
+        }
       }
-      // 轮次耗尽仍未分类的行 → flag（宁可不改）
+      // 收尾未分类行（FIX-1/DEF-3）：写 basis=unclassified 与"补跑后仍失败"分列，且不计入 done
       List<PendingFixRow> remain = fixMapper.selectPendingWithContent();
+      int unclassified = remain.size();
       for (PendingFixRow row : remain) {
         fixMapper.updateClassifyResult(row.getRowId(), row.getOldKnowledgeId(), BigDecimal.ZERO,
-            "guard", "自动补跑后仍失败", ExamDetailKnowledgeFixEntity.STATUS_FLAG);
-        batchMapper.incrementClassified(batchNo, "flag");
+            "unclassified", "批次中断未分类", ExamDetailKnowledgeFixEntity.STATUS_FLAG);
       }
-      // 收尾
+      if (unclassified > 0) {
+        batchMapper.incrementUnclassified(batchNo, unclassified);
+      }
+      // 收尾（FIX-1.4 质量门禁）：未分类占比 >5% 或自一致率 <0.8 → failed，禁止 done
       ExamKnowledgeFixBatchEntity finalState = batchMapper.selectById(batchId);
       if (finalState != null
           && !ExamKnowledgeFixBatchEntity.STATUS_FAILED.equals(finalState.getStatus())) {
+        int total = finalState.getTotal() == null ? 0 : finalState.getTotal();
+        // 未分类 = 收尾时仍未获得结论的行数（failed 是"尝试失败次数"，可能因重试大于行数，不能相减）
+        int unclassifiedCount = unclassified;
         BigDecimal rate = classified.get() > 0
             ? BigDecimal.valueOf(unanimous.get()).divide(BigDecimal.valueOf(classified.get()),
                 4, RoundingMode.HALF_UP)
             : BigDecimal.ZERO;
         finalState.setSelfConsistencyRate(rate);
-        finalState.setStatus(ExamKnowledgeFixBatchEntity.STATUS_DONE);
         finalState.setUpdatedAt(LocalDateTime.now());
+        boolean rateBelowGate = rate.compareTo(SELF_CONSISTENCY_GATE) < 0;
+        boolean unclassifiedAboveGate =
+            total > 0 && BigDecimal.valueOf(unclassifiedCount)
+                .divide(BigDecimal.valueOf(total), 4, RoundingMode.HALF_UP)
+                .compareTo(UNCLASSIFIED_RATIO_GATE) > 0;
+        if (batchFailed || rateBelowGate || unclassifiedAboveGate) {
+          finalState.setStatus(ExamKnowledgeFixBatchEntity.STATUS_FAILED);
+          finalState.setFailReason(buildGateReason(batchFailed, unclassifiedCount, total, rate));
+        } else {
+          finalState.setStatus(ExamKnowledgeFixBatchEntity.STATUS_DONE);
+        }
         batchMapper.updateById(finalState);
       }
-      log.info("知识修正批次完成：batchNo={}, rounds={}, dispatched={}, classified={}, unanimous={}",
-          batchNo, roundsUsed, totalDispatched, classified.get(), unanimous.get());
+      log.info("知识修正批次结束：batchNo={}, rounds={}, dispatched={}, classified={}, "
+              + "unanimous={}, guard={}, unclassified={}, status={}",
+          batchNo, roundsUsed, totalDispatched, classified.get(), unanimous.get(), guardCnt.get(),
+          unclassified, finalState == null ? "?" : finalState.getStatus());
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       log.error("知识修正批次被中断：batchNo={}", batchNo);
@@ -272,7 +324,8 @@ public class KnowledgeFixClassifyService {
       Map<Integer, List<KnowledgeNodeRow>> courseL2,
       Map<Integer, Map<Integer, List<KnowledgeNodeRow>>> courseL3ByParent,
       Map<Integer, KnowledgeNodeRow> nodeById, AtomicInteger consecutiveFailures,
-      AtomicInteger classified, AtomicInteger unanimous) throws InterruptedException {
+      AtomicInteger guardCnt, AtomicInteger classified, AtomicInteger unanimous)
+      throws InterruptedException {
     TenantContextHolder.setTenantId(tenantId);
     try {
       Integer courseId = row.getCourseId();
@@ -372,14 +425,15 @@ public class KnowledgeFixClassifyService {
         consecutiveFailures.set(0);
         return;
       }
-      // 确定性卫兵：零关键词重合且非素养节点 → flag
+      // 确定性卫兵：零关键词重合且非素养节点 → flag（FIX-1/DEF-1：卫兵拦截属业务判定，
+      // 不计入连续失败，避免与真失败凑满阈值误触发熔断）
       if (!KnowledgeNormUtil.hasBigramOverlap(chosen.getTitle(), questionText)
           && !KnowledgeNormUtil.isQualityNode(chosen.getTitle())) {
         fixMapper.updateClassifyResult(row.getRowId(), finalNodeId,
             BigDecimal.valueOf(finalConf).setScale(3, RoundingMode.HALF_UP), basis,
             "卫兵拦截:" + reason, ExamDetailKnowledgeFixEntity.STATUS_FLAG);
         batchMapper.incrementClassified(batchNo, "flag");
-        consecutiveFailures.incrementAndGet();
+        guardCnt.incrementAndGet();
         return;
       }
       // 置信分层
@@ -406,6 +460,24 @@ public class KnowledgeFixClassifyService {
     batch.setFailReason(reason);
     batch.setUpdatedAt(LocalDateTime.now());
     batchMapper.updateById(batch);
+  }
+
+  /** 质量门禁说明（FIX-1.4）：写清楚未达标原因，供页面红色提示与事后复核 */
+  private static String buildGateReason(boolean noDispatch, int unclassified, int total,
+      BigDecimal rate) {
+    StringBuilder sb = new StringBuilder("未达质量门禁：");
+    if (noDispatch) {
+      sb.append("本轮一条都未能派发；");
+    }
+    if (total > 0 && unclassified > 0) {
+      sb.append("未分类 ").append(unclassified).append("/").append(total)
+          .append("（上限 5%）；");
+    }
+    if (rate.compareTo(SELF_CONSISTENCY_GATE) < 0) {
+      sb.append("自一致率 ").append(rate).append("（下限 0.80）；");
+    }
+    sb.append("未分类行可经 reset 后重跑");
+    return sb.toString();
   }
 
   /** LLM 调用 + 审计落库（LLM 规范 #10，KF-19）：usage/耗时/摘要写入审计表，落库失败不影响主流程 */

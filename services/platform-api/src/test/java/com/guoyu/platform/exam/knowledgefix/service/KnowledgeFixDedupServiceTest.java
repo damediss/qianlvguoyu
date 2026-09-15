@@ -45,7 +45,8 @@ class KnowledgeFixDedupServiceTest {
   void kf06_generateFlowIsIdempotentOrdered() {
     when(queryMapper.selectMayRowCount()).thenReturn(118205L);
     Map<String, Object> raw = new HashMap<>();
-    raw.put("uniq_groups", 51120L);
+    raw.put("dup_groups", 51120L);
+    raw.put("deleted_rows", 43192L);
     raw.put("delete_rows", 93689L);
     when(dedupListMapper.selectDedupStatsRaw()).thenReturn(raw);
 
@@ -56,8 +57,9 @@ class KnowledgeFixDedupServiceTest {
     verify(dedupListMapper, times(2)).generateDedupList();
     verify(dedupListMapper, times(2)).markManualReviewRows();
     assertEquals(118205L, first.mayTotalRows());
-    assertEquals(51120L, first.uniqGroups());
+    assertEquals(51120L, first.dupGroups());
     assertEquals(93689L, first.deleteRows());
+    assertEquals(43192L, first.alreadyDeletedRows());
     assertEquals(first, second);
   }
 

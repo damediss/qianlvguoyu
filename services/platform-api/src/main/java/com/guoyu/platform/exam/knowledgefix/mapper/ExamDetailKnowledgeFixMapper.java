@@ -36,4 +36,18 @@ public interface ExamDetailKnowledgeFixMapper extends BaseMapper<ExamDetailKnowl
       ORDER BY f.id
       """)
   java.util.List<com.guoyu.platform.exam.knowledgefix.dto.PendingFixRow> selectPendingWithContent();
+
+  /**
+   * 重跑通道（FIX-3/DEF-6）：flag/rejected 行复位为 pending，清空上一轮结论
+   * （new_knowledge_id/confidence/basis/llm_reason/batch_no），使批次可完整重跑；
+   * 已写回（applied）与 apply 待写回行不动——它们已有结论，不能被重跑覆盖。
+   */
+  @Update("UPDATE exam_detail_knowledge_fix SET status = 'pending', new_knowledge_id = NULL, "
+      + "confidence = NULL, basis = NULL, llm_reason = NULL, batch_no = NULL, updated_at = NOW() "
+      + "WHERE status = 'flag' AND deleted = 0")
+  int resetFlagRows();
+
+  /** 复位行数（按状态统计，供前端提示） */
+  @Select("SELECT COUNT(*) FROM exam_detail_knowledge_fix WHERE status = #{status} AND deleted = 0")
+  long countByStatus(@Param("status") String status);
 }

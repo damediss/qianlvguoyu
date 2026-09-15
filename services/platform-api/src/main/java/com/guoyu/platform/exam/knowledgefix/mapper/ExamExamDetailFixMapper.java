@@ -85,7 +85,8 @@ public interface ExamExamDetailFixMapper {
       + "WHERE create_time >= '2026-05-01' AND deleted = 0 AND exam_id = 0")
   long selectMayRowCount();
 
-  /** 幸存集合中命中同名塌缩节点的行 → 装入知识修正清单（幂等：已有行跳过） */
+  /** 幸存集合中命中同名塌缩节点的行 → 装入知识修正清单（幂等：已有行跳过）
+   *  FIX-2（v1.5）：限定 5 月以来（§2 非目标：不动 5 月前历史行），修正首轮越界 3.2× 的缺陷 */
   @Insert("""
       INSERT INTO exam_detail_knowledge_fix
         (id, tenant_id, detail_id, old_knowledge_id, course_id, status,
@@ -95,6 +96,7 @@ public interface ExamExamDetailFixMapper {
       FROM exam_exam_detail e
       JOIN exam_knowledge_structure k ON k.id = e.knowledge_id
       WHERE e.deleted = 0 AND e.exam_id = 0
+        AND e.create_time >= '2026-05-01'
         AND k.title IN (
           SELECT title FROM exam_knowledge_structure
           WHERE deleted = 0 GROUP BY title HAVING COUNT(DISTINCT course_id) > 1)

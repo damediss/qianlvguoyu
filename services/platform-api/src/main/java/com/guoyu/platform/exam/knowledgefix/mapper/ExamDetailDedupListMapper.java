@@ -22,10 +22,11 @@ public interface ExamDetailDedupListMapper extends BaseMapper<ExamDetailDedupLis
   int clearPending();
 
   /**
-   * 生成去重清单（方案 §6.3）：
-   * 候选 = 5-01 以来导入 + exam_id=0 + knowledge 命中"跨课程同名节点"；
-   * 历史已有同题的组 → 全部 5 月副本软删（is_keeper=0）；仅 5 月组 → 保留最早一份（rn=1 不入清单）。
-   * 返回插入行数（预期 ≈93,689，随数据微调）。
+   * 生成去重清单（方案 §6.3；v1.5 按 FIX-7 裁定重写）：
+   * 判重域 = **同课程**（判重键前置 course_id，取自 knowledge_id → exam_knowledge_structure，取 deleted=0 节点）；
+   * 跨课程同题**不算重复**（需求方 2026-09-15 裁定）；无课程行（knowledge_id 为空/节点已删）归入 0 号"无课程桶"内部判重。
+   * 候选 = 5-01 以来导入 + exam_id=0（去掉旧的"跨课程同名节点"限定，DEF-7）；
+   * 历史已有同题（同课程/同桶）的组 → 全部 5 月副本软删（is_keeper=0）；仅 5 月的组 → 保留最早一份（rn=1 不入清单）。
    */
   @Insert("""
       INSERT INTO exam_detail_dedup_list
@@ -39,7 +40,7 @@ public interface ExamDetailDedupListMapper extends BaseMapper<ExamDetailDedupLis
                FIRST_VALUE(k.detail_id) OVER (PARTITION BY k.group_key ORDER BY k.create_time, k.detail_id) AS keeper_id
         FROM (
           SELECT e.id AS detail_id, e.create_time,
-            MD5(CONCAT(e.type, '|',
+            MD5(CONCAT(COALESCE(ks.course_id, 0), '|', e.type, '|',
               COALESCE(REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(e.content,'<[^>]+>',''),'&nbsp;',''),'[[:space:]　]+',''), ''),
               '|', COALESCE(REPLACE(REPLACE(REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(e.answer,''),'[[:space:]　]+',''),'[{]"content":"",[^}]*[}]',''),',]',']'),',[','['),',,',','), ''))) AS group_key,
             CASE DATE(e.create_time)
@@ -48,19 +49,16 @@ public interface ExamDetailDedupListMapper extends BaseMapper<ExamDetailDedupLis
               WHEN '2026-07-31' THEN '2026-07-31'
               ELSE 'other' END AS wave
           FROM exam_exam_detail e
+          LEFT JOIN exam_knowledge_structure ks ON ks.id = e.knowledge_id AND ks.deleted = 0
           WHERE e.create_time >= '2026-05-01' AND e.deleted = 0 AND e.exam_id = 0
-            AND e.knowledge_id IN (
-              SELECT k2.id FROM exam_knowledge_structure k2
-              WHERE k2.deleted = 0 AND k2.title IN (
-                SELECT title FROM exam_knowledge_structure
-                WHERE deleted = 0 GROUP BY title HAVING COUNT(DISTINCT course_id) > 1))
         ) k
       ) r
       JOIN (
-        SELECT DISTINCT MD5(CONCAT(e.type, '|',
+        SELECT DISTINCT MD5(CONCAT(COALESCE(ks.course_id, 0), '|', e.type, '|',
           COALESCE(REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(e.content,'<[^>]+>',''),'&nbsp;',''),'[[:space:]　]+',''), ''),
           '|', COALESCE(REPLACE(REPLACE(REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(e.answer,''),'[[:space:]　]+',''),'[{]"content":"",[^}]*[}]',''),',]',']'),',[','['),',,',','), ''))) AS group_key
         FROM exam_exam_detail e
+        LEFT JOIN exam_knowledge_structure ks ON ks.id = e.knowledge_id AND ks.deleted = 0
         WHERE e.create_time < '2026-05-01' AND e.deleted = 0
       ) h ON h.group_key = r.group_key
       WHERE (h.group_key IS NOT NULL) OR (h.group_key IS NULL AND r.rn > 1)
@@ -76,10 +74,16 @@ public interface ExamDetailDedupListMapper extends BaseMapper<ExamDetailDedupLis
       """)
   int markManualReviewRows();
 
-  /** 统计：组数/清单行/涉及课程（用于页面统计卡与报告） */
+  /**
+   * 统计（FIX-5 口径修正；排除已回滚批次行，避免回滚后重复计数）：
+   * dup_groups=重复题组数（同课程口径）、delete_rows=待执行删除行（pending/approved）、
+   * deleted_rows=已软删行（done）、manual_rows=人工复核行。
+   */
   @Select("""
-      SELECT COUNT(DISTINCT group_key) AS uniq_groups, COUNT(*) AS delete_rows,
-             COUNT(DISTINCT detail_id) AS distinct_details
+      SELECT COUNT(DISTINCT CASE WHEN status IN ('pending','approved') THEN group_key END) AS dup_groups,
+             SUM(status IN ('pending','approved')) AS delete_rows,
+             SUM(status = 'done') AS deleted_rows,
+             SUM(status = 'manual_review') AS manual_rows
       FROM exam_detail_dedup_list WHERE deleted = 0
       """)
   Map<String, Object> selectDedupStatsRaw();

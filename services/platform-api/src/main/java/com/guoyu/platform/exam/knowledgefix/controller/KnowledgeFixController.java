@@ -104,6 +104,14 @@ public class KnowledgeFixController {
     return ApiResponse.ok(classifyService.submit(tenantId, userId));
   }
 
+  /** 重跑通道（FIX-3）：flag 行复位 pending，返回复位行数 */
+  @PostMapping("/classify/reset")
+  @PreAuthorize("hasAuthority('exam:knowledgefix:classify:submit')")
+  @AuditLog(module = "exam", action = "knowledgefix:classify:reset", targetType = "exam_detail_knowledge_fix")
+  public ApiResponse<Integer> resetClassify() {
+    return ApiResponse.ok(classifyService.resetClassify());
+  }
+
   /** 最新批次进度 */
   @GetMapping("/classify/progress")
   @PreAuthorize("hasAuthority('exam:knowledgefix:view')")
@@ -185,8 +193,9 @@ public class KnowledgeFixController {
     }
     ExamKnowledgeFixBatchEntity b = list.get(0);
     int classified = b.getDone() == null ? 0 : b.getDone();
+    int total = b.getTotal() == null ? 0 : b.getTotal();
     return ApiResponse.ok(new QualityReportVO(b.getBatchNo(), b.getTotal(), classified,
         b.getApplyCnt(), b.getKeepCnt(), b.getFlagCnt(), b.getFailed(),
-        b.getSelfConsistencyRate(), b.getStatus()));
+        b.getSelfConsistencyRate(), b.getStatus(), Math.max(0, total - classified)));
   }
 }

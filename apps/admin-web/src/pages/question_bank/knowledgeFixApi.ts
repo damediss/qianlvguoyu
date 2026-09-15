@@ -3,8 +3,13 @@ import { apiClient, unwrap } from '../../api/client';
 
 export interface DedupStats {
   mayTotalRows: number;
-  uniqGroups: number;
+  /** 重复题组数（同课程口径：一组 = 同一课程内同一道题的 N 份副本） */
+  dupGroups: number;
+  /** 当前清单待执行删除行数（pending/approved） */
   deleteRows: number;
+  /** 已执行软删行数（done，可回滚） */
+  alreadyDeletedRows: number;
+  /** 人工复核行（有答题日志引用，不自动删除） */
   manualReviewRows: number;
 }
 
@@ -20,6 +25,8 @@ export interface FixBatch {
   selfConsistencyRate: number | null;
   status: string;
   failReason: string | null;
+  /** 未分类行数（未进过模型；total - done - failed） */
+  unclassified: number;
 }
 
 export interface FixItem {
@@ -56,6 +63,9 @@ export const rollbackDedup = (backupTable: string) =>
 
 export const submitClassify = () =>
   unwrap<FixBatch>(apiClient.post('/exam/knowledgefix/classify/submit'));
+
+export const resetClassify = () =>
+  unwrap<number>(apiClient.post('/exam/knowledgefix/classify/reset'));
 
 export const classifyProgress = () =>
   unwrap<FixBatch | null>(apiClient.get('/exam/knowledgefix/classify/progress'));

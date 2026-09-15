@@ -24,4 +24,12 @@ public interface ExamKnowledgeFixBatchMapper extends BaseMapper<ExamKnowledgeFix
   @Update("UPDATE exam_knowledge_fix_batch SET failed = failed + 1, updated_at = NOW() "
       + "WHERE batch_no = #{batchNo} AND deleted = 0")
   int incrementFailed(@Param("batchNo") Long batchNo);
+
+  /**
+   * 未分类行计数（FIX-1.3）：只累加 flag_cnt，**不计入 done**——done 定义为"进过模型且有结论"的行，
+   * 未分类行数由 total - done - failed 推导（页面"未分类"口径）。
+   */
+  @Update("UPDATE exam_knowledge_fix_batch SET flag_cnt = flag_cnt + #{count}, updated_at = NOW() "
+      + "WHERE batch_no = #{batchNo} AND deleted = 0")
+  int incrementUnclassified(@Param("batchNo") Long batchNo, @Param("count") int count);
 }

@@ -42,10 +42,11 @@ public class KnowledgeFixDedupService {
   public DedupStatsVO stats() {
     long mayTotal = queryMapper.selectMayRowCount();
     var raw = dedupListMapper.selectDedupStatsRaw();
-    long uniqGroups = ((Number) raw.getOrDefault("uniq_groups", 0)).longValue();
+    long dupGroups = ((Number) raw.getOrDefault("dup_groups", 0)).longValue();
     long deleteRows = ((Number) raw.getOrDefault("delete_rows", 0)).longValue();
+    long deletedRows = ((Number) raw.getOrDefault("deleted_rows", 0)).longValue();
     long manualRows = dedupListMapper.selectManualReviewCount();
-    return new DedupStatsVO(mayTotal, uniqGroups, deleteRows, manualRows);
+    return new DedupStatsVO(mayTotal, dupGroups, deleteRows, deletedRows, manualRows);
   }
 
   /** 软删除执行：清单 pending → approved → 备份 → 分批 deleted=1 → done（方案 §6.3） */

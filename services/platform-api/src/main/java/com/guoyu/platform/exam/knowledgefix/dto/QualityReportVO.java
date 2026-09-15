@@ -12,5 +12,7 @@ public record QualityReportVO(
     Integer flagCnt,
     Integer failed,
     BigDecimal selfConsistencyRate,
-    String status) {
+    String status,
+    /** 未分类行数（FIX-1.3 口径：total - done） */
+    Integer unclassified) {
 }
