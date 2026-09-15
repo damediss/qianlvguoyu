@@ -3417,7 +3417,7 @@ export async function exportSignUpPeople(signUpId: number | string, ids?: number
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `sign-up-people-${signUpId}.xlsx`;
+  a.download = parseContentDispositionFilename(response) || `报名人员汇总表-${signUpId}.xlsx`;
   a.click();
   window.URL.revokeObjectURL(url);
 }

@@ -11,6 +11,8 @@ import com.guoyu.platform.trainingdepartment.vo.SignUpDefaultTemplateExportCheck
 import com.guoyu.platform.trainingdepartment.vo.SignUpDefaultTemplateExportStartVO;
 import com.guoyu.platform.trainingdepartment.vo.TrainSignUpSelfListVO;
 import jakarta.validation.Valid;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -68,13 +70,20 @@ public class TrainSignUpCollectionController {
     return ApiResponse.ok(collectionService.generateQrcode(id));
   }
 
-  /** 导出报名人员 Excel */
+  /** 导出报名人员汇总表（对齐桌面《报名人员汇总表模板》A–Y 25 列） */
   @GetMapping("/sign-up-people/export")
   @PreAuthorize("hasAuthority('train:sign-up-people:view')")
-  public ResponseEntity<byte[]> exportPeople(@org.springframework.web.bind.annotation.RequestParam Long signUpId) {
-    byte[] body = collectionService.exportPeopleExcel(signUpId);
+  public ResponseEntity<byte[]> exportPeople(
+      @RequestParam Long signUpId,
+      @RequestParam(required = false) String ids) {
+    var export = collectionService.exportPeopleExcel(signUpId, ids);
+    byte[] body = export.body();
+    String asciiName = "sign-up-people-" + signUpId + ".xlsx";
+    String utf8Name = URLEncoder.encode(export.fileName(), StandardCharsets.UTF_8)
+        .replace("+", "%20");
     return ResponseEntity.ok()
-        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=sign-up-people-" + signUpId + ".xlsx")
+        .header(HttpHeaders.CONTENT_DISPOSITION,
+            "attachment; filename=\"" + asciiName + "\"; filename*=UTF-8''" + utf8Name)
         .contentType(MediaType.parseMediaType(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
         .body(body);

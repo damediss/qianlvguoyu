@@ -9,10 +9,13 @@ import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.system.entity.OrgEntity;
 import com.guoyu.platform.system.mapper.OrgMapper;
 import com.guoyu.platform.trainingdepartment.dto.TrainSignUpSelfQueryReq;
+import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
+import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
+import com.guoyu.platform.trainingdepartment.support.SignUpPeopleSummaryExcelSupport;
 import com.guoyu.platform.trainingdepartment.support.SignUpSelfFilesResolver;
 import com.guoyu.platform.trainingdepartment.support.TrainingWxMiniQrcodeClient;
 import com.guoyu.platform.security.SecurityContext;
@@ -21,16 +24,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,12 +43,14 @@ public class TrainSignUpCollectionApplicationService {
 
   private final TrainSignUpSelfMapper signUpMapper;
   private final TrainSignUpPeopleSelfMapper peopleMapper;
+  private final TrainInfoClassMapper classMapper;
   private final OrgMapper orgMapper;
   private final TrainingOperatorScopeService operatorScopeService;
   private final TrainingWxMiniQrcodeClient wxMiniQrcodeClient;
   private final QrCodeGenerationService qrCodeGenerationService;
   private final SignUpSelfFilesResolver filesResolver;
   private final ClassCollectionApplicationService classCollectionApplicationService;
+  private final SignUpPeopleSummaryExcelSupport peopleSummaryExcelSupport;
   private final String cdnPath;
   private final String cdnUrl;
   private final String appBaseUrl;
@@ -56,23 +58,27 @@ public class TrainSignUpCollectionApplicationService {
   public TrainSignUpCollectionApplicationService(
       TrainSignUpSelfMapper signUpMapper,
       TrainSignUpPeopleSelfMapper peopleMapper,
+      TrainInfoClassMapper classMapper,
       OrgMapper orgMapper,
       TrainingOperatorScopeService operatorScopeService,
       TrainingWxMiniQrcodeClient wxMiniQrcodeClient,
       QrCodeGenerationService qrCodeGenerationService,
       SignUpSelfFilesResolver filesResolver,
       ClassCollectionApplicationService classCollectionApplicationService,
+      SignUpPeopleSummaryExcelSupport peopleSummaryExcelSupport,
       @Value("${platform.cdn.path:./data/cdn}") String cdnPath,
       @Value("${platform.cdn.url:http://localhost:8080/api/exam/files}") String cdnUrl,
       @Value("${platform.app-base-url:http://localhost:8080}") String appBaseUrl) {
     this.signUpMapper = signUpMapper;
     this.peopleMapper = peopleMapper;
+    this.classMapper = classMapper;
     this.orgMapper = orgMapper;
     this.operatorScopeService = operatorScopeService;
     this.wxMiniQrcodeClient = wxMiniQrcodeClient;
     this.qrCodeGenerationService = qrCodeGenerationService;
     this.filesResolver = filesResolver;
     this.classCollectionApplicationService = classCollectionApplicationService;
+    this.peopleSummaryExcelSupport = peopleSummaryExcelSupport;
     this.cdnPath = cdnPath;
     this.cdnUrl = cdnUrl.endsWith("/") ? cdnUrl.substring(0, cdnUrl.length() - 1) : cdnUrl;
     this.appBaseUrl = appBaseUrl.endsWith("/") ? appBaseUrl.substring(0, appBaseUrl.length() - 1) : appBaseUrl;
@@ -203,40 +209,106 @@ public class TrainSignUpCollectionApplicationService {
   }
 
   @Transactional(readOnly = true)
-  public byte[] exportPeopleExcel(Long signUpId) {
-    getSignUp(signUpId);
+  public PeopleRosterExcel exportPeopleExcel(Long signUpId, String ids) {
+    TrainSignUpSelfEntity signUp = getSignUp(signUpId);
     Long tenantId = SecurityContext.currentUser().getTenantId();
+    List<Long> idList = parseCsvIds(ids);
     List<TrainSignUpPeopleSelfEntity> people = peopleMapper.selectList(
         new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
             .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUpId)
             .eq(TrainSignUpPeopleSelfEntity::getTenantId, tenantId)
             .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0)
+            .in(!idList.isEmpty(), TrainSignUpPeopleSelfEntity::getId, idList)
             .orderByDesc(TrainSignUpPeopleSelfEntity::getId));
-    try (Workbook wb = new XSSFWorkbook()) {
-      Sheet sheet = wb.createSheet("报名人员");
-      Row header = sheet.createRow(0);
-      String[] titles = {"ID", "姓名", "手机号", "身份证号", "性别", "学历", "状态", "创建时间"};
-      for (int i = 0; i < titles.length; i++) {
-        header.createCell(i).setCellValue(titles[i]);
+    String companyName = "";
+    if (signUp.getOrgId() != null) {
+      OrgEntity org = orgMapper.selectById(signUp.getOrgId());
+      if (org != null && StringUtils.hasText(org.getName())) {
+        companyName = org.getName();
       }
-      int rowIdx = 1;
-      for (TrainSignUpPeopleSelfEntity p : people) {
-        Row row = sheet.createRow(rowIdx++);
-        row.createCell(0).setCellValue(p.getId() != null ? p.getId() : 0);
-        row.createCell(1).setCellValue(p.getName() != null ? p.getName() : "");
-        row.createCell(2).setCellValue(p.getPhone() != null ? p.getPhone() : "");
-        row.createCell(3).setCellValue(p.getIdCardNumber() != null ? p.getIdCardNumber() : "");
-        row.createCell(4).setCellValue(p.getGender() != null ? p.getGender() : "");
-        row.createCell(5).setCellValue(p.getEducation() != null ? p.getEducation() : "");
-        row.createCell(6).setCellValue(statusLabel(p.getStatus()));
-        row.createCell(7).setCellValue(p.getCreateTime() != null ? p.getCreateTime().toString() : "");
-      }
-      java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-      wb.write(out);
-      return out.toByteArray();
-    } catch (Exception e) {
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "导出失败");
     }
+    byte[] body = peopleSummaryExcelSupport.write(companyName, people.stream().map(this::toRosterPerson).toList());
+    String fileName = SignUpPeopleSummaryExcelSupport.peopleRosterFileName(
+        resolveClassTitle(signUp), signUpId);
+    return new PeopleRosterExcel(body, fileName);
+  }
+
+  private String resolveClassTitle(TrainSignUpSelfEntity signUp) {
+    if (signUp.getTrainClassId() != null) {
+      TrainInfoClassEntity clazz = classMapper.selectById(signUp.getTrainClassId());
+      if (clazz != null && StringUtils.hasText(clazz.getTitle())) {
+        return clazz.getTitle().trim();
+      }
+    }
+    String title = signUp.getTitle();
+    if (!StringUtils.hasText(title)) {
+      return "班级";
+    }
+    String t = title.trim();
+    if (t.endsWith("-资料收集") && t.length() > 5) {
+      return t.substring(0, t.length() - "-资料收集".length());
+    }
+    return t;
+  }
+
+  private SignUpPeopleSummaryExcelSupport.RosterPerson toRosterPerson(TrainSignUpPeopleSelfEntity p) {
+    SignUpPeopleSummaryExcelSupport.RosterPerson row = new SignUpPeopleSummaryExcelSupport.RosterPerson();
+    row.name = p.getName();
+    row.idCardNumber = p.getIdCardNumber();
+    row.phone = p.getPhone();
+    row.age = p.getAge();
+    row.companyName = p.getCompanyName();
+    row.industrialPark = p.getIndustrialPark();
+    row.workTypeName = p.getWorkTypeName();
+    row.level = p.getLevel();
+    row.workTypeId = p.getWorkTypeId();
+    row.paperNo = p.getPaperNo();
+    row.workTypePaperHas = p.getWorkTypePaperHas();
+    row.workTypePaper = p.getWorkTypePaper();
+    row.education = p.getEducation();
+    row.titleType = p.getTitleType();
+    row.titleLevel = p.getTitleLevel();
+    row.school = p.getSchool();
+    row.major = p.getMajor();
+    row.schoolNo = p.getSchoolNo();
+    row.inSchoolDate = p.getInSchoolDate();
+    row.graduateDate = p.getGraduateDate();
+    row.workTime = p.getWorkTime();
+    row.createTime = p.getCreateTime();
+    row.declarationCondition = p.getDeclarationCondition();
+    row.workExp = p.getWorkExp();
+    row.address = p.getAddress();
+    row.workDateStart = p.getWorkDateStart();
+    row.workDateEnd = p.getWorkDateEnd();
+    row.job = p.getJob();
+    row.jog = p.getJog();
+    row.idCardFront = p.getIdCardFront();
+    row.idCardBack = p.getIdCardBack();
+    row.idCardHeader = p.getIdCardHeader();
+    row.schoolPaper = p.getSchoolPaper();
+    row.contactFirstPage = p.getContactFirstPage();
+    row.contactExpirePage = p.getContactExpirePage();
+    row.contactSignPage = p.getContactSignPage();
+    return row;
+  }
+
+  private static List<Long> parseCsvIds(String ids) {
+    List<Long> result = new ArrayList<>();
+    if (!StringUtils.hasText(ids)) {
+      return result;
+    }
+    for (String part : ids.split(",")) {
+      String t = part.trim();
+      if (!StringUtils.hasText(t)) {
+        continue;
+      }
+      try {
+        result.add(Long.parseLong(t));
+      } catch (NumberFormatException ignored) {
+        // skip invalid token
+      }
+    }
+    return result;
   }
 
   private TrainSignUpSelfEntity getSignUp(Long id) {
@@ -355,16 +427,5 @@ public class TrainSignUpCollectionApplicationService {
         e.getCreateTime(),
         e.getUpdateTime()
     );
-  }
-
-  private static String statusLabel(Integer status) {
-    if (status == null || status == 0) {
-      return "待审核";
-    }
-    return switch (status) {
-      case 1 -> "已通过";
-      case 2 -> "拒绝";
-      default -> "待审核";
-    };
   }
 }
