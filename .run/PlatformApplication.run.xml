@@ -19,6 +19,8 @@
       <env name="WEKNORA_PUBLIC_BASE_URL" value="http://43.138.163.7:8088" />
       <env name="XIAOPEI_KB_IDS" value="bf5db5a5-7cc1-4f3d-a1f7-87e8b2707ead" />
       <env name="WEKNORA_KB_IDS" value="bf5db5a5-7cc1-4f3d-a1f7-87e8b2707ead" />
+      <env name="WEKNORA_AGENT_ID" value="a6223b7c-96ed-494a-b0ef-2c39dac77064" />
+      <env name="XIAOPEI_AGENT_ID" value="a6223b7c-96ed-494a-b0ef-2c39dac77064" />
       <env name="RENCAI_ENABLED" value="true" />
       <env name="RENCAI_BASE_URL" value="http://127.0.0.1:8001" />
     </envs>

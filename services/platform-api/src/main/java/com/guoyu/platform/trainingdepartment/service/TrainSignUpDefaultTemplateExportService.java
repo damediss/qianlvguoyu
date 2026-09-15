@@ -37,6 +37,7 @@ import java.util.concurrent.Executor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -125,8 +126,17 @@ public class TrainSignUpDefaultTemplateExportService {
       }
     }
 
+    return insertOrReuseRunningTask(signUp.getId(), tenantId, peopleIds);
+  }
+
+  /**
+   * 多实例并发插入同 signUp 的进行中任务时，唯一索引会抛 DuplicateKeyException；
+   * 此时复用已存在的进行中任务，避免向调用方报错。
+   */
+  private SignUpDefaultTemplateExportStartVO insertOrReuseRunningTask(
+      Long signUpId, Long tenantId, List<Long> peopleIds) {
     TrainSignUpSelfTaskEntity task = new TrainSignUpSelfTaskEntity();
-    task.setSignUpId(signUp.getId());
+    task.setSignUpId(signUpId);
     task.setTenantId(tenantId);
     task.setAddtime(System.currentTimeMillis() / 1000);
     task.setEndtime(0L);
@@ -136,9 +146,22 @@ public class TrainSignUpDefaultTemplateExportService {
     } catch (Exception e) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "创建导出任务失败");
     }
-    taskMapper.insert(task);
-    submitExportAfterCommit(task.getId(), tenantId);
-    return new SignUpDefaultTemplateExportStartVO(task.getId(), progressOf(task));
+    try {
+      taskMapper.insert(task);
+      submitExportAfterCommit(task.getId(), tenantId);
+      return new SignUpDefaultTemplateExportStartVO(task.getId(), progressOf(task));
+    } catch (DuplicateKeyException e) {
+      log.info("默认模板导出并发插入冲突，复用已有进行中任务 signUpId={}", signUpId);
+      TrainSignUpSelfTaskEntity running = taskMapper.selectOne(new LambdaQueryWrapper<TrainSignUpSelfTaskEntity>()
+          .eq(TrainSignUpSelfTaskEntity::getSignUpId, signUpId)
+          .eq(TrainSignUpSelfTaskEntity::getEndtime, 0L)
+          .orderByDesc(TrainSignUpSelfTaskEntity::getId)
+          .last("LIMIT 1"));
+      if (running != null) {
+        return new SignUpDefaultTemplateExportStartVO(running.getId(), progressOf(running));
+      }
+      throw new BusinessException(ErrorCode.CONFLICT, "创建导出任务失败，请重试");
+    }
   }
 
   private boolean isStuckTask(TrainSignUpSelfTaskEntity task) {
@@ -224,9 +247,26 @@ public class TrainSignUpDefaultTemplateExportService {
     return new SignUpDefaultTemplateExportCheckVO(null, jindu, null, "当前进度");
   }
 
+  /** 用户主动取消进行中的导出任务。 */
+  @Transactional
+  public void cancelExport(SignUpDefaultTemplateExportCheckReq req) {
+    TrainSignUpSelfEntity signUp = getSignUp(req.getSignUpId());
+    TrainSignUpSelfTaskEntity task = taskMapper.selectById(req.getTaskId());
+    if (task == null || !signUp.getId().equals(task.getSignUpId())) {
+      return;
+    }
+    if (task.getEndtime() != null && task.getEndtime() > 0) {
+      // 已结束，无需取消
+      return;
+    }
+    failTask(task, "用户取消导出");
+    log.info("默认模板导出用户取消 taskId={}", task.getId());
+  }
+
   /**
    * 先扫 {cdn}/down/*_t{taskId}.zip，再按 result_file / 标题拼路径。
-   * 禁止回退到无 taskId 的历史同名包。
+   * 只返回 _t{taskId}.zip 匹配的文件，绝不返回旧命名（无 _t 后缀）的包，
+   * 否则会把上次全量导出的旧包误下给本次勾选导出。
    */
   private ResolvedZip resolveExportZip(
       TrainSignUpSelfEntity signUp, String folderName, TrainSignUpSelfTaskEntity task) {
@@ -294,6 +334,7 @@ public class TrainSignUpDefaultTemplateExportService {
     if (task == null || task.getEndtime() != null && task.getEndtime() > 0) {
       return;
     }
+    boolean firstStageDone = false;
     try {
       TrainSignUpSelfEntity signUp = signUpMapper.selectById(task.getSignUpId());
       if (signUp == null) {
@@ -328,6 +369,8 @@ public class TrainSignUpDefaultTemplateExportService {
           deleteQuietly(SignUpDefaultTemplateExportPaths.zipAbsolute(cdnPath, zipRelative));
           log.info("默认模板导出已取消，丢弃产物 taskId={} zip={}", taskId, zipRelative);
         } else {
+          // 已成功：若 result_file 仍空，补写磁盘路径，避免 check 拿不到下载链接
+          backfillResultFileIfEmpty(taskId, zipRelative, latest);
           log.info("默认模板导出结束时任务已成功，保留 zip taskId={} zip={}", taskId, zipRelative);
         }
         return;
@@ -339,17 +382,7 @@ public class TrainSignUpDefaultTemplateExportService {
         return;
       }
 
-      Long tenantId = latest.getTenantId() != null ? latest.getTenantId() : TenantContextHolder.getTenantId();
-      if (tenantId == null) {
-        failTask(latest, "上传压缩包失败: 缺少租户");
-        return;
-      }
-      String zipFileName = zipAbsolute.getFileName().toString();
-      byte[] zipBytes = Files.readAllBytes(zipAbsolute);
-      FileVO stored = fileApplicationService.storeFromBytesForTenant(
-          tenantId, zipBytes, zipFileName, "application/zip", "private");
-      String downloadPath = SignUpDefaultTemplateExportPaths.fileDownloadPath(stored.id());
-
+      // 第一阶段：打包完成立即写 endtime + result_file=磁盘路径，保证此刻 check 即可下载
       long endSec = System.currentTimeMillis() / 1000;
       int updated = taskMapper.update(null, new LambdaUpdateWrapper<TrainSignUpSelfTaskEntity>()
           .eq(TrainSignUpSelfTaskEntity::getId, taskId)
@@ -357,20 +390,22 @@ public class TrainSignUpDefaultTemplateExportService {
           .set(TrainSignUpSelfTaskEntity::getIdsOut, objectMapper.writeValueAsString(ids))
           .set(TrainSignUpSelfTaskEntity::getEndtime, endSec)
           .set(TrainSignUpSelfTaskEntity::getErrorMsg, null)
-          .set(TrainSignUpSelfTaskEntity::getResultFile, downloadPath));
+          .set(TrainSignUpSelfTaskEntity::getResultFile, zipRelative));
       if (updated == 0) {
+        // 第二阶段前的并发：被别处置成 endtime>0
         TrainSignUpSelfTaskEntity after = taskMapper.selectById(taskId);
         if (after != null && StringUtils.hasText(after.getErrorMsg())) {
           deleteQuietly(zipAbsolute);
           log.info("默认模板导出提交成功时已被取消 taskId={} zip={}", taskId, zipRelative);
         } else {
+          backfillResultFileIfEmpty(taskId, zipRelative, after);
           log.info("默认模板导出提交成功时任务已结束且无错误，保留 zip taskId={} zip={}",
               taskId, zipRelative);
         }
         return;
       }
-      log.info("默认模板导出成功 taskId={} zip={} fileId={} download={}",
-          taskId, zipRelative, stored.id(), downloadPath);
+      log.info("默认模板导出成功（磁盘）taskId={} zip={}", taskId, zipRelative);
+      firstStageDone = true;
 
       // 重新加载后再写 files，避免覆盖其它并发字段
       TrainSignUpSelfEntity signUpLatest = signUpMapper.selectById(signUp.getId());
@@ -379,9 +414,58 @@ public class TrainSignUpDefaultTemplateExportService {
         signUpLatest.setUpdateTime(LocalDateTime.now());
         signUpMapper.updateById(signUpLatest);
       }
+
+      // 第二阶段：上传 COS，成功后更新 result_file 为下载 URL（best-effort，失败不影响磁盘下载）
+      uploadToStoreAndUpdateResultFile(taskId, zipAbsolute, zipRelative, latest.getTenantId());
     } catch (Exception e) {
-      log.error("默认模板导出失败 taskId={}", taskId, e);
-      failTask(task, e.getMessage() != null ? e.getMessage() : "导出失败");
+      if (firstStageDone) {
+        // 磁盘产物已落盘并写 endtime，后续异常不应回滚成失败
+        log.warn("默认模板导出第一阶段后异常，保留磁盘产物 taskId={}", taskId, e);
+      } else {
+        log.error("默认模板导出失败 taskId={}", taskId, e);
+        failTask(task, e.getMessage() != null ? e.getMessage() : "导出失败");
+      }
+    }
+  }
+
+  /** result_file 为空时补写磁盘相对路径，避免 check 拿不到下载链接。 */
+  private void backfillResultFileIfEmpty(Long taskId, String zipRelative, TrainSignUpSelfTaskEntity current) {
+    if (current != null && StringUtils.hasText(current.getResultFile())) {
+      return;
+    }
+    try {
+      taskMapper.update(null, new LambdaUpdateWrapper<TrainSignUpSelfTaskEntity>()
+          .eq(TrainSignUpSelfTaskEntity::getId, taskId)
+          .and(w -> w.isNull(TrainSignUpSelfTaskEntity::getResultFile)
+              .or().eq(TrainSignUpSelfTaskEntity::getResultFile, ""))
+          .set(TrainSignUpSelfTaskEntity::getResultFile, zipRelative));
+    } catch (Exception e) {
+      log.warn("补写 result_file 失败 taskId={} zip={}", taskId, zipRelative, e);
+    }
+  }
+
+  /** 上传 zip 到文件服务，成功后把 result_file 更新为下载 URL；失败仅记日志，不影响磁盘下载。 */
+  private void uploadToStoreAndUpdateResultFile(
+      Long taskId, Path zipAbsolute, String zipRelative, Long tenantIdHint) {
+    try {
+      Long tenantId = tenantIdHint != null ? tenantIdHint : TenantContextHolder.getTenantId();
+      if (tenantId == null) {
+        log.warn("默认模板导出 COS 上传跳过：缺少租户 taskId={} zip={}", taskId, zipRelative);
+        return;
+      }
+      String zipFileName = zipAbsolute.getFileName().toString();
+      byte[] zipBytes = Files.readAllBytes(zipAbsolute);
+      FileVO stored = fileApplicationService.storeFromBytesForTenant(
+          tenantId, zipBytes, zipFileName, "application/zip", "private");
+      String downloadPath = SignUpDefaultTemplateExportPaths.fileDownloadPath(stored.id());
+      taskMapper.update(null, new LambdaUpdateWrapper<TrainSignUpSelfTaskEntity>()
+          .eq(TrainSignUpSelfTaskEntity::getId, taskId)
+          .set(TrainSignUpSelfTaskEntity::getResultFile, downloadPath));
+      log.info("默认模板导出 COS 上传成功 taskId={} zip={} fileId={} download={}",
+          taskId, zipRelative, stored.id(), downloadPath);
+    } catch (Exception e) {
+      // COS 上传失败不影响下载（磁盘路径已写入 result_file），仅记日志
+      log.warn("默认模板导出 COS 上传失败，保留磁盘下载路径 taskId={} zip={}", taskId, zipRelative, e);
     }
   }
 

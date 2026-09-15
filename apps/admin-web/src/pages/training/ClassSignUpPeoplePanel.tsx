@@ -20,7 +20,7 @@ import type { UploadProps } from 'antd';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import * as trainApi from '../../api/training';
-import { toBrowserPublicFileSrc } from '../../api/files';
+import { toBrowserPublicFileSrc, downloadExportFile, downloadUrlFile, isPublicExamFileUrl } from '../../api/files';
 import type { PlatformUser, TrainSignUpPerson } from '../../types/training';
 import { SignUpPeopleEditModal } from './SignUpPeopleEditModal';
 import './TrainingInformationPage.css';
@@ -152,7 +152,11 @@ export function ClassSignUpPeoplePanel({
   const [defaultExportTitle, setDefaultExportTitle] = useState('');
   const [defaultExportUrl, setDefaultExportUrl] = useState('');
   const [exportElapsed, setExportElapsed] = useState(0);
+  const [defaultExportTaskId, setDefaultExportTaskId] = useState<number | null>(null);
+  const [exportDownloading, setExportDownloading] = useState(false);
   const defaultExportTimerRef = useRef<number | null>(null);
+  const defaultExportCancelledRef = useRef(false);
+  const defaultExportGenRef = useRef(0);
 
   useEffect(() => {
     setPeoplePage(1);
@@ -299,10 +303,14 @@ export function ClassSignUpPeoplePanel({
   };
 
   const handleDefaultTemplateExport = async () => {
+    // generation 计数器：每次点击递增，旧循环发现自己不是最新一代时自动退出
+    const gen = ++defaultExportGenRef.current;
     setDefaultExportOpen(true);
     setDefaultExportTitle('默认模板正在导出，请稍后');
     setDefaultExportUrl('');
     setExportElapsed(0);
+    setDefaultExportTaskId(null);
+    defaultExportCancelledRef.current = false;
     if (defaultExportTimerRef.current) {
       window.clearInterval(defaultExportTimerRef.current);
     }
@@ -314,18 +322,31 @@ export function ClassSignUpPeoplePanel({
         signUpId: Number(signUpId),
         ids: selectedPeopleIds.length ? selectedPeopleIds : undefined,
       });
+      // await 返回后检查是否已被新一次点击取代
+      if (gen !== defaultExportGenRef.current) {
+        return;
+      }
       const taskId = start.taskId;
       if (!taskId) {
         throw new Error('no task');
       }
+      setDefaultExportTaskId(Number(taskId));
       setDefaultExportTitle(`当前进度：${start.jindu || '导出中'}`);
       let finished = false;
-      for (let i = 0; i < 90; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
+      let delay = 2000;
+      while (!finished && !defaultExportCancelledRef.current && gen === defaultExportGenRef.current) {
+        await new Promise((r) => setTimeout(r, delay));
+        if (defaultExportCancelledRef.current || gen !== defaultExportGenRef.current) {
+          break;
+        }
         const check = await trainApi.checkDefaultTemplateExport({
           signUpId: Number(signUpId),
           taskId: Number(taskId),
         });
+        // check 返回后再次检查代次，防止旧循环覆盖新循环的结果
+        if (gen !== defaultExportGenRef.current) {
+          break;
+        }
         if (check.url) {
           setDefaultExportTitle('导出成功');
           setDefaultExportUrl(toBrowserPublicFileSrc(String(check.url)));
@@ -340,17 +361,53 @@ export function ClassSignUpPeoplePanel({
         if (check.jindu) {
           setDefaultExportTitle(`当前进度：${check.jindu}`);
         }
+        // 指数退避：2s → 4s → 8s，上限 15s
+        delay = Math.min(delay * 2, 15000);
       }
-      if (!finished) {
+      if (!finished && !defaultExportCancelledRef.current && gen === defaultExportGenRef.current) {
         setDefaultExportTitle('导出超时，请稍后在导出记录中重试或联系管理员');
       }
     } catch {
-      setDefaultExportTitle('导出失败');
+      if (gen === defaultExportGenRef.current) {
+        setDefaultExportTitle('导出失败');
+      }
     } finally {
-      if (defaultExportTimerRef.current) {
+      if (gen === defaultExportGenRef.current && defaultExportTimerRef.current) {
         window.clearInterval(defaultExportTimerRef.current);
         defaultExportTimerRef.current = null;
       }
+    }
+  };
+
+  const handleCancelDefaultExport = async () => {
+    defaultExportCancelledRef.current = true;
+    const taskId = defaultExportTaskId;
+    if (taskId != null) {
+      try {
+        await trainApi.cancelDefaultTemplateExport({
+          signUpId: Number(signUpId),
+          taskId,
+        });
+      } catch {
+        // 忽略取消请求失败
+      }
+    }
+    setDefaultExportTitle('已取消导出');
+  };
+
+  const handleDownloadExport = async () => {
+    if (!defaultExportUrl || exportDownloading) return;
+    if (isPublicExamFileUrl(defaultExportUrl)) {
+      downloadExportFile(defaultExportUrl);
+      return;
+    }
+    setExportDownloading(true);
+    try {
+      await downloadUrlFile(defaultExportUrl);
+    } catch {
+      message.error('下载失败，请稍后重试');
+    } finally {
+      setExportDownloading(false);
     }
   };
 
@@ -789,11 +846,18 @@ export function ClassSignUpPeoplePanel({
         title="默认模板导出"
         open={defaultExportOpen}
         onCancel={() => setDefaultExportOpen(false)}
-        footer={<Button type="primary" onClick={() => setDefaultExportOpen(false)}>关闭</Button>}
+        footer={(
+          <Space>
+            {!defaultExportUrl && defaultExportTaskId != null ? (
+              <Button danger onClick={handleCancelDefaultExport}>取消导出</Button>
+            ) : null}
+            <Button type="primary" onClick={() => setDefaultExportOpen(false)}>关闭</Button>
+          </Space>
+        )}
       >
         <p>{defaultExportTitle}{!defaultExportUrl ? `（${exportElapsed}s）` : ''}</p>
         {defaultExportUrl ? (
-          <a href={defaultExportUrl} target="_blank" rel="noreferrer">下载文件</a>
+          <Button type="primary" loading={exportDownloading} onClick={handleDownloadExport}>下载文件</Button>
         ) : null}
       </Modal>
     </div>

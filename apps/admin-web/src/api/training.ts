@@ -3492,6 +3492,15 @@ export function checkDefaultTemplateExport(payload: {
   );
 }
 
+export function cancelDefaultTemplateExport(payload: {
+  signUpId: number;
+  taskId: number;
+}) {
+  return unwrap<void>(
+    apiClient.post(`${BASE}/sign-up-people/export/default-template/cancel`, payload),
+  );
+}
+
 export function pageSignUpOrcs(params: { signUpId?: number; page?: number; pageSize?: number }) {
   return unwrap<PageResponse<TrainSignUpOrcSelf>>(apiClient.get(`${BASE}/sign-up-orcs`, { params }));
 }
@@ -4189,3 +4198,4 @@ export function pageExamScoreImportBatchItems(
 export function downloadExamScoreImportFailures(batchId: number | string) {
   return fetchFileBlob(`${BASE}/exam-score-imports/batches/${batchId}/failures.xlsx`);
 }
+

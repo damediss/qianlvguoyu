@@ -510,6 +510,13 @@ public class SignUpPeopleDefaultTemplatePackService {
   private void finalizeZip(ExportContext ctx) throws Exception {
     Path oldZip = Paths.get(cdnPath, "down", ctx.folderName + ".zip");
     Files.deleteIfExists(oldZip);
+    // 清理同标题无 _t 后缀的旧 zip，避免 check 兜底命中旧包（全量导出 → 勾选导出误下全部）
+    if (ctx.taskId != null && ctx.taskId > 0) {
+      Path legacyZip = Paths.get(cdnPath, "down", sanitize(ctx.signUpTitle) + ".zip");
+      if (!legacyZip.equals(oldZip)) {
+        Files.deleteIfExists(legacyZip);
+      }
+    }
     List<Path> entries = new ArrayList<>();
     entries.add(ctx.idCardFrontDir);
     entries.add(ctx.idCardBackDir);
@@ -1321,6 +1328,7 @@ public class SignUpPeopleDefaultTemplatePackService {
   private static final class ExportContext {
     private final String folderName;
     private final String signUpTitle;
+    private final Long taskId;
     private final String companyName;
     private final String companyPhone;
     private final String companyAddress;
@@ -1358,6 +1366,7 @@ public class SignUpPeopleDefaultTemplatePackService {
 
     private ExportContext(String cdnRoot, TrainSignUpSelfEntity signUp, OrgEntity company, Long taskId) {
       this.signUpTitle = signUp != null && StringUtils.hasText(signUp.getTitle()) ? signUp.getTitle().trim() : "";
+      this.taskId = taskId;
       String base = sanitize(signUpTitle);
       // 每次导出独立目录/zip，避免同标题覆盖后仍被缓存或 check 命中旧包
       this.folderName = taskId != null && taskId > 0 ? base + "_t" + taskId : base;

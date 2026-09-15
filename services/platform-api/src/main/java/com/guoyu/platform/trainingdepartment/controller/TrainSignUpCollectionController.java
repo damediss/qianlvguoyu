@@ -104,4 +104,13 @@ public class TrainSignUpCollectionController {
       @Valid @RequestBody SignUpDefaultTemplateExportCheckReq req) {
     return ApiResponse.ok(defaultTemplateExportService.checkExport(req));
   }
+
+  /** 默认模板导出：取消进行中的任务 */
+  @PostMapping("/sign-up-people/export/default-template/cancel")
+  @PreAuthorize("hasAuthority('train:sign-up-people:view')")
+  public ApiResponse<Void> cancelDefaultTemplateExport(
+      @Valid @RequestBody SignUpDefaultTemplateExportCheckReq req) {
+    defaultTemplateExportService.cancelExport(req);
+    return ApiResponse.ok(null);
+  }
 }

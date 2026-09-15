@@ -13,7 +13,7 @@ import { uploadFile } from '../../api/knowledge';
 import type { TrainSignUpSelf, TrainSignUpSelfCreateReq, TrainSignUpPerson, TrainSignUpOrcSelf, TrainSignUpSelfFile, PlatformUser } from '../../types/training';
 import { FilePreviewModal, type FilePreviewTarget } from '../../components/FilePreviewModal';
 import { AuthImage } from '../../components/ApiAuthImage';
-import { fileNameFromUrl } from '../../api/files';
+import { fileNameFromUrl, downloadExportFile } from '../../api/files';
 import { SignUpPeopleEditModal } from './SignUpPeopleEditModal';
 import { TrainingProcessSteps } from './TrainingProcessSteps';
 import './TrainingInformationPage.css';
@@ -241,6 +241,7 @@ export function TrainingInformationPage() {
   const [defaultExportUrl, setDefaultExportUrl] = useState('');
   const [exportElapsed, setExportElapsed] = useState(0);
   const defaultExportTimerRef = useRef<number | null>(null);
+  const defaultExportGenRef = useRef(0);
   const [orcFailOpen, setOrcFailOpen] = useState(false);
   const [orcFailData, setOrcFailData] = useState<TrainSignUpOrcSelf[]>([]);
   const [orcFailLoading, setOrcFailLoading] = useState(false);
@@ -569,6 +570,7 @@ export function TrainingInformationPage() {
 
   const handleDefaultTemplateExport = async () => {
     if (!activeSignUp?.id) return;
+    const gen = ++defaultExportGenRef.current;
     setDefaultExportOpen(true);
     setDefaultExportTitle('');
     setDefaultExportUrl('');
@@ -583,9 +585,20 @@ export function TrainingInformationPage() {
         ids: selectedPeopleIds.length ? selectedPeopleIds : undefined,
         status: peopleStatus,
       });
+      // await 返回后检查是否已被新一次点击取代
+      if (gen !== defaultExportGenRef.current) {
+        return;
+      }
       setDefaultExportTitle(`当前进度：${res.jindu}`);
       let pollCount = 0;
       defaultExportTimerRef.current = window.setInterval(async () => {
+        if (gen !== defaultExportGenRef.current) {
+          if (defaultExportTimerRef.current != null) {
+            window.clearInterval(defaultExportTimerRef.current);
+            defaultExportTimerRef.current = null;
+          }
+          return;
+        }
         pollCount += 1;
         try {
           const check = await trainApi.checkDefaultTemplateExport({
@@ -593,6 +606,9 @@ export function TrainingInformationPage() {
             taskId: res.taskId,
             signUpTitle: activeSignUp.title,
           });
+          if (gen !== defaultExportGenRef.current) {
+            return;
+          }
           if (check.url) {
             if (defaultExportTimerRef.current != null) {
               window.clearInterval(defaultExportTimerRef.current);
@@ -601,7 +617,7 @@ export function TrainingInformationPage() {
             setDefaultExportTitle('导出成功');
             const downloadUrl = toProxiedCdnUrl(check.url);
             setDefaultExportUrl(downloadUrl);
-            window.open(downloadUrl, '_blank');
+            downloadExportFile(downloadUrl);
             queryClient.invalidateQueries({ queryKey: ['sign-up-collection'] });
           } else if (check.error && !String(check.msg ?? '').includes('未找到压缩包')) {
             if (defaultExportTimerRef.current != null) {
@@ -618,15 +634,19 @@ export function TrainingInformationPage() {
             setDefaultExportTitle('导出超时，请稍后重试');
           }
         } catch {
-          if (defaultExportTimerRef.current != null) {
-            window.clearInterval(defaultExportTimerRef.current);
-            defaultExportTimerRef.current = null;
+          if (gen === defaultExportGenRef.current) {
+            if (defaultExportTimerRef.current != null) {
+              window.clearInterval(defaultExportTimerRef.current);
+              defaultExportTimerRef.current = null;
+            }
+            setDefaultExportTitle('导出失败');
           }
-          setDefaultExportTitle('导出失败');
         }
       }, 1000);
     } catch {
-      setDefaultExportTitle('导出失败');
+      if (gen === defaultExportGenRef.current) {
+        setDefaultExportTitle('导出失败');
+      }
     }
   };
 
@@ -1271,7 +1291,13 @@ export function TrainingInformationPage() {
               {defaultExportUrl ? (
                 <>
                   {' '}
-                  <a href={defaultExportUrl} target="_blank" rel="noreferrer">下载</a>
+                  <a
+                    onClick={(e) => {
+                      e.preventDefault();
+                      downloadExportFile(defaultExportUrl);
+                    }}
+                    href="#"
+                  >下载</a>
                 </>
               ) : null}
             </div>

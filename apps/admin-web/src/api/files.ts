@@ -400,6 +400,18 @@ export async function downloadUrlFile(url: string, fileName?: string): Promise<v
   URL.revokeObjectURL(objectUrl);
 }
 
+/**
+ * 导出文件下载：/exam/files/ 路径是 permitAll，用 window.open 原生流式下载（大文件不占内存）；
+ * 其他路径（如 /api/files/{id}/download）需要 X-Tenant-Id 认证头，用 downloadUrlFile 走 apiClient。
+ */
+export function downloadExportFile(url: string): void {
+  if (isPublicExamFileUrl(url)) {
+    window.open(url, '_blank');
+  } else {
+    void downloadUrlFile(url).catch(() => {});
+  }
+}
+
 export function fileNameFromUrl(url?: string): string {
   if (!url) return '';
   const path = url.split('?')[0].split('#')[0];
