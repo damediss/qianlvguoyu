@@ -19,6 +19,8 @@ import com.guoyu.platform.exam.standard.parser.model.StandardWeightRow;
 import com.guoyu.platform.exam.standard.parser.model.StandardWeightTable;
 import com.guoyu.platform.exam.standard.vo.StandardNodeVO;
 import com.guoyu.platform.exam.standard.vo.StandardTaskVO;
+import com.guoyu.platform.file.entity.FileEntity;
+import com.guoyu.platform.file.mapper.FileMapper;
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.vo.FileVO;
 import java.io.ByteArrayInputStream;
@@ -57,15 +59,18 @@ public class StandardParseApplicationService {
   private final ExamStandardTaskMapper taskMapper;
   private final ExamStandardNodeMapper nodeMapper;
   private final FileApplicationService fileApplicationService;
+  private final FileMapper fileMapper;
   private final ObjectMapper objectMapper;
 
   public StandardParseApplicationService(ExamStandardTaskMapper taskMapper,
       ExamStandardNodeMapper nodeMapper,
       FileApplicationService fileApplicationService,
+      FileMapper fileMapper,
       ObjectMapper objectMapper) {
     this.taskMapper = taskMapper;
     this.nodeMapper = nodeMapper;
     this.fileApplicationService = fileApplicationService;
+    this.fileMapper = fileMapper;
     this.objectMapper = objectMapper;
   }
 
@@ -199,9 +204,10 @@ public class StandardParseApplicationService {
             keyword)
         .orderByDesc(ExamStandardTaskEntity::getId);
     Page<ExamStandardTaskEntity> result = taskMapper.selectPage(new Page<>(page, pageSize), wrapper);
+    Map<Long, String> fileNames = batchFileNames(result.getRecords());
     List<StandardTaskVO> items = new ArrayList<>();
     for (ExamStandardTaskEntity task : result.getRecords()) {
-      items.add(toTaskVO(task));
+      items.add(toTaskVO(task, fileNames));
     }
     return new PageResponse<>(items, result.getCurrent(), result.getSize(), result.getTotal());
   }
@@ -417,6 +423,27 @@ public class StandardParseApplicationService {
   // ============================================================
 
   private StandardTaskVO toTaskVO(ExamStandardTaskEntity task) {
+    return toTaskVO(task, batchFileNames(List.of(task)));
+  }
+
+  /** 批量取任务原始文件名（fileId → originalName），避免逐行查库。 */
+  private Map<Long, String> batchFileNames(List<ExamStandardTaskEntity> tasks) {
+    List<Long> fileIds = tasks.stream()
+        .map(ExamStandardTaskEntity::getFileId)
+        .filter(java.util.Objects::nonNull)
+        .distinct()
+        .toList();
+    if (fileIds.isEmpty()) {
+      return Map.of();
+    }
+    Map<Long, String> names = new HashMap<>();
+    for (FileEntity file : fileMapper.selectBatchIds(fileIds)) {
+      names.put(file.getId(), file.getOriginalName());
+    }
+    return names;
+  }
+
+  private StandardTaskVO toTaskVO(ExamStandardTaskEntity task, Map<Long, String> fileNames) {
     Long total = nodeMapper.selectCount(new LambdaQueryWrapper<ExamStandardNodeEntity>()
         .eq(ExamStandardNodeEntity::getTaskId, task.getId())
         .eq(ExamStandardNodeEntity::getNodeLevel, 3));
@@ -428,6 +455,7 @@ public class StandardParseApplicationService {
         task.getId() == null ? null : String.valueOf(task.getId()),
         task.getWorkTypeTitle(), task.getSeriesNo(), task.getVersion(),
         task.getFileId() == null ? null : String.valueOf(task.getFileId()),
+        task.getFileId() == null ? null : fileNames.get(task.getFileId()),
         task.getStatus(),
         readStringList(task.getDirectionsJson()),
         readLevels(task.getLevelsJson()),

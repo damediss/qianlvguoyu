@@ -13,6 +13,7 @@ public record StandardTaskVO(
     String seriesNo,
     String version,
     String fileId,
+    String fileName,
     String status,
     List<String> directions,
     List<Map<String, Object>> levels,
