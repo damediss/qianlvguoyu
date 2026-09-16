@@ -72,6 +72,11 @@ public class KnowledgeFixClassifyService {
   private final ExamKnowledgeFixBatchMapper batchMapper;
   private final ExamDetailKnowledgeFixMapper fixMapper;
   private final ExamExamDetailFixMapper queryMapper;
+  /**
+   * 人工暂停请求（FIX-10/v1.7）：batchNo 集合，编排线程在每行派发前检查。
+   * 内存态（进程重启即失效，届时批次需按 §11.10.9 C 的 SQL 收尾）；在飞行的行不中断，跑完即收尾为 paused。
+   */
+  private final java.util.Set<Long> pauseRequests = java.util.concurrent.ConcurrentHashMap.newKeySet();
   private final ExamFaqModelConfigMapper modelConfigMapper;
   private final FaqLlmClient llmClient;
   private final ObjectMapper objectMapper;
@@ -163,6 +168,34 @@ public class KnowledgeFixClassifyService {
     return fixMapper.countByStatus("pending");
   }
 
+  /**
+   * 人工暂停（FIX-10/v1.7）：登记暂停标志，编排线程在下一行派发边界停止派发新行；
+   * 已派发（在飞行）的行跑完后收尾为 paused——未跑的行保持 pending，再次提交即可接着跑。
+   * 继续 = 再点「提交 LLM 分类批次」（新批次只覆盖剩余 pending 行，已完成行结论不受影响）。
+   */
+  public long pause() {
+    ExamKnowledgeFixBatchEntity batch = currentInFlight();
+    if (batch == null) {
+      throw new BusinessException(ErrorCode.CONFLICT, "当前没有进行中的分类批次，无需暂停");
+    }
+    pauseRequests.add(batch.getBatchNo());
+    log.info("知识修正批次暂停请求已登记：batchNo={}, done={}/{}", batch.getBatchNo(),
+        batch.getDone(), batch.getTotal());
+    return batch.getBatchNo();
+  }
+
+  /** 进行中的批次（pending/running，取最新一条）；无则返回 null */
+  private ExamKnowledgeFixBatchEntity currentInFlight() {
+    List<ExamKnowledgeFixBatchEntity> list = batchMapper.selectList(
+        new LambdaQueryWrapper<ExamKnowledgeFixBatchEntity>()
+            .in(ExamKnowledgeFixBatchEntity::getStatus,
+                ExamKnowledgeFixBatchEntity.STATUS_PENDING,
+                ExamKnowledgeFixBatchEntity.STATUS_RUNNING)
+            .orderByDesc(ExamKnowledgeFixBatchEntity::getId)
+            .last("LIMIT 1"));
+    return list == null || list.isEmpty() ? null : list.get(0);
+  }
+
   /** 编排线程：两阶段分类 + 三采样自一致 + 旗舰升级 + 自动补跑（方案 §4.4/§6.4） */
   public void processBatch(Long batchId, Long batchNo, Long tenantId, Long userId,
       ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro) {
@@ -212,8 +245,14 @@ public class KnowledgeFixClassifyService {
         consecutiveFailures.set(0);
         // FIX-1/DEF-2：熔断只终止"本轮继续派发"，不放弃整批——本轮结束后进入下一轮补跑
         boolean breakerTrippedThisRound = false;
+        // FIX-10/v1.7：人工暂停——只停"继续派发"，在飞行已提交的行走完
+        boolean pauseTripped = false;
         List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
         for (PendingFixRow row : pending) {
+          if (pauseRequests.contains(batchNo)) {
+            pauseTripped = true;
+            break;
+          }
           if (consecutiveFailures.get() >= MAX_CONSECUTIVE_FAILURES) {
             breakerTrippedThisRound = true;
             break;
@@ -248,6 +287,10 @@ public class KnowledgeFixClassifyService {
           } catch (Exception e) {
             log.error("分类任务异常返回：batchNo={}", batchNo, e);
           }
+        }
+        if (pauseTripped) {
+          finalizePaused(batchId, batchNo);
+          return;
         }
         totalDispatched += futures.size();
         if (futures.isEmpty()) {
@@ -347,13 +390,16 @@ public class KnowledgeFixClassifyService {
         throw new BusinessException(ErrorCode.BAD_GATEWAY, "L2 下无 L3 鉴定点: " + l2Id);
       }
 
-      // 阶段 2：三采样自一致（候选顺序随机化）
+      // 阶段 2：三采样自一致
+      // FIX-11/v1.7：候选顺序每行随机一次（种子=detailId），3 次采样共用同一顺序——
+      // 第 2、3 次采样 prompt 与第 1 次逐字节一致，可整段命中前缀缓存（同课程行亦共享候选清单前缀）。
+      // 代价：行内位置偏差检测退化为行间（全批顺序仍随机）；位置偏差兜底 = 确定性卫兵。
+      List<KnowledgeNodeRow> ordered = new ArrayList<>(l3List);
+      Collections.shuffle(ordered, new java.util.Random(row.getDetailId()));
       List<Integer> nodeVotes = new ArrayList<>();
       List<Double> confVotes = new ArrayList<>();
       List<String> reasons = new ArrayList<>();
       for (int i = 0; i < SAMPLES; i++) {
-        List<KnowledgeNodeRow> ordered = new ArrayList<>(l3List);
-        Collections.shuffle(ordered);
         String s2 = callLlm(cfgFlash, tenantId, batchNo, row.getDetailId(), "stage2",
             buildStage2Prompt(questionText, ordered, oldNode), 1024).content();
         JsonNode json = parseObject(s2);
@@ -404,7 +450,7 @@ public class KnowledgeFixClassifyService {
       } else {
         // 三方各不同 → 旗舰复判（basis=llm-pro）
         String s3 = callLlm(cfgPro, tenantId, batchNo, row.getDetailId(), "escalate",
-            buildStage2Prompt(questionText, l3List, oldNode), 2048).content();
+            buildStage2Prompt(questionText, ordered, oldNode), 2048).content();
         JsonNode json = parseObject(s3);
         finalNodeId = json.path("node_id").asInt(-1);
         finalConf = json.path("confidence").asDouble(0);
@@ -462,6 +508,26 @@ public class KnowledgeFixClassifyService {
     batchMapper.updateById(batch);
   }
 
+  /**
+   * 人工暂停收尾（FIX-10/v1.7）：不写"批次中断未分类"兜底（剩余行保持 pending，供下次提交接着跑），
+   * 批次置 paused。跳过质量门禁——暂停是人工控制而非质量判定。
+   */
+  private void finalizePaused(Long batchId, Long batchNo) {
+    pauseRequests.remove(batchNo);
+    ExamKnowledgeFixBatchEntity batch = batchMapper.selectById(batchId);
+    if (batch == null) {
+      return;
+    }
+    int total = batch.getTotal() == null ? 0 : batch.getTotal();
+    int done = batch.getDone() == null ? 0 : batch.getDone();
+    batch.setStatus(ExamKnowledgeFixBatchEntity.STATUS_PAUSED);
+    batch.setFailReason("人工暂停：已分类 " + done + "/" + total + "，剩余 "
+        + Math.max(0, total - done) + " 行保持待分类；再次点「提交 LLM 分类批次」即可接着跑");
+    batch.setUpdatedAt(LocalDateTime.now());
+    batchMapper.updateById(batch);
+    log.info("知识修正批次已暂停：batchNo={}, done={}/{}", batchNo, done, total);
+  }
+
   /** 质量门禁说明（FIX-1.4）：写清楚未达标原因，供页面红色提示与事后复核 */
   private static String buildGateReason(boolean noDispatch, int unclassified, int total,
       BigDecimal rate) {
@@ -497,7 +563,8 @@ public class KnowledgeFixClassifyService {
       logRow.setDetailId(detailId);
       logRow.setStage(stage);
       logRow.setModelId(cfg.getModelId());
-      logRow.setPromptDigest(prompt.length() > 200 ? prompt.substring(0, 200) : prompt);
+      // FIX-11：题干已移至 prompt 末尾，摘要改存末尾 200 字（审计排障用）
+      logRow.setPromptDigest(prompt.length() > 200 ? prompt.substring(prompt.length() - 200) : prompt);
       logRow.setPromptTokens((int) result.promptTokens());
       logRow.setCompletionTokens((int) result.completionTokens());
       logRow.setTotalTokens((int) result.totalTokens());
@@ -533,20 +600,29 @@ public class KnowledgeFixClassifyService {
     return s.replaceAll("<[^>]+>", "").replace("&nbsp;", " ").trim();
   }
 
+  /**
+   * 阶段 1 prompt。FIX-11/v1.7 稳定段前置：候选清单 + 输出要求在前（同课程各行共享同一前缀，
+   * 便于前缀缓存命中），【试题】放末尾（行级变量）。
+   */
   private String buildStage1Prompt(String questionText, List<KnowledgeNodeRow> l2List) {
     StringBuilder sb = new StringBuilder();
-    sb.append("【试题】\n").append(questionText).append("\n\n【候选分类（L2）】\n");
+    sb.append("【候选分类（L2）】\n");
     for (KnowledgeNodeRow n : l2List) {
       sb.append(n.getId()).append("|").append(n.getTitle()).append("\n");
     }
-    sb.append("请从候选中选出该试题所属的 L2 分类，只输出 JSON：{\"l2_id\":<整数>}。禁止输出候选之外的 id，禁止输出任何其它文字。");
+    sb.append("请从候选中选出该试题所属的 L2 分类，只输出 JSON：{\"l2_id\":<整数>}。禁止输出候选之外的 id，禁止输出任何其它文字。\n\n");
+    sb.append("【试题】\n").append(questionText);
     return sb.toString();
   }
 
+  /**
+   * 阶段 2 prompt。FIX-11/v1.7 稳定段前置（同 buildStage1Prompt）；
+   * 【当前标记】属行级变量，随【试题】放末尾。
+   */
   private String buildStage2Prompt(String questionText, List<KnowledgeNodeRow> l3List,
       KnowledgeNodeRow oldNode) {
     StringBuilder sb = new StringBuilder();
-    sb.append("【试题】\n").append(questionText).append("\n\n【候选鉴定点（L3）】\n");
+    sb.append("【候选鉴定点（L3）】\n");
     for (KnowledgeNodeRow n : l3List) {
       sb.append(n.getId()).append("|").append(n.getTitle());
       if (n.getImportant() != null && !n.getImportant().isBlank()) {
@@ -554,13 +630,14 @@ public class KnowledgeFixClassifyService {
       }
       sb.append("\n");
     }
-    if (oldNode != null) {
-      sb.append("【当前标记】该试题当前挂在「").append(oldNode.getTitle())
-          .append("」，若试题确实属于它，请选择它（node_id=").append(oldNode.getId()).append("）。\n");
-    }
     sb.append("请从候选中选出该试题真正归属的鉴定点，只输出 JSON：")
         .append("{\"node_id\":<整数>,\"confidence\":<0~1 小数>,\"reason\":\"不超过50字\"}。")
-        .append("禁止输出候选之外的 id，禁止输出任何其它文字。");
+        .append("禁止输出候选之外的 id，禁止输出任何其它文字。\n\n");
+    sb.append("【试题】\n").append(questionText);
+    if (oldNode != null) {
+      sb.append("\n【当前标记】该试题当前挂在「").append(oldNode.getTitle())
+          .append("」，若试题确实属于它，请选择它（node_id=").append(oldNode.getId()).append("）。");
+    }
     return sb.toString();
   }
 

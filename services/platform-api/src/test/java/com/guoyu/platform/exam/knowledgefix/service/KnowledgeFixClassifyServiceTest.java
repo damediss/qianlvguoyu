@@ -596,6 +596,84 @@ class KnowledgeFixClassifyServiceTest {
     assertTrue(nz(batch.getDone()) >= n, "全部行都应得到结论，done=" + nz(batch.getDone()));
   }
 
+  // ───────── v1.7 回归（KF-32/33） ─────────
+
+  /**
+   * KF-32：人工暂停（FIX-10/v1.7）——暂停登记后编排不得派发任何行；批次收尾为 paused；
+   * 剩余行保持 pending（可再次提交接着跑）、不写"批次中断未分类"兜底、未分类计数不增、零 LLM 调用。
+   * 采用"启动前登记暂停"的确定性时序（与页面按钮同一入口 pause()）；运行中暂停走的同一检查点。
+   */
+  @Test
+  void kf32_pauseStopsDispatchingAndFinalizesPaused() {
+    stubCommonHappyPath();
+    List<PendingFixRow> rows = new ArrayList<>();
+    for (int i = 1; i <= 5; i++) {
+      rows.add(row(i, i, 4192, 190, "蒸发器跑碱的原因" + i));
+    }
+    batch.setTotal(5);
+    batch.setStatus(ExamKnowledgeFixBatchEntity.STATUS_RUNNING);
+    when(batchMapper.selectList(ArgumentMatchers
+            .<com.baomidou.mybatisplus.core.conditions.Wrapper<ExamKnowledgeFixBatchEntity>>any()))
+        .thenReturn(List.of(batch));
+    when(fixMapper.selectPendingWithContent()).thenAnswer(inv -> rows.stream()
+        .filter(r -> "pending".equals(statusByRowId.get(r.getRowId()))).toList());
+
+    service.pause();
+
+    service.processBatch(BATCH_ID, BATCH_NO, TENANT, USER, cfgFlash, cfgPro);
+
+    assertEquals(0, statusByRowId.values().stream().filter(s -> !"pending".equals(s)).count(),
+        "暂停后不得派发任何行");
+    assertEquals(5, statusByRowId.values().stream().filter(s -> "pending".equals(s)).count(),
+        "全部行应保持 pending，可再次提交接着跑");
+    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_PAUSED, batch.getStatus());
+    assertTrue(batch.getFailReason() != null && batch.getFailReason().contains("暂停"),
+        "failReason 应说明暂停：" + batch.getFailReason());
+    verify(llmClient, org.mockito.Mockito.never()).chatCompletionDetailed(anyString(), anyString(),
+        anyString(), anyString(), anyString(), anyInt(), any(), any(), anyBoolean(), anyLong(),
+        anyInt());
+    // 暂停收尾不写"批次中断未分类"兜底（否则继续跑要先 reset 把 flag 退回）
+    verify(fixMapper, org.mockito.Mockito.never()).updateClassifyResult(anyLong(), any(), any(),
+        any(), any(), anyString());
+    verify(batchMapper, org.mockito.Mockito.never()).incrementUnclassified(anyLong(), anyInt());
+  }
+
+  /** KF-33：缓存友好 prompt（FIX-11/v1.7）——同一行 3 次采样 prompt 逐字节一致；
+   *  结构上候选清单+输出要求在前、【试题】在后（同课程行共享前缀，可命中输入缓存） */
+  @Test
+  void kf33_samplesShareIdenticalPromptAndStablePrefixFirst() {
+    stubCommonHappyPath();
+    List<String> stage2Prompts = new CopyOnWriteArrayList<>();
+    List<PendingFixRow> rows = List.of(row(1, 1, 4192, 190, "蒸发器跑碱的原因"));
+    when(fixMapper.selectPendingWithContent()).thenAnswer(inv -> rows.stream()
+        .filter(r -> "pending".equals(statusByRowId.get(r.getRowId()))).toList());
+    when(llmClient.chatCompletionDetailed(anyString(), anyString(), anyString(), anyString(),
+        ArgumentMatchers.contains("候选分类（L2）"), anyInt(), any(), any(), anyBoolean(),
+        anyLong(), anyInt()))
+        .thenAnswer(inv -> result("{\"l2_id\":201}"));
+    when(llmClient.chatCompletionDetailed(anyString(), anyString(), anyString(), anyString(),
+        ArgumentMatchers.contains("候选鉴定点（L3）"), anyInt(), any(), any(), anyBoolean(),
+        anyLong(), anyInt()))
+        .thenAnswer(inv -> {
+          stage2Prompts.add(inv.getArgument(4, String.class));
+          return result("{\"node_id\":301,\"confidence\":0.9,\"reason\":\"x\"}");
+        });
+
+    service.processBatch(BATCH_ID, BATCH_NO, TENANT, USER, cfgFlash, cfgPro);
+
+    assertEquals(3, stage2Prompts.size());
+    assertEquals(stage2Prompts.get(0), stage2Prompts.get(1), "第 2 次采样应与第 1 次 prompt 一致（缓存命中）");
+    assertEquals(stage2Prompts.get(1), stage2Prompts.get(2), "第 3 次采样应与第 1 次 prompt 一致（缓存命中）");
+    String p = stage2Prompts.get(0);
+    int l3 = p.indexOf("【候选鉴定点（L3）】");
+    int rule = p.indexOf("请从候选中选出该试题真正归属的鉴定点");
+    int q = p.indexOf("【试题】");
+    int marker = p.indexOf("【当前标记】");
+    assertTrue(p.startsWith("【候选鉴定点（L3）】"), "候选清单应前置");
+    assertTrue(l3 >= 0 && rule > l3 && q > rule && marker > q,
+        "结构应为 候选清单 → 输出要求 → 【试题】 → 【当前标记】");
+  }
+
   private static int nz(Integer v) {
     return v == null ? 0 : v;
   }

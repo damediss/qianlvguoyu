@@ -15,6 +15,8 @@ public class ExamKnowledgeFixBatchEntity {
   public static final String STATUS_RUNNING = "running";
   public static final String STATUS_DONE = "done";
   public static final String STATUS_FAILED = "failed";
+  /** 人工暂停（FIX-10/v1.7）：停派发新行，已派发行跑完后收尾；剩余行保持 pending，可再次提交接着跑 */
+  public static final String STATUS_PAUSED = "paused";
 
   @TableId(type = IdType.INPUT)
   private Long id;

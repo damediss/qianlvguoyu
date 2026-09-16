@@ -12,7 +12,8 @@ import {
 } from 'antd';
 import {
   dedupStats, generateDedupList, applyDedup, rollbackDedup,
-  submitClassify, resetClassify, classifyProgress, fixList, exportFixList, applyFix, rollbackFix,
+  submitClassify, resetClassify, pauseClassify, classifyProgress, fixList, exportFixList,
+  applyFix, rollbackFix,
   qualityReport,
 } from './knowledgeFixApi';
 import type { DedupStats, FixBatch, FixItem } from './knowledgeFixApi';
@@ -166,6 +167,17 @@ const KnowledgeFixPage: React.FC = () => {
     }
   };
 
+  /** 人工暂停（FIX-10/v1.7）：停止派发新行，在飞行的行跑完后批次置 paused；继续=再点提交 */
+  const doPause = async () => {
+    try {
+      await pauseClassify();
+      message.success('暂停请求已登记，正在等待已派发的行跑完…');
+      qc.invalidateQueries({ queryKey: ['knowledgefix-progress'] });
+    } catch {
+      /* 拦截器统一提示 */
+    }
+  };
+
   const doApplyFix = async () => {
     setFixApplying(true);
     try {
@@ -288,8 +300,16 @@ const KnowledgeFixPage: React.FC = () => {
             <>
               <Space style={{ marginBottom: 16 }} wrap>
                 <Button type="primary" onClick={doSubmitClassify} disabled={batchRunning(batch)}>
-                  提交 LLM 分类批次
+                  {batch?.status === 'paused' ? '继续（提交剩余行）' : '提交 LLM 分类批次'}
                 </Button>
+                <Popconfirm
+                  title="确认暂停当前批次？"
+                  description="停止派发新行；已派发的行跑完即暂停（约 10 秒内）。要继续跑剩余行，再点「提交 LLM 分类批次」。"
+                  onConfirm={doPause}
+                  disabled={!batchRunning(batch)}
+                >
+                  <Button danger disabled={!batchRunning(batch)}>暂停</Button>
+                </Popconfirm>
                 <Popconfirm
                   title="确认复位未达标行以重跑？"
                   description="将「待关注/未分类」行复位为待分类并清空上一轮结论（已写回与待写回行不受影响）"
@@ -330,6 +350,15 @@ const KnowledgeFixPage: React.FC = () => {
                     <Descriptions.Item label="keep">{batch.keepCnt ?? 0}</Descriptions.Item>
                     <Descriptions.Item label="flag">{batch.flagCnt ?? 0}</Descriptions.Item>
                     <Descriptions.Item label="失败重试次数">{batch.failed ?? 0}</Descriptions.Item>
+                    <Descriptions.Item label="累计 LLM 调用">
+                      {batch.usage ? batch.usage.calls.toLocaleString() : '-'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="累计 tokens">
+                      {batch.usage
+                        ? `${(batch.usage.totalTokens / 10000).toFixed(1)} 万`
+                          + `（缓存命中 ${(batch.usage.cachedTokens / 10000).toFixed(1)} 万）`
+                        : '-'}
+                    </Descriptions.Item>
                   </Descriptions>
                   {batch.status === 'failed' && (
                     <Alert
@@ -338,6 +367,15 @@ const KnowledgeFixPage: React.FC = () => {
                       style={{ marginBottom: 12 }}
                       message="未达质量门禁，禁止写回"
                       description={batch.failReason ?? '未分类占比 >5% 或自一致率 <80%；可点「复位并重跑」后重新提交'}
+                    />
+                  )}
+                  {batch.status === 'paused' && (
+                    <Alert
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                      message="批次已暂停"
+                      description={`已分类 ${batch.done ?? 0}/${batch.total}，剩余 ${batch.unclassified ?? 0} 行保持待分类；再次点「提交 LLM 分类批次」即可接着跑。`}
                     />
                   )}
                   {batch.status === 'failed' && <div style={{ marginBottom: 12 }} />}

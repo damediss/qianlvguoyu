@@ -27,6 +27,17 @@ export interface FixBatch {
   failReason: string | null;
   /** 未分类行数（未进过模型；total - done - failed） */
   unclassified: number;
+  /** 累计 LLM 用量（FIX-10/v1.7；进度接口返回，供"费用超预期就暂停"判断） */
+  usage: FixBatchUsage | null;
+}
+
+/** 批次累计 LLM 用量：cachedTokens 为命中前缀缓存的输入 token */
+export interface FixBatchUsage {
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cachedTokens: number;
 }
 
 export interface FixItem {
@@ -66,6 +77,10 @@ export const submitClassify = () =>
 
 export const resetClassify = () =>
   unwrap<number>(apiClient.post('/exam/knowledgefix/classify/reset'));
+
+/** 人工暂停（FIX-10/v1.7）：停止派发新行，在飞行的行跑完后批次收尾为 paused；继续=再点提交 */
+export const pauseClassify = () =>
+  unwrap<number>(apiClient.post('/exam/knowledgefix/classify/pause'));
 
 export const classifyProgress = () =>
   unwrap<FixBatch | null>(apiClient.get('/exam/knowledgefix/classify/progress'));

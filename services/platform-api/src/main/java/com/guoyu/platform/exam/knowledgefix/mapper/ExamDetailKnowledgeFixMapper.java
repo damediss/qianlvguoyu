@@ -25,7 +25,10 @@ public interface ExamDetailKnowledgeFixMapper extends BaseMapper<ExamDetailKnowl
       + "WHERE status = 'apply' AND deleted = 0")
   int markAllApplied();
 
-  /** 待分类行（联考试题内容；供 LLM 分类输入） */
+  /**
+   * 待分类行（联考试题内容；供 LLM 分类输入）。
+   * FIX-9 范围加固（v1.7）：分类阶段再次限定 5 月以来——首轮越界装入的历史行若残留清单，绝不送模型（DEF-4/5）。
+   */
   @Select("""
       SELECT f.id AS rowId, f.detail_id AS detailId, f.old_knowledge_id AS oldKnowledgeId,
              f.course_id AS courseId, e.content, e.answer, e.resolve,
@@ -33,6 +36,7 @@ public interface ExamDetailKnowledgeFixMapper extends BaseMapper<ExamDetailKnowl
       FROM exam_detail_knowledge_fix f
       JOIN exam_exam_detail e ON e.id = f.detail_id
       WHERE f.status = 'pending' AND f.deleted = 0 AND e.deleted = 0
+        AND e.create_time >= '2026-05-01'
       ORDER BY f.id
       """)
   java.util.List<com.guoyu.platform.exam.knowledgefix.dto.PendingFixRow> selectPendingWithContent();
@@ -41,13 +45,24 @@ public interface ExamDetailKnowledgeFixMapper extends BaseMapper<ExamDetailKnowl
    * 重跑通道（FIX-3/DEF-6）：flag/rejected 行复位为 pending，清空上一轮结论
    * （new_knowledge_id/confidence/basis/llm_reason/batch_no），使批次可完整重跑；
    * 已写回（applied）与 apply 待写回行不动——它们已有结论，不能被重跑覆盖。
+   * FIX-9 范围加固（v1.7）：与分类范围同口径（5 月以来 + detail 存活），复位不会把 5 月前历史行拉回待分类。
    */
-  @Update("UPDATE exam_detail_knowledge_fix SET status = 'pending', new_knowledge_id = NULL, "
-      + "confidence = NULL, basis = NULL, llm_reason = NULL, batch_no = NULL, updated_at = NOW() "
-      + "WHERE status = 'flag' AND deleted = 0")
+  @Update("""
+      UPDATE exam_detail_knowledge_fix f
+      JOIN exam_exam_detail e ON e.id = f.detail_id
+      SET f.status = 'pending', f.new_knowledge_id = NULL, f.confidence = NULL, f.basis = NULL,
+          f.llm_reason = NULL, f.batch_no = NULL, f.updated_at = NOW()
+      WHERE f.status = 'flag' AND f.deleted = 0 AND e.deleted = 0
+        AND e.create_time >= '2026-05-01'
+      """)
   int resetFlagRows();
 
-  /** 复位行数（按状态统计，供前端提示） */
-  @Select("SELECT COUNT(*) FROM exam_detail_knowledge_fix WHERE status = #{status} AND deleted = 0")
+  /** 复位行数（按状态统计，供前端提示；FIX-9：与分类范围同口径） */
+  @Select("""
+      SELECT COUNT(*) FROM exam_detail_knowledge_fix f
+      JOIN exam_exam_detail e ON e.id = f.detail_id
+      WHERE f.status = #{status} AND f.deleted = 0 AND e.deleted = 0
+        AND e.create_time >= '2026-05-01'
+      """)
   long countByStatus(@Param("status") String status);
 }

@@ -43,16 +43,19 @@ public class KnowledgeFixController {
   private final KnowledgeFixWriteBackService writeBackService;
   private final ExamKnowledgeFixBatchMapper batchMapper;
   private final ExamDetailKnowledgeFixMapper fixMapper;
+  private final com.guoyu.platform.exam.knowledgefix.mapper.ExamKnowledgeFixLlmLogMapper llmLogMapper;
 
   @Autowired
   public KnowledgeFixController(KnowledgeFixDedupService dedupService,
       KnowledgeFixClassifyService classifyService, KnowledgeFixWriteBackService writeBackService,
-      ExamKnowledgeFixBatchMapper batchMapper, ExamDetailKnowledgeFixMapper fixMapper) {
+      ExamKnowledgeFixBatchMapper batchMapper, ExamDetailKnowledgeFixMapper fixMapper,
+      com.guoyu.platform.exam.knowledgefix.mapper.ExamKnowledgeFixLlmLogMapper llmLogMapper) {
     this.dedupService = dedupService;
     this.classifyService = classifyService;
     this.writeBackService = writeBackService;
     this.batchMapper = batchMapper;
     this.fixMapper = fixMapper;
+    this.llmLogMapper = llmLogMapper;
   }
 
   // ───────── 去重清理 ─────────
@@ -112,7 +115,19 @@ public class KnowledgeFixController {
     return ApiResponse.ok(classifyService.resetClassify());
   }
 
-  /** 最新批次进度 */
+  /**
+   * 人工暂停（FIX-10/v1.7）：登记暂停标志，编排线程在下一行派发边界停止派发；
+   * 已派发行跑完后批次收尾为 paused，剩余行保持 pending，再次「提交」即可接着跑。
+   * 权限沿用 classify:submit（与 reset 同口径，无需新迁移）。
+   */
+  @PostMapping("/classify/pause")
+  @PreAuthorize("hasAuthority('exam:knowledgefix:classify:submit')")
+  @AuditLog(module = "exam", action = "knowledgefix:classify:pause", targetType = "exam_knowledge_fix_batch")
+  public ApiResponse<Long> pauseClassify() {
+    return ApiResponse.ok(classifyService.pause());
+  }
+
+  /** 最新批次进度（含累计 LLM 用量，供"费用超预期就暂停"的现场判断） */
   @GetMapping("/classify/progress")
   @PreAuthorize("hasAuthority('exam:knowledgefix:view')")
   public ApiResponse<FixBatchVO> classifyProgress() {
@@ -124,7 +139,22 @@ public class KnowledgeFixController {
     if (list.isEmpty()) {
       return ApiResponse.ok(null);
     }
-    return ApiResponse.ok(FixBatchVO.from(list.get(0)));
+    ExamKnowledgeFixBatchEntity b = list.get(0);
+    return ApiResponse.ok(FixBatchVO.from(b, usageOf(b.getBatchNo())));
+  }
+
+  /** 批次累计用量；聚合失败不阻断进度查询（FIX-10） */
+  private com.guoyu.platform.exam.knowledgefix.dto.FixBatchUsageVO usageOf(Long batchNo) {
+    if (batchNo == null) {
+      return null;
+    }
+    try {
+      return com.guoyu.platform.exam.knowledgefix.dto.FixBatchUsageVO
+          .from(llmLogMapper.sumUsageByBatch(batchNo));
+    } catch (Exception e) {
+      log.warn("批次用量聚合失败（不影响进度查询）：batchNo={}, err={}", batchNo, e.getMessage());
+      return null;
+    }
   }
 
   /** 修正清单分页（apply/keep/flag 筛选） */

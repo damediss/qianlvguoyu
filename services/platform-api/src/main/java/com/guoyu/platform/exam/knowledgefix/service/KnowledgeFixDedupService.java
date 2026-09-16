@@ -65,7 +65,8 @@ public class KnowledgeFixDedupService {
     String backupTable = "exam_exam_detail_bak_dedup_"
         + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
     queryMapper.createBackupTable(backupTable);
-    queryMapper.backupRows(backupTable, "exam_detail_dedup_list");
+    // FIX-8：去重清单行状态为 approved
+    queryMapper.backupRows(backupTable, "exam_detail_dedup_list", "approved");
 
     int totalUpdated = 0;
     int lastId = 0;
