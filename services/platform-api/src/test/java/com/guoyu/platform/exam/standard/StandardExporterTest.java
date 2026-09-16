@@ -318,4 +318,31 @@ class StandardExporterTest {
       assertEquals("填表人：", sheet.getRow(last).getCell(0).getStringCellValue());
     }
   }
+
+  /** B8f：技能细目表——二级组内仅 1 个考评点时选考方式为"必考"，多选一为"任选一项"（2026-09-16 拍板） */
+  @Test
+  void b8f_skillSingleLeafGroupMeansBikao() throws Exception {
+    List<ExamStandardNodeEntity> ns = new ArrayList<>();
+    ns.add(node(301L, 0L, "B", 0, "工作要求B", null, new BigDecimal("0.7500"), "theory"));
+    ns.add(node(302L, 301L, "B-A", 1, "事故预防B-A", null, new BigDecimal("0.2000"), "theory"));
+    // 组 1：2 个技能叶 → 任选一项（占第 5、6 行）
+    ns.add(node(303L, 302L, "B-A-A", 2, "安全检查B-A-A", null, null, "theory"));
+    ns.add(node(304L, 303L, "B-A-A-001", 3, "检查风门损坏状况", "X", null, "skill"));
+    ns.add(node(305L, 303L, "B-A-A-002", 3, "检查风险点", "X", null, "skill"));
+    // 组 2：仅 1 个技能叶 → 必考（第 7 行，复现红框"讲授本专业技术理论知识"场景）
+    ns.add(node(306L, 302L, "B-A-B", 2, "技术传授B-A-B", null, null, "theory"));
+    ns.add(node(307L, 306L, "B-A-B-001", 3, "讲授本专业技术理论知识", "X", null, "skill"));
+    ExportTree t = StandardExportSupport.assemble(ns);
+
+    byte[] bytes = new SkillMubiaoExcelExporter().export(t,
+        "重冶备料工（二级）操作技能考评要素细目表", "职业： 重冶备料工                级别： 二",
+        l1 -> new BigDecimal("0.2000"));
+    try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+      var sheet = wb.getSheet("Sheet1");
+      assertEquals("任选一项", sheet.getRow(4).getCell(8).getStringCellValue(), "2 个考评点 → 任选一项");
+      assertEquals("001", sheet.getRow(6).getCell(9).getStringCellValue());
+      assertEquals("讲授本专业技术理论知识", sheet.getRow(6).getCell(10).getStringCellValue());
+      assertEquals("必考", sheet.getRow(6).getCell(8).getStringCellValue(), "仅 1 个考评点 → 必考");
+    }
+  }
 }

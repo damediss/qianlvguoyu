@@ -496,6 +496,8 @@ public class StandardLlmSummarizeService {
 
       // 全表后处理：X/Y/Z 比例硬护栏（超比例自动归 X）+ 同级重复/跨级异名告警
       postProcessTheoryLeaves(taskId);
+      // 技能表后处理（2026-09-16 拍板）：严格按 X 数/总数 ≥ 85% 硬护栏（超比例自动归 X）
+      postProcessSkillLeaves(taskId);
 
       ExamStandardTaskEntity done = new ExamStandardTaskEntity();
       done.setId(taskId);
@@ -1252,6 +1254,96 @@ public class StandardLlmSummarizeService {
     }
   }
 
+  /**
+   * 技能叶全表后处理（2026-09-16 拍板）：X 占比硬护栏——严格按 X 数/总数 ≥ 85%（允许全部归 X），
+   * 每张「等级×方向」表内不足档位的 LLM pending 草稿叶从树序末尾自动归 X；
+   * 人工/已审叶不动，仍不足则告警追加到任务 parseWarnings。
+   */
+  private void postProcessSkillLeaves(Long taskId) {
+    List<ExamStandardNodeEntity> leaves = nodeMapper.selectList(
+        new LambdaQueryWrapper<ExamStandardNodeEntity>()
+            .eq(ExamStandardNodeEntity::getTaskId, taskId)
+            .eq(ExamStandardNodeEntity::getNodeLevel, 3)
+            .eq(ExamStandardNodeEntity::getDimension, "skill")
+            .orderByAsc(ExamStandardNodeEntity::getNodeKey));
+    if (leaves.isEmpty()) {
+      return;
+    }
+    // 按 等级×工种 分组（nodeKey 升序保证组内树序）
+    Map<String, List<ExamStandardNodeEntity>> byScope = new LinkedHashMap<>();
+    for (ExamStandardNodeEntity leaf : leaves) {
+      byScope.computeIfAbsent(leaf.getLevelCode() + "|" + leaf.getDirection(),
+          k -> new ArrayList<>()).add(leaf);
+    }
+    List<String> warnings = new ArrayList<>();
+    for (Map.Entry<String, List<ExamStandardNodeEntity>> e : byScope.entrySet()) {
+      enforceSkillXRatio(scopeLabel(e.getKey()), e.getValue(), warnings);
+    }
+    if (warnings.isEmpty()) {
+      return;
+    }
+    log.info("[细目表] 技能全表后处理告警 {} 条：taskId={}", warnings.size(), taskId);
+    appendTaskWarnings(taskId, warnings);
+  }
+
+  /** 技能表 X 占比护栏：X 数/总数 ≥ 85%（needX = ⌈n×0.85⌉），不足的把 llm+pending 非 X 叶翻成 X */
+  private void enforceSkillXRatio(String scopeLabel, List<ExamStandardNodeEntity> scopeLeaves,
+      List<String> warnings) {
+    int n = scopeLeaves.size();
+    int needX = (int) Math.ceil(n * 0.85);
+    int xCount = 0;
+    for (ExamStandardNodeEntity leaf : scopeLeaves) {
+      if ("X".equals(leaf.getImportant())) {
+        xCount++;
+      }
+    }
+    List<ExamStandardNodeEntity> flip = pickSkillFlipToX(scopeLeaves);
+    for (ExamStandardNodeEntity leaf : flip) {
+      ExamStandardNodeEntity update = new ExamStandardNodeEntity();
+      update.setId(leaf.getId());
+      update.setImportant("X");
+      nodeMapper.updateById(update);
+      leaf.setImportant("X");
+      xCount++;
+    }
+    if (!flip.isEmpty()) {
+      log.info("[细目表] 技能表 X 占比护栏：{} 总数={} X:{}→{}（超额自动归 X）",
+          scopeLabel, n, xCount - flip.size(), xCount);
+    }
+    int remain = needX - xCount;
+    if (remain > 0) {
+      warnings.add("LLM护栏：" + scopeLabel + " 技能表 X 占比不足 85%（还差 " + remain
+          + " 个，涉及人工或已审叶未自动调整），请人工处理");
+    }
+  }
+
+  /**
+   * 技能表 X 占比护栏的纯函数部分（2026-09-16 拍板：严格按 X 数/总数 ≥ 85%，允许全部归 X）：
+   * 返回应从树序末尾翻成 X 的叶子（仅取 source=llm 且 reviewStatus=pending 的非 X 叶，至多翻到达标）。
+   */
+  public static List<ExamStandardNodeEntity> pickSkillFlipToX(
+      List<ExamStandardNodeEntity> scopeLeaves) {
+    int n = scopeLeaves.size();
+    int needX = (int) Math.ceil(n * 0.85);
+    long xCount = scopeLeaves.stream().filter(l -> "X".equals(l.getImportant())).count();
+    int deficit = (int) (needX - xCount);
+    if (deficit <= 0) {
+      return List.of();
+    }
+    List<ExamStandardNodeEntity> out = new ArrayList<>();
+    for (int i = scopeLeaves.size() - 1; i >= 0 && out.size() < deficit; i--) {
+      ExamStandardNodeEntity leaf = scopeLeaves.get(i);
+      if ("X".equals(leaf.getImportant())) {
+        continue;
+      }
+      if (!"llm".equals(leaf.getSource()) || !"pending".equals(leaf.getReviewStatus())) {
+        continue;
+      }
+      out.add(leaf);
+    }
+    return out;
+  }
+
   /** 从树序末尾往前把超额档位的 LLM pending 草稿叶改为 X，返回实际调整数 */
   private int flipExcessImportant(List<ExamStandardNodeEntity> sortedLeaves, String from, int excess) {
     int flipped = 0;
@@ -1430,10 +1522,10 @@ public class StandardLlmSummarizeService {
           dimension);
       return created;
     }
-    // 理论通道：越档产出归入最低允许档（不丢弃考评点，防空结果）；
-    // 同小节内相同/相近考评点自动合并（国标：内容相同或相近的考评点不重复出现）
-    List<StandardLlmPoint> points = skill ? result.getPoints()
-        : dedupSectionPoints(clampImportants(result.getPoints(), importants));
+    // 小节级档位钳制两通道统一（2026-09-16 拍板 D）：LLM 越档产出归入最低允许档（不丢弃考评点，防空结果）；
+    // 同小节相同/相近考评点自动合并仅理论通道执行（技能通道保持不去重）
+    List<StandardLlmPoint> clamped = clampImportants(result.getPoints(), importants);
+    List<StandardLlmPoint> points = skill ? clamped : dedupSectionPoints(clamped);
     for (StandardLlmPoint point : points) {
       created.add(insertLeaf(l2, dimension, point.title(), point.important(), "llm",
           created.size(), tenantId));
