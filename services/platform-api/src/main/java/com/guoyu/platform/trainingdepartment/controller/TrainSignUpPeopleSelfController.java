@@ -6,6 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.trainingdepartment.dto.PlatformUserQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.SignUpPeopleBatchReq;
 import com.guoyu.platform.trainingdepartment.dto.SignUpPeopleHistorySyncReq;
+import com.guoyu.platform.trainingdepartment.dto.SignUpStudentImportByIdCardReq;
 import com.guoyu.platform.trainingdepartment.dto.SignUpStudentImportReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSignUpPeopleSelfCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainSignUpPeopleSelfQueryReq;
@@ -127,6 +128,15 @@ public class TrainSignUpPeopleSelfController {
   @AuditLog(module = "training", action = "sign-up-people:import-students", targetType = "sign-up-people")
   public ApiResponse<SignUpPeopleImportResultVO> importStudents(@Valid @RequestBody SignUpStudentImportReq req) {
     return ApiResponse.ok(importService.importFromStudents(req.getSignUpId(), req.getIds()));
+  }
+
+  /** 按身份证号从学员库导入（一行一个） */
+  @PostMapping("/sign-up-people/import/students-by-idcard")
+  @PreAuthorize("hasAuthority('train:sign-up-people:create')")
+  @AuditLog(module = "training", action = "sign-up-people:import-students-by-idcard", targetType = "sign-up-people")
+  public ApiResponse<SignUpPeopleImportResultVO> importStudentsByIdCard(
+      @Valid @RequestBody SignUpStudentImportByIdCardReq req) {
+    return ApiResponse.ok(importService.importFromStudentsByIdCard(req.getSignUpId(), req.getIdCards()));
   }
 
   /** 学员库候选列表（对齐 studentlistAction，供从学员导入弹窗使用） */

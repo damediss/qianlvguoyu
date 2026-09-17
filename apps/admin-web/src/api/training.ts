@@ -3456,6 +3456,13 @@ export function importSignUpStudents(signUpId: number | string, ids: number[]) {
   );
 }
 
+/** 按身份证号从学员库导入报名/资料收集人员（一行一个） */
+export function importSignUpStudentsByIdCard(signUpId: number | string, idCards: string) {
+  return unwrap<SignUpPeopleImportResult>(
+    apiClient.post(`${BASE}/sign-up-people/import/students-by-idcard`, { signUpId, idCards }),
+  );
+}
+
 /** 按身份证从历史信息收集/扫码填报补全当前计划空字段 */
 export function syncSignUpPeopleHistory(signUpId: number | string, ids?: number[]) {
   return unwrap<SignUpPeopleHistorySyncResult>(

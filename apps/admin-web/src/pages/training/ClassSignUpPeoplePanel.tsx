@@ -136,6 +136,9 @@ export function ClassSignUpPeoplePanel({
   const [templateDownloading, setTemplateDownloading] = useState(false);
   const [importStudentOpen, setImportStudentOpen] = useState(false);
   const [importStudentLoading, setImportStudentLoading] = useState(false);
+  const [importByIdCardOpen, setImportByIdCardOpen] = useState(false);
+  const [importByIdCardLoading, setImportByIdCardLoading] = useState(false);
+  const [idCardText, setIdCardText] = useState('');
   const [historySyncLoading, setHistorySyncLoading] = useState(false);
   const [studentKeyword, setStudentKeyword] = useState('');
   const [studentPage, setStudentPage] = useState(1);
@@ -515,6 +518,43 @@ export function ClassSignUpPeoplePanel({
     }
   };
 
+  const showImportResult = (result: Awaited<ReturnType<typeof trainApi.importSignUpStudentsByIdCard>>) => {
+    const sync = result.platformUserSync;
+    const syncHint = sync
+      ? `，App账号就绪 ${sync.loginReady ?? 0}（新建 ${sync.created ?? 0}/复用 ${sync.reused ?? 0}）`
+      : '';
+    const skippedHint = result.skipped > 0 ? `，跳过重复 ${result.skipped} 人` : '';
+    const errHint = result.errors?.length ? `；${result.errors.slice(0, 3).join('；')}` : '';
+    if (result.inserted > 0) {
+      message.success(`导入成功: ${result.inserted} 人${skippedHint}${syncHint}${errHint}`);
+    } else if (result.errors?.length) {
+      message.warning(`未导入新人${skippedHint}${errHint}`);
+    } else {
+      message.success(`导入完成${skippedHint}${syncHint}`);
+    }
+  };
+
+  const handleImportStudentsByIdCard = async () => {
+    if (!idCardText.trim()) {
+      message.error('请输入身份证号');
+      return;
+    }
+    setImportByIdCardLoading(true);
+    try {
+      const result = await trainApi.importSignUpStudentsByIdCard(signUpId, idCardText);
+      showImportResult(result);
+      setImportByIdCardOpen(false);
+      setIdCardText('');
+      setImportStudentOpen(false);
+      setSelectedStudentIds([]);
+      notifyChanged();
+    } catch {
+      // interceptor
+    } finally {
+      setImportByIdCardLoading(false);
+    }
+  };
+
   const handleSyncHistory = () => {
     const ids = selectedPeopleIds.length ? selectedPeopleIds : undefined;
     const scopeText = ids?.length
@@ -766,13 +806,18 @@ export function ClassSignUpPeoplePanel({
         width={720}
         destroyOnHidden
       >
-        <Input
-          placeholder="搜索学员"
-          value={studentKeyword}
-          onChange={(e) => { setStudentKeyword(e.target.value); setStudentPage(1); }}
-          allowClear
-          style={{ marginBottom: 12, width: 260 }}
-        />
+        <Space style={{ marginBottom: 12 }} wrap>
+          <Input
+            placeholder="搜索学员"
+            value={studentKeyword}
+            onChange={(e) => { setStudentKeyword(e.target.value); setStudentPage(1); }}
+            allowClear
+            style={{ width: 260 }}
+          />
+          <Button onClick={() => { setIdCardText(''); setImportByIdCardOpen(true); }}>
+            按身份证号导入
+          </Button>
+        </Space>
         <Table
           rowKey="id"
           loading={studentLoading}
@@ -800,6 +845,28 @@ export function ClassSignUpPeoplePanel({
           size="small"
           showSizeChanger={false}
         />
+      </Modal>
+
+      <Modal
+        title="按身份证号导入"
+        open={importByIdCardOpen}
+        onCancel={() => { setImportByIdCardOpen(false); setIdCardText(''); }}
+        footer={null}
+        maskClosable={false}
+        width={420}
+        destroyOnHidden
+      >
+        <Input.TextArea
+          autoSize={{ minRows: 4, maxRows: 10 }}
+          value={idCardText}
+          onChange={(e) => setIdCardText(e.target.value)}
+          placeholder="请输入身份证,一行一个"
+        />
+        <div style={{ marginTop: 12, textAlign: 'right' }}>
+          <Button type="primary" loading={importByIdCardLoading} onClick={handleImportStudentsByIdCard}>
+            确定
+          </Button>
+        </div>
       </Modal>
 
       <Modal

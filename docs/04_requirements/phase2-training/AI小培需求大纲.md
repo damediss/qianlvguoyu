@@ -14,9 +14,9 @@
 
 > - 画布：`ai-xiaopei-digital-human-plan.canvas.tsx`  
 
-> 状态：**P0 已落地**；**WeKnora「AI助教_智能问答」已接入**；P1 TTS / P2 数字人 SDK 未做  
+> 状态：**对话体验改造已落地**（ChatGPT 风首屏 / 报考结论 / 上下文注入 / 快捷折叠）；知识库政策内容运营补齐中；服务端会话表已占位  
 
-> 编写日期：2026-09-10；实现：2026-09-10  
+> 编写日期：2026-09-10；实现：2026-09-10；P1/P2：2026-09-16；对话改造：2026-09-16  
 
 
 
@@ -112,7 +112,7 @@
 
 | API | `GET/POST .../assistant/bootstrap|chat`（不变） |
 
-| 壳 | `pages/class/components/XiaopeiSheet.vue` + `workspace.vue` FAB |
+| 壳 | `XiaopeiSheet` + `XiaopeiHost`（workspace / syncHome / syncExam / preciseHome） |
 
 | 全页 | `pages/class/assistant.vue` |
 
@@ -134,9 +134,13 @@
 
 | **P0.5** 合并入口、删旧磁贴 | **已实现**（学员/班长） |
 
-| **P1** TTS + 场景页唤起 | 待做 |
+| **P1** TTS + 场景页唤起 + 当前题讲题 + 端侧会话 | **已实现**（服务端会话表可选后置） |
 
-| **P2** 数字人 SDK + 讲题链 | 待做 |
+| **P2** 拍照/粘贴讲题 + 数字人壳 | **已实现**（CSS 壳 + 播报动效；厂商口型 SDK 未做） |
+
+| **P2.5** 语音输入（端侧 ASR） | **已实现**（H5 Web Speech / App plus.speech 按住说话；小程序暂不支持；服务端 ASR 后置） |
+
+| **对话体验改造** ChatGPT 风 + 报考结论 + 上下文 | **已实现**（2026-09-16；服务端会话读写下迭代） |
 
 
 
@@ -168,6 +172,6 @@
 
 
 
-P0 用半屏立绘小培落地四类必答意图；数字来自同步学 overview / 精准学 Hub；开练只深链，不新建答卷域。
+P0～P2.5：半屏小培可在班级 / 同步学 / 精准学唤起；进度走 Tool；自由问与拍照走 WeKnora；做题页可「讲讲这题」（解析→WeKnora）；TTS 播报 + 端侧语音输入（按住说话）+ 端侧续聊。厂商数字人 SDK 另立。
 
 

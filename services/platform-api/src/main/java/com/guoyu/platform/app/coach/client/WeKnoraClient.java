@@ -94,6 +94,19 @@ public class WeKnoraClient {
       List<String> knowledgeBaseIds,
       String agentId,
       List<String> imageDataUrls) {
+    return knowledgeChat(sessionId, query, knowledgeBaseIds, agentId, imageDataUrls, false);
+  }
+
+  /**
+   * @param preferKnowledgeChat true 时强制走 /knowledge-chat（更快，适合小培自由问答）
+   */
+  public WeKnoraChatResult knowledgeChat(
+      String sessionId,
+      String query,
+      List<String> knowledgeBaseIds,
+      String agentId,
+      List<String> imageDataUrls,
+      boolean preferKnowledgeChat) {
     ensureConfigured();
     if (!StringUtils.hasText(sessionId)) {
       throw new AppSmsException(-1, "sessionId 不能为空");
@@ -108,7 +121,8 @@ public class WeKnoraClient {
     String agent = StringUtils.hasText(agentId) ? agentId : properties.defaultAgentId();
     boolean hasImages = imageDataUrls != null && !imageDataUrls.isEmpty();
     // 带图时走 knowledge-chat（VLM 识图 + RAG）；agent-chat 智能推理模式常出现「看不到图片」
-    boolean useAgentChat = !hasImages
+    boolean useAgentChat = !preferKnowledgeChat
+        && !hasImages
         && (properties.useAgentChat()
         || (StringUtils.hasText(agent) && !agent.startsWith("builtin-")));
 
@@ -204,10 +218,12 @@ public class WeKnoraClient {
         if ("thinking".equals(responseType) && !node.path("done").asBoolean(false)) {
           thinking.append(node.path("content").asText(""));
         }
-        // agent-chat 可能把最终文本放在 tool_result 等事件，answer 为空时兜底
+        // agent-chat 的 tool_result 常是「Tool completed / grep_results」调试碎片，禁止当作用户可见答案
         if ("tool_result".equals(responseType)) {
           String toolContent = node.path("content").asText("");
-          if (StringUtils.hasText(toolContent) && !StringUtils.hasText(answer)) {
+          if (StringUtils.hasText(toolContent)
+              && !StringUtils.hasText(answer)
+              && !looksLikeToolNoise(toolContent)) {
             answer.append(toolContent);
           }
         }
@@ -230,14 +246,42 @@ public class WeKnoraClient {
       }
     }
 
-    String finalAnswer = answer.toString().trim();
+    String finalAnswer = sanitizeUserVisibleAnswer(answer.toString().trim());
     if (!StringUtils.hasText(finalAnswer)) {
-      finalAnswer = thinking.toString().trim();
+      finalAnswer = sanitizeUserVisibleAnswer(thinking.toString().trim());
     }
-    if (!StringUtils.hasText(finalAnswer)) {
+    if (!StringUtils.hasText(finalAnswer) || looksLikeToolNoise(finalAnswer)) {
       finalAnswer = "未从知识库检索到足够信息，请换个问法或联系管理员补充资料。";
     }
     return new WeKnoraChatResult(finalAnswer, references, sessionTitle);
+  }
+
+  /** 过滤智能体 Tool/检索调试噪音，避免直接展示给学员。 */
+  static boolean looksLikeToolNoise(String text) {
+    if (!StringUtils.hasText(text)) {
+      return false;
+    }
+    String t = text.trim();
+    return t.regionMatches(true, 0, "Tool completed", 0, "Tool completed".length())
+        || t.contains("grep_results")
+        || t.contains("payload omitted")
+        || t.regionMatches(true, 0, "Keyword search", 0, "Keyword search".length())
+        || t.startsWith("tool_result")
+        || (t.length() < 80 && t.contains("Tool completed"));
+  }
+
+  static String sanitizeUserVisibleAnswer(String text) {
+    if (!StringUtils.hasText(text)) {
+      return text;
+    }
+    String cleaned = text
+        .replaceAll("(?im)^\\s*Tool completed.*$", "")
+        .replaceAll("(?im)^\\s*Keyword search.*$", "")
+        .replaceAll("(?is)\\(grep_results;.*?\\)", "")
+        .replaceAll("(?is)payload omitted from history", "")
+        .replaceAll("(?m)^[ \\t]*\\n", "\n")
+        .trim();
+    return looksLikeToolNoise(cleaned) ? "" : cleaned;
   }
 
   /**

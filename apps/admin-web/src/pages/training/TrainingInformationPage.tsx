@@ -232,6 +232,9 @@ export function TrainingInformationPage() {
   const [templateDownloading, setTemplateDownloading] = useState(false);
   const [importStudentOpen, setImportStudentOpen] = useState(false);
   const [importStudentLoading, setImportStudentLoading] = useState(false);
+  const [importByIdCardOpen, setImportByIdCardOpen] = useState(false);
+  const [importByIdCardLoading, setImportByIdCardLoading] = useState(false);
+  const [idCardText, setIdCardText] = useState('');
   const [studentKeyword, setStudentKeyword] = useState('');
   const [studentPage, setStudentPage] = useState(1);
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
@@ -434,6 +437,43 @@ export function TrainingInformationPage() {
       refetchPeople();
     } catch {
       setImportStudentLoading(false);
+    }
+  };
+
+  const handleImportStudentsByIdCard = async () => {
+    if (!activeSignUp?.id) {
+      message.error('请先选择报名计划');
+      return;
+    }
+    if (!idCardText.trim()) {
+      message.error('请输入身份证号');
+      return;
+    }
+    setImportByIdCardLoading(true);
+    try {
+      const result = await trainApi.importSignUpStudentsByIdCard(activeSignUp.id, idCardText);
+      const sync = result.platformUserSync;
+      const syncHint = sync
+        ? `，App账号就绪 ${sync.loginReady ?? 0}（新建 ${sync.created ?? 0}/复用 ${sync.reused ?? 0}）`
+        : '';
+      const skippedHint = result.skipped > 0 ? `，跳过重复 ${result.skipped} 人` : '';
+      const errHint = result.errors?.length ? `；${result.errors.slice(0, 3).join('；')}` : '';
+      if (result.inserted > 0) {
+        message.success(`导入成功: ${result.inserted} 人${skippedHint}${syncHint}${errHint}`);
+      } else if (result.errors?.length) {
+        message.warning(`未导入新人${skippedHint}${errHint}`);
+      } else {
+        message.success(`导入完成${skippedHint}${syncHint}`);
+      }
+      setImportByIdCardOpen(false);
+      setIdCardText('');
+      closeImportStudentModal();
+      setSelectedPeopleIds([]);
+      refetchPeople();
+    } catch {
+      // interceptor
+    } finally {
+      setImportByIdCardLoading(false);
     }
   };
 
@@ -1226,6 +1266,12 @@ export function TrainingInformationPage() {
             style={{ width: 200, marginRight: 10 }}
             allowClear
           />
+          <Button
+            style={{ marginRight: 10 }}
+            onClick={() => { setIdCardText(''); setImportByIdCardOpen(true); }}
+          >
+            按身份证号导入
+          </Button>
           <Button type="primary" loading={importStudentLoading} onClick={handleImportStudents}>
             导入选中学员
           </Button>
@@ -1258,6 +1304,28 @@ export function TrainingInformationPage() {
             }),
           }}
         />
+      </Modal>
+
+      <Modal
+        title="按身份证号导入"
+        open={importByIdCardOpen}
+        onCancel={() => { setImportByIdCardOpen(false); setIdCardText(''); }}
+        footer={null}
+        maskClosable={false}
+        width={420}
+        destroyOnHidden
+      >
+        <Input.TextArea
+          autoSize={{ minRows: 4, maxRows: 10 }}
+          value={idCardText}
+          onChange={(e) => setIdCardText(e.target.value)}
+          placeholder="请输入身份证,一行一个"
+        />
+        <div style={{ marginTop: 12, textAlign: 'right' }}>
+          <Button type="primary" loading={importByIdCardLoading} onClick={handleImportStudentsByIdCard}>
+            确定
+          </Button>
+        </div>
       </Modal>
 
       <Modal

@@ -421,7 +421,7 @@ cd apps/admin-web && npm run dev
 
 ## 项目级踩坑(摘自 Mavis memory)
 
-新进项目的 Agent **必须**先读这 25 条,能少走 3 天弯路:
+新进项目的 Agent **必须**先读这 26 条,能少走 3 天弯路:
 
 1. **MyBatis-Plus 默认 snake_case** — Flyway 迁移的列名必须 snake_case,跟 Java 命名策略对齐(2026-06-04)
 2. **`setDeleted(1) + updateById` 永远是假删** — 软删统一用 `mapper.deleteById(...)`,全项目禁止 `setDeleted(1)`(2026-06-09)
@@ -448,3 +448,4 @@ cd apps/admin-web && npm run dev
 23. **mysql-connector-j 默认把 TINYINT(1) 映射为 Boolean(tinyInt1isBit=true)** — 会丢失 level=2/3 这类真实数值(`value instanceof Number` 为 false → 解析得 null),PHP 老库大量 tinyint(1) 存枚举/层级值。凡接 PHP 库的 JDBC URL 必须加 `tinyInt1isBit=false`;解析层对 Boolean 做 0/1 兜底。2026-08-04 权重解析因此全空、计划生成权重兜底失效(2026-08-04)
 24. **雪花 ID 超 JS Number 安全整数(2^53)** — App 端接口响应中的雪花 id(planId/dayId/mockPaperId)必须以字符串下发,前端 JSON.parse 会把 2e18 级整数四舍五入成别的值(2084569567062556674 → ...6700),回传即"记录不存在"。参照竞赛模块 `@JsonSerialize(using=ToStringSerializer.class)` 或视图层直接 String.valueOf(2026-08-04)
 25. **Flyway 迁移连接必须与业务 Druid 池分离** — Druid wall 会拦截迁移脚本中的 `PREPARE/EXECUTE` 动态 SQL(双库分叉场景的条件化 DDL 必用此写法,见踩坑 #7),空库重建/新环境首次部署必撞。`application.yml` 已通过 `spring.flyway.url/user/password = ${spring.datasource.*}` 让 Flyway 用独立直连(引用数据源属性防环境间配置漂移),勿删;也不要为此给 wall 开 none-base-statement-allow(等于给业务池放行动态 SQL)。**属性名是 `user` 不是 `username`**——写 username 会被静默忽略,JDBC 驱动回退 OS 用户名,启动报 Access denied for 'xxx'。新迁移继续沿用条件化 PREPARE 约定,不改已应用的历史脚本(2026-09-07 生产部署:V20260904_011 触发)
+26. **诊断"外网 IP 拉取超时"先排自回环,修复优先复用既有 helper 而非改配置/改底层** — 后端只监听 `127.0.0.1:8080`,nginx 仅代理 80→`127.0.0.1:8080`,8080 不对公网开放。生产把 `platform.cdn.url` 配成 `http://{本机公网IP}:8080/api/exam/files` 后,任何"本地缺失候选回退拉 `cdnUrl`"的代码 = **自己请求自己的公网 IP:8080,必连不上,每个候选干等连接超时**(2026-09-15 默认模板导出 364 次失败、单次 18~22 分钟,前端轮询先超时报"未找到压缩包")。排查要点:(a) 日志里的"外网 IP"先核是不是本机公网 IP + 该端口是否对本机可达,别默认当成远端 CDN;(b) 本机文件解析直接读盘,不要回环 HTTP 求自己——复用 `CdnFileServeHelper`(已实现 `cdn.path` + `file.local-root` 双根 + 远端回退),别新写解析逻辑也别去改 `FileApplicationService.openInputStream` 这类底层;(c) 自链接(`/exam/files/`、`cdnUrl`/`publicUrl` 前缀)剥成相对路径查盘,远端回退若指向自己也跳过;(d) 单次批量任务共用一个 resolver 缓存命中/未命中,同路径不重复探测;(e) 无记录槽位跳过约定路径盲试;(f) 远端拉图连接超时按秒级收敛(3s)。**流程教训**:用户说"先不动代码"时仍要把根因判准,别停在"改 `CDN_URL=localhost` 配置"这种治标层面——治标方案依赖运维改对配置、且仍走 HTTP,不如直接删自回环、双根读盘(2026-09-15 `dbac831` 修复)
