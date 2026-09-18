@@ -261,14 +261,14 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
     {
       title: '工种',
       dataIndex: 'directions',
-      width: 180,
+      width: 140,
       render: (dirs: string[]) =>
         dirs.length === 1 && dirs[0] === '默认' ? '（不分工种）' : dirs.join('、'),
     },
     {
       title: '原始文件',
       dataIndex: 'fileName',
-      width: 200,
+      width: 100,
       ellipsis: true,
       render: (name: string | null) =>
         name ? (
@@ -280,7 +280,7 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
     {
       title: '状态',
       dataIndex: 'status',
-      width: 110,
+      width: 80,
       render: (s: StandardTask['status']) => (
         <Tag
           icon={s === 'llm_running' ? <LoadingOutlined spin /> : undefined}
@@ -326,7 +326,7 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
     {
       title: '上传时间',
       dataIndex: 'createdAt',
-      width: 150,
+      width: 130,
       render: (v: string | null) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'),
     },
     {
