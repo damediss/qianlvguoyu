@@ -14,11 +14,11 @@ class GraduationCertifiedRosterExportServiceTest {
 
   @Test
   void formatLevelLabel_usesRensheSeriesTitle() {
-    assertEquals("五级/初级工", GraduationCertifiedRosterExportService.formatLevelLabel(1));
-    assertEquals("四级/中级工", GraduationCertifiedRosterExportService.formatLevelLabel(2));
+    assertEquals("一级/高级技师", GraduationCertifiedRosterExportService.formatLevelLabel(1));
+    assertEquals("二级/技师", GraduationCertifiedRosterExportService.formatLevelLabel(2));
     assertEquals("三级/高级工", GraduationCertifiedRosterExportService.formatLevelLabel(3));
-    assertEquals("二级/技师", GraduationCertifiedRosterExportService.formatLevelLabel(4));
-    assertEquals("一级/高级技师", GraduationCertifiedRosterExportService.formatLevelLabel(5));
+    assertEquals("四级/中级工", GraduationCertifiedRosterExportService.formatLevelLabel(4));
+    assertEquals("五级/初级工", GraduationCertifiedRosterExportService.formatLevelLabel(5));
     assertEquals("", GraduationCertifiedRosterExportService.formatLevelLabel(null));
     assertEquals("", GraduationCertifiedRosterExportService.formatLevelLabel(0));
     assertEquals("", GraduationCertifiedRosterExportService.formatLevelLabel(9));

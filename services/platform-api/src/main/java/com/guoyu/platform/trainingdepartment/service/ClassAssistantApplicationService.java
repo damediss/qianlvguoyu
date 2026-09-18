@@ -686,14 +686,8 @@ public class ClassAssistantApplicationService {
           + "讲解，不会换成知识库里的其它题目。你可以粘贴题干，我按考点讲解。"));
     }
 
-    // 深链用请求里的 examId，避免再查 sync overview
-    Long examId = body == null ? null : toLong(body.get("examId"));
-    if (examId != null && examId > 0) {
-      actions.add(nav("打开同步练习", "/pages/exam/syncHome?exam_id=" + examId));
-    } else {
-      actions.add(nav("打开同步练习", "/pages/exam/syncHome"));
-    }
-    actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
+    // 按场景决定是否给深链：刷题页不再塞「打开同步练习 / 精准学」
+    appendSceneAwarePracticeActions(actions, classId, body);
     Map<String, Object> out = pack("explain_question", primary, replies, cards, actions);
     out.put("source", "resolve+" + source);
     return out;
@@ -891,13 +885,7 @@ public class ClassAssistantApplicationService {
         cards.add(card);
       }
       List<Map<String, Object>> actions = new ArrayList<>();
-      Long examId = body == null ? null : toLong(body.get("examId"));
-      if (examId != null && examId > 0) {
-        actions.add(nav("打开同步练习", "/pages/exam/syncHome?exam_id=" + examId));
-      } else {
-        actions.add(nav("打开同步练习", "/pages/exam/syncHome"));
-      }
-      actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
+      appendSceneAwarePracticeActions(actions, classId, body);
       Map<String, Object> out = pack("ask_kb", primary, replies, cards, actions);
       out.put("sessionId", sessionId);
       out.put("kbName", kbName);
@@ -1205,16 +1193,38 @@ public class ClassAssistantApplicationService {
         + "闲聊、时事或与学习无关的百科问题我答不准，也不乱编。"
         + "你可以问「能不能考过」「我有多少错题」「讲讲这题」，或直接粘贴题干。";
     List<Map<String, Object>> actions = new ArrayList<>();
-    Long examId = body == null ? null : toLong(body.get("examId"));
-    if (examId != null && examId > 0) {
-      actions.add(nav("打开同步练习", "/pages/exam/syncHome?exam_id=" + examId));
-    }
-    if (classId != null) {
-      actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
-    }
+    appendSceneAwarePracticeActions(actions, classId, body);
     Map<String, Object> out = pack("out_of_scope", primary, List.of(textReply(tip)), List.of(), actions);
     out.put("source", "scope_guard");
     return out;
+  }
+
+  /**
+   * 场景感知深链：已在同步刷题/同步首页则不再推「打开同步练习」；
+   * 刷题中不推「打开精准学」（避免打断做题）；已在精准学首页则不推精准学。
+   */
+  private static void appendSceneAwarePracticeActions(
+      List<Map<String, Object>> actions, Long classId, Map<String, Object> body) {
+    if (actions == null) {
+      return;
+    }
+    String scene = body == null || body.get("scene") == null
+        ? "" : String.valueOf(body.get("scene")).trim();
+    boolean onSyncExam = "sync_exam".equals(scene);
+    boolean onSyncHome = "sync_home".equals(scene);
+    boolean onPrecise = "precise_home".equals(scene);
+    Long examId = body == null ? null : toLong(body.get("examId"));
+
+    if (!onSyncExam && !onSyncHome) {
+      if (examId != null && examId > 0) {
+        actions.add(nav("打开同步练习", "/pages/exam/syncHome?exam_id=" + examId));
+      } else {
+        actions.add(nav("打开同步练习", "/pages/exam/syncHome"));
+      }
+    }
+    if (!onSyncExam && !onPrecise && classId != null) {
+      actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
+    }
   }
 
   private ClassCertFacts loadClassCertFacts(TrainInfoClassEntity clazz, SyncSnapshot sync) {
