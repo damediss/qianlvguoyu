@@ -158,12 +158,14 @@ class KnowledgeFixClassifyServiceTest {
     return r;
   }
 
-  /** 课程 190 树：L2=201 蒸发系统（L3: 301 蒸发器跑碱处理 / 302 蒸发站真空调整）；L2=202 焙烧系统（L3: 303 焙烧温度控制）；老节点 4192 工匠精神培养 */
+  /** 课程 190 树：L2=201 蒸发系统（L3: 301 蒸发器跑碱处理 / 302 蒸发站真空调整）；L2=202 焙烧系统（L3: 303 焙烧温度控制）；
+   *  L2=203 安全规程（秃章节，无 L3——业务裁定"题可挂 L2"直收尾用）；老节点 4192 工匠精神培养 */
   private List<KnowledgeNodeRow> courseTree() {
     List<KnowledgeNodeRow> nodes = new ArrayList<>();
     nodes.add(node(200, 190, 0, "蒸发与焙烧单元", 1, "X"));
     nodes.add(node(201, 190, 200, "蒸发系统", 2, "X"));
     nodes.add(node(202, 190, 200, "焙烧系统", 2, "Y"));
+    nodes.add(node(203, 190, 200, "安全规程", 2, "X"));
     nodes.add(node(301, 190, 201, "蒸发器跑碱处理", 3, "X"));
     nodes.add(node(302, 190, 201, "蒸发站真空调整", 3, "Y"));
     nodes.add(node(303, 190, 202, "焙烧温度控制", 3, "Z"));
@@ -672,6 +674,105 @@ class KnowledgeFixClassifyServiceTest {
     assertTrue(p.startsWith("【候选鉴定点（L3）】"), "候选清单应前置");
     assertTrue(l3 >= 0 && rule > l3 && q > rule && marker > q,
         "结构应为 候选清单 → 输出要求 → 【试题】 → 【当前标记】");
+  }
+
+  // ───────── "题可挂 L2"业务裁定（KF-34~36） ─────────
+
+  /**
+   * KF-34：模型选中的 L2 下无存活 L3（秃章节）→ 直接以 L2 收尾（apply，固定置信 0.5，basis=l2-direct），
+   * 跳过阶段 2（零 L3 采样调用）；整批无三采样行 → 自一致率为 null，门禁率项不适用，批次 DONE
+   */
+  @Test
+  void kf34_childlessL2ConcludesDirectlyAtL2() {
+    stubCommonHappyPath();
+    when(llmClient.chatCompletionDetailed(anyString(), anyString(), anyString(), anyString(),
+        ArgumentMatchers.contains("候选分类（L2）"), anyInt(), any(), any(), anyBoolean(),
+        anyLong(), anyInt()))
+        .thenAnswer(inv -> result("{\"l2_id\":203}"));
+    List<PendingFixRow> rows = List.of(row(1, 1, 4192, 190, "安全规程相关题"));
+    when(fixMapper.selectPendingWithContent()).thenAnswer(inv -> rows.stream()
+        .filter(r -> "pending".equals(statusByRowId.get(r.getRowId()))).toList());
+
+    service.processBatch(BATCH_ID, BATCH_NO, TENANT, USER, cfgFlash, cfgPro);
+
+    // 直挂 L2：newKnowledgeId=203、固定置信 0.5、basis=l2-direct（capture 精确断言）
+    org.mockito.ArgumentCaptor<java.math.BigDecimal> confCap =
+        org.mockito.ArgumentCaptor.forClass(java.math.BigDecimal.class);
+    org.mockito.ArgumentCaptor<String> basisCap = org.mockito.ArgumentCaptor.forClass(String.class);
+    verify(fixMapper).updateClassifyResult(anyLong(), ArgumentMatchers.eq(203), confCap.capture(),
+        basisCap.capture(), any(), ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_APPLY));
+    assertEquals(0, confCap.getValue().compareTo(java.math.BigDecimal.valueOf(0.5)));
+    assertEquals("l2-direct", basisCap.getValue());
+    // 阶段 2 零调用（省 3 次采样）
+    verify(llmClient, org.mockito.Mockito.never()).chatCompletionDetailed(anyString(), anyString(),
+        anyString(), anyString(), ArgumentMatchers.contains("候选鉴定点（L3）"), anyInt(), any(),
+        any(), anyBoolean(), anyLong(), anyInt());
+    // 无三采样行：自一致率 null（非 0），率项不适用，批次 DONE
+    assertEquals(null, batch.getSelfConsistencyRate());
+    assertEquals(1, nz(batch.getDone()));
+    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_DONE, batch.getStatus());
+  }
+
+  /** KF-35：确定性守卫拒绝（L2 越界）不计失败重试、不计熔断——大量越界行也不会触发熔断 */
+  @Test
+  void kf35_guardRejectDoesNotCountTowardBreaker() {
+    stubCommonHappyPath();
+    int n = 12; // 阈值 5 的 2.4 倍：若越界计入失败，第 6 行起就会被熔断
+    List<PendingFixRow> rows = new ArrayList<>();
+    for (int i = 1; i <= n; i++) {
+      rows.add(row(i, i, 4192, 190, "蒸发器跑碱的原因" + i));
+    }
+    batch.setTotal(n);
+    when(fixMapper.selectPendingWithContent()).thenAnswer(inv -> rows.stream()
+        .filter(r -> "pending".equals(statusByRowId.get(r.getRowId()))).toList());
+    // stage1 恒返回候选外 id → 全部行守卫拒绝
+    when(llmClient.chatCompletionDetailed(anyString(), anyString(), anyString(), anyString(),
+        ArgumentMatchers.contains("候选分类（L2）"), anyInt(), any(), any(), anyBoolean(),
+        anyLong(), anyInt()))
+        .thenAnswer(inv -> result("{\"l2_id\":99999}"));
+
+    service.processBatch(BATCH_ID, BATCH_NO, TENANT, USER, cfgFlash, cfgPro);
+
+    // 越界不是服务故障：failed 计数一次都没动，且没有熔断把行跳过
+    verify(batchMapper, org.mockito.Mockito.never()).incrementFailed(BATCH_NO);
+    // 行保持 pending 重试至轮次耗尽，最终被收尾扫为 unclassified-flag（可 reset 重跑）
+    for (int i = 1; i <= n; i++) {
+      assertEquals(ExamDetailKnowledgeFixEntity.STATUS_FLAG, statusByRowId.get((long) i),
+          "第 " + i + " 行应被收尾标记（不是被熔断跳过）");
+    }
+  }
+
+  /** KF-36：混合批——L2 直收尾行不稀释自一致率（率只按三采样行计算） */
+  @Test
+  void kf36_l2DirectRowsExcludedFromSelfConsistencyRate() {
+    stubCommonHappyPath();
+    List<PendingFixRow> rows = List.of(
+        row(1, 1, 4192, 190, "秃章节题"),
+        row(2, 2, 4192, 190, "蒸发器跑碱的原因"));
+    batch.setTotal(2);
+    when(fixMapper.selectPendingWithContent()).thenAnswer(inv -> rows.stream()
+        .filter(r -> "pending".equals(statusByRowId.get(r.getRowId()))).toList());
+    when(llmClient.chatCompletionDetailed(anyString(), anyString(), anyString(), anyString(),
+        ArgumentMatchers.contains("候选分类（L2）"), anyInt(), any(), any(), anyBoolean(),
+        anyLong(), anyInt()))
+        .thenAnswer(inv -> {
+          String prompt = inv.getArgument(4, String.class);
+          return result(prompt.contains("秃章节题") ? "{\"l2_id\":203}" : "{\"l2_id\":201}");
+        });
+    // 仅第 2 行走阶段 2，三采样 3/3 一致
+    when(llmClient.chatCompletionDetailed(anyString(), anyString(), anyString(), anyString(),
+        ArgumentMatchers.contains("候选鉴定点（L3）"), anyInt(), any(), any(), anyBoolean(),
+        anyLong(), anyInt()))
+        .thenAnswer(inv -> result("{\"node_id\":301,\"confidence\":0.9,\"reason\":\"x\"}"));
+
+    service.processBatch(BATCH_ID, BATCH_NO, TENANT, USER, cfgFlash, cfgPro);
+
+    assertEquals(ExamDetailKnowledgeFixEntity.STATUS_APPLY, statusByRowId.get(1L));
+    assertEquals(ExamDetailKnowledgeFixEntity.STATUS_APPLY, statusByRowId.get(2L));
+    // 率 = 1/1（仅三采样行）而非 1/2：L2 直收尾行不进分子分母
+    assertEquals(0, BigDecimalCompare(batch.getSelfConsistencyRate(), 1.0));
+    assertEquals(2, nz(batch.getDone()));
+    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_DONE, batch.getStatus());
   }
 
   private static int nz(Integer v) {

@@ -68,6 +68,19 @@ public class KnowledgeFixClassifyService {
   private static final BigDecimal SELF_CONSISTENCY_GATE = new BigDecimal("0.80");
   /** 未分类占比门槛（FIX-1.4）：高于则批次判 failed */
   private static final BigDecimal UNCLASSIFIED_RATIO_GATE = new BigDecimal("0.05");
+  /** L2 直收尾固定置信度（业务裁定"题可挂 L2"，无三采样）——0.5 中性值，basis=l2-direct */
+  private static final BigDecimal L2_DIRECT_CONFIDENCE = new BigDecimal("0.500");
+
+  /**
+   * 确定性守卫拒绝（模型输出越界等校验失败）：业务判定而非服务故障——
+   * 不计入失败重试次数，也不计入熔断连续失败（A2；重试同样会被拒，凑满阈值会误杀整批）。
+   */
+  private static class GuardRejectException extends BusinessException {
+
+    GuardRejectException(String message) {
+      super(ErrorCode.BAD_GATEWAY, message);
+    }
+  }
 
   private final ExamKnowledgeFixBatchMapper batchMapper;
   private final ExamDetailKnowledgeFixMapper fixMapper;
@@ -231,6 +244,7 @@ public class KnowledgeFixClassifyService {
       int roundsUsed = 0;
       AtomicInteger classified = new AtomicInteger(0);
       AtomicInteger unanimous = new AtomicInteger(0);
+      AtomicInteger l2Direct = new AtomicInteger(0);
       int totalDispatched = 0;
       boolean batchFailed = false;
       while (roundsUsed < MAX_DISPATCH_ROUNDS) {
@@ -268,7 +282,7 @@ public class KnowledgeFixClassifyService {
             futures.add(llmExecutor.submit(() -> {
               try {
                 classifyRow(row, batchNo, tenantId, cfgFlash, cfgPro, courseL2, courseL3ByParent,
-                    nodeById, consecutiveFailures, guardCnt, classified, unanimous);
+                    nodeById, consecutiveFailures, guardCnt, classified, unanimous, l2Direct);
               } finally {
                 slots.release();
               }
@@ -320,13 +334,16 @@ public class KnowledgeFixClassifyService {
         int total = finalState.getTotal() == null ? 0 : finalState.getTotal();
         // 未分类 = 收尾时仍未获得结论的行数（failed 是"尝试失败次数"，可能因重试大于行数，不能相减）
         int unclassifiedCount = unclassified;
+        // 自一致率只衡量三采样行；L2 直收尾行（无自一致概念）已不计入 classified，
+        // 若整批无一行走三采样（全部 L2 直收尾）则率为 null——门禁的率项不适用，不得按 0 误杀
         BigDecimal rate = classified.get() > 0
             ? BigDecimal.valueOf(unanimous.get()).divide(BigDecimal.valueOf(classified.get()),
                 4, RoundingMode.HALF_UP)
-            : BigDecimal.ZERO;
+            : null;
         finalState.setSelfConsistencyRate(rate);
         finalState.setUpdatedAt(LocalDateTime.now());
-        boolean rateBelowGate = rate.compareTo(SELF_CONSISTENCY_GATE) < 0;
+        boolean rateBelowGate =
+            rate != null && rate.compareTo(SELF_CONSISTENCY_GATE) < 0;
         boolean unclassifiedAboveGate =
             total > 0 && BigDecimal.valueOf(unclassifiedCount)
                 .divide(BigDecimal.valueOf(total), 4, RoundingMode.HALF_UP)
@@ -340,9 +357,9 @@ public class KnowledgeFixClassifyService {
         batchMapper.updateById(finalState);
       }
       log.info("知识修正批次结束：batchNo={}, rounds={}, dispatched={}, classified={}, "
-              + "unanimous={}, guard={}, unclassified={}, status={}",
-          batchNo, roundsUsed, totalDispatched, classified.get(), unanimous.get(), guardCnt.get(),
-          unclassified, finalState == null ? "?" : finalState.getStatus());
+              + "unanimous={}, l2Direct={}, guard={}, unclassified={}, status={}",
+          batchNo, roundsUsed, totalDispatched, classified.get(), unanimous.get(), l2Direct.get(),
+          guardCnt.get(), unclassified, finalState == null ? "?" : finalState.getStatus());
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       log.error("知识修正批次被中断：batchNo={}", batchNo);
@@ -367,7 +384,8 @@ public class KnowledgeFixClassifyService {
       Map<Integer, List<KnowledgeNodeRow>> courseL2,
       Map<Integer, Map<Integer, List<KnowledgeNodeRow>>> courseL3ByParent,
       Map<Integer, KnowledgeNodeRow> nodeById, AtomicInteger consecutiveFailures,
-      AtomicInteger guardCnt, AtomicInteger classified, AtomicInteger unanimous)
+      AtomicInteger guardCnt, AtomicInteger classified, AtomicInteger unanimous,
+      AtomicInteger l2Direct)
       throws InterruptedException {
     TenantContextHolder.setTenantId(tenantId);
     try {
@@ -383,11 +401,22 @@ public class KnowledgeFixClassifyService {
       int l2Id = extractIntField(s1, "l2_id");
       boolean l2Valid = l2List.stream().anyMatch(n -> n.getId() != null && n.getId() == l2Id);
       if (!l2Valid) {
-        throw new BusinessException(ErrorCode.BAD_GATEWAY, "L2 越界: " + l2Id);
+        throw new GuardRejectException("L2 越界: " + l2Id);
       }
       List<KnowledgeNodeRow> l3List = l3Map.getOrDefault(l2Id, List.of());
       if (l3List.isEmpty()) {
-        throw new BusinessException(ErrorCode.BAD_GATEWAY, "L2 下无 L3 鉴定点: " + l2Id);
+        // 业务裁定"题可挂 L2"：模型选中的章节下无存活 L3 → 直接以该 L2 收尾，
+        // 跳过阶段 2（每行省 3~4 次调用）；固定置信 0.5 + basis=l2-direct；
+        // 不进自一致率分子分母（无三采样概念，避免稀释门禁口径）
+        boolean sameNode = Objects.equals(l2Id, row.getOldKnowledgeId());
+        String outcome = sameNode ? ExamDetailKnowledgeFixEntity.STATUS_KEEP
+            : ExamDetailKnowledgeFixEntity.STATUS_APPLY;
+        fixMapper.updateClassifyResult(row.getRowId(), l2Id, L2_DIRECT_CONFIDENCE, "l2-direct",
+            "所选章节下无鉴定点，按业务规则直接挂章节", outcome);
+        batchMapper.incrementClassified(batchNo, outcome);
+        l2Direct.incrementAndGet();
+        consecutiveFailures.set(0);
+        return;
       }
 
       // 阶段 2：三采样自一致
@@ -408,7 +437,7 @@ public class KnowledgeFixClassifyService {
         String reason = json.path("reason").asText("");
         KnowledgeNodeRow picked = nodeById.get(nodeId);
         if (picked == null || !Objects.equals(picked.getCourseId(), courseId)) {
-          throw new BusinessException(ErrorCode.BAD_GATEWAY, "node_id 越界: " + nodeId);
+          throw new GuardRejectException("node_id 越界: " + nodeId);
         }
         nodeVotes.add(nodeId);
         confVotes.add(conf);
@@ -457,7 +486,7 @@ public class KnowledgeFixClassifyService {
         reason = "旗舰复判:" + json.path("reason").asText("");
         basis = "llm-pro";
         if (nodeById.get(finalNodeId) == null) {
-          throw new BusinessException(ErrorCode.BAD_GATEWAY, "旗舰复判 node_id 越界");
+          throw new GuardRejectException("旗舰复判 node_id 越界");
         }
       }
 
@@ -492,6 +521,9 @@ public class KnowledgeFixClassifyService {
           BigDecimal.valueOf(finalConf).setScale(3, RoundingMode.HALF_UP), basis, reason, outcome);
       batchMapper.incrementClassified(batchNo, outcome);
       consecutiveFailures.set(0);
+    } catch (GuardRejectException e) {
+      // 守卫拒绝是确定性业务判定（重试同样被拒），不计失败重试与熔断计数；行保持 pending 供下轮重试
+      log.warn("知识修正分类被守卫拒绝：detailId={}, err={}", row.getDetailId(), e.getMessage());
     } catch (Exception e) {
       log.warn("知识修正分类失败：detailId={}, err={}", row.getDetailId(), e.getMessage());
       batchMapper.incrementFailed(batchNo);
@@ -539,7 +571,9 @@ public class KnowledgeFixClassifyService {
       sb.append("未分类 ").append(unclassified).append("/").append(total)
           .append("（上限 5%）；");
     }
-    if (rate.compareTo(SELF_CONSISTENCY_GATE) < 0) {
+    if (rate == null) {
+      sb.append("自一致率不适用（本批无三采样行，全部 L2 直收尾）；");
+    } else if (rate.compareTo(SELF_CONSISTENCY_GATE) < 0) {
       sb.append("自一致率 ").append(rate).append("（下限 0.80）；");
     }
     sb.append("未分类行可经 reset 后重跑");

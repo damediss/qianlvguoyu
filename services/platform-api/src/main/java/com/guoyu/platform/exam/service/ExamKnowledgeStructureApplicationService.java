@@ -270,7 +270,48 @@ public class ExamKnowledgeStructureApplicationService {
   }
 
   /**
-   * 获取某个 course 下所有 L3 知识点ID列表
+   * 获取某个节点自身 + 全部后代节点ID（不限层级；业务允许题目直接挂 L2，
+   * 试题范围查询必须包含中间层级，否则 L2 直挂题在按节点/课程筛选时不可见）。
+   */
+  @Transactional(readOnly = true)
+  public List<Integer> getDescendantIds(Integer knowledgeId) {
+    Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
+    List<Integer> result = new ArrayList<>();
+    result.add(knowledgeId);
+    collectDescendantIds(tenantId, knowledgeId, result);
+    return result;
+  }
+
+  private void collectDescendantIds(Integer tenantId, Integer parentId, List<Integer> result) {
+    LambdaQueryWrapper<ExamKnowledgeStructureEntity> wrapper = new LambdaQueryWrapper<ExamKnowledgeStructureEntity>()
+        .eq(ExamKnowledgeStructureEntity::getTenantId, tenantId)
+        .eq(ExamKnowledgeStructureEntity::getParentId, parentId);
+    List<ExamKnowledgeStructureEntity> children = mapper.selectList(wrapper);
+    if (children == null) return;
+    for (ExamKnowledgeStructureEntity child : children) {
+      result.add(child.getId());
+      collectDescendantIds(tenantId, child.getId(), result);
+    }
+  }
+
+  /**
+   * 获取某个 course 下全部知识点节点ID（不限层级；用于试题范围查询，见 getDescendantIds 说明）
+   */
+  @Transactional(readOnly = true)
+  public List<Integer> getNodeIdsByCourse(Integer courseId) {
+    Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
+    LambdaQueryWrapper<ExamKnowledgeStructureEntity> wrapper = new LambdaQueryWrapper<ExamKnowledgeStructureEntity>()
+        .eq(ExamKnowledgeStructureEntity::getTenantId, tenantId)
+        .eq(ExamKnowledgeStructureEntity::getCourseId, courseId)
+        .eq(ExamKnowledgeStructureEntity::getStatus, 1)
+        .select(ExamKnowledgeStructureEntity::getId);
+    return mapper.selectList(wrapper).stream()
+        .map(ExamKnowledgeStructureEntity::getId)
+        .toList();
+  }
+
+  /**
+   * 获取某个 course 下所有 L3 知识点ID列表（仅导入模板映射用——导入行必须落到 L3 候选）
    */
   @Transactional(readOnly = true)
   public List<Integer> getLevel3IdsByCourse(Integer courseId) {
