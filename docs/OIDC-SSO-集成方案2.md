@@ -28,7 +28,7 @@ C. 前端 fetch('/sso/weknora', {Authorization: Bearer <token>})
 D. 前端 window.location = authorizeUrl
    → 浏览器导航到 http://43.138.163.7/oauth2/authorize?...（同域，自动带 JSESSIONID）
    → AS 链(@Order 1, session-capable) 从 session 读到已认证身份 → 不弹登录 → 发 code
-E. 浏览器 302 回 http://43.138.163.7:8088/api/v1/auth/oidc/callback?code=...&state=...
+E. 浏览器 302 回 https://zsk.gjjd168.com/api/v1/auth/oidc/callback?code=...&state=...
 F. WeKnora 后端用 code 调 token 端点(容器→host.docker.internal:8080)换 id_token
 G. WeKnora 解码 id_token 拿 email → 按 email 自动建号/匹配 → 签发 WeKnora JWT
 H. 302 回 WeKnora 前端 /#oidc_result=... → 用户已登录，进入工作台
@@ -63,7 +63,7 @@ public class SsoBridgeController {
     /** WeKnora 后端 /oidc/url 地址（WeKnora 发布在宿主 :8088，公司后端走 localhost 即可） */
     private static final String WEKNORA_OIDC_URL =
         "http://localhost:8088/api/v1/auth/oidc/url"
-        + "?redirect_uri=http://43.138.163.7:8088/api/v1/auth/oidc/callback";
+        + "?redirect_uri=https://zsk.gjjd168.com/api/v1/auth/oidc/callback";
 
     /**
      * 前端登录后用 Bearer Token 调本端点：
@@ -200,7 +200,7 @@ public class AuthorizationServerConfig {
                 ClientAuthenticationMethod.CLIENT_SECRET_BASIC,
                 ClientAuthenticationMethod.CLIENT_SECRET_POST) // WeKnora 用 POST 表单提交
             .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-            .redirectUri("http://43.138.163.7:8088/api/v1/auth/oidc/callback") // 精确匹配
+            .redirectUri("https://zsk.gjjd168.com/api/v1/auth/oidc/callback") // 精确匹配
             .scope(OidcScopes.OPENID).scope(OidcScopes.PROFILE).scope(OidcScopes.EMAIL)
             .clientSettings(ClientSettings.builder().requireAuthorizationConsent(false).build()) // 无感 SSO
             .tokenSettings(TokenSettings.builder().idTokenSignatureAlgorithm(SignatureAlgorithm.RS256).build())
@@ -216,8 +216,9 @@ public class AuthorizationServerConfig {
     }
 
     @Bean
-    public AuthorizationServerSettings authorizationServerSettings() {
-        return AuthorizationServerSettings.builder().issuer("http://43.138.163.7").build();
+    public AuthorizationServerSettings authorizationServerSettings(
+        @Value("${platform.oauth2.issuer:https://java.app.gjjd168.com/api}") String issuer) {
+        return AuthorizationServerSettings.builder().issuer(issuer).build();
     }
 
     /** 生产务必改为从 keystore/配置加载持久化密钥，否则重启后旧 id_token 失效 */
@@ -350,9 +351,9 @@ mvn clean package -DskipTests
 | 项 | 值 |
 |---|---|
 | client_id | `weknora` |
-| redirect_uri | `http://43.138.163.7:8088/api/v1/auth/oidc/callback` |
+| redirect_uri | `https://zsk.gjjd168.com/api/v1/auth/oidc/callback` |
 | scope | `openid profile email` |
-| issuer | `http://43.138.163.7` |
+| issuer | `https://java.app.gjjd168.com/api`（生产；代码已外部化为 `platform.oauth2.issuer`） |
 | client_secret | §4.5 生成；与 WeKnora `.env` `OIDC_AUTH_CLIENT_SECRET` 一致 |
 | id_token claims | 必含 `email`（推荐含 `name`） |
 | consent | `requireAuthorizationConsent=false` |
@@ -365,10 +366,10 @@ OIDC_AUTH_CLIENT_SECRET=<§4.5 的密钥>
 OIDC_AUTH_ENABLE=true
 cd /opt/guoyu-platform/WeKnora && docker compose up -d app
 ```
-预置端点（无需改）：
+预置端点（生产值，2026-09-18 起 issuer 走域名）：
 ```
-OIDC_AUTH_ISSUER_URL=http://43.138.163.7
-OIDC_AUTH_AUTHORIZATION_ENDPOINT=http://43.138.163.7/oauth2/authorize   # 浏览器
+OIDC_AUTH_ISSUER_URL=https://java.app.gjjd168.com/api
+OIDC_AUTH_AUTHORIZATION_ENDPOINT=https://java.app.gjjd168.com/api/oauth2/authorize   # 浏览器
 OIDC_AUTH_TOKEN_ENDPOINT=http://host.docker.internal:8080/oauth2/token  # 容器→后端
 # userinfo 已注释：仅靠 id_token 取 email
 OIDC_USER_INFO_MAPPING_EMAIL=email        # 与你们发的 claim 名一致，无需改
