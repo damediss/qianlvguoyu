@@ -183,7 +183,7 @@ class StandardExporterTest {
     assertTrue(sql.contains("行数统计"));
   }
 
-  /** B7b：SQL 导出复用模式——不新建 work_type/course，按工种/等级 SELECT 定位 + DELETE 旧树 */
+  /** B7b：SQL 导出复用模式——不新建 work_type/course，按工种/等级 SELECT 定位 + 备份 + 软删旧树 */
   @Test
   void b7_sqlExportReuseMode() {
     String sql = new KnowledgeSqlExporter().export("矿山救护工", "6-16-01-12", "2019",
@@ -201,15 +201,27 @@ class StandardExporterTest {
     assertTrue(sql.contains("FROM exam_course WHERE work_type_id=@wt_") && sql.contains("AND level=0"),
         "按 work_type + level 定位已存在 exam_course");
 
-    // 每个 course 先清空旧树，再写新树（幂等可重复执行）
-    assertTrue(sql.contains("DELETE FROM exam_knowledge_structure WHERE course_id = @c_0_"),
-        "先删除该 course 下旧知识树");
+    // 禁止物理 DELETE：整份脚本不得出现 DELETE FROM（拍板：入库 SQL 只允许 UPDATE 软删）
+    assertFalse(sql.contains("DELETE FROM"), "入库 SQL 不允许出现 DELETE FROM");
+
+    // 每个 course 先删前备份（动态备份表，PREPARE 执行）
+    assertTrue(sql.contains("exam_knowledge_structure_bak_'"), "备份表名按 年月日_courseId 生成");
+    assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS "), "备份表 IF NOT EXISTS（当天重复执行不覆盖首份）");
+    assertTrue(sql.contains("PREPARE stmt FROM"), "动态 DDL 走 PREPARE");
+    assertTrue(sql.contains("AS SELECT * FROM exam_knowledge_structure WHERE course_id = '"),
+        "备份全量行");
+    assertTrue(sql.indexOf("CREATE TABLE IF NOT EXISTS") < sql.indexOf("UPDATE exam_knowledge_structure SET deleted=1"),
+        "备份必须先于软删");
+
+    // 软删旧树（物理数据保留，可回退），再写新树（幂等可重复执行）
+    assertTrue(sql.contains("UPDATE exam_knowledge_structure SET deleted=1 WHERE course_id = @c_0_"),
+        "软删该 course 下旧知识树");
     assertTrue(sql.contains("INSERT INTO exam_knowledge_structure"), "仍含新树插入");
     assertTrue(sql.contains("SET @k_A_A_A_001 = LAST_INSERT_ID();"), "变量链保留");
 
-    // 文件头危险提示
+    // 文件头说明
     assertTrue(sql.contains("复用已有课程模式"), "文件头标注复用模式");
-    assertTrue(sql.contains("执行前请备份目标库"), "危险提示");
+    assertTrue(sql.contains("回退"), "文件头含回退说明");
     assertTrue(sql.contains("知识树入库 SQL"), "通用文件头");
   }
 

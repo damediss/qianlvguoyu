@@ -138,7 +138,7 @@ public class KnowledgeSqlExporter {
 
   /**
    * 复用模式：不新建 work_type/course，按 工种(title)×等级(level) 匹配目标库已有课程，
-   * 每个 course 先 DELETE 旧知识树再写入（可重复执行）。
+   * 每个 course 先备份旧树到独立备份表，再 UPDATE 软删旧知识树后写入（可重复执行）。
    */
   private String exportReuse(String workTypeTitle, String version,
       Map<String, ExportTree> trees, String sourceFile, SqlExportOptions options) {
@@ -150,11 +150,15 @@ public class KnowledgeSqlExporter {
     sql.append("-- 来源文件：").append(sourceFile).append('\n');
     sql.append("-- 生成时间：").append(LocalDateTime.now().format(TS))
         .append("　操作人：").append(options.operatorName()).append('\n');
-    sql.append("-- !!! 危险：执行前请备份目标库。每个 course 段会先 \n");
-    sql.append("--     DELETE FROM exam_knowledge_structure WHERE course_id = @c_xxx，\n");
-    sql.append("--     删除该课程下全部旧知识树后写入新树（幂等，可重复执行）。\n");
-    sql.append("--     若 exam_work_type / exam_course 匹配不到，@c_xxx 为 NULL，\n");
-    sql.append("--     后续 INSERT 将因外键/非空约束失败——请先核对课程名与等级。\n");
+    sql.append("-- 每个 course 段的执行顺序：\n");
+    sql.append("--   ① 备份：现有知识树整份拷入 exam_knowledge_structure_bak_年月日_<courseId>\n");
+    sql.append("--      （IF NOT EXISTS：当天重复执行不会覆盖首份备份）\n");
+    sql.append("--   ② 软删：UPDATE ... SET deleted=1 标记该课程全部旧节点（不做物理 DELETE）\n");
+    sql.append("--   ③ 写入：INSERT 新树（deleted=0）。幂等，可重复执行。\n");
+    sql.append("-- 回退：软删行可 UPDATE deleted=0 复活；整课程还原用备份表\n");
+    sql.append("--      （DELETE 该 course 现有行后 INSERT SELECT * FROM 备份表）。\n");
+    sql.append("-- 若 exam_work_type / exam_course 匹配不到，@c_xxx 为 NULL，\n");
+    sql.append("-- 后续 UPDATE/INSERT 不生效或失败——请先核对课程名与等级。\n");
     sql.append("-- ============================================================\n\n");
 
     // 按 key（levelCode|direction）升序；work_type 变量按方向去重
@@ -190,9 +194,21 @@ public class KnowledgeSqlExporter {
           .append(" AND level=").append(levelCode)
           .append(" AND tenant_id=").append(options.tenantId())
           .append(" AND deleted=0 LIMIT 1;\n");
-      sql.append("-- 清空该 course 下旧知识树（执行前请确认已备份）\n");
-      sql.append("DELETE FROM exam_knowledge_structure WHERE course_id = ")
-          .append(courseVar).append(" AND tenant_id=").append(options.tenantId()).append(";\n\n");
+      String bakVar = "@bak_" + courseVar.substring(1);
+      String bakSqlVar = "@baksql_" + courseVar.substring(1);
+      sql.append("-- 【2.1】删前备份：该课程现有知识树整份拷入独立备份表（回退用，当天重复执行不覆盖首份备份）\n");
+      sql.append("SET ").append(bakVar).append(" = CONCAT('exam_knowledge_structure_bak_', ")
+          .append("DATE_FORMAT(NOW(), '%Y%m%d'), '_', ").append(courseVar).append(");\n");
+      sql.append("SET ").append(bakSqlVar).append(" = CONCAT('CREATE TABLE IF NOT EXISTS ', ")
+          .append(bakVar).append(", ' AS SELECT * FROM exam_knowledge_structure WHERE course_id = ', ")
+          .append(courseVar).append(", ' AND tenant_id=").append(options.tenantId()).append("');\n");
+      sql.append("PREPARE stmt FROM ").append(bakSqlVar).append(";\n");
+      sql.append("EXECUTE stmt;\n");
+      sql.append("DEALLOCATE PREPARE stmt;\n");
+      sql.append("-- 【2.2】软删该 course 下旧知识树（物理数据仍在，可回退）\n");
+      sql.append("UPDATE exam_knowledge_structure SET deleted=1 WHERE course_id = ")
+          .append(courseVar).append(" AND tenant_id=").append(options.tenantId())
+          .append(" AND deleted=0;\n\n");
 
       sql.append("-- 【3】exam_knowledge_structure：").append(courseTitle).append('\n');
       int before = sql.length();
