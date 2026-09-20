@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.guoyu.platform.exam.knowledgefix.mapper.ExamDetailDedupListMapper;
+import com.guoyu.platform.exam.knowledgefix.mapper.ExamDetailKnowledgeFixMapper;
 import com.guoyu.platform.exam.knowledgefix.mapper.ExamExamDetailFixMapper;
 import java.lang.reflect.Method;
 import java.util.Arrays;
@@ -30,7 +31,12 @@ class KnowledgeFixSqlContractTest {
     }
     org.apache.ibatis.annotations.Update update = m.getAnnotation(
         org.apache.ibatis.annotations.Update.class);
-    return update == null ? "" : String.join("\n", update.value());
+    if (update != null) {
+      return String.join("\n", update.value());
+    }
+    org.apache.ibatis.annotations.Select select = m.getAnnotation(
+        org.apache.ibatis.annotations.Select.class);
+    return select == null ? "" : String.join("\n", select.value());
   }
 
   /** KF-29：去重清单 SQL 必须带课程维度（跨课程同题不算重复，2026-09-15 裁定） */
@@ -59,5 +65,25 @@ class KnowledgeFixSqlContractTest {
     String sql = insertSql(ExamExamDetailFixMapper.class, "populateFixList");
     assertTrue(sql.contains("e.create_time >= '2026-05-01'"),
         "populateFixList 必须加 create_time 过滤，不得改动 5 月前历史行");
+  }
+
+  /** KF-34：分类阶段范围加固（FIX-9/v1.7）——"装入时拦、运行时漏"的下游三处 SQL 均须带 5 月过滤 */
+  @Test
+  void kf34_classifyScopeGuardsMayRowsOnly() {
+    for (String method : java.util.List.of(
+        "selectPendingWithContent", "resetFlagRows", "countByStatus")) {
+      String sql = insertSql(ExamDetailKnowledgeFixMapper.class, method);
+      assertTrue(sql.contains("e.create_time >= '2026-05-01'"),
+          method + " 必须带 5 月以来过滤（历史行绝不送模型、绝不被复位拉回）");
+    }
+  }
+
+  /** KF-35：备份过滤条件必须参数化（FIX-8/v1.7）——去重=approved、写回=apply，杜绝空备份表 */
+  @Test
+  void kf35_backupRowsStatusFilterIsParameterized() {
+    String sql = insertSql(ExamExamDetailFixMapper.class, "backupRows");
+    assertTrue(sql.contains("#{statusFilter}"),
+        "备份过滤条件必须参数化：去重侧传 approved、写回侧传 apply"
+            + "（修复知识修正清单不存在 approved 导致的空备份表/回滚失效）");
   }
 }

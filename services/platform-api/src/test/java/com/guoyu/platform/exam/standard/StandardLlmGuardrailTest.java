@@ -8,6 +8,7 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.exam.standard.entity.ExamStandardNodeEntity;
 import com.guoyu.platform.exam.standard.service.StandardLlmPoint;
 import com.guoyu.platform.exam.standard.service.StandardLlmSummarizeService;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -275,5 +276,68 @@ class StandardLlmGuardrailTest {
     List<StandardLlmPoint> onlyX =
         StandardLlmSummarizeService.clampImportants(points, List.of("X"));
     assertTrue(onlyX.stream().allMatch(p -> "X".equals(p.important())));
+  }
+
+  // ───────── 技能表 X 占比护栏（2026-09-16 拍板：严格按 X 数/总数 ≥ 85%，允许全部归 X） ─────────
+
+  private static ExamStandardNodeEntity skillLeaf(long id, String important, String source,
+      String reviewStatus) {
+    ExamStandardNodeEntity n = new ExamStandardNodeEntity();
+    n.setId(id);
+    n.setImportant(important);
+    n.setSource(source);
+    n.setReviewStatus(reviewStatus);
+    return n;
+  }
+
+  /** G1：X 占比已达标（17/20=85%）→ 不翻 */
+  @Test
+  void g1_skillXRatioAlreadyCompliant() {
+    List<ExamStandardNodeEntity> leaves = new ArrayList<>();
+    for (int i = 0; i < 20; i++) {
+      leaves.add(skillLeaf(i, i < 17 ? "X" : "Y", "llm", "pending"));
+    }
+    assertTrue(StandardLlmSummarizeService.pickSkillFlipToX(leaves).isEmpty());
+  }
+
+  /** G2：占比不足 → 从树序末尾往前翻，跳过 X 叶 */
+  @Test
+  void g2_skillXRatioFlipsFromTreeEnd() {
+    List<ExamStandardNodeEntity> leaves = new ArrayList<>();
+    for (int i = 0; i < 20; i++) {
+      boolean y = i == 5 || i == 10 || i == 15 || i == 16 || i == 17 || i == 18;
+      leaves.add(skillLeaf(i, y ? "Y" : "X", "llm", "pending"));
+    }
+    // needX=17，xCount=14，缺 3 → 末尾往前：18、17、16（19 是 X 跳过）
+    List<ExamStandardNodeEntity> flip = StandardLlmSummarizeService.pickSkillFlipToX(leaves);
+    assertEquals(3, flip.size());
+    assertEquals(18L, flip.get(0).getId());
+    assertEquals(17L, flip.get(1).getId());
+    assertEquals(16L, flip.get(2).getId());
+  }
+
+  /** G3：小叶表可全部归 X（⌈4×0.85⌉=4） */
+  @Test
+  void g3_skillXRatioMayFlipAllToX() {
+    List<ExamStandardNodeEntity> leaves = new ArrayList<>();
+    for (int i = 0; i < 4; i++) {
+      leaves.add(skillLeaf(i, "Y", "llm", "pending"));
+    }
+    assertEquals(4, StandardLlmSummarizeService.pickSkillFlipToX(leaves).size());
+  }
+
+  /** G4：人工/已审叶不翻——翻不够就只返回可翻的（缺口由调用方告警） */
+  @Test
+  void g4_skillXRatioSkipsManualAndReviewed() {
+    List<ExamStandardNodeEntity> leaves = new ArrayList<>();
+    for (int i = 0; i < 20; i++) {
+      leaves.add(skillLeaf(i, i < 15 ? "X" : "Y",
+          (i == 17) ? "manual" : "llm",
+          (i >= 16) ? "approved" : "pending"));
+    }
+    // needX=17，xCount=15，缺 2；可翻的 pending 非 X 只有 15 号叶（16-18 已审/人工，19 已审）
+    List<ExamStandardNodeEntity> flip = StandardLlmSummarizeService.pickSkillFlipToX(leaves);
+    assertEquals(1, flip.size());
+    assertEquals(15L, flip.get(0).getId());
   }
 }

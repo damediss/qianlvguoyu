@@ -12,6 +12,7 @@ import KnowledgeFixPage from './pages/question_bank/KnowledgeFixPage';
 import XiMuBiaoGuanLiPage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/XiMuBiaoGuanLiPage';
 import TheoryQuestionGenPage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/TheoryQuestionGenPage';
 import SkillQuestionGenPage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/SkillQuestionGenPage';
+import AiCoursewarePage from './pages/zhi_neng_ke_cheng_cai_liao_guan_li/AiCoursewarePage';
 import { RencaishibieEmbedPage } from './pages/knowledge/RencaishibieEmbedPage';
 import { WorkTypePage } from './pages/exam/WorkTypePage';
 import { CoursePage } from './pages/exam/CoursePage';
@@ -159,6 +160,8 @@ const pageMap: Record<string, React.ReactNode> = {
   theory_question_gen: <TheoryQuestionGenPage />,
   // 智能课程材料管理 > 操作技能试题生成管理
   skill_question_gen: <SkillQuestionGenPage />,
+  // 智能课程材料管理 > AI课件生成管理
+  ai_courseware_gen: <AiCoursewarePage />,
   exam_work_type: <WorkTypePage />,
   dev_task_detail: <DevTaskDetailPage />,
   // 题库审核指派(管理端 3 子菜单,挂在开发任务下)

@@ -11,8 +11,10 @@
       <env name="SPRING_FLYWAY_ENABLED" value="false" />
       <env name="REVIEW_SYNC_JOBS_ENABLED" value="false" />
       <env name="COMPETITION_MESSAGING_ENABLED" value="false" />
+      <env name="COMPETITION_FORMAL_EXAM_SCORING_MESSAGING_ENABLED" value="false" />
       <env name="SMS_ENABLED" value="false" />
       <env name="MANAGEMENT_HEALTH_RABBIT_ENABLED" value="false" />
+      <env name="RABBIT_HEALTH_ENABLED" value="false" />
       <env name="FLOWABLE_ASYNC_EXECUTOR_ACTIVATE" value="false" />
       <env name="SPRING_TASK_SCHEDULING_ENABLED" value="false" />
       <env name="WEKNORA_BASE_URL" value="http://43.138.163.7:8088" />

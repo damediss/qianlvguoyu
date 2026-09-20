@@ -30,6 +30,45 @@ public class AsyncConfig {
     return executor;
   }
 
+  /**
+   * AI 课件生成编排池(方案 v1.2 §11):每个项目占 1 线程跑"解析→消化→大纲"或页级派发编排。
+   * 并发项目上限 platform.courseware.batch-concurrency(默认 2)。
+   * AbortPolicy:同时项目过多直接拒绝 → 503 服务繁忙(AGENTS.md 坑 #12/#14)。
+   */
+  @Bean(name = "coursewareExecutor")
+  public ThreadPoolTaskExecutor coursewareExecutor(
+      @Value("${platform.courseware.batch-concurrency:2}") int batchConcurrency) {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(Math.max(1, batchConcurrency));
+    executor.setMaxPoolSize(Math.max(1, batchConcurrency));
+    executor.setQueueCapacity(10);
+    executor.setThreadNamePrefix("courseware-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(60);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
+  /**
+   * AI 课件页级生成池(方案 v1.2 §11):core=4/max=8/queue=50。
+   * 页级并发远小于 glm-5.3-flash 全局闸口(FaqLlmClient 信号量默认 50),由闸口统一限流。
+   * AbortPolicy:队列耗尽拒绝由编排侧捕获计页失败(坑 #12/#14)。
+   */
+  @Bean(name = "coursewareSlideExecutor")
+  public ThreadPoolTaskExecutor coursewareSlideExecutor() {
+    ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+    executor.setCorePoolSize(4);
+    executor.setMaxPoolSize(8);
+    executor.setQueueCapacity(50);
+    executor.setThreadNamePrefix("courseware-slide-");
+    executor.setWaitForTasksToCompleteOnShutdown(true);
+    executor.setAwaitTerminationSeconds(120);
+    executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+    executor.initialize();
+    return executor;
+  }
+
   @Bean(name = "signUpExportExecutor")
   public ThreadPoolTaskExecutor signUpExportExecutor() {
     ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();

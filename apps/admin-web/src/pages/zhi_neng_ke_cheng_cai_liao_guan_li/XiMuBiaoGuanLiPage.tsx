@@ -40,12 +40,14 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import { hasPermission } from '../../directives/permission';
 import {
   createNode,
   deleteNode,
   deleteTask,
   downloadExport,
+  downloadOriginalDocx,
   fetchTask,
   fetchTaskPage,
   fetchTree,
@@ -234,6 +236,22 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
 
   const [sqlTask, setSqlTask] = useState<StandardTask | null>(null);
   const [summarizeTask, setSummarizeTask] = useState<StandardTask | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const handleDownloadOriginal = async (task: StandardTask) => {
+    if (!task.fileId) {
+      message.warning('该任务没有关联的原始文件');
+      return;
+    }
+    setDownloadingId(task.id);
+    try {
+      await downloadOriginalDocx(task.fileId);
+    } catch (e: any) {
+      message.error(e?.message || '下载失败');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const columns: ColumnsType<StandardTask> = [
     { title: '职业名称', dataIndex: 'workTypeTitle', width: 140 },
@@ -243,14 +261,26 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
     {
       title: '工种',
       dataIndex: 'directions',
-      width: 180,
+      width: 140,
       render: (dirs: string[]) =>
         dirs.length === 1 && dirs[0] === '默认' ? '（不分工种）' : dirs.join('、'),
     },
     {
+      title: '原始文件',
+      dataIndex: 'fileName',
+      width: 100,
+      ellipsis: true,
+      render: (name: string | null) =>
+        name ? (
+          <Tooltip title={name}>{name}</Tooltip>
+        ) : (
+          '-'
+        ),
+    },
+    {
       title: '状态',
       dataIndex: 'status',
-      width: 110,
+      width: 80,
       render: (s: StandardTask['status']) => (
         <Tag
           icon={s === 'llm_running' ? <LoadingOutlined spin /> : undefined}
@@ -294,11 +324,27 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
         ),
     },
     {
+      title: '上传时间',
+      dataIndex: 'createdAt',
+      width: 130,
+      render: (v: string | null) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'),
+    },
+    {
       title: '操作',
-      width: 330,
+      width: 380,
       fixed: 'right',
       render: (_, t) => (
         <Space size={4} wrap>
+          <Button
+            size="small"
+            type="link"
+            icon={<DownloadOutlined />}
+            disabled={!t.fileId}
+            loading={downloadingId === t.id}
+            onClick={() => handleDownloadOriginal(t)}
+          >
+            下载原件
+          </Button>
           <Button size="small" type="link" onClick={() => onEnter(t.id)}>
             预览/审核树
           </Button>
@@ -405,7 +451,7 @@ function TaskListView({ onEnter }: { onEnter: (taskId: string) => void }) {
         loading={isLoading}
         dataSource={data?.items || []}
         columns={columns}
-        scroll={{ x: 1200 }}
+        scroll={{ x: 1560 }}
         pagination={{
           current: page,
           pageSize: 20,

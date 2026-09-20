@@ -22,6 +22,7 @@ class KnowledgeFixControllerPermissionTest {
     expected.put("rollbackDedup", "exam:knowledgefix:rollback");
     expected.put("submitClassify", "exam:knowledgefix:classify:submit");
     expected.put("resetClassify", "exam:knowledgefix:classify:submit");
+    expected.put("pauseClassify", "exam:knowledgefix:classify:submit");
     expected.put("classifyProgress", "exam:knowledgefix:view");
     expected.put("fixList", "exam:knowledgefix:view");
     expected.put("exportFixList", "exam:knowledgefix:classify:export");

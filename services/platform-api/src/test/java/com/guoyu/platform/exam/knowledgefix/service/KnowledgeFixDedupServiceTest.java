@@ -73,7 +73,7 @@ class KnowledgeFixDedupServiceTest {
 
     assertEquals(0, result.approvedRows());
     verify(queryMapper, never()).createBackupTable(anyString());
-    verify(queryMapper, never()).backupRows(anyString(), anyString());
+    verify(queryMapper, never()).backupRows(anyString(), anyString(), anyString());
     verify(dedupListMapper, never()).softDeleteByIds(any());
     verify(dedupListMapper, never()).markDedupDone();
   }
@@ -85,7 +85,7 @@ class KnowledgeFixDedupServiceTest {
     when(queryMapper.selectMayRowCount()).thenReturn(1500L);
     String backupTable = "exam_exam_detail_bak_dedup_" + java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
     when(queryMapper.createBackupTable(anyString())).thenReturn(1);
-    when(queryMapper.backupRows(anyString(), anyString())).thenReturn(1500);
+    when(queryMapper.backupRows(anyString(), anyString(), anyString())).thenReturn(1500);
     // 两页：第一页 1000（id 100..1099），第二页 500（id 1100..1599），第三页空
     List<Integer> page1 = IntStream.rangeClosed(100, 1099).boxed().collect(Collectors.toList());
     List<Integer> page2 = IntStream.rangeClosed(1100, 1599).boxed().collect(Collectors.toList());
@@ -99,7 +99,7 @@ class KnowledgeFixDedupServiceTest {
     // 备份先于软删除
     InOrder inOrder = org.mockito.Mockito.inOrder(queryMapper, dedupListMapper);
     inOrder.verify(queryMapper).createBackupTable(backupTable);
-    inOrder.verify(queryMapper).backupRows(backupTable, "exam_detail_dedup_list");
+    inOrder.verify(queryMapper).backupRows(backupTable, "exam_detail_dedup_list", "approved");
     inOrder.verify(dedupListMapper).softDeleteByIds(page1);
     inOrder.verify(dedupListMapper).softDeleteByIds(page2);
     inOrder.verify(dedupListMapper).markDedupDone();

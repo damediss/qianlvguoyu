@@ -60,10 +60,16 @@ public interface ExamExamDetailFixMapper {
   @Update("CREATE TABLE IF NOT EXISTS ${backupTable} LIKE exam_exam_detail")
   int createBackupTable(@Param("backupTable") String backupTable);
 
-  /** 备份指定行（幂等：已备份的行跳过） */
+  /**
+   * 备份指定行（幂等：已备份的行跳过）。
+   * FIX-8（v1.7）：状态过滤条件由调用方传入——去重清单用 status='approved'，知识修正清单的状态域是
+   * pending/apply/keep/flag/applied（不存在 approved），写回侧必须传 'apply'，否则备份表为空、回滚失效。
+   */
   @Insert("INSERT IGNORE INTO ${backupTable} "
-      + "SELECT * FROM exam_exam_detail WHERE id IN (SELECT detail_id FROM ${listTable} WHERE status = 'approved' AND deleted = 0)")
-  int backupRows(@Param("backupTable") String backupTable, @Param("listTable") String listTable);
+      + "SELECT * FROM exam_exam_detail WHERE id IN (SELECT detail_id FROM ${listTable} "
+      + "WHERE status = #{statusFilter} AND deleted = 0)")
+  int backupRows(@Param("backupTable") String backupTable, @Param("listTable") String listTable,
+      @Param("statusFilter") String statusFilter);
 
   /** 按备份表回滚 deleted */
   @Update("UPDATE exam_exam_detail e JOIN ${backupTable} b ON b.id = e.id "

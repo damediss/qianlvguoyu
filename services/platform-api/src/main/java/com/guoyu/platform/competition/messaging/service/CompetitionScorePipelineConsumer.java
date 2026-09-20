@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 @Component
 @Slf4j
 @ConditionalOnProperty(prefix = "platform.competition.formal-exam.scoring-messaging",
-    name = "enabled", havingValue = "true", matchIfMissing = true)
+    name = "enabled", havingValue = "true", matchIfMissing = false)
 public class CompetitionScorePipelineConsumer {
   private final ObjectMapper objectMapper;
   private final CompetitionScoreSourceMapper sourceMapper;

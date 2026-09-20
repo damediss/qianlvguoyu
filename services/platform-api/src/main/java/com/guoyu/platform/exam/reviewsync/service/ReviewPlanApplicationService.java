@@ -42,6 +42,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -776,7 +777,21 @@ public class ReviewPlanApplicationService {
       }
       return existing;
     }
-    return createPlan(platformUserId, examId, tenantId);
+    try {
+      return createPlan(platformUserId, examId, tenantId);
+    } catch (DuplicateKeyException ex) {
+      // 同一学员并发首次进入（overview/today 同时发起）撞 uk_ai_review_plan_user_exam：当前读取回已提交行
+      AiReviewPlanEntity concurrent = planMapper.selectByUserAndExamForUpdate(platformUserId, examId);
+      if (concurrent == null) {
+        throw ex;
+      }
+      log.info("[AI复习] 并发建计划命中唯一键，复用已存在计划：user={} exam={} planId={}",
+          platformUserId, examId, concurrent.getId());
+      if ("abandoned".equals(concurrent.getStatus())) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "该复习计划已放弃");
+      }
+      return concurrent;
+    }
   }
 
   private AiReviewPlanEntity createPlan(long platformUserId, long examId, Long tenantId) {
@@ -883,10 +898,17 @@ public class ReviewPlanApplicationService {
       if (existing.getPlanDate().isBefore(date)) {
         int nextIndex = dayIndex + 1;
         if (nextIndex <= plan.getTotalDays()) {
-          plan.setCurrentDayIndex(nextIndex);
-          plan.setCurrentStage(stageOfDay(plan, nextIndex));
-          planMapper.updateById(plan);
-          return getOrMaterializeDay(plan, nextIndex, date, interrupt);
+          // 行锁 + 当前读：与 materializeDay 同序（先计划行、后当天行），并发请求不会把指针推进两次
+          AiReviewPlanEntity locked = planMapper.selectByIdForUpdate(plan.getId());
+          int targetIndex = locked != null
+              ? Math.max(nextIndex, locked.getCurrentDayIndex())
+              : nextIndex;
+          if (targetIndex <= plan.getTotalDays()) {
+            plan.setCurrentDayIndex(targetIndex);
+            plan.setCurrentStage(stageOfDay(plan, targetIndex));
+            planMapper.updateById(plan);
+            return getOrMaterializeDay(plan, targetIndex, date, interrupt);
+          }
         }
       }
       return existing;
@@ -894,10 +916,27 @@ public class ReviewPlanApplicationService {
     return materializeDay(plan, dayIndex, date, interrupt);
   }
 
-  /** 物化指定天的任务（每日 04:00 job 与 overview 懒物化共用） */
+  /**
+   * 物化指定天的任务（overview/today 懒物化与 advanceDay 共用）。
+   *
+   * <p>幂等：App 进复习页会并发调 overview 与 today，两个请求可能同时决定物化同一天。
+   * 这里先锁计划行再以当前读复核，并发落库只会有一行；万一仍撞唯一键（其他来源），
+   * 捕获后当前读取回已提交行，不把 500 抛给学员。
+   */
   @Transactional
   public AiReviewPlanDayEntity materializeDay(AiReviewPlanEntity plan, int dayIndex,
       LocalDate date, InterruptInfo interrupt) {
+    AiReviewPlanDayEntity snapshot = findDay(plan.getId(), dayIndex);
+    if (snapshot != null) {
+      // 快路径：已物化，无需加锁
+      return snapshot;
+    }
+    planMapper.selectByIdForUpdate(plan.getId());
+    AiReviewPlanDayEntity materialized = dayMapper.selectByPlanAndDayForUpdate(plan.getId(), dayIndex);
+    if (materialized != null) {
+      return materialized;
+    }
+
     int stage = stageOfDay(plan, dayIndex);
     List<Long> mustDo = parseIds(plan.getMustDoIds());
     Set<Long> assignedNew = assignedNewIds(plan.getId());
@@ -949,7 +988,18 @@ public class ReviewPlanApplicationService {
       }
     }
     day.setTenantId(plan.getTenantId());
-    dayMapper.insert(day);
+    try {
+      dayMapper.insert(day);
+    } catch (DuplicateKeyException ex) {
+      // 兜底：并发来源抢先落库，当前读取回；仍取不到说明是真冲突，原样抛出
+      AiReviewPlanDayEntity concurrent = dayMapper.selectByPlanAndDayForUpdate(plan.getId(), dayIndex);
+      if (concurrent == null) {
+        throw ex;
+      }
+      log.info("[AI复习] 并发物化命中唯一键，复用已存在当天任务：planId={} dayIndex={}",
+          plan.getId(), dayIndex);
+      return concurrent;
+    }
 
     // 异步生成鼓励语
     llmAssistService.generateAsync(plan.getId(), dayIndex, stage, null, null,

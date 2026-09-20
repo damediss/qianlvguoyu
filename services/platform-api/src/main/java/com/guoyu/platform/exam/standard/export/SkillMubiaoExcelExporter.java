@@ -29,7 +29,8 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
  * <ul>
  *   <li>仅工作要求 B 支（dimension=skill 叶）；基本要求不出现；</li>
  *   <li>一级：代码+(X:Y:Z)、名称、考评比重（技能权重表）、选考方式=必考；</li>
- *   <li>二级：代码+(计数)、名称、技能要求原文、考评比重（仅首个二级标出）、选考方式=任选一项；</li>
+ *   <li>二级：代码+(计数)、名称、技能要求原文、考评比重（仅首个二级标出）、选考方式=任选一项
+ *       （组内仅 1 个考评点时为必考，2026-09-16 拍板）；</li>
  *   <li>试题量列程序留空，人工审核后填写（拍板⑤）。</li>
  * </ul>
  */
@@ -169,7 +170,8 @@ public class SkillMubiaoExcelExporter {
     } else {
       setCell(first, 7, "", styles.center);
     }
-    setCell(first, 8, "任选一项", styles.center);
+    // 选考方式（2026-09-16 拍板）：组内仅 1 个考评点时为"必考"，多选一为"任选一项"；空组保持"任选一项"
+    setCell(first, 8, leaves.size() == 1 ? "必考" : "任选一项", styles.center);
     if (endRow > startRow) {
       for (int c = 4; c <= 8; c++) {
         sheet.addMergedRegion(new CellRangeAddress(startRow, endRow, c, c));

@@ -23,6 +23,8 @@ import com.guoyu.platform.exam.standard.service.StandardExportApplicationService
 import com.guoyu.platform.exam.standard.service.StandardLlmSummarizeService;
 import com.guoyu.platform.exam.standard.service.StandardParseApplicationService;
 import com.guoyu.platform.exam.standard.vo.StandardTaskVO;
+import com.guoyu.platform.file.entity.FileEntity;
+import com.guoyu.platform.file.mapper.FileMapper;
 import com.guoyu.platform.file.service.FileApplicationService;
 import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.system.mapper.DictMapper;
@@ -38,8 +40,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 class StandardServiceTest {
 
   private StandardParseApplicationService newParseService(ExamStandardTaskMapper taskMapper,
-      ExamStandardNodeMapper nodeMapper, FileApplicationService fileService) {
-    return new StandardParseApplicationService(taskMapper, nodeMapper, fileService,
+      ExamStandardNodeMapper nodeMapper, FileApplicationService fileService, FileMapper fileMapper) {
+    return new StandardParseApplicationService(taskMapper, nodeMapper, fileService, fileMapper,
         new ObjectMapper());
   }
 
@@ -61,12 +63,18 @@ class StandardServiceTest {
     when(fileService.storeFromBytes(any(), any(), any(), any()))
         .thenReturn(new FileVO(999L, "矿山救护工.docx", "application/octet-stream", 100L,
             "private", "stored", LocalDateTime.now(), null));
+    FileMapper fileMapper = mock(FileMapper.class);
+    FileEntity storedFile = new FileEntity();
+    storedFile.setId(999L);
+    storedFile.setOriginalName("矿山救护工.docx");
+    when(fileMapper.selectBatchIds(any())).thenReturn(List.of(storedFile));
 
-    StandardTaskVO vo = newParseService(taskMapper, nodeMapper, fileService)
+    StandardTaskVO vo = newParseService(taskMapper, nodeMapper, fileService, fileMapper)
         .uploadAndParse(kuangshanDocx(), "矿山救护工.docx", 1L, 1L);
 
     assertEquals("parsed", vo.status());
     assertEquals("矿山救护工", vo.workTypeTitle());
+    assertEquals("矿山救护工.docx", vo.fileName());
     assertEquals("6-16-01-12", vo.seriesNo());
     assertEquals(List.of("默认"), vo.directions());
     assertEquals(5, vo.levels().size());
@@ -86,7 +94,7 @@ class StandardServiceTest {
     when(taskMapper.selectOne(any())).thenReturn(existing);
 
     BusinessException ex = assertThrows(BusinessException.class,
-        () -> newParseService(taskMapper, nodeMapper, fileService)
+        () -> newParseService(taskMapper, nodeMapper, fileService, mock(FileMapper.class))
             .uploadAndParse(kuangshanDocx(), "矿山救护工.docx", 1L, 1L));
     assertEquals("409", ex.getCode());
     assertTrue(ex.getMessage().contains("12345"));
@@ -166,7 +174,7 @@ class StandardServiceTest {
   void uploadRejectsOle2DisguisedAsDocx() {
     StandardParseApplicationService service = newParseService(
         mock(ExamStandardTaskMapper.class), mock(ExamStandardNodeMapper.class),
-        mock(FileApplicationService.class));
+        mock(FileApplicationService.class), mock(FileMapper.class));
     byte[] ole2 = new byte[16];
     ole2[0] = (byte) 0xD0;
     ole2[1] = (byte) 0xCF;

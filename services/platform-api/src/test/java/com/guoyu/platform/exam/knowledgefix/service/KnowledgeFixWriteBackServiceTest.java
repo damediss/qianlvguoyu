@@ -66,13 +66,15 @@ class KnowledgeFixWriteBackServiceTest {
         applyRow(1, 4192, 301, 190), applyRow(2, 4192, 302, 190)));
     when(queryMapper.selectAllNodes()).thenReturn(nodes());
     when(queryMapper.createBackupTable(any())).thenReturn(1);
-    when(queryMapper.backupRows(any(), any())).thenReturn(2);
+    when(queryMapper.backupRows(any(), any(), any())).thenReturn(2);
     when(queryMapper.updateKnowledgeId(anyInt(), anyInt())).thenReturn(1);
 
     ApplyResultVO result = service.apply(10159L, 9L);
 
     verify(queryMapper).createBackupTable(result.backupTable());
-    verify(queryMapper).backupRows(result.backupTable(), "exam_detail_knowledge_fix");
+    // FIX-8：写回按 apply 行备份（此前写死 approved → 空备份表）
+    verify(queryMapper).backupRows(eq(result.backupTable()), eq("exam_detail_knowledge_fix"),
+        eq("apply"));
     verify(queryMapper, times(1)).updateKnowledgeId(1, 301);
     verify(queryMapper, times(1)).updateKnowledgeId(2, 302);
     verify(fixMapper).markAllApplied();

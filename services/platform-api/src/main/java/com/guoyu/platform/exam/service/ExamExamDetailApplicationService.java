@@ -250,12 +250,12 @@ public class ExamExamDetailApplicationService {
    */
   private List<Integer> resolveKnowledgeIds(ExamExamDetailQueryReq req) {
     if (req.getKnowledgeId() != null && req.getKnowledgeId() > 0) {
-      return knowledgeService.getLevel3DescendantIds(req.getKnowledgeId());
+      return knowledgeService.getDescendantIds(req.getKnowledgeId());
     }
     if (req.getCourseId() != null && req.getCourseId() > 0) {
-      return knowledgeService.getLevel3IdsByCourse(req.getCourseId());
+      return knowledgeService.getNodeIdsByCourse(req.getCourseId());
     }
-    // workTypeId → 查该工种下所有科目 → 再查所有知识点 L3
+    // workTypeId → 查该工种下所有科目 → 再查全部知识点节点（不限层级，含 L2 直挂题）
     if (req.getWorkTypeId() != null && req.getWorkTypeId() > 0) {
       List<Integer> courseIds = courseMapper.selectList(
           new LambdaQueryWrapper<ExamCourseEntity>()
@@ -266,10 +266,10 @@ public class ExamExamDetailApplicationService {
       if (courseIds.isEmpty()) {
         return List.of();
       }
-      // 批量查所有科目下的 L3 知识点
+      // 批量查所有科目下的全部知识点节点
       List<Integer> allKnowledgeIds = new ArrayList<>();
       for (Integer cid : courseIds) {
-        allKnowledgeIds.addAll(knowledgeService.getLevel3IdsByCourse(cid));
+        allKnowledgeIds.addAll(knowledgeService.getNodeIdsByCourse(cid));
       }
       return allKnowledgeIds.isEmpty() ? List.of() : allKnowledgeIds;
     }
@@ -507,7 +507,7 @@ public class ExamExamDetailApplicationService {
   public ExportResultDTO exportByCourse(Integer courseId) {
     Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
 
-    List<Integer> knowledgeIds = knowledgeService.getLevel3IdsByCourse(courseId);
+    List<Integer> knowledgeIds = knowledgeService.getNodeIdsByCourse(courseId);
     if (knowledgeIds == null || knowledgeIds.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "该科目下无知识点，无法导出");
     }

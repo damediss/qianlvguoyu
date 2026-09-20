@@ -32,10 +32,12 @@ import java.time.Period;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -266,12 +268,12 @@ public class TrainSignUpPeopleImportService {
       if (ensure.platformUserId() != null) {
         entity.setPlatformUserId(ensure.platformUserId());
         PlatformUserEntity platformUser = platformUserMapper.selectById(ensure.platformUserId());
-        if (platformUser != null) {
+      if (platformUser != null) {
           if (StringUtils.hasText(platformUser.getRealname())) {
-            entity.setName(platformUser.getRealname());
+        entity.setName(platformUser.getRealname());
           }
           if (StringUtils.hasText(platformUser.getPhone())) {
-            entity.setPhone(platformUser.getPhone());
+        entity.setPhone(platformUser.getPhone());
           }
         }
         enrichDetailFromImportRow(ensure.platformUserId(), realname, idCard, phone, row);
@@ -407,6 +409,74 @@ public class TrainSignUpPeopleImportService {
     }
 
     return new SignUpPeopleImportResultVO(inserted, skipped, users.size(), null, errors, syncStats.toMap());
+  }
+
+  /**
+   * 按身份证号从学员库导入报名/资料收集名单（一行一个，口径同 {@link #importFromStudents}）。
+   */
+  @Transactional
+  public SignUpPeopleImportResultVO importFromStudentsByIdCard(Long signUpId, String idCardsText) {
+    if (signUpId == null || signUpId <= 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "参数错误");
+    }
+    if (!StringUtils.hasText(idCardsText)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请输入身份证号");
+    }
+
+    Long platformOrgId = resolvePlatformOrgId();
+    Long companyFilter = operatorScopeService.resolveCompanyFilter(null);
+    List<String> preErrors = new ArrayList<>();
+    List<Long> foundIds = new ArrayList<>();
+    Set<String> seen = new HashSet<>();
+
+    for (String line : idCardsText.split("[\\n,，\\s]+")) {
+      String raw = line.trim();
+      if (raw.isEmpty()) {
+        continue;
+      }
+      String idCard = PlatformUserEnsureService.normalizeIdCard(raw);
+      if (idCard.length() != 18) {
+        preErrors.add(raw + ": 身份证号格式错误");
+        continue;
+      }
+      if (!seen.add(idCard)) {
+        continue;
+      }
+
+      LambdaQueryWrapper<PlatformUserEntity> userQuery = new LambdaQueryWrapper<PlatformUserEntity>()
+          .eq(PlatformUserEntity::getIdcard, idCard)
+          .eq(PlatformUserEntity::getDeleted, 0)
+          .last("LIMIT 1");
+      if (!operatorScopeService.isPlatformAdmin()) {
+        userQuery.eq(PlatformUserEntity::getOrgId, platformOrgId);
+      }
+      if (companyFilter != null) {
+        userQuery.eq(PlatformUserEntity::getCompanyId, companyFilter);
+      }
+      PlatformUserEntity user = platformUserMapper.selectOne(userQuery);
+      if (user == null) {
+        preErrors.add(idCard + ": 未在学员库中找到该身份证号");
+        continue;
+      }
+      foundIds.add(user.getId());
+    }
+
+    if (foundIds.isEmpty()) {
+      return new SignUpPeopleImportResultVO(0, 0, preErrors.size(), null, preErrors, null);
+    }
+
+    SignUpPeopleImportResultVO imported = importFromStudents(signUpId, foundIds);
+    List<String> mergedErrors = new ArrayList<>(preErrors);
+    if (imported.errors() != null && !imported.errors().isEmpty()) {
+      mergedErrors.addAll(imported.errors());
+    }
+    return new SignUpPeopleImportResultVO(
+        imported.inserted(),
+        imported.skipped(),
+        imported.invalid() + preErrors.size(),
+        imported.filePath(),
+        mergedErrors,
+        imported.platformUserSync());
   }
 
   /**

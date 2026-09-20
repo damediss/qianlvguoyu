@@ -17,6 +17,8 @@ export interface StandardTask {
   seriesNo: string | null;
   version: string | null;
   fileId: string | null;
+  /** 上传的原始 docx 文件名（后端联 file_entity 补充） */
+  fileName: string | null;
   status: 'uploaded' | 'parsed' | 'llm_running' | 'reviewing' | 'confirmed' | 'exported';
   directions: string[];
   levels: Array<{ levelCode: number; levelName: string }>;
@@ -179,6 +181,38 @@ export async function downloadExport(taskId: string, kind: ExportKind, params?: 
   const disposition: string = resp.headers?.['content-disposition'] || '';
   const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
   const fileName = match ? decodeURIComponent(match[1]) : `export.${kind === 'sql' ? 'sql' : 'xlsx'}`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/** 下载上传的原始 docx 原件（走平台文件模块，COS/本地存储自动适配） */
+export async function downloadOriginalDocx(fileId: string): Promise<void> {
+  const resp = await apiClient.get(`/files/${fileId}/download`, {
+    responseType: 'blob',
+    timeout: 120000,
+  });
+  const blob: Blob = resp.data;
+  if (blob.type.includes('application/json')) {
+    const text = await blob.text();
+    try {
+      const json = JSON.parse(text);
+      throw new Error(json.message || '下载失败');
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        throw new Error('下载失败');
+      }
+      throw e;
+    }
+  }
+  const disposition: string = resp.headers?.['content-disposition'] || '';
+  const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
+  const fileName = match ? decodeURIComponent(match[1]) : 'standard.docx';
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

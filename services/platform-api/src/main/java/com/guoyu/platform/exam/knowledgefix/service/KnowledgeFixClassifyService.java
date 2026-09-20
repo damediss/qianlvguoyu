@@ -68,10 +68,28 @@ public class KnowledgeFixClassifyService {
   private static final BigDecimal SELF_CONSISTENCY_GATE = new BigDecimal("0.80");
   /** 未分类占比门槛（FIX-1.4）：高于则批次判 failed */
   private static final BigDecimal UNCLASSIFIED_RATIO_GATE = new BigDecimal("0.05");
+  /** L2 直收尾固定置信度（业务裁定"题可挂 L2"，无三采样）——0.5 中性值，basis=l2-direct */
+  private static final BigDecimal L2_DIRECT_CONFIDENCE = new BigDecimal("0.500");
+
+  /**
+   * 确定性守卫拒绝（模型输出越界等校验失败）：业务判定而非服务故障——
+   * 不计入失败重试次数，也不计入熔断连续失败（A2；重试同样会被拒，凑满阈值会误杀整批）。
+   */
+  private static class GuardRejectException extends BusinessException {
+
+    GuardRejectException(String message) {
+      super(ErrorCode.BAD_GATEWAY, message);
+    }
+  }
 
   private final ExamKnowledgeFixBatchMapper batchMapper;
   private final ExamDetailKnowledgeFixMapper fixMapper;
   private final ExamExamDetailFixMapper queryMapper;
+  /**
+   * 人工暂停请求（FIX-10/v1.7）：batchNo 集合，编排线程在每行派发前检查。
+   * 内存态（进程重启即失效，届时批次需按 §11.10.9 C 的 SQL 收尾）；在飞行的行不中断，跑完即收尾为 paused。
+   */
+  private final java.util.Set<Long> pauseRequests = java.util.concurrent.ConcurrentHashMap.newKeySet();
   private final ExamFaqModelConfigMapper modelConfigMapper;
   private final FaqLlmClient llmClient;
   private final ObjectMapper objectMapper;
@@ -163,6 +181,34 @@ public class KnowledgeFixClassifyService {
     return fixMapper.countByStatus("pending");
   }
 
+  /**
+   * 人工暂停（FIX-10/v1.7）：登记暂停标志，编排线程在下一行派发边界停止派发新行；
+   * 已派发（在飞行）的行跑完后收尾为 paused——未跑的行保持 pending，再次提交即可接着跑。
+   * 继续 = 再点「提交 LLM 分类批次」（新批次只覆盖剩余 pending 行，已完成行结论不受影响）。
+   */
+  public long pause() {
+    ExamKnowledgeFixBatchEntity batch = currentInFlight();
+    if (batch == null) {
+      throw new BusinessException(ErrorCode.CONFLICT, "当前没有进行中的分类批次，无需暂停");
+    }
+    pauseRequests.add(batch.getBatchNo());
+    log.info("知识修正批次暂停请求已登记：batchNo={}, done={}/{}", batch.getBatchNo(),
+        batch.getDone(), batch.getTotal());
+    return batch.getBatchNo();
+  }
+
+  /** 进行中的批次（pending/running，取最新一条）；无则返回 null */
+  private ExamKnowledgeFixBatchEntity currentInFlight() {
+    List<ExamKnowledgeFixBatchEntity> list = batchMapper.selectList(
+        new LambdaQueryWrapper<ExamKnowledgeFixBatchEntity>()
+            .in(ExamKnowledgeFixBatchEntity::getStatus,
+                ExamKnowledgeFixBatchEntity.STATUS_PENDING,
+                ExamKnowledgeFixBatchEntity.STATUS_RUNNING)
+            .orderByDesc(ExamKnowledgeFixBatchEntity::getId)
+            .last("LIMIT 1"));
+    return list == null || list.isEmpty() ? null : list.get(0);
+  }
+
   /** 编排线程：两阶段分类 + 三采样自一致 + 旗舰升级 + 自动补跑（方案 §4.4/§6.4） */
   public void processBatch(Long batchId, Long batchNo, Long tenantId, Long userId,
       ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro) {
@@ -198,6 +244,7 @@ public class KnowledgeFixClassifyService {
       int roundsUsed = 0;
       AtomicInteger classified = new AtomicInteger(0);
       AtomicInteger unanimous = new AtomicInteger(0);
+      AtomicInteger l2Direct = new AtomicInteger(0);
       int totalDispatched = 0;
       boolean batchFailed = false;
       while (roundsUsed < MAX_DISPATCH_ROUNDS) {
@@ -212,8 +259,14 @@ public class KnowledgeFixClassifyService {
         consecutiveFailures.set(0);
         // FIX-1/DEF-2：熔断只终止"本轮继续派发"，不放弃整批——本轮结束后进入下一轮补跑
         boolean breakerTrippedThisRound = false;
+        // FIX-10/v1.7：人工暂停——只停"继续派发"，在飞行已提交的行走完
+        boolean pauseTripped = false;
         List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
         for (PendingFixRow row : pending) {
+          if (pauseRequests.contains(batchNo)) {
+            pauseTripped = true;
+            break;
+          }
           if (consecutiveFailures.get() >= MAX_CONSECUTIVE_FAILURES) {
             breakerTrippedThisRound = true;
             break;
@@ -229,7 +282,7 @@ public class KnowledgeFixClassifyService {
             futures.add(llmExecutor.submit(() -> {
               try {
                 classifyRow(row, batchNo, tenantId, cfgFlash, cfgPro, courseL2, courseL3ByParent,
-                    nodeById, consecutiveFailures, guardCnt, classified, unanimous);
+                    nodeById, consecutiveFailures, guardCnt, classified, unanimous, l2Direct);
               } finally {
                 slots.release();
               }
@@ -248,6 +301,10 @@ public class KnowledgeFixClassifyService {
           } catch (Exception e) {
             log.error("分类任务异常返回：batchNo={}", batchNo, e);
           }
+        }
+        if (pauseTripped) {
+          finalizePaused(batchId, batchNo);
+          return;
         }
         totalDispatched += futures.size();
         if (futures.isEmpty()) {
@@ -277,13 +334,16 @@ public class KnowledgeFixClassifyService {
         int total = finalState.getTotal() == null ? 0 : finalState.getTotal();
         // 未分类 = 收尾时仍未获得结论的行数（failed 是"尝试失败次数"，可能因重试大于行数，不能相减）
         int unclassifiedCount = unclassified;
+        // 自一致率只衡量三采样行；L2 直收尾行（无自一致概念）已不计入 classified，
+        // 若整批无一行走三采样（全部 L2 直收尾）则率为 null——门禁的率项不适用，不得按 0 误杀
         BigDecimal rate = classified.get() > 0
             ? BigDecimal.valueOf(unanimous.get()).divide(BigDecimal.valueOf(classified.get()),
                 4, RoundingMode.HALF_UP)
-            : BigDecimal.ZERO;
+            : null;
         finalState.setSelfConsistencyRate(rate);
         finalState.setUpdatedAt(LocalDateTime.now());
-        boolean rateBelowGate = rate.compareTo(SELF_CONSISTENCY_GATE) < 0;
+        boolean rateBelowGate =
+            rate != null && rate.compareTo(SELF_CONSISTENCY_GATE) < 0;
         boolean unclassifiedAboveGate =
             total > 0 && BigDecimal.valueOf(unclassifiedCount)
                 .divide(BigDecimal.valueOf(total), 4, RoundingMode.HALF_UP)
@@ -297,9 +357,9 @@ public class KnowledgeFixClassifyService {
         batchMapper.updateById(finalState);
       }
       log.info("知识修正批次结束：batchNo={}, rounds={}, dispatched={}, classified={}, "
-              + "unanimous={}, guard={}, unclassified={}, status={}",
-          batchNo, roundsUsed, totalDispatched, classified.get(), unanimous.get(), guardCnt.get(),
-          unclassified, finalState == null ? "?" : finalState.getStatus());
+              + "unanimous={}, l2Direct={}, guard={}, unclassified={}, status={}",
+          batchNo, roundsUsed, totalDispatched, classified.get(), unanimous.get(), l2Direct.get(),
+          guardCnt.get(), unclassified, finalState == null ? "?" : finalState.getStatus());
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       log.error("知识修正批次被中断：batchNo={}", batchNo);
@@ -324,7 +384,8 @@ public class KnowledgeFixClassifyService {
       Map<Integer, List<KnowledgeNodeRow>> courseL2,
       Map<Integer, Map<Integer, List<KnowledgeNodeRow>>> courseL3ByParent,
       Map<Integer, KnowledgeNodeRow> nodeById, AtomicInteger consecutiveFailures,
-      AtomicInteger guardCnt, AtomicInteger classified, AtomicInteger unanimous)
+      AtomicInteger guardCnt, AtomicInteger classified, AtomicInteger unanimous,
+      AtomicInteger l2Direct)
       throws InterruptedException {
     TenantContextHolder.setTenantId(tenantId);
     try {
@@ -340,20 +401,34 @@ public class KnowledgeFixClassifyService {
       int l2Id = extractIntField(s1, "l2_id");
       boolean l2Valid = l2List.stream().anyMatch(n -> n.getId() != null && n.getId() == l2Id);
       if (!l2Valid) {
-        throw new BusinessException(ErrorCode.BAD_GATEWAY, "L2 越界: " + l2Id);
+        throw new GuardRejectException("L2 越界: " + l2Id);
       }
       List<KnowledgeNodeRow> l3List = l3Map.getOrDefault(l2Id, List.of());
       if (l3List.isEmpty()) {
-        throw new BusinessException(ErrorCode.BAD_GATEWAY, "L2 下无 L3 鉴定点: " + l2Id);
+        // 业务裁定"题可挂 L2"：模型选中的章节下无存活 L3 → 直接以该 L2 收尾，
+        // 跳过阶段 2（每行省 3~4 次调用）；固定置信 0.5 + basis=l2-direct；
+        // 不进自一致率分子分母（无三采样概念，避免稀释门禁口径）
+        boolean sameNode = Objects.equals(l2Id, row.getOldKnowledgeId());
+        String outcome = sameNode ? ExamDetailKnowledgeFixEntity.STATUS_KEEP
+            : ExamDetailKnowledgeFixEntity.STATUS_APPLY;
+        fixMapper.updateClassifyResult(row.getRowId(), l2Id, L2_DIRECT_CONFIDENCE, "l2-direct",
+            "所选章节下无鉴定点，按业务规则直接挂章节", outcome);
+        batchMapper.incrementClassified(batchNo, outcome);
+        l2Direct.incrementAndGet();
+        consecutiveFailures.set(0);
+        return;
       }
 
-      // 阶段 2：三采样自一致（候选顺序随机化）
+      // 阶段 2：三采样自一致
+      // FIX-11/v1.7：候选顺序每行随机一次（种子=detailId），3 次采样共用同一顺序——
+      // 第 2、3 次采样 prompt 与第 1 次逐字节一致，可整段命中前缀缓存（同课程行亦共享候选清单前缀）。
+      // 代价：行内位置偏差检测退化为行间（全批顺序仍随机）；位置偏差兜底 = 确定性卫兵。
+      List<KnowledgeNodeRow> ordered = new ArrayList<>(l3List);
+      Collections.shuffle(ordered, new java.util.Random(row.getDetailId()));
       List<Integer> nodeVotes = new ArrayList<>();
       List<Double> confVotes = new ArrayList<>();
       List<String> reasons = new ArrayList<>();
       for (int i = 0; i < SAMPLES; i++) {
-        List<KnowledgeNodeRow> ordered = new ArrayList<>(l3List);
-        Collections.shuffle(ordered);
         String s2 = callLlm(cfgFlash, tenantId, batchNo, row.getDetailId(), "stage2",
             buildStage2Prompt(questionText, ordered, oldNode), 1024).content();
         JsonNode json = parseObject(s2);
@@ -362,7 +437,7 @@ public class KnowledgeFixClassifyService {
         String reason = json.path("reason").asText("");
         KnowledgeNodeRow picked = nodeById.get(nodeId);
         if (picked == null || !Objects.equals(picked.getCourseId(), courseId)) {
-          throw new BusinessException(ErrorCode.BAD_GATEWAY, "node_id 越界: " + nodeId);
+          throw new GuardRejectException("node_id 越界: " + nodeId);
         }
         nodeVotes.add(nodeId);
         confVotes.add(conf);
@@ -404,14 +479,14 @@ public class KnowledgeFixClassifyService {
       } else {
         // 三方各不同 → 旗舰复判（basis=llm-pro）
         String s3 = callLlm(cfgPro, tenantId, batchNo, row.getDetailId(), "escalate",
-            buildStage2Prompt(questionText, l3List, oldNode), 2048).content();
+            buildStage2Prompt(questionText, ordered, oldNode), 2048).content();
         JsonNode json = parseObject(s3);
         finalNodeId = json.path("node_id").asInt(-1);
         finalConf = json.path("confidence").asDouble(0);
         reason = "旗舰复判:" + json.path("reason").asText("");
         basis = "llm-pro";
         if (nodeById.get(finalNodeId) == null) {
-          throw new BusinessException(ErrorCode.BAD_GATEWAY, "旗舰复判 node_id 越界");
+          throw new GuardRejectException("旗舰复判 node_id 越界");
         }
       }
 
@@ -446,6 +521,9 @@ public class KnowledgeFixClassifyService {
           BigDecimal.valueOf(finalConf).setScale(3, RoundingMode.HALF_UP), basis, reason, outcome);
       batchMapper.incrementClassified(batchNo, outcome);
       consecutiveFailures.set(0);
+    } catch (GuardRejectException e) {
+      // 守卫拒绝是确定性业务判定（重试同样被拒），不计失败重试与熔断计数；行保持 pending 供下轮重试
+      log.warn("知识修正分类被守卫拒绝：detailId={}, err={}", row.getDetailId(), e.getMessage());
     } catch (Exception e) {
       log.warn("知识修正分类失败：detailId={}, err={}", row.getDetailId(), e.getMessage());
       batchMapper.incrementFailed(batchNo);
@@ -462,6 +540,26 @@ public class KnowledgeFixClassifyService {
     batchMapper.updateById(batch);
   }
 
+  /**
+   * 人工暂停收尾（FIX-10/v1.7）：不写"批次中断未分类"兜底（剩余行保持 pending，供下次提交接着跑），
+   * 批次置 paused。跳过质量门禁——暂停是人工控制而非质量判定。
+   */
+  private void finalizePaused(Long batchId, Long batchNo) {
+    pauseRequests.remove(batchNo);
+    ExamKnowledgeFixBatchEntity batch = batchMapper.selectById(batchId);
+    if (batch == null) {
+      return;
+    }
+    int total = batch.getTotal() == null ? 0 : batch.getTotal();
+    int done = batch.getDone() == null ? 0 : batch.getDone();
+    batch.setStatus(ExamKnowledgeFixBatchEntity.STATUS_PAUSED);
+    batch.setFailReason("人工暂停：已分类 " + done + "/" + total + "，剩余 "
+        + Math.max(0, total - done) + " 行保持待分类；再次点「提交 LLM 分类批次」即可接着跑");
+    batch.setUpdatedAt(LocalDateTime.now());
+    batchMapper.updateById(batch);
+    log.info("知识修正批次已暂停：batchNo={}, done={}/{}", batchNo, done, total);
+  }
+
   /** 质量门禁说明（FIX-1.4）：写清楚未达标原因，供页面红色提示与事后复核 */
   private static String buildGateReason(boolean noDispatch, int unclassified, int total,
       BigDecimal rate) {
@@ -473,7 +571,9 @@ public class KnowledgeFixClassifyService {
       sb.append("未分类 ").append(unclassified).append("/").append(total)
           .append("（上限 5%）；");
     }
-    if (rate.compareTo(SELF_CONSISTENCY_GATE) < 0) {
+    if (rate == null) {
+      sb.append("自一致率不适用（本批无三采样行，全部 L2 直收尾）；");
+    } else if (rate.compareTo(SELF_CONSISTENCY_GATE) < 0) {
       sb.append("自一致率 ").append(rate).append("（下限 0.80）；");
     }
     sb.append("未分类行可经 reset 后重跑");
@@ -497,7 +597,8 @@ public class KnowledgeFixClassifyService {
       logRow.setDetailId(detailId);
       logRow.setStage(stage);
       logRow.setModelId(cfg.getModelId());
-      logRow.setPromptDigest(prompt.length() > 200 ? prompt.substring(0, 200) : prompt);
+      // FIX-11：题干已移至 prompt 末尾，摘要改存末尾 200 字（审计排障用）
+      logRow.setPromptDigest(prompt.length() > 200 ? prompt.substring(prompt.length() - 200) : prompt);
       logRow.setPromptTokens((int) result.promptTokens());
       logRow.setCompletionTokens((int) result.completionTokens());
       logRow.setTotalTokens((int) result.totalTokens());
@@ -533,20 +634,29 @@ public class KnowledgeFixClassifyService {
     return s.replaceAll("<[^>]+>", "").replace("&nbsp;", " ").trim();
   }
 
+  /**
+   * 阶段 1 prompt。FIX-11/v1.7 稳定段前置：候选清单 + 输出要求在前（同课程各行共享同一前缀，
+   * 便于前缀缓存命中），【试题】放末尾（行级变量）。
+   */
   private String buildStage1Prompt(String questionText, List<KnowledgeNodeRow> l2List) {
     StringBuilder sb = new StringBuilder();
-    sb.append("【试题】\n").append(questionText).append("\n\n【候选分类（L2）】\n");
+    sb.append("【候选分类（L2）】\n");
     for (KnowledgeNodeRow n : l2List) {
       sb.append(n.getId()).append("|").append(n.getTitle()).append("\n");
     }
-    sb.append("请从候选中选出该试题所属的 L2 分类，只输出 JSON：{\"l2_id\":<整数>}。禁止输出候选之外的 id，禁止输出任何其它文字。");
+    sb.append("请从候选中选出该试题所属的 L2 分类，只输出 JSON：{\"l2_id\":<整数>}。禁止输出候选之外的 id，禁止输出任何其它文字。\n\n");
+    sb.append("【试题】\n").append(questionText);
     return sb.toString();
   }
 
+  /**
+   * 阶段 2 prompt。FIX-11/v1.7 稳定段前置（同 buildStage1Prompt）；
+   * 【当前标记】属行级变量，随【试题】放末尾。
+   */
   private String buildStage2Prompt(String questionText, List<KnowledgeNodeRow> l3List,
       KnowledgeNodeRow oldNode) {
     StringBuilder sb = new StringBuilder();
-    sb.append("【试题】\n").append(questionText).append("\n\n【候选鉴定点（L3）】\n");
+    sb.append("【候选鉴定点（L3）】\n");
     for (KnowledgeNodeRow n : l3List) {
       sb.append(n.getId()).append("|").append(n.getTitle());
       if (n.getImportant() != null && !n.getImportant().isBlank()) {
@@ -554,13 +664,14 @@ public class KnowledgeFixClassifyService {
       }
       sb.append("\n");
     }
-    if (oldNode != null) {
-      sb.append("【当前标记】该试题当前挂在「").append(oldNode.getTitle())
-          .append("」，若试题确实属于它，请选择它（node_id=").append(oldNode.getId()).append("）。\n");
-    }
     sb.append("请从候选中选出该试题真正归属的鉴定点，只输出 JSON：")
         .append("{\"node_id\":<整数>,\"confidence\":<0~1 小数>,\"reason\":\"不超过50字\"}。")
-        .append("禁止输出候选之外的 id，禁止输出任何其它文字。");
+        .append("禁止输出候选之外的 id，禁止输出任何其它文字。\n\n");
+    sb.append("【试题】\n").append(questionText);
+    if (oldNode != null) {
+      sb.append("\n【当前标记】该试题当前挂在「").append(oldNode.getTitle())
+          .append("」，若试题确实属于它，请选择它（node_id=").append(oldNode.getId()).append("）。");
+    }
     return sb.toString();
   }
 

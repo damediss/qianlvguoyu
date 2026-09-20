@@ -82,11 +82,42 @@ public class QuestionResolveAssistService {
     }
   }
 
+  /**
+   * 只读解析与题干，不触发 AI 生成。供小培讲题/上下文快路径。
+   */
+  public Map<String, Object> peekResolve(Integer questionId) {
+    if (questionId == null || questionId <= 0) {
+      throw new AppSmsException(-1, "题目 id 无效");
+    }
+    ExamExamDetailEntity detail = examDetailMapper.selectById(questionId);
+    if (detail == null || (detail.getDeleted() != null && detail.getDeleted() != 0)) {
+      throw new AppSmsException(-1, "题目不存在");
+    }
+    String stem = extractStem(detail);
+    if (StringUtils.hasText(detail.getResolve())) {
+      String dbText = detail.getResolve().trim();
+      if (dbText.length() >= RESOLVE_DB_MAX - 5) {
+        AiGenerationDraftEntity draft = findDraft(questionId);
+        if (draft != null && StringUtils.hasText(draft.getResultText())
+            && draft.getResultText().trim().length() > dbText.length()) {
+          return result(questionId, draft.getResultText().trim(), "draft", false, stem);
+        }
+      }
+      return result(questionId, dbText, "db", false, stem);
+    }
+    AiGenerationDraftEntity draft = findDraft(questionId);
+    if (draft != null && StringUtils.hasText(draft.getResultText())) {
+      return result(questionId, draft.getResultText().trim(), "draft", false, stem);
+    }
+    return result(questionId, null, "empty", false, stem);
+  }
+
   private Map<String, Object> ensureResolveLocked(Integer questionId) {
     ExamExamDetailEntity detail = examDetailMapper.selectById(questionId);
     if (detail == null || (detail.getDeleted() != null && detail.getDeleted() != 0)) {
       throw new AppSmsException(-1, "题目不存在");
     }
+    String stem = extractStem(detail);
 
     if (StringUtils.hasText(detail.getResolve())) {
       String dbText = detail.getResolve().trim();
@@ -95,17 +126,17 @@ public class QuestionResolveAssistService {
         AiGenerationDraftEntity draft = findDraft(questionId);
         if (draft != null && StringUtils.hasText(draft.getResultText())
             && draft.getResultText().trim().length() > dbText.length()) {
-          return result(questionId, draft.getResultText().trim(), "draft", false);
+          return result(questionId, draft.getResultText().trim(), "draft", false, stem);
         }
       }
-      return result(questionId, dbText, "db", false);
+      return result(questionId, dbText, "db", false, stem);
     }
 
     AiGenerationDraftEntity draft = findDraft(questionId);
     if (draft != null && StringUtils.hasText(draft.getResultText())) {
       String full = draft.getResultText().trim();
       backfillResolveColumn(detail, full);
-      return result(questionId, full, "draft", false);
+      return result(questionId, full, "draft", false, stem);
     }
 
     Long tenantId = TenantContextHolder.getTenantId();
@@ -115,12 +146,48 @@ public class QuestionResolveAssistService {
 
     String generated = generateByLlm(detail, tenantId);
     if (!StringUtils.hasText(generated)) {
-      return result(questionId, null, "empty", false);
+      return result(questionId, null, "empty", false, stem);
     }
     String text = generated.trim();
     writeDraft(questionId, text, tenantId);
     backfillResolveColumn(detail, text);
-    return result(questionId, text, "ai", true);
+    return result(questionId, text, "ai", true, stem);
+  }
+
+  private String extractStem(ExamExamDetailEntity detail) {
+    if (detail == null) {
+      return null;
+    }
+    try {
+      FollowTaskQuestionReq snap = bankQuestionConverter.convert(detail, 0);
+      if (snap != null && StringUtils.hasText(snap.getStem())) {
+        return stripHtml(snap.getStem());
+      }
+    } catch (Exception ignored) {
+      // fall through
+    }
+    return stripHtml(detail.getContent());
+  }
+
+  /** 题干常带 &lt;p&gt; 等富文本，展示前去掉标签。 */
+  private static String stripHtml(String raw) {
+    if (!StringUtils.hasText(raw)) {
+      return null;
+    }
+    String t = raw
+        .replaceAll("(?is)<br\\s*/?>", "\n")
+        .replaceAll("(?is)</p>", "\n")
+        .replaceAll("(?is)<[^>]+>", "")
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replaceAll("[ \\t\\x0B\\f\\r]+", " ")
+        .replaceAll("\\n{3,}", "\n\n")
+        .trim();
+    return StringUtils.hasText(t) ? t : null;
   }
 
   private String generateByLlm(ExamExamDetailEntity detail, Long tenantId) {
@@ -259,12 +326,20 @@ public class QuestionResolveAssistService {
   }
 
   private static Map<String, Object> result(Integer questionId, String resolve, String source, boolean generated) {
+    return result(questionId, resolve, source, generated, null);
+  }
+
+  private static Map<String, Object> result(
+      Integer questionId, String resolve, String source, boolean generated, String stem) {
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("questionId", questionId);
     out.put("resolve", resolve);
     out.put("analysis", resolve);
     out.put("source", source);
     out.put("generated", generated);
+    if (StringUtils.hasText(stem)) {
+      out.put("stem", stem);
+    }
     return out;
   }
 

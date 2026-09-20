@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "platform.competition.formal-exam.scoring-messaging")
 public class CompetitionScoringMessagingProperties {
-  private boolean enabled = true;
+  private boolean enabled = false;
   private long dispatchDelayMillis = 100L;
   private int batchSize = 100;
   private int maxAttempts = 3;

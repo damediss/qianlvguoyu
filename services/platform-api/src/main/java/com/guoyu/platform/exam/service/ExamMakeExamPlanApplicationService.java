@@ -265,8 +265,8 @@ public class ExamMakeExamPlanApplicationService {
       Integer userId) {
 
     if (plan.getIsAll() != null && plan.getIsAll() == 1) {
-      // 全选模式：查 L3 知识点 + 按题型分组统计
-      List<Integer> l3Ids = knowledgeService.getLevel3IdsByCourse(plan.getCourseId());
+      // 全选模式：查全部知识点节点（不限层级，含 L2 直挂题）+ 按题型分组统计
+      List<Integer> l3Ids = knowledgeService.getNodeIdsByCourse(plan.getCourseId());
       if (l3Ids.isEmpty()) {
         return new ArrayList<>();
       }
@@ -403,11 +403,11 @@ public class ExamMakeExamPlanApplicationService {
       paperMapper.insert(paper);
     }
 
-    // 获取 L3 知识点
-    List<Integer> l3Ids = knowledgeService.getLevel3IdsByCourse(plan.getCourseId());
+    // 获取全部知识点节点（不限层级，含 L2 直挂题）
+    List<Integer> l3Ids = knowledgeService.getNodeIdsByCourse(plan.getCourseId());
     if (l3Ids.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST,
-          "该科目下无可用三级知识点，无法组卷；请先在题库配置知识点树");
+          "该科目下无可用知识点，无法组卷；请先在题库配置知识点树");
     }
 
     boolean isAll = plan.getIsAll() != null && plan.getIsAll() == 1;
@@ -475,7 +475,7 @@ public class ExamMakeExamPlanApplicationService {
         } else if (!rateDetailList.isEmpty()) {
           // 有比重：按知识点比重分配题数
           for (ExamKnowledgeRateDetailEntity rateDetail : rateDetailList) {
-            List<Integer> subL3Ids = knowledgeService.getLevel3DescendantIds(rateDetail.getKnowledgeId());
+            List<Integer> subL3Ids = knowledgeService.getDescendantIds(rateDetail.getKnowledgeId());
             if (subL3Ids.isEmpty()) continue;
 
             double subNum = Math.ceil((double) detail.getNum() * rateDetail.getRate() / 100);
@@ -632,7 +632,7 @@ public class ExamMakeExamPlanApplicationService {
       for (ExamMakeExamPlanDetailEntity detail : detailList) {
         if (detail.getKnowledgeId() == null) continue;
 
-        List<Integer> l3Ids = knowledgeService.getLevel3DescendantIds(detail.getKnowledgeId());
+        List<Integer> l3Ids = knowledgeService.getDescendantIds(detail.getKnowledgeId());
         if (l3Ids.isEmpty()) continue;
 
         List<ExamOperateDetailEntity> opDetails = operateDetailMapper.selectList(

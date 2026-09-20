@@ -33,10 +33,11 @@ import static org.springframework.http.HttpStatus.UNAUTHORIZED;
 @RestController
 public class SsoBridgeController {
 
-  /** WeKnora 后端 /oidc/url 地址（WeKnora 发布在宿主 :8088，本服务走 localhost 即可） */
+  /** WeKnora 后端 /oidc/url 地址（WeKnora 发布在宿主 :8088，本服务走 localhost 即可）。
+   * redirect_uri 必须与 AuthorizationServerConfig 注册的 redirectUri 逐字符一致。 */
   private static final String WEKNORA_OIDC_URL =
       "http://localhost:8088/api/v1/auth/oidc/url"
-          + "?redirect_uri=http://43.138.163.7:8088/api/v1/auth/oidc/callback";
+          + "?redirect_uri=https://zsk.gjjd168.com/api/v1/auth/oidc/callback";
 
   @GetMapping("/sso/weknora")
   public Map<String, String> bridge(HttpServletRequest req) {

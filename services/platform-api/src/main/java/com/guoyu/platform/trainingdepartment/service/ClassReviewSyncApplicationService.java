@@ -41,6 +41,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -222,9 +223,9 @@ public class ClassReviewSyncApplicationService {
 
   /**
    * 试题配置保存后自动开通同步学：绑定 exam、同步名单、写入灰度。
-   * 失败不抛给刷题保存（由调用方 fail-soft）；本方法内部名单/灰度亦 fail-soft。
+   * 独立事务：失败不回滚外层刷题范围保存（由调用方 fail-soft）。
    */
-  @Transactional
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
   public Map<String, Object> autoProvisionFromPracticeScope(Long classId, ClassPracticeScopeSaveReq practiceReq) {
     operatorScopeService.requireOrgOperator();
     TrainInfoClassEntity clazz = requireClass(classId);

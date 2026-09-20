@@ -17,6 +17,7 @@ import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -24,14 +25,12 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.server.authorization.client.InMemoryRegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
-import org.springframework.security.oauth2.server.authorization.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
@@ -53,9 +52,9 @@ public class AuthorizationServerConfig {
   public SecurityFilterChain authorizationServerFilterChain(
       HttpSecurity http,
       RestAuthenticationEntryPoint authenticationEntryPoint) throws Exception {
-    OAuth2AuthorizationServerConfiguration.applyDefaultSecurity(http);
-    http.getConfigurer(OAuth2AuthorizationServerConfigurer.class)
-        .oidc(Customizer.withDefaults());
+    http.with(OAuth2AuthorizationServerConfigurer.authorizationServer(),
+            configurer -> configurer.oidc(Customizer.withDefaults()))
+        .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated());
 
     http
         .securityMatcher("/oauth2/**", "/userinfo", "/.well-known/**")
@@ -99,7 +98,7 @@ public class AuthorizationServerConfig {
           c.add(ClientAuthenticationMethod.CLIENT_SECRET_POST);
         })
         .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-        .redirectUri("http://43.138.163.7:8088/api/v1/auth/oidc/callback")
+        .redirectUri("https://zsk.gjjd168.com/api/v1/auth/oidc/callback")
         .scope(OidcScopes.OPENID)
         .scope(OidcScopes.PROFILE)
         .scope(OidcScopes.EMAIL)
@@ -120,10 +119,15 @@ public class AuthorizationServerConfig {
     return (jwkSelector, ctx) -> jwkSelector.select(jwkSet);
   }
 
+  /**
+   * issuer 是签发的 id_token 里 iss 声明和发现文档的地址，必须与 WeKnora
+   * OIDC_AUTH_ISSUER_URL 逐字符一致；生产由外部配置覆盖为域名。
+   */
   @Bean
-  public AuthorizationServerSettings authorizationServerSettings() {
+  public AuthorizationServerSettings authorizationServerSettings(
+      @Value("${platform.oauth2.issuer:http://43.138.163.7/api}") String issuer) {
     return AuthorizationServerSettings.builder()
-        .issuer("http://43.138.163.7/api")
+        .issuer(issuer)
         .build();
   }
 

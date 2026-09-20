@@ -24,7 +24,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
     "com.guoyu.platform.exam.reviewsync.mapper",
     "com.guoyu.platform.exam.standard.mapper",
     "com.guoyu.platform.exam.theorygen.mapper",
-    "com.guoyu.platform.exam.skillgen.mapper"
+    "com.guoyu.platform.exam.skillgen.mapper",
+    "com.guoyu.platform.courseware.mapper"
 })
 @SpringBootApplication
 public class PlatformApplication {

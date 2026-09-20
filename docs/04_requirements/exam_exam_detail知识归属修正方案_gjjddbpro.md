@@ -2,7 +2,7 @@
 
 > 目标库：gjjddbpro（生产）。目标表：`exam_exam_detail`（题库试题明细，约 32 万行）。
 > 依据：2026-09-12 生产库只读探查（全部为 SELECT，未做任何写入）。
-> 状态：**v1.6——FIX-1~6 已实施（判重键加课程维度、断路器语义修正、质量门禁、重跑通道、前端口径、KF-25~30），31 测全绿；生产执行（回滚矫正 → 新口径重算 → 重跑分类 → 写回）待部署方在审批窗口执行，见 §11.9**。
+> 状态：**v1.7——FIX-8~12 已实施（2026-09-16）：写回备份参数化、分类阶段 5 月加固、人工暂停 + 用量可见、prompt 重排提升缓存命中、并发 5→30；knowledgefix 包 32 测全绿 + 前端 tsc 0 错；打包部署与生产执行（§11.10.9）待部署方在审批窗口进行**。
 > 关联背景：2026-05-14 起的题库批量导入存在知识点错误挂接 + 大规模重复导入。
 
 ### 修订记录
@@ -16,6 +16,7 @@
 | v1.4 | 新增 **§11 生产首轮执行结果、缺陷分析与修复方案**：Phase 1 去重已落地但候选口径收窄；Phase 3 分类批次被断路器中断，93,848 行中仅 456 行进过模型、93,392 行未分类即被兜底置 flag，批次仍被标记 done。列出 DEF-1~9 缺陷、FIX-1~7 修复方案、重跑顺序与止损状态 |
 | v1.5 | **FIX-7 裁定：跨课程同题不算重复**（需求方 2026-09-15 确认）→ 判重键加入课程维度、判重域收窄为"同课程"；**新增 §11.8**：生产只读复核量化（已删 43,192 行中 2,241 行需恢复、10,753 行需补删，新口径去重目标 51,712 行）+ 无课程行（45,924 行）处置待确认 + 执行方案 A/B；§1.2/§2/§6.3/§8/§10.4/§11.3~11.5 同步修订 |
 | v1.6 | 需求方确认无课程行按独立桶处理、执行方案选 A → **FIX-1~6 全部实施**（含 FIX-4 判重键加课程维度与无课程桶、FIX-1 断路器语义与质量门禁、FIX-3 reset 重跑通道、FIX-5 前端口径、KF-25~30 测试）；**新增 §11.9 实施记录**（代码落点 + 31 测全绿 + 全量回归 1,380/3 个既有失败 + 待部署方执行的生产步骤） |
+| v1.7 | 2026-09-16 生产反馈与需求方确认：①首轮批次越界装入 5 月前历史行（64,358 行）必须从分类阶段彻底隔离（**FIX-9**）；②需要"**暂停按钮**"控制费用（**FIX-10**，配套用量可见）；③prompt 重排提升**输入缓存命中率**、并发 5→30 提速（**FIX-11/FIX-12**）；④写回"自动备份"实际为空表，写回前必修（**FIX-8**，需求方补充确认）；⑤确认不做：为知识修正单独关闭 thinking（**E 项不做**）。**新增 §11.10 计划并已实施**（32 测全绿 + tsc 0 错）；同节记录 2026-09-16 生产已执行动作与执行窗口的操作顺序 |
 
 ---
 
@@ -653,3 +654,169 @@ SELECT COUNT(*) AS keywords, SUM(courses >= 2) AS cross_course_keys FROM (
 |---|---|---|---|
 | DEF-10 | 回滚入口只在"本次会话执行过软删除"后渲染（`lastDedupBackup` 为组件内存态）→ 部署/刷新后页面上无回滚入口，上一轮已执行的软删除无法从页面回滚 | 生产部署后反馈"页面上没有回滚去重按钮" | 已修：回滚入口常驻（与 §7.4 交互红线一致），点击弹窗确认备份表名（默认取上次使用值，localStorage 跨会话保留；格式 `exam_exam_detail_bak_dedup_YYYYMMDD` 前端校验），弹窗内提示查询最近备份表的 SQL |
 | DEF-11 | 去重回滚接口的备份表名无守卫（`${backupTable}` 直接拼 SQL），与写回侧（有前缀校验）不一致 | 代码审查 | 已修：服务端加前缀+日期格式校验（`exam_exam_detail_bak_dedup_\d{8}`），非法名直接 400；补测 KF-31（含 `; drop database` 等注入样例） |
+
+---
+
+### 11.10 v1.7：暂停控制、范围加固、缓存与并发（2026-09-16）
+
+> 依据：2026-09-16 生产执行反馈 + 代码复核（`KnowledgeFixClassifyService` / `ExamDetailKnowledgeFixMapper` / `KnowledgeFixWriteBackService` / `FaqLlmClient` / `AsyncConfig`）。
+> 状态：**FIX-8~12 已实施**——`mvn compile` 0 错；knowledgefix 包 **32 测全绿**（含新增 KF-32 暂停停派发 / KF-33 缓存友好 prompt / KF-34 范围加固契约 / KF-35 备份参数化契约，权限矩阵登记新端点后 13 端点核对通过）；前端 `tsc --noEmit` 0 错。打包部署与生产执行见 §11.10.9。
+> 实施要点与计划一致：FIX-8 `backupRows` 增 `statusFilter` 参数（去重 `approved` / 写回 `apply`）；FIX-9 三处 SQL 补 `e.create_time >= '2026-05-01'`（`resetFlagRows`/`countByStatus` 改 JOIN 多表）；FIX-10 `STATUS_PAUSED` + 内存态暂停键集 + 派发循环逐行检查 + `finalizePaused`（不写兜底）+ `POST /classify/pause`（沿用 `classify:submit`）+ `sumUsageByBatch` 聚合透出；FIX-11 候选清单与输出要求前置、【试题】与【当前标记】后置、每行 `shuffle` 一次（种子=detailId，3 采样同 prompt）、`prompt_digest` 改存末尾 200 字；FIX-12 `llm-concurrency` 默认 5 → 30。
+
+#### 11.10.1 2026-09-16 生产已执行动作（现场口径）
+
+| 动作 | 说明 |
+|---|---|
+| 中止越界批次 | 本轮新提交批次 total=95,839（= 首轮清单 93,848〔含 5 月前历史 64,358〕+ 本轮新装入约 1,991），跑到 404 行时人工中止：**重启后端进程 + 库内收尾**（`exam_knowledge_fix_batch` 置 `failed`），避免继续为 5 月前历史行付费 |
+| 清单域外行隔离 | 按下述 SQL 软删标记（保留审计；`@TableLogic` 使其同时从分类、分页、写回、备份中消失）。**如现场只做了批次收尾，需补做这一步** |
+| 遗留 | 上述是"一次性数据动作"：代码层仍会再次装入/派发历史行（`populateFixList` 已在 v1.6 加 5 月过滤，但 `selectPendingWithContent`/`resetFlagRows`/`countByStatus` 没有）→ FIX-9 |
+
+```sql
+UPDATE exam_detail_knowledge_fix f JOIN exam_exam_detail e ON e.id = f.detail_id
+SET f.deleted = 1, f.updated_at = NOW()
+WHERE f.deleted = 0 AND (e.create_time < '2026-05-01' OR e.deleted = 1);
+```
+
+#### 11.10.2 计划项总览
+
+| FIX | 项目 | 类型 | 优先级 | 生效方式 |
+|---|---|---|---|---|
+| FIX-8 | 写回备份表实际为空（写回前必修） | 后端 SQL | **P0** | 新 jar |
+| FIX-9 | 分类阶段 5 月范围加固（3 处 SQL） | 后端 SQL | **P0** | 新 jar |
+| FIX-10 | 人工「暂停」按钮 + 批次用量可见 | 后端 + 前端 | **P0** | 新 jar + 前端发版 |
+| FIX-11 | prompt 重排 + 采样顺序调整（输入缓存命中） | 后端 prompt | P1 | 新 jar（建议小样验证后上量） |
+| FIX-12 | 分类并发 5 → 30 | 配置默认值 | P1 | 新 jar 或环境变量 |
+| — | 为知识修正单独关闭 thinking（E 项） | — | **不做**（需求方 2026-09-16 决定） | — |
+
+#### 11.10.3 FIX-8 写回备份表实际为空（P0，写回前必修）
+
+- **现象**：`KnowledgeFixWriteBackService.apply` 调 `queryMapper.backupRows(backupTable, "exam_detail_knowledge_fix")`，而 `ExamExamDetailFixMapper.backupRows` 的 SQL 写死 `WHERE status = 'approved' AND deleted = 0`；知识修正清单的状态只有 `pending/apply/keep/flag/applied`（`ExamDetailKnowledgeFixEntity` 常量），**不存在 approved** → 备份表建出来是空表（`INSERT IGNORE ... SELECT` 命中 0 行），按钮上"已自动备份，可回滚"实际回滚不了任何行。
+- **影响面**：仅写回侧；去重侧不受影响（`exam_detail_dedup_list` 确实用 `status='approved'`）。
+- **修法（二选一）**：
+  1. **优选**：`backupRows` 过滤条件参数化 —— `backupRows(backupTable, listTable, statusFilter)`，去重传 `approved`、写回传 `apply`；
+  2. 备选：写回侧用自己的 SQL（`INSERT IGNORE INTO ${backupTable} SELECT * FROM exam_exam_detail WHERE id IN (SELECT detail_id FROM exam_detail_knowledge_fix WHERE status='apply' AND deleted=0)`）。
+- **验收**：写回前 `SELECT COUNT(*) FROM exam_exam_detail_bak_kfix_YYYYMMDD` 应等于 apply 行数；写回后可 `rollbackKnowledge` 还原。**未修前不得执行写回。**
+
+#### 11.10.4 FIX-9 分类阶段 5 月范围加固（P0）
+
+`populateFixList`（v1.6 FIX-2）已加 5 月过滤，但三个下游 SQL 没有，构成"装入时拦、运行时漏"：
+
+| 落点 | 现状 | 风险 |
+|---|---|---|
+| `ExamDetailKnowledgeFixMapper.selectPendingWithContent` | `f.status='pending' AND f.deleted=0 AND e.deleted=0` | 清单里残留的历史行会被送模型（范围放大 3.2×、结论落在历史行，DEF-4/5 翻版） |
+| `ExamDetailKnowledgeFixMapper.resetFlagRows` | `WHERE status='flag' AND deleted=0` | 「复位并重跑」把首轮兜底 flag 的历史行整批拉回 pending |
+| `ExamDetailKnowledgeFixMapper.countByStatus` | 仅按 status 统计 | 页面"待分类"数含历史行，误导重跑判断 |
+
+- **修法**：三处统一补 `AND e.create_time >= '2026-05-01'`；前两处改为 JOIN `exam_exam_detail e`（`resetFlagRows` 改多表 UPDATE 并给列加 `f.` 前缀）。
+- **验收**：KF-34 SQL 契约断言；生产「复位并重跑」后"待分类"数应等于去重后存活的目标行数（§11.3 FIX-2 目标 29,490 减去被去重删除的部分），而不是九万多。
+
+#### 11.10.5 FIX-10 人工暂停 + 用量可见（P0）
+
+**需求**：分类运行中费用超预期时能一键停下。
+
+**语义（先对齐）**：
+
+1. 暂停 = **停派发新行**；已派发（在飞行）的行**不中断**，跑完后编排线程把批次收尾为 `paused` 并退出（与踩坑 #18"pause 不中断已提交的长调用"同口径）。生效时间 ≈ 至多 1 行派发 + 在飞行行跑完，约 10 秒内（并发 30、单行 ≤4 次调用）。
+2. 未跑的行**保持 pending**，**不写**"批次中断未分类"兜底（否则继续跑要先 reset 把 flag 退回）。
+3. **继续 = 再点「提交 LLM 分类批次」**：新批次只覆盖剩余 pending 行，已完成行结论不受影响（不重跑、不重复计费）。
+4. 批次状态新增 `paused`（`ExamKnowledgeFixBatchEntity.STATUS_PAUSED`）。`submit`/`reset` 的"已有进行中的批次"守卫仍只认 `pending/running` → paused 批次不挡下一次提交；而**暂停标志落库成 paused 之前**编排线程仍在运行，提交仍被 running 挡住 → 无"双批次并发"窗口。
+5. 边界：暂停标志是**内存态**，进程重启即失效（届时批次停在 running，按 §11.10.8 C 的 SQL 收尾，与 2026-09-16 现场同口径）。
+
+**落点**：
+
+| 层 | 改动 |
+|---|---|
+| 实体 | `ExamKnowledgeFixBatchEntity` 增 `STATUS_PAUSED = "paused"` |
+| Mapper | `ExamKnowledgeFixLlmLogMapper` 增 `sumUsageByBatch`（calls / promptTokens / completionTokens / totalTokens / cachedTokens；走 `idx_kfll_batch`），配套新增 `FixBatchUsageVO` |
+| 服务 | `KnowledgeFixClassifyService`：`pauseRequests` 键集 + `pause()`（取最新 pending/running 批次登记标志）+ `currentInFlight()` + 派发循环逐行检查 + `finalizePaused()`（不写兜底、置 paused、failReason 写"已分类 X/Y，剩余 Z 行待分类，再次提交即可接着跑"） |
+| 控制器 | `POST /classify/pause`（权限沿用 `exam:knowledgefix:classify:submit`，与 reset 同口径，**无需新迁移/权限种子**）；`/classify/progress` 响应增 `usage` |
+| 前端 | 「暂停」按钮（`Popconfirm` 二次确认，批次 running/pending 时可点）；`paused` 状态提示条；paused 时「提交」按钮文案改"继续（提交剩余行）"；用量行显示"累计调用 N 次 / tokens X（缓存命中 Y）" |
+
+**验收**：KF-32（暂停后停派发、剩余行保持 pending、批次置 paused、不写 unclassified 兜底、LLM 调用数不再增长）；权限矩阵测试登记新端点（12 → 13）。
+
+#### 11.10.6 FIX-11 prompt 重排 + 采样顺序调整（P1，输入缓存命中）
+
+**现状诊断**（`FaqLlmClient` 已把 system 提示单独作为稳定前缀、审计表已有 `cached_tokens` 列，但本链路的 prompt 结构把缓存浪费掉了）：
+
+1. 稳定前缀只有 system 提示（约 150 token）；user 消息以「【试题】+题干」开头（逐行不同）→ 前缀从第一行题干就分叉；
+2. 同课程各行共享同一份 L2/L3 候选清单，但清单排在题干**之后**，命中不到；
+3. `classifyRow` 阶段 2 对**每次采样**都 `Collections.shuffle(l3List)` → 同一行 3 次采样 prompt 互不相同（升级复判那次反而用未打乱顺序，口径不一致）。
+
+**改法**：
+
+- **稳定段前置**：`【候选分类（L2）】/【候选鉴定点（L3）】+ 输出要求` 在前，`【试题】` 放末尾（`【当前标记】` 属行级变量，随之放末尾）；
+- **采样顺序**：由"每次采样 shuffle"改为"每行 shuffle 一次（种子 = detailId），3 次采样共用同一顺序"；升级复判沿用同一顺序；
+- 审计摘要 `prompt_digest` 改存**末尾 200 字**（题干在末尾，排障更有用）。
+
+**代价（需求方 2026-09-16 确认接受）**：行内"位置偏差检测"退化为行间（全批候选顺序仍随机）；位置偏差的兜底仍是确定性卫兵（选中节点与题干零重合且非素养节点 → flag）。
+
+**收益**：stage2 占调用数 75%，改后同一行第 2、3 次采样整段命中前缀缓存（`cached_tokens` 计费 + TTFT 更低），同课程行之间也共享候选清单前缀。
+
+**验收**：KF-33（3 次采样 prompt 逐字节一致 + 结构断言：候选在前、试题在后）；小样 100 行按 §11.10.7 量测命中率。
+
+#### 11.10.7 FIX-12 并发 5 → 30（P1）
+
+- **现状**：`platform.knowledgefix.llm-concurrency` 默认 5，线程池 core=max=该值（`AsyncConfig.knowledgeFixLlmExecutor`）→ 改配置即放大，无需改代码。
+- **实测基线**（首轮真实数据）：1,826 次调用 / 906 秒 ≈ **2 次/秒**（并发 5，单次约 2.5 秒）；每行 4 次调用（stage1 1 次 + stage2 三采样 3 次）。
+- **预计**（3 万行 ≈ 12 万次调用）：并发 5 ≈ 17 小时；并发 20 ≈ 4.2 小时；**并发 30 ≈ 2.8 小时**。
+- **上界与安全区**：stage1/stage2 走 `theory-gen-glm`（glm-5.3-flash），受 `FaqLlmClient` 的 **glm-5.3-flash 全局公平信号量 50** 封顶（`PLATFORM_AI_GLM_MAX_CONCURRENCY`）；HTTP perRoute 60。取 30 给理论/技能试题生成留余量；要更高时先抬闸口并核对智谱账号 RPM/TPM。
+- **落点**：`application.yml` 默认值 5 → 30（`PLATFORM_KNOWLEDGEFIX_LLM_CONCURRENCY` 仍可覆盖）。
+
+#### 11.10.8 用量与缓存命中量化（执行期与事后核对）
+
+```sql
+-- 批次累计用量（与页面同一口径；FIX-10 落地前也可手工执行）
+SELECT stage, COUNT(*) calls, SUM(prompt_tokens) pt, SUM(completion_tokens) ct,
+       SUM(total_tokens) tt, SUM(cached_tokens) cached,
+       ROUND(SUM(cached_tokens)/NULLIF(SUM(prompt_tokens),0)*100,1) AS hit_pct
+FROM exam_knowledge_fix_llm_log
+WHERE batch_no = <批次号> AND deleted = 0
+GROUP BY stage;
+
+-- 暂停/收尾后核对：剩余待分类行（应等于新批次 total）
+SELECT COUNT(*) FROM exam_detail_knowledge_fix f JOIN exam_exam_detail e ON e.id = f.detail_id
+WHERE f.status='pending' AND f.deleted=0 AND e.deleted=0 AND e.create_time >= '2026-05-01';
+```
+
+#### 11.10.9 中午窗口操作顺序
+
+**A. 现有 jar 即可执行（数据动作，§11.4 同口径）**
+
+1. 去重清理：按备份表 `exam_exam_detail_bak_dedup_20260914` 整体回滚（页面「回滚去重（按备份表）」）→ 旧清单置 `rolled_back`；
+2. 「生成/刷新去重清单」（新口径：课程维度 + 无课程桶），预期待删 ≈ 51,712 + 41,237；
+3. 复核统计卡 → 「执行软删除（deleted=1）」→ 记下新备份表名；
+4. 按 §11.8 D 的两条复核 SQL 验证（每课程每题恰一份；跨课程同题各自存活）。
+
+**B. 需新 jar（FIX-8~12 实施 + 编译打包 + 部署后）**
+
+5. 确认「复位并重跑」后"待分类"数 = 去重后存活的目标行数（不是九万多，即 FIX-9 生效）；
+6. 「提交 LLM 分类批次」→ 盯用量行（调用数 / tokens / 缓存命中率）；建议先小样 100 行核对自一致率 ≥80%、未分类 ≤5%（门禁仍由代码硬拦）；
+7. 费用超预期 → 点「暂停」→ 核对批次置 `paused`、剩余行 = total − done；要接着跑再点「提交」；
+8. 批次 done 且门禁通过 → **先确认 FIX-8 生效**（`exam_exam_detail_bak_kfix_YYYYMMDD` 行数 = apply 行数）→ 才点「执行写回（仅 apply 行）」；
+9. 归档：导出修正清单 xlsx + 质量报告 + LLM 审计统计。
+
+**C. 兜底（页面不可用时）**
+
+```sql
+-- 卡住的批次收尾（进程重启后 running/paused 均适用）
+UPDATE exam_knowledge_fix_batch SET status='failed',
+       fail_reason='人工中止（清理后重跑）', updated_at=NOW()
+WHERE status IN ('pending','running','paused');
+```
+
+#### 11.10.10 测试与验收清单（v1.7 增量）
+
+| 用例 | 断言要点 |
+|---|---|
+| KF-32 暂停停派发 | 登记暂停后编排停止派发；已派发行有结论；剩余行保持 pending；批次置 `paused`；**不写**"批次中断未分类"兜底；未分类计数不增 |
+| KF-33 缓存友好 prompt | 同一行 3 次 stage2 采样 prompt 逐字节一致；结构上候选清单+输出要求在【试题】之前；升级复判沿用同一顺序 |
+| KF-34 范围加固（SQL 契约） | `selectPendingWithContent` / `resetFlagRows` / `countByStatus` 三处 SQL 均含 `e.create_time >= '2026-05-01'` |
+| KF-35 写回备份（SQL 契约） | 写回备份按 `status='apply'` 取行（与去重的 `approved` 分开配置），杜绝"空备份表" |
+| 权限矩阵 | 端点清单登记 `pauseClassify`（沿用 `exam:knowledgefix:classify:submit`） |
+| 回归 | knowledgefix 包全绿 + 全量回归无新增失败；前端 `tsc` 0 错 |
+
+#### 11.10.11 不做项与遗留
+
+- **E 项（不做）**：为知识修正单独关闭 thinking。`exam_faq_model_config` 里 `theory-gen-glm`（glm-5.3-flash，thinking=enabled / effort=low）**同时被理论试题生成共用**，另起 `knowledge-fix-flash` 行并把 `MAIN_MODEL_CODE` 改成可配置属独立开发项（需求方 2026-09-16 决定不做）。
+- 结构性提速（合并 stage1/stage2、同课程多行批量一次调用）本次不做：收益 25% ~ 10×，但需重做 prompt/三采样/校验并重新验证准确率。
+- 存量说明：首轮批次 57183235 的 `apply` 59 行结论（全部落在 5 月前历史行）**不可用于写回**，新批次跑完后以新结论为准。

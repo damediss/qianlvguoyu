@@ -60,11 +60,12 @@ public class KnowledgeFixWriteBackService {
             "修正行 " + row.getDetailId() + " 的新节点越界（course 不一致），已阻止写回");
       }
     }
-    // 备份（整行；幂等）
+    // 备份（整行；幂等）。FIX-8：写回按 apply 行备份（清单状态域无 approved，
+    // 此前的实现写死 'approved' 导致备份表为空、回滚失效）
     String backupTable = "exam_exam_detail_bak_kfix_"
         + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
     queryMapper.createBackupTable(backupTable);
-    queryMapper.backupRows(backupTable, "exam_detail_knowledge_fix");
+    queryMapper.backupRows(backupTable, "exam_detail_knowledge_fix", "apply");
     // 逐行更新（PK 更新，应用行已按课程树封闭校验）
     int updated = 0;
     for (ExamDetailKnowledgeFixEntity row : applyRows) {

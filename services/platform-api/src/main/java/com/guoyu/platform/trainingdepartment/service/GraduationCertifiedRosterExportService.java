@@ -64,14 +64,14 @@ public class GraduationCertifiedRosterExportService {
   /** 0-based：班级名称行 */
   private static final int CLASS_NAME_ROW = 1;
 
-  /** workTypeLevel 1–5（初级→高级技师）→ 人社「级数/称谓」 */
+  /** workTypeLevel 与班级列表一致：人社级数 1=一级/高级技师 … 5=五级/初级工 */
   private static final String[] LEVEL_LABELS = {
       "",
-      "五级/初级工",
-      "四级/中级工",
-      "三级/高级工",
+      "一级/高级技师",
       "二级/技师",
-      "一级/高级技师"
+      "三级/高级工",
+      "四级/中级工",
+      "五级/初级工"
   };
 
   /** 导出人员范围：已获证（证号非空）/ 全班 */
