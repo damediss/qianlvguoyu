@@ -16,6 +16,8 @@ public record CompetitionStagePaperAssignmentPlayerVO(
     String paperSnapshotId,
     String paperCode,
     String paperTitle,
+    String assessmentSheetId,
+    String assessmentSheetCode,
     String allocationSource,
     String assignmentStatus,
     String configurationStatus) {

@@ -17,6 +17,15 @@ import type {
   CompetitionPlayerCreateRequest,
   CompetitionPlayerQuery,
   CompetitionPlayerUpdateRequest,
+  CompetitionReferee,
+  CompetitionRefereeAssignmentWorkspace,
+  CompetitionRefereeBatchAssignmentResult,
+  CompetitionRefereeCandidate,
+  CompetitionRefereeGroup,
+  CompetitionRefereeGroupUpsertRequest,
+  CompetitionRefereeCreateRequest,
+  CompetitionRefereeQuery,
+  CompetitionRefereeUpdateRequest,
   CompetitionNotice,
   CompetitionNoticeAsset,
   CompetitionNoticeAssetType,
@@ -62,10 +71,18 @@ import type {
   CompetitionTheoryMonitor,
   CompetitionTheoryResultSummary,
   CompetitionStageExecutionPlan,
+  CompetitionStageExecutionPlanCreateRequest,
   CompetitionStageContentItemRequest,
   CompetitionStageWorkspace,
   CompetitionStagePlanPreflight,
+  CompetitionPracticalPaperBinding,
+  CompetitionPracticalPaperBindingRequest,
+  CompetitionPracticalAssessmentSheet,
+  CompetitionPracticalConsole,
+  CompetitionPracticalJudgeTask,
+  CompetitionPracticalScoreEntryRequest,
   CompetitionPracticalSession,
+  CompetitionPracticalSessionCreateRequest,
   CompetitionStageRosterSnapshot,
   CompetitionPracticalJudgeGroup,
   CompetitionPracticalAssignment,
@@ -78,11 +95,13 @@ import type {
   CompetitionStagePaperAssignmentPlayer,
   CompetitionStagePaperAssignmentQuery,
   CompetitionStagePaperAssignmentItem,
+  CompetitionStagePaperAssignmentContentType,
   CompetitionFormalExamSession,
   CompetitionFormalExamPreflight,
   CompetitionFormalCandidateExam,
   CompetitionFormalCandidateResult,
   CompetitionFormalExamConsoleRealtimeTicket,
+  CompetitionFormalExamForceOfflineBatchResult,
 } from '../types/competition';
 import { uploadPlatformFile } from './files';
 
@@ -230,6 +249,35 @@ export function deleteCompetitionPlayer(registrationId: CompetitionId) {
   return unwrap<void>(apiClient.delete(`/competition/players/${registrationId}`));
 }
 
+export function pageCompetitionReferees(params: CompetitionRefereeQuery) {
+  return unwrap<PageResponse<CompetitionReferee>>(
+    apiClient.get('/competition/referees', { params }),
+  );
+}
+
+export function getCompetitionRefereeForEdit(profileId: CompetitionId) {
+  return unwrap<CompetitionReferee>(
+    apiClient.get(`/competition/referees/${profileId}`, { silentError: true }),
+  );
+}
+
+export function createCompetitionReferee(payload: CompetitionRefereeCreateRequest) {
+  return unwrap<CompetitionReferee>(apiClient.post('/competition/referees', payload));
+}
+
+export function updateCompetitionReferee(
+  profileId: CompetitionId,
+  payload: CompetitionRefereeUpdateRequest,
+) {
+  return unwrap<CompetitionReferee>(
+    apiClient.put(`/competition/referees/${profileId}`, payload),
+  );
+}
+
+export function deleteCompetitionReferee(profileId: CompetitionId) {
+  return unwrap<void>(apiClient.delete(`/competition/referees/${profileId}`));
+}
+
 export async function downloadCompetitionRosterTemplate(): Promise<Blob> {
   const response = await apiClient.get('/competition/roster-import-template', { responseType: 'blob' });
   return response.data as Blob;
@@ -368,30 +416,54 @@ export function publishCompetitionStageResult(stageId: CompetitionId) {
   return unwrap<CompetitionStage>(apiClient.post(`/competition/stages/${stageId}/actions/publish-result`));
 }
 
-export function getCompetitionStagePaperAssignmentSummary(stageId: CompetitionId) {
+export function getCompetitionStagePaperAssignmentSummary(
+  stageId: CompetitionId,
+  contentType: CompetitionStagePaperAssignmentContentType = 'theory',
+) {
   return unwrap<CompetitionStagePaperAssignmentSummary>(
-    apiClient.get(`/competition/stages/${stageId}/paper-assignments/summary`),
+    contentType === 'theory'
+      ? apiClient.get(`/competition/stages/${stageId}/paper-assignments/summary`)
+      : apiClient.get(`/competition/stages/${stageId}/paper-assignments/summary`, {
+        params: { contentType },
+      }),
   );
 }
 
 export function pageCompetitionStagePaperAssignmentPlayers(
   stageId: CompetitionId,
   params: CompetitionStagePaperAssignmentQuery,
+  contentType: CompetitionStagePaperAssignmentContentType = 'theory',
 ) {
   return unwrap<PageResponse<CompetitionStagePaperAssignmentPlayer>>(
-    apiClient.get(`/competition/stages/${stageId}/paper-assignments/players`, { params }),
+    apiClient.get(`/competition/stages/${stageId}/paper-assignments/players`, {
+      params: contentType === 'theory' ? params : { ...params, contentType },
+    }),
   );
 }
 
-export function listCompetitionStagePaperAssignmentPlayers(stageId: CompetitionId) {
+export function listCompetitionStagePaperAssignmentPlayers(
+  stageId: CompetitionId,
+  contentType: CompetitionStagePaperAssignmentContentType = 'theory',
+) {
   return unwrap<CompetitionStagePaperAssignmentPlayer[]>(
-    apiClient.get(`/competition/stages/${stageId}/paper-assignments/visualization`),
+    contentType === 'theory'
+      ? apiClient.get(`/competition/stages/${stageId}/paper-assignments/visualization`)
+      : apiClient.get(`/competition/stages/${stageId}/paper-assignments/visualization`, {
+        params: { contentType },
+      }),
   );
 }
 
-export function autoAllocateCompetitionStagePaperAssignments(stageId: CompetitionId) {
+export function autoAllocateCompetitionStagePaperAssignments(
+  stageId: CompetitionId,
+  contentType: CompetitionStagePaperAssignmentContentType = 'theory',
+) {
   return unwrap<CompetitionStagePaperAssignmentSummary>(
-    apiClient.post(`/competition/stages/${stageId}/paper-assignments/auto-allocate`),
+    contentType === 'theory'
+      ? apiClient.post(`/competition/stages/${stageId}/paper-assignments/auto-allocate`)
+      : apiClient.post(`/competition/stages/${stageId}/paper-assignments/auto-allocate`, undefined, {
+        params: { contentType },
+      }),
   );
 }
 
@@ -399,41 +471,63 @@ export function assignCompetitionStagePaper(
   stageId: CompetitionId,
   contestantProfileId: CompetitionId,
   paperSnapshotId: CompetitionId | null,
+  contentType: CompetitionStagePaperAssignmentContentType = 'theory',
 ) {
   return unwrap<CompetitionStagePaperAssignmentPlayer>(
-    apiClient.put(
-      `/competition/stages/${stageId}/paper-assignments/assignments/${contestantProfileId}`,
-      { paperSnapshotId },
-    ),
+    contentType === 'theory'
+      ? apiClient.put(
+        `/competition/stages/${stageId}/paper-assignments/assignments/${contestantProfileId}`,
+        { paperSnapshotId },
+      )
+      : apiClient.put(
+        `/competition/stages/${stageId}/paper-assignments/assignments/${contestantProfileId}`,
+        { paperSnapshotId },
+        { params: { contentType } },
+      ),
   );
 }
 
 export function batchAssignCompetitionStagePapers(
   stageId: CompetitionId,
   assignments: CompetitionStagePaperAssignmentItem[],
+  contentType: CompetitionStagePaperAssignmentContentType = 'theory',
 ) {
   return unwrap<CompetitionStagePaperAssignmentSummary>(
-    apiClient.put(`/competition/stages/${stageId}/paper-assignments/assignments/batch`, {
-      assignments,
-    }),
+    contentType === 'theory'
+      ? apiClient.put(`/competition/stages/${stageId}/paper-assignments/assignments/batch`, {
+        assignments,
+      })
+      : apiClient.put(`/competition/stages/${stageId}/paper-assignments/assignments/batch`, {
+        assignments,
+      }, { params: { contentType } }),
   );
 }
 
 export function saveCompetitionStagePaperAssignments(
   stageId: CompetitionId,
   assignments: CompetitionStagePaperAssignmentItem[],
+  contentType: CompetitionStagePaperAssignmentContentType = 'theory',
 ) {
   return unwrap<CompetitionStagePaperAssignmentSummary>(
-    apiClient.put(`/competition/stages/${stageId}/paper-assignments`, { assignments }),
+    contentType === 'theory'
+      ? apiClient.put(`/competition/stages/${stageId}/paper-assignments`, { assignments })
+      : apiClient.put(`/competition/stages/${stageId}/paper-assignments`, { assignments }, {
+        params: { contentType },
+      }),
   );
 }
 
 export function confirmCompetitionStagePaperAssignments(
   stageId: CompetitionId,
   assignments: CompetitionStagePaperAssignmentItem[],
+  contentType: CompetitionStagePaperAssignmentContentType = 'theory',
 ) {
   return unwrap<CompetitionStagePaperAssignmentSummary>(
-    apiClient.post(`/competition/stages/${stageId}/paper-assignments/confirm`, { assignments }),
+    contentType === 'theory'
+      ? apiClient.post(`/competition/stages/${stageId}/paper-assignments/confirm`, { assignments })
+      : apiClient.post(`/competition/stages/${stageId}/paper-assignments/confirm`, { assignments }, {
+        params: { contentType },
+      }),
   );
 }
 
@@ -523,6 +617,18 @@ export function forceOfflineCompetitionFormalCandidateExam(
   );
 }
 
+export function forceOfflineCompetitionFormalCandidateExams(
+  sessionId: CompetitionId,
+  candidateExamIds: CompetitionId[],
+) {
+  return unwrap<CompetitionFormalExamForceOfflineBatchResult>(
+    apiClient.post(
+      `/competition/formal-exam-sessions/${sessionId}/candidates/batch-force-offline`,
+      { candidateExamIds },
+    ),
+  );
+}
+
 export function createFormalExamConsoleRealtimeTicket(sessionId: CompetitionId) {
   return unwrap<CompetitionFormalExamConsoleRealtimeTicket>(
     apiClient.post(`/competition/formal-exam-sessions/${sessionId}/realtime/ticket`),
@@ -571,9 +677,24 @@ export function replaceCompetitionStageContents(
   );
 }
 
-export function listCompetitionExecutionPlans(stageId: CompetitionId, eventWorkTypeId: CompetitionId) {
+export function listCompetitionExecutionPlans(
+  stageId: CompetitionId,
+  eventWorkTypeId: CompetitionId,
+  eventWorkTypeLevelId?: CompetitionId,
+) {
   return unwrap<CompetitionStageExecutionPlan[]>(
-    apiClient.get(`/competition/stages/${stageId}/execution-plans`, { params: { eventWorkTypeId } }),
+    apiClient.get(`/competition/stages/${stageId}/execution-plans`, {
+      params: { eventWorkTypeId, eventWorkTypeLevelId },
+    }),
+  );
+}
+
+export function createCompetitionExecutionPlan(
+  stageId: CompetitionId,
+  payload: CompetitionStageExecutionPlanCreateRequest,
+) {
+  return unwrap<CompetitionStageExecutionPlan>(
+    apiClient.post(`/competition/stages/${stageId}/execution-plans`, payload),
   );
 }
 
@@ -585,6 +706,15 @@ export function listCompetitionPracticalSessions(planId: CompetitionId) {
   return unwrap<CompetitionPracticalSession[]>(apiClient.get(`/competition/execution-plans/${planId}/practical-sessions`));
 }
 
+export function createCompetitionPracticalSession(
+  planId: CompetitionId,
+  payload: CompetitionPracticalSessionCreateRequest,
+) {
+  return unwrap<CompetitionPracticalSession>(
+    apiClient.post(`/competition/execution-plans/${planId}/practical-sessions`, payload),
+  );
+}
+
 export function bindCompetitionPracticalPaperSnapshot(
   sessionId: CompetitionId,
   paperSnapshotId: CompetitionId,
@@ -594,6 +724,102 @@ export function bindCompetitionPracticalPaperSnapshot(
       paperSnapshotId,
     }),
   );
+}
+
+export function listCompetitionPracticalPaperBindings(
+  stageId: CompetitionId,
+  params: {
+    eventWorkTypeId: CompetitionId;
+    eventWorkTypeLevelId: CompetitionId;
+  },
+) {
+  return unwrap<CompetitionPracticalPaperBinding[]>(
+    apiClient.get(`/competition/stages/${stageId}/practical-paper-bindings`, { params }),
+  );
+}
+
+export function bindCompetitionPracticalPaper(
+  stageId: CompetitionId,
+  payload: CompetitionPracticalPaperBindingRequest,
+) {
+  return unwrap<CompetitionPracticalPaperBinding>(
+    apiClient.post(`/competition/stages/${stageId}/practical-paper-bindings`, payload),
+  );
+}
+
+export function listCompetitionPracticalAssessmentSheets(
+  stageId: CompetitionId,
+  params: {
+    eventWorkTypeId: CompetitionId;
+    eventWorkTypeLevelId: CompetitionId;
+  },
+) {
+  return unwrap<CompetitionPracticalAssessmentSheet[]>(
+    apiClient.get(`/competition/stages/${stageId}/practical-assessment-sheets`, { params }),
+  );
+}
+
+export function getCompetitionPracticalConsole(
+  stageId: CompetitionId,
+  eventWorkTypeLevelId: CompetitionId,
+) {
+  return unwrap<CompetitionPracticalConsole>(
+    apiClient.get(`/competition/stages/${stageId}/practical-console`, {
+      params: { eventWorkTypeLevelId },
+    }),
+  );
+}
+
+export function initializeCompetitionPracticalConsole(
+  stageId: CompetitionId,
+  eventWorkTypeLevelId: CompetitionId,
+) {
+  return unwrap<CompetitionPracticalConsole>(
+    apiClient.post(`/competition/stages/${stageId}/practical-console/initialize`, {
+      eventWorkTypeLevelId,
+    }, { silentError: true }),
+  );
+}
+
+export function listCompetitionPracticalJudgeTasks() {
+  return unwrap<CompetitionPracticalJudgeTask[]>(
+    apiClient.get('/competition/practical-judge/tasks'),
+  );
+}
+
+export function openCompetitionPracticalJudgeTask(assignmentId: CompetitionId) {
+  return unwrap<CompetitionPracticalJudgeTask>(
+    apiClient.post(`/competition/practical-judge/tasks/${assignmentId}/open`),
+  );
+}
+
+export function confirmCompetitionPracticalJudgeStart(assignmentId: CompetitionId) {
+  return unwrap<CompetitionPracticalJudgeTask>(
+    apiClient.post(`/competition/practical-judge/tasks/${assignmentId}/confirm-start`),
+  );
+}
+
+export function startCompetitionPracticalJudgeSession(assignmentId: CompetitionId) {
+  return unwrap<CompetitionPracticalJudgeTask>(
+    apiClient.post(`/competition/practical-judge/tasks/${assignmentId}/start-session`),
+  );
+}
+
+export function saveCompetitionPracticalJudgeTask(
+  assignmentId: CompetitionId,
+  entries: CompetitionPracticalScoreEntryRequest[],
+  submit = false,
+) {
+  return unwrap<CompetitionPracticalJudgeTask>(
+    apiClient[submit ? 'post' : 'put'](
+      `/competition/practical-judge/tasks/${assignmentId}/${submit ? 'submit' : 'save'}`,
+      { entries },
+    ),
+  );
+}
+
+export function createCompetitionPracticalRealtimeTicket() {
+  return unwrap<string>(apiClient.post('/competition/practical-realtime/ticket'));
 }
 
 export function listCompetitionStageRoster(planId: CompetitionId) {
@@ -618,6 +844,89 @@ export function listCompetitionPracticalJudgeGroups(sessionId: CompetitionId) {
 
 export function listCompetitionPracticalAssignments(sessionId: CompetitionId) {
   return unwrap<CompetitionPracticalAssignment[]>(apiClient.get(`/competition/practical-sessions/${sessionId}/assignments`));
+}
+
+export function getCompetitionRefereeAssignmentWorkspace(stageId: CompetitionId) {
+  return unwrap<CompetitionRefereeAssignmentWorkspace>(
+    apiClient.get(`/competition/stages/${stageId}/referee-assignments`),
+  );
+}
+
+export function replaceCompetitionRefereeAssignments(
+  stageId: CompetitionId,
+  contestantMemberId: CompetitionId,
+  refereeProfileIds: CompetitionId[],
+) {
+  return unwrap<CompetitionRefereeCandidate>(
+    apiClient.put(
+      `/competition/stages/${stageId}/referee-assignments/${contestantMemberId}`,
+      { refereeProfileIds },
+    ),
+  );
+}
+
+export function replaceCompetitionRefereeAssignmentsBatch(
+  stageId: CompetitionId,
+  contestantMemberIds: CompetitionId[],
+  refereeProfileIds: CompetitionId[],
+) {
+  return unwrap<CompetitionRefereeBatchAssignmentResult>(
+    apiClient.put(
+      `/competition/stages/${stageId}/referee-assignments/batch`,
+      { contestantMemberIds, refereeProfileIds },
+    ),
+  );
+}
+
+export function listCompetitionRefereeGroups(stageId?: CompetitionId) {
+  if (stageId) {
+    return unwrap<CompetitionRefereeGroup[]>(
+      apiClient.get(`/competition/stages/${stageId}/referee-groups`),
+    );
+  }
+  return unwrap<CompetitionRefereeGroup[]>(
+    apiClient.get('/competition/referee-groups'),
+  );
+}
+
+export function createCompetitionRefereeGroup(
+  request: CompetitionRefereeGroupUpsertRequest,
+) {
+  return unwrap<CompetitionRefereeGroup>(
+    apiClient.post('/competition/referee-groups', request),
+  );
+}
+
+export function updateCompetitionRefereeGroup(
+  groupId: CompetitionId,
+  request: CompetitionRefereeGroupUpsertRequest,
+) {
+  return unwrap<CompetitionRefereeGroup>(
+    apiClient.put(`/competition/referee-groups/${groupId}`, request),
+  );
+}
+
+export function confirmCompetitionRefereeGroup(groupId: CompetitionId) {
+  return unwrap<CompetitionRefereeGroup>(
+    apiClient.post(`/competition/referee-groups/${groupId}/confirm`),
+  );
+}
+
+export function deleteCompetitionRefereeGroup(groupId: CompetitionId) {
+  return unwrap<void>(apiClient.delete(`/competition/referee-groups/${groupId}`));
+}
+
+export function bindCompetitionRefereeGroup(
+  stageId: CompetitionId,
+  contestantMemberId: CompetitionId,
+  refereeGroupId?: CompetitionId | null,
+) {
+  return unwrap<CompetitionRefereeCandidate>(
+    apiClient.put(
+      `/competition/stages/${stageId}/referee-group-bindings/${contestantMemberId}`,
+      { refereeGroupId: refereeGroupId ?? null },
+    ),
+  );
 }
 
 export function getCompetitionStageSettlementPreflight(planId: CompetitionId, scoreRuleId: CompetitionId) {

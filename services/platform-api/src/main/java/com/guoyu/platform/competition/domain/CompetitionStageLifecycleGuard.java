@@ -182,7 +182,7 @@ public class CompetitionStageLifecycleGuard {
 
   public void requireStageAllocationWritable(CompetitionStageEntity stage) {
     CompetitionStageStatus status = CompetitionStageStatus.fromCode(stage == null ? null : stage.getStatus());
-    if (status != CompetitionStageStatus.CONFIGURING && status != CompetitionStageStatus.READY_LOCKED) {
+    if (status == null || !CompetitionStageStatus.allocationWritableStatuses().contains(status)) {
       throw new BusinessException(ErrorCode.CONFLICT, "当前赛段不允许调整分场或裁判分配");
     }
   }

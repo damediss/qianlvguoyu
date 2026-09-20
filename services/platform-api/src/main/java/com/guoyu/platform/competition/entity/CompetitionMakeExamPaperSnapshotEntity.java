@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 public class CompetitionMakeExamPaperSnapshotEntity extends BaseEntity {
 
   private Long planId;
+  private Long blueprintId;
   private Long eventId;
   private Long eventWorkTypeId;
   private Long eventWorkTypeLevelId;
@@ -25,6 +26,8 @@ public class CompetitionMakeExamPaperSnapshotEntity extends BaseEntity {
 
   public Long getPlanId() { return planId; }
   public void setPlanId(Long planId) { this.planId = planId; }
+  public Long getBlueprintId() { return blueprintId; }
+  public void setBlueprintId(Long blueprintId) { this.blueprintId = blueprintId; }
   public Long getEventId() { return eventId; }
   public void setEventId(Long eventId) { this.eventId = eventId; }
   public Long getEventWorkTypeId() { return eventWorkTypeId; }

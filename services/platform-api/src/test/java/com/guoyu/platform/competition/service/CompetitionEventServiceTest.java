@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.competition.dto.CompetitionEventCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionEventUpdateReq;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventOrgEntity;
@@ -33,6 +34,30 @@ class CompetitionEventServiceTest {
   private final UserMapper userMapper = Mockito.mock(UserMapper.class);
   private final CompetitionEventService service = new CompetitionEventService(
       eventMapper, eventOrgMapper, orgMapper, userMapper);
+
+  @Test
+  void generatesEventCodeFromNameInitialsAndCreationHour() {
+    when(eventMapper.selectOne(any())).thenReturn(null);
+    when(eventMapper.insert(any(CompetitionEventEntity.class))).thenReturn(1);
+
+    CompetitionEventEntity created = service.create(1L,
+        new CompetitionEventCreateReq("铝焙烧竞赛", "platform", 0, null, null, null), null);
+
+    assertThat(created.getCode()).startsWith("lbsjs").matches("lbsjs\\d{10}");
+    assertThat(created.getCreatedAt()).isNotNull();
+    assertThat(created.getUpdatedAt()).isEqualTo(created.getCreatedAt());
+  }
+
+  @Test
+  void appendsSequenceWhenNameAndCreationHourProduceAnExistingCode() {
+    when(eventMapper.selectOne(any())).thenReturn(event("platform", null), (CompetitionEventEntity) null);
+    when(eventMapper.insert(any(CompetitionEventEntity.class))).thenReturn(1);
+
+    CompetitionEventEntity created = service.create(1L,
+        new CompetitionEventCreateReq("铝焙烧竞赛", "platform", 0, null, null, null), null);
+
+    assertThat(created.getCode()).matches("lbsjs\\d{10}-02");
+  }
 
   @Test
   void publishesPlatformEventAfterAllPrerequisitesPass() {

@@ -1,0 +1,53 @@
+.rich-text-editor {
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.rich-text-editor__toolbar {
+  min-height: 38px;
+  padding: 4px 8px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fafafa;
+}
+
+.rich-text-editor__link-input {
+  width: 300px;
+  margin-left: 8px;
+}
+
+.rich-text-editor__content {
+  min-height: inherit;
+  padding: 10px 12px;
+  outline: none;
+  line-height: 1.7;
+}
+
+.rich-text-editor__content p.is-editor-empty:first-child::before {
+  color: #bfbfbf;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.rich-text-editor__content ul,
+.rich-text-editor__content ol {
+  padding-left: 24px;
+}
+
+.rich-text-preview {
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.rich-text-preview p:first-child,
+.rich-text-preview h1:first-child,
+.rich-text-preview h2:first-child,
+.rich-text-preview h3:first-child {
+  margin-top: 0;
+}

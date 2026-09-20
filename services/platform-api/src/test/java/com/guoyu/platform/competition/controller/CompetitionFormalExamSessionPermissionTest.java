@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.guoyu.platform.competition.dto.CompetitionFormalCandidateExamQueryReq;
+import com.guoyu.platform.competition.dto.CompetitionFormalExamForceOfflineBatchReq;
 import com.guoyu.platform.competition.dto.CompetitionFormalExamForceSubmitReq;
 import com.guoyu.platform.competition.dto.CompetitionFormalExamSessionStartReq;
 import com.guoyu.platform.competition.exam.realtime.FormalExamConsoleRealtimeApplicationService;
@@ -77,6 +78,10 @@ class CompetitionFormalExamSessionPermissionTest {
       assertThatThrownBy(() -> controller.forceOffline(9L, 8L))
           .isInstanceOf(AccessDeniedException.class);
       verify(service, never()).forceOffline(any(), any());
+      assertThatThrownBy(() -> controller.forceOfflineBatch(
+          9L, new CompetitionFormalExamForceOfflineBatchReq(List.of(8L))))
+          .isInstanceOf(AccessDeniedException.class);
+      verify(service, never()).forceOfflineBatch(any(), any());
     } finally {
       SecurityContextHolder.clearContext();
     }
@@ -174,6 +179,8 @@ class CompetitionFormalExamSessionPermissionTest {
       authenticate("competition:exam-session:force-offline");
       controller.forceOffline(9L, 8L);
       verify(service).forceOffline(9L, 8L);
+      controller.forceOfflineBatch(9L, new CompetitionFormalExamForceOfflineBatchReq(List.of(8L)));
+      verify(service).forceOfflineBatch(9L, List.of(8L));
       assertThatThrownBy(() -> controller.get(9L)).isInstanceOf(AccessDeniedException.class);
       assertThatThrownBy(() -> controller.forceSubmit(
           9L, 8L, new CompetitionFormalExamForceSubmitReq("现场设备异常")))

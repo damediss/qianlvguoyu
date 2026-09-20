@@ -43,6 +43,7 @@ import {
 import { useAuthStore } from '../../stores/authStore';
 import type {
   CompetitionId,
+  CompetitionStagePaperAssignmentContentType,
   CompetitionStagePaperAssignmentItem,
   CompetitionStagePaperAssignmentPlayer,
   CompetitionStagePaperAssignmentSummary,
@@ -76,10 +77,13 @@ function percentValue(value: number | string | undefined) {
 export function CompetitionPlayerPaperAssignmentPage({
   stageId,
   onDirtyChange,
+  contentType = 'theory',
 }: {
   stageId: CompetitionId;
   onDirtyChange?: (dirty: boolean) => void;
+  contentType?: CompetitionStagePaperAssignmentContentType;
 }) {
+  const assignmentContentType = contentType;
   const permissions = useAuthStore((state) => state.permissionCodes);
   const canView = permissions.includes('competition:stage-paper-assignment:view');
   const canManage = permissions.includes('competition:stage-paper-assignment:manage');
@@ -100,13 +104,17 @@ export function CompetitionPlayerPaperAssignmentPage({
   const [baselineAssignments, setBaselineAssignments] = useState<Record<string, string | null>>({});
 
   const summaryQuery = useQuery({
-    queryKey: ['competition-stage-paper-assignment-summary', stageId],
-    queryFn: () => getCompetitionStagePaperAssignmentSummary(stageId),
+    queryKey: ['competition-stage-paper-assignment-summary', stageId, assignmentContentType],
+    queryFn: () => assignmentContentType === 'practical'
+      ? getCompetitionStagePaperAssignmentSummary(stageId, assignmentContentType)
+      : getCompetitionStagePaperAssignmentSummary(stageId),
     enabled: canView,
   });
   const visualizationQuery = useQuery({
-    queryKey: ['competition-stage-paper-assignment-visualization', stageId],
-    queryFn: () => listCompetitionStagePaperAssignmentPlayers(stageId),
+    queryKey: ['competition-stage-paper-assignment-visualization', stageId, assignmentContentType],
+    queryFn: () => assignmentContentType === 'practical'
+      ? listCompetitionStagePaperAssignmentPlayers(stageId, assignmentContentType)
+      : listCompetitionStagePaperAssignmentPlayers(stageId),
     enabled: canView,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -124,7 +132,7 @@ export function CompetitionPlayerPaperAssignmentPage({
     setDraftAssignments(next);
     setSelectedProfileIds([]);
     setVisualSelectedIds([]);
-  }, [stageId, visualizationQuery.data]);
+  }, [assignmentContentType, stageId, visualizationQuery.data]);
 
   const papers = summaryQuery.data?.papers || [];
   const paperById = useMemo(
@@ -234,14 +242,16 @@ export function CompetitionPlayerPaperAssignmentPage({
 
   const invalidateAssignmentQueries = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['competition-stage-paper-assignment-summary', stageId] }),
-      queryClient.invalidateQueries({ queryKey: ['competition-stage-paper-assignment-players', stageId] }),
-      queryClient.invalidateQueries({ queryKey: ['competition-stage-paper-assignment-visualization', stageId] }),
+      queryClient.invalidateQueries({ queryKey: ['competition-stage-paper-assignment-summary', stageId, assignmentContentType] }),
+      queryClient.invalidateQueries({ queryKey: ['competition-stage-paper-assignment-players', stageId, assignmentContentType] }),
+      queryClient.invalidateQueries({ queryKey: ['competition-stage-paper-assignment-visualization', stageId, assignmentContentType] }),
     ]);
   };
 
   const autoAllocateMutation = useMutation({
-    mutationFn: () => autoAllocateCompetitionStagePaperAssignments(stageId),
+    mutationFn: () => assignmentContentType === 'practical'
+      ? autoAllocateCompetitionStagePaperAssignments(stageId, assignmentContentType)
+      : autoAllocateCompetitionStagePaperAssignments(stageId),
     onSuccess: async () => {
       await invalidateAssignmentQueries();
       message.success('已按平均随机策略重新分配试卷');
@@ -249,7 +259,9 @@ export function CompetitionPlayerPaperAssignmentPage({
     onError: (error) => message.error(errorText(error, '自动分配失败，请刷新后重试')),
   });
   const saveMutation = useMutation({
-    mutationFn: () => saveCompetitionStagePaperAssignments(stageId, assignmentItems()),
+    mutationFn: () => assignmentContentType === 'practical'
+      ? saveCompetitionStagePaperAssignments(stageId, assignmentItems(), assignmentContentType)
+      : saveCompetitionStagePaperAssignments(stageId, assignmentItems()),
     onSuccess: async () => {
       const next = { ...draftAssignments };
       setBaselineAssignments(next);
@@ -259,7 +271,9 @@ export function CompetitionPlayerPaperAssignmentPage({
     onError: (error) => message.error(errorText(error, '保存试卷配置失败，请刷新后重试')),
   });
   const confirmMutation = useMutation({
-    mutationFn: () => confirmCompetitionStagePaperAssignments(stageId, assignmentItems()),
+    mutationFn: () => assignmentContentType === 'practical'
+      ? confirmCompetitionStagePaperAssignments(stageId, assignmentItems(), assignmentContentType)
+      : confirmCompetitionStagePaperAssignments(stageId, assignmentItems()),
     onSuccess: async () => {
       const next = { ...draftAssignments };
       setBaselineAssignments(next);
@@ -297,6 +311,12 @@ export function CompetitionPlayerPaperAssignmentPage({
         ? <Badge status="success" text="已分配" />
         : <Badge status="warning" text="未分配" />,
     },
+    ...(assignmentContentType === 'practical' ? [{
+      title: '考评表', width: 160,
+      render: (_: unknown, row: CompetitionStagePaperAssignmentPlayer) => row.assessmentSheetId
+        ? <Tag color="orange">{row.assessmentSheetCode || '已同步绑定'}</Tag>
+        : <Tag color="warning">待保存同步</Tag>,
+    }] : []),
     {
       title: '操作', width: 220,
       render: (_, row) => canManageEffective ? (
@@ -401,8 +421,14 @@ export function CompetitionPlayerPaperAssignmentPage({
     <div className="competition-paper-assignment-page">
       <div className="competition-paper-assignment-page__header">
         <div>
-          <Typography.Title level={4}>选手配置 · 试卷分配</Typography.Title>
-          <Typography.Text type="secondary">为当前赛段符合工种和技能等级要求的选手分配已配置试卷；已导入待激活选手也会出现在列表中。</Typography.Text>
+          <Typography.Title level={4}>
+            {assignmentContentType === 'practical' ? '实操选手配置 · 试卷分配' : '选手配置 · 试卷分配'}
+          </Typography.Title>
+          <Typography.Text type="secondary">
+            {assignmentContentType === 'practical'
+              ? '为当前赛段符合工种和技能等级要求的选手分配已绑定实操试卷；保存时系统同步绑定该试卷的考评表。'
+              : '为当前赛段符合工种和技能等级要求的选手分配已配置试卷；已导入待激活选手也会出现在列表中。'}
+          </Typography.Text>
         </div>
         <Space>
           {summary?.confirmed && !dirty && <Tag color="success" icon={<CheckCircleOutlined />}>已确认</Tag>}
@@ -428,7 +454,9 @@ export function CompetitionPlayerPaperAssignmentPage({
           type="warning"
           showIcon
           message="正式比赛数据已生成，当前试卷分配已锁定。"
-          description="正式比赛将使用生成时的运行快照。如需核对选手试卷，请从竞赛菜单进入理论比赛控制台。"
+          description={assignmentContentType === 'practical'
+            ? '正式实操数据将使用生成时的运行快照。如需核对选手试卷，请从竞赛菜单进入实操比赛控制台。'
+            : '正式比赛将使用生成时的运行快照。如需核对选手试卷，请从竞赛菜单进入理论比赛控制台。'}
         />
       )}
       {summary && (

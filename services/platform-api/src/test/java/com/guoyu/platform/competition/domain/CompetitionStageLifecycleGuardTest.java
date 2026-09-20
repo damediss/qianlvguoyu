@@ -1,5 +1,6 @@
 package com.guoyu.platform.competition.domain;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -43,6 +44,31 @@ class CompetitionStageLifecycleGuardTest {
 
     assertThatThrownBy(() -> guard.requireInteractiveWrite(1L, 10L))
         .isInstanceOf(BusinessException.class);
+  }
+
+  @Test
+  void allocationWritableAllowsDraftConfiguringAndReadyLocked() {
+    assertThatCode(() -> guard.requireStageAllocationWritable(
+        stage("draft", LocalDateTime.now(), LocalDateTime.now().plusHours(1))))
+        .doesNotThrowAnyException();
+    assertThatCode(() -> guard.requireStageAllocationWritable(
+        stage("configuring", LocalDateTime.now(), LocalDateTime.now().plusHours(1))))
+        .doesNotThrowAnyException();
+    assertThatCode(() -> guard.requireStageAllocationWritable(
+        stage("ready_locked", LocalDateTime.now(), LocalDateTime.now().plusHours(1))))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  void allocationWritableRejectsStartedOrClosedStages() {
+    assertThatThrownBy(() -> guard.requireStageAllocationWritable(
+        stage("in_progress", LocalDateTime.now(), LocalDateTime.now().plusHours(1))))
+        .isInstanceOf(BusinessException.class)
+        .hasMessage("当前赛段不允许调整分场或裁判分配");
+    assertThatThrownBy(() -> guard.requireStageAllocationWritable(
+        stage("closed", LocalDateTime.now().minusHours(2), LocalDateTime.now().minusHours(1))))
+        .isInstanceOf(BusinessException.class)
+        .hasMessage("当前赛段不允许调整分场或裁判分配");
   }
 
   private CompetitionStageEntity stage(String status, LocalDateTime startAt, LocalDateTime endAt) {

@@ -285,11 +285,42 @@ public class PracticalScoringApplicationService {
     if (question == null || !paperId.equals(question.getPaperId().longValue())) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "实操试题不存在");
     }
+    requireQuestionTitle(question);
     List<PracticalScoringModels.TemplateItem> normalized = normalizeTemplate(items, question.getScore());
     question.setScoringTemplateJson(writeJson(normalized));
     question.setWeight(100);
     paperDetailMapper.updateById(question);
+    synchronizeGeneratedTasks(question, normalized);
     return normalized;
+  }
+
+  @Transactional
+  public PracticalScoringModels.PaperQuestionOption saveQuestion(
+      Long paperId,
+      Long questionId,
+      PracticalScoringModels.UpdateQuestionReq req
+  ) {
+    requirePaper(paperId);
+    ExamOperatePaperDetailEntity question = paperDetailMapper.selectById(questionId.intValue());
+    if (question == null || !paperId.equals(question.getPaperId().longValue())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "实操试题不存在");
+    }
+    String title = trimTitle(req.title());
+    if (!StringUtils.hasText(title)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "题目名称不能为空");
+    }
+    List<PracticalScoringModels.TemplateItem> normalized = normalizeTemplate(req.items(), question.getScore());
+    question.setTitle(title);
+    question.setScoringTemplateJson(writeJson(normalized));
+    question.setWeight(100);
+    paperDetailMapper.updateById(question);
+    synchronizeGeneratedTasks(question, normalized);
+    return new PracticalScoringModels.PaperQuestionOption(
+        question.getId().longValue(),
+        title,
+        question.getScore(),
+        true,
+        normalized);
   }
 
   @Transactional
@@ -3179,18 +3210,12 @@ public class PracticalScoringApplicationService {
         }
         if (StringUtils.hasText(title) && title.startsWith("试题")) {
           questionStarts.add(col);
-          continue;
-        }
-        if (StringUtils.hasText(title) && title.startsWith("试题")) {
-          questionStarts.add(col);
-        }
-        if (StringUtils.hasText(title) && title.contains("得分合计")) {
-          totalColumn = col - 1;
-          break;
         }
       }
       if (questionStarts.isEmpty()) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST, "未识别到试题标题，请确认第4行包含“试题”");
+        throw new BusinessException(
+            ErrorCode.BAD_REQUEST,
+            "题目名称不能为空或未识别到试题标题，请确认第4行填写了“试题”");
       }
       List<ParsedPracticalQuestion> questions = new ArrayList<>();
       BigDecimal paperScore = BigDecimal.ZERO;
@@ -3284,9 +3309,11 @@ public class PracticalScoringApplicationService {
       int startCol,
       int endCol
   ) {
-    String title = cellText(sheet, 3, startCol, formatter);
+    String title = trimTitle(cellText(sheet, 3, startCol, formatter));
     if (!StringUtils.hasText(title)) {
-      title = "实操题目";
+      throw new BusinessException(
+          ErrorCode.BAD_REQUEST,
+          "工作表“" + sheet.getSheetName() + "”题目名称不能为空，请补充评分记录表中的题目名称");
     }
     String content = cellText(sheet, 4, startCol + 1, formatter);
     BigDecimal titleScore = questionScore(title);
@@ -3799,7 +3826,7 @@ public class PracticalScoringApplicationService {
         questions.stream().map(question -> {
           List<PracticalScoringModels.TemplateItem> items = parseTemplate(question.getScoringTemplateJson());
           return new PracticalScoringModels.PaperQuestionOption(
-              question.getId().longValue(), question.getTitle(), question.getScore(),
+              question.getId().longValue(), nullToEmpty(question.getTitle()), question.getScore(),
               !items.isEmpty(), items);
         }).toList()
     );
@@ -3846,11 +3873,44 @@ public class PracticalScoringApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "实操试卷没有试题");
     }
     for (ExamOperatePaperDetailEntity question : questions) {
+      requireQuestionTitle(question);
       List<PracticalScoringModels.TemplateItem> items = parseTemplate(question.getScoringTemplateJson());
       if (items.isEmpty()) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "试题“" + question.getTitle() + "”尚未配置评分模板");
       }
       normalizeTemplate(items, question.getScore());
+    }
+  }
+
+  private void requireQuestionTitle(ExamOperatePaperDetailEntity question) {
+    if (question == null || !StringUtils.hasText(question.getTitle())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "题目名称不能为空");
+    }
+  }
+
+  private void synchronizeGeneratedTasks(
+      ExamOperatePaperDetailEntity question,
+      List<PracticalScoringModels.TemplateItem> template
+  ) {
+    List<CertificationAssessorTaskEntity> tasks = assessorTaskMapper.selectList(
+        new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
+            .eq(CertificationAssessorTaskEntity::getPaperQuestionId, question.getId().longValue()));
+    if (CollectionUtils.isEmpty(tasks)) {
+      return;
+    }
+    if (tasks.stream().anyMatch(task -> !"assigned".equals(task.getStatus()))) {
+      throw new BusinessException(
+          ErrorCode.BAD_REQUEST,
+          "该试题已有评分任务开始评分，暂不能修改评分记录表，请先处理现有评分任务");
+    }
+    String snapshot = questionSnapshot(question, template);
+    for (CertificationAssessorTaskEntity task : tasks) {
+      task.setTitle(question.getTitle());
+      task.setQuestionSnapshotJson(snapshot);
+      assessorTaskMapper.updateById(task);
+      scoreMapper.delete(new LambdaQueryWrapper<CertificationAssessorTaskScoreEntity>()
+          .eq(CertificationAssessorTaskScoreEntity::getAssessorTaskId, task.getId()));
+      insertScoreRows(task.getTaskId(), task.getId(), template);
     }
   }
 

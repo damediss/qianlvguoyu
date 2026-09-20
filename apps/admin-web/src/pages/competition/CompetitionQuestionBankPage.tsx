@@ -32,6 +32,7 @@ import type { UploadProps } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import {
   createCompetitionQuestion,
+  batchBindCompetitionQuestions,
   deleteCompetitionQuestion,
   downloadCompetitionQuestionTemplate,
   getCompetitionQuestion,
@@ -45,6 +46,7 @@ import {
   listCompetitionEventWorkTypes,
   pageCompetitionEvents,
 } from '../../api/competition';
+import { getCompetitionQuestionBlueprintTree, pageCompetitionQuestionBlueprints } from '../../api/competitionQuestionBlueprint';
 import type { CompetitionEvent, CompetitionEventWorkType, CompetitionEventWorkTypeLevel } from '../../types/competition';
 import type {
   CompetitionQuestion,
@@ -52,6 +54,7 @@ import type {
   CompetitionQuestionRequest,
   CompetitionQuestionType,
 } from '../../types/competitionQuestion';
+import { PracticalQuestionEditorModal } from './PracticalQuestionEditorModal';
 
 interface Props {
   contentType: CompetitionQuestionContentType;
@@ -71,10 +74,8 @@ interface QuestionFormValues {
   options?: QuestionOptions;
   difficulty?: number;
   status?: string;
-  operationContent?: string;
-  studentPrepare?: string;
-  equipmentPrepare?: string;
-  scoreItemsJson?: string;
+  blueprintId?: string;
+  blueprintNodeId?: string;
 }
 
 const typeLabels: Record<string, string> = {
@@ -140,7 +141,13 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
   const [workTypeId, setWorkTypeId] = useState('');
   const [levelId, setLevelId] = useState('');
   const [keyword, setKeyword] = useState('');
+  const [selectedSheet, setSelectedSheet] = useState('');
   const [questionType, setQuestionType] = useState<CompetitionQuestionType | undefined>();
+  const [bindingStatus, setBindingStatus] = useState<string | undefined>();
+  const [blueprintNodeId, setBlueprintNodeId] = useState<string | undefined>();
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
+  const [bindingOpen, setBindingOpen] = useState(false);
+  const [bindingTargetNodeId, setBindingTargetNodeId] = useState<string>();
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<CompetitionQuestion | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -167,8 +174,31 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
     enabled: Boolean(eventId && workTypeId),
   });
   const levels = levelsQuery.data ?? [];
+  const blueprintQuery = useQuery({
+    queryKey: ['competition-active-blueprint', eventId, workTypeId, levelId, contentType],
+    queryFn: () => pageCompetitionQuestionBlueprints(eventId, {
+      page: 1, pageSize: 20, eventWorkTypeId: workTypeId, eventWorkTypeLevelId: levelId, contentType, status: 'active',
+    }),
+    enabled: Boolean(eventId && workTypeId && levelId),
+  });
+  const activeBlueprint = blueprintQuery.data?.items?.[0];
+  const blueprintTreeQuery = useQuery({
+    queryKey: ['competition-active-blueprint-tree', eventId, activeBlueprint?.id],
+    queryFn: () => getCompetitionQuestionBlueprintTree(eventId, activeBlueprint!.id),
+    enabled: Boolean(eventId && activeBlueprint?.id && formOpen),
+  });
+  const blueprintNodes = useMemo(() => {
+    const rows: Array<{ value: string; label: string }> = [];
+    const walk = (nodes: NonNullable<typeof blueprintTreeQuery.data>['tree'], prefix = '') => nodes.forEach(node => {
+      const path = prefix ? `${prefix} / ${node.name}` : node.name;
+      if (!node.children?.length) rows.push({ value: node.id, label: `${node.fullCode} ${path}` });
+      else walk(node.children, path);
+    });
+    if (blueprintTreeQuery.data?.tree) walk(blueprintTreeQuery.data.tree);
+    return rows;
+  }, [blueprintTreeQuery.data]);
   const questionsQuery = useQuery({
-    queryKey: ['competition-questions', eventId, workTypeId, levelId, contentType, questionType, keyword, page],
+    queryKey: ['competition-questions', eventId, workTypeId, levelId, contentType, questionType, keyword, bindingStatus, blueprintNodeId, activeBlueprint?.id, page],
     queryFn: () => pageCompetitionQuestions(eventId, {
       page,
       pageSize: 20,
@@ -177,6 +207,9 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
       contentType,
       questionType,
       keyword: keyword || undefined,
+      blueprintId: activeBlueprint?.id,
+      blueprintNodeId,
+      bindingStatus,
     }),
     enabled: Boolean(eventId && workTypeId && levelId),
   });
@@ -228,17 +261,16 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
         difficulty: values.difficulty,
         status: values.status,
       };
-      if (contentType === 'practical') {
-        body.practicalDetail = {
-          operationContent: values.operationContent,
-          studentPrepare: values.studentPrepare,
-          equipmentPrepare: values.equipmentPrepare,
-        };
-        try {
-          body.scoreItems = values.scoreItemsJson ? JSON.parse(values.scoreItemsJson) : [];
-        } catch {
-          throw new Error('评分项 JSON 格式不正确');
-        }
+      // Historical questions may remain unbound and editable.  Do not send
+      // the current active blueprint implicitly during an edit; only a newly
+      // selected node creates/replaces a binding.  New questions still carry
+      // the required blueprint/node from the form.
+      if (!editing) {
+        body.blueprintId = values.blueprintId;
+        body.blueprintNodeId = values.blueprintNodeId;
+      } else if (values.blueprintNodeId && values.blueprintNodeId !== editing.blueprintNodeId) {
+        body.blueprintId = activeBlueprint?.id;
+        body.blueprintNodeId = values.blueprintNodeId;
       }
       return editing
         ? updateCompetitionQuestion(eventId, editing.id, body)
@@ -264,14 +296,36 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
       eventWorkTypeId: workTypeId,
       eventWorkTypeLevelId: levelId,
       contentType,
+      blueprintId: activeBlueprint!.id,
+      selectedSheet: selectedSheet.trim() || undefined,
     }, file),
     onSuccess: (batch) => {
       setBatchId(batch.id);
       message.success('文件已接收，正在后台校验');
     },
   });
+  const bindingMutation = useMutation({
+    mutationFn: () => batchBindCompetitionQuestions(eventId, {
+      blueprintId: activeBlueprint!.id,
+      blueprintNodeId: bindingTargetNodeId!,
+      questionIds: selectedQuestionIds,
+    }),
+    onSuccess: () => {
+      message.success(`已绑定 ${selectedQuestionIds.length} 道历史试题`);
+      setSelectedQuestionIds([]);
+      setBindingTargetNodeId(undefined);
+      setBindingOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['competition-questions'] });
+      queryClient.invalidateQueries({ queryKey: ['competition-blueprint-coverage'] });
+    },
+  });
 
   const openEdit = (record: CompetitionQuestion) => {
+    if (contentType === 'practical') {
+      setEditing(record);
+      setFormOpen(true);
+      return;
+    }
     setEditing(record);
     setFormOpen(true);
     form.setFieldsValue({
@@ -286,17 +340,8 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
       options: parseOptionsJson(record.optionsJson),
       difficulty: record.difficulty || undefined,
       status: record.status,
-      operationContent: record.operationContent || undefined,
-      studentPrepare: record.studentPrepare || undefined,
-      equipmentPrepare: record.equipmentPrepare || undefined,
-      scoreItemsJson: record.scoreItems?.length ? JSON.stringify(record.scoreItems.map(item => ({
-        itemNo: item.itemNo,
-        itemName: item.itemName,
-        criterion: item.criterion,
-        maxScore: item.maxScore,
-        maxDeduction: item.maxDeduction,
-        deductionStep: item.deductionStep,
-      })), null, 2) : undefined,
+      blueprintId: record.blueprintId || undefined,
+      blueprintNodeId: record.blueprintNodeId || undefined,
     });
   };
 
@@ -418,41 +463,52 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
       extra={(
         <Space wrap>
           <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>下载导入模板</Button>
-          <Upload {...uploadProps} disabled={!eventId || !workTypeId || !levelId || importMutation.isPending}>
+          {contentType === 'practical' && <Input allowClear value={selectedSheet} onChange={(event) => setSelectedSheet(event.target.value)} placeholder="实操工作表（可选）" style={{ width: 170 }} />}
+          <Button disabled={!activeBlueprint || selectedQuestionIds.length === 0} onClick={() => setBindingOpen(true)}>批量绑定考评点</Button>
+          <Upload {...uploadProps} disabled={!eventId || !workTypeId || !levelId || !activeBlueprint || importMutation.isPending}>
             <Button type="primary" icon={<UploadOutlined />}>导入试题</Button>
           </Upload>
-          <Button icon={<PlusOutlined />} onClick={() => { setEditing(null); form.resetFields(); form.setFieldsValue({
+          <Button icon={<PlusOutlined />} disabled={!activeBlueprint} onClick={() => { setEditing(null); form.resetFields(); form.setFieldsValue({
             eventWorkTypeId: workTypeId, eventWorkTypeLevelId: levelId,
             questionType: contentType === 'theory' ? 'single' : 'practical', status: 'enabled', difficulty: 2,
+            blueprintId: activeBlueprint?.id,
           }); setFormOpen(true); }}>新增试题</Button>
         </Space>
       )}
     >
-      <Alert type="info" showIcon style={{ marginBottom: 16 }} message="竞赛题库与课程题库完全独立；题目只维护内容、答案和实操评分项，单题分值在组卷计划中统一设置；导入按赛事、工种、等级和题型序号整批校验，发现重复或格式错误时不会写入任何题目。" />
+      {!activeBlueprint && eventId && workTypeId && levelId
+        ? <Alert type="warning" showIcon style={{ marginBottom: 16 }} message="当前范围没有启用的竞赛细目表，请先导入并启用理论/实操细目表；未绑定题目不会进入自动组卷。" />
+        : <Alert type="info" showIcon style={{ marginBottom: 16 }} message="竞赛题库与课程题库完全独立；题库导入必须绑定当前启用细目表的末级考评点，历史未绑定题目仍可编辑但不会进入自动组卷。" />}
       <Space wrap style={{ marginBottom: 16 }}>
         <Select
           showSearch optionFilterProp="label" style={{ width: 240 }} placeholder="选择赛事"
           value={eventId || undefined}
           options={events.map((event: CompetitionEvent) => ({ value: String(event.id), label: `${event.name}（${event.code}）` }))}
-          onChange={(value) => { setEventId(value); setWorkTypeId(''); setLevelId(''); setPage(1); }}
+          onChange={(value) => { setEventId(value); setWorkTypeId(''); setLevelId(''); setBindingStatus(undefined); setBlueprintNodeId(undefined); setSelectedQuestionIds([]); setPage(1); }}
         />
         <Select
           style={{ width: 210 }} placeholder="选择工种" value={workTypeId || undefined}
           options={workTypes.map((item: CompetitionEventWorkType) => ({ value: String(item.id), label: item.displayName || item.workTypeName || String(item.workTypeId) }))}
-          onChange={(value) => { setWorkTypeId(value); setLevelId(''); setPage(1); }}
+          onChange={(value) => { setWorkTypeId(value); setLevelId(''); setBindingStatus(undefined); setBlueprintNodeId(undefined); setSelectedQuestionIds([]); setPage(1); }}
         />
         <Select
           style={{ width: 180 }} placeholder="选择等级" value={levelId || undefined}
           options={levels.map((item: CompetitionEventWorkTypeLevel) => ({ value: String(item.id), label: `${item.levelName}（${item.levelCode}）` }))}
-          onChange={(value) => { setLevelId(value); setPage(1); }}
+          onChange={(value) => { setLevelId(value); setBindingStatus(undefined); setBlueprintNodeId(undefined); setSelectedQuestionIds([]); setPage(1); }}
         />
         <Select allowClear style={{ width: 140 }} placeholder="题型" value={questionType} options={typeOptions}
           onChange={(value) => { setQuestionType(value); setPage(1); }} />
+        <Select allowClear style={{ width: 130 }} placeholder="绑定状态" value={bindingStatus} disabled={!activeBlueprint}
+          options={[{ value: 'bound', label: '已绑定' }, { value: 'unbound', label: '未绑定' }]}
+          onChange={(value) => { setBindingStatus(value); setPage(1); }} />
+        <Select allowClear showSearch optionFilterProp="label" style={{ width: 260 }} placeholder="考评点" value={blueprintNodeId} disabled={!activeBlueprint}
+          options={blueprintNodes} onChange={(value) => { setBlueprintNodeId(value); setPage(1); }} />
         <Input.Search allowClear placeholder="搜索题干" style={{ width: 240 }} value={keyword}
           onChange={(event) => setKeyword(event.target.value)} onSearch={() => setPage(1)} />
       </Space>
       <Table<CompetitionQuestion>
         rowKey="id" loading={questionsQuery.isLoading || questionsQuery.isFetching}
+        rowSelection={{ selectedRowKeys: selectedQuestionIds, onChange: (keys) => setSelectedQuestionIds(keys.map(String)) }}
         dataSource={data?.items ?? []}
         pagination={{ current: data?.page ?? page, pageSize: data?.pageSize ?? 20, total: data?.total ?? 0, onChange: setPage, showSizeChanger: false }}
         columns={[
@@ -460,6 +516,7 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
           { title: '题型', dataIndex: 'questionType', width: 100, render: questionTypeTag },
           { title: '题干', dataIndex: 'stem', ellipsis: true, render: (value: string) => <Typography.Text ellipsis={{ tooltip: true }}>{value}</Typography.Text> },
           { title: '难度', dataIndex: 'difficulty', width: 90, render: (value: number | null) => value ? ['-', '简单', '中等', '困难', '较难', '极难'][value] || value : '-' },
+          { title: '绑定状态', dataIndex: 'bindingStatus', width: 100, render: (value: string) => value === 'bound' ? <Tag color="green">已绑定</Tag> : <Tag color="orange">未绑定</Tag> },
           { title: '状态', dataIndex: 'status', width: 90, render: (value: string) => value === 'enabled' ? <Tag color="green">启用</Tag> : <Tag>停用</Tag> },
           { title: '操作', key: 'actions', width: 170, render: (_: unknown, record: CompetitionQuestion) => (
             <Space size={0} style={{ whiteSpace: 'nowrap' }}>
@@ -473,13 +530,43 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
         ]}
       />
 
-      <Modal title={editing ? '编辑竞赛试题' : '新增竞赛试题'} open={formOpen}
+      <Modal
+        title={`批量绑定 ${selectedQuestionIds.length} 道历史试题`}
+        open={bindingOpen}
+        onCancel={() => { setBindingOpen(false); setBindingTargetNodeId(undefined); }}
+        onOk={() => bindingMutation.mutate()}
+        okButtonProps={{ disabled: !bindingTargetNodeId }}
+        confirmLoading={bindingMutation.isPending}
+      >
+        <Alert type="info" showIcon message="只能选择当前启用细目表的末级考评点；绑定后题目才会进入新的自动组卷。" style={{ marginBottom: 12 }} />
+        <Select showSearch optionFilterProp="label" style={{ width: '100%' }} value={bindingTargetNodeId} options={blueprintNodes} onChange={setBindingTargetNodeId} placeholder="选择末级考评点" />
+      </Modal>
+
+      {contentType === 'practical' && (
+        <PracticalQuestionEditorModal
+          open={formOpen}
+          eventId={eventId}
+          workTypeId={workTypeId}
+          levelId={levelId}
+          workTypes={workTypes}
+          levels={levels}
+          editing={editing}
+          blueprintId={activeBlueprint?.id}
+          blueprintNodes={blueprintNodes}
+          onClose={() => { setEditing(null); setFormOpen(false); form.resetFields(); }}
+          onSaved={() => { setEditing(null); setFormOpen(false); form.resetFields(); queryClient.invalidateQueries({ queryKey: ['competition-questions'] }); }}
+        />
+      )}
+
+      {contentType === 'theory' && <Modal title={editing ? '编辑竞赛试题' : '新增竞赛试题'} open={formOpen}
         onCancel={() => { setEditing(null); setFormOpen(false); form.resetFields(); }} onOk={() => form.submit()} confirmLoading={saveMutation.isPending} destroyOnClose width={760}>
         <Form form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
           <Space wrap align="start">
             <Form.Item name="eventWorkTypeId" label="工种" rules={[{ required: true }]}><Select style={{ width: 220 }} options={workTypes.map(item => ({ value: String(item.id), label: item.displayName || item.workTypeName || String(item.workTypeId) }))} /></Form.Item>
             <Form.Item name="eventWorkTypeLevelId" label="等级" rules={[{ required: true }]}><Select style={{ width: 170 }} options={levels.map(item => ({ value: String(item.id), label: item.levelName }))} /></Form.Item>
+            <Form.Item name="blueprintId" hidden><Input /></Form.Item>
             <Form.Item name="questionType" label="题型" rules={[{ required: true }]}><Select style={{ width: 130 }} options={typeOptions} onChange={(value) => handleQuestionTypeChange(value as CompetitionQuestionType)} /></Form.Item>
+            {activeBlueprint && <Form.Item name="blueprintNodeId" label="考评点" rules={[{ required: !editing, message: '请选择末级考评点' }]}><Select allowClear showSearch optionFilterProp="label" style={{ width: 300 }} options={blueprintNodes} placeholder={editing ? '如需绑定可选择末级考评点' : '选择细目表末级考评点'} /></Form.Item>}
             <Form.Item
               label="序号"
               extra={editing ? '按创建顺序生成，编辑时不可修改' : '保存后按创建顺序自动生成'}
@@ -489,14 +576,10 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
             <Form.Item name="difficulty" label="难度"><InputNumber min={1} max={5} /></Form.Item>
           </Space>
           <Form.Item name="stem" label="题干" rules={[{ required: true }]}><Input.TextArea rows={4} /></Form.Item>
-          {contentType === 'theory' ? renderTheoryAnswerFields() : <>
-            <Form.Item name="operationContent" label="操作内容"><Input.TextArea rows={3} /></Form.Item>
-            <Space wrap align="start"><Form.Item name="studentPrepare" label="考生准备"><Input.TextArea rows={2} style={{ width: 340 }} /></Form.Item><Form.Item name="equipmentPrepare" label="设备准备"><Input.TextArea rows={2} style={{ width: 340 }} /></Form.Item></Space>
-            <Form.Item name="scoreItemsJson" label="评分项 JSON" rules={[{ required: true }]} extra="每项包含 itemNo、itemName、criterion、maxScore、maxDeduction、deductionStep；题目满分在组卷计划中统一设置"><Input.TextArea rows={7} placeholder={'[{"itemNo":1,"itemName":"评分要素","criterion":"评分标准","maxScore":100,"maxDeduction":100,"deductionStep":1}]'} /></Form.Item>
-          </>}
+          {renderTheoryAnswerFields()}
           <Form.Item name="status" label="状态"><Select options={[{ value: 'enabled', label: '启用' }, { value: 'disabled', label: '停用' }]} /></Form.Item>
         </Form>
-      </Modal>
+      </Modal>}
 
       <Modal title="竞赛试题预览" open={Boolean(previewing)} onCancel={() => setPreviewing(null)} footer={null} width={720}>
         {previewQuery.isLoading ? <Spin /> : previewQuery.data ? <>
@@ -519,6 +602,7 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
         {batchQuery.data ? <>
           <Space direction="vertical" style={{ width: '100%' }}>
             <Typography.Text>文件：{batchQuery.data.originalFilename}</Typography.Text>
+            {batchQuery.data.selectedSheet && <Typography.Text>工作表：{batchQuery.data.selectedSheet}</Typography.Text>}
             <Typography.Text>状态：{batchQuery.data.status === 'processing' ? '解析中' : batchQuery.data.status === 'succeeded' ? '导入成功' : batchQuery.data.status === 'failed' ? '导入失败' : '排队中'}</Typography.Text>
             <Typography.Text>总数：{batchQuery.data.totalCount}，成功：{batchQuery.data.successCount}，失败：{batchQuery.data.failureCount}</Typography.Text>
             {batchQuery.data.errorDetail && <Alert type="error" showIcon message="错误明细" description={batchQuery.data.errorDetail} />}

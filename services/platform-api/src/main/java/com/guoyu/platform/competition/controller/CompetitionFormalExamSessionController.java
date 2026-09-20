@@ -6,6 +6,7 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.competition.dto.CompetitionFormalCandidateExamQueryReq;
+import com.guoyu.platform.competition.dto.CompetitionFormalExamForceOfflineBatchReq;
 import com.guoyu.platform.competition.dto.CompetitionFormalExamForceSubmitReq;
 import com.guoyu.platform.competition.dto.CompetitionFormalExamSessionStartReq;
 import com.guoyu.platform.competition.exam.realtime.FormalExamConsoleRealtimeApplicationService;
@@ -14,6 +15,7 @@ import com.guoyu.platform.competition.service.CompetitionFormalExamScoringServic
 import com.guoyu.platform.competition.vo.CompetitionFormalCandidateExamVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalCandidateResultVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamConsoleRealtimeTicketVO;
+import com.guoyu.platform.competition.vo.CompetitionFormalExamForceOfflineBatchVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPreflightVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamSessionVO;
 import com.guoyu.platform.competition.vo.FormalExamRealtimeCatchUpVO;
@@ -138,6 +140,17 @@ public class CompetitionFormalExamSessionController {
       @PathVariable Long candidateExamId) {
     service.forceOffline(sessionId, candidateExamId);
     return ApiResponse.ok();
+  }
+
+  @PostMapping("/competition/formal-exam-sessions/{sessionId}/candidates/batch-force-offline")
+  @PreAuthorize("hasAuthority('competition:exam-session:force-offline')")
+  @AuditLog(module = "competition", action = "exam-session:batch-force-offline",
+      targetType = "competition_formal_candidate_exam")
+  public ApiResponse<CompetitionFormalExamForceOfflineBatchVO> forceOfflineBatch(
+      @PathVariable Long sessionId,
+      @Valid @RequestBody CompetitionFormalExamForceOfflineBatchReq request) {
+    return ApiResponse.ok(service.forceOfflineBatch(
+        sessionId, request == null ? null : request.candidateExamIds()));
   }
 
   @PostMapping("/competition/formal-exam-sessions/{id}/score")

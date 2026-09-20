@@ -5,17 +5,23 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.competition.dto.CompetitionPracticalAssignmentReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalJudgeGroupReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalJudgeMemberActivateReq;
+import com.guoyu.platform.competition.dto.CompetitionPracticalInitializeReq;
+import com.guoyu.platform.competition.dto.CompetitionPracticalPaperBindingReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalRuleCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalScoreSaveReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalScoreUnlockReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalSessionCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalPaperSnapshotBindReq;
 import com.guoyu.platform.competition.service.CompetitionPracticalApplicationService;
+import com.guoyu.platform.competition.service.CompetitionPracticalConsoleService;
 import com.guoyu.platform.competition.vo.CompetitionPracticalAssignmentVO;
+import com.guoyu.platform.competition.vo.CompetitionPracticalAssessmentSheetVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalJudgeGroupVO;
+import com.guoyu.platform.competition.vo.CompetitionPracticalPaperBindingVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalRuleVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalScoreSheetVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalSessionVO;
+import com.guoyu.platform.competition.vo.CompetitionPracticalConsoleVO;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,8 +40,31 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/competition")
 public class CompetitionPracticalController {
   private final CompetitionPracticalApplicationService service;
+  private final CompetitionPracticalConsoleService consoleService;
 
-  public CompetitionPracticalController(CompetitionPracticalApplicationService service) { this.service = service; }
+  public CompetitionPracticalController(
+      CompetitionPracticalApplicationService service,
+      CompetitionPracticalConsoleService consoleService) {
+    this.service = service;
+    this.consoleService = consoleService;
+  }
+
+  @GetMapping("/stages/{stageId}/practical-console")
+  @PreAuthorize("hasAuthority('competition:practical-console:view')")
+  public ApiResponse<CompetitionPracticalConsoleVO> practicalConsole(
+      @PathVariable Long stageId, @RequestParam Long eventWorkTypeLevelId) {
+    return ApiResponse.ok(consoleService.get(stageId, eventWorkTypeLevelId));
+  }
+
+  @PostMapping("/stages/{stageId}/practical-console/initialize")
+  @PreAuthorize("hasAuthority('competition:practical-console:manage')")
+  @AuditLog(module = "competition", action = "practical-console:initialize",
+      targetType = "competition_practical_assignment")
+  public ApiResponse<CompetitionPracticalConsoleVO> initializePracticalConsole(
+      @PathVariable Long stageId,
+      @Valid @RequestBody CompetitionPracticalInitializeReq req) {
+    return ApiResponse.ok(consoleService.initialize(stageId, req.eventWorkTypeLevelId()));
+  }
 
   @GetMapping("/stages/{stageId}/practical-rules")
   @PreAuthorize("hasAuthority('competition:practical-rule:view')")
@@ -52,6 +81,35 @@ public class CompetitionPracticalController {
   @PreAuthorize("hasAuthority('competition:practical-rule:publish')")
   @AuditLog(module = "competition", action = "practical-rule:publish", targetType = "competition_practical_rule")
   public ApiResponse<CompetitionPracticalRuleVO> publishRule(@PathVariable Long ruleId) { return ApiResponse.ok(service.publishRule(ruleId)); }
+
+  @GetMapping("/stages/{stageId}/practical-paper-bindings")
+  @PreAuthorize("hasAuthority('competition:stage-plan:view')")
+  public ApiResponse<List<CompetitionPracticalPaperBindingVO>> paperBindings(
+      @PathVariable Long stageId,
+      @RequestParam Long eventWorkTypeId,
+      @RequestParam Long eventWorkTypeLevelId) {
+    return ApiResponse.ok(service.paperBindings(stageId, eventWorkTypeId, eventWorkTypeLevelId));
+  }
+
+  @GetMapping("/stages/{stageId}/practical-assessment-sheets")
+  @PreAuthorize("hasAuthority('competition:practical-assessment:view')")
+  public ApiResponse<List<CompetitionPracticalAssessmentSheetVO>> assessmentSheets(
+      @PathVariable Long stageId,
+      @RequestParam Long eventWorkTypeId,
+      @RequestParam Long eventWorkTypeLevelId) {
+    return ApiResponse.ok(service.assessmentSheets(
+        stageId, eventWorkTypeId, eventWorkTypeLevelId));
+  }
+
+  @PostMapping("/stages/{stageId}/practical-paper-bindings")
+  @PreAuthorize("hasAuthority('competition:stage-plan:manage')")
+  @AuditLog(module = "competition", action = "practical-paper:bind-stage",
+      targetType = "competition_practical_paper_binding")
+  public ApiResponse<CompetitionPracticalPaperBindingVO> bindPaperToStage(
+      @PathVariable Long stageId,
+      @Valid @RequestBody CompetitionPracticalPaperBindingReq req) {
+    return ApiResponse.ok(service.bindPaperToStage(stageId, req));
+  }
 
   @GetMapping("/execution-plans/{planId}/practical-sessions")
   @PreAuthorize("hasAuthority('competition:practical-session:view')")

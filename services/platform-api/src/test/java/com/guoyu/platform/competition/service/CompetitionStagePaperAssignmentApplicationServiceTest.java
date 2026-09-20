@@ -25,9 +25,14 @@ class CompetitionStagePaperAssignmentApplicationServiceTest {
   private final CompetitionStagePaperAssignmentMapper assignments = mock(CompetitionStagePaperAssignmentMapper.class);
   private final CompetitionFormalExamSessionMapper formalSessions =
       mock(CompetitionFormalExamSessionMapper.class);
+  private final CompetitionPracticalPaperBindingMapper practicalBindings =
+      mock(CompetitionPracticalPaperBindingMapper.class);
+  private final CompetitionMakeExamPaperSnapshotMapper practicalSnapshots =
+      mock(CompetitionMakeExamPaperSnapshotMapper.class);
   private final CompetitionStagePaperAssignmentApplicationService service =
       new CompetitionStagePaperAssignmentApplicationService(
-          stages, events, workTypes, levels, papers, assignments, formalSessions);
+          stages, events, workTypes, levels, papers, assignments, formalSessions,
+          practicalBindings, practicalSnapshots);
 
   @BeforeEach void setup() {
     var principal = new PlatformUserPrincipal(1000L, 1L, "admin", "Admin", "platform", List.of(), List.of(), null);
@@ -43,7 +48,8 @@ class CompetitionStagePaperAssignmentApplicationServiceTest {
     when(workTypes.selectOne(any())).thenReturn(workType);
     var level = new CompetitionEventWorkTypeLevelEntity(); level.setId(40L); level.setLevelCode("3");
     when(levels.selectOne(any())).thenReturn(level);
-    when(assignments.selectByScopeForUpdate(1L, 20L, 10L, 30L, 40L)).thenReturn(List.of());
+    when(assignments.selectByScopeForUpdate(1L, 20L, 10L, 30L, 40L, "theory"))
+        .thenReturn(List.of());
     when(assignments.insert(any(CompetitionStagePaperAssignmentEntity.class))).thenReturn(1);
     when(assignments.updateById(any(CompetitionStagePaperAssignmentEntity.class))).thenReturn(1);
     when(formalSessions.selectLatestByStage(1L, 10L)).thenReturn(null);
@@ -58,7 +64,17 @@ class CompetitionStagePaperAssignmentApplicationServiceTest {
       row.setRegistrationId(300L + index); return row;
     }).toList();
     when(assignments.selectEligiblePlayers(eq(1L), eq(20L), eq(10L), eq(30L), eq(40L),
-        anyList(), isNull(), isNull(), isNull(), isNull())).thenReturn(rows);
+        anyList(), isNull(), isNull(), isNull(), isNull(), eq("theory"))).thenReturn(rows);
+  }
+
+  private void practicalCandidates(int count) {
+    var rows = IntStream.range(0, count).mapToObj(index -> {
+      var row = new CompetitionStagePaperAssignmentPlayerRow();
+      row.setContestantProfileId(100L + index); row.setContestantMemberId(200L + index);
+      row.setRegistrationId(300L + index); return row;
+    }).toList();
+    when(assignments.selectEligiblePlayers(eq(1L), eq(20L), eq(10L), eq(30L), eq(40L),
+        anyList(), isNull(), isNull(), isNull(), isNull(), eq("practical"))).thenReturn(rows);
   }
 
   private void papers(int count) {
@@ -95,7 +111,8 @@ class CompetitionStagePaperAssignmentApplicationServiceTest {
     var existing = new CompetitionStagePaperAssignmentEntity();
     existing.setId(700L); existing.setContestantProfileId(100L); existing.setPaperSnapshotId(500L);
     existing.setStatus("confirmed"); existing.setConfirmedBy(1000L);
-    when(assignments.selectByScopeForUpdate(1L, 20L, 10L, 30L, 40L)).thenReturn(List.of(existing));
+    when(assignments.selectByScopeForUpdate(1L, 20L, 10L, 30L, 40L, "theory"))
+        .thenReturn(List.of(existing));
     service.save(10L, new CompetitionStagePaperAssignmentBatchReq(
         List.of(new CompetitionStagePaperAssignmentItemReq(100L, null))));
     verify(assignments).updateById(existing);
@@ -141,5 +158,48 @@ class CompetitionStagePaperAssignmentApplicationServiceTest {
     when(formalSessions.selectLatestByStage(1L, 10L)).thenReturn(runtime);
     assertThatThrownBy(() -> service.autoAllocate(10L)).hasMessageContaining("已锁定");
     verify(assignments, never()).insert(any(CompetitionStagePaperAssignmentEntity.class));
+  }
+
+  @Test void practicalAssignmentUsesStageBoundPublishedPracticalPapers() {
+    practicalCandidates(1);
+    var binding = new CompetitionPracticalPaperBindingEntity();
+    binding.setId(800L);
+    binding.setTenantId(1L);
+    binding.setEventId(20L);
+    binding.setStageId(10L);
+    binding.setEventWorkTypeId(30L);
+    binding.setEventWorkTypeLevelId(40L);
+    binding.setPaperSnapshotId(900L);
+    when(practicalBindings.selectList(any())).thenReturn(List.of(binding));
+
+    var paper = new CompetitionMakeExamPaperSnapshotEntity();
+    paper.setId(900L);
+    paper.setEventId(20L);
+    paper.setEventWorkTypeId(30L);
+    paper.setEventWorkTypeLevelId(40L);
+    paper.setContentType("practical");
+    paper.setPaperCode("P");
+    paper.setVersionNo(1);
+    paper.setTitle("实操试卷");
+    paper.setStatus("published");
+    when(practicalSnapshots.selectList(any())).thenReturn(List.of(paper));
+    when(assignments.selectByScopeForUpdate(1L, 20L, 10L, 30L, 40L, "practical"))
+        .thenReturn(List.of());
+    when(formalSessions.selectLatestByStageAndExamType(1L, 10L, "practical"))
+        .thenReturn(null);
+
+    var summary = service.summary(10L, "practical");
+
+    assertThat(summary.paperCount()).isEqualTo(1);
+    assertThat(summary.papers()).singleElement()
+        .satisfies(item -> {
+          assertThat(item.paperCode()).isEqualTo("P");
+          assertThat(item.title()).isEqualTo("实操试卷");
+        });
+    service.autoAllocate(10L, "practical");
+    var capture = ArgumentCaptor.forClass(CompetitionStagePaperAssignmentEntity.class);
+    verify(assignments).insert(capture.capture());
+    assertThat(capture.getValue().getContentType()).isEqualTo("practical");
+    verify(papers, never()).selectList(any());
   }
 }

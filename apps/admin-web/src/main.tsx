@@ -81,9 +81,13 @@ import { DefenseReviewApp } from './pages/assessor/DefenseReviewApp';
 import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
 import { CompetitionEventManagementPage } from './pages/competition/CompetitionEventManagementPage';
 import { CompetitionPlayerManagementPage } from './pages/competition/CompetitionPlayerManagementPage';
+import { CompetitionRefereeManagementPage } from './pages/competition/CompetitionRefereeManagementPage';
+import { CompetitionRefereeGroupPage } from './pages/competition/CompetitionRefereeGroupPage';
 import { CompetitionEventModulePage, type CompetitionEventModule } from './pages/competition/CompetitionEventModulePage';
 import { CompetitionQuestionBankPage } from './pages/competition/CompetitionQuestionBankPage';
+import { CompetitionQuestionBlueprintPage } from './pages/competition/CompetitionQuestionBlueprintPage';
 import { CompetitionMakeExamPlanPage } from './pages/competition/CompetitionMakeExamPlanPage';
+import { CompetitionPracticalJudgeApp } from './pages/competition/CompetitionPracticalJudgeApp';
 import { FormalExamPlayerApp } from './pages/formalExam/FormalExamPlayerApp';
 import { findCompetitionMenuCode, isCompetitionPath } from './routes/competitionRoute';
 import { useAuthStore } from './stores/authStore';
@@ -527,13 +531,19 @@ const pageMap: Record<string, React.ReactNode> = {
   'certification-practical-collection': <CollectionTaskListPage />,
   competition_event: <CompetitionEventManagementPage />,
   competition_player: <CompetitionPlayerManagementPage />,
+  competition_referee: <CompetitionRefereeManagementPage />,
+  competition_referee_info: <CompetitionRefereeManagementPage />,
+  competition_referee_group: <CompetitionRefereeGroupPage />,
   competition_stage: <CompetitionModuleShell module="stages" />,
   competition_notice: <CompetitionModuleShell module="notices" />,
   competition_theory_exam: <CompetitionModuleShell module="theory-exam" />,
   competition_formal_exam: <CompetitionModuleShell module="formal-exam-console" />,
+  competition_practical_exam: <CompetitionModuleShell module="practical-exam-console" />,
   competition_score_ranking: <CompetitionModuleShell module="scores" />,
   competition_theory_question: <CompetitionQuestionBankPage contentType="theory" />,
   competition_practical_question: <CompetitionQuestionBankPage contentType="practical" />,
+  competition_theory_blueprint: <CompetitionQuestionBlueprintPage contentType="theory" />,
+  competition_practical_blueprint: <CompetitionQuestionBlueprintPage contentType="practical" />,
   competition_make_exam_plan: <CompetitionMakeExamPlanPage />,
 };
 
@@ -683,6 +693,7 @@ function App() {
   const assessorMode = pathname.startsWith('/assessor-scoring');
   const defenseMode = pathname.startsWith('/assessor-defense');
   const practicalCollectionMode = pathname.startsWith('/practical-collection');
+  const competitionJudgeMode = pathname.startsWith('/competition-practical-judge');
   const collectionManageTaskId = pathname.match(/^\/certification\/practical-collection\/([^/]+)\/manage\/?$/)?.[1];
   const collectionManageMode = Boolean(collectionManageTaskId);
   const competitionEventMode = isCompetitionPath(pathname);
@@ -694,8 +705,10 @@ function App() {
       {formalExamMode ? (
         <FormalExamPlayerApp />
       ) : (
-      <AuthGate mode={assessorMode ? 'assessor' : defenseMode ? 'defense' : practicalCollectionMode ? 'collection' : 'admin'}>
-        {assessorMode ? (
+      <AuthGate mode={assessorMode ? 'assessor' : defenseMode ? 'defense' : practicalCollectionMode ? 'collection' : competitionJudgeMode ? 'competitionJudge' : 'admin'}>
+        {competitionJudgeMode ? (
+          <CompetitionPracticalJudgeApp />
+        ) : assessorMode ? (
           <TabletAssessorApp />
         ) : defenseMode ? (
           <DefenseReviewApp />

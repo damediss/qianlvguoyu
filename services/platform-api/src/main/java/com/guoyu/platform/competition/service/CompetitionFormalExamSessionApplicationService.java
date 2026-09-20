@@ -53,6 +53,7 @@ import com.guoyu.platform.competition.vo.CompetitionFormalCandidateExamVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalCandidateQuestionScoreVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalCandidateResultVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamFinishBlockerVO;
+import com.guoyu.platform.competition.vo.CompetitionFormalExamForceOfflineBatchVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPaperVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPreflightCheckVO;
 import com.guoyu.platform.competition.vo.CompetitionFormalExamPreflightVO;
@@ -298,9 +299,12 @@ public class CompetitionFormalExamSessionApplicationService {
   public CompetitionFormalExamSessionVO getByStage(Long stageId, String examTypeCode) {
     RuntimeScope scope = loadScope(stageId, false);
     CompetitionFormalExamType examType = requireSupportedExamType(examTypeCode);
-    CompetitionFormalExamSessionEntity active = requireSingleActive(
-        sessionMapper.selectActive(scope.tenantId(), scope.stageId(), examType.getCode()));
-    return active == null ? null : toSessionVO(scope, active);
+    // The occupancy token is released when a run finishes so a new run can be
+    // distinguished from the historical one. The console still needs to show
+    // that historical run instead of treating it as uninitialized.
+    CompetitionFormalExamSessionEntity latest = sessionMapper.selectLatestByStageAndExamType(
+        scope.tenantId(), scope.stageId(), examType.getCode());
+    return latest == null ? null : toSessionVO(scope, latest);
   }
 
   @Transactional(readOnly = true)
@@ -493,6 +497,67 @@ public class CompetitionFormalExamSessionApplicationService {
     log.warn(
         "Formal exam force-offline fallback kickout, operatorId={}, sessionId={}, candidateExamId={}, playerId={}",
         scope.userId(), session.getId(), candidate.getId(), candidate.getPlayerId());
+  }
+
+  /** 批量清退同一场正式比赛中选手的考试账号，不改变选手考试状态。 */
+  @Transactional
+  public CompetitionFormalExamForceOfflineBatchVO forceOfflineBatch(
+      Long sessionId, List<Long> candidateExamIds) {
+    List<Long> ids = normalizeForceOfflineCandidateIds(candidateExamIds);
+    CompetitionFormalExamSessionEntity session = requireSession(sessionId);
+    RuntimeScope scope = loadScope(session.getStageId(), false);
+    if (!Objects.equals(session.getTenantId(), scope.tenantId())
+        || !Objects.equals(session.getEventId(), scope.eventId())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "正式比赛运行实例不存在");
+    }
+
+    // 先锁定并校验全部选手，再执行任何 token 作废，避免批量中途发现跨场次数据时出现部分清退。
+    Map<Long, CompetitionFormalCandidateExamEntity> candidates = new LinkedHashMap<>();
+    for (Long candidateExamId : ids) {
+      CompetitionFormalCandidateExamEntity candidate =
+          candidateExamMapper.selectByIdForUpdate(candidateExamId);
+      if (candidate == null
+          || !Objects.equals(candidate.getExamSessionId(), session.getId())
+          || !Objects.equals(candidate.getTenantId(), session.getTenantId())) {
+        throw new BusinessException(ErrorCode.NOT_FOUND, "选手考试实例不存在");
+      }
+      if (candidate.getPlayerId() == null) {
+        throw new BusinessException(ErrorCode.CONFLICT, "该选手尚未绑定考试账号，无法清退");
+      }
+      candidates.put(candidateExamId, candidate);
+    }
+
+    int kickedCount = 0;
+    for (CompetitionFormalCandidateExamEntity candidate : candidates.values()) {
+      int transitioned;
+      if (accessSessionService != null) {
+        transitioned = accessSessionService.forceOfflineAndCount(
+            session.getId(),
+            candidate.getId(),
+            candidate.getPlayerId(),
+            scope.userId(),
+            CompetitionFormalExamAccessSessionService.REASON_STAFF_KICK);
+      } else {
+        if (examStpLogic == null) {
+          throw new BusinessException(ErrorCode.INTERNAL_ERROR, "考试会话服务不可用");
+        }
+        examStpLogic.kickout(candidate.getPlayerId());
+        log.warn(
+            "Formal exam batch force-offline fallback kickout, operatorId={}, sessionId={}, candidateExamId={}, playerId={}",
+            scope.userId(), session.getId(), candidate.getId(), candidate.getPlayerId());
+        transitioned = 1;
+      }
+      if (transitioned > 0) {
+        kickedCount++;
+      }
+    }
+
+    int alreadyOfflineCount = ids.size() - kickedCount;
+    log.warn(
+        "Formal exam batch force-offline, operatorId={}, sessionId={}, requestedCount={}, kickedCount={}, alreadyOfflineCount={}",
+        scope.userId(), session.getId(), ids.size(), kickedCount, alreadyOfflineCount);
+    return new CompetitionFormalExamForceOfflineBatchVO(
+        ids.size(), kickedCount, alreadyOfflineCount);
   }
 
   @Transactional(readOnly = true)
@@ -1599,6 +1664,23 @@ public class CompetitionFormalExamSessionApplicationService {
       return left.trim();
     }
     return StringUtils.hasText(right) ? right.trim() : null;
+  }
+
+  private static List<Long> normalizeForceOfflineCandidateIds(List<Long> candidateExamIds) {
+    if (candidateExamIds == null || candidateExamIds.isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请至少选择一名选手");
+    }
+    if (candidateExamIds.size() > 100) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "一次最多清退100名选手");
+    }
+    Set<Long> unique = new LinkedHashSet<>();
+    for (Long candidateExamId : candidateExamIds) {
+      if (candidateExamId == null || candidateExamId <= 0) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "选手考试实例无效");
+      }
+      unique.add(candidateExamId);
+    }
+    return new ArrayList<>(unique);
   }
 
   private static String id(Long value) {

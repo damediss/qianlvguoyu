@@ -13,11 +13,12 @@ import type { CompetitionEvent } from '../../types/competition';
 import './CompetitionEventManagementPage.css';
 import { CompetitionNoticePage } from './CompetitionNoticePage';
 import { CompetitionFormalExamConsolePage } from './CompetitionFormalExamConsolePage';
+import { CompetitionPracticalConsolePage } from './CompetitionPracticalConsolePage';
 import { CompetitionScoreRankingPage } from './CompetitionScoreRankingPage';
 import { CompetitionStagePlanningPage } from './CompetitionStagePlanningPage';
 import { CompetitionTheoryExamPage } from './CompetitionTheoryExamPage';
 
-export type CompetitionEventModule = 'stages' | 'notices' | 'theory-exam' | 'formal-exam-console' | 'scores';
+export type CompetitionEventModule = 'stages' | 'notices' | 'theory-exam' | 'formal-exam-console' | 'practical-exam-console' | 'scores';
 
 const STANDARD_COMPETITION_WORK_TYPE_LEVELS = [
   { value: '5', label: '\u521d\u7ea7\u5de5' },
@@ -57,6 +58,12 @@ const moduleMeta: Record<CompetitionEventModule, {
     permission: ['competition:exam-session:view'],
     eventLabel: (event) => `${event.code} · ${event.name}`,
   },
+  'practical-exam-console': {
+    title: '实操比赛控制台',
+    description: '按赛事工种、技能等级和赛段初始化正式实操比赛，将三名裁判、选手和考评表冻结为评分任务。',
+    permission: ['competition:practical-console:view'],
+    eventLabel: (event) => `${event.code} · ${event.name}`,
+  },
   scores: {
     title: '成绩与排名',
     description: '选择赛事后，汇总成绩并生成赛事排名。',
@@ -83,7 +90,8 @@ export function CompetitionEventModulePage({
   const queryClient = useQueryClient();
   const permissions = useAuthStore((state) => state.permissionCodes);
   const canView = meta.permission.some((permission) => permissions.includes(permission));
-  const needsWorkTypeScope = module === 'stages' || module === 'formal-exam-console';
+  const needsWorkTypeScope = module === 'stages' || module === 'formal-exam-console'
+    || module === 'practical-exam-console';
   const eventsQuery = useQuery({
     queryKey: ['competition-events', 'module-selector'],
     queryFn: () => pageCompetitionEvents({ page: 1, pageSize: 100 }),
@@ -297,6 +305,15 @@ export function CompetitionEventModulePage({
             请先选择工种和技能等级。正式比赛按「赛事 + 工种 + 等级」隔离，与赛段编排、选手试卷配置同一范围；只点「刷新赛事」不会带出该工种等级下的赛段。
           </Typography.Text>
         </Card>
+      ) : null}
+      {selectedEvent && module === 'practical-exam-console' && selectedEventWorkTypeId && selectedEventWorkTypeLevelCode ? (
+        <CompetitionPracticalConsolePage
+          key={`practical-exam:${selectedEvent.id}:${selectedEventWorkTypeId}:${selectedEventWorkTypeLevelCode}`}
+          eventId={String(selectedEvent.id)}
+          eventWorkTypeId={selectedEventWorkTypeId}
+          eventWorkTypeLevelCode={selectedEventWorkTypeLevelCode}
+          initialStageId={initialStageId}
+        />
       ) : null}
       {selectedEvent && module === 'scores' && <CompetitionScoreRankingPage eventId={String(selectedEvent.id)} onNavigate={onNavigate} embedded />}
     </div>

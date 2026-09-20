@@ -84,6 +84,17 @@ public class CertificationPracticalScoringController {
     return ApiResponse.ok(service.saveQuestionTemplate(paperId, questionId, items));
   }
 
+  @PutMapping("/practical-scoring/papers/{paperId}/questions/{questionId}")
+  @PreAuthorize("hasAuthority('certification.practical.config')")
+  @AuditLog(module = "certification", action = "practical-scoring:question-update", targetType = "exam_operate_paper_detail")
+  public ApiResponse<PracticalScoringModels.PaperQuestionOption> saveQuestion(
+      @PathVariable Long paperId,
+      @PathVariable Long questionId,
+      @Valid @RequestBody PracticalScoringModels.UpdateQuestionReq req
+  ) {
+    return ApiResponse.ok(service.saveQuestion(paperId, questionId, req));
+  }
+
   @PostMapping("/practical-scoring/tasks/{taskId}/generate")
   @PreAuthorize("hasAuthority('certification.practical.generate')")
   @AuditLog(module = "certification", action = "practical-scoring:generate", targetType = "certification_assessor_task")

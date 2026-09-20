@@ -12,13 +12,22 @@ export const STAGE_CONTEXT_MENU_ITEMS = [
       { key: 'theory:candidate', label: '选手配置' },
     ],
   },
-  { key: 'practical', label: '实操配置', children: null },
+  {
+    key: 'practical',
+    label: '实操配置',
+    children: [
+      { key: 'practical:paper', label: '试卷配置' },
+      { key: 'practical:candidate', label: '选手配置' },
+      { key: 'practical:referee', label: '裁判配置' },
+    ],
+  },
   { key: 'simulation', label: '仿真设置', children: null },
 ] as const;
 
 function buildMenuItems(
   enabledContentTypes: readonly CompetitionStageContentType[] = [],
   candidateEnabled = true,
+  refereeEnabled = true,
   onContentTypeClick?: (contentType: CompetitionStageContentType) => void,
 ): MenuProps['items'] {
   const enabled = new Set(enabledContentTypes);
@@ -28,8 +37,8 @@ function buildMenuItems(
       key: item.key,
       label: item.label,
       disabled: !contentEnabled,
-      // 理论配置是分组菜单，点击父级只负责展开，不再触发跳转。
-      onTitleClick: item.key === 'theory'
+      // 理论和实操配置是分组菜单，点击父级只负责展开，不再触发跳转。
+      onTitleClick: item.key === 'theory' || item.key === 'practical'
         ? undefined
         : contentEnabled
           ? () => onContentTypeClick?.(item.key)
@@ -47,6 +56,24 @@ function buildMenuItems(
             disabled: !contentEnabled || !candidateEnabled,
           },
         ]
+        : item.key === 'practical'
+          ? [
+            {
+              key: 'practical:paper',
+              label: '试卷配置',
+              disabled: !contentEnabled,
+            },
+            {
+              key: 'practical:candidate',
+              label: '选手配置',
+              disabled: !contentEnabled || !candidateEnabled,
+            },
+            {
+              key: 'practical:referee',
+              label: '裁判配置',
+              disabled: !contentEnabled || !refereeEnabled,
+            },
+          ]
         : [{
           key: `${item.key}:empty`,
           label: '暂无配置项',
@@ -60,18 +87,22 @@ interface StageContextMenuProps {
   position: { x: number; y: number };
   enabledContentTypes?: readonly CompetitionStageContentType[];
   candidateEnabled?: boolean;
+  refereeEnabled?: boolean;
   onClose: () => void;
   onContentTypeClick?: (contentType: CompetitionStageContentType) => void;
-  onCandidateClick?: () => void;
+  onCandidateClick?: (contentType: 'theory' | 'practical') => void;
+  onRefereeClick?: () => void;
 }
 
 export function StageContextMenu({
   position,
   enabledContentTypes,
   candidateEnabled,
+  refereeEnabled,
   onClose,
   onContentTypeClick,
   onCandidateClick,
+  onRefereeClick,
 }: StageContextMenuProps) {
   useEffect(() => {
     const closeOnPointerDown = (event: PointerEvent) => {
@@ -98,10 +129,13 @@ export function StageContextMenu({
       open
       trigger={[]}
       menu={{
-        items: buildMenuItems(enabledContentTypes, candidateEnabled, onContentTypeClick),
+        items: buildMenuItems(enabledContentTypes, candidateEnabled, refereeEnabled, onContentTypeClick),
         onClick: ({ key }) => {
           if (key === 'theory:paper') onContentTypeClick?.('theory');
-          if (key === 'theory:candidate') onCandidateClick?.();
+          if (key === 'practical:paper') onContentTypeClick?.('practical');
+          if (key === 'theory:candidate') onCandidateClick?.('theory');
+          if (key === 'practical:candidate') onCandidateClick?.('practical');
+          if (key === 'practical:referee') onRefereeClick?.();
         },
       }}
       overlayClassName="stage-context-menu-popup"

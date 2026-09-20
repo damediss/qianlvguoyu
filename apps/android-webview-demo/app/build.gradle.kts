@@ -27,6 +27,16 @@ android {
             applicationIdSuffix = ".localtest"
             versionNameSuffix = "-localTest"
         }
+        create("competitionJudge") {
+            dimension = "env"
+            applicationIdSuffix = ".competitionjudge"
+            versionNameSuffix = "-competitionJudge"
+        }
+        create("competitionJudgeLocal") {
+            dimension = "env"
+            applicationIdSuffix = ".competitionjudge.local"
+            versionNameSuffix = "-competitionJudgeLocal"
+        }
     }
 
     buildTypes {

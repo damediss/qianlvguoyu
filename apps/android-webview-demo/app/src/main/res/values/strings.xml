@@ -3,4 +3,5 @@
     <string name="app_name">信息采集（正式版）</string>
     <!-- 正式环境：java.app 域名；勿再用 43.138.163.7:5173（开发机 Vite，现网 502） -->
     <string name="default_web_url">https://java.app.gjjd168.com/practical-collection</string>
+    <string-array name="fallback_web_hosts" />
 </resources>

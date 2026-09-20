@@ -1,10 +1,11 @@
 param(
     [string]$TaskId = "2069972938644135937",
     [string]$Device = "",
-    [string]$LocalHost = "192.168.1.98",
+    [string]$LocalHost = "127.0.0.1",
     [int]$WebPort = 5173,
     [int]$ApiPort = 8080,
     [switch]$LocalTest,
+    [switch]$CompetitionJudge,
     [switch]$SkipBuild,
     [switch]$SkipInstall,
     [switch]$LogcatOnly
@@ -12,10 +13,27 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Flavor = if ($LocalTest) { "localTest" } else { "prod" }
+if ($CompetitionJudge -and $LocalTest) {
+    throw "Use either -CompetitionJudge or -LocalTest, not both."
+}
+$Flavor = if ($CompetitionJudge) {
+    "competitionJudgeLocal"
+} elseif ($LocalTest) {
+    "localTest"
+} else {
+    "prod"
+}
 $ApkPath = Join-Path $Root "app\build\outputs\apk\$Flavor\debug\app-$Flavor-debug.apk"
-$PackageName = if ($LocalTest) { "com.example.webviewshelldemo.localtest" } else { "com.example.webviewshelldemo" }
-$WebUrl = if ($LocalTest) {
+$PackageName = if ($CompetitionJudge) {
+    "com.example.webviewshelldemo.competitionjudge.local"
+} elseif ($LocalTest) {
+    "com.example.webviewshelldemo.localtest"
+} else {
+    "com.example.webviewshelldemo"
+}
+$WebUrl = if ($CompetitionJudge) {
+    "http://${LocalHost}:$WebPort/competition-practical-judge"
+} elseif ($LocalTest) {
     "http://${LocalHost}:$WebPort/practical-collection/workbench/$TaskId"
 } else {
     "http://43.138.163.7:$WebPort/practical-collection/workbench/$TaskId"
@@ -63,7 +81,13 @@ if (-not $SkipBuild) {
     Write-Host "Building $Flavor debug APK..."
     Push-Location $Root
     try {
-        $gradleTask = if ($LocalTest) { ":app:assembleLocalTestDebug" } else { ":app:assembleProdDebug" }
+        $gradleTask = if ($CompetitionJudge) {
+            ":app:assembleCompetitionJudgeLocalDebug"
+        } elseif ($LocalTest) {
+            ":app:assembleLocalTestDebug"
+        } else {
+            ":app:assembleProdDebug"
+        }
         & .\gradlew.bat $gradleTask
         if ($LASTEXITCODE -ne 0) { throw "Gradle build failed" }
     } finally {
@@ -81,7 +105,7 @@ Write-Host "URL: $WebUrl"
 Invoke-Adb $adbTarget @("shell", "am", "force-stop", $PackageName)
 Invoke-Adb $adbTarget @(
     "shell", "am", "start",
-    "-n", "$PackageName/.MainActivity",
+    "-n", "$PackageName/com.example.webviewshelldemo.MainActivity",
     "--es", "web_url", $WebUrl
 )
 
@@ -94,4 +118,8 @@ Write-Host "4. Console: typeof AndroidBridge?.scanQRCode"
 Write-Host "5. Tap scan button on tablet"
 Write-Host ""
 Write-Host "Logcat: .\wired-debug.ps1 -LogcatOnly"
-Write-Host "Relaunch: .\wired-debug.ps1 -SkipBuild -SkipInstall -TaskId YOUR_TASK_ID"
+if ($CompetitionJudge) {
+    Write-Host "Relaunch: .\wired-debug.ps1 -CompetitionJudge -SkipBuild -SkipInstall"
+} else {
+    Write-Host "Relaunch: .\wired-debug.ps1 -SkipBuild -SkipInstall -TaskId YOUR_TASK_ID"
+}

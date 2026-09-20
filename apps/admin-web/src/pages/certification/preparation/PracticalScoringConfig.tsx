@@ -1,5 +1,8 @@
 import {
+  DeleteOutlined,
   DownloadOutlined,
+  EditOutlined,
+  PlusOutlined,
   ReloadOutlined,
   RollbackOutlined,
   UploadOutlined,
@@ -42,6 +45,7 @@ import {
   importPracticalPaper,
   markPracticalCandidateAbsent,
   returnPracticalScoringTask,
+  savePracticalQuestion,
 } from '../../../api/practicalScoring';
 import { parseContentDispositionFilename } from '../../../utils/download';
 import type {
@@ -51,9 +55,11 @@ import type {
   PracticalCandidateProgress,
   PracticalCompleteTaskResult,
   PracticalPaperOption,
+  PracticalPaperQuestion,
   PracticalScoreItem,
   PracticalScopeOption,
   PracticalTaskProgressItem,
+  PracticalTemplateItem,
 } from '../../../types/practicalScoring';
 
 interface Props {
@@ -83,6 +89,12 @@ export function PracticalScoringConfig({
   const [adjustNote, setAdjustNote] = useState('');
   const [adjustReason, setAdjustReason] = useState('');
   const [selectedSummaryCandidateIds, setSelectedSummaryCandidateIds] = useState<string[]>([]);
+  const [editingQuestion, setEditingQuestion] = useState<{
+    paper: PracticalPaperOption;
+    question: PracticalPaperQuestion;
+  }>();
+  const [editQuestionTitle, setEditQuestionTitle] = useState('');
+  const [editTemplateItems, setEditTemplateItems] = useState<PracticalTemplateItem[]>([]);
   const showConfig = showSetup || showTemplate;
 
   const setupQuery = useQuery({
@@ -340,6 +352,27 @@ export function PracticalScoringConfig({
       message.error(reason);
     },
   });
+  const editQuestionMutation = useMutation({
+    mutationFn: () => savePracticalQuestion(
+      editingQuestion!.paper.id,
+      editingQuestion!.question.id,
+      { title: editQuestionTitle, items: editTemplateItems },
+    ),
+    onSuccess: () => {
+      message.success('评分记录表已修改');
+      setEditingQuestion(undefined);
+      setEditQuestionTitle('');
+      setEditTemplateItems([]);
+      refresh();
+    },
+    onError: (error: unknown) => {
+      const reason =
+        (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
+        || (error as { message?: string })?.message
+        || '修改评分记录表失败，请检查题目名称和评分项配分';
+      message.error(reason);
+    },
+  });
   const exportSummaryMutation = useMutation({
     mutationFn: () => exportPracticalSummary(taskId!, selectedSummaryCandidateIds),
     onSuccess: (resp) => {
@@ -370,6 +403,38 @@ export function PracticalScoringConfig({
       refresh();
     },
   });
+
+  const openQuestionEditor = (paper: PracticalPaperOption, question: PracticalPaperQuestion) => {
+    setEditingQuestion({ paper, question });
+    setEditQuestionTitle(question.title || '');
+    setEditTemplateItems((question.templateItems || []).map((item) => ({ ...item })));
+  };
+
+  const updateEditTemplateItem = (itemNo: number, patch: Partial<PracticalTemplateItem>) => {
+    setEditTemplateItems((previous) => previous.map((item) => (
+      item.itemNo === itemNo ? { ...item, ...patch } : item
+    )));
+  };
+
+  const addEditTemplateItem = () => {
+    const nextItemNo = editTemplateItems.reduce((max, item) => Math.max(max, item.itemNo), 0) + 1;
+    setEditTemplateItems((previous) => [
+      ...previous,
+      {
+        itemNo: nextItemNo,
+        itemName: `评分要素${nextItemNo}`,
+        maxScore: 1,
+        criterion: '',
+        maxDeduction: 0,
+        deductionStep: 1,
+      },
+    ]);
+  };
+
+  const editTemplateTotal = editTemplateItems.reduce((sum, item) => sum + Number(item.maxScore || 0), 0);
+  const editTargetScore = editingQuestion?.question.score;
+  const editScoreMatches = editTargetScore == null
+    || Math.abs(editTemplateTotal - Number(editTargetScore)) < 0.0001;
 
   if (!taskId) return <Typography.Text type="secondary">请选择认定任务。</Typography.Text>;
 
@@ -474,6 +539,57 @@ export function PracticalScoringConfig({
     },
   ];
 
+  const paperColumns: ColumnsType<PracticalPaperOption> = [
+    {
+      title: '评分记录表',
+      dataIndex: 'title',
+      ellipsis: true,
+      render: (value) => value || '未命名评分记录表',
+    },
+    {
+      title: '试题数',
+      width: 90,
+      render: (_, paper) => paper.questions.length,
+    },
+    {
+      title: '评分模板',
+      width: 120,
+      render: (_, paper) => {
+        const ready = paper.questions.filter((question) => question.templateReady).length;
+        return <Tag color={ready === paper.questions.length && ready > 0 ? 'success' : 'warning'}>{ready}/{paper.questions.length} 已配置</Tag>;
+      },
+    },
+  ];
+
+  const questionColumnsForPaper = (paper: PracticalPaperOption): ColumnsType<PracticalPaperQuestion> => [
+    {
+      title: '题目名称',
+      dataIndex: 'title',
+      ellipsis: true,
+      render: (value) => value || <Typography.Text type="danger">未命名题目</Typography.Text>,
+    },
+    { title: '题目分值', dataIndex: 'score', width: 100, render: (value) => value ?? '-' },
+    {
+      title: '评分项',
+      width: 100,
+      render: (_, question) => `${question.templateItems?.length || 0} 项`,
+    },
+    {
+      title: '操作',
+      width: 100,
+      render: (_, question) => (
+        <Button
+          type="link"
+          size="small"
+          icon={<EditOutlined />}
+          onClick={() => openQuestionEditor(paper, question)}
+        >
+          修改
+        </Button>
+      ),
+    },
+  ];
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       {showConfig && (
@@ -542,6 +658,39 @@ export function PracticalScoringConfig({
         </ProCard>
       )}
 
+      {showTemplate && (
+        <ProCard title="评分记录表配置">
+          <Alert
+            type="info"
+            showIcon
+            message="导入后可直接修改题目名称和评分明细"
+            description="题目名称不能为空，评分项配分合计必须等于题目分值。尚未开始评分的任务会同步更新；已开始评分的任务需先处理后再修改。"
+            style={{ marginBottom: 16 }}
+          />
+          <Table<PracticalPaperOption>
+            rowKey="id"
+            columns={paperColumns}
+            dataSource={setup?.papers || []}
+            loading={setupQuery.isFetching}
+            pagination={{ pageSize: 8, showSizeChanger: false }}
+            expandable={{
+              expandedRowRender: (paper) => (
+                <Table<PracticalPaperQuestion>
+                  rowKey="id"
+                  columns={questionColumnsForPaper(paper)}
+                  dataSource={paper.questions}
+                  pagination={false}
+                  size="small"
+                  locale={{ emptyText: '该评分记录表暂无题目' }}
+                />
+              ),
+              rowExpandable: (paper) => paper.questions.length > 0,
+            }}
+            locale={{ emptyText: '暂无可修改的实操评分记录表，请先导入评分记录表' }}
+          />
+        </ProCard>
+      )}
+
       <Modal
         title={`批量配置实操考试（已选 ${selectedCandidateIds.length} 名学员）`}
         open={configModalOpen}
@@ -597,6 +746,132 @@ export function PracticalScoringConfig({
               onChange={setBatchPaperId}
             />
           </div>
+        </Space>
+      </Modal>
+
+      <Modal
+        title={`修改评分记录表${editingQuestion?.question.title ? ` · ${editingQuestion.question.title}` : ''}`}
+        open={Boolean(editingQuestion)}
+        width={1120}
+        okText="保存修改"
+        cancelText="取消"
+        confirmLoading={editQuestionMutation.isPending}
+        okButtonProps={{
+          disabled: !editQuestionTitle.trim() || editTemplateItems.length === 0 || !editScoreMatches,
+        }}
+        onCancel={() => {
+          setEditingQuestion(undefined);
+          setEditQuestionTitle('');
+          setEditTemplateItems([]);
+        }}
+        onOk={() => editQuestionMutation.mutate()}
+      >
+        <Space direction="vertical" size={14} style={{ width: '100%' }}>
+          <div>
+            <Typography.Text strong>题目名称</Typography.Text>
+            <Input
+              value={editQuestionTitle}
+              maxLength={120}
+              showCount
+              placeholder="请输入题目名称"
+              style={{ marginTop: 8 }}
+              onChange={(event) => setEditQuestionTitle(event.target.value)}
+            />
+          </div>
+          <Space>
+            <Typography.Text strong>评分项明细</Typography.Text>
+            <Typography.Text type={
+              editingQuestion && Math.abs(editTemplateTotal - Number(editingQuestion.question.score || 0)) < 0.0001
+                ? 'success'
+                : 'danger'
+            }>
+              配分合计 {editTemplateTotal} / 题目分值 {editingQuestion?.question.score ?? '-'}
+            </Typography.Text>
+          </Space>
+          <Table<PracticalTemplateItem>
+            rowKey="itemNo"
+            size="small"
+            pagination={false}
+            scroll={{ x: 950 }}
+            dataSource={editTemplateItems}
+            columns={[
+              { title: '序号', dataIndex: 'itemNo', width: 70 },
+              {
+                title: '评分要素',
+                width: 180,
+                render: (_, item) => (
+                  <Input
+                    value={item.itemName}
+                    onChange={(event) => updateEditTemplateItem(item.itemNo, { itemName: event.target.value })}
+                  />
+                ),
+              },
+              {
+                title: '配分',
+                width: 110,
+                render: (_, item) => (
+                  <InputNumber
+                    min={0.01}
+                    precision={2}
+                    style={{ width: '100%' }}
+                    value={item.maxScore}
+                    onChange={(value) => updateEditTemplateItem(item.itemNo, { maxScore: Number(value || 0) })}
+                  />
+                ),
+              },
+              {
+                title: '评分标准',
+                width: 300,
+                render: (_, item) => (
+                  <Input
+                    value={item.criterion}
+                    onChange={(event) => updateEditTemplateItem(item.itemNo, { criterion: event.target.value })}
+                  />
+                ),
+              },
+              {
+                title: '最大扣分',
+                width: 110,
+                render: (_, item) => (
+                  <InputNumber
+                    min={0}
+                    precision={2}
+                    style={{ width: '100%' }}
+                    value={item.maxDeduction}
+                    onChange={(value) => updateEditTemplateItem(item.itemNo, { maxDeduction: Number(value || 0) })}
+                  />
+                ),
+              },
+              {
+                title: '步长',
+                width: 100,
+                render: (_, item) => (
+                  <InputNumber
+                    min={0.01}
+                    precision={2}
+                    style={{ width: '100%' }}
+                    value={item.deductionStep}
+                    onChange={(value) => updateEditTemplateItem(item.itemNo, { deductionStep: Number(value || 0) })}
+                  />
+                ),
+              },
+              {
+                title: '操作',
+                width: 70,
+                render: (_, item) => (
+                  <Button
+                    type="link"
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={() => setEditTemplateItems((previous) => previous.filter((row) => row.itemNo !== item.itemNo))}
+                  />
+                ),
+              },
+            ]}
+          />
+          <Button type="dashed" icon={<PlusOutlined />} onClick={addEditTemplateItem}>
+            新增评分项
+          </Button>
         </Space>
       </Modal>
 

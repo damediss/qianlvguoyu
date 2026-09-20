@@ -393,6 +393,42 @@ public class CompetitionStageService {
         CompetitionStageStatus.IN_PROGRESS, "start_stage", null);
   }
 
+  /**
+   * Tablet/console scoring needs an in-progress stage. Practical initialization only
+   * promotes draft → configuring, and the admin start action is not on the tablet path,
+   * so the first interactive write (or leader start) advances the lifecycle here.
+   */
+  @Transactional
+  public CompetitionStageEntity ensureInProgressForInteractiveWrite(
+      Long tenantId, Long userId, Long stageId) {
+    CompetitionStageEntity stage = locked(tenantId, stageId);
+    CompetitionStageStatus status = CompetitionStageStatus.fromCode(stage.getStatus());
+    if (status == CompetitionStageStatus.IN_PROGRESS) {
+      if (lifecycleGuard != null) {
+        lifecycleGuard.requireInteractiveWrite(tenantId, stageId);
+      }
+      return stage;
+    }
+    if (status == CompetitionStageStatus.DRAFT) {
+      beginConfiguration(tenantId, userId, stageId, "平板端开考");
+      stage = locked(tenantId, stageId);
+      status = CompetitionStageStatus.fromCode(stage.getStatus());
+    }
+    if (status != CompetitionStageStatus.CONFIGURING
+        && status != CompetitionStageStatus.READY_LOCKED) {
+      throw new BusinessException(ErrorCode.CONFLICT, "当前赛段不允许执行交互式操作");
+    }
+    ensureRuntimeWindowForStart(userId, stage);
+    if (status == CompetitionStageStatus.CONFIGURING) {
+      lockReady(tenantId, userId, stageId);
+    }
+    startStage(tenantId, userId, stageId);
+    if (lifecycleGuard != null) {
+      lifecycleGuard.requireInteractiveWrite(tenantId, stageId);
+    }
+    return locked(tenantId, stageId);
+  }
+
   @Transactional
   public CompetitionStageEntity closeStage(Long tenantId, Long userId, Long stageId) {
     CompetitionStageEntity entity = locked(tenantId, stageId);
@@ -448,6 +484,33 @@ public class CompetitionStageService {
   private CompetitionStageEntity locked(Long tenantId, Long stageId) {
     if (lifecycleGuard != null) return lifecycleGuard.lockStage(tenantId, stageId);
     return findExisting(tenantId, stageId);
+  }
+
+  private void ensureRuntimeWindowForStart(Long userId, CompetitionStageEntity stage) {
+    LocalDateTime now = LocalDateTime.now();
+    LocalDateTime start = stage.getStartAt();
+    LocalDateTime end = stage.getEndAt();
+    boolean changed = false;
+    if (start == null) {
+      start = now;
+      changed = true;
+    } else if (now.isBefore(start) && (end == null || now.isBefore(end))) {
+      start = now;
+      changed = true;
+    }
+    if (end == null || !end.isAfter(start)) {
+      end = start.plusHours(8);
+      changed = true;
+    }
+    if (!changed) {
+      return;
+    }
+    stage.setStartAt(start);
+    stage.setEndAt(end);
+    stage.setUpdatedBy(userId);
+    if (mapper.updateById(stage) != 1) {
+      throw new BusinessException(ErrorCode.CONFLICT, "赛段时间窗口已发生变化，请刷新后重试");
+    }
   }
 
   private void writeHistory(Long tenantId, Long userId, CompetitionStageEntity entity,

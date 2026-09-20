@@ -84,6 +84,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
     String tenantIdHeader = request.getHeader(TENANT_HEADER);
     if ((tenantIdHeader == null || tenantIdHeader.isBlank())
         && (path.equals("/api/ws/practical-scoring")
+            || path.equals("/api/ws/competition-practical")
             || path.equals("/api/ws/competition/formal-exam/player")
             || path.equals("/api/ws/competition/formal-exam/console"))) {
       tenantIdHeader = request.getParameter("tenantId");

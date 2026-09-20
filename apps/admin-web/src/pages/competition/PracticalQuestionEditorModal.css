@@ -1,0 +1,21 @@
+.practical-question-editor__scoring-tab {
+  padding: 4px 0;
+}
+
+.practical-question-editor__step-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.practical-question-editor__inline-preview {
+  color: #8c8c8c;
+  max-width: 360px;
+  max-height: 24px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.practical-question-editor__inline-preview p {
+  margin: 0;
+}

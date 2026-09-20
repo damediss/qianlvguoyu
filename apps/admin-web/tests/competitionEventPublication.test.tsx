@@ -31,10 +31,10 @@ describe('赛事基础信息发布', () => {
     const navigate = vi.fn();
     mount(<CompetitionEventFormPage onNavigate={navigate} />);
     await user.type(screen.getByPlaceholderText('请输入赛事名称'), '测试竞赛');
-    await user.type(screen.getByPlaceholderText('请输入唯一赛事编码'), 'c007-test');
     await user.click(screen.getByRole('button', { name: '保存并发布赛事' }));
     await waitFor(() => expect(publishCompetitionEvent).toHaveBeenCalledWith('100'));
-    expect(createCompetitionEvent).toHaveBeenCalledWith(expect.objectContaining({ name: '测试竞赛', code: 'c007-test', startAt: undefined, endAt: undefined }));
+    expect(createCompetitionEvent).toHaveBeenCalledWith(expect.objectContaining({ name: '测试竞赛', scope: 'platform', startAt: undefined, endAt: undefined }));
+    expect(createCompetitionEvent.mock.calls[0][0]).not.toHaveProperty('code');
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/competition/events/100'));
   });
 
@@ -44,7 +44,6 @@ describe('赛事基础信息发布', () => {
     const user = userEvent.setup();
     mount(<CompetitionEventFormPage onNavigate={navigate} />);
     await user.type(screen.getByPlaceholderText('请输入赛事名称'), '测试竞赛');
-    await user.type(screen.getByPlaceholderText('请输入唯一赛事编码'), 'c007-test');
     await user.click(screen.getByRole('button', { name: '保存并发布赛事' }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/competition/events/100'));
     expect(createCompetitionEvent).toHaveBeenCalledTimes(1);

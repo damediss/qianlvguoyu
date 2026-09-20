@@ -86,7 +86,12 @@ class CompetitionStageExecutionContractSchemaTest {
         "V20260803_006__freeze_competition_stage_execution_scope.sql",
         "V20260803_007__add_competition_promotion_source_plan.sql",
         "V20260804_005__add_competition_stage_plan_status.sql",
-        "V20260805_005__add_competition_promotion_rules_work_type_stages_and_confirmations.sql")) {
+        "V20260805_005__add_competition_promotion_rules_work_type_stages_and_confirmations.sql",
+        "V20260825_002__scope_competition_stage_canvas_by_work_type_level.sql",
+        "V20260904_003__create_competition_question_bank_and_make_plan.sql",
+        "V20260920_001__competition_practical_assessment_and_runtime.sql",
+        "V20260920_102__competition_practical_judge_start_gate.sql",
+        "V20260920_104__competition_practical_question_submit_status.sql")) {
       try (var input = getClass().getClassLoader().getResourceAsStream("db/migration/" + name)) {
         assertThat(input).as(name).isNotNull();
         value.append(new String(input.readAllBytes(), StandardCharsets.UTF_8)).append('\n');

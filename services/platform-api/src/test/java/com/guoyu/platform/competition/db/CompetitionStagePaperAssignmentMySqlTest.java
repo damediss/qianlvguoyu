@@ -34,6 +34,8 @@ class CompetitionStagePaperAssignmentMySqlTest {
           "db/migration/V20260505_002__seed_demo_tenant_admin.sql"));
       ScriptUtils.executeSqlScript(connection, new ClassPathResource(
           "db/migration/V20260907_004__create_competition_stage_paper_assignments.sql"));
+      ScriptUtils.executeSqlScript(connection, new ClassPathResource(
+          "db/migration/V20260918_002__extend_stage_paper_assignments_for_practical.sql"));
       try (var statement = connection.createStatement(); var rows = statement.executeQuery(
           "SELECT COUNT(*) FROM sys_permission WHERE code LIKE 'competition:stage-paper-assignment:%'")) {
         rows.next(); assertThat(rows.getInt(1)).isEqualTo(3);
@@ -50,6 +52,7 @@ class CompetitionStagePaperAssignmentMySqlTest {
       var assignment = new CompetitionStagePaperAssignmentEntity();
       assignment.setId(1L); assignment.setTenantId(1L); assignment.setEventId(2L);
       assignment.setStageId(3L); assignment.setEventWorkTypeId(4L); assignment.setEventWorkTypeLevelId(5L);
+      assignment.setContentType("theory");
       assignment.setContestantProfileId(6L); assignment.setContestantMemberId(7L); assignment.setRegistrationId(8L);
       assignment.setPaperSnapshotId(9L); assignment.setStatus("confirmed"); assignment.setAllocationSource("manual");
       assignment.setConfirmedBy(10L); assignment.setConfirmedAt(LocalDateTime.now());

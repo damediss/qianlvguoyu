@@ -35,13 +35,15 @@ interface StagePlanningCanvasProps {
   onAddStage: (stageType: StageType, position: { x: number; y: number }) => void;
   onStageContextMenu: (nodeId: string) => void;
   onStageContentTypeClick: (nodeId: string, contentType: CompetitionStageContentType) => void;
-  onStageCandidateClick?: (nodeId: string) => void;
+  onStageCandidateClick?: (nodeId: string, contentType: 'theory' | 'practical') => void;
+  onStageRefereeClick?: (nodeId: string) => void;
   candidateEnabled?: boolean;
+  refereeEnabled?: boolean;
   stageContentTypesByNodeId?: Readonly<Record<string, readonly CompetitionStageContentType[]>>;
   onFitViewReady: (fitView: () => void) => void;
 }
 
-function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, onNodesChange, onEdgesChange, onConnect, onSelectionChange, onAddStage, onStageContextMenu, onStageContentTypeClick, onStageCandidateClick, candidateEnabled, stageContentTypesByNodeId, onFitViewReady }: StagePlanningCanvasProps) {
+function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, onNodesChange, onEdgesChange, onConnect, onSelectionChange, onAddStage, onStageContextMenu, onStageContentTypeClick, onStageCandidateClick, onStageRefereeClick, candidateEnabled, refereeEnabled, stageContentTypesByNodeId, onFitViewReady }: StagePlanningCanvasProps) {
   const { screenToFlowPosition, fitView } = useReactFlow<StageNode, StageEdge>();
   const [contextMenu, setContextMenu] = useState<{
     nodeId: string;
@@ -130,16 +132,22 @@ function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, 
           position={contextMenu.position}
           enabledContentTypes={enabledContentTypes}
           candidateEnabled={candidateEnabled}
+          refereeEnabled={refereeEnabled}
           onClose={closeContextMenu}
           onContentTypeClick={(contentType) => {
             const nodeId = contextMenu.nodeId;
             closeContextMenu();
             onStageContentTypeClick(nodeId, contentType);
           }}
-          onCandidateClick={() => {
+          onCandidateClick={(contentType) => {
             const nodeId = contextMenu.nodeId;
             closeContextMenu();
-            onStageCandidateClick?.(nodeId);
+            onStageCandidateClick?.(nodeId, contentType);
+          }}
+          onRefereeClick={() => {
+            const nodeId = contextMenu.nodeId;
+            closeContextMenu();
+            onStageRefereeClick?.(nodeId);
           }}
         />
       )}

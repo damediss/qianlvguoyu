@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">竞赛实操裁判端（测试）</string>
+    <!-- 有线 ADB reverse 优先走本机回环；热点/有线网卡作为回退 -->
+    <string name="default_web_url">http://127.0.0.1:5173/competition-practical-judge</string>
+    <string-array name="fallback_web_hosts">
+        <item>192.168.137.1</item>
+        <item>192.168.1.120</item>
+    </string-array>
+</resources>

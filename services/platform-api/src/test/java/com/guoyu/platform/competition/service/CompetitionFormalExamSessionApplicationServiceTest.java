@@ -346,7 +346,7 @@ class CompetitionFormalExamSessionApplicationServiceTest {
   }
 
   @Test
-  void getByStageIgnoresFinishedOccupancyReleasedSession() {
+  void getByStageReturnsFinishedOccupancyReleasedSession() {
     players(player(100L, "张三", "001", 500L, "A"));
     papers(paper(500L, "A", "A卷", 60));
     questions(500L, 1);
@@ -354,7 +354,7 @@ class CompetitionFormalExamSessionApplicationServiceTest {
     sessionStore.get(0).setStatus("finished");
     sessionStore.get(0).setOccupancyToken(Long.valueOf(prepared.id()));
 
-    assertThat(service.getByStage(10L, "theory")).isNull();
+    assertThat(service.getByStage(10L, "theory").status()).isEqualTo("finished");
     assertThat(service.getById(Long.valueOf(prepared.id())).status()).isEqualTo("finished");
   }
 

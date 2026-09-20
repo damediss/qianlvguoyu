@@ -8,6 +8,7 @@ import com.guoyu.platform.competition.dto.CompetitionMakeExamPlanUpsertReq;
 import com.guoyu.platform.competition.service.CompetitionMakeExamPlanApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionMakeExamPlanVO;
 import com.guoyu.platform.competition.vo.CompetitionMakeExamSnapshotVO;
+import com.guoyu.platform.competition.vo.CompetitionMakeExamPlanPrecheckVO;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -53,6 +54,13 @@ public class CompetitionMakeExamPlanController {
   public ApiResponse<CompetitionMakeExamPlanVO> create(
       @PathVariable Long eventId, @Valid @RequestBody CompetitionMakeExamPlanUpsertReq req) {
     return ApiResponse.ok(service.create(eventId, req));
+  }
+
+  @PostMapping("/events/{eventId}/make-exam-plans/precheck")
+  @PreAuthorize("hasAuthority('competition:make-plan:view')")
+  public ApiResponse<CompetitionMakeExamPlanPrecheckVO> precheck(
+      @PathVariable Long eventId, @Valid @RequestBody CompetitionMakeExamPlanUpsertReq req) {
+    return ApiResponse.ok(service.precheck(eventId, req));
   }
 
   @PutMapping("/events/{eventId}/make-exam-plans/{planId}")

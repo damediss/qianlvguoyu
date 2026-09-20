@@ -88,7 +88,14 @@ apiClient.interceptors.response.use(
       msg = error?.response?.data?.message || error?.message || '请求失败';
     }
     if (!error?.config?.silentError) {
-      message.error(msg);
+      // A blueprint import uses 422 to request an explicit warning
+      // confirmation. It is actionable UI state, not a failed import, so do
+      // not present it as a red error toast.
+      if (error?.response?.status === 422 && msg.includes('待确认警告')) {
+        message.warning(msg);
+      } else {
+        message.error(msg);
+      }
     }
     return Promise.reject(error);
   },

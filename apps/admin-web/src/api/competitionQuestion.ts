@@ -5,6 +5,7 @@ import type {
   CompetitionMakeExamPlan,
   CompetitionMakeExamPlanRequest,
   CompetitionMakeExamSnapshot,
+  CompetitionMakeExamPlanPrecheck,
   CompetitionQuestionContentType,
   CompetitionQuestion,
   CompetitionQuestionImportBatch,
@@ -38,15 +39,26 @@ export function deleteCompetitionQuestion(eventId: CompetitionId, questionId: Co
   return unwrap<void>(apiClient.delete(`/competition/events/${eventId}/questions/${questionId}`));
 }
 
+export function batchBindCompetitionQuestions(
+  eventId: CompetitionId,
+  body: { blueprintId: CompetitionId; blueprintNodeId: CompetitionId; questionIds: CompetitionId[] },
+) {
+  return unwrap<CompetitionQuestion[]>(apiClient.post(
+    `/competition/events/${eventId}/questions/blueprint-binding/batch`, body,
+  ));
+}
+
 export function importCompetitionQuestions(
   eventId: CompetitionId,
-  scope: { eventWorkTypeId: CompetitionId; eventWorkTypeLevelId: CompetitionId; contentType: string },
+  scope: { eventWorkTypeId: CompetitionId; eventWorkTypeLevelId: CompetitionId; contentType: string; blueprintId: CompetitionId; selectedSheet?: string },
   file: File,
 ) {
   const form = new FormData();
   form.append('eventWorkTypeId', String(scope.eventWorkTypeId));
   form.append('eventWorkTypeLevelId', String(scope.eventWorkTypeLevelId));
   form.append('contentType', scope.contentType);
+  form.append('blueprintId', String(scope.blueprintId));
+  if (scope.selectedSheet) form.append('selectedSheet', scope.selectedSheet);
   form.append('file', file);
   return unwrap<CompetitionQuestionImportBatch>(apiClient.post(
     `/competition/events/${eventId}/question-imports`, form,
@@ -76,6 +88,10 @@ export function getCompetitionMakeExamPlan(eventId: CompetitionId, planId: Compe
 
 export function createCompetitionMakeExamPlan(eventId: CompetitionId, body: CompetitionMakeExamPlanRequest) {
   return unwrap<CompetitionMakeExamPlan>(apiClient.post(`/competition/events/${eventId}/make-exam-plans`, body));
+}
+
+export function precheckCompetitionMakeExamPlan(eventId: CompetitionId, body: CompetitionMakeExamPlanRequest) {
+  return unwrap<CompetitionMakeExamPlanPrecheck>(apiClient.post(`/competition/events/${eventId}/make-exam-plans/precheck`, body));
 }
 
 export function updateCompetitionMakeExamPlan(eventId: CompetitionId, planId: CompetitionId, body: CompetitionMakeExamPlanRequest) {

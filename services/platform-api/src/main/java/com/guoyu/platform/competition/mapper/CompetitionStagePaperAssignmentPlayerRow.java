@@ -17,6 +17,8 @@ public class CompetitionStagePaperAssignmentPlayerRow {
   private String levelCode;
   private String levelName;
   private Long assignedPaperSnapshotId;
+  private Long assessmentSheetId;
+  private String assessmentSheetCode;
   private Long paperSnapshotId;
   private String paperCode;
   private String paperTitle;
@@ -61,6 +63,10 @@ public class CompetitionStagePaperAssignmentPlayerRow {
   public void setAssignedPaperSnapshotId(Long assignedPaperSnapshotId) {
     this.assignedPaperSnapshotId = assignedPaperSnapshotId;
   }
+  public Long getAssessmentSheetId() { return assessmentSheetId; }
+  public void setAssessmentSheetId(Long assessmentSheetId) { this.assessmentSheetId = assessmentSheetId; }
+  public String getAssessmentSheetCode() { return assessmentSheetCode; }
+  public void setAssessmentSheetCode(String assessmentSheetCode) { this.assessmentSheetCode = assessmentSheetCode; }
   public Long getPaperSnapshotId() { return paperSnapshotId; }
   public void setPaperSnapshotId(Long paperSnapshotId) { this.paperSnapshotId = paperSnapshotId; }
   public String getPaperCode() { return paperCode; }

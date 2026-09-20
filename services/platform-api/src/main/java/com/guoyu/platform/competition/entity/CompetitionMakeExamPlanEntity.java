@@ -10,6 +10,8 @@ public class CompetitionMakeExamPlanEntity extends BaseEntity {
   private Long eventId;
   private Long eventWorkTypeId;
   private Long eventWorkTypeLevelId;
+  private Long blueprintId;
+  private Long practicalQuestionId;
   private String contentType;
   private String title;
   private String examType;
@@ -17,6 +19,7 @@ public class CompetitionMakeExamPlanEntity extends BaseEntity {
   private BigDecimal totalScore;
   private BigDecimal passScore;
   private Integer paperCount;
+  private Long randomSeed;
   private Integer planVersion;
   private String status;
   private String comments;
@@ -27,6 +30,10 @@ public class CompetitionMakeExamPlanEntity extends BaseEntity {
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
   public Long getEventWorkTypeLevelId() { return eventWorkTypeLevelId; }
   public void setEventWorkTypeLevelId(Long eventWorkTypeLevelId) { this.eventWorkTypeLevelId = eventWorkTypeLevelId; }
+  public Long getBlueprintId() { return blueprintId; }
+  public void setBlueprintId(Long blueprintId) { this.blueprintId = blueprintId; }
+  public Long getPracticalQuestionId() { return practicalQuestionId; }
+  public void setPracticalQuestionId(Long practicalQuestionId) { this.practicalQuestionId = practicalQuestionId; }
   public String getContentType() { return contentType; }
   public void setContentType(String contentType) { this.contentType = contentType; }
   public String getTitle() { return title; }
@@ -41,6 +48,8 @@ public class CompetitionMakeExamPlanEntity extends BaseEntity {
   public void setPassScore(BigDecimal passScore) { this.passScore = passScore; }
   public Integer getPaperCount() { return paperCount; }
   public void setPaperCount(Integer paperCount) { this.paperCount = paperCount; }
+  public Long getRandomSeed() { return randomSeed; }
+  public void setRandomSeed(Long randomSeed) { this.randomSeed = randomSeed; }
   public Integer getPlanVersion() { return planVersion; }
   public void setPlanVersion(Integer planVersion) { this.planVersion = planVersion; }
   public String getStatus() { return status; }

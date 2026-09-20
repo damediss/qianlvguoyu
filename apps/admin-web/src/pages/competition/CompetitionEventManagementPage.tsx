@@ -85,7 +85,6 @@ type EventRoute =
 
 interface EventFormValues {
   name: string;
-  code: string;
   scope: CompetitionEventScope;
   startAt?: Dayjs;
   endAt?: Dayjs;
@@ -126,6 +125,7 @@ function eventRoute(): EventRoute {
     '/competition/notices': 'notices',
     '/competition/theory-exams': 'theory-exam',
     '/competition/formal-exam': 'formal-exam-console',
+    '/competition/practical-exam': 'practical-exam-console',
     '/competition/scores': 'scores',
   };
   const module = modulePathMap[window.location.pathname.replace(/\/$/, '')];
@@ -535,7 +535,6 @@ export function CompetitionEventFormPage({
     if (!eventQuery.data) return;
     form.setFieldsValue({
       name: eventQuery.data.name,
-      code: eventQuery.data.code,
       scope: eventQuery.data.scope,
       startAt: dateTimeValue(eventQuery.data.startAt),
       endAt: dateTimeValue(eventQuery.data.endAt),
@@ -608,7 +607,6 @@ export function CompetitionEventFormPage({
     }
     const payload: CompetitionEventCreateRequest = {
       name: values.name.trim(),
-      code: values.code.trim(),
       scope: values.scope,
       startAt: toDateTime(values.startAt),
       endAt: toDateTime(values.endAt),
@@ -639,8 +637,10 @@ export function CompetitionEventFormPage({
             <Form.Item name="name" label="赛事名称" rules={[{ required: true, whitespace: true, message: '请输入赛事名称' }, { max: 128, message: '名称不能超过128个字符' }]}>
               <Input placeholder="请输入赛事名称" maxLength={128} showCount />
             </Form.Item>
-            <Form.Item name="code" label="赛事编码" rules={[{ required: true, whitespace: true, message: '请输入赛事编码' }, { max: 64, message: '编码不能超过64个字符' }]}>
-              <Input placeholder="请输入唯一赛事编码" maxLength={64} disabled={isEdit} showCount />
+            <Form.Item label="赛事编码">
+              <Typography.Text type="secondary">
+                {isEdit ? (eventQuery.data?.code || '保存后由系统生成') : '保存后按赛事名称首拼音 + 创建时间（年月日时）自动生成'}
+              </Typography.Text>
             </Form.Item>
             <Form.Item name="scope" label="赛事范围" rules={[{ required: true, message: '请选择赛事范围' }]}>
               <Select options={scopeOptions} disabled={isEdit} />

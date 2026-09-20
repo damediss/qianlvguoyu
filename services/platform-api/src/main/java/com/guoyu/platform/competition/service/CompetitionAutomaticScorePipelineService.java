@@ -87,6 +87,9 @@ public class CompetitionAutomaticScorePipelineService {
     CompetitionScoreSourceEntity practical = sourceOrDisabledZero(
         source, byType.get("practical"), "practical", rule, operatorId, now);
     if (theory == null || simulation == null || practical == null) return null;
+    if (!"confirmed".equalsIgnoreCase(theory.getConfirmationStatus())
+        || !"confirmed".equalsIgnoreCase(simulation.getConfirmationStatus())
+        || !"confirmed".equalsIgnoreCase(practical.getConfirmationStatus())) return null;
     if (!Objects.equals(theory.getScoreRuleId(), source.getScoreRuleId())
         || !Objects.equals(simulation.getScoreRuleId(), source.getScoreRuleId())
         || !Objects.equals(practical.getScoreRuleId(), source.getScoreRuleId())) return null;

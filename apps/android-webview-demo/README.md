@@ -40,6 +40,8 @@ Android 模拟器访问宿主机服务时使用 `10.0.2.2`。真机访问局域�
 |---|---|---|---|
 | `prodDebug` | 正式环境 | `com.example.webviewshelldemo` | `https://java.app.gjjd168.com/practical-collection` |
 | `localTestDebug` | 本机联调 | `com.example.webviewshelldemo.localtest` | `192.168.1.98:5173/practical-collection/workbench/{taskId}` |
+| `competitionJudgeDebug` | 竞赛实操裁判正式版 | `com.example.webviewshelldemo.competitionjudge` | `https://java.app.gjjd168.com/competition-practical-judge` |
+| `competitionJudgeLocalDebug` | 竞赛实操裁判联调版 | `com.example.webviewshelldemo.competitionjudge.local` | `127.0.0.1:5173/competition-practical-judge`（ADB reverse；失败回退 `192.168.137.1` / `192.168.1.120`） |
 
 两个变体可同时安装，互不影响。
 
@@ -53,13 +55,32 @@ cd apps/android-webview-demo
 
 # 本机测试版（localTest）
 .\gradlew.bat :app:assembleLocalTestDebug
+
+# 竞赛实操裁判端（正式/本地联调）
+.\gradlew.bat :app:assembleCompetitionJudgeDebug
+.\gradlew.bat :app:assembleCompetitionJudgeLocalDebug
+
+# 竞赛裁判本地联调（自动 reverse 5173/8080、安装、打开评分端）
+.\wired-debug.ps1 -CompetitionJudge
 ```
 
 ## 本机测试（localTest）
 
 前提：本机已启动 `admin-web`（5173）和 `platform-api`（8080），且平板与电脑在同一局域网。
 
-平板通过局域网 IP 访问本机（默认 `192.168.1.98`），无需 `adb reverse`：
+平板有线 ADB 联调时，脚本会做 `adb reverse tcp:5173/8080`，H5 默认走 `http://127.0.0.1:5173/...`。
+本机热点网段是 `192.168.137.1`，有线网卡是 `192.168.1.120`；不要再用过期地址 `192.168.1.98`。
+Windows 热点默认会拦平板访问主机端口，未放行防火墙时请继续用 ADB reverse，不要只依赖局域网 IP。
+
+```powershell
+# 信息采集本地联调
+.\wired-debug.ps1 -LocalTest
+
+# 竞赛裁判本地联调
+.\wired-debug.ps1 -CompetitionJudge
+```
+
+手动安装：
 
 ```powershell
 adb install app/build/outputs/apk/localTest/debug/app-localTest-debug.apk

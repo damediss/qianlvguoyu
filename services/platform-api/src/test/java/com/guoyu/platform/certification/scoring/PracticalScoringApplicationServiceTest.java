@@ -604,6 +604,62 @@ class PracticalScoringApplicationServiceTest {
     assertThat(detailCaptor.getValue().getScoringTemplateJson()).contains("安全确认", "设备处理");
   }
 
+  @Test
+  void saveQuestionUpdatesTitleAndScoringRecordTemplate() {
+    when(paperMapper.selectById(20)).thenReturn(paper(20, null));
+    when(paperDetailMapper.selectById(501)).thenReturn(question(20));
+
+    PracticalScoringModels.PaperQuestionOption result = service.saveQuestion(
+        20L,
+        501L,
+        new PracticalScoringModels.UpdateQuestionReq(
+            "  修订后的接线操作  ",
+            List.of(new PracticalScoringModels.TemplateItem(
+                1,
+                "安全确认",
+                new BigDecimal("10"),
+                "按规范完成",
+                new BigDecimal("10"),
+                BigDecimal.ONE))));
+
+    assertThat(result.title()).isEqualTo("修订后的接线操作");
+    assertThat(result.templateReady()).isTrue();
+    assertThat(result.templateItems()).hasSize(1);
+    ArgumentCaptor<ExamOperatePaperDetailEntity> questionCaptor =
+        ArgumentCaptor.forClass(ExamOperatePaperDetailEntity.class);
+    verify(paperDetailMapper).updateById(questionCaptor.capture());
+    assertThat(questionCaptor.getValue().getTitle()).isEqualTo("修订后的接线操作");
+    assertThat(questionCaptor.getValue().getScoringTemplateJson()).contains("安全确认");
+  }
+
+  @Test
+  void saveQuestionSynchronizesAssignedAssessorTasks() {
+    when(paperMapper.selectById(20)).thenReturn(paper(20, null));
+    when(paperDetailMapper.selectById(501)).thenReturn(question(20));
+    CertificationAssessorTaskEntity assessorTask = task(701L, 9L, 0);
+    assessorTask.setPaperQuestionId(501L);
+    when(assessorTaskMapper.selectList(any())).thenReturn(List.of(assessorTask));
+
+    service.saveQuestion(
+        20L,
+        501L,
+        new PracticalScoringModels.UpdateQuestionReq(
+            "修订后的接线操作",
+            List.of(new PracticalScoringModels.TemplateItem(
+                1,
+                "安全确认",
+                new BigDecimal("10"),
+                "按规范完成",
+                new BigDecimal("10"),
+                BigDecimal.ONE))));
+
+    assertThat(assessorTask.getTitle()).isEqualTo("修订后的接线操作");
+    assertThat(assessorTask.getQuestionSnapshotJson()).contains("修订后的接线操作", "安全确认");
+    verify(assessorTaskMapper).updateById(assessorTask);
+    verify(scoreMapper).delete(any());
+    verify(scoreMapper).insert(Mockito.any(CertificationAssessorTaskScoreEntity.class));
+  }
+
   @ParameterizedTest
   @ValueSource(ints = {4, 6, 8})
   void importFullScoreRecordWorkbookAcceptsFourToEightQuestionSheets(int questionCount) throws Exception {
@@ -663,6 +719,22 @@ class PracticalScoringApplicationServiceTest {
             fullScoreRecordWorkbookBytes(List.of(20, 20, 20, 30)))))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("100");
+  }
+
+  @Test
+  void importFullScoreRecordWorkbookRejectsBlankQuestionTitle() throws Exception {
+    when(taskMapper.selectById(1L)).thenReturn(taskEntity());
+
+    assertThatThrownBy(() -> service.importCustomPaper(
+        1L,
+        new MockMultipartFile(
+            "file",
+            "full-score-record.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            fullScoreRecordWorkbookBytes(List.of(25, 25, 25, 25), 1))))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("题目名称不能为空");
+    Mockito.verifyNoInteractions(paperMapper, paperDetailMapper);
   }
 
   @Test
@@ -1717,6 +1789,10 @@ class PracticalScoringApplicationServiceTest {
   }
 
   private byte[] fullScoreRecordWorkbookBytes(List<Integer> questionScores) throws Exception {
+    return fullScoreRecordWorkbookBytes(questionScores, -1);
+  }
+
+  private byte[] fullScoreRecordWorkbookBytes(List<Integer> questionScores, int blankQuestionIndex) throws Exception {
     try (XSSFWorkbook workbook = new XSSFWorkbook();
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
       Sheet summary = workbook.createSheet("评分汇总表");
@@ -1729,7 +1805,9 @@ class PracticalScoringApplicationServiceTest {
         cell(sheet, 3, 0, "序号");
         cell(sheet, 3, 1, "考生姓名");
         cell(sheet, 3, 2, "准考证号");
-        cell(sheet, 3, 3, "试题" + (i + 1) + "、实操题目" + (i + 1) + "(" + score + "分)");
+        if (i != blankQuestionIndex) {
+          cell(sheet, 3, 3, "试题" + (i + 1) + "、实操题目" + (i + 1) + "(" + score + "分)");
+        }
         cell(sheet, 3, 8, "本题得分合计");
         cell(sheet, 4, 4, "实操题目" + (i + 1));
         cell(sheet, 5, 4, "评分要素" + (i + 1));

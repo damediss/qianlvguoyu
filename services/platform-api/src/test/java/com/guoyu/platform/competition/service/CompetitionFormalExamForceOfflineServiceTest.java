@@ -1,5 +1,6 @@
 package com.guoyu.platform.competition.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -114,6 +115,49 @@ class CompetitionFormalExamForceOfflineServiceTest {
     service().forceOffline(9001L, 9101L);
 
     verify(accessSessions).forceOffline(9001L, 9101L, 77L, 1000L, "工作人员清退");
+    verify(examStpLogic, never()).kickout(any());
+  }
+
+  @Test
+  void batchKickoutProcessesSelectedCandidatesInOneApplicationCall() {
+    stubSession();
+    CompetitionFormalCandidateExamEntity first = candidate("running");
+    CompetitionFormalCandidateExamEntity second = candidate("waiting_enter");
+    second.setId(9102L);
+    second.setPlayerId(78L);
+    second.setCandidateNo("002");
+    second.setCandidateName("李四");
+    when(candidateExams.selectByIdForUpdate(9101L)).thenReturn(first);
+    when(candidateExams.selectByIdForUpdate(9102L)).thenReturn(second);
+    when(accessSessions.forceOfflineAndCount(
+        9001L, 9101L, 77L, 1000L, "工作人员清退")).thenReturn(1);
+    when(accessSessions.forceOfflineAndCount(
+        9001L, 9102L, 78L, 1000L, "工作人员清退")).thenReturn(0);
+
+    var result = service().forceOfflineBatch(9001L, List.of(9101L, 9102L));
+
+    assertThat(result.requestedCount()).isEqualTo(2);
+    assertThat(result.kickedCount()).isEqualTo(1);
+    assertThat(result.alreadyOfflineCount()).isEqualTo(1);
+    verify(accessSessions).forceOfflineAndCount(9001L, 9101L, 77L, 1000L, "工作人员清退");
+    verify(accessSessions).forceOfflineAndCount(9001L, 9102L, 78L, 1000L, "工作人员清退");
+    verify(examStpLogic, never()).kickout(any());
+  }
+
+  @Test
+  void batchKickoutValidatesAllCandidatesBeforeExecutingAnyKickout() {
+    stubSession();
+    CompetitionFormalCandidateExamEntity first = candidate("running");
+    CompetitionFormalCandidateExamEntity otherSession = candidate("running");
+    otherSession.setId(9102L);
+    otherSession.setExamSessionId(9999L);
+    when(candidateExams.selectByIdForUpdate(9101L)).thenReturn(first);
+    when(candidateExams.selectByIdForUpdate(9102L)).thenReturn(otherSession);
+
+    assertThatThrownBy(() -> service().forceOfflineBatch(9001L, List.of(9101L, 9102L)))
+        .isInstanceOf(BusinessException.class)
+        .hasMessage("选手考试实例不存在");
+    verify(accessSessions, never()).forceOfflineAndCount(any(), any(), any(), any(), anyString());
     verify(examStpLogic, never()).kickout(any());
   }
 

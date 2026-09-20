@@ -39,6 +39,7 @@ class CompetitionStageServiceTest {
     CompetitionEventEntity event = new CompetitionEventEntity();
     event.setId(1001L);
     event.setTenantId(1L);
+    event.setStatus("draft");
     event.setStartAt(LocalDateTime.of(2026, 8, 1, 9, 0));
     event.setEndAt(LocalDateTime.of(2026, 8, 10, 18, 0));
     when(eventMapper.selectForUpdate(1L, 1001L)).thenReturn(event);
@@ -85,5 +86,40 @@ class CompetitionStageServiceTest {
         new CompetitionStageUpdateReq(null, "qualification", null, null, null, "draft", null));
 
     assertThat(updated.getStatus()).isEqualTo("configuring");
+  }
+
+  @Test
+  void ensureInProgressPromotesConfiguringStageForTabletScoring() {
+    CompetitionStageEntity existing = new CompetitionStageEntity();
+    existing.setId(9001L);
+    existing.setTenantId(1L);
+    existing.setEventId(1001L);
+    existing.setStatus("configuring");
+    existing.setStartAt(LocalDateTime.now().minusHours(1));
+    existing.setEndAt(LocalDateTime.now().plusHours(2));
+    when(mapper.selectOne(any())).thenReturn(existing);
+    when(mapper.updateById(any(CompetitionStageEntity.class))).thenReturn(1);
+
+    CompetitionStageEntity started = service.ensureInProgressForInteractiveWrite(1L, 2L, 9001L);
+
+    assertThat(started.getStatus()).isEqualTo("in_progress");
+    verify(mapper, Mockito.times(2)).updateById(existing);
+  }
+
+  @Test
+  void ensureInProgressRejectsClosedStage() {
+    CompetitionStageEntity existing = new CompetitionStageEntity();
+    existing.setId(9001L);
+    existing.setTenantId(1L);
+    existing.setEventId(1001L);
+    existing.setStatus("closed");
+    existing.setStartAt(LocalDateTime.now().minusHours(3));
+    existing.setEndAt(LocalDateTime.now().minusHours(1));
+    when(mapper.selectOne(any())).thenReturn(existing);
+
+    assertThatThrownBy(() -> service.ensureInProgressForInteractiveWrite(1L, 2L, 9001L))
+        .isInstanceOf(com.guoyu.platform.common.exception.BusinessException.class)
+        .hasMessage("当前赛段不允许执行交互式操作");
+    verify(mapper, never()).updateById(any(CompetitionStageEntity.class));
   }
 }

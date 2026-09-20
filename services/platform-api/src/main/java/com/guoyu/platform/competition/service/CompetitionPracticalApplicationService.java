@@ -1,7 +1,10 @@
 package com.guoyu.platform.competition.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.guoyu.platform.competition.dto.CompetitionPracticalAssignmentReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalJudgeGroupReq;
+import com.guoyu.platform.competition.dto.CompetitionPracticalPaperBindingReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalRuleCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalScoreSaveReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalPaperSnapshotBindReq;
@@ -10,14 +13,18 @@ import com.guoyu.platform.competition.dto.CompetitionPracticalJudgeMemberActivat
 import com.guoyu.platform.competition.entity.CompetitionPracticalAssignmentEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalJudgeGroupEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalJudgeMemberEntity;
+import com.guoyu.platform.competition.entity.CompetitionPracticalPaperBindingEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalRuleEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalRuleItemEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalScoreEntryEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalScoreSheetEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalSessionEntity;
+import com.guoyu.platform.competition.mapper.CompetitionPracticalPaperBindingMapper;
 import com.guoyu.platform.competition.vo.CompetitionPracticalAssignmentVO;
+import com.guoyu.platform.competition.vo.CompetitionPracticalAssessmentSheetVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalJudgeGroupVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalJudgeMemberVO;
+import com.guoyu.platform.competition.vo.CompetitionPracticalPaperBindingVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalRuleItemVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalRuleVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalScoreEntryVO;
@@ -25,6 +32,7 @@ import com.guoyu.platform.competition.vo.CompetitionPracticalScoreSheetVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalSessionVO;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,18 +44,28 @@ public class CompetitionPracticalApplicationService {
   private final CompetitionPracticalRuleService ruleService;
   private final CompetitionPracticalExecutionService executionService;
   private final CompetitionMakeExamPlanApplicationService makeExamPlanService;
+  private final CompetitionPracticalPaperBindingMapper paperBindingMapper;
+  private CompetitionPracticalAssessmentSheetService assessmentSheetService;
 
   public CompetitionPracticalApplicationService(
       CompetitionStageApplicationService stageService,
       CompetitionStageExecutionPlanService planService,
       CompetitionPracticalRuleService ruleService,
       CompetitionPracticalExecutionService executionService,
-      CompetitionMakeExamPlanApplicationService makeExamPlanService) {
+      CompetitionMakeExamPlanApplicationService makeExamPlanService,
+      CompetitionPracticalPaperBindingMapper paperBindingMapper) {
     this.stageService = stageService;
     this.planService = planService;
     this.ruleService = ruleService;
     this.executionService = executionService;
     this.makeExamPlanService = makeExamPlanService;
+    this.paperBindingMapper = paperBindingMapper;
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public void setAssessmentSheetService(
+      CompetitionPracticalAssessmentSheetService assessmentSheetService) {
+    this.assessmentSheetService = assessmentSheetService;
   }
 
   @Transactional(readOnly = true)
@@ -72,6 +90,85 @@ public class CompetitionPracticalApplicationService {
   }
 
   @Transactional(readOnly = true)
+  public List<CompetitionPracticalPaperBindingVO> paperBindings(
+      Long stageId, Long workTypeId, Long levelId) {
+    var stage = stageService.get(stageId);
+    List<CompetitionPracticalPaperBindingEntity> rows = paperBindingMapper.selectList(
+        new LambdaQueryWrapper<CompetitionPracticalPaperBindingEntity>()
+            .eq(CompetitionPracticalPaperBindingEntity::getTenantId, tenant())
+            .eq(CompetitionPracticalPaperBindingEntity::getEventId, stage.getEventId())
+            .eq(CompetitionPracticalPaperBindingEntity::getStageId, stageId)
+            .eq(CompetitionPracticalPaperBindingEntity::getEventWorkTypeId, workTypeId)
+            .eq(CompetitionPracticalPaperBindingEntity::getEventWorkTypeLevelId, levelId)
+            .eq(CompetitionPracticalPaperBindingEntity::getDeleted, 0)
+            .orderByAsc(CompetitionPracticalPaperBindingEntity::getId));
+    rows = rows == null ? new ArrayList<>() : new ArrayList<>(rows);
+    List<CompetitionPracticalPaperBindingVO> result = new ArrayList<>(rows.size());
+    rows.forEach(row -> result.add(bindingVO(row)));
+    return result;
+  }
+
+  @Transactional(readOnly = true)
+  public List<CompetitionPracticalAssessmentSheetVO> assessmentSheets(
+      Long stageId, Long workTypeId, Long levelId) {
+    stageService.get(stageId);
+    return assessmentSheetService.list(stageId, workTypeId, levelId);
+  }
+
+  @Transactional
+  public CompetitionPracticalPaperBindingVO bindPaperToStage(
+      Long stageId, CompetitionPracticalPaperBindingReq req) {
+    var stage = stageService.assertCanManageStagePlan(stageId);
+    // The paper must be published and belong to the current event/work-type/level,
+    // but no practical scoring rule is required at this configuration stage.
+    makeExamPlanService.requirePublishedSnapshot(
+        stage.getEventId(), req.paperSnapshotId(), "practical",
+        req.eventWorkTypeId(), req.eventWorkTypeLevelId());
+
+    CompetitionPracticalPaperBindingEntity existing = paperBindingMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionPracticalPaperBindingEntity>()
+            .eq(CompetitionPracticalPaperBindingEntity::getTenantId, tenant())
+            .eq(CompetitionPracticalPaperBindingEntity::getEventId, stage.getEventId())
+            .eq(CompetitionPracticalPaperBindingEntity::getStageId, stageId)
+            .eq(CompetitionPracticalPaperBindingEntity::getEventWorkTypeId,
+                req.eventWorkTypeId())
+            .eq(CompetitionPracticalPaperBindingEntity::getEventWorkTypeLevelId,
+                req.eventWorkTypeLevelId())
+            .eq(CompetitionPracticalPaperBindingEntity::getPaperSnapshotId,
+                req.paperSnapshotId())
+            .eq(CompetitionPracticalPaperBindingEntity::getDeleted, 0));
+    if (existing != null) {
+      if (assessmentSheetService != null) {
+        assessmentSheetService.ensureForPaper(tenant(), userId(), stage.getEventId(), stageId,
+            req.eventWorkTypeId(), req.eventWorkTypeLevelId(), req.paperSnapshotId());
+      }
+      return bindingVO(existing);
+    }
+
+    CompetitionPracticalPaperBindingEntity binding = new CompetitionPracticalPaperBindingEntity();
+    binding.setId(IdWorker.getId());
+    binding.setTenantId(tenant());
+    binding.setEventId(stage.getEventId());
+    binding.setStageId(stageId);
+    binding.setEventWorkTypeId(req.eventWorkTypeId());
+    binding.setEventWorkTypeLevelId(req.eventWorkTypeLevelId());
+    binding.setPaperSnapshotId(req.paperSnapshotId());
+    binding.setCreatedBy(userId());
+    binding.setUpdatedBy(userId());
+    binding.setDeleted(0);
+    if (paperBindingMapper.insert(binding) != 1) {
+      throw new com.guoyu.platform.common.exception.BusinessException(
+          com.guoyu.platform.common.exception.ErrorCode.CONFLICT,
+          "实操试卷绑定失败，请刷新后重试");
+    }
+    if (assessmentSheetService != null) {
+      assessmentSheetService.ensureForPaper(tenant(), userId(), stage.getEventId(), stageId,
+          req.eventWorkTypeId(), req.eventWorkTypeLevelId(), req.paperSnapshotId());
+    }
+    return bindingVO(binding);
+  }
+
+  @Transactional(readOnly = true)
   public List<CompetitionPracticalSessionVO> sessions(Long planId) {
     var plan = planService.get(tenant(), planId); stageService.get(plan.getStageId());
     return executionService.sessions(tenant(), planId).stream().map(this::sessionVO).toList();
@@ -90,33 +187,9 @@ public class CompetitionPracticalApplicationService {
       Long sessionId, CompetitionPracticalPaperSnapshotBindReq req) {
     CompetitionPracticalSessionEntity session = sessionById(sessionId);
     stageService.assertCanManage(session.getStageId());
-    var snapshot = makeExamPlanService.requirePublishedSnapshot(
+    makeExamPlanService.requirePublishedSnapshot(
         session.getEventId(), req.paperSnapshotId(), "practical",
         session.getEventWorkTypeId(), session.getEventWorkTypeLevelId());
-    if (snapshot.totalScore() == null) {
-      throw new com.guoyu.platform.common.exception.BusinessException(
-          com.guoyu.platform.common.exception.ErrorCode.UNPROCESSABLE_ENTITY,
-          "实操竞赛组卷快照缺少总分");
-    }
-    CompetitionPracticalRuleEntity rule = ruleService.list(
-            tenant(), session.getStageId(), session.getEventWorkTypeId(),
-            session.getEventWorkTypeLevelId()).stream()
-        .filter(candidate -> "published".equals(candidate.getStatus()))
-        .filter(candidate -> java.util.Objects.equals(
-            candidate.getEventWorkTypeLevelId(), session.getEventWorkTypeLevelId()))
-        .findFirst()
-        .orElseGet(() -> ruleService.list(
-                tenant(), session.getStageId(), session.getEventWorkTypeId(), null).stream()
-            .filter(candidate -> "published".equals(candidate.getStatus()))
-            .filter(candidate -> candidate.getEventWorkTypeLevelId() == null)
-            .findFirst()
-            .orElse(null));
-    if (rule == null || rule.getTotalScore() == null
-        || rule.getTotalScore().compareTo(snapshot.totalScore()) != 0) {
-      throw new com.guoyu.platform.common.exception.BusinessException(
-          com.guoyu.platform.common.exception.ErrorCode.UNPROCESSABLE_ENTITY,
-          "实操组卷快照总分必须与已发布赛事评分规则一致");
-    }
     return sessionVO(executionService.bindPaperSnapshot(
         tenant(), userId(), sessionId, req.paperSnapshotId()));
   }
@@ -183,6 +256,15 @@ public class CompetitionPracticalApplicationService {
 
   private CompetitionPracticalSessionEntity sessionById(Long id) { return executionService.sessionForApplication(tenant(), id); }
   private CompetitionPracticalAssignmentEntity assignmentById(Long id) { return executionService.assignmentForApplication(tenant(), id); }
+  private CompetitionPracticalPaperBindingVO bindingVO(CompetitionPracticalPaperBindingEntity binding) {
+    return new CompetitionPracticalPaperBindingVO(
+        String.valueOf(binding.getId()),
+        String.valueOf(binding.getEventId()),
+        String.valueOf(binding.getStageId()),
+        String.valueOf(binding.getEventWorkTypeId()),
+        String.valueOf(binding.getEventWorkTypeLevelId()),
+        String.valueOf(binding.getPaperSnapshotId()));
+  }
   private CompetitionPracticalRuleVO ruleVO(CompetitionPracticalRuleEntity r, List<CompetitionPracticalRuleItemEntity> items) {
     return new CompetitionPracticalRuleVO(r.getId(), r.getEventId(), r.getStageId(), r.getEventWorkTypeId(), r.getEventWorkTypeLevelId(), r.getRuleVersion(), r.getRuleName(), r.getTotalScore(), r.getStatus(), r.getPublishedAt(), items.stream().map(i -> new CompetitionPracticalRuleItemVO(i.getId(), i.getItemCode(), i.getItemName(), i.getSortOrder(), i.getMaxScore(), i.getDeductionAllowed(), i.getCriteriaPayload(), i.getStatus())).toList());
   }

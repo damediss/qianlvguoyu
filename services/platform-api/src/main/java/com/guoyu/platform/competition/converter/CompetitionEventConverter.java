@@ -34,7 +34,6 @@ public final class CompetitionEventConverter {
     }
     CompetitionEventEntity target = new CompetitionEventEntity();
     target.setName(source.name());
-    target.setCode(source.code());
     target.setScope(source.scope());
     target.setRegistrationAuditRequired(source.registrationAuditRequired());
     target.setStartAt(source.startAt());

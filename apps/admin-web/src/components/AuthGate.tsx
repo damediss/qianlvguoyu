@@ -12,6 +12,7 @@ const ASSESSOR_ROLE = 'CERTIFICATION_ASSESSOR';
 const ASSESSOR_PERMISSION = 'certification.practical.score';
 const DEFENSE_REVIEW_PERMISSION = 'certification.defense.review';
 const COLLECTION_OPERATE_PERMISSION = 'certification.practical.collection.operate';
+const COMPETITION_JUDGE_PERMISSION = 'competition:practical-judge:score';
 
 function isAssessorAccount(user?: CurrentUserVO) {
   return Boolean(
@@ -27,9 +28,13 @@ function isCollectionOperator(user?: CurrentUserVO) {
   return Boolean(user?.permissions?.includes(COLLECTION_OPERATE_PERMISSION));
 }
 
+function isCompetitionJudge(user?: CurrentUserVO) {
+  return Boolean(user?.permissions?.includes(COMPETITION_JUDGE_PERMISSION));
+}
+
 interface AuthGateProps {
   children: ReactNode;
-  mode?: 'admin' | 'assessor' | 'collection' | 'defense';
+  mode?: 'admin' | 'assessor' | 'collection' | 'defense' | 'competitionJudge';
 }
 
 export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
@@ -84,6 +89,11 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
         clearAuth();
         return;
       }
+      if (mode === 'competitionJudge' && !isCompetitionJudge(data.user)) {
+        message.error('当前账号无竞赛实操裁判端权限');
+        clearAuth();
+        return;
+      }
       if (mode === 'admin' && isAssessorAccount(data.user)) {
         message.success('登录成功');
         window.location.replace('/assessor-scoring');
@@ -115,6 +125,10 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
       message.error('当前账号无平板信息采集端权限');
       clearAuth();
     }
+    if (mode === 'competitionJudge' && resolvedUser && !isCompetitionJudge(resolvedUser)) {
+      message.error('当前账号无竞赛实操裁判端权限');
+      clearAuth();
+    }
   }, [clearAuth, mode, resolvedUser]);
 
   // Primary check: currentUser from store (set by login response on first login,
@@ -126,6 +140,9 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
     }
     if (mode === 'collection' && !isCollectionOperator(resolvedUser)) {
       return <div className="boot-screen">正在校验平板信息采集端权限...</div>;
+    }
+    if (mode === 'competitionJudge' && !isCompetitionJudge(resolvedUser)) {
+      return <div className="boot-screen">正在校验竞赛裁判权限...</div>;
     }
     return children;
   }
@@ -148,6 +165,8 @@ export function AuthGate({ children, mode = 'admin' }: AuthGateProps) {
                   ? '考评员综合答辩端登录'
                   : mode === 'collection'
                     ? '平板信息采集端登录'
+                    : mode === 'competitionJudge'
+                      ? '竞赛实操裁判端登录'
                     : '管理端登录'}
             </Typography.Text>
           </div>

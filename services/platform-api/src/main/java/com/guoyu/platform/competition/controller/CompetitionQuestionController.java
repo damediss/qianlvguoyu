@@ -6,11 +6,14 @@ import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.competition.dto.CompetitionQuestionCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionQuestionQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionQuestionUpdateReq;
+import com.guoyu.platform.competition.dto.CompetitionQuestionBlueprintBindingReq;
+import com.guoyu.platform.competition.dto.CompetitionQuestionBlueprintBatchBindingReq;
 import com.guoyu.platform.competition.service.CompetitionQuestionApplicationService;
 import com.guoyu.platform.competition.vo.CompetitionQuestionImportBatchVO;
 import com.guoyu.platform.competition.vo.CompetitionQuestionVO;
 import jakarta.validation.Valid;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -88,8 +91,28 @@ public class CompetitionQuestionController {
       @RequestParam Long eventWorkTypeId,
       @RequestParam Long eventWorkTypeLevelId,
       @RequestParam String contentType,
+      @RequestParam Long blueprintId,
+      @RequestParam(required = false) String selectedSheet,
       @RequestPart("file") MultipartFile file) {
-    return ApiResponse.ok(service.importFile(eventId, eventWorkTypeId, eventWorkTypeLevelId, contentType, file));
+    return ApiResponse.ok(service.importFile(eventId, eventWorkTypeId, eventWorkTypeLevelId, contentType,
+        blueprintId, selectedSheet, file));
+  }
+
+  @PutMapping("/events/{eventId}/questions/{questionId}/blueprint-binding")
+  @PreAuthorize("hasAuthority('competition:question:update')")
+  @AuditLog(module = "competition", action = "question:blueprint-bind", targetType = "competition_question")
+  public ApiResponse<CompetitionQuestionVO> bindBlueprint(
+      @PathVariable Long eventId, @PathVariable Long questionId,
+      @Valid @RequestBody CompetitionQuestionBlueprintBindingReq req) {
+    return ApiResponse.ok(service.bindBlueprint(eventId, questionId, req));
+  }
+
+  @PostMapping("/events/{eventId}/questions/blueprint-binding/batch")
+  @PreAuthorize("hasAuthority('competition:question:update')")
+  @AuditLog(module = "competition", action = "question:blueprint-bind-batch", targetType = "competition_question")
+  public ApiResponse<List<CompetitionQuestionVO>> bindBlueprintBatch(
+      @PathVariable Long eventId, @Valid @RequestBody CompetitionQuestionBlueprintBatchBindingReq req) {
+    return ApiResponse.ok(service.bindBlueprintBatch(eventId, req));
   }
 
   @GetMapping("/events/{eventId}/question-imports/{batchId}")

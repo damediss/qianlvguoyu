@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -86,6 +87,113 @@ class CompetitionQuestionWorkbookParserTest {
     assertThat(question.scoreItems()).extracting(
         CompetitionQuestionWorkbookParser.ParsedScoreItem::deductionStep)
         .containsExactly(new BigDecimal("1"), new BigDecimal("2"));
+  }
+
+  @Test
+  void parsesHistoricalNineColumnScoreRecordWorkbookAcrossSheets() throws Exception {
+    Path file = tempDir.resolve("historical-practical-score-record.xlsx");
+    try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+      String[] headers = {"考评点", "实操题目", "考场准备", "考生准备", "评分要素", "配分", "评分标准", "最大扣分", "步长"};
+      var preparationOnly = workbook.createSheet("准备信息");
+      writeHeaders(preparationOnly, headers);
+      var preparationRow = preparationOnly.createRow(1);
+      preparationRow.createCell(0).setCellValue("仅准备信息");
+      preparationRow.createCell(1).setCellValue("没有评分项的旧页");
+      preparationRow.createCell(2).setCellValue("设备");
+      preparationRow.createCell(3).setCellValue("准考证");
+
+      var scoreRecord = workbook.createSheet("评分记录表");
+      writeHeaders(scoreRecord, headers);
+      writeHistoricalRow(scoreRecord, 1, "考评点一", "实操题一", "考场准备一", "考生准备一",
+          "评分要素一", 40, "扣分标准一", 40, 5);
+      writeHistoricalRow(scoreRecord, 2, null, null, null, null,
+          "评分要素二", 60, "扣分标准二", 60, 5);
+      writeHistoricalRow(scoreRecord, 3, "考评点二", "实操题二", "考场准备二", "考生准备二",
+          "评分要素三", 100, "扣分标准三", 100, 5);
+      scoreRecord.addMergedRegion(new CellRangeAddress(1, 2, 0, 0));
+      scoreRecord.addMergedRegion(new CellRangeAddress(1, 2, 1, 1));
+      scoreRecord.addMergedRegion(new CellRangeAddress(1, 2, 2, 2));
+      scoreRecord.addMergedRegion(new CellRangeAddress(1, 2, 3, 3));
+      try (var output = Files.newOutputStream(file)) {
+        workbook.write(output);
+      }
+    }
+
+    var result = parser.parse(file, "practical");
+
+    assertThat(result.questions()).hasSize(2);
+    var first = result.questions().get(0);
+    assertThat(first.sortOrder()).isEqualTo(1);
+    assertThat(first.stem()).isEqualTo("实操题一");
+    assertThat(first.durationMinutes()).isEqualTo(60);
+    assertThat(first.scoreDifference()).isEqualByComparingTo("10");
+    assertThat(first.totalScore()).isEqualByComparingTo("100");
+    assertThat(first.scoringMethod()).isEqualTo("deductive");
+    assertThat(first.assessmentRequirementsHtml()).isEqualTo("考评点一");
+    assertThat(first.examRoomPrepareHtml()).isEqualTo("考场准备一");
+    assertThat(first.candidatePrepareHtml()).isEqualTo("考生准备一");
+    assertThat(first.assessmentContents()).hasSize(1);
+    assertThat(first.assessmentContents().get(0).contentHtml()).isEqualTo("考评点一");
+    assertThat(first.assessmentContents().get(0).elements()).hasSize(2);
+    assertThat(first.scoreItems()).extracting(CompetitionQuestionWorkbookParser.ParsedScoreItem::itemName)
+        .containsExactly("评分要素一", "评分要素二");
+    assertThat(first.scoreItems()).extracting(CompetitionQuestionWorkbookParser.ParsedScoreItem::maxScore)
+        .containsExactly(new BigDecimal("40"), new BigDecimal("60"));
+    assertThat(first.legacyPracticalLayout()).isTrue();
+    assertThat(result.questions().get(1).sortOrder()).isEqualTo(2);
+  }
+
+  @Test
+  void supportsFourFiveAndSevenScoringElementsPerQuestion() throws Exception {
+    Path file = tempDir.resolve("variable-score-element-counts.xlsx");
+    try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+      var sheet = workbook.createSheet("评分记录表");
+      String[] headers = {"考评点", "实操题目", "考场准备", "考生准备", "评分要素", "配分", "评分标准", "最大扣分", "步长"};
+      writeHeaders(sheet, headers);
+      int rowNumber = 1;
+      int[][] allocations = {{25, 25, 25, 25}, {20, 20, 20, 20, 20}, {10, 10, 10, 10, 10, 10, 40}};
+      for (int questionIndex = 0; questionIndex < allocations.length; questionIndex++) {
+        int[] scores = allocations[questionIndex];
+        for (int elementIndex = 0; elementIndex < scores.length; elementIndex++) {
+          writeHistoricalRow(sheet, rowNumber++, elementIndex == 0 ? "考评点" + (questionIndex + 1) : null,
+              elementIndex == 0 ? "实操题" + (questionIndex + 1) : null,
+              elementIndex == 0 ? "考场准备" : null, elementIndex == 0 ? "考生准备" : null,
+              "要素" + (questionIndex + 1) + "-" + (elementIndex + 1), scores[elementIndex],
+              "标准", scores[elementIndex], scores[elementIndex] == 40 ? 10 : 5);
+        }
+      }
+      try (var output = Files.newOutputStream(file)) {
+        workbook.write(output);
+      }
+    }
+
+    var result = parser.parse(file, "practical");
+
+    assertThat(result.questions()).extracting(question -> question.scoreItems().size())
+        .containsExactly(4, 5, 7);
+    assertThat(result.questions()).allMatch(question -> question.assessmentContents().size() == 1
+        && question.assessmentContents().get(0).elements().size() == question.scoreItems().size()
+        && question.totalScore().compareTo(new BigDecimal("100")) == 0);
+  }
+
+  private void writeHeaders(org.apache.poi.ss.usermodel.Sheet sheet, String[] headers) {
+    var header = sheet.createRow(0);
+    for (int i = 0; i < headers.length; i++) header.createCell(i).setCellValue(headers[i]);
+  }
+
+  private void writeHistoricalRow(org.apache.poi.ss.usermodel.Sheet sheet, int rowNumber,
+      String point, String stem, String room, String candidate, String element,
+      int allocation, String standard, int maxDeduction, int step) {
+    var row = sheet.createRow(rowNumber);
+    if (point != null) row.createCell(0).setCellValue(point);
+    if (stem != null) row.createCell(1).setCellValue(stem);
+    if (room != null) row.createCell(2).setCellValue(room);
+    if (candidate != null) row.createCell(3).setCellValue(candidate);
+    row.createCell(4).setCellValue(element);
+    row.createCell(5).setCellValue(allocation);
+    row.createCell(6).setCellValue(standard);
+    row.createCell(7).setCellValue(maxDeduction);
+    row.createCell(8).setCellValue(step);
   }
 
   private Path writeTheoryWorkbook() throws Exception {

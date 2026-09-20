@@ -13,11 +13,14 @@ public class CompetitionStagePaperAssignmentEntity extends BaseEntity {
   private Long stageId;
   private Long eventWorkTypeId;
   private Long eventWorkTypeLevelId;
+  private String contentType;
   private Long contestantProfileId;
   private Long contestantMemberId;
   private Long registrationId;
   @TableField(updateStrategy = FieldStrategy.ALWAYS)
   private Long paperSnapshotId;
+  @TableField(updateStrategy = FieldStrategy.ALWAYS)
+  private Long assessmentSheetId;
   private String allocationSource;
   private String status;
   @TableField(updateStrategy = FieldStrategy.ALWAYS)
@@ -35,6 +38,8 @@ public class CompetitionStagePaperAssignmentEntity extends BaseEntity {
   public void setEventWorkTypeLevelId(Long eventWorkTypeLevelId) {
     this.eventWorkTypeLevelId = eventWorkTypeLevelId;
   }
+  public String getContentType() { return contentType; }
+  public void setContentType(String contentType) { this.contentType = contentType; }
   public Long getContestantProfileId() { return contestantProfileId; }
   public void setContestantProfileId(Long contestantProfileId) {
     this.contestantProfileId = contestantProfileId;
@@ -47,6 +52,8 @@ public class CompetitionStagePaperAssignmentEntity extends BaseEntity {
   public void setRegistrationId(Long registrationId) { this.registrationId = registrationId; }
   public Long getPaperSnapshotId() { return paperSnapshotId; }
   public void setPaperSnapshotId(Long paperSnapshotId) { this.paperSnapshotId = paperSnapshotId; }
+  public Long getAssessmentSheetId() { return assessmentSheetId; }
+  public void setAssessmentSheetId(Long assessmentSheetId) { this.assessmentSheetId = assessmentSheetId; }
   public String getAllocationSource() { return allocationSource; }
   public void setAllocationSource(String allocationSource) { this.allocationSource = allocationSource; }
   public String getStatus() { return status; }

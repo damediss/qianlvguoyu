@@ -13,6 +13,14 @@ public final class CompetitionPracticalAverageCalculator {
   private static final int REQUIRED_REFEREE_COUNT = 3;
 
   public PracticalAverageResult calculate(List<RefereeScore> scores) {
+    return calculate(scores, null);
+  }
+
+  /**
+   * Calculates the three-referee average and optionally enforces the frozen
+   * max-minus-min threshold from the practical paper snapshot.
+   */
+  public PracticalAverageResult calculate(List<RefereeScore> scores, BigDecimal scoreDifference) {
     List<RefereeScore> candidates = scores == null ? Collections.emptyList() : scores;
     List<RefereeScore> effective = candidates.stream()
         .filter(RefereeScore::currentRevision)
@@ -32,6 +40,13 @@ public final class CompetitionPracticalAverageCalculator {
     BigDecimal total = effective.stream()
         .map(RefereeScore::score)
         .reduce(BigDecimal.ZERO, BigDecimal::add);
+    if (scoreDifference != null && scoreDifference.signum() >= 0) {
+      BigDecimal max = effective.stream().map(RefereeScore::score).max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
+      BigDecimal min = effective.stream().map(RefereeScore::score).min(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
+      if (max.subtract(min).compareTo(scoreDifference) > 0) {
+        return PracticalAverageResult.pendingScoreDifference(effective.size());
+      }
+    }
     return PracticalAverageResult.confirmed(
         total.divide(BigDecimal.valueOf(REQUIRED_REFEREE_COUNT), 2, RoundingMode.HALF_UP));
   }
@@ -65,6 +80,11 @@ public final class CompetitionPracticalAverageCalculator {
           PracticalAverageStatus.PENDING_REFEREES_INCOMPLETE, null, effectiveRefereeCount);
     }
 
+    private static PracticalAverageResult pendingScoreDifference(int effectiveRefereeCount) {
+      return new PracticalAverageResult(
+          PracticalAverageStatus.PENDING_SCORE_DIFFERENCE, null, effectiveRefereeCount);
+    }
+
     public boolean confirmed() {
       return status == PracticalAverageStatus.CONFIRMED;
     }
@@ -72,6 +92,7 @@ public final class CompetitionPracticalAverageCalculator {
 
   public enum PracticalAverageStatus {
     CONFIRMED,
-    PENDING_REFEREES_INCOMPLETE
+    PENDING_REFEREES_INCOMPLETE,
+    PENDING_SCORE_DIFFERENCE
   }
 }

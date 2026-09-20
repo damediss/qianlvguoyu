@@ -16,6 +16,7 @@ import {
   startCompetitionFormalExamSession,
   forceSubmitCompetitionFormalCandidateExam,
   forceOfflineCompetitionFormalCandidateExam,
+  forceOfflineCompetitionFormalCandidateExams,
   scoreCompetitionFormalExamSession,
 } from '../src/api/competition';
 import type { CompetitionFormalExamSession } from '../src/types/competition';
@@ -37,6 +38,7 @@ vi.mock('../src/api/competition', () => ({
   startCompetitionFormalExamSession: vi.fn(),
   forceSubmitCompetitionFormalCandidateExam: vi.fn(),
   forceOfflineCompetitionFormalCandidateExam: vi.fn(),
+  forceOfflineCompetitionFormalCandidateExams: vi.fn(),
   createFormalExamConsoleRealtimeTicket: vi.fn().mockResolvedValue({
     ticket: 'console-ticket',
     expiresIn: 45,
@@ -475,6 +477,45 @@ describe('正式比赛控制台', () => {
     await waitFor(() => expect(forceOfflineCompetitionFormalCandidateExam).toHaveBeenCalledWith('9', '101'));
   });
 
+  it('batch evicts the selected candidates in one request', async () => {
+    const user = userEvent.setup();
+    auth.permissionCodes = ['competition:exam-session:force-offline'];
+    vi.mocked(getCompetitionFormalExamSessionPreflight).mockResolvedValue({
+      ready: true, checks: [],
+    });
+    vi.mocked(pageCompetitionFormalCandidateExams).mockResolvedValue({
+      items: [
+        {
+          id: '101', examSessionId: '9', candidateId: '100', contestantProfileId: '100',
+          candidateNo: '001', candidateName: '张三', paperSnapshotId: '11', sourcePaperId: '500',
+          paperCode: 'A', paperName: 'A卷', status: 'running', answeredCount: 20, totalQuestionCount: 100,
+          accessSessionStatus: 'active',
+        },
+        {
+          id: '102', examSessionId: '9', candidateId: '101', contestantProfileId: '101',
+          candidateNo: '002', candidateName: '李四', paperSnapshotId: '11', sourcePaperId: '500',
+          paperCode: 'A', paperName: 'A卷', status: 'running', answeredCount: 10, totalQuestionCount: 100,
+          accessSessionStatus: 'active',
+        },
+      ],
+      page: 1, pageSize: 20, total: 2,
+    });
+    vi.mocked(forceOfflineCompetitionFormalCandidateExams).mockResolvedValue({
+      requestedCount: 2, kickedCount: 2, alreadyOfflineCount: 0,
+    });
+    renderPanel({ ...session, status: 'running', runningCount: 2 });
+    expect(await screen.findByText('张三')).toBeInTheDocument();
+    const checkboxes = screen.getAllByRole('checkbox');
+    fireEvent.click(checkboxes[1]);
+    fireEvent.click(checkboxes[2]);
+    await user.click(screen.getByRole('button', { name: '批量清退' }));
+    expect(await screen.findByText('确认批量清退这些选手的考试账号？')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '确认批量清退' }));
+    await waitFor(() => expect(forceOfflineCompetitionFormalCandidateExams).toHaveBeenCalledWith(
+      '9', ['101', '102'],
+    ));
+  });
+
   it('hides force-submit without the dedicated permission', async () => {
     auth.permissionCodes = ['competition:exam-session:view'];
     vi.mocked(getCompetitionFormalExamSessionPreflight).mockResolvedValue({
@@ -674,6 +715,41 @@ describe('正式比赛控制台', () => {
       eventWorkTypeId: '30',
       eventWorkTypeLevelCode: '3',
     }));
+    client.clear();
+  });
+
+  it('keeps a finished formal session visible instead of showing it as uninitialized', async () => {
+    auth.permissionCodes = ['competition:exam-session:view'];
+    const finishedSession: CompetitionFormalExamSession = {
+      ...session,
+      status: 'finished',
+      scoringStatus: 'completed',
+      actualStartTime: '2026-09-08T09:00:00',
+      actualEndTime: '2026-09-08T10:30:00',
+    };
+    vi.mocked(pageCompetitionStages).mockResolvedValue({
+      items: [{
+        id: '10', eventId: '20', name: '初赛', stageType: 'preliminary', sortOrder: 1,
+        eventWorkTypeId: '30', eventWorkTypeLevelCode: '3',
+      }],
+      page: 1, pageSize: 500, total: 1,
+    } as never);
+    vi.mocked(getCompetitionFormalExamSessionByStage).mockResolvedValue(finishedSession);
+    vi.mocked(getCompetitionFormalExamSession).mockResolvedValue(finishedSession);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <CompetitionFormalExamConsolePage
+          eventId="20"
+          eventWorkTypeId="30"
+          eventWorkTypeLevelCode="3"
+        />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText('本场正式比赛已结束')).toBeInTheDocument();
+    expect(screen.getByTestId('formal-exam-console-initialized')).toBeInTheDocument();
+    expect(screen.queryByTestId('formal-exam-console-uninitialized')).not.toBeInTheDocument();
+    expect(screen.getAllByText('已结束').length).toBeGreaterThan(0);
     client.clear();
   });
 

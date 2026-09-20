@@ -10,6 +10,9 @@ public class CompetitionQuestionQueryReq extends PageQuery {
   private String questionType;
   private String keyword;
   private Integer status;
+  private Long blueprintId;
+  private Long blueprintNodeId;
+  private String bindingStatus;
 
   public Long getEventWorkTypeId() { return eventWorkTypeId; }
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
@@ -23,4 +26,10 @@ public class CompetitionQuestionQueryReq extends PageQuery {
   public void setKeyword(String keyword) { this.keyword = keyword; }
   public Integer getStatus() { return status; }
   public void setStatus(Integer status) { this.status = status; }
+  public Long getBlueprintId() { return blueprintId; }
+  public void setBlueprintId(Long blueprintId) { this.blueprintId = blueprintId; }
+  public Long getBlueprintNodeId() { return blueprintNodeId; }
+  public void setBlueprintNodeId(Long blueprintNodeId) { this.blueprintNodeId = blueprintNodeId; }
+  public String getBindingStatus() { return bindingStatus; }
+  public void setBindingStatus(String bindingStatus) { this.bindingStatus = bindingStatus; }
 }

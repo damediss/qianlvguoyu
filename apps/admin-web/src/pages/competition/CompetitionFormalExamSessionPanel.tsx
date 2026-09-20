@@ -19,7 +19,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type Key, useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import {
   getCompetitionFormalCandidateExam,
@@ -30,6 +30,7 @@ import {
   startCompetitionFormalExamSession,
   forceSubmitCompetitionFormalCandidateExam,
   forceOfflineCompetitionFormalCandidateExam,
+  forceOfflineCompetitionFormalCandidateExams,
   scoreCompetitionFormalExamSession,
   fetchFormalExamConsoleRealtimeEvents,
 } from '../../api/competition';
@@ -173,6 +174,8 @@ export function CompetitionFormalExamSessionPanel({
   const [forceTarget, setForceTarget] = useState<CompetitionFormalCandidateExam | null>(null);
   const [forceReason, setForceReason] = useState('');
   const [evictTarget, setEvictTarget] = useState<CompetitionFormalCandidateExam | null>(null);
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
+  const [batchEvictIds, setBatchEvictIds] = useState<string[]>([]);
   const [realtimeState, setRealtimeState] = useState<'idle' | 'connected' | 'disconnected'>('idle');
   const queryClient = useQueryClient();
   const realtimeRef = useRef<FormalExamConsoleRealtimeHandle | null>(null);
@@ -304,6 +307,31 @@ export function CompetitionFormalExamSessionPanel({
     },
     onError: (error) => {
       message.error(error instanceof Error ? error.message : '清退失败');
+    },
+  });
+  const batchForceOfflineMutation = useMutation({
+    mutationFn: (candidateExamIds: string[]) => forceOfflineCompetitionFormalCandidateExams(
+      String(currentSession!.id),
+      candidateExamIds,
+    ),
+    onSuccess: async (result, candidateExamIds) => {
+      const kickedCount = result?.kickedCount ?? candidateExamIds.length;
+      if (kickedCount > 0) {
+        message.success(`已清退 ${kickedCount} 名选手考试账号，平板将回到登录页`);
+      } else {
+        message.info(`所选 ${candidateExamIds.length} 名选手当前均已离线，无需重复清退`);
+      }
+      setBatchEvictIds([]);
+      setSelectedCandidateIds([]);
+      await queryClient.invalidateQueries({
+        queryKey: ['competition-formal-exam-session', session?.id],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ['competition-formal-exam-session-candidates', session?.id],
+      });
+    },
+    onError: (error) => {
+      message.error(error instanceof Error ? error.message : '批量清退失败');
     },
   });
   const scoreMutation = useMutation({
@@ -439,7 +467,14 @@ export function CompetitionFormalExamSessionPanel({
     setConfirmOpen(false);
     setForceTarget(null);
     setForceReason('');
+    setSelectedCandidateIds([]);
+    setBatchEvictIds([]);
   };
+
+  useEffect(() => {
+    setSelectedCandidateIds([]);
+    setBatchEvictIds([]);
+  }, [session?.id]);
 
   const content = (
     <>
@@ -674,10 +709,33 @@ export function CompetitionFormalExamSessionPanel({
                 virtual={false}
                 onChange={(value) => { setStatus(value); setPage(1); }}
               />
+              {canForceOffline ? (
+                <Button
+                  danger
+                  aria-label="批量清退"
+                  disabled={selectedCandidateIds.length === 0}
+                  onClick={() => setBatchEvictIds([...selectedCandidateIds])}
+                >
+                  批量清退{selectedCandidateIds.length > 0 ? `（${selectedCandidateIds.length}）` : ''}
+                </Button>
+              ) : null}
             </div>
             <Table<CompetitionFormalCandidateExam>
               rowKey={(row) => String(row.id)}
               size="small"
+              rowSelection={canForceOffline ? {
+                preserveSelectedRowKeys: true,
+                selectedRowKeys: selectedCandidateIds,
+                onChange: (keys: Key[]) => {
+                  const nextIds = keys.map(String);
+                  if (nextIds.length > 100) {
+                    message.warning('一次最多批量清退100名选手');
+                    setSelectedCandidateIds(nextIds.slice(0, 100));
+                    return;
+                  }
+                  setSelectedCandidateIds(nextIds);
+                },
+              } : undefined}
               loading={candidatesQuery.isFetching}
               dataSource={candidatesQuery.data?.items || []}
               locale={{ emptyText: '尚未生成选手考试实例' }}
@@ -888,6 +946,31 @@ export function CompetitionFormalExamSessionPanel({
             type="info"
             showIcon
             message="清退只会强制该选手考试账号下线，平板将回到登录页。不会交卷，也不会作废已答题目。下一场选手可在同一平板直接登录，不必更换考试地址。"
+          />
+        </Space>
+      </Modal>
+
+      <Modal
+        title="批量清退考试账号"
+        open={batchEvictIds.length > 0}
+        okText="确认批量清退"
+        cancelText="取消"
+        confirmLoading={batchForceOfflineMutation.isPending}
+        onCancel={() => setBatchEvictIds([])}
+        onOk={() => batchForceOfflineMutation.mutate(batchEvictIds)}
+        destroyOnHidden
+        transitionName=""
+        maskTransitionName=""
+      >
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Typography.Paragraph style={{ marginBottom: 0 }}>
+            已选择 {batchEvictIds.length} 名选手。
+          </Typography.Paragraph>
+          <Alert
+            type="warning"
+            showIcon
+            message="确认批量清退这些选手的考试账号？"
+            description="系统只会强制考试账号下线，平板将回到登录页；不会交卷，也不会作废已答题目。已提前下线的选手会安全跳过。"
           />
         </Space>
       </Modal>

@@ -14,11 +14,15 @@ import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeLevelEntity;
 import com.guoyu.platform.competition.entity.CompetitionFormalExamSessionEntity;
+import com.guoyu.platform.competition.entity.CompetitionMakeExamPaperSnapshotEntity;
+import com.guoyu.platform.competition.entity.CompetitionPracticalPaperBindingEntity;
 import com.guoyu.platform.competition.entity.CompetitionStagePaperAssignmentEntity;
 import com.guoyu.platform.competition.entity.CompetitionTheoryPaperSnapshotEntity;
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeLevelMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
 import com.guoyu.platform.competition.mapper.CompetitionFormalExamSessionMapper;
+import com.guoyu.platform.competition.mapper.CompetitionMakeExamPaperSnapshotMapper;
+import com.guoyu.platform.competition.mapper.CompetitionPracticalPaperBindingMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStagePaperAssignmentMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStagePaperAssignmentPlayerRow;
 import com.guoyu.platform.competition.mapper.CompetitionTheoryPaperSnapshotMapper;
@@ -37,6 +41,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -58,6 +63,8 @@ public class CompetitionStagePaperAssignmentApplicationService {
   private static final String CONFIRMED = "confirmed";
   private static final String RANDOM = "random";
   private static final String MANUAL = "manual";
+  private static final String THEORY = "theory";
+  private static final String PRACTICAL = "practical";
   private static final java.security.SecureRandom RANDOM_SOURCE =
       new java.security.SecureRandom();
 
@@ -68,6 +75,9 @@ public class CompetitionStagePaperAssignmentApplicationService {
   private final CompetitionTheoryPaperSnapshotMapper paperSnapshotMapper;
   private final CompetitionStagePaperAssignmentMapper assignmentMapper;
   private final CompetitionFormalExamSessionMapper formalExamSessionMapper;
+  private final CompetitionPracticalPaperBindingMapper practicalPaperBindingMapper;
+  private final CompetitionMakeExamPaperSnapshotMapper makeExamPaperSnapshotMapper;
+  private CompetitionPracticalAssessmentSheetService assessmentSheetService;
 
   public CompetitionStagePaperAssignmentApplicationService(
       CompetitionStageApplicationService stageApplicationService,
@@ -77,7 +87,19 @@ public class CompetitionStagePaperAssignmentApplicationService {
       CompetitionTheoryPaperSnapshotMapper paperSnapshotMapper,
       CompetitionStagePaperAssignmentMapper assignmentMapper) {
     this(stageApplicationService, eventService, eventWorkTypeMapper, levelMapper,
-        paperSnapshotMapper, assignmentMapper, null);
+        paperSnapshotMapper, assignmentMapper, null, null, null);
+  }
+
+  public CompetitionStagePaperAssignmentApplicationService(
+      CompetitionStageApplicationService stageApplicationService,
+      CompetitionEventService eventService,
+      CompetitionEventWorkTypeMapper eventWorkTypeMapper,
+      CompetitionEventWorkTypeLevelMapper levelMapper,
+      CompetitionTheoryPaperSnapshotMapper paperSnapshotMapper,
+      CompetitionStagePaperAssignmentMapper assignmentMapper,
+      CompetitionFormalExamSessionMapper formalExamSessionMapper) {
+    this(stageApplicationService, eventService, eventWorkTypeMapper, levelMapper,
+        paperSnapshotMapper, assignmentMapper, formalExamSessionMapper, null, null);
   }
 
   @Autowired
@@ -88,7 +110,9 @@ public class CompetitionStagePaperAssignmentApplicationService {
       CompetitionEventWorkTypeLevelMapper levelMapper,
       CompetitionTheoryPaperSnapshotMapper paperSnapshotMapper,
       CompetitionStagePaperAssignmentMapper assignmentMapper,
-      CompetitionFormalExamSessionMapper formalExamSessionMapper) {
+      CompetitionFormalExamSessionMapper formalExamSessionMapper,
+      CompetitionPracticalPaperBindingMapper practicalPaperBindingMapper,
+      CompetitionMakeExamPaperSnapshotMapper makeExamPaperSnapshotMapper) {
     this.stageApplicationService = stageApplicationService;
     this.eventService = eventService;
     this.eventWorkTypeMapper = eventWorkTypeMapper;
@@ -96,26 +120,45 @@ public class CompetitionStagePaperAssignmentApplicationService {
     this.paperSnapshotMapper = paperSnapshotMapper;
     this.assignmentMapper = assignmentMapper;
     this.formalExamSessionMapper = formalExamSessionMapper;
+    this.practicalPaperBindingMapper = practicalPaperBindingMapper;
+    this.makeExamPaperSnapshotMapper = makeExamPaperSnapshotMapper;
+  }
+
+  @Autowired
+  public void setAssessmentSheetService(
+      CompetitionPracticalAssessmentSheetService assessmentSheetService) {
+    this.assessmentSheetService = assessmentSheetService;
   }
 
   @Transactional(readOnly = true)
   public CompetitionStagePaperAssignmentSummaryVO summary(Long stageId) {
-    AssignmentScope scope = loadScope(stageId, false);
+    return summary(stageId, THEORY);
+  }
+
+  @Transactional(readOnly = true)
+  public CompetitionStagePaperAssignmentSummaryVO summary(Long stageId, String contentType) {
+    AssignmentScope scope = loadScope(stageId, false, contentType);
     return summaryInternal(scope);
   }
 
   @Transactional(readOnly = true)
   public PageResponse<CompetitionStagePaperAssignmentPlayerVO> page(
       Long stageId, CompetitionStagePaperAssignmentQueryReq req) {
+    return page(stageId, req, THEORY);
+  }
+
+  @Transactional(readOnly = true)
+  public PageResponse<CompetitionStagePaperAssignmentPlayerVO> page(
+      Long stageId, CompetitionStagePaperAssignmentQueryReq req, String contentType) {
     if (req == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "选手查询条件不能为空");
     }
-    AssignmentScope scope = loadScope(stageId, false);
+    AssignmentScope scope = loadScope(stageId, false, contentType);
     Page<CompetitionStagePaperAssignmentPlayerRow> page = assignmentMapper.selectEligiblePlayersPage(
         new Page<>(req.getPage(), req.getPageSize()),
         scope.tenantId(), scope.eventId(), scope.stageId(), scope.eventWorkTypeId(),
         scope.levelId(), scope.levelTexts(), normalize(req.getKeyword()), req.getOrgId(),
-        req.getPaperSnapshotId(), normalize(req.getAssignmentStatus()));
+        req.getPaperSnapshotId(), normalize(req.getAssignmentStatus()), scope.contentType());
     if (page == null) {
       log.warn("Stage paper assignment player page returned null, tenantId={}, stageId={}",
           scope.tenantId(), stageId);
@@ -129,7 +172,13 @@ public class CompetitionStagePaperAssignmentApplicationService {
 
   @Transactional(readOnly = true)
   public List<CompetitionStagePaperAssignmentPlayerVO> visualization(Long stageId) {
-    AssignmentScope scope = loadScope(stageId, false);
+    return visualization(stageId, THEORY);
+  }
+
+  @Transactional(readOnly = true)
+  public List<CompetitionStagePaperAssignmentPlayerVO> visualization(
+      Long stageId, String contentType) {
+    AssignmentScope scope = loadScope(stageId, false, contentType);
     return eligibleRows(scope, null, null, null, null).stream()
         .map(this::toPlayerVO)
         .toList();
@@ -137,9 +186,15 @@ public class CompetitionStagePaperAssignmentApplicationService {
 
   @Transactional
   public CompetitionStagePaperAssignmentSummaryVO autoAllocate(Long stageId) {
-    AssignmentScope scope = loadScope(stageId, true);
+    return autoAllocate(stageId, THEORY);
+  }
+
+  @Transactional
+  public CompetitionStagePaperAssignmentSummaryVO autoAllocate(
+      Long stageId, String contentType) {
+    AssignmentScope scope = loadScope(stageId, true, contentType);
     requireFormalExamUnlocked(scope);
-    List<CompetitionTheoryPaperSnapshotEntity> papers = currentPapers(scope);
+    List<AssignmentPaper> papers = currentPapers(scope);
     if (papers.isEmpty()) {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
           "当前赛段暂无已发布的可分配试卷，请先完成试卷配置");
@@ -156,7 +211,7 @@ public class CompetitionStagePaperAssignmentApplicationService {
     Collections.shuffle(candidates, RANDOM_SOURCE);
     for (int index = 0; index < candidates.size(); index++) {
       CompetitionStagePaperAssignmentPlayerRow candidate = candidates.get(index);
-      Long paperId = papers.get(index % papers.size()).getId();
+      Long paperId = papers.get(index % papers.size()).id();
       CompetitionStagePaperAssignmentEntity entity = existingByProfile.get(
           candidate.getContestantProfileId());
       if (entity == null) {
@@ -167,10 +222,12 @@ public class CompetitionStagePaperAssignmentApplicationService {
         entity.setDeleted(0);
         existingByProfile.put(candidate.getContestantProfileId(), entity);
         applyAssignment(entity, paperId, RANDOM, DRAFT, scope.userId(), LocalDateTime.now());
+        bindAssessmentSheet(scope, entity, paperId);
         requireChanged(assignmentMapper.insert(entity), "自动分配保存失败");
         continue;
       }
       applyAssignment(entity, paperId, RANDOM, DRAFT, scope.userId(), LocalDateTime.now());
+      bindAssessmentSheet(scope, entity, paperId);
       requireChanged(assignmentMapper.updateById(entity), "自动分配保存失败");
     }
     return summaryInternal(scope);
@@ -180,7 +237,14 @@ public class CompetitionStagePaperAssignmentApplicationService {
   public CompetitionStagePaperAssignmentPlayerVO assign(
       Long stageId, Long contestantProfileId,
       CompetitionStagePaperAssignmentChangeReq req) {
-    AssignmentScope scope = loadScope(stageId, true);
+    return assign(stageId, contestantProfileId, req, THEORY);
+  }
+
+  @Transactional
+  public CompetitionStagePaperAssignmentPlayerVO assign(
+      Long stageId, Long contestantProfileId,
+      CompetitionStagePaperAssignmentChangeReq req, String contentType) {
+    AssignmentScope scope = loadScope(stageId, true, contentType);
     requireFormalExamUnlocked(scope);
     Long paperSnapshotId = req == null ? null : req.paperSnapshotId();
     applyChanges(scope, List.of(new CompetitionStagePaperAssignmentItemReq(
@@ -191,7 +255,13 @@ public class CompetitionStagePaperAssignmentApplicationService {
   @Transactional
   public CompetitionStagePaperAssignmentSummaryVO batchAssign(
       Long stageId, CompetitionStagePaperAssignmentBatchReq req) {
-    AssignmentScope scope = loadScope(stageId, true);
+    return batchAssign(stageId, req, THEORY);
+  }
+
+  @Transactional
+  public CompetitionStagePaperAssignmentSummaryVO batchAssign(
+      Long stageId, CompetitionStagePaperAssignmentBatchReq req, String contentType) {
+    AssignmentScope scope = loadScope(stageId, true, contentType);
     requireFormalExamUnlocked(scope);
     applyChanges(scope, req == null ? null : req.assignments(), true);
     return summaryInternal(scope);
@@ -200,7 +270,13 @@ public class CompetitionStagePaperAssignmentApplicationService {
   @Transactional
   public CompetitionStagePaperAssignmentSummaryVO save(
       Long stageId, CompetitionStagePaperAssignmentBatchReq req) {
-    AssignmentScope scope = loadScope(stageId, true);
+    return save(stageId, req, THEORY);
+  }
+
+  @Transactional
+  public CompetitionStagePaperAssignmentSummaryVO save(
+      Long stageId, CompetitionStagePaperAssignmentBatchReq req, String contentType) {
+    AssignmentScope scope = loadScope(stageId, true, contentType);
     requireFormalExamUnlocked(scope);
     applyChanges(scope, req == null ? null : req.assignments(), false);
     return summaryInternal(scope);
@@ -209,7 +285,13 @@ public class CompetitionStagePaperAssignmentApplicationService {
   @Transactional
   public CompetitionStagePaperAssignmentSummaryVO confirm(
       Long stageId, CompetitionStagePaperAssignmentBatchReq req) {
-    AssignmentScope scope = loadScope(stageId, true);
+    return confirm(stageId, req, THEORY);
+  }
+
+  @Transactional
+  public CompetitionStagePaperAssignmentSummaryVO confirm(
+      Long stageId, CompetitionStagePaperAssignmentBatchReq req, String contentType) {
+    AssignmentScope scope = loadScope(stageId, true, contentType);
     requireFormalExamUnlocked(scope);
     applyChanges(scope, req == null ? null : req.assignments(), false);
     List<CompetitionStagePaperAssignmentPlayerRow> candidates =
@@ -218,8 +300,8 @@ public class CompetitionStagePaperAssignmentApplicationService {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
           "当前赛段没有符合条件的参赛选手，不能确认配置");
     }
-    List<CompetitionTheoryPaperSnapshotEntity> papers = currentPapers(scope);
-    Set<Long> paperIds = papers.stream().map(CompetitionTheoryPaperSnapshotEntity::getId)
+    List<AssignmentPaper> papers = currentPapers(scope);
+    Set<Long> paperIds = papers.stream().map(AssignmentPaper::id)
         .collect(Collectors.toSet());
     Map<Long, CompetitionStagePaperAssignmentEntity> assignments = assignmentsForUpdate(scope)
         .stream()
@@ -231,7 +313,9 @@ public class CompetitionStagePaperAssignmentApplicationService {
       CompetitionStagePaperAssignmentEntity assignment = assignments.get(
           candidate.getContestantProfileId());
       if (assignment == null || assignment.getPaperSnapshotId() == null
-          || !paperIds.contains(assignment.getPaperSnapshotId())) {
+          || !paperIds.contains(assignment.getPaperSnapshotId())
+          || (PRACTICAL.equals(scope.contentType())
+              && assignment.getAssessmentSheetId() == null)) {
         throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
             "仍有未分配试卷的选手，不能确认配置");
       }
@@ -251,7 +335,7 @@ public class CompetitionStagePaperAssignmentApplicationService {
   }
 
   private CompetitionStagePaperAssignmentSummaryVO summaryInternal(AssignmentScope scope) {
-    List<CompetitionTheoryPaperSnapshotEntity> papers = currentPapers(scope);
+    List<AssignmentPaper> papers = currentPapers(scope);
     List<CompetitionStagePaperAssignmentPlayerRow> candidates =
         eligibleRows(scope, null, null, null, null);
     Map<Long, Integer> assignedCountByPaper = new HashMap<>();
@@ -270,10 +354,10 @@ public class CompetitionStagePaperAssignmentApplicationService {
     }
     List<CompetitionStagePaperAssignmentPaperVO> paperStats = papers.stream()
         .map(paper -> {
-          int count = assignedCountByPaper.getOrDefault(paper.getId(), 0);
+          int count = assignedCountByPaper.getOrDefault(paper.id(), 0);
           return new CompetitionStagePaperAssignmentPaperVO(
-              id(paper.getId()), paper.getPaperCode(), paper.getSourceTitle(),
-              paper.getVersionNo(), count, percentage(count, candidates.size()));
+              id(paper.id()), paper.paperCode(), paper.title(),
+              paper.versionNo(), count, percentage(count, candidates.size()));
         })
         .toList();
     CompetitionFormalExamSessionEntity runtime = latestFormalExamSession(scope);
@@ -302,6 +386,10 @@ public class CompetitionStagePaperAssignmentApplicationService {
     if (formalExamSessionMapper == null) {
       return null;
     }
+    if (PRACTICAL.equals(scope.contentType())) {
+      return formalExamSessionMapper.selectLatestByStageAndExamType(
+          scope.tenantId(), scope.stageId(), PRACTICAL);
+    }
     return formalExamSessionMapper.selectLatestByStage(scope.tenantId(), scope.stageId());
   }
 
@@ -319,10 +407,10 @@ public class CompetitionStagePaperAssignmentApplicationService {
         .collect(Collectors.toMap(
             CompetitionStagePaperAssignmentPlayerRow::getContestantProfileId,
             item -> item, (left, right) -> left));
-    Map<Long, CompetitionTheoryPaperSnapshotEntity> papers = currentPapers(scope).stream()
+    Map<Long, AssignmentPaper> papers = currentPapers(scope).stream()
         .filter(Objects::nonNull)
-        .collect(Collectors.toMap(CompetitionTheoryPaperSnapshotEntity::getId,
-            item -> item, (left, right) -> left));
+        .collect(Collectors.toMap(AssignmentPaper::id, item -> item,
+            (left, right) -> left));
     List<CompetitionStagePaperAssignmentEntity> existing = assignmentsForUpdate(scope);
     Map<Long, CompetitionStagePaperAssignmentEntity> existingByProfile = existing.stream()
         .filter(Objects::nonNull)
@@ -352,6 +440,7 @@ public class CompetitionStagePaperAssignmentApplicationService {
         entity = newAssignment(scope, candidate);
         entity.setId(IdWorker.getId());
         entity.setPaperSnapshotId(change.paperSnapshotId());
+        bindAssessmentSheet(scope, entity, change.paperSnapshotId());
         entity.setAllocationSource(MANUAL);
         entity.setStatus(DRAFT);
         entity.setCreatedBy(scope.userId());
@@ -368,6 +457,7 @@ public class CompetitionStagePaperAssignmentApplicationService {
         continue;
       }
       applyAssignment(entity, change.paperSnapshotId(), MANUAL, DRAFT, scope.userId(), now);
+      bindAssessmentSheet(scope, entity, change.paperSnapshotId());
       requireChanged(assignmentMapper.updateById(entity), "保存试卷分配失败");
     }
   }
@@ -389,6 +479,7 @@ public class CompetitionStagePaperAssignmentApplicationService {
     entity.setStageId(scope.stageId());
     entity.setEventWorkTypeId(scope.eventWorkTypeId());
     entity.setEventWorkTypeLevelId(scope.levelId());
+    entity.setContentType(scope.contentType());
     entity.setContestantProfileId(candidate.getContestantProfileId());
     entity.setContestantMemberId(candidate.getContestantMemberId());
     entity.setRegistrationId(candidate.getRegistrationId());
@@ -411,23 +502,99 @@ public class CompetitionStagePaperAssignmentApplicationService {
     entity.setUpdatedAt(now);
   }
 
+  private void bindAssessmentSheet(
+      AssignmentScope scope, CompetitionStagePaperAssignmentEntity entity, Long paperId) {
+    if (!PRACTICAL.equals(scope.contentType()) || paperId == null) {
+      entity.setAssessmentSheetId(null);
+      return;
+    }
+    if (assessmentSheetService == null) {
+      // Compatibility for focused unit tests that construct this service manually.
+      // The Spring runtime always injects the assessment service.
+      entity.setAssessmentSheetId(null);
+      return;
+    }
+    var sheet = assessmentSheetService.findForPaper(
+        scope.tenantId(), scope.stageId(), scope.eventWorkTypeId(), scope.levelId(), paperId);
+    if (sheet == null) {
+      sheet = assessmentSheetService.ensureForPaper(
+          scope.tenantId(), scope.userId(), scope.eventId(), scope.stageId(),
+          scope.eventWorkTypeId(), scope.levelId(), paperId);
+    }
+    entity.setAssessmentSheetId(sheet.getId());
+  }
+
   private List<CompetitionStagePaperAssignmentPlayerRow> eligibleRows(
       AssignmentScope scope, String keyword, Long orgId, Long paperSnapshotId,
       String assignmentStatus) {
     List<CompetitionStagePaperAssignmentPlayerRow> rows = assignmentMapper.selectEligiblePlayers(
         scope.tenantId(), scope.eventId(), scope.stageId(), scope.eventWorkTypeId(),
-        scope.levelId(), scope.levelTexts(), keyword, orgId, paperSnapshotId, assignmentStatus);
+        scope.levelId(), scope.levelTexts(), keyword, orgId, paperSnapshotId, assignmentStatus,
+        scope.contentType());
     return safe(rows);
   }
 
   private List<CompetitionStagePaperAssignmentEntity> assignmentsForUpdate(AssignmentScope scope) {
     List<CompetitionStagePaperAssignmentEntity> rows = assignmentMapper.selectByScopeForUpdate(
         scope.tenantId(), scope.eventId(), scope.stageId(), scope.eventWorkTypeId(),
-        scope.levelId());
+        scope.levelId(), scope.contentType());
     return safe(rows);
   }
 
-  private List<CompetitionTheoryPaperSnapshotEntity> currentPapers(AssignmentScope scope) {
+  private List<AssignmentPaper> currentPapers(AssignmentScope scope) {
+    if (PRACTICAL.equals(scope.contentType())) {
+      if (practicalPaperBindingMapper == null || makeExamPaperSnapshotMapper == null) {
+        throw new BusinessException(ErrorCode.INTERNAL_ERROR, "实操试卷绑定服务未配置");
+      }
+      List<CompetitionPracticalPaperBindingEntity> bindings = safe(
+          practicalPaperBindingMapper.selectList(new LambdaQueryWrapper<
+              CompetitionPracticalPaperBindingEntity>()
+              .eq(CompetitionPracticalPaperBindingEntity::getTenantId, scope.tenantId())
+              .eq(CompetitionPracticalPaperBindingEntity::getEventId, scope.eventId())
+              .eq(CompetitionPracticalPaperBindingEntity::getStageId, scope.stageId())
+              .eq(CompetitionPracticalPaperBindingEntity::getEventWorkTypeId,
+                  scope.eventWorkTypeId())
+              .eq(CompetitionPracticalPaperBindingEntity::getEventWorkTypeLevelId,
+                  scope.levelId())
+              .eq(CompetitionPracticalPaperBindingEntity::getDeleted, 0)
+              .orderByAsc(CompetitionPracticalPaperBindingEntity::getId)));
+      if (bindings.isEmpty()) {
+        return new ArrayList<>();
+      }
+      Set<Long> snapshotIds = bindings.stream()
+          .map(CompetitionPracticalPaperBindingEntity::getPaperSnapshotId)
+          .filter(Objects::nonNull)
+          .collect(Collectors.toSet());
+      if (snapshotIds.isEmpty()) {
+        return new ArrayList<>();
+      }
+      List<CompetitionMakeExamPaperSnapshotEntity> snapshots = safe(
+          makeExamPaperSnapshotMapper.selectList(new LambdaQueryWrapper<
+              CompetitionMakeExamPaperSnapshotEntity>()
+              .eq(CompetitionMakeExamPaperSnapshotEntity::getTenantId, scope.tenantId())
+              .eq(CompetitionMakeExamPaperSnapshotEntity::getEventId, scope.eventId())
+              .eq(CompetitionMakeExamPaperSnapshotEntity::getEventWorkTypeId,
+                  scope.eventWorkTypeId())
+              .eq(CompetitionMakeExamPaperSnapshotEntity::getEventWorkTypeLevelId,
+                  scope.levelId())
+              .eq(CompetitionMakeExamPaperSnapshotEntity::getContentType, PRACTICAL)
+              .eq(CompetitionMakeExamPaperSnapshotEntity::getStatus, "published")
+              .eq(CompetitionMakeExamPaperSnapshotEntity::getDeleted, 0)
+              .in(CompetitionMakeExamPaperSnapshotEntity::getId, snapshotIds)
+              .orderByAsc(CompetitionMakeExamPaperSnapshotEntity::getPaperCode)
+              .orderByDesc(CompetitionMakeExamPaperSnapshotEntity::getVersionNo)));
+      Map<Long, CompetitionMakeExamPaperSnapshotEntity> snapshotById = snapshots.stream()
+          .collect(Collectors.toMap(CompetitionMakeExamPaperSnapshotEntity::getId,
+              item -> item, (left, right) -> left));
+      return bindings.stream()
+          .map(CompetitionPracticalPaperBindingEntity::getPaperSnapshotId)
+          .map(snapshotById::get)
+          .filter(Objects::nonNull)
+          .map(snapshot -> new AssignmentPaper(snapshot.getId(), snapshot.getPaperCode(),
+              snapshot.getTitle(), snapshot.getVersionNo()))
+          .toList();
+    }
+
     List<CompetitionTheoryPaperSnapshotEntity> rows = paperSnapshotMapper.selectList(
         new LambdaQueryWrapper<CompetitionTheoryPaperSnapshotEntity>()
             .eq(CompetitionTheoryPaperSnapshotEntity::getTenantId, scope.tenantId())
@@ -440,13 +607,21 @@ public class CompetitionStagePaperAssignmentApplicationService {
             .eq(CompetitionTheoryPaperSnapshotEntity::getDeleted, 0)
             .orderByAsc(CompetitionTheoryPaperSnapshotEntity::getPaperCode)
             .orderByDesc(CompetitionTheoryPaperSnapshotEntity::getVersionNo));
-    return safe(rows);
+    return safe(rows).stream()
+        .map(paper -> new AssignmentPaper(paper.getId(), paper.getPaperCode(),
+            paper.getSourceTitle(), paper.getVersionNo()))
+        .toList();
   }
 
   private AssignmentScope loadScope(Long stageId, boolean manage) {
+    return loadScope(stageId, manage, THEORY);
+  }
+
+  private AssignmentScope loadScope(Long stageId, boolean manage, String contentType) {
     if (stageId == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "赛段不能为空");
     }
+    String normalizedContentType = normalizeContentType(contentType);
     PlatformUserPrincipal principal = currentUser();
     // 分卷工作区展示全赛事选手，查看也要求赛事管理范围，不能仅凭参赛企业身份读取他单位名单。
     CompetitionStageVO stage = stageApplicationService.assertCanManage(stageId);
@@ -490,7 +665,17 @@ public class CompetitionStagePaperAssignmentApplicationService {
         levelTexts.add(text.trim());
       }
     }
-    return new AssignmentScope(principal, stage, event, workType, level, levelTexts);
+    return new AssignmentScope(principal, stage, event, workType, level, normalizedContentType,
+        levelTexts);
+  }
+
+  private static String normalizeContentType(String contentType) {
+    String normalized = StringUtils.hasText(contentType)
+        ? contentType.trim().toLowerCase(Locale.ROOT) : THEORY;
+    if (!THEORY.equals(normalized) && !PRACTICAL.equals(normalized)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "试卷类型不支持");
+    }
+    return normalized;
   }
 
   private CompetitionStagePaperAssignmentPlayerVO toPlayerVO(
@@ -502,7 +687,8 @@ public class CompetitionStagePaperAssignmentApplicationService {
         id(row.getOrgId()), row.getOrgName(),
         StringUtils.hasText(row.getWorkTypeName()) ? row.getWorkTypeName() : row.getRosterWorkType(),
         row.getLevelCode(), row.getLevelName(), row.getRosterLevel(), id(row.getPaperSnapshotId()),
-        row.getPaperCode(), row.getPaperTitle(), row.getAllocationSource(),
+        row.getPaperCode(), row.getPaperTitle(), id(row.getAssessmentSheetId()),
+        row.getAssessmentSheetCode(), row.getAllocationSource(),
         assigned ? "assigned" : "unassigned",
         CONFIRMED.equals(row.getAssignmentStatus()) && assigned ? CONFIRMED : DRAFT);
   }
@@ -556,6 +742,7 @@ public class CompetitionStagePaperAssignmentApplicationService {
       CompetitionEventEntity event,
       CompetitionEventWorkTypeEntity workType,
       CompetitionEventWorkTypeLevelEntity level,
+      String contentType,
       List<String> levelTexts) {
 
     Long tenantId() { return principal.getTenantId(); }
@@ -565,4 +752,6 @@ public class CompetitionStagePaperAssignmentApplicationService {
     Long eventWorkTypeId() { return workType.getId(); }
     Long levelId() { return level.getId(); }
   }
+
+  private record AssignmentPaper(Long id, String paperCode, String title, Integer versionNo) {}
 }

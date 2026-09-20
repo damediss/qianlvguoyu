@@ -10,6 +10,11 @@ public record CompetitionPracticalScoreItemVO(
     BigDecimal maxScore,
     BigDecimal maxDeduction,
     BigDecimal deductionStep,
-    String status
+    String status,
+    String elementHtml,
+    Boolean allocationEnabled,
+    String standardHtml,
+    String contentId,
+    Integer elementOrder
 ) {
 }

@@ -37,6 +37,7 @@ vi.mock('../src/api/competition', () => ({
 
 describe('选手试卷配置', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(getCompetitionStagePaperAssignmentSummary).mockResolvedValue({
       stageName: '初赛', workTypeName: '电工', levelName: '高级', levelCode: '3',
       eligibleCount: 1, paperCount: 5, assignedCount: 0, unassignedCount: 1, confirmed: false,
@@ -92,6 +93,20 @@ describe('选手试卷配置', () => {
     expect(screen.queryByRole('button', { name: /保\s*存/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /进入正式比赛/ })).not.toBeInTheDocument();
     expect(screen.getByText(/从竞赛菜单进入理论比赛控制台/)).toBeInTheDocument();
+    client.clear();
+  });
+
+  it('loads practical assignment data through the practical content scope', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <CompetitionPlayerPaperAssignmentPage stageId="10" contentType="practical" />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText('实操选手配置 · 试卷分配')).toBeInTheDocument();
+    expect(getCompetitionStagePaperAssignmentSummary).toHaveBeenCalledWith('10', 'practical');
+    expect(listCompetitionStagePaperAssignmentPlayers).toHaveBeenCalledWith('10', 'practical');
     client.clear();
   });
 });

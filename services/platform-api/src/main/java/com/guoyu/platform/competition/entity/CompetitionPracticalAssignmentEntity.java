@@ -12,9 +12,14 @@ public class CompetitionPracticalAssignmentEntity extends BaseEntity {
   private Long rosterItemId;
   private Long contestantMemberId;
   private Long refereeMemberId;
+  private Long assessmentSheetId;
   private String workstationCode;
   private String status;
   private LocalDateTime assignedAt;
+  private LocalDateTime startConfirmedAt;
+  private Long startConfirmedBy;
+  private LocalDateTime startedAt;
+  private Long startedBy;
   private LocalDateTime endedAt;
   public Long getPlanId() { return planId; }
   public void setPlanId(Long value) { planId = value; }
@@ -28,12 +33,22 @@ public class CompetitionPracticalAssignmentEntity extends BaseEntity {
   public void setContestantMemberId(Long value) { contestantMemberId = value; }
   public Long getRefereeMemberId() { return refereeMemberId; }
   public void setRefereeMemberId(Long value) { refereeMemberId = value; }
+  public Long getAssessmentSheetId() { return assessmentSheetId; }
+  public void setAssessmentSheetId(Long value) { assessmentSheetId = value; }
   public String getWorkstationCode() { return workstationCode; }
   public void setWorkstationCode(String value) { workstationCode = value; }
   public String getStatus() { return status; }
   public void setStatus(String value) { status = value; }
   public LocalDateTime getAssignedAt() { return assignedAt; }
   public void setAssignedAt(LocalDateTime value) { assignedAt = value; }
+  public LocalDateTime getStartConfirmedAt() { return startConfirmedAt; }
+  public void setStartConfirmedAt(LocalDateTime value) { startConfirmedAt = value; }
+  public Long getStartConfirmedBy() { return startConfirmedBy; }
+  public void setStartConfirmedBy(Long value) { startConfirmedBy = value; }
+  public LocalDateTime getStartedAt() { return startedAt; }
+  public void setStartedAt(LocalDateTime value) { startedAt = value; }
+  public Long getStartedBy() { return startedBy; }
+  public void setStartedBy(Long value) { startedBy = value; }
   public LocalDateTime getEndedAt() { return endedAt; }
   public void setEndedAt(LocalDateTime value) { endedAt = value; }
 }

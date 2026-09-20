@@ -11,6 +11,7 @@ import type {
   PracticalCompleteTaskResult,
   PracticalGenerateResult,
   PracticalImportPaperResult,
+  PracticalPaperQuestion,
   PracticalSaveScorePayload,
   PracticalScoringConfig,
   PracticalScoringProgress,
@@ -40,6 +41,16 @@ export function savePracticalQuestionTemplate(
 ) {
   return unwrap<PracticalTemplateItem[]>(
     apiClient.put(`${adminBase}/papers/${paperId}/questions/${questionId}/template`, items),
+  );
+}
+
+export function savePracticalQuestion(
+  paperId: string,
+  questionId: string,
+  payload: { title: string; items: PracticalTemplateItem[] },
+) {
+  return unwrap<PracticalPaperQuestion>(
+    apiClient.put(`${adminBase}/papers/${paperId}/questions/${questionId}`, payload),
   );
 }
 

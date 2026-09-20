@@ -182,6 +182,44 @@ describe('stage context menu', () => {
     expect(onContentTypeClick).toHaveBeenCalledWith('theory');
   });
 
+  it('notifies the practical content action from the practical paper configuration entry', async () => {
+    const onContentTypeClick = vi.fn();
+    render(
+      <StageContextMenu
+        position={{ x: 120, y: 160 }}
+        enabledContentTypes={['practical']}
+        onClose={vi.fn()}
+        onContentTypeClick={onContentTypeClick}
+      />,
+    );
+
+    const user = userEvent.setup();
+    const practical = await screen.findByText('实操配置');
+    await user.hover(practical.closest('.ant-dropdown-menu-submenu-title') || practical);
+    await user.click(await screen.findByText('试卷配置'));
+
+    expect(onContentTypeClick).toHaveBeenCalledWith('practical');
+  });
+
+  it('shows and notifies practical candidate configuration from the practical submenu', async () => {
+    const onCandidateClick = vi.fn();
+    render(
+      <StageContextMenu
+        position={{ x: 120, y: 160 }}
+        enabledContentTypes={['practical']}
+        onClose={vi.fn()}
+        onCandidateClick={onCandidateClick}
+      />,
+    );
+
+    const user = userEvent.setup();
+    const practical = await screen.findByText('实操配置');
+    await user.hover(practical.closest('.ant-dropdown-menu-submenu-title') || practical);
+    await user.click(await screen.findByText('选手配置'));
+
+    expect(onCandidateClick).toHaveBeenCalledWith('practical');
+  });
+
   it('closes on Escape and outside pointer down', async () => {
     const { rerender } = render(<ClosableContextMenu />);
     expect(await screen.findByText('理论配置')).toBeInTheDocument();

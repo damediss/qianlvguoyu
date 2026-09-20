@@ -130,6 +130,7 @@ public class SecurityConfig {
             // OnlyOffice Document Server：拉取文档 + 保存回调（无浏览器登录态）
             auth.requestMatchers("/training/office/**").permitAll();
             auth.requestMatchers(HttpMethod.GET, "/ws/practical-scoring").permitAll();
+            auth.requestMatchers(HttpMethod.GET, "/ws/competition-practical").permitAll();
             auth.requestMatchers(HttpMethod.GET, "/ws/competition/formal-exam/player").permitAll();
             auth.requestMatchers(HttpMethod.GET, "/ws/competition/formal-exam/console").permitAll();
             auth.requestMatchers(HttpMethod.POST, "/appregistration/**").permitAll();

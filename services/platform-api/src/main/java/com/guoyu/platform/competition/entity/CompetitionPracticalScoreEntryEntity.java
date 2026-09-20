@@ -13,6 +13,7 @@ public class CompetitionPracticalScoreEntryEntity extends BaseEntity {
   private BigDecimal score;
   private BigDecimal deduction;
   private String remark;
+  private String status;
   public Long getScoreSheetId() { return scoreSheetId; }
   public void setScoreSheetId(Long value) { scoreSheetId = value; }
   public Long getRuleItemId() { return ruleItemId; }
@@ -27,4 +28,6 @@ public class CompetitionPracticalScoreEntryEntity extends BaseEntity {
   public void setDeduction(BigDecimal value) { deduction = value; }
   public String getRemark() { return remark; }
   public void setRemark(String value) { remark = value; }
+  public String getStatus() { return status; }
+  public void setStatus(String value) { status = value; }
 }

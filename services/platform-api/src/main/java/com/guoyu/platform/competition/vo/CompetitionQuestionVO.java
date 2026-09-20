@@ -17,9 +17,15 @@ public record CompetitionQuestionVO(
     Integer difficulty,
     String status,
     String sourceBatchId,
+    String blueprintId,
+    String blueprintNodeId,
+    String blueprintFullCode,
+    String blueprintPath,
+    String bindingStatus,
     String operationContent,
     String studentPrepare,
     String equipmentPrepare,
-    List<CompetitionPracticalScoreItemVO> scoreItems
+    List<CompetitionPracticalScoreItemVO> scoreItems,
+    CompetitionPracticalQuestionDetailVO practicalDetail
 ) {
 }

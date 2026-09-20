@@ -11,7 +11,9 @@ public class CompetitionQuestionImportBatchEntity extends BaseEntity {
   private Long eventWorkTypeId;
   private Long eventWorkTypeLevelId;
   private String contentType;
+  private Long blueprintId;
   private String originalFilename;
+  private String selectedSheet;
   private String tempFilePath;
   private String status;
   private Integer totalCount;
@@ -29,8 +31,12 @@ public class CompetitionQuestionImportBatchEntity extends BaseEntity {
   public void setEventWorkTypeLevelId(Long eventWorkTypeLevelId) { this.eventWorkTypeLevelId = eventWorkTypeLevelId; }
   public String getContentType() { return contentType; }
   public void setContentType(String contentType) { this.contentType = contentType; }
+  public Long getBlueprintId() { return blueprintId; }
+  public void setBlueprintId(Long blueprintId) { this.blueprintId = blueprintId; }
   public String getOriginalFilename() { return originalFilename; }
   public void setOriginalFilename(String originalFilename) { this.originalFilename = originalFilename; }
+  public String getSelectedSheet() { return selectedSheet; }
+  public void setSelectedSheet(String selectedSheet) { this.selectedSheet = selectedSheet; }
   public String getTempFilePath() { return tempFilePath; }
   public void setTempFilePath(String tempFilePath) { this.tempFilePath = tempFilePath; }
   public String getStatus() { return status; }

@@ -35,7 +35,6 @@ export interface CompetitionEventPageQuery {
 
 export interface CompetitionEventCreateRequest {
   name: string;
-  code: string;
   scope: CompetitionEventScope;
   startAt?: string;
   endAt?: string;
@@ -289,6 +288,143 @@ export interface CompetitionPlayerWorkTypeRequest {
   level?: string | null;
 }
 
+export interface CompetitionRefereeQualification {
+  workTypeId: CompetitionId;
+  workTypeName?: string | null;
+  levelFromCode: string;
+  levelToCode: string;
+  levelFromName?: string | null;
+  levelToName?: string | null;
+  levelRange?: string | null;
+  /** Legacy single-level aliases returned during migration compatibility. */
+  levelCode?: string | null;
+  levelName?: string | null;
+}
+
+export interface CompetitionReferee {
+  id: CompetitionId;
+  eventId?: CompetitionId | null;
+  memberId?: CompetitionId | null;
+  personId: CompetitionId;
+  userId?: CompetitionId | null;
+  accountUsername?: string | null;
+  eventName?: string | null;
+  eventWorkTypeId?: CompetitionId | null;
+  eventWorkTypeName?: string | null;
+  eventWorkTypeLevelId?: CompetitionId | null;
+  eventWorkTypeLevelCode?: string | null;
+  eventWorkTypeLevelName?: string | null;
+  name: string;
+  idCardNo: string;
+  mobile: string;
+  status?: string | null;
+  createdAt?: string | null;
+  qualifications?: CompetitionRefereeQualification[];
+}
+
+export interface CompetitionRefereeQuery {
+  page: number;
+  pageSize: number;
+  eventId?: CompetitionId;
+  workTypeId?: CompetitionId;
+  keyword?: string;
+  status?: string;
+}
+
+export interface CompetitionRefereeCreateRequest {
+  qualifications: CompetitionRefereeQualificationRequest[];
+  name: string;
+  idCardNo: string;
+  mobile: string;
+}
+
+export interface CompetitionRefereeQualificationRequest {
+  workTypeId: CompetitionId;
+  levelFromCode: string;
+  levelToCode: string;
+}
+
+export type CompetitionRefereeUpdateRequest = Omit<
+  CompetitionRefereeCreateRequest,
+  'eventId'
+>;
+
+export interface CompetitionRefereeAssignment {
+  id: CompetitionId;
+  refereeMemberId: CompetitionId;
+  refereeGroupId?: CompetitionId | null;
+  refereeProfileId?: CompetitionId | null;
+  refereeName?: string | null;
+  assignmentRole: string;
+  status: string;
+}
+
+export interface CompetitionRefereeCandidate {
+  contestantProfileId: CompetitionId;
+  contestantMemberId: CompetitionId;
+  contestantNo?: string | null;
+  name?: string | null;
+  orgName?: string | null;
+  workTypeName?: string | null;
+  levelCode?: string | null;
+  levelName?: string | null;
+  paperSnapshotId?: CompetitionId | null;
+  paperCode?: string | null;
+  paperTitle?: string | null;
+  assignmentStatus: 'assigned' | 'unassigned' | string;
+  refereeGroupId?: CompetitionId | null;
+  refereeGroupName?: string | null;
+  refereeGroupStatus?: string | null;
+  assignments: CompetitionRefereeAssignment[];
+}
+
+export interface CompetitionRefereeGroupMember {
+  id: CompetitionId;
+  refereeMemberId: CompetitionId;
+  refereeProfileId?: CompetitionId | null;
+  refereeName?: string | null;
+  memberRole: 'leader' | 'member' | string;
+  status: string;
+}
+
+export interface CompetitionRefereeGroup {
+  id: CompetitionId;
+  stageId?: CompetitionId | null;
+  groupNo: number;
+  groupName: string;
+  status: 'draft' | 'confirmed' | 'closed' | string;
+  leaderRefereeProfileId?: CompetitionId | null;
+  bindable?: boolean | null;
+  unavailableReason?: string | null;
+  conflictStageName?: string | null;
+  members: CompetitionRefereeGroupMember[];
+}
+
+export interface CompetitionRefereeGroupUpsertRequest {
+  groupName: string;
+  refereeProfileIds: CompetitionId[];
+  leaderRefereeProfileId: CompetitionId;
+}
+
+export interface CompetitionRefereeAssignmentWorkspace {
+  stageId: CompetitionId;
+  eventId: CompetitionId;
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId: CompetitionId;
+  stageName?: string | null;
+  workTypeName?: string | null;
+  levelName?: string | null;
+  referees: CompetitionReferee[];
+  groups: CompetitionRefereeGroup[];
+  candidates: CompetitionRefereeCandidate[];
+}
+
+export interface CompetitionRefereeBatchAssignmentResult {
+  stageId: CompetitionId;
+  contestantMemberIds: CompetitionId[];
+  updatedCount: number;
+}
+
 export type CompetitionNoticeStatus = 'draft' | 'published';
 export type CompetitionNoticeContentType = 'markdown' | 'pdf';
 export type CompetitionNoticeAssetType = 'inline_image' | 'pdf';
@@ -436,6 +572,16 @@ export interface CompetitionStageExecutionPlan {
   resources: CompetitionStagePlanResource[];
 }
 
+export interface CompetitionStageExecutionPlanCreateRequest {
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId?: CompetitionId | null;
+  resourceVersion?: string;
+  scoreRuleId?: CompetitionId | null;
+  promotionQuota?: number | null;
+  promotionRuleType?: string | null;
+  promotionPercentage?: number | null;
+}
+
 export interface CompetitionStagePlanResource {
   id: CompetitionId;
   contentType: string;
@@ -466,6 +612,149 @@ export interface CompetitionPracticalSession {
   resourceId?: CompetitionId | null;
   paperSnapshotId?: CompetitionId | null;
   status: string;
+}
+
+export interface CompetitionPracticalSessionCreateRequest {
+  planId: CompetitionId;
+  sessionCode: string;
+  sessionName: string;
+  startAt: string;
+  endAt: string;
+  capacity?: number | null;
+  resourceId?: CompetitionId | null;
+}
+
+export interface CompetitionPracticalPaperBinding {
+  id: CompetitionId;
+  eventId: CompetitionId;
+  stageId: CompetitionId;
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId: CompetitionId;
+  paperSnapshotId: CompetitionId;
+}
+
+export interface CompetitionPracticalPaperBindingRequest {
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId: CompetitionId;
+  paperSnapshotId: CompetitionId;
+}
+
+export interface CompetitionPracticalAssessmentSheet {
+  id: CompetitionId;
+  eventId: CompetitionId;
+  stageId: CompetitionId;
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId: CompetitionId;
+  paperSnapshotId: CompetitionId;
+  paperCode?: string | null;
+  versionNo: number;
+  sheetCode: string;
+  title: string;
+  questionCount: number;
+  totalScore: CompetitionDecimal;
+  status: string;
+  sheet: {
+    summary?: Array<{
+      paperQuestionId: CompetitionId;
+      sortOrder: number;
+      title: string;
+      score: CompetitionDecimal;
+      weight: number;
+    }>;
+    questions?: Array<{
+      paperQuestionId: CompetitionId;
+      sortOrder: number;
+      title: string;
+      score: CompetitionDecimal;
+      scoringMethod?: string | null;
+      scoreItems?: unknown;
+      detail?: unknown;
+    }>;
+  };
+}
+
+export interface CompetitionPracticalConsoleQuestion {
+  paperQuestionId?: CompetitionId | null;
+  sortOrder: number;
+  title: string;
+  maxScore?: CompetitionDecimal | null;
+  score?: CompetitionDecimal | null;
+  status?: string | null;
+}
+
+export interface CompetitionPracticalConsoleTask {
+  assignmentId: CompetitionId;
+  sessionId: CompetitionId;
+  contestantMemberId: CompetitionId;
+  refereeMemberId: CompetitionId;
+  assessmentSheetId: CompetitionId;
+  workstationCode?: string | null;
+  taskStatus: string;
+  scoreSheetStatus?: string | null;
+  totalScore?: CompetitionDecimal | null;
+  contestantNo?: string | null;
+  contestantName?: string | null;
+  refereeName?: string | null;
+  assessmentSheetTitle?: string | null;
+  questions?: CompetitionPracticalConsoleQuestion[];
+}
+
+export interface CompetitionPracticalConsole {
+  planId?: CompetitionId | null;
+  eventId: CompetitionId;
+  stageId: CompetitionId;
+  eventWorkTypeId: CompetitionId;
+  eventWorkTypeLevelId: CompetitionId;
+  sessionCount: number;
+  contestantCount: number;
+  scoringTaskCount: number;
+  openedSheetCount: number;
+  submittedSheetCount: number;
+  status: 'not_initialized' | 'initialized' | 'completed' | string;
+  tasks: CompetitionPracticalConsoleTask[];
+}
+
+export interface CompetitionPracticalJudgeTask {
+  assignmentId: CompetitionId;
+  sessionId: CompetitionId;
+  contestantMemberId: CompetitionId;
+  refereeMemberId: CompetitionId;
+  workstationCode?: string | null;
+  status: string;
+  assessmentSheetId: CompetitionId;
+  assessmentSheet: CompetitionPracticalAssessmentSheet;
+  scoreSheetId?: CompetitionId | null;
+  scoreSheetStatus?: string | null;
+  totalScore?: CompetitionDecimal | null;
+  judgeRole: 'leader' | 'member';
+  startStatus: 'waiting' | 'ready' | 'started' | 'completed';
+  confirmedJudges: number;
+  requiredJudges: number;
+  currentJudgeConfirmed: boolean;
+  questionProgress?: CompetitionPracticalQuestionProgress[];
+}
+
+export interface CompetitionPracticalQuestionProgress {
+  paperQuestionId: CompetitionId;
+  status: 'unopened' | 'scoring' | 'submitted' | 'returned' | string;
+  score?: CompetitionDecimal | null;
+  entries?: CompetitionPracticalJudgeScoreEntry[];
+}
+
+export interface CompetitionPracticalJudgeScoreEntry {
+  paperItemNo: number;
+  score: CompetitionDecimal;
+  deduction: CompetitionDecimal;
+  remark?: string | null;
+}
+
+export interface CompetitionPracticalScoreEntryRequest {
+  ruleItemId?: CompetitionId | null;
+  paperQuestionId: CompetitionId;
+  paperItemNo: number;
+  score: CompetitionDecimal;
+  deduction: CompetitionDecimal;
+  remark?: string;
 }
 
 export interface CompetitionStageRosterItem {
@@ -1013,6 +1302,8 @@ export interface CompetitionStagePaperAssignmentSummary {
   formalExamStatus?: string | null;
 }
 
+export type CompetitionStagePaperAssignmentContentType = 'theory' | 'practical';
+
 export interface CompetitionStagePaperAssignmentPlayer {
   contestantProfileId: CompetitionId;
   contestantMemberId: CompetitionId;
@@ -1029,6 +1320,8 @@ export interface CompetitionStagePaperAssignmentPlayer {
   paperSnapshotId?: CompetitionId | null;
   paperCode?: string | null;
   paperTitle?: string | null;
+  assessmentSheetId?: CompetitionId | null;
+  assessmentSheetCode?: string | null;
   allocationSource?: 'random' | 'manual' | string | null;
   assignmentStatus: 'assigned' | 'unassigned' | string;
   configurationStatus: 'draft' | 'confirmed' | string;
@@ -1274,6 +1567,12 @@ export interface CompetitionFormalCandidateExam {
   accessSessionStatus?: string | null;
   connectionState?: string | null;
   lastSeenAt?: string | null;
+}
+
+export interface CompetitionFormalExamForceOfflineBatchResult {
+  requestedCount: number;
+  kickedCount: number;
+  alreadyOfflineCount: number;
 }
 
 export interface CompetitionFormalExamConsoleRealtimeTicket {

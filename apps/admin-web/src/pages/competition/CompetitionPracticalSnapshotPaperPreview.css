@@ -1,0 +1,215 @@
+.competition-paper-preview {
+  min-height: 520px;
+  padding: 18px 10px 28px;
+  overflow: auto;
+  background: #f3f4f6;
+}
+
+.competition-paper-preview__sheet {
+  width: min(794px, 100%);
+  min-height: 1123px;
+  margin: 0 auto;
+  padding: 70px 78px 64px;
+  box-sizing: border-box;
+  color: #222;
+  background: #fff;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 12%);
+  font-family: 'SimSun', '宋体', 'Songti SC', serif;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.competition-paper-preview__header {
+  text-align: center;
+}
+
+.competition-paper-preview__header h1,
+.competition-paper-preview__header h2,
+.competition-paper-preview__notice h2,
+.competition-paper-preview__question-title {
+  margin: 0;
+  color: #111;
+  font-weight: 700;
+}
+
+.competition-paper-preview__header h1 {
+  font-size: 23px;
+  line-height: 1.5;
+}
+
+.competition-paper-preview__header h2 {
+  margin-top: 3px;
+  font-size: 21px;
+  line-height: 1.55;
+}
+
+.competition-paper-preview__candidate-fields {
+  display: flex;
+  justify-content: space-between;
+  gap: 22px;
+  margin-top: 27px;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.competition-paper-preview__candidate-fields span {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.competition-paper-preview__candidate-fields i {
+  display: inline-block;
+  width: 112px;
+  height: 18px;
+  border-bottom: 1px solid #333;
+}
+
+.competition-paper-preview__notice {
+  margin-top: 27px;
+}
+
+.competition-paper-preview__notice h2 {
+  margin-bottom: 10px;
+  font-size: 25px;
+  line-height: 1.5;
+  letter-spacing: .55em;
+  text-align: center;
+  text-indent: .55em;
+}
+
+.competition-paper-preview__notice p,
+.competition-paper-preview__line {
+  margin: 0 0 5px;
+}
+
+.competition-paper-preview__question {
+  margin-top: 27px;
+}
+
+.competition-paper-preview__question-title {
+  margin-bottom: 7px;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.competition-paper-preview__detail-line {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 5px;
+}
+
+.competition-paper-preview__detail-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.competition-paper-preview__detail-value {
+  min-width: 0;
+  flex: 1;
+}
+
+.competition-paper-preview__rich-text {
+  word-break: break-word;
+}
+
+.competition-paper-preview__rich-text p,
+.competition-paper-preview__rich-text ul,
+.competition-paper-preview__rich-text ol {
+  margin: 0 0 5px;
+}
+
+.competition-paper-preview__rich-text p:last-child,
+.competition-paper-preview__rich-text ul:last-child,
+.competition-paper-preview__rich-text ol:last-child {
+  margin-bottom: 0;
+}
+
+.competition-paper-preview__rich-text ul,
+.competition-paper-preview__rich-text ol {
+  padding-left: 1.65em;
+}
+
+.competition-paper-preview__negative-list ol {
+  padding-left: 0;
+  list-style: none;
+  counter-reset: paper-negative;
+}
+
+.competition-paper-preview__negative-list ol > li {
+  position: relative;
+  padding-left: 1.65em;
+  counter-increment: paper-negative;
+}
+
+.competition-paper-preview__negative-list ol > li::before {
+  position: absolute;
+  top: .28em;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15em;
+  height: 1.15em;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  content: counter(paper-negative);
+  font-size: .72em;
+  line-height: 1;
+}
+
+.competition-paper-preview__supporting-info {
+  display: flex;
+  align-items: flex-start;
+  margin: 0 0 5px;
+  padding-left: 2em;
+}
+
+.competition-paper-preview__supporting-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.competition-paper-preview__supporting-info > .competition-paper-preview__rich-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.competition-paper-preview__placeholder {
+  color: #999;
+}
+
+.competition-paper-preview__empty {
+  margin-top: 42px;
+  color: #888;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .competition-paper-preview {
+    padding: 10px 0 18px;
+  }
+
+  .competition-paper-preview__sheet {
+    min-height: 0;
+    padding: 38px 24px 42px;
+  }
+
+  .competition-paper-preview__header h1 {
+    font-size: 20px;
+  }
+
+  .competition-paper-preview__header h2 {
+    font-size: 18px;
+  }
+
+  .competition-paper-preview__candidate-fields {
+    gap: 10px;
+    font-size: 13px;
+  }
+
+  .competition-paper-preview__candidate-fields i {
+    width: 62px;
+  }
+}

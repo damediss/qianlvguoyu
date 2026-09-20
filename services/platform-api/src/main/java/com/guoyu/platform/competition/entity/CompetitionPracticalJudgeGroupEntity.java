@@ -10,6 +10,7 @@ public class CompetitionPracticalJudgeGroupEntity extends BaseEntity {
   private Integer groupNo;
   private String groupName;
   private Integer officialCount;
+  private Long leaderRefereeMemberId;
   private String status;
   public Long getSessionId() { return sessionId; }
   public void setSessionId(Long value) { sessionId = value; }
@@ -21,6 +22,8 @@ public class CompetitionPracticalJudgeGroupEntity extends BaseEntity {
   public void setGroupName(String value) { groupName = value; }
   public Integer getOfficialCount() { return officialCount; }
   public void setOfficialCount(Integer value) { officialCount = value; }
+  public Long getLeaderRefereeMemberId() { return leaderRefereeMemberId; }
+  public void setLeaderRefereeMemberId(Long value) { leaderRefereeMemberId = value; }
   public String getStatus() { return status; }
   public void setStatus(String value) { status = value; }
 }

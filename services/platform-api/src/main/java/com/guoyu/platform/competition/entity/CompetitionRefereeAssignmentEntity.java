@@ -11,6 +11,7 @@ public class CompetitionRefereeAssignmentEntity extends BaseEntity {
   private Long stageId;
   private Long eventWorkTypeId;
   private Long eventWorkTypeLevelId;
+  private Long refereeGroupId;
   private Long refereeMemberId;
   private String assignmentRole;
   private Long contestantMemberId;
@@ -28,6 +29,8 @@ public class CompetitionRefereeAssignmentEntity extends BaseEntity {
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
   public Long getEventWorkTypeLevelId() { return eventWorkTypeLevelId; }
   public void setEventWorkTypeLevelId(Long eventWorkTypeLevelId) { this.eventWorkTypeLevelId = eventWorkTypeLevelId; }
+  public Long getRefereeGroupId() { return refereeGroupId; }
+  public void setRefereeGroupId(Long refereeGroupId) { this.refereeGroupId = refereeGroupId; }
   public Long getRefereeMemberId() { return refereeMemberId; }
   public void setRefereeMemberId(Long refereeMemberId) { this.refereeMemberId = refereeMemberId; }
   public String getAssignmentRole() { return assignmentRole; }

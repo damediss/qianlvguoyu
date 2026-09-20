@@ -36,4 +36,9 @@ public enum CompetitionStageStatus {
   public static Set<CompetitionStageStatus> writableStatuses() {
     return EnumSet.of(DRAFT, CONFIGURING);
   }
+
+  /** Stage statuses that still allow practical session/referee allocation. */
+  public static Set<CompetitionStageStatus> allocationWritableStatuses() {
+    return EnumSet.of(DRAFT, CONFIGURING, READY_LOCKED);
+  }
 }

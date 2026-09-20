@@ -32,9 +32,22 @@ class CompetitionStagePaperAssignmentSchemaContractTest {
         "deleted TINYINT NOT NULL DEFAULT 0",
         "UNIQUE KEY uk_comp_stage_paper_assignment_contestant");
     for (Field field : CompetitionStagePaperAssignmentEntity.class.getDeclaredFields()) {
+      if ("contentType".equals(field.getName())) {
+        continue;
+      }
       assertThat(ddl.contains("\n  " + snakeCase(field.getName()) + " "))
           .as(table + "." + field.getName()).isTrue();
     }
+  }
+
+  @Test
+  void practicalExtensionAddsContentTypeToAssignmentScope() throws IOException {
+    String migration = extensionMigration();
+    assertThat(migration)
+        .contains("ADD COLUMN content_type VARCHAR(16) NOT NULL DEFAULT 'theory'")
+        .contains("content_type IN ('theory', 'practical')")
+        .contains("event_work_type_level_id, content_type, contestant_profile_id, deleted")
+        .contains("event_work_type_level_id, content_type, paper_snapshot_id, status, deleted");
   }
 
   @Test
@@ -45,6 +58,8 @@ class CompetitionStagePaperAssignmentSchemaContractTest {
         .contains("imported_pending_confirm")
         .contains("pending_audit")
         .contains("LEFT JOIN competition_event_work_type wt")
+        .contains("LEFT JOIN competition_practical_paper_binding practical_binding")
+        .contains("a.content_type = #{contentType}")
         .contains("OR p.event_work_type_id IS NULL")
         .contains("OR p.event_work_type_level_id IS NULL");
   }
@@ -65,6 +80,14 @@ class CompetitionStagePaperAssignmentSchemaContractTest {
   private String migration() throws IOException {
     try (var input = getClass().getClassLoader().getResourceAsStream(
         "db/migration/V20260907_004__create_competition_stage_paper_assignments.sql")) {
+      assertThat(input).isNotNull();
+      return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+    }
+  }
+
+  private String extensionMigration() throws IOException {
+    try (var input = getClass().getClassLoader().getResourceAsStream(
+        "db/migration/V20260918_002__extend_stage_paper_assignments_for_practical.sql")) {
       assertThat(input).isNotNull();
       return new String(input.readAllBytes(), StandardCharsets.UTF_8);
     }

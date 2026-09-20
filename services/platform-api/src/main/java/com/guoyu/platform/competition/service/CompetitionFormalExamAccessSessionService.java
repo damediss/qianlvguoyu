@@ -220,13 +220,26 @@ public class CompetitionFormalExamAccessSessionService {
   @Transactional
   public void forceOffline(
       Long examSessionId, Long candidateExamId, Long playerId, Long operatorId, String reason) {
+    forceOfflineAndCount(examSessionId, candidateExamId, playerId, operatorId, reason);
+  }
+
+  /**
+   * 清退考试账号并返回实际从 ACTIVE 转为 KICKED 的会话数量。
+   *
+   * <p>批量控制台需要区分“本次实际清退”和“选手本来就已离线”，单个清退接口继续保留
+   * void 语义以兼容已有调用方。
+   */
+  @Transactional
+  public int forceOfflineAndCount(
+      Long examSessionId, Long candidateExamId, Long playerId, Long operatorId, String reason) {
+    int kickedCount = 0;
     List<CompetitionFormalExamAccessSessionEntity> actives = safe(
         accessSessionMapper.selectActiveByCandidateExamIdForUpdate(candidateExamId));
     if (actives.isEmpty()) {
       log.warn(
           "Formal exam force-offline idempotent: no ACTIVE access session, sessionId={}, candidateExamId={}, playerId={}",
           examSessionId, candidateExamId, playerId);
-      return;
+      return 0;
     }
     String endedReason = StringUtils.hasText(reason) ? reason.trim() : REASON_STAFF_KICK;
     for (CompetitionFormalExamAccessSessionEntity active : actives) {
@@ -241,6 +254,7 @@ public class CompetitionFormalExamAccessSessionService {
       if (updated != 1) {
         continue;
       }
+      kickedCount++;
       CompetitionFormalExamAccessCommandEntity command = writeCommand(
           active, CompetitionFormalExamAccessCommandType.FORCE_OFFLINE, endedReason,
           operatorId, operatorId);
@@ -259,6 +273,7 @@ public class CompetitionFormalExamAccessSessionService {
           "Formal exam force-offline, operatorId={}, sessionId={}, candidateExamId={}, playerId={}, accessSessionId={}, generation={}",
           operatorId, examSessionId, candidateExamId, playerId, active.getId(), active.getGeneration());
     }
+    return kickedCount;
   }
 
   public CompetitionFormalExamAccessSessionEntity requireActiveByToken(

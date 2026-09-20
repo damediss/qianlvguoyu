@@ -10,6 +10,7 @@ public class CompetitionPracticalScoreSheetEntity extends BaseEntity {
   private Long assignmentId;
   private Long planId;
   private Long ruleId;
+  private Long assessmentSheetId;
   private Long eventId;
   private Long stageId;
   private Long eventWorkTypeId;
@@ -29,6 +30,8 @@ public class CompetitionPracticalScoreSheetEntity extends BaseEntity {
   public void setPlanId(Long value) { planId = value; }
   public Long getRuleId() { return ruleId; }
   public void setRuleId(Long value) { ruleId = value; }
+  public Long getAssessmentSheetId() { return assessmentSheetId; }
+  public void setAssessmentSheetId(Long value) { assessmentSheetId = value; }
   public Long getEventId() { return eventId; }
   public void setEventId(Long value) { eventId = value; }
   public Long getStageId() { return stageId; }

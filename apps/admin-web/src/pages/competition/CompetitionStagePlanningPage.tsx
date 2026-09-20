@@ -22,6 +22,7 @@ import { useUnsavedChangesBlocker } from '../../hooks/useUnsavedChangesBlocker';
 import './CompetitionEventManagementPage.css';
 import { CompetitionEventFrame } from './CompetitionEventFrame';
 import { CompetitionPlayerPaperAssignmentPage } from './CompetitionPlayerPaperAssignmentPage';
+import { CompetitionPracticalConfigPage } from './CompetitionPracticalConfigPage';
 import { CompetitionTheoryExamPage } from './CompetitionTheoryExamPage';
 import { selectedContentTypes, stageContentConfigsAreValid } from './stage-planning/StageContentPanel';
 import { StageInspector } from './stage-planning/StageInspector';
@@ -63,6 +64,7 @@ export function CompetitionStagePlanningPage({
   const canManage = permissions.includes('competition:stage:manage');
   const canManageWorkTypeStages = permissions.includes('competition:event-work-type:manage');
   const canViewPlayerAssignment = permissions.includes('competition:stage-paper-assignment:view');
+  const canViewRefereeAssignment = permissions.includes('competition:referee-assignment:view');
   const queryClient = useQueryClient();
   const [validationOpen, setValidationOpen] = useState(false);
   const [validationIssues, setValidationIssues] = useState<StageValidationIssue[]>([]);
@@ -71,7 +73,19 @@ export function CompetitionStagePlanningPage({
     eventWorkTypeId?: string;
     eventWorkTypeLevelCode?: string;
   } | null>(null);
+  const [practicalWorkbench, setPracticalWorkbench] = useState<{
+    stageId: string;
+    stageName: string;
+    eventWorkTypeId: string;
+    eventWorkTypeName?: string;
+    eventWorkTypeLevelCode?: string;
+    eventWorkTypeLevelName?: string;
+    initialTab: 'paper' | 'referee';
+  } | null>(null);
   const [playerAssignmentStageId, setPlayerAssignmentStageId] = useState<string | null>(null);
+  const [playerAssignmentContentType, setPlayerAssignmentContentType] = useState<
+    'theory' | 'practical'
+  >('theory');
   const [playerAssignmentDirty, setPlayerAssignmentDirty] = useState(false);
   const [promotionDraft, setPromotionDraft] = useState<CompetitionWorkTypeStageConfig[]>([]);
   const [promotionDirty, setPromotionDirty] = useState(false);
@@ -188,21 +202,58 @@ export function CompetitionStagePlanningPage({
     return { [draft.selectedNode.id]: selectedContentTypes(selectedStageContents) };
   }, [draft.selectedNode, selectedStageContents]);
   const onStageContentTypeClick = useCallback((nodeId: string, contentType: CompetitionStageContentType) => {
-    if (contentType !== 'theory') return;
     const node = draft.nodes.find((item) => item.id === nodeId);
     if (!node || !isBusinessStageNode(node) || node.data.stageId === undefined || node.data.stageId === null) {
-      message.warning('请先保存当前赛段编排，再进入试卷工作台');
+      message.warning('请先保存当前赛段编排，再进入配置工作台');
       return;
     }
-    setTheoryWorkbench({
+    if (contentType === 'theory') {
+      setTheoryWorkbench({
+        stageId: String(node.data.stageId),
+        eventWorkTypeId: eventWorkTypeId === undefined || eventWorkTypeId === null
+          ? undefined
+          : String(eventWorkTypeId),
+        eventWorkTypeLevelCode,
+      });
+      return;
+    }
+    if (contentType === 'practical' && eventWorkTypeId !== undefined && eventWorkTypeId !== null) {
+      setPracticalWorkbench({
+        stageId: String(node.data.stageId),
+        stageName: node.data.name,
+        eventWorkTypeId: String(eventWorkTypeId),
+        eventWorkTypeName: selectedEventWorkType?.displayName || selectedEventWorkType?.workTypeName || undefined,
+        eventWorkTypeLevelCode,
+        eventWorkTypeLevelName: selectedEventWorkTypeLevel?.levelName,
+        initialTab: 'paper',
+      });
+    }
+  }, [draft.nodes, eventWorkTypeId, eventWorkTypeLevelCode, selectedEventWorkType, selectedEventWorkTypeLevel]);
+  const onStageRefereeClick = useCallback((nodeId: string) => {
+    if (!canViewRefereeAssignment) return;
+    const node = draft.nodes.find((item) => item.id === nodeId);
+    if (!node || !isBusinessStageNode(node) || node.data.stageId === undefined || node.data.stageId === null) {
+      message.warning('请先保存当前赛段编排，再进入裁判配置');
+      return;
+    }
+    if (eventWorkTypeId === undefined || eventWorkTypeId === null) {
+      message.warning('当前页面未选择赛事工种，暂时不能进入裁判配置');
+      return;
+    }
+    setPracticalWorkbench({
       stageId: String(node.data.stageId),
-      eventWorkTypeId: eventWorkTypeId === undefined || eventWorkTypeId === null
-        ? undefined
-        : String(eventWorkTypeId),
+      stageName: node.data.name,
+      eventWorkTypeId: String(eventWorkTypeId),
+      eventWorkTypeName: selectedEventWorkType?.displayName || selectedEventWorkType?.workTypeName || undefined,
       eventWorkTypeLevelCode,
+      eventWorkTypeLevelName: selectedEventWorkTypeLevel?.levelName,
+      initialTab: 'referee',
     });
-  }, [draft.nodes, eventWorkTypeId, eventWorkTypeLevelCode]);
-  const onStageCandidateClick = useCallback((nodeId: string) => {
+  }, [canViewRefereeAssignment, draft.nodes, eventWorkTypeId, eventWorkTypeLevelCode, selectedEventWorkType, selectedEventWorkTypeLevel]);
+  const onStageCandidateClick = useCallback((
+    nodeId: string,
+    contentType: 'theory' | 'practical' = 'theory',
+  ) => {
     if (!canViewPlayerAssignment) return;
     const node = draft.nodes.find((item) => item.id === nodeId);
     if (!node || !isBusinessStageNode(node) || node.data.stageId === undefined || node.data.stageId === null) {
@@ -210,6 +261,7 @@ export function CompetitionStagePlanningPage({
       return;
     }
     setPlayerAssignmentStageId(String(node.data.stageId));
+    setPlayerAssignmentContentType(contentType);
   }, [canViewPlayerAssignment, draft.nodes]);
   useEffect(() => {
     if (!eventWorkTypeId) {
@@ -513,7 +565,9 @@ export function CompetitionStagePlanningPage({
           onStageContextMenu={draft.selectNode}
           onStageContentTypeClick={onStageContentTypeClick}
           onStageCandidateClick={onStageCandidateClick}
+          onStageRefereeClick={onStageRefereeClick}
           candidateEnabled={canViewPlayerAssignment}
+          refereeEnabled={canViewRefereeAssignment}
           stageContentTypesByNodeId={stageContentTypesByNodeId}
           onFitViewReady={onFitViewReady}
         />
@@ -580,10 +634,42 @@ export function CompetitionStagePlanningPage({
       </Modal>
 
       <Modal
-        title="选手配置 · 试卷分配"
+        title="实操配置"
+        open={Boolean(practicalWorkbench)}
+        onCancel={() => setPracticalWorkbench(null)}
+        footer={null}
+        centered
+        width="min(1440px, calc(100vw - 48px))"
+        className="stage-practical-workbench-modal"
+        styles={{ body: { maxHeight: 'calc(100vh - 132px)', overflowY: 'auto', padding: 0 } }}
+        destroyOnClose
+        data-testid="stage-practical-workbench-modal"
+      >
+        {practicalWorkbench && (
+          <CompetitionPracticalConfigPage
+            eventId={eventId}
+            stageId={practicalWorkbench.stageId}
+            stageName={practicalWorkbench.stageName}
+            eventWorkTypeId={practicalWorkbench.eventWorkTypeId}
+            eventWorkTypeName={practicalWorkbench.eventWorkTypeName}
+            eventWorkTypeLevelCode={practicalWorkbench.eventWorkTypeLevelCode}
+            eventWorkTypeLevelName={practicalWorkbench.eventWorkTypeLevelName}
+            initialTab={practicalWorkbench.initialTab}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        title={playerAssignmentContentType === 'practical'
+          ? '实操选手配置 · 试卷分配'
+          : '选手配置 · 试卷分配'}
         open={Boolean(playerAssignmentStageId)}
         onCancel={() => {
-          const close = () => { setPlayerAssignmentStageId(null); setPlayerAssignmentDirty(false); };
+          const close = () => {
+            setPlayerAssignmentStageId(null);
+            setPlayerAssignmentContentType('theory');
+            setPlayerAssignmentDirty(false);
+          };
           if (playerAssignmentDirty) Modal.confirm({ title: '放弃未保存的选手分配调整？', onOk: close });
           else close();
         }}
@@ -595,7 +681,13 @@ export function CompetitionStagePlanningPage({
         destroyOnClose
         data-testid="stage-player-paper-assignment-modal"
       >
-        {playerAssignmentStageId && <CompetitionPlayerPaperAssignmentPage stageId={playerAssignmentStageId} onDirtyChange={setPlayerAssignmentDirty} />}
+        {playerAssignmentStageId && (
+          <CompetitionPlayerPaperAssignmentPage
+            stageId={playerAssignmentStageId}
+            contentType={playerAssignmentContentType}
+            onDirtyChange={setPlayerAssignmentDirty}
+          />
+        )}
       </Modal>
 
     </>

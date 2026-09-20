@@ -27,6 +27,12 @@ public final class PracticalScoringModels {
   ) {
   }
 
+  public record UpdateQuestionReq(
+      @NotBlank @Size(max = 120) String title,
+      @NotEmpty List<@Valid TemplateItem> items
+  ) {
+  }
+
   public record SaveConfigReq(
       @NotNull Long scopeId,
       // workTypeId 可空：scope 与 paper 都没有标准工种ID 时，后端 candidatesForConfig
