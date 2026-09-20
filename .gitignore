@@ -5,9 +5,14 @@
 .idea/
 .vscode/
 .qoder/
+.zcode/
 AGENTS.local.md
 *.swp
 *.tmp
+
+# Windows 设备名误建的文件：Git Bash 里 `2> nul` / `> nul` 会生成真的 nul 文件
+nul
+NUL
 
 # Environment and secrets
 .env
@@ -69,3 +74,10 @@ outputs/**/.cache/
 /outputs/
 !/outputs/README.md
 *.err
+
+# Playwright 测试产物
+apps/admin-web/test-results/
+apps/admin-web/playwright-report/
+
+# 本地运行时文件存储(platform.file.local-root 默认落点)
+storage/
