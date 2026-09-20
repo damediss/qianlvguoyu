@@ -1,6 +1,6 @@
 # AI 同步学（学员复习）功能接口实现方案
 
-> 版本：v1.5　日期：2026-08-07
+> 版本：v1.7　日期：2026-09-20
 > 修订记录：
 > - v1.0（2026-08-03）：初版
 > - v1.1（2026-08-04）：① 新增 D5/D6 决策（权重以国标为锚、阶段1每日新题权重配比增强版）；② 新增 §5.7 权重数据来源与回退链（`exam_knowledge_rate type=3` 约定，type=1 为实操既有约定，配套《标准理论知识权重映射配置指南》）；③ §5.2/§5.3/§5.6 接入权重双轨与回退链；④ §7.8 新增 itemMastery + estimatedScore 加权预估得分；⑤ §12 分期改三层（AI 错题讲解 7.9 列为"一期可选增量"）；⑥ 新增 §10.5 量化验收标准、§10.6 上线 Checklist；⑦ 新增 §13 执行顺序与依赖（相对鉴权方案），原"开放问题"顺延为 §14
@@ -9,6 +9,7 @@
 > - v1.4（2026-08-05）：**O7 拍板并实施**——模考多选严格判分开关 `ai_review_mock_strict_judge`（默认 1）：错选 0 分、少选按选项 score 部分给分、计错进错题本；选项 score 脏数据回退"少选不得分"；练习轮保持 PHP 宽松口径不变。新增 `ai_review_answer.earned_score/mock_paper_id` 列（V20260805_001），回写 get_score 按实得分；E2E 实测：少选 1 项得 0.2 部分分、空答多选不再白送分、PHP 回写 get_score=0.2 ✓
 > - v1.5（2026-08-07）：**新增三项一期增量（D7/D8/D9 需求方拍板，设计见 §15）**：① D7 超前学习——今日任务完成后可提前解锁明日任务（每日上限 `ai_review_advance_max_per_day`，默认 1 天），配套修复"超前完成被误判中断"（lastActiveDate 改"任务覆盖到哪天"口径）；② D8 灰度发布——总开关 `ai_review_gray_enabled` + `ai_review_gray_whitelist` 双粒度白名单（exam/user），应用层统一拦截，一期 SQL 配置不做管理页面；③ D9 科学化即时鼓励——答题按连对（3/5/10/15/20）/连错（2/3）阈值即时下发鼓励文案，文案规则基于过程性表扬（Mueller & Dweck 1998）、成长型思维、归因理论等 8 项实证依据（§15.4），一期纯预置文案池，LLM 个性化鼓励留二期
 > - v1.6（2026-08-27）：**单库化改造实施完成（指针式修订）**——gjjddb+gjjddb2026 已合并为 gjjddbpro（租户统一 10159），本文 §3/§4.7/§13 中"PHP 第二数据源读取""异步回写 exam_result + 补偿 job""train_exam_list 一次性导入/只读"等双库口径全部废止；现行口径以《AI同步学功能单库化改造方案_gjjddbpro》v1.2 为准（主数据源直读、exam_result 事务内同步直写、/appreviewsync 租户强制 10159）
+> - v1.7（2026-09-20）：**修复首次进入的并发物化竞态**（生产报错 `Duplicate entry '<planId>-<dayIndex>' for key 'uk_ai_review_day_plan_day'`）——App 进复习页会并发调 `/appreviewsync/overview` 与 `/appreviewsync/today`，两个请求可能同时决定物化同一天。修法：①`materializeDay` 先锁计划行（`AiReviewPlanMapper.selectByIdForUpdate`）再以当前读（`AiReviewPlanDayMapper.selectByPlanAndDayForUpdate`，REPEATABLE READ 下普通 SELECT 走旧快照看不到并发已提交行）复核，已存在直接复用；②插入仍撞唯一键时捕获 `DuplicateKeyException`，当前读取回已提交行，不再把 500 抛给学员；③跨天指针推进同序加锁并取 `max(nextIndex, 当前指针)`，防并发重复推进；④计划创建（`uk_ai_review_plan_user_exam`）走同一套兜底。**约定：所有每日任务的落库只能经 `materializeDay`**（幂等），新增入口不要再裸 `dayMapper.insert`；单测见 `ReviewPlanDayMaterializeConcurrencyTest`
 > 需求来源：`docs/osta-standards/AI同步学（学员复习）需求方案.txt`
 > 鉴权依据：`gjjd_appnext/docs/手机端调用SaaS鉴权方案.md`（v1.3，令牌透传）
 > 涉及项目：`qianlvguoyu_saas`（SaaS/platform-api，本期主体）、`gjjd_appnext`（手机端）、`gjjd_phalcon`（PHP，零改动）
