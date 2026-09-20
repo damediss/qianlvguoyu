@@ -14,6 +14,7 @@ import type { FormInstance } from 'antd/es/form';
 import { useQuery } from '@tanstack/react-query';
 import { listKnowledgeRates } from '../../api/exam';
 import type { ExamMakeExamPlanCreateReq, ExamKnowledgeRate } from '../../types/exam';
+import { DIFFICULTY_MAP } from '../../types/exam';
 
 const { Title } = Typography;
 
@@ -29,6 +30,10 @@ export const MAKE_EXAM_PLAN_QUESTION_TYPES = [
   { label: '分析题', value: 'analysis' },
   { label: '简单填空', value: 'simple_fill' },
 ];
+
+/** 难度下拉选项：只显示中文档位，值域 0~4（与 DIFFICULTY_MAP 一致，后端按数值区间抽题） */
+export const MAKE_EXAM_PLAN_DIFFICULTY_OPTIONS = [0, 1, 2, 3, 4]
+  .map((value) => ({ label: DIFFICULTY_MAP[value], value }));
 
 export type MakeExamPlanCourseOption = { id: number; title: string };
 
@@ -171,7 +176,7 @@ export function MakeExamPlanForm({
                         <div
                           style={{
                             display: 'grid',
-                            gridTemplateColumns: '1.5fr 1fr 1fr 1fr',
+                            gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr',
                             gap: 12,
                             alignItems: 'end',
                           }}
@@ -199,31 +204,28 @@ export function MakeExamPlanForm({
                           >
                             <InputNumber min={0} style={{ width: '100%' }} />
                           </Form.Item>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                            <Form.Item
-                              name={[field.name, 'difficultyStart']}
-                              label="难度起"
-                              style={{ marginBottom: 0 }}
-                            >
-                              <InputNumber min={0} max={4} style={{ width: '100%' }} />
-                            </Form.Item>
-                            <Form.Item
-                              name={[field.name, 'difficultyEnd']}
-                              label="难度止"
-                              style={{ marginBottom: 0 }}
-                            >
-                              <InputNumber min={0} max={4} style={{ width: '100%' }} />
-                            </Form.Item>
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 1fr 1fr 1fr',
-                            gap: 12,
-                            marginTop: 8,
-                          }}
-                        >
+                          <Form.Item
+                            name={[field.name, 'difficultyStart']}
+                            label="难度起"
+                            style={{ marginBottom: 0 }}
+                          >
+                            <Select
+                              options={MAKE_EXAM_PLAN_DIFFICULTY_OPTIONS}
+                              placeholder="不限"
+                              allowClear
+                            />
+                          </Form.Item>
+                          <Form.Item
+                            name={[field.name, 'difficultyEnd']}
+                            label="难度止"
+                            style={{ marginBottom: 0 }}
+                          >
+                            <Select
+                              options={MAKE_EXAM_PLAN_DIFFICULTY_OPTIONS}
+                              placeholder="不限"
+                              allowClear
+                            />
+                          </Form.Item>
                           <Form.Item
                             name={[field.name, 'startPoint']}
                             label="分值起"
