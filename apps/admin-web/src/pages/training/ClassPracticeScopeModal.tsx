@@ -33,6 +33,32 @@ type KnowledgeNode = {
 const { Text } = Typography;
 const { RangePicker } = DatePicker;
 
+/**
+ * exam_course.level：0 初级 … 4 高级技师（与科目标题后缀一致，不是班级 work_type_level 的 1–5）。
+ */
+const EXAM_COURSE_LEVEL_LABELS: Record<number, string> = {
+  0: '五级/初级工',
+  1: '四级/中级工',
+  2: '三级/高级工',
+  3: '二级/技师',
+  4: '一级/高级技师',
+};
+
+/** 科目标题末尾常见简称，拼人社全称前去掉，避免「…高级三级/高级工」 */
+const EXAM_COURSE_SHORT_LEVEL_SUFFIX = /(初级|中级|高级技师|高级|技师)$/;
+
+function formatCourseOptionLabel(title?: string | null, level?: number | null) {
+  let name = (title ?? '').trim() || '未命名科目';
+  if (level == null || Number.isNaN(Number(level))) return name;
+  const n = Number(level);
+  const levelText = EXAM_COURSE_LEVEL_LABELS[n];
+  if (!levelText) return `${name}（等级${n}）`;
+  const stripped = name.replace(EXAM_COURSE_SHORT_LEVEL_SUFFIX, '').trim();
+  if (stripped) name = stripped;
+  // 例：铝电解操作工三级/高级工
+  return `${name}${levelText}`;
+}
+
 function toKnowledgeTree(nodes: KnowledgeNode[]): DataNode[] {
   return (nodes ?? []).map((n) => ({
     key: String(n.id),
@@ -145,7 +171,7 @@ export function ClassPracticeScopeModal({ open, onClose, classId, classTitle, ti
   const courseOptions = useMemo(() => {
     return (coursesQuery.data ?? []).map((c) => ({
       value: c.id,
-      label: `${c.title}${c.level != null ? `（等级${c.level}）` : ''}`,
+      label: formatCourseOptionLabel(c.title, c.level),
     }));
   }, [coursesQuery.data]);
 
