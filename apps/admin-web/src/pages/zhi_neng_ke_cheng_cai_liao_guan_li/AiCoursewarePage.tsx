@@ -840,7 +840,7 @@ function SlideDetailDrawer({ slideId, onClose }: { slideId: string | null; onClo
             <Table
               size="small"
               pagination={false}
-              rowKey={(r) => r.join('|')}
+              rowKey={(r) => Object.values(r).join('|')}
               columns={(block.header ?? []).map((h, j) => ({
                 title: h, dataIndex: String(j),
               }))}
