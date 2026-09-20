@@ -252,7 +252,7 @@ export function ClassPracticeScopeModal({ open, onClose, classId, classTitle, ti
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="配置本班可刷科目、知识点与刷题日期。保存后将自动绑定同步学考试计划并开通名单/灰度；未设置日期则不过期；过了截止日学员无法从班级入口刷题。"
+        message="配置本班可刷科目、知识点与刷题日期。保存后将自动绑定同步学考试计划、写入复习配置并开通名单/灰度；学员可在 App「复习任务」中进入同步练习。未设置日期则不过期；过了截止日学员无法从班级入口刷题。"
       />
       {scopeQuery.isLoading ? (
         <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>

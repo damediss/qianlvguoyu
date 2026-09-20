@@ -40,6 +40,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,6 +66,7 @@ public class ClassReviewSyncApplicationService {
   private final TrainingOperatorScopeService operatorScopeService;
   private final TrainExamListApplicationService examListApplicationService;
   private final ReviewPlanApplicationService reviewPlanApplicationService;
+  private final JdbcTemplate jdbcTemplate;
   private final ConcurrentHashMap<Long, Object> classLocks = new ConcurrentHashMap<>();
 
   public ClassReviewSyncApplicationService(
@@ -78,7 +80,8 @@ public class ClassReviewSyncApplicationService {
       DictMapper dictMapper,
       TrainingOperatorScopeService operatorScopeService,
       TrainExamListApplicationService examListApplicationService,
-      ReviewPlanApplicationService reviewPlanApplicationService) {
+      ReviewPlanApplicationService reviewPlanApplicationService,
+      JdbcTemplate jdbcTemplate) {
     this.classMapper = classMapper;
     this.reviewSyncMapper = reviewSyncMapper;
     this.examListMapper = examListMapper;
@@ -90,6 +93,7 @@ public class ClassReviewSyncApplicationService {
     this.operatorScopeService = operatorScopeService;
     this.examListApplicationService = examListApplicationService;
     this.reviewPlanApplicationService = reviewPlanApplicationService;
+    this.jdbcTemplate = jdbcTemplate;
   }
 
   @Transactional(readOnly = true)
@@ -117,6 +121,8 @@ public class ClassReviewSyncApplicationService {
 
     LocalDateTime now = LocalDateTime.now();
     TrainClassReviewSyncEntity existing = findByClass(tenantId, classId);
+    Long previousExamId = existing != null && existing.getExamId() != null && existing.getExamId() > 0
+        ? existing.getExamId() : null;
     if (existing == null) {
       // 软删行仍占 uk_class_review_sync(tenant_id, class_id)，插入前物理清幽灵
       reviewSyncMapper.physicalDeleteByClass(tenantId, classId);
@@ -129,7 +135,15 @@ public class ClassReviewSyncApplicationService {
       reviewSyncMapper.insert(row);
     } else {
       applySaveFields(existing, req, now);
-    reviewSyncMapper.updateById(existing);
+      reviewSyncMapper.updateById(existing);
+    }
+    // 改绑后从旧计划移出本班学员，避免 App「考试任务」同时出现错绑计划
+    if (previousExamId != null && !previousExamId.equals(req.getExamId())) {
+      int removed = unenrollClassRosterFromExam(classId, previousExamId);
+      if (removed > 0) {
+        log.info("[班级同步学] 改绑 exam {}→{}，已从旧计划移出本班考生 {} 人 classId={}",
+            previousExamId, req.getExamId(), removed, classId);
+      }
     }
     Map<String, Object> view = buildConfigView(clazz, findByClass(tenantId, classId), tenantId);
     int enabled = req.getEnabled() != null && req.getEnabled() == 0 ? 0 : 1;
@@ -166,29 +180,41 @@ public class ClassReviewSyncApplicationService {
             .eq(TrainExamListEntity::getDeleted, 0)
             .last("LIMIT 1"));
         if (exam != null) {
-          boolean enabledNow = existing.getEnabled() != null && existing.getEnabled() == 1;
-          Map<String, Object> opened = tryOpenEnrollmentAndGray(classId, enabledNow);
-          Map<String, Object> cfg = buildConfigView(clazz, existing, tenantId);
-          Map<String, Object> out = new LinkedHashMap<>();
-          out.put("ok", true);
-          out.put("action", "synced");
-          out.put("examSource", "REUSE_BINDING");
-          out.put("examId", String.valueOf(existing.getExamId()));
-          out.put("config", cfg);
-          out.put("enroll", opened.get("enroll"));
-          out.put("gray", opened.get("gray"));
-          out.put("enrollError", opened.get("enrollError"));
-          out.put("grayError", opened.get("grayError"));
-          @SuppressWarnings("unchecked")
-          Map<String, Object> enroll = opened.get("enroll") instanceof Map
-              ? (Map<String, Object>) opened.get("enroll") : null;
-          @SuppressWarnings("unchecked")
-          Map<String, Object> gray = opened.get("gray") instanceof Map
-              ? (Map<String, Object>) opened.get("gray") : null;
-          out.put("message", buildAutoProvisionMessage(
-              "REUSE_BINDING", cfg, enroll,
-              (String) opened.get("enrollError"), gray, (String) opened.get("grayError")));
-          return out;
+          String classLevel = clazz.getWorkTypeLevel() != null ? String.valueOf(clazz.getWorkTypeLevel()) : null;
+          List<TrainExamWorkTypeListEntity> bindings = workTypeListMapper.selectList(
+              new LambdaQueryWrapper<TrainExamWorkTypeListEntity>()
+                  .eq(TrainExamWorkTypeListEntity::getExamId, exam.getId())
+                  .eq(TrainExamWorkTypeListEntity::getDeleted, 0));
+          int boundScore = computeMatchScore(bindings, clazz.getWorkTypeId(), classLevel);
+          // 等级不匹配视为错绑：走自动开通重选/新建，并由 saveConfig 清旧计划名单
+          if (StringUtils.hasText(classLevel) && boundScore < 2) {
+            log.warn("[班级同步学] 跟班同步 Tab 发现错绑 examId={}「{}」score={}，将重新匹配 classId={}",
+                exam.getId(), exam.getTitle(), boundScore, classId);
+          } else {
+            boolean enabledNow = existing.getEnabled() != null && existing.getEnabled() == 1;
+            Map<String, Object> opened = tryOpenEnrollmentAndGray(classId, enabledNow);
+            Map<String, Object> cfg = buildConfigView(clazz, existing, tenantId);
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", true);
+            out.put("action", "synced");
+            out.put("examSource", "REUSE_BINDING");
+            out.put("examId", String.valueOf(existing.getExamId()));
+            out.put("config", cfg);
+            out.put("enroll", opened.get("enroll"));
+            out.put("gray", opened.get("gray"));
+            out.put("enrollError", opened.get("enrollError"));
+            out.put("grayError", opened.get("grayError"));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> enroll = opened.get("enroll") instanceof Map
+                ? (Map<String, Object>) opened.get("enroll") : null;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> gray = opened.get("gray") instanceof Map
+                ? (Map<String, Object>) opened.get("gray") : null;
+            out.put("message", buildAutoProvisionMessage(
+                "REUSE_BINDING", cfg, enroll,
+                (String) opened.get("enrollError"), gray, (String) opened.get("grayError")));
+            return out;
+          }
         }
       }
       ClassPracticeScopeSaveReq req = new ClassPracticeScopeSaveReq();
@@ -369,6 +395,8 @@ public class ClassReviewSyncApplicationService {
     TrainClassReviewSyncEntity cfg = requireConfigured(tenantId, classId);
     Long examId = cfg.getExamId();
     requireExam(examId);
+    // App「复习任务」依赖 train_exam_review；同步学入口也仅在复习任务(result_type=1)展示
+    boolean reviewEnsured = ensureExamReviewConfig(examId);
 
     List<TrainPeopleListEntity> roster = peopleMapper.selectList(new LambdaQueryWrapper<TrainPeopleListEntity>()
         .eq(TrainPeopleListEntity::getTrainClassId, classId)
@@ -456,12 +484,17 @@ public class ClassReviewSyncApplicationService {
       inserted++;
     }
 
+    // 清掉本班学员在其它「*-同步学」计划上的残留（错绑改绑后 App 仍见双计划）
+    int removedForeign = unenrollClassRosterFromOtherSyncExams(clazz, examId);
+
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("classId", String.valueOf(classId));
     out.put("examId", String.valueOf(examId));
     out.put("inserted", inserted);
     out.put("existed", existed);
     out.put("skippedNoAccount", skippedNoAccount);
+    out.put("removedForeign", removedForeign);
+    out.put("reviewEnsured", reviewEnsured);
     out.put("roster", buildRosterGap(classId, examId));
     return out;
   }
@@ -681,22 +714,149 @@ public class ClassReviewSyncApplicationService {
     return out;
   }
 
+  /**
+   * 确保考试计划有复习配置行，使 App 归入「复习任务」并可出现「同步练习」入口。
+   * paper_id 与 Apppromote 列表硬编码口径对齐（1）；已存在则幂等跳过。
+   * <p>用 JdbcTemplate 直写，兼容合并库 train_exam_review 无 deleted 列。
+   *
+   * @return true 表示本次新写入
+   */
+  boolean ensureExamReviewConfig(Long examId) {
+    if (examId == null || examId <= 0) {
+      return false;
+    }
+    Long existingId = jdbcTemplate.query(
+        "SELECT id FROM train_exam_review WHERE exam_id = ? LIMIT 1",
+        (rs, rowNum) -> rs.getLong(1),
+        examId).stream().findFirst().orElse(null);
+    if (existingId != null && existingId > 0) {
+      return false;
+    }
+    Long tenantId = resolveTenantId();
+    Long userId = SecurityContext.currentUser().getUserId();
+    int rows = jdbcTemplate.update(
+        "INSERT INTO train_exam_review (exam_id, paper_id, num, user_id, tenant_id) VALUES (?, ?, ?, ?, ?)",
+        examId, 1L, 0, userId, tenantId);
+    if (rows > 0) {
+      log.info("[班级同步学] 已为 examId={} 写入复习配置，App 将归入复习任务", examId);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * 从指定考试计划中软删本班花名册对应考生（仅本班学员，不影响他班合法名单）。
+   */
+  int unenrollClassRosterFromExam(Long classId, Long examId) {
+    if (classId == null || examId == null || examId <= 0) {
+      return 0;
+    }
+    List<TrainPeopleListEntity> roster = peopleMapper.selectList(new LambdaQueryWrapper<TrainPeopleListEntity>()
+        .eq(TrainPeopleListEntity::getTrainClassId, classId)
+        .eq(TrainPeopleListEntity::getType, "student")
+        .eq(TrainPeopleListEntity::getDeleted, 0));
+    if (roster.isEmpty()) {
+      return 0;
+    }
+    Set<Long> userIds = new HashSet<>();
+    Set<String> idCards = new HashSet<>();
+    for (TrainPeopleListEntity s : roster) {
+      if (s.getPlatformUserId() != null && s.getPlatformUserId() > 0) {
+        userIds.add(s.getPlatformUserId());
+      }
+      if (StringUtils.hasText(s.getIdCard())) {
+        String card = s.getIdCard().trim();
+        idCards.add(card);
+        idCards.add(card.toUpperCase());
+      }
+    }
+    if (userIds.isEmpty() && idCards.isEmpty()) {
+      return 0;
+    }
+    LambdaQueryWrapper<TrainExamPeopleListEntity> q = new LambdaQueryWrapper<TrainExamPeopleListEntity>()
+        .eq(TrainExamPeopleListEntity::getExamId, examId)
+        .eq(TrainExamPeopleListEntity::getDeleted, 0);
+    q.and(w -> {
+      boolean first = true;
+      if (!userIds.isEmpty()) {
+        w.in(TrainExamPeopleListEntity::getPlatformUserId, userIds);
+        first = false;
+      }
+      if (!idCards.isEmpty()) {
+        if (!first) {
+          w.or();
+        }
+        w.in(TrainExamPeopleListEntity::getIdCardNum, idCards);
+      }
+    });
+    List<TrainExamPeopleListEntity> hits = examPeopleMapper.selectList(q);
+    if (hits.isEmpty()) {
+      return 0;
+    }
+    int removed = 0;
+    for (TrainExamPeopleListEntity hit : hits) {
+      // TableLogic：deleteById 软删
+      removed += examPeopleMapper.deleteById(hit.getId());
+    }
+    return removed;
+  }
+
+  /**
+   * 本班已绑到正确计划后，清理学员在同培训其它「*-同步学」计划上的错绑残留。
+   */
+  int unenrollClassRosterFromOtherSyncExams(TrainInfoClassEntity clazz, Long keepExamId) {
+    if (clazz == null || clazz.getTrainInfoId() == null || clazz.getTrainInfoId() <= 0
+        || keepExamId == null || keepExamId <= 0) {
+      return 0;
+    }
+    List<TrainExamListEntity> syncExams = examListMapper.selectList(new LambdaQueryWrapper<TrainExamListEntity>()
+        .eq(TrainExamListEntity::getTrainId, clazz.getTrainInfoId())
+        .eq(TrainExamListEntity::getDeleted, 0)
+        .likeLeft(TrainExamListEntity::getTitle, "同步学")
+        .ne(TrainExamListEntity::getId, keepExamId)
+        .last("LIMIT 200"));
+    if (syncExams.isEmpty()) {
+      return 0;
+    }
+    int total = 0;
+    for (TrainExamListEntity other : syncExams) {
+      total += unenrollClassRosterFromExam(clazz.getId(), other.getId());
+    }
+    if (total > 0) {
+      log.info("[班级同步学] 已从同培训其它同步学计划移出本班考生 {} 人 classId={} keepExamId={}",
+          total, clazz.getId(), keepExamId);
+    }
+    return total;
+  }
+
   private record ExamPick(Long examId, String source) {}
 
   /**
-   * 已绑定且计划仍有效则复用；否则取本培训工种匹配计划；再没有则新建。
+   * 已绑定且计划仍有效则复用；否则取本培训「工种+等级」均匹配的计划；再没有则新建。
+   * 仅同工种不同等级（如中级计划绑到高级班）不算匹配，避免错绑他班「xxx-同步学」。
    */
   ExamPick resolveExamForAutoProvision(
       TrainInfoClassEntity clazz,
       TrainClassReviewSyncEntity existing,
       ClassPracticeScopeSaveReq practiceReq) {
+    String classLevel = clazz.getWorkTypeLevel() != null ? String.valueOf(clazz.getWorkTypeLevel()) : null;
     if (existing != null && existing.getExamId() != null && existing.getExamId() > 0) {
       TrainExamListEntity bound = examListMapper.selectOne(new LambdaQueryWrapper<TrainExamListEntity>()
           .eq(TrainExamListEntity::getId, existing.getExamId())
           .eq(TrainExamListEntity::getDeleted, 0)
           .last("LIMIT 1"));
       if (bound != null) {
-        return new ExamPick(bound.getId(), "REUSE_BINDING");
+        List<TrainExamWorkTypeListEntity> bindings = workTypeListMapper.selectList(
+            new LambdaQueryWrapper<TrainExamWorkTypeListEntity>()
+                .eq(TrainExamWorkTypeListEntity::getExamId, bound.getId())
+                .eq(TrainExamWorkTypeListEntity::getDeleted, 0));
+        int boundScore = computeMatchScore(bindings, clazz.getWorkTypeId(), classLevel);
+        // 班级有等级时必须工种+等级都对才沿用；否则视为错绑，进入重选/新建
+        if (!StringUtils.hasText(classLevel) || boundScore >= 2) {
+          return new ExamPick(bound.getId(), "REUSE_BINDING");
+        }
+        log.warn("[班级同步学] 本班已绑 examId={}「{}」与班级等级不匹配(score={})，将重新匹配或新建 classId={} level={}",
+            bound.getId(), bound.getTitle(), boundScore, clazz.getId(), classLevel);
       }
     }
     Long matched = pickBestMatchingExamId(clazz);
@@ -708,6 +868,9 @@ public class ClassReviewSyncApplicationService {
     return new ExamPick(created, "CREATED");
   }
 
+  /**
+   * 仅返回工种+等级双匹配（score=2）的计划；同工种不同等级不采用。
+   */
   Long pickBestMatchingExamId(TrainInfoClassEntity clazz) {
     if (clazz == null || clazz.getTrainInfoId() == null || clazz.getTrainInfoId() <= 0) {
       return null;
@@ -728,7 +891,8 @@ public class ClassReviewSyncApplicationService {
     int bestScore = 0;
     for (TrainExamListEntity exam : exams) {
       int score = computeMatchScore(wtMap.getOrDefault(exam.getId(), List.of()), classWt, classLevel);
-      if (score < 1) {
+      // 与列表「完全匹配 matched>=2」对齐：禁止仅工种匹配就跨班复用
+      if (score < 2) {
         continue;
       }
       if (best == null || score > bestScore || (score == bestScore && exam.getId() > best.getId())) {
@@ -761,7 +925,7 @@ public class ClassReviewSyncApplicationService {
         : ("计划#" + (cfg == null ? "" : cfg.get("examId")));
     String bind = switch (examSource == null ? "" : examSource) {
       case "CREATED" -> "已新建同步学计划「" + examTitle + "」并绑定本班";
-      case "MATCHED_TRAIN" -> "已绑定本培训工种匹配计划「" + examTitle + "」";
+      case "MATCHED_TRAIN" -> "已绑定本培训同工种同等级计划「" + examTitle + "」";
       default -> "已沿用本班同步学计划「" + examTitle + "」";
     };
     StringBuilder sb = new StringBuilder(bind);
