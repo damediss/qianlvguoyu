@@ -188,6 +188,30 @@ public class TrainExamListApplicationService {
       title = title.substring(0, 255);
     }
 
+    Long orgId = clazz.getCompanyId() != null && clazz.getCompanyId() > 0 ? clazz.getCompanyId() : null;
+    String orgName = null;
+    if (clazz.getTrainInfoId() != null && clazz.getTrainInfoId() > 0) {
+      TrainInfoListEntity info = trainInfoListMapper.selectById(clazz.getTrainInfoId());
+      if (info != null) {
+        if (orgId == null && info.getCompanyId() != null && info.getCompanyId() > 0) {
+          orgId = info.getCompanyId();
+        }
+        if (StringUtils.hasText(info.getCompanyName())) {
+          orgName = info.getCompanyName().trim();
+        }
+      }
+    }
+    if (orgId == null) {
+      Long scopeOrgId = operatorScopeService.currentScope().orgId();
+      if (scopeOrgId != null && scopeOrgId > 0) {
+        orgId = scopeOrgId;
+      }
+    }
+    if (orgId == null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "班级未关联企业(org_id)，无法自动创建同步学考试计划，请先完善班级/培训企业信息");
+    }
+
     TrainExamListEntity entity = new TrainExamListEntity();
     entity.setTenantId(tenantId);
     entity.setUserId(userId);
@@ -196,6 +220,10 @@ public class TrainExamListApplicationService {
       entity.setLevel(String.valueOf(clazz.getWorkTypeLevel()));
     }
     entity.setTrainId(clazz.getTrainInfoId());
+    entity.setOrgId(orgId);
+    if (StringUtils.hasText(orgName)) {
+      entity.setOrgName(orgName);
+    }
     entity.setType(0);
     List<Long> courseIdList = courseIds == null ? List.of() : courseIds.stream()
         .filter(id -> id != null && id > 0)

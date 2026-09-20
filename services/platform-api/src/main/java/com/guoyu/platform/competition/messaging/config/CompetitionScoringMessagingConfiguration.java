@@ -14,7 +14,7 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @ConditionalOnProperty(prefix = "platform.competition.formal-exam.scoring-messaging",
-    name = "enabled", havingValue = "true", matchIfMissing = true)
+    name = "enabled", havingValue = "true", matchIfMissing = false)
 public class CompetitionScoringMessagingConfiguration {
 
   @Bean

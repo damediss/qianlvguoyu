@@ -12,10 +12,19 @@ import com.guoyu.platform.exam.reviewsync.service.ReviewPlanApplicationService;
 import com.guoyu.platform.trainingdepartment.entity.TrainFollowTaskEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainFollowTaskItemEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
 import com.guoyu.platform.trainingdepartment.mapper.TrainFollowTaskItemMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainFollowTaskMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpSelfMapper;
+import com.guoyu.platform.trainingdepartment.support.SignUpLevelSupport;
+import com.guoyu.platform.trainingdepartment.support.SignUpPeopleDefaultTemplatePackService;
 import com.guoyu.platform.trainingdepartment.vo.FollowStudentTaskVO;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -66,10 +75,14 @@ public class ClassAssistantApplicationService {
   private final WeKnoraProperties weKnoraProperties;
   private final QuestionResolveAssistService questionResolveAssistService;
   private final ExamWorkTypeMapper examWorkTypeMapper;
+  private final TrainPeopleListMapper peopleListMapper;
+  private final TrainSignUpSelfMapper signUpSelfMapper;
+  private final TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper;
 
   /** 单次 bootstrap/chat 请求内复用，避免重复 resolve/overview/dashboard */
   private final ThreadLocal<Map<String, SyncSnapshot>> syncCache = ThreadLocal.withInitial(LinkedHashMap::new);
   private final ThreadLocal<Map<String, ReadinessMetrics>> metricsCache = ThreadLocal.withInitial(LinkedHashMap::new);
+  private final ThreadLocal<Map<String, StudentClassProfile>> profileCache = ThreadLocal.withInitial(LinkedHashMap::new);
 
   public ClassAssistantApplicationService(
       TrainClassRoleApplicationService roleService,
@@ -84,7 +97,10 @@ public class ClassAssistantApplicationService {
       WeKnoraClient weKnoraClient,
       WeKnoraProperties weKnoraProperties,
       QuestionResolveAssistService questionResolveAssistService,
-      ExamWorkTypeMapper examWorkTypeMapper) {
+      ExamWorkTypeMapper examWorkTypeMapper,
+      TrainPeopleListMapper peopleListMapper,
+      TrainSignUpSelfMapper signUpSelfMapper,
+      TrainSignUpPeopleSelfMapper signUpPeopleSelfMapper) {
     this.roleService = roleService;
     this.scheduleService = scheduleService;
     this.taskService = taskService;
@@ -98,6 +114,9 @@ public class ClassAssistantApplicationService {
     this.weKnoraProperties = weKnoraProperties;
     this.questionResolveAssistService = questionResolveAssistService;
     this.examWorkTypeMapper = examWorkTypeMapper;
+    this.peopleListMapper = peopleListMapper;
+    this.signUpSelfMapper = signUpSelfMapper;
+    this.signUpPeopleSelfMapper = signUpPeopleSelfMapper;
   }
 
   /** 可能触发同步学 overview 懒创建计划，不可标 readOnly。 */
@@ -122,6 +141,7 @@ public class ClassAssistantApplicationService {
       // 文案是「我有多少错题」，intent 仍用 learn_detail，兼容未部署 wrong_stats 的线上包
       chips.add(chip("learn_detail", "我有多少错题"));
       chips.add(chip("learn_detail", "学习详情"));
+      chips.add(chip("my_homework", "作业与模考"));
       chips.add(chip("weak_points", "我的薄弱点"));
       chips.add(chip("explain_question", "讲讲这题"));
       chips.add(chip("reward_future", "考证路径"));
@@ -151,15 +171,17 @@ public class ClassAssistantApplicationService {
 
     SyncSnapshot sync = studentMode ? loadSyncSnapshot(platformUserId, classId) : null;
     if (studentMode) {
-      ClassCertFacts cert = loadClassCertFacts(clazz, sync);
-      Map<String, Object> learning = buildLearningSnapshot(platformUserId, classId, sync, cert);
-      out.put("welcome", "你好，我是小培。上方是你的学情快照；也可直接问能不能考过、错题情况、考什么证。");
-      out.put("hint", "点「快捷」或点学情卡看详情；数字只来自真实刷题记录。");
+      ClassCertFacts cert = loadClassCertFacts(platformUserId, classId, clazz, sync);
+      StudentClassProfile profile = loadStudentClassProfile(platformUserId, classId);
+      Map<String, Object> learning = buildLearningSnapshot(platformUserId, classId, sync, cert, profile);
+      out.put("welcome", "你好，我是小培。上方是你的学情快照；也可直接问能不能考过、作业模考、考什么证。");
+      out.put("hint", "点「快捷」或点学情卡看详情；数字只来自真实刷题与班级任务记录。");
       out.put("summary", null);
       out.put("learningSnapshot", learning);
       out.put("kbEnabled", weKnoraProperties.isApiReady());
       out.put("kbName", weKnoraProperties.xiaopeiKnowledgeBaseName());
       out.put("certContext", cert.toMap());
+      out.put("classProfile", profile.toMap());
     } else {
       out.put("welcome", "我是本班 AI 助理（规则版）。可点下方快捷指令，或输入「今日安排 / 我的作业 / 谁没交」。"
           + "班务数字来自系统查询；不替代批改与认定考试。");
@@ -223,6 +245,18 @@ public class ClassAssistantApplicationService {
     if (studentMode && looksLikeWrongStatsQuestion(text)) {
       intent = "wrong_stats";
     }
+    // 最终锁定：作业/模考/完成了哪些任务 → 真数据，禁止进知识库拒答
+    if (studentMode && looksLikeHomeworkTaskQuestion(text)) {
+      intent = "my_homework";
+    }
+    // 口语随意问：软分流到 Tool / 知识库，减少「听不懂就拒答」
+    if (studentMode && StringUtils.hasText(text)
+        && ("ask_kb".equals(intent) || "unknown".equals(intent) || "help".equals(intent))) {
+      String soft = softRouteStudentFreeForm(text);
+      if (StringUtils.hasText(soft)) {
+        intent = soft;
+      }
+    }
     // 最终锁定：做题页问「讲这题」必须走当前题，禁止进知识库讲成别的题
     if (studentMode && body != null && body.get("questionId") != null
         && looksLikeExplainCurrentQuestion(text)) {
@@ -248,7 +282,7 @@ public class ClassAssistantApplicationService {
       case "explain_question" -> replyExplainQuestion(platformUserId, classId, primary, body);
       case "ask_kb" -> replyAskKb(platformUserId, classId, primary, text, body);
       case "schedule_today" -> replySchedule(classId, primary);
-      case "my_homework" -> replyMyHomework(platformUserId, classId, primary);
+      case "my_homework" -> replyMyHomework(platformUserId, classId, primary, text);
       case "progress" -> replyProgress(classId, primary);
       case "unsubmitted" -> replyUnsubmitted(classId, primary);
       case "change_faq" -> replyChangeFaq(classId);
@@ -262,6 +296,7 @@ public class ClassAssistantApplicationService {
   private void clearRequestCache() {
     syncCache.remove();
     metricsCache.remove();
+    profileCache.remove();
   }
 
   // ------------------------------------------------------------------
@@ -414,19 +449,23 @@ public class ClassAssistantApplicationService {
     }
     SyncSnapshot sync = loadSyncSnapshot(platformUserId, classId);
     TrainInfoClassEntity clazz = classMapper.selectById(classId);
-    ClassCertFacts cert = loadClassCertFacts(clazz, sync);
+    ClassCertFacts cert = loadClassCertFacts(platformUserId, classId, clazz, sync);
+    StudentClassProfile profile = loadStudentClassProfile(platformUserId, classId);
     ReadinessMetrics m = collectReadinessMetrics(platformUserId, classId, sync);
     List<Map<String, Object>> replies = new ArrayList<>();
     List<Map<String, Object>> cards = new ArrayList<>();
     List<Map<String, Object>> actions = new ArrayList<>();
 
-    replies.add(textReply(formatLearningBoard(cert, m, sync, true)));
-    cards.add(buildLearningSnapshot(platformUserId, classId, sync, cert));
+    replies.add(textReply(formatLearningBoard(cert, m, sync, profile, true)));
+    cards.add(buildLearningSnapshot(platformUserId, classId, sync, cert, profile));
 
     if (sync.entryVisible()) {
       actions.add(syncNav(sync));
     }
     actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
+    if (profile.homework().pending() > 0 || profile.mock().pending() > 0) {
+      actions.add(nav("课堂作业/模考", "/pages/class/homeworkTodo?classId=" + classId));
+    }
     return pack("learn_detail", primary, replies, cards, actions);
   }
 
@@ -495,8 +534,9 @@ public class ClassAssistantApplicationService {
     }
     List<Map<String, Object>> cards = new ArrayList<>();
     TrainInfoClassEntity clazz = classMapper.selectById(classId);
-    ClassCertFacts cert = loadClassCertFacts(clazz, sync);
-    cards.add(buildLearningSnapshot(platformUserId, classId, sync, cert));
+    ClassCertFacts cert = loadClassCertFacts(platformUserId, classId, clazz, sync);
+    StudentClassProfile profile = loadStudentClassProfile(platformUserId, classId);
+    cards.add(buildLearningSnapshot(platformUserId, classId, sync, cert, profile));
     return pack("wrong_stats", primary, List.of(textReply(sb.toString().trim())), cards, actions);
   }
 
@@ -506,7 +546,8 @@ public class ClassAssistantApplicationService {
   private Map<String, Object> replyExamReadiness(Long platformUserId, Long classId, String primary) {
     SyncSnapshot sync = loadSyncSnapshot(platformUserId, classId);
     TrainInfoClassEntity clazz = classMapper.selectById(classId);
-    ClassCertFacts cert = loadClassCertFacts(clazz, sync);
+    ClassCertFacts cert = loadClassCertFacts(platformUserId, classId, clazz, sync);
+    StudentClassProfile profile = loadStudentClassProfile(platformUserId, classId);
     ReadinessMetrics m = collectReadinessMetrics(platformUserId, classId, sync);
 
     List<Map<String, Object>> replies = new ArrayList<>();
@@ -514,7 +555,7 @@ public class ClassAssistantApplicationService {
     List<Map<String, Object>> actions = new ArrayList<>();
 
     StringBuilder board = new StringBuilder();
-    board.append(formatLearningBoard(cert, m, sync, true));
+    board.append(formatLearningBoard(cert, m, sync, profile, true));
     board.append("\n\n");
 
     String verdict;
@@ -541,7 +582,7 @@ public class ClassAssistantApplicationService {
 
     replies.add(textReply(board + verdict + "\n" + advice));
 
-    Map<String, Object> card = buildLearningSnapshot(platformUserId, classId, sync, cert);
+    Map<String, Object> card = buildLearningSnapshot(platformUserId, classId, sync, cert, profile);
     card.put("type", "readiness_card");
     card.put("level", level);
     cards.add(card);
@@ -780,9 +821,13 @@ public class ClassAssistantApplicationService {
     if (looksLikeWrongStatsQuestion(text)) {
       return replyWrongStats(platformUserId, classId, primary);
     }
-    // 「考什么证」：只回本班配置真数据，避免 Agent Tool completed 泄漏
+    // 「考什么证」：本班真数据优先，再可选知识库补充（禁止库覆盖工种/级别）
     if (looksLikeCertQuestion(text)) {
-      return replyCertFactsOnly(platformUserId, classId, primary);
+      return replyCertWithKbSupplement(platformUserId, classId, primary, text, body);
+    }
+    // 作业/模考/完成了哪些任务：强制 Tool，禁止进 WeKnora 被当成闲聊拒答
+    if (looksLikeHomeworkTaskQuestion(text)) {
+      return replyMyHomework(platformUserId, classId, primary, text);
     }
     // 含正确率/通过率等个人指标：强制走 Tool，禁止进 WeKnora 说「库里没有」
     if (looksLikeProgressQuestion(text)) {
@@ -790,6 +835,23 @@ public class ClassAssistantApplicationService {
         return replyExamReadiness(platformUserId, classId, primary);
       }
       return replyLearnDetail(platformUserId, classId, primary, text);
+    }
+    // 口语软分流（与 doChat 一致，防止 chip 误传 ask_kb）
+    String soft = softRouteStudentFreeForm(text);
+    if ("exam_readiness".equals(soft)) {
+      return replyExamReadiness(platformUserId, classId, primary);
+    }
+    if ("learn_detail".equals(soft)) {
+      return replyLearnDetail(platformUserId, classId, primary, text);
+    }
+    if ("what_now".equals(soft)) {
+      return replyWhatNow(platformUserId, classId, primary);
+    }
+    if ("my_homework".equals(soft)) {
+      return replyMyHomework(platformUserId, classId, primary, text);
+    }
+    if ("weak_points".equals(soft)) {
+      return replyWeakPoints(platformUserId, classId, primary);
     }
     // 闲聊/时事/通用百科：直接拒答并引导回学习，避免胡编
     if (looksLikeOffTopicChitchat(text)) {
@@ -799,6 +861,15 @@ public class ClassAssistantApplicationService {
       // 考证类无知识库时，至少回班务真数据
       if (looksLikeCertQuestion(text)) {
         return replyCertFactsOnly(platformUserId, classId, primary);
+      }
+      // 随意问仍可用本班快照作答（进度/作业/报考）
+      if (looksLikeInScopeFreeQuestion(text) || looksLikeLearningTopic(text)) {
+        List<Map<String, Object>> actions = new ArrayList<>();
+        appendSceneAwarePracticeActions(actions, classId, body);
+        return pack("ask_kb", primary,
+            List.of(textReply(buildFreeFormSnapshotFallback(platformUserId, classId, text)
+                + "\n\n（知识库暂未开通，考点细则待开通后再补充）")),
+            List.of(), actions);
       }
       return pack("ask_kb", primary,
           List.of(textReply("知识库问答暂未开通（WeKnora API Key 未配置）。进度与「能不能考过」仍可用真实刷题数据回答。")),
@@ -818,28 +889,33 @@ public class ClassAssistantApplicationService {
       String agentId = weKnoraProperties.resolveXiaopeiAgentId();
       Map<String, Object> ctxBody = body == null ? new LinkedHashMap<>() : new LinkedHashMap<>(body);
       ctxBody.put("text", text);
+      // 随意提问：始终附带学情快照，便于口语问个人情况时用真数据答
+      ctxBody.put("forceRichContext", Boolean.TRUE);
       String context = buildLearnerContextForLlm(platformUserId, classId, ctxBody);
       List<String> images = parseImageDataUrls(body);
       boolean certQ = looksLikeCertQuestion(text);
       boolean pasted = looksLikePastedQuestion(text);
       String query = """
-          你是学习伙伴「小培」，只辅导本班学习、考证与题库相关问题。
-          【学员上下文快照】（个人进度/班级考证数字只能用这里的；没有就说暂无，禁止编造）
+          你是学习伙伴「小培」，辅导本班学习、考证与题库相关问题。
+          学员可能口语随意提问：先理解真实意图，再作答；口语不等于闲聊。
+          【学员上下文快照】（个人进度/作业/报考数字只能用这里的；没有就说暂无，禁止编造）
           %s
           【回答规则】
-          1. 问个人进度/正确率/通过率/错题：只依据快照，3～6 句直接说清数字与含义，并给下一步；禁止说「知识库没有」「去点某某按钮」。
-          2. 问「考什么证 / 怎么拿证 / 考完还能考什么」：先复述快照里的本班真数据（并标明来自本班配置）；再结合知识库「%s」补充政策与路径；库没有就诚实说后续会补。
-          3. 问考点、概念、工艺、安全规程：必须依据知识库检索内容作答；检索不到就明确说「知识库暂未收录」，禁止用通用百科/训练记忆编造工种知识点。
-          4. 若附带图片或粘贴题干：先审题再讲考点与易错点。
-          5. 不要让学员「去点按钮 / 点快捷指令」才给答案；数字在快照里就直接答。
-          6. 闲聊、时事、娱乐、天气、股票、星座、旅游、与本班学习无关的百科：不要回答实质内容，只礼貌说明你是学习伙伴，并引导问进度/错题/讲题/考证。
-          7. %s
+          1. 先判断意图：进度/能不能考过/错题/作业模考/考证/考点概念/讲题/其它。
+          2. 个人进度、正确率、通过率、错题、作业、模考、报考工种等级：只依据快照，3～8 句直接说清并给下一步；禁止说「知识库没有」「去点某某按钮」。
+          3. 「考什么证 / 怎么拿证 / 考完还能考什么」：先复述快照本班真数据；再结合知识库「%s」补充；库没有就诚实说。
+          4. 考点、概念、工艺、安全规程：优先依据知识库检索；检索不到就明确说「知识库暂未收录」，禁止用通识编造工种知识点。
+          5. 附带图片或粘贴题干：先审题再讲考点与易错点。
+          6. 闲聊、时事、娱乐、天气、股票、星座、旅游、与本班学习无关的百科：不要答实质内容，只说明你是学习伙伴并引导回学习问题。
+          7. 不要让学员「先点快捷指令」才给答案。
+          8. %s
           学员问题：%s
           """.formatted(
           context,
           kbName,
           certQ ? "本题偏考证路径，优先班务真数据 + 知识库政策。"
-              : (pasted ? "本题是粘贴/拍照题目，按讲题辅导来答。" : "自由问答，保持学习主题。"),
+              : (pasted ? "本题是粘贴/拍照题目，按讲题辅导来答。"
+                  : "自由口语问答：能用快照就先用快照，再用知识库补考点。"),
           text);
 
       WeKnoraChatResult result = weKnoraClient.knowledgeChat(
@@ -847,10 +923,19 @@ public class ClassAssistantApplicationService {
 
       boolean learningAdjacent = pasted
           || (images != null && !images.isEmpty())
-          || looksLikeLearningTopic(text);
+          || looksLikeLearningTopic(text)
+          || looksLikeInScopeFreeQuestion(text);
       boolean kbHit = hasKbReferenceHit(result.references());
-      // 无检索命中且不像学习问题：拒答，避免模型用通识胡答
+      // 仅明确闲聊才拒答；口语学习问题即使库未命中也允许用快照/诚实提示作答
+      if (!kbHit && !learningAdjacent && looksLikeOffTopicChitchat(text)) {
+        Map<String, Object> refuse = replyOutOfScope(primary, classId, body);
+        refuse.put("sessionId", sessionId);
+        refuse.put("kbName", kbName);
+        refuse.put("source", "scope_guard");
+        return refuse;
+      }
       if (!kbHit && !learningAdjacent) {
+        // 不像学习也不像明确闲聊：给轻量引导，仍附带一句可用快照能答的方向
         Map<String, Object> refuse = replyOutOfScope(primary, classId, body);
         refuse.put("sessionId", sessionId);
         refuse.put("kbName", kbName);
@@ -861,13 +946,11 @@ public class ClassAssistantApplicationService {
       List<Map<String, Object>> replies = new ArrayList<>();
       String answer = sanitizeXiaopeiKbAnswer(result.answer());
       if (!StringUtils.hasText(answer)) {
-        answer = learningAdjacent
-            ? "知识库里暂时没找到直接相关说明。你可以换个考点关键词，或把题干粘贴过来；进度类可问「能不能考过 / 我有多少错题」。"
-            : "这类问题不在我的辅导范围内。你可以问进度、错题、讲题或考证。";
+        answer = buildFreeFormSnapshotFallback(platformUserId, classId, text);
       } else if (!kbHit && learningAdjacent) {
-        // 有学习意图但库未命中：在回答前加诚实提示，降低「像真的一样」的幻觉感
-        if (!answer.contains("知识库") && !answer.contains("暂未") && !answer.contains("没有找到")) {
-          answer = "知识库未直接命中相关条目，下面仅供参考，请以教材与老师讲解为准：\n" + answer;
+        if (!answer.contains("知识库") && !answer.contains("暂未") && !answer.contains("没有找到")
+            && !answer.contains("快照") && !answer.contains("真数据")) {
+          answer = "下面结合你的本班学习记录作答；考点细则若未命中知识库，请以教材与老师讲解为准：\n" + answer;
         }
       }
       replies.add(textReply(answer));
@@ -924,20 +1007,123 @@ public class ClassAssistantApplicationService {
   }
 
   private Map<String, Object> replyCertFactsOnly(Long platformUserId, Long classId, String primary) {
+    return replyCertWithKbSupplement(platformUserId, classId, primary, "考什么证", null);
+  }
+
+  /**
+   * 考证问答：先报本班配置真数据，再调 WeKnora 补充申报/晋级说明。
+   * 知识库不得改写工种名称与级别；库不可用时仅回真数据。
+   */
+  private Map<String, Object> replyCertWithKbSupplement(
+      Long platformUserId, Long classId, String primary, String text, Map<String, Object> body) {
     SyncSnapshot sync = loadSyncSnapshot(platformUserId, classId);
     TrainInfoClassEntity clazz = classMapper.selectById(classId);
-    ClassCertFacts cert = loadClassCertFacts(clazz, sync);
+    ClassCertFacts cert = loadClassCertFacts(platformUserId, classId, clazz, sync);
+    String facts = buildCertFactsBlock(cert);
+
+    List<Map<String, Object>> actions = new ArrayList<>();
+    appendSceneAwarePracticeActions(actions, classId, body);
+    if (actions.isEmpty() && sync.entryVisible()) {
+      actions.add(syncNav(sync));
+    }
+
+    if (!weKnoraProperties.isApiReady()) {
+      String only = facts + "\n\n「怎么拿证 / 考完还能考什么」等细则，待知识库开通后补充；目前以本班配置为准，具体以教务与官方认定为准。";
+      return pack("ask_kb", primary, List.of(textReply(only)), List.of(), actions);
+    }
+
+    String kbName = weKnoraProperties.xiaopeiKnowledgeBaseName();
+    try {
+      String sessionId = body != null && body.get("sessionId") != null
+          ? String.valueOf(body.get("sessionId")).trim() : "";
+      if (!StringUtils.hasText(sessionId)) {
+        sessionId = weKnoraClient.createSession(
+            "AI小培·考证·班级" + classId,
+            "考证真数据优先，知识库仅补充申报路径");
+      }
+      String ask = StringUtils.hasText(text) ? text.trim() : "我现在考的是什么证？";
+      String query = """
+          你是学习伙伴「小培」。下面【本班真数据】由教务系统给出，绝对正确。
+          【硬性约束】
+          1. 禁止修改、否定、改写【本班真数据】里的班级、报考工种、报考等级（如「二级/技师」「一级/高级技师」）、考试计划、考期。
+          2. 禁止根据课表/方案文档把学员报考等级笼统改成「技师方向」等其它表述来覆盖真数据；等级以「报考等级」行为准。
+          3. 只补充：新规程下该报考等级的申报条件怎么理解、怎么拿证、考完下一级常见路径；库没有就一句话说明暂无细则。
+          4. 不要输出 Tool/Keyword search 等调试日志；控制在 3～8 句。
+          【本班真数据】
+          %s
+          知识库名称：%s
+          学员问题：%s
+          """.formatted(facts, kbName, ask);
+
+      WeKnoraChatResult result = weKnoraClient.knowledgeChat(
+          sessionId,
+          query,
+          resolveXiaopeiKbIds(),
+          weKnoraProperties.resolveXiaopeiAgentId(),
+          List.of(),
+          true);
+
+      String supplement = sanitizeXiaopeiKbAnswer(result.answer());
+      List<Map<String, Object>> replies = new ArrayList<>();
+      if (StringUtils.hasText(supplement)) {
+        replies.add(textReply(facts
+            + "\n\n【申报与规划补充】（来自知识库，仅作说明，不改写上方本班配置）\n"
+            + supplement));
+      } else {
+        replies.add(textReply(facts
+            + "\n\n知识库暂未检索到可补充的申报说明；上方本班配置仍有效。具体以教务与官方认定为准。"));
+      }
+
+      List<Map<String, Object>> cards = new ArrayList<>();
+      if (result.references() != null && !result.references().isEmpty()) {
+        Map<String, Object> card = new LinkedHashMap<>();
+        card.put("type", "kb_references");
+        card.put("items", result.references().stream().limit(5).map(ref -> {
+          Map<String, Object> line = new LinkedHashMap<>();
+          line.put("title", Objects.toString(ref.get("title"), ""));
+          line.put("filename", Objects.toString(ref.get("filename"), ""));
+          line.put("score", ref.get("score"));
+          return line;
+        }).toList());
+        cards.add(card);
+      }
+      Map<String, Object> out = pack("ask_kb", primary, replies, cards, actions);
+      out.put("sessionId", sessionId);
+      out.put("kbName", kbName);
+      out.put("source", "cert_facts+kb");
+      return out;
+    } catch (Exception e) {
+      log.warn("[小培] 考证知识库补充失败 classId={}: {}", classId, e.getMessage());
+      String fallback = facts
+          + "\n\n知识库暂时繁忙，先以本班配置为准。你可以稍后再问「怎么拿证 / 考完还能考什么」。";
+      Map<String, Object> out = pack("ask_kb", primary, List.of(textReply(fallback)), List.of(), actions);
+      out.put("source", "cert_facts");
+      return out;
+    }
+  }
+
+  private static String buildCertFactsBlock(ClassCertFacts cert) {
     StringBuilder sb = new StringBuilder();
-    sb.append("先说本班已配置的真信息：\n");
+    sb.append("先说你的报考真信息：\n");
     sb.append("班级：").append(Objects.toString(cert.classTitle(), "本班")).append("\n");
     if (StringUtils.hasText(cert.workTypeTitle())) {
-      sb.append("工种/证书方向：").append(cert.workTypeTitle());
-      if (cert.workTypeLevel() != null && cert.workTypeLevel() > 0) {
-        sb.append("（").append(cert.workTypeLevel()).append(" 级）");
+      sb.append("报考工种/证书：").append(cert.workTypeTitle()).append("\n");
+    } else {
+      sb.append("报考工种/证书：暂未配置\n");
+    }
+    if (StringUtils.hasText(cert.applyLevelLabel())) {
+      sb.append("报考等级：").append(cert.applyLevelLabel());
+      if ("person".equals(cert.levelSource())) {
+        sb.append("（来自报名信息）");
+      } else if ("class".equals(cert.levelSource())) {
+        sb.append("（来自班级预约）");
       }
       sb.append("\n");
     } else {
-      sb.append("工种/证书方向：班级暂未配置工种名称\n");
+      sb.append("报考等级：暂未配置\n");
+    }
+    if (StringUtils.hasText(cert.heldLevelLabel())) {
+      sb.append("现持证书等级：").append(cert.heldLevelLabel()).append("\n");
     }
     if (StringUtils.hasText(cert.examTitle())) {
       sb.append("同步学考试计划：").append(cert.examTitle()).append("\n");
@@ -945,35 +1131,39 @@ public class ClassAssistantApplicationService {
     if (StringUtils.hasText(cert.examDate())) {
       sb.append("计划考期：").append(cert.examDate()).append("\n");
     }
-    sb.append("\n「怎么拿证 / 考完还能考什么」等政策说明，知识库开通并补齐后我会结合库内容展开；目前以本班配置为准，具体以教务与官方认定为准。");
-    List<Map<String, Object>> actions = new ArrayList<>();
-    if (sync.entryVisible()) {
-      actions.add(syncNav(sync));
-    }
-    return pack("ask_kb", primary, List.of(textReply(sb.toString())), List.of(), actions);
+    return sb.toString().trim();
   }
 
   private String buildLearnerContextForLlm(Long platformUserId, Long classId, Map<String, Object> body) {
     String text = body == null || body.get("text") == null ? "" : String.valueOf(body.get("text"));
-    // 纯考点/概念问答：不拉 dashboard，显著缩短首包前等待
-    boolean needProgress = looksLikeProgressQuestion(text)
+    boolean forceRich = body != null && Boolean.TRUE.equals(body.get("forceRichContext"));
+    // 纯考点/概念问答：不拉 dashboard；随意问 / 进度类强制附带真数据
+    boolean needProgress = forceRich
+        || looksLikeProgressQuestion(text)
         || looksLikeExamReadiness(text)
         || looksLikeWrongStatsQuestion(text)
-        || looksLikeCertQuestion(text);
+        || looksLikeCertQuestion(text)
+        || looksLikeHomeworkTaskQuestion(text)
+        || looksLikeInScopeFreeQuestion(text);
     TrainInfoClassEntity clazz = classMapper.selectById(classId);
     StringBuilder sb = new StringBuilder();
     if (needProgress) {
       SyncSnapshot sync = loadSyncSnapshot(platformUserId, classId);
-      ClassCertFacts cert = loadClassCertFacts(clazz, sync);
+      ClassCertFacts cert = loadClassCertFacts(platformUserId, classId, clazz, sync);
       ReadinessMetrics m = collectReadinessMetrics(platformUserId, classId, sync);
       sb.append("班级=").append(Objects.toString(cert.classTitle(), "-"));
-      sb.append("；工种=").append(Objects.toString(cert.workTypeTitle(), "未配置"));
-      if (cert.workTypeLevel() != null && cert.workTypeLevel() > 0) {
+      sb.append("；报考工种=").append(Objects.toString(cert.workTypeTitle(), "未配置"));
+      if (StringUtils.hasText(cert.applyLevelLabel())) {
+        sb.append("；报考等级=").append(cert.applyLevelLabel());
+      } else if (cert.workTypeLevel() != null && cert.workTypeLevel() > 0) {
         sb.append("；等级=").append(cert.workTypeLevel());
       }
       sb.append("；考试计划=").append(Objects.toString(cert.examTitle(), "-"));
       sb.append("；考期=").append(Objects.toString(cert.examDate(), "未设置"));
       sb.append("。");
+      StudentClassProfile profile = loadStudentClassProfile(platformUserId, classId);
+      sb.append(formatTaskChannelLine("课堂作业", profile.homework())).append("；");
+      sb.append(formatTaskChannelLine("模拟考", profile.mock())).append("。");
       sb.append(buildProgressFactsForLlm(sync));
       sb.append(" 薄弱点约 ").append(m.weakCount()).append(" 个");
       if (!m.weakTitles().isEmpty()) {
@@ -1151,6 +1341,7 @@ public class ClassAssistantApplicationService {
         || looksLikeWrongStatsQuestion(text)
         || looksLikeExamReadiness(text)
         || looksLikeCertQuestion(text)
+        || looksLikeHomeworkTaskQuestion(text)
         || looksLikeExplainCurrentQuestion(text)
         || looksLikeCapabilityQuestion(text)) {
       return false;
@@ -1178,10 +1369,164 @@ public class ClassAssistantApplicationService {
         "考点", "考试", "考证", "证书", "工种", "认定", "取证", "报名",
         "题", "解析", "答案", "选项", "单选", "多选", "判断",
         "刷题", "错题", "薄弱", "正确率", "通过率", "同步学", "精准学",
+        "作业", "模考", "模拟考", "任务", "待办", "交作业",
         "工艺", "规程", "标准", "安全", "操作", "故障", "处理",
         "原理", "设备", "电压", "电流", "温度", "焙烧", "电解", "阳极",
         "知识", "概念", "名词", "什么意思", "怎么理解", "为何", "为什么选",
-        "教材", "讲义", "实训", "技能等级");
+        "教材", "讲义", "实训", "技能等级", "学习", "复习", "练习", "备考");
+  }
+
+  /**
+   * 口语随意问但仍像「本班学习相关」：允许走知识库/快照作答，避免误拒。
+   * 明确闲聊仍由 {@link #looksLikeOffTopicChitchat} 拦截。
+   */
+  private static boolean looksLikeInScopeFreeQuestion(String text) {
+    if (!StringUtils.hasText(text) || looksLikeOffTopicChitchat(text)) {
+      return false;
+    }
+    if (looksLikeLearningTopic(text) || looksLikeProgressQuestion(text)
+        || looksLikeHomeworkTaskQuestion(text) || looksLikeCertQuestion(text)
+        || looksLikeExamReadiness(text) || looksLikeWrongStatsQuestion(text)) {
+      return true;
+    }
+    String t = text.trim().toLowerCase(Locale.ROOT);
+    if (t.length() > 160) {
+      return true;
+    }
+    if (containsAny(t, "吗", "呢", "？", "?", "怎么", "如何", "为什么", "为啥", "啥", "什么",
+        "哪些", "那些", "多少", "能不能", "可不可以", "怎么办", "咋办", "帮我", "告诉我",
+        "想问", "请问", "请教", "解释", "说说", "讲讲")) {
+      return true;
+    }
+    return containsAny(t, "我", "本班", "我们班", "这班", "老师", "同学", "小培") && t.length() <= 100;
+  }
+
+  /**
+   * 学员口语软分流：把随意问句映射到已有 Tool 意图；无法判断则返回 null（走知识库）。
+   */
+  private static String softRouteStudentFreeForm(String text) {
+    if (!StringUtils.hasText(text) || looksLikeOffTopicChitchat(text)) {
+      return null;
+    }
+    if (looksLikeCapabilityQuestion(text) || looksLikePastedQuestion(text)) {
+      return null;
+    }
+    String t = text.toLowerCase(Locale.ROOT);
+    if (looksLikeHomeworkTaskQuestion(t) || looksLikeCompletedTasksQuestion(t)
+        || containsAny(t, "还有啥没", "还缺啥", "没做完", "剩下的", "未完成", "待完成")) {
+      return "my_homework";
+    }
+    if (looksLikeExamReadiness(t) || containsAny(t,
+        "行不行", "够不够", "稳不稳", "有没有戏", "把握大不大", "能过吗", "过得了吗",
+        "考得过吗", "有把握吗", "悬不悬")) {
+      return "exam_readiness";
+    }
+    if (looksLikeWrongStatsQuestion(t)) {
+      return containsAny(t, "薄弱") ? "weak_points" : "wrong_stats";
+    }
+    if (containsAny(t, "薄弱", "不会的点", "短板")) {
+      return "weak_points";
+    }
+    if (containsAny(t, "现在做什么", "现在做啥", "接下来", "然后呢", "下一步", "该干嘛",
+        "先干啥", "优先做什么", "优先干啥", "今天练啥", "今天刷啥")) {
+      return "what_now";
+    }
+    if (looksLikeProgressQuestion(t) || containsAny(t,
+        "怎么样了", "咋样了", "如何了", "情况怎样", "帮我看看", "看看我",
+        "分析一下我", "评估一下", "学得怎样", "练得怎样", "整体怎样", "整体如何")) {
+      return "learn_detail";
+    }
+    if (looksLikeCertQuestion(t)) {
+      return "ask_kb";
+    }
+    return null;
+  }
+
+  /** 知识库空答时：用本班真数据给一句可用回复，避免只会拒答。 */
+  private String buildFreeFormSnapshotFallback(Long platformUserId, Long classId, String text) {
+    try {
+      SyncSnapshot sync = loadSyncSnapshot(platformUserId, classId);
+      TrainInfoClassEntity clazz = classMapper.selectById(classId);
+      ClassCertFacts cert = loadClassCertFacts(platformUserId, classId, clazz, sync);
+      StudentClassProfile profile = loadStudentClassProfile(platformUserId, classId);
+      ReadinessMetrics m = collectReadinessMetrics(platformUserId, classId, sync);
+      StringBuilder sb = new StringBuilder();
+      sb.append("知识库暂未直接命中该问法，先按你的本班记录说明：\n");
+      if (StringUtils.hasText(cert.workTypeTitle())) {
+        sb.append("报考：").append(cert.workTypeTitle());
+        if (StringUtils.hasText(cert.applyLevelLabel())) {
+          sb.append(" · ").append(cert.applyLevelLabel());
+        }
+        sb.append("\n");
+      }
+      if (m.accuracy() != null) {
+        sb.append("练习正确率约 ").append(m.accuracy()).append("%（").append(m.accuracySource()).append("）\n");
+      }
+      sb.append("错题本约 ").append(m.wrongBookCount()).append(" 题；薄弱约 ").append(m.weakCount()).append(" 个\n");
+      sb.append(formatTaskChannelLine("课堂作业", profile.homework())).append("\n");
+      sb.append(formatTaskChannelLine("模拟考", profile.mock())).append("\n");
+      sb.append("若问的是具体考点，可换关键词或粘贴题干；进度/作业也可直接问「能不能考过」「我完成了哪些任务」。");
+      if (StringUtils.hasText(text) && text.length() <= 40) {
+        sb.append("（你刚问的是：").append(text.trim()).append("）");
+      }
+      return sb.toString().trim();
+    } catch (Exception e) {
+      return "知识库里暂时没找到直接相关说明。你可以换个考点关键词，或问「能不能考过 / 我有多少错题 / 我完成了哪些任务」。";
+    }
+  }
+
+  /** 课堂作业 / 模拟考 / 「完成了哪些任务」类：走班务真数据，不进知识库拒答。 */
+  private static boolean looksLikeHomeworkTaskQuestion(String text) {
+    if (!StringUtils.hasText(text)) {
+      return false;
+    }
+    String t = text.toLowerCase(Locale.ROOT);
+    if (containsAny(t, "模拟考", "模拟考试", "模考", "作业", "待办", "我的题",
+        "作业成绩", "模考成绩", "课堂作业", "练习任务")) {
+      return true;
+    }
+    if (containsAny(t,
+        "完成了哪些", "完成了那些", "都完成了", "做完了哪些", "做完了那些",
+        "交了哪些", "交了那些", "还有哪些任务", "还有什么任务", "我的任务",
+        "哪些任务", "那些任务", "什么任务", "啥任务", "任务完成", "完成任务")) {
+      return true;
+    }
+    // 「任务」+ 完成/待办语义
+    return containsAny(t, "任务")
+        && containsAny(t, "完成", "做完", "交了", "提交", "哪些", "那些", "待办", "未交", "没交", "还有");
+  }
+
+  /** 偏「已完成清单」而非总览。 */
+  private static boolean looksLikeCompletedTasksQuestion(String text) {
+    if (!StringUtils.hasText(text)) {
+      return false;
+    }
+    String t = text.toLowerCase(Locale.ROOT);
+    return containsAny(t,
+        "完成了哪些", "完成了那些", "都完成了", "做完了哪些", "做完了那些",
+        "交了哪些", "交了那些", "哪些完成", "那些完成", "完成了什么", "做完了什么",
+        "完成了啥", "做完了啥", "已经完成", "已完成");
+  }
+
+  private static void appendCompletedTaskSection(
+      StringBuilder sb, String label, TaskChannelSummary ch) {
+    sb.append(label).append("：");
+    if (ch == null || ch.total() <= 0) {
+      sb.append("暂无下发\n");
+      return;
+    }
+    if (ch.done() <= 0) {
+      sb.append("暂无已交（待办 ").append(ch.pending()).append("）\n");
+      return;
+    }
+    sb.append("已完成 ").append(ch.done()).append("/").append(ch.total());
+    if (ch.passed() > 0) {
+      sb.append("，通过 ").append(ch.passed());
+    }
+    sb.append("\n");
+    for (String line : ch.doneLines().stream().limit(8).toList()) {
+      sb.append("· ").append(line).append("\n");
+    }
   }
 
   private static boolean hasKbReferenceHit(List<Map<String, Object>> references) {
@@ -1189,9 +1534,10 @@ public class ClassAssistantApplicationService {
   }
 
   private Map<String, Object> replyOutOfScope(String primary, Long classId, Map<String, Object> body) {
-    String tip = "我是学习伙伴小培，主要帮你：学习进度、错题、讲题、考证路径和本班考点。"
+    String tip = "我是学习伙伴小培，主要帮你：学习进度、作业模考、错题、讲题、考证路径和本班考点。"
+        + "你可以随意用口语问，例如「我学得怎么样了」「还有啥没做」「这个考点啥意思」。"
         + "闲聊、时事或与学习无关的百科问题我答不准，也不乱编。"
-        + "你可以问「能不能考过」「我有多少错题」「讲讲这题」，或直接粘贴题干。";
+        + "也可以问「能不能考过」「我有多少错题」「讲讲这题」，或直接粘贴题干。";
     List<Map<String, Object>> actions = new ArrayList<>();
     appendSceneAwarePracticeActions(actions, classId, body);
     Map<String, Object> out = pack("out_of_scope", primary, List.of(textReply(tip)), List.of(), actions);
@@ -1227,42 +1573,156 @@ public class ClassAssistantApplicationService {
     }
   }
 
-  private ClassCertFacts loadClassCertFacts(TrainInfoClassEntity clazz, SyncSnapshot sync) {
+  /**
+   * 加载考证真数据：优先学员报名表 {@code req_work_type / req_level}，缺省回退班级预约工种等级。
+   */
+  private ClassCertFacts loadClassCertFacts(
+      Long platformUserId, Long classId, TrainInfoClassEntity clazz, SyncSnapshot sync) {
     String classTitle = clazz == null ? null : clazz.getTitle();
-    Integer level = clazz == null ? null : clazz.getWorkTypeLevel();
-    String workTypeTitle = null;
-    if (clazz != null && clazz.getWorkTypeId() != null && clazz.getWorkTypeId() > 0) {
+    Integer classLevel = clazz == null ? null : clazz.getWorkTypeLevel();
+    Long classWorkTypeId = clazz == null ? null : clazz.getWorkTypeId();
+    String classWorkTypeTitle = null;
+    if (classWorkTypeId != null && classWorkTypeId > 0) {
       try {
-        ExamWorkTypeEntity wt = examWorkTypeMapper.selectById(clazz.getWorkTypeId().intValue());
+        ExamWorkTypeEntity wt = examWorkTypeMapper.selectById(classWorkTypeId.intValue());
         if (wt != null && StringUtils.hasText(wt.getTitle())) {
-          workTypeTitle = wt.getTitle();
+          classWorkTypeTitle = wt.getTitle();
         }
       } catch (Exception e) {
         log.debug("[小培] 工种标题查询跳过: {}", e.getMessage());
       }
     }
+
+    TrainSignUpPeopleSelfEntity person = loadStudentSignUpPerson(platformUserId, classId);
+    Integer personReqLevel = person == null ? null : person.getReqLevel();
+    Long personReqWorkTypeId = person == null ? null : person.getReqWorkTypeId();
+    String personReqWorkTypeName = person == null ? null : person.getReqWorkTypeName();
+
+    Integer reqIndex = SignUpPeopleDefaultTemplatePackService.resolveReqLevelIndex(
+        personReqLevel, personReqWorkTypeId, personReqWorkTypeName, classWorkTypeId, classLevel);
+    String applyLevelLabel = SignUpLevelSupport.toLabel(reqIndex);
+    String workTypeTitle = SignUpPeopleDefaultTemplatePackService.resolveReqWorkTypeName(
+        personReqWorkTypeName, classWorkTypeTitle);
+    if (!StringUtils.hasText(workTypeTitle)) {
+      workTypeTitle = classWorkTypeTitle;
+    }
+
+    String levelSource = "unknown";
+    if (person != null && reqIndex != null) {
+      Integer classReq = SignUpPeopleDefaultTemplatePackService.classLevelToReqIndex(classLevel);
+      boolean personExplicit = personReqLevel != null && personReqLevel > 0 && personReqLevel <= 4;
+      boolean personOwnWork = (personReqWorkTypeId != null && personReqWorkTypeId > 0)
+          || StringUtils.hasText(personReqWorkTypeName);
+      if (personExplicit || (personOwnWork && !Objects.equals(reqIndex, classReq))) {
+        levelSource = "person";
+      } else if (classReq != null) {
+        levelSource = "class";
+      } else {
+        levelSource = "person";
+      }
+    } else if (reqIndex != null) {
+      levelSource = "class";
+    }
+
+    // 对外仍保留班级口径 1–5，便于前端兼容；展示优先用 applyLevelLabel
+    Integer workTypeLevel = reqIndex != null ? (5 - reqIndex) : classLevel;
+    String heldLevelLabel = SignUpPeopleDefaultTemplatePackService.optionalCurrentLevelLabel(person);
+
     String examTitle = sync == null ? null : sync.examTitle();
     String examDate = null;
     if (sync != null && sync.overview() != null) {
       examDate = str(sync.overview().get("examDate"), null);
     }
-    return new ClassCertFacts(classTitle, workTypeTitle, level, examTitle, examDate);
+    return new ClassCertFacts(
+        classTitle, workTypeTitle, workTypeLevel, applyLevelLabel, levelSource, heldLevelLabel,
+        examTitle, examDate);
+  }
+
+  /** 按班级花名册 + 信息收集表定位学员报考行。 */
+  private TrainSignUpPeopleSelfEntity loadStudentSignUpPerson(Long platformUserId, Long classId) {
+    if (classId == null || classId <= 0) {
+      return null;
+    }
+    try {
+      TrainPeopleListEntity roster = null;
+      if (platformUserId != null && platformUserId > 0) {
+        roster = peopleListMapper.selectOne(
+            new LambdaQueryWrapper<TrainPeopleListEntity>()
+                .eq(TrainPeopleListEntity::getTrainClassId, classId)
+                .eq(TrainPeopleListEntity::getPlatformUserId, platformUserId)
+                .eq(TrainPeopleListEntity::getType, "student")
+                .eq(TrainPeopleListEntity::getDeleted, 0)
+                .orderByDesc(TrainPeopleListEntity::getId)
+                .last("LIMIT 1"));
+      }
+
+      TrainSignUpSelfEntity signUp = signUpSelfMapper.selectOne(
+          new LambdaQueryWrapper<TrainSignUpSelfEntity>()
+              .eq(TrainSignUpSelfEntity::getTrainClassId, classId)
+              .eq(TrainSignUpSelfEntity::getDeleted, 0)
+              .orderByDesc(TrainSignUpSelfEntity::getId)
+              .last("LIMIT 1"));
+      if (signUp == null && roster != null && roster.getTrainId() != null && roster.getTrainId() > 0) {
+        signUp = signUpSelfMapper.selectOne(
+            new LambdaQueryWrapper<TrainSignUpSelfEntity>()
+                .eq(TrainSignUpSelfEntity::getTrainInfoId, roster.getTrainId())
+                .eq(TrainSignUpSelfEntity::getDeleted, 0)
+                .orderByDesc(TrainSignUpSelfEntity::getId)
+                .last("LIMIT 1"));
+      }
+      if (signUp == null) {
+        return null;
+      }
+
+      LambdaQueryWrapper<TrainSignUpPeopleSelfEntity> peopleQ =
+          new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
+              .eq(TrainSignUpPeopleSelfEntity::getSignUpId, signUp.getId())
+              .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0);
+      if (platformUserId != null && platformUserId > 0
+          && roster != null && StringUtils.hasText(roster.getIdCard())) {
+        final String idCard = roster.getIdCard().trim();
+        peopleQ.and(w -> w
+            .eq(TrainSignUpPeopleSelfEntity::getPlatformUserId, platformUserId)
+            .or()
+            .eq(TrainSignUpPeopleSelfEntity::getIdCardNumber, idCard));
+      } else if (platformUserId != null && platformUserId > 0) {
+        peopleQ.eq(TrainSignUpPeopleSelfEntity::getPlatformUserId, platformUserId);
+      } else if (roster != null && StringUtils.hasText(roster.getIdCard())) {
+        peopleQ.eq(TrainSignUpPeopleSelfEntity::getIdCardNumber, roster.getIdCard().trim());
+      } else {
+        return null;
+      }
+      return signUpPeopleSelfMapper.selectOne(
+          peopleQ.orderByDesc(TrainSignUpPeopleSelfEntity::getId).last("LIMIT 1"));
+    } catch (Exception e) {
+      log.debug("[小培] 学员报考信息查询跳过: {}", e.getMessage());
+      return null;
+    }
   }
 
   /** 打开半屏即可看到的学情快照（真数据）。 */
   private Map<String, Object> buildLearningSnapshot(
-      Long platformUserId, Long classId, SyncSnapshot sync, ClassCertFacts cert) {
+      Long platformUserId, Long classId, SyncSnapshot sync, ClassCertFacts cert,
+      StudentClassProfile profile) {
     ReadinessMetrics m = collectReadinessMetrics(platformUserId, classId, sync);
+    if (profile == null) {
+      profile = loadStudentClassProfile(platformUserId, classId);
+    }
     Map<String, Object> card = new LinkedHashMap<>();
     card.put("type", "learning_snapshot");
     card.put("title", "我的学情");
+    StringBuilder sub = new StringBuilder();
     if (m.accuracy() != null) {
-      card.put("subtitle", "练习正确率 " + m.accuracy() + "%（" + m.accuracySource() + "）· 错题本 "
-          + m.wrongBookCount() + " · 薄弱 " + m.weakCount());
+      sub.append("练习正确率 ").append(m.accuracy()).append("%（").append(m.accuracySource()).append("）");
     } else {
-      card.put("subtitle", "错题本 " + m.wrongBookCount() + " · 薄弱 " + m.weakCount()
-          + (m.coveragePercent() != null ? " · 覆盖 " + m.coveragePercent() + "%" : " · 暂无足够正确率样本"));
+      sub.append("暂无足够正确率样本");
     }
+    sub.append(" · 错题本 ").append(m.wrongBookCount()).append(" · 薄弱 ").append(m.weakCount());
+    if (profile.homework().total() > 0 || profile.mock().total() > 0) {
+      sub.append(" · 作业待办 ").append(profile.homework().pending())
+          .append(" · 模考待办 ").append(profile.mock().pending());
+    }
+    card.put("subtitle", sub.toString());
     card.put("accuracy", m.accuracy());
     card.put("accuracySource", m.accuracySource());
     card.put("passTendency", m.accuracy());
@@ -1279,11 +1739,17 @@ public class ClassAssistantApplicationService {
     card.put("dayIndex", m.dayIndex());
     card.put("totalDays", m.totalDays());
     card.put("recentWrongs", m.recentWrongStems());
-    card.put("lines", learningSnapshotLines(m, cert));
+    card.put("homeworkPending", profile.homework().pending());
+    card.put("homeworkDone", profile.homework().done());
+    card.put("mockPending", profile.mock().pending());
+    card.put("mockDone", profile.mock().done());
+    card.put("mockPassed", profile.mock().passed());
+    card.put("lines", learningSnapshotLines(m, cert, profile));
     return card;
   }
 
-  private static List<String> learningSnapshotLines(ReadinessMetrics m, ClassCertFacts cert) {
+  private static List<String> learningSnapshotLines(
+      ReadinessMetrics m, ClassCertFacts cert, StudentClassProfile profile) {
     List<String> lines = new ArrayList<>();
     if (m.accuracy() != null) {
       lines.add("练习正确率/通过倾向 " + m.accuracy() + "%（" + m.accuracySource() + "）");
@@ -1307,22 +1773,35 @@ public class ClassAssistantApplicationService {
       lines.add("近期错题：" + String.join("；", m.recentWrongStems().stream().limit(3).toList()));
     }
     if (cert != null && StringUtils.hasText(cert.workTypeTitle())) {
-      lines.add("备考：" + cert.workTypeTitle()
-          + (cert.workTypeLevel() != null && cert.workTypeLevel() > 0 ? "（" + cert.workTypeLevel() + "级）" : ""));
+      lines.add("报考：" + cert.workTypeTitle()
+          + (StringUtils.hasText(cert.applyLevelLabel()) ? " · " + cert.applyLevelLabel() : ""));
+    }
+    if (profile != null) {
+      lines.add(formatTaskChannelLine("课堂作业", profile.homework()));
+      lines.add(formatTaskChannelLine("模拟考", profile.mock()));
+      if (profile.examScore() != null || profile.theoryScore() != null || profile.realScore() != null) {
+        lines.add(formatOfficialScoresLine(profile));
+      }
     }
     return lines;
   }
 
   private String formatLearningBoard(
-      ClassCertFacts cert, ReadinessMetrics m, SyncSnapshot sync, boolean withHeader) {
+      ClassCertFacts cert, ReadinessMetrics m, SyncSnapshot sync,
+      StudentClassProfile profile, boolean withHeader) {
     StringBuilder board = new StringBuilder();
     if (withHeader) {
-      board.append("以下数字全部来自你本人的刷题记录（不是知识库估算）：\n\n");
+      board.append("以下数字全部来自你本人的班级与刷题记录（不是知识库估算）：\n\n");
       board.append("【学情看板】\n");
     }
+    if (profile != null && StringUtils.hasText(profile.realname())) {
+      board.append("学员：").append(profile.realname()).append("\n");
+    }
     if (cert != null && StringUtils.hasText(cert.workTypeTitle())) {
-      board.append("备考方向：").append(cert.workTypeTitle());
-      if (cert.workTypeLevel() != null && cert.workTypeLevel() > 0) {
+      board.append("报考方向：").append(cert.workTypeTitle());
+      if (StringUtils.hasText(cert.applyLevelLabel())) {
+        board.append(" · ").append(cert.applyLevelLabel());
+      } else if (cert.workTypeLevel() != null && cert.workTypeLevel() > 0) {
         board.append("（").append(cert.workTypeLevel()).append(" 级）");
       }
       board.append("\n");
@@ -1363,6 +1842,17 @@ public class ClassAssistantApplicationService {
       }
       board.append("\n");
     }
+    if (profile != null) {
+      board.append(formatTaskChannelLine("课堂作业", profile.homework())).append("\n");
+      board.append(formatTaskChannelLine("模拟考", profile.mock())).append("\n");
+      if (profile.examScore() != null || profile.theoryScore() != null || profile.realScore() != null
+          || profile.normalScore() != null) {
+        board.append(formatOfficialScoresLine(profile)).append("\n");
+      }
+      if (profile.graduateStatus() != null) {
+        board.append("结业状态：").append(graduateStatusLabel(profile.graduateStatus())).append("\n");
+      }
+    }
     if (!m.recentWrongStems().isEmpty()) {
       board.append("近期错题题干：\n");
       int i = 1;
@@ -1374,9 +1864,170 @@ public class ClassAssistantApplicationService {
       }
     }
     if (sync != null && !sync.configured()) {
-      board.append("（本班暂未绑定同步学计划，以上以专项/精准学数据为主）\n");
+      board.append("（本班暂未绑定同步学计划，以上以专项/精准学与班级任务数据为主）\n");
     }
     return board.toString().trim();
+  }
+
+  /**
+   * 聚合学员在本班的花名册、课堂作业、模拟考等真数据（请求内缓存）。
+   */
+  private StudentClassProfile loadStudentClassProfile(Long platformUserId, Long classId) {
+    String key = platformUserId + ":" + classId;
+    Map<String, StudentClassProfile> cache = profileCache.get();
+    StudentClassProfile hit = cache.get(key);
+    if (hit != null) {
+      return hit;
+    }
+    String realname = null;
+    String phone = null;
+    BigDecimal examScore = null;
+    BigDecimal theoryScore = null;
+    BigDecimal realScore = null;
+    BigDecimal normalScore = null;
+    Integer graduateStatus = null;
+    try {
+      if (platformUserId != null && platformUserId > 0 && classId != null && classId > 0) {
+        TrainPeopleListEntity roster = peopleListMapper.selectOne(
+            new LambdaQueryWrapper<TrainPeopleListEntity>()
+                .eq(TrainPeopleListEntity::getTrainClassId, classId)
+                .eq(TrainPeopleListEntity::getPlatformUserId, platformUserId)
+                .eq(TrainPeopleListEntity::getType, "student")
+                .eq(TrainPeopleListEntity::getDeleted, 0)
+                .orderByDesc(TrainPeopleListEntity::getId)
+                .last("LIMIT 1"));
+        if (roster != null) {
+          realname = roster.getRealname();
+          phone = roster.getPhone();
+          examScore = roster.getExamScore();
+          theoryScore = roster.getTheoryScore();
+          realScore = roster.getRealScore();
+          normalScore = roster.getNormalScore();
+          graduateStatus = roster.getGraduateStatus();
+        }
+      }
+    } catch (Exception e) {
+      log.debug("[小培] 花名册查询跳过: {}", e.getMessage());
+    }
+
+    TaskChannelSummary homework = TaskChannelSummary.empty();
+    TaskChannelSummary mock = TaskChannelSummary.empty();
+    try {
+      List<FollowStudentTaskVO> hw = taskService.listStudentTasks(
+          platformUserId, classId, TrainFollowTaskApplicationService.FILTER_ASSIGNMENT);
+      homework = summarizeTaskChannel(hw);
+    } catch (Exception e) {
+      log.debug("[小培] 课堂作业查询跳过: {}", e.getMessage());
+    }
+    try {
+      List<FollowStudentTaskVO> mocks = taskService.listStudentTasks(
+          platformUserId, classId, TrainFollowTaskApplicationService.TYPE_MOCK);
+      mock = summarizeTaskChannel(mocks);
+    } catch (Exception e) {
+      log.debug("[小培] 模拟考查询跳过: {}", e.getMessage());
+    }
+
+    StudentClassProfile profile = new StudentClassProfile(
+        realname, phone, examScore, theoryScore, realScore, normalScore, graduateStatus,
+        homework, mock);
+    cache.put(key, profile);
+    return profile;
+  }
+
+  private static TaskChannelSummary summarizeTaskChannel(List<FollowStudentTaskVO> tasks) {
+    if (tasks == null || tasks.isEmpty()) {
+      return TaskChannelSummary.empty();
+    }
+    int pending = 0;
+    int done = 0;
+    int passed = 0;
+    List<String> pendingTitles = new ArrayList<>();
+    List<String> doneLines = new ArrayList<>();
+    for (FollowStudentTaskVO t : tasks) {
+      boolean isDone = TrainFollowTaskApplicationService.ITEM_SUBMITTED.equals(t.itemStatus())
+          || TrainFollowTaskApplicationService.ITEM_GRADED.equals(t.itemStatus());
+      if (isDone) {
+        done++;
+        if (Boolean.TRUE.equals(t.passed())) {
+          passed++;
+        }
+        StringBuilder line = new StringBuilder(shortTaskTitle(t.title()));
+        if (t.score() != null) {
+          line.append(" ").append(t.score().stripTrailingZeros().toPlainString()).append("分");
+        }
+        if (t.passed() != null) {
+          line.append(Boolean.TRUE.equals(t.passed()) ? "·通过" : "·未通过");
+        } else if (StringUtils.hasText(t.itemStatusName())) {
+          line.append("·").append(t.itemStatusName());
+        }
+        doneLines.add(line.toString());
+      } else {
+        pending++;
+        if (StringUtils.hasText(t.title()) && pendingTitles.size() < 8) {
+          pendingTitles.add(shortTaskTitle(t.title()));
+        }
+      }
+    }
+    return new TaskChannelSummary(tasks.size(), pending, done, passed, pendingTitles, doneLines);
+  }
+
+  /** 作业标题常含长技能描述，展示时截断以免气泡刷屏。 */
+  private static String shortTaskTitle(String title) {
+    if (!StringUtils.hasText(title)) {
+      return "未命名";
+    }
+    String t = title.trim().replaceAll("[\\s\\u00A0]+", " ");
+    if (t.length() <= 28) {
+      return t;
+    }
+    return t.substring(0, 28) + "…";
+  }
+
+  private static String formatTaskChannelLine(String label, TaskChannelSummary ch) {
+    if (ch == null || ch.total() <= 0) {
+      return label + "：暂无下发";
+    }
+    StringBuilder sb = new StringBuilder();
+    sb.append(label).append("：共 ").append(ch.total())
+        .append(" · 已交 ").append(ch.done())
+        .append(" · 待办 ").append(ch.pending());
+    if (ch.done() > 0) {
+      sb.append(" · 通过 ").append(ch.passed());
+    }
+    if (!ch.pendingTitles().isEmpty()) {
+      sb.append("；待办：").append(String.join("、", ch.pendingTitles().stream().limit(4).toList()));
+    } else if (!ch.doneLines().isEmpty()) {
+      sb.append("；最近：").append(String.join("；", ch.doneLines().stream().limit(3).toList()));
+    }
+    return sb.toString();
+  }
+
+  private static String formatOfficialScoresLine(StudentClassProfile profile) {
+    List<String> parts = new ArrayList<>();
+    if (profile.theoryScore() != null) {
+      parts.add("理论 " + profile.theoryScore().stripTrailingZeros().toPlainString());
+    }
+    if (profile.realScore() != null) {
+      parts.add("实操 " + profile.realScore().stripTrailingZeros().toPlainString());
+    }
+    if (profile.examScore() != null) {
+      parts.add("综合/考试 " + profile.examScore().stripTrailingZeros().toPlainString());
+    }
+    if (profile.normalScore() != null) {
+      parts.add("平时 " + profile.normalScore().stripTrailingZeros().toPlainString());
+    }
+    return parts.isEmpty() ? "成绩：暂无" : ("班级成绩：" + String.join(" · ", parts));
+  }
+
+  private static String graduateStatusLabel(Integer status) {
+    if (status == null) {
+      return "未知";
+    }
+    return switch (status) {
+      case 1 -> "已结业";
+      case 2 -> "不合格";
+      default -> "未结业";
+    };
   }
 
   private ReadinessMetrics collectReadinessMetrics(Long platformUserId, Long classId, SyncSnapshot sync) {
@@ -1628,7 +2279,8 @@ public class ClassAssistantApplicationService {
     return pack("schedule_today", primary, replies, cards, actions);
   }
 
-  private Map<String, Object> replyMyHomework(Long platformUserId, Long classId, String primary) {
+  private Map<String, Object> replyMyHomework(
+      Long platformUserId, Long classId, String primary, String text) {
     List<Map<String, Object>> replies = new ArrayList<>();
     List<Map<String, Object>> cards = new ArrayList<>();
     List<Map<String, Object>> actions = new ArrayList<>();
@@ -1640,12 +2292,156 @@ public class ClassAssistantApplicationService {
       }
       return pack("my_homework", primary, replies, cards, actions);
     }
-    List<FollowStudentTaskVO> tasks = taskService.listStudentTasks(platformUserId, classId);
-    replies.add(textReply(tasks.isEmpty()
-        ? "当前没有下发给你的课堂作业。"
-        : ("你有 " + tasks.size() + " 条作业记录，请到课堂作业页查看待办与结果。")));
+
+    StudentClassProfile profile = loadStudentClassProfile(platformUserId, classId);
+    SyncSnapshot sync = loadSyncSnapshot(platformUserId, classId);
+    ReadinessMetrics metrics = collectReadinessMetrics(platformUserId, classId, sync);
+    boolean askCompleted = looksLikeCompletedTasksQuestion(text);
+    StringBuilder sb = new StringBuilder();
+    if (StringUtils.hasText(profile.realname())) {
+      sb.append(profile.realname()).append("，");
+    }
+    if (askCompleted) {
+      sb.append("你已完成的班级任务如下（真数据）：\n\n");
+      appendCompletedTaskSection(sb, "课堂作业", profile.homework());
+      appendCompletedTaskSection(sb, "模拟考", profile.mock());
+      int doneTotal = profile.homework().done() + profile.mock().done();
+      if (doneTotal <= 0) {
+        sb.append("目前还没有已交记录。");
+        if (profile.homework().pending() + profile.mock().pending() > 0) {
+          sb.append("待办还剩 ")
+              .append(profile.homework().pending() + profile.mock().pending())
+              .append(" 项。");
+        } else if (profile.homework().total() + profile.mock().total() <= 0) {
+          sb.append("本班暂未给你下发课堂作业或模拟考。");
+        }
+      } else {
+        sb.append("\n合计已完成 ").append(doneTotal).append(" 项");
+        int pending = profile.homework().pending() + profile.mock().pending();
+        if (pending > 0) {
+          sb.append("，还有 ").append(pending).append(" 项待办");
+        }
+        sb.append("。");
+      }
+    } else {
+      sb.append("你在本班的作业与模拟考情况如下（真数据）：\n\n");
+      sb.append(formatTaskChannelLine("课堂作业", profile.homework())).append("\n");
+      sb.append(formatTaskChannelLine("模拟考", profile.mock())).append("\n");
+      if (profile.examScore() != null || profile.theoryScore() != null || profile.realScore() != null
+          || profile.normalScore() != null) {
+        sb.append(formatOfficialScoresLine(profile)).append("\n");
+      }
+    }
+    sb.append("\n\n").append(buildTaskLearningAdvice(profile, metrics, sync));
+    replies.add(textReply(sb.toString().trim()));
+
+    Map<String, Object> card = new LinkedHashMap<>();
+    card.put("type", "task_profile");
+    card.put("title", "作业与模考");
+    card.put("homework", profile.homework().toMap());
+    card.put("mock", profile.mock().toMap());
+    Map<String, Object> scores = new LinkedHashMap<>();
+    scores.put("examScore", profile.examScore());
+    scores.put("theoryScore", profile.theoryScore());
+    scores.put("realScore", profile.realScore());
+    scores.put("normalScore", profile.normalScore());
+    scores.put("graduateStatus", profile.graduateStatus());
+    card.put("scores", scores);
+    cards.add(card);
+
     actions.add(nav("课堂作业", "/pages/class/homeworkTodo?classId=" + classId));
+    if (profile.mock().total() > 0) {
+      actions.add(nav("模拟考", "/pages/class/homeworkTodo?classId=" + classId + "&taskType=mock"));
+    }
+    if (metrics.wrongBookCount() > 0 || !metrics.weakTitles().isEmpty()) {
+      actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
+    } else if (sync.entryVisible()) {
+      actions.add(syncNav(sync));
+    }
     return pack("my_homework", primary, replies, cards, actions);
+  }
+
+  /**
+   * 基于作业/模考完成与学情真数据给可执行学习建议（非知识库空话）。
+   */
+  private static String buildTaskLearningAdvice(
+      StudentClassProfile profile, ReadinessMetrics m, SyncSnapshot sync) {
+    List<String> tips = new ArrayList<>();
+    TaskChannelSummary hw = profile.homework();
+    TaskChannelSummary mock = profile.mock();
+    int hwPending = hw.pending();
+    int mockPending = mock.pending();
+    int totalTasks = hw.total() + mock.total();
+
+    if (totalTasks <= 0) {
+      tips.add("本班暂无作业/模考时，按同步学日进度刷题，或去精准学清错题，保持手感。");
+    } else {
+      if (hwPending > 0) {
+        String pendingHint = hw.pendingTitles().isEmpty()
+            ? ""
+            : "（如：" + String.join("、", hw.pendingTitles().stream().limit(2).toList()) + "）";
+        tips.add("先把剩余 " + hwPending + " 项课堂作业交完" + pendingHint + "，再安排模考或加练。");
+      }
+      if (hw.done() > 0 && hw.passed() < hw.done()) {
+        tips.add("已交作业里有未通过项，打开解析对照错因，把同类题再练一轮后再往下走。");
+      }
+      if (channelHasZeroScorePass(hw) || channelHasZeroScorePass(mock)) {
+        tips.add("有任务得分很低（含 0 分）却显示通过：建议回看该卷解析，确认知识点真会了，避免「交了但没学会」。");
+      }
+      if (hwPending == 0 && mockPending > 0) {
+        tips.add("作业已齐，下一步完成 " + mockPending + " 场待办模拟考；尽量按正式考节奏限时作答。");
+      }
+      if (mock.done() > 0 && mock.passed() < mock.done()) {
+        tips.add("模拟考有未通过，先补薄弱点与错题，再重考同一套或同类卷。");
+      }
+      if (hw.total() >= 4 && hw.done() * 2 < hw.total()) {
+        tips.add("作业完成进度不到一半，本周优先把待办清到过半，再加大刷题量。");
+      }
+      if (hwPending == 0 && mockPending == 0 && hw.done() + mock.done() > 0) {
+        if (m != null && m.wrongBookCount() > 0) {
+          tips.add("班级任务已交齐；错题本还有 " + m.wrongBookCount() + " 题，建议去精准学清红黄卡巩固。");
+        } else if (m != null && !m.weakTitles().isEmpty()) {
+          tips.add("班级任务已交齐；薄弱点「"
+              + String.join("、", m.weakTitles().stream().limit(3).toList())
+              + "」可做专项练。");
+        } else if (sync != null && sync.entryVisible()) {
+          tips.add("班级任务已交齐；继续按同步学日进度刷题，把正确率稳住再冲认定。");
+        } else {
+          tips.add("班级任务已交齐；可定期回看作业/模考解析，或去精准学做薄弱专项。");
+        }
+      }
+    }
+
+    if (m != null && m.accuracy() != null && m.accuracy() < 70
+        && (hw.done() > 0 || mock.done() > 0)) {
+      tips.add("当前练习正确率约 " + m.accuracy() + "%，任务虽在推进，建议每天固定清一轮错题再做新题。");
+    }
+
+    if (tips.isEmpty()) {
+      tips.add("按「待办作业 → 模拟考 → 错题巩固」顺序推进即可。");
+    }
+
+    StringBuilder out = new StringBuilder("【学习建议】（依据上方真数据）\n");
+    int i = 1;
+    for (String tip : tips) {
+      if (i > 4) {
+        break;
+      }
+      out.append(i++).append(". ").append(tip).append("\n");
+    }
+    return out.toString().trim();
+  }
+
+  private static boolean channelHasZeroScorePass(TaskChannelSummary ch) {
+    if (ch == null || ch.doneLines() == null) {
+      return false;
+    }
+    for (String line : ch.doneLines()) {
+      if (line != null && line.contains("0分") && line.contains("通过")) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private Map<String, Object> replyProgress(Long classId, String primary) {
@@ -1763,9 +2559,10 @@ public class ClassAssistantApplicationService {
   private Map<String, Object> replyHelp(String primary) {
     String tip = isStudentMode(primary)
         ? "我是小培，可以直接聊：\n"
-            + "· 能不能考过 / 学习详情 / 薄弱点（真数据）\n"
+            + "· 随意口语问：学得怎么样、还有啥没做、能不能考过\n"
+            + "· 作业与模考：待办、得分、通过情况与学习建议\n"
             + "· 讲题：当前题、错题、粘贴或拍照\n"
-            + "· 考证：考什么证、怎么拿、考完还能考什么（本班配置 + 知识库）\n"
+            + "· 考证 / 考点：本班配置真数据 + 知识库补充\n"
             + "点「快捷」可展开常用入口；我不会在聊天里替你答题，但可以讲题和指路去练。"
         : "我可以：今日安排、本班进度、谁没交、调课说明、引导抽题布置、跳转 AI 精准学。";
     return pack("help", primary, List.of(textReply(tip)), List.of(), List.of());
@@ -1914,11 +2711,16 @@ public class ClassAssistantApplicationService {
       if (looksLikeWrongStatsQuestion(t)) {
         return containsAny(t, "薄弱") ? "weak_points" : "wrong_stats";
       }
+      // 作业/模考/完成了哪些任务：优先于「做完有什么用」等收益口语
+      if (looksLikeHomeworkTaskQuestion(t)) {
+        return "my_homework";
+      }
       // 进度口语优先：避免「学到哪里了 / 通过率」被当成知识库闲聊
       if (containsAny(t, "学到哪", "学到哪里", "到哪了", "到哪儿", "学习进度", "学情",
           "第几天", "学到第", "练到哪", "复习到哪", "现在学", "进度如何",
           "学得怎么样", "学习详情", "覆盖率", "正确率", "通过率", "及格率",
-          "没掌握", "未掌握", "没有掌握", "薄弱点", "薄弱知识", "准确率")) {
+          "没掌握", "未掌握", "没有掌握", "薄弱点", "薄弱知识", "准确率",
+          "班级情况", "我的情况", "在班", "本班情况")) {
         if (containsAny(t, "薄弱")) {
           return "weak_points";
         }
@@ -1965,7 +2767,7 @@ public class ClassAssistantApplicationService {
     if (containsAny(t, "课表", "今日安排", "上课安排")) {
       return "schedule_today";
     }
-    if (containsAny(t, "作业", "待办", "我的题")) {
+    if (looksLikeHomeworkTaskQuestion(t)) {
       return "my_homework";
     }
     if (containsAny(t, "没交", "未交", "催交", "谁没")) {
@@ -2107,6 +2909,9 @@ public class ClassAssistantApplicationService {
       String classTitle,
       String workTypeTitle,
       Integer workTypeLevel,
+      String applyLevelLabel,
+      String levelSource,
+      String heldLevelLabel,
       String examTitle,
       String examDate) {
     Map<String, Object> toMap() {
@@ -2114,8 +2919,60 @@ public class ClassAssistantApplicationService {
       m.put("classTitle", classTitle);
       m.put("workTypeTitle", workTypeTitle);
       m.put("workTypeLevel", workTypeLevel);
+      m.put("applyLevelLabel", applyLevelLabel);
+      m.put("levelSource", levelSource);
+      m.put("heldLevelLabel", heldLevelLabel);
       m.put("examTitle", examTitle);
       m.put("examDate", examDate);
+      return m;
+    }
+  }
+
+  private record TaskChannelSummary(
+      int total,
+      int pending,
+      int done,
+      int passed,
+      List<String> pendingTitles,
+      List<String> doneLines) {
+    static TaskChannelSummary empty() {
+      return new TaskChannelSummary(0, 0, 0, 0, List.of(), List.of());
+    }
+
+    Map<String, Object> toMap() {
+      Map<String, Object> m = new LinkedHashMap<>();
+      m.put("total", total);
+      m.put("pending", pending);
+      m.put("done", done);
+      m.put("passed", passed);
+      m.put("pendingTitles", pendingTitles);
+      m.put("doneLines", doneLines);
+      return m;
+    }
+  }
+
+  /** 学员在本班的花名册成绩 + 作业/模考汇总。 */
+  private record StudentClassProfile(
+      String realname,
+      String phone,
+      BigDecimal examScore,
+      BigDecimal theoryScore,
+      BigDecimal realScore,
+      BigDecimal normalScore,
+      Integer graduateStatus,
+      TaskChannelSummary homework,
+      TaskChannelSummary mock) {
+    Map<String, Object> toMap() {
+      Map<String, Object> m = new LinkedHashMap<>();
+      m.put("realname", realname);
+      m.put("phone", phone);
+      m.put("examScore", examScore);
+      m.put("theoryScore", theoryScore);
+      m.put("realScore", realScore);
+      m.put("normalScore", normalScore);
+      m.put("graduateStatus", graduateStatus);
+      m.put("homework", homework == null ? TaskChannelSummary.empty().toMap() : homework.toMap());
+      m.put("mock", mock == null ? TaskChannelSummary.empty().toMap() : mock.toMap());
       return m;
     }
   }

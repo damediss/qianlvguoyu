@@ -268,12 +268,12 @@ public class TrainSignUpPeopleImportService {
       if (ensure.platformUserId() != null) {
         entity.setPlatformUserId(ensure.platformUserId());
         PlatformUserEntity platformUser = platformUserMapper.selectById(ensure.platformUserId());
-        if (platformUser != null) {
+      if (platformUser != null) {
           if (StringUtils.hasText(platformUser.getRealname())) {
-            entity.setName(platformUser.getRealname());
+        entity.setName(platformUser.getRealname());
           }
           if (StringUtils.hasText(platformUser.getPhone())) {
-            entity.setPhone(platformUser.getPhone());
+        entity.setPhone(platformUser.getPhone());
           }
         }
         enrichDetailFromImportRow(ensure.platformUserId(), realname, idCard, phone, row);

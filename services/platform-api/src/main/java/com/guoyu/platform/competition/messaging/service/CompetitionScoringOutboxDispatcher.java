@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 @Component
 @Slf4j
 @ConditionalOnProperty(prefix = "platform.competition.formal-exam.scoring-messaging",
-    name = "enabled", havingValue = "true", matchIfMissing = true)
+    name = "enabled", havingValue = "true", matchIfMissing = false)
 public class CompetitionScoringOutboxDispatcher {
   private final CompetitionOutboxDispatchService dispatchService;
   private final RabbitTemplate rabbitTemplate;

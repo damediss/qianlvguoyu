@@ -965,7 +965,7 @@ public class SignUpPeopleDefaultTemplatePackService {
   /**
    * 现工种等级：库默认 {@code "0"} 与「五级」同码；无工种/证书痕迹时留空，避免认定表误填五级。
    */
-  static String optionalCurrentLevelLabel(TrainSignUpPeopleSelfEntity person) {
+  public static String optionalCurrentLevelLabel(TrainSignUpPeopleSelfEntity person) {
     if (person == null) {
       return "";
     }
@@ -1010,7 +1010,7 @@ public class SignUpPeopleDefaultTemplatePackService {
   /**
    * 班级工种等级 1=一级/高级技师 … 5=五级/初级工 → 报名人员 req_level 0=五级 … 4=一级。
    */
-  static Integer classLevelToReqIndex(Integer classLevel) {
+  public static Integer classLevelToReqIndex(Integer classLevel) {
     if (classLevel == null || classLevel < 1 || classLevel > 5) {
       return null;
     }
@@ -1020,7 +1020,7 @@ public class SignUpPeopleDefaultTemplatePackService {
   /**
    * 申请表申报工种/等级：人员未填预约报考时回退到班级设置，避免库默认 req_level=0 写成「五级/初级工」。
    */
-  static Integer resolveReqLevelIndex(
+  public static Integer resolveReqLevelIndex(
       Integer personReqLevel,
       Long personReqWorkTypeId,
       String personReqWorkTypeName,
@@ -1051,7 +1051,7 @@ public class SignUpPeopleDefaultTemplatePackService {
     return personReqLevel != null && personReqLevel >= 0 && personReqLevel <= 4 ? personReqLevel : null;
   }
 
-  static String resolveReqWorkTypeName(String personName, String className) {
+  public static String resolveReqWorkTypeName(String personName, String className) {
     if (StringUtils.hasText(personName)) {
       return personName.trim();
     }
