@@ -21,6 +21,7 @@ import { TaskExamAuditAssignListPage } from './pages/exam/TaskExamAuditAssignLis
 import { TaskExamshicaoAuditAssignListPage } from './pages/exam/TaskExamshicaoAuditAssignListPage';
 import { TaskExamsubAuditAssignListPage } from './pages/exam/TaskExamsubAuditAssignListPage';
 import { TrainingInfoPage } from './pages/training/TrainingInfoPage';
+import { TrainingDashboardPage } from './pages/training/TrainingDashboardPage';
 import { TrainingFollowClassPage } from './pages/training/TrainingFollowClassPage';
 import { TrainingFollowExamPage } from './pages/training/TrainingFollowExamPage';
 import { TrainingSubsidyDeclarePage } from './pages/training/TrainingSubsidyDeclarePage';
@@ -170,6 +171,7 @@ const pageMap: Record<string, React.ReactNode> = {
   task_examsub_audit_assign: <TaskExamsubAuditAssignListPage />,
   exam_course: <CoursePage />,
   'train_info-list': <TrainingInfoPage />,
+  train_dashboard: <TrainingDashboardPage />,
   train_follow: <TrainingFollowClassPage />,
   train_follow_exam: <TrainingFollowExamPage />,
   train_graduation_ceremony: <TrainingGraduationCeremonyPage />,

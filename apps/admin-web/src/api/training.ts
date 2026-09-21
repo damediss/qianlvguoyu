@@ -22,6 +22,7 @@ import type {
   TrainDashboard,
   DashboardMilestoneItem,
   DashboardStageDistribution,
+  DashboardCompanyOverview,
   TrainTalentNeed, TrainTalentNeedQuery, TrainTalentNeedCreateReq, TrainTalentNeedUpdateReq,
   PlatformUser, PlatformUserQuery, PlatformUserCreateReq, PlatformUserUpdateReq,
   TrainTeacherBank, TrainTeacherBankQuery, TrainTeacherBankCreateReq, TrainTeacherBankUpdateReq,
@@ -393,6 +394,10 @@ export function getDashboardMilestones() {
 
 export function getDashboardStageDistribution() {
   return unwrap<DashboardStageDistribution>(apiClient.get(`${BASE}/dashboard/stage-distribution`));
+}
+
+export function getDashboardCompanies() {
+  return unwrap<DashboardCompanyOverview[]>(apiClient.get(`${BASE}/dashboard/companies`));
 }
 
 // ==================== Talent Needs (人才数据管理) ====================

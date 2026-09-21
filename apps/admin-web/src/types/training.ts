@@ -823,6 +823,14 @@ export interface DashboardSummaryKpi {
   totalStudents: number;
   totalCertificates: number;
   totalBudgets: number;
+  totalClasses?: number;
+  activeClasses?: number;
+  totalExams?: number;
+  totalIssuedCerts?: number;
+  totalSubsidies?: number;
+  inProgressTrainings?: number;
+  totalCompanies?: number;
+  activeCompanies?: number;
 }
 
 export interface DashboardMonthlyTrend {
@@ -839,10 +847,48 @@ export interface DashboardAlertItem {
   suggestion: string;
 }
 
+export interface DashboardModuleStat {
+  code: string;
+  name: string;
+  count: number;
+  hint: string;
+}
+
+export interface DashboardCompanyTrainingItem {
+  trainInfoId: number;
+  title: string;
+  stage: string;
+  startDate?: string;
+  endDate?: string;
+  classCount: number;
+  studentCount: number;
+  examCount: number;
+  issuedCertCount: number;
+}
+
+export interface DashboardCompanyOverview {
+  companyId: number;
+  companyName: string;
+  projectCount: number;
+  trainingCount: number;
+  pendingCount: number;
+  inProgressCount: number;
+  completedCount: number;
+  classCount: number;
+  activeClassCount: number;
+  studentCount: number;
+  examCount: number;
+  issuedCertCount: number;
+  subsidyCount: number;
+  trainings: DashboardCompanyTrainingItem[];
+}
+
 export interface TrainDashboard {
   summary: DashboardSummaryKpi;
   monthlyTrends: DashboardMonthlyTrend[];
   alerts: DashboardAlertItem[];
+  modules?: DashboardModuleStat[];
+  companies?: DashboardCompanyOverview[];
 }
 
 export interface DashboardMilestoneItem {

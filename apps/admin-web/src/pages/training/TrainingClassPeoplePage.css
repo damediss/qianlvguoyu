@@ -30,6 +30,13 @@
   margin-top: 4px;
 }
 
+.training-class-people-page .class-people-table .class-wrap-cell {
+  white-space: normal !important;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
 .training-class-people-page .ant-table-thead > tr > th {
   background: #f8f9fa !important;
   color: #909399;

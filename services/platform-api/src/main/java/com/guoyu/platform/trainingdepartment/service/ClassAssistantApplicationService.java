@@ -251,7 +251,8 @@ public class ClassAssistantApplicationService {
     }
     // 口语随意问：软分流到 Tool / 知识库，减少「听不懂就拒答」
     if (studentMode && StringUtils.hasText(text)
-        && ("ask_kb".equals(intent) || "unknown".equals(intent) || "help".equals(intent))) {
+        && ("ask_kb".equals(intent) || "unknown".equals(intent) || "help".equals(intent)
+            || "reward_now".equals(intent) || "reward_future".equals(intent))) {
       String soft = softRouteStudentFreeForm(text);
       if (StringUtils.hasText(soft)) {
         intent = soft;
@@ -262,7 +263,7 @@ public class ClassAssistantApplicationService {
         && looksLikeExplainCurrentQuestion(text)) {
       intent = "explain_question";
     }
-    // 考证类：走班务真数据（ask_kb 内优先 Tool，避免 Agent Tool 日志泄漏）
+    // 考证类：走班务真数据 + KB；禁止被「有什么用」锁在 reward_now
     if (studentMode && looksLikeCertQuestion(text)) {
       intent = "ask_kb";
     }
@@ -889,8 +890,7 @@ public class ClassAssistantApplicationService {
       String agentId = weKnoraProperties.resolveXiaopeiAgentId();
       Map<String, Object> ctxBody = body == null ? new LinkedHashMap<>() : new LinkedHashMap<>(body);
       ctxBody.put("text", text);
-      // 随意提问：始终附带学情快照，便于口语问个人情况时用真数据答
-      ctxBody.put("forceRichContext", Boolean.TRUE);
+      // 自由问答默认轻量上下文：避免每次都拉 dashboard/作业拖慢首包；个人进度类已在上方走 Tool
       String context = buildLearnerContextForLlm(platformUserId, classId, ctxBody);
       List<String> images = parseImageDataUrls(body);
       boolean certQ = looksLikeCertQuestion(text);
@@ -1028,7 +1028,9 @@ public class ClassAssistantApplicationService {
     }
 
     if (!weKnoraProperties.isApiReady()) {
-      String only = facts + "\n\n「怎么拿证 / 考完还能考什么」等细则，待知识库开通后补充；目前以本班配置为准，具体以教务与官方认定为准。";
+      String only = facts
+          + "\n\n「考证有什么用 / 怎么拿证 / 考完还能考什么」等细则，待知识库开通后补充；"
+          + "目前以本班配置为准。技能等级证书一般用于证明岗位技能水平，具体评聘与政策以教务和官方认定为准。";
       return pack("ask_kb", primary, List.of(textReply(only)), List.of(), actions);
     }
 
@@ -1047,8 +1049,10 @@ public class ClassAssistantApplicationService {
           【硬性约束】
           1. 禁止修改、否定、改写【本班真数据】里的班级、报考工种、报考等级（如「二级/技师」「一级/高级技师」）、考试计划、考期。
           2. 禁止根据课表/方案文档把学员报考等级笼统改成「技师方向」等其它表述来覆盖真数据；等级以「报考等级」行为准。
-          3. 只补充：新规程下该报考等级的申报条件怎么理解、怎么拿证、考完下一级常见路径；库没有就一句话说明暂无细则。
-          4. 不要输出 Tool/Keyword search 等调试日志；控制在 3～8 句。
+          3. 学员若问「考这个证有什么用 / 考证干什么 / 有啥好处」：先点明本班报考的工种与等级，再结合知识库说明该证书常见用途（就业、评聘、晋升、技能认定等）；库没有就诚实说政策细则以官方为准，并给 2～3 句通用学习向用途，禁止编造具体补贴金额或未核实政策。
+          4. 只补充：申报条件怎么理解、怎么拿证、考完下一级常见路径、证书用途；库没有就一句话说明暂无细则。
+          5. 禁止回答成「今日刷题/扫荡任务有什么用」；本题是考证用途，不是同步学即时收益。
+          6. 不要输出 Tool/Keyword search 等调试日志；控制在 3～8 句。
           【本班真数据】
           %s
           知识库名称：%s
@@ -1136,18 +1140,15 @@ public class ClassAssistantApplicationService {
 
   private String buildLearnerContextForLlm(Long platformUserId, Long classId, Map<String, Object> body) {
     String text = body == null || body.get("text") == null ? "" : String.valueOf(body.get("text"));
-    boolean forceRich = body != null && Boolean.TRUE.equals(body.get("forceRichContext"));
-    // 纯考点/概念问答：不拉 dashboard；随意问 / 进度类强制附带真数据
-    boolean needProgress = forceRich
-        || looksLikeProgressQuestion(text)
+    // 个人指标才拉 dashboard/作业；考证只附轻量工种等级，避免自由问每次等 2～5 秒前置查询
+    boolean needFullMetrics = looksLikeProgressQuestion(text)
         || looksLikeExamReadiness(text)
         || looksLikeWrongStatsQuestion(text)
-        || looksLikeCertQuestion(text)
-        || looksLikeHomeworkTaskQuestion(text)
-        || looksLikeInScopeFreeQuestion(text);
+        || looksLikeHomeworkTaskQuestion(text);
+    boolean needCertSlim = looksLikeCertQuestion(text);
     TrainInfoClassEntity clazz = classMapper.selectById(classId);
     StringBuilder sb = new StringBuilder();
-    if (needProgress) {
+    if (needFullMetrics) {
       SyncSnapshot sync = loadSyncSnapshot(platformUserId, classId);
       ClassCertFacts cert = loadClassCertFacts(platformUserId, classId, clazz, sync);
       ReadinessMetrics m = collectReadinessMetrics(platformUserId, classId, sync);
@@ -1170,6 +1171,15 @@ public class ClassAssistantApplicationService {
         sb.append("：").append(String.join("、", m.weakTitles().stream().limit(6).toList()));
       }
       sb.append("；错题本约 ").append(m.wrongBookCount()).append("。");
+    } else if (needCertSlim) {
+      // 不拉 sync overview，只查报考工种等级，缩短考证问答前置耗时
+      ClassCertFacts cert = loadClassCertFacts(platformUserId, classId, clazz, null);
+      sb.append("班级=").append(Objects.toString(cert.classTitle(), "-"));
+      sb.append("；报考工种=").append(Objects.toString(cert.workTypeTitle(), "未配置"));
+      if (StringUtils.hasText(cert.applyLevelLabel())) {
+        sb.append("；报考等级=").append(cert.applyLevelLabel());
+      }
+      sb.append("。本题为考证相关问答，未附带完整刷题看板。");
     } else {
       String classTitle = clazz == null ? "-" : Objects.toString(clazz.getTitle(), "-");
       sb.append("班级=").append(classTitle).append("。本题为考点/概念问答，个人进度数字未附带。");
@@ -1311,11 +1321,39 @@ public class ClassAssistantApplicationService {
       return false;
     }
     String t = text.toLowerCase(Locale.ROOT);
-    return containsAny(t,
-        "考什么证", "考啥证", "什么证", "哪种证", "哪个证",
+    if (containsAny(t,
+        "考什么证", "考啥证", "什么证", "哪种证", "哪个证", "这个证", "考这个证",
         "怎么拿证", "如何拿证", "怎么取证", "如何取证", "怎么获得",
         "考完还能", "还能考什么", "还能考啥", "考证路径", "取证条件",
-        "报名条件", "报考条件", "认定条件");
+        "报名条件", "报考条件", "认定条件",
+        "证有什么用", "证有啥用", "考证有什么用", "考证有啥用",
+        "拿证有什么用", "拿证有啥用", "证书有什么用", "证书有啥用",
+        "为什么考证", "考证干什么", "考证干嘛", "考证有啥好处", "拿证有啥好处",
+        "考证意义", "证书作用", "考证作用", "值不值得考", "值得考证吗")) {
+      return true;
+    }
+    // 「证/证书/考证」+ 用途/好处口语
+    return containsAny(t, "证", "证书", "考证", "取证", "认定")
+        && containsAny(t, "有什么用", "有啥用", "干什么", "干嘛", "好处", "意义", "作用",
+            "值不值", "值得吗", "有没有用", "有用吗");
+  }
+
+  /** 做完今日刷题/任务有什么即时收益——勿与「考证有什么用」混淆。 */
+  private static boolean looksLikeTaskRewardQuestion(String text) {
+    if (!StringUtils.hasText(text) || looksLikeCertQuestion(text)) {
+      return false;
+    }
+    String t = text.toLowerCase(Locale.ROOT);
+    if (containsAny(t, "证", "证书", "考证", "取证", "认定", "报名")) {
+      return false;
+    }
+    if (containsAny(t, "做完有", "刷完有", "练完有", "完成得什么", "完成得啥", "即时收益",
+        "做完有什么用", "刷完有什么用", "练完有什么用", "做完有啥用")) {
+      return true;
+    }
+    // 裸「有什么用」仅在明确指向今日任务/刷题时成立
+    return containsAny(t, "有什么用", "有啥用")
+        && containsAny(t, "做完", "刷完", "练完", "今天", "今日", "任务", "扫荡", "复盘", "新题");
   }
 
   private static boolean looksLikePastedQuestion(String text) {
@@ -1412,6 +1450,10 @@ public class ClassAssistantApplicationService {
       return null;
     }
     String t = text.toLowerCase(Locale.ROOT);
+    // 考证用途必须最先：避免落到刷题收益/学情
+    if (looksLikeCertQuestion(t)) {
+      return "ask_kb";
+    }
     if (looksLikeHomeworkTaskQuestion(t) || looksLikeCompletedTasksQuestion(t)
         || containsAny(t, "还有啥没", "还缺啥", "没做完", "剩下的", "未完成", "待完成")) {
       return "my_homework";
@@ -1435,9 +1477,6 @@ public class ClassAssistantApplicationService {
         "怎么样了", "咋样了", "如何了", "情况怎样", "帮我看看", "看看我",
         "分析一下我", "评估一下", "学得怎样", "练得怎样", "整体怎样", "整体如何")) {
       return "learn_detail";
-    }
-    if (looksLikeCertQuestion(t)) {
-      return "ask_kb";
     }
     return null;
   }
@@ -1913,18 +1952,26 @@ public class ClassAssistantApplicationService {
     TaskChannelSummary homework = TaskChannelSummary.empty();
     TaskChannelSummary mock = TaskChannelSummary.empty();
     try {
-      List<FollowStudentTaskVO> hw = taskService.listStudentTasks(
-          platformUserId, classId, TrainFollowTaskApplicationService.FILTER_ASSIGNMENT);
+      // 一次拉取 assignment+mock，避免两次 listStudentTasks 往返
+      List<FollowStudentTaskVO> all = taskService.listStudentTasks(platformUserId, classId, "all");
+      List<FollowStudentTaskVO> hw = new ArrayList<>();
+      List<FollowStudentTaskVO> mocks = new ArrayList<>();
+      if (all != null) {
+        for (FollowStudentTaskVO t : all) {
+          if (t == null) {
+            continue;
+          }
+          if (TrainFollowTaskApplicationService.TYPE_MOCK.equals(t.taskType())) {
+            mocks.add(t);
+          } else {
+            hw.add(t);
+          }
+        }
+      }
       homework = summarizeTaskChannel(hw);
-    } catch (Exception e) {
-      log.debug("[小培] 课堂作业查询跳过: {}", e.getMessage());
-    }
-    try {
-      List<FollowStudentTaskVO> mocks = taskService.listStudentTasks(
-          platformUserId, classId, TrainFollowTaskApplicationService.TYPE_MOCK);
       mock = summarizeTaskChannel(mocks);
     } catch (Exception e) {
-      log.debug("[小培] 模拟考查询跳过: {}", e.getMessage());
+      log.debug("[小培] 作业/模考查询跳过: {}", e.getMessage());
     }
 
     StudentClassProfile profile = new StudentClassProfile(
@@ -2737,14 +2784,14 @@ public class ClassAssistantApplicationService {
           || (containsAny(t, "现在做", "该干", "该做") && !containsAny(t, "你", "能", "会", "都"))) {
         return "what_now";
       }
-      if (containsAny(t, "做完有", "有什么用", "有啥用", "即时收益", "完成得什么", "完成得啥")) {
-        return "reward_now";
-      }
-      // 考证路径口语 → 走知识库（班务真数据 + KB），不要被「证书」误判成未来收益套话
+      // 考证用途/路径优先：禁止「有什么用」误进刷题即时收益
       if (looksLikeCertQuestion(t)) {
         return "ask_kb";
       }
-      if (containsAny(t, "未来", "学完能", "认定", "考期", "能拿到") && !containsAny(t, "考什么", "怎么拿", "还能考")) {
+      if (looksLikeTaskRewardQuestion(t)) {
+        return "reward_now";
+      }
+      if (containsAny(t, "未来", "学完能", "认定", "考期", "能拿到") && !containsAny(t, "考什么", "怎么拿", "还能考", "这个证", "有什么用", "有啥用")) {
         return "reward_future";
       }
       if (containsAny(t, "进度") && !containsAny(t, "本班进度", "作业进度")) {
