@@ -26,6 +26,7 @@ import java.nio.file.Paths;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.HexFormat;
 import java.util.Optional;
@@ -215,7 +216,15 @@ public class FileApplicationService {
   @Transactional(readOnly = true)
   public DownloadUrlVO downloadUrl(Long id) {
     FileEntity entity = getExistingFile(SecurityContext.currentUser().getTenantId(), id);
-    return new DownloadUrlVO(entity.getId(), "/api/files/" + entity.getId() + "/download", entity.getAccessPolicy());
+    // COS 文件给预签名直链（10 分钟有效）：大文件让客户端直连 COS，绕开服务端中转和 120s 超时墙；
+    // local 等无法直链的存储回退鉴权中转 /download
+    String url = "/api/files/" + entity.getId() + "/download";
+    if ("cos".equalsIgnoreCase(entity.getStorageProvider())) {
+      url = storage.presignedDownloadUrl(entity.getObjectKey(), Duration.ofMinutes(10))
+          .map(java.net.URL::toString)
+          .orElse(url);
+    }
+    return new DownloadUrlVO(entity.getId(), url, entity.getAccessPolicy());
   }
 
   @Transactional(readOnly = true)

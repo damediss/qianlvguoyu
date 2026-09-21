@@ -389,7 +389,33 @@ export function fetchUrlFileBlob(url: string, options?: { silentError?: boolean 
   return fetchFileBlob(toProxiedFileFetchPath(url), options);
 }
 
+/**
+ * /api/files/{id}/download 形式的中转下载路径。
+ * COS 文件会由后端升级为预签名直链（download-url 返回绝对 http URL），local 文件回退中转。
+ */
+const PROXIED_DOWNLOAD_PATH = /^\/api\/files\/(\d+)\/download$/;
+
 export async function downloadUrlFile(url: string, fileName?: string): Promise<void> {
+  // COS 大文件直链快路径：浏览器原生流式下载，不受 axios 120s 超时限制、不占内存。
+  const match = PROXIED_DOWNLOAD_PATH.exec(url.split('?')[0]);
+  if (match) {
+    try {
+      const res = await apiClient.get<ApiResponse<{ id: number; url: string; accessPolicy?: string }>>(
+        `/files/${match[1]}/download-url`,
+      );
+      const direct = res.data.data?.url ?? '';
+      if (/^https?:\/\//.test(direct)) {
+        const anchor = document.createElement('a');
+        anchor.href = direct;
+        anchor.rel = 'noopener';
+        if (fileName) anchor.download = fileName;
+        anchor.click();
+        return;
+      }
+    } catch {
+      // 直链获取失败（如登录过期）回退鉴权中转下载
+    }
+  }
   const blob = await fetchUrlFileBlob(url);
   const name = fileName || fileNameFromUrl(url) || 'download';
   const objectUrl = URL.createObjectURL(blob);

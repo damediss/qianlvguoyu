@@ -3,6 +3,7 @@ package com.guoyu.platform.file.service;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -119,5 +120,55 @@ class FileApplicationServiceTest {
     assertThat(keyCaptor.getValue())
         .startsWith("dev/1/")
         .endsWith(".txt");
+  }
+
+  @Test
+  void downloadUrlReturnsPresignedUrlForCosFile() throws Exception {
+    authAsTenant(1L);
+    FileEntity entity = uploadedFile(7001L, 1L, "cos");
+    when(mapper.selectOne(any())).thenReturn(entity);
+    java.net.URL presigned = new java.net.URL(
+        "https://bucket.cos.ap-guangzhou.myqcloud.com/dev/1/pack.zip?sign=xyz");
+    when(storage.presignedDownloadUrl(eq("dev/1/pack.zip"), any(java.time.Duration.class)))
+        .thenReturn(java.util.Optional.of(presigned));
+
+    var vo = service.downloadUrl(7001L);
+
+    assertThat(vo.url()).isEqualTo(presigned.toString());
+    assertThat(vo.accessPolicy()).isEqualTo("private");
+  }
+
+  @Test
+  void downloadUrlFallsBackToProxyForLocalFile() {
+    authAsTenant(1L);
+    FileEntity entity = uploadedFile(7002L, 1L, "local");
+    when(mapper.selectOne(any())).thenReturn(entity);
+
+    var vo = service.downloadUrl(7002L);
+
+    // local 无法直链：mock 的默认空 Optional → 回退鉴权中转路径
+    assertThat(vo.url()).isEqualTo("/api/files/7002/download");
+  }
+
+  private void authAsTenant(Long tenantId) {
+    com.guoyu.platform.security.PlatformUserPrincipal principal =
+        new com.guoyu.platform.security.PlatformUserPrincipal(
+            1L, tenantId, "tester", "测试", "platform",
+            java.util.List.of(), java.util.List.of(), "a@b.c");
+    org.springframework.security.core.context.SecurityContextHolder.getContext()
+        .setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+            principal, "token", principal.getAuthorities()));
+  }
+
+  private FileEntity uploadedFile(Long id, Long tenantId, String provider) {
+    FileEntity entity = new FileEntity();
+    entity.setId(id);
+    entity.setTenantId(tenantId);
+    entity.setObjectKey("dev/1/pack.zip");
+    entity.setStorageProvider(provider);
+    entity.setAccessPolicy("private");
+    entity.setStatus("uploaded");
+    entity.setDeleted(0);
+    return entity;
   }
 }
