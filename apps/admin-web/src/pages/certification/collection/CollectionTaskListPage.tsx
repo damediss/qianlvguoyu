@@ -75,12 +75,16 @@ function statusTag(task: CollectionTaskVO) {
   return <Tag color={status.color}>{status.label}</Tag>;
 }
 
-function taskManageUrl(taskId: CollectionTaskVO['taskId']) {
-  return `/certification/practical-collection/${encodeURIComponent(String(taskId))}/manage`;
+function taskManageUrl(task: CollectionTaskVO) {
+  const baseUrl = `/certification/practical-collection/${encodeURIComponent(String(task.taskId))}/manage`;
+  if (!task.examSessionId) {
+    return baseUrl;
+  }
+  return `${baseUrl}?examSessionId=${encodeURIComponent(String(task.examSessionId))}`;
 }
 
 function openManagePage(task: CollectionTaskVO) {
-  window.location.assign(taskManageUrl(task.taskId));
+  window.location.assign(taskManageUrl(task));
 }
 
 function taskDateInRange(task: CollectionTaskVO, dateRange: [string, string] | null) {
@@ -110,7 +114,7 @@ export function CollectionTaskListPage() {
   const invalidateTasks = () => queryClient.invalidateQueries({ queryKey: ['practical-collection-tasks'] });
 
   const initializeMutation = useMutation({
-    mutationFn: initializeCollection,
+    mutationFn: (task: CollectionTaskVO) => initializeCollection(task.taskId, task.examSessionId),
     onSuccess: (result) => {
       message.success(result.message || '采集状态已初始化');
       invalidateTasks();
@@ -118,7 +122,7 @@ export function CollectionTaskListPage() {
   });
 
   const generateQrMutation = useMutation({
-    mutationFn: generateQrCodes,
+    mutationFn: (task: CollectionTaskVO) => generateQrCodes(task.taskId, task.examSessionId),
     onSuccess: (result) => {
       message.success(result.message || '二维码 token 已生成');
       invalidateTasks();
@@ -126,7 +130,7 @@ export function CollectionTaskListPage() {
   });
 
   const exportMutation = useMutation({
-    mutationFn: exportQrCodes,
+    mutationFn: (task: CollectionTaskVO) => exportQrCodes(task.taskId, task.examSessionId),
     onSuccess: (result) => {
       const messageText = typeof result === 'object' && result && 'message' in result
         ? String((result as { message?: unknown }).message)
@@ -389,21 +393,21 @@ export function CollectionTaskListPage() {
                   </Button>
                   <Button
                     loading={initializeMutation.isPending}
-                    onClick={() => initializeMutation.mutate(drawerTask.taskId)}
+                    onClick={() => initializeMutation.mutate(drawerTask)}
                   >
                     初始化采集状态
                   </Button>
                   <Button
                     icon={<QrcodeOutlined />}
                     loading={generateQrMutation.isPending}
-                    onClick={() => generateQrMutation.mutate(drawerTask.taskId)}
+                    onClick={() => generateQrMutation.mutate(drawerTask)}
                   >
                     生成二维码
                   </Button>
                   <Button
                     icon={<DownloadOutlined />}
                     loading={exportMutation.isPending}
-                    onClick={() => exportMutation.mutate(drawerTask.taskId)}
+                    onClick={() => exportMutation.mutate(drawerTask)}
                   >
                     二维码导出
                   </Button>
@@ -424,7 +428,10 @@ export function CollectionTaskListPage() {
           destroyOnHidden
           onCancel={() => setExceptionTask(null)}
         >
-          <CollectionExceptionPage taskId={exceptionTask?.taskId} />
+          <CollectionExceptionPage
+            taskId={exceptionTask?.taskId}
+            examSessionId={exceptionTask?.examSessionId}
+          />
         </Modal>
       </div>
     </PermissionGate>

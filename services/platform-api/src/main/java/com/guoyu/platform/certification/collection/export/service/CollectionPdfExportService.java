@@ -8,6 +8,7 @@ import com.guoyu.platform.certification.collection.enums.SignatureRecordStatusEn
 import com.guoyu.platform.certification.collection.export.dto.CollectionExportPdfDTO;
 import com.guoyu.platform.certification.collection.export.vo.CollectionPdfExportVO;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
+import com.guoyu.platform.certification.entity.CertificationCandidateExamSessionEntity;
 import com.guoyu.platform.certification.entity.CertificationExamSessionEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskExamSiteEntity;
@@ -16,6 +17,7 @@ import com.guoyu.platform.certification.entity.PracticalCollectionStatusEntity;
 import com.guoyu.platform.certification.entity.PracticalFingerprintTraceEntity;
 import com.guoyu.platform.certification.entity.PracticalSignatureRecordEntity;
 import com.guoyu.platform.certification.mapper.CertificationCandidateMapper;
+import com.guoyu.platform.certification.mapper.CertificationCandidateExamSessionMapper;
 import com.guoyu.platform.certification.mapper.CertificationExamSessionMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskExamSiteMapper;
 import com.guoyu.platform.certification.mapper.CertificationTaskMapper;
@@ -58,6 +60,7 @@ public class CollectionPdfExportService {
 
   private final CertificationTaskMapper taskMapper;
   private final CertificationCandidateMapper candidateMapper;
+  private final CertificationCandidateExamSessionMapper candidateExamSessionMapper;
   private final CertificationExamSessionMapper examSessionMapper;
   private final CertificationTaskExamSiteMapper taskExamSiteMapper;
   private final CertificationTaskScopeMapper taskScopeMapper;
@@ -71,6 +74,7 @@ public class CollectionPdfExportService {
   public CollectionPdfExportService(
       CertificationTaskMapper taskMapper,
       CertificationCandidateMapper candidateMapper,
+      CertificationCandidateExamSessionMapper candidateExamSessionMapper,
       CertificationExamSessionMapper examSessionMapper,
       CertificationTaskExamSiteMapper taskExamSiteMapper,
       CertificationTaskScopeMapper taskScopeMapper,
@@ -83,6 +87,7 @@ public class CollectionPdfExportService {
   ) {
     this.taskMapper = taskMapper;
     this.candidateMapper = candidateMapper;
+    this.candidateExamSessionMapper = candidateExamSessionMapper;
     this.examSessionMapper = examSessionMapper;
     this.taskExamSiteMapper = taskExamSiteMapper;
     this.taskScopeMapper = taskScopeMapper;
@@ -106,6 +111,8 @@ public class CollectionPdfExportService {
     }
     Long tenantId = SecurityContext.currentUser().getTenantId();
     CertificationTaskEntity task = requireTask(tenantId, request.examTaskId());
+    CertificationExamSessionEntity explicitSession = requireExamSession(
+        tenantId, request.examTaskId(), request.examSessionId());
     List<CertificationCandidateEntity> candidates = safeList(candidateMapper.selectList(
         new LambdaQueryWrapper<CertificationCandidateEntity>()
             .eq(CertificationCandidateEntity::getTenantId, tenantId)
@@ -113,6 +120,14 @@ public class CollectionPdfExportService {
             .in(CertificationCandidateEntity::getId, candidateIds)
             .eq(CertificationCandidateEntity::getDeleted, 0)
             .orderByAsc(CertificationCandidateEntity::getId)));
+    if (request.examSessionId() != null) {
+      List<Long> assignedIds = safeList(candidateExamSessionMapper.selectBySession(
+              tenantId, request.examTaskId(), request.examSessionId())).stream()
+          .filter(relation -> "ASSIGNED".equalsIgnoreCase(relation.getParticipationStatus()))
+          .map(CertificationCandidateExamSessionEntity::getCandidateId)
+          .toList();
+      candidates = candidates.stream().filter(candidate -> assignedIds.contains(candidate.getId())).toList();
+    }
     Map<Long, CertificationCandidateEntity> candidateMap = candidates.stream()
         .collect(Collectors.toMap(CertificationCandidateEntity::getId, Function.identity(), (left, right) -> left));
     Map<Long, CollectionEligibilityResult> eligibilityMap = eligibilityService.checkCandidates(tenantId, request.examTaskId(), candidates);
@@ -120,6 +135,9 @@ public class CollectionPdfExportService {
         new LambdaQueryWrapper<PracticalCollectionStatusEntity>()
             .eq(PracticalCollectionStatusEntity::getTenantId, tenantId)
             .eq(PracticalCollectionStatusEntity::getTaskId, request.examTaskId())
+            .eq(request.examSessionId() != null,
+                PracticalCollectionStatusEntity::getExamSessionId, request.examSessionId())
+            .isNull(request.examSessionId() == null, PracticalCollectionStatusEntity::getExamSessionId)
             .in(PracticalCollectionStatusEntity::getCandidateId, candidateIds)
             .eq(PracticalCollectionStatusEntity::getDeleted, 0)))
         .stream().collect(Collectors.toMap(PracticalCollectionStatusEntity::getCandidateId, Function.identity(), (left, right) -> left));
@@ -143,8 +161,10 @@ public class CollectionPdfExportService {
         errors.add(candidateLabel(candidate) + "：仅已完成或已放行的考生可生成打印版 PDF");
         continue;
       }
-      PracticalFingerprintTraceEntity fingerprint = latestFingerprintTrace(tenantId, request.examTaskId(), candidateId);
-      PracticalSignatureRecordEntity signature = latestSignatureRecord(tenantId, request.examTaskId(), candidateId);
+      PracticalFingerprintTraceEntity fingerprint = latestFingerprintTrace(
+          tenantId, request.examTaskId(), request.examSessionId(), candidateId);
+      PracticalSignatureRecordEntity signature = latestSignatureRecord(
+          tenantId, request.examTaskId(), request.examSessionId(), candidateId);
       byte[] fingerprintImage = fingerprint == null || !FingerprintCollectStatusEnum.SUCCESS.getCode().equals(fingerprint.getCollectStatus())
           ? null : readImageSafely(tenantId, fingerprint.getFingerprintImageFileId(), "指纹图片", candidate);
       byte[] signatureImage = signature == null ? null
@@ -162,7 +182,8 @@ public class CollectionPdfExportService {
               + "名不满足打印版 PDF 生成条件：\n" + String.join("\n", errors) + "\n请补充资料后重新生成。");
     }
 
-    CertificationExamSessionEntity session = resolveExportSession(statusMap);
+    CertificationExamSessionEntity session = explicitSession == null
+        ? resolveExportSession(statusMap) : explicitSession;
     CertificationTaskExamSiteEntity site = taskExamSiteMapper.selectOne(new LambdaQueryWrapper<CertificationTaskExamSiteEntity>()
         .eq(CertificationTaskExamSiteEntity::getTenantId, tenantId)
         .eq(CertificationTaskExamSiteEntity::getTaskId, request.examTaskId())
@@ -229,20 +250,63 @@ public class CollectionPdfExportService {
     return task;
   }
 
-  private PracticalFingerprintTraceEntity latestFingerprintTrace(Long tenantId, Long taskId, Long candidateId) {
+  private CertificationExamSessionEntity requireExamSession(
+      Long tenantId,
+      Long taskId,
+      Long examSessionId
+  ) {
+    if (examSessionId == null) {
+      Long sessionCount = examSessionMapper.selectCount(
+          new LambdaQueryWrapper<CertificationExamSessionEntity>()
+              .eq(CertificationExamSessionEntity::getTenantId, tenantId)
+              .eq(CertificationExamSessionEntity::getTaskId, taskId)
+              .eq(CertificationExamSessionEntity::getDeleted, 0));
+      if (sessionCount != null && sessionCount > 0) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "当前认定任务已配置考试场次，请先选择具体场次");
+      }
+      return null;
+    }
+    CertificationExamSessionEntity session = examSessionMapper.selectOne(
+        new LambdaQueryWrapper<CertificationExamSessionEntity>()
+            .eq(CertificationExamSessionEntity::getTenantId, tenantId)
+            .eq(CertificationExamSessionEntity::getTaskId, taskId)
+            .eq(CertificationExamSessionEntity::getId, examSessionId)
+            .eq(CertificationExamSessionEntity::getDeleted, 0)
+            .last("LIMIT 1"));
+    if (session == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "考试场次不存在或不属于当前认定任务");
+    }
+    return session;
+  }
+
+  private PracticalFingerprintTraceEntity latestFingerprintTrace(
+      Long tenantId,
+      Long taskId,
+      Long examSessionId,
+      Long candidateId
+  ) {
     return fingerprintTraceMapper.selectOne(new LambdaQueryWrapper<PracticalFingerprintTraceEntity>()
         .eq(PracticalFingerprintTraceEntity::getTenantId, tenantId)
         .eq(PracticalFingerprintTraceEntity::getTaskId, taskId)
+        .eq(examSessionId != null, PracticalFingerprintTraceEntity::getExamSessionId, examSessionId)
+        .isNull(examSessionId == null, PracticalFingerprintTraceEntity::getExamSessionId)
         .eq(PracticalFingerprintTraceEntity::getCandidateId, candidateId)
         .eq(PracticalFingerprintTraceEntity::getDeleted, 0)
         .orderByDesc(PracticalFingerprintTraceEntity::getCollectedAt)
         .orderByDesc(PracticalFingerprintTraceEntity::getCreatedAt).last("LIMIT 1"));
   }
 
-  private PracticalSignatureRecordEntity latestSignatureRecord(Long tenantId, Long taskId, Long candidateId) {
+  private PracticalSignatureRecordEntity latestSignatureRecord(
+      Long tenantId,
+      Long taskId,
+      Long examSessionId,
+      Long candidateId
+  ) {
     return signatureRecordMapper.selectOne(new LambdaQueryWrapper<PracticalSignatureRecordEntity>()
         .eq(PracticalSignatureRecordEntity::getTenantId, tenantId)
         .eq(PracticalSignatureRecordEntity::getTaskId, taskId)
+        .eq(examSessionId != null, PracticalSignatureRecordEntity::getExamSessionId, examSessionId)
+        .isNull(examSessionId == null, PracticalSignatureRecordEntity::getExamSessionId)
         .eq(PracticalSignatureRecordEntity::getCandidateId, candidateId)
         .eq(PracticalSignatureRecordEntity::getRecordStatus, SignatureRecordStatusEnum.ACTIVE.getCode())
         .eq(PracticalSignatureRecordEntity::getDeleted, 0)

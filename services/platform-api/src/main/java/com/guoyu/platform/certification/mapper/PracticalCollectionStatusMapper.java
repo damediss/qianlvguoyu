@@ -12,6 +12,7 @@ public interface PracticalCollectionStatusMapper extends BaseMapper<PracticalCol
       FROM certification_practical_collection_status
       WHERE tenant_id = #{tenantId}
         AND task_id = #{taskId}
+        AND ((#{examSessionId} IS NULL AND exam_session_id IS NULL) OR exam_session_id = #{examSessionId})
         AND candidate_id = #{candidateId}
         AND deleted = 0
       LIMIT 1
@@ -19,6 +20,7 @@ public interface PracticalCollectionStatusMapper extends BaseMapper<PracticalCol
   PracticalCollectionStatusEntity selectByTaskAndCandidate(
       @Param("tenantId") Long tenantId,
       @Param("taskId") Long taskId,
+      @Param("examSessionId") Long examSessionId,
       @Param("candidateId") Long candidateId
   );
 
@@ -27,6 +29,7 @@ public interface PracticalCollectionStatusMapper extends BaseMapper<PracticalCol
       FROM certification_practical_collection_status
       WHERE tenant_id = #{tenantId}
         AND task_id = #{taskId}
+        AND ((#{examSessionId} IS NULL AND exam_session_id IS NULL) OR exam_session_id = #{examSessionId})
         AND candidate_id = #{candidateId}
         AND deleted = 0
       LIMIT 1 FOR UPDATE
@@ -34,6 +37,7 @@ public interface PracticalCollectionStatusMapper extends BaseMapper<PracticalCol
   PracticalCollectionStatusEntity lockByTaskAndCandidate(
       @Param("tenantId") Long tenantId,
       @Param("taskId") Long taskId,
+      @Param("examSessionId") Long examSessionId,
       @Param("candidateId") Long candidateId
   );
 
@@ -42,6 +46,7 @@ public interface PracticalCollectionStatusMapper extends BaseMapper<PracticalCol
       FROM certification_practical_collection_status
       WHERE tenant_id = #{tenantId}
         AND task_id = #{taskId}
+        AND ((#{examSessionId} IS NULL AND exam_session_id IS NULL) OR exam_session_id = #{examSessionId})
         AND collect_token = #{collectToken}
         AND deleted = 0
       LIMIT 1 FOR UPDATE
@@ -49,6 +54,7 @@ public interface PracticalCollectionStatusMapper extends BaseMapper<PracticalCol
   PracticalCollectionStatusEntity lockByTaskAndToken(
       @Param("tenantId") Long tenantId,
       @Param("taskId") Long taskId,
+      @Param("examSessionId") Long examSessionId,
       @Param("collectToken") String collectToken
   );
 }

@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Size;
 
 public record MatchByTokenRequest(
     @NotNull Long taskId,
+    Long examSessionId,
     @NotBlank @Size(max = 128) String collectToken
 ) {
 }

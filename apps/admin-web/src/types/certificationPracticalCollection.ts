@@ -75,6 +75,7 @@ export type CollectionEntrySource = 'QR_SCAN' | 'CANDIDATE_ROW' | 'SEARCH';
 
 export interface CandidateCollectionContext {
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
   candidateId?: SnowflakeId;
   staffId?: SnowflakeId;
   candidateName: string;
@@ -226,11 +227,13 @@ export interface CollectionWorkbenchVO {
 
 export interface MatchByTokenRequest {
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
   collectToken: string;
 }
 
 export interface SearchCandidateRequest {
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
   keyword: string;
 }
 
@@ -298,23 +301,27 @@ export interface CandidateCollectionItemVO {
 
 export interface JoinQueueRequest {
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
   candidateId: SnowflakeId;
   matchMethod: CollectionMatchMethod;
 }
 
 export interface RemoveQueueRequest {
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
   queueId: SnowflakeId;
   removeReason?: string;
 }
 
 export interface StartNextRequest {
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
 }
 
 export interface QueueItemVO {
   queueId: SnowflakeId;
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
   candidateId: SnowflakeId;
   queueNo: number;
   name?: string;
@@ -334,6 +341,7 @@ export interface SubmitFingerprintRequest {
   taskId: SnowflakeId;
   candidateId: SnowflakeId;
   sessionId?: SnowflakeId;
+  examSessionId?: SnowflakeId;
   deviceSn?: string;
   deviceModel?: string;
   deviceVendorId?: string;
@@ -358,6 +366,7 @@ export interface FingerprintTraceVO {
   taskId: SnowflakeId;
   candidateId: SnowflakeId;
   sessionId?: SnowflakeId;
+  examSessionId?: SnowflakeId;
   deviceSn?: string;
   deviceModel?: string;
   deviceVendorId?: string;
@@ -381,6 +390,7 @@ export interface SubmitSignatureRequest {
   taskId: SnowflakeId;
   candidateId: SnowflakeId;
   sessionId?: SnowflakeId;
+  examSessionId?: SnowflakeId;
   signatureFileId: SnowflakeId;
   signatureHash: string;
   signerType: SignerType;
@@ -394,6 +404,7 @@ export interface SignatureRecordVO {
   taskId: SnowflakeId;
   candidateId: SnowflakeId;
   sessionId?: SnowflakeId;
+  examSessionId?: SnowflakeId;
   signatureFileId: SnowflakeId;
   signatureHash: string;
   signerType: SignerType;
@@ -408,23 +419,27 @@ export interface CompleteCollectionRequest {
   taskId: SnowflakeId;
   candidateId: SnowflakeId;
   sessionId?: SnowflakeId;
+  examSessionId?: SnowflakeId;
   remark?: string;
 }
 
 export interface MarkPendingRetryRequest {
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
   candidateId: SnowflakeId;
   reason: string;
 }
 
 export interface MarkInfoErrorRequest {
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
   candidateId: SnowflakeId;
   reason: string;
 }
 
 export interface ExceptionReleaseRequest {
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
   candidateId: SnowflakeId;
   exceptionType: CollectionExceptionType;
   releaseScope: CollectionReleaseScope;
@@ -460,6 +475,7 @@ export interface CollectionExceptionQueryRequest {
   page?: number;
   pageSize?: number;
   taskId?: SnowflakeId;
+  examSessionId?: SnowflakeId;
   candidateId?: SnowflakeId;
   exceptionType?: CollectionExceptionType;
   exceptionStatus?: CollectionExceptionStatus;
@@ -491,6 +507,7 @@ export interface CandidateCollectionDetailVO {
   candidateId: SnowflakeId;
   taskId: SnowflakeId;
   sessionId?: SnowflakeId;
+  examSessionId?: SnowflakeId;
   name: string;
   idCardLast4?: string;
   maskedIdCardNo?: string;

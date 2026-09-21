@@ -2,6 +2,12 @@ import { getCollectionTasks, getCollectionWorkbench } from '../../api/certificat
 import type { CollectionTaskVO, SnowflakeId } from '../../types/certificationPracticalCollection';
 
 const LAST_COLLECTION_TASK_ID_KEY = 'guoyu.practical-collection.last-task-id';
+const LAST_COLLECTION_EXAM_SESSION_ID_KEY = 'guoyu.practical-collection.last-exam-session-id';
+
+export interface CollectionWorkbenchScope {
+  taskId: string;
+  examSessionId?: string;
+}
 
 export function readLastCollectionTaskId(): string | undefined {
   try {
@@ -20,6 +26,17 @@ export function writeLastCollectionTaskId(taskId: SnowflakeId): void {
   }
 }
 
+export function readLastCollectionScope(): CollectionWorkbenchScope | undefined {
+  const taskId = readLastCollectionTaskId();
+  if (!taskId) return undefined;
+  try {
+    const examSessionId = localStorage.getItem(LAST_COLLECTION_EXAM_SESSION_ID_KEY)?.trim() || undefined;
+    return { taskId, examSessionId };
+  } catch {
+    return { taskId };
+  }
+}
+
 export async function fetchCollectionTasks(keyword?: string): Promise<CollectionTaskVO[]> {
   const response = await getCollectionTasks({
     page: 1,
@@ -29,21 +46,36 @@ export async function fetchCollectionTasks(keyword?: string): Promise<Collection
   return response.items || [];
 }
 
-export async function fetchCollectionTaskDetail(taskId: SnowflakeId) {
-  const workbench = await getCollectionWorkbench(taskId);
+export async function fetchCollectionTaskDetail(taskId: SnowflakeId, examSessionId?: SnowflakeId) {
+  const workbench = await getCollectionWorkbench(taskId, examSessionId);
   return workbench.task;
 }
 
-export async function fetchTaskCandidates(taskId: SnowflakeId) {
-  const workbench = await getCollectionWorkbench(taskId);
+export async function fetchTaskCandidates(taskId: SnowflakeId, examSessionId?: SnowflakeId) {
+  const workbench = await getCollectionWorkbench(taskId, examSessionId);
   return workbench.candidates;
 }
 
-export function buildTabletWorkbenchPath(taskId: SnowflakeId): string {
-  return `/practical-collection/workbench/${encodeURIComponent(String(taskId))}`;
+export function buildTabletWorkbenchPath(
+  taskId: SnowflakeId,
+  examSessionId?: SnowflakeId,
+): string {
+  const path = `/practical-collection/workbench/${encodeURIComponent(String(taskId))}`;
+  return examSessionId === undefined || examSessionId === null
+    ? path
+    : `${path}?examSessionId=${encodeURIComponent(String(examSessionId))}`;
 }
 
-export function switchCollectionTask(taskId: SnowflakeId): void {
+export function switchCollectionTask(taskId: SnowflakeId, examSessionId?: SnowflakeId): void {
   writeLastCollectionTaskId(taskId);
-  window.history.replaceState(null, '', buildTabletWorkbenchPath(taskId));
+  try {
+    if (examSessionId === undefined || examSessionId === null) {
+      localStorage.removeItem(LAST_COLLECTION_EXAM_SESSION_ID_KEY);
+    } else {
+      localStorage.setItem(LAST_COLLECTION_EXAM_SESSION_ID_KEY, String(examSessionId));
+    }
+  } catch {
+    // ignore storage failures on restricted WebView profiles
+  }
+  window.history.replaceState(null, '', buildTabletWorkbenchPath(taskId, examSessionId));
 }

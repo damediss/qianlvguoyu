@@ -398,23 +398,24 @@ public class PracticalCollectionApplicationService {
 
   @Transactional
   public CollectionWorkbenchVO workbench(Long taskId) {
+    return workbench(taskId, null);
+  }
+
+  @Transactional
+  public CollectionWorkbenchVO workbench(Long taskId, Long examSessionId) {
     Long tenantId = current().getTenantId();
-    initializeCollectionStatus(taskId);
+    CertificationExamSessionEntity session = requireExamSession(tenantId, taskId, examSessionId);
+    initializeCollectionStatus(taskId, examSessionId);
     CertificationTaskEntity task = requireTask(tenantId, taskId);
-    CollectionStatsVO stats = statsForTask(tenantId, taskId);
+    CollectionStatsVO stats = session == null ? statsForTask(tenantId, taskId) : statsForSession(tenantId, session);
     List<CertificationTaskScopeEntity> scopes = scopesForTask(tenantId, taskId);
-    List<CertificationCandidateEntity> candidates = candidateMapper.selectList(
-        new LambdaQueryWrapper<CertificationCandidateEntity>()
-            .eq(CertificationCandidateEntity::getTenantId, tenantId)
-            .eq(CertificationCandidateEntity::getTaskId, taskId)
-            .eq(CertificationCandidateEntity::getDeleted, 0)
-            .orderByAsc(CertificationCandidateEntity::getId)
-            .last("LIMIT 500"));
+    List<CertificationCandidateEntity> candidates = candidatesForScope(tenantId, taskId, examSessionId, 500);
     Map<Long, CollectionEligibilityResult> eligibilities = eligibilityService.checkCandidates(tenantId, taskId, candidates);
     List<CertificationCandidateEntity> eligibleCandidates = eligibleCandidates(candidates, eligibilities);
     Map<Long, PracticalCollectionStatusEntity> statuses = statusesByCandidateIds(
         tenantId,
         taskId,
+        examSessionId,
         eligibleCandidates.stream().map(CertificationCandidateEntity::getId).toList()
     );
     List<CandidateCollectionItemVO> candidateItems = eligibleCandidates.stream()
@@ -427,6 +428,8 @@ public class PracticalCollectionApplicationService {
         new LambdaQueryWrapper<PracticalCollectionQueueEntity>()
             .eq(PracticalCollectionQueueEntity::getTenantId, tenantId)
             .eq(PracticalCollectionQueueEntity::getTaskId, taskId)
+            .eq(examSessionId != null, PracticalCollectionQueueEntity::getExamSessionId, examSessionId)
+            .isNull(examSessionId == null, PracticalCollectionQueueEntity::getExamSessionId)
             .in(PracticalCollectionQueueEntity::getQueueStatus,
                 List.of(CollectionQueueStatusEnum.QUEUED.getCode(), CollectionQueueStatusEnum.COLLECTING.getCode()))
             .eq(PracticalCollectionQueueEntity::getDeleted, 0)
@@ -447,10 +450,12 @@ public class PracticalCollectionApplicationService {
     CandidateCollectionDetailVO currentCandidate = queueRows.stream()
         .filter(queue -> CollectionQueueStatusEnum.COLLECTING.getCode().equals(queue.getQueueStatus()))
         .findFirst()
-        .map(queue -> collectionDetail(taskId, queue.getCandidateId()))
+        .map(queue -> collectionDetail(taskId, examSessionId, queue.getCandidateId()))
         .orElse(null);
     return new CollectionWorkbenchVO(
-        converter.toTaskVO(task, stats, scopes),
+        session == null
+            ? converter.toTaskVO(task, stats, scopes)
+            : converter.toTaskVO(task, stats, scopes, session.getId(), session.getSessionName(), session.getExamType()),
         stats,
         candidateItems,
         queueItems,
@@ -459,17 +464,24 @@ public class PracticalCollectionApplicationService {
   }
 
   public CandidateCollectionDetailVO collectionDetail(Long taskId, Long candidateId) {
+    return collectionDetail(taskId, null, candidateId);
+  }
+
+  public CandidateCollectionDetailVO collectionDetail(Long taskId, Long examSessionId, Long candidateId) {
     PlatformUserPrincipal user = current();
-    CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), taskId, candidateId);
-    PracticalCollectionStatusEntity status = ensureStatusForCandidate(user.getTenantId(), candidate);
+    requireExamSession(user.getTenantId(), taskId, examSessionId);
+    CertificationCandidateEntity candidate = requireCandidateInScope(user.getTenantId(), taskId, examSessionId, candidateId);
+    PracticalCollectionStatusEntity status = ensureStatusForCandidate(user.getTenantId(), examSessionId, candidate);
     PracticalCollectionQueueEntity queue =
-        queueMapper.selectActiveByCandidate(user.getTenantId(), taskId, candidateId);
-    PracticalFingerprintTraceEntity fingerprintTrace = latestFingerprintTrace(user.getTenantId(), taskId, candidateId);
-    PracticalSignatureRecordEntity signatureRecord = latestSignatureRecord(user.getTenantId(), taskId, candidateId);
+        queueMapper.selectActiveByCandidate(user.getTenantId(), taskId, examSessionId, candidateId);
+    PracticalFingerprintTraceEntity fingerprintTrace = latestFingerprintTrace(user.getTenantId(), taskId, examSessionId, candidateId);
+    PracticalSignatureRecordEntity signatureRecord = latestSignatureRecord(user.getTenantId(), taskId, examSessionId, candidateId);
     List<CollectionExceptionVO> exceptions = exceptionMapper.selectList(
             new LambdaQueryWrapper<PracticalCollectionExceptionEntity>()
                 .eq(PracticalCollectionExceptionEntity::getTenantId, user.getTenantId())
                 .eq(PracticalCollectionExceptionEntity::getTaskId, taskId)
+                .eq(examSessionId != null, PracticalCollectionExceptionEntity::getExamSessionId, examSessionId)
+                .isNull(examSessionId == null, PracticalCollectionExceptionEntity::getExamSessionId)
                 .eq(PracticalCollectionExceptionEntity::getCandidateId, candidateId)
                 .eq(PracticalCollectionExceptionEntity::getDeleted, 0)
                 .orderByDesc(PracticalCollectionExceptionEntity::getHandledAt)
@@ -502,6 +514,9 @@ public class PracticalCollectionApplicationService {
         new LambdaQueryWrapper<PracticalCollectionExceptionEntity>()
             .eq(PracticalCollectionExceptionEntity::getTenantId, tenantId)
             .eq(request.getTaskId() != null, PracticalCollectionExceptionEntity::getTaskId, request.getTaskId())
+            .eq(request.getExamSessionId() != null, PracticalCollectionExceptionEntity::getExamSessionId, request.getExamSessionId())
+            .isNull(request.getTaskId() != null && request.getExamSessionId() == null,
+                PracticalCollectionExceptionEntity::getExamSessionId)
             .eq(request.getCandidateId() != null, PracticalCollectionExceptionEntity::getCandidateId, request.getCandidateId())
             .eq(StringUtils.hasText(request.getExceptionType()),
                 PracticalCollectionExceptionEntity::getExceptionType,
@@ -521,7 +536,8 @@ public class PracticalCollectionApplicationService {
         .map(entity -> converter.toExceptionVO(
             entity,
             candidateById(tenantId, entity.getTaskId(), entity.getCandidateId()),
-            statusMapper.selectByTaskAndCandidate(tenantId, entity.getTaskId(), entity.getCandidateId())
+            statusMapper.selectByTaskAndCandidate(
+                tenantId, entity.getTaskId(), entity.getExamSessionId(), entity.getCandidateId())
         ))
         .toList();
     return new PageResponse<>(items, page.getCurrent(), page.getSize(), page.getTotal());
@@ -529,18 +545,30 @@ public class PracticalCollectionApplicationService {
 
   @Transactional
   public CollectionActionResultVO initializeCollectionStatusAction(Long taskId) {
-    int created = initializeCollectionStatus(taskId);
+    return initializeCollectionStatusAction(taskId, null);
+  }
+
+  @Transactional
+  public CollectionActionResultVO initializeCollectionStatusAction(Long taskId, Long examSessionId) {
+    int created = initializeCollectionStatus(taskId, examSessionId);
     return actionResult(taskId, "Initialized collection statuses: " + created);
   }
 
   @Transactional
   public CollectionActionResultVO generateQrTokensAction(Long taskId) {
+    return generateQrTokensAction(taskId, null);
+  }
+
+  @Transactional
+  public CollectionActionResultVO generateQrTokensAction(Long taskId, Long examSessionId) {
     Long tenantId = current().getTenantId();
-    int generated = generateQrTokens(taskId);
+    int generated = generateQrTokens(taskId, examSessionId);
     List<PracticalCollectionStatusEntity> statuses = statusMapper.selectList(
         new LambdaQueryWrapper<PracticalCollectionStatusEntity>()
             .eq(PracticalCollectionStatusEntity::getTenantId, tenantId)
             .eq(PracticalCollectionStatusEntity::getTaskId, taskId)
+            .eq(examSessionId != null, PracticalCollectionStatusEntity::getExamSessionId, examSessionId)
+            .isNull(examSessionId == null, PracticalCollectionStatusEntity::getExamSessionId)
             .eq(PracticalCollectionStatusEntity::getDeleted, 0));
     int total = statuses.size();
     long issued = statuses.stream().filter(status -> StringUtils.hasText(status.getCollectToken())).count();
@@ -557,18 +585,20 @@ public class PracticalCollectionApplicationService {
    */
   @Transactional
   public QrCodeExportVO exportQrCodes(Long taskId) {
+    return exportQrCodes(taskId, null);
+  }
+
+  @Transactional
+  public QrCodeExportVO exportQrCodes(Long taskId, Long examSessionId) {
     Long tenantId = current().getTenantId();
     CertificationTaskEntity task = requireTask(tenantId, taskId);
-    generateQrTokens(taskId);
-    List<CertificationCandidateEntity> candidates = candidateMapper.selectList(
-        new LambdaQueryWrapper<CertificationCandidateEntity>()
-            .eq(CertificationCandidateEntity::getTenantId, tenantId)
-            .eq(CertificationCandidateEntity::getTaskId, taskId)
-            .eq(CertificationCandidateEntity::getDeleted, 0)
-            .orderByAsc(CertificationCandidateEntity::getId));
+    requireExamSession(tenantId, taskId, examSessionId);
+    generateQrTokens(taskId, examSessionId);
+    List<CertificationCandidateEntity> candidates = candidatesForScope(tenantId, taskId, examSessionId, null);
     Map<Long, PracticalCollectionStatusEntity> statuses = statusesByCandidateIds(
         tenantId,
         taskId,
+        examSessionId,
         candidates.stream().map(CertificationCandidateEntity::getId).toList());
     byte[] data = buildQrCodeWorkbook(candidates, statuses);
     String filename = String.format(
@@ -590,6 +620,8 @@ public class PracticalCollectionApplicationService {
   public CollectionFormExportVO exportCollectionForms(Long taskId, CollectionFormExportRequest request) {
     Long tenantId = current().getTenantId();
     CertificationTaskEntity task = requireTask(tenantId, taskId);
+    Long examSessionId = request.examSessionId();
+    CertificationExamSessionEntity explicitSession = requireExamSession(tenantId, taskId, examSessionId);
     List<Long> candidateIds = request.candidateIds().stream().filter(Objects::nonNull).distinct().toList();
     List<CertificationCandidateEntity> candidates = candidateMapper.selectList(
         new LambdaQueryWrapper<CertificationCandidateEntity>()
@@ -598,10 +630,15 @@ public class PracticalCollectionApplicationService {
             .in(CertificationCandidateEntity::getId, candidateIds)
             .eq(CertificationCandidateEntity::getDeleted, 0)
             .orderByAsc(CertificationCandidateEntity::getId));
+    if (examSessionId != null) {
+      Set<Long> assignedIds = candidateIdsForScope(tenantId, taskId, examSessionId);
+      candidates = candidates.stream().filter(candidate -> assignedIds.contains(candidate.getId())).toList();
+    }
     Map<Long, CertificationCandidateEntity> candidateMap = (candidates == null ? List.<CertificationCandidateEntity>of() : candidates).stream()
         .collect(Collectors.toMap(CertificationCandidateEntity::getId, Function.identity(), (left, right) -> left));
     Map<Long, CollectionEligibilityResult> eligibilities = eligibilityService.checkCandidates(tenantId, taskId, candidates);
-    Map<Long, PracticalCollectionStatusEntity> statuses = statusesByCandidateIds(tenantId, taskId, candidateIds);
+    Map<Long, PracticalCollectionStatusEntity> statuses = statusesByCandidateIds(
+        tenantId, taskId, examSessionId, candidateIds);
     List<String> errors = new ArrayList<>();
     List<CollectionFormCandidate> exportCandidates = new ArrayList<>();
     for (Long candidateId : candidateIds) {
@@ -625,8 +662,8 @@ public class PracticalCollectionApplicationService {
           status.getOverallStatus(), status.getExceptionStatus());
       try {
         byte[] avatar = readImageFile(tenantId, eligibility.avatarFileId(), "证件照");
-        PracticalFingerprintTraceEntity fingerprint = latestFingerprintTrace(tenantId, taskId, candidateId);
-        PracticalSignatureRecordEntity signature = latestSignatureRecord(tenantId, taskId, candidateId);
+        PracticalFingerprintTraceEntity fingerprint = latestFingerprintTrace(tenantId, taskId, examSessionId, candidateId);
+        PracticalSignatureRecordEntity signature = latestSignatureRecord(tenantId, taskId, examSessionId, candidateId);
         byte[] fingerprintImage;
         byte[] signatureImage;
         if (released) {
@@ -672,7 +709,8 @@ public class PracticalCollectionApplicationService {
         .eq(CertificationTaskScopeEntity::getDeleted, 0)
         .orderByAsc(CertificationTaskScopeEntity::getSortOrder)
         .last("LIMIT 1"));
-    CertificationExamSessionEntity session = resolveExportExamSession(taskId, statuses);
+    CertificationExamSessionEntity session = explicitSession == null
+        ? resolveExportExamSession(taskId, statuses) : explicitSession;
     byte[] data = buildCollectionFormWorkbook(task, site, scope, session, exportCandidates);
     String filename = "职业技能等级认定座次签到表_" + safeFilename(task.getTaskName()) + "_"
         + LocalDateTime.now().format(FILE_TS_FORMAT) + ".xlsx";
@@ -1448,29 +1486,36 @@ public class PracticalCollectionApplicationService {
    */
   @Transactional
   public ScanMatchResultVO scanMatchCurrent(Long taskId, String rawToken) {
+    return scanMatchCurrent(taskId, null, rawToken);
+  }
+
+  @Transactional
+  public ScanMatchResultVO scanMatchCurrent(Long taskId, Long examSessionId, String rawToken) {
     PlatformUserPrincipal user = current();
     requireTask(user.getTenantId(), taskId);
+    requireExamSession(user.getTenantId(), taskId, examSessionId);
     String token = normalizeToken(rawToken);
     if (!StringUtils.hasText(token)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "二维码内容为空，无法匹配考生");
     }
     PracticalCollectionStatusEntity status =
-        statusMapper.lockByTaskAndToken(user.getTenantId(), taskId, token);
+        statusMapper.lockByTaskAndToken(user.getTenantId(), taskId, examSessionId, token);
     if (status == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "采集二维码无效或不属于当前任务");
     }
     CertificationCandidateEntity candidate =
-        requireCandidate(user.getTenantId(), taskId, status.getCandidateId());
+        requireCandidateInScope(user.getTenantId(), taskId, examSessionId, status.getCandidateId());
     if (CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
       return new ScanMatchResultVO(
           true,
-          collectionDetail(taskId, candidate.getId()),
+          collectionDetail(taskId, examSessionId, candidate.getId()),
           "该考生已完成采集");
     }
     eligibilityService.requireEligible(user.getTenantId(), taskId, candidate.getId());
     CandidateCollectionDetailVO detail = openCurrentCandidate(
         user,
         taskId,
+        examSessionId,
         candidate,
         status,
         CollectionMatchMethodEnum.QR_CODE
@@ -1480,18 +1525,26 @@ public class PracticalCollectionApplicationService {
 
   @Transactional
   public CandidateCollectionDetailVO openCandidateCollection(Long taskId, Long candidateId) {
+    return openCandidateCollection(taskId, null, candidateId);
+  }
+
+  @Transactional
+  public CandidateCollectionDetailVO openCandidateCollection(Long taskId, Long examSessionId, Long candidateId) {
     PlatformUserPrincipal user = current();
     requireTask(user.getTenantId(), taskId);
-    CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), taskId, candidateId);
-    PracticalCollectionStatusEntity existingStatus = statusMapper.selectByTaskAndCandidate(user.getTenantId(), taskId, candidateId);
+    requireExamSession(user.getTenantId(), taskId, examSessionId);
+    CertificationCandidateEntity candidate = requireCandidateInScope(user.getTenantId(), taskId, examSessionId, candidateId);
+    PracticalCollectionStatusEntity existingStatus = statusMapper.selectByTaskAndCandidate(
+        user.getTenantId(), taskId, examSessionId, candidateId);
     if (existingStatus != null && CollectionOverallStatusEnum.COMPLETED.getCode().equals(existingStatus.getOverallStatus())) {
-      return collectionDetail(taskId, candidate.getId());
+      return collectionDetail(taskId, examSessionId, candidate.getId());
     }
     eligibilityService.requireEligible(user.getTenantId(), taskId, candidateId);
-    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), examSessionId, candidate);
     return openCurrentCandidate(
         user,
         taskId,
+        examSessionId,
         candidate,
         status,
         CollectionMatchMethodEnum.MANUAL
@@ -1506,15 +1559,18 @@ public class PracticalCollectionApplicationService {
   public CollectionActionResultVO cancelCurrentCollection(CancelCurrentCollectionRequest request) {
     PlatformUserPrincipal user = current();
     requireTask(user.getTenantId(), request.taskId());
+    requireExamSession(user.getTenantId(), request.taskId(), request.examSessionId());
     CertificationCandidateEntity candidate =
-        requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
-    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
+        requireCandidateInScope(user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId());
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(
+        user.getTenantId(), request.examSessionId(), candidate);
     boolean collecting =
         CollectionOverallStatusEnum.COLLECTING.getCode().equals(status.getOverallStatus())
             || CollectionQueueStatusEnum.COLLECTING.getCode().equals(status.getQueueStatus());
     if (!collecting) {
       PracticalCollectionQueueEntity activeQueue =
-          queueMapper.selectActiveByCandidate(user.getTenantId(), request.taskId(), request.candidateId());
+          queueMapper.selectActiveByCandidate(
+              user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId());
       if (activeQueue == null
           || !CollectionQueueStatusEnum.COLLECTING.getCode().equals(activeQueue.getQueueStatus())) {
         return converter.toActionResultVO(status, activeQueueItem(user.getTenantId(), candidate, status), "当前考生未在采集中");
@@ -1523,6 +1579,7 @@ public class PracticalCollectionApplicationService {
     removeActiveQueue(
         user.getTenantId(),
         request.taskId(),
+        request.examSessionId(),
         request.candidateId(),
         user.getUserId(),
         "取消当前采集"
@@ -1540,6 +1597,7 @@ public class PracticalCollectionApplicationService {
   private CandidateCollectionDetailVO openCurrentCandidate(
       PlatformUserPrincipal user,
       Long taskId,
+      Long examSessionId,
       CertificationCandidateEntity candidate,
       PracticalCollectionStatusEntity status,
       CollectionMatchMethodEnum matchMethod
@@ -1549,6 +1607,8 @@ public class PracticalCollectionApplicationService {
             new LambdaQueryWrapper<PracticalCollectionQueueEntity>()
                 .eq(PracticalCollectionQueueEntity::getTenantId, user.getTenantId())
                 .eq(PracticalCollectionQueueEntity::getTaskId, taskId)
+                .eq(examSessionId != null, PracticalCollectionQueueEntity::getExamSessionId, examSessionId)
+                .isNull(examSessionId == null, PracticalCollectionQueueEntity::getExamSessionId)
                 .eq(PracticalCollectionQueueEntity::getQueueStatus, CollectionQueueStatusEnum.COLLECTING.getCode())
                 .eq(PracticalCollectionQueueEntity::getDeleted, 0)
                 .last("LIMIT 1"))
@@ -1573,15 +1633,15 @@ public class PracticalCollectionApplicationService {
     status.setLastOperatorId(user.getUserId());
     statusMapper.updateById(status);
     PracticalCollectionQueueEntity queue =
-        queueMapper.selectActiveByCandidate(user.getTenantId(), taskId, candidate.getId());
+        queueMapper.selectActiveByCandidate(user.getTenantId(), taskId, examSessionId, candidate.getId());
     if (queue == null) {
-      joinQueue(new JoinQueueRequest(taskId, candidate.getId(), matchMethod.getCode()));
-      queue = queueMapper.selectActiveByCandidate(user.getTenantId(), taskId, candidate.getId());
+      joinQueue(new JoinQueueRequest(taskId, examSessionId, candidate.getId(), matchMethod.getCode()));
+      queue = queueMapper.selectActiveByCandidate(user.getTenantId(), taskId, examSessionId, candidate.getId());
     }
     if (queue == null) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "加入采集队列失败");
     }
-    PracticalCollectionStatusEntity locked = lockStatusForCandidate(user.getTenantId(), candidate);
+    PracticalCollectionStatusEntity locked = lockStatusForCandidate(user.getTenantId(), examSessionId, candidate);
     if (!CollectionOverallStatusEnum.COLLECTING.getCode().equals(locked.getOverallStatus())) {
       if (!CollectionQueueStatusEnum.COLLECTING.getCode().equals(queue.getQueueStatus())) {
         queue.setQueueStatus(CollectionQueueStatusEnum.COLLECTING.getCode());
@@ -1597,7 +1657,7 @@ public class PracticalCollectionApplicationService {
       locked.setLastOperatorId(user.getUserId());
       statusMapper.updateById(locked);
     }
-    return collectionDetail(taskId, candidate.getId());
+    return collectionDetail(taskId, examSessionId, candidate.getId());
   }
 
   private String normalizeToken(String rawToken) {
@@ -1614,18 +1674,20 @@ public class PracticalCollectionApplicationService {
 
   @Transactional
   public int initializeCollectionStatus(Long taskId) {
+    return initializeCollectionStatus(taskId, null);
+  }
+
+  @Transactional
+  public int initializeCollectionStatus(Long taskId, Long examSessionId) {
     Long tenantId = current().getTenantId();
     requireTask(tenantId, taskId);
-    List<CertificationCandidateEntity> candidates = candidateMapper.selectList(
-        new LambdaQueryWrapper<CertificationCandidateEntity>()
-            .eq(CertificationCandidateEntity::getTenantId, tenantId)
-            .eq(CertificationCandidateEntity::getTaskId, taskId)
-            .eq(CertificationCandidateEntity::getDeleted, 0));
+    requireExamSession(tenantId, taskId, examSessionId);
+    List<CertificationCandidateEntity> candidates = candidatesForScope(tenantId, taskId, examSessionId, null);
     Map<Long, CollectionEligibilityResult> eligibilities = eligibilityService.checkCandidates(tenantId, taskId, candidates);
     int created = 0;
     for (CertificationCandidateEntity candidate : candidates) {
       PracticalCollectionStatusEntity existing = statusMapper.selectByTaskAndCandidate(
-          tenantId, taskId, candidate.getId());
+          tenantId, taskId, examSessionId, candidate.getId());
       if (existing != null) {
         continue;
       }
@@ -1638,7 +1700,7 @@ public class PracticalCollectionApplicationService {
         continue;
       }
       try {
-        statusMapper.insert(newStatus(tenantId, candidate));
+        statusMapper.insert(newStatus(tenantId, examSessionId, candidate));
         created++;
       } catch (DuplicateKeyException ex) {
         // Another collector initialized this candidate concurrently. The unique key keeps it idempotent.
@@ -1649,12 +1711,19 @@ public class PracticalCollectionApplicationService {
 
   @Transactional
   public int generateQrTokens(Long taskId) {
+    return generateQrTokens(taskId, null);
+  }
+
+  @Transactional
+  public int generateQrTokens(Long taskId, Long examSessionId) {
     Long tenantId = current().getTenantId();
-    initializeCollectionStatus(taskId);
+    initializeCollectionStatus(taskId, examSessionId);
     List<PracticalCollectionStatusEntity> rows = statusMapper.selectList(
         new LambdaQueryWrapper<PracticalCollectionStatusEntity>()
             .eq(PracticalCollectionStatusEntity::getTenantId, tenantId)
             .eq(PracticalCollectionStatusEntity::getTaskId, taskId)
+            .eq(examSessionId != null, PracticalCollectionStatusEntity::getExamSessionId, examSessionId)
+            .isNull(examSessionId == null, PracticalCollectionStatusEntity::getExamSessionId)
             .eq(PracticalCollectionStatusEntity::getDeleted, 0)
             .and(wrapper -> wrapper
                 .isNull(PracticalCollectionStatusEntity::getCollectToken)
@@ -1672,14 +1741,17 @@ public class PracticalCollectionApplicationService {
   @Transactional
   public int generateQrTokens(GenerateQrCodeRequest request) {
     if (request.candidateIds() == null || request.candidateIds().isEmpty()) {
-      return generateQrTokens(request.taskId());
+      return generateQrTokens(request.taskId(), request.examSessionId());
     }
     Long tenantId = current().getTenantId();
     requireTask(tenantId, request.taskId());
+    requireExamSession(tenantId, request.taskId(), request.examSessionId());
     int generated = 0;
     for (Long candidateId : request.candidateIds()) {
-      CertificationCandidateEntity candidate = requireCandidate(tenantId, request.taskId(), candidateId);
-      PracticalCollectionStatusEntity status = lockStatusForCandidate(tenantId, candidate);
+      CertificationCandidateEntity candidate = requireCandidateInScope(
+          tenantId, request.taskId(), request.examSessionId(), candidateId);
+      PracticalCollectionStatusEntity status = lockStatusForCandidate(
+          tenantId, request.examSessionId(), candidate);
       boolean regenerate = Boolean.TRUE.equals(request.regenerateExisting());
       if (!regenerate && StringUtils.hasText(status.getCollectToken())) {
         continue;
@@ -1695,11 +1767,13 @@ public class PracticalCollectionApplicationService {
   public CandidateMatchVO matchByToken(MatchByTokenRequest request) {
     PlatformUserPrincipal user = current();
     PracticalCollectionStatusEntity status = statusMapper.lockByTaskAndToken(
-        user.getTenantId(), request.taskId(), request.collectToken());
+        user.getTenantId(), request.taskId(), request.examSessionId(), request.collectToken());
     if (status == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "采集二维码不存在或不属于当前任务");
     }
-    CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), status.getCandidateId());
+    requireExamSession(user.getTenantId(), request.taskId(), request.examSessionId());
+    CertificationCandidateEntity candidate = requireCandidateInScope(
+        user.getTenantId(), request.taskId(), request.examSessionId(), status.getCandidateId());
     if (!CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
       eligibilityService.requireEligible(user.getTenantId(), request.taskId(), candidate.getId());
     }
@@ -1713,7 +1787,8 @@ public class PracticalCollectionApplicationService {
     status.setLastOperatorId(user.getUserId());
     statusMapper.updateById(status);
     PracticalCollectionQueueEntity activeQueue =
-        queueMapper.selectActiveByCandidate(user.getTenantId(), request.taskId(), candidate.getId());
+        queueMapper.selectActiveByCandidate(
+            user.getTenantId(), request.taskId(), request.examSessionId(), candidate.getId());
     return converter.toCandidateMatchVO(
         candidate,
         status,
@@ -1727,12 +1802,17 @@ public class PracticalCollectionApplicationService {
   public List<CandidateMatchVO> searchCandidate(SearchCandidateRequest request) {
     Long tenantId = current().getTenantId();
     requireTask(tenantId, request.taskId());
-    initializeCollectionStatus(request.taskId());
+    requireExamSession(tenantId, request.taskId(), request.examSessionId());
+    initializeCollectionStatus(request.taskId(), request.examSessionId());
     String keyword = request.keyword() == null ? "" : request.keyword().trim();
     if (!StringUtils.hasText(keyword)) {
       return List.of();
     }
     List<CertificationCandidateEntity> candidates = searchCandidates(tenantId, request.taskId(), keyword);
+    if (request.examSessionId() != null) {
+      Set<Long> assignedIds = candidateIdsForScope(tenantId, request.taskId(), request.examSessionId());
+      candidates = candidates.stream().filter(candidate -> assignedIds.contains(candidate.getId())).toList();
+    }
     if (candidates.isEmpty()) {
         return List.of();
     }
@@ -1744,6 +1824,7 @@ public class PracticalCollectionApplicationService {
     Map<Long, PracticalCollectionStatusEntity> statuses = statusesByCandidateIds(
         tenantId,
         request.taskId(),
+        request.examSessionId(),
         candidates.stream().map(CertificationCandidateEntity::getId).toList()
     );
     return candidates.stream()
@@ -1783,14 +1864,18 @@ public class PracticalCollectionApplicationService {
     if (matchMethod == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "匹配方式不正确");
     }
-    CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
+    requireExamSession(user.getTenantId(), request.taskId(), request.examSessionId());
+    CertificationCandidateEntity candidate = requireCandidateInScope(
+        user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId());
     eligibilityService.requireEligible(user.getTenantId(), request.taskId(), request.candidateId());
-    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(
+        user.getTenantId(), request.examSessionId(), candidate);
     if (CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
       throw new BusinessException(ErrorCode.CONFLICT, "已完成采集的考生不能重新入队");
     }
     PracticalCollectionQueueEntity existing =
-        queueMapper.selectActiveByCandidate(user.getTenantId(), request.taskId(), request.candidateId());
+        queueMapper.selectActiveByCandidate(
+            user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId());
     if (existing != null) {
       return converter.toQueueItemVO(existing, candidate, status);
     }
@@ -1800,9 +1885,10 @@ public class PracticalCollectionApplicationService {
         PracticalCollectionQueueEntity queue = new PracticalCollectionQueueEntity();
         queue.setTenantId(user.getTenantId());
         queue.setTaskId(request.taskId());
+        queue.setExamSessionId(request.examSessionId());
         queue.setCandidateId(request.candidateId());
         queue.setStatusId(status.getId());
-        queue.setQueueNo(nextQueueNo(user.getTenantId(), request.taskId()));
+        queue.setQueueNo(nextQueueNo(user.getTenantId(), request.taskId(), request.examSessionId()));
         queue.setQueueStatus(CollectionQueueStatusEnum.QUEUED.getCode());
         queue.setMatchMethod(matchMethod.getCode());
         queue.setJoinedAt(LocalDateTime.now());
@@ -1822,7 +1908,8 @@ public class PracticalCollectionApplicationService {
         return converter.toQueueItemVO(queue, candidate, status);
       } catch (DuplicateKeyException ex) {
         PracticalCollectionQueueEntity active =
-            queueMapper.selectActiveByCandidate(user.getTenantId(), request.taskId(), request.candidateId());
+            queueMapper.selectActiveByCandidate(
+                user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId());
         if (active != null) {
           return converter.toQueueItemVO(active, candidate, status);
         }
@@ -1844,7 +1931,7 @@ public class PracticalCollectionApplicationService {
     List<BatchJoinQueueResultVO.BatchJoinQueueFailureVO> failures = new ArrayList<>();
     for (Long candidateId : candidateIds) {
       try {
-        joinQueue(new JoinQueueRequest(request.taskId(), candidateId, matchMethod));
+        joinQueue(new JoinQueueRequest(request.taskId(), request.examSessionId(), candidateId, matchMethod));
         success++;
       } catch (BusinessException ex) {
         CollectionEligibilityResult eligibility = eligibilityService.check(
@@ -1867,11 +1954,14 @@ public class PracticalCollectionApplicationService {
     PracticalCollectionQueueEntity queue = queueMapper.selectById(request.queueId());
     if (queue == null
         || !user.getTenantId().equals(queue.getTenantId())
-        || !request.taskId().equals(queue.getTaskId())) {
+        || !request.taskId().equals(queue.getTaskId())
+        || !Objects.equals(request.examSessionId(), queue.getExamSessionId())) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "队列项不存在");
     }
-    CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), queue.getCandidateId());
-    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
+    CertificationCandidateEntity candidate = requireCandidateInScope(
+        user.getTenantId(), request.taskId(), request.examSessionId(), queue.getCandidateId());
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(
+        user.getTenantId(), request.examSessionId(), candidate);
     if (CollectionQueueStatusEnum.REMOVED.getCode().equals(queue.getQueueStatus())) {
       return converter.toQueueItemVO(queue, candidate, status);
     }
@@ -1900,13 +1990,17 @@ public class PracticalCollectionApplicationService {
   public CandidateCollectionDetailVO startNext(StartNextRequest request) {
     PlatformUserPrincipal user = current();
     requireTask(user.getTenantId(), request.taskId());
-    PracticalCollectionQueueEntity queue = queueMapper.lockNextQueued(user.getTenantId(), request.taskId());
+    requireExamSession(user.getTenantId(), request.taskId(), request.examSessionId());
+    PracticalCollectionQueueEntity queue = queueMapper.lockNextQueued(
+        user.getTenantId(), request.taskId(), request.examSessionId());
     if (queue == null) {
       return null;
     }
-    CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), queue.getCandidateId());
+    CertificationCandidateEntity candidate = requireCandidateInScope(
+        user.getTenantId(), request.taskId(), request.examSessionId(), queue.getCandidateId());
     eligibilityService.requireEligible(user.getTenantId(), request.taskId(), candidate.getId());
-    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(
+        user.getTenantId(), request.examSessionId(), candidate);
     domainService.assertCanStartCollecting(status.getOverallStatus(), status.getQueueStatus());
     LocalDateTime now = LocalDateTime.now();
     queue.setQueueStatus(CollectionQueueStatusEnum.COLLECTING.getCode());
@@ -1925,12 +2019,12 @@ public class PracticalCollectionApplicationService {
   @Transactional
   public FingerprintTraceVO submitFingerprint(SubmitFingerprintRequest request) {
     PlatformUserPrincipal user = current();
-    CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
+    requireExamSession(user.getTenantId(), request.taskId(), request.examSessionId());
+    CertificationCandidateEntity candidate = requireCandidateInScope(
+        user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId());
     eligibilityService.requireEligible(user.getTenantId(), request.taskId(), request.candidateId());
-    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
-    if (request.examSessionId() != null) {
-      status.setExamSessionId(request.examSessionId());
-    }
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(
+        user.getTenantId(), request.examSessionId(), candidate);
     domainService.assertCanSubmitFingerprint(status.getOverallStatus());
     FingerprintCollectStatusEnum collectStatus = FingerprintCollectStatusEnum.fromCode(request.collectStatus());
     if (collectStatus == null) {
@@ -2007,12 +2101,12 @@ public class PracticalCollectionApplicationService {
     if (SignerTypeEnum.fromCode(request.signerType()) == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "签署人类型不正确");
     }
-    CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
+    requireExamSession(user.getTenantId(), request.taskId(), request.examSessionId());
+    CertificationCandidateEntity candidate = requireCandidateInScope(
+        user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId());
     eligibilityService.requireEligible(user.getTenantId(), request.taskId(), request.candidateId());
-    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
-    if (request.examSessionId() != null) {
-      status.setExamSessionId(request.examSessionId());
-    }
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(
+        user.getTenantId(), request.examSessionId(), candidate);
     domainService.assertCanSubmitSignature(status.getOverallStatus());
     FileEntity file = fileApplicationService.getExistingFile(user.getTenantId(), request.signatureFileId());
     if (StringUtils.hasText(file.getSha256())
@@ -2045,11 +2139,11 @@ public class PracticalCollectionApplicationService {
   @Transactional
   public CollectionActionResultVO completeCollection(CompleteCollectionRequest request) {
     PlatformUserPrincipal user = current();
-    CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
-    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
-    if (request.examSessionId() != null) {
-      status.setExamSessionId(request.examSessionId());
-    }
+    requireExamSession(user.getTenantId(), request.taskId(), request.examSessionId());
+    CertificationCandidateEntity candidate = requireCandidateInScope(
+        user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId());
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(
+        user.getTenantId(), request.examSessionId(), candidate);
     if (CollectionOverallStatusEnum.COMPLETED.getCode().equals(status.getOverallStatus())) {
       return converter.toActionResultVO(status, activeQueueItem(user.getTenantId(), candidate, status), "采集已完成");
     }
@@ -2066,7 +2160,8 @@ public class PracticalCollectionApplicationService {
     statusMapper.updateById(status);
 
     PracticalCollectionQueueEntity queue =
-        queueMapper.selectActiveByCandidate(user.getTenantId(), request.taskId(), request.candidateId());
+        queueMapper.selectActiveByCandidate(
+            user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId());
     if (queue != null) {
       queue.setQueueStatus(CollectionQueueStatusEnum.COMPLETED.getCode());
       queue.setCompletedAt(now);
@@ -2083,10 +2178,13 @@ public class PracticalCollectionApplicationService {
   @Transactional
   public CollectionActionResultVO markPendingRetry(MarkPendingRetryRequest request) {
     PlatformUserPrincipal user = current();
-    CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
-    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
+    requireExamSession(user.getTenantId(), request.taskId(), request.examSessionId());
+    CertificationCandidateEntity candidate = requireCandidateInScope(
+        user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId());
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(
+        user.getTenantId(), request.examSessionId(), candidate);
     domainService.assertNotCompleted(status.getOverallStatus(), "标记待补采");
-    removeActiveQueue(user.getTenantId(), request.taskId(), request.candidateId(), user.getUserId(), request.reason());
+    removeActiveQueue(user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId(), user.getUserId(), request.reason());
     status.setOverallStatus(CollectionOverallStatusEnum.PENDING_RETRY.getCode());
     status.setQueueStatus(CollectionQueueStatusEnum.REMOVED.getCode());
     status.setExceptionStatus(CollectionExceptionStatusEnum.PENDING_RETRY.getCode());
@@ -2095,6 +2193,7 @@ public class PracticalCollectionApplicationService {
     writeException(
         user,
         request.taskId(),
+        request.examSessionId(),
         request.candidateId(),
         CollectionExceptionTypeEnum.OTHER.getCode(),
         CollectionExceptionStatusEnum.PENDING_RETRY.getCode(),
@@ -2109,10 +2208,13 @@ public class PracticalCollectionApplicationService {
   @Transactional
   public CollectionActionResultVO markInfoError(MarkInfoErrorRequest request) {
     PlatformUserPrincipal user = current();
-    CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
-    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
+    requireExamSession(user.getTenantId(), request.taskId(), request.examSessionId());
+    CertificationCandidateEntity candidate = requireCandidateInScope(
+        user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId());
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(
+        user.getTenantId(), request.examSessionId(), candidate);
     domainService.assertNotCompleted(status.getOverallStatus(), "标记异常");
-    removeActiveQueue(user.getTenantId(), request.taskId(), request.candidateId(), user.getUserId(), request.reason());
+    removeActiveQueue(user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId(), user.getUserId(), request.reason());
     status.setOverallStatus(CollectionOverallStatusEnum.INFO_ERROR.getCode());
     status.setFingerprintStatus(FingerprintStatusEnum.FAILED.getCode());
     status.setSignatureStatus(SignatureStatusEnum.FAILED.getCode());
@@ -2123,6 +2225,7 @@ public class PracticalCollectionApplicationService {
     writeException(
         user,
         request.taskId(),
+        request.examSessionId(),
         request.candidateId(),
         CollectionExceptionTypeEnum.INFO_ERROR.getCode(),
         CollectionExceptionStatusEnum.INFO_ERROR.getCode(),
@@ -2137,15 +2240,18 @@ public class PracticalCollectionApplicationService {
   @Transactional
   public CollectionActionResultVO exceptionRelease(ExceptionReleaseRequest request) {
     PlatformUserPrincipal user = current();
-    CertificationCandidateEntity candidate = requireCandidate(user.getTenantId(), request.taskId(), request.candidateId());
-    PracticalCollectionStatusEntity status = lockStatusForCandidate(user.getTenantId(), candidate);
+    requireExamSession(user.getTenantId(), request.taskId(), request.examSessionId());
+    CertificationCandidateEntity candidate = requireCandidateInScope(
+        user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId());
+    PracticalCollectionStatusEntity status = lockStatusForCandidate(
+        user.getTenantId(), request.examSessionId(), candidate);
     CollectionExceptionTypeEnum exceptionType = CollectionExceptionTypeEnum.fromCode(request.exceptionType());
     if (exceptionType == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "异常类型不正确");
     }
     domainService.assertCanExceptionRelease(status.getOverallStatus(), request.releaseScope(), request.reason());
     CollectionReleaseScopeEnum scope = CollectionReleaseScopeEnum.fromCode(request.releaseScope());
-    removeActiveQueue(user.getTenantId(), request.taskId(), request.candidateId(), user.getUserId(), request.reason());
+    removeActiveQueue(user.getTenantId(), request.taskId(), request.examSessionId(), request.candidateId(), user.getUserId(), request.reason());
     status.setOverallStatus(CollectionOverallStatusEnum.EXCEPTION_RELEASED.getCode());
     status.setQueueStatus(CollectionQueueStatusEnum.REMOVED.getCode());
     status.setExceptionStatus(CollectionExceptionStatusEnum.RELEASED.getCode());
@@ -2154,6 +2260,7 @@ public class PracticalCollectionApplicationService {
     writeException(
         user,
         request.taskId(),
+        request.examSessionId(),
         request.candidateId(),
         exceptionType.getCode(),
         CollectionExceptionStatusEnum.RELEASED.getCode(),
@@ -2207,6 +2314,7 @@ public class PracticalCollectionApplicationService {
         new LambdaQueryWrapper<PracticalCollectionStatusEntity>()
             .eq(PracticalCollectionStatusEntity::getTenantId, tenantId)
             .eq(PracticalCollectionStatusEntity::getTaskId, taskId)
+            .isNull(PracticalCollectionStatusEntity::getExamSessionId)
             .eq(PracticalCollectionStatusEntity::getDeleted, 0));
     int qrIssued = countStatuses(statuses, PracticalCollectionStatusEntity::getQrIssueStatus, QrIssueStatusEnum.ISSUED.getCode());
     int arrived = (int) statuses.stream().filter(status -> status.getArrivedAt() != null).count();
@@ -2243,10 +2351,21 @@ public class PracticalCollectionApplicationService {
   }
 
   private PracticalFingerprintTraceEntity latestFingerprintTrace(Long tenantId, Long taskId, Long candidateId) {
+    return latestFingerprintTrace(tenantId, taskId, null, candidateId);
+  }
+
+  private PracticalFingerprintTraceEntity latestFingerprintTrace(
+      Long tenantId,
+      Long taskId,
+      Long examSessionId,
+      Long candidateId
+  ) {
     return fingerprintTraceMapper.selectOne(
         new LambdaQueryWrapper<PracticalFingerprintTraceEntity>()
             .eq(PracticalFingerprintTraceEntity::getTenantId, tenantId)
             .eq(PracticalFingerprintTraceEntity::getTaskId, taskId)
+            .eq(examSessionId != null, PracticalFingerprintTraceEntity::getExamSessionId, examSessionId)
+            .isNull(examSessionId == null, PracticalFingerprintTraceEntity::getExamSessionId)
             .eq(PracticalFingerprintTraceEntity::getCandidateId, candidateId)
             .eq(PracticalFingerprintTraceEntity::getDeleted, 0)
             .orderByDesc(PracticalFingerprintTraceEntity::getCollectedAt)
@@ -2255,10 +2374,21 @@ public class PracticalCollectionApplicationService {
   }
 
   private PracticalSignatureRecordEntity latestSignatureRecord(Long tenantId, Long taskId, Long candidateId) {
+    return latestSignatureRecord(tenantId, taskId, null, candidateId);
+  }
+
+  private PracticalSignatureRecordEntity latestSignatureRecord(
+      Long tenantId,
+      Long taskId,
+      Long examSessionId,
+      Long candidateId
+  ) {
     return signatureRecordMapper.selectOne(
         new LambdaQueryWrapper<PracticalSignatureRecordEntity>()
             .eq(PracticalSignatureRecordEntity::getTenantId, tenantId)
             .eq(PracticalSignatureRecordEntity::getTaskId, taskId)
+            .eq(examSessionId != null, PracticalSignatureRecordEntity::getExamSessionId, examSessionId)
+            .isNull(examSessionId == null, PracticalSignatureRecordEntity::getExamSessionId)
             .eq(PracticalSignatureRecordEntity::getCandidateId, candidateId)
             .eq(PracticalSignatureRecordEntity::getRecordStatus, SignatureRecordStatusEnum.ACTIVE.getCode())
             .eq(PracticalSignatureRecordEntity::getDeleted, 0)
@@ -2293,6 +2423,10 @@ public class PracticalCollectionApplicationService {
               new LambdaQueryWrapper<PracticalCollectionStatusEntity>()
                   .eq(PracticalCollectionStatusEntity::getTenantId, tenantId)
                   .eq(request.getTaskId() != null, PracticalCollectionStatusEntity::getTaskId, request.getTaskId())
+                  .eq(request.getExamSessionId() != null,
+                      PracticalCollectionStatusEntity::getExamSessionId, request.getExamSessionId())
+                  .isNull(request.getTaskId() != null && request.getExamSessionId() == null,
+                      PracticalCollectionStatusEntity::getExamSessionId)
                   .eq(PracticalCollectionStatusEntity::getIdCardLast4, keyword)
                   .eq(PracticalCollectionStatusEntity::getDeleted, 0)
                   .last("LIMIT 200"))
@@ -2424,12 +2558,23 @@ public class PracticalCollectionApplicationService {
       Long taskId,
       List<Long> candidateIds
   ) {
+    return statusesByCandidateIds(tenantId, taskId, null, candidateIds);
+  }
+
+  private Map<Long, PracticalCollectionStatusEntity> statusesByCandidateIds(
+      Long tenantId,
+      Long taskId,
+      Long examSessionId,
+      List<Long> candidateIds
+  ) {
     if (candidateIds == null || candidateIds.isEmpty()) {
       return Map.of();
     }
     return statusMapper.selectList(new LambdaQueryWrapper<PracticalCollectionStatusEntity>()
             .eq(PracticalCollectionStatusEntity::getTenantId, tenantId)
             .eq(PracticalCollectionStatusEntity::getTaskId, taskId)
+            .eq(examSessionId != null, PracticalCollectionStatusEntity::getExamSessionId, examSessionId)
+            .isNull(examSessionId == null, PracticalCollectionStatusEntity::getExamSessionId)
             .in(PracticalCollectionStatusEntity::getCandidateId, candidateIds)
             .eq(PracticalCollectionStatusEntity::getDeleted, 0))
         .stream()
@@ -2444,13 +2589,23 @@ public class PracticalCollectionApplicationService {
       Long tenantId,
       CertificationCandidateEntity candidate
   ) {
+    return lockStatusForCandidate(tenantId, null, candidate);
+  }
+
+  private PracticalCollectionStatusEntity lockStatusForCandidate(
+      Long tenantId,
+      Long examSessionId,
+      CertificationCandidateEntity candidate
+  ) {
     PracticalCollectionStatusEntity status =
-        statusMapper.lockByTaskAndCandidate(tenantId, candidate.getTaskId(), candidate.getId());
+        statusMapper.lockByTaskAndCandidate(
+            tenantId, candidate.getTaskId(), examSessionId, candidate.getId());
     if (status != null) {
       return status;
     }
-    ensureStatusForCandidate(tenantId, candidate);
-    status = statusMapper.lockByTaskAndCandidate(tenantId, candidate.getTaskId(), candidate.getId());
+    ensureStatusForCandidate(tenantId, examSessionId, candidate);
+    status = statusMapper.lockByTaskAndCandidate(
+        tenantId, candidate.getTaskId(), examSessionId, candidate.getId());
     if (status == null) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "采集状态初始化失败");
     }
@@ -2461,24 +2616,43 @@ public class PracticalCollectionApplicationService {
       Long tenantId,
       CertificationCandidateEntity candidate
   ) {
+    return ensureStatusForCandidate(tenantId, null, candidate);
+  }
+
+  private PracticalCollectionStatusEntity ensureStatusForCandidate(
+      Long tenantId,
+      Long examSessionId,
+      CertificationCandidateEntity candidate
+  ) {
     PracticalCollectionStatusEntity existing =
-        statusMapper.selectByTaskAndCandidate(tenantId, candidate.getTaskId(), candidate.getId());
+        statusMapper.selectByTaskAndCandidate(
+            tenantId, candidate.getTaskId(), examSessionId, candidate.getId());
     if (existing != null) {
       return existing;
     }
     try {
-      PracticalCollectionStatusEntity status = newStatus(tenantId, candidate);
+      PracticalCollectionStatusEntity status = newStatus(tenantId, examSessionId, candidate);
       statusMapper.insert(status);
       return status;
     } catch (DuplicateKeyException ex) {
-      return statusMapper.selectByTaskAndCandidate(tenantId, candidate.getTaskId(), candidate.getId());
+      return statusMapper.selectByTaskAndCandidate(
+          tenantId, candidate.getTaskId(), examSessionId, candidate.getId());
     }
   }
 
   private PracticalCollectionStatusEntity newStatus(Long tenantId, CertificationCandidateEntity candidate) {
+    return newStatus(tenantId, null, candidate);
+  }
+
+  private PracticalCollectionStatusEntity newStatus(
+      Long tenantId,
+      Long examSessionId,
+      CertificationCandidateEntity candidate
+  ) {
     PracticalCollectionStatusEntity status = new PracticalCollectionStatusEntity();
     status.setTenantId(tenantId);
     status.setTaskId(candidate.getTaskId());
+    status.setExamSessionId(examSessionId);
     status.setCandidateId(candidate.getId());
     status.setQrIssueStatus(QrIssueStatusEnum.NOT_ISSUED.getCode());
     status.setOverallStatus(CollectionOverallStatusEnum.NOT_ARRIVED.getCode());
@@ -2517,6 +2691,105 @@ public class PracticalCollectionApplicationService {
     return candidate;
   }
 
+  private CertificationExamSessionEntity requireExamSession(
+      Long tenantId,
+      Long taskId,
+      Long examSessionId
+  ) {
+    if (examSessionId == null) {
+      if (examSessionMapper != null) {
+        Long sessionCount = examSessionMapper.selectCount(
+            new LambdaQueryWrapper<CertificationExamSessionEntity>()
+                .eq(CertificationExamSessionEntity::getTenantId, tenantId)
+                .eq(CertificationExamSessionEntity::getTaskId, taskId)
+                .eq(CertificationExamSessionEntity::getDeleted, 0));
+        if (sessionCount != null && sessionCount > 0) {
+          throw new BusinessException(ErrorCode.BAD_REQUEST, "当前认定任务已配置考试场次，请先选择具体场次");
+        }
+      }
+      return null;
+    }
+    if (examSessionMapper == null) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "考试场次服务不可用");
+    }
+    CertificationExamSessionEntity session = examSessionMapper.selectOne(
+        new LambdaQueryWrapper<CertificationExamSessionEntity>()
+            .eq(CertificationExamSessionEntity::getTenantId, tenantId)
+            .eq(CertificationExamSessionEntity::getTaskId, taskId)
+            .eq(CertificationExamSessionEntity::getId, examSessionId)
+            .eq(CertificationExamSessionEntity::getDeleted, 0)
+            .last("LIMIT 1"));
+    if (session == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "考试场次不存在或不属于当前认定任务");
+    }
+    return session;
+  }
+
+  private Set<Long> candidateIdsForScope(Long tenantId, Long taskId, Long examSessionId) {
+    if (examSessionId == null) {
+      return candidateMapper.selectList(new LambdaQueryWrapper<CertificationCandidateEntity>()
+              .eq(CertificationCandidateEntity::getTenantId, tenantId)
+              .eq(CertificationCandidateEntity::getTaskId, taskId)
+              .eq(CertificationCandidateEntity::getDeleted, 0))
+          .stream()
+          .map(CertificationCandidateEntity::getId)
+          .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+    if (candidateExamSessionMapper == null) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "场次人员服务不可用");
+    }
+    List<CertificationCandidateExamSessionEntity> relations = candidateExamSessionMapper.selectBySession(
+        tenantId, taskId, examSessionId);
+    return (relations == null ? List.<CertificationCandidateExamSessionEntity>of() : relations).stream()
+        .filter(relation -> "ASSIGNED".equalsIgnoreCase(relation.getParticipationStatus()))
+        .map(CertificationCandidateExamSessionEntity::getCandidateId)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toCollection(LinkedHashSet::new));
+  }
+
+  private List<CertificationCandidateEntity> candidatesForScope(
+      Long tenantId,
+      Long taskId,
+      Long examSessionId,
+      Integer limit
+  ) {
+    Set<Long> candidateIds = candidateIdsForScope(tenantId, taskId, examSessionId);
+    if (candidateIds.isEmpty()) {
+      return List.of();
+    }
+    LambdaQueryWrapper<CertificationCandidateEntity> wrapper =
+        new LambdaQueryWrapper<CertificationCandidateEntity>()
+            .eq(CertificationCandidateEntity::getTenantId, tenantId)
+            .eq(CertificationCandidateEntity::getTaskId, taskId)
+            .in(CertificationCandidateEntity::getId, candidateIds)
+            .eq(CertificationCandidateEntity::getDeleted, 0)
+            .orderByAsc(CertificationCandidateEntity::getId);
+    if (limit != null && limit > 0) {
+      wrapper.last("LIMIT " + limit);
+    }
+    List<CertificationCandidateEntity> candidates = candidateMapper.selectList(wrapper);
+    return candidates == null ? List.of() : candidates;
+  }
+
+  private CertificationCandidateEntity requireCandidateInScope(
+      Long tenantId,
+      Long taskId,
+      Long examSessionId,
+      Long candidateId
+  ) {
+    CertificationCandidateEntity candidate = requireCandidate(tenantId, taskId, candidateId);
+    if (examSessionId == null) {
+      return candidate;
+    }
+    CertificationCandidateExamSessionEntity relation = candidateExamSessionMapper.selectIncludingDeleted(
+        tenantId, taskId, candidateId, examSessionId);
+    if (relation == null || !Objects.equals(0, relation.getDeleted())
+        || !"ASSIGNED".equalsIgnoreCase(relation.getParticipationStatus())) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "考生未分配到当前考试场次");
+    }
+    return candidate;
+  }
+
   private boolean generateTokenFor(PracticalCollectionStatusEntity status) {
     for (int i = 0; i < 3; i++) {
       status.setCollectToken(nextToken());
@@ -2538,8 +2811,8 @@ public class PracticalCollectionApplicationService {
     return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
   }
 
-  private Integer nextQueueNo(Long tenantId, Long taskId) {
-    Integer currentMax = queueMapper.selectMaxQueueNo(tenantId, taskId);
+  private Integer nextQueueNo(Long tenantId, Long taskId, Long examSessionId) {
+    Integer currentMax = queueMapper.selectMaxQueueNo(tenantId, taskId, examSessionId);
     return (currentMax == null ? 0 : currentMax) + 1;
   }
 
@@ -2575,23 +2848,27 @@ public class PracticalCollectionApplicationService {
       PracticalCollectionStatusEntity status
   ) {
     PracticalCollectionQueueEntity queue =
-        queueMapper.selectActiveByCandidate(tenantId, candidate.getTaskId(), candidate.getId());
+        queueMapper.selectActiveByCandidate(
+            tenantId, candidate.getTaskId(), status == null ? null : status.getExamSessionId(), candidate.getId());
     return queue == null ? null : converter.toQueueItemVO(queue, candidate, status);
   }
 
   private void removeActiveQueue(
       Long tenantId,
       Long taskId,
+      Long examSessionId,
       Long candidateId,
       Long operatorId,
       String reason
   ) {
-    queueMapper.removeActiveByCandidate(tenantId, taskId, candidateId, operatorId, reason);
+    queueMapper.removeActiveByCandidate(
+        tenantId, taskId, examSessionId, candidateId, operatorId, reason);
   }
 
   private void writeException(
       PlatformUserPrincipal user,
       Long taskId,
+      Long examSessionId,
       Long candidateId,
       String exceptionType,
       String exceptionStatus,
@@ -2603,6 +2880,7 @@ public class PracticalCollectionApplicationService {
     PracticalCollectionExceptionEntity entity = new PracticalCollectionExceptionEntity();
     entity.setTenantId(user.getTenantId());
     entity.setTaskId(taskId);
+    entity.setExamSessionId(examSessionId);
     entity.setCandidateId(candidateId);
     entity.setExceptionType(exceptionType);
     entity.setExceptionStatus(exceptionStatus);

@@ -63,6 +63,7 @@ import type {
   CandidateCollectionDetailVO,
 
   CandidateCollectionItemVO,
+  CollectionTaskVO,
 
   CollectionEntrySource,
 
@@ -79,8 +80,9 @@ import { CollectionOverallStatusText } from '../../types/certificationPracticalC
 interface CollectionWorkbenchPageProps {
 
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
 
-  onTaskChange: (taskId: SnowflakeId) => void;
+  onTaskChange: (task: CollectionTaskVO) => void;
 
   taskSelectorVisible?: boolean;
 
@@ -130,6 +132,13 @@ function isSameId(left?: SnowflakeId | null, right?: SnowflakeId | null) {
 
   return left !== undefined && left !== null && right !== undefined && right !== null && String(left) === String(right);
 
+}
+
+function isSameOptionalId(left?: SnowflakeId | null, right?: SnowflakeId | null) {
+  if ((left === undefined || left === null) && (right === undefined || right === null)) {
+    return true;
+  }
+  return isSameId(left, right);
 }
 
 
@@ -202,6 +211,8 @@ export function CollectionWorkbenchPage({
 
   taskId,
 
+  examSessionId,
+
   onTaskChange,
 
   taskSelectorVisible: taskSelectorVisibleProp,
@@ -240,9 +251,9 @@ export function CollectionWorkbenchPage({
 
   const workbenchQuery = useQuery({
 
-    queryKey: ['practical-collection-workbench', taskId],
+    queryKey: ['practical-collection-workbench', taskId, examSessionId],
 
-    queryFn: () => getCollectionWorkbench(taskId),
+    queryFn: () => getCollectionWorkbench(taskId, examSessionId),
 
     refetchInterval: online ? 10000 : false,
 
@@ -252,7 +263,7 @@ export function CollectionWorkbenchPage({
 
   const refreshWorkbench = () => {
 
-    queryClient.invalidateQueries({ queryKey: ['practical-collection-workbench', taskId] });
+    queryClient.invalidateQueries({ queryKey: ['practical-collection-workbench', taskId, examSessionId] });
 
   };
 
@@ -308,7 +319,7 @@ export function CollectionWorkbenchPage({
 
     try {
 
-      await cancelCurrentCollection(taskId, candidate.candidateId);
+      await cancelCurrentCollection(taskId, candidate.candidateId, examSessionId);
 
       clearCurrentCandidate();
 
@@ -424,7 +435,7 @@ export function CollectionWorkbenchPage({
 
     try {
 
-      const detail = await getCollectionDetail(taskId, activeCandidate.candidateId);
+      const detail = await getCollectionDetail(taskId, activeCandidate.candidateId, examSessionId);
 
       setCurrentCollectionCandidate(detail, activeCollectionContext?.entrySource || 'QR_SCAN');
 
@@ -478,7 +489,7 @@ export function CollectionWorkbenchPage({
 
       }
 
-      return scanMatchCurrent(taskId, token);
+      return scanMatchCurrent(taskId, token, examSessionId);
 
     },
 
@@ -580,7 +591,9 @@ export function CollectionWorkbenchPage({
 
   const openCandidateMutation = useMutation({
 
-    mutationFn: (candidate: CandidateCollectionItemVO) => openCandidateCollection(taskId, candidate.candidateId),
+    mutationFn: (candidate: CandidateCollectionItemVO) => openCandidateCollection(
+      taskId, candidate.candidateId, examSessionId,
+    ),
 
     onSuccess: (detail) => {
 
@@ -859,9 +872,11 @@ export function CollectionWorkbenchPage({
 
 
 
-  const performTaskSwitch = (nextTaskId: SnowflakeId) => {
+  const performTaskSwitch = (nextTask: CollectionTaskVO) => {
 
-    if (isSameId(nextTaskId, taskId)) {
+    const nextTaskId = nextTask.taskId;
+
+    if (isSameId(nextTaskId, taskId) && isSameOptionalId(nextTask.examSessionId, examSessionId)) {
 
       setTaskSelectorVisible(false);
 
@@ -879,7 +894,7 @@ export function CollectionWorkbenchPage({
 
     setDebugScanToken('');
 
-    onTaskChange(nextTaskId);
+    onTaskChange(nextTask);
 
     setTaskSelectorVisible(false);
 
@@ -891,9 +906,11 @@ export function CollectionWorkbenchPage({
 
 
 
-  const handleTaskSwitchRequest = (nextTaskId: SnowflakeId) => {
+  const handleTaskSwitchRequest = (nextTask: CollectionTaskVO) => {
 
-    if (isSameId(nextTaskId, taskId)) {
+    const nextTaskId = nextTask.taskId;
+
+    if (isSameId(nextTaskId, taskId) && isSameOptionalId(nextTask.examSessionId, examSessionId)) {
 
       setTaskSelectorVisible(false);
 
@@ -913,7 +930,7 @@ export function CollectionWorkbenchPage({
 
         cancelText: '继续当前采集',
 
-        onOk: () => performTaskSwitch(nextTaskId),
+        onOk: () => performTaskSwitch(nextTask),
 
       });
 
@@ -933,7 +950,7 @@ export function CollectionWorkbenchPage({
 
         cancelText: '取消',
 
-        onOk: () => performTaskSwitch(nextTaskId),
+        onOk: () => performTaskSwitch(nextTask),
 
       });
 
@@ -941,7 +958,7 @@ export function CollectionWorkbenchPage({
 
     }
 
-    performTaskSwitch(nextTaskId);
+    performTaskSwitch(nextTask);
 
   };
 
@@ -1230,6 +1247,8 @@ export function CollectionWorkbenchPage({
 
           currentTaskId={taskId}
 
+          currentExamSessionId={examSessionId}
+
           switching={taskSwitching}
 
           onSelect={handleTaskSwitchRequest}
@@ -1301,5 +1320,3 @@ export function CollectionWorkbenchPage({
   );
 
 }
-
-

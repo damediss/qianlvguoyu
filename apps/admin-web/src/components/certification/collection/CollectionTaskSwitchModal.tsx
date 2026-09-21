@@ -9,9 +9,10 @@ import { formatCollectionTaskStatus } from '../../../utils/collectionTask';
 interface CollectionTaskSwitchModalProps {
   open: boolean;
   currentTaskId?: SnowflakeId | null;
+  currentExamSessionId?: SnowflakeId | null;
   forceSelect?: boolean;
   switching?: boolean;
-  onSelect: (taskId: SnowflakeId) => void;
+  onSelect: (task: CollectionTaskVO) => void;
   onClose?: () => void;
 }
 
@@ -23,6 +24,7 @@ function isSameTask(left?: SnowflakeId | null, right?: SnowflakeId | null) {
 export function CollectionTaskSwitchModal({
   open,
   currentTaskId,
+  currentExamSessionId,
   forceSelect = false,
   switching = false,
   onSelect,
@@ -79,14 +81,17 @@ export function CollectionTaskSwitchModal({
           ) : null}
           {tasks.map((task) => {
             const status = formatCollectionTaskStatus(task);
-            const isCurrent = isSameTask(task.taskId, currentTaskId);
+            const sameSession = task.examSessionId == null && currentExamSessionId == null
+              ? true
+              : isSameTask(task.examSessionId, currentExamSessionId);
+            const isCurrent = isSameTask(task.taskId, currentTaskId) && sameSession;
             return (
               <button
-                key={String(task.taskId)}
+                key={`${String(task.taskId)}:${String(task.examSessionId || 'legacy')}`}
                 type="button"
                 className={`collection-task-switch-item${isCurrent ? ' is-current' : ''}`}
                 disabled={switching}
-                onClick={() => onSelect(task.taskId)}
+                onClick={() => onSelect(task)}
               >
                 <div className="collection-task-switch-item-main">
                   <div className="collection-task-switch-item-title">
@@ -96,6 +101,7 @@ export function CollectionTaskSwitchModal({
                   </div>
                   <div className="collection-task-switch-item-meta">
                     <span>任务编号：{task.taskNo || '-'}</span>
+                    <span>场次：{task.sessionName || '-'}</span>
                     <span>日期：{task.examDate || '-'}</span>
                     <span>考生：{task.candidateTotal} 人</span>
                     <span>已完成：{task.completedCount} 人</span>
