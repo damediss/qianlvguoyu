@@ -29,4 +29,7 @@ public class CwOutlinePageEntity extends BaseEntity {
   private String layoutId;
   /** JSON: ["S1:2","S1:3"] */
   private String sourceRefs;
+
+  /** 知识点 ID(仅知识点页非空,cw_knowledge_point.id) */
+  private Long knowledgePointId;
 }

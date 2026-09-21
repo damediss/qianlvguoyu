@@ -98,6 +98,18 @@ public final class CoursewareModels {
   public record AssembledSlide(List<SlideBlock> blocks, List<StructureIssue> issues) {
   }
 
+  /** 知识点页载荷(方案 v1.4):非空时单页生成走知识点骨架页 prompt */
+  public record KnowledgePointPayload(
+      String category,
+      String levelName,
+      String jobFunction,
+      String jobContent,
+      String code,
+      String title,
+      String skillText,
+      String knowledgeText) {
+  }
+
   /** 单页生成输入(页级独立上下文,方案 §8.2) */
   public record SlideGenInput(
       String deckTitle,
@@ -116,13 +128,15 @@ public final class CoursewareModels {
       String digestSlice,
       List<String> neighborTitles,
       String contentDensity,
+      /** 知识点载荷(知识点页非空) */
+      KnowledgePointPayload knowledgePoint,
       /** 修复轮问题清单 */
       List<String> issues) {
 
     public SlideGenInput withIssues(List<String> newIssues) {
       return new SlideGenInput(deckTitle, audience, position, totalPages, chapterTitle, pageTitle,
           objective, keyPoints, pageRole, layoutId, sections, digestSlice, neighborTitles,
-          contentDensity, newIssues);
+          contentDensity, knowledgePoint, newIssues);
     }
   }
 

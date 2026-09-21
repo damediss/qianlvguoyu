@@ -10,12 +10,14 @@ import com.guoyu.platform.courseware.domain.SlideValidator;
 import com.guoyu.platform.courseware.domain.StructureIssue;
 import java.util.ArrayList;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
  * 单页生成自纠环(方案 §8.1):生成 → 确定性校验 →(值得修)修复 1 轮。
  * JSON 契约失败视同一轮修复(输出零信任);修复只是把问题文本回喂 prompt 重生成。
  */
+@Slf4j
 @Service
 public class SlideWorkflowService {
 
@@ -36,13 +38,34 @@ public class SlideWorkflowService {
   public SlideWorkflowResult execute(SlideGenInput input, Long tenantId, Long projectId,
                                      Long operatorId, Long slideId) {
     CoursewareLayout.Layout layout = CoursewareLayout.require(input.layoutId());
+    // 知识点页走专用骨架页 prompt(方案 v1.4);常规页走原 prompt
+    boolean knowledgePage = input.knowledgePoint() != null;
+    String systemPrompt = knowledgePage
+        ? CoursewarePrompts.knowledgeSlideSystem()
+        : CoursewarePrompts.slideSystem(layout, objectMapper);
     List<String> issues = List.of();
     int round = 0;
     while (true) {
       SlideGenInput attemptInput = input.withIssues(issues);
-      String content = aiService.callSlide(tenantId, projectId, slideId, operatorId,
-          CoursewarePrompts.slideSystem(layout, objectMapper),
-          CoursewarePrompts.slideUser(attemptInput, objectMapper));
+      String userPrompt = knowledgePage
+          ? CoursewarePrompts.knowledgeSlideUser(attemptInput, objectMapper)
+          : CoursewarePrompts.slideUser(attemptInput, objectMapper);
+      // LLM 调用级重试(方案 §12):429/5xx 等瞬态失败退避后重试 1 次,仍失败由编排层计页失败
+      String content;
+      try {
+        content = aiService.callSlide(tenantId, projectId, slideId, operatorId,
+            systemPrompt, userPrompt);
+      } catch (com.guoyu.platform.ai.infrastructure.FaqLlmException first) {
+        log.warn("单页 LLM 调用失败,退避后重试 1 次: slideId={}, error={}", slideId,
+            first.getMessage());
+        try {
+          Thread.sleep(3_000);
+        } catch (InterruptedException ie) {
+          Thread.currentThread().interrupt();
+        }
+        content = aiService.callSlide(tenantId, projectId, slideId, operatorId,
+            systemPrompt, userPrompt);
+      }
 
       List<StructureIssue> roundIssues = new ArrayList<>();
       SlideAssembler.ParsedDraft draft;

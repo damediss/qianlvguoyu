@@ -314,10 +314,16 @@ class CoursewareE2ETest {
   }
 
   void cleanup() {
-    for (String table : List.of("cw_slide", "cw_outline_page", "cw_source_section", "cw_digest",
-        "cw_llm_log", "cw_project")) {
-      jdbc.execute("DELETE FROM " + table);
-    }
+    // 只清测试自建项目(按标题前缀收敛):误删过冒烟项目,禁止全表 DELETE(2026-09-21 事故)
+    jdbc.execute("""
+        DELETE s, o, sec, d, lg, pr FROM cw_project pr
+        LEFT JOIN cw_slide s ON s.project_id = pr.id
+        LEFT JOIN cw_outline_page o ON o.project_id = pr.id
+        LEFT JOIN cw_source_section sec ON sec.project_id = pr.id
+        LEFT JOIN cw_digest d ON d.project_id = pr.id
+        LEFT JOIN cw_llm_log lg ON lg.project_id = pr.id
+        WHERE pr.title LIKE '热处理工艺培训%' OR pr.title LIKE '并发%' OR pr.title LIKE '课件A%'
+        """);
   }
 
   // ──────────────────────── HTTP 辅助 ────────────────────────

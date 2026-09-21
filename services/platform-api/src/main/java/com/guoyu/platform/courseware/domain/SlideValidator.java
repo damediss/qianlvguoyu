@@ -59,6 +59,16 @@ public final class SlideValidator {
             "槽位 " + block.slotId() + " 只接受 " + String.join("、", slot.accepts())
                 + ",实际为 " + block.type()));
       }
+      // v1.4:表格空白数据行(模型输出对象行/空内容未被兜住时)→ structure error 触发修复
+      if (SlideBlock.TYPE_TABLE.equals(block.type())) {
+        long blankRows = (block.rows() == null ? List.<List<String>>of() : block.rows()).stream()
+            .filter(row -> row.isEmpty() || row.stream().allMatch(c -> c == null || c.isBlank()))
+            .count();
+        if (blankRows > 0) {
+          issues.add(StructureIssue.error(block.slotId(),
+              "表格存在 " + blankRows + " 行空白数据行,请补齐每一行的具体内容"));
+        }
+      }
     }
     for (SlotSpec slot : layout.slots()) {
       if (slot.required() && !seen.contains(slot.id())) {

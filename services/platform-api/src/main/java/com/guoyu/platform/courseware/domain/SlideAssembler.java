@@ -98,13 +98,26 @@ public final class SlideAssembler {
     return out;
   }
 
+  /** rows 宽容解析:数组行 / 对象行(按键序取值,模型常见变体) / 纯文本行 */
   private static List<List<String>> rowsList(JsonNode node) {
     if (!node.isArray()) {
       return List.of();
     }
     List<List<String>> out = new ArrayList<>();
     for (JsonNode row : node) {
-      out.add(stringList(row));
+      if (row.isArray()) {
+        out.add(stringList(row));
+      } else if (row.isObject()) {
+        // 模型常把行输出为对象({"要点":"...","含义":"..."}),按键序取值兜底
+        List<String> cells = new ArrayList<>();
+        row.fields().forEachRemaining(entry -> {
+          JsonNode v = entry.getValue();
+          cells.add(v.isTextual() ? v.asText() : v.toString());
+        });
+        out.add(cells);
+      } else if (row.isTextual()) {
+        out.add(List.of(row.asText()));
+      }
     }
     return out;
   }

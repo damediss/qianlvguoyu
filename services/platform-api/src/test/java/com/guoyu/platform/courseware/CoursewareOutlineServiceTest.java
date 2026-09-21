@@ -38,7 +38,7 @@ class CoursewareOutlineServiceTest {
   private final CwSlideMapper slideMapper = mock(CwSlideMapper.class);
   private final ObjectMapper om = new ObjectMapper();
   private final CoursewareOutlineService service =
-      new CoursewareOutlineService(aiService, outlineMapper, projectMapper, slideMapper, om);
+      new CoursewareOutlineService(aiService, outlineMapper, projectMapper, slideMapper, om, 50);
 
   private static OutlineChapterDraft chapter(String title, int contentPages) {
     List<OutlinePageDraft> pages = new ArrayList<>();
@@ -55,7 +55,7 @@ class CoursewareOutlineServiceTest {
         List.of(chapter("第一章", 2), chapter("第二章", 2), chapter("第三章", 1)),
         List.of("问题一", "问题二", "问题三"));
     List<CwOutlinePageEntity> pages =
-        CoursewareOutlineService.assemblePages(draft, "课件A", 1L, 10159L, 7L);
+        CoursewareOutlineService.assemblePages(draft, "课件A", 1L, 10159L, 7L, 50);
 
     assertEquals(11, pages.size(), "cover+toc + 3章×(1 section+内容页) 共 8 章页 + review");
     assertEquals(CwOutlinePageEntity.ROLE_COVER, pages.get(0).getPageRole());
@@ -78,7 +78,7 @@ class CoursewareOutlineServiceTest {
     OutlineDraft draft = new OutlineDraft(
         List.of(chapter("第一章", 1), chapter("第二章", 1), chapter("第三章", 1)), List.of());
     List<CwOutlinePageEntity> pages =
-        CoursewareOutlineService.assemblePages(draft, "课件A", 1L, 10159L, 7L);
+        CoursewareOutlineService.assemblePages(draft, "课件A", 1L, 10159L, 7L, 50);
     CwOutlinePageEntity review = pages.get(pages.size() - 1);
     assertTrue(review.getKeyPoints().contains("回顾并简述"), "缺 review_questions 时用章核心结论兜底");
   }
@@ -90,7 +90,7 @@ class CoursewareOutlineServiceTest {
       chapters.add(chapter("第" + i + "章", 1));
     }
     List<CwOutlinePageEntity> pages = CoursewareOutlineService.assemblePages(
-        new OutlineDraft(chapters, List.of("q1", "q2", "q3")), "课件A", 1L, 10159L, 7L);
+        new OutlineDraft(chapters, List.of("q1", "q2", "q3")), "课件A", 1L, 10159L, 7L, 50);
     long maxChapterNo = pages.stream()
         .map(CwOutlinePageEntity::getChapterNo).filter(java.util.Objects::nonNull)
         .mapToInt(Integer::intValue).max().orElse(0);
@@ -102,7 +102,7 @@ class CoursewareOutlineServiceTest {
     List<OutlineChapterDraft> chapters = List.of(
         chapter("一", 20), chapter("二", 20), chapter("三", 20));
     List<CwOutlinePageEntity> pages = CoursewareOutlineService.assemblePages(
-        new OutlineDraft(chapters, List.of("q1", "q2", "q3")), "课件A", 1L, 10159L, 7L);
+        new OutlineDraft(chapters, List.of("q1", "q2", "q3")), "课件A", 1L, 10159L, 7L, 50);
     assertEquals(50, pages.size(), "总页数钳制 50(含 3 固定页)");
     assertEquals(CwOutlinePageEntity.ROLE_REVIEW, pages.get(49).getPageRole());
   }

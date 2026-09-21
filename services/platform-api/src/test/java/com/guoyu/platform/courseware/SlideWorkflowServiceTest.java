@@ -52,7 +52,7 @@ class SlideWorkflowServiceTest {
   private static SlideGenInput input() {
     return new SlideGenInput("课件A", "学员自学", 3, 10, "第一章", "淬火温度决定硬度上限",
         "讲清温度", List.of("要点一", "要点二", "要点三"), "content", "content_bullets",
-        List.of(), null, List.of(), "medium", List.of());
+        List.of(), null, List.of(), "medium", null, List.of());
   }
 
   @Test
