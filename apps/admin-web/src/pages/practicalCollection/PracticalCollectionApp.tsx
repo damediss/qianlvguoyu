@@ -2,31 +2,34 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CollectionWorkbenchPage } from './CollectionWorkbenchPage';
 import { CollectionTaskSwitchModal } from '../../components/certification/collection/CollectionTaskSwitchModal';
 import {
-  readLastCollectionTaskId,
+  readLastCollectionScope,
   switchCollectionTask,
 } from '../../services/practicalCollection/tabletCollectionService';
-import type { SnowflakeId } from '../../types/certificationPracticalCollection';
+import type { CollectionTaskVO } from '../../types/certificationPracticalCollection';
 import './PracticalCollectionApp.css';
 
-function taskIdFromPath(): string | undefined {
+function scopeFromLocation(): { taskId: string; examSessionId?: string } | undefined {
   const match = window.location.pathname.match(/^\/practical-collection\/workbench\/([^/]+)/);
   if (!match?.[1]) {
     return undefined;
   }
-  return decodeURIComponent(match[1]).trim() || undefined;
+  const taskId = decodeURIComponent(match[1]).trim();
+  if (!taskId) return undefined;
+  const examSessionId = new URLSearchParams(window.location.search).get('examSessionId')?.trim() || undefined;
+  return { taskId, examSessionId };
 }
 
 export function PracticalCollectionApp() {
-  const initialTaskId = useMemo(() => taskIdFromPath() || readLastCollectionTaskId(), []);
-  const [currentTaskId, setCurrentTaskId] = useState<string | undefined>(initialTaskId);
-  const [taskSelectorVisible, setTaskSelectorVisible] = useState(!initialTaskId);
+  const initialScope = useMemo(() => scopeFromLocation() || readLastCollectionScope(), []);
+  const [currentScope, setCurrentScope] = useState(initialScope);
+  const [taskSelectorVisible, setTaskSelectorVisible] = useState(!initialScope);
 
   useEffect(() => {
-    if (!initialTaskId) {
+    if (!initialScope) {
       return;
     }
-    switchCollectionTask(initialTaskId);
-  }, [initialTaskId]);
+    switchCollectionTask(initialScope.taskId, initialScope.examSessionId);
+  }, [initialScope]);
 
   useEffect(() => {
     const previous = document.body.style.minWidth;
@@ -36,14 +39,17 @@ export function PracticalCollectionApp() {
     };
   }, []);
 
-  const handleTaskChange = useCallback((taskId: SnowflakeId) => {
-    const nextTaskId = String(taskId);
-    setCurrentTaskId(nextTaskId);
-    switchCollectionTask(taskId);
+  const handleTaskChange = useCallback((task: CollectionTaskVO) => {
+    const nextScope = {
+      taskId: String(task.taskId),
+      examSessionId: task.examSessionId ? String(task.examSessionId) : undefined,
+    };
+    setCurrentScope(nextScope);
+    switchCollectionTask(task.taskId, task.examSessionId);
     setTaskSelectorVisible(false);
   }, []);
 
-  if (!currentTaskId) {
+  if (!currentScope) {
     return (
       <div className="practical-collection-shell practical-collection-landing">
         <CollectionTaskSwitchModal
@@ -57,8 +63,9 @@ export function PracticalCollectionApp() {
 
   return (
     <CollectionWorkbenchPage
-      key={currentTaskId}
-      taskId={currentTaskId}
+      key={`${currentScope.taskId}:${currentScope.examSessionId || 'legacy'}`}
+      taskId={currentScope.taskId}
+      examSessionId={currentScope.examSessionId}
       onTaskChange={handleTaskChange}
       taskSelectorVisible={taskSelectorVisible}
       onTaskSelectorVisibleChange={setTaskSelectorVisible}

@@ -6,12 +6,13 @@ import type { CollectionExceptionVO, SnowflakeId } from '../../../types/certific
 
 interface CollectionExceptionPageProps {
   taskId?: SnowflakeId;
+  examSessionId?: SnowflakeId;
 }
 
-export function CollectionExceptionPage({ taskId }: CollectionExceptionPageProps) {
+export function CollectionExceptionPage({ taskId, examSessionId }: CollectionExceptionPageProps) {
   const exceptionsQuery = useQuery({
-    queryKey: ['practical-collection-exceptions', taskId],
-    queryFn: () => getCollectionExceptions({ page: 1, pageSize: 50, taskId }),
+    queryKey: ['practical-collection-exceptions', taskId, examSessionId],
+    queryFn: () => getCollectionExceptions({ page: 1, pageSize: 50, taskId, examSessionId }),
   });
 
   return (

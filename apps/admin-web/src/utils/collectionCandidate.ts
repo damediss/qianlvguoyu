@@ -32,6 +32,7 @@ export function toCandidateCollectionContext(
 ): CandidateCollectionContext {
   return {
     taskId: candidate.taskId,
+    examSessionId: candidate.examSessionId,
     candidateId: candidate.candidateId,
     candidateName: candidate.name,
     idCardNo: candidate.maskedIdCardNo,

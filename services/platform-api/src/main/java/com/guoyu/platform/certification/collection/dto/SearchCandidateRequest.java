@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Size;
 
 public record SearchCandidateRequest(
     @NotNull Long taskId,
+    Long examSessionId,
     @NotBlank @Size(max = 80) String keyword
 ) {
 }

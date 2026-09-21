@@ -562,14 +562,16 @@ function useBrowserPathname() {
   return pathname;
 }
 
-function CollectionManageShell({ taskId }: { taskId: string }) {
+function CollectionManageShell({ taskId, examSessionId }: { taskId: string; examSessionId?: string }) {
   const [manageActive, setManageActive] = React.useState(true);
 
   return (
     <AppShell
       pageMap={pageMap}
       selectedMenuKeyOverride={manageActive ? 'certification_practical_collection' : undefined}
-      contentOverride={manageActive ? <CollectionManagePage taskId={taskId} /> : undefined}
+      contentOverride={manageActive ? (
+        <CollectionManagePage taskId={taskId} examSessionId={examSessionId} />
+      ) : undefined}
       onMenuNavigate={() => setManageActive(false)}
     />
   );
@@ -698,6 +700,7 @@ function App() {
   const practicalCollectionMode = pathname.startsWith('/practical-collection');
   const competitionJudgeMode = pathname.startsWith('/competition-practical-judge');
   const collectionManageTaskId = pathname.match(/^\/certification\/practical-collection\/([^/]+)\/manage\/?$/)?.[1];
+  const collectionManageExamSessionId = new URLSearchParams(window.location.search).get('examSessionId') || undefined;
   const collectionManageMode = Boolean(collectionManageTaskId);
   const competitionEventMode = isCompetitionPath(pathname);
   const reviewSyncStatsMode = isReviewSyncStatsPath(pathname);
@@ -718,7 +721,10 @@ function App() {
         ) : practicalCollectionMode ? (
           <PracticalCollectionApp />
         ) : collectionManageMode ? (
-          <CollectionManageShell taskId={decodeURIComponent(collectionManageTaskId!)} />
+          <CollectionManageShell
+            taskId={decodeURIComponent(collectionManageTaskId!)}
+            examSessionId={collectionManageExamSessionId}
+          />
         ) : graduationClassDetailMode ? (
           <GraduationClassDetailShell pathname={pathname} />
         ) : reviewSyncStatsMode ? (

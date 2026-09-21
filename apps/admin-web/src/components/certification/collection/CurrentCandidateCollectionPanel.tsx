@@ -114,6 +114,7 @@ export function CurrentCandidateCollectionPanel({
         taskId,
         candidateId: detail.candidateId,
         sessionId: detail.sessionId,
+        examSessionId: detail.examSessionId,
         deviceSn: result.deviceSn,
         deviceModel: result.deviceModel,
         deviceVendorId: result.deviceVendorId,
@@ -157,6 +158,7 @@ export function CurrentCandidateCollectionPanel({
         taskId,
         candidateId: candidate.candidateId,
         sessionId: candidate.sessionId,
+        examSessionId: candidate.examSessionId,
       });
     },
     onSuccess: (result) => {
@@ -176,6 +178,7 @@ export function CurrentCandidateCollectionPanel({
       }
       return markInfoError({
         taskId,
+        examSessionId: candidate.examSessionId,
         candidateId: candidate.candidateId,
         reason,
       });

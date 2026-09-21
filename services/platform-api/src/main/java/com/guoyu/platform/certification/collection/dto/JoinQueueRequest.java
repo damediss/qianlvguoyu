@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Size;
 
 public record JoinQueueRequest(
     @NotNull Long taskId,
+    Long examSessionId,
     @NotNull Long candidateId,
     @NotBlank @Size(max = 32) String matchMethod
 ) {

@@ -51,6 +51,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Validated
@@ -74,29 +75,41 @@ public class CertificationPracticalCollectionController {
 
   @GetMapping("/workbench/{taskId}")
   @PreAuthorize("hasAuthority('certification.practical.collection.view')")
-  public ApiResponse<CollectionWorkbenchVO> workbench(@PathVariable Long taskId) {
-    return ApiResponse.ok(service.workbench(taskId));
+  public ApiResponse<CollectionWorkbenchVO> workbench(
+      @PathVariable Long taskId,
+      @RequestParam(required = false) Long examSessionId
+  ) {
+    return ApiResponse.ok(service.workbench(taskId, examSessionId));
   }
 
   @PostMapping("/tasks/{taskId}/initialize")
   @PreAuthorize("hasAuthority('certification.practical.collection.manage')")
   @AuditLog(module = "certification", action = "practical-collection:initialize", targetType = "certification_practical_collection_status")
-  public ApiResponse<CollectionActionResultVO> initialize(@PathVariable Long taskId) {
-    return ApiResponse.ok(service.initializeCollectionStatusAction(taskId));
+  public ApiResponse<CollectionActionResultVO> initialize(
+      @PathVariable Long taskId,
+      @RequestParam(required = false) Long examSessionId
+  ) {
+    return ApiResponse.ok(service.initializeCollectionStatusAction(taskId, examSessionId));
   }
 
   @PostMapping("/tasks/{taskId}/qrcodes/generate")
   @PreAuthorize("hasAuthority('certification.practical.collection.manage')")
   @AuditLog(module = "certification", action = "practical-collection:qrcode-generate", targetType = "certification_practical_collection_status")
-  public ApiResponse<CollectionActionResultVO> generateQrCodes(@PathVariable Long taskId) {
-    return ApiResponse.ok(service.generateQrTokensAction(taskId));
+  public ApiResponse<CollectionActionResultVO> generateQrCodes(
+      @PathVariable Long taskId,
+      @RequestParam(required = false) Long examSessionId
+  ) {
+    return ApiResponse.ok(service.generateQrTokensAction(taskId, examSessionId));
   }
 
   @GetMapping("/tasks/{taskId}/qrcodes/export")
   @PreAuthorize("hasAuthority('certification.practical.collection.export')")
   @AuditLog(module = "certification", action = "practical-collection:qrcode-export", targetType = "certification_practical_collection_status")
-  public ResponseEntity<InputStreamResource> exportQrCodes(@PathVariable Long taskId) {
-    QrCodeExportVO result = service.exportQrCodes(taskId);
+  public ResponseEntity<InputStreamResource> exportQrCodes(
+      @PathVariable Long taskId,
+      @RequestParam(required = false) Long examSessionId
+  ) {
+    QrCodeExportVO result = service.exportQrCodes(taskId, examSessionId);
     InputStreamResource resource = new InputStreamResource(new ByteArrayInputStream(result.data()));
     return ResponseEntity.ok()
         .header(HttpHeaders.CONTENT_DISPOSITION,
@@ -118,9 +131,10 @@ public class CertificationPracticalCollectionController {
   @AuditLog(module = "certification", action = "practical-collection:scan-match-current", targetType = "certification_practical_collection_status")
   public ApiResponse<ScanMatchResultVO> scanMatchCurrent(
       @PathVariable Long taskId,
+      @RequestParam(required = false) Long examSessionId,
       @Valid @RequestBody ScanMatchCurrentRequest request
   ) {
-    return ApiResponse.ok(service.scanMatchCurrent(taskId, request.token()));
+    return ApiResponse.ok(service.scanMatchCurrent(taskId, examSessionId, request.token()));
   }
 
   @PostMapping("/workbench/{taskId}/candidates/{candidateId}/open")
@@ -128,9 +142,10 @@ public class CertificationPracticalCollectionController {
   @AuditLog(module = "certification", action = "practical-collection:open-candidate", targetType = "certification_practical_collection_status")
   public ApiResponse<CandidateCollectionDetailVO> openCandidateCollection(
       @PathVariable Long taskId,
-      @PathVariable Long candidateId
+      @PathVariable Long candidateId,
+      @RequestParam(required = false) Long examSessionId
   ) {
-    return ApiResponse.ok(service.openCandidateCollection(taskId, candidateId));
+    return ApiResponse.ok(service.openCandidateCollection(taskId, examSessionId, candidateId));
   }
 
   @PostMapping("/workbench/{taskId}/candidates/{candidateId}/cancel-current")
@@ -138,9 +153,11 @@ public class CertificationPracticalCollectionController {
   @AuditLog(module = "certification", action = "practical-collection:cancel-current", targetType = "certification_practical_collection_status")
   public ApiResponse<CollectionActionResultVO> cancelCurrentCollection(
       @PathVariable Long taskId,
-      @PathVariable Long candidateId
+      @PathVariable Long candidateId,
+      @RequestParam(required = false) Long examSessionId
   ) {
-    return ApiResponse.ok(service.cancelCurrentCollection(new CancelCurrentCollectionRequest(taskId, candidateId)));
+    return ApiResponse.ok(service.cancelCurrentCollection(
+        new CancelCurrentCollectionRequest(taskId, examSessionId, candidateId)));
   }
 
   @PostMapping("/search-candidate")
@@ -237,9 +254,10 @@ public class CertificationPracticalCollectionController {
   @PreAuthorize("hasAuthority('certification.practical.collection.view')")
   public ApiResponse<CandidateCollectionDetailVO> detail(
       @PathVariable Long taskId,
-      @PathVariable Long candidateId
+      @PathVariable Long candidateId,
+      @RequestParam(required = false) Long examSessionId
   ) {
-    return ApiResponse.ok(service.collectionDetail(taskId, candidateId));
+    return ApiResponse.ok(service.collectionDetail(taskId, examSessionId, candidateId));
   }
 
   @GetMapping("/exceptions")

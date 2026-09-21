@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotNull;
 
 public record CancelCurrentCollectionRequest(
     @NotNull Long taskId,
+    Long examSessionId,
     @NotNull Long candidateId
 ) {
 }

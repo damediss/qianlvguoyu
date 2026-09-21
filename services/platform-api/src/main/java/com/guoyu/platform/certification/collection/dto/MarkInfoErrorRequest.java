@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Size;
 
 public record MarkInfoErrorRequest(
     @NotNull Long taskId,
+    Long examSessionId,
     @NotNull Long candidateId,
     @NotBlank @Size(max = 1000) String reason
 ) {

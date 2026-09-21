@@ -81,6 +81,7 @@ import './CollectionTaskListPage.css';
 
 interface CollectionManagePageProps {
   taskId?: string;
+  examSessionId?: string;
 }
 
 type OverallFilter = 'all' | CollectionOverallStatus;
@@ -243,7 +244,7 @@ async function copyText(text: string) {
   document.body.removeChild(textarea);
 }
 
-export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
+export function CollectionManagePage({ taskId, examSessionId }: CollectionManagePageProps) {
   const queryClient = useQueryClient();
   const setSelectedKey = useNavStore((state) => state.setSelectedKey);
   const [keyword, setKeyword] = useState('');
@@ -258,20 +259,20 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<SnowflakeId[]>([]);
 
   const workbenchQuery = useQuery({
-    queryKey: ['practical-collection-workbench', taskId],
-    queryFn: () => getCollectionWorkbench(taskId!),
+    queryKey: ['practical-collection-workbench', taskId, examSessionId],
+    queryFn: () => getCollectionWorkbench(taskId!, examSessionId),
     enabled: Boolean(taskId),
   });
 
   const exceptionsQuery = useQuery({
-    queryKey: ['practical-collection-exceptions', taskId, 'manage-overview'],
-    queryFn: () => getCollectionExceptions({ page: 1, pageSize: 5, taskId }),
+    queryKey: ['practical-collection-exceptions', taskId, examSessionId, 'manage-overview'],
+    queryFn: () => getCollectionExceptions({ page: 1, pageSize: 5, taskId, examSessionId }),
     enabled: Boolean(taskId),
   });
 
   const detailQuery = useQuery({
-    queryKey: ['practical-collection-detail', taskId, detailCandidate?.candidateId],
-    queryFn: () => getCollectionDetail(taskId!, detailCandidate!.candidateId),
+    queryKey: ['practical-collection-detail', taskId, examSessionId, detailCandidate?.candidateId],
+    queryFn: () => getCollectionDetail(taskId!, detailCandidate!.candidateId, examSessionId),
     enabled: Boolean(taskId && detailCandidate?.candidateId),
   });
 
@@ -295,7 +296,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
       return;
     }
     try {
-      await cancelCurrentCollection(taskId!, candidate.candidateId);
+      await cancelCurrentCollection(taskId!, candidate.candidateId, examSessionId);
       clearCollectionCandidate();
       refreshAll();
       message.success('已取消当前采集');
@@ -323,8 +324,8 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   };
 
   const refreshAll = () => {
-    queryClient.invalidateQueries({ queryKey: ['practical-collection-workbench', taskId] });
-    queryClient.invalidateQueries({ queryKey: ['practical-collection-exceptions', taskId] });
+    queryClient.invalidateQueries({ queryKey: ['practical-collection-workbench', taskId, examSessionId] });
+    queryClient.invalidateQueries({ queryKey: ['practical-collection-exceptions', taskId, examSessionId] });
     if (detailCandidate) {
       queryClient.invalidateQueries({ queryKey: ['practical-collection-detail', taskId, detailCandidate.candidateId] });
     }
@@ -339,7 +340,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
       return;
     }
     try {
-      const detail = await getCollectionDetail(taskId!, collectionCandidate.candidateId);
+      const detail = await getCollectionDetail(taskId!, collectionCandidate.candidateId, examSessionId);
       setCurrentCollectionCandidate(detail, collectionContext?.entrySource || 'CANDIDATE_ROW');
     } catch {
       message.warning('当前考生采集数据刷新失败，请稍后重试');
@@ -347,7 +348,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   };
 
   const generateQrMutation = useMutation({
-    mutationFn: () => generateQrCodes(taskId!),
+    mutationFn: () => generateQrCodes(taskId!, examSessionId),
     onSuccess: (result) => {
       message.success(result.message || '二维码 token 已生成');
       refreshAll();
@@ -355,7 +356,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   });
 
   const exportQrMutation = useMutation({
-    mutationFn: () => exportQrCodes(taskId!),
+    mutationFn: () => exportQrCodes(taskId!, examSessionId),
     onSuccess: (result) => {
       message.success(`二维码已导出：${result.filename}`);
     },
@@ -365,7 +366,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   });
 
   const exportCollectionFormsMutation = useMutation({
-    mutationFn: (candidateIds: SnowflakeId[]) => exportCollectionForms(taskId!, candidateIds),
+    mutationFn: (candidateIds: SnowflakeId[]) => exportCollectionForms(taskId!, candidateIds, examSessionId),
     onSuccess: (result) => {
       message.success(`采集表已生成：${result.filename}`);
       setSelectedCandidateIds([]);
@@ -376,7 +377,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   });
 
   const exportCollectionPdfMutation = useMutation({
-    mutationFn: (candidateIds: SnowflakeId[]) => exportCollectionPdf(taskId!, candidateIds),
+    mutationFn: (candidateIds: SnowflakeId[]) => exportCollectionPdf(taskId!, candidateIds, examSessionId),
     onSuccess: async (result) => {
       try {
         await downloadUrlFile(result.downloadUrl, result.fileName);
@@ -394,6 +395,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   const markInfoErrorMutation = useMutation({
     mutationFn: (reason: string) => markInfoError({
       taskId: taskId!,
+      examSessionId,
       candidateId: infoErrorCandidate!.candidateId,
       reason,
     }),
@@ -405,7 +407,10 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   });
 
   const releaseMutation = useMutation({
-    mutationFn: (values: Parameters<typeof exceptionRelease>[0]) => exceptionRelease(values),
+    mutationFn: (values: Parameters<typeof exceptionRelease>[0]) => exceptionRelease({
+      ...values,
+      examSessionId,
+    }),
     onSuccess: () => {
       message.success('免考放行已记录');
       setReleaseCandidate(null);
@@ -414,7 +419,9 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   });
 
   const openCandidateMutation = useMutation({
-    mutationFn: (candidate: CandidateCollectionItemVO) => openCandidateCollection(taskId!, candidate.candidateId),
+    mutationFn: (candidate: CandidateCollectionItemVO) => openCandidateCollection(
+      taskId!, candidate.candidateId, examSessionId,
+    ),
     onSuccess: (detail) => {
       setCurrentCollectionCandidate(detail, 'CANDIDATE_ROW');
       message.success(`已进入考生采集：${detail.name}`);
@@ -439,7 +446,11 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
   const stats = normalizeStats(workbench);
   const candidates = workbench?.candidates || [];
   const recentExceptions = exceptionsQuery.data?.items || [];
-  const tabletUrl = taskId ? `${window.location.origin}/practical-collection/workbench/${encodeURIComponent(taskId)}` : '';
+  const tabletUrl = taskId
+    ? `${window.location.origin}/practical-collection/workbench/${encodeURIComponent(taskId)}${
+      examSessionId ? `?examSessionId=${encodeURIComponent(examSessionId)}` : ''
+    }`
+    : '';
   const lastUpdated = workbenchQuery.dataUpdatedAt ? formatDateTime(new Date(workbenchQuery.dataUpdatedAt).toISOString()) : '-';
 
   const filteredCandidates = useMemo(() => candidates.filter((candidate) => {
@@ -1067,7 +1078,7 @@ export function CollectionManagePage({ taskId }: CollectionManagePageProps) {
         destroyOnHidden
         onCancel={() => setExceptionModalOpen(false)}
       >
-        <CollectionExceptionPage taskId={taskId} />
+        <CollectionExceptionPage taskId={taskId} examSessionId={examSessionId} />
       </Modal>
     </div>
   );

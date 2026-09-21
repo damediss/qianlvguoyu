@@ -13,6 +13,7 @@ public interface PracticalCollectionQueueMapper extends BaseMapper<PracticalColl
       FROM certification_practical_collection_queue
       WHERE tenant_id = #{tenantId}
         AND task_id = #{taskId}
+        AND ((#{examSessionId} IS NULL AND exam_session_id IS NULL) OR exam_session_id = #{examSessionId})
         AND candidate_id = #{candidateId}
         AND queue_status IN ('QUEUED', 'COLLECTING')
         AND deleted = 0
@@ -22,6 +23,7 @@ public interface PracticalCollectionQueueMapper extends BaseMapper<PracticalColl
   PracticalCollectionQueueEntity selectActiveByCandidate(
       @Param("tenantId") Long tenantId,
       @Param("taskId") Long taskId,
+      @Param("examSessionId") Long examSessionId,
       @Param("candidateId") Long candidateId
   );
 
@@ -30,15 +32,21 @@ public interface PracticalCollectionQueueMapper extends BaseMapper<PracticalColl
       FROM certification_practical_collection_queue
       WHERE tenant_id = #{tenantId}
         AND task_id = #{taskId}
+        AND ((#{examSessionId} IS NULL AND exam_session_id IS NULL) OR exam_session_id = #{examSessionId})
         AND deleted = 0
       """)
-  Integer selectMaxQueueNo(@Param("tenantId") Long tenantId, @Param("taskId") Long taskId);
+  Integer selectMaxQueueNo(
+      @Param("tenantId") Long tenantId,
+      @Param("taskId") Long taskId,
+      @Param("examSessionId") Long examSessionId
+  );
 
   @Select("""
       SELECT *
       FROM certification_practical_collection_queue
       WHERE tenant_id = #{tenantId}
         AND task_id = #{taskId}
+        AND ((#{examSessionId} IS NULL AND exam_session_id IS NULL) OR exam_session_id = #{examSessionId})
         AND queue_status = 'QUEUED'
         AND deleted = 0
       ORDER BY queue_no ASC, joined_at ASC, id ASC
@@ -46,7 +54,8 @@ public interface PracticalCollectionQueueMapper extends BaseMapper<PracticalColl
       """)
   PracticalCollectionQueueEntity lockNextQueued(
       @Param("tenantId") Long tenantId,
-      @Param("taskId") Long taskId
+      @Param("taskId") Long taskId,
+      @Param("examSessionId") Long examSessionId
   );
 
   @Update("""
@@ -59,6 +68,7 @@ public interface PracticalCollectionQueueMapper extends BaseMapper<PracticalColl
           updated_by = #{operatorId}
       WHERE tenant_id = #{tenantId}
         AND task_id = #{taskId}
+        AND ((#{examSessionId} IS NULL AND exam_session_id IS NULL) OR exam_session_id = #{examSessionId})
         AND candidate_id = #{candidateId}
         AND queue_status IN ('QUEUED', 'COLLECTING')
         AND deleted = 0
@@ -66,6 +76,7 @@ public interface PracticalCollectionQueueMapper extends BaseMapper<PracticalColl
   int removeActiveByCandidate(
       @Param("tenantId") Long tenantId,
       @Param("taskId") Long taskId,
+      @Param("examSessionId") Long examSessionId,
       @Param("candidateId") Long candidateId,
       @Param("operatorId") Long operatorId,
       @Param("reason") String reason

@@ -41,27 +41,49 @@ export function getCollectionTasks(
   );
 }
 
-export function getCollectionWorkbench(taskId: SnowflakeId): Promise<CollectionWorkbenchVO> {
+export function getCollectionWorkbench(
+  taskId: SnowflakeId,
+  examSessionId?: SnowflakeId,
+): Promise<CollectionWorkbenchVO> {
   return unwrap<CollectionWorkbenchVO>(
-    apiClient.get(`${base}/workbench/${taskId}`, collectionRequestConfig),
+    apiClient.get(`${base}/workbench/${taskId}`, {
+      ...collectionRequestConfig,
+      params: { examSessionId },
+    }),
   );
 }
 
-export function initializeCollection(taskId: SnowflakeId): Promise<CollectionActionResultVO> {
+export function initializeCollection(
+  taskId: SnowflakeId,
+  examSessionId?: SnowflakeId,
+): Promise<CollectionActionResultVO> {
   return unwrap<CollectionActionResultVO>(
-    apiClient.post(`${base}/tasks/${taskId}/initialize`, undefined, collectionRequestConfig),
+    apiClient.post(`${base}/tasks/${taskId}/initialize`, undefined, {
+      ...collectionRequestConfig,
+      params: { examSessionId },
+    }),
   );
 }
 
-export function generateQrCodes(taskId: SnowflakeId): Promise<CollectionActionResultVO> {
+export function generateQrCodes(
+  taskId: SnowflakeId,
+  examSessionId?: SnowflakeId,
+): Promise<CollectionActionResultVO> {
   return unwrap<CollectionActionResultVO>(
-    apiClient.post(`${base}/tasks/${taskId}/qrcodes/generate`, undefined, collectionRequestConfig),
+    apiClient.post(`${base}/tasks/${taskId}/qrcodes/generate`, undefined, {
+      ...collectionRequestConfig,
+      params: { examSessionId },
+    }),
   );
 }
 
-export async function exportQrCodes(taskId: SnowflakeId): Promise<{ filename: string }> {
+export async function exportQrCodes(
+  taskId: SnowflakeId,
+  examSessionId?: SnowflakeId,
+): Promise<{ filename: string }> {
   const response = await apiClient.get(`${base}/tasks/${taskId}/qrcodes/export`, {
     ...collectionRequestConfig,
+    params: { examSessionId },
     responseType: 'blob',
   });
   const blob = new Blob([response.data as BlobPart], {
@@ -89,30 +111,39 @@ export function matchByToken(params: MatchByTokenRequest): Promise<CandidateMatc
 export function scanMatchCurrent(
   taskId: SnowflakeId,
   token: string,
+  examSessionId?: SnowflakeId,
 ): Promise<ScanMatchResultVO> {
   return unwrap<ScanMatchResultVO>(
-    apiClient.post(`${base}/workbench/${taskId}/scan-match-current`, { token }, collectionRequestConfig),
+    apiClient.post(`${base}/workbench/${taskId}/scan-match-current`, { token }, {
+      ...collectionRequestConfig,
+      params: { examSessionId },
+    }),
   );
 }
 
 export function openCandidateCollection(
   taskId: SnowflakeId,
   candidateId: SnowflakeId,
+  examSessionId?: SnowflakeId,
 ): Promise<CandidateCollectionDetailVO> {
   return unwrap<CandidateCollectionDetailVO>(
-    apiClient.post(`${base}/workbench/${taskId}/candidates/${candidateId}/open`, undefined, collectionRequestConfig),
+    apiClient.post(`${base}/workbench/${taskId}/candidates/${candidateId}/open`, undefined, {
+      ...collectionRequestConfig,
+      params: { examSessionId },
+    }),
   );
 }
 
 export function cancelCurrentCollection(
   taskId: SnowflakeId,
   candidateId: SnowflakeId,
+  examSessionId?: SnowflakeId,
 ): Promise<CollectionActionResultVO> {
   return unwrap<CollectionActionResultVO>(
     apiClient.post(
       `${base}/workbench/${taskId}/candidates/${candidateId}/cancel-current`,
       undefined,
-      collectionRequestConfig,
+      { ...collectionRequestConfig, params: { examSessionId } },
     ),
   );
 }
@@ -131,6 +162,7 @@ export function joinQueue(params: JoinQueueRequest): Promise<QueueItemVO> {
 
 export function joinQueueBatch(params: {
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
   candidateIds: SnowflakeId[];
   matchMethod?: string;
 }): Promise<BatchJoinQueueResultVO> {
@@ -139,8 +171,15 @@ export function joinQueueBatch(params: {
   );
 }
 
-export async function exportCollectionForms(taskId: SnowflakeId, candidateIds: SnowflakeId[]): Promise<{ filename: string }> {
-  const response = await apiClient.post(`${base}/tasks/${taskId}/collection-forms/export`, { candidateIds }, {
+export async function exportCollectionForms(
+  taskId: SnowflakeId,
+  candidateIds: SnowflakeId[],
+  examSessionId?: SnowflakeId,
+): Promise<{ filename: string }> {
+  const response = await apiClient.post(`${base}/tasks/${taskId}/collection-forms/export`, {
+    examSessionId,
+    candidateIds,
+  }, {
     ...collectionRequestConfig,
     responseType: 'blob',
   });
@@ -162,9 +201,14 @@ export async function exportCollectionForms(taskId: SnowflakeId, candidateIds: S
 export function exportCollectionPdf(
   examTaskId: SnowflakeId,
   candidateIds: SnowflakeId[],
+  examSessionId?: SnowflakeId,
 ): Promise<CollectionPdfExportVO> {
   return unwrap<CollectionPdfExportVO>(
-    apiClient.post('/certification/collection/export/pdf', { examTaskId, candidateIds }, collectionRequestConfig),
+    apiClient.post('/certification/collection/export/pdf', {
+      examTaskId,
+      examSessionId,
+      candidateIds,
+    }, collectionRequestConfig),
   );
 }
 
@@ -219,9 +263,13 @@ export function exceptionRelease(params: ExceptionReleaseRequest): Promise<Colle
 export function getCollectionDetail(
   taskId: SnowflakeId,
   candidateId: SnowflakeId,
+  examSessionId?: SnowflakeId,
 ): Promise<CandidateCollectionDetailVO> {
   return unwrap<CandidateCollectionDetailVO>(
-    apiClient.get(`${base}/detail/${taskId}/${candidateId}`, collectionRequestConfig),
+    apiClient.get(`${base}/detail/${taskId}/${candidateId}`, {
+      ...collectionRequestConfig,
+      params: { examSessionId },
+    }),
   );
 }
 

@@ -8,6 +8,7 @@ import type { CandidateMatchVO, SnowflakeId } from '../../../types/certification
 
 interface CandidateSearchBoxProps {
   taskId: SnowflakeId;
+  examSessionId?: SnowflakeId;
   onCandidateMatched: (candidate: CandidateMatchVO) => void;
   onCandidatesFound: (candidates: CandidateMatchVO[]) => void;
   onAfterStatusChanged?: () => void;
@@ -15,6 +16,7 @@ interface CandidateSearchBoxProps {
 
 export function CandidateSearchBox({
   taskId,
+  examSessionId,
   onCandidateMatched,
   onCandidatesFound,
   onAfterStatusChanged,
@@ -24,7 +26,7 @@ export function CandidateSearchBox({
   const [candidates, setCandidates] = useState<CandidateMatchVO[]>([]);
 
   const tokenMutation = useMutation({
-    mutationFn: (collectToken: string) => matchByToken({ taskId, collectToken }),
+    mutationFn: (collectToken: string) => matchByToken({ taskId, examSessionId, collectToken }),
     onSuccess: (candidate) => {
       message.success(candidate.currentStatus === 'COMPLETED' ? '该考生已完成采集' : '已匹配考生');
       setCandidates([candidate]);
@@ -34,7 +36,7 @@ export function CandidateSearchBox({
   });
 
   const searchMutation = useMutation({
-    mutationFn: (value: string) => searchCandidate({ taskId, keyword: value }),
+    mutationFn: (value: string) => searchCandidate({ taskId, examSessionId, keyword: value }),
     onSuccess: (items) => {
       setCandidates(items);
       onCandidatesFound(items);

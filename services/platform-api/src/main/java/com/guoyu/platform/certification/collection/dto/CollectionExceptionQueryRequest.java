@@ -9,6 +9,7 @@ import lombok.Setter;
 @Setter
 public class CollectionExceptionQueryRequest extends PageQuery {
   private Long taskId;
+  private Long examSessionId;
   private Long candidateId;
 
   @Size(max = 32)
