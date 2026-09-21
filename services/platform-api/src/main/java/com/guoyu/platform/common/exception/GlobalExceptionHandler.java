@@ -8,6 +8,8 @@ import com.guoyu.platform.ai.infrastructure.FaqLlmException;
 import com.guoyu.platform.ai.infrastructure.FaqLlmRateLimitException;
 import com.guoyu.platform.ai.infrastructure.FaqLlmTimeoutException;
 import jakarta.validation.ConstraintViolationException;
+import java.io.EOFException;
+import java.net.SocketException;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -99,6 +101,12 @@ public class GlobalExceptionHandler {
 
   @ExceptionHandler(Exception.class)
   public ResponseEntity<ApiResponse<Object>> handleException(Exception ex) {
+    // 客户端中途断开（下载取消/切网/杀进程）：响应可能已预设 application/zip 等内容类型，
+    // 写 JSON 500 会再炸 No converter——识别后打 WARN 直接返回 null（等价于不产出 body）
+    if (isClientAbort(ex)) {
+      log.warn("ClientAborted: client disconnected before response completed: {}", ex.toString());
+      return null;
+    }
     if (SqlLockContention.isRetryable(ex)) {
       log.warn("Retryable database lock contention: {}", ex.toString());
       return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
@@ -143,6 +151,23 @@ public class GlobalExceptionHandler {
     log.warn("查证任务队列已满: {}", ex.getMessage());
     return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
         .body(ApiResponse.fail("503", "查证服务繁忙，请稍后重试"));
+  }
+
+  /**
+   * 判定异常链是否为客户端断连（SocketException/EOFException 且消息为 reset/broken pipe，
+   * 或消息缺失按断连处理）。裸 SocketException 在 Undertow 请求处理阶段抛出时
+   * 不会包装成 AsyncRequestNotUsableException，需要在此兜底识别。
+   */
+  private boolean isClientAbort(Throwable ex) {
+    for (Throwable t = ex; t != null && t.getCause() != t; t = t.getCause()) {
+      if (t instanceof SocketException || t instanceof EOFException) {
+        String message = t.getMessage();
+        return message == null
+            || message.contains("Connection reset")
+            || message.contains("Broken pipe");
+      }
+    }
+    return false;
   }
 
   private String formatFieldError(FieldError error) {
