@@ -55,7 +55,7 @@ function formatCourseOptionLabel(title?: string | null, level?: number | null) {
   if (!levelText) return `${name}（等级${n}）`;
   const stripped = name.replace(EXAM_COURSE_SHORT_LEVEL_SUFFIX, '').trim();
   if (stripped) name = stripped;
-  // 例：铝电解操作工三级/高级工
+  // 例：铝电解槽操作工三级/高级工
   return `${name}${levelText}`;
 }
 

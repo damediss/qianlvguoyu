@@ -16,6 +16,7 @@ import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListCreateReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.TrainPeopleListUpdateReq;
 import com.guoyu.platform.trainingdepartment.entity.PlatformUserDetailEntity;
+import com.guoyu.platform.trainingdepartment.entity.PlatformUserEntity;
 import com.guoyu.platform.trainingdepartment.entity.CourseKejianEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoClassEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainInfoListEntity;
@@ -24,6 +25,7 @@ import com.guoyu.platform.trainingdepartment.entity.TrainSignUpSelfEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainTeacherBankEntity;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserDetailMapper;
+import com.guoyu.platform.trainingdepartment.mapper.PlatformUserMapper;
 import com.guoyu.platform.trainingdepartment.mapper.CourseKejianMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoClassMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainInfoListMapper;
@@ -63,6 +65,7 @@ public class TrainPeopleListApplicationService {
   private final TrainingOperatorScopeService operatorScopeService;
   private final TrainingIdCardHeaderResolver idCardHeaderResolver;
   private final PlatformUserDetailMapper platformUserDetailMapper;
+  private final PlatformUserMapper platformUserMapper;
   private final PlatformUserEnsureService platformUserEnsureService;
   private final UserMapper userMapper;
   private final TrainClassRoleApplicationService classRoleApplicationService;
@@ -79,6 +82,7 @@ public class TrainPeopleListApplicationService {
       TrainingOperatorScopeService operatorScopeService,
       TrainingIdCardHeaderResolver idCardHeaderResolver,
       PlatformUserDetailMapper platformUserDetailMapper,
+      PlatformUserMapper platformUserMapper,
       PlatformUserEnsureService platformUserEnsureService,
       UserMapper userMapper,
       @Lazy TrainClassRoleApplicationService classRoleApplicationService,
@@ -94,6 +98,7 @@ public class TrainPeopleListApplicationService {
     this.operatorScopeService = operatorScopeService;
     this.idCardHeaderResolver = idCardHeaderResolver;
     this.platformUserDetailMapper = platformUserDetailMapper;
+    this.platformUserMapper = platformUserMapper;
     this.platformUserEnsureService = platformUserEnsureService;
     this.userMapper = userMapper;
     this.classRoleApplicationService = classRoleApplicationService;
@@ -234,6 +239,9 @@ public class TrainPeopleListApplicationService {
         .toList();
     Map<String, String> headerFromDetail = new HashMap<>();
     Map<String, String> headerFromSignUp = new HashMap<>();
+    Map<String, String> nameFromDetail = new HashMap<>();
+    Map<String, String> nameFromSignUp = new HashMap<>();
+    Map<Long, String> nameFromPlatformUser = new HashMap<>();
     if (!idCards.isEmpty()) {
       platformUserDetailMapper.selectList(
           new LambdaQueryWrapper<PlatformUserDetailEntity>()
@@ -243,13 +251,18 @@ public class TrainPeopleListApplicationService {
             if (StringUtils.hasText(p.getIdcard()) && StringUtils.hasText(p.getIdcardHeader())) {
               headerFromDetail.put(p.getIdcard(), p.getIdcardHeader());
             }
+            if (StringUtils.hasText(p.getIdcard()) && StringUtils.hasText(p.getRealname())
+                && !nameFromDetail.containsKey(p.getIdcard())) {
+              nameFromDetail.put(p.getIdcard(), p.getRealname().trim());
+            }
           });
-      // 仅取头像字段；勿 SELECT *（level 为 varchar 混中文，整行映射曾导致 Integer 反序列化 500）
+      // 仅取头像/姓名字段；勿 SELECT *（level 为 varchar 混中文，整行映射曾导致 Integer 反序列化 500）
       signUpPeopleSelfMapper.selectList(
           new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
               .select(
                   TrainSignUpPeopleSelfEntity::getIdCardNumber,
-                  TrainSignUpPeopleSelfEntity::getIdCardHeader)
+                  TrainSignUpPeopleSelfEntity::getIdCardHeader,
+                  TrainSignUpPeopleSelfEntity::getName)
               .in(TrainSignUpPeopleSelfEntity::getIdCardNumber, idCards)
               .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0)
               .orderByDesc(TrainSignUpPeopleSelfEntity::getId))
@@ -259,13 +272,46 @@ public class TrainPeopleListApplicationService {
                 && !headerFromSignUp.containsKey(p.getIdCardNumber())) {
               headerFromSignUp.put(p.getIdCardNumber(), p.getIdCardHeader());
             }
+            if (StringUtils.hasText(p.getIdCardNumber())
+                && StringUtils.hasText(p.getName())
+                && !nameFromSignUp.containsKey(p.getIdCardNumber())) {
+              nameFromSignUp.put(p.getIdCardNumber(), p.getName().trim());
+            }
+          });
+    }
+    List<Long> platformUserIds = mpPage.getRecords().stream()
+        .map(TrainPeopleListEntity::getPlatformUserId)
+        .filter(id -> id != null && id > 0)
+        .distinct()
+        .toList();
+    if (!platformUserIds.isEmpty()) {
+      platformUserMapper.selectList(
+          new LambdaQueryWrapper<PlatformUserEntity>()
+              .in(PlatformUserEntity::getId, platformUserIds)
+              .eq(PlatformUserEntity::getDeleted, 0))
+          .forEach(u -> {
+            if (u.getId() != null && StringUtils.hasText(u.getRealname())) {
+              nameFromPlatformUser.put(u.getId(), u.getRealname().trim());
+            }
           });
     }
 
     List<Map<String, Object>> list = mpPage.getRecords().stream().map(e -> {
       Map<String, Object> item = new LinkedHashMap<>();
       item.put("id", e.getId());
-      item.put("realname", e.getRealname());
+      String idCard = e.getIdCard();
+      // 花名册 realname 历史可能为空：与 PHP 开班导出一致，回退 detail / 账号 / 报名姓名
+      String displayName = e.getRealname();
+      if (!StringUtils.hasText(displayName) && StringUtils.hasText(idCard)) {
+        displayName = nameFromDetail.get(idCard);
+      }
+      if (!StringUtils.hasText(displayName) && e.getPlatformUserId() != null) {
+        displayName = nameFromPlatformUser.get(e.getPlatformUserId());
+      }
+      if (!StringUtils.hasText(displayName) && StringUtils.hasText(idCard)) {
+        displayName = nameFromSignUp.get(idCard);
+      }
+      item.put("realname", displayName);
       item.put("phone", e.getPhone());
       item.put("train_id", e.getTrainId());
       item.put("train_class_id", e.getTrainClassId());
@@ -277,7 +323,6 @@ public class TrainPeopleListApplicationService {
       item.put("exam_score", e.getExamScore());
       item.put("real_score", e.getRealScore());
       item.put("normal_score", e.getNormalScore());
-      String idCard = e.getIdCard();
       item.put("header", idCardHeaderResolver.resolveForStudent(
           idCard,
           idCard != null ? headerFromDetail.get(idCard) : null,

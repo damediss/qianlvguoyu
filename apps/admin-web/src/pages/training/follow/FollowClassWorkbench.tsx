@@ -931,7 +931,19 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   });
 
   const attendanceColumns: ColumnsType<ClassStudent> = [
-    { title: '姓名', dataIndex: 'realname', width: 120 },
+    {
+      title: '姓名',
+      dataIndex: 'realname',
+      width: 120,
+      ellipsis: true,
+      render: (v?: string, row?: ClassStudent) => {
+        const name = (v || row?.realname || '').trim();
+        if (name) return name;
+        if (row?.phone) return row.phone;
+        if (row?.id_card) return row.id_card;
+        return '—';
+      },
+    },
     { title: '手机', dataIndex: 'phone', width: 130, render: (v?: string) => v || '—' },
     {
       title: '考勤状态',
