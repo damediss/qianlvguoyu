@@ -210,8 +210,13 @@ public class TrainPeopleListApplicationService {
   @Transactional
   public void delete(Long id) {
     TrainPeopleListEntity entity = getExisting(id);
+    Long classId = entity.getTrainClassId();
+    boolean student = "student".equals(entity.getType());
     entity.setDeleted(1);
     mapper.deleteById(entity.getId());
+    if (student && classId != null) {
+      classReviewSyncApplicationService.unenrollRemovedStudents(classId, List.of(entity));
+    }
   }
 
   @Transactional
@@ -372,12 +377,16 @@ public class TrainPeopleListApplicationService {
     }
     int count = 0;
     java.util.Set<Long> classIds = new java.util.HashSet<>();
+    Map<Long, List<TrainPeopleListEntity>> removedByClass = new LinkedHashMap<>();
     for (Long id : ids) {
       TrainPeopleListEntity entity = mapper.selectById(id);
       if (entity != null && entity.getDeleted() == 0) {
         assertClassViewable(entity.getTrainClassId());
         if (entity.getTrainClassId() != null) {
           classIds.add(entity.getTrainClassId());
+          if ("student".equals(entity.getType())) {
+            removedByClass.computeIfAbsent(entity.getTrainClassId(), k -> new ArrayList<>()).add(entity);
+          }
         }
         if (entity.getIsLeader() != null && entity.getIsLeader() == 1) {
           entity.setIsLeader(0);
@@ -390,6 +399,9 @@ public class TrainPeopleListApplicationService {
     }
     for (Long classId : classIds) {
       syncClassStudentNums(classId);
+    }
+    for (Map.Entry<Long, List<TrainPeopleListEntity>> entry : removedByClass.entrySet()) {
+      classReviewSyncApplicationService.unenrollRemovedStudents(entry.getKey(), entry.getValue());
     }
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("count", count);

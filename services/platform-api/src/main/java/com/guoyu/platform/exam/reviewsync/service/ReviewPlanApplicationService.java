@@ -772,6 +772,9 @@ public class ReviewPlanApplicationService {
         .eq(AiReviewPlanEntity::getExamId, examId)
         .last("LIMIT 1"));
     if (existing != null) {
+      if (!reviewQuery.isUserInExam(examId, platformUserId)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "您不在该复习计划名单中");
+      }
       if ("abandoned".equals(existing.getStatus())) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "该复习计划已放弃");
       }
@@ -1341,6 +1344,9 @@ public class ReviewPlanApplicationService {
         .last("LIMIT 1"));
     if (plan == null) {
       throw new BusinessException(ErrorCode.NOT_FOUND, "复习计划不存在，请先进入同步练习");
+    }
+    if (!reviewQuery.isUserInExam(examId, platformUserId)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "您不在该复习计划名单中");
     }
     return plan;
   }

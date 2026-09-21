@@ -17,6 +17,9 @@ import com.guoyu.platform.trainingdepartment.dto.PlatformUserSaveReq;
 import com.guoyu.platform.trainingdepartment.entity.PlatformUserEntity;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserDetailMapper;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +42,10 @@ class PlatformUserGuardTest {
   @Mock
   private PlatformUserDetailMapper detailMapper;
   @Mock
+  private TrainPeopleListMapper peopleListMapper;
+  @Mock
+  private TrainSignUpPeopleSelfMapper signUpPeopleMapper;
+  @Mock
   private OrgMapper orgMapper;
   @Mock
   private UserMapper userMapper;
@@ -49,7 +56,10 @@ class PlatformUserGuardTest {
 
   @BeforeEach
   void setUp() {
-    service = new PlatformUserApplicationService(mapper, detailMapper, orgMapper, userMapper, operatorScopeService);
+    service = new PlatformUserApplicationService(
+        mapper, detailMapper, peopleListMapper, signUpPeopleMapper, orgMapper, userMapper, operatorScopeService);
+    when(peopleListMapper.selectList(any())).thenReturn(List.of());
+    when(signUpPeopleMapper.selectList(any())).thenReturn(List.of());
   }
 
   private MockedStatic<SecurityContext> mockCurrentAdmin() {

@@ -15,6 +15,7 @@ export function TrainingStudentPage() {
   const [page, setPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<PlatformUser | null>(null);
+  const [phoneEditable, setPhoneEditable] = useState(false);
 
   const { data: publicData } = useQuery({
     queryKey: ['training-public-data', 'company'],
@@ -49,11 +50,13 @@ export function TrainingStudentPage() {
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
+    setPhoneEditable(false);
     setModalOpen(true);
   };
 
   const openEdit = (row: PlatformUser) => {
     setEditing(row);
+    setPhoneEditable(false);
     form.setFieldsValue({
       id: row.id,
       realname: row.realname,
@@ -130,23 +133,42 @@ export function TrainingStudentPage() {
       <Modal
         title={editing ? '修改学员' : '添加学员'}
         open={modalOpen}
-        onCancel={() => { setModalOpen(false); setEditing(null); }}
+        onCancel={() => { setModalOpen(false); setEditing(null); setPhoneEditable(false); }}
         onOk={() => form.validateFields().then((v) => saveMu.mutate({ ...v, id: editing?.id }))}
         confirmLoading={saveMu.isPending}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical">
-          <Form.Item name="realname" label="姓名" rules={[{ required: true }]}>
-            <Input />
+        <Form form={form} layout="vertical" autoComplete="off">
+          <div aria-hidden style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}>
+            <input tabIndex={-1} autoComplete="username" name="username" />
+            <input tabIndex={-1} type="password" autoComplete="current-password" name="current-password" />
+          </div>
+          <Form.Item name="realname" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}>
+            <Input autoComplete="off" />
           </Form.Item>
-          <Form.Item name="idcard" label="身份证号" rules={[{ required: true, len: 18 }]}>
-            <Input maxLength={18} />
+          <Form.Item name="idcard" label="身份证号" rules={[{ required: true, len: 18, message: '请输入18位身份证号' }]}>
+            <Input maxLength={18} autoComplete="off" />
           </Form.Item>
-          <Form.Item name="phone" label="手机号" rules={[{ required: true, len: 11 }]}>
-            <Input maxLength={11} />
+          <Form.Item
+            name="phone"
+            label="手机号"
+            rules={[
+              { required: true, message: '请输入手机号' },
+              { pattern: /^1[3-9]\d{9}$/, message: '请输入11位有效手机号' },
+            ]}
+          >
+            <Input
+              maxLength={11}
+              inputMode="numeric"
+              autoComplete="off"
+              readOnly={!phoneEditable}
+              onFocus={() => {
+                window.setTimeout(() => setPhoneEditable(true), 200);
+              }}
+            />
           </Form.Item>
           <Form.Item name="password" label="密码" extra="留空则使用默认 123123">
-            <Input.Password />
+            <Input.Password autoComplete="new-password" />
           </Form.Item>
           <Form.Item name="companyId" label="所属企业">
             <Select allowClear placeholder="请选择" options={companies.map((c) => ({ value: c.id, label: c.title }))} />

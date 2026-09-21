@@ -14,8 +14,12 @@ import com.guoyu.platform.trainingdepartment.dto.PlatformUserQueryReq;
 import com.guoyu.platform.trainingdepartment.dto.PlatformUserSaveReq;
 import com.guoyu.platform.trainingdepartment.entity.PlatformUserDetailEntity;
 import com.guoyu.platform.trainingdepartment.entity.PlatformUserEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainSignUpPeopleSelfEntity;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserDetailMapper;
 import com.guoyu.platform.trainingdepartment.mapper.PlatformUserMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainSignUpPeopleSelfMapper;
 import com.guoyu.platform.trainingdepartment.vo.PlatformUserVO;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -23,10 +27,12 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +44,8 @@ public class PlatformUserApplicationService {
 
   private final PlatformUserMapper mapper;
   private final PlatformUserDetailMapper detailMapper;
+  private final TrainPeopleListMapper peopleListMapper;
+  private final TrainSignUpPeopleSelfMapper signUpPeopleMapper;
   private final OrgMapper orgMapper;
   private final UserMapper userMapper;
   private final TrainingOperatorScopeService operatorScopeService;
@@ -45,11 +53,15 @@ public class PlatformUserApplicationService {
   public PlatformUserApplicationService(
       PlatformUserMapper mapper,
       PlatformUserDetailMapper detailMapper,
+      TrainPeopleListMapper peopleListMapper,
+      TrainSignUpPeopleSelfMapper signUpPeopleMapper,
       OrgMapper orgMapper,
       UserMapper userMapper,
       TrainingOperatorScopeService operatorScopeService) {
     this.mapper = mapper;
     this.detailMapper = detailMapper;
+    this.peopleListMapper = peopleListMapper;
+    this.signUpPeopleMapper = signUpPeopleMapper;
     this.orgMapper = orgMapper;
     this.userMapper = userMapper;
     this.operatorScopeService = operatorScopeService;
@@ -95,13 +107,17 @@ public class PlatformUserApplicationService {
   @Transactional
   public PlatformUserVO save(PlatformUserSaveReq req) {
     operatorScopeService.requireOrgOperator();
-    validateIdentity(req.getIdcard(), req.getPhone(), req.getId());
+    String realname = trim(req.getRealname());
+    String idcard = trim(req.getIdcard()).replace(" ", "");
+    String phone = trim(req.getPhone()).replace(" ", "");
+    validateIdentity(idcard, phone, req.getId());
     Long orgId = resolveOrgId();
     if (req.getId() != null && req.getId() > 0) {
       PlatformUserEntity entity = getExisting(req.getId(), orgId);
-      entity.setRealname(trim(req.getRealname()));
-      entity.setIdcard(trim(req.getIdcard()));
-      entity.setPhone(trim(req.getPhone()));
+      String previousIdCard = entity.getIdcard();
+      entity.setRealname(realname);
+      entity.setIdcard(idcard);
+      entity.setPhone(phone);
       if (req.getCompanyId() != null) {
         entity.setCompanyId(req.getCompanyId());
       }
@@ -116,12 +132,13 @@ public class PlatformUserApplicationService {
       }
       mapper.updateById(entity);
       syncDetail(entity);
+      syncLinkedProfiles(entity, previousIdCard);
       return toVO(entity, companyName(entity.getCompanyId()));
     }
     PlatformUserEntity entity = new PlatformUserEntity();
-    entity.setRealname(trim(req.getRealname()));
-    entity.setIdcard(trim(req.getIdcard()));
-    entity.setPhone(trim(req.getPhone()));
+    entity.setRealname(realname);
+    entity.setIdcard(idcard);
+    entity.setPhone(phone);
     entity.setCompanyId(req.getCompanyId());
     entity.setOrgId(orgId);
     entity.setAddtime(System.currentTimeMillis() / 1000);
@@ -131,6 +148,7 @@ public class PlatformUserApplicationService {
     entity.setPassword(md5(StringUtils.hasText(req.getPassword()) ? req.getPassword() : "123123", stat));
     mapper.insert(entity);
     syncDetail(entity);
+    syncLinkedProfiles(entity, null);
     return toVO(entity, companyName(entity.getCompanyId()));
   }
 
@@ -157,11 +175,11 @@ public class PlatformUserApplicationService {
   }
 
   private void validateIdentity(String idcard, String phone, Long excludeId) {
-    if (idcard.length() != 18) {
+    if (idcard == null || idcard.length() != 18) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "身份证号位数不正确");
     }
-    if (phone.length() != 11) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "手机号位数不正确");
+    if (phone == null || !phone.matches("^1[3-9]\\d{9}$")) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请输入11位有效手机号");
     }
     LambdaQueryWrapper<PlatformUserEntity> idcardWrapper = new LambdaQueryWrapper<PlatformUserEntity>()
         .eq(PlatformUserEntity::getDeleted, 0)
@@ -199,6 +217,85 @@ public class PlatformUserApplicationService {
       detailMapper.insert(detail);
     } else {
       detailMapper.updateById(detail);
+    }
+  }
+
+  /**
+   * 学员账号是主数据。班级花名册、报名人员按账号或身份证指向同一个人，改手机号/姓名/证件号时一起回写。
+   * 跟班考勤的手机列读花名册，不单独存号码。
+   */
+  private void syncLinkedProfiles(PlatformUserEntity user, String previousIdCard) {
+    if (user.getId() == null) {
+      return;
+    }
+    List<String> idCards = new ArrayList<>();
+    if (StringUtils.hasText(previousIdCard)) {
+      idCards.add(previousIdCard.trim());
+    }
+    if (StringUtils.hasText(user.getIdcard()) && !idCards.contains(user.getIdcard().trim())) {
+      idCards.add(user.getIdcard().trim());
+    }
+
+    LambdaQueryWrapper<TrainPeopleListEntity> peopleQuery = new LambdaQueryWrapper<TrainPeopleListEntity>()
+        .eq(TrainPeopleListEntity::getDeleted, 0)
+        .and(w -> {
+          w.eq(TrainPeopleListEntity::getPlatformUserId, user.getId());
+          if (!idCards.isEmpty()) {
+            w.or().in(TrainPeopleListEntity::getIdCard, idCards);
+          }
+        });
+    for (TrainPeopleListEntity row : peopleListMapper.selectList(peopleQuery)) {
+      boolean changed = false;
+      if (!Objects.equals(row.getPhone(), user.getPhone())) {
+        row.setPhone(user.getPhone());
+        changed = true;
+      }
+      if (StringUtils.hasText(user.getRealname()) && !Objects.equals(row.getRealname(), user.getRealname())) {
+        row.setRealname(user.getRealname());
+        changed = true;
+      }
+      if (StringUtils.hasText(user.getIdcard()) && !Objects.equals(row.getIdCard(), user.getIdcard())) {
+        row.setIdCard(user.getIdcard());
+        changed = true;
+      }
+      if (row.getPlatformUserId() == null || row.getPlatformUserId() <= 0) {
+        row.setPlatformUserId(user.getId());
+        changed = true;
+      }
+      if (changed) {
+        peopleListMapper.updateById(row);
+      }
+    }
+
+    LambdaQueryWrapper<TrainSignUpPeopleSelfEntity> signUpQuery = new LambdaQueryWrapper<TrainSignUpPeopleSelfEntity>()
+        .eq(TrainSignUpPeopleSelfEntity::getDeleted, 0)
+        .and(w -> {
+          w.eq(TrainSignUpPeopleSelfEntity::getPlatformUserId, user.getId());
+          if (!idCards.isEmpty()) {
+            w.or().in(TrainSignUpPeopleSelfEntity::getIdCardNumber, idCards);
+          }
+        });
+    for (TrainSignUpPeopleSelfEntity row : signUpPeopleMapper.selectList(signUpQuery)) {
+      boolean changed = false;
+      if (!Objects.equals(row.getPhone(), user.getPhone())) {
+        row.setPhone(user.getPhone());
+        changed = true;
+      }
+      if (StringUtils.hasText(user.getRealname()) && !Objects.equals(row.getName(), user.getRealname())) {
+        row.setName(user.getRealname());
+        changed = true;
+      }
+      if (StringUtils.hasText(user.getIdcard()) && !Objects.equals(row.getIdCardNumber(), user.getIdcard())) {
+        row.setIdCardNumber(user.getIdcard());
+        changed = true;
+      }
+      if (row.getPlatformUserId() == null || row.getPlatformUserId() <= 0) {
+        row.setPlatformUserId(user.getId());
+        changed = true;
+      }
+      if (changed) {
+        signUpPeopleMapper.updateById(row);
+      }
     }
   }
 
