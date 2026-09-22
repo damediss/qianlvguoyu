@@ -66,7 +66,7 @@ importers:
         specifier: ^6.5.4
         version: 6.5.6(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       pdfjs-dist:
-        specifier: ^3.11.174
+        specifier: 3.11.174
         version: 3.11.174
       pinyin-pro:
         specifier: ^3.28.1
