@@ -207,6 +207,30 @@ public class CoursewareGenerationService {
       SlideGenInput input = buildInput(project, slide);
       SlideWorkflowResult result = workflowService.execute(input, tenantId, projectId, userId,
           slideId);
+      // 修复 1 轮后仍残留结构 error 的页不静默置 ready(否则导出被静默阻断、列表看不出问题),
+      // 置 failed 让用户手动重试(用户口径 2026-09-22)
+      boolean residualError = result.issues().stream()
+          .anyMatch(com.guoyu.platform.courseware.domain.StructureIssue::isError);
+      if (residualError) {
+        String firstError = result.issues().stream()
+            .filter(com.guoyu.platform.courseware.domain.StructureIssue::isError)
+            .findFirst().map(i -> i.message().length() > 200
+                ? i.message().substring(0, 200) : i.message())
+            .orElse("页面生成不完整");
+        CwSlideEntity failedUpdate = new CwSlideEntity();
+        failedUpdate.setId(slideId);
+        failedUpdate.setStatus(CwSlideEntity.STATUS_FAILED);
+        failedUpdate.setError("生成不完整,请重试(" + firstError + ")");
+        failedUpdate.setIssues(objectMapper.writeValueAsString(result.issues()));
+        failedUpdate.setBlocks(objectMapper.writeValueAsString(result.blocks()));
+        failedUpdate.setSpeakerNotes(result.speakerNotes());
+        slideMapper.updateById(failedUpdate);
+        projectMapper.incrementFailed(projectId);
+        refreshProjectStatusIfIdle(projectId);
+        log.warn("课件页修复后仍残留结构错误,置失败待手动重试: slideId={}, error={}",
+            slideId, firstError);
+        return;
+      }
       CwSlideEntity update = new CwSlideEntity();
       update.setId(slideId);
       update.setBlocks(objectMapper.writeValueAsString(result.blocks()));

@@ -98,7 +98,7 @@ public class KnowledgePointEnumerator {
               }
             } else if ("work".equals(mode) && numberedDepth(text) == 2) {
               // 工作要求等级行:"3. 1 五级/初级工"
-              currentLevel = stripNumber(text);
+              currentLevel = normalizeCjkSpaces(stripNumber(text));
             }
           } else {
             pendingContent = true;
@@ -166,7 +166,7 @@ public class KnowledgePointEnumerator {
     point.setCategory(CwKnowledgePointEntity.CATEGORY_BASIC);
     point.setJobFunction(jobFunction);
     point.setCode(extractCode(headingText));
-    point.setTitle(stripNumber(headingText));
+    point.setTitle(normalizeCjkSpaces(stripNumber(headingText)));
     point.setSourceRef(currentRef);
     return point;
   }
@@ -174,7 +174,7 @@ public class KnowledgePointEnumerator {
   private CwKnowledgePointEntity closeBasic(CwKnowledgePointEntity open, StringBuilder text,
                                             List<CwKnowledgePointEntity> points, int[] sortNo) {
     if (open != null) {
-      open.setKnowledgeText(text.toString().trim());
+      open.setKnowledgeText(normalizeCjkSpaces(text.toString().trim()));
       open.setSortNo(sortNo[0]++);
       points.add(open);
     }
@@ -220,8 +220,8 @@ public class KnowledgePointEnumerator {
       if (cells.size() <= knowledgeCol) {
         continue;
       }
-      String jobFunction = normalizeSpaces(cells.get(0));
-      String jobContent = normalizeSpaces(cells.get(contentCol));
+      String jobFunction = normalizeCjkSpaces(normalizeSpaces(cells.get(0)));
+      String jobContent = normalizeCjkSpaces(normalizeSpaces(cells.get(contentCol)));
       Map<String, String> skillByCode = splitXyzItems(cells.get(skillCol));
       Map<String, String> knowByCode = splitXyzItems(cells.get(knowledgeCol));
       for (Map.Entry<String, String> entry : knowByCode.entrySet()) {
@@ -231,9 +231,9 @@ public class KnowledgePointEnumerator {
         point.setJobFunction(jobFunction);
         point.setJobContent(jobContent);
         point.setCode(entry.getKey());
-        point.setTitle(entry.getValue());
-        point.setSkillText(skillByCode.get(entry.getKey()));
-        point.setKnowledgeText(entry.getValue());
+        point.setTitle(normalizeCjkSpaces(entry.getValue()));
+        point.setSkillText(normalizeCjkSpaces(skillByCode.get(entry.getKey())));
+        point.setKnowledgeText(normalizeCjkSpaces(entry.getValue()));
         point.setSourceRef(currentRef);
         point.setSortNo(sortNo[0]++);
         points.add(point);
@@ -293,6 +293,20 @@ public class KnowledgePointEnumerator {
 
   private static String normalizeSpaces(String text) {
     return text == null ? "" : text.replaceAll("\\s+", " ").trim();
+  }
+
+  /**
+   * CJK 间空格去除(用户口径 2026-09-22):标准 docx 文本常为「三 相 交 流」逐字空格,
+   * 标题展示需去除;去 CJK-CJK 及 CJK-中文标点间的空格,拉丁/数字相邻空格保留(如「PLC 编程」)。
+   */
+  public static String normalizeCjkSpaces(String text) {
+    if (text == null) {
+      return null;
+    }
+    return text.replaceAll(
+        "(?<=[\\u4e00-\\u9fff]) +(?=[\\u4e00-\\u9fff\\u3001\\u3002\\uff0c\\uff1b\\uff1a\\uff01"
+            + "\\uff1f\\uff08\\uff09\\u201c\\u201d\\u2018\\u2019\\u300a\\u300b\\u3010\\u3011"
+            + "\\u00b7\\u2014\\u2026])", "");
   }
 
   private static String cellText(XWPFTableCell cell) {

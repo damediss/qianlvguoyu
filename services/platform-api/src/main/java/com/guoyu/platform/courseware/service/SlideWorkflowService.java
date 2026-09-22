@@ -24,6 +24,11 @@ public class SlideWorkflowService {
   /** 最多修复 1 轮(方案 §8.1) */
   static final int MAX_REPAIR_ROUNDS = 1;
 
+  /** LLM 调用失败自动重试次数(用户口径 2026-09-22:重试 2 次仍失败转手动重试) */
+  static final int MAX_LLM_RETRIES = 2;
+
+  private static final long RETRY_BACKOFF_MS = 3_000;
+
   private final CoursewareAiService aiService;
   private final ObjectMapper objectMapper;
 
@@ -50,21 +55,31 @@ public class SlideWorkflowService {
       String userPrompt = knowledgePage
           ? CoursewarePrompts.knowledgeSlideUser(attemptInput, objectMapper)
           : CoursewarePrompts.slideUser(attemptInput, objectMapper);
-      // LLM 调用级重试(方案 §12):429/5xx 等瞬态失败退避后重试 1 次,仍失败由编排层计页失败
-      String content;
-      try {
-        content = aiService.callSlide(tenantId, projectId, slideId, operatorId,
-            systemPrompt, userPrompt);
-      } catch (com.guoyu.platform.ai.infrastructure.FaqLlmException first) {
-        log.warn("单页 LLM 调用失败,退避后重试 1 次: slideId={}, error={}", slideId,
-            first.getMessage());
+      // LLM 调用级重试(用户口径 2026-09-22):429/5xx 等瞬态失败退避重试 2 次,
+      // 仍失败向上抛由编排层计页失败,用户在页列表手动重试
+      String content = null;
+      int llmAttempts = 0;
+      while (true) {
         try {
-          Thread.sleep(3_000);
-        } catch (InterruptedException ie) {
-          Thread.currentThread().interrupt();
+          content = aiService.callSlide(tenantId, projectId, slideId, operatorId,
+              systemPrompt, userPrompt);
+          break;
+        } catch (com.guoyu.platform.ai.infrastructure.FaqLlmException first) {
+          llmAttempts++;
+          // 失败次数 > 重试次数(即 1 次原始 + 2 次重试共 3 次尝试后)仍失败才转手动
+          if (llmAttempts > MAX_LLM_RETRIES) {
+            log.warn("单页 LLM 重试 {} 次仍失败: slideId={}, error={}", MAX_LLM_RETRIES,
+                slideId, first.getMessage());
+            throw first;
+          }
+          log.warn("单页 LLM 调用失败,退避后第 {}/{} 次重试: slideId={}, error={}",
+              llmAttempts, MAX_LLM_RETRIES, slideId, first.getMessage());
+          try {
+            Thread.sleep(RETRY_BACKOFF_MS * llmAttempts);
+          } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+          }
         }
-        content = aiService.callSlide(tenantId, projectId, slideId, operatorId,
-            systemPrompt, userPrompt);
       }
 
       List<StructureIssue> roundIssues = new ArrayList<>();

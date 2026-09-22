@@ -76,6 +76,27 @@ class SlideWorkflowServiceTest {
   }
 
   @Test
+  void u11_llmFailTwiceThenSuccessRetries() {
+    when(aiService.callSlide(any(), any(), any(), any(), any(), any()))
+        .thenThrow(new com.guoyu.platform.ai.infrastructure.FaqLlmRateLimitException("429"))
+        .thenThrow(new com.guoyu.platform.ai.infrastructure.FaqLlmRateLimitException("429"))
+        .thenReturn(GOOD_JSON);
+    SlideWorkflowResult result = service.execute(input(), 10159L, 100L, 7L, 55L);
+    assertEquals(0, result.repairRounds());
+    verify(aiService, times(3)).callSlide(any(), any(), any(), any(), any(), any());
+  }
+
+  @Test
+  void u11_llmFailThreeTimesPropagates() {
+    when(aiService.callSlide(any(), any(), any(), any(), any(), any()))
+        .thenThrow(new com.guoyu.platform.ai.infrastructure.FaqLlmRateLimitException("429"));
+    assertThrows(com.guoyu.platform.ai.infrastructure.FaqLlmRateLimitException.class,
+        () -> service.execute(input(), 10159L, 100L, 7L, 55L));
+    // 1 次原始 + 2 次重试 = 3 次后仍失败转手动
+    verify(aiService, times(3)).callSlide(any(), any(), any(), any(), any(), any());
+  }
+
+  @Test
   void u11_capacityOnlyNoRepair() {
     when(aiService.callSlide(any(), any(), any(), any(), any(), any()))
         .thenReturn(CAPACITY_ONLY_JSON);

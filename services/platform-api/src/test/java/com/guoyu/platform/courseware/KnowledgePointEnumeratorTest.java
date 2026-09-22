@@ -78,6 +78,18 @@ class KnowledgePointEnumeratorTest {
   }
 
   @Test
+  void u16_cjkSpacesRemovedFromTitles() {
+    // 用户口径 2026-09-22:标题中 CJK 逐字空格自动去除
+    assertEquals("三相交流笼型异步电动机",
+        KnowledgePointEnumerator.normalizeCjkSpaces("三 相 交 流 笼 型 异 步 电 动 机"));
+    // 拉丁字母间空格不处理(保留「PLC 编程」等合法间距),仅 CJK-CJK 去空格
+    assertEquals("P L C 编程基础", KnowledgePointEnumerator.normalizeCjkSpaces("P L C 编 程 基 础"));
+    // 真实文档:三级编号标题去除编号后归一化
+    assertEquals("常用低压电器的结构、工作原理及使用方法", KnowledgePointEnumerator.normalizeCjkSpaces(
+        KnowledgePointEnumerator.stripNumber("1. 1. 2 常 用 低 压 电 器 的结构 、工作原理及使用方法")));
+  }
+
+  @Test
   void u16_numberedDepthAndStrip() {
     assertEquals(3, KnowledgePointEnumerator.numberedDepth("2. 1. 1 职业道德基本知识"));
     assertEquals(2, KnowledgePointEnumerator.numberedDepth("2. 1   职业道德"));
