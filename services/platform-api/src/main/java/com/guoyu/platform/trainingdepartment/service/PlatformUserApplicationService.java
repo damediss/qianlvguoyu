@@ -293,10 +293,87 @@ public class PlatformUserApplicationService {
         row.setPlatformUserId(user.getId());
         changed = true;
       }
-      if (changed) {
-        signUpPeopleMapper.updateById(row);
+    if (changed) {
+      signUpPeopleMapper.updateById(row);
       }
     }
+  }
+
+  /**
+   * 花名册 / 报名人员回写学员主数据，并再同步到其他关联表。
+   * 找不到账号时静默跳过；手机号非 11 位有效号时不回写手机号，避免污染主数据。
+   */
+  @Transactional
+  public void syncFromExternalProfile(Long platformUserId, String idCard, String realname, String phone) {
+    String normalizedIdCard = trim(idCard);
+    String normalizedPhone = trim(phone);
+    String normalizedName = trim(realname);
+    if ((platformUserId == null || platformUserId <= 0) && !StringUtils.hasText(normalizedIdCard)) {
+      return;
+    }
+
+    PlatformUserEntity user = null;
+    if (platformUserId != null && platformUserId > 0) {
+      user = mapper.selectOne(new LambdaQueryWrapper<PlatformUserEntity>()
+          .eq(PlatformUserEntity::getId, platformUserId)
+          .eq(PlatformUserEntity::getDeleted, 0)
+          .last("LIMIT 1"));
+    }
+    if (user == null && StringUtils.hasText(normalizedIdCard)) {
+      user = mapper.selectOne(new LambdaQueryWrapper<PlatformUserEntity>()
+          .eq(PlatformUserEntity::getDeleted, 0)
+          .eq(PlatformUserEntity::getIdcard, normalizedIdCard)
+          .last("LIMIT 1"));
+    }
+    if (user == null) {
+      return;
+    }
+
+    String previousIdCard = user.getIdcard();
+    boolean changed = false;
+    if (StringUtils.hasText(normalizedName) && !Objects.equals(user.getRealname(), normalizedName)) {
+      user.setRealname(normalizedName);
+      changed = true;
+    }
+    if (StringUtils.hasText(normalizedIdCard)
+        && normalizedIdCard.length() == 18
+        && !Objects.equals(user.getIdcard(), normalizedIdCard)
+        && !idCardTaken(normalizedIdCard, user.getId())) {
+      user.setIdcard(normalizedIdCard);
+      changed = true;
+    }
+    if (StringUtils.hasText(normalizedPhone)
+        && normalizedPhone.matches("^1[3-9]\\d{9}$")
+        && !Objects.equals(user.getPhone(), normalizedPhone)
+        && !phoneTaken(normalizedPhone, user.getId())) {
+      user.setPhone(normalizedPhone);
+      changed = true;
+    }
+    if (changed) {
+      mapper.updateById(user);
+      syncDetail(user);
+    }
+    syncLinkedProfiles(user, previousIdCard);
+  }
+
+  private boolean idCardTaken(String idcard, Long excludeId) {
+    LambdaQueryWrapper<PlatformUserEntity> wrapper = new LambdaQueryWrapper<PlatformUserEntity>()
+        .eq(PlatformUserEntity::getDeleted, 0)
+        .eq(PlatformUserEntity::getIdcard, idcard);
+    if (excludeId != null && excludeId > 0) {
+      wrapper.ne(PlatformUserEntity::getId, excludeId);
+    }
+    return mapper.selectCount(wrapper) > 0;
+  }
+
+  private boolean phoneTaken(String phone, Long excludeId) {
+    LambdaQueryWrapper<PlatformUserEntity> wrapper = new LambdaQueryWrapper<PlatformUserEntity>()
+        .eq(PlatformUserEntity::getDeleted, 0)
+        .eq(PlatformUserEntity::getPhone, phone);
+    if (excludeId != null && excludeId > 0) {
+      wrapper.ne(PlatformUserEntity::getId, excludeId);
+    }
+    return mapper.selectCount(wrapper) > 0;
   }
 
   private Long resolveOrgId() {

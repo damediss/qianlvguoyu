@@ -16,6 +16,7 @@ import com.guoyu.platform.trainingdepartment.vo.TrainSignUpPeopleSelfVO;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -27,14 +28,17 @@ public class TrainSignUpPeopleSelfApplicationService {
   private final TrainSignUpPeopleSelfMapper mapper;
   private final SignUpPeopleSelfAssembler assembler;
   private final ClassCollectionApplicationService classCollectionApplicationService;
+  private final PlatformUserApplicationService platformUserApplicationService;
 
   public TrainSignUpPeopleSelfApplicationService(
       TrainSignUpPeopleSelfMapper mapper,
       SignUpPeopleSelfAssembler assembler,
-      ClassCollectionApplicationService classCollectionApplicationService) {
+      ClassCollectionApplicationService classCollectionApplicationService,
+      @Lazy PlatformUserApplicationService platformUserApplicationService) {
     this.mapper = mapper;
     this.assembler = assembler;
     this.classCollectionApplicationService = classCollectionApplicationService;
+    this.platformUserApplicationService = platformUserApplicationService;
   }
 
   @Transactional(readOnly = true)
@@ -124,6 +128,8 @@ public class TrainSignUpPeopleSelfApplicationService {
     assembler.applyUpdate(entity, req);
     entity.setUpdateTime(LocalDateTime.now());
     mapper.updateById(entity);
+    platformUserApplicationService.syncFromExternalProfile(
+        entity.getPlatformUserId(), entity.getIdCardNumber(), entity.getName(), entity.getPhone());
     if (entity.getStatus() != null && entity.getStatus() == ClassCollectionApplicationService.STATUS_APPROVED) {
       classCollectionApplicationService.syncPersonToRoster(entity);
     }

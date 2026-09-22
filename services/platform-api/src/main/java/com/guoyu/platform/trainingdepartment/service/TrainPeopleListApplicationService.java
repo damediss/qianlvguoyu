@@ -71,6 +71,7 @@ public class TrainPeopleListApplicationService {
   private final TrainClassRoleApplicationService classRoleApplicationService;
   private final TrainFollowTaskApplicationService followTaskApplicationService;
   private final ClassReviewSyncApplicationService classReviewSyncApplicationService;
+  private final PlatformUserApplicationService platformUserApplicationService;
 
   public TrainPeopleListApplicationService(TrainPeopleListMapper mapper,
       TrainSignUpSelfMapper signUpSelfMapper,
@@ -87,7 +88,8 @@ public class TrainPeopleListApplicationService {
       UserMapper userMapper,
       @Lazy TrainClassRoleApplicationService classRoleApplicationService,
       @Lazy TrainFollowTaskApplicationService followTaskApplicationService,
-      @Lazy ClassReviewSyncApplicationService classReviewSyncApplicationService) {
+      @Lazy ClassReviewSyncApplicationService classReviewSyncApplicationService,
+      @Lazy PlatformUserApplicationService platformUserApplicationService) {
     this.mapper = mapper;
     this.signUpSelfMapper = signUpSelfMapper;
     this.signUpPeopleSelfMapper = signUpPeopleSelfMapper;
@@ -104,6 +106,7 @@ public class TrainPeopleListApplicationService {
     this.classRoleApplicationService = classRoleApplicationService;
     this.followTaskApplicationService = followTaskApplicationService;
     this.classReviewSyncApplicationService = classReviewSyncApplicationService;
+    this.platformUserApplicationService = platformUserApplicationService;
   }
 
   // ==================== 基础CRUD ====================
@@ -362,6 +365,8 @@ public class TrainPeopleListApplicationService {
     if (params.get("is_leader") != null) {
       classRoleApplicationService.syncMonitorFromStudent(entity);
     }
+    platformUserApplicationService.syncFromExternalProfile(
+        entity.getPlatformUserId(), entity.getIdCard(), entity.getRealname(), entity.getPhone());
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("id", entity.getId());
     result.put("realname", entity.getRealname());
