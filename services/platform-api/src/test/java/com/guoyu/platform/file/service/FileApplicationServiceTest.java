@@ -14,7 +14,12 @@ import com.guoyu.platform.file.config.FileStorageProperties;
 import com.guoyu.platform.file.entity.FileEntity;
 import com.guoyu.platform.file.mapper.FileMapper;
 import com.guoyu.platform.file.support.FileLocalPathResolver;
+import com.guoyu.platform.security.PlatformUserPrincipal;
+import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.mockito.Mockito;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
@@ -34,8 +39,21 @@ class FileApplicationServiceTest {
       new FileLocalPathResolver(properties)
   );
 
+  @AfterEach
+  void clearSecurityContext() {
+    SecurityContextHolder.clearContext();
+  }
+
+  private static void loginAs(long tenantId) {
+    // P0-5 收紧后 upload() 先经 getTenantIdSafe 取当前用户（未登录 401），空文件校验在其后
+    SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+        new PlatformUserPrincipal(1L, tenantId, "tester", "测试用户", "admin", List.of(), List.of(), null),
+        "token", List.of()));
+  }
+
   @Test
   void uploadRejectsEmptyFile() {
+    loginAs(1L);
     MockMultipartFile file = new MockMultipartFile("file", "empty.txt", "text/plain", new byte[0]);
     assertThatThrownBy(() -> service.upload(file, "private"))
         .isInstanceOf(BusinessException.class)
@@ -44,6 +62,7 @@ class FileApplicationServiceTest {
 
   @Test
   void storeFromBytesRejectsEmptyFile() {
+    loginAs(1L);
     assertThatThrownBy(() -> service.storeFromBytes(new byte[0], "x.bin", "application/octet-stream", "private"))
         .isInstanceOf(BusinessException.class)
         .hasMessage("File is empty");

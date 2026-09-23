@@ -8,6 +8,8 @@ import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
+import com.guoyu.platform.competition.exam.security.CompetitionExamPrincipal;
+import com.guoyu.platform.competition.player.security.CompetitionPlayerPrincipal;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import jakarta.servlet.FilterChain;
 import java.util.List;
@@ -113,6 +115,37 @@ class TenantConsistencyFilterTest {
   void fillsContextFromPrincipalWhenMissing() throws Exception {
     authenticate(principal(10159L));
     TenantContextHolder.clear();
+
+    FilterChain chain = mock(FilterChain.class);
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/anything");
+    MockHttpServletResponse response = new MockHttpServletResponse();
+
+    filter.doFilter(request, response, chain);
+
+    verify(chain).doFilter(request, response);
+  }
+
+  @Test
+  @DisplayName("★ 竞赛选手主体（真实类型）+ 不一致 header → 403，不误放")
+  void rejectsMismatchedCompetitionPlayerPrincipal() throws Exception {
+    authenticate(new CompetitionPlayerPrincipal(9L, 10159L));
+    TenantContextHolder.setTenantId(1L);
+
+    FilterChain chain = mock(FilterChain.class);
+    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/competition/player/entry");
+    MockHttpServletResponse response = new MockHttpServletResponse();
+
+    filter.doFilter(request, response, chain);
+
+    assertEquals(403, response.getStatus());
+    verify(chain, never()).doFilter(any(), any());
+  }
+
+  @Test
+  @DisplayName("竞赛考评主体（真实类型）+ 一致租户 → 放行")
+  void allowsMatchingCompetitionExamPrincipal() throws Exception {
+    authenticate(new CompetitionExamPrincipal(9L, 10159L));
+    TenantContextHolder.setTenantId(10159L);
 
     FilterChain chain = mock(FilterChain.class);
     MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/anything");

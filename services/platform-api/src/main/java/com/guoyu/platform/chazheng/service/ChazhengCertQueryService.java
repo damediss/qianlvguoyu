@@ -268,8 +268,11 @@ public class ChazhengCertQueryService {
       log.warn("无法创建日志目录: {}", logDir);
       return;
     }
-    Path logFile = logDir.resolve("certs_" + SensitiveMaskUtils.maskName(safeUserName)
-        + "_" + SensitiveMaskUtils.maskIdCard(idCard) + ".log");
+    String logFileName = "certs_" + SensitiveMaskUtils.maskName(safeUserName)
+        + "_" + SensitiveMaskUtils.maskIdCard(idCard) + ".log";
+    // 掩码符 * 在 Windows 是非法路径字符（InvalidPathException 会打断查证主流程），
+    // 文件名层面统一替换为 _；日志内容的脱敏不受影响
+    Path logFile = logDir.resolve(logFileName.replaceAll("[\\\\/:*?\"<>|]", "_"));
 
     // 用 LinkedHashMap 而非 Map.of：Map.of 不允许 null 值，
     // 当 detail 为 null（如响应缺 errorCode 字段，仅 statusCode/status 异常）时会抛 NPE
