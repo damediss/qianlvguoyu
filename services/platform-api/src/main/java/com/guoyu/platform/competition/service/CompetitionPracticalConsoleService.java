@@ -149,6 +149,44 @@ public class CompetitionPracticalConsoleService {
   }
 
   @Transactional
+  public void returnForRescore(Long assignmentId, String reason) {
+    var principal = SecurityContext.currentUser();
+    CompetitionPracticalAssignmentEntity assignment = practicalAssignmentMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionPracticalAssignmentEntity>()
+            .eq(CompetitionPracticalAssignmentEntity::getTenantId, principal.getTenantId())
+            .eq(CompetitionPracticalAssignmentEntity::getId, assignmentId)
+            .eq(CompetitionPracticalAssignmentEntity::getDeleted, 0)
+            .last("FOR UPDATE"));
+    if (assignment == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "实操评分任务不存在");
+    }
+    if (executionService.isPracticalScoreCompleted(principal.getTenantId(), assignmentId)) {
+      throw new BusinessException(ErrorCode.CONFLICT, "实操成绩已完成，不能退回重评");
+    }
+    CompetitionPracticalScoreSheetEntity sheet = scoreSheetMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionPracticalScoreSheetEntity>()
+            .eq(CompetitionPracticalScoreSheetEntity::getTenantId, principal.getTenantId())
+            .eq(CompetitionPracticalScoreSheetEntity::getAssignmentId, assignmentId)
+            .eq(CompetitionPracticalScoreSheetEntity::getDeleted, 0)
+            .orderByDesc(CompetitionPracticalScoreSheetEntity::getRevisionNo)
+            .last("LIMIT 1 FOR UPDATE"));
+    if (sheet == null) {
+      throw new BusinessException(ErrorCode.NOT_FOUND, "裁判评分单不存在");
+    }
+    executionService.unlockSheet(
+        principal.getTenantId(), principal.getUserId(), sheet.getId(), reason);
+    assignment.setStatus("in_progress");
+    assignment.setEndedAt(null);
+    assignment.setUpdatedBy(principal.getUserId());
+    if (practicalAssignmentMapper.updateById(assignment) != 1) {
+      throw new BusinessException(ErrorCode.CONFLICT, "评分任务退回失败，请刷新后重试");
+    }
+    if (realtimePublisher != null) {
+      realtimePublisher.publishAfterCommit(principal.getTenantId(), "score-sheet-returned", assignmentId);
+    }
+  }
+
+  @Transactional
   public CompetitionPracticalConsoleVO initialize(Long stageId, Long levelId) {
     var principal = SecurityContext.currentUser();
     var stage = ensureStageReadyForPracticalInitialization(stageService.assertCanManage(stageId));
@@ -254,7 +292,7 @@ public class CompetitionPracticalConsoleService {
     }
     CompetitionPracticalConsoleVO result = summarize(plan);
     if (realtimePublisher != null) {
-      realtimePublisher.publish(principal.getTenantId(), "competition-initialized", null);
+      realtimePublisher.publishAfterCommit(principal.getTenantId(), "competition-initialized", null);
     }
     return result;
   }
@@ -601,14 +639,61 @@ public class CompetitionPracticalConsoleService {
     int submitted = (int) sheets.stream()
         .filter(item -> "submitted_locked".equals(item.getStatus()))
         .count();
-    String status = assignments.isEmpty() ? "not_initialized"
-        : submitted == assignments.size() ? "completed" : "initialized";
     Map<Long, CompetitionPracticalScoreSheetEntity> sheetByAssignment = sheets.stream()
         .collect(Collectors.toMap(CompetitionPracticalScoreSheetEntity::getAssignmentId,
             item -> item, (left, right) -> left));
+    Map<Long, List<CompetitionPracticalAssignmentEntity>> assignmentsByContestant = assignments.stream()
+        .filter(item -> item.getContestantMemberId() != null)
+        .collect(Collectors.groupingBy(CompetitionPracticalAssignmentEntity::getContestantMemberId));
+    Map<Long, CompetitionPracticalSessionEntity> sessionById = sessions.stream()
+        .filter(item -> item != null && item.getId() != null)
+        .collect(Collectors.toMap(CompetitionPracticalSessionEntity::getId, item -> item, (left, right) -> left));
+    Map<Long, BigDecimal> limitBySnapshot = new HashMap<>();
+    Map<Long, CompetitionPracticalExecutionService.PracticalScoreDifferencePreview> previewByContestant =
+        new HashMap<>();
+    Map<Long, Boolean> completedByContestant = new HashMap<>();
+    Set<Long> confirmedContestants = executionService.confirmedPracticalContestantIds(
+        plan.getTenantId(), plan.getEventId(), plan.getStageId(),
+        plan.getEventWorkTypeId(), plan.getEventWorkTypeLevelId(), contestants);
+    boolean confirmedQueried = confirmedContestants != null;
+    if (!confirmedQueried) confirmedContestants = Set.of();
+    for (Map.Entry<Long, List<CompetitionPracticalAssignmentEntity>> entry
+        : assignmentsByContestant.entrySet()) {
+      List<BigDecimal> submittedScores = entry.getValue().stream()
+          .map(item -> sheetByAssignment.get(item.getId()))
+          .filter(Objects::nonNull)
+          .filter(item -> "submitted_locked".equals(item.getStatus()))
+          .map(CompetitionPracticalScoreSheetEntity::getTotalScore)
+          .filter(Objects::nonNull)
+          .toList();
+      CompetitionPracticalAssignmentEntity first = entry.getValue().get(0);
+      CompetitionPracticalSessionEntity session = first == null || first.getSessionId() == null
+          ? null : sessionById.get(first.getSessionId());
+      Long snapshotId = session == null ? null : session.getPaperSnapshotId();
+      BigDecimal limit = snapshotId == null ? null : limitBySnapshot.computeIfAbsent(
+          snapshotId, id -> executionService.paperSnapshotScoreDifference(plan.getTenantId(), id));
+      CompetitionPracticalExecutionService.PracticalScoreDifferencePreview preview =
+          executionService.previewPracticalScoreDifference(limit, submittedScores);
+      if (preview == null) {
+        preview = executionService.previewPracticalScoreDifference(
+            plan.getTenantId(), plan.getId(), entry.getKey(), submittedScores);
+      }
+      previewByContestant.put(entry.getKey(), preview);
+      completedByContestant.put(entry.getKey(), confirmedQueried
+          ? confirmedContestants.contains(entry.getKey())
+          : first != null && Boolean.TRUE.equals(
+              executionService.isPracticalScoreCompleted(plan.getTenantId(), first.getId())));
+    }
+    boolean allCompleted = !completedByContestant.isEmpty()
+        && completedByContestant.values().stream().allMatch(Boolean.TRUE::equals);
+    String status = assignments.isEmpty() ? "not_initialized"
+        : allCompleted ? "completed"
+        : submitted == assignments.size() ? "awaiting_confirmation" : "initialized";
     DisplayLookup lookup = loadDisplayLookup(plan, assignments, sheets);
     List<CompetitionPracticalConsoleTaskVO> tasks = assignments.stream().map(item -> {
       CompetitionPracticalScoreSheetEntity sheet = sheetByAssignment.get(item.getId());
+      CompetitionPracticalExecutionService.PracticalScoreDifferencePreview preview =
+          previewByContestant.get(item.getContestantMemberId());
       CompetitionPracticalAssessmentSheetEntity assessment =
           lookup.assessmentSheets.get(item.getAssessmentSheetId());
       List<CompetitionPracticalScoreEntryEntity> entries = sheet == null
@@ -617,7 +702,12 @@ public class CompetitionPracticalConsoleService {
       return new CompetitionPracticalConsoleTaskVO(id(item.getId()), id(item.getSessionId()),
           id(item.getContestantMemberId()), id(item.getRefereeMemberId()),
           id(item.getAssessmentSheetId()), item.getWorkstationCode(), item.getStatus(),
+          id(sheet == null ? null : sheet.getId()),
           sheet == null ? null : sheet.getStatus(), sheet == null ? null : sheet.getTotalScore(),
+          preview == null ? null : preview.allowedDifference(),
+          preview == null ? null : preview.actualDifference(),
+          preview == null ? "waiting" : preview.status(),
+          completedByContestant.getOrDefault(item.getContestantMemberId(), false),
           lookup.contestantNos.get(item.getContestantMemberId()),
           lookup.contestantNames.get(item.getContestantMemberId()),
           lookup.refereeNames.get(item.getRefereeMemberId()),

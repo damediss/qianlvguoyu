@@ -161,18 +161,24 @@ function isReleasedCandidate(candidate: CandidateCollectionItemVO) {
 }
 
 function canSelectForExport(candidate: CandidateCollectionItemVO) {
-  return candidate.collectionEligible === true
-    && (candidate.overallStatus === 'COMPLETED' || isReleasedCandidate(candidate));
+  const abnormal = candidate.overallStatus === 'INFO_ERROR';
+  return (candidate.collectionEligible === true || abnormal)
+    && (candidate.overallStatus === 'COMPLETED'
+      || abnormal
+      || isReleasedCandidate(candidate));
 }
 
 function exportDisabledTitle(candidate: CandidateCollectionItemVO) {
-  if (candidate.collectionEligible !== true) {
+  const abnormal = candidate.overallStatus === 'INFO_ERROR';
+  if (candidate.collectionEligible !== true && !abnormal) {
     return '资料未完成，不能生成采集表';
   }
-  if (candidate.overallStatus === 'COMPLETED' || isReleasedCandidate(candidate)) {
+  if (candidate.overallStatus === 'COMPLETED'
+    || abnormal
+    || isReleasedCandidate(candidate)) {
     return undefined;
   }
-  return '仅已完成或已放行的考生可生成采集表';
+  return '仅已完成、已放行或异常状态的考生可生成采集表';
 }
 
 function statusTag(value?: string, label?: string, textMap?: Record<string, string>) {

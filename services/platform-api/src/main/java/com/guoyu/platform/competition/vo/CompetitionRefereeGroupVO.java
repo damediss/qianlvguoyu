@@ -17,9 +17,12 @@ public class CompetitionRefereeGroupVO {
   @JsonSerialize(using = ToStringSerializer.class)
   private Long leaderRefereeProfileId;
   private Boolean bindable;
+  private Boolean releasable;
   private String unavailableReason;
   private String conflictStageName;
+  private String occupiedEventName;
   private List<CompetitionRefereeGroupMemberVO> members = new ArrayList<>();
+  private List<CompetitionRefereeGroupBoundTaskVO> boundTasks = new ArrayList<>();
 
   public Long getId() { return id; }
   public void setId(Long id) { this.id = id; }
@@ -37,12 +40,20 @@ public class CompetitionRefereeGroupVO {
   }
   public Boolean getBindable() { return bindable; }
   public void setBindable(Boolean bindable) { this.bindable = bindable; }
+  public Boolean getReleasable() { return releasable; }
+  public void setReleasable(Boolean releasable) { this.releasable = releasable; }
   public String getUnavailableReason() { return unavailableReason; }
   public void setUnavailableReason(String unavailableReason) { this.unavailableReason = unavailableReason; }
   public String getConflictStageName() { return conflictStageName; }
   public void setConflictStageName(String conflictStageName) { this.conflictStageName = conflictStageName; }
+  public String getOccupiedEventName() { return occupiedEventName; }
+  public void setOccupiedEventName(String occupiedEventName) { this.occupiedEventName = occupiedEventName; }
   public List<CompetitionRefereeGroupMemberVO> getMembers() { return members; }
   public void setMembers(List<CompetitionRefereeGroupMemberVO> members) {
     this.members = members == null ? new ArrayList<>() : new ArrayList<>(members);
+  }
+  public List<CompetitionRefereeGroupBoundTaskVO> getBoundTasks() { return boundTasks; }
+  public void setBoundTasks(List<CompetitionRefereeGroupBoundTaskVO> boundTasks) {
+    this.boundTasks = boundTasks == null ? new ArrayList<>() : new ArrayList<>(boundTasks);
   }
 }

@@ -53,6 +53,12 @@ function checkReportLines(report?: string | null) {
   }
 }
 
+export function hasLiveCompetitionQuestionBlueprint(
+  items: Array<{ status?: string | null }> | undefined | null,
+) {
+  return (items ?? []).some((item) => item.status === 'draft' || item.status === 'active');
+}
+
 export function CompetitionQuestionBlueprintPage({ contentType }: Props) {
   const queryClient = useQueryClient();
   const [eventId, setEventId] = useState(eventFromUrl);
@@ -93,6 +99,8 @@ export function CompetitionQuestionBlueprintPage({ contentType }: Props) {
   const events = eventsQuery.data?.items ?? [];
   const workTypes = workTypesQuery.data ?? [];
   const levels = levelsQuery.data ?? [];
+  const blueprintRows = pageQuery.data?.items ?? [];
+  const hasLiveBlueprint = hasLiveCompetitionQuestionBlueprint(blueprintRows);
   useEffect(() => { if (!eventId && events[0]) setEventId(String(events[0].id)); }, [eventId, events]);
   useEffect(() => { if (!workTypeId && workTypes[0]) setWorkTypeId(String(workTypes[0].id)); }, [workTypeId, workTypes]);
   useEffect(() => { if (!levelId && levels[0]) setLevelId(String(levels[0].id)); }, [levelId, levels]);
@@ -141,6 +149,20 @@ export function CompetitionQuestionBlueprintPage({ contentType }: Props) {
       onOk: () => activateMutation.mutate(row.id),
     });
   };
+  const archiveRow = (row: CompetitionQuestionBlueprint) => {
+    if (row.status !== 'active') {
+      archiveMutation.mutate(row.id);
+      return;
+    }
+    Modal.confirm({
+      title: '确认归档当前启用的细目表？',
+      content: '归档后，该工种该级别将没有启用中的细目表；题库导入和自动组卷需重新导入并启用后才能继续。已发布试卷不受影响。',
+      okText: '确认归档',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: () => archiveMutation.mutate(row.id),
+    });
+  };
   const toTreeNode = (node: NonNullable<typeof treeQuery.data>['tree'][number]): DataNode => ({
     key: node.id,
     title: `${node.fullCode} ${node.name}`,
@@ -153,16 +175,17 @@ export function CompetitionQuestionBlueprintPage({ contentType }: Props) {
     <Select style={{ width: 210 }} placeholder="选择工种" value={workTypeId || undefined} options={workTypes.map((w: CompetitionEventWorkType) => ({ value: String(w.id), label: w.displayName || w.workTypeName || String(w.workTypeId) }))} onChange={(v) => { setWorkTypeId(v); setLevelId(''); }} />
     <Select style={{ width: 170 }} placeholder="选择等级" value={levelId || undefined} options={levels.map((l: CompetitionEventWorkTypeLevel) => ({ value: String(l.id), label: `${l.levelName}（${l.levelCode}）` }))} onChange={setLevelId} />
     <Button icon={<DownloadOutlined />} onClick={() => void downloadTemplate()}>下载导入模板</Button>
-    <Upload {...uploadProps} disabled={!eventId || !workTypeId || !levelId || importMutation.isPending}><Button type="primary" icon={<UploadOutlined />}>导入细目表</Button></Upload>
+    <Upload {...uploadProps} disabled={!eventId || !workTypeId || !levelId || importMutation.isPending || hasLiveBlueprint}><Button type="primary" icon={<UploadOutlined />} disabled={hasLiveBlueprint}>导入细目表</Button></Upload>
   </Space>}>
-    <Alert type="info" showIcon message="细目表版本先导入为草稿；启用后，题库导入和自动组卷只能使用该版本的末级考评点。标题、元数据或 XYZ 比例警告需人工确认。" style={{ marginBottom: 16 }} />
+    <Alert type="info" showIcon message="同一赛事工种等级只能有一份理论/实操细目表。已有草稿或启用版本时不能重复导入；更换时请先归档现有细目表。启用后，题库导入和自动组卷只使用该份末级考评点。标题、元数据或 XYZ 比例警告需人工确认。" style={{ marginBottom: 16 }} />
+    {hasLiveBlueprint && <Alert type="warning" showIcon message="当前工种等级已有草稿或启用中的细目表，不能再导入第二份。如需更换，请先归档现有细目表。" style={{ marginBottom: 16 }} />}
     <Table<CompetitionQuestionBlueprint> rowKey="id" loading={pageQuery.isLoading} dataSource={pageQuery.data?.items ?? []} pagination={false} scroll={{ x: 'max-content' }} columns={[
       { title: '版本', dataIndex: 'versionNo', width: 80, render: (v: number) => `v${v}` },
       { title: '标题', dataIndex: 'title', ellipsis: true },
       { title: '主题/考评点', key: 'counts', render: (_: unknown, row: CompetitionQuestionBlueprint) => `${row.topicCount} / ${row.pointCount}` },
       { title: 'XYZ', dataIndex: 'xyzRatio' },
       { title: '状态', dataIndex: 'status', render: (v: string) => <Tag color={v === 'active' ? 'green' : v === 'draft' ? 'gold' : 'default'}>{v === 'active' ? '启用' : v === 'draft' ? '草稿' : '已归档'}</Tag> },
-      { title: '操作', key: 'actions', render: (_: unknown, row: CompetitionQuestionBlueprint) => <Space><Button type="link" icon={<ApartmentOutlined />} onClick={() => setTreeId(row.id)}>树形预览</Button><Button type="link" icon={<DownloadOutlined />} onClick={() => void downloadSource(row)}>源文件</Button>{row.status === 'draft' && <Button type="link" onClick={() => activateRow(row)}>启用</Button>}{row.status === 'draft' && <Button type="link" danger onClick={() => archiveMutation.mutate(row.id)}>归档</Button>}</Space> },
+      { title: '操作', key: 'actions', render: (_: unknown, row: CompetitionQuestionBlueprint) => <Space><Button type="link" icon={<ApartmentOutlined />} onClick={() => setTreeId(row.id)}>树形预览</Button><Button type="link" icon={<DownloadOutlined />} onClick={() => void downloadSource(row)}>源文件</Button>{row.status === 'draft' && <Button type="link" onClick={() => activateRow(row)}>启用</Button>}{(row.status === 'draft' || row.status === 'active') && <Button type="link" danger onClick={() => archiveRow(row)}>归档</Button>}</Space> },
     ]} />
     <Modal
       title={warningMessage ? '确认细目表导入警告' : '校验细目表'}

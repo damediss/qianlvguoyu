@@ -45,6 +45,7 @@ import com.guoyu.platform.competition.vo.CompetitionPracticalAssessmentContentVO
 import com.guoyu.platform.competition.vo.CompetitionPracticalAssessmentElementVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalQuestionDetailVO;
 import com.guoyu.platform.competition.vo.CompetitionQuestionImportBatchVO;
+import com.guoyu.platform.competition.vo.CompetitionQuestionImportMetricsVO;
 import com.guoyu.platform.competition.vo.CompetitionQuestionVO;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
@@ -75,7 +76,9 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -97,6 +100,7 @@ public class CompetitionQuestionApplicationService {
   private final CompetitionQuestionBlueprintNodeMapper blueprintNodeMapper;
   private final CompetitionQuestionBlueprintBindingMapper blueprintBindingMapper;
   private final ThreadPoolTaskExecutor importExecutor;
+  private final PlatformTransactionManager transactionManager;
   private final ObjectMapper objectMapper = new ObjectMapper();
   private static final Safelist PRACTICAL_HTML = Safelist.relaxed()
       .addTags("u", "s")
@@ -117,7 +121,8 @@ public class CompetitionQuestionApplicationService {
       @Qualifier("competitionQuestionImportExecutor") ThreadPoolTaskExecutor importExecutor,
       CompetitionQuestionBlueprintApplicationService blueprintService,
       CompetitionQuestionBlueprintNodeMapper blueprintNodeMapper,
-      CompetitionQuestionBlueprintBindingMapper blueprintBindingMapper) {
+      CompetitionQuestionBlueprintBindingMapper blueprintBindingMapper,
+      PlatformTransactionManager transactionManager) {
     this.questionMapper = questionMapper;
     this.practicalDetailMapper = practicalDetailMapper;
     this.assessmentContentMapper = assessmentContentMapper;
@@ -132,6 +137,7 @@ public class CompetitionQuestionApplicationService {
     this.blueprintService = blueprintService;
     this.blueprintNodeMapper = blueprintNodeMapper;
     this.blueprintBindingMapper = blueprintBindingMapper;
+    this.transactionManager = transactionManager;
   }
 
   /** Source-compatible constructor retained for existing unit-test and extension callers. */
@@ -162,7 +168,7 @@ public class CompetitionQuestionApplicationService {
       CompetitionQuestionImportPersistenceService persistenceService,
       ThreadPoolTaskExecutor importExecutor) {
     this(questionMapper, practicalDetailMapper, assessmentContentMapper, scoreItemMapper, batchMapper,
-        eventMapper, workTypeMapper, levelMapper, persistenceService, importExecutor, null, null, null);
+        eventMapper, workTypeMapper, levelMapper, persistenceService, importExecutor, null, null, null, null);
   }
 
   @Transactional(readOnly = true)
@@ -179,6 +185,8 @@ public class CompetitionQuestionApplicationService {
         // Historical/unbound questions remain listable even before a blueprint is activated.
       }
     }
+    Map<Long, CompetitionQuestionBlueprintBindingEntity> bindingByQuestion =
+        effectiveBindingByQuestion(principal.getTenantId(), displayBlueprintId);
     LambdaQueryWrapper<CompetitionQuestionEntity> wrapper = new LambdaQueryWrapper<CompetitionQuestionEntity>()
         .eq(CompetitionQuestionEntity::getTenantId, principal.getTenantId())
         .eq(CompetitionQuestionEntity::getEventId, eventId)
@@ -223,8 +231,8 @@ public class CompetitionQuestionApplicationService {
       // include their structured detail and score elements.
       boolean includePracticalDetail = "practical".equalsIgnoreCase(req.getContentType());
       for (CompetitionQuestionEntity entity : result.getRecords()) {
-        CompetitionQuestionBlueprintBindingEntity binding = null;
-        if (displayBlueprintId != null && blueprintBindingMapper != null) {
+        CompetitionQuestionBlueprintBindingEntity binding = bindingByQuestion.get(entity.getId());
+        if (binding == null && displayBlueprintId != null && blueprintBindingMapper != null) {
           List<CompetitionQuestionBlueprintBindingEntity> rows = blueprintBindingMapper.selectByQuestionAndBlueprint(
               principal.getTenantId(), entity.getId(), displayBlueprintId);
           if (rows != null && !rows.isEmpty()) binding = rows.get(0);
@@ -244,9 +252,12 @@ public class CompetitionQuestionApplicationService {
       try {
         Long blueprintId = blueprintService.findActive(principal.getTenantId(), eventId,
             entity.getEventWorkTypeId(), entity.getEventWorkTypeLevelId(), entity.getContentType()).getId();
-        List<CompetitionQuestionBlueprintBindingEntity> rows = blueprintBindingMapper.selectByQuestionAndBlueprint(
-            principal.getTenantId(), entity.getId(), blueprintId);
-        if (rows != null && !rows.isEmpty()) binding = rows.get(0);
+        binding = effectiveBindingByQuestion(principal.getTenantId(), blueprintId).get(entity.getId());
+        if (binding == null) {
+          List<CompetitionQuestionBlueprintBindingEntity> rows = blueprintBindingMapper.selectByQuestionAndBlueprint(
+              principal.getTenantId(), entity.getId(), blueprintId);
+          if (rows != null && !rows.isEmpty()) binding = rows.get(0);
+        }
       } catch (BusinessException ignored) { }
     }
     return toVO(principal.getTenantId(), entity, true, binding);
@@ -454,13 +465,11 @@ public class CompetitionQuestionApplicationService {
     deletePracticalChildren(principal.getTenantId(), questionId);
   }
 
-  @Transactional
   public CompetitionQuestionImportBatchVO importFile(
       Long eventId, Long eventWorkTypeId, Long eventWorkTypeLevelId, String contentType, MultipartFile file) {
     return importFile(eventId, eventWorkTypeId, eventWorkTypeLevelId, contentType, null, null, file);
   }
 
-  @Transactional
   public CompetitionQuestionImportBatchVO importFile(
       Long eventId, Long eventWorkTypeId, Long eventWorkTypeLevelId, String contentType,
       Long blueprintId, String selectedSheet, MultipartFile file) {
@@ -507,10 +516,7 @@ public class CompetitionQuestionApplicationService {
     batch.setCreatedBy(principal.getUserId());
     batch.setUpdatedBy(principal.getUserId());
     batch.setDeleted(0);
-    if (batchMapper.insert(batch) != 1) {
-      deleteQuietly(tempFile);
-      throw new BusinessException(ErrorCode.CONFLICT, "导入批次创建失败");
-    }
+    insertImportBatch(batch, tempFile);
     try {
       Long tenantId = principal.getTenantId();
       Long userId = principal.getUserId();
@@ -594,34 +600,62 @@ public class CompetitionQuestionApplicationService {
   private void processImport(Long batchId, Long tenantId, Long userId) {
     TenantContextHolder.setTenantId(tenantId);
     CompetitionQuestionImportBatchEntity batch = null;
+    long totalStarted = System.nanoTime();
+    long excelParseMs = 0L;
+    long validationMs = 0L;
+    long persistMs = 0L;
+    long commitMs = 0L;
+    int overheadSql = 0;
+    CompetitionQuestionImportPersistenceService.PersistStats persistStats = null;
     try {
       batch = batchMapper.selectOne(new LambdaQueryWrapper<CompetitionQuestionImportBatchEntity>()
           .eq(CompetitionQuestionImportBatchEntity::getTenantId, tenantId)
           .eq(CompetitionQuestionImportBatchEntity::getId, batchId)
           .eq(CompetitionQuestionImportBatchEntity::getDeleted, 0));
+      overheadSql++;
       if (batch == null) return;
       batch.setStatus("processing");
       batch.setStartedAt(LocalDateTime.now());
       batch.setUpdatedBy(userId);
       batchMapper.updateById(batch);
+      overheadSql++;
+      long parseStarted = System.nanoTime();
       CompetitionQuestionWorkbookParser.ParsedWorkbook parsed = parser.parse(Path.of(batch.getTempFilePath()),
           batch.getContentType(), batch.getSelectedSheet());
+      excelParseMs = elapsedMs(parseStarted);
       batch.setTotalCount(parsed.questions().size());
       if (!StringUtils.hasText(batch.getSelectedSheet()) && StringUtils.hasText(parsed.selectedSheet())) {
         batch.setSelectedSheet(parsed.selectedSheet());
       }
+      long validationStarted = System.nanoTime();
       validateImportConflicts(tenantId, batch, parsed.questions());
+      overheadSql++;
       List<CompetitionQuestionImportPersistenceService.Binding> bindings = resolveBlueprintBindings(
           tenantId, batch, parsed.questions());
-      persistenceService.persist(tenantId, userId, batch.getEventId(), batch.getEventWorkTypeId(),
+      if (batch.getBlueprintId() != null) overheadSql += 2;
+      validationMs = elapsedMs(validationStarted);
+      long persistStarted = System.nanoTime();
+      persistStats = persistenceService.persist(tenantId, userId, batch.getEventId(), batch.getEventWorkTypeId(),
           batch.getEventWorkTypeLevelId(), batch.getContentType(), batch.getId(), parsed.questions(), bindings);
+      persistMs = elapsedMs(persistStarted);
+      commitMs = Math.max(0L, persistMs - persistStats.writeMs());
+      persistMs = persistStats.writeMs();
+      String tempPath = batch.getTempFilePath();
       batch.setStatus("succeeded");
       batch.setSuccessCount(parsed.questions().size());
       batch.setFailureCount(0);
       batch.setFinishedAt(LocalDateTime.now());
       batch.setUpdatedBy(userId);
+      batch.setTempFilePath(null);
+      batch.setMetricsJson(writeMetrics(new CompetitionQuestionImportMetricsVO(
+          elapsedMs(totalStarted), excelParseMs, validationMs, persistMs, commitMs,
+          persistStats.questionBatchCount(), persistStats.bindingBatchCount(), persistStats.persistSqlCount(),
+          overheadSql + persistStats.persistSqlCount() + 1,
+          persistStats.batchWriteMs(), average(persistStats.batchWriteMs()))));
       batchMapper.updateById(batch);
-      log.info("Competition question import succeeded, batchId={}, count={}, tenantId={}", batchId, parsed.questions().size(), tenantId);
+      deleteQuietly(tempPath == null ? null : Path.of(tempPath));
+      log.info("Competition question import succeeded, batchId={}, count={}, tenantId={}, metrics={}",
+          batchId, parsed.questions().size(), tenantId, batch.getMetricsJson());
     } catch (Exception ex) {
       log.error("Competition question import failed, batchId={}, tenantId={}", batchId, tenantId, ex);
       if (batch == null) {
@@ -634,15 +668,38 @@ public class CompetitionQuestionApplicationService {
       batch.setErrorDetail("[\"" + jsonEscape(ex.getMessage() == null ? "导入失败" : ex.getMessage()) + "\"]");
       batch.setFinishedAt(LocalDateTime.now());
       batch.setUpdatedBy(userId);
+      batch.setMetricsJson(writeMetrics(new CompetitionQuestionImportMetricsVO(
+          elapsedMs(totalStarted), excelParseMs, validationMs, persistMs, commitMs,
+          persistStats == null ? 0 : persistStats.questionBatchCount(),
+          persistStats == null ? 0 : persistStats.bindingBatchCount(),
+          persistStats == null ? 0 : persistStats.persistSqlCount(),
+          overheadSql + (persistStats == null ? 0 : persistStats.persistSqlCount()) + 1,
+          persistStats == null ? List.of() : persistStats.batchWriteMs(),
+          persistStats == null ? 0L : average(persistStats.batchWriteMs()))));
+      String tempPath = batch.getTempFilePath();
+      batch.setTempFilePath(null);
       if (batch.getId() != null) batchMapper.updateById(batch);
+      deleteQuietly(tempPath == null || tempPath.isBlank() ? null : Path.of(tempPath));
     } finally {
-      if (batch != null && StringUtils.hasText(batch.getTempFilePath())) {
-        deleteQuietly(Path.of(batch.getTempFilePath()));
-        batch.setTempFilePath(null);
-        batch.setUpdatedBy(userId);
-        batchMapper.updateById(batch);
-      }
       TenantContextHolder.clear();
+    }
+  }
+
+  private void insertImportBatch(CompetitionQuestionImportBatchEntity batch, Path tempFile) {
+    Runnable insert = () -> {
+      if (batchMapper.insert(batch) != 1) {
+        throw new BusinessException(ErrorCode.CONFLICT, "导入批次创建失败");
+      }
+    };
+    try {
+      if (transactionManager == null) {
+        insert.run();
+      } else {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> insert.run());
+      }
+    } catch (RuntimeException ex) {
+      deleteQuietly(tempFile);
+      throw ex;
     }
   }
 
@@ -1400,7 +1457,50 @@ public class CompetitionQuestionApplicationService {
         String.valueOf(batch.getEventWorkTypeId()), String.valueOf(batch.getEventWorkTypeLevelId()), batch.getContentType(),
         batch.getBlueprintId() == null ? null : String.valueOf(batch.getBlueprintId()),
         batch.getOriginalFilename(), batch.getSelectedSheet(), batch.getStatus(), batch.getTotalCount(), batch.getSuccessCount(), batch.getFailureCount(),
-        batch.getErrorDetail(), batch.getStartedAt(), batch.getFinishedAt());
+        batch.getErrorDetail(), readMetrics(batch.getMetricsJson()), batch.getStartedAt(), batch.getFinishedAt());
+  }
+
+  private String writeMetrics(CompetitionQuestionImportMetricsVO metrics) {
+    try {
+      return objectMapper.writeValueAsString(metrics);
+    } catch (JsonProcessingException ex) {
+      log.warn("Competition question import metrics serialization failed");
+      return null;
+    }
+  }
+
+  private CompetitionQuestionImportMetricsVO readMetrics(String json) {
+    if (!StringUtils.hasText(json)) return null;
+    try {
+      return objectMapper.readValue(json, CompetitionQuestionImportMetricsVO.class);
+    } catch (Exception ex) {
+      log.warn("Competition question import metrics parse failed");
+      return null;
+    }
+  }
+
+  private static long elapsedMs(long startedNanos) {
+    return Math.max(0L, (System.nanoTime() - startedNanos) / 1_000_000L);
+  }
+
+  private static long average(List<Long> values) {
+    if (values == null || values.isEmpty()) return 0L;
+    long sum = 0L;
+    for (Long value : values) sum += value == null ? 0L : value;
+    return sum / values.size();
+  }
+
+  private Map<Long, CompetitionQuestionBlueprintBindingEntity> effectiveBindingByQuestion(
+      Long tenantId, Long blueprintId) {
+    Map<Long, CompetitionQuestionBlueprintBindingEntity> result = new HashMap<>();
+    if (tenantId == null || blueprintId == null || blueprintService == null) return result;
+    List<CompetitionQuestionBlueprintBindingEntity> rows =
+        blueprintService.listEffectiveBindings(tenantId, blueprintId);
+    if (rows == null) return result;
+    for (CompetitionQuestionBlueprintBindingEntity row : rows) {
+      if (row != null && row.getQuestionId() != null) result.putIfAbsent(row.getQuestionId(), row);
+    }
+    return result;
   }
 
   private PlatformUserPrincipal currentUser() {
@@ -1417,6 +1517,7 @@ public class CompetitionQuestionApplicationService {
   }
 
   private void deleteQuietly(Path path) {
+    if (path == null) return;
     try { Files.deleteIfExists(path); } catch (IOException ex) { log.warn("Failed to delete temporary import file {}", path); }
   }
 

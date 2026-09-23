@@ -10,6 +10,7 @@ import com.guoyu.platform.competition.entity.CompetitionEventMemberEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
 import com.guoyu.platform.competition.entity.CompetitionRegistrationEntity;
 import com.guoyu.platform.competition.entity.CompetitionScoreRuleEntity;
+import com.guoyu.platform.competition.entity.CompetitionStageContentEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageEntity;
 import com.guoyu.platform.competition.mapper.CompetitionContestantProfileMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
@@ -17,6 +18,7 @@ import com.guoyu.platform.competition.mapper.CompetitionEventMemberMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventWorkTypeMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRegistrationMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreRuleMapper;
+import com.guoyu.platform.competition.mapper.CompetitionStageContentMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStageMapper;
 import com.guoyu.platform.competition.vo.CompetitionScoringReadinessCheckVO;
 import com.guoyu.platform.competition.vo.CompetitionScoringReadinessVO;
@@ -35,6 +37,7 @@ class CompetitionScoringReadinessDomainServiceTest {
   private CompetitionStageMapper stageMapper;
   private CompetitionEventWorkTypeMapper workTypeMapper;
   private CompetitionScoreRuleMapper ruleMapper;
+  private CompetitionStageContentMapper stageContentMapper;
   private CompetitionContestantProfileMapper profileMapper;
   private CompetitionEventMemberMapper memberMapper;
   private CompetitionRegistrationMapper registrationMapper;
@@ -46,6 +49,7 @@ class CompetitionScoringReadinessDomainServiceTest {
     stageMapper = Mockito.mock(CompetitionStageMapper.class);
     workTypeMapper = Mockito.mock(CompetitionEventWorkTypeMapper.class);
     ruleMapper = Mockito.mock(CompetitionScoreRuleMapper.class);
+    stageContentMapper = Mockito.mock(CompetitionStageContentMapper.class);
     profileMapper = Mockito.mock(CompetitionContestantProfileMapper.class);
     memberMapper = Mockito.mock(CompetitionEventMemberMapper.class);
     registrationMapper = Mockito.mock(CompetitionRegistrationMapper.class);
@@ -55,11 +59,13 @@ class CompetitionScoringReadinessDomainServiceTest {
     service = new CompetitionScoringReadinessDomainService(
         eventMapper, stageMapper, workTypeMapper, ruleMapper, profileMapper,
         memberMapper, registrationMapper, ruleDomainService);
+    service.setStageContentMapper(stageContentMapper);
 
     when(eventMapper.selectOne(any())).thenReturn(event("published"));
     when(stageMapper.selectOne(any())).thenReturn(stage());
     when(workTypeMapper.selectOne(any())).thenReturn(workType());
     when(ruleMapper.selectList(any())).thenReturn(List.of(rule()));
+    when(stageContentMapper.selectList(any())).thenReturn(List.of());
     when(profileMapper.selectList(any())).thenReturn(List.of());
     when(registrationMapper.selectList(any())).thenReturn(List.of());
   }
@@ -78,6 +84,24 @@ class CompetitionScoringReadinessDomainServiceTest {
     CompetitionScoringReadinessVO unpublished = service.check(1L, 1001L, 2001L, 3001L);
     assertThat(checks(unpublished).get("SCORE_RULE_UNPUBLISHED").passed()).isFalse();
     assertThat(unpublished.getPublishedScoreRuleVersionId()).isNull();
+  }
+
+  @Test
+  void practicalOnlyStageContentWeightsMakeScoreRuleOptional() {
+    when(ruleMapper.selectList(any())).thenReturn(List.of());
+    CompetitionStageContentEntity practical = new CompetitionStageContentEntity();
+    practical.setContentType("practical");
+    practical.setStatus("enabled");
+    practical.setWeight(new BigDecimal("100"));
+    when(stageContentMapper.selectList(any())).thenReturn(List.of(practical));
+
+    CompetitionScoringReadinessVO result = service.check(1L, 1001L, 2001L, 3001L);
+
+    assertThat(checks(result).get("SCORE_RULE_UNPUBLISHED").passed()).isTrue();
+    assertThat(checks(result).get("SCORE_RULE_UNPUBLISHED").message())
+        .contains("赛段内容权重");
+    assertThat(result.isReady()).isTrue();
+    assertThat(result.getPublishedScoreRuleVersionId()).isNull();
   }
 
   @Test

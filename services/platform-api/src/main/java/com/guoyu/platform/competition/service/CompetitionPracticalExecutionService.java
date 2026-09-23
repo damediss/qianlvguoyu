@@ -54,6 +54,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -91,12 +92,19 @@ public class CompetitionPracticalExecutionService {
   private final CompetitionPracticalRuleDomainService ruleDomain = new CompetitionPracticalRuleDomainService();
   private final CompetitionPracticalAverageCalculator averageCalculator = new CompetitionPracticalAverageCalculator();
   private CompetitionScorePipelineOutboxService scorePipelineOutboxService;
+  private CompetitionAutomaticScorePipelineService automaticScorePipelineService;
   private CompetitionStageService stageService;
 
   @Autowired(required = false)
   public void setScorePipelineOutboxService(
       CompetitionScorePipelineOutboxService scorePipelineOutboxService) {
     this.scorePipelineOutboxService = scorePipelineOutboxService;
+  }
+
+  @Autowired(required = false)
+  public void setAutomaticScorePipelineService(
+      CompetitionAutomaticScorePipelineService automaticScorePipelineService) {
+    this.automaticScorePipelineService = automaticScorePipelineService;
   }
 
   @Autowired(required = false)
@@ -661,10 +669,26 @@ public class CompetitionPracticalExecutionService {
   }
 
   public List<CompetitionPracticalScoreEntryEntity> entries(Long tenantId, Long sheetId) {
-    List<CompetitionPracticalScoreEntryEntity> rows = entryMapper.selectList(new LambdaQueryWrapper<CompetitionPracticalScoreEntryEntity>()
-        .eq(CompetitionPracticalScoreEntryEntity::getTenantId, tenantId).eq(CompetitionPracticalScoreEntryEntity::getScoreSheetId, sheetId)
-        .eq(CompetitionPracticalScoreEntryEntity::getDeleted, 0));
-    return rows == null ? new ArrayList<>() : new ArrayList<>(rows);
+    if (sheetId == null) return new ArrayList<>();
+    return entriesBySheetIds(tenantId, List.of(sheetId)).getOrDefault(sheetId, new ArrayList<>());
+  }
+
+  public Map<Long, List<CompetitionPracticalScoreEntryEntity>> entriesBySheetIds(
+      Long tenantId, Collection<Long> sheetIds) {
+    Map<Long, List<CompetitionPracticalScoreEntryEntity>> result = new LinkedHashMap<>();
+    if (tenantId == null || sheetIds == null || sheetIds.isEmpty()) return result;
+    List<Long> ids = sheetIds.stream().filter(Objects::nonNull).distinct().toList();
+    if (ids.isEmpty()) return result;
+    List<CompetitionPracticalScoreEntryEntity> rows = entryMapper.selectList(
+        new LambdaQueryWrapper<CompetitionPracticalScoreEntryEntity>()
+            .eq(CompetitionPracticalScoreEntryEntity::getTenantId, tenantId)
+            .in(CompetitionPracticalScoreEntryEntity::getScoreSheetId, ids)
+            .eq(CompetitionPracticalScoreEntryEntity::getDeleted, 0));
+    for (CompetitionPracticalScoreEntryEntity row : rows == null ? List.<CompetitionPracticalScoreEntryEntity>of() : rows) {
+      if (row == null || row.getScoreSheetId() == null) continue;
+      result.computeIfAbsent(row.getScoreSheetId(), ignored -> new ArrayList<>()).add(row);
+    }
+    return result;
   }
 
   private List<SnapshotScoreItem> snapshotScoringItems(
@@ -814,7 +838,83 @@ public class CompetitionPracticalExecutionService {
     score.setCurrentFlag(1); score.setSourceSystem("competition"); score.setSourceReference("score-sheet:" + sheet.getId());
     score.setSubmittedAt(sheet.getSubmittedAt()); score.setLockedAt(sheet.getLockedAt()); score.setCreatedBy(userId); score.setUpdatedBy(userId);
     if (practicalScoreMapper.insert(score) != 1) throw new BusinessException(ErrorCode.CONFLICT, "实操裁判成绩保存失败");
-    refreshPracticalSource(tenantId, userId, sheet);
+  }
+
+  @Transactional
+  public CompetitionScoreSourceEntity completePracticalScore(
+      Long tenantId, Long userId, Long assignmentId) {
+    CompetitionPracticalScoreSheetEntity sheet = sheet(tenantId, assignmentId);
+    if (sheet == null || !"submitted_locked".equals(sheet.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "组长完成考试前必须先提交本人全部题目评分");
+    }
+    return refreshPracticalSource(tenantId, userId, sheet);
+  }
+
+  @Transactional(readOnly = true)
+  public boolean isPracticalScoreCompleted(Long tenantId, Long assignmentId) {
+    CompetitionPracticalScoreSheetEntity sheet = sheet(tenantId, assignmentId);
+    if (sheet == null) {
+      return false;
+    }
+    Long count = scoreSourceMapper.selectCount(
+        new LambdaQueryWrapper<CompetitionScoreSourceEntity>()
+            .eq(CompetitionScoreSourceEntity::getTenantId, tenantId)
+            .eq(CompetitionScoreSourceEntity::getEventId, sheet.getEventId())
+            .eq(CompetitionScoreSourceEntity::getStageId, sheet.getStageId())
+            .eq(CompetitionScoreSourceEntity::getEventWorkTypeId, sheet.getEventWorkTypeId())
+            .eq(sheet.getEventWorkTypeLevelId() != null,
+                CompetitionScoreSourceEntity::getEventWorkTypeLevelId,
+                sheet.getEventWorkTypeLevelId())
+            .isNull(sheet.getEventWorkTypeLevelId() == null,
+                CompetitionScoreSourceEntity::getEventWorkTypeLevelId)
+            .eq(CompetitionScoreSourceEntity::getContestantMemberId,
+                sheet.getContestantMemberId())
+            .eq(CompetitionScoreSourceEntity::getSourceType,
+                CompetitionScoreSourceType.PRACTICAL.getCode())
+            .eq(CompetitionScoreSourceEntity::getConfirmationStatus, "confirmed")
+            .eq(CompetitionScoreSourceEntity::getCurrentFlag, 1)
+            .eq(CompetitionScoreSourceEntity::getDeleted, 0));
+    return count != null && count > 0;
+  }
+
+  @Transactional(readOnly = true)
+  public Set<Long> confirmedPracticalContestantIds(
+      Long tenantId,
+      Long eventId,
+      Long stageId,
+      Long eventWorkTypeId,
+      Long eventWorkTypeLevelId,
+      Collection<Long> contestantMemberIds) {
+    Set<Long> result = new HashSet<>();
+    if (tenantId == null || eventId == null || stageId == null || eventWorkTypeId == null
+        || contestantMemberIds == null || contestantMemberIds.isEmpty()) {
+      return result;
+    }
+    List<Long> ids = contestantMemberIds.stream().filter(Objects::nonNull).distinct().toList();
+    if (ids.isEmpty()) return result;
+    List<CompetitionScoreSourceEntity> rows = scoreSourceMapper.selectList(
+        new LambdaQueryWrapper<CompetitionScoreSourceEntity>()
+            .eq(CompetitionScoreSourceEntity::getTenantId, tenantId)
+            .eq(CompetitionScoreSourceEntity::getEventId, eventId)
+            .eq(CompetitionScoreSourceEntity::getStageId, stageId)
+            .eq(CompetitionScoreSourceEntity::getEventWorkTypeId, eventWorkTypeId)
+            .eq(eventWorkTypeLevelId != null,
+                CompetitionScoreSourceEntity::getEventWorkTypeLevelId,
+                eventWorkTypeLevelId)
+            .isNull(eventWorkTypeLevelId == null,
+                CompetitionScoreSourceEntity::getEventWorkTypeLevelId)
+            .in(CompetitionScoreSourceEntity::getContestantMemberId, ids)
+            .eq(CompetitionScoreSourceEntity::getSourceType,
+                CompetitionScoreSourceType.PRACTICAL.getCode())
+            .eq(CompetitionScoreSourceEntity::getConfirmationStatus, "confirmed")
+            .eq(CompetitionScoreSourceEntity::getCurrentFlag, 1)
+            .eq(CompetitionScoreSourceEntity::getDeleted, 0));
+    for (CompetitionScoreSourceEntity row : rows == null ? List.<CompetitionScoreSourceEntity>of() : rows) {
+      if (row != null && row.getContestantMemberId() != null) {
+        result.add(row.getContestantMemberId());
+      }
+    }
+    return result;
   }
 
   @Transactional
@@ -856,18 +956,8 @@ public class CompetitionPracticalExecutionService {
     return rules == null ? List.of() : new ArrayList<>(rules);
   }
 
-  private CompetitionScoreRuleEntity publishedScoreRule(Long tenantId, Long scoreRuleId) {
-    if (scoreRuleId == null) {
-      return null;
-    }
-    return scoreRuleMapper.selectOne(new LambdaQueryWrapper<CompetitionScoreRuleEntity>()
-        .eq(CompetitionScoreRuleEntity::getTenantId, tenantId)
-        .eq(CompetitionScoreRuleEntity::getId, scoreRuleId)
-        .eq(CompetitionScoreRuleEntity::getStatus, "published")
-        .eq(CompetitionScoreRuleEntity::getDeleted, 0));
-  }
-
-  private void refreshPracticalSource(Long tenantId, Long userId, CompetitionPracticalScoreSheetEntity sheet) {
+  private CompetitionScoreSourceEntity refreshPracticalSource(
+      Long tenantId, Long userId, CompetitionPracticalScoreSheetEntity sheet) {
     CompetitionStageExecutionPlanEntity plan = planMapper.selectOne(new LambdaQueryWrapper<CompetitionStageExecutionPlanEntity>()
         .eq(CompetitionStageExecutionPlanEntity::getTenantId, tenantId)
         .eq(CompetitionStageExecutionPlanEntity::getId, sheet.getPlanId())
@@ -882,16 +972,7 @@ public class CompetitionPracticalExecutionService {
       log.warn("Practical score cannot bind published plan, sheetId={}, planId={}, eventId={}, stageId={}, workTypeId={}, levelId={}",
           sheet.getId(), sheet.getPlanId(), sheet.getEventId(), sheet.getStageId(),
           sheet.getEventWorkTypeId(), sheet.getEventWorkTypeLevelId());
-      throw new BusinessException(ErrorCode.CONFLICT, "实操成绩无法绑定当前执行方案的冻结计分规则");
-    }
-    if (plan.getScoreRuleId() == null) {
-      freezePlanScoreRule(tenantId, userId, plan);
-    }
-    if (plan.getScoreRuleId() == null) {
-      log.warn("Practical score missing unique published score rule, sheetId={}, planId={}, eventId={}, stageId={}, workTypeId={}, levelId={}",
-          sheet.getId(), plan.getId(), plan.getEventId(), plan.getStageId(),
-          plan.getEventWorkTypeId(), plan.getEventWorkTypeLevelId());
-      throw new BusinessException(ErrorCode.CONFLICT, "当前赛段没有唯一的已发布计分规则，无法提交实操成绩");
+      throw new BusinessException(ErrorCode.CONFLICT, "实操成绩无法绑定当前执行方案");
     }
     List<CompetitionPracticalScoreEntity> scores = practicalScoreMapper.selectList(new LambdaQueryWrapper<CompetitionPracticalScoreEntity>()
         .eq(CompetitionPracticalScoreEntity::getTenantId, tenantId).eq(CompetitionPracticalScoreEntity::getEventId, sheet.getEventId())
@@ -905,12 +986,11 @@ public class CompetitionPracticalExecutionService {
     BigDecimal scoreDifference = snapshotScoreDifference(tenantId, sheet.getPlanId(), sheet.getContestantMemberId());
     CompetitionPracticalAverageCalculator.PracticalAverageResult result = averageCalculator.calculate(candidates, scoreDifference);
     if (!result.confirmed()) {
-      persistPendingPracticalSource(tenantId, userId, sheet, plan, result);
-      return;
-    }
-    CompetitionScoreRuleEntity scoreRule = publishedScoreRule(tenantId, plan.getScoreRuleId());
-    if (scoreRule == null) {
-      throw new BusinessException(ErrorCode.CONFLICT, "当前执行方案冻结的计分规则已失效，无法提交实操成绩");
+      String message = result.status()
+          == CompetitionPracticalAverageCalculator.PracticalAverageStatus.PENDING_SCORE_DIFFERENCE
+          ? "三名裁判评分分差超过题目允许范围，无法完成考试"
+          : "三名裁判全部提交后才能完成考试";
+      throw new BusinessException(ErrorCode.CONFLICT, message);
     }
     CompetitionScoreSourceEntity existing = scoreSourceMapper.selectOne(new LambdaQueryWrapper<CompetitionScoreSourceEntity>()
         .eq(CompetitionScoreSourceEntity::getTenantId, tenantId).eq(CompetitionScoreSourceEntity::getEventId, sheet.getEventId())
@@ -919,16 +999,37 @@ public class CompetitionPracticalExecutionService {
         .isNull(sheet.getEventWorkTypeLevelId() == null, CompetitionScoreSourceEntity::getEventWorkTypeLevelId)
         .eq(CompetitionScoreSourceEntity::getContestantMemberId, sheet.getContestantMemberId()).eq(CompetitionScoreSourceEntity::getSourceType, CompetitionScoreSourceType.PRACTICAL.getCode())
         .eq(CompetitionScoreSourceEntity::getCurrentFlag, 1).eq(CompetitionScoreSourceEntity::getDeleted, 0));
-    int revision = existing == null ? 1 : existing.getRevisionNo() + 1;
+    if (existing != null && "confirmed".equals(existing.getConfirmationStatus())
+        && existing.getRawScore() != null
+        && result.score().compareTo(existing.getRawScore()) == 0) {
+      publishConfirmedPracticalSource(existing, userId);
+      return existing;
+    }
+    int revision = existing == null || existing.getRevisionNo() == null
+        ? 1 : existing.getRevisionNo() + 1;
     if (existing != null) { existing.setCurrentFlag(0); existing.setUpdatedBy(userId); scoreSourceMapper.updateById(existing); }
     CompetitionScoreSourceEntity source = new CompetitionScoreSourceEntity(); source.setId(IdWorker.getId()); source.setTenantId(tenantId);
     source.setEventId(sheet.getEventId()); source.setStageId(sheet.getStageId()); source.setEventWorkTypeId(sheet.getEventWorkTypeId());
     source.setEventWorkTypeLevelId(sheet.getEventWorkTypeLevelId()); source.setContestantMemberId(sheet.getContestantMemberId());
     source.setSourceType(CompetitionScoreSourceType.PRACTICAL.getCode()); source.setRawScore(result.score()); source.setConfirmationStatus("confirmed");
-    source.setSourceSystem("competition"); source.setSourceReference("practical-average:score-sheet:" + sheet.getId()); source.setScoreRuleId(scoreRule.getId());
+    source.setSourceSystem("competition"); source.setSourceReference("practical-average:leader-confirmed:score-sheet:" + sheet.getId());
+    source.setScoreRuleId(plan.getScoreRuleId());
     source.setRevisionNo(revision); source.setCurrentFlag(1); source.setAchievedAt(LocalDateTime.now()); source.setConfirmedAt(LocalDateTime.now()); source.setConfirmedBy(userId);
     source.setCreatedBy(userId); source.setUpdatedBy(userId); if (scoreSourceMapper.insert(source) != 1) throw new BusinessException(ErrorCode.CONFLICT, "实操成绩来源保存失败");
-    if (scorePipelineOutboxService != null) scorePipelineOutboxService.enqueue(source, userId);
+    publishConfirmedPracticalSource(source, userId);
+    return source;
+  }
+
+  private void publishConfirmedPracticalSource(CompetitionScoreSourceEntity source, Long userId) {
+    if (source == null || !"confirmed".equals(source.getConfirmationStatus())) {
+      return;
+    }
+    if (automaticScorePipelineService != null) {
+      automaticScorePipelineService.onConfirmedSource(source, userId);
+    }
+    if (scorePipelineOutboxService != null) {
+      scorePipelineOutboxService.enqueue(source, userId);
+    }
   }
 
   private BigDecimal snapshotScoreDifference(Long tenantId, Long planId, Long contestantMemberId) {
@@ -944,61 +1045,52 @@ public class CompetitionPracticalExecutionService {
         .last("LIMIT 1"));
     if (assignment == null) return null;
     CompetitionPracticalSessionEntity session = session(tenantId, assignment.getSessionId());
-    if (session.getPaperSnapshotId() == null) return null;
-    List<CompetitionMakeExamPaperQuestionEntity> questions = paperQuestionMapper.selectByPaper(tenantId, session.getPaperSnapshotId());
+    return paperSnapshotScoreDifference(tenantId, session.getPaperSnapshotId());
+  }
+
+  public BigDecimal paperSnapshotScoreDifference(Long tenantId, Long paperSnapshotId) {
+    if (tenantId == null || paperSnapshotId == null || paperQuestionMapper == null) return null;
+    List<CompetitionMakeExamPaperQuestionEntity> questions =
+        paperQuestionMapper.selectByPaper(tenantId, paperSnapshotId);
     if (questions == null) return null;
     return questions.stream().filter(q -> q != null && "practical".equalsIgnoreCase(q.getQuestionType())
         && q.getScoreDifference() != null).map(CompetitionMakeExamPaperQuestionEntity::getScoreDifference).findFirst().orElse(null);
   }
 
-  private void persistPendingPracticalSource(Long tenantId, Long userId,
-      CompetitionPracticalScoreSheetEntity sheet,
-      CompetitionStageExecutionPlanEntity plan,
-      CompetitionPracticalAverageCalculator.PracticalAverageResult result) {
-    CompetitionScoreRuleEntity scoreRule = publishedScoreRule(tenantId, plan.getScoreRuleId());
-    if (scoreRule == null) {
-      throw new BusinessException(ErrorCode.CONFLICT, "当前执行方案冻结的计分规则已失效，无法提交实操成绩");
-    }
-    CompetitionScoreSourceEntity existing = scoreSourceMapper.selectOne(new LambdaQueryWrapper<CompetitionScoreSourceEntity>()
-        .eq(CompetitionScoreSourceEntity::getTenantId, tenantId)
-        .eq(CompetitionScoreSourceEntity::getEventId, sheet.getEventId())
-        .eq(CompetitionScoreSourceEntity::getStageId, sheet.getStageId())
-        .eq(CompetitionScoreSourceEntity::getEventWorkTypeId, sheet.getEventWorkTypeId())
-        .eq(sheet.getEventWorkTypeLevelId() != null, CompetitionScoreSourceEntity::getEventWorkTypeLevelId, sheet.getEventWorkTypeLevelId())
-        .isNull(sheet.getEventWorkTypeLevelId() == null, CompetitionScoreSourceEntity::getEventWorkTypeLevelId)
-        .eq(CompetitionScoreSourceEntity::getContestantMemberId, sheet.getContestantMemberId())
-        .eq(CompetitionScoreSourceEntity::getSourceType, CompetitionScoreSourceType.PRACTICAL.getCode())
-        .eq(CompetitionScoreSourceEntity::getCurrentFlag, 1)
-        .eq(CompetitionScoreSourceEntity::getDeleted, 0));
-    int revision = existing == null || existing.getRevisionNo() == null ? 1 : existing.getRevisionNo() + 1;
-    if (existing != null) {
-      existing.setCurrentFlag(0);
-      existing.setUpdatedBy(userId);
-      scoreSourceMapper.updateById(existing);
-    }
-    CompetitionScoreSourceEntity pending = new CompetitionScoreSourceEntity();
-    pending.setId(IdWorker.getId());
-    pending.setTenantId(tenantId);
-    pending.setEventId(sheet.getEventId());
-    pending.setStageId(sheet.getStageId());
-    pending.setEventWorkTypeId(sheet.getEventWorkTypeId());
-    pending.setEventWorkTypeLevelId(sheet.getEventWorkTypeLevelId());
-    pending.setContestantMemberId(sheet.getContestantMemberId());
-    pending.setSourceType(CompetitionScoreSourceType.PRACTICAL.getCode());
-    pending.setRawScore(result.score() == null ? BigDecimal.ZERO : result.score());
-    pending.setConfirmationStatus("pending");
-    pending.setSourceSystem("competition");
-    pending.setSourceReference("practical-average:pending:" + result.status().name().toLowerCase(java.util.Locale.ROOT));
-    pending.setScoreRuleId(scoreRule.getId());
-    pending.setRevisionNo(revision);
-    pending.setCurrentFlag(1);
-    pending.setAchievedAt(LocalDateTime.now());
-    pending.setCreatedBy(userId);
-    pending.setUpdatedBy(userId);
-    if (scoreSourceMapper.insert(pending) != 1) {
-      throw new BusinessException(ErrorCode.CONFLICT, "待复核实操成绩来源保存失败");
-    }
+  /**
+   * Uses the same frozen paper threshold as final score confirmation, but can
+   * evaluate the currently submitted sheets before all three referees finish.
+   */
+  @Transactional(readOnly = true)
+  public PracticalScoreDifferencePreview previewPracticalScoreDifference(
+      Long tenantId, Long planId, Long contestantMemberId, List<BigDecimal> submittedScores) {
+    return previewPracticalScoreDifference(
+        snapshotScoreDifference(tenantId, planId, contestantMemberId), submittedScores);
   }
+
+  public PracticalScoreDifferencePreview previewPracticalScoreDifference(
+      BigDecimal allowedDifference, List<BigDecimal> submittedScores) {
+    List<BigDecimal> scores = submittedScores == null ? List.of() : submittedScores.stream()
+        .filter(Objects::nonNull)
+        .toList();
+    BigDecimal actual = scores.size() < 2 ? null
+        : scores.stream().max(BigDecimal::compareTo).orElse(BigDecimal.ZERO)
+            .subtract(scores.stream().min(BigDecimal::compareTo).orElse(BigDecimal.ZERO));
+    boolean exceeded = actual != null && allowedDifference != null && allowedDifference.signum() >= 0
+        && actual.compareTo(allowedDifference) > 0;
+    String status = scores.size() < 2 ? "waiting"
+        : exceeded ? "exceeded"
+        : allowedDifference == null || allowedDifference.signum() < 0 ? "unrestricted" : "normal";
+    return new PracticalScoreDifferencePreview(
+        allowedDifference, actual, scores.size(), status, exceeded);
+  }
+
+  public record PracticalScoreDifferencePreview(
+      BigDecimal allowedDifference,
+      BigDecimal actualDifference,
+      int submittedRefereeCount,
+      String status,
+      boolean exceeded) { }
 
   private CompetitionPracticalSessionEntity session(Long tenantId, Long id) { CompetitionPracticalSessionEntity row = sessionMapper.selectOne(new LambdaQueryWrapper<CompetitionPracticalSessionEntity>().eq(CompetitionPracticalSessionEntity::getTenantId, tenantId).eq(CompetitionPracticalSessionEntity::getId, id).eq(CompetitionPracticalSessionEntity::getDeleted, 0)); if (row == null) throw new BusinessException(ErrorCode.NOT_FOUND, "实操场次不存在"); return row; }
   private CompetitionPracticalJudgeGroupEntity group(Long tenantId, Long id) { CompetitionPracticalJudgeGroupEntity row = groupMapper.selectOne(new LambdaQueryWrapper<CompetitionPracticalJudgeGroupEntity>().eq(CompetitionPracticalJudgeGroupEntity::getTenantId, tenantId).eq(CompetitionPracticalJudgeGroupEntity::getId, id).eq(CompetitionPracticalJudgeGroupEntity::getDeleted, 0)); if (row == null) throw new BusinessException(ErrorCode.NOT_FOUND, "裁判组不存在"); return row; }

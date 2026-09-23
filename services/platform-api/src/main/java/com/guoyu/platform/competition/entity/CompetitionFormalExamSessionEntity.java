@@ -1,5 +1,7 @@
 package com.guoyu.platform.competition.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.guoyu.platform.common.domain.BaseEntity;
 import java.time.LocalDateTime;
@@ -26,6 +28,7 @@ public class CompetitionFormalExamSessionEntity extends BaseEntity {
   private String scoringStatus;
   private LocalDateTime scoringStartedAt;
   private LocalDateTime scoredTime;
+  @TableField(updateStrategy = FieldStrategy.ALWAYS)
   private String scoringError;
 
   public Long getEventId() { return eventId; }

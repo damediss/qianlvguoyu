@@ -14,18 +14,26 @@ import com.guoyu.platform.competition.dto.CompetitionRefereeGroupUpsertReq;
 import com.guoyu.platform.competition.dto.CompetitionRefereeQualificationReq;
 import com.guoyu.platform.competition.dto.CompetitionRefereeQueryReq;
 import com.guoyu.platform.competition.dto.CompetitionRefereeUpdateReq;
+import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventMemberEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeLevelEntity;
 import com.guoyu.platform.competition.entity.CompetitionPlayerIdentityEntity;
+import com.guoyu.platform.competition.entity.CompetitionPracticalAssignmentEntity;
+import com.guoyu.platform.competition.entity.CompetitionPracticalSessionEntity;
 import com.guoyu.platform.competition.entity.CompetitionRefereeAssignmentEntity;
 import com.guoyu.platform.competition.entity.CompetitionRefereeProfileEntity;
 import com.guoyu.platform.competition.entity.CompetitionRefereeQualificationEntity;
 import com.guoyu.platform.competition.domain.CompetitionRefereeGroupScheduleGuard;
 import com.guoyu.platform.competition.entity.CompetitionRefereeGroupEntity;
 import com.guoyu.platform.competition.entity.CompetitionRefereeGroupMemberEntity;
+import com.guoyu.platform.competition.entity.CompetitionScoreSourceEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageEntity;
+import com.guoyu.platform.competition.enums.CompetitionScoreSourceType;
+import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
 import com.guoyu.platform.competition.mapper.CompetitionEventMemberMapper;
+import com.guoyu.platform.competition.mapper.CompetitionPracticalAssignmentMapper;
+import com.guoyu.platform.competition.mapper.CompetitionPracticalSessionMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRefereeAssignmentMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRefereeProfileMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRefereeQualificationMapper;
@@ -33,6 +41,7 @@ import com.guoyu.platform.competition.mapper.CompetitionRefereeQualificationRow;
 import com.guoyu.platform.competition.mapper.CompetitionRefereeQueryRow;
 import com.guoyu.platform.competition.mapper.CompetitionRefereeGroupMapper;
 import com.guoyu.platform.competition.mapper.CompetitionRefereeGroupMemberMapper;
+import com.guoyu.platform.competition.mapper.CompetitionScoreSourceMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStageMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStagePaperAssignmentMapper;
 import com.guoyu.platform.competition.mapper.CompetitionStagePaperAssignmentPlayerRow;
@@ -41,6 +50,7 @@ import com.guoyu.platform.competition.vo.CompetitionRefereeAssignmentVO;
 import com.guoyu.platform.competition.vo.CompetitionRefereeAssignmentWorkspaceVO;
 import com.guoyu.platform.competition.vo.CompetitionRefereeBatchAssignmentResultVO;
 import com.guoyu.platform.competition.vo.CompetitionRefereeCandidateVO;
+import com.guoyu.platform.competition.vo.CompetitionRefereeGroupBoundTaskVO;
 import com.guoyu.platform.competition.vo.CompetitionRefereeGroupMemberVO;
 import com.guoyu.platform.competition.vo.CompetitionRefereeGroupVO;
 import com.guoyu.platform.competition.vo.CompetitionRefereeQualificationVO;
@@ -50,7 +60,9 @@ import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -81,8 +93,12 @@ public class CompetitionRefereeManagementService {
   private static final String PRACTICAL = "practical";
   private static final String GROUP_DRAFT = "draft";
   private static final String GROUP_CONFIRMED = "confirmed";
+  private static final String GROUP_CLOSED = "closed";
   private static final String GROUP_MEMBER = "member";
   private static final String GROUP_LEADER = "leader";
+  private static final String TASK_PENDING = "pending";
+  private static final String TASK_IN_PROGRESS = "in_progress";
+  private static final String TASK_COMPLETED = "completed";
   private static final String INITIAL_PASSWORD = "12345678";
   private static final Set<String> STANDARD_LEVEL_CODES = Set.of("1", "2", "3", "4", "5");
 
@@ -97,6 +113,10 @@ public class CompetitionRefereeManagementService {
   private final CompetitionRefereeGroupMemberMapper groupMemberMapper;
   private final CompetitionStageMapper stageMapper;
   private final CompetitionStagePaperAssignmentMapper stagePaperAssignmentMapper;
+  private final CompetitionEventMapper eventMapper;
+  private final CompetitionPracticalAssignmentMapper practicalAssignmentMapper;
+  private final CompetitionPracticalSessionMapper practicalSessionMapper;
+  private final CompetitionScoreSourceMapper scoreSourceMapper;
   private final CompetitionPlayerIdentityDomainService identityService;
   private UserApplicationService userApplicationService;
   private RoleMapper roleMapper;
@@ -120,6 +140,10 @@ public class CompetitionRefereeManagementService {
       CompetitionRefereeGroupMemberMapper groupMemberMapper,
       CompetitionStageMapper stageMapper,
       CompetitionStagePaperAssignmentMapper stagePaperAssignmentMapper,
+      CompetitionEventMapper eventMapper,
+      CompetitionPracticalAssignmentMapper practicalAssignmentMapper,
+      CompetitionPracticalSessionMapper practicalSessionMapper,
+      CompetitionScoreSourceMapper scoreSourceMapper,
       CompetitionPlayerIdentityDomainService identityService) {
     this.eventWorkTypeService = eventWorkTypeService;
     this.eventWorkTypeLevelService = eventWorkTypeLevelService;
@@ -132,6 +156,10 @@ public class CompetitionRefereeManagementService {
     this.groupMemberMapper = groupMemberMapper;
     this.stageMapper = stageMapper;
     this.stagePaperAssignmentMapper = stagePaperAssignmentMapper;
+    this.eventMapper = eventMapper;
+    this.practicalAssignmentMapper = practicalAssignmentMapper;
+    this.practicalSessionMapper = practicalSessionMapper;
+    this.scoreSourceMapper = scoreSourceMapper;
     this.identityService = identityService;
   }
 
@@ -365,7 +393,7 @@ public class CompetitionRefereeManagementService {
       throw new BusinessException(ErrorCode.CONFLICT, "裁判小组创建失败，请刷新后重试");
     }
     replaceGroupMembers(principal, group, input.profileIds());
-    return groupVO(group, Map.of(), input.refereeByProfileId());
+    return annotatedGroupVO(group, Map.of(), input.refereeByProfileId());
   }
 
   @Transactional
@@ -373,6 +401,9 @@ public class CompetitionRefereeManagementService {
       Long groupId, CompetitionRefereeGroupUpsertReq req) {
     PlatformUserPrincipal principal = currentUser();
     CompetitionRefereeGroupEntity group = findGroup(principal.getTenantId(), groupId);
+    if (GROUP_CLOSED.equals(group.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "已解散的裁判小组不能修改");
+    }
     if (!GROUP_DRAFT.equals(group.getStatus()) && hasActiveGroupBindings(principal.getTenantId(), groupId)) {
       throw new BusinessException(ErrorCode.CONFLICT, "已绑定赛段的裁判小组不能直接修改，请先解除选手绑定");
     }
@@ -385,7 +416,7 @@ public class CompetitionRefereeManagementService {
       throw new BusinessException(ErrorCode.CONFLICT, "裁判小组已发生变化，请刷新后重试");
     }
     replaceGroupMembers(principal, group, input.profileIds());
-    return groupVO(group, Map.of(), input.refereeByProfileId());
+    return annotatedGroupVO(group, Map.of(), input.refereeByProfileId());
   }
 
   @Transactional
@@ -395,7 +426,10 @@ public class CompetitionRefereeManagementService {
     Map<Long, CompetitionRefereeQueryRow> refereeByProfileId = tenantRefereesByProfile(
         principal.getTenantId());
     if (GROUP_CONFIRMED.equals(group.getStatus())) {
-      return groupVO(group, Map.of(), refereeByProfileId);
+      return annotatedGroupVO(group, Map.of(), refereeByProfileId);
+    }
+    if (GROUP_CLOSED.equals(group.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "已解散的裁判小组不能确定");
     }
     if (!GROUP_DRAFT.equals(group.getStatus())) {
       throw new BusinessException(ErrorCode.CONFLICT, "当前裁判小组不能确定");
@@ -415,7 +449,7 @@ public class CompetitionRefereeManagementService {
     if (groupMapper.updateById(group) != 1) {
       throw new BusinessException(ErrorCode.CONFLICT, "裁判小组已发生变化，请刷新后重试");
     }
-    return groupVO(group, Map.of(), refereeByProfileId);
+    return annotatedGroupVO(group, Map.of(), refereeByProfileId);
   }
 
   @Transactional
@@ -423,7 +457,8 @@ public class CompetitionRefereeManagementService {
     PlatformUserPrincipal principal = currentUser();
     CompetitionRefereeGroupEntity group = findGroup(principal.getTenantId(), groupId);
     if (hasActiveGroupBindings(principal.getTenantId(), groupId)) {
-      throw new BusinessException(ErrorCode.CONFLICT, "已绑定赛段的裁判小组不能删除，请先解除选手绑定");
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "已绑定赛段的裁判小组不能删除，请先解除选手绑定或在任务完成后解散小组");
     }
     List<CompetitionRefereeGroupMemberEntity> members = activeGroupMembers(
         principal.getTenantId(), group.getId());
@@ -435,6 +470,52 @@ public class CompetitionRefereeManagementService {
     if (groupMapper.deleteById(group.getId()) != 1) {
       throw new BusinessException(ErrorCode.CONFLICT, "裁判小组已发生变化，请刷新后重试");
     }
+  }
+
+  @Transactional
+  public CompetitionRefereeGroupVO releaseGroup(Long groupId) {
+    PlatformUserPrincipal principal = currentUser();
+    CompetitionRefereeGroupEntity group = findGroup(principal.getTenantId(), groupId);
+    if (GROUP_CLOSED.equals(group.getStatus())) {
+      return annotatedGroupVO(group, Map.of(), tenantRefereesByProfile(principal.getTenantId()));
+    }
+    if (!GROUP_CONFIRMED.equals(group.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "只有已确定的裁判小组才能解散");
+    }
+    CompetitionRefereeGroupVO preview = annotatedGroupVO(
+        group, Map.of(), tenantRefereesByProfile(principal.getTenantId()));
+    if (preview.getBoundTasks() == null || preview.getBoundTasks().isEmpty()) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+          "当前裁判小组尚未绑定赛段任务，请直接删除");
+    }
+    if (!Boolean.TRUE.equals(preview.getReleasable())) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "分配到的赛段任务尚未全部完成，不能解散裁判小组");
+    }
+    LocalDateTime now = LocalDateTime.now();
+    for (CompetitionRefereeAssignmentEntity assignment : groupAssignments(
+        principal.getTenantId(), group.getId(), true)) {
+      if (assignment == null || !ACTIVE.equals(assignment.getStatus())) continue;
+      assignment.setStatus(WITHDRAWN);
+      assignment.setEndedAt(now);
+      assignment.setUpdatedBy(principal.getUserId());
+      if (assignmentMapper.updateById(assignment) != 1) {
+        throw new BusinessException(ErrorCode.CONFLICT, "裁判组绑定已发生变化，请刷新后重试");
+      }
+    }
+    List<CompetitionRefereeGroupMemberEntity> members = activeGroupMembers(
+        principal.getTenantId(), group.getId());
+    for (CompetitionRefereeGroupMemberEntity member : members) {
+      if (groupMemberMapper.deleteById(member.getId()) != 1) {
+        throw new BusinessException(ErrorCode.CONFLICT, "裁判小组成员已发生变化，请刷新后重试");
+      }
+    }
+    group.setStatus(GROUP_CLOSED);
+    group.setUpdatedBy(principal.getUserId());
+    if (groupMapper.updateById(group) != 1) {
+      throw new BusinessException(ErrorCode.CONFLICT, "裁判小组已发生变化，请刷新后重试");
+    }
+    return annotatedGroupVO(group, Map.of(), tenantRefereesByProfile(principal.getTenantId()));
   }
 
   @Transactional
@@ -499,6 +580,7 @@ public class CompetitionRefereeManagementService {
       PlatformUserPrincipal principal,
       CompetitionRefereeGroupEntity group,
       List<Long> profileIds) {
+    assertProfilesAvailable(principal.getTenantId(), group.getId(), profileIds);
     List<CompetitionRefereeGroupMemberEntity> existing = groupMemberMapper.selectList(
         new LambdaQueryWrapper<CompetitionRefereeGroupMemberEntity>()
             .eq(CompetitionRefereeGroupMemberEntity::getTenantId, principal.getTenantId())
@@ -522,9 +604,36 @@ public class CompetitionRefereeManagementService {
       item.setCreatedBy(principal.getUserId());
       item.setUpdatedBy(principal.getUserId());
       item.setDeleted(0);
-      if (groupMemberMapper.insert(item) != 1) {
-        throw new BusinessException(ErrorCode.CONFLICT, "裁判小组成员保存失败，请刷新后重试");
+      try {
+        if (groupMemberMapper.insert(item) != 1) {
+          throw new BusinessException(ErrorCode.CONFLICT, "裁判小组成员保存失败，请刷新后重试");
+        }
+      } catch (DuplicateKeyException ex) {
+        throw new BusinessException(ErrorCode.CONFLICT, "一名裁判只能进入一个裁判小组");
       }
+    }
+  }
+
+  private void assertProfilesAvailable(Long tenantId, Long currentGroupId, Collection<Long> profileIds) {
+    if (profileIds == null || profileIds.isEmpty()) return;
+    List<CompetitionRefereeGroupMemberEntity> existing = groupMemberMapper.selectList(
+        new LambdaQueryWrapper<CompetitionRefereeGroupMemberEntity>()
+            .eq(CompetitionRefereeGroupMemberEntity::getTenantId, tenantId)
+            .in(CompetitionRefereeGroupMemberEntity::getRefereeProfileId, profileIds)
+            .eq(CompetitionRefereeGroupMemberEntity::getStatus, ACTIVE)
+            .eq(CompetitionRefereeGroupMemberEntity::getDeleted, 0));
+    Map<Long, CompetitionRefereeGroupEntity> groupById = new LinkedHashMap<>();
+    for (CompetitionRefereeGroupMemberEntity member : safe(existing)) {
+      if (member == null || member.getRefereeProfileId() == null) continue;
+      if (currentGroupId != null && Objects.equals(currentGroupId, member.getGroupId())) continue;
+      CompetitionRefereeGroupEntity other = groupById.computeIfAbsent(member.getGroupId(),
+          id -> groupMapper.selectById(id));
+      if (other == null || !Objects.equals(other.getTenantId(), tenantId)
+          || !Objects.equals(other.getDeleted(), 0) || GROUP_CLOSED.equals(other.getStatus())) {
+        continue;
+      }
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "所选裁判已加入裁判小组「" + other.getGroupName() + "」，一名裁判只能进入一个裁判小组");
     }
   }
 
@@ -572,13 +681,16 @@ public class CompetitionRefereeManagementService {
     List<CompetitionRefereeGroupMemberEntity> members = activeGroupMembers(
         principal.getTenantId(), group.getId());
     if (members.size() != 3) {
-      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "裁判小组必须配置3名裁判后才能绑定选手");
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "裁判小组必须配置3名裁判后才能绑定选手");
     }
-    CompetitionStageEntity conflict = overlappingStageUsingGroup(
-        principal.getTenantId(), group.getId(), stage);
-    if (conflict != null) {
+    if (GROUP_CLOSED.equals(group.getStatus())) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "已解散的裁判小组不能绑定选手");
+    }
+    String occupiedEventName = occupiedDifferentEventName(
+        principal.getTenantId(), group.getId(), stage.getEventId());
+    if (occupiedEventName != null) {
       throw new BusinessException(ErrorCode.CONFLICT,
-          "同时段赛段「" + displayStageName(conflict) + "」已绑定该裁判小组，不能重复调用");
+          "该裁判小组已承担赛事「" + occupiedEventName + "」的裁判任务，不能同时参加其他赛事");
     }
     Map<Long, CompetitionRefereeQueryRow> qualifiedByProfileId = safe(profileMapper.selectQualifiedForStage(
         principal.getTenantId(), stage.getEventId(), stage.getEventWorkTypeId(),
@@ -628,11 +740,11 @@ public class CompetitionRefereeManagementService {
         group.setUnavailableReason("组内裁判不具备当前赛段工种等级资质");
         continue;
       }
-      CompetitionStageEntity conflict = overlappingStageUsingGroup(tenantId, group.getId(), stage);
-      if (conflict != null) {
+      String occupiedEventName = occupiedDifferentEventName(tenantId, group.getId(), stage.getEventId());
+      if (occupiedEventName != null) {
         group.setBindable(false);
-        group.setConflictStageName(displayStageName(conflict));
-        group.setUnavailableReason("同时段赛段「" + displayStageName(conflict) + "」已占用该裁判小组");
+        group.setOccupiedEventName(occupiedEventName);
+        group.setUnavailableReason("已承担赛事「" + occupiedEventName + "」的裁判任务，不能同时参加其他赛事");
         continue;
       }
       group.setBindable(true);
@@ -640,37 +752,24 @@ public class CompetitionRefereeManagementService {
     return groups;
   }
 
-  private CompetitionStageEntity overlappingStageUsingGroup(
-      Long tenantId, Long groupId, CompetitionStageVO current) {
-    List<CompetitionRefereeAssignmentEntity> assignments = assignmentMapper.selectList(
-        new LambdaQueryWrapper<CompetitionRefereeAssignmentEntity>()
-            .eq(CompetitionRefereeAssignmentEntity::getTenantId, tenantId)
-            .eq(CompetitionRefereeAssignmentEntity::getRefereeGroupId, groupId)
-            .eq(CompetitionRefereeAssignmentEntity::getStatus, ACTIVE)
-            .eq(CompetitionRefereeAssignmentEntity::getDeleted, 0));
-    Set<Long> stageIds = safe(assignments).stream()
-        .map(CompetitionRefereeAssignmentEntity::getStageId)
-        .filter(Objects::nonNull)
-        .filter(stageId -> !Objects.equals(stageId, current.getId()))
-        .collect(Collectors.toCollection(LinkedHashSet::new));
-    if (stageIds.isEmpty()) return null;
-    List<CompetitionStageEntity> stages = stageMapper.selectList(
-        new LambdaQueryWrapper<CompetitionStageEntity>()
-            .eq(CompetitionStageEntity::getTenantId, tenantId)
-            .in(CompetitionStageEntity::getId, stageIds)
-            .eq(CompetitionStageEntity::getDeleted, 0));
-    for (CompetitionStageEntity other : safe(stages)) {
-      if (other != null && CompetitionRefereeGroupScheduleGuard.overlaps(
-          current.getStartAt(), current.getEndAt(), other.getStartAt(), other.getEndAt())) {
-        return other;
+  private String occupiedDifferentEventName(Long tenantId, Long groupId, Long currentEventId) {
+    Set<Long> occupiedEventIds = new LinkedHashSet<>();
+    Map<Long, String> eventNames = new LinkedHashMap<>();
+    for (CompetitionRefereeGroupBoundTaskVO task : boundTasksOf(tenantId, groupId, true)) {
+      if (task.getEventId() == null) continue;
+      occupiedEventIds.add(task.getEventId());
+      if (StringUtils.hasText(task.getEventName())) {
+        eventNames.putIfAbsent(task.getEventId(), task.getEventName());
       }
     }
-    return null;
-  }
-
-  private String displayStageName(CompetitionStageEntity stage) {
-    if (stage == null) return "其他赛段";
-    return StringUtils.hasText(stage.getName()) ? stage.getName() : String.valueOf(stage.getId());
+    if (!CompetitionRefereeGroupScheduleGuard.occupiesDifferentEvent(currentEventId, occupiedEventIds)) {
+      return null;
+    }
+    return occupiedEventIds.stream()
+        .filter(eventId -> !Objects.equals(eventId, currentEventId))
+        .map(eventId -> eventNames.getOrDefault(eventId, String.valueOf(eventId)))
+        .findFirst()
+        .orElse("其他赛事");
   }
 
   private Map<Long, CompetitionRefereeQueryRow> tenantRefereesByProfile(Long tenantId) {
@@ -710,8 +809,20 @@ public class CompetitionRefereeManagementService {
       List<CompetitionRefereeGroupEntity> groups,
       Map<Long, CompetitionRefereeQueryRow> refereeByMemberId,
       Map<Long, CompetitionRefereeQueryRow> refereeByProfileId) {
-    return safe(groups).stream().filter(Objects::nonNull)
+    List<CompetitionRefereeGroupVO> vos = safe(groups).stream().filter(Objects::nonNull)
         .map(group -> groupVO(group, refereeByMemberId, refereeByProfileId)).toList();
+    Long tenantId = safe(groups).stream().filter(Objects::nonNull)
+        .map(CompetitionRefereeGroupEntity::getTenantId).filter(Objects::nonNull).findFirst()
+        .orElse(null);
+    return annotateGroupTasks(tenantId, vos);
+  }
+
+  private CompetitionRefereeGroupVO annotatedGroupVO(
+      CompetitionRefereeGroupEntity group,
+      Map<Long, CompetitionRefereeQueryRow> refereeByMemberId,
+      Map<Long, CompetitionRefereeQueryRow> refereeByProfileId) {
+    return annotateGroupTasks(group.getTenantId(),
+        List.of(groupVO(group, refereeByMemberId, refereeByProfileId))).getFirst();
   }
 
   private CompetitionRefereeGroupVO groupVO(
@@ -724,6 +835,7 @@ public class CompetitionRefereeManagementService {
     result.setGroupNo(group.getGroupNo());
     result.setGroupName(group.getGroupName());
     result.setStatus(group.getStatus());
+    result.setReleasable(false);
     result.setLeaderRefereeProfileId(group.getLeaderRefereeProfileId());
     List<CompetitionRefereeGroupMemberVO> members = new ArrayList<>();
     for (CompetitionRefereeGroupMemberEntity member : activeGroupMembers(
@@ -750,7 +862,234 @@ public class CompetitionRefereeManagementService {
       members.add(item);
     }
     result.setMembers(members);
+    result.setBoundTasks(new ArrayList<>());
     return result;
+  }
+
+  private List<CompetitionRefereeGroupVO> annotateGroupTasks(
+      Long tenantId, List<CompetitionRefereeGroupVO> groups) {
+    if (tenantId == null || groups == null || groups.isEmpty()) {
+      return groups == null ? List.of() : groups;
+    }
+    Map<Long, List<CompetitionRefereeGroupBoundTaskVO>> tasksByGroup = boundTasksByGroup(
+        tenantId,
+        groups.stream().map(CompetitionRefereeGroupVO::getId).filter(Objects::nonNull).toList(),
+        false,
+        groups.stream().filter(item -> item.getId() != null)
+            .collect(Collectors.toMap(CompetitionRefereeGroupVO::getId,
+                item -> item.getStatus() == null ? "" : item.getStatus(),
+                (left, right) -> left, LinkedHashMap::new)));
+    for (CompetitionRefereeGroupVO group : groups) {
+      List<CompetitionRefereeGroupBoundTaskVO> tasks = new ArrayList<>(
+          tasksByGroup.getOrDefault(group.getId(), List.of()));
+      group.setBoundTasks(tasks);
+      boolean allCompleted = !tasks.isEmpty() && tasks.stream()
+          .allMatch(item -> TASK_COMPLETED.equals(item.getStatus()));
+      group.setReleasable(GROUP_CONFIRMED.equals(group.getStatus()) && allCompleted);
+      tasks.stream().map(CompetitionRefereeGroupBoundTaskVO::getEventName)
+          .filter(StringUtils::hasText).findFirst()
+          .ifPresent(group::setOccupiedEventName);
+    }
+    return groups;
+  }
+
+  private List<CompetitionRefereeGroupBoundTaskVO> boundTasksOf(
+      Long tenantId, Long groupId, boolean activeOnly) {
+    return boundTasksByGroup(tenantId, groupId == null ? List.of() : List.of(groupId), activeOnly, Map.of())
+        .getOrDefault(groupId, List.of());
+  }
+
+  private Map<Long, List<CompetitionRefereeGroupBoundTaskVO>> boundTasksByGroup(
+      Long tenantId, List<Long> groupIds, boolean activeOnly, Map<Long, String> groupStatusById) {
+    if (groupIds == null || groupIds.isEmpty()) return Map.of();
+    List<CompetitionRefereeAssignmentEntity> assignments = assignmentMapper.selectList(
+        new LambdaQueryWrapper<CompetitionRefereeAssignmentEntity>()
+            .eq(CompetitionRefereeAssignmentEntity::getTenantId, tenantId)
+            .in(CompetitionRefereeAssignmentEntity::getRefereeGroupId, groupIds)
+            .eq(activeOnly, CompetitionRefereeAssignmentEntity::getStatus, ACTIVE)
+            .eq(CompetitionRefereeAssignmentEntity::getDeleted, 0));
+    List<CompetitionRefereeAssignmentEntity> rows = safe(assignments).stream()
+        .filter(Objects::nonNull)
+        .filter(item -> item.getRefereeGroupId() != null && item.getStageId() != null)
+        .filter(item -> {
+          if (ACTIVE.equals(item.getStatus())) return true;
+          if (activeOnly) return false;
+          return WITHDRAWN.equals(item.getStatus())
+              && GROUP_CLOSED.equals(groupStatusById.get(item.getRefereeGroupId()));
+        })
+        .toList();
+    if (rows.isEmpty()) return Map.of();
+
+    Set<Long> stageIds = rows.stream().map(CompetitionRefereeAssignmentEntity::getStageId)
+        .filter(Objects::nonNull).collect(Collectors.toCollection(LinkedHashSet::new));
+    Set<Long> eventIds = rows.stream().map(CompetitionRefereeAssignmentEntity::getEventId)
+        .filter(Objects::nonNull).collect(Collectors.toCollection(LinkedHashSet::new));
+    Map<Long, CompetitionStageEntity> stages = stageIds.isEmpty() ? Map.of()
+        : safe(stageMapper.selectList(new LambdaQueryWrapper<CompetitionStageEntity>()
+            .eq(CompetitionStageEntity::getTenantId, tenantId)
+            .in(CompetitionStageEntity::getId, stageIds)
+            .eq(CompetitionStageEntity::getDeleted, 0))).stream()
+            .filter(Objects::nonNull)
+            .collect(Collectors.toMap(CompetitionStageEntity::getId, Function.identity(),
+                (left, right) -> left, LinkedHashMap::new));
+    Map<Long, CompetitionEventEntity> events = eventIds.isEmpty() ? Map.of()
+        : safe(eventMapper.selectList(new LambdaQueryWrapper<CompetitionEventEntity>()
+            .eq(CompetitionEventEntity::getTenantId, tenantId)
+            .in(CompetitionEventEntity::getId, eventIds)
+            .eq(CompetitionEventEntity::getDeleted, 0))).stream()
+            .filter(Objects::nonNull)
+            .collect(Collectors.toMap(CompetitionEventEntity::getId, Function.identity(),
+                (left, right) -> left, LinkedHashMap::new));
+    List<CompetitionPracticalSessionEntity> sessions = stageIds.isEmpty() ? List.of()
+        : safe(practicalSessionMapper.selectList(
+            new LambdaQueryWrapper<CompetitionPracticalSessionEntity>()
+                .eq(CompetitionPracticalSessionEntity::getTenantId, tenantId)
+                .in(CompetitionPracticalSessionEntity::getStageId, stageIds)
+                .eq(CompetitionPracticalSessionEntity::getDeleted, 0)));
+    Map<Long, Long> stageIdBySession = sessions.stream()
+        .filter(item -> item.getId() != null && item.getStageId() != null)
+        .collect(Collectors.toMap(CompetitionPracticalSessionEntity::getId,
+            CompetitionPracticalSessionEntity::getStageId, (left, right) -> left, LinkedHashMap::new));
+    Set<Long> sessionIds = stageIdBySession.keySet();
+    Set<Long> contestantIds = rows.stream()
+        .map(CompetitionRefereeAssignmentEntity::getContestantMemberId)
+        .filter(Objects::nonNull)
+        .collect(Collectors.toCollection(LinkedHashSet::new));
+    List<CompetitionPracticalAssignmentEntity> practicals = sessionIds.isEmpty() || contestantIds.isEmpty()
+        ? List.of()
+        : safe(practicalAssignmentMapper.selectList(
+            new LambdaQueryWrapper<CompetitionPracticalAssignmentEntity>()
+                .eq(CompetitionPracticalAssignmentEntity::getTenantId, tenantId)
+                .in(CompetitionPracticalAssignmentEntity::getSessionId, sessionIds)
+                .in(CompetitionPracticalAssignmentEntity::getContestantMemberId, contestantIds)
+                .ne(CompetitionPracticalAssignmentEntity::getStatus, WITHDRAWN)
+                .eq(CompetitionPracticalAssignmentEntity::getDeleted, 0)));
+    Map<String, Set<Long>> startedContestants = new HashMap<>();
+    for (CompetitionPracticalAssignmentEntity practical : practicals) {
+      if (practical == null) continue;
+      Long stageId = stageIdBySession.get(practical.getSessionId());
+      if (stageId == null || practical.getContestantMemberId() == null) continue;
+      startedContestants.computeIfAbsent(stageId + ":" + practical.getContestantMemberId(),
+          ignored -> new LinkedHashSet<>()).add(practical.getContestantMemberId());
+    }
+    List<CompetitionScoreSourceEntity> scores = contestantIds.isEmpty() || stageIds.isEmpty()
+        ? List.of()
+        : safe(scoreSourceMapper.selectList(
+            new LambdaQueryWrapper<CompetitionScoreSourceEntity>()
+                .eq(CompetitionScoreSourceEntity::getTenantId, tenantId)
+                .in(CompetitionScoreSourceEntity::getStageId, stageIds)
+                .in(CompetitionScoreSourceEntity::getContestantMemberId, contestantIds)
+                .eq(CompetitionScoreSourceEntity::getSourceType,
+                    CompetitionScoreSourceType.PRACTICAL.getCode())
+                .eq(CompetitionScoreSourceEntity::getConfirmationStatus, "confirmed")
+                .eq(CompetitionScoreSourceEntity::getCurrentFlag, 1)
+                .eq(CompetitionScoreSourceEntity::getDeleted, 0)));
+    Set<String> completedKeys = scores.stream()
+        .filter(Objects::nonNull)
+        .filter(item -> item.getStageId() != null && item.getContestantMemberId() != null)
+        .map(item -> item.getStageId() + ":" + item.getContestantMemberId())
+        .collect(Collectors.toCollection(LinkedHashSet::new));
+
+    Map<Long, Map<String, List<CompetitionRefereeAssignmentEntity>>> grouped = new LinkedHashMap<>();
+    for (CompetitionRefereeAssignmentEntity row : rows) {
+      String key = row.getEventId() + ":" + row.getStageId() + ":"
+          + row.getEventWorkTypeId() + ":" + row.getEventWorkTypeLevelId();
+      grouped.computeIfAbsent(row.getRefereeGroupId(), ignored -> new LinkedHashMap<>())
+          .computeIfAbsent(key, ignored -> new ArrayList<>()).add(row);
+    }
+    Map<Long, List<CompetitionRefereeGroupBoundTaskVO>> result = new LinkedHashMap<>();
+    Map<Long, String> workTypeNames = new HashMap<>();
+    Map<Long, String> levelNames = new HashMap<>();
+    for (Map.Entry<Long, Map<String, List<CompetitionRefereeAssignmentEntity>>> groupEntry : grouped.entrySet()) {
+      List<CompetitionRefereeGroupBoundTaskVO> tasks = new ArrayList<>();
+      for (List<CompetitionRefereeAssignmentEntity> stageRows : groupEntry.getValue().values()) {
+        CompetitionRefereeAssignmentEntity first = stageRows.getFirst();
+        Set<Long> contestants = stageRows.stream()
+            .map(CompetitionRefereeAssignmentEntity::getContestantMemberId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+        int completedCount = 0;
+        int startedCount = 0;
+        for (Long contestantId : contestants) {
+          String contestantKey = first.getStageId() + ":" + contestantId;
+          if (completedKeys.contains(contestantKey)) {
+            completedCount++;
+            startedCount++;
+          } else if (startedContestants.containsKey(contestantKey)) {
+            startedCount++;
+          }
+        }
+        String status = TASK_PENDING;
+        if (!contestants.isEmpty() && completedCount == contestants.size()) {
+          status = TASK_COMPLETED;
+        } else if (startedCount > 0) {
+          status = TASK_IN_PROGRESS;
+        }
+        CompetitionRefereeGroupBoundTaskVO task = new CompetitionRefereeGroupBoundTaskVO();
+        task.setEventId(first.getEventId());
+        CompetitionEventEntity event = first.getEventId() == null ? null : events.get(first.getEventId());
+        task.setEventName(event == null ? null : event.getName());
+        task.setStageId(first.getStageId());
+        CompetitionStageEntity stage = first.getStageId() == null ? null : stages.get(first.getStageId());
+        task.setStageName(stage == null ? null : stage.getName());
+        task.setEventWorkTypeId(first.getEventWorkTypeId());
+        task.setWorkTypeName(workTypeName(tenantId, first.getEventWorkTypeId(), workTypeNames));
+        task.setEventWorkTypeLevelId(first.getEventWorkTypeLevelId());
+        task.setLevelName(levelName(tenantId, first.getEventId(), first.getEventWorkTypeId(),
+            first.getEventWorkTypeLevelId(), levelNames));
+        task.setContestantCount(contestants.size());
+        task.setCompletedCount(completedCount);
+        task.setStatus(status);
+        tasks.add(task);
+      }
+      result.put(groupEntry.getKey(), tasks);
+    }
+    return result;
+  }
+
+  private String workTypeName(Long tenantId, Long workTypeId, Map<Long, String> cache) {
+    if (workTypeId == null) return null;
+    if (cache.containsKey(workTypeId)) return cache.get(workTypeId);
+    try {
+      CompetitionEventWorkTypeEntity workType = eventWorkTypeService.getById(tenantId, workTypeId);
+      String name = workType == null ? null : workType.getDisplayName();
+      cache.put(workTypeId, name);
+      return name;
+    } catch (BusinessException ex) {
+      cache.put(workTypeId, null);
+      return null;
+    }
+  }
+
+  private String levelName(
+      Long tenantId, Long eventId, Long workTypeId, Long levelId, Map<Long, String> cache) {
+    if (levelId == null) return null;
+    if (cache.containsKey(levelId)) return cache.get(levelId);
+    if (eventId == null || workTypeId == null) {
+      cache.put(levelId, null);
+      return null;
+    }
+    try {
+      String name = eventWorkTypeLevelService.list(tenantId, eventId, workTypeId).stream()
+          .filter(item -> item != null && Objects.equals(item.getId(), levelId))
+          .map(this::displayLevel)
+          .findFirst().orElse(null);
+      cache.put(levelId, name);
+      return name;
+    } catch (BusinessException ex) {
+      cache.put(levelId, null);
+      return null;
+    }
+  }
+
+  private List<CompetitionRefereeAssignmentEntity> groupAssignments(
+      Long tenantId, Long groupId, boolean activeOnly) {
+    return safe(assignmentMapper.selectList(
+        new LambdaQueryWrapper<CompetitionRefereeAssignmentEntity>()
+            .eq(CompetitionRefereeAssignmentEntity::getTenantId, tenantId)
+            .eq(CompetitionRefereeAssignmentEntity::getRefereeGroupId, groupId)
+            .eq(activeOnly, CompetitionRefereeAssignmentEntity::getStatus, ACTIVE)
+            .eq(CompetitionRefereeAssignmentEntity::getDeleted, 0)));
   }
 
   /** Kept for compatibility with older clients; the stage UI uses group binding APIs. */

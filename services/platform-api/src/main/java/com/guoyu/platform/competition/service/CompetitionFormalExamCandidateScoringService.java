@@ -10,8 +10,6 @@ import com.guoyu.platform.competition.entity.CompetitionFormalExamPaperSnapshotE
 import com.guoyu.platform.competition.entity.CompetitionFormalExamQuestionSnapshotEntity;
 import com.guoyu.platform.competition.entity.CompetitionFormalExamSessionEntity;
 import com.guoyu.platform.competition.entity.CompetitionScoreSourceEntity;
-import com.guoyu.platform.competition.entity.CompetitionScoreRuleEntity;
-import com.guoyu.platform.competition.entity.CompetitionStageContentEntity;
 import com.guoyu.platform.competition.enums.CompetitionFormalCandidateExamStatus;
 import com.guoyu.platform.competition.enums.CompetitionFormalCandidateResultStatus;
 import com.guoyu.platform.competition.exam.formal.scoring.FormalExamQuestionScoreOutcome;
@@ -26,8 +24,6 @@ import com.guoyu.platform.competition.mapper.CompetitionFormalExamPaperSnapshotM
 import com.guoyu.platform.competition.mapper.CompetitionFormalExamQuestionSnapshotMapper;
 import com.guoyu.platform.competition.mapper.CompetitionFormalExamSessionMapper;
 import com.guoyu.platform.competition.mapper.CompetitionScoreSourceMapper;
-import com.guoyu.platform.competition.mapper.CompetitionScoreRuleMapper;
-import com.guoyu.platform.competition.mapper.CompetitionStageContentMapper;
 import com.guoyu.platform.competition.messaging.service.CompetitionScorePipelineOutboxService;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -60,8 +56,6 @@ public class CompetitionFormalExamCandidateScoringService {
   private final FormalExamQuestionScorerRegistry scorerRegistry;
   private CompetitionFormalExamSessionMapper sessionMapper;
   private CompetitionScoreSourceMapper scoreSourceMapper;
-  private CompetitionScoreRuleMapper scoreRuleMapper;
-  private CompetitionStageContentMapper stageContentMapper;
   private CompetitionScorePipelineOutboxService scorePipelineOutboxService;
 
   public CompetitionFormalExamCandidateScoringService(
@@ -93,16 +87,6 @@ public class CompetitionFormalExamCandidateScoringService {
     this.sessionMapper = sessionMapper;
     this.scoreSourceMapper = scoreSourceMapper;
     this.scorePipelineOutboxService = scorePipelineOutboxService;
-  }
-
-  @Autowired(required = false)
-  public void setScoreRuleMapper(CompetitionScoreRuleMapper scoreRuleMapper) {
-    this.scoreRuleMapper = scoreRuleMapper;
-  }
-
-  @Autowired(required = false)
-  public void setStageContentMapper(CompetitionStageContentMapper stageContentMapper) {
-    this.stageContentMapper = stageContentMapper;
   }
 
   @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -265,7 +249,7 @@ public class CompetitionFormalExamCandidateScoringService {
       throw new FormalExamScoringException(
           "更新正式成绩汇总失败", candidate.getExamSessionId(), candidate.getId());
     }
-    upsertTheorySource(candidate, paper, result, now);
+    upsertTheorySource(candidate, result, now);
     if (candidate.getAnsweredCount() != null && candidate.getAnsweredCount() != answeredCount) {
       log.warn(
           "Formal exam answeredCount mismatch, sessionId={}, candidateExamId={}, runtime={}, scored={}",
@@ -356,15 +340,13 @@ public class CompetitionFormalExamCandidateScoringService {
   }
 
   private void upsertTheorySource(CompetitionFormalCandidateExamEntity candidate,
-      CompetitionFormalExamPaperSnapshotEntity paper,
       CompetitionFormalCandidateResultEntity result, LocalDateTime now) {
     if (sessionMapper == null || scoreSourceMapper == null) return;
     CompetitionFormalExamSessionEntity session = sessionMapper.selectById(candidate.getExamSessionId());
     if (session == null) {
       throw new FormalExamScoringException(
-          "正式成绩无法绑定冻结计分规则", candidate.getExamSessionId(), candidate.getId());
+          "正式考试场次不存在", candidate.getExamSessionId(), candidate.getId());
     }
-    Long scoreRuleId = resolveAndFreezeScoreRule(candidate, paper, session, now);
     String reference = "candidate-result:" + result.getId();
     CompetitionScoreSourceEntity same = scoreSourceMapper.selectOne(
         new LambdaQueryWrapper<CompetitionScoreSourceEntity>()
@@ -406,7 +388,6 @@ public class CompetitionFormalExamCandidateScoringService {
     source.setConfirmationStatus("confirmed");
     source.setSourceSystem("competition-formal-exam");
     source.setSourceReference(reference);
-    source.setScoreRuleId(scoreRuleId);
     source.setRevisionNo(current == null ? 1 : current.getRevisionNo() + 1);
     source.setCurrentFlag(1);
     source.setAchievedAt(result.getScoredTime());
@@ -424,65 +405,6 @@ public class CompetitionFormalExamCandidateScoringService {
     if (scorePipelineOutboxService != null) {
       scorePipelineOutboxService.enqueue(source, source.getConfirmedBy());
     }
-  }
-
-  private Long resolveAndFreezeScoreRule(
-      CompetitionFormalCandidateExamEntity candidate,
-      CompetitionFormalExamPaperSnapshotEntity paper,
-      CompetitionFormalExamSessionEntity session,
-      LocalDateTime now) {
-    // A theory-only stage is scored from the immutable question snapshot.  There is no
-    // cross-subject weighting to freeze, so the historical score-rule reference is intentionally
-    // left empty.  This check deliberately precedes the paper snapshot's legacy scoreRuleId so a
-    // retry cannot reintroduce the retired cross-subject rule dependency.
-    if (isTheoryOnlyStage(session.getStageId())) return null;
-    if (paper.getScoreRuleId() != null) return paper.getScoreRuleId();
-    // Mixed theory/simulation/practical stages still require a published rule.
-    if (scoreRuleMapper == null) {
-      throw new FormalExamScoringException(
-          "正式成绩无法绑定冻结计分规则", candidate.getExamSessionId(), candidate.getId());
-    }
-    List<CompetitionScoreRuleEntity> rules = scoreRuleMapper.selectList(
-        new LambdaQueryWrapper<CompetitionScoreRuleEntity>()
-            .eq(CompetitionScoreRuleEntity::getEventId, session.getEventId())
-            .eq(CompetitionScoreRuleEntity::getStageId, session.getStageId())
-            .eq(CompetitionScoreRuleEntity::getEventWorkTypeId, session.getEventWorkTypeId())
-            .eq(session.getEventWorkTypeLevelId() != null,
-                CompetitionScoreRuleEntity::getEventWorkTypeLevelId,
-                session.getEventWorkTypeLevelId())
-            .isNull(session.getEventWorkTypeLevelId() == null,
-                CompetitionScoreRuleEntity::getEventWorkTypeLevelId)
-            .eq(CompetitionScoreRuleEntity::getStatus, "published")
-            .eq(CompetitionScoreRuleEntity::getDeleted, 0));
-    if (rules == null || rules.size() != 1) {
-      throw new FormalExamScoringException(
-          "正式成绩需要当前赛段存在唯一的已发布计分规则",
-          candidate.getExamSessionId(), candidate.getId());
-    }
-    Long resolvedRuleId = rules.getFirst().getId();
-    paper.setScoreRuleId(resolvedRuleId);
-    paper.setUpdatedAt(now);
-    paper.setUpdatedBy(candidate.getUpdatedBy());
-    if (paperSnapshotMapper.updateById(paper) != 1) {
-      throw new FormalExamScoringException(
-          "冻结正式成绩计分规则失败", candidate.getExamSessionId(), candidate.getId());
-    }
-    log.warn("Formal exam scoring rule frozen during legacy recovery, sessionId={}, "
-            + "candidateExamId={}, paperSnapshotId={}, scoreRuleId={}",
-        candidate.getExamSessionId(), candidate.getId(), paper.getId(), resolvedRuleId);
-    return resolvedRuleId;
-  }
-
-  private boolean isTheoryOnlyStage(Long stageId) {
-    if (stageContentMapper == null || stageId == null) return false;
-    List<CompetitionStageContentEntity> contents = stageContentMapper.selectList(
-        new LambdaQueryWrapper<CompetitionStageContentEntity>()
-            .eq(CompetitionStageContentEntity::getStageId, stageId)
-            .eq(CompetitionStageContentEntity::getStatus, "enabled")
-            .eq(CompetitionStageContentEntity::getDeleted, 0));
-    return contents != null && !contents.isEmpty()
-        && contents.stream().allMatch(content -> content != null
-            && "theory".equalsIgnoreCase(content.getContentType()));
   }
 
   private Map<Long, CompetitionFormalCandidateAnswerEntity> answersByQuestion(Long candidateExamId) {

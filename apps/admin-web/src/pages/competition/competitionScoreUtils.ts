@@ -14,6 +14,37 @@ export const REQUIRED_SOURCE_TYPES: CompetitionScoreSourceType[] = [
   'practical',
 ];
 
+export function stageContentFormulaReady(
+  contents?: Array<{
+    status?: string | null;
+    contentType?: string | null;
+    weight?: number | string | null;
+  }>,
+): boolean {
+  const enabled = (contents || []).filter((item) => item.status === 'enabled');
+  if (enabled.length === 0) return false;
+  const total = enabled.reduce((sum, item) => sum + Number(item.weight || 0), 0);
+  return (
+    enabled.every((item) => Number(item.weight) > 0) &&
+    Math.abs(total - 100) < 0.005
+  );
+}
+
+export function enabledScoreSourceTypes(
+  contents?: Array<{
+    status?: string | null;
+    contentType?: string | null;
+  }>,
+): CompetitionScoreSourceType[] {
+  const types = (contents || [])
+    .filter((item) => item.status === 'enabled')
+    .map((item) => item.contentType)
+    .filter((type): type is CompetitionScoreSourceType =>
+      type === 'theory' || type === 'simulation' || type === 'practical',
+    );
+  return types.filter((type, index) => types.indexOf(type) === index);
+}
+
 function decimalValue(value: number | string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;

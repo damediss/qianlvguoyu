@@ -23,6 +23,7 @@ import {
   deleteCompetitionRefereeGroup,
   listCompetitionRefereeGroups,
   pageCompetitionReferees,
+  releaseCompetitionRefereeGroup,
   updateCompetitionRefereeGroup,
 } from '../../api/competition';
 import { useAuthStore } from '../../stores/authStore';
@@ -30,6 +31,7 @@ import type {
   CompetitionId,
   CompetitionReferee,
   CompetitionRefereeGroup,
+  CompetitionRefereeGroupBoundTask,
   CompetitionRefereeGroupUpsertRequest,
 } from '../../types/competition';
 import './CompetitionEventManagementPage.css';
@@ -44,8 +46,34 @@ function errorText(error: unknown, fallback: string) {
 
 function groupStatusTag(status: string) {
   if (status === 'confirmed') return <Tag color="success">已确定</Tag>;
-  if (status === 'closed') return <Tag color="default">已关闭</Tag>;
+  if (status === 'closed') return <Tag color="default">已解散</Tag>;
   return <Tag color="warning">待确定</Tag>;
+}
+
+function taskStatusTag(status: string) {
+  if (status === 'completed') return <Tag color="success">已完成</Tag>;
+  if (status === 'in_progress') return <Tag color="processing">进行中</Tag>;
+  return <Tag color="warning">待开赛</Tag>;
+}
+
+function boundTaskColumns(): ColumnsType<CompetitionRefereeGroupBoundTask> {
+  return [
+    { title: '赛事', dataIndex: 'eventName', render: (value: string) => value || '-' },
+    { title: '赛段', dataIndex: 'stageName', render: (value: string) => value || '-' },
+    { title: '工种', dataIndex: 'workTypeName', width: 140, render: (value: string) => value || '-' },
+    { title: '等级', dataIndex: 'levelName', width: 100, render: (value: string) => value || '-' },
+    {
+      title: '选手',
+      width: 110,
+      render: (_, task) => `${task.completedCount ?? 0}/${task.contestantCount ?? 0}`,
+    },
+    {
+      title: '任务状态',
+      dataIndex: 'status',
+      width: 110,
+      render: (status: string) => taskStatusTag(status),
+    },
+  ];
 }
 
 export function CompetitionRefereeGroupPage() {
@@ -101,25 +129,51 @@ export function CompetitionRefereeGroupPage() {
     onError: (error) => message.error(errorText(error, '裁判小组确定失败，请检查是否配置了3名裁判和1名组长')),
   });
 
+  const releaseMutation = useMutation({
+    mutationFn: (groupId: CompetitionId) => releaseCompetitionRefereeGroup(groupId),
+    onSuccess: async () => {
+      message.success('裁判小组已解散，组内裁判可重新编组');
+      await invalidate();
+    },
+    onError: (error) => message.error(errorText(error, '裁判小组解散失败，请确认全部赛段任务已完成')),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (groupId: CompetitionId) => deleteCompetitionRefereeGroup(groupId),
     onSuccess: async () => {
       message.success('裁判小组已删除');
       await invalidate();
     },
-    onError: (error) => message.error(errorText(error, '裁判小组删除失败，请先解除赛段绑定')),
+    onError: (error) => message.error(errorText(error, '裁判小组删除失败，请先解除赛段绑定或解散小组')),
   });
 
   const groups = groupsQuery.data ?? [];
   const referees = refereesQuery.data?.items ?? [];
+  const occupiedProfileIds = useMemo(() => {
+    const occupied = new Map<string, string>();
+    groups.forEach((group) => {
+      if (group.status === 'closed') return;
+      if (editingGroup && idValue(group.id) === idValue(editingGroup.id)) return;
+      group.members.forEach((member) => {
+        const profileId = idValue(member.refereeProfileId);
+        if (profileId) occupied.set(profileId, group.groupName);
+      });
+    });
+    return occupied;
+  }, [editingGroup, groups]);
   const refereeOptions = useMemo(
-    () => referees.map((referee: CompetitionReferee) => ({
-      label: `${referee.name}${referee.qualifications?.length
-        ? `（${referee.qualifications.map((item) => item.workTypeName || idValue(item.workTypeId)).join('、')}）`
-        : ''}`,
-      value: idValue(referee.id),
-    })),
-    [referees],
+    () => referees.map((referee: CompetitionReferee) => {
+      const value = idValue(referee.id);
+      const occupiedBy = occupiedProfileIds.get(value);
+      return {
+        label: `${referee.name}${occupiedBy ? `（已在「${occupiedBy}」）` : referee.qualifications?.length
+          ? `（${referee.qualifications.map((item) => item.workTypeName || idValue(item.workTypeId)).join('、')}）`
+          : ''}`,
+        value,
+        disabled: Boolean(occupiedBy),
+      };
+    }),
+    [occupiedProfileIds, referees],
   );
   const leaderOptions = useMemo(
     () => refereeOptions.filter((option) => memberProfileIds.includes(String(option.value))),
@@ -167,7 +221,7 @@ export function CompetitionRefereeGroupPage() {
 
   const columns = useMemo<ColumnsType<CompetitionRefereeGroup>>(() => [
     { title: '组号', dataIndex: 'groupNo', width: 80 },
-    { title: '裁判小组', dataIndex: 'groupName', width: 200 },
+    { title: '裁判小组', dataIndex: 'groupName', width: 180 },
     {
       title: '组内裁判',
       render: (_, group) => (
@@ -180,19 +234,36 @@ export function CompetitionRefereeGroupPage() {
         </Space>
       ),
     },
+    {
+      title: '已绑定任务',
+      width: 220,
+      render: (_, group) => {
+        const tasks = group.boundTasks ?? [];
+        if (!tasks.length) return <Typography.Text type="secondary">未绑定赛段</Typography.Text>;
+        return (
+          <Space direction="vertical" size={0}>
+            {tasks.map((task) => (
+              <Typography.Text key={`${idValue(task.eventId)}-${idValue(task.stageId)}`}>
+                {task.eventName || '赛事'} / {task.stageName || '赛段'} {taskStatusTag(task.status)}
+              </Typography.Text>
+            ))}
+          </Space>
+        );
+      },
+    },
     { title: '状态', dataIndex: 'status', width: 100, render: (status: string) => groupStatusTag(status) },
     {
       title: '操作',
-      width: 240,
+      width: 280,
       render: (_, group) => (
-        <Space>
-          {canManage && (group.status === 'draft' || group.status === 'confirmed') && (
+        <Space wrap>
+          {canManage && group.status !== 'closed' && (
             <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(group)}>编辑</Button>
           )}
           {canManage && group.status === 'draft' && (
             <Popconfirm
               title="确定该裁判小组？"
-              description="确定后可在赛段实操配置中绑定。同时段赛段不能调用同一小组。"
+              description="确定后可在赛段实操配置中绑定。同一小组不能同时承担不同赛事，但可参加同一赛事的多个赛段。"
               onConfirm={() => confirmMutation.mutate(group.id)}
               okText="确定"
               cancelText="取消"
@@ -200,10 +271,21 @@ export function CompetitionRefereeGroupPage() {
               <Button size="small" type="primary" loading={confirmMutation.isPending}>确定小组</Button>
             </Popconfirm>
           )}
+          {canManage && group.releasable && group.status === 'confirmed' && (
+            <Popconfirm
+              title="确认解散该裁判小组？"
+              description="解散后组内裁判可重新编入其他小组。历史绑定任务仍可查看。"
+              onConfirm={() => releaseMutation.mutate(group.id)}
+              okText="解散"
+              cancelText="取消"
+            >
+              <Button size="small" loading={releaseMutation.isPending}>解散小组</Button>
+            </Popconfirm>
+          )}
           {canDelete && (
             <Popconfirm
               title="确认删除该裁判小组？"
-              description="已绑定赛段的小组不能删除。"
+              description="已绑定未完成赛段的小组不能删除；任务全部完成后请先解散。"
               onConfirm={() => deleteMutation.mutate(group.id)}
               okText="删除"
               cancelText="取消"
@@ -214,7 +296,7 @@ export function CompetitionRefereeGroupPage() {
         </Space>
       ),
     },
-  ], [canDelete, canManage, confirmMutation, deleteMutation]);
+  ], [canDelete, canManage, confirmMutation, deleteMutation, releaseMutation]);
 
   if (!canView) {
     return <Result status="403" title="暂无裁判小组查看权限" subTitle="请联系管理员申请竞赛裁判管理权限。" />;
@@ -227,7 +309,7 @@ export function CompetitionRefereeGroupPage() {
           <div>
             <Typography.Title level={4}>裁判小组</Typography.Title>
             <Typography.Text type="secondary">
-              裁判小组按租户统一维护，层级高于赛段。创建后需确定，再在赛段实操配置中绑定；时间重叠的赛段不能调用同一小组。
+              一名裁判只能进入一个小组。小组同一时间只能承担一场赛事，但可参加该赛事的多个赛段；全部赛段任务完成后可在此解散小组。
             </Typography.Text>
           </div>
           <Space>
@@ -245,6 +327,18 @@ export function CompetitionRefereeGroupPage() {
           columns={columns}
           pagination={false}
           locale={{ emptyText: '尚未创建裁判小组' }}
+          expandable={{
+            rowExpandable: (group) => (group.boundTasks?.length ?? 0) > 0,
+            expandedRowRender: (group) => (
+              <Table<CompetitionRefereeGroupBoundTask>
+                rowKey={(task) => `${idValue(task.eventId)}-${idValue(task.stageId)}-${idValue(task.eventWorkTypeLevelId)}`}
+                size="small"
+                pagination={false}
+                columns={boundTaskColumns()}
+                dataSource={group.boundTasks ?? []}
+              />
+            ),
+          }}
         />
       </Card>
 
@@ -256,6 +350,7 @@ export function CompetitionRefereeGroupPage() {
         okText="保存裁判小组"
         cancelText="取消"
         confirmLoading={groupMutation.isPending}
+        width={760}
         destroyOnClose
       >
         <Form layout="vertical">
@@ -271,7 +366,7 @@ export function CompetitionRefereeGroupPage() {
             <Select
               mode="multiple"
               style={{ width: '100%' }}
-              placeholder="从裁判信息中选择3名裁判"
+              placeholder="从裁判信息中选择3名未编组裁判"
               value={memberProfileIds}
               options={refereeOptions}
               loading={refereesQuery.isLoading}
@@ -290,6 +385,19 @@ export function CompetitionRefereeGroupPage() {
               onChange={setLeaderProfileId}
               disabled={memberProfileIds.length === 0}
             />
+          </Form.Item>
+          <Form.Item label="已绑定任务">
+            {(editingGroup?.boundTasks?.length ?? 0) > 0 ? (
+              <Table<CompetitionRefereeGroupBoundTask>
+                rowKey={(task) => `${idValue(task.eventId)}-${idValue(task.stageId)}-${idValue(task.eventWorkTypeLevelId)}`}
+                size="small"
+                pagination={false}
+                columns={boundTaskColumns()}
+                dataSource={editingGroup?.boundTasks ?? []}
+              />
+            ) : (
+              <Typography.Text type="secondary">当前小组尚未绑定赛段任务</Typography.Text>
+            )}
           </Form.Item>
         </Form>
       </Modal>

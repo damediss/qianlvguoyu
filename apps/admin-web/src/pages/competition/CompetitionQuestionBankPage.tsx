@@ -605,7 +605,11 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
             {batchQuery.data.selectedSheet && <Typography.Text>工作表：{batchQuery.data.selectedSheet}</Typography.Text>}
             <Typography.Text>状态：{batchQuery.data.status === 'processing' ? '解析中' : batchQuery.data.status === 'succeeded' ? '导入成功' : batchQuery.data.status === 'failed' ? '导入失败' : '排队中'}</Typography.Text>
             <Typography.Text>总数：{batchQuery.data.totalCount}，成功：{batchQuery.data.successCount}，失败：{batchQuery.data.failureCount}</Typography.Text>
-            {batchQuery.data.errorDetail && <Alert type="error" showIcon message="错误明细" description={batchQuery.data.errorDetail} />}
+            {batchQuery.data.metrics && (
+              <Alert type="info" showIcon message="导入耗时"
+                description={`总耗时 ${(batchQuery.data.metrics.totalMs / 1000).toFixed(1)}s；解析 ${(batchQuery.data.metrics.excelParseMs / 1000).toFixed(1)}s；校验 ${(batchQuery.data.metrics.validationMs / 1000).toFixed(1)}s；落库 ${(batchQuery.data.metrics.persistMs / 1000).toFixed(1)}s；提交 ${(batchQuery.data.metrics.commitMs / 1000).toFixed(1)}s。题目批次 ${batchQuery.data.metrics.questionBatchCount}，绑定批次 ${batchQuery.data.metrics.bindingBatchCount}，SQL ${batchQuery.data.metrics.totalSqlCount}，平均每批 ${batchQuery.data.metrics.avgBatchWriteMs ?? 0}ms`} />
+            )}
+            {batchQuery.data.status === 'failed' && batchQuery.data.errorDetail && <Alert type="error" showIcon message="错误明细" description={batchQuery.data.errorDetail} />}
           </Space>
         </> : <Spin />}
       </Modal>

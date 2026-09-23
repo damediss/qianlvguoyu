@@ -66,6 +66,17 @@ public class CompetitionPracticalController {
     return ApiResponse.ok(consoleService.initialize(stageId, req.eventWorkTypeLevelId()));
   }
 
+  @PostMapping("/practical-console/assignments/{assignmentId}/return-for-rescore")
+  @PreAuthorize("hasAuthority('competition:practical-console:manage')")
+  @AuditLog(module = "competition", action = "practical-console:return-for-rescore",
+      targetType = "competition_practical_assignment")
+  public ApiResponse<Void> returnPracticalScoreForRescore(
+      @PathVariable Long assignmentId,
+      @Valid @RequestBody CompetitionPracticalScoreUnlockReq req) {
+    consoleService.returnForRescore(assignmentId, req.reason());
+    return ApiResponse.ok();
+  }
+
   @GetMapping("/stages/{stageId}/practical-rules")
   @PreAuthorize("hasAuthority('competition:practical-rule:view')")
   public ApiResponse<List<CompetitionPracticalRuleVO>> rules(@PathVariable Long stageId, @RequestParam Long eventWorkTypeId, @RequestParam(required = false) Long eventWorkTypeLevelId) {

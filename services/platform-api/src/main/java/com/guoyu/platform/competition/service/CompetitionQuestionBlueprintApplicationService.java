@@ -11,6 +11,7 @@ import com.guoyu.platform.competition.dto.CompetitionQuestionBlueprintQueryReq;
 import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeLevelEntity;
+import com.guoyu.platform.competition.entity.CompetitionQuestionBlueprintBindingEntity;
 import com.guoyu.platform.competition.entity.CompetitionQuestionBlueprintEntity;
 import com.guoyu.platform.competition.entity.CompetitionQuestionBlueprintNodeEntity;
 import com.guoyu.platform.competition.mapper.CompetitionEventMapper;
@@ -40,6 +41,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -94,6 +96,7 @@ public class CompetitionQuestionBlueprintApplicationService {
     if (!(fileName.toLowerCase().endsWith(".xlsx") || fileName.toLowerCase().endsWith(".xls"))) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持 xlsx/xls 文件");
     }
+    requireNoLiveBlueprint(principal.getTenantId(), eventId, eventWorkTypeId, eventWorkTypeLevelId, type);
     Path temp = null;
     try {
       temp = Files.createTempFile("competition-blueprint-", fileName.toLowerCase().endsWith(".xls") ? ".xls" : ".xlsx");
@@ -127,8 +130,12 @@ public class CompetitionQuestionBlueprintApplicationService {
       try { blueprint.setCheckReport(objectMapper.writeValueAsString(report)); }
       catch (Exception ex) { blueprint.setCheckReport("{\"warnings\":[\"报告序列化失败\"]}"); }
       blueprint.setStatus("draft"); blueprint.setCreatedBy(principal.getUserId()); blueprint.setUpdatedBy(principal.getUserId()); blueprint.setDeleted(0);
-      if (blueprintMapper.insert(blueprint) != 1) {
-        throw new BusinessException(ErrorCode.CONFLICT, "竞赛细目表版本保存失败");
+      try {
+        if (blueprintMapper.insert(blueprint) != 1) {
+          throw new BusinessException(ErrorCode.CONFLICT, "竞赛细目表版本保存失败");
+        }
+      } catch (DuplicateKeyException ex) {
+        throw new BusinessException(ErrorCode.CONFLICT, liveBlueprintConflictMessage(type, null, null));
       }
       persistNodes(principal, blueprint, parsed.rows());
       return CompetitionQuestionBlueprintTreeVO.toVO(blueprint);
@@ -200,7 +207,7 @@ public class CompetitionQuestionBlueprintApplicationService {
     return nodes == null ? new ArrayList<>() : new ArrayList<>(nodes);
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   public CompetitionQuestionBlueprintCoverageVO coverage(Long blueprintId) {
     PlatformUserPrincipal principal = currentUser();
     CompetitionQuestionBlueprintEntity blueprint = find(principal.getTenantId(), blueprintId);
@@ -219,9 +226,9 @@ public class CompetitionQuestionBlueprintApplicationService {
           return java.util.Comparator.nullsLast(Long::compareTo).compare(left.getId(), right.getId());
         })
         .toList();
-    List<com.guoyu.platform.competition.entity.CompetitionQuestionBlueprintBindingEntity> bindings = bindingMapper == null
-        ? List.of() : bindingMapper.selectByBlueprint(principal.getTenantId(), blueprintId);
-    bindings = bindings == null ? List.of() : bindings;
+    persistInheritedBindings(principal.getTenantId(), blueprintId, principal.getUserId());
+    List<CompetitionQuestionBlueprintBindingEntity> bindings =
+        listEffectiveBindings(principal.getTenantId(), blueprintId);
     Map<Long, Integer> counts = new HashMap<>();
     for (var binding : bindings) if (binding.getBlueprintNodeId() != null) {
       counts.merge(binding.getBlueprintNodeId(), 1, Integer::sum);
@@ -339,6 +346,7 @@ public class CompetitionQuestionBlueprintApplicationService {
     if (blueprintMapper.updateById(bp) != 1) {
       throw new BusinessException(ErrorCode.CONFLICT, "竞赛细目表启用失败");
     }
+    persistInheritedBindings(principal.getTenantId(), bp.getId(), principal.getUserId());
     return CompetitionQuestionBlueprintTreeVO.toVO(bp);
   }
 
@@ -346,11 +354,142 @@ public class CompetitionQuestionBlueprintApplicationService {
   public void archive(Long blueprintId) {
     PlatformUserPrincipal principal = currentUser();
     CompetitionQuestionBlueprintEntity bp = find(principal.getTenantId(), blueprintId);
-    if ("active".equals(bp.getStatus())) throw new BusinessException(ErrorCode.CONFLICT, "启用中的细目表不能直接归档");
+    if ("archived".equals(bp.getStatus())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "细目表已经归档");
+    }
     bp.setStatus("archived"); bp.setUpdatedBy(principal.getUserId());
     if (blueprintMapper.updateById(bp) != 1) {
       throw new BusinessException(ErrorCode.CONFLICT, "竞赛细目表归档失败");
     }
+  }
+
+  /**
+   * Bindings belong to a specific blueprint version.  When an older version is
+   * archived and a newer one is enabled, question-bank rows stay on the archived
+   * version unless the same full_code leaf exists on the live tree.  Grouping
+   * and coverage therefore merge those equivalent archived bindings into the
+   * current version so a duplicate import does not look like an empty bank.
+   */
+  @Transactional(readOnly = true)
+  public List<CompetitionQuestionBlueprintBindingEntity> listEffectiveBindings(Long tenantId, Long blueprintId) {
+    if (tenantId == null || blueprintId == null || bindingMapper == null) return List.of();
+    CompetitionQuestionBlueprintEntity target = find(tenantId, blueprintId);
+    List<CompetitionQuestionBlueprintNodeEntity> targetNodes = nodeMapper.selectByBlueprint(tenantId, blueprintId);
+    targetNodes = targetNodes == null ? List.of() : targetNodes;
+    Set<Long> parentIds = targetNodes.stream()
+        .map(CompetitionQuestionBlueprintNodeEntity::getParentId)
+        .filter(parent -> parent != null && parent != 0L)
+        .collect(Collectors.toSet());
+    Map<String, Long> leafIdByCode = new LinkedHashMap<>();
+    for (CompetitionQuestionBlueprintNodeEntity node : targetNodes) {
+      if (node.getId() == null || parentIds.contains(node.getId())) continue;
+      String code = normalizeNodeCode(node.getFullCode());
+      if (!code.isBlank()) leafIdByCode.putIfAbsent(code, node.getId());
+    }
+    List<CompetitionQuestionBlueprintBindingEntity> own = bindingMapper.selectByBlueprint(tenantId, blueprintId);
+    List<CompetitionQuestionBlueprintBindingEntity> result = new ArrayList<>();
+    Set<Long> boundQuestions = new HashSet<>();
+    if (own != null) {
+      for (CompetitionQuestionBlueprintBindingEntity row : own) {
+        if (row == null || row.getQuestionId() == null) continue;
+        result.add(row);
+        boundQuestions.add(row.getQuestionId());
+      }
+    }
+    List<CompetitionQuestionBlueprintEntity> archived = blueprintMapper.selectList(
+        new LambdaQueryWrapper<CompetitionQuestionBlueprintEntity>()
+            .eq(CompetitionQuestionBlueprintEntity::getTenantId, tenantId)
+            .eq(CompetitionQuestionBlueprintEntity::getEventId, target.getEventId())
+            .eq(CompetitionQuestionBlueprintEntity::getEventWorkTypeId, target.getEventWorkTypeId())
+            .eq(CompetitionQuestionBlueprintEntity::getEventWorkTypeLevelId, target.getEventWorkTypeLevelId())
+            .eq(CompetitionQuestionBlueprintEntity::getContentType, target.getContentType())
+            .eq(CompetitionQuestionBlueprintEntity::getStatus, "archived")
+            .eq(CompetitionQuestionBlueprintEntity::getDeleted, 0)
+            .ne(CompetitionQuestionBlueprintEntity::getId, blueprintId)
+            .orderByDesc(CompetitionQuestionBlueprintEntity::getVersionNo));
+    if (archived == null || archived.isEmpty()) return result;
+    for (CompetitionQuestionBlueprintEntity sibling : archived) {
+      if (sibling == null || sibling.getId() == null) continue;
+      List<CompetitionQuestionBlueprintNodeEntity> siblingNodes = nodeMapper.selectByBlueprint(tenantId, sibling.getId());
+      Map<Long, String> siblingCodeById = new HashMap<>();
+      if (siblingNodes != null) {
+        for (CompetitionQuestionBlueprintNodeEntity node : siblingNodes) {
+          if (node == null || node.getId() == null) continue;
+          siblingCodeById.put(node.getId(), normalizeNodeCode(node.getFullCode()));
+        }
+      }
+      List<CompetitionQuestionBlueprintBindingEntity> siblingBindings =
+          bindingMapper.selectByBlueprint(tenantId, sibling.getId());
+      if (siblingBindings == null) continue;
+      for (CompetitionQuestionBlueprintBindingEntity binding : siblingBindings) {
+        if (binding == null || binding.getQuestionId() == null || boundQuestions.contains(binding.getQuestionId())) {
+          continue;
+        }
+        String code = siblingCodeById.get(binding.getBlueprintNodeId());
+        Long newNodeId = code == null ? null : leafIdByCode.get(code);
+        if (newNodeId == null) continue;
+        CompetitionQuestionBlueprintBindingEntity remapped = new CompetitionQuestionBlueprintBindingEntity();
+        remapped.setId(binding.getId());
+        remapped.setTenantId(tenantId);
+        remapped.setQuestionId(binding.getQuestionId());
+        remapped.setBlueprintId(blueprintId);
+        remapped.setBlueprintNodeId(newNodeId);
+        remapped.setMatchMode(StringUtils.hasText(binding.getMatchMode()) ? binding.getMatchMode() : "full_code");
+        remapped.setSourceBatchId(binding.getSourceBatchId());
+        result.add(remapped);
+        boundQuestions.add(binding.getQuestionId());
+      }
+    }
+    return result;
+  }
+
+  @Transactional
+  public int persistInheritedBindings(Long tenantId, Long blueprintId, Long userId) {
+    if (tenantId == null || blueprintId == null || bindingMapper == null) return 0;
+    List<CompetitionQuestionBlueprintBindingEntity> effective = listEffectiveBindings(tenantId, blueprintId);
+    List<CompetitionQuestionBlueprintBindingEntity> own = bindingMapper.selectByBlueprint(tenantId, blueprintId);
+    Set<Long> ownQuestions = new HashSet<>();
+    if (own != null) {
+      for (CompetitionQuestionBlueprintBindingEntity row : own) {
+        if (row != null && row.getQuestionId() != null) ownQuestions.add(row.getQuestionId());
+      }
+    }
+    int saved = 0;
+    for (CompetitionQuestionBlueprintBindingEntity row : effective) {
+      if (row == null || row.getQuestionId() == null || ownQuestions.contains(row.getQuestionId())) continue;
+      CompetitionQuestionBlueprintBindingEntity copy = new CompetitionQuestionBlueprintBindingEntity();
+      copy.setId(IdWorker.getId());
+      copy.setTenantId(tenantId);
+      copy.setQuestionId(row.getQuestionId());
+      copy.setBlueprintId(blueprintId);
+      copy.setBlueprintNodeId(row.getBlueprintNodeId());
+      copy.setMatchMode(StringUtils.hasText(row.getMatchMode()) ? row.getMatchMode() : "full_code");
+      copy.setSourceBatchId(row.getSourceBatchId());
+      copy.setCreatedBy(userId);
+      copy.setUpdatedBy(userId);
+      copy.setDeleted(0);
+      try {
+        if (bindingMapper.insert(copy) == 1) {
+          ownQuestions.add(row.getQuestionId());
+          saved++;
+        }
+      } catch (DuplicateKeyException ex) {
+        ownQuestions.add(row.getQuestionId());
+      }
+    }
+    if (saved > 0) {
+      log.info("Inherited {} question bindings onto blueprint {}", saved, blueprintId);
+    }
+    return saved;
+  }
+
+  static String liveBlueprintConflictMessage(String contentType, Integer versionNo, String status) {
+    String typeName = "practical".equalsIgnoreCase(contentType) ? "实操" : "理论";
+    String statusName = "active".equals(status) ? "启用" : "draft".equals(status) ? "草稿" : "";
+    String existing = versionNo == null ? ""
+        : "，当前已存在 v" + versionNo + (statusName.isBlank() ? "" : "（" + statusName + "）");
+    return "同一赛事工种等级只能有一份" + typeName + "细目表" + existing
+        + "。如需更换，请先归档现有细目表后再导入。";
   }
 
   private void persistNodes(PlatformUserPrincipal principal, CompetitionQuestionBlueprintEntity bp,
@@ -695,6 +834,35 @@ public class CompetitionQuestionBlueprintApplicationService {
         .eq(CompetitionQuestionBlueprintEntity::getDeleted, 0)
         .orderByDesc(CompetitionQuestionBlueprintEntity::getVersionNo).last("LIMIT 1"));
     return last == null || last.getVersionNo() == null ? 1 : last.getVersionNo() + 1;
+  }
+
+  private void requireNoLiveBlueprint(Long tenantId, Long eventId, Long workTypeId, Long levelId, String type) {
+    CompetitionQuestionBlueprintEntity live = findLiveBlueprint(tenantId, eventId, workTypeId, levelId, type);
+    if (live != null) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          liveBlueprintConflictMessage(type, live.getVersionNo(), live.getStatus()));
+    }
+  }
+
+  private CompetitionQuestionBlueprintEntity findLiveBlueprint(
+      Long tenantId, Long eventId, Long workTypeId, Long levelId, String type) {
+    List<CompetitionQuestionBlueprintEntity> live = blueprintMapper.selectList(
+        new LambdaQueryWrapper<CompetitionQuestionBlueprintEntity>()
+            .eq(CompetitionQuestionBlueprintEntity::getTenantId, tenantId)
+            .eq(CompetitionQuestionBlueprintEntity::getEventId, eventId)
+            .eq(CompetitionQuestionBlueprintEntity::getEventWorkTypeId, workTypeId)
+            .eq(CompetitionQuestionBlueprintEntity::getEventWorkTypeLevelId, levelId)
+            .eq(CompetitionQuestionBlueprintEntity::getContentType, type)
+            .in(CompetitionQuestionBlueprintEntity::getStatus, List.of("draft", "active"))
+            .eq(CompetitionQuestionBlueprintEntity::getDeleted, 0)
+            .orderByDesc(CompetitionQuestionBlueprintEntity::getVersionNo));
+    return live == null || live.isEmpty() ? null : live.get(0);
+  }
+
+  private String normalizeNodeCode(String value) {
+    if (value == null) return "";
+    return java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC)
+        .replaceAll("\\s+", "").toUpperCase(java.util.Locale.ROOT);
   }
 
   private void requireScope(Long tenantId, Long eventId, Long workTypeId, Long levelId) {

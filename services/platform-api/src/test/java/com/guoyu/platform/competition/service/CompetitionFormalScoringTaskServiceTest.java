@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.competition.entity.CompetitionFormalCandidateExamEntity;
+import com.guoyu.platform.competition.entity.CompetitionFormalExamSessionEntity;
 import com.guoyu.platform.competition.entity.CompetitionFormalScoringTaskEntity;
 import com.guoyu.platform.competition.mapper.CompetitionFormalCandidateExamMapper;
 import com.guoyu.platform.competition.mapper.CompetitionFormalExamSessionMapper;
@@ -90,6 +91,29 @@ class CompetitionFormalScoringTaskServiceTest {
     CompetitionFormalScoringTaskEntity terminal = task(3);
     service.fail(terminal, "worker-1", new IllegalStateException("still broken"));
     verify(outbox, never()).insert(any(CompetitionOutboxEventEntity.class));
+  }
+
+  @Test
+  void completingAllTasksClearsPreviousSessionError() {
+    CompetitionFormalExamSessionEntity session = new CompetitionFormalExamSessionEntity();
+    session.setId(9001L);
+    session.setStatus("finished");
+    session.setScoringStatus("failed");
+    session.setScoringError("存在判分失败任务，请管理员重试");
+    when(sessions.selectById(9001L)).thenReturn(session);
+    when(candidates.selectByExamSessionId(9001L)).thenReturn(java.util.List.of(candidate()));
+    when(tasks.complete(anyLong(), anyString(), any(LocalDateTime.class))).thenReturn(1);
+    when(tasks.countBySession(9001L)).thenReturn(1);
+    when(tasks.countIncompleteBySession(9001L)).thenReturn(0);
+    when(tasks.countFailedBySession(9001L)).thenReturn(0);
+
+    service.complete(task(1), "worker-1");
+
+    ArgumentCaptor<CompetitionFormalExamSessionEntity> sessionCaptor =
+        ArgumentCaptor.forClass(CompetitionFormalExamSessionEntity.class);
+    verify(sessions).updateById(sessionCaptor.capture());
+    assertThat(sessionCaptor.getValue().getScoringStatus()).isEqualTo("completed");
+    assertThat(sessionCaptor.getValue().getScoringError()).isNull();
   }
 
   private CompetitionFormalCandidateExamEntity candidate() {

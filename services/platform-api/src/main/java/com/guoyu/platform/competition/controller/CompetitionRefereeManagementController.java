@@ -125,6 +125,14 @@ public class CompetitionRefereeManagementController {
     return ApiResponse.ok(service.confirmGroup(groupId));
   }
 
+  @PostMapping("/referee-groups/{groupId}/release")
+  @PreAuthorize("hasAnyAuthority('competition:referee-group:manage', 'competition:referee:create', 'competition:referee:update')")
+  @AuditLog(module = "competition", action = "referee:group-release",
+      targetType = "competition_referee_group")
+  public ApiResponse<CompetitionRefereeGroupVO> releaseGroup(@PathVariable Long groupId) {
+    return ApiResponse.ok(service.releaseGroup(groupId));
+  }
+
   @DeleteMapping("/referee-groups/{groupId}")
   @PreAuthorize("hasAnyAuthority('competition:referee-group:manage', 'competition:referee:delete')")
   @AuditLog(module = "competition", action = "referee:group-delete",

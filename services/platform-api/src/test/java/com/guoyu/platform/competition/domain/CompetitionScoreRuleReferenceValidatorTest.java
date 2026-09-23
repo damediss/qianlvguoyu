@@ -34,4 +34,17 @@ class CompetitionScoreRuleReferenceValidatorTest {
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("唯一已发布版本");
   }
+
+  @Test
+  void acceptsNullRuleWhenReadinessUsesStageContentWeights() {
+    CompetitionScoringReadinessVO ready = new CompetitionScoringReadinessVO();
+    ready.setReady(true);
+    ready.setPublishedScoreRuleVersionId(null);
+    when(readinessDomainService.check(1L, 10L, 20L, 30L)).thenReturn(ready);
+    CompetitionScoreRuleReferenceValidator validator =
+        new CompetitionScoreRuleReferenceValidator(readinessDomainService);
+
+    assertThatCode(() ->
+        validator.validatePublishedRule(1L, 10L, 20L, 30L, null)).doesNotThrowAnyException();
+  }
 }

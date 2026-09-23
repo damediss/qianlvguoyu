@@ -120,6 +120,9 @@ class CompetitionPracticalConsoleServiceTest {
         List.of("PLATFORM_ADMIN"), List.of("competition:practical-console:manage"), null);
     SecurityContextHolder.getContext().setAuthentication(
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
+    when(executionService.previewPracticalScoreDifference(any(), any(), any(), any()))
+        .thenReturn(new CompetitionPracticalExecutionService.PracticalScoreDifferencePreview(
+            new BigDecimal("10"), null, 1, "waiting", false));
   }
 
   @AfterEach
@@ -235,6 +238,9 @@ class CompetitionPracticalConsoleServiceTest {
     entry.setPaperQuestionId(1L);
     entry.setScore(new BigDecimal("35"));
     when(scoreEntryMapper.selectList(any())).thenReturn(List.of(entry));
+    when(executionService.previewPracticalScoreDifference(any(), any(), any(), any()))
+        .thenReturn(new CompetitionPracticalExecutionService.PracticalScoreDifferencePreview(
+            new BigDecimal("10"), new BigDecimal("15"), 2, "exceeded", true));
 
     var result = service.get(STAGE_ID, LEVEL_ID);
 
@@ -252,6 +258,33 @@ class CompetitionPracticalConsoleServiceTest {
     assertThat(first.questions().get(0).title()).isEqualTo("试题1");
     assertThat(first.questions().get(0).score()).isEqualByComparingTo("35");
     assertThat(first.questions().get(0).status()).isEqualTo("submitted");
+    assertThat(first.scoreSheetId()).isEqualTo("800");
+    assertThat(first.scoreDifferenceLimit()).isEqualByComparingTo("10");
+    assertThat(first.actualScoreDifference()).isEqualByComparingTo("15");
+    assertThat(first.scoreDifferenceStatus()).isEqualTo("exceeded");
+  }
+
+  @Test
+  void returnForRescoreUnlocksSheetAndRestoresAssignmentToInProgress() {
+    CompetitionPracticalAssignmentEntity assignment = assignment(501L, 1001L);
+    assignment.setStatus("completed");
+    assignment.setEndedAt(java.time.LocalDateTime.now());
+    when(practicalAssignmentMapper.selectOne(any())).thenReturn(assignment);
+    when(practicalAssignmentMapper.updateById(any(CompetitionPracticalAssignmentEntity.class)))
+        .thenReturn(1);
+    CompetitionPracticalScoreSheetEntity sheet = new CompetitionPracticalScoreSheetEntity();
+    sheet.setId(800L);
+    sheet.setAssignmentId(501L);
+    sheet.setStatus("submitted_locked");
+    when(scoreSheetMapper.selectOne(any())).thenReturn(sheet);
+    when(executionService.isPracticalScoreCompleted(TENANT_ID, 501L)).thenReturn(false);
+
+    service.returnForRescore(501L, "三裁判分差异常，退回复核");
+
+    verify(executionService).unlockSheet(TENANT_ID, USER_ID, 800L, "三裁判分差异常，退回复核");
+    assertThat(assignment.getStatus()).isEqualTo("in_progress");
+    assertThat(assignment.getEndedAt()).isNull();
+    assertThat(assignment.getUpdatedBy()).isEqualTo(USER_ID);
   }
 
   @Test

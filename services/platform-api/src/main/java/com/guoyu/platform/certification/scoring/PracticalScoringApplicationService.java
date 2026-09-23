@@ -76,6 +76,7 @@ import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -119,6 +120,12 @@ public class PracticalScoringApplicationService {
   private static final String DECIMAL_SCORE_FORMAT = "0.0";
   private static final String INTEGER_SCORE_FORMAT = "0";
   private static final BigDecimal ZERO_SCORE = new BigDecimal("0.0");
+
+  private static final class PracticalScoringReviewRequiredException extends BusinessException {
+    private PracticalScoringReviewRequiredException() {
+      super(ErrorCode.BAD_REQUEST, "三名考评员评分偏差超过10分，请审核并退回修正后再完成考试");
+    }
+  }
 
   private final CertificationTaskMapper taskMapper;
   private final CertificationTaskScopeMapper scopeMapper;
@@ -703,7 +710,7 @@ public class PracticalScoringApplicationService {
     return saveScore(assessorTaskId, req, false);
   }
 
-  @Transactional
+  @Transactional(isolation = Isolation.READ_COMMITTED)
   public PracticalScoringModels.AssessorTaskDetail submit(
       Long assessorTaskId,
       PracticalScoringModels.SaveScoreReq req
@@ -711,7 +718,7 @@ public class PracticalScoringApplicationService {
     return saveScore(assessorTaskId, req, true);
   }
 
-  @Transactional
+  @Transactional(isolation = Isolation.READ_COMMITTED)
   public PracticalScoringModels.AssessorTaskDetail adjustScore(
       Long assessorTaskId,
       PracticalScoringModels.AdjustScoreReq req
@@ -750,7 +757,7 @@ public class PracticalScoringApplicationService {
     return detail(task, startService.session(task.getTaskId(), task.getCandidateId()));
   }
 
-  @Transactional
+  @Transactional(isolation = Isolation.READ_COMMITTED)
   public void returnTask(Long assessorTaskId, String reason) {
     PlatformUserPrincipal user = SecurityContext.currentUser();
     CertificationAssessorTaskEntity task = assessorTaskMapper.lockById(user.getTenantId(), assessorTaskId);
@@ -774,13 +781,17 @@ public class PracticalScoringApplicationService {
     invalidateResults(task);
   }
 
-  @Transactional
+  @Transactional(
+      isolation = Isolation.READ_COMMITTED,
+      noRollbackFor = PracticalScoringReviewRequiredException.class)
   public PracticalScoringModels.StartSessionView completeByAssessorTask(Long assessorTaskId) {
     CertificationAssessorTaskEntity ownedTask = requireOwnedTask(assessorTaskId, false);
     return completeCandidate(ownedTask.getTaskId(), ownedTask.getCandidateId());
   }
 
-  @Transactional
+  @Transactional(
+      isolation = Isolation.READ_COMMITTED,
+      noRollbackFor = PracticalScoringReviewRequiredException.class)
   public PracticalScoringModels.StartSessionView completeCandidate(Long taskId, Long candidateId) {
     List<CertificationAssessorTaskEntity> tasks = assessorTaskMapper.selectList(
         new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
@@ -794,6 +805,7 @@ public class PracticalScoringApplicationService {
     if (submitted != tasks.size()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "三名考评员全部提交后才能完成考试");
     }
+    repairIncompleteQuestionResults(taskId, candidateId);
     calculateCandidateResult(taskId, candidateId);
     CertificationPracticalCandidateResultEntity result = candidateResultMapper.selectOne(
         new LambdaQueryWrapper<CertificationPracticalCandidateResultEntity>()
@@ -802,7 +814,7 @@ public class PracticalScoringApplicationService {
             .last("LIMIT 1"));
     if (result == null || !"completed".equals(result.getStatus())) {
       if (result != null && "review_required".equals(result.getStatus())) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST, "三名考评员评分偏差超过10分，请审核并退回修正后再完成考试");
+        throw new PracticalScoringReviewRequiredException();
       }
       throw new BusinessException(ErrorCode.BAD_REQUEST, "考生成绩尚未汇总完成");
     }
@@ -2659,12 +2671,30 @@ public class PracticalScoringApplicationService {
     if (result == null) {
       throw new BusinessException(ErrorCode.INTERNAL_ERROR, "试题成绩汇总记录不存在");
     }
+    List<CertificationAssessorTaskEntity> submitted = submittedTasks(
+        task.getTaskId(), task.getCandidateId(), task.getPaperQuestionId());
+    recomputeQuestionResult(result, submitted);
+    calculateCandidateResult(task.getTaskId(), task.getCandidateId());
+  }
+
+  private List<CertificationAssessorTaskEntity> submittedTasks(
+      Long taskId,
+      Long candidateId,
+      Long paperQuestionId
+  ) {
     List<CertificationAssessorTaskEntity> submitted = assessorTaskMapper.selectList(
         new LambdaQueryWrapper<CertificationAssessorTaskEntity>()
-            .eq(CertificationAssessorTaskEntity::getTaskId, task.getTaskId())
-            .eq(CertificationAssessorTaskEntity::getCandidateId, task.getCandidateId())
-            .eq(CertificationAssessorTaskEntity::getPaperQuestionId, task.getPaperQuestionId())
+            .eq(CertificationAssessorTaskEntity::getTaskId, taskId)
+            .eq(CertificationAssessorTaskEntity::getCandidateId, candidateId)
+            .eq(CertificationAssessorTaskEntity::getPaperQuestionId, paperQuestionId)
             .eq(CertificationAssessorTaskEntity::getStatus, "submitted"));
+    return submitted == null ? List.of() : submitted;
+  }
+
+  private void recomputeQuestionResult(
+      CertificationPracticalQuestionResultEntity result,
+      List<CertificationAssessorTaskEntity> submitted
+  ) {
     result.setSubmittedCount(submitted.size());
     if (submitted.size() == 3) {
       BigDecimal minScore = submitted.stream()
@@ -2683,7 +2713,6 @@ public class PracticalScoringApplicationService {
         result.setStatus("review_required");
         result.setCalculatedAt(LocalDateTime.now());
         questionResultMapper.updateById(result);
-        calculateCandidateResult(task.getTaskId(), task.getCandidateId());
         return;
       }
       BigDecimal sum = submitted.stream()
@@ -2702,7 +2731,42 @@ public class PracticalScoringApplicationService {
       result.setCalculatedAt(null);
     }
     questionResultMapper.updateById(result);
-    calculateCandidateResult(task.getTaskId(), task.getCandidateId());
+  }
+
+  private void repairIncompleteQuestionResults(Long taskId, Long candidateId) {
+    Long tenantId = SecurityContext.currentUser().getTenantId();
+    List<CertificationPracticalQuestionResultEntity> results = questionResultMapper.selectList(
+        new LambdaQueryWrapper<CertificationPracticalQuestionResultEntity>()
+            .eq(CertificationPracticalQuestionResultEntity::getTaskId, taskId)
+            .eq(CertificationPracticalQuestionResultEntity::getCandidateId, candidateId));
+    if (CollectionUtils.isEmpty(results)) {
+      return;
+    }
+    results.stream()
+        .filter(result -> !"completed".equals(result.getStatus()))
+        .sorted(Comparator.comparing(
+            CertificationPracticalQuestionResultEntity::getPaperQuestionId,
+            Comparator.nullsLast(Long::compareTo)))
+        .forEach(summary -> {
+          Long questionId = summary.getPaperQuestionId();
+          if (questionId == null) {
+            log.warn("Skip practical question result repair because paperQuestionId is null: taskId={}, candidateId={}",
+                taskId, candidateId);
+            return;
+          }
+          CertificationPracticalQuestionResultEntity current = questionResultMapper.lockResult(
+              tenantId, taskId, candidateId, questionId);
+          if (current == null || "completed".equals(current.getStatus())) {
+            return;
+          }
+          List<CertificationAssessorTaskEntity> submitted = submittedTasks(taskId, candidateId, questionId);
+          if (CollectionUtils.isEmpty(submitted)) {
+            log.warn("Skip practical question result repair because no submitted assessor tasks exist: taskId={}, candidateId={}, paperQuestionId={}",
+                taskId, candidateId, questionId);
+            return;
+          }
+          recomputeQuestionResult(current, submitted);
+        });
   }
 
   private void calculateCandidateResult(Long taskId, Long candidateId) {
@@ -2710,6 +2774,9 @@ public class PracticalScoringApplicationService {
         new LambdaQueryWrapper<CertificationPracticalQuestionResultEntity>()
             .eq(CertificationPracticalQuestionResultEntity::getTaskId, taskId)
             .eq(CertificationPracticalQuestionResultEntity::getCandidateId, candidateId));
+    if (results == null) {
+      results = List.of();
+    }
     CertificationPracticalCandidateResultEntity candidateResult = candidateResultMapper.selectOne(
         new LambdaQueryWrapper<CertificationPracticalCandidateResultEntity>()
             .eq(CertificationPracticalCandidateResultEntity::getTaskId, taskId)

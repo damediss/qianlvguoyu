@@ -6,6 +6,7 @@ import {
   getCompetitionPracticalConsole,
   listCompetitionEventWorkTypeLevels,
   pageCompetitionStages,
+  returnCompetitionPracticalScoreForRescore,
 } from '../src/api/competition';
 import {
   CompetitionPracticalConsolePage,
@@ -34,6 +35,7 @@ vi.mock('../src/api/competition', () => ({
   initializeCompetitionPracticalConsole: vi.fn(),
   listCompetitionEventWorkTypeLevels: vi.fn(),
   pageCompetitionStages: vi.fn(),
+  returnCompetitionPracticalScoreForRescore: vi.fn(),
 }));
 
 function task(partial: Partial<CompetitionPracticalConsoleTask>): CompetitionPracticalConsoleTask {
@@ -47,6 +49,10 @@ function task(partial: Partial<CompetitionPracticalConsoleTask>): CompetitionPra
     taskStatus: 'assigned',
     scoreSheetStatus: 'submitted_locked',
     totalScore: '100.0',
+    scoreDifferenceLimit: '10',
+    actualScoreDifference: '0',
+    scoreDifferenceStatus: 'normal',
+    practicalScoreCompleted: true,
     contestantNo: 'C-001',
     contestantName: '张三',
     refereeName: '认定测试001',
@@ -114,8 +120,31 @@ describe('实操比赛控制台选手展开卡片', () => {
     expect(rows[0].totalScore).toBeNull();
   });
 
+  it('两名裁判提交后分差超限即标记异常', () => {
+    const rows = groupConsoleContestants([
+      task({
+        assignmentId: '501', refereeMemberId: '1001', totalScore: '80',
+        actualScoreDifference: '15', scoreDifferenceStatus: 'exceeded', practicalScoreCompleted: false,
+      }),
+      task({
+        assignmentId: '502', refereeMemberId: '1002', totalScore: '95',
+        actualScoreDifference: '15', scoreDifferenceStatus: 'exceeded', practicalScoreCompleted: false,
+      }),
+      task({
+        assignmentId: '503', refereeMemberId: '1003', scoreSheetStatus: 'draft', totalScore: null,
+        actualScoreDifference: '15', scoreDifferenceStatus: 'exceeded', practicalScoreCompleted: false,
+      }),
+    ]);
+
+    expect(rows[0].submittedSheets).toBe(2);
+    expect(rows[0].status).toBe('abnormal');
+    expect(rows[0].actualScoreDifference).toBe(15);
+    expect(rows[0].scoreDifferenceLimit).toBe(10);
+  });
+
   it('列表按选手展示，展开后显示三张裁判评分卡', async () => {
     vi.mocked(createCompetitionPracticalRealtimeTicket).mockRejectedValue(new Error('skip ws'));
+    vi.mocked(returnCompetitionPracticalScoreForRescore).mockResolvedValue(undefined);
     vi.mocked(listCompetitionEventWorkTypeLevels).mockResolvedValue([
       { id: '40', levelCode: '5', levelName: '初级工' },
     ] as never);

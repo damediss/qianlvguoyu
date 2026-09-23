@@ -5,6 +5,8 @@ import {
   Button,
   Card,
   Empty,
+  Input,
+  Modal,
   Progress,
   Result,
   Select,
@@ -23,6 +25,7 @@ import {
   initializeCompetitionPracticalConsole,
   listCompetitionEventWorkTypeLevels,
   pageCompetitionStages,
+  returnCompetitionPracticalScoreForRescore,
 } from '../../api/competition';
 import { useAuthStore } from '../../stores/authStore';
 import type {
@@ -70,7 +73,10 @@ type ContestantRow = {
   completedQuestions: number;
   totalQuestions: number;
   totalScore?: number | null;
-  status: 'completed' | 'scoring';
+  scoreDifferenceLimit?: number | null;
+  actualScoreDifference?: number | null;
+  scoreDifferenceStatus: 'waiting' | 'normal' | 'exceeded' | 'unrestricted' | string;
+  status: 'completed' | 'awaiting_leader' | 'abnormal' | 'scoring';
   referees: CompetitionPracticalConsoleTask[];
 };
 
@@ -97,6 +103,11 @@ export function groupConsoleContestants(tasks: CompetitionPracticalConsoleTask[]
     const totalScore = allSubmitted && ordered.every((item) => item.totalScore != null && item.totalScore !== '')
       ? ordered.reduce((sum, item) => sum + Number(item.totalScore), 0) / ordered.length
       : null;
+    const scoreDifferenceStatus = ordered[0]?.scoreDifferenceStatus ?? 'waiting';
+    const practicalScoreCompleted = ordered.some((item) => item.practicalScoreCompleted);
+    const status = scoreDifferenceStatus === 'exceeded' ? 'abnormal'
+      : practicalScoreCompleted && allSubmitted ? 'completed'
+      : allSubmitted ? 'awaiting_leader' : 'scoring';
     return {
       key: contestantMemberId,
       contestantMemberId,
@@ -108,7 +119,12 @@ export function groupConsoleContestants(tasks: CompetitionPracticalConsoleTask[]
       completedQuestions,
       totalQuestions: questionCount,
       totalScore,
-      status: allSubmitted ? 'completed' : 'scoring',
+      scoreDifferenceLimit: ordered[0]?.scoreDifferenceLimit == null
+        ? null : Number(ordered[0].scoreDifferenceLimit),
+      actualScoreDifference: ordered[0]?.actualScoreDifference == null
+        ? null : Number(ordered[0].actualScoreDifference),
+      scoreDifferenceStatus,
+      status,
       referees: ordered,
     };
   });
@@ -133,6 +149,8 @@ export function CompetitionPracticalConsolePage({
   const queryClient = useQueryClient();
   const [selectedStageId, setSelectedStageId] = useState<string | undefined>(initialStageId);
   const [expandedRowKeys, setExpandedRowKeys] = useState<Key[]>([]);
+  const [returnTask, setReturnTask] = useState<CompetitionPracticalConsoleTask | null>(null);
+  const [returnReason, setReturnReason] = useState('');
   const levelsQuery = useQuery({
     queryKey: ['competition-practical-console-levels', eventId, eventWorkTypeId],
     queryFn: () => listCompetitionEventWorkTypeLevels(eventId, eventWorkTypeId),
@@ -167,6 +185,10 @@ export function CompetitionPracticalConsolePage({
     queryKey: ['competition-practical-console', selectedStageId, levelId],
     queryFn: () => getCompetitionPracticalConsole(selectedStageId!, levelId),
     enabled: canView && Boolean(selectedStageId && levelId),
+    refetchInterval: import.meta.env.MODE === 'test' || !(canView && selectedStageId && levelId)
+      ? false
+      : 4_000,
+    staleTime: 0,
   });
   const initializeMutation = useMutation({
     mutationFn: () => initializeCompetitionPracticalConsole(selectedStageId!, levelId),
@@ -176,18 +198,59 @@ export function CompetitionPracticalConsolePage({
     },
     onError: (error) => message.error(errorText(error, '初始化失败，请核对选手、裁判和考评表配置')),
   });
+  const returnMutation = useMutation({
+    mutationFn: () => returnCompetitionPracticalScoreForRescore(
+      returnTask!.assignmentId,
+      returnReason.trim(),
+    ),
+    onSuccess: () => {
+      message.success('已退回该裁判重评，分差状态将在重新提交后自动更新');
+      setReturnTask(null);
+      setReturnReason('');
+      void queryClient.invalidateQueries({ queryKey: ['competition-practical-console'] });
+    },
+    onError: (error) => message.error(errorText(error, '退回重评失败，请刷新后重试')),
+  });
   useEffect(() => {
     if (!token || !tenantId) return;
+    if (import.meta.env.MODE === 'test') return;
     let socket: WebSocket | undefined;
     let disposed = false;
-    createCompetitionPracticalRealtimeTicket().then((ticket) => {
-      if (disposed) return;
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const query = new URLSearchParams({ ticket, tenantId: String(tenantId) });
-      socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/competition-practical?${query}`);
-      socket.onmessage = () => void queryClient.invalidateQueries({ queryKey: ['competition-practical-console'] });
-    }).catch(() => undefined);
-    return () => { disposed = true; socket?.close(); };
+    let retryTimer: number | undefined;
+    let refetchTimer: number | undefined;
+    let attempt = 0;
+
+    function connect() {
+      createCompetitionPracticalRealtimeTicket().then((ticket) => {
+        if (disposed) return;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const query = new URLSearchParams({ ticket, tenantId: String(tenantId) });
+        socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/competition-practical?${query}`);
+        socket.onmessage = () => {
+          if (refetchTimer != null) window.clearTimeout(refetchTimer);
+          refetchTimer = window.setTimeout(() => {
+            void queryClient.refetchQueries({ queryKey: ['competition-practical-console'] });
+          }, 50);
+        };
+        socket.onclose = () => {
+          if (disposed) return;
+          const delay = Math.min(8_000, 400 * 2 ** attempt);
+          attempt += 1;
+          retryTimer = window.setTimeout(connect, delay);
+        };
+      }).catch(() => {
+        if (disposed) return;
+        retryTimer = window.setTimeout(connect, 2_000);
+      });
+    }
+
+    connect();
+    return () => {
+      disposed = true;
+      if (retryTimer != null) window.clearTimeout(retryTimer);
+      if (refetchTimer != null) window.clearTimeout(refetchTimer);
+      socket?.close();
+    };
   }, [queryClient, tenantId, token]);
 
   const contestantRows = useMemo(
@@ -203,7 +266,10 @@ export function CompetitionPracticalConsolePage({
     });
   }, [contestantKeys]);
 
-  const submittedContestantCount = contestantRows.filter((row) => row.status === 'completed').length;
+  const submittedContestantCount = contestantRows.filter(
+    (row) => row.totalSheets > 0 && row.submittedSheets === row.totalSheets,
+  ).length;
+  const abnormalContestants = contestantRows.filter((row) => row.status === 'abnormal');
 
   if (!canView) return <Result status="403" title="暂无实操比赛控制台查看权限" />;
   const state = consoleQuery.data;
@@ -232,12 +298,28 @@ export function CompetitionPracticalConsolePage({
       render: (_, row) => formatScore(row.totalScore) ?? '待三人齐交',
     },
     {
+      title: '分差预警',
+      width: 170,
+      render: (_, row) => {
+        if (row.scoreDifferenceStatus === 'exceeded') {
+          return <Tag color="error">分差 {formatScore(row.actualScoreDifference)} ＞ {formatScore(row.scoreDifferenceLimit)}</Tag>;
+        }
+        if (row.scoreDifferenceStatus === 'normal') {
+          return <Tag color="success">分差 {formatScore(row.actualScoreDifference)} / {formatScore(row.scoreDifferenceLimit)}</Tag>;
+        }
+        if (row.scoreDifferenceStatus === 'unrestricted') return <Tag>未限制</Tag>;
+        return <Tag>待至少 2 人提交</Tag>;
+      },
+    },
+    {
       title: '状态',
       dataIndex: 'status',
       width: 100,
-      render: (value) => (
-        <Tag color={value === 'completed' ? 'success' : 'processing'}>
-          {value === 'completed' ? '已完成' : '评分中'}
+      render: (value: ContestantRow['status']) => (
+        <Tag color={value === 'completed' ? 'success' : value === 'abnormal' ? 'error' : 'processing'}>
+          {value === 'completed' ? '已完成'
+            : value === 'abnormal' ? '分差异常'
+            : value === 'awaiting_leader' ? '待组长确认' : '评分中'}
         </Tag>
       ),
     },
@@ -292,6 +374,13 @@ export function CompetitionPracticalConsolePage({
         message="评分任务已冻结"
         description="每条任务均保存裁判、选手、考评表的明确关联。裁判端提交后，控制台统计会即时刷新。"
       /> : null}
+      {abnormalContestants.length > 0 ? <Alert
+        style={{ marginTop: 16 }}
+        type="error"
+        showIcon
+        message={`${abnormalContestants.length} 名选手存在裁判评分分差异常`}
+        description="请展开异常选手，核对各裁判原始分，并将需要复核的裁判评分退回重评。分差恢复到题目允许范围内之前，组长无法完成考试。"
+      /> : null}
       {state.scoringTaskCount > 0 ? <>
         <Space size={24} style={{ margin: '20px 0 16px' }}>
           <Progress
@@ -311,23 +400,73 @@ export function CompetitionPracticalConsolePage({
           pagination={contestantRows.length > 20 ? { pageSize: 20 } : false}
           dataSource={contestantRows}
           columns={contestantColumns}
-          scroll={{ x: 850 }}
+          scroll={{ x: 1090 }}
           expandable={{
             expandedRowKeys,
             onExpandedRowsChange: (keys) => setExpandedRowKeys([...keys]),
-            expandedRowRender: (row) => <RefereeBreakdown referees={row.referees} />,
+            expandedRowRender: (row) => <RefereeBreakdown
+              referees={row.referees}
+              scoreDifferenceExceeded={row.scoreDifferenceStatus === 'exceeded'}
+              canManage={canManage}
+              onReturn={(task) => {
+                setReturnTask(task);
+                setReturnReason('');
+              }}
+            />,
             rowExpandable: (row) => row.referees.length > 0,
             expandRowByClick: true,
           }}
         />
       </> : null}
     </Card> : null}
+    <Modal
+      open={Boolean(returnTask)}
+      title="退回裁判评分重评"
+      okText="确认退回"
+      cancelText="取消"
+      okButtonProps={{ disabled: !returnReason.trim() }}
+      confirmLoading={returnMutation.isPending}
+      onCancel={() => {
+        if (returnMutation.isPending) return;
+        setReturnTask(null);
+        setReturnReason('');
+      }}
+      onOk={() => returnMutation.mutate()}
+    >
+      <Typography.Paragraph>
+        将退回裁判“{returnTask?.refereeName || idValue(returnTask?.refereeMemberId)}”的评分（当前总分：{formatScore(returnTask?.totalScore) ?? '-'}）。
+        该裁判重新提交后系统会自动复核分差。
+      </Typography.Paragraph>
+      <Input.TextArea
+        rows={3}
+        maxLength={200}
+        showCount
+        value={returnReason}
+        placeholder="请填写退回原因，例如：与其他裁判分差过大，请复核第 2 题评分"
+        onChange={(event) => setReturnReason(event.target.value)}
+      />
+    </Modal>
   </Space>;
 }
 
-function RefereeBreakdown({ referees }: { referees: CompetitionPracticalConsoleTask[] }) {
+function RefereeBreakdown({
+  referees,
+  scoreDifferenceExceeded,
+  canManage,
+  onReturn,
+}: {
+  referees: CompetitionPracticalConsoleTask[];
+  scoreDifferenceExceeded: boolean;
+  canManage: boolean;
+  onReturn: (task: CompetitionPracticalConsoleTask) => void;
+}) {
   const padded: Array<CompetitionPracticalConsoleTask | null> = [...referees];
   while (padded.length < 3) padded.push(null);
+  const submittedScores = referees
+    .filter((item) => item.scoreSheetStatus === 'submitted_locked' && item.totalScore != null)
+    .map((item) => Number(item.totalScore));
+  const minScore = submittedScores.length ? Math.min(...submittedScores) : undefined;
+  const maxScore = submittedScores.length ? Math.max(...submittedScores) : undefined;
 
   return (
     <div className="practical-candidate-assessors">
@@ -346,8 +485,11 @@ function RefereeBreakdown({ referees }: { referees: CompetitionPracticalConsoleT
         const submittedQuestions = questions.filter((item) => questionSubmitted(item, referee.scoreSheetStatus)).length;
         const totalQuestions = questions.length;
         const sheetMeta = sheetStatusMeta(referee.scoreSheetStatus);
+        const edgeScore = scoreDifferenceExceeded
+          && referee.totalScore != null
+          && [minScore, maxScore].includes(Number(referee.totalScore));
         return (
-          <div key={idValue(referee.assignmentId)} className="practical-candidate-assessor">
+          <div key={idValue(referee.assignmentId)} className={`practical-candidate-assessor${edgeScore ? ' practical-candidate-assessor--difference-edge' : ''}`}>
             <div className="practical-assessor-head">
               <span className="assessor-name">{referee.refereeName || idValue(referee.refereeMemberId)}</span>
               <Tag color={sheetMeta.color}>{sheetMeta.text}</Tag>
@@ -375,6 +517,9 @@ function RefereeBreakdown({ referees }: { referees: CompetitionPracticalConsoleT
               <span>合计分</span>
               <strong>{formatScore(referee.totalScore) ?? '-'}</strong>
             </div>
+            {scoreDifferenceExceeded && canManage && referee.scoreSheetStatus === 'submitted_locked' ? (
+              <Button danger onClick={() => onReturn(referee)}>退回重评</Button>
+            ) : null}
           </div>
         );
       })}

@@ -615,7 +615,7 @@ public class PracticalCollectionApplicationService {
     return new QrCodeExportVO(data, filename);
   }
 
-  /** Strict archive export: every selected candidate must pass the current eligibility gate and have all capture images readable. */
+  /** Export completed, released, or abnormal candidates; abnormal candidates have blank capture image slots. */
   @Transactional(readOnly = true)
   public CollectionFormExportVO exportCollectionForms(Long taskId, CollectionFormExportRequest request) {
     Long tenantId = current().getTenantId();
@@ -649,40 +649,45 @@ public class PracticalCollectionApplicationService {
       }
       CollectionEligibilityResult eligibility = eligibilities.get(candidateId);
       PracticalCollectionStatusEntity status = statuses.get(candidateId);
-      if (eligibility == null || !eligibility.eligible()) {
-        errors.add(candidateLabel(candidate) + "：" + (eligibility == null ? "资料状态无法确认" : eligibility.reasonMessage()));
-        continue;
-      }
       if (status == null || !CollectionOverallStatusEnum.canExportCollectionForm(
           status.getOverallStatus(), status.getExceptionStatus())) {
-        errors.add(candidateLabel(candidate) + "：仅已完成或已放行的考生可生成采集表");
+        errors.add(candidateLabel(candidate) + "：仅已完成、已放行或异常状态的考生可生成采集表");
+        continue;
+      }
+      boolean abnormal = CollectionOverallStatusEnum.isAbnormal(status.getOverallStatus());
+      if (!abnormal && (eligibility == null || !eligibility.eligible())) {
+        errors.add(candidateLabel(candidate) + "：" + (eligibility == null ? "资料状态无法确认" : eligibility.reasonMessage()));
         continue;
       }
       boolean released = CollectionOverallStatusEnum.isExemptReleased(
           status.getOverallStatus(), status.getExceptionStatus());
       try {
-        byte[] avatar = readImageFile(tenantId, eligibility.avatarFileId(), "证件照");
-        PracticalFingerprintTraceEntity fingerprint = latestFingerprintTrace(tenantId, taskId, examSessionId, candidateId);
-        PracticalSignatureRecordEntity signature = latestSignatureRecord(tenantId, taskId, examSessionId, candidateId);
-        byte[] fingerprintImage;
-        byte[] signatureImage;
-        if (released) {
-          fingerprintImage = fingerprint == null
-              ? new byte[0]
-              : readImageFileOrEmpty(tenantId, fingerprint.getFingerprintImageFileId(), "指纹图片");
-          signatureImage = signature == null
-              ? new byte[0]
-              : readImageFileOrEmpty(tenantId, signature.getSignatureFileId(), "电子签名图片");
-        } else {
-          if (fingerprint == null || !FingerprintCollectStatusEnum.SUCCESS.getCode().equals(fingerprint.getCollectStatus())
-              || fingerprint.getFingerprintImageFileId() == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少有效指纹图片");
+        byte[] avatar = abnormal
+            ? readImageFileOrEmpty(tenantId, eligibility == null ? null : eligibility.avatarFileId(), "证件照")
+            : readImageFile(tenantId, eligibility.avatarFileId(), "证件照");
+        byte[] fingerprintImage = new byte[0];
+        byte[] signatureImage = new byte[0];
+        if (!abnormal) {
+          PracticalFingerprintTraceEntity fingerprint = latestFingerprintTrace(tenantId, taskId, examSessionId, candidateId);
+          PracticalSignatureRecordEntity signature = latestSignatureRecord(tenantId, taskId, examSessionId, candidateId);
+          if (released) {
+            fingerprintImage = fingerprint == null
+                ? new byte[0]
+                : readImageFileOrEmpty(tenantId, fingerprint.getFingerprintImageFileId(), "指纹图片");
+            signatureImage = signature == null
+                ? new byte[0]
+                : readImageFileOrEmpty(tenantId, signature.getSignatureFileId(), "电子签名图片");
+          } else {
+            if (fingerprint == null || !FingerprintCollectStatusEnum.SUCCESS.getCode().equals(fingerprint.getCollectStatus())
+                || fingerprint.getFingerprintImageFileId() == null) {
+              throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少有效指纹图片");
+            }
+            fingerprintImage = readImageFile(tenantId, fingerprint.getFingerprintImageFileId(), "指纹图片");
+            if (signature == null || signature.getSignatureFileId() == null) {
+              throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少有效电子签名图片");
+            }
+            signatureImage = readImageFile(tenantId, signature.getSignatureFileId(), "电子签名图片");
           }
-          fingerprintImage = readImageFile(tenantId, fingerprint.getFingerprintImageFileId(), "指纹图片");
-          if (signature == null || signature.getSignatureFileId() == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "缺少有效电子签名图片");
-          }
-          signatureImage = readImageFile(tenantId, signature.getSignatureFileId(), "电子签名图片");
         }
         exportCandidates.add(new CollectionFormCandidate(candidate, avatar, fingerprintImage, signatureImage));
       } catch (BusinessException ex) {

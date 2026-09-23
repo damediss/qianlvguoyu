@@ -2,6 +2,7 @@ package com.guoyu.platform.competition.controller;
 
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
+import com.guoyu.platform.competition.dto.CompetitionPracticalJudgeActiveStageReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalScoreSaveReq;
 import com.guoyu.platform.competition.service.CompetitionPracticalJudgeService;
 import com.guoyu.platform.competition.vo.CompetitionPracticalJudgeTaskVO;
@@ -31,6 +32,14 @@ public class CompetitionPracticalJudgeController {
     return ApiResponse.ok(service.tasks());
   }
 
+  @PostMapping("/active-stage")
+  @AuditLog(module = "competition", action = "practical-judge:switch-stage",
+      targetType = "competition_referee_group")
+  public ApiResponse<List<CompetitionPracticalJudgeTaskVO>> selectActiveStage(
+      @Valid @RequestBody CompetitionPracticalJudgeActiveStageReq req) {
+    return ApiResponse.ok(service.selectActiveStage(req.stageId()));
+  }
+
   @PostMapping("/tasks/{assignmentId}/open")
   public ApiResponse<CompetitionPracticalJudgeTaskVO> open(@PathVariable Long assignmentId) {
     return ApiResponse.ok(service.open(assignmentId));
@@ -50,6 +59,14 @@ public class CompetitionPracticalJudgeController {
   public ApiResponse<CompetitionPracticalJudgeTaskVO> startSession(
       @PathVariable Long assignmentId) {
     return ApiResponse.ok(service.startSession(assignmentId));
+  }
+
+  @PostMapping("/tasks/{assignmentId}/complete-session")
+  @AuditLog(module = "competition", action = "practical-judge:leader-complete",
+      targetType = "competition_practical_assignment")
+  public ApiResponse<CompetitionPracticalJudgeTaskVO> completeSession(
+      @PathVariable Long assignmentId) {
+    return ApiResponse.ok(service.completeSession(assignmentId));
   }
 
   @PutMapping("/tasks/{assignmentId}/save")

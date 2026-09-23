@@ -642,6 +642,9 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
           </Space>
         ) : (
           <Space direction="vertical" style={{ width: '100%' }} size={12}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              Excel 批量导入的每名考生都必须填写准考证号；未填写的行会标记为导入失败。
+            </Typography.Text>
             <Space wrap>
               <Button size="small" icon={<DownloadOutlined />} onClick={downloadExcelTemplate}>
                 下载模板
@@ -782,8 +785,12 @@ export function CandidateImport({ taskId, onChanged }: CandidateImportProps) {
             <Form.Item name="candidateName" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}>
               <Input />
             </Form.Item>
-            <Form.Item name="admissionTicketNo" label="准考证号">
-              <Input maxLength={64} />
+            <Form.Item
+              name="admissionTicketNo"
+              label="准考证号"
+              rules={[{ required: true, whitespace: true, message: '请输入准考证号' }]}
+            >
+              <Input maxLength={64} placeholder="请输入准考证号" />
             </Form.Item>
             <Form.Item
               name="idCardNo"

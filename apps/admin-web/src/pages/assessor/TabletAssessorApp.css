@@ -9,12 +9,63 @@
   z-index: 20;
   top: 0;
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
   min-height: 82px;
-  align-items: center;
-  justify-content: space-between;
   padding: 14px 24px;
   border-bottom: 1px solid #dbe4ee;
   background: rgba(255, 255, 255, 0.97);
+}
+
+.assessor-tablet-header-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.assessor-stage-switch {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.assessor-stage-select {
+  min-width: min(520px, 100%);
+  flex: 1 1 280px;
+}
+
+.assessor-stage-select .ant-select-selector {
+  min-height: 48px !important;
+  padding-block: 8px !important;
+  border-radius: 12px !important;
+}
+
+.assessor-stage-select .ant-select-selection-item {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.assessor-stage-dropdown .ant-select-item {
+  min-height: 44px;
+  font-size: 15px;
+}
+
+.assessor-stage-dropdown .ant-select-item-option-content {
+  white-space: normal;
+  line-height: 1.4;
+}
+
+.assessor-stage-switch .ant-tag {
+  max-width: 100%;
+  padding: 6px 12px;
+  white-space: normal;
+  line-height: 1.4;
+  font-size: 15px;
 }
 
 .assessor-tablet-header h3.ant-typography {

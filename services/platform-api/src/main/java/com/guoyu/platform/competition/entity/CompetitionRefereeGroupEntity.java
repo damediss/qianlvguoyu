@@ -15,6 +15,7 @@ public class CompetitionRefereeGroupEntity extends BaseEntity {
   private Long leaderRefereeMemberId;
   private Long leaderRefereeProfileId;
   private String status;
+  private Long activeStageId;
 
   public Long getEventId() { return eventId; }
   public void setEventId(Long eventId) { this.eventId = eventId; }
@@ -40,4 +41,6 @@ public class CompetitionRefereeGroupEntity extends BaseEntity {
   }
   public String getStatus() { return status; }
   public void setStatus(String status) { this.status = status; }
+  public Long getActiveStageId() { return activeStageId; }
+  public void setActiveStageId(Long activeStageId) { this.activeStageId = activeStageId; }
 }

@@ -26,6 +26,25 @@ export default defineConfig({
         target: apiProxyTarget,
         changeOrigin: true,
         ws: true,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            const origin = req.headers.origin;
+            const host = req.headers.host;
+            if (typeof origin !== 'string' || typeof host !== 'string') return;
+
+            try {
+              const originUrl = new URL(origin);
+              const requestProtocol = req.socket.encrypted ? 'https:' : 'http:';
+              if (originUrl.protocol === requestProtocol && originUrl.host.toLowerCase() === host.toLowerCase()) {
+                // Browser-to-Vite is same-origin; do not make the API proxy look
+                // like a cross-origin request to the backend CORS filter.
+                proxyReq.removeHeader('origin');
+              }
+            } catch {
+              // Keep malformed or non-matching origins so the backend can reject them.
+            }
+          });
+        },
       },
       '/rencai-api': {
         target: rencaiProxyTarget,

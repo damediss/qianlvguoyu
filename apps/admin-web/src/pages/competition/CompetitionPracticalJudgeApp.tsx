@@ -10,15 +10,17 @@ import {
   WifiOutlined,
 } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Empty, Input, List, Modal, Space, Spin, Tag, Typography, message } from 'antd';
+import { Alert, Button, Empty, Input, List, Modal, Select, Space, Spin, Tag, Typography, message } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { logout } from '../../api/auth';
 import {
+  completeCompetitionPracticalJudgeSession,
   confirmCompetitionPracticalJudgeStart,
   createCompetitionPracticalRealtimeTicket,
   listCompetitionPracticalJudgeTasks,
   openCompetitionPracticalJudgeTask,
   saveCompetitionPracticalJudgeTask,
+  selectCompetitionPracticalJudgeActiveStage,
   startCompetitionPracticalJudgeSession,
 } from '../../api/competition';
 import { useAuthStore } from '../../stores/authStore';
@@ -104,6 +106,7 @@ function formatScore(value?: number | null) {
 }
 
 function taskStatusText(task: CompetitionPracticalJudgeTask) {
+  if (task.startStatus === 'awaiting_leader') return task.judgeRole === 'leader' ? '待完成考试' : '等待组长完成';
   if (task.scoreSheetStatus === 'submitted_locked') return '已提交';
   if (task.startStatus === 'waiting') return task.currentJudgeConfirmed ? '等待其他裁判' : '待确认';
   if (task.startStatus === 'ready') return task.judgeRole === 'leader' ? '待组长开考' : '等待组长开考';
@@ -140,6 +143,21 @@ function syncText(state: SyncState) {
   }[state];
 }
 
+function contestantLabel(task: CompetitionPracticalJudgeTask) {
+  return task.contestantName || task.contestantNo || `选手 ${task.contestantMemberId}`;
+}
+
+function taskStageId(task: CompetitionPracticalJudgeTask) {
+  return String(task.stageId || task.assessmentSheet?.stageId || 'unassigned');
+}
+
+function taskScopeLabel(task: CompetitionPracticalJudgeTask) {
+  const parts = [task.eventName, task.workTypeName, task.levelName, task.stageName]
+    .map((part) => (part ?? '').trim())
+    .filter(Boolean);
+  return parts.join(' · ') || '未分赛段';
+}
+
 function errorMessage(error: unknown, fallback: string) {
   return (error as { response?: { data?: { message?: string } }; message?: string })?.response?.data?.message
     || (error as { message?: string })?.message
@@ -166,6 +184,7 @@ export function CompetitionPracticalJudgeApp() {
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string>();
+  const [activeStageId, setActiveStageId] = useState<string>();
   const [activeQuestionId, setActiveQuestionId] = useState<string>();
   const [scores, setScores] = useState<Record<string, ScoreValue>>({});
   const [online, setOnline] = useState(navigator.onLine);
@@ -179,13 +198,38 @@ export function CompetitionPracticalJudgeApp() {
   const tasksQuery = useQuery({
     queryKey: ['competition-practical-judge-tasks'],
     queryFn: listCompetitionPracticalJudgeTasks,
-    refetchInterval: online ? 15_000 : false,
+    refetchInterval: import.meta.env.MODE === 'test' || !online
+      ? false
+      : (realtimeConnected ? 8_000 : 2_000),
+    refetchIntervalInBackground: true,
     staleTime: 0,
   });
   const tasks = tasksQuery.data ?? [];
+  const isGroupLeaderUser = tasks.some((task) => task.judgeRole === 'leader');
+  const stages = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    tasks.forEach((task) => {
+      const id = taskStageId(task);
+      if (!map.has(id)) map.set(id, { id, name: taskScopeLabel(task) });
+    });
+    return [...map.values()];
+  }, [tasks]);
+  const serverActiveStageId = useMemo(() => {
+    const fromTask = tasks.find((task) => task.activeStageId != null && String(task.activeStageId) !== '');
+    return fromTask ? String(fromTask.activeStageId) : undefined;
+  }, [tasks]);
+  const resolvedStageId = isGroupLeaderUser
+    ? (activeStageId || serverActiveStageId || stages[0]?.id)
+    : (serverActiveStageId || stages[0]?.id);
+  const resolvedStageName = stages.find((stage) => stage.id === resolvedStageId)?.name
+    || '当前赛段';
+  const visibleTasks = useMemo(() => {
+    if (!resolvedStageId) return tasks;
+    return tasks.filter((task) => taskStageId(task) === resolvedStageId);
+  }, [resolvedStageId, tasks]);
   const selected = useMemo(
-    () => tasks.find((item) => String(item.assignmentId) === selectedId),
-    [selectedId, tasks],
+    () => visibleTasks.find((item) => String(item.assignmentId) === selectedId),
+    [selectedId, visibleTasks],
   );
   const questions = useMemo(
     () => (selected?.assessmentSheet?.sheet.questions ?? []) as PracticalQuestion[],
@@ -210,14 +254,22 @@ export function CompetitionPracticalJudgeApp() {
   const locked = selected?.scoreSheetStatus === 'submitted_locked';
   const scoringStarted = selected?.startStatus === 'started';
   const sessionCompleted = selected?.startStatus === 'completed';
+  const awaitingLeaderCompletion = selected?.startStatus === 'awaiting_leader';
+  const scoreDifferenceExceeded = selected?.scoreDifferenceStatus === 'exceeded';
   const startSessionReady = selected?.startStatus === 'ready';
   const isGroupLeader = selected?.judgeRole === 'leader';
   const activeQuestionStatus = questionStatusOf(selected, activeQuestion?.paperQuestionId);
   const questionLocked = activeQuestionStatus === 'submitted';
 
   useEffect(() => {
-    if (!selectedId && tasks.length) setSelectedId(String(tasks[0].assignmentId));
-  }, [selectedId, tasks]);
+    if (selectedId && visibleTasks.some((task) => String(task.assignmentId) === selectedId)) return;
+    if (visibleTasks.length) {
+      hydratedAssignmentRef.current = undefined;
+      setSelectedId(String(visibleTasks[0].assignmentId));
+      return;
+    }
+    setSelectedId(undefined);
+  }, [selectedId, visibleTasks]);
 
   useEffect(() => {
     if (!selected) return;
@@ -262,8 +314,10 @@ export function CompetitionPracticalJudgeApp() {
     const assignmentId = String(selected.assignmentId);
     if (openedAssignmentsRef.current.has(assignmentId)) return;
     openedAssignmentsRef.current.add(assignmentId);
-    void openCompetitionPracticalJudgeTask(selected.assignmentId)
-      .then(() => queryClient.invalidateQueries({ queryKey: ['competition-practical-judge-tasks'] }))
+    void Promise.resolve(openCompetitionPracticalJudgeTask(selected.assignmentId))
+      .then((result) => {
+        if (result) patchTaskCache(queryClient, result);
+      })
       .catch((error) => {
         openedAssignmentsRef.current.delete(assignmentId);
         message.error(errorMessage(error, '评分任务打开失败'));
@@ -290,22 +344,49 @@ export function CompetitionPracticalJudgeApp() {
 
   useEffect(() => {
     if (!token || !tenantId || !online) return;
+    if (import.meta.env.MODE === 'test') return;
     let socket: WebSocket | undefined;
     let disposed = false;
-    createCompetitionPracticalRealtimeTicket().then((ticket) => {
-      if (disposed) return;
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const query = new URLSearchParams({ ticket, tenantId: String(tenantId) });
-      socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/competition-practical?${query}`);
-      socket.onopen = () => setRealtimeConnected(true);
-      socket.onerror = () => setRealtimeConnected(false);
-      socket.onclose = () => setRealtimeConnected(false);
-      socket.onmessage = () => void queryClient.invalidateQueries({
-        queryKey: ['competition-practical-judge-tasks'],
+    let retryTimer: number | undefined;
+    let refetchTimer: number | undefined;
+    let attempt = 0;
+
+    function connect() {
+      createCompetitionPracticalRealtimeTicket().then((ticket) => {
+        if (disposed) return;
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const query = new URLSearchParams({ ticket, tenantId: String(tenantId) });
+        socket = new WebSocket(`${protocol}//${window.location.host}/api/ws/competition-practical?${query}`);
+        socket.onopen = () => {
+          attempt = 0;
+          setRealtimeConnected(true);
+        };
+        socket.onerror = () => setRealtimeConnected(false);
+        socket.onclose = () => {
+          setRealtimeConnected(false);
+          if (disposed) return;
+          const delay = Math.min(8_000, 400 * 2 ** attempt);
+          attempt += 1;
+          retryTimer = window.setTimeout(connect, delay);
+        };
+        socket.onmessage = () => {
+          if (refetchTimer != null) window.clearTimeout(refetchTimer);
+          refetchTimer = window.setTimeout(() => {
+            void queryClient.refetchQueries({ queryKey: ['competition-practical-judge-tasks'] });
+          }, 50);
+        };
+      }).catch(() => {
+        setRealtimeConnected(false);
+        if (disposed) return;
+        retryTimer = window.setTimeout(connect, 2_000);
       });
-    }).catch(() => setRealtimeConnected(false));
+    }
+
+    connect();
     return () => {
       disposed = true;
+      if (retryTimer != null) window.clearTimeout(retryTimer);
+      if (refetchTimer != null) window.clearTimeout(refetchTimer);
       socket?.close();
     };
   }, [online, queryClient, tenantId, token]);
@@ -368,11 +449,43 @@ export function CompetitionPracticalJudgeApp() {
     mutationFn: () => startCompetitionPracticalJudgeSession(selected!.assignmentId),
     onSuccess: (result) => {
       patchTaskCache(queryClient, result);
-      void queryClient.invalidateQueries({ queryKey: ['competition-practical-judge-tasks'] });
       message.success('考试已开始，三台裁判设备已同步解锁评分');
     },
     onError: (error) => message.error(errorMessage(error, '开始考试失败，请检查三名裁判是否均已确认')),
   });
+
+  const completeSessionMutation = useMutation({
+    mutationFn: () => completeCompetitionPracticalJudgeSession(selected!.assignmentId),
+    onSuccess: (result) => {
+      patchTaskCache(queryClient, result);
+      message.success('实操成绩已由组长确认提交，考试已完成');
+    },
+    onError: (error) => message.error(errorMessage(error, '完成考试失败，请检查三名裁判评分状态')),
+  });
+
+  const selectStageMutation = useMutation({
+    mutationFn: (stageId: string) => selectCompetitionPracticalJudgeActiveStage(stageId),
+    onSuccess: (result) => {
+      queryClient.setQueryData(['competition-practical-judge-tasks'], result);
+    },
+    onError: (error, stageId) => {
+      if (serverActiveStageId) setActiveStageId(serverActiveStageId);
+      message.error(errorMessage(error, '切换赛段任务失败，请刷新后重试'));
+      const fallback = tasks.find((task) => taskStageId(task) === serverActiveStageId)
+        || tasks.find((task) => taskStageId(task) !== stageId);
+      if (fallback) {
+        hydratedAssignmentRef.current = undefined;
+        setSelectedId(String(fallback.assignmentId));
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (selectStageMutation.isPending) return;
+    if (serverActiveStageId && serverActiveStageId !== activeStageId) {
+      setActiveStageId(serverActiveStageId);
+    }
+  }, [activeStageId, selectStageMutation.isPending, serverActiveStageId]);
 
   useEffect(() => {
     if (!dirty || !selected) return;
@@ -460,6 +573,48 @@ export function CompetitionPracticalJudgeApp() {
     }
   }
 
+  function switchStage(nextId: string | number) {
+    const stageId = String(nextId);
+    if (stageId === resolvedStageId || selectStageMutation.isPending) return;
+    setActiveStageId(stageId);
+    const nextTask = tasks.find((task) => taskStageId(task) === stageId);
+    if (nextTask && String(nextTask.assignmentId) !== selectedId) {
+      hydratedAssignmentRef.current = undefined;
+      setSelectedId(String(nextTask.assignmentId));
+    }
+    selectStageMutation.mutate(stageId);
+  }
+
+  function renderTaskItem(task: CompetitionPracticalJudgeTask) {
+    const status = taskStatusText(task);
+    return (
+      <List.Item
+        className={String(task.assignmentId) === selectedId ? 'selected' : ''}
+        onClick={() => {
+          hydratedAssignmentRef.current = undefined;
+          setSelectedId(String(task.assignmentId));
+        }}
+      >
+        <div className="assessor-task-card">
+          <Space wrap>
+            <Tag color={status === '已提交' ? 'success' : status === '已退回' ? 'error' : 'blue'}>
+              {status}
+            </Tag>
+            <Tag color={task.judgeRole === 'leader' ? 'gold' : 'default'}>
+              {task.judgeRole === 'leader' ? '组长' : '组员'}
+            </Tag>
+            <strong>{contestantLabel(task)}</strong>
+            <span>{task.workstationCode ? `工位 ${task.workstationCode}` : ''}</span>
+          </Space>
+          <Typography.Text>{task.assessmentSheet?.title || '实操考评表'}</Typography.Text>
+          <small>
+            {task.assessmentSheet?.questionCount || 0} 题 · {formatScore(Number(task.totalScore ?? 0))}/{formatScore(Number(task.assessmentSheet?.totalScore ?? 0))} 分
+          </small>
+        </div>
+      </List.Item>
+    );
+  }
+
   const detail = activeQuestion?.detail;
   const questionContent = detailText(detail, 'assessmentRequirementsHtml', 'operationContent') || '无补充题目说明';
   const candidatePrepare = detailText(detail, 'candidatePrepareHtml', 'studentPrepare') || '-';
@@ -468,28 +623,56 @@ export function CompetitionPracticalJudgeApp() {
   return (
     <div className="assessor-tablet-shell">
       <header className="assessor-tablet-header">
-        <div>
-          <Typography.Title level={3}>竞赛实操裁判</Typography.Title>
-          <Typography.Text>{currentUser?.displayName || '裁判员'}，请独立完成本人评分</Typography.Text>
+        <div className="assessor-tablet-header-main">
+          <div>
+            <Typography.Title level={3}>竞赛实操裁判</Typography.Title>
+            <Typography.Text>{currentUser?.displayName || '裁判员'}，请独立完成本人评分</Typography.Text>
+          </div>
+          <Space wrap>
+            <Tag icon={online ? <WifiOutlined /> : <CloudOutlined />} color={online ? 'success' : 'warning'}>
+              {online ? '在线' : '短时断网'}
+            </Tag>
+            <Tag icon={<CloudSyncOutlined />} color={syncState === 'error' ? 'error' : 'processing'}>
+              {syncText(syncState)}
+            </Tag>
+            <Tag color={realtimeConnected ? 'success' : 'default'}>
+              {realtimeConnected ? '实时连接' : '轮询同步'}
+            </Tag>
+            <Button icon={<LogoutOutlined />} onClick={handleLogout}>切换账号</Button>
+          </Space>
         </div>
-        <Space wrap>
-          <Tag icon={online ? <WifiOutlined /> : <CloudOutlined />} color={online ? 'success' : 'warning'}>
-            {online ? '在线' : '短时断网'}
-          </Tag>
-          <Tag icon={<CloudSyncOutlined />} color={syncState === 'error' ? 'error' : 'processing'}>
-            {syncText(syncState)}
-          </Tag>
-          <Tag color={realtimeConnected ? 'success' : 'default'}>
-            {realtimeConnected ? '实时连接' : '轮询同步'}
-          </Tag>
-          <Button icon={<LogoutOutlined />} onClick={handleLogout}>切换账号</Button>
-        </Space>
+        {isGroupLeaderUser && stages.length > 0 ? (
+          <div className="assessor-stage-switch" data-testid="judge-stage-switch">
+            <Typography.Text type="secondary">赛段任务</Typography.Text>
+            <Select
+              size="large"
+              className="assessor-stage-select"
+              classNames={{ popup: { root: 'assessor-stage-dropdown' } }}
+              value={resolvedStageId}
+              optionLabelProp="label"
+              options={stages.map((stage) => ({
+                label: stage.name,
+                value: stage.id,
+                title: stage.name,
+              }))}
+              onChange={switchStage}
+              loading={selectStageMutation.isPending}
+              disabled={!online || selectStageMutation.isPending}
+              placeholder="请选择赛段任务"
+            />
+          </div>
+        ) : resolvedStageId ? (
+          <div className="assessor-stage-switch" data-testid="judge-stage-current">
+            <Typography.Text type="secondary">当前赛段任务</Typography.Text>
+            <Tag color="blue">{resolvedStageName}</Tag>
+          </div>
+        ) : null}
       </header>
 
       <main className={`assessor-tablet-main ${selected ? 'has-selection' : ''}`}>
         <aside className="assessor-task-list">
           <div className="assessor-task-list-title">
-            <Typography.Title level={4}>当前竞赛任务</Typography.Title>
+            <Typography.Title level={4}>当前赛段选手</Typography.Title>
             <Button
               size="large"
               aria-label="刷新评分任务"
@@ -500,37 +683,9 @@ export function CompetitionPracticalJudgeApp() {
           </div>
           <Spin spinning={tasksQuery.isFetching}>
             <List
-              dataSource={tasks}
-              locale={{ emptyText: <Empty description="暂无评分任务" /> }}
-              renderItem={(task) => {
-                const status = taskStatusText(task);
-                return (
-                  <List.Item
-                    className={String(task.assignmentId) === selectedId ? 'selected' : ''}
-                    onClick={() => {
-                      hydratedAssignmentRef.current = undefined;
-                      setSelectedId(String(task.assignmentId));
-                    }}
-                  >
-                    <div className="assessor-task-card">
-                      <Space wrap>
-                        <Tag color={status === '已提交' ? 'success' : status === '已退回' ? 'error' : 'blue'}>
-                          {status}
-                        </Tag>
-                        <Tag color={task.judgeRole === 'leader' ? 'gold' : 'default'}>
-                          {task.judgeRole === 'leader' ? '组长' : '组员'}
-                        </Tag>
-                        <strong>选手 {task.contestantMemberId}</strong>
-                        <span>{task.workstationCode ? `工位 ${task.workstationCode}` : ''}</span>
-                      </Space>
-                      <Typography.Text>{task.assessmentSheet?.title || '实操考评表'}</Typography.Text>
-                      <small>
-                        {task.assessmentSheet?.questionCount || 0} 题 · {formatScore(Number(task.totalScore ?? 0))}/{formatScore(Number(task.assessmentSheet?.totalScore ?? 0))} 分
-                      </small>
-                    </div>
-                  </List.Item>
-                );
-              }}
+              dataSource={visibleTasks}
+              locale={{ emptyText: <Empty description="当前赛段暂无评分任务" /> }}
+              renderItem={renderTaskItem}
             />
           </Spin>
         </aside>
@@ -546,8 +701,12 @@ export function CompetitionPracticalJudgeApp() {
 
               <div className="assessor-candidate-bar">
                 <div>
-                  <Typography.Text type="secondary">当前选手</Typography.Text>
-                  <Typography.Title level={3}>选手 {selected.contestantMemberId}</Typography.Title>
+                  <Typography.Text type="secondary">
+                    {taskScopeLabel(selected) !== '未分赛段'
+                      ? `当前赛段：${taskScopeLabel(selected)}`
+                      : '当前选手'}
+                  </Typography.Text>
+                  <Typography.Title level={3}>{contestantLabel(selected)}</Typography.Title>
                   <Typography.Text>
                     {selected.workstationCode ? `工位 ${selected.workstationCode}` : '工位未设置'} / {selected.assessmentSheet.title}
                   </Typography.Text>
@@ -585,7 +744,7 @@ export function CompetitionPracticalJudgeApp() {
                 />
               )}
 
-              {!scoringStarted && !sessionCompleted && (
+              {(selected.startStatus === 'waiting' || selected.startStatus === 'ready') && (
                 <div className="assessor-start-gate">
                   <Typography.Title level={3}>统一开考确认</Typography.Title>
                   <Typography.Paragraph>
@@ -624,6 +783,37 @@ export function CompetitionPracticalJudgeApp() {
                     </Button>
                   )}
                 </div>
+              )}
+
+              {awaitingLeaderCompletion && (
+                <Alert
+                  type={scoreDifferenceExceeded ? 'error' : isGroupLeader ? 'warning' : 'info'}
+                  showIcon
+                  message={scoreDifferenceExceeded
+                    ? `裁判评分分差异常：${formatScore(Number(selected?.actualScoreDifference ?? 0))} 分，允许 ${formatScore(Number(selected?.scoreDifferenceLimit ?? 0))} 分`
+                    : isGroupLeader ? '三名裁判均已提交，请完成考试' : '三名裁判均已提交，等待组长完成考试'}
+                  description={scoreDifferenceExceeded
+                    ? '请在实操比赛控制台核对三名裁判原始分，并将需要复核的裁判评分退回重评。分差异常解除前不能完成考试。'
+                    : isGroupLeader
+                    ? '确认后系统将按题目快照中的评分要求汇总三名裁判原始分并提交实操成绩。'
+                    : '你的逐题评分已经锁定，最终实操成绩由裁判组组长确认提交。'}
+                  action={isGroupLeader ? (
+                    <Button
+                      type="primary"
+                      disabled={!online || scoreDifferenceExceeded}
+                      loading={completeSessionMutation.isPending}
+                      onClick={() => Modal.confirm({
+                        title: '确认完成考试并提交实操成绩？',
+                        content: '请确认三名裁判均已完成独立评分。提交后将生成本场实操汇总成绩。',
+                        okText: '完成考试',
+                        cancelText: '继续检查',
+                        onOk: () => completeSessionMutation.mutateAsync(),
+                      })}
+                    >
+                      完成考试
+                    </Button>
+                  ) : undefined}
+                />
               )}
 
               <div className="assessor-question-nav">

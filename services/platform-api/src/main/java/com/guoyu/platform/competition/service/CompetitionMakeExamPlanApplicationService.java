@@ -535,6 +535,9 @@ public class CompetitionMakeExamPlanApplicationService {
 
   private void generateDraftSnapshots(Long tenantId, Long userId, CompetitionMakeExamPlanEntity plan,
       List<CompetitionMakeExamPlanDetailReq> details) {
+    if (blueprintService != null && plan.getBlueprintId() != null) {
+      blueprintService.persistInheritedBindings(tenantId, plan.getBlueprintId(), userId);
+    }
     List<CompetitionQuestionEntity> candidates = questionMapper.selectList(questionScope(tenantId, plan));
     candidates = candidates == null ? new ArrayList<>() : new ArrayList<>(candidates);
     if ("practical".equals(plan.getContentType()) && plan.getBlueprintId() != null) {
@@ -948,6 +951,11 @@ public class CompetitionMakeExamPlanApplicationService {
   }
 
   private List<CompetitionQuestionBlueprintBindingEntity> safeBindings(Long tenantId, Long blueprintId) {
+    if (blueprintId != null && blueprintService != null) {
+      List<CompetitionQuestionBlueprintBindingEntity> effective =
+          blueprintService.listEffectiveBindings(tenantId, blueprintId);
+      if (effective != null) return effective;
+    }
     if (blueprintBindingMapper == null) return List.of();
     List<CompetitionQuestionBlueprintBindingEntity> rows = blueprintBindingMapper.selectByBlueprint(tenantId, blueprintId);
     return rows == null ? List.of() : rows;
@@ -1049,8 +1057,8 @@ public class CompetitionMakeExamPlanApplicationService {
         .eq(CompetitionQuestionEntity::getContentType, plan.getContentType())
         .eq(CompetitionQuestionEntity::getStatus, "enabled")
         .eq(CompetitionQuestionEntity::getDeleted, 0);
-    if (plan.getBlueprintId() != null && blueprintBindingMapper != null) {
-      List<CompetitionQuestionBlueprintBindingEntity> bindings = blueprintBindingMapper.selectByBlueprint(
+    if (plan.getBlueprintId() != null && (blueprintService != null || blueprintBindingMapper != null)) {
+      List<CompetitionQuestionBlueprintBindingEntity> bindings = safeBindings(
           tenantId, plan.getBlueprintId());
       List<Long> ids = bindings == null ? List.of() : bindings.stream()
           .map(CompetitionQuestionBlueprintBindingEntity::getQuestionId)

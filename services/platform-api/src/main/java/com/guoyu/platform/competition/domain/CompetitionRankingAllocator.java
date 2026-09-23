@@ -64,8 +64,7 @@ public final class CompetitionRankingAllocator {
     if (scope == null
         || scope.eventId() == null
         || scope.stageId() == null
-        || scope.eventWorkTypeId() == null
-        || scope.scoreRuleId() == null) {
+        || scope.eventWorkTypeId() == null) {
       throw new IllegalArgumentException("排名快照范围必须完整");
     }
   }

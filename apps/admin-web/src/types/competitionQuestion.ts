@@ -152,8 +152,23 @@ export interface CompetitionQuestionImportBatch {
   successCount: number;
   failureCount: number;
   errorDetail?: string | null;
+  metrics?: CompetitionQuestionImportMetrics | null;
   startedAt?: string | null;
   finishedAt?: string | null;
+}
+
+export interface CompetitionQuestionImportMetrics {
+  totalMs: number;
+  excelParseMs: number;
+  validationMs: number;
+  persistMs: number;
+  commitMs: number;
+  questionBatchCount: number;
+  bindingBatchCount: number;
+  persistSqlCount: number;
+  totalSqlCount: number;
+  batchWriteMs: number[];
+  avgBatchWriteMs?: number | null;
 }
 
 export interface CompetitionMakeExamPlanDetail {

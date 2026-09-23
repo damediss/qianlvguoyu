@@ -151,25 +151,31 @@ public class CollectionPdfExportService {
         continue;
       }
       CollectionEligibilityResult eligibility = eligibilityMap.get(candidateId);
-      if (eligibility == null || !eligibility.eligible()) {
-        errors.add(candidateLabel(candidate) + "：" + (eligibility == null ? "资料状态无法确认" : eligibility.reasonMessage()));
-        continue;
-      }
       PracticalCollectionStatusEntity status = statusMap.get(candidateId);
       if (status == null || !CollectionOverallStatusEnum.canExportCollectionForm(
           status.getOverallStatus(), status.getExceptionStatus())) {
-        errors.add(candidateLabel(candidate) + "：仅已完成或已放行的考生可生成打印版 PDF");
+        errors.add(candidateLabel(candidate) + "：仅已完成、已放行或异常状态的考生可生成打印版 PDF");
         continue;
       }
-      PracticalFingerprintTraceEntity fingerprint = latestFingerprintTrace(
-          tenantId, request.examTaskId(), request.examSessionId(), candidateId);
-      PracticalSignatureRecordEntity signature = latestSignatureRecord(
-          tenantId, request.examTaskId(), request.examSessionId(), candidateId);
-      byte[] fingerprintImage = fingerprint == null || !FingerprintCollectStatusEnum.SUCCESS.getCode().equals(fingerprint.getCollectStatus())
-          ? null : readImageSafely(tenantId, fingerprint.getFingerprintImageFileId(), "指纹图片", candidate);
-      byte[] signatureImage = signature == null ? null
-          : readImageSafely(tenantId, signature.getSignatureFileId(), "电子签名图片", candidate);
-      byte[] avatar = readImageSafely(tenantId, eligibility.avatarFileId(), "证件照", candidate);
+      boolean abnormal = CollectionOverallStatusEnum.isAbnormal(status.getOverallStatus());
+      if (!abnormal && (eligibility == null || !eligibility.eligible())) {
+        errors.add(candidateLabel(candidate) + "：" + (eligibility == null ? "资料状态无法确认" : eligibility.reasonMessage()));
+        continue;
+      }
+      byte[] fingerprintImage = null;
+      byte[] signatureImage = null;
+      if (!abnormal) {
+        PracticalFingerprintTraceEntity fingerprint = latestFingerprintTrace(
+            tenantId, request.examTaskId(), request.examSessionId(), candidateId);
+        PracticalSignatureRecordEntity signature = latestSignatureRecord(
+            tenantId, request.examTaskId(), request.examSessionId(), candidateId);
+        fingerprintImage = fingerprint == null || !FingerprintCollectStatusEnum.SUCCESS.getCode().equals(fingerprint.getCollectStatus())
+            ? null : readImageSafely(tenantId, fingerprint.getFingerprintImageFileId(), "指纹图片", candidate);
+        signatureImage = signature == null ? null
+            : readImageSafely(tenantId, signature.getSignatureFileId(), "电子签名图片", candidate);
+      }
+      byte[] avatar = readImageSafely(
+          tenantId, eligibility == null ? null : eligibility.avatarFileId(), "证件照", candidate);
       // 当前采集模型分别保存最近一次指纹/签名；无签到与交卷独立字段时，四个固定槽位复用当前记录。
       pdfCandidates.add(new CollectionPdfTemplate.PdfCandidate(
           candidate.getCandidateName(), candidate.getIdCardNo(), candidate.getAdmissionTicketNo(),

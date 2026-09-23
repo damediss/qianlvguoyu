@@ -3,6 +3,7 @@ package com.guoyu.platform.competition.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.guoyu.platform.competition.domain.CompetitionScoringSystemBCalculator;
+import com.guoyu.platform.competition.domain.CompetitionStageContentScoringWeights;
 import com.guoyu.platform.competition.entity.CompetitionFormalCandidateExamEntity;
 import com.guoyu.platform.competition.entity.CompetitionFormalExamSessionEntity;
 import com.guoyu.platform.competition.entity.CompetitionRankingEntryEntity;
@@ -78,9 +79,26 @@ public class CompetitionAutomaticScorePipelineService {
     if (isDirectTheorySource(source)) {
       return createDirectTheoryTotal(source, byType.get("theory"), operatorId, now);
     }
-    CompetitionScoreRuleEntity rule = ruleMapper.selectById(source.getScoreRuleId());
-    if (rule == null || !"B".equalsIgnoreCase(rule.getScoringSystem())
-        || !"published".equals(rule.getStatus())) return null;
+    if (source.getScoreRuleId() != null) {
+      CompetitionScoreRuleEntity rule = ruleMapper.selectById(source.getScoreRuleId());
+      if (rule != null && "B".equalsIgnoreCase(rule.getScoringSystem())
+          && "published".equals(rule.getStatus())) {
+        return createRuleWeightedTotal(source, byType, rule, operatorId, now);
+      }
+    }
+    CompetitionStageContentScoringWeights weights = stageContentWeights(source.getStageId());
+    if (weights.valid() && !weights.theoryOnly()) {
+      return createContentWeightedTotal(source, byType, weights, operatorId, now);
+    }
+    return null;
+  }
+
+  private CompetitionTotalScoreSnapshotEntity createRuleWeightedTotal(
+      CompetitionScoreSourceEntity source,
+      Map<String, CompetitionScoreSourceEntity> byType,
+      CompetitionScoreRuleEntity rule,
+      Long operatorId,
+      LocalDateTime now) {
     CompetitionScoreSourceEntity theory = byType.get("theory");
     CompetitionScoreSourceEntity simulation = sourceOrDisabledZero(
         source, byType.get("simulation"), "simulation", rule, operatorId, now);
@@ -104,43 +122,41 @@ public class CompetitionAutomaticScorePipelineService {
     if (!calculation.confirmed()) return null;
     String fingerprint = sha256(theory.getId() + ":" + simulation.getId() + ":"
         + practical.getId() + ":" + rule.getId());
+    return persistTotal(source, rule, theory, simulation, practical, calculation, fingerprint,
+        operatorId, now);
+  }
+
+  private CompetitionTotalScoreSnapshotEntity createContentWeightedTotal(
+      CompetitionScoreSourceEntity source,
+      Map<String, CompetitionScoreSourceEntity> byType,
+      CompetitionStageContentScoringWeights weights,
+      Long operatorId,
+      LocalDateTime now) {
+    CompetitionScoreSourceEntity theory = requiredOrZeroInput(byType.get("theory"), weights, "theory");
+    CompetitionScoreSourceEntity simulation =
+        requiredOrZeroInput(byType.get("simulation"), weights, "simulation");
+    CompetitionScoreSourceEntity practical =
+        requiredOrZeroInput(byType.get("practical"), weights, "practical");
+    if (theory == null || simulation == null || practical == null) return null;
+    var calculation = calculator.calculateLevelScoped(
+        input(theory), input(simulation), input(practical),
+        weights.theoryWeight(), weights.simulationWeight(), weights.practicalWeight());
+    if (!calculation.confirmed()) return null;
+    String fingerprint = sha256("content-weights:"
+        + idOrNone(theory) + ":" + idOrNone(simulation) + ":" + idOrNone(practical) + ":"
+        + weights.theoryWeight().toPlainString() + ":"
+        + weights.simulationWeight().toPlainString() + ":"
+        + weights.practicalWeight().toPlainString());
     CompetitionTotalScoreSnapshotEntity existing = totalMapper.selectOne(
         new LambdaQueryWrapper<CompetitionTotalScoreSnapshotEntity>()
             .eq(CompetitionTotalScoreSnapshotEntity::getInputFingerprint, fingerprint)
             .eq(CompetitionTotalScoreSnapshotEntity::getDeleted, 0).last("LIMIT 1"));
     if (existing != null) {
-      tryGenerateRankingDraft(source, rule, operatorId, now);
+      tryGenerateRankingDraft(source, null, operatorId, now);
       return existing;
     }
-    CompetitionTotalScoreSnapshotEntity current = totalMapper.selectOne(totalScope(source)
-        .eq(CompetitionTotalScoreSnapshotEntity::getCurrentFlag, 1).last("LIMIT 1"));
-    int version = current == null ? 1 : current.getCalculationVersion() + 1;
-    if (current != null) {
-      current.setCurrentFlag(0);
-      current.setUpdatedBy(operatorId);
-      totalMapper.updateById(current);
-    }
-    CompetitionTotalScoreSnapshotEntity total = new CompetitionTotalScoreSnapshotEntity();
-    total.setId(IdWorker.getId()); total.setTenantId(source.getTenantId());
-    total.setEventId(source.getEventId()); total.setStageId(source.getStageId());
-    total.setEventWorkTypeId(source.getEventWorkTypeId());
-    total.setEventWorkTypeLevelId(source.getEventWorkTypeLevelId());
-    total.setContestantMemberId(source.getContestantMemberId());
-    total.setScoreRuleId(rule.getId()); total.setTheorySourceId(theory.getId());
-    total.setSimulationSourceId(simulation.getId()); total.setPracticalSourceId(practical.getId());
-    total.setInputFingerprint(fingerprint); total.setTheoryScore(theory.getRawScore());
-    total.setSimulationScore(simulation.getRawScore()); total.setPracticalScore(practical.getRawScore());
-    total.setSimulationPracticalScore(calculation.simulationPracticalScore());
-    total.setTheoryWeight(rule.getTheoryWeight());
-    total.setSimulationPracticalWeight(combinedWeight(rule));
-    total.setSimulationWeight(rule.getSimulationWeight()); total.setPracticalWeight(rule.getPracticalWeight());
-    total.setTotalScore(calculation.totalScore()); total.setCalculationVersion(version);
-    total.setConfirmationStatus("confirmed"); total.setCurrentFlag(1); total.setCalculatedAt(now);
-    total.setCreatedBy(operatorId); total.setUpdatedBy(operatorId);
-    total.setCreatedAt(now); total.setUpdatedAt(now); total.setDeleted(0);
-    totalMapper.insert(total);
-    tryGenerateRankingDraft(source, rule, operatorId, now);
-    return total;
+    return persistContentWeightedTotal(
+        source, theory, simulation, practical, weights, calculation, fingerprint, operatorId, now);
   }
 
   /**
@@ -210,6 +226,137 @@ public class CompetitionAutomaticScorePipelineService {
     totalMapper.insert(total);
     tryGenerateRankingDraft(source, null, operatorId, now);
     return total;
+  }
+
+  private CompetitionTotalScoreSnapshotEntity persistTotal(
+      CompetitionScoreSourceEntity source,
+      CompetitionScoreRuleEntity rule,
+      CompetitionScoreSourceEntity theory,
+      CompetitionScoreSourceEntity simulation,
+      CompetitionScoreSourceEntity practical,
+      CompetitionScoringSystemBCalculator.SystemBCalculationResult calculation,
+      String fingerprint,
+      Long operatorId,
+      LocalDateTime now) {
+    CompetitionTotalScoreSnapshotEntity existing = totalMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionTotalScoreSnapshotEntity>()
+            .eq(CompetitionTotalScoreSnapshotEntity::getInputFingerprint, fingerprint)
+            .eq(CompetitionTotalScoreSnapshotEntity::getDeleted, 0).last("LIMIT 1"));
+    if (existing != null) {
+      tryGenerateRankingDraft(source, rule, operatorId, now);
+      return existing;
+    }
+    CompetitionTotalScoreSnapshotEntity current = totalMapper.selectOne(totalScope(source)
+        .eq(CompetitionTotalScoreSnapshotEntity::getCurrentFlag, 1).last("LIMIT 1"));
+    int version = current == null ? 1 : current.getCalculationVersion() + 1;
+    if (current != null) {
+      current.setCurrentFlag(0);
+      current.setUpdatedBy(operatorId);
+      totalMapper.updateById(current);
+    }
+    CompetitionTotalScoreSnapshotEntity total = new CompetitionTotalScoreSnapshotEntity();
+    total.setId(IdWorker.getId()); total.setTenantId(source.getTenantId());
+    total.setEventId(source.getEventId()); total.setStageId(source.getStageId());
+    total.setEventWorkTypeId(source.getEventWorkTypeId());
+    total.setEventWorkTypeLevelId(source.getEventWorkTypeLevelId());
+    total.setContestantMemberId(source.getContestantMemberId());
+    total.setScoreRuleId(rule.getId()); total.setTheorySourceId(theory.getId());
+    total.setSimulationSourceId(simulation.getId()); total.setPracticalSourceId(practical.getId());
+    total.setInputFingerprint(fingerprint); total.setTheoryScore(theory.getRawScore());
+    total.setSimulationScore(simulation.getRawScore()); total.setPracticalScore(practical.getRawScore());
+    total.setSimulationPracticalScore(calculation.simulationPracticalScore());
+    total.setTheoryWeight(rule.getTheoryWeight());
+    total.setSimulationPracticalWeight(combinedWeight(rule));
+    total.setSimulationWeight(rule.getSimulationWeight()); total.setPracticalWeight(rule.getPracticalWeight());
+    total.setTotalScore(calculation.totalScore()); total.setCalculationVersion(version);
+    total.setConfirmationStatus("confirmed"); total.setCurrentFlag(1); total.setCalculatedAt(now);
+    total.setCreatedBy(operatorId); total.setUpdatedBy(operatorId);
+    total.setCreatedAt(now); total.setUpdatedAt(now); total.setDeleted(0);
+    totalMapper.insert(total);
+    tryGenerateRankingDraft(source, rule, operatorId, now);
+    return total;
+  }
+
+  private CompetitionTotalScoreSnapshotEntity persistContentWeightedTotal(
+      CompetitionScoreSourceEntity source,
+      CompetitionScoreSourceEntity theory,
+      CompetitionScoreSourceEntity simulation,
+      CompetitionScoreSourceEntity practical,
+      CompetitionStageContentScoringWeights weights,
+      CompetitionScoringSystemBCalculator.SystemBCalculationResult calculation,
+      String fingerprint,
+      Long operatorId,
+      LocalDateTime now) {
+    CompetitionTotalScoreSnapshotEntity current = totalMapper.selectOne(totalScope(source)
+        .eq(CompetitionTotalScoreSnapshotEntity::getCurrentFlag, 1).last("LIMIT 1"));
+    int version = current == null ? 1 : current.getCalculationVersion() + 1;
+    if (current != null) {
+      current.setCurrentFlag(0);
+      current.setUpdatedBy(operatorId);
+      current.setUpdatedAt(now);
+      totalMapper.updateById(current);
+    }
+    CompetitionTotalScoreSnapshotEntity total = new CompetitionTotalScoreSnapshotEntity();
+    total.setId(IdWorker.getId());
+    total.setTenantId(source.getTenantId());
+    total.setEventId(source.getEventId());
+    total.setStageId(source.getStageId());
+    total.setEventWorkTypeId(source.getEventWorkTypeId());
+    total.setEventWorkTypeLevelId(source.getEventWorkTypeLevelId());
+    total.setContestantMemberId(source.getContestantMemberId());
+    total.setScoreRuleId(null);
+    total.setTheorySourceId(sourceId(theory));
+    total.setSimulationSourceId(sourceId(simulation));
+    total.setPracticalSourceId(sourceId(practical));
+    total.setInputFingerprint(fingerprint);
+    total.setTheoryScore(theory.getRawScore());
+    total.setSimulationScore(simulation.getRawScore());
+    total.setPracticalScore(practical.getRawScore());
+    total.setSimulationPracticalScore(calculation.simulationPracticalScore());
+    total.setTheoryWeight(weights.theoryWeight());
+    total.setSimulationWeight(weights.simulationWeight());
+    total.setPracticalWeight(weights.practicalWeight());
+    total.setSimulationPracticalWeight(weights.combinedSimulationPracticalWeight());
+    total.setTotalScore(calculation.totalScore());
+    total.setCalculationVersion(version);
+    total.setConfirmationStatus("confirmed");
+    total.setCurrentFlag(1);
+    total.setCalculatedAt(now);
+    total.setCreatedBy(operatorId);
+    total.setUpdatedBy(operatorId);
+    total.setCreatedAt(now);
+    total.setUpdatedAt(now);
+    total.setDeleted(0);
+    totalMapper.insert(total);
+    tryGenerateRankingDraft(source, null, operatorId, now);
+    return total;
+  }
+
+  private CompetitionScoreSourceEntity requiredOrZeroInput(
+      CompetitionScoreSourceEntity existing,
+      CompetitionStageContentScoringWeights weights,
+      String sourceType) {
+    if (weights.enabled(sourceType)) {
+      if (existing == null
+          || existing.getRawScore() == null
+          || !"confirmed".equalsIgnoreCase(existing.getConfirmationStatus())) {
+        return null;
+      }
+      return existing;
+    }
+    CompetitionScoreSourceEntity zero = new CompetitionScoreSourceEntity();
+    zero.setRawScore(BigDecimal.ZERO);
+    zero.setConfirmationStatus("confirmed");
+    zero.setSourceType(sourceType);
+    return zero;
+  }
+
+  private String idOrNone(CompetitionScoreSourceEntity source) {
+    return source == null || source.getId() == null ? "none" : String.valueOf(source.getId());
+  }
+
+  private Long sourceId(CompetitionScoreSourceEntity source) {
+    return source == null ? null : source.getId();
   }
 
   private boolean isDirectTheorySource(CompetitionScoreSourceEntity source) {
@@ -287,15 +434,18 @@ public class CompetitionAutomaticScorePipelineService {
   }
 
   private boolean isTheoryOnlyStage(Long stageId) {
-    if (stageContentMapper == null || stageId == null) return false;
+    return stageContentWeights(stageId).theoryOnly();
+  }
+
+  private CompetitionStageContentScoringWeights stageContentWeights(Long stageId) {
+    if (stageContentMapper == null || stageId == null) {
+      return CompetitionStageContentScoringWeights.invalid();
+    }
     List<CompetitionStageContentEntity> contents = stageContentMapper.selectList(
         new LambdaQueryWrapper<CompetitionStageContentEntity>()
             .eq(CompetitionStageContentEntity::getStageId, stageId)
-            .eq(CompetitionStageContentEntity::getStatus, "enabled")
             .eq(CompetitionStageContentEntity::getDeleted, 0));
-    return contents != null && !contents.isEmpty()
-        && contents.stream().allMatch(content -> content != null
-            && "theory".equalsIgnoreCase(content.getContentType()));
+    return CompetitionStageContentScoringWeights.from(contents);
   }
 
   private boolean allCandidatesClosed(List<CompetitionFormalCandidateExamEntity> candidates) {
@@ -336,39 +486,8 @@ public class CompetitionAutomaticScorePipelineService {
     scope.setEventWorkTypeId(snapshot.getEventWorkTypeId());
     scope.setEventWorkTypeLevelId(snapshot.getEventWorkTypeLevelId());
     scope.setScoreRuleId(snapshot.getScoreRuleId());
-    CompetitionFormalExamSessionEntity session = sessionMapper.selectOne(
-        new LambdaQueryWrapper<CompetitionFormalExamSessionEntity>()
-            .eq(CompetitionFormalExamSessionEntity::getEventId, snapshot.getEventId())
-            .eq(CompetitionFormalExamSessionEntity::getStageId, snapshot.getStageId())
-            .eq(CompetitionFormalExamSessionEntity::getEventWorkTypeId,
-                snapshot.getEventWorkTypeId())
-            .eq(snapshot.getEventWorkTypeLevelId() != null,
-                CompetitionFormalExamSessionEntity::getEventWorkTypeLevelId,
-                snapshot.getEventWorkTypeLevelId())
-            .isNull(snapshot.getEventWorkTypeLevelId() == null,
-                CompetitionFormalExamSessionEntity::getEventWorkTypeLevelId)
-            .eq(CompetitionFormalExamSessionEntity::getDeleted, 0)
-            .orderByDesc(CompetitionFormalExamSessionEntity::getId).last("LIMIT 1"));
-    if (session == null) return false;
-    List<CompetitionFormalCandidateExamEntity> candidates =
-        candidateMapper.selectByExamSessionId(session.getId());
-    if (!allCandidatesClosed(candidates)) return false;
-    List<RankRow> rows = new ArrayList<>();
-    for (CompetitionFormalCandidateExamEntity candidate : candidates) {
-      if (CompetitionFormalCandidateExamStatus.ABSENT.getCode().equals(candidate.getStatus())) {
-        rows.add(RankRow.absent(candidate));
-        continue;
-      }
-      CompetitionTotalScoreSnapshotEntity total = totalMapper.selectOne(
-          totalScopeWithoutContestant(scope)
-              .eq(CompetitionTotalScoreSnapshotEntity::getContestantMemberId,
-                  candidate.getContestantMemberId())
-              .eq(CompetitionTotalScoreSnapshotEntity::getCurrentFlag, 1)
-              .eq(CompetitionTotalScoreSnapshotEntity::getConfirmationStatus, "confirmed")
-              .last("LIMIT 1"));
-      if (total == null) return false;
-      rows.add(RankRow.completed(candidate, total));
-    }
+    List<RankRow> rows = loadRankingRows(scope);
+    if (rows == null || rows.isEmpty()) return false;
     rows.sort(rankingComparator());
     String currentFingerprint = sha256(rows.stream().map(RankRow::fingerprint)
         .collect(Collectors.joining("|")) + ":rule:" + snapshot.getScoreRuleId());
@@ -377,38 +496,8 @@ public class CompetitionAutomaticScorePipelineService {
 
   private void tryGenerateRankingDraft(CompetitionScoreSourceEntity source,
       CompetitionScoreRuleEntity rule, Long operatorId, LocalDateTime now) {
-    CompetitionFormalExamSessionEntity session = sessionMapper.selectOne(
-        new LambdaQueryWrapper<CompetitionFormalExamSessionEntity>()
-            .eq(CompetitionFormalExamSessionEntity::getEventId, source.getEventId())
-            .eq(CompetitionFormalExamSessionEntity::getStageId, source.getStageId())
-            .eq(CompetitionFormalExamSessionEntity::getEventWorkTypeId, source.getEventWorkTypeId())
-            .eq(source.getEventWorkTypeLevelId() != null,
-                CompetitionFormalExamSessionEntity::getEventWorkTypeLevelId,
-                source.getEventWorkTypeLevelId())
-            .isNull(source.getEventWorkTypeLevelId() == null,
-                CompetitionFormalExamSessionEntity::getEventWorkTypeLevelId)
-            .eq(CompetitionFormalExamSessionEntity::getDeleted, 0)
-            .orderByDesc(CompetitionFormalExamSessionEntity::getId).last("LIMIT 1"));
-    if (session == null) return;
-    List<CompetitionFormalCandidateExamEntity> candidates = candidateMapper.selectByExamSessionId(session.getId());
-    if (!allCandidatesClosed(candidates)) return;
-    List<RankRow> rows = new ArrayList<>();
-    for (CompetitionFormalCandidateExamEntity candidate : candidates) {
-      CompetitionFormalCandidateExamStatus status =
-          CompetitionFormalCandidateExamStatus.fromCode(candidate.getStatus());
-      if (status == CompetitionFormalCandidateExamStatus.ABSENT) {
-        rows.add(RankRow.absent(candidate));
-        continue;
-      }
-      CompetitionTotalScoreSnapshotEntity total = totalMapper.selectOne(totalScopeWithoutContestant(source)
-          .eq(CompetitionTotalScoreSnapshotEntity::getContestantMemberId,
-              candidate.getContestantMemberId())
-          .eq(CompetitionTotalScoreSnapshotEntity::getCurrentFlag, 1)
-          .eq(CompetitionTotalScoreSnapshotEntity::getConfirmationStatus, "confirmed")
-          .last("LIMIT 1"));
-      if (total == null) return;
-      rows.add(RankRow.completed(candidate, total));
-    }
+    List<RankRow> rows = loadRankingRows(source);
+    if (rows == null || rows.isEmpty()) return;
     rows.sort(rankingComparator());
     String fingerprint = sha256(rows.stream().map(RankRow::fingerprint)
         .collect(Collectors.joining("|")) + ":rule:" + (rule == null ? null : rule.getId()));
@@ -427,7 +516,7 @@ public class CompetitionAutomaticScorePipelineService {
     snapshot.setScoreRuleId(rule == null ? null : rule.getId());
     snapshot.setSnapshotVersion(latest == null ? 1 : latest.getSnapshotVersion() + 1);
     snapshot.setInputFingerprint(fingerprint); snapshot.setStatus("draft");
-    snapshot.setGenerationReason(rule == null ? "理论成绩齐备后自动生成" : "三类成绩齐备后自动生成");
+    snapshot.setGenerationReason(rule == null ? "赛段内容权重计分后自动生成" : "三类成绩齐备后自动生成");
     snapshot.setGeneratedAt(now);
     snapshot.setCreatedBy(operatorId); snapshot.setUpdatedBy(operatorId);
     snapshot.setCreatedAt(now); snapshot.setUpdatedAt(now); snapshot.setDeleted(0);
@@ -474,6 +563,68 @@ public class CompetitionAutomaticScorePipelineService {
       entry.setTiedFlag(entry.getTieKey() != null && tieCounts.get(entry.getTieKey()) > 1 ? 1 : 0);
       entryMapper.insert(entry);
     }
+  }
+
+  private List<RankRow> loadRankingRows(CompetitionScoreSourceEntity source) {
+    CompetitionFormalExamSessionEntity session = sessionMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionFormalExamSessionEntity>()
+            .eq(CompetitionFormalExamSessionEntity::getEventId, source.getEventId())
+            .eq(CompetitionFormalExamSessionEntity::getStageId, source.getStageId())
+            .eq(CompetitionFormalExamSessionEntity::getEventWorkTypeId, source.getEventWorkTypeId())
+            .eq(source.getEventWorkTypeLevelId() != null,
+                CompetitionFormalExamSessionEntity::getEventWorkTypeLevelId,
+                source.getEventWorkTypeLevelId())
+            .isNull(source.getEventWorkTypeLevelId() == null,
+                CompetitionFormalExamSessionEntity::getEventWorkTypeLevelId)
+            .eq(CompetitionFormalExamSessionEntity::getDeleted, 0)
+            .orderByDesc(CompetitionFormalExamSessionEntity::getId).last("LIMIT 1"));
+    if (session == null) {
+      return rankingRowsFromTotals(source);
+    }
+    List<CompetitionFormalCandidateExamEntity> candidates =
+        candidateMapper.selectByExamSessionId(session.getId());
+    if (!allCandidatesClosed(candidates)) return null;
+    List<RankRow> rows = new ArrayList<>();
+    for (CompetitionFormalCandidateExamEntity candidate : candidates) {
+      CompetitionFormalCandidateExamStatus status =
+          CompetitionFormalCandidateExamStatus.fromCode(candidate.getStatus());
+      if (status == CompetitionFormalCandidateExamStatus.ABSENT) {
+        rows.add(RankRow.absent(candidate));
+        continue;
+      }
+      CompetitionTotalScoreSnapshotEntity total = totalMapper.selectOne(
+          totalScopeWithoutContestant(source)
+              .eq(CompetitionTotalScoreSnapshotEntity::getContestantMemberId,
+                  candidate.getContestantMemberId())
+              .eq(CompetitionTotalScoreSnapshotEntity::getCurrentFlag, 1)
+              .eq(CompetitionTotalScoreSnapshotEntity::getConfirmationStatus, "confirmed")
+              .last("LIMIT 1"));
+      if (total == null) return null;
+      rows.add(RankRow.completed(candidate, total));
+    }
+    return rows;
+  }
+
+  private List<RankRow> rankingRowsFromTotals(CompetitionScoreSourceEntity source) {
+    List<CompetitionTotalScoreSnapshotEntity> totals = totalMapper.selectList(
+        totalScopeWithoutContestant(source)
+            .eq(CompetitionTotalScoreSnapshotEntity::getCurrentFlag, 1)
+            .eq(CompetitionTotalScoreSnapshotEntity::getConfirmationStatus, "confirmed"));
+    if (totals == null || totals.isEmpty()) return List.of();
+    List<RankRow> rows = new ArrayList<>();
+    for (CompetitionTotalScoreSnapshotEntity total : totals) {
+      if (total == null || total.getContestantMemberId() == null) continue;
+      rows.add(RankRow.completed(syntheticCandidate(total.getContestantMemberId()), total));
+    }
+    return rows;
+  }
+
+  private CompetitionFormalCandidateExamEntity syntheticCandidate(Long contestantMemberId) {
+    CompetitionFormalCandidateExamEntity candidate = new CompetitionFormalCandidateExamEntity();
+    candidate.setId(contestantMemberId);
+    candidate.setContestantMemberId(contestantMemberId);
+    candidate.setStatus(CompetitionFormalCandidateExamStatus.SUBMITTED.getCode());
+    return candidate;
   }
 
   private LambdaQueryWrapper<CompetitionScoreSourceEntity> scopeSources(CompetitionScoreSourceEntity s) {

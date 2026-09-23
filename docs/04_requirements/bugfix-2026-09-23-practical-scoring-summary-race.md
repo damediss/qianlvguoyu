@@ -1,7 +1,7 @@
 # 实操评分题级汇总并发竞态修复（B 方案移交文档）
 
 > 日期：2026-09-23
-> 状态：**待实施**（生产已用临时手段解封个别考生，根治未做）
+> 状态：**代码已改，待测试与生产验证**（`mvn -DskipTests compile` 通过；未运行测试；生产验证待部署后执行）
 > 模块：认定考评 · 实操评分（`certification` / `scoring` 包）
 > 严重度：P1 —— 特定时序下考生永久无法完成考试，且界面无报错入口、后台无错误日志，现场极难自助排查
 
@@ -49,7 +49,7 @@ paper_question_id=54  status=pending  submitted_count=2  average_score=NULL
 - 问题在步骤 2：**MySQL 默认 REPEATABLE READ 下，一致性快照在事务首次读时建立**。后到事务（…5222）请求早期的读（加载任务详情等）建立了快照 → 随后虽拿到行锁，这条计数仍是**快照读**，看不到先到事务（…4274）刚提交的 `submitted` → 数出 2 → 写回 `pending/submitted_count=2`。
 - **永不自愈的原因**：「完成考试」入口 `completeCandidate`（约 :783-811）只调 `calculateCandidateResult` 重算**人级**行，**从不重算题级行**；题级行卡在 `pending` → 人级 `completed_question_count=5/6` → 永远抛"考生成绩尚未汇总完成"（:807）。
 
-**这与踩坑库 #27（AI复习物化竞态）是同一类 bug：锁了行但计数走快照读。** #27 的结论直接适用——加锁不换读法没用，必须把关键读改为当前读。
+**这与踩坑库 #27（AI复习物化竞态）是同一类 bug：锁了汇总行，但任务统计仍使用过期快照。** 修复需要让同一事务中的每次统计都能看到语句开始时已提交的任务状态；仅增加行锁不会刷新 REPEATABLE READ 快照。
 
 ### 2.3 正常逻辑参考（第 54 题的正确值）
 
@@ -71,64 +71,46 @@ WHERE qr.deleted = 0 AND qr.status = 'pending'
 
 注意：此 SQL 仅能在**与库同环境的会话**判断（生产只读查询可跑；写操作仅部署方/用户在服务器执行）。
 
-## 4. B 修复计划（待同事实施）
+## 4. 修复方案与实施情况
 
-### 4.1 B1 根治：计数改当前读
+### 4.1 B1 根治：汇总事务使用 READ COMMITTED
 
-`calculateResults` 的 submitted 统计从普通 `selectList` 改为**加锁读**（`FOR UPDATE`），使拿到题级行锁后读到最新已提交数据。
+提交、异常分数调整重提、退回以及完成考试入口使用 `Isolation.READ_COMMITTED`。在题级行 `FOR UPDATE` 串行化同题汇总后，submitted 任务统计仍使用普通查询；READ COMMITTED 使每条查询读取该语句开始时已提交的数据，并包含本事务自己的任务状态更新。
 
-实施要点：
+此处不再对所有 submitted 任务行追加 `FOR UPDATE`：提交链路先锁考评员自己的任务行、后锁题级汇总行；反向锁住全部任务行会引入交叉等待风险。
 
-1. 在 `CertificationAssessorTaskMapper` 新增方法（SQL 风格参照 `CertificationPracticalQuestionResultMapper.lockResult` 的写法；**不要手拼 `tenant_id` 条件**，MyBatis-Plus 租户插件会自动补）：
+`calculateResults` 与完成入口自愈共用 `submittedTasks(...)` 和 `recomputeQuestionResult(...)`，避免两条路径的计数、偏差阈值和均分口径分叉。
 
-   ```java
-   @Select("SELECT * FROM certification_assessor_task "
-       + "WHERE task_id = #{taskId} AND candidate_id = #{candidateId} "
-       + "AND paper_question_id = #{paperQuestionId} AND status = 'submitted' "
-       + "AND deleted = 0 FOR UPDATE")
-   List<CertificationAssessorTaskEntity> lockSubmittedByQuestion(
-       @Param("taskId") Long taskId,
-       @Param("candidateId") Long candidateId,
-       @Param("paperQuestionId") Long paperQuestionId);
-   ```
+### 4.2 B2 加固：完成入口自愈（已实施）
 
-2. `calculateResults` 中替换统计调用；**偏差校验与均分计算继续消费这一个结果集**（逻辑不变）。
-3. 锁序分析（必须在 PR 描述中写明）：既有顺序是 题级行锁 → 任务行锁；两个并发 `calculateResults` 同题时先竞争同一把题级行锁（天然串行），不同题时任务行集合不相交——**无新增死锁面**。
-
-### 4.2 B2 加固：完成入口自愈
-
-`completeCandidate` 在抛"尚未汇总完成"之前，增加一段**修复性重算**：把人级行的 `pending` 溯源到题级行，凡是"3 任务已提交但题级行未 completed"的题，按当前读重算一遍，再重算人级行。这样：
+`completeCandidate` 校验该考生所有考评任务已提交后，按 `paper_question_id` 升序遍历非 `completed` 的题级行并锁定行，读取已提交任务后调用共享计算逻辑，再重算人级行。这样：
 
 - 存量卡住的考生（含周家增这类已按旧逻辑写入的 pending 行）**部署后重试点「完成考试」即自动修复**，无需手工改库；
 - 未来任何原因（含 B1 未覆盖到的路径）造成的同类卡态，完成入口兜底。
 
 实施要点：
 
-1. **抽取共用计算**：把 `calculateResults` 里"按已提交任务集计算单题结果（偏差→review_required / 均分→completed / 不足 3 人→pending）"的逻辑抽成独立方法（如 `recomputeQuestionResult(questionResult, submittedTasks)`），提交路径与修复路径**共用同一份实现**，禁止复制粘贴两套口径。
-2. `completeCandidate` 结构调整（伪代码）：
+1. 共用计算已抽取为 `recomputeQuestionResult(questionResult, submittedTasks)`，提交路径和修复路径调用同一实现。
+2. `completeCandidate` 在重新计算人级结果之前修复所有非完成题级行：
 
    ```java
+   repairIncompleteQuestionResults(taskId, candidateId);
    calculateCandidateResult(taskId, candidateId);
    CertificationPracticalCandidateResultEntity result = selectCandidateResult(...);
    if (result == null || !"completed".equals(result.getStatus())) {
      if (result != null && "review_required".equals(result.getStatus())) {
        throw new BusinessException(BAD_REQUEST, "三名考评员评分偏差超过10分，请审核并退回修正后再完成考试"); // 语义不变
      }
-     repairStuckQuestionResults(taskId, candidateId);   // 新增：当前读重算所有非 completed 题级行
-     calculateCandidateResult(taskId, candidateId);     // 重算后人级行刷新
-     result = selectCandidateResult(...);               // 重新读取
-     if (result == null || !"completed".equals(result.getStatus())) {
-       throw new BusinessException(BAD_REQUEST, "考生成绩尚未汇总完成"); // 最终兜底，文案不变
-     }
+     throw new BusinessException(BAD_REQUEST, "考生成绩尚未汇总完成"); // 文案不变
    }
    ```
 
-3. `repairStuckQuestionResults` 语义：
+3. `repairIncompleteQuestionResults` 语义：
    - 遍历该考生题级行（含 `pending`，以及防御性处理 `review_required`——重算后若偏差仍 >10 会自然回到 `review_required`，偏差提示文案不变）；
-   - 对每题用 `lockSubmittedByQuestion` 当前读取已提交任务集；
+   - 对每题先按固定顺序锁题级汇总行，再以 READ COMMITTED 查询已提交任务集；
    - **任务行缺失（汇总行存在但无任何任务行）时不建任务行**（任务行是考务生成的，不属于本修复范围），该题保持原状并在日志 WARN 留痕（含 taskId/candidateId/paperQuestionId）；
-   - 汇总行本身不存在的情况：`calculateCandidateResult` 对空结果集本就落 `pending`，修复函数可按 `ensureQuestionResult`（约 :3590）同款逻辑补建行后再重算（可选加固，建议做）。
-4. 修复路径与提交路径一样在 `completeCandidate` 的 `@Transactional` 内执行，锁与事务语义一致。
+   - 汇总行本身不存在的情况：不在本次修复中生成考评任务或汇总行；人级汇总继续按现有逻辑落 `pending`。
+4. 修复路径在 `completeCandidate` 的 READ COMMITTED 事务内执行，与正常提交共享同题汇总行锁。偏差仍超限时用专属业务异常保留原提示，同时允许刚重算出的 `review_required` 题级与人级状态提交，避免每次点击都只在事务内临时看到审核状态。
 
 ### 4.3 不做的事（范围边界）
 
@@ -169,15 +151,15 @@ WHERE qr.deleted = 0 AND qr.status = 'pending'
 |---|---|
 | 报错抛出点 | `PracticalScoringApplicationService.completeCandidate` :807 |
 | 完成入口整体 | 同文件 :783-811 |
-| 题级计算（待改 B1） | 同文件 `calculateResults` :2655-2706 |
+| 题级计算（B1 已改） | 同文件 `calculateResults`（`submittedTasks` + `recomputeQuestionResult`） |
 | 人级计算 | 同文件 `calculateCandidateResult` :2708-2743 |
 | 两个提交入口 | 同文件 :2640-2654（主提交）、:730-752（调整重提） |
 | 汇总行生成（ensure*） | 同文件 :2953-2956（调用点）、:3590-3650 |
-| 题级行锁参考写法 | `CertificationPracticalQuestionResultMapper.lockResult`（FOR UPDATE + 租户插件自动补条件） |
+| 题级行锁参考写法 | `CertificationPracticalQuestionResultMapper.lockResult`（FOR UPDATE + 租户条件） |
 | 同类事故 | 踩坑库 #27（RR 快照读 vs 当前读，含修法与约定） |
 
 ## 8. 交接备注
 
-- 修复分支命名：`fix/<task-id>-practical-scoring-summary-race`；提交格式 `fix(backend): 实操评分题级汇总并发竞态修复（当前读+完成入口自愈）`，body 关联本文档。
+- 修复分支命名建议：`fix/<task-id>-practical-scoring-summary-race`；提交格式 `fix(backend): 实操评分题级汇总并发竞态修复（READ COMMITTED+完成入口自愈）`，body 关联本文档。
 - 本修复上线需**重新打包部署 platform-api**；部署后历史卡态由 B2 自愈，无需数据订正脚本。
 - 修复完成后请同步把本类事故沉淀为踩坑库条目（参照 #27 格式：现象/根因/修法/约定）。

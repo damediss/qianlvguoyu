@@ -1,5 +1,6 @@
 package com.guoyu.platform.certification.collection.export.service;
 
+import com.guoyu.platform.certification.collection.enums.CollectionOverallStatusEnum;
 import java.awt.image.BufferedImage;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
@@ -118,18 +119,20 @@ public final class CollectionPdfTemplate {
       content.stroke();
     }
 
+    boolean showCaptureImagePlaceholder = candidate != null
+        && !CollectionOverallStatusEnum.isAbnormal(candidate.status());
     if (candidate != null) {
       drawFixedImage(content, font, document, candidate.avatar(),
           x + INNER_PADDING, y + INFO_HEIGHT + INNER_PADDING,
           subWidth - INNER_PADDING * 2, imageHeight - INNER_PADDING * 2, true);
       drawFixedImage(content, font, document, candidate.checkInFingerprint(),
           x + subWidth + INNER_PADDING, y + INFO_HEIGHT + INNER_PADDING,
-          subWidth - INNER_PADDING * 2, imageHeight - INNER_PADDING * 2, true);
+          subWidth - INNER_PADDING * 2, imageHeight - INNER_PADDING * 2, showCaptureImagePlaceholder);
     }
     drawSignatureColumn(content, font, document,
         candidate == null ? null : candidate.checkInSignature(),
         candidate == null ? null : candidate.submitSignature(),
-        x + subWidth * 2, y + INFO_HEIGHT, imageHeight, candidate != null);
+        x + subWidth * 2, y + INFO_HEIGHT, imageHeight, showCaptureImagePlaceholder);
 
     float rowHeight = INFO_HEIGHT / 3f;
     for (int row = 1; row < 3; row++) {

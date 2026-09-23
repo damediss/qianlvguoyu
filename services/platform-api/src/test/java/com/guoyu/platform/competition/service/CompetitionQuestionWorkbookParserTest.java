@@ -222,6 +222,42 @@ class CompetitionQuestionWorkbookParserTest {
     return file;
   }
 
+  @Test
+  void parsesTwelveHundredTheoryRowsUnderFifteenSeconds() throws Exception {
+    Path file = tempDir.resolve("theory-1200.xlsx");
+    try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+      var sheet = workbook.createSheet("理论题库");
+      String[] headers = {"序号", "题型", "题干", "参考答案", "选项A", "选项B", "选项C", "选项D",
+          "考评点完整编码", "考评点名称", "层级路径"};
+      var header = sheet.createRow(0);
+      for (int i = 0; i < headers.length; i++) header.createCell(i).setCellValue(headers[i]);
+      for (int i = 1; i <= 1200; i++) {
+        var row = sheet.createRow(i);
+        row.createCell(0).setCellValue(i);
+        row.createCell(1).setCellValue("单选题");
+        row.createCell(2).setCellValue("安全操作题干" + i);
+        row.createCell(3).setCellValue("A");
+        row.createCell(4).setCellValue("甲");
+        row.createCell(5).setCellValue("乙");
+        row.createCell(6).setCellValue("丙");
+        row.createCell(7).setCellValue("丁");
+        row.createCell(8).setCellValue("A-1-1-" + i);
+        row.createCell(9).setCellValue("考评点" + i);
+        row.createCell(10).setCellValue("一级/二级/考评点" + i);
+      }
+      try (var output = Files.newOutputStream(file)) {
+        workbook.write(output);
+      }
+    }
+
+    long started = System.nanoTime();
+    var result = parser.parse(file, "theory");
+    long parseMs = (System.nanoTime() - started) / 1_000_000L;
+    System.out.println("theory-1200-parse-ms=" + parseMs);
+    assertThat(result.questions()).hasSize(1200);
+    assertThat(parseMs).as("1200 theory rows parse ms=" + parseMs).isLessThan(15_000L);
+  }
+
   private void writePracticalRow(
       org.apache.poi.ss.usermodel.Row row,
       int sequence,

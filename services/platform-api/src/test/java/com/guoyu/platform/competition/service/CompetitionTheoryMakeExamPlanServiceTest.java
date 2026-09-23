@@ -2,6 +2,7 @@ package com.guoyu.platform.competition.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -89,6 +90,7 @@ class CompetitionTheoryMakeExamPlanServiceTest {
     when(blueprintService.findForEvent(any(), any(), eq(700L))).thenReturn(blueprint());
     when(blueprintNodeMapper.selectByBlueprint(1L, 700L)).thenReturn(nodes());
     when(bindingMapper.selectByBlueprint(1L, 700L)).thenReturn(bindings());
+    when(blueprintService.listEffectiveBindings(anyLong(), anyLong())).thenReturn(null);
     when(questionMapper.selectList(any())).thenReturn(List.of(question(101L), question(102L)));
     when(planMapper.insert(any(CompetitionMakeExamPlanEntity.class))).thenReturn(1);
     when(detailMapper.insert(any(CompetitionMakeExamPlanDetailEntity.class))).thenReturn(1);
@@ -162,6 +164,20 @@ class CompetitionTheoryMakeExamPlanServiceTest {
     assertThat(precheck.candidateCount()).isEqualTo(2);
     assertThat(precheck.unboundQuestionCount()).isEqualTo(3);
     assertThat(precheck.warnings()).anyMatch(item -> item.contains("3道题未绑定"));
+  }
+
+  @Test
+  void precheckUsesEffectiveBindingsInheritedFromArchivedBlueprint() {
+    when(bindingMapper.selectByBlueprint(1L, 700L)).thenReturn(List.of());
+    when(blueprintService.listEffectiveBindings(1L, 700L)).thenReturn(bindings());
+    List<CompetitionQuestionEntity> scopeQuestions = List.of(question(101L), question(102L));
+    when(questionMapper.selectList(any())).thenReturn(scopeQuestions, scopeQuestions);
+
+    var precheck = service.precheck(1001L, requestWithLegacyTopicRule());
+
+    assertThat(precheck.ready()).isTrue();
+    assertThat(precheck.candidateCount()).isEqualTo(2);
+    assertThat(precheck.unboundQuestionCount()).isZero();
   }
 
   @Test

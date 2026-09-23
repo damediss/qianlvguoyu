@@ -51,6 +51,17 @@ class CompetitionRankingAllocatorTest {
   }
 
   @Test
+  void allowsStageContentWeightedRankingWithoutScoreRuleId() {
+    RankingScope contentWeighted = new RankingScope(10L, 20L, 30L, null);
+    var result = allocator.allocate(contentWeighted, List.of(
+        new RankingCandidate(
+            contentWeighted, 1L, new BigDecimal("99.83"), "99.83|99.83|0|0",
+            CompetitionRankingContestantStatus.COMPLETED)));
+
+    assertThat(result).extracting(item -> item.rank()).containsExactly(1);
+  }
+
+  @Test
   void rejectsCandidateFromDifferentWorkTypeScope() {
     RankingScope otherWorkType = new RankingScope(10L, 20L, 31L, 40L);
     RankingCandidate candidate = new RankingCandidate(

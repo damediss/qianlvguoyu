@@ -7,7 +7,7 @@ public record CompetitionTotalScoreCalculateReq(
     @NotNull Long eventWorkTypeId,
     Long eventWorkTypeLevelId,
     @NotNull Long contestantMemberId,
-    @NotNull Long scoreRuleId) {
+    Long scoreRuleId) {
 
   public CompetitionTotalScoreCalculateReq(
       Long stageId, Long eventWorkTypeId, Long contestantMemberId, Long scoreRuleId) {

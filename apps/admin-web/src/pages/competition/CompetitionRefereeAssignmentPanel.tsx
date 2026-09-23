@@ -142,7 +142,7 @@ export function CompetitionRefereeAssignmentPanel({ stageId }: { stageId: Compet
         style={{ marginBottom: 16 }}
         message={`赛段：${workspace?.stageName || idValue(stageId)}${workspace?.levelName ? ` · ${workspace.levelName}` : ''}`}
         description={canManage
-          ? '请在「裁判管理 / 裁判小组」中创建并确定小组后，在此为选手选择绑定。时间重叠的赛段不能调用同一裁判小组。'
+          ? '请在「裁判管理 / 裁判小组」中创建并确定小组后，在此为选手选择绑定。同一裁判小组不能同时承担不同赛事，但可以参加同一赛事的多个赛段。'
           : '当前为只读模式；选手只能查看已经绑定的裁判小组。'}
       />
 
@@ -152,7 +152,7 @@ export function CompetitionRefereeAssignmentPanel({ stageId }: { stageId: Compet
           showIcon
           style={{ marginBottom: 12 }}
           message="暂无可绑定的裁判小组"
-          description="请先在裁判管理下的「裁判小组」中创建并确定小组。若小组已存在但仍不可选，可能是组内裁判不具备当前工种等级，或已被同时段赛段占用。"
+          description="请先在裁判管理下的「裁判小组」中创建并确定小组。若小组已存在但仍不可选，可能是组内裁判不具备当前工种等级，或已承担其他赛事的裁判任务。"
         />
       )}
       {occupiedGroups.length > 0 && (

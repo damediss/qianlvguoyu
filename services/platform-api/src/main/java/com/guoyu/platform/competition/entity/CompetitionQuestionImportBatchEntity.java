@@ -20,6 +20,7 @@ public class CompetitionQuestionImportBatchEntity extends BaseEntity {
   private Integer successCount;
   private Integer failureCount;
   private String errorDetail;
+  private String metricsJson;
   private LocalDateTime startedAt;
   private LocalDateTime finishedAt;
 
@@ -49,6 +50,8 @@ public class CompetitionQuestionImportBatchEntity extends BaseEntity {
   public void setFailureCount(Integer failureCount) { this.failureCount = failureCount; }
   public String getErrorDetail() { return errorDetail; }
   public void setErrorDetail(String errorDetail) { this.errorDetail = errorDetail; }
+  public String getMetricsJson() { return metricsJson; }
+  public void setMetricsJson(String metricsJson) { this.metricsJson = metricsJson; }
   public LocalDateTime getStartedAt() { return startedAt; }
   public void setStartedAt(LocalDateTime startedAt) { this.startedAt = startedAt; }
   public LocalDateTime getFinishedAt() { return finishedAt; }

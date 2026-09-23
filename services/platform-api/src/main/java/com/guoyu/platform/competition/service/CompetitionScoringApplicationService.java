@@ -280,6 +280,9 @@ public class CompetitionScoringApplicationService {
         principal.getTenantId(), eventId, request.stageId(),
         request.eventWorkTypeId(), request.eventWorkTypeLevelId(),
         request.contestantMemberId(), request.scoreRuleId());
+    if (request.scoreRuleId() == null) {
+      return calculateFromStageContent(eventId, request, principal);
+    }
     CompetitionScoreRuleEntity rule =
         scoreRuleDomainService.getById(principal.getTenantId(), request.scoreRuleId());
 
@@ -351,6 +354,41 @@ public class CompetitionScoringApplicationService {
     snapshot.setUpdatedBy(principal.getUserId());
     ensureSingleRow(totalScoreSnapshotMapper.insert(snapshot), "总分快照保存失败");
     return CompetitionScoringConverter.toVO(snapshot);
+  }
+
+  private CompetitionTotalScoreSnapshotVO calculateFromStageContent(
+      Long eventId,
+      CompetitionTotalScoreCalculateReq request,
+      PlatformUserPrincipal principal) {
+    if (automaticScorePipelineService == null) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "成绩计算流水线未就绪");
+    }
+    CompetitionScoreSourceEntity source = scoreSourceMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionScoreSourceEntity>()
+            .eq(CompetitionScoreSourceEntity::getEventId, eventId)
+            .eq(CompetitionScoreSourceEntity::getStageId, request.stageId())
+            .eq(CompetitionScoreSourceEntity::getEventWorkTypeId, request.eventWorkTypeId())
+            .eq(request.eventWorkTypeLevelId() != null,
+                CompetitionScoreSourceEntity::getEventWorkTypeLevelId,
+                request.eventWorkTypeLevelId())
+            .isNull(request.eventWorkTypeLevelId() == null,
+                CompetitionScoreSourceEntity::getEventWorkTypeLevelId)
+            .eq(CompetitionScoreSourceEntity::getContestantMemberId, request.contestantMemberId())
+            .eq(CompetitionScoreSourceEntity::getCurrentFlag, 1)
+            .eq(CompetitionScoreSourceEntity::getConfirmationStatus, CURRENT_CONFIRMED)
+            .eq(CompetitionScoreSourceEntity::getDeleted, 0)
+            .orderByDesc(CompetitionScoreSourceEntity::getRevisionNo)
+            .last("LIMIT 1"));
+    if (source == null) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "缺少当前已确认成绩来源");
+    }
+    CompetitionTotalScoreSnapshotEntity total =
+        automaticScorePipelineService.onConfirmedSource(source, principal.getUserId());
+    if (total == null) {
+      throw new BusinessException(
+          ErrorCode.UNPROCESSABLE_ENTITY, "科目成绩尚未齐备，无法按赛段内容权重计算综合成绩");
+    }
+    return CompetitionScoringConverter.toVO(total);
   }
 
   @Transactional(readOnly = true)
@@ -644,7 +682,9 @@ public class CompetitionScoringApplicationService {
         .eq(CompetitionTotalScoreSnapshotEntity::getEventWorkTypeLevelId, request.eventWorkTypeLevelId())
         .eq(CompetitionTotalScoreSnapshotEntity::getContestantMemberId,
             request.contestantMemberId())
-        .eq(CompetitionTotalScoreSnapshotEntity::getScoreRuleId, request.scoreRuleId());
+        .eq(request.scoreRuleId() != null,
+            CompetitionTotalScoreSnapshotEntity::getScoreRuleId, request.scoreRuleId())
+        .isNull(request.scoreRuleId() == null, CompetitionTotalScoreSnapshotEntity::getScoreRuleId);
   }
 
   private LambdaQueryWrapper<CompetitionRankingSnapshotEntity> rankingSnapshotScope(

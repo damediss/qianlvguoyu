@@ -15,6 +15,8 @@ import com.guoyu.platform.competition.entity.CompetitionFormalCandidateQuestionS
 import com.guoyu.platform.competition.entity.CompetitionFormalCandidateResultEntity;
 import com.guoyu.platform.competition.entity.CompetitionFormalExamPaperSnapshotEntity;
 import com.guoyu.platform.competition.entity.CompetitionFormalExamQuestionSnapshotEntity;
+import com.guoyu.platform.competition.entity.CompetitionFormalExamSessionEntity;
+import com.guoyu.platform.competition.entity.CompetitionScoreSourceEntity;
 import com.guoyu.platform.competition.exam.formal.FormalExamCandidateQuestionProjection;
 import com.guoyu.platform.competition.exam.formal.scoring.FormalExamChoiceScoringSupport;
 import com.guoyu.platform.competition.exam.formal.scoring.FormalExamFillScorer;
@@ -29,6 +31,8 @@ import com.guoyu.platform.competition.mapper.CompetitionFormalCandidateQuestionS
 import com.guoyu.platform.competition.mapper.CompetitionFormalCandidateResultMapper;
 import com.guoyu.platform.competition.mapper.CompetitionFormalExamPaperSnapshotMapper;
 import com.guoyu.platform.competition.mapper.CompetitionFormalExamQuestionSnapshotMapper;
+import com.guoyu.platform.competition.mapper.CompetitionFormalExamSessionMapper;
+import com.guoyu.platform.competition.mapper.CompetitionScoreSourceMapper;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -54,6 +58,10 @@ class CompetitionFormalExamCandidateScoringServiceTest {
       Mockito.mock(CompetitionFormalCandidateResultMapper.class);
   private final CompetitionFormalCandidateQuestionScoreMapper scores =
       Mockito.mock(CompetitionFormalCandidateQuestionScoreMapper.class);
+  private final CompetitionFormalExamSessionMapper sessions =
+      Mockito.mock(CompetitionFormalExamSessionMapper.class);
+  private final CompetitionScoreSourceMapper scoreSources =
+      Mockito.mock(CompetitionScoreSourceMapper.class);
 
   private CompetitionFormalExamCandidateScoringService service;
 
@@ -131,6 +139,39 @@ class CompetitionFormalExamCandidateScoringServiceTest {
       verify(results).updateById(resultCaptor.capture());
       assertThat(resultCaptor.getValue().getTotalScore()).isEqualByComparingTo("1.00");
     }
+  }
+
+  @Test
+  void formalTheorySourceUsesCalculatedResultWithoutPublishedScoreRule() {
+    stubSubmitted("auto_submitted");
+    CompetitionFormalExamPaperSnapshotEntity paper = paper();
+    paper.setQuestionCount(1);
+    paper.setTotalScore(new BigDecimal("1.00"));
+    when(papers.selectById(9201L)).thenReturn(paper);
+    when(questions.selectByPaperSnapshotId(9201L)).thenReturn(List.of(
+        question(9301L, 1, "single", "1.00", "[\"B\"]", null)));
+    when(answers.selectByCandidateExamId(9101L)).thenReturn(List.of(choice(9301L, 1, "9301:B")));
+
+    CompetitionFormalExamSessionEntity session = new CompetitionFormalExamSessionEntity();
+    session.setId(9001L);
+    session.setTenantId(1L);
+    session.setEventId(8001L);
+    session.setStageId(8002L);
+    session.setEventWorkTypeId(8003L);
+    when(sessions.selectById(9001L)).thenReturn(session);
+    when(scoreSources.insert(any(CompetitionScoreSourceEntity.class))).thenReturn(1);
+    service.setScoreSourceDependencies(sessions, scoreSources, null);
+
+    assertThat(service.scoreCandidate(9001L, 9101L, NOW))
+        .isEqualTo(CompetitionFormalExamCandidateScoringService.Outcome.SCORED);
+
+    ArgumentCaptor<CompetitionScoreSourceEntity> sourceCaptor =
+        ArgumentCaptor.forClass(CompetitionScoreSourceEntity.class);
+    verify(scoreSources).insert(sourceCaptor.capture());
+    assertThat(sourceCaptor.getValue().getSourceType()).isEqualTo("theory");
+    assertThat(sourceCaptor.getValue().getRawScore()).isEqualByComparingTo("1.00");
+    assertThat(sourceCaptor.getValue().getScoreRuleId()).isNull();
+    verify(papers, never()).updateById(any(CompetitionFormalExamPaperSnapshotEntity.class));
   }
 
   @Test

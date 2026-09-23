@@ -78,16 +78,34 @@
 .competition-score-readiness,
 .competition-score-import-alert,
 .competition-score-subject-alert {
-  margin: 12px 0;
+  margin: 8px 0;
   border-radius: 12px;
 }
 
+.competition-score-readiness.ant-alert,
+.competition-score-import-alert.ant-alert,
+.competition-score-subject-alert.ant-alert {
+  padding: 7px 12px;
+}
+
+.competition-score-readiness .ant-alert-message,
+.competition-score-import-alert .ant-alert-message,
+.competition-score-subject-alert .ant-alert-message {
+  font-size: 13px;
+}
+
+.competition-score-readiness .ant-alert-description,
+.competition-score-import-alert .ant-alert-description,
+.competition-score-subject-alert .ant-alert-description {
+  font-size: 12px;
+}
+
 .competition-score-main-tabs {
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .competition-score-main-tabs > .ant-tabs-nav {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .competition-score-main-tabs > .ant-tabs-nav .ant-tabs-tab {
@@ -100,13 +118,76 @@
 }
 
 .competition-score-overview-head {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
+}
+
+.competition-score-overview-card .ant-card-body,
+.competition-score-workbench-card .ant-card-body {
+  padding: 16px 18px;
 }
 
 .competition-score-overview-card .ant-table-wrapper,
 .competition-score-workbench-card .ant-table-wrapper,
 .competition-score-trace-card .ant-table-wrapper {
   overflow: hidden;
+}
+
+.competition-score-overview-card .ant-table-thead > tr > th,
+.competition-score-overview-card .ant-table-tbody > tr > td,
+.competition-score-workbench-card .ant-table-thead > tr > th,
+.competition-score-workbench-card .ant-table-tbody > tr > td {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+/* 综合成绩列：使用列 class 定位，兼容动态科目列数量和列顺序调整。 */
+.competition-score-overview-card
+  .ant-table-thead
+  > tr
+  > th.competition-score-total-column {
+  color: #0b3d91;
+  font-weight: 700;
+  background: #eaf4ff !important;
+  box-shadow: inset 3px 0 0 #1677ff;
+}
+
+.competition-score-overview-card
+  .ant-table-thead
+  > tr
+  > th.competition-score-total-column:hover,
+.competition-score-overview-card
+  .ant-table-thead
+  > tr
+  > th.ant-table-column-sort.competition-score-total-column {
+  color: #0b3d91;
+  background: #dceeff !important;
+}
+
+.competition-score-overview-card
+  .ant-table-thead
+  > tr
+  > th.competition-score-total-column
+  .ant-table-column-sorter {
+  color: #1677ff;
+}
+
+.competition-score-overview-card
+  .ant-table-tbody
+  > tr
+  > td.competition-score-total-column {
+  background: #f3f8ff;
+  box-shadow: inset 3px 0 0 #1677ff;
+}
+
+.competition-score-overview-card
+  .ant-table-tbody
+  > tr:hover
+  > td.competition-score-total-column,
+.competition-score-overview-card
+  .ant-table-tbody
+  > tr
+  > td.ant-table-cell-row-hover.competition-score-total-column {
+  background: #e8f3ff !important;
 }
 
 .competition-score-column-title,
@@ -198,6 +279,21 @@
   display: inline-flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.competition-score-total-cell strong {
+  color: #0b3d91;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+}
+
+.competition-score-total-cell small {
+  color: #6f8199;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
 }
 
 .competition-score-rank {
@@ -397,6 +493,15 @@
 }
 
 @media (max-width: 560px) {
+  .competition-score-overview-card .ant-card-body,
+  .competition-score-workbench-card .ant-card-body {
+    padding: 12px;
+  }
+
+  .competition-score-total-cell strong {
+    font-size: 20px;
+  }
+
   .competition-score-scope-selectors {
     grid-template-columns: 1fr;
   }

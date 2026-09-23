@@ -43,12 +43,16 @@ public enum CollectionOverallStatusEnum {
     return EXCEPTION_RELEASED.getCode().equals(overallStatus) || "RELEASED".equals(exceptionStatus);
   }
 
+  public static boolean isAbnormal(String overallStatus) {
+    return INFO_ERROR.getCode().equals(overallStatus);
+  }
+
   public static boolean canExportCollectionForm(String overallStatus) {
     return canExportCollectionForm(overallStatus, null);
   }
 
   public static boolean canExportCollectionForm(String overallStatus, String exceptionStatus) {
     CollectionOverallStatusEnum status = fromCode(overallStatus);
-    return status == COMPLETED || isExemptReleased(overallStatus, exceptionStatus);
+    return status == COMPLETED || status == INFO_ERROR || isExemptReleased(overallStatus, exceptionStatus);
   }
 }

@@ -16,6 +16,7 @@ public record CompetitionQuestionImportBatchVO(
     Integer successCount,
     Integer failureCount,
     String errorDetail,
+    CompetitionQuestionImportMetricsVO metrics,
     LocalDateTime startedAt,
     LocalDateTime finishedAt
 ) {

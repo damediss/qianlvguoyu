@@ -1965,8 +1965,10 @@ public class CertificationPreparationApplicationService {
 
   private void validateCandidate(CertificationTaskEntity task, PreparationCandidateSaveReq req, Long currentCandidateId) {
     boolean xlsxImport = "other_xlsx".equals(req.importSource());
-    if (xlsxImport && !StringUtils.hasText(req.idCardNo()) && !StringUtils.hasText(req.admissionTicketNo())) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "准考证号或身份证号至少填写一个");
+    boolean candidateEntry = !StringUtils.hasText(req.importSource())
+        || Set.of("manual", "other", "other_xlsx").contains(req.importSource());
+    if (candidateEntry && !StringUtils.hasText(req.admissionTicketNo())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "准考证号不能为空");
     }
     if (!xlsxImport && !StringUtils.hasText(req.idCardNo())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "身份证号不能为空");

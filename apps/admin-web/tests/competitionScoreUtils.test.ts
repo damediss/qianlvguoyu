@@ -6,8 +6,10 @@ import type {
 } from '../src/types/competition';
 import {
   buildRankingCandidates,
+  enabledScoreSourceTypes,
   findCalculationReadyContestants,
   rankingEntryPageItems,
+  stageContentFormulaReady,
 } from '../src/pages/competition/competitionScoreUtils';
 
 function scoreSource(
@@ -61,6 +63,22 @@ function totalSnapshot(
     currentFlag: 1,
   };
 }
+
+test('stage content weights of 100% practical are a complete scoring formula', () => {
+  assert.equal(
+    stageContentFormulaReady([
+      { status: 'enabled', contentType: 'practical', weight: 100 },
+    ]),
+    true,
+  );
+  assert.deepEqual(
+    enabledScoreSourceTypes([
+      { status: 'enabled', contentType: 'practical' },
+      { status: 'disabled', contentType: 'theory' },
+    ]),
+    ['practical'],
+  );
+});
 
 test('only contestants with three current confirmed sources are calculation-ready', () => {
   const sources = [

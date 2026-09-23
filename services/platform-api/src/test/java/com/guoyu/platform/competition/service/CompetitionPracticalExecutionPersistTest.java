@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,6 +15,7 @@ import com.guoyu.platform.competition.dto.CompetitionPracticalScoreSaveReq;
 import com.guoyu.platform.competition.entity.CompetitionMakeExamPaperQuestionEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalAssignmentEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalJudgeMemberEntity;
+import com.guoyu.platform.competition.entity.CompetitionPracticalScoreEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalScoreEntryEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalScoreSheetEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalSessionEntity;
@@ -63,6 +65,10 @@ class CompetitionPracticalExecutionPersistTest {
       Mockito.mock(CompetitionPracticalScoreSheetMapper.class);
   private final CompetitionPracticalScoreEntryMapper entryMapper =
       Mockito.mock(CompetitionPracticalScoreEntryMapper.class);
+  private final CompetitionPracticalScoreMapper practicalScoreMapper =
+      Mockito.mock(CompetitionPracticalScoreMapper.class);
+  private final CompetitionScoreSourceMapper scoreSourceMapper =
+      Mockito.mock(CompetitionScoreSourceMapper.class);
   private final CompetitionMakeExamPaperQuestionMapper paperQuestionMapper =
       Mockito.mock(CompetitionMakeExamPaperQuestionMapper.class);
   private final CompetitionStageLifecycleGuard lifecycleGuard =
@@ -83,10 +89,10 @@ class CompetitionPracticalExecutionPersistTest {
         Mockito.mock(CompetitionPracticalRuleItemMapper.class),
         sheetMapper,
         entryMapper,
-        Mockito.mock(CompetitionPracticalScoreMapper.class),
+        practicalScoreMapper,
         Mockito.mock(CompetitionRefereeAvoidanceMapper.class),
         Mockito.mock(CompetitionScoreRuleMapper.class),
-        Mockito.mock(CompetitionScoreSourceMapper.class),
+        scoreSourceMapper,
         Mockito.mock(CompetitionStageExecutionPlanMapper.class),
         lifecycleGuard,
         paperQuestionMapper,
@@ -161,6 +167,7 @@ class CompetitionPracticalExecutionPersistTest {
       boolean removed = liveEntries.removeIf(item -> Objects.equals(item.getId(), id));
       return removed ? 1 : 0;
     });
+    when(practicalScoreMapper.insert(any(CompetitionPracticalScoreEntity.class))).thenReturn(1);
   }
 
   @Test
@@ -180,6 +187,16 @@ class CompetitionPracticalExecutionPersistTest {
     assertThat(liveEntries.get(0).getScore()).isEqualByComparingTo("9.50");
     assertThat(sheet.getTotalScore()).isEqualByComparingTo("9.50");
     verify(entryMapper, never()).deleteById(anyLong());
+  }
+
+  @Test
+  void lastQuestionSubmitOnlyLocksRefereeScoreAndDoesNotFinalizePracticalResult() {
+    CompetitionPracticalScoreSheetEntity result =
+        service.submitQuestions(TENANT_ID, USER_ID, SHEET_ID, saveReq(BigDecimal.ZERO));
+
+    assertThat(result.getStatus()).isEqualTo("submitted_locked");
+    verify(practicalScoreMapper).insert(any(CompetitionPracticalScoreEntity.class));
+    verifyNoInteractions(scoreSourceMapper);
   }
 
   private CompetitionPracticalScoreSaveReq saveReq(BigDecimal deduction) {

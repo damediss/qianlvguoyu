@@ -787,6 +787,12 @@ export function listCompetitionPracticalJudgeTasks() {
   );
 }
 
+export function selectCompetitionPracticalJudgeActiveStage(stageId: CompetitionId) {
+  return unwrap<CompetitionPracticalJudgeTask[]>(
+    apiClient.post('/competition/practical-judge/active-stage', { stageId }),
+  );
+}
+
 export function openCompetitionPracticalJudgeTask(assignmentId: CompetitionId) {
   return unwrap<CompetitionPracticalJudgeTask>(
     apiClient.post(`/competition/practical-judge/tasks/${assignmentId}/open`),
@@ -802,6 +808,25 @@ export function confirmCompetitionPracticalJudgeStart(assignmentId: CompetitionI
 export function startCompetitionPracticalJudgeSession(assignmentId: CompetitionId) {
   return unwrap<CompetitionPracticalJudgeTask>(
     apiClient.post(`/competition/practical-judge/tasks/${assignmentId}/start-session`),
+  );
+}
+
+export function returnCompetitionPracticalScoreForRescore(
+  assignmentId: CompetitionId,
+  reason: string,
+) {
+  return unwrap<void>(
+    apiClient.post(
+      `/competition/practical-console/assignments/${assignmentId}/return-for-rescore`,
+      { reason },
+      { silentError: true },
+    ),
+  );
+}
+
+export function completeCompetitionPracticalJudgeSession(assignmentId: CompetitionId) {
+  return unwrap<CompetitionPracticalJudgeTask>(
+    apiClient.post(`/competition/practical-judge/tasks/${assignmentId}/complete-session`),
   );
 }
 
@@ -909,6 +934,12 @@ export function updateCompetitionRefereeGroup(
 export function confirmCompetitionRefereeGroup(groupId: CompetitionId) {
   return unwrap<CompetitionRefereeGroup>(
     apiClient.post(`/competition/referee-groups/${groupId}/confirm`),
+  );
+}
+
+export function releaseCompetitionRefereeGroup(groupId: CompetitionId) {
+  return unwrap<CompetitionRefereeGroup>(
+    apiClient.post(`/competition/referee-groups/${groupId}/release`),
   );
 }
 

@@ -387,6 +387,20 @@ export interface CompetitionRefereeGroupMember {
   status: string;
 }
 
+export interface CompetitionRefereeGroupBoundTask {
+  eventId?: CompetitionId | null;
+  eventName?: string | null;
+  stageId?: CompetitionId | null;
+  stageName?: string | null;
+  eventWorkTypeId?: CompetitionId | null;
+  workTypeName?: string | null;
+  eventWorkTypeLevelId?: CompetitionId | null;
+  levelName?: string | null;
+  contestantCount?: number | null;
+  completedCount?: number | null;
+  status: 'pending' | 'in_progress' | 'completed' | string;
+}
+
 export interface CompetitionRefereeGroup {
   id: CompetitionId;
   stageId?: CompetitionId | null;
@@ -395,9 +409,12 @@ export interface CompetitionRefereeGroup {
   status: 'draft' | 'confirmed' | 'closed' | string;
   leaderRefereeProfileId?: CompetitionId | null;
   bindable?: boolean | null;
+  releasable?: boolean | null;
   unavailableReason?: string | null;
   conflictStageName?: string | null;
+  occupiedEventName?: string | null;
   members: CompetitionRefereeGroupMember[];
+  boundTasks?: CompetitionRefereeGroupBoundTask[];
 }
 
 export interface CompetitionRefereeGroupUpsertRequest {
@@ -690,8 +707,13 @@ export interface CompetitionPracticalConsoleTask {
   assessmentSheetId: CompetitionId;
   workstationCode?: string | null;
   taskStatus: string;
+  scoreSheetId?: CompetitionId | null;
   scoreSheetStatus?: string | null;
   totalScore?: CompetitionDecimal | null;
+  scoreDifferenceLimit?: CompetitionDecimal | null;
+  actualScoreDifference?: CompetitionDecimal | null;
+  scoreDifferenceStatus?: 'waiting' | 'normal' | 'exceeded' | 'unrestricted' | string;
+  practicalScoreCompleted?: boolean;
   contestantNo?: string | null;
   contestantName?: string | null;
   refereeName?: string | null;
@@ -717,7 +739,15 @@ export interface CompetitionPracticalConsole {
 export interface CompetitionPracticalJudgeTask {
   assignmentId: CompetitionId;
   sessionId: CompetitionId;
+  eventId?: CompetitionId | null;
+  eventName?: string | null;
+  stageId?: CompetitionId | null;
+  stageName?: string | null;
+  workTypeName?: string | null;
+  levelName?: string | null;
   contestantMemberId: CompetitionId;
+  contestantNo?: string | null;
+  contestantName?: string | null;
   refereeMemberId: CompetitionId;
   workstationCode?: string | null;
   status: string;
@@ -726,12 +756,16 @@ export interface CompetitionPracticalJudgeTask {
   scoreSheetId?: CompetitionId | null;
   scoreSheetStatus?: string | null;
   totalScore?: CompetitionDecimal | null;
+  scoreDifferenceLimit?: CompetitionDecimal | null;
+  actualScoreDifference?: CompetitionDecimal | null;
+  scoreDifferenceStatus?: 'waiting' | 'normal' | 'exceeded' | 'unrestricted' | string;
   judgeRole: 'leader' | 'member';
-  startStatus: 'waiting' | 'ready' | 'started' | 'completed';
+  startStatus: 'waiting' | 'ready' | 'started' | 'awaiting_leader' | 'completed';
   confirmedJudges: number;
   requiredJudges: number;
   currentJudgeConfirmed: boolean;
   questionProgress?: CompetitionPracticalQuestionProgress[];
+  activeStageId?: CompetitionId | null;
 }
 
 export interface CompetitionPracticalQuestionProgress {
@@ -1090,7 +1124,7 @@ export interface CompetitionTotalScoreCalculateRequest {
   eventWorkTypeId: CompetitionId;
   eventWorkTypeLevelId?: CompetitionId | null;
   contestantMemberId: CompetitionId;
-  scoreRuleId: CompetitionId;
+  scoreRuleId?: CompetitionId | null;
 }
 
 export type CompetitionRankingSnapshotStatus =

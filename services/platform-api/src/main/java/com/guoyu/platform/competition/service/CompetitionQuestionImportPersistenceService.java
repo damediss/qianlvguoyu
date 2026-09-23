@@ -1,23 +1,29 @@
 package com.guoyu.platform.competition.service;
 
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
-import com.guoyu.platform.competition.entity.CompetitionPracticalQuestionDetailEntity;
+import com.guoyu.platform.common.exception.BusinessException;
+import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.competition.entity.CompetitionPracticalQuestionAssessmentContentEntity;
+import com.guoyu.platform.competition.entity.CompetitionPracticalQuestionDetailEntity;
 import com.guoyu.platform.competition.entity.CompetitionPracticalQuestionScoreItemEntity;
-import com.guoyu.platform.competition.mapper.CompetitionPracticalQuestionAssessmentContentMapper;
+import com.guoyu.platform.competition.entity.CompetitionQuestionBlueprintBindingEntity;
 import com.guoyu.platform.competition.entity.CompetitionQuestionEntity;
+import com.guoyu.platform.competition.mapper.CompetitionPracticalQuestionAssessmentContentMapper;
 import com.guoyu.platform.competition.mapper.CompetitionPracticalQuestionDetailMapper;
 import com.guoyu.platform.competition.mapper.CompetitionPracticalQuestionScoreItemMapper;
-import com.guoyu.platform.competition.mapper.CompetitionQuestionMapper;
-import com.guoyu.platform.competition.entity.CompetitionQuestionBlueprintBindingEntity;
 import com.guoyu.platform.competition.mapper.CompetitionQuestionBlueprintBindingMapper;
+import com.guoyu.platform.competition.mapper.CompetitionQuestionMapper;
 import java.math.BigDecimal;
-import java.util.Map;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.jsoup.Jsoup;
 import org.jsoup.safety.Safelist;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +41,7 @@ public class CompetitionQuestionImportPersistenceService {
   private final CompetitionPracticalQuestionAssessmentContentMapper contentMapper;
   private final CompetitionPracticalQuestionScoreItemMapper scoreItemMapper;
   private final CompetitionQuestionBlueprintBindingMapper bindingMapper;
+  private final CompetitionQuestionImportBatchWriter batchWriter;
 
   @Autowired
   public CompetitionQuestionImportPersistenceService(
@@ -42,19 +49,18 @@ public class CompetitionQuestionImportPersistenceService {
       CompetitionPracticalQuestionDetailMapper detailMapper,
       CompetitionPracticalQuestionAssessmentContentMapper contentMapper,
       CompetitionPracticalQuestionScoreItemMapper scoreItemMapper,
-      CompetitionQuestionBlueprintBindingMapper bindingMapper) {
-    this.questionMapper = questionMapper;
-    this.detailMapper = detailMapper;
-    this.contentMapper = contentMapper;
-    this.scoreItemMapper = scoreItemMapper;
-    this.bindingMapper = bindingMapper;
+      CompetitionQuestionBlueprintBindingMapper bindingMapper,
+      JdbcTemplate jdbcTemplate,
+      @Value("${platform.competition.question-import.batch-size:200}") int batchSize) {
+    this(questionMapper, detailMapper, contentMapper, scoreItemMapper, bindingMapper,
+        new CompetitionQuestionImportBatchWriter((sql, args) -> jdbcTemplate.update(sql, args), batchSize));
   }
 
   public CompetitionQuestionImportPersistenceService(
       CompetitionQuestionMapper questionMapper,
       CompetitionPracticalQuestionDetailMapper detailMapper,
       CompetitionPracticalQuestionScoreItemMapper scoreItemMapper) {
-    this(questionMapper, detailMapper, null, scoreItemMapper, null);
+    this(questionMapper, detailMapper, null, scoreItemMapper, null, null);
   }
 
   /** Constructor retained for tests/extensions that already provide structured assessment storage. */
@@ -63,11 +69,26 @@ public class CompetitionQuestionImportPersistenceService {
       CompetitionPracticalQuestionDetailMapper detailMapper,
       CompetitionPracticalQuestionAssessmentContentMapper contentMapper,
       CompetitionPracticalQuestionScoreItemMapper scoreItemMapper) {
-    this(questionMapper, detailMapper, contentMapper, scoreItemMapper, null);
+    this(questionMapper, detailMapper, contentMapper, scoreItemMapper, null, null);
+  }
+
+  public CompetitionQuestionImportPersistenceService(
+      CompetitionQuestionMapper questionMapper,
+      CompetitionPracticalQuestionDetailMapper detailMapper,
+      CompetitionPracticalQuestionAssessmentContentMapper contentMapper,
+      CompetitionPracticalQuestionScoreItemMapper scoreItemMapper,
+      CompetitionQuestionBlueprintBindingMapper bindingMapper,
+      CompetitionQuestionImportBatchWriter batchWriter) {
+    this.questionMapper = questionMapper;
+    this.detailMapper = detailMapper;
+    this.contentMapper = contentMapper;
+    this.scoreItemMapper = scoreItemMapper;
+    this.bindingMapper = bindingMapper;
+    this.batchWriter = batchWriter;
   }
 
   @Transactional
-  public void persist(
+  public PersistStats persist(
       Long tenantId,
       Long userId,
       Long eventId,
@@ -76,12 +97,12 @@ public class CompetitionQuestionImportPersistenceService {
       String contentType,
       Long batchId,
       List<CompetitionQuestionWorkbookParser.ParsedQuestion> parsedQuestions) {
-    persist(tenantId, userId, eventId, eventWorkTypeId, eventWorkTypeLevelId, contentType,
+    return persist(tenantId, userId, eventId, eventWorkTypeId, eventWorkTypeLevelId, contentType,
         batchId, parsedQuestions, List.of());
   }
 
   @Transactional
-  public void persist(
+  public PersistStats persist(
       Long tenantId,
       Long userId,
       Long eventId,
@@ -91,12 +112,23 @@ public class CompetitionQuestionImportPersistenceService {
       Long batchId,
       List<CompetitionQuestionWorkbookParser.ParsedQuestion> parsedQuestions,
       List<Binding> bindings) {
+    if (batchWriter == null) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "题目批量写入器未就绪");
+    }
+    long writeStarted = System.nanoTime();
     Map<Integer, Binding> bindingByIndex = new HashMap<>();
     if (bindings != null) {
       for (Binding binding : bindings) {
         if (binding != null) bindingByIndex.put(binding.questionIndex(), binding);
       }
     }
+    LocalDateTime now = LocalDateTime.now();
+    List<CompetitionQuestionEntity> questions = new ArrayList<>(parsedQuestions.size());
+    List<CompetitionQuestionBlueprintBindingEntity> bindingRows = new ArrayList<>(bindingByIndex.size());
+    List<CompetitionPracticalQuestionDetailEntity> details = new ArrayList<>();
+    List<CompetitionPracticalQuestionAssessmentContentEntity> contents = new ArrayList<>();
+    List<CompetitionPracticalQuestionScoreItemEntity> scoreItems = new ArrayList<>();
+
     for (int questionIndex = 0; questionIndex < parsedQuestions.size(); questionIndex++) {
       CompetitionQuestionWorkbookParser.ParsedQuestion parsed = parsedQuestions.get(questionIndex);
       CompetitionQuestionEntity question = new CompetitionQuestionEntity();
@@ -119,18 +151,13 @@ public class CompetitionQuestionImportPersistenceService {
       question.setSourceBatchId(batchId);
       question.setCreatedBy(userId);
       question.setUpdatedBy(userId);
+      question.setCreatedAt(now);
+      question.setUpdatedAt(now);
       question.setDeleted(0);
-      if (questionMapper.insert(question) != 1) {
-        throw new com.guoyu.platform.common.exception.BusinessException(
-            com.guoyu.platform.common.exception.ErrorCode.CONFLICT, "竞赛试题保存失败");
-      }
+      questions.add(question);
 
       Binding binding = bindingByIndex.get(questionIndex);
       if (binding != null) {
-        if (bindingMapper == null) {
-          throw new com.guoyu.platform.common.exception.BusinessException(
-              com.guoyu.platform.common.exception.ErrorCode.CONFLICT, "题目绑定服务未就绪");
-        }
         CompetitionQuestionBlueprintBindingEntity row = new CompetitionQuestionBlueprintBindingEntity();
         row.setId(IdWorker.getId());
         row.setTenantId(tenantId);
@@ -141,11 +168,10 @@ public class CompetitionQuestionImportPersistenceService {
         row.setSourceBatchId(batchId);
         row.setCreatedBy(userId);
         row.setUpdatedBy(userId);
+        row.setCreatedAt(now);
+        row.setUpdatedAt(now);
         row.setDeleted(0);
-        if (bindingMapper.insert(row) != 1) {
-          throw new com.guoyu.platform.common.exception.BusinessException(
-              com.guoyu.platform.common.exception.ErrorCode.CONFLICT, "题目考评点绑定保存失败");
-        }
+        bindingRows.add(row);
       }
 
       if ("practical".equals(contentType)) {
@@ -172,11 +198,10 @@ public class CompetitionQuestionImportPersistenceService {
         detail.setEquipmentPrepare(detail.getExamRoomPrepareHtml());
         detail.setCreatedBy(userId);
         detail.setUpdatedBy(userId);
+        detail.setCreatedAt(now);
+        detail.setUpdatedAt(now);
         detail.setDeleted(0);
-        if (detailMapper.insert(detail) != 1) {
-          throw new com.guoyu.platform.common.exception.BusinessException(
-              com.guoyu.platform.common.exception.ErrorCode.CONFLICT, "实操题详情保存失败");
-        }
+        details.add(detail);
 
         List<CompetitionQuestionWorkbookParser.ParsedAssessmentContent> groups = parsed.assessmentContents();
         if (groups == null || groups.isEmpty()) {
@@ -194,11 +219,10 @@ public class CompetitionQuestionImportPersistenceService {
           content.setContentHtml(sanitize(group.contentHtml()));
           content.setCreatedBy(userId);
           content.setUpdatedBy(userId);
+          content.setCreatedAt(now);
+          content.setUpdatedAt(now);
           content.setDeleted(0);
-          if (contentMapper != null && contentMapper.insert(content) != 1) {
-            throw new com.guoyu.platform.common.exception.BusinessException(
-                com.guoyu.platform.common.exception.ErrorCode.CONFLICT, "实操考核内容保存失败");
-          }
+          if (contentMapper != null) contents.add(content);
           for (CompetitionQuestionWorkbookParser.ParsedScoreItem item : group.elements()) {
             CompetitionPracticalQuestionScoreItemEntity scoreItem = new CompetitionPracticalQuestionScoreItemEntity();
             scoreItem.setId(IdWorker.getId());
@@ -219,19 +243,42 @@ public class CompetitionQuestionImportPersistenceService {
             scoreItem.setStatus("enabled");
             scoreItem.setCreatedBy(userId);
             scoreItem.setUpdatedBy(userId);
+            scoreItem.setCreatedAt(now);
+            scoreItem.setUpdatedAt(now);
             scoreItem.setDeleted(0);
-            if (scoreItemMapper.insert(scoreItem) != 1) {
-              throw new com.guoyu.platform.common.exception.BusinessException(
-                  com.guoyu.platform.common.exception.ErrorCode.CONFLICT, "实操评分项保存失败");
-            }
+            scoreItems.add(scoreItem);
           }
         }
       }
     }
+
+    CompetitionQuestionImportBatchWriter.FlushStats questionFlush = batchWriter.insertQuestions(questions);
+    CompetitionQuestionImportBatchWriter.FlushStats bindingFlush = batchWriter.insertBindings(bindingRows);
+    CompetitionQuestionImportBatchWriter.FlushStats extra = batchWriter.insertDetails(details)
+        .plus(batchWriter.insertContents(contents))
+        .plus(batchWriter.insertScoreItems(scoreItems));
+    long writeMs = Math.max(0L, (System.nanoTime() - writeStarted) / 1_000_000L);
+    List<Long> batchWriteMs = new ArrayList<>();
+    batchWriteMs.addAll(questionFlush.batchWriteMs());
+    batchWriteMs.addAll(bindingFlush.batchWriteMs());
+    batchWriteMs.addAll(extra.batchWriteMs());
+    return new PersistStats(
+        questionFlush.batchCount(),
+        bindingFlush.batchCount(),
+        questionFlush.sqlCount() + bindingFlush.sqlCount() + extra.sqlCount(),
+        List.copyOf(batchWriteMs),
+        writeMs);
   }
 
   /** Position-based binding plan; the question entity id does not exist until this transaction. */
   public record Binding(int questionIndex, Long blueprintId, Long blueprintNodeId, String matchMode) {}
+
+  public record PersistStats(
+      int questionBatchCount,
+      int bindingBatchCount,
+      int persistSqlCount,
+      List<Long> batchWriteMs,
+      long writeMs) {}
 
   public static BigDecimal sumScoreItems(List<CompetitionQuestionWorkbookParser.ParsedScoreItem> items) {
     return (items == null ? List.<CompetitionQuestionWorkbookParser.ParsedScoreItem>of() : items).stream()

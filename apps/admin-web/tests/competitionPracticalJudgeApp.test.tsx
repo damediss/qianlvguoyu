@@ -3,10 +3,12 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  completeCompetitionPracticalJudgeSession,
   confirmCompetitionPracticalJudgeStart,
   createCompetitionPracticalRealtimeTicket,
   listCompetitionPracticalJudgeTasks,
   saveCompetitionPracticalJudgeTask,
+  selectCompetitionPracticalJudgeActiveStage,
   startCompetitionPracticalJudgeSession,
 } from '../src/api/competition';
 import { CompetitionPracticalJudgeApp } from '../src/pages/competition/CompetitionPracticalJudgeApp';
@@ -24,18 +26,28 @@ vi.mock('../src/stores/authStore', () => ({
 vi.mock('../src/api/auth', () => ({ logout: vi.fn() }));
 
 vi.mock('../src/api/competition', () => ({
+  completeCompetitionPracticalJudgeSession: vi.fn(),
   confirmCompetitionPracticalJudgeStart: vi.fn(),
   createCompetitionPracticalRealtimeTicket: vi.fn(),
   listCompetitionPracticalJudgeTasks: vi.fn(),
   openCompetitionPracticalJudgeTask: vi.fn(),
   saveCompetitionPracticalJudgeTask: vi.fn(),
+  selectCompetitionPracticalJudgeActiveStage: vi.fn(),
   startCompetitionPracticalJudgeSession: vi.fn(),
 }));
 
 const judgeTask: CompetitionPracticalJudgeTask = {
   assignmentId: '501',
   sessionId: '301',
+  eventId: '20',
+  eventName: '技能大赛',
+  stageId: '10',
+  stageName: '初赛',
+  workTypeName: '电工',
+  levelName: '高级工',
   contestantMemberId: '2001',
+  contestantNo: 'C001',
+  contestantName: '选手甲',
   refereeMemberId: '1001',
   workstationCode: 'P-01',
   status: 'assigned',
@@ -48,6 +60,7 @@ const judgeTask: CompetitionPracticalJudgeTask = {
   confirmedJudges: 3,
   requiredJudges: 3,
   currentJudgeConfirmed: true,
+  activeStageId: '10',
   assessmentSheet: {
     id: '900',
     eventId: '20',
@@ -189,6 +202,61 @@ describe('竞赛实操裁判 WebView', () => {
     expect(screen.getByRole('button', { name: '本设备已确认' })).toBeDisabled();
   });
 
+  it('三名裁判逐题提交完成后，仅组长可以完成考试并提交实操成绩', async () => {
+    const user = userEvent.setup();
+    const awaitingTask: CompetitionPracticalJudgeTask = {
+      ...judgeTask,
+      status: 'completed',
+      scoreSheetStatus: 'submitted_locked',
+      startStatus: 'awaiting_leader',
+    };
+    const completedTask: CompetitionPracticalJudgeTask = {
+      ...awaitingTask,
+      startStatus: 'completed',
+    };
+    vi.mocked(createCompetitionPracticalRealtimeTicket).mockRejectedValue(new Error('skip websocket'));
+    vi.mocked(listCompetitionPracticalJudgeTasks).mockResolvedValue([awaitingTask]);
+    vi.mocked(completeCompetitionPracticalJudgeSession).mockResolvedValue(completedTask);
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <CompetitionPracticalJudgeApp />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText('三名裁判均已提交，请完成考试')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '完成考试' }));
+    expect((await screen.findAllByText('确认完成考试并提交实操成绩？')).length).toBeGreaterThan(0);
+    const confirmButtons = screen.getAllByRole('button', { name: '完成考试' });
+    await user.click(confirmButtons[confirmButtons.length - 1]);
+    await waitFor(() => expect(completeCompetitionPracticalJudgeSession).toHaveBeenCalledWith('501'));
+  });
+
+  it('分差异常时组长端提前显示原因并禁止完成考试', async () => {
+    vi.mocked(createCompetitionPracticalRealtimeTicket).mockRejectedValue(new Error('skip websocket'));
+    vi.mocked(listCompetitionPracticalJudgeTasks).mockResolvedValue([{
+      ...judgeTask,
+      status: 'completed',
+      scoreSheetStatus: 'submitted_locked',
+      startStatus: 'awaiting_leader',
+      scoreDifferenceLimit: '10',
+      actualScoreDifference: '15',
+      scoreDifferenceStatus: 'exceeded',
+    }]);
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <CompetitionPracticalJudgeApp />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText('裁判评分分差异常：15 分，允许 10 分')).toBeInTheDocument();
+    expect(screen.getByText(/请在实操比赛控制台核对三名裁判原始分/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '完成考试' })).toBeDisabled();
+  });
+
   it('自动保存和提交只针对当前试题，不会把未操作题目一并提交', async () => {
     const user = userEvent.setup();
     const twoQuestionTask: CompetitionPracticalJudgeTask = {
@@ -237,5 +305,86 @@ describe('竞赛实操裁判 WebView', () => {
     expect(firstSave?.[1]).toEqual([expect.objectContaining({ paperQuestionId: '7001' })]);
     expect(firstSave?.[1]).toHaveLength(1);
     expect(screen.getAllByText('评分中').length).toBeGreaterThan(0);
+  });
+
+  it('组长可在上栏下拉切换赛段任务，组员只展示组长选中的赛段', async () => {
+    const user = userEvent.setup();
+    const finalTask: CompetitionPracticalJudgeTask = {
+      ...judgeTask,
+      assignmentId: '601',
+      sessionId: '401',
+      stageId: '11',
+      stageName: '决赛',
+      contestantMemberId: '2002',
+      contestantNo: 'C002',
+      contestantName: '选手乙',
+      activeStageId: '10',
+    };
+    vi.mocked(createCompetitionPracticalRealtimeTicket).mockRejectedValue(new Error('skip websocket'));
+    vi.mocked(listCompetitionPracticalJudgeTasks).mockResolvedValue([judgeTask, finalTask]);
+    vi.mocked(selectCompetitionPracticalJudgeActiveStage).mockImplementation(async (stageId) => ([
+      { ...judgeTask, activeStageId: String(stageId) },
+      { ...finalTask, activeStageId: String(stageId) },
+    ]));
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <CompetitionPracticalJudgeApp />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByTestId('judge-stage-switch')).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    expect(screen.getAllByText('选手甲').length).toBeGreaterThan(0);
+    expect(screen.queryByText('选手乙')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('combobox'));
+    await user.click(await screen.findByText('技能大赛 · 电工 · 高级工 · 决赛'));
+    await waitFor(() => expect(selectCompetitionPracticalJudgeActiveStage).toHaveBeenCalledWith('11'));
+    expect((await screen.findAllByText('选手乙')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('选手甲')).not.toBeInTheDocument();
+  });
+
+  it('组员端只展示组长当前赛段，并随刷新同步切换', async () => {
+    const user = userEvent.setup();
+    const memberTask: CompetitionPracticalJudgeTask = {
+      ...judgeTask,
+      judgeRole: 'member',
+      activeStageId: '10',
+    };
+    const memberFinalTask: CompetitionPracticalJudgeTask = {
+      ...judgeTask,
+      assignmentId: '601',
+      sessionId: '401',
+      stageId: '11',
+      stageName: '决赛',
+      contestantMemberId: '2002',
+      contestantNo: 'C002',
+      contestantName: '选手乙',
+      judgeRole: 'member',
+      activeStageId: '11',
+    };
+    vi.mocked(createCompetitionPracticalRealtimeTicket).mockRejectedValue(new Error('skip websocket'));
+    vi.mocked(listCompetitionPracticalJudgeTasks)
+      .mockResolvedValueOnce([memberTask, { ...memberFinalTask, activeStageId: '10' }])
+      .mockResolvedValue([memberFinalTask]);
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <CompetitionPracticalJudgeApp />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByTestId('judge-stage-current')).toBeInTheDocument();
+    expect(screen.queryByTestId('judge-stage-switch')).not.toBeInTheDocument();
+    expect(screen.getAllByText('选手甲').length).toBeGreaterThan(0);
+    expect(screen.queryByText('选手乙')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '刷新评分任务' }));
+    expect((await screen.findAllByText('选手乙')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('选手甲')).not.toBeInTheDocument();
+    expect(screen.getAllByText('技能大赛 · 电工 · 高级工 · 决赛').length).toBeGreaterThan(0);
   });
 });

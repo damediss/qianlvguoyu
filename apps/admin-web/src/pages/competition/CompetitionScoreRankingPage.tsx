@@ -58,7 +58,7 @@ import {
   message,
 } from 'antd';
 import dayjs from 'dayjs';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   confirmCompetitionRankingSnapshot,
   confirmCompetitionSimulationImport,
@@ -103,8 +103,10 @@ import type {
 import { CompetitionEventFrame } from './CompetitionEventFrame';
 import {
   buildRankingCandidates,
+  enabledScoreSourceTypes,
   findCalculationReadyContestants,
   rankingEntryPageItems,
+  stageContentFormulaReady,
 } from './competitionScoreUtils';
 import './CompetitionEventManagementPage.css';
 import './competitionScoreRanking.css';
@@ -257,6 +259,17 @@ function scoreNumber(value?: number | string | null) {
 function scoreValue(value?: number | string | null) {
   const parsed = scoreNumber(value);
   return parsed === undefined ? '-' : parsed.toFixed(2);
+}
+
+function compareScoreValues(
+  left?: number | string | null,
+  right?: number | string | null,
+) {
+  const leftScore = scoreNumber(left);
+  const rightScore = scoreNumber(right);
+  if (leftScore === undefined) return rightScore === undefined ? 0 : 1;
+  if (rightScore === undefined) return -1;
+  return leftScore - rightScore;
 }
 
 function formatDate(value?: string | null) {
@@ -676,17 +689,6 @@ export function CompetitionScoreRankingPage({
     enabled: canReadStagePlan && Boolean(stageId),
     retry: false,
   });
-  const theoryOnly = Boolean(
-    stageWorkspaceQuery.data?.contents?.some(
-      (content) => content.status === 'enabled' && content.contentType === 'theory',
-    ) &&
-      stageWorkspaceQuery.data?.contents
-        ?.filter((content) => content.status === 'enabled')
-        .every((content) => content.contentType === 'theory'),
-  );
-  // A theory-only stage has no cross-subject rule selector. Its total/ranking snapshots are
-  // keyed by the stage scope with a null scoreRuleId.
-  const contextReady = scopeReady && (theoryOnly || Boolean(scoreRuleId));
 
   useEffect(() => {
     const stages = stagesQuery.data?.items || [];
@@ -739,6 +741,23 @@ export function CompetitionScoreRankingPage({
       }),
     enabled: canReadReadiness && scopeReady,
   });
+  const theoryOnly = Boolean(
+    stageWorkspaceQuery.data?.contents?.some(
+      (content) => content.status === 'enabled' && content.contentType === 'theory',
+    ) &&
+      stageWorkspaceQuery.data?.contents
+        ?.filter((content) => content.status === 'enabled')
+        .every((content) => content.contentType === 'theory'),
+  );
+  const usesStageContentFormula =
+    !scoreRuleId &&
+    (stageContentFormulaReady(stageWorkspaceQuery.data?.contents) ||
+      Boolean(
+        readinessQuery.data?.ready &&
+          !readinessQuery.data.publishedScoreRuleVersionId,
+      ));
+  const contextReady =
+    scopeReady && (usesStageContentFormula || Boolean(scoreRuleId));
   const scoreSourcesQuery = useQuery({
     queryKey: [
       'competition-score-sources',
@@ -881,9 +900,27 @@ export function CompetitionScoreRankingPage({
       ),
     [scoreRuleId, scoreSources],
   );
+  const scoringSources = useMemo(
+    () =>
+      usesStageContentFormula
+        ? scoreSources.filter((source) => !source.scoreRuleId)
+        : selectedRuleSources,
+    [scoreSources, selectedRuleSources, usesStageContentFormula],
+  );
+  const requiredSourceTypes = useMemo(
+    () =>
+      enabledScoreSourceTypes(stageWorkspaceQuery.data?.contents).length
+        ? enabledScoreSourceTypes(stageWorkspaceQuery.data?.contents)
+        : undefined,
+    [stageWorkspaceQuery.data?.contents],
+  );
   const calculationReadyContestants = useMemo(
-    () => findCalculationReadyContestants(selectedRuleSources),
-    [selectedRuleSources],
+    () =>
+      findCalculationReadyContestants(
+        scoringSources,
+        requiredSourceTypes,
+      ),
+    [requiredSourceTypes, scoringSources],
   );
   const players = useMemo(
     () =>
@@ -914,6 +951,39 @@ export function CompetitionScoreRankingPage({
   }, [activeSnapshot, rankingSnapshots, selectedSnapshotId]);
   const rankingEntries = rankingEntryPageItems(rankingEntriesQuery.data);
   const scoringTasks = scoringTasksQuery.data?.items || [];
+  const scoringTaskStateKey = useMemo(
+    () =>
+      scoringTasks
+        .map((task) =>
+          [
+            idValue(task.id),
+            task.taskStatus,
+            task.attemptCount,
+            task.completedAt || '',
+          ].join(':'),
+        )
+        .sort()
+        .join('|'),
+    [scoringTasks],
+  );
+  const previousScoringTaskStateKey = useRef<string>();
+  useEffect(() => {
+    if (!scoringTasks.length || !scoringTaskStateKey) return;
+    if (previousScoringTaskStateKey.current === scoringTaskStateKey) return;
+    previousScoringTaskStateKey.current = scoringTaskStateKey;
+    if (!scoringTasks.some((task) => task.taskStatus === 'completed')) return;
+    void Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ['competition-score-sources', eventId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ['competition-total-score-snapshots', eventId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ['competition-ranking-snapshots', eventId],
+      }),
+    ]);
+  }, [eventId, queryClient, scoringTaskStateKey, scoringTasks]);
   const overviewRows = useMemo(
     () =>
       buildOverviewRows(
@@ -1040,7 +1110,7 @@ export function CompetitionScoreRankingPage({
             eventWorkTypeId: eventWorkTypeId!,
             eventWorkTypeLevelId,
             contestantMemberId,
-            scoreRuleId: scoreRuleId!,
+            ...(scoreRuleId ? { scoreRuleId } : {}),
           }),
         ),
       ),
@@ -1049,8 +1119,50 @@ export function CompetitionScoreRankingPage({
       queryClient.invalidateQueries({
         queryKey: ['competition-total-score-snapshots', eventId],
       });
+      queryClient.invalidateQueries({
+        queryKey: ['competition-ranking-snapshots', eventId],
+      });
     },
   });
+  const autoCalculatedKey = useRef<string>();
+  useEffect(() => {
+    if (!usesStageContentFormula || !canCalculate || !contextReady) return;
+    if (readinessQuery.data?.ready === false) return;
+    if (calculationReadyContestants.length === 0) return;
+    if (!totalSnapshotsQuery.isFetched || totalSnapshotsQuery.isFetching) return;
+    if (
+      totalSnapshots.some(
+        (snapshot) =>
+          snapshot.currentFlag === 1 &&
+          snapshot.confirmationStatus === 'confirmed',
+      )
+    ) {
+      return;
+    }
+    const key = [
+      eventId,
+      stageId,
+      eventWorkTypeId,
+      eventWorkTypeLevelId,
+      ...calculationReadyContestants,
+    ].join(':');
+    if (autoCalculatedKey.current === key) return;
+    autoCalculatedKey.current = key;
+    calculateMutation.mutate();
+  }, [
+    calculationReadyContestants,
+    canCalculate,
+    contextReady,
+    eventId,
+    eventWorkTypeId,
+    eventWorkTypeLevelId,
+    readinessQuery.data?.ready,
+    stageId,
+    totalSnapshots,
+    totalSnapshotsQuery.isFetched,
+    totalSnapshotsQuery.isFetching,
+    usesStageContentFormula,
+  ]);
   const generateRankingMutation = useMutation({
     mutationFn: () =>
       generateCompetitionRankingSnapshot(eventId, {
@@ -1682,19 +1794,6 @@ export function CompetitionScoreRankingPage({
         </button>
       ),
     },
-    {
-      title: '代表队',
-      dataIndex: 'teamName',
-      width: 150,
-      ellipsis: true,
-      render: (value) => (
-        <span className="competition-score-secondary">
-          <TeamOutlined /> {value}
-        </span>
-      ),
-    },
-    { title: '工种', dataIndex: 'workTypeName', width: 130, ellipsis: true },
-    { title: '等级', dataIndex: 'levelName', width: 110, ellipsis: true },
     ...subjects.map((subject) => ({
       title: (
         <span
@@ -1722,6 +1821,17 @@ export function CompetitionScoreRankingPage({
       title: '综合成绩',
       key: 'total',
       width: 130,
+      className: 'competition-score-total-column',
+      defaultSortOrder: 'descend',
+      sorter: (left, right) =>
+        compareScoreValues(
+          left.total?.confirmationStatus === 'confirmed'
+            ? left.total.totalScore
+            : undefined,
+          right.total?.confirmationStatus === 'confirmed'
+            ? right.total.totalScore
+            : undefined,
+        ),
       render: (_: unknown, row: ScoreOverviewRow) => (
         <div className="competition-score-total-cell">
           <strong>
@@ -1737,6 +1847,19 @@ export function CompetitionScoreRankingPage({
         </div>
       ),
     },
+    {
+      title: '代表队',
+      dataIndex: 'teamName',
+      width: 150,
+      ellipsis: true,
+      render: (value) => (
+        <span className="competition-score-secondary">
+          <TeamOutlined /> {value}
+        </span>
+      ),
+    },
+    { title: '工种', dataIndex: 'workTypeName', width: 130, ellipsis: true },
+    { title: '等级', dataIndex: 'levelName', width: 110, ellipsis: true },
     {
       title: '状态',
       key: 'status',
@@ -1789,6 +1912,12 @@ export function CompetitionScoreRankingPage({
       {
         title: '成绩',
         width: 110,
+        defaultSortOrder: 'descend',
+        sorter: (left, right) =>
+          compareScoreValues(
+            activeType ? left.subjectCells[activeType]?.value : undefined,
+            activeType ? right.subjectCells[activeType]?.value : undefined,
+          ),
         render: (_value, row) =>
           activeType ? (
             <ScoreCellView
@@ -2066,8 +2195,10 @@ export function CompetitionScoreRankingPage({
               }}
             />
           )}
-          {theoryOnly ? (
-            <Tag color="blue">理论题目分值直接计分</Tag>
+          {usesStageContentFormula ? (
+            <Tag color="blue">
+              {theoryOnly ? '理论题目分值直接计分' : '赛段内容权重计分'}
+            </Tag>
           ) : (
             <Select
               value={scoreRuleId}
@@ -2140,7 +2271,9 @@ export function CompetitionScoreRankingPage({
               .join('；') ||
             (theoryOnly
               ? '理论赛段按题目快照分值直接计分，无需配置计分规则。'
-              : '赛段、工种、资格选手和已发布规则版本均已通过校验。')
+              : usesStageContentFormula
+                ? '综合成绩按赛段编排中的内容权重计算。'
+                : '赛段、工种、资格选手和已发布规则版本均已通过校验。')
           }
         />
       )}
@@ -2444,7 +2577,9 @@ export function CompetitionScoreRankingPage({
                         <Typography.Text type="secondary">
                           {theoryOnly
                             ? '理论成绩来自题目快照分值和答案判定，判分完成后自动形成综合成绩与排名草稿。'
-                            : '最终综合成绩由服务端按已发布规则计算，前端只展示结果。'}
+                            : usesStageContentFormula
+                              ? '综合成绩按赛段内容权重计算。已确认的科目分按编排权重合成后自动形成排名草稿。'
+                              : '最终综合成绩由服务端按已发布规则计算，前端只展示结果。'}
                         </Typography.Text>
                         <div className="competition-score-rule-card__scope">
                           <LockOutlined /> 当前范围：{contextLabel}
@@ -2459,7 +2594,7 @@ export function CompetitionScoreRankingPage({
                     >
                       返回综合成绩
                     </Button>
-                    {canGenerateRanking && !theoryOnly && (
+                    {canGenerateRanking && !usesStageContentFormula && (
                       <Button
                         icon={<TrophyOutlined />}
                         disabled={

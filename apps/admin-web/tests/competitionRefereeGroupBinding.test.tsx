@@ -67,7 +67,7 @@ describe('赛段实操裁判配置', () => {
     expect(await screen.findByText('选手甲')).toBeInTheDocument();
     expect(screen.queryByText('新建裁判组')).not.toBeInTheDocument();
     expect(screen.queryByText('新建裁判小组')).not.toBeInTheDocument();
-    expect(screen.getByText(/裁判管理 \/ 裁判小组/)).toBeInTheDocument();
+    expect(screen.getByText(/同一裁判小组不能同时承担不同赛事/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('combobox'));
     await user.click(await screen.findByText('第一裁判小组（3名裁判）'));

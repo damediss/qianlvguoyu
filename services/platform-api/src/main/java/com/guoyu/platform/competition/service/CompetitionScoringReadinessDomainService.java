@@ -6,6 +6,7 @@ import com.guoyu.platform.competition.entity.CompetitionEventEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventMemberEntity;
 import com.guoyu.platform.competition.entity.CompetitionEventWorkTypeEntity;
 import com.guoyu.platform.competition.entity.CompetitionRegistrationEntity;
+import com.guoyu.platform.competition.domain.CompetitionStageContentScoringWeights;
 import com.guoyu.platform.competition.entity.CompetitionScoreRuleEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageEntity;
 import com.guoyu.platform.competition.entity.CompetitionStageContentEntity;
@@ -118,20 +119,29 @@ public class CompetitionScoringReadinessDomainService {
         stageReady && eventWorkTypeReady
             ? findPublishedRules(tenantId, eventId, stageId, eventWorkTypeId, eventWorkTypeLevelId)
             : Collections.emptyList();
-    boolean theoryOnly = stageReady && eventWorkTypeReady && isTheoryOnlyStage(stageId);
-    boolean uniquePublishedRule = theoryOnly || publishedRules.size() == 1;
+    CompetitionStageContentScoringWeights contentWeights =
+        stageReady ? stageContentWeights(stageId) : CompetitionStageContentScoringWeights.invalid();
+    boolean theoryOnly = stageReady && eventWorkTypeReady && contentWeights.theoryOnly();
+    boolean contentWeighted = stageReady && eventWorkTypeReady && contentWeights.valid();
+    boolean uniquePublishedRule = publishedRules.size() == 1;
+    boolean formulaReady = theoryOnly || uniquePublishedRule || contentWeighted;
     checks.add(check(
-        "SCORE_RULE_UNPUBLISHED", uniquePublishedRule,
+        "SCORE_RULE_UNPUBLISHED", formulaReady,
         theoryOnly ? "理论赛段直接按题目快照分值计分，无需评分规则"
-            : uniquePublishedRule ? "存在唯一已发布评分规则" : publishedRuleMessage(publishedRules.size())));
+            : uniquePublishedRule ? "存在唯一已发布评分规则"
+            : contentWeighted ? "赛段内容权重已确定综合计分方式"
+            : publishedRuleMessage(publishedRules.size())));
 
-    CompetitionScoreRuleEntity publishedRule =
-        !theoryOnly && uniquePublishedRule ? publishedRules.get(0) : null;
-    boolean validRule = theoryOnly || publishedRule == null || scoreRuleDomainService.isValidRule(publishedRule);
+    CompetitionScoreRuleEntity publishedRule = uniquePublishedRule ? publishedRules.get(0) : null;
+    boolean validRule = theoryOnly || contentWeighted
+        || publishedRule == null
+        || scoreRuleDomainService.isValidRule(publishedRule);
     checks.add(check(
         "SCORE_RULE_INVALID", validRule,
         publishedRule == null
-            ? theoryOnly ? "理论赛段不使用评分规则" : "评分规则发布后校验配置"
+            ? theoryOnly ? "理论赛段不使用评分规则"
+                : contentWeighted ? "赛段内容权重配置有效"
+                : "评分规则发布后校验配置"
             : validRule ? "已发布评分规则配置有效" : "已发布评分规则模板或权重不合法"));
 
     CandidateChecks candidateChecks = eventWorkTypeReady
@@ -153,22 +163,21 @@ public class CompetitionScoringReadinessDomainService {
     result.setEventWorkTypeLevelId(eventWorkTypeLevelId);
     result.setChecks(checks);
     result.setReady(checks.stream().allMatch(CompetitionScoringReadinessCheckVO::passed));
-    if (!theoryOnly && uniquePublishedRule && validRule && publishedRule != null) {
+    if (uniquePublishedRule && validRule && publishedRule != null) {
       result.setPublishedScoreRuleVersionId(publishedRule.getId());
     }
     return result;
   }
 
-  private boolean isTheoryOnlyStage(Long stageId) {
-    if (stageContentMapper == null || stageId == null) return false;
+  private CompetitionStageContentScoringWeights stageContentWeights(Long stageId) {
+    if (stageContentMapper == null || stageId == null) {
+      return CompetitionStageContentScoringWeights.invalid();
+    }
     List<CompetitionStageContentEntity> contents = stageContentMapper.selectList(
         new LambdaQueryWrapper<CompetitionStageContentEntity>()
             .eq(CompetitionStageContentEntity::getStageId, stageId)
-            .eq(CompetitionStageContentEntity::getStatus, "enabled")
             .eq(CompetitionStageContentEntity::getDeleted, 0));
-    if (contents == null || contents.isEmpty()) return false;
-    return contents.stream().allMatch(content -> content != null
-        && "theory".equalsIgnoreCase(content.getContentType()));
+    return CompetitionStageContentScoringWeights.from(contents);
   }
 
   private CandidateChecks checkCandidates(

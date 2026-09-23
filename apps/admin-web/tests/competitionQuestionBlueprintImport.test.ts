@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCompetitionQuestionBlueprintErrorMessage } from '../src/pages/competition/CompetitionQuestionBlueprintPage';
+import { getCompetitionQuestionBlueprintErrorMessage, hasLiveCompetitionQuestionBlueprint } from '../src/pages/competition/CompetitionQuestionBlueprintPage';
 
 describe('竞赛实操细目表导入错误处理', () => {
   it('reads the server warning from an Axios response so confirmation can continue', () => {
@@ -14,5 +14,15 @@ describe('竞赛实操细目表导入错误处理', () => {
 
   it('falls back to the ordinary error message when no server message exists', () => {
     expect(getCompetitionQuestionBlueprintErrorMessage(new Error('文件解析失败'))).toBe('文件解析失败');
+  });
+
+  it('treats a draft or active row as the one live blueprint for a work type level', () => {
+    expect(hasLiveCompetitionQuestionBlueprint([
+      { status: 'archived' },
+      { status: 'active' },
+    ])).toBe(true);
+    expect(hasLiveCompetitionQuestionBlueprint([{ status: 'draft' }])).toBe(true);
+    expect(hasLiveCompetitionQuestionBlueprint([{ status: 'archived' }])).toBe(false);
+    expect(hasLiveCompetitionQuestionBlueprint([])).toBe(false);
   });
 });

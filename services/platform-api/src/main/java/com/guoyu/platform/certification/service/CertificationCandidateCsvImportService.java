@@ -198,8 +198,8 @@ public class CertificationCandidateCsvImportService {
   ) {
     String idCardNo = nullableValue(row, "身份证号");
     String admissionTicketNo = nullableValue(row, "准考证号");
-    if (!StringUtils.hasText(idCardNo) && !StringUtils.hasText(admissionTicketNo)) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "准考证号或身份证号至少填写一个");
+    if (!StringUtils.hasText(admissionTicketNo)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "准考证号不能为空");
     }
     PreparationCandidateSaveReq candidateReq = new PreparationCandidateSaveReq(
         nullableValue(row, "姓名"), idCardNo, nullableValue(row, "手机号码"),

@@ -42,7 +42,7 @@ public class CompetitionQuestionWorkbookParser {
     if (file == null || contentType == null) {
       throw new IllegalArgumentException("导入文件和题目类型不能为空");
     }
-    try (Workbook workbook = WorkbookFactory.create(file.toFile())) {
+    try (Workbook workbook = WorkbookFactory.create(file.toFile(), null, true)) {
       if ("theory".equalsIgnoreCase(contentType)) {
         Sheet sheet = workbook.getSheetAt(0);
         return new ParsedWorkbook(parseTheory(sheet), sheet.getSheetName());

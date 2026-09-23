@@ -1,23 +1,22 @@
 package com.guoyu.platform.competition.domain;
 
-import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Objects;
 
 /**
- * 裁判小组高于赛段：同一小组不能被时间重叠的赛段同时调用。
+ * 裁判小组同一时间只能承担一场赛事的裁判任务，但可以参加该赛事的多个赛段。
  */
 public final class CompetitionRefereeGroupScheduleGuard {
 
   private CompetitionRefereeGroupScheduleGuard() {
   }
 
-  public static boolean overlaps(
-      LocalDateTime leftStart,
-      LocalDateTime leftEnd,
-      LocalDateTime rightStart,
-      LocalDateTime rightEnd) {
-    if (leftStart == null || leftEnd == null || rightStart == null || rightEnd == null) {
+  public static boolean occupiesDifferentEvent(Long currentEventId, Collection<Long> occupiedEventIds) {
+    if (currentEventId == null || occupiedEventIds == null || occupiedEventIds.isEmpty()) {
       return false;
     }
-    return leftStart.isBefore(rightEnd) && rightStart.isBefore(leftEnd);
+    return occupiedEventIds.stream()
+        .filter(Objects::nonNull)
+        .anyMatch(eventId -> !Objects.equals(eventId, currentEventId));
   }
 }
