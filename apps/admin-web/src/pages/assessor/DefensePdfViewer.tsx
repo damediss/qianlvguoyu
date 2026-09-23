@@ -48,8 +48,8 @@ function measurePdfWidth(host: HTMLElement) {
 async function loadPdfjs() {
   installLegacyBrowserPolyfills();
   const [pdfjs, workerModule, workerUrl] = await Promise.all([
-    import('pdfjs-dist/legacy/build/pdf.mjs'),
-    import('pdfjs-dist/legacy/build/pdf.worker.min.mjs'),
+    import('pdfjs-dist/legacy/build/pdf.min.js'),
+    import('pdfjs-dist/legacy/build/pdf.worker.min.js'),
     import('./pdfjs.worker?worker&url'),
   ]);
   const handler = (workerModule as { WorkerMessageHandler?: unknown }).WorkerMessageHandler

@@ -7,6 +7,7 @@ import com.guoyu.platform.security.RestAccessDeniedHandler;
 import com.guoyu.platform.security.RestAuthenticationEntryPoint;
 import com.guoyu.platform.security.filter.AppTokenAuthFilter;
 import com.guoyu.platform.security.filter.SaTokenBridgeFilter;
+import com.guoyu.platform.security.filter.TenantConsistencyFilter;
 import com.guoyu.platform.competition.exam.security.CompetitionExamTokenBridgeFilter;
 import com.guoyu.platform.competition.player.security.CompetitionPlayerTokenBridgeFilter;
 import com.guoyu.platform.file.config.FileStorageProperties;
@@ -46,6 +47,30 @@ public class SecurityConfig {
    */
   @Value("${platform.security.permit-test-apis:false}")
   private boolean permitTestApis;
+
+  private final org.springframework.core.env.Environment environment;
+
+  public SecurityConfig(org.springframework.core.env.Environment environment) {
+    this.environment = environment;
+  }
+
+  /**
+   * P1-9：该开关只在非 prod 生效。prod profile 下即使环境变量配成 true 也强制关闭，
+   * 避免「一个环境变量即失守」。常年匿名放行的学员报名端点（GET detail/roster-check/mine、
+   * POST register/upload、PUT mine）不依赖本开关，不受影响。
+   */
+  private boolean permitTestApisEffective() {
+    if (!permitTestApis) {
+      return false;
+    }
+    boolean prod = java.util.Arrays.stream(environment.getActiveProfiles())
+        .anyMatch(p -> "prod".equalsIgnoreCase(p));
+    if (prod) {
+      log.warn("[Security] permit-test-apis=true 但当前为 prod profile，已强制关闭");
+      return false;
+    }
+    return true;
+  }
 
   @Bean
   public AppTokenAuthFilter appTokenAuthFilter(
@@ -98,6 +123,7 @@ public class SecurityConfig {
       CompetitionPlayerTokenBridgeFilter competitionPlayerTokenBridgeFilter,
       CompetitionExamTokenBridgeFilter competitionExamTokenBridgeFilter,
       SaTokenBridgeFilter saTokenBridgeFilter,
+      TenantConsistencyFilter tenantConsistencyFilter,
       TenantContextFilter tenantContextFilter,
       CorsConfigurationSource corsConfigurationSource
   ) throws Exception {
@@ -125,8 +151,11 @@ public class SecurityConfig {
             auth.requestMatchers(HttpMethod.GET, "/auth/tenants").permitAll();
             auth.requestMatchers(HttpMethod.GET, "/auth/captcha/generate").permitAll();
             auth.requestMatchers(HttpMethod.POST, "/auth/captcha/verify").permitAll();
+            // 证件照/素材直链（<img> 无 Authorization 头），保持匿名 —— 单独决策，见修订方案 §2.2
             auth.requestMatchers(HttpMethod.GET, "/exam/files/**").permitAll();
-            auth.requestMatchers("/files/**").permitAll();
+            // P0-5：/files/** 不再匿名放行（此前不限方法 permitAll 导致可匿名上传/删除）。
+            // 读端点需登录，写端点在 FileController 上另有 file:upload / file:delete 权限码。
+            auth.requestMatchers("/files/**").authenticated();
             // OnlyOffice Document Server：拉取文档 + 保存回调（无浏览器登录态）
             auth.requestMatchers("/training/office/**").permitAll();
             auth.requestMatchers(HttpMethod.GET, "/ws/practical-scoring").permitAll();
@@ -147,7 +176,7 @@ public class SecurityConfig {
                 "/training/sign-ups/{id}/register",
                 "/training/sign-ups/upload").permitAll();
             auth.requestMatchers(HttpMethod.PUT, "/training/sign-ups/{id}/mine").permitAll();
-            if (permitTestApis) {
+            if (permitTestApisEffective()) {
                 // 本地联调便利（env PERMIT_TEST_APIS=true，默认关）：管理端 sign-ups
                 // CRUD/二维码/导出也匿名放行；生产默认关闭 → 落入 authenticated()，
                 // 由 Sa-Token + @PreAuthorize(train:sign-up:*) 保护
@@ -161,6 +190,8 @@ public class SecurityConfig {
             auth.anyRequest().authenticated();
         })
         .addFilterBefore(saTokenBridgeFilter, UsernamePasswordAuthenticationFilter.class)
+        // P0-1：认证主体确立后立即比对 X-Tenant-Id 与主体租户，不一致 403（零例外）
+        .addFilterAfter(tenantConsistencyFilter, SaTokenBridgeFilter.class)
         .addFilterBefore(appTokenAuthFilter, SaTokenBridgeFilter.class)
         .addFilterBefore(competitionPlayerTokenBridgeFilter, AppTokenAuthFilter.class)
         .addFilterBefore(competitionExamTokenBridgeFilter, CompetitionPlayerTokenBridgeFilter.class)

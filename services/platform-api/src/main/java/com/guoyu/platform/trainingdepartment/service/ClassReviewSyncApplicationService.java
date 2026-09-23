@@ -802,6 +802,114 @@ public class ClassReviewSyncApplicationService {
   }
 
   /**
+   * 学员移出班级后，从本班已绑定的同步学/复习试卷名单中移除。
+   * 同一试卷仍被其他班级的在册学员使用时不移除。
+   */
+  public int unenrollRemovedStudents(Long classId, List<TrainPeopleListEntity> removed) {
+    if (classId == null || classId <= 0 || removed == null || removed.isEmpty()) {
+      return 0;
+    }
+    Long tenantId = resolveTenantId();
+    TrainClassReviewSyncEntity cfg = findByClass(tenantId, classId);
+    if (cfg == null || cfg.getExamId() == null || cfg.getExamId() <= 0) {
+      return 0;
+    }
+    Long examId = cfg.getExamId();
+    List<Long> siblingClassIds = reviewSyncMapper.selectList(new LambdaQueryWrapper<TrainClassReviewSyncEntity>()
+            .eq(TrainClassReviewSyncEntity::getExamId, examId)
+            .ne(TrainClassReviewSyncEntity::getClassId, classId))
+        .stream()
+        .map(TrainClassReviewSyncEntity::getClassId)
+        .filter(id -> id != null && id > 0)
+        .distinct()
+        .toList();
+
+    int removedCount = 0;
+    for (TrainPeopleListEntity student : removed) {
+      if (student == null || (student.getType() != null && !"student".equals(student.getType()))) {
+        continue;
+      }
+      if (stillActiveOnClasses(siblingClassIds, student)) {
+        continue;
+      }
+      removedCount += deleteExamPeopleForStudent(examId, student);
+    }
+    if (removedCount > 0) {
+      log.info("[班级同步学] 学员移出班级后已从复习名单移除 {} 人 classId={} examId={}",
+          removedCount, classId, examId);
+    }
+    return removedCount;
+  }
+
+  private boolean stillActiveOnClasses(List<Long> classIds, TrainPeopleListEntity student) {
+    if (classIds == null || classIds.isEmpty() || student == null) {
+      return false;
+    }
+    Long platformUserId = student.getPlatformUserId();
+    String idCard = StringUtils.hasText(student.getIdCard()) ? student.getIdCard().trim() : null;
+    if ((platformUserId == null || platformUserId <= 0) && !StringUtils.hasText(idCard)) {
+      return false;
+    }
+    LambdaQueryWrapper<TrainPeopleListEntity> q = new LambdaQueryWrapper<TrainPeopleListEntity>()
+        .in(TrainPeopleListEntity::getTrainClassId, classIds)
+        .eq(TrainPeopleListEntity::getType, "student")
+        .eq(TrainPeopleListEntity::getDeleted, 0);
+    q.and(w -> {
+      boolean first = true;
+      if (platformUserId != null && platformUserId > 0) {
+        w.eq(TrainPeopleListEntity::getPlatformUserId, platformUserId);
+        first = false;
+      }
+      if (StringUtils.hasText(idCard)) {
+        if (!first) {
+          w.or();
+        }
+        w.eq(TrainPeopleListEntity::getIdCard, idCard);
+      }
+    });
+    Long cnt = peopleMapper.selectCount(q);
+    return cnt != null && cnt > 0;
+  }
+
+  private int deleteExamPeopleForStudent(Long examId, TrainPeopleListEntity student) {
+    Set<Long> userIds = new HashSet<>();
+    Set<String> idCards = new HashSet<>();
+    if (student.getPlatformUserId() != null && student.getPlatformUserId() > 0) {
+      userIds.add(student.getPlatformUserId());
+    }
+    if (StringUtils.hasText(student.getIdCard())) {
+      String card = student.getIdCard().trim();
+      idCards.add(card);
+      idCards.add(card.toUpperCase());
+    }
+    if (userIds.isEmpty() && idCards.isEmpty()) {
+      return 0;
+    }
+    LambdaQueryWrapper<TrainExamPeopleListEntity> q = new LambdaQueryWrapper<TrainExamPeopleListEntity>()
+        .eq(TrainExamPeopleListEntity::getExamId, examId)
+        .eq(TrainExamPeopleListEntity::getDeleted, 0);
+    q.and(w -> {
+      boolean first = true;
+      if (!userIds.isEmpty()) {
+        w.in(TrainExamPeopleListEntity::getPlatformUserId, userIds);
+        first = false;
+      }
+      if (!idCards.isEmpty()) {
+        if (!first) {
+          w.or();
+        }
+        w.in(TrainExamPeopleListEntity::getIdCardNum, idCards);
+      }
+    });
+    List<TrainExamPeopleListEntity> hits = examPeopleMapper.selectList(q);
+    int removed = 0;
+    for (TrainExamPeopleListEntity hit : hits) {
+      removed += examPeopleMapper.deleteById(hit.getId());
+    }
+    return removed;
+  }
+
+  /**
    * 本班已绑到正确计划后，清理学员在同培训其它「*-同步学」计划上的错绑残留。
    */
   int unenrollClassRosterFromOtherSyncExams(TrainInfoClassEntity clazz, Long keepExamId) {

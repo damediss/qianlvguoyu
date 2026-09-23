@@ -757,11 +757,29 @@ function ProgressView({ projectId, onBack }: { projectId: string; onBack: () => 
                     data-testid={`slide-retry-${row.id}`}
                     onClick={async () => {
                       await retryCoursewareSlide(row.id);
-                      message.success('已重新生成该页');
-                      // 终态轮询已停,显式重取确保恢复可见(refetchQueries 强制刷新活跃查询)
+                      message.success('已重新生成该页,正在生成中');
+                      // 重试异步执行(约 10 秒),项目已是终态轮询已停:
+                      // 先立即刷新看到"生成中",再轮询到该页终态自动更新列表(用户口径 2026-09-22)
                       await queryClient.refetchQueries({
                         queryKey: ['courseware-progress', projectId],
                       });
+                      const deadline = Date.now() + 120_000;
+                      while (Date.now() < deadline) {
+                        await new Promise((r) => setTimeout(r, 3000));
+                        const fresh = await queryClient.fetchQuery({
+                          queryKey: ['courseware-progress', projectId],
+                          queryFn: () => getCoursewareProgress(projectId),
+                          staleTime: 0,
+                        });
+                        const target = fresh.slides.find((x) => x.id === row.id);
+                        if (!target || target.status === 'ready' || target.status === 'failed'
+                          || target.status === 'cancelled') {
+                          await queryClient.refetchQueries({
+                            queryKey: ['courseware-progress', projectId],
+                          });
+                          break;
+                        }
+                      }
                     }}
                   >
                     重试

@@ -1,5 +1,6 @@
 package com.guoyu.platform.competition.exam.realtime;
 
+import com.guoyu.platform.config.WebSocketAllowedOrigins;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -18,20 +19,23 @@ public class FormalExamRealtimeWebSocketConfig implements WebSocketConfigurer {
 
   private final FormalExamPlayerWebSocketHandler playerHandler;
   private final FormalExamConsoleWebSocketHandler consoleHandler;
+  private final WebSocketAllowedOrigins allowedOrigins;
 
   public FormalExamRealtimeWebSocketConfig(
       FormalExamPlayerWebSocketHandler playerHandler,
-      FormalExamConsoleWebSocketHandler consoleHandler) {
+      FormalExamConsoleWebSocketHandler consoleHandler,
+      WebSocketAllowedOrigins allowedOrigins) {
     this.playerHandler = playerHandler;
     this.consoleHandler = consoleHandler;
+    this.allowedOrigins = allowedOrigins;
   }
 
   @Override
   public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
     registry.addHandler(playerHandler, "/ws/competition/formal-exam/player")
-        .setAllowedOriginPatterns("*");
+        .setAllowedOrigins(allowedOrigins.asArray());
     registry.addHandler(consoleHandler, "/ws/competition/formal-exam/console")
-        .setAllowedOriginPatterns("*");
+        .setAllowedOrigins(allowedOrigins.asArray());
   }
 
   @Bean

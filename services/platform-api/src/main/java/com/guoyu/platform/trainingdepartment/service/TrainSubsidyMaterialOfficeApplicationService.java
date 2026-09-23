@@ -176,6 +176,7 @@ public class TrainSubsidyMaterialOfficeApplicationService {
 
   @Transactional(readOnly = true)
   public ResponseEntity<Resource> downloadForOffice(Long fileId, String token) {
+    requireEnabled();
     DownloadToken claims = verifyDownloadToken(token);
     if (!claims.fileId().equals(fileId)) {
       throw new BusinessException(ErrorCode.FORBIDDEN, "下载令牌与文件不匹配");
@@ -194,6 +195,10 @@ public class TrainSubsidyMaterialOfficeApplicationService {
       Long userId,
       String authorizationHeader,
       String bodyJson) {
+    // P1-12（提级第一批）：未启用时回调必须完全不可达。此前 handleCallback 不检查 enabled，
+    // 而 /training/office/** 在 SecurityConfig 中是 permitAll，等于把「零验签 + 任意 url 下载写入」
+    // 的接口暴露在公网上，仅靠雪花 ID 难猜挡着。
+    requireEnabled();
     try {
       JsonNode root = parseCallbackBody(authorizationHeader, bodyJson);
       int status = root.path("status").asInt(-1);
@@ -305,7 +310,7 @@ public class TrainSubsidyMaterialOfficeApplicationService {
       if (!StringUtils.hasText(token)) {
         throw new BusinessException(ErrorCode.UNAUTHORIZED, "缺少 OnlyOffice JWT");
       }
-      Map<String, Object> payload = OnlyOfficeJwtSupport.verifyHs256(token, props.jwtSecret());
+      Map<String, Object> payload = OnlyOfficeJwtSupport.verifyHs256(token, resolveJwtSecret());
       // OnlyOffice outbox JWT 常把业务字段放在 payload 根上，或放在 payload 字段内
       if (payload.containsKey("payload") && payload.get("payload") instanceof Map<?, ?> nested) {
         return objectMapper.valueToTree(nested);
@@ -316,6 +321,7 @@ public class TrainSubsidyMaterialOfficeApplicationService {
   }
 
   private byte[] downloadBytes(String url) throws Exception {
+    requireAllowedDocumentServerHost(url);
     HttpRequest request = HttpRequest.newBuilder(URI.create(url))
         .timeout(Duration.ofMinutes(2))
         .GET()
@@ -329,6 +335,55 @@ public class TrainSubsidyMaterialOfficeApplicationService {
     }
   }
 
+  /** 未启用 OnlyOffice 时，回调与供文档服务器下载的接口一律 404。 */
+  void requireEnabled() {
+    if (!props.enabled()) {
+      log.warn("OnlyOffice endpoint rejected: feature disabled, uri target instanceId");
+      throw new BusinessException(ErrorCode.NOT_FOUND, "在线编辑未启用");
+    }
+  }
+
+  /**
+   * SSRF 防护：回调 body 里的 url 只允许指向已配置的 Document Server。
+   * 生产部署 Document Server 时必须配 `platform.onlyoffice.document-server-url`，否则一律拒绝。
+   */
+  void requireAllowedDocumentServerHost(String url) {
+    if (!StringUtils.hasText(url)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "回调缺少下载 url");
+    }
+    String configuredHost = hostOf(props.documentServerUrl());
+    if (configuredHost == null) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "未配置 OnlyOffice Document Server 地址，拒绝下载编辑结果");
+    }
+    String targetHost = hostOf(url);
+    if (targetHost == null || !targetHost.equalsIgnoreCase(configuredHost)) {
+      log.warn("OnlyOffice callback url rejected: host not allowed, targetHost={}", targetHost);
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "回调下载地址不在允许范围内");
+    }
+  }
+
+  private String hostOf(String rawUrl) {
+    if (!StringUtils.hasText(rawUrl)) {
+      return null;
+    }
+    try {
+      return URI.create(rawUrl.trim()).getHost();
+    } catch (IllegalArgumentException ex) {
+      return null;
+    }
+  }
+
+  /**
+   * 下载令牌密钥：未配置即失败，不再回退到硬编码 dev secret
+   * （此前 Anyone 拿到源码即可伪造任意 fileId 的下载令牌）。
+   */
+  String resolveJwtSecret() {
+    if (!StringUtils.hasText(props.jwtSecret())) {
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "未配置 platform.onlyoffice.jwt-secret，无法签发或校验令牌");
+    }
+    return props.jwtSecret();
+  }
+
   private String signDownloadToken(Long fileId, Long tenantId, Long versionId) {
     long exp = Instant.now().getEpochSecond() + props.downloadTokenTtlSeconds();
     Map<String, Object> claims = new LinkedHashMap<>();
@@ -336,15 +391,14 @@ public class TrainSubsidyMaterialOfficeApplicationService {
     claims.put("tid", tenantId);
     claims.put("vid", versionId);
     claims.put("exp", exp);
-    String secret = StringUtils.hasText(props.jwtSecret()) ? props.jwtSecret() : "onlyoffice-download-dev-secret";
-    return OnlyOfficeJwtSupport.signHs256(claims, secret);
+    return OnlyOfficeJwtSupport.signHs256(claims, resolveJwtSecret());
   }
 
   private DownloadToken verifyDownloadToken(String token) {
     if (!StringUtils.hasText(token)) {
       throw new BusinessException(ErrorCode.UNAUTHORIZED, "缺少下载令牌");
     }
-    String secret = StringUtils.hasText(props.jwtSecret()) ? props.jwtSecret() : "onlyoffice-download-dev-secret";
+    String secret = resolveJwtSecret();
     Map<String, Object> claims;
     try {
       claims = OnlyOfficeJwtSupport.verifyHs256(token, secret);

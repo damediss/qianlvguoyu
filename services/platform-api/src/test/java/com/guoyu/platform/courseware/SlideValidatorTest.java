@@ -135,6 +135,19 @@ class SlideValidatorTest {
   }
 
   @Test
+  void u09_blankTableRowIsError() {
+    Layout tableLayout = CoursewareLayout.require(CoursewareLayout.CONTENT_TABLE);
+    List<StructureIssue> issues = SlideValidator.validate(List.of(
+        SlideBlock.text("title", "参数对照表"),
+        SlideBlock.table("body", List.of("参数", "值"), List.of(
+            List.of("温度", "850℃"), List.of(), List.of(" ", " ")))),
+        tableLayout, "content", "medium");
+    assertTrue(issues.stream().anyMatch(i -> i.isError() && i.message().contains("空白数据行")),
+        "空白数据行应报 structure error 触发修复");
+    assertTrue(issues.stream().anyMatch(StructureIssue::isRepairWorthy));
+  }
+
+  @Test
   void u10_tableCapacityRules() {
     Layout tableLayout = CoursewareLayout.require(CoursewareLayout.CONTENT_TABLE);
     List<StructureIssue> issues = SlideValidator.validate(List.of(

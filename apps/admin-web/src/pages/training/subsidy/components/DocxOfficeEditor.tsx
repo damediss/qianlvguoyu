@@ -8,6 +8,8 @@ type Props = {
   /** 版本变化时强制重建编辑器（document key 会变） */
   versionKey?: string | number | null;
   onSaved?: () => void;
+  /** OnlyOffice 未启用/不可用时回调，由上层回退到字段编辑 */
+  onUnavailable?: (reason: string) => void;
 };
 
 declare global {
@@ -42,11 +44,13 @@ function loadApiScript(src: string): Promise<void> {
   });
 }
 
-export function DocxOfficeEditor({ instanceId, versionKey, onSaved }: Props) {
+export function DocxOfficeEditor({ instanceId, versionKey, onSaved, onUnavailable }: Props) {
   const placeholderId = `oo-editor-${String(instanceId).replace(/\W/g, '')}`;
   const editorRef = useRef<{ destroyEditor?: () => void } | null>(null);
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
+  const onUnavailableRef = useRef(onUnavailable);
+  onUnavailableRef.current = onUnavailable;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<Pick<SubsidyMaterialOfficeConfig, 'documentServerUrl'> | null>(null);
@@ -61,7 +65,9 @@ export function DocxOfficeEditor({ instanceId, versionKey, onSaved }: Props) {
         const cfg = await trainApi.getSubsidyMaterialOfficeConfig(instanceId);
         if (cancelled) return;
         if (!cfg.enabled || !cfg.config || !cfg.apiScriptUrl) {
-          setError(cfg.message || 'OnlyOffice 未启用或未配置');
+          const reason = cfg.message || 'OnlyOffice 未启用或未配置';
+          onUnavailableRef.current?.(reason);
+          setError(reason);
           setLoading(false);
           return;
         }
@@ -104,7 +110,9 @@ export function DocxOfficeEditor({ instanceId, versionKey, onSaved }: Props) {
         setLoading(false);
       } catch (e) {
         if (!cancelled) {
-          setError((e as Error).message || '打开在线编辑失败');
+          const reason = (e as Error).message || '打开在线编辑失败';
+          onUnavailableRef.current?.(reason);
+          setError(reason);
           setLoading(false);
         }
       }
@@ -128,18 +136,14 @@ export function DocxOfficeEditor({ instanceId, versionKey, onSaved }: Props) {
   if (error) {
     return (
       <Alert
-        type="warning"
+        type="info"
         showIcon
-        message="无法打开在线编辑"
+        message="完整排版编辑不可用"
         description={
           <div>
             <div>{error}</div>
             <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
-              请确认已启动 OnlyOffice Document Server，并在后端配置
-              <Typography.Text code>ONLYOFFICE_ENABLED=true</Typography.Text>、
-              <Typography.Text code>ONLYOFFICE_DS_URL</Typography.Text>、
-              <Typography.Text code>ONLYOFFICE_PUBLIC_BASE_URL</Typography.Text>、
-              <Typography.Text code>ONLYOFFICE_JWT_SECRET</Typography.Text>（与 DS 一致）。
+              本环境未部署 OnlyOffice 时，请使用「字段编辑」改申请表内容，或下载后替换上传。
               {meta?.documentServerUrl ? (
                 <>
                   {' '}

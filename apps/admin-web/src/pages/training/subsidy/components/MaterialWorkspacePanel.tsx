@@ -3,10 +3,17 @@ import { Button, Empty, List, Space, Typography, Upload, message } from 'antd';
 import { ArrowLeftOutlined, EditOutlined, FileOutlined } from '@ant-design/icons';
 import type { SubsidyMaterialInstance, SubsidyMaterialSlotFile } from '../../../../api/training';
 import * as trainApi from '../../../../api/training';
-import { downloadUrlFile } from '../../../../api/files';
+import {
+  downloadUrlFile,
+  fetchPlatformFileBlob,
+  fetchUrlFileBlob,
+  resolveFilePreviewKind,
+  type FilePreviewKind,
+} from '../../../../api/files';
 import { MaterialStatusTag } from './MaterialStatusTag';
 import { MaterialFilePreview } from './MaterialFilePreview';
 import { MaterialSpreadsheetEditor } from './MaterialSpreadsheetEditor';
+import { DocxMetaEditor } from './DocxMetaEditor';
 import { DocxOfficeEditor } from './DocxOfficeEditor';
 
 type Props = {
@@ -36,14 +43,24 @@ function isWordDoc(name?: string | null, path?: string | null) {
   return /\.docx?(\?|$)/i.test(s);
 }
 
+/** 申请表/花名册/汇总等默认可进 Office 在线编辑（文件名常无扩展名） */
+function isOfficeEditableMaterialType(materialType?: string | null) {
+  return (
+    materialType === 'application_form'
+    || materialType === 'roster'
+    || materialType === 'summary'
+    || materialType === 'other'
+  );
+}
+
 /** 证书 PDF 等多文件并列；申请表/花名册等即使 slotFiles 有历史记录也按当前版本单文件处理 */
 function isMultiFileMaterial(item: SubsidyMaterialInstance) {
   if (item.materialType === 'certificate') return true;
   const slots = item.slotFiles || [];
   if (slots.length <= 1) return false;
-  // 多个 slot 文件且当前主文件不像 office 文档 → 按多文件列表
   const mainName = item.fileName || '';
   if (isSpreadsheet(mainName) || isWordDoc(mainName)) return false;
+  if (isOfficeEditableMaterialType(item.materialType)) return false;
   return slots.length > 1;
 }
 
@@ -97,13 +114,115 @@ export function MaterialWorkspacePanel({
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [savingCells, setSavingCells] = useState(false);
+  const [wordEditorMode, setWordEditorMode] = useState<'meta' | 'office'>('meta');
+  /** 文件名无扩展名时，用 MIME 嗅探结果决定编辑器 */
+  const [sniffedKind, setSniffedKind] = useState<FilePreviewKind | null>(null);
+  /** OnlyOffice 是否可用（未部署则不展示入口） */
+  const [onlyOfficeAvailable, setOnlyOfficeAvailable] = useState(false);
 
   const targets = useMemo(() => (item ? buildSlotTargets(item) : []), [item]);
 
   useEffect(() => {
     setSelectedKey(null);
     setEditing(false);
+    setWordEditorMode('meta');
+    setSniffedKind(null);
+    setOnlyOfficeAvailable(false);
   }, [item?.id]);
+
+  useEffect(() => {
+    if (!item?.hasFile || !item?.id) {
+      setOnlyOfficeAvailable(false);
+      return;
+    }
+    let cancelled = false;
+    void trainApi
+      .getSubsidyMaterialOfficeConfig(item.id)
+      .then((cfg) => {
+        if (!cancelled) {
+          const ok = !!cfg.enabled && !!cfg.config && !!cfg.apiScriptUrl;
+          setOnlyOfficeAvailable(ok);
+          if (!ok) setWordEditorMode('meta');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOnlyOfficeAvailable(false);
+          setWordEditorMode('meta');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [item?.id, item?.hasFile]);
+
+  const multiFile = !!item && isMultiFileMaterial(item) && targets.length > 1;
+
+  const active =
+    item == null
+      ? null
+      : selectedKey != null
+        ? targets.find((t) => t.key === selectedKey) ?? null
+        : multiFile
+          ? null
+          : targets[0] ?? null;
+
+  useEffect(() => {
+    if (!item?.hasFile || !active || multiFile) {
+      setSniffedKind(null);
+      return;
+    }
+    const nameHint = `${active.fileName || ''} ${item.fileName || ''} ${item.uploadTemplateFileName || ''}`;
+    if (isWordDoc(nameHint) || isSpreadsheet(nameHint)) {
+      setSniffedKind(isWordDoc(nameHint) ? 'docx' : 'spreadsheet');
+      return;
+    }
+
+    let cancelled = false;
+    const sniff = async () => {
+      try {
+        const blob = active.filePath
+          ? await fetchUrlFileBlob(active.filePath)
+          : active.fileId != null
+            ? await fetchPlatformFileBlob(String(active.fileId))
+            : null;
+        if (cancelled || !blob) return;
+        const kind = resolveFilePreviewKind(
+          active.fileName || item.fileName || item.title || '',
+          undefined,
+          blob.type,
+        );
+        if (!cancelled && (kind === 'docx' || kind === 'spreadsheet')) {
+          setSniffedKind(kind);
+        } else if (!cancelled && isOfficeEditableMaterialType(item.materialType)) {
+          setSniffedKind(
+            item.materialType === 'roster' || item.materialType === 'summary' ? 'spreadsheet' : 'docx',
+          );
+        }
+      } catch {
+        if (!cancelled && isOfficeEditableMaterialType(item.materialType)) {
+          setSniffedKind(
+            item.materialType === 'roster' || item.materialType === 'summary' ? 'spreadsheet' : 'docx',
+          );
+        }
+      }
+    };
+    void sniff();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    item?.id,
+    item?.hasFile,
+    item?.fileName,
+    item?.title,
+    item?.materialType,
+    item?.uploadTemplateFileName,
+    active?.fileId,
+    active?.filePath,
+    active?.fileName,
+    multiFile,
+  ]);
 
   if (!item) {
     return (
@@ -113,27 +232,34 @@ export function MaterialWorkspacePanel({
     );
   }
 
-  const multiFile = isMultiFileMaterial(item) && targets.length > 1;
-
-  const active =
-    selectedKey != null
-      ? targets.find((t) => t.key === selectedKey) ?? null
-      : multiFile
-        ? null
-        : targets[0] ?? null;
-
-  const fileLabel = `${active?.fileName || ''} ${item.fileName || ''} ${active?.filePath || ''}`;
+  const nameBundle = `${active?.fileName || ''} ${item.fileName || ''} ${item.uploadTemplateFileName || ''} ${active?.filePath || ''}`;
   const spreadsheet =
-    isSpreadsheet(active?.fileName, active?.filePath)
-    || isSpreadsheet(item.fileName, item.filePath)
-    || /\.xlsx?/i.test(fileLabel);
+    sniffedKind === 'spreadsheet'
+    || (sniffedKind == null
+      && (isSpreadsheet(active?.fileName, active?.filePath)
+        || isSpreadsheet(item.fileName, item.filePath)
+        || /\.xlsx?/i.test(nameBundle)));
+  // 申请表：扩展名缺失时也先按 Word 露出编辑（预览已能用 MIME 渲 docx）
   const wordDoc =
-    isWordDoc(active?.fileName, active?.filePath)
-    || isWordDoc(item.fileName, item.filePath);
+    sniffedKind === 'docx'
+    || (sniffedKind == null
+      && (isWordDoc(active?.fileName, active?.filePath)
+        || isWordDoc(item.fileName, item.filePath)
+        || /\.docx?/i.test(nameBundle)))
+    || (sniffedKind == null
+      && item.hasFile
+      && item.materialType === 'application_form'
+      && !isSpreadsheet(nameBundle));
 
   const canEditSpreadsheet = !!active && !multiFile && spreadsheet && item.hasFile && !!onReplaceFile;
   const canEditWord = !!active && !multiFile && wordDoc && item.hasFile;
-  const canEdit = item.hasFile && !multiFile && (!!onReplaceFile || canEditWord) && (spreadsheet || wordDoc);
+  const canEdit =
+    item.hasFile
+    && !multiFile
+    && !!active
+    && (canEditSpreadsheet
+      || canEditWord
+      || (isOfficeEditableMaterialType(item.materialType) && item.hasFile));
 
   const downloadTarget = active || (!multiFile ? targets[0] : null);
 
@@ -151,6 +277,20 @@ export function MaterialWorkspacePanel({
       setSavingCells(false);
     }
   };
+
+  const enterEditing = () => {
+    if (editing) {
+      setEditing(false);
+      return;
+    }
+    if (sniffedKind == null && item.materialType === 'application_form' && !spreadsheet) {
+      setSniffedKind('docx');
+    }
+    setEditing(true);
+  };
+
+  const showWordEditor = editing && !!active && (canEditWord || (editing && sniffedKind === 'docx'));
+  const showSheetEditor = editing && !!active && canEditSpreadsheet && sniffedKind !== 'docx';
 
   return (
     <div className="material-workspace-panel">
@@ -172,7 +312,7 @@ export function MaterialWorkspacePanel({
             ) : null}
           </Space>
         </div>
-        <Space wrap size={[8, 8]}>
+        <Space wrap size={[8, 8]} className="material-workspace-actions">
           {multiFile && active ? (
             <Button icon={<ArrowLeftOutlined />} onClick={() => setSelectedKey(null)}>
               返回列表
@@ -201,7 +341,7 @@ export function MaterialWorkspacePanel({
             <Button
               type={editing ? 'primary' : 'default'}
               icon={<EditOutlined />}
-              onClick={() => setEditing((v) => !v)}
+              onClick={enterEditing}
             >
               {editing ? '退出编辑' : '编辑'}
             </Button>
@@ -257,7 +397,7 @@ export function MaterialWorkspacePanel({
             )}
           />
         </div>
-      ) : active && editing && canEditSpreadsheet ? (
+      ) : active && showSheetEditor ? (
         <MaterialSpreadsheetEditor
           fileId={active.fileId}
           filePath={active.filePath}
@@ -266,15 +406,46 @@ export function MaterialWorkspacePanel({
           saveLoading={savingCells || !!replaceLoading}
           editable
         />
-      ) : active && editing && canEditWord ? (
-        <DocxOfficeEditor
-          instanceId={item.id}
-          versionKey={item.currentVersionId ?? item.versionNo}
-          onSaved={() => {
-            onOfficeSaved?.();
-            setEditing(false);
-          }}
-        />
+      ) : active && showWordEditor ? (
+        wordEditorMode === 'office' && onlyOfficeAvailable ? (
+          <div>
+            <div style={{ padding: '8px 12px' }}>
+              <Button type="link" size="small" onClick={() => setWordEditorMode('meta')}>
+                ← 返回字段编辑
+              </Button>
+            </div>
+            <DocxOfficeEditor
+              instanceId={item.id}
+              versionKey={item.currentVersionId ?? item.versionNo}
+              onUnavailable={() => {
+                message.info('OnlyOffice 未启用，已切换回字段编辑');
+                setWordEditorMode('meta');
+                setOnlyOfficeAvailable(false);
+              }}
+              onSaved={() => {
+                onOfficeSaved?.();
+                setEditing(false);
+              }}
+            />
+          </div>
+        ) : (
+          <DocxMetaEditor
+            instanceId={item.id}
+            onlyOfficeAvailable={onlyOfficeAvailable}
+            onCancel={() => setEditing(false)}
+            onOpenFullEditor={
+              onlyOfficeAvailable
+                ? () => setWordEditorMode('office')
+                : undefined
+            }
+            onSaved={() => {
+              onOfficeSaved?.();
+              setEditing(false);
+            }}
+          />
+        )
+      ) : active && editing ? (
+        <Empty description="正在识别文件类型…若仍无法编辑，请确认文件为 docx/xlsx" />
       ) : active ? (
         <MaterialFilePreview
           fileId={active.fileId}

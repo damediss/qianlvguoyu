@@ -4,9 +4,10 @@ import java.util.Collection;
 import java.util.List;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import com.guoyu.platform.security.TenantScopedPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 
-public class CompetitionExamPrincipal implements UserDetails {
+public class CompetitionExamPrincipal implements UserDetails, TenantScopedPrincipal {
   private final Long playerId;
   private final Long tenantId;
   private final Long accessSessionId;
@@ -36,6 +37,7 @@ public class CompetitionExamPrincipal implements UserDetails {
   }
 
   public Long getPlayerId() { return playerId; }
+  @Override
   public Long getTenantId() { return tenantId; }
   public Long getAccessSessionId() { return accessSessionId; }
   public Integer getGeneration() { return generation; }

@@ -8,6 +8,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import lombok.extern.slf4j.Slf4j;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -32,6 +33,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 @Service
+@Slf4j
 public class DefenseSummaryExportService {
 
   static final String TEMPLATE_PATH = "templates/技师、高级技师评价综合评定科目评审成绩汇总表.docx";
@@ -82,9 +84,9 @@ public class DefenseSummaryExportService {
       }
       return packZip(progress, summary, sheets);
     } catch (IOException ex) {
-      throw new BusinessException(
-          ErrorCode.INTERNAL_ERROR,
-          "导出答辩成绩汇总表失败: " + ex.getClass().getSimpleName() + ": " + ex.getMessage());
+      // P2-2：异常类名与消息可能暴露内部路径/实现，只入日志不回显
+      log.error("导出答辩成绩汇总表失败", ex);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "导出答辩成绩汇总表失败，请稍后重试");
     }
   }
 

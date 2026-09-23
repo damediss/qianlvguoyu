@@ -38,25 +38,28 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CoursewareOutlineService {
 
-  /** 钳制(方案 §7):章 3~6、内容页+固定页总数 ≤50 */
+  /** 钳制(方案 §7):章 3~6;总页数上限走配置(知识点页会显著放大体量,v1.4) */
   static final int MIN_CHAPTERS = 3;
   static final int MAX_CHAPTERS = 6;
-  static final int MAX_TOTAL_PAGES = 50;
 
   private final CoursewareAiService aiService;
   private final CwOutlinePageMapper outlineMapper;
   private final CwProjectMapper projectMapper;
   private final CwSlideMapper slideMapper;
   private final ObjectMapper objectMapper;
+  private final int maxTotalPages;
 
   public CoursewareOutlineService(CoursewareAiService aiService, CwOutlinePageMapper outlineMapper,
                                   CwProjectMapper projectMapper, CwSlideMapper slideMapper,
-                                  ObjectMapper objectMapper) {
+                                  ObjectMapper objectMapper,
+                                  @org.springframework.beans.factory.annotation.Value(
+                                      "${platform.courseware.max-pages:300}") int maxTotalPages) {
     this.aiService = aiService;
     this.outlineMapper = outlineMapper;
     this.projectMapper = projectMapper;
     this.slideMapper = slideMapper;
     this.objectMapper = objectMapper;
+    this.maxTotalPages = maxTotalPages;
   }
 
   // ──────────────── 生成(pipeline 调用) ────────────────
@@ -64,22 +67,31 @@ public class CoursewareOutlineService {
   /**
    * 生成大纲页实体列表(不落库,由 pipeline 统一落库)。
    * LLM 异常或两轮校验不过 → BusinessException("大纲生成失败,请重试")。
+   * knowledgePoints 非空时:基本要求/工作要求章替换为逐知识点页(方案 v1.4)。
    */
   public List<CwOutlinePageEntity> generateOutlinePages(Long tenantId, Long projectId,
       Long operatorId, String title, String audience, String density,
-      List<SourceSection> sections, DigestDraft digest) {
+      List<SourceSection> sections, DigestDraft digest,
+      List<com.guoyu.platform.courseware.entity.CwKnowledgePointEntity> knowledgePoints) {
     List<SourceSection> trimmed = CoursewareDigestService.trimSections(sections,
         CoursewareDigestService.MAX_SECTION_CHARS, CoursewareDigestService.MAX_TOTAL_CHARS);
     Set<String> validRefs = CoursewareDigestService.validRefs(sections);
+    boolean hasKnowledgePoints = knowledgePoints != null && !knowledgePoints.isEmpty();
     String userPrompt = CoursewarePrompts.outlineUser(title, audience, density, trimmed, digest,
-        objectMapper);
+        hasKnowledgePoints, objectMapper);
     Exception last = null;
     for (int attempt = 0; attempt < 2; attempt++) {
       try {
         String content = aiService.callOutline(tenantId, projectId, operatorId,
             CoursewarePrompts.outlineSystem(), userPrompt);
         OutlineDraft draft = parseOutline(content, validRefs, objectMapper);
-        return assemblePages(draft, title, projectId, tenantId, operatorId);
+        List<CwOutlinePageEntity> pages = assemblePages(draft, title, projectId, tenantId,
+            operatorId, maxTotalPages);
+        if (hasKnowledgePoints) {
+          pages = replaceRequirementChapters(pages, knowledgePoints, projectId, tenantId,
+              operatorId, maxTotalPages);
+        }
+        return pages;
       } catch (IllegalArgumentException e) {
         last = e;
         log.warn("大纲输出校验失败(第 {} 轮): projectId={}, error={}", attempt + 1, projectId,
@@ -132,11 +144,11 @@ public class CoursewareOutlineService {
   }
 
   /**
-   * 确定性组装(方案 §7):章钳制 [3,6](超出并入末章)、总页数 ≤50(截断)、
+   * 确定性组装(方案 §7):章钳制 [3,6](超出并入末章)、总页数 ≤maxTotalPages(截断)、
    * 每章首页强制 section、cover/toc/review 三页确定性生成、position 连续化。
    */
   public static List<CwOutlinePageEntity> assemblePages(OutlineDraft draft, String deckTitle,
-      Long projectId, Long tenantId, Long operatorId) {
+      Long projectId, Long tenantId, Long operatorId, int maxTotalPages) {
     // 章钳制:0 章已在 parse 拦截;>6 章并入第 6 章
     List<OutlineChapterDraft> chapters = new ArrayList<>(draft.chapters());
     if (chapters.size() > MAX_CHAPTERS) {
@@ -161,7 +173,7 @@ public class CoursewareOutlineService {
     pages.add(fixedPage(projectId, tenantId, operatorId, position[0]++, "目录",
         CwOutlinePageEntity.ROLE_TOC, tocItems, CoursewareLayout.TOC));
 
-    // 章页:每章首页 section,其余 content;总页数钳制 50(含 3 固定页)
+    // 章页:每章首页 section,其余 content;总页数钳制 maxTotalPages(含 3 固定页)
     int chapterNo = 1;
     for (OutlineChapterDraft chapter : chapters) {
       List<OutlinePageDraft> chapterPages = new ArrayList<>(chapter.pages());
@@ -172,7 +184,7 @@ public class CoursewareOutlineService {
             List.of(), "section", null, List.of()));
       }
       for (int i = 0; i < chapterPages.size(); i++) {
-        if (pages.size() >= MAX_TOTAL_PAGES - 1) {
+        if (pages.size() >= maxTotalPages - 1) {
           break; // 留给末页 review
         }
         OutlinePageDraft p = chapterPages.get(i);
@@ -217,6 +229,203 @@ public class CoursewareOutlineService {
       pages.get(i).setPosition(i + 1);
     }
     return pages;
+  }
+
+  // ──────────────── 知识点章替换(方案 v1.4) ────────────────
+
+  /**
+   * 把大纲里属于「基本要求/工作要求」来源范围的章,替换为逐知识点章:
+   * 基本要求 1 章(逐三级编号点)、工作要求按等级 N 章(逐 x.y.z 相关知识要求点)。
+   * 识别按章内页面 source_refs 是否全部落在该范围(不依赖模型起的章名);
+   * 无匹配章时在 review 页之前兜底插入。总页数仍受 maxTotalPages 截断。
+   */
+  public static List<CwOutlinePageEntity> replaceRequirementChapters(
+      List<CwOutlinePageEntity> pages,
+      List<com.guoyu.platform.courseware.entity.CwKnowledgePointEntity> points,
+      Long projectId, Long tenantId, Long operatorId, int maxTotalPages) {
+
+    List<com.guoyu.platform.courseware.entity.CwKnowledgePointEntity> basicPoints = points.stream()
+        .filter(p -> com.guoyu.platform.courseware.entity.CwKnowledgePointEntity.CATEGORY_BASIC
+            .equals(p.getCategory()))
+        .sorted(java.util.Comparator.comparingInt(
+            com.guoyu.platform.courseware.entity.CwKnowledgePointEntity::getSortNo))
+        .toList();
+    List<com.guoyu.platform.courseware.entity.CwKnowledgePointEntity> workPoints = points.stream()
+        .filter(p -> com.guoyu.platform.courseware.entity.CwKnowledgePointEntity.CATEGORY_WORK
+            .equals(p.getCategory()))
+        .sorted(java.util.Comparator.comparingInt(
+            com.guoyu.platform.courseware.entity.CwKnowledgePointEntity::getSortNo))
+        .toList();
+    Set<String> basicRefs = points.stream()
+        .filter(p -> com.guoyu.platform.courseware.entity.CwKnowledgePointEntity.CATEGORY_BASIC
+            .equals(p.getCategory()))
+        .map(com.guoyu.platform.courseware.entity.CwKnowledgePointEntity::getSourceRef)
+        .filter(java.util.Objects::nonNull)
+        .collect(java.util.stream.Collectors.toSet());
+    Set<String> workRefs = points.stream()
+        .filter(p -> com.guoyu.platform.courseware.entity.CwKnowledgePointEntity.CATEGORY_WORK
+            .equals(p.getCategory()))
+        .map(com.guoyu.platform.courseware.entity.CwKnowledgePointEntity::getSourceRef)
+        .filter(java.util.Objects::nonNull)
+        .collect(java.util.stream.Collectors.toSet());
+
+    // 构造知识点章块:基本要求一章 + 工作要求按等级各一章(等级按首见顺序)
+    List<List<CwOutlinePageEntity>> knowledgeBlocks = new ArrayList<>();
+    if (!basicPoints.isEmpty()) {
+      knowledgeBlocks.add(buildKnowledgeChapter("基本要求", basicPoints, projectId, tenantId,
+          operatorId));
+    }
+    java.util.LinkedHashMap<String, List<com.guoyu.platform.courseware.entity.CwKnowledgePointEntity>>
+        byLevel = new java.util.LinkedHashMap<>();
+    for (var p : workPoints) {
+      byLevel.computeIfAbsent(p.getLevelName() != null ? p.getLevelName() : "工作要求",
+          k -> new ArrayList<>()).add(p);
+    }
+    for (var entry : byLevel.entrySet()) {
+      knowledgeBlocks.add(buildKnowledgeChapter("工作要求·" + entry.getKey(), entry.getValue(),
+          projectId, tenantId, operatorId));
+    }
+    if (knowledgeBlocks.isEmpty()) {
+      return pages;
+    }
+
+    // 识别并移除被替换章:按页计的重叠率 ≥60%(整章全含时全替换;
+    // 模型常把章首页挂到范围外小节 ref,全含规则会漏,2026-09-21 电工冒烟实测)
+    java.util.LinkedHashMap<Integer, List<CwOutlinePageEntity>> chapters = new java.util.LinkedHashMap<>();
+    for (CwOutlinePageEntity page : pages) {
+      if (page.getChapterNo() != null && page.getChapterNo() > 0) {
+        chapters.computeIfAbsent(page.getChapterNo(), k -> new ArrayList<>()).add(page);
+      }
+    }
+    Set<Integer> replacedNos = new java.util.HashSet<>();
+    for (var entry : chapters.entrySet()) {
+      int inRange = 0;
+      int total = 0;
+      for (CwOutlinePageEntity page : entry.getValue()) {
+        java.util.List<String> refs = readRefs(page.getSourceRefs());
+        if (refs.isEmpty()) {
+          continue;
+        }
+        total++;
+        if (basicRefs.containsAll(refs) || workRefs.containsAll(refs)) {
+          inRange++;
+        }
+      }
+      if (total > 0 && inRange * 5 >= total * 3) {
+        replacedNos.add(entry.getKey());
+      }
+    }
+
+    List<CwOutlinePageEntity> out = new ArrayList<>();
+    boolean inserted = false;
+    if (!replacedNos.isEmpty()) {
+      for (CwOutlinePageEntity page : pages) {
+        if (page.getChapterNo() != null && replacedNos.contains(page.getChapterNo())) {
+          if (!inserted) {
+            knowledgeBlocks.forEach(out::addAll);
+            inserted = true;
+          }
+          continue; // 整章移除
+        }
+        out.add(page);
+      }
+    } else {
+      // 兜底:review 页之前插入(从输入列表定位,review 缺失时追加到末尾)
+      int insertAt = -1;
+      for (int i = 0; i < pages.size(); i++) {
+        if (CwOutlinePageEntity.ROLE_REVIEW.equals(pages.get(i).getPageRole())) {
+          insertAt = i;
+          break;
+        }
+      }
+      if (insertAt < 0) {
+        insertAt = pages.size();
+      }
+      out.addAll(pages.subList(0, insertAt));
+      knowledgeBlocks.forEach(out::addAll);
+      out.addAll(pages.subList(insertAt, pages.size()));
+    }
+
+    // 重新编章号 + position 连续化 + 总量截断(固定页 cover/toc 在前,review 必须留最后)
+    List<CwOutlinePageEntity> capped = new ArrayList<>();
+    for (CwOutlinePageEntity page : out) {
+      if (CwOutlinePageEntity.ROLE_REVIEW.equals(page.getPageRole())) {
+        continue;
+      }
+      if (capped.size() >= maxTotalPages - 1) {
+        break;
+      }
+      capped.add(page);
+    }
+    out.stream().filter(p -> CwOutlinePageEntity.ROLE_REVIEW.equals(p.getPageRole())).findFirst()
+        .ifPresent(capped::add);
+
+    // 章号按 chapterTitle 首见顺序重排(cover/toc/review 保持 0);position 连续化
+    java.util.LinkedHashMap<String, Integer> chapterOrder = new java.util.LinkedHashMap<>();
+    for (int i = 0; i < capped.size(); i++) {
+      CwOutlinePageEntity page = capped.get(i);
+      if (page.getChapterNo() == null || page.getChapterNo() == 0
+          || CwOutlinePageEntity.ROLE_REVIEW.equals(page.getPageRole())) {
+        page.setChapterNo(0);
+      } else {
+        chapterOrder.putIfAbsent(page.getChapterTitle(), chapterOrder.size() + 1);
+        page.setChapterNo(chapterOrder.get(page.getChapterTitle()));
+      }
+      page.setPosition(i + 1);
+    }
+    return capped;
+  }
+
+  /** 构造一个知识点章(section 章首页 + 逐知识点内容页) */
+  private static List<CwOutlinePageEntity> buildKnowledgeChapter(
+      String chapterTitle,
+      List<com.guoyu.platform.courseware.entity.CwKnowledgePointEntity> chapterPoints,
+      Long projectId, Long tenantId, Long operatorId) {
+    List<CwOutlinePageEntity> block = new ArrayList<>();
+    CwOutlinePageEntity section = newPage(projectId, tenantId, operatorId, 0, chapterTitle,
+        CwOutlinePageEntity.ROLE_SECTION);
+    section.setChapterTitle(chapterTitle);
+    section.setChapterNo(1);
+    section.setObjective("本章按最小知识点逐条精讲");
+    section.setKeyPoints(writeJson(List.of()));
+    section.setSourceRefs(writeJson(List.of()));
+    section.setLayoutId(CoursewareLayout.SECTION);
+    block.add(section);
+    for (var point : chapterPoints) {
+      String title = (point.getCode() != null && !point.getCode().isBlank()
+          ? point.getCode() + " " : "") + point.getTitle();
+      if (title.length() > 118) {
+        title = title.substring(0, 118);
+      }
+      CwOutlinePageEntity page = newPage(projectId, tenantId, operatorId, 0, title,
+          CwOutlinePageEntity.ROLE_CONTENT);
+      page.setChapterTitle(chapterTitle);
+      page.setChapterNo(1);
+      page.setKnowledgePointId(point.getId());
+      page.setKeyPoints(writeJson(List.of()));
+      page.setSourceRefs(writeJson(
+          point.getSourceRef() != null ? List.of(point.getSourceRef()) : List.of()));
+      page.setLayoutId(CoursewareLayout.CONTENT_TABLE);
+      block.add(page);
+    }
+    return block;
+  }
+
+  private static List<String> readRefs(String json) {
+    if (json == null || json.isBlank()) {
+      return List.of();
+    }
+    try {
+      List<String> out = new ArrayList<>();
+      for (JsonNode node : new ObjectMapper().readTree(json)) {
+        if (node.isTextual()) {
+          out.add(node.asText());
+        }
+      }
+      return out;
+    } catch (Exception e) {
+      return List.of();
+    }
   }
 
   private static CwOutlinePageEntity fixedPage(Long projectId, Long tenantId, Long operatorId,

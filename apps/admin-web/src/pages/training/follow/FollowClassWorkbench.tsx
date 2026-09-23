@@ -90,6 +90,194 @@ function formatClassHours(value?: number | string | null): string {
   return n.toFixed(1);
 }
 
+/** 上课时段：按开始时刻划分上午/下午（12 点前为上午） */
+type DayPeriod = '上午' | '下午';
+
+/**
+ * 从「HH:mm」或「yyyy-MM-dd HH:mm:ss」等串中取小时。
+ * 注意：不可用 ^(\\d{1,2}) 直接匹配，否则会把日期里的「2026」误读成 20 点 → 全变成下午。
+ */
+function parseHour(time?: string | null): number | null {
+  const raw = String(time ?? '').trim();
+  if (!raw) return null;
+  // 优先匹配时分：空格/T 后，或整串就是 HH:mm[:ss]
+  const m =
+    raw.match(/(?:[T\s]|^\s*)(\d{1,2}):(\d{2})(?::\d{2})?/)
+    ?? raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  return Number.isFinite(h) && h >= 0 && h <= 23 ? h : null;
+}
+
+/** 无法判断时段时返回 null（不归入「全天」） */
+function periodFromTime(time?: string | null): DayPeriod | null {
+  const h = parseHour(time);
+  if (h == null) return null;
+  return h < 12 ? '上午' : '下午';
+}
+
+/** 从导入备注「导入课次：08:30-11:30」取上课开始时间 */
+function startTimeFromAttendanceRemark(remark?: string | null): string | null {
+  const r = String(remark ?? '');
+  const m = r.match(/导入课次：\s*(\d{1,2}:\d{2})/);
+  return m ? m[1] : null;
+}
+
+/** 从导入备注解析起止时间 */
+function sessionTimesFromAttendanceRemark(
+  remark?: string | null,
+): { start: string | null; end: string | null } {
+  const r = String(remark ?? '');
+  const m = r.match(/导入课次：\s*(\d{1,2}:\d{2})\s*[-–—~～]\s*(\d{1,2}:\d{2})/);
+  if (m) return { start: m[1], end: m[2] };
+  return { start: startTimeFromAttendanceRemark(remark), end: null };
+}
+
+/** 统一成 YYYY-MM-DD，兼容带时间 / 斜杠日期 */
+function normalizeBizDate(raw?: string | null): string {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) {
+    return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+  }
+  const slash = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  if (slash) {
+    return `${slash[1]}-${slash[2].padStart(2, '0')}-${slash[3].padStart(2, '0')}`;
+  }
+  return s.slice(0, 10);
+}
+
+/** 取 HH:mm，兼容完整日期时间串 */
+function extractHm(time?: string | null): string | null {
+  const raw = String(time ?? '').trim();
+  if (!raw) return null;
+  const m = raw.match(/(?:[T\s]|^)(\d{1,2}):(\d{2})(?::\d{2})?/);
+  if (!m) return null;
+  return `${m[1].padStart(2, '0')}:${m[2]}`;
+}
+
+function formatSessionLabel(
+  startTime?: string | null,
+  endTime?: string | null,
+  fallback?: string,
+): string {
+  const start = extractHm(startTime);
+  const end = extractHm(endTime);
+  if (!start && !end) return fallback || '课次';
+  return `${start || '—'}-${end || '—'}`;
+}
+
+/** 出勤优先：出勤 > 迟到 > 早退 > 缺勤 */
+function attendanceStatusRank(status?: number | null): number {
+  if (status === 1) return 4;
+  if (status === 2) return 3;
+  if (status === 3) return 2;
+  if (status === 0) return 1;
+  return 0;
+}
+
+/** 同日多课次合并为一条展示（任一有效出勤即出勤；签到时间拼接） */
+function mergeDayAttendanceRows(
+  list: trainApi.TrainAttendanceItem[],
+): trainApi.TrainAttendanceItem {
+  const sessions = list.filter((r) => r.scheduleId != null);
+  const dayLevel = list.find((r) => r.scheduleId == null || r.scheduleId === undefined);
+  const pool = sessions.length > 0 ? sessions : dayLevel ? [dayLevel] : list;
+
+  let best = pool[0];
+  for (const row of pool) {
+    if (attendanceStatusRank(row.status) > attendanceStatusRank(best.status)) {
+      best = row;
+    }
+  }
+
+  const checkIns = pool
+    .map((r) => String(r.checkInTime ?? '').trim())
+    .filter(Boolean);
+  const uniqueCheckIns = [...new Set(checkIns)];
+  const remarks = pool
+    .map((r) => String(r.remark ?? '').trim())
+    .filter(Boolean);
+  const uniqueRemarks = [...new Set(remarks)];
+
+  return {
+    ...best,
+    checkInTime:
+      uniqueCheckIns.length > 1 ? uniqueCheckIns.join(' / ') : uniqueCheckIns[0] ?? best.checkInTime,
+    remark:
+      uniqueRemarks.length > 1 ? uniqueRemarks.join('；') : uniqueRemarks[0] ?? best.remark,
+  };
+}
+
+type SessionPeriodLabel = { period: DayPeriod; timeLabel: string; sortKey: string };
+
+/** 从考勤行解析「上午 08:30-11:30」类标注 */
+function resolveSessionPeriodLabel(
+  row: trainApi.TrainAttendanceItem,
+  schedules: Array<{ id?: number | string; startTime?: string; endTime?: string }>,
+): SessionPeriodLabel | null {
+  const sch =
+    row.scheduleId != null
+      ? schedules.find((s) => String(s.id) === String(row.scheduleId))
+      : undefined;
+  const fromRemark = sessionTimesFromAttendanceRemark(row.remark);
+  const start =
+    (sch?.startTime != null ? String(sch.startTime) : null)
+    || fromRemark.start
+    || extractHm(row.checkInTime);
+  const end =
+    (sch?.endTime != null ? String(sch.endTime) : null)
+    || fromRemark.end
+    || null;
+  const period =
+    periodFromTime(start)
+    || periodFromTime(fromRemark.start)
+    || periodFromTime(row.checkInTime);
+  if (!period) return null;
+  const timeLabel = formatSessionLabel(start, end, '');
+  return {
+    period,
+    timeLabel: timeLabel && timeLabel !== '课次' ? timeLabel : '',
+    sortKey: scheduleStartSortKey(start),
+  };
+}
+
+const PERIOD_SORT: Record<DayPeriod, number> = { 上午: 0, 下午: 1 };
+
+function scheduleStartSortKey(startTime?: string | null): string {
+  const h = parseHour(startTime);
+  const m = String(startTime ?? '').match(/:(\d{2})/);
+  const mm = m ? m[1] : '00';
+  if (h == null) return '99:99';
+  return `${String(h).padStart(2, '0')}:${mm}`;
+}
+
+/** 按日期+上午/下午挑选课次；上午取最早一节，下午取最晚一节 */
+function pickScheduleForPeriod(
+  schedules: Array<{ id?: number | string; scheduleDate?: string; startTime?: string }>,
+  date: string,
+  period: DayPeriod,
+  preferScheduleIds?: Set<string>,
+): { id?: number | string; startTime?: string } | null {
+  const candidates = schedules.filter((s) => {
+    if (normalizeBizDate(s.scheduleDate != null ? String(s.scheduleDate) : null) !== date) return false;
+    return periodFromTime(s.startTime != null ? String(s.startTime) : null) === period;
+  });
+  if (candidates.length === 0) return null;
+  const preferred =
+    preferScheduleIds && preferScheduleIds.size > 0
+      ? candidates.filter((s) => s.id != null && preferScheduleIds.has(String(s.id)))
+      : [];
+  const pool = preferred.length > 0 ? preferred : candidates;
+  pool.sort((a, b) =>
+    scheduleStartSortKey(a.startTime != null ? String(a.startTime) : null).localeCompare(
+      scheduleStartSortKey(b.startTime != null ? String(b.startTime) : null),
+    ),
+  );
+  return period === '下午' ? pool[pool.length - 1] : pool[0];
+}
+
 /** 师资库下拉：可搜索、可选手动输入姓名（antd Select 搜索不自动提交，用 onSearch/onBlur 提交）。 */
 function TeacherBankSelect({ value, onChange }: { value?: string; onChange?: (v?: string) => void }) {
   const [searchText, setSearchText] = useState('');
@@ -210,6 +398,11 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const [activeTab, setActiveTab] = useState('overview');
   const [bizDate, setBizDate] = useState<Dayjs | null>(dayjs());
   const [sessionKey, setSessionKey] = useState<string>('day');
+  /** 概览「查看」：先改日期，待课表选项就绪后再切到对应上下午课次 */
+  const [pendingPeriodNav, setPendingPeriodNav] = useState<{
+    date: string;
+    period: DayPeriod;
+  } | null>(null);
   const [studentPage, setStudentPage] = useState(1);
   const [detailStudent, setDetailStudent] = useState<ClassStudent | null>(null);
   const [importResult, setImportResult] = useState<trainApi.TrainAttendanceImportResult | null>(null);
@@ -286,7 +479,9 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const scheduleList = scheduleDraft;
 
   const scheduleItems = useMemo(() => {
-    return scheduleList.filter((s) => String(s.scheduleDate ?? '') === dateStr);
+    return scheduleList.filter(
+      (s) => normalizeBizDate(s.scheduleDate != null ? String(s.scheduleDate) : null) === dateStr,
+    );
   }, [scheduleList, dateStr]);
 
   /** 概览课表摘要：节次 / 学时合计 / 科目数 / 授课形式 / 上课天数 */
@@ -526,7 +721,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
     queryFn: () =>
       trainApi.pageAttendances({
         page: 1,
-        pageSize: 500,
+        pageSize: 5000,
         classId: classIdNum!,
         attendanceDate: dateStr,
         ...(isSessionAttendance ? { scheduleId: selectedScheduleId! } : {}),
@@ -547,6 +742,144 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
     enabled: classIdNum != null && classIdNum > 0,
     retry: false,
   });
+
+  /** 近日出勤率「查看」：业务日落地后再绑定上午/下午课次，避免仍停在按日或上午 */
+  useEffect(() => {
+    if (!pendingPeriodNav) return;
+    if (dateStr !== pendingPeriodNav.date) return;
+
+    const preferIds = new Set<string>();
+    for (const row of allAttendancePage?.items ?? []) {
+      if (normalizeBizDate(row.attendanceDate) !== pendingPeriodNav.date) continue;
+      if (row.scheduleId == null) continue;
+      const sch = scheduleList.find((s) => String(s.id) === String(row.scheduleId));
+      const period =
+        periodFromTime(sch?.startTime != null ? String(sch.startTime) : null)
+        || periodFromTime(startTimeFromAttendanceRemark(row.remark))
+        || periodFromTime(row.checkInTime);
+      if (period === pendingPeriodNav.period) {
+        preferIds.add(String(row.scheduleId));
+      }
+    }
+
+    const pick = pickScheduleForPeriod(
+      scheduleList,
+      pendingPeriodNav.date,
+      pendingPeriodNav.period,
+      preferIds,
+    );
+    if (pick?.id != null) {
+      setSessionKey(String(pick.id));
+      setPendingPeriodNav(null);
+      return;
+    }
+    if (preferIds.size > 0) {
+      const ids = [...preferIds].sort((a, b) => {
+        const sa = scheduleList.find((s) => String(s.id) === a);
+        const sb = scheduleList.find((s) => String(s.id) === b);
+        return scheduleStartSortKey(sa?.startTime != null ? String(sa.startTime) : null).localeCompare(
+          scheduleStartSortKey(sb?.startTime != null ? String(sb.startTime) : null),
+        );
+      });
+      const id = pendingPeriodNav.period === '下午' ? ids[ids.length - 1] : ids[0];
+      setSessionKey(id);
+      setPendingPeriodNav(null);
+      return;
+    }
+    if (scheduleLoading) return;
+    setSessionKey('day');
+    setPendingPeriodNav(null);
+    message.info(`当日暂无「${pendingPeriodNav.period}」课次，已切换为按日汇总`);
+  }, [
+    pendingPeriodNav,
+    dateStr,
+    scheduleList,
+    scheduleLoading,
+    allAttendancePage?.items,
+  ]);
+
+  /**
+   * 课次下拉：
+   * 1) 当日课表课次
+   * 2) 当日考勤已绑定的 scheduleId（课表被重导/保存删掉后仍可筛）
+   * 3) 当前选中项兜底 label
+   */
+  const sessionSelectOptions = useMemo(() => {
+    const byId = new Map<string, { value: string; label: string; sortKey: string }>();
+
+    const putSession = (
+      id: string,
+      start?: string | null,
+      end?: string | null,
+      fallback?: string,
+    ) => {
+      if (!id || byId.has(id)) return;
+      const label = formatSessionLabel(start, end, fallback || `课次#${id}`);
+      byId.set(id, {
+        value: id,
+        label,
+        sortKey: scheduleStartSortKey(start),
+      });
+    };
+
+    for (const s of scheduleItems) {
+      if (s.id == null) continue;
+      putSession(
+        String(s.id),
+        s.startTime != null ? String(s.startTime) : null,
+        s.endTime != null ? String(s.endTime) : null,
+      );
+    }
+
+    // 当日考勤里的课次：即使课表里已无该日/该 ID，也要能筛（导入补建课次后被物理删是常见情况）
+    for (const row of allAttendancePage?.items ?? []) {
+      if (normalizeBizDate(row.attendanceDate) !== dateStr) continue;
+      if (row.scheduleId == null) continue;
+      const id = String(row.scheduleId);
+      if (byId.has(id)) continue;
+      const sch = scheduleList.find((x) => String(x.id) === id);
+      if (sch) {
+        putSession(
+          id,
+          sch.startTime != null ? String(sch.startTime) : null,
+          sch.endTime != null ? String(sch.endTime) : null,
+        );
+      } else {
+        const times = sessionTimesFromAttendanceRemark(row.remark);
+        putSession(id, times.start, times.end, `课次#${id}（考勤）`);
+      }
+    }
+
+    if (sessionKey !== 'day' && !byId.has(sessionKey)) {
+      const s = scheduleList.find((x) => String(x.id) === sessionKey);
+      if (s) {
+        putSession(
+          sessionKey,
+          s.startTime != null ? String(s.startTime) : null,
+          s.endTime != null ? String(s.endTime) : null,
+        );
+      } else {
+        const att = (allAttendancePage?.items ?? []).find(
+          (r) => r.scheduleId != null && String(r.scheduleId) === sessionKey,
+        );
+        const times = sessionTimesFromAttendanceRemark(att?.remark);
+        putSession(sessionKey, times.start, times.end, `课次#${sessionKey}`);
+      }
+    }
+
+    const sorted = [...byId.values()].sort((a, b) => {
+      const c = a.sortKey.localeCompare(b.sortKey);
+      return c !== 0 ? c : a.label.localeCompare(b.label, 'zh-CN');
+    });
+    const fromSchedule = scheduleItems.length > 0;
+    return [
+      {
+        value: 'day',
+        label: fromSchedule || sorted.length > 0 ? '按日（无指定课次）' : '按日跟班（当日无排课）',
+      },
+      ...sorted.map(({ value, label }) => ({ value, label })),
+    ];
+  }, [scheduleItems, scheduleList, sessionKey, dateStr, allAttendancePage?.items]);
 
   const { data: homeworkMetrics, isLoading: homeworkMetricsLoading } = useQuery({
     queryKey: ['homework-metrics', classIdNum],
@@ -684,18 +1017,32 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
     return map;
   }, [classHoursData?.students]);
 
+  /** 当日考勤行：合并「按日查询」与全量缓存，避免只拿到一批课次 */
+  const dayAttendanceRows = useMemo(() => {
+    if (!hasBizDate) return [];
+    const byId = new Map<string | number, trainApi.TrainAttendanceItem>();
+    for (const row of allAttendancePage?.items ?? []) {
+      if (normalizeBizDate(row.attendanceDate) !== dateStr) continue;
+      if (row.id != null) byId.set(row.id, row);
+    }
+    for (const row of attendancePage?.items ?? []) {
+      if (normalizeBizDate(row.attendanceDate) !== dateStr) continue;
+      if (row.id != null) byId.set(row.id, row);
+    }
+    return [...byId.values()];
+  }, [hasBizDate, dateStr, allAttendancePage?.items, attendancePage?.items]);
+
   const attendanceMap = useMemo(() => {
     const map = new Map<string, trainApi.TrainAttendanceItem>();
-    const rows = attendancePage?.items ?? [];
     if (isSessionAttendance) {
-      for (const row of rows) {
-      if (row.userId != null) map.set(String(row.userId), row);
+      for (const row of attendancePage?.items ?? []) {
+        if (row.userId != null) map.set(String(row.userId), row);
+      }
+      return map;
     }
-    return map;
-    }
-    // 按日：优先 schedule_id 空；否则同日多课次「任一有效出勤即出勤」
+    // 按日：合并当日所有课次；有课次记录时不再被「按日空 schedule」行盖住
     const byUser = new Map<string, trainApi.TrainAttendanceItem[]>();
-    for (const row of rows) {
+    for (const row of dayAttendanceRows) {
       if (row.userId == null) continue;
       const key = String(row.userId);
       const list = byUser.get(key) ?? [];
@@ -703,16 +1050,48 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       byUser.set(key, list);
     }
     for (const [uid, list] of byUser) {
-      const dayLevel = list.find((r) => r.scheduleId == null || r.scheduleId === undefined);
-      if (dayLevel) {
-        map.set(uid, dayLevel);
-        continue;
-      }
-      const present = list.find((r) => r.status != null && r.status > 0);
-      map.set(uid, present ?? list[0]);
+      map.set(uid, mergeDayAttendanceRows(list));
     }
     return map;
-  }, [attendancePage?.items, isSessionAttendance]);
+  }, [attendancePage?.items, dayAttendanceRows, isSessionAttendance]);
+
+  /** 学员 → 当日/本课次上下午上课时间标注 */
+  const attendancePeriodLabelsByUser = useMemo(() => {
+    const map = new Map<string, string[]>();
+    const sourceRows = isSessionAttendance
+      ? (attendancePage?.items ?? [])
+      : dayAttendanceRows;
+    const byUser = new Map<string, trainApi.TrainAttendanceItem[]>();
+    for (const row of sourceRows) {
+      if (row.userId == null) continue;
+      const key = String(row.userId);
+      const list = byUser.get(key) ?? [];
+      list.push(row);
+      byUser.set(key, list);
+    }
+    for (const [uid, list] of byUser) {
+      const seen = new Map<string, SessionPeriodLabel>();
+      for (const row of list) {
+        const info = resolveSessionPeriodLabel(row, scheduleList);
+        if (!info) continue;
+        const key = `${info.period}|${info.timeLabel}`;
+        if (!seen.has(key)) seen.set(key, info);
+      }
+      const labels = [...seen.values()]
+        .sort((a, b) => {
+          const pc = PERIOD_SORT[a.period] - PERIOD_SORT[b.period];
+          return pc !== 0 ? pc : a.sortKey.localeCompare(b.sortKey);
+        })
+        .map((x) => (x.timeLabel ? `${x.period} ${x.timeLabel}` : x.period));
+      if (labels.length) map.set(uid, labels);
+    }
+    return map;
+  }, [
+    isSessionAttendance,
+    attendancePage?.items,
+    dayAttendanceRows,
+    scheduleList,
+  ]);
 
   const dayStats = useMemo(() => {
     let onTime = 0;
@@ -741,24 +1120,97 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
 
   const classStats = useMemo(() => {
     const rows = allAttendancePage?.items ?? [];
-    const byDate = new Map<string, { present: number; absent: number; total: number }>();
+    const expected = rosterTotal > 0 ? rosterTotal : allStudents.length;
+    const nameById = new Map(allStudents.map((s) => [String(s.id), s.realname]));
+
+    /** scheduleId → 上课日 + 上下午；date → 当日课表出现过的时段（来自导入/排课） */
+    const schedulePeriod = new Map<string, { date: string; period: DayPeriod }>();
+    const periodsByDate = new Map<string, Set<DayPeriod>>();
+    for (const s of scheduleList) {
+      const date = String(s.scheduleDate ?? '').slice(0, 10);
+      const period = periodFromTime(s.startTime != null ? String(s.startTime) : null);
+      if (!date || !period) continue;
+      if (s.id != null) {
+        schedulePeriod.set(String(s.id), { date, period });
+      }
+      const set = periodsByDate.get(date) ?? new Set<DayPeriod>();
+      set.add(period);
+      periodsByDate.set(date, set);
+    }
+
+    type SlotAgg = {
+      date: string;
+      period: DayPeriod;
+      presentUsers: Set<string>;
+      absentUsers: Set<string>;
+    };
+    const bySlot = new Map<string, SlotAgg>();
+
     const byUser = new Map<
       string,
       { name: string; present: number; absent: number; late: number; early: number; total: number }
     >();
 
-    const nameById = new Map(allStudents.map((s) => [String(s.id), s.realname]));
+    /** 先扫一遍：哪些「日」已有课次考勤（有 scheduleId） */
+    const datesWithSessionAttendance = new Set<string>();
+    for (const row of rows) {
+      const date = String(row.attendanceDate ?? '').slice(0, 10);
+      if (date && row.scheduleId != null) datesWithSessionAttendance.add(date);
+    }
+
+    const resolvePeriod = (row: trainApi.TrainAttendanceItem): DayPeriod | null => {
+      const date = String(row.attendanceDate ?? '').slice(0, 10);
+      if (!date) return null;
+
+      // 1) 绑定课次：课表开始时间
+      if (row.scheduleId != null) {
+        const meta = schedulePeriod.get(String(row.scheduleId));
+        if (meta?.period) return meta.period;
+      }
+
+      // 2) 导入备注里的课次开始时间「导入课次：08:30-11:30」
+      const fromRemark = periodFromTime(startTimeFromAttendanceRemark(row.remark));
+      if (fromRemark) return fromRemark;
+
+      // 3) 签到时间（完整日期时间须解析其中的时分，不能误读年份）
+      const fromCheckIn = periodFromTime(row.checkInTime);
+      if (fromCheckIn) return fromCheckIn;
+
+      // 4) 按日记录：若同日已有课次考勤，不再单独占一行
+      if (row.scheduleId == null && datesWithSessionAttendance.has(date)) {
+        return null;
+      }
+
+      // 5) 当日课表仅有一个时段时，归入该时段
+      const dayPeriods = periodsByDate.get(date);
+      if (dayPeriods && dayPeriods.size === 1) {
+        return [...dayPeriods][0];
+      }
+
+      return null;
+    };
 
     for (const row of rows) {
       const date = String(row.attendanceDate ?? '').slice(0, 10);
       if (!date) continue;
+      const period = resolvePeriod(row);
+      if (!period) continue;
+
+      const slotKey = `${date}|${period}`;
+      const slot =
+        bySlot.get(slotKey)
+        ?? { date, period, presentUsers: new Set<string>(), absentUsers: new Set<string>() };
       const uid = row.userId != null ? String(row.userId) : '';
       const status = row.status;
-      const day = byDate.get(date) ?? { present: 0, absent: 0, total: 0 };
-      day.total += 1;
-      if (status != null && status > 0) day.present += 1;
-      else if (status === 0) day.absent += 1;
-      byDate.set(date, day);
+      if (uid) {
+        if (status != null && status > 0) {
+          slot.presentUsers.add(uid);
+          slot.absentUsers.delete(uid);
+        } else if (status === 0 && !slot.presentUsers.has(uid)) {
+          slot.absentUsers.add(uid);
+        }
+      }
+      bySlot.set(slotKey, slot);
 
       if (!uid) continue;
       const u = byUser.get(uid) ?? {
@@ -783,26 +1235,38 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       byUser.set(uid, u);
     }
 
-    let sumPresent = 0;
-    let sumTotal = 0;
-    for (const d of byDate.values()) {
-      sumPresent += d.present;
-      sumTotal += d.total;
-    }
-    const cumulativeRate = sumTotal > 0 ? Math.round((sumPresent / sumTotal) * 1000) / 10 : 0;
+    const dailyTrend = [...bySlot.values()]
+      .map((slot) => {
+        const present = slot.presentUsers.size;
+        const absent = slot.absentUsers.size;
+        return {
+          date: slot.date,
+          period: slot.period,
+          present,
+          absent,
+          /** 应到：班级花名册总人数 */
+          total: expected,
+          rate: expected > 0 ? Math.round((present / expected) * 1000) / 10 : 0,
+        };
+      })
+      .sort((a, b) => {
+        const dc = b.date.localeCompare(a.date);
+        if (dc !== 0) return dc;
+        return PERIOD_SORT[a.period] - PERIOD_SORT[b.period];
+      })
+      .slice(0, 28);
 
-    const expected = rosterTotal > 0 ? rosterTotal : allStudents.length;
-    const dailyTrend = [...byDate.entries()]
-      .map(([date, v]) => ({
-        date,
-        present: v.present,
-        absent: v.absent,
-        /** 应到：班级总人数 */
-        total: expected,
-        rate: expected > 0 ? Math.round((v.present / expected) * 1000) / 10 : 0,
-      }))
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 14);
+    let sumPresent = 0;
+    let sumExpected = 0;
+    const dates = new Set<string>();
+    for (const row of dailyTrend) {
+      sumPresent += row.present;
+      sumExpected += row.total;
+      dates.add(row.date);
+    }
+    // 累计出勤率：各时段「实到÷应到」合计（与表格口径一致）
+    const cumulativeRate =
+      sumExpected > 0 ? Math.round((sumPresent / sumExpected) * 1000) / 10 : 0;
 
     const warnings = [...byUser.entries()]
       .map(([userId, u]) => {
@@ -814,14 +1278,14 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
       .slice(0, 20);
 
     return {
-      recordDays: byDate.size,
+      recordDays: dates.size,
       recordCount: rows.length,
       cumulativeRate,
       dailyTrend,
-      warnings,
       loading: allAttendanceLoading,
+      warnings,
     };
-  }, [allAttendancePage?.items, allStudents, allAttendanceLoading, rosterTotal]);
+  }, [allAttendancePage?.items, allStudents, allAttendanceLoading, rosterTotal, scheduleList]);
 
   const signInMu = useMutation({
     mutationFn: (student: ClassStudent) => {
@@ -931,16 +1395,43 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   });
 
   const attendanceColumns: ColumnsType<ClassStudent> = [
-    { title: '姓名', dataIndex: 'realname', width: 120 },
+    {
+      title: '姓名',
+      dataIndex: 'realname',
+      width: 120,
+      ellipsis: true,
+      render: (v?: string, row?: ClassStudent) => {
+        const name = (v || row?.realname || '').trim();
+        if (name) return name;
+        if (row?.phone) return row.phone;
+        if (row?.id_card) return row.id_card;
+        return '—';
+      },
+    },
     { title: '手机', dataIndex: 'phone', width: 130, render: (v?: string) => v || '—' },
     {
       title: '考勤状态',
-      width: 100,
+      width: 168,
       render: (_, row) => {
         const att = attendanceMap.get(String(row.id));
-        if (!att || att.status == null) return <Tag>未登记</Tag>;
-        const meta = ATTENDANCE_STATUS[att.status] ?? { text: String(att.status), color: 'default' };
-        return <Tag color={meta.color}>{meta.text}</Tag>;
+        const periodLabels = attendancePeriodLabelsByUser.get(String(row.id)) ?? [];
+        if ((!att || att.status == null) && periodLabels.length === 0) {
+          return <Tag>未登记</Tag>;
+        }
+        const meta =
+          att?.status != null
+            ? ATTENDANCE_STATUS[att.status] ?? { text: String(att.status), color: 'default' }
+            : null;
+        return (
+          <Space direction="vertical" size={2} style={{ lineHeight: 1.3 }}>
+            {meta ? <Tag color={meta.color}>{meta.text}</Tag> : <Tag>未登记</Tag>}
+            {periodLabels.map((label) => (
+              <Typography.Text key={label} type="secondary" style={{ fontSize: 12 }}>
+                {label}
+              </Typography.Text>
+            ))}
+          </Space>
+        );
       },
     },
     {
@@ -1036,13 +1527,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
               value={sessionKey}
               onChange={setSessionKey}
               disabled={!hasBizDate}
-              options={[
-                { value: 'day', label: scheduleItems.length ? '按日（无指定课次）' : '按日跟班（当日无排课）' },
-                ...scheduleItems.map((s, idx) => ({
-                  value: String(s.id ?? `s-${idx}`),
-                  label: `${String(s.startTime || '—')}-${String(s.endTime || '—')}`,
-                })),
-              ]}
+              options={sessionSelectOptions}
             />
           </span>
           <Tag>
@@ -1051,7 +1536,9 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                 ? '课次考勤'
                 : scheduleItems.length
                   ? `按日汇总 · 当日 ${scheduleItems.length} 课次`
-                  : '按日考勤 · 无排课'
+                  : sessionSelectOptions.length > 1
+                    ? `按日汇总 · 考勤课次 ${sessionSelectOptions.length - 1} 个`
+                    : '按日考勤 · 无排课'
               : '未选业务日'}
           </Tag>
         </Space>
@@ -1141,21 +1628,27 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                       ) : (
                         <Table
                           size="small"
-                          rowKey="date"
+                          rowKey={(r) => `${r.date}|${r.period}`}
                           pagination={false}
                           sticky
                           dataSource={classStats.dailyTrend}
                           columns={[
-                            { title: '日期', dataIndex: 'date', width: 120 },
+                            { title: '日期', dataIndex: 'date', width: 110 },
+                            {
+                              title: '时段',
+                              dataIndex: 'period',
+                              width: 64,
+                              render: (v: string) => <Tag>{v}</Tag>,
+                            },
                             {
                               title: '实到/应到',
-                              width: 110,
+                              width: 100,
                               render: (_, r) => `${r.present}/${r.total}`,
                             },
                             {
                               title: '缺勤',
                               dataIndex: 'absent',
-                              width: 70,
+                              width: 64,
                             },
                             {
                               title: '出勤率',
@@ -1165,7 +1658,7 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                                   <Progress
                                     percent={v}
                                     size="small"
-                                    style={{ width: 80, margin: 0 }}
+                                    style={{ width: 72, margin: 0 }}
                                     status={v < 80 ? 'exception' : 'normal'}
                                   />
                                   <span>{v}%</span>
@@ -1174,13 +1667,14 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
                             },
                             {
                               title: '',
-                              width: 70,
+                              width: 64,
                               render: (_, r) => (
                                 <Button
                                   type="link"
                                   size="small"
                                   style={{ padding: 0 }}
                                   onClick={() => {
+                                    setPendingPeriodNav({ date: r.date, period: r.period });
                                     setBizDate(dayjs(r.date));
                                     setActiveTab('attendance');
                                   }}

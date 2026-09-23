@@ -1,6 +1,9 @@
 package com.guoyu.platform.file;
 
 import java.io.InputStream;
+import java.net.URL;
+import java.time.Duration;
+import java.util.Optional;
 
 /**
  * 抽象文件存储 —— local / COS / S3 走同一接口。
@@ -25,6 +28,14 @@ public interface FileStorage {
 
   /** 删除文件,失败不抛(只是 log warn)。 */
   void delete(String objectKey);
+
+  /**
+   * 生成免后端中转的直链下载 URL（COS 预签名等），供大文件直连下载、绕开服务端转发瓶颈。
+   * 无法直链的存储（local 等）返回 empty，调用方回退 /api/files/{id}/download 中转。
+   */
+  default Optional<URL> presignedDownloadUrl(String objectKey, Duration ttl) {
+    return Optional.empty();
+  }
 
   /** 当前 provider 名,落库用(便于未来数据迁移识别)。 */
   String providerName();

@@ -8,14 +8,20 @@ import com.qcloud.cos.ClientConfig;
 import com.qcloud.cos.auth.BasicCOSCredentials;
 import com.qcloud.cos.auth.COSCredentials;
 import com.qcloud.cos.model.COSObject;
+import com.qcloud.cos.model.GeneratePresignedUrlRequest;
 import com.qcloud.cos.model.GetObjectRequest;
 import com.qcloud.cos.model.ObjectMetadata;
 import com.qcloud.cos.model.PutObjectRequest;
 import com.qcloud.cos.model.PutObjectResult;
+import com.qcloud.cos.http.HttpMethodName;
 import com.qcloud.cos.region.Region;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Date;
+import java.util.Optional;
 import org.springframework.util.StringUtils;
 
 /**
@@ -108,6 +114,15 @@ public class TencentCosFileStorage implements FileStorage {
   @Override
   public String providerName() {
     return "cos";
+  }
+
+  /** 生成 GET 预签名直链（有效期 ttl），供大文件免中转直连下载。 */
+  @Override
+  public Optional<URL> presignedDownloadUrl(String objectKey, Duration ttl) {
+    GeneratePresignedUrlRequest request =
+        new GeneratePresignedUrlRequest(bucket, objectKey, HttpMethodName.GET);
+    request.setExpiration(new Date(System.currentTimeMillis() + ttl.toMillis()));
+    return Optional.of(client.generatePresignedUrl(request));
   }
 
   /**

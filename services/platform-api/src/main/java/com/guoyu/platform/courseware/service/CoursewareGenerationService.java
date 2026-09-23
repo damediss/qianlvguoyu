@@ -52,6 +52,7 @@ public class CoursewareGenerationService {
   private final CwOutlinePageMapper outlineMapper;
   private final CwSourceSectionMapper sectionMapper;
   private final CwDigestMapper digestMapper;
+  private final com.guoyu.platform.courseware.mapper.CwKnowledgePointMapper knowledgePointMapper;
   private final SlideWorkflowService workflowService;
   private final ObjectMapper objectMapper;
   private final ThreadPoolTaskExecutor coursewareExecutor;
@@ -66,6 +67,7 @@ public class CoursewareGenerationService {
       CwOutlinePageMapper outlineMapper,
       CwSourceSectionMapper sectionMapper,
       CwDigestMapper digestMapper,
+      com.guoyu.platform.courseware.mapper.CwKnowledgePointMapper knowledgePointMapper,
       SlideWorkflowService workflowService,
       ObjectMapper objectMapper,
       @Qualifier("coursewareExecutor") ThreadPoolTaskExecutor coursewareExecutor,
@@ -75,6 +77,7 @@ public class CoursewareGenerationService {
     this.outlineMapper = outlineMapper;
     this.sectionMapper = sectionMapper;
     this.digestMapper = digestMapper;
+    this.knowledgePointMapper = knowledgePointMapper;
     this.workflowService = workflowService;
     this.objectMapper = objectMapper;
     this.coursewareExecutor = coursewareExecutor;
@@ -136,6 +139,10 @@ public class CoursewareGenerationService {
           .eq(CwSlideEntity::getProjectId, projectId)
           .in(CwSlideEntity::getStatus, CwSlideEntity.STATUS_PENDING, CwSlideEntity.STATUS_FAILED)
           .orderByAsc(CwSlideEntity::getPosition));
+      // 大课件页数远超页池队列(50):派发放权用信号量,拿到名额才提交,
+      // 编排线程持有未派发页,避免 runAsync 打爆队列整批异常(2026-09-21 冒烟事故)
+      java.util.concurrent.Semaphore slots =
+          new java.util.concurrent.Semaphore(Math.max(1, slideExecutor.getMaxPoolSize()));
       List<CompletableFuture<Void>> futures = new ArrayList<>();
       boolean cancelled = false;
       for (CwSlideEntity slide : slides) {
@@ -144,8 +151,31 @@ public class CoursewareGenerationService {
           cancelled = true;
           break;
         }
-        futures.add(CompletableFuture.runAsync(
-            () -> generateOne(projectId, slide.getId(), tenantId, userId), slideExecutor));
+        try {
+          slots.acquire();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          cancelled = true;
+          break;
+        }
+        try {
+          futures.add(CompletableFuture.runAsync(() -> {
+            try {
+              generateOne(projectId, slide.getId(), tenantId, userId);
+            } finally {
+              slots.release();
+            }
+          }, slideExecutor));
+        } catch (RejectedExecutionException e) {
+          slots.release();
+          // 池拒载按页失败计(坑 #12/#14),不影响其余页
+          CwSlideEntity failed = new CwSlideEntity();
+          failed.setId(slide.getId());
+          failed.setStatus(CwSlideEntity.STATUS_FAILED);
+          failed.setError("服务繁忙,请稍后重试");
+          slideMapper.updateById(failed);
+          projectMapper.incrementFailed(projectId);
+        }
       }
       CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
       finalizeProject(projectId, cancelled);
@@ -177,6 +207,30 @@ public class CoursewareGenerationService {
       SlideGenInput input = buildInput(project, slide);
       SlideWorkflowResult result = workflowService.execute(input, tenantId, projectId, userId,
           slideId);
+      // 修复 1 轮后仍残留结构 error 的页不静默置 ready(否则导出被静默阻断、列表看不出问题),
+      // 置 failed 让用户手动重试(用户口径 2026-09-22)
+      boolean residualError = result.issues().stream()
+          .anyMatch(com.guoyu.platform.courseware.domain.StructureIssue::isError);
+      if (residualError) {
+        String firstError = result.issues().stream()
+            .filter(com.guoyu.platform.courseware.domain.StructureIssue::isError)
+            .findFirst().map(i -> i.message().length() > 200
+                ? i.message().substring(0, 200) : i.message())
+            .orElse("页面生成不完整");
+        CwSlideEntity failedUpdate = new CwSlideEntity();
+        failedUpdate.setId(slideId);
+        failedUpdate.setStatus(CwSlideEntity.STATUS_FAILED);
+        failedUpdate.setError("生成不完整,请重试(" + firstError + ")");
+        failedUpdate.setIssues(objectMapper.writeValueAsString(result.issues()));
+        failedUpdate.setBlocks(objectMapper.writeValueAsString(result.blocks()));
+        failedUpdate.setSpeakerNotes(result.speakerNotes());
+        slideMapper.updateById(failedUpdate);
+        projectMapper.incrementFailed(projectId);
+        refreshProjectStatusIfIdle(projectId);
+        log.warn("课件页修复后仍残留结构错误,置失败待手动重试: slideId={}, error={}",
+            slideId, firstError);
+        return;
+      }
       CwSlideEntity update = new CwSlideEntity();
       update.setId(slideId);
       update.setBlocks(objectMapper.writeValueAsString(result.blocks()));
@@ -249,6 +303,17 @@ public class CoursewareGenerationService {
         SLIDE_TOTAL_CHARS);
     String digestSlice = digestSlice(project.getId(), refs);
     List<String> neighbors = neighborTitles(project.getId(), page.getPosition());
+    // 知识点页:装载体荷(方案 v1.4)
+    com.guoyu.platform.courseware.domain.CoursewareModels.KnowledgePointPayload knowledgePoint = null;
+    if (page.getKnowledgePointId() != null) {
+      var point = knowledgePointMapper.selectById(page.getKnowledgePointId());
+      if (point != null) {
+        knowledgePoint = new com.guoyu.platform.courseware.domain.CoursewareModels.KnowledgePointPayload(
+            point.getCategory(), point.getLevelName(), point.getJobFunction(),
+            point.getJobContent(), point.getCode(), point.getTitle(),
+            point.getSkillText(), point.getKnowledgeText());
+      }
+    }
     return new SlideGenInput(
         project.getTitle(),
         project.getAudience(),
@@ -265,6 +330,7 @@ public class CoursewareGenerationService {
         digestSlice,
         neighbors,
         project.getContentDensity(),
+        knowledgePoint,
         List.of());
   }
 

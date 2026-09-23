@@ -85,8 +85,8 @@ public class DocxSectionParser {
     return sections;
   }
 
-  /** 标题级别:样式名优先,编号正则兜底;均不命中返回 null */
-  Integer headingLevelOf(XWPFDocument document, XWPFParagraph paragraph) {
+  /** 标题级别:样式名优先,编号正则兜底;均不命中返回 null(供小节切分与知识点枚举复用) */
+  public Integer headingLevelOf(XWPFDocument document, XWPFParagraph paragraph) {
     String styleId = paragraph.getStyleID();
     if (styleId != null) {
       XWPFStyle style = document.getStyles().getStyle(styleId);

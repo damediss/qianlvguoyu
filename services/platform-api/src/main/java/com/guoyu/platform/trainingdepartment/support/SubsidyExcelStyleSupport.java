@@ -14,20 +14,12 @@ public final class SubsidyExcelStyleSupport {
 
   private SubsidyExcelStyleSupport() {}
 
-  /** xlsx=OOXML(ZIP)，xls=OLE2；无法识别返回空串 */
+  /**
+   * 按内容识别：docx / xlsx / xls；无法识别返回空串。
+   * <p>注意：docx 与 xlsx 都是 ZIP（PK），不能只看魔数，须看包内 {@code word/} vs {@code xl/}。
+   */
   public static String sniffFormat(byte[] bytes) {
-    if (bytes == null || bytes.length < 4) {
-      return "";
-    }
-    // PK\003\004
-    if (bytes[0] == 0x50 && bytes[1] == 0x4B) {
-      return "xlsx";
-    }
-    // D0 CF 11 E0
-    if ((bytes[0] & 0xFF) == 0xD0 && (bytes[1] & 0xFF) == 0xCF) {
-      return "xls";
-    }
-    return "";
+    return TrainingOfficeFileKind.sniffFormat(bytes);
   }
 
   public static int countBorderedCells(byte[] bytes) {

@@ -94,6 +94,9 @@ class ReviewAnswerExamResultSyncTest {
 
     when(reviewQuery.loadQuestionDetail(900L)).thenReturn(new ReviewQuestionDetail(
         900L, 7L, "single", 1, new BigDecimal("2"), "题干", SINGLE_ANSWER_JSON, "解析"));
+    // 83a8d076 起作答前校验名单（isUserInExam），Mockito 对 boolean 默认返回 false 会直接业务拒绝；
+    // 本测试关注 exam_result 直写/幂等语义，默认桩为在册
+    when(reviewQuery.isUserInExam(anyLong(), anyLong())).thenReturn(true);
     // 灰度总开关缺失=全员开放；连对/连错统计为空不触发鼓励文案
     when(dictMapper.selectList(any())).thenReturn(List.of());
     when(answerMapper.selectList(any())).thenReturn(List.of());

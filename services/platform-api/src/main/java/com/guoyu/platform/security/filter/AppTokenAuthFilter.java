@@ -78,7 +78,7 @@ public class AppTokenAuthFilter extends OncePerRequestFilter {
       return;
     }
 
-    log.info("AppTokenAuthFilter: checking token for URI={}", request.getRequestURI());
+    log.debug("AppTokenAuthFilter: checking token for URI={}", request.getRequestURI());
 
     try {
       // token 在库中允许重复（同秒同密码 sha1 相同，现网实测 85 组），
@@ -104,8 +104,6 @@ public class AppTokenAuthFilter extends OncePerRequestFilter {
         return;
       }
 
-      log.info("AppTokenAuthFilter: authenticated user {}", user.getId());
-
       Long tenantId = com.guoyu.platform.common.tenant.TenantContextHolder.DEFAULT_TENANT_ID;
       String tenantHeader = request.getHeader("X-Tenant-Id");
       if (tenantHeader != null && !tenantHeader.isBlank()) {
@@ -115,6 +113,8 @@ public class AppTokenAuthFilter extends OncePerRequestFilter {
           // keep default SaaS tenant
         }
       }
+
+      log.debug("AppTokenAuthFilter: authenticated userId={} tenantId={}", user.getId(), tenantId);
 
       PlatformUserPrincipal principal = new PlatformUserPrincipal(
           user.getId(),

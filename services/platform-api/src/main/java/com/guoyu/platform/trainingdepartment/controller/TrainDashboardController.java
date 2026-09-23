@@ -43,4 +43,11 @@ public class TrainDashboardController {
   public ApiResponse<Map<String, Long>> getStageDistribution() {
     return ApiResponse.ok(trainDashboardApplicationService.getStageDistribution());
   }
+
+  /** 企业培训明细 */
+  @GetMapping("/dashboard/companies")
+  @PreAuthorize("hasAuthority('train:dashboard:view')")
+  public ApiResponse<List<TrainDashboardVO.CompanyOverview>> getCompanies() {
+    return ApiResponse.ok(trainDashboardApplicationService.getCompanyOverviews());
+  }
 }

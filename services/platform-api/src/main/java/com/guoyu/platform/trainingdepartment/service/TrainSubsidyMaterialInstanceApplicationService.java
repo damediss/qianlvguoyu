@@ -212,7 +212,7 @@ public class TrainSubsidyMaterialInstanceApplicationService {
     return toVO(instance, subsidy, loadSlotFiles(subsidy.getId()), latestPhotoPack(subsidy));
   }
 
-  /** Word 轻量编辑初始化：解析当前版本可编辑段落（标题 / 元信息 / 图注） */
+  /** Word 轻量编辑初始化：解析当前版本可编辑段落/表格单元格（标题 / 元信息 / 图注） */
   @Transactional
   public com.guoyu.platform.trainingdepartment.vo.SubsidyMaterialDocxMetaVO getDocxMeta(
       Long instanceId) {

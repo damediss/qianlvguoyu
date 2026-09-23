@@ -90,7 +90,10 @@ public final class CoursewareLayout {
           slot("title", Set.of(T), true, 60, 30, 840, 52, 26, true, CoursewareTheme.PRIMARY, "left",
               40, null, null, null, null),
           slot("body", Set.of(TB), true, 60, 105, 840, 355, 12, false, CoursewareTheme.TEXT, "left",
-              null, null, 20, 8, 5))),
+              null, null, 20, 8, 5),
+          // note 槽位(方案 v1.4):页底小字,知识点页放核心口诀
+          slot("note", Set.of(T), false, 60, 466, 840, 34, 11, false, "777777", "left",
+              80, null, null, null, null))),
       CONTENT_KPI, new Layout(CONTENT_KPI, "数据页", List.of(
           slot("title", Set.of(T), true, 60, 30, 840, 52, 26, true, CoursewareTheme.PRIMARY, "left",
               40, null, null, null, null),

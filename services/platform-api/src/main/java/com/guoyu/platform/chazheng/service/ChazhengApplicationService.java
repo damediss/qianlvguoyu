@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
 import com.guoyu.platform.chazheng.config.CertCheckBatchConfig;
 import com.guoyu.platform.chazheng.dto.CertCheckBatchProgress;
 import com.guoyu.platform.chazheng.dto.CertCheckBatchReport;
@@ -220,7 +221,7 @@ public class ChazhengApplicationService {
 
         if (!StringUtils.hasText(userName) || !StringUtils.hasText(idCard)) continue;
         if (idCard.length() != 18) {
-          log.warn("跳过非法定身份证长度行[{}]: {}", i, idCard);
+          log.warn("跳过非法定身份证长度行[{}]: {}", i, SensitiveMaskUtils.maskIdCard(idCard));
           continue;
         }
 

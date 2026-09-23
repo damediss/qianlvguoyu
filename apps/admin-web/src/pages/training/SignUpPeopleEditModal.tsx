@@ -651,8 +651,12 @@ export function SignUpPeopleEditModal({
                 <Form.Item name="address" label="地址">
                   <Input className="people-input" />
                 </Form.Item>
-                <Form.Item name="phone" label="手机号">
-                  <Input className="people-input" />
+                <Form.Item
+                  name="phone"
+                  label="手机号"
+                  rules={[{ pattern: /^1[3-9]\d{9}$/, message: '请输入11位有效手机号' }]}
+                >
+                  <Input className="people-input" maxLength={11} inputMode="numeric" />
                 </Form.Item>
               </div>
               <div className="people-edit-images">

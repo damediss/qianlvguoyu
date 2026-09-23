@@ -11,7 +11,7 @@ export default defineConfig({
     minify: false,
   },
   optimizeDeps: {
-    include: ['pdfjs-dist/legacy/build/pdf.mjs'],
+    include: ['pdfjs-dist/legacy/build/pdf.min.js'],
   },
   worker: {
     format: 'es',

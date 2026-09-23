@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -37,6 +38,7 @@ public class FileController {
   }
 
   @PostMapping(consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+  @PreAuthorize("hasAuthority('file:upload')")
   @AuditLog(module = "file", action = "file:upload", targetType = "file")
   public ApiResponse<FileVO> uploadBinary(
       @RequestBody byte[] content,
@@ -59,6 +61,7 @@ public class FileController {
   }
 
   @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @PreAuthorize("hasAuthority('file:upload')")
   @AuditLog(module = "file", action = "file:upload", targetType = "file")
   public ApiResponse<FileVO> upload(
       @RequestParam("file") MultipartFile file,
@@ -87,16 +90,19 @@ public class FileController {
   }
 
   @GetMapping("/{id}")
+  @AuditLog(module = "file", action = "file:read", targetType = "file")
   public ApiResponse<FileVO> get(@PathVariable Long id) {
     return ApiResponse.ok(fileApplicationService.get(id));
   }
 
   @GetMapping("/{id}/download-url")
+  @AuditLog(module = "file", action = "file:read", targetType = "file")
   public ApiResponse<DownloadUrlVO> downloadUrl(@PathVariable Long id) {
     return ApiResponse.ok(fileApplicationService.downloadUrl(id));
   }
 
   @GetMapping("/{id}/download")
+  @AuditLog(module = "file", action = "file:read", targetType = "file")
   public ResponseEntity<Resource> download(
       @PathVariable Long id,
       @RequestParam(value = "inline", defaultValue = "false") boolean inline
@@ -105,6 +111,7 @@ public class FileController {
   }
 
   @DeleteMapping("/{id}")
+  @PreAuthorize("hasAuthority('file:delete')")
   @AuditLog(module = "file", action = "file:delete", targetType = "file")
   public ApiResponse<Void> delete(@PathVariable Long id) {
     fileApplicationService.delete(id);

@@ -63,4 +63,39 @@ class GlobalExceptionHandlerTest {
     assertThat(response.getBody().code()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE);
     assertThat(response.getBody().data()).isEqualTo(java.util.Map.of("retryAfterMs", 200));
   }
+
+  @Test
+  void treatsConnectionResetAsClientAbortWithoutBody() {
+    // 生产真实案例：下载 application/zip 途中客户端断连，裸 SocketException 冒到通用处理器，
+    // 回 JSON 会因 preset Content-Type 再炸 No converter——应识别为断连、返回 null（不写 body）
+    var response = handler.handleException(new java.net.SocketException("Connection reset"));
+
+    assertThat(response).isNull();
+  }
+
+  @Test
+  void treatsWrappedBrokenPipeAsClientAbortWithoutBody() {
+    var response = handler.handleException(
+        new IllegalStateException("stream failed",
+            new java.net.SocketException("Broken pipe")));
+
+    assertThat(response).isNull();
+  }
+
+  @Test
+  void nonAbortSocketExceptionStillMapsToHttp500() {
+    // 非断连语义的 SocketException（如权限问题）不应被误吞
+    var response = handler.handleException(new java.net.SocketException("Permission denied"));
+
+    assertThat(response).isNotNull();
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+
+  @Test
+  void unrelatedExceptionStillMapsToHttp500() {
+    var response = handler.handleException(new IllegalStateException("boom"));
+
+    assertThat(response).isNotNull();
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+  }
 }

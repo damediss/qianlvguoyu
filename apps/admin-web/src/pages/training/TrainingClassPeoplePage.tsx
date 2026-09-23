@@ -235,7 +235,7 @@ function StudentListModal({
   const saveMu = useMutation({
     mutationFn: (p: Record<string, unknown>) => trainApi.saveClassStudent(p),
     onSuccess: () => { message.success('成功'); setEditOpen(false); refetch(); },
-    onError: () => message.error('保存失败'),
+    onError: (e: Error) => message.error(e.message || '保存失败'),
   });
 
   const deleteMu = useMutation({
@@ -558,7 +558,9 @@ function StudentListModal({
         title="班级人员编辑"
         open={editOpen}
         onCancel={() => setEditOpen(false)}
-        onOk={() => saveMu.mutate(editForm.getFieldsValue())}
+        onOk={() => {
+          void editForm.validateFields().then((values) => saveMu.mutate(values));
+        }}
         confirmLoading={saveMu.isPending}
         okText="确定"
         cancelText="取消"
@@ -572,8 +574,12 @@ function StudentListModal({
           <Form.Item name="realname" label="姓名">
             <Input placeholder="请输入姓名" />
           </Form.Item>
-          <Form.Item name="phone" label="手机号">
-            <Input placeholder="请输入手机号" />
+          <Form.Item
+            name="phone"
+            label="手机号"
+            rules={[{ pattern: /^1[3-9]\d{9}$/, message: '请输入11位有效手机号' }]}
+          >
+            <Input maxLength={11} inputMode="numeric" placeholder="请输入手机号" />
           </Form.Item>
           <Form.Item name="id_card" label="身份证号">
             <Input placeholder="请输入身份证号" />
@@ -1519,8 +1525,22 @@ export function TrainingClassPeoplePage() {
       align: 'center',
       render: (_, __, i) => (currentPage - 1) * pageSize + i + 1,
     },
-    { title: '班级名称', dataIndex: 'title', align: 'left', ellipsis: true },
-    { title: '公司', dataIndex: 'company_name', align: 'left', ellipsis: true },
+    {
+      title: '班级名称',
+      dataIndex: 'title',
+      align: 'left',
+      width: 280,
+      className: 'class-wrap-cell',
+      onCell: () => ({ className: 'class-wrap-cell' }),
+    },
+    {
+      title: '公司',
+      dataIndex: 'company_name',
+      align: 'left',
+      width: 180,
+      className: 'class-wrap-cell',
+      onCell: () => ({ className: 'class-wrap-cell' }),
+    },
     { title: '工种', dataIndex: 'work_type_title', align: 'center', width: 140 },
     {
       title: '等级',

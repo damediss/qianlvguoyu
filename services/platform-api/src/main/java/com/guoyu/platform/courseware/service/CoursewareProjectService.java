@@ -36,6 +36,8 @@ public class CoursewareProjectService {
   private final CwSourceSectionMapper sectionMapper;
   private final CwOutlinePageMapper outlineMapper;
   private final DocxSectionParser docxParser;
+  private final KnowledgePointEnumerator knowledgePointEnumerator;
+  private final com.guoyu.platform.courseware.mapper.CwKnowledgePointMapper knowledgePointMapper;
   private final CoursewareDigestService digestService;
   private final CoursewareOutlineService outlineService;
   private final FileApplicationService fileService;
@@ -46,6 +48,8 @@ public class CoursewareProjectService {
       CwSourceSectionMapper sectionMapper,
       CwOutlinePageMapper outlineMapper,
       DocxSectionParser docxParser,
+      KnowledgePointEnumerator knowledgePointEnumerator,
+      com.guoyu.platform.courseware.mapper.CwKnowledgePointMapper knowledgePointMapper,
       CoursewareDigestService digestService,
       CoursewareOutlineService outlineService,
       FileApplicationService fileService,
@@ -54,6 +58,8 @@ public class CoursewareProjectService {
     this.sectionMapper = sectionMapper;
     this.outlineMapper = outlineMapper;
     this.docxParser = docxParser;
+    this.knowledgePointEnumerator = knowledgePointEnumerator;
+    this.knowledgePointMapper = knowledgePointMapper;
     this.digestService = digestService;
     this.outlineService = outlineService;
     this.fileService = fileService;
@@ -134,10 +140,11 @@ public class CoursewareProjectService {
       updateStatus(projectId, CwProjectEntity.STATUS_PARSING);
 
       // 1) 解析 docx
-      List<SourceSection> parsed;
+      byte[] docxBytes;
       try (InputStream in = fileService.openFileInputStreamById(project.getSourceFileId())) {
-        parsed = docxParser.parse(in.readAllBytes());
+        docxBytes = in.readAllBytes();
       }
+      List<SourceSection> parsed = docxParser.parse(docxBytes);
       if (parsed.isEmpty()) {
         markFailed(projectId, "这份文档没有识别出可用内容,请确认是文字版 docx");
         return;
@@ -161,16 +168,35 @@ public class CoursewareProjectService {
             s.locator()));
       }
 
+      // 1.5) 知识点枚举(方案 v1.4):基本要求/工作要求逐最小知识点,确定性枚举落库
+      List<com.guoyu.platform.courseware.entity.CwKnowledgePointEntity> knowledgePoints =
+          knowledgePointEnumerator.enumerate(docxBytes);
+      for (var point : knowledgePoints) {
+        point.setId(IdWorker.getId());
+        point.setTenantId(tenantId);
+        point.setProjectId(projectId);
+        point.setCreatedBy(userId);
+        point.setUpdatedBy(userId);
+        knowledgePointMapper.insert(point);
+      }
+      if (!knowledgePoints.isEmpty()) {
+        long basic = knowledgePoints.stream()
+            .filter(p -> com.guoyu.platform.courseware.entity.CwKnowledgePointEntity.CATEGORY_BASIC
+                .equals(p.getCategory())).count();
+        long work = knowledgePoints.size() - basic;
+        log.info("课件知识点枚举: projectId={}, 基本要求 {} 点, 工作要求 {} 点", projectId, basic, work);
+      }
+
       // 2) 消化层(失败降级不阻断)
       updateStatus(projectId, CwProjectEntity.STATUS_DIGESTING);
       DigestDraft digest = digestService.tryDigest(tenantId, projectId, userId, project.getTitle(),
           project.getAudience(), parsed);
 
-      // 3) 大纲生成
+      // 3) 大纲生成(含知识点章替换)
       updateStatus(projectId, CwProjectEntity.STATUS_OUTLINE_GENERATING);
       List<CwOutlinePageEntity> pages = outlineService.generateOutlinePages(tenantId, projectId,
           userId, project.getTitle(), project.getAudience(), project.getContentDensity(), parsed,
-          digest);
+          digest, knowledgePoints);
       for (CwOutlinePageEntity page : pages) {
         outlineMapper.insert(page);
       }

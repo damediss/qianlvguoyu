@@ -12,7 +12,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
@@ -256,6 +258,8 @@ public class ChazhengCertQueryService {
       Map<String, Object> reqData,
       String parseStatus,
       Object detail) {
+    // N4：此前日志文件名与内容均为明文「姓名 + 身份证」，等于在磁盘上落了一份个人信息清单。
+    // 文件名与 payload 一律走脱敏；排障仍可凭脱敏后的姓名首字 + 身份证前 6 后 4 定位到同一人。
     String safeUserName = name != null ? name.replaceAll("[\\\\/:*?\"<>|]", "_") : "unknown";
     Path logDir = Paths.get(chazhengLogDir);
     try {
@@ -264,12 +268,16 @@ public class ChazhengCertQueryService {
       log.warn("无法创建日志目录: {}", logDir);
       return;
     }
-    Path logFile = logDir.resolve("certs_" + safeUserName + "_" + idCard + ".log");
+    String logFileName = "certs_" + SensitiveMaskUtils.maskName(safeUserName)
+        + "_" + SensitiveMaskUtils.maskIdCard(idCard) + ".log";
+    // 掩码符 * 在 Windows 是非法路径字符（InvalidPathException 会打断查证主流程），
+    // 文件名层面统一替换为 _；日志内容的脱敏不受影响
+    Path logFile = logDir.resolve(logFileName.replaceAll("[\\\\/:*?\"<>|]", "_"));
 
     // 用 LinkedHashMap 而非 Map.of：Map.of 不允许 null 值，
     // 当 detail 为 null（如响应缺 errorCode 字段，仅 statusCode/status 异常）时会抛 NPE
     Map<String, Object> logPayload = new LinkedHashMap<>();
-    logPayload.put("template", reqData);
+    logPayload.put("template", sanitizeForLog(reqData));
     logPayload.put("detail", detail);
     String entry;
     try {
@@ -278,7 +286,7 @@ public class ChazhengCertQueryService {
           objectMapper.writeValueAsString(logPayload));
     } catch (JsonProcessingException e) {
       entry = String.format("--- %s %s ---%ntemplate=%s, detail=%s%n",
-          parseStatus, Instant.now(), reqData, detail);
+          parseStatus, Instant.now(), sanitizeForLog(reqData), detail);
     }
 
     try {
@@ -286,5 +294,34 @@ public class ChazhengCertQueryService {
     } catch (IOException e) {
       log.warn("写日志失败: {}", logFile, e);
     }
+  }
+
+  /** 请求模板里可能带姓名/身份证/手机号，落盘前按 key 特征脱敏。 */
+  private Map<String, Object> sanitizeForLog(Map<String, Object> source) {
+    if (source == null || source.isEmpty()) {
+      return source;
+    }
+    Map<String, Object> copy = new LinkedHashMap<>();
+    for (Map.Entry<String, Object> e : source.entrySet()) {
+      copy.put(e.getKey(), sanitizeValue(e.getKey(), e.getValue()));
+    }
+    return copy;
+  }
+
+  private Object sanitizeValue(String key, Object value) {
+    if (!(value instanceof String text) || key == null) {
+      return value;
+    }
+    String lowerKey = key.toLowerCase(Locale.ROOT).replace("_", "").replace("-", "");
+    if (lowerKey.contains("idcard") || lowerKey.contains("idnumber")) {
+      return SensitiveMaskUtils.maskIdCard(text);
+    }
+    if (lowerKey.contains("phone") || lowerKey.contains("mobile")) {
+      return SensitiveMaskUtils.maskPhone(text);
+    }
+    if (lowerKey.equals("name") || lowerKey.endsWith("name")) {
+      return SensitiveMaskUtils.maskName(text);
+    }
+    return value;
   }
 }

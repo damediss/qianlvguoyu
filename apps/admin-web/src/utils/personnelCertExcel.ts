@@ -1,6 +1,9 @@
-/** 人员认定 Excel 导入查证回填（前端 SheetJS 解析/写回；查证走后端 verify-lookup） */
+/** 人员认定 Excel 导入查证回填（前端 exceljs 解析/写回；查证走后端 verify-lookup） */
 
-import type { WorkBook } from 'xlsx';
+// P1-7：原使用 xlsx（SheetJS）0.18.5，存在 CVE-2023-30533（原型污染）与 CVE-2024-22363（ReDoS），
+// 且本工程仅此一处引用。迁移到 exceljs（browser 入口 dist/exceljs.min.js）后 xlsx 依赖已删除。
+// 运行时按需动态导入（与原先 xlsx 的懒加载一致），避免把 ~1.4MB 的 exceljs 打进主包。
+import type ExcelJS from 'exceljs';
 
 export type CertFillStatus = 'pending' | 'verified' | 'not_found' | 'invalid' | 'failed' | 'skipped';
 
@@ -35,7 +38,7 @@ export interface PersonnelCertExcelSession {
   sheetName: string;
   headerRowIndex: number;
   columnMap: ExcelColumnMap;
-  workbook: WorkBook;
+  workbook: ExcelJS.Workbook;
   rows: ParsedExcelPersonRow[];
   results: CertLookupRowResult[];
 }
@@ -103,45 +106,48 @@ function formatJsDate(value: Date): string {
   return `${value.getFullYear()}/${value.getMonth() + 1}/${value.getDate()}`;
 }
 
+/** 去掉数字格式里的字面量与颜色段，避免 "General"、"[Red]" 之类被误判为日期格式 */
+function stripNumFmtLiterals(numFmt: string): string {
+  return numFmt.replace(/"[^"]*"/g, '').replace(/\[[^\]]*\]/g, '');
+}
+
+function isDateFormat(numFmt?: string | null): boolean {
+  if (!numFmt) return false;
+  return /[ymdhs]/i.test(stripNumFmtLiterals(numFmt));
+}
+
 /**
- * SheetJS 再写出时常丢失日期数字格式，Excel 会把 45376 当普通数字显示。
+ * exceljs 再写出时常丢失日期数字格式，Excel 会把 45376 当普通数字显示。
  * 下载前把日期单元格转成可读文本，避免「2024/3/25 → 45376」。
  */
-function normalizeSheetDatesToText(workbook: WorkBook, XLSX: typeof import('xlsx')): void {
-  for (const name of workbook.SheetNames) {
-    const sheet = workbook.Sheets[name];
-    if (!sheet?.['!ref']) continue;
-    const range = XLSX.utils.decode_range(sheet['!ref']);
-    for (let r = range.s.r; r <= range.e.r; r += 1) {
-      for (let c = range.s.c; c <= range.e.c; c += 1) {
-        const addr = XLSX.utils.encode_cell({ r, c });
-        const cell = sheet[addr];
-        if (!cell) continue;
+function normalizeSheetDatesToText(workbook: ExcelJS.Workbook): void {
+  for (const sheet of workbook.worksheets) {
+    sheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        const value = cell.value as unknown;
 
-        if (cell.t === 'd' && cell.v instanceof Date) {
-          const text = formatJsDate(cell.v);
-          sheet[addr] = { t: 's', v: text, w: text };
-          continue;
+        if (value instanceof Date) {
+          const text = formatJsDate(value);
+          cell.value = text;
+          return;
         }
 
-        if (cell.t !== 'n' || typeof cell.v !== 'number') continue;
+        if (typeof value !== 'number') return;
 
-        const numFmt = typeof cell.z === 'string' ? cell.z : '';
-        const isDateFmt = numFmt ? XLSX.SSF.is_date(numFmt) : false;
-        const formatted = typeof cell.w === 'string' ? cell.w.trim() : '';
+        const formatted = typeof cell.text === 'string' ? cell.text.trim() : '';
         const looksFormattedDate = /^\d{4}[\/\-年]\d{1,2}[\/\-月]\d{1,2}/.test(formatted)
           || /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(formatted);
 
         // 典型业务日期序列区间（约 1950–2100），且带日期格式或已有日期形格式化文本
-        const inDateSerialRange = cell.v >= 18264 && cell.v <= 73050;
-        if (!isDateFmt && !(looksFormattedDate && inDateSerialRange)) continue;
+        const inDateSerialRange = value >= 18264 && value <= 73050;
+        if (!isDateFormat(cell.numFmt) && !(looksFormattedDate && inDateSerialRange)) return;
 
         const text = formatted && looksFormattedDate
           ? formatted.replace(/年|月/g, '/').replace(/日/g, '')
-          : excelSerialToDateText(cell.v);
-        sheet[addr] = { t: 's', v: text, w: text };
-      }
-    }
+          : excelSerialToDateText(value);
+        cell.value = text;
+      });
+    });
   }
 }
 
@@ -163,38 +169,59 @@ function normalizeIssueDateText(value?: string): string | undefined {
  * 采集模板常见「Administrator: 2020年11月」这类历史批注；SheetJS 重写后会原样带出，
  * 在 Excel 中显示为带红三角的批注框（非查证逻辑写入）。
  */
-function stripWorkbookComments(workbook: WorkBook): void {
-  for (const name of workbook.SheetNames) {
-    const sheet = workbook.Sheets[name] as Record<string, unknown> | undefined;
-    if (!sheet) continue;
-    delete sheet['!comments'];
-    for (const key of Object.keys(sheet)) {
-      if (key.startsWith('!')) continue;
-      const cell = sheet[key] as { c?: unknown } | undefined;
-      if (cell && cell.c != null) {
-        delete cell.c;
-      }
-    }
+function stripWorkbookComments(workbook: ExcelJS.Workbook): void {
+  for (const sheet of workbook.worksheets) {
+    sheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        if (cell.note) {
+          (cell as unknown as { note?: unknown }).note = undefined;
+        }
+      });
+    });
   }
 }
 
+/** 单元格值 → 展示文本（对齐原 SheetJS raw:false 的语义） */
+function toDisplayValue(value: unknown): string | number | null {
+  if (value == null) return '';
+  if (value instanceof Date) return formatJsDate(value);
+  if (typeof value === 'object') {
+    const obj = value as { text?: unknown; result?: unknown; hyperlink?: unknown };
+    if (typeof obj.text === 'string') return obj.text;
+    if (obj.result != null) return toDisplayValue(obj.result);
+    return '';
+  }
+  return value as string | number;
+}
+
 export async function parsePersonnelCertExcel(file: File): Promise<PersonnelCertExcelSession> {
-  const XLSX = await import('xlsx');
   const buffer = await file.arrayBuffer();
-  // cellNF：保留日期数字格式，便于写出前识别并转成文本
-  const workbook = XLSX.read(buffer, { type: 'array', cellDates: true, cellNF: true });
-  const sheetName =
-    workbook.SheetNames.includes('采集表') ? '采集表' : workbook.SheetNames[0];
+  const ExcelJSRuntime = (await import('exceljs')).default;
+  const workbook = new ExcelJSRuntime.Workbook();
+  await workbook.xlsx.load(buffer);
+
+  const sheetName = workbook.worksheets.some((ws) => ws.name === '采集表')
+    ? '采集表'
+    : workbook.worksheets[0]?.name;
   if (!sheetName) {
     throw new Error('Excel 中没有工作表');
   }
-  const sheet = workbook.Sheets[sheetName];
-  const matrix = XLSX.utils.sheet_to_json<(string | number | null)[]>(sheet, {
-    header: 1,
-    defval: '',
-    raw: false,
-    dateNF: 'yyyy/m/d',
-  }) as (string | number | null)[][];
+  const sheet = workbook.getWorksheet(sheetName);
+  if (!sheet) {
+    throw new Error(`工作表 ${sheetName} 不存在`);
+  }
+
+  const matrix: (string | number | null)[][] = [];
+  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    const line: (string | number | null)[] = [];
+    for (let c = 1; c <= row.cellCount; c += 1) {
+      line.push(toDisplayValue(row.getCell(c).value));
+    }
+    while (matrix.length < rowNumber - 1) {
+      matrix.push([]);
+    }
+    matrix[rowNumber - 1] = line;
+  });
 
   if (matrix.length === 0) {
     throw new Error('Excel 内容为空');
@@ -267,10 +294,9 @@ export function runMockCertLookup(rows: ParsedExcelPersonRow[]): CertLookupRowRe
 export async function fillWorkbookWithResults(
   session: PersonnelCertExcelSession,
   results: CertLookupRowResult[],
-): Promise<WorkBook> {
-  const XLSX = await import('xlsx');
+): Promise<ExcelJS.Workbook> {
   const { workbook, sheetName, columnMap } = session;
-  const sheet = workbook.Sheets[sheetName];
+  const sheet = workbook.getWorksheet(sheetName);
   if (!sheet) {
     throw new Error(`工作表 ${sheetName} 不存在`);
   }
@@ -281,11 +307,9 @@ export async function fillWorkbookWithResults(
     const result = resultMap.get(row.rowIndex);
     if (!result || result.status !== 'verified') continue;
 
-    const excelRow = row.rowIndex - 1;
     const writeCell = (col: number | undefined, value?: string) => {
       if (col == null || value == null || value === '') return;
-      const addr = XLSX.utils.encode_cell({ r: excelRow, c: col });
-      sheet[addr] = { t: 's', v: value, w: value };
+      sheet.getCell(row.rowIndex, col + 1).value = value;
     };
 
     writeCell(columnMap.certLevelCol, result.certLevel);
@@ -293,25 +317,18 @@ export async function fillWorkbookWithResults(
     writeCell(columnMap.issueDateCol, normalizeIssueDateText(result.issueDate));
   }
 
-  if (sheet['!ref']) {
-    const range = XLSX.utils.decode_range(sheet['!ref']);
-    for (const row of session.rows) {
-      const excelRow = row.rowIndex - 1;
-      if (excelRow > range.e.r) range.e.r = excelRow;
-    }
-    sheet['!ref'] = XLSX.utils.encode_range(range);
-  }
-
   stripWorkbookComments(workbook);
-  normalizeSheetDatesToText(workbook, XLSX);
+  normalizeSheetDatesToText(workbook);
   return workbook;
 }
 
-export async function downloadFilledWorkbook(workbook: WorkBook, fileName: string): Promise<void> {
-  const XLSX = await import('xlsx');
+export async function downloadFilledWorkbook(
+  workbook: ExcelJS.Workbook,
+  fileName: string,
+): Promise<void> {
   stripWorkbookComments(workbook);
-  normalizeSheetDatesToText(workbook, XLSX);
-  const out = XLSX.write(workbook, { bookType: 'xlsx', type: 'array', cellDates: true });
+  normalizeSheetDatesToText(workbook);
+  const out = await workbook.xlsx.writeBuffer();
   const blob = new Blob([out], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });

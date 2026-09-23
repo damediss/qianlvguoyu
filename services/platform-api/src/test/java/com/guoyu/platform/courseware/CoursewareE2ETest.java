@@ -314,10 +314,16 @@ class CoursewareE2ETest {
   }
 
   void cleanup() {
-    for (String table : List.of("cw_slide", "cw_outline_page", "cw_source_section", "cw_digest",
-        "cw_llm_log", "cw_project")) {
-      jdbc.execute("DELETE FROM " + table);
-    }
+    // 只清测试自建项目(按标题前缀收敛):误删过冒烟项目,禁止全表 DELETE(2026-09-21 事故)
+    jdbc.execute("""
+        DELETE s, o, sec, d, lg, pr FROM cw_project pr
+        LEFT JOIN cw_slide s ON s.project_id = pr.id
+        LEFT JOIN cw_outline_page o ON o.project_id = pr.id
+        LEFT JOIN cw_source_section sec ON sec.project_id = pr.id
+        LEFT JOIN cw_digest d ON d.project_id = pr.id
+        LEFT JOIN cw_llm_log lg ON lg.project_id = pr.id
+        WHERE pr.title LIKE '热处理工艺培训%' OR pr.title LIKE '并发%' OR pr.title LIKE '课件A%'
+        """);
   }
 
   // ──────────────────────── HTTP 辅助 ────────────────────────
@@ -721,41 +727,48 @@ class CoursewareE2ETest {
 
   @Test
   @Order(9)
-  @DisplayName("EA-09 导出门禁:残留 error 页阻断导出;修复后可导出且 warning 透出")
-  void ea09_exportGate() throws Exception {
+  @DisplayName("EA-09 残留结构错误置失败可手动重试;重试成功后导出通过")
+  void ea09_residualErrorFailedAndRetry() throws Exception {
     cleanup();
     Long projectId = createProjectToOutlineReady();
-    structureBadTitles = List.of("装炉方式影响受热均匀性"); // 两轮都缺 body → ready 但残留 error
+    structureBadTitles = List.of("装炉方式影响受热均匀性"); // 两轮都缺 body → 残留 error
     confirm(projectId);
     JsonNode progress = pollProgress(projectId, 90_000);
-    assertEquals("ready", progress.path("status").asText());
-
-    JsonNode exportResp = post("/courseware/projects/" + projectId + "/export", Map.of(), null);
-    assertEquals("0", exportResp.path("code").asText());
-    JsonNode data = exportResp.path("data");
-    assertTrue(data.path("blocked").asBoolean(), "structure error 应阻断导出");
-    assertTrue(data.path("issues").size() > 0);
-    assertTrue(data.path("fileId").isNull(), "阻断时无 fileId");
-
-    // 修复该页后导出成功
-    structureBadTitles = List.of();
+    assertEquals("partial", progress.path("status").asText(),
+        "残留结构错误的页应置失败而不是静默 ready(导出曾被静默阻断,用户口径 2026-09-22)");
+    assertEquals(1, progress.path("failedPages").asInt());
     Long badSlide = jdbc.queryForObject(
-        "SELECT id FROM cw_slide WHERE project_id=" + projectId
-            + " AND issues LIKE '%必填槽位%'", Long.class);
+        "SELECT id FROM cw_slide WHERE project_id=" + projectId + " AND status='failed'",
+        Long.class);
+    String err = jdbc.queryForObject("SELECT error FROM cw_slide WHERE id=" + badSlide,
+        String.class);
+    assertTrue(err != null && err.contains("生成不完整"), err);
+
+    // 修复后手动重试 → ready,项目收口,导出通过
+    structureBadTitles = List.of();
     assertEquals("0", post("/courseware/slides/" + badSlide + "/retry", Map.of(), null)
         .path("code").asText());
     long deadline = System.currentTimeMillis() + 30_000;
     while (System.currentTimeMillis() < deadline) {
-      String issues = jdbc.queryForObject(
-          "SELECT issues FROM cw_slide WHERE id=" + badSlide, String.class);
-      if (issues != null && !issues.contains("必填槽位")) {
+      String status = jdbc.queryForObject("SELECT status FROM cw_slide WHERE id=" + badSlide,
+          String.class);
+      if ("ready".equals(status)) {
         break;
       }
       Thread.sleep(400);
     }
-    JsonNode export2 = post("/courseware/projects/" + projectId + "/export", Map.of(), null);
-    assertFalse(export2.path("data").path("blocked").asBoolean());
-    assertTrue(export2.path("data").path("fileId").asLong() > 0);
+    assertEquals("ready", jdbc.queryForObject("SELECT status FROM cw_slide WHERE id=" + badSlide,
+        String.class));
+    long deadline2 = System.currentTimeMillis() + 10_000;
+    String projStatus;
+    do {
+      projStatus = jdbc.queryForObject("SELECT status FROM cw_project WHERE id=" + projectId,
+          String.class);
+      Thread.sleep(300);
+    } while (!"ready".equals(projStatus) && System.currentTimeMillis() < deadline2);
+    JsonNode export = post("/courseware/projects/" + projectId + "/export", Map.of(), null);
+    assertFalse(export.path("data").path("blocked").asBoolean());
+    assertTrue(export.path("data").path("fileId").asLong() > 0);
   }
 
   @Test
