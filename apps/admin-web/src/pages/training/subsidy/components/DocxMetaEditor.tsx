@@ -7,9 +7,24 @@ type Props = {
   instanceId: string | number;
   onSaved?: () => void;
   onCancel?: () => void;
+  /** 仅当 OnlyOffice 已启用时传入 */
+  onOpenFullEditor?: () => void;
+  onlyOfficeAvailable?: boolean;
 };
 
-export function DocxMetaEditor({ instanceId, onSaved, onCancel }: Props) {
+function isSameCellLabeled(line: { label: string; text: string; kind: string }) {
+  if (line.kind !== 'meta') return false;
+  const t = (line.text || '').trim();
+  return t.startsWith(line.label);
+}
+
+export function DocxMetaEditor({
+  instanceId,
+  onSaved,
+  onCancel,
+  onOpenFullEditor,
+  onlyOfficeAvailable = false,
+}: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [meta, setMeta] = useState<SubsidyMaterialDocxMeta | null>(null);
@@ -27,7 +42,8 @@ export function DocxMetaEditor({ instanceId, onSaved, onCancel }: Props) {
         setMeta(data);
         const values: Record<string, string> = {};
         for (const line of data.lines || []) {
-          values[`p_${line.index}`] = line.kind === 'meta' || line.kind === 'caption' ? line.value : line.text;
+          values[`p_${line.index}`] =
+            line.kind === 'meta' || line.kind === 'caption' ? line.value : line.text;
         }
         form.setFieldsValue(values);
       } catch (e) {
@@ -54,7 +70,9 @@ export function DocxMetaEditor({ instanceId, onSaved, onCancel }: Props) {
     for (const line of meta.lines) {
       const raw = values[`p_${line.index}`] ?? '';
       if (line.kind === 'meta') {
-        paragraphs[line.index] = `${line.label}：${raw}`;
+        paragraphs[line.index] = isSameCellLabeled(line)
+          ? `${line.label}：${raw}`
+          : String(raw);
       } else if (line.kind === 'caption') {
         const t = String(raw).trim();
         paragraphs[line.index] = t.startsWith('图') ? t : `${line.label}：${t}`;
@@ -83,17 +101,69 @@ export function DocxMetaEditor({ instanceId, onSaved, onCancel }: Props) {
   }
 
   if (error) {
-    return <Alert type="error" showIcon message="无法编辑此 Word" description={error} />;
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message="无法解析 Word 字段"
+        description={
+          <div>
+            <div>{error}</div>
+            <div style={{ marginTop: 8 }}>请用「下载」修改后「替换上传」，或检查后端是否已部署最新填数/编辑接口。</div>
+            {onCancel ? (
+              <Button type="link" style={{ paddingLeft: 0 }} onClick={onCancel}>
+                退出编辑
+              </Button>
+            ) : null}
+          </div>
+        }
+      />
+    );
+  }
+
+  if (!meta?.lines?.length) {
+    return (
+      <Alert
+        type="info"
+        showIcon
+        message="未识别到可编辑字段"
+        description={
+          <div>
+            <div>
+              当前文档未匹配到「培训机构 / 培训时间 / 经办人」等栏位。请「下载」后本地修改，再「替换上传」。
+            </div>
+            {onlyOfficeAvailable && onOpenFullEditor ? (
+              <Button type="link" style={{ paddingLeft: 0 }} onClick={onOpenFullEditor}>
+                使用完整排版编辑（OnlyOffice）
+              </Button>
+            ) : null}
+            {onCancel ? (
+              <Button type="link" onClick={onCancel}>
+                退出编辑
+              </Button>
+            ) : null}
+          </div>
+        }
+      />
+    );
   }
 
   return (
     <div className="material-docx-meta-editor" style={{ padding: '12px 16px' }}>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-        编辑标题、培训信息与图注后保存。图片不会改动；完整排版编辑可另用 OnlyOffice（需单独部署）。
+        修改下列字段后保存即可（无需 OnlyOffice）。后端会写回 docx，保留图片与表格版式。
         {meta?.fileName ? (
           <>
             {' '}
             文件：<Typography.Text code>{meta.fileName}</Typography.Text>
+          </>
+        ) : null}
+        {onlyOfficeAvailable && onOpenFullEditor ? (
+          <>
+            {' '}
+            <Button type="link" size="small" onClick={onOpenFullEditor}>
+              完整排版编辑（OnlyOffice）
+            </Button>
           </>
         ) : null}
       </Typography.Paragraph>

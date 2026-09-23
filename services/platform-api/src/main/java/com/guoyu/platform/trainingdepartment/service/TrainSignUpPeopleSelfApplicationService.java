@@ -92,13 +92,14 @@ public class TrainSignUpPeopleSelfApplicationService {
 
   @Transactional
   public TrainSignUpPeopleSelfVO create(TrainSignUpPeopleSelfCreateReq req) {
+    PlatformUserApplicationService.assertPhoneIfPresent(req.getPhone());
     Long tenantId = SecurityContext.currentUser().getTenantId();
     TrainSignUpPeopleSelfEntity entity = new TrainSignUpPeopleSelfEntity();
     entity.setTenantId(tenantId);
     entity.setSignUpId(req.getSignUpId());
     entity.setPlatformUserId(req.getPlatformUserId());
     entity.setName(req.getName());
-    entity.setPhone(req.getPhone());
+    entity.setPhone(StringUtils.hasText(req.getPhone()) ? req.getPhone().replace(" ", "").trim() : req.getPhone());
     entity.setIdCardNumber(req.getIdCardNumber());
     entity.setGender(req.getGender());
     entity.setEducation(req.getEducation());
@@ -117,6 +118,8 @@ public class TrainSignUpPeopleSelfApplicationService {
     if (entity.getStatus() != null && entity.getStatus() == ClassCollectionApplicationService.STATUS_APPROVED) {
       classCollectionApplicationService.syncPersonToRoster(entity);
     }
+    platformUserApplicationService.syncFromExternalProfile(
+        entity.getPlatformUserId(), entity.getIdCardNumber(), entity.getName(), entity.getPhone());
     TrainSignUpPeopleSelfVO vo = assembler.toVo(entity);
     assembler.enrich(vo);
     return vo;
@@ -126,6 +129,10 @@ public class TrainSignUpPeopleSelfApplicationService {
   public TrainSignUpPeopleSelfVO update(Long id, TrainSignUpPeopleSelfUpdateReq req) {
     TrainSignUpPeopleSelfEntity entity = getExisting(id);
     assembler.applyUpdate(entity, req);
+    PlatformUserApplicationService.assertPhoneIfPresent(entity.getPhone());
+    if (StringUtils.hasText(entity.getPhone())) {
+      entity.setPhone(entity.getPhone().replace(" ", "").trim());
+    }
     entity.setUpdateTime(LocalDateTime.now());
     mapper.updateById(entity);
     platformUserApplicationService.syncFromExternalProfile(

@@ -235,7 +235,6 @@ public class TrainSubsidyMaterialTemplateApplicationService {
     if (!lower.endsWith(".docx") && !lower.endsWith(".xlsx") && !lower.endsWith(".xls")) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持 docx / xlsx 模板");
     }
-    String format = lower.endsWith(".docx") ? "docx" : "xlsx";
     String sc = StringUtils.hasText(scope) ? scope.trim().toLowerCase(Locale.ROOT) : "tenant";
     if (!Set.of("platform", "tenant", "class").contains(sc)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "scope 须为 platform/tenant/class");
@@ -251,15 +250,24 @@ public class TrainSubsidyMaterialTemplateApplicationService {
 
     String schemaJson = "[]";
     int parseVersion = 2;
+    String format;
     try {
       byte[] bytes = file.getBytes();
+      // 内容优先：后缀写错（docx 改成 xlsx）也能正确登记
+      format = resolveOfficeFormat(bytes, null, original);
+      if (!"docx".equals(format) && !"xlsx".equals(format) && !"xls".equals(format)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "无法识别为 docx / xlsx / xls 文件");
+      }
       Set<String> keys = new LinkedHashSet<>(SubsidyTemplatePlaceholderParser.extract(bytes, format));
       if ("xlsx".equals(format) || "xls".equals(format)) {
         keys.addAll(SubsidyXlsxLabelFiller.detectMatchedKeys(bytes));
       }
       schemaJson = objectMapper.writeValueAsString(new ArrayList<>(keys));
+    } catch (BusinessException ex) {
+      throw ex;
     } catch (Exception ex) {
       log.warn("解析模板占位符失败 name={}", original, ex);
+      format = lower.endsWith(".docx") ? "docx" : (lower.endsWith(".xls") && !lower.endsWith(".xlsx") ? "xls" : "xlsx");
       schemaJson = "[]";
     }
 
@@ -464,18 +472,13 @@ public class TrainSubsidyMaterialTemplateApplicationService {
       templateBytes = styleBase.bytes();
       styleBaseLabel = styleBase.label();
       styleBaseBorders = styleBase.borderCount();
-      String sniffed =
-          com.guoyu.platform.trainingdepartment.support.SubsidyExcelStyleSupport.sniffFormat(
-              templateBytes);
-      fmt =
-          StringUtils.hasText(sniffed)
-              ? sniffed
-              : detectOfficeFormat(styleBase.fileName(), null);
+      fmt = resolveOfficeFormat(templateBytes, null, styleBase.fileName());
       if (!"docx".equals(fmt) && !"xlsx".equals(fmt) && !"xls".equals(fmt)) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "上传模板不是 docx/xlsx，无法自动填数");
       }
-      // 申请表误用花名册文件时直接拦截，避免再次生成花名册
-      if (SubsidyMaterialTypes.APPLICATION_FORM.equals(instance.getMaterialType())
+      // 申请表误用花名册文件时直接拦截，避免再次生成花名册（仅 Excel）
+      if (!"docx".equals(fmt)
+          && SubsidyMaterialTypes.APPLICATION_FORM.equals(instance.getMaterialType())
           && looksLikeRosterWorkbook(templateBytes)) {
         throw new BusinessException(
             ErrorCode.BAD_REQUEST,
@@ -486,19 +489,14 @@ public class TrainSubsidyMaterialTemplateApplicationService {
       sourceTemplateId = instance.getTemplateId();
       libraryMaterialType = instance.getMaterialType();
     } else {
+      templateBytes = fileApplicationService.readFileBytesById(libraryTemplate.getTemplateFileId());
       fmt =
-          libraryTemplate.getFileFormat() == null
-              ? ""
-              : libraryTemplate.getFileFormat().toLowerCase(Locale.ROOT);
+          resolveOfficeFormat(
+              templateBytes,
+              libraryTemplate.getFileFormat(),
+              libraryTemplate.getTitle());
       if (!"docx".equals(fmt) && !"xlsx".equals(fmt) && !"xls".equals(fmt)) {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "仅支持 docx / xlsx 模板自动填数");
-      }
-      templateBytes = fileApplicationService.readFileBytesById(libraryTemplate.getTemplateFileId());
-      String sniffed =
-          com.guoyu.platform.trainingdepartment.support.SubsidyExcelStyleSupport.sniffFormat(
-              templateBytes);
-      if ("xls".equals(sniffed) || "xlsx".equals(sniffed)) {
-        fmt = sniffed;
       }
       sourceTitle = libraryTemplate.getTitle();
       sourceTemplateId = libraryTemplate.getId();
@@ -570,13 +568,11 @@ public class TrainSubsidyMaterialTemplateApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "填数失败: " + detail);
     }
 
-    // 输出扩展名以填数结果魔数为准（库表可能标 xlsx，实际仍是 OLE .xls）
-    if (!"docx".equals(fmt)) {
-      String filledFmt =
-          com.guoyu.platform.trainingdepartment.support.SubsidyExcelStyleSupport.sniffFormat(filled);
-      if ("xls".equals(filledFmt) || "xlsx".equals(filledFmt)) {
-        fmt = filledFmt;
-      }
+    // 输出扩展名以填数结果内容为准（docx/xlsx 都是 ZIP；库表可能标错）
+    String filledFmt =
+        com.guoyu.platform.trainingdepartment.support.SubsidyExcelStyleSupport.sniffFormat(filled);
+    if ("docx".equals(filledFmt) || "xls".equals(filledFmt) || "xlsx".equals(filledFmt)) {
+      fmt = filledFmt;
     }
     String ext = "docx".equals(fmt) ? "docx" : ("xls".equals(fmt) ? "xls" : "xlsx");
     String contentType = "docx".equals(fmt) ? DOCX : ("xls".equals(fmt) ? XLS : XLSX);
@@ -1458,6 +1454,24 @@ public class TrainSubsidyMaterialTemplateApplicationService {
     } catch (Exception ex) {
       return false;
     }
+  }
+
+  /**
+   * 解析 Office 格式：内容嗅探优先（区分同为 ZIP 的 docx/xlsx），再回退声明值/文件名。
+   */
+  private static String resolveOfficeFormat(byte[] bytes, String declared, String fileName) {
+    String sniffed =
+        com.guoyu.platform.trainingdepartment.support.SubsidyExcelStyleSupport.sniffFormat(bytes);
+    if ("docx".equals(sniffed) || "xlsx".equals(sniffed) || "xls".equals(sniffed)) {
+      return sniffed;
+    }
+    if (StringUtils.hasText(declared)) {
+      String d = declared.trim().toLowerCase(Locale.ROOT);
+      if ("docx".equals(d) || "xlsx".equals(d) || "xls".equals(d)) {
+        return d;
+      }
+    }
+    return detectOfficeFormat(fileName, null);
   }
 
   private static String detectOfficeFormat(String fileName, String contentType) {

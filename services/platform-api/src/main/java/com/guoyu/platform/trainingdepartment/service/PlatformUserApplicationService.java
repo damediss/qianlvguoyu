@@ -300,8 +300,21 @@ public class PlatformUserApplicationService {
   }
 
   /**
+   * 手机号有值时必须是 11 位有效号；空值允许（部分场景可不填）。
+   */
+  public static void assertPhoneIfPresent(String phone) {
+    if (!StringUtils.hasText(phone)) {
+      return;
+    }
+    String normalized = phone.replace(" ", "").trim();
+    if (!normalized.matches("^1[3-9]\\d{9}$")) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "请输入11位有效手机号");
+    }
+  }
+
+  /**
    * 花名册 / 报名人员回写学员主数据，并再同步到其他关联表。
-   * 找不到账号时静默跳过；手机号非 11 位有效号时不回写手机号，避免污染主数据。
+   * 找不到账号时静默跳过。
    */
   @Transactional
   public void syncFromExternalProfile(Long platformUserId, String idCard, String realname, String phone) {

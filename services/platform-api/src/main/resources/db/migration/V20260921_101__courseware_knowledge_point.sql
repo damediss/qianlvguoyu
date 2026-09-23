@@ -3,6 +3,7 @@
 -- 解析层确定性枚举 x.y.z 知识点落库,大纲组装按此替换。
 -- 版本号依据(2026-09-21 双库查询):gjjddb2026(测试) MAX=20260921.020;gjjddbpro(生产) MAX=20260921.020,
 -- 本迁移取 20260921.101,在两库最大值之上并留足同日期间隔(踩坑 #7)。
+-- MySQL DDL 自动提交：ADD COLUMN 做 information_schema 守卫，支持失败后重跑。
 
 CREATE TABLE IF NOT EXISTS cw_knowledge_point (
   id BIGINT NOT NULL COMMENT '主键(雪花 ID)',
@@ -29,4 +30,13 @@ CREATE TABLE IF NOT EXISTS cw_knowledge_point (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 课件知识点清单';
 
 -- 大纲页挂接知识点(仅知识点页非空)
-ALTER TABLE cw_outline_page ADD COLUMN knowledge_point_id BIGINT NULL COMMENT '知识点 ID(cw_knowledge_point.id)' AFTER source_refs;
+SET @sql := (
+  SELECT IF(COUNT(*) = 0,
+    'ALTER TABLE cw_outline_page ADD COLUMN knowledge_point_id BIGINT NULL COMMENT ''知识点 ID(cw_knowledge_point.id)'' AFTER source_refs',
+    'SELECT 1')
+  FROM information_schema.columns
+  WHERE table_schema = DATABASE()
+    AND table_name = 'cw_outline_page'
+    AND column_name = 'knowledge_point_id'
+);
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;

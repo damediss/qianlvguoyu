@@ -183,6 +183,12 @@
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.training-subsidy-declare-page .material-workspace-actions {
+  flex: 1 1 auto;
+  justify-content: flex-end;
 }
 
 .training-subsidy-declare-page .material-preview-frame {

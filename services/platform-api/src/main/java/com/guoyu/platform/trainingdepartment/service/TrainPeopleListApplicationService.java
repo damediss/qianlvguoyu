@@ -356,7 +356,11 @@ public class TrainPeopleListApplicationService {
     TrainPeopleListEntity entity = getExisting(id);
     assertClassViewable(entity.getTrainClassId());
     if (params.get("realname") != null) entity.setRealname(params.get("realname").toString());
-    if (params.get("phone") != null) entity.setPhone(params.get("phone").toString());
+    if (params.get("phone") != null) {
+      String phone = params.get("phone").toString();
+      PlatformUserApplicationService.assertPhoneIfPresent(phone);
+      entity.setPhone(phone.replace(" ", "").trim());
+    }
     if (params.get("id_card") != null) entity.setIdCard(params.get("id_card").toString());
     if (params.get("normal_score") != null) entity.setNormalScore(new java.math.BigDecimal(params.get("normal_score").toString()));
     if (params.get("is_leader") != null) entity.setIsLeader(Integer.valueOf(params.get("is_leader").toString()));
