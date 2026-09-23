@@ -290,7 +290,7 @@ export function MaterialWorkspacePanel({
   };
 
   const showWordEditor = editing && !!active && (canEditWord || (editing && sniffedKind === 'docx'));
-  const showSheetEditor = editing && !!active && canEditSpreadsheet && sniffedKind !== 'docx';
+  const showSheetEditor = editing && !!active && canEditSpreadsheet;
 
   return (
     <div className="material-workspace-panel">
