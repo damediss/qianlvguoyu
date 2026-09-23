@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.app.entity.PlatformSmsEntity;
 import com.guoyu.platform.app.mapper.PlatformSmsMapper;
 import java.security.SecureRandom;
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
 import java.time.Instant;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,10 +44,12 @@ public class AppSmsApplicationService {
     smsMapper.insert(entity);
 
     if (smsEnabled) {
-      // 生产环境可接入阿里云短信；当前默认仅入库并在日志输出（便于联调）
-      log.warn("platform.sms.enabled=true 但未配置阿里云 SDK，验证码已入库: phone={} code={}", normalized, code);
+      // N2：验证码属一次性口令，绝不入日志；手机号脱敏后保留可定位性
+      log.warn("platform.sms.enabled=true 但未配置阿里云 SDK，验证码已入库: phone={} code={}",
+          SensitiveMaskUtils.maskPhone(normalized), SensitiveMaskUtils.OTP_PLACEHOLDER);
     } else {
-      log.info("短信验证码（开发模式）phone={} code={}", normalized, code);
+      log.debug("短信验证码（开发模式）phone={} code={}",
+          SensitiveMaskUtils.maskPhone(normalized), SensitiveMaskUtils.OTP_PLACEHOLDER);
     }
   }
 

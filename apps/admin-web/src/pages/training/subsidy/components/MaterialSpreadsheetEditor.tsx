@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+// P1-7：xlsx（SheetJS）依赖已移除，本文件表格预览改用 exceljs；
+// 仅类型导入，运行时按需动态加载。
+import type ExcelJS from 'exceljs';
 import { Alert, Button, Space, Spin, Typography, message } from 'antd';
 import { SaveOutlined } from '@ant-design/icons';
 import {
@@ -21,8 +24,6 @@ type Props = {
 };
 
 type WorkbookHandle = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  XLSX: any;
   sheetName: string;
   tableId: string;
 };
@@ -36,6 +37,47 @@ function cellAddrFromTdId(id: string, tableId: string): string | null {
 
 function parseEditedText(raw: string): string {
   return (raw || '').replace(/\u00a0/g, ' ').trimEnd();
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function cellToText(value: unknown): string {
+  if (value == null) return '';
+  if (value instanceof Date) {
+    return `${value.getFullYear()}/${value.getMonth() + 1}/${value.getDate()}`;
+  }
+  if (typeof value === 'object') {
+    const obj = value as { text?: unknown; result?: unknown };
+    if (typeof obj.text === 'string') return obj.text;
+    if (obj.result != null) return cellToText(obj.result);
+    return '';
+  }
+  return String(value);
+}
+
+/**
+ * 表格预览：把工作表渲染成 HTML table（替代 SheetJS 的 sheet_to_html）。
+ * 单元格文本一律转义 —— 上传的表格内容属不可信输入，直接拼进 innerHTML 会是存储型 XSS。
+ */
+function worksheetToHtmlTable(sheet: ExcelJS.Worksheet, tableId: string): string {
+  const rows: string[] = [];
+  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    const cells: string[] = [];
+    for (let c = 1; c <= row.cellCount; c += 1) {
+      const addr = `${row.getCell(c).address.replace(/\d+/g, '')}${rowNumber}`;
+      const text = escapeHtml(cellToText(row.getCell(c).value));
+      cells.push(`<td id="${tableId}-${addr}">${text}</td>`);
+    }
+    rows.push(`<tr>${cells.join('')}</tr>`);
+  });
+  return `<table id="${tableId}"><tbody>${rows.join('')}</tbody></table>`;
 }
 
 /**
@@ -86,19 +128,19 @@ export function MaterialSpreadsheetEditor({
           return;
         }
 
-        const XLSX = await import('xlsx');
         const buffer = await blob.arrayBuffer();
-        const workbook = XLSX.read(buffer, { type: 'array', cellStyles: true });
-        const sheetName = workbook.SheetNames[0];
-        if (!sheetName) {
+        const ExcelJSRuntime = (await import('exceljs')).default;
+        const workbook = new ExcelJSRuntime.Workbook();
+        await workbook.xlsx.load(buffer);
+        const sheet = workbook.worksheets[0];
+        if (!sheet) {
           setError('表格为空');
           return;
         }
         if (cancelled || !hostRef.current) return;
 
         const tableId = `material-edit-table-${String(fileId || 'x').replace(/\W/g, '')}`;
-        const sheet = workbook.Sheets[sheetName];
-        hostRef.current.innerHTML = XLSX.utils.sheet_to_html(sheet, { id: tableId });
+        hostRef.current.innerHTML = worksheetToHtmlTable(sheet, tableId);
 
         const table = hostRef.current.querySelector('table');
         if (table) {
@@ -113,14 +155,15 @@ export function MaterialSpreadsheetEditor({
           });
         }
 
-        if (workbook.SheetNames.length > 1) {
+        const sheetCount = workbook.worksheets.length;
+        if (sheetCount > 1) {
           const hint = document.createElement('p');
           hint.className = 'material-edit-sheet-hint';
-          hint.textContent = `共 ${workbook.SheetNames.length} 个工作表，当前编辑：${sheetName}`;
+          hint.textContent = `共 ${sheetCount} 个工作表，当前编辑：${sheet.name}`;
           hostRef.current.appendChild(hint);
         }
 
-        bookRef.current = { XLSX, sheetName, tableId };
+        bookRef.current = { sheetName: sheet.name, tableId };
         setKindOk(true);
       } catch (e) {
         if (!cancelled) setError((e as Error).message || '加载表格失败');

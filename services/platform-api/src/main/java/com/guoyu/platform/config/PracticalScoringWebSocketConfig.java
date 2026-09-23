@@ -11,14 +11,18 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class PracticalScoringWebSocketConfig implements WebSocketConfigurer {
 
   private final PracticalStartWebSocketHandler handler;
+  private final WebSocketAllowedOrigins allowedOrigins;
 
-  public PracticalScoringWebSocketConfig(PracticalStartWebSocketHandler handler) {
+  public PracticalScoringWebSocketConfig(
+      PracticalStartWebSocketHandler handler,
+      WebSocketAllowedOrigins allowedOrigins) {
     this.handler = handler;
+    this.allowedOrigins = allowedOrigins;
   }
 
   @Override
   public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
     registry.addHandler(handler, "/ws/practical-scoring")
-        .setAllowedOriginPatterns("*");
+        .setAllowedOrigins(allowedOrigins.asArray());
   }
 }

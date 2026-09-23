@@ -262,7 +262,8 @@ public class FileApplicationService {
     } catch (IOException ex) {
       log.warn("读取文件失败: id={}, objectKey={}, provider={}", id, entity.getObjectKey(),
           entity.getStorageProvider(), ex);
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取文件失败: " + ex.getMessage());
+      // P2-2：底层 IO 消息可能含磁盘路径，只入日志不回显
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取文件失败，请稍后重试");
     }
   }
 
@@ -278,7 +279,7 @@ public class FileApplicationService {
     } catch (IOException ex) {
       log.warn("打开文件流失败: id={}, objectKey={}, provider={}", id, entity.getObjectKey(),
           entity.getStorageProvider(), ex);
-      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取文件失败: " + ex.getMessage());
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取文件失败，请稍后重试");
     }
   }
 
@@ -555,11 +556,17 @@ public class FileApplicationService {
     return StringUtils.hasText(name) ? name : "file.bin";
   }
 
+  /**
+   * 取当前登录用户的租户。
+   *
+   * <p>P0-5：此前在未登录时兜底返回 0，配合 `/files/**` 的 permitAll，任何人都能匿名上传并把文件
+   * 落到 tenant_id=0。现在未认证直接抛异常（由全局异常处理器转为 401），匿名上传链路关闭。
+   */
   private Long getTenantIdSafe() {
     try {
       return SecurityContext.currentUser().getTenantId();
     } catch (IllegalStateException ex) {
-      return 0L;
+      throw new BusinessException(ErrorCode.UNAUTHORIZED, "请先登录后再操作文件");
     }
   }
 

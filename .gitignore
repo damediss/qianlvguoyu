@@ -7,6 +7,8 @@
 .qoder/
 .zcode/
 AGENTS.local.md
+# WorkBuddy 智能体的项目记忆目录（本地会话记忆，属机器本地数据，不入库）
+.workbuddy/
 *.swp
 *.tmp
 

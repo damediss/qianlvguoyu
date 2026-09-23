@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.auth.dto.LoginReq;
 import com.guoyu.platform.auth.vo.CurrentUserVO;
 import com.guoyu.platform.auth.vo.HomeVO;
+import com.guoyu.platform.auth.support.LoginFailureGuard;
 import com.guoyu.platform.auth.vo.LoginVO;
 import com.guoyu.platform.auth.vo.MenuVO;
 import com.guoyu.platform.common.exception.BusinessException;
@@ -45,6 +46,7 @@ public class AuthApplicationService {
   private final MenuMapper menuMapper;
   private final PasswordEncoder passwordEncoder;
   private final TrainingOperatorScopeService trainingOperatorScopeService;
+  private final LoginFailureGuard loginFailureGuard;
   private final SecureRandom secureRandom = new SecureRandom();
 
   public AuthApplicationService(
@@ -54,7 +56,8 @@ public class AuthApplicationService {
       RoleMenuMapper roleMenuMapper,
       MenuMapper menuMapper,
       PasswordEncoder passwordEncoder,
-      TrainingOperatorScopeService trainingOperatorScopeService
+      TrainingOperatorScopeService trainingOperatorScopeService,
+      LoginFailureGuard loginFailureGuard
   ) {
     this.tenantMapper = tenantMapper;
     this.userMapper = userMapper;
@@ -63,6 +66,7 @@ public class AuthApplicationService {
     this.menuMapper = menuMapper;
     this.passwordEncoder = passwordEncoder;
     this.trainingOperatorScopeService = trainingOperatorScopeService;
+    this.loginFailureGuard = loginFailureGuard;
   }
 
   @Transactional(readOnly = true)
@@ -70,12 +74,21 @@ public class AuthApplicationService {
     // 1. captcha 校验(临时关闭,LoginReq 已移除 captchaToken 字段)
     // captchaService.consumeToken(req.captchaToken());
 
+    // 1.5 登录失败锁定（§3.1）：先判锁定再校验凭据，锁定中即使密码正确也拒绝
+    long lockSeconds = loginFailureGuard.remainingLockSeconds(req.tenantCode(), req.username());
+    if (lockSeconds > 0) {
+      log.warn("登录被锁定拒绝 tenantCode={} username={} remainingSeconds={}",
+          req.tenantCode(), req.username(), lockSeconds);
+      throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "尝试次数过多，请稍后再试");
+    }
+
     // 2. Original tenant/user/password verification
     TenantEntity tenant = tenantMapper.selectOne(new LambdaQueryWrapper<TenantEntity>()
         .eq(TenantEntity::getCode, req.tenantCode())
         .eq(TenantEntity::getStatus, "enabled")
         .eq(TenantEntity::getDeleted, 0));
     if (tenant == null) {
+      loginFailureGuard.recordFailure(req.tenantCode(), req.username());
       throw new BusinessException(ErrorCode.UNAUTHORIZED, "Invalid username or password");
     }
     // 登录按 tenantCode 解析出租户后，立即把上下文租户设为该租户 id，再查用户/角色/菜单。
@@ -89,8 +102,10 @@ public class AuthApplicationService {
         .eq(UserEntity::getStatus, "enabled")
         .eq(UserEntity::getDeleted, 0));
     if (user == null || !passwordEncoder.matches(req.password(), user.getPasswordHash())) {
+      loginFailureGuard.recordFailure(req.tenantCode(), req.username());
       throw new BusinessException(ErrorCode.UNAUTHORIZED, "Invalid username or password");
     }
+    loginFailureGuard.clear(req.tenantCode(), req.username());
 
     PlatformUserPrincipal principal = buildPrincipal(user);
 

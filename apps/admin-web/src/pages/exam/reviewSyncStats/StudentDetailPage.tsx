@@ -17,6 +17,7 @@ import {
   Typography,
 } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
+import { sanitizeExamHtml } from '../../formalExam/sanitizeExamHtml';
 import type { ColumnsType } from 'antd/es/table';
 import ReactECharts from 'echarts-for-react';
 import { useQuery } from '@tanstack/react-query';
@@ -63,7 +64,9 @@ function parseUserAnswers(userAnswer: string | null | undefined): string[] {
 
 /** 渲染可能含 HTML 的题干/选项（管理端内部数据，题库管理人员录入） */
 function HtmlBlock({ html, style }: { html: string; style?: CSSProperties }) {
-  return <div style={style} dangerouslySetInnerHTML={{ __html: html }} />;
+  // P1-8：此前裸渲染，是管理端唯一未消毒的 innerHTML 点。题干/选项属可注入内容，
+  // 一旦被写入脚本即可窃取 localStorage 中的 token，一律走 sanitize。
+  return <div style={style} dangerouslySetInnerHTML={{ __html: sanitizeExamHtml(html) }} />;
 }
 
 function navigateTo(path: string) {

@@ -32,9 +32,13 @@ public class CorsConfig {
 
     boolean devMode = !StringUtils.hasText(allowedOrigins);
     if (devMode) {
-      // dev / 本地:全开(原 Customizer.withDefaults() 默认禁跨域,这里改成 dev 友好)
-      log.warn("[CORS] platform.cors.allowed-origins 未配置,dev 模式全开(*)。生产请显式配置。");
-      c.addAllowedOriginPattern("*");
+      // P1-1：此前未配置时直接放通 `*` 且 AllowCredentials=true —— 等于任意站点可发起带凭据的跨域请求，
+      // 生产未配 allowed-origins 时正在实际发生。现在兜底只放本机开发源。
+      log.warn("[CORS] platform.cors.allowed-origins 未配置，仅允许本机开发源（localhost / 127.0.0.1）。生产必须显式配置。");
+      c.addAllowedOriginPattern("http://localhost:[*]");
+      c.addAllowedOriginPattern("https://localhost:[*]");
+      c.addAllowedOriginPattern("http://127.0.0.1:[*]");
+      c.addAllowedOriginPattern("https://127.0.0.1:[*]");
     } else {
       for (String o : allowedOrigins.split(",")) {
         String trimmed = o.trim();

@@ -6,7 +6,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
-public class PlatformUserPrincipal implements UserDetails {
+public class PlatformUserPrincipal implements UserDetails, TenantScopedPrincipal {
 
   private final Long userId;
   private final Long tenantId;
@@ -45,6 +45,7 @@ public class PlatformUserPrincipal implements UserDetails {
     return userId;
   }
 
+  @Override
   public Long getTenantId() {
     return tenantId;
   }

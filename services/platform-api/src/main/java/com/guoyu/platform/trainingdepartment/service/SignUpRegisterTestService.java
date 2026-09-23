@@ -3,6 +3,7 @@ package com.guoyu.platform.trainingdepartment.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.trainingdepartment.dto.SignUpMineVO;
@@ -292,7 +293,7 @@ public class SignUpRegisterTestService {
       classCollectionApplicationService.syncPersonToRoster(e);
     }
     log.info("扫码报名成功 signUpId={} idCard={} id={} ip={}",
-        signUpId, req.getIdCardNumber(), e.getId(), currentIp());
+        signUpId, SensitiveMaskUtils.maskIdCard(req.getIdCardNumber()), e.getId(), currentIp());
 
     return new SignUpRegisterResultVO(
         e.getId(), signUpId, e.getName(), e.getPhone(),
@@ -459,7 +460,7 @@ public class SignUpRegisterTestService {
     peopleMapper.updateById(e);
 
     log.info("扫码修改报名成功 signUpId={} idCard={} id={} ip={}",
-        signUpId, req.getIdCardNumber(), e.getId(), currentIp());
+        signUpId, SensitiveMaskUtils.maskIdCard(req.getIdCardNumber()), e.getId(), currentIp());
 
     return new SignUpRegisterResultVO(
         e.getId(), signUpId, e.getName(), e.getPhone(),

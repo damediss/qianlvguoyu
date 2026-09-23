@@ -2,6 +2,7 @@ package com.guoyu.platform.trainingdepartment.support;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
 import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
 import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
 import com.guoyu.platform.system.entity.OrgEntity;
@@ -308,7 +309,7 @@ public class SignUpPeopleDefaultTemplatePackService {
             List.of(contractFirst, contractExpire, contractSign),
             ctx.contractMergeDir.resolve(idCard + ".jpg"));
       } catch (Exception e) {
-        log.warn("合同合并失败 idCard={}", idCard, e);
+        log.warn("合同合并失败 idCard={}", SensitiveMaskUtils.maskIdCard(idCard), e);
       }
     }
     return assets;
