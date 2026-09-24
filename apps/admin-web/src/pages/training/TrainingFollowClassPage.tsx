@@ -102,7 +102,7 @@ export function TrainingFollowClassPage() {
                     onClick={() => setActiveClass(row)}
                   >
                     <div className="follow-class-card-body">
-                      <Typography.Text className="follow-class-card-title" ellipsis={{ tooltip: row.title || '未命名班级' }}>
+                      <Typography.Text className="follow-class-card-title">
                         {row.title || '未命名班级'}
                       </Typography.Text>
 

@@ -749,6 +749,60 @@ public class ClassReviewSyncApplicationService {
   }
 
   /**
+   * App：当前学员在各班可进的同步学计划（提升页合并用）。
+   * 仅返回 entryVisible=true 的绑定；无资格班不出现假入口。
+   */
+  @Transactional(readOnly = true)
+  public List<Map<String, Object>> listMyVisibleReviewSync(Long platformUserId) {
+    List<Map<String, Object>> out = new ArrayList<>();
+    if (platformUserId == null || platformUserId <= 0) {
+      return out;
+    }
+    List<TrainPeopleListEntity> people = peopleMapper.selectList(new LambdaQueryWrapper<TrainPeopleListEntity>()
+        .eq(TrainPeopleListEntity::getPlatformUserId, platformUserId)
+        .eq(TrainPeopleListEntity::getType, "student")
+        .eq(TrainPeopleListEntity::getDeleted, 0)
+        .isNotNull(TrainPeopleListEntity::getTrainClassId));
+    if (people == null || people.isEmpty()) {
+      return out;
+    }
+    Set<String> seenExam = new HashSet<>();
+    for (TrainPeopleListEntity p : people) {
+      Long classId = p.getTrainClassId();
+      if (classId == null || classId <= 0) {
+        continue;
+      }
+      Map<String, Object> resolve;
+      try {
+        resolve = resolveForAppMember(classId, platformUserId);
+      } catch (Exception e) {
+        log.warn("[班级同步学] listMyVisible 跳过 classId={}: {}", classId, e.getMessage());
+        continue;
+      }
+      if (!Boolean.TRUE.equals(resolve.get("entryVisible"))) {
+        continue;
+      }
+      Object examIdObj = resolve.get("examId");
+      if (examIdObj == null || String.valueOf(examIdObj).isBlank()) {
+        continue;
+      }
+      String examKey = String.valueOf(examIdObj);
+      if (!seenExam.add(examKey)) {
+        continue;
+      }
+      Map<String, Object> item = new LinkedHashMap<>();
+      item.put("id", examIdObj);
+      item.put("examId", examIdObj);
+      item.put("title", resolve.get("examTitle") != null ? resolve.get("examTitle") : "同步学");
+      item.put("classId", classId);
+      item.put("paper_id", 1);
+      item.put("exam_date", "-");
+      out.add(item);
+    }
+    return out;
+  }
+
+  /**
    * App 班成员：解析本班同步学入口（配置 + 灰度 + 考生名单）。
    * 不走管理端组织权限；租户取 {@link TenantContextHolder}（App principal.tenantId 常为 0）。
    */
@@ -817,6 +871,9 @@ public class ClassReviewSyncApplicationService {
     deepLink.put("path", "/pages/exam/syncHome");
     Map<String, Object> query = new LinkedHashMap<>();
     query.put("exam_id", String.valueOf(examId));
+    if (classId != null && classId > 0) {
+      query.put("classId", String.valueOf(classId));
+    }
     deepLink.put("query", query);
     out.put("deepLink", deepLink);
     return out;

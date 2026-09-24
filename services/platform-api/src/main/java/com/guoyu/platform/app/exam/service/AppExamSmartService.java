@@ -13,16 +13,22 @@ import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
 import com.guoyu.platform.exam.entity.ExamKnowledgeStructureEntity;
 import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
 import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
+import com.guoyu.platform.exam.reviewsync.entity.AiReviewPlanEntity;
+import com.guoyu.platform.exam.reviewsync.entity.AiReviewWrongItemEntity;
+import com.guoyu.platform.exam.reviewsync.mapper.AiReviewPlanMapper;
+import com.guoyu.platform.exam.reviewsync.mapper.AiReviewWrongItemMapper;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.trainingdepartment.entity.TrainClassPracticeCourseEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainClassPracticeKnowledgeEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainClassPracticeScopeEntity;
+import com.guoyu.platform.trainingdepartment.entity.TrainClassReviewSyncEntity;
 import com.guoyu.platform.trainingdepartment.entity.TrainPeopleListEntity;
 import com.guoyu.platform.trainingdepartment.dto.FollowTaskQuestionReq;
 import com.guoyu.platform.trainingdepartment.mapper.TrainClassPracticeCourseMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainClassPracticeKnowledgeMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainClassPracticeScopeMapper;
+import com.guoyu.platform.trainingdepartment.mapper.TrainClassReviewSyncMapper;
 import com.guoyu.platform.trainingdepartment.mapper.TrainPeopleListMapper;
 import com.guoyu.platform.trainingdepartment.support.FollowTaskBankQuestionConverter;
 import java.math.BigDecimal;
@@ -77,6 +83,9 @@ public class AppExamSmartService {
   private final TrainClassPracticeCourseMapper practiceCourseMapper;
   private final TrainClassPracticeKnowledgeMapper practiceKnowledgeMapper;
   private final FollowTaskBankQuestionConverter bankQuestionConverter;
+  private final TrainClassReviewSyncMapper classReviewSyncMapper;
+  private final AiReviewPlanMapper reviewPlanMapper;
+  private final AiReviewWrongItemMapper reviewWrongItemMapper;
 
   public AppExamSmartService(ExamExamDetailMapper examDetailMapper,
                              ExamKnowledgeStructureMapper knowledgeMapper,
@@ -86,7 +95,10 @@ public class AppExamSmartService {
                              TrainClassPracticeScopeMapper practiceScopeMapper,
                              TrainClassPracticeCourseMapper practiceCourseMapper,
                              TrainClassPracticeKnowledgeMapper practiceKnowledgeMapper,
-                             FollowTaskBankQuestionConverter bankQuestionConverter) {
+                             FollowTaskBankQuestionConverter bankQuestionConverter,
+                             TrainClassReviewSyncMapper classReviewSyncMapper,
+                             AiReviewPlanMapper reviewPlanMapper,
+                             AiReviewWrongItemMapper reviewWrongItemMapper) {
     this.examDetailMapper = examDetailMapper;
     this.knowledgeMapper = knowledgeMapper;
     this.mockPaperMapper = mockPaperMapper;
@@ -96,6 +108,9 @@ public class AppExamSmartService {
     this.practiceCourseMapper = practiceCourseMapper;
     this.practiceKnowledgeMapper = practiceKnowledgeMapper;
     this.bankQuestionConverter = bankQuestionConverter;
+    this.classReviewSyncMapper = classReviewSyncMapper;
+    this.reviewPlanMapper = reviewPlanMapper;
+    this.reviewWrongItemMapper = reviewWrongItemMapper;
   }
 
   // ============================================================
@@ -408,6 +423,9 @@ public class AppExamSmartService {
     if (knowledgeId != null && knowledgeId > 0) {
       preferKids.add(knowledgeId);
     }
+    // 同步学红卡/星标考点：只作加权信号，答卷仍写通道 A
+    Set<Integer> syncBoostKids = loadSyncBoostKnowledgeIds(ctx.classId(), userId);
+    preferKids.addAll(syncBoostKids);
 
     List<Integer> wrongIds = answerLogMapper.findWrongQuestionIds(tenantId, userId, knowledgeId, 120);
     Map<Integer, ExamExamDetailEntity> wrongById = wrongIds.isEmpty()
@@ -454,7 +472,8 @@ public class AppExamSmartService {
 
     Map<String, Double> bucketScore = new HashMap<>();
     for (String bucket : typeBuckets) {
-      bucketScore.put(bucket, scoreBucket(bucket, bucketSeedCount, knowledgeWrongRate, typeWrongRate, preferKids));
+      bucketScore.put(bucket,
+          scoreBucket(bucket, bucketSeedCount, knowledgeWrongRate, typeWrongRate, preferKids, syncBoostKids));
     }
 
     Integer courseId = ctx.courseId();
@@ -481,7 +500,7 @@ public class AppExamSmartService {
       String bucket = q.getKnowledgeId() + "|" + type;
       similarByBucket.computeIfAbsent(bucket, k -> new ArrayList<>()).add(q);
       bucketScore.putIfAbsent(bucket,
-          scoreBucket(bucket, bucketSeedCount, knowledgeWrongRate, typeWrongRate, preferKids));
+          scoreBucket(bucket, bucketSeedCount, knowledgeWrongRate, typeWrongRate, preferKids, syncBoostKids));
     }
 
     List<String> orderedBuckets = new ArrayList<>(bucketScore.keySet());
@@ -585,9 +604,10 @@ public class AppExamSmartService {
       throw new AppSmsException(-1, "暂无同类型可推练习题，请先刷题积累错题");
     }
 
-    Map<String, Object> packFocus = buildPackFocus(picked, knowledgeWrongRate, typeWrongRate, preferKids);
+    Map<String, Object> packFocus = buildPackFocus(picked, knowledgeWrongRate, typeWrongRate, preferKids, syncBoostKids);
     Map<String, Object> view = persistPaper(user, "薄弱同型强化", "drill", picked, 0, ctx);
     view.put("packFocus", packFocus);
+    view.put("syncBoostKnowledgeCount", syncBoostKids.size());
     return view;
   }
 
@@ -675,12 +695,14 @@ public class AppExamSmartService {
     return best;
   }
 
-  private static double scoreBucket(
+  /** package-visible：单测校验弱项加权 */
+  static double scoreBucket(
       String bucket,
       Map<String, Integer> bucketSeedCount,
       Map<Integer, Double> knowledgeWrongRate,
       Map<String, Double> typeWrongRate,
-      Set<Integer> preferKids) {
+      Set<Integer> preferKids,
+      Set<Integer> syncBoostKids) {
     String[] parts = bucket.split("\\|", 2);
     Integer kid = toInt(parts[0]);
     String type = parts.length > 1 ? parts[1] : "unknown";
@@ -688,8 +710,55 @@ public class AppExamSmartService {
     double kr = kid == null ? 0 : knowledgeWrongRate.getOrDefault(kid, 0d);
     double tr = typeWrongRate.getOrDefault(type, 0d);
     double prefer = kid != null && preferKids.contains(kid) ? 40 : 0;
+    double syncBoost = kid != null && syncBoostKids != null && syncBoostKids.contains(kid) ? 50 : 0;
     double weakBoost = kr >= 60 ? 30 : (kr >= 30 ? 15 : 0);
-    return seeds * 12.0 + kr * 0.5 + tr * 0.35 + prefer + weakBoost;
+    return seeds * 12.0 + kr * 0.5 + tr * 0.35 + prefer + syncBoost + weakBoost;
+  }
+
+  /**
+   * 本班同步学红卡/星标对应考点（只读加权；不读 C 答卷写入 A）。
+   */
+  private Set<Integer> loadSyncBoostKnowledgeIds(Long classId, Long platformUserId) {
+    Set<Integer> out = new LinkedHashSet<>();
+    if (classId == null || classId <= 0 || platformUserId == null || platformUserId <= 0) {
+      return out;
+    }
+    try {
+      TrainClassReviewSyncEntity cfg = classReviewSyncMapper.selectOne(
+          new LambdaQueryWrapper<TrainClassReviewSyncEntity>()
+              .eq(TrainClassReviewSyncEntity::getClassId, classId)
+              .eq(TrainClassReviewSyncEntity::getEnabled, 1)
+              .eq(TrainClassReviewSyncEntity::getDeleted, 0)
+              .last("LIMIT 1"));
+      if (cfg == null || cfg.getExamId() == null || cfg.getExamId() <= 0) {
+        return out;
+      }
+      AiReviewPlanEntity plan = reviewPlanMapper.selectOne(new LambdaQueryWrapper<AiReviewPlanEntity>()
+          .eq(AiReviewPlanEntity::getPlatformUserId, platformUserId)
+          .eq(AiReviewPlanEntity::getExamId, cfg.getExamId())
+          .ne(AiReviewPlanEntity::getStatus, "abandoned")
+          .last("LIMIT 1"));
+      if (plan == null || plan.getId() == null) {
+        return out;
+      }
+      List<AiReviewWrongItemEntity> rows = reviewWrongItemMapper.selectList(
+          new LambdaQueryWrapper<AiReviewWrongItemEntity>()
+              .eq(AiReviewWrongItemEntity::getPlanId, plan.getId())
+              .and(w -> w.eq(AiReviewWrongItemEntity::getRemoved, 0)
+                  .or()
+                  .isNull(AiReviewWrongItemEntity::getRemoved))
+              .and(w -> w.eq(AiReviewWrongItemEntity::getCardLevel, "red")
+                  .or()
+                  .gt(AiReviewWrongItemEntity::getStar, 0)));
+      for (AiReviewWrongItemEntity row : rows) {
+        if (row.getKnowledgeId() != null && row.getKnowledgeId() > 0) {
+          out.add(row.getKnowledgeId().intValue());
+        }
+      }
+    } catch (Exception e) {
+      // 同步学加权失败不影响专项推题主路径
+    }
+    return out;
   }
 
   private static void pickWeightedFromCandidates(
@@ -740,7 +809,8 @@ public class AppExamSmartService {
       List<ExamExamDetailEntity> picked,
       Map<Integer, Double> knowledgeWrongRate,
       Map<String, Double> typeWrongRate,
-      Set<Integer> preferKids) {
+      Set<Integer> preferKids,
+      Set<Integer> syncBoostKids) {
     Map<Integer, Integer> kidCount = new HashMap<>();
     Map<String, Integer> typeCount = new HashMap<>();
     for (ExamExamDetailEntity q : picked) {
@@ -757,6 +827,7 @@ public class AppExamSmartService {
             .comparingDouble((Map.Entry<Integer, Integer> e) ->
                 knowledgeWrongRate.getOrDefault(e.getKey(), 0d)
                     + (preferKids.contains(e.getKey()) ? 20 : 0)
+                    + (syncBoostKids != null && syncBoostKids.contains(e.getKey()) ? 25 : 0)
                     + e.getValue())
             .thenComparingInt(Map.Entry::getValue))
         .map(Map.Entry::getKey)
@@ -896,6 +967,13 @@ public class AppExamSmartService {
     double lastWeekRate = lastWeekTotal == 0 ? 0 : Math.round(lastWeekWrong * 1000.0 / lastWeekTotal) / 10.0;
     Double delta = lastWeekTotal == 0 ? null : Math.round((weekRate - lastWeekRate) * 10) / 10.0;
 
+    long cleared = 0L;
+    try {
+      cleared = answerLogMapper.countClearedWrongSince(tenantId, userId, weekFrom);
+    } catch (Exception ignored) {
+      cleared = 0L;
+    }
+
     AppExamMockPaperEntity lastDrill = mockPaperMapper.selectOne(
         new LambdaQueryWrapper<AppExamMockPaperEntity>()
             .eq(AppExamMockPaperEntity::getTenantId, tenantId)
@@ -910,6 +988,7 @@ public class AppExamSmartService {
     effect.put("weekWrongRateDelta", delta);
     effect.put("weekAnswered", weekTotal);
     effect.put("weekWrong", weekWrong);
+    effect.put("clearedWrongCount", cleared);
     if (lastDrill != null) {
       int right = lastDrill.getRightCount() == null ? 0 : lastDrill.getRightCount();
       int cnt = lastDrill.getTotalCount() == null ? 0 : lastDrill.getTotalCount();

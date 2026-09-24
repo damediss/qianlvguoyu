@@ -229,4 +229,34 @@ public interface AppExamUserAnswerLogMapper extends BaseMapper<AppExamUserAnswer
   Map<String, Object> answerStatsSince(@Param("tenantId") Long tenantId,
                                        @Param("userId") Long userId,
                                        @Param("fromTime") java.time.LocalDateTime fromTime);
+
+  /**
+   * 近 N 日「出本」题数：最近一次作答为对，且历史上有过错。
+   * 用于精准学 Hub 展示「消灭错题」感知。
+   */
+  @Select("""
+      SELECT COUNT(DISTINCT t.question_id)
+      FROM exam_user_answer_log t
+      INNER JOIN (
+        SELECT question_id, MAX(id) AS max_id
+        FROM exam_user_answer_log
+        WHERE tenant_id = #{tenantId}
+          AND user_id = #{userId}
+          AND create_time >= #{fromTime}
+          AND question_id IS NOT NULL
+        GROUP BY question_id
+      ) latest ON t.id = latest.max_id
+      WHERE t.is_right = 1
+        AND EXISTS (
+          SELECT 1 FROM exam_user_answer_log w
+          WHERE w.tenant_id = #{tenantId}
+            AND w.user_id = #{userId}
+            AND w.question_id = t.question_id
+            AND w.is_right = 0
+            AND w.id < t.id
+        )
+      """)
+  long countClearedWrongSince(@Param("tenantId") Long tenantId,
+                              @Param("userId") Long userId,
+                              @Param("fromTime") java.time.LocalDateTime fromTime);
 }

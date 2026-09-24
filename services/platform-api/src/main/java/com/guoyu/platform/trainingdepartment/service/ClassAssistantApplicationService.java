@@ -133,11 +133,17 @@ public class ClassAssistantApplicationService {
     TrainInfoClassEntity clazz = classMapper.selectById(classId);
     boolean studentMode = isStudentMode(primary);
 
+    SyncSnapshot sync = studentMode ? loadSyncSnapshot(platformUserId, classId) : null;
     List<Map<String, Object>> chips = new ArrayList<>();
     if (studentMode) {
       chips.add(chip("exam_readiness", "能不能考过"));
       chips.add(chip("what_now", "现在做什么"));
-      chips.add(chip("go_sync", "该刷哪"));
+      if (sync != null && sync.configured() && sync.entryVisible()) {
+        chips.add(chip("go_sync", "该刷哪"));
+        chips.add(chip("go_sync", "继续练"));
+      } else if (sync != null && sync.configured() && !sync.entryVisible()) {
+        chips.add(chip("go_sync", "同步学怎么开通"));
+      }
       // 文案是「我有多少错题」，intent 仍用 learn_detail，兼容未部署 wrong_stats 的线上包
       chips.add(chip("learn_detail", "我有多少错题"));
       chips.add(chip("learn_detail", "学习详情"));
@@ -169,15 +175,18 @@ public class ClassAssistantApplicationService {
     out.put("persona", studentMode ? "xiaopei" : "class_assistant");
     out.put("chips", chips);
 
-    SyncSnapshot sync = studentMode ? loadSyncSnapshot(platformUserId, classId) : null;
     if (studentMode) {
       ClassCertFacts cert = loadClassCertFacts(platformUserId, classId, clazz, sync);
       StudentClassProfile profile = loadStudentClassProfile(platformUserId, classId);
       Map<String, Object> learning = buildLearningSnapshot(platformUserId, classId, sync, cert, profile);
-      out.put("welcome", "你好，我是小培。上方是你的学情快照；也可直接问能不能考过、作业模考、考什么证。");
+      Map<String, Object> syncSummary = buildSummaryCard(sync, clazz);
+      out.put("welcome", "你好，我是小培。上方是同步学摘要与学情快照；也可直接问能不能考过、作业模考、考什么证。");
       out.put("hint", "点「快捷」或点学情卡看详情；数字只来自真实刷题与班级任务记录。");
-      out.put("summary", null);
+      out.put("summary", syncSummary);
       out.put("learningSnapshot", learning);
+      out.put("examId", sync == null || sync.examId() == null ? null : String.valueOf(sync.examId()));
+      out.put("syncConfigured", sync != null && sync.configured());
+      out.put("syncEntryVisible", sync != null && sync.entryVisible());
       out.put("kbEnabled", weKnoraProperties.isApiReady());
       out.put("kbName", weKnoraProperties.xiaopeiKnowledgeBaseName());
       out.put("certContext", cert.toMap());
@@ -187,6 +196,7 @@ public class ClassAssistantApplicationService {
           + "班务数字来自系统查询；不替代批改与认定考试。");
       out.put("hint", "学员侧请用「AI小培」；深度刷题可用「AI精准学」。");
       out.put("summary", null);
+      out.put("examId", null);
       out.put("kbEnabled", false);
       out.put("kbName", null);
     }
@@ -362,7 +372,7 @@ public class ClassAssistantApplicationService {
     }
     if (sync.overview() == null) {
       replies.add(textReply("同步学已开通，但暂时读不到今日任务。请稍后重试，或直接打开同步练习。"));
-      actions.add(syncNav(sync));
+      actions.add(syncNav(sync, classId));
       return pack("what_now", primary, replies, cards, actions);
     }
 
@@ -409,7 +419,7 @@ public class ClassAssistantApplicationService {
     card.put("reviewTarget", reviewTarget);
     cards.add(card);
 
-    actions.add(syncNav(sync));
+    actions.add(syncNav(sync, classId));
     return pack("what_now", primary, replies, cards, actions);
   }
 
@@ -421,7 +431,7 @@ public class ClassAssistantApplicationService {
     if (sync.overview() == null) {
       replies.add(textReply(rewardNowFallback()));
       if (sync.entryVisible()) {
-        actions.add(syncNav(sync));
+        actions.add(syncNav(sync, classId));
       } else {
         actions.add(nav("课堂作业", "/pages/class/homeworkTodo?classId=" + classId));
       }
@@ -438,7 +448,7 @@ public class ClassAssistantApplicationService {
 
     replies.add(textReply(rewardNowByStage(stage, stageName, newLeft, reviewLeft)));
     if (sync.entryVisible()) {
-      actions.add(syncNav(sync));
+      actions.add(syncNav(sync, classId));
     }
     return pack("reward_now", primary, replies, List.of(), actions);
   }
@@ -472,7 +482,7 @@ public class ClassAssistantApplicationService {
     replies.add(textReply(sb.toString()));
 
     if (sync.entryVisible()) {
-      actions.add(syncNav(sync));
+      actions.add(syncNav(sync, classId));
     }
     actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
     return pack("reward_future", primary, replies, List.of(), actions);
@@ -496,7 +506,7 @@ public class ClassAssistantApplicationService {
     cards.add(buildLearningSnapshot(platformUserId, classId, sync, cert, profile));
 
     if (sync.entryVisible()) {
-      actions.add(syncNav(sync));
+      actions.add(syncNav(sync, classId));
     }
     actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
     if (profile.homework().pending() > 0 || profile.mock().pending() > 0) {
@@ -566,7 +576,7 @@ public class ClassAssistantApplicationService {
     List<Map<String, Object>> actions = new ArrayList<>();
     actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
     if (sync != null && sync.entryVisible()) {
-      actions.add(syncNav(sync));
+      actions.add(syncNav(sync, classId));
     }
     List<Map<String, Object>> cards = new ArrayList<>();
     TrainInfoClassEntity clazz = classMapper.selectById(classId);
@@ -624,7 +634,7 @@ public class ClassAssistantApplicationService {
     cards.add(card);
 
     if (sync.entryVisible()) {
-      actions.add(syncNav(sync));
+      actions.add(syncNav(sync, classId));
     }
     actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
     return pack("exam_readiness", primary, replies, cards, actions);
@@ -655,7 +665,7 @@ public class ClassAssistantApplicationService {
       replies.add(textReply(sb.toString().trim()));
     }
     if (sync.entryVisible()) {
-      actions.add(syncNav(sync));
+      actions.add(syncNav(sync, classId));
     }
     actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
     return pack("weak_points", primary, replies, List.of(), actions);
@@ -664,31 +674,34 @@ public class ClassAssistantApplicationService {
   private Map<String, Object> replyGoSync(Long platformUserId, Long classId, String primary) {
     SyncSnapshot sync = loadSyncSnapshot(platformUserId, classId);
     List<Map<String, Object>> replies = new ArrayList<>();
+    List<Map<String, Object>> cards = new ArrayList<>();
     List<Map<String, Object>> actions = new ArrayList<>();
 
     if (!sync.configured()) {
       replies.add(textReply("本班还没开通同步学，没法直接带你去日练。可先做课堂作业，或去 AI 精准学看错题薄弱点；开通同步学后「该刷哪」会优先带你去同步练。"));
       actions.add(nav("课堂作业", "/pages/class/homeworkTodo?classId=" + classId));
       actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
-      return pack("go_sync", primary, replies, List.of(), actions);
+      return pack("go_sync", primary, replies, cards, actions);
     }
     if (!sync.entryVisible()) {
       replies.add(textReply("同步学入口暂不可用："
           + (StringUtils.hasText(sync.reasonMessage()) ? sync.reasonMessage() : "请联系教务")
           + "。在此期间可用 AI 精准学练薄弱点。"));
       actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
-      return pack("go_sync", primary, replies, List.of(), actions);
+      return pack("go_sync", primary, replies, cards, actions);
     }
 
+    TrainInfoClassEntity clazz = classMapper.selectById(classId);
+    cards.add(buildSummaryCard(sync, clazz));
     String tip = "接下来建议继续同步学日练";
     if (sync.overview() != null) {
       tip += "（" + str(sync.overview().get("stageName"), "当前阶段")
           + " 第 " + sync.overview().getOrDefault("dayIndex", "-") + " 天）";
     }
-    tip += "。点下面打开同步练习，我不在聊天里出题。";
+    tip += "。点「继续练」打开同步练习，我不在聊天里出题。";
     replies.add(textReply(tip));
-    actions.add(syncNav(sync));
-    return pack("go_sync", primary, replies, List.of(), actions);
+    actions.add(syncNav(sync, classId));
+    return pack("go_sync", primary, replies, cards, actions);
   }
 
   /**
@@ -795,7 +808,12 @@ public class ClassAssistantApplicationService {
       } else if (ensureTried) {
         tip.append("尚未生成可用解析。");
       }
-      tip.append("请粘贴完整题干或选项发我，我按考点讲解；也可稍后再点「讲讲这题」。");
+      tip.append("可粘贴完整题干发我，我按考点讲解；");
+      if ("sync_exam".equals(scene) || "sync_home".equals(scene)) {
+        tip.append("同步学日练页也可先看选项对错再回来问。");
+      } else {
+        tip.append("也可稍后再点「讲讲这题」。");
+      }
       replies.add(textReply(tip.toString()));
     } else {
       replies.add(textReply("未找到" + listLabel + "的题干与解析（可能题目 id 无效或环境未同步）。"
@@ -1177,7 +1195,7 @@ public class ClassAssistantApplicationService {
     List<Map<String, Object>> actions = new ArrayList<>();
     appendSceneAwarePracticeActions(actions, classId, body);
     if (actions.isEmpty() && sync.entryVisible()) {
-      actions.add(syncNav(sync));
+      actions.add(syncNav(sync, classId));
     }
 
     if (!weKnoraProperties.isApiReady()) {
@@ -1770,9 +1788,15 @@ public class ClassAssistantApplicationService {
 
     if (!onSyncExam && !onSyncHome) {
       if (examId != null && examId > 0) {
-        actions.add(nav("打开同步练习", "/pages/exam/syncHome?exam_id=" + examId));
+        String url = "/pages/exam/syncHome?exam_id=" + examId;
+        if (classId != null && classId > 0) {
+          url += "&classId=" + classId;
+        }
+        actions.add(nav("继续练", url));
+      } else if (classId != null && classId > 0) {
+        actions.add(nav("继续练", "/pages/exam/syncHome?classId=" + classId));
       } else {
-        actions.add(nav("打开同步练习", "/pages/exam/syncHome"));
+        actions.add(nav("继续练", "/pages/exam/syncHome"));
       }
     }
     if (!onSyncExam && !onPrecise && classId != null) {
@@ -2267,7 +2291,7 @@ public class ClassAssistantApplicationService {
     List<String> weakTitles = new ArrayList<>();
     List<String> recentWrongStems = new ArrayList<>();
 
-    if (sync != null && sync.overview() != null) {
+    if (sync != null && sync.entryVisible() && sync.overview() != null) {
       Map<String, Object> ov = sync.overview();
       dayIndex = toInt(ov.get("dayIndex"), 0);
       totalDays = toInt(ov.get("totalDays"), 0);
@@ -2571,7 +2595,7 @@ public class ClassAssistantApplicationService {
     if (metrics.wrongBookCount() > 0 || !metrics.weakTitles().isEmpty()) {
       actions.add(nav("打开 AI 精准学", "/pages/exam/preciseHome?classId=" + classId));
     } else if (sync.entryVisible()) {
-      actions.add(syncNav(sync));
+      actions.add(syncNav(sync, classId));
     }
     return pack("my_homework", primary, replies, cards, actions);
   }
@@ -2778,7 +2802,7 @@ public class ClassAssistantApplicationService {
     List<Map<String, Object>> actions = new ArrayList<>();
     if (sync.configured() && sync.entryVisible()) {
       tip += "\n本班已开通，可从同步练习进入今日任务。";
-      actions.add(syncNav(sync));
+      actions.add(syncNav(sync, classId));
     } else if (sync.configured()) {
       tip += "\n本班已绑定计划，但入口暂不可用"
           + (StringUtils.hasText(sync.reasonMessage()) ? ("：" + sync.reasonMessage()) : "")
@@ -2941,13 +2965,18 @@ public class ClassAssistantApplicationService {
         + "开通同步学后，我可以按你当前阶段说得更具体。";
   }
 
-  private static Map<String, Object> syncNav(SyncSnapshot sync) {
-    if (sync.examId() == null) {
-      return nav("打开同步练习", "/pages/exam/syncHome");
+  private static Map<String, Object> syncNav(SyncSnapshot sync, Long classId) {
+    if (sync == null || sync.examId() == null) {
+      String url = classId != null && classId > 0
+          ? "/pages/exam/syncHome?classId=" + classId
+          : "/pages/exam/syncHome";
+      return nav("继续练", url);
     }
-    // 带 classId 便于小培续聊上下文（App syncHome 已支持）
-    return nav("打开同步练习",
-        "/pages/exam/syncHome?exam_id=" + sync.examId());
+    StringBuilder url = new StringBuilder("/pages/exam/syncHome?exam_id=").append(sync.examId());
+    if (classId != null && classId > 0) {
+      url.append("&classId=").append(classId);
+    }
+    return nav("继续练", url.toString());
   }
 
   private static boolean isStudentMode(String primary) {

@@ -204,6 +204,12 @@ public class TrainFollowAppController {
     return ApiResponse.ok(reviewSyncService.resolveForAppMember(classId, userId));
   }
 
+  /** App：我可进入的同步学计划列表（提升页合并 PHP reviewlist） */
+  @GetMapping("/my-review-sync")
+  public ApiResponse<List<Map<String, Object>>> myReviewSync() {
+    return ApiResponse.ok(reviewSyncService.listMyVisibleReviewSync(requirePlatformUserId()));
+  }
+
   /** App：AI 精准学 Hub 聚合（薄弱列表 + 双卡诊断 + 入口；编排层不写答卷） */
   @GetMapping("/classes/{classId}/precise/dashboard")
   public ApiResponse<Map<String, Object>> preciseDashboard(@PathVariable Long classId) {
