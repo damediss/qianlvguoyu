@@ -101,6 +101,7 @@ class ClassReviewSyncAutoProvisionTest {
     when(peopleMapper.selectList(any())).thenReturn(List.of());
     when(examPeopleMapper.selectList(any())).thenReturn(List.of());
     when(examPeopleMapper.selectCount(any())).thenReturn(0L);
+    when(reviewSyncMapper.selectList(any())).thenReturn(List.of());
     when(jdbcTemplate.query(any(String.class), any(RowMapper.class), any())).thenReturn(Collections.emptyList());
     when(jdbcTemplate.update(any(String.class), any(), any(), any(), any(), any())).thenReturn(1);
     when(grayWhitelistMapper.selectCount(any())).thenReturn(0L);
@@ -324,6 +325,88 @@ class ClassReviewSyncAutoProvisionTest {
     int removed = service.unenrollClassRosterFromExam(88L, 200L);
     assertThat(removed).isEqualTo(1);
     verify(examPeopleMapper).deleteById(77L);
+  }
+
+  @Test
+  void enrollRoster_prunesPeopleNotInClassRoster() {
+    TrainClassReviewSyncEntity existing = new TrainClassReviewSyncEntity();
+    existing.setId(3L);
+    existing.setTenantId(1L);
+    existing.setClassId(88L);
+    existing.setExamId(999L);
+    existing.setEnabled(1);
+    existing.setDeleted(0);
+    stored[0] = existing;
+
+    TrainExamListEntity keep = exam(999L, "浸出班-同步学");
+    when(examListMapper.selectOne(any())).thenReturn(keep);
+    when(examListMapper.selectById(999L)).thenReturn(keep);
+    when(examListMapper.selectList(any())).thenReturn(List.of());
+
+    TrainPeopleListEntity student = new TrainPeopleListEntity();
+    student.setPlatformUserId(501L);
+    student.setIdCard("110101199001011234");
+    student.setRealname("本班学员");
+    student.setType("student");
+    student.setDeleted(0);
+    when(peopleMapper.selectList(any())).thenReturn(List.of(student));
+
+    TrainExamPeopleListEntity keepRow = new TrainExamPeopleListEntity();
+    keepRow.setId(1L);
+    keepRow.setExamId(999L);
+    keepRow.setPlatformUserId(501L);
+    keepRow.setDeleted(0);
+
+    TrainExamPeopleListEntity stale = new TrainExamPeopleListEntity();
+    stale.setId(2L);
+    stale.setExamId(999L);
+    stale.setPlatformUserId(999L);
+    stale.setRealname("培训导入残留");
+    stale.setDeleted(0);
+
+    when(examPeopleMapper.selectList(any())).thenReturn(List.of(keepRow, stale));
+    when(examPeopleMapper.deleteById(2L)).thenReturn(1);
+
+    try (MockedStatic<SecurityContext> ignored = mockCurrentAdmin()) {
+      Map<String, Object> out = service.enrollRoster(88L);
+      assertThat(out.get("existed")).isEqualTo(1);
+      assertThat(out.get("removedStale")).isEqualTo(1);
+    }
+    verify(examPeopleMapper).deleteById(2L);
+    verify(examPeopleMapper, never()).deleteById(1L);
+  }
+
+  @Test
+  void enrollRoster_doesNotPruneNonClassScopedExam() {
+    TrainClassReviewSyncEntity existing = new TrainClassReviewSyncEntity();
+    existing.setId(3L);
+    existing.setTenantId(1L);
+    existing.setClassId(88L);
+    existing.setExamId(999L);
+    existing.setEnabled(1);
+    existing.setDeleted(0);
+    stored[0] = existing;
+
+    // 非「*-同步学」标题：正式统考式计划，禁止裁剪
+    TrainExamListEntity keep = exam(999L, "统一考试计划");
+    when(examListMapper.selectOne(any())).thenReturn(keep);
+    when(examListMapper.selectById(999L)).thenReturn(keep);
+    when(examListMapper.selectList(any())).thenReturn(List.of());
+
+    when(peopleMapper.selectList(any())).thenReturn(List.of());
+
+    TrainExamPeopleListEntity outsider = new TrainExamPeopleListEntity();
+    outsider.setId(2L);
+    outsider.setExamId(999L);
+    outsider.setPlatformUserId(999L);
+    outsider.setDeleted(0);
+    when(examPeopleMapper.selectList(any())).thenReturn(List.of(outsider));
+
+    try (MockedStatic<SecurityContext> ignored = mockCurrentAdmin()) {
+      Map<String, Object> out = service.enrollRoster(88L);
+      assertThat(out.get("removedStale")).isEqualTo(0);
+    }
+    verify(examPeopleMapper, never()).deleteById(org.mockito.ArgumentMatchers.anyLong());
   }
 
   @Test

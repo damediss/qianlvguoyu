@@ -104,6 +104,7 @@ export function ClassReviewSyncModal({ open, onClose, classId, classTitle }: Pro
     },
     onSuccess: (cfg) => {
       const inserted = cfg.enroll?.inserted ?? 0;
+      const removedStale = cfg.enroll?.removedStale ?? 0;
       const reviewError = cfg.reviewError || cfg.enroll?.reviewError;
       if (cfg.enrollError) {
         message.warning(`绑定已保存，但名单同步失败：${cfg.enrollError}`);
@@ -111,8 +112,11 @@ export function ClassReviewSyncModal({ open, onClose, classId, classTitle }: Pro
         message.warning(`绑定已保存，但复习任务未开通：${reviewError}`);
       } else if (cfg.grayError) {
         message.warning(`绑定已保存，但灰度开通失败：${cfg.grayError}`);
-      } else if (inserted > 0) {
-        message.success(`同步学配置已保存，并写入 ${inserted} 名学员；请学员在「复习任务」中进入同步练习`);
+      } else if (inserted > 0 || removedStale > 0) {
+        const parts = [`同步学配置已保存`];
+        if (inserted > 0) parts.push(`写入 ${inserted} 名学员`);
+        if (removedStale > 0) parts.push(`已移除 ${removedStale} 名非本班考生`);
+        message.success(`${parts.join('，')}；请学员在「复习任务」中进入同步练习`);
       } else {
         message.success('同步学配置已保存；请学员在「提升 → 复习任务」中进入同步练习');
       }
@@ -124,8 +128,9 @@ export function ClassReviewSyncModal({ open, onClose, classId, classTitle }: Pro
   const enrollMu = useMutation({
     mutationFn: () => trainApi.enrollClassReviewSyncRoster(classId!),
     onSuccess: (r) => {
+      const staleHint = (r.removedStale ?? 0) > 0 ? `，移除非本班 ${r.removedStale}` : '';
       message.success(
-        `名单同步完成：新增 ${r.inserted}，已在册 ${r.existed}，无账号跳过 ${r.skippedNoAccount}`,
+        `名单同步完成：新增 ${r.inserted}，已在册 ${r.existed}，无账号跳过 ${r.skippedNoAccount}${staleHint}`,
       );
       void queryClient.invalidateQueries({ queryKey: ['class-review-sync-config', classId] });
     },

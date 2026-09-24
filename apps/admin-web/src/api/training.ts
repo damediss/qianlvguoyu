@@ -1045,6 +1045,8 @@ export interface ClassReviewSyncConfig {
     inserted?: number;
     existed?: number;
     skippedNoAccount?: number;
+    removedStale?: number;
+    removedForeign?: number;
     roster?: ClassReviewSyncRosterGap;
   };
   gray?: { message?: string; examInGray?: boolean };
@@ -1109,6 +1111,8 @@ export function enrollClassReviewSyncRoster(classId: number | string) {
     inserted: number;
     existed: number;
     skippedNoAccount: number;
+    removedStale?: number;
+    removedForeign?: number;
     roster: ClassReviewSyncRosterGap;
   }>(apiClient.post(`${BASE}/info-classes/${classId}/review-sync-config/enroll-roster`));
 }
@@ -1124,6 +1128,8 @@ export function ensureClassReviewSyncRoster(classId: number | string) {
       inserted?: number;
       existed?: number;
       skippedNoAccount?: number;
+      removedStale?: number;
+      removedForeign?: number;
       roster?: ClassReviewSyncRosterGap;
     };
     enrollError?: string;

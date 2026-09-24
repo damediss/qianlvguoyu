@@ -407,7 +407,7 @@ public class ClassReviewSyncApplicationService {
     return out;
   }
 
-  /** 花名册 → 考生名单（有 platform_user_id 的学员） */
+  /** 花名册 → 考生名单（有 platform_user_id 的学员）；班级专属同步学还会裁掉非本班残留 */
   @Transactional
   public Map<String, Object> enrollRoster(Long classId) {
     operatorScopeService.requireOrgOperator();
@@ -415,7 +415,7 @@ public class ClassReviewSyncApplicationService {
     Long tenantId = resolveTenantId();
     TrainClassReviewSyncEntity cfg = requireConfigured(tenantId, classId);
     Long examId = cfg.getExamId();
-    requireExam(examId);
+    TrainExamListEntity exam = requireExam(examId);
     // App「复习任务」依赖 train_exam_review；同步学入口也仅在复习任务(result_type=1)展示
     boolean reviewEnsured = ensureExamReviewConfig(examId);
 
@@ -505,6 +505,20 @@ public class ClassReviewSyncApplicationService {
       inserted++;
     }
 
+    // 同一 platform_user_id 多行（历史重复导入/同步）：保留一条，避免考生管理人数翻倍、姓名列偶发空白
+    int removedDups = dedupeExamPeopleByUser(examId);
+
+    // 班级专属「*-同步学」：裁掉不在本班花名册的历史/导入残留（正式统考计划不裁）
+    int removedStale = 0;
+    if (isClassScopedSyncExamTitle(exam.getTitle())) {
+      List<TrainExamPeopleListEntity> afterDedupe = removedDups > 0
+          ? examPeopleMapper.selectList(new LambdaQueryWrapper<TrainExamPeopleListEntity>()
+              .eq(TrainExamPeopleListEntity::getExamId, examId)
+              .eq(TrainExamPeopleListEntity::getDeleted, 0))
+          : existingPeople;
+      removedStale = pruneExamPeopleNotOnRoster(examId, classId, roster, afterDedupe);
+    }
+
     // 清掉本班学员在其它「*-同步学」计划上的残留（错绑改绑后 App 仍见双计划）
     int removedForeign = unenrollClassRosterFromOtherSyncExams(clazz, examId);
 
@@ -514,10 +528,127 @@ public class ClassReviewSyncApplicationService {
     out.put("inserted", inserted);
     out.put("existed", existed);
     out.put("skippedNoAccount", skippedNoAccount);
+    out.put("removedDups", removedDups);
+    out.put("removedStale", removedStale);
     out.put("removedForeign", removedForeign);
     out.put("reviewEnsured", reviewEnsured);
     out.put("roster", buildRosterGap(classId, examId));
     return out;
+  }
+
+  /**
+   * 同一考试计划下按 platform_user_id 去重：保留有姓名的较早行，软删其余。
+   * 跟班「从培训导入」或重复开通时可能产生双行，考生管理会显示 2×班级人数。
+   */
+  int dedupeExamPeopleByUser(Long examId) {
+    if (examId == null || examId <= 0) {
+      return 0;
+    }
+    List<TrainExamPeopleListEntity> all = examPeopleMapper.selectList(
+        new LambdaQueryWrapper<TrainExamPeopleListEntity>()
+            .eq(TrainExamPeopleListEntity::getExamId, examId)
+            .eq(TrainExamPeopleListEntity::getDeleted, 0)
+            .orderByAsc(TrainExamPeopleListEntity::getId));
+    if (all.size() <= 1) {
+      return 0;
+    }
+    Map<Long, TrainExamPeopleListEntity> keepByUser = new LinkedHashMap<>();
+    int removed = 0;
+    for (TrainExamPeopleListEntity row : all) {
+      Long uid = row.getPlatformUserId();
+      if (uid == null || uid <= 0) {
+        continue;
+      }
+      TrainExamPeopleListEntity kept = keepByUser.get(uid);
+      if (kept == null) {
+        keepByUser.put(uid, row);
+        continue;
+      }
+      boolean keptHasName = StringUtils.hasText(kept.getRealname());
+      boolean rowHasName = StringUtils.hasText(row.getRealname());
+      if (!keptHasName && rowHasName) {
+        examPeopleMapper.deleteById(kept.getId());
+        keepByUser.put(uid, row);
+        removed++;
+      } else {
+        examPeopleMapper.deleteById(row.getId());
+        removed++;
+      }
+    }
+    if (removed > 0) {
+      log.info("[班级同步学] 考生名单去重 examId={} removed={}", examId, removed);
+    }
+    return removed;
+  }
+
+  /**
+   * 将班级专属同步学考生名单裁成与本班花名册一致。
+   * 仍被其它班级绑定到同一计划的在册学员不删（兼容历史错绑共享）。
+   */
+  int pruneExamPeopleNotOnRoster(
+      Long examId,
+      Long classId,
+      List<TrainPeopleListEntity> roster,
+      List<TrainExamPeopleListEntity> examPeople) {
+    if (examId == null || examId <= 0 || examPeople == null || examPeople.isEmpty()) {
+      return 0;
+    }
+    Set<Long> rosterUserIds = new HashSet<>();
+    Set<String> rosterIdCards = new HashSet<>();
+    if (roster != null) {
+      for (TrainPeopleListEntity s : roster) {
+        if (s == null) {
+          continue;
+        }
+        if (s.getPlatformUserId() != null && s.getPlatformUserId() > 0) {
+          rosterUserIds.add(s.getPlatformUserId());
+        }
+        if (StringUtils.hasText(s.getIdCard())) {
+          rosterIdCards.add(s.getIdCard().trim().toUpperCase());
+        }
+      }
+    }
+
+    List<Long> siblingClassIds = reviewSyncMapper.selectList(new LambdaQueryWrapper<TrainClassReviewSyncEntity>()
+            .eq(TrainClassReviewSyncEntity::getExamId, examId)
+            .ne(classId != null, TrainClassReviewSyncEntity::getClassId, classId))
+        .stream()
+        .map(TrainClassReviewSyncEntity::getClassId)
+        .filter(id -> id != null && id > 0)
+        .distinct()
+        .toList();
+
+    int removed = 0;
+    for (TrainExamPeopleListEntity person : examPeople) {
+      if (person == null || person.getId() == null) {
+        continue;
+      }
+      if (examPersonOnRoster(person, rosterUserIds, rosterIdCards)) {
+        continue;
+      }
+      if (stillActiveOnClasses(siblingClassIds, person.getPlatformUserId(),
+          StringUtils.hasText(person.getIdCardNum()) ? person.getIdCardNum().trim() : null)) {
+        continue;
+      }
+      removed += examPeopleMapper.deleteById(person.getId());
+    }
+    if (removed > 0) {
+      log.info("[班级同步学] 已裁掉非本班考生 {} 人 classId={} examId={}", removed, classId, examId);
+    }
+    return removed;
+  }
+
+  private static boolean examPersonOnRoster(
+      TrainExamPeopleListEntity person, Set<Long> rosterUserIds, Set<String> rosterIdCards) {
+    if (person.getPlatformUserId() != null && person.getPlatformUserId() > 0
+        && rosterUserIds.contains(person.getPlatformUserId())) {
+      return true;
+    }
+    if (StringUtils.hasText(person.getIdCardNum())) {
+      String card = person.getIdCardNum().trim().toUpperCase();
+      return rosterIdCards.contains(card);
+    }
+    return false;
   }
 
   /** 写入 exam 级灰度白名单（幂等） */
@@ -863,11 +994,17 @@ public class ClassReviewSyncApplicationService {
   }
 
   private boolean stillActiveOnClasses(List<Long> classIds, TrainPeopleListEntity student) {
-    if (classIds == null || classIds.isEmpty() || student == null) {
+    if (student == null) {
       return false;
     }
-    Long platformUserId = student.getPlatformUserId();
     String idCard = StringUtils.hasText(student.getIdCard()) ? student.getIdCard().trim() : null;
+    return stillActiveOnClasses(classIds, student.getPlatformUserId(), idCard);
+  }
+
+  private boolean stillActiveOnClasses(List<Long> classIds, Long platformUserId, String idCard) {
+    if (classIds == null || classIds.isEmpty()) {
+      return false;
+    }
     if ((platformUserId == null || platformUserId <= 0) && !StringUtils.hasText(idCard)) {
       return false;
     }
@@ -1122,8 +1259,12 @@ public class ClassReviewSyncApplicationService {
       Object inserted = enroll.get("inserted");
       Object existed = enroll.get("existed");
       Object skipped = enroll.get("skippedNoAccount");
+      Object removedStale = enroll.get("removedStale");
       sb.append("；名单新增 ").append(inserted).append("、已在册 ").append(existed)
           .append("、无账号跳过 ").append(skipped);
+      if (removedStale instanceof Number && ((Number) removedStale).intValue() > 0) {
+        sb.append("、移除非本班 ").append(removedStale);
+      }
     } else if (enrollError != null) {
       sb.append("；名单同步失败：").append(enrollError);
     }

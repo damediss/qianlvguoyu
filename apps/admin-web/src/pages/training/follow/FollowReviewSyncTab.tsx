@@ -49,6 +49,7 @@ export function FollowReviewSyncTab({ classId, classTitle, active }: Props) {
         }
         void queryClient.invalidateQueries({ queryKey: ['class-review-sync-config', classId] });
         const inserted = r.enroll?.inserted ?? 0;
+        const removedStale = r.enroll?.removedStale ?? 0;
         if (r.ok === false) {
           setEnsureState('error');
           setEnsureMessage(r.message || '自动同步学员失败，请打开同步学配置处理');
@@ -57,8 +58,12 @@ export function FollowReviewSyncTab({ classId, classTitle, active }: Props) {
         }
         setEnsureState('done');
         setEnsureMessage(r.message || null);
-        if (r.action === 'created' || inserted > 0) {
-          message.success(r.message || `已将本班学员同步到同步学（新增 ${inserted}）`);
+        if (r.action === 'created' || inserted > 0 || removedStale > 0) {
+          const fallback =
+            removedStale > 0
+              ? `已同步本班学员（新增 ${inserted}，移除非本班 ${removedStale}）`
+              : `已将本班学员同步到同步学（新增 ${inserted}）`;
+          message.success(r.message || fallback);
         }
       })
       .catch((e: Error) => {
