@@ -1035,10 +1035,10 @@ export function FollowClassWorkbench({ classItem, onBack }: Props) {
   const attendanceMap = useMemo(() => {
     const map = new Map<string, trainApi.TrainAttendanceItem>();
     if (isSessionAttendance) {
-      for (const row of attendancePage?.items ?? []) {
-        if (row.userId != null) map.set(String(row.userId), row);
-      }
-      return map;
+    for (const row of attendancePage?.items ?? []) {
+      if (row.userId != null) map.set(String(row.userId), row);
+    }
+    return map;
     }
     // 按日：合并当日所有课次；有课次记录时不再被「按日空 schedule」行盖住
     const byUser = new Map<string, trainApi.TrainAttendanceItem[]>();

@@ -104,12 +104,17 @@ export function ClassReviewSyncModal({ open, onClose, classId, classTitle }: Pro
     },
     onSuccess: (cfg) => {
       const inserted = cfg.enroll?.inserted ?? 0;
+      const reviewError = cfg.reviewError || cfg.enroll?.reviewError;
       if (cfg.enrollError) {
         message.warning(`绑定已保存，但名单同步失败：${cfg.enrollError}`);
+      } else if (reviewError) {
+        message.warning(`绑定已保存，但复习任务未开通：${reviewError}`);
+      } else if (cfg.grayError) {
+        message.warning(`绑定已保存，但灰度开通失败：${cfg.grayError}`);
       } else if (inserted > 0) {
-        message.success(`同步学配置已保存，并写入 ${inserted} 名学员`);
+        message.success(`同步学配置已保存，并写入 ${inserted} 名学员；请学员在「复习任务」中进入同步练习`);
       } else {
-        message.success('同步学配置已保存，本班有账号学员已在考生名单中');
+        message.success('同步学配置已保存；请学员在「提升 → 复习任务」中进入同步练习');
       }
       void queryClient.invalidateQueries({ queryKey: ['class-review-sync-config', classId] });
     },

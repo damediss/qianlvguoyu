@@ -181,15 +181,23 @@ public class ClassReviewSyncApplicationService {
             .last("LIMIT 1"));
         if (exam != null) {
           String classLevel = clazz.getWorkTypeLevel() != null ? String.valueOf(clazz.getWorkTypeLevel()) : null;
+          String expectedSyncTitle = expectedClassSyncExamTitle(clazz);
+          String examTitle = exam.getTitle() == null ? null : exam.getTitle().trim();
+          boolean titleOwnsClass = expectedSyncTitle != null && expectedSyncTitle.equals(examTitle);
+          boolean otherClassSync = isClassScopedSyncExamTitle(examTitle) && !titleOwnsClass;
           List<TrainExamWorkTypeListEntity> bindings = workTypeListMapper.selectList(
               new LambdaQueryWrapper<TrainExamWorkTypeListEntity>()
                   .eq(TrainExamWorkTypeListEntity::getExamId, exam.getId())
                   .eq(TrainExamWorkTypeListEntity::getDeleted, 0));
           int boundScore = computeMatchScore(bindings, clazz.getWorkTypeId(), classLevel);
-          // 等级不匹配视为错绑：走自动开通重选/新建，并由 saveConfig 清旧计划名单
-          if (StringUtils.hasText(classLevel) && boundScore < 2) {
-            log.warn("[班级同步学] 跟班同步 Tab 发现错绑 examId={}「{}」score={}，将重新匹配 classId={}",
-                exam.getId(), exam.getTitle(), boundScore, classId);
+          if (boundScore == 1 && StringUtils.hasText(classLevel) && StringUtils.hasText(exam.getLevel())
+              && classLevel.equals(exam.getLevel().trim())) {
+            boundScore = 2;
+          }
+          // 他班「*-同步学」或等级不匹配 → 重选/新建
+          if (otherClassSync || (StringUtils.hasText(classLevel) && boundScore < 2 && !titleOwnsClass)) {
+            log.warn("[班级同步学] 跟班同步 Tab 发现错绑 examId={}「{}」score={} otherClassSync={}，将重新匹配 classId={}",
+                exam.getId(), exam.getTitle(), boundScore, otherClassSync, classId);
           } else {
             boolean enabledNow = existing.getEnabled() != null && existing.getEnabled() == 1;
             Map<String, Object> opened = tryOpenEnrollmentAndGray(classId, enabledNow);
@@ -352,11 +360,24 @@ public class ClassReviewSyncApplicationService {
 
     Long classWt = clazz.getWorkTypeId();
     String classLevel = clazz.getWorkTypeLevel() != null ? String.valueOf(clazz.getWorkTypeLevel()) : null;
+    String expectedSyncTitle = expectedClassSyncExamTitle(clazz);
 
     List<Map<String, Object>> items = new ArrayList<>();
     for (TrainExamListEntity exam : exams) {
       List<TrainExamWorkTypeListEntity> bindings = wtMap.getOrDefault(exam.getId(), List.of());
       int matchScore = computeMatchScore(bindings, classWt, classLevel);
+      if (matchScore == 1 && StringUtils.hasText(classLevel) && StringUtils.hasText(exam.getLevel())
+          && classLevel.equals(exam.getLevel().trim())) {
+        matchScore = 2;
+      }
+      String title = exam.getTitle() == null ? null : exam.getTitle().trim();
+      boolean titleOwnsClass = expectedSyncTitle != null && expectedSyncTitle.equals(title);
+      // 他班「*-同步学」在下拉里不算推荐匹配
+      if (isClassScopedSyncExamTitle(title) && !titleOwnsClass) {
+        matchScore = 0;
+      } else if (titleOwnsClass) {
+        matchScore = Math.max(matchScore, 2);
+      }
       Map<String, Object> row = new LinkedHashMap<>();
       row.put("examId", String.valueOf(exam.getId()));
       row.put("title", exam.getTitle());
@@ -940,31 +961,45 @@ public class ClassReviewSyncApplicationService {
   private record ExamPick(Long examId, String source) {}
 
   /**
-   * 已绑定且计划仍有效则复用；否则取本培训「工种+等级」均匹配的计划；再没有则新建。
-   * 仅同工种不同等级（如中级计划绑到高级班）不算匹配，避免错绑他班「xxx-同步学」。
+   * 已绑定且计划仍有效则复用；否则取本培训可匹配计划；再没有则新建。
+   * <p>标题以「-同步学」结尾的计划视为班级专属，禁止同工种同等级跨班复用
+   * （否则中级1班会绑到中级2班-同步学，学情串班）。
    */
   ExamPick resolveExamForAutoProvision(
       TrainInfoClassEntity clazz,
       TrainClassReviewSyncEntity existing,
       ClassPracticeScopeSaveReq practiceReq) {
     String classLevel = clazz.getWorkTypeLevel() != null ? String.valueOf(clazz.getWorkTypeLevel()) : null;
+    String expectedSyncTitle = expectedClassSyncExamTitle(clazz);
     if (existing != null && existing.getExamId() != null && existing.getExamId() > 0) {
       TrainExamListEntity bound = examListMapper.selectOne(new LambdaQueryWrapper<TrainExamListEntity>()
           .eq(TrainExamListEntity::getId, existing.getExamId())
           .eq(TrainExamListEntity::getDeleted, 0)
           .last("LIMIT 1"));
       if (bound != null) {
-        List<TrainExamWorkTypeListEntity> bindings = workTypeListMapper.selectList(
-            new LambdaQueryWrapper<TrainExamWorkTypeListEntity>()
-                .eq(TrainExamWorkTypeListEntity::getExamId, bound.getId())
-                .eq(TrainExamWorkTypeListEntity::getDeleted, 0));
-        int boundScore = computeMatchScore(bindings, clazz.getWorkTypeId(), classLevel);
-        // 班级有等级时必须工种+等级都对才沿用；否则视为错绑，进入重选/新建
-        if (!StringUtils.hasText(classLevel) || boundScore >= 2) {
-          return new ExamPick(bound.getId(), "REUSE_BINDING");
+        String boundTitle = bound.getTitle() == null ? null : bound.getTitle().trim();
+        boolean titleOwnsClass = expectedSyncTitle != null && expectedSyncTitle.equals(boundTitle);
+        // 他班「*-同步学」即使工种等级相符也视为错绑
+        if (isClassScopedSyncExamTitle(boundTitle) && !titleOwnsClass) {
+          log.warn("[班级同步学] 本班已绑他班同步学计划 examId={}「{}」，将重新匹配 classId={} expect={}",
+              bound.getId(), boundTitle, clazz.getId(), expectedSyncTitle);
+        } else {
+          List<TrainExamWorkTypeListEntity> bindings = workTypeListMapper.selectList(
+              new LambdaQueryWrapper<TrainExamWorkTypeListEntity>()
+                  .eq(TrainExamWorkTypeListEntity::getExamId, bound.getId())
+                  .eq(TrainExamWorkTypeListEntity::getDeleted, 0));
+          int boundScore = computeMatchScore(bindings, clazz.getWorkTypeId(), classLevel);
+          if (boundScore == 1 && StringUtils.hasText(classLevel) && StringUtils.hasText(bound.getLevel())
+              && classLevel.equals(bound.getLevel().trim())) {
+            boundScore = 2;
+          }
+          // 本班专属标题、或非专属计划且工种+等级匹配、或班级无等级
+          if (titleOwnsClass || !StringUtils.hasText(classLevel) || boundScore >= 2) {
+            return new ExamPick(bound.getId(), "REUSE_BINDING");
+          }
+          log.warn("[班级同步学] 本班已绑 examId={}「{}」与班级等级不匹配(score={})，将重新匹配或新建 classId={} level={}",
+              bound.getId(), bound.getTitle(), boundScore, clazz.getId(), classLevel);
         }
-        log.warn("[班级同步学] 本班已绑 examId={}「{}」与班级等级不匹配(score={})，将重新匹配或新建 classId={} level={}",
-            bound.getId(), bound.getTitle(), boundScore, clazz.getId(), classLevel);
       }
     }
     Long matched = pickBestMatchingExamId(clazz);
@@ -976,8 +1011,27 @@ public class ClassReviewSyncApplicationService {
     return new ExamPick(created, "CREATED");
   }
 
+  /** 自动开通使用的规范标题：{班级名}-同步学 */
+  static String expectedClassSyncExamTitle(TrainInfoClassEntity clazz) {
+    if (clazz == null || !StringUtils.hasText(clazz.getTitle())) {
+      return null;
+    }
+    String title = clazz.getTitle().trim() + "-同步学";
+    return title.length() > 255 ? title.substring(0, 255) : title;
+  }
+
+  /** 班级通道自动生成的专属同步学计划（禁止跨班按工种复用） */
+  static boolean isClassScopedSyncExamTitle(String title) {
+    return StringUtils.hasText(title) && title.trim().endsWith("-同步学");
+  }
+
   /**
-   * 仅返回工种+等级双匹配（score=2）的计划；同工种不同等级不采用。
+   * 为本班挑选可复用的同步学考试计划。
+   * <ol>
+   *   <li>优先标题精确匹配「{班级名}-同步学」</li>
+   *   <li>其它「*-同步学」计划一律跳过（防止中级1/2班串班）</li>
+   *   <li>非专属计划才按工种+等级匹配；绑定缺等级时可用计划头 level 补齐</li>
+   * </ol>
    */
   Long pickBestMatchingExamId(TrainInfoClassEntity clazz) {
     if (clazz == null || clazz.getTrainInfoId() == null || clazz.getTrainInfoId() <= 0) {
@@ -991,6 +1045,24 @@ public class ClassReviewSyncApplicationService {
     if (exams.isEmpty()) {
       return null;
     }
+
+    String expectedSyncTitle = expectedClassSyncExamTitle(clazz);
+    if (expectedSyncTitle != null) {
+      // 同名多条时取最早创建的（通常带历史学情），避免再绑到后来误建的空计划
+      TrainExamListEntity titleHit = null;
+      for (TrainExamListEntity exam : exams) {
+        String title = exam.getTitle() == null ? null : exam.getTitle().trim();
+        if (expectedSyncTitle.equals(title)) {
+          if (titleHit == null || exam.getId() < titleHit.getId()) {
+            titleHit = exam;
+          }
+        }
+      }
+      if (titleHit != null) {
+        return titleHit.getId();
+      }
+    }
+
     Set<Long> examIds = exams.stream().map(TrainExamListEntity::getId).collect(Collectors.toSet());
     Map<Long, List<TrainExamWorkTypeListEntity>> wtMap = batchLoadWorkTypes(examIds);
     Long classWt = clazz.getWorkTypeId();
@@ -998,8 +1070,17 @@ public class ClassReviewSyncApplicationService {
     TrainExamListEntity best = null;
     int bestScore = 0;
     for (TrainExamListEntity exam : exams) {
+      String title = exam.getTitle() == null ? null : exam.getTitle().trim();
+      // 他班/任意班级专属「*-同步学」不得靠工种等级捞走
+      if (isClassScopedSyncExamTitle(title)) {
+        continue;
+      }
       int score = computeMatchScore(wtMap.getOrDefault(exam.getId(), List.of()), classWt, classLevel);
-      // 与列表「完全匹配 matched>=2」对齐：禁止仅工种匹配就跨班复用
+      // 绑定行只有工种、等级写在计划头上时，补成双匹配
+      if (score == 1 && StringUtils.hasText(classLevel) && StringUtils.hasText(exam.getLevel())
+          && classLevel.equals(exam.getLevel().trim())) {
+        score = 2;
+      }
       if (score < 2) {
         continue;
       }

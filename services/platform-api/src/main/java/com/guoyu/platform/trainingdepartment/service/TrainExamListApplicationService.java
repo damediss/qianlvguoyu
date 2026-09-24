@@ -174,6 +174,7 @@ public class TrainExamListApplicationService {
   /**
    * 试题配置自动开通同步学：创建本班考试计划。
    * 不导入全培训考生（由班级 enroll-roster 按花名册写入）。
+   * <p>同培训下若已存在标题「{班级名}-同步学」则直接复用，禁止重复插入。
    */
   @Transactional
   public Long createForClassReviewSync(TrainInfoClassEntity clazz, List<Integer> courseIds) {
@@ -186,6 +187,33 @@ public class TrainExamListApplicationService {
     String title = classTitle + "-同步学";
     if (title.length() > 255) {
       title = title.substring(0, 255);
+    }
+
+    // 幂等：同培训同标题已存在则复用最早一条，避免保存试题配置反复新建
+    if (clazz.getTrainInfoId() != null && clazz.getTrainInfoId() > 0) {
+      TrainExamListEntity existed = mapper.selectOne(new LambdaQueryWrapper<TrainExamListEntity>()
+          .eq(TrainExamListEntity::getTrainId, clazz.getTrainInfoId())
+          .eq(TrainExamListEntity::getTitle, title)
+          .eq(TrainExamListEntity::getDeleted, 0)
+          .orderByAsc(TrainExamListEntity::getId)
+          .last("LIMIT 1"));
+      if (existed != null && existed.getId() != null) {
+        List<Long> courseIdList = courseIds == null ? List.of() : courseIds.stream()
+            .filter(id -> id != null && id > 0)
+            .map(Integer::longValue)
+            .distinct()
+            .toList();
+        if (!courseIdList.isEmpty()) {
+          try {
+            syncCoursesForReviewSync(existed.getId(), courseIds);
+          } catch (Exception e) {
+            log.warn("[班级同步学] 复用已有计划时同步科目失败 examId={}: {}", existed.getId(), e.getMessage());
+          }
+        }
+        log.info("[班级同步学] 复用已有考试计划 examId={} title={} classId={}",
+            existed.getId(), title, clazz.getId());
+        return existed.getId();
+      }
     }
 
     Long orgId = clazz.getCompanyId() != null && clazz.getCompanyId() > 0 ? clazz.getCompanyId() : null;

@@ -108,6 +108,41 @@ class ClassReviewSyncAutoProvisionTest {
   }
 
   @Test
+  void pickBestMatchingExamId_doesNotCrossBindOtherClassSyncExam() {
+    // 同工种同等级的「中级2班-同步学」不得被中级1班（此处用浸出班）捞走
+    TrainExamListEntity otherClassSync = exam(400L, "中级2班-同步学");
+    otherClassSync.setLevel("3");
+    when(examListMapper.selectList(any())).thenReturn(List.of(otherClassSync));
+    when(workTypeListMapper.selectList(any())).thenReturn(List.of(binding(400L, 5L, "3")));
+
+    assertThat(service.pickBestMatchingExamId(clazz)).isNull();
+  }
+
+  @Test
+  void pickBestMatchingExamId_prefersExactSyncTitleEvenWithoutWorkTypeLevel() {
+    // 有学情的「班级名-同步学」但工种绑定缺等级时，仍应复用，禁止再新建同名空计划
+    TrainExamListEntity titled = exam(300L, "浸出班-同步学");
+    TrainExamListEntity other = exam(150L, "同工种同等级");
+    when(examListMapper.selectList(any())).thenReturn(List.of(titled, other));
+    when(workTypeListMapper.selectList(any())).thenReturn(List.of(
+        binding(300L, 5L, null),
+        binding(150L, 5L, "3")));
+
+    Long picked = service.pickBestMatchingExamId(clazz);
+    assertThat(picked).isEqualTo(300L);
+  }
+
+  @Test
+  void pickBestMatchingExamId_usesExamHeaderLevelWhenBindingLevelMissing() {
+    TrainExamListEntity headerLevel = exam(220L, "仅头等级");
+    headerLevel.setLevel("3");
+    when(examListMapper.selectList(any())).thenReturn(List.of(headerLevel));
+    when(workTypeListMapper.selectList(any())).thenReturn(List.of(binding(220L, 5L, null)));
+
+    assertThat(service.pickBestMatchingExamId(clazz)).isEqualTo(220L);
+  }
+
+  @Test
   void pickBestMatchingExamId_prefersWorkTypeAndLevel() {
     TrainExamListEntity unmatched = exam(100L, "其它工种");
     TrainExamListEntity workTypeOnly = exam(200L, "同工种");
