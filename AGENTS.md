@@ -106,7 +106,7 @@
 
 提交格式：`<type>(<scope>): <subject>`，body 关联 task id + verifier verdict。type ∈ `feat/fix/refactor/test/docs/chore/perf`；scope ∈ `backend/frontend/db/flyway/agt` 或具体模块。
 
-合并前必须：
+推送或合并前必须：
 
 1. `mvn compile -DskipTests` 0 错（主代码）
 2. `npm run build` 0 错（前端无 `tsc` script，build 内含 `tsc -b`）
