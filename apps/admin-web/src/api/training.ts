@@ -1048,10 +1048,12 @@ export interface ClassReviewSyncConfig {
     removedStale?: number;
     removedForeign?: number;
     roster?: ClassReviewSyncRosterGap;
+    reviewError?: string;
   };
   gray?: { message?: string; examInGray?: boolean };
   enrollError?: string;
   grayError?: string;
+  reviewError?: string;
   resolve?: {
     configured: boolean;
     examId?: string | null;
