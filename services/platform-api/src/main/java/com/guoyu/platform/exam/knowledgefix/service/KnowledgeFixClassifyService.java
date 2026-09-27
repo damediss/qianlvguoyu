@@ -7,6 +7,11 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.ai.infrastructure.FaqLlmClient;
+import com.guoyu.platform.ai.infrastructure.JevDecisionClient;
+import com.guoyu.platform.ai.infrastructure.JevDecisionException;
+import com.guoyu.platform.ai.infrastructure.JevUnauthorizedException;
+import com.guoyu.platform.ai.infrastructure.JevValidationException;
+import com.guoyu.platform.ai.dto.JevDecisionResult;
 import com.guoyu.platform.exam.entity.ExamFaqModelConfigEntity;
 import com.guoyu.platform.exam.knowledgefix.dto.FixBatchVO;
 import com.guoyu.platform.exam.knowledgefix.dto.KnowledgeNodeRow;
@@ -24,16 +29,22 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.DoubleAdder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
@@ -59,14 +70,23 @@ public class KnowledgeFixClassifyService {
 
   private static final String MAIN_MODEL_CODE = "theory-gen-glm";
   private static final String PRO_MODEL_CODE = "knowledge-fix-pro";
+  /** Jev 决策模型配置编码（方案 §8.2；配置行 status≠enabled/缺失 = 通道关闭，安静全走 LLM） */
+  private static final String JEV_MODEL_CODE = "knowledge-fix-jev";
+  /** Jev criteria 最小选项数（接口实测 min_length=2，空/单选项必 422 → 前置拦截） */
+  private static final int MIN_JEV_CRITERIA = 2;
+  /** Jev criteria 最大选项数（接口实测 255 通过 / 256 被拒 422 → 前置拦截） */
+  private static final int MAX_JEV_CRITERIA = 255;
+  /** θ₂ 硬底线（§7.1）：配置低于 0.3 拒绝提交 */
+  private static final BigDecimal JEV_MIN_THETA2 = new BigDecimal("0.3");
+  private static final BigDecimal DEFAULT_JEV_THETA = new BigDecimal("0.5");
+  private static final int DEFAULT_JEV_CONCURRENCY = 5;
+  private static final int DEFAULT_JEV_READ_TIMEOUT_SECONDS = 30;
   private static final int MAX_DISPATCH_ROUNDS = 3;
   private static final int MAX_CONSECUTIVE_FAILURES = 5;
   private static final int SAMPLES = 3;
   private static final double APPLY_CONFIDENCE = 0.7;
   private static final int RESPONSE_TIMEOUT_SECONDS = 120;
-  /** 自一致率门槛（FIX-1.4）：低于则批次判 failed，禁止 done */
-  private static final BigDecimal SELF_CONSISTENCY_GATE = new BigDecimal("0.80");
-  /** 未分类占比门槛（FIX-1.4）：高于则批次判 failed */
+  /** 未分类占比门槛（FIX-1.4）：高于则批次判 failed（§6 调整后唯一门禁；自一致率降为信息项） */
   private static final BigDecimal UNCLASSIFIED_RATIO_GATE = new BigDecimal("0.05");
   /** L2 直收尾固定置信度（业务裁定"题可挂 L2"，无三采样）——0.5 中性值，basis=l2-direct */
   private static final BigDecimal L2_DIRECT_CONFIDENCE = new BigDecimal("0.500");
@@ -82,6 +102,25 @@ public class KnowledgeFixClassifyService {
     }
   }
 
+  /** Jev 通道运行时配置（submit 时解析固化，改配置对下一批次生效 §8.2）；包内可见供单测构造 */
+  record JevChannel(ExamFaqModelConfigEntity cfg, BigDecimal theta1, BigDecimal theta2,
+      int concurrency, int readTimeoutSeconds) {
+  }
+
+  /**
+   * Jev 行级上下文（processBatch 内创建，随行传递）。ch 为 null = 通道关闭（§3 通道开关：
+   * 配置行缺失/status≠enabled/api_key 未回填），全行走 LLM 全流程。
+   * llmFallbackRows：兜底行去重集（跨轮重试的行只计一次，口径=行数而非尝试次数）。
+   */
+  private record JevRowCtx(JevChannel ch, Semaphore slots, AtomicBoolean openPermanent,
+      AtomicBoolean openRound, AtomicInteger consecutiveFailures, AtomicInteger jevClassified,
+      AtomicInteger llmFallback, DoubleAdder confSum,
+      java.util.Set<Long> llmFallbackRows) {
+  }
+
+  /** Jev 单行判定结果：RESOLVED=已出结论 / FALLBACK_LLM=降级 LLM 全流程 / SKIP_ROW=422 记失败跳过（§5） */
+  private enum JevOutcome { RESOLVED, FALLBACK_LLM, SKIP_ROW }
+
   private final ExamKnowledgeFixBatchMapper batchMapper;
   private final ExamDetailKnowledgeFixMapper fixMapper;
   private final ExamExamDetailFixMapper queryMapper;
@@ -92,6 +131,8 @@ public class KnowledgeFixClassifyService {
   private final java.util.Set<Long> pauseRequests = java.util.concurrent.ConcurrentHashMap.newKeySet();
   private final ExamFaqModelConfigMapper modelConfigMapper;
   private final FaqLlmClient llmClient;
+  /** Jev 决策客户端（独立非 OpenAI 协议，§8.1） */
+  private final JevDecisionClient jevClient;
   private final ObjectMapper objectMapper;
   private final ThreadPoolTaskExecutor knowledgeFixExecutor;
   private final ThreadPoolTaskExecutor llmExecutor;
@@ -102,7 +143,7 @@ public class KnowledgeFixClassifyService {
   public KnowledgeFixClassifyService(ExamKnowledgeFixBatchMapper batchMapper,
       ExamDetailKnowledgeFixMapper fixMapper, ExamExamDetailFixMapper queryMapper,
       ExamFaqModelConfigMapper modelConfigMapper, FaqLlmClient llmClient,
-      ObjectMapper objectMapper,
+      JevDecisionClient jevClient, ObjectMapper objectMapper,
       @Qualifier("knowledgeFixExecutor") ThreadPoolTaskExecutor knowledgeFixExecutor,
       @Qualifier("knowledgeFixLlmExecutor") ThreadPoolTaskExecutor llmExecutor,
       ExamKnowledgeFixLlmLogMapper llmLogMapper,
@@ -113,6 +154,7 @@ public class KnowledgeFixClassifyService {
     this.queryMapper = queryMapper;
     this.modelConfigMapper = modelConfigMapper;
     this.llmClient = llmClient;
+    this.jevClient = jevClient;
     this.objectMapper = objectMapper;
     this.knowledgeFixExecutor = knowledgeFixExecutor;
     this.llmExecutor = llmExecutor;
@@ -121,11 +163,26 @@ public class KnowledgeFixClassifyService {
     this.retryBackoffBaseMillis = retryBackoffBaseMillis;
   }
 
-  /** 提交分类批次（秒回 batchNo；装配修正清单 + 异步编排） */
+  /** 提交分类批次（秒回 batchNo；装配修正清单 + 异步编排）。全量口径：所有 pending 行入批。 */
   public FixBatchVO submit(Long tenantId, Long userId) {
+    return submit(tenantId, userId, null, null);
+  }
+
+  /**
+   * 提交分类批次（支持范围，方案 §13 步骤 8 小批次实测用）：courseId 限定课程、limit 限制行数；
+   * 两者均 null = 全量（既有口径不变）。暂停续跑须携带相同参数，否则剩余范围外行也会入批。
+   */
+  public FixBatchVO submit(Long tenantId, Long userId, Integer courseId, Integer limit) {
+    if (limit != null && (limit < 1 || limit > 1000)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "limit 须在 1~1000 之间");
+    }
+    if (courseId != null && courseId <= 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "courseId 不合法");
+    }
     Long running = batchMapper.selectCount(new LambdaQueryWrapper<ExamKnowledgeFixBatchEntity>()
         .in(ExamKnowledgeFixBatchEntity::getStatus,
-            ExamKnowledgeFixBatchEntity.STATUS_PENDING, ExamKnowledgeFixBatchEntity.STATUS_RUNNING));
+            ExamKnowledgeFixBatchEntity.STATUS_PENDING, ExamKnowledgeFixBatchEntity.STATUS_RUNNING,
+            ExamKnowledgeFixBatchEntity.STATUS_PAUSING));
     if (running != null && running > 0) {
       throw new BusinessException(ErrorCode.CONFLICT, "已有进行中的分类批次");
     }
@@ -133,11 +190,15 @@ public class KnowledgeFixClassifyService {
     ExamFaqModelConfigEntity cfgPro = requireConfig(PRO_MODEL_CODE);
     requireApiKey(cfgFlash);
     requireApiKey(cfgPro);
+    // Jev 通道开关（§3/§5 首行）：配置行缺失/status≠enabled/api_key 未回填 → null（0 次 Jev 安静全走 LLM）；
+    // 启用但 θ₂ < 0.3 属硬底线违规（§7.1）→ 配置校验拒绝
+    JevChannel jev = resolveJevChannel();
 
     int populated = queryMapper.populateFixList();
-    List<PendingFixRow> pending = fixMapper.selectPendingWithContent();
+    List<PendingFixRow> pending = scopePending(fixMapper.selectPendingWithContent(), courseId, limit);
     if (pending.isEmpty()) {
-      throw new BusinessException(ErrorCode.CONFLICT, "无待分类的修正行（可能已全部处理）");
+      throw new BusinessException(ErrorCode.CONFLICT,
+          courseId != null ? "所选课程无待分类的修正行（可能已全部处理）" : "无待分类的修正行（可能已全部处理）");
     }
 
     ExamKnowledgeFixBatchEntity batch = new ExamKnowledgeFixBatchEntity();
@@ -154,10 +215,28 @@ public class KnowledgeFixClassifyService {
     batchMapper.insert(batch);
 
     long batchNo = batch.getBatchNo();
+    final Integer fCourseId = courseId;
+    final Integer fLimit = limit;
     knowledgeFixExecutor.submit(() -> processBatch(batch.getId(), batchNo, tenantId, userId,
-        cfgFlash, cfgPro));
-    log.info("知识修正批次已提交：batchNo={}, total={}, 新装入={}", batchNo, pending.size(), populated);
+        cfgFlash, cfgPro, jev, fCourseId, fLimit));
+    log.info("知识修正批次已提交：batchNo={}, total={}, 新装入={}, scope={}",
+        batchNo, pending.size(), populated,
+        (courseId != null ? "courseId=" + courseId : "全课程") + (limit != null ? " limit=" + limit : ""));
     return FixBatchVO.from(batch);
+  }
+
+  /** 范围过滤（§13 步骤 8 小批次）：courseId 精确过滤 + limit 截断；两者均 null 时原样返回 */
+  private static List<PendingFixRow> scopePending(List<PendingFixRow> all, Integer courseId,
+      Integer limit) {
+    List<PendingFixRow> scoped = all;
+    if (courseId != null) {
+      scoped = scoped.stream()
+          .filter(r -> Objects.equals(r.getCourseId(), courseId)).toList();
+    }
+    if (limit != null && scoped.size() > limit) {
+      scoped = scoped.subList(0, limit);
+    }
+    return scoped;
   }
 
   /**
@@ -167,7 +246,8 @@ public class KnowledgeFixClassifyService {
   public int resetClassify() {
     Long running = batchMapper.selectCount(new LambdaQueryWrapper<ExamKnowledgeFixBatchEntity>()
         .in(ExamKnowledgeFixBatchEntity::getStatus,
-            ExamKnowledgeFixBatchEntity.STATUS_PENDING, ExamKnowledgeFixBatchEntity.STATUS_RUNNING));
+            ExamKnowledgeFixBatchEntity.STATUS_PENDING, ExamKnowledgeFixBatchEntity.STATUS_RUNNING,
+            ExamKnowledgeFixBatchEntity.STATUS_PAUSING));
     if (running != null && running > 0) {
       throw new BusinessException(ErrorCode.CONFLICT, "已有进行中的分类批次，不能重置");
     }
@@ -191,27 +271,47 @@ public class KnowledgeFixClassifyService {
     if (batch == null) {
       throw new BusinessException(ErrorCode.CONFLICT, "当前没有进行中的分类批次，无需暂停");
     }
+    // 双判加固（§10）：内存标志（本进程编排线程读）+ 批次表状态（进程重启后仍生效，
+    // 派发边界每行一次主键查）。pausing 为过渡态：在飞行行未收尾，reset/重复 submit 均被拒。
     pauseRequests.add(batch.getBatchNo());
+    batch.setStatus(ExamKnowledgeFixBatchEntity.STATUS_PAUSING);
+    batch.setUpdatedAt(LocalDateTime.now());
+    batchMapper.updateById(batch);
     log.info("知识修正批次暂停请求已登记：batchNo={}, done={}/{}", batch.getBatchNo(),
         batch.getDone(), batch.getTotal());
     return batch.getBatchNo();
   }
 
-  /** 进行中的批次（pending/running，取最新一条）；无则返回 null */
+  /** 进行中的批次（pending/running/pausing，取最新一条）；无则返回 null */
   private ExamKnowledgeFixBatchEntity currentInFlight() {
     List<ExamKnowledgeFixBatchEntity> list = batchMapper.selectList(
         new LambdaQueryWrapper<ExamKnowledgeFixBatchEntity>()
             .in(ExamKnowledgeFixBatchEntity::getStatus,
                 ExamKnowledgeFixBatchEntity.STATUS_PENDING,
-                ExamKnowledgeFixBatchEntity.STATUS_RUNNING)
+                ExamKnowledgeFixBatchEntity.STATUS_RUNNING,
+                ExamKnowledgeFixBatchEntity.STATUS_PAUSING)
             .orderByDesc(ExamKnowledgeFixBatchEntity::getId)
             .last("LIMIT 1"));
     return list == null || list.isEmpty() ? null : list.get(0);
   }
 
-  /** 编排线程：两阶段分类 + 三采样自一致 + 旗舰升级 + 自动补跑（方案 §4.4/§6.4） */
+  /** 编排线程（兼容入口，Jev 通道关闭）：两阶段分类 + 三采样自一致 + 旗舰升级 + 自动补跑 */
   public void processBatch(Long batchId, Long batchNo, Long tenantId, Long userId,
       ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro) {
+    processBatch(batchId, batchNo, tenantId, userId, cfgFlash, cfgPro, null, null, null);
+  }
+
+  /** 编排线程（兼容入口）：Jev 分层快速通道 + LLM 全流程兜底，全量口径 */
+  public void processBatch(Long batchId, Long batchNo, Long tenantId, Long userId,
+      ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro, JevChannel jev) {
+    processBatch(batchId, batchNo, tenantId, userId, cfgFlash, cfgPro, jev, null, null);
+  }
+
+  /** 编排线程：Jev 分层快速通道 + LLM 全流程兜底（方案 §3）+ 三采样自一致 + 旗舰升级 + 自动补跑；
+   *  scopeCourseId/scopeLimit 非空时只处理范围内行（§13 步骤 8 小批次），范围外行保持 pending */
+  public void processBatch(Long batchId, Long batchNo, Long tenantId, Long userId,
+      ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro, JevChannel jev,
+      Integer scopeCourseId, Integer scopeLimit) {
     TenantContextHolder.setTenantId(tenantId);
     try {
       ExamKnowledgeFixBatchEntity batch = batchMapper.selectById(batchId);
@@ -219,7 +319,10 @@ public class KnowledgeFixClassifyService {
         log.error("知识修正批次不存在：batchId={}", batchId);
         return;
       }
-      batch.setStatus(ExamKnowledgeFixBatchEntity.STATUS_RUNNING);
+      // §10：pausing 批次不得被启动段覆盖回 running（暂停双判的 DB 侧权威性）
+      if (!ExamKnowledgeFixBatchEntity.STATUS_PAUSING.equals(batch.getStatus())) {
+        batch.setStatus(ExamKnowledgeFixBatchEntity.STATUS_RUNNING);
+      }
       batch.setUpdatedAt(LocalDateTime.now());
       batchMapper.updateById(batch);
 
@@ -239,6 +342,18 @@ public class KnowledgeFixClassifyService {
       }
 
       Semaphore slots = new Semaphore(Math.max(1, llmConcurrency));
+      // Jev 通道运行时状态（§3/§5）：独立并发信号量 + 双级熔断 + 行级统计。
+      // 禁止复用 requireConfig 的抛错语义——通道关闭由 submit 解析为 null，批次照常完成。
+      Semaphore jevSlots = jev == null ? null : new Semaphore(Math.max(1, jev.concurrency()));
+      AtomicBoolean jevOpenPermanent = new AtomicBoolean(false);
+      AtomicBoolean jevOpenRound = new AtomicBoolean(false);
+      AtomicInteger jevConsecutiveFailures = new AtomicInteger(0);
+      AtomicInteger jevClassifiedCnt = new AtomicInteger(0);
+      AtomicInteger llmFallbackCnt = new AtomicInteger(0);
+      DoubleAdder jevConfSum = new DoubleAdder();
+      java.util.Set<Long> llmFallbackRows = java.util.concurrent.ConcurrentHashMap.newKeySet();
+      JevRowCtx jevCtx = new JevRowCtx(jev, jevSlots, jevOpenPermanent, jevOpenRound,
+          jevConsecutiveFailures, jevClassifiedCnt, llmFallbackCnt, jevConfSum, llmFallbackRows);
       AtomicInteger consecutiveFailures = new AtomicInteger(0);
       AtomicInteger guardCnt = new AtomicInteger(0);
       int roundsUsed = 0;
@@ -247,8 +362,28 @@ public class KnowledgeFixClassifyService {
       AtomicInteger l2Direct = new AtomicInteger(0);
       int totalDispatched = 0;
       boolean batchFailed = false;
+      // 范围批次（§13 步骤 8）：批次行集在首轮冻结——limit 圈定的行固定不变（重试仍在批内），
+      // 范围外行永不入批、也不会被未分类收尾扫到
+      java.util.Set<Long> scopeFrozenRowIds =
+          scopeCourseId != null || scopeLimit != null ? new java.util.HashSet<>() : null;
       while (roundsUsed < MAX_DISPATCH_ROUNDS) {
         List<PendingFixRow> pending = fixMapper.selectPendingWithContent();
+        if (scopeCourseId != null) {
+          pending = pending.stream()
+              .filter(r -> Objects.equals(r.getCourseId(), scopeCourseId)).toList();
+        }
+        if (scopeFrozenRowIds != null) {
+          if (scopeFrozenRowIds.isEmpty()) {
+            // 首个非空轮：冻结本批行集（limit 截断在此一次性生效）
+            if (scopeLimit != null && pending.size() > scopeLimit) {
+              pending = pending.subList(0, scopeLimit);
+            }
+            pending.forEach(r -> scopeFrozenRowIds.add(r.getRowId()));
+          } else {
+            pending = pending.stream()
+                .filter(r -> scopeFrozenRowIds.contains(r.getRowId())).toList();
+          }
+        }
         if (pending.isEmpty()) {
           break;
         }
@@ -257,13 +392,17 @@ public class KnowledgeFixClassifyService {
         }
         roundsUsed++;
         consecutiveFailures.set(0);
+        // Jev 熔断按轮复位（401 的 jevOpenPermanent 不复位：配置错误本批次内不会自愈，§5）
+        jevOpenRound.set(false);
+        jevConsecutiveFailures.set(0);
         // FIX-1/DEF-2：熔断只终止"本轮继续派发"，不放弃整批——本轮结束后进入下一轮补跑
         boolean breakerTrippedThisRound = false;
         // FIX-10/v1.7：人工暂停——只停"继续派发"，在飞行已提交的行走完
         boolean pauseTripped = false;
         List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
         for (PendingFixRow row : pending) {
-          if (pauseRequests.contains(batchNo)) {
+          // 暂停双判（§10 加固）：内存标志 + 批次表状态（每行一次主键查，开销可忽略）
+          if (pauseRequests.contains(batchNo) || isPausing(batchId)) {
             pauseTripped = true;
             break;
           }
@@ -282,7 +421,8 @@ public class KnowledgeFixClassifyService {
             futures.add(llmExecutor.submit(() -> {
               try {
                 classifyRow(row, batchNo, tenantId, cfgFlash, cfgPro, courseL2, courseL3ByParent,
-                    nodeById, consecutiveFailures, guardCnt, classified, unanimous, l2Direct);
+                    nodeById, consecutiveFailures, guardCnt, classified, unanimous, l2Direct,
+                    jevCtx);
               } finally {
                 slots.release();
               }
@@ -317,8 +457,17 @@ public class KnowledgeFixClassifyService {
               batchNo, roundsUsed, futures.size());
         }
       }
-      // 收尾未分类行（FIX-1/DEF-3）：写 basis=unclassified 与"补跑后仍失败"分列，且不计入 done
+      // 收尾未分类行（FIX-1/DEF-3）：写 basis=unclassified 与"补跑后仍失败"分列，且不计入 done；
+      // 有范围时只收尾本批冻结行集内的 pending 行，范围外行保持 pending 供后续批次
       List<PendingFixRow> remain = fixMapper.selectPendingWithContent();
+      if (scopeCourseId != null) {
+        remain = remain.stream()
+            .filter(r -> Objects.equals(r.getCourseId(), scopeCourseId)).toList();
+      }
+      if (scopeFrozenRowIds != null) {
+        remain = remain.stream()
+            .filter(r -> scopeFrozenRowIds.contains(r.getRowId())).toList();
+      }
       int unclassified = remain.size();
       for (PendingFixRow row : remain) {
         fixMapper.updateClassifyResult(row.getRowId(), row.getOldKnowledgeId(), BigDecimal.ZERO,
@@ -327,39 +476,46 @@ public class KnowledgeFixClassifyService {
       if (unclassified > 0) {
         batchMapper.incrementUnclassified(batchNo, unclassified);
       }
-      // 收尾（FIX-1.4 质量门禁）：未分类占比 >5% 或自一致率 <0.8 → failed，禁止 done
+      // 收尾（FIX-1.4 质量门禁，§6 调整）：仅未分类占比 >5% 卡 failed；
+      // 自一致率改信息项（仅 LLM 兜底行有自一致概念，样本少无统计意义，不再阻断批次）
       ExamKnowledgeFixBatchEntity finalState = batchMapper.selectById(batchId);
       if (finalState != null
           && !ExamKnowledgeFixBatchEntity.STATUS_FAILED.equals(finalState.getStatus())) {
         int total = finalState.getTotal() == null ? 0 : finalState.getTotal();
         // 未分类 = 收尾时仍未获得结论的行数（failed 是"尝试失败次数"，可能因重试大于行数，不能相减）
         int unclassifiedCount = unclassified;
-        // 自一致率只衡量三采样行；L2 直收尾行（无自一致概念）已不计入 classified，
-        // 若整批无一行走三采样（全部 L2 直收尾）则率为 null——门禁的率项不适用，不得按 0 误杀
+        // 自一致率只衡量 LLM 三采样行（Jev 行无此概念）；仅统计展示，不卡门禁（§6）
         BigDecimal rate = classified.get() > 0
             ? BigDecimal.valueOf(unanimous.get()).divide(BigDecimal.valueOf(classified.get()),
                 4, RoundingMode.HALF_UP)
             : null;
         finalState.setSelfConsistencyRate(rate);
+        // Jev/LLM 构成统计（§8.5）：jev_classified + llm_fallback ≈ 已获结论行数
+        finalState.setJevClassified(jevClassifiedCnt.get());
+        finalState.setLlmFallback(llmFallbackCnt.get());
+        finalState.setJevAvgConfidence(jevClassifiedCnt.get() > 0
+            ? BigDecimal.valueOf(jevConfSum.doubleValue())
+                .divide(BigDecimal.valueOf(jevClassifiedCnt.get()), 4, RoundingMode.HALF_UP)
+            : null);
         finalState.setUpdatedAt(LocalDateTime.now());
-        boolean rateBelowGate =
-            rate != null && rate.compareTo(SELF_CONSISTENCY_GATE) < 0;
         boolean unclassifiedAboveGate =
             total > 0 && BigDecimal.valueOf(unclassifiedCount)
                 .divide(BigDecimal.valueOf(total), 4, RoundingMode.HALF_UP)
                 .compareTo(UNCLASSIFIED_RATIO_GATE) > 0;
-        if (batchFailed || rateBelowGate || unclassifiedAboveGate) {
+        if (batchFailed || unclassifiedAboveGate) {
           finalState.setStatus(ExamKnowledgeFixBatchEntity.STATUS_FAILED);
-          finalState.setFailReason(buildGateReason(batchFailed, unclassifiedCount, total, rate));
+          finalState.setFailReason(buildGateReason(batchFailed, unclassifiedCount, total));
         } else {
           finalState.setStatus(ExamKnowledgeFixBatchEntity.STATUS_DONE);
         }
         batchMapper.updateById(finalState);
       }
       log.info("知识修正批次结束：batchNo={}, rounds={}, dispatched={}, classified={}, "
-              + "unanimous={}, l2Direct={}, guard={}, unclassified={}, status={}",
+              + "unanimous={}, l2Direct={}, guard={}, unclassified={}, jevClassified={}, "
+              + "llmFallback={}, status={}",
           batchNo, roundsUsed, totalDispatched, classified.get(), unanimous.get(), l2Direct.get(),
-          guardCnt.get(), unclassified, finalState == null ? "?" : finalState.getStatus());
+          guardCnt.get(), unclassified, jevClassifiedCnt.get(), llmFallbackCnt.get(),
+          finalState == null ? "?" : finalState.getStatus());
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       log.error("知识修正批次被中断：batchNo={}", batchNo);
@@ -378,17 +534,32 @@ public class KnowledgeFixClassifyService {
     }
   }
 
-  /** 单行分类：两阶段（L2 粗分 → L3 细分×3 自一致）+ 旗舰升级 + 卫兵（KF-09~15） */
+  /** 单行分类：Jev 分层快速通道（§3）→ LLM 全流程兜底（两阶段三采样自一致 + 旗舰升级 + 卫兵，KF-09~15） */
   private void classifyRow(PendingFixRow row, Long batchNo, Long tenantId,
       ExamFaqModelConfigEntity cfgFlash, ExamFaqModelConfigEntity cfgPro,
       Map<Integer, List<KnowledgeNodeRow>> courseL2,
       Map<Integer, Map<Integer, List<KnowledgeNodeRow>>> courseL3ByParent,
       Map<Integer, KnowledgeNodeRow> nodeById, AtomicInteger consecutiveFailures,
       AtomicInteger guardCnt, AtomicInteger classified, AtomicInteger unanimous,
-      AtomicInteger l2Direct)
+      AtomicInteger l2Direct, JevRowCtx jevCtx)
       throws InterruptedException {
     TenantContextHolder.setTenantId(tenantId);
     try {
+      // ── Jev 分层快速通道（§3）：通道开着且未熔断才走；需要 LLM 的情况全部降级兜底 ──
+      boolean jevAttempted = false;
+      if (jevCtx.ch() != null && !jevCtx.openPermanent().get() && !jevCtx.openRound().get()) {
+        jevAttempted = true;
+        JevOutcome outcome = tryClassifyViaJev(row, batchNo, tenantId, jevCtx, courseL2,
+            courseL3ByParent, nodeById);
+        if (outcome == JevOutcome.RESOLVED || outcome == JevOutcome.SKIP_ROW) {
+          return; // RESOLVED=已出结论；SKIP_ROW=422 记失败跳过，行保持 pending（§5）
+        }
+        // FALLBACK_LLM → 落入下方 LLM 全流程（兜底计数已在 tryClassifyViaJev 内按行去重记过）
+      }
+      if (!jevAttempted) {
+        // 通道关闭或熔断跳过：本行直接走 LLM，计入兜底（按行去重）
+        countLlmFallback(jevCtx, row.getRowId());
+      }
       Integer courseId = row.getCourseId();
       List<KnowledgeNodeRow> l2List = courseL2.getOrDefault(courseId, List.of());
       Map<Integer, List<KnowledgeNodeRow>> l3Map = courseL3ByParent.getOrDefault(courseId, Map.of());
@@ -533,6 +704,319 @@ public class KnowledgeFixClassifyService {
     }
   }
 
+  /**
+   * Jev 两阶段概率判定（方案 §3/§4）：阶段1 L2 粗分 → 阶段2 L3 细分；双门 conf₁≥θ₁ 且 conf₂≥θ₂ → apply
+   * （basis=jev，无理由文本）；选中当前节点 → keep（阈值不拦截）；零重合卫兵 → flag（优先于置信分层）；
+   * conf₁&lt;θ₁ / conf₂&lt;θ₂ / choice 越界 / criteria&lt;2 → 降级 LLM 全流程。审计见 {@link #logJevCall}。
+   */
+  private JevOutcome tryClassifyViaJev(PendingFixRow row, Long batchNo, Long tenantId,
+      JevRowCtx ctx, Map<Integer, List<KnowledgeNodeRow>> courseL2,
+      Map<Integer, Map<Integer, List<KnowledgeNodeRow>>> courseL3ByParent,
+      Map<Integer, KnowledgeNodeRow> nodeById)
+      throws InterruptedException {
+    Integer courseId = row.getCourseId();
+    List<KnowledgeNodeRow> l2List = courseL2.getOrDefault(courseId, List.of());
+    String questionText = buildQuestionText(row.getContent(), row.getAnswer(), row.getResolve());
+
+    // 前置拦截（§5）：criteria <2（实测 min_length=2）或 >255（实测上限）均必 422，不发请求直接降级
+    if (l2List.size() < MIN_JEV_CRITERIA || l2List.size() > MAX_JEV_CRITERIA) {
+      countLlmFallback(ctx, row.getRowId());
+      return JevOutcome.FALLBACK_LLM;
+    }
+    Map<String, String> l2Criteria = new LinkedHashMap<>();
+    for (KnowledgeNodeRow n : l2List) {
+      l2Criteria.put(String.valueOf(n.getId()), n.getTitle());
+    }
+    JevDecisionResult r1;
+    try {
+      ctx.slots().acquire();
+      try {
+        r1 = jevClient.decide(ctx.ch().cfg().getBaseUrl(), ctx.ch().cfg().getApiKey(),
+            ctx.ch().cfg().getModelId(), questionText, "l2", "该试题真正归属的 L2 章节",
+            l2Criteria, ctx.ch().readTimeoutSeconds());
+      } finally {
+        ctx.slots().release();
+      }
+    } catch (JevUnauthorizedException e) {
+      // 401=配置错误：立即熔断整批转 LLM 并 warn 告警（密钥错不会因重试变好，§5）
+      ctx.openPermanent().set(true);
+      log.warn("[Jev] 401 鉴权失败，整批熔断转 LLM：batchNo={}, err={}", batchNo, e.getMessage());
+      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), null, questionText, e);
+      countLlmFallback(ctx, row.getRowId());
+      return JevOutcome.FALLBACK_LLM;
+    } catch (JevValidationException e) {
+      // 422=请求构造 bug：该行记失败并跳过（不走 LLM），连续 ≥5 熔断（§5）；行保持 pending 供下轮
+      batchMapper.incrementFailed(batchNo);
+      if (ctx.consecutiveFailures().incrementAndGet() >= MAX_CONSECUTIVE_FAILURES) {
+        ctx.openRound().set(true);
+      }
+      log.warn("[Jev] 422 请求构造失败，行记失败跳过：batchNo={}, detailId={}, err={}",
+          batchNo, row.getDetailId(), e.getMessage());
+      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), null, questionText, e);
+      return JevOutcome.SKIP_ROW;
+    } catch (JevDecisionException e) {
+      // 超时/5xx/解析失败：该行降级 LLM 全流程；连续失败计入熔断（§5）
+      if (ctx.consecutiveFailures().incrementAndGet() >= MAX_CONSECUTIVE_FAILURES) {
+        ctx.openRound().set(true);
+      }
+      log.warn("[Jev] 调用失败，行降级 LLM：batchNo={}, detailId={}, err={}",
+          batchNo, row.getDetailId(), e.getMessage());
+      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), null, questionText, e);
+      countLlmFallback(ctx, row.getRowId());
+      return JevOutcome.FALLBACK_LLM;
+    }
+    ctx.consecutiveFailures().set(0);
+    logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage1", ctx.ch(), r1, questionText, null);
+
+    int l2Id;
+    try {
+      l2Id = Integer.parseInt(r1.choice());
+    } catch (NumberFormatException e) {
+      // choice 不在 criteria 语义内 → 卫兵拒绝（不计连续失败），行降级 LLM（§5）
+      countLlmFallback(ctx, row.getRowId());
+      return JevOutcome.FALLBACK_LLM;
+    }
+    boolean l2Valid = l2List.stream().anyMatch(n -> n.getId() != null && n.getId() == l2Id);
+    if (!l2Valid) {
+      countLlmFallback(ctx, row.getRowId());
+      return JevOutcome.FALLBACK_LLM;
+    }
+    if (BigDecimal.valueOf(r1.confidence()).compareTo(ctx.ch().theta1()) < 0) {
+      // conf₁ < θ₁：L2 都拿不准，阶段 2 无意义（§3 双门前置）
+      countLlmFallback(ctx, row.getRowId());
+      return JevOutcome.FALLBACK_LLM;
+    }
+    List<KnowledgeNodeRow> l3List = courseL3ByParent.getOrDefault(courseId, Map.of())
+        .getOrDefault(l2Id, List.of());
+    if (l3List.isEmpty()) {
+      // 所选 L2 下无存活 L3 → jev-l2-direct 直收尾（沿用 l2-direct 业务裁定，basis=jev-l2-direct）
+      boolean sameNode = Objects.equals(l2Id, row.getOldKnowledgeId());
+      String outcome = sameNode ? ExamDetailKnowledgeFixEntity.STATUS_KEEP
+          : ExamDetailKnowledgeFixEntity.STATUS_APPLY;
+      fixMapper.updateClassifyResult(row.getRowId(), l2Id, L2_DIRECT_CONFIDENCE, "jev-l2-direct",
+          "所选章节下无鉴定点，按业务规则直接挂章节", outcome);
+      batchMapper.incrementClassified(batchNo, outcome);
+      ctx.jevClassified().incrementAndGet();
+      ctx.confSum().add(L2_DIRECT_CONFIDENCE.doubleValue());
+      return JevOutcome.RESOLVED;
+    }
+    if (l3List.size() < MIN_JEV_CRITERIA || l3List.size() > MAX_JEV_CRITERIA) {
+      // 单候选（<2）或超上限（>255）无法构成合法 choice，降级 LLM 全流程
+      countLlmFallback(ctx, row.getRowId());
+      return JevOutcome.FALLBACK_LLM;
+    }
+    Map<String, String> l3Criteria = new LinkedHashMap<>();
+    for (KnowledgeNodeRow n : l3List) {
+      l3Criteria.put(String.valueOf(n.getId()), n.getTitle());
+    }
+    JevDecisionResult r2;
+    try {
+      ctx.slots().acquire();
+      try {
+        r2 = jevClient.decide(ctx.ch().cfg().getBaseUrl(), ctx.ch().cfg().getApiKey(),
+            ctx.ch().cfg().getModelId(), questionText, "l3", "该试题真正归属的鉴定点",
+            l3Criteria, ctx.ch().readTimeoutSeconds());
+      } finally {
+        ctx.slots().release();
+      }
+    } catch (JevUnauthorizedException e) {
+      ctx.openPermanent().set(true);
+      log.warn("[Jev] 401 鉴权失败，整批熔断转 LLM：batchNo={}, err={}", batchNo, e.getMessage());
+      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), null, questionText, e);
+      countLlmFallback(ctx, row.getRowId());
+      return JevOutcome.FALLBACK_LLM;
+    } catch (JevValidationException e) {
+      batchMapper.incrementFailed(batchNo);
+      if (ctx.consecutiveFailures().incrementAndGet() >= MAX_CONSECUTIVE_FAILURES) {
+        ctx.openRound().set(true);
+      }
+      log.warn("[Jev] 422 请求构造失败，行记失败跳过：batchNo={}, detailId={}, err={}",
+          batchNo, row.getDetailId(), e.getMessage());
+      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), null, questionText, e);
+      return JevOutcome.SKIP_ROW;
+    } catch (JevDecisionException e) {
+      if (ctx.consecutiveFailures().incrementAndGet() >= MAX_CONSECUTIVE_FAILURES) {
+        ctx.openRound().set(true);
+      }
+      log.warn("[Jev] 调用失败，行降级 LLM：batchNo={}, detailId={}, err={}",
+          batchNo, row.getDetailId(), e.getMessage());
+      logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), null, questionText, e);
+      countLlmFallback(ctx, row.getRowId());
+      return JevOutcome.FALLBACK_LLM;
+    }
+    ctx.consecutiveFailures().set(0);
+    logJevCall(tenantId, batchNo, row.getDetailId(), "jev-stage2", ctx.ch(), r2, questionText, null);
+
+    int nodeId;
+    try {
+      nodeId = Integer.parseInt(r2.choice());
+    } catch (NumberFormatException e) {
+      countLlmFallback(ctx, row.getRowId());
+      return JevOutcome.FALLBACK_LLM;
+    }
+    KnowledgeNodeRow picked = nodeById.get(nodeId);
+    if (picked == null || !Objects.equals(picked.getCourseId(), courseId)) {
+      // 越界=卫兵拒绝语义（§5），降级 LLM，不计连续失败
+      countLlmFallback(ctx, row.getRowId());
+      return JevOutcome.FALLBACK_LLM;
+    }
+    // keep 判定：模型选中当前节点（防过度修正，阈值不拦截 keep，§3）
+    if (Objects.equals(nodeId, row.getOldKnowledgeId())) {
+      fixMapper.updateClassifyResult(row.getRowId(), row.getOldKnowledgeId(),
+          scale(r2.confidence()), "jev", "", ExamDetailKnowledgeFixEntity.STATUS_KEEP);
+      batchMapper.incrementClassified(batchNo, ExamDetailKnowledgeFixEntity.STATUS_KEEP);
+      ctx.jevClassified().incrementAndGet();
+      ctx.confSum().add(r2.confidence());
+      return JevOutcome.RESOLVED;
+    }
+    // 确定性卫兵：零关键词重合且非素养节点 → flag（沿用，优先于置信分层）
+    if (!KnowledgeNormUtil.hasBigramOverlap(picked.getTitle(), questionText)
+        && !KnowledgeNormUtil.isQualityNode(picked.getTitle())) {
+      fixMapper.updateClassifyResult(row.getRowId(), nodeId, scale(r2.confidence()), "jev",
+          "卫兵拦截:概率判定零关键词重合", ExamDetailKnowledgeFixEntity.STATUS_FLAG);
+      batchMapper.incrementClassified(batchNo, ExamDetailKnowledgeFixEntity.STATUS_FLAG);
+      ctx.jevClassified().incrementAndGet();
+      ctx.confSum().add(r2.confidence());
+      return JevOutcome.RESOLVED;
+    }
+    // 双门置信分层：conf₂ < θ₂ → 降级 LLM 全流程（产 reason）；双门全过 → apply（§3）
+    if (BigDecimal.valueOf(r2.confidence()).compareTo(ctx.ch().theta2()) < 0) {
+      countLlmFallback(ctx, row.getRowId());
+      return JevOutcome.FALLBACK_LLM;
+    }
+    fixMapper.updateClassifyResult(row.getRowId(), nodeId, scale(r2.confidence()), "jev", "",
+        ExamDetailKnowledgeFixEntity.STATUS_APPLY);
+    batchMapper.incrementClassified(batchNo, ExamDetailKnowledgeFixEntity.STATUS_APPLY);
+    ctx.jevClassified().incrementAndGet();
+    ctx.confSum().add(r2.confidence());
+    return JevOutcome.RESOLVED;
+  }
+
+  /** 兜底行计数（§8.5）：按 rowId 去重——跨轮重试/多次降级的行只计一次（口径=行数） */
+  private void countLlmFallback(JevRowCtx ctx, Long rowId) {
+    if (ctx.llmFallbackRows().add(rowId)) {
+      ctx.llmFallback().incrementAndGet();
+    }
+  }
+
+  /** Jev 调用审计落库（§8.8）：stage/响应 model（记现有 model_id 列）/tokens/耗时/confidence_definition/top1/top2；失败调用也留痕 */
+  private void logJevCall(Long tenantId, Long batchNo, Integer detailId, String stage,
+      JevChannel ch, JevDecisionResult result, String state, Exception error) {
+    try {
+      ExamKnowledgeFixLlmLogEntity logRow = new ExamKnowledgeFixLlmLogEntity();
+      logRow.setId(com.baomidou.mybatisplus.core.toolkit.IdWorker.getId());
+      logRow.setTenantId(tenantId);
+      logRow.setBatchNo(batchNo);
+      logRow.setDetailId(detailId);
+      logRow.setStage(stage);
+      // 响应 model 优先（TokenDance 双服务商路由漂移监控，§9 风险 3）
+      logRow.setModelId(result != null && result.responseModel() != null
+          && !result.responseModel().isBlank()
+          ? result.responseModel() : ch.cfg().getModelId());
+      logRow.setPromptDigest(state.length() > 200 ? state.substring(state.length() - 200) : state);
+      long in = result == null ? 0 : result.inputTokens();
+      long out = result == null ? 0 : result.outputTokens();
+      logRow.setPromptTokens((int) in);
+      logRow.setCompletionTokens((int) out);
+      logRow.setTotalTokens((int) (in + out));
+      logRow.setCachedTokens(0);
+      logRow.setDurationMs(result == null ? 0 : result.durationMs());
+      if (result != null) {
+        logRow.setConfidenceDefinition(result.confidenceDefinition());
+        List<Double> tops = result.probabilities().values().stream()
+            .sorted(Comparator.reverseOrder()).toList();
+        logRow.setTop1Prob(tops.isEmpty() ? null
+            : BigDecimal.valueOf(tops.get(0)).setScale(6, RoundingMode.HALF_UP));
+        logRow.setTop2Prob(tops.size() > 1
+            ? BigDecimal.valueOf(tops.get(1)).setScale(6, RoundingMode.HALF_UP) : null);
+      } else if (error != null) {
+        logRow.setConfidenceDefinition("error:" + error.getClass().getSimpleName());
+      }
+      logRow.setCreatedAt(LocalDateTime.now());
+      logRow.setCreatedBy(0L);
+      logRow.setUpdatedBy(0L);
+      logRow.setDeleted(0);
+      llmLogMapper.insert(logRow);
+    } catch (Exception logEx) {
+      log.warn("Jev 审计落库失败（不影响主流程）：{}", logEx.getMessage());
+    }
+  }
+
+  private BigDecimal scale(double v) {
+    return BigDecimal.valueOf(v).setScale(3, RoundingMode.HALF_UP);
+  }
+
+  /** 暂停双判（§10 加固）：批次表状态检查（派发边界每行一次主键查，开销可忽略） */
+  private boolean isPausing(Long batchId) {
+    ExamKnowledgeFixBatchEntity b = batchMapper.selectById(batchId);
+    return b != null && ExamKnowledgeFixBatchEntity.STATUS_PAUSING.equals(b.getStatus());
+  }
+
+  /**
+   * 启动恢复（§10 加固）：进程重启后编排线程已消亡，遗留 pending/running/pausing 批次统一收尾为
+   * paused，剩余行保持 pending 可再次提交续跑。租户上下文显式设置（启动线程无 SecurityContext）。
+   */
+  @EventListener(ApplicationReadyEvent.class)
+  public void recoverAbandonedBatchesOnStartup() {
+    TenantContextHolder.setTenantId(TenantContextHolder.DEFAULT_TENANT_ID);
+    try {
+      List<ExamKnowledgeFixBatchEntity> abandoned = batchMapper.selectList(
+          new LambdaQueryWrapper<ExamKnowledgeFixBatchEntity>()
+              .in(ExamKnowledgeFixBatchEntity::getStatus,
+                  ExamKnowledgeFixBatchEntity.STATUS_PENDING,
+                  ExamKnowledgeFixBatchEntity.STATUS_RUNNING,
+                  ExamKnowledgeFixBatchEntity.STATUS_PAUSING));
+      if (abandoned == null || abandoned.isEmpty()) {
+        return;
+      }
+      for (ExamKnowledgeFixBatchEntity b : abandoned) {
+        b.setStatus(ExamKnowledgeFixBatchEntity.STATUS_PAUSED);
+        b.setFailReason("进程重启收尾：遗留批次置为 paused，剩余 pending 行可再次提交续跑");
+        b.setUpdatedAt(LocalDateTime.now());
+        batchMapper.updateById(b);
+      }
+      log.warn("知识修正批次启动恢复：收尾遗留批次 {} 个为 paused", abandoned.size());
+    } catch (Exception e) {
+      log.error("知识修正批次启动恢复失败（不影响启动）：{}", e.getMessage(), e);
+    } finally {
+      TenantContextHolder.clear();
+    }
+  }
+
+  /**
+   * Jev 通道开关（§3/§5 首行）：配置行缺失或 status≠enabled 或 api_key 未回填 → null
+   * （0 次 Jev，全部行走 LLM，安静降级不计失败）；θ₂ &lt; 0.3 属硬底线违规 → 配置校验拒绝（§7.1）。
+   */
+  private JevChannel resolveJevChannel() {
+    List<ExamFaqModelConfigEntity> list = modelConfigMapper.selectList(
+        new LambdaQueryWrapper<ExamFaqModelConfigEntity>()
+            .eq(ExamFaqModelConfigEntity::getModelCode, JEV_MODEL_CODE)
+            .eq(ExamFaqModelConfigEntity::getStatus, "enabled"));
+    if (list == null || list.isEmpty()) {
+      log.info("[Jev] 通道未启用（无 enabled 的 {} 配置行），本批次全走 LLM", JEV_MODEL_CODE);
+      return null;
+    }
+    ExamFaqModelConfigEntity cfg = list.get(0);
+    if (cfg.getApiKey() == null || cfg.getApiKey().isBlank()
+        || "PENDING_USER_INPUT".equals(cfg.getApiKey())) {
+      log.info("[Jev] 通道 api_key 未回填（{}），本批次全走 LLM", JEV_MODEL_CODE);
+      return null;
+    }
+    BigDecimal theta1 = cfg.getJevTheta1() == null ? DEFAULT_JEV_THETA : cfg.getJevTheta1();
+    BigDecimal theta2 = cfg.getJevTheta2() == null ? DEFAULT_JEV_THETA : cfg.getJevTheta2();
+    if (theta2.compareTo(JEV_MIN_THETA2) < 0) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "Jev θ₂ 配置 " + theta2 + " 低于硬底线 0.3（§7.1），已拒绝提交");
+    }
+    int concurrency = cfg.getJevConcurrency() == null ? DEFAULT_JEV_CONCURRENCY
+        : Math.max(1, cfg.getJevConcurrency());
+    int readTimeout = cfg.getJevReadTimeoutSeconds() == null ? DEFAULT_JEV_READ_TIMEOUT_SECONDS
+        : Math.max(5, cfg.getJevReadTimeoutSeconds());
+    log.info("[Jev] 通道已启用：model={}, θ₁={}, θ₂={}, 并发={}, 读超时={}s",
+        cfg.getModelId(), theta1, theta2, concurrency, readTimeout);
+    return new JevChannel(cfg, theta1, theta2, concurrency, readTimeout);
+  }
+
   private void failBatch(ExamKnowledgeFixBatchEntity batch, String reason) {
     batch.setStatus(ExamKnowledgeFixBatchEntity.STATUS_FAILED);
     batch.setFailReason(reason);
@@ -560,9 +1044,8 @@ public class KnowledgeFixClassifyService {
     log.info("知识修正批次已暂停：batchNo={}, done={}/{}", batchNo, done, total);
   }
 
-  /** 质量门禁说明（FIX-1.4）：写清楚未达标原因，供页面红色提示与事后复核 */
-  private static String buildGateReason(boolean noDispatch, int unclassified, int total,
-      BigDecimal rate) {
+  /** 质量门禁说明（FIX-1.4，§6 调整）：自一致率已改信息项，仅未分类占比可卡批次 */
+  private static String buildGateReason(boolean noDispatch, int unclassified, int total) {
     StringBuilder sb = new StringBuilder("未达质量门禁：");
     if (noDispatch) {
       sb.append("本轮一条都未能派发；");
@@ -570,11 +1053,6 @@ public class KnowledgeFixClassifyService {
     if (total > 0 && unclassified > 0) {
       sb.append("未分类 ").append(unclassified).append("/").append(total)
           .append("（上限 5%）；");
-    }
-    if (rate == null) {
-      sb.append("自一致率不适用（本批无三采样行，全部 L2 直收尾）；");
-    } else if (rate.compareTo(SELF_CONSISTENCY_GATE) < 0) {
-      sb.append("自一致率 ").append(rate).append("（下限 0.80）；");
     }
     sb.append("未分类行可经 reset 后重跑");
     return sb.toString();

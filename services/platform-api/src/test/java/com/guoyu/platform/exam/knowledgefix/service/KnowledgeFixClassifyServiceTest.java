@@ -18,6 +18,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guoyu.platform.ai.dto.LlmChatCompletionResult;
 import com.guoyu.platform.ai.infrastructure.FaqLlmClient;
+import com.guoyu.platform.ai.infrastructure.JevDecisionClient;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
 import com.guoyu.platform.exam.entity.ExamFaqModelConfigEntity;
 import com.guoyu.platform.exam.knowledgefix.dto.KnowledgeNodeRow;
@@ -59,6 +60,7 @@ class KnowledgeFixClassifyServiceTest {
   private ExamExamDetailFixMapper queryMapper;
   private ExamFaqModelConfigMapper modelConfigMapper;
   private FaqLlmClient llmClient;
+  private JevDecisionClient jevClient;
   private ExamKnowledgeFixLlmLogMapper llmLogMapper;
   private ThreadPoolTaskExecutor llmExecutor;
   private KnowledgeFixClassifyService service;
@@ -95,9 +97,10 @@ class KnowledgeFixClassifyServiceTest {
     cfgFlash = cfg("theory-gen-glm", "glm-5.3-flash");
     cfgPro = cfg("knowledge-fix-pro", "glm-5.3");
     batch = batchEntity();
+    jevClient = mock(JevDecisionClient.class);
 
     service = new KnowledgeFixClassifyService(batchMapper, fixMapper, queryMapper,
-        modelConfigMapper, llmClient, new ObjectMapper(), orchestrator, llmExecutor,
+        modelConfigMapper, llmClient, jevClient, new ObjectMapper(), orchestrator, llmExecutor,
         llmLogMapper, 3, 0L);
   }
 
@@ -309,9 +312,10 @@ class KnowledgeFixClassifyServiceTest {
     assertEquals(ExamDetailKnowledgeFixEntity.STATUS_APPLY, statusByRowId.get(1L));
     verify(fixMapper).updateClassifyResult(anyLong(), ArgumentMatchers.eq(301), any(), any(), any(),
         ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_APPLY));
-    // FIX-1.4：本批仅 1 行且非 3/3 一致 → 自一致率 0 < 0.80，批次被质量门禁拦下（禁止写回）
-    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_FAILED, batch.getStatus());
-    assertTrue(batch.getFailReason().contains("自一致率"), batch.getFailReason());
+    // §6 调整：自一致率 0（2/3 多数行非 3/3 一致）降为信息项展示，不再卡门禁 → 批次 DONE
+    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_DONE, batch.getStatus());
+    assertEquals(0, batch.getSelfConsistencyRate().compareTo(java.math.BigDecimal.ZERO),
+        "唯一分类行非 3/3 一致 → 自一致率 0（仅展示）");
   }
 
   /** KF-13：三方各不同 → 升级旗舰（glm-5.3）复判，结果生效且 basis=llm-pro */
@@ -338,8 +342,8 @@ class KnowledgeFixClassifyServiceTest {
     verify(llmClient, atLeast(1)).chatCompletionDetailed(anyString(), anyString(),
         ArgumentMatchers.eq("glm-5.3"), anyString(), ArgumentMatchers.contains("候选鉴定点（L3）"),
         anyInt(), any(), any(), anyBoolean(), anyLong(), anyInt());
-    // FIX-1.4：升级复判行不计入自一致（非 3/3）→ 批次被门禁拦下
-    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_FAILED, batch.getStatus());
+    // §6 调整：升级复判行不计入自一致（率 0 仅展示）→ 批次 DONE，不再被率门禁拦下
+    assertEquals(ExamKnowledgeFixBatchEntity.STATUS_DONE, batch.getStatus());
   }
 
   /** KF-14：确定性卫兵——选中节点与题干零重合且非素养节点 → 强制 flag */

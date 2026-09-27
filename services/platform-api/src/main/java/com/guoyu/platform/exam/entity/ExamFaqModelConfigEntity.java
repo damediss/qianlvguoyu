@@ -29,6 +29,11 @@ public class ExamFaqModelConfigEntity {
   private String reasoningEffort;
   private String extraConfig;
   private String status;
+  /** Jev 通道参数（方案 §8.2，批次启动时读配置固化；NULL 走默认值） */
+  private BigDecimal jevTheta1;
+  private BigDecimal jevTheta2;
+  private Integer jevConcurrency;
+  private Integer jevReadTimeoutSeconds;
   private LocalDateTime createdAt;
   private LocalDateTime updatedAt;
   private Long createdBy;
@@ -65,6 +70,14 @@ public class ExamFaqModelConfigEntity {
   public void setExtraConfig(String extraConfig) { this.extraConfig = extraConfig; }
   public String getStatus() { return status; }
   public void setStatus(String status) { this.status = status; }
+  public BigDecimal getJevTheta1() { return jevTheta1; }
+  public void setJevTheta1(BigDecimal jevTheta1) { this.jevTheta1 = jevTheta1; }
+  public BigDecimal getJevTheta2() { return jevTheta2; }
+  public void setJevTheta2(BigDecimal jevTheta2) { this.jevTheta2 = jevTheta2; }
+  public Integer getJevConcurrency() { return jevConcurrency; }
+  public void setJevConcurrency(Integer jevConcurrency) { this.jevConcurrency = jevConcurrency; }
+  public Integer getJevReadTimeoutSeconds() { return jevReadTimeoutSeconds; }
+  public void setJevReadTimeoutSeconds(Integer jevReadTimeoutSeconds) { this.jevReadTimeoutSeconds = jevReadTimeoutSeconds; }
   public LocalDateTime getCreatedAt() { return createdAt; }
   public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
   public LocalDateTime getUpdatedAt() { return updatedAt; }

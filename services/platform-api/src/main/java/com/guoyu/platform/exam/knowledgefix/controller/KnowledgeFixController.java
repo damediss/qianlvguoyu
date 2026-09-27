@@ -97,14 +97,20 @@ public class KnowledgeFixController {
 
   // ───────── 知识修正 ─────────
 
-  /** 提交 LLM 分类批次（秒回 batchNo） */
+  /**
+   * 提交 LLM 分类批次（秒回 batchNo）。可选 courseId/limit 做范围提交（方案 §13 步骤 8
+   * 小批次实测用）：courseId 限定课程、limit 限制行数（1~1000），均缺省 = 全量。
+   * 暂停续跑须携带相同参数。权限与审计口径不变。
+   */
   @PostMapping("/classify/submit")
   @PreAuthorize("hasAuthority('exam:knowledgefix:classify:submit')")
   @AuditLog(module = "exam", action = "knowledgefix:classify:submit", targetType = "exam_knowledge_fix_batch")
-  public ApiResponse<FixBatchVO> submitClassify() {
+  public ApiResponse<FixBatchVO> submitClassify(
+      @RequestParam(required = false) Integer courseId,
+      @RequestParam(required = false) Integer limit) {
     Long tenantId = TenantContextHolder.getTenantId();
     Long userId = SecurityContext.currentUser().getUserId();
-    return ApiResponse.ok(classifyService.submit(tenantId, userId));
+    return ApiResponse.ok(classifyService.submit(tenantId, userId, courseId, limit));
   }
 
   /** 重跑通道（FIX-3）：flag 行复位 pending，返回复位行数 */

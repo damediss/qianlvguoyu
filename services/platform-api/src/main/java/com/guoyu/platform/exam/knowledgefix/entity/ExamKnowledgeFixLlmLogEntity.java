@@ -24,6 +24,11 @@ public class ExamKnowledgeFixLlmLogEntity {
   private Integer totalTokens;
   private Integer cachedTokens;
   private Integer durationMs;
+  /** Jev 响应 metadata.confidence_definition（口径随路由漂移，须落库，§8.8） */
+  private String confidenceDefinition;
+  /** Jev 概率分布 top1/top2 */
+  private java.math.BigDecimal top1Prob;
+  private java.math.BigDecimal top2Prob;
   private LocalDateTime createdAt;
   private LocalDateTime updatedAt;
   private Long createdBy;
@@ -56,6 +61,12 @@ public class ExamKnowledgeFixLlmLogEntity {
   public void setCachedTokens(Integer cachedTokens) { this.cachedTokens = cachedTokens; }
   public Integer getDurationMs() { return durationMs; }
   public void setDurationMs(Integer durationMs) { this.durationMs = durationMs; }
+  public String getConfidenceDefinition() { return confidenceDefinition; }
+  public void setConfidenceDefinition(String confidenceDefinition) { this.confidenceDefinition = confidenceDefinition; }
+  public java.math.BigDecimal getTop1Prob() { return top1Prob; }
+  public void setTop1Prob(java.math.BigDecimal top1Prob) { this.top1Prob = top1Prob; }
+  public java.math.BigDecimal getTop2Prob() { return top2Prob; }
+  public void setTop2Prob(java.math.BigDecimal top2Prob) { this.top2Prob = top2Prob; }
   public LocalDateTime getCreatedAt() { return createdAt; }
   public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
   public LocalDateTime getUpdatedAt() { return updatedAt; }
