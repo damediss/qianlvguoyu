@@ -23,6 +23,12 @@ export interface FixBatch {
   keepCnt: number;
   flagCnt: number;
   selfConsistencyRate: number | null;
+  /** Jev 通道分类行数（§8.5 统计） */
+  jevClassified: number | null;
+  /** 走 LLM 全流程兜底行数 */
+  llmFallback: number | null;
+  /** Jev 行平均置信度（信息项，不卡门禁） */
+  jevAvgConfidence: number | null;
   status: string;
   failReason: string | null;
   /** 未分类行数（未进过模型；total - done - failed） */
@@ -72,8 +78,11 @@ export const rollbackDedup = (backupTable: string) =>
     params: { backupTable },
   }));
 
-export const submitClassify = () =>
-  unwrap<FixBatch>(apiClient.post('/exam/knowledgefix/classify/submit'));
+/** 范围提交（§13 步骤 8 小批次）：courseId 限定课程、limit 限行数（1~1000），均缺省 = 全量；暂停续跑须带相同参数 */
+export const submitClassify = (scope?: { courseId?: number; limit?: number }) =>
+  unwrap<FixBatch>(apiClient.post('/exam/knowledgefix/classify/submit', null, {
+    params: scope,
+  }));
 
 export const resetClassify = () =>
   unwrap<number>(apiClient.post('/exam/knowledgefix/classify/reset'));

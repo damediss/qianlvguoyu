@@ -7,8 +7,8 @@
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, Button, Card, Descriptions, Input, message, Modal, Popconfirm, Progress, Space, Statistic,
-  Table, Tabs, Tag,
+  Alert, Button, Card, Descriptions, Input, InputNumber, message, Modal, Popconfirm, Progress,
+  Space, Statistic, Table, Tabs, Tag,
 } from 'antd';
 import {
   dedupStats, generateDedupList, applyDedup, rollbackDedup,
@@ -32,7 +32,7 @@ const LAST_DEDUP_BACKUP_KEY = 'guoyu_kfix_last_dedup_backup';
 
 /** 判断批次是否仍在跑（进度轮询持续条件） */
 const batchRunning = (b: FixBatch | null | undefined) =>
-  !!b && (b.status === 'running' || b.status === 'pending');
+  !!b && (b.status === 'running' || b.status === 'pending' || b.status === 'pausing');
 
 const KnowledgeFixPage: React.FC = () => {
   const qc = useQueryClient();
@@ -146,14 +146,28 @@ const KnowledgeFixPage: React.FC = () => {
     queryFn: () => fixList({ status: fixStatus, page: fixPage, pageSize: 20 }),
   });
 
-  const doSubmitClassify = async () => {
+  const doSubmitClassify = async (scope?: { courseId?: number; limit?: number }) => {
     try {
-      const b = await submitClassify();
+      const b = await submitClassify(scope);
       message.success(`分类批次已提交：${b.total} 行（三采样自一致 + 低置信升级旗舰）`);
       qc.invalidateQueries({ queryKey: ['knowledgefix-progress'] });
     } catch {
       /* 拦截器统一提示 */
     }
+  };
+
+  // 范围提交（§13 步骤 8 小批次实测）：课程 ID + 行数上限；暂停续跑须携带相同参数
+  const [scopeCourseId, setScopeCourseId] = useState<number | undefined>();
+  const [scopeLimit, setScopeLimit] = useState<number | undefined>();
+  const doScopeSubmit = async () => {
+    if (scopeCourseId == null && scopeLimit == null) {
+      message.warning('请至少填写课程 ID 或行数上限（留空则全量提交）');
+      return;
+    }
+    await doSubmitClassify({
+      courseId: scopeCourseId,
+      limit: scopeLimit,
+    });
   };
 
   const doResetClassify = async () => {
@@ -209,8 +223,16 @@ const KnowledgeFixPage: React.FC = () => {
       render: (v: number | null) => (v == null ? '-' : v) },
     { title: '置信', dataIndex: 'confidence', key: 'confidence', width: 70,
       render: (v: number | null) => (v == null ? '-' : v.toFixed(2)) },
-    { title: '依据', dataIndex: 'basis', key: 'basis', width: 90 },
-    { title: '理由', dataIndex: 'llmReason', key: 'llmReason', ellipsis: true },
+    { title: '依据', dataIndex: 'basis', key: 'basis', width: 110,
+      render: (v: string) => {
+        if (v == null || v === '') return '-';
+        const jevBasis = v === 'jev' || v === 'jev-l2-direct';
+        return jevBasis ? <Tag color="purple">{v}</Tag> : v;
+      } },
+    { title: '理由', dataIndex: 'llmReason', key: 'llmReason', ellipsis: true,
+      render: (v: string, record: { basis?: string | null }) => (
+        v ? v : (record.basis === 'jev' || record.basis === 'jev-l2-direct' ? '（概率判定无理由）' : '-')
+      ) },
     { title: '状态', dataIndex: 'status', key: 'status', width: 90,
       render: (v: string) => {
         const t = STATUS_TAG[v] ?? { color: 'default', text: v };
@@ -299,9 +321,36 @@ const KnowledgeFixPage: React.FC = () => {
           children: (
             <>
               <Space style={{ marginBottom: 16 }} wrap>
-                <Button type="primary" onClick={doSubmitClassify} disabled={batchRunning(batch)}>
+                <Button type="primary" onClick={() => doSubmitClassify()} disabled={batchRunning(batch)}>
                   {batch?.status === 'paused' ? '继续（提交剩余行）' : '提交 LLM 分类批次'}
                 </Button>
+                <InputNumber
+                  placeholder="课程 ID"
+                  min={1}
+                  style={{ width: 110 }}
+                  value={scopeCourseId}
+                  onChange={(v) => setScopeCourseId(v ?? undefined)}
+                  disabled={batchRunning(batch)}
+                />
+                <InputNumber
+                  placeholder="行数上限"
+                  min={1}
+                  max={1000}
+                  style={{ width: 110 }}
+                  value={scopeLimit}
+                  onChange={(v) => setScopeLimit(v ?? undefined)}
+                  disabled={batchRunning(batch)}
+                />
+                <Popconfirm
+                  title="确认按范围提交小批次？"
+                  description="只处理所填课程（可再限行数上限）的待分类行；范围外行不受影响。暂停后续跑需携带相同范围。"
+                  onConfirm={doScopeSubmit}
+                  disabled={batchRunning(batch) || (scopeCourseId == null && scopeLimit == null)}
+                >
+                  <Button disabled={batchRunning(batch) || (scopeCourseId == null && scopeLimit == null)}>
+                    范围提交（小批次）
+                  </Button>
+                </Popconfirm>
                 <Popconfirm
                   title="确认暂停当前批次？"
                   description="停止派发新行；已派发的行跑完即暂停（约 10 秒内）。要继续跑剩余行，再点「提交 LLM 分类批次」。"
@@ -350,6 +399,13 @@ const KnowledgeFixPage: React.FC = () => {
                     <Descriptions.Item label="keep">{batch.keepCnt ?? 0}</Descriptions.Item>
                     <Descriptions.Item label="flag">{batch.flagCnt ?? 0}</Descriptions.Item>
                     <Descriptions.Item label="失败重试次数">{batch.failed ?? 0}</Descriptions.Item>
+                    <Descriptions.Item label="Jev 分类">
+                      <Tag color="purple">{batch.jevClassified ?? 0}</Tag>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="LLM 兜底">{batch.llmFallback ?? 0}</Descriptions.Item>
+                    <Descriptions.Item label="Jev 平均置信">
+                      {batch.jevAvgConfidence == null ? '-' : Number(batch.jevAvgConfidence).toFixed(3)}
+                    </Descriptions.Item>
                     <Descriptions.Item label="累计 LLM 调用">
                       {batch.usage ? batch.usage.calls.toLocaleString() : '-'}
                     </Descriptions.Item>
@@ -366,7 +422,7 @@ const KnowledgeFixPage: React.FC = () => {
                       showIcon
                       style={{ marginBottom: 12 }}
                       message="未达质量门禁，禁止写回"
-                      description={batch.failReason ?? '未分类占比 >5% 或自一致率 <80%；可点「复位并重跑」后重新提交'}
+                      description={batch.failReason ?? '未分类占比 >5%；可点「复位并重跑」后重新提交'}
                     />
                   )}
                   {batch.status === 'paused' && (
