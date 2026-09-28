@@ -115,9 +115,21 @@ public class ReviewQuestionQueryService {
         bindingList);
   }
 
+  /**
+   * 考试计划头部字段（漂移检测专用，轻量：只查计划行不查工种绑定）。
+   * 计划不存在返回 null（调用方保留原计划照常学习）。
+   */
+  public ReviewExamPlanInfo.ExamPlanHead loadExamPlanHead(long examId) {
+    TrainExamListEntity plan = trainExamListMapper.selectById(examId);
+    if (plan == null) {
+      return null;
+    }
+    return new ReviewExamPlanInfo.ExamPlanHead(plan.getExamDate(), plan.getExamDateList(),
+        plan.getSource());
+  }
+
   /** 按（工种, 等级）补查科目（步骤 3）：exam_course.level 0=初级工 … 4=高级技师 */
-  private Long findCourseId(long workTypeId, Integer level) {
-    if (level == null) {
+  private Long findCourseId(long workTypeId, Integer level) {    if (level == null) {
       return null;
     }
     List<ExamCourseEntity> courses = examCourseMapper.selectList(new LambdaQueryWrapper<ExamCourseEntity>()

@@ -136,7 +136,7 @@ public class ReviewPlanApplicationService {
   @Transactional
   public Map<String, Object> overview(long platformUserId, long examId, Long tenantId) {
     gateGrayRelease(examId, platformUserId, tenantId);
-    AiReviewPlanEntity plan = getOrCreatePlan(platformUserId, examId, tenantId);
+    AiReviewPlanEntity plan = replanIfExamPlanDrifted(getOrCreatePlan(platformUserId, examId, tenantId));
     LocalDate today = LocalDate.now();
 
     InterruptInfo interrupt = applyInterruptIfNeeded(plan, today);
@@ -174,7 +174,7 @@ public class ReviewPlanApplicationService {
   @Transactional
   public Map<String, Object> todayTask(long platformUserId, long examId, Long tenantId) {
     gateGrayRelease(examId, platformUserId, tenantId);
-    AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
+    AiReviewPlanEntity plan = replanIfExamPlanDrifted(requirePlan(platformUserId, examId));
     LocalDate today = LocalDate.now();
     InterruptInfo interrupt = applyInterruptIfNeeded(plan, today);
     AiReviewPlanDayEntity day = getOrMaterializeDay(plan, plan.getCurrentDayIndex(), today, interrupt);
@@ -597,7 +597,7 @@ public class ReviewPlanApplicationService {
   @Transactional
   public Map<String, Object> advanceDay(long platformUserId, long examId, Long tenantId) {
     gateGrayRelease(examId, platformUserId, tenantId);
-    AiReviewPlanEntity plan = requirePlan(platformUserId, examId);
+    AiReviewPlanEntity plan = replanIfExamPlanDrifted(requirePlan(platformUserId, examId));
     LocalDate today = LocalDate.now();
     AiReviewPlanDayEntity current = findDay(plan.getId(), plan.getCurrentDayIndex());
     if (current == null || !"done".equals(current.getStatus())) {
@@ -878,6 +878,160 @@ public class ReviewPlanApplicationService {
         plan.getId(), platformUserId, examId, questions.size(), mustDoIds.size(), trimmed,
         totalDays, stages[0], stages[1], stages[2], weights.weightSource());
     return plan;
+  }
+
+  // ==================================================================
+  // 考试计划变更软重排（入口漂移检测：考试日期 + 题目来源）
+  // ==================================================================
+
+  /**
+   * 考试计划中途变更后的入口重排（软重排，学员进度全保留）。重读 train_exam_list 头部字段，
+   * 与计划快照比对两维漂移：
+   *
+   * <ul>
+   *   <li>考试日期漂移：重算总天数与阶段切分（不回退天指针），重置未开始的今日及未来日任务；</li>
+   *   <li>题目来源（source）漂移：按新来源重建必做题池——重取题、权重重新解析并快照、
+   *       按阶段1容量重裁剪，刷新 source/total_questions/target_questions/must_do_ids/trimmed；
+   *       新来源暂无符合口径的题时保持原题池并记 warn，待题库补齐后下次进入自动完成重排。</li>
+   * </ul>
+   *
+   * <p>进度保全：作答记录、错题本（旧来源错题保留，由三级淘汰状态机自然洗出）、
+   * 已开始/已完成的天、当前天指针一律不动。任一维漂移都会重置未开始的今日及未来日任务，
+   * 下次物化按新节奏/新题池重算配额；受影响天的鼓励语缓存一并失效（旧文案含旧总天数）。
+   * 被删阶段3日任务挂着的未开考模考卷成为无引用行，无害。
+   *
+   * <p>边界：解析不出未来考试日（考试已过/日期清空）只跳过日期维，来源维独立判定；
+   * 考试日大幅提前导致新总天数小于已进行天数时按已进行天数保底，学员按每日上限自然收尾。
+   *
+   * <p>并发：与 materializeDay 同序（先计划行锁、后当天行）；锁后以当前读复核两维快照，
+   * App 并发调 overview/today 时只有第一个请求真正重排，其余读到已更新快照直接跳过。
+   * 仅 overview/today/advanceDay 三个物化入口调用；progress/finish 不物化无需调。
+   *
+   * @return 重排后的最新计划（无漂移时原样返回入参）
+   */
+  public AiReviewPlanEntity replanIfExamPlanDrifted(AiReviewPlanEntity planView) {
+    if (planView == null || !"active".equals(planView.getStatus()) || planView.getExamId() == null) {
+      // examId 兜底：并发建计划撞唯一键回退的并发行可能未填充
+      return planView;
+    }
+    LocalDate today = LocalDate.now();
+    ReviewExamPlanInfo.ExamPlanHead head = reviewQuery.loadExamPlanHead(planView.getExamId());
+    if (head == null) {
+      return planView;
+    }
+    LocalDate newExamDate = PlanScheduleDomainService.resolveExamDate(
+        head.examDate(), parseDateList(head.examDateList()), today);
+    int newSource = head.source() != null ? head.source() : 0;
+    boolean viewDateDrift = newExamDate != null && !newExamDate.equals(planView.getExamDate());
+    boolean viewSourceDrift = newSource != sourceOf(planView);
+    if (!viewDateDrift && !viewSourceDrift) {
+      return planView;
+    }
+    AiReviewPlanEntity plan = planMapper.selectByIdForUpdate(planView.getId());
+    if (plan == null) {
+      return planView;
+    }
+    if (!"active".equals(plan.getStatus())) {
+      return plan;
+    }
+    boolean dateDrift = viewDateDrift && !newExamDate.equals(plan.getExamDate());
+    boolean sourceDrift = viewSourceDrift && newSource != sourceOf(plan);
+    if (!dateDrift && !sourceDrift) {
+      // 并发入口已重排过：返回锁内当前读的最新行
+      return plan;
+    }
+
+    LocalDate oldExamDate = plan.getExamDate();
+    int oldTotalDays = plan.getTotalDays();
+    String oldStages = plan.getStage1Days() + "/" + plan.getStage2Days() + "/" + plan.getStage3Days();
+    int oldSource = sourceOf(plan);
+    int oldTotalQuestions = plan.getTotalQuestions() != null ? plan.getTotalQuestions() : 0;
+    int oldTargetQuestions = plan.getTargetQuestions() != null ? plan.getTargetQuestions() : 0;
+
+    if (dateDrift) {
+      int computedDays = PlanScheduleDomainService.computeTotalDays(newExamDate, today, 0);
+      int totalDays = Math.max(computedDays, plan.getCurrentDayIndex());
+      int[] stages = PlanScheduleDomainService.splitStages(totalDays);
+      plan.setExamDate(newExamDate);
+      plan.setTotalDays(totalDays);
+      plan.setStage1Days(stages[0]);
+      plan.setStage2Days(stages[1]);
+      plan.setStage3Days(stages[2]);
+      plan.setCurrentStage(stageOfDay(plan, plan.getCurrentDayIndex()));
+    }
+
+    boolean poolRebuilt = false;
+    if (sourceDrift) {
+      // 先日期后题池：阶段1天数变化会影响必做池容量上限
+      poolRebuilt = rebuildPoolForSource(plan, newSource);
+    }
+    if (!dateDrift && !poolRebuilt) {
+      // 仅来源漂移且新来源暂无题：原计划保持不动，下次进入再检测
+      return planView;
+    }
+
+    // 任一维漂移：重置未开始的今日及未来日任务，下次物化按新节奏/新题池重算
+    List<AiReviewPlanDayEntity> unstarted =
+        dayMapper.selectUnstartedFromForUpdate(plan.getId(), today);
+    List<Integer> resetIndexes = unstarted.stream()
+        .map(AiReviewPlanDayEntity::getDayIndex)
+        .toList();
+    int removed = dayMapper.deleteUnstartedFrom(plan.getId(), today);
+    planMapper.updateById(plan);
+    llmAssistService.evictEncouragement(plan.getId(), resetIndexes);
+    log.info("[AI复习] 计划漂移重排：planId={} examDate {}→{} source {}→{} 题量 {}→{} 必做 {}→{} "
+            + "totalDays {}→{} 阶段 {}→{}/{}/{} 重置未开始日任务 {} 行 index={}",
+        plan.getId(), oldExamDate, plan.getExamDate(), oldSource, plan.getSource(),
+        oldTotalQuestions, plan.getTotalQuestions(), oldTargetQuestions, plan.getTargetQuestions(),
+        oldTotalDays, plan.getTotalDays(), oldStages,
+        plan.getStage1Days(), plan.getStage2Days(), plan.getStage3Days(), removed, resetIndexes);
+    return plan;
+  }
+
+  /** source 快照归一（建计划口径：null 记 0） */
+  private static int sourceOf(AiReviewPlanEntity plan) {
+    return plan.getSource() != null ? plan.getSource() : 0;
+  }
+
+  /**
+   * 来源漂移：按新 source 重建必做题池（同科目，权重重新解析并快照）。裁剪口径与建计划一致：
+   * min(新池, 阶段1天数×dailyNewCap)，超出按权重裁剪（§5.3）。
+   *
+   * @return true=已重建；false=新来源暂无题/主科目缺失，保持原题池不动
+   */
+  private boolean rebuildPoolForSource(AiReviewPlanEntity plan, int newSource) {
+    if (plan.getCourseId() == null) {
+      log.warn("[AI复习] 来源变更重排中止：计划无主科目，保留原题池 planId={}", plan.getId());
+      return false;
+    }
+    List<Long> l3Ids = reviewQuery.loadL3KnowledgeIds(List.of(plan.getCourseId()));
+    List<ReviewQuestion> questions = reviewQuery.loadQuestionScope(newSource, l3Ids);
+    if (questions.isEmpty()) {
+      log.warn("[AI复习] 来源变更重排中止：新来源暂无符合口径的题，保留原题池 planId={} source={}",
+          plan.getId(), newSource);
+      return false;
+    }
+    ReviewCourseWeights courseWeights = reviewQuery.loadCourseWeights(plan.getCourseId());
+    List<ReviewKnowledgeNode> tree = reviewQuery.loadKnowledgeTree(plan.getCourseId());
+    WeightResolver.ResolvedWeights weights = WeightResolver.resolve(courseWeights, tree, questions);
+    if ("count".equals(weights.weightSource())) {
+      log.warn("[AI复习] course={} 无权重配置，来源重排按题量占比兜底", plan.getCourseId());
+    }
+    int dailyNewCap = plan.getDailyNewCap() != null ? plan.getDailyNewCap() : 120;
+    int target = Math.min(questions.size(), Math.max(1, plan.getStage1Days()) * dailyNewCap);
+    boolean trimmed = questions.size() > target;
+    List<Long> mustDoIds = trimmed
+        ? QuestionSelectDomainService.trimQuestionBank(questions, tree, weights, target)
+        : questions.stream().map(ReviewQuestion::id).toList();
+
+    plan.setSource(newSource);
+    plan.setWeightSnapshot(writeJson(WeightResolver.toSnapshot(weights)));
+    plan.setWeightSource(weights.weightSource());
+    plan.setTotalQuestions(questions.size());
+    plan.setTargetQuestions(mustDoIds.size());
+    plan.setMustDoIds(writeJson(mustDoIds));
+    plan.setTrimmed(trimmed ? 1 : 0);
+    return true;
   }
 
   // ==================================================================

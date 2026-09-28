@@ -196,6 +196,21 @@ public class ReviewLlmAssistService {
     return preset(stage, interruptReturn);
   }
 
+  /**
+   * 失效指定天的鼓励语缓存（考试日期变更重排专用）：
+   * 旧文案按旧总天数生成（如"别想那八十六天"），重排后不再适用，须重新生成。
+   */
+  public void evictEncouragement(long planId, List<Integer> dayIndexes) {
+    if (dayIndexes == null) {
+      return;
+    }
+    for (Integer dayIndex : dayIndexes) {
+      if (dayIndex != null) {
+        encourageCache.invalidate(planId + ":" + dayIndex);
+      }
+    }
+  }
+
   /** 物化时异步生成（失败自动降级预置文案） */
   public void generateAsync(long planId, int dayIndex, int stage, String workTypeTitle, String levelName,
       int totalDays, Double yesterdayAccuracy, boolean interruptReturn, Long tenantId) {

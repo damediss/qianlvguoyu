@@ -324,6 +324,20 @@ GRANT INSERT ON gjjddb.exam_result TO 'saas_sync'@'<SaaS服务器IP>';
 4. **作用域**：阶段1 每日新题构成（§5.2）、冗余裁剪剩余名额（§5.3）、组卷知识点配额（§5.6）、学情加权掌握度（§7.8）；阶段2 仅作同错题率时的 tie-breaker；
 5. **配置变更约定**：权重修订走"新增一行 type=3 + 旧行 deleted=1"，不原地 update（见配置指南 §7）。
 
+### 5.8 考试计划中途变更软重排（2026-09-28 补充：考试日期 + 题目来源）
+
+**问题**：计划在学员首次进入时一次性固化 `exam_date/total_days/stage1~3_days/source/total_questions/target_questions/must_do_ids/权重快照`，管理端中途修改考试日期或 `source`（取题来源）后原计划无感知——考试提前则按旧节奏刷不完，推后则中期空转；换来源则题池整体过期（新题进不来、死题占配额）；当日已物化的题量快照与鼓励语（含旧总天数文案，如"别想那八十六天"）均不更新。
+
+**机制（入口漂移检测）**：`overview/today/advanceDay` 三个物化入口在取到计划后调 `replanIfExamPlanDrifted`，轻量重读 `train_exam_list` 头部（`ReviewQuestionQueryService#loadExamPlanHead`，一条主键查询带出日期+来源，不查工种绑定），与计划快照比对两维漂移，可单独也可同时触发：
+
+1. **考试日期漂移**：持计划行锁（与 §5.2 物化同序，锁后当前读复核，App 并发调 overview/today 只有第一个请求真正重排）→ 重算 `total_days = max(考试日−今天, 当前天指针)`（不回退天指针）与三阶段切分，`current_stage` 按新边界重推导；
+2. **来源（source）漂移**：按新来源走建计划同款取题链（绑定科目三级知识点 → `final_check_status=1`），**重建必做题池**——权重按原科目重新解析并快照、`min(新池, 阶段1天数×dailyNewCap)` 重裁剪、刷新 `source/total_questions/target_questions/must_do_ids/trimmed`。先日期后题池（阶段1天数变化影响容量上限）；
+3. **任一维漂移**：物理删除 `plan_date ≥ 今天 且 new_done=0 且 review_done=0` 的日任务行（`deleteUnstartedFrom`；**不走逻辑删**——`uk_ai_review_day_plan_day` 不含 deleted 会挡同键重物化；零作答行无 answer 挂靠，物理删不丢数据；被删阶段 3 行的模考卷成无引用行，无害）；失效受影响天的鼓励语缓存，下次物化按新节奏/新题池重新生成。
+
+**进度保全**：作答记录、**错题本（旧来源错题保留，由三级淘汰状态机自然洗出）**、已开始/已完成的天、当前天指针一律不动；每日新题量公式 `min(dailyNewCap, ceil(剩余必做 ÷ 阶段1剩余天数))` 随新边界/新题池自适应。**边界**：解析不出未来考试日只跳过日期维；**新来源暂无符合口径的题时保持原题池不动**（source 快照不写，下次进入继续检测，题库补齐后自动完成重排）；completed/abandoned 计划跳过；`progress/finish` 等非物化入口不做漂移检测。
+
+**测试**：`ReviewPlanDriftReplanTest`（12 例：日期提前重置/推后增长+阶段重推导/天指针钳制/无漂移跳过/考试已过/计划被删/并发已重排返回最新行/完结计划跳过/换来源重建题池/超容量裁剪/空池保持原计划/双漂移同时生效）。
+
 ## 6. LLM 辅助设计（D2）
 
 | 场景 | 触发 | 提示词输入 | 输出 | 降级 |
