@@ -1,6 +1,7 @@
 package com.guoyu.platform.common.util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -63,7 +64,34 @@ class SensitiveMaskUtilsTest {
     String idCard = "450103199001010018";
     String masked = SensitiveMaskUtils.maskIdCard(idCard);
     assertEquals(18, masked.length());
-    org.junit.jupiter.api.Assertions.assertFalse(masked.contains("19900101"),
-        "脱敏结果不应包含出生日期段");
+    assertFalse(masked.contains("19900101"), "脱敏结果不应包含出生日期段");
+  }
+
+  @Test
+  @DisplayName("契约：任何输入都不得原样返回"
+      + "（历史私有实现在长度不符时 return 原值，导致明文落进 masked_phone / masked_id_card 列）")
+  void neverReturnsOriginalValue() {
+    String[] phones = {null, "", "   ", "1", "123456", "1234567", "0755-12345678",
+        "+8613812348000", "13812348000", "123456789012"};
+    for (String raw : phones) {
+      String masked = SensitiveMaskUtils.maskPhone(raw);
+      assertFalse(raw != null && raw.equals(masked), "maskPhone 不得返回原值: [" + raw + "]");
+    }
+
+    String[] idCards = {null, "", "   ", "1", "1234567", "X1234567", "12345678",
+        "450103900101001", "450103199001010018", "45010319900101001899"};
+    for (String raw : idCards) {
+      String masked = SensitiveMaskUtils.maskIdCard(raw);
+      assertFalse(raw != null && raw.equals(masked), "maskIdCard 不得返回原值: [" + raw + "]");
+      assertFalse(raw != null && raw.trim().equals(masked),
+          "maskIdCard 不得返回去空格后的原值: [" + raw + "]");
+    }
+  }
+
+  @Test
+  @DisplayName("8 位输入不得退化成原样返回（keepHead + keepTail 恰等于长度的边界缺陷）")
+  void maskIdCardEightCharsMustStillMask() {
+    assertEquals("********", SensitiveMaskUtils.maskIdCard("X1234567"));
+    assertEquals("********", SensitiveMaskUtils.maskIdCard("12345678"));
   }
 }

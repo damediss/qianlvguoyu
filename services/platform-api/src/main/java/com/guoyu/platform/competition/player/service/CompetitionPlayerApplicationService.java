@@ -1,5 +1,7 @@
 package com.guoyu.platform.competition.player.service;
 
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
+
 import cn.dev33.satoken.stp.StpLogic;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.common.exception.BusinessException;
@@ -185,7 +187,7 @@ public class CompetitionPlayerApplicationService {
             .eq(CompetitionRegistrationEntity::getPlayerId, player.getId())
             .eq(CompetitionRegistrationEntity::getStatus, CompetitionRegistrationStatus.ELIGIBLE_ACTIVATED.getCode())
             .eq(CompetitionRegistrationEntity::getDeleted, 0));
-    String maskedMobile = maskMobile(player.getMobile());
+    String maskedMobile = SensitiveMaskUtils.maskPhone(player.getMobile());
     if (registrations == null || registrations.isEmpty()) {
       return new CompetitionPlayerMeVO(player.getId(), player.getStatus(), maskedMobile, List.of());
     }
@@ -301,12 +303,6 @@ public class CompetitionPlayerApplicationService {
     return idCardNo.substring(idCardNo.length() - 6);
   }
 
-  private String maskMobile(String mobile) {
-    if (mobile == null || mobile.length() < 7) {
-      return "****";
-    }
-    return mobile.substring(0, 3) + "****" + mobile.substring(mobile.length() - 4);
-  }
 
   private CompetitionPlayerPrincipal currentPlayer() {
     try {

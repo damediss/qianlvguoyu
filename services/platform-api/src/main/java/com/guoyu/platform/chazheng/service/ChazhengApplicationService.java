@@ -468,7 +468,7 @@ public class ChazhengApplicationService {
       throw new BusinessException(ErrorCode.NOT_FOUND, "查证用户不存在");
     }
 
-    log.info("[certCheck] 开始查证 user={}, idCard={}", id, maskIdCard(user.getIdCard()));
+    log.info("[certCheck] 开始查证 user={}, idCard={}", id, SensitiveMaskUtils.maskIdCard(user.getIdCard()));
 
     CertQueryOutcome outcome = chazhengCertQueryService.queryByNameIdCard(
         user.getUserName(), user.getIdCard(), tenantId);
@@ -499,10 +499,6 @@ public class ChazhengApplicationService {
   }
 
   /** 身份证号脱敏(日志用) */
-  private static String maskIdCard(String idCard) {
-    if (idCard == null || idCard.length() < 8) return "***";
-    return idCard.substring(0, 4) + "********" + idCard.substring(idCard.length() - 4);
-  }
 
   // ════════════════════════════════════════════════════════════════════════
   //  批量异步查证（新增）

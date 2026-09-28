@@ -1,5 +1,7 @@
 package com.guoyu.platform.certification.service;
 
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -1139,7 +1141,7 @@ public class CertificationPreparationApplicationService {
       entity = existing;
       entity.setStaffName(staff.getStaffName());
       entity.setPhone(staff.getPhone());
-      entity.setMaskedPhone(StringUtils.hasText(staff.getMaskedPhone()) ? staff.getMaskedPhone() : maskPhone(staff.getPhone()));
+      entity.setMaskedPhone(StringUtils.hasText(staff.getMaskedPhone()) ? staff.getMaskedPhone() : SensitiveMaskUtils.maskPhone(staff.getPhone()));
       entity.setRemark(req.remark());
       entity.setStatus("configured");
       applyExamStaffRole(entity, role);
@@ -1155,7 +1157,7 @@ public class CertificationPreparationApplicationService {
       entity.setStaffId(staff.getId());
       entity.setStaffName(staff.getStaffName());
       entity.setPhone(staff.getPhone());
-      entity.setMaskedPhone(StringUtils.hasText(staff.getMaskedPhone()) ? staff.getMaskedPhone() : maskPhone(staff.getPhone()));
+      entity.setMaskedPhone(StringUtils.hasText(staff.getMaskedPhone()) ? staff.getMaskedPhone() : SensitiveMaskUtils.maskPhone(staff.getPhone()));
       entity.setRemark(req.remark());
       entity.setStatus("configured");
       applyExamStaffRole(entity, role);
@@ -2019,9 +2021,9 @@ public class CertificationPreparationApplicationService {
     entity.setCandidateName(req.candidateName());
     entity.setAdmissionTicketNo(req.admissionTicketNo());
     entity.setIdCardNo(req.idCardNo());
-    entity.setMaskedIdCardNo(maskIdCard(req.idCardNo()));
+    entity.setMaskedIdCardNo(SensitiveMaskUtils.maskIdCard(req.idCardNo()));
     entity.setPhone(req.phone());
-    entity.setMaskedPhone(maskPhone(req.phone()));
+    entity.setMaskedPhone(SensitiveMaskUtils.maskPhone(req.phone()));
     CertificationTaskScopeEntity defaultScope = req.taskScopeId() == null ? firstScope(task.getId())
         : scopeMapper.selectById(req.taskScopeId());
     entity.setTaskScopeId(defaultScope == null ? null : defaultScope.getId());
@@ -2824,17 +2826,4 @@ public class CertificationPreparationApplicationService {
     return StringUtils.hasText(value) ? LocalDate.parse(value) : null;
   }
 
-  private String maskPhone(String phone) {
-    if (!StringUtils.hasText(phone) || phone.length() != 11) {
-      return phone;
-    }
-    return phone.substring(0, 3) + "****" + phone.substring(7);
-  }
-
-  private String maskIdCard(String idCardNo) {
-    if (!StringUtils.hasText(idCardNo) || idCardNo.length() < 10) {
-      return idCardNo;
-    }
-    return idCardNo.substring(0, 6) + "********" + idCardNo.substring(idCardNo.length() - 4);
-  }
 }

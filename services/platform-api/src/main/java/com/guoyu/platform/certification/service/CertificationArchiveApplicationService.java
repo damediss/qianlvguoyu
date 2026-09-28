@@ -1,5 +1,7 @@
 package com.guoyu.platform.certification.service;
 
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -610,7 +612,7 @@ public class CertificationArchiveApplicationService {
     entity.setCandidateNo(row.candidateNo());
     entity.setName(row.name());
     entity.setIdCard(row.idCard());
-    entity.setMaskedIdCard(maskIdCard(row.idCard()));
+    entity.setMaskedIdCard(SensitiveMaskUtils.maskIdCard(row.idCard()));
     entity.setFolderName(row.folderName());
     if (entity.getId() == null) {
       candidateMapper.insert(entity);
@@ -693,7 +695,7 @@ public class CertificationArchiveApplicationService {
 
   private CertificationArchiveImportErrorVO toErrorVO(CertificationArchiveImportErrorEntity e) {
     return new CertificationArchiveImportErrorVO(e.getId(), e.getBatchId(), e.getCandidateNo(), e.getName(), e.getIdCard(),
-        maskIdCard(e.getIdCard()), e.getErrorType(), e.getErrorMessage(), e.getCreatedAt());
+        SensitiveMaskUtils.maskIdCard(e.getIdCard()), e.getErrorType(), e.getErrorMessage(), e.getCreatedAt());
   }
 
   private CertificationArchiveCandidateVO toCandidateVO(CertificationArchiveCandidateEntity e, boolean withMaterials) {
@@ -1139,12 +1141,6 @@ public class CertificationArchiveApplicationService {
     return CELL_FORMATTER.formatCellValue(cell).trim();
   }
 
-  private String maskIdCard(String value) {
-    if (!StringUtils.hasText(value) || value.length() < 10) {
-      return value;
-    }
-    return value.substring(0, 6) + "********" + value.substring(value.length() - 4);
-  }
 
   private boolean isAllowedFile(String name) {
     String lower = name.toLowerCase(Locale.ROOT);

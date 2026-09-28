@@ -1,5 +1,7 @@
 package com.guoyu.platform.competition.service;
 
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -1401,8 +1403,8 @@ public class CompetitionRefereeManagementService {
     result.setEventWorkTypeLevelCode(row.getEventWorkTypeLevelCode());
     result.setEventWorkTypeLevelName(row.getEventWorkTypeLevelName());
     result.setName(row.getName());
-    result.setIdCardNo(includeSensitive ? row.getIdCardNo() : maskIdCard(row.getIdCardNo()));
-    result.setMobile(includeSensitive ? row.getMobile() : maskMobile(row.getMobile()));
+    result.setIdCardNo(includeSensitive ? row.getIdCardNo() : SensitiveMaskUtils.maskIdCard(row.getIdCardNo()));
+    result.setMobile(includeSensitive ? row.getMobile() : SensitiveMaskUtils.maskPhone(row.getMobile()));
     result.setStatus(row.getStatus());
     result.setCreatedAt(row.getCreatedAt());
     result.setQualifications(qualifications == null ? List.of() : qualifications);
@@ -1686,15 +1688,6 @@ public class CompetitionRefereeManagementService {
     return StringUtils.hasText(value) ? value.trim() : null;
   }
 
-  private String maskIdCard(String value) {
-    if (!StringUtils.hasText(value) || value.length() < 8) return value;
-    return value.substring(0, 3) + "*".repeat(value.length() - 7) + value.substring(value.length() - 4);
-  }
-
-  private String maskMobile(String value) {
-    if (!StringUtils.hasText(value) || value.length() < 8) return value;
-    return value.substring(0, 3) + "****" + value.substring(value.length() - 4);
-  }
 
   private <T> List<T> safe(List<T> values) {
     return values == null ? List.of() : values;

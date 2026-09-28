@@ -1,5 +1,7 @@
 package com.guoyu.platform.certification.info.application;
 
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.certification.info.dto.AssessorInfoSaveReq;
@@ -731,7 +733,7 @@ public class CertificationInfoApplicationService {
     entity.setLevelScope(req.levelScope());
     entity.setValidUntil(req.validUntil());
     entity.setPhone(req.phone());
-    entity.setMaskedPhone(maskPhone(req.phone()));
+    entity.setMaskedPhone(SensitiveMaskUtils.maskPhone(req.phone()));
     entity.setMaterialsDescription(req.materialsDescription());
     entity.setRemark(req.remark());
   }
@@ -878,7 +880,7 @@ public class CertificationInfoApplicationService {
   private void applyExamStaff(CertificationInfoExamStaffEntity entity, ExamStaffInfoSaveReq req) {
     entity.setStaffName(req.staffName().trim());
     entity.setPhone(req.phone().trim());
-    entity.setMaskedPhone(maskPhone(req.phone()));
+    entity.setMaskedPhone(SensitiveMaskUtils.maskPhone(req.phone()));
   }
 
   private void ensureExamStaffContact(CertificationInfoExamStaffEntity entity) {
@@ -898,7 +900,7 @@ public class CertificationInfoApplicationService {
     entity.setFilingNo(req.filingNo());
     entity.setContactName(req.contactName());
     entity.setContactPhone(req.contactPhone());
-    entity.setMaskedContactPhone(maskPhone(req.contactPhone()));
+    entity.setMaskedContactPhone(SensitiveMaskUtils.maskPhone(req.contactPhone()));
     entity.setEquipmentCondition(req.equipmentCondition());
     entity.setMaterialsDescription(req.materialsDescription());
     entity.setStatus(StringUtils.hasText(req.status()) ? req.status() : "idle");
@@ -1096,12 +1098,6 @@ public class CertificationInfoApplicationService {
     }
   }
 
-  private String maskPhone(String phone) {
-    if (!StringUtils.hasText(phone) || phone.length() < 7) {
-      return phone;
-    }
-    return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4);
-  }
 
   private AssessorInfoVO toAssessorVO(CertificationInfoAssessorEntity entity) {
     String accountUsername = entity.getAccountUsername();
@@ -1117,7 +1113,7 @@ public class CertificationInfoApplicationService {
         entity.getWorkTypeScope(),
         parseWorkTypeScopes(entity.getWorkTypeJson(), entity.getWorkTypeScope()),
         entity.getLevelScope(), entity.getValidUntil(),
-        StringUtils.hasText(entity.getMaskedPhone()) ? entity.getMaskedPhone() : maskPhone(entity.getPhone()),
+        StringUtils.hasText(entity.getMaskedPhone()) ? entity.getMaskedPhone() : SensitiveMaskUtils.maskPhone(entity.getPhone()),
         entity.getAuditStatus(), entity.getWorkStatus(), entity.getMaterialsDescription(), entity.getRemark());
   }
 
@@ -1153,7 +1149,7 @@ public class CertificationInfoApplicationService {
   private ExamStaffInfoVO toExamStaffVO(CertificationInfoExamStaffEntity entity, String assignedTaskNos) {
     String editablePhone = List.of(DRAFT, REJECTED).contains(entity.getAuditStatus()) ? entity.getPhone() : null;
     return new ExamStaffInfoVO(entity.getId(), entity.getUserId(), entity.getAccountUsername(), entity.getStaffName(), editablePhone,
-        StringUtils.hasText(entity.getMaskedPhone()) ? entity.getMaskedPhone() : maskPhone(entity.getPhone()),
+        StringUtils.hasText(entity.getMaskedPhone()) ? entity.getMaskedPhone() : SensitiveMaskUtils.maskPhone(entity.getPhone()),
         entity.getAuditStatus(), resolveEffectiveWorkStatus(entity, assignedTaskNos), assignedTaskNos);
   }
 
@@ -1216,7 +1212,7 @@ public class CertificationInfoApplicationService {
   private ExamSiteInfoVO toSiteVO(CertificationInfoExamSiteEntity entity) {
     return new ExamSiteInfoVO(entity.getId(), entity.getSiteName(), entity.getSiteType(), entity.getAddress(),
         entity.getSeatCount(), entity.getFilingNo(), entity.getContactName(),
-        StringUtils.hasText(entity.getMaskedContactPhone()) ? entity.getMaskedContactPhone() : maskPhone(entity.getContactPhone()),
+        StringUtils.hasText(entity.getMaskedContactPhone()) ? entity.getMaskedContactPhone() : SensitiveMaskUtils.maskPhone(entity.getContactPhone()),
         entity.getEquipmentCondition(), entity.getMaterialsDescription(), entity.getAuditStatus(), entity.getStatus(), entity.getRemark());
   }
 

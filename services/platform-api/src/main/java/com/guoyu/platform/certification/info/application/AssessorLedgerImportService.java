@@ -1,5 +1,7 @@
 package com.guoyu.platform.certification.info.application;
 
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.certification.info.entity.AssessorLedgerImportEntity;
 import com.guoyu.platform.certification.info.entity.CertificationInfoAssessorEntity;
@@ -232,7 +234,7 @@ public class AssessorLedgerImportService {
       assessor.setValidUntil(StringUtils.hasText(row.validUntil())
           ? parseValidUntil(row.validUntil()) : MISSING_VALID_UNTIL);
       assessor.setPhone(row.phone());
-      assessor.setMaskedPhone(maskPhone(row.phone()));
+      assessor.setMaskedPhone(SensitiveMaskUtils.maskPhone(row.phone()));
       assessor.setMaterialsDescription("业务部门考评员台账批量导入");
       assessor.setRemark(row.remark());
       assessor.setAuditStatus("approved");
@@ -510,10 +512,6 @@ public class AssessorLedgerImportService {
     }
   }
 
-  private static String maskPhone(String phone) {
-    if (!StringUtils.hasText(phone) || phone.length() < 7) return phone;
-    return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4);
-  }
 
   private static void addFailure(List<String> failures, int rowNo, String message) {
     if (failures.size() < 20) failures.add("第" + rowNo + "行：" + message);

@@ -1,5 +1,7 @@
 package com.guoyu.platform.trainingdepartment.service;
 
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.app.exam.mapper.AppExamUserAnswerLogMapper;
 import com.guoyu.platform.common.exception.BusinessException;
@@ -323,8 +325,8 @@ public class ClassPracticeAnalyticsApplicationService {
       Map<String, Object> row = new LinkedHashMap<>();
       row.put("peopleId", s.getId());
       row.put("realname", s.getRealname());
-      row.put("phone", maskSensitive ? maskPhone(s.getPhone()) : s.getPhone());
-      row.put("idCard", maskSensitive ? maskIdCard(s.getIdCard()) : s.getIdCard());
+      row.put("phone", maskSensitive ? SensitiveMaskUtils.maskPhone(s.getPhone()) : s.getPhone());
+      row.put("idCard", maskSensitive ? SensitiveMaskUtils.maskIdCard(s.getIdCard()) : s.getIdCard());
       row.put("platformUserId", s.getPlatformUserId());
       row.put("hasAccount", s.getPlatformUserId() != null && s.getPlatformUserId() > 0);
       Map<String, Object> st = s.getPlatformUserId() == null ? null : userStats.get(s.getPlatformUserId());
@@ -573,13 +575,4 @@ public class ClassPracticeAnalyticsApplicationService {
     catch (Exception e) { return null; }
   }
 
-  private static String maskPhone(String phone) {
-    if (!StringUtils.hasText(phone) || phone.length() < 7) return phone;
-    return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4);
-  }
-
-  private static String maskIdCard(String id) {
-    if (!StringUtils.hasText(id) || id.length() < 8) return id;
-    return id.substring(0, 4) + "**********" + id.substring(id.length() - 4);
-  }
 }

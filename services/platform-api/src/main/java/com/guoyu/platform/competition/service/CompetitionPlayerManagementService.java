@@ -1,5 +1,7 @@
 package com.guoyu.platform.competition.service;
 
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.common.api.PageResponse;
@@ -727,8 +729,8 @@ public class CompetitionPlayerManagementService {
     vo.setEventWorkTypeLevelCode(row.getEventWorkTypeLevelCode());
     vo.setEventWorkTypeLevelName(row.getEventWorkTypeLevelName());
     vo.setName(row.getName());
-    vo.setIdCardNo(includeSensitiveData ? row.getIdCardNo() : maskIdCard(row.getIdCardNo()));
-    vo.setMobile(includeSensitiveData ? row.getMobile() : maskMobile(row.getMobile()));
+    vo.setIdCardNo(includeSensitiveData ? row.getIdCardNo() : SensitiveMaskUtils.maskIdCard(row.getIdCardNo()));
+    vo.setMobile(includeSensitiveData ? row.getMobile() : SensitiveMaskUtils.maskPhone(row.getMobile()));
     vo.setLevel(row.getLevel());
     vo.setStatus(row.getStatus());
     vo.setPlayerStatus(row.getPlayerStatus());
@@ -772,15 +774,6 @@ public class CompetitionPlayerManagementService {
     return currentUser().getTenantId();
   }
 
-  private String maskIdCard(String idCardNo) {
-    if (!StringUtils.hasText(idCardNo)) return "-";
-    return idCardNo.length() <= 8 ? "********" : idCardNo.substring(0, 3) + "********" + idCardNo.substring(idCardNo.length() - 4);
-  }
-
-  private String maskMobile(String mobile) {
-    if (!StringUtils.hasText(mobile)) return "-";
-    return mobile.length() < 7 ? "****" : mobile.substring(0, 3) + "****" + mobile.substring(mobile.length() - 4);
-  }
 
   private PlatformUserPrincipal currentUser() {
     try {

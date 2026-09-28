@@ -1,5 +1,7 @@
 package com.guoyu.platform.certification.service;
 
+import com.guoyu.platform.common.util.SensitiveMaskUtils;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.guoyu.platform.certification.dto.CertificationDocumentReq;
@@ -597,7 +599,7 @@ public class CertificationProjectApplicationService {
       entity.setInputFrequency(req.inputFrequency());
       entity.setWorkloadPercent(req.workloadPercent());
       entity.setPhone(req.phone());
-      entity.setMaskedPhone(maskPhone(req.phone()));
+      entity.setMaskedPhone(SensitiveMaskUtils.maskPhone(req.phone()));
       entity.setCoreRole(isCoreRole(req.roleCode()));
       entity.setSortOrder(i + 1);
       entity.setRemark(req.remark());
@@ -969,12 +971,6 @@ public class CertificationProjectApplicationService {
     return value != null && value.compareTo(BigDecimal.ZERO) < 0;
   }
 
-  private String maskPhone(String phone) {
-    if (!StringUtils.hasText(phone) || phone.length() != 11) {
-      return phone;
-    }
-    return phone.substring(0, 3) + "****" + phone.substring(7);
-  }
 
   private boolean isCoreRole(String roleCode) {
     if (!StringUtils.hasText(roleCode)) {

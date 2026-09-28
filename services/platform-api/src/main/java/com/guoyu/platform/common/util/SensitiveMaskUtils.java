@@ -3,9 +3,15 @@ package com.guoyu.platform.common.util;
 /**
  * 敏感字段脱敏工具。
  *
- * <p>此前项目里 {@code maskIdCard} 有 5 份私有复制（certification / chazheng / competition×2 /
- * training 各自的 service 里），口径不一且容易漏用 —— 2026-09-22 安全审查发现 4 处身份证、
- * 2 处手机号+短信验证码因此明文进了日志。统一收敛到本类。
+ * <p>此前项目里 {@code maskIdCard} / {@code maskPhone} / {@code maskMobile} 有 10 份私有复制
+ * （certification×5 / chazheng / competition×3 / training 各自的 service 里），口径互相不一致
+ * —— 同一个 18 位身份证能渲染出 5 种以上结果。2026-09-22 安全审查先发现 4 处身份证、2 处手机号
+ * +短信验证码明文进日志；2026-09-29 复查又发现其中 5 处在"长度不符合预期"时直接 {@code return 原值}，
+ * 导致固话 / 带区号 / 国际号码<b>明文落进名为 masked_phone / masked_id_card 的列</b>。
+ * 现已全部收敛到本类，项目内不再有任何私有脱敏实现。
+ *
+ * <p><b>契约（不可破坏）</b>：本类任何方法在任何输入下都<b>不返回原值</b>。长度不足、null、空白
+ * 一律整体打码。新增脱敏需求请在这里加方法，不要在业务 Service 里再写私有复制。
  *
  * <p>规则：日志、审计、异常信息里出现个人敏感信息时一律走这里；业务展示需要完整值时才用原值。
  */
@@ -30,6 +36,10 @@ public final class SensitiveMaskUtils {
     int keepTail = 4;
     int keepHead = value.length() >= 18 ? 6 : 4;
     int masked = value.length() - keepHead - keepTail;
+    if (masked <= 0) {
+      // 长度恰好等于 keepHead + keepTail（如 8 位）时会退化成原样返回，必须整体打码
+      return "*".repeat(value.length());
+    }
     return value.substring(0, keepHead) + "*".repeat(masked) + value.substring(value.length() - keepTail);
   }
 
