@@ -108,9 +108,11 @@ public class ExamExamDetailController {
   @PreAuthorize("hasAuthority('exam:question:view')")
   @AuditLog(module = "exam", action = "question:export", targetType = "exam_exam_detail")
   public ResponseEntity<InputStreamResource> exportByCourse(
-      @RequestParam Integer courseId) throws IOException {
-    log.info("GET /exam/exam-details/export courseId={}", courseId);
-    ExportResultDTO result = service.exportByCourse(courseId);
+      @RequestParam Integer courseId,
+      @RequestParam(required = false) List<Integer> ids) throws IOException {
+    log.info("GET /exam/exam-details/export courseId={}, selected={}", courseId,
+        ids == null ? 0 : ids.size());
+    ExportResultDTO result = service.exportByCourse(courseId, ids);
     InputStreamResource resource = new InputStreamResource(new ByteArrayInputStream(result.data()));
     // 使用 RFC 5987 filename*，避免 Spring ContentDisposition 生成 =?UTF-8?Q?...?=
     // 导致前端无法正确解析中文文件名

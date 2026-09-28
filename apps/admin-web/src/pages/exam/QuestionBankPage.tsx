@@ -375,6 +375,8 @@ export function QuestionBankPage() {
   const handleSelect = useCallback(
     (keys: React.Key[], info: any) => {
       setSelectedKeys(keys);
+      // 切换工种/科目/知识点时清空勾选，避免带着旧科目的勾选导出（会查出 0 条报错）
+      setSelectedRowKeys([]);
       if (keys.length === 0) {
         setSelectedWorkTypeId(undefined);
         setSelectedCourseId(undefined);
@@ -523,7 +525,11 @@ export function QuestionBankPage() {
     }
     setExportLoading(true);
     try {
-      const resp = await exportExamDetails(selectedCourseId);
+      const selectedIds = selectedRowKeys.map(Number);
+      const resp = await exportExamDetails(
+        selectedCourseId,
+        selectedIds.length > 0 ? selectedIds : undefined,
+      );
       const blob = new Blob([resp.data], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
@@ -536,7 +542,8 @@ export function QuestionBankPage() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      message.success('导出成功');
+      const exportedCount = selectedRowKeys.length;
+      message.success(exportedCount > 0 ? `已导出选中的 ${exportedCount} 道试题` : '导出成功');
     } catch (e: any) {
       message.error(e?.message || '导出失败');
     } finally {
@@ -969,7 +976,7 @@ export function QuestionBankPage() {
               loading={exportLoading}
               onClick={handleExport}
             >
-              导出试题
+              导出试题{selectedRowKeys.length > 0 ? `（已选 ${selectedRowKeys.length} 题）` : ''}
             </Button>
           )}
         </Space>

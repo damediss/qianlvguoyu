@@ -504,7 +504,7 @@ public class ExamExamDetailApplicationService {
 
   // ── Export to Excel (命题模板) ──
   @Transactional(readOnly = true)
-  public ExportResultDTO exportByCourse(Integer courseId) {
+  public ExportResultDTO exportByCourse(Integer courseId, List<Integer> ids) {
     Integer tenantId = SecurityContext.currentUser().getTenantId().intValue();
 
     List<Integer> knowledgeIds = knowledgeService.getNodeIdsByCourse(courseId);
@@ -512,12 +512,16 @@ public class ExamExamDetailApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "该科目下无知识点，无法导出");
     }
 
-    List<ExamExamDetailEntity> records = mapper.selectList(
-        new LambdaQueryWrapper<ExamExamDetailEntity>()
-            .eq(ExamExamDetailEntity::getTenantId, tenantId)
-            .in(ExamExamDetailEntity::getKnowledgeId, knowledgeIds)
-            .orderByDesc(ExamExamDetailEntity::getSortNumber)
-            .orderByDesc(ExamExamDetailEntity::getId));
+    LambdaQueryWrapper<ExamExamDetailEntity> wrapper = new LambdaQueryWrapper<ExamExamDetailEntity>()
+        .eq(ExamExamDetailEntity::getTenantId, tenantId)
+        .in(ExamExamDetailEntity::getKnowledgeId, knowledgeIds)
+        .orderByDesc(ExamExamDetailEntity::getSortNumber)
+        .orderByDesc(ExamExamDetailEntity::getId);
+    // 勾选导出：仅导出勾选的试题（勾选可跨页）；未勾选/空数组保持全量导出
+    if (ids != null && !ids.isEmpty()) {
+      wrapper.in(ExamExamDetailEntity::getId, ids);
+    }
+    List<ExamExamDetailEntity> records = mapper.selectList(wrapper);
 
     if (records.isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "该科目下无试题数据");

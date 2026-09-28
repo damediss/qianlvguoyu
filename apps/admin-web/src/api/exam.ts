@@ -323,10 +323,13 @@ export function importExamDetails(formData: FormData) {
   return unwrap<number>(apiClient.post('/exam/exam-details/import', formData));
 }
 
-/** 导出试题:返回 blob 流 */
-export function exportExamDetails(courseId: number) {
+/** 导出试题:返回 blob 流;传入 ids 时仅导出勾选的试题(勾选可跨页),否则导出整个科目 */
+export function exportExamDetails(courseId: number, ids?: number[]) {
   return apiClient.get('/exam/exam-details/export', {
-    params: { courseId },
+    params: {
+      courseId,
+      ...(ids && ids.length > 0 ? { ids } : {}),
+    },
     responseType: 'blob',
   });
 }
