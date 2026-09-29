@@ -34,7 +34,7 @@ interface StagePlanningCanvasProps {
   onSelectionChange: (selection: OnSelectionChangeParams) => void;
   onAddStage: (stageType: StageType, position: { x: number; y: number }) => void;
   onStageContextMenu: (nodeId: string) => void;
-  onStageContentTypeClick: (nodeId: string, contentType: CompetitionStageContentType) => void;
+  onStageContentTypeClick: (nodeId: string, contentType: CompetitionStageContentType, practicalTab?: 'paper' | 'runtime') => void;
   onStageCandidateClick?: (nodeId: string, contentType: 'theory' | 'practical') => void;
   onStageRefereeClick?: (nodeId: string) => void;
   candidateEnabled?: boolean;
@@ -134,10 +134,10 @@ function StagePlanningCanvasInner({ nodes, edges, editable, stagePlanConfirmed, 
           candidateEnabled={candidateEnabled}
           refereeEnabled={refereeEnabled}
           onClose={closeContextMenu}
-          onContentTypeClick={(contentType) => {
+          onContentTypeClick={(contentType, practicalTab) => {
             const nodeId = contextMenu.nodeId;
             closeContextMenu();
-            onStageContentTypeClick(nodeId, contentType);
+            onStageContentTypeClick(nodeId, contentType, practicalTab);
           }}
           onCandidateClick={(contentType) => {
             const nodeId = contextMenu.nodeId;

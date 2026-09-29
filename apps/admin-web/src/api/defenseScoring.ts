@@ -84,6 +84,10 @@ export function completeDefenseTask(taskId: string) {
   return unwrap<DefenseCompleteResult>(apiClient.post(`${adminBase}/tasks/${taskId}/complete`));
 }
 
+export function markDefenseCandidateAbsent(taskId: string, candidateId: string) {
+  return unwrap<void>(apiClient.post(`${adminBase}/tasks/${taskId}/candidates/${candidateId}/absent`));
+}
+
 export function exportDefenseSummary(taskId: string) {
   return apiClient.get(`${adminBase}/tasks/${taskId}/summary/export`, {
     responseType: 'blob',

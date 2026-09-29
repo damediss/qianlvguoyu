@@ -19,6 +19,10 @@ public class CompetitionPracticalAssignmentEntity extends BaseEntity {
   private LocalDateTime startConfirmedAt;
   private Long startConfirmedBy;
   private LocalDateTime startedAt;
+  private LocalDateTime standardDeadlineAt;
+  private LocalDateTime deadlineAt;
+  private LocalDateTime examEndedAt;
+  private Long pausedDurationSeconds;
   private Long startedBy;
   private LocalDateTime endedAt;
   public Long getPlanId() { return planId; }
@@ -47,6 +51,14 @@ public class CompetitionPracticalAssignmentEntity extends BaseEntity {
   public void setStartConfirmedBy(Long value) { startConfirmedBy = value; }
   public LocalDateTime getStartedAt() { return startedAt; }
   public void setStartedAt(LocalDateTime value) { startedAt = value; }
+  public LocalDateTime getStandardDeadlineAt() { return standardDeadlineAt; }
+  public void setStandardDeadlineAt(LocalDateTime value) { standardDeadlineAt = value; }
+  public LocalDateTime getDeadlineAt() { return deadlineAt; }
+  public void setDeadlineAt(LocalDateTime value) { deadlineAt = value; }
+  public LocalDateTime getExamEndedAt() { return examEndedAt; }
+  public void setExamEndedAt(LocalDateTime value) { examEndedAt = value; }
+  public Long getPausedDurationSeconds() { return pausedDurationSeconds; }
+  public void setPausedDurationSeconds(Long value) { pausedDurationSeconds = value; }
   public Long getStartedBy() { return startedBy; }
   public void setStartedBy(Long value) { startedBy = value; }
   public LocalDateTime getEndedAt() { return endedAt; }

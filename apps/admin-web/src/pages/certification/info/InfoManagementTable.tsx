@@ -1,6 +1,6 @@
 import { DeleteOutlined, EditOutlined, ExportOutlined, EyeOutlined, PlusOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Typography, Upload, message } from 'antd';
+import { Alert, Button, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Typography, Upload, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { FormInstance, UploadFile } from 'antd';
 import dayjs from 'dayjs';
@@ -12,7 +12,7 @@ import { LevelScopeRangeSelect } from '../../../components/LevelScopeRangeSelect
 import { PermissionGate } from '../../../directives/permission';
 import type { PageResponse } from '../../../types/api';
 import type { CertificationInfoQuery, InfoReviewPayload } from '../../../types/certificationInfo';
-import { flattenWorkTypeOptions } from '../../../utils/workTypeOptions';
+import { flattenAssessorWorkTypeOptions } from '../../../utils/workTypeOptions';
 
 type FieldType = 'text' | 'password' | 'textarea' | 'date' | 'number' | 'select' | 'select-multiple' | 'work-type-multiple' | 'levelRange' | 'imageUpload';
 
@@ -31,7 +31,7 @@ export interface InfoField<T> {
   hideInEdit?: boolean;
 }
 
-interface InfoManagementTableProps<T extends { id: string; auditStatus: string }, P extends object> {
+interface InfoManagementTableProps<T extends { id: string; auditStatus: string; workTypeMappingWarning?: string }, P extends object> {
   title: string;
   queryKey: string;
   permissionPrefix: string;
@@ -90,7 +90,7 @@ function isRecordDeletable(record: DeletableRecord) {
     || record.equipmentStatus === 'disabled';
 }
 
-export function InfoManagementTable<T extends { id: string; auditStatus: string } & DeletableRecord, P extends object>({
+export function InfoManagementTable<T extends { id: string; auditStatus: string; workTypeMappingWarning?: string } & DeletableRecord, P extends object>({
   title,
   queryKey,
   permissionPrefix,
@@ -136,7 +136,7 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
     staleTime: 5 * 60 * 1000,
   });
   const workTypeOptions = useMemo(
-    () => flattenWorkTypeOptions(workTypeQuery.data ?? []),
+    () => flattenAssessorWorkTypeOptions(workTypeQuery.data ?? []),
     [workTypeQuery.data],
   );
 
@@ -144,7 +144,7 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
 
   const saveMutation = useMutation({
     mutationFn: async (values: P) => {
-      const normalized = normalizePayload(values, fields) as P;
+      const normalized = normalizePayload(values, fields, workTypeOptions) as P;
       return current ? updateApi(current.id, normalized) : createApi(normalized);
     },
     onSuccess: () => {
@@ -346,6 +346,15 @@ export function InfoManagementTable<T extends { id: string; auditStatus: string 
         width={760}
       >
         <Form form={form} layout="vertical" disabled={modalMode === 'view'} onFinish={(values) => saveMutation.mutate(values as P)}>
+          {current?.workTypeMappingWarning ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="历史工种授权需要修正"
+              description={current.workTypeMappingWarning}
+            />
+          ) : null}
           {fields.filter((field) =>
             !(modalMode === 'view' && field.hideInView)
             && !(modalMode === 'edit' && field.hideInEdit)
@@ -571,12 +580,23 @@ function ImageUploadField<T>({ field, form, value, onChange, readOnly }: {
   );
 }
 
-function normalizePayload<T>(values: T, fields: InfoField<T>[]) {
+function normalizePayload<T>(values: T, fields: InfoField<T>[], workTypeOptions: { label: string; value: string }[]) {
   const next = { ...(values as Record<string, unknown>) };
   for (const field of fields) {
     if (field.type === 'date' && next[field.name] && dayjs.isDayjs(next[field.name])) {
       next[field.name] = (next[field.name] as dayjs.Dayjs).format('YYYY-MM-DD');
     }
+  }
+  if (fields.some((field) => field.type === 'work-type-multiple')) {
+    const selectedIds = Array.isArray(next.workTypeIds)
+      ? next.workTypeIds.map(String).filter((id) => workTypeOptions.some((option) => option.value === id))
+      : [];
+    const selectedPaths = selectedIds
+      .map((id) => workTypeOptions.find((option) => option.value === id)?.label)
+      .filter((path): path is string => Boolean(path));
+    next.workTypeIds = selectedIds;
+    next.workTypeScopes = selectedPaths;
+    next.workTypeScope = selectedPaths.join('、');
   }
   return next;
 }

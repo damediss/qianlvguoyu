@@ -1,7 +1,6 @@
 package com.guoyu.platform.certification.info.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
@@ -16,11 +15,12 @@ public record AssessorInfoSaveReq(
     Long certificatePhotoFileId,
     @Size(max = 255) String certificatePhotoFileName,
     @Deprecated String workTypeScope,
-    @NotEmpty List<@NotBlank String> workTypeScopes,
+    List<@NotBlank String> workTypeScopes,
     String levelScope,
     @NotNull LocalDate validUntil,
     String phone,
     String materialsDescription,
-    String remark
+    String remark,
+    List<Long> workTypeIds
 ) {
 }

@@ -141,6 +141,17 @@ public class CertificationDefenseScoringController {
     return ApiResponse.ok(managementService.progress(taskId));
   }
 
+  @PostMapping("/defense-scoring/tasks/{taskId}/candidates/{candidateId}/absent")
+  @PreAuthorize("hasAnyAuthority('certification.defense.complete', 'certification.preparation.task.view')")
+  @AuditLog(module = "certification", action = "defense-scoring:mark-absent", targetType = "certification_defense_absence")
+  public ApiResponse<Void> markCandidateAbsent(
+      @PathVariable Long taskId,
+      @PathVariable Long candidateId
+  ) {
+    managementService.markCandidateAbsent(taskId, candidateId);
+    return ApiResponse.ok();
+  }
+
   @PostMapping("/defense-scoring/tasks/{taskId}/complete")
   @PreAuthorize("hasAnyAuthority('certification.defense.complete', 'certification.preparation.task.view')")
   @AuditLog(module = "certification", action = "defense-scoring:complete", targetType = "certification_defense_config")

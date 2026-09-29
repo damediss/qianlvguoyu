@@ -19,7 +19,14 @@ public class CompetitionPracticalContentProvider implements CompetitionStageCont
 
   @Override
   public List<String> preflight(List<CompetitionStagePlanResourceEntity> resources) {
-    return resources == null || resources.isEmpty() ? List.of("PRACTICAL_RESOURCE_MISSING") : List.of();
+    if (resources == null || resources.isEmpty()) return List.of("PRACTICAL_RESOURCE_MISSING");
+    boolean configSnapshotReady = resources.stream().anyMatch(resource ->
+        "practical_execution_config".equals(resource.getResourceType())
+            && resource.getResourceId() != null
+            && resource.getResourceVersion() != null
+            && resource.getResourcePayload() != null
+            && !resource.getResourcePayload().isBlank());
+    return configSnapshotReady ? List.of() : List.of("PRACTICAL_CONFIG_SNAPSHOT_MISSING");
   }
 
   @Override

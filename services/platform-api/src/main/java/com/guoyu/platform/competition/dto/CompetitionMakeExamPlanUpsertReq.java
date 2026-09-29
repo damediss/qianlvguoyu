@@ -25,8 +25,31 @@ public record CompetitionMakeExamPlanUpsertReq(
     // obsolete theory/practical payload cannot block or affect automatic allocation.
     List<CompetitionMakeExamPlanTopicRuleReq> topicRules,
     Integer paperCount,
-    Long randomSeed
+    Long randomSeed,
+    List<Long> practicalQuestionIds
 ) {
+  /** Source-compatible constructor for clients that predate explicit project selection. */
+  public CompetitionMakeExamPlanUpsertReq(
+      Long eventWorkTypeId,
+      Long eventWorkTypeLevelId,
+      String contentType,
+      String title,
+      String examType,
+      Integer durationMinutes,
+      BigDecimal totalScore,
+      BigDecimal passScore,
+      String comments,
+      List<@Valid CompetitionMakeExamPlanDetailReq> details,
+      Long practicalQuestionId,
+      Long blueprintId,
+      List<CompetitionMakeExamPlanTopicRuleReq> topicRules,
+      Integer paperCount,
+      Long randomSeed) {
+    this(eventWorkTypeId, eventWorkTypeLevelId, contentType, title, examType, durationMinutes,
+        totalScore, passScore, comments, details, practicalQuestionId, blueprintId, topicRules,
+        paperCount, randomSeed, null);
+  }
+
   /**
    * Source-compatible constructor for theory plans and existing callers. The
    * practical question selector is optional for legacy theory requests.
@@ -43,7 +66,7 @@ public record CompetitionMakeExamPlanUpsertReq(
       String comments,
       List<@Valid CompetitionMakeExamPlanDetailReq> details) {
     this(eventWorkTypeId, eventWorkTypeLevelId, contentType, title, examType,
-        durationMinutes, totalScore, passScore, comments, details, null, null, null, null, null);
+        durationMinutes, totalScore, passScore, comments, details, null, null, null, null, null, null);
   }
 
   public CompetitionMakeExamPlanUpsertReq(
@@ -59,7 +82,7 @@ public record CompetitionMakeExamPlanUpsertReq(
       List<@Valid CompetitionMakeExamPlanDetailReq> details,
       Long practicalQuestionId) {
     this(eventWorkTypeId, eventWorkTypeLevelId, contentType, title, examType, durationMinutes,
-        totalScore, passScore, comments, details, practicalQuestionId, null, null, null, null);
+        totalScore, passScore, comments, details, practicalQuestionId, null, null, null, null, null);
   }
 
   /** Source-compatible constructor for callers that already provide blueprint/topic rules. */
@@ -79,6 +102,6 @@ public record CompetitionMakeExamPlanUpsertReq(
       List<CompetitionMakeExamPlanTopicRuleReq> topicRules) {
     this(eventWorkTypeId, eventWorkTypeLevelId, contentType, title, examType, durationMinutes,
         totalScore, passScore, comments, details, practicalQuestionId, blueprintId, topicRules,
-        null, null);
+        null, null, null);
   }
 }

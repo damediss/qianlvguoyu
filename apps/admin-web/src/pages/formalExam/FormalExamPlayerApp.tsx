@@ -86,11 +86,9 @@ function isNetworkFailure(error: unknown) {
 }
 
 function viewOf(context?: FormalExamPlayerContext | null) {
-  const sessionStatus = context?.examSession.status;
   const status = context?.candidateExam.status;
   if (context?.runtimeIssue) return 'anomaly';
   if (status === 'absent') return 'absent';
-  if (status === 'waiting_enter' && sessionStatus && sessionStatus !== 'ready') return 'blocked';
   if (status === 'waiting_enter') return 'confirm';
   if (status === 'ready') return 'waiting';
   if (status === 'running') return 'running';
@@ -429,19 +427,6 @@ export function FormalExamPlayerApp() {
               确认进入比赛
             </Button>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (view === 'blocked') {
-    return (
-      <div className="formal-exam-player">
-        <div className="formal-exam-player__card">
-          <h1 className="formal-exam-player__title">{examTypeLabel(context.examSession.examType)}</h1>
-          <p className="formal-exam-player__name">{candidate.candidateName || '-'}</p>
-          <p className="formal-exam-player__status">本场比赛已经开始。</p>
-          <p className="formal-exam-player__hint">您尚未完成赛前候考进入，请联系现场工作人员处理。</p>
         </div>
       </div>
     );

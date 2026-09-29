@@ -50,7 +50,7 @@
 ### 数据库铁律
 
 1. MySQL 8.4，主键雪花 ID（`BIGINT`）；业务主表必含 BaseEntity 六列（`id / tenant_id / deleted / created_by / updated_by / created_at / updated_at`），与实体 getter 一一对应
-2. Flyway 迁移放 `services/platform-api/src/main/resources/db/migration/`，命名 `V{YYYYMMDD}_{序号}__{描述}.sql`；**不改已应用迁移，新增必须新版本号——测试库与生产库已分叉，取号先同时查两库 `MAX(version)` 取最大并留间隔**；种子迁移必须幂等；空库必须能跑通全部迁移
+2. Flyway 共用迁移放 `services/platform-api/src/main/resources/db/migration/`；仅一侧数据库已应用的分叉迁移分别放 `db/migration-test/` 或 `db/migration-prod/`。默认与隔离压测 profile (`application.yml` / `application-loadtest.yml`) 使用测试历史；生产 profile (`application-prod.yml`) 使用生产历史。运行时 locations 不得同时包含同版本的不同脚本。**不改已应用迁移，新增共用迁移必须用高于测试库和生产库 MAX(version) 的新版本号并留间隔**；种子迁移必须幂等；空库必须能跑通全部迁移
 3. 菜单/权限/角色授权种子的 `tenant_id` 写 **10159**（千铝工投运行租户），不照抄历史文件里的 `tenant_id=1`；权限三步链：菜单 → 权限码 → `sys_role_permission` 授权，缺最后一步接口 403
 4. 业务主状态以 MySQL 为准，Redis 只用于缓存/会话/验证码/限流；`@Cacheable` 返回值用 `new ArrayList<>(list)`，禁用 immutable collection（Redis 反序列化会炸）
 5. 新迁移必须 `mvn compile` 后才会被 Flyway 看到（读 `target/classes`）；Druid wall 拦 `PREPARE` 与 `AS new` 别名——迁移走独立直连（`spring.flyway.url/user/password`，属性名是 `user` 不是 `username`），upsert 用旧式 `ON DUPLICATE KEY UPDATE c = VALUES(c)`

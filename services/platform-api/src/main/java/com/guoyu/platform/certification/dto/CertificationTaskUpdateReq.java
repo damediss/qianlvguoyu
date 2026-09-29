@@ -8,7 +8,7 @@ import java.util.List;
 
 public record CertificationTaskUpdateReq(
     @NotBlank @Size(max = 200) String taskName,
-    @NotBlank @Size(max = 80) String taskManagerName,
+    @Size(max = 80) String taskManagerName,
     @Size(max = 200) String companyName,
     @Size(max = 80) String certificationType,
     List<CertificationTaskScopeReq> scopes,

@@ -28,7 +28,7 @@ spring:
   datasource:
     type: com.alibaba.druid.pool.DruidDataSource
     # connectTimeout/socketTimeout/tcpKeepAlive：远程 MySQL 经公网/NAT 时降低 Communications link failure 概率
-    url: ${MYSQL_URL:jdbc:mysql://43.138.163.7:3308/gjjddb2026?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&connectTimeout=5000&socketTimeout=60000&tcpKeepAlive=true&zeroDateTimeBehavior=convertToNull}
+    url: ${MYSQL_URL:jdbc:mysql://43.138.163.7:3308/gjjddb2026?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&connectTimeout=5000&socketTimeout=60000&tcpKeepAlive=true&zeroDateTimeBehavior=convertToNull&rewriteBatchedStatements=true&useServerPrepStmts=false}
     username: ${MYSQL_USERNAME:gjjd}
     # 密码含 # 必须加引号，否则 YAML 会把 # 后整段当注释截断
     password: "${MYSQL_PASSWORD:w-#Y+=g7jdsJLjD8}"
@@ -87,7 +87,7 @@ spring:
         shutdown-timeout: 100ms
   flyway:
     enabled: true
-    locations: classpath:db/migration
+    locations: classpath:db/migration,classpath:db/migration-test
     baseline-on-migrate: true
     out-of-order: true
     validate-on-migrate: false
@@ -178,6 +178,8 @@ platform:
     # MCP 与 platform-api 必须配置相同的随机值（至少 32 字符），禁止提交真实密钥。
     actor-context-secret: ${BOT_ACTOR_CONTEXT_SECRET:}
   competition:
+    question-import:
+      batch-size: ${COMPETITION_QUESTION_IMPORT_BATCH_SIZE:200}
     player:
       sms:
         code-ttl-seconds: ${COMPETITION_PLAYER_SMS_CODE_TTL_SECONDS:300}

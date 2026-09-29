@@ -543,6 +543,7 @@ export interface PreparationAssessorGroup {
 export interface PreparationAssessorGroupWorktype {
   scopeId: string;
   workTypeName?: string;
+  workTypeId?: string;
   levelCode?: string;
   levelName?: string;
   sortOrder?: number;

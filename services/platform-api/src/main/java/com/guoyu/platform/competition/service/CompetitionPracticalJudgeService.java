@@ -85,6 +85,14 @@ public class CompetitionPracticalJudgeService {
   private final CompetitionRosterItemMapper rosterItemMapper;
   private final CompetitionPracticalAssessmentSheetService assessmentSheetService;
   private final CompetitionPracticalExecutionService executionService;
+  private CompetitionPracticalStagePlanSnapshotService planSnapshotService;
+
+  @Autowired(required = false)
+  public void setPlanSnapshotService(
+      CompetitionPracticalStagePlanSnapshotService planSnapshotService) {
+    this.planSnapshotService = planSnapshotService;
+  }
+
   private CompetitionPracticalRealtimePublisher realtimePublisher;
 
   @Autowired(required = false)
@@ -260,10 +268,31 @@ public class CompetitionPracticalJudgeService {
     }
     executionService.ensureInteractiveStage(tenantId(), userId(), owned.getSessionId());
     LocalDateTime now = LocalDateTime.now();
+    if (planSnapshotService == null) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "赛段实操运行快照服务不可用");
+    }
+    CompetitionPracticalStagePlanSnapshotService.RuntimeTimingSnapshot runtimeConfig =
+        planSnapshotService.runtimeTimingForPlan(tenantId(), owned.getPlanId());
+    if (runtimeConfig.durationSeconds() == null || runtimeConfig.durationSeconds() <= 0) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "赛段实操标准时长无效，无法启动考试");
+    }
+    LocalDateTime standardDeadlineAt = now.plusSeconds(runtimeConfig.durationSeconds());
+    LocalDateTime deadlineAt = null;
+    if ("AUTO_FINISH".equals(runtimeConfig.overtimeAction())) {
+      if (runtimeConfig.maxDurationSeconds() == null
+          || runtimeConfig.maxDurationSeconds() < runtimeConfig.durationSeconds()) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "赛段实操自动结束时限无效，无法启动考试");
+      }
+      deadlineAt = now.plusSeconds(runtimeConfig.maxDurationSeconds());
+    }
     Long currentUserId = userId();
     for (CompetitionPracticalAssignmentEntity assignment : assignments) {
       assignment.setStatus("in_progress");
       assignment.setStartedAt(now);
+      assignment.setStandardDeadlineAt(standardDeadlineAt);
+      assignment.setDeadlineAt(deadlineAt);
+      assignment.setExamEndedAt(null);
+      assignment.setPausedDurationSeconds(0L);
       assignment.setStartedBy(currentUserId);
       assignment.setUpdatedBy(currentUserId);
       if (assignmentMapper.updateById(assignment) != 1) {
@@ -374,7 +403,9 @@ public class CompetitionPracticalJudgeService {
         groupStatus, confirmedJudges, REQUIRED_JUDGES,
         assignment.getStartConfirmedAt() != null,
         questionProgress(assessmentVo, score, entries),
-        id(activeStageId));
+        id(activeStageId), assignment.getStartedAt(), assignment.getStandardDeadlineAt(),
+        assignment.getDeadlineAt(), assignment.getExamEndedAt(),
+        assignment.getPausedDurationSeconds() == null ? 0L : assignment.getPausedDurationSeconds());
   }
 
   private CompetitionPracticalJudgeTaskVO toVO(
@@ -515,6 +546,13 @@ public class CompetitionPracticalJudgeService {
   private void requireStarted(CompetitionPracticalAssignmentEntity assignment) {
     if (!"in_progress".equals(assignment.getStatus())) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "组长尚未统一开考，当前不能评分");
+    }
+    if (assignment.getExamEndedAt() != null) {
+      throw new BusinessException(ErrorCode.CONFLICT, "实操考试已结束，不能继续评分");
+    }
+    if (assignment.getDeadlineAt() != null
+        && !LocalDateTime.now().isBefore(assignment.getDeadlineAt())) {
+      throw new BusinessException(ErrorCode.CONFLICT, "实操考试已达到自动结束时限，不能继续评分");
     }
   }
 

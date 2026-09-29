@@ -126,7 +126,8 @@ public class CompetitionFormalExamAccessSessionService {
     CompetitionFormalCandidateExamEntity locked =
         candidateExamMapper.selectByIdForUpdate(byPlayer.getFirst().getId());
     if (locked == null || !Objects.equals(locked.getExamSessionId(), sessionId)
-        || !Objects.equals(locked.getPlayerId(), player.getId())) {
+        || !Objects.equals(locked.getTenantId(), player.getTenantId())
+        || (locked.getPlayerId() != null && !Objects.equals(locked.getPlayerId(), player.getId()))) {
       throw new BusinessException(ErrorCode.FORBIDDEN, "当前账号未参加本场理论考试");
     }
     String deviceId = normalizeDeviceId(deviceIdValue);

@@ -94,9 +94,9 @@ const readyPrecheck = {
   warnings: [],
 };
 
-function mount() {
+function mount(contentType: 'theory' | 'practical' = 'theory') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><CompetitionMakeExamPlanPage /></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><CompetitionMakeExamPlanPage contentType={contentType} /></QueryClientProvider>);
 }
 
 async function openCreate(user: ReturnType<typeof userEvent.setup>) {
@@ -111,7 +111,7 @@ async function submitModal(user: ReturnType<typeof userEvent.setup>) {
 }
 
 beforeEach(() => {
-  window.history.pushState({}, '', '/competition/make-plans?eventId=100');
+  window.history.pushState({}, '', '/competition/make-exam-plans?eventId=100');
   vi.clearAllMocks();
   api.pageEvents.mockResolvedValue({ items: [{ id: '100', name: '测试赛事', code: 'T2026' }], total: 1, page: 1, size: 200 });
   api.listWorkTypes.mockResolvedValue([{ id: '200', displayName: '铝加工', workTypeName: '铝加工' }]);
@@ -218,8 +218,7 @@ describe('竞赛理论组卷自动分配页面', () => {
       ],
     });
     const user = userEvent.setup();
-    mount();
-    await user.click(await screen.findByRole('tab', { name: '实操组卷' }));
+    mount('practical');
     await openCreate(user);
 
     expect(screen.getByText('实操自动组卷结构预览')).toBeInTheDocument();
@@ -286,8 +285,7 @@ describe('竞赛理论组卷自动分配页面', () => {
     api.previewSnapshot.mockResolvedValue(practicalSnapshot);
 
     const user = userEvent.setup();
-    mount();
-    await user.click(await screen.findByRole('tab', { name: '实操组卷' }));
+    mount('practical');
     await user.click(await screen.findByRole('button', { name: /快照预览/ }));
 
     expect(await screen.findByTestId('competition-practical-snapshot-paper')).toBeInTheDocument();

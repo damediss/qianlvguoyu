@@ -71,6 +71,9 @@ public class CompetitionStageExecutionPlanService {
   @Autowired(required = false)
   private CompetitionEventWorkTypeStageMapper workTypeStageMapper;
 
+  @Autowired(required = false)
+  private CompetitionPracticalStagePlanSnapshotService practicalSnapshotService;
+
   private final CompetitionStageExecutionPlanMapper planMapper;
   private final CompetitionStagePlanResourceMapper resourceMapper;
   private final CompetitionStageResourceBookingMapper bookingMapper;
@@ -199,6 +202,9 @@ public class CompetitionStageExecutionPlanService {
     if (planMapper.insert(plan) != 1) {
       throw new BusinessException(ErrorCode.CONFLICT, "执行方案创建失败");
     }
+    if (practicalSnapshotService != null) {
+      practicalSnapshotService.syncDraftPlan(tenantId, userId, plan);
+    }
     return plan;
   }
 
@@ -268,6 +274,9 @@ public class CompetitionStageExecutionPlanService {
     plan.setPreflightStatus("pending");
     plan.setUpdatedBy(userId);
     planMapper.updateById(plan);
+    if (practicalSnapshotService != null) {
+      practicalSnapshotService.syncDraftPlan(tenantId, userId, plan);
+    }
     return result;
   }
 
@@ -345,6 +354,9 @@ public class CompetitionStageExecutionPlanService {
     domainService.requirePublishable(plan.getStatus());
     if (!"configuring".equals(stage.getStatus())) {
       throw new BusinessException(ErrorCode.CONFLICT, "执行方案只能在配置中的赛段发布");
+    }
+    if (practicalSnapshotService != null) {
+      practicalSnapshotService.syncDraftPlan(tenantId, userId, plan);
     }
     CompetitionStagePlanPreflightVO preflight = preflight(tenantId, plan, stage);
     plan.setPreflightStatus(preflight.readyToPublish() ? "passed" : "blocked");

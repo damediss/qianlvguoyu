@@ -2,6 +2,7 @@ package com.guoyu.platform.certification.defense;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
+import com.guoyu.platform.certification.entity.CertificationDefenseAbsenceEntity;
 import com.guoyu.platform.certification.entity.CertificationDefenseConfigEntity;
 import com.guoyu.platform.certification.entity.CertificationDefenseReportEntity;
 import com.guoyu.platform.certification.entity.CertificationDefenseScoreEntity;
@@ -11,6 +12,7 @@ import com.guoyu.platform.certification.entity.CertificationTaskEntity;
 import com.guoyu.platform.certification.info.entity.CertificationInfoAssessorEntity;
 import com.guoyu.platform.certification.info.mapper.CertificationInfoAssessorMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateMapper;
+import com.guoyu.platform.certification.mapper.CertificationDefenseAbsenceMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseConfigMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseReportMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseScoreMapper;
@@ -50,6 +52,7 @@ public class DefenseScoringApplicationService {
   private final CertificationTaskAssessorGroupMapper groupMapper;
   private final CertificationTaskAssessorMapper taskAssessorMapper;
   private final CertificationInfoAssessorMapper assessorMapper;
+  private final CertificationDefenseAbsenceMapper absenceMapper;
   private final CertificationDefenseConfigMapper configMapper;
   private final CertificationDefenseReportMapper reportMapper;
   private final CertificationDefenseScoreMapper scoreMapper;
@@ -61,6 +64,7 @@ public class DefenseScoringApplicationService {
       CertificationTaskAssessorGroupMapper groupMapper,
       CertificationTaskAssessorMapper taskAssessorMapper,
       CertificationInfoAssessorMapper assessorMapper,
+      CertificationDefenseAbsenceMapper absenceMapper,
       CertificationDefenseConfigMapper configMapper,
       CertificationDefenseReportMapper reportMapper,
       CertificationDefenseScoreMapper scoreMapper,
@@ -71,6 +75,7 @@ public class DefenseScoringApplicationService {
     this.groupMapper = groupMapper;
     this.taskAssessorMapper = taskAssessorMapper;
     this.assessorMapper = assessorMapper;
+    this.absenceMapper = absenceMapper;
     this.configMapper = configMapper;
     this.reportMapper = reportMapper;
     this.scoreMapper = scoreMapper;
@@ -212,6 +217,16 @@ public class DefenseScoringApplicationService {
             .in(CertificationDefenseReportEntity::getTaskId, taskIds)
             .orderByDesc(CertificationDefenseReportEntity::getUploadedAt)
             .orderByDesc(CertificationDefenseReportEntity::getId)));
+    Set<String> absentCandidateKeys = safeList(absenceMapper.selectList(
+        new LambdaQueryWrapper<CertificationDefenseAbsenceEntity>()
+            .in(CertificationDefenseAbsenceEntity::getTaskId, taskIds)))
+        .stream()
+        .filter(absence -> absence != null && absence.getTaskId() != null && absence.getCandidateId() != null)
+        .map(absence -> absence.getTaskId() + ":" + absence.getCandidateId())
+        .collect(Collectors.toSet());
+    reports = reports.stream()
+        .filter(report -> !absentCandidateKeys.contains(report.getTaskId() + ":" + report.getCandidateId()))
+        .toList();
     Map<Long, CertificationTaskEntity> taskMap = loadTaskMap(taskIds);
     Map<Long, CertificationCandidateEntity> candidateMap = loadCandidateMap(reports.stream()
         .map(CertificationDefenseReportEntity::getCandidateId)
@@ -331,6 +346,9 @@ public class DefenseScoringApplicationService {
       String fileName,
       String matchKey
   ) {
+    if (isAbsent(taskId, candidate.getId())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "该考生已标记缺考，不能上传业绩评估报告");
+    }
     requirePdf(fileId, fileName);
     CertificationDefenseReportEntity existing = loadReport(taskId, candidate.getId());
     boolean replaced = existing != null;
@@ -556,7 +574,16 @@ public class DefenseScoringApplicationService {
       log.warn("用户{}尝试阅览非本考评组业绩评估报告{}", user.getUserId(), reportId);
       throw new BusinessException(ErrorCode.FORBIDDEN, "无权阅览该业绩评估报告");
     }
+    if (isAbsent(report.getTaskId(), report.getCandidateId())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "该考生已标记缺考，不能进行答辩评分");
+    }
     return report;
+  }
+
+  private boolean isAbsent(Long taskId, Long candidateId) {
+    return absenceMapper.selectCount(new LambdaQueryWrapper<CertificationDefenseAbsenceEntity>()
+        .eq(CertificationDefenseAbsenceEntity::getTaskId, taskId)
+        .eq(CertificationDefenseAbsenceEntity::getCandidateId, candidateId)) > 0;
   }
 
   CertificationTaskEntity requireTask(Long taskId) {

@@ -32,6 +32,7 @@ import com.guoyu.platform.certification.mapper.ExamStaffAssignedTaskRow;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.exam.service.ExamWorkTypeCoverageService;
 import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.dto.ResetPasswordReq;
@@ -49,12 +50,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 @Service
 public class CertificationInfoApplicationService {
+
+  private static final Logger log = LoggerFactory.getLogger(CertificationInfoApplicationService.class);
 
   private static final String DRAFT = "draft";
   private static final String PENDING = "pending";
@@ -71,6 +76,7 @@ public class CertificationInfoApplicationService {
   private final RoleMapper roleMapper;
   private final UserMapper userMapper;
   private final UserApplicationService userApplicationService;
+  private final ExamWorkTypeCoverageService workTypeCoverageService;
 
   public CertificationInfoApplicationService(
       CertificationInfoAssessorMapper assessorMapper,
@@ -81,7 +87,8 @@ public class CertificationInfoApplicationService {
       CertificationInfoAuditRecordMapper auditRecordMapper,
       RoleMapper roleMapper,
       UserMapper userMapper,
-      UserApplicationService userApplicationService
+      UserApplicationService userApplicationService,
+      ExamWorkTypeCoverageService workTypeCoverageService
   ) {
     this.assessorMapper = assessorMapper;
     this.examStaffMapper = examStaffMapper;
@@ -92,6 +99,7 @@ public class CertificationInfoApplicationService {
     this.roleMapper = roleMapper;
     this.userMapper = userMapper;
     this.userApplicationService = userApplicationService;
+    this.workTypeCoverageService = workTypeCoverageService;
   }
 
   @Transactional(readOnly = true)
@@ -258,6 +266,17 @@ public class CertificationInfoApplicationService {
       List<String> requiredWorkTypes,
       boolean includeAssigned
   ) {
+    return listAvailableAssessorsByWorkTypes(keyword, null, requiredWorkTypes, includeAssigned, false);
+  }
+
+  @Transactional(readOnly = true)
+  public List<AssessorInfoVO> listAvailableAssessorsByWorkTypes(
+      String keyword,
+      List<Long> requiredWorkTypeIds,
+      List<String> requiredWorkTypeNames,
+      boolean includeAssigned,
+      boolean requireWorkTypeCoverage
+  ) {
     LambdaQueryWrapper<CertificationInfoAssessorEntity> wrapper = new LambdaQueryWrapper<CertificationInfoAssessorEntity>()
         .eq(CertificationInfoAssessorEntity::getAuditStatus, APPROVED)
         .orderByDesc(CertificationInfoAssessorEntity::getCreatedAt);
@@ -269,30 +288,34 @@ public class CertificationInfoApplicationService {
           .or().like(CertificationInfoAssessorEntity::getCertificateNo, keyword));
     }
     LocalDate today = LocalDate.now();
-    List<String> required = requiredWorkTypes == null ? List.of()
-        : requiredWorkTypes.stream().filter(StringUtils::hasText).distinct().toList();
+    boolean hasRequiredIds = requiredWorkTypeIds != null && !requiredWorkTypeIds.isEmpty();
+    boolean hasRequiredNames = requiredWorkTypeNames != null
+        && requiredWorkTypeNames.stream().anyMatch(StringUtils::hasText);
+    if (requireWorkTypeCoverage && !hasRequiredIds && !hasRequiredNames) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "当前考评组和认定任务均未配置有效工种范围，请先维护认定任务工种范围");
+    }
+    List<Long> required = hasRequiredIds || hasRequiredNames
+        ? workTypeCoverageService.resolveRequiredWorkTypeIds(requiredWorkTypeIds, requiredWorkTypeNames)
+        : List.of();
     return assessorMapper.selectList(wrapper).stream()
         .filter(item -> item.getValidUntil() == null || !item.getValidUntil().isBefore(today))
-        .filter(item -> coversRequiredWorkTypes(item, required))
+        .filter(item -> required.isEmpty() || assessorCoversForCandidateList(item, required))
         .map(this::toAssessorVO)
         .toList();
   }
 
-  private boolean coversRequiredWorkTypes(CertificationInfoAssessorEntity item, List<String> required) {
-    if (required == null || required.isEmpty()) {
-      return true;
-    }
-    String scope = item.getWorkTypeScope();
-    if (!StringUtils.hasText(scope)) {
+  private boolean assessorCoversForCandidateList(
+      CertificationInfoAssessorEntity assessor,
+      List<Long> requiredWorkTypeIds
+  ) {
+    ExamWorkTypeCoverageService.AssessorCoverageResult result = workTypeCoverageService.checkAssessorCoverageForListing(
+        assessor.getWorkTypeJson(), assessor.getWorkTypeScope(), assessor.getAssessorName(), requiredWorkTypeIds);
+    if (StringUtils.hasText(result.warning())) {
+      log.warn("跳过工种授权无法匹配的考评员候选：assessorId={}, warning={}", assessor.getId(), result.warning());
       return false;
     }
-    String lowerScope = scope.toLowerCase(Locale.ROOT);
-    for (String need : required) {
-      if (!lowerScope.contains(need.toLowerCase(Locale.ROOT))) {
-        return false;
-      }
-    }
-    return true;
+    return result.covered();
   }
 
   @Transactional(readOnly = true)
@@ -720,16 +743,12 @@ public class CertificationInfoApplicationService {
     entity.setCertificateNo(req.certificateNo());
     entity.setCertificatePhotoFileId(req.certificatePhotoFileId());
     entity.setCertificatePhotoFileName(req.certificatePhotoFileName());
-    String joinedScopes = req.workTypeScopes() == null
-        ? ""
-        : req.workTypeScopes().stream()
-            .filter(Objects::nonNull)
-            .map(String::trim)
-            .filter(s -> !s.isEmpty())
-            .distinct()
-            .collect(java.util.stream.Collectors.joining("、"));
+    List<Long> workTypeIds = workTypeCoverageService.resolveSelectedWorkTypeIds(
+        req.workTypeIds(), req.workTypeScopes());
+    List<String> workTypePaths = workTypeCoverageService.pathsOf(workTypeIds);
+    String joinedScopes = String.join("、", workTypePaths);
     entity.setWorkTypeScope(joinedScopes);
-    entity.setWorkTypeJson(toWorkTypeJson(req.workTypeScopes()));
+    entity.setWorkTypeJson(toWorkTypeJson(workTypeIds));
     entity.setLevelScope(req.levelScope());
     entity.setValidUntil(req.validUntil());
     entity.setPhone(req.phone());
@@ -738,12 +757,12 @@ public class CertificationInfoApplicationService {
     entity.setRemark(req.remark());
   }
 
-  private String toWorkTypeJson(List<String> workTypeScopes) {
-    if (workTypeScopes == null || workTypeScopes.isEmpty()) {
+  private String toWorkTypeJson(List<Long> workTypeIds) {
+    if (workTypeIds == null || workTypeIds.isEmpty()) {
       return "[]";
     }
     try {
-      return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(workTypeScopes);
+      return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(workTypeIds);
     } catch (Exception e) {
       return "[]";
     }
@@ -1107,14 +1126,20 @@ public class CertificationInfoApplicationService {
         accountUsername = user.getUsername();
       }
     }
+    ExamWorkTypeCoverageService.WorkTypeSelection selection = workTypeCoverageService.readAssessorSelection(
+        entity.getWorkTypeJson(), entity.getWorkTypeScope(), entity.getAssessorName());
+    String displayScope = selection.warning() == null
+        ? String.join("、", selection.paths())
+        : entity.getWorkTypeScope();
     return new AssessorInfoVO(entity.getId(), entity.getUserId(), accountUsername, entity.getAccountPassword(),
         entity.getAssessorName(), entity.getIdentityNo(), entity.getCertificateNo(),
         entity.getCertificatePhotoFileId(), entity.getCertificatePhotoFileName(),
-        entity.getWorkTypeScope(),
-        parseWorkTypeScopes(entity.getWorkTypeJson(), entity.getWorkTypeScope()),
+        displayScope,
+        selection.paths(),
         entity.getLevelScope(), entity.getValidUntil(),
         StringUtils.hasText(entity.getMaskedPhone()) ? entity.getMaskedPhone() : SensitiveMaskUtils.maskPhone(entity.getPhone()),
-        entity.getAuditStatus(), entity.getWorkStatus(), entity.getMaterialsDescription(), entity.getRemark());
+        entity.getAuditStatus(), entity.getWorkStatus(), entity.getMaterialsDescription(), entity.getRemark(),
+        selection.ids().stream().map(String::valueOf).toList(), selection.warning());
   }
 
   private List<String> parseWorkTypeScopes(String workTypeJson, String workTypeScope) {

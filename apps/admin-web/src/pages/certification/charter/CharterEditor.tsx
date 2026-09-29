@@ -206,8 +206,8 @@ export function CharterEditor({
               <Form.Item name="taskNo" label={<span>任务编号<span style={{ color: '#ff4d4f', marginLeft: 4 }}>*</span></span>} rules={[{ required: true, message: '请输入任务编号' }]}>
                 <Input placeholder="请输入任务编号" />
               </Form.Item>
-              <Form.Item name="taskManagerName" label={<span>任务经理<span style={{ color: '#ff4d4f', marginLeft: 4 }}>*</span></span>} rules={[{ required: true, message: '请输入任务经理姓名' }]}>
-                <Input placeholder="请输入任务经理姓名" />
+              <Form.Item name="taskManagerName" label="任务经理（选填）">
+                <Input placeholder="请输入任务经理姓名（选填）" />
               </Form.Item>
               <Form.Item name="taskStatus" label="任务状态">
                 <Select options={statusOptions} placeholder="请选择任务状态" />
@@ -405,4 +405,3 @@ export function CharterEditor({
     </div>
   );
 }
-

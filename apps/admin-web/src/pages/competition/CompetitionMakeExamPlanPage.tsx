@@ -14,7 +14,6 @@ import {
   Space,
   Spin,
   Table,
-  Tabs,
   Tag,
   Typography,
   message,
@@ -73,9 +72,13 @@ function getEventIdFromUrl() {
   return new URLSearchParams(window.location.search).get('eventId') || '';
 }
 
-export function CompetitionMakeExamPlanPage() {
+interface CompetitionMakeExamPlanPageProps {
+  contentType?: CompetitionQuestionContentType;
+  simpleMode?: boolean;
+}
+
+export function CompetitionMakeExamPlanPage({ contentType = 'theory', simpleMode = false }: CompetitionMakeExamPlanPageProps) {
   const queryClient = useQueryClient();
-  const [contentType, setContentType] = useState<CompetitionQuestionContentType>('theory');
   const [eventId, setEventId] = useState(getEventIdFromUrl);
   const [workTypeId, setWorkTypeId] = useState('');
   const [levelId, setLevelId] = useState('');
@@ -98,10 +101,10 @@ export function CompetitionMakeExamPlanPage() {
     queryFn: () => pageCompetitionQuestionBlueprints(eventId, {
       page: 1, pageSize: 20, eventWorkTypeId: workTypeId, eventWorkTypeLevelId: levelId, contentType, status: 'active',
     }),
-    enabled: Boolean(eventId && workTypeId && levelId),
+    enabled: Boolean(!simpleMode && eventId && workTypeId && levelId),
   });
   const activeBlueprint = blueprintQuery.data?.items?.[0];
-  const selectedBlueprintId = editing ? editing.blueprintId || undefined : activeBlueprint?.id;
+  const selectedBlueprintId = simpleMode ? undefined : editing ? editing.blueprintId || undefined : activeBlueprint?.id;
   const blueprintTreeQuery = useQuery({
     queryKey: ['competition-plan-blueprint-tree', eventId, selectedBlueprintId],
     queryFn: () => getCompetitionQuestionBlueprintTree(eventId, selectedBlueprintId!),
@@ -114,12 +117,14 @@ export function CompetitionMakeExamPlanPage() {
       contentType: 'practical', questionType: 'practical',
       blueprintId: undefined,
     }),
-    enabled: contentType === 'practical' && !selectedBlueprintId && Boolean(eventId && workTypeId && levelId),
+    enabled: contentType === 'practical' && (simpleMode || !selectedBlueprintId) && Boolean(eventId && workTypeId && levelId),
   });
   const practicalQuestions = practicalQuestionsQuery.data?.items ?? [];
   const plansQuery = useQuery({
-    queryKey: ['competition-make-plans', eventId, workTypeId, levelId, contentType],
-    queryFn: () => pageCompetitionMakeExamPlans(eventId, { page: 1, pageSize: 100, eventWorkTypeId: workTypeId, eventWorkTypeLevelId: levelId, contentType }),
+    queryKey: ['competition-make-plans', eventId, workTypeId, levelId, contentType, simpleMode],
+    queryFn: () => pageCompetitionMakeExamPlans(eventId, {
+      page: 1, pageSize: 100, eventWorkTypeId: workTypeId, eventWorkTypeLevelId: levelId, contentType, simpleMode,
+    }),
     enabled: Boolean(eventId && workTypeId && levelId),
   });
   const snapshotsQuery = useQuery({
@@ -143,8 +148,27 @@ export function CompetitionMakeExamPlanPage() {
   }, [previewSnapshotId, snapshotsQuery.data]);
 
   const buildRequest = (values: PlanFormValues): CompetitionMakeExamPlanRequest => {
-    const requestBlueprintId = values.blueprintId || editing?.blueprintId || (!editing ? activeBlueprint?.id : undefined);
+    const requestBlueprintId = simpleMode
+      ? undefined
+      : values.blueprintId || editing?.blueprintId || (!editing ? activeBlueprint?.id : undefined);
     if (contentType === 'practical') {
+      if (simpleMode) {
+        const seed = new Uint32Array(1);
+        window.crypto?.getRandomValues(seed);
+        return {
+          eventWorkTypeId: values.eventWorkTypeId,
+          eventWorkTypeLevelId: values.eventWorkTypeLevelId,
+          contentType,
+          title: values.title,
+          examType: values.examType,
+          durationMinutes: Number(values.durationMinutes),
+          totalScore: Number(values.totalScore),
+          passScore: values.passScore,
+          randomSeed: String(seed[0] || Math.floor(Math.random() * 4_294_967_296)),
+          comments: values.comments,
+          details: values.details,
+        };
+      }
       const selected = practicalQuestions.find((question) => question.id === values.practicalQuestionId);
       const practicalDetail = selected?.practicalDetail;
       const blueprintPractical = Boolean(requestBlueprintId);
@@ -181,9 +205,13 @@ export function CompetitionMakeExamPlanPage() {
       totalScore: Number(values.totalScore),
       passScore: values.passScore,
       paperCount: Number(values.paperCount || 1),
-      randomSeed: values.randomSeed,
       comments: values.comments,
       details: values.details,
+      randomSeed: simpleMode ? (() => {
+        const seed = new Uint32Array(1);
+        window.crypto?.getRandomValues(seed);
+        return String(seed[0] || Math.floor(Math.random() * 4_294_967_296));
+      })() : values.randomSeed,
     };
   };
 
@@ -212,7 +240,8 @@ export function CompetitionMakeExamPlanPage() {
         const practicalShortages = (precheck.practicalAllocations || [])
           .filter((item) => item.candidateQuestionCount <= 0)
           .map((item) => `${item.path} 缺少可用完整实操题`);
-        const reason = [...precheck.errors, ...shortages, ...detailShortages, ...practicalShortages].join('；') || '候选题不足，请调整细目表或题库';
+        const reason = [...precheck.errors, ...shortages, ...detailShortages, ...practicalShortages].join('；')
+          || (simpleMode ? '题库题量不足，请调整题量或题库配置' : '候选题不足，请调整细目表或题库');
         throw new Error(`组卷预检未通过：${reason}`);
       }
       return editing ? updateCompetitionMakeExamPlan(eventId, editing.id, body) : createCompetitionMakeExamPlan(eventId, body);
@@ -240,20 +269,20 @@ export function CompetitionMakeExamPlanPage() {
     setTheoryPrecheck(null);
     setPracticalPrecheck(null);
     form.resetFields();
-    const firstPractical = contentType === 'practical' ? practicalQuestions[0] : undefined;
+    const firstPractical = contentType === 'practical' && !simpleMode ? practicalQuestions[0] : undefined;
     const defaultDetails = contentType === 'theory'
       ? [{ questionType: 'single' as CompetitionQuestionType, questionCount: 10, point: 10, sortOrder: 1 }]
-      : selectedBlueprintId ? [] : [{ questionType: 'practical' as CompetitionQuestionType, questionCount: 1, point: 100, sortOrder: 1 }];
+      : selectedBlueprintId && !simpleMode ? [] : [{ questionType: 'practical' as CompetitionQuestionType, questionCount: 1, point: 100, sortOrder: 1 }];
     form.setFieldsValue({
       eventWorkTypeId: workTypeId,
       eventWorkTypeLevelId: levelId,
       durationMinutes: 90,
       totalScore: 100,
       passScore: 60,
-      paperCount: contentType === 'practical' ? 1 : 1,
+      paperCount: 1,
       details: defaultDetails,
       practicalQuestionId: firstPractical?.id,
-      blueprintId: activeBlueprint?.id,
+      blueprintId: simpleMode ? undefined : activeBlueprint?.id,
       randomSeed: undefined,
     });
     if (firstPractical?.practicalDetail) {
@@ -306,25 +335,24 @@ export function CompetitionMakeExamPlanPage() {
   };
 
   const rows = plansQuery.data?.items ?? [];
+  const simplePrecheck = contentType === 'theory' ? theoryPrecheck : practicalPrecheck;
   const questionTypeOptions = contentType === 'theory'
     ? ['single', 'multi', 'judge', 'fill'].map(value => ({ value, label: typeLabels[value] }))
     : [{ value: 'practical', label: '实操题' }];
 
   return (
     <Card
-      title="竞赛组卷计划"
-      extra={<Button type="primary" icon={<PlusOutlined />} disabled={!eventId || !workTypeId || !levelId} onClick={openCreate}>新建计划</Button>}
+      title={simpleMode
+        ? `竞赛简易${contentType === 'theory' ? '理论' : '实操'}组卷`
+        : contentType === 'theory' ? '竞赛理论组卷计划' : '竞赛实操组卷计划'}
+      extra={<Button type="primary" icon={<PlusOutlined />} disabled={!eventId || !workTypeId || !levelId} onClick={openCreate}>{simpleMode ? '新建简易计划' : '新建计划'}</Button>}
     >
-      <Alert type="info" showIcon style={{ marginBottom: 16 }} message={contentType === 'practical'
-        ? '实操题量由细目表的层级选考关系决定：下级为必考时每个下级各抽1题；一级必考、二级任选一项时，每个一级只形成1个题位，再从该一级的二级范围中任选一个并抽1道完整题。'
-        : '理论组卷按组卷规则和细目表三级权重自动抽题；理论分布不可手工修改。'} />
-      {contentType === 'theory' && !activeBlueprint && eventId && workTypeId && levelId && <Alert type="warning" showIcon style={{ marginBottom: 16 }} message="当前赛事工种等级没有启用的理论细目表；理论自动组卷需要先导入并启用版本。" />}
-      <Tabs activeKey={contentType} onChange={(value) => {
-        setContentType(value as CompetitionQuestionContentType);
-        setEditing(null);
-        setTheoryPrecheck(null);
-        setPracticalPrecheck(null);
-      }} items={[{ key: 'theory', label: '理论组卷' }, { key: 'practical', label: '实操组卷' }]} />
+      <Alert type="info" showIcon style={{ marginBottom: 16 }} message={simpleMode
+        ? '简易组卷不需要细目表。配置题型、题量和单题分值后，系统会从当前赛事、工种和等级下的启用试题中随机抽题；实操评分项会按单题分值等比例换算。'
+        : contentType === 'practical'
+          ? '实操题量由细目表的层级选考关系决定：下级为必考时每个下级各抽1题；一级必考、二级任选一项时，每个一级只形成1个题位，再从该一级的二级范围中任选一个并抽1道完整题。'
+          : '理论组卷按组卷规则和细目表三级权重自动抽题；理论分布不可手工修改。'} />
+      {!simpleMode && contentType === 'theory' && !activeBlueprint && eventId && workTypeId && levelId && <Alert type="warning" showIcon style={{ marginBottom: 16 }} message="当前赛事工种等级没有启用的理论细目表；理论自动组卷需要先导入并启用版本。" />}
       <Space wrap style={{ marginBottom: 16 }}>
         <Select showSearch optionFilterProp="label" style={{ width: 250 }} placeholder="选择赛事" value={eventId || undefined}
           options={events.map((event: CompetitionEvent) => ({ value: String(event.id), label: `${event.name}（${event.code}）` }))}
@@ -339,7 +367,6 @@ export function CompetitionMakeExamPlanPage() {
       <Table<CompetitionMakeExamPlan> rowKey="id" loading={plansQuery.isLoading || plansQuery.isFetching} dataSource={rows} pagination={{ pageSize: 20, showSizeChanger: false }} scroll={{ x: 'max-content' }}
         columns={[
           { title: '计划标题', dataIndex: 'title', ellipsis: true },
-          { title: '类型', dataIndex: 'contentType', width: 90, render: (value: string) => value === 'theory' ? '理论' : '实操' },
           { title: '时长', dataIndex: 'durationMinutes', width: 90, render: (value: number) => `${value} 分钟` },
           { title: '总分', dataIndex: 'totalScore', width: 80 },
           { title: '及格分', dataIndex: 'passScore', width: 90 },
@@ -356,12 +383,12 @@ export function CompetitionMakeExamPlanPage() {
         ]}
       />
 
-      <Modal title={editing ? '编辑竞赛组卷计划' : '新建竞赛组卷计划'} open={formOpen} onCancel={() => setFormOpen(false)} onOk={() => form.submit()} confirmLoading={saveMutation.isPending} destroyOnClose width={860}>
+      <Modal title={`${editing ? '编辑' : '新建'}${simpleMode ? '简易' : ''}${contentType === 'theory' ? '理论' : '实操'}组卷计划`} open={formOpen} onCancel={() => setFormOpen(false)} onOk={() => form.submit()} confirmLoading={saveMutation.isPending} destroyOnClose width={860}>
         <Form form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
           <Form.Item name="eventWorkTypeId" hidden><Input /></Form.Item>
           <Form.Item name="eventWorkTypeLevelId" hidden><Input /></Form.Item>
           <Form.Item name="randomSeed" hidden><Input /></Form.Item>
-          <Form.Item name="blueprintId" label="细目表版本" rules={[{ required: contentType === 'theory' || Boolean(editing?.blueprintId), message: '请选择已启用的细目表版本' }]}>
+          {!simpleMode && <Form.Item name="blueprintId" label="细目表版本" rules={[{ required: contentType === 'theory' || Boolean(editing?.blueprintId), message: '请选择已启用的细目表版本' }]}>
             <Select
               disabled={Boolean(editing) || (!activeBlueprint && !editing)}
               options={(() => {
@@ -371,7 +398,7 @@ export function CompetitionMakeExamPlanPage() {
                 return blueprint ? [{ value: blueprint.id, label: `v${blueprint.versionNo} ${blueprint.title}` }] : [];
               })()}
               placeholder={editing?.blueprintId ? '沿用原细目表版本' : '请先启用理论/实操细目表'} />
-          </Form.Item>
+          </Form.Item>}
           {contentType === 'practical' && selectedBlueprintId && <>
             <Space style={{ marginTop: 4, marginBottom: 8 }}>
               <Typography.Text strong>实操自动组卷结构预览</Typography.Text>
@@ -423,7 +450,7 @@ export function CompetitionMakeExamPlanPage() {
           <Space wrap align="start">
             <Form.Item name="title" label="计划标题" rules={[{ required: true }]}><Input style={{ width: 300 }} /></Form.Item>
             <Form.Item name="examType" label="考试类型"><Input style={{ width: 180 }} placeholder="例如：初赛理论" /></Form.Item>
-            {contentType === 'practical' && !activeBlueprint && <Form.Item name="practicalQuestionId" label="实操题" rules={[{ required: true, message: '请选择实操题' }]}>
+            {contentType === 'practical' && !simpleMode && !activeBlueprint && <Form.Item name="practicalQuestionId" label="实操题" rules={[{ required: true, message: '请选择实操题' }]}>
               <Select
                 showSearch optionFilterProp="label" style={{ width: 360 }} loading={practicalQuestionsQuery.isLoading}
                 placeholder="选择当前赛事/工种/等级下的启用实操题"
@@ -439,12 +466,12 @@ export function CompetitionMakeExamPlanPage() {
                 }}
               />
             </Form.Item>}
-            {contentType === 'practical' && <Form.Item name="paperCount" label="生成套数" rules={[{ required: true }]}><InputNumber min={1} max={50} precision={0} /></Form.Item>}
+            {contentType === 'practical' && !simpleMode && <Form.Item name="paperCount" label="生成套数" rules={[{ required: true }]}><InputNumber min={1} max={50} precision={0} /></Form.Item>}
             <Form.Item name="durationMinutes" label="考试时长（分钟）" rules={[{ required: true, type: 'number', min: 1 }]} extra={contentType === 'practical' ? '计划时长独立配置；题目参考时长合计超出时仅提示' : undefined}><InputNumber min={1} precision={0} /></Form.Item>
-            <Form.Item name="totalScore" label="计划总分（每套卷）" rules={[{ required: true, type: 'number', min: 0.01 }]} extra={contentType === 'practical' ? '系统按最终必考题位或其任选组对应的整卷比重精确分配分值' : '每套卷实际题目分值合计必须等于此值'}><InputNumber min={0.01} precision={2} /></Form.Item>
+            <Form.Item name="totalScore" label="计划总分（每套卷）" rules={[{ required: true, type: 'number', min: 0.01 }]} extra={simpleMode ? '必须等于题量 × 单题分值的合计' : contentType === 'practical' ? '系统按最终必考题位或其任选组对应的整卷比重精确分配分值' : '每套卷实际题目分值合计必须等于此值'}><InputNumber min={0.01} precision={2} /></Form.Item>
             <Form.Item name="passScore" label="及格分" rules={[{ required: true }]}><InputNumber min={0} /></Form.Item>
           </Space>
-          {contentType === 'theory' && <><Typography.Text strong>组卷规则（题型、题量和单题分值）</Typography.Text>
+          {(contentType === 'theory' || (simpleMode && contentType === 'practical')) && <><Typography.Text strong>{contentType === 'theory' ? '组卷规则（题型、题量和单题分值）' : '组卷规则（实操题量和单题分值）'}</Typography.Text>
            <Form.List name="details">
             {(fields, { add, remove }) => <>
               {fields.map((field, index) => <Space key={field.key} align="start" style={{ display: 'flex', marginTop: 12 }}>
@@ -452,13 +479,39 @@ export function CompetitionMakeExamPlanPage() {
                 <Form.Item {...field} name={[field.name, 'questionType']} label={index === 0 ? '题型' : undefined} rules={[{ required: true }]}><Select style={{ width: 130 }} options={questionTypeOptions} /></Form.Item>
                 <Form.Item {...field} name={[field.name, 'questionCount']} label={index === 0 ? '题量' : undefined} rules={[{ required: true }]}><InputNumber min={1} /></Form.Item>
                 <Form.Item {...field} name={[field.name, 'point']} label={index === 0 ? '单题分值' : undefined} rules={[{ required: true }]}><InputNumber min={0.01} /></Form.Item>
-                <Form.Item {...field} name={[field.name, 'difficultyStart']} label={index === 0 ? '难度起' : undefined}><InputNumber min={1} max={5} placeholder="不限" /></Form.Item>
-                <Form.Item {...field} name={[field.name, 'difficultyEnd']} label={index === 0 ? '难度止' : undefined}><InputNumber min={1} max={5} placeholder="不限" /></Form.Item>
-                <Button danger type="link" style={{ marginTop: index === 0 ? 30 : 0 }} onClick={() => remove(field.name)}>删除</Button>
+                {contentType === 'theory' && <Form.Item {...field} name={[field.name, 'difficultyStart']} label={index === 0 ? '难度起' : undefined}><InputNumber min={1} max={5} placeholder="不限" /></Form.Item>}
+                {contentType === 'theory' && <Form.Item {...field} name={[field.name, 'difficultyEnd']} label={index === 0 ? '难度止' : undefined}><InputNumber min={1} max={5} placeholder="不限" /></Form.Item>}
+                {contentType === 'theory' && <Button danger type="link" style={{ marginTop: index === 0 ? 30 : 0 }} onClick={() => remove(field.name)}>删除</Button>}
               </Space>)}
               {contentType === 'theory' && <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add({ questionType: 'single', questionCount: 1, point: 1, sortOrder: fields.length + 1 })}>增加题型</Button>}
             </>}
            </Form.List>
+           {simpleMode && <>
+             <Space style={{ marginTop: 16, marginBottom: 8 }}>
+               <Typography.Text strong>随机抽题预检</Typography.Text>
+               <Button
+                 loading={precheckMutation.isPending}
+                 onClick={() => form.validateFields().then(values => precheckMutation.mutate(values)).catch(() => undefined)}
+               >查看可用题量</Button>
+               {simplePrecheck && <Tag color={simplePrecheck.ready ? 'green' : 'red'}>{simplePrecheck.ready ? '可组卷' : '题量不足'}</Tag>}
+             </Space>
+             {simplePrecheck && <>
+               {simplePrecheck.errors.length > 0 && <Alert type="error" showIcon style={{ marginBottom: 8 }} message={simplePrecheck.errors.join('；')} />}
+               {simplePrecheck.warnings.length > 0 && <Alert type="warning" showIcon style={{ marginBottom: 8 }} message={simplePrecheck.warnings.join('；')} />}
+               <Table
+                 size="small"
+                 rowKey={(row) => String(row.sortOrder ?? row.ruleIndex ?? row.questionType)}
+                 pagination={false}
+                 dataSource={simplePrecheck.details}
+                 columns={[
+                   { title: '题型', dataIndex: 'questionType', render: (value: string) => typeLabels[value] || value },
+                   { title: '需求题量', dataIndex: 'required', width: 100 },
+                   { title: '可用题量', dataIndex: 'available', width: 100 },
+                   { title: '缺口', dataIndex: 'shortage', width: 80, render: (value: number) => value > 0 ? <Typography.Text type="danger">{value}</Typography.Text> : value },
+                 ]}
+               />
+             </>}
+           </>}
            {selectedBlueprintId && <>
              <Space style={{ marginTop: 16, marginBottom: 8 }}>
                <Typography.Text strong>理论抽题分布（根据细目表三级权重自动计算）</Typography.Text>

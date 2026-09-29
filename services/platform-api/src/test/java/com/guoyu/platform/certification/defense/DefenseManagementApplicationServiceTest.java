@@ -15,6 +15,7 @@ import com.guoyu.platform.certification.entity.CertificationTaskAssessorGroupEnt
 import com.guoyu.platform.certification.entity.CertificationTaskEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskScopeEntity;
 import com.guoyu.platform.certification.mapper.CertificationCandidateMapper;
+import com.guoyu.platform.certification.mapper.CertificationDefenseAbsenceMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseConfigMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseReportMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseScoreMapper;
@@ -51,6 +52,7 @@ class DefenseManagementApplicationServiceTest {
   private final CertificationCandidateMapper candidateMapper = Mockito.mock(CertificationCandidateMapper.class);
   private final CertificationTaskAssessorGroupMapper groupMapper = Mockito.mock(CertificationTaskAssessorGroupMapper.class);
   private final CertificationTaskAssessorMapper taskAssessorMapper = Mockito.mock(CertificationTaskAssessorMapper.class);
+  private final CertificationDefenseAbsenceMapper absenceMapper = Mockito.mock(CertificationDefenseAbsenceMapper.class);
   private final CertificationDefenseConfigMapper configMapper = Mockito.mock(CertificationDefenseConfigMapper.class);
   private final CertificationDefenseReportMapper reportMapper = Mockito.mock(CertificationDefenseReportMapper.class);
   private final CertificationDefenseScoreMapper scoreMapper = Mockito.mock(CertificationDefenseScoreMapper.class);
@@ -65,7 +67,7 @@ class DefenseManagementApplicationServiceTest {
   @BeforeEach
   void setUp() {
     service = new DefenseManagementApplicationService(
-        taskMapper, candidateMapper, groupMapper, taskAssessorMapper, configMapper,
+        taskMapper, candidateMapper, groupMapper, taskAssessorMapper, absenceMapper, configMapper,
         reportMapper, scoreMapper, scopeMapper, examSiteMapper, exportService,
         fileApplicationService, objectMapper);
   }

@@ -27,6 +27,12 @@ export function createCompetitionQuestion(eventId: CompetitionId, body: Competit
   return unwrap<CompetitionQuestion>(apiClient.post(`/competition/events/${eventId}/questions`, body));
 }
 
+export function createCompetitionSimplePracticalQuestion(eventId: CompetitionId, body: CompetitionQuestionRequest) {
+  return unwrap<CompetitionQuestion>(apiClient.post(
+    `/competition/events/${eventId}/simple-practical-questions`, body,
+  ));
+}
+
 export function updateCompetitionQuestion(
   eventId: CompetitionId,
   questionId: CompetitionId,
@@ -65,13 +71,41 @@ export function importCompetitionQuestions(
   ));
 }
 
+export function importCompetitionSimpleTheoryQuestions(
+  eventId: CompetitionId,
+  scope: { eventWorkTypeId: CompetitionId; eventWorkTypeLevelId: CompetitionId },
+  file: File,
+) {
+  const form = new FormData();
+  form.append('eventWorkTypeId', String(scope.eventWorkTypeId));
+  form.append('eventWorkTypeLevelId', String(scope.eventWorkTypeLevelId));
+  form.append('file', file);
+  return unwrap<CompetitionQuestionImportBatch>(apiClient.post(
+    `/competition/events/${eventId}/simple-question-imports`, form,
+  ));
+}
+
+export function importCompetitionSimplePracticalDetails(
+  eventId: CompetitionId,
+  scope: { eventWorkTypeId: CompetitionId; eventWorkTypeLevelId: CompetitionId },
+  file: File,
+) {
+  const form = new FormData();
+  form.append('eventWorkTypeId', String(scope.eventWorkTypeId));
+  form.append('eventWorkTypeLevelId', String(scope.eventWorkTypeLevelId));
+  form.append('file', file);
+  return unwrap<CompetitionQuestionImportBatch>(apiClient.post(
+    `/competition/events/${eventId}/simple-practical-detail-imports`, form,
+  ));
+}
+
 export function getCompetitionQuestionImportBatch(eventId: CompetitionId, batchId: CompetitionId) {
   return unwrap<CompetitionQuestionImportBatch>(apiClient.get(`/competition/events/${eventId}/question-imports/${batchId}`));
 }
 
-export async function downloadCompetitionQuestionTemplate(contentType: string): Promise<Blob> {
+export async function downloadCompetitionQuestionTemplate(contentType: string, simple = false): Promise<Blob> {
   return (await apiClient.get('/competition/question-import-template', {
-    params: { contentType },
+    params: { contentType, simple },
     responseType: 'blob',
   })).data as Blob;
 }

@@ -201,6 +201,25 @@ describe('stage context menu', () => {
     expect(onContentTypeClick).toHaveBeenCalledWith('practical');
   });
 
+  it('opens the practical runtime rules entry from the practical submenu', async () => {
+    const onContentTypeClick = vi.fn();
+    render(
+      <StageContextMenu
+        position={{ x: 120, y: 160 }}
+        enabledContentTypes={['practical']}
+        onClose={vi.fn()}
+        onContentTypeClick={onContentTypeClick}
+      />,
+    );
+
+    const user = userEvent.setup();
+    const practical = await screen.findByText('实操配置');
+    await user.hover(practical.closest('.ant-dropdown-menu-submenu-title') || practical);
+    await user.click(await screen.findByText('运行规则'));
+
+    expect(onContentTypeClick).toHaveBeenCalledWith('practical', 'runtime');
+  });
+
   it('shows and notifies practical candidate configuration from the practical submenu', async () => {
     const onCandidateClick = vi.fn();
     render(

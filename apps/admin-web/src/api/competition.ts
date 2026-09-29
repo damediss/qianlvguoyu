@@ -98,6 +98,7 @@ import type {
   CompetitionStagePaperAssignmentContentType,
   CompetitionFormalExamSession,
   CompetitionFormalExamPreflight,
+  CompetitionFormalCandidateAnswerSheet,
   CompetitionFormalCandidateExam,
   CompetitionFormalCandidateResult,
   CompetitionFormalExamConsoleRealtimeTicket,
@@ -661,6 +662,14 @@ export function scoreCompetitionFormalExamSession(sessionId: CompetitionId) {
 export function getCompetitionFormalCandidateResult(candidateExamId: CompetitionId) {
   return unwrap<CompetitionFormalCandidateResult>(
     apiClient.get(`/competition/formal-exam-candidates/${candidateExamId}/result`),
+  );
+}
+
+export function getCompetitionFormalCandidateAnswerSheet(
+  candidateExamId: CompetitionId,
+) {
+  return unwrap<CompetitionFormalCandidateAnswerSheet>(
+    apiClient.get(`/competition/formal-exam-candidates/${candidateExamId}/answer-sheet`),
   );
 }
 

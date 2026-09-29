@@ -49,7 +49,7 @@ public class CompetitionQuestionWorkbookParser {
       }
       if ("practical".equalsIgnoreCase(contentType)) {
         PracticalParseResult practical = parsePractical(workbook, selectedSheet);
-        return new ParsedWorkbook(practical.questions(), practical.selectedSheet());
+        return new ParsedWorkbook(practical.questions(), practical.selectedSheet(), practical.simplePracticalFormat());
       }
       throw new IllegalArgumentException("不支持的题目类型: " + contentType);
     }
@@ -110,10 +110,16 @@ public class CompetitionQuestionWorkbookParser {
 
   private PracticalParseResult parsePractical(Workbook workbook, String selectedSheet) {
     List<SheetCandidate> candidates = new ArrayList<>();
+    List<SheetCandidate> simpleCandidates = new ArrayList<>();
     for (int sheetIndex = 0; sheetIndex < workbook.getNumberOfSheets(); sheetIndex++) {
       Sheet sheet = workbook.getSheetAt(sheetIndex);
       Header header = findPracticalTableHeader(sheet);
       if (header != null) {
+        if (isSimplePracticalHeader(header)) {
+          List<ParsedQuestion> parsed = parseSimplePracticalTable(sheet, header);
+          if (!parsed.isEmpty()) simpleCandidates.add(new SheetCandidate(sheet.getSheetName(), parsed));
+          continue;
+        }
         // A number of historical workbooks contain a preparation-only sheet before
         // the actual scoring-record sheet.  Parse every recognized table and keep
         // only sheets that contain complete scoring rows instead of returning the
@@ -121,6 +127,20 @@ public class CompetitionQuestionWorkbookParser {
         List<ParsedQuestion> parsed = parsePracticalTable(sheet, header);
         if (!parsed.isEmpty()) candidates.add(new SheetCandidate(sheet.getSheetName(), parsed));
       }
+    }
+
+    if (!simpleCandidates.isEmpty()) {
+      if (selectedSheet != null && !selectedSheet.isBlank()) {
+        SheetCandidate selected = simpleCandidates.stream()
+            .filter(candidate -> selectedSheet.equals(candidate.sheetName())).findFirst().orElse(null);
+        if (selected == null) throw new IllegalArgumentException("指定工作表不存在或没有有效评分明细: " + selectedSheet);
+        return new PracticalParseResult(selected.questions(), selected.sheetName(), true);
+      }
+      if (simpleCandidates.size() > 1) {
+        throw new IllegalArgumentException("实操评分项支持单项目导入，请每次只在一个工作表中填写一个考核项目");
+      }
+      SheetCandidate simple = simpleCandidates.get(0);
+      return new PracticalParseResult(simple.questions(), simple.sheetName(), true);
     }
 
     if (candidates.isEmpty()) {
@@ -135,7 +155,7 @@ public class CompetitionQuestionWorkbookParser {
     if (selectedSheet != null && !selectedSheet.isBlank()) {
       SheetCandidate selected = candidates.stream().filter(candidate -> selectedSheet.equals(candidate.sheetName())).findFirst().orElse(null);
       if (selected == null) throw new IllegalArgumentException("指定工作表不存在或没有有效题目: " + selectedSheet);
-      return new PracticalParseResult(selected.questions(), selected.sheetName());
+      return new PracticalParseResult(selected.questions(), selected.sheetName(), false);
     }
     candidates.sort((left, right) -> {
       // Coverage is the primary safety criterion: a sheet with more rows but
@@ -151,7 +171,132 @@ public class CompetitionQuestionWorkbookParser {
       throw new IllegalArgumentException("实操题库存在考评点覆盖率并列的工作表，请明确选择："
           + best.sheetName() + "、" + candidates.get(1).sheetName());
     }
-    return new PracticalParseResult(best.questions(), best.sheetName());
+    return new PracticalParseResult(best.questions(), best.sheetName(), false);
+  }
+
+  private boolean isSimplePracticalHeader(Header header) {
+    return header.index("考核项目") >= 0
+        && header.index("考核内容") >= 0
+        && header.index("评分项", "评分要素") >= 0
+        && header.index("评分标准") >= 0
+        && header.index("计分方式", "评分方式") >= 0
+        && header.index("步骤", "步长") >= 0
+        && header.index("分值", "配分") >= 0;
+  }
+
+  private List<ParsedQuestion> parseSimplePracticalTable(Sheet sheet, Header header) {
+    Map<String, String> merged = collectMergedValues(sheet);
+    int projectIndex = header.index("考核项目");
+    int contentIndex = header.index("考核内容");
+    int itemIndex = header.index("评分项", "评分要素");
+    int standardIndex = header.index("评分标准");
+    int scoringMethodIndex = header.index("计分方式", "评分方式");
+    int stepIndex = header.index("步骤", "步长");
+    int scoreIndex = header.index("分值", "配分");
+    String projectName = null;
+    String currentContent = null;
+    String scoringMethod = null;
+    int nextItemNo = 0;
+    Map<String, List<ParsedScoreItem>> contentElements = new LinkedHashMap<>();
+    List<ParsedScoreItem> items = new ArrayList<>();
+
+    for (int rowIndex = header.rowIndex() + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+      Row row = sheet.getRow(rowIndex);
+      if (isBlank(row)) continue;
+
+      String project = value(sheet, row, projectIndex, merged);
+      if (!project.isBlank()) {
+        if (projectName != null && !projectName.equals(project)) {
+          throw rowError(rowIndex, "一次仅支持导入一个考核项目");
+        }
+        projectName = project;
+      }
+      if (projectName == null || projectName.isBlank()) {
+        throw rowError(rowIndex, "考核项目不能为空");
+      }
+
+      String content = value(sheet, row, contentIndex, merged);
+      if (!content.isBlank()) currentContent = content;
+      if (currentContent == null || currentContent.isBlank()) {
+        throw rowError(rowIndex, "考核内容不能为空");
+      }
+
+      String method = normalizeScoringMethod(value(sheet, row, scoringMethodIndex, merged));
+      if (method != null) {
+        if (scoringMethod != null && !scoringMethod.equals(method)) {
+          throw rowError(rowIndex, "同一考核项目的计分方式必须一致");
+        }
+        scoringMethod = method;
+      }
+
+      String itemName = value(sheet, row, itemIndex, merged);
+      String criterion = value(sheet, row, standardIndex, merged);
+      if (itemName.isBlank() || criterion.isBlank()) {
+        throw rowError(rowIndex, "评分项和评分标准不能为空");
+      }
+      BigDecimal score = parseDecimal(value(sheet, row, scoreIndex, merged), rowIndex, "分值");
+      if (score.compareTo(new BigDecimal("100")) > 0) {
+        throw rowError(rowIndex, "单项分值不能超过100分");
+      }
+
+      String stepText = value(sheet, row, stepIndex, merged);
+      BigDecimal maxDeduction = null;
+      BigDecimal deductionStep = null;
+      if ("deductive".equals(scoringMethod)) {
+        if (stepText.isBlank()) throw rowError(rowIndex, "扣分制的步骤列必须填写正数步长");
+        deductionStep = parseDecimal(stepText, rowIndex, "步骤");
+        maxDeduction = score;
+        if (maxDeduction.remainder(deductionStep).signum() != 0) {
+          throw rowError(rowIndex, "扣分制步骤必须能整除该评分项分值");
+        }
+      }
+
+      nextItemNo++;
+      String itemElement = stepText.isBlank() ? itemName : "<p>" + escapeHtml(stepText) + "</p>";
+      ParsedScoreItem scoreItem = new ParsedScoreItem(nextItemNo, itemName, criterion, score,
+          maxDeduction, deductionStep, itemElement, true);
+      items.add(scoreItem);
+      contentElements.computeIfAbsent(currentContent, ignored -> new ArrayList<>()).add(scoreItem);
+    }
+
+    if (projectName == null || items.isEmpty()) {
+      throw new IllegalArgumentException("实操评分明细表没有可导入的评分项");
+    }
+    if (scoringMethod == null) throw new IllegalArgumentException("计分方式不能为空，请填写加分制或扣分制");
+
+    List<ParsedAssessmentContent> contents = new ArrayList<>();
+    int contentOrder = 0;
+    for (Map.Entry<String, List<ParsedScoreItem>> entry : contentElements.entrySet()) {
+      contents.add(new ParsedAssessmentContent(++contentOrder,
+          "<p>" + escapeHtml(entry.getKey()) + "</p>", entry.getValue()));
+    }
+    BigDecimal totalScore = sumScores(items);
+    if (totalScore.signum() <= 0 || totalScore.compareTo(new BigDecimal("100")) > 0) {
+      throw new IllegalArgumentException("考核项目评分项分值合计必须大于0且不超过100分");
+    }
+    BigDecimal scoreDifference = totalScore.min(new BigDecimal("10"));
+    ParsedQuestion question = new ParsedQuestion(null, "practical", projectName, null, null, null, null,
+        null, null, null, items, 60, scoreDifference, totalScore, scoringMethod,
+        null, null, null, null, null, contents, true, false, null, null, null);
+    return List.of(question);
+  }
+
+  private BigDecimal sumScores(List<ParsedScoreItem> items) {
+    return items.stream().map(ParsedScoreItem::maxScore).filter(Objects::nonNull)
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+  }
+
+  private String normalizeScoringMethod(String value) {
+    if (value == null || value.isBlank()) return null;
+    return switch (value.trim().toLowerCase(Locale.ROOT)) {
+      case "additive", "add", "加分", "加分制" -> "additive";
+      case "deductive", "deduct", "扣分", "扣分制" -> "deductive";
+      default -> throw new IllegalArgumentException("计分方式只能填写加分制或扣分制");
+    };
+  }
+
+  private String escapeHtml(String value) {
+    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
   }
 
   private List<ParsedQuestion> parsePracticalTable(Sheet sheet, Header header) {
@@ -358,6 +503,9 @@ public class CompetitionQuestionWorkbookParser {
       Row row = sheet.getRow(i);
       if (row == null) continue;
       Header header = Header.from(row, formatter);
+      if (isSimplePracticalHeader(header)) {
+        return header.withRowIndex(i);
+      }
       boolean hasSequenceAndStem = header.index("序号", "题号", "题目序号") >= 0
           && header.index("题干", "题目", "题目内容", "试题内容") >= 0;
       boolean hasOriginalScoreRecordColumns = header.index("考评点") >= 0
@@ -405,10 +553,10 @@ public class CompetitionQuestionWorkbookParser {
     if (type == null) return null;
     String value = type.trim().toLowerCase(Locale.ROOT);
     return switch (value) {
-      case "single", "单选", "单选题" -> "single";
-      case "multi", "multiple", "多选", "多选题" -> "multi";
-      case "judge", "判断", "判断题" -> "judge";
-      case "fill", "填空", "填空题" -> "fill";
+      case "single", "2", "单选", "单选题", "选择题" -> "single";
+      case "multi", "multiple", "7", "多选", "多选题", "多项选择", "多项选择题" -> "multi";
+      case "judge", "1", "判断", "判断题" -> "judge";
+      case "fill", "3", "填空", "填空题" -> "fill";
       default -> null;
     };
   }
@@ -588,11 +736,14 @@ public class CompetitionQuestionWorkbookParser {
     return new IllegalArgumentException("第" + (rowIndex + 1) + "行: " + message);
   }
 
-  public record ParsedWorkbook(List<ParsedQuestion> questions, String selectedSheet) {
+  public record ParsedWorkbook(List<ParsedQuestion> questions, String selectedSheet, boolean simplePracticalFormat) {
     public ParsedWorkbook {
       questions = Collections.unmodifiableList(new ArrayList<>(Objects.requireNonNull(questions)));
     }
-    public ParsedWorkbook(List<ParsedQuestion> questions) { this(questions, null); }
+    public ParsedWorkbook(List<ParsedQuestion> questions, String selectedSheet) {
+      this(questions, selectedSheet, false);
+    }
+    public ParsedWorkbook(List<ParsedQuestion> questions) { this(questions, null, false); }
   }
 
   private record SheetCandidate(String sheetName, List<ParsedQuestion> questions) {
@@ -613,7 +764,7 @@ public class CompetitionQuestionWorkbookParser {
     }
   }
 
-  private record PracticalParseResult(List<ParsedQuestion> questions, String selectedSheet) {}
+  private record PracticalParseResult(List<ParsedQuestion> questions, String selectedSheet, boolean simplePracticalFormat) {}
 
   public record ParsedQuestion(
       Integer sortOrder,
@@ -663,6 +814,14 @@ public class CompetitionQuestionWorkbookParser {
     public ParsedQuestion {
       scoreItems = scoreItems == null ? List.of() : List.copyOf(scoreItems);
       assessmentContents = assessmentContents == null ? List.of() : List.copyOf(assessmentContents);
+    }
+
+    public ParsedQuestion withSortOrder(Integer value) {
+      return new ParsedQuestion(value, questionType, stem, referenceAnswer, fillAnswer, optionsJson,
+          difficulty, operationContent, studentPrepare, equipmentPrepare, scoreItems, durationMinutes,
+          scoreDifference, totalScore, scoringMethod, assessmentRequirementsHtml, examRoomPrepareHtml,
+          candidatePrepareHtml, negativeItemsHtml, questionMaterialsHtml, assessmentContents,
+          structuredTemplate, legacyPracticalLayout, blueprintFullCode, blueprintPath, blueprintPointName);
     }
   }
 
@@ -803,7 +962,11 @@ public class CompetitionQuestionWorkbookParser {
       if (row != null) {
         for (int i = row.getFirstCellNum(); i <= row.getLastCellNum(); i++) {
           Cell cell = row.getCell(i);
-          if (cell != null) map.put(normalize(formatter.formatCellValue(cell)), i);
+          if (cell != null) {
+            String header = normalize(formatter.formatCellValue(cell));
+            map.put(header, i);
+            if (header.startsWith("题型（") || header.startsWith("题型(")) map.putIfAbsent("题型", i);
+          }
         }
       }
       return new Header(map, -1);

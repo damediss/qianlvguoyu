@@ -7,7 +7,7 @@ public record CertificationTaskScopeReq(
     @Size(max = 120) String workTypeName,
     @Size(max = 40) String levelCode,
     @Size(max = 80) String levelName,
-    Integer plannedPeopleCount
+    Integer plannedPeopleCount,
+    Long workTypeId
 ) {
 }
-

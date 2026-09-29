@@ -13,9 +13,11 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.apache.poi.xwpf.usermodel.IBodyElement;
@@ -191,7 +193,7 @@ public class DefenseSummaryExportService {
       List<ExpertSignImage> expertSigns
   ) {
     String occupation = "评审职业：" + emptyToDash(progress.workTypeName())
-        + "                     等级：" + emptyToDash(progress.levelName())
+        + "                     等级：" + emptyToDash(summarizeCandidateLevels(progress))
         + "             登分员：";
     for (XWPFParagraph paragraph : document.getParagraphs()) {
       String text = paragraph.getText();
@@ -204,6 +206,25 @@ public class DefenseSummaryExportService {
         fillExpertSignatures(paragraph, progress, expertSigns);
       }
     }
+  }
+
+  private static String summarizeCandidateLevels(DefenseScoringModels.ProgressView progress) {
+    if (progress.candidates() == null) {
+      return "";
+    }
+    return progress.candidates().stream()
+        .filter(candidate -> candidate != null)
+        .map(DefenseScoringModels.CandidateProgressView::levelName)
+        .filter(StringUtils::hasText)
+        .map(String::trim)
+        .distinct()
+        .sorted(Comparator.comparingInt(DefenseSummaryExportService::candidateLevelOrder))
+        .collect(Collectors.joining("、"));
+  }
+
+  private static int candidateLevelOrder(String levelName) {
+    String normalized = levelName.replace(" ", "").replace("\u3000", "");
+    return normalized.contains("高级技师") || normalized.contains("一级") ? 1 : 0;
   }
 
   private void fillExpertSignatures(
@@ -329,6 +350,17 @@ public class DefenseSummaryExportService {
     setCell(row, COL_TICKET, firstNonBlank(candidate.admissionTicketNo(), candidate.candidateNo()));
     setCell(row, COL_NAME, emptyToDash(candidate.candidateName()));
     setCell(row, COL_ID_CARD, firstNonBlank(candidate.idCardNo(), candidate.maskedIdCardNo()));
+    if ("absent".equals(candidate.status())) {
+      for (int index = 0; index < DefenseScoreCatalog.EXPORT_EXPERT_COUNT; index++) {
+        setCell(row, COL_THESIS_EXPERT_1 + index, "");
+        setCell(row, COL_PERF_EXPERT_1 + index, "");
+      }
+      setCell(row, COL_THESIS_AVG, "");
+      setCell(row, COL_PERF_AVG, "");
+      setCell(row, COL_FINAL, "0");
+      setCell(row, COL_VOTE, "");
+      return;
+    }
     for (int index = 0; index < DefenseScoreCatalog.EXPORT_EXPERT_COUNT; index++) {
       setCell(row, COL_THESIS_EXPERT_1 + index, formatScore(nth(candidate.thesisScores(), index)));
       setCell(row, COL_PERF_EXPERT_1 + index, formatScore(nth(candidate.performanceScores(), index)));

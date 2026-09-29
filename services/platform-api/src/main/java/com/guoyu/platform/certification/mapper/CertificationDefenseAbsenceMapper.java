@@ -1,0 +1,9 @@
+package com.guoyu.platform.certification.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.guoyu.platform.certification.entity.CertificationDefenseAbsenceEntity;
+import org.apache.ibatis.annotations.Mapper;
+
+@Mapper
+public interface CertificationDefenseAbsenceMapper extends BaseMapper<CertificationDefenseAbsenceEntity> {
+}

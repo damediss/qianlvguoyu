@@ -17,6 +17,7 @@ export const STAGE_CONTEXT_MENU_ITEMS = [
     label: '实操配置',
     children: [
       { key: 'practical:paper', label: '试卷配置' },
+      { key: 'practical:runtime', label: '运行规则' },
       { key: 'practical:candidate', label: '选手配置' },
       { key: 'practical:referee', label: '裁判配置' },
     ],
@@ -64,6 +65,11 @@ function buildMenuItems(
               disabled: !contentEnabled,
             },
             {
+              key: 'practical:runtime',
+              label: '运行规则',
+              disabled: !contentEnabled,
+            },
+            {
               key: 'practical:candidate',
               label: '选手配置',
               disabled: !contentEnabled || !candidateEnabled,
@@ -89,7 +95,7 @@ interface StageContextMenuProps {
   candidateEnabled?: boolean;
   refereeEnabled?: boolean;
   onClose: () => void;
-  onContentTypeClick?: (contentType: CompetitionStageContentType) => void;
+  onContentTypeClick?: (contentType: CompetitionStageContentType, practicalTab?: 'paper' | 'runtime') => void;
   onCandidateClick?: (contentType: 'theory' | 'practical') => void;
   onRefereeClick?: () => void;
 }
@@ -129,10 +135,13 @@ export function StageContextMenu({
       open
       trigger={[]}
       menu={{
-        items: buildMenuItems(enabledContentTypes, candidateEnabled, refereeEnabled, onContentTypeClick),
+        items: buildMenuItems(
+          enabledContentTypes, candidateEnabled, refereeEnabled, onContentTypeClick,
+        ),
         onClick: ({ key }) => {
           if (key === 'theory:paper') onContentTypeClick?.('theory');
           if (key === 'practical:paper') onContentTypeClick?.('practical');
+          if (key === 'practical:runtime') onContentTypeClick?.('practical', 'runtime');
           if (key === 'theory:candidate') onCandidateClick?.('theory');
           if (key === 'practical:candidate') onCandidateClick?.('practical');
           if (key === 'practical:referee') onRefereeClick?.();

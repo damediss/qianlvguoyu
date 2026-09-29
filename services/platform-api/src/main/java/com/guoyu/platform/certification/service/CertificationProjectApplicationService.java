@@ -44,6 +44,7 @@ import com.guoyu.platform.certification.vo.CertificationWorkbenchVO;
 import com.guoyu.platform.common.api.PageResponse;
 import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
+import com.guoyu.platform.exam.service.ExamWorkTypeCoverageService;
 import com.guoyu.platform.security.SecurityContext;
 import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.UserMapper;
@@ -121,6 +122,7 @@ public class CertificationProjectApplicationService {
   private final CertificationDocumentWorkflowService workflowService;
   private final UserMapper userMapper;
   private final UserRoleMapper userRoleMapper;
+  private final ExamWorkTypeCoverageService workTypeCoverageService;
 
   public CertificationProjectApplicationService(
       CertificationTaskMapper taskMapper,
@@ -134,7 +136,7 @@ public class CertificationProjectApplicationService {
       CertificationTaskScopeMapper scopeMapper
   ) {
     this(taskMapper, phaseMapper, documentMapper, charterGoalMapper, memberMapper, wbsMapper, scheduleMapper,
-        riskMapper, scopeMapper, null, null, null);
+        riskMapper, scopeMapper, null, null, null, null);
   }
 
   /** Retained for existing focused unit tests and non-Spring callers. */
@@ -151,7 +153,25 @@ public class CertificationProjectApplicationService {
       CertificationDocumentWorkflowService workflowService
   ) {
     this(taskMapper, phaseMapper, documentMapper, charterGoalMapper, memberMapper, wbsMapper, scheduleMapper,
-        riskMapper, scopeMapper, workflowService, null, null);
+        riskMapper, scopeMapper, workflowService, null, null, null);
+  }
+
+  /** Constructor retained for focused tests that exercise work type id persistence. */
+  public CertificationProjectApplicationService(
+      CertificationTaskMapper taskMapper,
+      CertificationTaskPhaseMapper phaseMapper,
+      CertificationTaskDocumentMapper documentMapper,
+      CertificationCharterGoalMapper charterGoalMapper,
+      CertificationTaskMemberMapper memberMapper,
+      CertificationWbsItemMapper wbsMapper,
+      CertificationScheduleItemMapper scheduleMapper,
+      CertificationRiskMapper riskMapper,
+      CertificationTaskScopeMapper scopeMapper,
+      CertificationDocumentWorkflowService workflowService,
+      ExamWorkTypeCoverageService workTypeCoverageService
+  ) {
+    this(taskMapper, phaseMapper, documentMapper, charterGoalMapper, memberMapper, wbsMapper, scheduleMapper,
+        riskMapper, scopeMapper, workflowService, null, null, workTypeCoverageService);
   }
 
   @Autowired
@@ -167,7 +187,8 @@ public class CertificationProjectApplicationService {
       CertificationTaskScopeMapper scopeMapper,
       CertificationDocumentWorkflowService workflowService,
       UserMapper userMapper,
-      UserRoleMapper userRoleMapper
+      UserRoleMapper userRoleMapper,
+      ExamWorkTypeCoverageService workTypeCoverageService
   ) {
     this.taskMapper = taskMapper;
     this.phaseMapper = phaseMapper;
@@ -181,6 +202,7 @@ public class CertificationProjectApplicationService {
     this.workflowService = workflowService;
     this.userMapper = userMapper;
     this.userRoleMapper = userRoleMapper;
+    this.workTypeCoverageService = workTypeCoverageService;
   }
 
   @Transactional(readOnly = true)
@@ -410,6 +432,7 @@ public class CertificationProjectApplicationService {
       }
       boolean hasValue = StringUtils.hasText(scopeReq.certificationType())
           || StringUtils.hasText(scopeReq.workTypeName())
+          || scopeReq.workTypeId() != null
           || StringUtils.hasText(scopeReq.levelCode())
           || StringUtils.hasText(scopeReq.levelName())
           || scopeReq.plannedPeopleCount() != null;
@@ -419,7 +442,15 @@ public class CertificationProjectApplicationService {
       CertificationTaskScopeEntity entity = new CertificationTaskScopeEntity();
       entity.setTaskId(task.getId());
       entity.setCertificationType(scopeReq.certificationType());
-      entity.setWorkTypeName(scopeReq.workTypeName());
+      Long workTypeId = scopeReq.workTypeId();
+      String workTypeName = scopeReq.workTypeName();
+      if (workTypeCoverageService != null
+          && (workTypeId != null || StringUtils.hasText(workTypeName))) {
+        workTypeId = workTypeCoverageService.resolveWorkTypeId(workTypeId, workTypeName);
+        workTypeName = workTypeCoverageService.titleOf(workTypeId);
+      }
+      entity.setWorkTypeId(workTypeId);
+      entity.setWorkTypeName(workTypeName);
       entity.setLevelCode(scopeReq.levelCode());
       entity.setLevelName(scopeReq.levelName());
       entity.setPlannedPeopleCount(scopeReq.plannedPeopleCount());
@@ -786,7 +817,7 @@ public class CertificationProjectApplicationService {
       String remark
   ) {
     entity.setTaskName(taskName);
-    entity.setTaskManagerName(taskManagerName);
+    entity.setTaskManagerName(StringUtils.hasText(taskManagerName) ? taskManagerName.trim() : "");
     entity.setCompanyName(companyName);
     entity.setCertificationType(certificationType);
     entity.setPlannedPeopleCount(plannedPeopleCount == null ? 0 : plannedPeopleCount);

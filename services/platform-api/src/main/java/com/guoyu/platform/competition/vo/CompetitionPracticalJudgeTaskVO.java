@@ -1,6 +1,7 @@
 package com.guoyu.platform.competition.vo;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 public record CompetitionPracticalJudgeTaskVO(
@@ -32,4 +33,9 @@ public record CompetitionPracticalJudgeTaskVO(
     int requiredJudges,
     boolean currentJudgeConfirmed,
     List<CompetitionPracticalQuestionProgressVO> questionProgress,
-    String activeStageId) { }
+    String activeStageId,
+    LocalDateTime startedAt,
+    LocalDateTime standardDeadlineAt,
+    LocalDateTime deadlineAt,
+    LocalDateTime examEndedAt,
+    Long pausedDurationSeconds) { }

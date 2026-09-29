@@ -33,7 +33,6 @@ import {
   Button,
   Card,
   Col,
-  Descriptions,
   Divider,
   Drawer,
   Empty,
@@ -45,11 +44,11 @@ import {
   Row,
   Select,
   Space,
+  Spin,
   Statistic,
   Table,
   Tabs,
   Tag,
-  Timeline,
   Tooltip,
   Typography,
   Upload,
@@ -65,6 +64,7 @@ import {
   calculateCompetitionTotalScore,
   downloadCompetitionSimulationImportErrors,
   getCompetitionEvent,
+  getCompetitionFormalCandidateAnswerSheet,
   getCompetitionFormalCandidateResult,
   getCompetitionScoringReadiness,
   getCompetitionSimulationImport,
@@ -86,8 +86,10 @@ import {
 } from '../../api/competition';
 import { useAuthStore } from '../../stores/authStore';
 import type {
-  CompetitionFormalScoringTask,
+  CompetitionFormalCandidateAnswerSheet,
+  CompetitionFormalCandidateAnswerSheetQuestion,
   CompetitionFormalCandidateResult,
+  CompetitionFormalScoringTask,
   CompetitionId,
   CompetitionPlayer,
   CompetitionRankingCandidate,
@@ -563,6 +565,33 @@ function ScoreCellView({
   );
 }
 
+function answerSheetStatus(
+  question: CompetitionFormalCandidateAnswerSheetQuestion,
+): 'correct' | 'wrong' | 'unanswered' {
+  if (!question.answered) return 'unanswered';
+  return question.correct ? 'correct' : 'wrong';
+}
+
+function selectedAnswerLabels(
+  question: CompetitionFormalCandidateAnswerSheetQuestion,
+) {
+  const selectedIds = question.candidateAnswer?.selectedOptionIds || [];
+  return selectedIds.map((optionId) => {
+    const option = question.options?.find((item) => item.optionId === optionId);
+    return option ? `${option.label}. ${option.content}` : optionId;
+  });
+}
+
+function questionTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    single: '单选题',
+    multi: '多选题',
+    judge: '判断题',
+    fill: '填空题',
+  };
+  return labels[type] || type || '题目';
+}
+
 export function CompetitionScoreRankingPage({
   eventId,
   onNavigate,
@@ -601,6 +630,9 @@ export function CompetitionScoreRankingPage({
   const [workbenchSubject, setWorkbenchSubject] =
     useState<CompetitionScoreSourceType>();
   const [selectedMemberId, setSelectedMemberId] = useState<string>();
+  const [answerSheetOpen, setAnswerSheetOpen] = useState(false);
+  const [selectedAnswerQuestionId, setSelectedAnswerQuestionId] =
+    useState<string>();
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<string>();
   const [simulationBatchId, setSimulationBatchId] = useState<string>();
   const [rankingDraftOpen, setRankingDraftOpen] = useState(false);
@@ -1042,6 +1074,16 @@ export function CompetitionScoreRankingPage({
     queryFn: () =>
       getCompetitionFormalCandidateResult(selectedTask!.candidateExamId),
     enabled: canViewScores && Boolean(selectedTask?.candidateExamId),
+    retry: false,
+  });
+  const answerSheetQuery = useQuery<CompetitionFormalCandidateAnswerSheet>({
+    queryKey: [
+      'competition-formal-candidate-answer-sheet',
+      selectedTask?.candidateExamId,
+    ],
+    queryFn: () =>
+      getCompetitionFormalCandidateAnswerSheet(selectedTask!.candidateExamId),
+    enabled: answerSheetOpen && Boolean(selectedTask?.candidateExamId),
     retry: false,
   });
   const statistics = useMemo(() => {
@@ -1751,6 +1793,21 @@ export function CompetitionScoreRankingPage({
     statistics.participantCount > 0 &&
     statistics.complete >= statistics.eligibleCount &&
     activeSnapshot?.status === 'confirmed';
+  const answerSheetQuestions = answerSheetQuery.data?.questions || [];
+  const activeAnswerQuestion =
+    answerSheetQuestions.find(
+      (question) =>
+        idValue(question.questionSnapshotId) === selectedAnswerQuestionId,
+    ) || answerSheetQuestions[0];
+  const answerSheetCorrectCount = answerSheetQuestions.filter(
+    (question) => answerSheetStatus(question) === 'correct',
+  ).length;
+  const answerSheetWrongCount = answerSheetQuestions.filter(
+    (question) => answerSheetStatus(question) === 'wrong',
+  ).length;
+  const answerSheetUnansweredCount = answerSheetQuestions.filter(
+    (question) => answerSheetStatus(question) === 'unanswered',
+  ).length;
 
   const overviewColumns: TableColumnsType<ScoreOverviewRow> = [
     {
@@ -2059,14 +2116,6 @@ export function CompetitionScoreRankingPage({
       ),
     };
   });
-
-  const detailSourceRevisions = selectedRow
-    ? scoreSources
-        .filter(
-          (source) => idValue(source.contestantMemberId) === selectedRow.key,
-        )
-        .sort((left, right) => right.revisionNo - left.revisionNo)
-    : [];
 
   const content = (
     <div className="competition-score-page">
@@ -2909,7 +2958,10 @@ export function CompetitionScoreRankingPage({
         title="选手成绩详情"
         open={Boolean(selectedRow)}
         width={560}
-        onClose={() => setSelectedMemberId(undefined)}
+        onClose={() => {
+          setSelectedMemberId(undefined);
+          setAnswerSheetOpen(false);
+        }}
         destroyOnClose
       >
         {selectedRow && (
@@ -2934,85 +2986,9 @@ export function CompetitionScoreRankingPage({
                 {statusTag(selectedRow.overallStatus, true)}
               </div>
             </div>
-            <Descriptions size="small" column={2} bordered>
-              <Descriptions.Item label="成员 ID">
-                {selectedRow.contestantMemberId}
-              </Descriptions.Item>
-              <Descriptions.Item label="排名">
-                {selectedRow.rank || '不参与排名'}
-              </Descriptions.Item>
-              <Descriptions.Item label="工种">
-                {selectedRow.workTypeName}
-              </Descriptions.Item>
-              <Descriptions.Item label="等级">
-                {selectedRow.levelName}
-              </Descriptions.Item>
-            </Descriptions>
-            {selectedTask && (
-              <Card
-                size="small"
-                className="competition-score-detail__exam-summary"
-              >
-                <Space direction="vertical" size={4}>
-                  <Typography.Text strong>理论考试链路</Typography.Text>
-                  <Space wrap>
-                    <Typography.Text type="secondary">
-                      任务：{selectedTask.taskStatus}
-                    </Typography.Text>
-                    {formalResultQuery.isLoading && (
-                      <Typography.Text type="secondary">
-                        结果加载中…
-                      </Typography.Text>
-                    )}
-                    {formalResultQuery.data && (
-                      <Tag
-                        color={
-                          formalResultQuery.data.resultStatus === 'absent'
-                            ? 'default'
-                            : 'success'
-                        }
-                      >
-                        {formalResultQuery.data.resultStatus === 'absent'
-                          ? '缺考'
-                          : formalResultQuery.data.resultStatus}
-                      </Tag>
-                    )}
-                    {formalResultQuery.data && (
-                      <Typography.Text>
-                        最终分：
-                        {formalResultQuery.data.resultStatus === 'absent'
-                          ? '—'
-                          : scoreValue(formalResultQuery.data.totalScore)}
-                      </Typography.Text>
-                    )}
-                    {formalResultQuery.data?.scoredTime && (
-                      <Typography.Text type="secondary">
-                        评分时间：
-                        {formatDate(formalResultQuery.data.scoredTime)}
-                      </Typography.Text>
-                    )}
-                  </Space>
-                  {formalResultQuery.data && (
-                    <Typography.Text type="secondary">
-                      答题 {formalResultQuery.data.answeredCount ?? 0} /{' '}
-                      {formalResultQuery.data.questionCount ?? 0} · 正确{' '}
-                      {formalResultQuery.data.correctCount ?? 0} · 未答{' '}
-                      {formalResultQuery.data.unansweredCount ?? 0}
-                    </Typography.Text>
-                  )}
-                  <Button
-                    type="link"
-                    size="small"
-                    onClick={() =>
-                      onNavigate(`/competition/events/${eventId}/theory-exam`)
-                    }
-                  >
-                    查看理论考试链路
-                  </Button>
-                </Space>
-              </Card>
-            )}
-            <Typography.Title level={5}>科目成绩</Typography.Title>
+            <div className="competition-score-detail__section-head">
+              <Typography.Title level={5}>科目成绩</Typography.Title>
+            </div>
             <div className="competition-score-detail__subjects">
               {subjects.map((subject) => {
                 const cell = selectedRow.subjectCells[subject.type];
@@ -3027,79 +3003,219 @@ export function CompetitionScoreRankingPage({
                     size="small"
                     className="competition-score-detail__subject"
                   >
-                    <div>
+                    <div className="competition-score-detail__subject-row">
                       <span style={{ color: subject.color }}>
                         {subject.icon} {subject.label}
                       </span>
                       <strong>{scoreValue(finalValue ?? cell?.value)}</strong>
                     </div>
-                    {statusTag(cell?.status || 'not_started', true)}
-                    {source && (
-                      <Typography.Text type="secondary">
-                        原始 {scoreValue(source.rawScore)} · 最终{' '}
-                        {scoreValue(finalValue)} · 来源：
-                        {source.sourceSystem || '—'} · V{source.revisionNo}
-                      </Typography.Text>
-                    )}
-                    {source && (
-                      <Typography.Text type="secondary">
-                        更新：
-                        {formatDate(source.confirmedAt || source.achievedAt)} ·
-                        操作人：
-                        {source.createdBy || source.confirmedBy || '系统'}
-                      </Typography.Text>
-                    )}
+                    <div className="competition-score-detail__subject-actions">
+                      {statusTag(cell?.status || 'not_started', true)}
+                      {subject.type === 'theory' && selectedTask && (
+                        <Button
+                          size="small"
+                          icon={<EyeOutlined />}
+                          loading={formalResultQuery.isFetching}
+                          disabled={
+                            formalResultQuery.isLoading ||
+                            !formalResultQuery.data?.questionScores?.length
+                          }
+                          onClick={() => {
+                            setSelectedAnswerQuestionId(undefined);
+                            setAnswerSheetOpen(true);
+                          }}
+                        >
+                          查看答题卡
+                        </Button>
+                      )}
+                    </div>
                   </Card>
                 );
               })}
             </div>
-            <Typography.Title level={5}>成绩修订轨迹</Typography.Title>
-            {detailSourceRevisions.length ? (
-              <Timeline
-                items={detailSourceRevisions.map((source) => {
-                  const previous = detailSourceRevisions.find(
-                    (candidate) =>
-                      candidate.sourceType === source.sourceType &&
-                      candidate.revisionNo < source.revisionNo,
-                  );
-                  return {
-                    color: source.currentFlag === 1 ? 'green' : 'gray',
-                    children: (
-                      <div>
-                        <Typography.Text strong>
-                          {sourceMeta[source.sourceType].shortLabel} V
-                          {source.revisionNo} ·{' '}
-                          {confirmationMeta[source.confirmationStatus].label}
-                        </Typography.Text>
-                        <br />
-                        <Typography.Text type="secondary">
-                          {previous
-                            ? `${scoreValue(previous.rawScore)} → `
-                            : ''}
-                          {scoreValue(source.rawScore)} ·{' '}
-                          {source.sourceSystem || '未知来源'} ·{' '}
-                          {formatDate(source.createdAt || source.achievedAt)}
-                        </Typography.Text>
-                        <br />
-                        <Typography.Text type="secondary">
-                          操作人：
-                          {source.createdBy || source.confirmedBy || '系统'} ·
-                          来源流水/备注：{source.sourceReference || '未填写'}
-                        </Typography.Text>
-                      </div>
-                    ),
-                  };
-                })}
-              />
-            ) : (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="暂无成绩修订记录"
-              />
-            )}
           </div>
         )}
       </Drawer>
+      <Modal
+        className="competition-answer-sheet-modal"
+        title={
+          <Space>
+            <FileSearchOutlined />
+            <span>查看答题卡</span>
+            {answerSheetQuery.data && (
+              <Typography.Text type="secondary">
+                {answerSheetQuery.data.candidateName} ·{' '}
+                {answerSheetQuery.data.candidateNo}
+              </Typography.Text>
+            )}
+          </Space>
+        }
+        open={answerSheetOpen}
+        width="calc(100vw - 48px)"
+        footer={null}
+        destroyOnClose
+        onCancel={() => setAnswerSheetOpen(false)}
+      >
+        {answerSheetQuery.isLoading ? (
+          <div className="competition-answer-sheet__loading">
+            <Spin tip="正在加载答题卡…" />
+          </div>
+        ) : answerSheetQuery.isError ? (
+          <Result
+            status="error"
+            title="答题卡加载失败"
+            subTitle={
+              answerSheetQuery.error instanceof Error
+                ? answerSheetQuery.error.message
+                : '请稍后重试'
+            }
+            extra={
+              <Button onClick={() => answerSheetQuery.refetch()}>重新加载</Button>
+            }
+          />
+        ) : answerSheetQuery.data && activeAnswerQuestion ? (
+          <div className="competition-answer-sheet">
+            <Card size="small" className="competition-answer-sheet__summary">
+              <Space wrap>
+                <Tag color="success">正确 {answerSheetCorrectCount}</Tag>
+                <Tag color="error">错误 {answerSheetWrongCount}</Tag>
+                <Tag>未作答 {answerSheetUnansweredCount}</Tag>
+              </Space>
+              <Typography.Text type="secondary">
+                点击左侧题号查看该题作答内容
+              </Typography.Text>
+            </Card>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={8}>
+                <Card
+                  size="small"
+                  title={`题目导航（${answerSheetQuestions.length} 题）`}
+                  className="competition-answer-sheet__navigation"
+                >
+                  <div className="competition-answer-sheet__question-grid">
+                    {answerSheetQuestions.map((question) => {
+                      const status = answerSheetStatus(question);
+                      const active =
+                        idValue(question.questionSnapshotId) ===
+                        idValue(activeAnswerQuestion.questionSnapshotId);
+                      return (
+                        <Button
+                          key={idValue(question.questionSnapshotId)}
+                          className={`competition-answer-sheet__question-number competition-answer-sheet__question-number--${status}${active ? ' is-active' : ''}`}
+                          aria-label={`第 ${question.questionOrder} 题${status === 'correct' ? '，正确' : status === 'wrong' ? '，错误' : '，未作答'}`}
+                          aria-pressed={active}
+                          onClick={() =>
+                            setSelectedAnswerQuestionId(
+                              idValue(question.questionSnapshotId),
+                            )
+                          }
+                        >
+                          {question.questionOrder}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  <Divider />
+                  <Space wrap size={[12, 8]}>
+                    <span className="competition-answer-sheet__legend">
+                      <i className="competition-answer-sheet__legend-dot competition-answer-sheet__legend-dot--correct" />
+                      正确
+                    </span>
+                    <span className="competition-answer-sheet__legend">
+                      <i className="competition-answer-sheet__legend-dot competition-answer-sheet__legend-dot--wrong" />
+                      错误
+                    </span>
+                    <span className="competition-answer-sheet__legend">
+                      <i className="competition-answer-sheet__legend-dot competition-answer-sheet__legend-dot--unanswered" />
+                      未作答
+                    </span>
+                  </Space>
+                </Card>
+              </Col>
+              <Col xs={24} md={16}>
+                <Card
+                  size="small"
+                  className="competition-answer-sheet__question-detail"
+                  title={
+                    <Space wrap>
+                      <span>第 {activeAnswerQuestion.questionOrder} 题</span>
+                      <Tag>{questionTypeLabel(activeAnswerQuestion.questionType)}</Tag>
+                      <Tag
+                        color={
+                          answerSheetStatus(activeAnswerQuestion) === 'correct'
+                            ? 'success'
+                            : answerSheetStatus(activeAnswerQuestion) === 'wrong'
+                              ? 'error'
+                              : 'default'
+                        }
+                      >
+                        {answerSheetStatus(activeAnswerQuestion) === 'correct'
+                          ? '正确'
+                          : answerSheetStatus(activeAnswerQuestion) === 'wrong'
+                            ? '错误'
+                            : '未作答'}
+                      </Tag>
+                    </Space>
+                  }
+                >
+                  <Typography.Paragraph className="competition-answer-sheet__stem">
+                    {activeAnswerQuestion.stem || '（题目内容为空）'}
+                  </Typography.Paragraph>
+                  {activeAnswerQuestion.options.length > 0 ? (
+                    <div className="competition-answer-sheet__options">
+                      {activeAnswerQuestion.options.map((option) => {
+                        const selected =
+                          activeAnswerQuestion.candidateAnswer.selectedOptionIds?.includes(
+                            option.optionId,
+                          ) || false;
+                        return (
+                          <div
+                            key={option.optionId}
+                            className={`competition-answer-sheet__option${selected ? ' is-selected' : ''}`}
+                          >
+                            <strong>{option.label}</strong>
+                            <Typography.Text>{option.content}</Typography.Text>
+                            {selected && <Tag color="processing">选手选择</Tag>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="competition-answer-sheet__fill-answers">
+                      <Typography.Text type="secondary">选手答案</Typography.Text>
+                      {activeAnswerQuestion.candidateAnswer.blanks?.length ? (
+                        activeAnswerQuestion.candidateAnswer.blanks.map(
+                          (answer, index) => (
+                            <Typography.Paragraph key={`blank-${index}`}>
+                              第 {index + 1} 空：{answer || '（未填写）'}
+                            </Typography.Paragraph>
+                          ),
+                        )
+                      ) : (
+                        <Typography.Paragraph>
+                          {selectedAnswerLabels(activeAnswerQuestion).join('、') ||
+                            (activeAnswerQuestion.answered ? '已作答' : '未作答')}
+                        </Typography.Paragraph>
+                      )}
+                    </div>
+                  )}
+                  {activeAnswerQuestion.options.length > 0 && (
+                    <div className="competition-answer-sheet__answer-summary">
+                      <Typography.Text type="secondary">选手答案</Typography.Text>
+                      <Typography.Paragraph>
+                        {selectedAnswerLabels(activeAnswerQuestion).join('、') ||
+                          (activeAnswerQuestion.answered ? '已作答' : '未作答')}
+                      </Typography.Paragraph>
+                    </div>
+                  )}
+                </Card>
+              </Col>
+            </Row>
+          </div>
+        ) : (
+          <Empty description="暂无答题卡内容" />
+        )}
+      </Modal>
       <Modal
         title="核对并生成排名快照"
         open={rankingDraftOpen}

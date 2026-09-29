@@ -38,6 +38,7 @@ import com.guoyu.platform.competition.exam.formal.FormalExamCandidateQuestionPro
 import com.guoyu.platform.competition.exam.formal.FormalExamCandidateQuestionProjection.ProjectedOption;
 import com.guoyu.platform.competition.exam.formal.FormalExamAnswerWriteRetry;
 import com.guoyu.platform.competition.exam.formal.FormalExamErrorCodes;
+import com.guoyu.platform.competition.exam.formal.FormalExamSessionFinishRules;
 import com.guoyu.platform.competition.exam.security.CompetitionExamPrincipal;
 import com.guoyu.platform.competition.exam.security.CompetitionExamSecurityContext;
 import com.guoyu.platform.competition.mapper.CompetitionContestantProfileMapper;
@@ -126,6 +127,8 @@ public class CompetitionFormalExamPlayerApplicationService {
   private CompetitionFormalScoringTaskService scoringTaskService;
 
   public static final int ANSWER_SYNC_BATCH_LIMIT = 100;
+  private static final long LATE_ENTRY_GRACE_MINUTES = 30;
+  private static final String LATE_ENTRY_TIMEOUT_MESSAGE = "您已超时进入考场";
 
   public CompetitionFormalExamPlayerApplicationService(
       CompetitionPlayerIdentityMapper playerMapper,
@@ -294,6 +297,7 @@ public class CompetitionFormalExamPlayerApplicationService {
     try {
       TenantContextHolder.setTenantId(player.getTenantId());
       Long resolvedSessionId = resolveLoginSession(player, sessionId);
+      assertLoginAdmission(player, resolvedSessionId);
       CompetitionFormalExamAccessSessionService.IssuedAccess issued =
           accessSessionService.issueLogin(player, resolvedSessionId, request.deviceId());
       SaLoginParameter loginParameter = SaLoginParameter.create()
@@ -339,7 +343,10 @@ public class CompetitionFormalExamPlayerApplicationService {
 
   @Transactional(readOnly = true)
   public CompetitionFormalExamPlayerContextVO context(String sessionIdValue) {
-    return toContext(resolve(currentPlayer(), parseSessionId(sessionIdValue), false));
+    ResolvedPlayerExam resolved = resolve(currentPlayer(), parseSessionId(sessionIdValue), false);
+    assertCandidateEntryWindow(
+        resolved.session(), resolved.candidateExam(), LocalDateTime.now(clock));
+    return toContext(resolved);
   }
 
   @Transactional(readOnly = true)
@@ -361,6 +368,10 @@ public class CompetitionFormalExamPlayerApplicationService {
       return toContext(resolved);
     }
     if (candidateStatus == CompetitionFormalCandidateExamStatus.ABSENT) {
+      if (FormalExamErrorCodes.ABSENT_REASON_DEADLINE_NOT_ENTERED.equals(
+          resolved.candidateExam().getAbsentReason())) {
+        throw lateEntryTimeout(resolved.session(), resolved.candidateExam());
+      }
       throw new BusinessException(ErrorCode.CONFLICT, "本场考试已记录为缺考，不能进入候考");
     }
     if (isSubmitted(candidateStatus)) {
@@ -369,20 +380,38 @@ public class CompetitionFormalExamPlayerApplicationService {
     if (candidateStatus != CompetitionFormalCandidateExamStatus.WAITING_ENTER) {
       throw new BusinessException(ErrorCode.CONFLICT, "当前考试状态不允许进入候考");
     }
-    assertSessionAllowsFirstEnter(resolved.session());
     LocalDateTime now = LocalDateTime.now(clock);
-    int updated = candidateExamMapper.markEnterIfWaiting(
-        resolved.candidateExam().getId(),
-        CompetitionFormalCandidateExamStatus.WAITING_ENTER.getCode(),
-        CompetitionFormalCandidateExamStatus.READY.getCode(),
-        now, now, principal.getPlayerId());
+    assertCandidateEntryWindow(resolved.session(), resolved.candidateExam(), now);
+    boolean lateEntry = CompetitionFormalExamSessionStatus.RUNNING.getCode()
+        .equals(resolved.session().getStatus());
+    int updated;
+    String enteredStatus;
+    if (lateEntry) {
+      enteredStatus = CompetitionFormalCandidateExamStatus.RUNNING.getCode();
+      updated = candidateExamMapper.markLateEnterIfWaiting(
+          resolved.candidateExam().getId(),
+          CompetitionFormalCandidateExamStatus.WAITING_ENTER.getCode(),
+          enteredStatus,
+          now,
+          resolved.session().getActualStartTime(),
+          now,
+          principal.getPlayerId());
+    } else {
+      assertSessionAllowsFirstEnter(resolved.session());
+      enteredStatus = CompetitionFormalCandidateExamStatus.READY.getCode();
+      updated = candidateExamMapper.markEnterIfWaiting(
+          resolved.candidateExam().getId(),
+          CompetitionFormalCandidateExamStatus.WAITING_ENTER.getCode(),
+          enteredStatus,
+          now, now, principal.getPlayerId());
+    }
     if (updated == 1) {
       CompetitionFormalCandidateExamEntity entered =
           candidateExamMapper.selectById(resolved.candidateExam().getId());
       if (entered == null) {
         throw new BusinessException(ErrorCode.INTERNAL_ERROR, "进入比赛后未能读取考试实例");
       }
-      publishCandidateStatus(principal, sessionId, entered.getId(), "ready", entered.getStatus());
+      publishCandidateStatus(principal, sessionId, entered.getId(), "waiting_enter", entered.getStatus());
       return toContext(new ResolvedPlayerExam(
           resolved.session(), resolved.profile(), entered,
           resolved.event(), resolved.stage(), resolved.workType(), resolved.level()));
@@ -405,6 +434,9 @@ public class CompetitionFormalExamPlayerApplicationService {
     }
     if (latestStatus == CompetitionFormalCandidateExamStatus.ABSENT) {
       throw new BusinessException(ErrorCode.CONFLICT, "本场考试已记录为缺考，不能进入候考");
+    }
+    if (latestStatus == CompetitionFormalCandidateExamStatus.WAITING_ENTER) {
+      assertCandidateEntryWindow(resolved.session(), latest, LocalDateTime.now(clock));
     }
     throw new BusinessException(ErrorCode.CONFLICT, "进入比赛失败，请稍后重试");
   }
@@ -820,6 +852,18 @@ public class CompetitionFormalExamPlayerApplicationService {
       return joinableSessionId;
     }
     if (requestedSessionId == null) {
+      CompetitionFormalCandidateExamEntity timedOut =
+          candidateExamMapper.selectLatestTimedOutEntryByPlayerId(player.getId());
+      if (timedOut != null && timedOut.getExamSessionId() != null) {
+        CompetitionFormalExamSessionEntity expiredSession =
+            sessionMapper.selectById(timedOut.getExamSessionId());
+        if (expiredSession != null
+            && Objects.equals(expiredSession.getTenantId(), player.getTenantId())) {
+          return expiredSession.getId();
+        }
+      }
+    }
+    if (requestedSessionId == null) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "正式比赛场次不能为空");
     }
     CompetitionFormalExamSessionEntity requested = sessionMapper.selectById(requestedSessionId);
@@ -844,6 +888,96 @@ public class CompetitionFormalExamPlayerApplicationService {
           "当前账号存在多场可参加的理论考试，请扫描本场二维码");
     }
     return sessionIds.size() == 1 ? sessionIds.getFirst() : null;
+  }
+
+  private void assertLoginAdmission(CompetitionPlayerIdentityEntity player, Long sessionId) {
+    List<CompetitionFormalCandidateExamEntity> candidates = safe(
+        candidateExamMapper.selectBySessionAndPlayerId(sessionId, player.getId()));
+    if (candidates.size() > 1) {
+      log.error("Formal exam login matched multiple CandidateExam rows, playerId={}, sessionId={}",
+          player.getId(), sessionId);
+      throw new BusinessException(ErrorCode.INTERNAL_ERROR,
+          "当前账号在本场比赛存在多份参赛档案，请联系工作人员");
+    }
+    if (candidates.isEmpty()) {
+      return;
+    }
+    CompetitionFormalExamSessionEntity session = sessionMapper.selectById(sessionId);
+    if (session != null && Objects.equals(session.getTenantId(), player.getTenantId())) {
+      assertCandidateEntryWindow(session, candidates.getFirst(), LocalDateTime.now(clock));
+    }
+  }
+
+  private void assertCandidateEntryWindow(
+      CompetitionFormalExamSessionEntity session,
+      CompetitionFormalCandidateExamEntity candidate,
+      LocalDateTime now) {
+    if (session == null || candidate == null || now == null) {
+      return;
+    }
+    CompetitionFormalCandidateExamStatus candidateStatus =
+        CompetitionFormalCandidateExamStatus.fromCode(candidate.getStatus());
+    if (candidateStatus == CompetitionFormalCandidateExamStatus.ABSENT) {
+      if (FormalExamErrorCodes.ABSENT_REASON_DEADLINE_NOT_ENTERED.equals(
+          candidate.getAbsentReason())) {
+        throw lateEntryTimeout(session, candidate);
+      }
+      return;
+    }
+    if (candidateStatus != CompetitionFormalCandidateExamStatus.WAITING_ENTER) {
+      return;
+    }
+
+    CompetitionFormalExamSessionStatus sessionStatus =
+        CompetitionFormalExamSessionStatus.fromCode(session.getStatus());
+    if (sessionStatus == CompetitionFormalExamSessionStatus.READY) {
+      return;
+    }
+    if (sessionStatus == CompetitionFormalExamSessionStatus.RUNNING) {
+      LocalDateTime entryDeadline = lateEntryDeadline(session);
+      if (entryDeadline == null) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+            "正式比赛缺少开考时间或截止时间，不能进入比赛");
+      }
+      if (!now.isBefore(entryDeadline)) {
+        throw lateEntryTimeout(session, candidate);
+      }
+      return;
+    }
+    if (sessionStatus == CompetitionFormalExamSessionStatus.FINISHED) {
+      LocalDateTime entryDeadline = lateEntryDeadline(session);
+      if (entryDeadline != null && !now.isBefore(entryDeadline)) {
+        throw lateEntryTimeout(session, candidate);
+      }
+      throw new BusinessException(ErrorCode.CONFLICT, "本场比赛已经结束");
+    }
+    if (sessionStatus == CompetitionFormalExamSessionStatus.CANCELLED) {
+      throw new BusinessException(ErrorCode.CONFLICT, "本场比赛已经取消");
+    }
+    if (sessionStatus == CompetitionFormalExamSessionStatus.PREPARING) {
+      throw new BusinessException(ErrorCode.CONFLICT, "正式比赛数据正在准备，请稍候");
+    }
+    throw new BusinessException(ErrorCode.CONFLICT, "当前比赛状态不允许进入候考");
+  }
+
+  private BusinessException lateEntryTimeout(
+      CompetitionFormalExamSessionEntity session,
+      CompetitionFormalCandidateExamEntity candidate) {
+    log.warn("Formal exam late entry rejected, sessionId={}, candidateExamId={}",
+        session == null ? null : session.getId(), candidate == null ? null : candidate.getId());
+    return new BusinessException(ErrorCode.CONFLICT, LATE_ENTRY_TIMEOUT_MESSAGE);
+  }
+
+  private static LocalDateTime lateEntryDeadline(CompetitionFormalExamSessionEntity session) {
+    if (session == null || session.getActualStartTime() == null) {
+      return null;
+    }
+    LocalDateTime platformDeadline = deadlineTime(session);
+    if (platformDeadline == null) {
+      return null;
+    }
+    LocalDateTime graceDeadline = session.getActualStartTime().plusMinutes(LATE_ENTRY_GRACE_MINUTES);
+    return platformDeadline.isBefore(graceDeadline) ? platformDeadline : graceDeadline;
   }
 
   private CompetitionPlayerIdentityEntity authenticateActivePlayer(
@@ -1003,11 +1137,7 @@ public class CompetitionFormalExamPlayerApplicationService {
   }
 
   private static LocalDateTime deadlineTime(CompetitionFormalExamSessionEntity session) {
-    if (session == null || session.getActualStartTime() == null
-        || session.getDurationSeconds() == null || session.getDurationSeconds() <= 0) {
-      return null;
-    }
-    return session.getActualStartTime().plusSeconds(session.getDurationSeconds());
+    return FormalExamSessionFinishRules.deadlineTime(session);
   }
 
   private void publishCandidateStatus(

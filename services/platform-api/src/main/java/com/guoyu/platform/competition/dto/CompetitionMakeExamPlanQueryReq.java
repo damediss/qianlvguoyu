@@ -9,6 +9,7 @@ public class CompetitionMakeExamPlanQueryReq extends PageQuery {
   private String contentType;
   private String status;
   private String keyword;
+  private Boolean simpleMode;
 
   public Long getEventWorkTypeId() { return eventWorkTypeId; }
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
@@ -20,4 +21,6 @@ public class CompetitionMakeExamPlanQueryReq extends PageQuery {
   public void setStatus(String status) { this.status = status; }
   public String getKeyword() { return keyword; }
   public void setKeyword(String keyword) { this.keyword = keyword; }
+  public Boolean getSimpleMode() { return simpleMode; }
+  public void setSimpleMode(Boolean simpleMode) { this.simpleMode = simpleMode; }
 }

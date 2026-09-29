@@ -80,7 +80,7 @@ export function CompetitionStagePlanningPage({
     eventWorkTypeName?: string;
     eventWorkTypeLevelCode?: string;
     eventWorkTypeLevelName?: string;
-    initialTab: 'paper' | 'referee';
+    initialTab: 'paper' | 'referee' | 'runtime';
   } | null>(null);
   const [playerAssignmentStageId, setPlayerAssignmentStageId] = useState<string | null>(null);
   const [playerAssignmentContentType, setPlayerAssignmentContentType] = useState<
@@ -201,7 +201,11 @@ export function CompetitionStagePlanningPage({
     if (!draft.selectedNode || !isBusinessStageNode(draft.selectedNode)) return {};
     return { [draft.selectedNode.id]: selectedContentTypes(selectedStageContents) };
   }, [draft.selectedNode, selectedStageContents]);
-  const onStageContentTypeClick = useCallback((nodeId: string, contentType: CompetitionStageContentType) => {
+  const onStageContentTypeClick = useCallback((
+    nodeId: string,
+    contentType: CompetitionStageContentType,
+    practicalTab: 'paper' | 'runtime' = 'paper',
+  ) => {
     const node = draft.nodes.find((item) => item.id === nodeId);
     if (!node || !isBusinessStageNode(node) || node.data.stageId === undefined || node.data.stageId === null) {
       message.warning('请先保存当前赛段编排，再进入配置工作台');
@@ -225,7 +229,7 @@ export function CompetitionStagePlanningPage({
         eventWorkTypeName: selectedEventWorkType?.displayName || selectedEventWorkType?.workTypeName || undefined,
         eventWorkTypeLevelCode,
         eventWorkTypeLevelName: selectedEventWorkTypeLevel?.levelName,
-        initialTab: 'paper',
+        initialTab: practicalTab,
       });
     }
   }, [draft.nodes, eventWorkTypeId, eventWorkTypeLevelCode, selectedEventWorkType, selectedEventWorkTypeLevel]);

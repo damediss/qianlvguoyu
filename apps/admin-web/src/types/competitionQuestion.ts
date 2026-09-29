@@ -8,6 +8,7 @@ export type CompetitionPracticalScoringMethod = 'additive' | 'deductive';
 export interface CompetitionPracticalAssessmentElementRequest {
   elementOrder: number;
   elementHtml: string;
+  itemName?: string;
   allocationEnabled: boolean;
   maxScore?: CompetitionDecimal;
   standardHtml: string;
@@ -136,6 +137,8 @@ export interface CompetitionQuestionQuery {
   blueprintId?: CompetitionId;
   blueprintNodeId?: CompetitionId;
   bindingStatus?: string;
+  unboundOnly?: boolean;
+  status?: number;
 }
 
 export interface CompetitionQuestionImportBatch {
@@ -201,6 +204,8 @@ export interface CompetitionMakeExamPlan {
   createdAt?: string | null;
   updatedAt?: string | null;
   randomSeed?: string | null;
+  planPurpose?: 'EXAM_PLAN' | 'PRACTICAL_SCORING_SCHEME' | string;
+  practicalQuestionIds?: CompetitionId[];
   details: CompetitionMakeExamPlanDetail[];
   topicRules?: CompetitionMakeExamPlanTopicRule[];
 }
@@ -221,6 +226,7 @@ export interface CompetitionMakeExamPlanRequest {
   topicRules?: CompetitionMakeExamPlanTopicRule[];
   paperCount?: number;
   randomSeed?: CompetitionId;
+  practicalQuestionIds?: CompetitionId[];
 }
 
 export interface CompetitionMakeExamPlanPrecheck {
