@@ -1,28 +1,29 @@
 -- 将「教师库」train_teacher-bank 挂到培训「支持保障」pxzhi_chi_bao_zhang 下，改名为「教务管理」
+-- 空库幂等化（踩坑 #34 修复）：父菜单 pxzhi_chi_bao_zhang 是存量库 legacy 菜单，空库不存在，
+-- parent_id 子查询返 NULL 撞上 NOT NULL 断链。父菜单在才挂载；不在则只做属性归一不动 parent_id。
+-- 存量库本版本已应用不会重跑（validate-on-migrate=false）。
+SET @db := DATABASE();
+SET @has_parent := (SELECT COUNT(*) FROM sys_menu
+  WHERE tenant_id = 1 AND code = 'pxzhi_chi_bao_zhang' AND deleted = 0);
 
-UPDATE sys_menu
-SET
-  parent_id = (
-    SELECT id FROM (
-      SELECT id FROM sys_menu
-      WHERE tenant_id = 1 AND code = 'pxzhi_chi_bao_zhang' AND deleted = 0
-      LIMIT 1
-    ) t
-  ),
-  menu_type = 'page',
-  name = '教务管理',
-  path = '/training/academic-mgmt',
-  component = 'training/TrainingAcademicManagePage',
-  permission_code = 'train:teacher-bank:view',
-  icon = 'ReadOutlined',
-  sort_order = 3,
-  visible = 1,
-  status = 'enabled',
-  deleted = 0,
-  updated_at = NOW(),
-  updated_by = 1
-WHERE tenant_id = 1
-  AND code = 'train_teacher-bank';
+SET @sql := IF(@has_parent > 0,
+  'UPDATE sys_menu
+   SET parent_id = (SELECT id FROM (SELECT id FROM sys_menu
+                     WHERE tenant_id = 1 AND code = ''pxzhi_chi_bao_zhang'' AND deleted = 0 LIMIT 1) t),
+       menu_type = ''page'', name = ''教务管理'', path = ''/training/academic-mgmt'',
+       component = ''training/TrainingAcademicManagePage'', permission_code = ''train:teacher-bank:view'',
+       icon = ''ReadOutlined'', sort_order = 3, visible = 1, status = ''enabled'',
+       deleted = 0, updated_at = NOW(), updated_by = 1
+   WHERE tenant_id = 1 AND code = ''train_teacher-bank''',
+  'UPDATE sys_menu
+   SET menu_type = ''page'', name = ''教务管理'', path = ''/training/academic-mgmt'',
+       component = ''training/TrainingAcademicManagePage'', permission_code = ''train:teacher-bank:view'',
+       icon = ''ReadOutlined'', sort_order = 3, visible = 1, status = ''enabled'',
+       deleted = 0, updated_at = NOW(), updated_by = 1
+   WHERE tenant_id = 1 AND code = ''train_teacher-bank''');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 若不存在历史菜单则新建
 INSERT INTO sys_menu (
@@ -51,7 +52,9 @@ SELECT
 FROM DUAL
 WHERE NOT EXISTS (
   SELECT 1 FROM sys_menu WHERE tenant_id = 1 AND code = 'train_teacher-bank'
-);
+)
+  -- 空库兜底：父菜单不存在时禁用本 INSERT，防 parent_id NOT NULL 断链
+  AND @has_parent > 0;
 
 -- 恢复平台管理员角色菜单关联
 UPDATE sys_role_menu

@@ -1,10 +1,27 @@
-ALTER TABLE certification_exam_equipment
-  ADD COLUMN equipment_quantity INT NOT NULL DEFAULT 1 COMMENT '设备数量' AFTER asset_no;
+-- 空库幂等化（踩坑 #34 修复）：存量库 certification_exam_equipment 是 PHP 老表已存在；
+-- 空库中该表由下游 V20260605_010 才建出（该建表已补上 equipment_quantity 列），
+-- 此处表不存在即跳过；存量库本版本已应用不会重跑（validate-on-migrate=false）。
+SET @db := DATABASE();
+SET @tbl := (SELECT COUNT(*) FROM information_schema.TABLES
+  WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'certification_exam_equipment');
 
-UPDATE certification_exam_equipment
-SET equipment_status = 'idle'
-WHERE equipment_status = 'normal'
-  AND deleted = 0;
+SET @sql := IF(
+  @tbl > 0 AND (SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'certification_exam_equipment'
+      AND COLUMN_NAME = 'equipment_quantity') = 0,
+  'ALTER TABLE certification_exam_equipment ADD COLUMN equipment_quantity INT NOT NULL DEFAULT 1 COMMENT ''设备数量'' AFTER asset_no',
+  'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  @tbl > 0,
+  'UPDATE certification_exam_equipment SET equipment_status = ''idle'' WHERE equipment_status = ''normal'' AND deleted = 0',
+  'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 CREATE TABLE IF NOT EXISTS certification_task_equipment (
   id BIGINT NOT NULL,

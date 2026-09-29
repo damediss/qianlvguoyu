@@ -6,9 +6,11 @@ INSERT INTO sys_menu (
   icon, sort_order, visible, expanded, status,
   created_at, updated_at, created_by, updated_by, deleted
 ) VALUES (
+  -- 空库幂等化（踩坑 #34 修复）：链上 sys_menu.expanded 为 NOT NULL 无默认（PHP 老表可空），
+  -- 原值 NULL 在空库必报 cannot be null；改 0（不展开），语义等价。存量库本版本已应用不会重跑。
   6600, 1, 2064170197574156289, 'page', 'exam_faq_conversion', '试题FAQ知识管理',
   '/question-bank/faq-conversion', 'exam/FaqConversionPage', 'exam:faq:view',
-  'RobotOutlined', 4, 1, NULL, 'enabled',
+  'RobotOutlined', 4, 1, 0, 'enabled',
   NOW(), NOW(), 1, 1, 0
 )
 ON DUPLICATE KEY UPDATE

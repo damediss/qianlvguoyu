@@ -1,16 +1,64 @@
-ALTER TABLE certification_task_member
-  ADD COLUMN user_id BIGINT NULL COMMENT 'registered platform user id' AFTER document_id,
-  ADD KEY idx_certification_member_user (tenant_id, user_id, deleted);
+-- 空库幂等化（踩坑 #34 修复）：存量库这三张表是 PHP 老表缺这些列/索引；
+-- 空库中链上建表（V20260603_010 等）已自带，无条件 ADD 必断链（Duplicate column）。
+-- 逐列/逐索引存在性守卫；存量库本版本已应用不会重跑（validate-on-migrate=false）。
+SET @db := DATABASE();
 
-ALTER TABLE certification_candidate
-  ADD COLUMN admission_ticket_no VARCHAR(64) NULL COMMENT 'admission ticket number' AFTER candidate_no,
-  ADD KEY idx_certification_candidate_admission_ticket (tenant_id, task_id, admission_ticket_no, deleted);
+-- 1) certification_task_member.user_id + idx
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+   WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'certification_task_member' AND COLUMN_NAME = 'user_id') = 0,
+  'ALTER TABLE certification_task_member ADD COLUMN user_id BIGINT NULL COMMENT ''registered platform user id'' AFTER document_id',
+  'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
-ALTER TABLE certification_info_exam_staff
-  ADD COLUMN user_id BIGINT NULL COMMENT 'registered platform user id' AFTER tenant_id,
-  ADD COLUMN account_username VARCHAR(64) NULL COMMENT 'registered platform username' AFTER staff_name,
-  ADD KEY idx_certification_info_exam_staff_user (tenant_id, user_id, deleted);
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.STATISTICS
+   WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'certification_task_member'
+     AND INDEX_NAME = 'idx_certification_member_user') = 0,
+  'ALTER TABLE certification_task_member ADD KEY idx_certification_member_user (tenant_id, user_id, deleted)',
+  'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
+-- 2) certification_candidate.admission_ticket_no + idx
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+   WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'certification_candidate' AND COLUMN_NAME = 'admission_ticket_no') = 0,
+  'ALTER TABLE certification_candidate ADD COLUMN admission_ticket_no VARCHAR(64) NULL COMMENT ''admission ticket number'' AFTER candidate_no',
+  'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.STATISTICS
+   WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'certification_candidate'
+     AND INDEX_NAME = 'idx_certification_candidate_admission_ticket') = 0,
+  'ALTER TABLE certification_candidate ADD KEY idx_certification_candidate_admission_ticket (tenant_id, task_id, admission_ticket_no, deleted)',
+  'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 3) certification_info_exam_staff.user_id / account_username + idx
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+   WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'certification_info_exam_staff' AND COLUMN_NAME = 'user_id') = 0,
+  'ALTER TABLE certification_info_exam_staff ADD COLUMN user_id BIGINT NULL COMMENT ''registered platform user id'' AFTER tenant_id',
+  'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.COLUMNS
+   WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'certification_info_exam_staff' AND COLUMN_NAME = 'account_username') = 0,
+  'ALTER TABLE certification_info_exam_staff ADD COLUMN account_username VARCHAR(64) NULL COMMENT ''registered platform username'' AFTER staff_name',
+  'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @sql := IF(
+  (SELECT COUNT(*) FROM information_schema.STATISTICS
+   WHERE TABLE_SCHEMA = @db AND TABLE_NAME = 'certification_info_exam_staff'
+     AND INDEX_NAME = 'idx_certification_info_exam_staff_user') = 0,
+  'ALTER TABLE certification_info_exam_staff ADD KEY idx_certification_info_exam_staff_user (tenant_id, user_id, deleted)',
+  'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- 4) sys_user 字段口径与种子（幂等，保持原样）
 ALTER TABLE sys_user MODIFY COLUMN user_type VARCHAR(32) NOT NULL
   COMMENT 'user type: platform_admin, tenant_admin, certification_admin, assessor, normal';
 

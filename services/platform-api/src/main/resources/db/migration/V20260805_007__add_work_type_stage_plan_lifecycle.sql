@@ -10,9 +10,11 @@ SET @has_plan_status = (
     AND TABLE_NAME = 'competition_event_work_type_stage'
     AND COLUMN_NAME = 'stage_plan_status'
 );
+-- 空库幂等化（踩坑 #34 修复）：链上建表无 status 列，AFTER status 非法——列序只影响展示，
+-- 去掉定位子句即可（存量库本版本已应用不会重跑，validate-on-migrate=false）。
 SET @ddl_status = (
   SELECT IF(@has_plan_status = 0,
-    'ALTER TABLE competition_event_work_type_stage ADD COLUMN stage_plan_status VARCHAR(32) NOT NULL DEFAULT ''draft'' COMMENT ''阶段编排生命周期：draft/confirmed'' AFTER status',
+    'ALTER TABLE competition_event_work_type_stage ADD COLUMN stage_plan_status VARCHAR(32) NOT NULL DEFAULT ''draft'' COMMENT ''阶段编排生命周期：draft/confirmed''',
     'SELECT 1'
   )
 );

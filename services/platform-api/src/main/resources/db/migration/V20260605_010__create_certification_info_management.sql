@@ -456,6 +456,9 @@ CREATE TABLE IF NOT EXISTS certification_exam_equipment (
   tenant_id BIGINT NOT NULL DEFAULT 1 COMMENT '租户id',
   equipment_type VARCHAR(120) NOT NULL COMMENT '设备类型',
   asset_no VARCHAR(120) NOT NULL COMMENT '资产编号',
+  -- 空库幂等化（踩坑 #34 修复）：V20260603_018 的 ADD COLUMN 在存量库已把该列加进 PHP 老表；
+  -- 空库由本处建表，必须带上同一列，否则空库终态与存量库分叉
+  equipment_quantity INT NOT NULL DEFAULT 1 COMMENT '设备数量',
   site_id BIGINT NULL COMMENT '所属考场id',
   site_name VARCHAR(200) NULL COMMENT '所属考点名称',
   equipment_model VARCHAR(160) NULL COMMENT '型号规格',
