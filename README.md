@@ -12,7 +12,7 @@
 | `services/` | 正式后端服务（Java 主平台、AI Gateway、MCP Server） |
 | `packages/` | 共享类型、UI 组件、内部 SDK |
 | `ai/` | Prompt、Skill、Agent 配置、知识库目录规范 |
-| `workflows/` | n8n、BPMN、流程自动化规则 |
+| `workflows/` | BPMN、流程自动化规则（一期不引入 n8n，自动化由平台自实现） |
 | `infra/` | Docker、Nginx、数据库、环境变量模板 |
 | `scripts/` | 文档生成、数据处理、检查和转换脚本 |
 | `data/` | 导入模板、脱敏样例、业务字典 |

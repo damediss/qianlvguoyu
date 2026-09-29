@@ -1,17 +1,10 @@
 # AGENTS.md
 
-> **本文件被以下 Agent 工具读取**（优先级从上到下）：
-> - **MiniMax Code / Mavis** — 团队阶段，owner + producer + verifier 协作
-> - **Claude Code** — 单 agent 阶段，本文件等同 CLAUDE.md
-> - **Cursor** — 单 agent 阶段，通过 `Cursor → Settings → Rules` 自动同步
-> - **Qoder** — 通过 `.qoder/agents/builtin/*.md` 引用本文件核心段
-> - **OpenCode / Codex / Gemini CLI** — 直接读取根目录 `AGENTS.md`
+> 本文件被各 Agent 工具读取：MiniMax Code / Mavis（团队阶段）、Claude Code（等同 CLAUDE.md）、Cursor（`Cursor → Settings → Rules` 同步）、Qoder（`.qoder/agents/builtin/*.md` 引用）、OpenCode / Codex / Gemini CLI（直接读取）。
 >
-> **子目录规则**：`apps/admin-web/AGENTS.md`（前端）、`services/platform-api/AGENTS.md`（后端）承载局部规则，进入对应目录工作前必读。Codex / Claude Code 会自动加载子目录文件；Cursor / Qoder 不会，做对应目录任务时需手动打开。
+> **子目录规则**：`apps/admin-web/AGENTS.md`（前端）、`services/platform-api/AGENTS.md`（后端）承载局部规则，进入对应目录工作前必读；Codex / Claude Code 自动加载子目录文件，Cursor / Qoder 需手动打开。
 >
-> **若你是 producer**：只读本文件 + 任务涉及目录的子目录 AGENTS.md，不要碰协作协议。
-> **若你是 verifier**：必读 `docs/agent/多Agent协作协议.md` + 本文件「测试与验收」。
-> **若你是 owner / plan 编排**：必读全部。
+> **角色导读**：producer 只读本文件 + 涉及目录的子目录 AGENTS.md，不碰协作协议；verifier 另必读 `docs/agent/多Agent协作协议.md` + 本文件「测试与验收」；owner / plan 编排必读全部。
 
 本文件给在本项目中工作的 AI Agent / Codex 使用。进入仓库后先阅读本文件，再按需加载对应目录下的文档。
 
@@ -41,7 +34,7 @@
 1. Java / Spring Boot 做核心业务主干，一期采用可控服务化，不做全量微服务
 2. 核心业务集中在 `services/platform-api/`，不要拆出细业务服务
 3. AI、MCP、文件、工作流保持独立工程边界，但一期可先在 `platform-api` 内用包隔离
-4. Flowable 管核心业务流程状态，n8n 只做内部自动化/通知/定时；BPMN 文件放 `services/platform-api/src/main/resources/workflows/bpmn/`，n8n 导出放 `workflows/n8n/`
+4. Flowable 管核心业务流程状态，BPMN 文件放 `services/platform-api/src/main/resources/workflows/bpmn/`；一期内部自动化/通知/定时由平台自实现，不引入 n8n
 
 ### 全栈硬规则
 
@@ -88,9 +81,9 @@
 
 > 经典软件工程著作几乎肯定在模型的训练数据里。给 Agent 的指令里**直接用下面这些术语**，不要意译成大白话——术语越精确，模型输出越精确。
 
-1. **tracer bullet（追踪子弹）** —— 做新功能要**纵向切片**：先打通 DB → 后端 → 前端最窄的一条端到端路径，跑通之后再横向扩展。**禁止按层横切**（先写完整数据库层、再应用层、最后前端）——每层单看都对，最后组装才暴露设计冲突。上文的分层表只定义**职责边界**，不定义施工顺序。
+1. **tracer bullet（追踪子弹）** —— 做新功能要**纵向切片**：先打通 DB → 后端 → 前端最窄的一条端到端路径，跑通之后再横向扩展。**禁止按层横切**（先写完整数据库层、再应用层、最后前端）——每层单看都对，最后组装才暴露设计冲突。上文的分层表只定义**职责边界**，不定义施工顺序。实例：AI 课件生成先打通"标准 docx → 骨架页 → 导出 pptx"一条链路，再逐点扩知识点页。
 2. **ubiquitous language（统一语言）** —— 一个业务概念**一个词、一个实现**。同一概念出现第二份实现即视为缺陷：脱敏统一走 `SensitiveMaskUtils`，错误码统一 `ErrorCode`，租户上下文统一 `TenantContextHolder`。**禁止在 Service 内私有复制公共能力**（历史上 `maskIdCard` / `maskPhone` / `maskMobile` 在 10 个类里复制出 14 处实现，口径互相打架，其中多个分支在长度不符时返回原值，导致明文落进 `masked_*` 列；详见踩坑库 #35）。
-3. **deep module（深模块）** —— 公共能力收敛成**接口窄、职责深**的模块，不要散成一堆互相转发调用的浅模块。判断标准：调用方只需知道一个方法名，不必知道内部有几层。
+3. **deep module（深模块）** —— 公共能力收敛成**接口窄、职责深**的模块，不要散成一堆互相转发调用的浅模块。判断标准：调用方只需知道一个方法名，不必知道内部有几层。实例：`FileStorage.presignedDownloadUrl` 默认方法收口预签名下载——local 实现零改动、COS 覆盖返回直链，调用方无需感知存储类型。
 
 **完成的定义**：能跑 ≠ 完成。完成 = 能改 + 能维护 + 能跟别人解释清楚。
 
@@ -99,14 +92,13 @@
 后端：JUnit 5 / Mockito / Spring Boot Test + MockMvc / Testcontainers / Spring Security Test
 前端：Vitest / React Testing Library / Playwright（**无 MSW**，勿假定存在）
 
-最低验收：
+最低验收（对每次改动持续生效的门槛，不是一次性验收清单）：
 
 1. 登录、菜单、权限、数据权限必须有测试
 2. 数据库迁移脚本必须能在空库执行成功；新增/修改表 DDL 必须包含完整 BaseEntity 六列，与实体 getter 一一对应
 3. 涉及异步线程的功能，整个调用链禁止直接调用 SecurityContext
 4. 文件上传必须验证成功和失败路径
 5. AI 和 MCP 工具调用必须验证权限失败、参数错误和人工确认
-6. 一期主链路可跑通：管理员配置基础数据 → 课程人员建课建题 → 课程发布审批 → 安排考试 → 学员学习答题查看成绩错题
 
 **验证边界诚实报告**：无法运行检查时，明确列出未验证项、原因和风险，禁止声称验证通过。
 
@@ -131,7 +123,7 @@
 3. 发现需求文档、API 合同、表结构、页面清单不一致时，先指出冲突并给出最小修正建议
 4. 生成或修改正式代码时，同步补充启动说明、环境变量、健康检查和测试
 5. 不把原型 HTML 当作正式前端工程继续扩写
-6. 不把 AI、MCP、n8n 设计成绕过平台权限和审计的通道
+6. 不把 AI、MCP 设计成绕过平台权限和审计的通道
 7. 多 Agent 协作（角色 / 硬上限 / 交棒 / 并行约束）→ `docs/agent/多Agent协作协议.md`
 
 ## 子文档索引
