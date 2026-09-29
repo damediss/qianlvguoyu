@@ -161,7 +161,10 @@ class ExamExamDetailImportPropositionTest {
     assertEquals("题干甲。（　　）", judge.getContent());
     assertEquals(1, judge.getDifficulty());
     assertEquals(0, judge.getScore().compareTo(new BigDecimal("0.5")));
-    assertEquals(0, judge.getFinalCheckStatus());
+    assertEquals(1, judge.getCheckStatus());
+    assertEquals(1, judge.getFinalCheckStatus());
+    assertEquals(1, judge.getCheckUserId());
+    assertEquals(1, judge.getFinalCheckUserId());
     JsonNode judgeOpts = objectMapper.readTree(judge.getAnswer());
     assertEquals(2, judgeOpts.size());
     assertEquals("正确", judgeOpts.get(0).get("content").asText());
