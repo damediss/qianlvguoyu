@@ -1043,11 +1043,7 @@ export function QuestionBankPage() {
           <p style={{ color: '#999', fontSize: 12 }}>支持 .xls / .xlsx 格式</p>
         </Upload.Dragger>
         <div style={{ marginTop: 12 }}>
-          <a
-            onClick={() => {
-              message.info('请联系管理员获取导入模板');
-            }}
-          >
+          <a href="/templates/exam-import-template.xlsx" download="试题导入模板-命题.xlsx">
             <DownloadOutlined /> 下载导入模板
           </a>
         </div>

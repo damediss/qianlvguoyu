@@ -36,6 +36,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.Cell;
@@ -62,6 +64,13 @@ public class ExamExamDetailApplicationService {
   private static final int PROPOSITION_ANSWER_START_COL = 6;
   /** 最多横向展开的选项列数（G 起） */
   private static final int PROPOSITION_MAX_CHOICE_OPTIONS = 8;
+  /** 命题模板数字题型码 → 题库题型码（与导出 mapTypeToPropositionCode 一一对应） */
+  private static final Map<Integer, String> PROPOSITION_TYPE_BY_CODE = Map.of(
+      1, "judge", 2, "single", 3, "fill", 4, "short", 5, "compute",
+      6, "essay", 7, "multi", 8, "name", 9, "drawing", 10, "case");
+  /** 命题模板选项单元格"内容、分值"后缀（分值可缺省） */
+  private static final Pattern PROPOSITION_OPTION_SCORE_PATTERN =
+      Pattern.compile("(.+)、([0-9]+(?:\\.[0-9]+)?)\\s*$");
 
   private final ExamExamDetailMapper mapper;
   private final ExamKnowledgeStructureMapper knowledgeMapper;
@@ -419,9 +428,9 @@ public class ExamExamDetailApplicationService {
       Map<String, Integer> colMap = buildColumnMap(sheet.getRow(0));
       Integer typeCol = colMap.get("题型");
       Integer stemCol = colMap.get("题干");
-      if (typeCol == null || stemCol == null) {
+      if (typeCol == null) {
         throw new BusinessException(ErrorCode.BAD_REQUEST,
-            "Excel 表头缺少必需列“题型”或“题干”。请使用系统导出的模板，或确保表头包含这两列");
+            "Excel 表头缺少必需列“题型”。请使用系统导出的模板，或确保表头包含该列");
       }
       // 选项列 A-H：normalizeHeader 把 "A"/"选项A" 都归一为 "a"，
       // 故按 "a".."h" 查列索引
@@ -441,24 +450,60 @@ public class ExamExamDetailApplicationService {
         String type = getCellString(row.getCell(typeCol));
         if (!StringUtils.hasText(type)) continue;
 
-        String typeCode = mapTypeLabel(type);
-        if (typeCode == null) {
-          log.warn("Row {}: unknown type '{}', skipping", i, type);
-          continue;
-        }
+        String typeCode;
+        String content;
+        String answer;
+        String resolve;
+        Integer difficulty;
+        String keyword;
+        BigDecimal score = null;
+        Integer knowledgeIdOverride = null;
 
-        String stem = getCellString(row.getCell(stemCol));
-        String[] opts = new String[8];
-        for (int k = 0; k < 8; k++) {
-          opts[k] = optCols[k] != null ? getCellString(row.getCell(optCols[k])) : null;
-        }
-        String answer = answerCol != null ? getCellString(row.getCell(answerCol)) : null;
-        String resolve = resolveCol != null ? getCellString(row.getCell(resolveCol)) : null;
-        Integer difficulty = parseDifficulty(
-            difficultyCol != null ? getCellString(row.getCell(difficultyCol)) : null);
-        String keyword = keywordCol != null ? getCellString(row.getCell(keywordCol)) : null;
+        Integer propositionCode = parsePropositionTypeCode(type);
+        if (propositionCode != null) {
+          // 命题模板格式（与导出同款）：A=知识点编码 C=数字题型码 D=题干 E=难度 F=分值
+          // G..N=选项（"内容、分值"），下一行在正确选项列写"是"。
+          // 与平台标准对齐：题型存英文码，answer 存 JSON 选项数组（判分消费端口径）。
+          typeCode = PROPOSITION_TYPE_BY_CODE.get(propositionCode);
+          String seriesNo = getCellString(row.getCell(0));
+          String stem = getCellString(row.getCell(3));
+          difficulty = parseDifficulty(getCellString(row.getCell(4)));
+          score = getCellDecimal(row.getCell(5));
+          resolve = null;
+          keyword = null;
+          if (isChoicePropositionCode(propositionCode)) {
+            answer = buildPropositionAnswerJson(
+                readPropositionOptions(row), readPropositionMarkers(sheet.getRow(i + 1)));
+          } else {
+            // 非选择题：答案文本直接写在 G 列
+            answer = getCellString(row.getCell(PROPOSITION_ANSWER_START_COL));
+          }
+          content = stem;
+          knowledgeIdOverride = resolveKnowledgeBySeriesNo(seriesNo, courseId);
+        } else {
+          typeCode = mapTypeLabel(type);
+          if (typeCode == null) {
+            log.warn("Row {}: unknown type '{}', skipping", i, type);
+            continue;
+          }
+          if (stemCol == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                "Excel 表头缺少必需列“题干”。请使用系统导出的模板，或确保表头包含该列");
+          }
 
-        String content = buildContent(stem, opts);
+          String stem = getCellString(row.getCell(stemCol));
+          String[] opts = new String[8];
+          for (int k = 0; k < 8; k++) {
+            opts[k] = optCols[k] != null ? getCellString(row.getCell(optCols[k])) : null;
+          }
+          answer = answerCol != null ? getCellString(row.getCell(answerCol)) : null;
+          resolve = resolveCol != null ? getCellString(row.getCell(resolveCol)) : null;
+          difficulty = parseDifficulty(
+              difficultyCol != null ? getCellString(row.getCell(difficultyCol)) : null);
+          keyword = keywordCol != null ? getCellString(row.getCell(keywordCol)) : null;
+
+          content = buildContent(stem, opts);
+        }
 
         ExamExamDetailEntity entity = new ExamExamDetailEntity();
         entity.setTenantId(tenantId);
@@ -469,7 +514,7 @@ public class ExamExamDetailApplicationService {
         entity.setKeyword(keyword);
         entity.setDifficulty(difficulty);
         entity.setSource(source != null ? source : 0);
-        entity.setScore(null);
+        entity.setScore(score);
         entity.setIsPrivate(0);
         entity.setStatus(1);
         entity.setCheckStatus(0);
@@ -479,8 +524,10 @@ public class ExamExamDetailApplicationService {
         entity.setDeleted(0);
         entity.setCreateTime(LocalDateTime.now());
 
-        // Assign knowledgeId: pick a random L3 under the course
-        if (knowledgeIds != null && !knowledgeIds.isEmpty()) {
+        // 命题模板按"知识点编码"列精确挂载；匹配不到或旧格式回退随机 L3
+        if (knowledgeIdOverride != null) {
+          entity.setKnowledgeId(knowledgeIdOverride);
+        } else if (knowledgeIds != null && !knowledgeIds.isEmpty()) {
           int idx = entities.size() % knowledgeIds.size();
           entity.setKnowledgeId(knowledgeIds.get(idx));
         }
@@ -900,9 +947,9 @@ public class ExamExamDetailApplicationService {
   private Integer parseDifficulty(String s) {
     if (s == null || s.isBlank()) return 2;
     return switch (s.trim()) {
-      case "简单" -> 1;
-      case "中等" -> 2;
-      case "困难" -> 3;
+      case "简单", "易" -> 1;
+      case "中等", "中" -> 2;
+      case "困难", "难" -> 3;
       default -> {
         try { yield Integer.parseInt(s.trim()); }
         catch (NumberFormatException e) { yield 2; }
@@ -974,6 +1021,106 @@ public class ExamExamDetailApplicationService {
       }
     }
     return "";
+  }
+
+  /** 命题模板题型列：数字码 1-10 识别为命题格式，返回码值；其余（中文标签）返回 null 走旧解析 */
+  private Integer parsePropositionTypeCode(String type) {
+    if (type == null) return null;
+    String trimmed = type.trim();
+    if (!trimmed.matches("[0-9]+")) return null;
+    int code = Integer.parseInt(trimmed);
+    return PROPOSITION_TYPE_BY_CODE.containsKey(code) ? code : null;
+  }
+
+  private boolean isChoicePropositionCode(int code) {
+    return code == 1 || code == 2 || code == 7;
+  }
+
+  /** 命题模板选项行：解析 G..N 的"内容、分值"单元格，空单元格保留槽位以对齐标记列 */
+  private PropositionOption[] readPropositionOptions(Row row) {
+    PropositionOption[] options = new PropositionOption[PROPOSITION_MAX_CHOICE_OPTIONS];
+    if (row == null) return options;
+    for (int k = 0; k < PROPOSITION_MAX_CHOICE_OPTIONS; k++) {
+      String text = getCellString(row.getCell(PROPOSITION_ANSWER_START_COL + k));
+      if (!StringUtils.hasText(text)) continue;
+      Matcher m = PROPOSITION_OPTION_SCORE_PATTERN.matcher(text);
+      if (m.matches()) {
+        options[k] = new PropositionOption(m.group(1).trim(), new BigDecimal(m.group(2)));
+      } else {
+        options[k] = new PropositionOption(text, null);
+      }
+    }
+    return options;
+  }
+
+  /** 命题模板标记行：正确选项列写"是" */
+  private boolean[] readPropositionMarkers(Row markerRow) {
+    boolean[] marks = new boolean[PROPOSITION_MAX_CHOICE_OPTIONS];
+    if (markerRow == null) return marks;
+    for (int k = 0; k < PROPOSITION_MAX_CHOICE_OPTIONS; k++) {
+      String v = getCellString(markerRow.getCell(PROPOSITION_ANSWER_START_COL + k));
+      marks[k] = "是".equals(v) || "√".equals(v) || "Y".equalsIgnoreCase(v);
+    }
+    return marks;
+  }
+
+  /**
+   * 组装平台标准答案 JSON：[{"content","isCorrect","score"}]（判分/练习消费端口径）。
+   * 选择题必须有正确项标记，否则返回 null（留空待审核补录，避免产生全错判分数据）。
+   */
+  private String buildPropositionAnswerJson(PropositionOption[] options, boolean[] marks) {
+    List<Map<String, Object>> answerOptions = new ArrayList<>();
+    boolean anyMark = false;
+    for (int k = 0; k < options.length; k++) {
+      PropositionOption opt = options[k];
+      if (opt == null) continue;
+      anyMark |= marks[k];
+      Map<String, Object> item = new LinkedHashMap<>();
+      item.put("content", opt.content());
+      item.put("isCorrect", marks[k]);
+      if (opt.score() != null) {
+        item.put("score", opt.score());
+      }
+      answerOptions.add(item);
+    }
+    if (answerOptions.isEmpty() || !anyMark) {
+      return null;
+    }
+    try {
+      return objectMapper.writeValueAsString(answerOptions);
+    } catch (Exception e) {
+      log.warn("Failed to serialize proposition answer options: {}", e.getMessage());
+      return null;
+    }
+  }
+
+  /** 按"知识点编码"列（series_no）在目标科目下精确挂载；查不到返回 null 回退随机 L3 */
+  private Integer resolveKnowledgeBySeriesNo(String seriesNo, Integer courseId) {
+    if (!StringUtils.hasText(seriesNo) || courseId == null) return null;
+    List<ExamKnowledgeStructureEntity> nodes = knowledgeMapper.selectList(
+        new LambdaQueryWrapper<ExamKnowledgeStructureEntity>()
+            .eq(ExamKnowledgeStructureEntity::getCourseId, courseId)
+            .eq(ExamKnowledgeStructureEntity::getSeriesNo, seriesNo.trim())
+            .last("LIMIT 1"));
+    return nodes.isEmpty() ? null : nodes.get(0).getId();
+  }
+
+  private BigDecimal getCellDecimal(Cell cell) {
+    if (cell == null) return null;
+    if (cell.getCellType() == CellType.NUMERIC) {
+      return BigDecimal.valueOf(cell.getNumericCellValue());
+    }
+    String s = getCellString(cell);
+    if (!StringUtils.hasText(s)) return null;
+    try {
+      return new BigDecimal(s);
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
+  /** 命题模板选项槽位 */
+  private record PropositionOption(String content, BigDecimal score) {
   }
 
   private String getCellString(Cell cell) {
