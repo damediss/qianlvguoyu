@@ -39,6 +39,7 @@ public class CompetitionPlayerSortingWorkbookExportService {
         throw new BusinessException(ErrorCode.INTERNAL_ERROR, "实操出场名单模板缺少工作表");
       }
       setTitle(rosterSheet, stageName);
+      configureRosterColumns(rosterSheet);
       fillRoster(rosterSheet, assignments);
       fillWorkstations(workstationSheet, assignments, groupCount);
       workbook.write(output);
@@ -77,12 +78,26 @@ public class CompetitionPlayerSortingWorkbookExportService {
       setString(row, 0, groupLabel(assignment.groupNo()));
       setNumber(row, 1, assignment.groupOrder());
       setString(row, 2, assignment.workstation());
-      setString(row, 3, assignment.contestantNo());
-      setString(row, 4, assignment.name());
+      setString(row, 3, assignment.name());
+      setString(row, 4, "");
       setString(row, 5, "");
       setString(row, 6, "");
       rowIndex++;
     }
+  }
+
+  private void configureRosterColumns(Sheet sheet) {
+    Row headerRow = sheet.getRow(4);
+    if (headerRow == null) {
+      return;
+    }
+    setString(headerRow, 3, "考生姓名");
+    setString(headerRow, 4, "现场签到");
+    setString(headerRow, 5, "备注");
+    setString(headerRow, 6, "");
+    sheet.setColumnWidth(4, sheet.getColumnWidth(5));
+    sheet.setColumnWidth(5, sheet.getColumnWidth(6));
+    sheet.setColumnHidden(6, true);
   }
 
   private void fillWorkstations(

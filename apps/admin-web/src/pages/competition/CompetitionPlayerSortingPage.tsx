@@ -235,7 +235,6 @@ export function CompetitionPlayerSortingPage({
   });
 
   const candidateColumns = useMemo(() => [
-    { title: '准考证号', dataIndex: 'contestantNo', width: 170, render: (value: string) => value || '-' },
     { title: '选手姓名', dataIndex: 'name', width: 140, render: (value: string) => value || '-' },
     { title: '所属企业', dataIndex: 'orgName', width: 220, render: (value: string) => value || '-' },
     { title: '赛事工种', dataIndex: 'workTypeName', width: 180, render: (value: string) => value || '-' },
@@ -251,7 +250,6 @@ export function CompetitionPlayerSortingPage({
     { title: '抽签组别', dataIndex: 'groupNo', width: 130, render: (value: number) => `第${value}组` },
     { title: '组内顺序', dataIndex: 'groupOrder', width: 110 },
     { title: '对应工位', dataIndex: 'workstation', width: 240 },
-    { title: '准考证号', dataIndex: 'contestantNo', width: 180, render: (value: string) => value || '-' },
     { title: '考生姓名', dataIndex: 'name', width: 140, render: (value: string) => value || '-' },
   ], []);
 
