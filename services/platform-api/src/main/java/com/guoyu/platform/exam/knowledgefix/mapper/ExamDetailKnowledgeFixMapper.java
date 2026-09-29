@@ -27,6 +27,16 @@ public interface ExamDetailKnowledgeFixMapper extends BaseMapper<ExamDetailKnowl
   int markAllApplied();
 
   /**
+   * 人工定夺（仅存疑行可翻）：状态翻转 + 结论落 new_knowledge_id（保留=原节点）+ 记操作人。
+   * 条件更新带 status='flag' 守卫——并发下被改走的行 affected=0，调用方按冲突处理。
+   */
+  @Update("UPDATE exam_detail_knowledge_fix SET status = #{status}, "
+      + "new_knowledge_id = #{newKnowledgeId}, updated_by = #{userId}, updated_at = NOW() "
+      + "WHERE id = #{rowId} AND status = 'flag' AND deleted = 0")
+  int adjudicateRow(@Param("rowId") Long rowId, @Param("status") String status,
+      @Param("newKnowledgeId") Integer newKnowledgeId, @Param("userId") Long userId);
+
+  /**
    * 待分类行（联考试题内容；供 LLM 分类输入）。
    * FIX-9 范围加固（v1.7）：分类阶段再次限定 5 月以来——首轮越界装入的历史行若残留清单，绝不送模型（DEF-4/5）。
    */

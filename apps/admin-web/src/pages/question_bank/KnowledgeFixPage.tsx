@@ -8,15 +8,15 @@ import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, Button, Card, Descriptions, Input, InputNumber, message, Modal, Popconfirm, Progress,
-  Space, Statistic, Table, Tabs, Tag,
+  Space, Statistic, Table, Tabs, Tag, Typography,
 } from 'antd';
 import {
   dedupStats, generateDedupList, applyDedup, rollbackDedup,
   submitClassify, resetClassify, pauseClassify, classifyProgress, fixList, exportFixList,
-  applyFix, rollbackFix,
+  applyFix, rollbackFix, adjudicateFix, adjudicateFixBatch,
   qualityReport,
 } from './knowledgeFixApi';
-import type { DedupStats, FixBatch, FixItem } from './knowledgeFixApi';
+import type { AdjudicateResult, DedupStats, FixBatch, FixItem } from './knowledgeFixApi';
 
 const STATUS_TAG: Record<string, { color: string; text: string }> = {
   apply: { color: 'success', text: '改挂' },
@@ -125,6 +125,8 @@ const KnowledgeFixPage: React.FC = () => {
 
   // ---------------- 知识修正 ----------------
   const [fixApplying, setFixApplying] = useState(false);
+  /** 存疑行人工定夺勾选（仅存疑页签可勾选） */
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
 
   const progressQuery = useQuery({
     queryKey: ['knowledgefix-progress'],
@@ -206,6 +208,34 @@ const KnowledgeFixPage: React.FC = () => {
     }
   };
 
+  /** 存疑行人工定夺结果提示：成功/跳过分别报，跳过带原因（最多展示 3 条） */
+  const reportAdjudicate = (r: AdjudicateResult) => {
+    if (r.skipped.length === 0) {
+      message.success(`已定夺 ${r.succeeded} 行`);
+    } else {
+      const reasons = r.skipped.slice(0, 3).map((s) => s.reason).join('；');
+      message.warning(`定夺成功 ${r.succeeded} 行，跳过 ${r.skipped.length} 行：${reasons}${r.skipped.length > 3 ? '…' : ''}`);
+    }
+    setSelectedRowKeys([]);
+    qc.invalidateQueries({ queryKey: ['knowledgefix-fix-list'] });
+  };
+
+  const doAdjudicate = async (rowId: string, action: 'apply' | 'keep') => {
+    try {
+      reportAdjudicate(await adjudicateFix(rowId, action));
+    } catch {
+      /* 拦截器统一提示 */
+    }
+  };
+
+  const doBatchAdjudicate = async (action: 'apply' | 'keep') => {
+    try {
+      reportAdjudicate(await adjudicateFixBatch(selectedRowKeys, action));
+    } catch {
+      /* 拦截器统一提示 */
+    }
+  };
+
   const doExportFix = async () => {
     const blob = await exportFixList();
     const url = URL.createObjectURL(blob);
@@ -217,10 +247,14 @@ const KnowledgeFixPage: React.FC = () => {
   };
 
   const fixColumns = [
-    { title: 'detail_id', dataIndex: 'detailId', key: 'detailId', width: 110 },
-    { title: '原知识点', dataIndex: 'oldKnowledgeId', key: 'oldKnowledgeId', width: 110 },
-    { title: '新知识点', dataIndex: 'newKnowledgeId', key: 'newKnowledgeId', width: 110,
-      render: (v: number | null) => (v == null ? '-' : v) },
+    { title: 'detail_id', dataIndex: 'detailId', key: 'detailId', width: 90 },
+    { title: '题干摘要', dataIndex: 'stemPreview', key: 'stemPreview', ellipsis: true,
+      render: (v: string | null) => (v ? v : '-') },
+    { title: '原知识点', dataIndex: 'oldKnowledgeId', key: 'oldKnowledgeId', width: 190,
+      render: (v: number, r: FixItem) => `${v}${r.oldKnowledgeTitle ? ' ' + r.oldKnowledgeTitle : ''}` },
+    { title: '新知识点', dataIndex: 'newKnowledgeId', key: 'newKnowledgeId', width: 190,
+      render: (v: number | null, r: FixItem) =>
+        (v == null ? '-' : `${v}${r.newKnowledgeTitle ? ' ' + r.newKnowledgeTitle : ''}`) },
     { title: '置信', dataIndex: 'confidence', key: 'confidence', width: 70,
       render: (v: number | null) => (v == null ? '-' : v.toFixed(2)) },
     { title: '依据', dataIndex: 'basis', key: 'basis', width: 110,
@@ -238,6 +272,25 @@ const KnowledgeFixPage: React.FC = () => {
         const t = STATUS_TAG[v] ?? { color: 'default', text: v };
         return <Tag color={t.color}>{t.text}</Tag>;
       } },
+    { title: '操作', key: 'op', width: 120,
+      render: (_: unknown, r: FixItem) => (r.status === 'flag' ? (
+        <Space size={0}>
+          <Popconfirm
+            title="定夺为改挂？"
+            description={`采用新知识点 ${r.newKnowledgeId ?? '-'}（${r.newKnowledgeTitle ?? ''}），定夺后需点「执行写回」才写进题库`}
+            onConfirm={() => doAdjudicate(r.rowId, 'apply')}
+          >
+            <Button type="link" size="small">改挂</Button>
+          </Popconfirm>
+          <Popconfirm
+            title="定夺为保留？"
+            description="维持原知识点不变（原节点已删的行会被拒绝）"
+            onConfirm={() => doAdjudicate(r.rowId, 'keep')}
+          >
+            <Button type="link" size="small">保留</Button>
+          </Popconfirm>
+        </Space>
+      ) : '-') },
   ];
 
   return (
@@ -379,6 +432,9 @@ const KnowledgeFixPage: React.FC = () => {
                     执行写回（仅改挂行）
                   </Button>
                 </Popconfirm>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  定夺为改挂的行需点「执行写回」才会写进题库（自动备份、可回滚）
+                </Typography.Text>
               </Space>
               {batchRunning(batch) && (
                 <Progress
@@ -440,16 +496,40 @@ const KnowledgeFixPage: React.FC = () => {
               <Space style={{ marginBottom: 12 }} wrap>
                 {['apply', 'keep', 'flag', 'pending'].map((st) => (
                   <Button key={st} size="small" type={fixStatus === st ? 'primary' : 'default'}
-                    onClick={() => { setFixStatus(st); setFixPage(1); }}>
+                    onClick={() => { setFixStatus(st); setFixPage(1); setSelectedRowKeys([]); }}>
                     {STATUS_TAG[st]?.text ?? st}
                   </Button>
                 ))}
-                <Button size="small" onClick={() => { setFixStatus(undefined); setFixPage(1); }}>全部</Button>
+                <Button size="small" onClick={() => { setFixStatus(undefined); setFixPage(1); setSelectedRowKeys([]); }}>全部</Button>
               </Space>
+              {fixStatus === 'flag' && selectedRowKeys.length > 0 && (
+                <Space style={{ marginBottom: 8 }} wrap>
+                  <Typography.Text>已选 {selectedRowKeys.length} 行</Typography.Text>
+                  <Popconfirm
+                    title="批量定夺为改挂？"
+                    description="各行采用模型建议的新知识点；定夺后需点「执行写回」才写进题库"
+                    onConfirm={() => doBatchAdjudicate('apply')}
+                  >
+                    <Button type="primary" size="small">批量定夺为改挂</Button>
+                  </Popconfirm>
+                  <Popconfirm
+                    title="批量定夺为保留？"
+                    description="各行维持原知识点（原节点已删的行会被跳过）"
+                    onConfirm={() => doBatchAdjudicate('keep')}
+                  >
+                    <Button size="small">批量定夺为保留</Button>
+                  </Popconfirm>
+                  <Button size="small" onClick={() => setSelectedRowKeys([])}>清空选择</Button>
+                </Space>
+              )}
               <Table rowKey="rowId" size="small"
                 loading={fixQuery.isLoading}
                 dataSource={fixQuery.data?.items ?? []}
                 columns={fixColumns}
+                rowSelection={fixStatus === 'flag' ? {
+                  selectedRowKeys,
+                  onChange: (keys) => setSelectedRowKeys(keys as string[]),
+                } : undefined}
                 pagination={{
                   current: fixPage, pageSize: 20, total: fixQuery.data?.total ?? 0,
                   onChange: (p) => setFixPage(p),

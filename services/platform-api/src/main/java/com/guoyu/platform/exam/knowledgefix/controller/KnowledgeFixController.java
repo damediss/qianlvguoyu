@@ -3,8 +3,13 @@ package com.guoyu.platform.exam.knowledgefix.controller;
 import com.guoyu.platform.common.api.ApiResponse;
 import com.guoyu.platform.common.audit.AuditLog;
 import com.guoyu.platform.common.tenant.TenantContextHolder;
+import com.guoyu.platform.exam.entity.ExamExamDetailEntity;
+import com.guoyu.platform.exam.entity.ExamKnowledgeStructureEntity;
+import com.guoyu.platform.exam.knowledgefix.dto.AdjudicateResultVO;
 import com.guoyu.platform.exam.knowledgefix.dto.ApplyResultVO;
 import com.guoyu.platform.exam.knowledgefix.dto.DedupStatsVO;
+import com.guoyu.platform.exam.knowledgefix.dto.FixAdjudicateBatchRequest;
+import com.guoyu.platform.exam.knowledgefix.dto.FixAdjudicateRequest;
 import com.guoyu.platform.exam.knowledgefix.dto.FixBatchVO;
 import com.guoyu.platform.exam.knowledgefix.dto.FixItemVO;
 import com.guoyu.platform.exam.knowledgefix.dto.QualityReportVO;
@@ -12,11 +17,18 @@ import com.guoyu.platform.exam.knowledgefix.entity.ExamDetailKnowledgeFixEntity;
 import com.guoyu.platform.exam.knowledgefix.entity.ExamKnowledgeFixBatchEntity;
 import com.guoyu.platform.exam.knowledgefix.mapper.ExamDetailKnowledgeFixMapper;
 import com.guoyu.platform.exam.knowledgefix.mapper.ExamKnowledgeFixBatchMapper;
+import com.guoyu.platform.exam.knowledgefix.service.KnowledgeFixAdjudicateService;
 import com.guoyu.platform.exam.knowledgefix.service.KnowledgeFixClassifyService;
 import com.guoyu.platform.exam.knowledgefix.service.KnowledgeFixDedupService;
 import com.guoyu.platform.exam.knowledgefix.service.KnowledgeFixWriteBackService;
+import com.guoyu.platform.exam.mapper.ExamExamDetailMapper;
+import com.guoyu.platform.exam.mapper.ExamKnowledgeStructureMapper;
 import com.guoyu.platform.security.SecurityContext;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -25,6 +37,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,21 +54,29 @@ public class KnowledgeFixController {
   private final KnowledgeFixDedupService dedupService;
   private final KnowledgeFixClassifyService classifyService;
   private final KnowledgeFixWriteBackService writeBackService;
+  private final KnowledgeFixAdjudicateService adjudicateService;
   private final ExamKnowledgeFixBatchMapper batchMapper;
   private final ExamDetailKnowledgeFixMapper fixMapper;
   private final com.guoyu.platform.exam.knowledgefix.mapper.ExamKnowledgeFixLlmLogMapper llmLogMapper;
+  private final ExamKnowledgeStructureMapper structureMapper;
+  private final ExamExamDetailMapper examDetailMapper;
 
   @Autowired
   public KnowledgeFixController(KnowledgeFixDedupService dedupService,
       KnowledgeFixClassifyService classifyService, KnowledgeFixWriteBackService writeBackService,
+      KnowledgeFixAdjudicateService adjudicateService,
       ExamKnowledgeFixBatchMapper batchMapper, ExamDetailKnowledgeFixMapper fixMapper,
-      com.guoyu.platform.exam.knowledgefix.mapper.ExamKnowledgeFixLlmLogMapper llmLogMapper) {
+      com.guoyu.platform.exam.knowledgefix.mapper.ExamKnowledgeFixLlmLogMapper llmLogMapper,
+      ExamKnowledgeStructureMapper structureMapper, ExamExamDetailMapper examDetailMapper) {
     this.dedupService = dedupService;
     this.classifyService = classifyService;
     this.writeBackService = writeBackService;
+    this.adjudicateService = adjudicateService;
     this.batchMapper = batchMapper;
     this.fixMapper = fixMapper;
     this.llmLogMapper = llmLogMapper;
+    this.structureMapper = structureMapper;
+    this.examDetailMapper = examDetailMapper;
   }
 
   // ───────── 去重清理 ─────────
@@ -177,12 +198,71 @@ public class KnowledgeFixController {
             .eq(status != null && !status.isBlank(),
                 ExamDetailKnowledgeFixEntity::getStatus, status)
             .orderByAsc(ExamDetailKnowledgeFixEntity::getId));
-    List<FixItemVO> items = result.getRecords().stream().map(e -> new FixItemVO(
-        e.getId(), e.getDetailId(), e.getOldKnowledgeId(), e.getCourseId(),
-        e.getNewKnowledgeId(), e.getConfidence(), e.getBasis(), e.getLlmReason(),
-        e.getStatus(), null)).toList();
+    List<ExamDetailKnowledgeFixEntity> records = result.getRecords();
+    // 当页批量回表组装：原/新知识点中文名 + 题干摘要（不引 N+1；查不到的节点视为已删）
+    Set<Integer> nodeIds = new HashSet<>();
+    Set<Integer> detailIds = new HashSet<>();
+    for (ExamDetailKnowledgeFixEntity e : records) {
+      if (e.getOldKnowledgeId() != null) {
+        nodeIds.add(e.getOldKnowledgeId());
+      }
+      if (e.getNewKnowledgeId() != null) {
+        nodeIds.add(e.getNewKnowledgeId());
+      }
+      if (e.getDetailId() != null) {
+        detailIds.add(e.getDetailId());
+      }
+    }
+    Map<Integer, String> titleById = nodeIds.isEmpty() ? Map.of()
+        : structureMapper.selectBatchIds(nodeIds).stream()
+            .collect(Collectors.toMap(ExamKnowledgeStructureEntity::getId,
+                ExamKnowledgeStructureEntity::getTitle, (a, b) -> a));
+    Map<Integer, String> stemById = detailIds.isEmpty() ? Map.of()
+        : examDetailMapper.selectBatchIds(detailIds).stream()
+            .collect(Collectors.toMap(ExamExamDetailEntity::getId,
+                d -> stripHtml(d.getContent()), (a, b) -> a));
+    List<FixItemVO> items = records.stream().map(e -> {
+      String oldTitle = e.getOldKnowledgeId() == null ? null
+          : titleById.getOrDefault(e.getOldKnowledgeId(), "（已删）");
+      String newTitle = e.getNewKnowledgeId() == null ? null
+          : titleById.getOrDefault(e.getNewKnowledgeId(), "（已删）");
+      String stem = e.getDetailId() == null ? null
+          : abbreviate(stemById.getOrDefault(e.getDetailId(), ""), 80);
+      return new FixItemVO(e.getId(), e.getDetailId(), e.getOldKnowledgeId(), e.getCourseId(),
+          e.getNewKnowledgeId(), oldTitle, newTitle, e.getConfidence(), e.getBasis(),
+          e.getLlmReason(), e.getStatus(), stem);
+    }).toList();
     return ApiResponse.ok(new com.guoyu.platform.common.api.PageResponse<>(items, page, pageSize,
         result.getTotal()));
+  }
+
+  /** 存疑行单行人工定夺：flag → 改挂(apply)/保留(keep)；只翻清单状态，不落题库 */
+  @PostMapping("/fix/adjudicate")
+  @PreAuthorize("hasAuthority('exam:knowledgefix:adjudicate')")
+  @AuditLog(module = "exam", action = "knowledgefix:adjudicate", targetType = "exam_detail_knowledge_fix")
+  public ApiResponse<AdjudicateResultVO> adjudicate(@RequestBody FixAdjudicateRequest req) {
+    Long userId = SecurityContext.currentUser().getUserId();
+    return ApiResponse.ok(adjudicateService.adjudicate(req.rowId(), req.action(), userId));
+  }
+
+  /** 存疑行批量人工定夺（≤200 行/次）：逐行校验，失败的行跳过并带原因 */
+  @PostMapping("/fix/adjudicate/batch")
+  @PreAuthorize("hasAuthority('exam:knowledgefix:adjudicate')")
+  @AuditLog(module = "exam", action = "knowledgefix:adjudicate:batch", targetType = "exam_detail_knowledge_fix")
+  public ApiResponse<AdjudicateResultVO> adjudicateBatch(@RequestBody FixAdjudicateBatchRequest req) {
+    Long userId = SecurityContext.currentUser().getUserId();
+    return ApiResponse.ok(adjudicateService.batch(req.rowIds(), req.action(), userId));
+  }
+
+  private static String stripHtml(String content) {
+    return content == null ? "" : content.replaceAll("<[^>]+>", "").trim();
+  }
+
+  private static String abbreviate(String s, int max) {
+    if (s == null || s.length() <= max) {
+      return s;
+    }
+    return s.substring(0, max) + "…";
   }
 
   /** 修正清单 xlsx 导出（归档留痕） */

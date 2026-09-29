@@ -53,11 +53,19 @@ export interface FixItem {
   oldKnowledgeId: number;
   courseId: number;
   newKnowledgeId: number | null;
+  oldKnowledgeTitle?: string | null;
+  newKnowledgeTitle?: string | null;
   confidence: number | null;
   basis: string | null;
   llmReason: string | null;
   status: string;
-  stemPreview: string | null;
+  stemPreview?: string | null;
+}
+
+/** 定夺结果：成功数 + 跳过明细（后端雪花 rowId 以字符串下发） */
+export interface AdjudicateResult {
+  succeeded: number;
+  skipped: { rowId: string; reason: string }[];
 }
 
 export interface ApplyResult {
@@ -104,6 +112,13 @@ export const exportFixList = async (): Promise<Blob> => {
 };
 
 export const applyFix = () => unwrap<ApplyResult>(apiClient.post('/exam/knowledgefix/fix/apply'));
+
+/** 存疑行人工定夺（单行/批量）：apply=定夺为改挂（采纳新知识点，待写回落地）、keep=定夺为保留 */
+export const adjudicateFix = (rowId: string, action: 'apply' | 'keep') =>
+  unwrap<AdjudicateResult>(apiClient.post('/exam/knowledgefix/fix/adjudicate', { rowId, action }));
+
+export const adjudicateFixBatch = (rowIds: string[], action: 'apply' | 'keep') =>
+  unwrap<AdjudicateResult>(apiClient.post('/exam/knowledgefix/fix/adjudicate/batch', { rowIds, action }));
 
 export const rollbackFix = (backupTable: string) =>
   unwrap<number>(apiClient.post('/exam/knowledgefix/fix/rollback', null, {
