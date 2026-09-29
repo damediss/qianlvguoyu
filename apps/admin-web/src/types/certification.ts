@@ -2,7 +2,7 @@ export interface CertificationTask {
   id: string;
   taskNo: string;
   taskName: string;
-  taskManagerName: string;
+  taskManagerName?: string | null;
   currentPhase: string;
   currentPhaseName: string;
   status: string;
@@ -40,7 +40,7 @@ export interface CertificationTaskQuery {
 export interface CertificationTaskPayload {
   taskNo?: string;
   taskName: string;
-  taskManagerName: string;
+  taskManagerName?: string;
   companyName?: string;
   certificationType?: string;
   scopes?: CertificationTaskScopePayload[];
@@ -103,6 +103,7 @@ export interface CertificationTaskScope {
   id: string;
   certificationType?: string;
   workTypeName?: string;
+  workTypeId?: string;
   levelCode?: string;
   levelName?: string;
   plannedPeopleCount?: number;
@@ -111,6 +112,7 @@ export interface CertificationTaskScope {
 export interface CertificationTaskScopePayload {
   certificationType?: string;
   workTypeName?: string;
+  workTypeId?: string;
   levelCode?: string;
   levelName?: string;
   plannedPeopleCount?: number;

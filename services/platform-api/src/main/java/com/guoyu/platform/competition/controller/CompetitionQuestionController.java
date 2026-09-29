@@ -98,6 +98,36 @@ public class CompetitionQuestionController {
         blueprintId, selectedSheet, file));
   }
 
+  @PostMapping(value = "/events/{eventId}/simple-question-imports", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @PreAuthorize("hasAuthority('competition:question:import')")
+  @AuditLog(module = "competition", action = "simple-question:import", targetType = "competition_question_import_batch")
+  public ApiResponse<CompetitionQuestionImportBatchVO> importSimpleTheoryFile(
+      @PathVariable Long eventId,
+      @RequestParam Long eventWorkTypeId,
+      @RequestParam Long eventWorkTypeLevelId,
+      @RequestPart("file") MultipartFile file) {
+    return ApiResponse.ok(service.importFile(eventId, eventWorkTypeId, eventWorkTypeLevelId, "theory", file));
+  }
+
+  @PostMapping(value = "/events/{eventId}/simple-practical-detail-imports", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  @PreAuthorize("hasAuthority('competition:question:import')")
+  @AuditLog(module = "competition", action = "simple-practical-detail:import", targetType = "competition_question_import_batch")
+  public ApiResponse<CompetitionQuestionImportBatchVO> importSimplePracticalDetails(
+      @PathVariable Long eventId,
+      @RequestParam Long eventWorkTypeId,
+      @RequestParam Long eventWorkTypeLevelId,
+      @RequestPart("file") MultipartFile file) {
+    return ApiResponse.ok(service.importFile(eventId, eventWorkTypeId, eventWorkTypeLevelId, "practical", file));
+  }
+
+  @PostMapping("/events/{eventId}/simple-practical-questions")
+  @PreAuthorize("hasAuthority('competition:question:create')")
+  @AuditLog(module = "competition", action = "simple-practical:create", targetType = "competition_question")
+  public ApiResponse<CompetitionQuestionVO> createSimplePracticalQuestion(
+      @PathVariable Long eventId, @Valid @RequestBody CompetitionQuestionCreateReq req) {
+    return ApiResponse.ok(service.createSimplePracticalQuestion(eventId, req));
+  }
+
   @PutMapping("/events/{eventId}/questions/{questionId}/blueprint-binding")
   @PreAuthorize("hasAuthority('competition:question:update')")
   @AuditLog(module = "competition", action = "question:blueprint-bind", targetType = "competition_question")
@@ -123,10 +153,16 @@ public class CompetitionQuestionController {
 
   @GetMapping("/question-import-template")
   @PreAuthorize("hasAuthority('competition:question:view')")
-  public ResponseEntity<byte[]> template(@RequestParam String contentType) {
-    byte[] body = service.template(contentType);
-    String filename = "theory".equalsIgnoreCase(contentType)
-        ? "competition-theory-question-template.xlsx" : "competition-practical-question-template.xlsx";
+  public ResponseEntity<byte[]> template(
+      @RequestParam String contentType,
+      @RequestParam(defaultValue = "false") boolean simple) {
+    byte[] body = service.template(contentType, simple);
+    String filename = simple
+        ? "practical".equalsIgnoreCase(contentType)
+            ? "competition-simple-practical-detail-template.xlsx"
+            : "competition-simple-theory-question-template.xlsx"
+        : "theory".equalsIgnoreCase(contentType)
+            ? "competition-theory-question-template.xlsx" : "competition-practical-question-template.xlsx";
     HttpHeaders headers = new HttpHeaders();
     headers.setContentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
     headers.setContentDisposition(ContentDisposition.attachment().filename(filename, StandardCharsets.UTF_8).build());

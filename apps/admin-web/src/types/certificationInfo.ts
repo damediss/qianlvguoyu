@@ -19,6 +19,8 @@ export interface AssessorInfo {
   /** @deprecated 旧字段，多个工种以"、"拼接。优先使用 workTypeScopes。 */
   workTypeScope: string;
   workTypeScopes: string[];
+  workTypeIds: string[];
+  workTypeMappingWarning?: string;
   levelScope?: string;
   validUntil: string;
   maskedPhone?: string;
@@ -39,6 +41,7 @@ export interface AssessorInfoPayload {
   /** @deprecated 旧字段。优先使用 workTypeScopes。 */
   workTypeScope?: string;
   workTypeScopes: string[];
+  workTypeIds: string[];
   levelScope?: string;
   validUntil: string;
   phone?: string;

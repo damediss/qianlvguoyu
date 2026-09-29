@@ -112,8 +112,8 @@ private void processAsync(Long tenantId, Long userId) {
 ## 数据库规则细则
 
 1. MySQL 8.4，主键雪花 ID，类型统一 `BIGINT`；多租户字段统一 `tenant_id`；逻辑删除通过 `deleted` 字段（插件自动处理）
-2. Flyway 脚本放 `src/main/resources/db/migration/`，命名 `V{YYYYMMDD}_{序号}__{描述}.sql`；涉及数字串等配置值时，YAML 中的版本号、数字串字段用引号包裹
-3. **新迁移必须 `mvn compile` 后才生效**——Flyway 读 `target/classes/db/migration/`，不是源码目录（踩坑 #16）
+2. Flyway 共用脚本放 `src/main/resources/db/migration/`；因生产/测试历史分叉而只在一侧应用的历史脚本放 `db/migration-prod/` 或 `db/migration-test/`，并由对应 Spring profile 配置 locations，避免同一 locations 出现重复版本。文件命名 `V{YYYYMMDD}_{序号}__{描述}.sql`；涉及数字串等配置值时，YAML 中的版本号、数字串字段用引号包裹
+3. **新迁移必须 `mvn compile` 后才生效**——Flyway 读 `target/classes/db/migration*/`，不是源码目录（踩坑 #16）
 4. Druid wall 过滤器约束：业务 SQL 禁 `INSERT ... AS new ON DUPLICATE KEY UPDATE`（被 wall 按注入拦截），upsert 统一旧式 `ON DUPLICATE KEY UPDATE c = VALUES(c)`；迁移脚本走独立直连（`spring.flyway.url/user/password`，**属性名是 `user` 不是 `username`**，写错静默回退 OS 用户名报 Access denied），不要给 wall 开 none-base-statement-allow（踩坑 #21/#25）
 5. 历史：PHP 第二数据源（`integration/php`、`integration/sync`）已于 2026-08-27 拆除，相关多数据源防御条款归档至 `docs/agent/踩坑库.md` #19/#20/#22/#23，当前代码不再适用
 

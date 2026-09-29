@@ -38,6 +38,8 @@ import {
   getCompetitionQuestion,
   getCompetitionQuestionImportBatch,
   importCompetitionQuestions,
+  importCompetitionSimplePracticalDetails,
+  importCompetitionSimpleTheoryQuestions,
   pageCompetitionQuestions,
   updateCompetitionQuestion,
 } from '../../api/competitionQuestion';
@@ -48,6 +50,7 @@ import {
 } from '../../api/competition';
 import { getCompetitionQuestionBlueprintTree, pageCompetitionQuestionBlueprints } from '../../api/competitionQuestionBlueprint';
 import type { CompetitionEvent, CompetitionEventWorkType, CompetitionEventWorkTypeLevel } from '../../types/competition';
+import { SimplePracticalQuestionCreateModal } from './SimplePracticalQuestionCreateModal';
 import type {
   CompetitionQuestion,
   CompetitionQuestionContentType,
@@ -58,6 +61,7 @@ import { PracticalQuestionEditorModal } from './PracticalQuestionEditorModal';
 
 interface Props {
   contentType: CompetitionQuestionContentType;
+  simpleMode?: boolean;
 }
 
 const OPTION_KEYS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'] as const;
@@ -135,7 +139,15 @@ function getEventIdFromUrl() {
   return new URLSearchParams(window.location.search).get('eventId') || '';
 }
 
-export function CompetitionQuestionBankPage({ contentType }: Props) {
+function plainText(value?: string | null) {
+  return value?.replace(/<br\s*\/?\s*>/gi, ' ').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim() || '-';
+}
+
+function practicalScoringMethodLabel(value?: string | null) {
+  return value === 'additive' ? '加分制' : value === 'deductive' ? '扣分制' : value || '-';
+}
+
+export function CompetitionQuestionBankPage({ contentType, simpleMode = false }: Props) {
   const queryClient = useQueryClient();
   const [eventId, setEventId] = useState(getEventIdFromUrl);
   const [workTypeId, setWorkTypeId] = useState('');
@@ -151,6 +163,7 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<CompetitionQuestion | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [simplePracticalCreateOpen, setSimplePracticalCreateOpen] = useState(false);
   const [previewing, setPreviewing] = useState<string | null>(null);
   const [batchId, setBatchId] = useState<string | null>(null);
   const [form] = Form.useForm<QuestionFormValues>();
@@ -179,9 +192,9 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
     queryFn: () => pageCompetitionQuestionBlueprints(eventId, {
       page: 1, pageSize: 20, eventWorkTypeId: workTypeId, eventWorkTypeLevelId: levelId, contentType, status: 'active',
     }),
-    enabled: Boolean(eventId && workTypeId && levelId),
+    enabled: !simpleMode && Boolean(eventId && workTypeId && levelId),
   });
-  const activeBlueprint = blueprintQuery.data?.items?.[0];
+  const activeBlueprint = simpleMode ? undefined : blueprintQuery.data?.items?.[0];
   const blueprintTreeQuery = useQuery({
     queryKey: ['competition-active-blueprint-tree', eventId, activeBlueprint?.id],
     queryFn: () => getCompetitionQuestionBlueprintTree(eventId, activeBlueprint!.id),
@@ -198,7 +211,7 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
     return rows;
   }, [blueprintTreeQuery.data]);
   const questionsQuery = useQuery({
-    queryKey: ['competition-questions', eventId, workTypeId, levelId, contentType, questionType, keyword, bindingStatus, blueprintNodeId, activeBlueprint?.id, page],
+    queryKey: ['competition-questions', eventId, workTypeId, levelId, contentType, questionType, keyword, bindingStatus, blueprintNodeId, activeBlueprint?.id, simpleMode, page],
     queryFn: () => pageCompetitionQuestions(eventId, {
       page,
       pageSize: 20,
@@ -210,6 +223,7 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
       blueprintId: activeBlueprint?.id,
       blueprintNodeId,
       bindingStatus,
+      unboundOnly: simpleMode || undefined,
     }),
     enabled: Boolean(eventId && workTypeId && levelId),
   });
@@ -292,13 +306,23 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
     },
   });
   const importMutation = useMutation({
-    mutationFn: (file: File) => importCompetitionQuestions(eventId, {
-      eventWorkTypeId: workTypeId,
-      eventWorkTypeLevelId: levelId,
-      contentType,
-      blueprintId: activeBlueprint!.id,
-      selectedSheet: selectedSheet.trim() || undefined,
-    }, file),
+    mutationFn: (file: File) => simpleMode
+      ? contentType === 'practical'
+        ? importCompetitionSimplePracticalDetails(eventId, {
+          eventWorkTypeId: workTypeId,
+          eventWorkTypeLevelId: levelId,
+        }, file)
+        : importCompetitionSimpleTheoryQuestions(eventId, {
+        eventWorkTypeId: workTypeId,
+        eventWorkTypeLevelId: levelId,
+      }, file)
+      : importCompetitionQuestions(eventId, {
+        eventWorkTypeId: workTypeId,
+        eventWorkTypeLevelId: levelId,
+        contentType,
+        blueprintId: activeBlueprint!.id,
+        selectedSheet: selectedSheet.trim() || undefined,
+      }, file),
     onSuccess: (batch) => {
       setBatchId(batch.id);
       message.success('文件已接收，正在后台校验');
@@ -368,11 +392,13 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
   const data = questionsQuery.data;
 
   const downloadTemplate = async () => {
-    const blob = await downloadCompetitionQuestionTemplate(contentType);
+    const blob = await downloadCompetitionQuestionTemplate(contentType, simpleMode);
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = contentType === 'theory' ? '竞赛理论试题模板.xlsx' : '竞赛实操试题模板.xlsx';
+    anchor.download = simpleMode
+      ? contentType === 'practical' ? '竞赛简易实操评分明细表模板.xlsx' : '竞赛简易理论试题导入模板.xlsx'
+      : contentType === 'theory' ? '竞赛理论试题模板.xlsx' : '竞赛实操试题模板.xlsx';
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -459,24 +485,33 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
 
   return (
     <Card
-      title={`竞赛${contentType === 'theory' ? '理论' : '实操'}试题`}
+      title={simpleMode
+        ? contentType === 'practical' ? '简易实操评分项' : '简易理论试题'
+        : `竞赛${contentType === 'theory' ? '理论' : '实操'}试题`}
       extra={(
         <Space wrap>
           <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>下载导入模板</Button>
-          {contentType === 'practical' && <Input allowClear value={selectedSheet} onChange={(event) => setSelectedSheet(event.target.value)} placeholder="实操工作表（可选）" style={{ width: 170 }} />}
-          <Button disabled={!activeBlueprint || selectedQuestionIds.length === 0} onClick={() => setBindingOpen(true)}>批量绑定考评点</Button>
-          <Upload {...uploadProps} disabled={!eventId || !workTypeId || !levelId || !activeBlueprint || importMutation.isPending}>
-            <Button type="primary" icon={<UploadOutlined />}>导入试题</Button>
+          {contentType === 'practical' && !simpleMode && <Input allowClear value={selectedSheet} onChange={(event) => setSelectedSheet(event.target.value)} placeholder="实操工作表（可选）" style={{ width: 170 }} />}
+          {!simpleMode && <Button disabled={!activeBlueprint || selectedQuestionIds.length === 0} onClick={() => setBindingOpen(true)}>批量绑定考评点</Button>}
+          {simpleMode && contentType === 'practical' && <Button icon={<PlusOutlined />} disabled={!eventId || !workTypeId || !levelId} onClick={() => setSimplePracticalCreateOpen(true)}>新增项目</Button>}
+          <Upload {...uploadProps} disabled={!eventId || !workTypeId || !levelId || (!simpleMode && !activeBlueprint) || importMutation.isPending}>
+            <Button type="primary" icon={<UploadOutlined />}>{simpleMode
+              ? contentType === 'practical' ? '导入评分明细表' : '批量导入试题'
+              : '导入试题'}</Button>
           </Upload>
-          <Button icon={<PlusOutlined />} disabled={!activeBlueprint} onClick={() => { setEditing(null); form.resetFields(); form.setFieldsValue({
+          {!simpleMode && <Button icon={<PlusOutlined />} disabled={!activeBlueprint} onClick={() => { setEditing(null); form.resetFields(); form.setFieldsValue({
             eventWorkTypeId: workTypeId, eventWorkTypeLevelId: levelId,
             questionType: contentType === 'theory' ? 'single' : 'practical', status: 'enabled', difficulty: 2,
             blueprintId: activeBlueprint?.id,
-          }); setFormOpen(true); }}>新增试题</Button>
+          }); setFormOpen(true); }}>新增试题</Button>}
         </Space>
       )}
     >
-      {!activeBlueprint && eventId && workTypeId && levelId
+      {simpleMode
+        ? <Alert type="info" showIcon style={{ marginBottom: 16 }} message={contentType === 'practical'
+          ? '实操评分项按赛事、工种和等级管理，无需配置细目表。每次导入一个考核项目，上传包含评分明细的 Excel 表。'
+          : '简易理论试题按赛事、工种和等级管理，导入时无需配置细目表。当前支持单选、多选、判断和填空题。'} />
+        : !activeBlueprint && eventId && workTypeId && levelId
         ? <Alert type="warning" showIcon style={{ marginBottom: 16 }} message="当前范围没有启用的竞赛细目表，请先导入并启用理论/实操细目表；未绑定题目不会进入自动组卷。" />
         : <Alert type="info" showIcon style={{ marginBottom: 16 }} message="竞赛题库与课程题库完全独立；题库导入必须绑定当前启用细目表的末级考评点，历史未绑定题目仍可编辑但不会进入自动组卷。" />}
       <Space wrap style={{ marginBottom: 16 }}>
@@ -496,32 +531,50 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
           options={levels.map((item: CompetitionEventWorkTypeLevel) => ({ value: String(item.id), label: `${item.levelName}（${item.levelCode}）` }))}
           onChange={(value) => { setLevelId(value); setBindingStatus(undefined); setBlueprintNodeId(undefined); setSelectedQuestionIds([]); setPage(1); }}
         />
-        <Select allowClear style={{ width: 140 }} placeholder="题型" value={questionType} options={typeOptions}
-          onChange={(value) => { setQuestionType(value); setPage(1); }} />
-        <Select allowClear style={{ width: 130 }} placeholder="绑定状态" value={bindingStatus} disabled={!activeBlueprint}
+        {!(simpleMode && contentType === 'practical') && <Select allowClear style={{ width: 140 }} placeholder="题型" value={questionType} options={typeOptions}
+          onChange={(value) => { setQuestionType(value); setPage(1); }} />}
+        {!simpleMode && <Select allowClear style={{ width: 130 }} placeholder="绑定状态" value={bindingStatus} disabled={!activeBlueprint}
           options={[{ value: 'bound', label: '已绑定' }, { value: 'unbound', label: '未绑定' }]}
-          onChange={(value) => { setBindingStatus(value); setPage(1); }} />
-        <Select allowClear showSearch optionFilterProp="label" style={{ width: 260 }} placeholder="考评点" value={blueprintNodeId} disabled={!activeBlueprint}
-          options={blueprintNodes} onChange={(value) => { setBlueprintNodeId(value); setPage(1); }} />
-        <Input.Search allowClear placeholder="搜索题干" style={{ width: 240 }} value={keyword}
+          onChange={(value) => { setBindingStatus(value); setPage(1); }} />}
+        {!simpleMode && <Select allowClear showSearch optionFilterProp="label" style={{ width: 260 }} placeholder="考评点" value={blueprintNodeId} disabled={!activeBlueprint}
+          options={blueprintNodes} onChange={(value) => { setBlueprintNodeId(value); setPage(1); }} />}
+        <Input.Search allowClear placeholder={simpleMode && contentType === 'practical' ? '搜索考核项目' : '搜索题干'} style={{ width: 240 }} value={keyword}
           onChange={(event) => setKeyword(event.target.value)} onSearch={() => setPage(1)} />
       </Space>
       <Table<CompetitionQuestion>
         rowKey="id" loading={questionsQuery.isLoading || questionsQuery.isFetching}
-        rowSelection={{ selectedRowKeys: selectedQuestionIds, onChange: (keys) => setSelectedQuestionIds(keys.map(String)) }}
+        rowSelection={simpleMode ? undefined : { selectedRowKeys: selectedQuestionIds, onChange: (keys) => setSelectedQuestionIds(keys.map(String)) }}
         dataSource={data?.items ?? []}
         pagination={{ current: data?.page ?? page, pageSize: data?.pageSize ?? 20, total: data?.total ?? 0, onChange: setPage, showSizeChanger: false }}
-        columns={[
+        columns={simpleMode && contentType === 'practical' ? [
+          { title: '考核项目', dataIndex: 'stem', ellipsis: true, render: (value: string) => <Typography.Text ellipsis={{ tooltip: true }}>{value}</Typography.Text> },
+          { title: '考核内容', width: 260, render: (_: unknown, record: CompetitionQuestion) => {
+            const content = record.practicalDetail?.assessmentContents?.map(item => plainText(item.contentHtml)).filter(item => item !== '-') ?? [];
+            return <Typography.Text ellipsis={{ tooltip: content.join('；') }}>{content.join('；') || plainText(record.operationContent)}</Typography.Text>;
+          } },
+          { title: '评分项', width: 90, render: (_: unknown, record: CompetitionQuestion) => record.scoreItems?.length ?? 0 },
+          { title: '计分方式', width: 100, render: (_: unknown, record: CompetitionQuestion) => practicalScoringMethodLabel(record.practicalDetail?.scoringMethod) },
+          { title: '总分', width: 90, render: (_: unknown, record: CompetitionQuestion) => record.practicalDetail?.totalScore ?? record.scoreItems?.reduce((total, item) => total + Number(item.maxScore || 0), 0) ?? '-' },
+          { title: '状态', dataIndex: 'status', width: 90, render: (value: string) => value === 'enabled' ? <Tag color="green">启用</Tag> : <Tag>停用</Tag> },
+          { title: '操作', key: 'actions', width: 180, render: (_: unknown, record: CompetitionQuestion) => (
+            <Space size={0} style={{ whiteSpace: 'nowrap' }}>
+              <Button type="link" size="small" style={{ paddingInline: 0 }} icon={<EyeOutlined />} onClick={() => setPreviewing(record.id)}>查看评分明细</Button>
+              <Popconfirm title="确认删除此实操评分项？" onConfirm={() => deleteMutation.mutate(record.id)}>
+                <Button type="link" danger size="small" style={{ paddingInline: 0 }} icon={<DeleteOutlined />}>删除</Button>
+              </Popconfirm>
+            </Space>
+          ) },
+        ] : [
           { title: '序号', dataIndex: 'sortOrder', width: 80 },
           { title: '题型', dataIndex: 'questionType', width: 100, render: questionTypeTag },
           { title: '题干', dataIndex: 'stem', ellipsis: true, render: (value: string) => <Typography.Text ellipsis={{ tooltip: true }}>{value}</Typography.Text> },
           { title: '难度', dataIndex: 'difficulty', width: 90, render: (value: number | null) => value ? ['-', '简单', '中等', '困难', '较难', '极难'][value] || value : '-' },
-          { title: '绑定状态', dataIndex: 'bindingStatus', width: 100, render: (value: string) => value === 'bound' ? <Tag color="green">已绑定</Tag> : <Tag color="orange">未绑定</Tag> },
+          ...(!simpleMode ? [{ title: '绑定状态', dataIndex: 'bindingStatus', width: 100, render: (value: string) => value === 'bound' ? <Tag color="green">已绑定</Tag> : <Tag color="orange">未绑定</Tag> }] : []),
           { title: '状态', dataIndex: 'status', width: 90, render: (value: string) => value === 'enabled' ? <Tag color="green">启用</Tag> : <Tag>停用</Tag> },
           { title: '操作', key: 'actions', width: 170, render: (_: unknown, record: CompetitionQuestion) => (
             <Space size={0} style={{ whiteSpace: 'nowrap' }}>
               <Button type="link" size="small" style={{ paddingInline: 0 }} icon={<EyeOutlined />} onClick={() => setPreviewing(record.id)}>预览</Button>
-              <Button type="link" size="small" style={{ paddingInline: 0 }} icon={<EditOutlined />} onClick={() => openEdit(record)}>编辑</Button>
+              {!simpleMode && <Button type="link" size="small" style={{ paddingInline: 0 }} icon={<EditOutlined />} onClick={() => openEdit(record)}>编辑</Button>}
               <Popconfirm title="确认删除此竞赛试题？" onConfirm={() => deleteMutation.mutate(record.id)}>
                 <Button type="link" danger size="small" style={{ paddingInline: 0 }} icon={<DeleteOutlined />}>删除</Button>
               </Popconfirm>
@@ -558,6 +611,20 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
         />
       )}
 
+      {simpleMode && contentType === 'practical' && (
+        <SimplePracticalQuestionCreateModal
+          open={simplePracticalCreateOpen}
+          eventId={eventId}
+          workTypeId={workTypeId}
+          levelId={levelId}
+          onClose={() => setSimplePracticalCreateOpen(false)}
+          onSaved={() => {
+            setSimplePracticalCreateOpen(false);
+            queryClient.invalidateQueries({ queryKey: ['competition-questions'] });
+          }}
+        />
+      )}
+
       {contentType === 'theory' && <Modal title={editing ? '编辑竞赛试题' : '新增竞赛试题'} open={formOpen}
         onCancel={() => { setEditing(null); setFormOpen(false); form.resetFields(); }} onOk={() => form.submit()} confirmLoading={saveMutation.isPending} destroyOnClose width={760}>
         <Form form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
@@ -581,19 +648,40 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
         </Form>
       </Modal>}
 
-      <Modal title="竞赛试题预览" open={Boolean(previewing)} onCancel={() => setPreviewing(null)} footer={null} width={720}>
+      <Modal title={simpleMode && contentType === 'practical' ? '实操评分明细' : '竞赛试题预览'} open={Boolean(previewing)} onCancel={() => setPreviewing(null)} footer={null} width={simpleMode && contentType === 'practical' ? 1120 : 720}>
         {previewQuery.isLoading ? <Spin /> : previewQuery.data ? <>
           <Descriptions column={3} size="small" style={{ marginBottom: 16 }}>
-            <Descriptions.Item label="题号">{previewQuery.data.sortOrder}</Descriptions.Item>
-            <Descriptions.Item label="题型">{questionTypeTag(previewQuery.data.questionType)}</Descriptions.Item>
+            {!simpleMode && <Descriptions.Item label="题号">{previewQuery.data.sortOrder}</Descriptions.Item>}
+            {!simpleMode && <Descriptions.Item label="题型">{questionTypeTag(previewQuery.data.questionType)}</Descriptions.Item>}
+            {simpleMode && contentType === 'practical' && <Descriptions.Item label="考核项目">{previewQuery.data.stem}</Descriptions.Item>}
+            {simpleMode && contentType === 'practical' && <Descriptions.Item label="计分方式">{practicalScoringMethodLabel(previewQuery.data.practicalDetail?.scoringMethod)}</Descriptions.Item>}
+            {simpleMode && contentType === 'practical' && <Descriptions.Item label="总分">{previewQuery.data.practicalDetail?.totalScore ?? '-'}</Descriptions.Item>}
           </Descriptions>
-          <Typography.Paragraph>{previewQuery.data.stem}</Typography.Paragraph>
+          {!simpleMode && <Typography.Paragraph>{previewQuery.data.stem}</Typography.Paragraph>}
           {previewQuery.data.optionsJson && <Typography.Paragraph type="secondary">选项：{previewQuery.data.optionsJson}</Typography.Paragraph>}
           {contentType === 'practical' && <>
+            {simpleMode ? <Table size="small" rowKey="id" pagination={false}
+              dataSource={previewQuery.data.practicalDetail?.assessmentContents?.flatMap(content => content.elements.map(element => ({
+                ...element,
+                assessmentContent: plainText(content.contentHtml),
+                standard: element.standardHtml,
+                scoringMethod: previewQuery.data!.practicalDetail?.scoringMethod,
+                stepText: element.elementHtml || String(element.elementOrder ?? ''),
+              }))) ?? []}
+              columns={[
+                { title: '考核项目', dataIndex: 'stem', render: () => previewQuery.data!.stem },
+                { title: '考核内容', dataIndex: 'assessmentContent' },
+                { title: '评分项', dataIndex: 'itemName' },
+                { title: '评分标准', dataIndex: 'standard', render: (value: string) => plainText(value) },
+                { title: '计分方式', dataIndex: 'scoringMethod', render: (value: string) => practicalScoringMethodLabel(value) },
+                { title: '步骤', dataIndex: 'stepText', render: (value: string) => plainText(value) },
+                { title: '分值', dataIndex: 'maxScore' },
+              ]} /> : <>
             <Typography.Paragraph><b>操作内容：</b>{previewQuery.data.operationContent || '-'}</Typography.Paragraph>
             <Typography.Paragraph><b>考生准备：</b>{previewQuery.data.studentPrepare || '-'}</Typography.Paragraph>
             <Typography.Paragraph><b>设备准备：</b>{previewQuery.data.equipmentPrepare || '-'}</Typography.Paragraph>
             <Table size="small" rowKey="id" pagination={false} dataSource={previewQuery.data.scoreItems} columns={[{ title: '序号', dataIndex: 'itemNo' }, { title: '评分要素', dataIndex: 'itemName' }, { title: '评分标准', dataIndex: 'criterion' }, { title: '最大分值', dataIndex: 'maxScore' }, { title: '最大扣分', dataIndex: 'maxDeduction' }, { title: '步长', dataIndex: 'deductionStep' }]} />
+            </>}
           </>}
         </> : <Alert type="warning" message="无法加载题目" />}
       </Modal>
@@ -615,4 +703,8 @@ export function CompetitionQuestionBankPage({ contentType }: Props) {
       </Modal>
     </Card>
   );
+}
+
+export function CompetitionSimplePracticalQuestionPage() {
+  return <CompetitionQuestionBankPage contentType="practical" simpleMode />;
 }

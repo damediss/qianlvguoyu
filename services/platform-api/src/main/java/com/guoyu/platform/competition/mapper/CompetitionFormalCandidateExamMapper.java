@@ -87,6 +87,26 @@ public interface CompetitionFormalCandidateExamMapper
   @Update("""
       UPDATE competition_formal_candidate_exam
       SET status = #{toStatus},
+          enter_time = #{enterTime},
+          start_time = #{startTime},
+          updated_at = #{updatedAt},
+          updated_by = #{updatedBy}
+      WHERE id = #{id}
+        AND status = #{fromStatus}
+        AND deleted = 0
+      """)
+  int markLateEnterIfWaiting(
+      @Param("id") Long id,
+      @Param("fromStatus") String fromStatus,
+      @Param("toStatus") String toStatus,
+      @Param("enterTime") LocalDateTime enterTime,
+      @Param("startTime") LocalDateTime startTime,
+      @Param("updatedAt") LocalDateTime updatedAt,
+      @Param("updatedBy") Long updatedBy);
+
+  @Update("""
+      UPDATE competition_formal_candidate_exam
+      SET status = #{toStatus},
           start_time = #{startTime},
           updated_at = #{updatedAt},
           updated_by = #{updatedBy}
@@ -189,11 +209,25 @@ public interface CompetitionFormalCandidateExamMapper
       @Param("limit") int limit);
 
   @Select("""
-      SELECT * FROM competition_formal_candidate_exam
-      WHERE exam_session_id = #{examSessionId}
-        AND player_id = #{playerId}
-        AND deleted = 0
-      ORDER BY id ASC
+      SELECT c.* FROM competition_formal_candidate_exam c
+      WHERE c.exam_session_id = #{examSessionId}
+        AND c.deleted = 0
+        AND (
+          c.player_id = #{playerId}
+          OR (c.player_id IS NULL AND EXISTS (
+            SELECT 1
+            FROM competition_contestant_profile p
+            JOIN competition_registration r
+              ON r.id = COALESCE(c.registration_id, p.registration_id)
+             AND r.tenant_id = p.tenant_id
+             AND r.deleted = 0
+            WHERE p.id = c.contestant_profile_id
+              AND p.tenant_id = c.tenant_id
+              AND p.deleted = 0
+              AND r.player_id = #{playerId}
+          ))
+        )
+      ORDER BY c.id ASC
       """)
   List<CompetitionFormalCandidateExamEntity> selectBySessionAndPlayerId(
       @Param("examSessionId") Long examSessionId,
@@ -204,14 +238,61 @@ public interface CompetitionFormalCandidateExamMapper
       FROM competition_formal_candidate_exam c
       INNER JOIN competition_formal_exam_session s
         ON s.id = c.exam_session_id
+       AND s.tenant_id = c.tenant_id
        AND s.deleted = 0
        AND s.status IN ('ready', 'running')
-      WHERE c.player_id = #{playerId}
-        AND c.deleted = 0
+      WHERE c.deleted = 0
         AND c.status IN ('waiting_enter', 'ready', 'running')
+        AND (
+          c.player_id = #{playerId}
+          OR (c.player_id IS NULL AND EXISTS (
+            SELECT 1
+            FROM competition_contestant_profile p
+            JOIN competition_registration r
+              ON r.id = COALESCE(c.registration_id, p.registration_id)
+             AND r.tenant_id = p.tenant_id
+             AND r.deleted = 0
+            WHERE p.id = c.contestant_profile_id
+              AND p.tenant_id = c.tenant_id
+              AND p.deleted = 0
+              AND r.player_id = #{playerId}
+          ))
+        )
       ORDER BY c.id ASC
       """)
   List<CompetitionFormalCandidateExamEntity> selectJoinableByPlayerId(
+      @Param("playerId") Long playerId);
+
+  @Select("""
+      SELECT c.*
+      FROM competition_formal_candidate_exam c
+      INNER JOIN competition_formal_exam_session s
+        ON s.id = c.exam_session_id
+       AND s.tenant_id = c.tenant_id
+       AND s.deleted = 0
+       AND s.status IN ('running', 'finished')
+      WHERE c.deleted = 0
+        AND c.status = 'absent'
+        AND c.absent_reason = '考试截止前未进入本场考试'
+        AND (
+          c.player_id = #{playerId}
+          OR (c.player_id IS NULL AND EXISTS (
+            SELECT 1
+            FROM competition_contestant_profile p
+            JOIN competition_registration r
+              ON r.id = COALESCE(c.registration_id, p.registration_id)
+             AND r.tenant_id = p.tenant_id
+             AND r.deleted = 0
+            WHERE p.id = c.contestant_profile_id
+              AND p.tenant_id = c.tenant_id
+              AND p.deleted = 0
+              AND r.player_id = #{playerId}
+          ))
+        )
+      ORDER BY s.actual_start_time DESC, c.id DESC
+      LIMIT 1
+      """)
+  CompetitionFormalCandidateExamEntity selectLatestTimedOutEntryByPlayerId(
       @Param("playerId") Long playerId);
 
   @Select("""

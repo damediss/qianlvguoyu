@@ -7,6 +7,7 @@ public record CompetitionPracticalAssessmentElementVO(
     Integer itemNo,
     Integer elementOrder,
     String elementHtml,
+    String itemName,
     Boolean allocationEnabled,
     BigDecimal maxScore,
     String standardHtml,

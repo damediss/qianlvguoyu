@@ -91,6 +91,8 @@ class CompetitionPracticalJudgeServiceTest {
       Mockito.mock(CompetitionPracticalAssessmentSheetService.class);
   private final CompetitionPracticalExecutionService executionService =
       Mockito.mock(CompetitionPracticalExecutionService.class);
+  private final CompetitionPracticalStagePlanSnapshotService planSnapshotService =
+      Mockito.mock(CompetitionPracticalStagePlanSnapshotService.class);
 
   private final CompetitionPracticalJudgeService service = new CompetitionPracticalJudgeService(
       profileMapper, eventMemberMapper, assignmentMapper, groupMapper, configuredGroupMapper,
@@ -132,6 +134,7 @@ class CompetitionPracticalJudgeServiceTest {
     when(executionService.previewPracticalScoreDifference(any(), any()))
         .thenReturn(new CompetitionPracticalExecutionService.PracticalScoreDifferencePreview(
             null, null, 0, "waiting", false));
+    service.setPlanSnapshotService(planSnapshotService);
   }
 
   @AfterEach
@@ -161,6 +164,9 @@ class CompetitionPracticalJudgeServiceTest {
     List<CompetitionPracticalAssignmentEntity> assignments = List.of(
         current, assignment(502L, 1002L, true), assignment(503L, 1003L, true));
     givenOwnedTask(current, assignments, LEADER_MEMBER_ID);
+    when(planSnapshotService.runtimeTimingForPlan(TENANT_ID, 200L))
+        .thenReturn(new CompetitionPracticalStagePlanSnapshotService.RuntimeTimingSnapshot(
+            5_400L, "ALLOW_CONTINUE", null));
 
     var result = service.startSession(current.getId());
 
@@ -169,10 +175,35 @@ class CompetitionPracticalJudgeServiceTest {
     assertThat(assignments).allSatisfy(item -> {
       assertThat(item.getStatus()).isEqualTo("in_progress");
       assertThat(item.getStartedAt()).isNotNull();
+      assertThat(item.getStandardDeadlineAt()).isEqualTo(item.getStartedAt().plusSeconds(5_400L));
+      assertThat(item.getDeadlineAt()).isNull();
+      assertThat(item.getExamEndedAt()).isNull();
+      assertThat(item.getPausedDurationSeconds()).isZero();
       assertThat(item.getStartedBy()).isEqualTo(USER_ID);
     });
+    assertThat(result.standardDeadlineAt()).isNotNull();
     verify(assignmentMapper, Mockito.times(3))
         .updateById(any(CompetitionPracticalAssignmentEntity.class));
+  }
+
+  @Test
+  void autoFinishDeadlineIsDerivedFromPublishedRuntimeSnapshot() {
+    CompetitionPracticalAssignmentEntity current = assignment(501L, LEADER_MEMBER_ID, true);
+    List<CompetitionPracticalAssignmentEntity> assignments = List.of(
+        current, assignment(502L, 1002L, true), assignment(503L, 1003L, true));
+    givenOwnedTask(current, assignments, LEADER_MEMBER_ID);
+    when(planSnapshotService.runtimeTimingForPlan(TENANT_ID, 200L))
+        .thenReturn(new CompetitionPracticalStagePlanSnapshotService.RuntimeTimingSnapshot(
+            5_400L, "AUTO_FINISH", 6_000L));
+
+    var result = service.startSession(current.getId());
+
+    assertThat(result.deadlineAt()).isEqualTo(result.startedAt().plusSeconds(6_000L));
+    assertThat(result.standardDeadlineAt()).isEqualTo(result.startedAt().plusSeconds(5_400L));
+    assertThat(assignments).allSatisfy(item -> {
+      assertThat(item.getDeadlineAt()).isEqualTo(item.getStartedAt().plusSeconds(6_000L));
+      assertThat(item.getStandardDeadlineAt()).isEqualTo(item.getStartedAt().plusSeconds(5_400L));
+    });
   }
 
   @Test
@@ -216,6 +247,30 @@ class CompetitionPracticalJudgeServiceTest {
     assertThatThrownBy(() -> service.open(current.getId()))
         .isInstanceOf(BusinessException.class)
         .hasMessage("组长尚未统一开考，当前不能评分");
+    verify(executionService, never()).openSheet(any(), any(), any());
+  }
+
+  @Test
+  void judgeCannotOpenScoringAfterAutoFinishMarkerIsRecorded() {
+    CompetitionPracticalAssignmentEntity current = startedAssignment();
+    current.setExamEndedAt(LocalDateTime.now().minusSeconds(1));
+    givenOwnedTask(current, List.of(current), LEADER_MEMBER_ID);
+
+    assertThatThrownBy(() -> service.open(current.getId()))
+        .isInstanceOf(BusinessException.class)
+        .hasMessage("实操考试已结束，不能继续评分");
+    verify(executionService, never()).openSheet(any(), any(), any());
+  }
+
+  @Test
+  void judgeCannotScoreAfterServerDeadlineBeforeSchedulerSweep() {
+    CompetitionPracticalAssignmentEntity current = startedAssignment();
+    current.setDeadlineAt(LocalDateTime.now().minusSeconds(1));
+    givenOwnedTask(current, List.of(current), LEADER_MEMBER_ID);
+
+    assertThatThrownBy(() -> service.open(current.getId()))
+        .isInstanceOf(BusinessException.class)
+        .hasMessage("实操考试已达到自动结束时限，不能继续评分");
     verify(executionService, never()).openSheet(any(), any(), any());
   }
 

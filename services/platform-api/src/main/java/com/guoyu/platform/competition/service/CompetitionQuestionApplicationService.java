@@ -212,6 +212,9 @@ public class CompetitionQuestionApplicationService {
             CompetitionQuestionEntity::getId,
             "SELECT question_id FROM competition_question_blueprint_binding WHERE tenant_id = "
                 + principal.getTenantId() + " AND blueprint_id = " + req.getBlueprintId() + " AND deleted = 0")
+        .notInSql(Boolean.TRUE.equals(req.getUnboundOnly()), CompetitionQuestionEntity::getId,
+            "SELECT question_id FROM competition_question_blueprint_binding WHERE tenant_id = "
+                + principal.getTenantId() + " AND deleted = 0")
         .eq(status != null, CompetitionQuestionEntity::getStatus, Integer.valueOf(1).equals(status) ? "enabled" : "disabled")
         .like(StringUtils.hasText(req.getKeyword()), CompetitionQuestionEntity::getStem, req.getKeyword())
         .orderByAsc(CompetitionQuestionEntity::getSortOrder)
@@ -265,6 +268,21 @@ public class CompetitionQuestionApplicationService {
 
   @Transactional
   public CompetitionQuestionVO create(Long eventId, CompetitionQuestionCreateReq req) {
+    return create(eventId, req, false);
+  }
+
+  @Transactional
+  public CompetitionQuestionVO createSimplePracticalQuestion(Long eventId, CompetitionQuestionCreateReq req) {
+    if (!"practical".equals(normalize(req.contentType())) || !"practical".equals(normalize(req.questionType()))) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "简易实操项目必须使用实操题类型");
+    }
+    if (req.blueprintId() != null || req.blueprintNodeId() != null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "简易实操项目不能绑定细目表考评点");
+    }
+    return create(eventId, req, true);
+  }
+
+  private CompetitionQuestionVO create(Long eventId, CompetitionQuestionCreateReq req, boolean simplePractical) {
     PlatformUserPrincipal principal = currentUser();
     lockEvent(principal.getTenantId(), eventId);
     String contentType = normalize(req.contentType());
@@ -273,7 +291,7 @@ public class CompetitionQuestionApplicationService {
         req.eventWorkTypeLevelId(), contentType, questionType);
     CompetitionPracticalQuestionDetailReq practicalDetail = normalizePracticalDetail(
         req.practicalDetail(), req.scoreItems());
-    if (blueprintService != null) {
+    if (blueprintService != null && !simplePractical) {
       // New questions are part of the current blueprint contract.  Existing
       // historical unbound rows remain editable through update(), but a new
       // row cannot be created outside an active theory/practical version.
@@ -547,48 +565,67 @@ public class CompetitionQuestionApplicationService {
   }
 
   public byte[] template(String contentType) {
+    return template(contentType, false);
+  }
+
+  public byte[] template(String contentType, boolean simple) {
     if (!"theory".equalsIgnoreCase(contentType) && !"practical".equalsIgnoreCase(contentType)) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "contentType 必须是 theory 或 practical");
     }
     try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-      Sheet sheet = workbook.createSheet("竞赛试题");
-      String[] headers = "theory".equalsIgnoreCase(contentType)
+      Sheet sheet = workbook.createSheet(simple && "practical".equalsIgnoreCase(contentType) ? "实操评分明细" : "竞赛试题");
+      String[] headers = simple && "practical".equalsIgnoreCase(contentType)
+          ? new String[] {"考核项目", "考核内容", "评分项", "评分标准", "计分方式", "步骤", "分值"}
+          : simple
+          ? new String[] {"序号", "题型（1：判断题、2：单选题、3：填空题、7：多项选择题）", "题干", "参考答案", "回答", "选项A", "选项B", "选项C", "选项D", "选项E", "选项F", "选项G", "选项H"}
+          : "theory".equalsIgnoreCase(contentType)
           ? new String[] {"序号", "题型", "题干", "参考答案", "回答", "选项A", "选项B", "选项C", "选项D", "选项E", "选项F", "选项G", "选项H", "难度", "考评点完整编码", "考评点名称", "层级路径"}
           : new String[] {"序号", "题型", "题干", "考试时间（分钟）", "评分差值", "试题总分", "评分方式", "考核要求", "考场准备", "考生准备", "否定项", "试题材料", "考核内容序号", "考核内容", "评分项序号", "评分要素", "是否配分", "配分", "评分标准", "最大扣分", "步长", "考评点完整编码", "考评点名称", "层级路径"};
       Row header = sheet.createRow(0);
       for (int i = 0; i < headers.length; i++) header.createCell(i).setCellValue(headers[i]);
-      Row example = sheet.createRow(1);
-      if ("theory".equalsIgnoreCase(contentType)) {
-        example.createCell(0).setCellValue(1);
-        example.createCell(1).setCellValue("单选题");
-        example.createCell(2).setCellValue("示例题干");
-        example.createCell(3).setCellValue("A");
-        example.createCell(5).setCellValue("选项A");
-        example.createCell(6).setCellValue("选项B");
-        example.createCell(14).setCellValue("A-1-1-1");
-        example.createCell(15).setCellValue("示例考评点");
-        example.createCell(16).setCellValue("一级/二级/三级/示例考评点");
-      } else {
-        example.createCell(0).setCellValue(1);
-        example.createCell(1).setCellValue("实操题");
-        example.createCell(2).setCellValue("示例实操题");
-        example.createCell(3).setCellValue(60);
-        example.createCell(4).setCellValue(10);
-        example.createCell(5).setCellValue(100);
-        example.createCell(6).setCellValue("扣分制");
-        example.createCell(7).setCellValue("考核要求");
-        example.createCell(12).setCellValue(1);
-        example.createCell(13).setCellValue("考核内容");
-        example.createCell(14).setCellValue(1);
-        example.createCell(15).setCellValue("评分要素");
-        example.createCell(16).setCellValue("是");
-        example.createCell(17).setCellValue(100);
-        example.createCell(18).setCellValue("评分标准");
-        example.createCell(19).setCellValue(100);
-        example.createCell(20).setCellValue(1);
-        example.createCell(21).setCellValue("A-1-1-1");
-        example.createCell(22).setCellValue("示例考评点");
-        example.createCell(23).setCellValue("一级/二级/示例考评点");
+      if (simple && "practical".equalsIgnoreCase(contentType)) {
+        Row example = sheet.createRow(1);
+        example.createCell(0).setCellValue("示例考核项目");
+        example.createCell(1).setCellValue("示例考核内容");
+        example.createCell(2).setCellValue("示例评分项");
+        example.createCell(3).setCellValue("按要求完成得分");
+        example.createCell(4).setCellValue("加分制");
+        example.createCell(5).setCellValue("完成步骤");
+        example.createCell(6).setCellValue(10);
+      } else if (!simple) {
+        Row example = sheet.createRow(1);
+        if ("theory".equalsIgnoreCase(contentType)) {
+          example.createCell(0).setCellValue(1);
+          example.createCell(1).setCellValue("单选题");
+          example.createCell(2).setCellValue("示例题干");
+          example.createCell(3).setCellValue("A");
+          example.createCell(5).setCellValue("选项A");
+          example.createCell(6).setCellValue("选项B");
+          example.createCell(14).setCellValue("A-1-1-1");
+          example.createCell(15).setCellValue("示例考评点");
+          example.createCell(16).setCellValue("一级/二级/三级/示例考评点");
+        } else {
+          example.createCell(0).setCellValue(1);
+          example.createCell(1).setCellValue("实操题");
+          example.createCell(2).setCellValue("示例实操题");
+          example.createCell(3).setCellValue(60);
+          example.createCell(4).setCellValue(10);
+          example.createCell(5).setCellValue(100);
+          example.createCell(6).setCellValue("扣分制");
+          example.createCell(7).setCellValue("考核要求");
+          example.createCell(12).setCellValue(1);
+          example.createCell(13).setCellValue("考核内容");
+          example.createCell(14).setCellValue(1);
+          example.createCell(15).setCellValue("评分要素");
+          example.createCell(16).setCellValue("是");
+          example.createCell(17).setCellValue(100);
+          example.createCell(18).setCellValue("评分标准");
+          example.createCell(19).setCellValue(100);
+          example.createCell(20).setCellValue(1);
+          example.createCell(21).setCellValue("A-1-1-1");
+          example.createCell(22).setCellValue("示例考评点");
+          example.createCell(23).setCellValue("一级/二级/示例考评点");
+        }
       }
       workbook.write(output);
       return output.toByteArray();
@@ -623,12 +660,15 @@ public class CompetitionQuestionApplicationService {
       CompetitionQuestionWorkbookParser.ParsedWorkbook parsed = parser.parse(Path.of(batch.getTempFilePath()),
           batch.getContentType(), batch.getSelectedSheet());
       excelParseMs = elapsedMs(parseStarted);
-      batch.setTotalCount(parsed.questions().size());
+      List<CompetitionQuestionWorkbookParser.ParsedQuestion> importedQuestions = parsed.simplePracticalFormat()
+          ? assignSimplePracticalSortOrder(tenantId, batch, parsed.questions())
+          : parsed.questions();
+      batch.setTotalCount(importedQuestions.size());
       if (!StringUtils.hasText(batch.getSelectedSheet()) && StringUtils.hasText(parsed.selectedSheet())) {
         batch.setSelectedSheet(parsed.selectedSheet());
       }
       long validationStarted = System.nanoTime();
-      validateImportConflicts(tenantId, batch, parsed.questions());
+      validateImportConflicts(tenantId, batch, importedQuestions);
       overheadSql++;
       List<CompetitionQuestionImportPersistenceService.Binding> bindings = resolveBlueprintBindings(
           tenantId, batch, parsed.questions());
@@ -636,13 +676,13 @@ public class CompetitionQuestionApplicationService {
       validationMs = elapsedMs(validationStarted);
       long persistStarted = System.nanoTime();
       persistStats = persistenceService.persist(tenantId, userId, batch.getEventId(), batch.getEventWorkTypeId(),
-          batch.getEventWorkTypeLevelId(), batch.getContentType(), batch.getId(), parsed.questions(), bindings);
+          batch.getEventWorkTypeLevelId(), batch.getContentType(), batch.getId(), importedQuestions, bindings);
       persistMs = elapsedMs(persistStarted);
       commitMs = Math.max(0L, persistMs - persistStats.writeMs());
       persistMs = persistStats.writeMs();
       String tempPath = batch.getTempFilePath();
       batch.setStatus("succeeded");
-      batch.setSuccessCount(parsed.questions().size());
+      batch.setSuccessCount(importedQuestions.size());
       batch.setFailureCount(0);
       batch.setFinishedAt(LocalDateTime.now());
       batch.setUpdatedBy(userId);
@@ -655,7 +695,7 @@ public class CompetitionQuestionApplicationService {
       batchMapper.updateById(batch);
       deleteQuietly(tempPath == null ? null : Path.of(tempPath));
       log.info("Competition question import succeeded, batchId={}, count={}, tenantId={}, metrics={}",
-          batchId, parsed.questions().size(), tenantId, batch.getMetricsJson());
+          batchId, importedQuestions.size(), tenantId, batch.getMetricsJson());
     } catch (Exception ex) {
       log.error("Competition question import failed, batchId={}, tenantId={}", batchId, tenantId, ex);
       if (batch == null) {
@@ -683,6 +723,27 @@ public class CompetitionQuestionApplicationService {
     } finally {
       TenantContextHolder.clear();
     }
+  }
+
+  private List<CompetitionQuestionWorkbookParser.ParsedQuestion> assignSimplePracticalSortOrder(
+      Long tenantId, CompetitionQuestionImportBatchEntity batch,
+      List<CompetitionQuestionWorkbookParser.ParsedQuestion> questions) {
+    if (questions == null || questions.size() != 1) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "实操评分项每次只能导入一个考核项目");
+    }
+    CompetitionQuestionEntity latest = questionMapper.selectOne(new LambdaQueryWrapper<CompetitionQuestionEntity>()
+        .select(CompetitionQuestionEntity::getSortOrder)
+        .eq(CompetitionQuestionEntity::getTenantId, tenantId)
+        .eq(CompetitionQuestionEntity::getEventId, batch.getEventId())
+        .eq(CompetitionQuestionEntity::getEventWorkTypeId, batch.getEventWorkTypeId())
+        .eq(CompetitionQuestionEntity::getEventWorkTypeLevelId, batch.getEventWorkTypeLevelId())
+        .eq(CompetitionQuestionEntity::getContentType, "practical")
+        .eq(CompetitionQuestionEntity::getQuestionType, "practical")
+        .eq(CompetitionQuestionEntity::getDeleted, 0)
+        .orderByDesc(CompetitionQuestionEntity::getSortOrder)
+        .last("LIMIT 1"));
+    int nextSortOrder = latest == null || latest.getSortOrder() == null ? 1 : latest.getSortOrder() + 1;
+    return List.of(questions.get(0).withSortOrder(nextSortOrder));
   }
 
   private void insertImportBatch(CompetitionQuestionImportBatchEntity batch, Path tempFile) {
@@ -1025,7 +1086,7 @@ public class CompetitionQuestionApplicationService {
             elements.add(new CompetitionPracticalAssessmentElementReq(
                 element.elementOrder(), sanitizeHtml(element.elementHtml()), element.allocationEnabled(),
                 element.maxScore(), sanitizeHtml(element.standardHtml()), element.maxDeduction(),
-                element.deductionStep()));
+                element.deductionStep(), sanitizeItemName(element.itemName())));
           }
         }
         contents.add(new CompetitionPracticalAssessmentContentReq(
@@ -1073,7 +1134,8 @@ public class CompetitionQuestionApplicationService {
       Set<Integer> elementOrders = new HashSet<>();
       for (CompetitionPracticalAssessmentElementReq element : content.elements()) {
         if (element == null || element.elementOrder() == null || element.elementOrder() <= 0
-            || !elementOrders.add(element.elementOrder()) || !hasHtmlText(element.elementHtml())
+            || !elementOrders.add(element.elementOrder())
+            || (!hasHtmlText(element.elementHtml()) && !hasHtmlText(element.itemName()))
             || !hasHtmlText(element.standardHtml()) || element.allocationEnabled() == null) {
           throw new BusinessException(ErrorCode.BAD_REQUEST, "评分要素序号、要素内容和评分标准不能为空");
         }
@@ -1119,6 +1181,11 @@ public class CompetitionQuestionApplicationService {
   private String sanitizeHtml(String value) {
     if (!StringUtils.hasText(value)) return null;
     return Jsoup.clean(value, PRACTICAL_HTML);
+  }
+
+  private String sanitizeItemName(String value) {
+    String sanitized = sanitizeHtml(value);
+    return sanitized == null ? null : Jsoup.parse(sanitized).text();
   }
 
   /** The legacy alias is a VARCHAR(255); structured HTML is authoritative. */
@@ -1273,7 +1340,8 @@ public class CompetitionQuestionApplicationService {
         entity.setItemNo(itemNo++);
         entity.setElementHtml(element.elementHtml());
         entity.setAllocationEnabled(Boolean.TRUE.equals(element.allocationEnabled()) ? 1 : 0);
-        entity.setItemName(legacyItemName(element.elementHtml()));
+        entity.setItemName(StringUtils.hasText(element.itemName())
+            ? element.itemName().trim() : legacyItemName(element.elementHtml()));
         entity.setStandardHtml(element.standardHtml());
         entity.setCriterion(Jsoup.parse(element.standardHtml()).text());
         entity.setMaxScore(Boolean.TRUE.equals(element.allocationEnabled()) ? element.maxScore() : null);
@@ -1418,7 +1486,7 @@ public class CompetitionQuestionApplicationService {
         for (CompetitionPracticalQuestionScoreItemEntity item : items) {
           elementVOs.add(new CompetitionPracticalAssessmentElementVO(
               String.valueOf(item.getId()), item.getItemNo(), item.getElementOrder(),
-              sanitizeHtml(firstNonBlank(item.getElementHtml(), item.getItemName())),
+              sanitizeHtml(firstNonBlank(item.getElementHtml(), item.getItemName())), item.getItemName(),
               Integer.valueOf(1).equals(item.getAllocationEnabled()), item.getMaxScore(),
               sanitizeHtml(firstNonBlank(item.getStandardHtml(), item.getCriterion())), item.getMaxDeduction(),
               item.getDeductionStep(), item.getStatus()));
@@ -1435,7 +1503,7 @@ public class CompetitionQuestionApplicationService {
       for (CompetitionPracticalQuestionScoreItemEntity item : scoreItems) {
         elements.add(new CompetitionPracticalAssessmentElementVO(String.valueOf(item.getId()), item.getItemNo(),
             item.getElementOrder() == null ? item.getItemNo() : item.getElementOrder(),
-            sanitizeHtml(firstNonBlank(item.getElementHtml(), item.getItemName())),
+            sanitizeHtml(firstNonBlank(item.getElementHtml(), item.getItemName())), item.getItemName(),
             !Integer.valueOf(0).equals(item.getAllocationEnabled()), item.getMaxScore(),
             sanitizeHtml(firstNonBlank(item.getStandardHtml(), item.getCriterion())), item.getMaxDeduction(),
             item.getDeductionStep(), item.getStatus()));

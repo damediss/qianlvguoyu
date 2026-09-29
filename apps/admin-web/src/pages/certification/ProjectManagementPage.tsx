@@ -16,6 +16,7 @@ import {
 } from '@ant-design/icons';
 import {
   Button,
+  Alert,
   Card,
   Collapse,
   DatePicker,
@@ -74,7 +75,9 @@ import type {
   CertificationWorkbench,
   CertificationWbsItem,
 } from '../../types/certification';
-import { flattenWorkTypeOptions } from '../../utils/workTypeOptions';
+import type { ExamWorkType } from '../../types/exam';
+import { LevelScopeRangeSelect } from '../../components/LevelScopeRangeSelect';
+import { flattenWorkTypeOptions, uniqueWorkTypeIdForTitle, workTypeTitleForId } from '../../utils/workTypeOptions';
 import { CharterEditor, type CharterDraft } from './charter/CharterEditor';
 import { CharterViewer } from './charter/CharterViewer';
 import { WbsEditor } from './wbs/WbsEditor';
@@ -108,10 +111,16 @@ interface PendingOrder {
 interface TaskFormValues {
   taskNo?: string;
   taskName: string;
-  taskManagerName: string;
+  taskManagerName?: string;
   companyName?: string;
   certificationType?: string;
-  scopes?: Array<{ workTypeName?: string; levelCode?: string; levelName?: string }>;
+  scopes?: Array<{
+    workTypeId?: string;
+    workTypeName?: string;
+    levelRange?: string;
+    legacyLevelCode?: string;
+    legacyLevelName?: string;
+  }>;
   plannedPeopleCount?: number;
   planStartDate?: Dayjs;
   planEndDate?: Dayjs;
@@ -128,15 +137,16 @@ function hasDuplicateScopeLevel(
 ): boolean {
   const currentScope = scopes?.[currentIndex];
   const workTypeName = currentScope?.workTypeName?.trim();
-  const levelCode = currentScope?.levelCode;
-  if (!workTypeName || !levelCode) {
+  const workTypeKey = currentScope?.workTypeId || (workTypeName ? `legacy:${workTypeName}` : undefined);
+  const currentLevels = new Set(levelCodesInRange(currentScope?.levelRange));
+  if (!workTypeKey || currentLevels.size === 0) {
     return false;
   }
 
   return (scopes ?? []).some((scope, index) => (
     index !== currentIndex
-    && scope?.workTypeName?.trim() === workTypeName
-    && scope.levelCode === levelCode
+    && (scope?.workTypeId || (scope?.workTypeName?.trim() ? `legacy:${scope.workTypeName.trim()}` : undefined)) === workTypeKey
+    && levelCodesInRange(scope.levelRange).some((levelCode) => currentLevels.has(levelCode))
   ));
 }
 
@@ -273,6 +283,25 @@ export function ProjectManagementPage() {
     () => flattenWorkTypeOptions(workTypeQuery.data ?? []),
     [workTypeQuery.data],
   );
+  const watchedScopes = Form.useWatch('scopes', taskForm) as TaskFormValues['scopes'];
+  const hasUnmappedLegacyWorkType = watchedScopes?.some((scope) =>
+    !scope.workTypeId && Boolean(scope.workTypeName?.trim()),
+  ) ?? false;
+
+  useEffect(() => {
+    if (!taskModalOpen || !workTypeQuery.data?.length) return;
+    const scopes = taskForm.getFieldValue('scopes') as TaskFormValues['scopes'];
+    if (!scopes?.length) return;
+    let changed = false;
+    const mappedScopes = scopes.map((scope) => {
+      if (scope.workTypeId || !scope.workTypeName?.trim()) return scope;
+      const id = uniqueWorkTypeIdForTitle(workTypeQuery.data!, scope.workTypeName);
+      if (!id) return scope;
+      changed = true;
+      return { ...scope, workTypeId: id, workTypeName: workTypeTitleForId(workTypeQuery.data!, id) };
+    });
+    if (changed) taskForm.setFieldValue('scopes', mappedScopes);
+  }, [taskForm, taskModalOpen, workTypeQuery.data]);
 
   const tasks = useMemo(() => tasksQuery.data?.items || [], [tasksQuery.data]);
 
@@ -587,7 +616,17 @@ export function ProjectManagementPage() {
     setEditingTask(null);
     taskForm.resetFields();
     const now = dayjs();
-    const scopes = order ? [{ workTypeName: order.workTypeName, levelCode: order.levelCode, levelName: order.levelName }] : [{ workTypeName: '', levelCode: undefined, levelName: '' }];
+    const orderLevelCode = resolveLevelCode(order?.levelCode, order?.levelName);
+    const orderWorkTypeId = uniqueWorkTypeIdForTitle(workTypeQuery.data ?? [], order?.workTypeName);
+    const scopes = order
+      ? [{
+        workTypeId: orderWorkTypeId,
+        workTypeName: order.workTypeName,
+        levelRange: orderLevelCode ? exactLevelRange(orderLevelCode) : undefined,
+        legacyLevelCode: orderLevelCode ? undefined : order.levelCode,
+        legacyLevelName: orderLevelCode ? undefined : order.levelName,
+      }]
+      : [{ workTypeId: undefined, workTypeName: '', levelRange: undefined }];
     taskForm.setFieldsValue({
       taskNo: order ? order.orderNo.replace('ORDER', 'RD') : `RD-${now.format('YYYYMMDD-HHmm')}`,
       taskName: order?.taskName,
@@ -603,7 +642,7 @@ export function ProjectManagementPage() {
       currentPhase: 'preparation',
     });
     setTaskModalOpen(true);
-  }, [taskForm]);
+  }, [taskForm, workTypeQuery.data]);
 
   const openEdit = useCallback(async (task: CertificationTask) => {
     setEditingTask(task);
@@ -617,8 +656,8 @@ export function ProjectManagementPage() {
     } catch {
       message.warning('获取任务详情失败，已使用列表数据');
     }
-    taskForm.setFieldsValue(buildTaskFormValues(detail));
-  }, [queryClient, taskForm]);
+    taskForm.setFieldsValue(buildTaskFormValues(detail, workTypeQuery.data ?? []));
+  }, [queryClient, taskForm, workTypeQuery.data]);
 
   const handleTaskSubmit = useCallback(() => {
     taskForm.validateFields().then(() => {
@@ -941,6 +980,15 @@ export function ProjectManagementPage() {
         cancelText="取消"
       >
         <Form form={taskForm} layout="vertical">
+          {hasUnmappedLegacyWorkType ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="历史工种名称尚未映射"
+              description="该名称无法唯一匹配当前租户的工种树节点。请在工种下拉框中重新选择有效节点后保存。"
+            />
+          ) : null}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
             <Form.Item name="taskNo" label="任务编号" rules={[{ required: true, message: '请输入任务编号' }]}>
               <Input disabled={Boolean(editingTask)} />
@@ -948,7 +996,7 @@ export function ProjectManagementPage() {
             <Form.Item name="taskName" label="任务名称" rules={[{ required: true, message: '请输入任务名称' }]}>
               <Input />
             </Form.Item>
-            <Form.Item name="taskManagerName" label="任务经理" rules={[{ required: true, message: '请输入任务经理' }]}>
+            <Form.Item name="taskManagerName" label="任务经理（选填）">
               <Input />
             </Form.Item>
             <Form.Item name="companyName" label="企业名称">
@@ -966,21 +1014,21 @@ export function ProjectManagementPage() {
                   <Space direction="vertical" style={{ width: '100%' }} size={8}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Typography.Text strong>认定范围（工种/等级）</Typography.Text>
-                      <Button icon={<PlusOutlined />} onClick={() => add({ workTypeName: '', levelCode: undefined, levelName: '' })}>新增范围</Button>
+                      <Button icon={<PlusOutlined />} onClick={() => add({ workTypeName: '', levelRange: undefined })}>新增范围</Button>
                     </div>
                     {fields.map(({ key, name, ...restField }) => (
                       <div
                         key={key}
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: 'minmax(0, 1fr) 200px 200px 64px',
+                          gridTemplateColumns: 'minmax(0, 1fr) minmax(280px, 1fr) 64px',
                           gap: 12,
                           alignItems: 'start',
                         }}
                       >
                         <Form.Item
                           {...restField}
-                          name={[name, 'workTypeName']}
+                          name={[name, 'workTypeId']}
                           label="工种"
                           rules={[
                             { required: true, message: '请选择工种' },
@@ -989,7 +1037,7 @@ export function ProjectManagementPage() {
                                 if (!hasDuplicateScopeLevel(taskForm.getFieldValue('scopes'), name)) {
                                   return;
                                 }
-                                throw new Error('同一工种下等级编码不可重复');
+                                throw new Error('同一工种的等级范围不能重叠');
                               },
                             },
                           ]}
@@ -999,35 +1047,32 @@ export function ProjectManagementPage() {
                             optionFilterProp="label"
                             options={workTypeOptions}
                             loading={workTypeQuery.isLoading}
+                            allowClear
                             placeholder="请选择工种"
                             notFoundContent={workTypeQuery.isError ? '工种数据加载失败' : undefined}
+                            onChange={(workTypeId) => {
+                              taskForm.setFieldValue(
+                                ['scopes', name, 'workTypeName'],
+                                workTypeTitleForId(workTypeQuery.data ?? [], workTypeId),
+                              );
+                            }}
                           />
                         </Form.Item>
+                        <Form.Item name={[name, 'workTypeName']} hidden><Input /></Form.Item>
                         <Form.Item
                           {...restField}
-                          name={[name, 'levelCode']}
-                          label="等级编码"
+                          name={[name, 'levelRange']}
+                          label="等级范围"
                           rules={[{
                             validator: async () => {
                               if (!hasDuplicateScopeLevel(taskForm.getFieldValue('scopes'), name)) {
                                 return;
                               }
-                              throw new Error('同一工种下等级编码不可重复');
+                              throw new Error('同一工种的等级范围不能重叠');
                             },
                           }]}
                         >
-                          <Select
-                            allowClear
-                            options={levelOptions}
-                            placeholder="选择等级"
-                            onChange={(_, option) => {
-                              const label = Array.isArray(option) ? undefined : option?.label;
-                              taskForm.setFieldValue(['scopes', name, 'levelName'], typeof label === 'string' ? label : undefined);
-                            }}
-                          />
-                        </Form.Item>
-                        <Form.Item {...restField} name={[name, 'levelName']} label="等级名称">
-                          <Input placeholder="自动带出/可手填" />
+                          <LevelScopeRangeSelect placeholderStart="起始等级" placeholderEnd="结束等级" />
                         </Form.Item>
                         <div style={{ paddingTop: 30 }}>
                           <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(name)} />
@@ -1855,35 +1900,145 @@ function formatDate(value: unknown) {
   return String(value);
 }
 
-function toScopeFormValues(task: CertificationTask): NonNullable<TaskFormValues['scopes']> {
-  if (task.scopes?.length) {
-    return task.scopes.map((scope) => ({
-      workTypeName: scope.workTypeName ?? '',
-      levelCode: scope.levelCode,
-      levelName: scope.levelName ?? '',
-    }));
+function resolveLevelCode(levelCode?: string, levelName?: string) {
+  const normalizedCode = levelCode?.trim();
+  if (normalizedCode && levelOptions.some((option) => option.value === normalizedCode)) {
+    return normalizedCode;
   }
-  return [{ workTypeName: '', levelCode: undefined, levelName: '' }];
+  const normalizedName = levelName?.trim();
+  return levelOptions.find((option) => option.label === normalizedName)?.value;
+}
+
+function exactLevelRange(levelCode: string) {
+  const option = levelOptions.find((item) => item.value === levelCode);
+  return option ? `${option.label}->${option.label}` : undefined;
+}
+
+function levelCodesInRange(levelRange?: string) {
+  const [startName, endName] = (levelRange || '').split('->').map((part) => part.trim());
+  const startIndex = levelOptions.findIndex((option) => option.label === startName);
+  const endIndex = levelOptions.findIndex((option) => option.label === (endName || startName));
+  if (startIndex < 0 || endIndex < 0) {
+    return [];
+  }
+  return levelOptions
+    .slice(Math.min(startIndex, endIndex), Math.max(startIndex, endIndex) + 1)
+    .map((option) => option.value);
+}
+
+function levelRangesFromCodes(levelCodes: string[]) {
+  const indexes = [...new Set(levelCodes)]
+    .map((levelCode) => levelOptions.findIndex((option) => option.value === levelCode))
+    .filter((index) => index >= 0)
+    .sort((left, right) => left - right);
+  const ranges: string[] = [];
+  let start = indexes[0];
+  let previous = indexes[0];
+  for (const index of indexes.slice(1)) {
+    if (index !== previous + 1) {
+      const first = levelOptions[start];
+      const last = levelOptions[previous];
+      ranges.push(`${first.label}->${last.label}`);
+      start = index;
+    }
+    previous = index;
+  }
+  if (start !== undefined && previous !== undefined) {
+    const first = levelOptions[start];
+    const last = levelOptions[previous];
+    ranges.push(`${first.label}->${last.label}`);
+  }
+  return ranges;
+}
+
+function toScopeFormValues(
+  task: CertificationTask,
+  workTypeTree: ExamWorkType[],
+): NonNullable<TaskFormValues['scopes']> {
+  if (!task.scopes?.length) {
+    const levelCode = resolveLevelCode(task.levelCode, task.levelName);
+    const workTypeId = uniqueWorkTypeIdForTitle(workTypeTree, task.workTypeName);
+    return [{
+      workTypeId,
+      workTypeName: workTypeTitleForId(workTypeTree, workTypeId) ?? task.workTypeName ?? '',
+      levelRange: levelCode ? exactLevelRange(levelCode) : undefined,
+      legacyLevelCode: levelCode ? undefined : task.levelCode,
+      legacyLevelName: levelCode ? undefined : task.levelName,
+    }];
+  }
+
+  const grouped = new Map<string, {
+    workTypeId?: string;
+    workTypeName: string;
+    levelCodes: string[];
+    legacyScopes: Array<{ levelCode?: string; levelName?: string }>;
+  }>();
+  for (const scope of task.scopes) {
+    const scopeName = scope.workTypeName ?? '';
+    const workTypeId = scope.workTypeId || uniqueWorkTypeIdForTitle(workTypeTree, scopeName);
+    const workTypeName = workTypeTitleForId(workTypeTree, workTypeId) ?? scopeName;
+    const groupKey = workTypeId ? `id:${workTypeId}` : `name:${scopeName}`;
+    const group = grouped.get(groupKey) ?? { workTypeId, workTypeName, levelCodes: [], legacyScopes: [] };
+    const levelCode = resolveLevelCode(scope.levelCode, scope.levelName);
+    if (levelCode) {
+      group.levelCodes.push(levelCode);
+    } else {
+      group.legacyScopes.push({ levelCode: scope.levelCode, levelName: scope.levelName });
+    }
+    grouped.set(groupKey, group);
+  }
+
+  const formScopes = Array.from(grouped.values()).flatMap((group) => [
+    ...levelRangesFromCodes(group.levelCodes).map((levelRange) => ({
+      workTypeId: group.workTypeId,
+      workTypeName: group.workTypeName,
+      levelRange,
+    })),
+    ...group.legacyScopes.map((scope) => ({
+      workTypeId: group.workTypeId,
+      workTypeName: group.workTypeName,
+      legacyLevelCode: scope.levelCode,
+      legacyLevelName: scope.levelName,
+    })),
+  ]);
+  return formScopes.length ? formScopes : [{ workTypeName: '', levelRange: undefined }];
 }
 
 function toScopePayload(scopes?: TaskFormValues['scopes']) {
-  return (scopes ?? [])
-    .map((scope) => ({
-      workTypeName: scope.workTypeName?.trim(),
-      levelCode: scope.levelCode,
-      levelName: scope.levelName?.trim(),
-    }))
-    .filter((scope) => scope.workTypeName || scope.levelCode || scope.levelName);
+  return (scopes ?? []).flatMap((scope) => {
+    const workTypeName = scope.workTypeName?.trim();
+    const workTypeId = scope.workTypeId;
+    const levelCodes = levelCodesInRange(scope.levelRange);
+    if (levelCodes.length) {
+      return levelCodes.map((levelCode) => ({
+        workTypeId,
+        workTypeName,
+        levelCode,
+        levelName: levelOptions.find((option) => option.value === levelCode)?.label,
+      }));
+    }
+
+    const legacyScope = {
+      workTypeId,
+      workTypeName,
+      levelCode: scope.legacyLevelCode,
+      levelName: scope.legacyLevelName?.trim(),
+    };
+    return legacyScope.workTypeName || legacyScope.levelCode || legacyScope.levelName ? [legacyScope] : [];
+  });
 }
 
-function buildTaskFormValues(task: CertificationTask): TaskFormValues {
+function buildTaskFormValues(
+  task: CertificationTask,
+  workTypeTree: ExamWorkType[],
+): TaskFormValues {
   return {
     taskNo: task.taskNo,
     taskName: task.taskName,
-    taskManagerName: task.taskManagerName,
+    taskManagerName: task.taskManagerName ?? undefined,
     companyName: task.companyName,
     certificationType: task.certificationType,
-    scopes: toScopeFormValues(task),
+    scopes: toScopeFormValues(task, workTypeTree),
     plannedPeopleCount: task.plannedPeopleCount,
     planStartDate: task.planStartDate ? dayjs(task.planStartDate) : undefined,
     planEndDate: task.planEndDate ? dayjs(task.planEndDate) : undefined,

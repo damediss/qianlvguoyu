@@ -79,6 +79,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 @Slf4j
 public class CompetitionMakeExamPlanApplicationService {
 
+  private static final String PURPOSE_EXAM_PLAN = "EXAM_PLAN";
+  private static final String PURPOSE_PRACTICAL_SCORING_SCHEME = "PRACTICAL_SCORING_SCHEME";
+
   private final CompetitionMakeExamPlanMapper planMapper;
   private final CompetitionMakeExamPlanDetailMapper detailMapper;
   private final CompetitionMakeExamPaperSnapshotMapper snapshotMapper;
@@ -162,6 +165,16 @@ public class CompetitionMakeExamPlanApplicationService {
         .like(StringUtils.hasText(req.getKeyword()), CompetitionMakeExamPlanEntity::getTitle, req.getKeyword())
         .orderByDesc(CompetitionMakeExamPlanEntity::getUpdatedAt)
         .orderByDesc(CompetitionMakeExamPlanEntity::getId);
+    if (Boolean.TRUE.equals(req.getSimpleMode())) {
+      wrapper.isNull(CompetitionMakeExamPlanEntity::getBlueprintId);
+      if ("practical".equalsIgnoreCase(req.getContentType())) {
+        wrapper.isNull(CompetitionMakeExamPlanEntity::getPracticalQuestionId);
+        wrapper.eq(CompetitionMakeExamPlanEntity::getPlanPurpose, PURPOSE_PRACTICAL_SCORING_SCHEME);
+      }
+    } else if (Boolean.FALSE.equals(req.getSimpleMode())) {
+      wrapper.and(condition -> condition.isNotNull(CompetitionMakeExamPlanEntity::getBlueprintId)
+          .or().isNotNull(CompetitionMakeExamPlanEntity::getPracticalQuestionId));
+    }
     Page<CompetitionMakeExamPlanEntity> result = planMapper.selectPage(new Page<>(req.getPage(), req.getPageSize()), wrapper);
     if (result == null) {
       log.warn("Competition make-plan mapper returned null page, tenantId={}, eventId={}",
@@ -194,15 +207,36 @@ public class CompetitionMakeExamPlanApplicationService {
     } catch (BusinessException ex) {
       errors.add(ex.getMessage());
     }
+    if (isPracticalScoringSchemeRequest(req)) {
+      int selectedCount = req.practicalQuestionIds() == null ? 0 : req.practicalQuestionIds().size();
+      return new CompetitionMakeExamPlanPrecheckVO(errors.isEmpty(), selectedCount,
+          List.of(), List.of(), errors, List.of(), 0, List.of(), List.of(), selectedCount,
+          req.durationMinutes());
+    }
     CompetitionMakeExamPlanEntity probe = new CompetitionMakeExamPlanEntity();
     probe.setEventId(eventId); probe.setEventWorkTypeId(req.eventWorkTypeId()); probe.setEventWorkTypeLevelId(req.eventWorkTypeLevelId());
     probe.setContentType(normalizeContentType(req.contentType())); probe.setBlueprintId(req.blueprintId());
-    List<CompetitionQuestionEntity> candidates = questionMapper.selectList(questionScope(principal.getTenantId(), probe));
-    candidates = candidates == null ? new ArrayList<>() : new ArrayList<>(candidates);
+    List<CompetitionQuestionEntity> candidates = sortCandidateQuestions(
+        questionMapper.selectList(questionScope(principal.getTenantId(), probe)));
     List<CompetitionMakeExamPlanPrecheckVO.TopicItem> topics = new ArrayList<>();
     List<CompetitionMakeExamPlanPrecheckVO.TheoryAllocationItem> theoryAllocations = new ArrayList<>();
     Integer unboundQuestionCount = 0;
     String contentType = probe.getContentType();
+    boolean simplePractical = "practical".equals(contentType)
+        && req.blueprintId() == null && req.practicalQuestionId() == null;
+    if (simplePractical && req.details() != null && req.details().size() == 1
+        && req.details().get(0) != null && req.details().get(0).point() != null) {
+      int practicalCandidateCount = (int) candidates.stream()
+          .filter(candidate -> candidate != null
+              && "practical".equalsIgnoreCase(candidate.getQuestionType()))
+          .count();
+      candidates = validSimplePracticalCandidates(principal.getTenantId(), candidates,
+          req.details().get(0).point());
+      if (candidates.size() < practicalCandidateCount) {
+        warnings.add("有" + (practicalCandidateCount - candidates.size())
+            + "道实操题缺少可用于当前分值配置的有效评分项，已排除");
+      }
+    }
     if (req.blueprintId() != null && blueprintNodeMapper != null && "theory".equals(contentType)) {
       try {
         BlueprintTopology topology = loadTopology(principal.getTenantId(), req.blueprintId());
@@ -299,12 +333,29 @@ public class CompetitionMakeExamPlanApplicationService {
     }
     List<CompetitionMakeExamPlanPrecheckVO.DetailItem> detailItems = new ArrayList<>();
     if (theoryAllocations.isEmpty() && req.details() != null) {
-      for (CompetitionMakeExamPlanDetailReq detail : req.details()) {
+      Set<Long> usedQuestionIds = new HashSet<>();
+      Random precheckRandom = new Random(effectiveRequestSeed(req));
+      List<CompetitionMakeExamPlanDetailReq> orderedDetails = new ArrayList<>(req.details());
+      orderedDetails.sort(Comparator.comparingInt(detail ->
+          detail == null || detail.sortOrder() == null ? Integer.MAX_VALUE : detail.sortOrder()));
+      for (CompetitionMakeExamPlanDetailReq detail : orderedDetails) {
         if (detail == null || detail.questionType() == null || detail.questionCount() == null) continue;
-        int available = (int) candidates.stream().filter(candidate -> detail.questionType().equalsIgnoreCase(candidate.getQuestionType())
-            && matchesDifficulty(candidate, detail)).count();
+        List<CompetitionQuestionEntity> availableQuestions = new ArrayList<>();
+        for (CompetitionQuestionEntity candidate : candidates) {
+          if (candidate == null || candidate.getId() == null || usedQuestionIds.contains(candidate.getId())
+              || !detail.questionType().equalsIgnoreCase(candidate.getQuestionType())
+              || !matchesDifficulty(candidate, detail)) {
+            continue;
+          }
+          availableQuestions.add(candidate);
+        }
+        Collections.shuffle(availableQuestions, precheckRandom);
+        int available = availableQuestions.size();
         detailItems.add(new CompetitionMakeExamPlanPrecheckVO.DetailItem(detail.questionType(), detail.questionCount(), available,
             Math.max(0, detail.questionCount() - available)));
+        for (int index = 0; index < Math.min(detail.questionCount(), available); index++) {
+          usedQuestionIds.add(availableQuestions.get(index).getId());
+        }
       }
     }
     if (unboundQuestionCount > 0) {
@@ -331,6 +382,8 @@ public class CompetitionMakeExamPlanApplicationService {
     plan.setPracticalQuestionId(req.practicalQuestionId());
     String contentType = normalizeContentType(req.contentType());
     plan.setContentType(contentType);
+    plan.setPlanPurpose(isPracticalScoringSchemeRequest(req)
+        ? PURPOSE_PRACTICAL_SCORING_SCHEME : PURPOSE_EXAM_PLAN);
     plan.setTitle(req.title());
     plan.setExamType(req.examType());
     plan.setDurationMinutes(req.durationMinutes());
@@ -339,7 +392,7 @@ public class CompetitionMakeExamPlanApplicationService {
     plan.setPaperCount(normalizePaperCount(req, contentType));
     plan.setRandomSeed(effectiveRequestSeed(req));
     plan.setPlanVersion(nextPlanVersion(principal.getTenantId(), eventId,
-        req.eventWorkTypeId(), req.eventWorkTypeLevelId(), contentType));
+        req.eventWorkTypeId(), req.eventWorkTypeLevelId(), contentType, plan.getPlanPurpose()));
     plan.setStatus("draft");
     plan.setComments(req.comments());
     plan.setCreatedBy(principal.getUserId());
@@ -348,10 +401,11 @@ public class CompetitionMakeExamPlanApplicationService {
     if (planMapper.insert(plan) != 1) {
       throw new BusinessException(ErrorCode.CONFLICT, "竞赛组卷计划保存失败");
     }
-    if (!isBlueprintPractical(contentType, req.blueprintId())) {
+    if (!isPracticalScoringSchemeRequest(req) && !isBlueprintPractical(contentType, req.blueprintId())) {
       saveDetails(principal.getTenantId(), principal.getUserId(), plan.getId(), req.details());
     }
-    generateDraftSnapshots(principal.getTenantId(), principal.getUserId(), plan, req.details());
+    generateDraftSnapshots(principal.getTenantId(), principal.getUserId(), plan, req.details(),
+        req.practicalQuestionIds());
     return toPlanVO(principal.getTenantId(), plan);
   }
 
@@ -361,6 +415,10 @@ public class CompetitionMakeExamPlanApplicationService {
     CompetitionMakeExamPlanEntity plan = findPlan(principal.getTenantId(), eventId, planId);
     if (!"draft".equals(plan.getStatus())) throw new BusinessException(ErrorCode.CONFLICT, "已发布组卷计划不可直接修改，请新建版本");
     CompetitionMakeExamPlanUpsertReq effectiveReq = lockDraftBlueprint(plan, req);
+    boolean existingScoringScheme = PURPOSE_PRACTICAL_SCORING_SCHEME.equals(plan.getPlanPurpose());
+    if (existingScoringScheme != isPracticalScoringSchemeRequest(effectiveReq)) {
+      throw new BusinessException(ErrorCode.CONFLICT, "评分方案和普通组卷计划不能互相转换，请新建对应类型的计划");
+    }
     validatePlan(principal.getTenantId(), eventId, effectiveReq, true);
     plan.setEventWorkTypeId(effectiveReq.eventWorkTypeId());
     plan.setEventWorkTypeLevelId(effectiveReq.eventWorkTypeLevelId());
@@ -368,6 +426,7 @@ public class CompetitionMakeExamPlanApplicationService {
     plan.setPracticalQuestionId(effectiveReq.practicalQuestionId());
     String contentType = normalizeContentType(effectiveReq.contentType());
     plan.setContentType(contentType);
+    plan.setPlanPurpose(existingScoringScheme ? PURPOSE_PRACTICAL_SCORING_SCHEME : PURPOSE_EXAM_PLAN);
     plan.setTitle(effectiveReq.title());
     plan.setExamType(effectiveReq.examType());
     plan.setDurationMinutes(effectiveReq.durationMinutes());
@@ -376,7 +435,7 @@ public class CompetitionMakeExamPlanApplicationService {
     plan.setPaperCount(normalizePaperCount(effectiveReq, contentType));
     plan.setRandomSeed(effectiveRequestSeed(effectiveReq));
     plan.setPlanVersion(nextPlanVersion(principal.getTenantId(), eventId,
-        req.eventWorkTypeId(), req.eventWorkTypeLevelId(), contentType));
+        req.eventWorkTypeId(), req.eventWorkTypeLevelId(), contentType, plan.getPlanPurpose()));
     plan.setComments(effectiveReq.comments());
     plan.setUpdatedBy(principal.getUserId());
     if (planMapper.updateById(plan) != 1) {
@@ -397,10 +456,12 @@ public class CompetitionMakeExamPlanApplicationService {
         .set(CompetitionMakeExamPaperSnapshotEntity::getStatus, "deprecated")
         .set(CompetitionMakeExamPaperSnapshotEntity::getUpdatedBy, principal.getUserId())
         .set(CompetitionMakeExamPaperSnapshotEntity::getUpdatedAt, LocalDateTime.now()));
-    if (!isBlueprintPractical(contentType, effectiveReq.blueprintId())) {
+    if (!isPracticalScoringSchemeRequest(effectiveReq)
+        && !isBlueprintPractical(contentType, effectiveReq.blueprintId())) {
       saveDetails(principal.getTenantId(), principal.getUserId(), plan.getId(), effectiveReq.details());
     }
-    generateDraftSnapshots(principal.getTenantId(), principal.getUserId(), plan, effectiveReq.details());
+    generateDraftSnapshots(principal.getTenantId(), principal.getUserId(), plan, effectiveReq.details(),
+        effectiveReq.practicalQuestionIds());
     return toPlanVO(principal.getTenantId(), plan);
   }
 
@@ -483,7 +544,14 @@ public class CompetitionMakeExamPlanApplicationService {
     List<CompetitionMakeExamSnapshotVO> result = new ArrayList<>();
     if (snapshots != null) {
       for (CompetitionMakeExamPaperSnapshotEntity snapshot : snapshots) {
-        result.add(toSnapshotVO(principal.getTenantId(), snapshot));
+        CompetitionMakeExamPlanEntity owner = planMapper.selectOne(
+            new LambdaQueryWrapper<CompetitionMakeExamPlanEntity>()
+                .eq(CompetitionMakeExamPlanEntity::getTenantId, principal.getTenantId())
+                .eq(CompetitionMakeExamPlanEntity::getId, snapshot.getPlanId())
+                .eq(CompetitionMakeExamPlanEntity::getDeleted, 0));
+        if (owner != null && !PURPOSE_PRACTICAL_SCORING_SCHEME.equals(owner.getPlanPurpose())) {
+          result.add(toSnapshotVO(principal.getTenantId(), snapshot));
+        }
       }
     }
     return result;
@@ -530,16 +598,34 @@ public class CompetitionMakeExamPlanApplicationService {
       throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
           "竞赛组卷快照未发布或与当前赛事工种等级不匹配");
     }
+    CompetitionMakeExamPlanEntity owner = planMapper.selectOne(
+        new LambdaQueryWrapper<CompetitionMakeExamPlanEntity>()
+            .eq(CompetitionMakeExamPlanEntity::getTenantId, principal.getTenantId())
+            .eq(CompetitionMakeExamPlanEntity::getId, snapshot.getPlanId())
+            .eq(CompetitionMakeExamPlanEntity::getStatus, "published")
+            .eq(CompetitionMakeExamPlanEntity::getDeleted, 0));
+    if (owner == null || PURPOSE_PRACTICAL_SCORING_SCHEME.equals(owner.getPlanPurpose())) {
+      throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+          "实操评分方案不能通过普通试卷绑定入口使用");
+    }
     return toSnapshotVO(principal.getTenantId(), snapshot);
   }
 
   private void generateDraftSnapshots(Long tenantId, Long userId, CompetitionMakeExamPlanEntity plan,
-      List<CompetitionMakeExamPlanDetailReq> details) {
+      List<CompetitionMakeExamPlanDetailReq> details, List<Long> practicalQuestionIds) {
     if (blueprintService != null && plan.getBlueprintId() != null) {
       blueprintService.persistInheritedBindings(tenantId, plan.getBlueprintId(), userId);
     }
-    List<CompetitionQuestionEntity> candidates = questionMapper.selectList(questionScope(tenantId, plan));
-    candidates = candidates == null ? new ArrayList<>() : new ArrayList<>(candidates);
+    if (PURPOSE_PRACTICAL_SCORING_SCHEME.equals(plan.getPlanPurpose())) {
+      List<SelectedQuestion> selectedQuestions = selectedPracticalScoringSchemeQuestions(
+          tenantId, plan.getEventId(), plan.getEventWorkTypeId(), plan.getEventWorkTypeLevelId(),
+          practicalQuestionIds);
+      persistSnapshot(tenantId, userId, plan, "P",
+          Long.toString(plan.getRandomSeed() == null ? 0L : plan.getRandomSeed()), selectedQuestions);
+      return;
+    }
+    List<CompetitionQuestionEntity> candidates = sortCandidateQuestions(
+        questionMapper.selectList(questionScope(tenantId, plan)));
     if ("practical".equals(plan.getContentType()) && plan.getBlueprintId() != null) {
       generatePracticalBlueprintSnapshots(tenantId, userId, plan, candidates);
       return;
@@ -552,7 +638,7 @@ public class CompetitionMakeExamPlanApplicationService {
     List<SelectedQuestion> selectedQuestions;
     if ("theory".equals(plan.getContentType()) && plan.getBlueprintId() != null) {
       selectedQuestions = selectTheoryByTopics(tenantId, plan, candidates, details, randomSeedValue);
-    } else if ("practical".equals(plan.getContentType())) {
+    } else if ("practical".equals(plan.getContentType()) && plan.getPracticalQuestionId() != null) {
       CompetitionQuestionEntity selected = candidates.stream()
           .filter(candidate -> candidate != null && candidate.getId() != null
               && candidate.getId().equals(plan.getPracticalQuestionId()))
@@ -565,6 +651,8 @@ public class CompetitionMakeExamPlanApplicationService {
       }
       selectedQuestions = List.of(new SelectedQuestion(selected, detail.getTotalScore(), null, null,
           null, null, detail.getTotalScore(), BigDecimal.ONE));
+    } else if ("practical".equals(plan.getContentType())) {
+      selectedQuestions = selectSimplePracticalQuestions(tenantId, candidates, details, random);
     } else {
       selectedQuestions = selectQuestionsForDetails(candidates, details, random);
     }
@@ -1068,6 +1156,14 @@ public class CompetitionMakeExamPlanApplicationService {
     return wrapper;
   }
 
+  private List<CompetitionQuestionEntity> sortCandidateQuestions(List<CompetitionQuestionEntity> questions) {
+    if (questions == null) return new ArrayList<>();
+    return questions.stream()
+        .filter(question -> question != null && question.getId() != null)
+        .sorted(Comparator.comparing(CompetitionQuestionEntity::getId))
+        .toList();
+  }
+
   private List<SelectedQuestion> selectQuestionsForDetails(
       List<CompetitionQuestionEntity> candidates,
       List<CompetitionMakeExamPlanDetailReq> details,
@@ -1104,6 +1200,59 @@ public class CompetitionMakeExamPlanApplicationService {
       }
     }
     return selected;
+  }
+
+  private List<SelectedQuestion> selectSimplePracticalQuestions(
+      Long tenantId,
+      List<CompetitionQuestionEntity> candidates,
+      List<CompetitionMakeExamPlanDetailReq> details,
+      Random random) {
+    if (details == null || details.size() != 1) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "简易实操组卷只允许配置一条实操题型规则");
+    }
+    CompetitionMakeExamPlanDetailReq rule = details.get(0);
+    List<CompetitionQuestionEntity> available = validSimplePracticalCandidates(
+        tenantId, candidates, rule.point());
+    Collections.shuffle(available, random);
+    if (available.size() < rule.questionCount()) {
+      throw new BusinessException(ErrorCode.CONFLICT,
+          "实操题可用题目不足，需要 " + rule.questionCount() + " 道，当前仅有 " + available.size() + " 道");
+    }
+    List<SelectedQuestion> selected = new ArrayList<>();
+    for (int index = 0; index < rule.questionCount(); index++) {
+      CompetitionQuestionEntity question = available.get(index);
+      CompetitionPracticalQuestionDetailEntity detail = practicalDetailMapper.selectByQuestion(
+          tenantId, question.getId());
+      BigDecimal sourceTotalScore = detail.getTotalScore();
+      BigDecimal scoreScale = rule.point().divide(sourceTotalScore, 12, RoundingMode.HALF_UP);
+      selected.add(new SelectedQuestion(question, rule.point(), null, null, null, null,
+          sourceTotalScore, scoreScale));
+    }
+    return selected;
+  }
+
+  private List<CompetitionQuestionEntity> validSimplePracticalCandidates(
+      Long tenantId, List<CompetitionQuestionEntity> candidates, BigDecimal targetScore) {
+    List<CompetitionQuestionEntity> valid = new ArrayList<>();
+    if (candidates == null) return valid;
+    for (CompetitionQuestionEntity candidate : candidates) {
+      if (candidate == null || candidate.getId() == null
+          || !"practical".equalsIgnoreCase(candidate.getQuestionType())) {
+        continue;
+      }
+      CompetitionPracticalQuestionDetailEntity detail = practicalDetailMapper.selectByQuestion(
+          tenantId, candidate.getId());
+      if (detail == null || detail.getTotalScore() == null) continue;
+      try {
+        validatePracticalScoringData(tenantId, candidate.getId(), detail,
+            detail.getTotalScore(), targetScore);
+        valid.add(candidate);
+      } catch (BusinessException ex) {
+        log.debug("Exclude practical question from simple make-plan candidates: questionId={}, reason={}",
+            candidate.getId(), ex.getMessage());
+      }
+    }
+    return valid;
   }
 
   private boolean matchesDifficulty(CompetitionQuestionEntity question,
@@ -1418,7 +1567,7 @@ public class CompetitionMakeExamPlanApplicationService {
     return new CompetitionMakeExamPlanUpsertReq(req.eventWorkTypeId(), req.eventWorkTypeLevelId(),
         req.contentType(), req.title(), req.examType(), req.durationMinutes(), req.totalScore(),
         req.passScore(), req.comments(), req.details(), req.practicalQuestionId(), plan.getBlueprintId(),
-        req.topicRules(), req.paperCount(), req.randomSeed());
+        req.topicRules(), req.paperCount(), req.randomSeed(), req.practicalQuestionIds());
   }
 
   private void requireBlueprintScope(Long tenantId, Long blueprintId, Long eventId,
@@ -1438,9 +1587,12 @@ public class CompetitionMakeExamPlanApplicationService {
       Long eventId,
       Long eventWorkTypeId,
       Long eventWorkTypeLevelId,
-      String contentType) {
-    Integer maxVersion = planMapper.selectMaxVersion(
-        tenantId, eventId, eventWorkTypeId, eventWorkTypeLevelId, contentType);
+      String contentType,
+      String planPurpose) {
+    Integer maxVersion = PURPOSE_EXAM_PLAN.equals(planPurpose)
+        ? planMapper.selectMaxVersion(tenantId, eventId, eventWorkTypeId, eventWorkTypeLevelId, contentType)
+        : planMapper.selectMaxVersionByPurpose(
+            tenantId, eventId, eventWorkTypeId, eventWorkTypeLevelId, contentType, planPurpose);
     return (maxVersion == null ? 0 : maxVersion) + 1;
   }
 
@@ -1461,6 +1613,10 @@ public class CompetitionMakeExamPlanApplicationService {
     }
     scoreCents(req.totalScore());
     normalizePaperCount(req, contentType);
+    if (isPracticalScoringSchemeRequest(req)) {
+      validatePracticalScoringScheme(tenantId, eventId, req, contentType);
+      return;
+    }
     if (req.blueprintId() != null) {
       if (blueprintService == null) throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "竞赛细目表服务未就绪");
       if (allowLockedBlueprint) {
@@ -1482,10 +1638,8 @@ public class CompetitionMakeExamPlanApplicationService {
         validateDefaultTheoryTopicRules(tenantId, req);
       }
     }
-    if ("practical".equals(contentType) && req.blueprintId() == null) {
-      if (req.practicalQuestionId() == null) {
-        throw new BusinessException(ErrorCode.BAD_REQUEST, "实操组卷必须显式选择一条启用的实操题");
-      }
+    if ("practical".equals(contentType) && req.blueprintId() == null
+        && req.practicalQuestionId() != null) {
       CompetitionQuestionEntity selected = questionMapper.selectOne(new LambdaQueryWrapper<CompetitionQuestionEntity>()
           .eq(CompetitionQuestionEntity::getTenantId, tenantId)
           .eq(CompetitionQuestionEntity::getEventId, eventId)
@@ -1519,6 +1673,11 @@ public class CompetitionMakeExamPlanApplicationService {
         throw new BusinessException(ErrorCode.BAD_REQUEST, "实操组卷不允许编辑题量和单题分值，必须与所选题目总分一致");
       }
     }
+    if ("practical".equals(contentType) && req.blueprintId() == null
+        && req.practicalQuestionId() == null
+        && (req.details() == null || req.details().size() != 1)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "简易实操组卷只允许配置一条实操题型规则");
+    }
     Set<Integer> orders = new HashSet<>();
     if (req.details() == null || req.details().isEmpty()) {
       throw new BusinessException(ErrorCode.BAD_REQUEST, "至少需要配置一条组卷规则");
@@ -1550,6 +1709,88 @@ public class CompetitionMakeExamPlanApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST,
           "组卷规则合计分值 " + rulesTotal + " 不等于计划总分 " + req.totalScore());
     }
+  }
+
+  private void validatePracticalScoringScheme(Long tenantId, Long eventId,
+      CompetitionMakeExamPlanUpsertReq req, String contentType) {
+    if (!"practical".equals(contentType) || req.blueprintId() != null
+        || req.practicalQuestionId() != null) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "实操评分方案只能选择实操题库项目，不能绑定细目表或单题组卷");
+    }
+    List<Long> questionIds = req.practicalQuestionIds();
+    if (questionIds == null || questionIds.isEmpty() || questionIds.size() > 50) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "实操评分方案需选择1到50个实操项目");
+    }
+    if (req.details() == null || !req.details().isEmpty()) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "实操评分方案不配置随机抽题规则");
+    }
+    if (normalizePaperCount(req, contentType) != 1) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "实操评分方案固定生成一份评分快照");
+    }
+    if (req.totalScore().compareTo(new BigDecimal("100.00")) != 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "实操评分方案总分固定为100分");
+    }
+    List<SelectedQuestion> selected = selectedPracticalScoringSchemeQuestions(tenantId, eventId,
+        req.eventWorkTypeId(), req.eventWorkTypeLevelId(), questionIds);
+    BigDecimal scoreTotal = selected.stream().map(SelectedQuestion::point)
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+    int durationTotal = 0;
+    for (SelectedQuestion item : selected) {
+      CompetitionPracticalQuestionDetailEntity detail =
+          practicalDetailMapper.selectByQuestion(tenantId, item.question().getId());
+      durationTotal += detail.getDurationMinutes();
+    }
+    if (scoreTotal.compareTo(req.totalScore()) != 0) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "所选实操项目原始分值合计" + scoreTotal + "分，须刚好为100分；不进行分值缩放");
+    }
+    if (req.durationMinutes() != durationTotal) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST,
+          "方案参考时长须等于所选实操项目参考时长合计" + durationTotal + "分钟");
+    }
+  }
+
+  private List<SelectedQuestion> selectedPracticalScoringSchemeQuestions(Long tenantId, Long eventId,
+      Long workTypeId, Long levelId, List<Long> questionIds) {
+    if (questionIds == null || questionIds.isEmpty() || questionIds.size() > 50) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "实操评分方案需选择1到50个实操项目");
+    }
+    Set<Long> seen = new HashSet<>();
+    List<SelectedQuestion> selected = new ArrayList<>();
+    for (Long questionId : questionIds) {
+      if (questionId == null || !seen.add(questionId)) {
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "实操评分方案项目不能为空或重复");
+      }
+      CompetitionQuestionEntity question = questionMapper.selectOne(
+          new LambdaQueryWrapper<CompetitionQuestionEntity>()
+              .eq(CompetitionQuestionEntity::getTenantId, tenantId)
+              .eq(CompetitionQuestionEntity::getEventId, eventId)
+              .eq(CompetitionQuestionEntity::getEventWorkTypeId, workTypeId)
+              .eq(CompetitionQuestionEntity::getEventWorkTypeLevelId, levelId)
+              .eq(CompetitionQuestionEntity::getContentType, "practical")
+              .eq(CompetitionQuestionEntity::getQuestionType, "practical")
+              .eq(CompetitionQuestionEntity::getStatus, "enabled")
+              .eq(CompetitionQuestionEntity::getId, questionId)
+              .eq(CompetitionQuestionEntity::getDeleted, 0));
+      if (question == null) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+            "所选实操项目不存在、已停用或不属于当前赛事工种等级");
+      }
+      CompetitionPracticalQuestionDetailEntity detail = practicalDetailMapper.selectByQuestion(
+          tenantId, questionId);
+      if (detail == null) {
+        throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY, "所选实操项目缺少评分配置");
+      }
+      validatePracticalScoringData(tenantId, questionId, detail,
+          detail.getTotalScore(), detail.getTotalScore());
+      selected.add(new SelectedQuestion(question, detail.getTotalScore(), null, null,
+          null, null, detail.getTotalScore(), BigDecimal.ONE));
+    }
+    return selected;
+  }
+
+  private boolean isPracticalScoringSchemeRequest(CompetitionMakeExamPlanUpsertReq req) {
+    return req != null && req.practicalQuestionIds() != null;
   }
 
   private void validateDefaultTheoryTopicRules(Long tenantId, CompetitionMakeExamPlanUpsertReq req) {
@@ -1606,13 +1847,29 @@ public class CompetitionMakeExamPlanApplicationService {
           String.valueOf(rule.getBlueprintNodeId()), rule.getQuestionCount(), rule.getScore(),
           Integer.valueOf(1).equals(rule.getSelected()), rule.getSortOrder()));
     }
+    List<String> practicalQuestionIds = new ArrayList<>();
+    if (PURPOSE_PRACTICAL_SCORING_SCHEME.equals(plan.getPlanPurpose())) {
+      List<CompetitionMakeExamPaperSnapshotEntity> snapshots = snapshotMapper.selectByPlan(tenantId, plan.getId());
+      CompetitionMakeExamPaperSnapshotEntity activeSnapshot = snapshots == null ? null : snapshots.stream()
+          .filter(snapshot -> "P".equals(snapshot.getPaperCode())
+              && ("published".equals(plan.getStatus())
+                  ? "published".equals(snapshot.getStatus()) : "draft".equals(snapshot.getStatus())))
+          .findFirst().orElse(null);
+      if (activeSnapshot != null) {
+        List<CompetitionMakeExamPaperQuestionEntity> snapshotQuestions =
+            snapshotQuestionMapper.selectByPaper(tenantId, activeSnapshot.getId());
+        if (snapshotQuestions != null) snapshotQuestions.forEach(question ->
+            practicalQuestionIds.add(String.valueOf(question.getSourceQuestionId())));
+      }
+    }
     return new CompetitionMakeExamPlanVO(String.valueOf(plan.getId()), String.valueOf(plan.getEventId()),
         String.valueOf(plan.getEventWorkTypeId()), String.valueOf(plan.getEventWorkTypeLevelId()),
         plan.getPracticalQuestionId() == null ? null : String.valueOf(plan.getPracticalQuestionId()), plan.getContentType(),
         plan.getTitle(), plan.getExamType(), plan.getDurationMinutes(), plan.getTotalScore(), plan.getPassScore(),
          plan.getPaperCount(), plan.getPlanVersion(), plan.getStatus(), plan.getComments(), plan.getCreatedAt(), plan.getUpdatedAt(), detailVOs,
          plan.getBlueprintId() == null ? null : String.valueOf(plan.getBlueprintId()), topicRuleVOs,
-         plan.getRandomSeed() == null ? null : String.valueOf(plan.getRandomSeed()));
+         plan.getRandomSeed() == null ? null : String.valueOf(plan.getRandomSeed()),
+         plan.getPlanPurpose() == null ? PURPOSE_EXAM_PLAN : plan.getPlanPurpose(), practicalQuestionIds);
   }
 
   private CompetitionMakeExamSnapshotVO toSnapshotVO(Long tenantId, CompetitionMakeExamPaperSnapshotEntity snapshot) {

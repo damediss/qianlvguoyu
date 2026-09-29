@@ -83,12 +83,14 @@ import { DefenseReviewApp } from './pages/assessor/DefenseReviewApp';
 import { PracticalCollectionApp } from './pages/practicalCollection/PracticalCollectionApp';
 import { CompetitionEventManagementPage } from './pages/competition/CompetitionEventManagementPage';
 import { CompetitionPlayerManagementPage } from './pages/competition/CompetitionPlayerManagementPage';
+import { CompetitionPlayerSortingManagementPage } from './pages/competition/CompetitionPlayerSortingPage';
 import { CompetitionRefereeManagementPage } from './pages/competition/CompetitionRefereeManagementPage';
 import { CompetitionRefereeGroupPage } from './pages/competition/CompetitionRefereeGroupPage';
 import { CompetitionEventModulePage, type CompetitionEventModule } from './pages/competition/CompetitionEventModulePage';
-import { CompetitionQuestionBankPage } from './pages/competition/CompetitionQuestionBankPage';
+import { CompetitionQuestionBankPage, CompetitionSimplePracticalQuestionPage } from './pages/competition/CompetitionQuestionBankPage';
 import { CompetitionQuestionBlueprintPage } from './pages/competition/CompetitionQuestionBlueprintPage';
 import { CompetitionMakeExamPlanPage } from './pages/competition/CompetitionMakeExamPlanPage';
+import { CompetitionPracticalScoringSchemePage } from './pages/competition/CompetitionPracticalScoringSchemePage';
 import { CompetitionPracticalJudgeApp } from './pages/competition/CompetitionPracticalJudgeApp';
 import { FormalExamPlayerApp } from './pages/formalExam/FormalExamPlayerApp';
 import { findCompetitionMenuCode, isCompetitionPath } from './routes/competitionRoute';
@@ -536,6 +538,8 @@ const pageMap: Record<string, React.ReactNode> = {
   'certification-practical-collection': <CollectionTaskListPage />,
   competition_event: <CompetitionEventManagementPage />,
   competition_player: <CompetitionPlayerManagementPage />,
+  competition_player_info: <CompetitionPlayerManagementPage />,
+  competition_player_sorting: <CompetitionPlayerSortingManagementPage />,
   competition_referee: <CompetitionRefereeManagementPage />,
   competition_referee_info: <CompetitionRefereeManagementPage />,
   competition_referee_group: <CompetitionRefereeGroupPage />,
@@ -547,9 +551,14 @@ const pageMap: Record<string, React.ReactNode> = {
   competition_score_ranking: <CompetitionModuleShell module="scores" />,
   competition_theory_question: <CompetitionQuestionBankPage contentType="theory" />,
   competition_practical_question: <CompetitionQuestionBankPage contentType="practical" />,
+  competition_simple_theory_question: <CompetitionQuestionBankPage contentType="theory" simpleMode />,
+  competition_simple_practical_question: <CompetitionSimplePracticalQuestionPage />,
   competition_theory_blueprint: <CompetitionQuestionBlueprintPage contentType="theory" />,
   competition_practical_blueprint: <CompetitionQuestionBlueprintPage contentType="practical" />,
-  competition_make_exam_plan: <CompetitionMakeExamPlanPage />,
+  competition_theory_make_exam_plan: <CompetitionMakeExamPlanPage contentType="theory" />,
+  competition_practical_make_exam_plan: <CompetitionMakeExamPlanPage contentType="practical" />,
+  competition_simple_theory_make_exam_plan: <CompetitionMakeExamPlanPage contentType="theory" simpleMode />,
+  competition_simple_practical_make_exam_plan: <CompetitionPracticalScoringSchemePage />,
 };
 
 function useBrowserPathname() {

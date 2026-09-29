@@ -15,6 +15,7 @@ import com.guoyu.platform.certification.dto.PreparationCandidateDocumentSaveReq;
 import com.guoyu.platform.certification.dto.PreparationCandidateSaveReq;
 import com.guoyu.platform.certification.dto.PreparationMaterialGenerateReq;
 import com.guoyu.platform.certification.dto.PreparationTaskAssessorSaveReq;
+import com.guoyu.platform.certification.dto.PreparationAssessorGroupSaveReq;
 import com.guoyu.platform.certification.dto.PreparationTaskEquipmentSaveReq;
 import com.guoyu.platform.certification.dto.PreparationTaskExamSiteSaveReq;
 import com.guoyu.platform.certification.dto.PreparationTaskExamStaffSaveReq;
@@ -31,6 +32,7 @@ import com.guoyu.platform.certification.entity.CertificationMaterialTemplateEnti
 import com.guoyu.platform.certification.entity.CertificationExamSiteEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskAssessorEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskAssessorGroupEntity;
+import com.guoyu.platform.certification.entity.CertificationAssessorGroupWorktypeEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskScopeEntity;
 import com.guoyu.platform.certification.mapper.CertificationApplicationMaterialBatchMapper;
@@ -59,14 +61,22 @@ import com.guoyu.platform.certification.mapper.CertificationTaskScopeMapper;
 import com.guoyu.platform.file.vo.FileVO;
 import com.guoyu.platform.certification.info.entity.CertificationInfoAssessorEntity;
 import com.guoyu.platform.certification.info.mapper.CertificationInfoAssessorMapper;
+import com.guoyu.platform.certification.vo.PreparationTaskAssessorVO;
 import com.guoyu.platform.common.exception.BusinessException;
+import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
+import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
+import com.guoyu.platform.exam.service.ExamWorkTypeCoverageService;
+import com.guoyu.platform.security.PlatformUserPrincipal;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 class CertificationPreparationApplicationServiceTest {
 
@@ -100,6 +110,7 @@ class CertificationPreparationApplicationServiceTest {
   private final CertificationAssessorGroupWorktypeMapper groupWorktypeMapper =
       Mockito.mock(CertificationAssessorGroupWorktypeMapper.class);
   private final CertificationInfoAssessorMapper infoAssessorMapper = Mockito.mock(CertificationInfoAssessorMapper.class);
+  private final ExamWorkTypeMapper examWorkTypeMapper = Mockito.mock(ExamWorkTypeMapper.class);
   private final com.guoyu.platform.file.service.FileApplicationService fileApplicationService =
       Mockito.mock(com.guoyu.platform.file.service.FileApplicationService.class);
   private final CertificationCandidateStagingApplicationService stagingApplicationService =
@@ -115,6 +126,17 @@ class CertificationPreparationApplicationServiceTest {
 
   @BeforeEach
   void setUp() {
+    PlatformUserPrincipal principal = new PlatformUserPrincipal(
+        1001L, 1L, "admin", "管理员", "admin", List.of("PLATFORM_ADMIN"), List.of(), "admin@example.com");
+    SecurityContextHolder.getContext().setAuthentication(
+        new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
+    when(examWorkTypeMapper.selectList(any())).thenReturn(List.of(
+        workType(1, "电工", 0, 1, 0),
+        workType(2, "低压电工", 1, 1, 0),
+        workType(3, "高压电工", 2, 1, 0),
+        workType(4, "焊工", 0, 1, 0),
+        workType(5, "电工维修", 0, 1, 0)
+    ));
     service = new CertificationPreparationApplicationService(
         taskMapper,
         phaseMapper,
@@ -143,9 +165,15 @@ class CertificationPreparationApplicationServiceTest {
         stagingApplicationService,
         applicationFormGenerationService,
         imageSourceService,
-        examSessionService
+        examSessionService,
+        new ExamWorkTypeCoverageService(examWorkTypeMapper)
     );
     when(scopeMapper.selectList(any())).thenReturn(List.of(existingScope()));
+  }
+
+  @AfterEach
+  void tearDown() {
+    SecurityContextHolder.clearContext();
   }
 
   @Test
@@ -161,7 +189,9 @@ class CertificationPreparationApplicationServiceTest {
         "高级",
         "manual",
         "鉴定中心",
-        "备注"
+        "备注",
+        null,
+        "TKT-0001"
     );
 
     assertThatThrownBy(() -> service.createCandidate(1L, req))
@@ -199,7 +229,9 @@ class CertificationPreparationApplicationServiceTest {
         "中级",
         "manual",
         "鉴定中心",
-        null
+        null,
+        null,
+        "TKT-0002"
     );
 
     assertThatThrownBy(() -> service.createCandidate(1L, req))
@@ -480,7 +512,75 @@ class CertificationPreparationApplicationServiceTest {
 
     assertThatThrownBy(() -> service.addGroupMember(1L, 2L, req))
         .isInstanceOf(BusinessException.class)
-        .hasMessage("考评员工种范围必须覆盖当前认定任务工种");
+        .hasMessageContaining("工种授权未覆盖当前范围的全部工种");
+  }
+
+  @Test
+  void addGroupMemberAllowsParentWorkTypeAuthorizationForTaskChild() {
+    when(taskMapper.selectById(1L)).thenReturn(existingTask());
+    CertificationTaskAssessorGroupEntity group = existingGroup();
+    group.setLeaderAssessorId(null);
+    when(groupMapper.selectById(2L)).thenReturn(group);
+    CertificationTaskScopeEntity childScope = existingScope();
+    childScope.setId(11L);
+    childScope.setWorkTypeId(2L);
+    childScope.setWorkTypeName("低压电工");
+    when(scopeMapper.selectList(any())).thenReturn(List.of(childScope));
+    CertificationInfoAssessorEntity assessor = assessor("[1]", LocalDate.of(2026, 12, 31));
+    when(infoAssessorMapper.selectById(9L)).thenReturn(assessor);
+    when(taskAssessorMapper.selectCount(any())).thenReturn(0L);
+
+    PreparationTaskAssessorVO result = service.addGroupMember(1L, 2L,
+        new PreparationTaskAssessorSaveReq(9L, "member", "成员", "备注"));
+
+    assertThat(result.assessorId()).isEqualTo(9L);
+    verify(taskAssessorMapper).insert(any(CertificationTaskAssessorEntity.class));
+  }
+
+  @Test
+  void addGroupMemberRejectsWhenGroupAndTaskHaveNoWorkTypeScope() {
+    when(taskMapper.selectById(1L)).thenReturn(existingTask());
+    CertificationTaskAssessorGroupEntity group = existingGroup();
+    group.setLeaderAssessorId(null);
+    when(groupMapper.selectById(2L)).thenReturn(group);
+    when(scopeMapper.selectList(any())).thenReturn(List.of());
+    when(infoAssessorMapper.selectById(9L)).thenReturn(assessor("[1]", LocalDate.of(2026, 12, 31)));
+
+    assertThatThrownBy(() -> service.addGroupMember(1L, 2L,
+        new PreparationTaskAssessorSaveReq(9L, "member", "成员", "备注")))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("未配置工种范围")
+        .hasMessageContaining("不能绕过");
+
+    verify(taskAssessorMapper, never()).insert(any(CertificationTaskAssessorEntity.class));
+  }
+
+  @Test
+  void updateGroupRejectsNewScopeThatExistingMemberDoesNotCover() {
+    when(taskMapper.selectById(1L)).thenReturn(existingTask());
+    CertificationTaskAssessorGroupEntity group = existingGroup();
+    group.setLeaderAssessorId(null);
+    when(groupMapper.selectById(2L)).thenReturn(group);
+    CertificationTaskAssessorEntity member = new CertificationTaskAssessorEntity();
+    member.setId(40L);
+    member.setTaskId(1L);
+    member.setGroupId(2L);
+    member.setAssessorId(9L);
+    when(taskAssessorMapper.selectList(any())).thenReturn(List.of(member));
+    when(infoAssessorMapper.selectById(9L)).thenReturn(assessor("[2]", LocalDate.of(2026, 12, 31)));
+    CertificationTaskScopeEntity parentScope = existingScope();
+    parentScope.setId(12L);
+    parentScope.setWorkTypeId(1L);
+    parentScope.setWorkTypeName("电工");
+    when(scopeMapper.selectList(any())).thenReturn(List.of(parentScope));
+
+    assertThatThrownBy(() -> service.updateGroup(1L, 2L, new PreparationAssessorGroupSaveReq(
+        "新范围考评组", null, null, null, List.of(12L), null, null)))
+        .isInstanceOf(BusinessException.class)
+        .hasMessageContaining("工种授权未覆盖当前范围的全部工种");
+
+    verify(groupMapper, never()).updateById(any(CertificationTaskAssessorGroupEntity.class));
+    verify(groupWorktypeMapper, never()).insert(any(CertificationAssessorGroupWorktypeEntity.class));
   }
 
   @Test
@@ -591,7 +691,9 @@ class CertificationPreparationApplicationServiceTest {
         "高级",
         "manual",
         "鉴定中心",
-        null
+        null,
+        null,
+        "TKT-0003"
     );
 
     service.createCandidate(1L, req);
@@ -691,7 +793,9 @@ class CertificationPreparationApplicationServiceTest {
 
   private CertificationTaskScopeEntity existingScope() {
     CertificationTaskScopeEntity scope = new CertificationTaskScopeEntity();
+    scope.setId(10L);
     scope.setTaskId(1L);
+    scope.setWorkTypeId(1L);
     scope.setWorkTypeName("电工");
     scope.setLevelCode("senior");
     scope.setLevelName("高级");
@@ -714,11 +818,27 @@ class CertificationPreparationApplicationServiceTest {
     assessor.setId(9L);
     assessor.setAssessorName("赵评");
     assessor.setCertificateNo("A-2026-001");
-    assessor.setWorkTypeScope(scope);
+    if (scope != null && scope.startsWith("[")) {
+      assessor.setWorkTypeJson(scope);
+      assessor.setWorkTypeScope("");
+    } else {
+      assessor.setWorkTypeScope(scope);
+    }
     assessor.setValidUntil(validUntil);
     assessor.setAuditStatus("approved");
     assessor.setWorkStatus("idle");
     return assessor;
+  }
+
+  private ExamWorkTypeEntity workType(int id, String title, int parentId, int status, int deleted) {
+    ExamWorkTypeEntity entity = new ExamWorkTypeEntity();
+    entity.setId(id);
+    entity.setTitle(title);
+    entity.setParentId(parentId);
+    entity.setTenantId(1);
+    entity.setStatus(status);
+    entity.setDeleted(deleted);
+    return entity;
   }
 
   private CertificationInfoExamEquipmentEntity infoEquipment(String status) {

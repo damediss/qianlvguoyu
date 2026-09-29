@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.guoyu.platform.certification.entity.CertificationCandidateEntity;
+import com.guoyu.platform.certification.entity.CertificationDefenseAbsenceEntity;
 import com.guoyu.platform.certification.entity.CertificationDefenseConfigEntity;
 import com.guoyu.platform.certification.entity.CertificationDefenseReportEntity;
 import com.guoyu.platform.certification.entity.CertificationDefenseScoreEntity;
@@ -13,6 +14,7 @@ import com.guoyu.platform.certification.entity.CertificationTaskEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskExamSiteEntity;
 import com.guoyu.platform.certification.entity.CertificationTaskScopeEntity;
 import com.guoyu.platform.certification.mapper.CertificationCandidateMapper;
+import com.guoyu.platform.certification.mapper.CertificationDefenseAbsenceMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseConfigMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseReportMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseScoreMapper;
@@ -25,6 +27,7 @@ import com.guoyu.platform.common.exception.BusinessException;
 import com.guoyu.platform.common.exception.ErrorCode;
 import com.guoyu.platform.exam.vo.ExportResultDTO;
 import com.guoyu.platform.file.service.FileApplicationService;
+import com.guoyu.platform.security.SecurityContext;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -55,6 +58,7 @@ public class DefenseManagementApplicationService {
   private final CertificationCandidateMapper candidateMapper;
   private final CertificationTaskAssessorGroupMapper groupMapper;
   private final CertificationTaskAssessorMapper taskAssessorMapper;
+  private final CertificationDefenseAbsenceMapper absenceMapper;
   private final CertificationDefenseConfigMapper configMapper;
   private final CertificationDefenseReportMapper reportMapper;
   private final CertificationDefenseScoreMapper scoreMapper;
@@ -69,6 +73,7 @@ public class DefenseManagementApplicationService {
       CertificationCandidateMapper candidateMapper,
       CertificationTaskAssessorGroupMapper groupMapper,
       CertificationTaskAssessorMapper taskAssessorMapper,
+      CertificationDefenseAbsenceMapper absenceMapper,
       CertificationDefenseConfigMapper configMapper,
       CertificationDefenseReportMapper reportMapper,
       CertificationDefenseScoreMapper scoreMapper,
@@ -82,6 +87,7 @@ public class DefenseManagementApplicationService {
     this.candidateMapper = candidateMapper;
     this.groupMapper = groupMapper;
     this.taskAssessorMapper = taskAssessorMapper;
+    this.absenceMapper = absenceMapper;
     this.configMapper = configMapper;
     this.reportMapper = reportMapper;
     this.scoreMapper = scoreMapper;
@@ -98,6 +104,43 @@ public class DefenseManagementApplicationService {
   }
 
   @Transactional
+  public void markCandidateAbsent(Long taskId, Long candidateId) {
+    CertificationTaskEntity task = requireTask(taskId);
+    CertificationDefenseConfigEntity config = loadConfig(taskId);
+    if (config != null && DefenseScoreCatalog.STATUS_COMPLETED.equals(config.getStatus())) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "答辩已完成，不能再标记缺考");
+    }
+    CertificationCandidateEntity candidate = activeCandidates(taskId).stream()
+        .filter(row -> Objects.equals(candidateId, row.getId()))
+        .findFirst()
+        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "答辩考生不存在"));
+    if (loadAbsence(taskId, candidateId) != null) {
+      return;
+    }
+
+    List<CertificationDefenseScoreEntity> candidateScores = safeList(scoreMapper.selectList(
+        new LambdaQueryWrapper<CertificationDefenseScoreEntity>()
+            .eq(CertificationDefenseScoreEntity::getTaskId, taskId)
+            .eq(CertificationDefenseScoreEntity::getCandidateId, candidateId)));
+    if (candidateScores.stream().anyMatch(DefenseManagementApplicationService::isSubmitted)) {
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "已有考评员提交评分，不能将该考生标记为缺考");
+    }
+    for (CertificationDefenseScoreEntity score : candidateScores) {
+      if (score != null && score.getId() != null) {
+        scoreMapper.deleteById(score.getId());
+      }
+    }
+
+    CertificationDefenseAbsenceEntity absence = new CertificationDefenseAbsenceEntity();
+    absence.setTenantId(SecurityContext.currentUser().getTenantId());
+    absence.setTaskId(taskId);
+    absence.setCandidateId(candidateId);
+    absence.setDeleted(0);
+    absenceMapper.insert(absence);
+    log.info("综合答辩考生已标记缺考: taskId={}, candidateId={}", taskId, candidateId);
+  }
+
+  @Transactional
   public DefenseScoringModels.CompleteView complete(Long taskId) {
     CertificationTaskEntity task = requireTask(taskId);
     DefenseScoringModels.ProgressView current = buildProgress(task);
@@ -108,12 +151,12 @@ public class DefenseManagementApplicationService {
       throw new BusinessException(ErrorCode.BAD_REQUEST, DefenseCandidateEligibility.EMPTY_ROSTER_MESSAGE + "，不能完成答辩");
     }
     List<DefenseScoringModels.CandidateProgressView> unfinished = current.candidates().stream()
-        .filter(row -> !"completed".equals(row.status()))
+        .filter(row -> !isResolved(row.status()))
         .toList();
     if (!unfinished.isEmpty()) {
       throw new BusinessException(
           ErrorCode.BAD_REQUEST,
-          "仍有 " + unfinished.size() + " 名考生的论文答辩或业绩评估未全部提交，不能完成答辩");
+          "仍有 " + unfinished.size() + " 名考生的论文答辩或业绩评估未完成，也未标记缺考，不能完成答辩");
     }
     CertificationDefenseConfigEntity config = loadConfig(taskId);
     if (config == null) {
@@ -132,10 +175,17 @@ public class DefenseManagementApplicationService {
     CertificationTaskEntity task = requireTask(taskId);
     DefenseScoringModels.ProgressView current = buildProgress(task);
     if (!"completed".equals(current.overallStatus()) && !"ready_to_complete".equals(current.overallStatus())) {
-      throw new BusinessException(ErrorCode.BAD_REQUEST, "全部考生完成论文答辩和业绩评估后才能导出成绩汇总表");
+      throw new BusinessException(ErrorCode.BAD_REQUEST, "全部考生完成评分或标记缺考后才能导出成绩汇总表");
     }
     Map<String, CertificationDefenseScoreEntity> scores = loadScores(taskId);
-    return exportService.export(current, expertSigns(current, scores), assessorSheets(current, scores));
+    boolean hasAbsentCandidate = current.candidates().stream().anyMatch(row -> "absent".equals(row.status()));
+    List<DefenseSummaryExportService.ExpertSignImage> signatureImages = hasAbsentCandidate
+        ? current.experts().stream()
+            .map(expert -> new DefenseSummaryExportService.ExpertSignImage(
+                expert.assessorId(), expert.assessorName(), null))
+            .toList()
+        : expertSigns(current, scores);
+    return exportService.export(current, signatureImages, assessorSheets(current, scores));
   }
 
   private List<DefenseSummaryExportService.ExpertSignImage> expertSigns(
@@ -172,6 +222,9 @@ public class DefenseManagementApplicationService {
     }
     List<DefenseSummaryExportService.AssessorSheetExport> sheets = new ArrayList<>();
     for (DefenseScoringModels.CandidateProgressView candidate : progress.candidates()) {
+      if ("absent".equals(candidate.status())) {
+        continue;
+      }
       for (DefenseScoringModels.ExpertView expert : progress.experts()) {
         CertificationDefenseScoreEntity thesis = scores.get(scoreKey(
             candidate.candidateId(), expert.assessorId(), DefenseScoreCatalog.SHEET_THESIS));
@@ -324,18 +377,28 @@ public class DefenseManagementApplicationService {
     List<DefenseScoringModels.ExpertView> experts = toExperts(members, group);
     List<CertificationCandidateEntity> candidates = activeCandidates(taskId);
     Map<Long, CertificationDefenseReportEntity> reports = loadReports(taskId);
+    Map<Long, CertificationDefenseAbsenceEntity> absences = loadAbsences(taskId);
     Map<String, CertificationDefenseScoreEntity> scores = loadScores(taskId);
     List<DefenseScoringModels.CandidateProgressView> rows = new ArrayList<>();
     int submitted = 0;
+    int resolved = 0;
     for (CertificationCandidateEntity candidate : candidates) {
       DefenseScoringModels.CandidateProgressView row = toCandidateProgress(
-          candidate, reports.get(candidate.getId()), members, group, scores);
+          candidate,
+          reports.get(candidate.getId()),
+          members,
+          group,
+          scores,
+          absences.containsKey(candidate.getId()));
       rows.add(row);
       if ("completed".equals(row.status())) {
         submitted += 1;
       }
+      if (isResolved(row.status())) {
+        resolved += 1;
+      }
     }
-    String overallStatus = resolveOverallStatus(config, candidates.size(), submitted);
+    String overallStatus = resolveOverallStatus(config, candidates.size(), resolved);
     return new DefenseScoringModels.ProgressView(
         taskId,
         task.getTaskNo(),
@@ -359,7 +422,8 @@ public class DefenseManagementApplicationService {
       CertificationDefenseReportEntity report,
       List<CertificationTaskAssessorEntity> members,
       CertificationTaskAssessorGroupEntity group,
-      Map<String, CertificationDefenseScoreEntity> scores
+      Map<String, CertificationDefenseScoreEntity> scores,
+      boolean absent
   ) {
     List<DefenseScoringModels.AssessorScoreView> assessorViews = new ArrayList<>();
     List<BigDecimal> thesisScores = new ArrayList<>();
@@ -369,6 +433,43 @@ public class DefenseManagementApplicationService {
     boolean rejected = false;
     int submittedSheets = 0;
     int requiredSheets = members.size() * 2;
+    if (absent) {
+      for (CertificationTaskAssessorEntity member : members) {
+        boolean leader = group != null && Objects.equals(member.getAssessorId(), group.getLeaderAssessorId());
+        assessorViews.add(new DefenseScoringModels.AssessorScoreView(
+            member.getAssessorId(),
+            member.getAssessorName(),
+            leader,
+            DefenseScoreCatalog.STATUS_EMPTY,
+            null,
+            false,
+            DefenseScoreCatalog.STATUS_EMPTY,
+            null,
+            false
+        ));
+        thesisScores.add(null);
+        performanceScores.add(null);
+      }
+      return new DefenseScoringModels.CandidateProgressView(
+          candidate.getId(),
+          candidate.getCandidateNo(),
+          candidate.getAdmissionTicketNo(),
+          candidate.getCandidateName(),
+          candidate.getMaskedIdCardNo(),
+          null,
+          candidate.getWorkTypeName(),
+          candidate.getLevelName(),
+          report != null,
+          "absent",
+          thesisScores,
+          null,
+          performanceScores,
+          null,
+          BigDecimal.ZERO,
+          false,
+          assessorViews
+      );
+    }
     for (CertificationTaskAssessorEntity member : members) {
       boolean leader = group != null && Objects.equals(member.getAssessorId(), group.getLeaderAssessorId());
       CertificationDefenseScoreEntity thesis = scores.get(scoreKey(
@@ -418,7 +519,7 @@ public class DefenseManagementApplicationService {
         candidate.getAdmissionTicketNo(),
         candidate.getCandidateName(),
         candidate.getMaskedIdCardNo(),
-        candidate.getIdCardNo(),
+        null,
         candidate.getWorkTypeName(),
         candidate.getLevelName(),
         report != null,
@@ -463,6 +564,10 @@ public class DefenseManagementApplicationService {
       return "ready_to_complete";
     }
     return "scoring";
+  }
+
+  private static boolean isResolved(String status) {
+    return "completed".equals(status) || "absent".equals(status);
   }
 
   private CertificationTaskEntity requireTask(Long taskId) {
@@ -510,6 +615,22 @@ public class DefenseManagementApplicationService {
         .stream()
         .filter(report -> report.getCandidateId() != null)
         .collect(Collectors.toMap(CertificationDefenseReportEntity::getCandidateId, report -> report, (a, b) -> a));
+  }
+
+  private Map<Long, CertificationDefenseAbsenceEntity> loadAbsences(Long taskId) {
+    return safeList(absenceMapper.selectList(
+        new LambdaQueryWrapper<CertificationDefenseAbsenceEntity>()
+            .eq(CertificationDefenseAbsenceEntity::getTaskId, taskId)))
+        .stream()
+        .filter(absence -> absence != null && absence.getCandidateId() != null)
+        .collect(Collectors.toMap(CertificationDefenseAbsenceEntity::getCandidateId, absence -> absence, (a, b) -> a));
+  }
+
+  private CertificationDefenseAbsenceEntity loadAbsence(Long taskId, Long candidateId) {
+    return absenceMapper.selectOne(new LambdaQueryWrapper<CertificationDefenseAbsenceEntity>()
+        .eq(CertificationDefenseAbsenceEntity::getTaskId, taskId)
+        .eq(CertificationDefenseAbsenceEntity::getCandidateId, candidateId)
+        .last("LIMIT 1"));
   }
 
   private Map<String, CertificationDefenseScoreEntity> loadScores(Long taskId) {

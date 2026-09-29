@@ -22,8 +22,16 @@ export function pageAssessorInfo(params: CertificationInfoQuery) {
   return unwrap<PageResponse<AssessorInfo>>(apiClient.get(`${base}/assessors`, { params }));
 }
 
-export function listAvailableAssessors(keyword?: string, includeAssigned = false) {
-  return unwrap<AssessorInfo[]>(apiClient.get(`${base}/assessors/available`, { params: { keyword, includeAssigned } }));
+export function listAvailableAssessors(
+  keyword?: string,
+  includeAssigned = false,
+  requiredWorkTypeIds?: string[],
+  requiredWorkTypes?: string[],
+  requireWorkTypeCoverage = false,
+) {
+  return unwrap<AssessorInfo[]>(apiClient.get(`${base}/assessors/available`, {
+    params: { keyword, includeAssigned, requiredWorkTypeIds, requiredWorkTypes, requireWorkTypeCoverage },
+  }));
 }
 
 export function createAssessorInfo(payload: AssessorInfoPayload) {

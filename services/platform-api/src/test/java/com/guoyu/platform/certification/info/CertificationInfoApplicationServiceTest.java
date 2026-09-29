@@ -31,6 +31,10 @@ import com.guoyu.platform.certification.info.vo.AssessorInfoVO;
 import com.guoyu.platform.certification.info.vo.ExamStaffInfoVO;
 import com.guoyu.platform.certification.mapper.ExamStaffAssignedTaskRow;
 import com.guoyu.platform.common.exception.BusinessException;
+import com.guoyu.platform.exam.entity.ExamWorkTypeEntity;
+import com.guoyu.platform.exam.mapper.ExamWorkTypeMapper;
+import com.guoyu.platform.exam.service.ExamWorkTypeCoverageService;
+import com.guoyu.platform.security.PlatformUserPrincipal;
 import com.guoyu.platform.system.entity.RoleEntity;
 import com.guoyu.platform.system.entity.UserEntity;
 import com.guoyu.platform.system.mapper.RoleMapper;
@@ -40,10 +44,13 @@ import com.guoyu.platform.system.vo.UserVO;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 class CertificationInfoApplicationServiceTest {
 
@@ -56,11 +63,22 @@ class CertificationInfoApplicationServiceTest {
   private final RoleMapper roleMapper = Mockito.mock(RoleMapper.class);
   private final UserMapper userMapper = Mockito.mock(UserMapper.class);
   private final UserApplicationService userApplicationService = Mockito.mock(UserApplicationService.class);
+  private final ExamWorkTypeMapper examWorkTypeMapper = Mockito.mock(ExamWorkTypeMapper.class);
 
   private CertificationInfoApplicationService service;
 
   @BeforeEach
   void setUp() {
+    PlatformUserPrincipal principal = new PlatformUserPrincipal(
+        1001L, 1L, "admin", "管理员", "admin", List.of("PLATFORM_ADMIN"), List.of(), "admin@example.com");
+    SecurityContextHolder.getContext().setAuthentication(
+        new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
+    when(examWorkTypeMapper.selectList(any())).thenReturn(List.of(
+        workType(1, "电工", 0, 1, 0),
+        workType(2, "焊工", 0, 1, 0),
+        workType(3, "电工维修", 0, 1, 0),
+        workType(4, "配电", 1, 1, 0)
+    ));
     RoleEntity role = new RoleEntity();
     role.setId(88L);
     role.setCode("CERTIFICATION_ASSESSOR");
@@ -73,7 +91,12 @@ class CertificationInfoApplicationServiceTest {
     ));
     service = new CertificationInfoApplicationService(
         assessorMapper, examStaffMapper, taskExamStaffMapper, siteMapper, equipmentMapper, auditRecordMapper,
-        roleMapper, userMapper, userApplicationService);
+        roleMapper, userMapper, userApplicationService, new ExamWorkTypeCoverageService(examWorkTypeMapper));
+  }
+
+  @AfterEach
+  void tearDown() {
+    SecurityContextHolder.clearContext();
   }
 
   @Test
@@ -81,7 +104,7 @@ class CertificationInfoApplicationServiceTest {
     when(assessorMapper.selectCount(any())).thenReturn(0L);
     AssessorInfoVO vo = service.createAssessor(new AssessorInfoSaveReq(
         "张三", null, "assessor.zhangsan", "Assessor@123", "CERT-001", null, null, "电工", List.of("电工"), "高级", LocalDate.of(2027, 6, 30),
-        "13800001234", "材料齐全说明", "备注"
+        "13800001234", "材料齐全说明", "备注", null
     ));
 
     assertThat(vo.auditStatus()).isEqualTo("draft");
@@ -90,6 +113,8 @@ class CertificationInfoApplicationServiceTest {
     assertThat(vo.accountUsername()).isEqualTo("assessor.zhangsan");
     assertThat(vo.accountPassword()).isEqualTo("Assessor@123");
     assertThat(vo.maskedPhone()).isEqualTo("138****1234");
+    assertThat(vo.workTypeIds()).containsExactly("1");
+    assertThat(vo.workTypeScope()).isEqualTo("电工");
     verify(userApplicationService).create(any());
     verify(assessorMapper).insert(any(CertificationInfoAssessorEntity.class));
   }
@@ -100,7 +125,7 @@ class CertificationInfoApplicationServiceTest {
 
     assertThatThrownBy(() -> service.createAssessor(new AssessorInfoSaveReq(
         "张三", null, "assessor.zhangsan", "Assessor@123", "CERT-001", null, null, "电工", List.of("电工"), null, LocalDate.of(2027, 6, 30),
-        null, null, null
+        null, null, null, null
     )))
         .isInstanceOf(BusinessException.class)
         .hasMessageContaining("证号已存在");
@@ -145,7 +170,7 @@ class CertificationInfoApplicationServiceTest {
 
     AssessorInfoVO result = service.updateAssessor(1L, new AssessorInfoSaveReq(
         "李四", null, "assessor.new", "NewPass@123", "CERT-002", null, null, "焊工", List.of("焊工"), "中级",
-        LocalDate.of(2028, 6, 30), "13900001234", "更新后的材料说明", "更新备注"
+        LocalDate.of(2028, 6, 30), "13900001234", "更新后的材料说明", "更新备注", null
     ));
 
     assertThat(result.assessorName()).isEqualTo("李四");
@@ -242,6 +267,22 @@ class CertificationInfoApplicationServiceTest {
 
     assertThat(service.listAvailableAssessors(null, List.of())).hasSize(1);
     assertThat(service.listAvailableAssessors(null, List.of()).getFirst().id()).isEqualTo(1L);
+  }
+
+  @Test
+  void availableAssessorFilterUsesTreeCoverageInsteadOfPartialNames() {
+    CertificationInfoAssessorEntity parentAuthorized = assessor("approved", "idle");
+    parentAuthorized.setWorkTypeJson("[1]");
+    CertificationInfoAssessorEntity partialNameOnly = assessor("approved", "idle");
+    partialNameOnly.setId(2L);
+    partialNameOnly.setWorkTypeScope("电工维修");
+    partialNameOnly.setWorkTypeJson("[3]");
+    when(assessorMapper.selectList(any())).thenReturn(List.of(parentAuthorized, partialNameOnly));
+
+    List<AssessorInfoVO> available = service.listAvailableAssessorsByWorkTypes(
+        null, List.of(4L), null, true, true);
+
+    assertThat(available).extracting(AssessorInfoVO::id).containsExactly(1L);
   }
 
   @Test
@@ -422,6 +463,17 @@ class CertificationInfoApplicationServiceTest {
     entity.setAuditStatus(auditStatus);
     entity.setWorkStatus(workStatus);
     entity.setReferencedCount(0);
+    return entity;
+  }
+
+  private ExamWorkTypeEntity workType(int id, String title, int parentId, int status, int deleted) {
+    ExamWorkTypeEntity entity = new ExamWorkTypeEntity();
+    entity.setId(id);
+    entity.setTitle(title);
+    entity.setParentId(parentId);
+    entity.setTenantId(1);
+    entity.setStatus(status);
+    entity.setDeleted(deleted);
     return entity;
   }
 

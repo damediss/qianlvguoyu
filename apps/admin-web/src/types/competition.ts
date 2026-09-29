@@ -766,6 +766,11 @@ export interface CompetitionPracticalJudgeTask {
   currentJudgeConfirmed: boolean;
   questionProgress?: CompetitionPracticalQuestionProgress[];
   activeStageId?: CompetitionId | null;
+    startedAt?: string | null;
+    standardDeadlineAt?: string | null;
+    deadlineAt?: string | null;
+    examEndedAt?: string | null;
+    pausedDurationSeconds?: number;
 }
 
 export interface CompetitionPracticalQuestionProgress {
@@ -1625,6 +1630,31 @@ export interface CompetitionFormalCandidateQuestionScore {
   correct: boolean;
   maxScore: CompetitionDecimal;
   awardedScore: CompetitionDecimal;
+}
+
+export interface CompetitionFormalCandidateAnswerSheetQuestion {
+  questionSnapshotId: CompetitionId;
+  questionOrder: number;
+  questionType: string;
+  stem: string;
+  answered: boolean;
+  correct: boolean;
+  candidateAnswer: {
+    selectedOptionIds?: string[];
+    blanks?: string[];
+  };
+  options: Array<{
+    optionId: string;
+    label: string;
+    content: string;
+  }>;
+}
+
+export interface CompetitionFormalCandidateAnswerSheet {
+  candidateExamId: CompetitionId;
+  candidateName: string;
+  candidateNo: string;
+  questions: CompetitionFormalCandidateAnswerSheetQuestion[];
 }
 
 export interface CompetitionFormalCandidateResult {

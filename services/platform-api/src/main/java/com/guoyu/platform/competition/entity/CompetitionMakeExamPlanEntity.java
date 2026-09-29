@@ -13,6 +13,7 @@ public class CompetitionMakeExamPlanEntity extends BaseEntity {
   private Long blueprintId;
   private Long practicalQuestionId;
   private String contentType;
+  private String planPurpose;
   private String title;
   private String examType;
   private Integer durationMinutes;
@@ -36,6 +37,8 @@ public class CompetitionMakeExamPlanEntity extends BaseEntity {
   public void setPracticalQuestionId(Long practicalQuestionId) { this.practicalQuestionId = practicalQuestionId; }
   public String getContentType() { return contentType; }
   public void setContentType(String contentType) { this.contentType = contentType; }
+  public String getPlanPurpose() { return planPurpose; }
+  public void setPlanPurpose(String planPurpose) { this.planPurpose = planPurpose; }
   public String getTitle() { return title; }
   public void setTitle(String title) { this.title = title; }
   public String getExamType() { return examType; }

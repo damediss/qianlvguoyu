@@ -358,7 +358,7 @@ export function CompetitionPlayerManagementPage() {
     <div className="competition-page">
       <section className="competition-page-heading">
         <div>
-          <Typography.Title level={2}><TeamOutlined /> 选手管理</Typography.Title>
+          <Typography.Title level={2}><TeamOutlined /> 选手信息</Typography.Title>
           <Typography.Paragraph type="secondary">按赛事任务划分查看选手，支持按企业、赛事工种筛选，并维护选手基础信息。</Typography.Paragraph>
         </div>
         <Space>

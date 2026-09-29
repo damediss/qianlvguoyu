@@ -25,6 +25,7 @@ import { useAuthStore } from '../../stores/authStore';
 import type { CompetitionId, CompetitionPracticalAssessmentSheet } from '../../types/competition';
 import type { CompetitionMakeExamSnapshot } from '../../types/competitionQuestion';
 import { CompetitionRefereeAssignmentPanel } from './CompetitionRefereeAssignmentPanel';
+import { CompetitionPracticalExecutionConfigPanel } from './CompetitionPracticalExecutionConfigPanel';
 
 function idValue(value?: CompetitionId | null) {
   return value === undefined || value === null ? '' : String(value);
@@ -57,7 +58,7 @@ export interface CompetitionPracticalConfigPageProps {
   eventWorkTypeName?: string;
   eventWorkTypeLevelCode?: string;
   eventWorkTypeLevelName?: string;
-  initialTab?: 'paper' | 'assessment' | 'referee';
+  initialTab?: 'paper' | 'assessment' | 'referee' | 'runtime';
 }
 
 /**
@@ -91,7 +92,7 @@ export function CompetitionPracticalConfigPage({
   const levelsQuery = useQuery({
     queryKey: ['competition-practical-config-levels', eventId, eventWorkTypeId],
     queryFn: () => listCompetitionEventWorkTypeLevels(eventId, eventWorkTypeId),
-    enabled: (canViewPaper || canViewReferee) && Boolean(eventWorkTypeId),
+    enabled: (canViewPaper || canViewReferee || canViewStagePlan) && Boolean(eventWorkTypeId),
   });
   const selectedLevel = levelsQuery.data?.find((level) => level.levelCode === eventWorkTypeLevelCode);
   const eventWorkTypeLevelId = idValue(selectedLevel?.id);
@@ -309,6 +310,27 @@ export function CompetitionPracticalConfigPage({
                     render: (_, row) => <Button type="link" onClick={() => setPreviewSheet(row)}>查看</Button>,
                   },
                 ]}
+              />
+            </Card>,
+          }] : []),
+          ...(canViewStagePlan ? [{
+            key: 'runtime',
+            label: '运行规则',
+            children: <Card size="small" title="赛段实操运行规则">
+              <Alert
+                style={{ marginBottom: 12 }}
+                type="info"
+                showIcon
+                message="这里配置本赛段如何考试；评分内容来自已发布的实操评分方案。"
+                description="运行规则会随赛段执行计划固化，已发布计划使用自己的配置快照。"
+              />
+              <CompetitionPracticalExecutionConfigPanel
+                eventId={eventId}
+                stageId={stageId}
+                stageName={stageName}
+                eventWorkTypeId={eventWorkTypeId}
+                eventWorkTypeLevelId={eventWorkTypeLevelId || undefined}
+                editable={canManageStagePlan}
               />
             </Card>,
           }] : []),

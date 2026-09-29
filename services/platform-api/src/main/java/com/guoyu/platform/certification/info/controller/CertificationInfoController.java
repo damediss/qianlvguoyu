@@ -145,9 +145,12 @@ public class CertificationInfoController {
   public ApiResponse<List<AssessorInfoVO>> listAvailableAssessors(
       @RequestParam(required = false) String keyword,
       @RequestParam(required = false) List<String> requiredWorkTypes,
-      @RequestParam(defaultValue = "false") boolean includeAssigned
+      @RequestParam(required = false) List<Long> requiredWorkTypeIds,
+      @RequestParam(defaultValue = "false") boolean includeAssigned,
+      @RequestParam(defaultValue = "false") boolean requireWorkTypeCoverage
   ) {
-    return ApiResponse.ok(service.listAvailableAssessors(keyword, requiredWorkTypes, includeAssigned));
+    return ApiResponse.ok(service.listAvailableAssessorsByWorkTypes(
+        keyword, requiredWorkTypeIds, requiredWorkTypes, includeAssigned, requireWorkTypeCoverage));
   }
 
   @GetMapping("/exam-staff")

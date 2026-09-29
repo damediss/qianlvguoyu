@@ -18,7 +18,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { completeDefenseTask, exportDefenseSummary, getDefenseProgress } from '../../api/defenseScoring';
+import { completeDefenseTask, exportDefenseSummary, getDefenseProgress, markDefenseCandidateAbsent } from '../../api/defenseScoring';
 import { pagePreparationTasks } from '../../api/certificationPreparation';
 import { PermissionGuard } from '../../directives/permission';
 import type { PreparationTaskOverview } from '../../types/certificationPreparation';
@@ -28,13 +28,14 @@ import { parseContentDispositionFilename } from '../../utils/download';
 
 function overallLabel(status?: DefenseOverallStatus) {
   if (status === 'completed') return { color: 'success', text: '答辩已完成' };
-  if (status === 'ready_to_complete') return { color: 'processing', text: '评分已齐，待完成答辩' };
+  if (status === 'ready_to_complete') return { color: 'processing', text: '评分已齐或已标记缺考，待完成答辩' };
   if (status === 'scoring') return { color: 'processing', text: '答辩评分中' };
   if (status === 'not_configured') return { color: 'default', text: '未配置综合答辩' };
   return { color: 'default', text: '待开始' };
 }
 
 function candidateStatusTag(row: DefenseCandidateProgress) {
+  if (row.status === 'absent') return <Tag color="warning">缺考</Tag>;
   if (row.rejected) return <Tag color="error">不合格</Tag>;
   if (row.status === 'completed') return <Tag color="success">已完成</Tag>;
   if (row.status === 'scoring') return <Tag color="processing">评分中</Tag>;
@@ -89,7 +90,7 @@ export function DefenseManagementPage() {
     ? '请先在认定筹备中绑定综合答辩考评组并上传业绩评估报告'
     : progress?.overallStatus === 'completed'
       ? '答辩已完成'
-      : '全部考生的论文答辩和业绩评估提交后才能完成答辩';
+      : '全部考生完成评分或标记缺考后才能完成答辩';
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['certification-defense-management-tasks'] });
@@ -102,6 +103,14 @@ export function DefenseManagementPage() {
     mutationFn: () => completeDefenseTask(selectedTaskId!),
     onSuccess: (result) => {
       message.success(`答辩已完成，共 ${result.candidateCount} 名考生`);
+      refresh();
+    },
+  });
+
+  const absentMutation = useMutation({
+    mutationFn: (candidateId: string) => markDefenseCandidateAbsent(selectedTaskId!, candidateId),
+    onSuccess: () => {
+      message.success('已标记缺考，汇总成绩为 0');
       refresh();
     },
   });
@@ -151,6 +160,39 @@ export function DefenseManagementPage() {
       render: (_, row) => (row.rejected ? <Typography.Text type="danger">不合格</Typography.Text> : formatScore(row.finalScore)),
     },
     { title: '状态', width: 110, render: (_, row) => candidateStatusTag(row) },
+    {
+      title: '操作',
+      width: 100,
+      fixed: 'right',
+      render: (_, row) => {
+        const absentDisabled = row.status === 'completed'
+          || row.status === 'absent'
+          || row.status === 'scoring'
+          || progress?.overallStatus === 'completed';
+        return (
+          <PermissionGuard codes={['certification.defense.complete', 'certification.preparation.task.view']} mode="any">
+            <Button
+              size="small"
+              danger
+              disabled={absentDisabled}
+              loading={absentMutation.isPending && absentMutation.variables === row.candidateId}
+              onClick={() => {
+                Modal.confirm({
+                  title: '确认标记缺考？',
+                  content: `${row.candidateName} 将不再进入答辩评分；未提交的草稿评分会清除，成绩汇总表记为 0，签名处留空。`,
+                  okText: '确认缺考',
+                  cancelText: '取消',
+                  okButtonProps: { danger: true },
+                  onOk: () => absentMutation.mutateAsync(row.candidateId),
+                });
+              }}
+            >
+              缺考
+            </Button>
+          </PermissionGuard>
+        );
+      },
+    },
   ];
 
   return (
@@ -213,7 +255,7 @@ export function DefenseManagementPage() {
                       onClick={() => {
                         Modal.confirm({
                           title: '确认完成答辩？',
-                          content: '全部考生的论文答辩和业绩评估均已提交。完成后可导出成绩汇总表及三名考评员评分表压缩包。',
+                          content: '全部考生已完成论文答辩和业绩评估评分或已标记缺考。完成后可导出成绩汇总表及评分表压缩包。',
                           okText: '完成答辩',
                           cancelText: '取消',
                           onOk: () => completeMutation.mutateAsync(),
@@ -260,8 +302,8 @@ export function DefenseManagementPage() {
                 type="success"
                 showIcon
                 style={{ marginBottom: 16 }}
-                message="全部考生答辩评分已提交"
-                description="点击「完成答辩」后即可导出成绩汇总表及三名考评员评分表压缩包。"
+                message="全部考生评分已提交或已标记缺考"
+                description="缺考考生的汇总成绩记为 0，签名处留空。点击「完成答辩」后即可导出成绩汇总表及评分表压缩包。"
               />
             ) : null}
             <Space size={24} style={{ marginBottom: 16 }}>
@@ -269,12 +311,12 @@ export function DefenseManagementPage() {
                 type="circle"
                 size={92}
                 percent={progress?.totalCandidateCount
-                  ? Math.round((progress.submittedCandidateCount || 0) * 100 / progress.totalCandidateCount)
+                  ? Math.round(((progress.candidates || []).filter((row) => row.status === 'completed' || row.status === 'absent').length) * 100 / progress.totalCandidateCount)
                   : 0}
               />
               <Space direction="vertical" size={4}>
                 <Typography.Text>
-                  考生已完成 {progress?.submittedCandidateCount || 0} / {progress?.totalCandidateCount || 0} 人
+                  考生已评分或缺考 {progress?.candidates?.filter((row) => row.status === 'completed' || row.status === 'absent').length || 0} / {progress?.totalCandidateCount || 0} 人
                 </Typography.Text>
                 <Typography.Text type="secondary">
                   最终成绩 = 论文答辩平均分 × 60% + 业绩评估平均分 × 40%

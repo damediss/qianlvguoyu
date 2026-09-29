@@ -21,6 +21,8 @@ public record AssessorInfoVO(
     String auditStatus,
     String workStatus,
     String materialsDescription,
-    String remark
+    String remark,
+    List<String> workTypeIds,
+    String workTypeMappingWarning
 ) {
 }

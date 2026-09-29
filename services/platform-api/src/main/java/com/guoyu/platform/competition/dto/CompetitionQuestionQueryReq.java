@@ -13,6 +13,7 @@ public class CompetitionQuestionQueryReq extends PageQuery {
   private Long blueprintId;
   private Long blueprintNodeId;
   private String bindingStatus;
+  private Boolean unboundOnly;
 
   public Long getEventWorkTypeId() { return eventWorkTypeId; }
   public void setEventWorkTypeId(Long eventWorkTypeId) { this.eventWorkTypeId = eventWorkTypeId; }
@@ -32,4 +33,6 @@ public class CompetitionQuestionQueryReq extends PageQuery {
   public void setBlueprintNodeId(Long blueprintNodeId) { this.blueprintNodeId = blueprintNodeId; }
   public String getBindingStatus() { return bindingStatus; }
   public void setBindingStatus(String bindingStatus) { this.bindingStatus = bindingStatus; }
+  public Boolean getUnboundOnly() { return unboundOnly; }
+  public void setUnboundOnly(Boolean unboundOnly) { this.unboundOnly = unboundOnly; }
 }

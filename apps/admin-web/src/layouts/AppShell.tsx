@@ -35,7 +35,9 @@ function filterHiddenMenuNodes(tree: MenuVO[]): MenuVO[] {
 function menuDisplayName(menu: MenuVO) {
   // Keep the renamed competition entry visible while an existing session still
   // has the previous backend menu payload cached.
-  return menu.code === 'competition_event' ? '赛事创建' : menu.name;
+  if (menu.code === 'competition_event') return '赛事创建';
+  if (menu.code === 'competition_simple_practical_question') return '实操评分项';
+  return menu.name;
 }
 
 /**

@@ -231,7 +231,7 @@ public class CompetitionQuestionImportPersistenceService {
             scoreItem.setContentId(contentMapper == null ? null : content.getId());
             scoreItem.setElementOrder(item.itemNo());
             scoreItem.setItemNo(globalItemNo++);
-            scoreItem.setItemName(legacyItemName(item.elementHtml() == null ? item.itemName() : item.elementHtml()));
+            scoreItem.setItemName(legacyItemName(item.itemName()));
             scoreItem.setElementHtml(sanitize(item.elementHtml() == null ? item.itemName() : item.elementHtml()));
             scoreItem.setAllocationEnabled(item.allocationEnabled() ? 1 : 0);
             scoreItem.setCriterion(Jsoup.parse(item.criterion() == null ? item.itemName() : item.criterion()).text());

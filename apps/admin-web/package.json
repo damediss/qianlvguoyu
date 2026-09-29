@@ -15,6 +15,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "test:competition-score": "esbuild tests/competitionScoreUtils.test.ts --bundle --platform=node --format=cjs --outfile=node_modules/.cache/competitionScoreUtils.test.cjs && node --test node_modules/.cache/competitionScoreUtils.test.cjs",
     "test:competition-routes": "esbuild tests/competitionRoutes.test.ts --bundle --platform=node --format=cjs --outfile=node_modules/.cache/competitionRoutes.test.cjs && node --test node_modules/.cache/competitionRoutes.test.cjs",
+    "test:competition-practical-execution-config": "vitest run --config vitest.config.ts tests/competitionPracticalExecutionConfig.test.tsx",
     "test:competition-stage-planning": "vitest run --config vitest.config.ts tests/competitionStagePlanning.test.ts tests/stagePlanningComponents.test.tsx",
     "test:e2e:stage-planning": "playwright test e2e/competition-stage-planning.spec.ts",
     "test:e2e:courseware": "playwright test e2e/courseware.spec.ts"

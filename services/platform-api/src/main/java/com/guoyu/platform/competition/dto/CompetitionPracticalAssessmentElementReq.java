@@ -14,6 +14,13 @@ public record CompetitionPracticalAssessmentElementReq(
     @DecimalMin("0.01") @DecimalMax("100") BigDecimal maxScore,
     @NotBlank String standardHtml,
     @DecimalMin("0") @DecimalMax("100") BigDecimal maxDeduction,
-    @DecimalMin("0.01") @DecimalMax("100") BigDecimal deductionStep
+    @DecimalMin("0.01") @DecimalMax("100") BigDecimal deductionStep,
+    String itemName
 ) {
+  public CompetitionPracticalAssessmentElementReq(
+      Integer elementOrder, String elementHtml, Boolean allocationEnabled, BigDecimal maxScore,
+      String standardHtml, BigDecimal maxDeduction, BigDecimal deductionStep) {
+    this(elementOrder, elementHtml, allocationEnabled, maxScore, standardHtml,
+        maxDeduction, deductionStep, null);
+  }
 }

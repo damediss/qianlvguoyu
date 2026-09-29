@@ -14,6 +14,7 @@ import com.guoyu.platform.certification.entity.CertificationTaskEntity;
 import com.guoyu.platform.certification.info.entity.CertificationInfoAssessorEntity;
 import com.guoyu.platform.certification.info.mapper.CertificationInfoAssessorMapper;
 import com.guoyu.platform.certification.mapper.CertificationCandidateMapper;
+import com.guoyu.platform.certification.mapper.CertificationDefenseAbsenceMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseConfigMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseReportMapper;
 import com.guoyu.platform.certification.mapper.CertificationDefenseScoreMapper;
@@ -39,6 +40,7 @@ class DefenseScoringApplicationServiceTest {
   private final CertificationTaskAssessorGroupMapper groupMapper = Mockito.mock(CertificationTaskAssessorGroupMapper.class);
   private final CertificationTaskAssessorMapper taskAssessorMapper = Mockito.mock(CertificationTaskAssessorMapper.class);
   private final CertificationInfoAssessorMapper assessorMapper = Mockito.mock(CertificationInfoAssessorMapper.class);
+  private final CertificationDefenseAbsenceMapper absenceMapper = Mockito.mock(CertificationDefenseAbsenceMapper.class);
   private final CertificationDefenseConfigMapper configMapper = Mockito.mock(CertificationDefenseConfigMapper.class);
   private final CertificationDefenseReportMapper reportMapper = Mockito.mock(CertificationDefenseReportMapper.class);
   private final CertificationDefenseScoreMapper scoreMapper = Mockito.mock(CertificationDefenseScoreMapper.class);
@@ -56,7 +58,7 @@ class DefenseScoringApplicationServiceTest {
         new UsernamePasswordAuthenticationToken(principal, "token", principal.getAuthorities()));
     service = new DefenseScoringApplicationService(
         taskMapper, candidateMapper, groupMapper, taskAssessorMapper, assessorMapper,
-        configMapper, reportMapper, scoreMapper, fileApplicationService);
+        absenceMapper, configMapper, reportMapper, scoreMapper, fileApplicationService);
     CertificationInfoAssessorEntity assessor = new CertificationInfoAssessorEntity();
     assessor.setId(9L);
     assessor.setUserId(100L);

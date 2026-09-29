@@ -12,6 +12,8 @@ import com.guoyu.platform.competition.dto.CompetitionPracticalScoreSaveReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalScoreUnlockReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalSessionCreateReq;
 import com.guoyu.platform.competition.dto.CompetitionPracticalPaperSnapshotBindReq;
+import com.guoyu.platform.competition.dto.CompetitionPracticalExecutionConfigSaveReq;
+import com.guoyu.platform.competition.service.CompetitionPracticalExecutionConfigApplicationService;
 import com.guoyu.platform.competition.service.CompetitionPracticalApplicationService;
 import com.guoyu.platform.competition.service.CompetitionPracticalConsoleService;
 import com.guoyu.platform.competition.vo.CompetitionPracticalAssignmentVO;
@@ -22,6 +24,9 @@ import com.guoyu.platform.competition.vo.CompetitionPracticalRuleVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalScoreSheetVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalSessionVO;
 import com.guoyu.platform.competition.vo.CompetitionPracticalConsoleVO;
+import com.guoyu.platform.competition.vo.CompetitionPracticalExecutionConfigVO;
+import com.guoyu.platform.competition.vo.CompetitionPracticalExecutionConfigValidationVO;
+import com.guoyu.platform.competition.vo.CompetitionPracticalScoringSchemeVO;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -30,6 +35,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -41,12 +47,54 @@ import org.springframework.web.bind.annotation.RestController;
 public class CompetitionPracticalController {
   private final CompetitionPracticalApplicationService service;
   private final CompetitionPracticalConsoleService consoleService;
+  private CompetitionPracticalExecutionConfigApplicationService executionConfigService;
 
   public CompetitionPracticalController(
       CompetitionPracticalApplicationService service,
       CompetitionPracticalConsoleService consoleService) {
     this.service = service;
     this.consoleService = consoleService;
+  }
+
+  @Autowired
+  public void setExecutionConfigService(
+      CompetitionPracticalExecutionConfigApplicationService executionConfigService) {
+    this.executionConfigService = executionConfigService;
+  }
+
+  @GetMapping("/stages/{stageId}/practical-execution-config")
+  @PreAuthorize("hasAuthority('competition:stage-plan:view')")
+  public ApiResponse<CompetitionPracticalExecutionConfigVO> practicalExecutionConfig(
+      @PathVariable Long stageId) {
+    return ApiResponse.ok(executionConfigService.get(stageId));
+  }
+
+  @GetMapping("/practical-scoring-schemes")
+  @PreAuthorize("hasAuthority('competition:stage-plan:view')")
+  public ApiResponse<List<CompetitionPracticalScoringSchemeVO>> practicalScoringSchemes(
+      @RequestParam Long eventId,
+      @RequestParam Long eventWorkTypeId,
+      @RequestParam Long eventWorkTypeLevelId) {
+    return ApiResponse.ok(executionConfigService.scoringSchemes(
+        eventId, eventWorkTypeId, eventWorkTypeLevelId));
+  }
+
+  @PostMapping("/stages/{stageId}/practical-execution-config/validate")
+  @PreAuthorize("hasAuthority('competition:stage-plan:manage')")
+  public ApiResponse<CompetitionPracticalExecutionConfigValidationVO> validatePracticalExecutionConfig(
+      @PathVariable Long stageId,
+      @Valid @RequestBody CompetitionPracticalExecutionConfigSaveReq req) {
+    return ApiResponse.ok(executionConfigService.validate(stageId, req));
+  }
+
+  @PutMapping("/stages/{stageId}/practical-execution-config")
+  @PreAuthorize("hasAuthority('competition:stage-plan:manage')")
+  @AuditLog(module = "competition", action = "practical-execution-config:save",
+      targetType = "competition_practical_execution_config")
+  public ApiResponse<CompetitionPracticalExecutionConfigVO> savePracticalExecutionConfig(
+      @PathVariable Long stageId,
+      @Valid @RequestBody CompetitionPracticalExecutionConfigSaveReq req) {
+    return ApiResponse.ok(executionConfigService.save(stageId, req));
   }
 
   @GetMapping("/stages/{stageId}/practical-console")

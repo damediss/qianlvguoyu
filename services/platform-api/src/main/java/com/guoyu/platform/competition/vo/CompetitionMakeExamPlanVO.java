@@ -25,8 +25,39 @@ public record CompetitionMakeExamPlanVO(
     List<CompetitionMakeExamPlanDetailVO> details,
     String blueprintId,
     List<CompetitionMakeExamPlanTopicRuleVO> topicRules,
-    String randomSeed
+    String randomSeed,
+    String planPurpose,
+    List<String> practicalQuestionIds
 ) {
+  /** Source-compatible constructor for the previous full response shape. */
+  public CompetitionMakeExamPlanVO(
+      String id,
+      String eventId,
+      String eventWorkTypeId,
+      String eventWorkTypeLevelId,
+      String practicalQuestionId,
+      String contentType,
+      String title,
+      String examType,
+      Integer durationMinutes,
+      BigDecimal totalScore,
+      BigDecimal passScore,
+      Integer paperCount,
+      Integer planVersion,
+      String status,
+      String comments,
+      LocalDateTime createdAt,
+      LocalDateTime updatedAt,
+      List<CompetitionMakeExamPlanDetailVO> details,
+      String blueprintId,
+      List<CompetitionMakeExamPlanTopicRuleVO> topicRules,
+      String randomSeed) {
+    this(id, eventId, eventWorkTypeId, eventWorkTypeLevelId, practicalQuestionId, contentType,
+        title, examType, durationMinutes, totalScore, passScore, paperCount, planVersion, status,
+        comments, createdAt, updatedAt, details, blueprintId, topicRules, randomSeed,
+        "EXAM_PLAN", List.of());
+  }
+
   public CompetitionMakeExamPlanVO(
       String id,
       String eventId,
@@ -47,7 +78,8 @@ public record CompetitionMakeExamPlanVO(
       List<CompetitionMakeExamPlanDetailVO> details) {
     this(id, eventId, eventWorkTypeId, eventWorkTypeLevelId, null, contentType,
         title, examType, durationMinutes, totalScore, passScore, paperCount,
-        planVersion, status, comments, createdAt, updatedAt, details, null, List.of(), null);
+        planVersion, status, comments, createdAt, updatedAt, details, null, List.of(), null,
+        "EXAM_PLAN", List.of());
   }
 
   public CompetitionMakeExamPlanVO(
@@ -71,7 +103,7 @@ public record CompetitionMakeExamPlanVO(
       List<CompetitionMakeExamPlanDetailVO> details) {
     this(id, eventId, eventWorkTypeId, eventWorkTypeLevelId, practicalQuestionId, contentType,
         title, examType, durationMinutes, totalScore, passScore, paperCount, planVersion, status,
-        comments, createdAt, updatedAt, details, null, List.of(), null);
+        comments, createdAt, updatedAt, details, null, List.of(), null, "EXAM_PLAN", List.of());
   }
 
   /** Source-compatible constructor for the extended blueprint-aware response. */
@@ -98,6 +130,6 @@ public record CompetitionMakeExamPlanVO(
       List<CompetitionMakeExamPlanTopicRuleVO> topicRules) {
     this(id, eventId, eventWorkTypeId, eventWorkTypeLevelId, practicalQuestionId, contentType,
         title, examType, durationMinutes, totalScore, passScore, paperCount, planVersion, status,
-        comments, createdAt, updatedAt, details, blueprintId, topicRules, null);
+        comments, createdAt, updatedAt, details, blueprintId, topicRules, null, "EXAM_PLAN", List.of());
   }
 }

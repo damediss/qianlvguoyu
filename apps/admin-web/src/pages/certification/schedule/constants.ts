@@ -183,7 +183,7 @@ export function buildScheduleTaskPayload(
   const primaryType = examInfos[0]?.certificationType || task.certificationType;
   return {
     taskName: task.taskName,
-    taskManagerName: task.taskManagerName,
+    taskManagerName: task.taskManagerName ?? undefined,
     companyName: task.companyName,
     certificationType: primaryType,
     plannedPeopleCount: totalPeople > 0 ? totalPeople : task.plannedPeopleCount,

@@ -92,8 +92,8 @@ class CertificationProjectApplicationServiceTest {
         "测试企业",
         "with_question_bank",
         java.util.List.of(
-            new CertificationTaskScopeReq("with_question_bank", "电工", "senior", "高级", 40),
-            new CertificationTaskScopeReq("with_question_bank", "焊工", "intermediate", "中级", 40)
+            new CertificationTaskScopeReq("with_question_bank", "电工", "senior", "高级", 40, 1L),
+            new CertificationTaskScopeReq("with_question_bank", "焊工", "intermediate", "中级", 40, 2L)
         ),
         80,
         LocalDate.of(2026, 5, 1),
@@ -133,6 +133,9 @@ class CertificationProjectApplicationServiceTest {
     assertThat(scopeCaptor.getAllValues())
         .extracting(CertificationTaskScopeEntity::getWorkTypeName)
         .containsExactly("电工", "焊工");
+    assertThat(scopeCaptor.getAllValues())
+        .extracting(CertificationTaskScopeEntity::getWorkTypeId)
+        .containsExactly(1L, 2L);
     assertThat(result.scopes()).hasSize(2);
   }
 
@@ -144,7 +147,7 @@ class CertificationProjectApplicationServiceTest {
         "周楠",
         "企业专项认定协同任务",
         "with_question_bank",
-        java.util.List.of(new CertificationTaskScopeReq("with_question_bank", "电工", "senior", "高级", 80)),
+        java.util.List.of(new CertificationTaskScopeReq("with_question_bank", "电工", "senior", "高级", 80, null)),
         80,
         LocalDate.of(2026, 5, 1),
         LocalDate.of(2026, 5, 20),
@@ -360,7 +363,7 @@ class CertificationProjectApplicationServiceTest {
         "Alice",
         "Acme",
         "with_question_bank",
-        List.of(new CertificationTaskScopeReq("with_question_bank", "Electrician", "senior", "Senior", 12)),
+        List.of(new CertificationTaskScopeReq("with_question_bank", "Electrician", "senior", "Senior", 12, null)),
         12,
         LocalDate.of(2026, 6, 1),
         LocalDate.of(2026, 6, 10),

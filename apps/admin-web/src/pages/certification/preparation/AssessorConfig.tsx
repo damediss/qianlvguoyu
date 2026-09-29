@@ -1,6 +1,6 @@
 import { DeleteOutlined, EditOutlined, ReloadOutlined, TeamOutlined } from '@ant-design/icons';
 import { ProCard } from '@ant-design/pro-components';
-import { Button, Form, Input, Modal, Popconfirm, Select, Space, Table, Typography, message } from 'antd';
+import { Alert, Button, Form, Input, Modal, Popconfirm, Select, Space, Table, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -41,12 +41,6 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [editingGroup, setEditingGroup] = useState<PreparationAssessorGroup | null>(null);
   const [groupForm] = Form.useForm<PreparationAssessorGroupPayload & { workTypeScopeIds?: string[] }>();
-
-  const availableCandidatesQuery = useQuery({
-    queryKey: ['certification-info-assessors-available', candidateKeyword],
-    queryFn: () => listAvailableAssessors(candidateKeyword || undefined, true),
-    enabled: memberWizardOpen,
-  });
 
   const groupsQuery = useQuery({
     queryKey: ['certification-preparation-assessor-groups', taskId],
@@ -90,6 +84,31 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
   }, [groupsQuery.data, selectedGroupId]);
 
   const selectedGroup = (groupsQuery.data || []).find((group) => group.id === selectedGroupId);
+  const requiredWorkTypeScopes = selectedGroup?.workTypeScopes?.length
+    ? selectedGroup.workTypeScopes
+    : taskWorktypesQuery.data || [];
+  const allRequiredWorkTypesHaveIds = requiredWorkTypeScopes.length > 0
+    && requiredWorkTypeScopes.every((scope) => Boolean(scope.workTypeId));
+  const requiredWorkTypeIds = allRequiredWorkTypesHaveIds
+    ? [...new Set(requiredWorkTypeScopes.map((scope) => String(scope.workTypeId)))]
+    : [];
+  const requiredWorkTypeNames = allRequiredWorkTypesHaveIds
+    ? []
+    : [...new Set(requiredWorkTypeScopes.map((scope) => scope.workTypeName || '').filter(Boolean))];
+
+  const availableCandidatesQuery = useQuery({
+    queryKey: [
+      'certification-info-assessors-available', candidateKeyword, requiredWorkTypeIds, requiredWorkTypeNames,
+    ],
+    queryFn: () => listAvailableAssessors(
+      candidateKeyword || undefined,
+      true,
+      requiredWorkTypeIds,
+      requiredWorkTypeNames,
+      true,
+    ),
+    enabled: memberWizardOpen,
+  });
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['certification-preparation-assessor-groups', taskId] });
@@ -407,6 +426,14 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
         }}
       >
         <Space direction="vertical" style={{ width: '100%' }} size={12}>
+          {availableCandidatesQuery.isError ? (
+            <Alert
+              type="error"
+              showIcon
+              message="可用考评员筛选失败"
+              description={candidateQueryErrorMessage(availableCandidatesQuery.error)}
+            />
+          ) : null}
           <Input.Search
             allowClear
             placeholder="搜索姓名、证号"
@@ -435,4 +462,14 @@ export function AssessorConfig({ taskId, task, onChanged }: AssessorConfigProps)
 
 function roleName(role?: string) {
   return role === 'leader' ? '组长' : role === 'member' ? '成员' : dash(role);
+}
+
+function candidateQueryErrorMessage(error: unknown) {
+  if (error && typeof error === 'object') {
+    const responseMessage = (error as { response?: { data?: { message?: unknown } } })
+      .response?.data?.message;
+    if (typeof responseMessage === 'string' && responseMessage.trim()) return responseMessage;
+    if (error instanceof Error && error.message) return error.message;
+  }
+  return '请检查认定任务工种范围和考评员历史授权，并修正后重试。';
 }
