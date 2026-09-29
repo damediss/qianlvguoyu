@@ -163,10 +163,10 @@ public class KnowledgeFixController {
     }
   }
 
-  /** 修正清单分页（apply/keep/flag 筛选） */
+  /** 修正清单分页（改挂/保留/存疑 筛选）；统一 PageResponse {items, page, pageSize, total} */
   @GetMapping("/fix/list")
   @PreAuthorize("hasAuthority('exam:knowledgefix:view')")
-  public ApiResponse<List<FixItemVO>> fixList(
+  public ApiResponse<com.guoyu.platform.common.api.PageResponse<FixItemVO>> fixList(
       @RequestParam(required = false) String status,
       @RequestParam(defaultValue = "1") long page,
       @RequestParam(defaultValue = "20") long pageSize) {
@@ -181,7 +181,8 @@ public class KnowledgeFixController {
         e.getId(), e.getDetailId(), e.getOldKnowledgeId(), e.getCourseId(),
         e.getNewKnowledgeId(), e.getConfidence(), e.getBasis(), e.getLlmReason(),
         e.getStatus(), null)).toList();
-    return ApiResponse.ok(items);
+    return ApiResponse.ok(new com.guoyu.platform.common.api.PageResponse<>(items, page, pageSize,
+        result.getTotal()));
   }
 
   /** 修正清单 xlsx 导出（归档留痕） */

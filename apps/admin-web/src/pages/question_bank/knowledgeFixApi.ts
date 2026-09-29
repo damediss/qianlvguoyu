@@ -1,5 +1,6 @@
 /** 知识归属修正 API（方案 §7.3）：去重软删除 + LLM 分类 + 置信分层写回 */
 import { apiClient, unwrap } from '../../api/client';
+import type { PageResponse } from '../../types/api';
 
 export interface DedupStats {
   mayTotalRows: number;
@@ -95,9 +96,7 @@ export const classifyProgress = () =>
   unwrap<FixBatch | null>(apiClient.get('/exam/knowledgefix/classify/progress'));
 
 export const fixList = (params: { status?: string; page: number; pageSize: number }) =>
-  unwrap<{ records: FixItem[]; total: number }>(
-    apiClient.get('/exam/knowledgefix/fix/list', { params }),
-  );
+  unwrap<PageResponse<FixItem>>(apiClient.get('/exam/knowledgefix/fix/list', { params }));
 
 export const exportFixList = async (): Promise<Blob> => {
   const resp = await apiClient.get('/exam/knowledgefix/fix/export', { responseType: 'blob' });

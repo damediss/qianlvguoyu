@@ -1,8 +1,8 @@
 /**
  * 知识归属修正工作台（方案 §7.4）：三页签
  * ① 去重清理（生成清单 → 软删除 → 可回滚）
- * ② 知识修正（LLM 三采样自一致分类 → apply/keep/flag 清单 → 置信分层写回）
- * ③ 质量报告（自一致率/置信分布/flag 规模）
+ * ② 知识修正（LLM 三采样自一致分类 → 改挂/保留/存疑 清单 → 置信分层写回）
+ * ③ 质量报告（自一致率/置信分布/存疑规模）
  */
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -19,9 +19,9 @@ import {
 import type { DedupStats, FixBatch, FixItem } from './knowledgeFixApi';
 
 const STATUS_TAG: Record<string, { color: string; text: string }> = {
-  apply: { color: 'success', text: '应用' },
+  apply: { color: 'success', text: '改挂' },
   keep: { color: 'processing', text: '保留' },
-  flag: { color: 'warning', text: '待关注' },
+  flag: { color: 'warning', text: '存疑' },
   pending: { color: 'default', text: '待分类' },
   applied: { color: 'success', text: '已写回' },
 };
@@ -173,7 +173,7 @@ const KnowledgeFixPage: React.FC = () => {
   const doResetClassify = async () => {
     try {
       const n = await resetClassify();
-      message.success(`已复位 ${n} 行（待关注/未分类 → 待分类），可重新提交批次`);
+      message.success(`已复位 ${n} 行（存疑/未分类 → 待分类），可重新提交批次`);
       qc.invalidateQueries({ queryKey: ['knowledgefix-progress'] });
       qc.invalidateQueries({ queryKey: ['knowledgefix-fix-list'] });
     } catch {
@@ -322,7 +322,7 @@ const KnowledgeFixPage: React.FC = () => {
             <>
               <Space style={{ marginBottom: 16 }} wrap>
                 <Button type="primary" onClick={() => doSubmitClassify()} disabled={batchRunning(batch)}>
-                  {batch?.status === 'paused' ? '继续（提交剩余行）' : '提交 LLM 分类批次'}
+                  {batch?.status === 'paused' ? '提交 LLM 分类批次（全量）' : '提交 LLM 分类批次'}
                 </Button>
                 <InputNumber
                   placeholder="课程 ID"
@@ -353,7 +353,7 @@ const KnowledgeFixPage: React.FC = () => {
                 </Popconfirm>
                 <Popconfirm
                   title="确认暂停当前批次？"
-                  description="停止派发新行；已派发的行跑完即暂停（约 10 秒内）。要继续跑剩余行，再点「提交 LLM 分类批次」。"
+                  description="停止派发新行；已派发的行跑完即暂停（约 10 秒内）。续跑请带相同课程 ID 和行数上限再点「范围提交（小批次）」；点「提交 LLM 分类批次」会按全量提交。"
                   onConfirm={doPause}
                   disabled={!batchRunning(batch)}
                 >
@@ -361,7 +361,7 @@ const KnowledgeFixPage: React.FC = () => {
                 </Popconfirm>
                 <Popconfirm
                   title="确认复位未达标行以重跑？"
-                  description="将「待关注/未分类」行复位为待分类并清空上一轮结论（已写回与待写回行不受影响）"
+                  description="将「存疑/未分类」行复位为待分类并清空上一轮结论（已写回与待写回行不受影响）"
                   onConfirm={doResetClassify}
                   disabled={batchRunning(batch)}
                 >
@@ -370,13 +370,13 @@ const KnowledgeFixPage: React.FC = () => {
                 <Button onClick={doExportFix}>导出修正清单 xlsx</Button>
                 <Popconfirm
                   title="确认执行知识修正写回？"
-                  description="仅 apply 行更新 knowledge_id（已自动备份，可回滚）"
+                  description="仅改挂行更新 knowledge_id（已自动备份，可回滚）"
                   onConfirm={doApplyFix}
                   disabled={fixApplying || !batch || batch.status !== 'done' || (batch.applyCnt ?? 0) === 0}
                 >
                   <Button danger loading={fixApplying}
                     disabled={fixApplying || !batch || batch.status !== 'done' || (batch.applyCnt ?? 0) === 0}>
-                    执行写回（仅 apply 行）
+                    执行写回（仅改挂行）
                   </Button>
                 </Popconfirm>
               </Space>
@@ -395,9 +395,9 @@ const KnowledgeFixPage: React.FC = () => {
                     <Descriptions.Item label="总数">{batch.total}</Descriptions.Item>
                     <Descriptions.Item label="已分类（进过模型）">{batch.done ?? 0}</Descriptions.Item>
                     <Descriptions.Item label="未分类">{batch.unclassified ?? 0}</Descriptions.Item>
-                    <Descriptions.Item label="apply">{batch.applyCnt ?? 0}</Descriptions.Item>
-                    <Descriptions.Item label="keep">{batch.keepCnt ?? 0}</Descriptions.Item>
-                    <Descriptions.Item label="flag">{batch.flagCnt ?? 0}</Descriptions.Item>
+                    <Descriptions.Item label="改挂">{batch.applyCnt ?? 0}</Descriptions.Item>
+                    <Descriptions.Item label="保留">{batch.keepCnt ?? 0}</Descriptions.Item>
+                    <Descriptions.Item label="存疑">{batch.flagCnt ?? 0}</Descriptions.Item>
                     <Descriptions.Item label="失败重试次数">{batch.failed ?? 0}</Descriptions.Item>
                     <Descriptions.Item label="Jev 分类">
                       <Tag color="purple">{batch.jevClassified ?? 0}</Tag>
@@ -431,7 +431,7 @@ const KnowledgeFixPage: React.FC = () => {
                       showIcon
                       style={{ marginBottom: 12 }}
                       message="批次已暂停"
-                      description={`已分类 ${batch.done ?? 0}/${batch.total}，剩余 ${batch.unclassified ?? 0} 行保持待分类；再次点「提交 LLM 分类批次」即可接着跑。`}
+                      description={`已分类 ${batch.done ?? 0}/${batch.total}，剩余 ${batch.unclassified ?? 0} 行保持待分类。续跑请带相同课程 ID 和行数上限点「范围提交（小批次）」；点「提交 LLM 分类批次」将全量提交所有待分类行。`}
                     />
                   )}
                   {batch.status === 'failed' && <div style={{ marginBottom: 12 }} />}
@@ -448,10 +448,10 @@ const KnowledgeFixPage: React.FC = () => {
               </Space>
               <Table rowKey="rowId" size="small"
                 loading={fixQuery.isLoading}
-                dataSource={fixQuery.data?.records ?? []}
+                dataSource={fixQuery.data?.items ?? []}
                 columns={fixColumns}
                 pagination={{
-                  current: fixPage, pageSize: 20,
+                  current: fixPage, pageSize: 20, total: fixQuery.data?.total ?? 0,
                   onChange: (p) => setFixPage(p),
                 }} />
             </>
@@ -463,9 +463,9 @@ const KnowledgeFixPage: React.FC = () => {
             <Descriptions column={2} bordered size="small" title={`批次 ${report.batchNo.slice(-8)} 质量报告`}>
               <Descriptions.Item label="总行数">{report.total}</Descriptions.Item>
               <Descriptions.Item label="状态">{report.status}</Descriptions.Item>
-              <Descriptions.Item label="apply（已按新知识点修正）">{report.applyCnt ?? 0}</Descriptions.Item>
-              <Descriptions.Item label="keep（判定归属正确保留）">{report.keepCnt ?? 0}</Descriptions.Item>
-              <Descriptions.Item label="flag（置信不足保持原节点）">{report.flagCnt ?? 0}</Descriptions.Item>
+              <Descriptions.Item label="改挂（已按新知识点修正）">{report.applyCnt ?? 0}</Descriptions.Item>
+              <Descriptions.Item label="保留（判定归属正确保留）">{report.keepCnt ?? 0}</Descriptions.Item>
+              <Descriptions.Item label="存疑（置信不足保持原节点）">{report.flagCnt ?? 0}</Descriptions.Item>
               <Descriptions.Item label="失败重试次数">{report.failed ?? 0}</Descriptions.Item>
               <Descriptions.Item label="未分类（未进模型）">{report.unclassified ?? 0}</Descriptions.Item>
               <Descriptions.Item label="自一致率（三采样全一致占比）">

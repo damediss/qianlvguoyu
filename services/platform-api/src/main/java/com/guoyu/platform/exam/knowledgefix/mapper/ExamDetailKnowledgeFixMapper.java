@@ -11,14 +11,15 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface ExamDetailKnowledgeFixMapper extends BaseMapper<ExamDetailKnowledgeFixEntity> {
 
-  /** 单行分类结果落库 */
+  /** 单行分类结果落库（含批次号审计：§13.2 回收 SQL 按 batch_no 查分层构成） */
   @Update("UPDATE exam_detail_knowledge_fix SET new_knowledge_id = #{newKnowledgeId}, "
       + "confidence = #{confidence}, basis = #{basis}, llm_reason = #{reason}, "
-      + "status = #{status}, updated_at = NOW() "
+      + "status = #{status}, batch_no = #{batchNo}, updated_at = NOW() "
       + "WHERE id = #{rowId} AND deleted = 0")
   int updateClassifyResult(@Param("rowId") Long rowId, @Param("newKnowledgeId") Integer newKnowledgeId,
       @Param("confidence") java.math.BigDecimal confidence, @Param("basis") String basis,
-      @Param("reason") String reason, @Param("status") String status);
+      @Param("reason") String reason, @Param("status") String status,
+      @Param("batchNo") Long batchNo);
 
   /** 写回后清单行置 applied */
   @Update("UPDATE exam_detail_knowledge_fix SET status = 'applied', updated_at = NOW() "

@@ -46,7 +46,7 @@ public class KnowledgeFixWriteBackService {
         new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<ExamDetailKnowledgeFixEntity>()
             .eq(ExamDetailKnowledgeFixEntity::getStatus, ExamDetailKnowledgeFixEntity.STATUS_APPLY));
     if (applyRows.isEmpty()) {
-      throw new BusinessException(ErrorCode.CONFLICT, "无 apply 状态的修正行");
+      throw new BusinessException(ErrorCode.CONFLICT, "没有待写回的改挂行");
     }
     // 预校验：新节点必须存在且课程一致（课程可信假设不破坏）
     var nodeMap = new java.util.HashMap<Integer, com.guoyu.platform.exam.knowledgefix.dto.KnowledgeNodeRow>();
@@ -89,6 +89,21 @@ public class KnowledgeFixWriteBackService {
     return restored;
   }
 
+  /** 清单状态 → 唯一中文术语（改挂/保留/存疑/待分类/已写回，状态码本身不动） */
+  private static String statusText(String status) {
+    if (status == null) {
+      return "";
+    }
+    return switch (status) {
+      case "apply" -> "改挂";
+      case "keep" -> "保留";
+      case "flag" -> "存疑";
+      case "pending" -> "待分类";
+      case "applied" -> "已写回";
+      default -> status;
+    };
+  }
+
   /** 修正清单 xlsx 导出（留痕；虽不做人工抽验，清单仍归档） */
   public byte[] exportFixList() {
     List<ExamDetailKnowledgeFixEntity> rows = fixMapper.selectList(
@@ -111,7 +126,7 @@ public class KnowledgeFixWriteBackService {
         row.createCell(4).setCellValue(e.getConfidence() == null ? "" : String.valueOf(e.getConfidence()));
         row.createCell(5).setCellValue(e.getBasis() == null ? "" : e.getBasis());
         row.createCell(6).setCellValue(e.getLlmReason() == null ? "" : e.getLlmReason());
-        row.createCell(7).setCellValue(e.getStatus() == null ? "" : e.getStatus());
+        row.createCell(7).setCellValue(statusText(e.getStatus()));
       }
       wb.write(out);
       return out.toByteArray();

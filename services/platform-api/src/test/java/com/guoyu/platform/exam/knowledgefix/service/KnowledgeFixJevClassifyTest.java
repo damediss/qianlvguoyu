@@ -211,7 +211,7 @@ class KnowledgeFixJevClassifyTest {
     when(batchMapper.updateById(ArgumentMatchers
         .<ExamKnowledgeFixBatchEntity>any())).thenReturn(1);
     when(queryMapper.selectAllNodes()).thenReturn(courseTree());
-    when(fixMapper.updateClassifyResult(anyLong(), any(), any(), any(), any(), any()))
+    when(fixMapper.updateClassifyResult(anyLong(), any(), any(), any(), any(), any(), anyLong()))
         .thenAnswer(inv -> {
           statusByRowId.put(inv.getArgument(0), inv.getArgument(5));
           basisByRowId.put(inv.getArgument(0), inv.getArgument(3));
@@ -291,7 +291,7 @@ class KnowledgeFixJevClassifyTest {
     ArgumentCaptor<String> basisCap = ArgumentCaptor.forClass(String.class);
     ArgumentCaptor<String> reasonCap = ArgumentCaptor.forClass(String.class);
     verify(fixMapper).updateClassifyResult(eq(1L), eq(301), any(), basisCap.capture(),
-        reasonCap.capture(), eq(ExamDetailKnowledgeFixEntity.STATUS_APPLY));
+        reasonCap.capture(), eq(ExamDetailKnowledgeFixEntity.STATUS_APPLY), anyLong());
     assertEquals("jev", basisCap.getValue());
     assertEquals("", reasonCap.getValue(), "Jev 行无理由文本");
   }
@@ -386,7 +386,7 @@ class KnowledgeFixJevClassifyTest {
     assertEquals(ExamDetailKnowledgeFixEntity.STATUS_FLAG, statusByRowId.get(1L));
     ArgumentCaptor<String> reasonCap = ArgumentCaptor.forClass(String.class);
     verify(fixMapper).updateClassifyResult(eq(1L), eq(303), any(), any(), reasonCap.capture(),
-        eq(ExamDetailKnowledgeFixEntity.STATUS_FLAG));
+        eq(ExamDetailKnowledgeFixEntity.STATUS_FLAG), anyLong());
     assertTrue(reasonCap.getValue().contains("卫兵拦截"), reasonCap.getValue());
   }
 
@@ -401,7 +401,7 @@ class KnowledgeFixJevClassifyTest {
 
     ArgumentCaptor<String> basisCap = ArgumentCaptor.forClass(String.class);
     verify(fixMapper).updateClassifyResult(eq(1L), eq(203), any(), basisCap.capture(), any(),
-        eq(ExamDetailKnowledgeFixEntity.STATUS_APPLY));
+        eq(ExamDetailKnowledgeFixEntity.STATUS_APPLY), anyLong());
     assertEquals("jev-l2-direct", basisCap.getValue());
     verify(jevClient, times(1)).decide(anyString(), anyString(), anyString(), anyString(),
         anyString(), anyString(), anyMap(), anyInt());

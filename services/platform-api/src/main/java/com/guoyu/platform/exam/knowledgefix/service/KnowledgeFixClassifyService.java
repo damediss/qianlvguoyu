@@ -471,7 +471,7 @@ public class KnowledgeFixClassifyService {
       int unclassified = remain.size();
       for (PendingFixRow row : remain) {
         fixMapper.updateClassifyResult(row.getRowId(), row.getOldKnowledgeId(), BigDecimal.ZERO,
-            "unclassified", "批次中断未分类", ExamDetailKnowledgeFixEntity.STATUS_FLAG);
+            "unclassified", "批次中断未分类", ExamDetailKnowledgeFixEntity.STATUS_FLAG, batchNo);
       }
       if (unclassified > 0) {
         batchMapper.incrementUnclassified(batchNo, unclassified);
@@ -583,7 +583,7 @@ public class KnowledgeFixClassifyService {
         String outcome = sameNode ? ExamDetailKnowledgeFixEntity.STATUS_KEEP
             : ExamDetailKnowledgeFixEntity.STATUS_APPLY;
         fixMapper.updateClassifyResult(row.getRowId(), l2Id, L2_DIRECT_CONFIDENCE, "l2-direct",
-            "所选章节下无鉴定点，按业务规则直接挂章节", outcome);
+            "所选章节下无鉴定点，按业务规则直接挂章节", outcome, batchNo);
         batchMapper.incrementClassified(batchNo, outcome);
         l2Direct.incrementAndGet();
         consecutiveFailures.set(0);
@@ -666,7 +666,7 @@ public class KnowledgeFixClassifyService {
       if (Objects.equals(finalNodeId, row.getOldKnowledgeId())) {
         fixMapper.updateClassifyResult(row.getRowId(), row.getOldKnowledgeId(),
             BigDecimal.valueOf(finalConf).setScale(3, RoundingMode.HALF_UP), basis, reason,
-            ExamDetailKnowledgeFixEntity.STATUS_KEEP);
+            ExamDetailKnowledgeFixEntity.STATUS_KEEP, batchNo);
         batchMapper.incrementClassified(batchNo, "keep");
         consecutiveFailures.set(0);
         return;
@@ -677,7 +677,7 @@ public class KnowledgeFixClassifyService {
           && !KnowledgeNormUtil.isQualityNode(chosen.getTitle())) {
         fixMapper.updateClassifyResult(row.getRowId(), finalNodeId,
             BigDecimal.valueOf(finalConf).setScale(3, RoundingMode.HALF_UP), basis,
-            "卫兵拦截:" + reason, ExamDetailKnowledgeFixEntity.STATUS_FLAG);
+            "卫兵拦截:" + reason, ExamDetailKnowledgeFixEntity.STATUS_FLAG, batchNo);
         batchMapper.incrementClassified(batchNo, "flag");
         guardCnt.incrementAndGet();
         return;
@@ -689,7 +689,7 @@ public class KnowledgeFixClassifyService {
         outcome = ExamDetailKnowledgeFixEntity.STATUS_FLAG;
       }
       fixMapper.updateClassifyResult(row.getRowId(), finalNodeId,
-          BigDecimal.valueOf(finalConf).setScale(3, RoundingMode.HALF_UP), basis, reason, outcome);
+          BigDecimal.valueOf(finalConf).setScale(3, RoundingMode.HALF_UP), basis, reason, outcome, batchNo);
       batchMapper.incrementClassified(batchNo, outcome);
       consecutiveFailures.set(0);
     } catch (GuardRejectException e) {
@@ -794,7 +794,7 @@ public class KnowledgeFixClassifyService {
       String outcome = sameNode ? ExamDetailKnowledgeFixEntity.STATUS_KEEP
           : ExamDetailKnowledgeFixEntity.STATUS_APPLY;
       fixMapper.updateClassifyResult(row.getRowId(), l2Id, L2_DIRECT_CONFIDENCE, "jev-l2-direct",
-          "所选章节下无鉴定点，按业务规则直接挂章节", outcome);
+          "所选章节下无鉴定点，按业务规则直接挂章节", outcome, batchNo);
       batchMapper.incrementClassified(batchNo, outcome);
       ctx.jevClassified().incrementAndGet();
       ctx.confSum().add(L2_DIRECT_CONFIDENCE.doubleValue());
@@ -863,7 +863,7 @@ public class KnowledgeFixClassifyService {
     // keep 判定：模型选中当前节点（防过度修正，阈值不拦截 keep，§3）
     if (Objects.equals(nodeId, row.getOldKnowledgeId())) {
       fixMapper.updateClassifyResult(row.getRowId(), row.getOldKnowledgeId(),
-          scale(r2.confidence()), "jev", "", ExamDetailKnowledgeFixEntity.STATUS_KEEP);
+          scale(r2.confidence()), "jev", "", ExamDetailKnowledgeFixEntity.STATUS_KEEP, batchNo);
       batchMapper.incrementClassified(batchNo, ExamDetailKnowledgeFixEntity.STATUS_KEEP);
       ctx.jevClassified().incrementAndGet();
       ctx.confSum().add(r2.confidence());
@@ -873,7 +873,7 @@ public class KnowledgeFixClassifyService {
     if (!KnowledgeNormUtil.hasBigramOverlap(picked.getTitle(), questionText)
         && !KnowledgeNormUtil.isQualityNode(picked.getTitle())) {
       fixMapper.updateClassifyResult(row.getRowId(), nodeId, scale(r2.confidence()), "jev",
-          "卫兵拦截:概率判定零关键词重合", ExamDetailKnowledgeFixEntity.STATUS_FLAG);
+          "卫兵拦截:概率判定零关键词重合", ExamDetailKnowledgeFixEntity.STATUS_FLAG, batchNo);
       batchMapper.incrementClassified(batchNo, ExamDetailKnowledgeFixEntity.STATUS_FLAG);
       ctx.jevClassified().incrementAndGet();
       ctx.confSum().add(r2.confidence());
@@ -885,7 +885,7 @@ public class KnowledgeFixClassifyService {
       return JevOutcome.FALLBACK_LLM;
     }
     fixMapper.updateClassifyResult(row.getRowId(), nodeId, scale(r2.confidence()), "jev", "",
-        ExamDetailKnowledgeFixEntity.STATUS_APPLY);
+        ExamDetailKnowledgeFixEntity.STATUS_APPLY, batchNo);
     batchMapper.incrementClassified(batchNo, ExamDetailKnowledgeFixEntity.STATUS_APPLY);
     ctx.jevClassified().incrementAndGet();
     ctx.confSum().add(r2.confidence());
@@ -1038,7 +1038,8 @@ public class KnowledgeFixClassifyService {
     int done = batch.getDone() == null ? 0 : batch.getDone();
     batch.setStatus(ExamKnowledgeFixBatchEntity.STATUS_PAUSED);
     batch.setFailReason("人工暂停：已分类 " + done + "/" + total + "，剩余 "
-        + Math.max(0, total - done) + " 行保持待分类；再次点「提交 LLM 分类批次」即可接着跑");
+        + Math.max(0, total - done) + " 行保持待分类；续跑请带相同范围点「范围提交（小批次）」"
+        + "（点全量提交将纳入所有待分类行）");
     batch.setUpdatedAt(LocalDateTime.now());
     batchMapper.updateById(batch);
     log.info("知识修正批次已暂停：batchNo={}, done={}/{}", batchNo, done, total);

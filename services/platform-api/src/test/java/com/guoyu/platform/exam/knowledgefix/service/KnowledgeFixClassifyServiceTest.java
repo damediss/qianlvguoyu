@@ -206,7 +206,7 @@ class KnowledgeFixClassifyServiceTest {
     when(batchMapper.updateById(ArgumentMatchers.<com.guoyu.platform.exam.knowledgefix.entity.ExamKnowledgeFixBatchEntity>any())).thenReturn(1);
     when(queryMapper.selectAllNodes()).thenReturn(courseTree());
     when(queryMapper.selectMayRowCount()).thenReturn(3L);
-    when(fixMapper.updateClassifyResult(anyLong(), any(), any(), any(), any(), any())).thenAnswer(inv -> {
+    when(fixMapper.updateClassifyResult(anyLong(), any(), any(), any(), any(), any(), anyLong())).thenAnswer(inv -> {
       statusByRowId.put(inv.getArgument(0), inv.getArgument(5));
       return 1;
     });
@@ -286,7 +286,7 @@ class KnowledgeFixClassifyServiceTest {
 
     assertEquals(ExamDetailKnowledgeFixEntity.STATUS_APPLY, statusByRowId.get(1L));
     verify(fixMapper).updateClassifyResult(anyLong(), ArgumentMatchers.eq(301), any(), any(), any(),
-        ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_APPLY));
+        ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_APPLY), anyLong());
     assertEquals(0, BigDecimalCompare(batch.getSelfConsistencyRate(), 1.0));
     assertEquals(ExamKnowledgeFixBatchEntity.STATUS_DONE, batch.getStatus());
   }
@@ -311,7 +311,7 @@ class KnowledgeFixClassifyServiceTest {
 
     assertEquals(ExamDetailKnowledgeFixEntity.STATUS_APPLY, statusByRowId.get(1L));
     verify(fixMapper).updateClassifyResult(anyLong(), ArgumentMatchers.eq(301), any(), any(), any(),
-        ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_APPLY));
+        ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_APPLY), anyLong());
     // §6 调整：自一致率 0（2/3 多数行非 3/3 一致）降为信息项展示，不再卡门禁 → 批次 DONE
     assertEquals(ExamKnowledgeFixBatchEntity.STATUS_DONE, batch.getStatus());
     assertEquals(0, batch.getSelfConsistencyRate().compareTo(java.math.BigDecimal.ZERO),
@@ -360,7 +360,7 @@ class KnowledgeFixClassifyServiceTest {
     assertEquals(ExamDetailKnowledgeFixEntity.STATUS_FLAG, statusByRowId.get(1L));
     verify(fixMapper).updateClassifyResult(anyLong(), ArgumentMatchers.eq(303), any(), any(),
         ArgumentMatchers.contains("卫兵拦截"),
-        ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_FLAG));
+        ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_FLAG), anyLong());
   }
 
   /** KF-15：模型输出零信任——非法 JSON → 行失败计数、编排不中断、行不写结论；
@@ -432,7 +432,8 @@ class KnowledgeFixClassifyServiceTest {
     // 熔断后每轮派发受限（不浪费调用），但整批不被放弃：全部行最终都有结论（unclassified）
     assertTrue(llmCalls.get() <= 10, "熔断后调用数应受限，实际 " + llmCalls.get());
     verify(fixMapper, atLeast(1)).updateClassifyResult(anyLong(), any(), any(), any(),
-        ArgumentMatchers.contains("批次中断未分类"), ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_FLAG));
+        ArgumentMatchers.contains("批次中断未分类"), ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_FLAG),
+        anyLong());
     for (int i = 1; i <= 7; i++) {
       assertEquals(ExamDetailKnowledgeFixEntity.STATUS_FLAG, statusByRowId.get((long) i),
           "第 " + i + " 行应有结论（不再被整批放弃）");
@@ -640,7 +641,7 @@ class KnowledgeFixClassifyServiceTest {
         anyInt());
     // 暂停收尾不写"批次中断未分类"兜底（否则继续跑要先 reset 把 flag 退回）
     verify(fixMapper, org.mockito.Mockito.never()).updateClassifyResult(anyLong(), any(), any(),
-        any(), any(), anyString());
+        any(), any(), anyString(), anyLong());
     verify(batchMapper, org.mockito.Mockito.never()).incrementUnclassified(anyLong(), anyInt());
   }
 
@@ -704,7 +705,7 @@ class KnowledgeFixClassifyServiceTest {
         org.mockito.ArgumentCaptor.forClass(java.math.BigDecimal.class);
     org.mockito.ArgumentCaptor<String> basisCap = org.mockito.ArgumentCaptor.forClass(String.class);
     verify(fixMapper).updateClassifyResult(anyLong(), ArgumentMatchers.eq(203), confCap.capture(),
-        basisCap.capture(), any(), ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_APPLY));
+        basisCap.capture(), any(), ArgumentMatchers.eq(ExamDetailKnowledgeFixEntity.STATUS_APPLY), anyLong());
     assertEquals(0, confCap.getValue().compareTo(java.math.BigDecimal.valueOf(0.5)));
     assertEquals("l2-direct", basisCap.getValue());
     // 阶段 2 零调用（省 3 次采样）
