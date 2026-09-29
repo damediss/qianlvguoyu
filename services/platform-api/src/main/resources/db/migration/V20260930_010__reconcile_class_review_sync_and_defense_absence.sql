@@ -33,3 +33,106 @@ SET @sql := IF(@has_status > 0,
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- V20260916_010 creates the placeholder tables in both migration chains;
+-- the test-only V20260920_107 remains unchanged in migration-test. Normalize
+-- both existing table definitions for snowflake IDs and BaseEntity mapping.
+
+ALTER TABLE train_class_assistant_session
+  MODIFY COLUMN id BIGINT NOT NULL COMMENT '主键',
+  MODIFY COLUMN tenant_id BIGINT NOT NULL COMMENT '租户';
+
+ALTER TABLE train_class_assistant_message
+  MODIFY COLUMN id BIGINT NOT NULL COMMENT '主键',
+  MODIFY COLUMN tenant_id BIGINT NOT NULL COMMENT '租户';
+
+SET @has_session_deleted := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'train_class_assistant_session'
+    AND COLUMN_NAME = 'deleted'
+);
+SET @ddl := IF(@has_session_deleted = 0,
+  'ALTER TABLE train_class_assistant_session ADD COLUMN deleted INT NOT NULL DEFAULT 0 COMMENT ''逻辑删除'' AFTER tenant_id',
+  'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_session_created_by := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'train_class_assistant_session'
+    AND COLUMN_NAME = 'created_by'
+);
+SET @ddl := IF(@has_session_created_by = 0,
+  'ALTER TABLE train_class_assistant_session ADD COLUMN created_by BIGINT NULL COMMENT ''创建人'' AFTER status',
+  'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_session_updated_by := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'train_class_assistant_session'
+    AND COLUMN_NAME = 'updated_by'
+);
+SET @ddl := IF(@has_session_updated_by = 0,
+  'ALTER TABLE train_class_assistant_session ADD COLUMN updated_by BIGINT NULL COMMENT ''更新人'' AFTER created_by',
+  'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_message_deleted := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'train_class_assistant_message'
+    AND COLUMN_NAME = 'deleted'
+);
+SET @ddl := IF(@has_message_deleted = 0,
+  'ALTER TABLE train_class_assistant_message ADD COLUMN deleted INT NOT NULL DEFAULT 0 COMMENT ''逻辑删除'' AFTER tenant_id',
+  'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_message_created_by := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'train_class_assistant_message'
+    AND COLUMN_NAME = 'created_by'
+);
+SET @ddl := IF(@has_message_created_by = 0,
+  'ALTER TABLE train_class_assistant_message ADD COLUMN created_by BIGINT NULL COMMENT ''创建人'' AFTER payload_json',
+  'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_message_updated_by := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'train_class_assistant_message'
+    AND COLUMN_NAME = 'updated_by'
+);
+SET @ddl := IF(@has_message_updated_by = 0,
+  'ALTER TABLE train_class_assistant_message ADD COLUMN updated_by BIGINT NULL COMMENT ''更新人'' AFTER created_by',
+  'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_message_updated_at := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'train_class_assistant_message'
+    AND COLUMN_NAME = 'updated_at'
+);
+SET @ddl := IF(@has_message_updated_at = 0,
+  'ALTER TABLE train_class_assistant_message ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT ''更新时间'' AFTER created_at',
+  'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
