@@ -62,8 +62,8 @@ class ReviewSyncPanelApplicationServiceTest {
     ReviewSyncPanelVO vo = service.getPanel(null);
 
     assertEquals(0, vo.scale().totalPlans());
+    assertEquals(0, vo.scale().newPlans7d());
     assertEquals(0, vo.scale().active7d());
-    assertNull(vo.scale().abandonRate());
     assertNull(vo.scale().activeRate7d());
     assertEquals(0, vo.effort().totalAnswers());
     assertNull(vo.effort().avgAnswersPerPlan());
@@ -87,6 +87,7 @@ class ReviewSyncPanelApplicationServiceTest {
         row("status", "abandoned", "cnt", 1L, "interruptCnt", 0L)))
         .when(panelMapper).planStatusAgg();
     doReturn(3L).when(panelMapper).activeUsers7d();
+    doReturn(7L).when(panelMapper).newPlans7d();
     doReturn(7010L).when(panelMapper).totalAnswers();
     doReturn(List.of(
         row("totalDays", 60L, "doneDays", 50L),
@@ -107,9 +108,8 @@ class ReviewSyncPanelApplicationServiceTest {
 
     assertEquals(10, vo.scale().totalPlans());
     assertEquals(6, vo.scale().active());
-    assertEquals(1, vo.scale().abandoned());
+    assertEquals(7, vo.scale().newPlans7d());
     assertEquals(2, vo.scale().interruptPlans());
-    assertEquals(0, vo.scale().abandonRate().compareTo(bd("10.00")));
     assertEquals(0, vo.scale().activeRate7d().compareTo(bd("50.00")));
     assertEquals(7010, vo.effort().totalAnswers());
     assertEquals(0, vo.effort().avgAnswersPerPlan().compareTo(bd("701.00")));

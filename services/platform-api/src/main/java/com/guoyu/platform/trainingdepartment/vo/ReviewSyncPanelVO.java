@@ -15,9 +15,9 @@ public record ReviewSyncPanelVO(
     List<WrongTrendPoint> wrongTrend30d,
     List<WeakItem> weakTop5) {
 
-  /** 规模（用没用）：activeRate7d 分母为进行中计划数 */
-  public record Scale(long totalPlans, long active, long completed, long abandoned,
-      BigDecimal abandonRate, long active7d, BigDecimal activeRate7d, long interruptPlans) {
+  /** 规模（用没用）：activeRate7d 分母为进行中计划数；newPlans7d 为近 7 日新增计划数 */
+  public record Scale(long totalPlans, long active, long completed, long newPlans7d,
+      long active7d, BigDecimal activeRate7d, long interruptPlans) {
   }
 
   /** 投入（勤不勤）：totalAnswers 为累计口径，dayCompletionRate 为近 N 天口径 */

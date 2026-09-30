@@ -61,7 +61,6 @@ public class ReviewSyncPanelApplicationService {
     long total = 0;
     long active = 0;
     long completed = 0;
-    long abandoned = 0;
     long interrupt = 0;
     for (Map<String, Object> row : nullToEmpty(panelMapper.planStatusAgg())) {
       String status = asString(row.get("status"));
@@ -71,15 +70,15 @@ public class ReviewSyncPanelApplicationService {
       switch (status == null ? "" : status) {
         case "active" -> active += cnt;
         case "completed" -> completed += cnt;
-        case "abandoned" -> abandoned += cnt;
         default -> {
           // 其他状态计入总数即可
         }
       }
     }
     long active7d = defaultZero(panelMapper.activeUsers7d());
-    return new ReviewSyncPanelVO.Scale(total, active, completed, abandoned,
-        ratio(abandoned, total), active7d, ratio(active7d, active), interrupt);
+    long newPlans7d = defaultZero(panelMapper.newPlans7d());
+    return new ReviewSyncPanelVO.Scale(total, active, completed, newPlans7d,
+        active7d, ratio(active7d, active), interrupt);
   }
 
   // ------------------------------------------------------------------

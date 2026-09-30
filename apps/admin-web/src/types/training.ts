@@ -3308,8 +3308,7 @@ export interface ReviewSyncPanelScale {
   totalPlans: number;
   active: number;
   completed: number;
-  abandoned: number;
-  abandonRate: number | null;
+  newPlans7d: number;
   active7d: number;
   activeRate7d: number | null;
   interruptPlans: number;

@@ -44,6 +44,14 @@ public interface ReviewSyncPanelMapper {
       """)
   Long activeUsers7d();
 
+  /** 近 7 日新增计划数（含今天，按 created_at） */
+  @Select("""
+      SELECT COUNT(*) AS cnt
+      FROM ai_review_plan
+      WHERE deleted = 0 AND created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+      """)
+  Long newPlans7d();
+
   /** 累计作答总行数（不限时间，面板"累计作答"口径） */
   @Select("SELECT COUNT(*) AS cnt FROM ai_review_answer WHERE deleted = 0")
   Long totalAnswers();

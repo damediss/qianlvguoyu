@@ -5,9 +5,9 @@ import { LineChartOutlined } from '@ant-design/icons';
 import { getReviewSyncPanel } from '../../api/training';
 import type { ReviewSyncPanel } from '../../types/training';
 import { useAuthStore } from '../../stores/authStore';
+import { useNavStore } from '../../stores/navStore';
 
 /** 红绿灯阈值（方案 §4.3，集中在前端常量便于调） */
-const ABANDON_RATE_RED = 20; // 放弃率 >20% 标红
 const ACTIVE_RATE_RED = 40; // 7日活跃率 <40% 标红
 const PASS_RATE_RED = 40; // 模考及格率 <40% 标红
 const PASS_RATE_GREEN = 60; // ≥60% 标绿
@@ -15,11 +15,8 @@ const MOCK_MIN_SAMPLE = 10; // 模考完成 <10 套显示"--"（样本不足）
 
 const POLL_INTERVAL_MS = 60_000;
 
-/** 统计隐藏路由跳转（与 main.tsx 约定：pushState + popstate） */
-function navigateTo(path: string) {
-  window.history.pushState({}, '', path);
-  window.dispatchEvent(new PopStateEvent('popstate'));
-}
+/** 明细页=考试计划列表（行内「AI同步学统计」入口）；SPA 内容区按 selectedKey 渲染，不走 URL */
+const DETAIL_MENU_KEY = 'kao_shi_ji_hua';
 
 function formatWan(value?: number | null) {
   if (value == null) return '--';
@@ -59,6 +56,7 @@ function GroupTitle({ children }: { children: React.ReactNode }) {
 export function ReviewSyncPanel() {
   const hasPerm = useAuthStore((s) => s.hasPermission);
   const canViewStats = hasPerm('exam:review-sync:stats:view');
+  const setSelectedKey = useNavStore((s) => s.setSelectedKey);
 
   const panelQuery = useQuery<ReviewSyncPanel>({
     queryKey: ['training-dashboard-review-sync-panel'],
@@ -134,7 +132,7 @@ export function ReviewSyncPanel() {
 
   const detailLink = canViewStats ? (
     <Button type="link" size="small" icon={<LineChartOutlined />}
-      onClick={() => navigateTo('/training/exam-lists')}>
+      onClick={() => setSelectedKey(DETAIL_MENU_KEY)}>
       查看明细
     </Button>
   ) : (
@@ -160,9 +158,7 @@ export function ReviewSyncPanel() {
       <div className="review-sync-kpi-row">
         <Kpi label="计划学员" value={formatWan(scale.totalPlans)} foot={`已完成 ${scale.completed}`} />
         <Kpi label="进行中" value={formatWan(scale.active)} />
-        <Kpi label="已放弃" value={formatWan(scale.abandoned)}
-          tag={rateTag(scale.abandonRate, undefined, ABANDON_RATE_RED)}
-          foot={`放弃率 ${formatRate(scale.abandonRate)}`} />
+        <Kpi label="近7日新增计划" value={formatWan(scale.newPlans7d)} foot="含今天" />
         <Kpi label="近7日活跃" value={formatWan(scale.active7d)}
           tag={rateTag(scale.activeRate7d, ACTIVE_RATE_RED)}
           foot={`7日活跃率 ${formatRate(scale.activeRate7d)}`} />
