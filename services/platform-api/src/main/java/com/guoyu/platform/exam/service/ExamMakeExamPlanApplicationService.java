@@ -28,6 +28,9 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class ExamMakeExamPlanApplicationService {
 
+  /** 赛前复习专用题库：组卷抽题一律排除 */
+  private static final int SOURCE_PRE_COMPETITION_REVIEW = 3;
+
   private static final String[] LEVEL_NAMES = {
       "初级工/五级", "中级工/四级", "高级工/三级", "技师/二级",
       "高级技师/一级", "特级技师", "首席技师"
@@ -285,7 +288,8 @@ public class ExamMakeExamPlanApplicationService {
           new LambdaQueryWrapper<ExamExamDetailEntity>()
               .in(ExamExamDetailEntity::getKnowledgeId, l3Ids)
               .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
-              .eq(ExamExamDetailEntity::getTenantId, tenantId));
+              .eq(ExamExamDetailEntity::getTenantId, tenantId)
+              .ne(ExamExamDetailEntity::getSource, SOURCE_PRE_COMPETITION_REVIEW));
 
       // 按题型分组
       var grouped = allDetails.stream()
@@ -436,6 +440,7 @@ public class ExamMakeExamPlanApplicationService {
               .in(ExamExamDetailEntity::getKnowledgeId, l3Ids)
               .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
               .eq(ExamExamDetailEntity::getTenantId, tenantId)
+              .ne(ExamExamDetailEntity::getSource, SOURCE_PRE_COMPETITION_REVIEW)
               .last("ORDER BY RAND()"));
 
       for (ExamExamDetailEntity exam : examList) {
@@ -462,7 +467,8 @@ public class ExamMakeExamPlanApplicationService {
                       .in(ExamExamDetailEntity::getKnowledgeId, l3Ids)
                       .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
                       .eq(ExamExamDetailEntity::getTenantId, tenantId)
-                      .eq(ExamExamDetailEntity::getType, type),
+                      .eq(ExamExamDetailEntity::getType, type)
+                      .ne(ExamExamDetailEntity::getSource, SOURCE_PRE_COMPETITION_REVIEW),
                   diffStart, diffEnd, scoreStart, scoreEnd, addedExamIds));
 
           for (int i = 0; i < num && i < examList.size(); i++) {
@@ -486,7 +492,8 @@ public class ExamMakeExamPlanApplicationService {
                         .in(ExamExamDetailEntity::getKnowledgeId, subL3Ids)
                         .eq(ExamExamDetailEntity::getType, type)
                         .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
-                        .eq(ExamExamDetailEntity::getTenantId, tenantId),
+                        .eq(ExamExamDetailEntity::getTenantId, tenantId)
+                        .ne(ExamExamDetailEntity::getSource, SOURCE_PRE_COMPETITION_REVIEW),
                     diffStart, diffEnd, scoreStart, scoreEnd, addedExamIds));
             for (int i = 0; i < subNum && i < examList.size(); i++) {
               ExamExamDetailEntity exam = examList.get(i);
@@ -504,7 +511,8 @@ public class ExamMakeExamPlanApplicationService {
                       .in(ExamExamDetailEntity::getKnowledgeId, l3Ids)
                       .eq(ExamExamDetailEntity::getType, type)
                       .eq(ExamExamDetailEntity::getFinalCheckStatus, 1)
-                      .eq(ExamExamDetailEntity::getTenantId, tenantId),
+                      .eq(ExamExamDetailEntity::getTenantId, tenantId)
+                      .ne(ExamExamDetailEntity::getSource, SOURCE_PRE_COMPETITION_REVIEW),
                   diffStart, diffEnd, scoreStart, scoreEnd, addedExamIds));
           for (int i = 0; i < num && i < examList.size(); i++) {
             ExamExamDetailEntity exam = examList.get(i);

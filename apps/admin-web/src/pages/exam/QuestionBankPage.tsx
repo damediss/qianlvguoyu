@@ -331,7 +331,7 @@ export function QuestionBankPage() {
 
   // ── import modal state ──
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [importSource, setImportSource] = useState<number>(0); // 0=内部, 1=外部
+  const [importSource, setImportSource] = useState<number>(0); // 0=内部, 1=外部, 3=赛前复习
   const [importFileList, setImportFileList] = useState<any[]>([]);
   const [importLoading, setImportLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
@@ -451,6 +451,7 @@ export function QuestionBankPage() {
     return {
       internal: items.filter((it) => it.source === 0).length,
       external: items.filter((it) => it.source === 1).length,
+      preCompetition: items.filter((it) => it.source === 3).length,
     };
   }, [examPage?.items]);
 
@@ -563,7 +564,7 @@ export function QuestionBankPage() {
       dataIndex: 'source',
       width: 70,
       render: (v: number) => (
-        <Tag color={v === 0 ? 'blue' : 'orange'}>{EXAM_SOURCE_MAP[v] ?? v}</Tag>
+        <Tag color={v === 0 ? 'blue' : v === 3 ? 'green' : 'orange'}>{EXAM_SOURCE_MAP[v] ?? v}</Tag>
       ),
     },
     {
@@ -829,6 +830,7 @@ export function QuestionBankPage() {
             total: examPage?.total ?? 0,
             internal: sourceCount.internal,
             external: sourceCount.external,
+            preCompetition: sourceCount.preCompetition,
             selected: selectedRowKeys.length,
           }}
           filters={{
@@ -878,6 +880,7 @@ export function QuestionBankPage() {
             options={[
               { value: 0, label: '内部' },
               { value: 1, label: '外部' },
+              { value: 3, label: '赛前复习' },
             ]}
           />
           <Select
@@ -968,6 +971,20 @@ export function QuestionBankPage() {
               >
                 导入外部试题
               </Button>
+              <Button
+                icon={<UploadOutlined />}
+                onClick={() => {
+                  if (!selectedCourseId) {
+                    message.warning('请先选择科目');
+                    return;
+                  }
+                  setImportSource(3);
+                  setImportFileList([]);
+                  setImportModalOpen(true);
+                }}
+              >
+                导入赛前复习试题
+              </Button>
             </>
           )}
           {hasPerm('exam:question:view') && (
@@ -1018,7 +1035,7 @@ export function QuestionBankPage() {
 
       {/* ── Import Modal ── */}
       <Modal
-        title={importSource === 0 ? '导入内部试题' : '导入外部试题'}
+        title={`导入${EXAM_SOURCE_MAP[importSource] ?? ''}试题`}
         open={importModalOpen}
         onOk={handleImport}
         onCancel={() => {
