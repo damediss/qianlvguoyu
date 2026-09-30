@@ -166,8 +166,13 @@ class StandardExporterTest {
     assertTrue(sql.contains("SET @k_A_A = LAST_INSERT_ID();"));
     assertTrue(sql.contains("SET @k_A_A_A_001 = LAST_INSERT_ID();"));
     assertTrue(sql.contains("parent_id, title") , "knowledge_structure 列");
-    assertTrue(sql.contains(", @k_A_A, '职业道德基本知识A-A-A'"), "L2 parent 引用 L1 变量");
-    assertTrue(sql.contains(", @k_A, '职业道德A-A'"), "L1 parent 引用 L0 变量");
+    // 平台口径：title=纯名称，series_no=节点编码（对齐库内既有工种数据，炭素成型工事故修复）
+    assertTrue(sql.contains(", 0, '基本要求', 'A', 0,"), "L0 纯名称+series_no（父为字面量 0）");
+    assertTrue(sql.contains(", @k_A, '职业道德', 'A-A', 1,"), "L1 纯名称+series_no");
+    assertTrue(sql.contains(", @k_A_A, '职业道德基本知识', 'A-A-A', 2,"), "L2 纯名称+series_no");
+    assertTrue(sql.contains("'工匠精神的基本内涵', 'A-A-A-001', 3,"), "L3 纯名称+series_no");
+    assertFalse(sql.contains("职业道德A-A'") || sql.contains("基本要求A'"),
+        "title 不应再内嵌编码尾巴");
     assertTrue(sql.contains("'Y'"), "important varchar 下发");
     assertTrue(sql.contains("10159"), "PHP 租户口径");
     assertTrue(sql.contains("10.00"), "amount 默认值");
